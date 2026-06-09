@@ -31,11 +31,6 @@
         "{workspaceRoot}/tools/eslint-rules/**/*"
       ]
     },
-    "@nx/esbuild:esbuild": {
-      "cache": true,
-      "dependsOn": ["^build"],
-      "inputs": ["production", "^production"]
-    },
     "@nx/js:tsc": {
       "cache": true,
       "dependsOn": ["^build"],
@@ -50,13 +45,6 @@
       "inputs": ["default", "^production"]
     }
   },
-  "release": {
-    "projects": ["api"],
-    "projectsRelationship": "independent",
-    "docker": {
-      "skipVersionActions": true
-    }
-  },
   "plugins": [
     {
       "plugin": "@nx/playwright/plugin",
@@ -68,13 +56,6 @@
       "plugin": "@nx/eslint/plugin",
       "options": {
         "targetName": "lint"
-      }
-    },
-    {
-      "plugin": "@nx/docker",
-      "options": {
-        "buildTarget": "docker:build",
-        "runTarget": "docker:run"
       }
     },
     {
