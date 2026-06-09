@@ -1,49 +1,64 @@
-<main class="exam-shell">
-  <header class="topbar">
-    <div>
-      <p class="eyebrow">Local exam practice</p>
-      <h1>{{ title }}</h1>
+<main class="min-h-screen bg-surface-50 text-color">
+  <div class="mx-auto grid max-w-[1500px] gap-4 p-4 lg:p-6">
+    <header
+      class="grid gap-4 border-b border-surface-200 pb-4 lg:grid-cols-[minmax(0,1fr)_minmax(360px,430px)] lg:items-end"
+    >
+      <div class="min-w-0">
+        <p class="m-0 text-xs font-bold uppercase text-muted-color">
+          Local workspace
+        </p>
+        <h1 class="m-0 mt-1 text-4xl font-bold leading-tight text-color">
+          {{ title }}
+        </h1>
+      </div>
+
+      <section aria-label="Model health">
+        <app-model-health />
+      </section>
+    </header>
+
+    <div class="grid gap-2 md:grid-cols-2" aria-live="polite">
+      <p-message
+        severity="info"
+        variant="simple"
+        icon="pi pi-info-circle"
+        [text]="operations.status()"
+      />
+      @if (operations.error(); as errorMessage) {
+        <p-message
+          severity="error"
+          variant="simple"
+          icon="pi pi-exclamation-triangle"
+          role="alert"
+          [text]="errorMessage"
+        />
+      }
     </div>
 
-    <section class="health-panel" aria-label="Model health">
-      <app-model-health />
-    </section>
-  </header>
+    <div
+      class="grid items-start gap-4 xl:grid-cols-[minmax(230px,290px)_minmax(0,1fr)_minmax(280px,360px)]"
+    >
+      <aside aria-label="Projects">
+        <app-project-rail />
+      </aside>
 
-  <div class="message-row" aria-live="polite">
-    <span>{{ operations.status() }}</span>
-    @if (operations.error(); as errorMessage) {
-      <strong role="alert">{{ errorMessage }}</strong>
-    }
-  </div>
-
-  <div class="workspace-grid">
-    <aside class="project-rail" aria-label="Projects">
-      <app-project-rail />
-    </aside>
-
-    <section class="flow-column" aria-label="Practice loop">
-      @if (projects.selectedProject()) {
-        <section class="flow-panel" aria-labelledby="source-heading">
+      <section class="grid gap-4" aria-label="Practice loop">
+        @if (projects.selectedProject()) {
           <app-source-import-panel />
-        </section>
-
-        <section class="flow-panel" aria-labelledby="drafts-heading">
           <app-draft-review-panel />
-        </section>
-
-        <section class="flow-panel" aria-labelledby="practice-heading">
           <app-practice-panel />
-        </section>
-      } @else {
-        <section class="flow-panel">
-          <h2>Select or create a project.</h2>
-        </section>
-      }
-    </section>
+        } @else {
+          <section
+            class="rounded-lg border border-dashed border-surface-300 bg-surface-0 p-5 text-sm text-muted-color"
+          >
+            Select or create a project.
+          </section>
+        }
+      </section>
 
-    <aside class="review-rail" aria-labelledby="review-heading">
-      <app-wrong-answer-review />
-    </aside>
+      <aside class="xl:sticky xl:top-4" aria-labelledby="review-heading">
+        <app-wrong-answer-review />
+      </aside>
+    </div>
   </div>
 </main>

@@ -1,86 +1,133 @@
 import { Component, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { Button } from 'primeng/button';
+import { Card } from 'primeng/card';
+import { InputText } from 'primeng/inputtext';
+import { Tag } from 'primeng/tag';
 import { DraftReviewStore } from '../stores/draft-review.store';
 import { OperationStore } from '../stores/operation.store';
 import { SourceImportStore } from '../stores/source-import.store';
 
 @Component({
   selector: 'app-draft-review-panel',
-  imports: [FormsModule],
+  imports: [Button, Card, FormsModule, InputText, Tag],
   template: `
-    <div class="panel-heading">
-      <span>02</span>
-      <div>
-        <h2 id="drafts-heading">Cited Drafts</h2>
-        <p>{{ drafts.approvedDrafts().length }} approved</p>
-      </div>
-    </div>
-
-    <div class="action-row">
-      <label>
-        <span>Draft count</span>
-        <input
-          name="draftLimit"
-          type="number"
-          min="1"
-          max="50"
-          [ngModel]="drafts.draftLimit()"
-          (ngModelChange)="drafts.setDraftLimit($event)"
-        />
-      </label>
-      <button
-        class="primary-button"
-        type="button"
-        [disabled]="operations.isBusy() || !sourceImport.canGenerateDrafts()"
-        (click)="drafts.generateDrafts()"
-      >
-        Generate cited drafts
-      </button>
-    </div>
-
-    <div class="draft-list">
-      @for (draft of drafts.drafts(); track draft.id) {
-        <article
-          class="draft-item"
-          [class.is-approved]="draft.status === 'approved'"
+    <p-card styleClass="exam-card">
+      <div class="grid gap-4">
+        <div
+          class="grid gap-3 md:grid-cols-[2.25rem_minmax(0,1fr)_auto] md:items-start"
         >
-          <div class="item-heading">
-            <span>{{ draft.status }}</span>
-            @if (draft.citation_page) {
-              <span>Page {{ draft.citation_page }}</span>
-            }
+          <span
+            class="grid h-9 w-9 place-items-center rounded-md border border-primary-200 bg-primary-50 text-sm font-bold text-primary"
+          >
+            02
+          </span>
+          <div class="min-w-0">
+            <h2 id="drafts-heading" class="m-0 text-base font-bold text-color">
+              Cited Drafts
+            </h2>
+            <p class="m-0 mt-1 text-sm text-muted-color">
+              {{ drafts.approvedDrafts().length }} approved
+            </p>
           </div>
-          <h3>{{ draft.question }}</h3>
-          <ol>
-            @for (choice of draft.choices; track $index) {
-              <li>{{ choice }}</li>
-            }
-          </ol>
-          @if (draft.source_excerpt) {
-            <blockquote>{{ draft.source_excerpt }}</blockquote>
+          <p-tag
+            [value]="drafts.drafts().length + ' drafts'"
+            severity="secondary"
+            [rounded]="true"
+          />
+        </div>
+
+        <div class="grid gap-3 md:grid-cols-[10rem_auto] md:items-end">
+          <label class="grid gap-1.5 text-sm font-semibold text-muted-color">
+            <span>Draft count</span>
+            <input
+              pInputText
+              name="draftLimit"
+              type="number"
+              min="1"
+              max="50"
+              [ngModel]="drafts.draftLimit()"
+              (ngModelChange)="drafts.setDraftLimit($event)"
+            />
+          </label>
+          <p-button
+            label="Generate cited drafts"
+            icon="pi pi-sparkles"
+            type="button"
+            [disabled]="operations.isBusy() || !sourceImport.canGenerateDrafts()"
+            (onClick)="drafts.generateDrafts()"
+          />
+        </div>
+
+        <div class="grid gap-3">
+          @for (draft of drafts.drafts(); track draft.id) {
+            <article
+              class="grid gap-3 rounded-lg border p-3"
+              [class.border-primary-300]="draft.status === 'approved'"
+              [class.border-surface-200]="draft.status !== 'approved'"
+              [class.bg-highlight]="draft.status === 'approved'"
+              [class.bg-surface-0]="draft.status !== 'approved'"
+            >
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <p-tag
+                  [value]="draft.status"
+                  [severity]="draft.status === 'approved' ? 'success' : 'warn'"
+                  [rounded]="true"
+                />
+                @if (draft.citation_page) {
+                  <span class="text-sm font-semibold text-muted-color">
+                    Page {{ draft.citation_page }}
+                  </span>
+                }
+              </div>
+              <h3 class="m-0 text-base font-semibold leading-6 text-color">
+                {{ draft.question }}
+              </h3>
+              <ol class="m-0 grid gap-2 pl-5 text-sm sm:grid-cols-2">
+                @for (choice of draft.choices; track $index) {
+                  <li class="rounded-md bg-surface-50 px-2 py-1 text-color">
+                    {{ choice }}
+                  </li>
+                }
+              </ol>
+              @if (draft.source_excerpt) {
+                <blockquote
+                  class="border-l-4 border-primary-300 bg-primary-50 px-3 py-2 text-sm leading-6 text-color"
+                >
+                  {{ draft.source_excerpt }}
+                </blockquote>
+              }
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <span class="text-sm text-muted-color">
+                  Answer: {{ draft.answer ?? 'Not set' }}
+                </span>
+                @if (draft.status === 'approved') {
+                  <p-tag value="Approved" severity="success" [rounded]="true" />
+                } @else if (!drafts.canApprove(draft)) {
+                  <p-tag value="Needs citation" severity="danger" [rounded]="true" />
+                } @else {
+                  <p-button
+                    label="Approve draft"
+                    icon="pi pi-check"
+                    severity="secondary"
+                    [outlined]="true"
+                    type="button"
+                    [disabled]="operations.isBusy()"
+                    (onClick)="drafts.approveDraft(draft)"
+                  />
+                }
+              </div>
+            </article>
+          } @empty {
+            <p
+              class="m-0 rounded-lg border border-dashed border-surface-300 bg-surface-0 p-3 text-sm text-muted-color"
+            >
+              No drafts for this project.
+            </p>
           }
-          <div class="item-actions">
-            <span>Answer: {{ draft.answer ?? 'Not set' }}</span>
-            @if (draft.status === 'approved') {
-              <strong>Approved</strong>
-            } @else if (!drafts.canApprove(draft)) {
-              <strong>Needs citation</strong>
-            } @else {
-              <button
-                class="secondary-button"
-                type="button"
-                [disabled]="operations.isBusy()"
-                (click)="drafts.approveDraft(draft)"
-              >
-                Approve draft
-              </button>
-            }
-          </div>
-        </article>
-      } @empty {
-        <p class="empty-state">No drafts for this project.</p>
-      }
-    </div>
+        </div>
+      </div>
+    </p-card>
   `,
 })
 export class DraftReviewPanelComponent {

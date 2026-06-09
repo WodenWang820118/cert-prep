@@ -4,8 +4,6 @@ import { workspaceRoot } from '@nx/devkit';
 
 // For CI, you may want to set BASE_URL to the deployed application.
 const baseURL = process.env['BASE_URL'] || 'http://localhost:4200';
-const runningUnderNx =
-  process.env['NX_TASK_TARGET_PROJECT'] === 'exam-prep-e2e';
 
 /**
  * Read environment variables from file.
@@ -24,17 +22,14 @@ export default defineConfig({
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
   },
-  ...(runningUnderNx
-    ? {}
-    : {
-        /* Run your local dev server before starting the tests */
-        webServer: {
-          command: 'pnpm exec nx run exam-prep:serve',
-          url: 'http://localhost:4200',
-          reuseExistingServer: true,
-          cwd: workspaceRoot,
-        },
-      }),
+  /* Run your local dev server before starting the tests. */
+  webServer: {
+    command: 'pnpm nx run exam-prep:serve',
+    url: baseURL,
+    reuseExistingServer: true,
+    timeout: 120_000,
+    cwd: workspaceRoot,
+  },
   projects: [
     {
       name: 'chromium',

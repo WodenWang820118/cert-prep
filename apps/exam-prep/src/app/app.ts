@@ -1,4 +1,5 @@
 import { Component, inject, OnInit } from '@angular/core';
+import { Message } from 'primeng/message';
 import { DraftReviewPanelComponent } from './components/draft-review-panel.component';
 import { ModelHealthComponent } from './components/model-health.component';
 import { PracticePanelComponent } from './components/practice-panel.component';
@@ -12,6 +13,7 @@ import { WorkspaceFacade } from './stores/workspace.facade';
 @Component({
   imports: [
     DraftReviewPanelComponent,
+    Message,
     ModelHealthComponent,
     PracticePanelComponent,
     ProjectRailComponent,

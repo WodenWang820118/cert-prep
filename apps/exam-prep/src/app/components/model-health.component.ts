@@ -1,36 +1,50 @@
 import { Component, inject } from '@angular/core';
+import { Button } from 'primeng/button';
+import { Tag } from 'primeng/tag';
 import { HealthStore } from '../stores/health.store';
 import { OperationStore } from '../stores/operation.store';
 
 @Component({
   selector: 'app-model-health',
-  imports: [],
+  imports: [Button, Tag],
   template: `
-    @if (health.health(); as modelHealth) {
-      <span
-        class="health-dot"
-        [class.is-online]="modelHealth.available"
-        aria-hidden="true"
-      ></span>
-      <div>
-        <strong>{{ modelHealth.provider }} / {{ modelHealth.model }}</strong>
-        <span>{{ modelHealth.detail }}</span>
-      </div>
-    } @else {
-      <span class="health-dot" aria-hidden="true"></span>
-      <div>
-        <strong>Model health</strong>
-        <span>Unavailable</span>
-      </div>
-    }
-    <button
-      class="ghost-button"
-      type="button"
-      [disabled]="operations.isBusy()"
-      (click)="health.refresh()"
+    <div
+      class="grid gap-3 rounded-lg border border-surface-200 bg-surface-0 p-3 shadow-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
     >
-      Refresh
-    </button>
+      @if (health.health(); as modelHealth) {
+        <div class="min-w-0">
+          <div class="flex flex-wrap items-center gap-2">
+            <p-tag
+              [severity]="modelHealth.available ? 'success' : 'danger'"
+              [value]="modelHealth.available ? 'Online' : 'Offline'"
+              [rounded]="true"
+            />
+            <strong class="truncate text-sm text-color">
+              {{ modelHealth.provider }} / {{ modelHealth.model }}
+            </strong>
+          </div>
+          <p class="m-0 mt-1 text-sm leading-5 text-muted-color">
+            {{ modelHealth.detail }}
+          </p>
+        </div>
+      } @else {
+        <div>
+          <div class="flex items-center gap-2">
+            <p-tag severity="danger" value="Offline" [rounded]="true" />
+            <strong class="text-sm text-color">Model health</strong>
+          </div>
+          <p class="m-0 mt-1 text-sm text-muted-color">Unavailable</p>
+        </div>
+      }
+      <p-button
+        label="Refresh"
+        icon="pi pi-refresh"
+        severity="secondary"
+        [outlined]="true"
+        [disabled]="operations.isBusy()"
+        (onClick)="health.refresh()"
+      />
+    </div>
   `,
 })
 export class ModelHealthComponent {

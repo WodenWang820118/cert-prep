@@ -4,6 +4,27 @@
   "projectType": "application",
   "sourceRoot": "apps/exam-prep-e2e/src",
   "implicitDependencies": ["exam-prep"],
-  "// targets": "to see all targets run: nx show project exam-prep-e2e --web",
-  "targets": {}
+  "targets": {
+    "e2e": {
+      "executor": "nx:run-commands",
+      "dependsOn": [],
+      "options": {
+        "cwd": "apps/exam-prep-e2e",
+        "command": "playwright test"
+      },
+      "cache": true,
+      "inputs": [
+        "default",
+        "^production",
+        "^{projectRoot}/tsconfig*.json",
+        {
+          "externalDependencies": ["@playwright/test"]
+        }
+      ],
+      "outputs": [
+        "{workspaceRoot}/dist/.playwright/apps/exam-prep-e2e/test-output",
+        "{workspaceRoot}/dist/.playwright/apps/exam-prep-e2e/playwright-report"
+      ]
+    }
+  }
 }
