@@ -30,4 +30,3 @@
 
 - [ ] Phase 8: Run guardrail review and cleanup.
   Verify: grill-me/second-opinion review, `git status --short`, and final verification summary.
-

@@ -47,7 +47,7 @@ Question drafts cannot be approved unless they include a document id, page numbe
 ## Key Decisions
 
 - Use `pnpm@10.33.2` and run Nx via `pnpm nx ...`.
-- Use FastAPI, Pydantic, SQLite, pytest, ruff, PyMuPDF, and the official Ollama Python client.
+- Use FastAPI, Pydantic, SQLite, pytest, ruff, `pypdf`, PyInstaller, and the official Ollama Python client.
 - Use deterministic fake LLM providers in tests; live `gemma4:12b` checks are smoke/manual.
 - Use Angular signals/services for UI state and standalone components.
 - Use Tauri sidecar lifecycle for desktop packaging; do not expose filesystem writes to Angular.
@@ -60,6 +60,8 @@ Question drafts cannot be approved unless they include a document id, page numbe
 - AI output fails schema/citation validation: keep draft invalid and block approval.
 - Backend token missing or invalid: return `401` with error envelope.
 - App data directory missing: create it at backend startup.
+- SQLite schema version missing or stale: run backend-owned versioned migrations before serving requests.
+- Python sidecar missing in packaged builds: fail desktop startup with a clear sidecar-not-found error.
 
 ## Acceptance Criteria
 
@@ -79,3 +81,15 @@ Question drafts cannot be approved unless they include a document id, page numbe
 - Playwright e2e for the full create/import/approve/practice/review loop with deterministic data.
 - Tauri Rust tests for sidecar command construction and configuration.
 - Verification commands are tracked in `.agents/TODOS/exam-prep.md`.
+
+## Packaging And Bootstrap
+
+- Development backend runs through `uv run uvicorn`.
+- Packaged backend is built as a versioned PyInstaller executable; the desktop app must not require system Python.
+- Tauri launches the sidecar on `127.0.0.1` with an ephemeral port, `EXAM_PREP_DATA_DIR`, and a generated bearer token.
+- Angular receives backend configuration only through a Tauri command after sidecar readiness.
+- Backend CORS is restricted to the Tauri/dev origins used by the app; it must not use broad wildcard CORS for packaged builds.
+
+## Licensing Decision
+
+`pypdf` is the v1 PDF extraction dependency because PyPI/deps metadata lists it as BSD-3-Clause and Python 3.14-compatible. PyMuPDF/MuPDF is not used in v1 because current PyMuPDF/MuPDF documentation describes AGPL or commercial licensing, which is a distribution risk for this desktop app.

@@ -12,6 +12,10 @@
 - Store original PDFs by SHA-256 under the app data directory.
 - Use OpenAPI as the backend/frontend contract source.
 - Use fake LLM providers for deterministic automated tests.
+- Use `pypdf` for v1 selectable-text PDF extraction.
+- Use PyInstaller to build the Python backend sidecar executable for packaged desktop builds.
+- Use backend-owned versioned SQLite migrations.
+- Tauri owns sidecar startup, readiness polling, local token generation, and backend config handoff to Angular.
 - Commit each phase separately after verification.
 
 ## Rejected Or Deferred Options
@@ -21,6 +25,7 @@
 - Vision-based page extraction in v1: deferred because it is slower and harder to verify deterministically.
 - Auto-activating AI questions: rejected because bad extractions would pollute practice.
 - Retrofitting the existing shop app/API: rejected to keep starter code isolated and avoid accidental regressions.
+- PyMuPDF in v1: rejected because AGPL/commercial licensing creates distribution risk for the desktop app.
 
 ## Guardrails
 
@@ -37,3 +42,5 @@
 - Tauri sidecars: https://v2.tauri.app/develop/sidecar/
 - Tauri config: https://v2.tauri.app/reference/config/
 - pnpm workspaces: https://pnpm.io/10.x/workspaces
+- pypdf package/license metadata: https://pypi.org/project/pypdf/
+- PyInstaller package support: https://pypi.org/project/PyInstaller/
