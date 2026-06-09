@@ -30,7 +30,6 @@ class DocumentRead(BaseModel):
     project_id: str
     filename: str
     sha256: str
-    storage_path: str
     page_count: int
     has_text: bool
     status: str

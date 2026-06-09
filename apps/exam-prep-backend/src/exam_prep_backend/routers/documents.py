@@ -22,13 +22,19 @@ async def upload_document(
     db: Database = Depends(get_database),
     settings: Settings = Depends(get_settings),
 ) -> dict:
-    content = await file.read()
+    _validate_pdf_upload_metadata(file)
+    content = await _read_limited_upload(file, settings.max_upload_bytes)
     if not content:
         raise validation_error("PDF is empty.")
 
     try:
         projects_store.ensure_project_exists(db, project_id)
-        extraction = extract_pdf_pages(content)
+        extraction = extract_pdf_pages(
+            content,
+            max_pages=settings.max_pdf_pages,
+            max_page_text_chars=settings.max_page_text_chars,
+            max_total_text_chars=settings.max_total_text_chars,
+        )
         sha256 = sha256_hex(content)
         storage_path = store_pdf(settings, project_id, sha256, content)
         return documents_store.create_document(
@@ -55,3 +61,23 @@ def list_document_chunks(
         return {"items": documents_store.list_chunks(db, project_id, document_id)}
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
+
+
+async def _read_limited_upload(file: UploadFile, max_bytes: int) -> bytes:
+    chunks: list[bytes] = []
+    total_size = 0
+    while chunk := await file.read(1024 * 1024):
+        total_size += len(chunk)
+        if total_size > max_bytes:
+            raise validation_error(f"PDF is too large; the limit is {max_bytes} bytes.")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _validate_pdf_upload_metadata(file: UploadFile) -> None:
+    content_type = (file.content_type or "").lower()
+    filename = (file.filename or "").lower()
+    if content_type not in {"application/pdf", "application/x-pdf"} and not filename.endswith(
+        ".pdf"
+    ):
+        raise validation_error("Only PDF uploads are supported.")

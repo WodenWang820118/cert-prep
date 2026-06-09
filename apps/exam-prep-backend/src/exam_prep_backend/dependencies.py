@@ -31,6 +31,12 @@ def require_bearer_auth(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> None:
     settings = get_settings(request)
+    if not settings.api_token:
+        raise api_error(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            code="unauthorized",
+            message="API token is not configured.",
+        )
     if credentials is None or not hmac.compare_digest(credentials.credentials, settings.api_token):
         raise api_error(
             status_code=status.HTTP_401_UNAUTHORIZED,

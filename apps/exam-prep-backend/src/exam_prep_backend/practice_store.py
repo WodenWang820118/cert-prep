@@ -75,6 +75,9 @@ def record_attempt(
         ).fetchone()
         if question is None:
             raise NotFoundError("Approved question not found.")
+        choices = json.loads(question["choices_json"])
+        if selected_answer not in choices:
+            raise ValidationError("Selected answer is not one of the available choices.")
         is_correct = selected_answer == question["answer"]
         connection.execute(
             """
@@ -111,6 +114,7 @@ def list_wrong_answers(db: Database, project_id: str) -> list[dict]:
                 practice_attempts.session_id,
                 practice_attempts.question_id,
                 practice_attempts.selected_answer,
+                practice_attempts.is_correct,
                 practice_attempts.created_at,
                 question_drafts.question,
                 question_drafts.answer AS correct_answer,
@@ -119,12 +123,19 @@ def list_wrong_answers(db: Database, project_id: str) -> list[dict]:
                 question_drafts.source_excerpt
             FROM practice_attempts
             JOIN question_drafts ON question_drafts.id = practice_attempts.question_id
-            WHERE practice_attempts.project_id = ? AND practice_attempts.is_correct = 0
+            WHERE practice_attempts.project_id = ?
             ORDER BY practice_attempts.created_at DESC
             """,
             (project_id,),
         ).fetchall()
-    return [_wrong_answer_from_row(row) for row in rows]
+    latest_by_question: dict[str, Row] = {}
+    for row in rows:
+        latest_by_question.setdefault(row["question_id"], row)
+    return [
+        _wrong_answer_from_row(row)
+        for row in latest_by_question.values()
+        if not bool(row["is_correct"])
+    ]
 
 
 def _session_query(connection, project_id: str, session_id: str) -> Row | None:

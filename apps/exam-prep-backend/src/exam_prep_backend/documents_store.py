@@ -88,6 +88,21 @@ def get_source_chunks(db: Database, project_id: str, document_id: str) -> list[d
     return list_chunks(db, project_id, document_id)
 
 
+def get_chunk(db: Database, project_id: str, document_id: str, chunk_id: str) -> dict:
+    with db.connect() as connection:
+        row = connection.execute(
+            """
+            SELECT *
+            FROM document_chunks
+            WHERE project_id = ? AND document_id = ? AND id = ?
+            """,
+            (project_id, document_id, chunk_id),
+        ).fetchone()
+    if row is None:
+        raise NotFoundError("Document chunk not found.")
+    return _chunk_from_row(row)
+
+
 def ensure_document_exists(db: Database, project_id: str, document_id: str) -> None:
     with db.connect() as connection:
         row = connection.execute(
@@ -118,7 +133,6 @@ def _document_from_row(row: Row) -> dict:
         "project_id": row["project_id"],
         "filename": row["filename"],
         "sha256": row["sha256"],
-        "storage_path": row["storage_path"],
         "page_count": row["page_count"],
         "has_text": bool(row["has_text"]),
         "status": row["status"],

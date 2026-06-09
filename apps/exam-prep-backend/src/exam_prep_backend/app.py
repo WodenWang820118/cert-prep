@@ -1,3 +1,4 @@
+import sqlite3
 from typing import Any
 
 from fastapi import Depends, FastAPI, Request
@@ -61,6 +62,18 @@ def create_app(
                 "code": "validation_error",
                 "message": "Request validation failed.",
                 "details": {"errors": exc.errors()},
+            },
+        )
+
+    @app.exception_handler(sqlite3.IntegrityError)
+    async def integrity_error_handler(
+        _request: Request, _exc: sqlite3.IntegrityError
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "code": "validation_error",
+                "message": "Request violates a data relationship.",
             },
         )
 

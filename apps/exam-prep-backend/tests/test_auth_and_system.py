@@ -16,6 +16,18 @@ def test_health_is_public_but_other_endpoints_require_bearer_auth(tmp_path: Path
     assert client.get("/projects", headers={"Authorization": "Bearer wrong"}).status_code == 401
 
 
+def test_missing_api_token_fails_closed(tmp_path: Path) -> None:
+    client = TestClient(create_app(settings=Settings(data_dir=tmp_path)))
+
+    response = client.get("/projects", headers={"Authorization": "Bearer anything"})
+
+    assert response.status_code == 401
+    assert response.json() == {
+        "code": "unauthorized",
+        "message": "API token is not configured.",
+    }
+
+
 def test_cors_allows_configured_dev_origin(tmp_path: Path) -> None:
     client = TestClient(create_app(settings=Settings(data_dir=tmp_path, api_token="secret")))
 

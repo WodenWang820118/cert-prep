@@ -29,8 +29,10 @@ def test_pdf_upload_hashes_stores_extracts_and_chunks_by_page(
     assert document["page_count"] == 2
     assert document["has_text"] is True
     assert document["chunks_count"] == 2
-    assert Path(document["storage_path"]).is_file()
-    assert Path(document["storage_path"]).read_bytes() == pdf_bytes
+    assert "storage_path" not in document
+    stored_path = tmp_path / "uploads" / project_id / f"{expected_sha}.pdf"
+    assert stored_path.is_file()
+    assert stored_path.read_bytes() == pdf_bytes
 
     chunks = client.get(
         f"/projects/{project_id}/documents/{document['id']}/chunks",
@@ -56,6 +58,25 @@ def test_scanned_pdf_upload_is_detected_without_chunks(client: TestClient, auth_
     assert document["has_text"] is False
     assert document["status"] == "no_text_detected"
     assert document["chunks_count"] == 0
+
+
+def test_pdf_upload_rejects_oversized_file(tmp_path: Path, auth_headers) -> None:
+    from exam_prep_backend.app import create_app
+    from exam_prep_backend.config import Settings
+
+    client = TestClient(
+        create_app(settings=Settings(data_dir=tmp_path, api_token="test-token", max_upload_bytes=8))
+    )
+    project_id = _create_project(client, auth_headers)
+
+    response = client.post(
+        f"/projects/{project_id}/documents",
+        headers=auth_headers,
+        files={"file": ("large.pdf", minimal_pdf("too large"), "application/pdf")},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "validation_error"
 
 
 def _create_project(client: TestClient, auth_headers) -> str:

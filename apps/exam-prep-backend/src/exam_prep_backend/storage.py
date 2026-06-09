@@ -14,6 +14,6 @@ def store_pdf(settings: Settings, project_id: str, sha256: str, content: bytes) 
     upload_dir = settings.data_dir / "uploads" / project_id
     upload_dir.mkdir(parents=True, exist_ok=True)
     storage_path = upload_dir / f"{sha256}.pdf"
-    if not storage_path.exists() or storage_path.read_bytes() != content:
+    if not storage_path.exists():
         storage_path.write_bytes(content)
     return storage_path.resolve()

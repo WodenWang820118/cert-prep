@@ -4,8 +4,9 @@ import json
 from sqlite3 import Row
 from uuid import uuid4
 
+from exam_prep_backend import documents_store
 from exam_prep_backend.database import Database, utc_now
-from exam_prep_backend.errors import NotFoundError
+from exam_prep_backend.errors import NotFoundError, ValidationError
 from exam_prep_backend.llm import DraftSuggestion
 from exam_prep_backend.projects_store import ensure_project_exists
 from exam_prep_backend.schemas import QuestionDraftCreate, QuestionDraftUpdate
@@ -13,6 +14,7 @@ from exam_prep_backend.schemas import QuestionDraftCreate, QuestionDraftUpdate
 
 def create_draft(db: Database, project_id: str, payload: QuestionDraftCreate) -> dict:
     ensure_project_exists(db, project_id)
+    _validate_optional_source(db, project_id, payload.document_id, payload.chunk_id)
     draft_id = str(uuid4())
     now = utc_now()
     with db.connect() as connection:
@@ -152,6 +154,9 @@ def approve_draft(db: Database, project_id: str, draft_id: str) -> dict:
     missing = missing_approval_fields(draft)
     if missing:
         return {"blocked": True, "missing": missing}
+    grounding_errors = grounding_errors_for_draft(db, draft)
+    if grounding_errors:
+        return {"blocked": True, "missing": grounding_errors}
 
     now = utc_now()
     with db.connect() as connection:
@@ -179,6 +184,10 @@ def get_draft(db: Database, project_id: str, draft_id: str) -> dict:
 
 def missing_approval_fields(draft: dict) -> list[str]:
     missing: list[str] = []
+    if not draft["document_id"]:
+        missing.append("document_id")
+    if not draft["chunk_id"]:
+        missing.append("chunk_id")
     if draft["citation_page"] is None:
         missing.append("citation_page")
     if not draft["source_excerpt"]:
@@ -190,6 +199,40 @@ def missing_approval_fields(draft: dict) -> list[str]:
     if not draft["rationale"]:
         missing.append("rationale")
     return missing
+
+
+def grounding_errors_for_draft(db: Database, draft: dict) -> list[str]:
+    try:
+        chunk = documents_store.get_chunk(
+            db,
+            draft["project_id"],
+            draft["document_id"],
+            draft["chunk_id"],
+        )
+    except NotFoundError:
+        return ["document_chunk"]
+
+    errors: list[str] = []
+    if draft["citation_page"] != chunk["page_number"]:
+        errors.append("citation_page")
+
+    source_excerpt = (draft["source_excerpt"] or "").strip()
+    if source_excerpt and source_excerpt not in chunk["text"]:
+        errors.append("source_excerpt")
+    return errors
+
+
+def _validate_optional_source(
+    db: Database,
+    project_id: str,
+    document_id: str | None,
+    chunk_id: str | None,
+) -> None:
+    if document_id is None and chunk_id is None:
+        return
+    if document_id is None or chunk_id is None:
+        raise ValidationError("Document id and chunk id must be provided together.")
+    documents_store.get_chunk(db, project_id, document_id, chunk_id)
 
 
 def _draft_query(connection, project_id: str, draft_id: str) -> Row | None:

@@ -21,7 +21,11 @@ class Settings(BaseSettings):
 
     data_dir: Path = Field(default_factory=default_data_dir)
     database_name: str = "exam-prep.sqlite3"
-    api_token: str = "exam-prep-local-dev-token"
+    api_token: str = ""
+    max_upload_bytes: int = 20 * 1024 * 1024
+    max_pdf_pages: int = 250
+    max_page_text_chars: int = 20_000
+    max_total_text_chars: int = 500_000
     allowed_origins: list[str] = Field(
         default_factory=lambda: [
             "http://localhost:4200",

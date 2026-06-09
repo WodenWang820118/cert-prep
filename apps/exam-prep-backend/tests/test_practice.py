@@ -42,6 +42,51 @@ def test_practice_session_attempts_and_wrong_answer_review(client: TestClient, a
     assert item["correct_answer"] == "Apply the cited concept"
     assert item["citation_page"] == 1
 
+    corrected = client.post(
+        f"/projects/{project_id}/practice-sessions/{session['id']}/attempts",
+        headers=auth_headers,
+        json={"question_id": approved["id"], "selected_answer": "Apply the cited concept"},
+    )
+    assert corrected.status_code == 201
+    assert corrected.json()["is_correct"] is True
+
+    resolved_wrong_answers = client.get(
+        f"/projects/{project_id}/wrong-answers", headers=auth_headers
+    )
+    assert resolved_wrong_answers.status_code == 200
+    assert resolved_wrong_answers.json()["items"] == []
+
+
+def test_practice_attempt_rejects_answer_outside_choices(client: TestClient, auth_headers) -> None:
+    project_id = _create_project(client, auth_headers)
+    document_id = _upload_document(client, auth_headers, project_id)
+    draft = client.post(
+        f"/projects/{project_id}/documents/{document_id}/drafts",
+        headers=auth_headers,
+        json={"limit": 1},
+    ).json()["items"][0]
+    approved = client.post(
+        f"/projects/{project_id}/question-drafts/{draft['id']}/approve",
+        headers=auth_headers,
+    ).json()
+    session = client.post(
+        f"/projects/{project_id}/practice-sessions",
+        headers=auth_headers,
+        json={"question_count": 1},
+    ).json()
+
+    response = client.post(
+        f"/projects/{project_id}/practice-sessions/{session['id']}/attempts",
+        headers=auth_headers,
+        json={"question_id": approved["id"], "selected_answer": "Not a listed choice"},
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "code": "validation_error",
+        "message": "Selected answer is not one of the available choices.",
+    }
+
 
 def _create_project(client: TestClient, auth_headers) -> str:
     response = client.post("/projects", headers=auth_headers, json={"name": "Azure"})
