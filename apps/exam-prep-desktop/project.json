@@ -6,24 +6,42 @@
   "tags": ["scope:exam", "type:desktop"],
   "implicitDependencies": ["exam-prep", "exam-prep-backend"],
   "targets": {
+    "lint": {
+      "cache": true,
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/exam-prep-desktop",
+        "command": "eslint . --ignore-pattern src-tauri/target/** --ignore-pattern src-tauri/binaries/**"
+      }
+    },
     "dev": {
       "continuous": true,
       "executor": "nx:run-commands",
+      "dependsOn": ["sync-sidecar"],
       "options": {
         "command": "pnpm exec tauri dev --config apps/exam-prep-desktop/src-tauri/tauri.conf.json"
       }
     },
     "build": {
       "executor": "nx:run-commands",
-      "dependsOn": ["exam-prep:build", "exam-prep-backend:build-sidecar"],
+      "dependsOn": ["exam-prep:build", "sync-sidecar"],
       "outputs": ["{projectRoot}/src-tauri/target"],
       "options": {
         "command": "pnpm exec tauri build --config apps/exam-prep-desktop/src-tauri/tauri.conf.json"
       }
     },
+    "sync-sidecar": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["exam-prep-backend:build-sidecar"],
+      "outputs": ["{projectRoot}/src-tauri/binaries"],
+      "options": {
+        "command": "node apps/exam-prep-desktop/scripts/sync-sidecar.mjs"
+      }
+    },
     "cargo-test": {
       "cache": true,
       "executor": "nx:run-commands",
+      "dependsOn": ["sync-sidecar"],
       "inputs": ["default"],
       "options": {
         "command": "cargo test --manifest-path apps/exam-prep-desktop/src-tauri/Cargo.toml"

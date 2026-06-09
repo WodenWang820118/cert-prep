@@ -26,6 +26,8 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all"
+    "targets": "all",
+    "icon": ["icons/icon.ico"],
+    "externalBin": ["binaries/exam-prep-backend"]
   }
 }
