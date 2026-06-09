@@ -1,12 +1,49 @@
-<main class="app-shell">
-  <section class="intro" aria-labelledby="app-title">
-    <p class="eyebrow">Local exam practice</p>
-    <h1 id="app-title">{{ title }}</h1>
-    <p class="summary">
-      Create projects, import past papers, approve cited AI question drafts, and
-      review the questions you missed.
-    </p>
-  </section>
+<main class="exam-shell">
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">Local exam practice</p>
+      <h1>{{ title }}</h1>
+    </div>
 
-  <router-outlet></router-outlet>
+    <section class="health-panel" aria-label="Model health">
+      <app-model-health />
+    </section>
+  </header>
+
+  <div class="message-row" aria-live="polite">
+    <span>{{ operations.status() }}</span>
+    @if (operations.error(); as errorMessage) {
+      <strong role="alert">{{ errorMessage }}</strong>
+    }
+  </div>
+
+  <div class="workspace-grid">
+    <aside class="project-rail" aria-label="Projects">
+      <app-project-rail />
+    </aside>
+
+    <section class="flow-column" aria-label="Practice loop">
+      @if (projects.selectedProject()) {
+        <section class="flow-panel" aria-labelledby="source-heading">
+          <app-source-import-panel />
+        </section>
+
+        <section class="flow-panel" aria-labelledby="drafts-heading">
+          <app-draft-review-panel />
+        </section>
+
+        <section class="flow-panel" aria-labelledby="practice-heading">
+          <app-practice-panel />
+        </section>
+      } @else {
+        <section class="flow-panel">
+          <h2>Select or create a project.</h2>
+        </section>
+      }
+    </section>
+
+    <aside class="review-rail" aria-labelledby="review-heading">
+      <app-wrong-answer-review />
+    </aside>
+  </div>
 </main>

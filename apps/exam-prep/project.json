@@ -8,6 +8,12 @@
   "targets": {
     "build": {
       "executor": "@angular/build:application",
+      "dependsOn": [
+        {
+          "projects": ["exam-prep-backend"],
+          "target": "generate-openapi-client"
+        }
+      ],
       "outputs": ["{options.outputPath}"],
       "options": {
         "outputPath": "dist/apps/exam-prep",

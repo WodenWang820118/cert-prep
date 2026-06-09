@@ -41,6 +41,16 @@
         "cwd": "apps/exam-prep-backend",
         "command": "uv run pyinstaller --noconfirm --clean --name exam-prep-backend --onefile src/exam_prep_backend/sidecar.py --distpath dist --workpath build --specpath build"
       }
+    },
+    "generate-openapi-client": {
+      "cache": true,
+      "executor": "nx:run-commands",
+      "inputs": ["default"],
+      "outputs": ["{workspaceRoot}/apps/exam-prep/src/app/api/exam-prep-api.generated.ts"],
+      "options": {
+        "cwd": "apps/exam-prep-backend",
+        "command": "uv run python scripts/generate_openapi_client.py --output ../../apps/exam-prep/src/app/api/exam-prep-api.generated.ts"
+      }
     }
   }
 }

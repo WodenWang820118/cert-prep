@@ -1,0 +1,118 @@
+import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { inject, Injectable, InjectionToken } from '@angular/core';
+import { firstValueFrom } from 'rxjs';
+import { createExamPrepGeneratedClient } from './api/exam-prep-api.generated';
+import type {
+  ExamPrepGeneratedClient,
+  ExamPrepHttpRequest,
+} from './api/exam-prep-api.generated';
+
+export type {
+  DocumentRead,
+  DraftGenerateRequest,
+  ExamPrepGeneratedClient,
+  LLMHealthRead,
+  PracticeAttemptCreate,
+  PracticeAttemptRead,
+  PracticeSessionCreate,
+  PracticeSessionRead,
+  ProjectCreate,
+  ProjectList,
+  ProjectRead,
+  QuestionDraftList,
+  QuestionDraftRead,
+  WrongAnswerList,
+  WrongAnswerRead,
+} from './api/exam-prep-api.generated';
+
+const DEFAULT_LOCAL_API_BASE_URL = 'http://127.0.0.1:8765';
+
+export interface BackendConfig {
+  base_url: string;
+  token: string;
+}
+
+export const EXAM_PREP_API = new InjectionToken<ExamPrepGeneratedClient>(
+  'EXAM_PREP_API',
+  {
+    providedIn: 'root',
+    factory: () =>
+      createExamPrepGeneratedClient(inject(ExamPrepAuthenticatedTransport)),
+  },
+);
+
+@Injectable({ providedIn: 'root' })
+export class ExamPrepRuntimeConfig {
+  private configPromise: Promise<BackendConfig> | null = null;
+
+  async getBackendConfig(): Promise<BackendConfig> {
+    this.configPromise ??= this.loadBackendConfig();
+    return this.configPromise;
+  }
+
+  private async loadBackendConfig(): Promise<BackendConfig> {
+    const tauriConfig = await this.loadTauriBackendConfig();
+    return tauriConfig ?? this.loadLocalBackendConfig();
+  }
+
+  private async loadTauriBackendConfig(): Promise<BackendConfig | null> {
+    if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) {
+      return null;
+    }
+
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      return await invoke<BackendConfig>('backend_config');
+    } catch {
+      throw new Error('Desktop backend configuration is unavailable.');
+    }
+  }
+
+  private loadLocalBackendConfig(): BackendConfig {
+    const storage = this.getLocalStorage();
+    return {
+      base_url:
+        storage?.getItem('examPrepApiBaseUrl')?.trim() ??
+        DEFAULT_LOCAL_API_BASE_URL,
+      token: storage?.getItem('examPrepApiToken')?.trim() ?? '',
+    };
+  }
+
+  private getLocalStorage(): Storage | null {
+    if (typeof window === 'undefined') {
+      return null;
+    }
+
+    try {
+      return window.localStorage;
+    } catch {
+      return null;
+    }
+  }
+}
+
+@Injectable({ providedIn: 'root' })
+export class ExamPrepAuthenticatedTransport {
+  private readonly http = inject(HttpClient);
+  private readonly runtimeConfig = inject(ExamPrepRuntimeConfig);
+
+  async request<TResponse>(request: ExamPrepHttpRequest): Promise<TResponse> {
+    const config = await this.runtimeConfig.getBackendConfig();
+    return firstValueFrom(
+      this.http.request<TResponse>(
+        request.method,
+        this.url(config.base_url, request.path),
+        {
+          body: request.body,
+          headers: new HttpHeaders({
+            Authorization: `Bearer ${config.token}`,
+          }),
+        },
+      ),
+    );
+  }
+
+  private url(baseUrl: string, path: string): string {
+    return `${baseUrl.replace(/\/+$/, '')}${path}`;
+  }
+}
