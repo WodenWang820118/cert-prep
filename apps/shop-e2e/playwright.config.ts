@@ -24,7 +24,7 @@ export default defineConfig({
   },
   /* Run your local dev server before starting the tests */
   webServer: {
-    command: 'npx nx run shop:serve',
+    command: 'pnpm nx run shop:serve',
     url: 'http://localhost:4200',
     reuseExistingServer: true,
     cwd: workspaceRoot,
@@ -36,7 +36,7 @@ export default defineConfig({
     },
     // Uncomment to test wider variety of browsers
     // Note, you will also need to update `.github/workflows/ci.yml`
-    // Replacing `npx playwright install --only-shell` with `npx playwright install --with-deps`
+    // Replacing `pnpm exec playwright install --only-shell` with `pnpm exec playwright install --with-deps`
     // {
     //   name: 'firefox',
     //   use: { ...devices['Desktop Firefox'] },
