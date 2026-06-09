@@ -4,9 +4,17 @@
 dist
 tmp
 out-tsc
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
 
 # dependencies
 node_modules
+.venv/
+target/
+apps/**/src-tauri/target/
+apps/**/src-tauri/gen/
 
 # IDEs and editors
 /.idea
@@ -52,3 +60,4 @@ vitest.config.*.timestamp*
 
 .nx/polygraph
 .nx/self-healing
+__screenshots__/

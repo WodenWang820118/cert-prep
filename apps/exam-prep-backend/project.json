@@ -1,0 +1,46 @@
+{
+  "name": "exam-prep-backend",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "sourceRoot": "apps/exam-prep-backend/src",
+  "tags": ["scope:exam", "type:backend"],
+  "targets": {
+    "serve": {
+      "continuous": true,
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/exam-prep-backend",
+        "command": "uv run uvicorn exam_prep_backend.app:create_app --factory --host 127.0.0.1 --port 8765"
+      }
+    },
+    "test": {
+      "cache": true,
+      "executor": "nx:run-commands",
+      "inputs": ["default"],
+      "outputs": ["{workspaceRoot}/coverage/apps/exam-prep-backend"],
+      "options": {
+        "cwd": "apps/exam-prep-backend",
+        "command": "uv run pytest"
+      }
+    },
+    "lint": {
+      "cache": true,
+      "executor": "nx:run-commands",
+      "inputs": ["default"],
+      "options": {
+        "cwd": "apps/exam-prep-backend",
+        "command": "uv run ruff check ."
+      }
+    },
+    "build-sidecar": {
+      "cache": true,
+      "executor": "nx:run-commands",
+      "inputs": ["production"],
+      "outputs": ["{projectRoot}/dist"],
+      "options": {
+        "cwd": "apps/exam-prep-backend",
+        "command": "uv run pyinstaller --noconfirm --clean --name exam-prep-backend --onefile src/exam_prep_backend/sidecar.py --distpath dist --workpath build --specpath build"
+      }
+    }
+  }
+}

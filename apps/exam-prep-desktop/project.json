@@ -1,0 +1,33 @@
+{
+  "name": "exam-prep-desktop",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "sourceRoot": "apps/exam-prep-desktop/src-tauri/src",
+  "tags": ["scope:exam", "type:desktop"],
+  "implicitDependencies": ["exam-prep", "exam-prep-backend"],
+  "targets": {
+    "dev": {
+      "continuous": true,
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "pnpm exec tauri dev --config apps/exam-prep-desktop/src-tauri/tauri.conf.json"
+      }
+    },
+    "build": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["exam-prep:build", "exam-prep-backend:build-sidecar"],
+      "outputs": ["{projectRoot}/src-tauri/target"],
+      "options": {
+        "command": "pnpm exec tauri build --config apps/exam-prep-desktop/src-tauri/tauri.conf.json"
+      }
+    },
+    "cargo-test": {
+      "cache": true,
+      "executor": "nx:run-commands",
+      "inputs": ["default"],
+      "options": {
+        "command": "cargo test --manifest-path apps/exam-prep-desktop/src-tauri/Cargo.toml"
+      }
+    }
+  }
+}
