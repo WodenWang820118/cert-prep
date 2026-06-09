@@ -18,7 +18,8 @@ pub fn build_backend_config(base_url: impl Into<String>, token: impl Into<String
 fn backend_config() -> BackendConfig {
     let base_url =
         std::env::var("EXAM_PREP_BACKEND_URL").unwrap_or_else(|_| "http://127.0.0.1:8765".into());
-    let token = std::env::var("EXAM_PREP_BACKEND_TOKEN").unwrap_or_default();
+    let token = std::env::var("EXAM_PREP_BACKEND_TOKEN")
+        .unwrap_or_else(|_| "exam-prep-local-dev-token".into());
     build_backend_config(base_url, token)
 }
 

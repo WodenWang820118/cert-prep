@@ -1,0 +1,45 @@
+from __future__ import annotations
+
+from typing import Any
+
+from fastapi import HTTPException, status
+
+
+class BackendError(Exception):
+    """Base exception for expected backend failures."""
+
+
+class NotFoundError(BackendError):
+    pass
+
+
+class ValidationError(BackendError):
+    pass
+
+
+class InvalidPdfError(ValidationError):
+    pass
+
+
+class ProviderUnavailableError(BackendError):
+    pass
+
+
+def api_error(
+    status_code: int,
+    code: str,
+    message: str,
+    details: dict[str, Any] | None = None,
+) -> HTTPException:
+    content: dict[str, Any] = {"code": code, "message": message}
+    if details:
+        content["details"] = details
+    return HTTPException(status_code=status_code, detail=content)
+
+
+def not_found_error(message: str) -> HTTPException:
+    return api_error(status.HTTP_404_NOT_FOUND, "not_found", message)
+
+
+def validation_error(message: str, details: dict[str, Any] | None = None) -> HTTPException:
+    return api_error(status.HTTP_422_UNPROCESSABLE_CONTENT, "validation_error", message, details)
