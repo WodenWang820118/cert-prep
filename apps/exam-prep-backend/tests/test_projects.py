@@ -44,7 +44,7 @@ def test_project_crud_and_versioned_migrations(tmp_path: Path, auth_headers) -> 
         versions = [
             row[0] for row in connection.execute("SELECT version FROM schema_migrations ORDER BY version")
         ]
-    assert versions == [1, 2, 3, 4, 5]
+    assert versions == [1, 2, 3, 4, 5, 6, 7]
 
     deleted = client.delete(f"/projects/{project_id}", headers=auth_headers)
     assert deleted.status_code == 204

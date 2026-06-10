@@ -24,14 +24,14 @@ import { SourceImportStore } from '../stores/source-import.store';
           </span>
           <div class="min-w-0">
             <h2 id="drafts-heading" class="m-0 text-base font-bold text-color">
-              Cited Drafts
+              Mock Exam Items
             </h2>
             <p class="m-0 mt-1 text-sm text-muted-color">
               {{ drafts.approvedDrafts().length }} approved
             </p>
           </div>
           <p-tag
-            [value]="drafts.drafts().length + ' drafts'"
+            [value]="drafts.drafts().length + ' items'"
             severity="secondary"
             [rounded]="true"
           />
@@ -51,7 +51,7 @@ import { SourceImportStore } from '../stores/source-import.store';
             />
           </label>
           <p-button
-            label="Generate cited drafts"
+            label="Regenerate mock exam"
             icon="pi pi-sparkles"
             type="button"
             [disabled]="operations.isBusy() || !sourceImport.canGenerateDrafts()"
@@ -79,6 +79,11 @@ import { SourceImportStore } from '../stores/source-import.store';
                     Page {{ draft.citation_page }}
                   </span>
                 }
+                <p-tag
+                  [value]="draft.answer_key_source"
+                  severity="secondary"
+                  [rounded]="true"
+                />
               </div>
               <h3 class="m-0 text-base font-semibold leading-6 text-color">
                 {{ draft.question }}
@@ -122,7 +127,7 @@ import { SourceImportStore } from '../stores/source-import.store';
             <p
               class="m-0 rounded-lg border border-dashed border-surface-300 bg-surface-0 p-3 text-sm text-muted-color"
             >
-              No drafts for this project.
+              No mock exam items for this project.
             </p>
           }
         </div>

@@ -12,6 +12,7 @@ export type {
   DraftGenerateRequest,
   ExamPrepGeneratedClient,
   LLMHealthRead,
+  OCRHealthRead,
   PracticeAttemptCreate,
   PracticeAttemptRead,
   PracticeSessionCreate,

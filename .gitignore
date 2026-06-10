@@ -65,3 +65,7 @@ vitest.config.*.timestamp*
 .nx/polygraph
 .nx/self-healing
 __screenshots__/
+
+# Local QA source documents and OCR benchmark output
+/pdfs/
+/apps/exam-prep-backend/.benchmarks/

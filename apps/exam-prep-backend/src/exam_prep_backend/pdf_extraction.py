@@ -2,10 +2,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from io import BytesIO
+from typing import Protocol
 
+import pypdfium2 as pdfium
 from pypdf import PdfReader
 
 from exam_prep_backend.errors import InvalidPdfError
+from exam_prep_backend.ocr import OCRPageResult
+
+
+class PageOcrProvider(Protocol):
+    def extract_page_text(self, image_png: bytes, page_number: int) -> OCRPageResult:
+        pass
 
 
 @dataclass(frozen=True)
@@ -13,12 +21,19 @@ class ExtractedPage:
     page_number: int
     text: str
     source_excerpt: str
+    extraction_method: str
 
 
 @dataclass(frozen=True)
 class PdfExtractionResult:
     page_count: int
     pages: list[ExtractedPage]
+    status: str
+    extraction_method: str
+    ocr_device: str | None
+    ocr_fallback_reason: str | None
+    ocr_duration_ms: int
+    processed_page_count: int
 
     @property
     def has_text(self) -> bool:
@@ -31,6 +46,8 @@ def extract_pdf_pages(
     max_pages: int,
     max_page_text_chars: int,
     max_total_text_chars: int,
+    ocr_provider: PageOcrProvider | None = None,
+    ocr_render_scale: float = 2.0,
 ) -> PdfExtractionResult:
     try:
         reader = PdfReader(BytesIO(pdf_bytes))
@@ -40,7 +57,8 @@ def extract_pdf_pages(
     if len(reader.pages) > max_pages:
         raise InvalidPdfError(f"PDF has {len(reader.pages)} pages; the limit is {max_pages}.")
 
-    extracted_pages: list[ExtractedPage] = []
+    embedded_text_by_page: dict[int, str] = {}
+    pages_needing_ocr: list[int] = []
     total_text_chars = 0
     for page_number, page in enumerate(reader.pages, start=1):
         try:
@@ -59,15 +77,104 @@ def extract_pdf_pages(
                     f"PDF has too much extracted text; "
                     f"the limit is {max_total_text_chars} characters."
                 )
-            extracted_pages.append(
-                ExtractedPage(
-                    page_number=page_number,
-                    text=text,
-                    source_excerpt=text[:500],
-                )
-            )
+            embedded_text_by_page[page_number] = text
+        else:
+            pages_needing_ocr.append(page_number)
 
-    return PdfExtractionResult(page_count=len(reader.pages), pages=extracted_pages)
+    extracted_pages = [
+        ExtractedPage(
+            page_number=page_number,
+            text=text,
+            source_excerpt=text[:500],
+            extraction_method="embedded",
+        )
+        for page_number, text in embedded_text_by_page.items()
+    ]
+
+    ocr_failed = False
+    ocr_device: str | None = None
+    ocr_fallback_reasons: list[str] = []
+    ocr_duration_ms = 0
+    if pages_needing_ocr and ocr_provider is not None:
+        for page_number in pages_needing_ocr:
+            try:
+                image_png = render_pdf_page_png(
+                    pdf_bytes,
+                    page_index=page_number - 1,
+                    scale=ocr_render_scale,
+                )
+                ocr_result = ocr_provider.extract_page_text(image_png, page_number)
+                ocr_device = ocr_result.device or ocr_device
+                ocr_duration_ms += ocr_result.duration_ms
+                if (
+                    ocr_result.fallback_reason
+                    and ocr_result.fallback_reason not in ocr_fallback_reasons
+                ):
+                    ocr_fallback_reasons.append(ocr_result.fallback_reason)
+                text = _normalize_text(ocr_result.text)
+                if not text:
+                    continue
+                if len(text) > max_page_text_chars:
+                    raise InvalidPdfError(
+                        f"Page {page_number} has too much OCR text; "
+                        f"the limit is {max_page_text_chars} characters."
+                    )
+                total_text_chars += len(text)
+                if total_text_chars > max_total_text_chars:
+                    raise InvalidPdfError(
+                        f"PDF has too much extracted text; "
+                        f"the limit is {max_total_text_chars} characters."
+                    )
+                extracted_pages.append(
+                    ExtractedPage(
+                        page_number=page_number,
+                        text=text,
+                        source_excerpt=text[:500],
+                        extraction_method=ocr_result.extraction_method,
+                    )
+                )
+            except InvalidPdfError:
+                raise
+            except Exception:
+                ocr_failed = True
+                continue
+
+    extracted_pages.sort(key=lambda page: page.page_number)
+    methods = {page.extraction_method for page in extracted_pages}
+    if not extracted_pages:
+        return PdfExtractionResult(
+            page_count=len(reader.pages),
+            pages=[],
+            status="ocr_failed" if ocr_failed else "no_text_detected",
+            extraction_method="ocr_failed" if ocr_failed else "none",
+            ocr_device=ocr_device,
+            ocr_fallback_reason="; ".join(ocr_fallback_reasons) or None,
+            ocr_duration_ms=ocr_duration_ms,
+            processed_page_count=0,
+        )
+
+    return PdfExtractionResult(
+        page_count=len(reader.pages),
+        pages=extracted_pages,
+        status="ready",
+        extraction_method=methods.pop() if len(methods) == 1 else "mixed",
+        ocr_device=ocr_device,
+        ocr_fallback_reason="; ".join(ocr_fallback_reasons) or None,
+        ocr_duration_ms=ocr_duration_ms,
+        processed_page_count=len(extracted_pages),
+    )
+
+
+def render_pdf_page_png(pdf_bytes: bytes, *, page_index: int, scale: float) -> bytes:
+    try:
+        document = pdfium.PdfDocument(BytesIO(pdf_bytes))
+        bitmap = document[page_index].render(scale=scale)
+        image = bitmap.to_pil()
+        output = BytesIO()
+        image.save(output, format="PNG")
+        return output.getvalue()
+    except Exception as exc:
+        raise InvalidPdfError(f"Could not render page {page_index + 1} for OCR.") from exc
 
 
 def _normalize_text(text: str) -> str:

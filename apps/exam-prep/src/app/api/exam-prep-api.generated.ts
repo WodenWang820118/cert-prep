@@ -6,12 +6,13 @@ export interface Components {
   schemas: {
     Body_upload_document_projects__project_id__documents_post: { "file": string };
     ChunkList: { "items": Components['schemas']['ChunkRead'][] };
-    ChunkRead: { "id": string; "document_id": string; "page_number": number; "chunk_index": number; "text": string; "source_excerpt": string; "created_at": string };
-    DocumentRead: { "id": string; "project_id": string; "filename": string; "sha256": string; "page_count": number; "has_text": boolean; "status": string; "chunks_count": number; "created_at": string };
+    ChunkRead: { "id": string; "document_id": string; "page_number": number; "chunk_index": number; "text": string; "source_excerpt": string; "extraction_method": string; "created_at": string };
+    DocumentRead: { "id": string; "project_id": string; "filename": string; "sha256": string; "page_count": number; "has_text": boolean; "status": string; "extraction_method": string; "ocr_device": string | null; "ocr_fallback_reason": string | null; "ocr_duration_ms": number; "processed_page_count": number; "exam_item_count": number; "chunks_count": number; "created_at": string };
     DraftGenerateRequest: { "limit"?: number };
     HTTPValidationError: { "detail"?: Components['schemas']['ValidationError'][] };
     HealthResponse: { "status": string; "app": string; "version": string };
     LLMHealthRead: { "provider": string; "model": string; "available": boolean; "detail": string };
+    OCRHealthRead: { "provider": string; "engine": string; "available": boolean; "detail": string; "python_version": string; "paddle_version": string | null; "paddleocr_version": string | null; "selected_device": string | null; "cuda_available": boolean; "gpu_count": number; "model_cache_dir": string | null; "fallback_reason": string | null };
     PracticeAttemptCreate: { "question_id": string; "selected_answer": string };
     PracticeAttemptRead: { "id": string; "session_id": string; "project_id": string; "question_id": string; "selected_answer": string; "is_correct": boolean; "created_at": string };
     PracticeSessionCreate: { "question_count"?: number };
@@ -20,10 +21,10 @@ export interface Components {
     ProjectList: { "items": Components['schemas']['ProjectRead'][] };
     ProjectRead: { "id": string; "name": string; "description": string; "created_at": string; "updated_at": string };
     ProjectUpdate: { "name"?: string | null; "description"?: string | null };
-    QuestionDraftCreate: { "question"?: string; "choices"?: string[]; "answer"?: string | null; "rationale"?: string | null; "citation_page"?: number | null; "source_excerpt"?: string | null; "document_id"?: string | null; "chunk_id"?: string | null };
+    QuestionDraftCreate: { "question"?: string; "choices"?: string[]; "answer"?: string | null; "answer_key_source"?: string; "rationale"?: string | null; "citation_page"?: number | null; "source_excerpt"?: string | null; "document_id"?: string | null; "chunk_id"?: string | null };
     QuestionDraftList: { "items": Components['schemas']['QuestionDraftRead'][] };
-    QuestionDraftRead: { "id": string; "project_id": string; "document_id": string | null; "chunk_id": string | null; "question": string; "choices": string[]; "answer": string | null; "rationale": string | null; "citation_page": number | null; "source_excerpt": string | null; "status": string; "rejection_reason": string | null; "created_at": string; "updated_at": string };
-    QuestionDraftUpdate: { "question"?: string | null; "choices"?: string[] | null; "answer"?: string | null; "rationale"?: string | null; "citation_page"?: number | null; "source_excerpt"?: string | null };
+    QuestionDraftRead: { "id": string; "project_id": string; "document_id": string | null; "chunk_id": string | null; "question": string; "choices": string[]; "answer": string | null; "answer_key_source": string; "rationale": string | null; "citation_page": number | null; "source_excerpt": string | null; "status": string; "rejection_reason": string | null; "created_at": string; "updated_at": string };
+    QuestionDraftUpdate: { "question"?: string | null; "choices"?: string[] | null; "answer"?: string | null; "answer_key_source"?: string | null; "rationale"?: string | null; "citation_page"?: number | null; "source_excerpt"?: string | null };
     ValidationError: { "loc": (string | number)[]; "msg": string; "type": string; "input"?: unknown; "ctx"?: Record<string, unknown> };
     WrongAnswerList: { "items": Components['schemas']['WrongAnswerRead'][] };
     WrongAnswerRead: { "attempt_id": string; "session_id": string; "question_id": string; "question": string; "selected_answer": string; "correct_answer": string | null; "rationale": string | null; "citation_page": number | null; "source_excerpt": string | null; "created_at": string };
@@ -38,6 +39,7 @@ export type DraftGenerateRequest = Components['schemas']['DraftGenerateRequest']
 export type HTTPValidationError = Components['schemas']['HTTPValidationError'];
 export type HealthResponse = Components['schemas']['HealthResponse'];
 export type LLMHealthRead = Components['schemas']['LLMHealthRead'];
+export type OCRHealthRead = Components['schemas']['OCRHealthRead'];
 export type PracticeAttemptCreate = Components['schemas']['PracticeAttemptCreate'];
 export type PracticeAttemptRead = Components['schemas']['PracticeAttemptRead'];
 export type PracticeSessionCreate = Components['schemas']['PracticeSessionCreate'];
@@ -85,6 +87,7 @@ export interface ExamPrepGeneratedClient {
   recordPracticeAttempt(projectId: string, sessionId: string, body: Components['schemas']['PracticeAttemptCreate']): Promise<Components['schemas']['PracticeAttemptRead']>;
   listWrongAnswers(projectId: string): Promise<Components['schemas']['WrongAnswerList']>;
   llmHealth(): Promise<Components['schemas']['LLMHealthRead']>;
+  ocrHealth(): Promise<Components['schemas']['OCRHealthRead']>;
 }
 
 export function createExamPrepGeneratedClient(
@@ -127,5 +130,7 @@ export function createExamPrepGeneratedClient(
       transport.request<Components['schemas']['WrongAnswerList']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/wrong-answers` }),
     llmHealth: () =>
       transport.request<Components['schemas']['LLMHealthRead']>({ method: 'GET' as const, path: "/llm/health" }),
+    ocrHealth: () =>
+      transport.request<Components['schemas']['OCRHealthRead']>({ method: 'GET' as const, path: "/ocr/health" }),
   };
 }

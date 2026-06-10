@@ -30,9 +30,25 @@
         "command": "pnpm exec tauri build --config apps/exam-prep-desktop/src-tauri/tauri.conf.json"
       }
     },
+    "build-gpu": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["exam-prep:build", "sync-sidecar-gpu"],
+      "outputs": ["{projectRoot}/src-tauri/target"],
+      "options": {
+        "command": "pnpm exec tauri build --config apps/exam-prep-desktop/src-tauri/tauri.conf.json"
+      }
+    },
     "sync-sidecar": {
       "executor": "nx:run-commands",
-      "dependsOn": ["exam-prep-backend:build-sidecar"],
+      "dependsOn": ["exam-prep-backend:build-sidecar-cpu"],
+      "outputs": ["{projectRoot}/src-tauri/binaries"],
+      "options": {
+        "command": "node apps/exam-prep-desktop/scripts/sync-sidecar.mjs"
+      }
+    },
+    "sync-sidecar-gpu": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["exam-prep-backend:build-sidecar-gpu"],
       "outputs": ["{projectRoot}/src-tauri/binaries"],
       "options": {
         "command": "node apps/exam-prep-desktop/scripts/sync-sidecar.mjs"

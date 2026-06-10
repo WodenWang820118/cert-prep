@@ -93,6 +93,10 @@ fn launch_backend_sidecar<R: Runtime>(app: &tauri::App<R>) -> Result<BackendStat
         .env("EXAM_PREP_PORT", port.to_string())
         .env("EXAM_PREP_API_TOKEN", token.as_str())
         .env("EXAM_PREP_DATA_DIR", data_dir.to_string_lossy().to_string())
+        .env("EXAM_PREP_LLM_PROVIDER", "ollama")
+        .env("EXAM_PREP_OCR_PROVIDER", "paddle")
+        .env("EXAM_PREP_OCR_DEVICE", "auto")
+        .env("EXAM_PREP_OLLAMA_MODEL", "gemma4:12b")
         .spawn()
         .map_err(|error| format!("failed to launch backend sidecar: {error}"))?;
 

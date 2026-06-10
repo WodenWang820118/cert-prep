@@ -22,10 +22,10 @@ def create_draft(db: Database, project_id: str, payload: QuestionDraftCreate) ->
             """
             INSERT INTO question_drafts(
                 id, project_id, document_id, chunk_id, question, choices_json,
-                answer, rationale, citation_page, source_excerpt, status,
+                answer, answer_key_source, rationale, citation_page, source_excerpt, status,
                 rejection_reason, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', NULL, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', NULL, ?, ?)
             """,
             (
                 draft_id,
@@ -35,6 +35,7 @@ def create_draft(db: Database, project_id: str, payload: QuestionDraftCreate) ->
                 payload.question,
                 json.dumps(payload.choices),
                 payload.answer,
+                payload.answer_key_source,
                 payload.rationale,
                 payload.citation_page,
                 payload.source_excerpt,
@@ -66,10 +67,10 @@ def create_generated_drafts(
                 """
                 INSERT INTO question_drafts(
                     id, project_id, document_id, chunk_id, question, choices_json,
-                    answer, rationale, citation_page, source_excerpt, status,
+                    answer, answer_key_source, rationale, citation_page, source_excerpt, status,
                     rejection_reason, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', NULL, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', NULL, ?, ?)
                 """,
                 (
                     draft_id,
@@ -79,6 +80,7 @@ def create_generated_drafts(
                     suggestion.question,
                     json.dumps(suggestion.choices),
                     suggestion.answer,
+                    suggestion.answer_key_source,
                     suggestion.rationale,
                     suggestion.citation_page,
                     suggestion.source_excerpt,
@@ -119,7 +121,7 @@ def update_draft(
         connection.execute(
             """
             UPDATE question_drafts
-            SET question = ?, choices_json = ?, answer = ?, rationale = ?,
+            SET question = ?, choices_json = ?, answer = ?, answer_key_source = ?, rationale = ?,
                 citation_page = ?, source_excerpt = ?, updated_at = ?
             WHERE project_id = ? AND id = ?
             """,
@@ -127,6 +129,11 @@ def update_draft(
                 payload.question if payload.question is not None else existing["question"],
                 json.dumps(choices),
                 payload.answer if payload.answer is not None else existing["answer"],
+                (
+                    payload.answer_key_source
+                    if payload.answer_key_source is not None
+                    else existing["answer_key_source"]
+                ),
                 payload.rationale if payload.rationale is not None else existing["rationale"],
                 (
                     payload.citation_page
@@ -251,6 +258,7 @@ def _draft_from_row(row: Row) -> dict:
         "question": row["question"],
         "choices": json.loads(row["choices_json"]),
         "answer": row["answer"],
+        "answer_key_source": row["answer_key_source"],
         "rationale": row["rationale"],
         "citation_page": row["citation_page"],
         "source_excerpt": row["source_excerpt"],

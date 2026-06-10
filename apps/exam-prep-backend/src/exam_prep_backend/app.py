@@ -13,7 +13,8 @@ from exam_prep_backend.config import Settings
 from exam_prep_backend.database import Database
 from exam_prep_backend.dependencies import require_bearer_auth
 from exam_prep_backend.llm import LLMProvider, provider_from_settings
-from exam_prep_backend.routers import documents, drafts, llm, practice, projects
+from exam_prep_backend.ocr import OCRProvider, ocr_provider_from_settings
+from exam_prep_backend.routers import documents, drafts, llm, ocr, practice, projects
 
 
 class HealthResponse(BaseModel):
@@ -25,6 +26,7 @@ class HealthResponse(BaseModel):
 def create_app(
     settings: Settings | None = None,
     llm_provider: LLMProvider | None = None,
+    ocr_provider: OCRProvider | None = None,
 ) -> FastAPI:
     app_settings = settings or Settings()
     app = FastAPI(
@@ -35,6 +37,7 @@ def create_app(
     app.state.settings = app_settings
     app.state.database = Database(app_settings)
     app.state.llm_provider = llm_provider or provider_from_settings(app_settings)
+    app.state.ocr_provider = ocr_provider or ocr_provider_from_settings(app_settings)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=app_settings.allowed_origins,
@@ -88,6 +91,7 @@ def create_app(
     app.include_router(drafts.drafts_router, dependencies=protected_dependencies)
     app.include_router(practice.router, dependencies=protected_dependencies)
     app.include_router(llm.router, dependencies=protected_dependencies)
+    app.include_router(ocr.router, dependencies=protected_dependencies)
 
     return app
 

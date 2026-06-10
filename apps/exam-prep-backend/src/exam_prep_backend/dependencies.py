@@ -7,8 +7,9 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from exam_prep_backend.config import Settings
 from exam_prep_backend.database import Database
-from exam_prep_backend.llm import LLMProvider
 from exam_prep_backend.errors import api_error
+from exam_prep_backend.llm import LLMProvider
+from exam_prep_backend.ocr import OCRProvider
 
 
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -24,6 +25,10 @@ def get_database(request: Request) -> Database:
 
 def get_llm_provider(request: Request) -> LLMProvider:
     return request.app.state.llm_provider
+
+
+def get_ocr_provider(request: Request) -> OCRProvider:
+    return request.app.state.ocr_provider
 
 
 def require_bearer_auth(

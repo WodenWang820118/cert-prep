@@ -99,6 +99,7 @@ function questionDraft(
     question: 'Which answer is supported by the cited source?',
     choices: ['A', 'B', 'C', 'D'],
     answer: 'A',
+    answer_key_source: 'ai_inferred',
     rationale: 'The source supports A.',
     citation_page: 1,
     source_excerpt: 'The cited source supports answer A.',

@@ -21,15 +21,15 @@ def create_document(
     ensure_project_exists(db, project_id)
     document_id = str(uuid4())
     now = utc_now()
-    status = "ready" if extraction.has_text else "no_text_detected"
     with db.connect() as connection:
         connection.execute(
             """
             INSERT INTO documents(
                 id, project_id, filename, sha256, storage_path, page_count,
-                has_text, status, created_at
+                has_text, status, extraction_method, ocr_device, ocr_fallback_reason,
+                ocr_duration_ms, processed_page_count, exam_item_count, created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
             """,
             (
                 document_id,
@@ -39,7 +39,12 @@ def create_document(
                 storage_path,
                 extraction.page_count,
                 int(extraction.has_text),
-                status,
+                extraction.status,
+                extraction.extraction_method,
+                extraction.ocr_device,
+                extraction.ocr_fallback_reason,
+                extraction.ocr_duration_ms,
+                extraction.processed_page_count,
                 now,
             ),
         )
@@ -48,9 +53,9 @@ def create_document(
                 """
                 INSERT INTO document_chunks(
                     id, project_id, document_id, page_number, chunk_index,
-                    text, source_excerpt, created_at
+                    text, source_excerpt, extraction_method, created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     str(uuid4()),
@@ -60,6 +65,7 @@ def create_document(
                     chunk_index,
                     page.text,
                     page.source_excerpt,
+                    page.extraction_method,
                     now,
                 ),
             )
@@ -103,6 +109,37 @@ def get_chunk(db: Database, project_id: str, document_id: str, chunk_id: str) ->
     return _chunk_from_row(row)
 
 
+def get_document(db: Database, project_id: str, document_id: str) -> dict:
+    with db.connect() as connection:
+        row = _document_query(connection, project_id, document_id)
+    if row is None:
+        raise NotFoundError("Document not found.")
+    return _document_from_row(row)
+
+
+def update_exam_state(
+    db: Database,
+    *,
+    project_id: str,
+    document_id: str,
+    status: str,
+    exam_item_count: int,
+) -> dict:
+    with db.connect() as connection:
+        connection.execute(
+            """
+            UPDATE documents
+            SET status = ?, exam_item_count = ?
+            WHERE project_id = ? AND id = ?
+            """,
+            (status, exam_item_count, project_id, document_id),
+        )
+        row = _document_query(connection, project_id, document_id)
+    if row is None:
+        raise NotFoundError("Document not found.")
+    return _document_from_row(row)
+
+
 def ensure_document_exists(db: Database, project_id: str, document_id: str) -> None:
     with db.connect() as connection:
         row = connection.execute(
@@ -136,6 +173,12 @@ def _document_from_row(row: Row) -> dict:
         "page_count": row["page_count"],
         "has_text": bool(row["has_text"]),
         "status": row["status"],
+        "extraction_method": row["extraction_method"],
+        "ocr_device": row["ocr_device"],
+        "ocr_fallback_reason": row["ocr_fallback_reason"],
+        "ocr_duration_ms": row["ocr_duration_ms"],
+        "processed_page_count": row["processed_page_count"],
+        "exam_item_count": row["exam_item_count"],
         "chunks_count": row["chunks_count"],
         "created_at": row["created_at"],
     }
@@ -149,5 +192,6 @@ def _chunk_from_row(row: Row) -> dict:
         "chunk_index": row["chunk_index"],
         "text": row["text"],
         "source_excerpt": row["source_excerpt"],
+        "extraction_method": row["extraction_method"],
         "created_at": row["created_at"],
     }

@@ -33,6 +33,12 @@ class DocumentRead(BaseModel):
     page_count: int
     has_text: bool
     status: str
+    extraction_method: str
+    ocr_device: str | None
+    ocr_fallback_reason: str | None
+    ocr_duration_ms: int
+    processed_page_count: int
+    exam_item_count: int
     chunks_count: int
     created_at: str
 
@@ -44,6 +50,7 @@ class ChunkRead(BaseModel):
     chunk_index: int
     text: str
     source_excerpt: str
+    extraction_method: str
     created_at: str
 
 
@@ -59,6 +66,7 @@ class QuestionDraftCreate(BaseModel):
     question: str = ""
     choices: list[str] = Field(default_factory=list)
     answer: str | None = None
+    answer_key_source: str = "manual"
     rationale: str | None = None
     citation_page: int | None = Field(default=None, ge=1)
     source_excerpt: str | None = None
@@ -70,6 +78,7 @@ class QuestionDraftUpdate(BaseModel):
     question: str | None = None
     choices: list[str] | None = None
     answer: str | None = None
+    answer_key_source: str | None = None
     rationale: str | None = None
     citation_page: int | None = Field(default=None, ge=1)
     source_excerpt: str | None = None
@@ -83,6 +92,7 @@ class QuestionDraftRead(BaseModel):
     question: str
     choices: list[str]
     answer: str | None
+    answer_key_source: str
     rationale: str | None
     citation_page: int | None
     source_excerpt: str | None
@@ -101,6 +111,21 @@ class LLMHealthRead(BaseModel):
     model: str
     available: bool
     detail: str
+
+
+class OCRHealthRead(BaseModel):
+    provider: str
+    engine: str
+    available: bool
+    detail: str
+    python_version: str
+    paddle_version: str | None
+    paddleocr_version: str | None
+    selected_device: str | None
+    cuda_available: bool
+    gpu_count: int
+    model_cache_dir: str | None
+    fallback_reason: str | None
 
 
 class PracticeSessionCreate(BaseModel):

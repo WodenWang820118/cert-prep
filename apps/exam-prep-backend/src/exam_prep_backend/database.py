@@ -112,6 +112,32 @@ MIGRATIONS: Final[tuple[tuple[int, str], ...]] = (
         VALUES ('schema_name', 'exam-prep-backend', CURRENT_TIMESTAMP);
         """,
     ),
+    (
+        6,
+        """
+        ALTER TABLE documents
+            ADD COLUMN extraction_method TEXT NOT NULL DEFAULT 'embedded';
+        ALTER TABLE documents
+            ADD COLUMN exam_item_count INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE document_chunks
+            ADD COLUMN extraction_method TEXT NOT NULL DEFAULT 'embedded';
+        ALTER TABLE question_drafts
+            ADD COLUMN answer_key_source TEXT NOT NULL DEFAULT 'manual';
+        """,
+    ),
+    (
+        7,
+        """
+        ALTER TABLE documents
+            ADD COLUMN ocr_device TEXT;
+        ALTER TABLE documents
+            ADD COLUMN ocr_fallback_reason TEXT;
+        ALTER TABLE documents
+            ADD COLUMN ocr_duration_ms INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE documents
+            ADD COLUMN processed_page_count INTEGER NOT NULL DEFAULT 0;
+        """,
+    ),
 )
 
 

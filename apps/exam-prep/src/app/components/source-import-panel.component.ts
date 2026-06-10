@@ -4,6 +4,7 @@ import { Card } from 'primeng/card';
 import { Tag } from 'primeng/tag';
 import { OperationStore } from '../stores/operation.store';
 import { ProjectStore } from '../stores/project.store';
+import { DraftReviewStore } from '../stores/draft-review.store';
 import { SourceImportStore } from '../stores/source-import.store';
 
 @Component({
@@ -43,7 +44,7 @@ import { SourceImportStore } from '../stores/source-import.store';
             icon="pi pi-upload"
             type="button"
             [disabled]="operations.isBusy() || !sourceImport.canUpload()"
-            (onClick)="sourceImport.uploadDocument()"
+            (onClick)="uploadDocument()"
           />
         </div>
 
@@ -70,11 +71,67 @@ import { SourceImportStore } from '../stores/source-import.store';
               </dd>
             </div>
             <div class="rounded-md border border-surface-200 bg-surface-50 p-3">
+              <dt class="text-xs font-bold uppercase text-muted-color">
+                Mock items
+              </dt>
+              <dd class="m-0 mt-1 text-sm font-semibold text-color">
+                {{ document.exam_item_count }}
+              </dd>
+            </div>
+            <div class="rounded-md border border-surface-200 bg-surface-50 p-3">
+              <dt class="text-xs font-bold uppercase text-muted-color">
+                Processed
+              </dt>
+              <dd class="m-0 mt-1 text-sm font-semibold text-color">
+                {{ document.processed_page_count }}
+              </dd>
+            </div>
+            <div class="rounded-md border border-surface-200 bg-surface-50 p-3">
               <dt class="text-xs font-bold uppercase text-muted-color">Status</dt>
               <dd class="m-0 mt-1">
                 <p-tag [value]="document.status" [rounded]="true" />
               </dd>
             </div>
+            <div class="rounded-md border border-surface-200 bg-surface-50 p-3">
+              <dt class="text-xs font-bold uppercase text-muted-color">
+                Extraction
+              </dt>
+              <dd class="m-0 mt-1">
+                <p-tag
+                  [value]="document.extraction_method"
+                  severity="secondary"
+                  [rounded]="true"
+                />
+              </dd>
+            </div>
+            <div class="rounded-md border border-surface-200 bg-surface-50 p-3">
+              <dt class="text-xs font-bold uppercase text-muted-color">
+                OCR device
+              </dt>
+              <dd class="m-0 mt-1 text-sm font-semibold text-color">
+                {{ document.ocr_device || 'none' }}
+              </dd>
+            </div>
+            <div class="rounded-md border border-surface-200 bg-surface-50 p-3">
+              <dt class="text-xs font-bold uppercase text-muted-color">
+                OCR time
+              </dt>
+              <dd class="m-0 mt-1 text-sm font-semibold text-color">
+                {{ document.ocr_duration_ms }} ms
+              </dd>
+            </div>
+            @if (document.ocr_fallback_reason) {
+              <div
+                class="rounded-md border border-amber-200 bg-amber-50 p-3 xl:col-span-2"
+              >
+                <dt class="text-xs font-bold uppercase text-amber-700">
+                  OCR fallback
+                </dt>
+                <dd class="m-0 mt-1 text-sm font-semibold text-amber-900">
+                  {{ document.ocr_fallback_reason }}
+                </dd>
+              </div>
+            }
           </dl>
         }
       </div>
@@ -82,6 +139,7 @@ import { SourceImportStore } from '../stores/source-import.store';
   `,
 })
 export class SourceImportPanelComponent {
+  protected readonly drafts = inject(DraftReviewStore);
   protected readonly operations = inject(OperationStore);
   protected readonly projects = inject(ProjectStore);
   protected readonly sourceImport = inject(SourceImportStore);
@@ -89,5 +147,13 @@ export class SourceImportPanelComponent {
   protected chooseFile(event: Event): void {
     const input = event.target as HTMLInputElement;
     this.sourceImport.chooseFile(input.files?.item(0) ?? null);
+  }
+
+  protected async uploadDocument(): Promise<void> {
+    const document = await this.sourceImport.uploadDocument();
+    const project = this.projects.selectedProject();
+    if (document !== null && project !== null) {
+      await this.drafts.load(project.id);
+    }
   }
 }

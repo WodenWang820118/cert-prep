@@ -34,12 +34,12 @@ export class SourceImportStore {
     this.uploadedDocument.set(null);
   }
 
-  async uploadDocument(): Promise<void> {
+  async uploadDocument(): Promise<DocumentRead | null> {
     const project = this.projects.selectedProject();
     const file = this.selectedFile();
     if (project === null || file === null) {
       this.operations.fail('Choose a project and PDF before uploading.');
-      return;
+      return null;
     }
 
     const formData = new FormData();
@@ -51,5 +51,6 @@ export class SourceImportStore {
     if (document !== null) {
       this.uploadedDocument.set(document);
     }
+    return document;
   }
 }

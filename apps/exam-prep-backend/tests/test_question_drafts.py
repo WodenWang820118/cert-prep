@@ -3,7 +3,9 @@ from fastapi.testclient import TestClient
 from conftest import minimal_pdf
 
 
-def test_fake_provider_generates_deterministic_cited_drafts(client: TestClient, auth_headers) -> None:
+def test_fake_provider_generates_deterministic_approved_mock_exam_items(
+    client: TestClient, auth_headers
+) -> None:
     project_id = _create_project(client, auth_headers)
     document_id = _upload_document(client, auth_headers, project_id)
 
@@ -17,9 +19,10 @@ def test_fake_provider_generates_deterministic_cited_drafts(client: TestClient, 
     drafts = response.json()["items"]
     assert len(drafts) == 1
     draft = drafts[0]
-    assert draft["status"] == "draft"
+    assert draft["status"] == "approved"
     assert draft["citation_page"] == 1
     assert "least privilege" in draft["source_excerpt"].lower()
+    assert draft["answer_key_source"] == "ai_inferred"
     assert draft["choices"] == [
         "Apply the cited concept",
         "Ignore the cited source",

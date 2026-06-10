@@ -32,6 +32,54 @@
         "command": "uv run ruff check ."
       }
     },
+    "python-version-check": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/exam-prep-backend",
+        "command": "uv run python -c \"import sys; print(sys.version); assert sys.version_info[:2] == (3, 13)\""
+      }
+    },
+    "ocr-setup-cpu": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/exam-prep-backend",
+        "command": "uv sync --extra ocr-cpu --reinstall-package paddlepaddle && uv run --extra ocr-cpu python scripts/ocr_diagnostics.py --provider paddle --device cpu --strict-lane cpu --fail-on-error"
+      }
+    },
+    "ocr-setup-gpu": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/exam-prep-backend",
+        "command": "uv sync --extra ocr-gpu --reinstall-package paddlepaddle-gpu && uv run --extra ocr-gpu python scripts/ocr_diagnostics.py --provider paddle --device gpu:0 --strict-lane gpu --fail-on-error"
+      }
+    },
+    "ocr-health": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/exam-prep-backend",
+        "command": "uv run python scripts/ocr_diagnostics.py --provider paddle"
+      }
+    },
+    "ocr-benchmark-cpu": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/exam-prep-backend",
+        "command": "uv sync --extra ocr-cpu --reinstall-package paddlepaddle && uv run --extra ocr-cpu python scripts/benchmark_ocr.py --device cpu --output .benchmarks/ocr-cpu-page3.json"
+      }
+    },
+    "ocr-benchmark-gpu": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/exam-prep-backend",
+        "command": "uv sync --extra ocr-gpu --reinstall-package paddlepaddle-gpu && uv run --extra ocr-gpu python scripts/benchmark_ocr.py --device gpu:0 --output .benchmarks/ocr-gpu-page3.json"
+      }
+    },
     "build-sidecar": {
       "cache": true,
       "executor": "nx:run-commands",
@@ -40,6 +88,28 @@
       "options": {
         "cwd": "apps/exam-prep-backend",
         "command": "uv run pyinstaller --noconfirm --clean --name exam-prep-backend --onefile src/exam_prep_backend/sidecar.py --distpath dist --workpath build --specpath build"
+      }
+    },
+    "build-sidecar-cpu": {
+      "cache": true,
+      "executor": "nx:run-commands",
+      "dependsOn": ["ocr-setup-cpu"],
+      "inputs": ["production"],
+      "outputs": ["{projectRoot}/dist"],
+      "options": {
+        "cwd": "apps/exam-prep-backend",
+        "command": "uv run --extra ocr-cpu python scripts/build_sidecar.py --lane cpu"
+      }
+    },
+    "build-sidecar-gpu": {
+      "cache": true,
+      "executor": "nx:run-commands",
+      "dependsOn": ["ocr-setup-gpu"],
+      "inputs": ["production"],
+      "outputs": ["{projectRoot}/dist"],
+      "options": {
+        "cwd": "apps/exam-prep-backend",
+        "command": "uv run --extra ocr-gpu python scripts/build_sidecar.py --lane gpu"
       }
     },
     "generate-openapi-client": {

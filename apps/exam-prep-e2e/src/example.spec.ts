@@ -8,19 +8,25 @@ test('completes the local practice loop with a mocked API', async ({
 }) => {
   const project = {
     id: 'project-1',
-    name: 'Security+ 701',
-    description: 'Local certification drill',
+    name: 'JLPT_N1',
+    description: '2025 N1 mock exam',
     created_at: '2026-06-09T00:00:00Z',
     updated_at: '2026-06-09T00:00:00Z',
   };
   const document = {
     id: 'document-1',
     project_id: project.id,
-    filename: 'security.pdf',
+    filename: 'jlpt-n1.pdf',
     sha256: 'abc123',
     page_count: 2,
     has_text: true,
     status: 'ready',
+    extraction_method: 'paddle_ocr_gpu',
+    ocr_device: 'gpu:0',
+    ocr_fallback_reason: null,
+    ocr_duration_ms: 384,
+    processed_page_count: 1,
+    exam_item_count: 1,
     chunks_count: 2,
     created_at: '2026-06-09T00:00:00Z',
   };
@@ -37,10 +43,11 @@ test('completes the local practice loop with a mocked API', async ({
       'Remove all safeguards',
     ],
     answer: 'Apply the cited concept',
+    answer_key_source: 'ai_inferred',
     rationale: 'Least privilege keeps permissions scoped to the task.',
     citation_page: 1,
     source_excerpt: 'Least privilege limits access to required permissions.',
-    status: 'draft',
+    status: 'approved',
     rejection_reason: null,
     created_at: '2026-06-09T00:00:00Z',
     updated_at: '2026-06-09T00:00:00Z',
@@ -53,7 +60,7 @@ test('completes the local practice loop with a mocked API', async ({
     created_at: '2026-06-09T00:00:00Z',
     completed_at: null,
   };
-  let draftGenerated = false;
+  let documentUploaded = false;
   const wrongAnswers: unknown[] = [];
   const seenPaths = new Set<string>();
 
@@ -91,6 +98,24 @@ test('completes the local practice loop with a mocked API', async ({
       return;
     }
 
+    if (method === 'GET' && path === '/ocr/health') {
+      await fulfillJson(route, 200, {
+        provider: 'paddle',
+        engine: 'paddleocr',
+        available: true,
+        detail: 'PaddleOCR imports available',
+        python_version: '3.13.5',
+        paddle_version: '3.3.0',
+        paddleocr_version: '3.3.0',
+        selected_device: 'gpu:0',
+        cuda_available: true,
+        gpu_count: 1,
+        model_cache_dir: null,
+        fallback_reason: null,
+      });
+      return;
+    }
+
     if (method === 'GET' && path === '/projects') {
       await fulfillJson(route, 200, { items: [] });
       return;
@@ -108,7 +133,7 @@ test('completes the local practice loop with a mocked API', async ({
       await fulfillJson(
         route,
         200,
-        draftGenerated ? { items: [draft] } : { items: [] },
+        documentUploaded ? { items: [draft] } : { items: [] },
       );
       return;
     }
@@ -119,26 +144,8 @@ test('completes the local practice loop with a mocked API', async ({
     }
 
     if (method === 'POST' && path === `/projects/${project.id}/documents`) {
+      documentUploaded = true;
       await fulfillJson(route, 201, document);
-      return;
-    }
-
-    if (
-      method === 'POST' &&
-      path === `/projects/${project.id}/documents/${document.id}/drafts`
-    ) {
-      draftGenerated = true;
-      await fulfillJson(route, 201, { items: [draft] });
-      return;
-    }
-
-    if (
-      method === 'POST' &&
-      path === `/projects/${project.id}/question-drafts/${draft.id}/approve`
-    ) {
-      draft.status = 'approved';
-      draft.updated_at = '2026-06-09T00:01:00Z';
-      await fulfillJson(route, 200, draft);
       return;
     }
 
@@ -206,13 +213,12 @@ test('completes the local practice loop with a mocked API', async ({
 
   await expect(page.getByRole('heading', { name: 'Exam Prep' })).toBeVisible();
   await expect(page.getByText('fake / gemma4:12b')).toBeVisible();
+  await expect(page.getByText('paddle / gpu:0')).toBeVisible();
 
   await page.getByLabel('Name').fill(project.name);
   await page.getByLabel('Description').fill(project.description);
   await page.getByRole('button', { name: 'Create project' }).click();
-  await expect(
-    page.getByRole('button', { name: /Security\+ 701/ }),
-  ).toBeVisible();
+  await expect(page.getByRole('button', { name: /JLPT_N1/ })).toBeVisible();
 
   await page.getByLabel('PDF file').setInputFiles({
     name: document.filename,
@@ -221,12 +227,10 @@ test('completes the local practice loop with a mocked API', async ({
   });
   await page.getByRole('button', { name: 'Upload PDF' }).click();
   await expect(page.getByText(document.filename)).toBeVisible();
-
-  await page.getByRole('button', { name: 'Generate cited drafts' }).click();
+  await expect(page.getByText('paddle_ocr_gpu')).toBeVisible();
+  await expect(page.getByText('gpu:0').last()).toBeVisible();
   await expect(page.getByText(draft.question)).toBeVisible();
   await expect(page.getByText(draft.source_excerpt)).toBeVisible();
-
-  await page.getByRole('button', { name: 'Approve draft' }).click();
   await expect(page.getByText('Approved', { exact: true })).toBeVisible();
 
   await page.getByRole('button', { name: 'Create practice session' }).click();
@@ -242,12 +246,11 @@ test('completes the local practice loop with a mocked API', async ({
   expect(seenPaths).toEqual(
     new Set([
       'GET /llm/health',
+      'GET /ocr/health',
       'GET /projects',
       'POST /projects',
       `POST /projects/${project.id}/documents`,
-      `POST /projects/${project.id}/documents/${document.id}/drafts`,
       `GET /projects/${project.id}/question-drafts`,
-      `POST /projects/${project.id}/question-drafts/${draft.id}/approve`,
       `POST /projects/${project.id}/practice-sessions`,
       `GET /projects/${project.id}/practice-sessions/${session.id}`,
       `POST /projects/${project.id}/practice-sessions/${session.id}/attempts`,

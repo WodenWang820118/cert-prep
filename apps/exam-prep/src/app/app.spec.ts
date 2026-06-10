@@ -10,6 +10,20 @@ describe('App', () => {
       available: true,
       detail: 'deterministic local fake provider',
     }),
+    ocrHealth: vi.fn().mockResolvedValue({
+      provider: 'fake',
+      engine: 'none',
+      available: true,
+      detail: 'deterministic local fake OCR provider',
+      python_version: '3.13.5',
+      paddle_version: null,
+      paddleocr_version: null,
+      selected_device: null,
+      cuda_available: false,
+      gpu_count: 0,
+      model_cache_dir: null,
+      fallback_reason: null,
+    }),
     listProjects: vi.fn().mockResolvedValue({ items: [] }),
     listQuestionDrafts: vi.fn().mockResolvedValue({ items: [] }),
     listWrongAnswers: vi.fn().mockResolvedValue({ items: [] }),
@@ -32,6 +46,7 @@ describe('App', () => {
     await vi.waitFor(() => {
       fixture.detectChanges();
       expect(compiled.textContent).toContain('fake / gemma4:12b');
+      expect(compiled.textContent).toContain('fake / none');
     });
 
     expect(compiled.querySelector('h1')?.textContent).toContain('Exam Prep');

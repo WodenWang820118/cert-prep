@@ -57,6 +57,13 @@ def generate_document_drafts(
             document_id=document_id,
             suggestions=suggestions,
         )
+        documents_store.update_exam_state(
+            db,
+            project_id=project_id,
+            document_id=document_id,
+            status="ready" if drafts else "exam_failed",
+            exam_item_count=len(drafts),
+        )
         return {"items": drafts}
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
