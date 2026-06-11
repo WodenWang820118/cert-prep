@@ -1,0 +1,75 @@
+from __future__ import annotations
+
+from collections.abc import Iterable, Mapping, Sequence
+
+from exam_prep_backend.domains.practice.models import (
+    PracticeAttempt,
+    PracticeQuestion,
+    PracticeSession,
+    WrongAnswer,
+)
+
+
+NO_APPROVED_QUESTIONS_MESSAGE = "No approved questions are available for practice."
+QUESTION_NOT_IN_SESSION_MESSAGE = "Question is not part of this practice session."
+SELECTED_ANSWER_NOT_AVAILABLE_MESSAGE = "Selected answer is not one of the available choices."
+
+
+class PracticeRuleViolation(ValueError):
+    pass
+
+
+def select_session_question_ids(
+    approved_question_ids: Sequence[str], question_count: int
+) -> tuple[str, ...]:
+    selected_question_ids = tuple(approved_question_ids[:question_count])
+    if not selected_question_ids:
+        raise PracticeRuleViolation(NO_APPROVED_QUESTIONS_MESSAGE)
+    return selected_question_ids
+
+
+def ensure_question_belongs_to_session(session: PracticeSession, question_id: str) -> None:
+    if not session.includes_question(question_id):
+        raise PracticeRuleViolation(QUESTION_NOT_IN_SESSION_MESSAGE)
+
+
+def ensure_selected_answer_is_available(question: PracticeQuestion, selected_answer: str) -> None:
+    if not question.has_choice(selected_answer):
+        raise PracticeRuleViolation(SELECTED_ANSWER_NOT_AVAILABLE_MESSAGE)
+
+
+def build_practice_attempt(
+    *,
+    attempt_id: str,
+    session: PracticeSession,
+    question: PracticeQuestion,
+    selected_answer: str,
+    created_at: str,
+) -> PracticeAttempt:
+    ensure_question_belongs_to_session(session, question.id)
+    ensure_selected_answer_is_available(question, selected_answer)
+
+    return PracticeAttempt(
+        id=attempt_id,
+        session_id=session.id,
+        project_id=session.project_id,
+        question_id=question.id,
+        selected_answer=selected_answer,
+        is_correct=question.is_correct(selected_answer),
+        created_at=created_at,
+    )
+
+
+def current_wrong_answers(
+    attempts: Iterable[PracticeAttempt],
+    questions_by_id: Mapping[str, PracticeQuestion],
+) -> tuple[WrongAnswer, ...]:
+    latest_attempt_by_question: dict[str, PracticeAttempt] = {}
+    for attempt in sorted(attempts, key=lambda item: item.created_at, reverse=True):
+        latest_attempt_by_question.setdefault(attempt.question_id, attempt)
+
+    return tuple(
+        WrongAnswer.from_attempt_and_question(attempt, questions_by_id[attempt.question_id])
+        for attempt in latest_attempt_by_question.values()
+        if not attempt.is_correct
+    )

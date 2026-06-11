@@ -5,8 +5,15 @@ from sqlite3 import Row
 from uuid import uuid4
 
 from exam_prep_backend.database import Database, utc_now
+from exam_prep_backend.domains.practice.models import PracticeQuestion, PracticeSession
+from exam_prep_backend.domains.practice.policies import (
+    PracticeRuleViolation,
+    build_practice_attempt,
+    current_wrong_answers,
+    select_session_question_ids,
+)
+from exam_prep_backend.domains.projects.repository import ensure_project_exists
 from exam_prep_backend.errors import NotFoundError, ValidationError
-from exam_prep_backend.projects_store import ensure_project_exists
 
 
 def create_session(db: Database, project_id: str, question_count: int) -> dict:
@@ -24,9 +31,13 @@ def create_session(db: Database, project_id: str, question_count: int) -> dict:
             """,
             (project_id, question_count),
         ).fetchall()
-        question_ids = [row["id"] for row in question_rows]
-        if not question_ids:
-            raise ValidationError("No approved questions are available for practice.")
+        try:
+            question_ids = select_session_question_ids(
+                [row["id"] for row in question_rows],
+                question_count,
+            )
+        except PracticeRuleViolation as exc:
+            raise ValidationError(str(exc)) from exc
         connection.execute(
             """
             INSERT INTO practice_sessions(
@@ -34,7 +45,7 @@ def create_session(db: Database, project_id: str, question_count: int) -> dict:
             )
             VALUES (?, ?, ?, 'active', ?, NULL)
             """,
-            (session_id, project_id, json.dumps(question_ids), now),
+            (session_id, project_id, json.dumps(list(question_ids)), now),
         )
         row = _session_query(connection, project_id, session_id)
     if row is None:
@@ -58,9 +69,15 @@ def record_attempt(
     question_id: str,
     selected_answer: str,
 ) -> dict:
-    session = get_session(db, project_id, session_id)
-    if question_id not in session["question_ids"]:
-        raise ValidationError("Question is not part of this practice session.")
+    session_record = get_session(db, project_id, session_id)
+    session = PracticeSession(
+        id=session_record["id"],
+        project_id=session_record["project_id"],
+        question_ids=tuple(session_record["question_ids"]),
+        status=session_record["status"],
+        created_at=session_record["created_at"],
+        completed_at=session_record["completed_at"],
+    )
 
     now = utc_now()
     attempt_id = str(uuid4())
@@ -75,10 +92,19 @@ def record_attempt(
         ).fetchone()
         if question is None:
             raise NotFoundError("Approved question not found.")
-        choices = json.loads(question["choices_json"])
-        if selected_answer not in choices:
-            raise ValidationError("Selected answer is not one of the available choices.")
-        is_correct = selected_answer == question["answer"]
+
+        practice_question = _practice_question_from_row(question)
+        try:
+            attempt = build_practice_attempt(
+                attempt_id=attempt_id,
+                session=session,
+                question=practice_question,
+                selected_answer=selected_answer,
+                created_at=now,
+            )
+        except PracticeRuleViolation as exc:
+            raise ValidationError(str(exc)) from exc
+
         connection.execute(
             """
             INSERT INTO practice_attempts(
@@ -88,13 +114,13 @@ def record_attempt(
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                attempt_id,
-                session_id,
-                project_id,
-                question_id,
-                selected_answer,
-                int(is_correct),
-                now,
+                attempt.id,
+                attempt.session_id,
+                attempt.project_id,
+                attempt.question_id,
+                attempt.selected_answer,
+                int(attempt.is_correct),
+                attempt.created_at,
             ),
         )
         row = connection.execute(
@@ -117,6 +143,7 @@ def list_wrong_answers(db: Database, project_id: str) -> list[dict]:
                 practice_attempts.is_correct,
                 practice_attempts.created_at,
                 question_drafts.question,
+                question_drafts.choices_json,
                 question_drafts.answer AS correct_answer,
                 question_drafts.rationale,
                 question_drafts.citation_page,
@@ -128,14 +155,13 @@ def list_wrong_answers(db: Database, project_id: str) -> list[dict]:
             """,
             (project_id,),
         ).fetchall()
-    latest_by_question: dict[str, Row] = {}
-    for row in rows:
-        latest_by_question.setdefault(row["question_id"], row)
-    return [
-        _wrong_answer_from_row(row)
-        for row in latest_by_question.values()
-        if not bool(row["is_correct"])
-    ]
+
+    attempts = [_practice_attempt_from_wrong_answer_row(project_id, row) for row in rows]
+    questions = {
+        row["question_id"]: _practice_question_from_wrong_answer_row(row)
+        for row in rows
+    }
+    return [wrong_answer.to_record() for wrong_answer in current_wrong_answers(attempts, questions)]
 
 
 def _session_query(connection, project_id: str, session_id: str) -> Row | None:
@@ -168,16 +194,40 @@ def _attempt_from_row(row: Row) -> dict:
     }
 
 
-def _wrong_answer_from_row(row: Row) -> dict:
-    return {
-        "attempt_id": row["attempt_id"],
-        "session_id": row["session_id"],
-        "question_id": row["question_id"],
-        "question": row["question"],
-        "selected_answer": row["selected_answer"],
-        "correct_answer": row["correct_answer"],
-        "rationale": row["rationale"],
-        "citation_page": row["citation_page"],
-        "source_excerpt": row["source_excerpt"],
-        "created_at": row["created_at"],
-    }
+def _practice_question_from_row(row: Row) -> PracticeQuestion:
+    return PracticeQuestion(
+        id=row["id"],
+        choices=tuple(json.loads(row["choices_json"])),
+        correct_answer=row["answer"],
+        question=row["question"],
+        status=row["status"],
+        rationale=row["rationale"],
+        citation_page=row["citation_page"],
+        source_excerpt=row["source_excerpt"],
+    )
+
+
+def _practice_attempt_from_wrong_answer_row(project_id: str, row: Row):
+    from exam_prep_backend.domains.practice.models import PracticeAttempt
+
+    return PracticeAttempt(
+        id=row["attempt_id"],
+        session_id=row["session_id"],
+        project_id=project_id,
+        question_id=row["question_id"],
+        selected_answer=row["selected_answer"],
+        is_correct=bool(row["is_correct"]),
+        created_at=row["created_at"],
+    )
+
+
+def _practice_question_from_wrong_answer_row(row: Row) -> PracticeQuestion:
+    return PracticeQuestion(
+        id=row["question_id"],
+        choices=tuple(json.loads(row["choices_json"])),
+        correct_answer=row["correct_answer"],
+        question=row["question"],
+        rationale=row["rationale"],
+        citation_page=row["citation_page"],
+        source_excerpt=row["source_excerpt"],
+    )

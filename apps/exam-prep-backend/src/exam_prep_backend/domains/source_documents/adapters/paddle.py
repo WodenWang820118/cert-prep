@@ -8,16 +8,18 @@ from typing import Any
 
 from PIL import Image, ImageDraw
 
-from exam_prep_backend.errors import ProviderUnavailableError
-from exam_prep_backend.ocr import OCRHealth, OCRPageResult
-from exam_prep_backend.ocr_paddle_runtime import (
+from exam_prep_backend.domains.source_documents.adapters.paddle_runtime import (
     cuda_available,
     gpu_count,
     import_paddle_stack,
     model_cache_dir,
     package_versions,
 )
-from exam_prep_backend.ocr_paddle_text import extract_prediction_text
+from exam_prep_backend.domains.source_documents.adapters.paddle_text import (
+    extract_prediction_text,
+)
+from exam_prep_backend.errors import ProviderUnavailableError
+from exam_prep_backend.domains.source_documents.ocr import OCRHealth, OCRPageResult
 
 
 class PaddleOCRProvider:

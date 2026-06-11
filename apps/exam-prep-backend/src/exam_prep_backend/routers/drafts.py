@@ -2,9 +2,19 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, status
 
-from exam_prep_backend import documents_store, drafts_store
 from exam_prep_backend.database import Database
 from exam_prep_backend.dependencies import get_database, get_llm_provider
+from exam_prep_backend.domains.mock_exams import repository as mock_exams_repository
+from exam_prep_backend.domains.mock_exams.models import SourceChunk
+from exam_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
+from exam_prep_backend.domains.mock_exams.schemas import (
+    DraftGenerateRequest,
+    QuestionDraftCreate,
+    QuestionDraftList,
+    QuestionDraftRead,
+    QuestionDraftUpdate,
+)
+from exam_prep_backend.domains.source_documents import repository as source_documents_repository
 from exam_prep_backend.errors import (
     NotFoundError,
     ProviderUnavailableError,
@@ -12,14 +22,6 @@ from exam_prep_backend.errors import (
     api_error,
     not_found_error,
     validation_error,
-)
-from exam_prep_backend.llm import LLMProvider, SourceChunk
-from exam_prep_backend.schemas import (
-    DraftGenerateRequest,
-    QuestionDraftCreate,
-    QuestionDraftList,
-    QuestionDraftRead,
-    QuestionDraftUpdate,
 )
 
 
@@ -46,18 +48,18 @@ def generate_document_drafts(
                 text=chunk["text"],
                 source_excerpt=chunk["source_excerpt"],
             )
-            for chunk in documents_store.get_source_chunks(db, project_id, document_id)
+            for chunk in source_documents_repository.get_source_chunks(db, project_id, document_id)
         ]
         if not chunks:
             raise ValidationError("Document has no extracted text chunks.")
         suggestions = provider.generate_drafts(chunks, payload.limit)
-        drafts = drafts_store.create_generated_drafts(
+        drafts = mock_exams_repository.create_generated_drafts(
             db,
             project_id=project_id,
             document_id=document_id,
             suggestions=suggestions,
         )
-        documents_store.update_exam_state(
+        source_documents_repository.update_exam_state(
             db,
             project_id=project_id,
             document_id=document_id,
@@ -84,7 +86,7 @@ def create_question_draft(
     db: Database = Depends(get_database),
 ) -> dict:
     try:
-        return drafts_store.create_draft(db, project_id, payload)
+        return mock_exams_repository.create_draft(db, project_id, payload)
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
 
@@ -92,7 +94,7 @@ def create_question_draft(
 @drafts_router.get("", response_model=QuestionDraftList)
 def list_question_drafts(project_id: str, db: Database = Depends(get_database)) -> dict:
     try:
-        return {"items": drafts_store.list_drafts(db, project_id)}
+        return {"items": mock_exams_repository.list_drafts(db, project_id)}
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
 
@@ -105,7 +107,7 @@ def update_question_draft(
     db: Database = Depends(get_database),
 ) -> dict:
     try:
-        return drafts_store.update_draft(db, project_id, draft_id, payload)
+        return mock_exams_repository.update_draft(db, project_id, draft_id, payload)
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
 
@@ -117,7 +119,7 @@ def approve_question_draft(
     db: Database = Depends(get_database),
 ) -> dict:
     try:
-        approved = drafts_store.approve_draft(db, project_id, draft_id)
+        approved = mock_exams_repository.approve_draft(db, project_id, draft_id)
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
 

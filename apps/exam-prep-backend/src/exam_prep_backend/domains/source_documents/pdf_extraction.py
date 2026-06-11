@@ -1,43 +1,24 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from io import BytesIO
 from typing import Protocol
 
 import pypdfium2 as pdfium
 from pypdf import PdfReader
 
+from exam_prep_backend.domains.source_documents.models import (
+    ExtractedPage,
+    PdfExtractionResult,
+)
+from exam_prep_backend.domains.source_documents.ocr import OCRPageResult
 from exam_prep_backend.errors import InvalidPdfError
-from exam_prep_backend.ocr import OCRPageResult
 
 
 class PageOcrProvider(Protocol):
+    """OCR capability needed by the PDF extractor for page images."""
+
     def extract_page_text(self, image_png: bytes, page_number: int) -> OCRPageResult:
         pass
-
-
-@dataclass(frozen=True)
-class ExtractedPage:
-    page_number: int
-    text: str
-    source_excerpt: str
-    extraction_method: str
-
-
-@dataclass(frozen=True)
-class PdfExtractionResult:
-    page_count: int
-    pages: list[ExtractedPage]
-    status: str
-    extraction_method: str
-    ocr_device: str | None
-    ocr_fallback_reason: str | None
-    ocr_duration_ms: int
-    processed_page_count: int
-
-    @property
-    def has_text(self) -> bool:
-        return bool(self.pages)
 
 
 def extract_pdf_pages(
@@ -49,6 +30,8 @@ def extract_pdf_pages(
     ocr_provider: PageOcrProvider | None = None,
     ocr_render_scale: float = 2.0,
 ) -> PdfExtractionResult:
+    """Extract page text from a PDF, falling back to OCR for blank pages."""
+
     try:
         reader = PdfReader(BytesIO(pdf_bytes))
     except Exception as exc:

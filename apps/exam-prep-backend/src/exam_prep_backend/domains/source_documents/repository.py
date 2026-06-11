@@ -4,9 +4,9 @@ from sqlite3 import Row
 from uuid import uuid4
 
 from exam_prep_backend.database import Database, utc_now
+from exam_prep_backend.domains.source_documents.models import PdfExtractionResult
 from exam_prep_backend.errors import NotFoundError
-from exam_prep_backend.pdf_extraction import PdfExtractionResult
-from exam_prep_backend.projects_store import ensure_project_exists
+from exam_prep_backend.domains.projects.repository import ensure_project_exists
 
 
 def create_document(
@@ -18,6 +18,8 @@ def create_document(
     storage_path: str,
     extraction: PdfExtractionResult,
 ) -> dict:
+    """Persist imported document metadata and extracted page chunks."""
+
     ensure_project_exists(db, project_id)
     document_id = str(uuid4())
     now = utc_now()

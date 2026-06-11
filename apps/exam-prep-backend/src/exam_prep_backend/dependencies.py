@@ -8,8 +8,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from exam_prep_backend.config import Settings
 from exam_prep_backend.database import Database
 from exam_prep_backend.errors import api_error
-from exam_prep_backend.llm import LLMProvider
-from exam_prep_backend.ocr import OCRProvider
+from exam_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
+from exam_prep_backend.domains.source_documents.ocr import OCRProvider
 
 
 bearer_scheme = HTTPBearer(auto_error=False)

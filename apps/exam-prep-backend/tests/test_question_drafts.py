@@ -1,6 +1,10 @@
 from fastapi.testclient import TestClient
 
 from conftest import minimal_pdf
+from exam_prep_backend.app import create_app
+from exam_prep_backend.config import Settings
+from exam_prep_backend.errors import ProviderUnavailableError
+from exam_prep_backend.domains.mock_exams.ports import ProviderHealth
 
 
 def test_fake_provider_generates_deterministic_approved_mock_exam_items(
@@ -82,6 +86,41 @@ def test_cited_draft_can_be_approved(client: TestClient, auth_headers) -> None:
     assert approved.json()["status"] == "approved"
 
 
+def test_custom_answer_key_source_remains_backward_compatible(
+    client: TestClient, auth_headers
+) -> None:
+    project_id = _create_project(client, auth_headers)
+
+    created = client.post(
+        f"/projects/{project_id}/question-drafts",
+        headers=auth_headers,
+        json={
+            "question": "Which source should be trusted?",
+            "choices": ["A", "B"],
+            "answer": "A",
+            "answer_key_source": "legacy_custom",
+            "rationale": "Existing databases may contain custom source labels.",
+        },
+    )
+
+    assert created.status_code == 201
+    draft_id = created.json()["id"]
+    assert created.json()["answer_key_source"] == "legacy_custom"
+
+    patched = client.patch(
+        f"/projects/{project_id}/question-drafts/{draft_id}",
+        headers=auth_headers,
+        json={"answer_key_source": "legacy_custom_patch"},
+    )
+
+    assert patched.status_code == 200
+    assert patched.json()["answer_key_source"] == "legacy_custom_patch"
+
+    listed = client.get(f"/projects/{project_id}/question-drafts", headers=auth_headers)
+    assert listed.status_code == 200
+    assert listed.json()["items"][0]["answer_key_source"] == "legacy_custom_patch"
+
+
 def test_draft_with_fake_source_citation_cannot_be_approved(
     client: TestClient, auth_headers
 ) -> None:
@@ -131,10 +170,51 @@ def test_bad_draft_source_ids_return_error_envelope(client: TestClient, auth_hea
     assert response.json() == {"code": "not_found", "message": "Document chunk not found."}
 
 
+def test_explicit_generation_returns_provider_unavailable_error_envelope(
+    tmp_path, auth_headers
+) -> None:
+    client = TestClient(
+        create_app(
+            settings=Settings(data_dir=tmp_path, api_token="test-token"),
+            llm_provider=UnavailableExamProvider(),
+        )
+    )
+    project_id = _create_project(client, auth_headers)
+    document_id = _upload_document(client, auth_headers, project_id)
+
+    response = client.post(
+        f"/projects/{project_id}/documents/{document_id}/drafts",
+        headers=auth_headers,
+        json={"limit": 1},
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "code": "provider_unavailable",
+        "message": "provider offline",
+    }
+
+
 def _create_project(client: TestClient, auth_headers) -> str:
     response = client.post("/projects", headers=auth_headers, json={"name": "Cloud"})
     assert response.status_code == 201
     return response.json()["id"]
+
+
+class UnavailableExamProvider:
+    provider = "unavailable"
+    model = "gemma4:12b"
+
+    def health(self) -> ProviderHealth:
+        return ProviderHealth(
+            provider=self.provider,
+            model=self.model,
+            available=False,
+            detail="provider offline",
+        )
+
+    def generate_drafts(self, _chunks, _limit):
+        raise ProviderUnavailableError("provider offline")
 
 
 def _upload_document(client: TestClient, auth_headers, project_id: str) -> str:

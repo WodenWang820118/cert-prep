@@ -6,7 +6,7 @@ import uvicorn
 
 from exam_prep_backend.app import create_app
 from exam_prep_backend.config import Settings
-from exam_prep_backend.ocr_diagnostics import run_ocr_diagnostics
+from exam_prep_backend.domains.source_documents.adapters.diagnostics import run_ocr_diagnostics
 
 
 app = create_app()

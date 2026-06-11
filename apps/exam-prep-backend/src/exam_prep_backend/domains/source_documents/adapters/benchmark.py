@@ -6,8 +6,11 @@ from time import perf_counter
 from typing import Any
 
 from exam_prep_backend.config import Settings
-from exam_prep_backend.ocr import OCRProvider, ocr_provider_from_settings
-from exam_prep_backend.pdf_extraction import render_pdf_page_png
+from exam_prep_backend.domains.source_documents.ocr import (
+    OCRProvider,
+    ocr_provider_from_settings,
+)
+from exam_prep_backend.domains.source_documents.pdf_extraction import render_pdf_page_png
 
 
 @dataclass(frozen=True)

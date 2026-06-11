@@ -7,8 +7,13 @@ from typing import Any
 from PIL import Image, ImageDraw
 
 from exam_prep_backend.config import Settings
-from exam_prep_backend.ocr import OCRProvider, ocr_provider_from_settings
-from exam_prep_backend.ocr_paddle_runtime import import_paddle_stack
+from exam_prep_backend.domains.source_documents.ocr import (
+    OCRProvider,
+    ocr_provider_from_settings,
+)
+from exam_prep_backend.domains.source_documents.adapters.paddle_runtime import (
+    import_paddle_stack,
+)
 
 
 def run_ocr_diagnostics(

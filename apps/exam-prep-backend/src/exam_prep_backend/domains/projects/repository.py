@@ -4,8 +4,8 @@ from sqlite3 import Row
 from uuid import uuid4
 
 from exam_prep_backend.database import Database, utc_now
+from exam_prep_backend.domains.projects.schemas import ProjectCreate, ProjectUpdate
 from exam_prep_backend.errors import NotFoundError
-from exam_prep_backend.schemas import ProjectCreate, ProjectUpdate
 
 
 def create_project(db: Database, payload: ProjectCreate) -> dict:

@@ -33,6 +33,8 @@ class OCRPageResult:
 
 
 class OCRProvider(Protocol):
+    """Boundary for page-image OCR providers used by document ingestion."""
+
     provider: str
     engine: str
 
@@ -74,12 +76,14 @@ class FakeOCRProvider:
 
 
 def ocr_provider_from_settings(settings: Settings) -> OCRProvider:
+    """Build the configured OCR provider without importing optional stacks eagerly."""
+
     if settings.ocr_provider == "paddle":
-        from exam_prep_backend.ocr_paddle import PaddleOCRProvider
+        from exam_prep_backend.domains.source_documents.adapters.paddle import PaddleOCRProvider
 
         return PaddleOCRProvider(device=settings.ocr_device)
     if settings.ocr_provider == "ollama":
-        from exam_prep_backend.ocr_ollama import OllamaOCRProvider
+        from exam_prep_backend.domains.source_documents.adapters.ollama import OllamaOCRProvider
 
         return OllamaOCRProvider(
             host=settings.ollama_host,

@@ -12,8 +12,9 @@ from exam_prep_backend import __version__
 from exam_prep_backend.config import Settings
 from exam_prep_backend.database import Database
 from exam_prep_backend.dependencies import require_bearer_auth
-from exam_prep_backend.llm import LLMProvider, provider_from_settings
-from exam_prep_backend.ocr import OCRProvider, ocr_provider_from_settings
+from exam_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
+from exam_prep_backend.domains.mock_exams.provider import provider_from_settings
+from exam_prep_backend.domains.source_documents.ocr import OCRProvider, ocr_provider_from_settings
 from exam_prep_backend.routers import documents, drafts, llm, ocr, practice, projects
 
 

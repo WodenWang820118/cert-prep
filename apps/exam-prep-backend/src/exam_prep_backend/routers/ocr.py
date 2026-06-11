@@ -3,8 +3,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from exam_prep_backend.dependencies import get_ocr_provider
-from exam_prep_backend.ocr import OCRProvider
-from exam_prep_backend.schemas import OCRHealthRead
+from exam_prep_backend.domains.provider_health.schemas import OCRHealthRead
+from exam_prep_backend.domains.source_documents.ocr import OCRProvider
 
 
 router = APIRouter(prefix="/ocr", tags=["ocr"])

@@ -11,7 +11,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 from exam_prep_backend.config import Settings
-from exam_prep_backend.ocr_diagnostics import run_ocr_diagnostics
+from exam_prep_backend.domains.source_documents.adapters.diagnostics import run_ocr_diagnostics
 
 
 def main() -> None:

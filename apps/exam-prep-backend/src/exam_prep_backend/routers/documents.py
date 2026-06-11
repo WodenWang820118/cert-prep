@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, UploadFile, status
 
-from exam_prep_backend import documents_store, drafts_store, projects_store
 from exam_prep_backend.config import Settings
 from exam_prep_backend.database import Database
 from exam_prep_backend.dependencies import (
@@ -11,6 +10,15 @@ from exam_prep_backend.dependencies import (
     get_ocr_provider,
     get_settings,
 )
+from exam_prep_backend.domains.mock_exams import repository as mock_exams_repository
+from exam_prep_backend.domains.mock_exams.models import SourceChunk
+from exam_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
+from exam_prep_backend.domains.projects import repository as projects_repository
+from exam_prep_backend.domains.source_documents import repository as source_documents_repository
+from exam_prep_backend.domains.source_documents.ocr import OCRProvider
+from exam_prep_backend.domains.source_documents.pdf_extraction import extract_pdf_pages
+from exam_prep_backend.domains.source_documents.schemas import ChunkList, DocumentRead
+from exam_prep_backend.domains.source_documents.storage import sha256_hex, store_pdf
 from exam_prep_backend.errors import (
     InvalidPdfError,
     NotFoundError,
@@ -18,11 +26,6 @@ from exam_prep_backend.errors import (
     not_found_error,
     validation_error,
 )
-from exam_prep_backend.llm import LLMProvider, SourceChunk
-from exam_prep_backend.ocr import OCRProvider
-from exam_prep_backend.pdf_extraction import extract_pdf_pages
-from exam_prep_backend.schemas import ChunkList, DocumentRead
-from exam_prep_backend.storage import sha256_hex, store_pdf
 
 
 router = APIRouter(prefix="/projects/{project_id}/documents", tags=["documents"])
@@ -43,7 +46,7 @@ async def upload_document(
         raise validation_error("PDF is empty.")
 
     try:
-        projects_store.ensure_project_exists(db, project_id)
+        projects_repository.ensure_project_exists(db, project_id)
         extraction = extract_pdf_pages(
             content,
             max_pages=settings.max_pdf_pages,
@@ -54,7 +57,7 @@ async def upload_document(
         )
         sha256 = sha256_hex(content)
         storage_path = store_pdf(settings, project_id, sha256, content)
-        document = documents_store.create_document(
+        document = source_documents_repository.create_document(
             db,
             project_id=project_id,
             filename=file.filename or f"{sha256}.pdf",
@@ -84,7 +87,7 @@ def list_document_chunks(
     db: Database = Depends(get_database),
 ) -> dict:
     try:
-        return {"items": documents_store.list_chunks(db, project_id, document_id)}
+        return {"items": source_documents_repository.list_chunks(db, project_id, document_id)}
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
 
@@ -124,12 +127,12 @@ def _auto_generate_exam_items(
             text=chunk["text"],
             source_excerpt=chunk["source_excerpt"],
         )
-        for chunk in documents_store.get_source_chunks(db, project_id, document_id)
+        for chunk in source_documents_repository.get_source_chunks(db, project_id, document_id)
     ]
     try:
         suggestions = provider.generate_drafts(chunks, limit)
     except ProviderUnavailableError:
-        return documents_store.update_exam_state(
+        return source_documents_repository.update_exam_state(
             db,
             project_id=project_id,
             document_id=document_id,
@@ -138,7 +141,7 @@ def _auto_generate_exam_items(
         )
 
     if not suggestions:
-        return documents_store.update_exam_state(
+        return source_documents_repository.update_exam_state(
             db,
             project_id=project_id,
             document_id=document_id,
@@ -146,13 +149,13 @@ def _auto_generate_exam_items(
             exam_item_count=0,
         )
 
-    drafts = drafts_store.create_generated_drafts(
+    drafts = mock_exams_repository.create_generated_drafts(
         db,
         project_id=project_id,
         document_id=document_id,
         suggestions=suggestions,
     )
-    return documents_store.update_exam_state(
+    return source_documents_repository.update_exam_state(
         db,
         project_id=project_id,
         document_id=document_id,

@@ -4,15 +4,18 @@
 
 export interface Components {
   schemas: {
+    AnswerKeySource: string;
     Body_upload_document_projects__project_id__documents_post: { "file": string };
     ChunkList: { "items": Components['schemas']['ChunkRead'][] };
-    ChunkRead: { "id": string; "document_id": string; "page_number": number; "chunk_index": number; "text": string; "source_excerpt": string; "extraction_method": string; "created_at": string };
-    DocumentRead: { "id": string; "project_id": string; "filename": string; "sha256": string; "page_count": number; "has_text": boolean; "status": string; "extraction_method": string; "ocr_device": string | null; "ocr_fallback_reason": string | null; "ocr_duration_ms": number; "processed_page_count": number; "exam_item_count": number; "chunks_count": number; "created_at": string };
+    ChunkRead: { "id": string; "document_id": string; "page_number": number; "chunk_index": number; "text": string; "source_excerpt": string; "extraction_method": Components['schemas']['PdfExtractionMethod'] | string; "created_at": string };
+    DocumentRead: { "id": string; "project_id": string; "filename": string; "sha256": string; "page_count": number; "has_text": boolean; "status": Components['schemas']['SourceDocumentStatus'] | string; "extraction_method": Components['schemas']['PdfExtractionMethod'] | string; "ocr_device": string | null; "ocr_fallback_reason": string | null; "ocr_duration_ms": number; "processed_page_count": number; "exam_item_count": number; "chunks_count": number; "created_at": string };
     DraftGenerateRequest: { "limit"?: number };
+    DraftStatus: string;
     HTTPValidationError: { "detail"?: Components['schemas']['ValidationError'][] };
     HealthResponse: { "status": string; "app": string; "version": string };
     LLMHealthRead: { "provider": string; "model": string; "available": boolean; "detail": string };
     OCRHealthRead: { "provider": string; "engine": string; "available": boolean; "detail": string; "python_version": string; "paddle_version": string | null; "paddleocr_version": string | null; "selected_device": string | null; "cuda_available": boolean; "gpu_count": number; "model_cache_dir": string | null; "fallback_reason": string | null };
+    PdfExtractionMethod: string;
     PracticeAttemptCreate: { "question_id": string; "selected_answer": string };
     PracticeAttemptRead: { "id": string; "session_id": string; "project_id": string; "question_id": string; "selected_answer": string; "is_correct": boolean; "created_at": string };
     PracticeSessionCreate: { "question_count"?: number };
@@ -21,25 +24,29 @@ export interface Components {
     ProjectList: { "items": Components['schemas']['ProjectRead'][] };
     ProjectRead: { "id": string; "name": string; "description": string; "created_at": string; "updated_at": string };
     ProjectUpdate: { "name"?: string | null; "description"?: string | null };
-    QuestionDraftCreate: { "question"?: string; "choices"?: string[]; "answer"?: string | null; "answer_key_source"?: string; "rationale"?: string | null; "citation_page"?: number | null; "source_excerpt"?: string | null; "document_id"?: string | null; "chunk_id"?: string | null };
+    QuestionDraftCreate: { "question"?: string; "choices"?: string[]; "answer"?: string | null; "answer_key_source"?: Components['schemas']['AnswerKeySource'] | string; "rationale"?: string | null; "citation_page"?: number | null; "source_excerpt"?: string | null; "document_id"?: string | null; "chunk_id"?: string | null };
     QuestionDraftList: { "items": Components['schemas']['QuestionDraftRead'][] };
-    QuestionDraftRead: { "id": string; "project_id": string; "document_id": string | null; "chunk_id": string | null; "question": string; "choices": string[]; "answer": string | null; "answer_key_source": string; "rationale": string | null; "citation_page": number | null; "source_excerpt": string | null; "status": string; "rejection_reason": string | null; "created_at": string; "updated_at": string };
-    QuestionDraftUpdate: { "question"?: string | null; "choices"?: string[] | null; "answer"?: string | null; "answer_key_source"?: string | null; "rationale"?: string | null; "citation_page"?: number | null; "source_excerpt"?: string | null };
+    QuestionDraftRead: { "id": string; "project_id": string; "document_id": string | null; "chunk_id": string | null; "question": string; "choices": string[]; "answer": string | null; "answer_key_source": Components['schemas']['AnswerKeySource'] | string; "rationale": string | null; "citation_page": number | null; "source_excerpt": string | null; "status": Components['schemas']['DraftStatus'] | string; "rejection_reason": string | null; "created_at": string; "updated_at": string };
+    QuestionDraftUpdate: { "question"?: string | null; "choices"?: string[] | null; "answer"?: string | null; "answer_key_source"?: Components['schemas']['AnswerKeySource'] | string | null; "rationale"?: string | null; "citation_page"?: number | null; "source_excerpt"?: string | null };
+    SourceDocumentStatus: string;
     ValidationError: { "loc": (string | number)[]; "msg": string; "type": string; "input"?: unknown; "ctx"?: Record<string, unknown> };
     WrongAnswerList: { "items": Components['schemas']['WrongAnswerRead'][] };
     WrongAnswerRead: { "attempt_id": string; "session_id": string; "question_id": string; "question": string; "selected_answer": string; "correct_answer": string | null; "rationale": string | null; "citation_page": number | null; "source_excerpt": string | null; "created_at": string };
   };
 }
 
+export type AnswerKeySource = Components['schemas']['AnswerKeySource'];
 export type Body_upload_document_projects__project_id__documents_post = Components['schemas']['Body_upload_document_projects__project_id__documents_post'];
 export type ChunkList = Components['schemas']['ChunkList'];
 export type ChunkRead = Components['schemas']['ChunkRead'];
 export type DocumentRead = Components['schemas']['DocumentRead'];
 export type DraftGenerateRequest = Components['schemas']['DraftGenerateRequest'];
+export type DraftStatus = Components['schemas']['DraftStatus'];
 export type HTTPValidationError = Components['schemas']['HTTPValidationError'];
 export type HealthResponse = Components['schemas']['HealthResponse'];
 export type LLMHealthRead = Components['schemas']['LLMHealthRead'];
 export type OCRHealthRead = Components['schemas']['OCRHealthRead'];
+export type PdfExtractionMethod = Components['schemas']['PdfExtractionMethod'];
 export type PracticeAttemptCreate = Components['schemas']['PracticeAttemptCreate'];
 export type PracticeAttemptRead = Components['schemas']['PracticeAttemptRead'];
 export type PracticeSessionCreate = Components['schemas']['PracticeSessionCreate'];
@@ -52,6 +59,7 @@ export type QuestionDraftCreate = Components['schemas']['QuestionDraftCreate'];
 export type QuestionDraftList = Components['schemas']['QuestionDraftList'];
 export type QuestionDraftRead = Components['schemas']['QuestionDraftRead'];
 export type QuestionDraftUpdate = Components['schemas']['QuestionDraftUpdate'];
+export type SourceDocumentStatus = Components['schemas']['SourceDocumentStatus'];
 export type ValidationError = Components['schemas']['ValidationError'];
 export type WrongAnswerList = Components['schemas']['WrongAnswerList'];
 export type WrongAnswerRead = Components['schemas']['WrongAnswerRead'];

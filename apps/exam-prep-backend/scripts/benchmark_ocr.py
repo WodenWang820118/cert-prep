@@ -12,7 +12,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 from exam_prep_backend.config import Settings
-from exam_prep_backend.ocr_benchmark import benchmark_pdf_page
+from exam_prep_backend.domains.source_documents.adapters.benchmark import benchmark_pdf_page
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]

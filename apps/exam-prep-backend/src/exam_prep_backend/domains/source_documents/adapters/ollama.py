@@ -8,7 +8,7 @@ from typing import Any
 import ollama
 
 from exam_prep_backend.errors import ProviderUnavailableError
-from exam_prep_backend.ocr import OCRHealth, OCRPageResult
+from exam_prep_backend.domains.source_documents.ocr import OCRHealth, OCRPageResult
 
 
 class OllamaOCRProvider:

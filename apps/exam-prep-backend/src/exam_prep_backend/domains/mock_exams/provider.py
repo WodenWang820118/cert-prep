@@ -1,53 +1,20 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
 import json
-from typing import Any, Protocol
+from typing import Any
 
 import ollama
 
 from exam_prep_backend.config import Settings
+from exam_prep_backend.domains.mock_exams.models import (
+    AnswerKeySource,
+    DraftSuggestion,
+    SourceChunk,
+)
+from exam_prep_backend.domains.mock_exams.policies import normalize_answer
+from exam_prep_backend.domains.mock_exams.ports import ProviderHealth
 from exam_prep_backend.errors import ProviderUnavailableError
-
-
-@dataclass(frozen=True)
-class ProviderHealth:
-    provider: str
-    model: str
-    available: bool
-    detail: str
-
-
-@dataclass(frozen=True)
-class SourceChunk:
-    id: str
-    page_number: int
-    text: str
-    source_excerpt: str
-
-
-@dataclass(frozen=True)
-class DraftSuggestion:
-    chunk_id: str
-    question: str
-    choices: list[str]
-    answer: str
-    answer_key_source: str
-    rationale: str
-    citation_page: int
-    source_excerpt: str
-
-
-class LLMProvider(Protocol):
-    provider: str
-    model: str
-
-    def health(self) -> ProviderHealth:
-        pass
-
-    def generate_drafts(self, chunks: Sequence[SourceChunk], limit: int) -> list[DraftSuggestion]:
-        pass
 
 
 class FakeLLMProvider:
@@ -67,7 +34,7 @@ class FakeLLMProvider:
     def generate_drafts(self, chunks: Sequence[SourceChunk], limit: int) -> list[DraftSuggestion]:
         suggestions: list[DraftSuggestion] = []
         for chunk in chunks[:limit]:
-            excerpt = chunk.source_excerpt or chunk.text[:500]
+            excerpt = chunk.excerpt_or_text_prefix()
             suggestions.append(
                 DraftSuggestion(
                     chunk_id=chunk.id,
@@ -79,7 +46,7 @@ class FakeLLMProvider:
                         "Remove all safeguards",
                     ],
                     answer="Apply the cited concept",
-                    answer_key_source="ai_inferred",
+                    answer_key_source=AnswerKeySource.AI_INFERRED,
                     rationale=f"The cited source supports applying this concept: {excerpt}",
                     citation_page=chunk.page_number,
                     source_excerpt=excerpt,
@@ -173,7 +140,9 @@ class OllamaProvider:
         return suggestions
 
 
-def provider_from_settings(settings: Settings) -> LLMProvider:
+def provider_from_settings(settings: Settings):
+    """Create the configured mock exam provider."""
+
     if settings.llm_provider == "ollama":
         return OllamaProvider(
             host=settings.ollama_host,
@@ -276,7 +245,7 @@ def _draft_suggestion_from_item(
     if chunk is None:
         return None
 
-    answer = _normalize_answer(answer, choices)
+    answer = normalize_answer(answer, choices)
     if answer not in choices:
         return None
 
@@ -323,15 +292,23 @@ def _source_excerpt(raw_excerpt: Any, chunk: SourceChunk) -> str:
     excerpt = _text(raw_excerpt)
     if excerpt and excerpt in chunk.text:
         return excerpt
-    return chunk.source_excerpt or chunk.text[:500]
+    return chunk.excerpt_or_text_prefix()
 
 
 def _looks_like_exam_item(question: str, choices: list[str], source_excerpt: str) -> bool:
     combined = f"{question} {source_excerpt}".lower()
+    japanese_version_notice = (
+        "\u3053\u306e\u8a66\u9a13\u554f\u984c\u306b\u306f\u8907\u6570"
+        "\u306e\u30d0\u30fc\u30b8\u30e7\u30f3"
+    )
+    japanese_version_notice_without_prefix = (
+        "\u8a66\u9a13\u554f\u984c\u306b\u306f\u8907\u6570"
+        "\u306e\u30d0\u30fc\u30b8\u30e7\u30f3"
+    )
     rejected_markers = (
         "this test paper has multiple versions",
-        "この試験問題には複数のバージョン",
-        "試験問題には複数のバージョン",
+        japanese_version_notice,
+        japanese_version_notice_without_prefix,
         "copyright",
         "general instructions",
         "do not open",
@@ -350,23 +327,6 @@ def _starts_with_choice_marker(text: str) -> bool:
         stripped.startswith(marker)
         for marker in ("1", "2", "3", "4", "A", "B", "C", "D", "(1)", "(2)", "(3)", "(4)")
     )
-
-
-def _normalize_answer(answer: str, choices: list[str]) -> str:
-    if answer in choices:
-        return answer
-
-    normalized = answer.strip().rstrip(".:")
-    letter_to_index = {"A": 0, "B": 1, "C": 2, "D": 3, "1": 0, "2": 1, "3": 2, "4": 3}
-    index = letter_to_index.get(normalized.upper())
-    if index is not None and index < len(choices):
-        return choices[index]
-
-    for choice in choices:
-        stripped = choice.strip()
-        if stripped.startswith(f"{normalized}.") or stripped.startswith(f"{normalized} "):
-            return choice
-    return answer
 
 
 def _unique_texts(value: Any) -> list[str]:

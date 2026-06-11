@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from exam_prep_backend.ocr_paddle import PaddleOCRProvider
-from exam_prep_backend.ocr_paddle_text import extract_prediction_text
+from exam_prep_backend.domains.source_documents.adapters.paddle import PaddleOCRProvider
+from exam_prep_backend.domains.source_documents.adapters.paddle_text import extract_prediction_text
 
 
 def test_prediction_text_extracts_rec_texts_without_duplicates() -> None:
@@ -22,7 +22,7 @@ def test_prediction_text_extracts_from_generators() -> None:
 
 
 def test_paddle_health_reports_cpu_fallback_when_cuda_unavailable(monkeypatch) -> None:
-    import exam_prep_backend.ocr_paddle as paddle_module
+    import exam_prep_backend.domains.source_documents.adapters.paddle as paddle_module
 
     monkeypatch.setattr(
         paddle_module,
@@ -45,7 +45,7 @@ def test_paddle_health_reports_cpu_fallback_when_cuda_unavailable(monkeypatch) -
 
 
 def test_paddle_gpu_failure_falls_back_to_cpu(monkeypatch) -> None:
-    import exam_prep_backend.ocr_paddle as paddle_module
+    import exam_prep_backend.domains.source_documents.adapters.paddle as paddle_module
 
     created_devices: list[str] = []
 

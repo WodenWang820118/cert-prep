@@ -6,8 +6,9 @@ from fastapi.testclient import TestClient
 from conftest import minimal_pdf
 from exam_prep_backend.app import create_app
 from exam_prep_backend.config import Settings
-from exam_prep_backend.llm import DraftSuggestion, ProviderHealth, SourceChunk
-from exam_prep_backend.ocr import OCRHealth, OCRPageResult
+from exam_prep_backend.domains.mock_exams.models import DraftSuggestion, SourceChunk
+from exam_prep_backend.domains.mock_exams.ports import ProviderHealth
+from exam_prep_backend.domains.source_documents.ocr import OCRHealth, OCRPageResult
 
 
 def test_pdf_upload_hashes_stores_extracts_and_chunks_by_page(
@@ -129,6 +130,81 @@ def test_image_only_pdf_uses_ocr_and_creates_approved_mock_exam(
     assert item["answer_key_source"] == "ai_inferred"
     assert item["citation_page"] == 1
     assert item["source_excerpt"] in chunks[0]["text"]
+
+
+def test_provider_specific_ocr_method_round_trips_through_upload_response(
+    tmp_path: Path, auth_headers
+) -> None:
+    ocr_provider = MockOllamaOcrProvider()
+    client = TestClient(
+        create_app(
+            settings=Settings(data_dir=tmp_path, api_token="test-token"),
+            ocr_provider=ocr_provider,
+        )
+    )
+    project_id = _create_project(client, auth_headers)
+
+    response = client.post(
+        f"/projects/{project_id}/documents",
+        headers=auth_headers,
+        files={"file": ("ollama.pdf", minimal_pdf(""), "application/pdf")},
+    )
+
+    assert response.status_code == 201
+    document = response.json()
+    assert document["status"] == "ready"
+    assert document["extraction_method"] == "gemma_ocr"
+    assert document["ocr_device"] == "ollama"
+    assert document["processed_page_count"] == 1
+    assert "storage_path" not in document
+
+    chunks = client.get(
+        f"/projects/{project_id}/documents/{document['id']}/chunks",
+        headers=auth_headers,
+    ).json()["items"]
+    assert chunks[0]["extraction_method"] == "gemma_ocr"
+    assert chunks[0]["page_number"] == 1
+
+
+def test_mixed_embedded_and_ocr_pdf_keeps_page_order(tmp_path: Path, auth_headers) -> None:
+    ocr_provider = MockPaddleOcrProvider()
+    client = TestClient(
+        create_app(
+            settings=Settings(data_dir=tmp_path, api_token="test-token"),
+            ocr_provider=ocr_provider,
+        )
+    )
+    project_id = _create_project(client, auth_headers)
+
+    response = client.post(
+        f"/projects/{project_id}/documents",
+        headers=auth_headers,
+        files={
+            "file": (
+                "mixed.pdf",
+                minimal_pdf("Embedded page text for page one.", ""),
+                "application/pdf",
+            )
+        },
+    )
+
+    assert response.status_code == 201
+    document = response.json()
+    assert document["status"] == "ready"
+    assert document["extraction_method"] == "mixed"
+    assert document["processed_page_count"] == 2
+    assert document["chunks_count"] == 2
+    assert ocr_provider.ocr_page_numbers == [2]
+
+    chunks = client.get(
+        f"/projects/{project_id}/documents/{document['id']}/chunks",
+        headers=auth_headers,
+    ).json()["items"]
+    assert [chunk["page_number"] for chunk in chunks] == [1, 2]
+    assert [chunk["extraction_method"] for chunk in chunks] == [
+        "embedded",
+        "paddle_ocr_gpu",
+    ]
 
 
 def test_image_only_pdf_ocr_continues_after_single_page_failure(
@@ -255,6 +331,22 @@ class MockPaddleOcrProvider:
             device="gpu:0",
             fallback_reason=None,
             duration_ms=123,
+        )
+
+
+class MockOllamaOcrProvider(MockPaddleOcrProvider):
+    provider = "mock-ollama"
+    engine = "gemma4:12b"
+
+    def extract_page_text(self, image_png: bytes, page_number: int) -> OCRPageResult:
+        assert image_png.startswith(b"\x89PNG")
+        self.ocr_page_numbers.append(page_number)
+        return OCRPageResult(
+            text=f"Ollama OCR page {page_number}",
+            extraction_method="gemma_ocr",
+            device="ollama",
+            fallback_reason=None,
+            duration_ms=77,
         )
 
 
