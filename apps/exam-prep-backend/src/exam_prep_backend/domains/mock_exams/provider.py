@@ -14,6 +14,7 @@ from exam_prep_backend.domains.mock_exams.models import (
 )
 from exam_prep_backend.domains.mock_exams.policies import normalize_answer
 from exam_prep_backend.domains.mock_exams.ports import ProviderHealth
+from exam_prep_backend.domains.mock_exams.ports import ModelPullProgress
 from exam_prep_backend.errors import ProviderUnavailableError
 
 
@@ -139,6 +140,12 @@ class OllamaProvider:
                 break
         return suggestions
 
+    def pull_model(self, progress) -> None:
+        """Pull the configured Ollama model after explicit user confirmation."""
+
+        for update in self._client.pull(self.model, stream=True):
+            progress(_pull_progress(update))
+
 
 def provider_from_settings(settings: Settings):
     """Create the configured mock exam provider."""
@@ -164,6 +171,21 @@ def _extract_model_names(response: Any) -> set[str]:
         if isinstance(name, str):
             names.add(name)
     return names
+
+
+def _pull_progress(response: Any) -> ModelPullProgress:
+    status = getattr(response, "status", None)
+    completed = getattr(response, "completed", None)
+    total = getattr(response, "total", None)
+    if isinstance(response, dict):
+        status = response.get("status", status)
+        completed = response.get("completed", completed)
+        total = response.get("total", total)
+    return ModelPullProgress(
+        status=status if isinstance(status, str) else "downloading model",
+        completed=completed if isinstance(completed, int) else None,
+        total=total if isinstance(total, int) else None,
+    )
 
 
 EXAM_ITEMS_SCHEMA: dict[str, Any] = {

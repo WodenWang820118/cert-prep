@@ -35,7 +35,7 @@
       "dependsOn": ["exam-prep:build", "sync-sidecar-gpu"],
       "outputs": ["{projectRoot}/src-tauri/target"],
       "options": {
-        "command": "pnpm exec tauri build --config apps/exam-prep-desktop/src-tauri/tauri.conf.json"
+        "command": "pnpm exec tauri build --target x86_64-pc-windows-msvc --ci --config apps/exam-prep-desktop/src-tauri/tauri.conf.json"
       }
     },
     "sync-sidecar": {
@@ -51,7 +51,24 @@
       "dependsOn": ["exam-prep-backend:build-sidecar-gpu"],
       "outputs": ["{projectRoot}/src-tauri/binaries"],
       "options": {
-        "command": "node apps/exam-prep-desktop/scripts/sync-sidecar.mjs"
+        "command": "node apps/exam-prep-desktop/scripts/sync-sidecar.mjs --target x86_64-pc-windows-msvc"
+      }
+    },
+    "package-qa": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "dependsOn": ["build-gpu"],
+      "outputs": ["{workspaceRoot}/tmp/exam-prep-desktop/package-qa"],
+      "options": {
+        "command": "node apps/exam-prep-desktop/scripts/package-qa.mjs"
+      }
+    },
+    "package-qa-test": {
+      "cache": true,
+      "executor": "nx:run-commands",
+      "inputs": ["default"],
+      "options": {
+        "command": "node --test apps/exam-prep-desktop/scripts/package-qa.test.mjs"
       }
     },
     "cargo-test": {

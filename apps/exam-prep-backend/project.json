@@ -56,6 +56,14 @@
         "command": "uv sync --extra ocr-gpu --reinstall-package paddlepaddle-gpu && uv run --extra ocr-gpu python scripts/ocr_diagnostics.py --provider paddle --device gpu:0 --strict-lane gpu --fail-on-error"
       }
     },
+    "ocr-setup-gpu-capable": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "apps/exam-prep-backend",
+        "command": "uv sync --extra ocr-gpu --reinstall-package paddlepaddle-gpu && uv run --extra ocr-gpu python scripts/ocr_diagnostics.py --provider paddle --device auto --fail-on-error"
+      }
+    },
     "ocr-health": {
       "cache": false,
       "executor": "nx:run-commands",
@@ -104,7 +112,7 @@
     "build-sidecar-gpu": {
       "cache": true,
       "executor": "nx:run-commands",
-      "dependsOn": ["ocr-setup-gpu"],
+      "dependsOn": ["ocr-setup-gpu-capable"],
       "inputs": ["production"],
       "outputs": ["{projectRoot}/dist"],
       "options": {

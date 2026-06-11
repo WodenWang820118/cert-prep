@@ -14,6 +14,8 @@ export interface Components {
     HTTPValidationError: { "detail"?: Components['schemas']['ValidationError'][] };
     HealthResponse: { "status": string; "app": string; "version": string };
     LLMHealthRead: { "provider": string; "model": string; "available": boolean; "detail": string };
+    ModelDownloadRead: { "id": string; "provider": string; "model": string; "status": Components['schemas']['ModelDownloadStatus']; "detail": string; "completed": number | null; "total": number | null; "created_at": string; "updated_at": string };
+    ModelDownloadStatus: string;
     OCRHealthRead: { "provider": string; "engine": string; "available": boolean; "detail": string; "python_version": string; "paddle_version": string | null; "paddleocr_version": string | null; "selected_device": string | null; "cuda_available": boolean; "gpu_count": number; "model_cache_dir": string | null; "fallback_reason": string | null };
     PdfExtractionMethod: string;
     PracticeAttemptCreate: { "question_id": string; "selected_answer": string };
@@ -45,6 +47,8 @@ export type DraftStatus = Components['schemas']['DraftStatus'];
 export type HTTPValidationError = Components['schemas']['HTTPValidationError'];
 export type HealthResponse = Components['schemas']['HealthResponse'];
 export type LLMHealthRead = Components['schemas']['LLMHealthRead'];
+export type ModelDownloadRead = Components['schemas']['ModelDownloadRead'];
+export type ModelDownloadStatus = Components['schemas']['ModelDownloadStatus'];
 export type OCRHealthRead = Components['schemas']['OCRHealthRead'];
 export type PdfExtractionMethod = Components['schemas']['PdfExtractionMethod'];
 export type PracticeAttemptCreate = Components['schemas']['PracticeAttemptCreate'];
@@ -95,6 +99,8 @@ export interface ExamPrepGeneratedClient {
   recordPracticeAttempt(projectId: string, sessionId: string, body: Components['schemas']['PracticeAttemptCreate']): Promise<Components['schemas']['PracticeAttemptRead']>;
   listWrongAnswers(projectId: string): Promise<Components['schemas']['WrongAnswerList']>;
   llmHealth(): Promise<Components['schemas']['LLMHealthRead']>;
+  startModelDownload(): Promise<Components['schemas']['ModelDownloadRead']>;
+  getModelDownload(jobId: string): Promise<Components['schemas']['ModelDownloadRead']>;
   ocrHealth(): Promise<Components['schemas']['OCRHealthRead']>;
 }
 
@@ -138,6 +144,10 @@ export function createExamPrepGeneratedClient(
       transport.request<Components['schemas']['WrongAnswerList']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/wrong-answers` }),
     llmHealth: () =>
       transport.request<Components['schemas']['LLMHealthRead']>({ method: 'GET' as const, path: "/llm/health" }),
+    startModelDownload: () =>
+      transport.request<Components['schemas']['ModelDownloadRead']>({ method: 'POST' as const, path: "/llm/model-downloads" }),
+    getModelDownload: (jobId: string) =>
+      transport.request<Components['schemas']['ModelDownloadRead']>({ method: 'GET' as const, path: `/llm/model-downloads/${encodeURIComponent(jobId)}` }),
     ocrHealth: () =>
       transport.request<Components['schemas']['OCRHealthRead']>({ method: 'GET' as const, path: "/ocr/health" }),
   };

@@ -12,6 +12,7 @@ from exam_prep_backend import __version__
 from exam_prep_backend.config import Settings
 from exam_prep_backend.database import Database
 from exam_prep_backend.dependencies import require_bearer_auth
+from exam_prep_backend.domains.mock_exams.downloads import ModelDownloadManager
 from exam_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
 from exam_prep_backend.domains.mock_exams.provider import provider_from_settings
 from exam_prep_backend.domains.source_documents.ocr import OCRProvider, ocr_provider_from_settings
@@ -28,6 +29,7 @@ def create_app(
     settings: Settings | None = None,
     llm_provider: LLMProvider | None = None,
     ocr_provider: OCRProvider | None = None,
+    model_download_manager: ModelDownloadManager | None = None,
 ) -> FastAPI:
     app_settings = settings or Settings()
     app = FastAPI(
@@ -38,6 +40,9 @@ def create_app(
     app.state.settings = app_settings
     app.state.database = Database(app_settings)
     app.state.llm_provider = llm_provider or provider_from_settings(app_settings)
+    app.state.model_download_manager = model_download_manager or ModelDownloadManager(
+        app.state.llm_provider
+    )
     app.state.ocr_provider = ocr_provider or ocr_provider_from_settings(app_settings)
     app.add_middleware(
         CORSMiddleware,
