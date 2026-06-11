@@ -6,9 +6,12 @@ import { ModelHealthComponent } from './model-health.component';
 describe('ModelHealthComponent', () => {
   let apiClient: {
     getModelDownload: ReturnType<typeof vi.fn>;
+    getRuntimeInstallation: ReturnType<typeof vi.fn>;
     llmHealth: ReturnType<typeof vi.fn>;
     ocrHealth: ReturnType<typeof vi.fn>;
+    runtimeRequirements: ReturnType<typeof vi.fn>;
     startModelDownload: ReturnType<typeof vi.fn>;
+    startRuntimeInstallation: ReturnType<typeof vi.fn>;
   };
 
   beforeEach(async () => {
@@ -16,9 +19,12 @@ describe('ModelHealthComponent', () => {
 
     apiClient = {
       getModelDownload: vi.fn(),
+      getRuntimeInstallation: vi.fn(),
       llmHealth: vi.fn(),
       ocrHealth: vi.fn(),
+      runtimeRequirements: vi.fn().mockResolvedValue({ items: [] }),
       startModelDownload: vi.fn(),
+      startRuntimeInstallation: vi.fn(),
     };
 
     await TestBed.configureTestingModule({
@@ -65,6 +71,34 @@ describe('ModelHealthComponent', () => {
     expect(health.modelDownloadConsentVisible()).toBe(false);
     expect(apiClient.startModelDownload).not.toHaveBeenCalled();
   });
+
+  it('opens Ollama install consent for missing Ollama', async () => {
+    const fixture = TestBed.createComponent(ModelHealthComponent);
+    const health = TestBed.inject(HealthStore);
+    health.llmHealth.set({
+      ...missingModelHealth(),
+      detail: 'Ollama is not installed.',
+      unavailable_reason: 'ollama_missing',
+    });
+    health.ocrHealth.set(ocrHealth());
+    fixture.detectChanges();
+
+    buttonByText(fixture.nativeElement, 'Install Ollama')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(health.runtimeInstallConsentVisible()).toBe(true);
+    expect(document.body.textContent).toContain(
+      'Install Ollama for local AI generation?',
+    );
+
+    buttonByText(document.body, 'Cancel')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(health.runtimeInstallConsentVisible()).toBe(false);
+    expect(apiClient.startRuntimeInstallation).not.toHaveBeenCalled();
+  });
 });
 
 function buttonByText(root: ParentNode, text: string): HTMLButtonElement | null {
@@ -99,5 +133,6 @@ function ocrHealth(): OCRHealthRead {
     gpu_count: 0,
     model_cache_dir: null,
     fallback_reason: null,
+    unavailable_reason: null,
   };
 }

@@ -45,7 +45,16 @@ class Settings(BaseSettings):
     ocr_benchmark: bool = False
     ollama_host: str = "http://127.0.0.1:11434"
     ollama_model: str = "gemma4:12b"
+    ocr_runtime_mode: Literal["external", "inprocess"] = "external"
+    ocr_runtime_dir: Path | None = None
+    ocr_runtime_manifest_path: Path | None = None
+    ocr_runtime_timeout_seconds: float = 300.0
+    runtime_install_timeout_seconds: float = 900.0
 
     @property
     def database_path(self) -> Path:
         return self.data_dir / self.database_name
+
+    @property
+    def resolved_ocr_runtime_dir(self) -> Path:
+        return (self.ocr_runtime_dir or self.data_dir / "runtimes" / "paddle_ocr").resolve()

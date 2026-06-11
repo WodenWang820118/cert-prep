@@ -23,7 +23,7 @@ def main() -> None:
     args = parser.parse_args()
 
     result = run_ocr_diagnostics(
-        Settings(ocr_provider=args.provider, ocr_device=args.device),
+        Settings(ocr_provider=args.provider, ocr_device=args.device, ocr_runtime_mode="inprocess"),
         strict_lane=args.strict_lane,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))

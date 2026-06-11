@@ -9,13 +9,15 @@ type BusyAction =
   | 'approve'
   | 'session'
   | 'attempt'
-  | 'review';
+  | 'review'
+  | 'runtime';
 
 @Injectable({ providedIn: 'root' })
 export class OperationStore {
   readonly busy = signal<BusyAction | null>(null);
   readonly status = signal('Ready');
   readonly error = signal<string | null>(null);
+  readonly errorCode = signal<string | null>(null);
   readonly isBusy = computed(() => this.busy() !== null);
 
   async run<T>(
@@ -25,12 +27,14 @@ export class OperationStore {
   ): Promise<T | null> {
     this.busy.set(action);
     this.error.set(null);
+    this.errorCode.set(null);
     try {
       const result = await task();
       this.status.set(successMessage);
       return result;
     } catch (error) {
       this.error.set(this.getErrorMessage(error));
+      this.errorCode.set(this.getErrorCode(error));
       return null;
     } finally {
       if (this.busy() === action) {
@@ -41,6 +45,11 @@ export class OperationStore {
 
   fail(message: string): void {
     this.error.set(message);
+  }
+
+  failWithCode(message: string, code: string): void {
+    this.error.set(message);
+    this.errorCode.set(code);
   }
 
   private getErrorMessage(error: unknown): string {
@@ -67,5 +76,19 @@ export class OperationStore {
       'message' in value &&
       typeof (value as { message?: unknown }).message === 'string'
     );
+  }
+
+  private getErrorCode(error: unknown): string | null {
+    const httpError = error as { error?: unknown };
+    if (
+      typeof httpError.error === 'object' &&
+      httpError.error !== null &&
+      'code' in httpError.error &&
+      typeof (httpError.error as { code?: unknown }).code === 'string'
+    ) {
+      return (httpError.error as { code: string }).code;
+    }
+
+    return null;
   }
 }

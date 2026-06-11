@@ -9,6 +9,7 @@ describe('App', () => {
       model: 'gemma4:12b',
       available: true,
       detail: 'deterministic local fake provider',
+      unavailable_reason: null,
     }),
     ocrHealth: vi.fn().mockResolvedValue({
       provider: 'fake',
@@ -23,7 +24,9 @@ describe('App', () => {
       gpu_count: 0,
       model_cache_dir: null,
       fallback_reason: null,
+      unavailable_reason: null,
     }),
+    runtimeRequirements: vi.fn().mockResolvedValue({ items: [] }),
     listProjects: vi.fn().mockResolvedValue({ items: [] }),
     listQuestionDrafts: vi.fn().mockResolvedValue({ items: [] }),
     listWrongAnswers: vi.fn().mockResolvedValue({ items: [] }),

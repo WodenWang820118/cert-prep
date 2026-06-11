@@ -1,11 +1,13 @@
 import { computed, inject, Injectable, signal } from '@angular/core';
 import { DocumentRead, EXAM_PREP_API } from '../exam-prep-api';
+import { HealthStore } from './health.store';
 import { OperationStore } from './operation.store';
 import { ProjectStore } from './project.store';
 
 @Injectable({ providedIn: 'root' })
 export class SourceImportStore {
   private readonly api = inject(EXAM_PREP_API);
+  private readonly health = inject(HealthStore);
   private readonly operations = inject(OperationStore);
   private readonly projects = inject(ProjectStore);
 
@@ -50,7 +52,18 @@ export class SourceImportStore {
     );
     if (document !== null) {
       this.uploadedDocument.set(document);
+    } else if (this.operations.errorCode() === 'paddle_runtime_missing') {
+      await this.refreshRuntimeHealth();
+      this.health.openOcrRuntimeInstallConsent();
     }
     return document;
+  }
+
+  private async refreshRuntimeHealth(): Promise<void> {
+    try {
+      await this.health.load();
+    } catch {
+      // Keep the use-time prompt available even if the health refresh failed.
+    }
   }
 }

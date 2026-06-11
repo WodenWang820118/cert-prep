@@ -13,7 +13,6 @@ export type {
   ExamPrepGeneratedClient,
   LLMHealthRead,
   ModelDownloadRead,
-  ModelDownloadStatus,
   OCRHealthRead,
   PracticeAttemptCreate,
   PracticeAttemptRead,
@@ -24,6 +23,10 @@ export type {
   ProjectRead,
   QuestionDraftList,
   QuestionDraftRead,
+  RuntimeInstallationRead,
+  RuntimeRequirementKind,
+  RuntimeRequirementRead,
+  RuntimeRequirementsRead,
   WrongAnswerList,
   WrongAnswerRead,
 } from './api/exam-prep-api.generated';

@@ -5,7 +5,6 @@ from fastapi.testclient import TestClient
 
 from exam_prep_backend.app import create_app
 from exam_prep_backend.config import Settings
-from exam_prep_backend.domains.mock_exams.downloads import ModelDownloadManager
 from exam_prep_backend.domains.mock_exams.models import DraftSuggestion, SourceChunk
 from exam_prep_backend.domains.mock_exams.ports import ModelPullProgress, ProviderHealth
 from exam_prep_backend.domains.mock_exams.provider import _draft_suggestion_from_item
@@ -61,7 +60,7 @@ def test_llm_health_does_not_pull_missing_ollama_model(tmp_path) -> None:
         create_app(
             settings=Settings(data_dir=tmp_path, api_token="test-token"),
             llm_provider=provider,
-            model_download_manager=ModelDownloadManager(provider, async_jobs=False),
+            runtime_installation_async_jobs=False,
         )
     )
 
@@ -78,7 +77,7 @@ def test_model_download_starts_only_from_explicit_post(tmp_path) -> None:
         create_app(
             settings=Settings(data_dir=tmp_path, api_token="test-token"),
             llm_provider=provider,
-            model_download_manager=ModelDownloadManager(provider, async_jobs=False),
+            runtime_installation_async_jobs=False,
         )
     )
 
@@ -96,17 +95,17 @@ def test_model_download_starts_only_from_explicit_post(tmp_path) -> None:
         "total": 100,
         "created_at": response.json()["created_at"],
         "updated_at": response.json()["updated_at"],
+        "error": None,
     }
 
 
 def test_model_download_poll_returns_job_status(tmp_path) -> None:
     provider = RecordingDownloadProvider(available=False, detail="model not found")
-    manager = ModelDownloadManager(provider, async_jobs=False)
     client = TestClient(
         create_app(
             settings=Settings(data_dir=tmp_path, api_token="test-token"),
             llm_provider=provider,
-            model_download_manager=manager,
+            runtime_installation_async_jobs=False,
         )
     )
     started = client.post("/llm/model-downloads", headers=AUTH_HEADERS).json()
@@ -144,7 +143,7 @@ def test_model_download_records_provider_failure(tmp_path) -> None:
         create_app(
             settings=Settings(data_dir=tmp_path, api_token="test-token"),
             llm_provider=provider,
-            model_download_manager=ModelDownloadManager(provider, async_jobs=False),
+            runtime_installation_async_jobs=False,
         )
     )
 

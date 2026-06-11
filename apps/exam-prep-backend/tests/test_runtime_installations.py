@@ -1,0 +1,159 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+import json
+from pathlib import Path
+from zipfile import ZipFile
+
+from fastapi.testclient import TestClient
+
+from exam_prep_backend.app import create_app
+from exam_prep_backend.config import Settings
+from exam_prep_backend.domains.runtime_installations import (
+    PaddleOcrRuntimeInstaller,
+    RuntimeInstallProgress,
+    RuntimeInstallationManager,
+    RuntimeInstallationStatus,
+    RuntimeRequirementKind,
+    RuntimeRequirementSnapshot,
+)
+from exam_prep_backend.domains.source_documents.ocr import OCRHealth, OCRPageResult
+
+
+AUTH_HEADERS = {"Authorization": "Bearer test-token"}
+
+
+def test_runtime_requirements_are_read_only(tmp_path: Path) -> None:
+    installer = FakeInstaller(RuntimeRequirementKind.OLLAMA)
+    manager = RuntimeInstallationManager(
+        settings=Settings(data_dir=tmp_path, api_token="test-token"),
+        llm_provider=object(),
+        ocr_provider=FakeOcrProvider(),
+        installers=[installer],
+        async_jobs=False,
+    )
+    client = TestClient(
+        create_app(
+            settings=Settings(data_dir=tmp_path, api_token="test-token"),
+            runtime_installation_manager=manager,
+        )
+    )
+
+    response = client.get("/runtime/requirements", headers=AUTH_HEADERS)
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["kind"] == "ollama"
+    assert installer.install_calls == 0
+
+
+def test_runtime_installation_starts_only_from_post(tmp_path: Path) -> None:
+    installer = FakeInstaller(RuntimeRequirementKind.OLLAMA_MODEL)
+    manager = RuntimeInstallationManager(
+        settings=Settings(data_dir=tmp_path, api_token="test-token"),
+        llm_provider=object(),
+        ocr_provider=FakeOcrProvider(),
+        installers=[installer],
+        async_jobs=False,
+    )
+    client = TestClient(
+        create_app(
+            settings=Settings(data_dir=tmp_path, api_token="test-token"),
+            runtime_installation_manager=manager,
+        )
+    )
+
+    response = client.post("/runtime/installations/ollama_model", headers=AUTH_HEADERS)
+
+    assert response.status_code == 202
+    assert response.json()["status"] == "succeeded"
+    assert response.json()["completed"] == 100
+    assert installer.install_calls == 1
+
+
+def test_paddle_runtime_install_rejects_checksum_mismatch(tmp_path: Path) -> None:
+    artifact_path = tmp_path / "exam-prep-ocr-runtime-x86_64-pc-windows-msvc.zip"
+    with ZipFile(artifact_path, "w") as archive:
+        archive.writestr("exam-prep-ocr-runtime.cmd", "@echo off\r\nexit /b 0\r\n")
+    manifest_path = tmp_path / "ocr-runtime-manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "version": "0.1.0",
+                "target": "x86_64-pc-windows-msvc",
+                "entrypoint": "exam-prep-ocr-runtime.cmd",
+                "artifact": {
+                    "file_name": artifact_path.name,
+                    "sha256": "0" * 64,
+                    "bytes": artifact_path.stat().st_size,
+                    "url": None,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    settings = Settings(
+        data_dir=tmp_path,
+        api_token="test-token",
+        ocr_runtime_manifest_path=manifest_path,
+    )
+    manager = RuntimeInstallationManager(
+        settings=settings,
+        llm_provider=object(),
+        ocr_provider=FakeOcrProvider(),
+        installers=[PaddleOcrRuntimeInstaller(settings, FakeOcrProvider())],
+        async_jobs=False,
+    )
+
+    response = manager.start_installation(RuntimeRequirementKind.PADDLE_OCR)
+
+    assert response.status == RuntimeInstallationStatus.FAILED
+    assert response.error == "OCR runtime artifact checksum mismatch."
+
+
+@dataclass
+class FakeInstaller:
+    kind: RuntimeRequirementKind
+    install_calls: int = 0
+    provider: str = "test-runtime"
+    model: str = ""
+
+    def requirement(self) -> RuntimeRequirementSnapshot:
+        return RuntimeRequirementSnapshot(
+            kind=self.kind,
+            label=self.kind.value,
+            available=False,
+            detail=f"{self.kind.value} missing",
+            unavailable_reason=f"{self.kind.value}_missing",
+        )
+
+    def install(self, progress) -> RuntimeInstallationStatus:
+        self.install_calls += 1
+        progress(RuntimeInstallProgress("halfway", completed=50, total=100))
+        progress(RuntimeInstallProgress("done", completed=100, total=100))
+        return RuntimeInstallationStatus.SUCCEEDED
+
+
+class FakeOcrProvider:
+    provider = "paddle"
+    engine = "paddleocr"
+
+    def health(self) -> OCRHealth:
+        return OCRHealth(
+            provider=self.provider,
+            engine=self.engine,
+            available=False,
+            detail="PaddleOCR runtime is not installed.",
+            python_version="3.13.5",
+            paddle_version=None,
+            paddleocr_version=None,
+            selected_device=None,
+            cuda_available=False,
+            gpu_count=0,
+            model_cache_dir=None,
+            fallback_reason=None,
+            unavailable_reason="paddle_runtime_missing",
+        )
+
+    def extract_page_text(self, image_png: bytes, page_number: int) -> OCRPageResult:
+        raise AssertionError("OCR should not run in runtime installation tests.")

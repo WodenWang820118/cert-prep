@@ -11,6 +11,18 @@ SIDECAR_ENTRY = BACKEND_ROOT / "src" / "exam_prep_backend" / "sidecar.py"
 DIST_DIR = BACKEND_ROOT / "dist"
 BUILD_DIR = BACKEND_ROOT / "build"
 EXE_PATH = DIST_DIR / "exam-prep-backend.exe"
+LITE_EXCLUDES = [
+    "cv2",
+    "modelscope",
+    "paddle",
+    "paddleocr",
+    "paddlex",
+    "pandas",
+    "shapely",
+    "exam_prep_backend.domains.source_documents.adapters.diagnostics",
+    "exam_prep_backend.domains.source_documents.adapters.paddle",
+    "exam_prep_backend.domains.source_documents.adapters.paddle_runtime",
+]
 
 COMMON_COLLECT_ALL = ["paddle", "paddleocr", "paddlex"]
 COMMON_METADATA = ["paddleocr", "paddlex"]
@@ -30,11 +42,10 @@ LANE_METADATA = {
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--lane", choices=sorted(LANE_METADATA), required=True)
+    parser.add_argument("--lane", choices=["lite", *sorted(LANE_METADATA)], default="lite")
     args = parser.parse_args()
 
     _run(_pyinstaller_command(args.lane))
-    _run([str(EXE_PATH), "--ocr-self-test"])
 
 
 def _pyinstaller_command(lane: str) -> list[str]:
@@ -56,9 +67,14 @@ def _pyinstaller_command(lane: str) -> list[str]:
         str(BUILD_DIR),
     ]
     for package_name in COMMON_COLLECT_ALL:
-        command.extend(["--collect-all", package_name])
-    for distribution_name in [LANE_METADATA[lane], *COMMON_METADATA, *OCR_CORE_METADATA]:
-        command.extend(["--copy-metadata", distribution_name])
+        if lane != "lite":
+            command.extend(["--collect-all", package_name])
+    if lane == "lite":
+        for module_name in LITE_EXCLUDES:
+            command.extend(["--exclude-module", module_name])
+    else:
+        for distribution_name in [LANE_METADATA[lane], *COMMON_METADATA, *OCR_CORE_METADATA]:
+            command.extend(["--copy-metadata", distribution_name])
     return command
 
 

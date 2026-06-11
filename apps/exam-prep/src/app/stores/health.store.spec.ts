@@ -1,13 +1,21 @@
 import { TestBed } from '@angular/core/testing';
-import { EXAM_PREP_API, LLMHealthRead, ModelDownloadRead } from '../exam-prep-api';
+import {
+  EXAM_PREP_API,
+  LLMHealthRead,
+  ModelDownloadRead,
+  RuntimeInstallationRead,
+} from '../exam-prep-api';
 import { HealthStore } from './health.store';
 
 describe('HealthStore model downloads', () => {
   const apiClient = {
     llmHealth: vi.fn(),
     ocrHealth: vi.fn(),
+    runtimeRequirements: vi.fn(),
     startModelDownload: vi.fn(),
     getModelDownload: vi.fn(),
+    startRuntimeInstallation: vi.fn(),
+    getRuntimeInstallation: vi.fn(),
   };
 
   beforeEach(() => {
@@ -27,7 +35,9 @@ describe('HealthStore model downloads', () => {
       gpu_count: 0,
       model_cache_dir: null,
       fallback_reason: 'cuda_unavailable',
+      unavailable_reason: null,
     });
+    apiClient.runtimeRequirements.mockResolvedValue({ items: [] });
     TestBed.configureTestingModule({
       providers: [{ provide: EXAM_PREP_API, useValue: apiClient }],
     });
@@ -88,6 +98,46 @@ describe('HealthStore model downloads', () => {
     expect(store.modelDownloadConsentVisible()).toBe(false);
     expect(apiClient.startModelDownload).not.toHaveBeenCalled();
   });
+
+  it('starts and polls a runtime installation after confirmation', async () => {
+    const store = TestBed.inject(HealthStore);
+    apiClient.llmHealth.mockResolvedValue(
+      llmHealth({
+        available: false,
+        detail: 'Ollama is not installed.',
+        unavailable_reason: 'ollama_missing',
+      }),
+    );
+    apiClient.startRuntimeInstallation.mockResolvedValue(
+      runtimeInstallation({
+        status: 'running',
+        detail: 'Installing Ollama',
+        completed: 10,
+      }),
+    );
+    apiClient.getRuntimeInstallation.mockResolvedValue(
+      runtimeInstallation({
+        status: 'succeeded',
+        detail: 'Ollama installation completed',
+        completed: 100,
+      }),
+    );
+    await store.load();
+
+    store.openOllamaInstallConsent();
+    await store.confirmRuntimeInstallation();
+
+    expect(apiClient.startRuntimeInstallation).toHaveBeenCalledWith('ollama');
+    expect(store.runtimeInstallConsentVisible()).toBe(false);
+    expect(store.runtimeInstall()?.phase).toBe('running');
+    expect(store.runtimeInstall()?.progress).toBe(10);
+
+    await vi.advanceTimersByTimeAsync(1500);
+
+    expect(apiClient.getRuntimeInstallation).toHaveBeenCalledWith('runtime-1');
+    expect(store.runtimeInstall()?.phase).toBe('succeeded');
+    expect(store.runtimeInstall()?.progress).toBe(100);
+  });
 });
 
 function llmHealth(overrides: Partial<LLMHealthRead> = {}): LLMHealthRead {
@@ -96,6 +146,7 @@ function llmHealth(overrides: Partial<LLMHealthRead> = {}): LLMHealthRead {
     model: 'gemma4:12b',
     available: false,
     detail: 'model not found',
+    unavailable_reason: 'model_missing',
     ...overrides,
   };
 }
@@ -110,6 +161,24 @@ function modelDownload(
     status: 'running',
     detail: 'downloading',
     completed: 25,
+    total: 100,
+    created_at: '2026-06-11T00:00:00Z',
+    updated_at: '2026-06-11T00:00:00Z',
+    ...overrides,
+  };
+}
+
+function runtimeInstallation(
+  overrides: Partial<RuntimeInstallationRead> = {},
+): RuntimeInstallationRead {
+  return {
+    id: 'runtime-1',
+    kind: 'ollama',
+    provider: 'ollama',
+    model: 'ollama',
+    status: 'running',
+    detail: 'installing',
+    completed: 10,
     total: 100,
     created_at: '2026-06-11T00:00:00Z',
     updated_at: '2026-06-11T00:00:00Z',

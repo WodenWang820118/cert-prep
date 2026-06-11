@@ -16,3 +16,4 @@ class OCRHealthRead(BaseModel):
     gpu_count: int
     model_cache_dir: str | None
     fallback_reason: str | None
+    unavailable_reason: str | None = None

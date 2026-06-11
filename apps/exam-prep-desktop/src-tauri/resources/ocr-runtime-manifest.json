@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "kind": "paddle_ocr",
+  "version": "0.1.0",
+  "target": "x86_64-pc-windows-msvc",
+  "entrypoint": "exam-prep-ocr-runtime.exe",
+  "artifact": {
+    "file_name": "exam-prep-ocr-runtime-x86_64-pc-windows-msvc.zip",
+    "sha256": "f1c27a61c4bd13dd10567d8b8ca712360d18ae416990c335b17a281596134f42",
+    "bytes": 663364398,
+    "url": null
+  }
+}

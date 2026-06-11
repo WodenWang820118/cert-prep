@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from exam_prep_backend.domains.mock_exams.downloads import ModelDownloadStatus
 from exam_prep_backend.domains.mock_exams.models import (
     AnswerKeySource,
     AnswerKeySourceValue,
@@ -63,6 +62,7 @@ class LLMHealthRead(BaseModel):
     model: str
     available: bool
     detail: str
+    unavailable_reason: str | None = None
 
 
 class ModelDownloadRead(BaseModel):
@@ -71,9 +71,10 @@ class ModelDownloadRead(BaseModel):
     id: str
     provider: str
     model: str
-    status: ModelDownloadStatus
+    status: str
     detail: str
     completed: int | None
     total: int | None
     created_at: str
     updated_at: str
+    error: str | None = None

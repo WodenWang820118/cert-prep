@@ -17,10 +17,15 @@ const DEFAULT_OUTPUT = 'tmp/exam-prep-desktop/package-qa/package-qa.json';
 const DEFAULT_BUNDLE_ROOT =
   `apps/exam-prep-desktop/src-tauri/target/${DEFAULT_TARGET_TRIPLE}/release/bundle`;
 const DEFAULT_SIDECAR_DIR = 'apps/exam-prep-desktop/src-tauri/binaries';
+const DEFAULT_OCR_RUNTIME_ROOT = 'apps/exam-prep-backend/dist/ocr-runtime';
+const DEFAULT_OCR_RUNTIME_MANIFEST =
+  'apps/exam-prep-desktop/src-tauri/resources/ocr-runtime-manifest.json';
 const DEFAULT_DATA_DIR = 'tmp/exam-prep-desktop/package-qa/data';
 const DEFAULT_LLM_MODEL = 'gemma4:12b';
 const SIDECAR_PREFIX = 'exam-prep-backend-';
 const CAPTURE_LIMIT = 12_000;
+const INITIAL_INSTALLER_WARNING_MB = 150;
+const INITIAL_INSTALLER_ERROR_MB = 250;
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const defaultWorkspaceRoot = resolve(scriptDir, '../../..');
@@ -29,6 +34,14 @@ export async function createPackageQaReport(options = {}) {
   const workspaceRoot = resolve(options.workspaceRoot ?? defaultWorkspaceRoot);
   const bundleRoot = resolve(workspaceRoot, options.bundleRoot ?? DEFAULT_BUNDLE_ROOT);
   const sidecarDir = resolve(workspaceRoot, options.sidecarDir ?? DEFAULT_SIDECAR_DIR);
+  const ocrRuntimeRoot = resolve(
+    workspaceRoot,
+    options.ocrRuntimeRoot ?? DEFAULT_OCR_RUNTIME_ROOT
+  );
+  const ocrRuntimeManifest = resolve(
+    workspaceRoot,
+    options.ocrRuntimeManifest ?? DEFAULT_OCR_RUNTIME_MANIFEST
+  );
   const expectedTargetTriple =
     options.expectedTargetTriple ?? DEFAULT_TARGET_TRIPLE;
 
@@ -52,7 +65,13 @@ export async function createPackageQaReport(options = {}) {
     timeoutMs: options.healthTimeoutMs,
     dataDir: resolve(workspaceRoot, options.dataDir ?? DEFAULT_DATA_DIR),
     llmModel: options.llmModel ?? DEFAULT_LLM_MODEL,
+    ocrRuntimeManifest,
   });
+  const ocrRuntimeArtifacts = collectOcrRuntimeArtifacts(ocrRuntimeRoot, workspaceRoot);
+  const sizeGate = initialInstallerSizeGate(bundleArtifacts, sidecar);
+  if (sizeGate.status === 'failed') {
+    throw new Error(sizeGate.detail);
+  }
 
   return {
     schema_version: 1,
@@ -66,6 +85,9 @@ export async function createPackageQaReport(options = {}) {
       bundle_root: normalizePath(relative(workspaceRoot, bundleRoot)),
       bundle_artifacts: bundleArtifacts.map(publicFileRecord),
       sidecar: publicFileRecord(sidecar),
+      ocr_runtime_root: normalizePath(relative(workspaceRoot, ocrRuntimeRoot)),
+      ocr_runtime_artifacts: ocrRuntimeArtifacts.map(publicFileRecord),
+      size_gate: sizeGate,
     },
     runtime,
   };
@@ -85,6 +107,16 @@ export function collectSidecars(sidecarDir, workspaceRoot = defaultWorkspaceRoot
   return collectFiles(sidecarDir, workspaceRoot).filter(record =>
     isSidecarName(basename(record.absolutePath))
   );
+}
+
+export function collectOcrRuntimeArtifacts(
+  ocrRuntimeRoot,
+  workspaceRoot = defaultWorkspaceRoot
+) {
+  if (!existsSync(ocrRuntimeRoot)) {
+    return [];
+  }
+  return collectFiles(ocrRuntimeRoot, workspaceRoot);
 }
 
 export function resolveSingleSidecar(sidecars) {
@@ -115,6 +147,7 @@ export function summarizeOcrHealth(health) {
     cuda_available: health.cuda_available ?? null,
     gpu_count: health.gpu_count ?? null,
     fallback_reason: health.fallback_reason ?? null,
+    unavailable_reason: health.unavailable_reason ?? null,
   };
 }
 
@@ -124,6 +157,7 @@ export function summarizeLlmHealth(health) {
     model: health.model ?? null,
     available: health.available ?? null,
     detail: health.detail ?? null,
+    unavailable_reason: health.unavailable_reason ?? null,
   };
 }
 
@@ -137,6 +171,7 @@ export async function collectRuntimeHealth({
   timeoutMs = 120_000,
   dataDir = resolve(workspaceRoot, DEFAULT_DATA_DIR),
   llmModel = DEFAULT_LLM_MODEL,
+  ocrRuntimeManifest = resolve(workspaceRoot, DEFAULT_OCR_RUNTIME_MANIFEST),
 } = {}) {
   const port = await reserveLoopbackPort();
   const token = `package-qa-${process.pid}-${Date.now()}`;
@@ -156,6 +191,8 @@ export async function collectRuntimeHealth({
       EXAM_PREP_DATA_DIR: dataDir,
       EXAM_PREP_LLM_PROVIDER: 'ollama',
       EXAM_PREP_OCR_PROVIDER: 'paddle',
+      EXAM_PREP_OCR_RUNTIME_MODE: 'external',
+      EXAM_PREP_OCR_RUNTIME_MANIFEST_PATH: ocrRuntimeManifest,
       EXAM_PREP_OCR_DEVICE: 'auto',
       EXAM_PREP_OLLAMA_MODEL: llmModel,
       PYTHONIOENCODING: 'utf-8',
@@ -184,6 +221,7 @@ export async function collectRuntimeHealth({
     return {
       launch_env: {
         EXAM_PREP_OCR_PROVIDER: 'paddle',
+        EXAM_PREP_OCR_RUNTIME_MODE: 'external',
         EXAM_PREP_OCR_DEVICE: 'auto',
         EXAM_PREP_LLM_PROVIDER: 'ollama',
         EXAM_PREP_OLLAMA_MODEL: llmModel,
@@ -200,6 +238,40 @@ export async function collectRuntimeHealth({
   } finally {
     await stopChild(child, state);
   }
+}
+
+export function initialInstallerSizeGate(bundleArtifacts, sidecar) {
+  const largestInitialMb = Math.max(
+    sidecar.mb,
+    ...bundleArtifacts.map(artifact => artifact.mb)
+  );
+  if (largestInitialMb > INITIAL_INSTALLER_ERROR_MB) {
+    return {
+      status: 'failed',
+      largest_initial_mb: largestInitialMb,
+      warning_mb: INITIAL_INSTALLER_WARNING_MB,
+      error_mb: INITIAL_INSTALLER_ERROR_MB,
+      detail:
+        `Initial package is ${largestInitialMb} MB, above the ${INITIAL_INSTALLER_ERROR_MB} MB limit.`,
+    };
+  }
+  if (largestInitialMb > INITIAL_INSTALLER_WARNING_MB) {
+    return {
+      status: 'warning',
+      largest_initial_mb: largestInitialMb,
+      warning_mb: INITIAL_INSTALLER_WARNING_MB,
+      error_mb: INITIAL_INSTALLER_ERROR_MB,
+      detail:
+        `Initial package is ${largestInitialMb} MB, above the ${INITIAL_INSTALLER_WARNING_MB} MB warning threshold.`,
+    };
+  }
+  return {
+    status: 'passed',
+    largest_initial_mb: largestInitialMb,
+    warning_mb: INITIAL_INSTALLER_WARNING_MB,
+    error_mb: INITIAL_INSTALLER_ERROR_MB,
+    detail: 'Initial package size is within the configured gate.',
+  };
 }
 
 export function writeReport(report, outputPath) {
@@ -340,6 +412,10 @@ function parseArgs(args) {
       parsed.bundleRoot = readValue(arg);
     } else if (arg === '--sidecar-dir') {
       parsed.sidecarDir = readValue(arg);
+    } else if (arg === '--ocr-runtime-root') {
+      parsed.ocrRuntimeRoot = readValue(arg);
+    } else if (arg === '--ocr-runtime-manifest') {
+      parsed.ocrRuntimeManifest = readValue(arg);
     } else if (arg === '--target') {
       parsed.expectedTargetTriple = readValue(arg);
     } else if (arg === '--health-timeout-ms') {

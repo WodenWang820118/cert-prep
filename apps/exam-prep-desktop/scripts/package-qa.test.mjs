@@ -7,7 +7,9 @@ import { afterEach, test } from 'node:test';
 import {
   bytesToMb,
   collectBundleArtifacts,
+  collectOcrRuntimeArtifacts,
   collectSidecars,
+  initialInstallerSizeGate,
   resolveSingleSidecar,
   summarizeLlmHealth,
   summarizeOcrHealth,
@@ -20,6 +22,24 @@ afterEach(() => {
   while (tempRoots.length > 0) {
     rmSync(tempRoots.pop(), { recursive: true, force: true });
   }
+});
+
+test('collectOcrRuntimeArtifacts records optional OCR runtime zip and manifest', () => {
+  const workspaceRoot = makeTempWorkspace();
+  const runtimeRoot = join(workspaceRoot, 'apps/exam-prep-backend/dist/ocr-runtime');
+  mkdirSync(runtimeRoot, { recursive: true });
+  writeFileSync(join(runtimeRoot, 'exam-prep-ocr-runtime-x86_64-pc-windows-msvc.zip'), 'zip');
+  writeFileSync(join(runtimeRoot, 'ocr-runtime-manifest.json'), '{}');
+
+  const artifacts = collectOcrRuntimeArtifacts(runtimeRoot, workspaceRoot);
+
+  assert.deepEqual(
+    artifacts.map(artifact => artifact.path),
+    [
+      'apps/exam-prep-backend/dist/ocr-runtime/exam-prep-ocr-runtime-x86_64-pc-windows-msvc.zip',
+      'apps/exam-prep-backend/dist/ocr-runtime/ocr-runtime-manifest.json',
+    ]
+  );
 });
 
 test('collectBundleArtifacts records sorted relative paths and sizes', () => {
@@ -114,6 +134,7 @@ test('health summaries keep OCR fallback and LLM model state', () => {
       cuda_available: false,
       gpu_count: 0,
       fallback_reason: 'cuda_unavailable',
+      unavailable_reason: null,
     }
   );
 
@@ -130,7 +151,23 @@ test('health summaries keep OCR fallback and LLM model state', () => {
       model: 'gemma4:12b',
       available: false,
       detail: 'model not found',
+      unavailable_reason: null,
     }
+  );
+});
+
+test('initialInstallerSizeGate warns and fails at configured thresholds', () => {
+  assert.equal(
+    initialInstallerSizeGate([{ mb: 100 }], { mb: 90 }).status,
+    'passed'
+  );
+  assert.equal(
+    initialInstallerSizeGate([{ mb: 180 }], { mb: 90 }).status,
+    'warning'
+  );
+  assert.equal(
+    initialInstallerSizeGate([{ mb: 300 }], { mb: 90 }).status,
+    'failed'
   );
 });
 

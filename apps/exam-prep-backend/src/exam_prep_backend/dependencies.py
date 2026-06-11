@@ -8,8 +8,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from exam_prep_backend.config import Settings
 from exam_prep_backend.database import Database
 from exam_prep_backend.errors import api_error
-from exam_prep_backend.domains.mock_exams.downloads import ModelDownloadManager
 from exam_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
+from exam_prep_backend.domains.runtime_installations import RuntimeInstallationManager
 from exam_prep_backend.domains.source_documents.ocr import OCRProvider
 
 
@@ -28,8 +28,8 @@ def get_llm_provider(request: Request) -> LLMProvider:
     return request.app.state.llm_provider
 
 
-def get_model_download_manager(request: Request) -> ModelDownloadManager:
-    return request.app.state.model_download_manager
+def get_runtime_installation_manager(request: Request) -> RuntimeInstallationManager:
+    return request.app.state.runtime_installation_manager
 
 
 def get_ocr_provider(request: Request) -> OCRProvider:

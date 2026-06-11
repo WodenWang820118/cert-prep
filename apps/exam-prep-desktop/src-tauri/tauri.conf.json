@@ -28,6 +28,7 @@
     "active": true,
     "targets": "all",
     "icon": ["icons/icon.ico"],
+    "resources": ["resources/ocr-runtime-manifest.json"],
     "externalBin": ["binaries/exam-prep-backend"]
   }
 }

@@ -7,6 +7,7 @@ from typing import Any
 import ollama
 
 from exam_prep_backend.config import Settings
+from exam_prep_backend.domains.runtime_installations import resolve_ollama_executable
 from exam_prep_backend.domains.mock_exams.models import (
     AnswerKeySource,
     DraftSuggestion,
@@ -65,6 +66,14 @@ class OllamaProvider:
         self._client = ollama.Client(host=host, timeout=timeout_seconds)
 
     def health(self) -> ProviderHealth:
+        if resolve_ollama_executable() is None:
+            return ProviderHealth(
+                provider=self.provider,
+                model=self.model,
+                available=False,
+                detail="Ollama is not installed.",
+                unavailable_reason="ollama_missing",
+            )
         try:
             response = self._client.list()
         except Exception as exc:
@@ -73,6 +82,7 @@ class OllamaProvider:
                 model=self.model,
                 available=False,
                 detail=f"Ollama unavailable: {exc}",
+                unavailable_reason="ollama_not_running",
             )
 
         model_names = _extract_model_names(response)
@@ -83,6 +93,7 @@ class OllamaProvider:
             model=self.model,
             available=available,
             detail=detail,
+            unavailable_reason=None if available else "model_missing",
         )
 
     def generate_drafts(self, chunks: Sequence[SourceChunk], limit: int) -> list[DraftSuggestion]:

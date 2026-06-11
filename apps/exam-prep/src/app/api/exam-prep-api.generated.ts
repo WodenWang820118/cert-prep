@@ -13,10 +13,9 @@ export interface Components {
     DraftStatus: string;
     HTTPValidationError: { "detail"?: Components['schemas']['ValidationError'][] };
     HealthResponse: { "status": string; "app": string; "version": string };
-    LLMHealthRead: { "provider": string; "model": string; "available": boolean; "detail": string };
-    ModelDownloadRead: { "id": string; "provider": string; "model": string; "status": Components['schemas']['ModelDownloadStatus']; "detail": string; "completed": number | null; "total": number | null; "created_at": string; "updated_at": string };
-    ModelDownloadStatus: string;
-    OCRHealthRead: { "provider": string; "engine": string; "available": boolean; "detail": string; "python_version": string; "paddle_version": string | null; "paddleocr_version": string | null; "selected_device": string | null; "cuda_available": boolean; "gpu_count": number; "model_cache_dir": string | null; "fallback_reason": string | null };
+    LLMHealthRead: { "provider": string; "model": string; "available": boolean; "detail": string; "unavailable_reason"?: string | null };
+    ModelDownloadRead: { "id": string; "provider": string; "model": string; "status": string; "detail": string; "completed": number | null; "total": number | null; "created_at": string; "updated_at": string; "error"?: string | null };
+    OCRHealthRead: { "provider": string; "engine": string; "available": boolean; "detail": string; "python_version": string; "paddle_version": string | null; "paddleocr_version": string | null; "selected_device": string | null; "cuda_available": boolean; "gpu_count": number; "model_cache_dir": string | null; "fallback_reason": string | null; "unavailable_reason"?: string | null };
     PdfExtractionMethod: string;
     PracticeAttemptCreate: { "question_id": string; "selected_answer": string };
     PracticeAttemptRead: { "id": string; "session_id": string; "project_id": string; "question_id": string; "selected_answer": string; "is_correct": boolean; "created_at": string };
@@ -30,6 +29,11 @@ export interface Components {
     QuestionDraftList: { "items": Components['schemas']['QuestionDraftRead'][] };
     QuestionDraftRead: { "id": string; "project_id": string; "document_id": string | null; "chunk_id": string | null; "question": string; "choices": string[]; "answer": string | null; "answer_key_source": Components['schemas']['AnswerKeySource'] | string; "rationale": string | null; "citation_page": number | null; "source_excerpt": string | null; "status": Components['schemas']['DraftStatus'] | string; "rejection_reason": string | null; "created_at": string; "updated_at": string };
     QuestionDraftUpdate: { "question"?: string | null; "choices"?: string[] | null; "answer"?: string | null; "answer_key_source"?: Components['schemas']['AnswerKeySource'] | string | null; "rationale"?: string | null; "citation_page"?: number | null; "source_excerpt"?: string | null };
+    RuntimeInstallationRead: { "id": string; "kind": Components['schemas']['RuntimeRequirementKind']; "provider": string; "model": string; "status": Components['schemas']['RuntimeInstallationStatus']; "detail": string; "completed": number | null; "total": number | null; "created_at": string; "updated_at": string; "error"?: string | null };
+    RuntimeInstallationStatus: string;
+    RuntimeRequirementKind: string;
+    RuntimeRequirementRead: { "kind": Components['schemas']['RuntimeRequirementKind']; "label": string; "available": boolean; "detail": string; "unavailable_reason": string | null; "version"?: string | null; "bytes"?: number | null; "installed_path"?: string | null };
+    RuntimeRequirementsRead: { "items": Components['schemas']['RuntimeRequirementRead'][] };
     SourceDocumentStatus: string;
     ValidationError: { "loc": (string | number)[]; "msg": string; "type": string; "input"?: unknown; "ctx"?: Record<string, unknown> };
     WrongAnswerList: { "items": Components['schemas']['WrongAnswerRead'][] };
@@ -48,7 +52,6 @@ export type HTTPValidationError = Components['schemas']['HTTPValidationError'];
 export type HealthResponse = Components['schemas']['HealthResponse'];
 export type LLMHealthRead = Components['schemas']['LLMHealthRead'];
 export type ModelDownloadRead = Components['schemas']['ModelDownloadRead'];
-export type ModelDownloadStatus = Components['schemas']['ModelDownloadStatus'];
 export type OCRHealthRead = Components['schemas']['OCRHealthRead'];
 export type PdfExtractionMethod = Components['schemas']['PdfExtractionMethod'];
 export type PracticeAttemptCreate = Components['schemas']['PracticeAttemptCreate'];
@@ -63,6 +66,11 @@ export type QuestionDraftCreate = Components['schemas']['QuestionDraftCreate'];
 export type QuestionDraftList = Components['schemas']['QuestionDraftList'];
 export type QuestionDraftRead = Components['schemas']['QuestionDraftRead'];
 export type QuestionDraftUpdate = Components['schemas']['QuestionDraftUpdate'];
+export type RuntimeInstallationRead = Components['schemas']['RuntimeInstallationRead'];
+export type RuntimeInstallationStatus = Components['schemas']['RuntimeInstallationStatus'];
+export type RuntimeRequirementKind = Components['schemas']['RuntimeRequirementKind'];
+export type RuntimeRequirementRead = Components['schemas']['RuntimeRequirementRead'];
+export type RuntimeRequirementsRead = Components['schemas']['RuntimeRequirementsRead'];
 export type SourceDocumentStatus = Components['schemas']['SourceDocumentStatus'];
 export type ValidationError = Components['schemas']['ValidationError'];
 export type WrongAnswerList = Components['schemas']['WrongAnswerList'];
@@ -102,6 +110,9 @@ export interface ExamPrepGeneratedClient {
   startModelDownload(): Promise<Components['schemas']['ModelDownloadRead']>;
   getModelDownload(jobId: string): Promise<Components['schemas']['ModelDownloadRead']>;
   ocrHealth(): Promise<Components['schemas']['OCRHealthRead']>;
+  runtimeRequirements(): Promise<Components['schemas']['RuntimeRequirementsRead']>;
+  startRuntimeInstallation(kind: string): Promise<Components['schemas']['RuntimeInstallationRead']>;
+  getRuntimeInstallation(jobId: string): Promise<Components['schemas']['RuntimeInstallationRead']>;
 }
 
 export function createExamPrepGeneratedClient(
@@ -150,5 +161,11 @@ export function createExamPrepGeneratedClient(
       transport.request<Components['schemas']['ModelDownloadRead']>({ method: 'GET' as const, path: `/llm/model-downloads/${encodeURIComponent(jobId)}` }),
     ocrHealth: () =>
       transport.request<Components['schemas']['OCRHealthRead']>({ method: 'GET' as const, path: "/ocr/health" }),
+    runtimeRequirements: () =>
+      transport.request<Components['schemas']['RuntimeRequirementsRead']>({ method: 'GET' as const, path: "/runtime/requirements" }),
+    startRuntimeInstallation: (kind: string) =>
+      transport.request<Components['schemas']['RuntimeInstallationRead']>({ method: 'POST' as const, path: `/runtime/installations/${encodeURIComponent(kind)}` }),
+    getRuntimeInstallation: (jobId: string) =>
+      transport.request<Components['schemas']['RuntimeInstallationRead']>({ method: 'GET' as const, path: `/runtime/installations/${encodeURIComponent(jobId)}` }),
   };
 }

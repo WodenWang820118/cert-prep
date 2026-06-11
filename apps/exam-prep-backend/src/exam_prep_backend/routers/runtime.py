@@ -2,34 +2,39 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, status
 
-from exam_prep_backend.dependencies import get_llm_provider, get_runtime_installation_manager
-from exam_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
-from exam_prep_backend.domains.mock_exams.schemas import LLMHealthRead, ModelDownloadRead
+from exam_prep_backend.dependencies import get_runtime_installation_manager
 from exam_prep_backend.domains.runtime_installations import (
     RuntimeInstallationManager,
     RuntimeRequirementKind,
 )
+from exam_prep_backend.domains.runtime_schemas import (
+    RuntimeInstallationRead,
+    RuntimeRequirementsRead,
+)
 from exam_prep_backend.errors import ProviderUnavailableError, api_error, not_found_error
 
 
-router = APIRouter(prefix="/llm", tags=["llm"])
+router = APIRouter(prefix="/runtime", tags=["runtime"])
 
 
-@router.get("/health", response_model=LLMHealthRead)
-def llm_health(provider: LLMProvider = Depends(get_llm_provider)):
-    return provider.health()
+@router.get("/requirements", response_model=RuntimeRequirementsRead)
+def runtime_requirements(
+    manager: RuntimeInstallationManager = Depends(get_runtime_installation_manager),
+):
+    return {"items": manager.requirements()}
 
 
 @router.post(
-    "/model-downloads",
-    response_model=ModelDownloadRead,
+    "/installations/{kind}",
+    response_model=RuntimeInstallationRead,
     status_code=status.HTTP_202_ACCEPTED,
 )
-def start_model_download(
+def start_runtime_installation(
+    kind: RuntimeRequirementKind,
     manager: RuntimeInstallationManager = Depends(get_runtime_installation_manager),
 ):
     try:
-        return manager.start_installation(RuntimeRequirementKind.OLLAMA_MODEL)
+        return manager.start_installation(kind)
     except ProviderUnavailableError as exc:
         raise api_error(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -38,12 +43,12 @@ def start_model_download(
         ) from exc
 
 
-@router.get("/model-downloads/{job_id}", response_model=ModelDownloadRead)
-def get_model_download(
+@router.get("/installations/{job_id}", response_model=RuntimeInstallationRead)
+def get_runtime_installation(
     job_id: str,
     manager: RuntimeInstallationManager = Depends(get_runtime_installation_manager),
 ):
     try:
         return manager.get_installation(job_id)
     except KeyError as exc:
-        raise not_found_error("Model download job was not found.") from exc
+        raise not_found_error("Runtime installation job was not found.") from exc

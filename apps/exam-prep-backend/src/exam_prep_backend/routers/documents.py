@@ -23,6 +23,7 @@ from exam_prep_backend.errors import (
     InvalidPdfError,
     NotFoundError,
     ProviderUnavailableError,
+    api_error,
     not_found_error,
     validation_error,
 )
@@ -78,6 +79,12 @@ async def upload_document(
         raise validation_error(str(exc)) from exc
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
+    except ProviderUnavailableError as exc:
+        raise api_error(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            code="paddle_runtime_missing",
+            message=str(exc),
+        ) from exc
 
 
 @router.get("/{document_id}/chunks", response_model=ChunkList)

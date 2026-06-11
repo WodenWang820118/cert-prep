@@ -61,6 +61,7 @@ def test_llm_health_uses_fake_provider_without_network(client: TestClient, auth_
         "model": "gemma4:12b",
         "available": True,
         "detail": "deterministic local fake provider",
+        "unavailable_reason": None,
     }
 
 
@@ -83,4 +84,5 @@ def test_ocr_health_uses_fake_provider_without_native_dependencies(
         "gpu_count": 0,
         "model_cache_dir": None,
         "fallback_reason": None,
+        "unavailable_reason": None,
     }

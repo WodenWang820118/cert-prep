@@ -6,6 +6,7 @@ use std::{
 };
 
 use serde::Serialize;
+use tauri::path::BaseDirectory;
 use tauri::{Manager, Runtime};
 use tauri_plugin_shell::{process::CommandChild, ShellExt};
 
@@ -85,7 +86,7 @@ fn launch_backend_sidecar<R: Runtime>(app: &tauri::App<R>) -> Result<BackendStat
     std::fs::create_dir_all(&data_dir)
         .map_err(|error| format!("failed to create app data directory: {error}"))?;
 
-    let (_events, child) = app
+    let command = app
         .shell()
         .sidecar("exam-prep-backend")
         .map_err(|error| format!("failed to create backend sidecar command: {error}"))?
@@ -95,8 +96,17 @@ fn launch_backend_sidecar<R: Runtime>(app: &tauri::App<R>) -> Result<BackendStat
         .env("EXAM_PREP_DATA_DIR", data_dir.to_string_lossy().to_string())
         .env("EXAM_PREP_LLM_PROVIDER", "ollama")
         .env("EXAM_PREP_OCR_PROVIDER", "paddle")
+        .env("EXAM_PREP_OCR_RUNTIME_MODE", "external")
         .env("EXAM_PREP_OCR_DEVICE", "auto")
-        .env("EXAM_PREP_OLLAMA_MODEL", "gemma4:12b")
+        .env("EXAM_PREP_OLLAMA_MODEL", "gemma4:12b");
+
+    let command = if let Some(manifest_path) = ocr_runtime_manifest_path(app) {
+        command.env("EXAM_PREP_OCR_RUNTIME_MANIFEST_PATH", manifest_path)
+    } else {
+        command
+    };
+
+    let (_events, child) = command
         .spawn()
         .map_err(|error| format!("failed to launch backend sidecar: {error}"))?;
 
@@ -113,6 +123,24 @@ fn launch_backend_sidecar<R: Runtime>(app: &tauri::App<R>) -> Result<BackendStat
 
 fn sidecar_host() -> &'static str {
     "127.0.0.1"
+}
+
+fn ocr_runtime_manifest_path<R: Runtime>(app: &tauri::App<R>) -> Option<String> {
+    for candidate in ocr_runtime_manifest_resource_candidates() {
+        if let Ok(path) = app.path().resolve(candidate, BaseDirectory::Resource) {
+            if path.is_file() {
+                return Some(path.to_string_lossy().to_string());
+            }
+        }
+    }
+    None
+}
+
+fn ocr_runtime_manifest_resource_candidates() -> [&'static str; 2] {
+    [
+        "ocr-runtime-manifest.json",
+        "resources/ocr-runtime-manifest.json",
+    ]
 }
 
 fn external_backend_env() -> Option<BackendConfig> {
@@ -192,5 +220,16 @@ mod tests {
 
         std::env::remove_var("EXAM_PREP_BACKEND_URL");
         std::env::remove_var("EXAM_PREP_BACKEND_TOKEN");
+    }
+
+    #[test]
+    fn ocr_runtime_manifest_candidates_cover_flat_and_nested_resource_paths() {
+        assert_eq!(
+            ocr_runtime_manifest_resource_candidates(),
+            [
+                "ocr-runtime-manifest.json",
+                "resources/ocr-runtime-manifest.json"
+            ]
+        );
     }
 }

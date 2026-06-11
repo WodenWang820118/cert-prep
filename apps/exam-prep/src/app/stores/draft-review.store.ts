@@ -1,5 +1,6 @@
 import { computed, inject, Injectable, signal } from '@angular/core';
 import { EXAM_PREP_API, QuestionDraftRead } from '../exam-prep-api';
+import { HealthStore } from './health.store';
 import { OperationStore } from './operation.store';
 import { ProjectStore } from './project.store';
 import { SourceImportStore } from './source-import.store';
@@ -7,6 +8,7 @@ import { SourceImportStore } from './source-import.store';
 @Injectable({ providedIn: 'root' })
 export class DraftReviewStore {
   private readonly api = inject(EXAM_PREP_API);
+  private readonly health = inject(HealthStore);
   private readonly operations = inject(OperationStore);
   private readonly projects = inject(ProjectStore);
   private readonly sourceImport = inject(SourceImportStore);
@@ -62,11 +64,33 @@ export class DraftReviewStore {
         }),
     );
     if (drafts === null) {
+      await this.openMissingAiRuntimePrompt();
       return;
     }
 
     this.drafts.set(drafts.items);
     await this.load(project.id);
+  }
+
+  private async openMissingAiRuntimePrompt(): Promise<void> {
+    if (this.operations.errorCode() !== 'provider_unavailable') {
+      return;
+    }
+
+    try {
+      await this.health.load();
+    } catch {
+      return;
+    }
+
+    if (this.health.canInstallOllama()) {
+      this.health.openOllamaInstallConsent();
+      return;
+    }
+
+    if (this.health.canDownloadModel()) {
+      this.health.openModelDownloadConsent();
+    }
   }
 
   async approveDraft(draft: QuestionDraftRead): Promise<void> {

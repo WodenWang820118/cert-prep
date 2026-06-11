@@ -32,7 +32,7 @@
     },
     "build-gpu": {
       "executor": "nx:run-commands",
-      "dependsOn": ["exam-prep:build", "sync-sidecar-gpu"],
+      "dependsOn": ["exam-prep:build", "sync-sidecar", "sync-runtime-manifest"],
       "outputs": ["{projectRoot}/src-tauri/target"],
       "options": {
         "command": "pnpm exec tauri build --target x86_64-pc-windows-msvc --ci --config apps/exam-prep-desktop/src-tauri/tauri.conf.json"
@@ -40,7 +40,7 @@
     },
     "sync-sidecar": {
       "executor": "nx:run-commands",
-      "dependsOn": ["exam-prep-backend:build-sidecar-cpu"],
+      "dependsOn": ["exam-prep-backend:build-sidecar"],
       "outputs": ["{projectRoot}/src-tauri/binaries"],
       "options": {
         "command": "node apps/exam-prep-desktop/scripts/sync-sidecar.mjs"
@@ -52,6 +52,14 @@
       "outputs": ["{projectRoot}/src-tauri/binaries"],
       "options": {
         "command": "node apps/exam-prep-desktop/scripts/sync-sidecar.mjs --target x86_64-pc-windows-msvc"
+      }
+    },
+    "sync-runtime-manifest": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["exam-prep-backend:build-ocr-runtime-gpu"],
+      "outputs": ["{projectRoot}/src-tauri/resources/ocr-runtime-manifest.json"],
+      "options": {
+        "command": "node apps/exam-prep-desktop/scripts/sync-runtime-manifest.mjs"
       }
     },
     "package-qa": {

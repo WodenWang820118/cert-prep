@@ -11,7 +11,7 @@ from exam_prep_backend.domains.source_documents.models import (
     PdfExtractionResult,
 )
 from exam_prep_backend.domains.source_documents.ocr import OCRPageResult
-from exam_prep_backend.errors import InvalidPdfError
+from exam_prep_backend.errors import InvalidPdfError, ProviderUnavailableError
 
 
 class PageOcrProvider(Protocol):
@@ -118,6 +118,11 @@ def extract_pdf_pages(
                 )
             except InvalidPdfError:
                 raise
+            except ProviderUnavailableError:
+                if not extracted_pages:
+                    raise
+                ocr_failed = True
+                continue
             except Exception:
                 ocr_failed = True
                 continue

@@ -84,6 +84,28 @@ def test_scanned_pdf_upload_is_detected_without_chunks(client: TestClient, auth_
     assert document["exam_item_count"] == 0
 
 
+def test_image_only_pdf_reports_missing_paddle_runtime(tmp_path: Path, auth_headers) -> None:
+    client = TestClient(
+        create_app(
+            settings=Settings(data_dir=tmp_path, api_token="test-token"),
+            ocr_provider=MissingPaddleRuntimeProvider(),
+        )
+    )
+    project_id = _create_project(client, auth_headers)
+
+    response = client.post(
+        f"/projects/{project_id}/documents",
+        headers=auth_headers,
+        files={"file": ("scan.pdf", minimal_pdf(""), "application/pdf")},
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "code": "paddle_runtime_missing",
+        "message": "PaddleOCR runtime is not installed.",
+    }
+
+
 def test_image_only_pdf_uses_ocr_and_creates_approved_mock_exam(
     tmp_path: Path, auth_headers
 ) -> None:
@@ -363,3 +385,27 @@ class FailingSecondPageOcrProvider(MockPaddleOcrProvider):
             fallback_reason="gpu:0 failed: simulated GPU OCR failure",
             duration_ms=123,
         )
+
+
+class MissingPaddleRuntimeProvider(MockPaddleOcrProvider):
+    def health(self) -> OCRHealth:
+        return OCRHealth(
+            provider="paddle",
+            engine="paddleocr",
+            available=False,
+            detail="PaddleOCR runtime is not installed.",
+            python_version="3.13.5",
+            paddle_version=None,
+            paddleocr_version=None,
+            selected_device=None,
+            cuda_available=False,
+            gpu_count=0,
+            model_cache_dir=None,
+            fallback_reason=None,
+            unavailable_reason="paddle_runtime_missing",
+        )
+
+    def extract_page_text(self, image_png: bytes, page_number: int) -> OCRPageResult:
+        from exam_prep_backend.errors import ProviderUnavailableError
+
+        raise ProviderUnavailableError("PaddleOCR runtime is not installed.")

@@ -13,6 +13,7 @@ class ProviderHealth:
     model: str
     available: bool
     detail: str
+    unavailable_reason: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

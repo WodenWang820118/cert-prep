@@ -21,6 +21,7 @@ class OCRHealth:
     gpu_count: int
     model_cache_dir: str | None
     fallback_reason: str | None
+    unavailable_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -63,6 +64,7 @@ class FakeOCRProvider:
             gpu_count=0,
             model_cache_dir=None,
             fallback_reason=None,
+            unavailable_reason=None,
         )
 
     def extract_page_text(self, image_png: bytes, page_number: int) -> OCRPageResult:
@@ -79,6 +81,12 @@ def ocr_provider_from_settings(settings: Settings) -> OCRProvider:
     """Build the configured OCR provider without importing optional stacks eagerly."""
 
     if settings.ocr_provider == "paddle":
+        if settings.ocr_runtime_mode == "external":
+            from exam_prep_backend.domains.source_documents.adapters.external_paddle import (
+                ExternalPaddleOCRProvider,
+            )
+
+            return ExternalPaddleOCRProvider(settings=settings)
         from exam_prep_backend.domains.source_documents.adapters.paddle import PaddleOCRProvider
 
         return PaddleOCRProvider(device=settings.ocr_device)

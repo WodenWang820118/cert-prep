@@ -60,6 +60,7 @@ class PaddleOCRProvider:
             gpu_count=visible_gpu_count,
             model_cache_dir=model_cache_dir(),
             fallback_reason=self._last_fallback_reason or fallback_reason,
+            unavailable_reason=_unavailable_reason(import_error, versions),
         )
 
     def extract_page_text(self, image_png: bytes, page_number: int) -> OCRPageResult:
@@ -172,3 +173,11 @@ def _create_self_test_png() -> Path:
 
 def _elapsed_ms(started_at: float) -> int:
     return max(0, round((perf_counter() - started_at) * 1000))
+
+
+def _unavailable_reason(import_error: Exception | None, versions: dict[str, str | None]) -> str | None:
+    if import_error is None:
+        return None
+    if versions["paddle"] is None and versions["paddleocr"] is None and versions["paddlex"] is None:
+        return "paddle_runtime_missing"
+    return "paddle_runtime_unhealthy"

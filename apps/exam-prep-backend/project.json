@@ -95,7 +95,7 @@
       "outputs": ["{projectRoot}/dist"],
       "options": {
         "cwd": "apps/exam-prep-backend",
-        "command": "uv run pyinstaller --noconfirm --clean --name exam-prep-backend --onefile src/exam_prep_backend/sidecar.py --distpath dist --workpath build --specpath build"
+        "command": "uv run python scripts/build_sidecar.py --lane lite"
       }
     },
     "build-sidecar-cpu": {
@@ -118,6 +118,17 @@
       "options": {
         "cwd": "apps/exam-prep-backend",
         "command": "uv run --extra ocr-gpu python scripts/build_sidecar.py --lane gpu"
+      }
+    },
+    "build-ocr-runtime-gpu": {
+      "cache": true,
+      "executor": "nx:run-commands",
+      "dependsOn": ["ocr-setup-gpu-capable"],
+      "inputs": ["production"],
+      "outputs": ["{projectRoot}/dist/ocr-runtime"],
+      "options": {
+        "cwd": "apps/exam-prep-backend",
+        "command": "uv run --extra ocr-gpu python scripts/build_ocr_runtime.py --lane gpu --target x86_64-pc-windows-msvc"
       }
     },
     "generate-openapi-client": {
