@@ -7,26 +7,39 @@
  * Three commands: gate, post-action, cycle-check.
  *
  * Usage:
- *   node ci-state-update.mjs gate --gate-type <local-fix|env-rerun> [counter args]
- *   node ci-state-update.mjs post-action --action <type> [--cipe-url <url>] [--commit-sha <sha>]
- *   node ci-state-update.mjs cycle-check --code <code> [--agent-triggered] [counter args]
+ *   node ci-state-update.mts gate --gate-type <local-fix|env-rerun> [counter args]
+ *   node ci-state-update.mts post-action --action <type> [--cipe-url <url>] [--commit-sha <sha>]
+ *   node ci-state-update.mts cycle-check --code <code> [--agent-triggered] [counter args]
  */
 
 // --- Arg parsing ---
 
-const args = process.argv.slice(2);
-const command = args[0];
+type MonitorCommand = 'gate' | 'post-action' | 'cycle-check';
+type MonitorAction =
+  | 'fix-auto-applying'
+  | 'apply-mcp'
+  | 'env-rerun'
+  | 'apply-local-push'
+  | 'reject-fix-push'
+  | 'local-fix-push'
+  | 'auto-fix-push'
+  | 'empty-commit-push';
 
-function getFlag(name) {
+type JsonOutput = Record<string, unknown>;
+
+const args = process.argv.slice(2);
+const command = args[0] as MonitorCommand | undefined;
+
+function getFlag(name: string): boolean {
   return args.includes(name);
 }
 
-function getArg(name) {
+function getArg(name: string): string | null {
   const idx = args.indexOf(name);
   return idx !== -1 && idx + 1 < args.length ? args[idx + 1] : null;
 }
 
-function output(result) {
+function output(result: JsonOutput): void {
   console.log(JSON.stringify(result));
 }
 
@@ -34,7 +47,7 @@ function output(result) {
 // Check if an action is allowed and return incremented counter.
 // Called before any local fix attempt or environment rerun.
 
-function gate() {
+function gate(): void {
   const gateType = getArg('--gate-type');
 
   if (gateType === 'local-fix') {
@@ -77,24 +90,28 @@ function gate() {
 // Compute next state after an action is taken.
 // Returns wait mode params and whether the action was agent-triggered.
 
-function postAction() {
-  const action = getArg('--action');
+function postAction(): void {
+  const action = getArg('--action') as MonitorAction | null;
   const cipeUrl = getArg('--cipe-url');
   const commitSha = getArg('--commit-sha');
 
   // MCP-triggered or auto-applied: track by cipeUrl
-  const cipeUrlActions = ['fix-auto-applying', 'apply-mcp', 'env-rerun'];
+  const cipeUrlActions = new Set<MonitorAction>([
+    'fix-auto-applying',
+    'apply-mcp',
+    'env-rerun',
+  ]);
   // Local push: track by commitSha
-  const commitShaActions = [
+  const commitShaActions = new Set<MonitorAction>([
     'apply-local-push',
     'reject-fix-push',
     'local-fix-push',
     'auto-fix-push',
     'empty-commit-push',
-  ];
+  ]);
 
-  const trackByCipeUrl = cipeUrlActions.includes(action);
-  const trackByCommitSha = commitShaActions.includes(action);
+  const trackByCipeUrl = action ? cipeUrlActions.has(action) : false;
+  const trackByCommitSha = action ? commitShaActions.has(action) : false;
 
   if (!trackByCipeUrl && !trackByCommitSha) {
     return output({ error: `Unknown action: ${action}` });
@@ -116,7 +133,7 @@ function postAction() {
 // Cycle classification + counter resets when a new "done" code is received.
 // Called at the start of handling each actionable code.
 
-function cycleCheck() {
+function cycleCheck(): void {
   const status = getArg('--code');
   const wasAgentTriggered = getFlag('--agent-triggered');
   let cycleCount = parseInt(getArg('--cycle-count') || '0', 10);

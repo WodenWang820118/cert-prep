@@ -42,7 +42,7 @@ removeStaleSidecars(desktopBinaries);
 copyFileSync(sourcePath, targetPath);
 console.log(`Synced sidecar to ${targetPath}`);
 
-function targetFromArgs(args) {
+function targetFromArgs(args: readonly string[]): string | undefined {
   const targetIndex = args.indexOf('--target');
   if (targetIndex >= 0) {
     const target = args[targetIndex + 1];
@@ -55,7 +55,7 @@ function targetFromArgs(args) {
   return inlineTarget?.slice('--target='.length);
 }
 
-function rustHostTriple() {
+function rustHostTriple(): string | undefined {
   const rustInfo = execFileSync('rustc', ['-vV'], { encoding: 'utf8' });
   return rustInfo
     .split(/\r?\n/)
@@ -63,7 +63,7 @@ function rustHostTriple() {
     ?.replace(/^host:\s*/, '');
 }
 
-function removeStaleSidecars(directory) {
+function removeStaleSidecars(directory: string): void {
   for (const entry of readdirSync(directory)) {
     if (SIDECAR_PATTERN.test(entry)) {
       rmSync(join(directory, entry), { force: true });

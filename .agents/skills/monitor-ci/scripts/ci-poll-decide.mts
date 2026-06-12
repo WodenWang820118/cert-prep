@@ -11,7 +11,7 @@
  *   buildOutput() — maps classification to full output with messages, delays, counters
  *
  * Usage:
- *   node ci-poll-decide.mjs '<ci_info_json>' <poll_count> <verbosity> \
+ *   node ci-poll-decide.mts '<ci_info_json>' <poll_count> <verbosity> \
  *     [--wait-mode] [--prev-cipe-url <url>] [--expected-sha <sha>] \
  *     [--prev-status <status>] [--timeout <seconds>] [--new-cipe-timeout <seconds>] \
  *     [--env-rerun-count <n>] [--no-progress-count <n>] \
@@ -21,16 +21,94 @@
 
 // --- Arg parsing ---
 
-const args = process.argv.slice(2);
-const ciInfoJson = args[0];
-const pollCount = parseInt(args[1], 10) || 0;
-const verbosity = args[2] || 'medium';
+type Verbosity = 'minimal' | 'medium' | 'verbose';
+type DecisionAction = 'poll' | 'wait' | 'done';
+type DecisionCode =
+  | 'new_cipe_detected'
+  | 'no_new_cipe'
+  | 'waiting_for_cipe'
+  | 'polling_timeout'
+  | 'circuit_breaker'
+  | 'ci_success'
+  | 'cipe_canceled'
+  | 'cipe_timed_out'
+  | 'cipe_no_tasks'
+  | 'environment_rerun_cap'
+  | 'environment_issue'
+  | 'self_healing_throttled'
+  | 'ci_running'
+  | 'sh_running'
+  | 'flaky_rerun'
+  | 'fix_auto_applied'
+  | 'verification_pending'
+  | 'fix_auto_applying'
+  | 'fix_auto_apply_skipped'
+  | 'fix_needs_review'
+  | 'fix_apply_ready'
+  | 'fix_needs_local_verify'
+  | 'fix_failed'
+  | 'no_fix'
+  | 'fallback'
+  | 'error';
 
-function getFlag(name) {
+interface CiInfo {
+  readonly cipeStatus: string | null;
+  readonly selfHealingStatus: string | null;
+  readonly verificationStatus: string | null;
+  readonly selfHealingEnabled: boolean | null;
+  readonly selfHealingSkippedReason: string | null;
+  readonly failureClassification: string | null;
+  readonly failedTaskIds: string[];
+  readonly verifiedTaskIds: string[];
+  readonly couldAutoApplyTasks: boolean | null;
+  readonly autoApplySkipped: boolean | null;
+  readonly autoApplySkipReason: string | null;
+  readonly userAction: string | null;
+  readonly cipeUrl: string | null;
+  readonly commitSha: string | null;
+}
+
+interface DecisionExtra {
+  readonly verifiableTaskIds?: string[];
+  readonly autoApplySkipReason?: string | null;
+}
+
+interface Decision {
+  readonly action: DecisionAction;
+  readonly code: DecisionCode;
+  readonly extra?: DecisionExtra;
+}
+
+interface ActionOutput {
+  action: DecisionAction;
+  code: DecisionCode;
+  message: string | null;
+  noProgressCount: number;
+  envRerunCount: number;
+  delay?: number;
+  fields?: 'light';
+  newCipeDetected?: boolean;
+  verifiableTaskIds?: string[];
+  autoApplySkipReason?: string | null;
+}
+
+type TaskCategory =
+  | { readonly category: 'all_verified' }
+  | { readonly category: 'e2e_only' }
+  | { readonly category: 'needs_local_verify'; readonly verifiableTaskIds: string[] };
+
+type JsonRecord = Record<string, unknown>;
+
+const args = process.argv.slice(2);
+const ciInfoJson = args[0] ?? '';
+const pollCount = parseInt(args[1] ?? '', 10) || 0;
+const verbosity = parseVerbosity(args[2]);
+
+function getFlag(name: string): boolean {
   return args.includes(name);
 }
 
-function getArg(name) {
+function getArg(name: string): string | null {
   const idx = args.indexOf(name);
   return idx !== -1 && idx + 1 < args.length ? args[idx + 1] : null;
 }
@@ -50,9 +128,9 @@ const prevFailureClassification = getArg('--prev-failure-classification');
 
 // --- Parse CI info ---
 
-let ci;
+let ci: CiInfo;
 try {
-  ci = JSON.parse(ciInfoJson);
+  ci = parseCiInfo(JSON.parse(ciInfoJson));
 } catch {
   console.log(
     JSON.stringify({
@@ -87,7 +165,7 @@ const failureClassification = rawFailureClassification?.toLowerCase() ?? null;
 
 // --- Helpers ---
 
-function categorizeTasks() {
+function categorizeTasks(): TaskCategory {
   const verifiedSet = new Set(verifiedTaskIds);
   const unverified = failedTaskIds.filter((t) => !verifiedSet.has(t));
   if (unverified.length === 0) return { category: 'all_verified' };
@@ -105,12 +183,12 @@ function categorizeTasks() {
   return { category: 'needs_local_verify', verifiableTaskIds: verifiable };
 }
 
-function backoff(count) {
+function backoff(count: number): number {
   const delays = [60, 90, 120];
   return delays[Math.min(count, delays.length - 1)];
 }
 
-function hasStateChanged() {
+function hasStateChanged(): boolean {
   if (prevCipeStatus && cipeStatus !== prevCipeStatus) return true;
   if (prevShStatus && selfHealingStatus !== prevShStatus) return true;
   if (prevVerificationStatus && verificationStatus !== prevVerificationStatus)
@@ -123,19 +201,19 @@ function hasStateChanged() {
   return false;
 }
 
-function isTimedOut() {
+function isTimedOut(): boolean {
   if (timeoutSeconds <= 0) return false;
   const avgDelay = pollCount === 0 ? 0 : backoff(Math.floor(pollCount / 2));
   return pollCount * avgDelay >= timeoutSeconds;
 }
 
-function isWaitTimedOut() {
+function isWaitTimedOut(): boolean {
   if (newCipeTimeoutSeconds <= 0) return false;
   return pollCount * 30 >= newCipeTimeoutSeconds;
 }
 
-function isNewCipe() {
-  return (
+function isNewCipe(): boolean {
+  return Boolean(
     (prevCipeUrl && cipeUrl && cipeUrl !== prevCipeUrl) ||
     (expectedSha && commitSha && commitSha === expectedSha)
   );
@@ -175,7 +253,7 @@ function isNewCipe() {
 //    24. fallback                        → poll  (fallback)
 // ============================================================
 
-function classify() {
+function classify(): Decision {
   // --- Wait mode ---
   if (waitMode) {
     if (isNewCipe()) return { action: 'poll', code: 'new_cipe_detected' };
@@ -290,7 +368,7 @@ function classify() {
 // ============================================================
 
 // Message templates keyed by status or key
-const messages = {
+const messages: Partial<Record<DecisionCode, (extra?: DecisionExtra) => string>> = {
   // wait mode
   new_cipe_detected: () =>
     `New CI Attempt detected! CI: ${cipeStatus || 'N/A'}`,
@@ -340,7 +418,7 @@ const messages = {
     }`,
   fix_apply_ready: () => 'Fix available and verified. Ready to apply.',
   fix_needs_local_verify: (extra) =>
-    `Fix available. ${extra.verifiableTaskIds.length} task(s) need local verification.`,
+    `Fix available. ${extra?.verifiableTaskIds?.length ?? 0} task(s) need local verification.`,
   fix_failed: () => 'Self-healing failed to generate a fix.',
   no_fix: () => 'CI failed, no fix available.',
 
@@ -352,7 +430,7 @@ const messages = {
 };
 
 // Codes where noProgressCount resets to 0 (genuine progress occurred)
-const resetProgressCodes = new Set([
+const resetProgressCodes = new Set<DecisionCode>([
   'ci_success',
   'fix_auto_applying',
   'fix_auto_apply_skipped',
@@ -361,7 +439,7 @@ const resetProgressCodes = new Set([
   'fix_needs_local_verify',
 ]);
 
-function formatMessage(msg) {
+function formatMessage(msg: string): string | null {
   if (verbosity === 'minimal') {
     const currentStatus = `${cipeStatus}|${selfHealingStatus}|${verificationStatus}`;
     if (currentStatus === (prevStatus || '')) return null;
@@ -378,7 +456,7 @@ function formatMessage(msg) {
   return `Poll #${pollCount + 1} | ${msg}`;
 }
 
-function buildOutput(decision) {
+function buildOutput(decision: Decision): void {
   const { action, code, extra } = decision;
 
   // noProgressCount is already computed before classify() was called.
@@ -388,7 +466,7 @@ function buildOutput(decision) {
   const rawMsg = msgFn ? msgFn(extra) : `Unknown: ${code}`;
   const message = formatMessage(rawMsg);
 
-  const result = {
+  const result: ActionOutput = {
     action,
     code,
     message,
@@ -426,3 +504,47 @@ const noProgressCount = (() => {
 })();
 
 buildOutput(classify());
+
+function parseVerbosity(value: string | undefined): Verbosity {
+  return value === 'minimal' || value === 'verbose' ? value : 'medium';
+}
+
+function parseCiInfo(value: unknown): CiInfo {
+  const record = asRecord(value);
+  return {
+    cipeStatus: stringOrNull(record.cipeStatus),
+    selfHealingStatus: stringOrNull(record.selfHealingStatus),
+    verificationStatus: stringOrNull(record.verificationStatus),
+    selfHealingEnabled: booleanOrNull(record.selfHealingEnabled),
+    selfHealingSkippedReason: stringOrNull(record.selfHealingSkippedReason),
+    failureClassification: stringOrNull(record.failureClassification),
+    failedTaskIds: stringArray(record.failedTaskIds),
+    verifiedTaskIds: stringArray(record.verifiedTaskIds),
+    couldAutoApplyTasks: booleanOrNull(record.couldAutoApplyTasks),
+    autoApplySkipped: booleanOrNull(record.autoApplySkipped),
+    autoApplySkipReason: stringOrNull(record.autoApplySkipReason),
+    userAction: stringOrNull(record.userAction),
+    cipeUrl: stringOrNull(record.cipeUrl),
+    commitSha: stringOrNull(record.commitSha),
+  };
+}
+
+function asRecord(value: unknown): JsonRecord {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as JsonRecord
+    : {};
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === 'string' ? value : null;
+}
+
+function booleanOrNull(value: unknown): boolean | null {
+  return typeof value === 'boolean' ? value : null;
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
+}

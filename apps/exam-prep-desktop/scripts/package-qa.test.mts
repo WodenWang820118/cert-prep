@@ -14,13 +14,16 @@ import {
   summarizeLlmHealth,
   summarizeOcrHealth,
   targetTripleFromSidecarName,
-} from './package-qa.mjs';
+} from './package-qa.mts';
 
-const tempRoots = [];
+const tempRoots: string[] = [];
 
 afterEach(() => {
   while (tempRoots.length > 0) {
-    rmSync(tempRoots.pop(), { recursive: true, force: true });
+    const tempRoot = tempRoots.pop();
+    if (tempRoot) {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
   }
 });
 
@@ -171,7 +174,7 @@ test('initialInstallerSizeGate warns and fails at configured thresholds', () => 
   );
 });
 
-function makeTempWorkspace() {
+function makeTempWorkspace(): string {
   const workspaceRoot = mkdtempSync(join(tmpdir(), 'exam-prep-package-qa-'));
   tempRoots.push(workspaceRoot);
   return workspaceRoot;

@@ -43,7 +43,7 @@
       "dependsOn": ["exam-prep-backend:build-sidecar"],
       "outputs": ["{projectRoot}/src-tauri/binaries"],
       "options": {
-        "command": "node apps/exam-prep-desktop/scripts/sync-sidecar.mjs"
+        "command": "node apps/exam-prep-desktop/scripts/sync-sidecar.mts"
       }
     },
     "sync-sidecar-gpu": {
@@ -51,7 +51,7 @@
       "dependsOn": ["exam-prep-backend:build-sidecar-gpu"],
       "outputs": ["{projectRoot}/src-tauri/binaries"],
       "options": {
-        "command": "node apps/exam-prep-desktop/scripts/sync-sidecar.mjs --target x86_64-pc-windows-msvc"
+        "command": "node apps/exam-prep-desktop/scripts/sync-sidecar.mts --target x86_64-pc-windows-msvc"
       }
     },
     "sync-runtime-manifest": {
@@ -59,7 +59,7 @@
       "dependsOn": ["exam-prep-backend:build-ocr-runtime-gpu"],
       "outputs": ["{projectRoot}/src-tauri/resources/ocr-runtime-manifest.json"],
       "options": {
-        "command": "node apps/exam-prep-desktop/scripts/sync-runtime-manifest.mjs"
+        "command": "node apps/exam-prep-desktop/scripts/sync-runtime-manifest.mts"
       }
     },
     "package-qa": {
@@ -68,15 +68,24 @@
       "dependsOn": ["build-gpu"],
       "outputs": ["{workspaceRoot}/tmp/exam-prep-desktop/package-qa"],
       "options": {
-        "command": "node apps/exam-prep-desktop/scripts/package-qa.mjs"
+        "command": "node apps/exam-prep-desktop/scripts/package-qa.mts"
+      }
+    },
+    "typecheck-scripts": {
+      "cache": true,
+      "executor": "nx:run-commands",
+      "inputs": ["default", "{workspaceRoot}/tsconfig.scripts.json"],
+      "options": {
+        "command": "pnpm exec tsc -p tsconfig.scripts.json"
       }
     },
     "package-qa-test": {
       "cache": true,
       "executor": "nx:run-commands",
+      "dependsOn": ["typecheck-scripts"],
       "inputs": ["default"],
       "options": {
-        "command": "node --test apps/exam-prep-desktop/scripts/package-qa.test.mjs"
+        "command": "node --test apps/exam-prep-desktop/scripts/package-qa.test.mts"
       }
     },
     "cargo-test": {

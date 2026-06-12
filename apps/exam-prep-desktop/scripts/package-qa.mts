@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import {
   existsSync,
@@ -30,7 +30,139 @@ const INITIAL_INSTALLER_ERROR_MB = 250;
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const defaultWorkspaceRoot = resolve(scriptDir, '../../..');
 
-export async function createPackageQaReport(options = {}) {
+interface PackageQaOptions {
+  readonly workspaceRoot?: string;
+  readonly bundleRoot?: string;
+  readonly sidecarDir?: string;
+  readonly ocrRuntimeRoot?: string;
+  readonly ocrRuntimeManifest?: string;
+  readonly expectedTargetTriple?: string;
+  readonly healthTimeoutMs?: number;
+  readonly dataDir?: string;
+  readonly llmModel?: string;
+}
+
+interface RuntimeHealthOptions {
+  readonly sidecarPath: string;
+  readonly workspaceRoot?: string;
+  readonly timeoutMs?: number;
+  readonly dataDir?: string;
+  readonly llmModel?: string;
+  readonly ocrRuntimeManifest?: string;
+}
+
+interface FileRecord {
+  readonly absolutePath: string;
+  readonly path: string;
+  readonly bytes: number;
+  readonly mb: number;
+}
+
+interface PublicFileRecord {
+  readonly path: string;
+  readonly bytes: number;
+  readonly mb: number;
+}
+
+type SizeGateStatus = 'passed' | 'warning' | 'failed';
+
+interface SizeGate {
+  readonly status: SizeGateStatus;
+  readonly largest_initial_mb: number;
+  readonly warning_mb: number;
+  readonly error_mb: number;
+  readonly detail: string;
+}
+
+interface OcrHealthSummary {
+  readonly provider: unknown;
+  readonly engine: unknown;
+  readonly available: unknown;
+  readonly detail: unknown;
+  readonly selected_device: unknown;
+  readonly cuda_available: unknown;
+  readonly gpu_count: unknown;
+  readonly fallback_reason: unknown;
+  readonly unavailable_reason: unknown;
+}
+
+interface LlmHealthSummary {
+  readonly provider: unknown;
+  readonly model: unknown;
+  readonly available: unknown;
+  readonly detail: unknown;
+  readonly unavailable_reason: unknown;
+}
+
+interface RuntimeHealthSummary {
+  readonly launch_env: {
+    readonly EXAM_PREP_OCR_PROVIDER: 'paddle';
+    readonly EXAM_PREP_OCR_RUNTIME_MODE: 'external';
+    readonly EXAM_PREP_OCR_DEVICE: 'auto';
+    readonly EXAM_PREP_LLM_PROVIDER: 'ollama';
+    readonly EXAM_PREP_OLLAMA_MODEL: string;
+  };
+  readonly system_health: unknown;
+  readonly ocr_health: OcrHealthSummary;
+  readonly llm_health: LlmHealthSummary;
+  readonly raw_health: {
+    readonly ocr: JsonRecord;
+    readonly llm: JsonRecord;
+  };
+  readonly sidecar_output_tail: OutputCapture;
+}
+
+interface PackageQaReport {
+  readonly schema_version: 1;
+  readonly generated_at: string;
+  readonly target: {
+    readonly rust_triple: string;
+    readonly platform: NodeJS.Platform;
+    readonly arch: string;
+  };
+  readonly package: {
+    readonly bundle_root: string;
+    readonly bundle_artifacts: PublicFileRecord[];
+    readonly sidecar: PublicFileRecord;
+    readonly ocr_runtime_root: string;
+    readonly ocr_runtime_artifacts: PublicFileRecord[];
+    readonly size_gate: SizeGate;
+  };
+  readonly runtime: RuntimeHealthSummary;
+}
+
+interface OutputCapture {
+  stdout: string;
+  stderr: string;
+}
+
+interface ChildState {
+  exited: boolean;
+  code: number | null;
+  signal: NodeJS.Signals | null;
+}
+
+interface WaitForJsonOptions {
+  readonly state: ChildState;
+  readonly output: OutputCapture;
+  readonly timeoutMs: number;
+}
+
+interface ParsedArgs {
+  output?: string;
+  bundleRoot?: string;
+  sidecarDir?: string;
+  ocrRuntimeRoot?: string;
+  ocrRuntimeManifest?: string;
+  expectedTargetTriple?: string;
+  healthTimeoutMs?: number;
+}
+
+type JsonRecord = Record<string, unknown>;
+
+export async function createPackageQaReport(
+  options: PackageQaOptions = {}
+): Promise<PackageQaReport> {
   const workspaceRoot = resolve(options.workspaceRoot ?? defaultWorkspaceRoot);
   const bundleRoot = resolve(workspaceRoot, options.bundleRoot ?? DEFAULT_BUNDLE_ROOT);
   const sidecarDir = resolve(workspaceRoot, options.sidecarDir ?? DEFAULT_SIDECAR_DIR);
@@ -93,14 +225,20 @@ export async function createPackageQaReport(options = {}) {
   };
 }
 
-export function collectBundleArtifacts(bundleRoot, workspaceRoot = defaultWorkspaceRoot) {
+export function collectBundleArtifacts(
+  bundleRoot: string,
+  workspaceRoot = defaultWorkspaceRoot
+): FileRecord[] {
   if (!existsSync(bundleRoot)) {
     return [];
   }
   return collectFiles(bundleRoot, workspaceRoot);
 }
 
-export function collectSidecars(sidecarDir, workspaceRoot = defaultWorkspaceRoot) {
+export function collectSidecars(
+  sidecarDir: string,
+  workspaceRoot = defaultWorkspaceRoot
+): FileRecord[] {
   if (!existsSync(sidecarDir)) {
     return [];
   }
@@ -110,16 +248,16 @@ export function collectSidecars(sidecarDir, workspaceRoot = defaultWorkspaceRoot
 }
 
 export function collectOcrRuntimeArtifacts(
-  ocrRuntimeRoot,
+  ocrRuntimeRoot: string,
   workspaceRoot = defaultWorkspaceRoot
-) {
+): FileRecord[] {
   if (!existsSync(ocrRuntimeRoot)) {
     return [];
   }
   return collectFiles(ocrRuntimeRoot, workspaceRoot);
 }
 
-export function resolveSingleSidecar(sidecars) {
+export function resolveSingleSidecar(sidecars: readonly FileRecord[]): FileRecord {
   if (sidecars.length !== 1) {
     const paths = sidecars.map(sidecar => sidecar.path).join(', ') || 'none';
     throw new Error(`Expected exactly one synced sidecar, found ${paths}`);
@@ -127,7 +265,7 @@ export function resolveSingleSidecar(sidecars) {
   return sidecars[0];
 }
 
-export function targetTripleFromSidecarName(fileName) {
+export function targetTripleFromSidecarName(fileName: string): string {
   if (!isSidecarName(fileName)) {
     throw new Error(`Not an exam-prep sidecar name: ${fileName}`);
   }
@@ -137,7 +275,7 @@ export function targetTripleFromSidecarName(fileName) {
     : withoutPrefix;
 }
 
-export function summarizeOcrHealth(health) {
+export function summarizeOcrHealth(health: JsonRecord): OcrHealthSummary {
   return {
     provider: health.provider ?? null,
     engine: health.engine ?? null,
@@ -151,7 +289,7 @@ export function summarizeOcrHealth(health) {
   };
 }
 
-export function summarizeLlmHealth(health) {
+export function summarizeLlmHealth(health: JsonRecord): LlmHealthSummary {
   return {
     provider: health.provider ?? null,
     model: health.model ?? null,
@@ -161,7 +299,7 @@ export function summarizeLlmHealth(health) {
   };
 }
 
-export function bytesToMb(bytes) {
+export function bytesToMb(bytes: number): number {
   return Number((bytes / 1024 / 1024).toFixed(2));
 }
 
@@ -172,12 +310,12 @@ export async function collectRuntimeHealth({
   dataDir = resolve(workspaceRoot, DEFAULT_DATA_DIR),
   llmModel = DEFAULT_LLM_MODEL,
   ocrRuntimeManifest = resolve(workspaceRoot, DEFAULT_OCR_RUNTIME_MANIFEST),
-} = {}) {
+}: RuntimeHealthOptions = {} as RuntimeHealthOptions): Promise<RuntimeHealthSummary> {
   const port = await reserveLoopbackPort();
   const token = `package-qa-${process.pid}-${Date.now()}`;
   const baseUrl = `http://127.0.0.1:${port}`;
-  const output = { stdout: '', stderr: '' };
-  const state = { exited: false, code: null, signal: null };
+  const output: OutputCapture = { stdout: '', stderr: '' };
+  const state: ChildState = { exited: false, code: null, signal: null };
 
   mkdirSync(dataDir, { recursive: true });
 
@@ -215,8 +353,8 @@ export async function collectRuntimeHealth({
       output,
       timeoutMs,
     });
-    const ocrHealthRaw = await fetchJson(`${baseUrl}/ocr/health`, token);
-    const llmHealthRaw = await fetchJson(`${baseUrl}/llm/health`, token);
+    const ocrHealthRaw = asJsonRecord(await fetchJson(`${baseUrl}/ocr/health`, token));
+    const llmHealthRaw = asJsonRecord(await fetchJson(`${baseUrl}/llm/health`, token));
 
     return {
       launch_env: {
@@ -240,7 +378,10 @@ export async function collectRuntimeHealth({
   }
 }
 
-export function initialInstallerSizeGate(bundleArtifacts, sidecar) {
+export function initialInstallerSizeGate(
+  bundleArtifacts: readonly Pick<FileRecord, 'mb'>[],
+  sidecar: Pick<FileRecord, 'mb'>
+): SizeGate {
   const largestInitialMb = Math.max(
     sidecar.mb,
     ...bundleArtifacts.map(artifact => artifact.mb)
@@ -274,13 +415,13 @@ export function initialInstallerSizeGate(bundleArtifacts, sidecar) {
   };
 }
 
-export function writeReport(report, outputPath) {
+export function writeReport(report: unknown, outputPath: string): void {
   mkdirSync(dirname(outputPath), { recursive: true });
   writeFileSync(outputPath, `${JSON.stringify(report, null, 2)}\n`);
 }
 
-function collectFiles(root, workspaceRoot) {
-  const files = [];
+function collectFiles(root: string, workspaceRoot: string): FileRecord[] {
+  const files: FileRecord[] = [];
   for (const entry of readdirSync(root, { withFileTypes: true })) {
     const path = join(root, entry.name);
     if (entry.isDirectory()) {
@@ -292,7 +433,7 @@ function collectFiles(root, workspaceRoot) {
   return files.sort((left, right) => left.path.localeCompare(right.path));
 }
 
-function fileRecord(filePath, workspaceRoot) {
+function fileRecord(filePath: string, workspaceRoot: string): FileRecord {
   const bytes = statSync(filePath).size;
   return {
     absolutePath: filePath,
@@ -302,7 +443,7 @@ function fileRecord(filePath, workspaceRoot) {
   };
 }
 
-function publicFileRecord(record) {
+function publicFileRecord(record: FileRecord): PublicFileRecord {
   return {
     path: record.path,
     bytes: record.bytes,
@@ -310,7 +451,7 @@ function publicFileRecord(record) {
   };
 }
 
-function isSidecarName(fileName) {
+function isSidecarName(fileName: string): boolean {
   return (
     fileName.startsWith(SIDECAR_PREFIX) &&
     fileName.length > SIDECAR_PREFIX.length &&
@@ -318,17 +459,17 @@ function isSidecarName(fileName) {
   );
 }
 
-function normalizePath(path) {
+function normalizePath(path: string): string {
   return path.split(sep).join('/');
 }
 
-async function reserveLoopbackPort() {
+async function reserveLoopbackPort(): Promise<number> {
   const server = createServer();
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const address = server.address();
   const port = typeof address === 'object' && address ? address.port : null;
-  await new Promise((resolveClose, rejectClose) => {
+  await new Promise<void>((resolveClose, rejectClose) => {
     server.close(error => (error ? rejectClose(error) : resolveClose()));
   });
   if (!port) {
@@ -337,9 +478,12 @@ async function reserveLoopbackPort() {
   return port;
 }
 
-async function waitForJson(url, { state, output, timeoutMs }) {
+async function waitForJson(
+  url: string,
+  { state, output, timeoutMs }: WaitForJsonOptions
+): Promise<unknown> {
   const deadline = Date.now() + timeoutMs;
-  let lastError = null;
+  let lastError: unknown = null;
   while (Date.now() < deadline) {
     if (state.exited) {
       throw new Error(
@@ -354,12 +498,14 @@ async function waitForJson(url, { state, output, timeoutMs }) {
     }
   }
   throw new Error(
-    `Sidecar did not become healthy within ${timeoutMs}ms. Last error: ${lastError?.message ?? 'none'}`
+    `Sidecar did not become healthy within ${timeoutMs}ms. Last error: ${errorMessage(lastError)}`
   );
 }
 
-async function fetchJson(url, token) {
-  const headers = token ? { Authorization: `Bearer ${token}` } : {};
+async function fetchJson(url: string, token?: string): Promise<unknown> {
+  const headers: Record<string, string> = token
+    ? { Authorization: `Bearer ${token}` }
+    : {};
   const response = await fetch(url, { headers });
   const text = await response.text();
   if (!response.ok) {
@@ -368,15 +514,15 @@ async function fetchJson(url, token) {
   try {
     return JSON.parse(text);
   } catch (error) {
-    throw new Error(`${url} returned invalid JSON: ${error.message}`);
+    throw new Error(`${url} returned invalid JSON: ${errorMessage(error)}`);
   }
 }
 
-function appendCapture(output, key, chunk) {
+function appendCapture(output: OutputCapture, key: keyof OutputCapture, chunk: Buffer | string): void {
   output[key] = `${output[key]}${chunk.toString()}`.slice(-CAPTURE_LIMIT);
 }
 
-async function stopChild(child, state) {
+async function stopChild(child: ChildProcess, state: ChildState): Promise<void> {
   if (state.exited) {
     return;
   }
@@ -393,11 +539,11 @@ async function stopChild(child, state) {
   }
 }
 
-function parseArgs(args) {
-  const parsed = {};
+function parseArgs(args: readonly string[]): ParsedArgs {
+  const parsed: ParsedArgs = {};
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
-    const readValue = name => {
+    const readValue = (name: string): string => {
       const value = args[index + 1];
       if (!value) {
         throw new Error(`${name} requires a value.`);
@@ -427,7 +573,17 @@ function parseArgs(args) {
   return parsed;
 }
 
-async function main() {
+function asJsonRecord(value: unknown): JsonRecord {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as JsonRecord
+    : {};
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error ?? 'none');
+}
+
+async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const workspaceRoot = defaultWorkspaceRoot;
   const outputPath = resolve(workspaceRoot, args.output ?? DEFAULT_OUTPUT);

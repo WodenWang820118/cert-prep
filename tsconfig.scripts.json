@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "noEmit": true,
+    "target": "esnext",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "allowImportingTsExtensions": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "strict": true,
+    "types": ["node"],
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": [
+    "eslint.config.mts",
+    "apps/**/*.mts",
+    ".agents/skills/monitor-ci/scripts/**/*.mts",
+    ".github/skills/monitor-ci/scripts/**/*.mts",
+    ".opencode/skills/monitor-ci/scripts/**/*.mts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "tmp",
+    "apps/**/src-tauri/target/**"
+  ]
+}
