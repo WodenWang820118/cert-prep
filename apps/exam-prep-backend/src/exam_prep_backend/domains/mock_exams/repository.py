@@ -77,7 +77,7 @@ def create_generated_drafts(
                     answer, answer_key_source, rationale, citation_page, source_excerpt, status,
                     rejection_reason, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', NULL, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
                 """,
                 (
                     draft_id,
@@ -91,6 +91,7 @@ def create_generated_drafts(
                     suggestion.rationale,
                     suggestion.citation_page,
                     suggestion.source_excerpt,
+                    suggestion.status.value,
                     now,
                     now,
                 ),

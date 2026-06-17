@@ -7,6 +7,7 @@ describe('ModelHealthComponent', () => {
   let apiClient: {
     getModelDownload: ReturnType<typeof vi.fn>;
     getRuntimeInstallation: ReturnType<typeof vi.fn>;
+    health: ReturnType<typeof vi.fn>;
     llmHealth: ReturnType<typeof vi.fn>;
     ocrHealth: ReturnType<typeof vi.fn>;
     runtimeRequirements: ReturnType<typeof vi.fn>;
@@ -20,6 +21,13 @@ describe('ModelHealthComponent', () => {
     apiClient = {
       getModelDownload: vi.fn(),
       getRuntimeInstallation: vi.fn(),
+      health: vi.fn().mockResolvedValue({
+        status: 'ok',
+        app: 'exam-prep-backend',
+        version: '0.1.0',
+        python_version: '3.13.5',
+        runtime_mode: 'source',
+      }),
       llmHealth: vi.fn(),
       ocrHealth: vi.fn(),
       runtimeRequirements: vi.fn().mockResolvedValue({ items: [] }),
@@ -101,7 +109,10 @@ describe('ModelHealthComponent', () => {
   });
 });
 
-function buttonByText(root: ParentNode, text: string): HTMLButtonElement | null {
+function buttonByText(
+  root: ParentNode,
+  text: string,
+): HTMLButtonElement | null {
   return (
     Array.from(root.querySelectorAll('button')).find((button) =>
       button.textContent?.includes(text),

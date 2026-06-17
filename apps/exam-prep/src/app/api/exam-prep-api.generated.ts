@@ -8,11 +8,12 @@ export interface Components {
     Body_upload_document_projects__project_id__documents_post: { "file": string };
     ChunkList: { "items": Components['schemas']['ChunkRead'][] };
     ChunkRead: { "id": string; "document_id": string; "page_number": number; "chunk_index": number; "text": string; "source_excerpt": string; "extraction_method": Components['schemas']['PdfExtractionMethod'] | string; "created_at": string };
+    DocumentList: { "items": Components['schemas']['DocumentRead'][] };
     DocumentRead: { "id": string; "project_id": string; "filename": string; "sha256": string; "page_count": number; "has_text": boolean; "status": Components['schemas']['SourceDocumentStatus'] | string; "extraction_method": Components['schemas']['PdfExtractionMethod'] | string; "ocr_device": string | null; "ocr_fallback_reason": string | null; "ocr_duration_ms": number; "processed_page_count": number; "exam_item_count": number; "chunks_count": number; "created_at": string };
     DraftGenerateRequest: { "limit"?: number };
     DraftStatus: string;
     HTTPValidationError: { "detail"?: Components['schemas']['ValidationError'][] };
-    HealthResponse: { "status": string; "app": string; "version": string };
+    HealthResponse: { "status": string; "app": string; "version": string; "python_version": string; "runtime_mode": string };
     LLMHealthRead: { "provider": string; "model": string; "available": boolean; "detail": string; "unavailable_reason"?: string | null };
     ModelDownloadRead: { "id": string; "provider": string; "model": string; "status": string; "detail": string; "completed": number | null; "total": number | null; "created_at": string; "updated_at": string; "error"?: string | null };
     OCRHealthRead: { "provider": string; "engine": string; "available": boolean; "detail": string; "python_version": string; "paddle_version": string | null; "paddleocr_version": string | null; "selected_device": string | null; "cuda_available": boolean; "gpu_count": number; "model_cache_dir": string | null; "fallback_reason": string | null; "unavailable_reason"?: string | null };
@@ -45,6 +46,7 @@ export type AnswerKeySource = Components['schemas']['AnswerKeySource'];
 export type Body_upload_document_projects__project_id__documents_post = Components['schemas']['Body_upload_document_projects__project_id__documents_post'];
 export type ChunkList = Components['schemas']['ChunkList'];
 export type ChunkRead = Components['schemas']['ChunkRead'];
+export type DocumentList = Components['schemas']['DocumentList'];
 export type DocumentRead = Components['schemas']['DocumentRead'];
 export type DraftGenerateRequest = Components['schemas']['DraftGenerateRequest'];
 export type DraftStatus = Components['schemas']['DraftStatus'];
@@ -95,6 +97,7 @@ export interface ExamPrepGeneratedClient {
   getProject(projectId: string): Promise<Components['schemas']['ProjectRead']>;
   updateProject(projectId: string, body: Components['schemas']['ProjectUpdate']): Promise<Components['schemas']['ProjectRead']>;
   deleteProject(projectId: string): Promise<void>;
+  listDocuments(projectId: string): Promise<Components['schemas']['DocumentList']>;
   uploadDocument(projectId: string, body: FormData): Promise<Components['schemas']['DocumentRead']>;
   listDocumentChunks(projectId: string, documentId: string): Promise<Components['schemas']['ChunkList']>;
   generateDocumentDrafts(projectId: string, documentId: string, body: Components['schemas']['DraftGenerateRequest']): Promise<Components['schemas']['QuestionDraftList']>;
@@ -131,6 +134,8 @@ export function createExamPrepGeneratedClient(
       transport.request<Components['schemas']['ProjectRead']>({ method: 'PATCH' as const, path: `/projects/${encodeURIComponent(projectId)}`, body }),
     deleteProject: (projectId: string) =>
       transport.request<void>({ method: 'DELETE' as const, path: `/projects/${encodeURIComponent(projectId)}` }),
+    listDocuments: (projectId: string) =>
+      transport.request<Components['schemas']['DocumentList']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/documents` }),
     uploadDocument: (projectId: string, body: FormData) =>
       transport.request<Components['schemas']['DocumentRead']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/documents`, body }),
     listDocumentChunks: (projectId: string, documentId: string) =>

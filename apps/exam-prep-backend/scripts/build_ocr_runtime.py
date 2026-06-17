@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -93,9 +94,16 @@ def _manifest(*, zip_path: Path, version: str, target: str) -> dict[str, object]
             "file_name": zip_path.name,
             "sha256": _sha256(zip_path),
             "bytes": zip_path.stat().st_size,
-            "url": None,
+            "url": _artifact_url(zip_path.name),
         },
     }
+
+
+def _artifact_url(file_name: str) -> str | None:
+    base_url = os.environ.get("EXAM_PREP_RUNTIME_ASSET_BASE_URL")
+    if not base_url:
+        return None
+    return f"{base_url.rstrip('/')}/{file_name}"
 
 
 def _sha256(path: Path) -> str:

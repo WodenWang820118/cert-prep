@@ -17,7 +17,7 @@ from exam_prep_backend.domains.projects import repository as projects_repository
 from exam_prep_backend.domains.source_documents import repository as source_documents_repository
 from exam_prep_backend.domains.source_documents.ocr import OCRProvider
 from exam_prep_backend.domains.source_documents.pdf_extraction import extract_pdf_pages
-from exam_prep_backend.domains.source_documents.schemas import ChunkList, DocumentRead
+from exam_prep_backend.domains.source_documents.schemas import ChunkList, DocumentList, DocumentRead
 from exam_prep_backend.domains.source_documents.storage import sha256_hex, store_pdf
 from exam_prep_backend.errors import (
     InvalidPdfError,
@@ -30,6 +30,17 @@ from exam_prep_backend.errors import (
 
 
 router = APIRouter(prefix="/projects/{project_id}/documents", tags=["documents"])
+
+
+@router.get("", response_model=DocumentList)
+def list_documents(
+    project_id: str,
+    db: Database = Depends(get_database),
+) -> dict:
+    try:
+        return {"items": source_documents_repository.list_documents(db, project_id)}
+    except NotFoundError as exc:
+        raise not_found_error(str(exc)) from exc
 
 
 @router.post("", response_model=DocumentRead, status_code=status.HTTP_201_CREATED)

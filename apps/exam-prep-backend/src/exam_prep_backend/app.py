@@ -1,4 +1,6 @@
 import sqlite3
+import platform
+import sys
 from typing import Any
 
 from fastapi import Depends, FastAPI, Request
@@ -23,6 +25,8 @@ class HealthResponse(BaseModel):
     status: str
     app: str
     version: str
+    python_version: str
+    runtime_mode: str
 
 
 def create_app(
@@ -92,7 +96,13 @@ def create_app(
 
     @app.get("/health", response_model=HealthResponse, tags=["system"])
     async def health() -> HealthResponse:
-        return HealthResponse(status="ok", app="exam-prep-backend", version=__version__)
+        return HealthResponse(
+            status="ok",
+            app="exam-prep-backend",
+            version=__version__,
+            python_version=platform.python_version(),
+            runtime_mode="packaged" if getattr(sys, "frozen", False) else "source",
+        )
 
     protected_dependencies = [Depends(require_bearer_auth)]
     app.include_router(projects.router, dependencies=protected_dependencies)

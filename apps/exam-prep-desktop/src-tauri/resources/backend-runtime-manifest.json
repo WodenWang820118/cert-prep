@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "kind": "python_backend",
+  "version": "0.1.0",
+  "target": "x86_64-pc-windows-msvc",
+  "entrypoint": "exam-prep-backend.exe",
+  "artifact": {
+    "file_name": "exam-prep-backend-runtime-x86_64-pc-windows-msvc.zip",
+    "sha256": "7714464bb67271f3a7846cd0f6a1be59593e84037810be55578ae0685a294565",
+    "bytes": 45162503,
+    "url": null
+  }
+}

@@ -13,5 +13,6 @@ def test_health_endpoint_returns_app_status() -> None:
         "status": "ok",
         "app": "exam-prep-backend",
         "version": "0.1.0",
+        "python_version": response.json()["python_version"],
+        "runtime_mode": "source",
     }
-

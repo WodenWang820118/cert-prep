@@ -46,6 +46,7 @@ class DraftSuggestion:
     rationale: str
     citation_page: int
     source_excerpt: str
+    status: DraftStatus | str = GENERATED_DRAFT_STATUS
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "choices", tuple(self.choices))
@@ -54,6 +55,7 @@ class DraftSuggestion:
             "answer_key_source",
             answer_key_source_from_value(self.answer_key_source),
         )
+        object.__setattr__(self, "status", draft_status_from_value(self.status))
 
     def to_serialized(self) -> dict[str, object]:
         return {

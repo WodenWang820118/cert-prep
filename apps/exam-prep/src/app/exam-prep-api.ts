@@ -8,9 +8,11 @@ import type {
 } from './api/exam-prep-api.generated';
 
 export type {
+  ChunkRead,
   DocumentRead,
   DraftGenerateRequest,
   ExamPrepGeneratedClient,
+  HealthResponse,
   LLMHealthRead,
   ModelDownloadRead,
   OCRHealthRead,

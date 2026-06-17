@@ -12,7 +12,7 @@
         </h1>
       </div>
 
-      <section aria-label="Model health">
+      <section aria-label="Runtime checklist">
         <app-model-health />
       </section>
     </header>
@@ -25,16 +25,17 @@
         [text]="operations.status()"
       />
       @if (operations.error(); as errorMessage) {
-        <p-message
-          severity="error"
-          variant="simple"
-          icon="pi pi-exclamation-triangle"
-          role="alert"
-          [text]="errorMessage"
-        />
+      <p-message
+        severity="error"
+        variant="simple"
+        icon="pi pi-exclamation-triangle"
+        role="alert"
+        [text]="errorMessage"
+      />
       }
     </div>
 
+    @if (desktopRuntime.isBackendReady()) {
     <div
       class="grid items-start gap-4 xl:grid-cols-[minmax(230px,290px)_minmax(0,1fr)_minmax(280px,360px)]"
     >
@@ -44,15 +45,15 @@
 
       <section class="grid gap-4" aria-label="Practice loop">
         @if (projects.selectedProject()) {
-          <app-source-import-panel />
-          <app-draft-review-panel />
-          <app-practice-panel />
+        <app-source-import-panel />
+        <app-draft-review-panel />
+        <app-practice-panel />
         } @else {
-          <section
-            class="rounded-lg border border-dashed border-surface-300 bg-surface-0 p-5 text-sm text-muted-color"
-          >
-            Select or create a project.
-          </section>
+        <section
+          class="rounded-lg border border-dashed border-surface-300 bg-surface-0 p-5 text-sm text-muted-color"
+        >
+          Select or create a project.
+        </section>
         }
       </section>
 
@@ -60,5 +61,12 @@
         <app-wrong-answer-review />
       </aside>
     </div>
+    } @else {
+    <section
+      class="rounded-lg border border-dashed border-surface-300 bg-surface-0 p-5 text-sm text-muted-color"
+    >
+      Install the Python backend runtime to open the local workspace.
+    </section>
+    }
   </div>
 </main>

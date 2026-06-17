@@ -1,8 +1,10 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import {
   existsSync,
   mkdirSync,
+  readFileSync,
   readdirSync,
   statSync,
   writeFileSync,
@@ -14,15 +16,21 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 const DEFAULT_TARGET_TRIPLE = 'x86_64-pc-windows-msvc';
 const DEFAULT_OUTPUT = 'tmp/exam-prep-desktop/package-qa/package-qa.json';
-const DEFAULT_BUNDLE_ROOT =
-  `apps/exam-prep-desktop/src-tauri/target/${DEFAULT_TARGET_TRIPLE}/release/bundle`;
-const DEFAULT_SIDECAR_DIR = 'apps/exam-prep-desktop/src-tauri/binaries';
+const DEFAULT_BUNDLE_ROOT = `apps/exam-prep-desktop/src-tauri/target/${DEFAULT_TARGET_TRIPLE}/release/bundle`;
+const DEFAULT_BACKEND_RUNTIME_ROOT =
+  'apps/exam-prep-backend/dist/backend-runtime';
+const DEFAULT_BACKEND_RUNTIME_MANIFEST =
+  'apps/exam-prep-desktop/src-tauri/resources/backend-runtime-manifest.json';
+const DEFAULT_BACKEND_RUNTIME_ENTRYPOINT =
+  'apps/exam-prep-backend/dist/exam-prep-backend.exe';
 const DEFAULT_OCR_RUNTIME_ROOT = 'apps/exam-prep-backend/dist/ocr-runtime';
 const DEFAULT_OCR_RUNTIME_MANIFEST =
   'apps/exam-prep-desktop/src-tauri/resources/ocr-runtime-manifest.json';
 const DEFAULT_DATA_DIR = 'tmp/exam-prep-desktop/package-qa/data';
 const DEFAULT_LLM_MODEL = 'gemma4:12b';
 const SIDECAR_PREFIX = 'exam-prep-backend-';
+const BACKEND_RUNTIME_PREFIX = 'exam-prep-backend-runtime-';
+const OCR_RUNTIME_PREFIX = 'exam-prep-ocr-runtime-';
 const CAPTURE_LIMIT = 12_000;
 const INITIAL_INSTALLER_WARNING_MB = 150;
 const INITIAL_INSTALLER_ERROR_MB = 250;
@@ -33,7 +41,9 @@ const defaultWorkspaceRoot = resolve(scriptDir, '../../..');
 interface PackageQaOptions {
   readonly workspaceRoot?: string;
   readonly bundleRoot?: string;
-  readonly sidecarDir?: string;
+  readonly backendRuntimeRoot?: string;
+  readonly backendRuntimeManifest?: string;
+  readonly backendRuntimeEntrypoint?: string;
   readonly ocrRuntimeRoot?: string;
   readonly ocrRuntimeManifest?: string;
   readonly expectedTargetTriple?: string;
@@ -43,7 +53,7 @@ interface PackageQaOptions {
 }
 
 interface RuntimeHealthOptions {
-  readonly sidecarPath: string;
+  readonly backendRuntimeEntrypoint: string;
   readonly workspaceRoot?: string;
   readonly timeoutMs?: number;
   readonly dataDir?: string;
@@ -109,7 +119,30 @@ interface RuntimeHealthSummary {
     readonly ocr: JsonRecord;
     readonly llm: JsonRecord;
   };
-  readonly sidecar_output_tail: OutputCapture;
+  readonly backend_output_tail: OutputCapture;
+}
+
+interface RuntimeManifest {
+  readonly kind: string;
+  readonly version: string;
+  readonly target: string;
+  readonly entrypoint: string;
+  readonly artifact: {
+    readonly file_name: string;
+    readonly sha256: string;
+    readonly bytes: number;
+    readonly url?: string | null;
+  };
+}
+
+interface RuntimeManifestSummary {
+  readonly kind: string;
+  readonly version: string;
+  readonly target: string;
+  readonly entrypoint: string;
+  readonly url: string;
+  readonly manifest: PublicFileRecord;
+  readonly artifact: PublicFileRecord;
 }
 
 interface PackageQaReport {
@@ -123,8 +156,11 @@ interface PackageQaReport {
   readonly package: {
     readonly bundle_root: string;
     readonly bundle_artifacts: PublicFileRecord[];
-    readonly sidecar: PublicFileRecord;
+    readonly backend_runtime_root: string;
+    readonly backend_runtime_manifest: RuntimeManifestSummary;
+    readonly backend_runtime_artifacts: PublicFileRecord[];
     readonly ocr_runtime_root: string;
+    readonly ocr_runtime_manifest: RuntimeManifestSummary;
     readonly ocr_runtime_artifacts: PublicFileRecord[];
     readonly size_gate: SizeGate;
   };
@@ -151,7 +187,9 @@ interface WaitForJsonOptions {
 interface ParsedArgs {
   output?: string;
   bundleRoot?: string;
-  sidecarDir?: string;
+  backendRuntimeRoot?: string;
+  backendRuntimeManifest?: string;
+  backendRuntimeEntrypoint?: string;
   ocrRuntimeRoot?: string;
   ocrRuntimeManifest?: string;
   expectedTargetTriple?: string;
@@ -161,18 +199,32 @@ interface ParsedArgs {
 type JsonRecord = Record<string, unknown>;
 
 export async function createPackageQaReport(
-  options: PackageQaOptions = {}
+  options: PackageQaOptions = {},
 ): Promise<PackageQaReport> {
   const workspaceRoot = resolve(options.workspaceRoot ?? defaultWorkspaceRoot);
-  const bundleRoot = resolve(workspaceRoot, options.bundleRoot ?? DEFAULT_BUNDLE_ROOT);
-  const sidecarDir = resolve(workspaceRoot, options.sidecarDir ?? DEFAULT_SIDECAR_DIR);
+  const bundleRoot = resolve(
+    workspaceRoot,
+    options.bundleRoot ?? DEFAULT_BUNDLE_ROOT,
+  );
+  const backendRuntimeRoot = resolve(
+    workspaceRoot,
+    options.backendRuntimeRoot ?? DEFAULT_BACKEND_RUNTIME_ROOT,
+  );
+  const backendRuntimeManifest = resolve(
+    workspaceRoot,
+    options.backendRuntimeManifest ?? DEFAULT_BACKEND_RUNTIME_MANIFEST,
+  );
+  const backendRuntimeEntrypoint = resolve(
+    workspaceRoot,
+    options.backendRuntimeEntrypoint ?? DEFAULT_BACKEND_RUNTIME_ENTRYPOINT,
+  );
   const ocrRuntimeRoot = resolve(
     workspaceRoot,
-    options.ocrRuntimeRoot ?? DEFAULT_OCR_RUNTIME_ROOT
+    options.ocrRuntimeRoot ?? DEFAULT_OCR_RUNTIME_ROOT,
   );
   const ocrRuntimeManifest = resolve(
     workspaceRoot,
-    options.ocrRuntimeManifest ?? DEFAULT_OCR_RUNTIME_MANIFEST
+    options.ocrRuntimeManifest ?? DEFAULT_OCR_RUNTIME_MANIFEST,
   );
   const expectedTargetTriple =
     options.expectedTargetTriple ?? DEFAULT_TARGET_TRIPLE;
@@ -182,25 +234,54 @@ export async function createPackageQaReport(
     throw new Error(`No bundle artifacts found under ${bundleRoot}`);
   }
 
-  const sidecars = collectSidecars(sidecarDir, workspaceRoot);
-  const sidecar = resolveSingleSidecar(sidecars);
-  const targetTriple = targetTripleFromSidecarName(basename(sidecar.absolutePath));
+  const backendRuntimeArtifacts = collectBackendRuntimeArtifacts(
+    backendRuntimeRoot,
+    workspaceRoot,
+  );
+  const backendRuntimeManifestSummary = validateRuntimeManifest({
+    manifestPath: backendRuntimeManifest,
+    runtimeRoot: backendRuntimeRoot,
+    workspaceRoot,
+    expectedKind: 'python_backend',
+    artifactPrefix: BACKEND_RUNTIME_PREFIX,
+  });
+  const ocrRuntimeArtifacts = collectOcrRuntimeArtifacts(
+    ocrRuntimeRoot,
+    workspaceRoot,
+  );
+  const ocrRuntimeManifestSummary = validateRuntimeManifest({
+    manifestPath: ocrRuntimeManifest,
+    runtimeRoot: ocrRuntimeRoot,
+    workspaceRoot,
+    expectedKind: 'paddle_ocr',
+    artifactPrefix: OCR_RUNTIME_PREFIX,
+  });
+  const targetTriple = backendRuntimeManifestSummary.target;
   if (targetTriple !== expectedTargetTriple) {
     throw new Error(
-      `Expected ${expectedTargetTriple} sidecar, found ${targetTriple}`
+      `Expected ${expectedTargetTriple} backend runtime, found ${targetTriple}`,
+    );
+  }
+  if (ocrRuntimeManifestSummary.target !== expectedTargetTriple) {
+    throw new Error(
+      `Expected ${expectedTargetTriple} OCR runtime, found ${ocrRuntimeManifestSummary.target}`,
+    );
+  }
+  if (!existsSync(backendRuntimeEntrypoint)) {
+    throw new Error(
+      `Backend runtime entrypoint was not built: ${backendRuntimeEntrypoint}`,
     );
   }
 
   const runtime = await collectRuntimeHealth({
-    sidecarPath: sidecar.absolutePath,
+    backendRuntimeEntrypoint,
     workspaceRoot,
     timeoutMs: options.healthTimeoutMs,
     dataDir: resolve(workspaceRoot, options.dataDir ?? DEFAULT_DATA_DIR),
     llmModel: options.llmModel ?? DEFAULT_LLM_MODEL,
     ocrRuntimeManifest,
   });
-  const ocrRuntimeArtifacts = collectOcrRuntimeArtifacts(ocrRuntimeRoot, workspaceRoot);
-  const sizeGate = initialInstallerSizeGate(bundleArtifacts, sidecar);
+  const sizeGate = initialInstallerSizeGate(bundleArtifacts);
   if (sizeGate.status === 'failed') {
     throw new Error(sizeGate.detail);
   }
@@ -216,8 +297,13 @@ export async function createPackageQaReport(
     package: {
       bundle_root: normalizePath(relative(workspaceRoot, bundleRoot)),
       bundle_artifacts: bundleArtifacts.map(publicFileRecord),
-      sidecar: publicFileRecord(sidecar),
+      backend_runtime_root: normalizePath(
+        relative(workspaceRoot, backendRuntimeRoot),
+      ),
+      backend_runtime_manifest: backendRuntimeManifestSummary,
+      backend_runtime_artifacts: backendRuntimeArtifacts.map(publicFileRecord),
       ocr_runtime_root: normalizePath(relative(workspaceRoot, ocrRuntimeRoot)),
+      ocr_runtime_manifest: ocrRuntimeManifestSummary,
       ocr_runtime_artifacts: ocrRuntimeArtifacts.map(publicFileRecord),
       size_gate: sizeGate,
     },
@@ -227,7 +313,7 @@ export async function createPackageQaReport(
 
 export function collectBundleArtifacts(
   bundleRoot: string,
-  workspaceRoot = defaultWorkspaceRoot
+  workspaceRoot = defaultWorkspaceRoot,
 ): FileRecord[] {
   if (!existsSync(bundleRoot)) {
     return [];
@@ -237,19 +323,29 @@ export function collectBundleArtifacts(
 
 export function collectSidecars(
   sidecarDir: string,
-  workspaceRoot = defaultWorkspaceRoot
+  workspaceRoot = defaultWorkspaceRoot,
 ): FileRecord[] {
   if (!existsSync(sidecarDir)) {
     return [];
   }
-  return collectFiles(sidecarDir, workspaceRoot).filter(record =>
-    isSidecarName(basename(record.absolutePath))
+  return collectFiles(sidecarDir, workspaceRoot).filter((record) =>
+    isSidecarName(basename(record.absolutePath)),
   );
+}
+
+export function collectBackendRuntimeArtifacts(
+  runtimeRoot: string,
+  workspaceRoot = defaultWorkspaceRoot,
+): FileRecord[] {
+  if (!existsSync(runtimeRoot)) {
+    return [];
+  }
+  return collectFiles(runtimeRoot, workspaceRoot);
 }
 
 export function collectOcrRuntimeArtifacts(
   ocrRuntimeRoot: string,
-  workspaceRoot = defaultWorkspaceRoot
+  workspaceRoot = defaultWorkspaceRoot,
 ): FileRecord[] {
   if (!existsSync(ocrRuntimeRoot)) {
     return [];
@@ -257,9 +353,11 @@ export function collectOcrRuntimeArtifacts(
   return collectFiles(ocrRuntimeRoot, workspaceRoot);
 }
 
-export function resolveSingleSidecar(sidecars: readonly FileRecord[]): FileRecord {
+export function resolveSingleSidecar(
+  sidecars: readonly FileRecord[],
+): FileRecord {
   if (sidecars.length !== 1) {
-    const paths = sidecars.map(sidecar => sidecar.path).join(', ') || 'none';
+    const paths = sidecars.map((sidecar) => sidecar.path).join(', ') || 'none';
     throw new Error(`Expected exactly one synced sidecar, found ${paths}`);
   }
   return sidecars[0];
@@ -273,6 +371,80 @@ export function targetTripleFromSidecarName(fileName: string): string {
   return withoutPrefix.endsWith('.exe')
     ? withoutPrefix.slice(0, -'.exe'.length)
     : withoutPrefix;
+}
+
+export function targetTripleFromRuntimeArtifactName(
+  fileName: string,
+  prefix: string,
+): string {
+  if (!fileName.startsWith(prefix) || !fileName.endsWith('.zip')) {
+    throw new Error(`Not an exam-prep runtime artifact name: ${fileName}`);
+  }
+  return fileName.slice(prefix.length, -'.zip'.length);
+}
+
+export function validateRuntimeManifest({
+  manifestPath,
+  runtimeRoot,
+  workspaceRoot = defaultWorkspaceRoot,
+  expectedKind,
+  artifactPrefix,
+}: {
+  readonly manifestPath: string;
+  readonly runtimeRoot: string;
+  readonly workspaceRoot?: string;
+  readonly expectedKind: string;
+  readonly artifactPrefix: string;
+}): RuntimeManifestSummary {
+  if (!existsSync(manifestPath)) {
+    throw new Error(`Runtime manifest was not found: ${manifestPath}`);
+  }
+  const manifest = JSON.parse(
+    readFileSync(manifestPath, 'utf8'),
+  ) as RuntimeManifest;
+  if (manifest.kind !== expectedKind) {
+    throw new Error(
+      `Expected ${expectedKind} manifest, found ${manifest.kind}`,
+    );
+  }
+  if (!manifest.artifact?.url) {
+    throw new Error(
+      `${manifest.kind} runtime manifest is missing a release URL.`,
+    );
+  }
+  const targetFromName = targetTripleFromRuntimeArtifactName(
+    manifest.artifact.file_name,
+    artifactPrefix,
+  );
+  if (targetFromName !== manifest.target) {
+    throw new Error(
+      `${manifest.kind} artifact target ${targetFromName} does not match manifest target ${manifest.target}`,
+    );
+  }
+  const artifactPath = join(runtimeRoot, manifest.artifact.file_name);
+  if (!existsSync(artifactPath)) {
+    throw new Error(`Runtime artifact was not found: ${artifactPath}`);
+  }
+  const artifact = fileRecord(artifactPath, workspaceRoot);
+  if (artifact.bytes !== manifest.artifact.bytes) {
+    throw new Error(
+      `${manifest.kind} artifact size mismatch: expected ${manifest.artifact.bytes}, found ${artifact.bytes}`,
+    );
+  }
+  const actualHash = sha256File(artifactPath);
+  if (actualHash.toLowerCase() !== manifest.artifact.sha256.toLowerCase()) {
+    throw new Error(`${manifest.kind} artifact checksum mismatch.`);
+  }
+
+  return {
+    kind: manifest.kind,
+    version: manifest.version,
+    target: manifest.target,
+    entrypoint: manifest.entrypoint,
+    url: manifest.artifact.url,
+    manifest: publicFileRecord(fileRecord(manifestPath, workspaceRoot)),
+    artifact: publicFileRecord(artifact),
+  };
 }
 
 export function summarizeOcrHealth(health: JsonRecord): OcrHealthSummary {
@@ -304,13 +476,13 @@ export function bytesToMb(bytes: number): number {
 }
 
 export async function collectRuntimeHealth({
-  sidecarPath,
+  backendRuntimeEntrypoint,
   workspaceRoot = defaultWorkspaceRoot,
   timeoutMs = 120_000,
   dataDir = resolve(workspaceRoot, DEFAULT_DATA_DIR),
   llmModel = DEFAULT_LLM_MODEL,
   ocrRuntimeManifest = resolve(workspaceRoot, DEFAULT_OCR_RUNTIME_MANIFEST),
-}: RuntimeHealthOptions = {} as RuntimeHealthOptions): Promise<RuntimeHealthSummary> {
+}: RuntimeHealthOptions): Promise<RuntimeHealthSummary> {
   const port = await reserveLoopbackPort();
   const token = `package-qa-${process.pid}-${Date.now()}`;
   const baseUrl = `http://127.0.0.1:${port}`;
@@ -319,7 +491,7 @@ export async function collectRuntimeHealth({
 
   mkdirSync(dataDir, { recursive: true });
 
-  const child = spawn(sidecarPath, [], {
+  const child = spawn(backendRuntimeEntrypoint, [], {
     cwd: workspaceRoot,
     env: {
       ...process.env,
@@ -339,8 +511,8 @@ export async function collectRuntimeHealth({
     windowsHide: true,
   });
 
-  child.stdout?.on('data', chunk => appendCapture(output, 'stdout', chunk));
-  child.stderr?.on('data', chunk => appendCapture(output, 'stderr', chunk));
+  child.stdout?.on('data', (chunk) => appendCapture(output, 'stdout', chunk));
+  child.stderr?.on('data', (chunk) => appendCapture(output, 'stderr', chunk));
   child.on('exit', (code, signal) => {
     state.exited = true;
     state.code = code;
@@ -353,8 +525,12 @@ export async function collectRuntimeHealth({
       output,
       timeoutMs,
     });
-    const ocrHealthRaw = asJsonRecord(await fetchJson(`${baseUrl}/ocr/health`, token));
-    const llmHealthRaw = asJsonRecord(await fetchJson(`${baseUrl}/llm/health`, token));
+    const ocrHealthRaw = asJsonRecord(
+      await fetchJson(`${baseUrl}/ocr/health`, token),
+    );
+    const llmHealthRaw = asJsonRecord(
+      await fetchJson(`${baseUrl}/llm/health`, token),
+    );
 
     return {
       launch_env: {
@@ -371,7 +547,7 @@ export async function collectRuntimeHealth({
         ocr: ocrHealthRaw,
         llm: llmHealthRaw,
       },
-      sidecar_output_tail: output,
+      backend_output_tail: output,
     };
   } finally {
     await stopChild(child, state);
@@ -380,11 +556,9 @@ export async function collectRuntimeHealth({
 
 export function initialInstallerSizeGate(
   bundleArtifacts: readonly Pick<FileRecord, 'mb'>[],
-  sidecar: Pick<FileRecord, 'mb'>
 ): SizeGate {
   const largestInitialMb = Math.max(
-    sidecar.mb,
-    ...bundleArtifacts.map(artifact => artifact.mb)
+    ...bundleArtifacts.map((artifact) => artifact.mb),
   );
   if (largestInitialMb > INITIAL_INSTALLER_ERROR_MB) {
     return {
@@ -392,8 +566,7 @@ export function initialInstallerSizeGate(
       largest_initial_mb: largestInitialMb,
       warning_mb: INITIAL_INSTALLER_WARNING_MB,
       error_mb: INITIAL_INSTALLER_ERROR_MB,
-      detail:
-        `Initial package is ${largestInitialMb} MB, above the ${INITIAL_INSTALLER_ERROR_MB} MB limit.`,
+      detail: `Initial package is ${largestInitialMb} MB, above the ${INITIAL_INSTALLER_ERROR_MB} MB limit.`,
     };
   }
   if (largestInitialMb > INITIAL_INSTALLER_WARNING_MB) {
@@ -402,8 +575,7 @@ export function initialInstallerSizeGate(
       largest_initial_mb: largestInitialMb,
       warning_mb: INITIAL_INSTALLER_WARNING_MB,
       error_mb: INITIAL_INSTALLER_ERROR_MB,
-      detail:
-        `Initial package is ${largestInitialMb} MB, above the ${INITIAL_INSTALLER_WARNING_MB} MB warning threshold.`,
+      detail: `Initial package is ${largestInitialMb} MB, above the ${INITIAL_INSTALLER_WARNING_MB} MB warning threshold.`,
     };
   }
   return {
@@ -451,6 +623,13 @@ function publicFileRecord(record: FileRecord): PublicFileRecord {
   };
 }
 
+function sha256File(filePath: string): string {
+  const hash = createHash('sha256');
+  const content = readFileSync(filePath);
+  hash.update(content);
+  return hash.digest('hex');
+}
+
 function isSidecarName(fileName: string): boolean {
   return (
     fileName.startsWith(SIDECAR_PREFIX) &&
@@ -470,7 +649,7 @@ async function reserveLoopbackPort(): Promise<number> {
   const address = server.address();
   const port = typeof address === 'object' && address ? address.port : null;
   await new Promise<void>((resolveClose, rejectClose) => {
-    server.close(error => (error ? rejectClose(error) : resolveClose()));
+    server.close((error) => (error ? rejectClose(error) : resolveClose()));
   });
   if (!port) {
     throw new Error('Unable to reserve a loopback port for package QA.');
@@ -480,14 +659,14 @@ async function reserveLoopbackPort(): Promise<number> {
 
 async function waitForJson(
   url: string,
-  { state, output, timeoutMs }: WaitForJsonOptions
+  { state, output, timeoutMs }: WaitForJsonOptions,
 ): Promise<unknown> {
   const deadline = Date.now() + timeoutMs;
   let lastError: unknown = null;
   while (Date.now() < deadline) {
     if (state.exited) {
       throw new Error(
-        `Sidecar exited before health was ready (code=${state.code}, signal=${state.signal}). stderr tail: ${output.stderr}`
+        `Backend runtime exited before health was ready (code=${state.code}, signal=${state.signal}). stderr tail: ${output.stderr}`,
       );
     }
     try {
@@ -498,7 +677,7 @@ async function waitForJson(
     }
   }
   throw new Error(
-    `Sidecar did not become healthy within ${timeoutMs}ms. Last error: ${errorMessage(lastError)}`
+    `Backend runtime did not become healthy within ${timeoutMs}ms. Last error: ${errorMessage(lastError)}`,
   );
 }
 
@@ -518,11 +697,18 @@ async function fetchJson(url: string, token?: string): Promise<unknown> {
   }
 }
 
-function appendCapture(output: OutputCapture, key: keyof OutputCapture, chunk: Buffer | string): void {
+function appendCapture(
+  output: OutputCapture,
+  key: keyof OutputCapture,
+  chunk: Buffer | string,
+): void {
   output[key] = `${output[key]}${chunk.toString()}`.slice(-CAPTURE_LIMIT);
 }
 
-async function stopChild(child: ChildProcess, state: ChildState): Promise<void> {
+async function stopChild(
+  child: ChildProcess,
+  state: ChildState,
+): Promise<void> {
   if (state.exited) {
     return;
   }
@@ -556,8 +742,12 @@ function parseArgs(args: readonly string[]): ParsedArgs {
       parsed.output = readValue(arg);
     } else if (arg === '--bundle-root') {
       parsed.bundleRoot = readValue(arg);
-    } else if (arg === '--sidecar-dir') {
-      parsed.sidecarDir = readValue(arg);
+    } else if (arg === '--backend-runtime-root') {
+      parsed.backendRuntimeRoot = readValue(arg);
+    } else if (arg === '--backend-runtime-manifest') {
+      parsed.backendRuntimeManifest = readValue(arg);
+    } else if (arg === '--backend-runtime-entrypoint') {
+      parsed.backendRuntimeEntrypoint = readValue(arg);
     } else if (arg === '--ocr-runtime-root') {
       parsed.ocrRuntimeRoot = readValue(arg);
     } else if (arg === '--ocr-runtime-manifest') {
@@ -575,7 +765,7 @@ function parseArgs(args: readonly string[]): ParsedArgs {
 
 function asJsonRecord(value: unknown): JsonRecord {
   return value && typeof value === 'object' && !Array.isArray(value)
-    ? value as JsonRecord
+    ? (value as JsonRecord)
     : {};
 }
 
@@ -592,8 +782,11 @@ async function main(): Promise<void> {
   console.log(`Wrote package QA report to ${outputPath}`);
 }
 
-if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) {
-  main().catch(error => {
+if (
+  process.argv[1] &&
+  pathToFileURL(resolve(process.argv[1])).href === import.meta.url
+) {
+  main().catch((error) => {
     console.error(error);
     process.exitCode = 1;
   });

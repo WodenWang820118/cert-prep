@@ -9,6 +9,7 @@ import { HealthStore } from './health.store';
 
 describe('HealthStore model downloads', () => {
   const apiClient = {
+    health: vi.fn(),
     llmHealth: vi.fn(),
     ocrHealth: vi.fn(),
     runtimeRequirements: vi.fn(),
@@ -21,6 +22,13 @@ describe('HealthStore model downloads', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
+    apiClient.health.mockResolvedValue({
+      status: 'ok',
+      app: 'exam-prep-backend',
+      version: '0.1.0',
+      python_version: '3.13.5',
+      runtime_mode: 'source',
+    });
     apiClient.llmHealth.mockResolvedValue(llmHealth({ available: false }));
     apiClient.ocrHealth.mockResolvedValue({
       provider: 'paddle',

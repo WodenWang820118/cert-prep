@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 from pathlib import Path
+import subprocess
 from zipfile import ZipFile
 
 from fastapi.testclient import TestClient
@@ -16,6 +17,7 @@ from exam_prep_backend.domains.runtime_installations import (
     RuntimeInstallationStatus,
     RuntimeRequirementKind,
     RuntimeRequirementSnapshot,
+    run_ocr_runtime_command,
 )
 from exam_prep_backend.domains.source_documents.ocr import OCRHealth, OCRPageResult
 
@@ -109,6 +111,27 @@ def test_paddle_runtime_install_rejects_checksum_mismatch(tmp_path: Path) -> Non
 
     assert response.status == RuntimeInstallationStatus.FAILED
     assert response.error == "OCR runtime artifact checksum mismatch."
+
+
+def test_ocr_runtime_command_decodes_utf8_output(monkeypatch, tmp_path: Path) -> None:
+    calls: dict[str, object] = {}
+
+    def fake_run(command, **kwargs):
+        calls.update(kwargs)
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            stdout='{"text":"日本語","duration_ms":1}\n',
+            stderr="model warning\n",
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    output = run_ocr_runtime_command(tmp_path / "exam-prep-ocr-runtime.exe", [])
+
+    assert json.loads(output)["text"] == "日本語"
+    assert calls["encoding"] == "utf-8"
+    assert calls["errors"] == "replace"
 
 
 @dataclass

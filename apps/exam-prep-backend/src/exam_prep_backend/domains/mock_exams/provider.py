@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 import json
+import re
 from typing import Any
 
 import ollama
@@ -10,6 +11,7 @@ from exam_prep_backend.config import Settings
 from exam_prep_backend.domains.runtime_installations import resolve_ollama_executable
 from exam_prep_backend.domains.mock_exams.models import (
     AnswerKeySource,
+    DraftStatus,
     DraftSuggestion,
     SourceChunk,
 )
@@ -100,7 +102,11 @@ class OllamaProvider:
         if not chunks:
             return []
 
-        source = _source_text_for_prompt(chunks)
+        extracted = _extract_jlpt_question_blocks(chunks, limit)
+        if extracted:
+            return extracted
+
+        source = _source_text_for_prompt(chunks, limit)
         response = self._client.chat(
             model=self.model,
             messages=[
@@ -232,11 +238,118 @@ EXAM_ITEMS_SCHEMA: dict[str, Any] = {
 }
 
 
-def _source_text_for_prompt(chunks: Sequence[SourceChunk]) -> str:
-    sections = []
-    for chunk in chunks:
-        sections.append(f"[[chunk_id:{chunk.id} page:{chunk.page_number}]]\n{chunk.text}")
+MAX_PROMPT_SOURCE_CHARS = 3_000
+MAX_PROMPT_CHUNKS = 6
+
+
+def _source_text_for_prompt(chunks: Sequence[SourceChunk], limit: int) -> str:
+    sections: list[str] = []
+    used_chars = 0
+    max_chunks = max(1, min(MAX_PROMPT_CHUNKS, max(1, limit)))
+    candidates = [chunk for chunk in chunks if _is_exam_source_chunk(chunk)]
+    if not candidates:
+        candidates = list(chunks)
+
+    for chunk in candidates:
+        if len(sections) >= max_chunks:
+            break
+        text = chunk.text.strip()
+        if not text:
+            continue
+        section = f"[[chunk_id:{chunk.id} page:{chunk.page_number}]]\n{text}"
+        remaining = MAX_PROMPT_SOURCE_CHARS - used_chars
+        if remaining <= 0:
+            break
+        if len(section) > remaining:
+            if not sections:
+                section = section[:remaining]
+            else:
+                break
+        sections.append(section)
+        used_chars += len(section)
     return "\n\n".join(sections)
+
+
+def _is_exam_source_chunk(chunk: SourceChunk) -> bool:
+    text = chunk.text.lower()
+    rejected_markers = (
+        "this test paper has multiple versions",
+        "the questions are the same, but the fonts and layouts differ",
+        "official wechat",
+        "\u8907\u6570\u306e\u30d0\u30fc\u30b8\u30e7\u30f3",
+    )
+    if any(marker in text for marker in rejected_markers):
+        return False
+    exam_markers = (
+        "\u554f\u984c",
+        "\u9078\u3073\u306a\u3055\u3044",
+        "\u6700\u3082\u3088\u3044",
+        "mondai",
+        "choose",
+    )
+    return any(marker in text for marker in exam_markers)
+
+
+QUESTION_BLOCK_PATTERN = re.compile(
+    r"(?<!\u554f\u984c)(?P<number>\d{1,3})\s+"
+    r"(?P<stem>.+?[。？?])\s+"
+    r"1\s*(?P<c1>.+?)\s+"
+    r"2\s*(?P<c2>.+?)\s+"
+    r"3\s*(?P<c3>.+?)\s+"
+    r"4\s*(?P<c4>.+?)"
+    r"(?=\s+\d{1,3}\s+|$)"
+)
+
+
+def _extract_jlpt_question_blocks(
+    chunks: Sequence[SourceChunk], limit: int
+) -> list[DraftSuggestion]:
+    suggestions: list[DraftSuggestion] = []
+    for chunk in chunks:
+        if len(suggestions) >= limit:
+            break
+        if not _is_exam_source_chunk(chunk):
+            continue
+        for match in QUESTION_BLOCK_PATTERN.finditer(_question_block_source_text(chunk.text)):
+            stem = _clean_exam_text(match.group("stem"))
+            if _looks_like_question_group_instruction(stem):
+                continue
+            choices = [
+                f"{index} {_clean_exam_text(match.group(f'c{index}'))}"
+                for index in range(1, 5)
+            ]
+            choices = [choice for choice in choices if len(choice) > 2]
+            if not stem or len(choices) < 4:
+                continue
+            source_excerpt = _clean_exam_text(match.group(0))
+            suggestions.append(
+                DraftSuggestion(
+                    chunk_id=chunk.id,
+                    question=stem,
+                    choices=choices,
+                    answer="",
+                    answer_key_source=AnswerKeySource.MANUAL,
+                    rationale="",
+                    citation_page=chunk.page_number,
+                    source_excerpt=source_excerpt[:500],
+                    status=DraftStatus.DRAFT,
+                )
+            )
+            if len(suggestions) >= limit:
+                break
+    return suggestions
+
+
+def _clean_exam_text(text: str) -> str:
+    return " ".join(text.split()).strip(" -")
+
+
+def _question_block_source_text(text: str) -> str:
+    return re.sub(r"^.*?\u9078\u3073\u306a\u3055\u3044[。\.]\s+(?=\d{1,3}\s+)", "", text)
+
+
+def _looks_like_question_group_instruction(stem: str) -> bool:
+    return "\u554f\u984c" in stem or "\u9078\u3073\u306a\u3055\u3044" in stem
 
 
 def _json_response(response: Any) -> dict[str, Any]:

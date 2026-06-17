@@ -10,6 +10,7 @@
     "dev:tauri": "pnpm nx run exam-prep-desktop:dev",
     "build:frontend": "pnpm nx run exam-prep:build",
     "build:backend": "pnpm nx run exam-prep-backend:build-sidecar",
+    "build:backend-runtime": "pnpm nx run exam-prep-backend:build-backend-runtime",
     "build:ocr-runtime": "pnpm nx run exam-prep-backend:build-ocr-runtime-gpu",
     "build:tauri": "pnpm nx run exam-prep-desktop:build",
     "build:tauri:win": "pnpm nx run exam-prep-desktop:build-gpu",

@@ -4,6 +4,13 @@ import { EXAM_PREP_API } from './exam-prep-api';
 
 describe('App', () => {
   const apiClient = {
+    health: vi.fn().mockResolvedValue({
+      status: 'ok',
+      app: 'exam-prep-backend',
+      version: '0.1.0',
+      python_version: '3.13.5',
+      runtime_mode: 'source',
+    }),
     llmHealth: vi.fn().mockResolvedValue({
       provider: 'fake',
       model: 'gemma4:12b',
@@ -48,8 +55,9 @@ describe('App', () => {
     const compiled = fixture.nativeElement as HTMLElement;
     await vi.waitFor(() => {
       fixture.detectChanges();
-      expect(compiled.textContent).toContain('fake / gemma4:12b');
-      expect(compiled.textContent).toContain('fake / none');
+      expect(compiled.textContent).toContain('Python 3.13.5 / source');
+      expect(compiled.textContent).toContain('gemma4:12b');
+      expect(compiled.textContent).toContain('PaddleOCR');
     });
 
     expect(compiled.querySelector('h1')?.textContent).toContain('Exam Prep');

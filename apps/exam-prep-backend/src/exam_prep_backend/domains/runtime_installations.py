@@ -624,7 +624,14 @@ def run_ocr_runtime_command(entrypoint: Path, args: list[str]) -> str:
         ]
     else:
         command = [str(entrypoint), *args]
-    completed = subprocess.run(command, check=False, capture_output=True, text=True)
+    completed = subprocess.run(
+        command,
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
     if completed.returncode != 0:
         raise ProviderUnavailableError((completed.stderr or completed.stdout).strip())
     return completed.stdout

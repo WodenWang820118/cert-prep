@@ -1,5 +1,5 @@
 import { computed, inject, Injectable, signal } from '@angular/core';
-import { DocumentRead, EXAM_PREP_API } from '../exam-prep-api';
+import { ChunkRead, DocumentRead, EXAM_PREP_API } from '../exam-prep-api';
 import { HealthStore } from './health.store';
 import { OperationStore } from './operation.store';
 import { ProjectStore } from './project.store';
@@ -13,6 +13,11 @@ export class SourceImportStore {
 
   readonly selectedFile = signal<File | null>(null);
   readonly uploadedDocument = signal<DocumentRead | null>(null);
+  readonly chunks = signal<ChunkRead[]>([]);
+  readonly previewChunks = computed(() => this.chunks().slice(0, 12));
+  readonly hiddenChunkCount = computed(() =>
+    Math.max(0, this.chunks().length - this.previewChunks().length),
+  );
   readonly canUpload = computed(
     () => this.projects.selectedProject() !== null && this.selectedFile() !== null,
   );
@@ -29,11 +34,13 @@ export class SourceImportStore {
   chooseFile(file: File | null): void {
     this.selectedFile.set(file);
     this.uploadedDocument.set(null);
+    this.chunks.set([]);
   }
 
   reset(): void {
     this.selectedFile.set(null);
     this.uploadedDocument.set(null);
+    this.chunks.set([]);
   }
 
   async uploadDocument(): Promise<DocumentRead | null> {
@@ -52,11 +59,32 @@ export class SourceImportStore {
     );
     if (document !== null) {
       this.uploadedDocument.set(document);
+      await this.loadDocumentChunks(project.id, document.id);
     } else if (this.operations.errorCode() === 'paddle_runtime_missing') {
       await this.refreshRuntimeHealth();
       this.health.openOcrRuntimeInstallConsent();
     }
     return document;
+  }
+
+  async loadLatestDocument(projectId: string): Promise<void> {
+    const documents = await this.api.listDocuments(projectId);
+    const document = documents.items[0] ?? null;
+    this.uploadedDocument.set(document);
+    if (document === null) {
+      this.chunks.set([]);
+      return;
+    }
+    await this.loadDocumentChunks(projectId, document.id);
+  }
+
+  private async loadDocumentChunks(projectId: string, documentId: string): Promise<void> {
+    try {
+      const chunks = await this.api.listDocumentChunks(projectId, documentId);
+      this.chunks.set(chunks.items);
+    } catch {
+      this.chunks.set([]);
+    }
   }
 
   private async refreshRuntimeHealth(): Promise<void> {

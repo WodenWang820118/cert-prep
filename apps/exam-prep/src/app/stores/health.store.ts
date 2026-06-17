@@ -2,6 +2,7 @@ import { computed, inject, Injectable, signal } from '@angular/core';
 import {
   EXAM_PREP_API,
   ExamPrepGeneratedClient,
+  HealthResponse,
   LLMHealthRead,
   ModelDownloadRead,
   OCRHealthRead,
@@ -100,6 +101,7 @@ export class HealthStore {
   private runtimeInstallPollTimer: ReturnType<typeof setTimeout> | null = null;
 
   readonly llmHealth = signal<LLMHealthRead | null>(null);
+  readonly systemHealth = signal<HealthResponse | null>(null);
   readonly ocrHealth = signal<OCRHealthRead | null>(null);
   readonly runtimeRequirements = signal<RuntimeRequirementRead[]>([]);
   readonly modelDownloadConsentVisible = signal(false);
@@ -153,7 +155,9 @@ export class HealthStore {
     () => this.isOcrRuntimeMissing() && !this.isRuntimeInstallActive(),
   );
   readonly modelDownloadActionLabel = computed(() =>
-    this.modelDownload()?.phase === 'failed' ? 'Retry download' : 'Download model',
+    this.modelDownload()?.phase === 'failed'
+      ? 'Retry download'
+      : 'Download model',
   );
   readonly runtimeInstallActionLabel = computed(() =>
     this.runtimeInstall()?.phase === 'failed' ? 'Retry install' : 'Install',
@@ -166,11 +170,14 @@ export class HealthStore {
   );
 
   async load(): Promise<void> {
-    const [llmHealth, ocrHealth, runtimeRequirements] = await Promise.all([
-      this.api.llmHealth(),
-      this.api.ocrHealth(),
-      this.loadRuntimeRequirements(),
-    ]);
+    const [systemHealth, llmHealth, ocrHealth, runtimeRequirements] =
+      await Promise.all([
+        this.api.health(),
+        this.api.llmHealth(),
+        this.api.ocrHealth(),
+        this.loadRuntimeRequirements(),
+      ]);
+    this.systemHealth.set(systemHealth);
     this.llmHealth.set(llmHealth);
     this.ocrHealth.set(ocrHealth);
     this.runtimeRequirements.set(runtimeRequirements);
@@ -181,12 +188,14 @@ export class HealthStore {
       'health',
       'Runtime health refreshed',
       async () => ({
+        system: await this.api.health(),
         llm: await this.api.llmHealth(),
         ocr: await this.api.ocrHealth(),
         runtimeRequirements: await this.loadRuntimeRequirements(),
       }),
     );
     if (health !== null) {
+      this.systemHealth.set(health.system);
       this.llmHealth.set(health.llm);
       this.ocrHealth.set(health.ocr);
       this.runtimeRequirements.set(health.runtimeRequirements);
@@ -277,7 +286,11 @@ export class HealthStore {
 
   async confirmRuntimeInstallation(): Promise<void> {
     const kind = this.runtimeInstallConsentKind();
-    if (kind === null || !this.canInstallRuntime(kind) || this.runtimeInstallStarting()) {
+    if (
+      kind === null ||
+      !this.canInstallRuntime(kind) ||
+      this.runtimeInstallStarting()
+    ) {
       return;
     }
 
@@ -516,7 +529,12 @@ export class HealthStore {
       fallbackPhase;
     const normalizedStatus = this.normalizedCode(status);
     const error = this.readString(record, 'error');
-    const phase = this.phaseFrom(record, normalizedStatus, fallbackPhase, error);
+    const phase = this.phaseFrom(
+      record,
+      normalizedStatus,
+      fallbackPhase,
+      error,
+    );
     const progress = this.progressFrom(record, phase);
     const message =
       error ??
@@ -531,7 +549,8 @@ export class HealthStore {
         this.readString(record, 'id') ??
         this.modelDownload()?.jobId ??
         null,
-      model: this.readString(record, 'model') ?? this.llmHealth()?.model ?? 'model',
+      model:
+        this.readString(record, 'model') ?? this.llmHealth()?.model ?? 'model',
       phase,
       status,
       progress,
@@ -554,7 +573,12 @@ export class HealthStore {
       fallbackPhase;
     const normalizedStatus = this.normalizedCode(status);
     const error = this.readString(record, 'error');
-    const phase = this.phaseFrom(record, normalizedStatus, fallbackPhase, error);
+    const phase = this.phaseFrom(
+      record,
+      normalizedStatus,
+      fallbackPhase,
+      error,
+    );
     const progress = this.progressFrom(record, phase);
     const message =
       error ??
@@ -593,7 +617,10 @@ export class HealthStore {
       return 'waiting_for_user';
     }
 
-    if (this.readBoolean(record, 'done') || MODEL_DOWNLOAD_DONE_STATUSES.has(status)) {
+    if (
+      this.readBoolean(record, 'done') ||
+      MODEL_DOWNLOAD_DONE_STATUSES.has(status)
+    ) {
       return 'succeeded';
     }
 
@@ -616,7 +643,8 @@ export class HealthStore {
       this.readNumber(record, 'completed') ??
       this.readNumber(record, 'downloaded_bytes');
     const total =
-      this.readNumber(record, 'total') ?? this.readNumber(record, 'total_bytes');
+      this.readNumber(record, 'total') ??
+      this.readNumber(record, 'total_bytes');
     if (completed !== null && total !== null && total > 0) {
       return this.percent((completed / total) * 100);
     }
@@ -746,7 +774,10 @@ export class HealthStore {
 
   private normalizedCode(value: unknown): string {
     return typeof value === 'string'
-      ? value.trim().toLowerCase().replace(/[\s-]+/g, '_')
+      ? value
+          .trim()
+          .toLowerCase()
+          .replace(/[\s-]+/g, '_')
       : '';
   }
 
@@ -794,7 +825,9 @@ export class HealthStore {
       : fallbackKind;
   }
 
-  private runtimeLabel(kind: RuntimeRequirementKind | RuntimeKind | null): string {
+  private runtimeLabel(
+    kind: RuntimeRequirementKind | RuntimeKind | null,
+  ): string {
     if (kind === null) {
       return 'Runtime';
     }

@@ -133,6 +133,53 @@ import { SourceImportStore } from '../stores/source-import.store';
               </div>
             }
           </dl>
+
+          @if (sourceImport.previewChunks().length > 0) {
+            <section
+              class="grid gap-3 rounded-md border border-surface-200 bg-surface-0 p-3"
+              aria-labelledby="extracted-text-heading"
+            >
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <h3
+                  id="extracted-text-heading"
+                  class="m-0 text-sm font-bold uppercase text-muted-color"
+                >
+                  Extracted text
+                </h3>
+                <p-tag
+                  [value]="sourceImport.chunks().length + ' chunks'"
+                  severity="secondary"
+                  [rounded]="true"
+                />
+              </div>
+              <div class="grid max-h-96 gap-2 overflow-auto pr-1">
+                @for (chunk of sourceImport.previewChunks(); track chunk.id) {
+                  <article class="grid gap-1 rounded-md bg-surface-50 p-3">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <p-tag
+                        [value]="'Page ' + chunk.page_number"
+                        severity="secondary"
+                        [rounded]="true"
+                      />
+                      <span class="text-xs font-semibold text-muted-color">
+                        {{ chunk.extraction_method }}
+                      </span>
+                    </div>
+                    <p class="m-0 whitespace-pre-wrap text-sm leading-6 text-color">
+                      {{ chunk.text }}
+                    </p>
+                  </article>
+                }
+                @if (sourceImport.hiddenChunkCount() > 0) {
+                  <p
+                    class="m-0 rounded-md border border-dashed border-surface-300 p-3 text-sm text-muted-color"
+                  >
+                    {{ sourceImport.hiddenChunkCount() }} more chunks available.
+                  </p>
+                }
+              </div>
+            </section>
+          }
         }
       </div>
     </p-card>

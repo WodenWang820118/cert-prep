@@ -17,14 +17,13 @@
     "dev": {
       "continuous": true,
       "executor": "nx:run-commands",
-      "dependsOn": ["sync-sidecar"],
       "options": {
         "command": "pnpm exec tauri dev --config apps/exam-prep-desktop/src-tauri/tauri.conf.json"
       }
     },
     "build": {
       "executor": "nx:run-commands",
-      "dependsOn": ["exam-prep:build", "sync-sidecar"],
+      "dependsOn": ["exam-prep:build", "sync-backend-runtime-manifest"],
       "outputs": ["{projectRoot}/src-tauri/target"],
       "options": {
         "command": "pnpm exec tauri build --config apps/exam-prep-desktop/src-tauri/tauri.conf.json"
@@ -32,7 +31,11 @@
     },
     "build-gpu": {
       "executor": "nx:run-commands",
-      "dependsOn": ["exam-prep:build", "sync-sidecar", "sync-runtime-manifest"],
+      "dependsOn": [
+        "exam-prep:build",
+        "sync-backend-runtime-manifest",
+        "sync-runtime-manifest"
+      ],
       "outputs": ["{projectRoot}/src-tauri/target"],
       "options": {
         "command": "pnpm exec tauri build --target x86_64-pc-windows-msvc --ci --config apps/exam-prep-desktop/src-tauri/tauri.conf.json"
@@ -57,9 +60,21 @@
     "sync-runtime-manifest": {
       "executor": "nx:run-commands",
       "dependsOn": ["exam-prep-backend:build-ocr-runtime-gpu"],
-      "outputs": ["{projectRoot}/src-tauri/resources/ocr-runtime-manifest.json"],
+      "outputs": [
+        "{projectRoot}/src-tauri/resources/ocr-runtime-manifest.json"
+      ],
       "options": {
         "command": "node apps/exam-prep-desktop/scripts/sync-runtime-manifest.mts"
+      }
+    },
+    "sync-backend-runtime-manifest": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["exam-prep-backend:build-backend-runtime"],
+      "outputs": [
+        "{projectRoot}/src-tauri/resources/backend-runtime-manifest.json"
+      ],
+      "options": {
+        "command": "node apps/exam-prep-desktop/scripts/sync-backend-runtime-manifest.mts"
       }
     },
     "package-qa": {
@@ -91,7 +106,6 @@
     "cargo-test": {
       "cache": true,
       "executor": "nx:run-commands",
-      "dependsOn": ["sync-sidecar"],
       "inputs": ["default"],
       "options": {
         "command": "cargo test --manifest-path apps/exam-prep-desktop/src-tauri/Cargo.toml"

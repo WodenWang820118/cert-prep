@@ -96,6 +96,24 @@ def get_source_chunks(db: Database, project_id: str, document_id: str) -> list[d
     return list_chunks(db, project_id, document_id)
 
 
+def list_documents(db: Database, project_id: str) -> list[dict]:
+    ensure_project_exists(db, project_id)
+    with db.connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT documents.*,
+                COUNT(document_chunks.id) AS chunks_count
+            FROM documents
+            LEFT JOIN document_chunks ON document_chunks.document_id = documents.id
+            WHERE documents.project_id = ?
+            GROUP BY documents.id
+            ORDER BY documents.created_at DESC
+            """,
+            (project_id,),
+        ).fetchall()
+    return [_document_from_row(row) for row in rows]
+
+
 def get_chunk(db: Database, project_id: str, document_id: str, chunk_id: str) -> dict:
     with db.connect() as connection:
         row = connection.execute(

@@ -8,6 +8,7 @@ import { SourceImportPanelComponent } from './components/source-import-panel.com
 import { WrongAnswerReviewComponent } from './components/wrong-answer-review.component';
 import { OperationStore } from './stores/operation.store';
 import { ProjectStore } from './stores/project.store';
+import { DesktopRuntimeStore } from './stores/desktop-runtime.store';
 import { WorkspaceFacade } from './stores/workspace.facade';
 
 @Component({
@@ -26,6 +27,7 @@ import { WorkspaceFacade } from './stores/workspace.facade';
 })
 export class App implements OnInit {
   protected readonly title = 'Exam Prep';
+  protected readonly desktopRuntime = inject(DesktopRuntimeStore);
   protected readonly operations = inject(OperationStore);
   protected readonly projects = inject(ProjectStore);
   private readonly workspace = inject(WorkspaceFacade);

@@ -7,7 +7,12 @@ from exam_prep_backend.app import create_app
 from exam_prep_backend.config import Settings
 from exam_prep_backend.domains.mock_exams.models import DraftSuggestion, SourceChunk
 from exam_prep_backend.domains.mock_exams.ports import ModelPullProgress, ProviderHealth
-from exam_prep_backend.domains.mock_exams.provider import _draft_suggestion_from_item
+from exam_prep_backend.domains.mock_exams.provider import (
+    MAX_PROMPT_SOURCE_CHARS,
+    _draft_suggestion_from_item,
+    _extract_jlpt_question_blocks,
+    _source_text_for_prompt,
+)
 
 
 AUTH_HEADERS = {"Authorization": "Bearer test-token"}
@@ -52,6 +57,65 @@ def test_draft_parser_accepts_jlpt_like_choice_item() -> None:
     assert suggestion is not None
     assert suggestion.answer == "1 seikai"
     assert suggestion.citation_page == 3
+
+
+def test_ollama_prompt_source_skips_notice_pages_and_stays_bounded() -> None:
+    notice = SourceChunk(
+        id="cover",
+        page_number=1,
+        text=(
+            "This test paper has multiple versions. The questions are the same, "
+            "but the fonts and layouts differ."
+        ),
+        source_excerpt="This test paper has multiple versions.",
+    )
+    first_exam_page = SourceChunk(
+        id="page-2",
+        page_number=2,
+        text=(
+            "問題1 の言葉の読み方として最もよいのを、1・2・3・4から"
+            "一つ選びなさい。 1 余暇の楽しみ方はいろいろある。"
+            " 1 ようか 2 よか 3 よが 4 ようが"
+        ),
+        source_excerpt="問題1 の言葉の読み方として最もよいのを選びなさい。",
+    )
+    long_exam_page = SourceChunk(
+        id="page-3",
+        page_number=3,
+        text="問題2 " + ("日本語の設問 " * 2000),
+        source_excerpt="問題2",
+    )
+
+    source = _source_text_for_prompt([notice, first_exam_page, long_exam_page], limit=3)
+
+    assert "chunk_id:cover" not in source
+    assert "chunk_id:page-2" in source
+    assert "余暇" in source
+    assert len(source) <= MAX_PROMPT_SOURCE_CHARS
+
+
+def test_jlpt_question_blocks_extract_as_manual_drafts_without_ai() -> None:
+    chunk = SourceChunk(
+        id="page-2",
+        page_number=2,
+        text=(
+            "問題1 の言葉の読み方として最もよいのを、1・2・3・4から"
+            "一つ選びなさい。 1 余暇の楽しみ方はいろいろある。 "
+            "1 ようか 2 よか 3 よが 4 ようが "
+            "2 その動物は動きが鈍い。 1 するどい 2 にぶい 3 あらい 4 あやうい"
+        ),
+        source_excerpt="問題1 の言葉の読み方として最もよいのを選びなさい。",
+    )
+
+    suggestions = _extract_jlpt_question_blocks([chunk], limit=2)
+
+    assert len(suggestions) == 2
+    assert suggestions[0].question == "余暇の楽しみ方はいろいろある。"
+    assert suggestions[0].choices == ("1 ようか", "2 よか", "3 よが", "4 ようが")
+    assert suggestions[0].answer == ""
+    assert suggestions[0].answer_key_source.value == "manual"
+    assert suggestions[0].status.value == "draft"
+    assert suggestions[0].citation_page == 2
 
 
 def test_llm_health_does_not_pull_missing_ollama_model(tmp_path) -> None:

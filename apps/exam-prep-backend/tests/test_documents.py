@@ -60,6 +60,12 @@ def test_pdf_upload_hashes_stores_extracts_and_chunks_by_page(
     assert len(drafts.json()["items"]) == 2
     assert drafts.json()["items"][0]["status"] == "approved"
 
+    documents = client.get(f"/projects/{project_id}/documents", headers=auth_headers)
+    assert documents.status_code == 200
+    assert documents.json()["items"][0]["id"] == document["id"]
+    assert documents.json()["items"][0]["chunks_count"] == 2
+    assert "storage_path" not in documents.json()["items"][0]
+
 
 def test_scanned_pdf_upload_is_detected_without_chunks(client: TestClient, auth_headers) -> None:
     project_id = _create_project(client, auth_headers)

@@ -26,6 +26,10 @@ class DocumentRead(BaseModel):
     created_at: str
 
 
+class DocumentList(BaseModel):
+    items: list[DocumentRead]
+
+
 class ChunkRead(BaseModel):
     id: str
     document_id: str
