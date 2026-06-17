@@ -1,5 +1,7 @@
 import hashlib
 from pathlib import Path
+from threading import Event
+import time
 
 from fastapi.testclient import TestClient
 
@@ -23,6 +25,7 @@ def test_pdf_upload_hashes_stores_extracts_and_chunks_by_page(
     response = client.post(
         f"/projects/{project_id}/documents",
         headers=auth_headers,
+        data={"language_hint": "ja"},
         files={"file": ("security.pdf", pdf_bytes, "application/pdf")},
     )
 
@@ -31,6 +34,7 @@ def test_pdf_upload_hashes_stores_extracts_and_chunks_by_page(
     expected_sha = hashlib.sha256(pdf_bytes).hexdigest()
     assert document["sha256"] == expected_sha
     assert document["filename"] == "security.pdf"
+    assert document["language_hint"] == "ja"
     assert document["page_count"] == 2
     assert document["has_text"] is True
     assert document["status"] == "ready"
@@ -40,7 +44,7 @@ def test_pdf_upload_hashes_stores_extracts_and_chunks_by_page(
     assert document["ocr_duration_ms"] == 0
     assert document["processed_page_count"] == 2
     assert document["chunks_count"] == 2
-    assert document["exam_item_count"] == 2
+    assert document["exam_item_count"] == 0
     assert "storage_path" not in document
     stored_path = tmp_path / "uploads" / project_id / f"{expected_sha}.pdf"
     assert stored_path.is_file()
@@ -57,14 +61,21 @@ def test_pdf_upload_hashes_stores_extracts_and_chunks_by_page(
 
     drafts = client.get(f"/projects/{project_id}/question-drafts", headers=auth_headers)
     assert drafts.status_code == 200
-    assert len(drafts.json()["items"]) == 2
-    assert drafts.json()["items"][0]["status"] == "approved"
+    assert drafts.json()["items"] == []
 
     documents = client.get(f"/projects/{project_id}/documents", headers=auth_headers)
     assert documents.status_code == 200
     assert documents.json()["items"][0]["id"] == document["id"]
     assert documents.json()["items"][0]["chunks_count"] == 2
     assert "storage_path" not in documents.json()["items"][0]
+
+    detail = client.get(
+        f"/projects/{project_id}/documents/{document['id']}",
+        headers=auth_headers,
+    )
+    assert detail.status_code == 200
+    assert detail.json()["id"] == document["id"]
+    assert detail.json()["language_hint"] == "ja"
 
 
 def test_scanned_pdf_upload_is_detected_without_chunks(client: TestClient, auth_headers) -> None:
@@ -85,7 +96,7 @@ def test_scanned_pdf_upload_is_detected_without_chunks(client: TestClient, auth_
     assert document["ocr_device"] is None
     assert document["ocr_fallback_reason"] is None
     assert document["ocr_duration_ms"] == 0
-    assert document["processed_page_count"] == 0
+    assert document["processed_page_count"] == 1
     assert document["chunks_count"] == 0
     assert document["exam_item_count"] == 0
 
@@ -93,8 +104,13 @@ def test_scanned_pdf_upload_is_detected_without_chunks(client: TestClient, auth_
 def test_image_only_pdf_reports_missing_paddle_runtime(tmp_path: Path, auth_headers) -> None:
     client = TestClient(
         create_app(
-            settings=Settings(data_dir=tmp_path, api_token="test-token"),
+            settings=Settings(
+                data_dir=tmp_path,
+                api_token="test-token",
+                auto_generate_exam_on_upload=True,
+            ),
             ocr_provider=MissingPaddleRuntimeProvider(),
+            document_processing_async_jobs=False,
         )
     )
     project_id = _create_project(client, auth_headers)
@@ -105,11 +121,10 @@ def test_image_only_pdf_reports_missing_paddle_runtime(tmp_path: Path, auth_head
         files={"file": ("scan.pdf", minimal_pdf(""), "application/pdf")},
     )
 
-    assert response.status_code == 503
-    assert response.json() == {
-        "code": "paddle_runtime_missing",
-        "message": "PaddleOCR runtime is not installed.",
-    }
+    assert response.status_code == 201
+    document = response.json()
+    assert document["status"] == "ocr_failed"
+    assert document["ocr_fallback_reason"] == "PaddleOCR runtime is not installed."
 
 
 def test_image_only_pdf_uses_ocr_and_creates_approved_mock_exam(
@@ -119,9 +134,14 @@ def test_image_only_pdf_uses_ocr_and_creates_approved_mock_exam(
     llm_provider = MockExamProvider()
     client = TestClient(
         create_app(
-            settings=Settings(data_dir=tmp_path, api_token="test-token"),
+            settings=Settings(
+                data_dir=tmp_path,
+                api_token="test-token",
+                auto_generate_exam_on_upload=True,
+            ),
             llm_provider=llm_provider,
             ocr_provider=ocr_provider,
+            document_processing_async_jobs=False,
         )
     )
     project_id = _create_project(client, auth_headers)
@@ -168,6 +188,7 @@ def test_provider_specific_ocr_method_round_trips_through_upload_response(
         create_app(
             settings=Settings(data_dir=tmp_path, api_token="test-token"),
             ocr_provider=ocr_provider,
+            document_processing_async_jobs=False,
         )
     )
     project_id = _create_project(client, auth_headers)
@@ -200,6 +221,7 @@ def test_mixed_embedded_and_ocr_pdf_keeps_page_order(tmp_path: Path, auth_header
         create_app(
             settings=Settings(data_dir=tmp_path, api_token="test-token"),
             ocr_provider=ocr_provider,
+            document_processing_async_jobs=False,
         )
     )
     project_id = _create_project(client, auth_headers)
@@ -245,6 +267,7 @@ def test_image_only_pdf_ocr_continues_after_single_page_failure(
             settings=Settings(data_dir=tmp_path, api_token="test-token"),
             llm_provider=llm_provider,
             ocr_provider=ocr_provider,
+            document_processing_async_jobs=False,
         )
     )
     project_id = _create_project(client, auth_headers)
@@ -262,9 +285,9 @@ def test_image_only_pdf_ocr_continues_after_single_page_failure(
     assert document["ocr_device"] == "cpu"
     assert document["ocr_fallback_reason"] == "gpu:0 failed: simulated GPU OCR failure"
     assert document["ocr_duration_ms"] == 246
-    assert document["processed_page_count"] == 2
+    assert document["processed_page_count"] == 3
     assert document["chunks_count"] == 2
-    assert document["exam_item_count"] == 2
+    assert document["exam_item_count"] == 0
     assert ocr_provider.ocr_page_numbers == [1, 2, 3]
 
     chunks = client.get(
@@ -276,7 +299,10 @@ def test_image_only_pdf_ocr_continues_after_single_page_failure(
 
 def test_pdf_upload_rejects_oversized_file(tmp_path: Path, auth_headers) -> None:
     client = TestClient(
-        create_app(settings=Settings(data_dir=tmp_path, api_token="test-token", max_upload_bytes=8))
+        create_app(
+            settings=Settings(data_dir=tmp_path, api_token="test-token", max_upload_bytes=8),
+            document_processing_async_jobs=False,
+        )
     )
     project_id = _create_project(client, auth_headers)
 
@@ -288,6 +314,46 @@ def test_pdf_upload_rejects_oversized_file(tmp_path: Path, auth_headers) -> None
 
     assert response.status_code == 422
     assert response.json()["code"] == "validation_error"
+
+
+def test_async_upload_returns_processing_then_progresses(tmp_path: Path, auth_headers) -> None:
+    ocr_provider = BlockingOcrProvider()
+    llm_provider = MockExamProvider()
+    client = TestClient(
+        create_app(
+            settings=Settings(data_dir=tmp_path, api_token="test-token"),
+            llm_provider=llm_provider,
+            ocr_provider=ocr_provider,
+            document_processing_async_jobs=True,
+        )
+    )
+    project_id = _create_project(client, auth_headers)
+
+    response = client.post(
+        f"/projects/{project_id}/documents",
+        headers=auth_headers,
+        files={"file": ("async.pdf", minimal_pdf(""), "application/pdf")},
+    )
+
+    assert response.status_code == 201
+    document = response.json()
+    assert document["status"] == "processing"
+    assert document["processed_page_count"] == 0
+    assert document["chunks_count"] == 0
+    assert ocr_provider.started.wait(timeout=2)
+
+    processing = client.get(
+        f"/projects/{project_id}/documents/{document['id']}",
+        headers=auth_headers,
+    )
+    assert processing.status_code == 200
+    assert processing.json()["status"] == "processing"
+
+    ocr_provider.release.set()
+    ready = _wait_for_document_status(client, auth_headers, project_id, document["id"], "ready")
+    assert ready["processed_page_count"] == 1
+    assert ready["chunks_count"] == 1
+    assert ready["exam_item_count"] == 0
 
 
 def _create_project(client: TestClient, auth_headers) -> str:
@@ -362,6 +428,18 @@ class MockPaddleOcrProvider:
         )
 
 
+class BlockingOcrProvider(MockPaddleOcrProvider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.started = Event()
+        self.release = Event()
+
+    def extract_page_text(self, image_png: bytes, page_number: int) -> OCRPageResult:
+        self.started.set()
+        assert self.release.wait(timeout=5)
+        return super().extract_page_text(image_png, page_number)
+
+
 class MockOllamaOcrProvider(MockPaddleOcrProvider):
     provider = "mock-ollama"
     engine = "gemma4:12b"
@@ -415,3 +493,25 @@ class MissingPaddleRuntimeProvider(MockPaddleOcrProvider):
         from exam_prep_backend.errors import ProviderUnavailableError
 
         raise ProviderUnavailableError("PaddleOCR runtime is not installed.")
+
+
+def _wait_for_document_status(
+    client: TestClient,
+    auth_headers,
+    project_id: str,
+    document_id: str,
+    status: str,
+) -> dict:
+    deadline = time.monotonic() + 5
+    latest: dict | None = None
+    while time.monotonic() < deadline:
+        response = client.get(
+            f"/projects/{project_id}/documents/{document_id}",
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        latest = response.json()
+        if latest["status"] == status:
+            return latest
+        time.sleep(0.05)
+    raise AssertionError(f"Document did not reach {status}: {latest}")

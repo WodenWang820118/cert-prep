@@ -6,6 +6,7 @@ type BusyAction =
   | 'project'
   | 'upload'
   | 'drafts'
+  | 'saveDraft'
   | 'approve'
   | 'session'
   | 'attempt'
@@ -50,6 +51,14 @@ export class OperationStore {
   failWithCode(message: string, code: string): void {
     this.error.set(message);
     this.errorCode.set(code);
+  }
+
+  isBusyFor(action: string | readonly string[]): boolean {
+    const current = this.busy();
+    if (current === null) {
+      return false;
+    }
+    return Array.isArray(action) ? action.includes(current) : current === action;
   }
 
   private getErrorMessage(error: unknown): string {

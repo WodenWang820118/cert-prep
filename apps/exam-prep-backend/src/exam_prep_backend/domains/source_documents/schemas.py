@@ -13,6 +13,7 @@ class DocumentRead(BaseModel):
     project_id: str
     filename: str
     sha256: str
+    language_hint: str
     page_count: int
     has_text: bool
     status: DocumentStatus
@@ -24,6 +25,7 @@ class DocumentRead(BaseModel):
     exam_item_count: int
     chunks_count: int
     created_at: str
+    updated_at: str
 
 
 class DocumentList(BaseModel):

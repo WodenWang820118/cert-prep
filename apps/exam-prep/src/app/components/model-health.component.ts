@@ -22,7 +22,7 @@ import { WorkspaceFacade } from '../stores/workspace.facade';
           icon="pi pi-refresh"
           severity="secondary"
           [outlined]="true"
-          [disabled]="operations.isBusy()"
+          [disabled]="operations.isBusyFor(['health', 'startup'])"
           (onClick)="refreshAll()"
         />
       </div>
@@ -57,7 +57,7 @@ import { WorkspaceFacade } from '../stores/workspace.facade';
                 icon="pi pi-download"
                 severity="warn"
                 [outlined]="true"
-                [disabled]="operations.isBusy()"
+                [disabled]="desktopRuntime.installStarting()"
                 (onClick)="desktopRuntime.openInstallConsent()"
               />
             }
@@ -100,7 +100,7 @@ import { WorkspaceFacade } from '../stores/workspace.facade';
                 icon="pi pi-download"
                 severity="warn"
                 [outlined]="true"
-                [disabled]="operations.isBusy()"
+                [disabled]="health.runtimeInstallStarting()"
                 (onClick)="health.openOllamaInstallConsent()"
               />
             }
@@ -132,7 +132,7 @@ import { WorkspaceFacade } from '../stores/workspace.facade';
                 icon="pi pi-download"
                 severity="warn"
                 [outlined]="true"
-                [disabled]="operations.isBusy()"
+                [disabled]="health.modelDownloadStarting()"
                 (onClick)="health.openModelDownloadConsent()"
               />
             }
@@ -182,7 +182,7 @@ import { WorkspaceFacade } from '../stores/workspace.facade';
                 icon="pi pi-download"
                 severity="warn"
                 [outlined]="true"
-                [disabled]="operations.isBusy()"
+                [disabled]="health.runtimeInstallStarting()"
                 (onClick)="health.openOcrRuntimeInstallConsent()"
               />
             }

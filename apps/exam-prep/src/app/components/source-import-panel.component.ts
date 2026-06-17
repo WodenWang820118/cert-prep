@@ -1,6 +1,8 @@
 import { Component, inject } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { Button } from 'primeng/button';
 import { Card } from 'primeng/card';
+import { ProgressBar } from 'primeng/progressbar';
 import { Tag } from 'primeng/tag';
 import { OperationStore } from '../stores/operation.store';
 import { ProjectStore } from '../stores/project.store';
@@ -9,7 +11,7 @@ import { SourceImportStore } from '../stores/source-import.store';
 
 @Component({
   selector: 'app-source-import-panel',
-  imports: [Button, Card, Tag],
+  imports: [Button, Card, FormsModule, ProgressBar, Tag],
   template: `
     <p-card styleClass="exam-card">
       <div class="grid gap-4">
@@ -29,7 +31,9 @@ import { SourceImportStore } from '../stores/source-import.store';
           </div>
         </div>
 
-        <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+        <div
+          class="grid gap-3 md:grid-cols-[minmax(0,1fr)_11rem_auto] md:items-end"
+        >
           <label class="grid gap-1.5 text-sm font-semibold text-muted-color">
             <span>PDF file</span>
             <input
@@ -39,16 +43,55 @@ import { SourceImportStore } from '../stores/source-import.store';
               (change)="chooseFile($event)"
             />
           </label>
+          <label class="grid gap-1.5 text-sm font-semibold text-muted-color">
+            <span>Language</span>
+            <select
+              class="h-11 rounded-md border border-surface-300 bg-surface-0 px-3 text-sm font-semibold text-color"
+              [ngModel]="sourceImport.languageHint()"
+              (ngModelChange)="sourceImport.setLanguageHint($event)"
+            >
+              @for (language of sourceImport.languageHints; track language) {
+                <option [value]="language">{{ language }}</option>
+              }
+            </select>
+          </label>
           <p-button
             label="Upload PDF"
             icon="pi pi-upload"
             type="button"
-            [disabled]="operations.isBusy() || !sourceImport.canUpload()"
+            [disabled]="operations.isBusyFor('upload') || !sourceImport.canUpload()"
+            [loading]="operations.isBusyFor('upload')"
             (onClick)="uploadDocument()"
           />
         </div>
 
         @if (sourceImport.uploadedDocument(); as document) {
+          <section
+            class="grid gap-3 rounded-md border border-surface-200 bg-surface-50 p-3"
+            aria-live="polite"
+          >
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="min-w-0">
+                <p class="m-0 truncate text-sm font-semibold text-color">
+                  {{ sourceImport.parseStageText() }}
+                </p>
+                <p class="m-0 mt-1 text-xs font-semibold text-muted-color">
+                  {{ sourceImport.progressLabel() }} / {{ document.chunks_count }}
+                  chunks / {{ sourceImport.elapsedTime() }}
+                </p>
+              </div>
+              <p-tag
+                [value]="document.status"
+                [severity]="document.status === 'processing' ? 'info' : document.status === 'ready' ? 'success' : 'warn'"
+                [rounded]="true"
+              />
+            </div>
+            <p-progressbar
+              [value]="sourceImport.progressPercent()"
+              [showValue]="false"
+            />
+          </section>
+
           <dl class="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
             <div class="rounded-md border border-surface-200 bg-surface-50 p-3">
               <dt class="text-xs font-bold uppercase text-muted-color">File</dt>
@@ -84,6 +127,14 @@ import { SourceImportStore } from '../stores/source-import.store';
               </dt>
               <dd class="m-0 mt-1 text-sm font-semibold text-color">
                 {{ document.processed_page_count }}
+              </dd>
+            </div>
+            <div class="rounded-md border border-surface-200 bg-surface-50 p-3">
+              <dt class="text-xs font-bold uppercase text-muted-color">
+                Language
+              </dt>
+              <dd class="m-0 mt-1 text-sm font-semibold text-color">
+                {{ document.language_hint }}
               </dd>
             </div>
             <div class="rounded-md border border-surface-200 bg-surface-50 p-3">
@@ -171,14 +222,31 @@ import { SourceImportStore } from '../stores/source-import.store';
                   </article>
                 }
                 @if (sourceImport.hiddenChunkCount() > 0) {
-                  <p
-                    class="m-0 rounded-md border border-dashed border-surface-300 p-3 text-sm text-muted-color"
+                  <div
+                    class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-dashed border-surface-300 p-3"
                   >
-                    {{ sourceImport.hiddenChunkCount() }} more chunks available.
-                  </p>
+                    <p class="m-0 text-sm text-muted-color">
+                      {{ sourceImport.hiddenChunkCount() }} more chunks available.
+                    </p>
+                    <p-button
+                      label="Show more"
+                      icon="pi pi-chevron-down"
+                      severity="secondary"
+                      [outlined]="true"
+                      size="small"
+                      type="button"
+                      (onClick)="sourceImport.showMoreChunks()"
+                    />
+                  </div>
                 }
               </div>
             </section>
+          } @else if (sourceImport.isParsing()) {
+            <p
+              class="m-0 rounded-md border border-dashed border-surface-300 bg-surface-0 p-3 text-sm text-muted-color"
+            >
+              Waiting for the first extracted chunk.
+            </p>
           }
         }
       </div>

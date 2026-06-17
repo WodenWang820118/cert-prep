@@ -12,6 +12,7 @@ from exam_prep_backend.domains.source_documents import (
 
 def test_document_status_values_preserve_serialized_order() -> None:
     assert DOCUMENT_STATUS_VALUES == (
+        "processing",
         "ready",
         "exam_failed",
         "no_text_detected",

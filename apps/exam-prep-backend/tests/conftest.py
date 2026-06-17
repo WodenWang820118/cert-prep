@@ -21,7 +21,9 @@ def auth_headers() -> dict[str, str]:
 @pytest.fixture
 def client(tmp_path: Path) -> Iterator[TestClient]:
     settings = Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake")
-    with TestClient(create_app(settings=settings)) as test_client:
+    with TestClient(
+        create_app(settings=settings, document_processing_async_jobs=False)
+    ) as test_client:
         yield test_client
 
 
@@ -73,6 +75,6 @@ def minimal_pdf(*page_texts: str) -> bytes:
 
 def _pdf_page_stream(text: str) -> bytes:
     if not text:
-        return b""
+        return b"q 1 1 1 rg 0 0 1 1 re f Q"
     escaped = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
     return f"BT /F1 12 Tf 72 720 Td ({escaped}) Tj ET".encode()

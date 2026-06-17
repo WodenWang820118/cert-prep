@@ -59,11 +59,13 @@ def generate_document_drafts(
             document_id=document_id,
             suggestions=suggestions,
         )
+        document = source_documents_repository.get_document(db, project_id, document_id)
+        next_status = "processing" if document["status"] == "processing" else "ready"
         source_documents_repository.update_exam_state(
             db,
             project_id=project_id,
             document_id=document_id,
-            status="ready" if drafts else "exam_failed",
+            status=next_status,
             exam_item_count=len(drafts),
         )
         return {"items": drafts}

@@ -138,6 +138,15 @@ MIGRATIONS: Final[tuple[tuple[int, str], ...]] = (
             ADD COLUMN processed_page_count INTEGER NOT NULL DEFAULT 0;
         """,
     ),
+    (
+        8,
+        """
+        ALTER TABLE documents
+            ADD COLUMN language_hint TEXT NOT NULL DEFAULT 'auto';
+        ALTER TABLE documents
+            ADD COLUMN updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP;
+        """,
+    ),
 )
 
 

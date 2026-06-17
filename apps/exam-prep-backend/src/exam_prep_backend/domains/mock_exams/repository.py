@@ -67,6 +67,15 @@ def create_generated_drafts(
     now = utc_now()
     draft_ids: list[str] = []
     with db.connect() as connection:
+        connection.execute(
+            """
+            DELETE FROM question_drafts
+            WHERE project_id = ?
+              AND document_id = ?
+              AND status <> 'approved'
+            """,
+            (project_id, document_id),
+        )
         for suggestion in suggestions:
             draft_id = str(uuid4())
             draft_ids.append(draft_id)

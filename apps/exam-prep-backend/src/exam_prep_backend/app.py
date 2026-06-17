@@ -17,6 +17,7 @@ from exam_prep_backend.dependencies import require_bearer_auth
 from exam_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
 from exam_prep_backend.domains.mock_exams.provider import provider_from_settings
 from exam_prep_backend.domains.runtime_installations import RuntimeInstallationManager
+from exam_prep_backend.domains.source_documents import repository as source_documents_repository
 from exam_prep_backend.domains.source_documents.ocr import OCRProvider, ocr_provider_from_settings
 from exam_prep_backend.routers import documents, drafts, llm, ocr, practice, projects, runtime
 
@@ -35,6 +36,7 @@ def create_app(
     ocr_provider: OCRProvider | None = None,
     runtime_installation_manager: RuntimeInstallationManager | None = None,
     runtime_installation_async_jobs: bool = True,
+    document_processing_async_jobs: bool = True,
 ) -> FastAPI:
     app_settings = settings or Settings()
     app = FastAPI(
@@ -44,8 +46,10 @@ def create_app(
     )
     app.state.settings = app_settings
     app.state.database = Database(app_settings)
+    source_documents_repository.recover_processing_documents(app.state.database)
     app.state.llm_provider = llm_provider or provider_from_settings(app_settings)
     app.state.ocr_provider = ocr_provider or ocr_provider_from_settings(app_settings)
+    app.state.document_processing_async_jobs = document_processing_async_jobs
     app.state.runtime_installation_manager = runtime_installation_manager or RuntimeInstallationManager(
         settings=app_settings,
         llm_provider=app.state.llm_provider,

@@ -1,5 +1,9 @@
 import { computed, inject, Injectable, signal } from '@angular/core';
-import { EXAM_PREP_API, QuestionDraftRead } from '../exam-prep-api';
+import {
+  EXAM_PREP_API,
+  QuestionDraftRead,
+  QuestionDraftUpdate,
+} from '../exam-prep-api';
 import { HealthStore } from './health.store';
 import { OperationStore } from './operation.store';
 import { ProjectStore } from './project.store';
@@ -15,6 +19,8 @@ export class DraftReviewStore {
 
   readonly draftLimit = signal(3);
   readonly drafts = signal<QuestionDraftRead[]>([]);
+  readonly editingDraftId = signal<string | null>(null);
+  readonly draftEdits = signal<Record<string, DraftEdit>>({});
   readonly approvedDrafts = computed(() =>
     this.drafts().filter((draft) => draft.status === 'approved'),
   );
@@ -26,6 +32,8 @@ export class DraftReviewStore {
 
   reset(): void {
     this.drafts.set([]);
+    this.editingDraftId.set(null);
+    this.draftEdits.set({});
   }
 
   setDraftLimit(value: string | number): void {
@@ -33,18 +41,102 @@ export class DraftReviewStore {
   }
 
   canApprove(draft: QuestionDraftRead): boolean {
-    return (
-      draft.status !== 'approved' &&
-      draft.document_id !== null &&
-      draft.chunk_id !== null &&
-      draft.citation_page !== null &&
-      draft.citation_page > 0 &&
-      hasText(draft.source_excerpt) &&
-      draft.choices.length >= 2 &&
-      hasText(draft.answer) &&
-      draft.choices.includes(draft.answer) &&
-      hasText(draft.rationale)
-    );
+    return draft.status !== 'approved' && this.approvalBlockers(draft).length === 0;
+  }
+
+  isEditing(draft: QuestionDraftRead): boolean {
+    return this.editingDraftId() === draft.id;
+  }
+
+  draftEdit(draft: QuestionDraftRead): DraftEdit {
+    return this.draftEdits()[draft.id] ?? editFromDraft(draft);
+  }
+
+  startEdit(draft: QuestionDraftRead): void {
+    this.draftEdits.update((edits) => ({
+      ...edits,
+      [draft.id]: editFromDraft(draft),
+    }));
+    this.editingDraftId.set(draft.id);
+  }
+
+  cancelEdit(draft: QuestionDraftRead): void {
+    this.removeDraftEdit(draft.id);
+    if (this.editingDraftId() === draft.id) {
+      this.editingDraftId.set(null);
+    }
+  }
+
+  setEditQuestion(draftId: string, question: string): void {
+    this.patchDraftEdit(draftId, (edit) => ({ ...edit, question }));
+  }
+
+  setEditChoice(draftId: string, index: number, choice: string): void {
+    this.patchDraftEdit(draftId, (edit) => {
+      const choices = [...edit.choices];
+      choices[index] = choice;
+      return { ...edit, choices };
+    });
+  }
+
+  addEditChoice(draftId: string): void {
+    this.patchDraftEdit(draftId, (edit) => ({
+      ...edit,
+      choices: [...edit.choices, ''],
+    }));
+  }
+
+  removeEditChoice(draftId: string, index: number): void {
+    this.patchDraftEdit(draftId, (edit) => {
+      const choices = edit.choices.filter((_, choiceIndex) => choiceIndex !== index);
+      const answer = choices.includes(edit.answer) ? edit.answer : '';
+      return { ...edit, choices, answer };
+    });
+  }
+
+  setEditAnswer(draftId: string, answer: string): void {
+    this.patchDraftEdit(draftId, (edit) => ({ ...edit, answer }));
+  }
+
+  setEditRationale(draftId: string, rationale: string): void {
+    this.patchDraftEdit(draftId, (edit) => ({ ...edit, rationale }));
+  }
+
+  approvalBlockers(draft: QuestionDraftRead): string[] {
+    const edit = this.draftEdit(draft);
+    const choices = normalizeChoices(edit.choices);
+    const answer = edit.answer.trim();
+    const blockers: string[] = [];
+
+    if (
+      draft.document_id === null ||
+      draft.chunk_id === null ||
+      draft.citation_page === null ||
+      draft.citation_page <= 0
+    ) {
+      blockers.push('missing citation');
+    }
+    if (!hasText(draft.source_excerpt)) {
+      blockers.push('missing source excerpt');
+    }
+    if (!hasText(answer)) {
+      blockers.push('missing answer');
+    } else if (!choices.includes(answer)) {
+      blockers.push('choice mismatch');
+    }
+    if (choices.length < 2) {
+      blockers.push('choice mismatch');
+    }
+    if (!hasText(edit.rationale)) {
+      blockers.push('missing rationale');
+    }
+
+    return Array.from(new Set(blockers));
+  }
+
+  approvalBlockerText(draft: QuestionDraftRead): string {
+    const blockers = this.approvalBlockers(draft);
+    return blockers.length === 0 ? 'Ready to approve' : blockers.join(', ');
   }
 
   async generateDrafts(): Promise<void> {
@@ -70,6 +162,7 @@ export class DraftReviewStore {
 
     this.drafts.set(drafts.items);
     await this.load(project.id);
+    await this.sourceImport.refreshUploadedDocument(project.id, document.id);
   }
 
   private async openMissingAiRuntimePrompt(): Promise<void> {
@@ -101,9 +194,7 @@ export class DraftReviewStore {
     }
 
     if (!this.canApprove(draft)) {
-      this.operations.fail(
-        'Draft needs a citation, source excerpt, choices, answer, and rationale before approval.',
-      );
+      this.operations.fail(`Draft cannot be approved: ${this.approvalBlockerText(draft)}.`);
       return;
     }
 
@@ -112,7 +203,33 @@ export class DraftReviewStore {
     );
     if (approved !== null) {
       this.upsertDraft(approved);
+      this.cancelEdit(approved);
     }
+  }
+
+  async saveDraft(draft: QuestionDraftRead): Promise<QuestionDraftRead | null> {
+    const project = this.projects.selectedProject();
+    if (project === null) {
+      this.operations.fail('Select a project before saving drafts.');
+      return null;
+    }
+
+    const updated = await this.operations.run('saveDraft', 'Draft saved', () =>
+      this.api.updateQuestionDraft(project.id, draft.id, this.updatePayload(draft)),
+    );
+    if (updated !== null) {
+      this.upsertDraft(updated);
+      this.startEdit(updated);
+    }
+    return updated;
+  }
+
+  async saveAndApproveDraft(draft: QuestionDraftRead): Promise<void> {
+    const saved = await this.saveDraft(draft);
+    if (saved === null) {
+      return;
+    }
+    await this.approveDraft(saved);
   }
 
   private upsertDraft(nextDraft: QuestionDraftRead): void {
@@ -129,6 +246,51 @@ export class DraftReviewStore {
       );
     });
   }
+
+  private patchDraftEdit(
+    draftId: string,
+    updater: (edit: DraftEdit) => DraftEdit,
+  ): void {
+    const draft = this.drafts().find((candidate) => candidate.id === draftId);
+    const current = this.draftEdits()[draftId] ?? (draft ? editFromDraft(draft) : null);
+    if (current === null) {
+      return;
+    }
+    this.draftEdits.update((edits) => ({
+      ...edits,
+      [draftId]: updater(current),
+    }));
+  }
+
+  private removeDraftEdit(draftId: string): void {
+    this.draftEdits.update((edits) => {
+      const next = { ...edits };
+      delete next[draftId];
+      return next;
+    });
+  }
+
+  private updatePayload(draft: QuestionDraftRead): QuestionDraftUpdate {
+    const edit = this.draftEdit(draft);
+    const choices = normalizeChoices(edit.choices);
+    const answer = edit.answer.trim();
+    return {
+      question: edit.question.trim(),
+      choices,
+      answer: answer.length > 0 ? answer : null,
+      answer_key_source: 'manual',
+      rationale: emptyToNull(edit.rationale),
+      citation_page: draft.citation_page,
+      source_excerpt: draft.source_excerpt,
+    };
+  }
+}
+
+interface DraftEdit {
+  question: string;
+  choices: string[];
+  answer: string;
+  rationale: string;
 }
 
 function clampInteger(
@@ -146,4 +308,22 @@ function clampInteger(
 
 function hasText(value: string | null): value is string {
   return value !== null && value.trim().length > 0;
+}
+
+function editFromDraft(draft: QuestionDraftRead): DraftEdit {
+  return {
+    question: draft.question,
+    choices: draft.choices.length > 0 ? [...draft.choices] : ['', ''],
+    answer: draft.answer ?? '',
+    rationale: draft.rationale ?? '',
+  };
+}
+
+function normalizeChoices(choices: string[]): string[] {
+  return choices.map((choice) => choice.trim()).filter((choice) => choice.length > 0);
+}
+
+function emptyToNull(value: string): string | null {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }

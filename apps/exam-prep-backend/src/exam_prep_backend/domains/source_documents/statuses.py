@@ -5,6 +5,7 @@ from typing import Final, TypeAlias
 
 
 class SourceDocumentStatus(StrEnum):
+    PROCESSING = "processing"
     READY = "ready"
     EXAM_FAILED = "exam_failed"
     NO_TEXT_DETECTED = "no_text_detected"

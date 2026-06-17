@@ -25,6 +25,7 @@ export type {
   ProjectRead,
   QuestionDraftList,
   QuestionDraftRead,
+  QuestionDraftUpdate,
   RuntimeInstallationRead,
   RuntimeRequirementKind,
   RuntimeRequirementRead,

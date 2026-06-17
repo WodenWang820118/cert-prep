@@ -4,7 +4,8 @@ from sqlite3 import Row
 from uuid import uuid4
 
 from exam_prep_backend.database import Database, utc_now
-from exam_prep_backend.domains.source_documents.models import PdfExtractionResult
+from exam_prep_backend.domains.source_documents.models import ExtractedPage, PdfExtractionResult
+from exam_prep_backend.domains.source_documents.statuses import SourceDocumentStatus
 from exam_prep_backend.errors import NotFoundError
 from exam_prep_backend.domains.projects.repository import ensure_project_exists
 
@@ -15,6 +16,7 @@ def create_document(
     project_id: str,
     filename: str,
     sha256: str,
+    language_hint: str = "auto",
     storage_path: str,
     extraction: PdfExtractionResult,
 ) -> dict:
@@ -29,9 +31,10 @@ def create_document(
             INSERT INTO documents(
                 id, project_id, filename, sha256, storage_path, page_count,
                 has_text, status, extraction_method, ocr_device, ocr_fallback_reason,
-                ocr_duration_ms, processed_page_count, exam_item_count, created_at
+                ocr_duration_ms, processed_page_count, exam_item_count, language_hint,
+                created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)
             """,
             (
                 document_id,
@@ -47,6 +50,8 @@ def create_document(
                 extraction.ocr_fallback_reason,
                 extraction.ocr_duration_ms,
                 extraction.processed_page_count,
+                language_hint,
+                now,
                 now,
             ),
         )
@@ -77,6 +82,51 @@ def create_document(
     return _document_from_row(row)
 
 
+def create_processing_document(
+    db: Database,
+    *,
+    project_id: str,
+    filename: str,
+    sha256: str,
+    language_hint: str,
+    storage_path: str,
+    page_count: int,
+) -> dict:
+    """Persist document metadata before background extraction starts."""
+
+    ensure_project_exists(db, project_id)
+    document_id = str(uuid4())
+    now = utc_now()
+    with db.connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO documents(
+                id, project_id, filename, sha256, storage_path, page_count,
+                has_text, status, extraction_method, ocr_device, ocr_fallback_reason,
+                ocr_duration_ms, processed_page_count, exam_item_count, language_hint,
+                created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, 0, ?, 'none', NULL, NULL, 0, 0, 0, ?, ?, ?)
+            """,
+            (
+                document_id,
+                project_id,
+                filename,
+                sha256,
+                storage_path,
+                page_count,
+                SourceDocumentStatus.PROCESSING,
+                language_hint,
+                now,
+                now,
+            ),
+        )
+        row = _document_query(connection, project_id, document_id)
+    if row is None:
+        raise NotFoundError("Document not found.")
+    return _document_from_row(row)
+
+
 def list_chunks(db: Database, project_id: str, document_id: str) -> list[dict]:
     ensure_document_exists(db, project_id, document_id)
     with db.connect() as connection:
@@ -94,6 +144,95 @@ def list_chunks(db: Database, project_id: str, document_id: str) -> list[dict]:
 
 def get_source_chunks(db: Database, project_id: str, document_id: str) -> list[dict]:
     return list_chunks(db, project_id, document_id)
+
+
+def record_extraction_progress(
+    db: Database,
+    *,
+    project_id: str,
+    document_id: str,
+    processed_page_count: int,
+    page: ExtractedPage | None,
+    ocr_device: str | None,
+    ocr_fallback_reason: str | None,
+    ocr_duration_ms: int,
+) -> dict:
+    """Store incremental parsing progress and optional page text."""
+
+    now = utc_now()
+    with db.connect() as connection:
+        existing = _document_query(connection, project_id, document_id)
+        if existing is None:
+            raise NotFoundError("Document not found.")
+
+        extraction_method = existing["extraction_method"]
+        if page is not None:
+            chunk_index = connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM document_chunks
+                WHERE project_id = ? AND document_id = ?
+                """,
+                (project_id, document_id),
+            ).fetchone()[0]
+            connection.execute(
+                """
+                INSERT INTO document_chunks(
+                    id, project_id, document_id, page_number, chunk_index,
+                    text, source_excerpt, extraction_method, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(uuid4()),
+                    project_id,
+                    document_id,
+                    page.page_number,
+                    chunk_index,
+                    page.text,
+                    page.source_excerpt,
+                    page.extraction_method,
+                    now,
+                ),
+            )
+            extraction_method = _merged_extraction_method(
+                current=extraction_method,
+                next_method=page.extraction_method,
+                existing_chunk_count=chunk_index,
+            )
+
+        connection.execute(
+            """
+            UPDATE documents
+            SET has_text = CASE
+                    WHEN EXISTS (
+                        SELECT 1 FROM document_chunks
+                        WHERE document_chunks.document_id = documents.id
+                    )
+                    THEN 1 ELSE has_text END,
+                extraction_method = ?,
+                ocr_device = COALESCE(?, ocr_device),
+                ocr_fallback_reason = COALESCE(?, ocr_fallback_reason),
+                ocr_duration_ms = ?,
+                processed_page_count = ?,
+                updated_at = ?
+            WHERE project_id = ? AND id = ?
+            """,
+            (
+                extraction_method,
+                ocr_device,
+                ocr_fallback_reason,
+                ocr_duration_ms,
+                processed_page_count,
+                now,
+                project_id,
+                document_id,
+            ),
+        )
+        row = _document_query(connection, project_id, document_id)
+    if row is None:
+        raise NotFoundError("Document not found.")
+    return _document_from_row(row)
 
 
 def list_documents(db: Database, project_id: str) -> list[dict]:
@@ -137,6 +276,74 @@ def get_document(db: Database, project_id: str, document_id: str) -> dict:
     return _document_from_row(row)
 
 
+def complete_document_extraction(
+    db: Database,
+    *,
+    project_id: str,
+    document_id: str,
+    extraction: PdfExtractionResult,
+) -> dict:
+    now = utc_now()
+    with db.connect() as connection:
+        connection.execute(
+            """
+            UPDATE documents
+            SET has_text = ?,
+                status = ?,
+                extraction_method = ?,
+                ocr_device = ?,
+                ocr_fallback_reason = ?,
+                ocr_duration_ms = ?,
+                processed_page_count = ?,
+                updated_at = ?
+            WHERE project_id = ? AND id = ?
+            """,
+            (
+                int(extraction.has_text),
+                extraction.status,
+                extraction.extraction_method,
+                extraction.ocr_device,
+                extraction.ocr_fallback_reason,
+                extraction.ocr_duration_ms,
+                extraction.processed_page_count,
+                now,
+                project_id,
+                document_id,
+            ),
+        )
+        row = _document_query(connection, project_id, document_id)
+    if row is None:
+        raise NotFoundError("Document not found.")
+    return _document_from_row(row)
+
+
+def fail_document_extraction(
+    db: Database,
+    *,
+    project_id: str,
+    document_id: str,
+    status: str,
+    detail: str,
+) -> dict:
+    now = utc_now()
+    with db.connect() as connection:
+        connection.execute(
+            """
+            UPDATE documents
+            SET status = ?,
+                extraction_method = 'ocr_failed',
+                ocr_fallback_reason = ?,
+                updated_at = ?
+            WHERE project_id = ? AND id = ?
+            """,
+            (status, detail, now, project_id, document_id),
+        )
+        row = _document_query(connection, project_id, document_id)
+    if row is None:
+        raise NotFoundError("Document not found.")
+    return _document_from_row(row)
+
+
 def update_exam_state(
     db: Database,
     *,
@@ -145,19 +352,39 @@ def update_exam_state(
     status: str,
     exam_item_count: int,
 ) -> dict:
+    now = utc_now()
     with db.connect() as connection:
         connection.execute(
             """
             UPDATE documents
-            SET status = ?, exam_item_count = ?
+            SET status = ?, exam_item_count = ?, updated_at = ?
             WHERE project_id = ? AND id = ?
             """,
-            (status, exam_item_count, project_id, document_id),
+            (status, exam_item_count, now, project_id, document_id),
         )
         row = _document_query(connection, project_id, document_id)
     if row is None:
         raise NotFoundError("Document not found.")
     return _document_from_row(row)
+
+
+def recover_processing_documents(db: Database) -> int:
+    """Mark stale processing rows from a previous app process as recoverable failures."""
+
+    now = utc_now()
+    with db.connect() as connection:
+        cursor = connection.execute(
+            """
+            UPDATE documents
+            SET status = 'ocr_failed',
+                extraction_method = 'ocr_failed',
+                ocr_fallback_reason = 'Parsing was interrupted before completion.',
+                updated_at = ?
+            WHERE status = 'processing'
+            """,
+            (now,),
+        )
+        return int(cursor.rowcount)
 
 
 def ensure_document_exists(db: Database, project_id: str, document_id: str) -> None:
@@ -190,6 +417,7 @@ def _document_from_row(row: Row) -> dict:
         "project_id": row["project_id"],
         "filename": row["filename"],
         "sha256": row["sha256"],
+        "language_hint": row["language_hint"],
         "page_count": row["page_count"],
         "has_text": bool(row["has_text"]),
         "status": row["status"],
@@ -201,6 +429,7 @@ def _document_from_row(row: Row) -> dict:
         "exam_item_count": row["exam_item_count"],
         "chunks_count": row["chunks_count"],
         "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
     }
 
 
@@ -215,3 +444,16 @@ def _chunk_from_row(row: Row) -> dict:
         "extraction_method": row["extraction_method"],
         "created_at": row["created_at"],
     }
+
+
+def _merged_extraction_method(
+    *,
+    current: str,
+    next_method: str,
+    existing_chunk_count: int,
+) -> str:
+    if existing_chunk_count == 0 or current == "none":
+        return next_method
+    if current == next_method:
+        return current
+    return "mixed"

@@ -50,6 +50,7 @@ class SourceDocument:
     project_id: str
     filename: str
     sha256: str
+    language_hint: str
     page_count: int
     has_text: bool
     status: SourceDocumentStatus
@@ -61,6 +62,7 @@ class SourceDocument:
     exam_item_count: int
     chunks_count: int
     created_at: str
+    updated_at: str
 
 
 @dataclass(frozen=True, slots=True)

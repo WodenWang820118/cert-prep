@@ -5,11 +5,11 @@
 export interface Components {
   schemas: {
     AnswerKeySource: string;
-    Body_upload_document_projects__project_id__documents_post: { "file": string };
+    Body_upload_document_projects__project_id__documents_post: { "file": string; "language_hint"?: string };
     ChunkList: { "items": Components['schemas']['ChunkRead'][] };
     ChunkRead: { "id": string; "document_id": string; "page_number": number; "chunk_index": number; "text": string; "source_excerpt": string; "extraction_method": Components['schemas']['PdfExtractionMethod'] | string; "created_at": string };
     DocumentList: { "items": Components['schemas']['DocumentRead'][] };
-    DocumentRead: { "id": string; "project_id": string; "filename": string; "sha256": string; "page_count": number; "has_text": boolean; "status": Components['schemas']['SourceDocumentStatus'] | string; "extraction_method": Components['schemas']['PdfExtractionMethod'] | string; "ocr_device": string | null; "ocr_fallback_reason": string | null; "ocr_duration_ms": number; "processed_page_count": number; "exam_item_count": number; "chunks_count": number; "created_at": string };
+    DocumentRead: { "id": string; "project_id": string; "filename": string; "sha256": string; "language_hint": string; "page_count": number; "has_text": boolean; "status": Components['schemas']['SourceDocumentStatus'] | string; "extraction_method": Components['schemas']['PdfExtractionMethod'] | string; "ocr_device": string | null; "ocr_fallback_reason": string | null; "ocr_duration_ms": number; "processed_page_count": number; "exam_item_count": number; "chunks_count": number; "created_at": string; "updated_at": string };
     DraftGenerateRequest: { "limit"?: number };
     DraftStatus: string;
     HTTPValidationError: { "detail"?: Components['schemas']['ValidationError'][] };
@@ -99,6 +99,7 @@ export interface ExamPrepGeneratedClient {
   deleteProject(projectId: string): Promise<void>;
   listDocuments(projectId: string): Promise<Components['schemas']['DocumentList']>;
   uploadDocument(projectId: string, body: FormData): Promise<Components['schemas']['DocumentRead']>;
+  getDocument(projectId: string, documentId: string): Promise<Components['schemas']['DocumentRead']>;
   listDocumentChunks(projectId: string, documentId: string): Promise<Components['schemas']['ChunkList']>;
   generateDocumentDrafts(projectId: string, documentId: string, body: Components['schemas']['DraftGenerateRequest']): Promise<Components['schemas']['QuestionDraftList']>;
   createQuestionDraft(projectId: string, body: Components['schemas']['QuestionDraftCreate']): Promise<Components['schemas']['QuestionDraftRead']>;
@@ -138,6 +139,8 @@ export function createExamPrepGeneratedClient(
       transport.request<Components['schemas']['DocumentList']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/documents` }),
     uploadDocument: (projectId: string, body: FormData) =>
       transport.request<Components['schemas']['DocumentRead']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/documents`, body }),
+    getDocument: (projectId: string, documentId: string) =>
+      transport.request<Components['schemas']['DocumentRead']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}` }),
     listDocumentChunks: (projectId: string, documentId: string) =>
       transport.request<Components['schemas']['ChunkList']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/chunks` }),
     generateDocumentDrafts: (projectId: string, documentId: string, body: Components['schemas']['DraftGenerateRequest']) =>

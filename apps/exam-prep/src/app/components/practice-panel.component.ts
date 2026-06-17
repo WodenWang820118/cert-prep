@@ -54,7 +54,8 @@ import { PracticeStore } from '../stores/practice.store';
             label="Create practice session"
             icon="pi pi-play"
             type="button"
-            [disabled]="operations.isBusy() || drafts.approvedDrafts().length === 0"
+            [disabled]="operations.isBusyFor('session') || drafts.approvedDrafts().length === 0"
+            [loading]="operations.isBusyFor('session')"
             (onClick)="practice.createPracticeSession()"
           />
         </div>
@@ -101,7 +102,8 @@ import { PracticeStore } from '../stores/practice.store';
               label="Submit answer"
               icon="pi pi-send"
               type="button"
-              [disabled]="operations.isBusy() || practice.selectedAnswer().length === 0"
+              [disabled]="operations.isBusyFor('attempt') || practice.selectedAnswer().length === 0"
+              [loading]="operations.isBusyFor('attempt')"
               (onClick)="practice.submitAnswer()"
             />
           </article>
@@ -110,6 +112,7 @@ import { PracticeStore } from '../stores/practice.store';
             class="m-0 rounded-lg border border-dashed border-surface-300 bg-surface-0 p-3 text-sm text-muted-color"
           >
             Practice set complete.
+            Correct answers are removed from the wrong-answer list after submission.
           </p>
         } @else {
           <p

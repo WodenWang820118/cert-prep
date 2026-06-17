@@ -27,7 +27,8 @@ import { WrongAnswerReviewStore } from '../stores/wrong-answer-review.store';
             severity="secondary"
             [outlined]="true"
             type="button"
-            [disabled]="operations.isBusy() || projects.selectedProject() === null"
+            [disabled]="operations.isBusyFor('review') || projects.selectedProject() === null"
+            [loading]="operations.isBusyFor('review')"
             (onClick)="review.refresh()"
           />
         </div>
@@ -68,7 +69,8 @@ import { WrongAnswerReviewStore } from '../stores/wrong-answer-review.store';
             <p
               class="m-0 rounded-lg border border-dashed border-surface-300 bg-surface-0 p-3 text-sm text-muted-color"
             >
-              No wrong answers recorded.
+              Wrong answers will appear here after a practice attempt needs review.
+              Answer correctly in a later session to clear them.
             </p>
           }
         </div>

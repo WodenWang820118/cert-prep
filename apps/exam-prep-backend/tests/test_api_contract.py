@@ -10,6 +10,7 @@ def test_status_like_fields_are_documented_as_openapi_enums(tmp_path) -> None:
     openapi = create_app(Settings(data_dir=tmp_path, api_token="contract-token")).openapi()
 
     assert _enum_values(openapi, "DocumentRead", "status") == [
+        "processing",
         "ready",
         "exam_failed",
         "no_text_detected",

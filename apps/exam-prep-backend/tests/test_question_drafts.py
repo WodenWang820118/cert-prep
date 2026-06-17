@@ -177,10 +177,17 @@ def test_explicit_generation_returns_provider_unavailable_error_envelope(
         create_app(
             settings=Settings(data_dir=tmp_path, api_token="test-token"),
             llm_provider=UnavailableExamProvider(),
+            document_processing_async_jobs=False,
         )
     )
     project_id = _create_project(client, auth_headers)
     document_id = _upload_document(client, auth_headers, project_id)
+    document = client.get(
+        f"/projects/{project_id}/documents/{document_id}", headers=auth_headers
+    )
+    assert document.status_code == 200
+    assert document.json()["status"] == "ready"
+    assert document.json()["exam_item_count"] == 0
 
     response = client.post(
         f"/projects/{project_id}/documents/{document_id}/drafts",

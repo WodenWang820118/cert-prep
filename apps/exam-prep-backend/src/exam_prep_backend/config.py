@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     max_page_text_chars: int = 20_000
     max_total_text_chars: int = 500_000
     ocr_render_scale: float = 1.0
-    auto_generate_exam_on_upload: bool = True
+    auto_generate_exam_on_upload: bool = False
     auto_generate_exam_limit: int = 50
     ollama_timeout_seconds: float = 120.0
     allowed_origins: list[str] = Field(

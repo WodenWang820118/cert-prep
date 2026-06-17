@@ -5,11 +5,8 @@ from conftest import minimal_pdf
 
 def test_practice_session_attempts_and_wrong_answer_review(client: TestClient, auth_headers) -> None:
     project_id = _create_project(client, auth_headers)
-    _upload_document(client, auth_headers, project_id)
-    approved = client.get(
-        f"/projects/{project_id}/question-drafts",
-        headers=auth_headers,
-    ).json()["items"][0]
+    document_id = _upload_document(client, auth_headers, project_id)
+    approved = _generate_approved_draft(client, auth_headers, project_id, document_id)
 
     session_response = client.post(
         f"/projects/{project_id}/practice-sessions",
@@ -54,11 +51,8 @@ def test_practice_session_attempts_and_wrong_answer_review(client: TestClient, a
 
 def test_practice_attempt_rejects_answer_outside_choices(client: TestClient, auth_headers) -> None:
     project_id = _create_project(client, auth_headers)
-    _upload_document(client, auth_headers, project_id)
-    approved = client.get(
-        f"/projects/{project_id}/question-drafts",
-        headers=auth_headers,
-    ).json()["items"][0]
+    document_id = _upload_document(client, auth_headers, project_id)
+    approved = _generate_approved_draft(client, auth_headers, project_id, document_id)
     session = client.post(
         f"/projects/{project_id}/practice-sessions",
         headers=auth_headers,
@@ -83,6 +77,7 @@ def test_practice_attempt_rejects_approved_question_outside_session(
 ) -> None:
     project_id = _create_project(client, auth_headers)
     document_id = _upload_document(client, auth_headers, project_id)
+    _generate_approved_draft(client, auth_headers, project_id, document_id)
     second_question = _create_approved_manual_question(
         client,
         auth_headers,
@@ -142,6 +137,23 @@ def _upload_document(client: TestClient, auth_headers, project_id: str) -> str:
     )
     assert response.status_code == 201
     return response.json()["id"]
+
+
+def _generate_approved_draft(
+    client: TestClient,
+    auth_headers,
+    project_id: str,
+    document_id: str,
+) -> dict:
+    response = client.post(
+        f"/projects/{project_id}/documents/{document_id}/drafts",
+        headers=auth_headers,
+        json={"limit": 1},
+    )
+    assert response.status_code == 201
+    draft = response.json()["items"][0]
+    assert draft["status"] == "approved"
+    return draft
 
 
 def _create_approved_manual_question(

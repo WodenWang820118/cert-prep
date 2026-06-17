@@ -9,6 +9,7 @@ describe('DraftReviewStore', () => {
     approveQuestionDraft: vi.fn(),
     generateDocumentDrafts: vi.fn(),
     listQuestionDrafts: vi.fn(),
+    updateQuestionDraft: vi.fn(),
   };
 
   beforeEach(() => {
@@ -42,7 +43,7 @@ describe('DraftReviewStore', () => {
     await store.approveDraft(incompleteDraft);
 
     expect(apiClient.approveQuestionDraft).not.toHaveBeenCalled();
-    expect(operations.error()).toContain('Draft needs a citation');
+    expect(operations.error()).toContain('missing source excerpt');
   });
 
   it('blocks approval when the answer key is not one of the choices', async () => {
@@ -80,6 +81,47 @@ describe('DraftReviewStore', () => {
 
     await store.approveDraft(draft);
 
+    expect(apiClient.approveQuestionDraft).toHaveBeenCalledWith(
+      'project-1',
+      draft.id,
+    );
+    expect(store.drafts()).toEqual([approved]);
+  });
+
+  it('saves manual edits before approving a draft', async () => {
+    const store = TestBed.inject(DraftReviewStore);
+    const draft = questionDraft({
+      answer: null,
+      rationale: null,
+      answer_key_source: 'ai_inferred',
+    });
+    const saved = questionDraft({
+      answer: 'B',
+      answer_key_source: 'manual',
+      rationale: 'Manual rationale',
+    });
+    const approved = questionDraft({
+      ...saved,
+      status: 'approved',
+    });
+    apiClient.updateQuestionDraft.mockResolvedValue(saved);
+    apiClient.approveQuestionDraft.mockResolvedValue(approved);
+    store.drafts.set([draft]);
+    store.startEdit(draft);
+    store.setEditAnswer(draft.id, 'B');
+    store.setEditRationale(draft.id, 'Manual rationale');
+
+    await store.saveAndApproveDraft(draft);
+
+    expect(apiClient.updateQuestionDraft).toHaveBeenCalledWith(
+      'project-1',
+      draft.id,
+      expect.objectContaining({
+        answer: 'B',
+        answer_key_source: 'manual',
+        rationale: 'Manual rationale',
+      }),
+    );
     expect(apiClient.approveQuestionDraft).toHaveBeenCalledWith(
       'project-1',
       draft.id,

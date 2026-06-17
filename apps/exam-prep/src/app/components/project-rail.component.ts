@@ -54,7 +54,8 @@ import { WorkspaceFacade } from '../stores/workspace.facade';
             icon="pi pi-plus"
             type="submit"
             [fluid]="true"
-            [disabled]="operations.isBusy() || projects.projectName().trim().length === 0"
+            [disabled]="operations.isBusyFor('project') || projects.projectName().trim().length === 0"
+            [loading]="operations.isBusyFor('project')"
           />
         </form>
       </p-card>
