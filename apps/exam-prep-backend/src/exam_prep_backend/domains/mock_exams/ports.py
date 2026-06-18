@@ -9,6 +9,8 @@ from exam_prep_backend.domains.mock_exams.models import DraftSuggestion, SourceC
 
 @dataclass(frozen=True, slots=True)
 class ProviderHealth:
+    """Read-only health snapshot for a draft-generation provider."""
+
     provider: str
     model: str
     available: bool
@@ -26,13 +28,17 @@ class ModelPullProgress:
 
 
 class DraftGenerationProvider(Protocol):
+    """Boundary for providers that turn source chunks into draft exam items."""
+
     provider: str
     model: str
 
     def health(self) -> ProviderHealth:
+        """Return provider and model availability without generating drafts."""
         pass
 
     def generate_drafts(self, chunks: Sequence[SourceChunk], limit: int) -> list[DraftSuggestion]:
+        """Generate up to limit draft suggestions from source chunks."""
         pass
 
 
@@ -43,4 +49,5 @@ class ModelDownloadProvider(Protocol):
     model: str
 
     def pull_model(self, progress: Callable[[ModelPullProgress], None]) -> None:
+        """Pull the configured model and report progress to the caller."""
         pass

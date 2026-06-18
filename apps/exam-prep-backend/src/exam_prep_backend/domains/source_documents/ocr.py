@@ -9,6 +9,8 @@ from exam_prep_backend.config import Settings
 
 @dataclass(frozen=True)
 class OCRHealth:
+    """Read-only health snapshot for a page-image OCR provider."""
+
     provider: str
     engine: str
     available: bool
@@ -26,6 +28,8 @@ class OCRHealth:
 
 @dataclass(frozen=True)
 class OCRPageResult:
+    """Text and timing metadata extracted from one rendered PDF page image."""
+
     text: str
     extraction_method: str
     device: str | None
@@ -40,13 +44,17 @@ class OCRProvider(Protocol):
     engine: str
 
     def health(self) -> OCRHealth:
+        """Return OCR runtime availability without extracting page text."""
         pass
 
     def extract_page_text(self, image_png: bytes, page_number: int) -> OCRPageResult:
+        """Extract OCR text from one rendered PDF page image."""
         pass
 
 
 class FakeOCRProvider:
+    """Deterministic OCR provider used when OCR is not configured."""
+
     provider = "fake"
     engine = "none"
     page_workers = 1
