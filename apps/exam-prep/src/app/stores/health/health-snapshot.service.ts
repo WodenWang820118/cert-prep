@@ -1,11 +1,12 @@
 import { inject, Injectable } from '@angular/core';
-import { EXAM_PREP_API } from '../exam-prep-api';
-import type { HealthSnapshot } from './health-runtime.models';
-import { runtimeInstallationClient } from './runtime-api-clients';
+import { EXAM_PREP_API } from '../../exam-prep-api';
+import type { HealthSnapshot } from './contracts/health-runtime.contracts';
+import { RuntimeApiClientsService } from './runtime-api-clients.service';
 
 @Injectable({ providedIn: 'root' })
 export class HealthSnapshotService {
   private readonly api = inject(EXAM_PREP_API);
+  private readonly runtimeApi = inject(RuntimeApiClientsService);
 
   /**
    * Loads independent health endpoints concurrently while preserving partial
@@ -42,7 +43,7 @@ export class HealthSnapshotService {
   }
 
   private async loadRuntimeRequirements() {
-    const client = runtimeInstallationClient(this.api);
+    const client = this.runtimeApi.runtimeInstallationClient();
     if (client === null) {
       return [];
     }

@@ -1,0 +1,15 @@
+import type { PracticeSessionCreate } from '../../../exam-prep-api';
+
+/**
+ * Practice session modes supported by the project question bank.
+ */
+export type PracticeSessionMode = 'full_document' | 'random_draw';
+
+/**
+ * API payload for session creation, narrowed to the fields this store owns.
+ */
+export type PracticeSessionPayload = PracticeSessionCreate &
+  Partial<{
+    mode: PracticeSessionMode;
+    document_id: string;
+  }>;

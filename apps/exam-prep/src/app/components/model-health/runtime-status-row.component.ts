@@ -1,6 +1,6 @@
 import { Component, Input } from '@angular/core';
 import { Tag } from 'primeng/tag';
-import type { RuntimeStatusSectionView } from './model-health.view-model';
+import type { RuntimeStatusSectionView } from './contracts/model-health.contracts';
 
 @Component({
   selector: 'app-runtime-status-row',

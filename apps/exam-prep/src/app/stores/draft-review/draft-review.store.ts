@@ -1,22 +1,22 @@
 import { computed, inject, Injectable, signal } from '@angular/core';
 import {
-  DraftGenerateRequest,
   EXAM_PREP_API,
   QuestionDraftRead,
-  QuestionDraftUpdate,
-} from '../exam-prep-api';
-import { HealthStore } from './health.store';
-import { OperationStore } from './operation.store';
-import { ProjectStore } from './project.store';
-import { SourceImportStore } from './source-import.store';
-
-export type DraftGenerationStrategy =
-  | 'deterministic_only'
-  | 'hybrid_reasoning';
+} from '../../exam-prep-api';
+import type {
+  DraftEdit,
+  DraftGenerationStrategy,
+} from './contracts/draft-review.contracts';
+import { DraftEditService } from './draft-edit.service';
+import { HealthStore } from '../health/health.store';
+import { OperationStore } from '../operation.store';
+import { ProjectStore } from '../project.store';
+import { SourceImportStore } from '../source-import/source-import.store';
 
 @Injectable({ providedIn: 'root' })
 export class DraftReviewStore {
   private readonly api = inject(EXAM_PREP_API);
+  private readonly edits = inject(DraftEditService);
   private readonly health = inject(HealthStore);
   private readonly operations = inject(OperationStore);
   private readonly projects = inject(ProjectStore);
@@ -42,7 +42,7 @@ export class DraftReviewStore {
   }
 
   setDraftLimit(value: string | number): void {
-    this.draftLimit.set(clampInteger(value, 1, 50));
+    this.draftLimit.set(this.edits.clampDraftLimit(value));
   }
 
   canApprove(draft: QuestionDraftRead): boolean {
@@ -54,13 +54,13 @@ export class DraftReviewStore {
   }
 
   draftEdit(draft: QuestionDraftRead): DraftEdit {
-    return this.draftEdits()[draft.id] ?? editFromDraft(draft);
+    return this.draftEdits()[draft.id] ?? this.edits.editFromDraft(draft);
   }
 
   startEdit(draft: QuestionDraftRead): void {
     this.draftEdits.update((edits) => ({
       ...edits,
-      [draft.id]: editFromDraft(draft),
+      [draft.id]: this.edits.editFromDraft(draft),
     }));
     this.editingDraftId.set(draft.id);
   }
@@ -108,35 +108,7 @@ export class DraftReviewStore {
   }
 
   approvalBlockers(draft: QuestionDraftRead): string[] {
-    const edit = this.draftEdit(draft);
-    const choices = normalizeChoices(edit.choices);
-    const answer = edit.answer.trim();
-    const blockers: string[] = [];
-
-    if (
-      draft.document_id === null ||
-      draft.chunk_id === null ||
-      draft.citation_page === null ||
-      draft.citation_page <= 0
-    ) {
-      blockers.push('missing citation');
-    }
-    if (!hasText(draft.source_excerpt)) {
-      blockers.push('missing source excerpt');
-    }
-    if (!hasText(answer)) {
-      blockers.push('missing answer');
-    } else if (!choices.includes(answer)) {
-      blockers.push('choice mismatch');
-    }
-    if (choices.length < 2) {
-      blockers.push('choice mismatch');
-    }
-    if (!hasText(edit.rationale)) {
-      blockers.push('missing rationale');
-    }
-
-    return Array.from(new Set(blockers));
+    return this.edits.approvalBlockers(draft, this.draftEdit(draft));
   }
 
   approvalBlockerText(draft: QuestionDraftRead): string {
@@ -284,7 +256,9 @@ export class DraftReviewStore {
     updater: (edit: DraftEdit) => DraftEdit,
   ): void {
     const draft = this.drafts().find((candidate) => candidate.id === draftId);
-    const current = this.draftEdits()[draftId] ?? (draft ? editFromDraft(draft) : null);
+    const current =
+      this.draftEdits()[draftId] ??
+      (draft ? this.edits.editFromDraft(draft) : null);
     if (current === null) {
       return;
     }
@@ -302,67 +276,11 @@ export class DraftReviewStore {
     });
   }
 
-  private updatePayload(draft: QuestionDraftRead): QuestionDraftUpdate {
-    const edit = this.draftEdit(draft);
-    const choices = normalizeChoices(edit.choices);
-    const answer = edit.answer.trim();
-    return {
-      question: edit.question.trim(),
-      choices,
-      answer: answer.length > 0 ? answer : null,
-      answer_key_source: 'manual',
-      rationale: emptyToNull(edit.rationale),
-      citation_page: draft.citation_page,
-      source_excerpt: draft.source_excerpt,
-    };
+  private updatePayload(draft: QuestionDraftRead) {
+    return this.edits.updatePayload(draft, this.draftEdit(draft));
   }
 
-  private generatePayload(strategy: DraftGenerationStrategy): DraftGenerateRequest {
-    return {
-      limit: this.draftLimit(),
-      strategy,
-    } as DraftGenerateRequest & { strategy: DraftGenerationStrategy };
+  private generatePayload(strategy: DraftGenerationStrategy) {
+    return this.edits.generatePayload(this.draftLimit(), strategy);
   }
-}
-
-interface DraftEdit {
-  question: string;
-  choices: string[];
-  answer: string;
-  rationale: string;
-}
-
-function clampInteger(
-  value: string | number,
-  minimum: number,
-  maximum: number,
-): number {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) {
-    return minimum;
-  }
-
-  return Math.min(maximum, Math.max(minimum, Math.round(parsed)));
-}
-
-function hasText(value: string | null): value is string {
-  return value !== null && value.trim().length > 0;
-}
-
-function editFromDraft(draft: QuestionDraftRead): DraftEdit {
-  return {
-    question: draft.question,
-    choices: draft.choices.length > 0 ? [...draft.choices] : ['', ''],
-    answer: draft.answer ?? '',
-    rationale: draft.rationale ?? '',
-  };
-}
-
-function normalizeChoices(choices: string[]): string[] {
-  return choices.map((choice) => choice.trim()).filter((choice) => choice.length > 0);
-}
-
-function emptyToNull(value: string): string | null {
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
 }

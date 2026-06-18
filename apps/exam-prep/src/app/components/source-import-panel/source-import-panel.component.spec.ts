@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
-import { DocumentRead, EXAM_PREP_API } from '../exam-prep-api';
-import { ProjectStore } from '../stores/project.store';
-import { SourceImportStore } from '../stores/source-import.store';
+import { DocumentRead, EXAM_PREP_API } from '../../exam-prep-api';
+import { ProjectStore } from '../../stores/project.store';
+import { SourceImportStore } from '../../stores/source-import/source-import.store';
 import { SourceImportPanelComponent } from './source-import-panel.component';
 
 describe('SourceImportPanelComponent', () => {

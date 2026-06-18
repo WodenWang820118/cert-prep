@@ -4,10 +4,10 @@ import { Button } from 'primeng/button';
 import { Card } from 'primeng/card';
 import { ProgressBar } from 'primeng/progressbar';
 import { Tag } from 'primeng/tag';
-import { OperationStore } from '../stores/operation.store';
-import { ProjectStore } from '../stores/project.store';
-import { DraftReviewStore } from '../stores/draft-review.store';
-import { SourceImportStore } from '../stores/source-import.store';
+import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
+import { OperationStore } from '../../stores/operation.store';
+import { ProjectStore } from '../../stores/project.store';
+import { SourceImportStore } from '../../stores/source-import/source-import.store';
 
 @Component({
   selector: 'app-source-import-panel',

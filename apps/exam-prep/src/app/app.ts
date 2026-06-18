@@ -1,30 +1,23 @@
 import { Component, effect, inject, OnInit, signal } from '@angular/core';
-import { ButtonDirective } from 'primeng/button';
+import { Button } from 'primeng/button';
 import { Message } from 'primeng/message';
 import { DraftReviewPanelComponent } from './components/draft-review-panel.component';
-import { ModelHealthComponent } from './components/model-health.component';
+import { ModelHealthComponent } from './components/model-health/model-health.component';
 import { PracticePanelComponent } from './components/practice-panel.component';
 import { ProjectRailComponent } from './components/project-rail.component';
-import { SourceImportPanelComponent } from './components/source-import-panel.component';
+import { SourceImportPanelComponent } from './components/source-import-panel/source-import-panel.component';
 import { WrongAnswerReviewComponent } from './components/wrong-answer-review.component';
+import type { StudyMode, StudyModeOption } from './contracts/app.contracts';
 import { OperationStore } from './stores/operation.store';
 import { ProjectStore } from './stores/project.store';
-import { DesktopRuntimeStore } from './stores/desktop-runtime.store';
+import { DesktopRuntimeStore } from './stores/desktop-runtime/desktop-runtime.store';
 import { WorkspaceFacade } from './stores/workspace.facade';
-
-type StudyMode = 'build' | 'full_exam' | 'random_quiz' | 'review';
-
-interface StudyModeOption {
-  readonly id: StudyMode;
-  readonly label: string;
-  readonly icon: string;
-}
 
 const LAST_PROJECT_STORAGE_KEY = 'examPrepLastProjectId';
 
 @Component({
   imports: [
-    ButtonDirective,
+    Button,
     DraftReviewPanelComponent,
     Message,
     ModelHealthComponent,

@@ -5,11 +5,11 @@ import {
   PracticeSessionRead,
   ProjectRead,
   QuestionDraftRead,
-} from '../exam-prep-api';
-import { DraftReviewStore } from './draft-review.store';
+} from '../../exam-prep-api';
+import { DraftReviewStore } from '../draft-review/draft-review.store';
 import { PracticeStore } from './practice.store';
-import { ProjectStore } from './project.store';
-import { SourceImportStore } from './source-import.store';
+import { ProjectStore } from '../project.store';
+import { SourceImportStore } from '../source-import/source-import.store';
 
 describe('PracticeStore session modes', () => {
   const project: ProjectRead = {

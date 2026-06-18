@@ -4,7 +4,7 @@ import {
   LLMHealthRead,
   ModelDownloadRead,
   RuntimeInstallationRead,
-} from '../exam-prep-api';
+} from '../../exam-prep-api';
 import { HealthStore } from './health.store';
 
 describe('HealthStore model downloads', () => {

@@ -1,11 +1,11 @@
 import { inject, Injectable, signal } from '@angular/core';
-import { DesktopRuntimeStore } from './desktop-runtime.store';
-import { DraftReviewStore } from './draft-review.store';
-import { HealthStore } from './health.store';
+import { DesktopRuntimeStore } from './desktop-runtime/desktop-runtime.store';
+import { DraftReviewStore } from './draft-review/draft-review.store';
+import { HealthStore } from './health/health.store';
 import { OperationStore } from './operation.store';
-import { PracticeStore } from './practice.store';
+import { PracticeStore } from './practice/practice.store';
 import { ProjectStore } from './project.store';
-import { SourceImportStore } from './source-import.store';
+import { SourceImportStore } from './source-import/source-import.store';
 import { WrongAnswerReviewStore } from './wrong-answer-review.store';
 
 @Injectable({ providedIn: 'root' })

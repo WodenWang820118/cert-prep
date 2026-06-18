@@ -1,16 +1,14 @@
 import { Component, computed, effect, inject, signal } from '@angular/core';
 import { Button } from 'primeng/button';
 import { Dialog } from 'primeng/dialog';
-import {
-  modelHealthViewModel,
-  ModelHealthViewModel,
-} from './model-health.view-model';
+import type { ModelHealthViewModel } from './contracts/model-health.contracts';
+import { ModelHealthViewModelService } from './model-health-view-model.service';
 import { RuntimeManagerDialogComponent } from './runtime-manager-dialog.component';
 import { RuntimeStatusChipBarComponent } from './runtime-status-chip-bar.component';
-import { DesktopRuntimeStore } from '../stores/desktop-runtime.store';
-import { HealthStore } from '../stores/health.store';
-import { runtimeLabel } from '../stores/runtime-job-view';
-import { WorkspaceFacade } from '../stores/workspace.facade';
+import { DesktopRuntimeStore } from '../../stores/desktop-runtime/desktop-runtime.store';
+import { HealthStore } from '../../stores/health/health.store';
+import { RuntimeJobViewService } from '../../stores/health/runtime-job-view.service';
+import { WorkspaceFacade } from '../../stores/workspace.facade';
 
 @Component({
   selector: 'app-model-health',
@@ -166,11 +164,13 @@ export class ModelHealthComponent {
   protected readonly desktopRuntime = inject(DesktopRuntimeStore);
   protected readonly health = inject(HealthStore);
   protected readonly runtimeDialogVisible = signal(false);
+  private readonly healthViewModels = inject(ModelHealthViewModelService);
+  private readonly runtimeJobs = inject(RuntimeJobViewService);
   private readonly workspace = inject(WorkspaceFacade);
   private loadingBackendState = false;
 
   protected readonly viewModel = computed<ModelHealthViewModel>(() =>
-    modelHealthViewModel({
+    this.healthViewModels.create({
       backendReady: this.desktopRuntime.isBackendReady(),
       pythonRuntimeMissing: this.desktopRuntime.isPythonRuntimeMissing(),
       pythonInstallActive: this.desktopRuntime.isInstallActive(),
@@ -191,7 +191,7 @@ export class ModelHealthComponent {
       : 'Download model',
   );
   protected readonly runtimeInstallConsentLabel = computed(() =>
-    runtimeLabel(this.health.runtimeInstallConsentKind()),
+    this.runtimeJobs.runtimeLabel(this.health.runtimeInstallConsentKind()),
   );
 
   constructor() {

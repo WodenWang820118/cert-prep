@@ -7,10 +7,8 @@ import { Message } from 'primeng/message';
 import { RadioButton } from 'primeng/radiobutton';
 import { Tag } from 'primeng/tag';
 import { OperationStore } from '../stores/operation.store';
-import {
-  PracticeSessionMode,
-  PracticeStore,
-} from '../stores/practice.store';
+import type { PracticeSessionMode } from '../stores/practice/contracts/practice.contracts';
+import { PracticeStore } from '../stores/practice/practice.store';
 
 @Component({
   selector: 'app-practice-panel',

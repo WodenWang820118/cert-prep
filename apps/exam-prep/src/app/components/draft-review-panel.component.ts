@@ -4,9 +4,9 @@ import { Button } from 'primeng/button';
 import { Card } from 'primeng/card';
 import { InputText } from 'primeng/inputtext';
 import { Tag } from 'primeng/tag';
-import { DraftReviewStore } from '../stores/draft-review.store';
+import { DraftReviewStore } from '../stores/draft-review/draft-review.store';
 import { OperationStore } from '../stores/operation.store';
-import { SourceImportStore } from '../stores/source-import.store';
+import { SourceImportStore } from '../stores/source-import/source-import.store';
 
 @Component({
   selector: 'app-draft-review-panel',

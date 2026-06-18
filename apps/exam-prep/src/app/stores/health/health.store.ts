@@ -1,47 +1,32 @@
 import { computed, inject, Injectable, signal } from '@angular/core';
 import {
-  EXAM_PREP_API,
   HealthResponse,
   LLMHealthRead,
   OCRHealthRead,
   RuntimeRequirementRead,
-} from '../exam-prep-api';
-import {
+} from '../../exam-prep-api';
+import type {
   DownloadPhase,
   HealthSnapshot,
   ModelDownloadView,
   RuntimeInstallationView,
   RuntimeKind,
-} from './health-runtime.models';
+} from './contracts/health-runtime.contracts';
 import { HealthSnapshotService } from './health-snapshot.service';
-import { OperationStore } from './operation.store';
-import {
-  configuredModelName,
-  isModelMissing,
-  isOcrRuntimeMissing,
-  isOllamaMissing,
-} from './runtime-health-derivation';
-import {
-  errorMessage,
-  failedDownload,
-  failedRuntimeInstall,
-  startingDownload,
-  startingRuntimeInstall,
-  toModelDownloadView,
-  toRuntimeInstallationView,
-} from './runtime-job-view';
-import {
-  modelDownloadClient,
-  runtimeInstallationClient,
-} from './runtime-api-clients';
+import { RuntimeApiClientsService } from './runtime-api-clients.service';
+import { RuntimeHealthDerivationService } from './runtime-health-derivation.service';
+import { RuntimeJobViewService } from './runtime-job-view.service';
+import { OperationStore } from '../operation.store';
 
 const RUNTIME_JOB_POLL_INTERVAL_MS = 1500;
 
 @Injectable({ providedIn: 'root' })
 export class HealthStore {
-  private readonly api = inject(EXAM_PREP_API);
   private readonly operations = inject(OperationStore);
   private readonly snapshots = inject(HealthSnapshotService);
+  private readonly runtimeApi = inject(RuntimeApiClientsService);
+  private readonly runtimeHealth = inject(RuntimeHealthDerivationService);
+  private readonly jobView = inject(RuntimeJobViewService);
   private modelDownloadPollTimer: ReturnType<typeof setTimeout> | null = null;
   private runtimeInstallPollTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -60,7 +45,9 @@ export class HealthStore {
    * Derived from read-only LLM health data; starting a download remains gated by
    * explicit user consent in the component dialog.
    */
-  readonly isModelMissing = computed(() => isModelMissing(this.llmHealth()));
+  readonly isModelMissing = computed(() =>
+    this.runtimeHealth.isModelMissing(this.llmHealth()),
+  );
 
   /**
    * Includes both the optimistic start flag and the last job phase so buttons
@@ -90,10 +77,16 @@ export class HealthStore {
   });
 
   readonly isOllamaMissing = computed(() =>
-    isOllamaMissing(this.llmHealth(), this.runtimeRequirements()),
+    this.runtimeHealth.isOllamaMissing(
+      this.llmHealth(),
+      this.runtimeRequirements(),
+    ),
   );
   readonly isOcrRuntimeMissing = computed(() =>
-    isOcrRuntimeMissing(this.ocrHealth(), this.runtimeRequirements()),
+    this.runtimeHealth.isOcrRuntimeMissing(
+      this.ocrHealth(),
+      this.runtimeRequirements(),
+    ),
   );
   readonly canDownloadModel = computed(
     () => this.isModelMissing() && !this.isModelDownloadActive(),
@@ -108,7 +101,10 @@ export class HealthStore {
     () => this.runtimeInstallConsentKind() !== null,
   );
   readonly configuredModelName = computed(() =>
-    configuredModelName(this.llmHealth(), this.modelDownload()?.model),
+    this.runtimeHealth.configuredModelName(
+      this.llmHealth(),
+      this.modelDownload()?.model,
+    ),
   );
 
   async load(): Promise<void> {
@@ -152,7 +148,7 @@ export class HealthStore {
       return;
     }
 
-    const client = modelDownloadClient(this.api);
+    const client = this.runtimeApi.modelDownloadClient();
     if (client === null) {
       const message = 'Model download API is unavailable.';
       this.modelDownloadConsentVisible.set(false);
@@ -163,7 +159,9 @@ export class HealthStore {
 
     this.clearModelDownloadPollTimer();
     this.modelDownloadStarting.set(true);
-    this.modelDownload.set(startingDownload(this.llmHealth()?.model ?? null));
+    this.modelDownload.set(
+      this.jobView.startingDownload(this.llmHealth()?.model ?? null),
+    );
 
     try {
       const response = await client.startModelDownload();
@@ -172,7 +170,7 @@ export class HealthStore {
       this.modelDownloadConsentVisible.set(false);
       this.continueModelDownload(status);
     } catch (error) {
-      const message = errorMessage(error);
+      const message = this.jobView.errorMessage(error);
       this.modelDownload.set(this.failedDownload(message));
       this.operations.fail(message);
     } finally {
@@ -218,7 +216,7 @@ export class HealthStore {
       return;
     }
 
-    const client = runtimeInstallationClient(this.api);
+    const client = this.runtimeApi.runtimeInstallationClient();
     if (client === null) {
       const message = 'Runtime installation API is unavailable.';
       this.runtimeInstallConsentKind.set(null);
@@ -229,7 +227,7 @@ export class HealthStore {
 
     this.clearRuntimeInstallPollTimer();
     this.runtimeInstallStarting.set(true);
-    this.runtimeInstall.set(startingRuntimeInstall(kind));
+    this.runtimeInstall.set(this.jobView.startingRuntimeInstall(kind));
 
     try {
       const response = await client.startRuntimeInstallation(kind);
@@ -238,7 +236,7 @@ export class HealthStore {
       this.runtimeInstallConsentKind.set(null);
       this.continueRuntimeInstallation(status);
     } catch (error) {
-      const message = errorMessage(error);
+      const message = this.jobView.errorMessage(error);
       this.runtimeInstall.set(this.failedRuntimeInstall(kind, message));
       this.operations.fail(message);
     } finally {
@@ -252,7 +250,7 @@ export class HealthStore {
       return;
     }
 
-    const client = runtimeInstallationClient(this.api);
+    const client = this.runtimeApi.runtimeInstallationClient();
     if (client === null) {
       const message = 'Runtime installation API is unavailable.';
       this.runtimeInstall.set({ ...current, phase: 'failed', error: message });
@@ -272,7 +270,7 @@ export class HealthStore {
       this.runtimeInstall.set(status);
       this.continueRuntimeInstallation(status);
     } catch (error) {
-      const message = errorMessage(error);
+      const message = this.jobView.errorMessage(error);
       this.runtimeInstall.set({
         ...current,
         phase: 'failed',
@@ -290,7 +288,7 @@ export class HealthStore {
       return;
     }
 
-    const client = modelDownloadClient(this.api);
+    const client = this.runtimeApi.modelDownloadClient();
     if (client === null) {
       const message = 'Model download API is unavailable.';
       this.modelDownload.set({ ...current, phase: 'failed', error: message });
@@ -306,7 +304,7 @@ export class HealthStore {
       this.modelDownload.set(status);
       this.continueModelDownload(status);
     } catch (error) {
-      const message = errorMessage(error);
+      const message = this.jobView.errorMessage(error);
       this.modelDownload.set({
         ...current,
         phase: 'failed',
@@ -354,7 +352,7 @@ export class HealthStore {
     try {
       await this.load();
     } catch (error) {
-      this.operations.fail(errorMessage(error));
+      this.operations.fail(this.jobView.errorMessage(error));
     }
   }
 
@@ -433,7 +431,7 @@ export class HealthStore {
     response: unknown,
     fallbackPhase: DownloadPhase,
   ): ModelDownloadView {
-    return toModelDownloadView(response, fallbackPhase, {
+    return this.jobView.toModelDownloadView(response, fallbackPhase, {
       currentJobId: this.modelDownload()?.jobId ?? null,
       modelName: this.llmHealth()?.model,
     });
@@ -444,19 +442,32 @@ export class HealthStore {
     fallbackKind: RuntimeKind,
     fallbackPhase: DownloadPhase,
   ): RuntimeInstallationView {
-    return toRuntimeInstallationView(response, fallbackKind, fallbackPhase, {
-      currentJobId: this.runtimeInstall()?.jobId ?? null,
-    });
+    return this.jobView.toRuntimeInstallationView(
+      response,
+      fallbackKind,
+      fallbackPhase,
+      {
+        currentJobId: this.runtimeInstall()?.jobId ?? null,
+      },
+    );
   }
 
   private failedDownload(message: string): ModelDownloadView {
-    return failedDownload(message, this.modelDownload(), this.llmHealth()?.model);
+    return this.jobView.failedDownload(
+      message,
+      this.modelDownload(),
+      this.llmHealth()?.model,
+    );
   }
 
   private failedRuntimeInstall(
     kind: RuntimeKind,
     message: string,
   ): RuntimeInstallationView {
-    return failedRuntimeInstall(kind, message, this.runtimeInstall());
+    return this.jobView.failedRuntimeInstall(
+      kind,
+      message,
+      this.runtimeInstall(),
+    );
   }
 }

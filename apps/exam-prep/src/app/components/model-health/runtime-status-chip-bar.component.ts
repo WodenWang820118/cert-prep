@@ -1,7 +1,7 @@
 import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { Button } from 'primeng/button';
 import { Tag } from 'primeng/tag';
-import type { RuntimeStatusChipView } from './model-health.view-model';
+import type { RuntimeStatusChipView } from './contracts/model-health.contracts';
 
 @Component({
   selector: 'app-runtime-status-chip-bar',

@@ -1,9 +1,9 @@
 import { TestBed } from '@angular/core/testing';
-import { DocumentRead, EXAM_PREP_API, QuestionDraftRead } from '../exam-prep-api';
+import { DocumentRead, EXAM_PREP_API, QuestionDraftRead } from '../../exam-prep-api';
 import { DraftReviewStore } from './draft-review.store';
-import { OperationStore } from './operation.store';
-import { ProjectStore } from './project.store';
-import { SourceImportStore } from './source-import.store';
+import { OperationStore } from '../operation.store';
+import { ProjectStore } from '../project.store';
+import { SourceImportStore } from '../source-import/source-import.store';
 
 describe('DraftReviewStore', () => {
   const apiClient = {

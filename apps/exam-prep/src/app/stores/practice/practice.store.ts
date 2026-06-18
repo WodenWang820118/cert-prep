@@ -1,23 +1,19 @@
 import { computed, inject, Injectable, signal } from '@angular/core';
 import {
   EXAM_PREP_API,
-  PracticeSessionCreate,
   PracticeAttemptRead,
   PracticeSessionRead,
-} from '../exam-prep-api';
-import { DraftReviewStore } from './draft-review.store';
-import { OperationStore } from './operation.store';
-import { ProjectStore } from './project.store';
-import { SourceImportStore } from './source-import.store';
-import { WrongAnswerReviewStore } from './wrong-answer-review.store';
-
-export type PracticeSessionMode = 'full_document' | 'random_draw';
-
-type PracticeSessionPayload = PracticeSessionCreate &
-  Partial<{
-    mode: PracticeSessionMode;
-    document_id: string;
-  }>;
+} from '../../exam-prep-api';
+import type {
+  PracticeSessionMode,
+  PracticeSessionPayload,
+} from './contracts/practice.contracts';
+import { PracticeSessionPayloadService } from './practice-session-payload.service';
+import { DraftReviewStore } from '../draft-review/draft-review.store';
+import { OperationStore } from '../operation.store';
+import { ProjectStore } from '../project.store';
+import { SourceImportStore } from '../source-import/source-import.store';
+import { WrongAnswerReviewStore } from '../wrong-answer-review.store';
 
 @Injectable({ providedIn: 'root' })
 export class PracticeStore {
@@ -25,6 +21,7 @@ export class PracticeStore {
   private readonly drafts = inject(DraftReviewStore);
   private readonly operations = inject(OperationStore);
   private readonly projects = inject(ProjectStore);
+  private readonly sessionPayloads = inject(PracticeSessionPayloadService);
   private readonly sourceImport = inject(SourceImportStore);
   private readonly wrongAnswers = inject(WrongAnswerReviewStore);
 
@@ -116,7 +113,9 @@ export class PracticeStore {
   }
 
   setSessionQuestionCount(value: string | number): void {
-    this.sessionQuestionCount.set(clampInteger(value, 1, 100));
+    this.sessionQuestionCount.set(
+      this.sessionPayloads.clampQuestionCount(value),
+    );
   }
 
   selectAnswer(choice: string): void {
@@ -196,22 +195,13 @@ export class PracticeStore {
   }
 
   private sessionPayload(mode: PracticeSessionMode): PracticeSessionPayload {
-    if (mode === 'full_document') {
-      const documentId = this.effectiveFullExamDocumentId();
-      return {
-        mode,
-        document_id: documentId ?? undefined,
-        question_count: Math.max(1, this.selectedDocumentApprovedCount()),
-      };
-    }
-
-    return {
+    return this.sessionPayloads.createPayload({
       mode,
-      question_count: Math.min(
-        this.sessionQuestionCount(),
-        Math.max(1, this.approvedDraftCount()),
-      ),
-    };
+      fullExamDocumentId: this.effectiveFullExamDocumentId(),
+      selectedDocumentApprovedCount: this.selectedDocumentApprovedCount(),
+      sessionQuestionCount: this.sessionQuestionCount(),
+      approvedDraftCount: this.approvedDraftCount(),
+    });
   }
 
   async submitAnswer(): Promise<void> {
@@ -248,17 +238,4 @@ export class PracticeStore {
     this.selectedAnswer.set('');
     await this.wrongAnswers.load(project.id);
   }
-}
-
-function clampInteger(
-  value: string | number,
-  minimum: number,
-  maximum: number,
-): number {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) {
-    return minimum;
-  }
-
-  return Math.min(maximum, Math.max(minimum, Math.round(parsed)));
 }

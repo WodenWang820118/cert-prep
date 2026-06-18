@@ -5,7 +5,7 @@ import type {
   OCRHealthRead,
   RuntimeInstallationRead,
   RuntimeRequirementRead,
-} from '../exam-prep-api';
+} from '../../../exam-prep-api';
 
 /**
  * Runtime job lifecycle normalized for UI state and polling decisions.
@@ -76,3 +76,38 @@ export interface RuntimeInstallationView {
   readonly message: string;
   readonly error: string | null;
 }
+
+/**
+ * Loose record shape used when normalizing runtime job responses from evolving
+ * backend and Tauri command contracts.
+ */
+export type RuntimeJobRecord = Record<string, unknown>;
+
+/**
+ * Existing UI state needed to preserve job identity while mapping a model
+ * download response.
+ */
+export interface ModelDownloadViewContext {
+  readonly currentJobId: string | null;
+  readonly modelName: string | null | undefined;
+}
+
+/**
+ * Existing UI state needed to preserve job identity while mapping a runtime
+ * installation response.
+ */
+export interface RuntimeInstallationViewContext {
+  readonly currentJobId: string | null;
+}
+
+/**
+ * Backends may expose model-missing details under several diagnostic fields
+ * while the OpenAPI contract stabilizes.
+ */
+export type LLMHealthWithMissingReason = LLMHealthRead &
+  Partial<{
+    code: string;
+    error_code: string;
+    reason: string;
+    unavailable_reason: string;
+  }>;

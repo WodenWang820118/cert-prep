@@ -1,6 +1,6 @@
 import { Component, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Button, ButtonDirective } from 'primeng/button';
+import { Button } from 'primeng/button';
 import { Card } from 'primeng/card';
 import { InputText } from 'primeng/inputtext';
 import { Textarea } from 'primeng/textarea';
@@ -10,7 +10,7 @@ import { WorkspaceFacade } from '../stores/workspace.facade';
 
 @Component({
   selector: 'app-project-rail',
-  imports: [Button, ButtonDirective, Card, FormsModule, InputText, Textarea],
+  imports: [Button, Card, FormsModule, InputText, Textarea],
   template: `
     <div class="grid gap-4">
       <p-card styleClass="exam-card">
@@ -62,14 +62,12 @@ import { WorkspaceFacade } from '../stores/workspace.facade';
 
       <div class="grid gap-2" aria-label="Project list">
         @for (project of projects.projects(); track project.id) {
-          <button
-            pButton
+          <p-button
             type="button"
             severity="secondary"
-            [outlined]="true"
-            class="project-select-button"
-            [class.is-selected]="project.id === projects.selectedProjectId()"
-            (click)="workspace.selectProject(project.id)"
+            [outlined]="project.id !== projects.selectedProjectId()"
+            styleClass="project-select-button w-full justify-start text-left"
+            (onClick)="workspace.selectProject(project.id)"
           >
             <span class="grid min-w-0 gap-1">
               <strong class="truncate text-sm">{{ project.name }}</strong>
@@ -79,7 +77,7 @@ import { WorkspaceFacade } from '../stores/workspace.facade';
                 </span>
               }
             </span>
-          </button>
+          </p-button>
         } @empty {
           <p
             class="m-0 rounded-lg border border-dashed border-surface-300 bg-surface-0 p-3 text-sm text-muted-color"

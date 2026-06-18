@@ -2,11 +2,11 @@ import { Component, EventEmitter, inject, Input, Output } from '@angular/core';
 import { Button } from 'primeng/button';
 import { Dialog } from 'primeng/dialog';
 import { ProgressBar } from 'primeng/progressbar';
-import { DesktopRuntimeStore } from '../stores/desktop-runtime.store';
-import { HealthStore } from '../stores/health.store';
-import { OperationStore } from '../stores/operation.store';
-import type { ModelHealthViewModel } from './model-health.view-model';
+import type { ModelHealthViewModel } from './contracts/model-health.contracts';
 import { RuntimeStatusRowComponent } from './runtime-status-row.component';
+import { DesktopRuntimeStore } from '../../stores/desktop-runtime/desktop-runtime.store';
+import { HealthStore } from '../../stores/health/health.store';
+import { OperationStore } from '../../stores/operation.store';
 
 @Component({
   selector: 'app-runtime-manager-dialog',

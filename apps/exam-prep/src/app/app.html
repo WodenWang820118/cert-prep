@@ -50,19 +50,16 @@
           aria-label="Study modes"
         >
           @for (mode of studyModes; track mode.id) {
-          <button
-            pButton
+          <p-button
             type="button"
             severity="secondary"
-            [outlined]="true"
-            class="mode-nav-button"
-            [class.is-selected]="activeMode() === mode.id"
+            [icon]="mode.icon"
+            [label]="mode.label"
+            [outlined]="activeMode() !== mode.id"
+            styleClass="mode-nav-button w-full justify-center"
             [attr.aria-current]="activeMode() === mode.id ? 'page' : null"
-            (click)="selectMode(mode.id)"
-          >
-            <i [class]="mode.icon" aria-hidden="true"></i>
-            <span>{{ mode.label }}</span>
-          </button>
+            (onClick)="selectMode(mode.id)"
+          />
           }
         </nav>
 

@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
-import { EXAM_PREP_API, LLMHealthRead, OCRHealthRead } from '../exam-prep-api';
-import { HealthStore } from '../stores/health.store';
+import { EXAM_PREP_API, LLMHealthRead, OCRHealthRead } from '../../exam-prep-api';
+import { HealthStore } from '../../stores/health/health.store';
 import { ModelHealthComponent } from './model-health.component';
 
 describe('ModelHealthComponent', () => {
