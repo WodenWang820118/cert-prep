@@ -1,18 +1,18 @@
 <main class="min-h-screen bg-surface-50 text-color">
   <div class="mx-auto grid max-w-[1500px] gap-4 p-4 lg:p-6">
     <header
-      class="grid gap-4 border-b border-surface-200 pb-4 lg:grid-cols-[minmax(0,1fr)_minmax(360px,430px)] lg:items-end"
+      class="grid gap-4 border-b border-surface-200 pb-4 lg:grid-cols-[minmax(0,1fr)_minmax(520px,680px)] lg:items-end"
     >
       <div class="min-w-0">
         <p class="m-0 text-xs font-bold uppercase text-muted-color">
           Local workspace
         </p>
-        <h1 class="m-0 mt-1 text-4xl font-bold leading-tight text-color">
+        <h1 class="m-0 mt-1 text-3xl font-bold leading-tight text-color">
           {{ title }}
         </h1>
       </div>
 
-      <section aria-label="Runtime checklist">
+      <section aria-label="Runtime status">
         <app-model-health />
       </section>
     </header>
@@ -37,17 +37,50 @@
 
     @if (desktopRuntime.isBackendReady()) {
     <div
-      class="grid items-start gap-4 xl:grid-cols-[minmax(230px,290px)_minmax(0,1fr)_minmax(280px,360px)]"
+      class="grid items-start gap-4 xl:grid-cols-[minmax(230px,290px)_minmax(0,1fr)]"
     >
       <aside aria-label="Projects">
         <app-project-rail />
       </aside>
 
-      <section class="grid gap-4" aria-label="Practice loop">
+      <section class="grid gap-4" aria-label="Study workspace">
         @if (projects.selectedProject()) {
-        <app-source-import-panel />
-        <app-draft-review-panel />
-        <app-practice-panel />
+        <nav
+          class="grid gap-2 rounded-lg border border-surface-200 bg-surface-0 p-2 shadow-sm sm:grid-cols-2 xl:grid-cols-4"
+          aria-label="Study modes"
+        >
+          @for (mode of studyModes; track mode.id) {
+          <button
+            pButton
+            type="button"
+            severity="secondary"
+            [outlined]="true"
+            class="mode-nav-button"
+            [class.is-selected]="activeMode() === mode.id"
+            [attr.aria-current]="activeMode() === mode.id ? 'page' : null"
+            (click)="selectMode(mode.id)"
+          >
+            <i [class]="mode.icon" aria-hidden="true"></i>
+            <span>{{ mode.label }}</span>
+          </button>
+          }
+        </nav>
+
+        @switch (activeMode()) {
+          @case ('build') {
+            <app-source-import-panel />
+            <app-draft-review-panel />
+          }
+          @case ('full_exam') {
+            <app-practice-panel [sessionMode]="'full_document'" />
+          }
+          @case ('random_quiz') {
+            <app-practice-panel [sessionMode]="'random_draw'" />
+          }
+          @case ('review') {
+            <app-wrong-answer-review />
+          }
+        }
         } @else {
         <section
           class="rounded-lg border border-dashed border-surface-300 bg-surface-0 p-5 text-sm text-muted-color"
@@ -56,10 +89,6 @@
         </section>
         }
       </section>
-
-      <aside class="xl:sticky xl:top-4" aria-labelledby="review-heading">
-        <app-wrong-answer-review />
-      </aside>
     </div>
     } @else {
     <section

@@ -1,6 +1,6 @@
-import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = resolve(scriptDir, '../../..');
@@ -19,5 +19,13 @@ if (!existsSync(sourcePath)) {
 }
 
 mkdirSync(resourceDir, { recursive: true });
-copyFileSync(sourcePath, targetPath);
+const manifest = JSON.parse(readFileSync(sourcePath, 'utf8')) as {
+  artifact?: { file_name?: string; url?: string | null };
+};
+if (manifest.artifact && !manifest.artifact.url && manifest.artifact.file_name) {
+  manifest.artifact.url = pathToFileURL(
+    join(dirname(sourcePath), manifest.artifact.file_name),
+  ).href;
+}
+writeFileSync(targetPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
 console.log(`Synced OCR runtime manifest to ${targetPath}`);

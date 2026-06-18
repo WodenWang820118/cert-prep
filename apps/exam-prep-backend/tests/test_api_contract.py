@@ -27,11 +27,40 @@ def test_status_like_fields_are_documented_as_openapi_enums(tmp_path) -> None:
         "paddle_ocr_gpu_fallback",
         "fake_ocr",
     ]
+    assert _enum_values(openapi, "DocumentRead", "content_profile") == [
+        "unknown",
+        "jlpt_vocabulary",
+        "jlpt_grouped",
+        "mixed",
+    ]
+    assert _enum_values(openapi, "ChunkRead", "content_profile") == [
+        "unknown",
+        "jlpt_vocabulary",
+        "jlpt_grouped",
+        "mixed",
+    ]
     assert _enum_values(openapi, "QuestionDraftRead", "status") == ["draft", "approved"]
     assert _enum_values(openapi, "QuestionDraftRead", "answer_key_source") == [
         "manual",
         "pdf",
         "ai_inferred",
+    ]
+    assert _enum_values(openapi, "QuestionDraftRead", "item_kind") == [
+        "unknown",
+        "vocabulary_single",
+        "grouped_question",
+    ]
+    assert _enum_values(openapi, "DraftGenerateRequest", "strategy") == [
+        "deterministic_only",
+        "hybrid_reasoning",
+    ]
+    assert _enum_values(openapi, "PracticeSessionCreate", "mode") == [
+        "random_draw",
+        "full_document",
+    ]
+    assert _enum_values(openapi, "PracticeSessionRead", "mode") == [
+        "random_draw",
+        "full_document",
     ]
 
 

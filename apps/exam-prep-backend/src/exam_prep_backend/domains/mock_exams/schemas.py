@@ -2,15 +2,18 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from exam_prep_backend.domains.exam_content import QuestionItemKind, QuestionItemKindValue
 from exam_prep_backend.domains.mock_exams.models import (
     AnswerKeySource,
     AnswerKeySourceValue,
+    DraftGenerationStrategy,
     DraftStatusValue,
 )
 
 
 class DraftGenerateRequest(BaseModel):
     limit: int = Field(default=5, ge=1, le=50)
+    strategy: DraftGenerationStrategy = DraftGenerationStrategy.DETERMINISTIC_ONLY
 
 
 class QuestionDraftCreate(BaseModel):
@@ -21,8 +24,14 @@ class QuestionDraftCreate(BaseModel):
     rationale: str | None = None
     citation_page: int | None = Field(default=None, ge=1)
     source_excerpt: str | None = None
+    confidence: float | None = Field(default=None, ge=0, le=1)
     document_id: str | None = None
     chunk_id: str | None = None
+    source_order: int | None = Field(default=None, ge=0)
+    source_question_number: str | None = None
+    item_kind: QuestionItemKindValue = QuestionItemKind.UNKNOWN
+    group_key: str | None = None
+    group_prompt: str | None = None
 
 
 class QuestionDraftUpdate(BaseModel):
@@ -33,6 +42,12 @@ class QuestionDraftUpdate(BaseModel):
     rationale: str | None = None
     citation_page: int | None = Field(default=None, ge=1)
     source_excerpt: str | None = None
+    confidence: float | None = Field(default=None, ge=0, le=1)
+    source_order: int | None = Field(default=None, ge=0)
+    source_question_number: str | None = None
+    item_kind: QuestionItemKindValue | None = None
+    group_key: str | None = None
+    group_prompt: str | None = None
 
 
 class QuestionDraftRead(BaseModel):
@@ -47,6 +62,12 @@ class QuestionDraftRead(BaseModel):
     rationale: str | None
     citation_page: int | None
     source_excerpt: str | None
+    confidence: float | None
+    source_order: int | None
+    source_question_number: str | None
+    item_kind: QuestionItemKindValue
+    group_key: str | None
+    group_prompt: str | None
     status: DraftStatusValue
     rejection_reason: str | None
     created_at: str

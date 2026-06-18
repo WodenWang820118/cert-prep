@@ -1,13 +1,16 @@
 import { TestBed } from '@angular/core/testing';
-import { EXAM_PREP_API, QuestionDraftRead } from '../exam-prep-api';
+import { DocumentRead, EXAM_PREP_API, QuestionDraftRead } from '../exam-prep-api';
 import { DraftReviewStore } from './draft-review.store';
 import { OperationStore } from './operation.store';
 import { ProjectStore } from './project.store';
+import { SourceImportStore } from './source-import.store';
 
 describe('DraftReviewStore', () => {
   const apiClient = {
     approveQuestionDraft: vi.fn(),
     generateDocumentDrafts: vi.fn(),
+    getDocument: vi.fn(),
+    listDocumentChunks: vi.fn(),
     listQuestionDrafts: vi.fn(),
     updateQuestionDraft: vi.fn(),
   };
@@ -29,6 +32,9 @@ describe('DraftReviewStore', () => {
       },
     ]);
     projects.select('project-1');
+
+    apiClient.getDocument.mockResolvedValue(documentRead());
+    apiClient.listDocumentChunks.mockResolvedValue({ items: [] });
   });
 
   it('blocks approval when citation evidence is incomplete', async () => {
@@ -74,9 +80,13 @@ describe('DraftReviewStore', () => {
 
   it('approves and upserts a fully cited draft', async () => {
     const store = TestBed.inject(DraftReviewStore);
+    const sourceImport = TestBed.inject(SourceImportStore);
     const draft = questionDraft({ status: 'draft' });
     const approved = questionDraft({ status: 'approved' });
+    const refreshedDocument = documentRead({ exam_item_count: 1 });
     apiClient.approveQuestionDraft.mockResolvedValue(approved);
+    apiClient.getDocument.mockResolvedValue(refreshedDocument);
+    sourceImport.documents.set([documentRead({ status: 'processing' })]);
     store.drafts.set([draft]);
 
     await store.approveDraft(draft);
@@ -86,6 +96,12 @@ describe('DraftReviewStore', () => {
       draft.id,
     );
     expect(store.drafts()).toEqual([approved]);
+    expect(apiClient.getDocument).toHaveBeenCalledWith('project-1', 'document-1');
+    expect(apiClient.listDocumentChunks).toHaveBeenCalledWith(
+      'project-1',
+      'document-1',
+    );
+    expect(sourceImport.documents()).toEqual([refreshedDocument]);
   });
 
   it('saves manual edits before approving a draft', async () => {
@@ -128,6 +144,41 @@ describe('DraftReviewStore', () => {
     );
     expect(store.drafts()).toEqual([approved]);
   });
+
+  it('sends deterministic strategy when generating deterministic drafts', async () => {
+    const store = TestBed.inject(DraftReviewStore);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    const draft = questionDraft();
+    sourceImport.uploadedDocument.set(documentRead());
+    apiClient.generateDocumentDrafts.mockResolvedValue({ items: [draft] });
+    apiClient.listQuestionDrafts.mockResolvedValue({ items: [draft] });
+
+    await store.generateDrafts('deterministic_only');
+
+    expect(apiClient.generateDocumentDrafts).toHaveBeenCalledWith(
+      'project-1',
+      'document-1',
+      { limit: 3, strategy: 'deterministic_only' },
+    );
+  });
+
+  it('sends hybrid reasoning strategy when enriching drafts', async () => {
+    const store = TestBed.inject(DraftReviewStore);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    const draft = questionDraft();
+    store.setDraftLimit(8);
+    sourceImport.uploadedDocument.set(documentRead());
+    apiClient.generateDocumentDrafts.mockResolvedValue({ items: [draft] });
+    apiClient.listQuestionDrafts.mockResolvedValue({ items: [draft] });
+
+    await store.generateDrafts('hybrid_reasoning');
+
+    expect(apiClient.generateDocumentDrafts).toHaveBeenCalledWith(
+      'project-1',
+      'document-1',
+      { limit: 8, strategy: 'hybrid_reasoning' },
+    );
+  });
 });
 
 function questionDraft(
@@ -145,8 +196,44 @@ function questionDraft(
     rationale: 'The source supports A.',
     citation_page: 1,
     source_excerpt: 'The cited source supports answer A.',
+    confidence: null,
+    source_order: 10001,
+    source_question_number: '1',
+    item_kind: 'vocabulary_single_question',
+    group_key: null,
+    group_prompt: null,
     status: 'draft',
     rejection_reason: null,
+    created_at: '2026-06-09T00:00:00Z',
+    updated_at: '2026-06-09T00:00:00Z',
+    ...overrides,
+  };
+}
+
+function documentRead(overrides: Partial<DocumentRead> = {}): DocumentRead {
+  return {
+    id: 'document-1',
+    project_id: 'project-1',
+    filename: 'jlpt-n1.pdf',
+    sha256: 'document-sha',
+    language_hint: 'ja',
+    page_count: 46,
+    has_text: true,
+    status: 'ready',
+    extraction_method: 'paddle_ocr_gpu',
+    ocr_device: 'gpu:0',
+    ocr_fallback_reason: null,
+    ocr_duration_ms: 26513,
+    processed_page_count: 46,
+    parse_wall_duration_ms: 0,
+    render_duration_ms: 0,
+    ocr_engine_duration_ms: 26513,
+    ocr_worker_count: 1,
+    first_chunk_ms: 0,
+    exam_item_count: 0,
+    content_profile: 'vocabulary_single_questions',
+    classification_detail: '{"profile":"vocabulary_single_questions"}',
+    chunks_count: 46,
     created_at: '2026-06-09T00:00:00Z',
     updated_at: '2026-06-09T00:00:00Z',
     ...overrides,

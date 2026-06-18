@@ -1,57 +1,23 @@
-# Tauri Packaging With Deferred Runtimes Spec
+# Tauri Packaging 與 Deferred Runtime 規格
 
-## Purpose
+## 現況
 
-Package the Exam Prep app as a Windows x64 Tauri app that includes the Angular UI and a lite backend sidecar. Ollama, `gemma4:12b`, and PaddleOCR must stay outside the initial installer and be installed only after explicit user confirmation at the point of use.
+Windows x64 packaged Tauri app 使用輕量 shell，Python backend runtime、PaddleOCR runtime、Ollama/model 皆透過明確使用者同意與 runtime job 安裝或檢查。初始 installer 不包含 Ollama model 或 PaddleOCR payload。
 
-## Non-Goals
+## 決策
 
-- Do not bundle Ollama models into the installer.
-- Do not bundle Ollama, PaddleOCR, PaddlePaddle, or OCR model payloads into the initial installer.
-- Do not auto-install runtimes or auto-pull models during startup, health checks, upload, or draft generation.
-- Do not add cross-platform packaging in this slice.
+- Startup/health check 不得自動安裝 Ollama、model、PaddleOCR 或 Python backend。
+- Runtime artifact 必須以 manifest 宣告 byte size、SHA-256、release URL，安裝前驗證。
+- Ollama/model/PaddleOCR 都透過 backend runtime installation API 顯示狀態與 progress。
+- package QA JSON 與 runtime manifests 必須對應同一次 build artifact。
 
-## Interfaces
+## QA 證據
 
-- `GET /llm/health` remains read-only and reports provider/model availability.
-- `GET /runtime/requirements` reports availability for `ollama`, `ollama_model`, and `paddle_ocr`.
-- `POST /runtime/installations/{kind}` starts an explicit runtime/model installation job.
-- `GET /runtime/installations/{job_id}` polls queued/running/waiting/succeeded/failed state, byte progress, detail, timestamps, and error text.
-- `POST /llm/model-downloads` and `GET /llm/model-downloads/{job_id}` remain compatibility wrappers around the `ollama_model` runtime job.
-- Tauri launches the sidecar with `EXAM_PREP_OCR_PROVIDER=paddle` and `EXAM_PREP_OCR_RUNTIME_MODE=external`.
-- Tauri bundles only the lite backend sidecar plus the OCR runtime manifest; the OCR runtime ZIP/EXE is a separate release asset.
-- Packaged QA writes raw diagnostics and artifact sizes to ignored benchmark output, then records the final size summary in decisions.
+- package QA 已重建 backend/OCR runtime zip、MSI/NSIS bundle，並更新 manifest。
+- packaged UI 已驗證 Python/PaddleOCR 可透過 UI ready；reasoning model download 仍需另做 consent/bakeoff 驗證。
 
-## Key Decisions
+## 未解風險
 
-- Supersede the previous bundled GPU Paddle sidecar decision with a deferred PaddleOCR runtime artifact.
-- Keep Ollama install and model pull logic behind explicit backend job APIs so the frontend can enforce confirmation.
-- Verify OCR runtime artifacts with SHA-256 before extraction into per-user app data.
-- Use Windows x64 as the packaging target for this pass.
-
-## Edge Cases and Failure Modes
-
-- If Ollama is missing, the UI prompts for the official Windows installer only when local AI generation is requested.
-- If Ollama is installed but not running, health reports `ollama_not_running` without launching installers.
-- If `gemma4:12b` is missing, the model pull starts only after user confirmation.
-- If image-only PDF import needs OCR and PaddleOCR is missing, the backend returns `paddle_runtime_missing` so the UI can prompt and retry.
-- Embedded-text PDFs do not require PaddleOCR.
-- If a pull job for the same configured provider/model is already queued or running, return the existing job instead of starting a duplicate.
-- If an OCR artifact hash check fails, the install job fails and leaves the active runtime unchanged.
-- If the official Ollama installer requires user interaction, the job reports `waiting_for_user` and the UI offers status refresh.
-
-## Acceptance Criteria
-
-- Health checks and startup never install Ollama, pull models, or install PaddleOCR.
-- Model pull starts only after user confirmation triggers the model job.
-- PaddleOCR install starts only after an OCR-needed flow hits a missing runtime and the user confirms.
-- UI can poll and display queued/running/waiting/succeeded/failed install states.
-- Tauri build includes only the lite sidecar in `externalBin` and records installer, sidecar, OCR artifact, and browser bundle sizes.
-- Initial installer size gate warns above 150 MB and fails above 250 MB unless explicitly documented.
-- Verification commands in the TODO pass or have a documented environment blocker.
-
-## Test Plan
-
-- Backend tests cover no implicit install, explicit install success/failure, duplicate running job reuse, unsupported provider response, hash mismatch, image-only OCR missing, and OpenAPI schema generation.
-- Frontend tests cover confirmation cancel, confirmation start, polling/progress display, and use-time prompts.
-- Desktop/package verification runs Nx build/cargo/package targets plus the packaged QA size script.
+- Tauri product shutdown 仍需 process-tree cleanup，不能只 kill direct child。
+- package QA helper 已比 product cleanup 更強，下一階段要把這個能力移回 product。
+- 若 release URL 未發布，production QA 可只 patch built target manifest，不得修改 source manifest 假裝發布完成。

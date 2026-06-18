@@ -37,7 +37,9 @@ import { SourceImportStore } from '../stores/source-import.store';
           />
         </div>
 
-        <div class="grid gap-3 md:grid-cols-[10rem_auto] md:items-end">
+        <div
+          class="grid gap-3 md:grid-cols-[10rem_minmax(0,1fr)] md:items-end"
+        >
           <label class="grid gap-1.5 text-sm font-semibold text-muted-color">
             <span>Draft count</span>
             <input
@@ -50,14 +52,26 @@ import { SourceImportStore } from '../stores/source-import.store';
               (ngModelChange)="drafts.setDraftLimit($event)"
             />
           </label>
-          <p-button
-            label="Regenerate mock exam"
-            icon="pi pi-sparkles"
-            type="button"
-            [disabled]="operations.isBusyFor('drafts') || !sourceImport.canGenerateDrafts()"
-            [loading]="operations.isBusyFor('drafts')"
-            (onClick)="drafts.generateDrafts()"
-          />
+          <div class="flex flex-wrap gap-2">
+            <p-button
+              label="Generate deterministic drafts"
+              icon="pi pi-list-check"
+              severity="secondary"
+              [outlined]="true"
+              type="button"
+              [disabled]="operations.isBusyFor('drafts') || !sourceImport.canGenerateDrafts()"
+              [loading]="operations.isBusyFor('drafts')"
+              (onClick)="drafts.generateDrafts('deterministic_only')"
+            />
+            <p-button
+              label="Enrich with reasoning"
+              icon="pi pi-sparkles"
+              type="button"
+              [disabled]="operations.isBusyFor('drafts') || !sourceImport.canGenerateDrafts()"
+              [loading]="operations.isBusyFor('drafts')"
+              (onClick)="drafts.generateDrafts('hybrid_reasoning')"
+            />
+          </div>
         </div>
 
         <div class="grid gap-3">

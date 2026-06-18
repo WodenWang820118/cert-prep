@@ -41,6 +41,45 @@ describe('ModelHealthComponent', () => {
     }).compileComponents();
   });
 
+  it('renders compact status chips and keeps details in the manager', () => {
+    const fixture = TestBed.createComponent(ModelHealthComponent);
+    const health = TestBed.inject(HealthStore);
+    health.systemHealth.set({
+      status: 'ok',
+      app: 'exam-prep-backend',
+      version: '0.1.0',
+      python_version: '3.13.5',
+      runtime_mode: 'source',
+    });
+    health.llmHealth.set({
+      provider: 'fake',
+      model: 'reasoner:7b',
+      available: true,
+      detail: 'deterministic local fake provider',
+      unavailable_reason: null,
+    });
+    health.ocrHealth.set(ocrHealth());
+
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Python 3.13.5');
+    expect(fixture.nativeElement.textContent).toContain(
+      'Reasoning model: reasoner:7b',
+    );
+    expect(fixture.nativeElement.textContent).not.toContain('gemma4:12b');
+    expect(fixture.nativeElement.textContent).toContain('paddle / cpu');
+    expect(buttonByText(fixture.nativeElement, 'Manage runtime')).not.toBeNull();
+    expect(fixture.nativeElement.textContent).not.toContain('Runtime details');
+
+    buttonByText(fixture.nativeElement, 'Manage runtime')?.click();
+    fixture.detectChanges();
+
+    expect(document.body.textContent).toContain('Runtime details');
+    expect(document.body.textContent).toContain('Python backend');
+    expect(document.body.textContent).toContain('Reasoning model');
+    expect(document.body.textContent).toContain('PaddleOCR');
+  });
+
   it('hides the download action for generic offline health', () => {
     const fixture = TestBed.createComponent(ModelHealthComponent);
     const health = TestBed.inject(HealthStore);
@@ -52,8 +91,10 @@ describe('ModelHealthComponent', () => {
     health.ocrHealth.set(ocrHealth());
 
     fixture.detectChanges();
+    buttonByText(fixture.nativeElement, 'Manage runtime')?.click();
+    fixture.detectChanges();
 
-    expect(buttonByText(fixture.nativeElement, 'Download model')).toBeNull();
+    expect(buttonByText(document.body, 'Download model')).toBeNull();
   });
 
   it('opens consent and cancel does not start the download', async () => {
@@ -63,13 +104,15 @@ describe('ModelHealthComponent', () => {
     health.ocrHealth.set(ocrHealth());
     fixture.detectChanges();
 
-    buttonByText(fixture.nativeElement, 'Download model')?.click();
+    buttonByText(fixture.nativeElement, 'Manage runtime')?.click();
+    fixture.detectChanges();
+    buttonByText(document.body, 'Download model')?.click();
     fixture.detectChanges();
     await fixture.whenStable();
 
     expect(health.modelDownloadConsentVisible()).toBe(true);
     expect(document.body.textContent).toContain(
-      'Download gemma4:12b with Ollama?',
+      'Download reasoner:7b with Ollama?',
     );
 
     buttonByText(document.body, 'Cancel')?.click();
@@ -91,7 +134,9 @@ describe('ModelHealthComponent', () => {
     health.ocrHealth.set(ocrHealth());
     fixture.detectChanges();
 
-    buttonByText(fixture.nativeElement, 'Install Ollama')?.click();
+    buttonByText(fixture.nativeElement, 'Manage runtime')?.click();
+    fixture.detectChanges();
+    buttonByText(document.body, 'Install Ollama')?.click();
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -123,9 +168,9 @@ function buttonByText(
 function missingModelHealth(): LLMHealthRead & { unavailable_reason: string } {
   return {
     provider: 'ollama',
-    model: 'gemma4:12b',
+    model: 'reasoner:7b',
     available: false,
-    detail: 'Ollama model gemma4:12b is missing.',
+    detail: 'Ollama model reasoner:7b is missing.',
     unavailable_reason: 'model_missing',
   };
 }

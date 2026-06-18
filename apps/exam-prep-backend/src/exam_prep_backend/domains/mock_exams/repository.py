@@ -30,9 +30,10 @@ def create_draft(db: Database, project_id: str, payload: QuestionDraftCreate) ->
             INSERT INTO question_drafts(
                 id, project_id, document_id, chunk_id, question, choices_json,
                 answer, answer_key_source, rationale, citation_page, source_excerpt, status,
+                confidence, source_order, source_question_number, item_kind, group_key, group_prompt,
                 rejection_reason, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', NULL, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, NULL, ?, ?)
             """,
             (
                 draft_id,
@@ -46,6 +47,12 @@ def create_draft(db: Database, project_id: str, payload: QuestionDraftCreate) ->
                 payload.rationale,
                 payload.citation_page,
                 payload.source_excerpt,
+                payload.confidence,
+                payload.source_order,
+                payload.source_question_number,
+                payload.item_kind,
+                payload.group_key,
+                payload.group_prompt,
                 now,
                 now,
             ),
@@ -76,7 +83,7 @@ def create_generated_drafts(
             """,
             (project_id, document_id),
         )
-        for suggestion in suggestions:
+        for index, suggestion in enumerate(suggestions, start=1):
             draft_id = str(uuid4())
             draft_ids.append(draft_id)
             connection.execute(
@@ -84,9 +91,10 @@ def create_generated_drafts(
                 INSERT INTO question_drafts(
                     id, project_id, document_id, chunk_id, question, choices_json,
                     answer, answer_key_source, rationale, citation_page, source_excerpt, status,
+                    confidence, source_order, source_question_number, item_kind, group_key, group_prompt,
                     rejection_reason, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
                 """,
                 (
                     draft_id,
@@ -101,6 +109,12 @@ def create_generated_drafts(
                     suggestion.citation_page,
                     suggestion.source_excerpt,
                     suggestion.status.value,
+                    suggestion.confidence,
+                    suggestion.source_order or index,
+                    suggestion.source_question_number,
+                    suggestion.item_kind.value,
+                    suggestion.group_key,
+                    suggestion.group_prompt,
                     now,
                     now,
                 ),
@@ -139,7 +153,9 @@ def update_draft(
             """
             UPDATE question_drafts
             SET question = ?, choices_json = ?, answer = ?, answer_key_source = ?, rationale = ?,
-                citation_page = ?, source_excerpt = ?, updated_at = ?
+                citation_page = ?, source_excerpt = ?, confidence = ?, source_order = ?,
+                source_question_number = ?, item_kind = ?, group_key = ?, group_prompt = ?,
+                updated_at = ?
             WHERE project_id = ? AND id = ?
             """,
             (
@@ -161,6 +177,28 @@ def update_draft(
                     payload.source_excerpt
                     if payload.source_excerpt is not None
                     else existing["source_excerpt"]
+                ),
+                (
+                    payload.confidence
+                    if payload.confidence is not None
+                    else existing["confidence"]
+                ),
+                (
+                    payload.source_order
+                    if payload.source_order is not None
+                    else existing["source_order"]
+                ),
+                (
+                    payload.source_question_number
+                    if payload.source_question_number is not None
+                    else existing["source_question_number"]
+                ),
+                payload.item_kind if payload.item_kind is not None else existing["item_kind"],
+                payload.group_key if payload.group_key is not None else existing["group_key"],
+                (
+                    payload.group_prompt
+                    if payload.group_prompt is not None
+                    else existing["group_prompt"]
                 ),
                 now,
                 project_id,
@@ -227,6 +265,7 @@ def grounding_errors_for_draft(db: Database, draft: dict) -> list[str]:
         id=chunk["id"],
         page_number=chunk["page_number"],
         text=chunk["text"],
+        raw_text=chunk["raw_text"],
         source_excerpt=chunk["source_excerpt"],
     )
     return list(grounding_error_codes(draft, source_chunk))
@@ -265,6 +304,12 @@ def _draft_from_row(row: Row) -> dict:
         "rationale": row["rationale"],
         "citation_page": row["citation_page"],
         "source_excerpt": row["source_excerpt"],
+        "confidence": row["confidence"],
+        "source_order": row["source_order"],
+        "source_question_number": row["source_question_number"],
+        "item_kind": row["item_kind"],
+        "group_key": row["group_key"],
+        "group_prompt": row["group_prompt"],
         "status": row["status"],
         "rejection_reason": row["rejection_reason"],
         "created_at": row["created_at"],

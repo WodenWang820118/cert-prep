@@ -17,6 +17,10 @@ def test_practice_session_attempts_and_wrong_answer_review(client: TestClient, a
     session = session_response.json()
     assert session["project_id"] == project_id
     assert session["question_ids"] == [approved["id"]]
+    assert session["mode"] == "random_draw"
+    assert session["document_id"] is None
+    assert session["question_count"] == 5
+    assert isinstance(session["random_seed"], int)
 
     attempt = client.post(
         f"/projects/{project_id}/practice-sessions/{session['id']}/attempts",
@@ -117,6 +121,84 @@ def test_practice_attempt_rejects_approved_question_outside_session(
     }
 
 
+def test_full_document_session_uses_source_order_for_document_drafts(
+    client: TestClient, auth_headers
+) -> None:
+    project_id = _create_project(client, auth_headers)
+    document_id = _upload_document(client, auth_headers, project_id)
+    second = _create_approved_manual_question(
+        client,
+        auth_headers,
+        project_id,
+        document_id,
+        question="Second source item?",
+        source_order=20,
+    )
+    first = _create_approved_manual_question(
+        client,
+        auth_headers,
+        project_id,
+        document_id,
+        question="First source item?",
+        source_order=10,
+    )
+
+    response = client.post(
+        f"/projects/{project_id}/practice-sessions",
+        headers=auth_headers,
+        json={"mode": "full_document", "document_id": document_id},
+    )
+
+    assert response.status_code == 201
+    session = response.json()
+    assert session["mode"] == "full_document"
+    assert session["document_id"] == document_id
+    assert session["question_count"] == 2
+    assert session["random_seed"] is None
+    assert session["question_ids"] == [first["id"], second["id"]]
+
+
+def test_random_draw_session_uses_fixed_seed_deterministically(
+    client: TestClient, auth_headers
+) -> None:
+    project_id = _create_project(client, auth_headers)
+    document_id = _upload_document(client, auth_headers, project_id)
+    approved = [
+        _create_approved_manual_question(
+            client,
+            auth_headers,
+            project_id,
+            document_id,
+            question=f"Seeded item {index}?",
+            source_order=index,
+        )
+        for index in range(1, 4)
+    ]
+
+    payload = {"mode": "random_draw", "question_count": 2, "random_seed": 12345}
+    first = client.post(
+        f"/projects/{project_id}/practice-sessions",
+        headers=auth_headers,
+        json=payload,
+    )
+    second = client.post(
+        f"/projects/{project_id}/practice-sessions",
+        headers=auth_headers,
+        json=payload,
+    )
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    first_session = first.json()
+    second_session = second.json()
+    assert first_session["mode"] == "random_draw"
+    assert first_session["question_count"] == 2
+    assert first_session["random_seed"] == 12345
+    assert first_session["question_ids"] == second_session["question_ids"]
+    assert len(first_session["question_ids"]) == 2
+    assert set(first_session["question_ids"]) <= {item["id"] for item in approved}
+
+
 def _create_project(client: TestClient, auth_headers) -> str:
     response = client.post("/projects", headers=auth_headers, json={"name": "Azure"})
     assert response.status_code == 201
@@ -148,10 +230,17 @@ def _generate_approved_draft(
     response = client.post(
         f"/projects/{project_id}/documents/{document_id}/drafts",
         headers=auth_headers,
-        json={"limit": 1},
+        json={"limit": 1, "strategy": "hybrid_reasoning"},
     )
     assert response.status_code == 201
     draft = response.json()["items"][0]
+    if draft["status"] != "approved":
+        approved = client.post(
+            f"/projects/{project_id}/question-drafts/{draft['id']}/approve",
+            headers=auth_headers,
+        )
+        assert approved.status_code == 200
+        draft = approved.json()
     assert draft["status"] == "approved"
     return draft
 
@@ -161,6 +250,9 @@ def _create_approved_manual_question(
     auth_headers,
     project_id: str,
     document_id: str,
+    *,
+    question: str = "Which access model should be applied?",
+    source_order: int | None = None,
 ) -> dict:
     chunks_response = client.get(
         f"/projects/{project_id}/documents/{document_id}/chunks",
@@ -172,7 +264,7 @@ def _create_approved_manual_question(
         f"/projects/{project_id}/question-drafts",
         headers=auth_headers,
         json={
-            "question": "Which access model should be applied?",
+            "question": question,
             "choices": ["Use least privilege", "Allow unrestricted access"],
             "answer": "Use least privilege",
             "rationale": "The document says permissions should remain scoped.",
@@ -180,6 +272,8 @@ def _create_approved_manual_question(
             "chunk_id": chunk["id"],
             "citation_page": chunk["page_number"],
             "source_excerpt": chunk["source_excerpt"],
+            "source_order": source_order,
+            "item_kind": "vocabulary_single",
         },
     )
     assert created.status_code == 201

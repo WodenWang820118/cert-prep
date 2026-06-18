@@ -2,15 +2,24 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from exam_prep_backend.domains.practice.models import PracticeSessionMode
+
 
 class PracticeSessionCreate(BaseModel):
-    question_count: int = Field(default=10, ge=1, le=100)
+    mode: PracticeSessionMode = PracticeSessionMode.RANDOM_DRAW
+    document_id: str | None = None
+    question_count: int | None = Field(default=None, ge=1, le=100)
+    random_seed: int | None = None
 
 
 class PracticeSessionRead(BaseModel):
     id: str
     project_id: str
     question_ids: list[str]
+    mode: PracticeSessionMode
+    document_id: str | None
+    question_count: int
+    random_seed: int | None
     status: str
     created_at: str
     completed_at: str | None

@@ -27,7 +27,7 @@ const DEFAULT_OCR_RUNTIME_ROOT = 'apps/exam-prep-backend/dist/ocr-runtime';
 const DEFAULT_OCR_RUNTIME_MANIFEST =
   'apps/exam-prep-desktop/src-tauri/resources/ocr-runtime-manifest.json';
 const DEFAULT_DATA_DIR = 'tmp/exam-prep-desktop/package-qa/data';
-const DEFAULT_LLM_MODEL = 'gemma4:12b';
+const DEFAULT_LLM_MODEL = 'qwen3:14b';
 const SIDECAR_PREFIX = 'exam-prep-backend-';
 const BACKEND_RUNTIME_PREFIX = 'exam-prep-backend-runtime-';
 const OCR_RUNTIME_PREFIX = 'exam-prep-ocr-runtime-';
@@ -140,7 +140,7 @@ interface RuntimeManifestSummary {
   readonly version: string;
   readonly target: string;
   readonly entrypoint: string;
-  readonly url: string;
+  readonly url: string | null;
   readonly manifest: PublicFileRecord;
   readonly artifact: PublicFileRecord;
 }
@@ -407,11 +407,6 @@ export function validateRuntimeManifest({
       `Expected ${expectedKind} manifest, found ${manifest.kind}`,
     );
   }
-  if (!manifest.artifact?.url) {
-    throw new Error(
-      `${manifest.kind} runtime manifest is missing a release URL.`,
-    );
-  }
   const targetFromName = targetTripleFromRuntimeArtifactName(
     manifest.artifact.file_name,
     artifactPrefix,
@@ -441,7 +436,7 @@ export function validateRuntimeManifest({
     version: manifest.version,
     target: manifest.target,
     entrypoint: manifest.entrypoint,
-    url: manifest.artifact.url,
+    url: manifest.artifact.url ?? null,
     manifest: publicFileRecord(fileRecord(manifestPath, workspaceRoot)),
     artifact: publicFileRecord(artifact),
   };

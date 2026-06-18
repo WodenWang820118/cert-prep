@@ -77,7 +77,7 @@ def grounding_errors_for_draft(
         errors.append("citation_page")
 
     source_excerpt = _text(draft.get("source_excerpt")).strip()
-    if source_excerpt and source_excerpt not in chunk.text:
+    if source_excerpt and source_excerpt not in chunk.raw_or_text():
         errors.append("source_excerpt")
     return tuple(errors)
 

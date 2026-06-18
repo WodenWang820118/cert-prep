@@ -3,7 +3,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from exam_prep_backend.app import create_app
-from exam_prep_backend.config import Settings, default_data_dir
+from exam_prep_backend.config import DEFAULT_OLLAMA_MODEL, Settings, default_data_dir
 
 
 def test_health_is_public_but_other_endpoints_require_bearer_auth(tmp_path: Path) -> None:
@@ -58,7 +58,7 @@ def test_llm_health_uses_fake_provider_without_network(client: TestClient, auth_
     assert response.status_code == 200
     assert response.json() == {
         "provider": "fake",
-        "model": "gemma4:12b",
+        "model": DEFAULT_OLLAMA_MODEL,
         "available": True,
         "detail": "deterministic local fake provider",
         "unavailable_reason": None,

@@ -49,6 +49,7 @@ class OCRProvider(Protocol):
 class FakeOCRProvider:
     provider = "fake"
     engine = "none"
+    page_workers = 1
 
     def health(self) -> OCRHealth:
         return OCRHealth(
@@ -89,7 +90,10 @@ def ocr_provider_from_settings(settings: Settings) -> OCRProvider:
             return ExternalPaddleOCRProvider(settings=settings)
         from exam_prep_backend.domains.source_documents.adapters.paddle import PaddleOCRProvider
 
-        return PaddleOCRProvider(device=settings.ocr_device)
+        return PaddleOCRProvider(
+            device=settings.ocr_device,
+            page_workers=settings.ocr_page_workers,
+        )
     if settings.ocr_provider == "ollama":
         from exam_prep_backend.domains.source_documents.adapters.ollama import OllamaOCRProvider
 

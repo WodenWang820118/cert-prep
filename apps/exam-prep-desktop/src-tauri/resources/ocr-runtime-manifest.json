@@ -6,8 +6,8 @@
   "entrypoint": "exam-prep-ocr-runtime.exe",
   "artifact": {
     "file_name": "exam-prep-ocr-runtime-x86_64-pc-windows-msvc.zip",
-    "sha256": "a5b07e36cccf067451f932db87abc78de2c8e0ae6b48bd4a9a7dcdf91abb2136",
-    "bytes": 663364645,
-    "url": null
+    "sha256": "9d9dadfa6123cf653ceaab233d49851eb9e05960a62ac98a2b22772774cf3f90",
+    "bytes": 663379297,
+    "url": "file:///C:/software-dev/cert-prep/apps/exam-prep-backend/dist/ocr-runtime/exam-prep-ocr-runtime-x86_64-pc-windows-msvc.zip"
   }
 }

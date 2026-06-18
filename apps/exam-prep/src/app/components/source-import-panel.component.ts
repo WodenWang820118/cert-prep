@@ -163,14 +163,16 @@ import { SourceImportStore } from '../stores/source-import.store';
                 {{ document.ocr_device || 'none' }}
               </dd>
             </div>
-            <div class="rounded-md border border-surface-200 bg-surface-50 p-3">
-              <dt class="text-xs font-bold uppercase text-muted-color">
-                OCR time
-              </dt>
-              <dd class="m-0 mt-1 text-sm font-semibold text-color">
-                {{ document.ocr_duration_ms }} ms
-              </dd>
-            </div>
+            @for (metric of sourceImport.parsingMetrics(document); track metric.label) {
+              <div class="rounded-md border border-surface-200 bg-surface-50 p-3">
+                <dt class="text-xs font-bold uppercase text-muted-color">
+                  {{ metric.label }}
+                </dt>
+                <dd class="m-0 mt-1 text-sm font-semibold text-color">
+                  {{ metric.value }}
+                </dd>
+              </div>
+            }
             @if (document.ocr_fallback_reason) {
               <div
                 class="rounded-md border border-amber-200 bg-amber-50 p-3 xl:col-span-2"

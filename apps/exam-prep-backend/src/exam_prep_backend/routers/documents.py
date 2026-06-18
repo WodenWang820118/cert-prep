@@ -174,8 +174,14 @@ def _auto_generate_exam_items(
         SourceChunk(
             id=chunk["id"],
             page_number=chunk["page_number"],
+            chunk_index=chunk["chunk_index"],
             text=chunk["text"],
+            raw_text=chunk["raw_text"],
             source_excerpt=chunk["source_excerpt"],
+            line_start=chunk["line_start"],
+            line_end=chunk["line_end"],
+            line_count=chunk["line_count"],
+            content_profile=chunk["content_profile"],
         )
         for chunk in source_documents_repository.get_source_chunks(db, project_id, document_id)
     ]
@@ -215,6 +221,11 @@ def _process_document_upload(
             ocr_device=progress.ocr_device,
             ocr_fallback_reason=progress.ocr_fallback_reason,
             ocr_duration_ms=progress.ocr_duration_ms,
+            parse_wall_duration_ms=progress.parse_wall_duration_ms,
+            render_duration_ms=progress.render_duration_ms,
+            ocr_engine_duration_ms=progress.ocr_engine_duration_ms,
+            ocr_worker_count=progress.ocr_worker_count,
+            first_chunk_ms=progress.first_chunk_ms,
         )
 
     try:

@@ -1,38 +1,23 @@
-# Exam Prep Backend DDD Refactor Spec
+# Backend DDD Refactor 規格
 
-## Purpose
+## 現況
 
-Refactor the FastAPI backend into domain packages that make source ingestion, mock exam generation, practice, and projects easier to test and evolve without changing the user-visible workflow.
+FastAPI backend 已按 domain 拆分 source documents、mock exams/question drafts、practice、runtime installations 等模組。此切片的目標是讓 OCR、draft generation、practice session 與 project persistence 能獨立測試與演進。
 
-## Non-Goals
+## 決策
 
-- Do not introduce a new ORM, database migration strategy, or persistence format.
-- Do not require live Ollama, PaddleOCR, or GPU dependencies in deterministic tests.
-- Do not redesign the Angular UI or endpoint paths during this refactor.
+- Domain code 放在 `exam_prep_backend/domains/<domain>/`。
+- Endpoint path、auth、error envelope 盡量維持相容。
+- Public DTO 由 owning domain 輸出；OpenAPI client 必須跟 schema 同步。
+- Generated/AI draft 不自動 approved；approved-only 是 playable exam rule。
 
-## Architecture
+## QA 證據
 
-- Domain code lives under `exam_prep_backend/domains/<domain>/`.
-- `app.py`, `main.py`, `config.py`, `database.py`, `dependencies.py`, and error-envelope handling remain shared platform code.
-- Pre-DDD top-level store/provider modules are removed once their callers move to domain modules.
+- Backend pytest/ruff/OpenAPI client checks 已在後續 QA 中反覆跑過。
+- OCR page failure、draft approval、practice full/random mode、wrong-answer projection 均有測試或 packaged QA 證據。
 
-## Interfaces
+## 未解風險
 
-- Preserve existing endpoint paths, HTTP methods, status codes, auth behavior, and error envelopes.
-- Preserve serialized string values for public statuses and methods.
-- API polish is limited to documenting known status-like values in backend/OpenAPI schemas without rejecting legacy/custom strings; frontend-generated client compatibility must be regenerated and verified.
-
-## Acceptance Criteria
-
-- Backend tests, lint, and Python version checks pass through Nx.
-- Domain modules are cohesive, small, and grouped by feature.
-- Public domain services, ports, and non-obvious policies have useful docstrings.
-- Schema DTOs are imported from their owning domain packages; top-level compatibility facades are removed.
-- A `grill-me` Codex sub-agent implementation review finds no blocking issues.
-
-## Test Plan
-
-- Add characterization tests before moving behavior.
-- Cover source document ingestion, OCR fallback, mock exam parsing/approval, practice attempts, and OpenAPI enum documentation.
-- Run `pnpm nx run exam-prep-backend:test`, `pnpm nx run exam-prep-backend:lint`, and `pnpm nx run exam-prep-backend:python-version-check`.
-- Run generated client and frontend checks when OpenAPI output changes.
+- OCR worker 與 repository progress persistence 還要支援 as-completed chunk flush。
+- Reasoning bakeoff harness 會新增評測入口，需避免污染 production API。
+- Schema 變更後若忘記重產前端 client，會造成 UI payload drift。

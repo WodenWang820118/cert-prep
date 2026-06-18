@@ -72,4 +72,20 @@
     color: var(--p-text-color);
     box-shadow: inset 4px 0 0 var(--p-primary-color);
   }
+
+  .mode-nav-button.p-button {
+    justify-content: flex-start;
+    width: 100%;
+    min-height: 2.75rem;
+    border-color: var(--p-surface-200);
+    color: var(--p-text-color);
+    text-align: left;
+  }
+
+  .mode-nav-button.is-selected.p-button {
+    border-color: var(--p-primary-color);
+    background: var(--p-highlight-background);
+    color: var(--p-text-color);
+    box-shadow: inset 0 -3px 0 var(--p-primary-color);
+  }
 }

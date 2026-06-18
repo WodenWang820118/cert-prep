@@ -8,6 +8,9 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+DEFAULT_OLLAMA_MODEL = "qwen3:14b"
+
+
 def default_data_dir() -> Path:
     if os.name == "nt":
         base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
@@ -27,6 +30,7 @@ class Settings(BaseSettings):
     max_page_text_chars: int = 20_000
     max_total_text_chars: int = 500_000
     ocr_render_scale: float = 1.0
+    ocr_page_workers: int = Field(default=1, ge=1)
     auto_generate_exam_on_upload: bool = False
     auto_generate_exam_limit: int = 50
     ollama_timeout_seconds: float = 120.0
@@ -44,7 +48,7 @@ class Settings(BaseSettings):
     ocr_device: str = "auto"
     ocr_benchmark: bool = False
     ollama_host: str = "http://127.0.0.1:11434"
-    ollama_model: str = "gemma4:12b"
+    ollama_model: str = DEFAULT_OLLAMA_MODEL
     ocr_runtime_mode: Literal["external", "inprocess"] = "external"
     ocr_runtime_dir: Path | None = None
     ocr_runtime_manifest_path: Path | None = None

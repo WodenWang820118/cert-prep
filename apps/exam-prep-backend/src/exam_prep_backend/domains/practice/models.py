@@ -8,6 +8,11 @@ class PracticeSessionStatus(str, Enum):
     ACTIVE = "active"
 
 
+class PracticeSessionMode(str, Enum):
+    RANDOM_DRAW = "random_draw"
+    FULL_DOCUMENT = "full_document"
+
+
 class QuestionDraftStatus(str, Enum):
     DRAFT = "draft"
     APPROVED = "approved"
@@ -20,11 +25,16 @@ class PracticeSession:
     question_ids: tuple[str, ...]
     created_at: str
     status: PracticeSessionStatus = PracticeSessionStatus.ACTIVE
+    mode: PracticeSessionMode = PracticeSessionMode.RANDOM_DRAW
+    source_document_id: str | None = None
+    requested_question_count: int = 10
+    random_seed: int | None = None
     completed_at: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "question_ids", tuple(self.question_ids))
         object.__setattr__(self, "status", PracticeSessionStatus(self.status))
+        object.__setattr__(self, "mode", PracticeSessionMode(self.mode))
 
     def includes_question(self, question_id: str) -> bool:
         return question_id in self.question_ids
@@ -35,6 +45,10 @@ class PracticeSession:
             "project_id": self.project_id,
             "question_ids": list(self.question_ids),
             "status": self.status.value,
+            "mode": self.mode.value,
+            "document_id": self.source_document_id,
+            "question_count": self.requested_question_count,
+            "random_seed": self.random_seed,
             "created_at": self.created_at,
             "completed_at": self.completed_at,
         }

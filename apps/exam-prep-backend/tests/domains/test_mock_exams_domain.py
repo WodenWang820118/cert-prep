@@ -42,6 +42,12 @@ def test_draft_suggestion_serializes_answer_key_source_as_string() -> None:
         "rationale": "The source says to apply it.",
         "citation_page": 2,
         "source_excerpt": "Apply the cited concept.",
+        "confidence": None,
+        "source_order": None,
+        "source_question_number": None,
+        "item_kind": "unknown",
+        "group_key": None,
+        "group_prompt": None,
     }
 
 

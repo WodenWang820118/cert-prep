@@ -151,7 +151,7 @@ describe('HealthStore model downloads', () => {
 function llmHealth(overrides: Partial<LLMHealthRead> = {}): LLMHealthRead {
   return {
     provider: 'ollama',
-    model: 'gemma4:12b',
+    model: 'reasoner:7b',
     available: false,
     detail: 'model not found',
     unavailable_reason: 'model_missing',
@@ -165,7 +165,7 @@ function modelDownload(
   return {
     id: 'job-1',
     provider: 'ollama',
-    model: 'gemma4:12b',
+    model: 'reasoner:7b',
     status: 'running',
     detail: 'downloading',
     completed: 25,

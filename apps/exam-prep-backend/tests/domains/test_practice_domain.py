@@ -36,6 +36,10 @@ def test_practice_models_preserve_current_serialized_values() -> None:
     assert QuestionDraftStatus.APPROVED.value == "approved"
     assert session.to_record()["status"] == "active"
     assert session.to_record()["question_ids"] == ["question-1"]
+    assert session.to_record()["mode"] == "random_draw"
+    assert session.to_record()["document_id"] is None
+    assert session.to_record()["question_count"] == 10
+    assert session.to_record()["random_seed"] is None
     assert question.status is QuestionDraftStatus.APPROVED
 
 

@@ -1,5 +1,6 @@
 import { computed, inject, Injectable, signal } from '@angular/core';
 import {
+  DraftGenerateRequest,
   EXAM_PREP_API,
   QuestionDraftRead,
   QuestionDraftUpdate,
@@ -8,6 +9,10 @@ import { HealthStore } from './health.store';
 import { OperationStore } from './operation.store';
 import { ProjectStore } from './project.store';
 import { SourceImportStore } from './source-import.store';
+
+export type DraftGenerationStrategy =
+  | 'deterministic_only'
+  | 'hybrid_reasoning';
 
 @Injectable({ providedIn: 'root' })
 export class DraftReviewStore {
@@ -139,7 +144,9 @@ export class DraftReviewStore {
     return blockers.length === 0 ? 'Ready to approve' : blockers.join(', ');
   }
 
-  async generateDrafts(): Promise<void> {
+  async generateDrafts(
+    strategy: DraftGenerationStrategy = 'hybrid_reasoning',
+  ): Promise<void> {
     const project = this.projects.selectedProject();
     const document = this.sourceImport.uploadedDocument();
     if (project === null || document === null) {
@@ -149,14 +156,18 @@ export class DraftReviewStore {
 
     const drafts = await this.operations.run(
       'drafts',
-      'Cited drafts generated',
+      strategy === 'deterministic_only'
+        ? 'Deterministic drafts generated'
+        : 'Reasoning enrichment completed',
       () =>
-        this.api.generateDocumentDrafts(project.id, document.id, {
-          limit: this.draftLimit(),
-        }),
+        this.api.generateDocumentDrafts(
+          project.id,
+          document.id,
+          this.generatePayload(strategy),
+        ),
     );
     if (drafts === null) {
-      await this.openMissingAiRuntimePrompt();
+      await this.openMissingAiRuntimePrompt(strategy);
       return;
     }
 
@@ -165,8 +176,13 @@ export class DraftReviewStore {
     await this.sourceImport.refreshUploadedDocument(project.id, document.id);
   }
 
-  private async openMissingAiRuntimePrompt(): Promise<void> {
-    if (this.operations.errorCode() !== 'provider_unavailable') {
+  private async openMissingAiRuntimePrompt(
+    strategy: DraftGenerationStrategy,
+  ): Promise<void> {
+    if (
+      strategy !== 'hybrid_reasoning' ||
+      this.operations.errorCode() !== 'provider_unavailable'
+    ) {
       return;
     }
 
@@ -198,12 +214,28 @@ export class DraftReviewStore {
       return;
     }
 
+    await this.approveSavedDraft(draft);
+  }
+
+  private async approveSavedDraft(draft: QuestionDraftRead): Promise<void> {
+    const project = this.projects.selectedProject();
+    if (project === null) {
+      this.operations.fail('Select a project before approving drafts.');
+      return;
+    }
+
     const approved = await this.operations.run('approve', 'Draft approved', () =>
       this.api.approveQuestionDraft(project.id, draft.id),
     );
     if (approved !== null) {
       this.upsertDraft(approved);
       this.cancelEdit(approved);
+      if (approved.document_id !== null) {
+        await this.sourceImport.refreshUploadedDocument(
+          project.id,
+          approved.document_id,
+        );
+      }
     }
   }
 
@@ -229,7 +261,7 @@ export class DraftReviewStore {
     if (saved === null) {
       return;
     }
-    await this.approveDraft(saved);
+    await this.approveSavedDraft(saved);
   }
 
   private upsertDraft(nextDraft: QuestionDraftRead): void {
@@ -283,6 +315,13 @@ export class DraftReviewStore {
       citation_page: draft.citation_page,
       source_excerpt: draft.source_excerpt,
     };
+  }
+
+  private generatePayload(strategy: DraftGenerationStrategy): DraftGenerateRequest {
+    return {
+      limit: this.draftLimit(),
+      strategy,
+    } as DraftGenerateRequest & { strategy: DraftGenerationStrategy };
   }
 }
 

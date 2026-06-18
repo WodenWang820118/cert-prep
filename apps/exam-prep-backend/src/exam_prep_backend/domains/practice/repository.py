@@ -2,50 +2,97 @@ from __future__ import annotations
 
 import json
 from sqlite3 import Row
+import secrets
 from uuid import uuid4
 
 from exam_prep_backend.database import Database, utc_now
-from exam_prep_backend.domains.practice.models import PracticeQuestion, PracticeSession
+from exam_prep_backend.domains.practice.models import (
+    PracticeQuestion,
+    PracticeSession,
+    PracticeSessionMode,
+)
 from exam_prep_backend.domains.practice.policies import (
+    DOCUMENT_REQUIRED_FOR_FULL_DOCUMENT_MESSAGE,
     PracticeRuleViolation,
     build_practice_attempt,
     current_wrong_answers,
+    select_random_session_question_ids,
     select_session_question_ids,
 )
+from exam_prep_backend.domains.source_documents import repository as documents_repository
 from exam_prep_backend.domains.projects.repository import ensure_project_exists
 from exam_prep_backend.errors import NotFoundError, ValidationError
 
 
-def create_session(db: Database, project_id: str, question_count: int) -> dict:
+DEFAULT_RANDOM_QUESTION_COUNT = 10
+
+
+def create_session(
+    db: Database,
+    project_id: str,
+    *,
+    mode: PracticeSessionMode | str = PracticeSessionMode.RANDOM_DRAW,
+    document_id: str | None = None,
+    question_count: int | None = None,
+    random_seed: int | None = None,
+) -> dict:
     ensure_project_exists(db, project_id)
+    session_mode = PracticeSessionMode(mode)
+    if session_mode is PracticeSessionMode.FULL_DOCUMENT and document_id is None:
+        raise ValidationError(DOCUMENT_REQUIRED_FOR_FULL_DOCUMENT_MESSAGE)
+    if session_mode is PracticeSessionMode.FULL_DOCUMENT and document_id is not None:
+        documents_repository.ensure_document_exists(db, project_id, document_id)
+
     now = utc_now()
     session_id = str(uuid4())
     with db.connect() as connection:
-        question_rows = connection.execute(
-            """
-            SELECT id
-            FROM question_drafts
-            WHERE project_id = ? AND status = 'approved'
-            ORDER BY created_at
-            LIMIT ?
-            """,
-            (project_id, question_count),
-        ).fetchall()
+        question_rows = _approved_question_rows(
+            connection,
+            project_id=project_id,
+            mode=session_mode,
+            document_id=document_id,
+        )
+        effective_count = _effective_question_count(
+            mode=session_mode,
+            requested_question_count=question_count,
+            available_question_count=len(question_rows),
+        )
         try:
-            question_ids = select_session_question_ids(
-                [row["id"] for row in question_rows],
-                question_count,
-            )
+            if session_mode is PracticeSessionMode.RANDOM_DRAW:
+                stored_seed = random_seed if random_seed is not None else secrets.randbits(63)
+                question_ids = select_random_session_question_ids(
+                    [row["id"] for row in question_rows],
+                    effective_count,
+                    stored_seed,
+                )
+                stored_document_id = None
+            else:
+                stored_seed = None
+                stored_document_id = document_id
+                question_ids = select_session_question_ids(
+                    [row["id"] for row in question_rows],
+                    effective_count,
+                )
         except PracticeRuleViolation as exc:
             raise ValidationError(str(exc)) from exc
         connection.execute(
             """
             INSERT INTO practice_sessions(
-                id, project_id, question_ids_json, status, created_at, completed_at
+                id, project_id, question_ids_json, mode, source_document_id,
+                requested_question_count, random_seed, status, created_at, completed_at
             )
-            VALUES (?, ?, ?, 'active', ?, NULL)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, NULL)
             """,
-            (session_id, project_id, json.dumps(list(question_ids)), now),
+            (
+                session_id,
+                project_id,
+                json.dumps(list(question_ids)),
+                session_mode.value,
+                stored_document_id,
+                effective_count,
+                stored_seed,
+                now,
+            ),
         )
         row = _session_query(connection, project_id, session_id)
     if row is None:
@@ -75,6 +122,10 @@ def record_attempt(
         project_id=session_record["project_id"],
         question_ids=tuple(session_record["question_ids"]),
         status=session_record["status"],
+        mode=session_record["mode"],
+        source_document_id=session_record["document_id"],
+        requested_question_count=session_record["question_count"],
+        random_seed=session_record["random_seed"],
         created_at=session_record["created_at"],
         completed_at=session_record["completed_at"],
     )
@@ -171,11 +222,62 @@ def _session_query(connection, project_id: str, session_id: str) -> Row | None:
     ).fetchone()
 
 
+def _approved_question_rows(
+    connection,
+    *,
+    project_id: str,
+    mode: PracticeSessionMode,
+    document_id: str | None,
+) -> list[Row]:
+    if mode is PracticeSessionMode.FULL_DOCUMENT:
+        return connection.execute(
+            """
+            SELECT id
+            FROM question_drafts
+            WHERE project_id = ? AND document_id = ? AND status = 'approved'
+            ORDER BY
+                CASE WHEN source_order IS NULL THEN 1 ELSE 0 END,
+                source_order,
+                citation_page,
+                created_at,
+                id
+            """,
+            (project_id, document_id),
+        ).fetchall()
+
+    return connection.execute(
+        """
+        SELECT id
+        FROM question_drafts
+        WHERE project_id = ? AND status = 'approved'
+        ORDER BY id
+        """,
+        (project_id,),
+    ).fetchall()
+
+
+def _effective_question_count(
+    *,
+    mode: PracticeSessionMode,
+    requested_question_count: int | None,
+    available_question_count: int,
+) -> int:
+    if requested_question_count is not None:
+        return requested_question_count
+    if mode is PracticeSessionMode.FULL_DOCUMENT and available_question_count > 0:
+        return available_question_count
+    return DEFAULT_RANDOM_QUESTION_COUNT
+
+
 def _session_from_row(row: Row) -> dict:
     return {
         "id": row["id"],
         "project_id": row["project_id"],
         "question_ids": json.loads(row["question_ids_json"]),
+        "mode": row["mode"],
+        "document_id": row["source_document_id"],
+        "question_count": row["requested_question_count"],
+        "random_seed": row["random_seed"],
         "status": row["status"],
         "created_at": row["created_at"],
         "completed_at": row["completed_at"],

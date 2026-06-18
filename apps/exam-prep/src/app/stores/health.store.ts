@@ -168,6 +168,9 @@ export class HealthStore {
   readonly runtimeInstallConsentLabel = computed(() =>
     this.runtimeLabel(this.runtimeInstallConsentKind()),
   );
+  readonly configuredModelName = computed(
+    () => this.llmHealth()?.model ?? this.modelDownload()?.model ?? 'configured model',
+  );
 
   async load(): Promise<void> {
     const [systemHealth, llmHealth, ocrHealth, runtimeRequirements] =

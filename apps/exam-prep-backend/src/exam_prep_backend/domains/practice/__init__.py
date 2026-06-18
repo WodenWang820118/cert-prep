@@ -2,11 +2,13 @@ from exam_prep_backend.domains.practice.models import (
     PracticeAttempt,
     PracticeQuestion,
     PracticeSession,
+    PracticeSessionMode,
     PracticeSessionStatus,
     QuestionDraftStatus,
     WrongAnswer,
 )
 from exam_prep_backend.domains.practice.policies import (
+    DOCUMENT_REQUIRED_FOR_FULL_DOCUMENT_MESSAGE,
     NO_APPROVED_QUESTIONS_MESSAGE,
     QUESTION_NOT_IN_SESSION_MESSAGE,
     SELECTED_ANSWER_NOT_AVAILABLE_MESSAGE,
@@ -15,10 +17,12 @@ from exam_prep_backend.domains.practice.policies import (
     current_wrong_answers,
     ensure_question_belongs_to_session,
     ensure_selected_answer_is_available,
+    select_random_session_question_ids,
     select_session_question_ids,
 )
 
 __all__ = [
+    "DOCUMENT_REQUIRED_FOR_FULL_DOCUMENT_MESSAGE",
     "NO_APPROVED_QUESTIONS_MESSAGE",
     "QUESTION_NOT_IN_SESSION_MESSAGE",
     "SELECTED_ANSWER_NOT_AVAILABLE_MESSAGE",
@@ -26,6 +30,7 @@ __all__ = [
     "PracticeQuestion",
     "PracticeRuleViolation",
     "PracticeSession",
+    "PracticeSessionMode",
     "PracticeSessionStatus",
     "QuestionDraftStatus",
     "WrongAnswer",
@@ -33,5 +38,6 @@ __all__ = [
     "current_wrong_answers",
     "ensure_question_belongs_to_session",
     "ensure_selected_answer_is_available",
+    "select_random_session_question_ids",
     "select_session_question_ids",
 ]

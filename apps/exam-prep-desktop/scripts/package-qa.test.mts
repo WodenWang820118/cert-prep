@@ -111,7 +111,7 @@ test('collectBundleArtifacts records sorted relative paths and sizes', () => {
   assert.equal(bytesToMb(1024 * 1024 * 1.5), 1.5);
 });
 
-test('validateRuntimeManifest checks URL, target, size, and checksum', () => {
+test('validateRuntimeManifest checks optional URL, target, size, and checksum', () => {
   const workspaceRoot = makeTempWorkspace();
   const runtimeRoot = join(
     workspaceRoot,
@@ -165,6 +165,32 @@ test('validateRuntimeManifest checks URL, target, size, and checksum', () => {
     ),
     'x86_64-pc-windows-msvc',
   );
+
+  writeFileSync(
+    manifestPath,
+    JSON.stringify({
+      kind: 'python_backend',
+      version: '0.1.0',
+      target: 'x86_64-pc-windows-msvc',
+      entrypoint: 'exam-prep-backend.exe',
+      artifact: {
+        file_name: 'exam-prep-backend-runtime-x86_64-pc-windows-msvc.zip',
+        sha256: sha256('backend-runtime'),
+        bytes: Buffer.byteLength('backend-runtime'),
+        url: null,
+      },
+    }),
+  );
+
+  const localSummary = validateRuntimeManifest({
+    manifestPath,
+    runtimeRoot,
+    workspaceRoot,
+    expectedKind: 'python_backend',
+    artifactPrefix: 'exam-prep-backend-runtime-',
+  });
+
+  assert.equal(localSummary.url, null);
 });
 
 test('health summaries keep OCR fallback and LLM model state', () => {
@@ -196,14 +222,14 @@ test('health summaries keep OCR fallback and LLM model state', () => {
   assert.deepEqual(
     summarizeLlmHealth({
       provider: 'ollama',
-      model: 'gemma4:12b',
+      model: 'qwen3:14b',
       available: false,
       detail: 'model not found',
       extra: 'ignored',
     }),
     {
       provider: 'ollama',
-      model: 'gemma4:12b',
+      model: 'qwen3:14b',
       available: false,
       detail: 'model not found',
       unavailable_reason: null,

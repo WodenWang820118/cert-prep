@@ -7,10 +7,18 @@ from typing import Any
 
 import ollama
 
+from exam_prep_backend.config import DEFAULT_OLLAMA_MODEL
 from exam_prep_backend.config import Settings
+from exam_prep_backend.domains.exam_content import (
+    QuestionItemKind,
+    clean_exam_text,
+    parse_jlpt_question_blocks,
+    question_item_kind_from_value,
+)
 from exam_prep_backend.domains.runtime_installations import resolve_ollama_executable
 from exam_prep_backend.domains.mock_exams.models import (
     AnswerKeySource,
+    DraftGenerationStrategy,
     DraftStatus,
     DraftSuggestion,
     SourceChunk,
@@ -24,7 +32,7 @@ from exam_prep_backend.errors import ProviderUnavailableError
 class FakeLLMProvider:
     provider = "fake"
 
-    def __init__(self, model: str = "gemma4:12b") -> None:
+    def __init__(self, model: str = DEFAULT_OLLAMA_MODEL) -> None:
         self.model = model
 
     def health(self) -> ProviderHealth:
@@ -54,6 +62,9 @@ class FakeLLMProvider:
                     rationale=f"The cited source supports applying this concept: {excerpt}",
                     citation_page=chunk.page_number,
                     source_excerpt=excerpt,
+                    confidence=1.0,
+                    source_order=(chunk.page_number * 10_000) + (chunk.chunk_index * 1_000) + 1,
+                    item_kind=QuestionItemKind.UNKNOWN,
                 )
             )
         return suggestions
@@ -103,8 +114,17 @@ class OllamaProvider:
             return []
 
         extracted = _extract_jlpt_question_blocks(chunks, limit)
-        if extracted:
+        if len(extracted) >= limit:
             return extracted
+
+        generated = self.generate_reasoning_drafts(chunks, limit - len(extracted))
+        return _dedupe_suggestions([*extracted, *generated], limit)
+
+    def generate_reasoning_drafts(
+        self, chunks: Sequence[SourceChunk], limit: int
+    ) -> list[DraftSuggestion]:
+        if not chunks or limit <= 0:
+            return []
 
         source = _source_text_for_prompt(chunks, limit)
         response = self._client.chat(
@@ -120,7 +140,8 @@ class OllamaProvider:
                         "Only output real multiple-choice exam items with a question stem and "
                         "visible choices. If an explicit answer key is present, use it. If it "
                         "is absent, infer the correct answer and mark answer_key_source as "
-                        "ai_inferred."
+                        "ai_inferred. Do not include chain-of-thought, hidden reasoning, or "
+                        "analysis. Only include a concise user-facing rationale."
                     ),
                 },
                 {
@@ -128,8 +149,9 @@ class OllamaProvider:
                     "content": (
                         f"Create up to {limit} JLPT mock exam items from this page-delimited "
                         "source text. For every item, set answer to the exact choice text, "
-                        "include a concise rationale, keep citation_page from the source page, "
-                        "and include a source_excerpt copied exactly from the source text. If "
+                        "include a concise user-facing rationale, include confidence as a "
+                        "number from 0 to 1, keep citation_page from the source page, and "
+                        "include a source_excerpt copied exactly from the source text. If "
                         "the source only contains title, note, version, or instruction text, "
                         "return an empty items array for that text.\n\n"
                         f"{source}"
@@ -174,6 +196,29 @@ def provider_from_settings(settings: Settings):
             timeout_seconds=settings.ollama_timeout_seconds,
         )
     return FakeLLMProvider(model=settings.ollama_model)
+
+
+def generate_drafts_for_strategy(
+    provider,
+    chunks: Sequence[SourceChunk],
+    limit: int,
+    strategy: DraftGenerationStrategy,
+) -> list[DraftSuggestion]:
+    """Generate draft suggestions for the explicit draft endpoint strategy."""
+
+    deterministic = _extract_jlpt_question_blocks(chunks, limit)
+    if strategy == DraftGenerationStrategy.DETERMINISTIC_ONLY:
+        return deterministic
+    if len(deterministic) >= limit:
+        return deterministic
+
+    remaining = limit - len(deterministic)
+    if isinstance(provider, OllamaProvider):
+        generated = provider.generate_reasoning_drafts(chunks, remaining)
+    else:
+        generated = provider.generate_drafts(chunks, remaining)
+    generated = [_as_ai_reasoning_draft(suggestion) for suggestion in generated]
+    return _dedupe_suggestions([*deterministic, *generated], limit)
 
 
 def _extract_model_names(response: Any) -> set[str]:
@@ -221,6 +266,12 @@ EXAM_ITEMS_SCHEMA: dict[str, Any] = {
                     "answer_key_source": {"type": "string"},
                     "rationale": {"type": "string"},
                     "source_excerpt": {"type": "string"},
+                    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+                    "source_order": {"type": "integer"},
+                    "source_question_number": {"type": "string"},
+                    "item_kind": {"type": "string"},
+                    "group_key": {"type": "string"},
+                    "group_prompt": {"type": "string"},
                 },
                 "required": [
                     "citation_page",
@@ -230,6 +281,7 @@ EXAM_ITEMS_SCHEMA: dict[str, Any] = {
                     "answer_key_source",
                     "rationale",
                     "source_excerpt",
+                    "confidence",
                 ],
             },
         }
@@ -253,7 +305,7 @@ def _source_text_for_prompt(chunks: Sequence[SourceChunk], limit: int) -> str:
     for chunk in candidates:
         if len(sections) >= max_chunks:
             break
-        text = chunk.text.strip()
+        text = chunk.raw_or_text().strip()
         if not text:
             continue
         section = f"[[chunk_id:{chunk.id} page:{chunk.page_number}]]\n{text}"
@@ -271,7 +323,7 @@ def _source_text_for_prompt(chunks: Sequence[SourceChunk], limit: int) -> str:
 
 
 def _is_exam_source_chunk(chunk: SourceChunk) -> bool:
-    text = chunk.text.lower()
+    text = chunk.raw_or_text().lower()
     rejected_markers = (
         "this test paper has multiple versions",
         "the questions are the same, but the fonts and layouts differ",
@@ -310,29 +362,28 @@ def _extract_jlpt_question_blocks(
             break
         if not _is_exam_source_chunk(chunk):
             continue
-        for match in QUESTION_BLOCK_PATTERN.finditer(_question_block_source_text(chunk.text)):
-            stem = _clean_exam_text(match.group("stem"))
-            if _looks_like_question_group_instruction(stem):
-                continue
-            choices = [
-                f"{index} {_clean_exam_text(match.group(f'c{index}'))}"
-                for index in range(1, 5)
-            ]
-            choices = [choice for choice in choices if len(choice) > 2]
-            if not stem or len(choices) < 4:
-                continue
-            source_excerpt = _clean_exam_text(match.group(0))
+        for block in parse_jlpt_question_blocks(
+            text=chunk.raw_or_text(),
+            page_number=chunk.page_number,
+            chunk_index=chunk.chunk_index,
+        ):
             suggestions.append(
                 DraftSuggestion(
                     chunk_id=chunk.id,
-                    question=stem,
-                    choices=choices,
+                    question=block.stem,
+                    choices=block.choices,
                     answer="",
                     answer_key_source=AnswerKeySource.MANUAL,
                     rationale="",
                     citation_page=chunk.page_number,
-                    source_excerpt=source_excerpt[:500],
+                    source_excerpt=block.source_excerpt,
                     status=DraftStatus.DRAFT,
+                    confidence=1.0,
+                    source_order=block.source_order,
+                    source_question_number=block.source_question_number,
+                    item_kind=block.item_kind,
+                    group_key=block.group_key,
+                    group_prompt=block.group_prompt,
                 )
             )
             if len(suggestions) >= limit:
@@ -341,7 +392,7 @@ def _extract_jlpt_question_blocks(
 
 
 def _clean_exam_text(text: str) -> str:
-    return " ".join(text.split()).strip(" -")
+    return clean_exam_text(text)
 
 
 def _question_block_source_text(text: str) -> str:
@@ -383,8 +434,11 @@ def _draft_suggestion_from_item(
     question = _text(raw_item.get("question"))
     choices = _unique_texts(raw_item.get("choices"))
     answer = _text(raw_item.get("answer"))
-    rationale = _text(raw_item.get("rationale"))
+    rationale = _user_facing_rationale(raw_item.get("rationale"))
+    confidence = _confidence(raw_item.get("confidence"))
     if not question or len(choices) < 2 or not answer:
+        return None
+    if confidence is None:
         return None
 
     chunk = _chunk_for_item(raw_item, chunks_by_page, chunks_by_id)
@@ -404,6 +458,10 @@ def _draft_suggestion_from_item(
     answer_key_source = _text(raw_item.get("answer_key_source"))
     if answer_key_source not in {"pdf", "ai_inferred"}:
         answer_key_source = "ai_inferred"
+    source_question_number = _text(raw_item.get("source_question_number")) or None
+    item_kind = question_item_kind_from_value(_text(raw_item.get("item_kind")))
+    group_key = _text(raw_item.get("group_key")) or None
+    group_prompt = _text(raw_item.get("group_prompt")) or None
 
     return DraftSuggestion(
         chunk_id=chunk.id,
@@ -414,6 +472,13 @@ def _draft_suggestion_from_item(
         rationale=rationale or "Selected from the extracted JLPT source.",
         citation_page=chunk.page_number,
         source_excerpt=source_excerpt,
+        status=DraftStatus.DRAFT,
+        confidence=confidence,
+        source_order=_optional_int(raw_item.get("source_order")),
+        source_question_number=source_question_number,
+        item_kind=item_kind,
+        group_key=group_key,
+        group_prompt=group_prompt,
     )
 
 
@@ -423,22 +488,24 @@ def _chunk_for_item(
     chunks_by_id: dict[str, SourceChunk],
 ) -> SourceChunk | None:
     chunk_id = _text(raw_item.get("chunk_id"))
-    if chunk_id in chunks_by_id:
-        return chunks_by_id[chunk_id]
-
-    page_number = raw_item.get("citation_page")
-    if isinstance(page_number, int) and page_number in chunks_by_page:
-        return chunks_by_page[page_number]
-    if isinstance(page_number, str) and page_number.isdigit():
-        return chunks_by_page.get(int(page_number))
-    return next(iter(chunks_by_page.values()), None)
+    page_number = _optional_int(raw_item.get("citation_page"))
+    if chunk_id:
+        chunk = chunks_by_id.get(chunk_id)
+        if chunk is None:
+            return None
+        if page_number is not None and page_number != chunk.page_number:
+            return None
+        return chunk
+    if page_number is None:
+        return None
+    return chunks_by_page.get(page_number)
 
 
 def _source_excerpt(raw_excerpt: Any, chunk: SourceChunk) -> str:
     excerpt = _text(raw_excerpt)
-    if excerpt and excerpt in chunk.text:
+    if excerpt and excerpt in chunk.raw_or_text():
         return excerpt
-    return chunk.excerpt_or_text_prefix()
+    return ""
 
 
 def _looks_like_exam_item(question: str, choices: list[str], source_excerpt: str) -> bool:
@@ -488,3 +555,78 @@ def _unique_texts(value: Any) -> list[str]:
 
 def _text(value: Any) -> str:
     return value.strip() if isinstance(value, str) else ""
+
+
+def _optional_int(value: Any) -> int | None:
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return None
+
+
+def _confidence(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        confidence = float(value)
+    elif isinstance(value, str):
+        try:
+            confidence = float(value)
+        except ValueError:
+            return None
+    else:
+        return None
+    if 0 <= confidence <= 1:
+        return confidence
+    return None
+
+
+def _user_facing_rationale(value: Any) -> str:
+    rationale = _text(value)
+    if not rationale:
+        return ""
+    rationale = re.sub(r"(?is)<think>.*?</think>", "", rationale)
+    rationale = re.sub(r"(?im)^.*chain[- ]of[- ]thought.*$", "", rationale)
+    rationale = re.sub(r"(?im)^.*hidden reasoning.*$", "", rationale)
+    return " ".join(rationale.split())
+
+
+def _as_ai_reasoning_draft(suggestion: DraftSuggestion) -> DraftSuggestion:
+    return DraftSuggestion(
+        chunk_id=suggestion.chunk_id,
+        question=suggestion.question,
+        choices=suggestion.choices,
+        answer=suggestion.answer,
+        answer_key_source=suggestion.answer_key_source,
+        rationale=suggestion.rationale,
+        citation_page=suggestion.citation_page,
+        source_excerpt=suggestion.source_excerpt,
+        status=DraftStatus.DRAFT,
+        confidence=suggestion.confidence,
+        source_order=suggestion.source_order,
+        source_question_number=suggestion.source_question_number,
+        item_kind=suggestion.item_kind,
+        group_key=suggestion.group_key,
+        group_prompt=suggestion.group_prompt,
+    )
+
+
+def _dedupe_suggestions(
+    suggestions: Sequence[DraftSuggestion], limit: int
+) -> list[DraftSuggestion]:
+    deduped: list[DraftSuggestion] = []
+    seen: set[tuple[str, str, str]] = set()
+    for suggestion in suggestions:
+        key = (
+            suggestion.chunk_id,
+            suggestion.source_question_number or "",
+            suggestion.question.strip().casefold(),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(suggestion)
+        if len(deduped) >= limit:
+            break
+    return deduped

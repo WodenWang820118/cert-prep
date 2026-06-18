@@ -29,7 +29,14 @@ def create_practice_session(
     db: Database = Depends(get_database),
 ) -> dict:
     try:
-        return practice_repository.create_session(db, project_id, payload.question_count)
+        return practice_repository.create_session(
+            db,
+            project_id,
+            mode=payload.mode,
+            document_id=payload.document_id,
+            question_count=payload.question_count,
+            random_seed=payload.random_seed,
+        )
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
     except ValidationError as exc:

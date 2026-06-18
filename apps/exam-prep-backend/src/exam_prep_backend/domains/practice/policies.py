@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
+import random
 
 from exam_prep_backend.domains.practice.models import (
     PracticeAttempt,
@@ -11,6 +12,9 @@ from exam_prep_backend.domains.practice.models import (
 
 
 NO_APPROVED_QUESTIONS_MESSAGE = "No approved questions are available for practice."
+DOCUMENT_REQUIRED_FOR_FULL_DOCUMENT_MESSAGE = (
+    "Document id is required for full document practice."
+)
 QUESTION_NOT_IN_SESSION_MESSAGE = "Question is not part of this practice session."
 SELECTED_ANSWER_NOT_AVAILABLE_MESSAGE = "Selected answer is not one of the available choices."
 
@@ -26,6 +30,15 @@ def select_session_question_ids(
     if not selected_question_ids:
         raise PracticeRuleViolation(NO_APPROVED_QUESTIONS_MESSAGE)
     return selected_question_ids
+
+
+def select_random_session_question_ids(
+    approved_question_ids: Sequence[str], question_count: int, random_seed: int
+) -> tuple[str, ...]:
+    if not approved_question_ids:
+        raise PracticeRuleViolation(NO_APPROVED_QUESTIONS_MESSAGE)
+    selected_count = min(question_count, len(approved_question_ids))
+    return tuple(random.Random(random_seed).sample(tuple(approved_question_ids), selected_count))
 
 
 def ensure_question_belongs_to_session(session: PracticeSession, question_id: str) -> None:

@@ -26,8 +26,9 @@ class PaddleOCRProvider:
     provider = "paddle"
     engine = "paddleocr"
 
-    def __init__(self, device: str = "auto") -> None:
+    def __init__(self, device: str = "auto", page_workers: int = 1) -> None:
         self.requested_device = device
+        self.page_workers = max(1, page_workers)
         self._pipelines: dict[str, Any] = {}
         self._self_tested_devices: set[str] = set()
         self._last_fallback_reason: str | None = None

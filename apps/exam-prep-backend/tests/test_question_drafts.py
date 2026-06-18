@@ -2,17 +2,32 @@ from fastapi.testclient import TestClient
 
 from conftest import minimal_pdf
 from exam_prep_backend.app import create_app
-from exam_prep_backend.config import Settings
+from exam_prep_backend.config import DEFAULT_OLLAMA_MODEL, Settings
+from exam_prep_backend.domains.mock_exams.models import (
+    AnswerKeySource,
+    DraftStatus,
+    DraftSuggestion,
+)
 from exam_prep_backend.errors import ProviderUnavailableError
 from exam_prep_backend.domains.mock_exams.ports import ProviderHealth
+from exam_prep_backend.domains.mock_exams.schemas import DraftGenerateRequest
 
 
-def test_fake_provider_generates_deterministic_approved_mock_exam_items(
-    client: TestClient, auth_headers
+def test_generation_defaults_to_deterministic_only_without_provider_call(
+    tmp_path, auth_headers
 ) -> None:
+    provider = RecordingExamProvider()
+    client = TestClient(
+        create_app(
+            settings=Settings(data_dir=tmp_path, api_token="test-token"),
+            llm_provider=provider,
+            document_processing_async_jobs=False,
+        )
+    )
     project_id = _create_project(client, auth_headers)
     document_id = _upload_document(client, auth_headers, project_id)
 
+    assert DraftGenerateRequest().strategy.value == "deterministic_only"
     response = client.post(
         f"/projects/{project_id}/documents/{document_id}/drafts",
         headers=auth_headers,
@@ -20,20 +35,38 @@ def test_fake_provider_generates_deterministic_approved_mock_exam_items(
     )
 
     assert response.status_code == 201
+    assert provider.generate_calls == 0
     drafts = response.json()["items"]
-    assert len(drafts) == 1
-    draft = drafts[0]
-    assert draft["status"] == "approved"
-    assert draft["citation_page"] == 1
-    assert "least privilege" in draft["source_excerpt"].lower()
+    assert drafts == []
+
+
+def test_hybrid_reasoning_provider_output_is_saved_as_draft(
+    tmp_path, auth_headers
+) -> None:
+    provider = RecordingExamProvider()
+    client = TestClient(
+        create_app(
+            settings=Settings(data_dir=tmp_path, api_token="test-token"),
+            llm_provider=provider,
+            document_processing_async_jobs=False,
+        )
+    )
+    project_id = _create_project(client, auth_headers)
+    document_id = _upload_document(client, auth_headers, project_id)
+
+    response = client.post(
+        f"/projects/{project_id}/documents/{document_id}/drafts",
+        headers=auth_headers,
+        json={"limit": 1, "strategy": "hybrid_reasoning"},
+    )
+
+    assert response.status_code == 201
+    assert provider.generate_calls == 1
+    draft = response.json()["items"][0]
+    assert draft["status"] == "draft"
     assert draft["answer_key_source"] == "ai_inferred"
-    assert draft["choices"] == [
-        "Apply the cited concept",
-        "Ignore the cited source",
-        "Choose an unrelated control",
-        "Remove all safeguards",
-    ]
-    assert draft["answer"] == "Apply the cited concept"
+    assert draft["confidence"] == 0.73
+    assert draft["rationale"] == "The cited source supports the correct answer."
 
 
 def test_approval_blocks_drafts_missing_required_learning_evidence(
@@ -74,7 +107,7 @@ def test_cited_draft_can_be_approved(client: TestClient, auth_headers) -> None:
     draft = client.post(
         f"/projects/{project_id}/documents/{document_id}/drafts",
         headers=auth_headers,
-        json={"limit": 1},
+        json={"limit": 1, "strategy": "hybrid_reasoning"},
     ).json()["items"][0]
 
     approved = client.post(
@@ -84,6 +117,53 @@ def test_cited_draft_can_be_approved(client: TestClient, auth_headers) -> None:
 
     assert approved.status_code == 200
     assert approved.json()["status"] == "approved"
+
+
+def test_generation_preserves_existing_approved_drafts(
+    client: TestClient, auth_headers
+) -> None:
+    project_id = _create_project(client, auth_headers)
+    document_id = _upload_document(client, auth_headers, project_id)
+    chunks = client.get(
+        f"/projects/{project_id}/documents/{document_id}/chunks",
+        headers=auth_headers,
+    ).json()["items"]
+    chunk = chunks[0]
+    created = client.post(
+        f"/projects/{project_id}/question-drafts",
+        headers=auth_headers,
+        json={
+            "document_id": document_id,
+            "chunk_id": chunk["id"],
+            "question": "Which action applies?",
+            "choices": ["Apply least privilege", "Grant all access"],
+            "answer": "Apply least privilege",
+            "answer_key_source": "ai_inferred",
+            "rationale": "The cited source limits access.",
+            "citation_page": chunk["page_number"],
+            "source_excerpt": chunk["source_excerpt"],
+            "confidence": 0.91,
+        },
+    )
+    assert created.status_code == 201
+    approved = client.post(
+        f"/projects/{project_id}/question-drafts/{created.json()['id']}/approve",
+        headers=auth_headers,
+    )
+    assert approved.status_code == 200
+
+    generated = client.post(
+        f"/projects/{project_id}/documents/{document_id}/drafts",
+        headers=auth_headers,
+        json={"limit": 1},
+    )
+
+    assert generated.status_code == 201
+    listed = client.get(f"/projects/{project_id}/question-drafts", headers=auth_headers)
+    assert any(
+        item["id"] == approved.json()["id"] and item["status"] == "approved"
+        for item in listed.json()["items"]
+    )
 
 
 def test_custom_answer_key_source_remains_backward_compatible(
@@ -192,7 +272,7 @@ def test_explicit_generation_returns_provider_unavailable_error_envelope(
     response = client.post(
         f"/projects/{project_id}/documents/{document_id}/drafts",
         headers=auth_headers,
-        json={"limit": 1},
+        json={"limit": 1, "strategy": "hybrid_reasoning"},
     )
 
     assert response.status_code == 503
@@ -210,7 +290,7 @@ def _create_project(client: TestClient, auth_headers) -> str:
 
 class UnavailableExamProvider:
     provider = "unavailable"
-    model = "gemma4:12b"
+    model = DEFAULT_OLLAMA_MODEL
 
     def health(self) -> ProviderHealth:
         return ProviderHealth(
@@ -224,14 +304,61 @@ class UnavailableExamProvider:
         raise ProviderUnavailableError("provider offline")
 
 
-def _upload_document(client: TestClient, auth_headers, project_id: str) -> str:
+class RecordingExamProvider:
+    provider = "recording"
+    model = DEFAULT_OLLAMA_MODEL
+
+    def __init__(self) -> None:
+        self.generate_calls = 0
+
+    def health(self) -> ProviderHealth:
+        return ProviderHealth(
+            provider=self.provider,
+            model=self.model,
+            available=True,
+            detail="recording provider",
+        )
+
+    def generate_drafts(self, chunks, limit):
+        self.generate_calls += 1
+        chunk = chunks[0]
+        excerpt = chunk.excerpt_or_text_prefix()
+        return [
+            DraftSuggestion(
+                chunk_id=chunk.id,
+                question="Which action best applies the cited exam concept?",
+                choices=[
+                    "Apply the cited concept",
+                    "Ignore the cited source",
+                    "Choose an unrelated control",
+                    "Remove all safeguards",
+                ],
+                answer="Apply the cited concept",
+                answer_key_source=AnswerKeySource.AI_INFERRED,
+                rationale="The cited source supports the correct answer.",
+                citation_page=chunk.page_number,
+                source_excerpt=excerpt,
+                status=DraftStatus.APPROVED,
+                confidence=0.73,
+                source_order=(chunk.page_number * 10_000) + 1,
+            )
+        ][:limit]
+
+
+def _upload_document(
+    client: TestClient,
+    auth_headers,
+    project_id: str,
+    *,
+    text: str = "Least privilege limits access to required permissions.",
+) -> str:
     response = client.post(
         f"/projects/{project_id}/documents",
         headers=auth_headers,
         files={
             "file": (
                 "cloud.pdf",
-                minimal_pdf("Least privilege limits access to required permissions."),
+                minimal_pdf(text),
                 "application/pdf",
             )
         },

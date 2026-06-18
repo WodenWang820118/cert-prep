@@ -1,32 +1,23 @@
-# Exam Prep UI System Spec
+# Exam Prep UI System 規格
 
-## Purpose
+## 現況
 
-Rebuild the exam-prep Angular UI on PrimeNG and Tailwind CSS 4 so future features can reuse consistent controls, tokens, layout utilities, and accessible component behavior.
+Exam Prep UI 已以 Angular standalone components、PrimeNG v21、Tailwind CSS 4 建立共用視覺與互動基線。後續 runtime drawer、source import、draft review、practice、review mode 都沿用這套控制項與 spacing pattern。
 
-## Non-Goals
+## 決策
 
-- Do not change backend API contracts, persistence, extraction, practice, or review behavior.
-- Do not add routing or new product flows in this slice.
-- Do not collapse existing standalone Angular components into a single large component.
+- PrimeNG 負責 button、input、tag、message、drawer、progress 等互動控制。
+- Tailwind 負責 layout、spacing、responsive composition。
+- UI 以 project workflow 為中心，不再用大型 runtime checklist 佔滿第一屏。
+- 新功能優先擴充現有 store/component，而不是建立平行 UI 系統。
 
-## Key Decisions
+## QA 證據
 
-- Use PrimeNG v21 with `@primeuix/themes` and the Aura preset.
-- Use Tailwind CSS v4 through PostCSS and `tailwindcss-primeui` CSS integration.
-- Keep Angular components standalone and focused by workflow panel.
-- Use PrimeNG for form controls, buttons, cards, tags, messages, and selection controls.
-- Use Tailwind utilities for layout, spacing, responsive behavior, and project-specific composition.
+- Angular unit/component tests、Playwright e2e、production build 均曾在後續切片中通過。
+- packaged QA 截圖證明 compact runtime header/drawer 已取代早期大 checklist。
 
-## Acceptance Criteria
+## 未解風險
 
-- The existing full loop remains available: create project, import PDF, generate drafts, approve, practice, and review wrong answers.
-- `pnpm nx show projects --json` still reports only the exam-prep projects.
-- Angular lint, tests, build, and Playwright e2e pass.
-- The UI has a maintainable design-system baseline with no old hand-rolled button/input styling as the primary control surface.
-
-## Test Plan
-
-- Angular component/store tests for existing behavior.
-- Playwright full-loop e2e with mocked backend.
-- Production build to catch PrimeNG/Tailwind integration and bundle issues.
+- Source PDF preview 在解析完成後仍容易佔太多垂直空間。
+- Progress bar complete-state 有視覺 mismatch，需要在下一階段修正。
+- Bundle budget 仍有 warning，後續 UI 增量需留意大小。

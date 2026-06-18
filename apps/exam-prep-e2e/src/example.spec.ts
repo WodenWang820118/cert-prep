@@ -26,9 +26,18 @@ test('completes the local practice loop with a mocked API', async ({
     ocr_fallback_reason: null,
     ocr_duration_ms: 384,
     processed_page_count: 1,
+    parse_wall_duration_ms: 1200,
+    render_duration_ms: 180,
+    ocr_engine_duration_ms: 384,
+    ocr_worker_count: 1,
+    first_chunk_ms: 850,
     exam_item_count: 1,
+    language_hint: 'ja',
+    content_profile: 'vocabulary_single_questions',
+    classification_detail: '{"profile":"vocabulary_single_questions"}',
     chunks_count: 2,
     created_at: '2026-06-09T00:00:00Z',
+    updated_at: '2026-06-09T00:00:00Z',
   };
   const draft = {
     id: 'draft-1',
@@ -47,6 +56,12 @@ test('completes the local practice loop with a mocked API', async ({
     rationale: 'Least privilege keeps permissions scoped to the task.',
     citation_page: 1,
     source_excerpt: 'Least privilege limits access to required permissions.',
+    confidence: 0.94,
+    source_order: 10001,
+    source_question_number: '1',
+    item_kind: 'vocabulary_single_question',
+    group_key: null,
+    group_prompt: null,
     status: 'approved',
     rejection_reason: null,
     created_at: '2026-06-09T00:00:00Z',
@@ -56,11 +71,16 @@ test('completes the local practice loop with a mocked API', async ({
     id: 'session-1',
     project_id: project.id,
     question_ids: [draft.id],
+    mode: 'random_draw',
+    document_id: null,
+    question_count: 1,
+    random_seed: 42,
     status: 'active',
     created_at: '2026-06-09T00:00:00Z',
     completed_at: null,
   };
   let documentUploaded = false;
+  let practiceSessionPayload: Record<string, unknown> | null = null;
   const wrongAnswers: unknown[] = [];
   const seenPaths = new Set<string>();
 
@@ -88,10 +108,21 @@ test('completes the local practice loop with a mocked API', async ({
 
     seenPaths.add(`${method} ${path}`);
 
+    if (method === 'GET' && path === '/health') {
+      await fulfillJson(route, 200, {
+        status: 'ok',
+        app: 'exam-prep-backend',
+        version: '0.1.0',
+        python_version: '3.13.5',
+        runtime_mode: 'source',
+      });
+      return;
+    }
+
     if (method === 'GET' && path === '/llm/health') {
       await fulfillJson(route, 200, {
         provider: 'fake',
-        model: 'gemma4:12b',
+        model: 'qwen3:14b',
         available: true,
         detail: 'deterministic local fake provider',
       });
@@ -113,6 +144,11 @@ test('completes the local practice loop with a mocked API', async ({
         model_cache_dir: null,
         fallback_reason: null,
       });
+      return;
+    }
+
+    if (method === 'GET' && path === '/runtime/requirements') {
+      await fulfillJson(route, 200, { items: [] });
       return;
     }
 
@@ -138,6 +174,31 @@ test('completes the local practice loop with a mocked API', async ({
       return;
     }
 
+    if (method === 'GET' && path === `/projects/${project.id}/documents`) {
+      await fulfillJson(
+        route,
+        200,
+        documentUploaded ? { items: [document] } : { items: [] },
+      );
+      return;
+    }
+
+    if (
+      method === 'GET' &&
+      path === `/projects/${project.id}/documents/${document.id}`
+    ) {
+      await fulfillJson(route, 200, document);
+      return;
+    }
+
+    if (
+      method === 'GET' &&
+      path === `/projects/${project.id}/documents/${document.id}/chunks`
+    ) {
+      await fulfillJson(route, 200, { items: [] });
+      return;
+    }
+
     if (method === 'GET' && path === `/projects/${project.id}/wrong-answers`) {
       await fulfillJson(route, 200, { items: wrongAnswers });
       return;
@@ -153,6 +214,7 @@ test('completes the local practice loop with a mocked API', async ({
       method === 'POST' &&
       path === `/projects/${project.id}/practice-sessions`
     ) {
+      practiceSessionPayload = parseJsonBody(request.postData());
       await fulfillJson(route, 201, session);
       return;
     }
@@ -212,7 +274,8 @@ test('completes the local practice loop with a mocked API', async ({
   await page.goto('/');
 
   await expect(page.getByRole('heading', { name: 'Exam Prep' })).toBeVisible();
-  await expect(page.getByText('fake / gemma4:12b')).toBeVisible();
+  await expect(page.getByText('qwen3:14b')).toBeVisible();
+  await expect(page.getByText('fake')).toBeVisible();
   await expect(page.getByText('paddle / gpu:0')).toBeVisible();
 
   await page.getByLabel('Name').fill(project.name);
@@ -233,23 +296,35 @@ test('completes the local practice loop with a mocked API', async ({
   await expect(page.getByText(draft.source_excerpt)).toBeVisible();
   await expect(page.getByText('Approved', { exact: true })).toBeVisible();
 
-  await page.getByRole('button', { name: 'Create practice session' }).click();
+  await page.getByRole('button', { name: 'Random Quiz' }).click();
+  await expect(page.getByText('Approved items')).toBeVisible();
+  await page.getByRole('button', { name: 'Start random quiz' }).click();
   await expect(page.getByText(`Session ${session.id}`)).toBeVisible();
+  expect(practiceSessionPayload).toMatchObject({
+    mode: 'random_draw',
+    question_count: 1,
+  });
 
   await page.getByLabel('Ignore the cited source').check();
   await page.getByRole('button', { name: 'Submit answer' }).click();
 
   await expect(page.getByText('Needs review')).toBeVisible();
+  await page.getByRole('button', { name: 'Review' }).click();
   await expect(page.getByText(`Correct: ${draft.answer}`)).toBeVisible();
   await expect(page.getByText(draft.rationale)).toBeVisible();
 
   expect(seenPaths).toEqual(
     new Set([
+      'GET /health',
       'GET /llm/health',
       'GET /ocr/health',
+      'GET /runtime/requirements',
       'GET /projects',
       'POST /projects',
+      `GET /projects/${project.id}/documents`,
       `POST /projects/${project.id}/documents`,
+      `GET /projects/${project.id}/documents/${document.id}`,
+      `GET /projects/${project.id}/documents/${document.id}/chunks`,
       `GET /projects/${project.id}/question-drafts`,
       `POST /projects/${project.id}/practice-sessions`,
       `GET /projects/${project.id}/practice-sessions/${session.id}`,
@@ -280,10 +355,10 @@ async function fulfillJson(
   });
 }
 
-function parseJsonBody(body: string | null): Record<string, string> {
+function parseJsonBody(body: string | null): Record<string, unknown> {
   if (body === null || body.length === 0) {
     return {};
   }
 
-  return JSON.parse(body) as Record<string, string>;
+  return JSON.parse(body) as Record<string, unknown>;
 }

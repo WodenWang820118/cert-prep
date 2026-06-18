@@ -147,6 +147,74 @@ MIGRATIONS: Final[tuple[tuple[int, str], ...]] = (
             ADD COLUMN updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP;
         """,
     ),
+    (
+        9,
+        """
+        ALTER TABLE documents
+            ADD COLUMN content_profile TEXT NOT NULL DEFAULT 'unknown';
+        ALTER TABLE documents
+            ADD COLUMN classification_detail TEXT NOT NULL DEFAULT '';
+
+        ALTER TABLE document_chunks
+            ADD COLUMN raw_text TEXT NOT NULL DEFAULT '';
+        ALTER TABLE document_chunks
+            ADD COLUMN line_start INTEGER;
+        ALTER TABLE document_chunks
+            ADD COLUMN line_end INTEGER;
+        ALTER TABLE document_chunks
+            ADD COLUMN line_count INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE document_chunks
+            ADD COLUMN content_profile TEXT NOT NULL DEFAULT 'unknown';
+        UPDATE document_chunks
+        SET raw_text = text,
+            line_start = CASE WHEN text = '' THEN NULL ELSE 1 END,
+            line_end = CASE WHEN text = '' THEN NULL ELSE 1 END,
+            line_count = CASE WHEN text = '' THEN 0 ELSE 1 END
+        WHERE raw_text = '';
+
+        ALTER TABLE question_drafts
+            ADD COLUMN source_order INTEGER;
+        ALTER TABLE question_drafts
+            ADD COLUMN source_question_number TEXT;
+        ALTER TABLE question_drafts
+            ADD COLUMN item_kind TEXT NOT NULL DEFAULT 'unknown';
+        ALTER TABLE question_drafts
+            ADD COLUMN group_key TEXT;
+        ALTER TABLE question_drafts
+            ADD COLUMN group_prompt TEXT;
+
+        ALTER TABLE practice_sessions
+            ADD COLUMN mode TEXT NOT NULL DEFAULT 'random_draw';
+        ALTER TABLE practice_sessions
+            ADD COLUMN source_document_id TEXT REFERENCES documents(id) ON DELETE SET NULL;
+        ALTER TABLE practice_sessions
+            ADD COLUMN requested_question_count INTEGER NOT NULL DEFAULT 10;
+        ALTER TABLE practice_sessions
+            ADD COLUMN random_seed INTEGER;
+        """,
+    ),
+    (
+        10,
+        """
+        ALTER TABLE documents
+            ADD COLUMN parse_wall_duration_ms INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE documents
+            ADD COLUMN render_duration_ms INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE documents
+            ADD COLUMN ocr_engine_duration_ms INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE documents
+            ADD COLUMN ocr_worker_count INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE documents
+            ADD COLUMN first_chunk_ms INTEGER NOT NULL DEFAULT 0;
+        """,
+    ),
+    (
+        11,
+        """
+        ALTER TABLE question_drafts
+            ADD COLUMN confidence REAL;
+        """,
+    ),
 )
 
 

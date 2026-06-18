@@ -16,6 +16,81 @@ const FINAL_DOCUMENT_STATUSES = new Set([
   'ocr_failed',
 ]);
 
+const PARSING_METRIC_DEFINITIONS: readonly ParsingMetricDefinition[] = [
+  {
+    label: 'Parse wall time',
+    kind: 'duration',
+    keys: [
+      'parse_wall_time_ms',
+      'parse_wall_time_seconds',
+      'parse_wall_duration_ms',
+      'parseWallTimeMs',
+      'parseWallDurationMs',
+      'parse_duration_ms',
+      'parseDurationMs',
+      'parse_elapsed_ms',
+      'parseElapsedMs',
+    ],
+  },
+  {
+    label: 'Render time',
+    kind: 'duration',
+    keys: [
+      'render_time_ms',
+      'render_time_seconds',
+      'render_duration_ms',
+      'renderDurationMs',
+      'pdf_render_duration_ms',
+      'pdfRenderDurationMs',
+      'page_render_time_ms',
+      'pageRenderTimeMs',
+      'render_ms',
+      'renderMs',
+    ],
+  },
+  {
+    label: 'OCR engine time',
+    kind: 'duration',
+    keys: [
+      'ocr_engine_time_ms',
+      'ocrEngineTimeMs',
+      'ocr_engine_duration_ms',
+      'ocrEngineDurationMs',
+      'ocr_time_ms',
+      'ocrTimeMs',
+      'ocr_duration_ms',
+      'ocrDurationMs',
+    ],
+  },
+  {
+    label: 'Worker count',
+    kind: 'count',
+    keys: [
+      'worker_count',
+      'workerCount',
+      'workers',
+      'ocr_worker_count',
+      'ocrWorkerCount',
+    ],
+  },
+  {
+    label: 'First chunk time',
+    kind: 'duration',
+    keys: [
+      'first_chunk_time_ms',
+      'firstChunkTimeMs',
+      'first_chunk_duration_ms',
+      'firstChunkDurationMs',
+      'first_chunk_latency_ms',
+      'firstChunkLatencyMs',
+      'first_chunk_ms',
+      'firstChunkMs',
+      'time_to_first_chunk_ms',
+      'timeToFirstChunkMs',
+    ],
+  },
+];
+
 @Injectable({ providedIn: 'root' })
 export class SourceImportStore {
   private readonly api = inject(EXAM_PREP_API);
@@ -34,6 +109,7 @@ export class SourceImportStore {
   ];
   readonly languageHint = signal<LanguageHint>('auto');
   readonly selectedFile = signal<File | null>(null);
+  readonly documents = signal<DocumentRead[]>([]);
   readonly uploadedDocument = signal<DocumentRead | null>(null);
   readonly chunks = signal<ChunkRead[]>([]);
   readonly visibleChunkLimit = signal(INITIAL_CHUNK_PREVIEW_LIMIT);
@@ -123,6 +199,7 @@ export class SourceImportStore {
 
   reset(): void {
     this.selectedFile.set(null);
+    this.documents.set([]);
     this.uploadedDocument.set(null);
     this.chunks.set([]);
     this.visibleChunkLimit.set(INITIAL_CHUNK_PREVIEW_LIMIT);
@@ -138,6 +215,25 @@ export class SourceImportStore {
 
   showMoreChunks(): void {
     this.visibleChunkLimit.update((limit) => limit + CHUNK_PREVIEW_STEP);
+  }
+
+  parsingMetrics(document: DocumentRead): DocumentParsingMetric[] {
+    return PARSING_METRIC_DEFINITIONS.flatMap((definition) => {
+      const value = readMetricNumber(document, definition.keys);
+      if (value === null) {
+        return [];
+      }
+
+      return [
+        {
+          label: definition.label,
+          value:
+            definition.kind === 'duration'
+              ? formatMetricDuration(value)
+              : formatMetricCount(value),
+        },
+      ];
+    });
   }
 
   async uploadDocument(): Promise<DocumentRead | null> {
@@ -157,6 +253,7 @@ export class SourceImportStore {
     );
     if (document !== null) {
       this.uploadedDocument.set(document);
+      this.upsertDocument(document);
       this.visibleChunkLimit.set(INITIAL_CHUNK_PREVIEW_LIMIT);
       await this.refreshUploadedDocument(project.id, document.id);
     } else if (this.operations.errorCode() === 'paddle_runtime_missing') {
@@ -168,6 +265,7 @@ export class SourceImportStore {
 
   async loadLatestDocument(projectId: string): Promise<void> {
     const documents = await this.api.listDocuments(projectId);
+    this.documents.set(documents.items);
     const document = documents.items[0] ?? null;
     this.uploadedDocument.set(document);
     if (document === null) {
@@ -194,6 +292,7 @@ export class SourceImportStore {
         this.loadDocumentChunks(project, document),
       ]);
       this.uploadedDocument.set(nextDocument);
+      this.upsertDocument(nextDocument);
       if (nextDocument.status === 'processing') {
         this.scheduleDocumentPolling(project, document);
       } else {
@@ -211,6 +310,19 @@ export class SourceImportStore {
     } catch {
       this.chunks.set([]);
     }
+  }
+
+  private upsertDocument(document: DocumentRead): void {
+    this.documents.update((documents) => {
+      const existingIndex = documents.findIndex((item) => item.id === document.id);
+      if (existingIndex === -1) {
+        return [document, ...documents];
+      }
+
+      return documents.map((item, index) =>
+        index === existingIndex ? document : item,
+      );
+    });
   }
 
   private async refreshRuntimeHealth(): Promise<void> {
@@ -239,6 +351,7 @@ export class SourceImportStore {
     try {
       const document = await this.api.getDocument(projectId, documentId);
       this.uploadedDocument.set(document);
+      this.upsertDocument(document);
       await this.loadDocumentChunks(projectId, documentId);
       if (!FINAL_DOCUMENT_STATUSES.has(document.status)) {
         this.scheduleDocumentPolling(projectId, documentId);
@@ -264,4 +377,38 @@ function formatElapsed(milliseconds: number): string {
     return `${seconds}s`;
   }
   return `${minutes}m ${seconds.toString().padStart(2, '0')}s`;
+}
+
+export interface DocumentParsingMetric {
+  readonly label: string;
+  readonly value: string;
+}
+
+interface ParsingMetricDefinition {
+  readonly label: string;
+  readonly kind: 'duration' | 'count';
+  readonly keys: readonly string[];
+}
+
+function readMetricNumber(
+  document: DocumentRead,
+  keys: readonly string[],
+): number | null {
+  const record = document as Record<string, unknown>;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return key.endsWith('_seconds') ? value * 1000 : value;
+    }
+  }
+
+  return null;
+}
+
+function formatMetricDuration(milliseconds: number): string {
+  return `${Math.max(0, Math.round(milliseconds))} ms`;
+}
+
+function formatMetricCount(count: number): string {
+  return Math.max(0, Math.round(count)).toString();
 }

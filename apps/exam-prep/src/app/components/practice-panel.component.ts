@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, Input, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Button } from 'primeng/button';
 import { Card } from 'primeng/card';
@@ -6,9 +6,11 @@ import { InputText } from 'primeng/inputtext';
 import { Message } from 'primeng/message';
 import { RadioButton } from 'primeng/radiobutton';
 import { Tag } from 'primeng/tag';
-import { DraftReviewStore } from '../stores/draft-review.store';
 import { OperationStore } from '../stores/operation.store';
-import { PracticeStore } from '../stores/practice.store';
+import {
+  PracticeSessionMode,
+  PracticeStore,
+} from '../stores/practice.store';
 
 @Component({
   selector: 'app-practice-panel',
@@ -22,14 +24,14 @@ import { PracticeStore } from '../stores/practice.store';
           <span
             class="grid h-9 w-9 place-items-center rounded-md border border-primary-200 bg-primary-50 text-sm font-bold text-primary"
           >
-            03
+            {{ sessionMode === 'full_document' ? 'FE' : 'RQ' }}
           </span>
           <div class="min-w-0">
             <h2 id="practice-heading" class="m-0 text-base font-bold text-color">
-              Practice Session
+              {{ modeTitle() }}
             </h2>
             <p class="m-0 mt-1 text-sm text-muted-color">
-              {{ practice.sessionProgress() }} answered
+              {{ modeSummary() }}
             </p>
           </div>
           @if (practice.practiceSession(); as session) {
@@ -37,27 +39,109 @@ import { PracticeStore } from '../stores/practice.store';
           }
         </div>
 
-        <div class="grid gap-3 md:grid-cols-[10rem_auto] md:items-end">
-          <label class="grid gap-1.5 text-sm font-semibold text-muted-color">
-            <span>Questions</span>
-            <input
-              pInputText
-              name="sessionQuestionCount"
-              type="number"
-              min="1"
-              max="100"
-              [ngModel]="practice.sessionQuestionCount()"
-              (ngModelChange)="practice.setSessionQuestionCount($event)"
+        @if (sessionMode === 'full_document') {
+          <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+            <label class="grid gap-1.5 text-sm font-semibold text-muted-color">
+              <span>Parsed document</span>
+              <select
+                class="h-11 rounded-md border border-surface-300 bg-surface-0 px-3 text-sm font-semibold text-color"
+                [ngModel]="practice.fullExamDocumentSelectValue()"
+                (ngModelChange)="practice.setSelectedDocumentId($event)"
+              >
+                @for (document of practice.fullExamDocuments(); track document.id) {
+                  <option [value]="document.id">
+                    {{ document.filename }} -
+                    {{ practice.approvedCountForDocument(document.id) }} approved
+                  </option>
+                }
+              </select>
+            </label>
+            <p-button
+              [label]="startButtonLabel()"
+              icon="pi pi-play"
+              type="button"
+              [disabled]="operations.isBusyFor('session') || !practice.canCreatePracticeSession(sessionMode)"
+              [loading]="operations.isBusyFor('session')"
+              (onClick)="startPracticeSession()"
             />
-          </label>
-          <p-button
-            label="Create practice session"
-            icon="pi pi-play"
-            type="button"
-            [disabled]="operations.isBusyFor('session') || drafts.approvedDrafts().length === 0"
-            [loading]="operations.isBusyFor('session')"
-            (onClick)="practice.createPracticeSession()"
-          />
+          </div>
+
+          <dl class="grid gap-2 sm:grid-cols-3">
+            <div class="rounded-md border border-surface-200 bg-surface-50 p-3">
+              <dt class="text-xs font-bold uppercase text-muted-color">
+                Documents
+              </dt>
+              <dd class="m-0 mt-1 text-sm font-semibold text-color">
+                {{ practice.fullExamDocuments().length }}
+              </dd>
+            </div>
+            <div class="rounded-md border border-surface-200 bg-surface-50 p-3">
+              <dt class="text-xs font-bold uppercase text-muted-color">
+                Approved
+              </dt>
+              <dd class="m-0 mt-1 text-sm font-semibold text-color">
+                {{ practice.selectedDocumentApprovedCount() }}
+              </dd>
+            </div>
+            <div class="rounded-md border border-surface-200 bg-surface-50 p-3">
+              <dt class="text-xs font-bold uppercase text-muted-color">
+                Progress
+              </dt>
+              <dd class="m-0 mt-1 text-sm font-semibold text-color">
+                {{ practice.sessionProgress() }}
+              </dd>
+            </div>
+          </dl>
+        } @else {
+          <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_10rem_auto] md:items-end">
+            <div class="rounded-md border border-surface-200 bg-surface-50 p-3">
+              <p class="m-0 text-xs font-bold uppercase text-muted-color">
+                Approved items
+              </p>
+              <p class="m-0 mt-1 text-lg font-bold text-color">
+                {{ practice.approvedDraftCount() }}
+              </p>
+            </div>
+            <label class="grid gap-1.5 text-sm font-semibold text-muted-color">
+              <span>Questions</span>
+              <input
+                pInputText
+                name="sessionQuestionCount"
+                type="number"
+                min="1"
+                max="100"
+                [ngModel]="practice.sessionQuestionCount()"
+                (ngModelChange)="practice.setSessionQuestionCount($event)"
+              />
+            </label>
+            <p-button
+              [label]="startButtonLabel()"
+              icon="pi pi-play"
+              type="button"
+              [disabled]="operations.isBusyFor('session') || !practice.canCreatePracticeSession(sessionMode)"
+              [loading]="operations.isBusyFor('session')"
+              (onClick)="startPracticeSession()"
+            />
+          </div>
+        }
+
+        @if (!practice.canCreatePracticeSession(sessionMode)) {
+          <p
+            class="m-0 rounded-lg border border-dashed border-surface-300 bg-surface-0 p-3 text-sm text-muted-color"
+          >
+            {{ practice.sessionStartBlocker(sessionMode) }}
+          </p>
+        }
+
+        <div class="grid gap-3">
+          <div
+            class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-surface-200 bg-surface-50 px-3 py-2 text-sm font-semibold text-color"
+          >
+            <span>Runner</span>
+            <span class="text-muted-color">
+              {{ practice.sessionProgress() }} answered
+            </span>
+          </div>
         </div>
 
         @if (practice.practiceSession(); as session) {
@@ -133,7 +217,30 @@ import { PracticeStore } from '../stores/practice.store';
   `,
 })
 export class PracticePanelComponent {
-  protected readonly drafts = inject(DraftReviewStore);
+  @Input({ required: true }) sessionMode: PracticeSessionMode = 'random_draw';
+
   protected readonly operations = inject(OperationStore);
   protected readonly practice = inject(PracticeStore);
+
+  protected modeTitle(): string {
+    return this.sessionMode === 'full_document' ? 'Full Exam' : 'Random Quiz';
+  }
+
+  protected modeSummary(): string {
+    if (this.sessionMode === 'full_document') {
+      return `${this.practice.selectedDocumentApprovedCount()} approved in selected document`;
+    }
+
+    return `${this.practice.approvedDraftCount()} approved available`;
+  }
+
+  protected startButtonLabel(): string {
+    return this.sessionMode === 'full_document'
+      ? 'Start full exam'
+      : 'Start random quiz';
+  }
+
+  protected async startPracticeSession(): Promise<void> {
+    await this.practice.createPracticeSession(this.sessionMode);
+  }
 }

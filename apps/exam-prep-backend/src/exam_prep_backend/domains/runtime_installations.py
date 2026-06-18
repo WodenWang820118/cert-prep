@@ -17,7 +17,7 @@ from urllib.request import urlretrieve
 from uuid import uuid4
 from zipfile import ZipFile
 
-from exam_prep_backend.config import Settings
+from exam_prep_backend.config import DEFAULT_OLLAMA_MODEL, Settings
 from exam_prep_backend.domains.mock_exams.ports import ModelPullProgress
 from exam_prep_backend.domains.source_documents.ocr import OCRProvider
 from exam_prep_backend.errors import ProviderUnavailableError
@@ -380,7 +380,7 @@ class OllamaModelInstaller:
 
     def __init__(self, provider: object) -> None:
         self._provider = provider
-        self.model = str(getattr(provider, "model", "gemma4:12b"))
+        self.model = str(getattr(provider, "model", DEFAULT_OLLAMA_MODEL))
         self.provider = str(getattr(provider, "provider", "ollama"))
 
     def requirement(self) -> RuntimeRequirementSnapshot:
