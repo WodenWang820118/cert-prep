@@ -28,6 +28,7 @@ const DEFAULT_OCR_RUNTIME_MANIFEST =
   'apps/exam-prep-desktop/src-tauri/resources/ocr-runtime-manifest.json';
 const DEFAULT_DATA_DIR = 'tmp/exam-prep-desktop/package-qa/data';
 const DEFAULT_LLM_MODEL = 'qwen3:14b';
+const PACKAGE_QA_OCR_PAGE_WORKERS_ENV = 'EXAM_PREP_PACKAGE_QA_OCR_PAGE_WORKERS';
 const SIDECAR_PREFIX = 'exam-prep-backend-';
 const BACKEND_RUNTIME_PREFIX = 'exam-prep-backend-runtime-';
 const OCR_RUNTIME_PREFIX = 'exam-prep-ocr-runtime-';
@@ -50,6 +51,7 @@ interface PackageQaOptions {
   readonly healthTimeoutMs?: number;
   readonly dataDir?: string;
   readonly llmModel?: string;
+  readonly ocrPageWorkers?: number;
 }
 
 interface RuntimeHealthOptions {
@@ -59,6 +61,7 @@ interface RuntimeHealthOptions {
   readonly dataDir?: string;
   readonly llmModel?: string;
   readonly ocrRuntimeManifest?: string;
+  readonly ocrPageWorkers?: number;
 }
 
 interface FileRecord {
@@ -111,6 +114,7 @@ interface RuntimeHealthSummary {
     readonly EXAM_PREP_OCR_DEVICE: 'auto';
     readonly EXAM_PREP_LLM_PROVIDER: 'ollama';
     readonly EXAM_PREP_OLLAMA_MODEL: string;
+    readonly EXAM_PREP_OCR_PAGE_WORKERS: string | null;
   };
   readonly system_health: unknown;
   readonly ocr_health: OcrHealthSummary;
@@ -194,9 +198,20 @@ interface ParsedArgs {
   ocrRuntimeManifest?: string;
   expectedTargetTriple?: string;
   healthTimeoutMs?: number;
+  ocrPageWorkers?: number;
 }
 
 type JsonRecord = Record<string, unknown>;
+
+interface RuntimeLaunchEnvOptions {
+  readonly port: number;
+  readonly token: string;
+  readonly dataDir: string;
+  readonly llmModel: string;
+  readonly ocrRuntimeManifest: string;
+  readonly ocrPageWorkers?: number;
+  readonly baseEnv?: NodeJS.ProcessEnv;
+}
 
 export async function createPackageQaReport(
   options: PackageQaOptions = {},
@@ -280,6 +295,7 @@ export async function createPackageQaReport(
     dataDir: resolve(workspaceRoot, options.dataDir ?? DEFAULT_DATA_DIR),
     llmModel: options.llmModel ?? DEFAULT_LLM_MODEL,
     ocrRuntimeManifest,
+    ocrPageWorkers: options.ocrPageWorkers,
   });
   const sizeGate = initialInstallerSizeGate(bundleArtifacts);
   if (sizeGate.status === 'failed') {
@@ -477,6 +493,7 @@ export async function collectRuntimeHealth({
   dataDir = resolve(workspaceRoot, DEFAULT_DATA_DIR),
   llmModel = DEFAULT_LLM_MODEL,
   ocrRuntimeManifest = resolve(workspaceRoot, DEFAULT_OCR_RUNTIME_MANIFEST),
+  ocrPageWorkers,
 }: RuntimeHealthOptions): Promise<RuntimeHealthSummary> {
   const port = await reserveLoopbackPort();
   const token = `package-qa-${process.pid}-${Date.now()}`;
@@ -485,23 +502,18 @@ export async function collectRuntimeHealth({
   const state: ChildState = { exited: false, code: null, signal: null };
 
   mkdirSync(dataDir, { recursive: true });
+  const childEnv = buildRuntimeLaunchEnv({
+    port,
+    token,
+    dataDir,
+    llmModel,
+    ocrRuntimeManifest,
+    ocrPageWorkers,
+  });
 
   const child = spawn(backendRuntimeEntrypoint, [], {
     cwd: workspaceRoot,
-    env: {
-      ...process.env,
-      EXAM_PREP_HOST: '127.0.0.1',
-      EXAM_PREP_PORT: String(port),
-      EXAM_PREP_API_TOKEN: token,
-      EXAM_PREP_DATA_DIR: dataDir,
-      EXAM_PREP_LLM_PROVIDER: 'ollama',
-      EXAM_PREP_OCR_PROVIDER: 'paddle',
-      EXAM_PREP_OCR_RUNTIME_MODE: 'external',
-      EXAM_PREP_OCR_RUNTIME_MANIFEST_PATH: ocrRuntimeManifest,
-      EXAM_PREP_OCR_DEVICE: 'auto',
-      EXAM_PREP_OLLAMA_MODEL: llmModel,
-      PYTHONIOENCODING: 'utf-8',
-    },
+    env: childEnv,
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });
@@ -534,6 +546,8 @@ export async function collectRuntimeHealth({
         EXAM_PREP_OCR_DEVICE: 'auto',
         EXAM_PREP_LLM_PROVIDER: 'ollama',
         EXAM_PREP_OLLAMA_MODEL: llmModel,
+        EXAM_PREP_OCR_PAGE_WORKERS:
+          childEnv.EXAM_PREP_OCR_PAGE_WORKERS ?? null,
       },
       system_health: systemHealth,
       ocr_health: summarizeOcrHealth(ocrHealthRaw),
@@ -547,6 +561,38 @@ export async function collectRuntimeHealth({
   } finally {
     await stopChild(child, state);
   }
+}
+
+export function buildRuntimeLaunchEnv({
+  port,
+  token,
+  dataDir,
+  llmModel,
+  ocrRuntimeManifest,
+  ocrPageWorkers,
+  baseEnv = process.env,
+}: RuntimeLaunchEnvOptions): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...baseEnv };
+  delete env.EXAM_PREP_OCR_PAGE_WORKERS;
+  Object.assign(env, {
+    EXAM_PREP_HOST: '127.0.0.1',
+    EXAM_PREP_PORT: String(port),
+    EXAM_PREP_API_TOKEN: token,
+    EXAM_PREP_DATA_DIR: dataDir,
+    EXAM_PREP_LLM_PROVIDER: 'ollama',
+    EXAM_PREP_OCR_PROVIDER: 'paddle',
+    EXAM_PREP_OCR_RUNTIME_MODE: 'external',
+    EXAM_PREP_OCR_RUNTIME_MANIFEST_PATH: ocrRuntimeManifest,
+    EXAM_PREP_OCR_DEVICE: 'auto',
+    EXAM_PREP_OLLAMA_MODEL: llmModel,
+    PYTHONIOENCODING: 'utf-8',
+  });
+  if (ocrPageWorkers !== undefined) {
+    env.EXAM_PREP_OCR_PAGE_WORKERS = String(
+      positiveInteger(ocrPageWorkers, 'ocrPageWorkers'),
+    );
+  }
+  return env;
 }
 
 export function initialInstallerSizeGate(
@@ -720,8 +766,11 @@ async function stopChild(
   }
 }
 
-function parseArgs(args: readonly string[]): ParsedArgs {
-  const parsed: ParsedArgs = {};
+export function parsePackageQaArgs(
+  args: readonly string[],
+  env: NodeJS.ProcessEnv = process.env,
+): ParsedArgs {
+  const parsed: ParsedArgs = parsePackageQaEnv(env);
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     const readValue = (name: string): string => {
@@ -751,11 +800,32 @@ function parseArgs(args: readonly string[]): ParsedArgs {
       parsed.expectedTargetTriple = readValue(arg);
     } else if (arg === '--health-timeout-ms') {
       parsed.healthTimeoutMs = Number(readValue(arg));
+    } else if (arg === '--ocr-page-workers') {
+      parsed.ocrPageWorkers = positiveInteger(Number(readValue(arg)), arg);
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
   }
   return parsed;
+}
+
+export function parsePackageQaEnv(
+  env: NodeJS.ProcessEnv,
+): Pick<ParsedArgs, 'ocrPageWorkers'> {
+  const value = env[PACKAGE_QA_OCR_PAGE_WORKERS_ENV];
+  if (value === undefined || value.trim() === '') {
+    return {};
+  }
+  return {
+    ocrPageWorkers: positiveInteger(Number(value), PACKAGE_QA_OCR_PAGE_WORKERS_ENV),
+  };
+}
+
+function positiveInteger(value: number, name: string): number {
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error(`${name} must be a positive integer.`);
+  }
+  return value;
 }
 
 function asJsonRecord(value: unknown): JsonRecord {
@@ -769,7 +839,7 @@ function errorMessage(error: unknown): string {
 }
 
 async function main(): Promise<void> {
-  const args = parseArgs(process.argv.slice(2));
+  const args = parsePackageQaArgs(process.argv.slice(2));
   const workspaceRoot = defaultWorkspaceRoot;
   const outputPath = resolve(workspaceRoot, args.output ?? DEFAULT_OUTPUT);
   const report = await createPackageQaReport({ ...args, workspaceRoot });

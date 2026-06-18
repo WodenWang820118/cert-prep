@@ -1,72 +1,92 @@
-# Parallel Parsing 與 Reasoning QA 摘要
+# Parallel Parsing 與 Reasoning QA
 
 ## 現況
 
-Production packaged flow 已驗證 deterministic/manual acceptance path，但保留 performance/UX follow-ups。測試使用 release executable：
+已使用同一個 packaged Tauri build 驗證 production flow。測試 PDF 為 `pdfs/【1】2025年07月N1 真题.pdf`，語言提示為 `ja`，runtime 使用已安裝的 Python backend 與 PaddleOCR，避免把下載時間混進 parsing 效能。
 
-`apps/exam-prep-desktop/src-tauri/target/x86_64-pc-windows-msvc/release/exam-prep-desktop.exe`
+最新 package QA JSON：`tmp/exam-prep-desktop/package-qa/package-qa.json`，產生時間 `2026-06-18T06:49:02.451Z`。Bundle 大小：MSI `3.95 MB`，NSIS `2.76 MB`，backend runtime `43.1 MB`，OCR runtime `632.65 MB`。
 
-PDF：`pdfs/【1】2025年07月N1 真题.pdf`。
+## 自動化驗證
 
-## Automated Verification
-
-| Command | Result | Notes |
+| 指令 | 結果 | 備註 |
 | --- | --- | --- |
-| `pnpm nx run exam-prep-backend:test` | Passed | 75 passed，1 Starlette/httpx warning。 |
+| `pnpm nx run exam-prep-backend:test` | Passed | 80 tests passed；保留 Starlette/httpx warning。 |
 | `pnpm nx run exam-prep-backend:lint` | Passed | Ruff all checks passed。 |
-| `pnpm nx run exam-prep:test --skip-nx-cache` | Passed | 24 passed。 |
-| `pnpm nx run exam-prep-e2e:e2e` | Passed | 3 Playwright tests。 |
-| `pnpm nx run exam-prep-desktop:typecheck-scripts` | Passed | `tsc -p tsconfig.scripts.json`。 |
-| `pnpm nx run exam-prep-desktop:package-qa-test` | Passed | 6 node tests。 |
-| `pnpm nx run exam-prep-desktop:cargo-test` | Passed | 11 Rust tests。 |
-| `pnpm nx run exam-prep-desktop:package-qa --skip-nx-cache` | Passed | Rebuilt runtimes and bundles。 |
+| `pnpm nx run exam-prep:test --skip-nx-cache` | Passed | 32 frontend tests passed。 |
+| `pnpm nx run exam-prep:lint` | Passed | Angular lint passed。 |
+| `pnpm nx run exam-prep-e2e:e2e` | Passed | 3 Playwright tests passed。 |
+| `pnpm nx run exam-prep-desktop:typecheck-scripts` | Passed | script TypeScript typecheck passed。 |
+| `pnpm nx run exam-prep-desktop:package-qa-test` | Passed | package QA unit tests passed。 |
+| `pnpm nx run exam-prep-desktop:cargo-test` | Passed | 12 Rust tests passed。 |
+| `pnpm nx run exam-prep-desktop:package-qa --skip-nx-cache --args='--ocr-page-workers 1'` | Passed | 重新產出 release exe、MSI、NSIS、runtime manifests。 |
 
-Package QA JSON：`tmp/exam-prep-desktop/package-qa/package-qa.json`，generated `2026-06-18T04:06:03.165Z`。
-
-## OCR Performance
-
-| Run | Workers | Wall | First chunk | Render | OCR engine | GPU | Result |
-| --- | ---: | ---: | ---: | ---: | ---: | --- | --- |
-| Packaged production | 2 | 58,068 ms | 57,587 ms | 2,459 ms | 38,788 ms | max 100%, avg 21.8%, memory peak 53.1% | ready, 46 pages, 46 chunks |
-| Same-build baseline | 1 | 未跑 | 未跑 | 未跑 | 未跑 | 未跑 | 必須補跑 |
-
-決策：預設 worker count 維持 `1`，因為尚無 same-build `1` vs `2` 對照，且 first chunk visibility 沒有達到 use-while-parsing 期待。
+已知非阻斷 warning：Angular initial bundle 超出 `700 kB` budget 約 `61 kB`；Cargo PDB filename collision warning；Paddle/PyInstaller build log 仍有 console encoding mojibake。
 
 ## Production Flow Evidence
 
-Artifact folder：`.agents/tmp/parallel-parsing-reasoning/2026-06-18T04-06-30-521Z/`
+worker `1` artifact：`.agents/tmp/parallel-parsing-reasoning/2026-06-18T06-58-03-170Z/`
 
-- Runtime missing → Python install consent → runtime ready。
-- PDF selected with `language_hint=ja`。
-- Parsing started and workspace remained usable。
-- Parsing complete with 46 chunks and metrics。
-- Manual draft edit and approval。
-- Full Exam mode available。
-- Wrong answer recorded and Review populated。
-- Random Quiz correct answer clears Review。
-- Restart persistence verified after manual project selection。
+worker `2` artifact：`.agents/tmp/parallel-parsing-reasoning/2026-06-18T06-54-25-686Z/`
+
+兩輪皆完成：
+
+- Runtime drawer 進入 OCR ready 狀態。
+- 建立 project，選擇 PDF 並設定 `language_hint=ja`。
+- Upload 後立即看到 processing。
+- Parsing 中 UI 仍可操作，且 chunk preview 會出現。
+- Parsing complete 後顯示 metrics。
+- 產生 deterministic draft，手動編輯 answer/rationale 後 approve。
+- Full Exam 可啟動並記錄 wrong answer。
+- Review panel 顯示 wrong answer。
+- Random Quiz 再答對後 Review panel 清空。
+- Restart persistence verified。
+
+另有 Python runtime fresh install 證據：`.agents/tmp/parallel-parsing-reasoning/2026-06-18T06-35-08-482Z/`，包含 Python missing、install consent、runtime ready 截圖。後續效能測試保留 runtime，以免下載時間污染 parsing 數據。
+
+## 效能比較
+
+| Workers | Artifact | Upload visible | First chunk visible | Parse complete visible | GPU memory peak | GPU util peak | 結果 |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| 1 | `2026-06-18T06-58-03-170Z` | 660 ms | 43,870 ms | 66,941 ms | 2,350/8,188 MiB, 28.7% | 94% | 46 pages, 46 chunks, ready |
+| 2 | `2026-06-18T06-54-25-686Z` | 580 ms | 80,507 ms | 100,294 ms | 4,221/8,188 MiB, 51.6% | 100% | 46 pages, 46 chunks, ready |
+
+決策：不提升預設 worker count。`2` workers 沒有達到 wall time 改善 `>=20%`，反而在此輪較慢；GPU memory 未超過 90%，但 GPU utilization 已打滿。預設維持 `1`，`2` 只保留為後續調校選項。
 
 ## SQLite Evidence
 
-- Document：status `ready`、46 pages、46 processed pages、46 chunks、`paddle_ocr_gpu`、`gpu:0`、worker count `2`、language hint `ja`。
-- Approved draft：status `approved`、answer source `manual`、citation page `2`、item kind `vocabulary_single`。
-- Sessions：`full_document` 與 `random_draw`。
-- Wrong answers：由 attempts projection 產生；wrong attempt 後出現，後續 correct attempt 清空。
+最新 worker `1` DB：`%APPDATA%/dev.certprep.exam-prep/exam-prep.sqlite3`
+
+- projects：1
+- documents：1
+- document_chunks：46
+- question_drafts：1
+- practice_sessions：2
+- practice_attempts：2
+
+Document sample：`status=ready`，`page_count=46`，`processed_page_count=46`，`chunk_count=46`，`extraction_method=paddle_ocr_gpu`，`ocr_device=gpu:0`，`language_hint=ja`，`ocr_worker_count=1`，`first_chunk_ms=43828`，`content_profile=mixed`。
+
+Approved draft sample：`status=approved`，`answer_key_source=manual`，`citation_page=2`，`item_kind=vocabulary_single`，`source_question_number=1`。
+
+Session sample：存在 `full_document` 與 `random_draw` 兩種 session，兩者皆保存 `question_ids_json` snapshot；random draw 有 seed。
+
+worker `2` backup DB：`.agents/tmp/appdata-backup-before-worker1-valid-20260618-145755/exam-prep.sqlite3`
+
+- `page_count=46`
+- `processed_page_count=46`
+- `chunk_count=46`
+- `ocr_worker_count=2`
+- `parse_wall_duration_ms=99551`
+- `first_chunk_ms=79381`
 
 ## Reasoning Bakeoff
 
-| Model | Status |
-| --- | --- |
-| deterministic_only | Production flow verified。 |
-| `qwen3:14b` | 尚未跑；需 explicit model download consent。 |
-| `deepseek-r1:14b` | 尚未跑。 |
-| `gemma4:12b` | 尚未跑；compat fallback。 |
+已建立 harness 與 backend test，並跑過 `pnpm nx run exam-prep-backend:reasoning-bakeoff`。輸出在 ignored artifact `apps/exam-prep-backend/.benchmarks/reasoning-bakeoff-20260618T053505Z.json`。
+
+本機當下 Ollama 不可連線，所以 `qwen3:14b`、`deepseek-r1:14b`、`gemma4:12b` 都是 `ollama_unavailable / ConnectionError`。此輪只驗證 harness 不會自動下載、不會自動 approve、不保存 chain-of-thought；模型品質比較仍是 active TODO。
 
 ## 未解風險
 
-- First chunk 幾乎等於 full parse completion，需 ordered as-completed flush。
-- Runtime install 後狀態 refresh 有 stale message。
-- Complete progress bar 視覺偏低。
-- Restart 後未 auto-select project。
-- Packaged app shutdown 曾留下 backend/OCR child processes。
-- 1-worker baseline 與 model bakeoff 是 active TODO。
+- OCR health cold start 仍會讓 drawer 暫時顯示 OCR unknown，測試中約 10 到 29 秒後才 settled；需要更好的 loading copy 或非阻塞 health cache。
+- First chunk 仍未在 15 秒內可見；雖然 backend 已支援 as-completed flush，但 use-while-parsing 體感還需要縮短。
+- QA wrapper 的 Alt+F4 graceful close 未讓 packaged app 自行退出，最後用 `taskkill /T /F` 清掉 process tree；未留下殘留行程，但仍需釐清 CDP 關窗與實際使用者關窗差異。
+- Reasoning model bakeoff 需要在 Ollama server 與候選模型可用時重跑。

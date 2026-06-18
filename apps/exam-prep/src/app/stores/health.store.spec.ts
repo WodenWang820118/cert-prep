@@ -66,6 +66,32 @@ describe('HealthStore model downloads', () => {
     expect(apiClient.startModelDownload).not.toHaveBeenCalled();
   });
 
+  it('keeps direct health results when runtime requirements are unavailable', async () => {
+    const store = TestBed.inject(HealthStore);
+    apiClient.runtimeRequirements.mockRejectedValueOnce(
+      new Error('runtime requirements unavailable'),
+    );
+
+    await store.load();
+
+    expect(store.systemHealth()?.status).toBe('ok');
+    expect(store.ocrHealth()?.available).toBe(true);
+    expect(store.llmHealth()?.provider).toBe('ollama');
+    expect(store.runtimeRequirements()).toEqual([]);
+  });
+
+  it('keeps available runtime health when optional LLM health fails', async () => {
+    const store = TestBed.inject(HealthStore);
+    apiClient.llmHealth.mockRejectedValueOnce(new Error('ollama unavailable'));
+
+    await store.load();
+
+    expect(store.systemHealth()?.status).toBe('ok');
+    expect(store.ocrHealth()?.available).toBe(true);
+    expect(store.llmHealth()).toBeNull();
+    expect(store.runtimeRequirements()).toEqual([]);
+  });
+
   it('starts and polls a model download only after confirmation', async () => {
     const store = TestBed.inject(HealthStore);
     apiClient.startModelDownload.mockResolvedValue(
@@ -140,11 +166,21 @@ describe('HealthStore model downloads', () => {
     expect(store.runtimeInstall()?.phase).toBe('running');
     expect(store.runtimeInstall()?.progress).toBe(10);
 
+    apiClient.llmHealth.mockResolvedValue(
+      llmHealth({
+        available: true,
+        detail: 'Ollama is ready.',
+        unavailable_reason: null,
+      }),
+    );
     await vi.advanceTimersByTimeAsync(1500);
 
     expect(apiClient.getRuntimeInstallation).toHaveBeenCalledWith('runtime-1');
     expect(store.runtimeInstall()?.phase).toBe('succeeded');
     expect(store.runtimeInstall()?.progress).toBe(100);
+    await vi.waitFor(() => expect(store.llmHealth()?.available).toBe(true));
+    expect(apiClient.health).toHaveBeenCalledTimes(2);
+    expect(apiClient.runtimeRequirements).toHaveBeenCalledTimes(2);
   });
 });
 

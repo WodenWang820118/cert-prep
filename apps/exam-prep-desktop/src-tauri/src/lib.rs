@@ -117,15 +117,15 @@ pub fn build_backend_config(
 
 impl Drop for BackendRuntimeInner {
     fn drop(&mut self) {
-        self.kill_child();
+        self.terminate_child_process_tree();
     }
 }
 
 impl BackendRuntimeInner {
-    fn kill_child(&self) {
+    fn terminate_child_process_tree(&self) {
         if let Ok(mut child) = self.child.lock() {
-            if let Some(mut child) = child.take() {
-                let _ = child.kill();
+            if let Some(child) = child.take() {
+                terminate_backend_process_tree(child);
             }
         }
     }
@@ -524,17 +524,17 @@ fn launch_backend_entrypoint(
         );
     }
 
-    let mut child = command
+    let child = command
         .spawn()
         .map_err(|error| format!("failed to launch backend runtime: {error}"))?;
     if let Err(error) = wait_for_backend(port, Duration::from_secs(10)) {
-        let _ = child.kill();
+        terminate_backend_process_tree(child);
         return Err(error);
     }
 
     if let Ok(mut current_child) = inner.child.lock() {
-        if let Some(mut old_child) = current_child.take() {
-            let _ = old_child.kill();
+        if let Some(old_child) = current_child.take() {
+            terminate_backend_process_tree(old_child);
         }
         *current_child = Some(child);
     }
@@ -566,6 +566,50 @@ fn wait_for_backend(port: u16, timeout: Duration) -> Result<(), String> {
     Err(format!(
         "backend runtime did not become ready on port {port}"
     ))
+}
+
+fn terminate_backend_process_tree(mut child: Child) {
+    if child.try_wait().ok().flatten().is_some() {
+        return;
+    }
+
+    #[cfg(windows)]
+    {
+        if taskkill_backend_process_tree(child.id()).is_ok() {
+            let _ = child.wait();
+            return;
+        }
+    }
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[cfg(windows)]
+fn taskkill_backend_process_tree(pid: u32) -> Result<(), String> {
+    let output = taskkill_backend_process_tree_command(pid)
+        .output()
+        .map_err(|error| format!("failed to run taskkill for backend process tree: {error}"))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    Err(if stderr.is_empty() { stdout } else { stderr })
+}
+
+#[cfg(any(windows, test))]
+fn taskkill_backend_process_tree_command(pid: u32) -> Command {
+    let mut command = Command::new("taskkill");
+    command
+        .args(taskkill_process_tree_args(pid))
+        .stdin(Stdio::null());
+    command
+}
+
+#[cfg(any(windows, test))]
+fn taskkill_process_tree_args(pid: u32) -> [String; 4] {
+    ["/PID".into(), pid.to_string(), "/T".into(), "/F".into()]
 }
 
 fn sidecar_host() -> &'static str {
@@ -881,7 +925,7 @@ pub fn run() {
         .on_window_event(|window, event| {
             if matches!(event, tauri::WindowEvent::Destroyed) {
                 if let Some(state) = window.try_state::<BackendState>() {
-                    state.inner.kill_child();
+                    state.inner.terminate_child_process_tree();
                 }
             }
         })
@@ -937,6 +981,19 @@ mod tests {
     #[test]
     fn sidecar_host_is_loopback_only() {
         assert_eq!(sidecar_host(), "127.0.0.1");
+    }
+
+    #[test]
+    fn taskkill_command_targets_only_spawned_pid_tree() {
+        let command = taskkill_backend_process_tree_command(4242);
+        let args: Vec<String> = command
+            .get_args()
+            .map(|argument| argument.to_string_lossy().into_owned())
+            .collect();
+
+        assert_eq!(command.get_program().to_string_lossy(), "taskkill");
+        assert_eq!(args, vec!["/PID", "4242", "/T", "/F"]);
+        assert!(!args.iter().any(|argument| argument == "/IM"));
     }
 
     #[test]
@@ -996,7 +1053,10 @@ mod tests {
         );
 
         #[cfg(not(windows))]
-        assert_eq!(path, PathBuf::from("/C:/software-dev/cert-prep/runtime.zip"));
+        assert_eq!(
+            path,
+            PathBuf::from("/C:/software-dev/cert-prep/runtime.zip")
+        );
     }
 
     #[test]

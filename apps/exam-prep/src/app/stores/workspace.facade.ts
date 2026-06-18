@@ -35,7 +35,7 @@ export class WorkspaceFacade {
       'startup',
       'Workspace ready',
       async () => {
-        await Promise.all([this.health.load(), this.projects.load()]);
+        await this.projects.load();
       },
     );
     if (loaded === null) {
@@ -47,6 +47,7 @@ export class WorkspaceFacade {
     if (firstProject !== undefined) {
       await this.selectProject(firstProject.id);
     }
+    void this.health.load().catch(() => undefined);
   }
 
   async createProject(): Promise<void> {

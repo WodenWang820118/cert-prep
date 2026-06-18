@@ -88,6 +88,15 @@
         "command": "uv sync --extra ocr-gpu --reinstall-package paddlepaddle-gpu && uv run --extra ocr-gpu python scripts/benchmark_ocr.py --device gpu:0 --output .benchmarks/ocr-gpu-page3.json"
       }
     },
+    "reasoning-bakeoff": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "outputs": ["{projectRoot}/.benchmarks"],
+      "options": {
+        "cwd": "apps/exam-prep-backend",
+        "command": "uv run python scripts/reasoning_bakeoff.py"
+      }
+    },
     "build-sidecar": {
       "cache": true,
       "executor": "nx:run-commands",

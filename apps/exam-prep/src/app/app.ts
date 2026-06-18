@@ -1,4 +1,4 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, effect, inject, OnInit, signal } from '@angular/core';
 import { ButtonDirective } from 'primeng/button';
 import { Message } from 'primeng/message';
 import { DraftReviewPanelComponent } from './components/draft-review-panel.component';
@@ -19,6 +19,8 @@ interface StudyModeOption {
   readonly label: string;
   readonly icon: string;
 }
+
+const LAST_PROJECT_STORAGE_KEY = 'examPrepLastProjectId';
 
 @Component({
   imports: [
@@ -48,12 +50,114 @@ export class App implements OnInit {
   protected readonly operations = inject(OperationStore);
   protected readonly projects = inject(ProjectStore);
   private readonly workspace = inject(WorkspaceFacade);
+  private readonly startupProjectId = this.readLastProjectId();
+  private hasAttemptedInitialStartupLoad = false;
+  private hasAppliedStartupProjectSelection = false;
+  private loadingStartupState = false;
+
+  constructor() {
+    effect(() => {
+      const selectedProjectId = this.projects.selectedProjectId();
+      const backendReady = this.desktopRuntime.isBackendReady();
+      const backendStateLoaded = this.workspace.hasLoadedBackendState();
+
+      if (
+        this.hasAppliedStartupProjectSelection &&
+        selectedProjectId !== null
+      ) {
+        this.writeLastProjectId(selectedProjectId);
+      }
+
+      if (
+        !this.hasAttemptedInitialStartupLoad ||
+        !backendReady ||
+        backendStateLoaded ||
+        this.loadingStartupState
+      ) {
+        return;
+      }
+
+      queueMicrotask(() => {
+        void this.loadStartupState();
+      });
+    });
+  }
 
   async ngOnInit(): Promise<void> {
-    await this.workspace.loadStartupState();
+    try {
+      await this.loadStartupState();
+    } finally {
+      this.hasAttemptedInitialStartupLoad = true;
+    }
   }
 
   protected selectMode(mode: StudyMode): void {
     this.activeMode.set(mode);
+  }
+
+  private async loadStartupState(): Promise<void> {
+    if (this.loadingStartupState) {
+      return;
+    }
+
+    this.loadingStartupState = true;
+    try {
+      await this.workspace.loadStartupState();
+      await this.applyStartupProjectSelection();
+    } finally {
+      this.loadingStartupState = false;
+    }
+  }
+
+  private async applyStartupProjectSelection(): Promise<void> {
+    if (!this.workspace.hasLoadedBackendState()) {
+      return;
+    }
+
+    const projects = this.projects.projects();
+    if (projects.length === 0) {
+      this.hasAppliedStartupProjectSelection = true;
+      return;
+    }
+
+    const targetProjectId =
+      this.startupProjectId !== null &&
+      projects.some((project) => project.id === this.startupProjectId)
+        ? this.startupProjectId
+        : projects[0].id;
+
+    if (this.projects.selectedProjectId() !== targetProjectId) {
+      await this.workspace.selectProject(targetProjectId);
+    }
+
+    this.writeLastProjectId(targetProjectId);
+    this.hasAppliedStartupProjectSelection = true;
+  }
+
+  private readLastProjectId(): string | null {
+    const value = this.projectStorage()
+      ?.getItem(LAST_PROJECT_STORAGE_KEY)
+      ?.trim();
+    return value === undefined || value.length === 0 ? null : value;
+  }
+
+  private writeLastProjectId(projectId: string): void {
+    try {
+      this.projectStorage()?.setItem(LAST_PROJECT_STORAGE_KEY, projectId);
+    } catch {
+      // Storage persistence is a convenience; startup should continue without it.
+    }
+  }
+
+  private projectStorage(): Storage | null {
+    if (typeof window === 'undefined') {
+      return null;
+    }
+
+    try {
+      return window.localStorage;
+    } catch {
+      return null;
+    }
   }
 }

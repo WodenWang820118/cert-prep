@@ -72,31 +72,13 @@ def create_document(
             ),
         )
         for chunk_index, page in enumerate(extraction.pages):
-            connection.execute(
-                """
-                INSERT INTO document_chunks(
-                    id, project_id, document_id, page_number, chunk_index,
-                    text, raw_text, line_start, line_end, line_count, source_excerpt,
-                    extraction_method, content_profile, created_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    str(uuid4()),
-                    project_id,
-                    document_id,
-                    page.page_number,
-                    chunk_index,
-                    page.text,
-                    _page_raw_text(page),
-                    _page_line_start(page),
-                    _page_line_end(page),
-                    _page_line_count(page),
-                    page.source_excerpt,
-                    page.extraction_method,
-                    content_profile_from_value(page.content_profile).value,
-                    now,
-                ),
+            _upsert_page_chunk(
+                connection,
+                project_id=project_id,
+                document_id=document_id,
+                page=page,
+                chunk_index=chunk_index,
+                now=now,
             )
         row = _document_query(connection, project_id, document_id)
     if row is None:
@@ -197,44 +179,19 @@ def record_extraction_progress(
 
         extraction_method = existing["extraction_method"]
         if page is not None:
-            chunk_index = connection.execute(
-                """
-                SELECT COUNT(*)
-                FROM document_chunks
-                WHERE project_id = ? AND document_id = ?
-                """,
-                (project_id, document_id),
-            ).fetchone()[0]
-            connection.execute(
-                """
-                INSERT INTO document_chunks(
-                    id, project_id, document_id, page_number, chunk_index,
-                    text, raw_text, line_start, line_end, line_count, source_excerpt,
-                    extraction_method, content_profile, created_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    str(uuid4()),
-                    project_id,
-                    document_id,
-                    page.page_number,
-                    chunk_index,
-                    page.text,
-                    _page_raw_text(page),
-                    _page_line_start(page),
-                    _page_line_end(page),
-                    _page_line_count(page),
-                    page.source_excerpt,
-                    page.extraction_method,
-                    content_profile_from_value(page.content_profile).value,
-                    now,
-                ),
+            _upsert_page_chunk(
+                connection,
+                project_id=project_id,
+                document_id=document_id,
+                page=page,
+                chunk_index=page.page_number - 1,
+                now=now,
             )
-            extraction_method = _merged_extraction_method(
-                current=extraction_method,
-                next_method=page.extraction_method,
-                existing_chunk_count=chunk_index,
+            extraction_method = _document_extraction_method_from_db(
+                connection,
+                project_id,
+                document_id,
+                fallback=extraction_method,
             )
         content_profile, classification_detail = _document_classification_from_db(
             connection,
@@ -340,6 +297,13 @@ def complete_document_extraction(
 ) -> dict:
     now = utc_now()
     with db.connect() as connection:
+        _sync_document_chunks(
+            connection,
+            project_id=project_id,
+            document_id=document_id,
+            pages=extraction.pages,
+            now=now,
+        )
         content_profile, classification_detail = _document_classification_from_db(
             connection,
             project_id,
@@ -533,16 +497,136 @@ def _chunk_from_row(row: Row) -> dict:
     }
 
 
-def _merged_extraction_method(
+def _upsert_page_chunk(
+    connection,
     *,
-    current: str,
-    next_method: str,
-    existing_chunk_count: int,
+    project_id: str,
+    document_id: str,
+    page: ExtractedPage,
+    chunk_index: int,
+    now: str,
+) -> None:
+    rows = connection.execute(
+        """
+        SELECT id
+        FROM document_chunks
+        WHERE project_id = ? AND document_id = ? AND page_number = ?
+        ORDER BY chunk_index, created_at, id
+        """,
+        (project_id, document_id, page.page_number),
+    ).fetchall()
+    values = (
+        chunk_index,
+        page.text,
+        _page_raw_text(page),
+        _page_line_start(page),
+        _page_line_end(page),
+        _page_line_count(page),
+        page.source_excerpt,
+        page.extraction_method,
+        content_profile_from_value(page.content_profile).value,
+    )
+    if rows:
+        keep_id = rows[0]["id"]
+        connection.execute(
+            """
+            UPDATE document_chunks
+            SET chunk_index = ?,
+                text = ?,
+                raw_text = ?,
+                line_start = ?,
+                line_end = ?,
+                line_count = ?,
+                source_excerpt = ?,
+                extraction_method = ?,
+                content_profile = ?
+            WHERE id = ?
+            """,
+            (*values, keep_id),
+        )
+        connection.executemany(
+            "DELETE FROM document_chunks WHERE id = ?",
+            [(row["id"],) for row in rows[1:]],
+        )
+        return
+
+    connection.execute(
+        """
+        INSERT INTO document_chunks(
+            id, project_id, document_id, page_number, chunk_index,
+            text, raw_text, line_start, line_end, line_count, source_excerpt,
+            extraction_method, content_profile, created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            str(uuid4()),
+            project_id,
+            document_id,
+            page.page_number,
+            *values,
+            now,
+        ),
+    )
+
+
+def _sync_document_chunks(
+    connection,
+    *,
+    project_id: str,
+    document_id: str,
+    pages: tuple[ExtractedPage, ...],
+    now: str,
+) -> None:
+    pages_by_number = {page.page_number: page for page in pages}
+    rows = connection.execute(
+        """
+        SELECT id, page_number
+        FROM document_chunks
+        WHERE project_id = ? AND document_id = ?
+        ORDER BY page_number, chunk_index, created_at, id
+        """,
+        (project_id, document_id),
+    ).fetchall()
+    kept_page_numbers: set[int] = set()
+    for row in rows:
+        page_number = row["page_number"]
+        if page_number in pages_by_number and page_number not in kept_page_numbers:
+            kept_page_numbers.add(page_number)
+            continue
+        connection.execute("DELETE FROM document_chunks WHERE id = ?", (row["id"],))
+
+    for chunk_index, page in enumerate(sorted(pages, key=lambda item: item.page_number)):
+        _upsert_page_chunk(
+            connection,
+            project_id=project_id,
+            document_id=document_id,
+            page=page,
+            chunk_index=chunk_index,
+            now=now,
+        )
+
+
+def _document_extraction_method_from_db(
+    connection,
+    project_id: str,
+    document_id: str,
+    *,
+    fallback: str,
 ) -> str:
-    if existing_chunk_count == 0 or current == "none":
-        return next_method
-    if current == next_method:
-        return current
+    rows = connection.execute(
+        """
+        SELECT DISTINCT extraction_method
+        FROM document_chunks
+        WHERE project_id = ? AND document_id = ?
+        """,
+        (project_id, document_id),
+    ).fetchall()
+    methods = {row["extraction_method"] for row in rows}
+    if not methods:
+        return fallback
+    if len(methods) == 1:
+        return methods.pop()
     return "mixed"
 
 

@@ -359,7 +359,7 @@ def test_image_only_pdf_ocr_continues_after_single_page_render_failure(
     assert [chunk["page_number"] for chunk in chunks] == [1, 3]
 
 
-def test_ocr_page_workers_preserve_progress_order_and_metrics(
+def test_ocr_page_workers_preserve_final_order_and_metrics(
     tmp_path: Path,
     auth_headers,
 ) -> None:
@@ -405,6 +405,70 @@ def test_ocr_page_workers_preserve_progress_order_and_metrics(
             "Worker page 2",
             "Worker page 3",
         ]
+
+
+def test_parallel_ocr_flushes_completed_page_before_all_pages_finish(
+    tmp_path: Path,
+    auth_headers,
+) -> None:
+    ocr_provider = BlockingFirstPageOcrProvider()
+    client = TestClient(
+        create_app(
+            settings=Settings(
+                data_dir=tmp_path,
+                api_token="test-token",
+                ocr_page_workers=2,
+            ),
+            ocr_provider=ocr_provider,
+            document_processing_async_jobs=True,
+        )
+    )
+    project_id = _create_project(client, auth_headers)
+
+    response = client.post(
+        f"/projects/{project_id}/documents",
+        headers=auth_headers,
+        files={"file": ("scan.pdf", minimal_pdf("", ""), "application/pdf")},
+    )
+
+    assert response.status_code == 201
+    document = response.json()
+    assert document["status"] == "processing"
+    assert ocr_provider.page_one_started.wait(timeout=2)
+    try:
+        assert ocr_provider.page_two_finished.wait(timeout=2)
+        partial = _wait_for_document_progress(
+            client,
+            auth_headers,
+            project_id,
+            document["id"],
+            processed_page_count=1,
+            chunks_count=1,
+        )
+        assert partial["status"] == "processing"
+
+        chunks = client.get(
+            f"/projects/{project_id}/documents/{document['id']}/chunks",
+            headers=auth_headers,
+        ).json()["items"]
+        assert [(chunk["page_number"], chunk["chunk_index"]) for chunk in chunks] == [(2, 1)]
+        assert chunks[0]["text"] == "Worker page 2"
+    finally:
+        ocr_provider.release_page_one.set()
+
+    ready = _wait_for_document_status(client, auth_headers, project_id, document["id"], "ready")
+    assert ready["processed_page_count"] == 2
+    assert ready["chunks_count"] == 2
+    assert ready["ocr_duration_ms"] == 30
+    assert ocr_provider.ocr_page_numbers == [2, 1]
+
+    chunks = client.get(
+        f"/projects/{project_id}/documents/{document['id']}/chunks",
+        headers=auth_headers,
+    ).json()["items"]
+    assert [chunk["page_number"] for chunk in chunks] == [1, 2]
+    assert [chunk["chunk_index"] for chunk in chunks] == [0, 1]
+    assert [chunk["text"] for chunk in chunks] == ["Worker page 1", "Worker page 2"]
 
 
 def test_pdf_upload_rejects_oversized_file(tmp_path: Path, auth_headers) -> None:
@@ -600,6 +664,32 @@ class DelayedOcrProvider(MockPaddleOcrProvider):
         )
 
 
+class BlockingFirstPageOcrProvider(MockPaddleOcrProvider):
+    page_workers = 2
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.page_one_started = Event()
+        self.page_two_finished = Event()
+        self.release_page_one = Event()
+
+    def extract_page_text(self, image_png: bytes, page_number: int) -> OCRPageResult:
+        assert image_png.startswith(b"\x89PNG")
+        if page_number == 1:
+            self.page_one_started.set()
+            assert self.release_page_one.wait(timeout=5)
+        self.ocr_page_numbers.append(page_number)
+        if page_number == 2:
+            self.page_two_finished.set()
+        return OCRPageResult(
+            text=f"Worker page {page_number}",
+            extraction_method="paddle_ocr_gpu",
+            device="gpu:0",
+            fallback_reason=None,
+            duration_ms=page_number * 10,
+        )
+
+
 class MissingPaddleRuntimeProvider(MockPaddleOcrProvider):
     def health(self) -> OCRHealth:
         return OCRHealth(
@@ -644,3 +734,33 @@ def _wait_for_document_status(
             return latest
         time.sleep(0.05)
     raise AssertionError(f"Document did not reach {status}: {latest}")
+
+
+def _wait_for_document_progress(
+    client: TestClient,
+    auth_headers,
+    project_id: str,
+    document_id: str,
+    *,
+    processed_page_count: int,
+    chunks_count: int,
+) -> dict:
+    deadline = time.monotonic() + 5
+    latest: dict | None = None
+    while time.monotonic() < deadline:
+        response = client.get(
+            f"/projects/{project_id}/documents/{document_id}",
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        latest = response.json()
+        if (
+            latest["processed_page_count"] == processed_page_count
+            and latest["chunks_count"] == chunks_count
+        ):
+            return latest
+        time.sleep(0.05)
+    raise AssertionError(
+        "Document did not reach progress "
+        f"processed_page_count={processed_page_count}, chunks_count={chunks_count}: {latest}"
+    )

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from io import BytesIO
 from time import perf_counter
@@ -140,6 +140,7 @@ def extract_pdf_pages(
     ocr_failed = False
     ocr_device: str | None = None
     ocr_fallback_reasons: list[str] = []
+    provider_unavailable_errors: list[str] = []
     ocr_duration_ms = 0
     ocr_worker_count = (
         _ocr_worker_count(ocr_provider)
@@ -158,8 +159,11 @@ def extract_pdf_pages(
             page_number = outcome.page_number
             render_duration_ms += outcome.render_duration_ms
             if outcome.provider_unavailable:
-                if not extracted_pages:
-                    raise ProviderUnavailableError(outcome.error or "OCR provider unavailable.")
+                error = outcome.error or "OCR provider unavailable."
+                if error not in provider_unavailable_errors:
+                    provider_unavailable_errors.append(error)
+                if error not in ocr_fallback_reasons:
+                    ocr_fallback_reasons.append(error)
                 ocr_failed = True
                 processed_page_count += 1
                 _notify_progress(
@@ -254,6 +258,9 @@ def extract_pdf_pages(
                 first_chunk_ms=first_chunk_ms or 0,
             )
 
+        if provider_unavailable_errors and not extracted_pages:
+            raise ProviderUnavailableError("; ".join(provider_unavailable_errors))
+
     extracted_pages.sort(key=lambda page: page.page_number)
     methods = {page.extraction_method for page in extracted_pages}
     parse_wall_duration_ms = _elapsed_ms(extract_started_at)
@@ -298,8 +305,7 @@ def _extract_ocr_pages(
     ocr_provider: PageOcrProvider,
     ocr_render_scale: float,
     worker_count: int,
-) -> list[_OcrPageOutcome]:
-    outcomes: dict[int, _OcrPageOutcome] = {}
+) -> Iterator[_OcrPageOutcome]:
     with ThreadPoolExecutor(max_workers=min(max(1, worker_count), len(page_numbers))) as executor:
         futures = {
             executor.submit(
@@ -314,26 +320,25 @@ def _extract_ocr_pages(
         for future in as_completed(futures):
             page_number = futures[future]
             try:
-                outcomes[page_number] = future.result()
+                yield future.result()
             except InvalidPdfError as exc:
-                outcomes[page_number] = _OcrPageOutcome(
+                yield _OcrPageOutcome(
                     page_number=page_number,
                     failed=True,
                     error=str(exc),
                 )
             except ProviderUnavailableError as exc:
-                outcomes[page_number] = _OcrPageOutcome(
+                yield _OcrPageOutcome(
                     page_number=page_number,
                     provider_unavailable=True,
                     error=str(exc),
                 )
             except Exception as exc:
-                outcomes[page_number] = _OcrPageOutcome(
+                yield _OcrPageOutcome(
                     page_number=page_number,
                     failed=True,
                     error=str(exc),
                 )
-    return [outcomes[page_number] for page_number in page_numbers]
 
 
 def _extract_ocr_page(

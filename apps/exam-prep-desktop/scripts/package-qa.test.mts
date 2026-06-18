@@ -6,11 +6,14 @@ import { join } from 'node:path';
 import { afterEach, test } from 'node:test';
 
 import {
+  buildRuntimeLaunchEnv,
   bytesToMb,
   collectBackendRuntimeArtifacts,
   collectBundleArtifacts,
   collectOcrRuntimeArtifacts,
   initialInstallerSizeGate,
+  parsePackageQaArgs,
+  parsePackageQaEnv,
   summarizeLlmHealth,
   summarizeOcrHealth,
   targetTripleFromRuntimeArtifactName,
@@ -235,6 +238,47 @@ test('health summaries keep OCR fallback and LLM model state', () => {
       unavailable_reason: null,
     },
   );
+});
+
+test('package QA parses OCR page worker count from QA-specific inputs', () => {
+  assert.deepEqual(
+    parsePackageQaEnv({ EXAM_PREP_PACKAGE_QA_OCR_PAGE_WORKERS: '2' }),
+    { ocrPageWorkers: 2 },
+  );
+  assert.equal(
+    parsePackageQaArgs(['--ocr-page-workers', '4'], {
+      EXAM_PREP_PACKAGE_QA_OCR_PAGE_WORKERS: '2',
+    }).ocrPageWorkers,
+    4,
+  );
+  assert.throws(
+    () => parsePackageQaArgs(['--ocr-page-workers', '0'], {}),
+    /positive integer/,
+  );
+});
+
+test('runtime launch env sets OCR page workers only from explicit QA config', () => {
+  const baseOptions = {
+    port: 8765,
+    token: 'token',
+    dataDir: 'data',
+    llmModel: 'qwen3:14b',
+    ocrRuntimeManifest: 'ocr-runtime-manifest.json',
+  };
+
+  const ambientOnly = buildRuntimeLaunchEnv({
+    ...baseOptions,
+    baseEnv: { EXAM_PREP_OCR_PAGE_WORKERS: '9', PATH: 'test-path' },
+  });
+  assert.equal(ambientOnly.EXAM_PREP_OCR_PAGE_WORKERS, undefined);
+  assert.equal(ambientOnly.PATH, 'test-path');
+
+  const explicit = buildRuntimeLaunchEnv({
+    ...baseOptions,
+    ocrPageWorkers: 3,
+    baseEnv: { EXAM_PREP_OCR_PAGE_WORKERS: '9' },
+  });
+  assert.equal(explicit.EXAM_PREP_OCR_PAGE_WORKERS, '3');
 });
 
 test('initialInstallerSizeGate warns and fails at configured thresholds', () => {

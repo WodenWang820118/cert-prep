@@ -127,9 +127,10 @@ export class SourceImportStore {
     if (document === null || document.page_count <= 0) {
       return 0;
     }
+    const completedPages = completedPageCount(document);
     return Math.min(
       100,
-      Math.round((document.processed_page_count / document.page_count) * 100),
+      Math.round((completedPages / document.page_count) * 100),
     );
   });
   readonly progressLabel = computed(() => {
@@ -137,7 +138,7 @@ export class SourceImportStore {
     if (document === null) {
       return '0/0 pages';
     }
-    return `${document.processed_page_count}/${document.page_count} pages`;
+    return `${completedPageCount(document)}/${document.page_count} pages`;
   });
   readonly parseStageText = computed(() => {
     const document = this.uploadedDocument();
@@ -403,6 +404,22 @@ function readMetricNumber(
   }
 
   return null;
+}
+
+function completedPageCount(document: DocumentRead): number {
+  const pageCount = Math.max(0, document.page_count);
+  if (pageCount === 0) {
+    return 0;
+  }
+
+  if (
+    document.processed_page_count >= pageCount ||
+    (document.status === 'ready' && document.chunks_count >= pageCount)
+  ) {
+    return pageCount;
+  }
+
+  return Math.max(0, Math.min(pageCount, document.processed_page_count));
 }
 
 function formatMetricDuration(milliseconds: number): string {

@@ -73,10 +73,28 @@ describe('SourceImportPanelComponent', () => {
     expect(text).not.toContain('Worker count');
     expect(text).not.toContain('First chunk time');
   });
+
+  it('renders complete ready documents at 100 percent progress', () => {
+    const fixture = TestBed.createComponent(SourceImportPanelComponent);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    sourceImport.uploadedDocument.set(
+      documentRead({
+        chunks_count: 8,
+        processed_page_count: 7,
+        status: 'ready',
+      }),
+    );
+
+    fixture.detectChanges();
+
+    expect(sourceImport.progressPercent()).toBe(100);
+    expect(sourceImport.progressLabel()).toBe('8/8 pages');
+    expect(fixture.nativeElement.textContent).toContain('8/8 pages / 8 chunks');
+  });
 });
 
 function documentRead(
-  metrics: Partial<Record<string, number>> = {},
+  overrides: Partial<DocumentRead> & Record<string, unknown> = {},
 ): DocumentRead {
   return {
     id: 'document-1',
@@ -98,6 +116,6 @@ function documentRead(
     chunks_count: 8,
     created_at: '2026-06-18T00:00:00Z',
     updated_at: '2026-06-18T00:00:01Z',
-    ...metrics,
+    ...overrides,
   } as DocumentRead;
 }

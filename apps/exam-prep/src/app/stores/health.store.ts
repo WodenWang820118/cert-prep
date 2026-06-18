@@ -61,6 +61,13 @@ type LLMHealthWithMissingReason = LLMHealthRead &
 
 type ModelDownloadRecord = Record<string, unknown>;
 
+interface HealthSnapshot {
+  readonly system?: HealthResponse;
+  readonly llm?: LLMHealthRead;
+  readonly ocr?: OCRHealthRead;
+  readonly runtimeRequirements: RuntimeRequirementRead[];
+}
+
 interface ModelDownloadApiClient {
   startModelDownload(): Promise<ModelDownloadRead>;
   getModelDownload(jobId: string): Promise<ModelDownloadRead>;
@@ -173,35 +180,17 @@ export class HealthStore {
   );
 
   async load(): Promise<void> {
-    const [systemHealth, llmHealth, ocrHealth, runtimeRequirements] =
-      await Promise.all([
-        this.api.health(),
-        this.api.llmHealth(),
-        this.api.ocrHealth(),
-        this.loadRuntimeRequirements(),
-      ]);
-    this.systemHealth.set(systemHealth);
-    this.llmHealth.set(llmHealth);
-    this.ocrHealth.set(ocrHealth);
-    this.runtimeRequirements.set(runtimeRequirements);
+    this.applyHealthSnapshot(await this.loadHealthSnapshot());
   }
 
   async refresh(): Promise<void> {
     const health = await this.operations.run(
       'health',
       'Runtime health refreshed',
-      async () => ({
-        system: await this.api.health(),
-        llm: await this.api.llmHealth(),
-        ocr: await this.api.ocrHealth(),
-        runtimeRequirements: await this.loadRuntimeRequirements(),
-      }),
+      async () => this.loadHealthSnapshot(),
     );
     if (health !== null) {
-      this.systemHealth.set(health.system);
-      this.llmHealth.set(health.llm);
-      this.ocrHealth.set(health.ocr);
-      this.runtimeRequirements.set(health.runtimeRequirements);
+      this.applyHealthSnapshot(health);
     }
   }
 
@@ -399,7 +388,7 @@ export class HealthStore {
 
   private continueModelDownload(status: ModelDownloadView): void {
     if (status.phase === 'succeeded') {
-      void this.load();
+      void this.refreshHealthAfterRuntimeChange();
       return;
     }
 
@@ -413,7 +402,7 @@ export class HealthStore {
 
   private continueRuntimeInstallation(status: RuntimeInstallationView): void {
     if (status.phase === 'succeeded') {
-      void this.load();
+      void this.refreshHealthAfterRuntimeChange();
       return;
     }
 
@@ -427,6 +416,14 @@ export class HealthStore {
     }
 
     this.scheduleRuntimeInstallPoll();
+  }
+
+  private async refreshHealthAfterRuntimeChange(): Promise<void> {
+    try {
+      await this.load();
+    } catch (error) {
+      this.operations.fail(this.errorMessage(error));
+    }
   }
 
   private scheduleModelDownloadPoll(): void {
@@ -500,6 +497,62 @@ export class HealthStore {
     }
 
     return (await client.runtimeRequirements()).items;
+  }
+
+  private async loadHealthSnapshot(): Promise<HealthSnapshot> {
+    const system = this.api.health().then((health) => {
+      this.systemHealth.set(health);
+      return health;
+    });
+    const llm = this.api.llmHealth().then((health) => {
+      this.llmHealth.set(health);
+      return health;
+    });
+    const ocr = this.api.ocrHealth().then((health) => {
+      this.ocrHealth.set(health);
+      return health;
+    });
+    const runtimeRequirements = this.loadRuntimeRequirements()
+      .then((requirements) => {
+        this.runtimeRequirements.set(requirements);
+        return requirements;
+      })
+      .catch(() => []);
+
+    const [systemResult, llmResult, ocrResult, requirementsResult] =
+      await Promise.allSettled([system, llm, ocr, runtimeRequirements]);
+
+    const failures = [systemResult, llmResult, ocrResult].filter(
+      (result): result is PromiseRejectedResult =>
+        result.status === 'rejected',
+    );
+    if (failures.length === 3) {
+      throw failures[0].reason;
+    }
+
+    return {
+      system:
+        systemResult.status === 'fulfilled' ? systemResult.value : undefined,
+      llm: llmResult.status === 'fulfilled' ? llmResult.value : undefined,
+      ocr: ocrResult.status === 'fulfilled' ? ocrResult.value : undefined,
+      runtimeRequirements:
+        requirementsResult.status === 'fulfilled'
+          ? requirementsResult.value
+          : [],
+    };
+  }
+
+  private applyHealthSnapshot(snapshot: HealthSnapshot): void {
+    if (snapshot.system !== undefined) {
+      this.systemHealth.set(snapshot.system);
+    }
+    if (snapshot.llm !== undefined) {
+      this.llmHealth.set(snapshot.llm);
+    }
+    if (snapshot.ocr !== undefined) {
+      this.ocrHealth.set(snapshot.ocr);
+    }
+    this.runtimeRequirements.set(snapshot.runtimeRequirements);
   }
 
   private hasModelMissingReason(health: LLMHealthRead): boolean {
