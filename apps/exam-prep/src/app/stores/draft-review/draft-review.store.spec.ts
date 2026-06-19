@@ -18,6 +18,7 @@ describe('DraftReviewStore', () => {
     listDocumentChunks: vi.fn(),
     listDocumentDraftJobs: vi.fn(),
     listQuestionDrafts: vi.fn(),
+    retryDocumentDraftJobs: vi.fn(),
     updateQuestionDraft: vi.fn(),
   };
 
@@ -279,6 +280,35 @@ describe('DraftReviewStore', () => {
         severity: 'warn',
       }),
     );
+  });
+
+  it('retries skipped streaming draft jobs for the current document', async () => {
+    const store = TestBed.inject(DraftReviewStore);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    const draft = questionDraft();
+    const skippedJob = draftJob({
+      status: 'skipped_missing_model',
+      last_error: 'qwen3:14b is not installed',
+    });
+    const succeededJob = draftJob({
+      status: 'succeeded',
+      generated_count: 1,
+      retry_count: 1,
+    });
+    sourceImport.uploadedDocument.set(documentRead());
+    store.draftJobs.set([skippedJob]);
+    apiClient.retryDocumentDraftJobs.mockResolvedValue({ items: [succeededJob] });
+    apiClient.listQuestionDrafts.mockResolvedValue({ items: [draft] });
+
+    await store.retryDraftJobs();
+
+    expect(apiClient.retryDocumentDraftJobs).toHaveBeenCalledWith(
+      'project-1',
+      'document-1',
+    );
+    expect(store.draftJobs()).toEqual([succeededJob]);
+    expect(store.drafts()).toEqual([draft]);
+    expect(apiClient.getDocument).toHaveBeenCalledWith('project-1', 'document-1');
   });
 });
 

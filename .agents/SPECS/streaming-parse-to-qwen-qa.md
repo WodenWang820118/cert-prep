@@ -82,3 +82,42 @@ Verification:
 This still does not close the TODO. The remaining acceptance evidence is a live
 packaged streaming run where qwen output produces usable draft questions before
 parse completion, with timing and review-quality results recorded.
+
+## 2026-06-19 Recovery And Retry Evidence
+
+Implemented the next reliability slice for scan-to-usable flow:
+
+- Backend startup now recovers durable streaming draft jobs by resetting
+  interrupted `running` jobs to `pending` and scheduling all runnable pending
+  jobs.
+- Added `POST /projects/{project_id}/documents/{document_id}/draft-jobs/retry`
+  to requeue retryable terminal jobs after runtime blockers clear.
+- Retry only resets `failed`, `skipped_provider_unavailable`, and
+  `skipped_missing_model`; `succeeded`, `pending`, and `running` jobs are left
+  alone.
+- Retry updates job provider/model to the current runtime, clears `last_error`,
+  increments `retry_count`, and preserves draft-only append/dedupe behavior.
+- Frontend draft review now shows a `Retry drafting` action when streaming jobs
+  are blocked, so users can install or start the qwen runtime later and requeue
+  already-scanned chunks without uploading/parsing the PDF again.
+
+Local model availability check:
+
+- `ollama list` showed `gemma4:12b`, `qwen3:8b`, and `qwen3-coder:30b`.
+- `qwen3:14b` is still not installed locally, so live packaged qwen timing
+  remains blocked without a user-provided model install.
+
+Verification:
+
+- `pnpm nx run exam-prep-backend:test --skip-nx-cache` passed, 93 tests.
+- `pnpm nx run exam-prep-backend:lint --skip-nx-cache` passed.
+- `pnpm nx run exam-prep-backend:generate-openapi-client --skip-nx-cache`
+  passed.
+- `pnpm nx run exam-prep:test --skip-nx-cache` passed, 41 tests.
+- `pnpm nx run exam-prep:lint --skip-nx-cache` passed.
+- `pnpm nx run exam-prep:build --skip-nx-cache` passed with the existing
+  initial bundle budget warning.
+
+The TODO remains open until a fresh packaged smoke captures streaming metrics
+and, after `qwen3:14b` is present, live usable qwen draft questions before parse
+completion.

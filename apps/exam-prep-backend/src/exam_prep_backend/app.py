@@ -68,6 +68,7 @@ def create_app(
         provider=app.state.llm_provider,
         async_jobs=streaming_draft_generation_async_jobs,
     )
+    app.state.streaming_draft_generation_manager.recover_jobs(app.state.database)
     app.state.runtime_installation_manager = runtime_installation_manager or RuntimeInstallationManager(
         settings=app_settings,
         llm_provider=app.state.llm_provider,

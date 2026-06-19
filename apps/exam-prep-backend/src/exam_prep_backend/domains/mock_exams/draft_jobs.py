@@ -25,6 +25,11 @@ TERMINAL_STATUSES = {
     DraftGenerationJobStatus.SKIPPED_MISSING_MODEL,
     DraftGenerationJobStatus.FAILED,
 }
+RETRYABLE_STATUSES = {
+    DraftGenerationJobStatus.SKIPPED_PROVIDER_UNAVAILABLE,
+    DraftGenerationJobStatus.SKIPPED_MISSING_MODEL,
+    DraftGenerationJobStatus.FAILED,
+}
 
 
 def enqueue_chunk_job(
@@ -92,6 +97,89 @@ def list_document_jobs(db: Database, project_id: str, document_id: str) -> list[
             ORDER BY page_number, created_at, id
             """,
             (project_id, document_id),
+        ).fetchall()
+    return [job_from_row(row) for row in rows]
+
+
+def recover_runnable_jobs(db: Database) -> list[dict]:
+    """Return pending jobs from durable storage, resetting interrupted running jobs."""
+
+    now = utc_now()
+    with db.connect() as connection:
+        connection.execute(
+            """
+            UPDATE draft_generation_jobs
+            SET status = ?,
+                last_error = 'Draft generation was interrupted before completion.',
+                updated_at = ?
+            WHERE status = ?
+            """,
+            (
+                DraftGenerationJobStatus.PENDING,
+                now,
+                DraftGenerationJobStatus.RUNNING,
+            ),
+        )
+        rows = connection.execute(
+            """
+            SELECT *
+            FROM draft_generation_jobs
+            WHERE status = ?
+            ORDER BY updated_at, page_number, created_at, id
+            """,
+            (DraftGenerationJobStatus.PENDING,),
+        ).fetchall()
+    return [job_from_row(row) for row in rows]
+
+
+def retry_document_jobs(
+    db: Database,
+    *,
+    project_id: str,
+    document_id: str,
+    provider: str,
+    model: str,
+) -> list[dict]:
+    """Requeue retryable terminal jobs for a document after runtime blockers clear."""
+
+    documents_repository.ensure_document_exists(db, project_id, document_id)
+    now = utc_now()
+    retryable_statuses = tuple(status.value for status in RETRYABLE_STATUSES)
+    with db.connect() as connection:
+        connection.execute(
+            """
+            UPDATE draft_generation_jobs
+            SET status = ?,
+                provider = ?,
+                model = ?,
+                generated_count = 0,
+                retry_count = retry_count + 1,
+                last_error = NULL,
+                updated_at = ?
+            WHERE project_id = ?
+              AND document_id = ?
+              AND status IN (?, ?, ?)
+            """,
+            (
+                DraftGenerationJobStatus.PENDING,
+                provider,
+                model,
+                now,
+                project_id,
+                document_id,
+                *retryable_statuses,
+            ),
+        )
+        rows = connection.execute(
+            """
+            SELECT *
+            FROM draft_generation_jobs
+            WHERE project_id = ?
+              AND document_id = ?
+              AND status = ?
+            ORDER BY updated_at, page_number, created_at, id
+            """,
+            (project_id, document_id, DraftGenerationJobStatus.PENDING),
         ).fetchall()
     return [job_from_row(row) for row in rows]
 

@@ -42,6 +42,19 @@ import { SourceImportStore } from '../stores/source-import/source-import.store';
                 <span class="text-sm text-muted-color">
                   {{ drafts.draftJobSummary().detail }}
                 </span>
+                @if (drafts.canRetryDraftJobs()) {
+                  <p-button
+                    label="Retry drafting"
+                    icon="pi pi-refresh"
+                    severity="secondary"
+                    [outlined]="true"
+                    size="small"
+                    type="button"
+                    [disabled]="operations.isBusyFor('drafts')"
+                    [loading]="operations.isBusyFor('drafts')"
+                    (onClick)="drafts.retryDraftJobs()"
+                  />
+                }
               </div>
             }
           </div>

@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from conftest import minimal_pdf
 from exam_prep_backend.app import create_app
 from exam_prep_backend.config import Settings
+from exam_prep_backend.domains.mock_exams import draft_jobs
 from exam_prep_backend.domains.mock_exams.models import DraftSuggestion, SourceChunk
 from exam_prep_backend.domains.mock_exams.ports import ProviderHealth
 from exam_prep_backend.domains.source_documents import pdf_extraction
@@ -670,6 +671,162 @@ def test_streaming_draft_job_records_missing_model_without_blocking_parse(
     assert drafts.json()["items"] == []
 
 
+def test_streaming_draft_retry_requeues_missing_model_job_after_qwen_available(
+    tmp_path: Path,
+    auth_headers,
+) -> None:
+    missing_model_client = TestClient(
+        create_app(
+            settings=Settings(
+                data_dir=tmp_path,
+                api_token="test-token",
+                streaming_draft_generation_on_upload=True,
+            ),
+            llm_provider=MissingModelExamProvider(),
+            ocr_provider=MockPaddleOcrProvider(),
+            document_processing_async_jobs=False,
+            streaming_draft_generation_async_jobs=False,
+        )
+    )
+    project_id = _create_project(missing_model_client, auth_headers)
+
+    response = missing_model_client.post(
+        f"/projects/{project_id}/documents",
+        headers=auth_headers,
+        files={"file": ("scan.pdf", minimal_pdf(""), "application/pdf")},
+    )
+
+    assert response.status_code == 201
+    document = response.json()
+    assert _draft_job_statuses(
+        missing_model_client, auth_headers, project_id, document["id"]
+    ) == ["skipped_missing_model"]
+
+    available_model_client = TestClient(
+        create_app(
+            settings=Settings(
+                data_dir=tmp_path,
+                api_token="test-token",
+                streaming_draft_generation_on_upload=True,
+                streaming_draft_generation_page_limit=1,
+            ),
+            llm_provider=MockExamProvider(),
+            ocr_provider=MockPaddleOcrProvider(),
+            document_processing_async_jobs=False,
+            streaming_draft_generation_async_jobs=False,
+        )
+    )
+
+    retry_response = available_model_client.post(
+        f"/projects/{project_id}/documents/{document['id']}/draft-jobs/retry",
+        headers=auth_headers,
+    )
+
+    assert retry_response.status_code == 202
+    retried_job = retry_response.json()["items"][0]
+    assert retried_job["status"] == "succeeded"
+    assert retried_job["generated_count"] == 1
+    assert retried_job["retry_count"] == 1
+    assert retried_job["last_error"] is None
+    assert retried_job["provider"] == MockExamProvider.provider
+    assert retried_job["model"] == MockExamProvider.model
+
+    drafts = available_model_client.get(
+        f"/projects/{project_id}/question-drafts",
+        headers=auth_headers,
+    ).json()["items"]
+    assert len(drafts) == 1
+    assert drafts[0]["status"] == "draft"
+    assert drafts[0]["citation_page"] == 1
+
+    idempotent_retry = available_model_client.post(
+        f"/projects/{project_id}/documents/{document['id']}/draft-jobs/retry",
+        headers=auth_headers,
+    )
+
+    assert idempotent_retry.status_code == 202
+    assert idempotent_retry.json()["items"][0]["status"] == "succeeded"
+    assert idempotent_retry.json()["items"][0]["retry_count"] == 1
+    drafts_after_second_retry = available_model_client.get(
+        f"/projects/{project_id}/question-drafts",
+        headers=auth_headers,
+    ).json()["items"]
+    assert len(drafts_after_second_retry) == 1
+
+
+def test_streaming_draft_recovery_resumes_interrupted_running_job(
+    tmp_path: Path,
+    auth_headers,
+) -> None:
+    initial_client = TestClient(
+        create_app(
+            settings=Settings(data_dir=tmp_path, api_token="test-token"),
+            ocr_provider=MockPaddleOcrProvider(),
+            document_processing_async_jobs=False,
+        )
+    )
+    project_id = _create_project(initial_client, auth_headers)
+
+    response = initial_client.post(
+        f"/projects/{project_id}/documents",
+        headers=auth_headers,
+        files={"file": ("scan.pdf", minimal_pdf(""), "application/pdf")},
+    )
+
+    assert response.status_code == 201
+    document = response.json()
+    chunks = initial_client.get(
+        f"/projects/{project_id}/documents/{document['id']}/chunks",
+        headers=auth_headers,
+    ).json()["items"]
+    assert len(chunks) == 1
+
+    job = draft_jobs.enqueue_chunk_job(
+        initial_client.app.state.database,
+        project_id=project_id,
+        document_id=document["id"],
+        chunk_id=chunks[0]["id"],
+        page_number=chunks[0]["page_number"],
+        strategy="hybrid_reasoning",
+        provider="ollama",
+        model="qwen3:14b",
+    )
+    draft_jobs.mark_running(initial_client.app.state.database, job["id"])
+
+    recovered_client = TestClient(
+        create_app(
+            settings=Settings(
+                data_dir=tmp_path,
+                api_token="test-token",
+                streaming_draft_generation_on_upload=True,
+                streaming_draft_generation_page_limit=1,
+            ),
+            llm_provider=MockExamProvider(),
+            ocr_provider=MockPaddleOcrProvider(),
+            document_processing_async_jobs=False,
+            streaming_draft_generation_async_jobs=False,
+        )
+    )
+
+    jobs = recovered_client.get(
+        f"/projects/{project_id}/documents/{document['id']}/draft-jobs",
+        headers=auth_headers,
+    )
+    assert jobs.status_code == 200
+    recovered_job = jobs.json()["items"][0]
+    assert recovered_job["status"] == "succeeded"
+    assert recovered_job["generated_count"] == 1
+    assert recovered_job["last_error"] is None
+
+    drafts = recovered_client.get(
+        f"/projects/{project_id}/question-drafts",
+        headers=auth_headers,
+    )
+    assert drafts.status_code == 200
+    assert drafts.json()["items"][0]["status"] == "draft"
+    assert drafts.json()["items"][0]["citation_page"] == 1
+
+
 def test_pdf_upload_rejects_oversized_file(tmp_path: Path, auth_headers) -> None:
     client = TestClient(
         create_app(
@@ -1073,3 +1230,17 @@ def _wait_for_question_drafts(
             return latest
         time.sleep(0.05)
     raise AssertionError(f"Question drafts did not reach count={count}: {latest}")
+
+
+def _draft_job_statuses(
+    client: TestClient,
+    auth_headers,
+    project_id: str,
+    document_id: str,
+) -> list[str]:
+    response = client.get(
+        f"/projects/{project_id}/documents/{document_id}/draft-jobs",
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+    return [job["status"] for job in response.json()["items"]]

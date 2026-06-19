@@ -115,6 +115,7 @@ export interface ExamPrepGeneratedClient {
   listDocumentChunks(projectId: string, documentId: string): Promise<Components['schemas']['ChunkList']>;
   generateDocumentDrafts(projectId: string, documentId: string, body: Components['schemas']['DraftGenerateRequest']): Promise<Components['schemas']['QuestionDraftList']>;
   listDocumentDraftJobs(projectId: string, documentId: string): Promise<Components['schemas']['DraftGenerationJobList']>;
+  retryDocumentDraftJobs(projectId: string, documentId: string): Promise<Components['schemas']['DraftGenerationJobList']>;
   createQuestionDraft(projectId: string, body: Components['schemas']['QuestionDraftCreate']): Promise<Components['schemas']['QuestionDraftRead']>;
   listQuestionDrafts(projectId: string): Promise<Components['schemas']['QuestionDraftList']>;
   updateQuestionDraft(projectId: string, draftId: string, body: Components['schemas']['QuestionDraftUpdate']): Promise<Components['schemas']['QuestionDraftRead']>;
@@ -160,6 +161,8 @@ export function createExamPrepGeneratedClient(
       transport.request<Components['schemas']['QuestionDraftList']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/drafts`, body }),
     listDocumentDraftJobs: (projectId: string, documentId: string) =>
       transport.request<Components['schemas']['DraftGenerationJobList']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/draft-jobs` }),
+    retryDocumentDraftJobs: (projectId: string, documentId: string) =>
+      transport.request<Components['schemas']['DraftGenerationJobList']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/draft-jobs/retry` }),
     createQuestionDraft: (projectId: string, body: Components['schemas']['QuestionDraftCreate']) =>
       transport.request<Components['schemas']['QuestionDraftRead']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/question-drafts`, body }),
     listQuestionDrafts: (projectId: string) =>

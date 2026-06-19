@@ -89,6 +89,33 @@ class StreamingDraftGenerationManager:
             worker.join(timeout=1)
         self._workers.clear()
 
+    def recover_jobs(self, db: Database) -> int:
+        if not self._settings.streaming_draft_generation_on_upload:
+            return 0
+
+        jobs = draft_jobs.recover_runnable_jobs(db)
+        return self._schedule_jobs(db, jobs)
+
+    def retry_document_jobs(
+        self,
+        db: Database,
+        *,
+        project_id: str,
+        document_id: str,
+    ) -> list[dict]:
+        if not self._settings.streaming_draft_generation_on_upload:
+            return draft_jobs.list_document_jobs(db, project_id, document_id)
+
+        jobs = draft_jobs.retry_document_jobs(
+            db,
+            project_id=project_id,
+            document_id=document_id,
+            provider=str(getattr(self._provider, "provider", "unknown")),
+            model=str(getattr(self._provider, "model", "")),
+        )
+        self._schedule_jobs(db, jobs)
+        return draft_jobs.list_document_jobs(db, project_id, document_id)
+
     def _worker_loop(self) -> None:
         while True:
             item = self._queue.get()
@@ -99,6 +126,19 @@ class StreamingDraftGenerationManager:
                 self._run_job(db, job_id, limit)
             finally:
                 self._queue.task_done()
+
+    def _schedule_jobs(self, db: Database, jobs: list[dict]) -> int:
+        page_limit = self._settings.streaming_draft_generation_page_limit
+        scheduled_count = 0
+        for job in jobs:
+            if not draft_jobs.should_run(job):
+                continue
+            scheduled_count += 1
+            if self._async_jobs:
+                self._queue.put((db, job["id"], page_limit))
+            else:
+                self._run_job(db, job["id"], page_limit)
+        return scheduled_count
 
     def _run_job(self, db: Database, job_id: str, limit: int) -> None:
         try:

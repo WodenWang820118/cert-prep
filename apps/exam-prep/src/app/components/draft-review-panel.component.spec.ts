@@ -16,6 +16,7 @@ describe('DraftReviewPanelComponent', () => {
     generateDocumentDrafts: vi.fn(),
     listDocumentDraftJobs: vi.fn(),
     listQuestionDrafts: vi.fn(),
+    retryDocumentDraftJobs: vi.fn(),
     updateQuestionDraft: vi.fn(),
   };
 
@@ -44,6 +45,25 @@ describe('DraftReviewPanelComponent', () => {
     ) as HTMLElement | null;
     expect(liveRegion?.textContent).toContain('Drafting 1/1');
     expect(liveRegion?.textContent).toContain('0 drafts ready so far.');
+  });
+
+  it('renders retry action when streaming draft jobs are blocked', () => {
+    const projects = TestBed.inject(ProjectStore);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    const drafts = TestBed.inject(DraftReviewStore);
+    projects.projects.set([projectRead()]);
+    projects.select('project-1');
+    sourceImport.uploadedDocument.set(documentRead());
+    drafts.draftJobs.set([draftJob({ status: 'skipped_missing_model' })]);
+
+    const fixture = TestBed.createComponent(DraftReviewPanelComponent);
+    fixture.detectChanges();
+
+    const retryButton = fixture.nativeElement.querySelector(
+      'button',
+    ) as HTMLButtonElement | null;
+    expect(fixture.nativeElement.textContent).toContain('Model missing');
+    expect(retryButton?.textContent).toContain('Retry drafting');
   });
 });
 

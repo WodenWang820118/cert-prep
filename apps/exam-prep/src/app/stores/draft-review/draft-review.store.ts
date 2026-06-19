@@ -39,6 +39,10 @@ export class DraftReviewStore {
   readonly draftJobSummary = computed(() =>
     this.summarizeDraftJobs(this.draftJobs()),
   );
+  readonly canRetryDraftJobs = computed(() => {
+    const summary = this.draftJobSummary();
+    return summary.skipped > 0 || summary.failed > 0;
+  });
 
   constructor() {
     effect(() => {
@@ -227,6 +231,31 @@ export class DraftReviewStore {
     }
 
     await this.approveSavedDraft(draft);
+  }
+
+  async retryDraftJobs(): Promise<void> {
+    const project = this.projects.selectedProject();
+    const document = this.sourceImport.uploadedDocument();
+    if (project === null || document === null) {
+      this.operations.fail('Select a parsed document before retrying drafting.');
+      return;
+    }
+
+    const jobs = await this.operations.run(
+      'drafts',
+      'Drafting retry queued',
+      () => this.api.retryDocumentDraftJobs(project.id, document.id),
+    );
+    if (jobs === null) {
+      return;
+    }
+
+    this.draftJobs.set(jobs.items);
+    await this.load(project.id);
+    await this.sourceImport.refreshUploadedDocument(project.id, document.id);
+    if (this.hasActiveDraftJobs(jobs.items)) {
+      this.ensureStreamingDraftPolling(project.id, document.id);
+    }
   }
 
   private async approveSavedDraft(draft: QuestionDraftRead): Promise<void> {

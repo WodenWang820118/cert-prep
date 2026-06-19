@@ -249,3 +249,40 @@ Open evidence:
 
 - Live packaged streaming timing and qwen draft-quality evidence is still
   missing; the streaming TODO remains open.
+
+## 2026-06-19 Streaming Recovery And Retry Follow-Up
+
+Additional streaming reliability work:
+
+- Backend app startup now requeues durable `pending` draft jobs and resets
+  interrupted `running` draft jobs to `pending`.
+- Added draft-job retry API:
+  `POST /projects/{project_id}/documents/{document_id}/draft-jobs/retry`.
+- Retry requeues only `failed`, `skipped_provider_unavailable`, and
+  `skipped_missing_model` jobs, leaving `succeeded`, `pending`, and `running`
+  jobs unchanged.
+- Retry updates provider/model metadata to the current runtime, clears
+  `last_error`, increments `retry_count`, and keeps generated output as
+  draft-only.
+- Frontend draft review now renders `Retry drafting` when jobs are blocked, so
+  users can make the qwen model available later and continue from already
+  parsed chunks.
+
+Verification:
+
+- `pnpm nx run exam-prep-backend:test --skip-nx-cache` - passed, 93 tests, one
+  existing Starlette/httpx warning.
+- `pnpm nx run exam-prep-backend:lint --skip-nx-cache` - passed.
+- `pnpm nx run exam-prep-backend:generate-openapi-client --skip-nx-cache` -
+  passed.
+- `pnpm nx run exam-prep:test --skip-nx-cache` - passed, 41 tests.
+- `pnpm nx run exam-prep:lint --skip-nx-cache` - passed.
+- `pnpm nx run exam-prep:build --skip-nx-cache` - passed with the existing
+  initial bundle budget warning.
+
+Local live-qwen blocker:
+
+- `ollama list` currently has `gemma4:12b`, `qwen3:8b`, and
+  `qwen3-coder:30b`.
+- `qwen3:14b` is not installed, so a live packaged qwen timing run still cannot
+  satisfy acceptance without a user-provided model install.

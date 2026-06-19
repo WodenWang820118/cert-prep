@@ -3,7 +3,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, status
 
 from exam_prep_backend.database import Database
-from exam_prep_backend.dependencies import get_database, get_llm_provider
+from exam_prep_backend.dependencies import (
+    get_database,
+    get_llm_provider,
+    get_streaming_draft_generation_manager,
+)
 from exam_prep_backend.domains.mock_exams import draft_jobs
 from exam_prep_backend.domains.mock_exams import repository as mock_exams_repository
 from exam_prep_backend.domains.mock_exams.models import SourceChunk
@@ -17,6 +21,7 @@ from exam_prep_backend.domains.mock_exams.schemas import (
     QuestionDraftRead,
     QuestionDraftUpdate,
 )
+from exam_prep_backend.domains.mock_exams.streaming import StreamingDraftGenerationManager
 from exam_prep_backend.domains.source_documents import repository as source_documents_repository
 from exam_prep_backend.errors import (
     NotFoundError,
@@ -47,6 +52,31 @@ def list_document_draft_jobs(
 ) -> dict:
     try:
         return {"items": draft_jobs.list_document_jobs(db, project_id, document_id)}
+    except NotFoundError as exc:
+        raise not_found_error(str(exc)) from exc
+
+
+@draft_jobs_router.post(
+    "/retry",
+    response_model=DraftGenerationJobList,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def retry_document_draft_jobs(
+    project_id: str,
+    document_id: str,
+    db: Database = Depends(get_database),
+    streaming_drafts: StreamingDraftGenerationManager = Depends(
+        get_streaming_draft_generation_manager
+    ),
+) -> dict:
+    try:
+        return {
+            "items": streaming_drafts.retry_document_jobs(
+                db,
+                project_id=project_id,
+                document_id=document_id,
+            )
+        }
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
 
