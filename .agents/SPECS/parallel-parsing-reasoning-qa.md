@@ -137,4 +137,30 @@ Open after this run:
 - OCR health cold-start UX remains open until a packaged artifact confirms the drawer no longer shows `OCR unknown` while health is in-flight. Frontend state/test coverage now treats any health snapshot refresh as OCR checking/warming.
 - First chunk latency remains open. The backend improved from about `76s` to about `20.7s`, but the packaged acceptance gate is still `<15s`.
 - Streaming parse-to-qwen remains research/prototype work. Initial decision: no Kafka for the first local-first slice; use a SQLite queue/outbox and bounded qwen worker.
-- Dead-code cleanup was added as a new backlog item and has not started.
+- Dead-code cleanup is complete for the 2026-06-19 audit slice.
+
+## 2026-06-19 Dead Code Cleanup Evidence
+
+Deleted or simplified:
+
+- Frontend: removed unused `OperationStore.isBusy`, `OperationStore.failWithCode`, and the now-unused Angular `computed` import.
+- Backend: deleted unused `mock_exams/downloads.py` and removed unused `ModelDownloadProvider`; live model-download routes remain on the runtime installation manager.
+- Desktop scripts: removed unused package-QA sidecar helpers `collectSidecars`, `resolveSingleSidecar`, `targetTripleFromSidecarName`, private `isSidecarName`, `SIDECAR_PREFIX`, and the now-unused `basename` import.
+
+Evidence:
+
+- `rg` checks found no remaining call sites for the removed symbols.
+- `pnpm exec tsc -p tsconfig.scripts.json --noUnusedLocals --noUnusedParameters` passed before the desktop cleanup.
+- Backend `ruff` lint passed before cleanup and the backend worker also checked the deleted manager/protocol with `uvx vulture`.
+
+Final verification:
+
+- `pnpm nx run exam-prep:lint`
+- `pnpm nx run exam-prep:test`
+- `pnpm nx run exam-prep:build`
+- `pnpm nx run exam-prep-backend:lint`
+- `pnpm nx run exam-prep-backend:test`
+- `pnpm nx run exam-prep-desktop:lint`
+- `pnpm nx run exam-prep-desktop:typecheck-scripts`
+- `pnpm nx run exam-prep-desktop:package-qa-test`
+- `pnpm nx run exam-prep-desktop:cargo-test`

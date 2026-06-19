@@ -1,4 +1,4 @@
-import { Injectable, computed, signal } from '@angular/core';
+import { Injectable, signal } from '@angular/core';
 
 type BusyAction =
   | 'startup'
@@ -19,7 +19,6 @@ export class OperationStore {
   readonly status = signal('Ready');
   readonly error = signal<string | null>(null);
   readonly errorCode = signal<string | null>(null);
-  readonly isBusy = computed(() => this.busy() !== null);
 
   async run<T>(
     action: BusyAction,
@@ -46,11 +45,6 @@ export class OperationStore {
 
   fail(message: string): void {
     this.error.set(message);
-  }
-
-  failWithCode(message: string, code: string): void {
-    this.error.set(message);
-    this.errorCode.set(code);
   }
 
   isBusyFor(action: string | readonly string[]): boolean {

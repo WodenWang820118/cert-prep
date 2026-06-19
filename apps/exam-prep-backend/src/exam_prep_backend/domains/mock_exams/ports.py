@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Callable, Protocol
+from typing import Protocol
 
 from exam_prep_backend.domains.mock_exams.models import DraftSuggestion, SourceChunk
 
@@ -39,15 +39,4 @@ class DraftGenerationProvider(Protocol):
 
     def generate_drafts(self, chunks: Sequence[SourceChunk], limit: int) -> list[DraftSuggestion]:
         """Generate up to limit draft suggestions from source chunks."""
-        pass
-
-
-class ModelDownloadProvider(Protocol):
-    """Provider capability for user-confirmed local model downloads."""
-
-    provider: str
-    model: str
-
-    def pull_model(self, progress: Callable[[ModelPullProgress], None]) -> None:
-        """Pull the configured model and report progress to the caller."""
         pass

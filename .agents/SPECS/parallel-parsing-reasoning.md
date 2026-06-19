@@ -45,7 +45,7 @@ Use a SQLite-backed job queue/outbox plus a bounded qwen worker, and keep Kafka 
 another broker as a future option only for distributed workers, fan-out, durable
 multi-consumer replay, or multi-user service deployment.
 
-## Dead Code Cleanup Backlog
+## Dead Code Cleanup
 
 User-added backlog topic on 2026-06-19: audit all projects and remove truly
 unused classes, files, functions, imports, test helpers, and script code so the
@@ -56,6 +56,9 @@ contracts, intentionally reserved extension points, or code paths that are only
 reachable in packaged/runtime QA without matching evidence. Each deletion slice
 must be project-scoped and verified through the relevant `pnpm nx ...` tests,
 lints, builds, or package checks.
+
+Status: completed for the 2026-06-19 audit slice. Evidence is recorded in
+`.agents/SPECS/parallel-parsing-reasoning-qa.md`.
 
 同 build packaged production flow：
 

@@ -9,7 +9,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { basename, dirname, join, relative, resolve, sep } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createServer } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -29,7 +29,6 @@ const DEFAULT_OCR_RUNTIME_MANIFEST =
 const DEFAULT_DATA_DIR = 'tmp/exam-prep-desktop/package-qa/data';
 const DEFAULT_LLM_MODEL = 'qwen3:14b';
 const PACKAGE_QA_OCR_PAGE_WORKERS_ENV = 'EXAM_PREP_PACKAGE_QA_OCR_PAGE_WORKERS';
-const SIDECAR_PREFIX = 'exam-prep-backend-';
 const BACKEND_RUNTIME_PREFIX = 'exam-prep-backend-runtime-';
 const OCR_RUNTIME_PREFIX = 'exam-prep-ocr-runtime-';
 const CAPTURE_LIMIT = 12_000;
@@ -337,18 +336,6 @@ export function collectBundleArtifacts(
   return collectFiles(bundleRoot, workspaceRoot);
 }
 
-export function collectSidecars(
-  sidecarDir: string,
-  workspaceRoot = defaultWorkspaceRoot,
-): FileRecord[] {
-  if (!existsSync(sidecarDir)) {
-    return [];
-  }
-  return collectFiles(sidecarDir, workspaceRoot).filter((record) =>
-    isSidecarName(basename(record.absolutePath)),
-  );
-}
-
 export function collectBackendRuntimeArtifacts(
   runtimeRoot: string,
   workspaceRoot = defaultWorkspaceRoot,
@@ -367,26 +354,6 @@ export function collectOcrRuntimeArtifacts(
     return [];
   }
   return collectFiles(ocrRuntimeRoot, workspaceRoot);
-}
-
-export function resolveSingleSidecar(
-  sidecars: readonly FileRecord[],
-): FileRecord {
-  if (sidecars.length !== 1) {
-    const paths = sidecars.map((sidecar) => sidecar.path).join(', ') || 'none';
-    throw new Error(`Expected exactly one synced sidecar, found ${paths}`);
-  }
-  return sidecars[0];
-}
-
-export function targetTripleFromSidecarName(fileName: string): string {
-  if (!isSidecarName(fileName)) {
-    throw new Error(`Not an exam-prep sidecar name: ${fileName}`);
-  }
-  const withoutPrefix = fileName.slice(SIDECAR_PREFIX.length);
-  return withoutPrefix.endsWith('.exe')
-    ? withoutPrefix.slice(0, -'.exe'.length)
-    : withoutPrefix;
 }
 
 export function targetTripleFromRuntimeArtifactName(
@@ -669,14 +636,6 @@ function sha256File(filePath: string): string {
   const content = readFileSync(filePath);
   hash.update(content);
   return hash.digest('hex');
-}
-
-function isSidecarName(fileName: string): boolean {
-  return (
-    fileName.startsWith(SIDECAR_PREFIX) &&
-    fileName.length > SIDECAR_PREFIX.length &&
-    (fileName.endsWith('.exe') || !fileName.includes('.'))
-  );
 }
 
 function normalizePath(path: string): string {
