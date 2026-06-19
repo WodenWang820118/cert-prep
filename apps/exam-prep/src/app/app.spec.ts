@@ -1,145 +1,23 @@
 import { TestBed } from '@angular/core/testing';
 import { App } from './app';
 import { EXAM_PREP_API } from './exam-prep-api';
-import { OperationStore } from './stores/operation.store';
-import { ProjectStore } from './stores/project.store';
-import { WorkspaceFacade } from './stores/workspace.facade';
+import {
+  appDocument,
+  appProject,
+  approvedAppDraft,
+  availableLlmHealth,
+  availableOcrHealth,
+  backendHealth,
+  buttonByText,
+} from './app.spec-helpers';
 
 describe('App', () => {
-  const project = {
-    id: 'project-1',
-    name: 'Security Study',
-    description: 'Local exam prep',
-    created_at: '2026-06-17T00:00:00Z',
-    updated_at: '2026-06-17T00:00:00Z',
-  };
-  const secondProject = {
-    ...project,
-    id: 'project-2',
-    name: 'Network Study',
-  };
-  const document = {
-    id: 'document-1',
-    project_id: project.id,
-    filename: 'security.pdf',
-    sha256: 'abc123',
-    language_hint: 'en',
-    page_count: 12,
-    has_text: true,
-    status: 'ready',
-    extraction_method: 'text',
-    ocr_device: null,
-    ocr_fallback_reason: null,
-    ocr_duration_ms: 0,
-    processed_page_count: 12,
-    exam_item_count: 1,
-    chunks_count: 6,
-    created_at: '2026-06-17T00:00:00Z',
-    updated_at: '2026-06-17T00:00:00Z',
-  };
-  const secondDocument = {
-    ...document,
-    id: 'document-2',
-    project_id: secondProject.id,
-    filename: 'network.pdf',
-  };
-  const draft = {
-    id: 'draft-1',
-    project_id: project.id,
-    document_id: document.id,
-    chunk_id: 'chunk-1',
-    question: 'Which principle limits permissions?',
-    choices: ['Least privilege', 'Privilege sprawl'],
-    answer: 'Least privilege',
-    answer_key_source: 'manual',
-    rationale: 'Permissions stay scoped.',
-    citation_page: 2,
-    source_excerpt: 'Least privilege limits access.',
-    status: 'approved',
-    rejection_reason: null,
-    created_at: '2026-06-17T00:00:00Z',
-    updated_at: '2026-06-17T00:00:00Z',
-  };
-  const apiClient = {
-    health: vi.fn().mockResolvedValue({
-      status: 'ok',
-      app: 'exam-prep-backend',
-      version: '0.1.0',
-      python_version: '3.13.5',
-      runtime_mode: 'source',
-    }),
-    llmHealth: vi.fn().mockResolvedValue({
-      provider: 'fake',
-      model: 'reasoner:7b',
-      available: true,
-      detail: 'deterministic local fake provider',
-      unavailable_reason: null,
-    }),
-    ocrHealth: vi.fn().mockResolvedValue({
-      provider: 'fake',
-      engine: 'none',
-      available: true,
-      detail: 'deterministic local fake OCR provider',
-      python_version: '3.13.5',
-      paddle_version: null,
-      paddleocr_version: null,
-      selected_device: null,
-      cuda_available: false,
-      gpu_count: 0,
-      model_cache_dir: null,
-      fallback_reason: null,
-      unavailable_reason: null,
-    }),
-    runtimeRequirements: vi.fn().mockResolvedValue({ items: [] }),
-    startRuntimeInstallation: vi.fn(),
-    getRuntimeInstallation: vi.fn(),
-    listProjects: vi.fn().mockResolvedValue({ items: [project] }),
-    listDocuments: vi.fn().mockResolvedValue({ items: [document] }),
-    getDocument: vi.fn().mockResolvedValue(document),
-    listDocumentChunks: vi.fn().mockResolvedValue({ items: [] }),
-    listQuestionDrafts: vi.fn().mockResolvedValue({ items: [draft] }),
-    listWrongAnswers: vi.fn().mockResolvedValue({ items: [] }),
-  };
+  let apiClient: ReturnType<typeof createApiClient>;
 
   beforeEach(async () => {
     vi.clearAllMocks();
     localStorage.clear();
-    apiClient.health.mockResolvedValue({
-      status: 'ok',
-      app: 'exam-prep-backend',
-      version: '0.1.0',
-      python_version: '3.13.5',
-      runtime_mode: 'source',
-    });
-    apiClient.llmHealth.mockResolvedValue({
-      provider: 'fake',
-      model: 'reasoner:7b',
-      available: true,
-      detail: 'deterministic local fake provider',
-      unavailable_reason: null,
-    });
-    apiClient.ocrHealth.mockResolvedValue({
-      provider: 'fake',
-      engine: 'none',
-      available: true,
-      detail: 'deterministic local fake OCR provider',
-      python_version: '3.13.5',
-      paddle_version: null,
-      paddleocr_version: null,
-      selected_device: null,
-      cuda_available: false,
-      gpu_count: 0,
-      model_cache_dir: null,
-      fallback_reason: null,
-      unavailable_reason: null,
-    });
-    apiClient.runtimeRequirements.mockResolvedValue({ items: [] });
-    apiClient.listProjects.mockResolvedValue({ items: [project] });
-    apiClient.listDocuments.mockResolvedValue({ items: [document] });
-    apiClient.getDocument.mockResolvedValue(document);
-    apiClient.listDocumentChunks.mockResolvedValue({ items: [] });
-    apiClient.listQuestionDrafts.mockResolvedValue({ items: [draft] });
-    apiClient.listWrongAnswers.mockResolvedValue({ items: [] });
+    apiClient = createApiClient();
 
     await TestBed.configureTestingModule({
       imports: [App],
@@ -188,118 +66,23 @@ describe('App', () => {
 
     expect(compiled.textContent).toContain('Wrong Answers');
   });
-
-  it('selects the last project on restart when it still exists', async () => {
-    localStorage.setItem('examPrepLastProjectId', secondProject.id);
-    apiClient.listProjects.mockResolvedValue({
-      items: [project, secondProject],
-    });
-    apiClient.listDocuments.mockImplementation(async (projectId: string) => ({
-      items: [projectId === secondProject.id ? secondDocument : document],
-    }));
-    apiClient.getDocument.mockImplementation(async (projectId: string) =>
-      projectId === secondProject.id ? secondDocument : document,
-    );
-    apiClient.listQuestionDrafts.mockResolvedValue({ items: [] });
-
-    const fixture = TestBed.createComponent(App);
-    const projects = TestBed.inject(ProjectStore);
-    fixture.detectChanges();
-
-    await vi.waitFor(() => {
-      fixture.detectChanges();
-      expect(projects.selectedProjectId()).toBe(secondProject.id);
-    });
-
-    expect(localStorage.getItem('examPrepLastProjectId')).toBe(secondProject.id);
-    expect(apiClient.listDocuments).toHaveBeenCalledWith(secondProject.id);
-  });
-
-  it('selects the first project when the saved restart project is gone', async () => {
-    localStorage.setItem('examPrepLastProjectId', 'missing-project');
-    apiClient.listProjects.mockResolvedValue({
-      items: [project, secondProject],
-    });
-
-    const fixture = TestBed.createComponent(App);
-    const projects = TestBed.inject(ProjectStore);
-    fixture.detectChanges();
-
-    await vi.waitFor(() => {
-      fixture.detectChanges();
-      expect(projects.selectedProjectId()).toBe(project.id);
-    });
-
-    expect(localStorage.getItem('examPrepLastProjectId')).toBe(project.id);
-  });
-
-  it('selects the first project while optional runtime health is still loading', async () => {
-    apiClient.ocrHealth.mockReturnValue(new Promise(() => undefined));
-
-    const fixture = TestBed.createComponent(App);
-    const projects = TestBed.inject(ProjectStore);
-    fixture.detectChanges();
-
-    await vi.waitFor(() => {
-      fixture.detectChanges();
-      expect(projects.selectedProjectId()).toBe(project.id);
-    });
-
-    expect(apiClient.listDocuments).toHaveBeenCalledWith(project.id);
-    expect(localStorage.getItem('examPrepLastProjectId')).toBe(project.id);
-  });
-
-  it('reloads backend state after runtime startup becomes ready', async () => {
-    const fixture = TestBed.createComponent(App);
-    const operations = TestBed.inject(OperationStore);
-    const workspace = TestBed.inject(WorkspaceFacade);
-    fixture.detectChanges();
-
-    await vi.waitFor(() => expect(workspace.hasLoadedBackendState()).toBe(true));
-    await vi.waitFor(() => expect(operations.status()).toBe('Project loaded'));
-
-    vi.clearAllMocks();
-    operations.status.set('Python backend runtime is required.');
-    workspace.hasLoadedBackendState.set(false);
-    fixture.detectChanges();
-
-    await vi.waitFor(() => {
-      fixture.detectChanges();
-      expect(operations.status()).toBe('Project loaded');
-    });
-    expect(operations.status()).not.toBe('Python backend runtime is required.');
-    expect(apiClient.health).toHaveBeenCalledTimes(1);
-    expect(apiClient.runtimeRequirements).toHaveBeenCalledTimes(1);
-  });
-
-  it('loads projects even when optional runtime health is temporarily unavailable', async () => {
-    apiClient.runtimeRequirements.mockRejectedValueOnce(
-      new Error('runtime requirements unavailable'),
-    );
-
-    const fixture = TestBed.createComponent(App);
-    const projects = TestBed.inject(ProjectStore);
-    const operations = TestBed.inject(OperationStore);
-    fixture.detectChanges();
-
-    await vi.waitFor(() => {
-      fixture.detectChanges();
-      expect(projects.projects()).toEqual([project]);
-      expect(projects.selectedProjectId()).toBe(project.id);
-    });
-
-    expect(operations.status()).toBe('Project loaded');
-    expect(operations.status()).not.toBe('Python backend runtime is required.');
-  });
 });
 
-function buttonByText(
-  root: ParentNode,
-  text: string,
-): HTMLButtonElement | null {
-  return (
-    Array.from(root.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes(text),
-    ) ?? null
-  );
+function createApiClient() {
+  return {
+    health: vi.fn().mockResolvedValue({
+      ...backendHealth(),
+    }),
+    llmHealth: vi.fn().mockResolvedValue(availableLlmHealth()),
+    ocrHealth: vi.fn().mockResolvedValue(availableOcrHealth()),
+    runtimeRequirements: vi.fn().mockResolvedValue({ items: [] }),
+    startRuntimeInstallation: vi.fn(),
+    getRuntimeInstallation: vi.fn(),
+    listProjects: vi.fn().mockResolvedValue({ items: [appProject] }),
+    listDocuments: vi.fn().mockResolvedValue({ items: [appDocument] }),
+    getDocument: vi.fn().mockResolvedValue(appDocument),
+    listDocumentChunks: vi.fn().mockResolvedValue({ items: [] }),
+    listQuestionDrafts: vi.fn().mockResolvedValue({ items: [approvedAppDraft] }),
+    listWrongAnswers: vi.fn().mockResolvedValue({ items: [] }),
+  };
 }

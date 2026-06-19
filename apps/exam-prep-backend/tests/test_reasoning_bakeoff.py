@@ -7,10 +7,12 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from reasoning_bakeoff import (
-    decode_model_payload,
+from bakeoff.data import (
     fixed_bakeoff_chunks,
     group_expectation,
+)
+from bakeoff.scoring import (
+    decode_model_payload,
     score_model_content,
 )
 

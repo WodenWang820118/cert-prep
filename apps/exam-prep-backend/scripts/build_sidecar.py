@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
-import json
-import os
-import subprocess
 import sys
 from pathlib import Path
-from zipfile import ZIP_DEFLATED, ZipFile
+
+from runtime_build.artifacts import (
+    RuntimeArtifactSpec,
+    run_command,
+    write_runtime_artifact,
+)
 
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
@@ -88,50 +89,26 @@ def _pyinstaller_command(lane: str) -> list[str]:
 
 
 def _run(command: list[str]) -> None:
-    subprocess.run(command, cwd=BACKEND_ROOT, check=True)
+    run_command(command, cwd=BACKEND_ROOT)
 
 
 def _write_runtime_artifact(*, target: str, version: str) -> None:
-    RUNTIME_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     zip_path = RUNTIME_OUTPUT_DIR / f"exam-prep-backend-runtime-{target}.zip"
-    with ZipFile(zip_path, "w", compression=ZIP_DEFLATED) as archive:
-        archive.write(EXE_PATH, EXE_PATH.name)
-    manifest = _manifest(zip_path=zip_path, target=target, version=version)
     manifest_path = RUNTIME_OUTPUT_DIR / "backend-runtime-manifest.json"
-    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    write_runtime_artifact(
+        RuntimeArtifactSpec(
+            kind="python_backend",
+            version=version,
+            target=target,
+            entrypoint=EXE_PATH.name,
+            source_path=EXE_PATH,
+            archive_name=EXE_PATH.name,
+            zip_path=zip_path,
+            manifest_path=manifest_path,
+        )
+    )
     print(f"Wrote backend runtime artifact to {zip_path}")
     print(f"Wrote backend runtime manifest to {manifest_path}")
-
-
-def _manifest(*, zip_path: Path, target: str, version: str) -> dict[str, object]:
-    return {
-        "schema_version": 1,
-        "kind": "python_backend",
-        "version": version,
-        "target": target,
-        "entrypoint": EXE_PATH.name,
-        "artifact": {
-            "file_name": zip_path.name,
-            "sha256": _sha256(zip_path),
-            "bytes": zip_path.stat().st_size,
-            "url": _artifact_url(zip_path.name),
-        },
-    }
-
-
-def _artifact_url(file_name: str) -> str | None:
-    base_url = os.environ.get("EXAM_PREP_RUNTIME_ASSET_BASE_URL")
-    if not base_url:
-        return None
-    return f"{base_url.rstrip('/')}/{file_name}"
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as file:
-        for chunk in iter(lambda: file.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 if __name__ == "__main__":
