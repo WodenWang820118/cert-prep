@@ -1,9 +1,14 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   appendFileSync,
   createWriteStream,
   existsSync,
   mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
@@ -17,6 +22,7 @@ const DEFAULT_OUT_ROOT = 'tmp/exam-prep-desktop/packaged-flow-smoke';
 const DEFAULT_PDF_PATH = 'pdfs/\u30101\u30112025\u5e7407\u6708N1 \u771f\u9898.pdf';
 const DEFAULT_CDP_PORT = 9491;
 const DEFAULT_OCR_PAGE_WORKERS = 1;
+const DEFAULT_OLLAMA_MODEL = 'qwen3:14b';
 const CAPTURE_LIMIT = 12_000;
 const PROCESS_SNAPSHOT_MAX_BUFFER = 64 * 1024 * 1024;
 const EXAM_PREP_PROCESS_NAMES = new Set([
@@ -33,7 +39,7 @@ const PROTECTED_NODE_COMMAND_FRAGMENTS = [
   'servicehub',
 ];
 const STREAMING_DRAFT_STATUS_PATTERN =
-  /Drafting \d+\/\d+|\d+ drafts ready|Model missing|Reasoning unavailable|Drafting needs attention/i;
+  /Drafting \d+\/\d+|[1-9]\d* drafts ready|Model missing|Reasoning unavailable|Drafting needs attention/i;
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const defaultWorkspaceRoot = resolve(scriptDir, '../../..');
@@ -45,6 +51,9 @@ interface SmokeOptions {
   outDir: string;
   cdpPort: number;
   ocrPageWorkers: number;
+  ollamaModel: string;
+  streamingDraftPageLimit?: number;
+  streamingDraftWorkers?: number;
   skipGpuSampling: boolean;
 }
 
@@ -60,6 +69,9 @@ interface SmokeMetrics {
   project_name?: string;
   approved_answer?: string;
   wrong_answer?: string;
+  llm_model: string;
+  streaming_draft_page_limit?: number;
+  streaming_draft_workers?: number;
   restart?: {
     attempted: boolean;
     verified?: boolean;
@@ -104,6 +116,26 @@ interface StreamingQuestionDraftSnapshot {
   source: 'question-drafts';
   item_count: number;
   usable_count: number;
+}
+
+interface UploadedDocumentRef {
+  apiBaseUrl: string;
+  authorization: string | null;
+  projectId: string;
+  documentId: string;
+}
+
+interface BackendRuntimeManifest {
+  kind: string;
+  version: string;
+  target: string;
+  entrypoint: string;
+  artifact: {
+    file_name: string;
+    sha256: string;
+    bytes: number;
+    url?: string | null;
+  };
 }
 
 interface ProcessRecord {
@@ -172,6 +204,7 @@ let port = DEFAULT_CDP_PORT;
 let processBaseline: ProcessSnapshot = { all: [], nodePids: new Set() };
 let streamingDraftParseStartedAt: number | null = null;
 let streamingDraftCaptureOpen = false;
+let streamingApiPollErrorCaptured = false;
 
 export function parsePackagedFlowSmokeArgs(
   args: readonly string[],
@@ -192,6 +225,17 @@ export function parsePackagedFlowSmokeArgs(
     ocrPageWorkers: Number(
       process.env.EXAM_PREP_PACKAGE_SMOKE_OCR_PAGE_WORKERS ??
         DEFAULT_OCR_PAGE_WORKERS,
+    ),
+    ollamaModel:
+      process.env.EXAM_PREP_PACKAGE_SMOKE_OLLAMA_MODEL?.trim() ||
+      DEFAULT_OLLAMA_MODEL,
+    streamingDraftPageLimit: optionalPositiveInteger(
+      process.env.EXAM_PREP_PACKAGE_SMOKE_STREAMING_DRAFT_PAGE_LIMIT,
+      'EXAM_PREP_PACKAGE_SMOKE_STREAMING_DRAFT_PAGE_LIMIT',
+    ),
+    streamingDraftWorkers: optionalPositiveInteger(
+      process.env.EXAM_PREP_PACKAGE_SMOKE_STREAMING_DRAFT_WORKERS,
+      'EXAM_PREP_PACKAGE_SMOKE_STREAMING_DRAFT_WORKERS',
     ),
     skipGpuSampling: false,
   };
@@ -217,6 +261,12 @@ export function parsePackagedFlowSmokeArgs(
       parsed.cdpPort = positiveInteger(Number(readValue(arg)), arg);
     } else if (arg === '--ocr-page-workers') {
       parsed.ocrPageWorkers = positiveInteger(Number(readValue(arg)), arg);
+    } else if (arg === '--ollama-model') {
+      parsed.ollamaModel = nonEmptyString(readValue(arg), arg);
+    } else if (arg === '--streaming-draft-page-limit') {
+      parsed.streamingDraftPageLimit = positiveInteger(Number(readValue(arg)), arg);
+    } else if (arg === '--streaming-draft-workers') {
+      parsed.streamingDraftWorkers = positiveInteger(Number(readValue(arg)), arg);
     } else if (arg === '--skip-gpu-sampling') {
       parsed.skipGpuSampling = true;
     } else {
@@ -228,6 +278,7 @@ export function parsePackagedFlowSmokeArgs(
     parsed.ocrPageWorkers,
     'ocrPageWorkers',
   );
+  parsed.ollamaModel = nonEmptyString(parsed.ollamaModel, 'ollamaModel');
   return parsed;
 }
 
@@ -406,7 +457,7 @@ export function selectNewWorkspaceNodeHelpers({
 export function classifyStreamingDraftStatus(
   text: string,
 ): 'active' | 'ready' | 'blocked' | 'none' {
-  if (/\d+ drafts ready/i.test(text)) {
+  if (/[1-9]\d* drafts ready/i.test(text)) {
     return 'ready';
   }
   if (/Model missing|Reasoning unavailable|Drafting needs attention/i.test(text)) {
@@ -671,9 +722,157 @@ function recordStreamingQuestionDraftSnapshot(payload: unknown, elapsedMs: numbe
   }
 }
 
+async function waitForUploadDocumentResponse(): Promise<UploadedDocumentRef | null> {
+  const response = await activePage()
+    .waitForResponse(
+      (candidate) =>
+        candidate.request().method().toUpperCase() === 'POST' &&
+        isDocumentsCollectionUrl(candidate.url()),
+      { timeout: 120_000 },
+    )
+    .catch((error) => {
+      metrics.observations.push(
+        `Upload document response capture timed out: ${errorMessage(error)}`,
+      );
+      return null;
+    });
+  if (!response) {
+    return null;
+  }
+
+  const payload = await response.json().catch(() => null);
+  if (!payload || typeof payload !== 'object') {
+    metrics.observations.push('Upload document response was not valid JSON.');
+    return null;
+  }
+
+  return uploadedDocumentRefFromResponse(response, payload);
+}
+
+function uploadedDocumentRefFromResponse(
+  response: Response,
+  payload: object,
+): UploadedDocumentRef | null {
+  const id = valueString(payload, 'id');
+  const projectId = valueString(payload, 'project_id');
+  if (!id || !projectId) {
+    metrics.observations.push(
+      'Upload document response did not include project_id and id.',
+    );
+    return null;
+  }
+
+  const apiBaseUrl = apiBaseUrlFromResponse(response);
+  if (!apiBaseUrl) {
+    metrics.observations.push(
+      'Upload document response URL could not be converted to an API base URL.',
+    );
+    return null;
+  }
+
+  const requestHeaders = response.request().headers();
+  return {
+    apiBaseUrl,
+    authorization: requestHeaders.authorization ?? null,
+    projectId,
+    documentId: id,
+  };
+}
+
+function isDocumentsCollectionUrl(value: string): boolean {
+  try {
+    return /\/projects\/[^/]+\/documents\/?$/.test(new URL(value).pathname);
+  } catch {
+    return false;
+  }
+}
+
+function apiBaseUrlFromResponse(response: Response): string | null {
+  try {
+    const parsed = new URL(response.url());
+    const markerIndex = parsed.pathname.indexOf('/projects/');
+    if (markerIndex < 0) {
+      return null;
+    }
+    const basePath = parsed.pathname.slice(0, markerIndex).replace(/\/+$/, '');
+    return `${parsed.origin}${basePath}`;
+  } catch {
+    return null;
+  }
+}
+
+function valueString(payload: object, key: string): string | null {
+  const value = (payload as Record<string, unknown>)[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value : null;
+}
+
+async function pollStreamingDraftApis(
+  uploadedDocument: UploadedDocumentRef,
+  elapsedMs: number,
+): Promise<void> {
+  const [jobs, drafts] = await Promise.all([
+    streamingApiGet(
+      uploadedDocument,
+      `/projects/${encodeURIComponent(uploadedDocument.projectId)}/documents/${encodeURIComponent(
+        uploadedDocument.documentId,
+      )}/draft-jobs`,
+    ),
+    streamingApiGet(
+      uploadedDocument,
+      `/projects/${encodeURIComponent(uploadedDocument.projectId)}/question-drafts`,
+    ),
+  ]);
+
+  if (jobs) {
+    recordStreamingDraftJobSnapshot(jobs, elapsedMs);
+  }
+  if (drafts) {
+    recordStreamingQuestionDraftSnapshot(drafts, elapsedMs);
+  }
+}
+
+async function streamingApiGet(
+  uploadedDocument: UploadedDocumentRef,
+  path: string,
+): Promise<unknown | null> {
+  try {
+    const headers = uploadedDocument.authorization
+      ? { Authorization: uploadedDocument.authorization }
+      : undefined;
+    const response = await activePage().request.get(
+      `${uploadedDocument.apiBaseUrl}${path}`,
+      {
+        headers,
+        timeout: 10_000,
+      },
+    );
+    if (!response.ok()) {
+      recordStreamingApiPollError(
+        `Streaming API poll ${path} returned HTTP ${response.status()}.`,
+      );
+      return null;
+    }
+    return await response.json();
+  } catch (error) {
+    recordStreamingApiPollError(
+      `Streaming API poll ${path} failed: ${errorMessage(error)}`,
+    );
+    return null;
+  }
+}
+
+function recordStreamingApiPollError(message: string): void {
+  if (streamingApiPollErrorCaptured) {
+    return;
+  }
+  streamingApiPollErrorCaptured = true;
+  metrics.errors.push(message);
+}
+
 async function observeStreamingDraftUiUntil(
   parseStart: number,
   completion: Promise<void>,
+  uploadedDocument: UploadedDocumentRef | null,
 ): Promise<void> {
   let completed = false;
   completion.then(
@@ -691,6 +890,9 @@ async function observeStreamingDraftUiUntil(
     metrics.ui_timings_ms.streaming_first_usable_question_visible !== undefined;
 
   while (!completed && (!statusCaptured || !usableCaptured)) {
+    if (uploadedDocument) {
+      await pollStreamingDraftApis(uploadedDocument, Date.now() - parseStart);
+    }
     const text = await bodyText();
     if (!statusCaptured && STREAMING_DRAFT_STATUS_PATTERN.test(text)) {
       const elapsedMs = Date.now() - parseStart;
@@ -718,6 +920,10 @@ async function observeStreamingDraftUiUntil(
       delay(1_000),
       completion.catch(() => undefined),
     ]);
+  }
+
+  if (uploadedDocument) {
+    await pollStreamingDraftApis(uploadedDocument, Date.now() - parseStart);
   }
 
   if (metrics.ui_timings_ms.streaming_draft_status_visible === undefined) {
@@ -1099,6 +1305,7 @@ async function uploadAndParsePdf(): Promise<void> {
   await activePage().locator('input[type="file"]').setInputFiles(options.pdfPath);
   await screenshot('pdf-selected-language-ja');
 
+  const uploadDocumentResponse = waitForUploadDocumentResponse();
   const uploadStart = Date.now();
   await clickButtonText('Upload PDF', { timeout: 120_000 });
   await waitText(
@@ -1107,6 +1314,16 @@ async function uploadAndParsePdf(): Promise<void> {
     'upload response / parsing visible',
   );
   metrics.ui_timings_ms.upload_to_processing_visible = Date.now() - uploadStart;
+  const uploadedDocument = await uploadDocumentResponse;
+  if (uploadedDocument) {
+    metrics.observations.push(
+      `Captured upload document reference for streaming API polling: ${uploadedDocument.documentId}.`,
+    );
+  } else {
+    metrics.observations.push(
+      'Upload document response was not captured; streaming evidence is limited to UI/API responses.',
+    );
+  }
   await screenshot('parsing-started');
 
   const parseStart = Date.now();
@@ -1147,7 +1364,11 @@ async function uploadAndParsePdf(): Promise<void> {
     ).then(() => {
       metrics.ui_timings_ms.parse_complete_visible = Date.now() - parseStart;
     });
-    await observeStreamingDraftUiUntil(parseStart, parseCompletePromise);
+    await observeStreamingDraftUiUntil(
+      parseStart,
+      parseCompletePromise,
+      uploadedDocument,
+    );
     await parseCompletePromise;
   } finally {
     streamingDraftCaptureOpen = false;
@@ -1314,11 +1535,174 @@ function startNvidiaSampling(): void {
   }
 }
 
+function preparePackagedBackendRuntimeForSmoke(): void {
+  const manifestPath = resolve(
+    options.workspaceRoot,
+    'apps/exam-prep-desktop/src-tauri/resources/backend-runtime-manifest.json',
+  );
+  if (!existsSync(manifestPath)) {
+    throw new Error(`Missing backend runtime manifest: ${manifestPath}`);
+  }
+
+  const manifest = parseBackendRuntimeManifest(readFileSync(manifestPath, 'utf8'));
+  if (manifest.kind !== 'python_backend') {
+    throw new Error(`Unsupported backend runtime kind: ${manifest.kind}`);
+  }
+
+  const artifactPath = resolveBackendRuntimeArtifact(manifest);
+  verifyBackendRuntimeArtifact(artifactPath, manifest);
+
+  const appDataRoot = packagedAppDataDir();
+  const runtimeRoot = join(appDataRoot, 'runtimes');
+  const runtimeDir = join(runtimeRoot, 'python_backend');
+  const extractDir = join(options.outDir, 'backend-runtime-extract');
+
+  rmSync(extractDir, { recursive: true, force: true });
+  mkdirSync(extractDir, { recursive: true });
+  expandArchive(artifactPath, extractDir);
+
+  const entrypoint = join(extractDir, manifest.entrypoint);
+  if (!existsSync(entrypoint)) {
+    throw new Error(
+      `Backend runtime archive did not contain entrypoint: ${manifest.entrypoint}`,
+    );
+  }
+
+  rmSync(runtimeDir, { recursive: true, force: true });
+  mkdirSync(runtimeRoot, { recursive: true });
+  renameSync(extractDir, runtimeDir);
+  writeFileSync(
+    join(runtimeDir, 'runtime-manifest.json'),
+    `${JSON.stringify(manifest, null, 2)}\n`,
+  );
+  metrics.observations.push(
+    `Packaged smoke synced backend runtime ${manifest.artifact.sha256.slice(
+      0,
+      12,
+    )} into app data.`,
+  );
+}
+
+function parseBackendRuntimeManifest(raw: string): BackendRuntimeManifest {
+  const value = JSON.parse(raw) as Partial<BackendRuntimeManifest>;
+  if (
+    typeof value.kind !== 'string' ||
+    typeof value.version !== 'string' ||
+    typeof value.target !== 'string' ||
+    typeof value.entrypoint !== 'string' ||
+    typeof value.artifact !== 'object' ||
+    value.artifact === null ||
+    typeof value.artifact.file_name !== 'string' ||
+    typeof value.artifact.sha256 !== 'string' ||
+    typeof value.artifact.bytes !== 'number'
+  ) {
+    throw new Error('Backend runtime manifest is missing required fields.');
+  }
+  return value as BackendRuntimeManifest;
+}
+
+function resolveBackendRuntimeArtifact(manifest: BackendRuntimeManifest): string {
+  if (manifest.artifact.url?.startsWith('file://')) {
+    return fileURLToPath(manifest.artifact.url);
+  }
+
+  return resolve(
+    options.workspaceRoot,
+    'apps/exam-prep-backend/dist/backend-runtime',
+    manifest.artifact.file_name,
+  );
+}
+
+function verifyBackendRuntimeArtifact(
+  artifactPath: string,
+  manifest: BackendRuntimeManifest,
+): void {
+  if (!existsSync(artifactPath)) {
+    throw new Error(`Missing backend runtime artifact: ${artifactPath}`);
+  }
+
+  const size = statSync(artifactPath).size;
+  if (size !== manifest.artifact.bytes) {
+    throw new Error(
+      `Backend runtime artifact size mismatch: expected ${manifest.artifact.bytes}, got ${size}.`,
+    );
+  }
+
+  const actualHash = sha256File(artifactPath);
+  if (actualHash.toLowerCase() !== manifest.artifact.sha256.toLowerCase()) {
+    throw new Error(
+      `Backend runtime artifact sha256 mismatch: expected ${manifest.artifact.sha256}, got ${actualHash}.`,
+    );
+  }
+}
+
+function packagedAppDataDir(): string {
+  const override = process.env.EXAM_PREP_PACKAGE_SMOKE_APP_DATA_DIR?.trim();
+  if (override) {
+    return resolve(override);
+  }
+
+  const appData = process.env.APPDATA?.trim();
+  if (!appData) {
+    throw new Error('APPDATA is required to prepare packaged smoke runtime.');
+  }
+  return join(appData, 'dev.certprep.exam-prep');
+}
+
+function expandArchive(archivePath: string, destinationPath: string): void {
+  const result = spawnSync(
+    resolveWindowsPowerShellExecutable(),
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      `Expand-Archive -LiteralPath ${powerShellString(
+        archivePath,
+      )} -DestinationPath ${powerShellString(destinationPath)} -Force`,
+    ],
+    {
+      cwd: options.workspaceRoot,
+      encoding: 'utf8',
+      windowsHide: true,
+      maxBuffer: PROCESS_SNAPSHOT_MAX_BUFFER,
+    },
+  );
+  if (result.status !== 0) {
+    throw new Error(
+      `Failed to extract backend runtime artifact: ${result.stderr || result.stdout}`,
+    );
+  }
+}
+
+function powerShellString(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+function sha256File(filePath: string): string {
+  return createHash('sha256').update(readFileSync(filePath)).digest('hex');
+}
+
 async function launchAppAndConnect(): Promise<void> {
   const env = {
     ...process.env,
     WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
+    EXAM_PREP_DESKTOP_DATA_DIR: packagedAppDataDir(),
     EXAM_PREP_OCR_PAGE_WORKERS: String(options.ocrPageWorkers),
+    EXAM_PREP_OLLAMA_MODEL: options.ollamaModel,
+    ...(options.streamingDraftPageLimit
+      ? {
+          EXAM_PREP_STREAMING_DRAFT_GENERATION_PAGE_LIMIT: String(
+            options.streamingDraftPageLimit,
+          ),
+        }
+      : {}),
+    ...(options.streamingDraftWorkers
+      ? {
+          EXAM_PREP_STREAMING_DRAFT_WORKERS: String(
+            options.streamingDraftWorkers,
+          ),
+        }
+      : {}),
   };
   const child = spawn(options.exePath, [], {
     cwd: options.workspaceRoot,
@@ -1375,6 +1759,7 @@ async function runFlow(): Promise<void> {
   log(`artifact dir ${options.outDir}`);
   processBaseline = processSnapshot();
   startNvidiaSampling();
+  preparePackagedBackendRuntimeForSmoke();
   await launchAppAndConnect();
   await installPythonRuntimeIfNeeded();
   await installOcrRuntimeIfNeeded();
@@ -1458,6 +1843,24 @@ function positiveInteger(value: number, name: string): number {
     throw new Error(`${name} must be a positive integer.`);
   }
   return value;
+}
+
+function optionalPositiveInteger(
+  value: string | undefined,
+  name: string,
+): number | undefined {
+  if (value === undefined || value.trim().length === 0) {
+    return undefined;
+  }
+  return positiveInteger(Number(value), name);
+}
+
+function nonEmptyString(value: string, name: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new Error(`${name} must not be empty.`);
+  }
+  return trimmed;
 }
 
 function responseItems(payload: unknown): unknown[] {
@@ -1554,6 +1957,9 @@ async function main(): Promise<void> {
     ui_timings_ms: {},
     observations: [],
     errors: [],
+    llm_model: options.ollamaModel,
+    streaming_draft_page_limit: options.streamingDraftPageLimit,
+    streaming_draft_workers: options.streamingDraftWorkers,
     streaming_drafts: {
       job_snapshots: [],
       draft_snapshots: [],

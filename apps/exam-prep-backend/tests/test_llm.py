@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from pathlib import Path
 from threading import Event
 
 import pytest
@@ -8,6 +9,8 @@ from exam_prep_backend.app import create_app
 from exam_prep_backend.config import DEFAULT_OLLAMA_MODEL, Settings
 from exam_prep_backend.domains.mock_exams.models import DraftSuggestion, SourceChunk
 from exam_prep_backend.domains.mock_exams.ports import ModelPullProgress, ProviderHealth
+from exam_prep_backend.domains.mock_exams.ollama_transport import OllamaProvider
+from exam_prep_backend.domains.mock_exams import ollama_transport
 from exam_prep_backend.domains.mock_exams.provider import (
     MAX_PROMPT_SOURCE_CHARS,
     _draft_suggestion_from_item,
@@ -192,6 +195,88 @@ def test_llm_health_does_not_pull_missing_ollama_model(tmp_path) -> None:
     assert provider.pull_calls == 0
 
 
+def test_ollama_prewarm_only_chats_when_configured_model_exists(monkeypatch) -> None:
+    fake_client = RecordingOllamaClient(models=["qwen3:14b"])
+    monkeypatch.setattr(ollama_transport, "resolve_ollama_executable", lambda: Path("ollama"))
+    provider = OllamaProvider(
+        host="http://127.0.0.1:11434",
+        model="qwen3:14b",
+        timeout_seconds=1,
+    )
+    provider._client = fake_client
+
+    provider.prewarm()
+
+    assert fake_client.chat_calls == [
+        {
+            "model": "qwen3:14b",
+            "messages": [{"role": "user", "content": "Reply with ok."}],
+            "options": {"temperature": 0, "num_ctx": 512, "num_predict": 1},
+            "think": False,
+            "keep_alive": "5m",
+        }
+    ]
+    assert fake_client.pull_calls == 0
+
+
+def test_ollama_prewarm_skips_missing_model_without_pull(monkeypatch) -> None:
+    fake_client = RecordingOllamaClient(models=[])
+    monkeypatch.setattr(ollama_transport, "resolve_ollama_executable", lambda: Path("ollama"))
+    provider = OllamaProvider(
+        host="http://127.0.0.1:11434",
+        model="qwen3:14b",
+        timeout_seconds=1,
+    )
+    provider._client = fake_client
+
+    provider.prewarm()
+
+    assert fake_client.chat_calls == []
+    assert fake_client.pull_calls == 0
+
+
+def test_ollama_fast_first_draft_maps_compact_json_to_candidate_choice(
+    monkeypatch,
+) -> None:
+    fake_client = RecordingOllamaClient(
+        models=["qwen3:14b"],
+        chat_content='{"answer":"2","rationale":"Qwen picked the closest reading.","confidence":"high"}',
+    )
+    monkeypatch.setattr(ollama_transport, "resolve_ollama_executable", lambda: Path("ollama"))
+    provider = OllamaProvider(
+        host="http://127.0.0.1:11434",
+        model="qwen3:14b",
+        timeout_seconds=1,
+    )
+    provider._client = fake_client
+    chunk = SourceChunk(
+        id="chunk-2",
+        page_number=2,
+        text="1 余暇の楽しみ方はいろいろある。 1 ようか 2よか 3よが 4 ようが",
+        source_excerpt="1 余暇の楽しみ方はいろいろある。",
+    )
+    candidate = DraftSuggestion(
+        chunk_id=chunk.id,
+        question="余暇の楽しみ方はいろいろある。",
+        choices=["1 ようか", "2 よか", "3 よが", "4 ようが"],
+        answer="",
+        answer_key_source="manual",
+        rationale="",
+        citation_page=2,
+        source_excerpt="1 余暇の楽しみ方はいろいろある。",
+    )
+
+    suggestion = provider.generate_fast_first_draft(chunk, candidate)
+
+    assert suggestion is not None
+    assert suggestion.answer == "2 よか"
+    assert suggestion.answer_key_source.value == "ai_inferred"
+    assert suggestion.rationale == "Qwen picked the closest reading."
+    assert suggestion.confidence == 0.8
+    assert fake_client.chat_calls[0]["format"] == "json"
+    assert fake_client.pull_calls == 0
+
+
 def test_model_download_starts_only_from_explicit_post(tmp_path) -> None:
     provider = RecordingDownloadProvider(available=False, detail="model not found")
     client = TestClient(
@@ -341,6 +426,25 @@ class RecordingDownloadProvider:
         progress(ModelPullProgress(status="pulling manifest"))
         progress(ModelPullProgress(status="downloading", completed=50, total=100))
         progress(ModelPullProgress(status="success", completed=100, total=100))
+
+
+class RecordingOllamaClient:
+    def __init__(self, *, models: list[str], chat_content: str = "ok") -> None:
+        self.models = models
+        self.chat_content = chat_content
+        self.chat_calls: list[dict] = []
+        self.pull_calls = 0
+
+    def list(self) -> dict:
+        return {"models": [{"model": model} for model in self.models]}
+
+    def chat(self, **kwargs) -> dict:
+        self.chat_calls.append(kwargs)
+        return {"message": {"content": self.chat_content}}
+
+    def pull(self, *_args, **_kwargs):
+        self.pull_calls += 1
+        raise AssertionError("prewarm must not pull models")
 
 
 class BlockingDownloadProvider(RecordingDownloadProvider):

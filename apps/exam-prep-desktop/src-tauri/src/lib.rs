@@ -7,7 +7,7 @@ mod manifests;
 mod runtime_installation;
 mod windows_process;
 
-use std::fs;
+use std::{fs, path::PathBuf};
 use tauri::Manager;
 
 pub use backend::{build_backend_config, BackendConfig, BackendState, DesktopRuntimeStatus};
@@ -22,10 +22,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
-            let data_dir = app
-                .path()
-                .app_data_dir()
-                .map_err(|error| format!("failed to resolve app data directory: {error}"))?;
+            let data_dir = resolved_app_data_dir(app)?;
             fs::create_dir_all(&data_dir)
                 .map_err(|error| format!("failed to create app data directory: {error}"))?;
 
@@ -60,4 +57,17 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("failed to run exam prep desktop app");
+}
+
+fn resolved_app_data_dir(app: &tauri::App) -> Result<PathBuf, String> {
+    if let Ok(value) = std::env::var("EXAM_PREP_DESKTOP_DATA_DIR") {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            return Ok(PathBuf::from(trimmed));
+        }
+    }
+
+    app.path()
+        .app_data_dir()
+        .map_err(|error| format!("failed to resolve app data directory: {error}"))
 }

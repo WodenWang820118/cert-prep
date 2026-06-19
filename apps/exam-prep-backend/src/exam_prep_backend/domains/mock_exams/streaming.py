@@ -1,25 +1,33 @@
 from __future__ import annotations
 
-from queue import Queue
-from threading import Thread
+from threading import BoundedSemaphore, Thread
 
 from exam_prep_backend.config import Settings
 from exam_prep_backend.database import Database
 from exam_prep_backend.domains.mock_exams import draft_jobs
-from exam_prep_backend.domains.mock_exams.models import DraftGenerationStrategy, SourceChunk
+from exam_prep_backend.domains.mock_exams import repository as drafts_repository
+from exam_prep_backend.domains.mock_exams.deterministic_parser import (
+    extract_jlpt_question_blocks,
+    is_exam_source_chunk,
+)
+from exam_prep_backend.domains.mock_exams.models import (
+    DraftGenerationStrategy,
+    DraftSuggestion,
+    SourceChunk,
+)
 from exam_prep_backend.domains.mock_exams.normalization import as_ai_reasoning_draft
 from exam_prep_backend.domains.mock_exams.ports import DraftGenerationProvider
 from exam_prep_backend.domains.mock_exams.provider import generate_drafts_for_strategy
-from exam_prep_backend.domains.mock_exams import repository as drafts_repository
 from exam_prep_backend.domains.source_documents import repository as documents_repository
 from exam_prep_backend.errors import NotFoundError, ProviderUnavailableError
 
 
-JobItem = tuple[Database, str, int] | None
+STREAMING_FAST_FIRST_NUM_CTX = 2048
+STREAMING_FAST_FIRST_NUM_PREDICT = 512
 
 
 class StreamingDraftGenerationManager:
-    """Runs page-ready draft generation from a SQLite-backed local job queue."""
+    """Runs page-ready draft generation from SQLite-backed local jobs."""
 
     def __init__(
         self,
@@ -31,17 +39,11 @@ class StreamingDraftGenerationManager:
         self._settings = settings
         self._provider = provider
         self._async_jobs = async_jobs
-        self._queue: Queue[JobItem] = Queue()
-        self._workers: list[Thread] = []
+        self._job_slots = BoundedSemaphore(settings.streaming_draft_workers)
+        self._job_threads: list[Thread] = []
+        self._prewarm_thread: Thread | None = None
         if async_jobs and settings.streaming_draft_generation_on_upload:
-            for index in range(settings.streaming_draft_workers):
-                worker = Thread(
-                    target=self._worker_loop,
-                    name=f"streaming-draft-worker-{index + 1}",
-                    daemon=True,
-                )
-                worker.start()
-                self._workers.append(worker)
+            self._start_provider_prewarm()
 
     def enqueue_page(
         self,
@@ -62,6 +64,12 @@ class StreamingDraftGenerationManager:
             return None
 
         strategy = self._settings.streaming_draft_generation_strategy
+        source_chunk = _source_chunk_from_record(chunk)
+        if not _should_enqueue_streaming_chunk(
+            source_chunk, DraftGenerationStrategy(strategy)
+        ):
+            return None
+
         job = draft_jobs.enqueue_chunk_job(
             db,
             project_id=project_id,
@@ -77,17 +85,18 @@ class StreamingDraftGenerationManager:
 
         page_limit = self._settings.streaming_draft_generation_page_limit
         if self._async_jobs:
-            self._queue.put((db, job["id"], page_limit))
+            self._start_job_thread(db, job["id"], page_limit)
         else:
             self._run_job(db, job["id"], page_limit)
         return job
 
     def close(self) -> None:
-        for _worker in self._workers:
-            self._queue.put(None)
-        for worker in self._workers:
+        for worker in self._job_threads:
             worker.join(timeout=1)
-        self._workers.clear()
+        self._job_threads.clear()
+        if self._prewarm_thread is not None:
+            self._prewarm_thread.join(timeout=1)
+            self._prewarm_thread = None
 
     def recover_jobs(self, db: Database) -> int:
         if not self._settings.streaming_draft_generation_on_upload:
@@ -116,17 +125,6 @@ class StreamingDraftGenerationManager:
         self._schedule_jobs(db, jobs)
         return draft_jobs.list_document_jobs(db, project_id, document_id)
 
-    def _worker_loop(self) -> None:
-        while True:
-            item = self._queue.get()
-            try:
-                if item is None:
-                    return
-                db, job_id, limit = item
-                self._run_job(db, job_id, limit)
-            finally:
-                self._queue.task_done()
-
     def _schedule_jobs(self, db: Database, jobs: list[dict]) -> int:
         page_limit = self._settings.streaming_draft_generation_page_limit
         scheduled_count = 0
@@ -135,7 +133,7 @@ class StreamingDraftGenerationManager:
                 continue
             scheduled_count += 1
             if self._async_jobs:
-                self._queue.put((db, job["id"], page_limit))
+                self._start_job_thread(db, job["id"], page_limit)
             else:
                 self._run_job(db, job["id"], page_limit)
         return scheduled_count
@@ -155,9 +153,9 @@ class StreamingDraftGenerationManager:
             source_chunk = _source_chunk_from_record(chunk)
             suggestions = [
                 as_ai_reasoning_draft(suggestion)
-                for suggestion in generate_drafts_for_strategy(
+                for suggestion in _generate_streaming_fast_first_drafts(
                     self._provider,
-                    [source_chunk],
+                    source_chunk,
                     limit,
                     DraftGenerationStrategy(job["strategy"]),
                 )
@@ -188,6 +186,111 @@ class StreamingDraftGenerationManager:
 
         draft_jobs.mark_skipped_provider_unavailable(db, job["id"], detail=detail)
         return True
+
+    def _start_job_thread(self, db: Database, job_id: str, limit: int) -> None:
+        self._job_threads = [thread for thread in self._job_threads if thread.is_alive()]
+        worker = Thread(
+            target=self._run_job_with_slot,
+            args=(db, job_id, limit),
+            name=f"streaming-draft-job-{job_id[:8]}",
+            daemon=True,
+        )
+        worker.start()
+        self._job_threads.append(worker)
+
+    def _run_job_with_slot(self, db: Database, job_id: str, limit: int) -> None:
+        with self._job_slots:
+            self._run_job(db, job_id, limit)
+
+    def _start_provider_prewarm(self) -> None:
+        prewarm = getattr(self._provider, "prewarm", None)
+        if not callable(prewarm):
+            return
+
+        self._prewarm_thread = Thread(
+            target=self._prewarm_provider,
+            name="streaming-draft-prewarm",
+            daemon=True,
+        )
+        self._prewarm_thread.start()
+
+    def _prewarm_provider(self) -> None:
+        prewarm = getattr(self._provider, "prewarm", None)
+        if not callable(prewarm):
+            return
+        try:
+            prewarm()
+        except Exception:
+            return
+
+
+def _generate_streaming_fast_first_drafts(
+    provider: DraftGenerationProvider,
+    source_chunk: SourceChunk,
+    limit: int,
+    strategy: DraftGenerationStrategy,
+) -> list[DraftSuggestion]:
+    first_limit = min(limit, 1)
+    if first_limit <= 0:
+        return []
+    if strategy == DraftGenerationStrategy.HYBRID_REASONING:
+        deterministic = extract_jlpt_question_blocks([source_chunk], 1)
+        fast_first = getattr(provider, "generate_fast_first_draft", None)
+        if deterministic and callable(fast_first):
+            suggestion = fast_first(source_chunk, deterministic[0])
+            if suggestion is not None:
+                return [suggestion]
+
+        reasoning = getattr(provider, "generate_reasoning_drafts", None)
+        if callable(reasoning):
+            prompt_chunk = _compact_reasoning_chunk(source_chunk)
+            suggestions = reasoning(
+                [prompt_chunk],
+                first_limit,
+                num_ctx=STREAMING_FAST_FIRST_NUM_CTX,
+                num_predict=STREAMING_FAST_FIRST_NUM_PREDICT,
+            )
+            if suggestions:
+                return suggestions
+
+    return generate_drafts_for_strategy(provider, [source_chunk], first_limit, strategy)
+
+
+def _should_enqueue_streaming_chunk(
+    source_chunk: SourceChunk,
+    strategy: DraftGenerationStrategy,
+) -> bool:
+    if strategy == DraftGenerationStrategy.HYBRID_REASONING:
+        return bool(extract_jlpt_question_blocks([source_chunk], 1))
+    return is_exam_source_chunk(source_chunk)
+
+
+def _compact_reasoning_chunk(source_chunk: SourceChunk) -> SourceChunk:
+    deterministic = extract_jlpt_question_blocks([source_chunk], 1)
+    if not deterministic:
+        return source_chunk
+
+    first = deterministic[0]
+    choices = "\n".join(f"- {choice}" for choice in first.choices)
+    text = (
+        "JLPT question candidate for qwen answer/rationale completion.\n"
+        f"Question: {first.question}\n"
+        f"Choices:\n{choices}\n"
+        f"Source excerpt: {first.source_excerpt}\n"
+        "Infer exactly one correct answer from the visible stem and choices."
+    )
+    return SourceChunk(
+        id=source_chunk.id,
+        page_number=source_chunk.page_number,
+        chunk_index=source_chunk.chunk_index,
+        text=text,
+        raw_text=text,
+        source_excerpt=first.source_excerpt,
+        line_start=source_chunk.line_start,
+        line_end=source_chunk.line_end,
+        line_count=source_chunk.line_count,
+        content_profile=source_chunk.content_profile,
+    )
 
 
 def _source_chunk_from_record(chunk: dict) -> SourceChunk:

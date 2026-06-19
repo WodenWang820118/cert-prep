@@ -17,6 +17,12 @@ from exam_prep_backend.errors import InvalidPdfError, ProviderUnavailableError
 from exam_prep_backend.routers import documents as documents_router
 
 
+JLPT_SINGLE_ITEM_OCR_TEXT = (
+    "問題1 の言葉の読み方として最もよいのを、1・2・3・4から一つ選びなさい。 "
+    "1 余暇の楽しみ方はいろいろある。 1 ようか 2よか 3よが 4 ようが"
+)
+
+
 def test_pdf_upload_hashes_stores_extracts_and_chunks_by_page(
     client: TestClient, auth_headers, tmp_path: Path
 ) -> None:
@@ -568,7 +574,7 @@ def test_streaming_draft_job_creates_draft_before_document_is_ready(
     tmp_path: Path,
     auth_headers,
 ) -> None:
-    ocr_provider = BlockingFirstPageOcrProvider()
+    ocr_provider = BlockingExamFirstPageOcrProvider()
     llm_provider = MockExamProvider()
     client = TestClient(
         create_app(
@@ -628,6 +634,132 @@ def test_streaming_draft_job_creates_draft_before_document_is_ready(
     assert ready["chunks_count"] == 2
 
 
+def test_streaming_draft_generation_skips_notice_pages(
+    tmp_path: Path,
+    auth_headers,
+) -> None:
+    client = TestClient(
+        create_app(
+            settings=Settings(
+                data_dir=tmp_path,
+                api_token="test-token",
+                streaming_draft_generation_on_upload=True,
+            ),
+            llm_provider=FailingExamProvider(),
+            ocr_provider=NoticePageOcrProvider(),
+            document_processing_async_jobs=False,
+            streaming_draft_generation_async_jobs=False,
+        )
+    )
+    project_id = _create_project(client, auth_headers)
+
+    response = client.post(
+        f"/projects/{project_id}/documents",
+        headers=auth_headers,
+        files={"file": ("notice.pdf", minimal_pdf(""), "application/pdf")},
+    )
+
+    assert response.status_code == 201
+    document = response.json()
+    assert document["status"] == "ready"
+    assert document["chunks_count"] == 1
+
+    jobs = client.get(
+        f"/projects/{project_id}/documents/{document['id']}/draft-jobs",
+        headers=auth_headers,
+    )
+    assert jobs.status_code == 200
+    assert jobs.json()["items"] == []
+
+    drafts = client.get(f"/projects/{project_id}/question-drafts", headers=auth_headers)
+    assert drafts.status_code == 200
+    assert drafts.json()["items"] == []
+
+
+def test_streaming_draft_generation_uses_fast_first_completion_before_reasoning(
+    tmp_path: Path,
+    auth_headers,
+) -> None:
+    llm_provider = FastFirstCompletionExamProvider()
+    client = TestClient(
+        create_app(
+            settings=Settings(
+                data_dir=tmp_path,
+                api_token="test-token",
+                streaming_draft_generation_on_upload=True,
+                streaming_draft_generation_page_limit=3,
+            ),
+            llm_provider=llm_provider,
+            ocr_provider=JlptBlockOcrProvider(),
+            document_processing_async_jobs=False,
+            streaming_draft_generation_async_jobs=False,
+        )
+    )
+    project_id = _create_project(client, auth_headers)
+
+    response = client.post(
+        f"/projects/{project_id}/documents",
+        headers=auth_headers,
+        files={"file": ("scan.pdf", minimal_pdf(""), "application/pdf")},
+    )
+
+    assert response.status_code == 201
+    document = response.json()
+    assert document["status"] == "ready"
+    assert llm_provider.fast_first_calls == [
+        {
+            "page_numbers": [1],
+            "question": "余暇の楽しみ方はいろいろある。",
+        }
+    ]
+    assert llm_provider.reasoning_calls == []
+    jobs = client.get(
+        f"/projects/{project_id}/documents/{document['id']}/draft-jobs",
+        headers=auth_headers,
+    ).json()["items"]
+    assert jobs[0]["status"] == "succeeded"
+    assert jobs[0]["generated_count"] == 1
+
+
+def test_streaming_draft_async_job_thread_creates_draft(
+    tmp_path: Path,
+    auth_headers,
+) -> None:
+    with TestClient(
+        create_app(
+            settings=Settings(
+                data_dir=tmp_path,
+                api_token="test-token",
+                streaming_draft_generation_on_upload=True,
+                streaming_draft_generation_page_limit=1,
+            ),
+            llm_provider=MockExamProvider(),
+            ocr_provider=JlptBlockOcrProvider(),
+            document_processing_async_jobs=False,
+        )
+    ) as client:
+        project_id = _create_project(client, auth_headers)
+
+        response = client.post(
+            f"/projects/{project_id}/documents",
+            headers=auth_headers,
+            files={"file": ("scan.pdf", minimal_pdf(""), "application/pdf")},
+        )
+
+        assert response.status_code == 201
+        document = response.json()
+        assert document["status"] == "ready"
+
+        drafts = _wait_for_question_drafts(client, auth_headers, project_id, count=1)
+        assert drafts[0]["citation_page"] == 1
+        jobs = client.get(
+            f"/projects/{project_id}/documents/{document['id']}/draft-jobs",
+            headers=auth_headers,
+        ).json()["items"]
+        assert jobs[0]["status"] == "succeeded"
+        assert jobs[0]["generated_count"] == 1
+
+
 def test_streaming_draft_job_records_missing_model_without_blocking_parse(
     tmp_path: Path,
     auth_headers,
@@ -640,7 +772,7 @@ def test_streaming_draft_job_records_missing_model_without_blocking_parse(
                 streaming_draft_generation_on_upload=True,
             ),
             llm_provider=MissingModelExamProvider(),
-            ocr_provider=MockPaddleOcrProvider(),
+            ocr_provider=JlptBlockOcrProvider(),
             document_processing_async_jobs=False,
             streaming_draft_generation_async_jobs=False,
         )
@@ -683,7 +815,7 @@ def test_streaming_draft_retry_requeues_missing_model_job_after_qwen_available(
                 streaming_draft_generation_on_upload=True,
             ),
             llm_provider=MissingModelExamProvider(),
-            ocr_provider=MockPaddleOcrProvider(),
+            ocr_provider=JlptBlockOcrProvider(),
             document_processing_async_jobs=False,
             streaming_draft_generation_async_jobs=False,
         )
@@ -711,7 +843,7 @@ def test_streaming_draft_retry_requeues_missing_model_job_after_qwen_available(
                 streaming_draft_generation_page_limit=1,
             ),
             llm_provider=MockExamProvider(),
-            ocr_provider=MockPaddleOcrProvider(),
+            ocr_provider=JlptBlockOcrProvider(),
             document_processing_async_jobs=False,
             streaming_draft_generation_async_jobs=False,
         )
@@ -761,7 +893,7 @@ def test_streaming_draft_recovery_resumes_interrupted_running_job(
     initial_client = TestClient(
         create_app(
             settings=Settings(data_dir=tmp_path, api_token="test-token"),
-            ocr_provider=MockPaddleOcrProvider(),
+            ocr_provider=JlptBlockOcrProvider(),
             document_processing_async_jobs=False,
         )
     )
@@ -802,7 +934,7 @@ def test_streaming_draft_recovery_resumes_interrupted_running_job(
                 streaming_draft_generation_page_limit=1,
             ),
             llm_provider=MockExamProvider(),
-            ocr_provider=MockPaddleOcrProvider(),
+            ocr_provider=JlptBlockOcrProvider(),
             document_processing_async_jobs=False,
             streaming_draft_generation_async_jobs=False,
         )
@@ -965,6 +1097,28 @@ class MockExamProvider:
         ]
         return suggestions[:limit]
 
+    def generate_fast_first_draft(
+        self,
+        source_chunk: SourceChunk,
+        candidate: DraftSuggestion,
+    ) -> DraftSuggestion | None:
+        return DraftSuggestion(
+            chunk_id=source_chunk.id,
+            question=candidate.question,
+            choices=candidate.choices,
+            answer=candidate.choices[0] if candidate.choices else "",
+            answer_key_source="ai_inferred",
+            rationale="Test provider inferred the first visible choice.",
+            citation_page=source_chunk.page_number,
+            source_excerpt=candidate.source_excerpt,
+            confidence=0.8,
+            source_order=candidate.source_order,
+            source_question_number=candidate.source_question_number,
+            item_kind=candidate.item_kind,
+            group_key=candidate.group_key,
+            group_prompt=candidate.group_prompt,
+        )
+
 
 class MissingModelExamProvider(MockExamProvider):
     model = "qwen3:14b"
@@ -982,6 +1136,58 @@ class MissingModelExamProvider(MockExamProvider):
         self, chunks: list[SourceChunk] | tuple[SourceChunk, ...], limit: int
     ) -> list[DraftSuggestion]:
         raise AssertionError("streaming worker should not call a missing model")
+
+
+class FailingExamProvider(MockExamProvider):
+    def generate_drafts(
+        self, chunks: list[SourceChunk] | tuple[SourceChunk, ...], limit: int
+    ) -> list[DraftSuggestion]:
+        raise AssertionError("notice pages should not enqueue streaming draft jobs")
+
+
+class FastFirstCompletionExamProvider(MockExamProvider):
+    provider = "ollama"
+    model = "qwen3:8b"
+
+    def __init__(self) -> None:
+        self.fast_first_calls: list[dict] = []
+        self.reasoning_calls: list[dict] = []
+
+    def generate_fast_first_draft(
+        self,
+        source_chunk: SourceChunk,
+        candidate: DraftSuggestion,
+    ) -> DraftSuggestion | None:
+        self.fast_first_calls.append(
+            {
+                "page_numbers": [source_chunk.page_number],
+                "question": candidate.question,
+            }
+        )
+        return super().generate_fast_first_draft(source_chunk, candidate)
+
+    def generate_reasoning_drafts(
+        self,
+        chunks: list[SourceChunk] | tuple[SourceChunk, ...],
+        limit: int,
+        *,
+        num_ctx: int,
+        num_predict: int,
+    ) -> list[DraftSuggestion]:
+        self.reasoning_calls.append(
+            {
+                "page_numbers": [chunk.page_number for chunk in chunks],
+                "limit": limit,
+                "num_ctx": num_ctx,
+                "num_predict": num_predict,
+            }
+        )
+        raise AssertionError("fast-first completion should run before reasoning fallback")
+
+    def generate_drafts(
+        self, chunks: list[SourceChunk] | tuple[SourceChunk, ...], limit: int
+    ) -> list[DraftSuggestion]:
+        raise AssertionError("streaming hybrid path should use fast-first reasoning")
 
 
 class MockPaddleOcrProvider:
@@ -1012,6 +1218,19 @@ class MockPaddleOcrProvider:
         self.ocr_page_numbers.append(page_number)
         return OCRPageResult(
             text=f"JLPT question {page_number}: choose the correct word. A correct B wrong",
+            extraction_method="paddle_ocr_gpu",
+            device="gpu:0",
+            fallback_reason=None,
+            duration_ms=123,
+        )
+
+
+class JlptBlockOcrProvider(MockPaddleOcrProvider):
+    def extract_page_text(self, image_png: bytes, page_number: int) -> OCRPageResult:
+        assert image_png.startswith(b"\x89PNG")
+        self.ocr_page_numbers.append(page_number)
+        return OCRPageResult(
+            text=JLPT_SINGLE_ITEM_OCR_TEXT,
             extraction_method="paddle_ocr_gpu",
             device="gpu:0",
             fallback_reason=None,
@@ -1117,6 +1336,34 @@ class BlockingFirstPageOcrProvider(MockPaddleOcrProvider):
             device="gpu:0",
             fallback_reason=None,
             duration_ms=page_number * 10,
+        )
+
+
+class BlockingExamFirstPageOcrProvider(BlockingFirstPageOcrProvider):
+    def extract_page_text(self, image_png: bytes, page_number: int) -> OCRPageResult:
+        result = super().extract_page_text(image_png, page_number)
+        return OCRPageResult(
+            text=JLPT_SINGLE_ITEM_OCR_TEXT,
+            extraction_method=result.extraction_method,
+            device=result.device,
+            fallback_reason=result.fallback_reason,
+            duration_ms=result.duration_ms,
+        )
+
+
+class NoticePageOcrProvider(MockPaddleOcrProvider):
+    def extract_page_text(self, image_png: bytes, page_number: int) -> OCRPageResult:
+        assert image_png.startswith(b"\x89PNG")
+        self.ocr_page_numbers.append(page_number)
+        return OCRPageResult(
+            text=(
+                "This test paper has multiple versions. The questions are the same, "
+                "but the fonts and layouts differ."
+            ),
+            extraction_method="paddle_ocr_gpu",
+            device="gpu:0",
+            fallback_reason=None,
+            duration_ms=12,
         )
 
 

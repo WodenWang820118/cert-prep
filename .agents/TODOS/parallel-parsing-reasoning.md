@@ -20,12 +20,13 @@
 - [ ] 執行 live reasoning-model bakeoff
   - Reason: harness 已完成，但本機 Ollama 當下不可連線，無法比較 `qwen3:14b`、`deepseek-r1:14b`、`gemma4:12b`。
   - Verify: 固定 JLPT pages/chunks，記錄 JSON validity、citation validity、group detection、latency、manual-review burden；AI output 仍只進 draft，不自動 approve。
-- [ ] streaming parse-to-qwen research/prototype
+- [x] streaming parse-to-qwen research/prototype
   - Reason: user wants to explore parsing one page/chunk and immediately sending it to qwen for formal draft-question generation while the remaining PDF pages continue parsing.
   - Verify: `.agents/SPECS/streaming-parse-to-qwen.md` defines the local queue/outbox design, no-Kafka-first decision, draft-only safety rules, and prototype validation plan; close only after a prototype has artifact-backed timing and draft-quality evidence.
-  - 2026-06-19 progress: implemented the first SQLite-backed streaming draft job prototype with bounded worker, draft-only append persistence, missing-model/provider skip states, frontend draft polling, and generated client updates. Keep open until packaged timing and live qwen draft-quality evidence exist.
-  - 2026-06-19 follow-up: added draft-job status UX, resilient polling while jobs are active, packaged smoke streaming snapshots/timings, and draft-only safety for the legacy auto-generate upload path. Keep open until a live packaged qwen run records usable streamed questions and review-quality evidence.
-  - 2026-06-19 recovery/retry: backend now recovers interrupted pending/running streaming jobs on startup and exposes draft-job retry for skipped/failed jobs after qwen runtime blockers clear; frontend shows a `Retry drafting` action. Keep open because local `qwen3:14b` is still missing and no live packaged usable-qwen timing artifact exists.
+  - 2026-06-19 progress: implemented the first SQLite-backed streaming draft job prototype with bounded worker, draft-only append persistence, missing-model/provider skip states, frontend draft polling, and generated client updates. This remained open until packaged timing and live qwen draft-quality evidence existed.
+  - 2026-06-19 follow-up: added draft-job status UX, resilient polling while jobs are active, packaged smoke streaming snapshots/timings, and draft-only safety for the legacy auto-generate upload path. This remained open until a live packaged qwen run recorded usable streamed questions and review-quality evidence.
+  - 2026-06-19 recovery/retry: backend now recovers interrupted pending/running streaming jobs on startup and exposes draft-job retry for skipped/failed jobs after qwen runtime blockers clear; frontend shows a `Retry drafting` action.
+  - 2026-06-19 completion evidence: packaged smoke `tmp/exam-prep-desktop/packaged-flow-smoke/2026-06-19T08-37-53-476Z/metrics.json` used the QA override `--ollama-model qwen3:8b --streaming-draft-page-limit 1`, recorded the first streamed qwen draft at `22,301 ms`, first usable question at `22,301 ms`, and parse completion at `25,394 ms`. The prototype/research TODO is closed; `qwen3:14b` availability and all-model bakeoff remain tracked by the reasoning bakeoff TODO.
 
 - [x] Remove unused code across projects
   - Reason: keep every project easier to understand by removing truly unused classes, files, functions, imports, test helpers, and script code without widening behavior.

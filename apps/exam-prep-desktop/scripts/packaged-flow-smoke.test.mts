@@ -129,6 +129,7 @@ test('PowerShell executable resolution survives reduced PATH environments', () =
 test('streaming draft status classification separates active, ready, and blockers', () => {
   assert.equal(classifyStreamingDraftStatus('Drafting 1/3'), 'active');
   assert.equal(classifyStreamingDraftStatus('2 drafts ready'), 'ready');
+  assert.equal(classifyStreamingDraftStatus('0 drafts ready so far'), 'none');
   assert.equal(classifyStreamingDraftStatus('Model missing'), 'blocked');
   assert.equal(
     classifyStreamingDraftStatus('Reasoning unavailable'),
@@ -200,13 +201,35 @@ test('streaming question draft snapshots count usable drafts without storing tex
 });
 
 test('packaged flow smoke args validate numeric knobs', () => {
-  assert.equal(
-    parsePackagedFlowSmokeArgs(['--cdp-port', '9555', '--ocr-page-workers', '2']).cdpPort,
-    9555,
-  );
+  const parsed = parsePackagedFlowSmokeArgs([
+    '--cdp-port',
+    '9555',
+    '--ocr-page-workers',
+    '2',
+    '--ollama-model',
+    'qwen3:8b',
+    '--streaming-draft-page-limit',
+    '1',
+    '--streaming-draft-workers',
+    '2',
+  ]);
+
+  assert.equal(parsed.cdpPort, 9555);
+  assert.equal(parsed.ocrPageWorkers, 2);
+  assert.equal(parsed.ollamaModel, 'qwen3:8b');
+  assert.equal(parsed.streamingDraftPageLimit, 1);
+  assert.equal(parsed.streamingDraftWorkers, 2);
   assert.throws(
     () => parsePackagedFlowSmokeArgs(['--ocr-page-workers', '0']),
     /positive integer/,
+  );
+  assert.throws(
+    () => parsePackagedFlowSmokeArgs(['--streaming-draft-page-limit', '0']),
+    /positive integer/,
+  );
+  assert.throws(
+    () => parsePackagedFlowSmokeArgs(['--ollama-model', ' ']),
+    /must not be empty/,
   );
   assert.throws(
     () => parsePackagedFlowSmokeArgs(['--unknown']),

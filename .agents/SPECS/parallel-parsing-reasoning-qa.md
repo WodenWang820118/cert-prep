@@ -286,3 +286,49 @@ Local live-qwen blocker:
   `qwen3-coder:30b`.
 - `qwen3:14b` is not installed, so a live packaged qwen timing run still cannot
   satisfy acceptance without a user-provided model install.
+
+## 2026-06-19 Packaged Streaming Fast-First Evidence
+
+Streaming parse-to-qwen prototype status: complete for the research/prototype
+TODO.
+
+Artifact:
+
+- `tmp/exam-prep-desktop/packaged-flow-smoke/2026-06-19T08-37-53-476Z/metrics.json`
+
+Packaged smoke command:
+
+- `pnpm nx run exam-prep-desktop:packaged-flow-smoke --skip-nx-cache --args="--ocr-page-workers 1 --ollama-model qwen3:8b --streaming-draft-page-limit 1 --skip-gpu-sampling"`
+
+Evidence:
+
+- Packaged app used `qwen3:8b` through a QA override; no model download was
+  triggered.
+- First draft job/status appeared at `1,043 ms`.
+- First streamed qwen draft appeared at `22,301 ms`.
+- First usable question appeared at `22,301 ms`.
+- Parse completion appeared at `25,394 ms`, so a usable streamed qwen draft was
+  available before the document finished parsing.
+- Streaming draft snapshots reached `item_count=1` and `usable_count=1`.
+- Final document state still reached `46 pages / 46 chunks`.
+- Restart and final close both reported `gracefulExited=true`,
+  `fallbackUsed=false`, `exitCode=0`, and empty `residualProcesses`.
+- Node cleanup summary reported `closed_count=0` and no this-run helper residue.
+
+Implementation notes:
+
+- The prototype keeps the no-Kafka local architecture: SQLite job queue/outbox,
+  bounded qwen workers, draft-only persistence, and approval-gated promotion.
+- Qwen prewarm runs only after provider health succeeds and never pulls missing
+  models.
+- Fast-first generation is limited to deterministic extracted candidates, so
+  notice/cover pages do not consume the qwen worker window.
+
+Still open:
+
+- First chunk latency remains open. The latest packaged smoke recorded
+  `first_chunk_visible=15,005 ms`, just over the `<15s` target.
+- Reasoning bakeoff remains open because all three comparator models have not
+  produced scored live results.
+- The default model path still needs `qwen3:14b` availability evidence if that
+  remains the selected production default.

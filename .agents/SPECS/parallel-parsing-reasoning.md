@@ -45,6 +45,13 @@ Use a SQLite-backed job queue/outbox plus a bounded qwen worker, and keep Kafka 
 another broker as a future option only for distributed workers, fan-out, durable
 multi-consumer replay, or multi-user service deployment.
 
+Status on 2026-06-19: research/prototype evidence is complete. Packaged smoke
+`tmp/exam-prep-desktop/packaged-flow-smoke/2026-06-19T08-37-53-476Z/metrics.json`
+used `qwen3:8b` as a QA override and recorded a streamed usable qwen draft at
+`22,301 ms`, before parse completion at `25,394 ms`. Remaining model availability
+and three-model comparison work stay under the live reasoning-model bakeoff
+backlog item.
+
 ## Dead Code Cleanup
 
 User-added backlog topic on 2026-06-19: audit all projects and remove truly

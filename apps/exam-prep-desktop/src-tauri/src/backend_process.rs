@@ -13,6 +13,8 @@ use crate::{
     windows_process::terminate_backend_process_tree,
 };
 
+const DEFAULT_OLLAMA_MODEL: &str = "qwen3:14b";
+
 pub(crate) fn launch_backend_entrypoint(
     inner: &Arc<BackendRuntimeInner>,
     entrypoint: &Path,
@@ -45,7 +47,7 @@ pub(crate) fn launch_backend_entrypoint(
         .env("EXAM_PREP_OCR_PROVIDER", "paddle")
         .env("EXAM_PREP_OCR_RUNTIME_MODE", "external")
         .env("EXAM_PREP_OCR_DEVICE", "auto")
-        .env("EXAM_PREP_OLLAMA_MODEL", "qwen3:14b")
+        .env("EXAM_PREP_OLLAMA_MODEL", configured_ollama_model())
         .env("EXAM_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD", "true")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -110,6 +112,14 @@ fn sidecar_host() -> &'static str {
     "127.0.0.1"
 }
 
+fn configured_ollama_model() -> String {
+    std::env::var("EXAM_PREP_OLLAMA_MODEL")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| DEFAULT_OLLAMA_MODEL.to_string())
+}
+
 pub(crate) fn external_backend_env() -> Option<BackendConfig> {
     match (
         std::env::var("EXAM_PREP_BACKEND_URL"),
@@ -134,6 +144,21 @@ mod tests {
     #[test]
     fn sidecar_host_is_loopback_only() {
         assert_eq!(sidecar_host(), "127.0.0.1");
+    }
+
+    #[test]
+    fn configured_ollama_model_uses_default_or_explicit_override() {
+        std::env::remove_var("EXAM_PREP_OLLAMA_MODEL");
+
+        assert_eq!(configured_ollama_model(), "qwen3:14b");
+
+        std::env::set_var("EXAM_PREP_OLLAMA_MODEL", " qwen3:8b ");
+        assert_eq!(configured_ollama_model(), "qwen3:8b");
+
+        std::env::set_var("EXAM_PREP_OLLAMA_MODEL", " ");
+        assert_eq!(configured_ollama_model(), "qwen3:14b");
+
+        std::env::remove_var("EXAM_PREP_OLLAMA_MODEL");
     }
 
     #[test]
