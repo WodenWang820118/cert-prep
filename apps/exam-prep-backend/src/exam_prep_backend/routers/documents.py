@@ -15,6 +15,7 @@ from exam_prep_backend.dependencies import (
 )
 from exam_prep_backend.domains.mock_exams import repository as mock_exams_repository
 from exam_prep_backend.domains.mock_exams.models import SourceChunk
+from exam_prep_backend.domains.mock_exams.normalization import as_ai_reasoning_draft
 from exam_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
 from exam_prep_backend.domains.mock_exams.streaming import StreamingDraftGenerationManager
 from exam_prep_backend.domains.projects import repository as projects_repository
@@ -200,7 +201,10 @@ def _auto_generate_exam_items(
         for chunk in source_documents_repository.get_source_chunks(db, project_id, document_id)
     ]
     try:
-        suggestions = provider.generate_drafts(chunks, limit)
+        suggestions = [
+            as_ai_reasoning_draft(suggestion)
+            for suggestion in provider.generate_drafts(chunks, limit)
+        ]
     except ProviderUnavailableError:
         return _update_document_exam_state(db, project_id, document_id, 0)
 

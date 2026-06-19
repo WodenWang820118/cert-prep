@@ -15,3 +15,22 @@ export interface DraftEdit {
   answer: string;
   rationale: string;
 }
+
+export type DraftJobSummarySeverity =
+  | 'secondary'
+  | 'info'
+  | 'success'
+  | 'warn'
+  | 'danger';
+
+export interface DraftJobSummary {
+  total: number;
+  active: number;
+  succeeded: number;
+  skipped: number;
+  failed: number;
+  generatedCount: number;
+  label: string;
+  detail: string;
+  severity: DraftJobSummarySeverity;
+}

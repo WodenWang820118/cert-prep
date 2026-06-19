@@ -24,6 +24,7 @@
   - Reason: user wants to explore parsing one page/chunk and immediately sending it to qwen for formal draft-question generation while the remaining PDF pages continue parsing.
   - Verify: `.agents/SPECS/streaming-parse-to-qwen.md` defines the local queue/outbox design, no-Kafka-first decision, draft-only safety rules, and prototype validation plan; close only after a prototype has artifact-backed timing and draft-quality evidence.
   - 2026-06-19 progress: implemented the first SQLite-backed streaming draft job prototype with bounded worker, draft-only append persistence, missing-model/provider skip states, frontend draft polling, and generated client updates. Keep open until packaged timing and live qwen draft-quality evidence exist.
+  - 2026-06-19 follow-up: added draft-job status UX, resilient polling while jobs are active, packaged smoke streaming snapshots/timings, and draft-only safety for the legacy auto-generate upload path. Keep open until a live packaged qwen run records usable streamed questions and review-quality evidence.
 
 - [x] Remove unused code across projects
   - Reason: keep every project easier to understand by removing truly unused classes, files, functions, imports, test helpers, and script code without widening behavior.

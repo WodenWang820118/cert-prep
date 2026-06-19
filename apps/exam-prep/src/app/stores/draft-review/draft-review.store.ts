@@ -1,10 +1,12 @@
 import { computed, effect, inject, Injectable, signal } from '@angular/core';
 import {
+  DraftGenerationJobRead,
   EXAM_PREP_API,
   QuestionDraftRead,
 } from '../../exam-prep-api';
 import type {
   DraftEdit,
+  DraftJobSummary,
   DraftGenerationStrategy,
 } from './contracts/draft-review.contracts';
 import { DraftEditService } from './draft-edit.service';
@@ -28,24 +30,37 @@ export class DraftReviewStore {
 
   readonly draftLimit = signal(3);
   readonly drafts = signal<QuestionDraftRead[]>([]);
+  readonly draftJobs = signal<DraftGenerationJobRead[]>([]);
   readonly editingDraftId = signal<string | null>(null);
   readonly draftEdits = signal<Record<string, DraftEdit>>({});
   readonly approvedDrafts = computed(() =>
     this.drafts().filter((draft) => draft.status === 'approved'),
+  );
+  readonly draftJobSummary = computed(() =>
+    this.summarizeDraftJobs(this.draftJobs()),
   );
 
   constructor() {
     effect(() => {
       const projectId = this.projects.selectedProjectId();
       const document = this.sourceImport.uploadedDocument();
+      const documentKey =
+        projectId !== null && document !== null
+          ? `${projectId}:${document.id}`
+          : null;
+      const hasActiveJobs =
+        documentKey !== null &&
+        this.streamingDraftPollKey === documentKey &&
+        this.hasActiveDraftJobs(this.draftJobs());
       const shouldPoll =
-        projectId !== null &&
-        document !== null &&
-        document.status === 'processing' &&
-        document.chunks_count > 0;
+        documentKey !== null &&
+        ((document?.status === 'processing' && document.chunks_count > 0) ||
+          hasActiveJobs);
 
-      if (shouldPoll) {
+      if (shouldPoll && document !== null && projectId !== null) {
         this.ensureStreamingDraftPolling(projectId, document.id);
+      } else if (documentKey === null) {
+        this.stopStreamingDraftPolling({ clearJobs: true });
       } else {
         this.stopStreamingDraftPolling();
       }
@@ -59,6 +74,7 @@ export class DraftReviewStore {
 
   reset(): void {
     this.drafts.set([]);
+    this.draftJobs.set([]);
     this.editingDraftId.set(null);
     this.draftEdits.set({});
     this.stopStreamingDraftPolling();
@@ -168,6 +184,7 @@ export class DraftReviewStore {
 
     this.drafts.set(drafts.items);
     await this.load(project.id);
+    await this.loadDraftJobs(project.id, document.id);
     await this.sourceImport.refreshUploadedDocument(project.id, document.id);
   }
 
@@ -313,7 +330,7 @@ export class DraftReviewStore {
   ): void {
     const nextKey = `${projectId}:${documentId}`;
     if (this.streamingDraftPollKey !== nextKey) {
-      this.stopStreamingDraftPolling();
+      this.stopStreamingDraftPolling({ clearJobs: true });
       this.streamingDraftPollKey = nextKey;
       void this.pollStreamingDrafts(projectId, documentId);
       return;
@@ -343,7 +360,10 @@ export class DraftReviewStore {
     }
 
     try {
-      await this.load(projectId);
+      await Promise.all([
+        this.load(projectId),
+        this.loadDraftJobs(projectId, documentId).catch(() => undefined),
+      ]);
     } catch {
       this.stopStreamingDraftPolling();
       return;
@@ -354,7 +374,7 @@ export class DraftReviewStore {
     if (
       selectedProjectId === projectId &&
       document?.id === documentId &&
-      document.status === 'processing'
+      (document.status === 'processing' || this.hasActiveDraftJobs(this.draftJobs()))
     ) {
       this.scheduleStreamingDraftPolling(projectId, documentId);
     } else {
@@ -362,11 +382,127 @@ export class DraftReviewStore {
     }
   }
 
-  private stopStreamingDraftPolling(): void {
+  private stopStreamingDraftPolling(
+    options: { clearJobs?: boolean } = {},
+  ): void {
     if (this.streamingDraftPollTimer !== null) {
       clearTimeout(this.streamingDraftPollTimer);
       this.streamingDraftPollTimer = null;
     }
     this.streamingDraftPollKey = null;
+    if (options.clearJobs) {
+      this.draftJobs.set([]);
+    }
+  }
+
+  private async loadDraftJobs(
+    projectId: string,
+    documentId: string,
+  ): Promise<void> {
+    const jobs = await this.api.listDocumentDraftJobs(projectId, documentId);
+    this.draftJobs.set(jobs.items);
+  }
+
+  private hasActiveDraftJobs(jobs: DraftGenerationJobRead[]): boolean {
+    return jobs.some((job) => ['pending', 'running'].includes(job.status));
+  }
+
+  private summarizeDraftJobs(jobs: DraftGenerationJobRead[]): DraftJobSummary {
+    const total = jobs.length;
+    const active = jobs.filter((job) =>
+      ['pending', 'running'].includes(job.status),
+    ).length;
+    const succeeded = jobs.filter((job) => job.status === 'succeeded').length;
+    const skipped = jobs.filter((job) =>
+      ['skipped_missing_model', 'skipped_provider_unavailable'].includes(
+        job.status,
+      ),
+    ).length;
+    const failed = jobs.filter((job) => job.status === 'failed').length;
+    const generatedCount = jobs.reduce(
+      (count, job) => count + job.generated_count,
+      0,
+    );
+
+    if (total === 0) {
+      return {
+        total,
+        active,
+        succeeded,
+        skipped,
+        failed,
+        generatedCount,
+        label: 'No draft jobs',
+        detail: 'Waiting for parsed pages.',
+        severity: 'secondary',
+      };
+    }
+    if (active > 0) {
+      return {
+        total,
+        active,
+        succeeded,
+        skipped,
+        failed,
+        generatedCount,
+        label: `Drafting ${active}/${total}`,
+        detail: `${generatedCount} drafts ready so far.`,
+        severity: 'info',
+      };
+    }
+    if (failed > 0) {
+      return {
+        total,
+        active,
+        succeeded,
+        skipped,
+        failed,
+        generatedCount,
+        label: 'Drafting needs attention',
+        detail: `${failed} job${failed === 1 ? '' : 's'} failed.`,
+        severity: 'danger',
+      };
+    }
+    if (skipped > 0 && succeeded === 0) {
+      const missingModel = jobs.some(
+        (job) => job.status === 'skipped_missing_model',
+      );
+      return {
+        total,
+        active,
+        succeeded,
+        skipped,
+        failed,
+        generatedCount,
+        label: missingModel ? 'Model missing' : 'Reasoning unavailable',
+        detail: `${skipped} job${skipped === 1 ? '' : 's'} skipped.`,
+        severity: 'warn',
+      };
+    }
+    if (succeeded > 0) {
+      return {
+        total,
+        active,
+        succeeded,
+        skipped,
+        failed,
+        generatedCount,
+        label: `${generatedCount} drafts ready`,
+        detail: `${succeeded}/${total} jobs completed.`,
+        severity: skipped > 0 ? 'warn' : 'success',
+      };
+    }
+
+    return {
+      total,
+      active,
+      succeeded,
+      skipped,
+      failed,
+      generatedCount,
+      label: 'Draft jobs settled',
+      detail: `${total} jobs completed without drafts.`,
+      severity: 'secondary',
+    };
   }
 }

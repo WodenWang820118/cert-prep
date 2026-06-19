@@ -29,6 +29,21 @@ import { SourceImportStore } from '../stores/source-import/source-import.store';
             <p class="m-0 mt-1 text-sm text-muted-color">
               {{ drafts.approvedDrafts().length }} approved
             </p>
+            @if (drafts.draftJobSummary().total > 0 || sourceImport.isParsing()) {
+              <div
+                class="mt-2 flex flex-wrap items-center gap-2"
+                aria-live="polite"
+              >
+                <p-tag
+                  [value]="drafts.draftJobSummary().label"
+                  [severity]="drafts.draftJobSummary().severity"
+                  [rounded]="true"
+                />
+                <span class="text-sm text-muted-color">
+                  {{ drafts.draftJobSummary().detail }}
+                </span>
+              </div>
+            }
           </div>
           <p-tag
             [value]="drafts.drafts().length + ' items'"

@@ -210,3 +210,42 @@ Verification:
 
 Node cleanup note: post-verification node processes were all `nx-mcp` service
 processes, so no workspace/test-owned Node helpers were killed.
+
+## 2026-06-19 Streaming Instrumentation Follow-Up
+
+Additional streaming research/prototype work:
+
+- Frontend draft review exposes draft-job summary state during parsing:
+  active job counts, ready counts, model-missing/provider-unavailable blockers,
+  and failure attention state.
+- The draft refresh loop now keeps polling while draft jobs remain active and
+  isolates draft-job endpoint failures from draft list refresh.
+- Backend legacy upload auto-generation now persists provider suggestions as
+  `draft` records rather than `approved`, preserving the review gate even when
+  streaming generation is disabled.
+- Packaged flow smoke now records streaming draft API snapshots and UI timings
+  during parse, including status counts, first job/status/draft/usable timings,
+  blocker state, and sanitized snapshot counts.
+- Packaged smoke tests assert that streaming snapshots do not persist question
+  text, choices, auth headers, or token-like payload content.
+
+Verification:
+
+- `pnpm nx run exam-prep-backend:test --skip-nx-cache` - passed, 91 tests, one
+  existing Starlette/httpx warning.
+- `pnpm nx run exam-prep-backend:lint --skip-nx-cache` - passed.
+- `pnpm nx run exam-prep:test --skip-nx-cache` - passed, 39 tests.
+- `pnpm nx run exam-prep:lint --skip-nx-cache` - passed.
+- `pnpm nx run exam-prep:build --skip-nx-cache` - passed with the existing
+  initial bundle budget warning.
+- `pnpm nx run exam-prep-desktop:lint --skip-nx-cache` - passed.
+- `pnpm nx run exam-prep-desktop:typecheck-scripts --skip-nx-cache` - passed.
+- `pnpm nx run exam-prep-desktop:package-qa-test --skip-nx-cache` - passed, 17
+  script tests.
+- `pnpm nx run exam-prep-desktop:cargo-test --skip-nx-cache` - passed, 12 tests.
+- `git diff --check` - passed with only line-ending normalization warnings.
+
+Open evidence:
+
+- Live packaged streaming timing and qwen draft-quality evidence is still
+  missing; the streaming TODO remains open.

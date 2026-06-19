@@ -11,6 +11,8 @@ export type {
   ChunkRead,
   DocumentRead,
   DraftGenerateRequest,
+  DraftGenerationJobList,
+  DraftGenerationJobRead,
   ExamPrepGeneratedClient,
   HealthResponse,
   LLMHealthRead,

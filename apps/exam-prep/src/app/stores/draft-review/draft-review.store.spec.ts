@@ -1,5 +1,10 @@
 import { TestBed } from '@angular/core/testing';
-import { DocumentRead, EXAM_PREP_API, QuestionDraftRead } from '../../exam-prep-api';
+import {
+  DocumentRead,
+  DraftGenerationJobRead,
+  EXAM_PREP_API,
+  QuestionDraftRead,
+} from '../../exam-prep-api';
 import { DraftReviewStore } from './draft-review.store';
 import { OperationStore } from '../operation.store';
 import { ProjectStore } from '../project.store';
@@ -11,6 +16,7 @@ describe('DraftReviewStore', () => {
     generateDocumentDrafts: vi.fn(),
     getDocument: vi.fn(),
     listDocumentChunks: vi.fn(),
+    listDocumentDraftJobs: vi.fn(),
     listQuestionDrafts: vi.fn(),
     updateQuestionDraft: vi.fn(),
   };
@@ -35,6 +41,7 @@ describe('DraftReviewStore', () => {
 
     apiClient.getDocument.mockResolvedValue(documentRead());
     apiClient.listDocumentChunks.mockResolvedValue({ items: [] });
+    apiClient.listDocumentDraftJobs.mockResolvedValue({ items: [] });
   });
 
   it('blocks approval when citation evidence is incomplete', async () => {
@@ -160,6 +167,10 @@ describe('DraftReviewStore', () => {
       'document-1',
       { limit: 3, strategy: 'deterministic_only' },
     );
+    expect(apiClient.listDocumentDraftJobs).toHaveBeenCalledWith(
+      'project-1',
+      'document-1',
+    );
   });
 
   it('sends hybrid reasoning strategy when enriching drafts', async () => {
@@ -178,6 +189,10 @@ describe('DraftReviewStore', () => {
       'document-1',
       { limit: 8, strategy: 'hybrid_reasoning' },
     );
+    expect(apiClient.listDocumentDraftJobs).toHaveBeenCalledWith(
+      'project-1',
+      'document-1',
+    );
   });
 
   it('refreshes drafts while a processing document has completed chunks', async () => {
@@ -185,6 +200,12 @@ describe('DraftReviewStore', () => {
     const sourceImport = TestBed.inject(SourceImportStore);
     const draft = questionDraft();
     apiClient.listQuestionDrafts.mockResolvedValue({ items: [draft] });
+    apiClient.listDocumentDraftJobs.mockResolvedValue({
+      items: [
+        draftJob({ status: 'running' }),
+        draftJob({ id: 'job-2', status: 'succeeded', generated_count: 1 }),
+      ],
+    });
 
     sourceImport.uploadedDocument.set(
       documentRead({ status: 'processing', chunks_count: 1 }),
@@ -194,11 +215,70 @@ describe('DraftReviewStore', () => {
     await Promise.resolve();
 
     expect(apiClient.listQuestionDrafts).toHaveBeenCalledWith('project-1');
+    expect(apiClient.listDocumentDraftJobs).toHaveBeenCalledWith(
+      'project-1',
+      'document-1',
+    );
     expect(store.drafts()).toEqual([draft]);
+    expect(store.draftJobSummary()).toEqual(
+      expect.objectContaining({
+        active: 1,
+        generatedCount: 1,
+        label: 'Drafting 1/2',
+        severity: 'info',
+      }),
+    );
 
     sourceImport.uploadedDocument.set(documentRead({ status: 'ready' }));
     TestBed.tick();
     await Promise.resolve();
+  });
+
+  it('keeps streaming draft refresh when draft job status is temporarily unavailable', async () => {
+    const store = TestBed.inject(DraftReviewStore);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    const draft = questionDraft();
+    apiClient.listQuestionDrafts.mockResolvedValue({ items: [draft] });
+    apiClient.listDocumentDraftJobs.mockRejectedValue(new Error('jobs offline'));
+
+    sourceImport.uploadedDocument.set(
+      documentRead({ status: 'processing', chunks_count: 1 }),
+    );
+    TestBed.tick();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(store.drafts()).toEqual([draft]);
+    expect(store.draftJobs()).toEqual([]);
+  });
+
+  it('surfaces skipped streaming draft jobs when the reasoning model is missing', async () => {
+    const store = TestBed.inject(DraftReviewStore);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    apiClient.listQuestionDrafts.mockResolvedValue({ items: [] });
+    apiClient.listDocumentDraftJobs.mockResolvedValue({
+      items: [
+        draftJob({
+          status: 'skipped_missing_model',
+          last_error: 'qwen3:14b is not installed',
+        }),
+      ],
+    });
+
+    sourceImport.uploadedDocument.set(
+      documentRead({ status: 'processing', chunks_count: 1 }),
+    );
+    TestBed.tick();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(store.draftJobSummary()).toEqual(
+      expect.objectContaining({
+        label: 'Model missing',
+        skipped: 1,
+        severity: 'warn',
+      }),
+    );
   });
 });
 
@@ -255,6 +335,28 @@ function documentRead(overrides: Partial<DocumentRead> = {}): DocumentRead {
     content_profile: 'vocabulary_single_questions',
     classification_detail: '{"profile":"vocabulary_single_questions"}',
     chunks_count: 46,
+    created_at: '2026-06-09T00:00:00Z',
+    updated_at: '2026-06-09T00:00:00Z',
+    ...overrides,
+  };
+}
+
+function draftJob(
+  overrides: Partial<DraftGenerationJobRead> = {},
+): DraftGenerationJobRead {
+  return {
+    id: 'job-1',
+    project_id: 'project-1',
+    document_id: 'document-1',
+    chunk_id: 'chunk-1',
+    page_number: 1,
+    strategy: 'hybrid_reasoning',
+    status: 'pending',
+    provider: 'ollama',
+    model: 'qwen3:14b',
+    generated_count: 0,
+    retry_count: 0,
+    last_error: null,
     created_at: '2026-06-09T00:00:00Z',
     updated_at: '2026-06-09T00:00:00Z',
     ...overrides,

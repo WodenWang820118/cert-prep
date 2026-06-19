@@ -10,7 +10,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { chromium, type Browser, type Page } from 'playwright';
+import { chromium, type Browser, type Page, type Response } from 'playwright';
 
 const DEFAULT_TARGET_TRIPLE = 'x86_64-pc-windows-msvc';
 const DEFAULT_OUT_ROOT = 'tmp/exam-prep-desktop/packaged-flow-smoke';
@@ -32,6 +32,8 @@ const PROTECTED_NODE_COMMAND_FRAGMENTS = [
   'code.exe',
   'servicehub',
 ];
+const STREAMING_DRAFT_STATUS_PATTERN =
+  /Drafting \d+\/\d+|\d+ drafts ready|Model missing|Reasoning unavailable|Drafting needs attention/i;
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const defaultWorkspaceRoot = resolve(scriptDir, '../../..');
@@ -73,7 +75,35 @@ interface SmokeMetrics {
     new_node_helpers_closed: PublicProcessRecord[];
     residue_after_close: PublicProcessRecord[];
   };
+  streaming_drafts: StreamingDraftsMetrics;
   gpu_sampling?: string;
+}
+
+interface StreamingDraftsMetrics {
+  job_snapshots: StreamingDraftJobSnapshot[];
+  draft_snapshots: StreamingQuestionDraftSnapshot[];
+  status_counts: Record<string, number>;
+  first_job_visible_ms?: number;
+  first_status_visible_ms?: number;
+  first_draft_visible_ms?: number;
+  first_usable_question_visible_ms?: number;
+  blocker?: string;
+}
+
+interface StreamingDraftJobSnapshot {
+  elapsed_ms: number;
+  source: 'draft-jobs';
+  item_count: number;
+  status_counts: Record<string, number>;
+  generated_count: number;
+  blocker?: string;
+}
+
+interface StreamingQuestionDraftSnapshot {
+  elapsed_ms: number;
+  source: 'question-drafts';
+  item_count: number;
+  usable_count: number;
 }
 
 interface ProcessRecord {
@@ -140,6 +170,8 @@ let browser: Browser | null = null;
 let page: Page | null = null;
 let port = DEFAULT_CDP_PORT;
 let processBaseline: ProcessSnapshot = { all: [], nodePids: new Set() };
+let streamingDraftParseStartedAt: number | null = null;
+let streamingDraftCaptureOpen = false;
 
 export function parsePackagedFlowSmokeArgs(
   args: readonly string[],
@@ -371,6 +403,68 @@ export function selectNewWorkspaceNodeHelpers({
   });
 }
 
+export function classifyStreamingDraftStatus(
+  text: string,
+): 'active' | 'ready' | 'blocked' | 'none' {
+  if (/\d+ drafts ready/i.test(text)) {
+    return 'ready';
+  }
+  if (/Model missing|Reasoning unavailable|Drafting needs attention/i.test(text)) {
+    return 'blocked';
+  }
+  if (/Drafting \d+\/\d+/i.test(text)) {
+    return 'active';
+  }
+  return 'none';
+}
+
+export function draftJobStatusCounts(payload: unknown): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const item of responseItems(payload)) {
+    const status = isRecord(item) ? stringField(item.status).trim() : '';
+    if (status) {
+      counts[status] = (counts[status] ?? 0) + 1;
+    }
+  }
+  return counts;
+}
+
+export function sanitizeDraftJobSnapshot(
+  payload: unknown,
+  elapsedMs: number,
+): StreamingDraftJobSnapshot {
+  const items = responseItems(payload);
+  const statusCounts = draftJobStatusCounts(payload);
+  const generatedCount = items.reduce<number>((total, item) => {
+    if (!isRecord(item)) {
+      return total;
+    }
+    return total + numberField(item.generated_count);
+  }, 0);
+  const blocker = streamingDraftBlockerFromStatusCounts(statusCounts);
+  return {
+    elapsed_ms: normalizedElapsedMs(elapsedMs),
+    source: 'draft-jobs',
+    item_count: items.length,
+    status_counts: statusCounts,
+    generated_count: generatedCount,
+    ...(blocker ? { blocker } : {}),
+  };
+}
+
+export function sanitizeQuestionDraftSnapshot(
+  payload: unknown,
+  elapsedMs: number,
+): StreamingQuestionDraftSnapshot {
+  const items = responseItems(payload);
+  return {
+    elapsed_ms: normalizedElapsedMs(elapsedMs),
+    source: 'question-drafts',
+    item_count: items.length,
+    usable_count: items.filter(isUsableQuestionDraftPayload).length,
+  };
+}
+
 export function closeMainWindowPowerShellCommand(pid: number): string {
   return [
     "$ErrorActionPreference = 'Stop'",
@@ -503,6 +597,157 @@ async function closeNewNodeHelpers(): Promise<PublicProcessRecord[]> {
     await delay(1_000);
   }
   return helpers.map(publicProcessRecord);
+}
+
+function observeStreamingApiResponses(currentPage: Page): void {
+  currentPage.on('response', (response) => {
+    void recordStreamingApiResponse(response);
+  });
+}
+
+async function recordStreamingApiResponse(response: Response): Promise<void> {
+  if (!streamingDraftCaptureOpen || streamingDraftParseStartedAt === null) {
+    return;
+  }
+  if (response.request().method().toUpperCase() !== 'GET') {
+    return;
+  }
+
+  const url = response.url();
+  const capturesDraftJobs = url.includes('/draft-jobs');
+  const capturesQuestionDrafts = url.includes('/question-drafts');
+  if (!capturesDraftJobs && !capturesQuestionDrafts) {
+    return;
+  }
+
+  const payload = await response.json().catch(() => null);
+  if (!payload) {
+    return;
+  }
+  const elapsedMs = Date.now() - streamingDraftParseStartedAt;
+  if (capturesDraftJobs) {
+    recordStreamingDraftJobSnapshot(payload, elapsedMs);
+  } else {
+    recordStreamingQuestionDraftSnapshot(payload, elapsedMs);
+  }
+}
+
+function recordStreamingDraftJobSnapshot(payload: unknown, elapsedMs: number): void {
+  const snapshot = sanitizeDraftJobSnapshot(payload, elapsedMs);
+  metrics.streaming_drafts.job_snapshots.push(snapshot);
+  mergeStatusCounts(metrics.streaming_drafts.status_counts, snapshot.status_counts);
+  if (
+    metrics.streaming_drafts.first_job_visible_ms === undefined &&
+    snapshot.item_count > 0
+  ) {
+    metrics.streaming_drafts.first_job_visible_ms = snapshot.elapsed_ms;
+  }
+  if (
+    metrics.streaming_drafts.first_status_visible_ms === undefined &&
+    Object.keys(snapshot.status_counts).length > 0
+  ) {
+    metrics.streaming_drafts.first_status_visible_ms = snapshot.elapsed_ms;
+  }
+  if (snapshot.blocker && !metrics.streaming_drafts.blocker) {
+    metrics.streaming_drafts.blocker = snapshot.blocker;
+  }
+}
+
+function recordStreamingQuestionDraftSnapshot(payload: unknown, elapsedMs: number): void {
+  const snapshot = sanitizeQuestionDraftSnapshot(payload, elapsedMs);
+  metrics.streaming_drafts.draft_snapshots.push(snapshot);
+  if (
+    metrics.streaming_drafts.first_draft_visible_ms === undefined &&
+    snapshot.item_count > 0
+  ) {
+    metrics.streaming_drafts.first_draft_visible_ms = snapshot.elapsed_ms;
+  }
+  if (
+    metrics.streaming_drafts.first_usable_question_visible_ms === undefined &&
+    snapshot.usable_count > 0
+  ) {
+    metrics.streaming_drafts.first_usable_question_visible_ms =
+      snapshot.elapsed_ms;
+  }
+}
+
+async function observeStreamingDraftUiUntil(
+  parseStart: number,
+  completion: Promise<void>,
+): Promise<void> {
+  let completed = false;
+  completion.then(
+    () => {
+      completed = true;
+    },
+    () => {
+      completed = true;
+    },
+  );
+
+  let statusCaptured =
+    metrics.ui_timings_ms.streaming_draft_status_visible !== undefined;
+  let usableCaptured =
+    metrics.ui_timings_ms.streaming_first_usable_question_visible !== undefined;
+
+  while (!completed && (!statusCaptured || !usableCaptured)) {
+    const text = await bodyText();
+    if (!statusCaptured && STREAMING_DRAFT_STATUS_PATTERN.test(text)) {
+      const elapsedMs = Date.now() - parseStart;
+      const streamingStatus = classifyStreamingDraftStatus(text);
+      metrics.ui_timings_ms.streaming_draft_status_visible = elapsedMs;
+      metrics.observations.push(`Streaming draft status: ${streamingStatus}.`);
+      if (streamingStatus === 'ready') {
+        metrics.ui_timings_ms.streaming_first_draft_ready_visible = elapsedMs;
+      } else if (streamingStatus === 'blocked') {
+        metrics.ui_timings_ms.streaming_draft_blocker_visible = elapsedMs;
+      }
+      await screenshot('streaming-draft-status-visible');
+      statusCaptured = true;
+    }
+
+    if (!usableCaptured && (await firstUsableDraftArticleVisible())) {
+      const elapsedMs = Date.now() - parseStart;
+      metrics.ui_timings_ms.streaming_first_usable_question_visible = elapsedMs;
+      metrics.streaming_drafts.first_usable_question_visible_ms ??= elapsedMs;
+      await screenshot('streaming-first-usable-draft-visible');
+      usableCaptured = true;
+    }
+
+    await Promise.race([
+      delay(1_000),
+      completion.catch(() => undefined),
+    ]);
+  }
+
+  if (metrics.ui_timings_ms.streaming_draft_status_visible === undefined) {
+    metrics.observations.push(
+      'Streaming draft status was not visible before parse completion.',
+    );
+  }
+}
+
+async function firstUsableDraftArticleVisible(): Promise<boolean> {
+  if (!page) {
+    return false;
+  }
+  try {
+    return await page.locator('app-draft-review-panel article').evaluateAll(
+      (articles) =>
+        articles.some((article) => {
+          const question = article.querySelector('h3')?.textContent?.trim() ?? '';
+          const choices = Array.from(article.querySelectorAll('ol li')).filter(
+            (choice) => (choice.textContent ?? '').trim().length > 0,
+          );
+          return question.length > 0 && choices.length >= 2;
+        }),
+    );
+  } catch (error) {
+    if (errorMessage(error).includes('Execution context was destroyed')) {
+      return false;
+    }
+    throw error;
+  }
 }
 
 function log(message: string): void {
@@ -865,39 +1110,48 @@ async function uploadAndParsePdf(): Promise<void> {
   await screenshot('parsing-started');
 
   const parseStart = Date.now();
-  await delay(15_000);
-  const midText = await bodyText();
-  if (/Extracted text|Page \d+|\b[1-9]\d* chunks\b/.test(midText)) {
-    metrics.ui_timings_ms.first_chunk_visible = Date.now() - parseStart;
-  } else {
-    metrics.observations.push(
-      'No extracted chunk was visible 15s after parsing started.',
-    );
-  }
-  await screenshot('mid-parse-ui-still-usable');
-
-  const firstChunkStart = Date.now();
+  streamingDraftParseStartedAt = parseStart;
+  streamingDraftCaptureOpen = true;
   try {
-    await waitText(
-      /Extracted text|Page \d+|\b[1-9]\d* chunks\b/,
-      260_000,
-      'first extracted chunk visible',
-    );
-    if (metrics.ui_timings_ms.first_chunk_visible === undefined) {
+    await delay(15_000);
+    const midText = await bodyText();
+    if (/Extracted text|Page \d+|\b[1-9]\d* chunks\b/.test(midText)) {
       metrics.ui_timings_ms.first_chunk_visible = Date.now() - parseStart;
+    } else {
+      metrics.observations.push(
+        'No extracted chunk was visible 15s after parsing started.',
+      );
     }
-  } catch (error) {
-    metrics.errors.push(`first chunk wait failed: ${errorMessage(error)}`);
-  }
-  metrics.ui_timings_ms.first_chunk_wait_window =
-    Date.now() - firstChunkStart;
+    await screenshot('mid-parse-ui-still-usable');
 
-  await waitText(
-    /Parsing complete\.|46\/46 pages|ready\s*Page/i,
-    300_000,
-    'parsing complete',
-  );
-  metrics.ui_timings_ms.parse_complete_visible = Date.now() - parseStart;
+    const firstChunkStart = Date.now();
+    try {
+      await waitText(
+        /Extracted text|Page \d+|\b[1-9]\d* chunks\b/,
+        260_000,
+        'first extracted chunk visible',
+      );
+      if (metrics.ui_timings_ms.first_chunk_visible === undefined) {
+        metrics.ui_timings_ms.first_chunk_visible = Date.now() - parseStart;
+      }
+    } catch (error) {
+      metrics.errors.push(`first chunk wait failed: ${errorMessage(error)}`);
+    }
+    metrics.ui_timings_ms.first_chunk_wait_window =
+      Date.now() - firstChunkStart;
+
+    const parseCompletePromise = waitText(
+      /Parsing complete\.|46\/46 pages|ready\s*Page/i,
+      300_000,
+      'parsing complete',
+    ).then(() => {
+      metrics.ui_timings_ms.parse_complete_visible = Date.now() - parseStart;
+    });
+    await observeStreamingDraftUiUntil(parseStart, parseCompletePromise);
+    await parseCompletePromise;
+  } finally {
+    streamingDraftCaptureOpen = false;
+  }
   await screenshot('parsing-complete-with-metrics');
 }
 
@@ -1094,6 +1348,7 @@ async function launchAppAndConnect(): Promise<void> {
   page =
     context.pages()[0] ??
     (await context.waitForEvent('page', { timeout: 30_000 }));
+  observeStreamingApiResponses(page);
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page
     .waitForLoadState('domcontentloaded', { timeout: 30_000 })
@@ -1205,6 +1460,54 @@ function positiveInteger(value: number, name: string): number {
   return value;
 }
 
+function responseItems(payload: unknown): unknown[] {
+  if (!isRecord(payload) || !Array.isArray(payload.items)) {
+    return [];
+  }
+  return payload.items;
+}
+
+function isUsableQuestionDraftPayload(item: unknown): boolean {
+  if (!isRecord(item)) {
+    return false;
+  }
+  const question = stringField(item.question).trim();
+  const choices = Array.isArray(item.choices)
+    ? item.choices.filter(
+        (choice) => typeof choice === 'string' && choice.trim().length > 0,
+      )
+    : [];
+  return question.length > 0 && choices.length >= 2;
+}
+
+function streamingDraftBlockerFromStatusCounts(
+  statusCounts: Record<string, number>,
+): string | undefined {
+  if (statusCounts.skipped_missing_model) {
+    return 'skipped_missing_model';
+  }
+  if (statusCounts.skipped_provider_unavailable) {
+    return 'skipped_provider_unavailable';
+  }
+  if (statusCounts.failed) {
+    return 'failed';
+  }
+  return undefined;
+}
+
+function mergeStatusCounts(
+  target: Record<string, number>,
+  source: Record<string, number>,
+): void {
+  for (const [status, count] of Object.entries(source)) {
+    target[status] = (target[status] ?? 0) + count;
+  }
+}
+
+function normalizedElapsedMs(value: number): number {
+  return Math.max(0, Math.round(value));
+}
+
 function numberField(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value)
     ? value
@@ -1213,6 +1516,10 @@ function numberField(value: unknown): number {
 
 function stringField(value: unknown): string {
   return typeof value === 'string' ? value : '';
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 
 function normalizePath(path: string): string {
@@ -1247,6 +1554,11 @@ async function main(): Promise<void> {
     ui_timings_ms: {},
     observations: [],
     errors: [],
+    streaming_drafts: {
+      job_snapshots: [],
+      draft_snapshots: [],
+      status_counts: {},
+    },
   };
 
   try {

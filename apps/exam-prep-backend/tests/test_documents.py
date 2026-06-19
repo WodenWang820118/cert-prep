@@ -177,7 +177,7 @@ def test_upload_prepare_failure_reports_missing_paddle_runtime(
     assert documents.json()["items"] == []
 
 
-def test_image_only_pdf_uses_ocr_and_creates_approved_mock_exam(
+def test_image_only_pdf_uses_ocr_and_creates_draft_mock_exam(
     tmp_path: Path, auth_headers
 ) -> None:
     ocr_provider = MockPaddleOcrProvider()
@@ -228,7 +228,7 @@ def test_image_only_pdf_uses_ocr_and_creates_approved_mock_exam(
 
     drafts = client.get(f"/projects/{project_id}/question-drafts", headers=auth_headers)
     item = drafts.json()["items"][0]
-    assert item["status"] == "approved"
+    assert item["status"] == "draft"
     assert item["answer_key_source"] == "ai_inferred"
     assert item["citation_page"] == 1
     assert item["source_excerpt"] in chunks[0]["text"]
