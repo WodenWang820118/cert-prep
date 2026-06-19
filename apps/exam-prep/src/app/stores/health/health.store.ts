@@ -29,10 +29,12 @@ export class HealthStore {
   private readonly jobView = inject(RuntimeJobViewService);
   private modelDownloadPollTimer: ReturnType<typeof setTimeout> | null = null;
   private runtimeInstallPollTimer: ReturnType<typeof setTimeout> | null = null;
+  private healthSnapshotLoadCount = 0;
 
   readonly llmHealth = signal<LLMHealthRead | null>(null);
   readonly systemHealth = signal<HealthResponse | null>(null);
   readonly ocrHealth = signal<OCRHealthRead | null>(null);
+  readonly healthSnapshotLoading = signal(false);
   readonly runtimeRequirements = signal<RuntimeRequirementRead[]>([]);
   readonly modelDownloadConsentVisible = signal(false);
   readonly modelDownloadStarting = signal(false);
@@ -88,6 +90,7 @@ export class HealthStore {
       this.runtimeRequirements(),
     ),
   );
+  readonly isOcrHealthLoading = computed(() => this.healthSnapshotLoading());
   readonly canDownloadModel = computed(
     () => this.isModelMissing() && !this.isModelDownloadActive(),
   );
@@ -108,17 +111,27 @@ export class HealthStore {
   );
 
   async load(): Promise<void> {
-    this.applyHealthSnapshot(await this.snapshots.load());
+    this.beginHealthSnapshotLoad();
+    try {
+      this.applyHealthSnapshot(await this.snapshots.load());
+    } finally {
+      this.endHealthSnapshotLoad();
+    }
   }
 
   async refresh(): Promise<void> {
-    const health = await this.operations.run(
-      'health',
-      'Runtime health refreshed',
-      async () => this.snapshots.load(),
-    );
-    if (health !== null) {
-      this.applyHealthSnapshot(health);
+    this.beginHealthSnapshotLoad();
+    try {
+      const health = await this.operations.run(
+        'health',
+        'Runtime health refreshed',
+        async () => this.snapshots.load(),
+      );
+      if (health !== null) {
+        this.applyHealthSnapshot(health);
+      }
+    } finally {
+      this.endHealthSnapshotLoad();
     }
   }
 
@@ -392,6 +405,21 @@ export class HealthStore {
     if (this.runtimeInstallPollTimer !== null) {
       clearTimeout(this.runtimeInstallPollTimer);
       this.runtimeInstallPollTimer = null;
+    }
+  }
+
+  private beginHealthSnapshotLoad(): void {
+    this.healthSnapshotLoadCount += 1;
+    this.healthSnapshotLoading.set(true);
+  }
+
+  private endHealthSnapshotLoad(): void {
+    this.healthSnapshotLoadCount = Math.max(
+      0,
+      this.healthSnapshotLoadCount - 1,
+    );
+    if (this.healthSnapshotLoadCount === 0) {
+      this.healthSnapshotLoading.set(false);
     }
   }
 

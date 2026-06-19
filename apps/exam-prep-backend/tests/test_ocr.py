@@ -159,6 +159,153 @@ if args.ocr_worker:
     ]
 
 
+def test_external_paddle_health_prewarms_only_primary_worker_then_expands(
+    tmp_path: Path,
+) -> None:
+    provider, log_path = _external_provider_with_runtime(
+        tmp_path,
+        ocr_page_workers=2,
+        health_body=_runtime_health_body(available=True),
+        worker_body="""
+if args.ocr_worker:
+    log('worker_start')
+    for line in sys.stdin:
+        job = json.loads(line)
+        log(f"worker_job:{job['page_number']}")
+        print(json.dumps({
+            'id': job.get('id'),
+            'ok': True,
+            'result': {
+                'text': f"worker page {job['page_number']}",
+                'extraction_method': 'paddle_ocr_cpu',
+                'device': 'cpu',
+                'fallback_reason': None,
+                'duration_ms': 11,
+            },
+        }), flush=True)
+    raise SystemExit(0)
+""",
+    )
+
+    try:
+        health = provider.health()
+        assert health.available is True
+        assert log_path.read_text(encoding="utf-8").splitlines() == [
+            "health",
+            "worker_start",
+            "worker_job:1",
+        ]
+
+        assert provider.extract_page_text(b"\x89PNG seven", 7).text == "worker page 7"
+        assert provider.extract_page_text(b"\x89PNG eight", 8).text == "worker page 8"
+    finally:
+        provider._reset_worker_pool()
+
+    assert log_path.read_text(encoding="utf-8").splitlines() == [
+        "health",
+        "worker_start",
+        "worker_job:1",
+        "worker_job:7",
+        "worker_start",
+        "worker_job:8",
+    ]
+
+
+def test_external_paddle_health_does_not_prewarm_unavailable_runtime(
+    tmp_path: Path,
+) -> None:
+    provider, log_path = _external_provider_with_runtime(
+        tmp_path,
+        health_body=_runtime_health_body(available=False),
+        worker_body="""
+if args.ocr_worker:
+    log('unexpected_worker_start')
+    raise SystemExit(9)
+""",
+    )
+
+    health = provider.health()
+
+    assert health.available is False
+    assert provider._worker_pool is None
+    assert log_path.read_text(encoding="utf-8").splitlines() == ["health"]
+
+
+def test_external_paddle_health_resets_pool_when_prewarm_worker_fails(
+    tmp_path: Path,
+) -> None:
+    provider, log_path = _external_provider_with_runtime(
+        tmp_path,
+        health_body=_runtime_health_body(available=True),
+        worker_body="""
+if args.ocr_worker:
+    log('worker_exit')
+    raise SystemExit(7)
+""",
+    )
+
+    health = provider.health()
+
+    assert health.available is True
+    assert provider._worker_pool is None
+    assert log_path.read_text(encoding="utf-8").splitlines() == [
+        "health",
+        "worker_exit",
+    ]
+
+
+def test_external_paddle_prepare_for_document_ocr_prewarms_primary_worker(
+    tmp_path: Path,
+) -> None:
+    provider, log_path = _external_provider_with_runtime(
+        tmp_path,
+        worker_body="""
+if args.ocr_worker:
+    log('worker_start')
+    for line in sys.stdin:
+        job = json.loads(line)
+        log(f"worker_job:{job['page_number']}")
+        print(json.dumps({
+            'id': job.get('id'),
+            'ok': True,
+            'result': {
+                'text': f"worker page {job['page_number']}",
+                'extraction_method': 'paddle_ocr_cpu',
+                'device': 'cpu',
+                'fallback_reason': None,
+                'duration_ms': 11,
+            },
+        }), flush=True)
+    raise SystemExit(0)
+""",
+    )
+
+    try:
+        provider.prepare_for_document_ocr()
+    finally:
+        provider._reset_worker_pool()
+
+    assert log_path.read_text(encoding="utf-8").splitlines() == [
+        "worker_start",
+        "worker_job:1",
+    ]
+
+
+def test_external_paddle_prepare_for_document_ocr_reports_missing_runtime(
+    tmp_path: Path,
+) -> None:
+    provider = ExternalPaddleOCRProvider(
+        Settings(
+            data_dir=tmp_path,
+            api_token="test-token",
+            ocr_runtime_dir=tmp_path / "missing-runtime",
+        )
+    )
+
+    with pytest.raises(ProviderUnavailableError, match="PaddleOCR runtime is not installed."):
+        provider.prepare_for_document_ocr()
+
+
 def test_external_paddle_provider_falls_back_to_oneshot_when_worker_exits(
     tmp_path: Path,
 ) -> None:
@@ -244,13 +391,20 @@ def _external_provider_with_runtime(
     *,
     worker_body: str,
     oneshot_body: str = "",
+    health_body: str = "",
+    ocr_page_workers: int = 1,
 ) -> tuple[ExternalPaddleOCRProvider, Path]:
     runtime_dir = tmp_path / "runtime"
     runtime_dir.mkdir()
     log_path = tmp_path / "runtime.log"
     script_path = runtime_dir / "runtime.py"
     script_path.write_text(
-        _runtime_script(log_path=log_path, worker_body=worker_body, oneshot_body=oneshot_body),
+        _runtime_script(
+            log_path=log_path,
+            worker_body=worker_body,
+            oneshot_body=oneshot_body,
+            health_body=health_body,
+        ),
         encoding="utf-8",
     )
     entrypoint = runtime_dir / "runtime.cmd"
@@ -279,14 +433,43 @@ def _external_provider_with_runtime(
             data_dir=tmp_path,
             api_token="test-token",
             ocr_runtime_dir=runtime_dir,
-            ocr_page_workers=1,
+            ocr_page_workers=ocr_page_workers,
             ocr_runtime_timeout_seconds=2,
         )
     )
     return provider, log_path
 
 
-def _runtime_script(*, log_path: Path, worker_body: str, oneshot_body: str) -> str:
+def _runtime_health_body(*, available: bool) -> str:
+    return f"""
+if args.ocr_health:
+    log('health')
+    print(json.dumps({{
+        'provider': 'paddle',
+        'engine': 'paddleocr',
+        'available': {available!r},
+        'detail': 'test health',
+        'python_version': '3.13.test',
+        'paddle_version': '3.3.0',
+        'paddleocr_version': '3.6.0',
+        'selected_device': 'cpu',
+        'cuda_available': False,
+        'gpu_count': 0,
+        'model_cache_dir': 'test-cache',
+        'fallback_reason': None,
+        'unavailable_reason': None if {available!r} else 'paddle_runtime_unhealthy',
+    }}))
+    raise SystemExit(0)
+"""
+
+
+def _runtime_script(
+    *,
+    log_path: Path,
+    worker_body: str,
+    oneshot_body: str,
+    health_body: str = "",
+) -> str:
     return f"""
 from __future__ import annotations
 
@@ -305,10 +488,12 @@ def log(message: str) -> None:
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--ocr-worker', action='store_true')
+parser.add_argument('--ocr-health', action='store_true')
 parser.add_argument('--ocr-page')
 parser.add_argument('--page-number', type=int, default=1)
 parser.add_argument('--device', default='auto')
 args = parser.parse_args()
+{health_body}
 {worker_body}
 {oneshot_body}
 raise SystemExit(3)

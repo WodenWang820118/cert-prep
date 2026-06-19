@@ -102,6 +102,10 @@ export class ModelHealthViewModelService {
       return 'OCR waiting';
     }
 
+    if (state.ocrHealthLoading) {
+      return 'OCR checking';
+    }
+
     if (state.ocrHealth === null) {
       return 'OCR unknown';
     }
@@ -149,6 +153,9 @@ export class ModelHealthViewModelService {
     if (!state.backendReady) {
       return 'Waiting for Python backend runtime.';
     }
+    if (state.ocrHealthLoading) {
+      return 'PaddleOCR is warming up.';
+    }
     if (state.ocrHealth === null) {
       return 'PaddleOCR status unavailable.';
     }
@@ -178,6 +185,9 @@ export class ModelHealthViewModelService {
   private ocrStatusLabel(state: ModelHealthViewState): string {
     if (!state.backendReady) {
       return 'Waiting';
+    }
+    if (state.ocrHealthLoading) {
+      return 'Checking';
     }
     if (state.ocrRuntimeMissing) {
       return 'Missing';
@@ -215,6 +225,9 @@ export class ModelHealthViewModelService {
 
   private ocrSeverity(state: ModelHealthViewState): HealthStatusSeverity {
     if (!state.backendReady) {
+      return 'info';
+    }
+    if (state.ocrHealthLoading) {
       return 'info';
     }
     return state.ocrRuntimeMissing

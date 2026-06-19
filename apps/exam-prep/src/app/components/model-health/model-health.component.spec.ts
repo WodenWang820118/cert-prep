@@ -97,6 +97,38 @@ describe('ModelHealthComponent', () => {
     expect(buttonByText(document.body, 'Download model')).toBeNull();
   });
 
+  it('shows OCR checking copy while health is still settling', () => {
+    const fixture = TestBed.createComponent(ModelHealthComponent);
+    const health = TestBed.inject(HealthStore);
+    health.systemHealth.set({
+      status: 'ok',
+      app: 'exam-prep-backend',
+      version: '0.1.0',
+      python_version: '3.13.5',
+      runtime_mode: 'source',
+    });
+    health.llmHealth.set({
+      provider: 'fake',
+      model: 'reasoner:7b',
+      available: true,
+      detail: 'deterministic local fake provider',
+      unavailable_reason: null,
+    });
+    health.ocrHealth.set(null);
+    health.healthSnapshotLoading.set(true);
+
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('OCR checking');
+    expect(fixture.nativeElement.textContent).not.toContain('OCR unknown');
+
+    buttonByText(fixture.nativeElement, 'Manage runtime')?.click();
+    fixture.detectChanges();
+
+    expect(document.body.textContent).toContain('Checking');
+    expect(document.body.textContent).toContain('PaddleOCR is warming up.');
+  });
+
   it('opens consent and cancel does not start the download', async () => {
     const fixture = TestBed.createComponent(ModelHealthComponent);
     const health = TestBed.inject(HealthStore);

@@ -12,7 +12,8 @@ from exam_prep_backend.domains.mock_exams.models import DraftSuggestion, SourceC
 from exam_prep_backend.domains.mock_exams.ports import ProviderHealth
 from exam_prep_backend.domains.source_documents import pdf_extraction
 from exam_prep_backend.domains.source_documents.ocr import OCRHealth, OCRPageResult
-from exam_prep_backend.errors import InvalidPdfError
+from exam_prep_backend.errors import InvalidPdfError, ProviderUnavailableError
+from exam_prep_backend.routers import documents as documents_router
 
 
 def test_pdf_upload_hashes_stores_extracts_and_chunks_by_page(
@@ -140,6 +141,40 @@ def test_image_only_pdf_reports_missing_paddle_runtime(tmp_path: Path, auth_head
     document = response.json()
     assert document["status"] == "ocr_failed"
     assert document["ocr_fallback_reason"] == "PaddleOCR runtime is not installed."
+
+
+def test_upload_prepare_failure_reports_missing_paddle_runtime(
+    tmp_path: Path,
+    auth_headers,
+) -> None:
+    client = TestClient(
+        create_app(
+            settings=Settings(
+                data_dir=tmp_path,
+                api_token="test-token",
+                auto_generate_exam_on_upload=True,
+            ),
+            ocr_provider=PrepareFailingPaddleRuntimeProvider(),
+            document_processing_async_jobs=True,
+        )
+    )
+    project_id = _create_project(client, auth_headers)
+
+    response = client.post(
+        f"/projects/{project_id}/documents",
+        headers=auth_headers,
+        files={"file": ("scan.pdf", minimal_pdf(""), "application/pdf")},
+    )
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "code": "paddle_runtime_missing",
+        "message": "PaddleOCR runtime is not installed.",
+    }
+
+    documents = client.get(f"/projects/{project_id}/documents", headers=auth_headers)
+    assert documents.status_code == 200
+    assert documents.json()["items"] == []
 
 
 def test_image_only_pdf_uses_ocr_and_creates_approved_mock_exam(
@@ -359,6 +394,63 @@ def test_image_only_pdf_ocr_continues_after_single_page_render_failure(
     assert [chunk["page_number"] for chunk in chunks] == [1, 3]
 
 
+def test_ocr_page_flushes_before_all_pages_finish_embedded_scan(monkeypatch) -> None:
+    ocr_provider = PageOneObservedOcrProvider()
+    scan_order: list[int] = []
+    page_three_scan_started = Event()
+    progress_snapshots: list[tuple[int, int, bool]] = []
+
+    class BlankPage:
+        def __init__(self, page_number: int) -> None:
+            self.page_number = page_number
+
+        def extract_text(self) -> str:
+            scan_order.append(self.page_number)
+            if self.page_number == 2:
+                assert ocr_provider.page_one_finished.wait(timeout=2)
+            if self.page_number == 3:
+                page_three_scan_started.set()
+            return ""
+
+    class FakePdfReader:
+        def __init__(self, stream) -> None:
+            self.pages = [BlankPage(1), BlankPage(2), BlankPage(3)]
+
+    def render_page(pdf_bytes: bytes, *, page_index: int, scale: float) -> bytes:
+        return b"\x89PNG\r\nfake-page"
+
+    def record_progress(progress: pdf_extraction.PdfExtractionProgress) -> None:
+        if progress.page is not None:
+            progress_snapshots.append(
+                (
+                    progress.page_number,
+                    len(scan_order),
+                    page_three_scan_started.is_set(),
+                )
+            )
+
+    monkeypatch.setattr(pdf_extraction, "PdfReader", FakePdfReader)
+    monkeypatch.setattr(pdf_extraction, "render_pdf_page_png", render_page)
+
+    result = pdf_extraction.extract_pdf_pages(
+        b"%PDF fake",
+        max_pages=3,
+        max_page_text_chars=10_000,
+        max_total_text_chars=30_000,
+        ocr_provider=ocr_provider,
+        on_page_processed=record_progress,
+    )
+
+    assert any(
+        page_number == 1 and scanned_page_count < 3 and not page_three_started
+        for page_number, scanned_page_count, page_three_started in progress_snapshots
+    )
+    assert result.processed_page_count == 3
+    assert result.ocr_worker_count == 1
+    assert [page.page_number for page in result.pages] == [1, 2, 3]
+    assert ocr_provider.ocr_page_numbers == [1, 2, 3]
+
+
 def test_ocr_page_workers_preserve_final_order_and_metrics(
     tmp_path: Path,
     auth_headers,
@@ -530,6 +622,49 @@ def test_async_upload_returns_processing_then_progresses(tmp_path: Path, auth_he
     assert ready["exam_item_count"] == 0
 
 
+def test_async_upload_prepares_document_ocr_before_starting_processing(
+    tmp_path: Path,
+    auth_headers,
+    monkeypatch,
+) -> None:
+    ocr_provider = PreparingOcrProvider()
+    thread_observations: list[tuple[str, list[str]]] = []
+
+    class RecordingThread:
+        def __init__(self, *, target, args, daemon: bool) -> None:
+            self.target = target
+            self.args = args
+            self.daemon = daemon
+            thread_observations.append(("constructed", list(ocr_provider.calls)))
+
+        def start(self) -> None:
+            thread_observations.append(("started", list(ocr_provider.calls)))
+
+    monkeypatch.setattr(documents_router, "Thread", RecordingThread)
+    client = TestClient(
+        create_app(
+            settings=Settings(data_dir=tmp_path, api_token="test-token"),
+            ocr_provider=ocr_provider,
+            document_processing_async_jobs=True,
+        )
+    )
+    project_id = _create_project(client, auth_headers)
+
+    response = client.post(
+        f"/projects/{project_id}/documents",
+        headers=auth_headers,
+        files={"file": ("async.pdf", minimal_pdf(""), "application/pdf")},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["status"] == "processing"
+    assert ocr_provider.calls == ["prepare"]
+    assert thread_observations == [
+        ("constructed", ["prepare"]),
+        ("started", ["prepare"]),
+    ]
+
+
 def _create_project(client: TestClient, auth_headers) -> str:
     response = client.post("/projects", headers=auth_headers, json={"name": "CISSP"})
     assert response.status_code == 201
@@ -614,6 +749,19 @@ class BlockingOcrProvider(MockPaddleOcrProvider):
         return super().extract_page_text(image_png, page_number)
 
 
+class PreparingOcrProvider(MockPaddleOcrProvider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.calls: list[str] = []
+
+    def prepare_for_document_ocr(self) -> None:
+        self.calls.append("prepare")
+
+    def extract_page_text(self, image_png: bytes, page_number: int) -> OCRPageResult:
+        self.calls.append(f"extract:{page_number}")
+        return super().extract_page_text(image_png, page_number)
+
+
 class MockOllamaOcrProvider(MockPaddleOcrProvider):
     provider = "mock-ollama"
     engine = "gemma4:12b"
@@ -690,6 +838,20 @@ class BlockingFirstPageOcrProvider(MockPaddleOcrProvider):
         )
 
 
+class PageOneObservedOcrProvider(MockPaddleOcrProvider):
+    page_workers = 1
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.page_one_finished = Event()
+
+    def extract_page_text(self, image_png: bytes, page_number: int) -> OCRPageResult:
+        result = super().extract_page_text(image_png, page_number)
+        if page_number == 1:
+            self.page_one_finished.set()
+        return result
+
+
 class MissingPaddleRuntimeProvider(MockPaddleOcrProvider):
     def health(self) -> OCRHealth:
         return OCRHealth(
@@ -709,8 +871,11 @@ class MissingPaddleRuntimeProvider(MockPaddleOcrProvider):
         )
 
     def extract_page_text(self, image_png: bytes, page_number: int) -> OCRPageResult:
-        from exam_prep_backend.errors import ProviderUnavailableError
+        raise ProviderUnavailableError("PaddleOCR runtime is not installed.")
 
+
+class PrepareFailingPaddleRuntimeProvider(MissingPaddleRuntimeProvider):
+    def prepare_for_document_ocr(self) -> None:
         raise ProviderUnavailableError("PaddleOCR runtime is not installed.")
 
 

@@ -51,8 +51,17 @@ class ExternalPaddleOCRProvider:
                 unavailable_reason="paddle_runtime_missing",
             )
         try:
-            payload = self._run_json(entrypoint, ["--ocr-health", "--device", self._settings.ocr_device])
-            return _health_from_payload(payload, runtime_dir=self._settings.resolved_ocr_runtime_dir)
+            payload = self._run_json(
+                entrypoint,
+                ["--ocr-health", "--device", self._settings.ocr_device],
+            )
+            health = _health_from_payload(
+                payload,
+                runtime_dir=self._settings.resolved_ocr_runtime_dir,
+            )
+            if health.available:
+                self._prewarm_primary_worker(entrypoint)
+            return health
         except Exception as exc:
             return OCRHealth(
                 provider=self.provider,
@@ -69,6 +78,29 @@ class ExternalPaddleOCRProvider:
                 fallback_reason=None,
                 unavailable_reason="paddle_runtime_unhealthy",
             )
+
+    def prepare_for_document_ocr(self) -> None:
+        entrypoint = self._entrypoint()
+        if entrypoint is None:
+            raise ProviderUnavailableError("PaddleOCR runtime is not installed.")
+        self._prewarm_primary_worker(entrypoint, raise_on_failure=True)
+
+    def _prewarm_primary_worker(
+        self,
+        entrypoint: Path,
+        *,
+        raise_on_failure: bool = False,
+    ) -> None:
+        try:
+            self._worker_pool_for(entrypoint, initial_worker_count=1).prewarm_primary_worker()
+        except Exception as exc:
+            self._reset_worker_pool()
+            if raise_on_failure:
+                if isinstance(exc, ProviderUnavailableError):
+                    raise
+                raise ProviderUnavailableError(
+                    f"PaddleOCR runtime is unhealthy: {exc}"
+                ) from exc
 
     def extract_page_text(self, image_png: bytes, page_number: int) -> OCRPageResult:
         entrypoint = self._entrypoint()
@@ -129,7 +161,12 @@ class ExternalPaddleOCRProvider:
         )
         return _ocr_result_from_payload(payload)
 
-    def _worker_pool_for(self, entrypoint: Path) -> _OcrWorkerPool:
+    def _worker_pool_for(
+        self,
+        entrypoint: Path,
+        *,
+        initial_worker_count: int | None = None,
+    ) -> _OcrWorkerPool:
         with self._worker_pool_lock:
             if self._worker_pool is not None and self._worker_pool.entrypoint == entrypoint:
                 return self._worker_pool
@@ -139,6 +176,7 @@ class ExternalPaddleOCRProvider:
                 entrypoint=entrypoint,
                 device=self._settings.ocr_device,
                 worker_count=self.page_workers,
+                initial_worker_count=initial_worker_count,
                 timeout_seconds=self._settings.ocr_runtime_timeout_seconds,
             )
             return self._worker_pool
@@ -157,25 +195,43 @@ class _OcrWorkerPool:
         entrypoint: Path,
         device: str,
         worker_count: int,
+        initial_worker_count: int | None = None,
         timeout_seconds: float,
     ) -> None:
         self.entrypoint = entrypoint
+        self.worker_count = max(1, worker_count)
+        self._device = device
+        self._timeout_seconds = timeout_seconds
         self._lock = threading.Lock()
         self._next_worker_index = 0
+        self._primary_worker_prewarmed = False
         self._workers: list[_JsonlOcrWorker] = []
+        worker_start_count = (
+            self.worker_count
+            if initial_worker_count is None
+            else min(max(1, initial_worker_count), self.worker_count)
+        )
         try:
-            self._workers = [
-                _JsonlOcrWorker(
-                    entrypoint=entrypoint,
-                    device=device,
-                    timeout_seconds=timeout_seconds,
-                )
-                for _ in range(max(1, worker_count))
-            ]
+            self._workers = [self._create_worker() for _ in range(worker_start_count)]
         except Exception:
             self.close()
             raise
         atexit.register(self.close)
+
+    def prewarm_primary_worker(self) -> None:
+        with self._lock:
+            if self._primary_worker_prewarmed:
+                return
+            worker = self._worker_at(0)
+
+        image_path = _write_prewarm_png()
+        try:
+            worker.extract_page_text(image_path=image_path, page_number=1)
+        finally:
+            image_path.unlink(missing_ok=True)
+
+        with self._lock:
+            self._primary_worker_prewarmed = True
 
     def extract_page_text(self, *, image_path: Path, page_number: int) -> OCRPageResult:
         payload = self._next_worker().extract_page_text(
@@ -188,10 +244,27 @@ class _OcrWorkerPool:
         for worker in self._workers:
             worker.close()
 
+    def _create_worker(self) -> _JsonlOcrWorker:
+        return _JsonlOcrWorker(
+            entrypoint=self.entrypoint,
+            device=self._device,
+            timeout_seconds=self._timeout_seconds,
+        )
+
+    def _worker_at(self, index: int) -> _JsonlOcrWorker:
+        while len(self._workers) <= index:
+            self._workers.append(self._create_worker())
+        return self._workers[index]
+
     def _next_worker(self) -> _JsonlOcrWorker:
         with self._lock:
             if not self._workers:
-                raise ProviderUnavailableError("PaddleOCR worker pool is not running.")
+                self._workers.append(self._create_worker())
+            if (
+                self._next_worker_index >= len(self._workers)
+                and len(self._workers) < self.worker_count
+            ):
+                self._workers.append(self._create_worker())
             worker = self._workers[self._next_worker_index % len(self._workers)]
             self._next_worker_index += 1
             return worker
@@ -336,6 +409,25 @@ def _ocr_result_from_payload(payload: dict[str, Any]) -> OCRPageResult:
         fallback_reason=_optional_string(payload.get("fallback_reason")),
         duration_ms=int(payload.get("duration_ms") or 0),
     )
+
+
+def _write_prewarm_png() -> Path:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as image_file:
+        image_file.write(_prewarm_png())
+        return Path(image_file.name)
+
+
+def _prewarm_png() -> bytes:
+    from io import BytesIO
+
+    from PIL import Image, ImageDraw
+
+    image = Image.new("RGB", (160, 56), "white")
+    draw = ImageDraw.Draw(image)
+    draw.text((8, 16), "OCR TEST", fill="black")
+    output = BytesIO()
+    image.save(output, format="PNG")
+    return output.getvalue()
 
 
 def _entrypoint_command(entrypoint: Path, args: list[str]) -> list[str]:

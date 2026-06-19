@@ -31,6 +31,32 @@ Root/coordinator 已完成文件整理與 baseline commit：`f1fd9dc feat: stabi
 
 主要 QA 報告：`.agents/SPECS/parallel-parsing-reasoning-qa.md`
 
+## Streaming Page-To-Qwen Research
+
+User-added research topic on 2026-06-19: parse each page/chunk and immediately
+start qwen draft-question generation while the remaining PDF pages continue
+parsing.
+
+Research plan: `.agents/SPECS/streaming-parse-to-qwen.md`
+QA placeholder: `.agents/SPECS/streaming-parse-to-qwen-qa.md`
+
+Initial architecture decision: do not add Kafka for the first local-first slice.
+Use a SQLite-backed job queue/outbox plus a bounded qwen worker, and keep Kafka or
+another broker as a future option only for distributed workers, fan-out, durable
+multi-consumer replay, or multi-user service deployment.
+
+## Dead Code Cleanup Backlog
+
+User-added backlog topic on 2026-06-19: audit all projects and remove truly
+unused classes, files, functions, imports, test helpers, and script code so the
+workspace stays simpler to understand.
+
+Scope rule: this is cleanup only. Do not remove generated files, public API
+contracts, intentionally reserved extension points, or code paths that are only
+reachable in packaged/runtime QA without matching evidence. Each deletion slice
+must be project-scoped and verified through the relevant `pnpm nx ...` tests,
+lints, builds, or package checks.
+
 同 build packaged production flow：
 
 - worker `1`：`.agents/tmp/parallel-parsing-reasoning/2026-06-18T06-58-03-170Z/`

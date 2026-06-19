@@ -1,5 +1,7 @@
 import { TestBed } from '@angular/core/testing';
-import { DocumentRead, EXAM_PREP_API } from '../../exam-prep-api';
+import { DocumentRead, EXAM_PREP_API, OCRHealthRead } from '../../exam-prep-api';
+import { HealthStore } from '../../stores/health/health.store';
+import { OperationStore } from '../../stores/operation.store';
 import { ProjectStore } from '../../stores/project.store';
 import { SourceImportStore } from '../../stores/source-import/source-import.store';
 import { SourceImportPanelComponent } from './source-import-panel.component';
@@ -91,6 +93,31 @@ describe('SourceImportPanelComponent', () => {
     expect(sourceImport.progressLabel()).toBe('8/8 pages');
     expect(fixture.nativeElement.textContent).toContain('8/8 pages / 8 chunks');
   });
+
+  it('keeps upload disabled while runtime health is refreshing stale OCR status', async () => {
+    const fixture = TestBed.createComponent(SourceImportPanelComponent);
+    const health = TestBed.inject(HealthStore);
+    const operations = TestBed.inject(OperationStore);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    health.ocrHealth.set(ocrHealth());
+    health.healthSnapshotLoading.set(true);
+    sourceImport.chooseFile(
+      new File(['%PDF-1.7'], 'runtime.pdf', { type: 'application/pdf' }),
+    );
+
+    fixture.detectChanges();
+
+    expect(health.isOcrHealthLoading()).toBe(true);
+    expect(sourceImport.canUpload()).toBe(false);
+    expect(uploadButton(fixture.nativeElement)?.disabled).toBe(true);
+
+    await sourceImport.uploadDocument();
+
+    expect(apiClient.uploadDocument).not.toHaveBeenCalled();
+    expect(operations.error()).toBe(
+      'PaddleOCR is warming up. Try again when runtime health finishes.',
+    );
+  });
 });
 
 function documentRead(
@@ -118,4 +145,30 @@ function documentRead(
     updated_at: '2026-06-18T00:00:01Z',
     ...overrides,
   } as DocumentRead;
+}
+
+function ocrHealth(): OCRHealthRead {
+  return {
+    provider: 'paddle',
+    engine: 'paddleocr',
+    available: true,
+    detail: 'PaddleOCR imports available',
+    python_version: '3.13.5',
+    paddle_version: '3.3.0',
+    paddleocr_version: '3.6.0',
+    selected_device: 'gpu:0',
+    cuda_available: true,
+    gpu_count: 1,
+    model_cache_dir: null,
+    fallback_reason: null,
+    unavailable_reason: null,
+  };
+}
+
+function uploadButton(root: ParentNode): HTMLButtonElement | null {
+  return (
+    Array.from(root.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Upload PDF'),
+    ) ?? null
+  );
 }

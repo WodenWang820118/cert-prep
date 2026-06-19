@@ -3,6 +3,7 @@ import {
   EXAM_PREP_API,
   LLMHealthRead,
   ModelDownloadRead,
+  OCRHealthRead,
   RuntimeInstallationRead,
 } from '../../exam-prep-api';
 import { HealthStore } from './health.store';
@@ -90,6 +91,29 @@ describe('HealthStore model downloads', () => {
     expect(store.ocrHealth()?.available).toBe(true);
     expect(store.llmHealth()).toBeNull();
     expect(store.runtimeRequirements()).toEqual([]);
+  });
+
+  it('marks OCR health as loading while the snapshot is still settling', async () => {
+    const store = TestBed.inject(HealthStore);
+    let resolveOcrHealth!: (value: OCRHealthRead) => void;
+    apiClient.ocrHealth.mockReturnValueOnce(
+      new Promise<OCRHealthRead>((resolve) => {
+        resolveOcrHealth = resolve;
+      }),
+    );
+
+    const load = store.load();
+
+    expect(store.healthSnapshotLoading()).toBe(true);
+    expect(store.isOcrHealthLoading()).toBe(true);
+    expect(store.ocrHealth()).toBeNull();
+
+    resolveOcrHealth(ocrHealth());
+    await load;
+
+    expect(store.healthSnapshotLoading()).toBe(false);
+    expect(store.isOcrHealthLoading()).toBe(false);
+    expect(store.ocrHealth()?.available).toBe(true);
   });
 
   it('starts and polls a model download only after confirmation', async () => {
@@ -209,6 +233,24 @@ function modelDownload(
     created_at: '2026-06-11T00:00:00Z',
     updated_at: '2026-06-11T00:00:00Z',
     ...overrides,
+  };
+}
+
+function ocrHealth(): OCRHealthRead {
+  return {
+    provider: 'paddle',
+    engine: 'paddleocr',
+    available: true,
+    detail: 'PaddleOCR imports available',
+    python_version: '3.13.5',
+    paddle_version: '3.3.0',
+    paddleocr_version: '3.6.0',
+    selected_device: 'cpu',
+    cuda_available: false,
+    gpu_count: 0,
+    model_cache_dir: null,
+    fallback_reason: null,
+    unavailable_reason: null,
   };
 }
 

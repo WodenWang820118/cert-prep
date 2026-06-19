@@ -86,6 +86,17 @@
         "command": "node apps/exam-prep-desktop/scripts/package-qa.mts"
       }
     },
+    "packaged-flow-smoke": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "dependsOn": ["build-gpu"],
+      "outputs": [
+        "{workspaceRoot}/tmp/exam-prep-desktop/packaged-flow-smoke"
+      ],
+      "options": {
+        "command": "node apps/exam-prep-desktop/scripts/packaged-flow-smoke.mts"
+      }
+    },
     "typecheck-scripts": {
       "cache": true,
       "executor": "nx:run-commands",
@@ -100,7 +111,7 @@
       "dependsOn": ["typecheck-scripts"],
       "inputs": ["default"],
       "options": {
-        "command": "node --test apps/exam-prep-desktop/scripts/package-qa.test.mts"
+        "command": "node --test apps/exam-prep-desktop/scripts/package-qa.test.mts apps/exam-prep-desktop/scripts/packaged-flow-smoke.test.mts"
       }
     },
     "cargo-test": {

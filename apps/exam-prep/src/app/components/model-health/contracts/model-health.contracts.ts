@@ -57,6 +57,7 @@ export interface ModelHealthViewState {
   readonly systemHealth: HealthResponse | null;
   readonly llmHealth: LLMHealthRead | null;
   readonly ocrHealth: OCRHealthRead | null;
+  readonly ocrHealthLoading: boolean;
   readonly ollamaMissing: boolean;
   readonly modelMissing: boolean;
   readonly ocrRuntimeMissing: boolean;

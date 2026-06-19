@@ -71,6 +71,7 @@ async def upload_document(
         page_count = inspect_pdf_page_count(content, max_pages=settings.max_pdf_pages)
         sha256 = sha256_hex(content)
         storage_path = store_pdf(settings, project_id, sha256, content)
+        _prepare_document_ocr_provider(ocr_provider)
         document = source_documents_repository.create_processing_document(
             db,
             project_id=project_id,
@@ -160,6 +161,12 @@ def _validate_pdf_upload_metadata(file: UploadFile) -> None:
         ".pdf"
     ):
         raise validation_error("Only PDF uploads are supported.")
+
+
+def _prepare_document_ocr_provider(ocr_provider: OCRProvider) -> None:
+    prepare = getattr(ocr_provider, "prepare_for_document_ocr", None)
+    if callable(prepare):
+        prepare()
 
 
 def _auto_generate_exam_items(

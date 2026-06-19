@@ -43,7 +43,10 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if matches!(event, tauri::WindowEvent::Destroyed) {
+            if matches!(
+                event,
+                tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed
+            ) {
                 if let Some(state) = window.try_state::<BackendState>() {
                     state.terminate_child_process_tree();
                 }

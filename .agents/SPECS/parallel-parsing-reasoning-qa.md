@@ -90,3 +90,51 @@ worker `2` backup DB：`.agents/tmp/appdata-backup-before-worker1-valid-20260618
 - First chunk 仍未在 15 秒內可見；雖然 backend 已支援 as-completed flush，但 use-while-parsing 體感還需要縮短。
 - QA wrapper 的 Alt+F4 graceful close 未讓 packaged app 自行退出，最後用 `taskkill /T /F` 清掉 process tree；未留下殘留行程，但仍需釐清 CDP 關窗與實際使用者關窗差異。
 - Reasoning model bakeoff 需要在 Ollama server 與候選模型可用時重跑。
+
+## 2026-06-19 Execution Evidence
+
+Commands run:
+
+- `pnpm nx run exam-prep:test` - passed, 35 tests.
+- `pnpm nx run exam-prep:lint` - passed.
+- `pnpm nx run exam-prep:build` - passed with existing bundle budget warning: initial `757.02 kB` exceeds `700.00 kB` by `57.02 kB`.
+- `pnpm nx run exam-prep-backend:test` - passed, 88 tests, one existing Starlette/httpx warning.
+- `pnpm nx run exam-prep-backend:lint` - passed.
+- `pnpm nx run exam-prep-desktop:cargo-test` - passed, 12 Rust tests.
+- `pnpm nx run exam-prep-desktop:typecheck-scripts` - passed.
+- `pnpm nx run exam-prep-desktop:package-qa-test` - passed, 14 script tests.
+- `pnpm nx run exam-prep-desktop:package-qa --skip-nx-cache --args='--ocr-page-workers 1'` - passed.
+- `pnpm nx run exam-prep-desktop:packaged-flow-smoke --skip-nx-cache --args='--ocr-page-workers 1'` - passed.
+- `pnpm nx run exam-prep-backend:reasoning-bakeoff` - completed with partial live evidence only.
+
+Latest packaged smoke:
+
+- Artifact: `tmp/exam-prep-desktop/packaged-flow-smoke/2026-06-19T03-24-37-213Z/metrics.json`.
+- Final document DB row: `46 pages / 46 chunks`, `processed_page_count=46`, `status=ready`, `ocr_worker_count=1`.
+- Backend timing: `first_chunk_ms=20,713`, `parse_wall_duration_ms=48,656`, `ocr_engine_duration_ms=27,021`, `render_duration_ms=1,202`.
+- UI timing: `first_chunk_visible=21,226 ms`, `parse_complete_visible=48,829 ms`.
+- Close/process evidence: restart and final close both `gracefulExited=true`, `fallbackUsed=false`, `exitCode=0`, empty `residualProcesses`; `node_cleanup_summary.closed_count=0`.
+
+Package QA:
+
+- Artifact: `tmp/exam-prep-desktop/package-qa/package-qa.json`.
+- Generated at: `2026-06-19T03:17:45.099Z`.
+- Package artifacts: MSI `3.95 MB`, NSIS `2.76 MB`.
+- Backend runtime artifact: `43.12 MB`.
+- OCR runtime artifact: `632.66 MB`.
+- Runtime launch env keeps `EXAM_PREP_OCR_PAGE_WORKERS=1`.
+
+Reasoning bakeoff:
+
+- Artifact: `apps/exam-prep-backend/.benchmarks/reasoning-bakeoff-20260619T020859Z.json`.
+- `qwen3:14b`: `missing_model`.
+- `deepseek-r1:14b`: `missing_model`.
+- `gemma4:12b`: `scored`, `latency_ms=127,504`, `json_valid=true`, citation validity `2/3`, manual review ratio `1.0`.
+- TODO remains open because all three comparator models did not produce scored results.
+
+Open after this run:
+
+- OCR health cold-start UX remains open until a packaged artifact confirms the drawer no longer shows `OCR unknown` while health is in-flight. Frontend state/test coverage now treats any health snapshot refresh as OCR checking/warming.
+- First chunk latency remains open. The backend improved from about `76s` to about `20.7s`, but the packaged acceptance gate is still `<15s`.
+- Streaming parse-to-qwen remains research/prototype work. Initial decision: no Kafka for the first local-first slice; use a SQLite queue/outbox and bounded qwen worker.
+- Dead-code cleanup was added as a new backlog item and has not started.

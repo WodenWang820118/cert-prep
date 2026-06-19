@@ -82,7 +82,10 @@ export class SourceImportStore {
     this.metrics.elapsedTime(this.uploadedDocument()),
   );
   readonly canUpload = computed(
-    () => this.projects.selectedProject() !== null && this.selectedFile() !== null,
+    () =>
+      this.projects.selectedProject() !== null &&
+      this.selectedFile() !== null &&
+      !this.health.healthSnapshotLoading(),
   );
   readonly canGenerateDrafts = computed(() => {
     const document = this.uploadedDocument();
@@ -131,6 +134,12 @@ export class SourceImportStore {
     const file = this.selectedFile();
     if (project === null || file === null) {
       this.operations.fail('Choose a project and PDF before uploading.');
+      return null;
+    }
+    if (this.health.healthSnapshotLoading()) {
+      this.operations.fail(
+        'PaddleOCR is warming up. Try again when runtime health finishes.',
+      );
       return null;
     }
 
