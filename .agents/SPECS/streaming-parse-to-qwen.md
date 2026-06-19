@@ -52,11 +52,14 @@ Recommended states:
 - `skipped_provider_unavailable`
 - `skipped_missing_model`
 - `failed`
-- `cancelled`
 
 Each job should include `project_id`, `document_id`, `chunk_id`, `page_number`,
 `parse_run_id`, `content_profile`, retry count, last error, timestamps, and model
 profile.
+
+Prototype note: the first implementation omits `cancelled` until there is a
+real pause/cancel API. Keeping unused states out of the enum makes the worker
+state surface easier to audit.
 
 ## UI/API Shape
 

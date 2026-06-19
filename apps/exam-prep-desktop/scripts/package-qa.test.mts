@@ -271,6 +271,10 @@ test('runtime launch env sets OCR page workers only from explicit QA config', ()
     baseEnv: { EXAM_PREP_OCR_PAGE_WORKERS: '9', PATH: 'test-path' },
   });
   assert.equal(ambientOnly.EXAM_PREP_OCR_PAGE_WORKERS, undefined);
+  assert.equal(
+    ambientOnly.EXAM_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD,
+    'true',
+  );
   assert.equal(ambientOnly.PATH, 'test-path');
 
   const explicit = buildRuntimeLaunchEnv({

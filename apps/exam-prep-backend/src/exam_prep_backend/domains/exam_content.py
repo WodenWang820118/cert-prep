@@ -213,18 +213,6 @@ def question_item_kind_from_value(value: QuestionItemKindValue | None) -> Questi
     return QuestionItemKind.UNKNOWN
 
 
-def clean_exam_text(text: str) -> str:
-    return _clean_exam_text(text)
-
-
-def question_block_source_text(text: str) -> str:
-    return _question_block_source_text(text)
-
-
-def looks_like_question_group_instruction(stem: str) -> bool:
-    return _looks_like_question_group_instruction(stem)
-
-
 def _group_prompts(text: str) -> list[tuple[str, str]]:
     prompts: list[tuple[str, str]] = []
     for match in GROUP_PROMPT_PATTERN.finditer(text or ""):

@@ -1,0 +1,213 @@
+from __future__ import annotations
+
+from enum import StrEnum
+from sqlite3 import Row
+from uuid import uuid4
+
+from exam_prep_backend.database import Database, utc_now
+from exam_prep_backend.domains.projects.repository import ensure_project_exists
+from exam_prep_backend.domains.source_documents import repository as documents_repository
+from exam_prep_backend.errors import NotFoundError
+
+
+class DraftGenerationJobStatus(StrEnum):
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    SKIPPED_PROVIDER_UNAVAILABLE = "skipped_provider_unavailable"
+    SKIPPED_MISSING_MODEL = "skipped_missing_model"
+    FAILED = "failed"
+
+
+TERMINAL_STATUSES = {
+    DraftGenerationJobStatus.SUCCEEDED,
+    DraftGenerationJobStatus.SKIPPED_PROVIDER_UNAVAILABLE,
+    DraftGenerationJobStatus.SKIPPED_MISSING_MODEL,
+    DraftGenerationJobStatus.FAILED,
+}
+
+
+def enqueue_chunk_job(
+    db: Database,
+    *,
+    project_id: str,
+    document_id: str,
+    chunk_id: str,
+    page_number: int,
+    strategy: str,
+    provider: str,
+    model: str,
+) -> dict:
+    """Create or return the idempotent draft job for one source chunk."""
+
+    ensure_project_exists(db, project_id)
+    documents_repository.get_chunk(db, project_id, document_id, chunk_id)
+    now = utc_now()
+    with db.connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO draft_generation_jobs(
+                id, project_id, document_id, chunk_id, page_number, strategy,
+                status, provider, model, generated_count, retry_count,
+                last_error, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NULL, ?, ?)
+            ON CONFLICT(document_id, chunk_id, strategy) DO NOTHING
+            """,
+            (
+                str(uuid4()),
+                project_id,
+                document_id,
+                chunk_id,
+                page_number,
+                strategy,
+                DraftGenerationJobStatus.PENDING,
+                provider,
+                model,
+                now,
+                now,
+            ),
+        )
+        row = connection.execute(
+            """
+            SELECT *
+            FROM draft_generation_jobs
+            WHERE project_id = ? AND document_id = ? AND chunk_id = ? AND strategy = ?
+            """,
+            (project_id, document_id, chunk_id, strategy),
+        ).fetchone()
+    if row is None:
+        raise NotFoundError("Draft generation job not found.")
+    return job_from_row(row)
+
+
+def list_document_jobs(db: Database, project_id: str, document_id: str) -> list[dict]:
+    documents_repository.ensure_document_exists(db, project_id, document_id)
+    with db.connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT *
+            FROM draft_generation_jobs
+            WHERE project_id = ? AND document_id = ?
+            ORDER BY page_number, created_at, id
+            """,
+            (project_id, document_id),
+        ).fetchall()
+    return [job_from_row(row) for row in rows]
+
+
+def get_job(db: Database, job_id: str) -> dict:
+    with db.connect() as connection:
+        row = connection.execute(
+            "SELECT * FROM draft_generation_jobs WHERE id = ?",
+            (job_id,),
+        ).fetchone()
+    if row is None:
+        raise NotFoundError("Draft generation job not found.")
+    return job_from_row(row)
+
+
+def mark_running(db: Database, job_id: str) -> dict:
+    return _update_job(
+        db,
+        job_id,
+        status=DraftGenerationJobStatus.RUNNING,
+        generated_count=0,
+        last_error=None,
+    )
+
+
+def mark_succeeded(db: Database, job_id: str, *, generated_count: int) -> dict:
+    return _update_job(
+        db,
+        job_id,
+        status=DraftGenerationJobStatus.SUCCEEDED,
+        generated_count=generated_count,
+        last_error=None,
+    )
+
+
+def mark_skipped_missing_model(db: Database, job_id: str, *, detail: str) -> dict:
+    return _update_job(
+        db,
+        job_id,
+        status=DraftGenerationJobStatus.SKIPPED_MISSING_MODEL,
+        generated_count=0,
+        last_error=detail,
+    )
+
+
+def mark_skipped_provider_unavailable(db: Database, job_id: str, *, detail: str) -> dict:
+    return _update_job(
+        db,
+        job_id,
+        status=DraftGenerationJobStatus.SKIPPED_PROVIDER_UNAVAILABLE,
+        generated_count=0,
+        last_error=detail,
+    )
+
+
+def mark_failed(db: Database, job_id: str, *, detail: str) -> dict:
+    return _update_job(
+        db,
+        job_id,
+        status=DraftGenerationJobStatus.FAILED,
+        generated_count=0,
+        last_error=detail,
+    )
+
+
+def should_run(job: dict) -> bool:
+    status = DraftGenerationJobStatus(job["status"])
+    return status not in TERMINAL_STATUSES and status != DraftGenerationJobStatus.RUNNING
+
+
+def job_from_row(row: Row) -> dict:
+    return {
+        "id": row["id"],
+        "project_id": row["project_id"],
+        "document_id": row["document_id"],
+        "chunk_id": row["chunk_id"],
+        "page_number": row["page_number"],
+        "strategy": row["strategy"],
+        "status": row["status"],
+        "provider": row["provider"],
+        "model": row["model"],
+        "generated_count": row["generated_count"],
+        "retry_count": row["retry_count"],
+        "last_error": row["last_error"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def _update_job(
+    db: Database,
+    job_id: str,
+    *,
+    status: DraftGenerationJobStatus,
+    generated_count: int,
+    last_error: str | None,
+) -> dict:
+    now = utc_now()
+    with db.connect() as connection:
+        connection.execute(
+            """
+            UPDATE draft_generation_jobs
+            SET status = ?,
+                generated_count = ?,
+                last_error = ?,
+                retry_count = CASE
+                    WHEN ? = 'failed' THEN retry_count + 1 ELSE retry_count END,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (status, generated_count, last_error, status, now, job_id),
+        )
+        row = connection.execute(
+            "SELECT * FROM draft_generation_jobs WHERE id = ?",
+            (job_id,),
+        ).fetchone()
+    if row is None:
+        raise NotFoundError("Draft generation job not found.")
+    return job_from_row(row)

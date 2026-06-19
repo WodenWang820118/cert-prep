@@ -113,6 +113,7 @@ interface RuntimeHealthSummary {
     readonly EXAM_PREP_OCR_DEVICE: 'auto';
     readonly EXAM_PREP_LLM_PROVIDER: 'ollama';
     readonly EXAM_PREP_OLLAMA_MODEL: string;
+    readonly EXAM_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD: 'true';
     readonly EXAM_PREP_OCR_PAGE_WORKERS: string | null;
   };
   readonly system_health: unknown;
@@ -513,6 +514,7 @@ export async function collectRuntimeHealth({
         EXAM_PREP_OCR_DEVICE: 'auto',
         EXAM_PREP_LLM_PROVIDER: 'ollama',
         EXAM_PREP_OLLAMA_MODEL: llmModel,
+        EXAM_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD: 'true',
         EXAM_PREP_OCR_PAGE_WORKERS:
           childEnv.EXAM_PREP_OCR_PAGE_WORKERS ?? null,
       },
@@ -552,6 +554,7 @@ export function buildRuntimeLaunchEnv({
     EXAM_PREP_OCR_RUNTIME_MANIFEST_PATH: ocrRuntimeManifest,
     EXAM_PREP_OCR_DEVICE: 'auto',
     EXAM_PREP_OLLAMA_MODEL: llmModel,
+    EXAM_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD: 'true',
     PYTHONIOENCODING: 'utf-8',
   });
   if (ocrPageWorkers !== undefined) {

@@ -563,6 +563,113 @@ def test_parallel_ocr_flushes_completed_page_before_all_pages_finish(
     assert [chunk["text"] for chunk in chunks] == ["Worker page 1", "Worker page 2"]
 
 
+def test_streaming_draft_job_creates_draft_before_document_is_ready(
+    tmp_path: Path,
+    auth_headers,
+) -> None:
+    ocr_provider = BlockingFirstPageOcrProvider()
+    llm_provider = MockExamProvider()
+    client = TestClient(
+        create_app(
+            settings=Settings(
+                data_dir=tmp_path,
+                api_token="test-token",
+                ocr_page_workers=2,
+                streaming_draft_generation_on_upload=True,
+                streaming_draft_generation_page_limit=1,
+            ),
+            llm_provider=llm_provider,
+            ocr_provider=ocr_provider,
+            document_processing_async_jobs=True,
+            streaming_draft_generation_async_jobs=False,
+        )
+    )
+    project_id = _create_project(client, auth_headers)
+
+    response = client.post(
+        f"/projects/{project_id}/documents",
+        headers=auth_headers,
+        files={"file": ("scan.pdf", minimal_pdf("", ""), "application/pdf")},
+    )
+
+    assert response.status_code == 201
+    document = response.json()
+    assert document["status"] == "processing"
+    assert ocr_provider.page_one_started.wait(timeout=2)
+    try:
+        assert ocr_provider.page_two_finished.wait(timeout=2)
+        partial = _wait_for_document_progress(
+            client,
+            auth_headers,
+            project_id,
+            document["id"],
+            processed_page_count=1,
+            chunks_count=1,
+        )
+        assert partial["status"] == "processing"
+
+        drafts = _wait_for_question_drafts(client, auth_headers, project_id, count=1)
+        assert drafts[0]["status"] == "draft"
+        assert drafts[0]["citation_page"] == 2
+        assert drafts[0]["answer_key_source"] == "ai_inferred"
+
+        jobs = client.get(
+            f"/projects/{project_id}/documents/{document['id']}/draft-jobs",
+            headers=auth_headers,
+        )
+        assert jobs.status_code == 200
+        assert jobs.json()["items"][0]["status"] == "succeeded"
+        assert jobs.json()["items"][0]["generated_count"] == 1
+    finally:
+        ocr_provider.release_page_one.set()
+
+    ready = _wait_for_document_status(client, auth_headers, project_id, document["id"], "ready")
+    assert ready["chunks_count"] == 2
+
+
+def test_streaming_draft_job_records_missing_model_without_blocking_parse(
+    tmp_path: Path,
+    auth_headers,
+) -> None:
+    client = TestClient(
+        create_app(
+            settings=Settings(
+                data_dir=tmp_path,
+                api_token="test-token",
+                streaming_draft_generation_on_upload=True,
+            ),
+            llm_provider=MissingModelExamProvider(),
+            ocr_provider=MockPaddleOcrProvider(),
+            document_processing_async_jobs=False,
+            streaming_draft_generation_async_jobs=False,
+        )
+    )
+    project_id = _create_project(client, auth_headers)
+
+    response = client.post(
+        f"/projects/{project_id}/documents",
+        headers=auth_headers,
+        files={"file": ("scan.pdf", minimal_pdf(""), "application/pdf")},
+    )
+
+    assert response.status_code == 201
+    document = response.json()
+    assert document["status"] == "ready"
+    assert document["chunks_count"] == 1
+
+    jobs = client.get(
+        f"/projects/{project_id}/documents/{document['id']}/draft-jobs",
+        headers=auth_headers,
+    )
+    assert jobs.status_code == 200
+    assert jobs.json()["items"][0]["status"] == "skipped_missing_model"
+    assert jobs.json()["items"][0]["last_error"] == "model not found"
+
+    drafts = client.get(f"/projects/{project_id}/question-drafts", headers=auth_headers)
+    assert drafts.status_code == 200
+    assert drafts.json()["items"] == []
+
+
 def test_pdf_upload_rejects_oversized_file(tmp_path: Path, auth_headers) -> None:
     client = TestClient(
         create_app(
@@ -700,6 +807,24 @@ class MockExamProvider:
             for chunk in chunks
         ]
         return suggestions[:limit]
+
+
+class MissingModelExamProvider(MockExamProvider):
+    model = "qwen3:14b"
+
+    def health(self) -> ProviderHealth:
+        return ProviderHealth(
+            provider="ollama",
+            model=self.model,
+            available=False,
+            detail="model not found",
+            unavailable_reason="model_missing",
+        )
+
+    def generate_drafts(
+        self, chunks: list[SourceChunk] | tuple[SourceChunk, ...], limit: int
+    ) -> list[DraftSuggestion]:
+        raise AssertionError("streaming worker should not call a missing model")
 
 
 class MockPaddleOcrProvider:
@@ -929,3 +1054,22 @@ def _wait_for_document_progress(
         "Document did not reach progress "
         f"processed_page_count={processed_page_count}, chunks_count={chunks_count}: {latest}"
     )
+
+
+def _wait_for_question_drafts(
+    client: TestClient,
+    auth_headers,
+    project_id: str,
+    *,
+    count: int,
+) -> list[dict]:
+    deadline = time.monotonic() + 5
+    latest: list[dict] = []
+    while time.monotonic() < deadline:
+        response = client.get(f"/projects/{project_id}/question-drafts", headers=auth_headers)
+        assert response.status_code == 200
+        latest = response.json()["items"]
+        if len(latest) >= count:
+            return latest
+        time.sleep(0.05)
+    raise AssertionError(f"Question drafts did not reach count={count}: {latest}")

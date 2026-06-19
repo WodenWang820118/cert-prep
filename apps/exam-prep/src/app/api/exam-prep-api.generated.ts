@@ -12,6 +12,8 @@ export interface Components {
     DocumentList: { "items": Components['schemas']['DocumentRead'][] };
     DocumentRead: { "id": string; "project_id": string; "filename": string; "sha256": string; "language_hint": string; "page_count": number; "has_text": boolean; "status": Components['schemas']['SourceDocumentStatus'] | string; "extraction_method": Components['schemas']['PdfExtractionMethod'] | string; "ocr_device": string | null; "ocr_fallback_reason": string | null; "ocr_duration_ms": number; "processed_page_count": number; "parse_wall_duration_ms": number; "render_duration_ms": number; "ocr_engine_duration_ms": number; "ocr_worker_count": number; "first_chunk_ms": number; "exam_item_count": number; "content_profile": Components['schemas']['ContentProfile'] | string; "classification_detail": string; "chunks_count": number; "created_at": string; "updated_at": string };
     DraftGenerateRequest: { "limit"?: number; "strategy"?: Components['schemas']['DraftGenerationStrategy'] };
+    DraftGenerationJobList: { "items": Components['schemas']['DraftGenerationJobRead'][] };
+    DraftGenerationJobRead: { "id": string; "project_id": string; "document_id": string; "chunk_id": string; "page_number": number; "strategy": Components['schemas']['DraftGenerationStrategy']; "status": string; "provider": string; "model": string; "generated_count": number; "retry_count": number; "last_error": string | null; "created_at": string; "updated_at": string };
     DraftGenerationStrategy: string;
     DraftStatus: string;
     HTTPValidationError: { "detail"?: Components['schemas']['ValidationError'][] };
@@ -54,6 +56,8 @@ export type ContentProfile = Components['schemas']['ContentProfile'];
 export type DocumentList = Components['schemas']['DocumentList'];
 export type DocumentRead = Components['schemas']['DocumentRead'];
 export type DraftGenerateRequest = Components['schemas']['DraftGenerateRequest'];
+export type DraftGenerationJobList = Components['schemas']['DraftGenerationJobList'];
+export type DraftGenerationJobRead = Components['schemas']['DraftGenerationJobRead'];
 export type DraftGenerationStrategy = Components['schemas']['DraftGenerationStrategy'];
 export type DraftStatus = Components['schemas']['DraftStatus'];
 export type HTTPValidationError = Components['schemas']['HTTPValidationError'];
@@ -110,6 +114,7 @@ export interface ExamPrepGeneratedClient {
   getDocument(projectId: string, documentId: string): Promise<Components['schemas']['DocumentRead']>;
   listDocumentChunks(projectId: string, documentId: string): Promise<Components['schemas']['ChunkList']>;
   generateDocumentDrafts(projectId: string, documentId: string, body: Components['schemas']['DraftGenerateRequest']): Promise<Components['schemas']['QuestionDraftList']>;
+  listDocumentDraftJobs(projectId: string, documentId: string): Promise<Components['schemas']['DraftGenerationJobList']>;
   createQuestionDraft(projectId: string, body: Components['schemas']['QuestionDraftCreate']): Promise<Components['schemas']['QuestionDraftRead']>;
   listQuestionDrafts(projectId: string): Promise<Components['schemas']['QuestionDraftList']>;
   updateQuestionDraft(projectId: string, draftId: string, body: Components['schemas']['QuestionDraftUpdate']): Promise<Components['schemas']['QuestionDraftRead']>;
@@ -153,6 +158,8 @@ export function createExamPrepGeneratedClient(
       transport.request<Components['schemas']['ChunkList']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/chunks` }),
     generateDocumentDrafts: (projectId: string, documentId: string, body: Components['schemas']['DraftGenerateRequest']) =>
       transport.request<Components['schemas']['QuestionDraftList']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/drafts`, body }),
+    listDocumentDraftJobs: (projectId: string, documentId: string) =>
+      transport.request<Components['schemas']['DraftGenerationJobList']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/draft-jobs` }),
     createQuestionDraft: (projectId: string, body: Components['schemas']['QuestionDraftCreate']) =>
       transport.request<Components['schemas']['QuestionDraftRead']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/question-drafts`, body }),
     listQuestionDrafts: (projectId: string) =>

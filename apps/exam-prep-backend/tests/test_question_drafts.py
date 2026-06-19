@@ -8,6 +8,7 @@ from exam_prep_backend.domains.mock_exams.models import (
     DraftStatus,
     DraftSuggestion,
 )
+from exam_prep_backend.domains.mock_exams import repository as drafts_repository
 from exam_prep_backend.errors import ProviderUnavailableError
 from exam_prep_backend.domains.mock_exams.ports import ProviderHealth
 from exam_prep_backend.domains.mock_exams.schemas import DraftGenerateRequest
@@ -164,6 +165,64 @@ def test_generation_preserves_existing_approved_drafts(
         item["id"] == approved.json()["id"] and item["status"] == "approved"
         for item in listed.json()["items"]
     )
+
+
+def test_streaming_append_preserves_existing_drafts_and_dedupes_retries(
+    client: TestClient, auth_headers
+) -> None:
+    project_id = _create_project(client, auth_headers)
+    document_id = _upload_document(client, auth_headers, project_id)
+    chunk = client.get(
+        f"/projects/{project_id}/documents/{document_id}/chunks",
+        headers=auth_headers,
+    ).json()["items"][0]
+    existing = client.post(
+        f"/projects/{project_id}/question-drafts",
+        headers=auth_headers,
+        json={
+            "document_id": document_id,
+            "chunk_id": chunk["id"],
+            "question": "Existing edited draft",
+            "choices": ["A", "B"],
+            "answer": "A",
+            "answer_key_source": "manual",
+            "rationale": "Edited by reviewer.",
+            "citation_page": chunk["page_number"],
+            "source_excerpt": chunk["source_excerpt"],
+        },
+    ).json()
+    suggestion = DraftSuggestion(
+        chunk_id=chunk["id"],
+        question="Which action best applies the cited exam concept?",
+        choices=["Apply the cited concept", "Ignore the cited source"],
+        answer="Apply the cited concept",
+        answer_key_source=AnswerKeySource.AI_INFERRED,
+        rationale="The cited source supports the correct answer.",
+        citation_page=chunk["page_number"],
+        source_excerpt=chunk["source_excerpt"],
+        status=DraftStatus.DRAFT,
+        source_question_number="1",
+    )
+
+    first = drafts_repository.append_generated_drafts(
+        client.app.state.database,
+        project_id=project_id,
+        document_id=document_id,
+        suggestions=[suggestion],
+    )
+    second = drafts_repository.append_generated_drafts(
+        client.app.state.database,
+        project_id=project_id,
+        document_id=document_id,
+        suggestions=[suggestion],
+    )
+
+    assert len(first) == 1
+    assert second == []
+    listed = client.get(f"/projects/{project_id}/question-drafts", headers=auth_headers)
+    draft_ids = {item["id"] for item in listed.json()["items"]}
+    assert existing["id"] in draft_ids
+    assert first[0]["id"] in draft_ids
 
 
 def test_custom_answer_key_source_remains_backward_compatible(

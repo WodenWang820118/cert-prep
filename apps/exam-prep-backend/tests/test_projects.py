@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from exam_prep_backend.app import create_app
 from exam_prep_backend.config import Settings
+from exam_prep_backend.database import MIGRATIONS
 
 
 def test_project_crud_and_versioned_migrations(tmp_path: Path, auth_headers) -> None:
@@ -48,7 +49,7 @@ def test_project_crud_and_versioned_migrations(tmp_path: Path, auth_headers) -> 
         versions = [
             row[0] for row in connection.execute("SELECT version FROM schema_migrations ORDER BY version")
         ]
-    assert versions == list(range(1, 12))
+    assert versions == [version for version, _sql in MIGRATIONS]
 
     deleted = client.delete(f"/projects/{project_id}", headers=auth_headers)
     assert deleted.status_code == 204

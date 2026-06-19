@@ -179,6 +179,27 @@ describe('DraftReviewStore', () => {
       { limit: 8, strategy: 'hybrid_reasoning' },
     );
   });
+
+  it('refreshes drafts while a processing document has completed chunks', async () => {
+    const store = TestBed.inject(DraftReviewStore);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    const draft = questionDraft();
+    apiClient.listQuestionDrafts.mockResolvedValue({ items: [draft] });
+
+    sourceImport.uploadedDocument.set(
+      documentRead({ status: 'processing', chunks_count: 1 }),
+    );
+    TestBed.tick();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(apiClient.listQuestionDrafts).toHaveBeenCalledWith('project-1');
+    expect(store.drafts()).toEqual([draft]);
+
+    sourceImport.uploadedDocument.set(documentRead({ status: 'ready' }));
+    TestBed.tick();
+    await Promise.resolve();
+  });
 });
 
 function questionDraft(

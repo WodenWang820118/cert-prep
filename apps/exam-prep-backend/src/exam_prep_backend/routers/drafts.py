@@ -4,12 +4,14 @@ from fastapi import APIRouter, Depends, status
 
 from exam_prep_backend.database import Database
 from exam_prep_backend.dependencies import get_database, get_llm_provider
+from exam_prep_backend.domains.mock_exams import draft_jobs
 from exam_prep_backend.domains.mock_exams import repository as mock_exams_repository
 from exam_prep_backend.domains.mock_exams.models import SourceChunk
 from exam_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
 from exam_prep_backend.domains.mock_exams.provider import generate_drafts_for_strategy
 from exam_prep_backend.domains.mock_exams.schemas import (
     DraftGenerateRequest,
+    DraftGenerationJobList,
     QuestionDraftCreate,
     QuestionDraftList,
     QuestionDraftRead,
@@ -30,7 +32,23 @@ documents_router = APIRouter(
     prefix="/projects/{project_id}/documents/{document_id}/drafts",
     tags=["question-drafts"],
 )
+draft_jobs_router = APIRouter(
+    prefix="/projects/{project_id}/documents/{document_id}/draft-jobs",
+    tags=["question-drafts"],
+)
 drafts_router = APIRouter(prefix="/projects/{project_id}/question-drafts", tags=["question-drafts"])
+
+
+@draft_jobs_router.get("", response_model=DraftGenerationJobList)
+def list_document_draft_jobs(
+    project_id: str,
+    document_id: str,
+    db: Database = Depends(get_database),
+) -> dict:
+    try:
+        return {"items": draft_jobs.list_document_jobs(db, project_id, document_id)}
+    except NotFoundError as exc:
+        raise not_found_error(str(exc)) from exc
 
 
 @documents_router.post("", response_model=QuestionDraftList, status_code=status.HTTP_201_CREATED)

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import atexit
 from collections import deque
-from dataclasses import asdict
 import json
 import platform
 from queue import Empty, Queue
@@ -444,7 +443,3 @@ def _entrypoint_command(entrypoint: Path, args: list[str]) -> list[str]:
             *args,
         ]
     return [str(entrypoint), *args]
-
-
-def serialize_ocr_health(health: OCRHealth) -> dict[str, Any]:
-    return asdict(health)

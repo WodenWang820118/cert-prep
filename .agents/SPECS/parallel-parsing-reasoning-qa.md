@@ -164,3 +164,49 @@ Final verification:
 - `pnpm nx run exam-prep-desktop:typecheck-scripts`
 - `pnpm nx run exam-prep-desktop:package-qa-test`
 - `pnpm nx run exam-prep-desktop:cargo-test`
+
+## 2026-06-19 Streaming Prototype And Dead-Code Follow-Up
+
+Additional cleanup:
+
+- Backend: removed unused `DraftGenerationJobStatus.CANCELLED` because no cancel
+  writer or endpoint exists in the prototype.
+- Backend: removed unused public wrappers
+  `clean_exam_text`, `question_block_source_text`, and
+  `looks_like_question_group_instruction`; their private implementations remain
+  used internally.
+- Backend: removed unused `serialize_ocr_health` and its `asdict` import from
+  the external Paddle adapter.
+- Desktop and frontend sub-agent audits found no safe delete-only candidates in
+  their scopes.
+
+Streaming prototype evidence:
+
+- Added SQLite-backed `draft_generation_jobs`, chunk-scoped enqueueing, bounded
+  streaming draft worker, provider-unavailable/missing-model skip states, and
+  append-only draft persistence.
+- Frontend draft review polls drafts while parsing continues once chunks are
+  visible.
+- OpenAPI client regenerated for the draft-job list endpoint.
+- Runtime launch env for packaged QA now sets
+  `EXAM_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD=true`.
+
+Verification:
+
+- `pnpm nx run exam-prep-backend:lint --skip-nx-cache` - passed.
+- `pnpm nx run exam-prep-backend:test --skip-nx-cache` - passed, 91 tests, one
+  existing Starlette/httpx warning.
+- `pnpm nx run exam-prep-backend:generate-openapi-client --skip-nx-cache` -
+  passed.
+- `pnpm nx run exam-prep:lint --skip-nx-cache` - passed.
+- `pnpm nx run exam-prep:test --skip-nx-cache` - passed, 36 tests.
+- `pnpm nx run exam-prep:build --skip-nx-cache` - passed with the existing
+  initial bundle budget warning.
+- `pnpm nx run exam-prep-desktop:lint --skip-nx-cache` - passed.
+- `pnpm nx run exam-prep-desktop:typecheck-scripts --skip-nx-cache` - passed.
+- `pnpm nx run exam-prep-desktop:package-qa-test --skip-nx-cache` - passed, 14
+  tests.
+- `pnpm nx run exam-prep-desktop:cargo-test --skip-nx-cache` - passed, 12 tests.
+
+Node cleanup note: post-verification node processes were all `nx-mcp` service
+processes, so no workspace/test-owned Node helpers were killed.

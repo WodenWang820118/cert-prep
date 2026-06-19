@@ -50,6 +50,27 @@ def get_chunk(db: Database, project_id: str, document_id: str, chunk_id: str) ->
     return chunk_from_row(row)
 
 
+def get_chunk_by_page(
+    db: Database, project_id: str, document_id: str, page_number: int
+) -> dict:
+    """Load the canonical chunk for a processed source document page."""
+
+    with db.connect() as connection:
+        row = connection.execute(
+            """
+            SELECT *
+            FROM document_chunks
+            WHERE project_id = ? AND document_id = ? AND page_number = ?
+            ORDER BY chunk_index, created_at, id
+            LIMIT 1
+            """,
+            (project_id, document_id, page_number),
+        ).fetchone()
+    if row is None:
+        raise NotFoundError("Document chunk not found.")
+    return chunk_from_row(row)
+
+
 def chunk_from_row(row: Row) -> dict:
     """Map a persisted chunk row into the API/domain dictionary shape."""
 

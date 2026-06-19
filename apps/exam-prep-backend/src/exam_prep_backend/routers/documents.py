@@ -11,10 +11,12 @@ from exam_prep_backend.dependencies import (
     get_llm_provider,
     get_ocr_provider,
     get_settings,
+    get_streaming_draft_generation_manager,
 )
 from exam_prep_backend.domains.mock_exams import repository as mock_exams_repository
 from exam_prep_backend.domains.mock_exams.models import SourceChunk
 from exam_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
+from exam_prep_backend.domains.mock_exams.streaming import StreamingDraftGenerationManager
 from exam_prep_backend.domains.projects import repository as projects_repository
 from exam_prep_backend.domains.source_documents import repository as source_documents_repository
 from exam_prep_backend.domains.source_documents.ocr import OCRProvider
@@ -60,6 +62,9 @@ async def upload_document(
     settings: Settings = Depends(get_settings),
     llm_provider: LLMProvider = Depends(get_llm_provider),
     ocr_provider: OCRProvider = Depends(get_ocr_provider),
+    streaming_drafts: StreamingDraftGenerationManager = Depends(
+        get_streaming_draft_generation_manager
+    ),
 ) -> dict:
     _validate_pdf_upload_metadata(file)
     content = await _read_limited_upload(file, settings.max_upload_bytes)
@@ -90,6 +95,7 @@ async def upload_document(
                     settings,
                     llm_provider,
                     ocr_provider,
+                    streaming_drafts,
                     project_id,
                     document["id"],
                     content,
@@ -103,6 +109,7 @@ async def upload_document(
             settings,
             llm_provider,
             ocr_provider,
+            streaming_drafts,
             project_id,
             document["id"],
             content,
@@ -214,6 +221,7 @@ def _process_document_upload(
     settings: Settings,
     llm_provider: LLMProvider,
     ocr_provider: OCRProvider,
+    streaming_drafts: StreamingDraftGenerationManager,
     project_id: str,
     document_id: str,
     content: bytes,
@@ -234,6 +242,13 @@ def _process_document_upload(
             ocr_worker_count=progress.ocr_worker_count,
             first_chunk_ms=progress.first_chunk_ms,
         )
+        if progress.page is not None:
+            streaming_drafts.enqueue_page(
+                db,
+                project_id=project_id,
+                document_id=document_id,
+                page_number=progress.page_number,
+            )
 
     try:
         extraction = extract_pdf_pages(
@@ -251,7 +266,11 @@ def _process_document_upload(
             document_id=document_id,
             extraction=extraction,
         )
-        if settings.auto_generate_exam_on_upload and document["chunks_count"] > 0:
+        if (
+            settings.auto_generate_exam_on_upload
+            and not settings.streaming_draft_generation_on_upload
+            and document["chunks_count"] > 0
+        ):
             document = _auto_generate_exam_items(
                 db,
                 provider=llm_provider,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from exam_prep_backend.domains.source_documents.chunks import (
     get_chunk,
+    get_chunk_by_page,
     get_source_chunks,
     list_chunks,
 )
@@ -27,6 +28,7 @@ __all__ = [
     "ensure_document_exists",
     "fail_document_extraction",
     "get_chunk",
+    "get_chunk_by_page",
     "get_document",
     "get_source_chunks",
     "list_chunks",

@@ -23,8 +23,10 @@
 - [ ] streaming parse-to-qwen research/prototype
   - Reason: user wants to explore parsing one page/chunk and immediately sending it to qwen for formal draft-question generation while the remaining PDF pages continue parsing.
   - Verify: `.agents/SPECS/streaming-parse-to-qwen.md` defines the local queue/outbox design, no-Kafka-first decision, draft-only safety rules, and prototype validation plan; close only after a prototype has artifact-backed timing and draft-quality evidence.
+  - 2026-06-19 progress: implemented the first SQLite-backed streaming draft job prototype with bounded worker, draft-only append persistence, missing-model/provider skip states, frontend draft polling, and generated client updates. Keep open until packaged timing and live qwen draft-quality evidence exist.
 
 - [x] Remove unused code across projects
   - Reason: keep every project easier to understand by removing truly unused classes, files, functions, imports, test helpers, and script code without widening behavior.
   - Verify: repo-wide dead-code audit with project-scoped deletions, matching Nx tests/lints/builds for affected projects, and no removal of public contracts, generated files, or extension points that are still intentionally reserved.
   - 2026-06-19 evidence: removed unused frontend `OperationStore` members, retired the unused backend mock-exam model-download manager/protocol, and deleted unused desktop package-QA sidecar helpers. Verified with affected Nx lint/test/build/typecheck/package-QA/cargo lanes.
+  - 2026-06-19 follow-up evidence: removed unused backend streaming prototype leftovers (`DraftGenerationJobStatus.CANCELLED`), unused exam-content public wrappers, and unused external Paddle OCR health serialization helper. Frontend and desktop sub-agent audits found no additional safe delete-only candidates.

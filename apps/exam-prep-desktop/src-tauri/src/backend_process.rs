@@ -46,6 +46,7 @@ pub(crate) fn launch_backend_entrypoint(
         .env("EXAM_PREP_OCR_RUNTIME_MODE", "external")
         .env("EXAM_PREP_OCR_DEVICE", "auto")
         .env("EXAM_PREP_OLLAMA_MODEL", "qwen3:14b")
+        .env("EXAM_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD", "true")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());

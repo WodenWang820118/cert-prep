@@ -1,4 +1,4 @@
-import { computed, inject, Injectable, signal } from '@angular/core';
+import { computed, effect, inject, Injectable, signal } from '@angular/core';
 import {
   EXAM_PREP_API,
   QuestionDraftRead,
@@ -13,6 +13,8 @@ import { OperationStore } from '../operation.store';
 import { ProjectStore } from '../project.store';
 import { SourceImportStore } from '../source-import/source-import.store';
 
+const STREAMING_DRAFT_POLL_INTERVAL_MS = 1500;
+
 @Injectable({ providedIn: 'root' })
 export class DraftReviewStore {
   private readonly api = inject(EXAM_PREP_API);
@@ -21,6 +23,8 @@ export class DraftReviewStore {
   private readonly operations = inject(OperationStore);
   private readonly projects = inject(ProjectStore);
   private readonly sourceImport = inject(SourceImportStore);
+  private streamingDraftPollKey: string | null = null;
+  private streamingDraftPollTimer: ReturnType<typeof setTimeout> | null = null;
 
   readonly draftLimit = signal(3);
   readonly drafts = signal<QuestionDraftRead[]>([]);
@@ -29,6 +33,24 @@ export class DraftReviewStore {
   readonly approvedDrafts = computed(() =>
     this.drafts().filter((draft) => draft.status === 'approved'),
   );
+
+  constructor() {
+    effect(() => {
+      const projectId = this.projects.selectedProjectId();
+      const document = this.sourceImport.uploadedDocument();
+      const shouldPoll =
+        projectId !== null &&
+        document !== null &&
+        document.status === 'processing' &&
+        document.chunks_count > 0;
+
+      if (shouldPoll) {
+        this.ensureStreamingDraftPolling(projectId, document.id);
+      } else {
+        this.stopStreamingDraftPolling();
+      }
+    });
+  }
 
   async load(projectId: string): Promise<void> {
     const drafts = await this.api.listQuestionDrafts(projectId);
@@ -39,6 +61,7 @@ export class DraftReviewStore {
     this.drafts.set([]);
     this.editingDraftId.set(null);
     this.draftEdits.set({});
+    this.stopStreamingDraftPolling();
   }
 
   setDraftLimit(value: string | number): void {
@@ -282,5 +305,68 @@ export class DraftReviewStore {
 
   private generatePayload(strategy: DraftGenerationStrategy) {
     return this.edits.generatePayload(this.draftLimit(), strategy);
+  }
+
+  private ensureStreamingDraftPolling(
+    projectId: string,
+    documentId: string,
+  ): void {
+    const nextKey = `${projectId}:${documentId}`;
+    if (this.streamingDraftPollKey !== nextKey) {
+      this.stopStreamingDraftPolling();
+      this.streamingDraftPollKey = nextKey;
+      void this.pollStreamingDrafts(projectId, documentId);
+      return;
+    }
+
+    if (this.streamingDraftPollTimer === null) {
+      this.scheduleStreamingDraftPolling(projectId, documentId);
+    }
+  }
+
+  private scheduleStreamingDraftPolling(
+    projectId: string,
+    documentId: string,
+  ): void {
+    this.streamingDraftPollTimer = setTimeout(() => {
+      this.streamingDraftPollTimer = null;
+      void this.pollStreamingDrafts(projectId, documentId);
+    }, STREAMING_DRAFT_POLL_INTERVAL_MS);
+  }
+
+  private async pollStreamingDrafts(
+    projectId: string,
+    documentId: string,
+  ): Promise<void> {
+    if (this.streamingDraftPollKey !== `${projectId}:${documentId}`) {
+      return;
+    }
+
+    try {
+      await this.load(projectId);
+    } catch {
+      this.stopStreamingDraftPolling();
+      return;
+    }
+
+    const document = this.sourceImport.uploadedDocument();
+    const selectedProjectId = this.projects.selectedProjectId();
+    if (
+      selectedProjectId === projectId &&
+      document?.id === documentId &&
+      document.status === 'processing'
+    ) {
+      this.scheduleStreamingDraftPolling(projectId, documentId);
+    } else {
+      this.stopStreamingDraftPolling();
+    }
+  }
+
+  private stopStreamingDraftPolling(): void {
+    if (this.streamingDraftPollTimer !== null) {
+      clearTimeout(this.streamingDraftPollTimer);
+      this.streamingDraftPollTimer = null;
+    }
+    this.streamingDraftPollKey = null;
   }
 }

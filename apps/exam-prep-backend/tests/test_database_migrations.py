@@ -14,6 +14,7 @@ def test_saved_exam_runtime_metadata_columns_are_migrated(tmp_path: Path) -> Non
         document_columns = _columns(connection, "documents")
         chunk_columns = _columns(connection, "document_chunks")
         draft_columns = _columns(connection, "question_drafts")
+        draft_job_columns = _columns(connection, "draft_generation_jobs")
         session_columns = _columns(connection, "practice_sessions")
 
     assert document_columns["content_profile"] == "'unknown'"
@@ -42,6 +43,19 @@ def test_saved_exam_runtime_metadata_columns_are_migrated(tmp_path: Path) -> Non
         "requested_question_count",
         "random_seed",
     } <= set(session_columns)
+    assert {
+        "project_id",
+        "document_id",
+        "chunk_id",
+        "page_number",
+        "strategy",
+        "status",
+        "provider",
+        "model",
+        "generated_count",
+        "retry_count",
+        "last_error",
+    } <= set(draft_job_columns)
 
 
 def _columns(connection, table_name: str) -> dict[str, str | None]:

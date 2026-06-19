@@ -215,6 +215,32 @@ MIGRATIONS: Final[tuple[tuple[int, str], ...]] = (
             ADD COLUMN confidence REAL;
         """,
     ),
+    (
+        12,
+        """
+        CREATE TABLE draft_generation_jobs (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+            chunk_id TEXT NOT NULL REFERENCES document_chunks(id) ON DELETE CASCADE,
+            page_number INTEGER NOT NULL,
+            strategy TEXT NOT NULL,
+            status TEXT NOT NULL,
+            provider TEXT NOT NULL DEFAULT '',
+            model TEXT NOT NULL DEFAULT '',
+            generated_count INTEGER NOT NULL DEFAULT 0,
+            retry_count INTEGER NOT NULL DEFAULT 0,
+            last_error TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(document_id, chunk_id, strategy)
+        );
+        CREATE INDEX idx_draft_generation_jobs_document
+            ON draft_generation_jobs(project_id, document_id, created_at);
+        CREATE INDEX idx_draft_generation_jobs_status
+            ON draft_generation_jobs(status, updated_at);
+        """,
+    ),
 )
 
 

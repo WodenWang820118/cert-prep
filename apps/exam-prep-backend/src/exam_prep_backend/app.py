@@ -1,6 +1,8 @@
-import sqlite3
 import platform
+import sqlite3
 import sys
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import Depends, FastAPI, Request
@@ -16,6 +18,7 @@ from exam_prep_backend.database import Database
 from exam_prep_backend.dependencies import require_bearer_auth
 from exam_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
 from exam_prep_backend.domains.mock_exams.provider import provider_from_settings
+from exam_prep_backend.domains.mock_exams.streaming import StreamingDraftGenerationManager
 from exam_prep_backend.domains.runtime_installations import RuntimeInstallationManager
 from exam_prep_backend.domains.source_documents import repository as source_documents_repository
 from exam_prep_backend.domains.source_documents.ocr import OCRProvider, ocr_provider_from_settings
@@ -37,12 +40,22 @@ def create_app(
     runtime_installation_manager: RuntimeInstallationManager | None = None,
     runtime_installation_async_jobs: bool = True,
     document_processing_async_jobs: bool = True,
+    streaming_draft_generation_async_jobs: bool = True,
 ) -> FastAPI:
     app_settings = settings or Settings()
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        try:
+            yield
+        finally:
+            app.state.streaming_draft_generation_manager.close()
+
     app = FastAPI(
         title="Exam Prep Backend",
         version=__version__,
         summary="Local sidecar API for the exam prep desktop app.",
+        lifespan=lifespan,
     )
     app.state.settings = app_settings
     app.state.database = Database(app_settings)
@@ -50,6 +63,11 @@ def create_app(
     app.state.llm_provider = llm_provider or provider_from_settings(app_settings)
     app.state.ocr_provider = ocr_provider or ocr_provider_from_settings(app_settings)
     app.state.document_processing_async_jobs = document_processing_async_jobs
+    app.state.streaming_draft_generation_manager = StreamingDraftGenerationManager(
+        settings=app_settings,
+        provider=app.state.llm_provider,
+        async_jobs=streaming_draft_generation_async_jobs,
+    )
     app.state.runtime_installation_manager = runtime_installation_manager or RuntimeInstallationManager(
         settings=app_settings,
         llm_provider=app.state.llm_provider,
@@ -112,6 +130,7 @@ def create_app(
     app.include_router(projects.router, dependencies=protected_dependencies)
     app.include_router(documents.router, dependencies=protected_dependencies)
     app.include_router(drafts.documents_router, dependencies=protected_dependencies)
+    app.include_router(drafts.draft_jobs_router, dependencies=protected_dependencies)
     app.include_router(drafts.drafts_router, dependencies=protected_dependencies)
     app.include_router(practice.router, dependencies=protected_dependencies)
     app.include_router(llm.router, dependencies=protected_dependencies)

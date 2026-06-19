@@ -127,6 +127,70 @@ def create_generated_drafts(
     return [_draft_from_row(row) for row in rows]
 
 
+def append_generated_drafts(
+    db: Database,
+    *,
+    project_id: str,
+    document_id: str,
+    suggestions: list[DraftSuggestion],
+) -> list[dict]:
+    """Append streaming draft suggestions without deleting in-review work."""
+
+    ensure_project_exists(db, project_id)
+    now = utc_now()
+    draft_ids: list[str] = []
+    with db.connect() as connection:
+        for index, suggestion in enumerate(suggestions, start=1):
+            if _matching_generated_draft_exists(
+                connection,
+                project_id=project_id,
+                document_id=document_id,
+                suggestion=suggestion,
+            ):
+                continue
+            draft_id = str(uuid4())
+            draft_ids.append(draft_id)
+            connection.execute(
+                """
+                INSERT INTO question_drafts(
+                    id, project_id, document_id, chunk_id, question, choices_json,
+                    answer, answer_key_source, rationale, citation_page, source_excerpt, status,
+                    confidence, source_order, source_question_number, item_kind, group_key, group_prompt,
+                    rejection_reason, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+                """,
+                (
+                    draft_id,
+                    project_id,
+                    document_id,
+                    suggestion.chunk_id,
+                    suggestion.question,
+                    json.dumps(suggestion.choices),
+                    suggestion.answer,
+                    suggestion.answer_key_source,
+                    suggestion.rationale,
+                    suggestion.citation_page,
+                    suggestion.source_excerpt,
+                    suggestion.status.value,
+                    suggestion.confidence,
+                    suggestion.source_order or index,
+                    suggestion.source_question_number,
+                    suggestion.item_kind.value,
+                    suggestion.group_key,
+                    suggestion.group_prompt,
+                    now,
+                    now,
+                ),
+            )
+        rows = [
+            row
+            for draft_id in draft_ids
+            if (row := _draft_query(connection, project_id, draft_id)) is not None
+        ]
+    return [_draft_from_row(row) for row in rows]
+
+
 def list_drafts(db: Database, project_id: str) -> list[dict]:
     ensure_project_exists(db, project_id)
     with db.connect() as connection:
@@ -140,6 +204,19 @@ def list_drafts(db: Database, project_id: str) -> list[dict]:
             (project_id,),
         ).fetchall()
     return [_draft_from_row(row) for row in rows]
+
+
+def count_document_drafts(db: Database, project_id: str, document_id: str) -> int:
+    with db.connect() as connection:
+        row = connection.execute(
+            """
+            SELECT COUNT(*) AS draft_count
+            FROM question_drafts
+            WHERE project_id = ? AND document_id = ?
+            """,
+            (project_id, document_id),
+        ).fetchone()
+    return int(row["draft_count"]) if row is not None else 0
 
 
 def update_draft(
@@ -289,6 +366,54 @@ def _draft_query(connection, project_id: str, draft_id: str) -> Row | None:
         "SELECT * FROM question_drafts WHERE project_id = ? AND id = ?",
         (project_id, draft_id),
     ).fetchone()
+
+
+def _matching_generated_draft_exists(
+    connection,
+    *,
+    project_id: str,
+    document_id: str,
+    suggestion: DraftSuggestion,
+) -> bool:
+    if suggestion.source_question_number:
+        row = connection.execute(
+            """
+            SELECT id
+            FROM question_drafts
+            WHERE project_id = ?
+              AND document_id = ?
+              AND chunk_id = ?
+              AND source_question_number = ?
+            LIMIT 1
+            """,
+            (
+                project_id,
+                document_id,
+                suggestion.chunk_id,
+                suggestion.source_question_number,
+            ),
+        ).fetchone()
+        if row is not None:
+            return True
+
+    row = connection.execute(
+        """
+        SELECT id
+        FROM question_drafts
+        WHERE project_id = ?
+          AND document_id = ?
+          AND chunk_id = ?
+          AND lower(trim(question)) = ?
+        LIMIT 1
+        """,
+        (
+            project_id,
+            document_id,
+            suggestion.chunk_id,
+            suggestion.question.strip().casefold(),
+        ),
+    ).fetchone()
+    return row is not None
 
 
 def _draft_from_row(row: Row) -> dict:

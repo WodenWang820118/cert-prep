@@ -78,6 +78,27 @@ class QuestionDraftList(BaseModel):
     items: list[QuestionDraftRead]
 
 
+class DraftGenerationJobRead(BaseModel):
+    id: str
+    project_id: str
+    document_id: str
+    chunk_id: str
+    page_number: int
+    strategy: DraftGenerationStrategy
+    status: str
+    provider: str
+    model: str
+    generated_count: int
+    retry_count: int
+    last_error: str | None
+    created_at: str
+    updated_at: str
+
+
+class DraftGenerationJobList(BaseModel):
+    items: list[DraftGenerationJobRead]
+
+
 class LLMHealthRead(BaseModel):
     provider: str
     model: str
