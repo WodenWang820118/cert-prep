@@ -235,7 +235,7 @@ def test_image_only_pdf_uses_ocr_and_creates_draft_mock_exam(
 
     drafts = client.get(f"/projects/{project_id}/question-drafts", headers=auth_headers)
     item = drafts.json()["items"][0]
-    assert item["status"] == "draft"
+    assert item["status"] == "approved"
     assert item["answer_key_source"] == "ai_inferred"
     assert item["citation_page"] == 1
     assert item["source_excerpt"] in chunks[0]["text"]
@@ -616,7 +616,7 @@ def test_streaming_draft_job_creates_draft_before_document_is_ready(
         assert partial["status"] == "processing"
 
         drafts = _wait_for_question_drafts(client, auth_headers, project_id, count=1)
-        assert drafts[0]["status"] == "draft"
+        assert drafts[0]["status"] == "approved"
         assert drafts[0]["citation_page"] == 2
         assert drafts[0]["answer_key_source"] == "ai_inferred"
 
@@ -868,7 +868,7 @@ def test_streaming_draft_retry_requeues_missing_model_job_after_qwen_available(
         headers=auth_headers,
     ).json()["items"]
     assert len(drafts) == 1
-    assert drafts[0]["status"] == "draft"
+    assert drafts[0]["status"] == "approved"
     assert drafts[0]["citation_page"] == 1
 
     idempotent_retry = available_model_client.post(
@@ -955,7 +955,7 @@ def test_streaming_draft_recovery_resumes_interrupted_running_job(
         headers=auth_headers,
     )
     assert drafts.status_code == 200
-    assert drafts.json()["items"][0]["status"] == "draft"
+    assert drafts.json()["items"][0]["status"] == "approved"
     assert drafts.json()["items"][0]["citation_page"] == 1
 
 

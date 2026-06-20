@@ -46,7 +46,7 @@ def create_session(
     now = utc_now()
     session_id = str(uuid4())
     with db.connect() as connection:
-        question_rows = _approved_question_rows(
+        question_rows = _playable_question_rows(
             connection,
             project_id=project_id,
             mode=session_mode,
@@ -142,7 +142,7 @@ def record_attempt(
             (project_id, question_id),
         ).fetchone()
         if question is None:
-            raise NotFoundError("Approved question not found.")
+            raise NotFoundError("Playable question not found.")
 
         practice_question = _practice_question_from_row(question)
         try:
@@ -222,7 +222,7 @@ def _session_query(connection, project_id: str, session_id: str) -> Row | None:
     ).fetchone()
 
 
-def _approved_question_rows(
+def _playable_question_rows(
     connection,
     *,
     project_id: str,

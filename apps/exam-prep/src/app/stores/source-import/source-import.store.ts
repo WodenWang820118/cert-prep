@@ -76,7 +76,7 @@ export class SourceImportStore {
     if (document.status === 'no_text_detected') {
       return 'Parsing finished, but no text was detected.';
     }
-    return 'Draft generation needs attention.';
+    return 'Question generation needs attention.';
   });
   readonly elapsedTime = computed(() =>
     this.metrics.elapsedTime(this.uploadedDocument()),
@@ -85,7 +85,7 @@ export class SourceImportStore {
     () =>
       this.projects.selectedProject() !== null &&
       this.selectedFile() !== null &&
-      !this.health.healthSnapshotLoading(),
+      !this.health.isOcrHealthLoading(),
   );
   readonly canGenerateDrafts = computed(() => {
     const document = this.uploadedDocument();
@@ -136,7 +136,7 @@ export class SourceImportStore {
       this.operations.fail('Choose a project and PDF before uploading.');
       return null;
     }
-    if (this.health.healthSnapshotLoading()) {
+    if (this.health.isOcrHealthLoading()) {
       this.operations.fail(
         'PaddleOCR is warming up. Try again when runtime health finishes.',
       );

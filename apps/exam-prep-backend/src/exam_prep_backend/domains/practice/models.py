@@ -14,7 +14,6 @@ class PracticeSessionMode(str, Enum):
 
 
 class QuestionDraftStatus(str, Enum):
-    DRAFT = "draft"
     APPROVED = "approved"
 
 

@@ -16,15 +16,15 @@ export class PracticeSessionPayloadService {
   createPayload(args: {
     readonly mode: PracticeSessionMode;
     readonly fullExamDocumentId: string | null;
-    readonly selectedDocumentApprovedCount: number;
+    readonly selectedDocumentQuestionCount: number;
     readonly sessionQuestionCount: number;
-    readonly approvedDraftCount: number;
+    readonly questionCount: number;
   }): PracticeSessionPayload {
     if (args.mode === 'full_document') {
       return {
         mode: args.mode,
         document_id: args.fullExamDocumentId ?? undefined,
-        question_count: Math.max(1, args.selectedDocumentApprovedCount),
+        question_count: Math.max(1, args.selectedDocumentQuestionCount),
       };
     }
 
@@ -32,7 +32,7 @@ export class PracticeSessionPayloadService {
       mode: args.mode,
       question_count: Math.min(
         args.sessionQuestionCount,
-        Math.max(1, args.approvedDraftCount),
+        Math.max(1, args.questionCount),
       ),
     };
   }

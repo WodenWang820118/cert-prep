@@ -49,7 +49,7 @@ export async function uploadDocumentAndExpectDraft(
   await expect(page.getByText('gpu:0').last()).toBeVisible();
   await expect(page.getByText(api.draft.question)).toBeVisible();
   await expect(page.getByText(api.draft.source_excerpt)).toBeVisible();
-  await expect(page.getByText('Approved', { exact: true })).toBeVisible();
+  await expect(page.getByText('Playable', { exact: true })).toBeVisible();
 }
 
 export async function startRandomQuiz(
@@ -57,7 +57,7 @@ export async function startRandomQuiz(
   api: MockExamPrepApi,
 ): Promise<void> {
   await page.getByRole('button', { name: 'Random Quiz' }).click();
-  await expect(page.getByText('Approved items')).toBeVisible();
+  await expect(page.getByText('1 questions available')).toBeVisible();
   await page.getByRole('button', { name: 'Start random quiz' }).click();
   await expect(page.getByText(`Session ${api.session.id}`)).toBeVisible();
 }

@@ -7,7 +7,6 @@ import { documentRead, questionDraft } from './draft-review.store.spec-helpers';
 
 describe('DraftReviewStore generation', () => {
   const apiClient = {
-    approveQuestionDraft: vi.fn(),
     generateDocumentDrafts: vi.fn(),
     getDocument: vi.fn(),
     listDocumentChunks: vi.fn(),
@@ -40,7 +39,7 @@ describe('DraftReviewStore generation', () => {
     apiClient.listDocumentDraftJobs.mockResolvedValue({ items: [] });
   });
 
-  it('sends deterministic strategy when generating deterministic drafts', async () => {
+  it('sends deterministic strategy when generating deterministic questions', async () => {
     const store = TestBed.inject(DraftReviewStore);
     const sourceImport = TestBed.inject(SourceImportStore);
     const draft = questionDraft();
@@ -61,11 +60,11 @@ describe('DraftReviewStore generation', () => {
     );
   });
 
-  it('sends hybrid reasoning strategy when enriching drafts', async () => {
+  it('sends hybrid reasoning strategy when generating questions', async () => {
     const store = TestBed.inject(DraftReviewStore);
     const sourceImport = TestBed.inject(SourceImportStore);
     const draft = questionDraft();
-    store.setDraftLimit(8);
+    store.setQuestionLimit(8);
     sourceImport.uploadedDocument.set(documentRead());
     apiClient.generateDocumentDrafts.mockResolvedValue({ items: [draft] });
     apiClient.listQuestionDrafts.mockResolvedValue({ items: [draft] });

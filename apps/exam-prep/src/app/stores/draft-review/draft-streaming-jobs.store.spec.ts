@@ -11,7 +11,6 @@ import {
 
 describe('DraftReviewStore streaming jobs', () => {
   const apiClient = {
-    approveQuestionDraft: vi.fn(),
     generateDocumentDrafts: vi.fn(),
     getDocument: vi.fn(),
     listDocumentChunks: vi.fn(),
@@ -44,7 +43,7 @@ describe('DraftReviewStore streaming jobs', () => {
     apiClient.listDocumentDraftJobs.mockResolvedValue({ items: [] });
   });
 
-  it('refreshes drafts while a processing document has completed chunks', async () => {
+  it('refreshes questions while a processing document has completed chunks', async () => {
     const store = TestBed.inject(DraftReviewStore);
     const sourceImport = TestBed.inject(SourceImportStore);
     const draft = questionDraft();
@@ -73,7 +72,7 @@ describe('DraftReviewStore streaming jobs', () => {
       expect.objectContaining({
         active: 1,
         generatedCount: 1,
-        label: 'Drafting 1/2',
+        label: 'Generating 1/2',
         severity: 'info',
       }),
     );
@@ -83,7 +82,7 @@ describe('DraftReviewStore streaming jobs', () => {
     await Promise.resolve();
   });
 
-  it('keeps streaming draft refresh when draft job status is temporarily unavailable', async () => {
+  it('keeps streaming question refresh when job status is temporarily unavailable', async () => {
     const store = TestBed.inject(DraftReviewStore);
     const sourceImport = TestBed.inject(SourceImportStore);
     const draft = questionDraft();
@@ -101,7 +100,7 @@ describe('DraftReviewStore streaming jobs', () => {
     expect(store.draftJobs()).toEqual([]);
   });
 
-  it('surfaces skipped streaming draft jobs when the reasoning model is missing', async () => {
+  it('surfaces skipped streaming question jobs when the reasoning model is missing', async () => {
     const store = TestBed.inject(DraftReviewStore);
     const sourceImport = TestBed.inject(SourceImportStore);
     apiClient.listQuestionDrafts.mockResolvedValue({ items: [] });
@@ -130,7 +129,7 @@ describe('DraftReviewStore streaming jobs', () => {
     );
   });
 
-  it('retries skipped streaming draft jobs for the current document', async () => {
+  it('retries skipped streaming question jobs for the current document', async () => {
     const store = TestBed.inject(DraftReviewStore);
     const sourceImport = TestBed.inject(SourceImportStore);
     const draft = questionDraft();

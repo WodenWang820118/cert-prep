@@ -2,22 +2,26 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
-  classifyStreamingDraftStatus,
+  classifyStreamingQuestionStatus,
   draftJobStatusCounts,
   sanitizeDraftJobSnapshot,
-  sanitizeQuestionDraftSnapshot,
+  sanitizeQuestionSnapshot,
+  streamingJobCompletionState,
 } from './streaming-evidence.mts';
 
-test('streaming draft status classification separates active, ready, and blockers', () => {
-  assert.equal(classifyStreamingDraftStatus('Drafting 1/3'), 'active');
-  assert.equal(classifyStreamingDraftStatus('2 drafts ready'), 'ready');
-  assert.equal(classifyStreamingDraftStatus('0 drafts ready so far'), 'none');
-  assert.equal(classifyStreamingDraftStatus('Model missing'), 'blocked');
+test('streaming question status classification separates active, ready, and blockers', () => {
+  assert.equal(classifyStreamingQuestionStatus('Generating 1/3'), 'active');
+  assert.equal(classifyStreamingQuestionStatus('2 questions ready'), 'ready');
   assert.equal(
-    classifyStreamingDraftStatus('Reasoning unavailable'),
+    classifyStreamingQuestionStatus('0 questions ready so far'),
+    'none',
+  );
+  assert.equal(classifyStreamingQuestionStatus('Model missing'), 'blocked');
+  assert.equal(
+    classifyStreamingQuestionStatus('Reasoning unavailable'),
     'blocked',
   );
-  assert.equal(classifyStreamingDraftStatus('No draft jobs'), 'none');
+  assert.equal(classifyStreamingQuestionStatus('No question jobs'), 'none');
 });
 
 test('streaming draft job snapshots keep status evidence without response secrets', () => {
@@ -55,7 +59,7 @@ test('streaming draft job snapshots keep status evidence without response secret
   assert.doesNotMatch(JSON.stringify(snapshot), /SECRET|hidden-token|Bearer/i);
 });
 
-test('streaming question draft snapshots count usable drafts without storing text', () => {
+test('streaming question snapshots count usable questions without storing text', () => {
   const payload = {
     items: [
       {
@@ -71,13 +75,48 @@ test('streaming question draft snapshots count usable drafts without storing tex
     ],
   };
 
-  const snapshot = sanitizeQuestionDraftSnapshot(payload, 101);
+  const snapshot = sanitizeQuestionSnapshot(payload, 101);
 
   assert.deepEqual(snapshot, {
     elapsed_ms: 101,
     source: 'question-drafts',
     item_count: 2,
-    usable_count: 1,
+    usable_question_count: 1,
   });
   assert.doesNotMatch(JSON.stringify(snapshot), /SECRET|hidden-token|Bearer/i);
+});
+
+test('streaming job completion state separates active, success, and blockers', () => {
+  assert.deepEqual(
+    streamingJobCompletionState({ succeeded: 3 }),
+    {
+      total_count: 3,
+      active_count: 0,
+      terminal_count: 3,
+      succeeded_count: 3,
+      failed_count: 0,
+      skipped_count: 0,
+      all_terminal: true,
+      all_succeeded: true,
+    },
+  );
+
+  assert.deepEqual(
+    streamingJobCompletionState({
+      succeeded: 1,
+      running: 1,
+      skipped_missing_model: 1,
+      failed: 1,
+    }),
+    {
+      total_count: 4,
+      active_count: 1,
+      terminal_count: 3,
+      succeeded_count: 1,
+      failed_count: 1,
+      skipped_count: 1,
+      all_terminal: false,
+      all_succeeded: false,
+    },
+  );
 });

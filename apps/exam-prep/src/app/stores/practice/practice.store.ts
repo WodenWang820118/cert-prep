@@ -31,10 +31,10 @@ export class PracticeStore {
   readonly selectedAnswer = signal('');
   readonly lastAttempt = signal<PracticeAttemptRead | null>(null);
   readonly answeredQuestionIds = signal<ReadonlySet<string>>(new Set<string>());
-  readonly approvedDraftCount = computed(() => this.drafts.approvedDrafts().length);
-  readonly approvedDraftsByDocument = computed(() => {
+  readonly questionCount = computed(() => this.drafts.playableQuestions().length);
+  readonly questionsByDocument = computed(() => {
     const counts = new Map<string, number>();
-    for (const draft of this.drafts.approvedDrafts()) {
+    for (const draft of this.drafts.playableQuestions()) {
       if (draft.document_id === null) {
         continue;
       }
@@ -43,7 +43,7 @@ export class PracticeStore {
     return counts;
   });
   readonly fullExamDocuments = computed(() => {
-    const counts = this.approvedDraftsByDocument();
+    const counts = this.questionsByDocument();
     return this.sourceImport
       .documents()
       .filter(
@@ -62,11 +62,11 @@ export class PracticeStore {
 
     return this.fullExamDocuments()[0]?.id ?? null;
   });
-  readonly selectedDocumentApprovedCount = computed(() => {
+  readonly selectedDocumentQuestionCount = computed(() => {
     const documentId = this.effectiveFullExamDocumentId();
     return documentId === null
       ? 0
-      : (this.approvedDraftsByDocument().get(documentId) ?? 0);
+      : (this.questionsByDocument().get(documentId) ?? 0);
   });
   readonly fullExamDocumentSelectValue = computed(
     () => this.effectiveFullExamDocumentId() ?? '',
@@ -129,8 +129,8 @@ export class PracticeStore {
     this.selectedDocumentId.set(nextDocument?.id ?? null);
   }
 
-  approvedCountForDocument(documentId: string): number {
-    return this.approvedDraftsByDocument().get(documentId) ?? 0;
+  questionCountForDocument(documentId: string): number {
+    return this.questionsByDocument().get(documentId) ?? 0;
   }
 
   canCreatePracticeSession(mode: PracticeSessionMode): boolean {
@@ -141,11 +141,11 @@ export class PracticeStore {
     if (mode === 'full_document') {
       return (
         this.effectiveFullExamDocumentId() !== null &&
-        this.selectedDocumentApprovedCount() > 0
+        this.selectedDocumentQuestionCount() > 0
       );
     }
 
-    return this.approvedDraftCount() > 0 && this.sessionQuestionCount() > 0;
+    return this.questionCount() > 0 && this.sessionQuestionCount() > 0;
   }
 
   sessionStartBlocker(mode: PracticeSessionMode): string {
@@ -154,10 +154,10 @@ export class PracticeStore {
     }
 
     if (mode === 'full_document') {
-      return 'Choose a parsed document with approved items.';
+      return 'Choose a parsed document with generated questions.';
     }
 
-    return 'Approve at least one item before starting a random quiz.';
+    return 'Generate at least one question before starting a random quiz.';
   }
 
   async createPracticeSession(
@@ -198,9 +198,9 @@ export class PracticeStore {
     return this.sessionPayloads.createPayload({
       mode,
       fullExamDocumentId: this.effectiveFullExamDocumentId(),
-      selectedDocumentApprovedCount: this.selectedDocumentApprovedCount(),
+      selectedDocumentQuestionCount: this.selectedDocumentQuestionCount(),
       sessionQuestionCount: this.sessionQuestionCount(),
-      approvedDraftCount: this.approvedDraftCount(),
+      questionCount: this.questionCount(),
     });
   }
 

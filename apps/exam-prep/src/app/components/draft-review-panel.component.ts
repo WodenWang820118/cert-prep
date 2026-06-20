@@ -27,7 +27,7 @@ import { SourceImportStore } from '../stores/source-import/source-import.store';
               Mock Exam Items
             </h2>
             <p class="m-0 mt-1 text-sm text-muted-color">
-              {{ drafts.approvedDrafts().length }} approved
+              {{ drafts.playableQuestions().length }} editable questions
             </p>
             @if (drafts.draftJobSummary().total > 0 || sourceImport.isParsing()) {
               <div
@@ -44,14 +44,14 @@ import { SourceImportStore } from '../stores/source-import/source-import.store';
                 </span>
                 @if (drafts.canRetryDraftJobs()) {
                   <p-button
-                    label="Retry drafting"
+                    label="Retry generation"
                     icon="pi pi-refresh"
                     severity="secondary"
                     [outlined]="true"
                     size="small"
                     type="button"
-                    [disabled]="operations.isBusyFor('drafts')"
-                    [loading]="operations.isBusyFor('drafts')"
+                    [disabled]="operations.isBusyFor('questions')"
+                    [loading]="operations.isBusyFor('questions')"
                     (onClick)="drafts.retryDraftJobs()"
                   />
                 }
@@ -69,34 +69,24 @@ import { SourceImportStore } from '../stores/source-import/source-import.store';
           class="grid gap-3 md:grid-cols-[10rem_minmax(0,1fr)] md:items-end"
         >
           <label class="grid gap-1.5 text-sm font-semibold text-muted-color">
-            <span>Draft count</span>
+            <span>Question count</span>
             <input
               pInputText
-              name="draftLimit"
+              name="questionLimit"
               type="number"
               min="1"
               max="50"
-              [ngModel]="drafts.draftLimit()"
-              (ngModelChange)="drafts.setDraftLimit($event)"
+              [ngModel]="drafts.questionLimit()"
+              (ngModelChange)="drafts.setQuestionLimit($event)"
             />
           </label>
           <div class="flex flex-wrap gap-2">
             <p-button
-              label="Generate deterministic drafts"
-              icon="pi pi-list-check"
-              severity="secondary"
-              [outlined]="true"
-              type="button"
-              [disabled]="operations.isBusyFor('drafts') || !sourceImport.canGenerateDrafts()"
-              [loading]="operations.isBusyFor('drafts')"
-              (onClick)="drafts.generateDrafts('deterministic_only')"
-            />
-            <p-button
-              label="Enrich with reasoning"
+              label="Generate questions"
               icon="pi pi-sparkles"
               type="button"
-              [disabled]="operations.isBusyFor('drafts') || !sourceImport.canGenerateDrafts()"
-              [loading]="operations.isBusyFor('drafts')"
+              [disabled]="operations.isBusyFor('questions') || !sourceImport.canGenerateDrafts()"
+              [loading]="operations.isBusyFor('questions')"
               (onClick)="drafts.generateDrafts('hybrid_reasoning')"
             />
           </div>
@@ -105,16 +95,12 @@ import { SourceImportStore } from '../stores/source-import/source-import.store';
         <div class="grid gap-3">
           @for (draft of drafts.drafts(); track draft.id) {
             <article
-              class="grid gap-3 rounded-lg border p-3"
-              [class.border-primary-300]="draft.status === 'approved'"
-              [class.border-surface-200]="draft.status !== 'approved'"
-              [class.bg-highlight]="draft.status === 'approved'"
-              [class.bg-surface-0]="draft.status !== 'approved'"
+              class="grid gap-3 rounded-lg border border-primary-300 bg-highlight p-3"
             >
               <div class="flex flex-wrap items-center justify-between gap-2">
                 <p-tag
-                  [value]="draft.status"
-                  [severity]="draft.status === 'approved' ? 'success' : 'warn'"
+                  value="Playable"
+                  severity="success"
                   [rounded]="true"
                 />
                 @if (draft.citation_page) {
@@ -243,72 +229,39 @@ import { SourceImportStore } from '../stores/source-import/source-import.store';
                       : draft.answer ?? 'Not set'
                   }}
                 </span>
-                @if (draft.status === 'approved') {
-                  <p-tag value="Approved" severity="success" [rounded]="true" />
+                <p-tag value="Editable" severity="success" [rounded]="true" />
+              </div>
+
+              <div class="flex flex-wrap justify-end gap-2">
+                @if (drafts.isEditing(draft)) {
+                  <p-button
+                    label="Cancel"
+                    severity="secondary"
+                    [outlined]="true"
+                    type="button"
+                    [disabled]="operations.isBusyFor('saveDraft')"
+                    (onClick)="drafts.cancelEdit(draft)"
+                  />
+                  <p-button
+                    label="Save"
+                    icon="pi pi-save"
+                    type="button"
+                    [disabled]="operations.isBusyFor('saveDraft')"
+                    [loading]="operations.isBusyFor('saveDraft')"
+                    (onClick)="drafts.saveDraft(draft)"
+                  />
                 } @else {
-                  <p-tag
-                    [value]="drafts.approvalBlockerText(draft)"
-                    [severity]="drafts.canApprove(draft) ? 'success' : 'danger'"
-                    [rounded]="true"
+                  <p-button
+                    label="Edit"
+                    icon="pi pi-pencil"
+                    severity="secondary"
+                    [outlined]="true"
+                    type="button"
+                    [disabled]="operations.isBusyFor('saveDraft')"
+                    (onClick)="drafts.startEdit(draft)"
                   />
                 }
               </div>
-
-              @if (draft.status !== 'approved') {
-                <div class="flex flex-wrap justify-end gap-2">
-                  @if (drafts.isEditing(draft)) {
-                    <p-button
-                      label="Cancel"
-                      severity="secondary"
-                      [outlined]="true"
-                      type="button"
-                      [disabled]="operations.isBusyFor(['saveDraft', 'approve'])"
-                      (onClick)="drafts.cancelEdit(draft)"
-                    />
-                    <p-button
-                      label="Save"
-                      icon="pi pi-save"
-                      severity="secondary"
-                      [outlined]="true"
-                      type="button"
-                      [disabled]="operations.isBusyFor(['saveDraft', 'approve'])"
-                      [loading]="operations.isBusyFor('saveDraft')"
-                      (onClick)="drafts.saveDraft(draft)"
-                    />
-                    <p-button
-                      label="Save & approve"
-                      icon="pi pi-check"
-                      type="button"
-                      [disabled]="
-                        operations.isBusyFor(['saveDraft', 'approve']) ||
-                        !drafts.canApprove(draft)
-                      "
-                      [loading]="operations.isBusyFor(['saveDraft', 'approve'])"
-                      (onClick)="drafts.saveAndApproveDraft(draft)"
-                    />
-                  } @else {
-                    <p-button
-                      label="Edit"
-                      icon="pi pi-pencil"
-                      severity="secondary"
-                      [outlined]="true"
-                      type="button"
-                      [disabled]="operations.isBusyFor(['saveDraft', 'approve'])"
-                      (onClick)="drafts.startEdit(draft)"
-                    />
-                    <p-button
-                      label="Approve"
-                      icon="pi pi-check"
-                      severity="secondary"
-                      [outlined]="true"
-                      type="button"
-                      [disabled]="operations.isBusyFor('approve') || !drafts.canApprove(draft)"
-                      [loading]="operations.isBusyFor('approve')"
-                      (onClick)="drafts.approveDraft(draft)"
-                    />
-                  }
-                </div>
-              }
             </article>
           } @empty {
             <p

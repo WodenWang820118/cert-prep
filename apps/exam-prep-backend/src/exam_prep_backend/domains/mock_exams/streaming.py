@@ -15,7 +15,7 @@ from exam_prep_backend.domains.mock_exams.models import (
     DraftSuggestion,
     SourceChunk,
 )
-from exam_prep_backend.domains.mock_exams.normalization import as_ai_reasoning_draft
+from exam_prep_backend.domains.mock_exams.normalization import as_editable_question
 from exam_prep_backend.domains.mock_exams.ports import DraftGenerationProvider
 from exam_prep_backend.domains.mock_exams.provider import generate_drafts_for_strategy
 from exam_prep_backend.domains.source_documents import repository as documents_repository
@@ -152,7 +152,7 @@ class StreamingDraftGenerationManager:
             )
             source_chunk = _source_chunk_from_record(chunk)
             suggestions = [
-                as_ai_reasoning_draft(suggestion)
+                as_editable_question(suggestion)
                 for suggestion in _generate_streaming_fast_first_drafts(
                     self._provider,
                     source_chunk,

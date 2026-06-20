@@ -28,14 +28,12 @@ export class DraftReviewStore {
   private streamingDraftPollKey: string | null = null;
   private streamingDraftPollTimer: ReturnType<typeof setTimeout> | null = null;
 
-  readonly draftLimit = signal(3);
+  readonly questionLimit = signal(3);
   readonly drafts = signal<QuestionDraftRead[]>([]);
   readonly draftJobs = signal<DraftGenerationJobRead[]>([]);
   readonly editingDraftId = signal<string | null>(null);
   readonly draftEdits = signal<Record<string, DraftEdit>>({});
-  readonly approvedDrafts = computed(() =>
-    this.drafts().filter((draft) => draft.status === 'approved'),
-  );
+  readonly playableQuestions = computed(() => this.drafts());
   readonly draftJobSummary = computed(() =>
     this.summarizeDraftJobs(this.draftJobs()),
   );
@@ -84,12 +82,8 @@ export class DraftReviewStore {
     this.stopStreamingDraftPolling();
   }
 
-  setDraftLimit(value: string | number): void {
-    this.draftLimit.set(this.edits.clampDraftLimit(value));
-  }
-
-  canApprove(draft: QuestionDraftRead): boolean {
-    return draft.status !== 'approved' && this.approvalBlockers(draft).length === 0;
+  setQuestionLimit(value: string | number): void {
+    this.questionLimit.set(this.edits.clampQuestionLimit(value));
   }
 
   isEditing(draft: QuestionDraftRead): boolean {
@@ -150,30 +144,21 @@ export class DraftReviewStore {
     this.patchDraftEdit(draftId, (edit) => ({ ...edit, rationale }));
   }
 
-  approvalBlockers(draft: QuestionDraftRead): string[] {
-    return this.edits.approvalBlockers(draft, this.draftEdit(draft));
-  }
-
-  approvalBlockerText(draft: QuestionDraftRead): string {
-    const blockers = this.approvalBlockers(draft);
-    return blockers.length === 0 ? 'Ready to approve' : blockers.join(', ');
-  }
-
   async generateDrafts(
     strategy: DraftGenerationStrategy = 'hybrid_reasoning',
   ): Promise<void> {
     const project = this.projects.selectedProject();
     const document = this.sourceImport.uploadedDocument();
     if (project === null || document === null) {
-      this.operations.fail('Upload a text PDF before generating drafts.');
+      this.operations.fail('Upload a text PDF before generating questions.');
       return;
     }
 
     const drafts = await this.operations.run(
-      'drafts',
+      'questions',
       strategy === 'deterministic_only'
-        ? 'Deterministic drafts generated'
-        : 'Reasoning enrichment completed',
+        ? 'Deterministic questions generated'
+        : 'Reasoning questions generated',
       () =>
         this.api.generateDocumentDrafts(
           project.id,
@@ -218,32 +203,17 @@ export class DraftReviewStore {
     }
   }
 
-  async approveDraft(draft: QuestionDraftRead): Promise<void> {
-    const project = this.projects.selectedProject();
-    if (project === null) {
-      this.operations.fail('Select a project before approving drafts.');
-      return;
-    }
-
-    if (!this.canApprove(draft)) {
-      this.operations.fail(`Draft cannot be approved: ${this.approvalBlockerText(draft)}.`);
-      return;
-    }
-
-    await this.approveSavedDraft(draft);
-  }
-
   async retryDraftJobs(): Promise<void> {
     const project = this.projects.selectedProject();
     const document = this.sourceImport.uploadedDocument();
     if (project === null || document === null) {
-      this.operations.fail('Select a parsed document before retrying drafting.');
+      this.operations.fail('Select a parsed document before retrying question generation.');
       return;
     }
 
     const jobs = await this.operations.run(
-      'drafts',
-      'Drafting retry queued',
+      'questions',
+      'Question generation retry queued',
       () => this.api.retryDocumentDraftJobs(project.id, document.id),
     );
     if (jobs === null) {
@@ -258,51 +228,21 @@ export class DraftReviewStore {
     }
   }
 
-  private async approveSavedDraft(draft: QuestionDraftRead): Promise<void> {
-    const project = this.projects.selectedProject();
-    if (project === null) {
-      this.operations.fail('Select a project before approving drafts.');
-      return;
-    }
-
-    const approved = await this.operations.run('approve', 'Draft approved', () =>
-      this.api.approveQuestionDraft(project.id, draft.id),
-    );
-    if (approved !== null) {
-      this.upsertDraft(approved);
-      this.cancelEdit(approved);
-      if (approved.document_id !== null) {
-        await this.sourceImport.refreshUploadedDocument(
-          project.id,
-          approved.document_id,
-        );
-      }
-    }
-  }
-
   async saveDraft(draft: QuestionDraftRead): Promise<QuestionDraftRead | null> {
     const project = this.projects.selectedProject();
     if (project === null) {
-      this.operations.fail('Select a project before saving drafts.');
+      this.operations.fail('Select a project before saving questions.');
       return null;
     }
 
-    const updated = await this.operations.run('saveDraft', 'Draft saved', () =>
+    const updated = await this.operations.run('saveDraft', 'Question saved', () =>
       this.api.updateQuestionDraft(project.id, draft.id, this.updatePayload(draft)),
     );
     if (updated !== null) {
       this.upsertDraft(updated);
-      this.startEdit(updated);
+      this.cancelEdit(updated);
     }
     return updated;
-  }
-
-  async saveAndApproveDraft(draft: QuestionDraftRead): Promise<void> {
-    const saved = await this.saveDraft(draft);
-    if (saved === null) {
-      return;
-    }
-    await this.approveSavedDraft(saved);
   }
 
   private upsertDraft(nextDraft: QuestionDraftRead): void {
@@ -350,7 +290,7 @@ export class DraftReviewStore {
   }
 
   private generatePayload(strategy: DraftGenerationStrategy) {
-    return this.edits.generatePayload(this.draftLimit(), strategy);
+    return this.edits.generatePayload(this.questionLimit(), strategy);
   }
 
   private ensureStreamingDraftPolling(
@@ -461,7 +401,7 @@ export class DraftReviewStore {
         skipped,
         failed,
         generatedCount,
-        label: 'No draft jobs',
+        label: 'No question jobs',
         detail: 'Waiting for parsed pages.',
         severity: 'secondary',
       };
@@ -474,8 +414,8 @@ export class DraftReviewStore {
         skipped,
         failed,
         generatedCount,
-        label: `Drafting ${active}/${total}`,
-        detail: `${generatedCount} drafts ready so far.`,
+        label: `Generating ${active}/${total}`,
+        detail: `${generatedCount} questions ready so far.`,
         severity: 'info',
       };
     }
@@ -487,7 +427,7 @@ export class DraftReviewStore {
         skipped,
         failed,
         generatedCount,
-        label: 'Drafting needs attention',
+        label: 'Question generation needs attention',
         detail: `${failed} job${failed === 1 ? '' : 's'} failed.`,
         severity: 'danger',
       };
@@ -516,7 +456,7 @@ export class DraftReviewStore {
         skipped,
         failed,
         generatedCount,
-        label: `${generatedCount} drafts ready`,
+        label: `${generatedCount} questions ready`,
         detail: `${succeeded}/${total} jobs completed.`,
         severity: skipped > 0 ? 'warn' : 'success',
       };
@@ -529,8 +469,8 @@ export class DraftReviewStore {
       skipped,
       failed,
       generatedCount,
-      label: 'Draft jobs settled',
-      detail: `${total} jobs completed without drafts.`,
+      label: 'Question jobs settled',
+      detail: `${total} jobs completed without questions.`,
       severity: 'secondary',
     };
   }

@@ -41,7 +41,7 @@ def test_generation_defaults_to_deterministic_only_without_provider_call(
     assert drafts == []
 
 
-def test_hybrid_reasoning_provider_output_is_saved_as_draft(
+def test_hybrid_reasoning_provider_output_is_saved_as_playable_question(
     tmp_path, auth_headers
 ) -> None:
     provider = RecordingExamProvider()
@@ -64,60 +64,34 @@ def test_hybrid_reasoning_provider_output_is_saved_as_draft(
     assert response.status_code == 201
     assert provider.generate_calls == 1
     draft = response.json()["items"][0]
-    assert draft["status"] == "draft"
+    assert draft["status"] == "approved"
     assert draft["answer_key_source"] == "ai_inferred"
     assert draft["confidence"] == 0.73
     assert draft["rationale"] == "The cited source supports the correct answer."
 
 
-def test_approval_blocks_drafts_missing_required_learning_evidence(
+def test_created_question_is_playable_and_editable(
     client: TestClient, auth_headers
 ) -> None:
     project_id = _create_project(client, auth_headers)
-    created = client.post(
-        f"/projects/{project_id}/question-drafts",
-        headers=auth_headers,
-        json={
-            "question": "Which control applies?",
-            "choices": ["A", "B"],
-            "answer": "A",
-            "rationale": "Because it matches the control objective.",
-        },
-    )
-    assert created.status_code == 201
-    draft_id = created.json()["id"]
-
-    blocked = client.post(
-        f"/projects/{project_id}/question-drafts/{draft_id}/approve",
-        headers=auth_headers,
-    )
-
-    assert blocked.status_code == 422
-    assert blocked.json() == {
-        "code": "validation_error",
-        "message": "Draft cannot be approved without complete citation evidence.",
-        "details": {
-            "missing": ["document_id", "chunk_id", "citation_page", "source_excerpt"]
-        },
-    }
-
-
-def test_cited_draft_can_be_approved(client: TestClient, auth_headers) -> None:
-    project_id = _create_project(client, auth_headers)
     document_id = _upload_document(client, auth_headers, project_id)
-    draft = client.post(
+    question = client.post(
         f"/projects/{project_id}/documents/{document_id}/drafts",
         headers=auth_headers,
         json={"limit": 1, "strategy": "hybrid_reasoning"},
     ).json()["items"][0]
 
-    approved = client.post(
-        f"/projects/{project_id}/question-drafts/{draft['id']}/approve",
+    assert question["status"] == "approved"
+
+    patched = client.patch(
+        f"/projects/{project_id}/question-drafts/{question['id']}",
         headers=auth_headers,
+        json={"question": "Edited playable question?"},
     )
 
-    assert approved.status_code == 200
-    assert approved.json()["status"] == "approved"
+    assert patched.status_code == 200
+    assert patched.json()["question"] == "Edited playable question?"
+    assert patched.json()["status"] == "approved"
 
 
 def test_generation_preserves_existing_approved_drafts(
@@ -147,11 +121,7 @@ def test_generation_preserves_existing_approved_drafts(
         },
     )
     assert created.status_code == 201
-    approved = client.post(
-        f"/projects/{project_id}/question-drafts/{created.json()['id']}/approve",
-        headers=auth_headers,
-    )
-    assert approved.status_code == 200
+    assert created.json()["status"] == "approved"
 
     generated = client.post(
         f"/projects/{project_id}/documents/{document_id}/drafts",
@@ -162,9 +132,32 @@ def test_generation_preserves_existing_approved_drafts(
     assert generated.status_code == 201
     listed = client.get(f"/projects/{project_id}/question-drafts", headers=auth_headers)
     assert any(
-        item["id"] == approved.json()["id"] and item["status"] == "approved"
+        item["id"] == created.json()["id"] and item["status"] == "approved"
         for item in listed.json()["items"]
     )
+
+
+def test_create_question_rejects_partial_source_reference(
+    client: TestClient, auth_headers
+) -> None:
+    project_id = _create_project(client, auth_headers)
+    document_id = _upload_document(client, auth_headers, project_id)
+
+    response = client.post(
+        f"/projects/{project_id}/question-drafts",
+        headers=auth_headers,
+        json={
+            "document_id": document_id,
+            "question": "Which action applies?",
+            "choices": ["Apply least privilege", "Grant all access"],
+            "answer": "Apply least privilege",
+            "answer_key_source": "manual",
+            "rationale": "The cited source limits access.",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "validation_error"
 
 
 def test_streaming_append_preserves_existing_drafts_and_dedupes_retries(
@@ -200,7 +193,6 @@ def test_streaming_append_preserves_existing_drafts_and_dedupes_retries(
         rationale="The cited source supports the correct answer.",
         citation_page=chunk["page_number"],
         source_excerpt=chunk["source_excerpt"],
-        status=DraftStatus.DRAFT,
         source_question_number="1",
     )
 
@@ -258,33 +250,6 @@ def test_custom_answer_key_source_remains_backward_compatible(
     listed = client.get(f"/projects/{project_id}/question-drafts", headers=auth_headers)
     assert listed.status_code == 200
     assert listed.json()["items"][0]["answer_key_source"] == "legacy_custom_patch"
-
-
-def test_draft_with_fake_source_citation_cannot_be_approved(
-    client: TestClient, auth_headers
-) -> None:
-    project_id = _create_project(client, auth_headers)
-    created = client.post(
-        f"/projects/{project_id}/question-drafts",
-        headers=auth_headers,
-        json={
-            "question": "Which control applies?",
-            "choices": ["A", "B"],
-            "answer": "A",
-            "rationale": "Because it matches the control objective.",
-            "citation_page": 1,
-            "source_excerpt": "A made up citation.",
-        },
-    )
-    assert created.status_code == 201
-
-    blocked = client.post(
-        f"/projects/{project_id}/question-drafts/{created.json()['id']}/approve",
-        headers=auth_headers,
-    )
-
-    assert blocked.status_code == 422
-    assert blocked.json()["details"]["missing"] == ["document_id", "chunk_id"]
 
 
 def test_bad_draft_source_ids_return_error_envelope(client: TestClient, auth_headers) -> None:

@@ -23,10 +23,10 @@ describe('PracticeStore session modes', () => {
     documentRead('document-1', 'domain-a.pdf'),
     documentRead('document-2', 'domain-b.pdf'),
   ];
-  const drafts: QuestionDraftRead[] = [
-    approvedDraft('draft-1', documents[0].id),
-    approvedDraft('draft-2', documents[1].id),
-    approvedDraft('draft-3', documents[1].id),
+  const questions: QuestionDraftRead[] = [
+    editableQuestion('draft-1', documents[0].id),
+    editableQuestion('draft-2', documents[1].id),
+    editableQuestion('draft-3', documents[1].id),
   ];
   const session: PracticeSessionRead = {
     id: 'session-1',
@@ -43,7 +43,7 @@ describe('PracticeStore session modes', () => {
   const apiClient = {
     createPracticeSession: vi.fn().mockResolvedValue(session),
     getPracticeSession: vi.fn().mockResolvedValue(session),
-    listQuestionDrafts: vi.fn().mockResolvedValue({ items: drafts }),
+    listQuestionDrafts: vi.fn().mockResolvedValue({ items: questions }),
   };
 
   beforeEach(() => {
@@ -57,7 +57,7 @@ describe('PracticeStore session modes', () => {
     projects.select(project.id);
 
     TestBed.inject(SourceImportStore).documents.set(documents);
-    TestBed.inject(DraftReviewStore).drafts.set(drafts);
+    TestBed.inject(DraftReviewStore).drafts.set(questions);
   });
 
   it('sends a full-document payload for the selected parsed document', async () => {
@@ -77,7 +77,7 @@ describe('PracticeStore session modes', () => {
     );
   });
 
-  it('sends a random-draw payload capped to approved item count', async () => {
+  it('sends a random-draw payload capped to editable question count', async () => {
     const store = TestBed.inject(PracticeStore);
     store.setSessionQuestionCount(10);
 
@@ -119,7 +119,7 @@ function documentRead(id: string, filename: string): DocumentRead {
   };
 }
 
-function approvedDraft(id: string, documentId: string): QuestionDraftRead {
+function editableQuestion(id: string, documentId: string): QuestionDraftRead {
   return {
     id,
     project_id: 'project-1',
@@ -135,7 +135,7 @@ function approvedDraft(id: string, documentId: string): QuestionDraftRead {
     confidence: null,
     source_order: 10001,
     source_question_number: '1',
-    item_kind: 'vocabulary_single_question',
+    item_kind: 'vocabulary_single',
     group_key: null,
     group_prompt: null,
     status: 'approved',

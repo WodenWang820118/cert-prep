@@ -6,7 +6,7 @@ from conftest import minimal_pdf
 def test_practice_session_attempts_and_wrong_answer_review(client: TestClient, auth_headers) -> None:
     project_id = _create_project(client, auth_headers)
     document_id = _upload_document(client, auth_headers, project_id)
-    approved = _generate_approved_draft(client, auth_headers, project_id, document_id)
+    question = _generate_playable_question(client, auth_headers, project_id, document_id)
 
     session_response = client.post(
         f"/projects/{project_id}/practice-sessions",
@@ -16,7 +16,7 @@ def test_practice_session_attempts_and_wrong_answer_review(client: TestClient, a
     assert session_response.status_code == 201
     session = session_response.json()
     assert session["project_id"] == project_id
-    assert session["question_ids"] == [approved["id"]]
+    assert session["question_ids"] == [question["id"]]
     assert session["mode"] == "random_draw"
     assert session["document_id"] is None
     assert session["question_count"] == 5
@@ -25,7 +25,7 @@ def test_practice_session_attempts_and_wrong_answer_review(client: TestClient, a
     attempt = client.post(
         f"/projects/{project_id}/practice-sessions/{session['id']}/attempts",
         headers=auth_headers,
-        json={"question_id": approved["id"], "selected_answer": "Ignore the cited source"},
+        json={"question_id": question["id"], "selected_answer": "Ignore the cited source"},
     )
     assert attempt.status_code == 201
     assert attempt.json()["is_correct"] is False
@@ -33,7 +33,7 @@ def test_practice_session_attempts_and_wrong_answer_review(client: TestClient, a
     wrong_answers = client.get(f"/projects/{project_id}/wrong-answers", headers=auth_headers)
     assert wrong_answers.status_code == 200
     item = wrong_answers.json()["items"][0]
-    assert item["question_id"] == approved["id"]
+    assert item["question_id"] == question["id"]
     assert item["selected_answer"] == "Ignore the cited source"
     assert item["correct_answer"] == "Apply the cited concept"
     assert item["citation_page"] == 1
@@ -41,7 +41,7 @@ def test_practice_session_attempts_and_wrong_answer_review(client: TestClient, a
     corrected = client.post(
         f"/projects/{project_id}/practice-sessions/{session['id']}/attempts",
         headers=auth_headers,
-        json={"question_id": approved["id"], "selected_answer": "Apply the cited concept"},
+        json={"question_id": question["id"], "selected_answer": "Apply the cited concept"},
     )
     assert corrected.status_code == 201
     assert corrected.json()["is_correct"] is True
@@ -56,7 +56,7 @@ def test_practice_session_attempts_and_wrong_answer_review(client: TestClient, a
 def test_practice_attempt_rejects_answer_outside_choices(client: TestClient, auth_headers) -> None:
     project_id = _create_project(client, auth_headers)
     document_id = _upload_document(client, auth_headers, project_id)
-    approved = _generate_approved_draft(client, auth_headers, project_id, document_id)
+    question = _generate_playable_question(client, auth_headers, project_id, document_id)
     session = client.post(
         f"/projects/{project_id}/practice-sessions",
         headers=auth_headers,
@@ -66,7 +66,7 @@ def test_practice_attempt_rejects_answer_outside_choices(client: TestClient, aut
     response = client.post(
         f"/projects/{project_id}/practice-sessions/{session['id']}/attempts",
         headers=auth_headers,
-        json={"question_id": approved["id"], "selected_answer": "Not a listed choice"},
+        json={"question_id": question["id"], "selected_answer": "Not a listed choice"},
     )
 
     assert response.status_code == 422
@@ -81,18 +81,18 @@ def test_practice_attempt_rejects_approved_question_outside_session(
 ) -> None:
     project_id = _create_project(client, auth_headers)
     document_id = _upload_document(client, auth_headers, project_id)
-    _generate_approved_draft(client, auth_headers, project_id, document_id)
-    second_question = _create_approved_manual_question(
+    _generate_playable_question(client, auth_headers, project_id, document_id)
+    second_question = _create_manual_question(
         client,
         auth_headers,
         project_id,
         document_id,
     )
-    approved_questions = client.get(
+    playable_questions = client.get(
         f"/projects/{project_id}/question-drafts",
         headers=auth_headers,
     ).json()["items"]
-    assert second_question["id"] in {question["id"] for question in approved_questions}
+    assert second_question["id"] in {question["id"] for question in playable_questions}
 
     session = client.post(
         f"/projects/{project_id}/practice-sessions",
@@ -101,7 +101,7 @@ def test_practice_attempt_rejects_approved_question_outside_session(
     ).json()
     assert len(session["question_ids"]) == 1
     outside_question = next(
-        question for question in approved_questions if question["id"] not in session["question_ids"]
+        question for question in playable_questions if question["id"] not in session["question_ids"]
     )
     assert outside_question["status"] == "approved"
 
@@ -126,7 +126,7 @@ def test_full_document_session_uses_source_order_for_document_drafts(
 ) -> None:
     project_id = _create_project(client, auth_headers)
     document_id = _upload_document(client, auth_headers, project_id)
-    second = _create_approved_manual_question(
+    second = _create_manual_question(
         client,
         auth_headers,
         project_id,
@@ -134,7 +134,7 @@ def test_full_document_session_uses_source_order_for_document_drafts(
         question="Second source item?",
         source_order=20,
     )
-    first = _create_approved_manual_question(
+    first = _create_manual_question(
         client,
         auth_headers,
         project_id,
@@ -163,8 +163,8 @@ def test_random_draw_session_uses_fixed_seed_deterministically(
 ) -> None:
     project_id = _create_project(client, auth_headers)
     document_id = _upload_document(client, auth_headers, project_id)
-    approved = [
-        _create_approved_manual_question(
+    questions = [
+        _create_manual_question(
             client,
             auth_headers,
             project_id,
@@ -196,7 +196,7 @@ def test_random_draw_session_uses_fixed_seed_deterministically(
     assert first_session["random_seed"] == 12345
     assert first_session["question_ids"] == second_session["question_ids"]
     assert len(first_session["question_ids"]) == 2
-    assert set(first_session["question_ids"]) <= {item["id"] for item in approved}
+    assert set(first_session["question_ids"]) <= {item["id"] for item in questions}
 
 
 def _create_project(client: TestClient, auth_headers) -> str:
@@ -221,7 +221,7 @@ def _upload_document(client: TestClient, auth_headers, project_id: str) -> str:
     return response.json()["id"]
 
 
-def _generate_approved_draft(
+def _generate_playable_question(
     client: TestClient,
     auth_headers,
     project_id: str,
@@ -234,18 +234,11 @@ def _generate_approved_draft(
     )
     assert response.status_code == 201
     draft = response.json()["items"][0]
-    if draft["status"] != "approved":
-        approved = client.post(
-            f"/projects/{project_id}/question-drafts/{draft['id']}/approve",
-            headers=auth_headers,
-        )
-        assert approved.status_code == 200
-        draft = approved.json()
     assert draft["status"] == "approved"
     return draft
 
 
-def _create_approved_manual_question(
+def _create_manual_question(
     client: TestClient,
     auth_headers,
     project_id: str,
@@ -277,11 +270,5 @@ def _create_approved_manual_question(
         },
     )
     assert created.status_code == 201
-
-    approved = client.post(
-        f"/projects/{project_id}/question-drafts/{created.json()['id']}/approve",
-        headers=auth_headers,
-    )
-    assert approved.status_code == 200
-    assert approved.json()["status"] == "approved"
-    return approved.json()
+    assert created.json()["status"] == "approved"
+    return created.json()

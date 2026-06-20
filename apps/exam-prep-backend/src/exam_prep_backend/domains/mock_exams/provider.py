@@ -15,7 +15,7 @@ from exam_prep_backend.domains.mock_exams.models import (
     SourceChunk,
 )
 from exam_prep_backend.domains.mock_exams.normalization import (
-    as_ai_reasoning_draft as _as_ai_reasoning_draft,
+    as_editable_question as _as_editable_question,
     dedupe_suggestions as _dedupe_suggestions,
 )
 from exam_prep_backend.domains.mock_exams.ollama_transport import (
@@ -48,21 +48,33 @@ def generate_drafts_for_strategy(
     limit: int,
     strategy: DraftGenerationStrategy,
 ) -> list[DraftSuggestion]:
-    """Generate draft suggestions for the explicit draft endpoint strategy."""
+    """Generate immediately playable question suggestions for a document."""
 
     deterministic = _extract_jlpt_question_blocks(chunks, limit)
     if strategy == DraftGenerationStrategy.DETERMINISTIC_ONLY:
-        return deterministic
-    if len(deterministic) >= limit:
-        return deterministic
+        return _playable_suggestions(deterministic, limit)
 
-    remaining = limit - len(deterministic)
     if isinstance(provider, OllamaProvider):
-        generated = provider.generate_reasoning_drafts(chunks, remaining)
+        generated = provider.generate_reasoning_drafts(chunks, limit)
     else:
-        generated = provider.generate_drafts(chunks, remaining)
-    generated = [_as_ai_reasoning_draft(suggestion) for suggestion in generated]
-    return _dedupe_suggestions([*deterministic, *generated], limit)
+        generated = provider.generate_drafts(chunks, limit)
+    generated = [_as_editable_question(suggestion) for suggestion in generated]
+    return _dedupe_suggestions(
+        [*_playable_suggestions(deterministic, limit), *generated],
+        limit,
+    )
+
+
+def _playable_suggestions(
+    suggestions: Sequence[DraftSuggestion], limit: int
+) -> list[DraftSuggestion]:
+    return [
+        suggestion
+        for suggestion in suggestions
+        if suggestion.answer
+        and suggestion.answer in suggestion.choices
+        and suggestion.rationale
+    ][:limit]
 
 
 __all__ = [
@@ -70,7 +82,7 @@ __all__ = [
     "FakeLLMProvider",
     "MAX_PROMPT_SOURCE_CHARS",
     "OllamaProvider",
-    "_as_ai_reasoning_draft",
+    "_as_editable_question",
     "_dedupe_suggestions",
     "_draft_suggestion_from_item",
     "_extract_jlpt_question_blocks",

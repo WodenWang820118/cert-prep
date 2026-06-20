@@ -1,20 +1,32 @@
 import { isRecord, numberField, stringField } from './text-utils.mts';
 import type {
+  StreamingJobCompletionState,
   StreamingDraftJobSnapshot,
-  StreamingQuestionDraftSnapshot,
+  StreamingQuestionSnapshot,
 } from './types.mts';
 
+const TERMINAL_STREAMING_JOB_STATUSES = new Set([
+  'succeeded',
+  'failed',
+  'skipped_provider_unavailable',
+  'skipped_missing_model',
+]);
+
 /** Classifies the compact streaming status copy shown during packaged smoke. */
-export function classifyStreamingDraftStatus(
+export function classifyStreamingQuestionStatus(
   text: string,
 ): 'active' | 'ready' | 'blocked' | 'none' {
-  if (/[1-9]\d* drafts ready/i.test(text)) {
+  if (/[1-9]\d* questions ready/i.test(text)) {
     return 'ready';
   }
-  if (/Model missing|Reasoning unavailable|Drafting needs attention/i.test(text)) {
+  if (
+    /Model missing|Reasoning unavailable|Question generation needs attention/i.test(
+      text,
+    )
+  ) {
     return 'blocked';
   }
-  if (/Drafting \d+\/\d+/i.test(text)) {
+  if (/Generating \d+\/\d+/i.test(text)) {
     return 'active';
   }
   return 'none';
@@ -56,17 +68,17 @@ export function sanitizeDraftJobSnapshot(
   };
 }
 
-/** Stores only draft counts and usable-draft counts from qwen draft responses. */
-export function sanitizeQuestionDraftSnapshot(
+/** Stores only counts for generated editable questions from qwen responses. */
+export function sanitizeQuestionSnapshot(
   payload: unknown,
   elapsedMs: number,
-): StreamingQuestionDraftSnapshot {
+): StreamingQuestionSnapshot {
   const items = responseItems(payload);
   return {
     elapsed_ms: normalizedElapsedMs(elapsedMs),
     source: 'question-drafts',
     item_count: items.length,
-    usable_count: items.filter(isUsableQuestionDraftPayload).length,
+    usable_question_count: items.filter(isUsableQuestionPayload).length,
   };
 }
 
@@ -80,6 +92,49 @@ export function mergeStatusCounts(
   }
 }
 
+/** Summarizes whether the latest draft-job status histogram is complete. */
+export function streamingJobCompletionState(
+  statusCounts: Record<string, number>,
+): StreamingJobCompletionState {
+  let totalCount = 0;
+  let terminalCount = 0;
+  let succeededCount = 0;
+  let failedCount = 0;
+  let skippedCount = 0;
+
+  for (const [status, count] of Object.entries(statusCounts)) {
+    const normalizedCount = Math.max(0, Math.trunc(numberField(count)));
+    totalCount += normalizedCount;
+    if (TERMINAL_STREAMING_JOB_STATUSES.has(status)) {
+      terminalCount += normalizedCount;
+    }
+    if (status === 'succeeded') {
+      succeededCount += normalizedCount;
+    } else if (status === 'failed') {
+      failedCount += normalizedCount;
+    } else if (status.startsWith('skipped_')) {
+      skippedCount += normalizedCount;
+    }
+  }
+
+  const activeCount = totalCount - terminalCount;
+  return {
+    total_count: totalCount,
+    active_count: activeCount,
+    terminal_count: terminalCount,
+    succeeded_count: succeededCount,
+    failed_count: failedCount,
+    skipped_count: skippedCount,
+    all_terminal: totalCount > 0 && activeCount === 0,
+    all_succeeded:
+      totalCount > 0 &&
+      activeCount === 0 &&
+      failedCount === 0 &&
+      skippedCount === 0 &&
+      succeededCount === totalCount,
+  };
+}
+
 function responseItems(payload: unknown): unknown[] {
   if (!isRecord(payload) || !Array.isArray(payload.items)) {
     return [];
@@ -87,7 +142,7 @@ function responseItems(payload: unknown): unknown[] {
   return payload.items;
 }
 
-function isUsableQuestionDraftPayload(item: unknown): boolean {
+function isUsableQuestionPayload(item: unknown): boolean {
   if (!isRecord(item)) {
     return false;
   }

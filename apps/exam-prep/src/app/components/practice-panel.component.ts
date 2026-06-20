@@ -49,7 +49,7 @@ import { PracticeStore } from '../stores/practice/practice.store';
                 @for (document of practice.fullExamDocuments(); track document.id) {
                   <option [value]="document.id">
                     {{ document.filename }} -
-                    {{ practice.approvedCountForDocument(document.id) }} approved
+                    {{ practice.questionCountForDocument(document.id) }} questions
                   </option>
                 }
               </select>
@@ -75,10 +75,10 @@ import { PracticeStore } from '../stores/practice/practice.store';
             </div>
             <div class="rounded-md border border-surface-200 bg-surface-50 p-3">
               <dt class="text-xs font-bold uppercase text-muted-color">
-                Approved
+                Questions
               </dt>
               <dd class="m-0 mt-1 text-sm font-semibold text-color">
-                {{ practice.selectedDocumentApprovedCount() }}
+                {{ practice.selectedDocumentQuestionCount() }}
               </dd>
             </div>
             <div class="rounded-md border border-surface-200 bg-surface-50 p-3">
@@ -94,10 +94,10 @@ import { PracticeStore } from '../stores/practice/practice.store';
           <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_10rem_auto] md:items-end">
             <div class="rounded-md border border-surface-200 bg-surface-50 p-3">
               <p class="m-0 text-xs font-bold uppercase text-muted-color">
-                Approved items
+                Questions
               </p>
               <p class="m-0 mt-1 text-lg font-bold text-color">
-                {{ practice.approvedDraftCount() }}
+                {{ practice.questionCount() }}
               </p>
             </div>
             <label class="grid gap-1.5 text-sm font-semibold text-muted-color">
@@ -226,10 +226,10 @@ export class PracticePanelComponent {
 
   protected modeSummary(): string {
     if (this.sessionMode === 'full_document') {
-      return `${this.practice.selectedDocumentApprovedCount()} approved in selected document`;
+      return `${this.practice.selectedDocumentQuestionCount()} questions in selected document`;
     }
 
-    return `${this.practice.approvedDraftCount()} approved available`;
+    return `${this.practice.questionCount()} questions available`;
   }
 
   protected startButtonLabel(): string {

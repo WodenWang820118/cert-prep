@@ -5,8 +5,8 @@ import re
 from typing import Any
 
 from exam_prep_backend.domains.exam_content import question_item_kind_from_value
-from exam_prep_backend.domains.mock_exams.models import DraftStatus, DraftSuggestion, SourceChunk
-from exam_prep_backend.domains.mock_exams.policies import normalize_answer
+from exam_prep_backend.domains.mock_exams.models import DraftSuggestion, SourceChunk
+from exam_prep_backend.domains.mock_exams.normalization import normalize_answer
 from exam_prep_backend.errors import ProviderUnavailableError
 
 
@@ -123,7 +123,6 @@ def draft_suggestion_from_item(
         rationale=rationale or "Selected from the extracted JLPT source.",
         citation_page=chunk.page_number,
         source_excerpt=source_excerpt,
-        status=DraftStatus.DRAFT,
         confidence=confidence,
         source_order=_optional_int(raw_item.get("source_order")),
         source_question_number=source_question_number,

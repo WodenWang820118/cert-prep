@@ -13,11 +13,27 @@ export class HealthSnapshotService {
    * success. The health UI can still render Python/OCR status when LLM or
    * runtime-requirement endpoints are unavailable.
    */
-  async load(): Promise<HealthSnapshot> {
-    const system = this.api.health();
-    const llm = this.api.llmHealth();
-    const ocr = this.api.ocrHealth();
-    const runtimeRequirements = this.loadRuntimeRequirements().catch(() => []);
+  async load(
+    onPartialSnapshot?: (snapshot: Partial<HealthSnapshot>) => void,
+  ): Promise<HealthSnapshot> {
+    const system = this.api.health().then((value) => {
+      onPartialSnapshot?.({ system: value });
+      return value;
+    });
+    const llm = this.api.llmHealth().then((value) => {
+      onPartialSnapshot?.({ llm: value });
+      return value;
+    });
+    const ocr = this.api.ocrHealth().then((value) => {
+      onPartialSnapshot?.({ ocr: value });
+      return value;
+    });
+    const runtimeRequirements = this.loadRuntimeRequirements()
+      .then((value) => {
+        onPartialSnapshot?.({ runtimeRequirements: value });
+        return value;
+      })
+      .catch(() => []);
 
     const [systemResult, llmResult, ocrResult, requirementsResult] =
       await Promise.allSettled([system, llm, ocr, runtimeRequirements]);

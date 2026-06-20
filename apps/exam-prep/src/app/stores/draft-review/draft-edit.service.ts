@@ -10,11 +10,11 @@ import type {
 } from './contracts/draft-review.contracts';
 
 /**
- * Encapsulates draft form normalization and approval validation rules.
+ * Normalizes editable question form input before saving it back to the API.
  */
 @Injectable({ providedIn: 'root' })
 export class DraftEditService {
-  clampDraftLimit(value: string | number): number {
+  clampQuestionLimit(value: string | number): number {
     return this.clampInteger(value, 1, 50);
   }
 
@@ -25,37 +25,6 @@ export class DraftEditService {
       answer: draft.answer ?? '',
       rationale: draft.rationale ?? '',
     };
-  }
-
-  approvalBlockers(draft: QuestionDraftRead, edit: DraftEdit): string[] {
-    const choices = this.normalizeChoices(edit.choices);
-    const answer = edit.answer.trim();
-    const blockers: string[] = [];
-
-    if (
-      draft.document_id === null ||
-      draft.chunk_id === null ||
-      draft.citation_page === null ||
-      draft.citation_page <= 0
-    ) {
-      blockers.push('missing citation');
-    }
-    if (!this.hasText(draft.source_excerpt)) {
-      blockers.push('missing source excerpt');
-    }
-    if (!this.hasText(answer)) {
-      blockers.push('missing answer');
-    } else if (!choices.includes(answer)) {
-      blockers.push('choice mismatch');
-    }
-    if (choices.length < 2) {
-      blockers.push('choice mismatch');
-    }
-    if (!this.hasText(edit.rationale)) {
-      blockers.push('missing rationale');
-    }
-
-    return Array.from(new Set(blockers));
   }
 
   updatePayload(
@@ -96,10 +65,6 @@ export class DraftEditService {
     }
 
     return Math.min(maximum, Math.max(minimum, Math.round(parsed)));
-  }
-
-  private hasText(value: string | null): value is string {
-    return value !== null && value.trim().length > 0;
   }
 
   private normalizeChoices(choices: string[]): string[] {

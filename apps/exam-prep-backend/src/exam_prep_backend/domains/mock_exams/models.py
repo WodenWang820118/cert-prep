@@ -14,7 +14,6 @@ from exam_prep_backend.domains.exam_content import (
 
 
 class DraftStatus(StrEnum):
-    DRAFT = "draft"
     APPROVED = "approved"
 
 
@@ -125,7 +124,7 @@ def answer_key_source_from_value(
 def draft_status_from_value(
     value: DraftStatus | str | None,
     *,
-    default: DraftStatus = DraftStatus.DRAFT,
+    default: DraftStatus = DraftStatus.APPROVED,
 ) -> DraftStatus:
     if isinstance(value, DraftStatus):
         return value

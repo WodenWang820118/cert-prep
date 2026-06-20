@@ -149,7 +149,7 @@ def test_ollama_prompt_source_skips_notice_pages_and_stays_bounded() -> None:
     assert len(source) <= MAX_PROMPT_SOURCE_CHARS
 
 
-def test_jlpt_question_blocks_extract_as_manual_drafts_without_ai() -> None:
+def test_jlpt_question_blocks_extract_as_unanswered_candidates_without_ai() -> None:
     chunk = SourceChunk(
         id="page-2",
         page_number=2,
@@ -169,7 +169,7 @@ def test_jlpt_question_blocks_extract_as_manual_drafts_without_ai() -> None:
     assert suggestions[0].choices == ("1 ようか", "2 よか", "3 よが", "4 ようが")
     assert suggestions[0].answer == ""
     assert suggestions[0].answer_key_source.value == "manual"
-    assert suggestions[0].status.value == "draft"
+    assert suggestions[0].status.value == "approved"
     assert suggestions[0].citation_page == 2
     assert suggestions[0].confidence == 1.0
     assert suggestions[0].source_order == 20001

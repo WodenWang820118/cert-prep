@@ -1,7 +1,7 @@
 import pytest
 
 from exam_prep_backend.domains.practice import (
-    NO_APPROVED_QUESTIONS_MESSAGE,
+    NO_PLAYABLE_QUESTIONS_MESSAGE,
     QUESTION_NOT_IN_SESSION_MESSAGE,
     SELECTED_ANSWER_NOT_AVAILABLE_MESSAGE,
     PracticeAttempt,
@@ -32,7 +32,6 @@ def test_practice_models_preserve_current_serialized_values() -> None:
     )
 
     assert PracticeSessionStatus.ACTIVE.value == "active"
-    assert QuestionDraftStatus.DRAFT.value == "draft"
     assert QuestionDraftStatus.APPROVED.value == "approved"
     assert session.to_record()["status"] == "active"
     assert session.to_record()["question_ids"] == ["question-1"]
@@ -43,13 +42,13 @@ def test_practice_models_preserve_current_serialized_values() -> None:
     assert question.status is QuestionDraftStatus.APPROVED
 
 
-def test_select_session_questions_preserves_approved_order_and_requires_questions() -> None:
+def test_select_session_questions_preserves_playable_order_and_requires_questions() -> None:
     assert select_session_question_ids(["q-1", "q-2", "q-3"], 2) == ("q-1", "q-2")
 
     with pytest.raises(PracticeRuleViolation) as exc_info:
         select_session_question_ids([], 10)
 
-    assert str(exc_info.value) == NO_APPROVED_QUESTIONS_MESSAGE
+    assert str(exc_info.value) == NO_PLAYABLE_QUESTIONS_MESSAGE
 
 
 def test_practice_attempt_policy_validates_membership_and_grades_answer() -> None:

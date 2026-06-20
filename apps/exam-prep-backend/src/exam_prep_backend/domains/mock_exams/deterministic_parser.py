@@ -5,7 +5,6 @@ from collections.abc import Sequence
 from exam_prep_backend.domains.exam_content import parse_jlpt_question_blocks
 from exam_prep_backend.domains.mock_exams.models import (
     AnswerKeySource,
-    DraftStatus,
     DraftSuggestion,
     SourceChunk,
 )
@@ -93,7 +92,6 @@ def extract_jlpt_question_blocks(
                     rationale="",
                     citation_page=chunk.page_number,
                     source_excerpt=block.source_excerpt,
-                    status=DraftStatus.DRAFT,
                     confidence=1.0,
                     source_order=block.source_order,
                     source_question_number=block.source_question_number,

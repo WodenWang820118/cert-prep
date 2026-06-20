@@ -97,6 +97,17 @@
         "command": "node apps/exam-prep-desktop/scripts/packaged-flow-smoke.mts"
       }
     },
+    "packaged-streaming-baseline": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "dependsOn": ["build-gpu"],
+      "outputs": [
+        "{workspaceRoot}/tmp/exam-prep-desktop/packaged-streaming-baseline"
+      ],
+      "options": {
+        "command": "node apps/exam-prep-desktop/scripts/packaged-flow-smoke.mts --ocr-page-workers 1 --ollama-model qwen3:8b --streaming-draft-page-limit 1 --streaming-draft-workers 1 --wait-for-streaming-complete"
+      }
+    },
     "typecheck-scripts": {
       "cache": true,
       "executor": "nx:run-commands",

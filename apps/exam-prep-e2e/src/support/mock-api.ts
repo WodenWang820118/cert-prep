@@ -83,7 +83,7 @@ export async function installMockExamPrepApi(
     confidence: 0.94,
     source_order: 10001,
     source_question_number: '1',
-    item_kind: 'vocabulary_single_question',
+    item_kind: 'vocabulary_single',
     group_key: null,
     group_prompt: null,
     status: 'approved',

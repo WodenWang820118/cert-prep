@@ -9,7 +9,7 @@ from exam_prep_backend.domains.practice.models import (
 )
 from exam_prep_backend.domains.practice.policies import (
     DOCUMENT_REQUIRED_FOR_FULL_DOCUMENT_MESSAGE,
-    NO_APPROVED_QUESTIONS_MESSAGE,
+    NO_PLAYABLE_QUESTIONS_MESSAGE,
     QUESTION_NOT_IN_SESSION_MESSAGE,
     SELECTED_ANSWER_NOT_AVAILABLE_MESSAGE,
     PracticeRuleViolation,
@@ -23,7 +23,7 @@ from exam_prep_backend.domains.practice.policies import (
 
 __all__ = [
     "DOCUMENT_REQUIRED_FOR_FULL_DOCUMENT_MESSAGE",
-    "NO_APPROVED_QUESTIONS_MESSAGE",
+    "NO_PLAYABLE_QUESTIONS_MESSAGE",
     "QUESTION_NOT_IN_SESSION_MESSAGE",
     "SELECTED_ANSWER_NOT_AVAILABLE_MESSAGE",
     "PracticeAttempt",

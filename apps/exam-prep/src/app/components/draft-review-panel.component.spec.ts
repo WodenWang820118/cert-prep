@@ -12,7 +12,6 @@ import { DraftReviewPanelComponent } from './draft-review-panel.component';
 
 describe('DraftReviewPanelComponent', () => {
   const apiClient = {
-    approveQuestionDraft: vi.fn(),
     generateDocumentDrafts: vi.fn(),
     listDocumentDraftJobs: vi.fn(),
     listQuestionDrafts: vi.fn(),
@@ -28,7 +27,7 @@ describe('DraftReviewPanelComponent', () => {
     }).compileComponents();
   });
 
-  it('renders streaming draft job progress as a live status', () => {
+  it('renders streaming question job progress as a live status', () => {
     const projects = TestBed.inject(ProjectStore);
     const sourceImport = TestBed.inject(SourceImportStore);
     const drafts = TestBed.inject(DraftReviewStore);
@@ -43,11 +42,11 @@ describe('DraftReviewPanelComponent', () => {
     const liveRegion = fixture.nativeElement.querySelector(
       '[aria-live="polite"]',
     ) as HTMLElement | null;
-    expect(liveRegion?.textContent).toContain('Drafting 1/1');
-    expect(liveRegion?.textContent).toContain('0 drafts ready so far.');
+    expect(liveRegion?.textContent).toContain('Generating 1/1');
+    expect(liveRegion?.textContent).toContain('0 questions ready so far.');
   });
 
-  it('renders retry action when streaming draft jobs are blocked', () => {
+  it('renders retry action when streaming question jobs are blocked', () => {
     const projects = TestBed.inject(ProjectStore);
     const sourceImport = TestBed.inject(SourceImportStore);
     const drafts = TestBed.inject(DraftReviewStore);
@@ -63,7 +62,7 @@ describe('DraftReviewPanelComponent', () => {
       'button',
     ) as HTMLButtonElement | null;
     expect(fixture.nativeElement.textContent).toContain('Model missing');
-    expect(retryButton?.textContent).toContain('Retry drafting');
+    expect(retryButton?.textContent).toContain('Retry generation');
   });
 });
 

@@ -11,7 +11,7 @@ from exam_prep_backend.domains.practice.models import (
 )
 
 
-NO_APPROVED_QUESTIONS_MESSAGE = "No approved questions are available for practice."
+NO_PLAYABLE_QUESTIONS_MESSAGE = "No playable questions are available for practice."
 DOCUMENT_REQUIRED_FOR_FULL_DOCUMENT_MESSAGE = (
     "Document id is required for full document practice."
 )
@@ -24,21 +24,21 @@ class PracticeRuleViolation(ValueError):
 
 
 def select_session_question_ids(
-    approved_question_ids: Sequence[str], question_count: int
+    playable_question_ids: Sequence[str], question_count: int
 ) -> tuple[str, ...]:
-    selected_question_ids = tuple(approved_question_ids[:question_count])
+    selected_question_ids = tuple(playable_question_ids[:question_count])
     if not selected_question_ids:
-        raise PracticeRuleViolation(NO_APPROVED_QUESTIONS_MESSAGE)
+        raise PracticeRuleViolation(NO_PLAYABLE_QUESTIONS_MESSAGE)
     return selected_question_ids
 
 
 def select_random_session_question_ids(
-    approved_question_ids: Sequence[str], question_count: int, random_seed: int
+    playable_question_ids: Sequence[str], question_count: int, random_seed: int
 ) -> tuple[str, ...]:
-    if not approved_question_ids:
-        raise PracticeRuleViolation(NO_APPROVED_QUESTIONS_MESSAGE)
-    selected_count = min(question_count, len(approved_question_ids))
-    return tuple(random.Random(random_seed).sample(tuple(approved_question_ids), selected_count))
+    if not playable_question_ids:
+        raise PracticeRuleViolation(NO_PLAYABLE_QUESTIONS_MESSAGE)
+    selected_count = min(question_count, len(playable_question_ids))
+    return tuple(random.Random(random_seed).sample(tuple(playable_question_ids), selected_count))
 
 
 def ensure_question_belongs_to_session(session: PracticeSession, question_id: str) -> None:

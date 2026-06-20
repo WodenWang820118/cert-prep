@@ -94,12 +94,11 @@ describe('SourceImportPanelComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('8/8 pages / 8 chunks');
   });
 
-  it('keeps upload disabled while runtime health is refreshing stale OCR status', async () => {
+  it('keeps upload disabled while runtime health is waiting for first OCR status', async () => {
     const fixture = TestBed.createComponent(SourceImportPanelComponent);
     const health = TestBed.inject(HealthStore);
     const operations = TestBed.inject(OperationStore);
     const sourceImport = TestBed.inject(SourceImportStore);
-    health.ocrHealth.set(ocrHealth());
     health.healthSnapshotLoading.set(true);
     sourceImport.chooseFile(
       new File(['%PDF-1.7'], 'runtime.pdf', { type: 'application/pdf' }),
@@ -117,6 +116,23 @@ describe('SourceImportPanelComponent', () => {
     expect(operations.error()).toBe(
       'PaddleOCR is warming up. Try again when runtime health finishes.',
     );
+  });
+
+  it('keeps upload available when OCR is known and LLM health is still settling', () => {
+    const fixture = TestBed.createComponent(SourceImportPanelComponent);
+    const health = TestBed.inject(HealthStore);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    health.ocrHealth.set(ocrHealth());
+    health.healthSnapshotLoading.set(true);
+    sourceImport.chooseFile(
+      new File(['%PDF-1.7'], 'runtime.pdf', { type: 'application/pdf' }),
+    );
+
+    fixture.detectChanges();
+
+    expect(health.isOcrHealthLoading()).toBe(false);
+    expect(sourceImport.canUpload()).toBe(true);
+    expect(uploadButton(fixture.nativeElement)?.disabled).toBe(false);
   });
 });
 

@@ -65,13 +65,13 @@ def retry_document_draft_jobs(
     project_id: str,
     document_id: str,
     db: Database = Depends(get_database),
-    streaming_drafts: StreamingDraftGenerationManager = Depends(
+    streaming_questions: StreamingDraftGenerationManager = Depends(
         get_streaming_draft_generation_manager
     ),
 ) -> dict:
     try:
         return {
-            "items": streaming_drafts.retry_document_jobs(
+            "items": streaming_questions.retry_document_jobs(
                 db,
                 project_id=project_id,
                 document_id=document_id,
@@ -148,6 +148,8 @@ def create_question_draft(
         return mock_exams_repository.create_draft(db, project_id, payload)
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
+    except ValidationError as exc:
+        raise validation_error(str(exc)) from exc
 
 
 @drafts_router.get("", response_model=QuestionDraftList)
@@ -169,22 +171,3 @@ def update_question_draft(
         return mock_exams_repository.update_draft(db, project_id, draft_id, payload)
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
-
-
-@drafts_router.post("/{draft_id}/approve", response_model=QuestionDraftRead)
-def approve_question_draft(
-    project_id: str,
-    draft_id: str,
-    db: Database = Depends(get_database),
-) -> dict:
-    try:
-        approved = mock_exams_repository.approve_draft(db, project_id, draft_id)
-    except NotFoundError as exc:
-        raise not_found_error(str(exc)) from exc
-
-    if approved.get("blocked"):
-        raise validation_error(
-            "Draft cannot be approved without complete citation evidence.",
-            {"missing": approved["missing"]},
-        )
-    return approved

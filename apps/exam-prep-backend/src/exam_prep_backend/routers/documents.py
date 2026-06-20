@@ -15,7 +15,7 @@ from exam_prep_backend.dependencies import (
 )
 from exam_prep_backend.domains.mock_exams import repository as mock_exams_repository
 from exam_prep_backend.domains.mock_exams.models import SourceChunk
-from exam_prep_backend.domains.mock_exams.normalization import as_ai_reasoning_draft
+from exam_prep_backend.domains.mock_exams.normalization import as_editable_question
 from exam_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
 from exam_prep_backend.domains.mock_exams.streaming import StreamingDraftGenerationManager
 from exam_prep_backend.domains.projects import repository as projects_repository
@@ -63,7 +63,7 @@ async def upload_document(
     settings: Settings = Depends(get_settings),
     llm_provider: LLMProvider = Depends(get_llm_provider),
     ocr_provider: OCRProvider = Depends(get_ocr_provider),
-    streaming_drafts: StreamingDraftGenerationManager = Depends(
+    streaming_questions: StreamingDraftGenerationManager = Depends(
         get_streaming_draft_generation_manager
     ),
 ) -> dict:
@@ -96,7 +96,7 @@ async def upload_document(
                     settings,
                     llm_provider,
                     ocr_provider,
-                    streaming_drafts,
+                    streaming_questions,
                     project_id,
                     document["id"],
                     content,
@@ -110,7 +110,7 @@ async def upload_document(
             settings,
             llm_provider,
             ocr_provider,
-            streaming_drafts,
+            streaming_questions,
             project_id,
             document["id"],
             content,
@@ -202,7 +202,7 @@ def _auto_generate_exam_items(
     ]
     try:
         suggestions = [
-            as_ai_reasoning_draft(suggestion)
+            as_editable_question(suggestion)
             for suggestion in provider.generate_drafts(chunks, limit)
         ]
     except ProviderUnavailableError:
@@ -225,7 +225,7 @@ def _process_document_upload(
     settings: Settings,
     llm_provider: LLMProvider,
     ocr_provider: OCRProvider,
-    streaming_drafts: StreamingDraftGenerationManager,
+    streaming_questions: StreamingDraftGenerationManager,
     project_id: str,
     document_id: str,
     content: bytes,
@@ -247,7 +247,7 @@ def _process_document_upload(
             first_chunk_ms=progress.first_chunk_ms,
         )
         if progress.page is not None:
-            streaming_drafts.enqueue_page(
+            streaming_questions.enqueue_page(
                 db,
                 project_id=project_id,
                 document_id=document_id,

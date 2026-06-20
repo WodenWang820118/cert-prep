@@ -4,7 +4,7 @@ import { EXAM_PREP_API } from './exam-prep-api';
 import {
   appDocument,
   appProject,
-  approvedAppDraft,
+  editableAppQuestion,
   availableLlmHealth,
   availableOcrHealth,
   backendHealth,
@@ -83,7 +83,7 @@ function createApiClient() {
     listDocuments: vi.fn().mockResolvedValue({ items: [appDocument] }),
     getDocument: vi.fn().mockResolvedValue(appDocument),
     listDocumentChunks: vi.fn().mockResolvedValue({ items: [] }),
-    listQuestionDrafts: vi.fn().mockResolvedValue({ items: [approvedAppDraft] }),
+    listQuestionDrafts: vi.fn().mockResolvedValue({ items: [editableAppQuestion] }),
     listWrongAnswers: vi.fn().mockResolvedValue({ items: [] }),
   };
 }

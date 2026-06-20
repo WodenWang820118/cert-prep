@@ -20,6 +20,7 @@ const PROCESS_SNAPSHOT_MAX_BUFFER = 64 * 1024 * 1024;
 interface PrepareBackendRuntimeOptions {
   workspaceRoot: string;
   outDir: string;
+  appDataDir?: string;
   metrics: SmokeMetrics;
 }
 
@@ -27,6 +28,7 @@ interface PrepareBackendRuntimeOptions {
 export function preparePackagedBackendRuntimeForSmoke({
   workspaceRoot,
   outDir,
+  appDataDir,
   metrics,
 }: PrepareBackendRuntimeOptions): void {
   const manifestPath = resolve(
@@ -45,7 +47,7 @@ export function preparePackagedBackendRuntimeForSmoke({
   const artifactPath = resolveBackendRuntimeArtifact(workspaceRoot, manifest);
   verifyBackendRuntimeArtifact(artifactPath, manifest);
 
-  const appDataRoot = packagedAppDataDir();
+  const appDataRoot = packagedAppDataDir(appDataDir);
   const runtimeRoot = join(appDataRoot, 'runtimes');
   const runtimeDir = join(runtimeRoot, 'python_backend');
   const extractDir = join(outDir, 'backend-runtime-extract');
@@ -77,7 +79,11 @@ export function preparePackagedBackendRuntimeForSmoke({
 }
 
 /** Resolves the packaged app data directory used by runtime discovery. */
-export function packagedAppDataDir(): string {
+export function packagedAppDataDir(overrideValue?: string): string {
+  if (overrideValue?.trim()) {
+    return resolve(overrideValue);
+  }
+
   const override = process.env.EXAM_PREP_PACKAGE_SMOKE_APP_DATA_DIR?.trim();
   if (override) {
     return resolve(override);

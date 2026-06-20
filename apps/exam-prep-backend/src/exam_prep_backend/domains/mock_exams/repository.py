@@ -6,13 +6,6 @@ from uuid import uuid4
 
 from exam_prep_backend.database import Database, utc_now
 from exam_prep_backend.domains.mock_exams.models import DraftSuggestion
-from exam_prep_backend.domains.mock_exams.models import SourceChunk
-from exam_prep_backend.domains.mock_exams.policies import (
-    grounding_errors_for_draft as grounding_error_codes,
-)
-from exam_prep_backend.domains.mock_exams.policies import (
-    missing_approval_fields as missing_approval_field_codes,
-)
 from exam_prep_backend.domains.mock_exams.schemas import QuestionDraftCreate, QuestionDraftUpdate
 from exam_prep_backend.domains.source_documents import repository as documents_repository
 from exam_prep_backend.domains.projects.repository import ensure_project_exists
@@ -33,7 +26,7 @@ def create_draft(db: Database, project_id: str, payload: QuestionDraftCreate) ->
                 confidence, source_order, source_question_number, item_kind, group_key, group_prompt,
                 rejection_reason, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?, ?, ?, ?, ?, NULL, ?, ?)
             """,
             (
                 draft_id,
@@ -74,16 +67,14 @@ def create_generated_drafts(
     now = utc_now()
     draft_ids: list[str] = []
     with db.connect() as connection:
-        connection.execute(
-            """
-            DELETE FROM question_drafts
-            WHERE project_id = ?
-              AND document_id = ?
-              AND status <> 'approved'
-            """,
-            (project_id, document_id),
-        )
         for index, suggestion in enumerate(suggestions, start=1):
+            if _matching_generated_draft_exists(
+                connection,
+                project_id=project_id,
+                document_id=document_id,
+                suggestion=suggestion,
+            ):
+                continue
             draft_id = str(uuid4())
             draft_ids.append(draft_id)
             connection.execute(
@@ -288,64 +279,12 @@ def update_draft(
     return _draft_from_row(row)
 
 
-def approve_draft(db: Database, project_id: str, draft_id: str) -> dict:
-    draft = get_draft(db, project_id, draft_id)
-    missing = missing_approval_fields(draft)
-    if missing:
-        return {"blocked": True, "missing": missing}
-    grounding_errors = grounding_errors_for_draft(db, draft)
-    if grounding_errors:
-        return {"blocked": True, "missing": grounding_errors}
-
-    now = utc_now()
-    with db.connect() as connection:
-        connection.execute(
-            """
-            UPDATE question_drafts
-            SET status = 'approved', rejection_reason = NULL, updated_at = ?
-            WHERE project_id = ? AND id = ?
-            """,
-            (now, project_id, draft_id),
-        )
-        row = _draft_query(connection, project_id, draft_id)
-    if row is None:
-        raise NotFoundError("Question draft not found.")
-    return _draft_from_row(row)
-
-
 def get_draft(db: Database, project_id: str, draft_id: str) -> dict:
     with db.connect() as connection:
         row = _draft_query(connection, project_id, draft_id)
     if row is None:
         raise NotFoundError("Question draft not found.")
     return _draft_from_row(row)
-
-
-def missing_approval_fields(draft: dict) -> list[str]:
-    """Return the user-facing approval blockers in the existing API order."""
-
-    return list(missing_approval_field_codes(draft))
-
-
-def grounding_errors_for_draft(db: Database, draft: dict) -> list[str]:
-    try:
-        chunk = documents_repository.get_chunk(
-            db,
-            draft["project_id"],
-            draft["document_id"],
-            draft["chunk_id"],
-        )
-    except NotFoundError:
-        return ["document_chunk"]
-
-    source_chunk = SourceChunk(
-        id=chunk["id"],
-        page_number=chunk["page_number"],
-        text=chunk["text"],
-        raw_text=chunk["raw_text"],
-        source_excerpt=chunk["source_excerpt"],
-    )
-    return list(grounding_error_codes(draft, source_chunk))
 
 
 def _validate_optional_source(

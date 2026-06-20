@@ -39,7 +39,7 @@ def test_status_like_fields_are_documented_as_openapi_enums(tmp_path) -> None:
         "jlpt_grouped",
         "mixed",
     ]
-    assert _enum_values(openapi, "QuestionDraftRead", "status") == ["draft", "approved"]
+    assert _enum_values(openapi, "QuestionDraftRead", "status") == ["approved"]
     assert _enum_values(openapi, "QuestionDraftRead", "answer_key_source") == [
         "manual",
         "pdf",

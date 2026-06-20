@@ -83,4 +83,27 @@ describe('HealthStore loading', () => {
     expect(store.isOcrHealthLoading()).toBe(false);
     expect(store.ocrHealth()?.available).toBe(true);
   });
+
+  it('applies OCR health before slower LLM health settles', async () => {
+    const store = TestBed.inject(HealthStore);
+    let resolveLlmHealth!: (value: ReturnType<typeof llmHealth>) => void;
+    apiClient.llmHealth.mockReturnValueOnce(
+      new Promise<ReturnType<typeof llmHealth>>((resolve) => {
+        resolveLlmHealth = resolve;
+      }),
+    );
+
+    const load = store.load();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(store.healthSnapshotLoading()).toBe(true);
+    expect(store.ocrHealth()?.available).toBe(true);
+    expect(store.isOcrHealthLoading()).toBe(false);
+
+    resolveLlmHealth(llmHealth({ available: false }));
+    await load;
+
+    expect(store.healthSnapshotLoading()).toBe(false);
+  });
 });

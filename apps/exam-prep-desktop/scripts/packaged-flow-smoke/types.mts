@@ -6,11 +6,14 @@ export interface SmokeOptions {
   exePath: string;
   pdfPath: string;
   outDir: string;
+  appDataDir?: string;
   cdpPort: number;
   ocrPageWorkers: number;
   ollamaModel: string;
   streamingDraftPageLimit?: number;
   streamingDraftWorkers?: number;
+  waitForStreamingComplete: boolean;
+  streamingCompleteTimeoutMs: number;
   skipGpuSampling: boolean;
 }
 
@@ -24,11 +27,15 @@ export interface SmokeMetrics {
   observations: string[];
   errors: string[];
   project_name?: string;
-  approved_answer?: string;
+  selected_answer?: string;
   wrong_answer?: string;
   llm_model: string;
   streaming_draft_page_limit?: number;
   streaming_draft_workers?: number;
+  wait_for_streaming_complete?: boolean;
+  app_data_dir?: string;
+  ocr_completion?: OcrCompletionMetrics;
+  streaming_baseline?: StreamingBaselineArtifacts;
   restart?: {
     attempted: boolean;
     verified?: boolean;
@@ -44,19 +51,45 @@ export interface SmokeMetrics {
     new_node_helpers_closed: PublicProcessRecord[];
     residue_after_close: PublicProcessRecord[];
   };
-  streaming_drafts: StreamingDraftsMetrics;
+  streaming_questions: StreamingQuestionsMetrics;
   gpu_sampling?: string;
 }
 
-export interface StreamingDraftsMetrics {
+export interface StreamingQuestionsMetrics {
   job_snapshots: StreamingDraftJobSnapshot[];
-  draft_snapshots: StreamingQuestionDraftSnapshot[];
+  question_snapshots: StreamingQuestionSnapshot[];
   status_counts: Record<string, number>;
   first_job_visible_ms?: number;
   first_status_visible_ms?: number;
-  first_draft_visible_ms?: number;
+  first_question_visible_ms?: number;
   first_usable_question_visible_ms?: number;
+  all_jobs_terminal_ms?: number;
   blocker?: string;
+}
+
+export interface OcrCompletionMetrics {
+  pages_processed: number | null;
+  total_pages: number | null;
+  chunks: number | null;
+  expected_pages: 46;
+  expected_chunks: 46;
+}
+
+export interface StreamingBaselineArtifacts {
+  status: 'passed' | 'failed';
+  json: string;
+  markdown: string;
+}
+
+export interface StreamingJobCompletionState {
+  total_count: number;
+  active_count: number;
+  terminal_count: number;
+  succeeded_count: number;
+  failed_count: number;
+  skipped_count: number;
+  all_terminal: boolean;
+  all_succeeded: boolean;
 }
 
 export interface StreamingDraftJobSnapshot {
@@ -68,11 +101,11 @@ export interface StreamingDraftJobSnapshot {
   blocker?: string;
 }
 
-export interface StreamingQuestionDraftSnapshot {
+export interface StreamingQuestionSnapshot {
   elapsed_ms: number;
   source: 'question-drafts';
   item_count: number;
-  usable_count: number;
+  usable_question_count: number;
 }
 
 export interface UploadedDocumentRef {
@@ -152,6 +185,7 @@ export interface SmokeRunState {
   page: Page | null;
   port: number;
   processBaseline: ProcessSnapshot;
+  uploadedDocument: UploadedDocumentRef | null;
   streamingDraftParseStartedAt: number | null;
   streamingDraftCaptureOpen: boolean;
   streamingApiPollErrorCaptured: boolean;

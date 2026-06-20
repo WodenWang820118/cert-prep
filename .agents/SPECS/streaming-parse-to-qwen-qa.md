@@ -1,13 +1,14 @@
 # Streaming Parse To Qwen QA
 
-No implementation evidence yet. This file is reserved for artifact-backed
-results once the research plan moves into a prototype or product slice.
+This file tracks artifact-backed research, prototype, and packaged baseline
+evidence for parse-to-qwen streaming.
 
 Initial research decision on 2026-06-19:
 
 - Do not add Kafka or another external broker for the first local-first version.
 - Use a SQLite-backed local job queue/outbox and bounded qwen worker.
-- Keep qwen output draft-only and approval-gated.
+- Superseded: qwen output is now persisted as directly playable, editable
+  question records; the old draft-only approval gate was removed.
 - Treat Ollama/model unavailability as an environment blocker.
 
 ## 2026-06-19 Prototype Evidence
@@ -186,3 +187,62 @@ This closes the streaming parse-to-qwen research/prototype TODO. Remaining
 product gates are tracked separately: `qwen3:14b` must still be available for
 the default packaged model path if required, the three-model reasoning bakeoff
 is still open, and first-chunk latency is still just outside the target gate.
+
+## 2026-06-19 Packaged Full Streaming Baseline
+
+Added and verified the dedicated packaged streaming baseline lane. The latest
+direct-editable-question baseline is:
+
+- Nx target: `exam-prep-desktop:packaged-streaming-baseline`.
+- Command:
+  `pnpm nx run exam-prep-desktop:packaged-streaming-baseline --skip-nx-cache`.
+- Target args: `--ocr-page-workers 1 --ollama-model qwen3:8b
+  --streaming-draft-page-limit 1 --streaming-draft-workers 1
+  --wait-for-streaming-complete`.
+- The run used an isolated app data directory under the baseline artifact
+  folder and stopped after parse plus streaming completion; deterministic
+  generation, manual edit, practice, and quiz flows were not run.
+- Artifact:
+  `tmp/exam-prep-desktop/packaged-streaming-baseline/2026-06-19T13-33-48-372Z/streaming-baseline.json`.
+- Markdown summary:
+  `tmp/exam-prep-desktop/packaged-streaming-baseline/2026-06-19T13-33-48-372Z/streaming-baseline.md`.
+- Metrics:
+  `tmp/exam-prep-desktop/packaged-streaming-baseline/2026-06-19T13-33-48-372Z/metrics.json`.
+
+Baseline result:
+
+- Status: passed.
+- Model: `qwen3:8b`.
+- Corrected PDF: `pdfs/【1】2025年07月N1 真题.pdf`, `7,652,941 bytes`.
+- PDF: `pdfs/【1】2025年07月N1 真题.pdf`, `7,652,941 bytes`,
+  SHA-256
+  `ec5f312d5c97ee91b87ec7fcbf1d33b4f4019fca367df376b48c1f4943a744c8`.
+- OCR: `46/46 pages`, `46 chunks`.
+- Upload to processing visible: `564 ms`.
+- First chunk visible: `15,018 ms`.
+- Streaming question status visible: `15,574 ms`.
+- First streamed qwen question visible: `65,133 ms`.
+- First usable qwen question visible: `65,133 ms`.
+- Parse complete visible: `130,698 ms`.
+- All streaming jobs terminal: `238,056 ms`.
+- Streaming jobs: `12`.
+- Final job statuses: `succeeded=12`.
+- Generated editable questions: `12`; usable editable questions: `12`.
+- First usable qwen question appeared before parse completion.
+- Packaged close was graceful: `gracefulExited=true`,
+  `fallbackUsed=false`, `exitCode=0`, and no residual app/backend/OCR
+  processes.
+- Node cleanup comparison found no new workspace/test-owned Node helpers after
+  the run.
+
+Verification:
+
+- `ollama list` included `qwen3:8b`; no model was downloaded automatically.
+- `pnpm nx run exam-prep-desktop:typecheck-scripts --skip-nx-cache` passed.
+- `pnpm nx run exam-prep-desktop:package-qa-test --skip-nx-cache` passed, 19
+  script tests.
+- `pnpm nx run exam-prep-desktop:lint --skip-nx-cache` passed.
+- `pnpm nx run exam-prep-desktop:package-qa --skip-nx-cache --args="--ocr-page-workers 1"`
+  passed before the baseline run.
+- A direct Node JSON assertion over `streaming-baseline.json` passed all
+  baseline criteria.

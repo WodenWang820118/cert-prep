@@ -119,7 +119,6 @@ export interface ExamPrepGeneratedClient {
   createQuestionDraft(projectId: string, body: Components['schemas']['QuestionDraftCreate']): Promise<Components['schemas']['QuestionDraftRead']>;
   listQuestionDrafts(projectId: string): Promise<Components['schemas']['QuestionDraftList']>;
   updateQuestionDraft(projectId: string, draftId: string, body: Components['schemas']['QuestionDraftUpdate']): Promise<Components['schemas']['QuestionDraftRead']>;
-  approveQuestionDraft(projectId: string, draftId: string): Promise<Components['schemas']['QuestionDraftRead']>;
   createPracticeSession(projectId: string, body: Components['schemas']['PracticeSessionCreate']): Promise<Components['schemas']['PracticeSessionRead']>;
   getPracticeSession(projectId: string, sessionId: string): Promise<Components['schemas']['PracticeSessionRead']>;
   recordPracticeAttempt(projectId: string, sessionId: string, body: Components['schemas']['PracticeAttemptCreate']): Promise<Components['schemas']['PracticeAttemptRead']>;
@@ -169,8 +168,6 @@ export function createExamPrepGeneratedClient(
       transport.request<Components['schemas']['QuestionDraftList']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/question-drafts` }),
     updateQuestionDraft: (projectId: string, draftId: string, body: Components['schemas']['QuestionDraftUpdate']) =>
       transport.request<Components['schemas']['QuestionDraftRead']>({ method: 'PATCH' as const, path: `/projects/${encodeURIComponent(projectId)}/question-drafts/${encodeURIComponent(draftId)}`, body }),
-    approveQuestionDraft: (projectId: string, draftId: string) =>
-      transport.request<Components['schemas']['QuestionDraftRead']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/question-drafts/${encodeURIComponent(draftId)}/approve` }),
     createPracticeSession: (projectId: string, body: Components['schemas']['PracticeSessionCreate']) =>
       transport.request<Components['schemas']['PracticeSessionRead']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/practice-sessions`, body }),
     getPracticeSession: (projectId: string, sessionId: string) =>

@@ -5,10 +5,13 @@ import type { SmokeOptions } from './types.mts';
 
 const DEFAULT_TARGET_TRIPLE = 'x86_64-pc-windows-msvc';
 const DEFAULT_OUT_ROOT = 'tmp/exam-prep-desktop/packaged-flow-smoke';
+const DEFAULT_BASELINE_OUT_ROOT =
+  'tmp/exam-prep-desktop/packaged-streaming-baseline';
 const DEFAULT_PDF_PATH = 'pdfs/\u30101\u30112025\u5e7407\u6708N1 \u771f\u9898.pdf';
 const DEFAULT_CDP_PORT = 9491;
 const DEFAULT_OCR_PAGE_WORKERS = 1;
 const DEFAULT_OLLAMA_MODEL = 'qwen3:14b';
+const DEFAULT_STREAMING_COMPLETE_TIMEOUT_MS = 1_200_000;
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const defaultWorkspaceRoot = resolve(scriptDir, '../../../..');
@@ -19,6 +22,8 @@ export function parsePackagedFlowSmokeArgs(
   workspaceRoot = defaultWorkspaceRoot,
 ): SmokeOptions {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  let outDirExplicit = false;
+  let appDataDirExplicit = false;
   const parsed: SmokeOptions = {
     workspaceRoot,
     exePath: resolve(
@@ -45,6 +50,12 @@ export function parsePackagedFlowSmokeArgs(
       process.env.EXAM_PREP_PACKAGE_SMOKE_STREAMING_DRAFT_WORKERS,
       'EXAM_PREP_PACKAGE_SMOKE_STREAMING_DRAFT_WORKERS',
     ),
+    waitForStreamingComplete: false,
+    streamingCompleteTimeoutMs:
+      optionalPositiveInteger(
+        process.env.EXAM_PREP_PACKAGE_SMOKE_STREAMING_COMPLETE_TIMEOUT_MS,
+        'EXAM_PREP_PACKAGE_SMOKE_STREAMING_COMPLETE_TIMEOUT_MS',
+      ) ?? DEFAULT_STREAMING_COMPLETE_TIMEOUT_MS,
     skipGpuSampling: false,
   };
 
@@ -64,7 +75,11 @@ export function parsePackagedFlowSmokeArgs(
     } else if (arg === '--pdf') {
       parsed.pdfPath = resolve(workspaceRoot, readValue(arg));
     } else if (arg === '--out-dir') {
+      outDirExplicit = true;
       parsed.outDir = resolve(workspaceRoot, readValue(arg));
+    } else if (arg === '--app-data-dir') {
+      appDataDirExplicit = true;
+      parsed.appDataDir = resolve(workspaceRoot, readValue(arg));
     } else if (arg === '--cdp-port') {
       parsed.cdpPort = positiveInteger(Number(readValue(arg)), arg);
     } else if (arg === '--ocr-page-workers') {
@@ -75,6 +90,13 @@ export function parsePackagedFlowSmokeArgs(
       parsed.streamingDraftPageLimit = positiveInteger(Number(readValue(arg)), arg);
     } else if (arg === '--streaming-draft-workers') {
       parsed.streamingDraftWorkers = positiveInteger(Number(readValue(arg)), arg);
+    } else if (arg === '--wait-for-streaming-complete') {
+      parsed.waitForStreamingComplete = true;
+    } else if (arg === '--streaming-complete-timeout-ms') {
+      parsed.streamingCompleteTimeoutMs = positiveInteger(
+        Number(readValue(arg)),
+        arg,
+      );
     } else if (arg === '--skip-gpu-sampling') {
       parsed.skipGpuSampling = true;
     } else {
@@ -87,6 +109,16 @@ export function parsePackagedFlowSmokeArgs(
     'ocrPageWorkers',
   );
   parsed.ollamaModel = nonEmptyString(parsed.ollamaModel, 'ollamaModel');
+  parsed.streamingCompleteTimeoutMs = positiveInteger(
+    parsed.streamingCompleteTimeoutMs,
+    'streamingCompleteTimeoutMs',
+  );
+  if (parsed.waitForStreamingComplete && !outDirExplicit) {
+    parsed.outDir = resolve(workspaceRoot, DEFAULT_BASELINE_OUT_ROOT, timestamp);
+  }
+  if (parsed.waitForStreamingComplete && !appDataDirExplicit) {
+    parsed.appDataDir = resolve(parsed.outDir, 'app-data');
+  }
   return parsed;
 }
 

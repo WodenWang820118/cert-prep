@@ -55,7 +55,7 @@ export const secondAppDocument: DocumentRead = {
   filename: 'network.pdf',
 };
 
-export const approvedAppDraft: QuestionDraftRead = {
+export const editableAppQuestion: QuestionDraftRead = {
   id: 'draft-1',
   project_id: appProject.id,
   document_id: appDocument.id,
@@ -70,7 +70,7 @@ export const approvedAppDraft: QuestionDraftRead = {
   confidence: null,
   source_order: 10001,
   source_question_number: '1',
-  item_kind: 'vocabulary_single_question',
+  item_kind: 'vocabulary_single',
   group_key: null,
   group_prompt: null,
   status: 'approved',

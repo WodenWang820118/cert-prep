@@ -90,7 +90,9 @@ export class HealthStore {
       this.runtimeRequirements(),
     ),
   );
-  readonly isOcrHealthLoading = computed(() => this.healthSnapshotLoading());
+  readonly isOcrHealthLoading = computed(
+    () => this.healthSnapshotLoading() && this.ocrHealth() === null,
+  );
   readonly canDownloadModel = computed(
     () => this.isModelMissing() && !this.isModelDownloadActive(),
   );
@@ -113,7 +115,11 @@ export class HealthStore {
   async load(): Promise<void> {
     this.beginHealthSnapshotLoad();
     try {
-      this.applyHealthSnapshot(await this.snapshots.load());
+      this.applyHealthSnapshot(
+        await this.snapshots.load((snapshot) =>
+          this.applyHealthSnapshot(snapshot),
+        ),
+      );
     } finally {
       this.endHealthSnapshotLoad();
     }
@@ -125,7 +131,10 @@ export class HealthStore {
       const health = await this.operations.run(
         'health',
         'Runtime health refreshed',
-        async () => this.snapshots.load(),
+        async () =>
+          this.snapshots.load((snapshot) =>
+            this.applyHealthSnapshot(snapshot),
+          ),
       );
       if (health !== null) {
         this.applyHealthSnapshot(health);
@@ -423,7 +432,7 @@ export class HealthStore {
     }
   }
 
-  private applyHealthSnapshot(snapshot: HealthSnapshot): void {
+  private applyHealthSnapshot(snapshot: Partial<HealthSnapshot>): void {
     if (snapshot.system !== undefined) {
       this.systemHealth.set(snapshot.system);
     }
@@ -433,7 +442,9 @@ export class HealthStore {
     if (snapshot.ocr !== undefined) {
       this.ocrHealth.set(snapshot.ocr);
     }
-    this.runtimeRequirements.set(snapshot.runtimeRequirements);
+    if (snapshot.runtimeRequirements !== undefined) {
+      this.runtimeRequirements.set(snapshot.runtimeRequirements);
+    }
   }
 
   private canInstallRuntime(kind: RuntimeKind): boolean {
