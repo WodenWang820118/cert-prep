@@ -5,6 +5,8 @@ import type {
   StreamingQuestionSnapshot,
 } from './types.mts';
 
+export const FIRST_CHUNK_GATE_MS = 15_000;
+
 const TERMINAL_STREAMING_JOB_STATUSES = new Set([
   'succeeded',
   'failed',
@@ -90,6 +92,20 @@ export function mergeStatusCounts(
   for (const [status, count] of Object.entries(source)) {
     target[status] = (target[status] ?? 0) + count;
   }
+}
+
+/** Records the packaged smoke first-chunk gate without conflating it with wait timing. */
+export function firstChunkGateMetrics(
+  firstChunkVisibleMs: number | undefined,
+  gateMs = FIRST_CHUNK_GATE_MS,
+): { first_chunk_gate_ms: number; first_chunk_under_gate: boolean } {
+  const normalizedGateMs = normalizedElapsedMs(gateMs);
+  return {
+    first_chunk_gate_ms: normalizedGateMs,
+    first_chunk_under_gate:
+      firstChunkVisibleMs !== undefined &&
+      normalizedElapsedMs(firstChunkVisibleMs) < normalizedGateMs,
+  };
 }
 
 /** Summarizes whether the latest draft-job status histogram is complete. */

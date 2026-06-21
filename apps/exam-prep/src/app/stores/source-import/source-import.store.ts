@@ -10,6 +10,7 @@ import { OperationStore } from '../operation.store';
 import { ProjectStore } from '../project.store';
 
 const DOCUMENT_POLL_INTERVAL_MS = 1500;
+const FIRST_CHUNK_POLL_INTERVAL_MS = 500;
 const INITIAL_CHUNK_PREVIEW_LIMIT = 6;
 const CHUNK_PREVIEW_STEP = 6;
 const FINAL_DOCUMENT_STATUSES = new Set([
@@ -237,7 +238,15 @@ export class SourceImportStore {
     this.documentPollTimer = setTimeout(() => {
       this.documentPollTimer = null;
       void this.pollDocument(projectId, documentId);
-    }, DOCUMENT_POLL_INTERVAL_MS);
+    }, this.documentPollIntervalMs());
+  }
+
+  private documentPollIntervalMs(): number {
+    const document = this.uploadedDocument();
+    return document?.status === 'processing' &&
+      this.chunks().length === 0
+      ? FIRST_CHUNK_POLL_INTERVAL_MS
+      : DOCUMENT_POLL_INTERVAL_MS;
   }
 
   private async pollDocument(projectId: string, documentId: string): Promise<void> {

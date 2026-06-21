@@ -136,7 +136,10 @@ Open after this run:
 
 - OCR health cold-start UX remains open until a packaged artifact confirms the drawer no longer shows `OCR unknown` while health is in-flight. Frontend state/test coverage now treats any health snapshot refresh as OCR checking/warming.
 - First chunk latency remains open. The backend improved from about `76s` to about `20.7s`, but the packaged acceptance gate is still `<15s`.
-- Streaming parse-to-qwen remains research/prototype work. Initial decision: no Kafka for the first local-first slice; use a SQLite queue/outbox and bounded qwen worker.
+- Streaming parse-to-qwen was still research/prototype work at this checkpoint.
+  It was later closed by the packaged fast-first evidence below. The initial
+  no-Kafka decision remains current: use a SQLite queue/outbox and bounded qwen
+  worker for the local-first slice.
 - Dead-code cleanup is complete for the 2026-06-19 audit slice.
 
 ## 2026-06-19 Dead Code Cleanup Evidence
@@ -247,8 +250,9 @@ Verification:
 
 Open evidence:
 
-- Live packaged streaming timing and qwen draft-quality evidence is still
-  missing; the streaming TODO remains open.
+- Live packaged streaming timing and qwen draft-quality evidence was still
+  missing at this checkpoint. It was later closed by the packaged fast-first
+  evidence below.
 
 ## 2026-06-19 Streaming Recovery And Retry Follow-Up
 
@@ -318,7 +322,7 @@ Evidence:
 Implementation notes:
 
 - The prototype keeps the no-Kafka local architecture: SQLite job queue/outbox,
-  bounded qwen workers, draft-only persistence, and approval-gated promotion.
+  bounded qwen workers, editable question persistence, and user-governed edits.
 - Qwen prewarm runs only after provider health succeeds and never pulls missing
   models.
 - Fast-first generation is limited to deterministic extracted candidates, so
@@ -332,3 +336,62 @@ Still open:
   produced scored live results.
 - The default model path still needs `qwen3:14b` availability evidence if that
   remains the selected production default.
+
+## 2026-06-21 OCR Health And First-Chunk Gate Evidence
+
+Implementation checkpoint:
+
+- Frontend OCR health now uses explicit phases: `waiting`, `checking`,
+  `warming`, `stale`, `ready`, and `failed`.
+- Runtime drawer/model-health copy now renders active startup checks as
+  checking/warming/stale states instead of `OCR unknown`.
+- Source import polling now uses a faster `500 ms` cadence only while parsing is
+  active and no source chunk is visible, then returns to the existing `1500 ms`
+  cadence.
+- Packaged smoke first-chunk timing now starts observation at parse start,
+  keeps the 15s screenshot, and records `first_chunk_gate_ms` plus
+  `first_chunk_under_gate`.
+- Packaged smoke runtime drawer checks are scoped to the runtime dialog so
+  background document text cannot satisfy OCR-ready detection.
+
+Verification:
+
+- `pnpm nx run exam-prep:test --skip-nx-cache` - passed, 46 tests.
+- `pnpm nx run exam-prep:lint --skip-nx-cache` - passed.
+- `pnpm nx run exam-prep-backend:test --skip-nx-cache` - passed, 95 tests, one
+  existing Starlette/httpx deprecation warning.
+- `pnpm nx run exam-prep-backend:lint --skip-nx-cache` - passed.
+- `pnpm nx run exam-prep-desktop:typecheck-scripts --skip-nx-cache` - passed.
+- `pnpm nx run exam-prep-desktop:package-qa-test --skip-nx-cache` - passed, 20
+  script tests.
+- `pnpm nx run exam-prep-desktop:packaged-flow-smoke --skip-nx-cache --args="--ocr-page-workers 1 --skip-gpu-sampling"` - passed.
+
+Latest packaged smoke:
+
+- Artifact:
+  `tmp/exam-prep-desktop/packaged-flow-smoke/2026-06-21T05-59-55-867Z/metrics.json`.
+- OCR health settled from active checking to `paddle / gpu:0`; the artifact text
+  contains no `OCR unknown`, `Unknown`, `status unavailable`, or
+  `PaddleOCR status unavailable` observation.
+- First visible chunk: `2,612 ms`.
+- First-chunk gate: `first_chunk_gate_ms=15000`,
+  `first_chunk_under_gate=true`.
+- Mid-parse UI evidence: `8/46 pages / 8 chunks / 15s`; source text was visible
+  while parsing continued.
+- Final OCR completion: `46 pages / 46 chunks`.
+- Parse complete visible: `86,214 ms`.
+- Restart and final close both reported `gracefulExited=true`, `fallbackUsed=false`,
+  `exitCode=0`, and empty residual process lists.
+- Streaming draft status remained blocked by missing `qwen3:14b`; no model
+  download was triggered.
+
+Reasoning bakeoff:
+
+- Command: `pnpm nx run exam-prep-backend:reasoning-bakeoff --skip-nx-cache`.
+- Artifact:
+  `apps/exam-prep-backend/.benchmarks/reasoning-bakeoff-20260621T052159Z.json`.
+- `qwen3:14b`: `missing_model`.
+- `deepseek-r1:14b`: `missing_model`.
+- `gemma4:12b`: `request_failed`, `json_error=ReadTimeout`.
+- No candidate produced full scored comparator evidence, so the default model
+  decision remains unchanged and the live bakeoff TODO stays open.

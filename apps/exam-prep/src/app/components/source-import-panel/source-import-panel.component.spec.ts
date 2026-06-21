@@ -9,12 +9,17 @@ import { SourceImportPanelComponent } from './source-import-panel.component';
 describe('SourceImportPanelComponent', () => {
   const apiClient = {
     generateDocumentDrafts: vi.fn(),
+    getDocument: vi.fn(),
+    listDocumentChunks: vi.fn(),
     listQuestionDrafts: vi.fn(),
     uploadDocument: vi.fn(),
   };
 
   beforeEach(async () => {
+    vi.useRealTimers();
     vi.clearAllMocks();
+    apiClient.getDocument.mockResolvedValue(documentRead());
+    apiClient.listDocumentChunks.mockResolvedValue({ items: [] });
 
     await TestBed.configureTestingModule({
       imports: [SourceImportPanelComponent],
@@ -32,6 +37,10 @@ describe('SourceImportPanelComponent', () => {
       },
     ]);
     projects.select('project-1');
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('renders parsing metrics when the document carries timing fields', () => {
@@ -133,6 +142,55 @@ describe('SourceImportPanelComponent', () => {
     expect(health.isOcrHealthLoading()).toBe(false);
     expect(sourceImport.canUpload()).toBe(true);
     expect(uploadButton(fixture.nativeElement)?.disabled).toBe(false);
+  });
+
+  it('polls faster only until the first source chunk is visible', async () => {
+    vi.useFakeTimers();
+    TestBed.createComponent(SourceImportPanelComponent);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    sourceImport.uploadedDocument.set(
+      documentRead({ status: 'processing', chunks_count: 0 }),
+    );
+    apiClient.getDocument
+      .mockResolvedValueOnce(documentRead({ status: 'processing', chunks_count: 0 }))
+      .mockResolvedValueOnce(documentRead({ status: 'processing', chunks_count: 1 }))
+      .mockResolvedValueOnce(documentRead({ status: 'processing', chunks_count: 1 }));
+    apiClient.listDocumentChunks
+      .mockResolvedValueOnce({ items: [] })
+      .mockResolvedValue({
+        items: [
+          {
+            id: 'chunk-1',
+            document_id: 'document-1',
+            page_number: 1,
+            chunk_index: 0,
+            text: 'First chunk',
+            raw_text: 'First chunk',
+            line_start: 1,
+            line_end: 1,
+            line_count: 1,
+            source_excerpt: 'First chunk',
+            extraction_method: 'paddle_ocr_gpu',
+            content_profile: 'unknown',
+            created_at: '2026-06-18T00:00:01Z',
+          },
+        ],
+      });
+
+    await sourceImport.refreshUploadedDocument('project-1', 'document-1');
+
+    expect(apiClient.getDocument).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(499);
+    expect(apiClient.getDocument).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(apiClient.getDocument).toHaveBeenCalledTimes(2);
+
+    await vi.advanceTimersByTimeAsync(1499);
+    expect(apiClient.getDocument).toHaveBeenCalledTimes(2);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(apiClient.getDocument).toHaveBeenCalledTimes(3);
   });
 });
 

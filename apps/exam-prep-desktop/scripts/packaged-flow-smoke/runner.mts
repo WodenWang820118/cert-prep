@@ -29,6 +29,8 @@ import {
 } from './runtime-sync.mts';
 import {
   classifyStreamingQuestionStatus,
+  FIRST_CHUNK_GATE_MS,
+  firstChunkGateMetrics,
   mergeStatusCounts,
   sanitizeDraftJobSnapshot,
   sanitizeQuestionSnapshot,
@@ -52,6 +54,8 @@ const EXPECTED_BASELINE_PAGES = 46;
 const EXPECTED_BASELINE_CHUNKS = 46;
 const STREAMING_COMPLETE_STABLE_POLLS = 3;
 const STREAMING_COMPLETE_POLL_INTERVAL_MS = 5_000;
+const FIRST_CHUNK_TEXT_PATTERN = /Extracted text|Page \d+|\b[1-9]\d* chunks\b/;
+const FIRST_CHUNK_VISIBLE_TIMEOUT_MS = FIRST_CHUNK_GATE_MS + 260_000;
 
 interface StreamingBaselineReport {
   schema_version: 1;
@@ -109,6 +113,11 @@ interface StreamingBaselineReport {
   };
   checks: Record<string, boolean>;
   errors: string[];
+}
+
+interface FirstChunkObservation {
+  readonly done: Promise<void>;
+  stop(): void;
 }
 
 let run: SmokeRunState;
@@ -276,6 +285,73 @@ function recordStreamingQuestionSnapshot(payload: unknown, elapsedMs: number): v
     run.metrics.streaming_questions.first_usable_question_visible_ms =
       snapshot.elapsed_ms;
   }
+}
+
+function refreshFirstChunkGateMetrics(): void {
+  const gate = firstChunkGateMetrics(
+    run.metrics.ui_timings_ms.first_chunk_visible,
+    FIRST_CHUNK_GATE_MS,
+  );
+  run.metrics.first_chunk_gate_ms = gate.first_chunk_gate_ms;
+  run.metrics.first_chunk_under_gate = gate.first_chunk_under_gate;
+}
+
+function recordFirstChunkVisible(parseStart: number): void {
+  if (run.metrics.ui_timings_ms.first_chunk_visible === undefined) {
+    run.metrics.ui_timings_ms.first_chunk_visible = Date.now() - parseStart;
+  }
+  refreshFirstChunkGateMetrics();
+}
+
+function observeFirstChunkVisibleFromParseStart(
+  parseStart: number,
+): FirstChunkObservation {
+  let stopped = false;
+  const firstChunkStart = Date.now();
+  const done = (async () => {
+    try {
+      while (
+        !stopped &&
+        Date.now() - firstChunkStart < FIRST_CHUNK_VISIBLE_TIMEOUT_MS
+      ) {
+        const text = await bodyText();
+        if (FIRST_CHUNK_TEXT_PATTERN.test(text)) {
+          const elapsed = Date.now() - firstChunkStart;
+          log(`first extracted chunk visible after ${elapsed}ms`);
+          recordFirstChunkVisible(parseStart);
+          return;
+        }
+        await delay(500);
+      }
+
+      if (!stopped) {
+        const text = await bodyText();
+        throw new Error(
+          `Timed out waiting for first extracted chunk visible. Pattern=${FIRST_CHUNK_TEXT_PATTERN}. Body=${text.slice(0, 1400)}`,
+        );
+      }
+    } catch (error) {
+      if (!stopped) {
+        run.metrics.errors.push(`first chunk wait failed: ${errorMessage(error)}`);
+        refreshFirstChunkGateMetrics();
+      }
+    } finally {
+      if (
+        !stopped ||
+        run.metrics.ui_timings_ms.first_chunk_wait_window === undefined
+      ) {
+        run.metrics.ui_timings_ms.first_chunk_wait_window =
+          Date.now() - firstChunkStart;
+      }
+    }
+  })();
+
+  return {
+    done,
+    stop(): void {
+      stopped = true;
+    },
+  };
 }
 
 async function waitForUploadDocumentResponse(): Promise<UploadedDocumentRef | null> {
@@ -729,6 +805,7 @@ function log(message: string): void {
 }
 
 function saveMetrics(): void {
+  refreshFirstChunkGateMetrics();
   run.metrics.finished_at = new Date().toISOString();
   writeFileSync(
     join(run.options.outDir, 'metrics.json'),
@@ -762,6 +839,7 @@ function buildStreamingBaselineReport(): StreamingBaselineReport {
   const latestQuestion = latestStreamingQuestionSnapshot();
   const finalStatusCounts = latestJob?.status_counts ?? {};
   const completionState = streamingJobCompletionState(finalStatusCounts);
+  refreshFirstChunkGateMetrics();
   const timings = run.metrics.ui_timings_ms;
   const firstUsable =
     run.metrics.streaming_questions.first_usable_question_visible_ms;
@@ -781,6 +859,7 @@ function buildStreamingBaselineReport(): StreamingBaselineReport {
       run.metrics.ocr_completion?.total_pages === EXPECTED_BASELINE_PAGES,
     ocr_completed_46_chunks:
       run.metrics.ocr_completion?.chunks === EXPECTED_BASELINE_CHUNKS,
+    first_chunk_under_gate: run.metrics.first_chunk_under_gate,
     first_usable_before_parse_complete: firstUsableBeforeParseComplete,
     all_jobs_terminal: completionState.all_terminal,
     all_jobs_succeeded: completionState.all_succeeded,
@@ -831,6 +910,7 @@ function buildStreamingBaselineReport(): StreamingBaselineReport {
     },
     timings_ms: {
       upload_to_processing_visible: timings.upload_to_processing_visible ?? null,
+      first_chunk_gate_ms: run.metrics.first_chunk_gate_ms,
       first_chunk_visible: timings.first_chunk_visible ?? null,
       streaming_question_status_visible:
         timings.streaming_question_status_visible ?? null,
@@ -884,7 +964,7 @@ function renderStreamingBaselineMarkdown(report: StreamingBaselineReport): strin
 - Model: ${report.runtime.llm_model}
 - PDF: ${report.input.pdf_path} (${report.input.pdf_bytes} bytes)
 - OCR: ${report.ocr_completion.pages_processed}/${report.ocr_completion.total_pages} pages, ${report.ocr_completion.chunks} chunks
-- First chunk visible: ${formatMaybeMs(report.timings_ms.first_chunk_visible)}
+- First chunk visible: ${formatMaybeMs(report.timings_ms.first_chunk_visible)} (gate: ${formatMaybeMs(report.timings_ms.first_chunk_gate_ms)}, under gate: ${String(report.checks.first_chunk_under_gate)})
 - First usable qwen question: ${formatMaybeMs(report.timings_ms.first_usable_question_visible)}
 - Parse complete: ${formatMaybeMs(report.timings_ms.parse_complete_visible)}
 - All streaming jobs terminal: ${formatMaybeMs(report.timings_ms.streaming_all_jobs_terminal)}
@@ -1073,6 +1153,41 @@ async function openRuntimeDrawer(): Promise<void> {
   await waitText(/Runtime details/, 10_000, 'runtime drawer visible');
 }
 
+function runtimeDrawerLocator() {
+  return activePage()
+    .locator('.p-dialog, [role="dialog"]')
+    .filter({ hasText: /Runtime details/ })
+    .last();
+}
+
+async function runtimeDrawerText(): Promise<string> {
+  await openRuntimeDrawer();
+  const drawer = runtimeDrawerLocator();
+  await drawer.waitFor({ state: 'visible', timeout: 10_000 });
+  return drawer.innerText({ timeout: 10_000 });
+}
+
+async function waitRuntimeDrawerText(
+  pattern: RegExp,
+  timeoutMs: number,
+  label: string,
+): Promise<number> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const text = await runtimeDrawerText();
+    if (pattern.test(text)) {
+      const elapsed = Date.now() - start;
+      log(`${label} after ${elapsed}ms`);
+      return elapsed;
+    }
+    await delay(500);
+  }
+  const text = await runtimeDrawerText();
+  throw new Error(
+    `Timed out waiting for ${label}. Pattern=${pattern}. Drawer=${text.slice(0, 1400)}`,
+  );
+}
+
 async function closeRuntimeDrawer(): Promise<void> {
   if (!/Runtime details/.test(await bodyText())) {
     return;
@@ -1142,13 +1257,13 @@ async function installOcrRuntimeIfNeeded(): Promise<void> {
   await openRuntimeDrawer();
   await refreshRuntimeDrawer();
 
-  let text = await bodyText();
+  let text = await runtimeDrawerText();
   if (/Unknown|status unavailable|OCR unknown|PaddleOCR status unavailable/i.test(text)) {
     run.metrics.observations.push(
       'Runtime drawer showed OCR unknown after Python install; manual refresh was required.',
     );
     await refreshRuntimeDrawer();
-    text = await bodyText();
+    text = await runtimeDrawerText();
   }
 
   if (/PaddleOCR imports available|gpu:0|PaddleOCR runtime is ready/i.test(text)) {
@@ -1163,12 +1278,12 @@ async function installOcrRuntimeIfNeeded(): Promise<void> {
     run.metrics.observations.push(
       'Waiting longer for OCR health to settle before treating the drawer as failed.',
     );
-    await waitText(
+    await waitRuntimeDrawerText(
       /PaddleOCR imports available|gpu:0|paddle\s*\/\s*(gpu|cpu)|OCR ready|Install OCR|PaddleOCR runtime is not installed|paddle_runtime_missing/i,
       180_000,
       'ocr health settled',
     );
-    text = await bodyText();
+    text = await runtimeDrawerText();
   }
 
   if (/PaddleOCR imports available|gpu:0|paddle\s*\/\s*(gpu|cpu)|OCR ready/i.test(text)) {
@@ -1238,49 +1353,38 @@ async function uploadAndParsePdf(): Promise<void> {
     'upload response / parsing visible',
   );
   run.metrics.ui_timings_ms.upload_to_processing_visible = Date.now() - uploadStart;
-  const uploadedDocument = await uploadDocumentResponse;
-  run.uploadedDocument = uploadedDocument;
-  if (uploadedDocument) {
-    run.metrics.observations.push(
-      `Captured upload document reference for streaming API polling: ${uploadedDocument.documentId}.`,
-    );
-  } else {
-    run.metrics.observations.push(
-      'Upload document response was not captured; streaming evidence is limited to UI/API responses.',
-    );
-  }
-  await screenshot('parsing-started');
-
   const parseStart = Date.now();
   run.streamingDraftParseStartedAt = parseStart;
   run.streamingDraftCaptureOpen = true;
+  const firstChunkObservation = observeFirstChunkVisibleFromParseStart(parseStart);
+
   try {
-    await delay(15_000);
+    const uploadedDocument = await uploadDocumentResponse;
+    run.uploadedDocument = uploadedDocument;
+    if (uploadedDocument) {
+      run.metrics.observations.push(
+        `Captured upload document reference for streaming API polling: ${uploadedDocument.documentId}.`,
+      );
+    } else {
+      run.metrics.observations.push(
+        'Upload document response was not captured; streaming evidence is limited to UI/API responses.',
+      );
+    }
+    await screenshot('parsing-started');
+
+    await delay(FIRST_CHUNK_GATE_MS);
     const midText = await bodyText();
-    if (/Extracted text|Page \d+|\b[1-9]\d* chunks\b/.test(midText)) {
-      run.metrics.ui_timings_ms.first_chunk_visible = Date.now() - parseStart;
+    if (FIRST_CHUNK_TEXT_PATTERN.test(midText)) {
+      recordFirstChunkVisible(parseStart);
     } else {
       run.metrics.observations.push(
         'No extracted chunk was visible 15s after parsing started.',
       );
+      refreshFirstChunkGateMetrics();
     }
     await screenshot('mid-parse-ui-still-usable');
 
-    const firstChunkStart = Date.now();
-    try {
-      await waitText(
-        /Extracted text|Page \d+|\b[1-9]\d* chunks\b/,
-        260_000,
-        'first extracted chunk visible',
-      );
-      if (run.metrics.ui_timings_ms.first_chunk_visible === undefined) {
-        run.metrics.ui_timings_ms.first_chunk_visible = Date.now() - parseStart;
-      }
-    } catch (error) {
-      run.metrics.errors.push(`first chunk wait failed: ${errorMessage(error)}`);
-    }
-    run.metrics.ui_timings_ms.first_chunk_wait_window =
-      Date.now() - firstChunkStart;
+    await firstChunkObservation.done;
 
     const parseCompletePromise = waitText(
       /Parsing complete\.|46\/46 pages|ready\s*Page/i,
@@ -1303,6 +1407,8 @@ async function uploadAndParsePdf(): Promise<void> {
       await waitForStreamingJobsComplete(uploadedDocument, parseStart);
     }
   } finally {
+    firstChunkObservation.stop();
+    await firstChunkObservation.done;
     run.streamingDraftCaptureOpen = false;
   }
   await screenshot('parsing-complete-with-metrics');
@@ -1681,6 +1787,8 @@ export async function runPackagedFlowSmokeCli(argv: readonly string[] = process.
     observations: [],
     errors: [],
     llm_model: parsedOptions.ollamaModel,
+    first_chunk_gate_ms: FIRST_CHUNK_GATE_MS,
+    first_chunk_under_gate: false,
     streaming_draft_page_limit: parsedOptions.streamingDraftPageLimit,
     streaming_draft_workers: parsedOptions.streamingDraftWorkers,
     wait_for_streaming_complete: parsedOptions.waitForStreamingComplete,

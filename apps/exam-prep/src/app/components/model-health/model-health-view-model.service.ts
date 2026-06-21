@@ -102,16 +102,32 @@ export class ModelHealthViewModelService {
       return 'OCR waiting';
     }
 
-    if (state.ocrHealthLoading) {
+    if (state.ocrPhase === 'checking') {
       return 'OCR checking';
     }
 
-    if (state.ocrHealth === null) {
-      return 'OCR unknown';
+    if (state.ocrPhase === 'warming') {
+      return 'OCR warming';
     }
 
-    const device = state.ocrHealth.selected_device ?? state.ocrHealth.engine;
-    return `${state.ocrHealth.provider} / ${device}`;
+    if (state.ocrPhase === 'stale') {
+      return 'OCR stale';
+    }
+
+    if (state.ocrPhase === 'waiting') {
+      return 'OCR waiting';
+    }
+
+    if (state.ocrPhase === 'failed') {
+      return state.ocrRuntimeMissing ? 'OCR missing' : 'OCR failed';
+    }
+
+    const health = state.ocrHealth;
+    if (health === null) {
+      return 'OCR waiting';
+    }
+    const device = health.selected_device ?? health.engine;
+    return `${health.provider} / ${device}`;
   }
 
   private pythonDetail(state: ModelHealthViewState): string {
@@ -153,11 +169,22 @@ export class ModelHealthViewModelService {
     if (!state.backendReady) {
       return 'Waiting for Python backend runtime.';
     }
-    if (state.ocrHealthLoading) {
+    if (state.ocrPhase === 'checking') {
+      return 'Checking PaddleOCR runtime health.';
+    }
+    if (state.ocrPhase === 'warming') {
       return 'PaddleOCR is warming up.';
     }
+    if (state.ocrPhase === 'stale') {
+      return 'Refreshing cached PaddleOCR status.';
+    }
+    if (state.ocrPhase === 'waiting') {
+      return 'Waiting for PaddleOCR status.';
+    }
     if (state.ocrHealth === null) {
-      return 'PaddleOCR status unavailable.';
+      return state.ocrRuntimeMissing
+        ? 'PaddleOCR runtime is not installed.'
+        : 'PaddleOCR health check failed.';
     }
     return state.ocrHealth.fallback_reason || state.ocrHealth.detail;
   }
@@ -186,13 +213,22 @@ export class ModelHealthViewModelService {
     if (!state.backendReady) {
       return 'Waiting';
     }
-    if (state.ocrHealthLoading) {
+    if (state.ocrPhase === 'checking') {
       return 'Checking';
+    }
+    if (state.ocrPhase === 'warming') {
+      return 'Warming';
+    }
+    if (state.ocrPhase === 'stale') {
+      return 'Stale';
+    }
+    if (state.ocrPhase === 'waiting') {
+      return 'Waiting';
     }
     if (state.ocrRuntimeMissing) {
       return 'Missing';
     }
-    return state.ocrHealth?.available ? 'Ready' : 'Offline';
+    return state.ocrPhase === 'ready' ? 'Ready' : 'Offline';
   }
 
   private pythonSeverity(state: ModelHealthViewState): HealthStatusSeverity {
@@ -227,12 +263,12 @@ export class ModelHealthViewModelService {
     if (!state.backendReady) {
       return 'info';
     }
-    if (state.ocrHealthLoading) {
+    if (['waiting', 'checking', 'warming', 'stale'].includes(state.ocrPhase)) {
       return 'info';
     }
     return state.ocrRuntimeMissing
       ? 'danger'
-      : state.ocrHealth?.available
+      : state.ocrPhase === 'ready'
         ? 'success'
         : 'warn';
   }

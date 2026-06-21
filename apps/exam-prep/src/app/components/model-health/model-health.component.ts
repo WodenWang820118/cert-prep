@@ -179,7 +179,7 @@ export class ModelHealthComponent {
       systemHealth: this.health.systemHealth(),
       llmHealth: this.health.llmHealth(),
       ocrHealth: this.health.ocrHealth(),
-      ocrHealthLoading: this.health.isOcrHealthLoading(),
+      ocrPhase: this.health.ocrPhase(),
       ollamaMissing: this.health.isOllamaMissing(),
       modelMissing: this.health.isModelMissing(),
       ocrRuntimeMissing: this.health.isOcrRuntimeMissing(),

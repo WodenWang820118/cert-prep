@@ -103,6 +103,33 @@ describe('ModelHealthComponent status display', () => {
     fixture.detectChanges();
 
     expect(document.body.textContent).toContain('Checking');
-    expect(document.body.textContent).toContain('PaddleOCR is warming up.');
+    expect(document.body.textContent).toContain(
+      'Checking PaddleOCR runtime health.',
+    );
+  });
+
+  it('shows stale OCR copy while refreshing a cached OCR status', async () => {
+    const fixture = TestBed.createComponent(ModelHealthComponent);
+    const health = TestBed.inject(HealthStore);
+    health.systemHealth.set(systemHealth());
+    health.llmHealth.set(availableLlmHealth());
+    health.ocrHealth.set(ocrHealth());
+    apiClient.llmHealth.mockResolvedValueOnce(availableLlmHealth());
+    apiClient.ocrHealth.mockRejectedValueOnce(new Error('ocr unavailable'));
+
+    await health.load();
+
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('OCR stale');
+    expect(fixture.nativeElement.textContent).not.toContain('OCR unknown');
+
+    buttonByText(fixture.nativeElement, 'Manage runtime')?.click();
+    fixture.detectChanges();
+
+    expect(document.body.textContent).toContain('Stale');
+    expect(document.body.textContent).toContain(
+      'Refreshing cached PaddleOCR status.',
+    );
   });
 });

@@ -3,6 +3,7 @@ import type {
   LLMHealthRead,
   OCRHealthRead,
 } from '../../../exam-prep-api';
+import type { OcrHealthPhase } from '../../../stores/health/contracts/health-runtime.contracts';
 
 /**
  * PrimeNG tag severities used by the health/runtime status UI.
@@ -57,7 +58,7 @@ export interface ModelHealthViewState {
   readonly systemHealth: HealthResponse | null;
   readonly llmHealth: LLMHealthRead | null;
   readonly ocrHealth: OCRHealthRead | null;
-  readonly ocrHealthLoading: boolean;
+  readonly ocrPhase: OcrHealthPhase;
   readonly ollamaMissing: boolean;
   readonly modelMissing: boolean;
   readonly ocrRuntimeMissing: boolean;

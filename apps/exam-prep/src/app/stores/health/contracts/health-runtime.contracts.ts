@@ -23,6 +23,17 @@ export type DownloadPhase =
 export type RuntimeKind = 'ollama' | 'ollama_model' | 'paddle_ocr';
 
 /**
+ * Coarse OCR readiness phase used by the runtime UI and upload gating.
+ */
+export type OcrHealthPhase =
+  | 'waiting'
+  | 'checking'
+  | 'warming'
+  | 'stale'
+  | 'ready'
+  | 'failed';
+
+/**
  * Partial health payload that preserves successful endpoint reads when one
  * optional endpoint fails.
  */

@@ -4,6 +4,8 @@ import { test } from 'node:test';
 import {
   classifyStreamingQuestionStatus,
   draftJobStatusCounts,
+  FIRST_CHUNK_GATE_MS,
+  firstChunkGateMetrics,
   sanitizeDraftJobSnapshot,
   sanitizeQuestionSnapshot,
   streamingJobCompletionState,
@@ -119,4 +121,20 @@ test('streaming job completion state separates active, success, and blockers', (
       all_succeeded: false,
     },
   );
+});
+
+test('first chunk gate metrics use strict under-threshold timing', () => {
+  assert.equal(FIRST_CHUNK_GATE_MS, 15_000);
+  assert.deepEqual(firstChunkGateMetrics(14_999), {
+    first_chunk_gate_ms: 15_000,
+    first_chunk_under_gate: true,
+  });
+  assert.deepEqual(firstChunkGateMetrics(15_000), {
+    first_chunk_gate_ms: 15_000,
+    first_chunk_under_gate: false,
+  });
+  assert.deepEqual(firstChunkGateMetrics(undefined), {
+    first_chunk_gate_ms: 15_000,
+    first_chunk_under_gate: false,
+  });
 });

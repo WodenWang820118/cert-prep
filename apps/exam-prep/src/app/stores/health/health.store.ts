@@ -9,6 +9,7 @@ import type {
   DownloadPhase,
   HealthSnapshot,
   ModelDownloadView,
+  OcrHealthPhase,
   RuntimeInstallationView,
   RuntimeKind,
 } from './contracts/health-runtime.contracts';
@@ -35,6 +36,9 @@ export class HealthStore {
   readonly systemHealth = signal<HealthResponse | null>(null);
   readonly ocrHealth = signal<OCRHealthRead | null>(null);
   readonly healthSnapshotLoading = signal(false);
+  private readonly ocrHealthLoadFailed = signal(false);
+  private readonly ocrHealthRefreshPending = signal(false);
+  private readonly ocrHealthStale = signal(false);
   readonly runtimeRequirements = signal<RuntimeRequirementRead[]>([]);
   readonly modelDownloadConsentVisible = signal(false);
   readonly modelDownloadStarting = signal(false);
@@ -90,8 +94,37 @@ export class HealthStore {
       this.runtimeRequirements(),
     ),
   );
-  readonly isOcrHealthLoading = computed(
-    () => this.healthSnapshotLoading() && this.ocrHealth() === null,
+  readonly ocrPhase = computed<OcrHealthPhase>(() => {
+    const health = this.ocrHealth();
+    const install = this.runtimeInstall();
+    const installingOcr =
+      install?.kind === 'paddle_ocr' &&
+      ['starting', 'running', 'waiting_for_user'].includes(install.phase);
+    if (installingOcr && health === null) {
+      return 'warming';
+    }
+    if (this.healthSnapshotLoading()) {
+      if (health === null) {
+        return 'checking';
+      }
+      return this.ocrHealthRefreshPending()
+        ? 'stale'
+        : health.available
+          ? 'ready'
+          : 'failed';
+    }
+    if (health !== null && this.ocrHealthStale()) {
+      return 'stale';
+    }
+    if (health === null) {
+      return this.ocrHealthLoadFailed() || this.isOcrRuntimeMissing()
+        ? 'failed'
+        : 'waiting';
+    }
+    return health.available ? 'ready' : 'failed';
+  });
+  readonly isOcrHealthLoading = computed(() =>
+    ['checking', 'warming'].includes(this.ocrPhase()),
   );
   readonly canDownloadModel = computed(
     () => this.isModelMissing() && !this.isModelDownloadActive(),
@@ -115,11 +148,14 @@ export class HealthStore {
   async load(): Promise<void> {
     this.beginHealthSnapshotLoad();
     try {
-      this.applyHealthSnapshot(
-        await this.snapshots.load((snapshot) =>
-          this.applyHealthSnapshot(snapshot),
-        ),
+      const snapshot = await this.snapshots.load((partial) =>
+        this.applyHealthSnapshot(partial),
       );
+      this.applyHealthSnapshot(snapshot);
+      this.recordOcrHealthResult(snapshot);
+    } catch (error) {
+      this.recordOcrHealthResult({});
+      throw error;
     } finally {
       this.endHealthSnapshotLoad();
     }
@@ -138,6 +174,9 @@ export class HealthStore {
       );
       if (health !== null) {
         this.applyHealthSnapshot(health);
+        this.recordOcrHealthResult(health);
+      } else {
+        this.recordOcrHealthResult({});
       }
     } finally {
       this.endHealthSnapshotLoad();
@@ -420,6 +459,8 @@ export class HealthStore {
   private beginHealthSnapshotLoad(): void {
     this.healthSnapshotLoadCount += 1;
     this.healthSnapshotLoading.set(true);
+    this.ocrHealthLoadFailed.set(false);
+    this.ocrHealthRefreshPending.set(true);
   }
 
   private endHealthSnapshotLoad(): void {
@@ -441,9 +482,24 @@ export class HealthStore {
     }
     if (snapshot.ocr !== undefined) {
       this.ocrHealth.set(snapshot.ocr);
+      this.ocrHealthLoadFailed.set(false);
+      this.ocrHealthRefreshPending.set(false);
+      this.ocrHealthStale.set(false);
     }
     if (snapshot.runtimeRequirements !== undefined) {
       this.runtimeRequirements.set(snapshot.runtimeRequirements);
+    }
+  }
+
+  private recordOcrHealthResult(snapshot: Partial<HealthSnapshot>): void {
+    if (snapshot.ocr !== undefined) {
+      return;
+    }
+    this.ocrHealthRefreshPending.set(false);
+    if (this.ocrHealth() === null) {
+      this.ocrHealthLoadFailed.set(true);
+    } else {
+      this.ocrHealthStale.set(true);
     }
   }
 

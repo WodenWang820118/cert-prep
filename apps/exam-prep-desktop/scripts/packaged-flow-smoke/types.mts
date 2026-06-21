@@ -30,6 +30,8 @@ export interface SmokeMetrics {
   selected_answer?: string;
   wrong_answer?: string;
   llm_model: string;
+  first_chunk_gate_ms: number;
+  first_chunk_under_gate: boolean;
   streaming_draft_page_limit?: number;
   streaming_draft_workers?: number;
   wait_for_streaming_complete?: boolean;

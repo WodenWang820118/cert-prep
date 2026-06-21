@@ -74,6 +74,7 @@ describe('HealthStore loading', () => {
 
     expect(store.healthSnapshotLoading()).toBe(true);
     expect(store.isOcrHealthLoading()).toBe(true);
+    expect(store.ocrPhase()).toBe('checking');
     expect(store.ocrHealth()).toBeNull();
 
     resolveOcrHealth(ocrHealth());
@@ -81,6 +82,7 @@ describe('HealthStore loading', () => {
 
     expect(store.healthSnapshotLoading()).toBe(false);
     expect(store.isOcrHealthLoading()).toBe(false);
+    expect(store.ocrPhase()).toBe('ready');
     expect(store.ocrHealth()?.available).toBe(true);
   });
 
@@ -100,10 +102,34 @@ describe('HealthStore loading', () => {
     expect(store.healthSnapshotLoading()).toBe(true);
     expect(store.ocrHealth()?.available).toBe(true);
     expect(store.isOcrHealthLoading()).toBe(false);
+    expect(store.ocrPhase()).toBe('ready');
 
     resolveLlmHealth(llmHealth({ available: false }));
     await load;
 
     expect(store.healthSnapshotLoading()).toBe(false);
+  });
+
+  it('marks existing OCR health stale when a refresh cannot update OCR', async () => {
+    const store = TestBed.inject(HealthStore);
+    store.ocrHealth.set(ocrHealth());
+    apiClient.ocrHealth.mockRejectedValueOnce(new Error('ocr unavailable'));
+
+    await store.load();
+
+    expect(store.ocrHealth()?.available).toBe(true);
+    expect(store.ocrPhase()).toBe('stale');
+    expect(store.isOcrHealthLoading()).toBe(false);
+  });
+
+  it('marks OCR failed when the first OCR health check fails', async () => {
+    const store = TestBed.inject(HealthStore);
+    apiClient.ocrHealth.mockRejectedValueOnce(new Error('ocr unavailable'));
+
+    await store.load();
+
+    expect(store.ocrHealth()).toBeNull();
+    expect(store.ocrPhase()).toBe('failed');
+    expect(store.isOcrHealthLoading()).toBe(false);
   });
 });
