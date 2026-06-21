@@ -1,7 +1,7 @@
 # Parallel Parsing And Reasoning TODO
 
 Status: active backlog only. Completed OCR health and first-chunk gate evidence
-has been merged into `.agents/SPECS/parallel-parsing-reasoning-qa.md`.
+has been merged into `.agents/SPECS/domains/parsing-reasoning.md`.
 
 ## 1. Live Reasoning-Model Bakeoff
 
@@ -19,7 +19,7 @@ has been merged into `.agents/SPECS/parallel-parsing-reasoning-qa.md`.
        are intentionally installed or the timeout condition is addressed.
     3. Compare JSON validity, citation validity, group detection, latency,
        manual-review burden, and artifact hygiene.
-    4. Update `.agents/SPECS/parallel-parsing-reasoning-qa.md` with the scored
+    4. Update `.agents/SPECS/domains/parsing-reasoning.md` with the scored
        artifact or a refreshed concrete blocker.
     5. Only update the default model decision if the evidence supports it.
   - Verify:
