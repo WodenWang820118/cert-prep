@@ -96,7 +96,7 @@ export async function installOcrRuntimeIfNeeded(run: SmokeRunState): Promise<voi
   );
   await screenshot(run, 'ocr-install-consent');
   await clickConsentInstall(run);
-  await waitText(run, ocrReadyPattern(), 240_000, 'ocr runtime ready');
+  await waitText(run, ocrReadyPattern(), 900_000, 'ocr runtime ready');
   run.metrics.ui_timings_ms.paddleocr_runtime_install = Date.now() - start;
   await screenshot(run, 'runtime-checklist-ready');
 }

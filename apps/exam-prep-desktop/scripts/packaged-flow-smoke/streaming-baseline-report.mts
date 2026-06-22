@@ -323,27 +323,19 @@ function buildProductionSummary(
   run: SmokeRunState,
   report: StreamingBaselineReport,
 ): PackagedStreamingProductionSummary {
-  const gpuRoutingChecks = readGpuRoutingChecks(run);
+  const resourceSummary = readResourceSummary(run);
+  const gpuRoutingChecks = readGpuRoutingChecks(resourceSummary);
   const configuredModel =
     run.metrics.llm_configured_model ?? report.runtime.llm_configured_model;
   const effectiveModel =
     run.metrics.llm_effective_model ?? report.runtime.llm_effective_model;
   const selectedModel = effectiveModel;
-  const checks = {
+  const checks: Record<string, boolean> = {
     no_script_errors: run.metrics.errors.length === 0,
     ocr_completed_expected_pages:
       report.ocr_completion.pages_processed === EXPECTED_BASELINE_PAGES &&
       report.ocr_completion.total_pages === EXPECTED_BASELINE_PAGES,
     ocr_chunks_present: acceptedOcrChunkCount(run),
-    directml_ocr_process_observed: routingBoolean(
-      gpuRoutingChecks,
-      'directml_ocr_process_observed',
-    ),
-    ocr_uses_amd_igpu: routingBoolean(gpuRoutingChecks, 'ocr_uses_amd_igpu'),
-    ocr_avoids_nvidia_dgpu: routingBoolean(
-      gpuRoutingChecks,
-      'ocr_avoids_nvidia_dgpu',
-    ),
     reasoning_uses_nvidia_dgpu: routingBoolean(
       gpuRoutingChecks,
       'reasoning_uses_nvidia_dgpu',
@@ -354,6 +346,17 @@ function buildProductionSummary(
     streaming_practice_ready:
       report.streaming.practice_ready_from_streamed_questions,
   };
+  Object.assign(checks, {
+    directml_ocr_process_observed: routingBoolean(
+      gpuRoutingChecks,
+      'directml_ocr_process_observed',
+    ),
+    ocr_uses_amd_igpu: routingBoolean(gpuRoutingChecks, 'ocr_uses_amd_igpu'),
+    ocr_avoids_nvidia_dgpu: routingBoolean(
+      gpuRoutingChecks,
+      'ocr_avoids_nvidia_dgpu',
+    ),
+  });
   const productionSummaryPath = join(run.options.outDir, 'production-summary.json');
 
   return {
@@ -428,7 +431,7 @@ function renderModelMarkdown(report: StreamingBaselineReport): string {
   return configured;
 }
 
-function readGpuRoutingChecks(run: SmokeRunState): GpuRoutingChecks | null {
+function readResourceSummary(run: SmokeRunState): Record<string, unknown> | null {
   const summaryPath = run.metrics.resource_sampling?.windows_summary_json;
   if (!summaryPath) {
     return null;
@@ -441,13 +444,17 @@ function readGpuRoutingChecks(run: SmokeRunState): GpuRoutingChecks | null {
 
   try {
     const payload = JSON.parse(readFileSync(absolutePath, 'utf8').replace(/^\uFEFF/, ''));
-    if (!isRecord(payload) || !isRecord(payload.gpu_routing_checks)) {
-      return null;
-    }
-    return payload.gpu_routing_checks as GpuRoutingChecks;
+    return isRecord(payload) ? payload : null;
   } catch {
     return null;
   }
+}
+
+function readGpuRoutingChecks(
+  resourceSummary: Record<string, unknown> | null,
+): GpuRoutingChecks | null {
+  const payload = recordField(resourceSummary, 'gpu_routing_checks');
+  return payload === null ? null : (payload as GpuRoutingChecks);
 }
 
 function routingBoolean(
@@ -455,6 +462,14 @@ function routingBoolean(
   key: keyof GpuRoutingChecks,
 ): boolean {
   return checks?.[key] === true;
+}
+
+function recordField(
+  record: Record<string, unknown> | null,
+  key: string,
+): Record<string, unknown> | null {
+  const value = record?.[key];
+  return isRecord(value) ? value : null;
 }
 
 function acceptedOcrChunkCount(run: SmokeRunState): boolean {

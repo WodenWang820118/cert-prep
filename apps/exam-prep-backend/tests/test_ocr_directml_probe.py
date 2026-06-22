@@ -31,9 +31,11 @@ DXGI_ADAPTERS = [
     },
 ]
 REQUIRED_MODEL_FILES = (
-    "det_model.onnx",
-    "rec_model.onnx",
-    "rec_char_dict.txt",
+    "det/inference.onnx",
+    "det/inference.yml",
+    "rec/inference.onnx",
+    "rec/inference.yml",
+    "rec/ppocr_keys_v1.txt",
     "pipeline.json",
 )
 
@@ -79,7 +81,7 @@ def test_directml_probe_reports_ready_when_required_artifacts_exist(tmp_path: Pa
     model_dir = tmp_path / "models"
     model_dir.mkdir()
     for file_name in REQUIRED_MODEL_FILES:
-        (model_dir / file_name).write_text("stub", encoding="utf-8")
+        _write_model_file(model_dir, file_name)
 
     artifacts = inspect_model_artifacts(model_dir)
     status = classify_directml_status(
@@ -100,7 +102,7 @@ def test_directml_probe_blocks_without_amd_adapter(tmp_path: Path) -> None:
     model_dir = tmp_path / "models"
     model_dir.mkdir()
     for file_name in REQUIRED_MODEL_FILES:
-        (model_dir / file_name).write_text("stub", encoding="utf-8")
+        _write_model_file(model_dir, file_name)
 
     artifacts = inspect_model_artifacts(model_dir)
     status = classify_directml_status(
@@ -121,22 +123,28 @@ def test_directml_probe_blocks_without_amd_adapter(tmp_path: Path) -> None:
 def test_directml_probe_rejects_empty_required_model_file(tmp_path: Path) -> None:
     model_dir = tmp_path / "models"
     model_dir.mkdir()
-    (model_dir / "det_model.onnx").write_text("stub", encoding="utf-8")
-    (model_dir / "rec_model.onnx").write_bytes(b"")
-    (model_dir / "rec_char_dict.txt").write_text("stub", encoding="utf-8")
+    (model_dir / "det").mkdir(parents=True)
+    (model_dir / "rec").mkdir(parents=True)
+    (model_dir / "det" / "inference.onnx").write_text("stub", encoding="utf-8")
+    (model_dir / "det" / "inference.yml").write_text("stub", encoding="utf-8")
+    (model_dir / "rec" / "inference.onnx").write_bytes(b"")
+    (model_dir / "rec" / "inference.yml").write_text("stub", encoding="utf-8")
+    (model_dir / "rec" / "ppocr_keys_v1.txt").write_text("stub", encoding="utf-8")
     (model_dir / "pipeline.json").write_text("{}", encoding="utf-8")
 
     artifacts = inspect_model_artifacts(model_dir)
 
     assert artifacts["ready"] is False
-    assert artifacts["missing_required"] == ["rec_model.onnx"]
+    assert artifacts["missing_required"] == ["rec/inference.onnx"]
 
 
 def test_directml_probe_requires_pipeline_contract(tmp_path: Path) -> None:
     model_dir = tmp_path / "models"
     model_dir.mkdir()
-    for file_name in ("det_model.onnx", "rec_model.onnx", "rec_char_dict.txt"):
-        (model_dir / file_name).write_text("stub", encoding="utf-8")
+    for file_name in REQUIRED_MODEL_FILES:
+        if file_name == "pipeline.json":
+            continue
+        _write_model_file(model_dir, file_name)
 
     artifacts = inspect_model_artifacts(model_dir)
 
@@ -151,9 +159,22 @@ def test_directml_probe_selects_amd_dxgi_adapter_index() -> None:
     assert selected["adapter_index"] == 0
 
 
+def test_directml_probe_selects_amd_when_nvidia_is_first_adapter() -> None:
+    selected = select_amd_dxgi_adapter([DXGI_ADAPTERS[1], DXGI_ADAPTERS[0] | {"adapter_index": 1}])
+
+    assert selected is not None
+    assert selected["adapter_index"] == 1
+
+
 def test_directml_probe_default_output_is_benchmark_artifact() -> None:
     output = default_output_path()
 
     assert output.parent.name == ".benchmarks"
     assert output.name.startswith("ocr-directml-probe-")
     assert output.suffix == ".json"
+
+
+def _write_model_file(model_dir: Path, file_name: str) -> None:
+    path = model_dir / file_name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("stub", encoding="utf-8")

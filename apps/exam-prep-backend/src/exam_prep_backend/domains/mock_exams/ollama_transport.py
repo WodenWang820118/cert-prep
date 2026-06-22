@@ -231,27 +231,32 @@ class OllamaProvider:
     ) -> DraftSuggestion | None:
         """Ask Ollama to complete one extracted draft with answer/rationale JSON."""
 
-        payload = self._with_model_fallback(
-            lambda model: _json_object_response_or_unavailable(
-                self._client.chat(
-                    model=model,
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": _fast_first_prompt(candidate),
-                        }
-                    ],
-                    format="json",
-                    options={
-                        "temperature": 0,
-                        "num_ctx": num_ctx,
-                        "num_predict": num_predict,
-                    },
-                    think=False,
-                    keep_alive=STREAMING_PREWARM_KEEP_ALIVE,
+        try:
+            payload = self._with_model_fallback(
+                lambda model: _json_object_response_or_unavailable(
+                    self._client.chat(
+                        model=model,
+                        messages=[
+                            {
+                                "role": "user",
+                                "content": _fast_first_prompt(candidate),
+                            }
+                        ],
+                        format="json",
+                        options={
+                            "temperature": 0,
+                            "num_ctx": num_ctx,
+                            "num_predict": num_predict,
+                        },
+                        think=False,
+                        keep_alive=STREAMING_PREWARM_KEEP_ALIVE,
+                    )
                 )
             )
-        )
+        except ProviderUnavailableError as exc:
+            if _is_non_fatal_generation_error(exc):
+                return None
+            raise
         answer = _answer_from_payload(payload.get("answer"), candidate.choices)
         if answer is None:
             return None
@@ -350,7 +355,8 @@ class OllamaProvider:
                 result = operation(model)
             except Exception as exc:
                 errors.append(f"{model}: {_short_error(exc)}")
-                self._mark_model_unusable(model, exc)
+                if _is_runtime_model_failure(exc):
+                    self._mark_model_unusable(model, exc)
                 continue
 
             self._record_model_success(model)
@@ -490,6 +496,22 @@ def _short_error(exc: Exception) -> str:
 
 def _short_error_text(value: str) -> str:
     return " ".join(value.split())[:240]
+
+
+def _is_runtime_model_failure(exc: Exception) -> bool:
+    return not _is_non_fatal_generation_error(exc)
+
+
+def _is_non_fatal_generation_error(exc: Exception) -> bool:
+    error = _short_error(exc).lower()
+    return any(
+        marker in error
+        for marker in (
+            "invalid json",
+            "unreadable response",
+            "non-object json response",
+        )
+    )
 
 
 def extract_model_names(response: Any) -> set[str]:

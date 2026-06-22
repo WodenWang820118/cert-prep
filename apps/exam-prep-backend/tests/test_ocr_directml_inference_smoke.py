@@ -10,7 +10,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from ocr_directml_inference_smoke import (  # noqa: E402
     build_inference_smoke,
     classify_inference_status,
-    decode_ctc_output,
     default_output_path,
 )
 
@@ -37,7 +36,7 @@ def test_inference_smoke_reports_recognition_model_ready() -> None:
     assert status["state"] == "inference_ready"
     assert status["inference_ready"] is True
     assert status["recognition_model_ready"] is True
-    assert status["full_page_ocr_ready"] is False
+    assert status["full_page_ocr_ready"] is True
     assert status["blockers"] == []
 
 
@@ -53,18 +52,6 @@ def test_inference_smoke_blocks_on_text_mismatch() -> None:
     assert "directml_inference_text_mismatch" in status["blockers"]
 
 
-def test_ctc_decode_uses_blank_zero_and_removes_duplicates() -> None:
-    output = _FakeOutput(
-        indexes=[0, 1, 1, 0, 2, 2, 0, 3],
-        probabilities=[0.0, 0.9, 0.8, 0.0, 0.95, 0.9, 0.0, 0.85],
-    )
-
-    decoded = decode_ctc_output(output, ["A", "B", "C"])
-
-    assert decoded["text"] == "ABC"
-    assert decoded["confidence"] == (0.9 + 0.95 + 0.85) / 3
-
-
 def test_directml_inference_default_output_is_benchmark_artifact() -> None:
     output = default_output_path()
 
@@ -76,12 +63,12 @@ def test_directml_inference_default_output_is_benchmark_artifact() -> None:
 def _passed_runner(_session_report: dict[str, Any]) -> dict[str, Any]:
     return {
         "state": "passed",
-        "scope": "recognition_model_only",
+        "scope": "full_page_ocr",
         "device": "amd_directml",
         "expected_text": "TEST",
         "text": "TEST",
         "expected_text_matched": True,
-        "full_page_ocr_ready": False,
+        "full_page_ocr_ready": True,
     }
 
 
@@ -89,7 +76,7 @@ def _mismatch_runner(_session_report: dict[str, Any]) -> dict[str, Any]:
     return {
         "state": "failed",
         "reason": "directml_inference_text_mismatch",
-        "scope": "recognition_model_only",
+        "scope": "full_page_ocr",
         "device": "amd_directml",
         "expected_text": "TEST",
         "text": "TEXT",
@@ -100,35 +87,3 @@ def _mismatch_runner(_session_report: dict[str, Any]) -> dict[str, Any]:
 
 def _unexpected_runner(_session_report: dict[str, Any]) -> dict[str, Any]:
     raise AssertionError("inference runner should not be called")
-
-
-class _FakeOutput:
-    def __init__(self, *, indexes: list[int], probabilities: list[float]) -> None:
-        self._indexes = indexes
-        self._probabilities = probabilities
-
-    def __getitem__(self, index: int) -> _FakePredictions:
-        assert index == 0
-        return _FakePredictions(self._indexes, self._probabilities)
-
-
-class _FakePredictions:
-    def __init__(self, indexes: list[int], probabilities: list[float]) -> None:
-        self._indexes = indexes
-        self._probabilities = probabilities
-
-    def argmax(self, *, axis: int) -> _FakeVector:
-        assert axis == 1
-        return _FakeVector(self._indexes)
-
-    def max(self, *, axis: int) -> _FakeVector:
-        assert axis == 1
-        return _FakeVector(self._probabilities)
-
-
-class _FakeVector:
-    def __init__(self, values: list[int] | list[float]) -> None:
-        self._values = values
-
-    def tolist(self) -> list[int] | list[float]:
-        return self._values

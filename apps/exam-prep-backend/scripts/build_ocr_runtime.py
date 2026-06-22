@@ -33,13 +33,31 @@ PADDLE_METADATA = [
     "python-bidi",
     "shapely",
 ]
-DIRECTML_COLLECT_ALL = ["cv2", "PIL", "pyclipper", "shapely"]
+DIRECTML_COLLECT_ALL = [
+    "bidi",
+    "cv2",
+    "imagesize",
+    "PIL",
+    "onnxruntime",
+    "modelscope",
+    "paddleocr",
+    "paddlex",
+    "pyclipper",
+    "pypdfium2",
+    "shapely",
+]
 DIRECTML_METADATA = [
+    "imagesize",
     "numpy",
     "onnxruntime-directml",
     "opencv-contrib-python",
+    "modelscope",
+    "paddleocr",
+    "paddlex",
     "pillow",
     "pyclipper",
+    "pypdfium2",
+    "python-bidi",
     "shapely",
 ]
 DIRECTML_EXCLUDES = [
@@ -50,10 +68,7 @@ DIRECTML_EXCLUDES = [
     "exam_prep_backend.domains.source_documents.adapters.paddle",
     "exam_prep_backend.domains.source_documents.adapters.paddle_runtime",
     "exam_prep_backend.domains.source_documents.adapters.paddle_text",
-    "modelscope",
     "paddle",
-    "paddleocr",
-    "paddlex",
     "pluggy",
     "pytest",
     "shapely.conftest",
@@ -66,9 +81,11 @@ LANE_METADATA = {
     "directml": "onnxruntime-directml",
 }
 DIRECTML_MODEL_FILES = (
-    "det_model.onnx",
-    "rec_model.onnx",
-    "rec_char_dict.txt",
+    "det/inference.onnx",
+    "det/inference.yml",
+    "rec/inference.onnx",
+    "rec/inference.yml",
+    "rec/ppocr_keys_v1.txt",
     "pipeline.json",
 )
 
@@ -137,7 +154,10 @@ def _build_directml_runtime(args: argparse.Namespace) -> None:
             archive_name=DIRECTML_EXE_NAME,
             zip_path=zip_path,
             manifest_path=manifest_path,
-            extra_files=tuple((path, path.name) for path in model_files),
+            extra_files=tuple(
+                (path, path.relative_to(args.directml_model_dir).as_posix())
+                for path in model_files
+            ),
         )
     )
     print(f"Wrote DirectML OCR runtime artifact to {zip_path}")
@@ -145,11 +165,12 @@ def _build_directml_runtime(args: argparse.Namespace) -> None:
 
 
 def _pyinstaller_command(lane: str) -> list[str]:
-    exe_base_name = (
-        "exam-prep-ocr-directml-runtime"
-        if lane == "directml"
-        else "exam-prep-ocr-runtime"
-    )
+    exe_base_name = {
+        "directml": "exam-prep-ocr-directml-runtime",
+    }.get(lane, "exam-prep-ocr-runtime")
+    entrypoint = {
+        "directml": DIRECTML_RUNTIME_ENTRY,
+    }.get(lane, RUNTIME_ENTRY)
     command = [
         sys.executable,
         "-m",
@@ -159,7 +180,7 @@ def _pyinstaller_command(lane: str) -> list[str]:
         "--name",
         exe_base_name,
         "--onefile",
-        str(DIRECTML_RUNTIME_ENTRY if lane == "directml" else RUNTIME_ENTRY),
+        str(entrypoint),
         "--distpath",
         str(DIST_DIR),
         "--workpath",
@@ -167,11 +188,15 @@ def _pyinstaller_command(lane: str) -> list[str]:
         "--specpath",
         str(BUILD_DIR),
     ]
-    collect_all = DIRECTML_COLLECT_ALL if lane == "directml" else PADDLE_COLLECT_ALL
-    metadata = DIRECTML_METADATA if lane == "directml" else [
-        LANE_METADATA[lane],
-        *PADDLE_METADATA,
-    ]
+    if lane == "directml":
+        collect_all = DIRECTML_COLLECT_ALL
+        metadata = DIRECTML_METADATA
+    else:
+        collect_all = PADDLE_COLLECT_ALL
+        metadata = [
+            LANE_METADATA[lane],
+            *PADDLE_METADATA,
+        ]
     for package_name in collect_all:
         command.extend(["--collect-all", package_name])
     for distribution_name in metadata:

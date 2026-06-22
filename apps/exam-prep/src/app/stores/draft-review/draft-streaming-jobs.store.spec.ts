@@ -108,7 +108,7 @@ describe('DraftReviewStore streaming jobs', () => {
       items: [
         draftJob({
           status: 'skipped_missing_model',
-          last_error: 'qwen3:14b is not installed',
+          last_error: 'qwen3.5:4b is not installed',
         }),
       ],
     });
@@ -135,7 +135,7 @@ describe('DraftReviewStore streaming jobs', () => {
     const draft = questionDraft();
     const skippedJob = draftJob({
       status: 'skipped_missing_model',
-      last_error: 'qwen3:14b is not installed',
+      last_error: 'qwen3.5:4b is not installed',
     });
     const succeededJob = draftJob({
       status: 'succeeded',

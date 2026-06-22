@@ -104,7 +104,8 @@ export class HealthStore {
     const health = this.ocrHealth();
     const install = this.runtimeInstall();
     const installingOcr =
-      (install?.kind === 'paddle_ocr' || install?.kind === 'directml_ocr') &&
+      install !== null &&
+      this.isOcrRuntimeKind(install?.kind) &&
       ['starting', 'running', 'waiting_for_user'].includes(install.phase);
     if (installingOcr && health === null) {
       return 'warming';
@@ -529,7 +530,7 @@ export class HealthStore {
       return this.isOllamaMissing();
     }
 
-    if (kind === 'paddle_ocr' || kind === 'directml_ocr') {
+    if (this.isOcrRuntimeKind(kind)) {
       return (
         this.isOcrRuntimeMissing() ||
         this.runtimeInstallConsentKind() === kind
@@ -581,5 +582,9 @@ export class HealthStore {
       message,
       this.runtimeInstall(),
     );
+  }
+
+  private isOcrRuntimeKind(kind: RuntimeKind | null | undefined): boolean {
+    return kind === 'paddle_ocr' || kind === 'directml_ocr';
   }
 }

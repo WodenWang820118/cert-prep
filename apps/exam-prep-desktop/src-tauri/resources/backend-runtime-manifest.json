@@ -6,8 +6,8 @@
   "entrypoint": "exam-prep-backend.exe",
   "artifact": {
     "file_name": "exam-prep-backend-runtime-x86_64-pc-windows-msvc.zip",
-    "sha256": "4cacd0089c350f6c8cfd4535b3f90aa217374880bb00d549ca14fbb1d8e68e36",
-    "bytes": 69557110,
+    "sha256": "8473620bcfa1641c9c544cc2f4bd96af1ccbbc790ffc0dfd763dc58fe9279034",
+    "bytes": 78892263,
     "url": "file:///C:/software-dev/cert-prep/apps/exam-prep-backend/dist/backend-runtime/exam-prep-backend-runtime-x86_64-pc-windows-msvc.zip"
   }
 }

@@ -8,8 +8,8 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
-DEFAULT_OLLAMA_MODEL = "qwen3:14b"
-DEFAULT_OLLAMA_FALLBACK_MODELS = ("qwen3:8b",)
+DEFAULT_OLLAMA_MODEL = "qwen3.5:4b"
+DEFAULT_OLLAMA_FALLBACK_MODELS = ("qwen3.5:2b",)
 
 
 def default_data_dir() -> Path:
@@ -68,7 +68,7 @@ class Settings(BaseSettings):
     ocr_runtime_manifest_path: Path | None = None
     directml_ocr_runtime_dir: Path | None = None
     directml_ocr_runtime_manifest_path: Path | None = None
-    ocr_directml_device_id: int = Field(default=0, ge=0)
+    ocr_directml_device_id: int = Field(default=-1, ge=-1)
     ocr_runtime_timeout_seconds: float = 300.0
     runtime_install_timeout_seconds: float = 900.0
 

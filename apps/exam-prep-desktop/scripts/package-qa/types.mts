@@ -75,7 +75,7 @@ export interface RuntimeHealthSummary {
     readonly EXAM_PREP_OCR_RUNTIME_MODE: 'external';
     readonly EXAM_PREP_OCR_DEVICE: 'auto';
     readonly EXAM_PREP_OCR_RUNTIME_MANIFEST_PATH: string;
-    readonly EXAM_PREP_OCR_DIRECTML_DEVICE_ID: '0';
+    readonly EXAM_PREP_OCR_DIRECTML_DEVICE_ID: '-1';
     readonly EXAM_PREP_DIRECTML_OCR_RUNTIME_MANIFEST_PATH: string;
     readonly EXAM_PREP_LLM_PROVIDER: 'ollama';
     readonly EXAM_PREP_OLLAMA_MODEL: string;

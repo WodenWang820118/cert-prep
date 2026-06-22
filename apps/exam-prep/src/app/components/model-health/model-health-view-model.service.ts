@@ -200,9 +200,10 @@ export class ModelHealthViewModelService {
   }
 
   private ocrTitle(state: ModelHealthViewState): string {
-    return state.ocrHealth?.provider === 'directml'
-      ? 'AMD DirectML OCR'
-      : 'PaddleOCR';
+    if (state.ocrHealth?.provider === 'directml') {
+      return 'AMD DirectML OCR';
+    }
+    return 'PaddleOCR';
   }
 
   private ollamaStatusLabel(state: ModelHealthViewState): string {

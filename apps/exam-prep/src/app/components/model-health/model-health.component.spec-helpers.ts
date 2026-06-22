@@ -27,15 +27,15 @@ export function availableLlmHealth(): LLMHealthRead {
 export function fallbackLlmHealth(): LLMHealthRead {
   return {
     provider: 'ollama',
-    model: 'qwen3:14b',
+    model: 'qwen3.5:4b',
     available: true,
-    detail: 'model available via fallback qwen3:8b',
+    detail: 'model available via fallback qwen3.5:2b',
     unavailable_reason: null,
-    configured_model: 'qwen3:14b',
-    effective_model: 'qwen3:8b',
-    fallback_models: ['qwen3:8b'],
+    configured_model: 'qwen3.5:4b',
+    effective_model: 'qwen3.5:2b',
+    fallback_models: ['qwen3.5:2b'],
     fallback_reason:
-      'Configured model qwen3:14b is missing; using fallback qwen3:8b.',
+      'Configured model qwen3.5:4b is missing; using fallback qwen3.5:2b.',
   };
 }
 

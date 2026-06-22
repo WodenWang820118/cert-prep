@@ -22,12 +22,14 @@ DEFAULT_OUTPUT_DIR = BACKEND_ROOT / ".benchmarks"
 DEFAULT_MODEL_DIR = BACKEND_ROOT / ".benchmarks" / "ocr-directml-models"
 COMMAND_TIMEOUT_SECONDS = 10.0
 REQUIRED_MODEL_FILES = (
-    "det_model.onnx",
-    "rec_model.onnx",
-    "rec_char_dict.txt",
+    "det/inference.onnx",
+    "det/inference.yml",
+    "rec/inference.onnx",
+    "rec/inference.yml",
+    "rec/ppocr_keys_v1.txt",
     "pipeline.json",
 )
-OPTIONAL_MODEL_FILES = ("cls_model.onnx",)
+OPTIONAL_MODEL_FILES = ()
 
 
 def default_output_path() -> Path:
@@ -70,8 +72,8 @@ def build_report(model_dir: Path = DEFAULT_MODEL_DIR) -> dict[str, Any]:
         "mode": {
             "name": "ocr_directml_probe",
             "goal": (
-                "Verify whether ONNX Runtime DirectML can host a future AMD iGPU "
-                "OCR backend without changing the production Paddle CUDA runtime."
+                "Verify whether ONNX Runtime DirectML can host the AMD iGPU "
+                "PaddleOCR 3.7 PP-OCRv6 runtime."
             ),
             "does_not_pull_models": True,
             "does_not_change_runtime_defaults": True,
@@ -85,7 +87,7 @@ def build_report(model_dir: Path = DEFAULT_MODEL_DIR) -> dict[str, Any]:
         "dxgi_adapters": dxgi_adapters,
         "onnxruntime": providers_snapshot,
         "model_contract": {
-            "description": "Minimal PP-OCR ONNX artifact contract for the future DirectML OCR backend.",
+            "description": "PaddleOCR 3.7 PP-OCRv6 ONNXRuntime artifact contract.",
             "required_files": list(REQUIRED_MODEL_FILES),
             "optional_files": list(OPTIONAL_MODEL_FILES),
         },
@@ -121,8 +123,8 @@ def onnxruntime_provider_snapshot() -> dict[str, Any]:
 
 
 def inspect_model_artifacts(model_dir: Path) -> dict[str, Any]:
-    required = [model_file_state(model_dir / name) for name in REQUIRED_MODEL_FILES]
-    optional = [model_file_state(model_dir / name) for name in OPTIONAL_MODEL_FILES]
+    required = [model_file_state(model_dir / name, name=name) for name in REQUIRED_MODEL_FILES]
+    optional = [model_file_state(model_dir / name, name=name) for name in OPTIONAL_MODEL_FILES]
     missing_required = [
         item["name"] for item in required if item["state"] != "present"
     ]
@@ -136,14 +138,15 @@ def inspect_model_artifacts(model_dir: Path) -> dict[str, Any]:
     }
 
 
-def model_file_state(path: Path) -> dict[str, Any]:
+def model_file_state(path: Path, *, name: str | None = None) -> dict[str, Any]:
+    display_name = name or path.name
     if not path.exists():
-        return {"name": path.name, "path": str(path), "state": "missing", "bytes": 0}
+        return {"name": display_name, "path": str(path), "state": "missing", "bytes": 0}
     if not path.is_file():
-        return {"name": path.name, "path": str(path), "state": "not_file", "bytes": 0}
+        return {"name": display_name, "path": str(path), "state": "not_file", "bytes": 0}
     size = path.stat().st_size
     return {
-        "name": path.name,
+        "name": display_name,
         "path": str(path),
         "state": "present" if size > 0 else "empty",
         "bytes": size,
@@ -213,12 +216,11 @@ def classify_directml_status(
         "model_artifacts_ready": bool(model_artifacts.get("ready", False)),
         "blockers": blockers,
         "current_safe_action": (
-            "Keep production OCR on Paddle CUDA. Use this DirectML lane only for "
-            "artifact validation and future ONNX inference experiments."
+            "Keep OCR on the AMD iGPU DirectML lane only when DirectML, AMD adapter "
+            "selection, and PP-OCRv6 artifacts are all ready."
         ),
         "recommended_next_step": (
-            "Export or provide PP-OCR ONNX detection and recognition model artifacts, "
-            "then add a DirectML inference smoke before wiring a provider."
+            "Run PaddleOCR 3.7 DirectML session and inference smoke before packaged QA."
         ),
     }
 

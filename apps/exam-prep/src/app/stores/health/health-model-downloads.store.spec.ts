@@ -101,19 +101,19 @@ describe('HealthStore model downloads', () => {
     apiClient.llmHealth.mockResolvedValue(
       llmHealth({
         available: true,
-        model: 'qwen3:14b',
-        detail: 'model available via fallback qwen3:8b',
+        model: 'qwen3.5:4b',
+        detail: 'model available via fallback qwen3.5:2b',
         unavailable_reason: null,
-        configured_model: 'qwen3:14b',
-        effective_model: 'qwen3:8b',
-        fallback_models: ['qwen3:8b'],
+        configured_model: 'qwen3.5:4b',
+        effective_model: 'qwen3.5:2b',
+        fallback_models: ['qwen3.5:2b'],
         fallback_reason:
-          'Configured model qwen3:14b is missing; using fallback qwen3:8b.',
+          'Configured model qwen3.5:4b is missing; using fallback qwen3.5:2b.',
       }),
     );
     apiClient.startModelDownload.mockResolvedValue(
       modelDownload({
-        model: 'qwen3:14b',
+        model: 'qwen3.5:4b',
         status: 'succeeded',
         detail: 'model download complete',
         completed: 100,
@@ -126,7 +126,7 @@ describe('HealthStore model downloads', () => {
 
     expect(store.modelDownloadConsentVisible()).toBe(false);
     expect(apiClient.startModelDownload).toHaveBeenCalledTimes(1);
-    expect(store.modelDownload()?.model).toBe('qwen3:14b');
+    expect(store.modelDownload()?.model).toBe('qwen3.5:4b');
     expect(store.modelDownload()?.phase).toBe('succeeded');
   });
 });

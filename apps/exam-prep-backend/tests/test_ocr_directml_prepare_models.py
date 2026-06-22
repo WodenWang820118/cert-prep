@@ -42,9 +42,18 @@ def test_prepare_models_reports_converter_blocker(tmp_path: Path) -> None:
         "B",
         "1",
     ]
+    assert (model_dir / "rec" / "ppocr_keys_v1.txt").read_text(
+        encoding="utf-8"
+    ).splitlines() == [
+        "A",
+        "B",
+        "1",
+    ]
+    assert (model_dir / "det" / "inference.yml").is_file()
+    assert (model_dir / "rec" / "inference.yml").is_file()
     assert (model_dir / "pipeline.json").is_file()
-    assert not (model_dir / "det_model.onnx").exists()
-    assert not (model_dir / "rec_model.onnx").exists()
+    assert not (model_dir / "det" / "inference.onnx").exists()
+    assert not (model_dir / "rec" / "inference.onnx").exists()
 
 
 def test_prepare_models_copies_converted_onnx_models(tmp_path: Path) -> None:
@@ -62,17 +71,18 @@ def test_prepare_models_copies_converted_onnx_models(tmp_path: Path) -> None:
 
     assert report["status"]["state"] == "ready"
     assert report["status"]["blockers"] == []
-    assert (model_dir / "det_model.onnx").read_bytes() == b"fake-det-onnx"
-    assert (model_dir / "rec_model.onnx").read_bytes() == b"fake-rec-onnx"
+    assert (model_dir / "det" / "inference.onnx").read_bytes() == b"fake-det-onnx"
+    assert (model_dir / "rec" / "inference.onnx").read_bytes() == b"fake-rec-onnx"
 
 
 def test_prepare_models_force_conversion_replaces_existing_models(tmp_path: Path) -> None:
     sources_dir = tmp_path / "sources"
     model_dir = tmp_path / "models"
     artifacts = _fixture_artifacts(sources_dir)
-    model_dir.mkdir()
-    (model_dir / "det_model.onnx").write_bytes(b"old-det")
-    (model_dir / "rec_model.onnx").write_bytes(b"old-rec")
+    (model_dir / "det").mkdir(parents=True)
+    (model_dir / "rec").mkdir(parents=True)
+    (model_dir / "det" / "inference.onnx").write_bytes(b"old-det")
+    (model_dir / "rec" / "inference.onnx").write_bytes(b"old-rec")
 
     report = build_report(
         sources_dir=sources_dir,
@@ -86,8 +96,8 @@ def test_prepare_models_force_conversion_replaces_existing_models(tmp_path: Path
 
     assert report["mode"]["converter"] == "docker"
     assert report["status"]["state"] == "ready"
-    assert (model_dir / "det_model.onnx").read_bytes() == b"fake-det-onnx"
-    assert (model_dir / "rec_model.onnx").read_bytes() == b"fake-rec-onnx"
+    assert (model_dir / "det" / "inference.onnx").read_bytes() == b"fake-det-onnx"
+    assert (model_dir / "rec" / "inference.onnx").read_bytes() == b"fake-rec-onnx"
 
 
 def test_docker_work_path_uses_backend_mount() -> None:
@@ -169,7 +179,7 @@ def _write_model_archive(
         sha256=sha256_file(archive_path),
         byte_size=archive_path.stat().st_size,
         archive_root=root,
-        target_onnx_name=f"{kind}_model.onnx",
+        target_onnx_name=f"{kind}/inference.onnx",
     )
 
 

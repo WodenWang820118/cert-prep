@@ -62,9 +62,13 @@ export function summarizeGpuByAdapter(
   const namedProcessGpuUsage = processGpuUsage.filter(
     (usage) => usage.name !== null,
   );
+  const processNames = new Set(
+    windowsSummary.processes.map((process) => process.name.toLowerCase()),
+  );
   const gpuRoutingChecks = gpuRoutingChecksForProcessUsage(
     dxgiAdapters,
     namedProcessGpuUsage,
+    processNames,
   );
 
   return {
@@ -86,6 +90,7 @@ function gpuRoutingChecksForProcessUsage(
     adapter_kind: string;
     adapter_name: string | null;
   }>,
+  processNames: ReadonlySet<string>,
 ): Record<string, boolean | number> {
   const directmlOcrUsage = processGpuUsage.filter(
     (usage) => usage.name === 'exam-prep-ocr-directml-runtime.exe',
@@ -96,13 +101,16 @@ function gpuRoutingChecksForProcessUsage(
   const ocrNvidiaMaxBytes = maxProcessGpuBytes(
     directmlOcrUsage.filter((usage) => usage.adapter_kind === 'nvidia_dgpu'),
   );
+  const directmlOcrProcessObserved =
+    processNames.has('exam-prep-ocr-directml-runtime.exe') ||
+    directmlOcrUsage.length > 0;
   return {
-    directml_ocr_process_observed: directmlOcrUsage.length > 0,
+    directml_ocr_process_observed: directmlOcrProcessObserved,
     ocr_uses_amd_igpu: hasAnyProcessGpuUsage(
       directmlOcrUsage.filter((usage) => usage.adapter_kind === 'amd_igpu'),
     ),
     ocr_avoids_nvidia_dgpu:
-      directmlOcrUsage.length > 0 &&
+      directmlOcrProcessObserved &&
       ocrNvidiaMaxBytes <= NVIDIA_OCR_PROCESS_MEMORY_GATE_BYTES,
     ocr_nvidia_process_memory_max_bytes: ocrNvidiaMaxBytes,
     ocr_nvidia_process_memory_gate_bytes: NVIDIA_OCR_PROCESS_MEMORY_GATE_BYTES,

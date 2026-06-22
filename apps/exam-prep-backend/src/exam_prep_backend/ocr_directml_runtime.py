@@ -5,6 +5,7 @@ import argparse
 import json
 from pathlib import Path
 import sys
+import traceback
 from typing import Any
 
 from exam_prep_backend.domains.source_documents.adapters.directml import (
@@ -15,7 +16,7 @@ from exam_prep_backend.domains.source_documents.adapters.directml import (
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--provider", choices=["directml"], default="directml")
-    parser.add_argument("--directml-device-id", type=int, default=0)
+    parser.add_argument("--directml-device-id", type=int, default=-1)
     parser.add_argument("--model-dir", type=Path)
     parser.add_argument("--ocr-health", action="store_true")
     parser.add_argument("--ocr-self-test", action="store_true")
@@ -69,7 +70,11 @@ def _self_test(args: argparse.Namespace) -> dict[str, Any]:
         return {
             "ok": False,
             "provider": "directml",
+            "error_type": type(exc).__name__,
             "error": str(exc),
+            "cause": str(exc.__cause__) if exc.__cause__ is not None else None,
+            "context": str(exc.__context__) if exc.__context__ is not None else None,
+            "traceback_tail": traceback.format_exc()[-3000:],
         }
     normalized = result.text.replace(" ", "").replace("\n", "")
     return {

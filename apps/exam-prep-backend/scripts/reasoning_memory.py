@@ -17,7 +17,7 @@ import ollama
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT_DIR = BACKEND_ROOT / ".benchmarks"
-DEFAULT_MODELS = ("qwen3:14b", "deepseek-r1:14b", "gemma4:12b")
+DEFAULT_MODELS = ("qwen3.5:4b", "deepseek-r1:14b", "gemma4:12b")
 DEFAULT_OLLAMA_HOST = "http://127.0.0.1:11434"
 MEMORY_SMOKE_OPTIONS = {"temperature": 0, "num_ctx": 8192, "num_predict": 64}
 OBSERVATION_COMMAND_TIMEOUT_SECONDS = 10.0

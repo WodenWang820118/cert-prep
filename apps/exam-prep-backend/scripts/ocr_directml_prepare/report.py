@@ -88,8 +88,8 @@ def build_report(
         "mode": {
             "name": "ocr_directml_prepare_models",
             "goal": (
-                "Prepare official PP-OCRv5 mobile assets for the DirectML OCR "
-                "production gate without changing app startup behavior."
+                "Prepare official PP-OCRv6 medium assets for the PaddleOCR 3.7 "
+                "ONNXRuntime DirectML production gate without changing app startup behavior."
             ),
             "does_not_change_runtime_defaults": True,
             "does_not_run_ocr_inference": True,

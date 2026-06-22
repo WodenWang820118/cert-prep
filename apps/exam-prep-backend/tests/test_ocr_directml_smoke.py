@@ -15,12 +15,14 @@ from ocr_directml_smoke import (  # noqa: E402
 
 
 REQUIRED_MODEL_FILES = (
-    "det_model.onnx",
-    "rec_model.onnx",
-    "rec_char_dict.txt",
+    "det/inference.onnx",
+    "det/inference.yml",
+    "rec/inference.onnx",
+    "rec/inference.yml",
+    "rec/ppocr_keys_v1.txt",
     "pipeline.json",
 )
-SESSION_MODEL_FILES = ("det_model.onnx", "rec_model.onnx")
+SESSION_MODEL_FILES = ("det/inference.onnx", "rec/inference.onnx")
 
 
 def test_session_smoke_skips_until_models_exist() -> None:
@@ -136,7 +138,7 @@ def _failed_session_runner(
         "state": "session_failed",
         "providers_requested": ["DmlExecutionProvider", "CPUExecutionProvider"],
         "sessions": [],
-        "errors": [{"model": "det_model.onnx", "error": "invalid onnx"}],
+        "errors": [{"model": "det/inference.onnx", "error": "invalid onnx"}],
     }
 
 

@@ -77,7 +77,7 @@ export function draftJob(
     strategy: 'hybrid_reasoning',
     status: 'pending',
     provider: 'ollama',
-    model: 'qwen3:14b',
+    model: 'qwen3.5:4b',
     generated_count: 0,
     retry_count: 0,
     last_error: null,

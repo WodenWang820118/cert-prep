@@ -16,6 +16,7 @@ from document_test_helpers import (
 from document_test_llm_fakes import (
     FailingExamProvider,
     FastFirstCompletionExamProvider,
+    InvalidJsonReasoningExamProvider,
     MissingModelExamProvider,
     MockExamProvider,
 )
@@ -175,6 +176,49 @@ def test_streaming_draft_generation_uses_fast_first_completion_before_reasoning(
     ).json()["items"]
     assert jobs[0]["status"] == "succeeded"
     assert jobs[0]["generated_count"] == 1
+
+
+def test_streaming_draft_generation_treats_invalid_json_as_empty_page(
+    tmp_path: Path,
+    auth_headers,
+) -> None:
+    client = TestClient(
+        create_app(
+            settings=Settings(
+                data_dir=tmp_path,
+                api_token="test-token",
+                streaming_draft_generation_on_upload=True,
+                streaming_draft_generation_page_limit=1,
+            ),
+            llm_provider=InvalidJsonReasoningExamProvider(),
+            ocr_provider=JlptBlockOcrProvider(),
+            document_processing_async_jobs=False,
+            streaming_draft_generation_async_jobs=False,
+        )
+    )
+    project_id = _create_project(client, auth_headers)
+
+    response = client.post(
+        f"/projects/{project_id}/documents",
+        headers=auth_headers,
+        files={"file": ("scan.pdf", minimal_pdf(""), "application/pdf")},
+    )
+
+    assert response.status_code == 201
+    document = response.json()
+    assert document["status"] == "ready"
+
+    jobs = client.get(
+        f"/projects/{project_id}/documents/{document['id']}/draft-jobs",
+        headers=auth_headers,
+    ).json()["items"]
+    assert jobs[0]["status"] == "succeeded"
+    assert jobs[0]["generated_count"] == 0
+    assert jobs[0]["last_error"] is None
+
+    drafts = client.get(f"/projects/{project_id}/question-drafts", headers=auth_headers)
+    assert drafts.status_code == 200
+    assert drafts.json()["items"] == []
 
 
 def test_streaming_draft_async_job_thread_creates_draft(
@@ -377,7 +421,7 @@ def test_streaming_draft_recovery_resumes_interrupted_running_job(
         page_number=chunks[0]["page_number"],
         strategy="hybrid_reasoning",
         provider="ollama",
-        model="qwen3:14b",
+        model="qwen3.5:4b",
     )
     draft_jobs.mark_running(initial_client.app.state.database, job["id"])
 

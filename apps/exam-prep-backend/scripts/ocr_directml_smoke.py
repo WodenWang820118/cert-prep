@@ -17,6 +17,7 @@ BACKEND_ROOT = SCRIPT_DIR.parents[0]
 DEFAULT_OUTPUT_DIR = BACKEND_ROOT / ".benchmarks"
 
 sys.path.insert(0, str(SCRIPT_DIR))
+sys.path.insert(0, str(BACKEND_ROOT / "src"))
 
 from ocr_directml_probe import (  # noqa: E402
     DEFAULT_MODEL_DIR,
@@ -26,6 +27,8 @@ from ocr_directml_probe import (  # noqa: E402
 
 
 SESSION_MODEL_FILES = tuple(name for name in REQUIRED_MODEL_FILES if name.endswith(".onnx"))
+DIRECTML_DEVICE_LABEL = "amd_directml"
+DIRECTML_PROVIDERS = ["DmlExecutionProvider", "CPUExecutionProvider"]
 SessionSmokeRunner = Callable[[dict[str, Path], int | None], dict[str, Any]]
 
 
@@ -65,9 +68,8 @@ def build_report(
         "mode": {
             "name": "ocr_directml_session_smoke",
             "goal": (
-                "Verify that required PP-OCR ONNX model files can create ONNX "
-                "Runtime sessions with DirectML before any production OCR routing "
-                "changes."
+                "Verify that required PP-OCRv6 ONNX model files can create ONNX "
+                "Runtime DirectML sessions before production OCR packaging."
             ),
             "does_not_pull_models": True,
             "does_not_change_runtime_defaults": True,
@@ -109,7 +111,7 @@ def skipped_session_smoke(reason: str) -> dict[str, Any]:
     return {
         "state": "skipped",
         "reason": reason,
-        "providers_requested": directml_providers(None),
+        "providers_requested": directml_provider_names(),
         "session_options": directml_session_options_metadata(),
         "sessions": [],
         "errors": [],
@@ -147,13 +149,20 @@ def directml_providers(device_id: int | None) -> list[Any]:
     ]
 
 
+def directml_provider_names() -> list[str]:
+    return list(DIRECTML_PROVIDERS)
+
+
 def directml_session_options_metadata() -> dict[str, Any]:
     return {
         "enable_mem_pattern": False,
         "execution_mode": "ORT_SEQUENTIAL",
+        "execution_policy": "paddleocr37_directml",
+        "selection_mode": "directml_amd_igpu",
+        "providers_requested": directml_provider_names(),
         "reason": (
-            "ONNX Runtime DirectML requires memory-pattern optimization disabled "
-            "and sequential execution."
+            "PaddleOCR 3.7 engine='onnxruntime' validates provider names through "
+            "ONNX Runtime and currently uses DirectML plus CPU fallback."
         ),
     }
 
@@ -169,7 +178,6 @@ def run_directml_session_smoke(
     model_files: dict[str, Path],
     device_id: int | None,
 ) -> dict[str, Any]:
-    providers = directml_providers(device_id)
     sessions: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
 
@@ -178,7 +186,8 @@ def run_directml_session_smoke(
     except Exception as exc:
         return {
             "state": "session_failed",
-            "providers_requested": providers,
+            "providers_requested": directml_provider_names(),
+            "device": DIRECTML_DEVICE_LABEL,
             "session_options": directml_session_options_metadata(),
             "sessions": sessions,
             "errors": [{"model": "*", "error": str(exc)}],
@@ -187,10 +196,11 @@ def run_directml_session_smoke(
     for model_name in SESSION_MODEL_FILES:
         model_path = model_files[model_name]
         try:
+            options = create_directml_session_options(ort)
             session = ort.InferenceSession(
                 str(model_path),
-                sess_options=create_directml_session_options(ort),
-                providers=providers,
+                sess_options=options,
+                providers=directml_providers(device_id),
             )
             sessions.append(session_metadata(model_name, model_path, session))
         except Exception as exc:
@@ -198,7 +208,8 @@ def run_directml_session_smoke(
 
     return {
         "state": "session_ready" if not errors else "session_failed",
-        "providers_requested": providers,
+        "providers_requested": directml_provider_names(),
+        "device": DIRECTML_DEVICE_LABEL,
         "directml_device_id": device_id,
         "session_options": directml_session_options_metadata(),
         "sessions": sessions,
@@ -206,7 +217,11 @@ def run_directml_session_smoke(
     }
 
 
-def session_metadata(model_name: str, model_path: Path, session: Any) -> dict[str, Any]:
+def session_metadata(
+    model_name: str,
+    model_path: Path,
+    session: Any,
+) -> dict[str, Any]:
     return {
         "model": model_name,
         "path": str(model_path),
@@ -267,8 +282,8 @@ def classify_smoke_status(
         "model_artifacts_ready": bool(probe_status.get("model_artifacts_ready")),
         "session_ready": session_state == "session_ready",
         "current_safe_action": (
-            "Keep production OCR on Paddle CUDA until DirectML session creation, "
-            "inference correctness, latency, and adapter telemetry all pass."
+            "Keep OCR on the AMD iGPU DirectML lane only when DirectML session "
+            "creation, inference correctness, latency, and adapter telemetry pass."
         ),
         "recommended_next_step": _recommended_next_step(state),
     }
@@ -277,8 +292,7 @@ def classify_smoke_status(
 def _recommended_next_step(state: str) -> str:
     if state == "session_ready":
         return (
-            "Add a deterministic DirectML OCR inference smoke with a small image and "
-            "adapter telemetry before wiring an experimental provider."
+            "Run deterministic PaddleOCR 3.7 DirectML inference and adapter telemetry."
         )
     if state == "session_failed":
         return "Inspect ONNX compatibility errors and adjust/export PP-OCR artifacts."

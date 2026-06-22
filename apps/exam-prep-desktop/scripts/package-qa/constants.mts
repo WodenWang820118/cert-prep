@@ -20,7 +20,7 @@ export const DEFAULT_DIRECTML_OCR_RUNTIME_ROOT =
 export const DEFAULT_DIRECTML_OCR_RUNTIME_MANIFEST =
   'apps/exam-prep-desktop/src-tauri/resources/directml-ocr-runtime-manifest.json';
 export const DEFAULT_DATA_DIR = 'tmp/exam-prep-desktop/package-qa/data';
-export const DEFAULT_LLM_MODEL = 'qwen3:14b';
+export const DEFAULT_LLM_MODEL = 'qwen3.5:4b';
 export const PACKAGE_QA_OCR_PAGE_WORKERS_ENV =
   'EXAM_PREP_PACKAGE_QA_OCR_PAGE_WORKERS';
 export const BACKEND_RUNTIME_PREFIX = 'exam-prep-backend-runtime-';

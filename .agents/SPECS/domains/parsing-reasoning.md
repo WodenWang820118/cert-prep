@@ -18,8 +18,9 @@ those flows.
   models, auto-approve questions, or expose hidden chain-of-thought.
 - UI copy should say `Reasoning model` rather than hardcoding a single model
   identity.
-- Live bakeoff candidates are `qwen3:14b`, `deepseek-r1:14b`, and
-  `gemma4:12b`.
+- Default Ollama model is `qwen3.5:4b`; default fallback is `qwen3.5:2b`.
+- Larger 12B/14B reasoning comparator runs remain user-controlled research
+  gates and should not be treated as the current startup default.
 - Reasoning comparator work must collect RAM/VRAM residency evidence before
   parameter reduction, scored bakeoff reruns, or default-model changes.
 - Nvidia GPU headroom should be preserved for larger Ollama reasoning models.
@@ -414,6 +415,177 @@ Live baseline blocker:
   - `pnpm nx run exam-prep-backend:reasoning-memory --skip-nx-cache --args="--model qwen3:8b --timeout-seconds 300"`.
   - `pnpm nx run exam-prep-backend:reasoning-bakeoff --skip-nx-cache --args="--model qwen3:8b --timeout-seconds 300"`.
   - `pnpm nx run exam-prep-desktop:packaged-streaming-production-directml --skip-nx-cache`.
+
+2026-06-22 Qwen 3.5 4B default update:
+
+- Default configured Ollama model is now `qwen3.5:4b` across backend settings,
+  desktop launch defaults, package QA, packaged streaming targets, and UI/e2e
+  test fixtures.
+- Default fallback is now the smaller same-family `qwen3.5:2b`; production
+  packaged streaming targets no longer reference the previous
+  `gemma4:12b,qwen3:8b` fallback chain.
+- Local Ollama cleanup completed through the HTTP API because `ollama.exe` was
+  not on PATH in the current shell. `DELETE /api/delete` removed `qwen3:8b`,
+  and `/api/tags` returned an empty model list afterward.
+- User-controlled install remains unchanged: the app should prompt/download
+  `qwen3.5:4b` only after explicit consent.
+
+2026-06-22 AMD NPU OCR experimental lane (archived):
+
+- Decision update: standalone AMD NPU OCR is retired from the product/runtime
+  path. The formal direction is DirectML mixed execution
+  (`DmlExecutionProvider` plus `CPUExecutionProvider`) under the existing
+  `directml` OCR provider.
+- Removed/retired implementation surfaces:
+  - backend `amd_npu` OCR provider selection and `amd_npu_ocr` runtime
+    requirement kind
+  - packaged `exam-prep-ocr-amd-npu-runtime.exe` build lane
+  - desktop `build-amd-npu`, `sync-amd-npu-runtime-manifest`, and
+    `packaged-streaming-production-amd-npu` targets
+  - package QA AMD NPU runtime manifest/env validation
+  - Angular runtime checklist/consent UI for AMD NPU OCR
+  - packaged-flow `xrt-smi`, `npu_routing_checks`, and
+    `npu_power_or_efficiency_observations` production summary fields
+- DirectML production baseline remains the only packaged streaming production
+  OCR target. Acceptance still requires 46/46 pages, chunks present, first
+  chunk under the UX gate, streamed questions before parse completion,
+  practice readiness, DirectML OCR on AMD iGPU, Nvidia avoidance for OCR,
+  Ollama reasoning on Nvidia, and clean cleanup.
+- The historical evidence below explains why the independent NPU path was not
+  accepted: PP-OCRv5 did not pass strict VitisAI NPU-only session gates, mixed
+  Windows ML policy sessions still used CPU fallback, and power replacement
+  evidence was not available.
+
+Historical AMD NPU OCR research:
+
+- Durable spec:
+  `.agents/SPECS/domains/ocr-amd-npu.md`.
+- Implemented `EXAM_PREP_OCR_PROVIDER=amd_npu`, runtime requirement kind
+  `amd_npu_ocr`, packaged runtime entrypoint
+  `exam-prep-ocr-amd-npu-runtime.exe`, and desktop target
+  `packaged-streaming-production-amd-npu`.
+- AMD NPU runtime follows the official Windows ML
+  `ExecutionProviderCatalog` + `VitisAIExecutionProvider` path. Passive health
+  and probe paths do not call `EnsureReadyAsync()`; the explicit runtime
+  installer path is the only user-approved enablement/download gate.
+- Desktop resource sampling now records `xrt-smi-summary.json`,
+  `xrt_smi_summary`, `npu_routing_checks`, and
+  `npu_power_or_efficiency_observations`. DirectML production checks remain
+  provider-aware and are not applied to `amd_npu`.
+- Explicit `--ensure-ready` probe artifact:
+  `apps/exam-prep-backend/.benchmarks/ocr-amd-npu-probe-20260622T085003Z.json`.
+- Probe status: `ready_for_session`. The machine sees
+  `NPU Compute Accelerator Device`, `xrt-smi`, `NPU Strix`, and VitisAI NPU
+  device id `6128` through ORT `get_ep_devices()`.
+- VitisAI package path:
+  `C:\Program Files\WindowsApps\MicrosoftCorporationII.WinML.AMD.NPU.EP.1.8_1.8.62.0_x64__8wekyb3d8bbwe\ExecutionProvider\onnxruntime_vitisai_ep.dll`.
+- Strict session smoke artifact:
+  `apps/exam-prep-backend/.benchmarks/ocr-amd-npu-smoke-20260622T085540Z.json`.
+- Session smoke uses ONNX Runtime plugin EP device binding through
+  `add_provider_for_devices(...)` and disables CPU fallback with
+  `session.disable_cpu_ep_fallback=1`.
+- Current blocker: both PP-OCRv5 `det_model.onnx` and `rec_model.onnx` assign
+  some nodes to the default CPU EP under VitisAI, so strict NPU-only session
+  creation fails with CPU fallback disabled.
+- Inference smoke artifact:
+  `apps/exam-prep-backend/.benchmarks/ocr-amd-npu-inference-smoke-20260622T085642Z.json`.
+- Inference smoke status: skipped, reason `session_failed`.
+- Static-shape compatibility target added:
+  `pnpm nx run exam-prep-backend:ocr-amd-npu-model-compat --skip-nx-cache`.
+- Static-shape compatibility artifact:
+  `apps/exam-prep-backend/.benchmarks/ocr-amd-npu-model-compat-20260622T091947Z.json`.
+- Static candidate models were generated in
+  `apps/exam-prep-backend/.benchmarks/ocr-amd-npu-static-shape-models` with
+  det shape `1x3x1152x864` and rec shape `1x3x48x320`.
+- Static-shape candidate session smoke timed out after `180 seconds`, so fixed
+  input shapes alone are not accepted as an AMD NPU replacement path. Next
+  model work should evaluate QDQ/A8W8 or a smaller NPU-friendly OCR model/export.
+- QDQ/A8W8 compatibility implemented in the same target via
+  `--candidate-kind static_qdq_a8w8`.
+- QDQ/A8W8 compatibility artifact:
+  `apps/exam-prep-backend/.benchmarks/ocr-amd-npu-model-compat-20260622T110203Z.json`.
+- QDQ/A8W8 candidate models were generated in
+  `apps/exam-prep-backend/.benchmarks/ocr-amd-npu-qdq-a8w8-models` using
+  deterministic synthetic calibration with `2` samples. This is compile/session
+  evidence only, not an accuracy acceptance.
+- QDQ insertion counts: det `560/560` QuantizeLinear/DequantizeLinear nodes;
+  rec `568/568` QuantizeLinear/DequantizeLinear nodes.
+- QDQ/A8W8 strict session still fails with CPU fallback disabled. VitisAI
+  partition observations include `batchnorm`, `quantize-linear`,
+  `qlinear-hard-softmax`, `dequantize-linear`, and `const-fix`; the recognizer
+  also hits the `qlinear-hard-softmax` channel limit.
+- Reference scout target added:
+  `pnpm nx run exam-prep-backend:ocr-amd-npu-reference-scout --skip-nx-cache`.
+- Reference scout artifact:
+  `apps/exam-prep-backend/.benchmarks/ocr-amd-npu-reference-scout-20260622T115426Z.json`.
+- Python 3.12 compatibility is now allowed for backend/model-prep tooling:
+  `requires-python` is `>=3.12,<3.14`, `uv.lock` resolves `<3.13` and
+  `>=3.13`, `ruff` target is `py312`, and Nx `python-version-check` accepts
+  Python `3.12` or `3.13`.
+- Python 3.12 Quark probe target added:
+  `pnpm nx run exam-prep-backend:ocr-amd-npu-reference-scout-python312 --skip-nx-cache`.
+- `py -3.12` is available and Quark-compatible by version, but `amd-quark` is
+  not installed yet. Next NPU model work should use AMD's Nemotron OCR v2 BF16
+  reference compile or install Quark in a Python 3.12 model-prep environment
+  with document-derived calibration.
+- Windows ML mixed execution research:
+  - Added target
+    `pnpm nx run exam-prep-backend:ocr-windowsml-policy-mixed-probe --skip-nx-cache`.
+  - Provider-matrix artifact:
+    `apps/exam-prep-backend/.benchmarks/ocr-windowsml-policy-mixed-probe-20260622T122325Z.json`.
+  - Synthetic-inference artifact:
+    `apps/exam-prep-backend/.benchmarks/ocr-windowsml-policy-mixed-probe-20260622T122418Z.json`.
+  - `onnxruntime-windowsml 1.24.6` exposes
+    `SessionOptions.set_provider_selection_policy(...)` and policies including
+    `MAX_EFFICIENCY`, `MIN_OVERALL_POWER`, `PREFER_NPU`, `PREFER_GPU`, and
+    `MAX_PERFORMANCE`.
+  - With VitisAI disabled/not visible in-process, NPU/efficiency policies
+    selected CPU only.
+  - After user-approved `EnsureReadyAsync()` and VitisAI registration, the
+    current PP-OCRv5 det/rec ONNX models created sessions with
+    `VitisAIExecutionProvider + CPUExecutionProvider` for
+    `MAX_EFFICIENCY`/`MIN_OVERALL_POWER`/`PREFER_NPU`.
+  - `PREFER_GPU`/`MAX_PERFORMANCE` created sessions with
+    `DmlExecutionProvider + CPUExecutionProvider`.
+  - The target confirmed `PREFER_NPU` synthetic zero-input inference for both
+    det and rec with `VitisAIExecutionProvider + CPUExecutionProvider`.
+  - This is a separate Windows ML policy mixed probe, not a replacement for
+    strict NPU-only evidence, because CPU fallback can hide unsupported
+    operators and VitisAI emitted compile warnings while sessions and synthetic
+    inference still succeeded.
+- PaddleOCR 3.7 isolated ONNX Runtime probe:
+  - Added target
+    `pnpm nx run exam-prep-backend:ocr-paddle37-onnxruntime-probe --skip-nx-cache`.
+  - Artifact:
+    `apps/exam-prep-backend/.benchmarks/ocr-paddle37-onnxruntime-probe-20260622T141653Z.json`.
+  - The target runs in isolated Python 3.12 through `uv run --no-project` with
+    `paddleocr==3.7.0`, stages the existing PP-OCRv5 ONNX models into PaddleX's
+    `inference.onnx` / `inference.yml` layout, and does not change production
+    defaults.
+  - CPU ONNXRuntime and AMD iGPU DML ONNXRuntime both decoded `OCRTEST`. The
+    DML case reported internal det/rec sessions using
+    `DmlExecutionProvider + CPUExecutionProvider`.
+  - Windows ML hybrid by provider names failed because PaddleX 3.7 validates
+    against `onnxruntime.get_available_providers()` and does not expose
+    `SessionOptions.add_provider_for_devices(...)`. Therefore PaddleOCR 3.7 is
+    a DML refactor candidate, not yet an NPU+iGPU replacement.
+- Power replacement gate is not accepted because the current `xrt-smi` probe
+  does not expose watts. Keep DirectML iGPU as the production default.
+- Verification at this checkpoint:
+  - `pnpm nx run exam-prep-desktop:typecheck-scripts --skip-nx-cache`.
+  - `pnpm nx run exam-prep-desktop:package-qa-test --skip-nx-cache`.
+  - `pnpm nx run exam-prep-backend:lint --skip-nx-cache`.
+  - `pnpm nx run exam-prep-backend:test --skip-nx-cache`.
+  - `pnpm nx run exam-prep-backend:ocr-amd-npu-probe --skip-nx-cache --args="--ensure-ready"`.
+  - `pnpm nx run exam-prep-backend:ocr-amd-npu-session-smoke --skip-nx-cache --args="--ensure-ready"`.
+  - `pnpm nx run exam-prep-backend:ocr-amd-npu-model-compat --skip-nx-cache --args="--ensure-ready --session-timeout-seconds 180"`.
+  - `pnpm nx run exam-prep-backend:ocr-amd-npu-model-compat --skip-nx-cache --args="--candidate-kind static_qdq_a8w8 --ensure-ready --session-timeout-seconds 120 --calibration-samples 2"`.
+  - `pnpm nx run exam-prep-backend:ocr-amd-npu-reference-scout --skip-nx-cache --args="--online"`.
+  - `pnpm nx run exam-prep-backend:ocr-amd-npu-reference-scout-python312 --skip-nx-cache`.
+  - `pnpm nx run exam-prep-backend:ocr-amd-npu-inference-smoke --skip-nx-cache --args="--ensure-ready"`.
+  - `pnpm nx run exam-prep-backend:ocr-windowsml-policy-mixed-probe --skip-nx-cache --args="--ensure-ready --policy PREFER_NPU --policy PREFER_GPU --session-timeout-seconds 240"`.
+  - `pnpm nx run exam-prep-backend:ocr-windowsml-policy-mixed-probe --skip-nx-cache --args="--ensure-ready --policy PREFER_NPU --run-zero-inference --session-timeout-seconds 300"`.
+  - `pnpm nx run exam-prep-backend:ocr-paddle37-onnxruntime-probe --skip-nx-cache`.
 
 ## Active Backlog
 

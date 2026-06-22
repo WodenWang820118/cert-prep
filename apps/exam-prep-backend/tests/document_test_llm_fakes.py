@@ -1,5 +1,6 @@
 from exam_prep_backend.domains.mock_exams.models import DraftSuggestion, SourceChunk
 from exam_prep_backend.domains.mock_exams.ports import ProviderHealth
+from exam_prep_backend.errors import ProviderUnavailableError
 
 
 class MockExamProvider:
@@ -56,7 +57,7 @@ class MockExamProvider:
 
 
 class MissingModelExamProvider(MockExamProvider):
-    model = "qwen3:14b"
+    model = "qwen3.5:4b"
 
     def health(self) -> ProviderHealth:
         return ProviderHealth(
@@ -82,7 +83,7 @@ class FailingExamProvider(MockExamProvider):
 
 class FastFirstCompletionExamProvider(MockExamProvider):
     provider = "ollama"
-    model = "qwen3:8b"
+    model = "qwen3.5:2b"
 
     def __init__(self) -> None:
         self.fast_first_calls: list[dict] = []
@@ -123,3 +124,30 @@ class FastFirstCompletionExamProvider(MockExamProvider):
         self, chunks: list[SourceChunk] | tuple[SourceChunk, ...], limit: int
     ) -> list[DraftSuggestion]:
         raise AssertionError("streaming hybrid path should use fast-first reasoning")
+
+
+class InvalidJsonReasoningExamProvider(MockExamProvider):
+    provider = "ollama"
+    model = "qwen3.5:4b"
+
+    def generate_fast_first_draft(
+        self,
+        source_chunk: SourceChunk,
+        candidate: DraftSuggestion,
+    ) -> DraftSuggestion | None:
+        return None
+
+    def generate_reasoning_drafts(
+        self,
+        chunks: list[SourceChunk] | tuple[SourceChunk, ...],
+        limit: int,
+        *,
+        num_ctx: int,
+        num_predict: int,
+    ) -> list[DraftSuggestion]:
+        raise ProviderUnavailableError("Ollama returned invalid JSON.")
+
+    def generate_drafts(
+        self, chunks: list[SourceChunk] | tuple[SourceChunk, ...], limit: int
+    ) -> list[DraftSuggestion]:
+        raise AssertionError("streaming hybrid path should not retry full generation")

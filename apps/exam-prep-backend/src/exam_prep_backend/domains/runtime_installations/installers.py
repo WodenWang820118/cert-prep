@@ -246,13 +246,12 @@ class PaddleOcrRuntimeInstaller:
         write_installed_ocr_manifest(runtime_dir, manifest)
         return RuntimeInstallationStatus.SUCCEEDED
 
-
 class DirectMLOcrRuntimeInstaller:
     """Installer and health snapshot for the packaged AMD DirectML OCR runtime."""
 
     kind = RuntimeRequirementKind.DIRECTML_OCR
     provider = "directml"
-    model = "pp-ocrv5-directml"
+    model = "pp-ocrv6-medium-directml"
 
     def __init__(self, settings: Settings, provider: OCRProvider) -> None:
         self._settings = settings

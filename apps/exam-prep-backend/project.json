@@ -37,7 +37,7 @@
       "executor": "nx:run-commands",
       "options": {
         "cwd": "apps/exam-prep-backend",
-        "command": "uv run python -c \"import sys; print(sys.version); assert sys.version_info[:2] == (3, 13)\""
+        "command": "uv run python -c \"import sys; print(sys.version); assert sys.version_info[:2] in {(3, 12), (3, 13)}\""
       }
     },
     "ocr-setup-cpu": {
@@ -103,7 +103,7 @@
       "outputs": ["{projectRoot}/.benchmarks"],
       "options": {
         "cwd": "apps/exam-prep-backend",
-        "command": "uv run --extra ocr-directml python scripts/ocr_directml_probe.py"
+        "command": "uv run --python 3.12 --extra ocr-directml python scripts/ocr_directml_probe.py"
       }
     },
     "ocr-directml-prepare-models": {
@@ -112,7 +112,7 @@
       "outputs": ["{projectRoot}/.benchmarks"],
       "options": {
         "cwd": "apps/exam-prep-backend",
-        "command": "uv run --extra ocr-directml python scripts/ocr_directml_prepare_models.py"
+        "command": "uv run --python 3.12 --extra ocr-directml python scripts/ocr_directml_prepare_models.py"
       }
     },
     "ocr-directml-prepare-models-docker": {
@@ -121,7 +121,7 @@
       "outputs": ["{projectRoot}/.benchmarks"],
       "options": {
         "cwd": "apps/exam-prep-backend",
-        "command": "uv run --extra ocr-directml python scripts/ocr_directml_prepare_models.py --converter docker --force-conversion --fail-if-not-ready"
+        "command": "uv run --python 3.12 --extra ocr-directml python scripts/ocr_directml_prepare_models.py --converter docker --force-conversion --fail-if-not-ready"
       }
     },
     "ocr-directml-session-smoke": {
@@ -130,7 +130,7 @@
       "outputs": ["{projectRoot}/.benchmarks"],
       "options": {
         "cwd": "apps/exam-prep-backend",
-        "command": "uv run --extra ocr-directml python scripts/ocr_directml_smoke.py"
+        "command": "uv run --python 3.12 --extra ocr-directml python scripts/ocr_directml_smoke.py"
       }
     },
     "ocr-directml-inference-smoke": {
@@ -139,7 +139,7 @@
       "outputs": ["{projectRoot}/.benchmarks"],
       "options": {
         "cwd": "apps/exam-prep-backend",
-        "command": "uv run --extra ocr-directml python scripts/ocr_directml_inference_smoke.py"
+        "command": "uv run --python 3.12 --extra ocr-directml python scripts/ocr_directml_inference_smoke.py"
       }
     },
     "ocr-directml-benchmark": {
@@ -148,7 +148,7 @@
       "outputs": ["{projectRoot}/.benchmarks"],
       "options": {
         "cwd": "apps/exam-prep-backend",
-        "command": "uv run --extra ocr-directml python scripts/ocr_directml_benchmark.py"
+        "command": "uv run --python 3.12 --extra ocr-directml python scripts/ocr_directml_benchmark.py"
       }
     },
     "reasoning-bakeoff": {
@@ -230,7 +230,7 @@
       "outputs": ["{projectRoot}/dist/ocr-directml-runtime"],
       "options": {
         "cwd": "apps/exam-prep-backend",
-        "command": "uv run --extra ocr-directml python scripts/build_ocr_runtime.py --lane directml --target x86_64-pc-windows-msvc"
+        "command": "uv run --python 3.12 --extra ocr-directml python scripts/build_ocr_runtime.py --lane directml --target x86_64-pc-windows-msvc"
       }
     },
     "generate-openapi-client": {

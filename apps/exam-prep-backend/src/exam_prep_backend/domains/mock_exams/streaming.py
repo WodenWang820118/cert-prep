@@ -237,21 +237,32 @@ def _generate_streaming_fast_first_drafts(
         deterministic = extract_jlpt_question_blocks([source_chunk], 1)
         fast_first = getattr(provider, "generate_fast_first_draft", None)
         if deterministic and callable(fast_first):
-            suggestion = fast_first(source_chunk, deterministic[0])
+            try:
+                suggestion = fast_first(source_chunk, deterministic[0])
+            except ProviderUnavailableError as exc:
+                if not _is_non_fatal_generation_error(exc):
+                    raise
+                suggestion = None
             if suggestion is not None:
                 return [suggestion]
 
         reasoning = getattr(provider, "generate_reasoning_drafts", None)
         if callable(reasoning):
             prompt_chunk = _compact_reasoning_chunk(source_chunk)
-            suggestions = reasoning(
-                [prompt_chunk],
-                first_limit,
-                num_ctx=STREAMING_FAST_FIRST_NUM_CTX,
-                num_predict=STREAMING_FAST_FIRST_NUM_PREDICT,
-            )
+            try:
+                suggestions = reasoning(
+                    [prompt_chunk],
+                    first_limit,
+                    num_ctx=STREAMING_FAST_FIRST_NUM_CTX,
+                    num_predict=STREAMING_FAST_FIRST_NUM_PREDICT,
+                )
+            except ProviderUnavailableError as exc:
+                if not _is_non_fatal_generation_error(exc):
+                    raise
+                return []
             if suggestions:
                 return suggestions
+            return []
 
     return generate_drafts_for_strategy(provider, [source_chunk], first_limit, strategy)
 
@@ -324,4 +335,16 @@ def _refresh_document_exam_count(db: Database, project_id: str, document_id: str
         exam_item_count=drafts_repository.count_document_drafts(
             db, project_id, document_id
         ),
+    )
+
+
+def _is_non_fatal_generation_error(exc: Exception) -> bool:
+    error = " ".join(str(exc).lower().split())
+    return any(
+        marker in error
+        for marker in (
+            "invalid json",
+            "unreadable response",
+            "non-object json response",
+        )
     )

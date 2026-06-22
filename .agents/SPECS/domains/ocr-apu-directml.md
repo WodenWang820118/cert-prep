@@ -84,13 +84,24 @@ ONNX Runtime DirectML production gate rather than a configuration change to
   `pipeline.json`, and exports `rec_char_dict.txt`; it does not mark the gate
   ready until `det_model.onnx` and `rec_model.onnx` are actually produced.
 - ONNX conversion is reproducible through the explicit Docker release-prep
-  target using the official PaddleX CPU image. The repo-local Python 3.13
-  environment still lacks the Paddle2ONNX plugin, so local conversion remains
-  advisory; Docker conversion is the current Windows-safe release-prep lane.
+  target using the official PaddleX CPU image. The backend now allows Python
+  `3.12` compatibility, so local conversion may use an explicit Python 3.12
+  release-prep environment; Docker conversion remains the Windows-safe
+  reproducible lane.
 - DirectML `device_id` must be selected from DXGI adapter order. On the current
   machine, AMD Radeon 880M is DXGI adapter index `0` and RTX 4060 is index `1`.
 - DirectML sessions must set `enable_mem_pattern=false` and
   `execution_mode=ORT_SEQUENTIAL`.
+- Current DirectML sessions register `DmlExecutionProvider` followed by
+  `CPUExecutionProvider`, so ONNX Runtime may partition unsupported work to CPU
+  by provider priority. This mixed fallback behavior is useful for reliability,
+  but production routing evidence must still prove OCR residency on the AMD
+  iGPU and avoid Nvidia dGPU usage.
+- Formal direction as of 2026-06-22: use the DirectML lane's mixed
+  `DmlExecutionProvider` + `CPUExecutionProvider` behavior for reliability and
+  latency research. The standalone Windows ML/VitisAI NPU OCR lane is retired
+  from product/runtime surfaces. Historical Windows ML policy probe artifacts
+  remain evidence only and are not Nx targets or production QA gates.
 - Inference smoke and benchmark targets are explicit production gates. The
   deterministic smoke currently proves recognition-model inference on AMD
   DirectML; the JLPT page-3 benchmark proves the full det/rec runner is fast
@@ -106,8 +117,9 @@ ONNX Runtime DirectML production gate rather than a configuration change to
   with `device=amd_directml`.
 - `benchmark_ready` means the JLPT page-3 DirectML benchmark beats the CPU
   baseline and passes required anchors.
-- Packaged telemetry is the production gate proving AMD iGPU residency and
-  Nvidia dGPU avoidance.
+- Packaged telemetry is the production gate proving DirectML OCR process
+  observation, AMD iGPU residency, Nvidia dGPU avoidance, Ollama reasoning on
+  Nvidia, and clean shutdown.
 
 ## Edge Cases And Failure Modes
 
@@ -149,9 +161,10 @@ ONNX Runtime DirectML production gate rather than a configuration change to
 - Docker conversion produced:
   - `det_model.onnx`, `4748769` bytes.
   - `rec_model.onnx`, `16517247` bytes.
-- The local Python `3.13.5` repo runtime still lacks the Paddle2ONNX plugin,
-  but `ocr-directml-prepare-models-docker` reproduced conversion through the
-  official PaddleX image without changing app startup behavior.
+- `ocr-directml-prepare-models-docker` reproduced conversion through the
+  official PaddleX image without changing app startup behavior. A local Python
+  `3.12` release-prep environment is now allowed for future PaddleX/Paddle2ONNX
+  conversion attempts.
 - DirectML probe artifact:
   `apps/exam-prep-backend/.benchmarks/ocr-directml-probe-20260622T010301Z.json`.
 - Status: `ready`.
@@ -217,6 +230,39 @@ ONNX Runtime DirectML production gate rather than a configuration change to
   AMD iGPU process memory reached `41906176` dedicated bytes and
   `7076143104` shared bytes. Nvidia dGPU process memory for OCR stayed at
   `0` bytes, below the `67108864` byte gate.
+- PaddleOCR 3.7 isolated ONNX Runtime probe target:
+  `pnpm nx run exam-prep-backend:ocr-paddle37-onnxruntime-probe --skip-nx-cache`.
+- PaddleOCR 3.7 isolated artifact:
+  `apps/exam-prep-backend/.benchmarks/ocr-paddle37-onnxruntime-probe-20260622T141653Z.json`.
+- Probe isolation:
+  the target uses `uv run --no-project --python 3.12 --with paddleocr==3.7.0`
+  plus Windows ML/WinAppSDK packages, so it does not mutate the backend
+  project venv or production runtime defaults.
+- PaddleOCR 3.7 model staging:
+  existing PP-OCRv5 ONNX artifacts were staged into PaddleX's expected layout:
+  `det/inference.onnx`, `det/inference.yml`, `rec/inference.onnx`,
+  `rec/inference.yml`, and `rec/ppocr_keys_v1.txt`.
+- PaddleOCR 3.7 ONNX Runtime CPU smoke:
+  `engine='onnxruntime'`, `providers=['CPUExecutionProvider']`, initialized in
+  `499 ms`, inferred in `43 ms`, and decoded `OCRTEST`.
+- PaddleOCR 3.7 ONNX Runtime AMD iGPU DML smoke:
+  `providers=['DmlExecutionProvider','CPUExecutionProvider']` with
+  `provider_options=[{'device_id': 1}, {}]`, initialized in `775 ms`, inferred
+  in `287 ms`, decoded `OCRTEST`, and the internal det/rec sessions reported
+  `DmlExecutionProvider + CPUExecutionProvider`.
+- PaddleOCR 3.7 Windows ML hybrid provider-name attempt:
+  Windows ML registration discovered `MIGraphXExecutionProvider` and
+  `VitisAIExecutionProvider` EP devices, but PaddleX 3.7's
+  `ONNXRuntimeRunner` validates providers against
+  `onnxruntime.get_available_providers()`, which still reports only
+  `DmlExecutionProvider` and `CPUExecutionProvider`. The hybrid attempt fails
+  with provider-unavailable before session creation.
+- Replacement assessment:
+  PaddleOCR 3.7 is a strong refactor candidate for deleting most custom
+  PP-OCR preprocessing/postprocessing in the AMD iGPU DML lane. It is not yet
+  a replacement for the explicit Windows ML `add_provider_for_devices()`
+  NPU+iGPU lane unless PaddleX exposes EP-device binding or a local wrapper
+  patches its runner.
 
 ## Acceptance Criteria
 
@@ -248,6 +294,12 @@ ONNX Runtime DirectML production gate rather than a configuration change to
   Nvidia OCR avoidance, reasoning-on-Nvidia evidence, and DXGI LUID usability.
 - Packaged DirectML streaming baseline passes with `ocr_provider=directml` and
   `ocr_page_workers=1`.
+- PaddleOCR 3.7 ONNXRuntime isolated probe passes CPU and AMD iGPU DML
+  inference on `OCRTEST`, records internal session providers, and leaves
+  production defaults unchanged.
+- PaddleOCR 3.7 is not accepted as an NPU+iGPU replacement until it can express
+  Windows ML EP-device binding or otherwise prove VitisAI+MIGraphX session
+  creation and inference through the high-level OCR pipeline.
 
 ## Test Plan
 
@@ -258,6 +310,7 @@ ONNX Runtime DirectML production gate rather than a configuration change to
 - `pnpm nx run exam-prep-backend:ocr-directml-session-smoke --skip-nx-cache`
 - `pnpm nx run exam-prep-backend:ocr-directml-inference-smoke --skip-nx-cache`
 - `pnpm nx run exam-prep-backend:ocr-directml-benchmark --skip-nx-cache`
+- `pnpm nx run exam-prep-backend:ocr-paddle37-onnxruntime-probe --skip-nx-cache`
 - `pnpm nx run exam-prep-backend:generate-openapi-client --skip-nx-cache`
 - `pnpm nx run exam-prep-backend:test --skip-nx-cache`
 - `pnpm nx run exam-prep-backend:lint --skip-nx-cache`
@@ -274,6 +327,8 @@ ONNX Runtime DirectML production gate rather than a configuration change to
   https://paddlepaddle.github.io/PaddleOCR/main/en/version2.x/legacy/paddle2onnx.html
 - PaddleX high-performance inference reference:
   https://paddlepaddle.github.io/PaddleX/3.4/en/pipeline_deploy/high_performance_inference.html
+- PaddleOCR 3.x inference engine reference:
+  https://github.com/PaddlePaddle/PaddleOCR/blob/main/docs/version3.x/inference_deployment/local_inference/inference_engine.en.md
 - PaddleX text detection model reference:
   https://paddlepaddle.github.io/PaddleX/3.4/en/module_usage/tutorials/ocr_modules/text_detection.html
 - PaddleX text recognition model reference:

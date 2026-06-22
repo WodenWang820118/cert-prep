@@ -24,6 +24,7 @@ sys.path.insert(0, str(BACKEND_ROOT / "src"))
 
 from benchmark_ocr import DEFAULT_PAGE_3_ANCHORS  # noqa: E402
 from ocr_directml_inference_smoke import build_report as build_inference_report  # noqa: E402
+from ocr_directml_smoke import DIRECTML_DEVICE_LABEL  # noqa: E402
 from ocr_directml_probe import DEFAULT_MODEL_DIR  # noqa: E402
 from exam_prep_backend.config import Settings  # noqa: E402
 from exam_prep_backend.domains.source_documents.adapters.benchmark import (  # noqa: E402
@@ -109,7 +110,7 @@ def build_benchmark(
             "pdf_path": str(pdf_path),
             "warm_ocr_latency_ms": None,
             "cpu_baseline_latency_ms": CPU_BASELINE_LATENCY_MS,
-            "device": "amd_directml",
+            "device": DIRECTML_DEVICE_LABEL,
         }
     provider = _DirectMLBenchmarkProvider(
         model_dir=model_dir,
@@ -132,7 +133,7 @@ def build_benchmark(
             "page_number": page_number,
             "warm_ocr_latency_ms": None,
             "cpu_baseline_latency_ms": CPU_BASELINE_LATENCY_MS,
-            "device": "amd_directml",
+            "device": DIRECTML_DEVICE_LABEL,
         }
     warm_ms = int(result["warm_ocr_ms"])
     anchors_present = result.get("anchors_present", {})
@@ -154,7 +155,7 @@ def build_benchmark(
         "text_present": text_present,
         "missing_anchors": missing_anchors,
         "benchmark_result": result,
-        "device": "amd_directml",
+        "device": DIRECTML_DEVICE_LABEL,
     }
 
 
@@ -175,7 +176,7 @@ def classify_benchmark_status(
         "inference_ready": bool(inference_status.get("inference_ready")),
         "benchmark_ready": benchmark_ready,
         "current_safe_action": (
-            "Do not prefer DirectML OCR in production until benchmark and routing "
+            "Keep OCR on the AMD iGPU DirectML lane only when benchmark and routing "
             "evidence beat the CPU baseline and avoid Nvidia residency."
         ),
     }

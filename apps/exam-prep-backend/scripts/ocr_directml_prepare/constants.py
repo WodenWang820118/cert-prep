@@ -21,28 +21,28 @@ CONVERTERS = ("local", "docker")
 SOURCE_ARTIFACTS = (
     SourceArtifact(
         kind="det",
-        model_name="PP-OCRv5_mobile_det",
+        model_name="PP-OCRv6_medium_det",
         url=(
             "https://paddle-model-ecology.bj.bcebos.com/paddlex/"
-            "official_inference_model/paddle3.0.0/PP-OCRv5_mobile_det_infer.tar"
+            "official_inference_model/paddle3.0.0/PP-OCRv6_medium_det_infer.tar"
         ),
-        filename="PP-OCRv5_mobile_det_infer.tar",
-        sha256="50446e5d01ac2a73d5319c89513281f6578414c888c602f9af13f93feefffc58",
-        byte_size=4_935_680,
-        archive_root="PP-OCRv5_mobile_det_infer",
-        target_onnx_name="det_model.onnx",
+        filename="PP-OCRv6_medium_det_infer.tar",
+        sha256="144d0621e059566e5086e228829171591c144c2deb07b2dad4962214fbabfcf7",
+        byte_size=62_279_680,
+        archive_root="PP-OCRv6_medium_det_infer",
+        target_onnx_name="det/inference.onnx",
     ),
     SourceArtifact(
         kind="rec",
-        model_name="PP-OCRv5_mobile_rec",
+        model_name="PP-OCRv6_medium_rec",
         url=(
             "https://paddle-model-ecology.bj.bcebos.com/paddlex/"
-            "official_inference_model/paddle3.0.0/PP-OCRv5_mobile_rec_infer.tar"
+            "official_inference_model/paddle3.0.0/PP-OCRv6_medium_rec_infer.tar"
         ),
-        filename="PP-OCRv5_mobile_rec_infer.tar",
-        sha256="566b9512b34e34a9f0db54d87b51fa5a0b9ed2cf1ab7e49728cc0b8b5a64f414",
-        byte_size=16_834_560,
-        archive_root="PP-OCRv5_mobile_rec_infer",
-        target_onnx_name="rec_model.onnx",
+        filename="PP-OCRv6_medium_rec_infer.tar",
+        sha256="4eecc1c6a4623765042e6fc15446da0da110b7d875b6b72b2d351d2b2dbd4da6",
+        byte_size=76_851_200,
+        archive_root="PP-OCRv6_medium_rec_infer",
+        target_onnx_name="rec/inference.onnx",
     ),
 )

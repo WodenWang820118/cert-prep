@@ -13,9 +13,11 @@ from .constants import DOCKER_PADDLEX_IMAGE
 
 def inspect_prepared_model_artifacts(model_dir: Path) -> dict[str, Any]:
     required_files = (
-        "det_model.onnx",
-        "rec_model.onnx",
-        "rec_char_dict.txt",
+        "det/inference.onnx",
+        "det/inference.yml",
+        "rec/inference.onnx",
+        "rec/inference.yml",
+        "rec/ppocr_keys_v1.txt",
         "pipeline.json",
     )
     required = [model_file_state(model_dir / name) for name in required_files]
@@ -30,12 +32,12 @@ def inspect_prepared_model_artifacts(model_dir: Path) -> dict[str, Any]:
 
 def model_file_state(path: Path) -> dict[str, Any]:
     if not path.exists():
-        return {"name": path.name, "path": str(path), "state": "missing", "bytes": 0}
+        return {"name": path.as_posix(), "path": str(path), "state": "missing", "bytes": 0}
     if not path.is_file():
-        return {"name": path.name, "path": str(path), "state": "not_file", "bytes": 0}
+        return {"name": path.as_posix(), "path": str(path), "state": "not_file", "bytes": 0}
     size = path.stat().st_size
     return {
-        "name": path.name,
+        "name": path.as_posix(),
         "path": str(path),
         "state": "present" if size > 0 else "empty",
         "bytes": size,
@@ -66,9 +68,10 @@ def inspect_conversion_tool() -> dict[str, Any]:
         ],
         "note": (
             "PaddleX local high-performance/plugin docs target Python 3.8-3.12; "
-            "this repo currently runs Python 3.13, so conversion may require a "
-            "separate release-prep environment. The Docker converter is the "
-            "reproducible Windows release-prep lane when Docker Desktop is available."
+            "the backend now allows Python 3.12 compatibility, so conversion can "
+            "use an explicit Python 3.12 release-prep environment. The Docker "
+            "converter is the reproducible Windows release-prep lane when Docker "
+            "Desktop is available."
         ),
     }
 
@@ -127,12 +130,12 @@ def classify_prepare_status(
 
 def recommended_next_step(state: str, blockers: Sequence[str]) -> str:
     if state == "ready":
-        return "Run ocr-directml-session-smoke and then implement deterministic DirectML inference."
+        return "Run ocr-directml-session-smoke and then packaged DirectML streaming QA."
     if "conversion_tool_unavailable" in blockers:
         return (
             "Run PaddleX/Paddle2ONNX conversion in a Python 3.8-3.12 release-prep "
             "environment, then publish the ONNX assets by release URL."
         )
     if "model_artifacts_missing" in blockers:
-        return "Finish conversion so det_model.onnx and rec_model.onnx exist."
+        return "Finish conversion so det/inference.onnx and rec/inference.onnx exist."
     return "Inspect the prepare-models artifact and resolve the first listed blocker."

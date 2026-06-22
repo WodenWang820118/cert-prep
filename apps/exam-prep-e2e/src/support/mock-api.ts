@@ -146,7 +146,7 @@ export async function installMockExamPrepApi(
     if (method === 'GET' && path === '/llm/health') {
       await fulfillJson(route, 200, {
         provider: 'fake',
-        model: 'qwen3:14b',
+        model: 'qwen3.5:4b',
         available: true,
         detail: 'deterministic local fake provider',
       });

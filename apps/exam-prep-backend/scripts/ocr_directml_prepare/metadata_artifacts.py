@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 import json
 from pathlib import Path
+import shutil
 from typing import Any
 
 import yaml
@@ -44,8 +45,16 @@ def prepare_metadata_artifacts(
         }
 
     model_dir.mkdir(parents=True, exist_ok=True)
+    det_dir = model_dir / "det"
+    rec_dir = model_dir / "rec"
+    det_dir.mkdir(parents=True, exist_ok=True)
+    rec_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source_dirs["det"] / "inference.yml", det_dir / "inference.yml")
+    shutil.copy2(source_dirs["rec"] / "inference.yml", rec_dir / "inference.yml")
     char_dict_path = model_dir / "rec_char_dict.txt"
     char_dict_path.write_text("\n".join(chars) + "\n", encoding="utf-8")
+    paddleocr_char_dict_path = rec_dir / "ppocr_keys_v1.txt"
+    paddleocr_char_dict_path.write_text("\n".join(chars) + "\n", encoding="utf-8")
     pipeline_path = model_dir / "pipeline.json"
     pipeline_path.write_text(
         json.dumps(
@@ -64,6 +73,9 @@ def prepare_metadata_artifacts(
         "state": "ready",
         "pipeline_json": str(pipeline_path),
         "rec_char_dict": str(char_dict_path),
+        "paddleocr_rec_char_dict": str(paddleocr_char_dict_path),
+        "det_inference_yml": str(det_dir / "inference.yml"),
+        "rec_inference_yml": str(rec_dir / "inference.yml"),
         "character_count": len(chars),
     }
 
@@ -97,7 +109,7 @@ def build_pipeline_contract(
 ) -> dict[str, Any]:
     return {
         "schema_version": 1,
-        "model_family": "PP-OCRv5_mobile",
+        "model_family": "PP-OCRv6_medium",
         "source": "PaddleX official inference models",
         "source_artifacts": [
             {
@@ -113,27 +125,30 @@ def build_pipeline_contract(
         "runtime_contract": {
             "provider": "DmlExecutionProvider",
             "device_selection": "dxgi_adapter_index",
+            "ocr_engine": "PaddleOCR 3.7 engine='onnxruntime'",
             "session_options": {
                 "enable_mem_pattern": False,
                 "execution_mode": "ORT_SEQUENTIAL",
             },
             "required_files": [
-                "det_model.onnx",
-                "rec_model.onnx",
-                "rec_char_dict.txt",
+                "det/inference.onnx",
+                "det/inference.yml",
+                "rec/inference.onnx",
+                "rec/inference.yml",
+                "rec/ppocr_keys_v1.txt",
                 "pipeline.json",
             ],
         },
         "det": {
             "model_name": det_config.get("Global", {}).get("model_name"),
-            "onnx_file": "det_model.onnx",
+            "onnx_file": "det/inference.onnx",
             "preprocess": det_config.get("PreProcess"),
             "postprocess": det_config.get("PostProcess"),
         },
         "rec": {
             "model_name": rec_config.get("Global", {}).get("model_name"),
-            "onnx_file": "rec_model.onnx",
-            "rec_char_dict_file": "rec_char_dict.txt",
+            "onnx_file": "rec/inference.onnx",
+            "rec_char_dict_file": "rec/ppocr_keys_v1.txt",
             "character_count": character_count,
             "preprocess": rec_config.get("PreProcess"),
             "postprocess": sanitized_rec_postprocess(rec_config),

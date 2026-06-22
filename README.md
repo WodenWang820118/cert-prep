@@ -25,7 +25,7 @@ pnpm nx run exam-prep-desktop:dev
 The app expects local Ollama to be installed separately. Pull the configured model manually when needed:
 
 ```bash
-ollama pull gemma4:12b
+ollama pull qwen3.5:4b
 ```
 
 ## Verification

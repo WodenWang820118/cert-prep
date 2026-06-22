@@ -60,7 +60,7 @@ def test_reasoning_bakeoff_scores_valid_citations_and_group_detection() -> None:
     )
 
     result = score_model_content(
-        model="qwen3:14b",
+        model="qwen3.5:4b",
         content=content,
         chunks=chunks,
         latency_ms=123,

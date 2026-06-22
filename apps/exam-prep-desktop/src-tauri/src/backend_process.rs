@@ -13,7 +13,7 @@ use crate::{
     windows_process::terminate_backend_process_tree,
 };
 
-const DEFAULT_OLLAMA_MODEL: &str = "qwen3:14b";
+const DEFAULT_OLLAMA_MODEL: &str = "qwen3.5:4b";
 const DEFAULT_BACKEND_READY_TIMEOUT_SECS: u64 = 60;
 
 pub(crate) fn launch_backend_entrypoint(
@@ -49,7 +49,7 @@ pub(crate) fn launch_backend_entrypoint(
         .env("EXAM_PREP_OCR_PROVIDER", configured_ocr_provider())
         .env("EXAM_PREP_OCR_RUNTIME_MODE", "external")
         .env("EXAM_PREP_OCR_DEVICE", "auto")
-        .env("EXAM_PREP_OCR_DIRECTML_DEVICE_ID", "0")
+        .env("EXAM_PREP_OCR_DIRECTML_DEVICE_ID", "-1")
         .env("EXAM_PREP_OLLAMA_MODEL", configured_ollama_model())
         .env("EXAM_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD", "true")
         .stdin(Stdio::null())
@@ -84,7 +84,6 @@ pub(crate) fn launch_backend_entrypoint(
             manifest_path.to_string_lossy().to_string(),
         );
     }
-
     let child = command
         .spawn()
         .map_err(|error| format!("failed to launch backend runtime: {error}"))?;
@@ -217,19 +216,19 @@ mod tests {
     fn configured_ollama_model_uses_default_or_explicit_override() {
         std::env::remove_var("EXAM_PREP_OLLAMA_MODEL");
 
-        assert_eq!(configured_ollama_model(), "qwen3:14b");
+        assert_eq!(configured_ollama_model(), "qwen3.5:4b");
 
-        std::env::set_var("EXAM_PREP_OLLAMA_MODEL", " qwen3:8b ");
-        assert_eq!(configured_ollama_model(), "qwen3:8b");
+        std::env::set_var("EXAM_PREP_OLLAMA_MODEL", " qwen3.5:2b ");
+        assert_eq!(configured_ollama_model(), "qwen3.5:2b");
 
         std::env::set_var("EXAM_PREP_OLLAMA_MODEL", " ");
-        assert_eq!(configured_ollama_model(), "qwen3:14b");
+        assert_eq!(configured_ollama_model(), "qwen3.5:4b");
 
         std::env::remove_var("EXAM_PREP_OLLAMA_MODEL");
     }
 
     #[test]
-    fn configured_ocr_provider_defaults_to_directml_and_allows_paddle_override() {
+    fn configured_ocr_provider_defaults_to_directml_and_allows_explicit_overrides() {
         std::env::remove_var("EXAM_PREP_OCR_PROVIDER");
 
         assert_eq!(configured_ocr_provider(), "directml");

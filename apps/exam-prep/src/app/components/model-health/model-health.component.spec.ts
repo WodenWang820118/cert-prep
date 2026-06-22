@@ -80,7 +80,7 @@ describe('ModelHealthComponent status display', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).toContain(
-      'Reasoning model: qwen3:8b',
+      'Reasoning model: qwen3.5:2b',
     );
     expect(fixture.nativeElement.textContent).not.toContain(
       'Reasoning model missing',
@@ -90,8 +90,8 @@ describe('ModelHealthComponent status display', () => {
     fixture.detectChanges();
 
     expect(document.body.textContent).toContain('Ready via fallback');
-    expect(document.body.textContent).toContain('primary qwen3:14b');
-    expect(buttonByText(document.body, 'Download qwen3:14b')).not.toBeNull();
+    expect(document.body.textContent).toContain('primary qwen3.5:4b');
+    expect(buttonByText(document.body, 'Download qwen3.5:4b')).not.toBeNull();
   });
 
   it('hides the download action for generic offline health', () => {

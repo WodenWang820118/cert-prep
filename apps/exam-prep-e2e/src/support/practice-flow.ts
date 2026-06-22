@@ -17,7 +17,7 @@ export async function seedMockApiConfig(
 
 export async function expectRuntimeReady(page: Page): Promise<void> {
   await expect(page.getByRole('heading', { name: 'Exam Prep' })).toBeVisible();
-  await expect(page.getByText('qwen3:14b')).toBeVisible();
+  await expect(page.getByText('qwen3.5:4b')).toBeVisible();
   await expect(page.getByText('fake')).toBeVisible();
   await expect(page.getByText('paddle / gpu:0')).toBeVisible();
 }

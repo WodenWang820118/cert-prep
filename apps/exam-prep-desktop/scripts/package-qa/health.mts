@@ -121,7 +121,7 @@ export async function collectRuntimeHealth({
         EXAM_PREP_OCR_RUNTIME_MODE: 'external',
         EXAM_PREP_OCR_DEVICE: 'auto',
         EXAM_PREP_OCR_RUNTIME_MANIFEST_PATH: ocrRuntimeManifest,
-        EXAM_PREP_OCR_DIRECTML_DEVICE_ID: '0',
+        EXAM_PREP_OCR_DIRECTML_DEVICE_ID: '-1',
         EXAM_PREP_DIRECTML_OCR_RUNTIME_MANIFEST_PATH:
           directmlOcrRuntimeManifest,
         EXAM_PREP_LLM_PROVIDER: 'ollama',
@@ -170,7 +170,7 @@ export function buildRuntimeLaunchEnv({
     EXAM_PREP_OCR_DEVICE: 'auto',
     EXAM_PREP_DIRECTML_OCR_RUNTIME_MANIFEST_PATH:
       directmlOcrRuntimeManifest,
-    EXAM_PREP_OCR_DIRECTML_DEVICE_ID: '0',
+    EXAM_PREP_OCR_DIRECTML_DEVICE_ID: '-1',
     EXAM_PREP_OLLAMA_MODEL: llmModel,
     EXAM_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD: 'true',
     PYTHONIOENCODING: 'utf-8',

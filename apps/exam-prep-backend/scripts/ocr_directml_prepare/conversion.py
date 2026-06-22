@@ -15,6 +15,41 @@ from .constants import (
 )
 from .model_types import ConversionResult, ConverterRunner, SourceArtifact
 
+_PADDLEOCR_ONNX_RESOLVER_SCRIPT = r"""
+from pathlib import Path
+import os
+import shutil
+import sys
+
+os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
+
+kind = sys.argv[1]
+model_name = sys.argv[2]
+output_dir = Path(sys.argv[3])
+det_name = model_name if kind == "det" else "PP-OCRv6_medium_det"
+rec_name = model_name if kind == "rec" else "PP-OCRv6_medium_rec"
+
+from paddleocr import PaddleOCR
+
+ocr = PaddleOCR(
+    text_detection_model_name=det_name,
+    text_recognition_model_name=rec_name,
+    use_doc_orientation_classify=False,
+    use_doc_unwarping=False,
+    use_textline_orientation=False,
+    engine="onnxruntime",
+    engine_config={"providers": ["CPUExecutionProvider"]},
+)
+
+model_dir = Path.home() / ".paddlex" / "official_models" / f"{model_name}_onnx"
+source_model = model_dir / "inference.onnx"
+if not source_model.is_file():
+    raise SystemExit(f"PaddleOCR ONNX resolver did not create {source_model}")
+output_dir.mkdir(parents=True, exist_ok=True)
+shutil.copy2(source_model, output_dir / "inference.onnx")
+print(f"resolved {model_name} ONNX from {source_model}")
+"""
+
 
 def normalize_converter(value: str) -> str:
     normalized = value.strip().lower()
@@ -87,6 +122,7 @@ def prepare_onnx_artifacts(
         report = conversion_report(artifact, target, conversion)
         report["converter"] = converter
         if conversion.state == "ready" and conversion.output_model and conversion.output_model.is_file():
+            target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(conversion.output_model, target)
             report["state"] = "ready"
             report["bytes"] = target.stat().st_size
@@ -158,12 +194,72 @@ def run_paddlex_conversion(
             stderr=stderr,
             output_model=output_model,
         )
+    fallback = run_paddleocr_onnx_model_resolver(artifact, output_dir)
+    if fallback.state == "ready":
+        return ConversionResult(
+            state="ready",
+            command=[*command, "&&", *fallback.command],
+            stdout="\n".join(part for part in (stdout, fallback.stdout) if part),
+            stderr="\n".join(part for part in (stderr, fallback.stderr) if part),
+            output_model=fallback.output_model,
+        )
     return ConversionResult(
         state="failed",
         command=command,
         stdout=stdout,
         stderr=stderr,
         blocker=classify_conversion_blocker(combined),
+    )
+
+
+def run_paddleocr_onnx_model_resolver(
+    artifact: SourceArtifact,
+    output_dir: Path,
+) -> ConversionResult:
+    """Use PaddleOCR's official ONNX model resolver as an explicit prepare fallback."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    command = [
+        sys.executable,
+        "-c",
+        _PADDLEOCR_ONNX_RESOLVER_SCRIPT,
+        artifact.kind,
+        artifact.model_name,
+        str(output_dir),
+    ]
+    try:
+        result = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=CONVERSION_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        return ConversionResult(
+            state="failed",
+            command=command,
+            stdout=str(exc.stdout or ""),
+            stderr=str(exc.stderr or ""),
+            blocker="paddleocr_onnx_resolver_timeout",
+        )
+
+    output_model = output_dir / "inference.onnx"
+    stdout = result.stdout.strip()
+    stderr = result.stderr.strip()
+    if result.returncode == 0 and output_model.is_file() and output_model.stat().st_size > 0:
+        return ConversionResult(
+            state="ready",
+            command=command,
+            stdout=stdout,
+            stderr=stderr,
+            output_model=output_model,
+        )
+    return ConversionResult(
+        state="failed",
+        command=command,
+        stdout=stdout,
+        stderr=stderr,
+        blocker="paddleocr_onnx_resolver_failed",
     )
 
 

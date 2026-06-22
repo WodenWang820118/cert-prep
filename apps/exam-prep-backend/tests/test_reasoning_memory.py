@@ -21,11 +21,11 @@ def test_reasoning_memory_extracts_model_names_from_api_shapes() -> None:
     assert model_names_from_ollama_list_response(
         {
             "models": [
-                {"model": "qwen3:14b"},
+                {"model": "qwen3.5:4b"},
                 {"name": "gemma4:12b"},
             ]
         }
-    ) == {"qwen3:14b", "gemma4:12b"}
+    ) == {"qwen3.5:4b", "gemma4:12b"}
 
     response = SimpleNamespace(
         models=[
@@ -38,13 +38,13 @@ def test_reasoning_memory_extracts_model_names_from_api_shapes() -> None:
 
 def test_reasoning_memory_extracts_model_names_from_cli_table() -> None:
     stdout = """NAME              ID              SIZE      MODIFIED
-qwen3:14b         abc123          9.3 GB    2 days ago
+qwen3.5:4b         abc123          9.3 GB    2 days ago
 deepseek-r1:14b   def456          9.0 GB    1 week ago
 """
 
     assert model_names_from_ollama_list_stdout(stdout) == [
         "deepseek-r1:14b",
-        "qwen3:14b",
+        "qwen3.5:4b",
     ]
 
 
