@@ -1,0 +1,293 @@
+import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { readFileSync, statSync, writeFileSync } from 'node:fs';
+import { join, relative } from 'node:path';
+
+import {
+  EXPECTED_BASELINE_CHUNKS,
+  EXPECTED_BASELINE_PAGES,
+  latestStreamingJobSnapshot,
+  latestStreamingQuestionSnapshot,
+  refreshFirstChunkGateMetrics,
+} from './streaming-capture.mts';
+import { streamingJobCompletionState } from './streaming-evidence.mts';
+import { normalizePath } from './text-utils.mts';
+import type {
+  PublicProcessRecord,
+  ResourceSamplingArtifacts,
+  SmokeRunState,
+  StreamingJobCompletionState,
+} from './types.mts';
+
+export interface StreamingBaselineReport {
+  schema_version: 1;
+  status: 'passed' | 'failed';
+  generated_at: string;
+  git_commit: string | null;
+  artifacts: {
+    out_dir: string;
+    metrics_json: string;
+    baseline_json: string;
+    baseline_markdown: string;
+    screenshots: string[];
+    gpu_sampling?: string;
+    resource_sampling?: ResourceSamplingArtifacts;
+  };
+  input: {
+    pdf_path: string;
+    pdf_bytes: number;
+    pdf_sha256: string;
+    expected_pages: 46;
+    expected_chunks: 46;
+  };
+  runtime: {
+    exe_path: string;
+    app_data_dir: string | null;
+    llm_model: string;
+    ocr_provider: string;
+    ocr_page_workers: number;
+    streaming_draft_page_limit: number | null;
+    streaming_draft_workers: number | null;
+    streaming_complete_timeout_ms: number;
+  };
+  timings_ms: Record<string, number | null>;
+  ocr_completion: {
+    pages_processed: number | null;
+    total_pages: number | null;
+    chunks: number | null;
+  };
+  streaming: {
+    job_count: number;
+    final_status_counts: Record<string, number>;
+    completion_state: StreamingJobCompletionState;
+    generated_count: number;
+    question_count: number;
+    usable_question_count: number;
+    first_usable_before_parse_complete: boolean;
+    job_snapshot_count: number;
+    question_snapshot_count: number;
+    blocker: string | null;
+  };
+  cleanup: {
+    gracefulExited: boolean | null;
+    fallbackUsed: boolean | null;
+    exitCode: number | null;
+    residualProcesses: PublicProcessRecord[];
+    nodeClosedCount: number | null;
+  };
+  checks: Record<string, boolean>;
+  errors: string[];
+}
+
+export function writeStreamingBaselineArtifacts(
+  run: SmokeRunState,
+  {
+    recordFailure = true,
+  }: {
+    readonly recordFailure?: boolean;
+  } = {},
+): void {
+  if (!run.options.waitForStreamingComplete) {
+    return;
+  }
+
+  let report = buildStreamingBaselineReport(run);
+  if (report.status === 'failed' && recordFailure) {
+    run.metrics.errors.push('Streaming baseline checks failed.');
+    report = buildStreamingBaselineReport(run);
+  }
+  const jsonPath = join(run.options.outDir, 'streaming-baseline.json');
+  const markdownPath = join(run.options.outDir, 'streaming-baseline.md');
+  writeFileSync(jsonPath, `${JSON.stringify(report, null, 2)}\n`);
+  writeFileSync(markdownPath, renderStreamingBaselineMarkdown(report));
+  run.metrics.streaming_baseline = {
+    status: report.status,
+    json: normalizePath(relative(run.options.workspaceRoot, jsonPath)),
+    markdown: normalizePath(relative(run.options.workspaceRoot, markdownPath)),
+  };
+}
+
+function buildStreamingBaselineReport(run: SmokeRunState): StreamingBaselineReport {
+  const latestJob = latestStreamingJobSnapshot(run);
+  const latestQuestion = latestStreamingQuestionSnapshot(run);
+  const finalStatusCounts = latestJob?.status_counts ?? {};
+  const completionState = streamingJobCompletionState(finalStatusCounts);
+  refreshFirstChunkGateMetrics(run);
+  const timings = run.metrics.ui_timings_ms;
+  const firstUsable =
+    run.metrics.streaming_questions.first_usable_question_visible_ms;
+  const parseComplete = timings.parse_complete_visible;
+  const firstUsableBeforeParseComplete =
+    firstUsable !== undefined &&
+    parseComplete !== undefined &&
+    firstUsable < parseComplete;
+  const checks = {
+    no_script_errors: run.metrics.errors.length === 0,
+    graceful_close: run.metrics.final_close?.gracefulExited === true,
+    no_residual_processes:
+      (run.metrics.final_close?.residualProcesses.length ?? 0) === 0 &&
+      (run.metrics.process_cleanup?.residue_after_close.length ?? 0) === 0,
+    ocr_completed_46_pages:
+      run.metrics.ocr_completion?.pages_processed === EXPECTED_BASELINE_PAGES &&
+      run.metrics.ocr_completion?.total_pages === EXPECTED_BASELINE_PAGES,
+    ocr_completed_46_chunks:
+      run.metrics.ocr_completion?.chunks === EXPECTED_BASELINE_CHUNKS,
+    first_chunk_under_gate: run.metrics.first_chunk_under_gate,
+    first_usable_before_parse_complete: firstUsableBeforeParseComplete,
+    all_jobs_terminal: completionState.all_terminal,
+    all_jobs_succeeded: completionState.all_succeeded,
+    generated_equals_usable:
+      (latestJob?.generated_count ?? 0) > 0 &&
+      latestJob?.generated_count === latestQuestion?.usable_question_count,
+    no_streaming_blocker: !run.metrics.streaming_questions.blocker,
+  };
+  const status = Object.values(checks).every(Boolean) ? 'passed' : 'failed';
+  const metricsPath = join(run.options.outDir, 'metrics.json');
+  const baselineJsonPath = join(run.options.outDir, 'streaming-baseline.json');
+  const baselineMarkdownPath = join(run.options.outDir, 'streaming-baseline.md');
+
+  return {
+    schema_version: 1,
+    status,
+    generated_at: new Date().toISOString(),
+    git_commit: currentGitCommit(run),
+    artifacts: {
+      out_dir: normalizePath(relative(run.options.workspaceRoot, run.options.outDir)),
+      metrics_json: normalizePath(relative(run.options.workspaceRoot, metricsPath)),
+      baseline_json: normalizePath(
+        relative(run.options.workspaceRoot, baselineJsonPath),
+      ),
+      baseline_markdown: normalizePath(
+        relative(run.options.workspaceRoot, baselineMarkdownPath),
+      ),
+      screenshots: run.metrics.screenshots,
+      ...(run.metrics.gpu_sampling ? { gpu_sampling: run.metrics.gpu_sampling } : {}),
+      ...(run.metrics.resource_sampling
+        ? { resource_sampling: run.metrics.resource_sampling }
+        : {}),
+    },
+    input: {
+      pdf_path: normalizePath(relative(run.options.workspaceRoot, run.options.pdfPath)),
+      pdf_bytes: statSync(run.options.pdfPath).size,
+      pdf_sha256: sha256File(run.options.pdfPath),
+      expected_pages: EXPECTED_BASELINE_PAGES,
+      expected_chunks: EXPECTED_BASELINE_CHUNKS,
+    },
+    runtime: {
+      exe_path: normalizePath(relative(run.options.workspaceRoot, run.options.exePath)),
+      app_data_dir: run.options.appDataDir
+        ? normalizePath(relative(run.options.workspaceRoot, run.options.appDataDir))
+        : null,
+      llm_model: run.options.ollamaModel,
+      ocr_provider: run.options.ocrProvider,
+      ocr_page_workers: run.options.ocrPageWorkers,
+      streaming_draft_page_limit: run.options.streamingDraftPageLimit ?? null,
+      streaming_draft_workers: run.options.streamingDraftWorkers ?? null,
+      streaming_complete_timeout_ms: run.options.streamingCompleteTimeoutMs,
+    },
+    timings_ms: {
+      upload_to_processing_visible: timings.upload_to_processing_visible ?? null,
+      first_chunk_gate_ms: run.metrics.first_chunk_gate_ms,
+      first_chunk_visible: timings.first_chunk_visible ?? null,
+      streaming_question_status_visible:
+        timings.streaming_question_status_visible ?? null,
+      first_streamed_question_visible:
+        run.metrics.streaming_questions.first_question_visible_ms ?? null,
+      first_usable_question_visible: firstUsable ?? null,
+      parse_complete_visible: parseComplete ?? null,
+      streaming_all_jobs_terminal:
+        run.metrics.streaming_questions.all_jobs_terminal_ms ?? null,
+    },
+    ocr_completion: {
+      pages_processed: run.metrics.ocr_completion?.pages_processed ?? null,
+      total_pages: run.metrics.ocr_completion?.total_pages ?? null,
+      chunks: run.metrics.ocr_completion?.chunks ?? null,
+    },
+    streaming: {
+      job_count: latestJob?.item_count ?? 0,
+      final_status_counts: finalStatusCounts,
+      completion_state: completionState,
+      generated_count: latestJob?.generated_count ?? 0,
+      question_count: latestQuestion?.item_count ?? 0,
+      usable_question_count: latestQuestion?.usable_question_count ?? 0,
+      first_usable_before_parse_complete: firstUsableBeforeParseComplete,
+      job_snapshot_count: run.metrics.streaming_questions.job_snapshots.length,
+      question_snapshot_count:
+        run.metrics.streaming_questions.question_snapshots.length,
+      blocker: run.metrics.streaming_questions.blocker ?? null,
+    },
+    cleanup: {
+      gracefulExited: run.metrics.final_close?.gracefulExited ?? null,
+      fallbackUsed: run.metrics.final_close?.fallbackUsed ?? null,
+      exitCode: run.metrics.final_close?.exitCode ?? null,
+      residualProcesses:
+        run.metrics.final_close?.residualProcesses ??
+        run.metrics.process_cleanup?.residue_after_close ??
+        [],
+      nodeClosedCount:
+        run.metrics.process_cleanup?.node_cleanup_summary.closed_count ?? null,
+    },
+    checks,
+    errors: run.metrics.errors,
+  };
+}
+
+function renderStreamingBaselineMarkdown(report: StreamingBaselineReport): string {
+  return `# Packaged Streaming Baseline
+
+- Status: ${report.status}
+- Generated: ${report.generated_at}
+- Git commit: ${report.git_commit ?? 'unknown'}
+- Model: ${report.runtime.llm_model}
+- PDF: ${report.input.pdf_path} (${report.input.pdf_bytes} bytes)
+- OCR: ${report.ocr_completion.pages_processed}/${report.ocr_completion.total_pages} pages, ${report.ocr_completion.chunks} chunks
+- First chunk visible: ${formatMaybeMs(report.timings_ms.first_chunk_visible)} (gate: ${formatMaybeMs(report.timings_ms.first_chunk_gate_ms)}, under gate: ${String(report.checks.first_chunk_under_gate)})
+- First usable qwen question: ${formatMaybeMs(report.timings_ms.first_usable_question_visible)}
+- Parse complete: ${formatMaybeMs(report.timings_ms.parse_complete_visible)}
+- All streaming jobs terminal: ${formatMaybeMs(report.timings_ms.streaming_all_jobs_terminal)}
+- Jobs: ${report.streaming.job_count}, generated: ${report.streaming.generated_count}, usable questions: ${report.streaming.usable_question_count}
+- Final job statuses: ${JSON.stringify(report.streaming.final_status_counts)}
+- Graceful close: ${String(report.cleanup.gracefulExited)}, fallback used: ${String(report.cleanup.fallbackUsed)}, residual processes: ${report.cleanup.residualProcesses.length}
+
+Artifacts:
+
+- Metrics: ${report.artifacts.metrics_json}
+- Baseline JSON: ${report.artifacts.baseline_json}
+- Screenshots: ${report.artifacts.screenshots.length}
+${renderResourceSamplingMarkdown(report.artifacts.resource_sampling)}
+`;
+}
+
+function formatMaybeMs(value: number | null): string {
+  return value === null ? 'n/a' : `${value} ms`;
+}
+
+function renderResourceSamplingMarkdown(
+  artifacts: ResourceSamplingArtifacts | undefined,
+): string {
+  if (!artifacts) {
+    return '';
+  }
+  const paths = [
+    artifacts.nvidia_smi_csv,
+    artifacts.windows_counters_csv,
+    artifacts.windows_summary_json,
+  ].filter((path): path is string => Boolean(path));
+  if (paths.length === 0) {
+    return '';
+  }
+  return `- Resource sampling: ${paths.join(', ')}`;
+}
+
+function sha256File(filePath: string): string {
+  return createHash('sha256').update(readFileSync(filePath)).digest('hex');
+}
+
+function currentGitCommit(run: SmokeRunState): string | null {
+  const result = spawnSync('git', ['rev-parse', 'HEAD'], {
+    cwd: run.options.workspaceRoot,
+    encoding: 'utf8',
+    windowsHide: true,
+  });
+  return result.status === 0 ? result.stdout.trim() || null : null;
+}
