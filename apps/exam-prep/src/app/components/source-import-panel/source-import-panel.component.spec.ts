@@ -123,7 +123,7 @@ describe('SourceImportPanelComponent', () => {
 
     expect(apiClient.uploadDocument).not.toHaveBeenCalled();
     expect(operations.error()).toBe(
-      'PaddleOCR is warming up. Try again when runtime health finishes.',
+      'OCR runtime is warming up. Try again when runtime health finishes.',
     );
   });
 

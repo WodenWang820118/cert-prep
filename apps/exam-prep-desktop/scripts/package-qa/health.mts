@@ -8,6 +8,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import {
   CAPTURE_LIMIT,
   DEFAULT_DATA_DIR,
+  DEFAULT_DIRECTML_OCR_RUNTIME_MANIFEST,
   DEFAULT_LLM_MODEL,
   DEFAULT_OCR_RUNTIME_MANIFEST,
   defaultWorkspaceRoot,
@@ -63,6 +64,10 @@ export async function collectRuntimeHealth({
   dataDir = resolve(workspaceRoot, DEFAULT_DATA_DIR),
   llmModel = DEFAULT_LLM_MODEL,
   ocrRuntimeManifest = resolve(workspaceRoot, DEFAULT_OCR_RUNTIME_MANIFEST),
+  directmlOcrRuntimeManifest = resolve(
+    workspaceRoot,
+    DEFAULT_DIRECTML_OCR_RUNTIME_MANIFEST,
+  ),
   ocrPageWorkers,
 }: RuntimeHealthOptions): Promise<RuntimeHealthSummary> {
   const port = await reserveLoopbackPort();
@@ -78,6 +83,7 @@ export async function collectRuntimeHealth({
     dataDir,
     llmModel,
     ocrRuntimeManifest,
+    directmlOcrRuntimeManifest,
     ocrPageWorkers,
   });
 
@@ -111,9 +117,13 @@ export async function collectRuntimeHealth({
 
     return {
       launch_env: {
-        EXAM_PREP_OCR_PROVIDER: 'paddle',
+        EXAM_PREP_OCR_PROVIDER: 'directml',
         EXAM_PREP_OCR_RUNTIME_MODE: 'external',
         EXAM_PREP_OCR_DEVICE: 'auto',
+        EXAM_PREP_OCR_RUNTIME_MANIFEST_PATH: ocrRuntimeManifest,
+        EXAM_PREP_OCR_DIRECTML_DEVICE_ID: '0',
+        EXAM_PREP_DIRECTML_OCR_RUNTIME_MANIFEST_PATH:
+          directmlOcrRuntimeManifest,
         EXAM_PREP_LLM_PROVIDER: 'ollama',
         EXAM_PREP_OLLAMA_MODEL: llmModel,
         EXAM_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD: 'true',
@@ -141,6 +151,8 @@ export function buildRuntimeLaunchEnv({
   dataDir,
   llmModel,
   ocrRuntimeManifest,
+  directmlOcrRuntimeManifest,
+  ocrProvider = 'directml',
   ocrPageWorkers,
   baseEnv = process.env,
 }: RuntimeLaunchEnvOptions): NodeJS.ProcessEnv {
@@ -152,10 +164,13 @@ export function buildRuntimeLaunchEnv({
     EXAM_PREP_API_TOKEN: token,
     EXAM_PREP_DATA_DIR: dataDir,
     EXAM_PREP_LLM_PROVIDER: 'ollama',
-    EXAM_PREP_OCR_PROVIDER: 'paddle',
+    EXAM_PREP_OCR_PROVIDER: ocrProvider,
     EXAM_PREP_OCR_RUNTIME_MODE: 'external',
     EXAM_PREP_OCR_RUNTIME_MANIFEST_PATH: ocrRuntimeManifest,
     EXAM_PREP_OCR_DEVICE: 'auto',
+    EXAM_PREP_DIRECTML_OCR_RUNTIME_MANIFEST_PATH:
+      directmlOcrRuntimeManifest,
+    EXAM_PREP_OCR_DIRECTML_DEVICE_ID: '0',
     EXAM_PREP_OLLAMA_MODEL: llmModel,
     EXAM_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD: 'true',
     PYTHONIOENCODING: 'utf-8',

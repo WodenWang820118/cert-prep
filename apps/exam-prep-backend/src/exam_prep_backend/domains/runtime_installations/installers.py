@@ -213,3 +213,75 @@ class PaddleOcrRuntimeInstaller:
             shutil.move(str(temp_dir), runtime_dir)
         write_installed_ocr_manifest(runtime_dir, manifest)
         return RuntimeInstallationStatus.SUCCEEDED
+
+
+class DirectMLOcrRuntimeInstaller:
+    """Installer and health snapshot for the packaged AMD DirectML OCR runtime."""
+
+    kind = RuntimeRequirementKind.DIRECTML_OCR
+    provider = "directml"
+    model = "pp-ocrv5-directml"
+
+    def __init__(self, settings: Settings, provider: OCRProvider) -> None:
+        self._settings = settings
+        self._provider = provider
+
+    def requirement(self) -> RuntimeRequirementSnapshot:
+        """Return AMD DirectML OCR runtime availability from the provider health check."""
+
+        health = self._provider.health()
+        return RuntimeRequirementSnapshot(
+            kind=self.kind,
+            label="AMD DirectML OCR runtime",
+            available=health.available,
+            detail=health.detail,
+            unavailable_reason=health.unavailable_reason,
+            version=health.paddleocr_version,
+            installed_path=health.model_cache_dir,
+        )
+
+    def install(self, progress: Callable[[RuntimeInstallProgress], None]) -> RuntimeInstallationStatus:
+        """Verify, extract, self-test, and install the packaged DirectML OCR runtime."""
+
+        manifest = load_ocr_runtime_source_manifest(
+            self._settings,
+            kind=RuntimeRequirementKind.DIRECTML_OCR,
+        )
+        artifact = resolve_ocr_runtime_artifact(manifest)
+        progress(
+            RuntimeInstallProgress(
+                "Verifying AMD DirectML OCR runtime artifact.",
+                total=manifest.bytes,
+            )
+        )
+        verify_file_hash(artifact, manifest.sha256, expected_bytes=manifest.bytes)
+
+        runtime_dir = self._settings.resolved_directml_ocr_runtime_dir
+        runtime_dir.parent.mkdir(parents=True, exist_ok=True)
+        with TemporaryDirectory(dir=runtime_dir.parent) as temp_name:
+            temp_dir = Path(temp_name)
+            progress(RuntimeInstallProgress("Extracting AMD DirectML OCR runtime artifact."))
+            extract_zip_safely(artifact, temp_dir)
+            entrypoint = temp_dir / manifest.entrypoint
+            if not entrypoint.is_file():
+                raise ProviderUnavailableError(
+                    f"OCR runtime entrypoint was not found: {manifest.entrypoint}"
+                )
+            progress(RuntimeInstallProgress("Running AMD DirectML OCR runtime self-test."))
+            run_ocr_runtime_command(
+                entrypoint,
+                [
+                    "--provider",
+                    "directml",
+                    "--model-dir",
+                    str(temp_dir),
+                    "--directml-device-id",
+                    str(self._settings.ocr_directml_device_id),
+                    "--ocr-self-test",
+                ],
+            )
+            if runtime_dir.exists():
+                shutil.rmtree(runtime_dir)
+            shutil.move(str(temp_dir), runtime_dir)
+        write_installed_ocr_manifest(runtime_dir, manifest)
+        return RuntimeInstallationStatus.SUCCEEDED

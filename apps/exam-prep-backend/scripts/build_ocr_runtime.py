@@ -13,13 +13,17 @@ from runtime_build.artifacts import (
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_ENTRY = BACKEND_ROOT / "src" / "exam_prep_backend" / "ocr_runtime.py"
+DIRECTML_RUNTIME_ENTRY = BACKEND_ROOT / "src" / "exam_prep_backend" / "ocr_directml_runtime.py"
 DIST_DIR = BACKEND_ROOT / "dist"
 BUILD_DIR = BACKEND_ROOT / "build"
 OUTPUT_DIR = DIST_DIR / "ocr-runtime"
+DIRECTML_OUTPUT_DIR = DIST_DIR / "ocr-directml-runtime"
 EXE_NAME = "exam-prep-ocr-runtime.exe"
-EXE_PATH = DIST_DIR / EXE_NAME
-COMMON_COLLECT_ALL = ["paddle", "paddleocr", "paddlex"]
-COMMON_METADATA = [
+DIRECTML_EXE_NAME = "exam-prep-ocr-directml-runtime.exe"
+PADDLE_EXE_PATH = DIST_DIR / EXE_NAME
+DIRECTML_EXE_PATH = DIST_DIR / DIRECTML_EXE_NAME
+PADDLE_COLLECT_ALL = ["paddle", "paddleocr", "paddlex"]
+PADDLE_METADATA = [
     "imagesize",
     "opencv-contrib-python",
     "paddleocr",
@@ -29,10 +33,44 @@ COMMON_METADATA = [
     "python-bidi",
     "shapely",
 ]
+DIRECTML_COLLECT_ALL = ["cv2", "PIL", "pyclipper", "shapely"]
+DIRECTML_METADATA = [
+    "numpy",
+    "onnxruntime-directml",
+    "opencv-contrib-python",
+    "pillow",
+    "pyclipper",
+    "shapely",
+]
+DIRECTML_EXCLUDES = [
+    "_pytest",
+    "exam_prep_backend.domains.runtime_installations",
+    "exam_prep_backend.domains.source_documents.adapters.external_paddle",
+    "exam_prep_backend.domains.source_documents.adapters.ollama",
+    "exam_prep_backend.domains.source_documents.adapters.paddle",
+    "exam_prep_backend.domains.source_documents.adapters.paddle_runtime",
+    "exam_prep_backend.domains.source_documents.adapters.paddle_text",
+    "modelscope",
+    "paddle",
+    "paddleocr",
+    "paddlex",
+    "pluggy",
+    "pytest",
+    "shapely.conftest",
+    "shapely.testing",
+    "shapely.tests",
+]
 LANE_METADATA = {
     "cpu": "paddlepaddle",
     "gpu": "paddlepaddle-gpu",
+    "directml": "onnxruntime-directml",
 }
+DIRECTML_MODEL_FILES = (
+    "det_model.onnx",
+    "rec_model.onnx",
+    "rec_char_dict.txt",
+    "pipeline.json",
+)
 
 
 def main() -> None:
@@ -40,10 +78,22 @@ def main() -> None:
     parser.add_argument("--lane", choices=sorted(LANE_METADATA), default="gpu")
     parser.add_argument("--target", default="x86_64-pc-windows-msvc")
     parser.add_argument("--version", default="0.1.0")
+    parser.add_argument(
+        "--directml-model-dir",
+        type=Path,
+        default=BACKEND_ROOT / ".benchmarks" / "ocr-directml-models",
+    )
     args = parser.parse_args()
 
+    if args.lane == "directml":
+        _build_directml_runtime(args)
+        return
+    _build_paddle_runtime(args)
+
+
+def _build_paddle_runtime(args: argparse.Namespace) -> None:
     _run(_pyinstaller_command(args.lane))
-    _run([str(EXE_PATH), "--ocr-self-test", "--device", "auto"])
+    _run([str(PADDLE_EXE_PATH), "--ocr-self-test", "--device", "auto"])
     zip_path = OUTPUT_DIR / f"exam-prep-ocr-runtime-{args.target}.zip"
     manifest_path = OUTPUT_DIR / "ocr-runtime-manifest.json"
     write_runtime_artifact(
@@ -52,7 +102,7 @@ def main() -> None:
             version=args.version,
             target=args.target,
             entrypoint=EXE_NAME,
-            source_path=EXE_PATH,
+            source_path=PADDLE_EXE_PATH,
             archive_name=EXE_NAME,
             zip_path=zip_path,
             manifest_path=manifest_path,
@@ -62,7 +112,44 @@ def main() -> None:
     print(f"Wrote OCR runtime manifest to {manifest_path}")
 
 
+def _build_directml_runtime(args: argparse.Namespace) -> None:
+    model_files = _directml_model_files(args.directml_model_dir)
+    _run(_pyinstaller_command(args.lane))
+    _run(
+        [
+            str(DIRECTML_EXE_PATH),
+            "--provider",
+            "directml",
+            "--model-dir",
+            str(args.directml_model_dir),
+            "--ocr-self-test",
+        ]
+    )
+    zip_path = DIRECTML_OUTPUT_DIR / f"exam-prep-ocr-directml-runtime-{args.target}.zip"
+    manifest_path = DIRECTML_OUTPUT_DIR / "directml-ocr-runtime-manifest.json"
+    write_runtime_artifact(
+        RuntimeArtifactSpec(
+            kind="directml_ocr",
+            version=args.version,
+            target=args.target,
+            entrypoint=DIRECTML_EXE_NAME,
+            source_path=DIRECTML_EXE_PATH,
+            archive_name=DIRECTML_EXE_NAME,
+            zip_path=zip_path,
+            manifest_path=manifest_path,
+            extra_files=tuple((path, path.name) for path in model_files),
+        )
+    )
+    print(f"Wrote DirectML OCR runtime artifact to {zip_path}")
+    print(f"Wrote DirectML OCR runtime manifest to {manifest_path}")
+
+
 def _pyinstaller_command(lane: str) -> list[str]:
+    exe_base_name = (
+        "exam-prep-ocr-directml-runtime"
+        if lane == "directml"
+        else "exam-prep-ocr-runtime"
+    )
     command = [
         sys.executable,
         "-m",
@@ -70,9 +157,9 @@ def _pyinstaller_command(lane: str) -> list[str]:
         "--noconfirm",
         "--clean",
         "--name",
-        "exam-prep-ocr-runtime",
+        exe_base_name,
         "--onefile",
-        str(RUNTIME_ENTRY),
+        str(DIRECTML_RUNTIME_ENTRY if lane == "directml" else RUNTIME_ENTRY),
         "--distpath",
         str(DIST_DIR),
         "--workpath",
@@ -80,11 +167,26 @@ def _pyinstaller_command(lane: str) -> list[str]:
         "--specpath",
         str(BUILD_DIR),
     ]
-    for package_name in COMMON_COLLECT_ALL:
+    collect_all = DIRECTML_COLLECT_ALL if lane == "directml" else PADDLE_COLLECT_ALL
+    metadata = DIRECTML_METADATA if lane == "directml" else [
+        LANE_METADATA[lane],
+        *PADDLE_METADATA,
+    ]
+    for package_name in collect_all:
         command.extend(["--collect-all", package_name])
-    for distribution_name in [LANE_METADATA[lane], *COMMON_METADATA]:
+    for distribution_name in metadata:
         command.extend(["--copy-metadata", distribution_name])
+    if lane == "directml":
+        for module_name in DIRECTML_EXCLUDES:
+            command.extend(["--exclude-module", module_name])
     return command
+
+
+def _directml_model_files(model_dir: Path) -> list[Path]:
+    missing = [name for name in DIRECTML_MODEL_FILES if not (model_dir / name).is_file()]
+    if missing:
+        raise SystemExit(f"Missing DirectML OCR model files: {', '.join(missing)}")
+    return [model_dir / name for name in DIRECTML_MODEL_FILES]
 
 
 def _run(command: list[str]) -> None:

@@ -50,7 +50,7 @@ class Settings(BaseSettings):
         ]
     )
     llm_provider: Literal["fake", "ollama"] = "fake"
-    ocr_provider: Literal["fake", "ollama", "paddle"] = "fake"
+    ocr_provider: Literal["fake", "ollama", "paddle", "directml"] = "fake"
     ocr_device: str = "auto"
     ocr_benchmark: bool = False
     ollama_host: str = "http://127.0.0.1:11434"
@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     ocr_runtime_mode: Literal["external", "inprocess"] = "external"
     ocr_runtime_dir: Path | None = None
     ocr_runtime_manifest_path: Path | None = None
+    directml_ocr_runtime_dir: Path | None = None
+    directml_ocr_runtime_manifest_path: Path | None = None
+    ocr_directml_device_id: int = Field(default=0, ge=0)
     ocr_runtime_timeout_seconds: float = 300.0
     runtime_install_timeout_seconds: float = 900.0
 
@@ -68,3 +71,9 @@ class Settings(BaseSettings):
     @property
     def resolved_ocr_runtime_dir(self) -> Path:
         return (self.ocr_runtime_dir or self.data_dir / "runtimes" / "paddle_ocr").resolve()
+
+    @property
+    def resolved_directml_ocr_runtime_dir(self) -> Path:
+        return (
+            self.directml_ocr_runtime_dir or self.data_dir / "runtimes" / "directml_ocr"
+        ).resolve()

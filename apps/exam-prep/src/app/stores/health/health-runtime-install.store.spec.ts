@@ -93,4 +93,37 @@ describe('HealthStore runtime installation', () => {
     expect(apiClient.health).toHaveBeenCalledTimes(2);
     expect(apiClient.runtimeRequirements).toHaveBeenCalledTimes(2);
   });
+
+  it('starts DirectML OCR runtime installation from DirectML missing health', async () => {
+    const store = TestBed.inject(HealthStore);
+    apiClient.ocrHealth.mockResolvedValue({
+      ...ocrHealth(),
+      provider: 'directml',
+      engine: 'onnxruntime-directml',
+      available: false,
+      detail: 'AMD DirectML OCR runtime is not installed.',
+      selected_device: null,
+      unavailable_reason: 'directml_runtime_missing',
+    });
+    apiClient.startRuntimeInstallation.mockResolvedValue(
+      runtimeInstallation({
+        kind: 'directml_ocr',
+        provider: 'directml',
+        model: 'pp-ocrv5-directml',
+        status: 'running',
+        detail: 'Installing AMD DirectML OCR runtime',
+        completed: 10,
+      }),
+    );
+    await store.load();
+
+    store.openOcrRuntimeInstallConsent();
+    await store.confirmRuntimeInstallation();
+
+    expect(apiClient.startRuntimeInstallation).toHaveBeenCalledWith(
+      'directml_ocr',
+    );
+    expect(store.runtimeInstall()?.kind).toBe('directml_ocr');
+    expect(store.runtimeInstall()?.label).toBe('AMD DirectML OCR runtime');
+  });
 });

@@ -132,4 +132,35 @@ describe('ModelHealthComponent status display', () => {
       'Refreshing cached PaddleOCR status.',
     );
   });
+
+  it('shows AMD DirectML OCR runtime install copy when DirectML runtime is missing', () => {
+    const fixture = TestBed.createComponent(ModelHealthComponent);
+    const health = TestBed.inject(HealthStore);
+    health.systemHealth.set(systemHealth());
+    health.llmHealth.set(availableLlmHealth());
+    health.ocrHealth.set({
+      ...ocrHealth(),
+      provider: 'directml',
+      engine: 'onnxruntime-directml',
+      available: false,
+      detail: 'AMD DirectML OCR runtime is not installed.',
+      selected_device: null,
+      unavailable_reason: 'directml_runtime_missing',
+    });
+
+    fixture.detectChanges();
+    buttonByText(fixture.nativeElement, 'Manage runtime')?.click();
+    fixture.detectChanges();
+
+    expect(document.body.textContent).toContain('AMD DirectML OCR');
+    buttonByText(document.body, 'Install OCR')?.click();
+    fixture.detectChanges();
+
+    expect(document.body.textContent).toContain(
+      'Install the AMD DirectML OCR runtime for image-only PDFs?',
+    );
+    expect(document.body.textContent).toContain(
+      'the Nvidia GPU remains available for reasoning',
+    );
+  });
 });

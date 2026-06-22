@@ -123,7 +123,16 @@ import { WorkspaceFacade } from '../../stores/workspace.facade';
       (visibleChange)="health.setRuntimeInstallConsentVisible($event)"
     >
       <div class="grid gap-3">
-        @if (health.runtimeInstallConsentKind() === 'paddle_ocr') {
+        @if (health.runtimeInstallConsentKind() === 'directml_ocr') {
+          <p class="m-0 text-sm leading-6 text-color">
+            Install the AMD DirectML OCR runtime for image-only PDFs?
+          </p>
+          <p class="m-0 text-sm leading-6 text-muted-color">
+            The runtime is downloaded from the release asset, verified, and
+            extracted under your user app data. OCR stays on the AMD iGPU so
+            the Nvidia GPU remains available for reasoning.
+          </p>
+        } @else if (health.runtimeInstallConsentKind() === 'paddle_ocr') {
           <p class="m-0 text-sm leading-6 text-color">
             Install the PaddleOCR runtime for image-only PDFs?
           </p>

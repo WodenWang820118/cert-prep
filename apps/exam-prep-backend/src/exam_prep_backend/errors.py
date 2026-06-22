@@ -4,25 +4,24 @@ from typing import Any
 
 from fastapi import HTTPException, status
 
+from exam_prep_backend.exceptions import (
+    BackendError,
+    InvalidPdfError,
+    NotFoundError,
+    ProviderUnavailableError,
+    ValidationError,
+)
 
-class BackendError(Exception):
-    """Base exception for expected backend failures."""
-
-
-class NotFoundError(BackendError):
-    pass
-
-
-class ValidationError(BackendError):
-    pass
-
-
-class InvalidPdfError(ValidationError):
-    pass
-
-
-class ProviderUnavailableError(BackendError):
-    pass
+__all__ = [
+    "BackendError",
+    "InvalidPdfError",
+    "NotFoundError",
+    "ProviderUnavailableError",
+    "ValidationError",
+    "api_error",
+    "not_found_error",
+    "validation_error",
+]
 
 
 def api_error(

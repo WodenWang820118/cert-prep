@@ -8,6 +8,7 @@ export interface SmokeOptions {
   outDir: string;
   appDataDir?: string;
   cdpPort: number;
+  ocrProvider: string;
   ocrPageWorkers: number;
   ollamaModel: string;
   streamingDraftPageLimit?: number;
@@ -30,6 +31,7 @@ export interface SmokeMetrics {
   selected_answer?: string;
   wrong_answer?: string;
   llm_model: string;
+  ocr_provider: string;
   first_chunk_gate_ms: number;
   first_chunk_under_gate: boolean;
   streaming_draft_page_limit?: number;
@@ -55,6 +57,15 @@ export interface SmokeMetrics {
   };
   streaming_questions: StreamingQuestionsMetrics;
   gpu_sampling?: string;
+  resource_sampling?: ResourceSamplingArtifacts;
+}
+
+export interface ResourceSamplingArtifacts {
+  nvidia_smi_csv?: string;
+  nvidia_smi_stderr_log?: string;
+  windows_counters_csv?: string;
+  windows_summary_json?: string;
+  windows_dxgi_adapters_json?: string;
 }
 
 export interface StreamingQuestionsMetrics {
@@ -169,6 +180,11 @@ export interface ChildExitState {
   signal: NodeJS.Signals | null;
 }
 
+export interface ResourceSamplingController {
+  readonly artifacts: ResourceSamplingArtifacts;
+  stop(): Promise<void>;
+}
+
 export interface SelectNodeHelpersOptions {
   beforeNodePids: ReadonlySet<number>;
   after: readonly ProcessRecord[];
@@ -183,6 +199,7 @@ export interface SmokeRunState {
   app: ChildProcess | null;
   appExit: ChildExitState | null;
   nvidia: ChildProcess | null;
+  resourceSampling: ResourceSamplingController | null;
   browser: Browser | null;
   page: Page | null;
   port: number;

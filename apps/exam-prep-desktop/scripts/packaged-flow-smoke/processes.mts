@@ -16,6 +16,9 @@ import type {
 } from './types.mts';
 
 const PROCESS_SNAPSHOT_MAX_BUFFER = 64 * 1024 * 1024;
+const WINDOWS_PROCESS_SNAPSHOT_TIMEOUT_MS = 15_000;
+const WINDOWS_CLOSE_REQUEST_TIMEOUT_MS = 5_000;
+const WINDOWS_TASKKILL_TIMEOUT_MS = 5_000;
 const EXAM_PREP_PROCESS_NAMES = new Set([
   'exam-prep-desktop.exe',
   'exam-prep-backend.exe',
@@ -76,6 +79,7 @@ export function snapshotWindowsProcesses(): ProcessRecord[] {
       encoding: 'utf8',
       windowsHide: true,
       maxBuffer: PROCESS_SNAPSHOT_MAX_BUFFER,
+      timeout: WINDOWS_PROCESS_SNAPSHOT_TIMEOUT_MS,
     },
   );
 
@@ -244,7 +248,11 @@ export function requestWindowsCloseByPid(pid: number): boolean {
       '-Command',
       closeMainWindowPowerShellCommand(pid),
     ],
-    { stdio: 'ignore', windowsHide: true },
+    {
+      stdio: 'ignore',
+      windowsHide: true,
+      timeout: WINDOWS_CLOSE_REQUEST_TIMEOUT_MS,
+    },
   );
   return !result.error && result.status === 0;
 }
@@ -255,6 +263,7 @@ export function terminateProcessTreeByPid(pid: number): void {
     spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], {
       stdio: 'ignore',
       windowsHide: true,
+      timeout: WINDOWS_TASKKILL_TIMEOUT_MS,
     });
   } else {
     try {

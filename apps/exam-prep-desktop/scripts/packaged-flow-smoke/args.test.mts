@@ -7,6 +7,8 @@ test('packaged flow smoke args validate numeric knobs', () => {
   const parsed = parsePackagedFlowSmokeArgs([
     '--cdp-port',
     '9555',
+    '--ocr-provider',
+    'directml',
     '--ocr-page-workers',
     '2',
     '--ollama-model',
@@ -23,6 +25,7 @@ test('packaged flow smoke args validate numeric knobs', () => {
   ]);
 
   assert.equal(parsed.cdpPort, 9555);
+  assert.equal(parsed.ocrProvider, 'directml');
   assert.equal(parsed.ocrPageWorkers, 2);
   assert.equal(parsed.ollamaModel, 'qwen3:8b');
   assert.equal(parsed.streamingDraftPageLimit, 1);
@@ -40,6 +43,10 @@ test('packaged flow smoke args validate numeric knobs', () => {
   );
   assert.throws(
     () => parsePackagedFlowSmokeArgs(['--ollama-model', ' ']),
+    /must not be empty/,
+  );
+  assert.throws(
+    () => parsePackagedFlowSmokeArgs(['--ocr-provider', ' ']),
     /must not be empty/,
   );
   assert.throws(

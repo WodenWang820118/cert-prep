@@ -44,9 +44,10 @@ pub(crate) fn launch_backend_entrypoint(
             inner.data_dir.to_string_lossy().to_string(),
         )
         .env("EXAM_PREP_LLM_PROVIDER", "ollama")
-        .env("EXAM_PREP_OCR_PROVIDER", "paddle")
+        .env("EXAM_PREP_OCR_PROVIDER", configured_ocr_provider())
         .env("EXAM_PREP_OCR_RUNTIME_MODE", "external")
         .env("EXAM_PREP_OCR_DEVICE", "auto")
+        .env("EXAM_PREP_OCR_DIRECTML_DEVICE_ID", "0")
         .env("EXAM_PREP_OLLAMA_MODEL", configured_ollama_model())
         .env("EXAM_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD", "true")
         .stdin(Stdio::null())
@@ -60,6 +61,16 @@ pub(crate) fn launch_backend_entrypoint(
     {
         command.env(
             "EXAM_PREP_OCR_RUNTIME_MANIFEST_PATH",
+            manifest_path.to_string_lossy().to_string(),
+        );
+    }
+    if let Some(manifest_path) = inner
+        .directml_ocr_manifest_path
+        .as_ref()
+        .filter(|path| path.is_file())
+    {
+        command.env(
+            "EXAM_PREP_DIRECTML_OCR_RUNTIME_MANIFEST_PATH",
             manifest_path.to_string_lossy().to_string(),
         );
     }
@@ -120,6 +131,14 @@ fn configured_ollama_model() -> String {
         .unwrap_or_else(|| DEFAULT_OLLAMA_MODEL.to_string())
 }
 
+fn configured_ocr_provider() -> String {
+    std::env::var("EXAM_PREP_OCR_PROVIDER")
+        .ok()
+        .map(|value| value.trim().to_ascii_lowercase())
+        .filter(|value| matches!(value.as_str(), "directml" | "paddle"))
+        .unwrap_or_else(|| "directml".to_string())
+}
+
 pub(crate) fn external_backend_env() -> Option<BackendConfig> {
     match (
         std::env::var("EXAM_PREP_BACKEND_URL"),
@@ -159,6 +178,21 @@ mod tests {
         assert_eq!(configured_ollama_model(), "qwen3:14b");
 
         std::env::remove_var("EXAM_PREP_OLLAMA_MODEL");
+    }
+
+    #[test]
+    fn configured_ocr_provider_defaults_to_directml_and_allows_paddle_override() {
+        std::env::remove_var("EXAM_PREP_OCR_PROVIDER");
+
+        assert_eq!(configured_ocr_provider(), "directml");
+
+        std::env::set_var("EXAM_PREP_OCR_PROVIDER", " paddle ");
+        assert_eq!(configured_ocr_provider(), "paddle");
+
+        std::env::set_var("EXAM_PREP_OCR_PROVIDER", "cpu");
+        assert_eq!(configured_ocr_provider(), "directml");
+
+        std::env::remove_var("EXAM_PREP_OCR_PROVIDER");
     }
 
     #[test]

@@ -2,7 +2,6 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   appendFileSync,
-  createWriteStream,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -27,6 +26,7 @@ import {
   packagedAppDataDir,
   preparePackagedBackendRuntimeForSmoke,
 } from './runtime-sync.mts';
+import { startResourceSampling } from './resource-sampling.mts';
 import {
   classifyStreamingQuestionStatus,
   FIRST_CHUNK_GATE_MS,
@@ -40,6 +40,7 @@ import { errorMessage, normalizePath } from './text-utils.mts';
 import type {
   CloseSummary,
   PublicProcessRecord,
+  ResourceSamplingArtifacts,
   SmokeMetrics,
   SmokeRunState,
   StreamingDraftJobSnapshot,
@@ -69,6 +70,7 @@ interface StreamingBaselineReport {
     baseline_markdown: string;
     screenshots: string[];
     gpu_sampling?: string;
+    resource_sampling?: ResourceSamplingArtifacts;
   };
   input: {
     pdf_path: string;
@@ -81,6 +83,7 @@ interface StreamingBaselineReport {
     exe_path: string;
     app_data_dir: string | null;
     llm_model: string;
+    ocr_provider: string;
     ocr_page_workers: number;
     streaming_draft_page_limit: number | null;
     streaming_draft_workers: number | null;
@@ -813,13 +816,17 @@ function saveMetrics(): void {
   );
 }
 
-function writeStreamingBaselineArtifacts(): void {
+function writeStreamingBaselineArtifacts({
+  recordFailure = true,
+}: {
+  readonly recordFailure?: boolean;
+} = {}): void {
   if (!run.options.waitForStreamingComplete) {
     return;
   }
 
   let report = buildStreamingBaselineReport();
-  if (report.status === 'failed') {
+  if (report.status === 'failed' && recordFailure) {
     run.metrics.errors.push('Streaming baseline checks failed.');
     report = buildStreamingBaselineReport();
   }
@@ -889,6 +896,9 @@ function buildStreamingBaselineReport(): StreamingBaselineReport {
       ),
       screenshots: run.metrics.screenshots,
       ...(run.metrics.gpu_sampling ? { gpu_sampling: run.metrics.gpu_sampling } : {}),
+      ...(run.metrics.resource_sampling
+        ? { resource_sampling: run.metrics.resource_sampling }
+        : {}),
     },
     input: {
       pdf_path: normalizePath(relative(run.options.workspaceRoot, run.options.pdfPath)),
@@ -903,6 +913,7 @@ function buildStreamingBaselineReport(): StreamingBaselineReport {
         ? normalizePath(relative(run.options.workspaceRoot, run.options.appDataDir))
         : null,
       llm_model: run.options.ollamaModel,
+      ocr_provider: run.options.ocrProvider,
       ocr_page_workers: run.options.ocrPageWorkers,
       streaming_draft_page_limit: run.options.streamingDraftPageLimit ?? null,
       streaming_draft_workers: run.options.streamingDraftWorkers ?? null,
@@ -977,11 +988,29 @@ Artifacts:
 - Metrics: ${report.artifacts.metrics_json}
 - Baseline JSON: ${report.artifacts.baseline_json}
 - Screenshots: ${report.artifacts.screenshots.length}
+${renderResourceSamplingMarkdown(report.artifacts.resource_sampling)}
 `;
 }
 
 function formatMaybeMs(value: number | null): string {
   return value === null ? 'n/a' : `${value} ms`;
+}
+
+function renderResourceSamplingMarkdown(
+  artifacts: ResourceSamplingArtifacts | undefined,
+): string {
+  if (!artifacts) {
+    return '';
+  }
+  const paths = [
+    artifacts.nvidia_smi_csv,
+    artifacts.windows_counters_csv,
+    artifacts.windows_summary_json,
+  ].filter((path): path is string => Boolean(path));
+  if (paths.length === 0) {
+    return '';
+  }
+  return `- Resource sampling: ${paths.join(', ')}`;
 }
 
 function sha256File(filePath: string): string {
@@ -1258,7 +1287,11 @@ async function installOcrRuntimeIfNeeded(): Promise<void> {
   await refreshRuntimeDrawer();
 
   let text = await runtimeDrawerText();
-  if (/Unknown|status unavailable|OCR unknown|PaddleOCR status unavailable/i.test(text)) {
+  if (
+    /Unknown|status unavailable|OCR unknown|PaddleOCR status unavailable|AMD DirectML OCR status unavailable/i.test(
+      text,
+    )
+  ) {
     run.metrics.observations.push(
       'Runtime drawer showed OCR unknown after Python install; manual refresh was required.',
     );
@@ -1266,35 +1299,35 @@ async function installOcrRuntimeIfNeeded(): Promise<void> {
     text = await runtimeDrawerText();
   }
 
-  if (/PaddleOCR imports available|gpu:0|PaddleOCR runtime is ready/i.test(text)) {
+  if (ocrReadyPattern().test(text)) {
     run.metrics.observations.push(
-      'PaddleOCR runtime was already ready after runtime refresh.',
+      'OCR runtime was already ready after runtime refresh.',
     );
     await screenshot('runtime-ocr-ready-after-refresh');
     return;
   }
 
-  if (!/Install OCR|PaddleOCR runtime is not installed|paddle_runtime_missing/i.test(text)) {
+  if (!ocrInstallablePattern().test(text)) {
     run.metrics.observations.push(
       'Waiting longer for OCR health to settle before treating the drawer as failed.',
     );
     await waitRuntimeDrawerText(
-      /PaddleOCR imports available|gpu:0|paddle\s*\/\s*(gpu|cpu)|OCR ready|Install OCR|PaddleOCR runtime is not installed|paddle_runtime_missing/i,
+      ocrSettledPattern(),
       180_000,
       'ocr health settled',
     );
     text = await runtimeDrawerText();
   }
 
-  if (/PaddleOCR imports available|gpu:0|paddle\s*\/\s*(gpu|cpu)|OCR ready/i.test(text)) {
+  if (ocrReadyPattern().test(text)) {
     run.metrics.observations.push(
-      'PaddleOCR runtime became ready after delayed health settling.',
+      'OCR runtime became ready after delayed health settling.',
     );
     await screenshot('runtime-ocr-ready-after-delayed-health');
     return;
   }
 
-  if (!/Install OCR|PaddleOCR runtime is not installed|paddle_runtime_missing/i.test(text)) {
+  if (!ocrInstallablePattern().test(text)) {
     throw new Error(
       `OCR install action did not appear. Runtime drawer text: ${text.slice(0, 1400)}`,
     );
@@ -1302,16 +1335,31 @@ async function installOcrRuntimeIfNeeded(): Promise<void> {
 
   const start = Date.now();
   await clickButtonPattern(/^\s*Install OCR\s*$/);
-  await waitText(/Install the PaddleOCR runtime/, 10_000, 'ocr install consent');
+  await waitText(
+    /Install the (PaddleOCR|AMD DirectML OCR) runtime/,
+    10_000,
+    'ocr install consent',
+  );
   await screenshot('ocr-install-consent');
   await clickConsentInstall();
-  await waitText(
-    /PaddleOCR imports available|gpu:0|paddle\s*\/\s*gpu|OCR ready/i,
-    240_000,
-    'ocr runtime ready',
-  );
+  await waitText(ocrReadyPattern(), 240_000, 'ocr runtime ready');
   run.metrics.ui_timings_ms.paddleocr_runtime_install = Date.now() - start;
   await screenshot('runtime-checklist-ready');
+}
+
+function ocrInstallablePattern(): RegExp {
+  return /Install OCR|PaddleOCR runtime is not installed|paddle_runtime_missing|AMD DirectML OCR runtime is not installed|directml_runtime_missing/i;
+}
+
+function ocrReadyPattern(): RegExp {
+  return /PaddleOCR imports available|gpu:0|PaddleOCR runtime is ready|paddle\s*\/\s*(gpu|cpu)|AMD DirectML OCR runtime is ready|directml\s*\/\s*amd_directml|OCR ready/i;
+}
+
+function ocrSettledPattern(): RegExp {
+  return new RegExp(
+    `${ocrReadyPattern().source}|${ocrInstallablePattern().source}`,
+    'i',
+  );
 }
 
 async function createProject(): Promise<void> {
@@ -1593,40 +1641,12 @@ async function restartAndVerifyPersistence(): Promise<void> {
     /Parsing complete|Playable|Mock Exam Items|Source PDF/i.test(await bodyText());
 }
 
-function startNvidiaSampling(): void {
-  if (run.options.skipGpuSampling) {
-    return;
-  }
-  const csvPath = join(run.options.outDir, 'nvidia-smi.csv');
-  try {
-    run.nvidia = spawn(
-      'nvidia-smi',
-      [
-        '--query-gpu=timestamp,utilization.gpu,memory.used,memory.total,power.draw',
-        '--format=csv',
-        '-l',
-        '1',
-      ],
-      { cwd: run.options.workspaceRoot, windowsHide: true },
-    );
-    run.nvidia.stdout?.pipe(createWriteStream(csvPath));
-    run.nvidia.stderr?.on('data', (chunk) =>
-      appendFileSync(join(run.options.outDir, 'nvidia-smi.stderr.log'), chunk),
-    );
-    run.nvidia.on('error', (error) => {
-      run.metrics.observations.push(`nvidia-smi unavailable: ${error.message}`);
-    });
-    run.metrics.gpu_sampling = normalizePath(relative(run.options.workspaceRoot, csvPath));
-  } catch (error) {
-    run.metrics.observations.push(`nvidia-smi unavailable: ${errorMessage(error)}`);
-  }
-}
-
 async function launchAppAndConnect(): Promise<void> {
   const env = {
     ...process.env,
     WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${run.port}`,
     EXAM_PREP_DESKTOP_DATA_DIR: packagedAppDataDir(run.options.appDataDir),
+    EXAM_PREP_OCR_PROVIDER: run.options.ocrProvider,
     EXAM_PREP_OCR_PAGE_WORKERS: String(run.options.ocrPageWorkers),
     EXAM_PREP_OLLAMA_MODEL: run.options.ollamaModel,
     ...(run.options.streamingDraftPageLimit
@@ -1698,7 +1718,16 @@ async function runFlow(): Promise<void> {
 
   log(`artifact dir ${run.options.outDir}`);
   run.processBaseline = processSnapshot();
-  startNvidiaSampling();
+  run.resourceSampling = startResourceSampling({
+    skipGpuSampling: run.options.skipGpuSampling,
+    outDir: run.options.outDir,
+    workspaceRoot: run.options.workspaceRoot,
+    observe: (message) => run.metrics.observations.push(message),
+  });
+  if (Object.keys(run.resourceSampling.artifacts).length > 0) {
+    run.metrics.resource_sampling = run.resourceSampling.artifacts;
+    run.metrics.gpu_sampling = run.resourceSampling.artifacts.nvidia_smi_csv;
+  }
   preparePackagedBackendRuntimeForSmoke({
     workspaceRoot: run.options.workspaceRoot,
     outDir: run.options.outDir,
@@ -1736,9 +1765,14 @@ async function cleanupAfterRun(): Promise<void> {
     }
   }
 
-  if (run.nvidia && !run.nvidia.killed) {
-    run.nvidia.kill();
+  if (run.resourceSampling) {
+    await run.resourceSampling.stop().catch((error) => {
+      run.metrics.errors.push(
+        `resource sampler cleanup failed: ${errorMessage(error)}`,
+      );
+    });
   }
+  run.resourceSampling = null;
   run.nvidia = null;
 
   const nodeHelpers = await closeNewNodeHelpers().catch((error) => {
@@ -1754,6 +1788,49 @@ async function cleanupAfterRun(): Promise<void> {
     new_node_helpers_closed: nodeHelpers,
     residue_after_close: cleanupResidue,
   };
+}
+
+async function cleanupAfterRunWithTimeout(): Promise<void> {
+  const timeoutMs = 90_000;
+  await Promise.race([
+    cleanupAfterRun(),
+    delay(timeoutMs).then(() => {
+      throw new Error(`closeout cleanup timed out after ${timeoutMs}ms`);
+    }),
+  ]);
+}
+
+function writeCloseoutArtifacts(
+  label: string,
+  { recordBaselineFailure }: { readonly recordBaselineFailure: boolean },
+): void {
+  try {
+    run.metrics.observations.push(`closeout checkpoint: ${label}`);
+    writeStreamingBaselineArtifacts({ recordFailure: recordBaselineFailure });
+    saveMetrics();
+  } catch (error) {
+    run.metrics.errors.push(
+      `${label} artifact write failed: ${errorMessage(error)}`,
+    );
+  }
+}
+
+function logFinalMetricsSummary(): void {
+  console.log(
+    JSON.stringify(
+      {
+        status: run.metrics.status,
+        error_count: run.metrics.errors.length,
+        out_dir: normalizePath(relative(run.options.workspaceRoot, run.options.outDir)),
+        metrics_json: normalizePath(
+          relative(run.options.workspaceRoot, join(run.options.outDir, 'metrics.json')),
+        ),
+        streaming_baseline: run.metrics.streaming_baseline ?? null,
+      },
+      null,
+      2,
+    ),
+  );
 }
 
 async function waitForChildExit(
@@ -1787,6 +1864,7 @@ export async function runPackagedFlowSmokeCli(argv: readonly string[] = process.
     observations: [],
     errors: [],
     llm_model: parsedOptions.ollamaModel,
+    ocr_provider: parsedOptions.ocrProvider,
     first_chunk_gate_ms: FIRST_CHUNK_GATE_MS,
     first_chunk_under_gate: false,
     streaming_draft_page_limit: parsedOptions.streamingDraftPageLimit,
@@ -1807,6 +1885,7 @@ export async function runPackagedFlowSmokeCli(argv: readonly string[] = process.
     app: null,
     appExit: null,
     nvidia: null,
+    resourceSampling: null,
     browser: null,
     page: null,
     port: parsedOptions.cdpPort,
@@ -1832,10 +1911,12 @@ export async function runPackagedFlowSmokeCli(argv: readonly string[] = process.
       });
     }
   } finally {
-    await cleanupAfterRun();
-    writeStreamingBaselineArtifacts();
-    saveMetrics();
-    console.log(JSON.stringify(run.metrics, null, 2));
+    writeCloseoutArtifacts('pre-cleanup', { recordBaselineFailure: false });
+    await cleanupAfterRunWithTimeout().catch((error) => {
+      run.metrics.errors.push(`cleanup failed: ${errorMessage(error)}`);
+    });
+    writeCloseoutArtifacts('final', { recordBaselineFailure: true });
+    logFinalMetricsSummary();
   }
 
   process.exitCode = run.metrics.status === 'completed' && run.metrics.errors.length === 0 ? 0 : 1;

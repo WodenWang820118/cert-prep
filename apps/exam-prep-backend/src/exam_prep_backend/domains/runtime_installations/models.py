@@ -12,6 +12,7 @@ class RuntimeRequirementKind(StrEnum):
     OLLAMA = "ollama"
     OLLAMA_MODEL = "ollama_model"
     PADDLE_OCR = "paddle_ocr"
+    DIRECTML_OCR = "directml_ocr"
 
 
 class RuntimeInstallationStatus(StrEnum):
@@ -66,8 +67,9 @@ class RuntimeInstallProgress:
 
 @dataclass(frozen=True, slots=True)
 class OcrRuntimeManifest:
-    """Manifest metadata for a packaged PaddleOCR runtime artifact."""
+    """Manifest metadata for a packaged OCR runtime artifact."""
 
+    kind: RuntimeRequirementKind
     version: str
     target: str
     file_name: str

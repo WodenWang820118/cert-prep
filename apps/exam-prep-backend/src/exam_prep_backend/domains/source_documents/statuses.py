@@ -25,6 +25,7 @@ class PdfExtractionMethod(StrEnum):
     PADDLE_OCR_CPU_FALLBACK = "paddle_ocr_cpu_fallback"
     PADDLE_OCR_GPU = "paddle_ocr_gpu"
     PADDLE_OCR_GPU_FALLBACK = "paddle_ocr_gpu_fallback"
+    DIRECTML_OCR = "directml_ocr"
     FAKE_OCR = "fake_ocr"
 
 

@@ -6,6 +6,8 @@ export interface PackageQaOptions {
   readonly backendRuntimeEntrypoint?: string;
   readonly ocrRuntimeRoot?: string;
   readonly ocrRuntimeManifest?: string;
+  readonly directmlOcrRuntimeRoot?: string;
+  readonly directmlOcrRuntimeManifest?: string;
   readonly expectedTargetTriple?: string;
   readonly healthTimeoutMs?: number;
   readonly dataDir?: string;
@@ -20,6 +22,7 @@ export interface RuntimeHealthOptions {
   readonly dataDir?: string;
   readonly llmModel?: string;
   readonly ocrRuntimeManifest?: string;
+  readonly directmlOcrRuntimeManifest?: string;
   readonly ocrPageWorkers?: number;
 }
 
@@ -68,9 +71,12 @@ export interface LlmHealthSummary {
 
 export interface RuntimeHealthSummary {
   readonly launch_env: {
-    readonly EXAM_PREP_OCR_PROVIDER: 'paddle';
+    readonly EXAM_PREP_OCR_PROVIDER: 'directml' | 'paddle';
     readonly EXAM_PREP_OCR_RUNTIME_MODE: 'external';
     readonly EXAM_PREP_OCR_DEVICE: 'auto';
+    readonly EXAM_PREP_OCR_RUNTIME_MANIFEST_PATH: string;
+    readonly EXAM_PREP_OCR_DIRECTML_DEVICE_ID: '0';
+    readonly EXAM_PREP_DIRECTML_OCR_RUNTIME_MANIFEST_PATH: string;
     readonly EXAM_PREP_LLM_PROVIDER: 'ollama';
     readonly EXAM_PREP_OLLAMA_MODEL: string;
     readonly EXAM_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD: 'true';
@@ -126,6 +132,9 @@ export interface PackageQaReport {
     readonly ocr_runtime_root: string;
     readonly ocr_runtime_manifest: RuntimeManifestSummary;
     readonly ocr_runtime_artifacts: PublicFileRecord[];
+    readonly directml_ocr_runtime_root: string;
+    readonly directml_ocr_runtime_manifest: RuntimeManifestSummary;
+    readonly directml_ocr_runtime_artifacts: PublicFileRecord[];
     readonly size_gate: SizeGate;
   };
   readonly runtime: RuntimeHealthSummary;
@@ -156,6 +165,8 @@ export interface ParsedArgs {
   backendRuntimeEntrypoint?: string;
   ocrRuntimeRoot?: string;
   ocrRuntimeManifest?: string;
+  directmlOcrRuntimeRoot?: string;
+  directmlOcrRuntimeManifest?: string;
   expectedTargetTriple?: string;
   healthTimeoutMs?: number;
   ocrPageWorkers?: number;
@@ -169,6 +180,8 @@ export interface RuntimeLaunchEnvOptions {
   readonly dataDir: string;
   readonly llmModel: string;
   readonly ocrRuntimeManifest: string;
+  readonly directmlOcrRuntimeManifest: string;
+  readonly ocrProvider?: 'directml' | 'paddle';
   readonly ocrPageWorkers?: number;
   readonly baseEnv?: NodeJS.ProcessEnv;
 }

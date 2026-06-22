@@ -14,6 +14,10 @@ const MODEL_MISSING_REASON_CODES = new Set([
   'missing_model',
   'ollama_model_missing',
 ]);
+const OCR_RUNTIME_MISSING_REASON_CODES = new Set([
+  'paddle_runtime_missing',
+  'directml_runtime_missing',
+]);
 
 @Injectable({ providedIn: 'root' })
 export class RuntimeHealthDerivationService {
@@ -54,11 +58,37 @@ export class RuntimeHealthDerivationService {
     health: OCRHealthRead | null,
     requirements: readonly RuntimeRequirementRead[],
   ): boolean {
+    const kind = this.ocrRuntimeKind(health, requirements);
     return (
-      this.unavailableReason(health) === 'paddle_runtime_missing' ||
-      this.runtimeUnavailableReason(requirements, 'paddle_ocr') ===
-        'paddle_runtime_missing'
+      OCR_RUNTIME_MISSING_REASON_CODES.has(this.unavailableReason(health)) ||
+      OCR_RUNTIME_MISSING_REASON_CODES.has(
+        this.runtimeUnavailableReason(requirements, kind),
+      )
     );
+  }
+
+  ocrRuntimeKind(
+    health: OCRHealthRead | null,
+    requirements: readonly RuntimeRequirementRead[],
+  ): Extract<RuntimeKind, 'paddle_ocr' | 'directml_ocr'> {
+    const healthProvider = this.normalizedCode(health?.provider);
+    const healthReason = this.unavailableReason(health);
+    if (
+      healthProvider === 'directml' ||
+      healthReason.startsWith('directml_')
+    ) {
+      return 'directml_ocr';
+    }
+    if (
+      requirements.some(
+        (item) =>
+          item.kind === 'directml_ocr' &&
+          this.normalizedCode(item.unavailable_reason).startsWith('directml_'),
+      )
+    ) {
+      return 'directml_ocr';
+    }
+    return 'paddle_ocr';
   }
 
   configuredModelName(

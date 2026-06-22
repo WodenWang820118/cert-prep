@@ -30,7 +30,8 @@
     "icon": ["icons/icon.ico"],
     "resources": [
       "resources/backend-runtime-manifest.json",
-      "resources/ocr-runtime-manifest.json"
+      "resources/ocr-runtime-manifest.json",
+      "resources/directml-ocr-runtime-manifest.json"
     ]
   }
 }

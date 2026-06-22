@@ -11,7 +11,7 @@ from exam_prep_backend.errors import ProviderUnavailableError
 
 
 def resolve_ocr_runtime_artifact(manifest: OcrRuntimeManifest) -> Path:
-    """Find or download the PaddleOCR runtime archive described by the manifest."""
+    """Find or download the OCR runtime archive described by the manifest."""
 
     candidates = [
         (manifest.base_dir / manifest.file_name) if manifest.base_dir is not None else None,
@@ -28,9 +28,7 @@ def resolve_ocr_runtime_artifact(manifest: OcrRuntimeManifest) -> Path:
         target = download_dir / manifest.file_name
         urlretrieve(manifest.url, target)
         return target
-    raise ProviderUnavailableError(
-        f"PaddleOCR runtime artifact was not found: {manifest.file_name}"
-    )
+    raise ProviderUnavailableError(f"OCR runtime artifact was not found: {manifest.file_name}")
 
 
 def verify_file_hash(path: Path, sha256: str, *, expected_bytes: int) -> None:

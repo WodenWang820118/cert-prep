@@ -98,7 +98,7 @@ export class HealthStore {
     const health = this.ocrHealth();
     const install = this.runtimeInstall();
     const installingOcr =
-      install?.kind === 'paddle_ocr' &&
+      (install?.kind === 'paddle_ocr' || install?.kind === 'directml_ocr') &&
       ['starting', 'running', 'waiting_for_user'].includes(install.phase);
     if (installingOcr && health === null) {
       return 'warming';
@@ -247,7 +247,12 @@ export class HealthStore {
 
   openOcrRuntimeInstallConsent(): void {
     if (!this.isRuntimeInstallActive()) {
-      this.runtimeInstallConsentKind.set('paddle_ocr');
+      this.runtimeInstallConsentKind.set(
+        this.runtimeHealth.ocrRuntimeKind(
+          this.ocrHealth(),
+          this.runtimeRequirements(),
+        ),
+      );
     }
   }
 
@@ -512,10 +517,10 @@ export class HealthStore {
       return this.isOllamaMissing();
     }
 
-    if (kind === 'paddle_ocr') {
+    if (kind === 'paddle_ocr' || kind === 'directml_ocr') {
       return (
         this.isOcrRuntimeMissing() ||
-        this.runtimeInstallConsentKind() === 'paddle_ocr'
+        this.runtimeInstallConsentKind() === kind
       );
     }
 

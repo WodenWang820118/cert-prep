@@ -9,6 +9,7 @@ const DEFAULT_BASELINE_OUT_ROOT =
   'tmp/exam-prep-desktop/packaged-streaming-baseline';
 const DEFAULT_PDF_PATH = 'pdfs/\u30101\u30112025\u5e7407\u6708N1 \u771f\u9898.pdf';
 const DEFAULT_CDP_PORT = 9491;
+const DEFAULT_OCR_PROVIDER = 'directml';
 const DEFAULT_OCR_PAGE_WORKERS = 1;
 const DEFAULT_OLLAMA_MODEL = 'qwen3:14b';
 const DEFAULT_STREAMING_COMPLETE_TIMEOUT_MS = 1_200_000;
@@ -35,6 +36,9 @@ export function parsePackagedFlowSmokeArgs(
     pdfPath: resolve(workspaceRoot, DEFAULT_PDF_PATH),
     outDir: resolve(workspaceRoot, DEFAULT_OUT_ROOT, timestamp),
     cdpPort: DEFAULT_CDP_PORT,
+    ocrProvider:
+      process.env.EXAM_PREP_PACKAGE_SMOKE_OCR_PROVIDER?.trim() ||
+      DEFAULT_OCR_PROVIDER,
     ocrPageWorkers: Number(
       process.env.EXAM_PREP_PACKAGE_SMOKE_OCR_PAGE_WORKERS ??
         DEFAULT_OCR_PAGE_WORKERS,
@@ -82,6 +86,8 @@ export function parsePackagedFlowSmokeArgs(
       parsed.appDataDir = resolve(workspaceRoot, readValue(arg));
     } else if (arg === '--cdp-port') {
       parsed.cdpPort = positiveInteger(Number(readValue(arg)), arg);
+    } else if (arg === '--ocr-provider') {
+      parsed.ocrProvider = nonEmptyString(readValue(arg), arg);
     } else if (arg === '--ocr-page-workers') {
       parsed.ocrPageWorkers = positiveInteger(Number(readValue(arg)), arg);
     } else if (arg === '--ollama-model') {
@@ -108,6 +114,7 @@ export function parsePackagedFlowSmokeArgs(
     parsed.ocrPageWorkers,
     'ocrPageWorkers',
   );
+  parsed.ocrProvider = nonEmptyString(parsed.ocrProvider, 'ocrProvider');
   parsed.ollamaModel = nonEmptyString(parsed.ollamaModel, 'ollamaModel');
   parsed.streamingCompleteTimeoutMs = positiveInteger(
     parsed.streamingCompleteTimeoutMs,

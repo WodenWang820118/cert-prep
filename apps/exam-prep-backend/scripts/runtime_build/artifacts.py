@@ -21,6 +21,7 @@ class RuntimeArtifactSpec:
     archive_name: str
     zip_path: Path
     manifest_path: Path
+    extra_files: tuple[tuple[Path, str], ...] = ()
 
 
 def run_command(command: list[str], *, cwd: Path) -> None:
@@ -33,6 +34,8 @@ def write_runtime_artifact(spec: RuntimeArtifactSpec) -> tuple[Path, Path]:
     spec.zip_path.parent.mkdir(parents=True, exist_ok=True)
     with ZipFile(spec.zip_path, "w", compression=ZIP_DEFLATED) as archive:
         archive.write(spec.source_path, spec.archive_name)
+        for source_path, archive_name in spec.extra_files:
+            archive.write(source_path, archive_name)
     manifest = runtime_manifest(spec)
     spec.manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return spec.zip_path, spec.manifest_path

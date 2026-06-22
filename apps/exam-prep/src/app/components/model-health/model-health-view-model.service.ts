@@ -64,7 +64,7 @@ export class ModelHealthViewModelService {
 
   private ocrSection(state: ModelHealthViewState): RuntimeStatusSectionView {
     return {
-      title: 'PaddleOCR',
+      title: this.ocrTitle(state),
       statusLabel: this.ocrStatusLabel(state),
       severity: this.ocrSeverity(state),
       detail: this.ocrDetail(state),
@@ -166,27 +166,34 @@ export class ModelHealthViewModelService {
   }
 
   private ocrDetail(state: ModelHealthViewState): string {
+    const title = this.ocrTitle(state);
     if (!state.backendReady) {
       return 'Waiting for Python backend runtime.';
     }
     if (state.ocrPhase === 'checking') {
-      return 'Checking PaddleOCR runtime health.';
+      return `Checking ${title} runtime health.`;
     }
     if (state.ocrPhase === 'warming') {
-      return 'PaddleOCR is warming up.';
+      return `${title} is warming up.`;
     }
     if (state.ocrPhase === 'stale') {
-      return 'Refreshing cached PaddleOCR status.';
+      return `Refreshing cached ${title} status.`;
     }
     if (state.ocrPhase === 'waiting') {
-      return 'Waiting for PaddleOCR status.';
+      return `Waiting for ${title} status.`;
     }
     if (state.ocrHealth === null) {
       return state.ocrRuntimeMissing
-        ? 'PaddleOCR runtime is not installed.'
-        : 'PaddleOCR health check failed.';
+        ? `${title} runtime is not installed.`
+        : `${title} health check failed.`;
     }
     return state.ocrHealth.fallback_reason || state.ocrHealth.detail;
+  }
+
+  private ocrTitle(state: ModelHealthViewState): string {
+    return state.ocrHealth?.provider === 'directml'
+      ? 'AMD DirectML OCR'
+      : 'PaddleOCR';
   }
 
   private ollamaStatusLabel(state: ModelHealthViewState): string {

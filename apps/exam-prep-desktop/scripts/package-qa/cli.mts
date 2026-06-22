@@ -33,6 +33,10 @@ export function parsePackageQaArgs(
       parsed.ocrRuntimeRoot = readValue(arg);
     } else if (arg === '--ocr-runtime-manifest') {
       parsed.ocrRuntimeManifest = readValue(arg);
+    } else if (arg === '--directml-ocr-runtime-root') {
+      parsed.directmlOcrRuntimeRoot = readValue(arg);
+    } else if (arg === '--directml-ocr-runtime-manifest') {
+      parsed.directmlOcrRuntimeManifest = readValue(arg);
     } else if (arg === '--target') {
       parsed.expectedTargetTriple = readValue(arg);
     } else if (arg === '--health-timeout-ms') {

@@ -88,6 +88,69 @@
         "command": "uv sync --extra ocr-gpu --reinstall-package paddlepaddle-gpu && uv run --extra ocr-gpu python scripts/benchmark_ocr.py --device gpu:0 --output .benchmarks/ocr-gpu-page3.json"
       }
     },
+    "ocr-igpu-probe": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "outputs": ["{projectRoot}/.benchmarks"],
+      "options": {
+        "cwd": "apps/exam-prep-backend",
+        "command": "uv run --extra ocr-gpu python scripts/ocr_igpu_probe.py"
+      }
+    },
+    "ocr-directml-probe": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "outputs": ["{projectRoot}/.benchmarks"],
+      "options": {
+        "cwd": "apps/exam-prep-backend",
+        "command": "uv run --extra ocr-directml python scripts/ocr_directml_probe.py"
+      }
+    },
+    "ocr-directml-prepare-models": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "outputs": ["{projectRoot}/.benchmarks"],
+      "options": {
+        "cwd": "apps/exam-prep-backend",
+        "command": "uv run --extra ocr-directml python scripts/ocr_directml_prepare_models.py"
+      }
+    },
+    "ocr-directml-prepare-models-docker": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "outputs": ["{projectRoot}/.benchmarks"],
+      "options": {
+        "cwd": "apps/exam-prep-backend",
+        "command": "uv run --extra ocr-directml python scripts/ocr_directml_prepare_models.py --converter docker --force-conversion --fail-if-not-ready"
+      }
+    },
+    "ocr-directml-session-smoke": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "outputs": ["{projectRoot}/.benchmarks"],
+      "options": {
+        "cwd": "apps/exam-prep-backend",
+        "command": "uv run --extra ocr-directml python scripts/ocr_directml_smoke.py"
+      }
+    },
+    "ocr-directml-inference-smoke": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "outputs": ["{projectRoot}/.benchmarks"],
+      "options": {
+        "cwd": "apps/exam-prep-backend",
+        "command": "uv run --extra ocr-directml python scripts/ocr_directml_inference_smoke.py"
+      }
+    },
+    "ocr-directml-benchmark": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "outputs": ["{projectRoot}/.benchmarks"],
+      "options": {
+        "cwd": "apps/exam-prep-backend",
+        "command": "uv run --extra ocr-directml python scripts/ocr_directml_benchmark.py"
+      }
+    },
     "reasoning-bakeoff": {
       "cache": false,
       "executor": "nx:run-commands",
@@ -95,6 +158,15 @@
       "options": {
         "cwd": "apps/exam-prep-backend",
         "command": "uv run python scripts/reasoning_bakeoff.py"
+      }
+    },
+    "reasoning-memory": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "outputs": ["{projectRoot}/.benchmarks"],
+      "options": {
+        "cwd": "apps/exam-prep-backend",
+        "command": "uv run python scripts/reasoning_memory.py"
       }
     },
     "build-sidecar": {
@@ -148,6 +220,17 @@
       "options": {
         "cwd": "apps/exam-prep-backend",
         "command": "uv run --extra ocr-gpu python scripts/build_ocr_runtime.py --lane gpu --target x86_64-pc-windows-msvc"
+      }
+    },
+    "build-ocr-runtime-directml": {
+      "cache": true,
+      "executor": "nx:run-commands",
+      "dependsOn": ["ocr-directml-prepare-models"],
+      "inputs": ["production"],
+      "outputs": ["{projectRoot}/dist/ocr-directml-runtime"],
+      "options": {
+        "cwd": "apps/exam-prep-backend",
+        "command": "uv run --extra ocr-directml python scripts/build_ocr_runtime.py --lane directml --target x86_64-pc-windows-msvc"
       }
     },
     "generate-openapi-client": {

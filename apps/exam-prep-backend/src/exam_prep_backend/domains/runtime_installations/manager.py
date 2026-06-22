@@ -86,9 +86,16 @@ class RuntimeInstallationManager:
         installers: list[RuntimeInstaller] | None = None,
     ) -> None:
         from exam_prep_backend.domains.runtime_installations.installers import (
+            DirectMLOcrRuntimeInstaller,
             OllamaModelInstaller,
             OllamaRuntimeInstaller,
             PaddleOcrRuntimeInstaller,
+        )
+        from exam_prep_backend.domains.source_documents.adapters.external_directml import (
+            ExternalDirectMLOCRProvider,
+        )
+        from exam_prep_backend.domains.source_documents.adapters.external_paddle import (
+            ExternalPaddleOCRProvider,
         )
 
         self._settings = settings
@@ -100,7 +107,22 @@ class RuntimeInstallationManager:
                 or [
                     OllamaRuntimeInstaller(settings),
                     OllamaModelInstaller(llm_provider),
-                    PaddleOcrRuntimeInstaller(settings, ocr_provider),
+                    PaddleOcrRuntimeInstaller(
+                        settings,
+                        (
+                            ocr_provider
+                            if getattr(ocr_provider, "provider", None) == "paddle"
+                            else ExternalPaddleOCRProvider(settings)
+                        ),
+                    ),
+                    DirectMLOcrRuntimeInstaller(
+                        settings,
+                        (
+                            ocr_provider
+                            if getattr(ocr_provider, "provider", None) == "directml"
+                            else ExternalDirectMLOCRProvider(settings)
+                        ),
+                    ),
                 ]
             )
         }

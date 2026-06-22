@@ -139,7 +139,7 @@ export class SourceImportStore {
     }
     if (this.health.isOcrHealthLoading()) {
       this.operations.fail(
-        'PaddleOCR is warming up. Try again when runtime health finishes.',
+        'OCR runtime is warming up. Try again when runtime health finishes.',
       );
       return null;
     }
@@ -156,7 +156,11 @@ export class SourceImportStore {
       this.upsertDocument(document);
       this.visibleChunkLimit.set(INITIAL_CHUNK_PREVIEW_LIMIT);
       await this.refreshUploadedDocument(project.id, document.id);
-    } else if (this.operations.errorCode() === 'paddle_runtime_missing') {
+    } else if (
+      ['paddle_runtime_missing', 'directml_runtime_missing'].includes(
+        this.operations.errorCode() ?? '',
+      )
+    ) {
       await this.refreshRuntimeHealth();
       this.health.openOcrRuntimeInstallConsent();
     }

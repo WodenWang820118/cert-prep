@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from exam_prep_backend.app import create_app
 from exam_prep_backend.config import Settings
 from exam_prep_backend.domains.runtime_installations import (
+    DirectMLOcrRuntimeInstaller,
     PaddleOcrRuntimeInstaller,
     RuntimeInstallProgress,
     RuntimeInstallationManager,
@@ -113,6 +114,57 @@ def test_paddle_runtime_install_rejects_checksum_mismatch(tmp_path: Path) -> Non
     assert response.error == "OCR runtime artifact checksum mismatch."
 
 
+def test_directml_runtime_install_verifies_and_installs_artifact(tmp_path: Path) -> None:
+    artifact_path = tmp_path / "exam-prep-ocr-directml-runtime-x86_64-pc-windows-msvc.zip"
+    with ZipFile(artifact_path, "w") as archive:
+        archive.writestr("exam-prep-ocr-directml-runtime.cmd", "@echo off\r\nexit /b 0\r\n")
+        archive.writestr("det_model.onnx", "det")
+        archive.writestr("rec_model.onnx", "rec")
+        archive.writestr("rec_char_dict.txt", "A\n")
+        archive.writestr("pipeline.json", "{}")
+    sha256 = _sha256_file(artifact_path)
+    manifest_path = tmp_path / "directml-ocr-runtime-manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "kind": "directml_ocr",
+                "version": "0.1.0",
+                "target": "x86_64-pc-windows-msvc",
+                "entrypoint": "exam-prep-ocr-directml-runtime.cmd",
+                "artifact": {
+                    "file_name": artifact_path.name,
+                    "sha256": sha256,
+                    "bytes": artifact_path.stat().st_size,
+                    "url": None,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    runtime_dir = tmp_path / "installed-directml"
+    settings = Settings(
+        data_dir=tmp_path,
+        api_token="test-token",
+        directml_ocr_runtime_dir=runtime_dir,
+        directml_ocr_runtime_manifest_path=manifest_path,
+    )
+    manager = RuntimeInstallationManager(
+        settings=settings,
+        llm_provider=object(),
+        ocr_provider=FakeOcrProvider(),
+        installers=[DirectMLOcrRuntimeInstaller(settings, FakeDirectMLOcrProvider(runtime_dir))],
+        async_jobs=False,
+    )
+
+    response = manager.start_installation(RuntimeRequirementKind.DIRECTML_OCR)
+
+    assert response.status == RuntimeInstallationStatus.SUCCEEDED
+    installed_manifest = json.loads((runtime_dir / "runtime-manifest.json").read_text())
+    assert installed_manifest["kind"] == "directml_ocr"
+    assert (runtime_dir / "exam-prep-ocr-directml-runtime.cmd").is_file()
+
+
 def test_ocr_runtime_command_decodes_utf8_output(monkeypatch, tmp_path: Path) -> None:
     calls: dict[str, object] = {}
 
@@ -180,3 +232,38 @@ class FakeOcrProvider:
 
     def extract_page_text(self, image_png: bytes, page_number: int) -> OCRPageResult:
         raise AssertionError("OCR should not run in runtime installation tests.")
+
+
+class FakeDirectMLOcrProvider(FakeOcrProvider):
+    provider = "directml"
+    engine = "onnxruntime-directml"
+
+    def __init__(self, runtime_dir: Path) -> None:
+        self._runtime_dir = runtime_dir
+
+    def health(self) -> OCRHealth:
+        return OCRHealth(
+            provider=self.provider,
+            engine=self.engine,
+            available=(self._runtime_dir / "runtime-manifest.json").is_file(),
+            detail="AMD DirectML OCR runtime is ready.",
+            python_version="3.13.5",
+            paddle_version=None,
+            paddleocr_version="1.24.4",
+            selected_device="amd_directml",
+            cuda_available=False,
+            gpu_count=0,
+            model_cache_dir=str(self._runtime_dir),
+            fallback_reason=None,
+            unavailable_reason=None,
+        )
+
+
+def _sha256_file(path: Path) -> str:
+    import hashlib
+
+    digest = hashlib.sha256()
+    with path.open("rb") as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()

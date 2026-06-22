@@ -9,12 +9,18 @@ from typing import Any
 
 from exam_prep_backend.config import Settings
 from exam_prep_backend.domains.source_documents.adapters.diagnostics import run_ocr_diagnostics
+from exam_prep_backend.domains.source_documents.adapters.directml import (
+    DirectMLRuntimeOCRProvider,
+)
 from exam_prep_backend.domains.source_documents.adapters.paddle import PaddleOCRProvider
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--provider", choices=["paddle", "directml"], default="paddle")
     parser.add_argument("--device", default="auto")
+    parser.add_argument("--directml-device-id", type=int, default=0)
+    parser.add_argument("--model-dir", type=Path)
     parser.add_argument("--ocr-health", action="store_true")
     parser.add_argument("--ocr-self-test", action="store_true")
     parser.add_argument("--ocr-page")
@@ -26,13 +32,11 @@ def main() -> None:
         sys.stdout.reconfigure(encoding="utf-8")
 
     if args.ocr_self_test:
-        result = run_ocr_diagnostics(
-            Settings(ocr_provider="paddle", ocr_device=args.device, ocr_runtime_mode="inprocess")
-        )
+        result = _self_test(args)
         print(json.dumps(result, ensure_ascii=False))
         raise SystemExit(0 if result["ok"] else 1)
 
-    provider = PaddleOCRProvider(device=args.device)
+    provider = _provider_from_args(args)
     if args.ocr_worker:
         _run_worker(provider)
         return
@@ -54,7 +58,44 @@ def main() -> None:
     parser.error("one of --ocr-health, --ocr-self-test, --ocr-page, or --ocr-worker is required")
 
 
-def _run_worker(provider: PaddleOCRProvider) -> None:
+def _provider_from_args(args: argparse.Namespace) -> PaddleOCRProvider | DirectMLRuntimeOCRProvider:
+    if args.provider == "directml":
+        return DirectMLRuntimeOCRProvider(
+            model_dir=args.model_dir or _default_directml_model_dir(),
+            device_id=args.directml_device_id,
+        )
+    return PaddleOCRProvider(device=args.device)
+
+
+def _self_test(args: argparse.Namespace) -> dict[str, Any]:
+    if args.provider == "directml":
+        provider = _provider_from_args(args)
+        try:
+            result = provider.extract_page_text(_self_test_png(), 1)
+        except Exception as exc:
+            return {
+                "ok": False,
+                "provider": "directml",
+                "error": str(exc),
+            }
+        normalized = result.text.replace(" ", "").replace("\n", "")
+        return {
+            "ok": "OCR" in normalized and "TEST" in normalized,
+            "provider": "directml",
+            "result": asdict(result),
+        }
+    return run_ocr_diagnostics(
+        Settings(ocr_provider="paddle", ocr_device=args.device, ocr_runtime_mode="inprocess")
+    )
+
+
+def _default_directml_model_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parents[2] / ".benchmarks" / "ocr-directml-models"
+
+
+def _run_worker(provider: PaddleOCRProvider | DirectMLRuntimeOCRProvider) -> None:
     for line in sys.stdin:
         if not line.strip():
             continue
@@ -89,6 +130,19 @@ def _worker_response(provider: PaddleOCRProvider, line: str) -> dict[str, Any]:
 
 def _optional_string(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
+
+
+def _self_test_png() -> bytes:
+    from io import BytesIO
+
+    from PIL import Image, ImageDraw
+
+    image = Image.new("RGB", (160, 56), "white")
+    draw = ImageDraw.Draw(image)
+    draw.text((8, 16), "OCR TEST", fill="black")
+    output = BytesIO()
+    image.save(output, format="PNG")
+    return output.getvalue()
 
 
 if __name__ == "__main__":

@@ -84,6 +84,9 @@ class ExternalPaddleOCRProvider:
             raise ProviderUnavailableError("PaddleOCR runtime is not installed.")
         self._prewarm_primary_worker(entrypoint, raise_on_failure=True)
 
+    def close(self) -> None:
+        self._reset_worker_pool()
+
     def _prewarm_primary_worker(
         self,
         entrypoint: Path,
@@ -173,7 +176,8 @@ class ExternalPaddleOCRProvider:
                 self._worker_pool.close()
             self._worker_pool = _OcrWorkerPool(
                 entrypoint=entrypoint,
-                device=self._settings.ocr_device,
+                worker_args=["--ocr-worker", "--device", self._settings.ocr_device],
+                worker_label="PaddleOCR",
                 worker_count=self.page_workers,
                 initial_worker_count=initial_worker_count,
                 timeout_seconds=self._settings.ocr_runtime_timeout_seconds,
@@ -192,14 +196,16 @@ class _OcrWorkerPool:
         self,
         *,
         entrypoint: Path,
-        device: str,
+        worker_args: list[str],
+        worker_label: str,
         worker_count: int,
         initial_worker_count: int | None = None,
         timeout_seconds: float,
     ) -> None:
         self.entrypoint = entrypoint
         self.worker_count = max(1, worker_count)
-        self._device = device
+        self._worker_args = worker_args
+        self._worker_label = worker_label
         self._timeout_seconds = timeout_seconds
         self._lock = threading.Lock()
         self._next_worker_index = 0
@@ -246,7 +252,8 @@ class _OcrWorkerPool:
     def _create_worker(self) -> _JsonlOcrWorker:
         return _JsonlOcrWorker(
             entrypoint=self.entrypoint,
-            device=self._device,
+            worker_args=self._worker_args,
+            worker_label=self._worker_label,
             timeout_seconds=self._timeout_seconds,
         )
 
@@ -270,13 +277,21 @@ class _OcrWorkerPool:
 
 
 class _JsonlOcrWorker:
-    def __init__(self, *, entrypoint: Path, device: str, timeout_seconds: float) -> None:
+    def __init__(
+        self,
+        *,
+        entrypoint: Path,
+        worker_args: list[str],
+        worker_label: str,
+        timeout_seconds: float,
+    ) -> None:
         self._timeout_seconds = max(1.0, timeout_seconds)
+        self._worker_label = worker_label
         self._lock = threading.Lock()
         self._stderr_lines: deque[str] = deque(maxlen=20)
         self._responses: Queue[str | None] = Queue()
         self._process = subprocess.Popen(
-            _entrypoint_command(entrypoint, ["--ocr-worker", "--device", device]),
+            _entrypoint_command(entrypoint, worker_args),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -307,14 +322,14 @@ class _JsonlOcrWorker:
                 self._process.stdin.flush()
             except Exception as exc:
                 raise ProviderUnavailableError(
-                    f"PaddleOCR worker could not accept a job: {exc}"
+                    f"{self._worker_label} worker could not accept a job: {exc}"
                 ) from exc
 
             try:
                 line = self._responses.get(timeout=self._timeout_seconds)
             except Empty as exc:
                 self.close()
-                raise ProviderUnavailableError("PaddleOCR worker timed out.") from exc
+                raise ProviderUnavailableError(f"{self._worker_label} worker timed out.") from exc
 
             if line is None:
                 raise ProviderUnavailableError(self._worker_exit_detail())
@@ -322,18 +337,24 @@ class _JsonlOcrWorker:
                 payload = json.loads(line)
             except json.JSONDecodeError as exc:
                 raise ProviderUnavailableError(
-                    f"PaddleOCR worker returned invalid JSON: {line.strip()}"
+                    f"{self._worker_label} worker returned invalid JSON: {line.strip()}"
                 ) from exc
             if not isinstance(payload, dict):
-                raise ProviderUnavailableError("PaddleOCR worker returned a non-object payload.")
+                raise ProviderUnavailableError(
+                    f"{self._worker_label} worker returned a non-object payload."
+                )
             if payload.get("id") != job_id:
-                raise ProviderUnavailableError("PaddleOCR worker returned a mismatched job id.")
+                raise ProviderUnavailableError(
+                    f"{self._worker_label} worker returned a mismatched job id."
+                )
             if not payload.get("ok"):
-                error = str(payload.get("error") or "PaddleOCR worker failed.")
+                error = str(payload.get("error") or f"{self._worker_label} worker failed.")
                 raise ProviderUnavailableError(error)
             result = payload.get("result")
             if not isinstance(result, dict):
-                raise ProviderUnavailableError("PaddleOCR worker returned a missing result.")
+                raise ProviderUnavailableError(
+                    f"{self._worker_label} worker returned a missing result."
+                )
             return result
 
     def close(self) -> None:
@@ -352,7 +373,7 @@ class _JsonlOcrWorker:
             raise ProviderUnavailableError(self._worker_exit_detail())
 
     def _worker_exit_detail(self) -> str:
-        detail = "PaddleOCR worker exited unexpectedly."
+        detail = f"{self._worker_label} worker exited unexpectedly."
         stderr = "\n".join(self._stderr_lines).strip()
         if stderr:
             return f"{detail} {stderr}"

@@ -80,6 +80,7 @@ test('runtime launch env sets OCR page workers only from explicit QA config', ()
     dataDir: 'data',
     llmModel: 'qwen3:14b',
     ocrRuntimeManifest: 'ocr-runtime-manifest.json',
+    directmlOcrRuntimeManifest: 'directml-ocr-runtime-manifest.json',
   };
 
   const ambientOnly = buildRuntimeLaunchEnv({
@@ -91,6 +92,12 @@ test('runtime launch env sets OCR page workers only from explicit QA config', ()
     ambientOnly.EXAM_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD,
     'true',
   );
+  assert.equal(ambientOnly.EXAM_PREP_OCR_PROVIDER, 'directml');
+  assert.equal(
+    ambientOnly.EXAM_PREP_DIRECTML_OCR_RUNTIME_MANIFEST_PATH,
+    'directml-ocr-runtime-manifest.json',
+  );
+  assert.equal(ambientOnly.EXAM_PREP_OCR_DIRECTML_DEVICE_ID, '0');
   assert.equal(ambientOnly.PATH, 'test-path');
 
   const explicit = buildRuntimeLaunchEnv({

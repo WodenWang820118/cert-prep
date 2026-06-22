@@ -9,10 +9,13 @@ import {
   DEFAULT_BUNDLE_ROOT,
   DEFAULT_DATA_DIR,
   DEFAULT_LLM_MODEL,
+  DEFAULT_DIRECTML_OCR_RUNTIME_MANIFEST,
+  DEFAULT_DIRECTML_OCR_RUNTIME_ROOT,
   DEFAULT_OCR_RUNTIME_MANIFEST,
   DEFAULT_OCR_RUNTIME_ROOT,
   DEFAULT_TARGET_TRIPLE,
   OCR_RUNTIME_PREFIX,
+  DIRECTML_OCR_RUNTIME_PREFIX,
   defaultWorkspaceRoot,
 } from './constants.mts';
 import {
@@ -56,6 +59,14 @@ export async function createPackageQaReport(
     workspaceRoot,
     options.ocrRuntimeManifest ?? DEFAULT_OCR_RUNTIME_MANIFEST,
   );
+  const directmlOcrRuntimeRoot = resolve(
+    workspaceRoot,
+    options.directmlOcrRuntimeRoot ?? DEFAULT_DIRECTML_OCR_RUNTIME_ROOT,
+  );
+  const directmlOcrRuntimeManifest = resolve(
+    workspaceRoot,
+    options.directmlOcrRuntimeManifest ?? DEFAULT_DIRECTML_OCR_RUNTIME_MANIFEST,
+  );
   const expectedTargetTriple =
     options.expectedTargetTriple ?? DEFAULT_TARGET_TRIPLE;
 
@@ -86,6 +97,17 @@ export async function createPackageQaReport(
     expectedKind: 'paddle_ocr',
     artifactPrefix: OCR_RUNTIME_PREFIX,
   });
+  const directmlOcrRuntimeArtifacts = collectOcrRuntimeArtifacts(
+    directmlOcrRuntimeRoot,
+    workspaceRoot,
+  );
+  const directmlOcrRuntimeManifestSummary = validateRuntimeManifest({
+    manifestPath: directmlOcrRuntimeManifest,
+    runtimeRoot: directmlOcrRuntimeRoot,
+    workspaceRoot,
+    expectedKind: 'directml_ocr',
+    artifactPrefix: DIRECTML_OCR_RUNTIME_PREFIX,
+  });
   const targetTriple = backendRuntimeManifestSummary.target;
   if (targetTriple !== expectedTargetTriple) {
     throw new Error(
@@ -95,6 +117,11 @@ export async function createPackageQaReport(
   if (ocrRuntimeManifestSummary.target !== expectedTargetTriple) {
     throw new Error(
       `Expected ${expectedTargetTriple} OCR runtime, found ${ocrRuntimeManifestSummary.target}`,
+    );
+  }
+  if (directmlOcrRuntimeManifestSummary.target !== expectedTargetTriple) {
+    throw new Error(
+      `Expected ${expectedTargetTriple} DirectML OCR runtime, found ${directmlOcrRuntimeManifestSummary.target}`,
     );
   }
   if (!existsSync(backendRuntimeEntrypoint)) {
@@ -110,6 +137,7 @@ export async function createPackageQaReport(
     dataDir: resolve(workspaceRoot, options.dataDir ?? DEFAULT_DATA_DIR),
     llmModel: options.llmModel ?? DEFAULT_LLM_MODEL,
     ocrRuntimeManifest,
+    directmlOcrRuntimeManifest,
     ocrPageWorkers: options.ocrPageWorkers,
   });
   const sizeGate = initialInstallerSizeGate(bundleArtifacts);
@@ -136,6 +164,12 @@ export async function createPackageQaReport(
       ocr_runtime_root: normalizePath(relative(workspaceRoot, ocrRuntimeRoot)),
       ocr_runtime_manifest: ocrRuntimeManifestSummary,
       ocr_runtime_artifacts: ocrRuntimeArtifacts.map(publicFileRecord),
+      directml_ocr_runtime_root: normalizePath(
+        relative(workspaceRoot, directmlOcrRuntimeRoot),
+      ),
+      directml_ocr_runtime_manifest: directmlOcrRuntimeManifestSummary,
+      directml_ocr_runtime_artifacts:
+        directmlOcrRuntimeArtifacts.map(publicFileRecord),
       size_gate: sizeGate,
     },
     runtime,

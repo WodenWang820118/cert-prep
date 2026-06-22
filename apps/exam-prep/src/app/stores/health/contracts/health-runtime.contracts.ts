@@ -20,7 +20,11 @@ export type DownloadPhase =
 /**
  * Runtime requirement kinds the Angular health UI knows how to present.
  */
-export type RuntimeKind = 'ollama' | 'ollama_model' | 'paddle_ocr';
+export type RuntimeKind =
+  | 'ollama'
+  | 'ollama_model'
+  | 'paddle_ocr'
+  | 'directml_ocr';
 
 /**
  * Coarse OCR readiness phase used by the runtime UI and upload gating.
