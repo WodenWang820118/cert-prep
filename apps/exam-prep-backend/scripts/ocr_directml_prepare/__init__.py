@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import sys
-
-from ocr_directml_prepare import (
+from .cli import main, parse_args
+from .constants import (
     BACKEND_ROOT,
     CONVERTERS,
     CONVERSION_TIMEOUT_SECONDS,
@@ -12,44 +11,42 @@ from ocr_directml_prepare import (
     DOCKER_PADDLEX_IMAGE,
     SCRIPT_DIR,
     SOURCE_ARTIFACTS,
-    ConversionResult,
-    ConverterRunner,
-    DownloadFn,
-    SourceArtifact,
-    build_pipeline_contract,
-    build_report,
+)
+from .conversion import (
     classify_conversion_blocker,
-    classify_prepare_status,
     conversion_report,
     converter_runner_for,
-    default_output_path,
     docker_work_path,
-    download_file,
-    ensure_source_artifact,
-    extract_character_dict,
-    extract_source_artifact,
-    inspect_conversion_tool,
-    inspect_prepared_model_artifacts,
-    load_inference_yml,
-    main,
-    model_file_state,
     normalize_converter,
-    parse_args,
-    prepare_metadata_artifacts,
     prepare_onnx_artifacts,
-    recommended_next_step,
     run_docker_paddlex_conversion,
     run_paddlex_conversion,
-    safe_extract_tar,
+)
+from .inspection import (
+    classify_prepare_status,
+    inspect_conversion_tool,
+    inspect_prepared_model_artifacts,
+    model_file_state,
+    recommended_next_step,
+)
+from .metadata_artifacts import (
+    build_pipeline_contract,
+    extract_character_dict,
+    load_inference_yml,
+    prepare_metadata_artifacts,
     sanitized_rec_postprocess,
+)
+from .model_types import ConversionResult, ConverterRunner, DownloadFn, SourceArtifact
+from .report import build_report, default_output_path
+from .source_artifacts import (
+    download_file,
+    ensure_source_artifact,
+    extract_source_artifact,
+    safe_extract_tar,
     sha256_file,
     source_artifact_report,
     verify_source_archive,
 )
-
-
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8")
 
 
 __all__ = [
@@ -96,7 +93,3 @@ __all__ = [
     "source_artifact_report",
     "verify_source_archive",
 ]
-
-
-if __name__ == "__main__":
-    main()
