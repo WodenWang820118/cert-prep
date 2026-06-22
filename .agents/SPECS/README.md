@@ -12,13 +12,14 @@ temporary implementation slices.
 - `domains/backend-architecture.md` - backend domain boundaries, SOLID/DDD
   refactor decisions, OpenAPI ownership, persistence rules, and schema risks.
 - `domains/parsing-reasoning.md` - OCR parsing performance, direct editable
-  questions, streaming qwen prototype, live bakeoff blockers, and active TODO
-  pointers.
+  questions, streaming qwen prototype, live bakeoff/deferred model gates, and
+  closed TODO evidence.
 
 ## Active Backlog
 
-Active work belongs in `.agents/TODOS/`. At this checkpoint the only active
-backlog is `.agents/TODOS/parallel-parsing-reasoning.md`.
+Active work belongs in `.agents/TODOS/`. At this checkpoint the active backlog
+is empty. Recreate a TODO file only for executable open work; completed evidence
+belongs in the owning SPECS domain.
 
 ## Retired Slice Files
 

@@ -9,6 +9,7 @@ import {
   runFullExamWrongAnswer,
   runRandomQuizCorrectClear,
   uploadAndParsePdf,
+  verifyStreamingPracticeReady,
 } from './flow-steps.mts';
 import { processSnapshot } from './processes.mts';
 import { preparePackagedBackendRuntimeForSmoke } from './runtime-sync.mts';
@@ -53,6 +54,9 @@ async function runFlow(run: SmokeRunState): Promise<void> {
   await createProject(run);
   await uploadAndParsePdf(run);
   if (run.options.waitForStreamingComplete) {
+    if (run.options.verifyStreamingPracticeReady) {
+      await verifyStreamingPracticeReady(run);
+    }
     run.metrics.status = 'completed';
     log(run, 'streaming baseline completed');
     return;
@@ -128,6 +132,7 @@ export async function runPackagedFlowSmokeCli(argv: readonly string[] = process.
     streaming_draft_page_limit: parsedOptions.streamingDraftPageLimit,
     streaming_draft_workers: parsedOptions.streamingDraftWorkers,
     wait_for_streaming_complete: parsedOptions.waitForStreamingComplete,
+    practice_ready_from_streamed_questions: false,
     app_data_dir: parsedOptions.appDataDir
       ? normalizePath(relative(parsedOptions.workspaceRoot, parsedOptions.appDataDir))
       : undefined,

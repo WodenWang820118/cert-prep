@@ -70,6 +70,7 @@ export interface StreamingBaselineReport {
     question_count: number;
     usable_question_count: number;
     first_usable_before_parse_complete: boolean;
+    practice_ready_from_streamed_questions: boolean;
     job_snapshot_count: number;
     question_snapshot_count: number;
     blocker: string | null;
@@ -208,6 +209,12 @@ function buildStreamingBaselineReport(run: SmokeRunState): StreamingBaselineRepo
       (latestJob?.generated_count ?? 0) > 0 &&
       latestJob?.generated_count === latestQuestion?.usable_question_count,
     no_streaming_blocker: !run.metrics.streaming_questions.blocker,
+    ...(run.options.verifyStreamingPracticeReady
+      ? {
+          streaming_practice_ready:
+            run.metrics.practice_ready_from_streamed_questions === true,
+        }
+      : {}),
   };
   const status = Object.values(checks).every(Boolean) ? 'passed' : 'failed';
   const metricsPath = join(run.options.outDir, 'metrics.json');
@@ -272,6 +279,9 @@ function buildStreamingBaselineReport(run: SmokeRunState): StreamingBaselineRepo
       parse_complete_visible: parseComplete ?? null,
       streaming_all_jobs_terminal:
         run.metrics.streaming_questions.all_jobs_terminal_ms ?? null,
+      practice_ready_visible_ms: timings.practice_ready_visible_ms ?? null,
+      practice_first_question_visible_ms:
+        timings.practice_first_question_visible_ms ?? null,
     },
     ocr_completion: {
       pages_processed: run.metrics.ocr_completion?.pages_processed ?? null,
@@ -286,6 +296,8 @@ function buildStreamingBaselineReport(run: SmokeRunState): StreamingBaselineRepo
       question_count: latestQuestion?.item_count ?? 0,
       usable_question_count: latestQuestion?.usable_question_count ?? 0,
       first_usable_before_parse_complete: firstUsableBeforeParseComplete,
+      practice_ready_from_streamed_questions:
+        run.metrics.practice_ready_from_streamed_questions === true,
       job_snapshot_count: run.metrics.streaming_questions.job_snapshots.length,
       question_snapshot_count:
         run.metrics.streaming_questions.question_snapshots.length,
@@ -339,6 +351,8 @@ function buildProductionSummary(
     streaming_jobs_succeeded: report.streaming.completion_state.all_succeeded,
     selected_model_produced_usable_questions:
       selectedModel !== null && report.streaming.usable_question_count > 0,
+    streaming_practice_ready:
+      report.streaming.practice_ready_from_streamed_questions,
   };
   const productionSummaryPath = join(run.options.outDir, 'production-summary.json');
 
@@ -387,6 +401,8 @@ function renderStreamingBaselineMarkdown(report: StreamingBaselineReport): strin
 - First usable qwen question: ${formatMaybeMs(report.timings_ms.first_usable_question_visible)}
 - Parse complete: ${formatMaybeMs(report.timings_ms.parse_complete_visible)}
 - All streaming jobs terminal: ${formatMaybeMs(report.timings_ms.streaming_all_jobs_terminal)}
+- Practice ready from streamed questions: ${String(report.streaming.practice_ready_from_streamed_questions)}
+- Practice first question: ${formatMaybeMs(report.timings_ms.practice_first_question_visible_ms)}
 - Jobs: ${report.streaming.job_count}, generated: ${report.streaming.generated_count}, usable questions: ${report.streaming.usable_question_count}
 - Final job statuses: ${JSON.stringify(report.streaming.final_status_counts)}
 - Graceful close: ${String(report.cleanup.gracefulExited)}, fallback used: ${String(report.cleanup.fallbackUsed)}, residual processes: ${report.cleanup.residualProcesses.length}

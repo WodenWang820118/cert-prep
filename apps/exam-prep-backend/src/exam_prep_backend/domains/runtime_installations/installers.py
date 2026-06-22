@@ -24,7 +24,10 @@ from exam_prep_backend.domains.runtime_installations.models import (
     RuntimeRequirementKind,
     RuntimeRequirementSnapshot,
 )
-from exam_prep_backend.domains.runtime_installations.ollama import resolve_ollama_executable
+from exam_prep_backend.domains.runtime_installations.ollama import (
+    ensure_ollama_server_running,
+    resolve_ollama_executable,
+)
 from exam_prep_backend.domains.runtime_installations.processes import run_ocr_runtime_command
 from exam_prep_backend.domains.source_documents.ocr import OCRProvider
 from exam_prep_backend.errors import ProviderUnavailableError
@@ -64,30 +67,34 @@ class OllamaRuntimeInstaller:
     def install(self, progress: Callable[[RuntimeInstallProgress], None]) -> RuntimeInstallationStatus:
         """Run the official Ollama Windows installer script."""
 
-        progress(RuntimeInstallProgress("Starting the official Ollama Windows installer."))
+        progress(RuntimeInstallProgress("Starting the Ollama Windows installer."))
         if os.name != "nt":
             raise ProviderUnavailableError("Ollama installer automation is only configured for Windows.")
 
-        command = [
-            "powershell.exe",
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            "irm https://ollama.com/install.ps1 | iex",
-        ]
+        command = ollama_windows_install_command()
         completed = subprocess.run(
             command,
             check=False,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=max(60, int(self._settings.runtime_install_timeout_seconds)),
         )
         if completed.returncode != 0:
             output = (completed.stderr or completed.stdout or "").strip()
             raise ProviderUnavailableError(output or "Ollama installer failed.")
-        if resolve_ollama_executable() is None:
+        executable = resolve_ollama_executable()
+        if executable is None:
             return RuntimeInstallationStatus.WAITING_FOR_USER
+        progress(RuntimeInstallProgress("Starting the Ollama local API."))
+        if not ensure_ollama_server_running(
+            self._settings.ollama_host,
+            executable=executable,
+        ):
+            raise ProviderUnavailableError(
+                "Ollama was installed, but the local API did not become reachable."
+            )
         return RuntimeInstallationStatus.SUCCEEDED
 
 
@@ -160,6 +167,31 @@ class OllamaModelInstaller:
         except Exception as exc:
             raise ProviderUnavailableError(f"Ollama unavailable: {exc}") from exc
         return RuntimeInstallationStatus.SUCCEEDED
+
+
+def ollama_windows_install_command() -> list[str]:
+    """Return the preferred explicit user-triggered Ollama installer command."""
+
+    winget = shutil.which("winget")
+    if winget:
+        return [
+            winget,
+            "install",
+            "--id",
+            "Ollama.Ollama",
+            "-e",
+            "--silent",
+            "--accept-package-agreements",
+            "--accept-source-agreements",
+        ]
+    return [
+        "powershell.exe",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "irm https://ollama.com/install.ps1 | iex",
+    ]
 
 
 class PaddleOcrRuntimeInstaller:

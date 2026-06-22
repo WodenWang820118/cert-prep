@@ -119,19 +119,23 @@ Current local model state on 2026-06-21:
 Current bakeoff options are `temperature=0`, `num_ctx=8192`, and
 `num_predict=4096`. Do not reduce parameters until RAM/VRAM evidence exists.
 
-Open reasoning gate:
+Closed RAM/VRAM observation:
 
-- RAM/VRAM observation target:
+- Target:
   `pnpm nx run exam-prep-backend:reasoning-memory --skip-nx-cache`.
-- Latest artifact:
+- Artifact:
   `apps/exam-prep-backend/.benchmarks/reasoning-memory-20260621T083447Z.json`.
 - `qwen3:14b`: `missing_model`.
 - `deepseek-r1:14b`: `missing_model`.
 - `gemma4:12b`: `completed`, `latency_ms=41266`; `ollama ps` showed
   `8.4 GB`, `100% GPU`, and `CONTEXT=8192` during load/run/idle samples.
-- The latest RAM artifact is local ignored evidence under
-  `/apps/exam-prep-backend/.benchmarks/`; rerun after intentionally installing
-  the missing comparator models before parameter tuning or scored bakeoff.
+- This closes the local RAM observation TODO for the installed comparator set:
+  missing comparator models are recorded as explicit blockers, and `gemma4:12b`
+  has residency evidence.
+- Deferred model gate: rerun memory and scored bakeoff evidence after
+  intentionally installing `qwen3:14b` and `deepseek-r1:14b`, or after changing
+  the comparator set. Do not tune parameters or change defaults before that
+  follow-up evidence exists.
 
 ## APU-First Streaming Utilization
 
@@ -267,16 +271,159 @@ Closed APU gate controls:
 - Do not change reasoning model defaults or parameters until separate
   RAM/VRAM evidence supports the change.
 
+## Streaming Production Practice-Ready Gate
+
+2026-06-22 implementation checkpoint:
+
+- Packaged streaming smoke now supports
+  `--verify-streaming-practice-ready`.
+- The flag waits for streaming jobs to reach terminal success, then verifies
+  Full Exam can start from the generated streamed questions without creating a
+  manual smoke question.
+- Metrics now record `practice_ready_visible_ms`,
+  `practice_first_question_visible_ms`, and
+  `practice_ready_from_streamed_questions`.
+- `packaged-streaming-production-directml` now defaults to
+  `qwen3:14b` with fallbacks `gemma4:12b,qwen3:8b`, DirectML OCR,
+  `ocr_page_workers=1`, streaming completion wait, and practice-ready
+  verification.
+- Production summaries include a `streaming_practice_ready` check while keeping
+  configured/effective model, fallback list, and fallback reason fields.
+- Transient streaming API poll failures are retained as observations; final
+  semantic success is governed by terminal jobs, generated usable questions,
+  practice readiness, and cleanup.
+
+Verification passed:
+
+- `pnpm nx run exam-prep-desktop:typecheck-scripts --skip-nx-cache`.
+- `pnpm nx run exam-prep-desktop:package-qa-test --skip-nx-cache`.
+- `pnpm nx run exam-prep-backend:test --skip-nx-cache`.
+
+Live baseline blocker:
+
+- Ollama preflight
+  `Invoke-RestMethod http://127.0.0.1:11434/api/tags` failed with
+  `unable to connect to remote server`.
+- 2026-06-22 direct packaged production run was executed anyway at user
+  request with
+  `pnpm nx run exam-prep-desktop:packaged-streaming-production-directml --skip-nx-cache`.
+- Tauri packaging succeeded and produced:
+  `apps/exam-prep-desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/Exam Prep_0.1.0_x64_en-US.msi`
+  and
+  `apps/exam-prep-desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/Exam Prep_0.1.0_x64-setup.exe`.
+- Packaged app smoke launched the real exe and completed DirectML OCR:
+  46/46 pages, 46 chunks, first chunk visible in 4076 ms, parse complete in
+  69719 ms, graceful app close, and no residual packaged smoke processes.
+- Streaming did not produce questions because Ollama was unavailable:
+  `llm_health.detail` was `Ollama is not installed.`, effective model was
+  `null`, and all 9 jobs ended as `skipped_provider_unavailable`.
+- The production artifact preserved configured model `qwen3:14b`, fallback
+  list `gemma4:12b,qwen3:8b`, DirectML GPU routing checks, screenshots,
+  metrics, resource logs, and the failed practice-ready check.
+- Evidence paths:
+  - Production summary:
+    `tmp/exam-prep-desktop/packaged-streaming-production/2026-06-22T07-04-33-152Z/production-summary.json`.
+  - Streaming baseline JSON/MD:
+    `tmp/exam-prep-desktop/packaged-streaming-production/2026-06-22T07-04-33-152Z/streaming-baseline.json`
+    and
+    `tmp/exam-prep-desktop/packaged-streaming-production/2026-06-22T07-04-33-152Z/streaming-baseline.md`.
+  - Metrics JSON:
+    `tmp/exam-prep-desktop/packaged-streaming-production/2026-06-22T07-04-33-152Z/metrics.json`.
+  - Screenshots:
+    `tmp/exam-prep-desktop/packaged-streaming-production/2026-06-22T07-04-33-152Z/*.png`.
+  - Windows resource summary:
+    `tmp/exam-prep-desktop/packaged-streaming-production/2026-06-22T07-04-33-152Z/windows-resource-summary.json`.
+  - Nvidia CSV:
+    `tmp/exam-prep-desktop/packaged-streaming-production/2026-06-22T07-04-33-152Z/nvidia-smi.csv`.
+  - Reasoning memory JSON and reasoning bakeoff JSON: not produced in this run
+    because Ollama API was unavailable and model availability could not be
+    proven without implicit installs.
+- Rerun reasoning memory/bakeoff and the production baseline only after
+  Ollama API is reachable and `qwen3:8b` appears in `/api/tags`; model
+  installation remains user-controlled and must not be triggered implicitly by
+  QA.
+
+2026-06-22 Ollama runtime installer bridge:
+
+- Installed local Ollama runtime through the official `Ollama.Ollama` winget
+  package to clear the machine-level blocker; the install placed
+  `ollama.exe` at
+  `C:\Users\User\AppData\Local\Programs\Ollama\ollama.exe`.
+- Backend `OllamaRuntimeInstaller` now prefers the Windows winget package for
+  explicit user-confirmed runtime installation, falls back to the existing
+  official PowerShell installer script when winget is unavailable, and starts
+  `ollama serve` after installation so `/api/tags` becomes reachable.
+- Backend `OllamaProvider.health()` now bridges the installed-but-idle case by
+  starting the local Ollama API once, then rechecking model availability. It
+  does not pull models during health checks.
+- Local backend API smoke after the fix:
+  `/runtime/requirements` reported Ollama runtime available,
+  `/llm/health` reported `model_missing` for configured `qwen3:14b` with
+  fallbacks `gemma4:12b,qwen3:8b`, and
+  `POST /runtime/installations/ollama` returned `succeeded`.
+- At this checkpoint, `/api/tags` became reachable but the model list was still
+  empty. The remaining production baseline gate was user-controlled model
+  installation, at minimum `qwen3:8b`.
+- Verification:
+  `pnpm nx run exam-prep-backend:test --skip-nx-cache`.
+
+2026-06-22 Ollama enabled baseline:
+
+- User authorized model download for the production fallback lane. Installed
+  `qwen3:8b` through Ollama CLI; `/api/tags` now reports `qwen3:8b` with
+  digest `500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41`,
+  size `5225388164`, parameter size `8.2B`, quantization `Q4_K_M`, and
+  context length `40960`.
+- Backend API health now reports configured model `qwen3:14b`, effective model
+  `qwen3:8b`, fallbacks `gemma4:12b,qwen3:8b`, and fallback reason
+  `Configured model qwen3:14b is missing; using fallback qwen3:8b.`
+- Reasoning evidence:
+  - Memory JSON:
+    `apps/exam-prep-backend/.benchmarks/reasoning-memory-20260622T073812Z.json`;
+    `qwen3:8b` completed in `39342 ms`.
+  - Bakeoff JSON:
+    `apps/exam-prep-backend/.benchmarks/reasoning-bakeoff-20260622T073913Z.json`;
+    `qwen3:8b` completed in `57692 ms`, produced valid JSON, and had 3/3
+    citation-valid items.
+- Packaged production baseline now passes with fallback model `qwen3:8b`:
+  - Production summary:
+    `tmp/exam-prep-desktop/packaged-streaming-production/2026-06-22T07-44-50-031Z/production-summary.json`.
+  - Streaming baseline JSON/MD:
+    `tmp/exam-prep-desktop/packaged-streaming-production/2026-06-22T07-44-50-031Z/streaming-baseline.json`
+    and
+    `tmp/exam-prep-desktop/packaged-streaming-production/2026-06-22T07-44-50-031Z/streaming-baseline.md`.
+  - Metrics JSON:
+    `tmp/exam-prep-desktop/packaged-streaming-production/2026-06-22T07-44-50-031Z/metrics.json`.
+  - Screenshots:
+    `tmp/exam-prep-desktop/packaged-streaming-production/2026-06-22T07-44-50-031Z/*.png`.
+  - Windows resource summary:
+    `tmp/exam-prep-desktop/packaged-streaming-production/2026-06-22T07-44-50-031Z/windows-resource-summary.json`.
+  - Nvidia CSV:
+    `tmp/exam-prep-desktop/packaged-streaming-production/2026-06-22T07-44-50-031Z/nvidia-smi.csv`.
+- Production metrics: DirectML OCR completed 46/46 pages with 46 chunks, first
+  chunk visible in `9270 ms`, first usable streamed question visible in
+  `52859 ms`, parse complete in `96301 ms`, all streaming jobs terminal in
+  `141594 ms`, practice ready in `143070 ms`, and first practice question
+  visible in `143772 ms`.
+- Acceptance checks passed: first usable question appeared before parse
+  complete, 9/9 jobs succeeded, 9 usable questions were generated, Full Exam
+  practice started from streamed questions, DirectML OCR used AMD iGPU and
+  avoided Nvidia dGPU, reasoning used Nvidia dGPU, graceful close succeeded,
+  and no residual packaged smoke processes remained.
+- Verification:
+  - `pnpm nx run exam-prep-backend:reasoning-memory --skip-nx-cache --args="--model qwen3:8b --timeout-seconds 300"`.
+  - `pnpm nx run exam-prep-backend:reasoning-bakeoff --skip-nx-cache --args="--model qwen3:8b --timeout-seconds 300"`.
+  - `pnpm nx run exam-prep-desktop:packaged-streaming-production-directml --skip-nx-cache`.
+
 ## Active Backlog
 
-Active TODO:
+No active parsing/reasoning TODO file remains at this checkpoint.
 
-- `.agents/TODOS/parallel-parsing-reasoning.md`
+Deferred gate:
 
-Current open gate:
-
-- Rerun reasoning memory/bakeoff only after `qwen3:14b` and
-  `deepseek-r1:14b` are intentionally installed or the model set changes.
+- Optional comparator reruns for `qwen3:14b` and `gemma4:12b` remain
+  user-controlled and should only run after those models are intentionally
+  installed.
 
 ## Retired Risk Notes
 

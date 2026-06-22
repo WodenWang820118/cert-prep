@@ -23,7 +23,10 @@ from exam_prep_backend.domains.mock_exams.reasoning_parser import (
     draft_suggestion_from_item,
     json_response,
 )
-from exam_prep_backend.domains.runtime_installations import resolve_ollama_executable
+from exam_prep_backend.domains.runtime_installations.ollama import (
+    ensure_ollama_server_running,
+    resolve_ollama_executable,
+)
 from exam_prep_backend.errors import ProviderUnavailableError
 
 
@@ -65,12 +68,22 @@ class OllamaProvider:
         try:
             model_names = self._installed_model_names()
         except Exception as exc:
-            if resolve_ollama_executable() is None:
+            executable = resolve_ollama_executable()
+            if executable is None:
                 detail = "Ollama is not installed."
                 unavailable_reason = "ollama_missing"
             else:
-                detail = f"Ollama unavailable: {exc}"
-                unavailable_reason = "ollama_not_running"
+                if ensure_ollama_server_running(self.host, executable=executable):
+                    try:
+                        model_names = self._installed_model_names()
+                    except Exception as retry_exc:
+                        detail = f"Ollama unavailable: {retry_exc}"
+                        unavailable_reason = "ollama_not_running"
+                    else:
+                        return self._health_from_model_names(model_names)
+                else:
+                    detail = f"Ollama unavailable: {exc}"
+                    unavailable_reason = "ollama_not_running"
             return ProviderHealth(
                 provider=self.provider,
                 model=self.model,
@@ -81,6 +94,9 @@ class OllamaProvider:
                 fallback_models=self.fallback_models,
             )
 
+        return self._health_from_model_names(model_names)
+
+    def _health_from_model_names(self, model_names: set[str]) -> ProviderHealth:
         effective_model = self._effective_model_from(model_names)
         available = effective_model is not None
         fallback_reason = self._fallback_reason(effective_model)

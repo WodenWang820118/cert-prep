@@ -219,6 +219,45 @@ export async function createAndEditQuestion(run: SmokeRunState): Promise<void> {
   await screenshot(run, 'editable-question-saved');
 }
 
+export async function verifyStreamingPracticeReady(
+  run: SmokeRunState,
+): Promise<void> {
+  const parseStart = run.streamingDraftParseStartedAt ?? Date.now();
+  await clickButtonPattern(run, /^\s*Full Exam\s*$/);
+  await waitText(run, /Start full exam|Full Exam/i, 10_000, 'streamed full exam mode');
+
+  const startButton = activePage(run)
+    .locator('button')
+    .filter({ hasText: /^\s*Start full exam\s*$/ })
+    .first();
+  await startButton.waitFor({ state: 'visible', timeout: 30_000 });
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
+    if (await startButton.isEnabled()) {
+      run.metrics.ui_timings_ms.practice_ready_visible_ms = Date.now() - parseStart;
+      await screenshot(run, 'streaming-practice-ready');
+      await startButton.click({ timeout: 30_000 });
+      await waitText(
+        run,
+        /Submit answer|Choices/,
+        30_000,
+        'streamed practice first question visible',
+      );
+      run.metrics.ui_timings_ms.practice_first_question_visible_ms =
+        Date.now() - parseStart;
+      run.metrics.practice_ready_from_streamed_questions = true;
+      await screenshot(run, 'streaming-practice-first-question');
+      return;
+    }
+    await delay(500);
+  }
+
+  const text = await bodyText(run);
+  throw new Error(
+    `Streamed questions did not enable practice readiness. Body=${text.slice(0, 1400)}`,
+  );
+}
+
 export async function runFullExamWrongAnswer(run: SmokeRunState): Promise<void> {
   await clickButtonPattern(run, /^\s*Full Exam\s*$/);
   await waitText(run, /Start full exam|Full Exam/i, 10_000, 'full exam mode');

@@ -265,6 +265,58 @@ def test_ollama_health_uses_http_api_when_cli_is_not_on_path(monkeypatch) -> Non
     assert fake_client.pull_calls == 0
 
 
+def test_ollama_health_starts_installed_idle_server(monkeypatch) -> None:
+    fake_client = FlakyListOllamaClient(models=["qwen3:8b"])
+    start_calls: list[tuple[str, Path | None]] = []
+    monkeypatch.setattr(ollama_transport, "resolve_ollama_executable", lambda: Path("ollama"))
+    monkeypatch.setattr(
+        ollama_transport,
+        "ensure_ollama_server_running",
+        lambda host, *, executable=None: start_calls.append((host, executable)) or True,
+    )
+    provider = OllamaProvider(
+        host="http://127.0.0.1:11434",
+        model="qwen3:14b",
+        timeout_seconds=1,
+        fallback_models=["qwen3:8b"],
+    )
+    provider._client = fake_client
+
+    health = provider.health()
+
+    assert health.available is True
+    assert health.effective_model == "qwen3:8b"
+    assert start_calls == [("http://127.0.0.1:11434", Path("ollama"))]
+    assert fake_client.list_calls == 2
+    assert fake_client.pull_calls == 0
+
+
+def test_ollama_health_reports_not_running_when_idle_server_start_fails(
+    monkeypatch,
+) -> None:
+    fake_client = FailingListOllamaClient()
+    monkeypatch.setattr(ollama_transport, "resolve_ollama_executable", lambda: Path("ollama"))
+    monkeypatch.setattr(
+        ollama_transport,
+        "ensure_ollama_server_running",
+        lambda _host, *, executable=None: False,
+    )
+    provider = OllamaProvider(
+        host="http://127.0.0.1:11434",
+        model="qwen3:14b",
+        timeout_seconds=1,
+        fallback_models=["qwen3:8b"],
+    )
+    provider._client = fake_client
+
+    health = provider.health()
+
+    assert health.available is False
+    assert health.unavailable_reason == "ollama_not_running"
+    assert "Ollama unavailable" in health.detail
+    assert fake_client.pull_calls == 0
+
+
 def test_ollama_prewarm_only_chats_when_configured_model_exists(monkeypatch) -> None:
     fake_client = RecordingOllamaClient(models=["qwen3:14b"])
     monkeypatch.setattr(ollama_transport, "resolve_ollama_executable", lambda: Path("ollama"))
@@ -623,6 +675,28 @@ class RecordingOllamaClient:
     def pull(self, *_args, **_kwargs):
         self.pull_calls += 1
         raise AssertionError("prewarm must not pull models")
+
+
+class FlakyListOllamaClient(RecordingOllamaClient):
+    def __init__(self, *, models: list[str]) -> None:
+        super().__init__(models=models)
+        self.list_calls = 0
+
+    def list(self) -> dict:
+        self.list_calls += 1
+        if self.list_calls == 1:
+            raise RuntimeError("connection refused")
+        return super().list()
+
+
+class FailingListOllamaClient(RecordingOllamaClient):
+    def __init__(self) -> None:
+        super().__init__(models=[])
+        self.list_calls = 0
+
+    def list(self) -> dict:
+        self.list_calls += 1
+        raise RuntimeError("connection refused")
 
 
 class BlockingDownloadProvider(RecordingDownloadProvider):

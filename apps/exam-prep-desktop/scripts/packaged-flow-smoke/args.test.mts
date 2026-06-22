@@ -22,6 +22,7 @@ test('packaged flow smoke args validate numeric knobs', () => {
     '--wait-for-streaming-complete',
     '--streaming-complete-timeout-ms',
     '1234',
+    '--verify-streaming-practice-ready',
     '--app-data-dir',
     'tmp/baseline-app-data',
   ]);
@@ -35,6 +36,7 @@ test('packaged flow smoke args validate numeric knobs', () => {
   assert.equal(parsed.streamingDraftWorkers, 2);
   assert.equal(parsed.waitForStreamingComplete, true);
   assert.equal(parsed.streamingCompleteTimeoutMs, 1234);
+  assert.equal(parsed.verifyStreamingPracticeReady, true);
   assert.match(parsed.appDataDir ?? '', /tmp[\\/]baseline-app-data$/);
   assert.throws(
     () => parsePackagedFlowSmokeArgs(['--ocr-page-workers', '0']),
@@ -69,6 +71,7 @@ test('packaged streaming baseline defaults to isolated output and app data', () 
   );
 
   assert.equal(parsed.waitForStreamingComplete, true);
+  assert.equal(parsed.verifyStreamingPracticeReady, false);
   assert.equal(parsed.streamingCompleteTimeoutMs, 1_200_000);
   assert.match(
     parsed.outDir,
@@ -86,10 +89,25 @@ test('packaged streaming production enables completion wait and production outpu
   assert.equal(parsed.productionSummary, true);
   assert.equal(parsed.allowOcrChunkVariance, true);
   assert.equal(parsed.waitForStreamingComplete, true);
+  assert.equal(parsed.verifyStreamingPracticeReady, false);
   assert.deepEqual(parsed.ollamaFallbackModels, ['qwen3:8b']);
   assert.match(
     parsed.outDir,
     /tmp[\\/]exam-prep-desktop[\\/]packaged-streaming-production[\\/]/,
   );
   assert.equal(parsed.appDataDir, `${parsed.outDir}\\app-data`);
+});
+
+test('streaming practice-ready verification implies completion wait', () => {
+  const parsed = parsePackagedFlowSmokeArgs(
+    ['--verify-streaming-practice-ready'],
+    'C:\\workspace',
+  );
+
+  assert.equal(parsed.verifyStreamingPracticeReady, true);
+  assert.equal(parsed.waitForStreamingComplete, true);
+  assert.match(
+    parsed.outDir,
+    /tmp[\\/]exam-prep-desktop[\\/]packaged-streaming-baseline[\\/]/,
+  );
 });

@@ -19,6 +19,7 @@ export interface SmokeOptions {
   skipGpuSampling: boolean;
   productionSummary: boolean;
   allowOcrChunkVariance: boolean;
+  verifyStreamingPracticeReady: boolean;
 }
 
 export interface SmokeMetrics {
@@ -49,6 +50,7 @@ export interface SmokeMetrics {
   ocr_completion?: OcrCompletionMetrics;
   streaming_baseline?: StreamingBaselineArtifacts;
   production_summary?: string;
+  practice_ready_from_streamed_questions?: boolean;
   restart?: {
     attempted: boolean;
     verified?: boolean;

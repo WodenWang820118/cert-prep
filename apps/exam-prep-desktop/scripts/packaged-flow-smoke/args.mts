@@ -70,6 +70,7 @@ export function parsePackagedFlowSmokeArgs(
     skipGpuSampling: false,
     productionSummary: false,
     allowOcrChunkVariance: false,
+    verifyStreamingPracticeReady: false,
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -121,6 +122,9 @@ export function parsePackagedFlowSmokeArgs(
       parsed.waitForStreamingComplete = true;
     } else if (arg === '--allow-ocr-chunk-variance') {
       parsed.allowOcrChunkVariance = true;
+    } else if (arg === '--verify-streaming-practice-ready') {
+      parsed.verifyStreamingPracticeReady = true;
+      parsed.waitForStreamingComplete = true;
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }

@@ -150,7 +150,7 @@
         "{workspaceRoot}/tmp/exam-prep-desktop/packaged-streaming-production"
       ],
       "options": {
-        "command": "node apps/exam-prep-desktop/scripts/packaged-flow-smoke.mts --production-summary --allow-ocr-chunk-variance --ocr-provider directml --ocr-page-workers 1 --ollama-model qwen3:14b --ollama-fallback-models qwen3:8b --streaming-draft-page-limit 1 --streaming-draft-workers 1 --wait-for-streaming-complete"
+        "command": "node apps/exam-prep-desktop/scripts/packaged-flow-smoke.mts --production-summary --allow-ocr-chunk-variance --ocr-provider directml --ocr-page-workers 1 --ollama-model qwen3:14b --ollama-fallback-models gemma4:12b,qwen3:8b --streaming-draft-page-limit 1 --streaming-draft-workers 1 --wait-for-streaming-complete --verify-streaming-practice-ready"
       }
     },
     "typecheck-scripts": {

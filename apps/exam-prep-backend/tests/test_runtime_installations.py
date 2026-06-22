@@ -12,6 +12,7 @@ from exam_prep_backend.app import create_app
 from exam_prep_backend.config import Settings
 from exam_prep_backend.domains.runtime_installations import (
     DirectMLOcrRuntimeInstaller,
+    OllamaRuntimeInstaller,
     PaddleOcrRuntimeInstaller,
     RuntimeInstallProgress,
     RuntimeInstallationManager,
@@ -20,6 +21,8 @@ from exam_prep_backend.domains.runtime_installations import (
     RuntimeRequirementSnapshot,
     run_ocr_runtime_command,
 )
+from exam_prep_backend.domains.runtime_installations import installers as runtime_installers
+from exam_prep_backend.domains.runtime_installations import ollama as runtime_ollama
 from exam_prep_backend.domains.source_documents.ocr import OCRHealth, OCRPageResult
 
 
@@ -71,6 +74,111 @@ def test_runtime_installation_starts_only_from_post(tmp_path: Path) -> None:
     assert response.json()["status"] == "succeeded"
     assert response.json()["completed"] == 100
     assert installer.install_calls == 1
+
+
+def test_ollama_runtime_install_uses_winget_and_starts_api(
+    monkeypatch, tmp_path: Path
+) -> None:
+    commands: list[list[str]] = []
+    started: list[tuple[str, Path | None]] = []
+    progress_messages: list[str] = []
+
+    def fake_run(command, **_kwargs):
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(runtime_installers.os, "name", "nt")
+    monkeypatch.setattr(
+        runtime_installers.shutil,
+        "which",
+        lambda name: "C:/Windows/System32/winget.exe" if name == "winget" else None,
+    )
+    monkeypatch.setattr(runtime_installers.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        runtime_installers,
+        "resolve_ollama_executable",
+        lambda: Path("C:/Users/User/AppData/Local/Programs/Ollama/ollama.exe"),
+    )
+    monkeypatch.setattr(
+        runtime_installers,
+        "ensure_ollama_server_running",
+        lambda host, *, executable=None: started.append((host, executable)) or True,
+    )
+
+    status = OllamaRuntimeInstaller(
+        Settings(data_dir=tmp_path, ollama_host="http://127.0.0.1:11434")
+    ).install(lambda progress: progress_messages.append(progress.detail))
+
+    assert status == RuntimeInstallationStatus.SUCCEEDED
+    assert commands == [
+        [
+            "C:/Windows/System32/winget.exe",
+            "install",
+            "--id",
+            "Ollama.Ollama",
+            "-e",
+            "--silent",
+            "--accept-package-agreements",
+            "--accept-source-agreements",
+        ]
+    ]
+    assert started == [
+        (
+            "http://127.0.0.1:11434",
+            Path("C:/Users/User/AppData/Local/Programs/Ollama/ollama.exe"),
+        )
+    ]
+    assert progress_messages == [
+        "Starting the Ollama Windows installer.",
+        "Starting the Ollama local API.",
+    ]
+
+
+def test_ollama_runtime_install_falls_back_to_official_script_without_winget(
+    monkeypatch, tmp_path: Path
+) -> None:
+    commands: list[list[str]] = []
+
+    def fake_run(command, **_kwargs):
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(runtime_installers.os, "name", "nt")
+    monkeypatch.setattr(runtime_installers.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(runtime_installers.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        runtime_installers,
+        "resolve_ollama_executable",
+        lambda: Path("C:/Users/User/AppData/Local/Programs/Ollama/ollama.exe"),
+    )
+    monkeypatch.setattr(
+        runtime_installers,
+        "ensure_ollama_server_running",
+        lambda _host, *, executable=None: True,
+    )
+
+    status = OllamaRuntimeInstaller(Settings(data_dir=tmp_path)).install(lambda _progress: None)
+
+    assert status == RuntimeInstallationStatus.SUCCEEDED
+    assert commands == [
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            "irm https://ollama.com/install.ps1 | iex",
+        ]
+    ]
+
+
+def test_ollama_server_bind_host_uses_url_authority() -> None:
+    assert runtime_ollama._ollama_server_bind_host("http://127.0.0.1:11434") == (
+        "127.0.0.1:11434"
+    )
+    assert runtime_ollama._ollama_server_bind_host("127.0.0.1:11434") == (
+        "127.0.0.1:11434"
+    )
 
 
 def test_paddle_runtime_install_rejects_checksum_mismatch(tmp_path: Path) -> None:

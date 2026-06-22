@@ -1,8 +1,16 @@
 # SOLID Domain Refactor 決策
 
+## 2026-06-22
+
+- Completed parallel parsing/reasoning TODO evidence was merged into
+  `.agents/SPECS/domains/parsing-reasoning.md`.
+- `.agents/TODOS/parallel-parsing-reasoning.md` was removed so `.agents/TODOS`
+  remains active-only.
+
 ## 2026-06-18
 
-- 本輪採 pure refactor，功能 TODO 保持在 `.agents/TODOS/parallel-parsing-reasoning.md`。
+- 本輪採 pure refactor；當時功能 TODO 保留在 active backlog，後續於
+  2026-06-22 關閉並融合回 SPECS。
 - 舊 `.agents/TODOS/*.md` archive 指標檔刪除納入 baseline commit `803310f`，避免後續 domain refactor diff 混入文件清理。
 - Root agent 採 coordinator 職責：文件、commit、scope、整合 review、QA evidence；Tauri、Angular、Python 各自有 bounded ownership。
 - 允許 breaking changes，但本輪最後沒有刻意改外部 REST/OpenAPI、Tauri command、package QA JSON schema。
