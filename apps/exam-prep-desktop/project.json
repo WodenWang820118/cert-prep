@@ -133,7 +133,11 @@
     "typecheck-scripts": {
       "cache": true,
       "executor": "nx:run-commands",
-      "inputs": ["default", "{workspaceRoot}/tsconfig.scripts.json"],
+      "inputs": [
+        "default",
+        "{workspaceRoot}/tsconfig.scripts.json",
+        "{projectRoot}/scripts/tsconfig.json"
+      ],
       "options": {
         "command": "pnpm exec tsc -p tsconfig.scripts.json"
       }
