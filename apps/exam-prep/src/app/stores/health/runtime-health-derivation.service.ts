@@ -95,7 +95,42 @@ export class RuntimeHealthDerivationService {
     health: LLMHealthRead | null,
     fallbackModel: string | null | undefined,
   ): string {
-    return health?.model ?? fallbackModel ?? 'configured model';
+    return (
+      health?.configured_model ??
+      health?.model ??
+      fallbackModel ??
+      'configured model'
+    );
+  }
+
+  effectiveModelName(
+    health: LLMHealthRead | null,
+    fallbackModel: string | null | undefined,
+  ): string {
+    return (
+      health?.effective_model ??
+      health?.model ??
+      fallbackModel ??
+      'configured model'
+    );
+  }
+
+  isConfiguredModelMissing(health: LLMHealthRead | null): boolean {
+    return this.isModelMissing(health) || this.isModelFallbackActive(health);
+  }
+
+  isModelFallbackActive(health: LLMHealthRead | null): boolean {
+    if (health === null || health.available !== true) {
+      return false;
+    }
+
+    const configured = this.normalizedModelName(
+      health.configured_model ?? health.model,
+    );
+    const effective = this.normalizedModelName(
+      health.effective_model ?? health.model,
+    );
+    return configured.length > 0 && effective.length > 0 && configured !== effective;
   }
 
   normalizedCode(value: unknown): string {
@@ -117,5 +152,9 @@ export class RuntimeHealthDerivationService {
   ): string {
     const requirement = requirements.find((item) => item.kind === kind);
     return this.normalizedCode(requirement?.unavailable_reason);
+  }
+
+  private normalizedModelName(value: unknown): string {
+    return typeof value === 'string' ? value.trim().toLowerCase() : '';
   }
 }

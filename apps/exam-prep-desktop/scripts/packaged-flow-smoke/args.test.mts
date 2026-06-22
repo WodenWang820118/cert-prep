@@ -13,6 +13,8 @@ test('packaged flow smoke args validate numeric knobs', () => {
     '2',
     '--ollama-model',
     'qwen3:8b',
+    '--ollama-fallback-models',
+    'qwen3:14b, qwen3:4b',
     '--streaming-draft-page-limit',
     '1',
     '--streaming-draft-workers',
@@ -28,6 +30,7 @@ test('packaged flow smoke args validate numeric knobs', () => {
   assert.equal(parsed.ocrProvider, 'directml');
   assert.equal(parsed.ocrPageWorkers, 2);
   assert.equal(parsed.ollamaModel, 'qwen3:8b');
+  assert.deepEqual(parsed.ollamaFallbackModels, ['qwen3:14b', 'qwen3:4b']);
   assert.equal(parsed.streamingDraftPageLimit, 1);
   assert.equal(parsed.streamingDraftWorkers, 2);
   assert.equal(parsed.waitForStreamingComplete, true);
@@ -70,6 +73,23 @@ test('packaged streaming baseline defaults to isolated output and app data', () 
   assert.match(
     parsed.outDir,
     /tmp[\\/]exam-prep-desktop[\\/]packaged-streaming-baseline[\\/]/,
+  );
+  assert.equal(parsed.appDataDir, `${parsed.outDir}\\app-data`);
+});
+
+test('packaged streaming production enables completion wait and production output root', () => {
+  const parsed = parsePackagedFlowSmokeArgs(
+    ['--production-summary', '--allow-ocr-chunk-variance'],
+    'C:\\workspace',
+  );
+
+  assert.equal(parsed.productionSummary, true);
+  assert.equal(parsed.allowOcrChunkVariance, true);
+  assert.equal(parsed.waitForStreamingComplete, true);
+  assert.deepEqual(parsed.ollamaFallbackModels, ['qwen3:8b']);
+  assert.match(
+    parsed.outDir,
+    /tmp[\\/]exam-prep-desktop[\\/]packaged-streaming-production[\\/]/,
   );
   assert.equal(parsed.appDataDir, `${parsed.outDir}\\app-data`);
 });

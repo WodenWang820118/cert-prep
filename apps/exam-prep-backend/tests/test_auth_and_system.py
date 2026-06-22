@@ -62,6 +62,10 @@ def test_llm_health_uses_fake_provider_without_network(client: TestClient, auth_
         "available": True,
         "detail": "deterministic local fake provider",
         "unavailable_reason": None,
+        "configured_model": DEFAULT_OLLAMA_MODEL,
+        "effective_model": DEFAULT_OLLAMA_MODEL,
+        "fallback_models": [],
+        "fallback_reason": None,
     }
 
 

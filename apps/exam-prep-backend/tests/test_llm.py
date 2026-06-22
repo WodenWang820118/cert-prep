@@ -195,6 +195,76 @@ def test_llm_health_does_not_pull_missing_ollama_model(tmp_path) -> None:
     assert provider.pull_calls == 0
 
 
+def test_settings_parse_comma_separated_ollama_fallback_models(tmp_path) -> None:
+    settings = Settings(
+        data_dir=tmp_path,
+        ollama_fallback_models="qwen3:8b, gemma4:12b, ",
+    )
+
+    assert settings.ollama_fallback_models == ["qwen3:8b", "gemma4:12b"]
+
+
+def test_settings_parse_env_ollama_fallback_models(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("EXAM_PREP_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv(
+        "EXAM_PREP_OLLAMA_FALLBACK_MODELS",
+        "qwen3:8b, gemma4:12b, ",
+    )
+
+    settings = Settings()
+
+    assert settings.ollama_fallback_models == ["qwen3:8b", "gemma4:12b"]
+
+
+def test_ollama_health_uses_installed_fallback_without_pull(monkeypatch) -> None:
+    fake_client = RecordingOllamaClient(models=["qwen3:8b"])
+    monkeypatch.setattr(
+        ollama_transport, "resolve_ollama_executable", lambda: Path("ollama")
+    )
+    provider = OllamaProvider(
+        host="http://127.0.0.1:11434",
+        model="qwen3:14b",
+        timeout_seconds=1,
+        fallback_models=["qwen3:8b"],
+    )
+    provider._client = fake_client
+
+    health = provider.health()
+
+    assert health.available is True
+    assert health.model == "qwen3:14b"
+    assert health.configured_model == "qwen3:14b"
+    assert health.effective_model == "qwen3:8b"
+    assert health.fallback_models == ("qwen3:8b",)
+    assert (
+        health.fallback_reason
+        == "Configured model qwen3:14b is missing; using fallback qwen3:8b."
+    )
+    assert health.unavailable_reason is None
+    assert fake_client.chat_calls == []
+    assert fake_client.pull_calls == 0
+
+
+def test_ollama_health_uses_http_api_when_cli_is_not_on_path(monkeypatch) -> None:
+    fake_client = RecordingOllamaClient(models=["qwen3:8b"])
+    monkeypatch.setattr(ollama_transport, "resolve_ollama_executable", lambda: None)
+    provider = OllamaProvider(
+        host="http://127.0.0.1:11434",
+        model="qwen3:14b",
+        timeout_seconds=1,
+        fallback_models=["qwen3:8b"],
+    )
+    provider._client = fake_client
+
+    health = provider.health()
+
+    assert health.available is True
+    assert health.effective_model == "qwen3:8b"
+    assert health.fallback_reason is not None
+    assert "using fallback qwen3:8b" in health.fallback_reason
+    assert fake_client.pull_calls == 0
+
+
 def test_ollama_prewarm_only_chats_when_configured_model_exists(monkeypatch) -> None:
     fake_client = RecordingOllamaClient(models=["qwen3:14b"])
     monkeypatch.setattr(ollama_transport, "resolve_ollama_executable", lambda: Path("ollama"))
@@ -232,6 +302,54 @@ def test_ollama_prewarm_skips_missing_model_without_pull(monkeypatch) -> None:
     provider.prewarm()
 
     assert fake_client.chat_calls == []
+    assert fake_client.pull_calls == 0
+
+
+def test_ollama_prewarm_uses_available_fallback_model(monkeypatch) -> None:
+    fake_client = RecordingOllamaClient(models=["qwen3:8b"])
+    monkeypatch.setattr(
+        ollama_transport, "resolve_ollama_executable", lambda: Path("ollama")
+    )
+    provider = OllamaProvider(
+        host="http://127.0.0.1:11434",
+        model="qwen3:14b",
+        timeout_seconds=1,
+        fallback_models=["qwen3:8b"],
+    )
+    provider._client = fake_client
+
+    provider.prewarm()
+
+    assert fake_client.chat_calls[0]["model"] == "qwen3:8b"
+    assert fake_client.pull_calls == 0
+
+
+def test_ollama_prewarm_falls_back_when_primary_runtime_fails(monkeypatch) -> None:
+    fake_client = RecordingOllamaClient(
+        models=["qwen3:14b", "qwen3:8b"],
+        fail_models={"qwen3:14b": RuntimeError("model requires more memory")},
+    )
+    monkeypatch.setattr(
+        ollama_transport, "resolve_ollama_executable", lambda: Path("ollama")
+    )
+    provider = OllamaProvider(
+        host="http://127.0.0.1:11434",
+        model="qwen3:14b",
+        timeout_seconds=1,
+        fallback_models=["qwen3:8b"],
+    )
+    provider._client = fake_client
+
+    provider.prewarm()
+
+    assert [call["model"] for call in fake_client.chat_calls] == [
+        "qwen3:14b",
+        "qwen3:8b",
+    ]
+    health = provider.health()
+    assert health.effective_model == "qwen3:8b"
+    assert health.fallback_reason is not None
+    assert "unavailable during generation" in health.fallback_reason
     assert fake_client.pull_calls == 0
 
 
@@ -274,6 +392,56 @@ def test_ollama_fast_first_draft_maps_compact_json_to_candidate_choice(
     assert suggestion.rationale == "Qwen picked the closest reading."
     assert suggestion.confidence == 0.8
     assert fake_client.chat_calls[0]["format"] == "json"
+    assert fake_client.pull_calls == 0
+
+
+def test_ollama_fast_first_draft_falls_back_when_primary_runtime_fails(
+    monkeypatch,
+) -> None:
+    fake_client = RecordingOllamaClient(
+        models=["qwen3:14b", "qwen3:8b"],
+        chat_content='{"answer":"2","rationale":"Fallback picked the answer.","confidence":0.72}',
+        fail_models={"qwen3:14b": RuntimeError("model requires more memory")},
+    )
+    monkeypatch.setattr(
+        ollama_transport, "resolve_ollama_executable", lambda: Path("ollama")
+    )
+    provider = OllamaProvider(
+        host="http://127.0.0.1:11434",
+        model="qwen3:14b",
+        timeout_seconds=1,
+        fallback_models=["qwen3:8b"],
+    )
+    provider._client = fake_client
+    chunk = SourceChunk(
+        id="chunk-2",
+        page_number=2,
+        text="Question text. 1 first 2 second 3 third 4 fourth",
+        source_excerpt="Question text.",
+    )
+    candidate = DraftSuggestion(
+        chunk_id=chunk.id,
+        question="Question text.",
+        choices=["1 first", "2 second", "3 third", "4 fourth"],
+        answer="",
+        answer_key_source="manual",
+        rationale="",
+        citation_page=2,
+        source_excerpt="Question text.",
+    )
+
+    suggestion = provider.generate_fast_first_draft(chunk, candidate)
+
+    assert suggestion is not None
+    assert suggestion.answer == "2 second"
+    assert [call["model"] for call in fake_client.chat_calls] == [
+        "qwen3:14b",
+        "qwen3:8b",
+    ]
+    health = provider.health()
+    assert health.effective_model == "qwen3:8b"
+    assert health.fallback_reason is not None
+    assert "model requires more memory" in health.fallback_reason
     assert fake_client.pull_calls == 0
 
 
@@ -429,9 +597,16 @@ class RecordingDownloadProvider:
 
 
 class RecordingOllamaClient:
-    def __init__(self, *, models: list[str], chat_content: str = "ok") -> None:
+    def __init__(
+        self,
+        *,
+        models: list[str],
+        chat_content: str = "ok",
+        fail_models: dict[str, Exception] | None = None,
+    ) -> None:
         self.models = models
         self.chat_content = chat_content
+        self.fail_models = fail_models or {}
         self.chat_calls: list[dict] = []
         self.pull_calls = 0
 
@@ -440,6 +615,9 @@ class RecordingOllamaClient:
 
     def chat(self, **kwargs) -> dict:
         self.chat_calls.append(kwargs)
+        model = kwargs.get("model")
+        if isinstance(model, str) and model in self.fail_models:
+            raise self.fail_models[model]
         return {"message": {"content": self.chat_content}}
 
     def pull(self, *_args, **_kwargs):

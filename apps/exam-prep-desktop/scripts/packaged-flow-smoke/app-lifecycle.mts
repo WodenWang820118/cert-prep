@@ -155,9 +155,13 @@ export async function launchAppAndConnect(run: SmokeRunState): Promise<void> {
     ...process.env,
     WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${run.port}`,
     EXAM_PREP_DESKTOP_DATA_DIR: packagedAppDataDir(run.options.appDataDir),
+    EXAM_PREP_BACKEND_LOG_DIR: run.options.outDir,
+    EXAM_PREP_BACKEND_READY_TIMEOUT_SECS: '90',
     EXAM_PREP_OCR_PROVIDER: run.options.ocrProvider,
     EXAM_PREP_OCR_PAGE_WORKERS: String(run.options.ocrPageWorkers),
     EXAM_PREP_OLLAMA_MODEL: run.options.ollamaModel,
+    EXAM_PREP_OLLAMA_FALLBACK_MODELS:
+      run.options.ollamaFallbackModels.join(','),
     ...(run.options.streamingDraftPageLimit
       ? {
           EXAM_PREP_STREAMING_DRAFT_GENERATION_PAGE_LIMIT: String(

@@ -92,8 +92,11 @@ export class ModelHealthViewModelService {
   }
 
   private modelChipLabel(state: ModelHealthViewState): string {
-    return state.modelMissing
-      ? 'Reasoning model missing'
+    if (state.modelMissing) {
+      return 'Reasoning model missing';
+    }
+    return state.modelFallbackActive
+      ? `Reasoning model: ${state.effectiveModelName}`
       : `Reasoning model: ${state.configuredModelName}`;
   }
 
@@ -160,6 +163,12 @@ export class ModelHealthViewModelService {
     if (state.llmHealth === null) {
       return 'Model status unavailable.';
     }
+    if (state.modelFallbackActive) {
+      return [
+        `Ready via fallback ${state.effectiveModelName};`,
+        `primary ${state.configuredModelName} is not installed.`,
+      ].join(' ');
+    }
     return state.modelMissing
       ? `${state.llmHealth.model} is missing locally.`
       : state.llmHealth.detail;
@@ -213,6 +222,9 @@ export class ModelHealthViewModelService {
     if (state.modelMissing) {
       return 'Missing';
     }
+    if (state.modelFallbackActive) {
+      return 'Ready via fallback';
+    }
     return state.llmHealth?.available ? 'Ready' : 'Offline';
   }
 
@@ -261,6 +273,8 @@ export class ModelHealthViewModelService {
     }
     return state.modelMissing
       ? 'danger'
+      : state.modelFallbackActive
+        ? 'warn'
       : state.llmHealth?.available
         ? 'success'
         : 'warn';

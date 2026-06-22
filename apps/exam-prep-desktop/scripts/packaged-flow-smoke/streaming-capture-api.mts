@@ -1,7 +1,8 @@
 import type { Page, Response } from 'playwright';
 
-import { errorMessage } from './text-utils.mts';
+import { errorMessage, isRecord, stringField } from './text-utils.mts';
 import type {
+  LlmHealthSnapshot,
   SmokeRunState,
   UploadedDocumentRef,
 } from './types.mts';
@@ -162,6 +163,27 @@ export async function pollStreamingDraftApis(
   }
 }
 
+export async function captureLlmHealth(
+  run: SmokeRunState,
+  uploadedDocument: UploadedDocumentRef,
+): Promise<void> {
+  const payload = await streamingApiGet(run, uploadedDocument, '/llm/health');
+  const health = sanitizeLlmHealth(payload);
+  if (!health) {
+    run.metrics.observations.push('LLM health response was not valid JSON.');
+    return;
+  }
+
+  run.metrics.llm_health = health;
+  run.metrics.llm_configured_model =
+    health.configured_model ?? health.model ?? run.options.ollamaModel;
+  run.metrics.llm_effective_model = health.available
+    ? health.effective_model ?? health.model ?? undefined
+    : health.effective_model ?? undefined;
+  run.metrics.llm_fallback_models = health.fallback_models;
+  run.metrics.llm_fallback_reason = health.fallback_reason;
+}
+
 async function streamingApiGet(
   run: SmokeRunState,
   uploadedDocument: UploadedDocumentRef,
@@ -298,5 +320,31 @@ function recordStreamingApiPollError(run: SmokeRunState, message: string): void 
     return;
   }
   run.streamingApiPollErrorCaptured = true;
-  run.metrics.errors.push(message);
+  run.metrics.observations.push(message);
+}
+
+function sanitizeLlmHealth(payload: unknown): LlmHealthSnapshot | null {
+  if (!isRecord(payload)) {
+    return null;
+  }
+  return {
+    provider: nullableString(payload.provider),
+    available:
+      typeof payload.available === 'boolean' ? payload.available : null,
+    model: nullableString(payload.model),
+    configured_model: nullableString(payload.configured_model),
+    effective_model: nullableString(payload.effective_model),
+    fallback_models: Array.isArray(payload.fallback_models)
+      ? payload.fallback_models
+          .map((value) => stringField(value).trim())
+          .filter(Boolean)
+      : [],
+    fallback_reason: nullableString(payload.fallback_reason),
+    detail: nullableString(payload.detail),
+  };
+}
+
+function nullableString(value: unknown): string | null {
+  const normalized = stringField(value).trim();
+  return normalized.length > 0 ? normalized : null;
 }

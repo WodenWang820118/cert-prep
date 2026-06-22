@@ -16,6 +16,10 @@ class ProviderHealth:
     available: bool
     detail: str
     unavailable_reason: str | None = None
+    configured_model: str | None = None
+    effective_model: str | None = None
+    fallback_models: tuple[str, ...] = ()
+    fallback_reason: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

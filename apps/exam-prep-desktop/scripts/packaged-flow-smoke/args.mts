@@ -7,11 +7,14 @@ const DEFAULT_TARGET_TRIPLE = 'x86_64-pc-windows-msvc';
 const DEFAULT_OUT_ROOT = 'tmp/exam-prep-desktop/packaged-flow-smoke';
 const DEFAULT_BASELINE_OUT_ROOT =
   'tmp/exam-prep-desktop/packaged-streaming-baseline';
+const DEFAULT_PRODUCTION_OUT_ROOT =
+  'tmp/exam-prep-desktop/packaged-streaming-production';
 const DEFAULT_PDF_PATH = 'pdfs/\u30101\u30112025\u5e7407\u6708N1 \u771f\u9898.pdf';
 const DEFAULT_CDP_PORT = 9491;
 const DEFAULT_OCR_PROVIDER = 'directml';
 const DEFAULT_OCR_PAGE_WORKERS = 1;
 const DEFAULT_OLLAMA_MODEL = 'qwen3:14b';
+const DEFAULT_OLLAMA_FALLBACK_MODELS = ['qwen3:8b'];
 const DEFAULT_STREAMING_COMPLETE_TIMEOUT_MS = 1_200_000;
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
@@ -46,6 +49,10 @@ export function parsePackagedFlowSmokeArgs(
     ollamaModel:
       process.env.EXAM_PREP_PACKAGE_SMOKE_OLLAMA_MODEL?.trim() ||
       DEFAULT_OLLAMA_MODEL,
+    ollamaFallbackModels: stringList(
+      process.env.EXAM_PREP_PACKAGE_SMOKE_OLLAMA_FALLBACK_MODELS,
+      DEFAULT_OLLAMA_FALLBACK_MODELS,
+    ),
     streamingDraftPageLimit: optionalPositiveInteger(
       process.env.EXAM_PREP_PACKAGE_SMOKE_STREAMING_DRAFT_PAGE_LIMIT,
       'EXAM_PREP_PACKAGE_SMOKE_STREAMING_DRAFT_PAGE_LIMIT',
@@ -61,6 +68,8 @@ export function parsePackagedFlowSmokeArgs(
         'EXAM_PREP_PACKAGE_SMOKE_STREAMING_COMPLETE_TIMEOUT_MS',
       ) ?? DEFAULT_STREAMING_COMPLETE_TIMEOUT_MS,
     skipGpuSampling: false,
+    productionSummary: false,
+    allowOcrChunkVariance: false,
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -92,6 +101,8 @@ export function parsePackagedFlowSmokeArgs(
       parsed.ocrPageWorkers = positiveInteger(Number(readValue(arg)), arg);
     } else if (arg === '--ollama-model') {
       parsed.ollamaModel = nonEmptyString(readValue(arg), arg);
+    } else if (arg === '--ollama-fallback-models') {
+      parsed.ollamaFallbackModels = stringList(readValue(arg), []);
     } else if (arg === '--streaming-draft-page-limit') {
       parsed.streamingDraftPageLimit = positiveInteger(Number(readValue(arg)), arg);
     } else if (arg === '--streaming-draft-workers') {
@@ -105,6 +116,11 @@ export function parsePackagedFlowSmokeArgs(
       );
     } else if (arg === '--skip-gpu-sampling') {
       parsed.skipGpuSampling = true;
+    } else if (arg === '--production-summary') {
+      parsed.productionSummary = true;
+      parsed.waitForStreamingComplete = true;
+    } else if (arg === '--allow-ocr-chunk-variance') {
+      parsed.allowOcrChunkVariance = true;
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
@@ -116,12 +132,19 @@ export function parsePackagedFlowSmokeArgs(
   );
   parsed.ocrProvider = nonEmptyString(parsed.ocrProvider, 'ocrProvider');
   parsed.ollamaModel = nonEmptyString(parsed.ollamaModel, 'ollamaModel');
+  parsed.ollamaFallbackModels = nonEmptyStringList(
+    parsed.ollamaFallbackModels,
+    'ollamaFallbackModels',
+  );
   parsed.streamingCompleteTimeoutMs = positiveInteger(
     parsed.streamingCompleteTimeoutMs,
     'streamingCompleteTimeoutMs',
   );
   if (parsed.waitForStreamingComplete && !outDirExplicit) {
-    parsed.outDir = resolve(workspaceRoot, DEFAULT_BASELINE_OUT_ROOT, timestamp);
+    const outRoot = parsed.productionSummary
+      ? DEFAULT_PRODUCTION_OUT_ROOT
+      : DEFAULT_BASELINE_OUT_ROOT;
+    parsed.outDir = resolve(workspaceRoot, outRoot, timestamp);
   }
   if (parsed.waitForStreamingComplete && !appDataDirExplicit) {
     parsed.appDataDir = resolve(parsed.outDir, 'app-data');
@@ -152,4 +175,24 @@ function nonEmptyString(value: string, name: string): string {
     throw new Error(`${name} must not be empty.`);
   }
   return trimmed;
+}
+
+function stringList(
+  value: string | undefined,
+  defaultValues: readonly string[],
+): string[] {
+  const source = value === undefined ? defaultValues.join(',') : value;
+  return source
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function nonEmptyStringList(values: readonly string[], name: string): string[] {
+  const unique = new Set<string>();
+  for (const value of values) {
+    const trimmed = nonEmptyString(value, name);
+    unique.add(trimmed);
+  }
+  return [...unique];
 }

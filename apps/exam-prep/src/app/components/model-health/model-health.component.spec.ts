@@ -5,6 +5,7 @@ import { ModelHealthComponent } from './model-health.component';
 import {
   availableLlmHealth,
   buttonByText,
+  fallbackLlmHealth,
   missingModelHealth,
   ocrHealth,
   systemHealth,
@@ -67,6 +68,30 @@ describe('ModelHealthComponent status display', () => {
     expect(document.body.textContent).toContain('Python backend');
     expect(document.body.textContent).toContain('Reasoning model');
     expect(document.body.textContent).toContain('PaddleOCR');
+  });
+
+  it('shows effective fallback model and still offers primary model download', () => {
+    const fixture = TestBed.createComponent(ModelHealthComponent);
+    const health = TestBed.inject(HealthStore);
+    health.systemHealth.set(systemHealth());
+    health.llmHealth.set(fallbackLlmHealth());
+    health.ocrHealth.set(ocrHealth());
+
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain(
+      'Reasoning model: qwen3:8b',
+    );
+    expect(fixture.nativeElement.textContent).not.toContain(
+      'Reasoning model missing',
+    );
+
+    buttonByText(fixture.nativeElement, 'Manage runtime')?.click();
+    fixture.detectChanges();
+
+    expect(document.body.textContent).toContain('Ready via fallback');
+    expect(document.body.textContent).toContain('primary qwen3:14b');
+    expect(buttonByText(document.body, 'Download qwen3:14b')).not.toBeNull();
   });
 
   it('hides the download action for generic offline health', () => {

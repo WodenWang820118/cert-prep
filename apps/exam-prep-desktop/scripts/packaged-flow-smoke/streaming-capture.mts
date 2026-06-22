@@ -1,5 +1,6 @@
 export {
   answerForVisiblePracticeQuestion,
+  captureLlmHealth,
   createPackagedSmokeQuestion,
   firstSourceChunk,
   observeStreamingApiResponses,

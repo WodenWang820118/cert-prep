@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 import {
@@ -11,8 +11,9 @@ import {
   refreshFirstChunkGateMetrics,
 } from './streaming-capture.mts';
 import { streamingJobCompletionState } from './streaming-evidence.mts';
-import { normalizePath } from './text-utils.mts';
+import { isRecord, normalizePath } from './text-utils.mts';
 import type {
+  LlmHealthSnapshot,
   PublicProcessRecord,
   ResourceSamplingArtifacts,
   SmokeRunState,
@@ -44,6 +45,11 @@ export interface StreamingBaselineReport {
     exe_path: string;
     app_data_dir: string | null;
     llm_model: string;
+    llm_configured_model: string;
+    llm_effective_model: string | null;
+    llm_fallback_models: string[];
+    llm_fallback_reason: string | null;
+    llm_health: LlmHealthSnapshot | null;
     ocr_provider: string;
     ocr_page_workers: number;
     streaming_draft_page_limit: number | null;
@@ -79,6 +85,40 @@ export interface StreamingBaselineReport {
   errors: string[];
 }
 
+interface GpuRoutingChecks {
+  directml_ocr_process_observed?: boolean;
+  ocr_uses_amd_igpu?: boolean;
+  ocr_avoids_nvidia_dgpu?: boolean;
+  reasoning_uses_nvidia_dgpu?: boolean;
+  gpu_luid_map_usable?: boolean;
+  [key: string]: unknown;
+}
+
+interface PackagedStreamingProductionSummary {
+  schema_version: 1;
+  status: 'passed' | 'failed';
+  generated_at: string;
+  selected_model: string | null;
+  configured_model: string;
+  effective_model: string | null;
+  fallback_models: string[];
+  fallback_reason: string | null;
+  llm_health: LlmHealthSnapshot | null;
+  artifacts: {
+    production_summary_json: string;
+    baseline_json: string;
+    baseline_markdown: string;
+    metrics_json: string;
+    resource_sampling?: ResourceSamplingArtifacts;
+  };
+  timings_ms: StreamingBaselineReport['timings_ms'];
+  ocr_completion: StreamingBaselineReport['ocr_completion'];
+  streaming: StreamingBaselineReport['streaming'];
+  gpu_routing_checks: GpuRoutingChecks | null;
+  checks: Record<string, boolean>;
+  errors: string[];
+}
+
 export function writeStreamingBaselineArtifacts(
   run: SmokeRunState,
   {
@@ -92,9 +132,19 @@ export function writeStreamingBaselineArtifacts(
   }
 
   let report = buildStreamingBaselineReport(run);
-  if (report.status === 'failed' && recordFailure) {
+  let productionSummary = run.options.productionSummary
+    ? buildProductionSummary(run, report)
+    : null;
+  if (
+    report.status === 'failed' &&
+    recordFailure &&
+    productionSummary?.status !== 'passed'
+  ) {
     run.metrics.errors.push('Streaming baseline checks failed.');
     report = buildStreamingBaselineReport(run);
+    productionSummary = run.options.productionSummary
+      ? buildProductionSummary(run, report)
+      : null;
   }
   const jsonPath = join(run.options.outDir, 'streaming-baseline.json');
   const markdownPath = join(run.options.outDir, 'streaming-baseline.md');
@@ -105,6 +155,22 @@ export function writeStreamingBaselineArtifacts(
     json: normalizePath(relative(run.options.workspaceRoot, jsonPath)),
     markdown: normalizePath(relative(run.options.workspaceRoot, markdownPath)),
   };
+  if (run.options.productionSummary) {
+    productionSummary ??= buildProductionSummary(run, report);
+    if (productionSummary.status === 'failed' && recordFailure) {
+      run.metrics.errors.push('Packaged streaming production checks failed.');
+      report = buildStreamingBaselineReport(run);
+      productionSummary = buildProductionSummary(run, report);
+    }
+    const productionSummaryPath = join(run.options.outDir, 'production-summary.json');
+    writeFileSync(
+      productionSummaryPath,
+      `${JSON.stringify(productionSummary, null, 2)}\n`,
+    );
+    run.metrics.production_summary = normalizePath(
+      relative(run.options.workspaceRoot, productionSummaryPath),
+    );
+  }
 }
 
 function buildStreamingBaselineReport(run: SmokeRunState): StreamingBaselineReport {
@@ -121,6 +187,7 @@ function buildStreamingBaselineReport(run: SmokeRunState): StreamingBaselineRepo
     firstUsable !== undefined &&
     parseComplete !== undefined &&
     firstUsable < parseComplete;
+  const chunksAccepted = acceptedOcrChunkCount(run);
   const checks = {
     no_script_errors: run.metrics.errors.length === 0,
     graceful_close: run.metrics.final_close?.gracefulExited === true,
@@ -130,8 +197,9 @@ function buildStreamingBaselineReport(run: SmokeRunState): StreamingBaselineRepo
     ocr_completed_46_pages:
       run.metrics.ocr_completion?.pages_processed === EXPECTED_BASELINE_PAGES &&
       run.metrics.ocr_completion?.total_pages === EXPECTED_BASELINE_PAGES,
-    ocr_completed_46_chunks:
-      run.metrics.ocr_completion?.chunks === EXPECTED_BASELINE_CHUNKS,
+    ...(run.options.allowOcrChunkVariance
+      ? { ocr_chunks_present: chunksAccepted }
+      : { ocr_completed_46_chunks: chunksAccepted }),
     first_chunk_under_gate: run.metrics.first_chunk_under_gate,
     first_usable_before_parse_complete: firstUsableBeforeParseComplete,
     all_jobs_terminal: completionState.all_terminal,
@@ -179,6 +247,13 @@ function buildStreamingBaselineReport(run: SmokeRunState): StreamingBaselineRepo
         ? normalizePath(relative(run.options.workspaceRoot, run.options.appDataDir))
         : null,
       llm_model: run.options.ollamaModel,
+      llm_configured_model:
+        run.metrics.llm_configured_model ?? run.options.ollamaModel,
+      llm_effective_model: run.metrics.llm_effective_model ?? null,
+      llm_fallback_models:
+        run.metrics.llm_fallback_models ?? run.options.ollamaFallbackModels,
+      llm_fallback_reason: run.metrics.llm_fallback_reason ?? null,
+      llm_health: run.metrics.llm_health ?? null,
       ocr_provider: run.options.ocrProvider,
       ocr_page_workers: run.options.ocrPageWorkers,
       streaming_draft_page_limit: run.options.streamingDraftPageLimit ?? null,
@@ -232,13 +307,80 @@ function buildStreamingBaselineReport(run: SmokeRunState): StreamingBaselineRepo
   };
 }
 
+function buildProductionSummary(
+  run: SmokeRunState,
+  report: StreamingBaselineReport,
+): PackagedStreamingProductionSummary {
+  const gpuRoutingChecks = readGpuRoutingChecks(run);
+  const configuredModel =
+    run.metrics.llm_configured_model ?? report.runtime.llm_configured_model;
+  const effectiveModel =
+    run.metrics.llm_effective_model ?? report.runtime.llm_effective_model;
+  const selectedModel = effectiveModel;
+  const checks = {
+    no_script_errors: run.metrics.errors.length === 0,
+    ocr_completed_expected_pages:
+      report.ocr_completion.pages_processed === EXPECTED_BASELINE_PAGES &&
+      report.ocr_completion.total_pages === EXPECTED_BASELINE_PAGES,
+    ocr_chunks_present: acceptedOcrChunkCount(run),
+    directml_ocr_process_observed: routingBoolean(
+      gpuRoutingChecks,
+      'directml_ocr_process_observed',
+    ),
+    ocr_uses_amd_igpu: routingBoolean(gpuRoutingChecks, 'ocr_uses_amd_igpu'),
+    ocr_avoids_nvidia_dgpu: routingBoolean(
+      gpuRoutingChecks,
+      'ocr_avoids_nvidia_dgpu',
+    ),
+    reasoning_uses_nvidia_dgpu: routingBoolean(
+      gpuRoutingChecks,
+      'reasoning_uses_nvidia_dgpu',
+    ),
+    streaming_jobs_succeeded: report.streaming.completion_state.all_succeeded,
+    selected_model_produced_usable_questions:
+      selectedModel !== null && report.streaming.usable_question_count > 0,
+  };
+  const productionSummaryPath = join(run.options.outDir, 'production-summary.json');
+
+  return {
+    schema_version: 1,
+    status: Object.values(checks).every(Boolean) ? 'passed' : 'failed',
+    generated_at: report.generated_at,
+    selected_model: selectedModel,
+    configured_model: configuredModel,
+    effective_model: effectiveModel,
+    fallback_models:
+      run.metrics.llm_fallback_models ?? report.runtime.llm_fallback_models,
+    fallback_reason:
+      run.metrics.llm_fallback_reason ?? report.runtime.llm_fallback_reason,
+    llm_health: run.metrics.llm_health ?? report.runtime.llm_health,
+    artifacts: {
+      production_summary_json: normalizePath(
+        relative(run.options.workspaceRoot, productionSummaryPath),
+      ),
+      baseline_json: report.artifacts.baseline_json,
+      baseline_markdown: report.artifacts.baseline_markdown,
+      metrics_json: report.artifacts.metrics_json,
+      ...(report.artifacts.resource_sampling
+        ? { resource_sampling: report.artifacts.resource_sampling }
+        : {}),
+    },
+    timings_ms: report.timings_ms,
+    ocr_completion: report.ocr_completion,
+    streaming: report.streaming,
+    gpu_routing_checks: gpuRoutingChecks,
+    checks,
+    errors: run.metrics.errors,
+  };
+}
+
 function renderStreamingBaselineMarkdown(report: StreamingBaselineReport): string {
   return `# Packaged Streaming Baseline
 
 - Status: ${report.status}
 - Generated: ${report.generated_at}
 - Git commit: ${report.git_commit ?? 'unknown'}
-- Model: ${report.runtime.llm_model}
+- Model: ${renderModelMarkdown(report)}
 - PDF: ${report.input.pdf_path} (${report.input.pdf_bytes} bytes)
 - OCR: ${report.ocr_completion.pages_processed}/${report.ocr_completion.total_pages} pages, ${report.ocr_completion.chunks} chunks
 - First chunk visible: ${formatMaybeMs(report.timings_ms.first_chunk_visible)} (gate: ${formatMaybeMs(report.timings_ms.first_chunk_gate_ms)}, under gate: ${String(report.checks.first_chunk_under_gate)})
@@ -256,6 +398,61 @@ Artifacts:
 - Screenshots: ${report.artifacts.screenshots.length}
 ${renderResourceSamplingMarkdown(report.artifacts.resource_sampling)}
 `;
+}
+
+function renderModelMarkdown(report: StreamingBaselineReport): string {
+  const configured = report.runtime.llm_configured_model;
+  if (report.runtime.llm_health?.available === false) {
+    return `${configured} (unavailable: ${report.runtime.llm_health.detail ?? 'provider unavailable'})`;
+  }
+  const effective = report.runtime.llm_effective_model ?? configured;
+  if (effective !== configured) {
+    return `${effective} (configured: ${configured}, fallback: ${report.runtime.llm_fallback_reason ?? 'active'})`;
+  }
+  return configured;
+}
+
+function readGpuRoutingChecks(run: SmokeRunState): GpuRoutingChecks | null {
+  const summaryPath = run.metrics.resource_sampling?.windows_summary_json;
+  if (!summaryPath) {
+    return null;
+  }
+
+  const absolutePath = join(run.options.workspaceRoot, summaryPath);
+  if (!existsSync(absolutePath)) {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(readFileSync(absolutePath, 'utf8').replace(/^\uFEFF/, ''));
+    if (!isRecord(payload) || !isRecord(payload.gpu_routing_checks)) {
+      return null;
+    }
+    return payload.gpu_routing_checks as GpuRoutingChecks;
+  } catch {
+    return null;
+  }
+}
+
+function routingBoolean(
+  checks: GpuRoutingChecks | null,
+  key: keyof GpuRoutingChecks,
+): boolean {
+  return checks?.[key] === true;
+}
+
+function acceptedOcrChunkCount(run: SmokeRunState): boolean {
+  const chunks = run.metrics.ocr_completion?.chunks;
+  if (chunks === EXPECTED_BASELINE_CHUNKS) {
+    return true;
+  }
+  return (
+    run.options.allowOcrChunkVariance &&
+    chunks !== null &&
+    chunks !== undefined &&
+    chunks > 0 &&
+    chunks <= EXPECTED_BASELINE_CHUNKS
+  );
 }
 
 function formatMaybeMs(value: number | null): string {

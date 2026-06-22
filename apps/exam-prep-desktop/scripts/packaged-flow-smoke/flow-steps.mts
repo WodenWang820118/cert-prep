@@ -13,6 +13,7 @@ import {
 } from './runner-context.mts';
 import {
   answerForVisiblePracticeQuestion,
+  captureLlmHealth,
   createPackagedSmokeQuestion,
   EXPECTED_BASELINE_CHUNKS,
   EXPECTED_BASELINE_PAGES,
@@ -79,6 +80,7 @@ export async function uploadAndParsePdf(run: SmokeRunState): Promise<void> {
       run.metrics.observations.push(
         `Captured upload document reference for streaming API polling: ${uploadedDocument.documentId}.`,
       );
+      await captureLlmHealth(run, uploadedDocument);
     } else {
       run.metrics.observations.push(
         'Upload document response was not captured; streaming evidence is limited to UI/API responses.',
@@ -119,7 +121,13 @@ export async function uploadAndParsePdf(run: SmokeRunState): Promise<void> {
       if (!uploadedDocument) {
         throw new Error('Cannot wait for streaming completion without upload API reference.');
       }
-      await waitForStreamingJobsComplete(run, uploadedDocument, parseStart);
+      try {
+        await waitForStreamingJobsComplete(run, uploadedDocument, parseStart);
+      } catch (error) {
+        await captureLlmHealth(run, uploadedDocument);
+        throw error;
+      }
+      await captureLlmHealth(run, uploadedDocument);
     }
   } finally {
     firstChunkObservation.stop();

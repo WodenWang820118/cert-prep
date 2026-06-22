@@ -193,12 +193,14 @@ export class ModelHealthComponent {
       modelMissing: this.health.isModelMissing(),
       ocrRuntimeMissing: this.health.isOcrRuntimeMissing(),
       configuredModelName: this.health.configuredModelName(),
+      effectiveModelName: this.health.effectiveModelName(),
+      modelFallbackActive: this.health.isModelFallbackActive(),
     }),
   );
   protected readonly modelDownloadActionLabel = computed(() =>
     this.health.modelDownload()?.phase === 'failed'
-      ? 'Retry download'
-      : 'Download model',
+      ? `Retry ${this.health.configuredModelName()}`
+      : `Download ${this.health.configuredModelName()}`,
   );
   protected readonly runtimeInstallConsentLabel = computed(() =>
     this.runtimeJobs.runtimeLabel(this.health.runtimeInstallConsentKind()),

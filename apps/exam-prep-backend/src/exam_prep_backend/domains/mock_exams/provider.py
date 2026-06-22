@@ -37,6 +37,7 @@ def provider_from_settings(settings: Settings):
         return OllamaProvider(
             host=settings.ollama_host,
             model=settings.ollama_model,
+            fallback_models=settings.ollama_fallback_models,
             timeout_seconds=settings.ollama_timeout_seconds,
         )
     return FakeLLMProvider(model=settings.ollama_model)

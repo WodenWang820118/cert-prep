@@ -63,4 +63,6 @@ export interface ModelHealthViewState {
   readonly modelMissing: boolean;
   readonly ocrRuntimeMissing: boolean;
   readonly configuredModelName: string;
+  readonly effectiveModelName: string;
+  readonly modelFallbackActive: boolean;
 }

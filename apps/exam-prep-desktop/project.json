@@ -42,6 +42,18 @@
         "command": "pnpm exec tauri build --target x86_64-pc-windows-msvc --ci --config apps/exam-prep-desktop/src-tauri/tauri.conf.json"
       }
     },
+    "build-directml": {
+      "executor": "nx:run-commands",
+      "dependsOn": [
+        "exam-prep:build",
+        "sync-backend-runtime-manifest",
+        "sync-directml-runtime-manifest"
+      ],
+      "outputs": ["{projectRoot}/src-tauri/target"],
+      "options": {
+        "command": "pnpm exec tauri build --target x86_64-pc-windows-msvc --ci --config apps/exam-prep-desktop/src-tauri/tauri.conf.json"
+      }
+    },
     "sync-sidecar": {
       "executor": "nx:run-commands",
       "dependsOn": ["exam-prep-backend:build-sidecar"],
@@ -122,12 +134,23 @@
     "packaged-streaming-baseline-directml": {
       "cache": false,
       "executor": "nx:run-commands",
-      "dependsOn": ["build-gpu"],
+      "dependsOn": ["build-directml"],
       "outputs": [
         "{workspaceRoot}/tmp/exam-prep-desktop/packaged-streaming-baseline"
       ],
       "options": {
         "command": "node apps/exam-prep-desktop/scripts/packaged-flow-smoke.mts --ocr-provider directml --ocr-page-workers 1 --ollama-model qwen3:8b --streaming-draft-page-limit 1 --streaming-draft-workers 1 --wait-for-streaming-complete"
+      }
+    },
+    "packaged-streaming-production-directml": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "dependsOn": ["build-directml"],
+      "outputs": [
+        "{workspaceRoot}/tmp/exam-prep-desktop/packaged-streaming-production"
+      ],
+      "options": {
+        "command": "node apps/exam-prep-desktop/scripts/packaged-flow-smoke.mts --production-summary --allow-ocr-chunk-variance --ocr-provider directml --ocr-page-workers 1 --ollama-model qwen3:14b --ollama-fallback-models qwen3:8b --streaming-draft-page-limit 1 --streaming-draft-workers 1 --wait-for-streaming-complete"
       }
     },
     "typecheck-scripts": {

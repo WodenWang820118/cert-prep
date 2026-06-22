@@ -1,7 +1,7 @@
 use std::{
-    fs,
+    fs::{self, OpenOptions},
     net::{TcpListener, TcpStream},
-    path::Path,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::Arc,
     thread,
@@ -14,6 +14,7 @@ use crate::{
 };
 
 const DEFAULT_OLLAMA_MODEL: &str = "qwen3:14b";
+const DEFAULT_BACKEND_READY_TIMEOUT_SECS: u64 = 60;
 
 pub(crate) fn launch_backend_entrypoint(
     inner: &Arc<BackendRuntimeInner>,
@@ -36,6 +37,7 @@ pub(crate) fn launch_backend_entrypoint(
 
     let mut command = Command::new(entrypoint);
     command
+        .current_dir(entrypoint.parent().unwrap_or_else(|| Path::new(".")))
         .env("EXAM_PREP_HOST", sidecar_host())
         .env("EXAM_PREP_PORT", port.to_string())
         .env("EXAM_PREP_API_TOKEN", token.as_str())
@@ -51,8 +53,16 @@ pub(crate) fn launch_backend_entrypoint(
         .env("EXAM_PREP_OLLAMA_MODEL", configured_ollama_model())
         .env("EXAM_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD", "true")
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stdout(configured_log_stdio("backend.stdout.log"))
+        .stderr(configured_log_stdio("backend.stderr.log"));
+
+    forward_env(&mut command, "EXAM_PREP_OLLAMA_FALLBACK_MODELS");
+    forward_env(&mut command, "EXAM_PREP_OCR_PAGE_WORKERS");
+    forward_env(
+        &mut command,
+        "EXAM_PREP_STREAMING_DRAFT_GENERATION_PAGE_LIMIT",
+    );
+    forward_env(&mut command, "EXAM_PREP_STREAMING_DRAFT_WORKERS");
 
     if let Some(manifest_path) = inner
         .ocr_manifest_path
@@ -78,7 +88,7 @@ pub(crate) fn launch_backend_entrypoint(
     let child = command
         .spawn()
         .map_err(|error| format!("failed to launch backend runtime: {error}"))?;
-    if let Err(error) = wait_for_backend(port, Duration::from_secs(10)) {
+    if let Err(error) = wait_for_backend(port, backend_ready_timeout()) {
         terminate_backend_process_tree(child);
         return Err(error);
     }
@@ -139,6 +149,44 @@ fn configured_ocr_provider() -> String {
         .unwrap_or_else(|| "directml".to_string())
 }
 
+fn backend_ready_timeout() -> Duration {
+    Duration::from_secs(
+        std::env::var("EXAM_PREP_BACKEND_READY_TIMEOUT_SECS")
+            .ok()
+            .and_then(|value| value.trim().parse::<u64>().ok())
+            .filter(|value| *value > 0)
+            .unwrap_or(DEFAULT_BACKEND_READY_TIMEOUT_SECS),
+    )
+}
+
+fn forward_env(command: &mut Command, name: &str) {
+    if let Some(value) = trimmed_env_var(name) {
+        command.env(name, value);
+    }
+}
+
+fn configured_log_stdio(file_name: &str) -> Stdio {
+    let Some(log_dir) = trimmed_env_var("EXAM_PREP_BACKEND_LOG_DIR").map(PathBuf::from) else {
+        return Stdio::null();
+    };
+    if fs::create_dir_all(&log_dir).is_err() {
+        return Stdio::null();
+    }
+    OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_dir.join(file_name))
+        .map(Stdio::from)
+        .unwrap_or_else(|_| Stdio::null())
+}
+
+fn trimmed_env_var(name: &str) -> Option<String> {
+    std::env::var(name)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
 pub(crate) fn external_backend_env() -> Option<BackendConfig> {
     match (
         std::env::var("EXAM_PREP_BACKEND_URL"),
@@ -193,6 +241,21 @@ mod tests {
         assert_eq!(configured_ocr_provider(), "directml");
 
         std::env::remove_var("EXAM_PREP_OCR_PROVIDER");
+    }
+
+    #[test]
+    fn backend_ready_timeout_uses_positive_override_or_default() {
+        std::env::remove_var("EXAM_PREP_BACKEND_READY_TIMEOUT_SECS");
+
+        assert_eq!(backend_ready_timeout(), Duration::from_secs(60));
+
+        std::env::set_var("EXAM_PREP_BACKEND_READY_TIMEOUT_SECS", " 90 ");
+        assert_eq!(backend_ready_timeout(), Duration::from_secs(90));
+
+        std::env::set_var("EXAM_PREP_BACKEND_READY_TIMEOUT_SECS", "0");
+        assert_eq!(backend_ready_timeout(), Duration::from_secs(60));
+
+        std::env::remove_var("EXAM_PREP_BACKEND_READY_TIMEOUT_SECS");
     }
 
     #[test]

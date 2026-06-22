@@ -6,8 +6,8 @@
   "entrypoint": "exam-prep-ocr-directml-runtime.exe",
   "artifact": {
     "file_name": "exam-prep-ocr-directml-runtime-x86_64-pc-windows-msvc.zip",
-    "sha256": "ebcea572ff16717e274015455bb85faab7d0f0a6eab3087eb34171344499f028",
-    "bytes": 118632683,
+    "sha256": "dcd1c6df2e3f0fc147f0b1b314b1c5b70b6e6e756f348cab36e90fe9850056dc",
+    "bytes": 118631604,
     "url": "file:///C:/software-dev/cert-prep/apps/exam-prep-backend/dist/ocr-directml-runtime/exam-prep-ocr-directml-runtime-x86_64-pc-windows-msvc.zip"
   }
 }

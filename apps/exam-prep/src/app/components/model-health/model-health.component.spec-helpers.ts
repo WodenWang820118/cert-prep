@@ -24,6 +24,21 @@ export function availableLlmHealth(): LLMHealthRead {
   };
 }
 
+export function fallbackLlmHealth(): LLMHealthRead {
+  return {
+    provider: 'ollama',
+    model: 'qwen3:14b',
+    available: true,
+    detail: 'model available via fallback qwen3:8b',
+    unavailable_reason: null,
+    configured_model: 'qwen3:14b',
+    effective_model: 'qwen3:8b',
+    fallback_models: ['qwen3:8b'],
+    fallback_reason:
+      'Configured model qwen3:14b is missing; using fallback qwen3:8b.',
+  };
+}
+
 export function missingModelHealth(): LLMHealthRead & {
   unavailable_reason: string;
 } {

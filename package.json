@@ -14,7 +14,8 @@
     "build:ocr-runtime": "pnpm nx run exam-prep-backend:build-ocr-runtime-gpu",
     "build:tauri": "pnpm nx run exam-prep-desktop:build",
     "build:tauri:win": "pnpm nx run exam-prep-desktop:build-gpu",
-    "package:qa": "pnpm nx run exam-prep-desktop:package-qa"
+    "package:qa": "pnpm nx run exam-prep-desktop:package-qa",
+    "package:streaming-production": "pnpm nx run exam-prep-desktop:packaged-streaming-production-directml"
   },
   "private": true,
   "dependencies": {

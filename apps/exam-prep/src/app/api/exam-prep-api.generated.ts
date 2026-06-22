@@ -18,7 +18,7 @@ export interface Components {
     DraftStatus: string;
     HTTPValidationError: { "detail"?: Components['schemas']['ValidationError'][] };
     HealthResponse: { "status": string; "app": string; "version": string; "python_version": string; "runtime_mode": string };
-    LLMHealthRead: { "provider": string; "model": string; "available": boolean; "detail": string; "unavailable_reason"?: string | null };
+    LLMHealthRead: { "provider": string; "model": string; "available": boolean; "detail": string; "unavailable_reason"?: string | null; "configured_model"?: string | null; "effective_model"?: string | null; "fallback_models"?: string[]; "fallback_reason"?: string | null };
     ModelDownloadRead: { "id": string; "provider": string; "model": string; "status": string; "detail": string; "completed": number | null; "total": number | null; "created_at": string; "updated_at": string; "error"?: string | null };
     OCRHealthRead: { "provider": string; "engine": string; "available": boolean; "detail": string; "python_version": string; "paddle_version": string | null; "paddleocr_version": string | null; "selected_device": string | null; "cuda_available": boolean; "gpu_count": number; "model_cache_dir": string | null; "fallback_reason": string | null; "unavailable_reason"?: string | null };
     PdfExtractionMethod: string;

@@ -95,4 +95,38 @@ describe('HealthStore model downloads', () => {
     expect(store.modelDownloadConsentVisible()).toBe(false);
     expect(apiClient.startModelDownload).not.toHaveBeenCalled();
   });
+
+  it('offers primary model download when runtime is using a fallback model', async () => {
+    const store = TestBed.inject(HealthStore);
+    apiClient.llmHealth.mockResolvedValue(
+      llmHealth({
+        available: true,
+        model: 'qwen3:14b',
+        detail: 'model available via fallback qwen3:8b',
+        unavailable_reason: null,
+        configured_model: 'qwen3:14b',
+        effective_model: 'qwen3:8b',
+        fallback_models: ['qwen3:8b'],
+        fallback_reason:
+          'Configured model qwen3:14b is missing; using fallback qwen3:8b.',
+      }),
+    );
+    apiClient.startModelDownload.mockResolvedValue(
+      modelDownload({
+        model: 'qwen3:14b',
+        status: 'succeeded',
+        detail: 'model download complete',
+        completed: 100,
+      }),
+    );
+
+    await store.load();
+    store.openModelDownloadConsent();
+    await store.confirmModelDownload();
+
+    expect(store.modelDownloadConsentVisible()).toBe(false);
+    expect(apiClient.startModelDownload).toHaveBeenCalledTimes(1);
+    expect(store.modelDownload()?.model).toBe('qwen3:14b');
+    expect(store.modelDownload()?.phase).toBe('succeeded');
+  });
 });

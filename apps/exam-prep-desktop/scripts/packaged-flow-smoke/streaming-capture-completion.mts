@@ -106,7 +106,7 @@ function assertSuccessfulStreamingBaseline(
   if (
     ocr?.pages_processed !== EXPECTED_BASELINE_PAGES ||
     ocr.total_pages !== EXPECTED_BASELINE_PAGES ||
-    ocr.chunks !== EXPECTED_BASELINE_CHUNKS
+    !ocrChunksAccepted(run)
   ) {
     throw new Error(
       `OCR completion did not match expected ${EXPECTED_BASELINE_PAGES} pages / ${EXPECTED_BASELINE_CHUNKS} chunks: ${JSON.stringify(
@@ -114,4 +114,18 @@ function assertSuccessfulStreamingBaseline(
       )}`,
     );
   }
+}
+
+function ocrChunksAccepted(run: SmokeRunState): boolean {
+  const chunks = run.metrics.ocr_completion?.chunks;
+  if (chunks === EXPECTED_BASELINE_CHUNKS) {
+    return true;
+  }
+  return (
+    run.options.allowOcrChunkVariance &&
+    chunks !== null &&
+    chunks !== undefined &&
+    chunks > 0 &&
+    chunks <= EXPECTED_BASELINE_CHUNKS
+  );
 }

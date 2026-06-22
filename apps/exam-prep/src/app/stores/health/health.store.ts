@@ -54,6 +54,12 @@ export class HealthStore {
   readonly isModelMissing = computed(() =>
     this.runtimeHealth.isModelMissing(this.llmHealth()),
   );
+  readonly isConfiguredModelMissing = computed(() =>
+    this.runtimeHealth.isConfiguredModelMissing(this.llmHealth()),
+  );
+  readonly isModelFallbackActive = computed(() =>
+    this.runtimeHealth.isModelFallbackActive(this.llmHealth()),
+  );
 
   /**
    * Includes both the optimistic start flag and the last job phase so buttons
@@ -127,7 +133,7 @@ export class HealthStore {
     ['checking', 'warming'].includes(this.ocrPhase()),
   );
   readonly canDownloadModel = computed(
-    () => this.isModelMissing() && !this.isModelDownloadActive(),
+    () => this.isConfiguredModelMissing() && !this.isModelDownloadActive(),
   );
   readonly canInstallOllama = computed(
     () => this.isOllamaMissing() && !this.isRuntimeInstallActive(),
@@ -140,6 +146,12 @@ export class HealthStore {
   );
   readonly configuredModelName = computed(() =>
     this.runtimeHealth.configuredModelName(
+      this.llmHealth(),
+      this.modelDownload()?.model,
+    ),
+  );
+  readonly effectiveModelName = computed(() =>
+    this.runtimeHealth.effectiveModelName(
       this.llmHealth(),
       this.modelDownload()?.model,
     ),
@@ -205,7 +217,7 @@ export class HealthStore {
   }
 
   async confirmModelDownload(): Promise<void> {
-    if (!this.isModelMissing() || this.modelDownloadStarting()) {
+    if (!this.canDownloadModel() || this.modelDownloadStarting()) {
       return;
     }
 
@@ -221,7 +233,7 @@ export class HealthStore {
     this.clearModelDownloadPollTimer();
     this.modelDownloadStarting.set(true);
     this.modelDownload.set(
-      this.jobView.startingDownload(this.llmHealth()?.model ?? null),
+      this.jobView.startingDownload(this.configuredModelName()),
     );
 
     try {
@@ -533,7 +545,7 @@ export class HealthStore {
   ): ModelDownloadView {
     return this.jobView.toModelDownloadView(response, fallbackPhase, {
       currentJobId: this.modelDownload()?.jobId ?? null,
-      modelName: this.llmHealth()?.model,
+      modelName: this.configuredModelName(),
     });
   }
 
@@ -556,7 +568,7 @@ export class HealthStore {
     return this.jobView.failedDownload(
       message,
       this.modelDownload(),
-      this.llmHealth()?.model,
+      this.configuredModelName(),
     );
   }
 

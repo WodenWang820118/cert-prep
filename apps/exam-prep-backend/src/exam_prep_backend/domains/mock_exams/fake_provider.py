@@ -28,6 +28,8 @@ class FakeLLMProvider:
             model=self.model,
             available=True,
             detail="deterministic local fake provider",
+            configured_model=self.model,
+            effective_model=self.model,
         )
 
     def generate_drafts(self, chunks: Sequence[SourceChunk], limit: int) -> list[DraftSuggestion]:

@@ -50,7 +50,7 @@ describe('ModelHealthComponent runtime actions', () => {
 
     buttonByText(fixture.nativeElement, 'Manage runtime')?.click();
     fixture.detectChanges();
-    buttonByText(document.body, 'Download model')?.click();
+    buttonByText(document.body, 'Download reasoner:7b')?.click();
     fixture.detectChanges();
     await fixture.whenStable();
 

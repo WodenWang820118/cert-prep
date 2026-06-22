@@ -11,11 +11,14 @@ export interface SmokeOptions {
   ocrProvider: string;
   ocrPageWorkers: number;
   ollamaModel: string;
+  ollamaFallbackModels: string[];
   streamingDraftPageLimit?: number;
   streamingDraftWorkers?: number;
   waitForStreamingComplete: boolean;
   streamingCompleteTimeoutMs: number;
   skipGpuSampling: boolean;
+  productionSummary: boolean;
+  allowOcrChunkVariance: boolean;
 }
 
 export interface SmokeMetrics {
@@ -31,6 +34,11 @@ export interface SmokeMetrics {
   selected_answer?: string;
   wrong_answer?: string;
   llm_model: string;
+  llm_configured_model?: string;
+  llm_effective_model?: string;
+  llm_fallback_models: string[];
+  llm_fallback_reason?: string | null;
+  llm_health?: LlmHealthSnapshot;
   ocr_provider: string;
   first_chunk_gate_ms: number;
   first_chunk_under_gate: boolean;
@@ -40,6 +48,7 @@ export interface SmokeMetrics {
   app_data_dir?: string;
   ocr_completion?: OcrCompletionMetrics;
   streaming_baseline?: StreamingBaselineArtifacts;
+  production_summary?: string;
   restart?: {
     attempted: boolean;
     verified?: boolean;
@@ -92,6 +101,17 @@ export interface StreamingBaselineArtifacts {
   status: 'passed' | 'failed';
   json: string;
   markdown: string;
+}
+
+export interface LlmHealthSnapshot {
+  provider: string | null;
+  available: boolean | null;
+  model: string | null;
+  configured_model: string | null;
+  effective_model: string | null;
+  fallback_models: string[];
+  fallback_reason: string | null;
+  detail: string | null;
 }
 
 export interface StreamingJobCompletionState {
