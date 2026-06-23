@@ -8,7 +8,7 @@ import sys
 import traceback
 from typing import Any
 
-from exam_prep_backend.domains.source_documents.adapters.windowsml import (
+from exam_prep_backend.domains.source_documents.adapters.windowsml.runtime import (
     WindowsMLRuntimeOCRProvider,
 )
 
@@ -60,7 +60,6 @@ def _provider_from_args(args: argparse.Namespace) -> WindowsMLRuntimeOCRProvider
     return WindowsMLRuntimeOCRProvider(
         model_dir=args.model_dir or _default_model_dir(),
         device_id=args.windowsml_device_id,
-        npu_policy=args.windowsml_device_policy,
     )
 
 

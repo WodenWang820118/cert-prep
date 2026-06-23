@@ -7,7 +7,7 @@ import tempfile
 from time import perf_counter
 from typing import Any
 
-from exam_prep_backend.domains.source_documents.adapters.windowsml_device import (
+from exam_prep_backend.domains.source_documents.adapters.windowsml.device import (
     AUTO_WINDOWSML_DEVICE_ID,
     WindowsMLDeviceSelectionError,
     windowsml_device_label,
@@ -30,40 +30,6 @@ PADDLEOCR37_REQUIRED_MODEL_FILES = (
 )
 
 
-class WindowsMLOCRProvider:
-    """Blocked-until-ready WindowsML OCR provider for the packaged production gate."""
-
-    provider = "windowsml"
-    engine = "onnxruntime-windowsml"
-    page_workers = 1
-
-    def health(self) -> OCRHealth:
-        providers, version, import_error = _onnxruntime_state()
-        windowsml_available = "DmlExecutionProvider" in providers
-        unavailable_reason = _unavailable_reason(import_error, windowsml_available)
-        return OCRHealth(
-            provider=self.provider,
-            engine=self.engine,
-            available=False,
-            detail=_detail(import_error, windowsml_available),
-            python_version=platform.python_version(),
-            paddle_version=None,
-            paddleocr_version=version,
-            selected_device="windowsml" if windowsml_available else None,
-            cuda_available=False,
-            gpu_count=0,
-            model_cache_dir=None,
-            fallback_reason=None,
-            unavailable_reason=unavailable_reason,
-        )
-
-    def extract_page_text(self, image_png: bytes, page_number: int) -> OCRPageResult:
-        raise ProviderUnavailableError(
-            "WindowsML OCR is gated until model artifacts, deterministic inference, "
-            "benchmark, and hardware routing evidence pass."
-        )
-
-
 class WindowsMLRuntimeOCRProvider:
     """Runnable WindowsML OCR provider used inside the packaged WindowsML runtime."""
 
@@ -76,11 +42,9 @@ class WindowsMLRuntimeOCRProvider:
         *,
         model_dir: Path,
         device_id: int | None = AUTO_WINDOWSML_DEVICE_ID,
-        npu_policy: str = "PREFER_NPU",
     ) -> None:
         self.model_dir = model_dir
         self.device_id = device_id
-        self.npu_policy = npu_policy
         self._runner = WindowsMLOCRRunner(model_dir=model_dir, device_id=device_id)
 
     def health(self) -> OCRHealth:
@@ -138,27 +102,13 @@ class WindowsMLRuntimeOCRProvider:
         )
 
     def extract_page_text(self, image_png: bytes, page_number: int) -> OCRPageResult:
-        npu_prepass = _try_windowsml_npu_prepass(
-            self.model_dir,
-            image_png,
-            policy=self.npu_policy,
-        )
         result = self._runner.extract_text(image_png)
-        device = result.device
-        fallback_reason = result.fallback_reason
-        if npu_prepass is not None:
-            device = f"windowsml:vitisai+{result.device}"
-            fallback_reason = (
-                "npu_prepass=text_density_vitisai;"
-                f"vitisai_events={npu_prepass['vitisai_event_count']};"
-                "paddleocr_det_rec=windowsml"
-            )
         return OCRPageResult(
             text=result.text,
             extraction_method="windowsml_ocr",
-            device=device,
-            fallback_reason=fallback_reason,
-            duration_ms=result.duration_ms + int(npu_prepass["duration_ms"] if npu_prepass else 0),
+            device=result.device,
+            fallback_reason=result.fallback_reason,
+            duration_ms=result.duration_ms,
         )
 
 
@@ -272,28 +222,6 @@ def _import_paddleocr() -> Any:
     return PaddleOCR
 
 
-def _unavailable_reason(
-    import_error: Exception | None,
-    windowsml_available: bool,
-) -> str:
-    if import_error is not None:
-        return "windowsml_runtime_missing"
-    if not windowsml_available:
-        return "windowsml_provider_unavailable"
-    return "windowsml_ocr_not_ready"
-
-
-def _detail(import_error: Exception | None, windowsml_available: bool) -> str:
-    if import_error is not None:
-        return f"WindowsML OCR runtime unavailable: {import_error}"
-    if not windowsml_available:
-        return "WindowsML OCR runtime is installed but DmlExecutionProvider is unavailable."
-    return (
-        "WindowsML OCR runtime is present, but production OCR is blocked until "
-        "ONNX model artifacts, inference smoke, benchmark, and hardware routing checks pass."
-    )
-
-
 def _runtime_unavailable_reason(
     import_error: Exception | None,
     paddleocr_error: Exception | None,
@@ -332,17 +260,6 @@ def _runtime_detail(
     if missing_files:
         return f"WindowsML OCR model artifacts are missing: {', '.join(missing_files)}."
     return "WindowsML OCR runtime is ready with PaddleOCR 3.7, PP-OCRv6 medium, and WindowsML."
-
-
-def _windowsml_providers(device_id: int | None) -> list[Any]:
-    if device_id is not None and device_id < 0:
-        device_id = resolve_windowsml_device_id(device_id)
-    if device_id is None:
-        return ["DmlExecutionProvider", "CPUExecutionProvider"]
-    return [
-        ("DmlExecutionProvider", {"device_id": str(device_id)}),
-        "CPUExecutionProvider",
-    ]
 
 
 def _resolve_health_device_id(
@@ -397,27 +314,3 @@ def _count_paddleocr_boxes(results: Any) -> int:
 
 def _elapsed_ms(started_at: float) -> int:
     return max(0, round((perf_counter() - started_at) * 1000))
-
-
-def _try_windowsml_npu_prepass(
-    model_dir: Path,
-    image_png: bytes,
-    *,
-    policy: str,
-) -> dict[str, int] | None:
-    try:
-        from exam_prep_backend.domains.source_documents.adapters.amd_npu import (
-            AmdNpuPrepassRunner,
-        )
-
-        result = AmdNpuPrepassRunner(
-            model_dir=model_dir,
-            device_id="auto",
-            policy=policy,
-        ).run(image_png)
-    except Exception:
-        return None
-    return {
-        "duration_ms": result.duration_ms,
-        "vitisai_event_count": result.vitisai_event_count,
-    }

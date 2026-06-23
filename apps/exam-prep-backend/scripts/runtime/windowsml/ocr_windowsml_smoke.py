@@ -13,13 +13,14 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-BACKEND_ROOT = SCRIPT_DIR.parents[0]
+SCRIPTS_ROOT = SCRIPT_DIR.parents[1]
+BACKEND_ROOT = SCRIPTS_ROOT.parent
 DEFAULT_OUTPUT_DIR = BACKEND_ROOT / ".benchmarks"
 
-sys.path.insert(0, str(SCRIPT_DIR))
+sys.path.insert(0, str(SCRIPTS_ROOT))
 sys.path.insert(0, str(BACKEND_ROOT / "src"))
 
-from ocr_windowsml_probe import (  # noqa: E402
+from runtime.windowsml.ocr_windowsml_probe import (  # noqa: E402
     DEFAULT_MODEL_DIR,
     REQUIRED_MODEL_FILES,
     build_report as build_probe_report,

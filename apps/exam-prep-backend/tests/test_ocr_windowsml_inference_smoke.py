@@ -7,7 +7,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from ocr_windowsml_inference_smoke import (  # noqa: E402
+from runtime.windowsml.ocr_windowsml_inference_smoke import (  # noqa: E402
     build_inference_smoke,
     classify_inference_status,
     default_output_path,

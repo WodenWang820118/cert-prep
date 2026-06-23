@@ -103,7 +103,7 @@
       "outputs": ["{projectRoot}/.benchmarks"],
       "options": {
         "cwd": "apps/exam-prep-backend",
-        "command": "uv run --exact --reinstall-package onnxruntime-windowsml --python 3.12 --extra ocr-windowsml python scripts/ocr_windowsml_probe.py"
+        "command": "uv run --exact --reinstall-package onnxruntime-windowsml --python 3.12 --extra ocr-windowsml python scripts/runtime/windowsml/ocr_windowsml_probe.py"
       }
     },
     "ocr-windowsml-prepare-models": {
@@ -113,7 +113,7 @@
       "outputs": ["{projectRoot}/.benchmarks"],
       "options": {
         "cwd": "apps/exam-prep-backend",
-        "command": "uv run --exact --reinstall-package onnxruntime-windowsml --python 3.12 --extra ocr-windowsml python scripts/ocr_windowsml_prepare_models.py"
+        "command": "uv run --exact --reinstall-package onnxruntime-windowsml --python 3.12 --extra ocr-windowsml python scripts/runtime/windowsml/ocr_windowsml_prepare_models.py"
       }
     },
     "ocr-windowsml-prepare-models-docker": {
@@ -123,7 +123,7 @@
       "outputs": ["{projectRoot}/.benchmarks"],
       "options": {
         "cwd": "apps/exam-prep-backend",
-        "command": "uv run --exact --reinstall-package onnxruntime-windowsml --python 3.12 --extra ocr-windowsml python scripts/ocr_windowsml_prepare_models.py --converter docker --force-conversion --fail-if-not-ready"
+        "command": "uv run --exact --reinstall-package onnxruntime-windowsml --python 3.12 --extra ocr-windowsml python scripts/runtime/windowsml/ocr_windowsml_prepare_models.py --converter docker --force-conversion --fail-if-not-ready"
       }
     },
     "ocr-windowsml-session-smoke": {
@@ -132,7 +132,7 @@
       "outputs": ["{projectRoot}/.benchmarks"],
       "options": {
         "cwd": "apps/exam-prep-backend",
-        "command": "uv run --exact --reinstall-package onnxruntime-windowsml --python 3.12 --extra ocr-windowsml python scripts/ocr_windowsml_smoke.py"
+        "command": "uv run --exact --reinstall-package onnxruntime-windowsml --python 3.12 --extra ocr-windowsml python scripts/runtime/windowsml/ocr_windowsml_smoke.py"
       }
     },
     "ocr-windowsml-inference-smoke": {
@@ -141,7 +141,7 @@
       "outputs": ["{projectRoot}/.benchmarks"],
       "options": {
         "cwd": "apps/exam-prep-backend",
-        "command": "uv run --exact --reinstall-package onnxruntime-windowsml --python 3.12 --extra ocr-windowsml python scripts/ocr_windowsml_inference_smoke.py"
+        "command": "uv run --exact --reinstall-package onnxruntime-windowsml --python 3.12 --extra ocr-windowsml python scripts/runtime/windowsml/ocr_windowsml_inference_smoke.py"
       }
     },
     "ocr-windowsml-benchmark": {
@@ -150,7 +150,7 @@
       "outputs": ["{projectRoot}/.benchmarks"],
       "options": {
         "cwd": "apps/exam-prep-backend",
-        "command": "uv run --exact --reinstall-package onnxruntime-windowsml --python 3.12 --extra ocr-windowsml python scripts/ocr_windowsml_benchmark.py"
+        "command": "uv run --exact --reinstall-package onnxruntime-windowsml --python 3.12 --extra ocr-windowsml python scripts/runtime/windowsml/ocr_windowsml_benchmark.py"
       }
     },
     "reasoning-bakeoff": {

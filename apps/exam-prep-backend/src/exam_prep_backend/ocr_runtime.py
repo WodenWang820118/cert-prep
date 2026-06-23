@@ -10,7 +10,7 @@ from typing import Any
 
 from exam_prep_backend.config import Settings
 from exam_prep_backend.domains.source_documents.adapters.diagnostics import run_ocr_diagnostics
-from exam_prep_backend.domains.source_documents.adapters.windowsml import (
+from exam_prep_backend.domains.source_documents.adapters.windowsml.runtime import (
     WindowsMLRuntimeOCRProvider,
 )
 from exam_prep_backend.domains.source_documents.adapters.paddle import PaddleOCRProvider

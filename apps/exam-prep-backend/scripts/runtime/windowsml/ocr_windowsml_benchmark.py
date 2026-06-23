@@ -14,23 +14,24 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-BACKEND_ROOT = SCRIPT_DIR.parents[0]
-REPO_ROOT = SCRIPT_DIR.parents[2]
+SCRIPTS_ROOT = SCRIPT_DIR.parents[1]
+BACKEND_ROOT = SCRIPTS_ROOT.parent
+REPO_ROOT = BACKEND_ROOT
 DEFAULT_OUTPUT_DIR = BACKEND_ROOT / ".benchmarks"
 CPU_BASELINE_LATENCY_MS = 34_900
 
-sys.path.insert(0, str(SCRIPT_DIR))
+sys.path.insert(0, str(SCRIPTS_ROOT))
 sys.path.insert(0, str(BACKEND_ROOT / "src"))
 
 from benchmark_ocr import DEFAULT_PAGE_3_ANCHORS  # noqa: E402
-from ocr_windowsml_inference_smoke import build_report as build_inference_report  # noqa: E402
-from ocr_windowsml_smoke import WINDOWSML_DEVICE_LABEL  # noqa: E402
-from ocr_windowsml_probe import DEFAULT_MODEL_DIR  # noqa: E402
+from runtime.windowsml.ocr_windowsml_inference_smoke import build_report as build_inference_report  # noqa: E402
+from runtime.windowsml.ocr_windowsml_smoke import WINDOWSML_DEVICE_LABEL  # noqa: E402
+from runtime.windowsml.ocr_windowsml_probe import DEFAULT_MODEL_DIR  # noqa: E402
 from exam_prep_backend.config import Settings  # noqa: E402
 from exam_prep_backend.domains.source_documents.adapters.benchmark import (  # noqa: E402
     benchmark_pdf_page,
 )
-from exam_prep_backend.domains.source_documents.adapters.windowsml import (  # noqa: E402
+from exam_prep_backend.domains.source_documents.adapters.windowsml.runtime import (  # noqa: E402
     WindowsMLOCRRunner,
 )
 from exam_prep_backend.domains.source_documents.ocr import OCRPageResult  # noqa: E402

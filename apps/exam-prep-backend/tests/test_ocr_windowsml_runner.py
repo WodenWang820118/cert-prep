@@ -6,9 +6,11 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from exam_prep_backend.domains.source_documents.adapters import windowsml_device  # noqa: E402
-from exam_prep_backend.domains.source_documents.adapters import windowsml  # noqa: E402
 from exam_prep_backend.domains.source_documents.adapters.windowsml import (  # noqa: E402
+    device as windowsml_device,
+    runtime as windowsml,
+)
+from exam_prep_backend.domains.source_documents.adapters.windowsml.runtime import (  # noqa: E402
     WindowsMLRuntimeOCRProvider,
     WindowsMLOCRTextResult,
 )
@@ -86,18 +88,7 @@ def test_windowsml_auto_device_selects_amd_after_nvidia(monkeypatch) -> None:
     assert windowsml_device.resolve_windowsml_device_id(-1) == 1
 
 
-def test_windowsml_provider_options_resolve_auto_device(monkeypatch) -> None:
-    monkeypatch.setattr(windowsml, "resolve_windowsml_device_id", lambda _device_id: 1)
-
-    providers = windowsml._windowsml_providers(-1)
-
-    assert providers == [
-        ("DmlExecutionProvider", {"device_id": "1"}),
-        "CPUExecutionProvider",
-    ]
-
-
-def test_windowsml_runtime_provider_records_npu_prepass_evidence(
+def test_windowsml_runtime_provider_records_base_extraction_result(
     monkeypatch,
     tmp_path: Path,
 ) -> None:
@@ -113,23 +104,14 @@ def test_windowsml_runtime_provider_records_npu_prepass_evidence(
             device="amd_windowsml:0",
         ),
     )
-    monkeypatch.setattr(
-        windowsml,
-        "_try_windowsml_npu_prepass",
-        lambda _model_dir, _image_png, *, policy: {"duration_ms": 3, "vitisai_event_count": 2},
-    )
 
     result = provider.extract_page_text(b"\x89PNG page", 1)
 
     assert result.text == "OCRTEST"
     assert result.extraction_method == "windowsml_ocr"
-    assert result.device == "windowsml:vitisai+amd_windowsml:0"
-    assert result.duration_ms == 12
-    assert result.fallback_reason == (
-        "npu_prepass=text_density_vitisai;"
-        "vitisai_events=2;"
-        "paddleocr_det_rec=windowsml"
-    )
+    assert result.device == "amd_windowsml:0"
+    assert result.duration_ms == 9
+    assert result.fallback_reason is None
 
 
 def _write_paddleocr37_model_files(model_dir: Path) -> None:

@@ -7,7 +7,7 @@ import tarfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from ocr_windowsml_prepare_models import (  # noqa: E402
+from runtime.windowsml.ocr_windowsml_prepare_models import (  # noqa: E402
     BACKEND_ROOT,
     ConversionResult,
     SourceArtifact,

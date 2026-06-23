@@ -3,6 +3,7 @@ from __future__ import annotations
 import platform
 
 from exam_prep_backend.config import Settings
+from exam_prep_backend.exceptions import ProviderUnavailableError
 from exam_prep_backend.domains.source_documents.ocr_contracts import (
     OCRHealth,
     OCRPageResult,
@@ -75,9 +76,7 @@ def ocr_provider_from_settings(settings: Settings) -> OCRProvider:
             )
 
             return ExternalWindowsMLOCRProvider(settings=settings)
-        from exam_prep_backend.domains.source_documents.adapters.windowsml import (
-            WindowsMLOCRProvider,
+        raise ProviderUnavailableError(
+            "WindowsML provider requires external runtime mode and does not support inprocess."
         )
-
-        return WindowsMLOCRProvider()
     return FakeOCRProvider()

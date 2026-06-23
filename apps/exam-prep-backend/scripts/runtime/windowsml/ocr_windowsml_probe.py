@@ -17,7 +17,9 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 
-BACKEND_ROOT = Path(__file__).resolve().parents[1]
+SCRIPT_DIR = Path(__file__).resolve().parent
+SCRIPTS_ROOT = SCRIPT_DIR.parents[1]
+BACKEND_ROOT = SCRIPTS_ROOT.parent
 DEFAULT_OUTPUT_DIR = BACKEND_ROOT / ".benchmarks"
 DEFAULT_MODEL_DIR = BACKEND_ROOT / ".benchmarks" / "ocr-windowsml-models"
 COMMAND_TIMEOUT_SECONDS = 10.0

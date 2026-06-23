@@ -6,7 +6,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from ocr_windowsml_probe import (  # noqa: E402
+from runtime.windowsml.ocr_windowsml_probe import (  # noqa: E402
     classify_windowsml_status,
     default_output_path,
     inspect_model_artifacts,

@@ -16,17 +16,19 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-BACKEND_ROOT = SCRIPT_DIR.parents[0]
+SCRIPTS_ROOT = SCRIPT_DIR.parents[1]
+BACKEND_ROOT = SCRIPTS_ROOT.parent
 DEFAULT_OUTPUT_DIR = BACKEND_ROOT / ".benchmarks"
 
-sys.path.insert(0, str(SCRIPT_DIR))
+sys.path.insert(0, str(SCRIPTS_ROOT))
+sys.path.insert(0, str(BACKEND_ROOT / "src"))
 
-from ocr_windowsml_probe import DEFAULT_MODEL_DIR  # noqa: E402
-from ocr_windowsml_smoke import (  # noqa: E402
+from runtime.windowsml.ocr_windowsml_probe import DEFAULT_MODEL_DIR  # noqa: E402
+from runtime.windowsml.ocr_windowsml_smoke import (  # noqa: E402
     WINDOWSML_DEVICE_LABEL,
     build_report as build_session_report,
 )
-from exam_prep_backend.domains.source_documents.adapters.windowsml import (  # noqa: E402
+from exam_prep_backend.domains.source_documents.adapters.windowsml.runtime import (  # noqa: E402
     WindowsMLRuntimeOCRProvider,
 )
 

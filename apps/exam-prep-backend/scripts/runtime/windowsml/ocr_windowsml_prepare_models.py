@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 
-from ocr_windowsml_prepare import (
+from runtime.windowsml.prepare.ocr_windowsml_prepare import (
     BACKEND_ROOT,
     CONVERTERS,
     CONVERSION_TIMEOUT_SECONDS,
