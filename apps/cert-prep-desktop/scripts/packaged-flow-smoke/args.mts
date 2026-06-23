@@ -1,6 +1,7 @@
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { DEFAULT_LLM_MODEL } from '../package-qa/constants.mts';
 import type { SmokeOptions } from './types.mts';
 
 const DEFAULT_TARGET_TRIPLE = 'x86_64-pc-windows-msvc';
@@ -13,7 +14,6 @@ const DEFAULT_PDF_PATH = 'pdfs/\u30101\u30112025\u5e7407\u6708N1 \u771f\u9898.pd
 const DEFAULT_CDP_PORT = 9491;
 const DEFAULT_OCR_PROVIDER = 'windowsml';
 const DEFAULT_OCR_PAGE_WORKERS = 1;
-const DEFAULT_OLLAMA_MODEL = 'qwen3.5:4b';
 const DEFAULT_OLLAMA_FALLBACK_MODELS = ['qwen3.5:2b'];
 const DEFAULT_STREAMING_COMPLETE_TIMEOUT_MS = 1_200_000;
 
@@ -48,7 +48,7 @@ export function parsePackagedFlowSmokeArgs(
     ),
     ollamaModel:
       process.env.CERT_PREP_PACKAGE_SMOKE_OLLAMA_MODEL?.trim() ||
-      DEFAULT_OLLAMA_MODEL,
+      DEFAULT_LLM_MODEL,
     ollamaFallbackModels: stringList(
       process.env.CERT_PREP_PACKAGE_SMOKE_OLLAMA_FALLBACK_MODELS,
       DEFAULT_OLLAMA_FALLBACK_MODELS,

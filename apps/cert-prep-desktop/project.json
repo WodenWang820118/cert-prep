@@ -115,7 +115,7 @@
         "{workspaceRoot}/tmp/cert-prep-desktop/packaged-streaming-baseline"
       ],
       "options": {
-        "command": "node apps/cert-prep-desktop/scripts/packaged-flow-smoke.mts --ocr-page-workers 1 --ollama-model qwen3.5:4b --streaming-draft-page-limit 1 --streaming-draft-workers 1 --wait-for-streaming-complete"
+        "command": "node apps/cert-prep-desktop/scripts/packaged-flow-smoke.mts --ocr-page-workers 1 --streaming-draft-page-limit 1 --streaming-draft-workers 1 --wait-for-streaming-complete"
       }
     },
     "packaged-streaming-baseline-windowsml": {
@@ -126,7 +126,7 @@
         "{workspaceRoot}/tmp/cert-prep-desktop/packaged-streaming-baseline"
       ],
       "options": {
-        "command": "node apps/cert-prep-desktop/scripts/packaged-flow-smoke.mts --ocr-provider windowsml --ocr-page-workers 1 --ollama-model qwen3.5:4b --streaming-draft-page-limit 1 --streaming-draft-workers 1 --wait-for-streaming-complete"
+        "command": "node apps/cert-prep-desktop/scripts/packaged-flow-smoke.mts --ocr-provider windowsml --ocr-page-workers 1 --streaming-draft-page-limit 1 --streaming-draft-workers 1 --wait-for-streaming-complete"
       }
     },
     "packaged-streaming-production-windowsml": {
@@ -137,7 +137,7 @@
         "{workspaceRoot}/tmp/cert-prep-desktop/packaged-streaming-production"
       ],
       "options": {
-        "command": "node apps/cert-prep-desktop/scripts/packaged-flow-smoke.mts --production-summary --allow-ocr-chunk-variance --ocr-provider windowsml --ocr-page-workers 1 --ollama-model qwen3.5:4b --ollama-fallback-models qwen3.5:2b --streaming-draft-page-limit 1 --streaming-draft-workers 1 --wait-for-streaming-complete --verify-streaming-practice-ready"
+        "command": "node apps/cert-prep-desktop/scripts/packaged-flow-smoke.mts --production-summary --allow-ocr-chunk-variance --ocr-provider windowsml --ocr-page-workers 1 --ollama-fallback-models qwen3.5:2b --streaming-draft-page-limit 1 --streaming-draft-workers 1 --wait-for-streaming-complete --verify-streaming-practice-ready"
       }
     },
     "typecheck-scripts": {

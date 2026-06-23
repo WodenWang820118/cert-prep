@@ -13,7 +13,6 @@ use crate::{
     windows_process::terminate_backend_process_tree,
 };
 
-const DEFAULT_OLLAMA_MODEL: &str = "qwen3.5:4b";
 const DEFAULT_BACKEND_READY_TIMEOUT_SECS: u64 = 60;
 
 pub(crate) fn launch_backend_entrypoint(
@@ -112,7 +111,7 @@ impl BackendEnv {
 }
 
 fn backend_launch_env(data_dir: &Path, port: u16, token: &str) -> Vec<BackendEnv> {
-    vec![
+    let mut env = vec![
         BackendEnv::new("CERT_PREP_HOST", sidecar_host()),
         BackendEnv::new("CERT_PREP_PORT", port.to_string()),
         BackendEnv::new("CERT_PREP_API_TOKEN", token),
@@ -129,9 +128,12 @@ fn backend_launch_env(data_dir: &Path, port: u16, token: &str) -> Vec<BackendEnv
             "CERT_PREP_OCR_WINDOWSML_DEVICE_POLICY",
             configured_windowsml_device_policy(),
         ),
-        BackendEnv::new("CERT_PREP_OLLAMA_MODEL", configured_ollama_model()),
         BackendEnv::new("CERT_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD", "true"),
-    ]
+    ];
+    if let Some(model) = configured_ollama_model_override() {
+        env.push(BackendEnv::new("CERT_PREP_OLLAMA_MODEL", model));
+    }
+    env
 }
 
 fn reserve_loopback_port() -> Result<u16, String> {
@@ -159,12 +161,8 @@ fn sidecar_host() -> &'static str {
     "127.0.0.1"
 }
 
-fn configured_ollama_model() -> String {
-    std::env::var("CERT_PREP_OLLAMA_MODEL")
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| DEFAULT_OLLAMA_MODEL.to_string())
+fn configured_ollama_model_override() -> Option<String> {
+    trimmed_env_var("CERT_PREP_OLLAMA_MODEL")
 }
 
 fn configured_ocr_provider() -> String {
@@ -261,16 +259,19 @@ mod tests {
     }
 
     #[test]
-    fn configured_ollama_model_uses_default_or_explicit_override() {
+    fn configured_ollama_model_override_uses_explicit_non_empty_value() {
         std::env::remove_var("CERT_PREP_OLLAMA_MODEL");
 
-        assert_eq!(configured_ollama_model(), "qwen3.5:4b");
+        assert_eq!(configured_ollama_model_override(), None);
 
         std::env::set_var("CERT_PREP_OLLAMA_MODEL", " qwen3.5:2b ");
-        assert_eq!(configured_ollama_model(), "qwen3.5:2b");
+        assert_eq!(
+            configured_ollama_model_override(),
+            Some("qwen3.5:2b".to_string())
+        );
 
         std::env::set_var("CERT_PREP_OLLAMA_MODEL", " ");
-        assert_eq!(configured_ollama_model(), "qwen3.5:4b");
+        assert_eq!(configured_ollama_model_override(), None);
 
         std::env::remove_var("CERT_PREP_OLLAMA_MODEL");
     }
@@ -324,14 +325,25 @@ mod tests {
             env_value(&env, "CERT_PREP_OCR_WINDOWSML_DEVICE_POLICY"),
             Some("PREFER_NPU")
         );
-        assert_eq!(
-            env_value(&env, "CERT_PREP_OLLAMA_MODEL"),
-            Some("qwen3.5:4b")
-        );
+        assert_eq!(env_value(&env, "CERT_PREP_OLLAMA_MODEL"), None);
         assert_eq!(
             env_value(&env, "CERT_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD"),
             Some("true")
         );
+    }
+
+    #[test]
+    fn backend_launch_env_forwards_explicit_ollama_model_override() {
+        std::env::set_var("CERT_PREP_OLLAMA_MODEL", " qwen3.5:2b ");
+
+        let env = backend_launch_env(Path::new("cert-prep-data"), 8123, "test-token");
+
+        assert_eq!(
+            env_value(&env, "CERT_PREP_OLLAMA_MODEL"),
+            Some("qwen3.5:2b")
+        );
+
+        std::env::remove_var("CERT_PREP_OLLAMA_MODEL");
     }
 
     #[test]
