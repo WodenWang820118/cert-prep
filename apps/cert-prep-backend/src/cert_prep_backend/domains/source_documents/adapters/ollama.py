@@ -7,7 +7,7 @@ from typing import Any
 
 import ollama
 
-from cert_prep_backend.errors import ProviderUnavailableError
+from cert_prep_backend.api.errors import ProviderUnavailableError
 from cert_prep_backend.domains.source_documents.ocr import OCRHealth, OCRPageResult
 
 

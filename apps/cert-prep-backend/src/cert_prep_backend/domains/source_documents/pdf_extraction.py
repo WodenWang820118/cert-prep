@@ -21,7 +21,7 @@ from cert_prep_backend.domains.source_documents.models import (
 )
 from cert_prep_backend.domains.exam_content import classify_exam_text, line_metadata
 from cert_prep_backend.domains.source_documents.ocr import OCRPageResult
-from cert_prep_backend.errors import InvalidPdfError, ProviderUnavailableError
+from cert_prep_backend.api.errors import InvalidPdfError, ProviderUnavailableError
 
 
 class PageOcrProvider(Protocol):

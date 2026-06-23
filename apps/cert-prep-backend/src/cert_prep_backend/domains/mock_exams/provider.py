@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from cert_prep_backend.config import Settings
+from cert_prep_backend.core.config import Settings
 from cert_prep_backend.domains.mock_exams.deterministic_parser import (
     MAX_PROMPT_SOURCE_CHARS,
     extract_jlpt_question_blocks as _extract_jlpt_question_blocks,

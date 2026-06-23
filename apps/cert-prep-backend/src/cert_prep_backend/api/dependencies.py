@@ -5,9 +5,9 @@ import hmac
 from fastapi import Depends, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from cert_prep_backend.config import Settings
-from cert_prep_backend.database import Database
-from cert_prep_backend.errors import api_error
+from cert_prep_backend.api.errors import api_error
+from cert_prep_backend.core.config import Settings
+from cert_prep_backend.persistence.database import Database
 from cert_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
 from cert_prep_backend.domains.mock_exams.streaming import StreamingDraftGenerationManager
 from cert_prep_backend.domains.runtime_installations import RuntimeInstallationManager

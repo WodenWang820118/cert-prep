@@ -5,7 +5,7 @@ from tempfile import TemporaryDirectory
 import shutil
 from pathlib import Path
 
-from cert_prep_backend.config import Settings
+from cert_prep_backend.core.config import Settings
 from cert_prep_backend.domains.runtime_installations.archive import (
     extract_zip_safely,
     resolve_ocr_runtime_artifact,
@@ -17,7 +17,7 @@ from cert_prep_backend.domains.runtime_installations.manifest import (
 )
 from cert_prep_backend.domains.runtime_installations.processes import run_ocr_runtime_command
 from cert_prep_backend.domains.source_documents.ocr import OCRProvider
-from cert_prep_backend.errors import ProviderUnavailableError
+from cert_prep_backend.api.errors import ProviderUnavailableError
 from cert_prep_contracts.runtime import (
     RuntimeInstallationStatus,
     RuntimeInstallProgress,

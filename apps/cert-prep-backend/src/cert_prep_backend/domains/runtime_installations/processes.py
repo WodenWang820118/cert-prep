@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import subprocess
 
-from cert_prep_backend.errors import ProviderUnavailableError
+from cert_prep_backend.api.errors import ProviderUnavailableError
 
 
 def run_ocr_runtime_command(entrypoint: Path, args: list[str]) -> str:

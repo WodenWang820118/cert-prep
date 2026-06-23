@@ -8,7 +8,7 @@ import sys
 import traceback
 from typing import Any
 
-from cert_prep_backend.config import Settings
+from cert_prep_backend.core.config import Settings
 from cert_prep_backend.domains.source_documents.adapters.diagnostics import run_ocr_diagnostics
 from cert_prep_backend.domains.source_documents.adapters.paddle import PaddleOCRProvider
 from cert_prep_ocr_windowsml.paths import DEFAULT_MODEL_DIR

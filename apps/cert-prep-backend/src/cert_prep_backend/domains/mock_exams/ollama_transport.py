@@ -23,7 +23,7 @@ from cert_prep_backend.domains.mock_exams.reasoning_parser import (
     draft_suggestion_from_item,
     json_response,
 )
-from cert_prep_backend.errors import ProviderUnavailableError
+from cert_prep_backend.api.errors import ProviderUnavailableError
 from cert_prep_ollama.models import extract_model_names, pull_progress
 from cert_prep_ollama.server import ensure_ollama_server_running, resolve_ollama_executable
 

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import platform
 
-from cert_prep_backend.config import Settings
-from cert_prep_backend.exceptions import ProviderUnavailableError
+from cert_prep_backend.core.config import Settings
+from cert_prep_backend.core.exceptions import ProviderUnavailableError
 from cert_prep_backend.domains.source_documents.ocr_contracts import (
     OCRHealth,
     OCRPageResult,

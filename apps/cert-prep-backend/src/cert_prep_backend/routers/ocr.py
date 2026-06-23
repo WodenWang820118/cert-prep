@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from cert_prep_backend.dependencies import get_ocr_provider
+from cert_prep_backend.api.dependencies import get_ocr_provider
 from cert_prep_backend.domains.provider_health.schemas import OCRHealthRead
 from cert_prep_backend.domains.source_documents.ocr import OCRProvider
 

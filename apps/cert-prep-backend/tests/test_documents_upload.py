@@ -4,8 +4,8 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from conftest import minimal_pdf
-from cert_prep_backend.app import create_app
-from cert_prep_backend.config import Settings
+from cert_prep_backend.api.app import create_app
+from cert_prep_backend.core.config import Settings
 from document_test_helpers import _create_project
 from document_test_ocr_fakes import MockOllamaOcrProvider, MockPaddleOcrProvider
 

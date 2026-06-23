@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, status
 
-from cert_prep_backend.database import Database
-from cert_prep_backend.dependencies import (
+from cert_prep_backend.persistence.database import Database
+from cert_prep_backend.api.dependencies import (
     get_database,
     get_llm_provider,
     get_streaming_draft_generation_manager,
@@ -23,7 +23,7 @@ from cert_prep_backend.domains.mock_exams.schemas import (
 )
 from cert_prep_backend.domains.mock_exams.streaming import StreamingDraftGenerationManager
 from cert_prep_backend.domains.source_documents import repository as source_documents_repository
-from cert_prep_backend.errors import (
+from cert_prep_backend.api.errors import (
     NotFoundError,
     ProviderUnavailableError,
     ValidationError,

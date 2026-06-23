@@ -6,7 +6,7 @@ from typing import Any
 
 from PIL import Image, ImageDraw
 
-from cert_prep_backend.config import Settings
+from cert_prep_backend.core.config import Settings
 from cert_prep_backend.domains.source_documents.ocr import (
     OCRProvider,
     ocr_provider_from_settings,

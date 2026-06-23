@@ -7,5 +7,5 @@ Useful commands:
 ```bash
 uv run pytest
 uv run ruff check .
-uv run uvicorn cert_prep_backend.app:create_app --factory --host 127.0.0.1 --port 8765
+uv run uvicorn cert_prep_backend.api.app:create_app --factory --host 127.0.0.1 --port 8765
 ```

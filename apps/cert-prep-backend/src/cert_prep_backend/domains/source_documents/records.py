@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from sqlite3 import Row
 
-from cert_prep_backend.database import Database
-from cert_prep_backend.errors import NotFoundError
+from cert_prep_backend.persistence.database import Database
+from cert_prep_backend.api.errors import NotFoundError
 
 
 def document_query(connection, project_id: str, document_id: str) -> Row | None:

@@ -18,7 +18,7 @@ from cert_prep_backend.domains.source_documents.adapters.paddle_runtime import (
 from cert_prep_backend.domains.source_documents.adapters.paddle_text import (
     extract_prediction_text,
 )
-from cert_prep_backend.errors import ProviderUnavailableError
+from cert_prep_backend.api.errors import ProviderUnavailableError
 from cert_prep_backend.domains.source_documents.ocr import OCRHealth, OCRPageResult
 
 

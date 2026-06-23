@@ -2,7 +2,7 @@ from threading import Event
 import time
 
 from cert_prep_backend.domains.source_documents.ocr import OCRHealth, OCRPageResult
-from cert_prep_backend.errors import ProviderUnavailableError
+from cert_prep_backend.api.errors import ProviderUnavailableError
 
 
 JLPT_SINGLE_ITEM_OCR_TEXT = (

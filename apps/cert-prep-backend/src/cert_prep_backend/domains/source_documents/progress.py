@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from cert_prep_backend.database import Database, utc_now
+from cert_prep_backend.persistence.database import Database, utc_now
 from cert_prep_backend.domains.source_documents.chunks import sync_document_chunks, upsert_page_chunk
 from cert_prep_backend.domains.source_documents.classification import (
     document_classification_from_db,
@@ -8,7 +8,7 @@ from cert_prep_backend.domains.source_documents.classification import (
 )
 from cert_prep_backend.domains.source_documents.models import ExtractedPage, PdfExtractionResult
 from cert_prep_backend.domains.source_documents.records import document_from_row, document_query
-from cert_prep_backend.errors import NotFoundError
+from cert_prep_backend.api.errors import NotFoundError
 
 
 def record_extraction_progress(

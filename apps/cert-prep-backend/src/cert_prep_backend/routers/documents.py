@@ -4,9 +4,9 @@ from threading import Thread
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile, status
 
-from cert_prep_backend.config import Settings
-from cert_prep_backend.database import Database
-from cert_prep_backend.dependencies import (
+from cert_prep_backend.core.config import Settings
+from cert_prep_backend.persistence.database import Database
+from cert_prep_backend.api.dependencies import (
     get_database,
     get_llm_provider,
     get_ocr_provider,
@@ -28,7 +28,7 @@ from cert_prep_backend.domains.source_documents.pdf_extraction import (
 )
 from cert_prep_backend.domains.source_documents.schemas import ChunkList, DocumentList, DocumentRead
 from cert_prep_backend.domains.source_documents.storage import sha256_hex, store_pdf
-from cert_prep_backend.errors import (
+from cert_prep_backend.api.errors import (
     InvalidPdfError,
     NotFoundError,
     ProviderUnavailableError,

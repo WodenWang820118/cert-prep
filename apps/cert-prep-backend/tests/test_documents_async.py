@@ -3,8 +3,8 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from conftest import minimal_pdf
-from cert_prep_backend.app import create_app
-from cert_prep_backend.config import Settings
+from cert_prep_backend.api.app import create_app
+from cert_prep_backend.core.config import Settings
 from cert_prep_backend.routers import documents as documents_router
 from document_test_helpers import _create_project, _wait_for_document_status
 from document_test_llm_fakes import MockExamProvider

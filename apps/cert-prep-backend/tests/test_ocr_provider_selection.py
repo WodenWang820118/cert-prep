@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from cert_prep_backend.config import Settings
+from cert_prep_backend.core.config import Settings
 from cert_prep_backend.domains.source_documents.ocr import ocr_provider_from_settings
-from cert_prep_backend.errors import ProviderUnavailableError
+from cert_prep_backend.api.errors import ProviderUnavailableError
 
 
 def test_windowsml_provider_rejects_inprocess_mode(tmp_path: Path) -> None:

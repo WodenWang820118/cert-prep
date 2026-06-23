@@ -13,9 +13,9 @@ from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from cert_prep_backend import __version__
-from cert_prep_backend.config import Settings
-from cert_prep_backend.database import Database
-from cert_prep_backend.dependencies import require_bearer_auth
+from cert_prep_backend.api.dependencies import require_bearer_auth
+from cert_prep_backend.core.config import Settings
+from cert_prep_backend.persistence.database import Database
 from cert_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
 from cert_prep_backend.domains.mock_exams.provider import provider_from_settings
 from cert_prep_backend.domains.mock_exams.streaming import StreamingDraftGenerationManager

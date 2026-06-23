@@ -5,8 +5,8 @@ from threading import Event
 import pytest
 from fastapi.testclient import TestClient
 
-from cert_prep_backend.app import create_app
-from cert_prep_backend.config import DEFAULT_OLLAMA_MODEL, Settings
+from cert_prep_backend.api.app import create_app
+from cert_prep_backend.core.config import DEFAULT_OLLAMA_MODEL, Settings
 from cert_prep_backend.domains.mock_exams.models import DraftSuggestion, SourceChunk
 from cert_prep_backend.domains.mock_exams.ports import ModelPullProgress, ProviderHealth
 from cert_prep_backend.domains.mock_exams.ollama_transport import OllamaProvider
@@ -18,7 +18,7 @@ from cert_prep_backend.domains.mock_exams.provider import (
     _json_response,
     _source_text_for_prompt,
 )
-from cert_prep_backend.errors import ProviderUnavailableError
+from cert_prep_backend.api.errors import ProviderUnavailableError
 
 
 AUTH_HEADERS = {"Authorization": "Bearer test-token"}

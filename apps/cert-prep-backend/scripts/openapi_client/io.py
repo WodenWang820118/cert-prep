@@ -4,8 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from cert_prep_backend.app import create_app
-from cert_prep_backend.config import Settings
+from cert_prep_backend.api.app import create_app
+from cert_prep_backend.core.config import Settings
 
 from openapi_client.typescript import render_typescript
 

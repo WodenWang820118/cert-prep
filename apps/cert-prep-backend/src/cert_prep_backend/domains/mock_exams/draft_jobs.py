@@ -4,10 +4,10 @@ from enum import StrEnum
 from sqlite3 import Row
 from uuid import uuid4
 
-from cert_prep_backend.database import Database, utc_now
+from cert_prep_backend.persistence.database import Database, utc_now
 from cert_prep_backend.domains.projects.repository import ensure_project_exists
 from cert_prep_backend.domains.source_documents import repository as documents_repository
-from cert_prep_backend.errors import NotFoundError
+from cert_prep_backend.api.errors import NotFoundError
 
 
 class DraftGenerationJobStatus(StrEnum):

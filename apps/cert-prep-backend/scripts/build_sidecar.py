@@ -12,7 +12,9 @@ from runtime_build.artifacts import (
 
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
-SIDECAR_ENTRY = BACKEND_ROOT / "src" / "cert_prep_backend" / "sidecar.py"
+SIDECAR_ENTRY = (
+    BACKEND_ROOT / "src" / "cert_prep_backend" / "entrypoints" / "sidecar.py"
+)
 DIST_DIR = BACKEND_ROOT / "dist"
 BUILD_DIR = BACKEND_ROOT / "build"
 EXE_PATH = DIST_DIR / "cert-prep-backend.exe"

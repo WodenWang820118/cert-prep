@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, status
 
-from cert_prep_backend.database import Database
-from cert_prep_backend.dependencies import get_database
+from cert_prep_backend.persistence.database import Database
+from cert_prep_backend.api.dependencies import get_database
 from cert_prep_backend.domains.practice import repository as practice_repository
 from cert_prep_backend.domains.practice.schemas import (
     PracticeAttemptCreate,
@@ -12,7 +12,7 @@ from cert_prep_backend.domains.practice.schemas import (
     PracticeSessionRead,
     WrongAnswerList,
 )
-from cert_prep_backend.errors import NotFoundError, ValidationError, not_found_error, validation_error
+from cert_prep_backend.api.errors import NotFoundError, ValidationError, not_found_error, validation_error
 
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["practice"])

@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import HTTPException, status
 
-from cert_prep_backend.exceptions import (
+from cert_prep_backend.core.exceptions import (
     BackendError,
     InvalidPdfError,
     NotFoundError,

@@ -7,7 +7,7 @@ from typing import Any
 from cert_prep_backend.domains.exam_content import question_item_kind_from_value
 from cert_prep_backend.domains.mock_exams.models import DraftSuggestion, SourceChunk
 from cert_prep_backend.domains.mock_exams.normalization import normalize_answer
-from cert_prep_backend.errors import ProviderUnavailableError
+from cert_prep_backend.api.errors import ProviderUnavailableError
 
 
 EXAM_ITEMS_SCHEMA: dict[str, Any] = {

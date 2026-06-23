@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from cert_prep_backend.config import DEFAULT_OLLAMA_MODEL
+from cert_prep_backend.core.config import DEFAULT_OLLAMA_MODEL
 from cert_prep_backend.domains.exam_content import QuestionItemKind
 from cert_prep_backend.domains.mock_exams.models import (
     AnswerKeySource,

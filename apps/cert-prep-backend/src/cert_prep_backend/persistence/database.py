@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Final
 
-from cert_prep_backend.config import Settings
+from cert_prep_backend.core.config import Settings
 
 
 # Migration strategy: keep these local SQLite migrations append-only for now so

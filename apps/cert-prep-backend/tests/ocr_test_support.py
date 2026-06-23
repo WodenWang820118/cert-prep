@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import sys
 
-from cert_prep_backend.config import Settings
+from cert_prep_backend.core.config import Settings
 from cert_prep_backend.domains.source_documents.adapters.external_paddle import (
     ExternalPaddleOCRProvider,
 )

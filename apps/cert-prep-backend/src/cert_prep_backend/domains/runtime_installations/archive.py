@@ -7,7 +7,7 @@ from urllib.request import urlretrieve
 from zipfile import ZipFile
 
 from cert_prep_backend.domains.runtime_installations.models import OcrRuntimeManifest
-from cert_prep_backend.errors import ProviderUnavailableError
+from cert_prep_backend.api.errors import ProviderUnavailableError
 
 
 def resolve_ocr_runtime_artifact(manifest: OcrRuntimeManifest) -> Path:

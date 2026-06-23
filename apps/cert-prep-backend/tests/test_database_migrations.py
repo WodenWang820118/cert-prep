@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cert_prep_backend.config import Settings
-from cert_prep_backend.database import Database
+from cert_prep_backend.core.config import Settings
+from cert_prep_backend.persistence.database import Database
 
 
 def test_saved_exam_runtime_metadata_columns_are_migrated(tmp_path: Path) -> None:

@@ -3,11 +3,11 @@ from __future__ import annotations
 from sqlite3 import Row
 from uuid import uuid4
 
-from cert_prep_backend.database import Database
+from cert_prep_backend.persistence.database import Database
 from cert_prep_backend.domains.exam_content import content_profile_from_value, line_metadata
 from cert_prep_backend.domains.source_documents.models import ExtractedPage
 from cert_prep_backend.domains.source_documents.records import ensure_document_exists
-from cert_prep_backend.errors import NotFoundError
+from cert_prep_backend.api.errors import NotFoundError
 
 
 def list_chunks(db: Database, project_id: str, document_id: str) -> list[dict]:

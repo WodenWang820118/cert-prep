@@ -13,7 +13,9 @@ from runtime_build.artifacts import (
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = BACKEND_ROOT.parents[1]
-RUNTIME_ENTRY = BACKEND_ROOT / "src" / "cert_prep_backend" / "ocr_runtime.py"
+RUNTIME_ENTRY = (
+    BACKEND_ROOT / "src" / "cert_prep_backend" / "entrypoints" / "ocr_runtime.py"
+)
 WINDOWSML_RUNTIME_ENTRY = (
     REPO_ROOT
     / "packages"

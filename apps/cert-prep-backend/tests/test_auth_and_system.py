@@ -2,8 +2,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from cert_prep_backend.app import create_app
-from cert_prep_backend.config import DEFAULT_OLLAMA_MODEL, Settings, default_data_dir
+from cert_prep_backend.api.app import create_app
+from cert_prep_backend.core.config import DEFAULT_OLLAMA_MODEL, Settings, default_data_dir
 
 
 def test_health_is_public_but_other_endpoints_require_bearer_auth(tmp_path: Path) -> None:

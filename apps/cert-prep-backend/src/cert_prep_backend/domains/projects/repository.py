@@ -3,9 +3,9 @@ from __future__ import annotations
 from sqlite3 import Row
 from uuid import uuid4
 
-from cert_prep_backend.database import Database, utc_now
+from cert_prep_backend.persistence.database import Database, utc_now
 from cert_prep_backend.domains.projects.schemas import ProjectCreate, ProjectUpdate
-from cert_prep_backend.errors import NotFoundError
+from cert_prep_backend.api.errors import NotFoundError
 
 
 def create_project(db: Database, payload: ProjectCreate) -> dict:

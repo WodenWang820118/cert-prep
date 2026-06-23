@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import sys
 
-from cert_prep_backend.ocr_runtime import _run_worker
+from cert_prep_backend.entrypoints.ocr_runtime import _run_worker
 
 from ocr_test_support import RuntimeWorkerFakeProvider, jsonl
 

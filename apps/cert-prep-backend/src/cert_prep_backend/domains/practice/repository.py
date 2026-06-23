@@ -5,7 +5,7 @@ from sqlite3 import Row
 import secrets
 from uuid import uuid4
 
-from cert_prep_backend.database import Database, utc_now
+from cert_prep_backend.persistence.database import Database, utc_now
 from cert_prep_backend.domains.practice.models import (
     PracticeQuestion,
     PracticeSession,
@@ -21,7 +21,7 @@ from cert_prep_backend.domains.practice.policies import (
 )
 from cert_prep_backend.domains.source_documents import repository as documents_repository
 from cert_prep_backend.domains.projects.repository import ensure_project_exists
-from cert_prep_backend.errors import NotFoundError, ValidationError
+from cert_prep_backend.api.errors import NotFoundError, ValidationError
 
 
 DEFAULT_RANDOM_QUESTION_COUNT = 10

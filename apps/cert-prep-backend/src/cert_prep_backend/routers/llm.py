@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, status
 
-from cert_prep_backend.dependencies import get_llm_provider, get_runtime_installation_manager
+from cert_prep_backend.api.dependencies import get_llm_provider, get_runtime_installation_manager
 from cert_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
 from cert_prep_backend.domains.mock_exams.schemas import LLMHealthRead, ModelDownloadRead
 from cert_prep_backend.domains.runtime_installations import RuntimeInstallationManager
-from cert_prep_backend.errors import ProviderUnavailableError, api_error, not_found_error
+from cert_prep_backend.api.errors import ProviderUnavailableError, api_error, not_found_error
 from cert_prep_contracts.runtime import RuntimeRequirementKind
 
 

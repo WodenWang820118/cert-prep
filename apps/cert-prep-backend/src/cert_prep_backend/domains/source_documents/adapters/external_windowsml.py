@@ -7,7 +7,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from cert_prep_backend.config import Settings
+from cert_prep_backend.core.config import Settings
 from cert_prep_backend.domains.runtime_installations import (
     parse_ocr_runtime_manifest,
     run_ocr_runtime_command,
@@ -18,7 +18,7 @@ from cert_prep_backend.domains.source_documents.adapters.external_paddle import 
     _ocr_result_from_payload,
 )
 from cert_prep_backend.domains.source_documents.ocr_contracts import OCRHealth, OCRPageResult
-from cert_prep_backend.errors import ProviderUnavailableError
+from cert_prep_backend.api.errors import ProviderUnavailableError
 from cert_prep_contracts.runtime import RuntimeRequirementKind
 
 

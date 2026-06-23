@@ -5,7 +5,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any
 
-from cert_prep_backend.config import Settings
+from cert_prep_backend.core.config import Settings
 from cert_prep_backend.domains.source_documents.ocr import (
     OCRProvider,
     ocr_provider_from_settings,

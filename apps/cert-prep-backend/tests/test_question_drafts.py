@@ -1,15 +1,15 @@
 from fastapi.testclient import TestClient
 
 from conftest import minimal_pdf
-from cert_prep_backend.app import create_app
-from cert_prep_backend.config import DEFAULT_OLLAMA_MODEL, Settings
+from cert_prep_backend.api.app import create_app
+from cert_prep_backend.core.config import DEFAULT_OLLAMA_MODEL, Settings
 from cert_prep_backend.domains.mock_exams.models import (
     AnswerKeySource,
     DraftStatus,
     DraftSuggestion,
 )
 from cert_prep_backend.domains.mock_exams import repository as drafts_repository
-from cert_prep_backend.errors import ProviderUnavailableError
+from cert_prep_backend.api.errors import ProviderUnavailableError
 from cert_prep_backend.domains.mock_exams.ports import ProviderHealth
 from cert_prep_backend.domains.mock_exams.schemas import DraftGenerateRequest
 

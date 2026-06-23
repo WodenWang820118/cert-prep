@@ -4,11 +4,11 @@ from pathlib import Path
 
 import pytest
 
-from cert_prep_backend.config import Settings
+from cert_prep_backend.core.config import Settings
 from cert_prep_backend.domains.source_documents.adapters.external_paddle import (
     ExternalPaddleOCRProvider,
 )
-from cert_prep_backend.errors import ProviderUnavailableError
+from cert_prep_backend.api.errors import ProviderUnavailableError
 
 from ocr_test_support import external_provider_with_runtime, runtime_health_body
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from cert_prep_backend.config import Settings
+from cert_prep_backend.core.config import Settings
 
 
 def sha256_hex(content: bytes) -> str:

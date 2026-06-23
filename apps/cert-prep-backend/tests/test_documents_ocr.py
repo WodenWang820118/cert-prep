@@ -4,10 +4,10 @@ from threading import Event
 from fastapi.testclient import TestClient
 
 from conftest import minimal_pdf
-from cert_prep_backend.app import create_app
-from cert_prep_backend.config import Settings
+from cert_prep_backend.api.app import create_app
+from cert_prep_backend.core.config import Settings
 from cert_prep_backend.domains.source_documents import pdf_extraction
-from cert_prep_backend.errors import InvalidPdfError
+from cert_prep_backend.api.errors import InvalidPdfError
 from document_test_helpers import (
     _create_project,
     _wait_for_document_progress,
