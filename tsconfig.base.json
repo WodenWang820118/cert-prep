@@ -12,7 +12,9 @@
     "skipLibCheck": true,
     "skipDefaultLibCheck": true,
     "baseUrl": ".",
-    "paths": {}
+    "paths": {
+      "@cert-prep/api": ["./libs/cert-prep-api/src/index.ts"]
+    }
   },
   "exclude": ["node_modules", "tmp"]
 }

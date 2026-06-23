@@ -1,11 +1,11 @@
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { inject, Injectable, InjectionToken } from '@angular/core';
-import { firstValueFrom } from 'rxjs';
-import { createCertPrepGeneratedClient } from './api/cert-prep-api.generated';
+import { createCertPrepGeneratedClient } from '@cert-prep/api';
 import type {
   CertPrepGeneratedClient,
   CertPrepHttpRequest,
-} from './api/cert-prep-api.generated';
+} from '@cert-prep/api';
+import { firstValueFrom } from 'rxjs';
 
 export type {
   ChunkRead,
@@ -34,7 +34,7 @@ export type {
   RuntimeRequirementsRead,
   WrongAnswerList,
   WrongAnswerRead,
-} from './api/cert-prep-api.generated';
+} from '@cert-prep/api';
 
 const DEFAULT_LOCAL_API_BASE_URL = 'http://127.0.0.1:8765';
 

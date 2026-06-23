@@ -29,12 +29,24 @@
 
 ## Missing Shared Libraries
 
-- [ ] Evaluate extracting common patterns into `libs/` shared libraries. Candidates include:
-  - API client generation and error handling
-  - Store patterns (OperationStore-like busy/error management)
-  - Contract types shared between frontend and e2e tests
-  Start by creating a `libs/shared-types` or `libs/api-client` project.
-  Verify: `pnpm nx show projects --json` (should list new libs)
+- [x] Extract the generated OpenAPI client/types into `libs/cert-prep-api`.
+  - Keep Angular DI/HttpClient runtime config in `apps/cert-prep/src/app/cert-prep-api.ts`.
+  - Use `@cert-prep/api` from both the Angular app facade and Playwright e2e mock fixtures.
+  - Defer store/component pattern extraction until there is a concrete second production consumer.
+  Verify:
+  - `pnpm nx show projects --json` lists `cert-prep-api`
+  - `pnpm nx show project cert-prep-api --json` resolves inferred `lint` / `vite:test` targets
+  - `pnpm nx run cert-prep-backend:generate-openapi-client`
+  - `pnpm nx run cert-prep-api:lint`
+  - `pnpm nx run cert-prep-api:vite:test`
+  - `pnpm nx run cert-prep-api:typecheck`
+  - `pnpm nx run cert-prep:lint`
+  - `pnpm nx run cert-prep:test --skip-nx-cache`
+  - `pnpm nx run cert-prep:build --skip-nx-cache`
+  - `pnpm nx run cert-prep-e2e:lint`
+  - `pnpm nx run cert-prep-e2e:e2e`
+  Note: `cert-prep-e2e` now has `scope:cert` / `type:e2e` tags so Nx module
+  boundaries allow its typed dependency on `@cert-prep/api`.
 
 ## Final Check
 

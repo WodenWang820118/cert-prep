@@ -4,6 +4,7 @@
   "projectType": "application",
   "sourceRoot": "apps/cert-prep-e2e/src",
   "implicitDependencies": ["cert-prep"],
+  "tags": ["scope:cert", "type:e2e"],
   "targets": {
     "e2e": {
       "executor": "nx:run-commands",

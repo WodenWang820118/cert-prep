@@ -256,11 +256,11 @@
       "executor": "nx:run-commands",
       "inputs": ["default"],
       "outputs": [
-        "{workspaceRoot}/apps/cert-prep/src/app/api/cert-prep-api.generated.ts"
+        "{workspaceRoot}/libs/cert-prep-api/src/lib/cert-prep-api.generated.ts"
       ],
       "options": {
         "cwd": "apps/cert-prep-backend",
-        "command": "uv run python scripts/generate_openapi_client.py --output ../../apps/cert-prep/src/app/api/cert-prep-api.generated.ts"
+        "command": "uv run python scripts/generate_openapi_client.py --output ../../libs/cert-prep-api/src/lib/cert-prep-api.generated.ts"
       }
     }
   },

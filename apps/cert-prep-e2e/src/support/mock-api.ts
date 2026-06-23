@@ -1,29 +1,36 @@
 import type { Page, Route } from '@playwright/test';
+import type {
+  DocumentRead,
+  HealthResponse,
+  LLMHealthRead,
+  OCRHealthRead,
+  PracticeAttemptCreate,
+  PracticeAttemptRead,
+  PracticeSessionCreate,
+  PracticeSessionRead,
+  ProjectRead,
+  QuestionDraftRead,
+  RuntimeRequirementsRead,
+  WrongAnswerRead,
+} from '@cert-prep/api';
 
 export const apiBaseUrl = 'http://127.0.0.1:8765';
 export const devToken = 'cert-prep-local-dev-token';
 
+type ApprovedQuestionDraft = QuestionDraftRead & {
+  readonly answer: string;
+  readonly citation_page: number;
+  readonly document_id: string;
+  readonly rationale: string;
+  readonly source_excerpt: string;
+};
+
 export interface MockCertPrepApi {
-  readonly project: {
-    readonly id: string;
-    readonly name: string;
-    readonly description: string;
-  };
-  readonly document: {
-    readonly id: string;
-    readonly filename: string;
-  };
-  readonly draft: {
-    readonly id: string;
-    readonly question: string;
-    readonly answer: string;
-    readonly rationale: string;
-    readonly source_excerpt: string;
-  };
-  readonly session: {
-    readonly id: string;
-  };
-  practiceSessionPayload(): Record<string, unknown> | null;
+  readonly project: ProjectRead;
+  readonly document: DocumentRead;
+  readonly draft: ApprovedQuestionDraft;
+  readonly session: PracticeSessionRead;
+  practiceSessionPayload(): PracticeSessionCreate | null;
   seenPaths(): Set<string>;
 }
 
@@ -36,7 +43,7 @@ export async function installMockCertPrepApi(
     description: '2025 N1 mock exam',
     created_at: '2026-06-09T00:00:00Z',
     updated_at: '2026-06-09T00:00:00Z',
-  };
+  } satisfies ProjectRead;
   const document = {
     id: 'document-1',
     project_id: project.id,
@@ -62,7 +69,7 @@ export async function installMockCertPrepApi(
     chunks_count: 2,
     created_at: '2026-06-09T00:00:00Z',
     updated_at: '2026-06-09T00:00:00Z',
-  };
+  } satisfies DocumentRead;
   const draft = {
     id: 'draft-1',
     project_id: project.id,
@@ -90,7 +97,7 @@ export async function installMockCertPrepApi(
     rejection_reason: null,
     created_at: '2026-06-09T00:00:00Z',
     updated_at: '2026-06-09T00:00:00Z',
-  };
+  } satisfies ApprovedQuestionDraft;
   const session = {
     id: 'session-1',
     project_id: project.id,
@@ -102,10 +109,10 @@ export async function installMockCertPrepApi(
     status: 'active',
     created_at: '2026-06-09T00:00:00Z',
     completed_at: null,
-  };
+  } satisfies PracticeSessionRead;
   let documentUploaded = false;
-  let practiceSessionPayload: Record<string, unknown> | null = null;
-  const wrongAnswers: unknown[] = [];
+  let practiceSessionPayload: PracticeSessionCreate | null = null;
+  const wrongAnswers: WrongAnswerRead[] = [];
   const seenPaths = new Set<string>();
 
   await page.route(`${apiBaseUrl}/**`, async (route) => {
@@ -133,28 +140,30 @@ export async function installMockCertPrepApi(
     seenPaths.add(`${method} ${path}`);
 
     if (method === 'GET' && path === '/health') {
-      await fulfillJson(route, 200, {
+      const body = {
         status: 'ok',
         app: 'cert-prep-backend',
         version: '0.1.0',
         python_version: '3.13.5',
         runtime_mode: 'source',
-      });
+      } satisfies HealthResponse;
+      await fulfillJson(route, 200, body);
       return;
     }
 
     if (method === 'GET' && path === '/llm/health') {
-      await fulfillJson(route, 200, {
+      const body = {
         provider: 'fake',
         model: 'qwen3.5:4b',
         available: true,
         detail: 'deterministic local fake provider',
-      });
+      } satisfies LLMHealthRead;
+      await fulfillJson(route, 200, body);
       return;
     }
 
     if (method === 'GET' && path === '/ocr/health') {
-      await fulfillJson(route, 200, {
+      const body = {
         provider: 'paddle',
         engine: 'paddleocr',
         available: true,
@@ -167,12 +176,14 @@ export async function installMockCertPrepApi(
         gpu_count: 1,
         model_cache_dir: null,
         fallback_reason: null,
-      });
+      } satisfies OCRHealthRead;
+      await fulfillJson(route, 200, body);
       return;
     }
 
     if (method === 'GET' && path === '/runtime/requirements') {
-      await fulfillJson(route, 200, { items: [] });
+      const body = { items: [] } satisfies RuntimeRequirementsRead;
+      await fulfillJson(route, 200, body);
       return;
     }
 
@@ -238,7 +249,9 @@ export async function installMockCertPrepApi(
       method === 'POST' &&
       path === `/projects/${project.id}/practice-sessions`
     ) {
-      practiceSessionPayload = parseJsonBody(request.postData());
+      practiceSessionPayload = parseJsonBody<PracticeSessionCreate>(
+        request.postData(),
+      );
       await fulfillJson(route, 201, session);
       return;
     }
@@ -256,28 +269,29 @@ export async function installMockCertPrepApi(
       path ===
         `/projects/${project.id}/practice-sessions/${session.id}/attempts`
     ) {
-      const payload = parseJsonBody(request.postData());
+      const payload = parseJsonBody<PracticeAttemptCreate>(request.postData());
       wrongAnswers.push({
         attempt_id: 'attempt-1',
         session_id: session.id,
         question_id: draft.id,
         question: draft.question,
-        selected_answer: payload['selected_answer'],
+        selected_answer: payload.selected_answer,
         correct_answer: draft.answer,
         rationale: draft.rationale,
         citation_page: draft.citation_page,
         source_excerpt: draft.source_excerpt,
         created_at: '2026-06-09T00:02:00Z',
       });
-      await fulfillJson(route, 201, {
+      const body = {
         id: 'attempt-1',
         session_id: session.id,
         project_id: project.id,
         question_id: draft.id,
-        selected_answer: payload['selected_answer'],
+        selected_answer: payload.selected_answer,
         is_correct: false,
         created_at: '2026-06-09T00:02:00Z',
-      });
+      } satisfies PracticeAttemptRead;
+      await fulfillJson(route, 201, body);
       return;
     }
 
@@ -338,10 +352,10 @@ async function fulfillJson(
   });
 }
 
-function parseJsonBody(body: string | null): Record<string, unknown> {
+function parseJsonBody<TBody>(body: string | null): TBody {
   if (body === null || body.length === 0) {
-    return {};
+    return {} as TBody;
   }
 
-  return JSON.parse(body) as Record<string, unknown>;
+  return JSON.parse(body) as TBody;
 }
