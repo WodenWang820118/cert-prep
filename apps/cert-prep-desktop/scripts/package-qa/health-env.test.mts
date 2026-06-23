@@ -98,7 +98,6 @@ test('runtime launch env sets OCR page workers only from explicit QA config', ()
   );
   assert.equal('CERT_PREP_OCR_RUNTIME_MANIFEST_PATH' in ambientOnly, false);
   assert.equal(ambientOnly.CERT_PREP_OCR_WINDOWSML_DEVICE_ID, '-1');
-  assert.equal(ambientOnly.CERT_PREP_OCR_WINDOWSML_DEVICE_POLICY, 'PREFER_NPU');
   assert.equal(ambientOnly.PATH, 'test-path');
 
   const explicit = buildRuntimeLaunchEnv({

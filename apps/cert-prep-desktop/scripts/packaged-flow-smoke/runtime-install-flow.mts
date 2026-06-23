@@ -106,7 +106,7 @@ function ocrInstallablePattern(): RegExp {
 }
 
 function ocrReadyPattern(): RegExp {
-  return /PaddleOCR imports available|gpu:0|PaddleOCR runtime is ready|paddle\s*\/\s*(gpu|cpu)|WindowsML OCR runtime is ready|windowsml\s*\/\s*(amd_windowsml|windowsml|igpu|npu)|OCR ready/i;
+  return /PaddleOCR imports available|gpu:0|PaddleOCR runtime is ready|paddle\s*\/\s*(gpu|cpu)|WindowsML OCR runtime is ready|windowsml\s*\/\s*(amd_windowsml|windowsml|igpu)|OCR ready/i;
 }
 
 function ocrSettledPattern(): RegExp {

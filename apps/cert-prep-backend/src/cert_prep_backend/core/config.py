@@ -69,21 +69,8 @@ class Settings(BaseSettings):
     windowsml_ocr_runtime_dir: Path | None = None
     windowsml_ocr_runtime_manifest_path: Path | None = None
     ocr_windowsml_device_id: int = Field(default=-1, ge=-1)
-    ocr_windowsml_device_policy: Literal[
-        "DEFAULT",
-        "MAX_EFFICIENCY",
-        "MIN_OVERALL_POWER",
-        "PREFER_NPU",
-        "PREFER_GPU",
-        "MAX_PERFORMANCE",
-    ] = "PREFER_NPU"
     ocr_runtime_timeout_seconds: float = 300.0
     runtime_install_timeout_seconds: float = 900.0
-
-    @field_validator("ocr_windowsml_device_policy", mode="before")
-    @classmethod
-    def normalize_windowsml_device_policy(cls, value):
-        return str(value or "PREFER_NPU").strip().upper()
 
     @property
     def database_path(self) -> Path:

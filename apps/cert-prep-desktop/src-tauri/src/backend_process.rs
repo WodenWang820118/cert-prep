@@ -124,10 +124,6 @@ fn backend_launch_env(data_dir: &Path, port: u16, token: &str) -> Vec<BackendEnv
             "CERT_PREP_OCR_WINDOWSML_DEVICE_ID",
             configured_windowsml_device_id(),
         ),
-        BackendEnv::new(
-            "CERT_PREP_OCR_WINDOWSML_DEVICE_POLICY",
-            configured_windowsml_device_policy(),
-        ),
         BackendEnv::new("CERT_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD", "true"),
     ];
     if let Some(model) = configured_ollama_model_override() {
@@ -175,23 +171,6 @@ fn configured_ocr_provider() -> String {
 
 fn configured_windowsml_device_id() -> String {
     trimmed_env_var("CERT_PREP_OCR_WINDOWSML_DEVICE_ID").unwrap_or_else(|| "-1".to_string())
-}
-
-fn configured_windowsml_device_policy() -> String {
-    trimmed_env_var("CERT_PREP_OCR_WINDOWSML_DEVICE_POLICY")
-        .map(|value| value.to_ascii_uppercase())
-        .filter(|value| {
-            matches!(
-                value.as_str(),
-                "DEFAULT"
-                    | "MAX_EFFICIENCY"
-                    | "MIN_OVERALL_POWER"
-                    | "PREFER_NPU"
-                    | "PREFER_GPU"
-                    | "MAX_PERFORMANCE"
-            )
-        })
-        .unwrap_or_else(|| "PREFER_NPU".to_string())
 }
 
 fn backend_ready_timeout() -> Duration {
@@ -299,7 +278,6 @@ mod tests {
         std::env::remove_var("CERT_PREP_OLLAMA_MODEL");
         std::env::remove_var("CERT_PREP_OCR_PROVIDER");
         std::env::remove_var("CERT_PREP_OCR_WINDOWSML_DEVICE_ID");
-        std::env::remove_var("CERT_PREP_OCR_WINDOWSML_DEVICE_POLICY");
 
         let env = backend_launch_env(Path::new("cert-prep-data"), 8123, "test-token");
 
@@ -321,10 +299,6 @@ mod tests {
             env_value(&env, "CERT_PREP_OCR_WINDOWSML_DEVICE_ID"),
             Some("-1")
         );
-        assert_eq!(
-            env_value(&env, "CERT_PREP_OCR_WINDOWSML_DEVICE_POLICY"),
-            Some("PREFER_NPU")
-        );
         assert_eq!(env_value(&env, "CERT_PREP_OLLAMA_MODEL"), None);
         assert_eq!(
             env_value(&env, "CERT_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD"),
@@ -344,24 +318,6 @@ mod tests {
         );
 
         std::env::remove_var("CERT_PREP_OLLAMA_MODEL");
-    }
-
-    #[test]
-    fn configured_windowsml_device_policy_uses_supported_override_or_default() {
-        std::env::remove_var("CERT_PREP_OCR_WINDOWSML_DEVICE_POLICY");
-
-        assert_eq!(configured_windowsml_device_policy(), "PREFER_NPU");
-
-        std::env::set_var(
-            "CERT_PREP_OCR_WINDOWSML_DEVICE_POLICY",
-            " min_overall_power ",
-        );
-        assert_eq!(configured_windowsml_device_policy(), "MIN_OVERALL_POWER");
-
-        std::env::set_var("CERT_PREP_OCR_WINDOWSML_DEVICE_POLICY", "cpu");
-        assert_eq!(configured_windowsml_device_policy(), "PREFER_NPU");
-
-        std::env::remove_var("CERT_PREP_OCR_WINDOWSML_DEVICE_POLICY");
     }
 
     #[test]

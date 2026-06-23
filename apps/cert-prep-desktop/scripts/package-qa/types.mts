@@ -74,7 +74,6 @@ export interface RuntimeHealthSummary {
     readonly CERT_PREP_OCR_RUNTIME_MODE: 'external';
     readonly CERT_PREP_OCR_DEVICE: 'auto';
     readonly CERT_PREP_OCR_WINDOWSML_DEVICE_ID: '-1';
-    readonly CERT_PREP_OCR_WINDOWSML_DEVICE_POLICY: string;
     readonly CERT_PREP_WINDOWSML_OCR_RUNTIME_MANIFEST_PATH: string;
     readonly CERT_PREP_LLM_PROVIDER: 'ollama';
     readonly CERT_PREP_OLLAMA_MODEL: string;

@@ -12,7 +12,6 @@ from typing import Any
 from cert_prep_ocr_windowsml.paths import DEFAULT_OUTPUT_DIR
 from cert_prep_ocr_windowsml.tools.windowsml.ocr_windowsml_probe import (
     DEFAULT_MODEL_DIR,
-    REQUIRED_MODEL_FILES,
     build_report as build_probe_report,
 )
 
@@ -21,7 +20,10 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 
-SESSION_MODEL_FILES = tuple(name for name in REQUIRED_MODEL_FILES if name.endswith(".onnx"))
+SESSION_MODEL_FILES = (
+    "det/inference.onnx",
+    "rec/inference.onnx",
+)
 WINDOWSML_DEVICE_LABEL = "amd_windowsml"
 WINDOWSML_PROVIDERS = ["DmlExecutionProvider", "CPUExecutionProvider"]
 SessionSmokeRunner = Callable[[dict[str, Path], int | None], dict[str, Any]]

@@ -10,7 +10,7 @@ import {
 } from './streaming-baseline-report.mts';
 import type { SmokeRunState } from './types.mts';
 
-test('production summary does not fail WindowsML OCR when NPU prepass was not scheduled', () => {
+test('production summary passes when WindowsML OCR is routed to AMD iGPU', () => {
   const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-prep-production-summary-'));
   try {
     const outDir = join(workspaceRoot, 'out');
@@ -28,26 +28,14 @@ test('production summary does not fail WindowsML OCR when NPU prepass was not sc
       }),
       'utf8',
     );
-    writeFileSync(
-      join(outDir, 'xrt-smi-summary.json'),
-      JSON.stringify({
-        npu_detected: true,
-        power_watts_available: true,
-      }),
-      'utf8',
-    );
-
     const run = productionRunState(workspaceRoot, outDir);
     const summary = buildProductionSummary(run, productionReport());
 
     assert.equal(summary.schema_version, 2);
     assert.equal(summary.status, 'passed');
-    assert.equal(summary.windowsml_npu_prepass_evidence?.available, false);
-    assert.equal(
-      summary.windowsml_npu_hardware_observation?.scheduling_scope,
-      'attempted_not_scheduled',
-    );
-    assert.equal('windowsml_npu_prepass_evidence' in summary.checks, false);
+    assert.equal(summary.checks.windowsml_ocr_process_observed, true);
+    assert.equal(summary.checks.ocr_uses_amd_igpu, true);
+    assert.equal(summary.checks.ocr_avoids_nvidia_dgpu, true);
   } finally {
     rmSync(workspaceRoot, { recursive: true, force: true });
   }
@@ -96,17 +84,6 @@ function productionRunState(
         expected_pages: 46,
         expected_chunks: 46,
       },
-      windowsml_npu_prepass_evidence: {
-        source: 'document_ocr_fallback_reason',
-        available: false,
-        attempted: true,
-        ocr_device: 'amd_windowsml:0',
-        fallback_reason:
-          'npu_prepass_unavailable=vitisai_events_missing;vitisai_events=0;cpu_events=5',
-        vitisai_events: 0,
-        cpu_events: 5,
-        reason: 'attempted_not_scheduled',
-      },
       practice_ready_from_streamed_questions: true,
       streaming_questions: {
         job_snapshots: [],
@@ -115,7 +92,6 @@ function productionRunState(
       },
       resource_sampling: {
         windows_summary_json: 'out/windows-resource-summary.json',
-        xrt_smi_summary_json: 'out/xrt-smi-summary.json',
       },
     },
     app: null,
@@ -147,7 +123,6 @@ function productionReport(): StreamingBaselineReport {
       screenshots: [],
       resource_sampling: {
         windows_summary_json: 'out/windows-resource-summary.json',
-        xrt_smi_summary_json: 'out/xrt-smi-summary.json',
       },
     },
     input: {

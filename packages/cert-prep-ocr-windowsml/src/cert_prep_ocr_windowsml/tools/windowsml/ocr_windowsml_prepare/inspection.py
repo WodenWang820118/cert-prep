@@ -18,7 +18,6 @@ def inspect_prepared_model_artifacts(model_dir: Path) -> dict[str, Any]:
         "rec/inference.onnx",
         "rec/inference.yml",
         "rec/ppocr_keys_v1.txt",
-        "npu-prepass/text-density.onnx",
         "pipeline.json",
     )
     required = [model_file_state(model_dir / name) for name in required_files]

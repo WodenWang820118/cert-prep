@@ -15,14 +15,11 @@ from cert_prep_ocr_windowsml.device import (
     resolve_windowsml_device_id,
 )
 from cert_prep_ocr_windowsml.exceptions import ProviderUnavailableError
-from cert_prep_ocr_windowsml.npu_prepass import (
-    NPU_PREPASS_MODEL_FILE,
-    WindowsMLNpuPrepass,
-    merge_fallback_reason_with_npu_prepass,
-)
 
 
 _UNRESOLVED_DEVICE_ID = object()
+DML_PROVIDER = "DmlExecutionProvider"
+CPU_PROVIDER = "CPUExecutionProvider"
 PADDLEOCR37_DET_MODEL_NAME = "PP-OCRv6_medium_det"
 PADDLEOCR37_REC_MODEL_NAME = "PP-OCRv6_medium_rec"
 PADDLEOCR37_REQUIRED_MODEL_FILES = (
@@ -31,7 +28,6 @@ PADDLEOCR37_REQUIRED_MODEL_FILES = (
     "rec/inference.onnx",
     "rec/inference.yml",
     "rec/ppocr_keys_v1.txt",
-    NPU_PREPASS_MODEL_FILE,
     "pipeline.json",
 )
 
@@ -48,15 +44,12 @@ class WindowsMLRuntimeOCRProvider:
         *,
         model_dir: Path,
         device_id: int | None = AUTO_WINDOWSML_DEVICE_ID,
-        device_policy: str = "PREFER_NPU",
     ) -> None:
         self.model_dir = model_dir
         self.device_id = device_id
-        self.device_policy = device_policy
         self._runner = WindowsMLOCRRunner(
             model_dir=model_dir,
             device_id=device_id,
-            device_policy=device_policy,
         )
 
     def health(self) -> OCRHealth:
@@ -142,21 +135,14 @@ class WindowsMLOCRRunner:
         *,
         model_dir: Path,
         device_id: int | None = AUTO_WINDOWSML_DEVICE_ID,
-        device_policy: str = "PREFER_NPU",
     ) -> None:
         self.model_dir = model_dir
         self.device_id = device_id
-        self.device_policy = device_policy
         self._selected_device_id: int | None | object = _UNRESOLVED_DEVICE_ID
         self._paddleocr: Any | None = None
-        self._npu_prepass = WindowsMLNpuPrepass(
-            model_dir=model_dir,
-            device_policy=device_policy,
-        )
 
     def extract_text(self, image_png: bytes) -> WindowsMLOCRTextResult:
         started = perf_counter()
-        npu_prepass = self._npu_prepass.run(image_png)
         image_path = self._write_temp_png(image_png)
         try:
             results = self._paddleocr_pipeline().predict(str(image_path))
@@ -169,7 +155,7 @@ class WindowsMLOCRRunner:
             box_count=_count_paddleocr_boxes(results),
             recognized_count=len(lines),
             device=self._device_label(),
-            fallback_reason=merge_fallback_reason_with_npu_prepass(None, npu_prepass),
+            fallback_reason=None,
         )
 
     def _write_temp_png(self, image_png: bytes) -> Path:
@@ -179,7 +165,7 @@ class WindowsMLOCRRunner:
             delete=False,
         ) as file:
             file.write(image_png)
-            return Path(file.name)
+        return Path(file.name)
 
     def _paddleocr_pipeline(self) -> Any:
         if self._paddleocr is None:
@@ -199,7 +185,7 @@ class WindowsMLOCRRunner:
 
     def _engine_config(self) -> dict[str, Any]:
         return {
-            "providers": ["DmlExecutionProvider", "CPUExecutionProvider"],
+            "providers": [DML_PROVIDER, CPU_PROVIDER],
             "provider_options": [{"device_id": self._windowsml_device_id()}, {}],
             "enable_mem_pattern": False,
             "execution_mode": "sequential",
@@ -282,7 +268,10 @@ def _runtime_detail(
         return f"WindowsML OCR adapter selection failed: {device_error}"
     if missing_files:
         return f"WindowsML OCR model artifacts are missing: {', '.join(missing_files)}."
-    return "WindowsML OCR runtime is ready with PaddleOCR 3.7, PP-OCRv6 medium, and WindowsML."
+    return (
+        "WindowsML OCR runtime is ready with PaddleOCR 3.7, PP-OCRv6 medium, "
+        "DmlExecutionProvider, and AMD iGPU selection."
+    )
 
 
 def _resolve_health_device_id(

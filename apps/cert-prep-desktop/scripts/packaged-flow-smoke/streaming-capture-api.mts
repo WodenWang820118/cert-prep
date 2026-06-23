@@ -7,7 +7,6 @@ import type {
   UploadedDocumentRef,
 } from './types.mts';
 import { activePage } from './runner-context.mts';
-import { parseWindowsmlNpuPrepassEvidence } from './streaming-evidence.mts';
 import {
   recordStreamingDraftJobSnapshot,
   recordStreamingQuestionSnapshot,
@@ -201,15 +200,12 @@ export async function captureDocumentOcrEvidence(
     return;
   }
 
-  const evidence = parseWindowsmlNpuPrepassEvidence(
-    payload.ocr_device,
-    payload.ocr_fallback_reason,
-  );
-  run.metrics.windowsml_npu_prepass_evidence = evidence;
+  const device = stringField(payload.ocr_device).trim() || 'unknown';
+  const fallback = stringField(payload.ocr_fallback_reason).trim();
   run.metrics.observations.push(
-    evidence.available
-      ? `WindowsML NPU prepass evidence captured: vitisai_events=${evidence.vitisai_events}.`
-      : `WindowsML NPU prepass evidence unavailable: ${evidence.reason ?? 'unknown'}.`,
+    fallback
+      ? `Document OCR completed on ${device}; fallback_reason=${fallback}.`
+      : `Document OCR completed on ${device}.`,
   );
 }
 

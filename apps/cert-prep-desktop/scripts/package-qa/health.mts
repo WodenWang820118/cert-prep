@@ -120,7 +120,6 @@ export async function collectRuntimeHealth({
         CERT_PREP_OCR_RUNTIME_MODE: 'external',
         CERT_PREP_OCR_DEVICE: 'auto',
         CERT_PREP_OCR_WINDOWSML_DEVICE_ID: '-1',
-        CERT_PREP_OCR_WINDOWSML_DEVICE_POLICY: 'PREFER_NPU',
         CERT_PREP_WINDOWSML_OCR_RUNTIME_MANIFEST_PATH:
           windowsmlOcrRuntimeManifest,
         CERT_PREP_LLM_PROVIDER: 'ollama',
@@ -168,7 +167,6 @@ export function buildRuntimeLaunchEnv({
     CERT_PREP_WINDOWSML_OCR_RUNTIME_MANIFEST_PATH:
       windowsmlOcrRuntimeManifest,
     CERT_PREP_OCR_WINDOWSML_DEVICE_ID: '-1',
-    CERT_PREP_OCR_WINDOWSML_DEVICE_POLICY: 'PREFER_NPU',
     CERT_PREP_OLLAMA_MODEL: llmModel,
     CERT_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD: 'true',
     PYTHONIOENCODING: 'utf-8',

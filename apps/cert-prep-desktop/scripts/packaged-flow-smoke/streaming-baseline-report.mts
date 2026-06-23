@@ -18,7 +18,6 @@ import type {
   ResourceSamplingArtifacts,
   SmokeRunState,
   StreamingJobCompletionState,
-  WindowsMlNpuPrepassEvidence,
 } from './types.mts';
 
 export interface StreamingBaselineReport {
@@ -117,9 +116,6 @@ interface PackagedStreamingProductionSummary {
   ocr_completion: StreamingBaselineReport['ocr_completion'];
   streaming: StreamingBaselineReport['streaming'];
   gpu_routing_checks: GpuRoutingChecks | null;
-  windowsml_npu_prepass_evidence: WindowsMlNpuPrepassEvidence | null;
-  xrt_smi_summary: Record<string, unknown> | null;
-  windowsml_npu_hardware_observation: Record<string, unknown> | null;
   checks: Record<string, boolean>;
   errors: string[];
 }
@@ -329,7 +325,6 @@ export function buildProductionSummary(
 ): PackagedStreamingProductionSummary {
   const resourceSummary = readResourceSummary(run);
   const gpuRoutingChecks = readGpuRoutingChecks(resourceSummary);
-  const xrtSmiSummary = readXrtSmiSummary(run);
   const configuredModel =
     run.metrics.llm_configured_model ?? report.runtime.llm_configured_model;
   const effectiveModel =
@@ -381,20 +376,6 @@ export function buildProductionSummary(
     ocr_completion: report.ocr_completion,
     streaming: report.streaming,
     gpu_routing_checks: gpuRoutingChecks,
-    windowsml_npu_prepass_evidence:
-      run.options.ocrProvider === 'windowsml'
-        ? run.metrics.windowsml_npu_prepass_evidence ?? null
-        : null,
-    xrt_smi_summary: xrtSmiSummary,
-    windowsml_npu_hardware_observation:
-      run.options.ocrProvider === 'windowsml'
-        ? {
-            power_watts_available: xrtSmiSummary?.power_watts_available === true,
-            npu_detected: xrtSmiSummary?.npu_detected === true,
-            evidence_scope: 'windowsml_hardware_metadata_only',
-            scheduling_scope: windowsmlNpuSchedulingScope(run),
-          }
-        : null,
     checks,
     errors: run.metrics.errors,
   };
@@ -418,19 +399,6 @@ function providerRoutingChecks(
     };
   }
   return {};
-}
-
-function windowsmlNpuSchedulingScope(
-  run: SmokeRunState,
-): 'prepass_scheduled' | 'attempted_not_scheduled' | 'not_observed' {
-  const evidence = run.metrics.windowsml_npu_prepass_evidence;
-  if (evidence?.available === true) {
-    return 'prepass_scheduled';
-  }
-  if (evidence?.attempted === true) {
-    return 'attempted_not_scheduled';
-  }
-  return 'not_observed';
 }
 
 function renderStreamingBaselineMarkdown(report: StreamingBaselineReport): string {
@@ -497,25 +465,6 @@ function readGpuRoutingChecks(
 ): GpuRoutingChecks | null {
   const payload = recordField(resourceSummary, 'gpu_routing_checks');
   return payload === null ? null : (payload as GpuRoutingChecks);
-}
-
-function readXrtSmiSummary(run: SmokeRunState): Record<string, unknown> | null {
-  const summaryPath = run.metrics.resource_sampling?.xrt_smi_summary_json;
-  if (!summaryPath) {
-    return null;
-  }
-
-  const absolutePath = join(run.options.workspaceRoot, summaryPath);
-  if (!existsSync(absolutePath)) {
-    return null;
-  }
-
-  try {
-    const payload = JSON.parse(readFileSync(absolutePath, 'utf8').replace(/^\uFEFF/, ''));
-    return isRecord(payload) ? payload : null;
-  } catch {
-    return null;
-  }
 }
 
 function routingBoolean(

@@ -3,7 +3,6 @@ import type {
   StreamingJobCompletionState,
   StreamingDraftJobSnapshot,
   StreamingQuestionSnapshot,
-  WindowsMlNpuPrepassEvidence,
 } from './types.mts';
 
 export const FIRST_CHUNK_GATE_MS = 15_000;
@@ -109,37 +108,6 @@ export function firstChunkGateMetrics(
   };
 }
 
-/** Parses compact WindowsML NPU prepass evidence from the existing OCR metadata. */
-export function parseWindowsmlNpuPrepassEvidence(
-  ocrDevice: unknown,
-  fallbackReason: unknown,
-): WindowsMlNpuPrepassEvidence {
-  const device = nullableString(ocrDevice);
-  const fallback = nullableString(fallbackReason);
-  const vitisaiEvents = fallbackMetric(fallback, 'vitisai_events');
-  const cpuEvents = fallbackMetric(fallback, 'cpu_events');
-  const success = /\bnpu_prepass=text_density_vitisai\b/.test(fallback ?? '');
-  const unavailableReason = unavailableNpuPrepassReason(fallback);
-  const deviceIsWindowsml =
-    device === 'amd_windowsml' || device?.startsWith('amd_windowsml:') === true;
-  const available = deviceIsWindowsml && success && vitisaiEvents > 0;
-  return {
-    source: 'document_ocr_fallback_reason',
-    available,
-    attempted: success || unavailableReason !== null,
-    ocr_device: device,
-    fallback_reason: fallback,
-    vitisai_events: vitisaiEvents,
-    cpu_events: cpuEvents,
-    reason: available
-      ? null
-      : normalizeNpuPrepassUnavailableReason(unavailableReason) ??
-        (deviceIsWindowsml
-          ? 'npu_prepass_evidence_missing'
-          : 'ocr_device_not_windowsml'),
-  };
-}
-
 /** Summarizes whether the latest draft-job status histogram is complete. */
 export function streamingJobCompletionState(
   statusCounts: Record<string, number>,
@@ -220,33 +188,4 @@ function streamingDraftBlockerFromStatusCounts(
 
 function normalizedElapsedMs(value: number): number {
   return Math.max(0, Math.round(value));
-}
-
-function fallbackMetric(fallbackReason: string | null, key: string): number {
-  if (!fallbackReason) {
-    return 0;
-  }
-  const pattern = new RegExp(`(?:^|;)\\s*${key}=(\\d+)\\b`);
-  const match = fallbackReason.match(pattern);
-  return match ? numberField(Number(match[1])) : 0;
-}
-
-function unavailableNpuPrepassReason(fallbackReason: string | null): string | null {
-  if (!fallbackReason) {
-    return null;
-  }
-  const match = fallbackReason.match(/(?:^|;)\s*npu_prepass_unavailable=([^;]+)/);
-  return match ? match[1].trim() || 'npu_prepass_unavailable' : null;
-}
-
-function normalizeNpuPrepassUnavailableReason(reason: string | null): string | null {
-  if (reason === 'vitisai_events_missing') {
-    return 'attempted_not_scheduled';
-  }
-  return reason;
-}
-
-function nullableString(value: unknown): string | null {
-  const normalized = stringField(value).trim();
-  return normalized.length > 0 ? normalized : null;
 }

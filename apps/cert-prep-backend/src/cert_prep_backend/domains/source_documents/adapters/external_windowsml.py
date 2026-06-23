@@ -198,6 +198,4 @@ class ExternalWindowsMLOCRProvider:
             str(runtime_dir),
             "--windowsml-device-id",
             str(self._settings.ocr_windowsml_device_id),
-            "--windowsml-device-policy",
-            self._settings.ocr_windowsml_device_policy,
         ]

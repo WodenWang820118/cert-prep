@@ -6,7 +6,6 @@ import {
   draftJobStatusCounts,
   FIRST_CHUNK_GATE_MS,
   firstChunkGateMetrics,
-  parseWindowsmlNpuPrepassEvidence,
   sanitizeDraftJobSnapshot,
   sanitizeQuestionSnapshot,
   streamingJobCompletionState,
@@ -138,48 +137,4 @@ test('first chunk gate metrics use strict under-threshold timing', () => {
     first_chunk_gate_ms: 15_000,
     first_chunk_under_gate: false,
   });
-});
-
-test('WindowsML NPU prepass evidence requires VitisAI provider events', () => {
-  assert.deepEqual(
-    parseWindowsmlNpuPrepassEvidence(
-      'amd_windowsml:0',
-      'npu_prepass=text_density_vitisai;vitisai_events=2;cpu_events=1',
-    ),
-    {
-      source: 'document_ocr_fallback_reason',
-      available: true,
-      attempted: true,
-      ocr_device: 'amd_windowsml:0',
-      fallback_reason:
-        'npu_prepass=text_density_vitisai;vitisai_events=2;cpu_events=1',
-      vitisai_events: 2,
-      cpu_events: 1,
-      reason: null,
-    },
-  );
-
-  assert.deepEqual(
-    parseWindowsmlNpuPrepassEvidence(
-      'amd_windowsml:0',
-      'npu_prepass_unavailable=vitisai_events_missing;vitisai_events=0;cpu_events=5',
-    ),
-    {
-      source: 'document_ocr_fallback_reason',
-      available: false,
-      attempted: true,
-      ocr_device: 'amd_windowsml:0',
-      fallback_reason:
-        'npu_prepass_unavailable=vitisai_events_missing;vitisai_events=0;cpu_events=5',
-      vitisai_events: 0,
-      cpu_events: 5,
-      reason: 'attempted_not_scheduled',
-    },
-  );
-
-  assert.equal(
-    parseWindowsmlNpuPrepassEvidence('cpu', 'vitisai_events=9;cpu_events=1')
-      .available,
-    false,
-  );
 });

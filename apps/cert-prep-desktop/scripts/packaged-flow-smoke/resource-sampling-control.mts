@@ -1,5 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { appendFileSync, createWriteStream, existsSync, writeFileSync } from 'node:fs';
+import { appendFileSync, createWriteStream, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 import { resolveWindowsPowerShellExecutable } from './processes.mts';
@@ -21,14 +21,6 @@ const RESOURCE_SAMPLE_INTERVAL_MS = 1_000;
 const WINDOWS_RESOURCE_SCRIPT_NAME = 'windows-resource-sampling.ps1';
 const RESOURCE_SAMPLER_GRACE_MS = 5_000;
 const RESOURCE_SAMPLER_FORCE_MS = 5_000;
-
-interface XrtSmiResult {
-  readonly command: readonly string[];
-  readonly exit_code: number | null;
-  readonly stdout: string;
-  readonly stderr: string;
-  readonly error: string | null;
-}
 
 /** Starts best-effort GPU/CPU/RSS telemetry for packaged flow evidence. */
 export function startResourceSampling({
@@ -68,7 +60,6 @@ export function startResourceSampling({
   if (windowsSampler) {
     children.push(windowsSampler);
   }
-  writeXrtSmiSummary({ outDir, workspaceRoot, artifacts, observe });
 
   return {
     artifacts,
@@ -85,97 +76,6 @@ export function startResourceSampling({
         samplerStopSummary,
       });
     },
-  };
-}
-
-function writeXrtSmiSummary({
-  outDir,
-  workspaceRoot,
-  artifacts,
-  observe,
-}: {
-  readonly outDir: string;
-  readonly workspaceRoot: string;
-  readonly artifacts: ResourceSamplingArtifacts;
-  readonly observe: (message: string) => void;
-}): void {
-  const executable = resolveXrtSmiExecutable();
-  const summaryPath = join(outDir, 'xrt-smi-summary.json');
-  if (!executable) {
-    writeFileSync(
-      summaryPath,
-      `${JSON.stringify(
-        {
-          available: false,
-          executable: null,
-          npu_detected: false,
-          power_watts_available: false,
-        },
-        null,
-        2,
-      )}\n`,
-      'utf8',
-    );
-    artifacts.xrt_smi_summary_json = normalizePath(relative(workspaceRoot, summaryPath));
-    observe('xrt-smi unavailable; NPU power telemetry will be marked unavailable.');
-    return;
-  }
-  const version = runXrtSmi([executable, '--version'], workspaceRoot);
-  const examine = runXrtSmi([executable, 'examine', '--batch'], workspaceRoot);
-  const text = `${version.stdout}\n${examine.stdout}`;
-  writeFileSync(
-    summaryPath,
-    `${JSON.stringify(
-      {
-        available: true,
-        executable,
-        version,
-        examine_batch: examine,
-        npu_detected: text.toUpperCase().includes('NPU'),
-        power_watts_available: text.includes(' W') || text.includes('Watts'),
-      },
-      null,
-      2,
-    )}\n`,
-    'utf8',
-  );
-  artifacts.xrt_smi_summary_json = normalizePath(relative(workspaceRoot, summaryPath));
-}
-
-function resolveXrtSmiExecutable(): string | null {
-  const candidates = [
-    process.env.CERT_PREP_XRT_SMI_EXE,
-    'C:/Windows/System32/AMD/xrt-smi.exe',
-    'C:/Program Files/AMD/XRT/bin/xrt-smi.exe',
-  ].filter((value): value is string => Boolean(value));
-  for (const candidate of candidates) {
-    if (existsSync(candidate)) {
-      return candidate;
-    }
-  }
-  const result = spawnSync('where.exe', ['xrt-smi.exe'], {
-    encoding: 'utf8',
-    windowsHide: true,
-  });
-  return result.status === 0 ? result.stdout.split(/\r?\n/).find(Boolean) ?? null : null;
-}
-
-function runXrtSmi(
-  command: readonly string[],
-  workspaceRoot: string,
-): XrtSmiResult {
-  const result = spawnSync(command[0], command.slice(1), {
-    cwd: workspaceRoot,
-    encoding: 'utf8',
-    windowsHide: true,
-    timeout: 20_000,
-  });
-  return {
-    command,
-    exit_code: result.status,
-    stdout: String(result.stdout ?? '').trim(),
-    stderr: String(result.stderr ?? '').trim(),
-    error: result.error?.message ?? null,
   };
 }
 
