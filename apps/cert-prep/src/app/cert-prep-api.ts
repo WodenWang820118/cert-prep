@@ -67,7 +67,13 @@ export class CertPrepRuntimeConfig {
   }
 
   private async loadTauriBackendConfig(): Promise<BackendConfig | null> {
-    if (typeof window === 'undefined' || !('__TAURI_INTERNALS__' in window)) {
+    const windowRef = globalThis as typeof globalThis & {
+      window?: Window & { __TAURI_INTERNALS__?: unknown };
+    };
+    if (
+      typeof windowRef.window === 'undefined' ||
+      !('__TAURI_INTERNALS__' in windowRef.window)
+    ) {
       return null;
     }
 
@@ -90,12 +96,13 @@ export class CertPrepRuntimeConfig {
   }
 
   private getLocalStorage(): Storage | null {
-    if (typeof window === 'undefined') {
+    const windowRef = globalThis as typeof globalThis & { window?: Window };
+    if (typeof windowRef.window === 'undefined') {
       return null;
     }
 
     try {
-      return window.localStorage;
+      return windowRef.window.localStorage;
     } catch {
       return null;
     }

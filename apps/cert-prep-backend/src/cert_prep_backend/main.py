@@ -2,11 +2,6 @@ import os
 
 import uvicorn
 
-from cert_prep_backend.app import create_app
-
-
-app = create_app()
-
 
 def main() -> None:
     host = os.environ.get("CERT_PREP_HOST", "127.0.0.1")

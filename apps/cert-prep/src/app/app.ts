@@ -76,12 +76,16 @@ export class App implements OnInit {
     });
   }
 
-  async ngOnInit(): Promise<void> {
-    try {
-      await this.loadStartupState();
-    } finally {
-      this.hasAttemptedInitialStartupLoad = true;
-    }
+  ngOnInit(): void {
+    void this.loadStartupState()
+      .finally(() => {
+        this.hasAttemptedInitialStartupLoad = true;
+      })
+      .catch((error: unknown) => {
+        queueMicrotask(() => {
+          throw error;
+        });
+      });
   }
 
   protected selectMode(mode: StudyMode): void {
@@ -143,12 +147,13 @@ export class App implements OnInit {
   }
 
   private projectStorage(): Storage | null {
-    if (typeof window === 'undefined') {
+    const windowRef = globalThis as typeof globalThis & { window?: Window };
+    if (typeof windowRef.window === 'undefined') {
       return null;
     }
 
     try {
-      return window.localStorage;
+      return windowRef.window.localStorage;
     } catch {
       return null;
     }

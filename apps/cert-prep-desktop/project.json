@@ -29,18 +29,6 @@
         "command": "pnpm exec tauri build --config apps/cert-prep-desktop/src-tauri/tauri.conf.json"
       }
     },
-    "build-gpu": {
-      "executor": "nx:run-commands",
-      "dependsOn": [
-        "cert-prep:build",
-        "sync-backend-runtime-manifest",
-        "sync-windowsml-runtime-manifest"
-      ],
-      "outputs": ["{projectRoot}/src-tauri/target"],
-      "options": {
-        "command": "pnpm exec tauri build --target x86_64-pc-windows-msvc --ci --config apps/cert-prep-desktop/src-tauri/tauri.conf.json"
-      }
-    },
     "build-windowsml": {
       "executor": "nx:run-commands",
       "dependsOn": [

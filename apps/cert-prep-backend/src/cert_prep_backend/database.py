@@ -10,6 +10,10 @@ from typing import Final
 from cert_prep_backend.config import Settings
 
 
+# Migration strategy: keep these local SQLite migrations append-only for now so
+# desktop installs do not need a separate migration CLI. Revisit Alembic when
+# downgrade support, branching migrations, or multi-process migration ownership
+# become product requirements.
 MIGRATIONS: Final[tuple[tuple[int, str], ...]] = (
     (
         1,

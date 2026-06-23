@@ -36,26 +36,11 @@ pub(crate) fn launch_backend_entrypoint(
         .map_err(|error| format!("failed to create app data directory: {error}"))?;
 
     let mut command = Command::new(entrypoint);
+    command.current_dir(entrypoint.parent().unwrap_or_else(|| Path::new(".")));
+    for env in backend_launch_env(&inner.data_dir, port, &token) {
+        command.env(env.name, env.value);
+    }
     command
-        .current_dir(entrypoint.parent().unwrap_or_else(|| Path::new(".")))
-        .env("CERT_PREP_HOST", sidecar_host())
-        .env("CERT_PREP_PORT", port.to_string())
-        .env("CERT_PREP_API_TOKEN", token.as_str())
-        .env(
-            "CERT_PREP_DATA_DIR",
-            inner.data_dir.to_string_lossy().to_string(),
-        )
-        .env("CERT_PREP_LLM_PROVIDER", "ollama")
-        .env("CERT_PREP_OCR_PROVIDER", configured_ocr_provider())
-        .env("CERT_PREP_OCR_RUNTIME_MODE", "external")
-        .env("CERT_PREP_OCR_DEVICE", "auto")
-        .env("CERT_PREP_OCR_WINDOWSML_DEVICE_ID", configured_windowsml_device_id())
-        .env(
-            "CERT_PREP_OCR_WINDOWSML_DEVICE_POLICY",
-            configured_windowsml_device_policy(),
-        )
-        .env("CERT_PREP_OLLAMA_MODEL", configured_ollama_model())
-        .env("CERT_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD", "true")
         .stdin(Stdio::null())
         .stdout(configured_log_stdio("backend.stdout.log"))
         .stderr(configured_log_stdio("backend.stderr.log"));
@@ -109,6 +94,44 @@ pub(crate) fn launch_backend_entrypoint(
         ));
     }
     Ok(())
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct BackendEnv {
+    name: &'static str,
+    value: String,
+}
+
+impl BackendEnv {
+    fn new(name: &'static str, value: impl Into<String>) -> Self {
+        Self {
+            name,
+            value: value.into(),
+        }
+    }
+}
+
+fn backend_launch_env(data_dir: &Path, port: u16, token: &str) -> Vec<BackendEnv> {
+    vec![
+        BackendEnv::new("CERT_PREP_HOST", sidecar_host()),
+        BackendEnv::new("CERT_PREP_PORT", port.to_string()),
+        BackendEnv::new("CERT_PREP_API_TOKEN", token),
+        BackendEnv::new("CERT_PREP_DATA_DIR", data_dir.to_string_lossy().to_string()),
+        BackendEnv::new("CERT_PREP_LLM_PROVIDER", "ollama"),
+        BackendEnv::new("CERT_PREP_OCR_PROVIDER", configured_ocr_provider()),
+        BackendEnv::new("CERT_PREP_OCR_RUNTIME_MODE", "external"),
+        BackendEnv::new("CERT_PREP_OCR_DEVICE", "auto"),
+        BackendEnv::new(
+            "CERT_PREP_OCR_WINDOWSML_DEVICE_ID",
+            configured_windowsml_device_id(),
+        ),
+        BackendEnv::new(
+            "CERT_PREP_OCR_WINDOWSML_DEVICE_POLICY",
+            configured_windowsml_device_policy(),
+        ),
+        BackendEnv::new("CERT_PREP_OLLAMA_MODEL", configured_ollama_model()),
+        BackendEnv::new("CERT_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD", "true"),
+    ]
 }
 
 fn reserve_loopback_port() -> Result<u16, String> {
@@ -271,6 +294,47 @@ mod tests {
     }
 
     #[test]
+    fn backend_launch_env_collects_auditable_runtime_settings() {
+        std::env::remove_var("CERT_PREP_OLLAMA_MODEL");
+        std::env::remove_var("CERT_PREP_OCR_PROVIDER");
+        std::env::remove_var("CERT_PREP_OCR_WINDOWSML_DEVICE_ID");
+        std::env::remove_var("CERT_PREP_OCR_WINDOWSML_DEVICE_POLICY");
+
+        let env = backend_launch_env(Path::new("cert-prep-data"), 8123, "test-token");
+
+        assert_eq!(env_value(&env, "CERT_PREP_HOST"), Some("127.0.0.1"));
+        assert_eq!(env_value(&env, "CERT_PREP_PORT"), Some("8123"));
+        assert_eq!(env_value(&env, "CERT_PREP_API_TOKEN"), Some("test-token"));
+        assert_eq!(
+            env_value(&env, "CERT_PREP_DATA_DIR"),
+            Some("cert-prep-data")
+        );
+        assert_eq!(env_value(&env, "CERT_PREP_LLM_PROVIDER"), Some("ollama"));
+        assert_eq!(env_value(&env, "CERT_PREP_OCR_PROVIDER"), Some("windowsml"));
+        assert_eq!(
+            env_value(&env, "CERT_PREP_OCR_RUNTIME_MODE"),
+            Some("external")
+        );
+        assert_eq!(env_value(&env, "CERT_PREP_OCR_DEVICE"), Some("auto"));
+        assert_eq!(
+            env_value(&env, "CERT_PREP_OCR_WINDOWSML_DEVICE_ID"),
+            Some("-1")
+        );
+        assert_eq!(
+            env_value(&env, "CERT_PREP_OCR_WINDOWSML_DEVICE_POLICY"),
+            Some("PREFER_NPU")
+        );
+        assert_eq!(
+            env_value(&env, "CERT_PREP_OLLAMA_MODEL"),
+            Some("qwen3.5:4b")
+        );
+        assert_eq!(
+            env_value(&env, "CERT_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD"),
+            Some("true")
+        );
+    }
+
+    #[test]
     fn configured_windowsml_device_policy_uses_supported_override_or_default() {
         std::env::remove_var("CERT_PREP_OCR_WINDOWSML_DEVICE_POLICY");
 
@@ -320,5 +384,11 @@ mod tests {
 
         std::env::remove_var("CERT_PREP_BACKEND_URL");
         std::env::remove_var("CERT_PREP_BACKEND_TOKEN");
+    }
+
+    fn env_value<'a>(env: &'a [BackendEnv], name: &str) -> Option<&'a str> {
+        env.iter()
+            .find(|item| item.name == name)
+            .map(|item| item.value.as_str())
     }
 }
