@@ -9,6 +9,7 @@ from exam_prep_backend.domains.mock_exams import draft_jobs
 from document_test_helpers import (
     _create_project,
     _draft_job_statuses,
+    _wait_for_draft_jobs,
     _wait_for_document_progress,
     _wait_for_document_status,
     _wait_for_question_drafts,
@@ -77,13 +78,14 @@ def test_streaming_draft_job_creates_draft_before_document_is_ready(
         assert drafts[0]["citation_page"] == 2
         assert drafts[0]["answer_key_source"] == "ai_inferred"
 
-        jobs = client.get(
-            f"/projects/{project_id}/documents/{document['id']}/draft-jobs",
-            headers=auth_headers,
+        jobs = _wait_for_draft_jobs(
+            client,
+            auth_headers,
+            project_id,
+            document["id"],
+            status="succeeded",
         )
-        assert jobs.status_code == 200
-        assert jobs.json()["items"][0]["status"] == "succeeded"
-        assert jobs.json()["items"][0]["generated_count"] == 1
+        assert jobs[0]["generated_count"] == 1
     finally:
         ocr_provider.release_page_one.set()
 

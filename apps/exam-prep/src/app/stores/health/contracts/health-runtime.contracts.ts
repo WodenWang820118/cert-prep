@@ -24,7 +24,8 @@ export type RuntimeKind =
   | 'ollama'
   | 'ollama_model'
   | 'paddle_ocr'
-  | 'directml_ocr';
+  | 'directml_ocr'
+  | 'amd_npu_ocr';
 
 /**
  * Coarse OCR readiness phase used by the runtime UI and upload gating.

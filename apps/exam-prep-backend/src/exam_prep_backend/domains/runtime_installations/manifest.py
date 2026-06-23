@@ -90,6 +90,8 @@ def write_installed_ocr_manifest(runtime_dir: Path, manifest: OcrRuntimeManifest
 def _manifest_path(settings: Settings, kind: RuntimeRequirementKind) -> Path | None:
     if kind == RuntimeRequirementKind.DIRECTML_OCR:
         return settings.directml_ocr_runtime_manifest_path
+    if kind == RuntimeRequirementKind.AMD_NPU_OCR:
+        return settings.amd_npu_ocr_runtime_manifest_path
     return settings.ocr_runtime_manifest_path
 
 
@@ -104,4 +106,6 @@ def _manifest_kind(payload: dict[str, Any]) -> RuntimeRequirementKind:
 def _label(kind: RuntimeRequirementKind) -> str:
     if kind == RuntimeRequirementKind.DIRECTML_OCR:
         return "AMD DirectML OCR"
+    if kind == RuntimeRequirementKind.AMD_NPU_OCR:
+        return "AMD NPU OCR"
     return "PaddleOCR"

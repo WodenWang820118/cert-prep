@@ -31,6 +31,7 @@ def test_pdf_extraction_method_values_preserve_serialized_order() -> None:
         "paddle_ocr_gpu",
         "paddle_ocr_gpu_fallback",
         "directml_ocr",
+        "amd_npu_ocr",
         "fake_ocr",
     )
 

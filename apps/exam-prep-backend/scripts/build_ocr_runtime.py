@@ -14,14 +14,18 @@ from runtime_build.artifacts import (
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_ENTRY = BACKEND_ROOT / "src" / "exam_prep_backend" / "ocr_runtime.py"
 DIRECTML_RUNTIME_ENTRY = BACKEND_ROOT / "src" / "exam_prep_backend" / "ocr_directml_runtime.py"
+AMD_NPU_RUNTIME_ENTRY = BACKEND_ROOT / "src" / "exam_prep_backend" / "ocr_amd_npu_runtime.py"
 DIST_DIR = BACKEND_ROOT / "dist"
 BUILD_DIR = BACKEND_ROOT / "build"
 OUTPUT_DIR = DIST_DIR / "ocr-runtime"
 DIRECTML_OUTPUT_DIR = DIST_DIR / "ocr-directml-runtime"
+AMD_NPU_OUTPUT_DIR = DIST_DIR / "ocr-amd-npu-runtime"
 EXE_NAME = "exam-prep-ocr-runtime.exe"
 DIRECTML_EXE_NAME = "exam-prep-ocr-directml-runtime.exe"
+AMD_NPU_EXE_NAME = "exam-prep-ocr-amd-npu-runtime.exe"
 PADDLE_EXE_PATH = DIST_DIR / EXE_NAME
 DIRECTML_EXE_PATH = DIST_DIR / DIRECTML_EXE_NAME
+AMD_NPU_EXE_PATH = DIST_DIR / AMD_NPU_EXE_NAME
 PADDLE_COLLECT_ALL = ["paddle", "paddleocr", "paddlex"]
 PADDLE_METADATA = [
     "imagesize",
@@ -37,6 +41,7 @@ DIRECTML_COLLECT_ALL = [
     "bidi",
     "cv2",
     "imagesize",
+    "onnx",
     "PIL",
     "onnxruntime",
     "modelscope",
@@ -49,7 +54,23 @@ DIRECTML_COLLECT_ALL = [
 DIRECTML_METADATA = [
     "imagesize",
     "numpy",
+    "onnx",
     "onnxruntime-directml",
+    "opencv-contrib-python",
+    "modelscope",
+    "paddleocr",
+    "paddlex",
+    "pillow",
+    "pyclipper",
+    "pypdfium2",
+    "python-bidi",
+    "shapely",
+]
+AMD_NPU_METADATA = [
+    "imagesize",
+    "numpy",
+    "onnx",
+    "onnxruntime-windowsml",
     "opencv-contrib-python",
     "modelscope",
     "paddleocr",
@@ -79,6 +100,7 @@ LANE_METADATA = {
     "cpu": "paddlepaddle",
     "gpu": "paddlepaddle-gpu",
     "directml": "onnxruntime-directml",
+    "amd-npu": "onnxruntime-windowsml",
 }
 DIRECTML_MODEL_FILES = (
     "det/inference.onnx",
@@ -104,6 +126,9 @@ def main() -> None:
 
     if args.lane == "directml":
         _build_directml_runtime(args)
+        return
+    if args.lane == "amd-npu":
+        _build_amd_npu_runtime(args)
         return
     _build_paddle_runtime(args)
 
@@ -164,12 +189,50 @@ def _build_directml_runtime(args: argparse.Namespace) -> None:
     print(f"Wrote DirectML OCR runtime manifest to {manifest_path}")
 
 
+def _build_amd_npu_runtime(args: argparse.Namespace) -> None:
+    model_files = _directml_model_files(args.directml_model_dir)
+    _run(_pyinstaller_command(args.lane))
+    _run(
+        [
+            str(AMD_NPU_EXE_PATH),
+            "--provider",
+            "amd_npu",
+            "--model-dir",
+            str(args.directml_model_dir),
+            "--ensure-ready",
+            "--ocr-self-test",
+        ]
+    )
+    zip_path = AMD_NPU_OUTPUT_DIR / f"exam-prep-ocr-amd-npu-runtime-{args.target}.zip"
+    manifest_path = AMD_NPU_OUTPUT_DIR / "amd-npu-ocr-runtime-manifest.json"
+    write_runtime_artifact(
+        RuntimeArtifactSpec(
+            kind="amd_npu_ocr",
+            version=args.version,
+            target=args.target,
+            entrypoint=AMD_NPU_EXE_NAME,
+            source_path=AMD_NPU_EXE_PATH,
+            archive_name=AMD_NPU_EXE_NAME,
+            zip_path=zip_path,
+            manifest_path=manifest_path,
+            extra_files=tuple(
+                (path, path.relative_to(args.directml_model_dir).as_posix())
+                for path in model_files
+            ),
+        )
+    )
+    print(f"Wrote AMD NPU OCR runtime artifact to {zip_path}")
+    print(f"Wrote AMD NPU OCR runtime manifest to {manifest_path}")
+
+
 def _pyinstaller_command(lane: str) -> list[str]:
     exe_base_name = {
         "directml": "exam-prep-ocr-directml-runtime",
+        "amd-npu": "exam-prep-ocr-amd-npu-runtime",
     }.get(lane, "exam-prep-ocr-runtime")
     entrypoint = {
         "directml": DIRECTML_RUNTIME_ENTRY,
+        "amd-npu": AMD_NPU_RUNTIME_ENTRY,
     }.get(lane, RUNTIME_ENTRY)
     command = [
         sys.executable,
@@ -188,9 +251,9 @@ def _pyinstaller_command(lane: str) -> list[str]:
         "--specpath",
         str(BUILD_DIR),
     ]
-    if lane == "directml":
+    if lane in {"directml", "amd-npu"}:
         collect_all = DIRECTML_COLLECT_ALL
-        metadata = DIRECTML_METADATA
+        metadata = AMD_NPU_METADATA if lane == "amd-npu" else DIRECTML_METADATA
     else:
         collect_all = PADDLE_COLLECT_ALL
         metadata = [
@@ -201,7 +264,7 @@ def _pyinstaller_command(lane: str) -> list[str]:
         command.extend(["--collect-all", package_name])
     for distribution_name in metadata:
         command.extend(["--copy-metadata", distribution_name])
-    if lane == "directml":
+    if lane in {"directml", "amd-npu"}:
         for module_name in DIRECTML_EXCLUDES:
             command.extend(["--exclude-module", module_name])
     return command

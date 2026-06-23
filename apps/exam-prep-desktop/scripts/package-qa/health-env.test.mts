@@ -81,6 +81,7 @@ test('runtime launch env sets OCR page workers only from explicit QA config', ()
     llmModel: 'qwen3.5:4b',
     ocrRuntimeManifest: 'ocr-runtime-manifest.json',
     directmlOcrRuntimeManifest: 'directml-ocr-runtime-manifest.json',
+    amdNpuOcrRuntimeManifest: 'amd-npu-ocr-runtime-manifest.json',
   };
 
   const ambientOnly = buildRuntimeLaunchEnv({
@@ -98,7 +99,20 @@ test('runtime launch env sets OCR page workers only from explicit QA config', ()
     'directml-ocr-runtime-manifest.json',
   );
   assert.equal(ambientOnly.EXAM_PREP_OCR_DIRECTML_DEVICE_ID, '-1');
+  assert.equal(
+    ambientOnly.EXAM_PREP_AMD_NPU_OCR_RUNTIME_MANIFEST_PATH,
+    'amd-npu-ocr-runtime-manifest.json',
+  );
+  assert.equal(ambientOnly.EXAM_PREP_OCR_AMD_NPU_DEVICE_ID, 'auto');
+  assert.equal(ambientOnly.EXAM_PREP_OCR_AMD_NPU_POLICY, 'PREFER_NPU');
   assert.equal(ambientOnly.PATH, 'test-path');
+
+  const amdNpu = buildRuntimeLaunchEnv({
+    ...baseOptions,
+    ocrProvider: 'amd_npu',
+    baseEnv: {},
+  });
+  assert.equal(amdNpu.EXAM_PREP_OCR_PROVIDER, 'amd_npu');
 
   const explicit = buildRuntimeLaunchEnv({
     ...baseOptions,

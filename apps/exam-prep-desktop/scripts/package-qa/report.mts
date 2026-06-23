@@ -2,7 +2,10 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, relative, resolve } from 'node:path';
 
 import {
+  AMD_NPU_OCR_RUNTIME_PREFIX,
   BACKEND_RUNTIME_PREFIX,
+  DEFAULT_AMD_NPU_OCR_RUNTIME_MANIFEST,
+  DEFAULT_AMD_NPU_OCR_RUNTIME_ROOT,
   DEFAULT_BACKEND_RUNTIME_ENTRYPOINT,
   DEFAULT_BACKEND_RUNTIME_MANIFEST,
   DEFAULT_BACKEND_RUNTIME_ROOT,
@@ -67,6 +70,14 @@ export async function createPackageQaReport(
     workspaceRoot,
     options.directmlOcrRuntimeManifest ?? DEFAULT_DIRECTML_OCR_RUNTIME_MANIFEST,
   );
+  const amdNpuOcrRuntimeRoot = resolve(
+    workspaceRoot,
+    options.amdNpuOcrRuntimeRoot ?? DEFAULT_AMD_NPU_OCR_RUNTIME_ROOT,
+  );
+  const amdNpuOcrRuntimeManifest = resolve(
+    workspaceRoot,
+    options.amdNpuOcrRuntimeManifest ?? DEFAULT_AMD_NPU_OCR_RUNTIME_MANIFEST,
+  );
   const expectedTargetTriple =
     options.expectedTargetTriple ?? DEFAULT_TARGET_TRIPLE;
 
@@ -124,6 +135,30 @@ export async function createPackageQaReport(
       `Expected ${expectedTargetTriple} DirectML OCR runtime, found ${directmlOcrRuntimeManifestSummary.target}`,
     );
   }
+  const includeAmdNpuRuntime =
+    options.amdNpuOcrRuntimeRoot !== undefined ||
+    options.amdNpuOcrRuntimeManifest !== undefined ||
+    existsSync(amdNpuOcrRuntimeManifest);
+  const amdNpuOcrRuntimeArtifacts = includeAmdNpuRuntime
+    ? collectOcrRuntimeArtifacts(amdNpuOcrRuntimeRoot, workspaceRoot)
+    : [];
+  const amdNpuOcrRuntimeManifestSummary = includeAmdNpuRuntime
+    ? validateRuntimeManifest({
+        manifestPath: amdNpuOcrRuntimeManifest,
+        runtimeRoot: amdNpuOcrRuntimeRoot,
+        workspaceRoot,
+        expectedKind: 'amd_npu_ocr',
+        artifactPrefix: AMD_NPU_OCR_RUNTIME_PREFIX,
+      })
+    : undefined;
+  if (
+    amdNpuOcrRuntimeManifestSummary !== undefined &&
+    amdNpuOcrRuntimeManifestSummary.target !== expectedTargetTriple
+  ) {
+    throw new Error(
+      `Expected ${expectedTargetTriple} AMD NPU OCR runtime, found ${amdNpuOcrRuntimeManifestSummary.target}`,
+    );
+  }
   if (!existsSync(backendRuntimeEntrypoint)) {
     throw new Error(
       `Backend runtime entrypoint was not built: ${backendRuntimeEntrypoint}`,
@@ -138,6 +173,8 @@ export async function createPackageQaReport(
     llmModel: options.llmModel ?? DEFAULT_LLM_MODEL,
     ocrRuntimeManifest,
     directmlOcrRuntimeManifest,
+    amdNpuOcrRuntimeManifest,
+    ocrProvider: options.ocrProvider,
     ocrPageWorkers: options.ocrPageWorkers,
   });
   const sizeGate = initialInstallerSizeGate(bundleArtifacts);
@@ -170,6 +207,16 @@ export async function createPackageQaReport(
       directml_ocr_runtime_manifest: directmlOcrRuntimeManifestSummary,
       directml_ocr_runtime_artifacts:
         directmlOcrRuntimeArtifacts.map(publicFileRecord),
+      ...(amdNpuOcrRuntimeManifestSummary === undefined
+        ? {}
+        : {
+            amd_npu_ocr_runtime_root: normalizePath(
+              relative(workspaceRoot, amdNpuOcrRuntimeRoot),
+            ),
+            amd_npu_ocr_runtime_manifest: amdNpuOcrRuntimeManifestSummary,
+            amd_npu_ocr_runtime_artifacts:
+              amdNpuOcrRuntimeArtifacts.map(publicFileRecord),
+          }),
       size_gate: sizeGate,
     },
     runtime,

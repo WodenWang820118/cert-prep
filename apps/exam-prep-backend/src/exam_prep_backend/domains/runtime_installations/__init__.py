@@ -6,6 +6,7 @@ from exam_prep_backend.domains.runtime_installations.archive import (
     verify_file_hash,
 )
 from exam_prep_backend.domains.runtime_installations.installers import (
+    AmdNpuOcrRuntimeInstaller,
     DirectMLOcrRuntimeInstaller,
     OllamaModelInstaller,
     OllamaRuntimeInstaller,
@@ -36,6 +37,7 @@ from exam_prep_backend.domains.runtime_installations.processes import run_ocr_ru
 
 __all__ = [
     "OcrRuntimeManifest",
+    "AmdNpuOcrRuntimeInstaller",
     "DirectMLOcrRuntimeInstaller",
     "OllamaModelInstaller",
     "OllamaRuntimeInstaller",

@@ -123,7 +123,16 @@ import { WorkspaceFacade } from '../../stores/workspace.facade';
       (visibleChange)="health.setRuntimeInstallConsentVisible($event)"
     >
       <div class="grid gap-3">
-        @if (health.runtimeInstallConsentKind() === 'directml_ocr') {
+        @if (health.runtimeInstallConsentKind() === 'amd_npu_ocr') {
+          <p class="m-0 text-sm leading-6 text-color">
+            Install the AMD NPU OCR runtime for image-only PDFs?
+          </p>
+          <p class="m-0 text-sm leading-6 text-muted-color">
+            This runtime is gated behind strict Windows ML VitisAI session and
+            OCR evidence. DirectML remains the default until the NPU lane passes
+            production checks.
+          </p>
+        } @else if (health.runtimeInstallConsentKind() === 'directml_ocr') {
           <p class="m-0 text-sm leading-6 text-color">
             Install the AMD DirectML OCR runtime for image-only PDFs?
           </p>

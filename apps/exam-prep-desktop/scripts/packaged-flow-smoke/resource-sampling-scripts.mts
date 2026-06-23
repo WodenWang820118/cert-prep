@@ -167,6 +167,7 @@ $targetProcessNames = @(
   'exam-prep-backend.exe',
   'exam-prep-ocr-runtime.exe',
   'exam-prep-ocr-directml-runtime.exe',
+  'exam-prep-ocr-amd-npu-runtime.exe',
   'llama-server.exe',
   'ollama.exe',
   'ollama app.exe',

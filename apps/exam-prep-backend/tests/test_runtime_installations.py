@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from exam_prep_backend.app import create_app
 from exam_prep_backend.config import Settings
 from exam_prep_backend.domains.runtime_installations import (
+    AmdNpuOcrRuntimeInstaller,
     DirectMLOcrRuntimeInstaller,
     OllamaRuntimeInstaller,
     PaddleOcrRuntimeInstaller,
@@ -273,6 +274,59 @@ def test_directml_runtime_install_verifies_and_installs_artifact(tmp_path: Path)
     assert (runtime_dir / "exam-prep-ocr-directml-runtime.cmd").is_file()
 
 
+def test_amd_npu_runtime_install_verifies_and_installs_artifact(tmp_path: Path) -> None:
+    artifact_path = tmp_path / "exam-prep-ocr-amd-npu-runtime-x86_64-pc-windows-msvc.zip"
+    with ZipFile(artifact_path, "w") as archive:
+        archive.writestr("exam-prep-ocr-amd-npu-runtime.cmd", "@echo off\r\nexit /b 0\r\n")
+        archive.writestr("rec/inference.onnx", "rec")
+        archive.writestr("rec/inference.yml", "rec-yml")
+        archive.writestr("rec/ppocr_keys_v1.txt", "A\n")
+        archive.writestr("det/inference.onnx", "det")
+        archive.writestr("det/inference.yml", "det-yml")
+        archive.writestr("pipeline.json", "{}")
+    sha256 = _sha256_file(artifact_path)
+    manifest_path = tmp_path / "amd-npu-ocr-runtime-manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "kind": "amd_npu_ocr",
+                "version": "0.1.0",
+                "target": "x86_64-pc-windows-msvc",
+                "entrypoint": "exam-prep-ocr-amd-npu-runtime.cmd",
+                "artifact": {
+                    "file_name": artifact_path.name,
+                    "sha256": sha256,
+                    "bytes": artifact_path.stat().st_size,
+                    "url": None,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    runtime_dir = tmp_path / "installed-amd-npu"
+    settings = Settings(
+        data_dir=tmp_path,
+        api_token="test-token",
+        amd_npu_ocr_runtime_dir=runtime_dir,
+        amd_npu_ocr_runtime_manifest_path=manifest_path,
+    )
+    manager = RuntimeInstallationManager(
+        settings=settings,
+        llm_provider=object(),
+        ocr_provider=FakeOcrProvider(),
+        installers=[AmdNpuOcrRuntimeInstaller(settings, FakeAmdNpuOcrProvider(runtime_dir))],
+        async_jobs=False,
+    )
+
+    response = manager.start_installation(RuntimeRequirementKind.AMD_NPU_OCR)
+
+    assert response.status == RuntimeInstallationStatus.SUCCEEDED
+    installed_manifest = json.loads((runtime_dir / "runtime-manifest.json").read_text())
+    assert installed_manifest["kind"] == "amd_npu_ocr"
+    assert (runtime_dir / "exam-prep-ocr-amd-npu-runtime.cmd").is_file()
+
+
 def test_ocr_runtime_command_decodes_utf8_output(monkeypatch, tmp_path: Path) -> None:
     calls: dict[str, object] = {}
 
@@ -359,6 +413,31 @@ class FakeDirectMLOcrProvider(FakeOcrProvider):
             paddle_version=None,
             paddleocr_version="1.24.4",
             selected_device="amd_directml",
+            cuda_available=False,
+            gpu_count=0,
+            model_cache_dir=str(self._runtime_dir),
+            fallback_reason=None,
+            unavailable_reason=None,
+        )
+
+
+class FakeAmdNpuOcrProvider(FakeOcrProvider):
+    provider = "amd_npu"
+    engine = "onnxruntime-windowsml-vitisai"
+
+    def __init__(self, runtime_dir: Path) -> None:
+        self._runtime_dir = runtime_dir
+
+    def health(self) -> OCRHealth:
+        return OCRHealth(
+            provider=self.provider,
+            engine=self.engine,
+            available=(self._runtime_dir / "runtime-manifest.json").is_file(),
+            detail="AMD NPU OCR runtime is ready.",
+            python_version="3.12.11",
+            paddle_version=None,
+            paddleocr_version="1.24.6",
+            selected_device="amd_npu:vitisai+amd_directml",
             cuda_available=False,
             gpu_count=0,
             model_cache_dir=str(self._runtime_dir),

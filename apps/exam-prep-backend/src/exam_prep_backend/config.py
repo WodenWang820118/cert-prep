@@ -55,7 +55,7 @@ class Settings(BaseSettings):
         ]
     )
     llm_provider: Literal["fake", "ollama"] = "fake"
-    ocr_provider: Literal["fake", "ollama", "paddle", "directml"] = "fake"
+    ocr_provider: Literal["fake", "ollama", "paddle", "directml", "amd_npu"] = "fake"
     ocr_device: str = "auto"
     ocr_benchmark: bool = False
     ollama_host: str = "http://127.0.0.1:11434"
@@ -69,6 +69,17 @@ class Settings(BaseSettings):
     directml_ocr_runtime_dir: Path | None = None
     directml_ocr_runtime_manifest_path: Path | None = None
     ocr_directml_device_id: int = Field(default=-1, ge=-1)
+    amd_npu_ocr_runtime_dir: Path | None = None
+    amd_npu_ocr_runtime_manifest_path: Path | None = None
+    ocr_amd_npu_device_id: str = "auto"
+    ocr_amd_npu_policy: Literal[
+        "DEFAULT",
+        "MAX_EFFICIENCY",
+        "MIN_OVERALL_POWER",
+        "PREFER_NPU",
+        "PREFER_GPU",
+        "MAX_PERFORMANCE",
+    ] = "PREFER_NPU"
     ocr_runtime_timeout_seconds: float = 300.0
     runtime_install_timeout_seconds: float = 900.0
 
@@ -91,4 +102,10 @@ class Settings(BaseSettings):
     def resolved_directml_ocr_runtime_dir(self) -> Path:
         return (
             self.directml_ocr_runtime_dir or self.data_dir / "runtimes" / "directml_ocr"
+        ).resolve()
+
+    @property
+    def resolved_amd_npu_ocr_runtime_dir(self) -> Path:
+        return (
+            self.amd_npu_ocr_runtime_dir or self.data_dir / "runtimes" / "amd_npu_ocr"
         ).resolve()

@@ -77,6 +77,7 @@ export interface ResourceSamplingArtifacts {
   windows_counters_csv?: string;
   windows_summary_json?: string;
   windows_dxgi_adapters_json?: string;
+  xrt_smi_summary_json?: string;
 }
 
 export interface StreamingQuestionsMetrics {

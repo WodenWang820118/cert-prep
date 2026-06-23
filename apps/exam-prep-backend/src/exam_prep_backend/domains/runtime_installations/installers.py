@@ -316,3 +316,80 @@ class DirectMLOcrRuntimeInstaller:
             shutil.move(str(temp_dir), runtime_dir)
         write_installed_ocr_manifest(runtime_dir, manifest)
         return RuntimeInstallationStatus.SUCCEEDED
+
+
+class AmdNpuOcrRuntimeInstaller:
+    """Installer and health snapshot for the packaged AMD NPU OCR runtime."""
+
+    kind = RuntimeRequirementKind.AMD_NPU_OCR
+    provider = "amd_npu"
+    model = "pp-ocrv6-medium-amd-npu"
+
+    def __init__(self, settings: Settings, provider: OCRProvider) -> None:
+        self._settings = settings
+        self._provider = provider
+
+    def requirement(self) -> RuntimeRequirementSnapshot:
+        """Return AMD NPU OCR runtime availability from the provider health check."""
+
+        health = self._provider.health()
+        return RuntimeRequirementSnapshot(
+            kind=self.kind,
+            label="AMD NPU OCR runtime",
+            available=health.available,
+            detail=health.detail,
+            unavailable_reason=health.unavailable_reason,
+            version=health.paddleocr_version,
+            installed_path=health.model_cache_dir,
+        )
+
+    def install(self, progress: Callable[[RuntimeInstallProgress], None]) -> RuntimeInstallationStatus:
+        """Verify, extract, self-test, and install the packaged AMD NPU OCR runtime."""
+
+        manifest = load_ocr_runtime_source_manifest(
+            self._settings,
+            kind=RuntimeRequirementKind.AMD_NPU_OCR,
+        )
+        artifact = resolve_ocr_runtime_artifact(manifest)
+        progress(
+            RuntimeInstallProgress(
+                "Verifying AMD NPU OCR runtime artifact.",
+                total=manifest.bytes,
+            )
+        )
+        verify_file_hash(artifact, manifest.sha256, expected_bytes=manifest.bytes)
+
+        runtime_dir = self._settings.resolved_amd_npu_ocr_runtime_dir
+        runtime_dir.parent.mkdir(parents=True, exist_ok=True)
+        with TemporaryDirectory(dir=runtime_dir.parent) as temp_name:
+            temp_dir = Path(temp_name)
+            progress(RuntimeInstallProgress("Extracting AMD NPU OCR runtime artifact."))
+            extract_zip_safely(artifact, temp_dir)
+            entrypoint = temp_dir / manifest.entrypoint
+            if not entrypoint.is_file():
+                raise ProviderUnavailableError(
+                    f"OCR runtime entrypoint was not found: {manifest.entrypoint}"
+                )
+            progress(RuntimeInstallProgress("Running AMD NPU OCR runtime self-test."))
+            run_ocr_runtime_command(
+                entrypoint,
+                [
+                    "--provider",
+                    "amd_npu",
+                    "--model-dir",
+                    str(temp_dir),
+                    "--directml-device-id",
+                    str(self._settings.ocr_directml_device_id),
+                    "--amd-npu-device-id",
+                    self._settings.ocr_amd_npu_device_id,
+                    "--amd-npu-policy",
+                    self._settings.ocr_amd_npu_policy,
+                    "--ensure-ready",
+                    "--ocr-self-test",
+                ],
+            )
+            if runtime_dir.exists():
+                shutil.rmtree(runtime_dir)
+            shutil.move(str(temp_dir), runtime_dir)
+        write_installed_ocr_manifest(runtime_dir, manifest)
+        return RuntimeInstallationStatus.SUCCEEDED

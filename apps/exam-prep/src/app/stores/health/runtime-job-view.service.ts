@@ -34,6 +34,7 @@ const RUNTIME_KIND_LABELS: Record<string, string> = {
   ollama_model: 'Ollama model',
   paddle_ocr: 'PaddleOCR runtime',
   directml_ocr: 'AMD DirectML OCR runtime',
+  amd_npu_ocr: 'AMD NPU OCR runtime',
 };
 
 @Injectable({ providedIn: 'root' })
@@ -341,7 +342,8 @@ export class RuntimeJobViewService {
     return kind === 'ollama' ||
       kind === 'ollama_model' ||
       kind === 'paddle_ocr' ||
-      kind === 'directml_ocr'
+      kind === 'directml_ocr' ||
+      kind === 'amd_npu_ocr'
       ? kind
       : fallbackKind;
   }

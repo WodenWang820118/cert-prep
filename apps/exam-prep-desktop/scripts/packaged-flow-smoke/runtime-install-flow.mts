@@ -90,7 +90,7 @@ export async function installOcrRuntimeIfNeeded(run: SmokeRunState): Promise<voi
   const start = Date.now();
   await clickButtonPattern(run, /^\s*Install OCR\s*$/);
   await waitText(run,
-    /Install the (PaddleOCR|AMD DirectML OCR) runtime/,
+    /Install the (PaddleOCR|AMD DirectML OCR|AMD NPU OCR) runtime/,
     10_000,
     'ocr install consent',
   );
@@ -102,11 +102,11 @@ export async function installOcrRuntimeIfNeeded(run: SmokeRunState): Promise<voi
 }
 
 function ocrInstallablePattern(): RegExp {
-  return /Install OCR|PaddleOCR runtime is not installed|paddle_runtime_missing|AMD DirectML OCR runtime is not installed|directml_runtime_missing/i;
+  return /Install OCR|PaddleOCR runtime is not installed|paddle_runtime_missing|AMD DirectML OCR runtime is not installed|directml_runtime_missing|AMD NPU OCR runtime is not installed|amd_npu_runtime_missing/i;
 }
 
 function ocrReadyPattern(): RegExp {
-  return /PaddleOCR imports available|gpu:0|PaddleOCR runtime is ready|paddle\s*\/\s*(gpu|cpu)|AMD DirectML OCR runtime is ready|directml\s*\/\s*amd_directml|OCR ready/i;
+  return /PaddleOCR imports available|gpu:0|PaddleOCR runtime is ready|paddle\s*\/\s*(gpu|cpu)|AMD DirectML OCR runtime is ready|directml\s*\/\s*amd_directml|AMD NPU OCR runtime is ready|amd_npu\s*\/\s*amd_npu|OCR ready/i;
 }
 
 function ocrSettledPattern(): RegExp {

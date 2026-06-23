@@ -50,6 +50,8 @@ pub(crate) fn launch_backend_entrypoint(
         .env("EXAM_PREP_OCR_RUNTIME_MODE", "external")
         .env("EXAM_PREP_OCR_DEVICE", "auto")
         .env("EXAM_PREP_OCR_DIRECTML_DEVICE_ID", "-1")
+        .env("EXAM_PREP_OCR_AMD_NPU_DEVICE_ID", configured_amd_npu_device_id())
+        .env("EXAM_PREP_OCR_AMD_NPU_POLICY", configured_amd_npu_policy())
         .env("EXAM_PREP_OLLAMA_MODEL", configured_ollama_model())
         .env("EXAM_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD", "true")
         .stdin(Stdio::null())
@@ -81,6 +83,16 @@ pub(crate) fn launch_backend_entrypoint(
     {
         command.env(
             "EXAM_PREP_DIRECTML_OCR_RUNTIME_MANIFEST_PATH",
+            manifest_path.to_string_lossy().to_string(),
+        );
+    }
+    if let Some(manifest_path) = inner
+        .amd_npu_ocr_manifest_path
+        .as_ref()
+        .filter(|path| path.is_file())
+    {
+        command.env(
+            "EXAM_PREP_AMD_NPU_OCR_RUNTIME_MANIFEST_PATH",
             manifest_path.to_string_lossy().to_string(),
         );
     }
@@ -144,8 +156,29 @@ fn configured_ocr_provider() -> String {
     std::env::var("EXAM_PREP_OCR_PROVIDER")
         .ok()
         .map(|value| value.trim().to_ascii_lowercase())
-        .filter(|value| matches!(value.as_str(), "directml" | "paddle"))
+        .filter(|value| matches!(value.as_str(), "directml" | "paddle" | "amd_npu"))
         .unwrap_or_else(|| "directml".to_string())
+}
+
+fn configured_amd_npu_device_id() -> String {
+    trimmed_env_var("EXAM_PREP_OCR_AMD_NPU_DEVICE_ID").unwrap_or_else(|| "auto".to_string())
+}
+
+fn configured_amd_npu_policy() -> String {
+    trimmed_env_var("EXAM_PREP_OCR_AMD_NPU_POLICY")
+        .map(|value| value.to_ascii_uppercase())
+        .filter(|value| {
+            matches!(
+                value.as_str(),
+                "DEFAULT"
+                    | "MAX_EFFICIENCY"
+                    | "MIN_OVERALL_POWER"
+                    | "PREFER_NPU"
+                    | "PREFER_GPU"
+                    | "MAX_PERFORMANCE"
+            )
+        })
+        .unwrap_or_else(|| "PREFER_NPU".to_string())
 }
 
 fn backend_ready_timeout() -> Duration {
@@ -236,10 +269,28 @@ mod tests {
         std::env::set_var("EXAM_PREP_OCR_PROVIDER", " paddle ");
         assert_eq!(configured_ocr_provider(), "paddle");
 
+        std::env::set_var("EXAM_PREP_OCR_PROVIDER", " AMD_NPU ");
+        assert_eq!(configured_ocr_provider(), "amd_npu");
+
         std::env::set_var("EXAM_PREP_OCR_PROVIDER", "cpu");
         assert_eq!(configured_ocr_provider(), "directml");
 
         std::env::remove_var("EXAM_PREP_OCR_PROVIDER");
+    }
+
+    #[test]
+    fn configured_amd_npu_policy_uses_supported_override_or_default() {
+        std::env::remove_var("EXAM_PREP_OCR_AMD_NPU_POLICY");
+
+        assert_eq!(configured_amd_npu_policy(), "PREFER_NPU");
+
+        std::env::set_var("EXAM_PREP_OCR_AMD_NPU_POLICY", " min_overall_power ");
+        assert_eq!(configured_amd_npu_policy(), "MIN_OVERALL_POWER");
+
+        std::env::set_var("EXAM_PREP_OCR_AMD_NPU_POLICY", "cpu");
+        assert_eq!(configured_amd_npu_policy(), "PREFER_NPU");
+
+        std::env::remove_var("EXAM_PREP_OCR_AMD_NPU_POLICY");
     }
 
     #[test]

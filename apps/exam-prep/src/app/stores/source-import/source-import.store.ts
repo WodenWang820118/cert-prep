@@ -157,9 +157,11 @@ export class SourceImportStore {
       this.visibleChunkLimit.set(INITIAL_CHUNK_PREVIEW_LIMIT);
       await this.refreshUploadedDocument(project.id, document.id);
     } else if (
-      ['paddle_runtime_missing', 'directml_runtime_missing'].includes(
-        this.operations.errorCode() ?? '',
-      )
+      [
+        'paddle_runtime_missing',
+        'directml_runtime_missing',
+        'amd_npu_runtime_missing',
+      ].includes(this.operations.errorCode() ?? '')
     ) {
       await this.refreshRuntimeHealth();
       this.health.openOcrRuntimeInstallConsent();

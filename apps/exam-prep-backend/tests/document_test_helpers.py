@@ -92,3 +92,27 @@ def _draft_job_statuses(
     )
     assert response.status_code == 200
     return [job["status"] for job in response.json()["items"]]
+
+
+def _wait_for_draft_jobs(
+    client: TestClient,
+    auth_headers,
+    project_id: str,
+    document_id: str,
+    *,
+    status: str,
+    count: int = 1,
+) -> list[dict]:
+    deadline = time.monotonic() + 5
+    latest: list[dict] = []
+    while time.monotonic() < deadline:
+        response = client.get(
+            f"/projects/{project_id}/documents/{document_id}/draft-jobs",
+            headers=auth_headers,
+        )
+        assert response.status_code == 200
+        latest = response.json()["items"]
+        if len(latest) >= count and all(job["status"] == status for job in latest[:count]):
+            return latest
+        time.sleep(0.05)
+    raise AssertionError(f"Draft jobs did not reach status={status}, count={count}: {latest}")

@@ -88,6 +88,10 @@ export interface StreamingBaselineReport {
 
 interface GpuRoutingChecks {
   directml_ocr_process_observed?: boolean;
+  amd_npu_ocr_process_observed?: boolean;
+  npu_ocr_process_observed?: boolean;
+  npu_ocr_uses_amd_igpu?: boolean;
+  npu_ocr_avoids_nvidia_dgpu?: boolean;
   ocr_uses_amd_igpu?: boolean;
   ocr_avoids_nvidia_dgpu?: boolean;
   reasoning_uses_nvidia_dgpu?: boolean;
@@ -116,6 +120,8 @@ interface PackagedStreamingProductionSummary {
   ocr_completion: StreamingBaselineReport['ocr_completion'];
   streaming: StreamingBaselineReport['streaming'];
   gpu_routing_checks: GpuRoutingChecks | null;
+  xrt_smi_summary: Record<string, unknown> | null;
+  npu_power_or_efficiency_observations: Record<string, unknown> | null;
   checks: Record<string, boolean>;
   errors: string[];
 }
@@ -325,6 +331,7 @@ function buildProductionSummary(
 ): PackagedStreamingProductionSummary {
   const resourceSummary = readResourceSummary(run);
   const gpuRoutingChecks = readGpuRoutingChecks(resourceSummary);
+  const xrtSmiSummary = readXrtSmiSummary(run);
   const configuredModel =
     run.metrics.llm_configured_model ?? report.runtime.llm_configured_model;
   const effectiveModel =
@@ -346,17 +353,7 @@ function buildProductionSummary(
     streaming_practice_ready:
       report.streaming.practice_ready_from_streamed_questions,
   };
-  Object.assign(checks, {
-    directml_ocr_process_observed: routingBoolean(
-      gpuRoutingChecks,
-      'directml_ocr_process_observed',
-    ),
-    ocr_uses_amd_igpu: routingBoolean(gpuRoutingChecks, 'ocr_uses_amd_igpu'),
-    ocr_avoids_nvidia_dgpu: routingBoolean(
-      gpuRoutingChecks,
-      'ocr_avoids_nvidia_dgpu',
-    ),
-  });
+  Object.assign(checks, providerRoutingChecks(run, gpuRoutingChecks, xrtSmiSummary));
   const productionSummaryPath = join(run.options.outDir, 'production-summary.json');
 
   return {
@@ -386,8 +383,52 @@ function buildProductionSummary(
     ocr_completion: report.ocr_completion,
     streaming: report.streaming,
     gpu_routing_checks: gpuRoutingChecks,
+    xrt_smi_summary: xrtSmiSummary,
+    npu_power_or_efficiency_observations:
+      run.options.ocrProvider === 'amd_npu'
+        ? {
+            power_watts_available: xrtSmiSummary?.power_watts_available === true,
+            npu_detected: xrtSmiSummary?.npu_detected === true,
+            routing_evidence_required: true,
+          }
+        : null,
     checks,
     errors: run.metrics.errors,
+  };
+}
+
+function providerRoutingChecks(
+  run: SmokeRunState,
+  gpuRoutingChecks: GpuRoutingChecks | null,
+  xrtSmiSummary: Record<string, unknown> | null,
+): Record<string, boolean> {
+  if (run.options.ocrProvider === 'amd_npu') {
+    return {
+      npu_ocr_process_observed: routingBoolean(
+        gpuRoutingChecks,
+        'npu_ocr_process_observed',
+      ),
+      npu_ocr_uses_amd_igpu: routingBoolean(
+        gpuRoutingChecks,
+        'npu_ocr_uses_amd_igpu',
+      ),
+      npu_ocr_avoids_nvidia_dgpu: routingBoolean(
+        gpuRoutingChecks,
+        'npu_ocr_avoids_nvidia_dgpu',
+      ),
+      xrt_smi_npu_detected: xrtSmiSummary?.npu_detected === true,
+    };
+  }
+  return {
+    directml_ocr_process_observed: routingBoolean(
+      gpuRoutingChecks,
+      'directml_ocr_process_observed',
+    ),
+    ocr_uses_amd_igpu: routingBoolean(gpuRoutingChecks, 'ocr_uses_amd_igpu'),
+    ocr_avoids_nvidia_dgpu: routingBoolean(
+      gpuRoutingChecks,
+      'ocr_avoids_nvidia_dgpu',
+    ),
   };
 }
 
@@ -455,6 +496,25 @@ function readGpuRoutingChecks(
 ): GpuRoutingChecks | null {
   const payload = recordField(resourceSummary, 'gpu_routing_checks');
   return payload === null ? null : (payload as GpuRoutingChecks);
+}
+
+function readXrtSmiSummary(run: SmokeRunState): Record<string, unknown> | null {
+  const summaryPath = run.metrics.resource_sampling?.xrt_smi_summary_json;
+  if (!summaryPath) {
+    return null;
+  }
+
+  const absolutePath = join(run.options.workspaceRoot, summaryPath);
+  if (!existsSync(absolutePath)) {
+    return null;
+  }
+
+  try {
+    const payload = JSON.parse(readFileSync(absolutePath, 'utf8').replace(/^\uFEFF/, ''));
+    return isRecord(payload) ? payload : null;
+  } catch {
+    return null;
+  }
 }
 
 function routingBoolean(

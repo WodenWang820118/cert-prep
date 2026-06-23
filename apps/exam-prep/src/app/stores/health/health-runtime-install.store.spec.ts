@@ -126,4 +126,37 @@ describe('HealthStore runtime installation', () => {
     expect(store.runtimeInstall()?.kind).toBe('directml_ocr');
     expect(store.runtimeInstall()?.label).toBe('AMD DirectML OCR runtime');
   });
+
+  it('starts AMD NPU OCR runtime installation from AMD NPU missing health', async () => {
+    const store = TestBed.inject(HealthStore);
+    apiClient.ocrHealth.mockResolvedValue({
+      ...ocrHealth(),
+      provider: 'amd_npu',
+      engine: 'onnxruntime-windowsml-vitisai',
+      available: false,
+      detail: 'AMD NPU OCR runtime is not installed.',
+      selected_device: null,
+      unavailable_reason: 'amd_npu_runtime_missing',
+    });
+    apiClient.startRuntimeInstallation.mockResolvedValue(
+      runtimeInstallation({
+        kind: 'amd_npu_ocr',
+        provider: 'amd_npu',
+        model: 'pp-ocrv6-medium-amd-npu',
+        status: 'running',
+        detail: 'Installing AMD NPU OCR runtime',
+        completed: 10,
+      }),
+    );
+    await store.load();
+
+    store.openOcrRuntimeInstallConsent();
+    await store.confirmRuntimeInstallation();
+
+    expect(apiClient.startRuntimeInstallation).toHaveBeenCalledWith(
+      'amd_npu_ocr',
+    );
+    expect(store.runtimeInstall()?.kind).toBe('amd_npu_ocr');
+    expect(store.runtimeInstall()?.label).toBe('AMD NPU OCR runtime');
+  });
 });

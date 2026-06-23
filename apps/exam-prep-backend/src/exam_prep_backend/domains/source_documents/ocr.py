@@ -80,4 +80,16 @@ def ocr_provider_from_settings(settings: Settings) -> OCRProvider:
         )
 
         return DirectMLOCRProvider()
+    if settings.ocr_provider == "amd_npu":
+        if settings.ocr_runtime_mode == "external":
+            from exam_prep_backend.domains.source_documents.adapters.external_amd_npu import (
+                ExternalAmdNpuOCRProvider,
+            )
+
+            return ExternalAmdNpuOCRProvider(settings=settings)
+        from exam_prep_backend.domains.source_documents.adapters.amd_npu import (
+            AmdNpuOCRProvider,
+        )
+
+        return AmdNpuOCRProvider()
     return FakeOCRProvider()

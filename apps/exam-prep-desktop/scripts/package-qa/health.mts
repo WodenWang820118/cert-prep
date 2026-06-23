@@ -8,6 +8,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import {
   CAPTURE_LIMIT,
   DEFAULT_DATA_DIR,
+  DEFAULT_AMD_NPU_OCR_RUNTIME_MANIFEST,
   DEFAULT_DIRECTML_OCR_RUNTIME_MANIFEST,
   DEFAULT_LLM_MODEL,
   DEFAULT_OCR_RUNTIME_MANIFEST,
@@ -68,6 +69,11 @@ export async function collectRuntimeHealth({
     workspaceRoot,
     DEFAULT_DIRECTML_OCR_RUNTIME_MANIFEST,
   ),
+  amdNpuOcrRuntimeManifest = resolve(
+    workspaceRoot,
+    DEFAULT_AMD_NPU_OCR_RUNTIME_MANIFEST,
+  ),
+  ocrProvider = 'directml',
   ocrPageWorkers,
 }: RuntimeHealthOptions): Promise<RuntimeHealthSummary> {
   const port = await reserveLoopbackPort();
@@ -84,6 +90,8 @@ export async function collectRuntimeHealth({
     llmModel,
     ocrRuntimeManifest,
     directmlOcrRuntimeManifest,
+    amdNpuOcrRuntimeManifest,
+    ocrProvider,
     ocrPageWorkers,
   });
 
@@ -117,13 +125,17 @@ export async function collectRuntimeHealth({
 
     return {
       launch_env: {
-        EXAM_PREP_OCR_PROVIDER: 'directml',
+        EXAM_PREP_OCR_PROVIDER: ocrProvider,
         EXAM_PREP_OCR_RUNTIME_MODE: 'external',
         EXAM_PREP_OCR_DEVICE: 'auto',
         EXAM_PREP_OCR_RUNTIME_MANIFEST_PATH: ocrRuntimeManifest,
         EXAM_PREP_OCR_DIRECTML_DEVICE_ID: '-1',
         EXAM_PREP_DIRECTML_OCR_RUNTIME_MANIFEST_PATH:
           directmlOcrRuntimeManifest,
+        EXAM_PREP_AMD_NPU_OCR_RUNTIME_MANIFEST_PATH:
+          amdNpuOcrRuntimeManifest,
+        EXAM_PREP_OCR_AMD_NPU_DEVICE_ID: 'auto',
+        EXAM_PREP_OCR_AMD_NPU_POLICY: 'PREFER_NPU',
         EXAM_PREP_LLM_PROVIDER: 'ollama',
         EXAM_PREP_OLLAMA_MODEL: llmModel,
         EXAM_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD: 'true',
@@ -152,6 +164,7 @@ export function buildRuntimeLaunchEnv({
   llmModel,
   ocrRuntimeManifest,
   directmlOcrRuntimeManifest,
+  amdNpuOcrRuntimeManifest,
   ocrProvider = 'directml',
   ocrPageWorkers,
   baseEnv = process.env,
@@ -170,7 +183,11 @@ export function buildRuntimeLaunchEnv({
     EXAM_PREP_OCR_DEVICE: 'auto',
     EXAM_PREP_DIRECTML_OCR_RUNTIME_MANIFEST_PATH:
       directmlOcrRuntimeManifest,
+    EXAM_PREP_AMD_NPU_OCR_RUNTIME_MANIFEST_PATH:
+      amdNpuOcrRuntimeManifest ?? '',
     EXAM_PREP_OCR_DIRECTML_DEVICE_ID: '-1',
+    EXAM_PREP_OCR_AMD_NPU_DEVICE_ID: 'auto',
+    EXAM_PREP_OCR_AMD_NPU_POLICY: 'PREFER_NPU',
     EXAM_PREP_OLLAMA_MODEL: llmModel,
     EXAM_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD: 'true',
     PYTHONIOENCODING: 'utf-8',

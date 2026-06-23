@@ -37,6 +37,10 @@ export function parsePackageQaArgs(
       parsed.directmlOcrRuntimeRoot = readValue(arg);
     } else if (arg === '--directml-ocr-runtime-manifest') {
       parsed.directmlOcrRuntimeManifest = readValue(arg);
+    } else if (arg === '--amd-npu-ocr-runtime-root') {
+      parsed.amdNpuOcrRuntimeRoot = readValue(arg);
+    } else if (arg === '--amd-npu-ocr-runtime-manifest') {
+      parsed.amdNpuOcrRuntimeManifest = readValue(arg);
     } else if (arg === '--target') {
       parsed.expectedTargetTriple = readValue(arg);
     } else if (arg === '--health-timeout-ms') {
