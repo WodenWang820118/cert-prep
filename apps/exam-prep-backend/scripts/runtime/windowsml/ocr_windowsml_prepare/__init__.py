@@ -37,6 +37,11 @@ from .metadata_artifacts import (
     sanitized_rec_postprocess,
 )
 from .model_types import ConversionResult, ConverterRunner, DownloadFn, SourceArtifact
+from .npu_prepass_model import (
+    NPU_PREPASS_MODEL_FILE,
+    build_text_density_model,
+    prepare_npu_prepass_model,
+)
 from .report import build_report, default_output_path
 from .source_artifacts import (
     download_file,
@@ -60,6 +65,7 @@ __all__ = [
     "DEFAULT_SOURCES_DIR",
     "DOCKER_PADDLEX_IMAGE",
     "DownloadFn",
+    "NPU_PREPASS_MODEL_FILE",
     "SCRIPT_DIR",
     "SOURCE_ARTIFACTS",
     "SourceArtifact",
@@ -83,6 +89,7 @@ __all__ = [
     "normalize_converter",
     "parse_args",
     "prepare_metadata_artifacts",
+    "prepare_npu_prepass_model",
     "prepare_onnx_artifacts",
     "recommended_next_step",
     "run_docker_paddlex_conversion",
@@ -92,4 +99,5 @@ __all__ = [
     "sha256_file",
     "source_artifact_report",
     "verify_source_archive",
+    "build_text_density_model",
 ]

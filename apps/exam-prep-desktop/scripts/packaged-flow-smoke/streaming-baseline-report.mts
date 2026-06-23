@@ -18,6 +18,7 @@ import type {
   ResourceSamplingArtifacts,
   SmokeRunState,
   StreamingJobCompletionState,
+  WindowsMlNpuPrepassEvidence,
 } from './types.mts';
 
 export interface StreamingBaselineReport {
@@ -116,6 +117,7 @@ interface PackagedStreamingProductionSummary {
   ocr_completion: StreamingBaselineReport['ocr_completion'];
   streaming: StreamingBaselineReport['streaming'];
   gpu_routing_checks: GpuRoutingChecks | null;
+  windowsml_npu_prepass_evidence: WindowsMlNpuPrepassEvidence | null;
   xrt_smi_summary: Record<string, unknown> | null;
   npu_power_or_efficiency_observations: Record<string, unknown> | null;
   checks: Record<string, boolean>;
@@ -350,6 +352,10 @@ function buildProductionSummary(
       report.streaming.practice_ready_from_streamed_questions,
   };
   Object.assign(checks, providerRoutingChecks(run, gpuRoutingChecks));
+  if (run.options.ocrProvider === 'windowsml') {
+    checks.windowsml_npu_prepass_evidence =
+      run.metrics.windowsml_npu_prepass_evidence?.available === true;
+  }
   const productionSummaryPath = join(run.options.outDir, 'production-summary.json');
 
   return {
@@ -379,6 +385,10 @@ function buildProductionSummary(
     ocr_completion: report.ocr_completion,
     streaming: report.streaming,
     gpu_routing_checks: gpuRoutingChecks,
+    windowsml_npu_prepass_evidence:
+      run.options.ocrProvider === 'windowsml'
+        ? run.metrics.windowsml_npu_prepass_evidence ?? null
+        : null,
     xrt_smi_summary: xrtSmiSummary,
     npu_power_or_efficiency_observations:
       run.options.ocrProvider === 'windowsml'

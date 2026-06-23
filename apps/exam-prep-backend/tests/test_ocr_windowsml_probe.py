@@ -36,6 +36,7 @@ REQUIRED_MODEL_FILES = (
     "rec/inference.onnx",
     "rec/inference.yml",
     "rec/ppocr_keys_v1.txt",
+    "npu-prepass/text-density.onnx",
     "pipeline.json",
 )
 
@@ -125,11 +126,13 @@ def test_windowsml_probe_rejects_empty_required_model_file(tmp_path: Path) -> No
     model_dir.mkdir()
     (model_dir / "det").mkdir(parents=True)
     (model_dir / "rec").mkdir(parents=True)
+    (model_dir / "npu-prepass").mkdir(parents=True)
     (model_dir / "det" / "inference.onnx").write_text("stub", encoding="utf-8")
     (model_dir / "det" / "inference.yml").write_text("stub", encoding="utf-8")
     (model_dir / "rec" / "inference.onnx").write_bytes(b"")
     (model_dir / "rec" / "inference.yml").write_text("stub", encoding="utf-8")
     (model_dir / "rec" / "ppocr_keys_v1.txt").write_text("stub", encoding="utf-8")
+    (model_dir / "npu-prepass" / "text-density.onnx").write_text("stub", encoding="utf-8")
     (model_dir / "pipeline.json").write_text("{}", encoding="utf-8")
 
     artifacts = inspect_model_artifacts(model_dir)

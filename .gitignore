@@ -69,3 +69,5 @@ __screenshots__/
 # Local QA source documents and OCR benchmark output
 /pdfs/
 /apps/exam-prep-backend/.benchmarks/
+/apps/exam-prep-backend/scripts/.benchmarks/
+/apps/exam-prep-backend/onnxruntime_profile__*.json

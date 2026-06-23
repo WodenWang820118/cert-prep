@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 import tarfile
+from typing import Any
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
@@ -17,9 +18,13 @@ from runtime.windowsml.ocr_windowsml_prepare_models import (  # noqa: E402
     safe_extract_tar,
     sha256_file,
 )
+from runtime.windowsml.ocr_windowsml_prepare import (  # noqa: E402
+    metadata_artifacts,
+)
 
 
-def test_prepare_models_reports_converter_blocker(tmp_path: Path) -> None:
+def test_prepare_models_reports_converter_blocker(monkeypatch, tmp_path: Path) -> None:
+    _stub_npu_prepass(monkeypatch)
     sources_dir = tmp_path / "sources"
     model_dir = tmp_path / "models"
     artifacts = _fixture_artifacts(sources_dir)
@@ -51,12 +56,14 @@ def test_prepare_models_reports_converter_blocker(tmp_path: Path) -> None:
     ]
     assert (model_dir / "det" / "inference.yml").is_file()
     assert (model_dir / "rec" / "inference.yml").is_file()
+    assert (model_dir / "npu-prepass" / "text-density.onnx").is_file()
     assert (model_dir / "pipeline.json").is_file()
     assert not (model_dir / "det" / "inference.onnx").exists()
     assert not (model_dir / "rec" / "inference.onnx").exists()
 
 
-def test_prepare_models_copies_converted_onnx_models(tmp_path: Path) -> None:
+def test_prepare_models_copies_converted_onnx_models(monkeypatch, tmp_path: Path) -> None:
+    _stub_npu_prepass(monkeypatch)
     sources_dir = tmp_path / "sources"
     model_dir = tmp_path / "models"
     artifacts = _fixture_artifacts(sources_dir)
@@ -73,9 +80,14 @@ def test_prepare_models_copies_converted_onnx_models(tmp_path: Path) -> None:
     assert report["status"]["blockers"] == []
     assert (model_dir / "det" / "inference.onnx").read_bytes() == b"fake-det-onnx"
     assert (model_dir / "rec" / "inference.onnx").read_bytes() == b"fake-rec-onnx"
+    assert report["metadata"]["npu_prepass"]["state"] == "ready"
 
 
-def test_prepare_models_force_conversion_replaces_existing_models(tmp_path: Path) -> None:
+def test_prepare_models_force_conversion_replaces_existing_models(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    _stub_npu_prepass(monkeypatch)
     sources_dir = tmp_path / "sources"
     model_dir = tmp_path / "models"
     artifacts = _fixture_artifacts(sources_dir)
@@ -152,6 +164,21 @@ def _fixture_artifacts(sources_dir: Path) -> tuple[SourceArtifact, SourceArtifac
         yml=_rec_yml(),
     )
     return det, rec
+
+
+def _stub_npu_prepass(monkeypatch) -> None:
+    def prepare(model_dir: Path) -> dict[str, Any]:
+        path = model_dir / "npu-prepass" / "text-density.onnx"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"fake-npu-prepass-onnx")
+        return {
+            "state": "ready",
+            "model_name": "text_density",
+            "onnx_file": str(path),
+            "relative_path": "npu-prepass/text-density.onnx",
+        }
+
+    monkeypatch.setattr(metadata_artifacts, "prepare_npu_prepass_model", prepare)
 
 
 def _write_model_archive(

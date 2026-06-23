@@ -6,7 +6,7 @@ from .model_types import SourceArtifact
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-SCRIPTS_ROOT = SCRIPT_DIR.parents[1]
+SCRIPTS_ROOT = SCRIPT_DIR.parents[2]
 BACKEND_ROOT = SCRIPTS_ROOT.parent
 DEFAULT_OUTPUT_DIR = BACKEND_ROOT / ".benchmarks"
 DEFAULT_SOURCES_DIR = DEFAULT_OUTPUT_DIR / "ocr-windowsml-sources"

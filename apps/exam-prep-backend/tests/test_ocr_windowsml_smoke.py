@@ -22,9 +22,14 @@ REQUIRED_MODEL_FILES = (
     "rec/inference.onnx",
     "rec/inference.yml",
     "rec/ppocr_keys_v1.txt",
+    "npu-prepass/text-density.onnx",
     "pipeline.json",
 )
-SESSION_MODEL_FILES = ("det/inference.onnx", "rec/inference.onnx")
+SESSION_MODEL_FILES = (
+    "det/inference.onnx",
+    "rec/inference.onnx",
+    "npu-prepass/text-density.onnx",
+)
 
 
 def test_session_smoke_skips_until_models_exist() -> None:

@@ -180,8 +180,18 @@ def create_windowsml_session_options(ort: Any) -> Any:
     options = ort.SessionOptions()
     options.enable_mem_pattern = False
     options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+    try:
+        options.profile_file_prefix = str(onnxruntime_profile_prefix())
+    except Exception:
+        pass
     _enable_session_profiling(options)
     return options
+
+
+def onnxruntime_profile_prefix() -> Path:
+    profile_dir = DEFAULT_OUTPUT_DIR / "onnxruntime-profiles"
+    profile_dir.mkdir(parents=True, exist_ok=True)
+    return profile_dir / "session-smoke"
 
 
 def run_windowsml_session_smoke(

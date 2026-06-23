@@ -1,5 +1,6 @@
 export {
   answerForVisiblePracticeQuestion,
+  captureDocumentOcrEvidence,
   captureLlmHealth,
   createPackagedSmokeQuestion,
   firstSourceChunk,

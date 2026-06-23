@@ -29,6 +29,7 @@ REQUIRED_MODEL_FILES = (
     "rec/inference.onnx",
     "rec/inference.yml",
     "rec/ppocr_keys_v1.txt",
+    "npu-prepass/text-density.onnx",
     "pipeline.json",
 )
 OPTIONAL_MODEL_FILES = ()

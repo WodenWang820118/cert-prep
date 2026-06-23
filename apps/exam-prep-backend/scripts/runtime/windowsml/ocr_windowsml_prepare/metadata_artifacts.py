@@ -9,6 +9,7 @@ from typing import Any
 import yaml
 
 from .model_types import SourceArtifact
+from .npu_prepass_model import NPU_PREPASS_MODEL_FILE, prepare_npu_prepass_model
 
 
 def prepare_metadata_artifacts(
@@ -69,6 +70,7 @@ def prepare_metadata_artifacts(
         ),
         encoding="utf-8",
     )
+    npu_prepass = prepare_npu_prepass_model(model_dir)
     return {
         "state": "ready",
         "pipeline_json": str(pipeline_path),
@@ -76,6 +78,7 @@ def prepare_metadata_artifacts(
         "paddleocr_rec_char_dict": str(paddleocr_char_dict_path),
         "det_inference_yml": str(det_dir / "inference.yml"),
         "rec_inference_yml": str(rec_dir / "inference.yml"),
+        "npu_prepass": npu_prepass,
         "character_count": len(chars),
     }
 
@@ -136,8 +139,15 @@ def build_pipeline_contract(
                 "rec/inference.onnx",
                 "rec/inference.yml",
                 "rec/ppocr_keys_v1.txt",
+                NPU_PREPASS_MODEL_FILE,
                 "pipeline.json",
             ],
+            "npu_prepass": {
+                "model_name": "text_density",
+                "onnx_file": NPU_PREPASS_MODEL_FILE,
+                "provider_policy": "PREFER_NPU",
+                "success_condition": "VitisAIExecutionProvider profile events present",
+            },
         },
         "det": {
             "model_name": det_config.get("Global", {}).get("model_name"),

@@ -13,6 +13,7 @@ import {
 } from './runner-context.mts';
 import {
   answerForVisiblePracticeQuestion,
+  captureDocumentOcrEvidence,
   captureLlmHealth,
   createPackagedSmokeQuestion,
   EXPECTED_BASELINE_CHUNKS,
@@ -117,6 +118,9 @@ export async function uploadAndParsePdf(run: SmokeRunState): Promise<void> {
     );
     await parseCompletePromise;
     recordOcrCompletionFromText(run, await bodyText(run));
+    if (uploadedDocument) {
+      await captureDocumentOcrEvidence(run, uploadedDocument);
+    }
     if (run.options.waitForStreamingComplete) {
       if (!uploadedDocument) {
         throw new Error('Cannot wait for streaming completion without upload API reference.');

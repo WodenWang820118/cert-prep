@@ -45,13 +45,13 @@ url = "https://www.paddlepaddle.org.cn/packages/stable/cpu/"
 explicit = true
 
 [[tool.uv.index]]
-name = "paddle-cu126"
-url = "https://www.paddlepaddle.org.cn/packages/stable/cu126/"
+name = "paddle-cu130"
+url = "https://www.paddlepaddle.org.cn/packages/stable/cu130/"
 explicit = true
 
 [tool.uv.sources]
 paddlepaddle = { index = "paddle-cpu" }
-paddlepaddle-gpu = { index = "paddle-cu126" }
+paddlepaddle-gpu = { index = "paddle-cu130" }
 
 [dependency-groups]
 dev = [

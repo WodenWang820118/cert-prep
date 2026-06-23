@@ -48,6 +48,7 @@ export interface SmokeMetrics {
   wait_for_streaming_complete?: boolean;
   app_data_dir?: string;
   ocr_completion?: OcrCompletionMetrics;
+  windowsml_npu_prepass_evidence?: WindowsMlNpuPrepassEvidence;
   streaming_baseline?: StreamingBaselineArtifacts;
   production_summary?: string;
   practice_ready_from_streamed_questions?: boolean;
@@ -98,6 +99,17 @@ export interface OcrCompletionMetrics {
   chunks: number | null;
   expected_pages: 46;
   expected_chunks: 46;
+}
+
+export interface WindowsMlNpuPrepassEvidence {
+  source: 'document_ocr_fallback_reason';
+  available: boolean;
+  attempted: boolean;
+  ocr_device: string | null;
+  fallback_reason: string | null;
+  vitisai_events: number;
+  cpu_events: number;
+  reason: string | null;
 }
 
 export interface StreamingBaselineArtifacts {

@@ -21,6 +21,7 @@ def main() -> None:
     parser.add_argument("--provider", choices=["paddle", "windowsml"], default="paddle")
     parser.add_argument("--device", default="auto")
     parser.add_argument("--windowsml-device-id", type=int, default=-1)
+    parser.add_argument("--windowsml-device-policy", default="PREFER_NPU")
     parser.add_argument("--model-dir", type=Path)
     parser.add_argument("--ocr-health", action="store_true")
     parser.add_argument("--ocr-self-test", action="store_true")
@@ -64,6 +65,7 @@ def _provider_from_args(args: argparse.Namespace) -> PaddleOCRProvider | Windows
         return WindowsMLRuntimeOCRProvider(
             model_dir=args.model_dir or _default_windowsml_model_dir(),
             device_id=args.windowsml_device_id,
+            device_policy=args.windowsml_device_policy,
         )
     return PaddleOCRProvider(device=args.device)
 

@@ -69,6 +69,7 @@ def _provider_from_args(args: argparse.Namespace) -> WindowsMLRuntimeOCRProvider
     return WindowsMLRuntimeOCRProvider(
         model_dir=args.model_dir or _default_model_dir(),
         device_id=args.windowsml_device_id,
+        device_policy=args.windowsml_device_policy,
     )
 
 

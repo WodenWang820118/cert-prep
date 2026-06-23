@@ -13,6 +13,11 @@ from exam_prep_backend.domains.source_documents.adapters.windowsml.device import
     windowsml_device_label,
     resolve_windowsml_device_id,
 )
+from exam_prep_backend.domains.source_documents.adapters.windowsml.npu_prepass import (
+    NPU_PREPASS_MODEL_FILE,
+    WindowsMLNpuPrepass,
+    merge_fallback_reason_with_npu_prepass,
+)
 from exam_prep_backend.domains.source_documents.ocr_contracts import OCRHealth, OCRPageResult
 from exam_prep_backend.exceptions import ProviderUnavailableError
 
@@ -26,6 +31,7 @@ PADDLEOCR37_REQUIRED_MODEL_FILES = (
     "rec/inference.onnx",
     "rec/inference.yml",
     "rec/ppocr_keys_v1.txt",
+    NPU_PREPASS_MODEL_FILE,
     "pipeline.json",
 )
 
@@ -42,10 +48,16 @@ class WindowsMLRuntimeOCRProvider:
         *,
         model_dir: Path,
         device_id: int | None = AUTO_WINDOWSML_DEVICE_ID,
+        device_policy: str = "PREFER_NPU",
     ) -> None:
         self.model_dir = model_dir
         self.device_id = device_id
-        self._runner = WindowsMLOCRRunner(model_dir=model_dir, device_id=device_id)
+        self.device_policy = device_policy
+        self._runner = WindowsMLOCRRunner(
+            model_dir=model_dir,
+            device_id=device_id,
+            device_policy=device_policy,
+        )
 
     def health(self) -> OCRHealth:
         providers, version, import_error = _onnxruntime_state()
@@ -130,14 +142,21 @@ class WindowsMLOCRRunner:
         *,
         model_dir: Path,
         device_id: int | None = AUTO_WINDOWSML_DEVICE_ID,
+        device_policy: str = "PREFER_NPU",
     ) -> None:
         self.model_dir = model_dir
         self.device_id = device_id
+        self.device_policy = device_policy
         self._selected_device_id: int | None | object = _UNRESOLVED_DEVICE_ID
         self._paddleocr: Any | None = None
+        self._npu_prepass = WindowsMLNpuPrepass(
+            model_dir=model_dir,
+            device_policy=device_policy,
+        )
 
     def extract_text(self, image_png: bytes) -> WindowsMLOCRTextResult:
         started = perf_counter()
+        npu_prepass = self._npu_prepass.run(image_png)
         image_path = self._write_temp_png(image_png)
         try:
             results = self._paddleocr_pipeline().predict(str(image_path))
@@ -150,11 +169,15 @@ class WindowsMLOCRRunner:
             box_count=_count_paddleocr_boxes(results),
             recognized_count=len(lines),
             device=self._device_label(),
-            fallback_reason=None,
+            fallback_reason=merge_fallback_reason_with_npu_prepass(None, npu_prepass),
         )
 
     def _write_temp_png(self, image_png: bytes) -> Path:
-        with tempfile.NamedTemporaryFile(prefix="exam-prep-windowsml-", suffix=".png", delete=False) as file:
+        with tempfile.NamedTemporaryFile(
+            prefix="exam-prep-windowsml-",
+            suffix=".png",
+            delete=False,
+        ) as file:
             file.write(image_png)
             return Path(file.name)
 

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from pathlib import Path
 import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from runtime.windowsml.prepare.ocr_windowsml_prepare import (
     BACKEND_ROOT,
@@ -15,7 +18,9 @@ from runtime.windowsml.prepare.ocr_windowsml_prepare import (
     ConversionResult,
     ConverterRunner,
     DownloadFn,
+    NPU_PREPASS_MODEL_FILE,
     SourceArtifact,
+    build_text_density_model,
     build_pipeline_contract,
     build_report,
     classify_conversion_blocker,
@@ -36,6 +41,7 @@ from runtime.windowsml.prepare.ocr_windowsml_prepare import (
     normalize_converter,
     parse_args,
     prepare_metadata_artifacts,
+    prepare_npu_prepass_model,
     prepare_onnx_artifacts,
     recommended_next_step,
     run_docker_paddlex_conversion,
@@ -63,9 +69,11 @@ __all__ = [
     "DEFAULT_SOURCES_DIR",
     "DOCKER_PADDLEX_IMAGE",
     "DownloadFn",
+    "NPU_PREPASS_MODEL_FILE",
     "SCRIPT_DIR",
     "SOURCE_ARTIFACTS",
     "SourceArtifact",
+    "build_text_density_model",
     "build_pipeline_contract",
     "build_report",
     "classify_conversion_blocker",
@@ -86,6 +94,7 @@ __all__ = [
     "normalize_converter",
     "parse_args",
     "prepare_metadata_artifacts",
+    "prepare_npu_prepass_model",
     "prepare_onnx_artifacts",
     "recommended_next_step",
     "run_docker_paddlex_conversion",
