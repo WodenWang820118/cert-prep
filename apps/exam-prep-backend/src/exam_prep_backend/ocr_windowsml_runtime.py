@@ -31,7 +31,15 @@ def main() -> None:
 
     if args.ocr_self_test:
         result = _self_test(args)
-        print(json.dumps(result, ensure_ascii=False))
+        print(
+            json.dumps(
+                {
+                    **result,
+                    "windowsml_device_policy": args.windowsml_device_policy,
+                },
+                ensure_ascii=False,
+            )
+        )
         raise SystemExit(0 if result["ok"] else 1)
 
     provider = _provider_from_args(args)
@@ -40,17 +48,18 @@ def main() -> None:
         return
 
     if args.ocr_health:
-        print(json.dumps(asdict(provider.health()), ensure_ascii=False))
+        payload = asdict(provider.health())
+        payload["windowsml_device_policy"] = args.windowsml_device_policy
+        payload["windowsml_device_id"] = args.windowsml_device_id
+        print(json.dumps(payload, ensure_ascii=False))
         return
 
     if args.ocr_page:
         image_png = Path(args.ocr_page).read_bytes()
-        print(
-            json.dumps(
-                asdict(provider.extract_page_text(image_png, args.page_number)),
-                ensure_ascii=False,
-            )
-        )
+        result = asdict(provider.extract_page_text(image_png, args.page_number))
+        result["windowsml_device_policy"] = args.windowsml_device_policy
+        result["windowsml_device_id"] = args.windowsml_device_id
+        print(json.dumps(result, ensure_ascii=False))
         return
 
     parser.error("one of --ocr-health, --ocr-self-test, --ocr-page, or --ocr-worker is required")
@@ -67,10 +76,13 @@ def _self_test(args: argparse.Namespace) -> dict[str, Any]:
     provider = _provider_from_args(args)
     try:
         result = provider.extract_page_text(_self_test_png(), 1)
+        windowsml_device_id = getattr(provider, "device_id", None)
     except Exception as exc:
         return {
             "ok": False,
             "provider": "windowsml",
+            "windowsml_device_policy": args.windowsml_device_policy,
+            "windowsml_device_id": args.windowsml_device_id,
             "error_type": type(exc).__name__,
             "error": str(exc),
             "cause": str(exc.__cause__) if exc.__cause__ is not None else None,
@@ -82,6 +94,8 @@ def _self_test(args: argparse.Namespace) -> dict[str, Any]:
         "ok": "OCR" in normalized and "TEST" in normalized,
         "provider": "windowsml",
         "result": asdict(result),
+        "windowsml_device_policy": args.windowsml_device_policy,
+        "windowsml_device_id": windowsml_device_id,
     }
 
 

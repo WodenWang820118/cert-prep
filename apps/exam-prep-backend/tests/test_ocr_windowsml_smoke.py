@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 import sys
 from typing import Any
 
@@ -8,6 +9,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from runtime.windowsml.ocr_windowsml_smoke import (  # noqa: E402
+    summarize_provider_mix,
     build_session_smoke,
     classify_smoke_status,
     default_output_path,
@@ -61,6 +63,33 @@ def test_session_smoke_runs_required_models_when_ready(tmp_path: Path) -> None:
     assert smoke["state"] == "session_ready"
     assert status["state"] == "session_ready"
     assert status["blockers"] == []
+
+
+def test_summarize_provider_mix_from_mock_profile(tmp_path: Path) -> None:
+    profile_path = tmp_path / "profile.json"
+    profile_path.write_text(
+        json.dumps(
+            [
+                {"cat": "Kernel", "args": {"provider": "DmlExecutionProvider"}},
+                {"cat": "Kernel", "args": {"provider": "CPUExecutionProvider"}},
+                {"cat": "Kernel", "args": {"provider": "CPUExecutionProvider"}},
+                {"cat": "Kernel", "args": {"provider": "DmlExecutionProvider"}},
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    mix = summarize_provider_mix(profile_path)
+
+    assert mix["profile_file"] == str(profile_path)
+    assert mix["providers_seen"] == ["DmlExecutionProvider", "CPUExecutionProvider"]
+    assert mix["provider_counts"] == {
+        "DmlExecutionProvider": 2,
+        "CPUExecutionProvider": 2,
+    }
+    assert mix["mixed_execution_detected"] is True
+    assert mix["profile_file"].endswith("profile.json")
 
 
 def test_session_smoke_reports_session_failure(tmp_path: Path) -> None:

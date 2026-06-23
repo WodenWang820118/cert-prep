@@ -67,6 +67,17 @@ def test_windowsml_runtime_provider_health_resolves_auto_amd_igpu(
     assert health.fallback_reason is None
 
 
+def test_windowsml_runtime_provider_engine_config_prefers_windowsml_then_cpu(monkeypatch) -> None:
+    monkeypatch.setattr(windowsml, "resolve_windowsml_device_id", lambda _device_id: 0)
+    runner = windowsml.WindowsMLOCRRunner(model_dir=Path("unused-model-dir"), device_id=0)
+    config = runner._engine_config()
+
+    assert config["providers"] == ["DmlExecutionProvider", "CPUExecutionProvider"]
+    assert config["provider_options"] == [{"device_id": 0}, {}]
+    assert config["enable_mem_pattern"] is False
+    assert config["execution_mode"] == "sequential"
+
+
 def test_windowsml_auto_device_selects_amd_after_nvidia(monkeypatch) -> None:
     monkeypatch.setattr(
         windowsml_device,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 import json
@@ -70,7 +71,8 @@ def build_report(
             "name": "ocr_windowsml_session_smoke",
             "goal": (
                 "Verify that required PP-OCRv6 ONNX model files can create ONNX "
-                "Runtime WindowsML sessions before production OCR packaging."
+                "Runtime WindowsML sessions and collect profiling evidence for "
+                "provider scheduling before production OCR packaging."
             ),
             "does_not_pull_models": True,
             "does_not_change_runtime_defaults": True,
@@ -116,6 +118,12 @@ def skipped_session_smoke(reason: str) -> dict[str, Any]:
         "session_options": windowsml_session_options_metadata(),
         "sessions": [],
         "errors": [],
+        "provider_mix": {
+            "providers_seen": [],
+            "provider_counts": {},
+            "mixed_execution_detected": False,
+            "inference_executed": False,
+        },
     }
 
 
@@ -172,6 +180,7 @@ def create_windowsml_session_options(ort: Any) -> Any:
     options = ort.SessionOptions()
     options.enable_mem_pattern = False
     options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+    _enable_session_profiling(options)
     return options
 
 
@@ -203,7 +212,12 @@ def run_windowsml_session_smoke(
                 sess_options=options,
                 providers=windowsml_providers(device_id),
             )
-            sessions.append(session_metadata(model_name, model_path, session))
+            sessions.append(
+                {
+                    **session_metadata(model_name, model_path, session),
+                    "provider_mix": collect_provider_mix(session, model_name),
+                }
+            )
         except Exception as exc:
             errors.append({"model": model_name, "error": str(exc)})
 
@@ -215,6 +229,206 @@ def run_windowsml_session_smoke(
         "session_options": windowsml_session_options_metadata(),
         "sessions": sessions,
         "errors": errors,
+        "provider_mix": aggregate_provider_mix_from_sessions(sessions),
+    }
+
+
+def collect_provider_mix(
+    session: Any,
+    model_name: str,
+) -> dict[str, Any]:
+    base_report = {
+        "profile_file": None,
+        "providers_seen": [],
+        "provider_counts": {},
+        "mixed_execution_detected": False,
+        "inference_executed": False,
+    }
+    try:
+        profile_path = run_profile_capture(session, model_name)
+    except Exception as exc:
+        base_report["profiling_error"] = str(exc)
+        return base_report
+
+    if profile_path is None:
+        return base_report
+
+    try:
+        provider_summary = summarize_provider_mix(profile_path)
+        base_report["inference_executed"] = True
+        base_report.update(provider_summary)
+    except Exception as exc:
+        base_report["profiling_error"] = str(exc)
+    return base_report
+
+
+def _enable_session_profiling(options: Any) -> bool:
+    try:
+        options.enable_profiling = True
+    except Exception:
+        return False
+    return True
+
+
+def run_profile_capture(session: Any, model_name: str) -> Path | None:
+    profile_path: Path | None = None
+    try:
+        feed = build_profile_feed(session)
+        session.run(None, feed)
+    except Exception as exc:
+        profile_path = end_session_profiling(session)
+        raise RuntimeError(f"{model_name}: profiling run failed: {exc}") from exc
+    finally:
+        if profile_path is None:
+            profile_path = end_session_profiling(session)
+
+    return profile_path
+
+
+def end_session_profiling(session: Any) -> Path | None:
+    end_profiling = getattr(session, "end_profiling", None)
+    if not callable(end_profiling):
+        return None
+    try:
+        resolved_path = end_profiling()
+    except Exception:
+        return None
+    if not resolved_path:
+        return None
+    try:
+        return Path(str(resolved_path))
+    except Exception:
+        return None
+
+
+def build_profile_feed(session: Any) -> dict[str, Any]:
+    inputs = _safe_call_list(session, "get_inputs")
+    if not inputs:
+        return {}
+    return build_zero_inputs_for_nodes(inputs)
+
+
+def build_zero_inputs_for_nodes(inputs: Sequence[Any]) -> dict[str, Any]:
+    import numpy as np
+
+    feed: dict[str, Any] = {}
+    for node in inputs:
+        name = str(getattr(node, "name", ""))
+        if not name:
+            continue
+        dtype = numpy_dtype_from_node_type(str(getattr(node, "type", "")))
+        shape = normalize_node_shape(getattr(node, "shape", ()))
+        feed[name] = np.zeros(shape, dtype=dtype)
+    return feed
+
+
+def numpy_dtype_from_node_type(type_name: str) -> Any:
+    normalized = type_name.strip().lower()
+    if normalized.startswith("tensor(") and normalized.endswith(")"):
+        normalized = normalized[len("tensor(") : -1]
+    return {
+        "float": __import__("numpy").float32,
+        "float16": __import__("numpy").float16,
+        "float32": __import__("numpy").float32,
+        "float64": __import__("numpy").float64,
+        "double": __import__("numpy").float64,
+        "int8": __import__("numpy").int8,
+        "int16": __import__("numpy").int16,
+        "int32": __import__("numpy").int32,
+        "int64": __import__("numpy").int64,
+        "uint8": __import__("numpy").uint8,
+        "uint16": __import__("numpy").uint16,
+        "uint32": __import__("numpy").uint32,
+        "uint64": __import__("numpy").uint64,
+        "bool": __import__("numpy").bool_,
+    }.get(normalized, __import__("numpy").float32)
+
+
+def normalize_node_shape(shape: Any) -> list[int]:
+    if not isinstance(shape, (list, tuple)) or not shape:
+        return [1]
+
+    normalized: list[int] = []
+    for dim in shape:
+        if isinstance(dim, bool):
+            normalized.append(1 if dim else 1)
+        elif isinstance(dim, int) and dim > 0:
+            normalized.append(dim)
+        elif isinstance(dim, str) and dim.isdigit():
+            value = int(dim)
+            normalized.append(value if value > 0 else 1)
+        else:
+            normalized.append(1)
+    return normalized or [1]
+
+
+def summarize_provider_mix(profile_path: Path) -> dict[str, Any]:
+    events = _load_profile_events(profile_path)
+    counts = Counter(_extract_provider_from_profile_event(event) for event in events)
+    provider_counts = {
+        provider: count
+        for provider, count in sorted(counts.items(), key=lambda item: item[0])
+        if provider in WINDOWSML_PROVIDERS
+    }
+    providers_seen = [provider for provider in windowsml_provider_names() if provider in provider_counts]
+    if "CPUExecutionProvider" in provider_counts:
+        provider_counts["CPUExecutionProvider"] = provider_counts["CPUExecutionProvider"]
+    return {
+        "profile_file": str(profile_path),
+        "providers_seen": providers_seen,
+        "provider_counts": provider_counts,
+        "mixed_execution_detected": (
+            "DmlExecutionProvider" in provider_counts
+            and "CPUExecutionProvider" in provider_counts
+        ),
+    }
+
+
+def _extract_provider_from_profile_event(event: Any) -> str:
+    if not isinstance(event, dict):
+        return ""
+    args = event.get("args")
+    if isinstance(args, dict):
+        for key in ("provider", "provider_name", "provider_name_", "execution_provider"):
+            value = args.get(key)
+            if isinstance(value, str):
+                normalized = _normalize_provider_name(value)
+                if normalized:
+                    return normalized
+    return ""
+
+
+def _normalize_provider_name(value: str) -> str:
+    lowered = value.lower()
+    if "dmlexecutionprovider" in lowered:
+        return "DmlExecutionProvider"
+    if "cpuexecutionprovider" in lowered:
+        return "CPUExecutionProvider"
+    if value in WINDOWSML_PROVIDERS:
+        return value
+    return ""
+
+
+def _load_profile_events(profile_path: Path) -> list[dict[str, Any]]:
+    payload = json.loads(profile_path.read_text(encoding="utf-8"))
+    return payload if isinstance(payload, list) else []
+
+
+def aggregate_provider_mix_from_sessions(sessions: list[dict[str, Any]]) -> dict[str, Any]:
+    counts = Counter()
+    for session in sessions:
+        mix = session.get("provider_mix")
+        if not isinstance(mix, dict):
+            continue
+        for provider, value in mix.get("provider_counts", {}).items():
+            if provider in WINDOWSML_PROVIDERS and isinstance(value, int):
+                counts[provider] += value
+    provider_counts = {provider: counts[provider] for provider in windowsml_provider_names() if provider in counts}
+    providers_seen = [provider for provider in windowsml_provider_names() if provider in provider_counts]
+    return {
+        "providers_seen": providers_seen,
+        "provider_counts": provider_counts,
+        "mixed_execution_detected": len(providers_seen) >= 2,
     }
 
 
