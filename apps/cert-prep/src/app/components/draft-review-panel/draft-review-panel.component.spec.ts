@@ -4,10 +4,10 @@ import {
   DraftGenerationJobRead,
   CERT_PREP_API,
   ProjectRead,
-} from '../cert-prep-api';
-import { DraftReviewStore } from '../stores/draft-review/draft-review.store';
-import { ProjectStore } from '../stores/project.store';
-import { SourceImportStore } from '../stores/source-import/source-import.store';
+} from '../../cert-prep-api';
+import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
+import { ProjectStore } from '../../stores/project.store';
+import { SourceImportStore } from '../../stores/source-import/source-import.store';
 import { DraftReviewPanelComponent } from './draft-review-panel.component';
 
 describe('DraftReviewPanelComponent', () => {

@@ -1,12 +1,12 @@
 import { Component, effect, inject, OnInit, signal } from '@angular/core';
 import { Button } from 'primeng/button';
 import { Message } from 'primeng/message';
-import { DraftReviewPanelComponent } from './components/draft-review-panel.component';
+import { DraftReviewPanelComponent } from './components/draft-review-panel/draft-review-panel.component';
 import { ModelHealthComponent } from './components/model-health/model-health.component';
-import { PracticePanelComponent } from './components/practice-panel.component';
-import { ProjectRailComponent } from './components/project-rail.component';
+import { PracticePanelComponent } from './components/practice-panel/practice-panel.component';
+import { ProjectRailComponent } from './components/project-rail/project-rail.component';
 import { SourceImportPanelComponent } from './components/source-import-panel/source-import-panel.component';
-import { WrongAnswerReviewComponent } from './components/wrong-answer-review.component';
+import { WrongAnswerReviewComponent } from './components/wrong-answer-review/wrong-answer-review.component';
 import type { StudyMode, StudyModeOption } from './contracts/app.contracts';
 import { OperationStore } from './stores/operation.store';
 import { ProjectStore } from './stores/project.store';
