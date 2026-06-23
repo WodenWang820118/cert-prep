@@ -1,0 +1,30 @@
+{
+  "name": "cert-prep-e2e",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "sourceRoot": "apps/cert-prep-e2e/src",
+  "implicitDependencies": ["cert-prep"],
+  "targets": {
+    "e2e": {
+      "executor": "nx:run-commands",
+      "dependsOn": [],
+      "options": {
+        "cwd": "apps/cert-prep-e2e",
+        "command": "playwright test"
+      },
+      "cache": true,
+      "inputs": [
+        "default",
+        "^production",
+        "^{projectRoot}/tsconfig*.json",
+        {
+          "externalDependencies": ["@playwright/test"]
+        }
+      ],
+      "outputs": [
+        "{workspaceRoot}/dist/.playwright/apps/cert-prep-e2e/test-output",
+        "{workspaceRoot}/dist/.playwright/apps/cert-prep-e2e/playwright-report"
+      ]
+    }
+  }
+}

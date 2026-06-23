@@ -7,11 +7,11 @@ Date: 2026-06-23
 Retire the standalone `amd_npu` OCR product lane. WindowsML is now the only
 packaged accelerated OCR runtime lane, exposed as:
 
-- Backend OCR provider: `EXAM_PREP_OCR_PROVIDER=windowsml`.
+- Backend OCR provider: `CERT_PREP_OCR_PROVIDER=windowsml`.
 - Runtime requirement kind: `windowsml_ocr`.
 - Document extraction method: `windowsml_ocr`.
 - Runtime manifest resource: `windowsml-ocr-runtime-manifest.json`.
-- Packaged runtime entrypoint: `exam-prep-ocr-windowsml-runtime.exe`.
+- Packaged runtime entrypoint: `cert-prep-ocr-windowsml-runtime.exe`.
 
 AMD/VitisAI NPU support remains an internal WindowsML hardware capability, not a
 separate provider, installer, UI runtime, or package target. The current OCR
@@ -34,7 +34,7 @@ PaddleOCR must remain at least 3.7 everywhere:
 - Product package targets build and ship only the WindowsML OCR runtime
   manifest/resource for OCR. The legacy Paddle GPU OCR runtime remains a
   backend/dev capability and is not bundled into the default packaged product.
-- Desktop passes `EXAM_PREP_OCR_WINDOWSML_DEVICE_POLICY=PREFER_NPU` by default.
+- Desktop passes `CERT_PREP_OCR_WINDOWSML_DEVICE_POLICY=PREFER_NPU` by default.
 - Backend accepts `ocr_windowsml_device_policy` and passes it to the packaged
   WindowsML runtime.
 - WindowsML runtime passes `--windowsml-device-policy` into the internal NPU
@@ -59,7 +59,7 @@ PaddleOCR must remain at least 3.7 everywhere:
   `npu_prepass=text_density_vitisai;vitisai_events=...` while keeping
   `extraction_method=windowsml_ocr`.
 - Strict NPU proof gate:
-  `pnpm nx run exam-prep-backend:ocr-windowsml-npu-smoke --skip-nx-cache`
+  `pnpm nx run cert-prep-backend:ocr-windowsml-npu-smoke --skip-nx-cache`
   writes `ocr-windowsml-npu-smoke-*.json` and exits non-zero unless ORT profile
   provider counts show NPU provider node execution for the text-density
   prepass.

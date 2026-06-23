@@ -25,8 +25,8 @@ export default [
               onlyDependOnLibsWithTags: ['scope:shared'],
             },
             {
-              sourceTag: 'scope:exam',
-              onlyDependOnLibsWithTags: ['scope:exam', 'scope:shared'],
+              sourceTag: 'scope:cert',
+              onlyDependOnLibsWithTags: ['scope:cert', 'scope:shared'],
             },
             {
               sourceTag: 'type:data',

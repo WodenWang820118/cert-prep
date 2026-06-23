@@ -1,0 +1,61 @@
+[project]
+name = "cert-prep-backend"
+version = "0.1.0"
+description = "Local sidecar API for the cert prep desktop app."
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+  "cert-prep-ocr-windowsml",
+  "fastapi>=0.124.0,<1.0.0",
+  "ollama>=0.6.0,<1.0.0",
+  "pillow>=12.0.0,<13.0.0",
+  "pydantic>=2.10.0,<3.0.0",
+  "pydantic-settings>=2.6.0,<3.0.0",
+  "pypdf>=6.0.0,<7.0.0",
+  "pypdfium2>=5.0.0,<6.0.0",
+  "python-multipart>=0.0.20,<1.0.0",
+  "uvicorn[standard]>=0.34.0,<1.0.0",
+]
+
+[project.optional-dependencies]
+ocr-cpu = [
+  "paddleocr>=3.7.0,<4.0.0",
+  "paddlepaddle==3.3.0",
+]
+ocr-gpu = [
+  "paddleocr>=3.7.0,<4.0.0",
+  "paddlepaddle-gpu==3.3.0",
+]
+ocr-windowsml = [
+  "cert-prep-ocr-windowsml[windowsml]",
+]
+[[tool.uv.index]]
+name = "paddle-cpu"
+url = "https://www.paddlepaddle.org.cn/packages/stable/cpu/"
+explicit = true
+
+[[tool.uv.index]]
+name = "paddle-cu130"
+url = "https://www.paddlepaddle.org.cn/packages/stable/cu130/"
+explicit = true
+
+[tool.uv.sources]
+cert-prep-ocr-windowsml = { path = "../../packages/cert-prep-ocr-windowsml", editable = true }
+paddlepaddle = { index = "paddle-cpu" }
+paddlepaddle-gpu = { index = "paddle-cu130" }
+
+[dependency-groups]
+dev = [
+  "httpx>=0.27.0,<1.0.0",
+  "pyinstaller>=6.19.0,<7.0.0",
+  "pytest>=8.3.0,<9.0.0",
+  "ruff>=0.9.0,<1.0.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

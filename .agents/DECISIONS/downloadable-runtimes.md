@@ -16,5 +16,5 @@
 
 ## Assumptions
 
-- Release automation provides `EXAM_PREP_RUNTIME_ASSET_BASE_URL` when building distributable runtime manifests.
+- Release automation provides `CERT_PREP_RUNTIME_ASSET_BASE_URL` when building distributable runtime manifests.
 - Browser development mode continues to use `http://127.0.0.1:8765` unless local storage overrides it.

@@ -32,7 +32,7 @@ and process cleanup.
 - Packaged flow smoke now records restart and final close summaries with
   `gracefulExited`, `fallbackUsed`, `exitCode`, and residual process lists.
 - The 2026-06-21 packaged smoke completed with empty residual process lists and
-  no `exam-prep` process residue after close.
+  no `cert-prep` process residue after close.
 - Python/PaddleOCR health can settle after startup; QA runner checks are scoped
   to the runtime dialog so background document text cannot falsely satisfy OCR
   readiness.

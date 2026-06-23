@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Exam Prep is a local-first Windows/Tauri certification-prep app. The core user
+Cert Prep is a local-first Windows/Tauri certification-prep app. The core user
 journey is: create/select a project, upload a PDF, parse it with OCR when
 needed, review editable questions, practice through Full Exam or Random Quiz,
 and clear wrong-answer review state through correct attempts.

@@ -1,4 +1,4 @@
-# Exam Prep Specs
+# Cert Prep Specs
 
 This folder is organized by durable product/domain ownership instead of by
 temporary implementation slices.

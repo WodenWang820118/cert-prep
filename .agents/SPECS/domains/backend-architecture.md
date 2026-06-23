@@ -8,7 +8,7 @@ SQLite, OCR, runtime installation, question generation, and practice.
 
 ## Decisions
 
-- Domain code lives under `exam_prep_backend/domains/<domain>/`.
+- Domain code lives under `cert_prep_backend/domains/<domain>/`.
 - Public DTOs are owned by their backend domain. OpenAPI client generation must
   be rerun after route/schema changes.
 - SQLite remains backend-owned; Angular must not read or write local files
@@ -18,7 +18,7 @@ SQLite, OCR, runtime installation, question generation, and practice.
 - Generated/AI questions must stay editable and user-governed. Older
   approval-only promotion behavior is retired.
 - Runtime installation remains exposed through the
-  `exam_prep_backend.domains.runtime_installations` package boundary.
+  `cert_prep_backend.domains.runtime_installations` package boundary.
 - Behavior-preserving refactors should keep external Tauri command, REST, and
   generated client contracts stable unless the spec explicitly says otherwise.
 

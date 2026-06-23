@@ -2,7 +2,7 @@
 
 Archived status: this document is historical DirectML implementation and
 measurement evidence. As of 2026-06-23, the current packaged accelerated OCR
-product lane is WindowsML (`EXAM_PREP_OCR_PROVIDER=windowsml`) with PaddleOCR
+product lane is WindowsML (`CERT_PREP_OCR_PROVIDER=windowsml`) with PaddleOCR
 3.7 det/rec on the AMD iGPU through DML/CPU mixed execution. NPU participation
 is tracked only as internal WindowsML prepass evidence and strict smoke proof.
 
@@ -33,23 +33,23 @@ ONNX Runtime DirectML production gate rather than a configuration change to
 - Backend dependency extra:
   `ocr-directml`, containing `onnxruntime-directml`.
 - Backend OCR provider setting:
-  `EXAM_PREP_OCR_PROVIDER=directml`.
+  `CERT_PREP_OCR_PROVIDER=directml`.
 - Backend extraction method enum value:
   `directml_ocr`.
 - DirectML probe target:
-  `pnpm nx run exam-prep-backend:ocr-directml-probe --skip-nx-cache`.
+  `pnpm nx run cert-prep-backend:ocr-directml-probe --skip-nx-cache`.
 - DirectML model-prep target:
-  `pnpm nx run exam-prep-backend:ocr-directml-prepare-models --skip-nx-cache`.
+  `pnpm nx run cert-prep-backend:ocr-directml-prepare-models --skip-nx-cache`.
 - Reproducible Docker conversion target:
-  `pnpm nx run exam-prep-backend:ocr-directml-prepare-models-docker --skip-nx-cache`.
+  `pnpm nx run cert-prep-backend:ocr-directml-prepare-models-docker --skip-nx-cache`.
 - DirectML session-smoke target:
-  `pnpm nx run exam-prep-backend:ocr-directml-session-smoke --skip-nx-cache`.
+  `pnpm nx run cert-prep-backend:ocr-directml-session-smoke --skip-nx-cache`.
 - DirectML inference-smoke target:
-  `pnpm nx run exam-prep-backend:ocr-directml-inference-smoke --skip-nx-cache`.
+  `pnpm nx run cert-prep-backend:ocr-directml-inference-smoke --skip-nx-cache`.
 - DirectML benchmark target:
-  `pnpm nx run exam-prep-backend:ocr-directml-benchmark --skip-nx-cache`.
+  `pnpm nx run cert-prep-backend:ocr-directml-benchmark --skip-nx-cache`.
 - Packaged DirectML streaming target:
-  `pnpm nx run exam-prep-desktop:packaged-streaming-baseline-directml --skip-nx-cache`.
+  `pnpm nx run cert-prep-desktop:packaged-streaming-baseline-directml --skip-nx-cache`.
 - Probe JSON fields:
   `status.state`, `status.blockers`, `onnxruntime.providers`,
   `dxgi_adapters`, `status.directml_device_id`, `model_artifacts`, and
@@ -75,8 +75,8 @@ ONNX Runtime DirectML production gate rather than a configuration change to
 
 ## Key Decisions
 
-- The packaged production preference is `EXAM_PREP_OCR_PROVIDER=directml`.
-  Paddle CUDA remains available as an explicit `EXAM_PREP_OCR_PROVIDER=paddle`
+- The packaged production preference is `CERT_PREP_OCR_PROVIDER=directml`.
+  Paddle CUDA remains available as an explicit `CERT_PREP_OCR_PROVIDER=paddle`
   override/debug path.
 - The backend accepts an explicit `directml` OCR provider setting and routes it
   through the external DirectML OCR runtime. Missing or unhealthy DirectML
@@ -152,7 +152,7 @@ ONNX Runtime DirectML production gate rather than a configuration change to
 ## Current Evidence
 
 - DirectML model-prep artifact:
-  `apps/exam-prep-backend/.benchmarks/ocr-directml-prepare-models-20260622T010227Z.json`.
+  `apps/cert-prep-backend/.benchmarks/ocr-directml-prepare-models-20260622T010227Z.json`.
 - Model-prep status: `ready`.
 - Official source archives are present and checksum-verified:
   - `PP-OCRv5_mobile_det_infer.tar`, SHA-256
@@ -163,7 +163,7 @@ ONNX Runtime DirectML production gate rather than a configuration change to
     `16834560` bytes.
 - Model-prep wrote `pipeline.json` and `rec_char_dict.txt`
   (`18383` characters) to
-  `apps/exam-prep-backend/.benchmarks/ocr-directml-models/`.
+  `apps/cert-prep-backend/.benchmarks/ocr-directml-models/`.
 - Docker conversion produced:
   - `det_model.onnx`, `4748769` bytes.
   - `rec_model.onnx`, `16517247` bytes.
@@ -172,7 +172,7 @@ ONNX Runtime DirectML production gate rather than a configuration change to
   `3.12` release-prep environment is now allowed for future PaddleX/Paddle2ONNX
   conversion attempts.
 - DirectML probe artifact:
-  `apps/exam-prep-backend/.benchmarks/ocr-directml-probe-20260622T010301Z.json`.
+  `apps/cert-prep-backend/.benchmarks/ocr-directml-probe-20260622T010301Z.json`.
 - Status: `ready`.
 - ONNX Runtime: `onnxruntime-directml 1.24.4`.
 - Providers: `DmlExecutionProvider`, `CPUExecutionProvider`.
@@ -184,40 +184,40 @@ ONNX Runtime DirectML production gate rather than a configuration change to
 - Required model artifacts are present in the repo-local ignored benchmark
   model directory.
 - Packaged production OCR now defaults to DirectML through
-  `EXAM_PREP_OCR_PROVIDER=directml`. Paddle CUDA remains available as an
+  `CERT_PREP_OCR_PROVIDER=directml`. Paddle CUDA remains available as an
   explicit override.
 - Session-smoke artifact:
-  `apps/exam-prep-backend/.benchmarks/ocr-directml-smoke-20260622T010301Z.json`.
+  `apps/cert-prep-backend/.benchmarks/ocr-directml-smoke-20260622T010301Z.json`.
 - Session-smoke status: `session_ready`.
 - Required det/rec ONNX models create ONNX Runtime sessions with
   `DmlExecutionProvider` pinned to AMD DXGI adapter index `0`. Session options
   are `enable_mem_pattern=false` and `execution_mode=ORT_SEQUENTIAL`.
 - Inference-smoke artifact:
-  `apps/exam-prep-backend/.benchmarks/ocr-directml-inference-smoke-20260622T010300Z.json`.
+  `apps/cert-prep-backend/.benchmarks/ocr-directml-inference-smoke-20260622T010300Z.json`.
 - Inference-smoke status: `inference_ready`.
 - Deterministic recognition smoke rendered `TEST`, decoded `TEST`, used
   `device=amd_directml`, and reported confidence about `0.967`.
 - Benchmark artifact:
-  `apps/exam-prep-backend/.benchmarks/ocr-directml-benchmark-20260622T010946Z.json`.
+  `apps/cert-prep-backend/.benchmarks/ocr-directml-benchmark-20260622T010946Z.json`.
 - Benchmark status: `benchmark_ready`.
 - JLPT page-3 DirectML benchmark used `DET_INPUT_LONG_SIDE=1152` and dynamic
   recognition width. Warm OCR latency was `1789 ms`, CPU baseline was
   `34900 ms`, text length was `459` chars, and anchors `問題2`, `合併`, `中山`,
   and `加筆` were all present.
 - DirectML runtime artifact:
-  `apps/exam-prep-backend/dist/ocr-directml-runtime/directml-ocr-runtime-manifest.json`.
+  `apps/cert-prep-backend/dist/ocr-directml-runtime/directml-ocr-runtime-manifest.json`.
 - Runtime artifact status: `kind=directml_ocr`,
-  `entrypoint=exam-prep-ocr-directml-runtime.exe`, SHA-256
+  `entrypoint=cert-prep-ocr-directml-runtime.exe`, SHA-256
   `ebcea572ff16717e274015455bb85faab7d0f0a6eab3087eb34171344499f028`,
   and `118632683` bytes. The Tauri resource manifest was synced with a local
   `file://` URL for QA. Release builds can publish the same artifact by
-  setting `EXAM_PREP_RUNTIME_ASSET_BASE_URL`.
+  setting `CERT_PREP_RUNTIME_ASSET_BASE_URL`.
 - Runtime install path:
   the DirectML OCR runtime uses explicit install consent, checksum
   verification, manifest `kind=directml_ocr`, DirectML self-test, and a
   health blocker when missing/unhealthy. It does not silently fall back to CPU.
 - Packaged DirectML streaming artifact:
-  `tmp/exam-prep-desktop/packaged-streaming-baseline/2026-06-22T02-08-02-496Z/streaming-baseline.json`.
+  `tmp/cert-prep-desktop/packaged-streaming-baseline/2026-06-22T02-08-02-496Z/streaming-baseline.json`.
 - Packaged DirectML streaming status: `passed`.
 - Packaged DirectML streaming timings:
   `first_chunk_visible=9708 ms` under the `15000 ms` gate,
@@ -237,9 +237,9 @@ ONNX Runtime DirectML production gate rather than a configuration change to
   `7076143104` shared bytes. Nvidia dGPU process memory for OCR stayed at
   `0` bytes, below the `67108864` byte gate.
 - PaddleOCR 3.7 isolated ONNX Runtime probe target:
-  `pnpm nx run exam-prep-backend:ocr-paddle37-onnxruntime-probe --skip-nx-cache`.
+  `pnpm nx run cert-prep-backend:ocr-paddle37-onnxruntime-probe --skip-nx-cache`.
 - PaddleOCR 3.7 isolated artifact:
-  `apps/exam-prep-backend/.benchmarks/ocr-paddle37-onnxruntime-probe-20260622T141653Z.json`.
+  `apps/cert-prep-backend/.benchmarks/ocr-paddle37-onnxruntime-probe-20260622T141653Z.json`.
 - Probe isolation:
   the target uses `uv run --no-project --python 3.12 --with paddleocr==3.7.0`
   plus Windows ML/WinAppSDK packages, so it does not mutate the backend
@@ -310,19 +310,19 @@ ONNX Runtime DirectML production gate rather than a configuration change to
 ## Test Plan
 
 - `uv run pytest tests/test_ocr_directml_prepare_models.py tests/test_ocr_directml_probe.py tests/test_ocr_directml_smoke.py tests/test_ocr_directml_inference_smoke.py tests/test_ocr_directml_runner.py tests/test_ocr_igpu_probe.py tests/test_ocr.py`
-- `pnpm nx run exam-prep-backend:ocr-directml-probe --skip-nx-cache`
-- `pnpm nx run exam-prep-backend:ocr-directml-prepare-models --skip-nx-cache`
-- `pnpm nx run exam-prep-backend:ocr-directml-prepare-models-docker --skip-nx-cache`
-- `pnpm nx run exam-prep-backend:ocr-directml-session-smoke --skip-nx-cache`
-- `pnpm nx run exam-prep-backend:ocr-directml-inference-smoke --skip-nx-cache`
-- `pnpm nx run exam-prep-backend:ocr-directml-benchmark --skip-nx-cache`
-- `pnpm nx run exam-prep-backend:ocr-paddle37-onnxruntime-probe --skip-nx-cache`
-- `pnpm nx run exam-prep-backend:generate-openapi-client --skip-nx-cache`
-- `pnpm nx run exam-prep-backend:test --skip-nx-cache`
-- `pnpm nx run exam-prep-backend:lint --skip-nx-cache`
-- `pnpm nx run exam-prep-desktop:typecheck-scripts --skip-nx-cache`
-- `pnpm nx run exam-prep-desktop:package-qa-test --skip-nx-cache`
-- `pnpm nx run exam-prep-desktop:packaged-streaming-baseline-directml --skip-nx-cache`
+- `pnpm nx run cert-prep-backend:ocr-directml-probe --skip-nx-cache`
+- `pnpm nx run cert-prep-backend:ocr-directml-prepare-models --skip-nx-cache`
+- `pnpm nx run cert-prep-backend:ocr-directml-prepare-models-docker --skip-nx-cache`
+- `pnpm nx run cert-prep-backend:ocr-directml-session-smoke --skip-nx-cache`
+- `pnpm nx run cert-prep-backend:ocr-directml-inference-smoke --skip-nx-cache`
+- `pnpm nx run cert-prep-backend:ocr-directml-benchmark --skip-nx-cache`
+- `pnpm nx run cert-prep-backend:ocr-paddle37-onnxruntime-probe --skip-nx-cache`
+- `pnpm nx run cert-prep-backend:generate-openapi-client --skip-nx-cache`
+- `pnpm nx run cert-prep-backend:test --skip-nx-cache`
+- `pnpm nx run cert-prep-backend:lint --skip-nx-cache`
+- `pnpm nx run cert-prep-desktop:typecheck-scripts --skip-nx-cache`
+- `pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`
+- `pnpm nx run cert-prep-desktop:packaged-streaming-baseline-directml --skip-nx-cache`
 - `git diff --check`
 
 ## References

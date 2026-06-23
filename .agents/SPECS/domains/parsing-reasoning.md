@@ -9,7 +9,7 @@ those flows.
 
 ## Current Decisions
 
-- `EXAM_PREP_OCR_PAGE_WORKERS` defaults to `1`.
+- `CERT_PREP_OCR_PAGE_WORKERS` defaults to `1`.
 - Worker count `2` is only a measured option if the same-build packaged QA run
   improves wall time by at least 20%, keeps counts stable, improves first chunk,
   and stays under GPU memory gates.
@@ -55,23 +55,23 @@ slice.
 Evidence:
 
 - Packaged live qwen artifact:
-  `tmp/exam-prep-desktop/packaged-flow-smoke/2026-06-19T08-37-53-476Z/metrics.json`.
+  `tmp/cert-prep-desktop/packaged-flow-smoke/2026-06-19T08-37-53-476Z/metrics.json`.
 - QA override model: `qwen3:8b`; default packaged model remained `qwen3:14b`.
 - First streamed qwen draft visible: `22,301 ms`.
 - First usable question visible: `22,301 ms`.
 - Parse complete visible: `25,394 ms`.
 - Close/process cleanup reported graceful close and empty residual processes.
 - Dedicated packaged streaming baseline:
-  `tmp/exam-prep-desktop/packaged-streaming-baseline/2026-06-19T13-33-48-372Z/streaming-baseline.json`.
+  `tmp/cert-prep-desktop/packaged-streaming-baseline/2026-06-19T13-33-48-372Z/streaming-baseline.json`.
 
 ## OCR Health And First-Chunk Evidence
 
 Latest packaged smoke:
 
 - Command:
-  `pnpm nx run exam-prep-desktop:packaged-flow-smoke --skip-nx-cache --args="--ocr-page-workers 1 --skip-gpu-sampling"`.
+  `pnpm nx run cert-prep-desktop:packaged-flow-smoke --skip-nx-cache --args="--ocr-page-workers 1 --skip-gpu-sampling"`.
 - Artifact:
-  `tmp/exam-prep-desktop/packaged-flow-smoke/2026-06-21T05-59-55-867Z/metrics.json`.
+  `tmp/cert-prep-desktop/packaged-flow-smoke/2026-06-21T05-59-55-867Z/metrics.json`.
 - OCR settled from active checking to `paddle / gpu:0`.
 - Artifact text contained no `OCR unknown`, `Unknown`, `status unavailable`, or
   `PaddleOCR status unavailable` observation.
@@ -87,12 +87,12 @@ Latest packaged smoke:
 
 Verification for the 2026-06-21 slice:
 
-- `pnpm nx run exam-prep:test --skip-nx-cache` passed.
-- `pnpm nx run exam-prep:lint --skip-nx-cache` passed.
-- `pnpm nx run exam-prep-backend:test --skip-nx-cache` passed.
-- `pnpm nx run exam-prep-backend:lint --skip-nx-cache` passed.
-- `pnpm nx run exam-prep-desktop:typecheck-scripts --skip-nx-cache` passed.
-- `pnpm nx run exam-prep-desktop:package-qa-test --skip-nx-cache` passed.
+- `pnpm nx run cert-prep:test --skip-nx-cache` passed.
+- `pnpm nx run cert-prep:lint --skip-nx-cache` passed.
+- `pnpm nx run cert-prep-backend:test --skip-nx-cache` passed.
+- `pnpm nx run cert-prep-backend:lint --skip-nx-cache` passed.
+- `pnpm nx run cert-prep-desktop:typecheck-scripts --skip-nx-cache` passed.
+- `pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache` passed.
 - Packaged flow smoke passed with worker count `1` and GPU sampling skipped.
 - `git diff --check` passed with only line-ending normalization warnings.
 
@@ -100,7 +100,7 @@ Verification for the 2026-06-21 slice:
 
 Latest live bakeoff artifact:
 
-- `apps/exam-prep-backend/.benchmarks/reasoning-bakeoff-20260621T052159Z.json`.
+- `apps/cert-prep-backend/.benchmarks/reasoning-bakeoff-20260621T052159Z.json`.
 - `qwen3:14b`: `missing_model`.
 - `deepseek-r1:14b`: `missing_model`.
 - `gemma4:12b`: `request_failed`, `json_error=ReadTimeout`.
@@ -124,9 +124,9 @@ Current bakeoff options are `temperature=0`, `num_ctx=8192`, and
 Closed RAM/VRAM observation:
 
 - Target:
-  `pnpm nx run exam-prep-backend:reasoning-memory --skip-nx-cache`.
+  `pnpm nx run cert-prep-backend:reasoning-memory --skip-nx-cache`.
 - Artifact:
-  `apps/exam-prep-backend/.benchmarks/reasoning-memory-20260621T083447Z.json`.
+  `apps/cert-prep-backend/.benchmarks/reasoning-memory-20260621T083447Z.json`.
 - `qwen3:14b`: `missing_model`.
 - `deepseek-r1:14b`: `missing_model`.
 - `gemma4:12b`: `completed`, `latency_ms=41266`; `ollama ps` showed
@@ -162,7 +162,7 @@ Current constraints:
 Latest APU telemetry evidence:
 
 - Passed artifact:
-  `tmp/exam-prep-desktop/packaged-streaming-baseline/2026-06-21T10-37-19-351Z/streaming-baseline.json`.
+  `tmp/cert-prep-desktop/packaged-streaming-baseline/2026-06-21T10-37-19-351Z/streaming-baseline.json`.
   The closeout now writes `metrics.json`, `streaming-baseline.json`, and a
   finalized `windows-resource-summary.json`.
 - Closeout hardening writes pre-cleanup artifacts before best-effort cleanup,
@@ -180,7 +180,7 @@ Latest APU telemetry evidence:
   `max_compute_percent=99.582`, `avg_engine_utilization_percent=0.066`, and
   `max_3d_percent=22.811`.
 - Named target-process GPU memory is the routing gate. In the latest run,
-  `exam-prep-ocr-runtime.exe` appeared only on `nvidia_dgpu`, with max
+  `cert-prep-ocr-runtime.exe` appeared only on `nvidia_dgpu`, with max
   dedicated process memory of `323796992` bytes and `1953300480` bytes across
   two OCR runtime PIDs. `ollama.exe` had only trivial GPU process memory
   (`4096` bytes total on AMD, `368640` bytes total on Nvidia).
@@ -192,51 +192,51 @@ Latest APU telemetry evidence:
   `parse_complete_visible=91172`, `streaming_all_jobs_terminal=181978`, and all
   baseline checks were `true`.
 - iGPU Paddle probe:
-  `apps/exam-prep-backend/.benchmarks/ocr-igpu-probe-20260622T001432Z.json`
+  `apps/cert-prep-backend/.benchmarks/ocr-igpu-probe-20260622T001432Z.json`
   recorded `state=needs_alternative_backend`. Windows detected both
   `AMD Radeon(TM) 880M Graphics` and `NVIDIA GeForce RTX 4060 Laptop GPU`, but
   Paddle reported `compiled_with_cuda=true`, `compiled_with_rocm=false`,
   `available_devices=["gpu:0"]`, and `custom_device_types=[]`.
   A separate DirectML lane is now required for AMD iGPU OCR work.
 - DirectML probe:
-  `apps/exam-prep-backend/.benchmarks/ocr-directml-probe-20260622T010301Z.json`
+  `apps/cert-prep-backend/.benchmarks/ocr-directml-probe-20260622T010301Z.json`
   recorded `state=ready`. `onnxruntime-directml 1.24.4` is
   available, providers include `DmlExecutionProvider` and
   `CPUExecutionProvider`. DXGI metadata selects the AMD 880M iGPU as DirectML
   `device_id=0`; RTX 4060 is adapter index `1`.
 - DirectML model prep:
-  `apps/exam-prep-backend/.benchmarks/ocr-directml-prepare-models-20260622T010227Z.json`
+  `apps/cert-prep-backend/.benchmarks/ocr-directml-prepare-models-20260622T010227Z.json`
   recorded `state=ready`. The explicit Docker release-prep target reproduced
   PP-OCRv5 mobile det/rec conversion into `det_model.onnx` and
   `rec_model.onnx` from checksum-verified official source archives.
 - DirectML session smoke:
-  `apps/exam-prep-backend/.benchmarks/ocr-directml-smoke-20260622T010301Z.json`
+  `apps/cert-prep-backend/.benchmarks/ocr-directml-smoke-20260622T010301Z.json`
   recorded `state=session_ready`, with det/rec ONNX sessions pinned to the
   AMD DXGI adapter index and DirectML session options
   `enable_mem_pattern=false`, `execution_mode=ORT_SEQUENTIAL`.
 - DirectML inference/benchmark gates:
-  `apps/exam-prep-backend/.benchmarks/ocr-directml-inference-smoke-20260622T010300Z.json`
+  `apps/cert-prep-backend/.benchmarks/ocr-directml-inference-smoke-20260622T010300Z.json`
   recorded `state=inference_ready`, and
-  `apps/exam-prep-backend/.benchmarks/ocr-directml-benchmark-20260622T010946Z.json`
+  `apps/cert-prep-backend/.benchmarks/ocr-directml-benchmark-20260622T010946Z.json`
   recorded `state=benchmark_ready`. JLPT page-3 warm OCR was `1789 ms` versus
   CPU baseline `34900 ms`, with anchors `問題2`, `合併`, `中山`, and `加筆`
   all present.
-- Desktop resource summaries now track `exam-prep-ocr-directml-runtime.exe` and
+- Desktop resource summaries now track `cert-prep-ocr-directml-runtime.exe` and
   emit `gpu_routing_checks` for AMD OCR usage, Nvidia OCR avoidance,
   reasoning-on-Nvidia residency, and DXGI LUID usability.
 - DirectML runtime artifact:
-  `apps/exam-prep-backend/dist/ocr-directml-runtime/directml-ocr-runtime-manifest.json`
+  `apps/cert-prep-backend/dist/ocr-directml-runtime/directml-ocr-runtime-manifest.json`
   records `kind=directml_ocr`,
-  `entrypoint=exam-prep-ocr-directml-runtime.exe`, SHA-256
+  `entrypoint=cert-prep-ocr-directml-runtime.exe`, SHA-256
   `ebcea572ff16717e274015455bb85faab7d0f0a6eab3087eb34171344499f028`, and
   `118632683` bytes. The Tauri resource manifest was synced with a local
   `file://` URL for QA; release builds can publish the same artifact by setting
-  `EXAM_PREP_RUNTIME_ASSET_BASE_URL`.
+  `CERT_PREP_RUNTIME_ASSET_BASE_URL`.
 - DirectML install/health is wired through explicit runtime consent, checksum
   verification, manifest `kind=directml_ocr`, DirectML self-test, and a
   missing/unhealthy blocker. It does not silently fall back to CPU OCR.
 - Packaged DirectML streaming artifact:
-  `tmp/exam-prep-desktop/packaged-streaming-baseline/2026-06-22T02-08-02-496Z/streaming-baseline.json`.
+  `tmp/cert-prep-desktop/packaged-streaming-baseline/2026-06-22T02-08-02-496Z/streaming-baseline.json`.
 - Packaged DirectML streaming passed with `ocr_provider=directml`,
   `ocr_page_workers=1`, `qwen3:8b`, `46/46` pages, `46` chunks,
   `first_chunk_visible=9708 ms` under the `15000 ms` gate,
@@ -262,7 +262,7 @@ Closed APU gate controls:
 - Keep the AMD-capable ONNX Runtime DirectML OCR backend packaged as a separate
   runtime artifact from the Paddle CUDA runtime.
 - Keep DirectML release publishing explicit through
-  `EXAM_PREP_RUNTIME_ASSET_BASE_URL`; local QA may use `file://` URLs, but
+  `CERT_PREP_RUNTIME_ASSET_BASE_URL`; local QA may use `file://` URLs, but
   startup must not auto-download runtime/model assets.
 - Keep `ocr_page_workers=1` until same-build packaged evidence supports a
   change.
@@ -297,9 +297,9 @@ Closed APU gate controls:
 
 Verification passed:
 
-- `pnpm nx run exam-prep-desktop:typecheck-scripts --skip-nx-cache`.
-- `pnpm nx run exam-prep-desktop:package-qa-test --skip-nx-cache`.
-- `pnpm nx run exam-prep-backend:test --skip-nx-cache`.
+- `pnpm nx run cert-prep-desktop:typecheck-scripts --skip-nx-cache`.
+- `pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`.
+- `pnpm nx run cert-prep-backend:test --skip-nx-cache`.
 
 Live baseline blocker:
 
@@ -308,11 +308,11 @@ Live baseline blocker:
   `unable to connect to remote server`.
 - 2026-06-22 direct packaged production run was executed anyway at user
   request with
-  `pnpm nx run exam-prep-desktop:packaged-streaming-production-directml --skip-nx-cache`.
+  `pnpm nx run cert-prep-desktop:packaged-streaming-production-directml --skip-nx-cache`.
 - Tauri packaging succeeded and produced:
-  `apps/exam-prep-desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/Exam Prep_0.1.0_x64_en-US.msi`
+  `apps/cert-prep-desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/Cert Prep_0.1.0_x64_en-US.msi`
   and
-  `apps/exam-prep-desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/Exam Prep_0.1.0_x64-setup.exe`.
+  `apps/cert-prep-desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/Cert Prep_0.1.0_x64-setup.exe`.
 - Packaged app smoke launched the real exe and completed DirectML OCR:
   46/46 pages, 46 chunks, first chunk visible in 4076 ms, parse complete in
   69719 ms, graceful app close, and no residual packaged smoke processes.
@@ -324,19 +324,19 @@ Live baseline blocker:
   metrics, resource logs, and the failed practice-ready check.
 - Evidence paths:
   - Production summary:
-    `tmp/exam-prep-desktop/packaged-streaming-production/2026-06-22T07-04-33-152Z/production-summary.json`.
+    `tmp/cert-prep-desktop/packaged-streaming-production/2026-06-22T07-04-33-152Z/production-summary.json`.
   - Streaming baseline JSON/MD:
-    `tmp/exam-prep-desktop/packaged-streaming-production/2026-06-22T07-04-33-152Z/streaming-baseline.json`
+    `tmp/cert-prep-desktop/packaged-streaming-production/2026-06-22T07-04-33-152Z/streaming-baseline.json`
     and
-    `tmp/exam-prep-desktop/packaged-streaming-production/2026-06-22T07-04-33-152Z/streaming-baseline.md`.
+    `tmp/cert-prep-desktop/packaged-streaming-production/2026-06-22T07-04-33-152Z/streaming-baseline.md`.
   - Metrics JSON:
-    `tmp/exam-prep-desktop/packaged-streaming-production/2026-06-22T07-04-33-152Z/metrics.json`.
+    `tmp/cert-prep-desktop/packaged-streaming-production/2026-06-22T07-04-33-152Z/metrics.json`.
   - Screenshots:
-    `tmp/exam-prep-desktop/packaged-streaming-production/2026-06-22T07-04-33-152Z/*.png`.
+    `tmp/cert-prep-desktop/packaged-streaming-production/2026-06-22T07-04-33-152Z/*.png`.
   - Windows resource summary:
-    `tmp/exam-prep-desktop/packaged-streaming-production/2026-06-22T07-04-33-152Z/windows-resource-summary.json`.
+    `tmp/cert-prep-desktop/packaged-streaming-production/2026-06-22T07-04-33-152Z/windows-resource-summary.json`.
   - Nvidia CSV:
-    `tmp/exam-prep-desktop/packaged-streaming-production/2026-06-22T07-04-33-152Z/nvidia-smi.csv`.
+    `tmp/cert-prep-desktop/packaged-streaming-production/2026-06-22T07-04-33-152Z/nvidia-smi.csv`.
   - Reasoning memory JSON and reasoning bakeoff JSON: not produced in this run
     because Ollama API was unavailable and model availability could not be
     proven without implicit installs.
@@ -367,7 +367,7 @@ Live baseline blocker:
   empty. The remaining production baseline gate was user-controlled model
   installation, at minimum `qwen3:8b`.
 - Verification:
-  `pnpm nx run exam-prep-backend:test --skip-nx-cache`.
+  `pnpm nx run cert-prep-backend:test --skip-nx-cache`.
 
 2026-06-22 Ollama enabled baseline:
 
@@ -381,27 +381,27 @@ Live baseline blocker:
   `Configured model qwen3:14b is missing; using fallback qwen3:8b.`
 - Reasoning evidence:
   - Memory JSON:
-    `apps/exam-prep-backend/.benchmarks/reasoning-memory-20260622T073812Z.json`;
+    `apps/cert-prep-backend/.benchmarks/reasoning-memory-20260622T073812Z.json`;
     `qwen3:8b` completed in `39342 ms`.
   - Bakeoff JSON:
-    `apps/exam-prep-backend/.benchmarks/reasoning-bakeoff-20260622T073913Z.json`;
+    `apps/cert-prep-backend/.benchmarks/reasoning-bakeoff-20260622T073913Z.json`;
     `qwen3:8b` completed in `57692 ms`, produced valid JSON, and had 3/3
     citation-valid items.
 - Packaged production baseline now passes with fallback model `qwen3:8b`:
   - Production summary:
-    `tmp/exam-prep-desktop/packaged-streaming-production/2026-06-22T07-44-50-031Z/production-summary.json`.
+    `tmp/cert-prep-desktop/packaged-streaming-production/2026-06-22T07-44-50-031Z/production-summary.json`.
   - Streaming baseline JSON/MD:
-    `tmp/exam-prep-desktop/packaged-streaming-production/2026-06-22T07-44-50-031Z/streaming-baseline.json`
+    `tmp/cert-prep-desktop/packaged-streaming-production/2026-06-22T07-44-50-031Z/streaming-baseline.json`
     and
-    `tmp/exam-prep-desktop/packaged-streaming-production/2026-06-22T07-44-50-031Z/streaming-baseline.md`.
+    `tmp/cert-prep-desktop/packaged-streaming-production/2026-06-22T07-44-50-031Z/streaming-baseline.md`.
   - Metrics JSON:
-    `tmp/exam-prep-desktop/packaged-streaming-production/2026-06-22T07-44-50-031Z/metrics.json`.
+    `tmp/cert-prep-desktop/packaged-streaming-production/2026-06-22T07-44-50-031Z/metrics.json`.
   - Screenshots:
-    `tmp/exam-prep-desktop/packaged-streaming-production/2026-06-22T07-44-50-031Z/*.png`.
+    `tmp/cert-prep-desktop/packaged-streaming-production/2026-06-22T07-44-50-031Z/*.png`.
   - Windows resource summary:
-    `tmp/exam-prep-desktop/packaged-streaming-production/2026-06-22T07-44-50-031Z/windows-resource-summary.json`.
+    `tmp/cert-prep-desktop/packaged-streaming-production/2026-06-22T07-44-50-031Z/windows-resource-summary.json`.
   - Nvidia CSV:
-    `tmp/exam-prep-desktop/packaged-streaming-production/2026-06-22T07-44-50-031Z/nvidia-smi.csv`.
+    `tmp/cert-prep-desktop/packaged-streaming-production/2026-06-22T07-44-50-031Z/nvidia-smi.csv`.
 - Production metrics: DirectML OCR completed 46/46 pages with 46 chunks, first
   chunk visible in `9270 ms`, first usable streamed question visible in
   `52859 ms`, parse complete in `96301 ms`, all streaming jobs terminal in
@@ -413,9 +413,9 @@ Live baseline blocker:
   avoided Nvidia dGPU, reasoning used Nvidia dGPU, graceful close succeeded,
   and no residual packaged smoke processes remained.
 - Verification:
-  - `pnpm nx run exam-prep-backend:reasoning-memory --skip-nx-cache --args="--model qwen3:8b --timeout-seconds 300"`.
-  - `pnpm nx run exam-prep-backend:reasoning-bakeoff --skip-nx-cache --args="--model qwen3:8b --timeout-seconds 300"`.
-  - `pnpm nx run exam-prep-desktop:packaged-streaming-production-directml --skip-nx-cache`.
+  - `pnpm nx run cert-prep-backend:reasoning-memory --skip-nx-cache --args="--model qwen3:8b --timeout-seconds 300"`.
+  - `pnpm nx run cert-prep-backend:reasoning-bakeoff --skip-nx-cache --args="--model qwen3:8b --timeout-seconds 300"`.
+  - `pnpm nx run cert-prep-desktop:packaged-streaming-production-directml --skip-nx-cache`.
 
 2026-06-22 Qwen 3.5 4B default update:
 
@@ -440,7 +440,7 @@ Live baseline blocker:
 - Removed/retired implementation surfaces:
   - backend `amd_npu` OCR provider selection and `amd_npu_ocr` runtime
     requirement kind
-  - packaged `exam-prep-ocr-amd-npu-runtime.exe` build lane
+  - packaged `cert-prep-ocr-amd-npu-runtime.exe` build lane
   - desktop `build-amd-npu`, `sync-amd-npu-runtime-manifest`, and
     `packaged-streaming-production-amd-npu` targets
   - package QA AMD NPU runtime manifest/env validation
@@ -459,9 +459,9 @@ Historical AMD NPU OCR research:
 
 - Durable spec:
   `.agents/SPECS/domains/ocr-amd-npu.md`.
-- Implemented `EXAM_PREP_OCR_PROVIDER=amd_npu`, runtime requirement kind
+- Implemented `CERT_PREP_OCR_PROVIDER=amd_npu`, runtime requirement kind
   `amd_npu_ocr`, packaged runtime entrypoint
-  `exam-prep-ocr-amd-npu-runtime.exe`, and desktop target
+  `cert-prep-ocr-amd-npu-runtime.exe`, and desktop target
   `packaged-streaming-production-amd-npu`.
 - AMD NPU runtime follows the official Windows ML
   `ExecutionProviderCatalog` + `VitisAIExecutionProvider` path. Passive health
@@ -472,14 +472,14 @@ Historical AMD NPU OCR research:
   `npu_power_or_efficiency_observations` field. Current WindowsML summaries use
   `windowsml_npu_hardware_observation` instead.
 - Explicit `--ensure-ready` probe artifact:
-  `apps/exam-prep-backend/.benchmarks/ocr-amd-npu-probe-20260622T085003Z.json`.
+  `apps/cert-prep-backend/.benchmarks/ocr-amd-npu-probe-20260622T085003Z.json`.
 - Probe status: `ready_for_session`. The machine sees
   `NPU Compute Accelerator Device`, `xrt-smi`, `NPU Strix`, and VitisAI NPU
   device id `6128` through ORT `get_ep_devices()`.
 - VitisAI package path:
   `C:\Program Files\WindowsApps\MicrosoftCorporationII.WinML.AMD.NPU.EP.1.8_1.8.62.0_x64__8wekyb3d8bbwe\ExecutionProvider\onnxruntime_vitisai_ep.dll`.
 - Strict session smoke artifact:
-  `apps/exam-prep-backend/.benchmarks/ocr-amd-npu-smoke-20260622T085540Z.json`.
+  `apps/cert-prep-backend/.benchmarks/ocr-amd-npu-smoke-20260622T085540Z.json`.
 - Session smoke uses ONNX Runtime plugin EP device binding through
   `add_provider_for_devices(...)` and disables CPU fallback with
   `session.disable_cpu_ep_fallback=1`.
@@ -487,14 +487,14 @@ Historical AMD NPU OCR research:
   some nodes to the default CPU EP under VitisAI, so strict NPU-only session
   creation fails with CPU fallback disabled.
 - Inference smoke artifact:
-  `apps/exam-prep-backend/.benchmarks/ocr-amd-npu-inference-smoke-20260622T085642Z.json`.
+  `apps/cert-prep-backend/.benchmarks/ocr-amd-npu-inference-smoke-20260622T085642Z.json`.
 - Inference smoke status: skipped, reason `session_failed`.
 - Static-shape compatibility target added:
-  `pnpm nx run exam-prep-backend:ocr-amd-npu-model-compat --skip-nx-cache`.
+  `pnpm nx run cert-prep-backend:ocr-amd-npu-model-compat --skip-nx-cache`.
 - Static-shape compatibility artifact:
-  `apps/exam-prep-backend/.benchmarks/ocr-amd-npu-model-compat-20260622T091947Z.json`.
+  `apps/cert-prep-backend/.benchmarks/ocr-amd-npu-model-compat-20260622T091947Z.json`.
 - Static candidate models were generated in
-  `apps/exam-prep-backend/.benchmarks/ocr-amd-npu-static-shape-models` with
+  `apps/cert-prep-backend/.benchmarks/ocr-amd-npu-static-shape-models` with
   det shape `1x3x1152x864` and rec shape `1x3x48x320`.
 - Static-shape candidate session smoke timed out after `180 seconds`, so fixed
   input shapes alone are not accepted as an AMD NPU replacement path. Next
@@ -502,9 +502,9 @@ Historical AMD NPU OCR research:
 - QDQ/A8W8 compatibility implemented in the same target via
   `--candidate-kind static_qdq_a8w8`.
 - QDQ/A8W8 compatibility artifact:
-  `apps/exam-prep-backend/.benchmarks/ocr-amd-npu-model-compat-20260622T110203Z.json`.
+  `apps/cert-prep-backend/.benchmarks/ocr-amd-npu-model-compat-20260622T110203Z.json`.
 - QDQ/A8W8 candidate models were generated in
-  `apps/exam-prep-backend/.benchmarks/ocr-amd-npu-qdq-a8w8-models` using
+  `apps/cert-prep-backend/.benchmarks/ocr-amd-npu-qdq-a8w8-models` using
   deterministic synthetic calibration with `2` samples. This is compile/session
   evidence only, not an accuracy acceptance.
 - QDQ insertion counts: det `560/560` QuantizeLinear/DequantizeLinear nodes;
@@ -514,26 +514,26 @@ Historical AMD NPU OCR research:
   `qlinear-hard-softmax`, `dequantize-linear`, and `const-fix`; the recognizer
   also hits the `qlinear-hard-softmax` channel limit.
 - Reference scout target added:
-  `pnpm nx run exam-prep-backend:ocr-amd-npu-reference-scout --skip-nx-cache`.
+  `pnpm nx run cert-prep-backend:ocr-amd-npu-reference-scout --skip-nx-cache`.
 - Reference scout artifact:
-  `apps/exam-prep-backend/.benchmarks/ocr-amd-npu-reference-scout-20260622T115426Z.json`.
+  `apps/cert-prep-backend/.benchmarks/ocr-amd-npu-reference-scout-20260622T115426Z.json`.
 - Python 3.12 compatibility is now allowed for backend/model-prep tooling:
   `requires-python` is `>=3.12,<3.14`, `uv.lock` resolves `<3.13` and
   `>=3.13`, `ruff` target is `py312`, and Nx `python-version-check` accepts
   Python `3.12` or `3.13`.
 - Python 3.12 Quark probe target added:
-  `pnpm nx run exam-prep-backend:ocr-amd-npu-reference-scout-python312 --skip-nx-cache`.
+  `pnpm nx run cert-prep-backend:ocr-amd-npu-reference-scout-python312 --skip-nx-cache`.
 - `py -3.12` is available and Quark-compatible by version, but `amd-quark` is
   not installed yet. Next NPU model work should use AMD's Nemotron OCR v2 BF16
   reference compile or install Quark in a Python 3.12 model-prep environment
   with document-derived calibration.
 - Windows ML mixed execution research:
   - Added target
-    `pnpm nx run exam-prep-backend:ocr-windowsml-policy-mixed-probe --skip-nx-cache`.
+    `pnpm nx run cert-prep-backend:ocr-windowsml-policy-mixed-probe --skip-nx-cache`.
   - Provider-matrix artifact:
-    `apps/exam-prep-backend/.benchmarks/ocr-windowsml-policy-mixed-probe-20260622T122325Z.json`.
+    `apps/cert-prep-backend/.benchmarks/ocr-windowsml-policy-mixed-probe-20260622T122325Z.json`.
   - Synthetic-inference artifact:
-    `apps/exam-prep-backend/.benchmarks/ocr-windowsml-policy-mixed-probe-20260622T122418Z.json`.
+    `apps/cert-prep-backend/.benchmarks/ocr-windowsml-policy-mixed-probe-20260622T122418Z.json`.
   - `onnxruntime-windowsml 1.24.6` exposes
     `SessionOptions.set_provider_selection_policy(...)` and policies including
     `MAX_EFFICIENCY`, `MIN_OVERALL_POWER`, `PREFER_NPU`, `PREFER_GPU`, and
@@ -554,9 +554,9 @@ Historical AMD NPU OCR research:
     inference still succeeded.
 - PaddleOCR 3.7 isolated ONNX Runtime probe:
   - Added target
-    `pnpm nx run exam-prep-backend:ocr-paddle37-onnxruntime-probe --skip-nx-cache`.
+    `pnpm nx run cert-prep-backend:ocr-paddle37-onnxruntime-probe --skip-nx-cache`.
   - Artifact:
-    `apps/exam-prep-backend/.benchmarks/ocr-paddle37-onnxruntime-probe-20260622T141653Z.json`.
+    `apps/cert-prep-backend/.benchmarks/ocr-paddle37-onnxruntime-probe-20260622T141653Z.json`.
   - The target runs in isolated Python 3.12 through `uv run --no-project` with
     `paddleocr==3.7.0`, stages the existing PP-OCRv5 ONNX models into PaddleX's
     `inference.onnx` / `inference.yml` layout, and does not change production
@@ -571,20 +571,20 @@ Historical AMD NPU OCR research:
 - Power replacement gate is not accepted because the current `xrt-smi` probe
   does not expose watts. Keep DirectML iGPU as the production default.
 - Verification at this checkpoint:
-  - `pnpm nx run exam-prep-desktop:typecheck-scripts --skip-nx-cache`.
-  - `pnpm nx run exam-prep-desktop:package-qa-test --skip-nx-cache`.
-  - `pnpm nx run exam-prep-backend:lint --skip-nx-cache`.
-  - `pnpm nx run exam-prep-backend:test --skip-nx-cache`.
-  - `pnpm nx run exam-prep-backend:ocr-amd-npu-probe --skip-nx-cache --args="--ensure-ready"`.
-  - `pnpm nx run exam-prep-backend:ocr-amd-npu-session-smoke --skip-nx-cache --args="--ensure-ready"`.
-  - `pnpm nx run exam-prep-backend:ocr-amd-npu-model-compat --skip-nx-cache --args="--ensure-ready --session-timeout-seconds 180"`.
-  - `pnpm nx run exam-prep-backend:ocr-amd-npu-model-compat --skip-nx-cache --args="--candidate-kind static_qdq_a8w8 --ensure-ready --session-timeout-seconds 120 --calibration-samples 2"`.
-  - `pnpm nx run exam-prep-backend:ocr-amd-npu-reference-scout --skip-nx-cache --args="--online"`.
-  - `pnpm nx run exam-prep-backend:ocr-amd-npu-reference-scout-python312 --skip-nx-cache`.
-  - `pnpm nx run exam-prep-backend:ocr-amd-npu-inference-smoke --skip-nx-cache --args="--ensure-ready"`.
-  - `pnpm nx run exam-prep-backend:ocr-windowsml-policy-mixed-probe --skip-nx-cache --args="--ensure-ready --policy PREFER_NPU --policy PREFER_GPU --session-timeout-seconds 240"`.
-  - `pnpm nx run exam-prep-backend:ocr-windowsml-policy-mixed-probe --skip-nx-cache --args="--ensure-ready --policy PREFER_NPU --run-zero-inference --session-timeout-seconds 300"`.
-  - `pnpm nx run exam-prep-backend:ocr-paddle37-onnxruntime-probe --skip-nx-cache`.
+  - `pnpm nx run cert-prep-desktop:typecheck-scripts --skip-nx-cache`.
+  - `pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`.
+  - `pnpm nx run cert-prep-backend:lint --skip-nx-cache`.
+  - `pnpm nx run cert-prep-backend:test --skip-nx-cache`.
+  - `pnpm nx run cert-prep-backend:ocr-amd-npu-probe --skip-nx-cache --args="--ensure-ready"`.
+  - `pnpm nx run cert-prep-backend:ocr-amd-npu-session-smoke --skip-nx-cache --args="--ensure-ready"`.
+  - `pnpm nx run cert-prep-backend:ocr-amd-npu-model-compat --skip-nx-cache --args="--ensure-ready --session-timeout-seconds 180"`.
+  - `pnpm nx run cert-prep-backend:ocr-amd-npu-model-compat --skip-nx-cache --args="--candidate-kind static_qdq_a8w8 --ensure-ready --session-timeout-seconds 120 --calibration-samples 2"`.
+  - `pnpm nx run cert-prep-backend:ocr-amd-npu-reference-scout --skip-nx-cache --args="--online"`.
+  - `pnpm nx run cert-prep-backend:ocr-amd-npu-reference-scout-python312 --skip-nx-cache`.
+  - `pnpm nx run cert-prep-backend:ocr-amd-npu-inference-smoke --skip-nx-cache --args="--ensure-ready"`.
+  - `pnpm nx run cert-prep-backend:ocr-windowsml-policy-mixed-probe --skip-nx-cache --args="--ensure-ready --policy PREFER_NPU --policy PREFER_GPU --session-timeout-seconds 240"`.
+  - `pnpm nx run cert-prep-backend:ocr-windowsml-policy-mixed-probe --skip-nx-cache --args="--ensure-ready --policy PREFER_NPU --run-zero-inference --session-timeout-seconds 300"`.
+  - `pnpm nx run cert-prep-backend:ocr-paddle37-onnxruntime-probe --skip-nx-cache`.
 
 ## Active Backlog
 
@@ -608,7 +608,7 @@ Deferred gate:
   `ocr-windowsml` pinned to `paddleocr==3.7.0`.
 - NPU participation is now an internal WindowsML stage: the packaged WindowsML
   runtime attempts a VitisAI text-density prepass using
-  `EXAM_PREP_OCR_WINDOWSML_DEVICE_POLICY`, then runs PaddleOCR det/rec through
+  `CERT_PREP_OCR_WINDOWSML_DEVICE_POLICY`, then runs PaddleOCR det/rec through
   the WindowsML ONNX Runtime runner. OCR output remains `windowsml_ocr` even
   when NPU evidence is recorded.
 - Low-level AMD/VitisAI helper names remain only as hardware evidence because

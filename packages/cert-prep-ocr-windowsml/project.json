@@ -1,0 +1,28 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "cert-prep-ocr-windowsml",
+  "root": "packages/cert-prep-ocr-windowsml",
+  "sourceRoot": "packages/cert-prep-ocr-windowsml/src",
+  "projectType": "library",
+  "tags": ["scope:cert", "type:runtime", "platform:windows"],
+  "targets": {
+    "test": {
+      "cache": true,
+      "executor": "nx:run-commands",
+      "inputs": ["default"],
+      "options": {
+        "cwd": "apps/cert-prep-backend",
+        "command": "uv run pytest ../../packages/cert-prep-ocr-windowsml/tests"
+      }
+    },
+    "lint": {
+      "cache": true,
+      "executor": "nx:run-commands",
+      "inputs": ["default"],
+      "options": {
+        "cwd": "apps/cert-prep-backend",
+        "command": "uv run ruff check ../../packages/cert-prep-ocr-windowsml/src ../../packages/cert-prep-ocr-windowsml/tests"
+      }
+    }
+  }
+}

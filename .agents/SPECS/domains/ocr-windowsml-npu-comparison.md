@@ -1,23 +1,23 @@
 # WindowsML OCR NPU Comparison Notes
 
 Date: 2026-06-23
-Scope: Read-only comparison between `C:\software-dev\win-ml-example` and this `exam-prep` workspace.
+Scope: Read-only comparison between `C:\software-dev\win-ml-example` and this `cert-prep` workspace.
 
 ## Purpose
 
-This note is for the `exam-prep` agent. It compares the dedicated `win-ml-example`
-NPU proof harness with the current `exam-prep` WindowsML OCR implementation, then
+This note is for the `cert-prep` agent. It compares the dedicated `win-ml-example`
+NPU proof harness with the current `cert-prep` WindowsML OCR implementation, then
 lists checks and recommendations for verifying whether OCR inference is really
 scheduled on the NPU.
 
-No heavy `exam-prep` prepare, packaging, or benchmark target was rerun for this
+No heavy `cert-prep` prepare, packaging, or benchmark target was rerun for this
 note. Observations are based on source inspection, Nx resolved target inspection,
 existing `.agents` planning notes, and existing local benchmark/production
 artifacts.
 
 ## Short Conclusion
 
-Seeing little or no real NPU activity during `exam-prep` OCR inference is expected
+Seeing little or no real NPU activity during `cert-prep` OCR inference is expected
 with the current product path.
 
 The current product OCR lane is:
@@ -63,7 +63,7 @@ Key behavior:
 - `observe-npu` keeps a sustained inference loop running after warm-up so Task
   Manager can be watched, but the JSON report remains the source of truth.
 
-The proof logic is stricter than `exam-prep`:
+The proof logic is stricter than `cert-prep`:
 
 - It bootstraps Windows App SDK.
 - It queries `ExecutionProviderCatalog`.
@@ -93,29 +93,29 @@ Report fields to inspect:
 - `registration.providers`
 - `diagnostics.onnxruntime.ep_devices`
 
-## exam-prep Current Product OCR Path
+## cert-prep Current Product OCR Path
 
 Workspace: `C:\software-dev\cert-prep`
 
 Resolved projects include:
 
-- `exam-prep-backend`
-- `exam-prep-desktop`
-- `exam-prep-e2e`
-- `exam-prep`
+- `cert-prep-backend`
+- `cert-prep-desktop`
+- `cert-prep-e2e`
+- `cert-prep`
 
 Important source files:
 
-- `apps/exam-prep-backend/pyproject.toml`
-- `apps/exam-prep-backend/src/exam_prep_backend/ocr_windowsml_runtime.py`
-- `apps/exam-prep-backend/src/exam_prep_backend/domains/source_documents/adapters/external_windowsml.py`
-- `apps/exam-prep-backend/src/exam_prep_backend/domains/source_documents/adapters/windowsml/runtime.py`
-- `apps/exam-prep-backend/src/exam_prep_backend/domains/source_documents/adapters/windowsml/device.py`
-- `apps/exam-prep-backend/src/exam_prep_backend/domains/source_documents/adapters/windowsml/npu_prepass.py`
-- `apps/exam-prep-backend/scripts/runtime/windowsml/ocr_windowsml_probe.py`
-- `apps/exam-prep-backend/scripts/runtime/windowsml/ocr_windowsml_smoke.py`
-- `apps/exam-prep-backend/scripts/runtime/windowsml/ocr_windowsml_inference_smoke.py`
-- `apps/exam-prep-backend/scripts/runtime/windowsml/ocr_windowsml_benchmark.py`
+- `apps/cert-prep-backend/pyproject.toml`
+- `apps/cert-prep-backend/src/cert_prep_backend/ocr_windowsml_runtime.py`
+- `apps/cert-prep-backend/src/cert_prep_backend/domains/source_documents/adapters/external_windowsml.py`
+- `apps/cert-prep-backend/src/cert_prep_backend/domains/source_documents/adapters/windowsml/runtime.py`
+- `apps/cert-prep-backend/src/cert_prep_backend/domains/source_documents/adapters/windowsml/device.py`
+- `apps/cert-prep-backend/src/cert_prep_backend/domains/source_documents/adapters/windowsml/npu_prepass.py`
+- `apps/cert-prep-backend/scripts/runtime/windowsml/ocr_windowsml_probe.py`
+- `apps/cert-prep-backend/scripts/runtime/windowsml/ocr_windowsml_smoke.py`
+- `apps/cert-prep-backend/scripts/runtime/windowsml/ocr_windowsml_inference_smoke.py`
+- `apps/cert-prep-backend/scripts/runtime/windowsml/ocr_windowsml_benchmark.py`
 - `.agents/SPECS/domains/ocr-amd-npu-productization.md`
 - `.agents/SPECS/domains/parsing-reasoning.md`
 
@@ -123,7 +123,7 @@ Current product decision:
 
 - Standalone `amd_npu` OCR productization is retired.
 - WindowsML is the only packaged accelerated OCR runtime lane.
-- Public surfaces are `EXAM_PREP_OCR_PROVIDER=windowsml`,
+- Public surfaces are `CERT_PREP_OCR_PROVIDER=windowsml`,
   runtime kind `windowsml_ocr`, and extraction method `windowsml_ocr`.
 - AMD/VitisAI names remain only as internal hardware evidence.
 
@@ -162,7 +162,7 @@ Current NPU participation path:
 
 The latest inspected packaged WindowsML production artifact was:
 
-`tmp/exam-prep-desktop/packaged-streaming-production/2026-06-23T02-57-52-542Z/production-summary.json`
+`tmp/cert-prep-desktop/packaged-streaming-production/2026-06-23T02-57-52-542Z/production-summary.json`
 
 It showed:
 
@@ -187,7 +187,7 @@ Interpretation:
 
 The latest inspected WindowsML inference smoke artifact was:
 
-`apps/exam-prep-backend/.benchmarks/ocr-windowsml-inference-smoke-20260623T033646Z.json`
+`apps/cert-prep-backend/.benchmarks/ocr-windowsml-inference-smoke-20260623T033646Z.json`
 
 It showed:
 
@@ -222,24 +222,24 @@ Reasons:
 
 Use ORT profile provider counts as the authority.
 
-## Recommended Checks for exam-prep Agent
+## Recommended Checks for cert-prep Agent
 
 Start with resolved targets, not guessed `project.json` fragments:
 
 ```powershell
 pnpm nx show projects --json
-pnpm nx show project exam-prep-backend --json
-pnpm nx show project exam-prep-desktop --json
+pnpm nx show project cert-prep-backend --json
+pnpm nx show project cert-prep-desktop --json
 ```
 
 Check the current product WindowsML lane:
 
 ```powershell
-pnpm nx run exam-prep-backend:ocr-windowsml-probe --skip-nx-cache
-pnpm nx run exam-prep-backend:ocr-windowsml-session-smoke --skip-nx-cache
-pnpm nx run exam-prep-backend:ocr-windowsml-inference-smoke --skip-nx-cache
-pnpm nx run exam-prep-backend:ocr-windowsml-benchmark --skip-nx-cache
-pnpm nx run exam-prep-desktop:packaged-streaming-production-windowsml --skip-nx-cache
+pnpm nx run cert-prep-backend:ocr-windowsml-probe --skip-nx-cache
+pnpm nx run cert-prep-backend:ocr-windowsml-session-smoke --skip-nx-cache
+pnpm nx run cert-prep-backend:ocr-windowsml-inference-smoke --skip-nx-cache
+pnpm nx run cert-prep-backend:ocr-windowsml-benchmark --skip-nx-cache
+pnpm nx run cert-prep-desktop:packaged-streaming-production-windowsml --skip-nx-cache
 ```
 
 Interpret these fields:
@@ -288,7 +288,7 @@ Avoid wording like:
 unless `VitisAIExecutionProvider` node events are present for the claimed OCR
 stage.
 
-### 2. Port the win-ml-example Proof Gate into exam-prep
+### 2. Port the win-ml-example Proof Gate into cert-prep
 
 The `win-ml-example` proof pattern is the right template for a strict gate:
 
@@ -367,7 +367,7 @@ A future "NPU OCR" slice should require all of the following:
 
 ## One-Line Handoff
 
-`exam-prep` currently has a solid WindowsML/DML AMD iGPU OCR product lane with an
+`cert-prep` currently has a solid WindowsML/DML AMD iGPU OCR product lane with an
 internal NPU prepass, but it should not be described as full NPU OCR inference
 until ORT profile evidence shows actual `VitisAIExecutionProvider` node execution
 for the OCR stage being claimed.

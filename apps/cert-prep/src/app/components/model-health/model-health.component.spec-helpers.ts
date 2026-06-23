@@ -1,0 +1,81 @@
+import type {
+  HealthResponse,
+  LLMHealthRead,
+  OCRHealthRead,
+} from '../../cert-prep-api';
+
+export function systemHealth(): HealthResponse {
+  return {
+    status: 'ok',
+    app: 'cert-prep-backend',
+    version: '0.1.0',
+    python_version: '3.13.5',
+    runtime_mode: 'source',
+  };
+}
+
+export function availableLlmHealth(): LLMHealthRead {
+  return {
+    provider: 'fake',
+    model: 'reasoner:7b',
+    available: true,
+    detail: 'deterministic local fake provider',
+    unavailable_reason: null,
+  };
+}
+
+export function fallbackLlmHealth(): LLMHealthRead {
+  return {
+    provider: 'ollama',
+    model: 'qwen3.5:4b',
+    available: true,
+    detail: 'model available via fallback qwen3.5:2b',
+    unavailable_reason: null,
+    configured_model: 'qwen3.5:4b',
+    effective_model: 'qwen3.5:2b',
+    fallback_models: ['qwen3.5:2b'],
+    fallback_reason:
+      'Configured model qwen3.5:4b is missing; using fallback qwen3.5:2b.',
+  };
+}
+
+export function missingModelHealth(): LLMHealthRead & {
+  unavailable_reason: string;
+} {
+  return {
+    provider: 'ollama',
+    model: 'reasoner:7b',
+    available: false,
+    detail: 'Ollama model reasoner:7b is missing.',
+    unavailable_reason: 'model_missing',
+  };
+}
+
+export function ocrHealth(): OCRHealthRead {
+  return {
+    provider: 'paddle',
+    engine: 'paddleocr',
+    available: true,
+    detail: 'Ready',
+    python_version: '3.13.5',
+    paddle_version: null,
+    paddleocr_version: null,
+    selected_device: 'cpu',
+    cuda_available: false,
+    gpu_count: 0,
+    model_cache_dir: null,
+    fallback_reason: null,
+    unavailable_reason: null,
+  };
+}
+
+export function buttonByText(
+  root: ParentNode,
+  text: string,
+): HTMLButtonElement | null {
+  return (
+    Array.from(root.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes(text),
+    ) ?? null
+  );
+}
