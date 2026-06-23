@@ -1,13 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-import sys
 from typing import Any
 
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-
-from runtime.windowsml.ocr_windowsml_inference_smoke import (  # noqa: E402
+from cert_prep_ocr_windowsml.tools.windowsml.ocr_windowsml_inference_smoke import (
     WindowsGpuTelemetryCapture,
     build_inference_smoke,
     classify_inference_status,

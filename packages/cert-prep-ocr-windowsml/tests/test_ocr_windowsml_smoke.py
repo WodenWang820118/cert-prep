@@ -2,13 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
-import sys
 from typing import Any
 
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-
-from runtime.windowsml.ocr_windowsml_smoke import (  # noqa: E402
+from cert_prep_ocr_windowsml.tools.windowsml.ocr_windowsml_smoke import (
     summarize_provider_mix,
     build_session_smoke,
     classify_smoke_status,

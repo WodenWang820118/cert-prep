@@ -103,19 +103,20 @@ Resolved projects include:
 - `cert-prep-desktop`
 - `cert-prep-e2e`
 - `cert-prep`
+- `cert-prep-ocr-windowsml`
 
 Important source files:
 
 - `apps/cert-prep-backend/pyproject.toml`
 - `apps/cert-prep-backend/src/cert_prep_backend/ocr_windowsml_runtime.py`
 - `apps/cert-prep-backend/src/cert_prep_backend/domains/source_documents/adapters/external_windowsml.py`
-- `apps/cert-prep-backend/src/cert_prep_backend/domains/source_documents/adapters/windowsml/runtime.py`
-- `apps/cert-prep-backend/src/cert_prep_backend/domains/source_documents/adapters/windowsml/device.py`
-- `apps/cert-prep-backend/src/cert_prep_backend/domains/source_documents/adapters/windowsml/npu_prepass.py`
-- `apps/cert-prep-backend/scripts/runtime/windowsml/ocr_windowsml_probe.py`
-- `apps/cert-prep-backend/scripts/runtime/windowsml/ocr_windowsml_smoke.py`
-- `apps/cert-prep-backend/scripts/runtime/windowsml/ocr_windowsml_inference_smoke.py`
-- `apps/cert-prep-backend/scripts/runtime/windowsml/ocr_windowsml_benchmark.py`
+- `packages/cert-prep-ocr-windowsml/src/cert_prep_ocr_windowsml/runtime.py`
+- `packages/cert-prep-ocr-windowsml/src/cert_prep_ocr_windowsml/device.py`
+- `packages/cert-prep-ocr-windowsml/src/cert_prep_ocr_windowsml/npu_prepass.py`
+- `packages/cert-prep-ocr-windowsml/src/cert_prep_ocr_windowsml/tools/windowsml/ocr_windowsml_probe.py`
+- `packages/cert-prep-ocr-windowsml/src/cert_prep_ocr_windowsml/tools/windowsml/ocr_windowsml_smoke.py`
+- `packages/cert-prep-ocr-windowsml/src/cert_prep_ocr_windowsml/tools/windowsml/ocr_windowsml_inference_smoke.py`
+- `packages/cert-prep-ocr-windowsml/src/cert_prep_ocr_windowsml/tools/windowsml/ocr_windowsml_benchmark.py`
 - `.agents/SPECS/domains/ocr-amd-npu-productization.md`
 - `.agents/SPECS/domains/parsing-reasoning.md`
 

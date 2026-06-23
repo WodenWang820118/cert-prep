@@ -35,6 +35,28 @@ def test_windowsml_runtime_provider_health_requires_model_artifacts(
     assert ready.available is True
     assert ready.unavailable_reason is None
     assert ready.selected_device == "amd_windowsml:0"
+    assert ready.fallback_reason is None
+
+
+def test_windowsml_runtime_provider_health_resolves_auto_amd_igpu(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        windowsml,
+        "_onnxruntime_state",
+        lambda: (["DmlExecutionProvider", "CPUExecutionProvider"], "1.24.6", None),
+    )
+    monkeypatch.setattr(windowsml, "_paddleocr_state", lambda: ("3.7.0", None))
+    monkeypatch.setattr(windowsml, "resolve_windowsml_device_id", lambda _device_id: 1)
+    _write_paddleocr37_model_files(tmp_path)
+    provider = WindowsMLRuntimeOCRProvider(model_dir=tmp_path)
+
+    health = provider.health()
+
+    assert health.available is True
+    assert health.selected_device == "amd_windowsml:1"
+    assert health.fallback_reason is None
 
 
 def test_windowsml_auto_device_selects_amd_after_nvidia(monkeypatch) -> None:
@@ -111,6 +133,22 @@ def test_windowsml_runner_records_vitisai_prepass_evidence(monkeypatch, tmp_path
     assert result.device == "amd_windowsml:0"
     assert result.fallback_reason == (
         "npu_prepass=text_density_vitisai;vitisai_events=3;cpu_events=1"
+    )
+
+
+def test_windowsml_runner_does_not_claim_npu_without_vitisai_events(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(windowsml, "resolve_windowsml_device_id", lambda _device_id: 0)
+    runner = windowsml.WindowsMLOCRRunner(model_dir=tmp_path, device_id=0)
+    monkeypatch.setattr(runner, "_npu_prepass", _FakePrepass(vitisai_events=0, cpu_events=4))
+    monkeypatch.setattr(runner, "_paddleocr_pipeline", lambda: _FakePaddleOCR())
+
+    result = runner.extract_text(b"\x89PNG page")
+
+    assert result.fallback_reason == (
+        "npu_prepass_unavailable=vitisai_events_missing;vitisai_events=0;cpu_events=4"
     )
 
 

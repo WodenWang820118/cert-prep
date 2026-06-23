@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-import sys
 import tarfile
 from typing import Any
 
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-
-from runtime.windowsml.ocr_windowsml_prepare_models import (  # noqa: E402
+from cert_prep_ocr_windowsml.tools.windowsml.ocr_windowsml_prepare import (
+    metadata_artifacts,
+)
+from cert_prep_ocr_windowsml.tools.windowsml.ocr_windowsml_prepare_models import (
     BACKEND_ROOT,
     ConversionResult,
     SourceArtifact,
@@ -17,9 +17,6 @@ from runtime.windowsml.ocr_windowsml_prepare_models import (  # noqa: E402
     docker_work_path,
     safe_extract_tar,
     sha256_file,
-)
-from runtime.windowsml.ocr_windowsml_prepare import (  # noqa: E402
-    metadata_artifacts,
 )
 
 
