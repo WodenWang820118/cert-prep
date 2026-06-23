@@ -7,10 +7,10 @@ from typing import Any
 from cert_prep_backend.config import Settings
 from cert_prep_backend.domains.runtime_installations.models import (
     OcrRuntimeManifest,
-    RuntimeRequirementKind,
     utcnow,
 )
 from cert_prep_backend.errors import ProviderUnavailableError
+from cert_prep_ollama.models import RuntimeRequirementKind
 
 
 def load_ocr_runtime_source_manifest(

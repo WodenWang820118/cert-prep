@@ -7,8 +7,8 @@ from typing import Annotated, Literal
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+from cert_prep_ollama.models import DEFAULT_OLLAMA_MODEL
 
-DEFAULT_OLLAMA_MODEL = "qwen3.5:4b"
 DEFAULT_OLLAMA_FALLBACK_MODELS = ("qwen3.5:2b",)
 
 
@@ -39,9 +39,9 @@ class Settings(BaseSettings):
     auto_generate_exam_on_upload: bool = False
     auto_generate_exam_limit: int = 50
     streaming_draft_generation_on_upload: bool = False
-    streaming_draft_generation_strategy: Literal[
-        "deterministic_only", "hybrid_reasoning"
-    ] = "hybrid_reasoning"
+    streaming_draft_generation_strategy: Literal["deterministic_only", "hybrid_reasoning"] = (
+        "hybrid_reasoning"
+    )
     streaming_draft_generation_page_limit: int = Field(default=3, ge=1, le=20)
     streaming_draft_workers: int = Field(default=1, ge=1, le=4)
     ollama_timeout_seconds: float = 120.0

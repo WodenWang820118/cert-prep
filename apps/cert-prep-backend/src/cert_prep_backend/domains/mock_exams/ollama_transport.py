@@ -17,17 +17,15 @@ from cert_prep_backend.domains.mock_exams.models import (
     SourceChunk,
 )
 from cert_prep_backend.domains.mock_exams.normalization import dedupe_suggestions
-from cert_prep_backend.domains.mock_exams.ports import ModelPullProgress, ProviderHealth
+from cert_prep_backend.domains.mock_exams.ports import ProviderHealth
 from cert_prep_backend.domains.mock_exams.reasoning_parser import (
     EXAM_ITEMS_SCHEMA,
     draft_suggestion_from_item,
     json_response,
 )
-from cert_prep_backend.domains.runtime_installations.ollama import (
-    ensure_ollama_server_running,
-    resolve_ollama_executable,
-)
 from cert_prep_backend.errors import ProviderUnavailableError
+from cert_prep_ollama.models import extract_model_names, pull_progress
+from cert_prep_ollama.server import ensure_ollama_server_running, resolve_ollama_executable
 
 
 STREAMING_PREWARM_KEEP_ALIVE = "5m"
@@ -511,37 +509,4 @@ def _is_non_fatal_generation_error(exc: Exception) -> bool:
             "unreadable response",
             "non-object json response",
         )
-    )
-
-
-def extract_model_names(response: Any) -> set[str]:
-    """Extract model names from the shapes returned by Ollama clients."""
-
-    models = getattr(response, "models", None)
-    if models is None and isinstance(response, dict):
-        models = response.get("models", [])
-    names: set[str] = set()
-    for model in models or []:
-        name = getattr(model, "model", None)
-        if name is None and isinstance(model, dict):
-            name = model.get("model") or model.get("name")
-        if isinstance(name, str):
-            names.add(name)
-    return names
-
-
-def pull_progress(response: Any) -> ModelPullProgress:
-    """Normalize streamed Ollama pull progress into domain progress values."""
-
-    status = getattr(response, "status", None)
-    completed = getattr(response, "completed", None)
-    total = getattr(response, "total", None)
-    if isinstance(response, dict):
-        status = response.get("status", status)
-        completed = response.get("completed", completed)
-        total = response.get("total", total)
-    return ModelPullProgress(
-        status=status if isinstance(status, str) else "downloading model",
-        completed=completed if isinstance(completed, int) else None,
-        total=total if isinstance(total, int) else None,
     )

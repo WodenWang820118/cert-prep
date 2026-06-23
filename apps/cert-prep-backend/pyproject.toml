@@ -5,6 +5,7 @@ description = "Local sidecar API for the cert prep desktop app."
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
 dependencies = [
+  "cert-prep-ollama",
   "cert-prep-ocr-windowsml",
   "fastapi>=0.124.0,<1.0.0",
   "ollama>=0.6.0,<1.0.0",
@@ -40,6 +41,7 @@ url = "https://www.paddlepaddle.org.cn/packages/stable/cu130/"
 explicit = true
 
 [tool.uv.sources]
+cert-prep-ollama = { path = "../../packages/cert-prep-ollama", editable = true }
 cert-prep-ocr-windowsml = { path = "../../packages/cert-prep-ocr-windowsml", editable = true }
 paddlepaddle = { index = "paddle-cpu" }
 paddlepaddle-gpu = { index = "paddle-cu130" }

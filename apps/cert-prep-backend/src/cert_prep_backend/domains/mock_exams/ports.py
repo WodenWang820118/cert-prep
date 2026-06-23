@@ -5,6 +5,10 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from cert_prep_backend.domains.mock_exams.models import DraftSuggestion, SourceChunk
+from cert_prep_ollama.models import ModelPullProgress
+
+# Re-export for backward compatibility.
+__all__ = ["DraftGenerationProvider", "ModelPullProgress", "ProviderHealth"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,15 +24,6 @@ class ProviderHealth:
     effective_model: str | None = None
     fallback_models: tuple[str, ...] = ()
     fallback_reason: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class ModelPullProgress:
-    """Progress reported by an explicit model download provider."""
-
-    status: str
-    completed: int | None = None
-    total: int | None = None
 
 
 class DraftGenerationProvider(Protocol):

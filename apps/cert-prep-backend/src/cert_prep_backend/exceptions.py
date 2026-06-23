@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 class BackendError(Exception):
     """Base exception for expected backend failures."""
 
@@ -18,4 +17,4 @@ class InvalidPdfError(ValidationError):
 
 
 class ProviderUnavailableError(BackendError):
-    pass
+    """Raised when a provider or its prerequisites are not available."""

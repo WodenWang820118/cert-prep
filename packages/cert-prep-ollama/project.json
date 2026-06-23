@@ -1,0 +1,28 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "cert-prep-ollama",
+  "root": "packages/cert-prep-ollama",
+  "sourceRoot": "packages/cert-prep-ollama/src",
+  "projectType": "library",
+  "tags": ["scope:cert", "type:infrastructure"],
+  "targets": {
+    "test": {
+      "cache": true,
+      "executor": "nx:run-commands",
+      "inputs": ["default"],
+      "options": {
+        "cwd": "apps/cert-prep-backend",
+        "command": "uv run pytest ../../packages/cert-prep-ollama/tests"
+      }
+    },
+    "lint": {
+      "cache": true,
+      "executor": "nx:run-commands",
+      "inputs": ["default"],
+      "options": {
+        "cwd": "apps/cert-prep-backend",
+        "command": "uv run ruff check ../../packages/cert-prep-ollama/src ../../packages/cert-prep-ollama/tests"
+      }
+    }
+  }
+}

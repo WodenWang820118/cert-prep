@@ -10,14 +10,17 @@ from uuid import uuid4
 from cert_prep_backend.config import Settings
 from cert_prep_backend.domains.runtime_installations.models import (
     RuntimeInstallationSnapshot,
-    RuntimeInstallationStatus,
-    RuntimeInstallProgress,
-    RuntimeRequirementKind,
-    RuntimeRequirementSnapshot,
     utcnow,
 )
 from cert_prep_backend.domains.source_documents.ocr import OCRProvider
 from cert_prep_backend.errors import ProviderUnavailableError
+from cert_prep_ollama.exceptions import ProviderUnavailableError as OllamaProviderUnavailableError
+from cert_prep_ollama.models import (
+    RuntimeInstallationStatus,
+    RuntimeInstallProgress,
+    RuntimeRequirementKind,
+    RuntimeRequirementSnapshot,
+)
 
 
 class RuntimeInstaller(Protocol):
@@ -31,7 +34,9 @@ class RuntimeInstaller(Protocol):
         """Return the current read-only availability state."""
         pass
 
-    def install(self, progress: Callable[[RuntimeInstallProgress], None]) -> RuntimeInstallationStatus:
+    def install(
+        self, progress: Callable[[RuntimeInstallProgress], None]
+    ) -> RuntimeInstallationStatus:
         """Install the requirement and emit progress updates."""
         pass
 
@@ -87,13 +92,12 @@ class RuntimeInstallationManager:
     ) -> None:
         from cert_prep_backend.domains.runtime_installations.installers import (
             WindowsMLOcrRuntimeInstaller,
-            OllamaModelInstaller,
-            OllamaRuntimeInstaller,
             PaddleOcrRuntimeInstaller,
         )
         from cert_prep_backend.domains.source_documents.adapters.external_windowsml import (
             ExternalWindowsMLOCRProvider,
         )
+        from cert_prep_ollama.installers import OllamaModelInstaller, OllamaRuntimeInstaller
         from cert_prep_backend.domains.source_documents.adapters.external_paddle import (
             ExternalPaddleOCRProvider,
         )
@@ -105,7 +109,10 @@ class RuntimeInstallationManager:
             for installer in (
                 installers
                 or [
-                    OllamaRuntimeInstaller(settings),
+                    OllamaRuntimeInstaller(
+                        ollama_host=settings.ollama_host,
+                        runtime_install_timeout_seconds=settings.runtime_install_timeout_seconds,
+                    ),
                     OllamaModelInstaller(llm_provider),
                     PaddleOcrRuntimeInstaller(
                         settings,
@@ -147,7 +154,14 @@ class RuntimeInstallationManager:
             return self._completed_snapshot(installer, requirement)
         validate = getattr(installer, "validate_installable", None)
         if callable(validate):
-            validate()
+            try:
+                validate()
+            except ProviderUnavailableError:
+                raise
+            except OllamaProviderUnavailableError as exc:
+                raise ProviderUnavailableError(str(exc)) from exc
+            except Exception as exc:
+                raise ProviderUnavailableError(str(exc)) from exc
 
         with self._lock:
             existing = self._active_job_for(installer.kind)

@@ -12,7 +12,6 @@ from cert_prep_backend.domains.runtime_installations import (
     parse_ocr_runtime_manifest,
     run_ocr_runtime_command,
 )
-from cert_prep_backend.domains.runtime_installations.models import RuntimeRequirementKind
 from cert_prep_backend.domains.source_documents.adapters.external_paddle import (
     _OcrWorkerPool,
     _health_from_payload,
@@ -20,6 +19,7 @@ from cert_prep_backend.domains.source_documents.adapters.external_paddle import 
 )
 from cert_prep_backend.domains.source_documents.ocr_contracts import OCRHealth, OCRPageResult
 from cert_prep_backend.errors import ProviderUnavailableError
+from cert_prep_ollama.models import RuntimeRequirementKind
 
 
 class ExternalWindowsMLOCRProvider:

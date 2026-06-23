@@ -1,3 +1,5 @@
+"""Ollama executable resolution and server lifecycle management."""
+
 from __future__ import annotations
 
 import os
