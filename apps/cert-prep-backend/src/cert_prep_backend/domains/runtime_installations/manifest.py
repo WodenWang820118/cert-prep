@@ -10,7 +10,7 @@ from cert_prep_backend.domains.runtime_installations.models import (
     utcnow,
 )
 from cert_prep_backend.errors import ProviderUnavailableError
-from cert_prep_ollama.models import RuntimeRequirementKind
+from cert_prep_contracts.runtime import RuntimeRequirementKind
 
 
 def load_ocr_runtime_source_manifest(

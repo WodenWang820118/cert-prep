@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from cert_prep_backend.domains.mock_exams.models import DraftSuggestion, SourceChunk
-from cert_prep_ollama.models import ModelPullProgress
+from cert_prep_contracts.llm import ModelPullProgress
 
 # Re-export for backward compatibility.
 __all__ = ["DraftGenerationProvider", "ModelPullProgress", "ProviderHealth"]

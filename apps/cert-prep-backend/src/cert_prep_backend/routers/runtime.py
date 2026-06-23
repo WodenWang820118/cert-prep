@@ -9,7 +9,7 @@ from cert_prep_backend.domains.runtime_schemas import (
     RuntimeRequirementsRead,
 )
 from cert_prep_backend.errors import ProviderUnavailableError, api_error, not_found_error
-from cert_prep_ollama.models import RuntimeRequirementKind
+from cert_prep_contracts.runtime import RuntimeRequirementKind
 
 
 router = APIRouter(prefix="/runtime", tags=["runtime"])

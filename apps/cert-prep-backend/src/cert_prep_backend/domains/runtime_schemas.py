@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict
 
-from cert_prep_ollama.models import (
+from cert_prep_contracts.runtime import (
     RuntimeInstallationStatus,
     RuntimeRequirementKind,
 )

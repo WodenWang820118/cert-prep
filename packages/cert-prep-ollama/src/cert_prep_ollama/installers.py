@@ -7,15 +7,15 @@ import os
 import shutil
 import subprocess
 
-from cert_prep_ollama.exceptions import ProviderUnavailableError
-from cert_prep_ollama.models import (
-    DEFAULT_OLLAMA_MODEL,
-    ModelPullProgress,
-    RuntimeInstallProgress,
+from cert_prep_contracts.llm import ModelPullProgress
+from cert_prep_contracts.runtime import (
     RuntimeInstallationStatus,
+    RuntimeInstallProgress,
     RuntimeRequirementKind,
     RuntimeRequirementSnapshot,
 )
+from cert_prep_ollama.exceptions import ProviderUnavailableError
+from cert_prep_ollama.models import DEFAULT_OLLAMA_MODEL
 from cert_prep_ollama.server import ensure_ollama_server_running, resolve_ollama_executable
 
 

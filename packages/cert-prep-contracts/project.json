@@ -1,0 +1,29 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "cert-prep-contracts",
+  "root": "packages/cert-prep-contracts",
+  "sourceRoot": "packages/cert-prep-contracts/src",
+  "projectType": "library",
+  "tags": ["scope:cert", "type:contracts"],
+  "targets": {
+    "test": {
+      "cache": true,
+      "executor": "nx:run-commands",
+      "inputs": ["default"],
+      "options": {
+        "cwd": "apps/cert-prep-backend",
+        "command": "uv run pytest ../../packages/cert-prep-contracts/tests"
+      }
+    },
+    "lint": {
+      "cache": true,
+      "executor": "nx:run-commands",
+      "inputs": ["default"],
+      "options": {
+        "cwd": "apps/cert-prep-backend",
+        "command": "uv run ruff check ../../packages/cert-prep-contracts/src ../../packages/cert-prep-contracts/tests"
+      }
+    }
+  }
+}
+

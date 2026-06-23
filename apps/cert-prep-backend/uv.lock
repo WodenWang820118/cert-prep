@@ -180,6 +180,7 @@ name = "cert-prep-backend"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "cert-prep-contracts" },
     { name = "cert-prep-ocr-windowsml" },
     { name = "cert-prep-ollama" },
     { name = "fastapi" },
@@ -216,6 +217,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cert-prep-contracts", editable = "../../packages/cert-prep-contracts" },
     { name = "cert-prep-ocr-windowsml", editable = "../../packages/cert-prep-ocr-windowsml" },
     { name = "cert-prep-ocr-windowsml", extras = ["windowsml"], marker = "extra == 'ocr-windowsml'", editable = "../../packages/cert-prep-ocr-windowsml" },
     { name = "cert-prep-ollama", editable = "../../packages/cert-prep-ollama" },
@@ -244,9 +246,25 @@ dev = [
 ]
 
 [[package]]
+name = "cert-prep-contracts"
+version = "0.1.0"
+source = { editable = "../../packages/cert-prep-contracts" }
+
+[package.metadata]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.3.0,<9.0.0" },
+    { name = "ruff", specifier = ">=0.9.0,<1.0.0" },
+]
+
+[[package]]
 name = "cert-prep-ocr-windowsml"
 version = "0.1.0"
 source = { editable = "../../packages/cert-prep-ocr-windowsml" }
+dependencies = [
+    { name = "cert-prep-contracts" },
+]
 
 [package.optional-dependencies]
 windowsml = [
@@ -268,6 +286,7 @@ windowsml = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cert-prep-contracts", editable = "../../packages/cert-prep-contracts" },
     { name = "numpy", marker = "extra == 'windowsml'", specifier = ">=2.0.0,<3.0.0" },
     { name = "onnx", marker = "extra == 'windowsml'", specifier = ">=1.16.1,<=1.17.0" },
     { name = "onnxruntime-windowsml", marker = "extra == 'windowsml'", specifier = ">=1.24.0,<2.0.0" },
@@ -295,11 +314,15 @@ name = "cert-prep-ollama"
 version = "0.1.0"
 source = { editable = "../../packages/cert-prep-ollama" }
 dependencies = [
+    { name = "cert-prep-contracts" },
     { name = "ollama" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "ollama", specifier = ">=0.6.0,<1.0.0" }]
+requires-dist = [
+    { name = "cert-prep-contracts", editable = "../../packages/cert-prep-contracts" },
+    { name = "ollama", specifier = ">=0.6.0,<1.0.0" },
+]
 
 [package.metadata.requires-dev]
 dev = [

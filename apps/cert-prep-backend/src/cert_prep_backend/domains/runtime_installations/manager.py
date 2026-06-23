@@ -14,13 +14,13 @@ from cert_prep_backend.domains.runtime_installations.models import (
 )
 from cert_prep_backend.domains.source_documents.ocr import OCRProvider
 from cert_prep_backend.errors import ProviderUnavailableError
-from cert_prep_ollama.exceptions import ProviderUnavailableError as OllamaProviderUnavailableError
-from cert_prep_ollama.models import (
+from cert_prep_contracts.runtime import (
     RuntimeInstallationStatus,
     RuntimeInstallProgress,
     RuntimeRequirementKind,
     RuntimeRequirementSnapshot,
 )
+from cert_prep_ollama.exceptions import ProviderUnavailableError as OllamaProviderUnavailableError
 
 
 class RuntimeInstaller(Protocol):

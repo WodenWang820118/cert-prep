@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from cert_prep_ollama.models import (
+from cert_prep_contracts.runtime import (
     RuntimeInstallationStatus,
     RuntimeRequirementKind,
 )

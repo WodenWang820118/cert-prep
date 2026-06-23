@@ -7,7 +7,7 @@ from cert_prep_backend.domains.mock_exams.ports import DraftGenerationProvider a
 from cert_prep_backend.domains.mock_exams.schemas import LLMHealthRead, ModelDownloadRead
 from cert_prep_backend.domains.runtime_installations import RuntimeInstallationManager
 from cert_prep_backend.errors import ProviderUnavailableError, api_error, not_found_error
-from cert_prep_ollama.models import RuntimeRequirementKind
+from cert_prep_contracts.runtime import RuntimeRequirementKind
 
 
 router = APIRouter(prefix="/llm", tags=["llm"])

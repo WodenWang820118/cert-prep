@@ -5,8 +5,12 @@ description = "Ollama infrastructure utilities shared across cert-prep projects.
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
 dependencies = [
+    "cert-prep-contracts",
     "ollama>=0.6.0,<1.0.0",
 ]
+
+[tool.uv.sources]
+cert-prep-contracts = { path = "../cert-prep-contracts", editable = true }
 
 [dependency-groups]
 dev = [

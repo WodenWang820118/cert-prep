@@ -48,6 +48,29 @@
   Note: `cert-prep-e2e` now has `scope:cert` / `type:e2e` tags so Nx module
   boundaries allow its typed dependency on `@cert-prep/api`.
 
+- [x] Extract Python shared contracts into `packages/cert-prep-contracts`.
+  - Keep the package pure stdlib dataclasses/enums/protocols.
+  - Move runtime installation contracts, model download progress, and OCR
+    health/page-result/provider contracts behind `cert_prep_contracts`.
+  - Preserve compatibility exports from `cert_prep_ollama.models`,
+    `cert_prep_backend.domains.source_documents.ocr_contracts`, and
+    `cert_prep_ocr_windowsml.contracts`.
+  Verify:
+  - `pnpm nx show projects --json` lists `cert-prep-contracts`
+  - `pnpm nx show project cert-prep-contracts --json`
+  - `pnpm nx run cert-prep-contracts:lint`
+  - `pnpm nx run cert-prep-contracts:test`
+  - `pnpm nx run cert-prep-ollama:lint`
+  - `pnpm nx run cert-prep-ollama:test`
+  - `pnpm nx run cert-prep-ocr-windowsml:lint`
+  - `pnpm nx run cert-prep-ocr-windowsml:test`
+  - `pnpm nx run cert-prep-backend:lint`
+  - `pnpm nx run cert-prep-backend:test`
+  - `pnpm nx run cert-prep-backend:generate-openapi-client`
+  - `pnpm nx run cert-prep-api:lint`
+  - `pnpm nx run cert-prep-api:vite:test`
+  - `git diff --check`
+
 ## Final Check
 
 - [ ] Full workspace audit:

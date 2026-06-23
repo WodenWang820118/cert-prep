@@ -1,5 +1,12 @@
 """Ollama infrastructure utilities shared across cert-prep projects."""
 
+from cert_prep_contracts.llm import ModelPullProgress
+from cert_prep_contracts.runtime import (
+    RuntimeInstallationStatus,
+    RuntimeInstallProgress,
+    RuntimeRequirementKind,
+    RuntimeRequirementSnapshot,
+)
 from cert_prep_ollama.exceptions import OllamaError, ProviderUnavailableError
 from cert_prep_ollama.installers import (
     OllamaModelInstaller,
@@ -8,11 +15,6 @@ from cert_prep_ollama.installers import (
 )
 from cert_prep_ollama.models import (
     DEFAULT_OLLAMA_MODEL,
-    ModelPullProgress,
-    RuntimeInstallProgress,
-    RuntimeInstallationStatus,
-    RuntimeRequirementKind,
-    RuntimeRequirementSnapshot,
     extract_model_names,
     pull_progress,
 )

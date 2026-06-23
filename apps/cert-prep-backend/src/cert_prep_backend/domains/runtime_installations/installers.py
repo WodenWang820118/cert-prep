@@ -18,7 +18,7 @@ from cert_prep_backend.domains.runtime_installations.manifest import (
 from cert_prep_backend.domains.runtime_installations.processes import run_ocr_runtime_command
 from cert_prep_backend.domains.source_documents.ocr import OCRProvider
 from cert_prep_backend.errors import ProviderUnavailableError
-from cert_prep_ollama.models import (
+from cert_prep_contracts.runtime import (
     RuntimeInstallationStatus,
     RuntimeInstallProgress,
     RuntimeRequirementKind,

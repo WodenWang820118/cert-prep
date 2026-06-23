@@ -1,0 +1,22 @@
+[project]
+name = "cert-prep-contracts"
+version = "0.1.0"
+description = "Shared Python value types and provider protocols for cert-prep projects."
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+dependencies = []
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3.0,<9.0.0",
+  "ruff>=0.9.0,<1.0.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
