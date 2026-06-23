@@ -31,6 +31,9 @@ PaddleOCR must remain at least 3.7 everywhere:
 - `onnxruntime-directml` is removed from product dependencies and build targets.
 - `onnxruntime-windowsml` is the Windows accelerated OCR runtime dependency.
 - Desktop defaults to `windowsml`, with `paddle` allowed as an explicit override.
+- Product package targets build and ship only the WindowsML OCR runtime
+  manifest/resource for OCR. The legacy Paddle GPU OCR runtime remains a
+  backend/dev capability and is not bundled into the default packaged product.
 - Desktop passes `EXAM_PREP_OCR_WINDOWSML_DEVICE_POLICY=PREFER_NPU` by default.
 - Backend accepts `ocr_windowsml_device_policy` and passes it to the packaged
   WindowsML runtime.
@@ -47,6 +50,9 @@ PaddleOCR must remain at least 3.7 everywhere:
 - Packaging gate: no `build-ocr-runtime-amd-npu`, `build-amd-npu`,
   `sync-amd-npu-runtime-manifest`, or `packaged-streaming-production-amd-npu`
   target.
+- Package artifact gate: default Tauri/package QA targets depend on
+  `build-windowsml` and `sync-windowsml-runtime-manifest`, not the legacy
+  `sync-runtime-manifest` Paddle GPU runtime path.
 - Dependency gate: `uv.lock` exposes only `ocr-cpu`, `ocr-gpu`, and
   `ocr-windowsml`; PaddleOCR resolves to 3.7+.
 - Evidence gate: WindowsML OCR results may record

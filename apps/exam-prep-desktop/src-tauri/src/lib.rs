@@ -15,7 +15,7 @@ pub use runtime_installation::DesktopRuntimeInstallation;
 
 use backend::resource_path;
 use backend_process::external_backend_env;
-use constants::{BACKEND_RUNTIME_MANIFEST, OCR_RUNTIME_MANIFEST, WINDOWSML_OCR_RUNTIME_MANIFEST};
+use constants::{BACKEND_RUNTIME_MANIFEST, WINDOWSML_OCR_RUNTIME_MANIFEST};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -29,7 +29,7 @@ pub fn run() {
             let state = BackendState::new(
                 data_dir,
                 resource_path(app, BACKEND_RUNTIME_MANIFEST),
-                resource_path(app, OCR_RUNTIME_MANIFEST),
+                None,
                 resource_path(app, WINDOWSML_OCR_RUNTIME_MANIFEST),
             );
             if let Some(config) = external_backend_env() {

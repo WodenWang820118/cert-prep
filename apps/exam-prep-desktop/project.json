@@ -34,7 +34,6 @@
       "dependsOn": [
         "exam-prep:build",
         "sync-backend-runtime-manifest",
-        "sync-runtime-manifest",
         "sync-windowsml-runtime-manifest"
       ],
       "outputs": ["{projectRoot}/src-tauri/target"],
@@ -103,7 +102,7 @@
     "package-qa": {
       "cache": false,
       "executor": "nx:run-commands",
-      "dependsOn": ["build-gpu"],
+      "dependsOn": ["build-windowsml"],
       "outputs": ["{workspaceRoot}/tmp/exam-prep-desktop/package-qa"],
       "options": {
         "command": "node apps/exam-prep-desktop/scripts/package-qa.mts"
@@ -112,7 +111,7 @@
     "packaged-flow-smoke": {
       "cache": false,
       "executor": "nx:run-commands",
-      "dependsOn": ["build-gpu"],
+      "dependsOn": ["build-windowsml"],
       "outputs": [
         "{workspaceRoot}/tmp/exam-prep-desktop/packaged-flow-smoke"
       ],
@@ -123,7 +122,7 @@
     "packaged-streaming-baseline": {
       "cache": false,
       "executor": "nx:run-commands",
-      "dependsOn": ["build-gpu"],
+      "dependsOn": ["build-windowsml"],
       "outputs": [
         "{workspaceRoot}/tmp/exam-prep-desktop/packaged-streaming-baseline"
       ],

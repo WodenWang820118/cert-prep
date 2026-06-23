@@ -11,12 +11,11 @@
     "build:frontend": "pnpm nx run exam-prep:build",
     "build:backend": "pnpm nx run exam-prep-backend:build-sidecar",
     "build:backend-runtime": "pnpm nx run exam-prep-backend:build-backend-runtime",
-    "build:ocr-runtime": "pnpm nx run exam-prep-backend:build-ocr-runtime-gpu",
+    "build:ocr-runtime": "pnpm nx run exam-prep-backend:build-ocr-runtime-windowsml",
     "build:tauri": "pnpm nx run exam-prep-desktop:build",
-    "build:tauri:win": "pnpm nx run exam-prep-desktop:build-gpu",
+    "build:tauri:win": "pnpm nx run exam-prep-desktop:build-windowsml",
     "package:qa": "pnpm nx run exam-prep-desktop:package-qa",
-    "package:streaming-production": "pnpm nx run exam-prep-desktop:packaged-streaming-production-windowsml",
-    "smoke:npu": "pnpm nx run exam-prep-backend:ocr-windowsml-npu-smoke"
+    "package:streaming-production": "pnpm nx run exam-prep-desktop:packaged-streaming-production-windowsml"
   },
   "private": true,
   "dependencies": {

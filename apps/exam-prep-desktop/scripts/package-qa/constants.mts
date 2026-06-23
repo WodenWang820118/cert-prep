@@ -11,10 +11,6 @@ export const DEFAULT_BACKEND_RUNTIME_MANIFEST =
   'apps/exam-prep-desktop/src-tauri/resources/backend-runtime-manifest.json';
 export const DEFAULT_BACKEND_RUNTIME_ENTRYPOINT =
   'apps/exam-prep-backend/dist/exam-prep-backend.exe';
-export const DEFAULT_OCR_RUNTIME_ROOT =
-  'apps/exam-prep-backend/dist/ocr-runtime';
-export const DEFAULT_OCR_RUNTIME_MANIFEST =
-  'apps/exam-prep-desktop/src-tauri/resources/ocr-runtime-manifest.json';
 export const DEFAULT_WINDOWSML_OCR_RUNTIME_ROOT =
   'apps/exam-prep-backend/dist/ocr-windowsml-runtime';
 export const DEFAULT_WINDOWSML_OCR_RUNTIME_MANIFEST =
@@ -24,7 +20,6 @@ export const DEFAULT_LLM_MODEL = 'qwen3.5:4b';
 export const PACKAGE_QA_OCR_PAGE_WORKERS_ENV =
   'EXAM_PREP_PACKAGE_QA_OCR_PAGE_WORKERS';
 export const BACKEND_RUNTIME_PREFIX = 'exam-prep-backend-runtime-';
-export const OCR_RUNTIME_PREFIX = 'exam-prep-ocr-runtime-';
 export const WINDOWSML_OCR_RUNTIME_PREFIX = 'exam-prep-ocr-windowsml-runtime-';
 export const CAPTURE_LIMIT = 12_000;
 export const INITIAL_INSTALLER_WARNING_MB = 150;

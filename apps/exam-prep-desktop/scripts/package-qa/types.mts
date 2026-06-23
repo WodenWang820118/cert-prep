@@ -4,15 +4,13 @@ export interface PackageQaOptions {
   readonly backendRuntimeRoot?: string;
   readonly backendRuntimeManifest?: string;
   readonly backendRuntimeEntrypoint?: string;
-  readonly ocrRuntimeRoot?: string;
-  readonly ocrRuntimeManifest?: string;
   readonly windowsmlOcrRuntimeRoot?: string;
   readonly windowsmlOcrRuntimeManifest?: string;
   readonly expectedTargetTriple?: string;
   readonly healthTimeoutMs?: number;
   readonly dataDir?: string;
   readonly llmModel?: string;
-  readonly ocrProvider?: 'windowsml' | 'paddle';
+  readonly ocrProvider?: 'windowsml';
   readonly ocrPageWorkers?: number;
 }
 
@@ -22,9 +20,8 @@ export interface RuntimeHealthOptions {
   readonly timeoutMs?: number;
   readonly dataDir?: string;
   readonly llmModel?: string;
-  readonly ocrRuntimeManifest?: string;
   readonly windowsmlOcrRuntimeManifest?: string;
-  readonly ocrProvider?: 'windowsml' | 'paddle';
+  readonly ocrProvider?: 'windowsml';
   readonly ocrPageWorkers?: number;
 }
 
@@ -73,10 +70,9 @@ export interface LlmHealthSummary {
 
 export interface RuntimeHealthSummary {
   readonly launch_env: {
-    readonly EXAM_PREP_OCR_PROVIDER: 'windowsml' | 'paddle';
+    readonly EXAM_PREP_OCR_PROVIDER: 'windowsml';
     readonly EXAM_PREP_OCR_RUNTIME_MODE: 'external';
     readonly EXAM_PREP_OCR_DEVICE: 'auto';
-    readonly EXAM_PREP_OCR_RUNTIME_MANIFEST_PATH: string;
     readonly EXAM_PREP_OCR_WINDOWSML_DEVICE_ID: '-1';
     readonly EXAM_PREP_OCR_WINDOWSML_DEVICE_POLICY: string;
     readonly EXAM_PREP_WINDOWSML_OCR_RUNTIME_MANIFEST_PATH: string;
@@ -119,7 +115,7 @@ export interface RuntimeManifestSummary {
 }
 
 export interface PackageQaReport {
-  readonly schema_version: 1;
+  readonly schema_version: 2;
   readonly generated_at: string;
   readonly target: {
     readonly rust_triple: string;
@@ -132,9 +128,6 @@ export interface PackageQaReport {
     readonly backend_runtime_root: string;
     readonly backend_runtime_manifest: RuntimeManifestSummary;
     readonly backend_runtime_artifacts: PublicFileRecord[];
-    readonly ocr_runtime_root: string;
-    readonly ocr_runtime_manifest: RuntimeManifestSummary;
-    readonly ocr_runtime_artifacts: PublicFileRecord[];
     readonly windowsml_ocr_runtime_root: string;
     readonly windowsml_ocr_runtime_manifest: RuntimeManifestSummary;
     readonly windowsml_ocr_runtime_artifacts: PublicFileRecord[];
@@ -166,8 +159,6 @@ export interface ParsedArgs {
   backendRuntimeRoot?: string;
   backendRuntimeManifest?: string;
   backendRuntimeEntrypoint?: string;
-  ocrRuntimeRoot?: string;
-  ocrRuntimeManifest?: string;
   windowsmlOcrRuntimeRoot?: string;
   windowsmlOcrRuntimeManifest?: string;
   expectedTargetTriple?: string;
@@ -182,9 +173,8 @@ export interface RuntimeLaunchEnvOptions {
   readonly token: string;
   readonly dataDir: string;
   readonly llmModel: string;
-  readonly ocrRuntimeManifest: string;
   readonly windowsmlOcrRuntimeManifest: string;
-  readonly ocrProvider?: 'windowsml' | 'paddle';
+  readonly ocrProvider?: 'windowsml';
   readonly ocrPageWorkers?: number;
   readonly baseEnv?: NodeJS.ProcessEnv;
 }

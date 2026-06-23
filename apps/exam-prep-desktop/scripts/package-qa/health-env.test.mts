@@ -79,7 +79,6 @@ test('runtime launch env sets OCR page workers only from explicit QA config', ()
     token: 'token',
     dataDir: 'data',
     llmModel: 'qwen3.5:4b',
-    ocrRuntimeManifest: 'ocr-runtime-manifest.json',
     windowsmlOcrRuntimeManifest: 'windowsml-ocr-runtime-manifest.json',
   };
 
@@ -97,6 +96,7 @@ test('runtime launch env sets OCR page workers only from explicit QA config', ()
     ambientOnly.EXAM_PREP_WINDOWSML_OCR_RUNTIME_MANIFEST_PATH,
     'windowsml-ocr-runtime-manifest.json',
   );
+  assert.equal('EXAM_PREP_OCR_RUNTIME_MANIFEST_PATH' in ambientOnly, false);
   assert.equal(ambientOnly.EXAM_PREP_OCR_WINDOWSML_DEVICE_ID, '-1');
   assert.equal(ambientOnly.EXAM_PREP_OCR_WINDOWSML_DEVICE_POLICY, 'PREFER_NPU');
   assert.equal(ambientOnly.PATH, 'test-path');

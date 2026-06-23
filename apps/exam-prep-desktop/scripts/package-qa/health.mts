@@ -10,7 +10,6 @@ import {
   DEFAULT_DATA_DIR,
   DEFAULT_WINDOWSML_OCR_RUNTIME_MANIFEST,
   DEFAULT_LLM_MODEL,
-  DEFAULT_OCR_RUNTIME_MANIFEST,
   defaultWorkspaceRoot,
 } from './constants.mts';
 import {
@@ -63,7 +62,6 @@ export async function collectRuntimeHealth({
   timeoutMs = 120_000,
   dataDir = resolve(workspaceRoot, DEFAULT_DATA_DIR),
   llmModel = DEFAULT_LLM_MODEL,
-  ocrRuntimeManifest = resolve(workspaceRoot, DEFAULT_OCR_RUNTIME_MANIFEST),
   windowsmlOcrRuntimeManifest = resolve(
     workspaceRoot,
     DEFAULT_WINDOWSML_OCR_RUNTIME_MANIFEST,
@@ -83,7 +81,6 @@ export async function collectRuntimeHealth({
     token,
     dataDir,
     llmModel,
-    ocrRuntimeManifest,
     windowsmlOcrRuntimeManifest,
     ocrProvider,
     ocrPageWorkers,
@@ -122,7 +119,6 @@ export async function collectRuntimeHealth({
         EXAM_PREP_OCR_PROVIDER: ocrProvider,
         EXAM_PREP_OCR_RUNTIME_MODE: 'external',
         EXAM_PREP_OCR_DEVICE: 'auto',
-        EXAM_PREP_OCR_RUNTIME_MANIFEST_PATH: ocrRuntimeManifest,
         EXAM_PREP_OCR_WINDOWSML_DEVICE_ID: '-1',
         EXAM_PREP_OCR_WINDOWSML_DEVICE_POLICY: 'PREFER_NPU',
         EXAM_PREP_WINDOWSML_OCR_RUNTIME_MANIFEST_PATH:
@@ -153,7 +149,6 @@ export function buildRuntimeLaunchEnv({
   token,
   dataDir,
   llmModel,
-  ocrRuntimeManifest,
   windowsmlOcrRuntimeManifest,
   ocrProvider = 'windowsml',
   ocrPageWorkers,
@@ -169,7 +164,6 @@ export function buildRuntimeLaunchEnv({
     EXAM_PREP_LLM_PROVIDER: 'ollama',
     EXAM_PREP_OCR_PROVIDER: ocrProvider,
     EXAM_PREP_OCR_RUNTIME_MODE: 'external',
-    EXAM_PREP_OCR_RUNTIME_MANIFEST_PATH: ocrRuntimeManifest,
     EXAM_PREP_OCR_DEVICE: 'auto',
     EXAM_PREP_WINDOWSML_OCR_RUNTIME_MANIFEST_PATH:
       windowsmlOcrRuntimeManifest,

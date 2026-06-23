@@ -12,21 +12,23 @@ and process cleanup.
   assuming machine-wide Python or hidden global setup.
 - Runtime artifacts are described by manifests with file name, byte size,
   SHA-256, target, entrypoint, and release/local URL.
-- Python backend and PaddleOCR runtime readiness are required for OCR/manual PDF
-  workflows.
+- Python backend and WindowsML OCR runtime readiness are required for packaged
+  OCR/manual PDF workflows.
 - Ollama and model availability are optional reasoning dependencies. They must
   never block OCR, source import, manual questions, Full Exam, Random Quiz, or
   wrong-answer review.
 - Runtime install/download actions require explicit user consent.
-- Package QA must verify MSI/NSIS artifacts, backend runtime zip, OCR runtime
-  zip, manifests, launch env, and script-level gates through Nx targets.
+- Package QA schema v2 must verify MSI/NSIS artifacts, backend runtime zip,
+  WindowsML OCR runtime zip, manifests, launch env, and script-level gates
+  through Nx targets. The legacy Paddle OCR runtime manifest is not a packaged
+  product artifact.
 - Runtime manifest hash churn should only be committed when the artifact change
   is part of the intended slice.
 
 ## Evidence
 
-- Package QA has verified backend/OCR runtime manifests, runtime launch env, and
-  Windows x64 bundle artifacts.
+- Package QA has verified backend/WindowsML OCR runtime manifests, runtime
+  launch env, and Windows x64 bundle artifacts.
 - Packaged flow smoke now records restart and final close summaries with
   `gracefulExited`, `fallbackUsed`, `exitCode`, and residual process lists.
 - The 2026-06-21 packaged smoke completed with empty residual process lists and

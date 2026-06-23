@@ -29,10 +29,6 @@ export function parsePackageQaArgs(
       parsed.backendRuntimeManifest = readValue(arg);
     } else if (arg === '--backend-runtime-entrypoint') {
       parsed.backendRuntimeEntrypoint = readValue(arg);
-    } else if (arg === '--ocr-runtime-root') {
-      parsed.ocrRuntimeRoot = readValue(arg);
-    } else if (arg === '--ocr-runtime-manifest') {
-      parsed.ocrRuntimeManifest = readValue(arg);
     } else if (arg === '--windowsml-ocr-runtime-root') {
       parsed.windowsmlOcrRuntimeRoot = readValue(arg);
     } else if (arg === '--windowsml-ocr-runtime-manifest') {

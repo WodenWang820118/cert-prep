@@ -11,10 +11,7 @@ import {
   DEFAULT_LLM_MODEL,
   DEFAULT_WINDOWSML_OCR_RUNTIME_MANIFEST,
   DEFAULT_WINDOWSML_OCR_RUNTIME_ROOT,
-  DEFAULT_OCR_RUNTIME_MANIFEST,
-  DEFAULT_OCR_RUNTIME_ROOT,
   DEFAULT_TARGET_TRIPLE,
-  OCR_RUNTIME_PREFIX,
   WINDOWSML_OCR_RUNTIME_PREFIX,
   defaultWorkspaceRoot,
 } from './constants.mts';
@@ -51,14 +48,6 @@ export async function createPackageQaReport(
     workspaceRoot,
     options.backendRuntimeEntrypoint ?? DEFAULT_BACKEND_RUNTIME_ENTRYPOINT,
   );
-  const ocrRuntimeRoot = resolve(
-    workspaceRoot,
-    options.ocrRuntimeRoot ?? DEFAULT_OCR_RUNTIME_ROOT,
-  );
-  const ocrRuntimeManifest = resolve(
-    workspaceRoot,
-    options.ocrRuntimeManifest ?? DEFAULT_OCR_RUNTIME_MANIFEST,
-  );
   const windowsmlOcrRuntimeRoot = resolve(
     workspaceRoot,
     options.windowsmlOcrRuntimeRoot ?? DEFAULT_WINDOWSML_OCR_RUNTIME_ROOT,
@@ -86,17 +75,6 @@ export async function createPackageQaReport(
     expectedKind: 'python_backend',
     artifactPrefix: BACKEND_RUNTIME_PREFIX,
   });
-  const ocrRuntimeArtifacts = collectOcrRuntimeArtifacts(
-    ocrRuntimeRoot,
-    workspaceRoot,
-  );
-  const ocrRuntimeManifestSummary = validateRuntimeManifest({
-    manifestPath: ocrRuntimeManifest,
-    runtimeRoot: ocrRuntimeRoot,
-    workspaceRoot,
-    expectedKind: 'paddle_ocr',
-    artifactPrefix: OCR_RUNTIME_PREFIX,
-  });
   const windowsmlOcrRuntimeArtifacts = collectOcrRuntimeArtifacts(
     windowsmlOcrRuntimeRoot,
     workspaceRoot,
@@ -112,11 +90,6 @@ export async function createPackageQaReport(
   if (targetTriple !== expectedTargetTriple) {
     throw new Error(
       `Expected ${expectedTargetTriple} backend runtime, found ${targetTriple}`,
-    );
-  }
-  if (ocrRuntimeManifestSummary.target !== expectedTargetTriple) {
-    throw new Error(
-      `Expected ${expectedTargetTriple} OCR runtime, found ${ocrRuntimeManifestSummary.target}`,
     );
   }
   if (windowsmlOcrRuntimeManifestSummary.target !== expectedTargetTriple) {
@@ -136,7 +109,6 @@ export async function createPackageQaReport(
     timeoutMs: options.healthTimeoutMs,
     dataDir: resolve(workspaceRoot, options.dataDir ?? DEFAULT_DATA_DIR),
     llmModel: options.llmModel ?? DEFAULT_LLM_MODEL,
-    ocrRuntimeManifest,
     windowsmlOcrRuntimeManifest,
     ocrProvider: options.ocrProvider,
     ocrPageWorkers: options.ocrPageWorkers,
@@ -147,7 +119,7 @@ export async function createPackageQaReport(
   }
 
   return {
-    schema_version: 1,
+    schema_version: 2,
     generated_at: new Date().toISOString(),
     target: {
       rust_triple: targetTriple,
@@ -162,9 +134,6 @@ export async function createPackageQaReport(
       ),
       backend_runtime_manifest: backendRuntimeManifestSummary,
       backend_runtime_artifacts: backendRuntimeArtifacts.map(publicFileRecord),
-      ocr_runtime_root: normalizePath(relative(workspaceRoot, ocrRuntimeRoot)),
-      ocr_runtime_manifest: ocrRuntimeManifestSummary,
-      ocr_runtime_artifacts: ocrRuntimeArtifacts.map(publicFileRecord),
       windowsml_ocr_runtime_root: normalizePath(
         relative(workspaceRoot, windowsmlOcrRuntimeRoot),
       ),
