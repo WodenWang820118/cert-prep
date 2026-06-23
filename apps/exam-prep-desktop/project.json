@@ -171,7 +171,7 @@
       "dependsOn": ["typecheck-scripts"],
       "inputs": ["default"],
       "options": {
-        "command": "node --test apps/exam-prep-desktop/scripts/package-qa/artifacts.test.mts apps/exam-prep-desktop/scripts/package-qa/health-env.test.mts apps/exam-prep-desktop/scripts/packaged-flow-smoke/args.test.mts apps/exam-prep-desktop/scripts/packaged-flow-smoke/processes.test.mts apps/exam-prep-desktop/scripts/packaged-flow-smoke/resource-sampling.test.mts apps/exam-prep-desktop/scripts/packaged-flow-smoke/streaming-evidence.test.mts"
+        "command": "node --test apps/exam-prep-desktop/scripts/package-qa/artifacts.test.mts apps/exam-prep-desktop/scripts/package-qa/health-env.test.mts apps/exam-prep-desktop/scripts/packaged-flow-smoke/args.test.mts apps/exam-prep-desktop/scripts/packaged-flow-smoke/processes.test.mts apps/exam-prep-desktop/scripts/packaged-flow-smoke/resource-sampling.test.mts apps/exam-prep-desktop/scripts/packaged-flow-smoke/streaming-baseline-report.test.mts apps/exam-prep-desktop/scripts/packaged-flow-smoke/streaming-evidence.test.mts"
       }
     },
     "cargo-test": {

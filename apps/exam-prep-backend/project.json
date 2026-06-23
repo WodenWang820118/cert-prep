@@ -153,6 +153,15 @@
         "command": "uv run --exact --reinstall-package onnxruntime-windowsml --python 3.12 --extra ocr-windowsml python scripts/runtime/windowsml/ocr_windowsml_benchmark.py"
       }
     },
+    "ocr-windowsml-npu-smoke": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "outputs": ["{projectRoot}/.benchmarks"],
+      "options": {
+        "cwd": "apps/exam-prep-backend",
+        "command": "uv run --exact --reinstall-package onnxruntime-windowsml --python 3.12 --extra ocr-windowsml python scripts/runtime/windowsml/ocr_windowsml_npu_smoke.py"
+      }
+    },
     "reasoning-bakeoff": {
       "cache": false,
       "executor": "nx:run-commands",

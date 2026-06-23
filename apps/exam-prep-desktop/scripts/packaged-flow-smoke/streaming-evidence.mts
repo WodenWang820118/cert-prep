@@ -133,7 +133,7 @@ export function parseWindowsmlNpuPrepassEvidence(
     cpu_events: cpuEvents,
     reason: available
       ? null
-      : unavailableReason ??
+      : normalizeNpuPrepassUnavailableReason(unavailableReason) ??
         (deviceIsWindowsml
           ? 'npu_prepass_evidence_missing'
           : 'ocr_device_not_windowsml'),
@@ -237,6 +237,13 @@ function unavailableNpuPrepassReason(fallbackReason: string | null): string | nu
   }
   const match = fallbackReason.match(/(?:^|;)\s*npu_prepass_unavailable=([^;]+)/);
   return match ? match[1].trim() || 'npu_prepass_unavailable' : null;
+}
+
+function normalizeNpuPrepassUnavailableReason(reason: string | null): string | null {
+  if (reason === 'vitisai_events_missing') {
+    return 'attempted_not_scheduled';
+  }
+  return reason;
 }
 
 function nullableString(value: unknown): string | null {

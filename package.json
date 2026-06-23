@@ -15,7 +15,8 @@
     "build:tauri": "pnpm nx run exam-prep-desktop:build",
     "build:tauri:win": "pnpm nx run exam-prep-desktop:build-gpu",
     "package:qa": "pnpm nx run exam-prep-desktop:package-qa",
-    "package:streaming-production": "pnpm nx run exam-prep-desktop:packaged-streaming-production-windowsml"
+    "package:streaming-production": "pnpm nx run exam-prep-desktop:packaged-streaming-production-windowsml",
+    "smoke:npu": "pnpm nx run exam-prep-backend:ocr-windowsml-npu-smoke"
   },
   "private": true,
   "dependencies": {

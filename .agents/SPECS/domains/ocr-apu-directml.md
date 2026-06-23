@@ -1,5 +1,11 @@
 # OCR APU DirectML Spec
 
+Archived status: this document is historical DirectML implementation and
+measurement evidence. As of 2026-06-23, the current packaged accelerated OCR
+product lane is WindowsML (`EXAM_PREP_OCR_PROVIDER=windowsml`) with PaddleOCR
+3.7 det/rec on the AMD iGPU through DML/CPU mixed execution. NPU participation
+is tracked only as internal WindowsML prepass evidence and strict smoke proof.
+
 ## Purpose
 
 Use the AMD Radeon 880M iGPU for OCR work when possible so the Nvidia RTX 4060

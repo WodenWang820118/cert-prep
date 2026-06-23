@@ -97,7 +97,7 @@ interface GpuRoutingChecks {
 }
 
 interface PackagedStreamingProductionSummary {
-  schema_version: 1;
+  schema_version: 2;
   status: 'passed' | 'failed';
   generated_at: string;
   selected_model: string | null;
@@ -119,7 +119,7 @@ interface PackagedStreamingProductionSummary {
   gpu_routing_checks: GpuRoutingChecks | null;
   windowsml_npu_prepass_evidence: WindowsMlNpuPrepassEvidence | null;
   xrt_smi_summary: Record<string, unknown> | null;
-  npu_power_or_efficiency_observations: Record<string, unknown> | null;
+  windowsml_npu_hardware_observation: Record<string, unknown> | null;
   checks: Record<string, boolean>;
   errors: string[];
 }
@@ -323,7 +323,7 @@ function buildStreamingBaselineReport(run: SmokeRunState): StreamingBaselineRepo
   };
 }
 
-function buildProductionSummary(
+export function buildProductionSummary(
   run: SmokeRunState,
   report: StreamingBaselineReport,
 ): PackagedStreamingProductionSummary {
@@ -352,14 +352,10 @@ function buildProductionSummary(
       report.streaming.practice_ready_from_streamed_questions,
   };
   Object.assign(checks, providerRoutingChecks(run, gpuRoutingChecks));
-  if (run.options.ocrProvider === 'windowsml') {
-    checks.windowsml_npu_prepass_evidence =
-      run.metrics.windowsml_npu_prepass_evidence?.available === true;
-  }
   const productionSummaryPath = join(run.options.outDir, 'production-summary.json');
 
   return {
-    schema_version: 1,
+    schema_version: 2,
     status: Object.values(checks).every(Boolean) ? 'passed' : 'failed',
     generated_at: report.generated_at,
     selected_model: selectedModel,
@@ -390,12 +386,13 @@ function buildProductionSummary(
         ? run.metrics.windowsml_npu_prepass_evidence ?? null
         : null,
     xrt_smi_summary: xrtSmiSummary,
-    npu_power_or_efficiency_observations:
+    windowsml_npu_hardware_observation:
       run.options.ocrProvider === 'windowsml'
         ? {
             power_watts_available: xrtSmiSummary?.power_watts_available === true,
             npu_detected: xrtSmiSummary?.npu_detected === true,
-            evidence_scope: 'windowsml_hardware_metadata',
+            evidence_scope: 'windowsml_hardware_metadata_only',
+            scheduling_scope: windowsmlNpuSchedulingScope(run),
           }
         : null,
     checks,
@@ -421,6 +418,19 @@ function providerRoutingChecks(
     };
   }
   return {};
+}
+
+function windowsmlNpuSchedulingScope(
+  run: SmokeRunState,
+): 'prepass_scheduled' | 'attempted_not_scheduled' | 'not_observed' {
+  const evidence = run.metrics.windowsml_npu_prepass_evidence;
+  if (evidence?.available === true) {
+    return 'prepass_scheduled';
+  }
+  if (evidence?.attempted === true) {
+    return 'attempted_not_scheduled';
+  }
+  return 'not_observed';
 }
 
 function renderStreamingBaselineMarkdown(report: StreamingBaselineReport): string {

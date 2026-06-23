@@ -24,8 +24,9 @@ those flows.
 - Reasoning comparator work must collect RAM/VRAM residency evidence before
   parameter reduction, scored bakeoff reruns, or default-model changes.
 - Nvidia GPU headroom should be preserved for larger Ollama reasoning models.
-  Packaged OCR now prefers AMD DirectML through an explicit runtime health gate;
-  Paddle CUDA remains an override/debug path.
+  Packaged accelerated OCR now defaults to WindowsML OCR on the AMD iGPU, with
+  NPU participation recorded only as internal prepass evidence when ORT profile
+  data proves provider scheduling. Paddle CUDA remains an override/debug path.
 - No Kafka or external broker is used for the first local-first streaming
   implementation. The current design uses a SQLite-backed job queue/outbox and
   bounded local workers.
@@ -432,10 +433,10 @@ Live baseline blocker:
 
 2026-06-22 AMD NPU OCR experimental lane (archived):
 
-- Decision update: standalone AMD NPU OCR is retired from the product/runtime
-  path. The formal direction is DirectML mixed execution
-  (`DmlExecutionProvider` plus `CPUExecutionProvider`) under the existing
-  `directml` OCR provider.
+- Historical decision update: standalone AMD NPU OCR was retired from the
+  product/runtime path on 2026-06-22 in favor of DirectML mixed execution. That
+  DirectML direction is now archived; as of 2026-06-23 the current packaged
+  accelerated OCR product lane is WindowsML.
 - Removed/retired implementation surfaces:
   - backend `amd_npu` OCR provider selection and `amd_npu_ocr` runtime
     requirement kind
@@ -444,13 +445,11 @@ Live baseline blocker:
     `packaged-streaming-production-amd-npu` targets
   - package QA AMD NPU runtime manifest/env validation
   - Angular runtime checklist/consent UI for AMD NPU OCR
-  - packaged-flow `xrt-smi`, `npu_routing_checks`, and
+  - packaged-flow `xrt-smi`, `npu_routing_checks`, and the old
     `npu_power_or_efficiency_observations` production summary fields
-- DirectML production baseline remains the only packaged streaming production
-  OCR target. Acceptance still requires 46/46 pages, chunks present, first
-  chunk under the UX gate, streamed questions before parse completion,
-  practice readiness, DirectML OCR on AMD iGPU, Nvidia avoidance for OCR,
-  Ollama reasoning on Nvidia, and clean cleanup.
+- DirectML production baseline evidence is historical. Current packaged
+  production acceptance uses the WindowsML lane and keeps NPU prepass evidence
+  separate from OCR success.
 - The historical evidence below explains why the independent NPU path was not
   accepted: PP-OCRv5 did not pass strict VitisAI NPU-only session gates, mixed
   Windows ML policy sessions still used CPU fallback, and power replacement
@@ -468,10 +467,10 @@ Historical AMD NPU OCR research:
   `ExecutionProviderCatalog` + `VitisAIExecutionProvider` path. Passive health
   and probe paths do not call `EnsureReadyAsync()`; the explicit runtime
   installer path is the only user-approved enablement/download gate.
-- Desktop resource sampling now records `xrt-smi-summary.json`,
-  `xrt_smi_summary`, `npu_routing_checks`, and
-  `npu_power_or_efficiency_observations`. DirectML production checks remain
-  provider-aware and are not applied to `amd_npu`.
+- Desktop resource sampling at that historical checkpoint recorded
+  `xrt-smi-summary.json`, `xrt_smi_summary`, `npu_routing_checks`, and the old
+  `npu_power_or_efficiency_observations` field. Current WindowsML summaries use
+  `windowsml_npu_hardware_observation` instead.
 - Explicit `--ensure-ready` probe artifact:
   `apps/exam-prep-backend/.benchmarks/ocr-amd-npu-probe-20260622T085003Z.json`.
 - Probe status: `ready_for_session`. The machine sees

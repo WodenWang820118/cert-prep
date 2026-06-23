@@ -52,6 +52,14 @@ PaddleOCR must remain at least 3.7 everywhere:
 - Evidence gate: WindowsML OCR results may record
   `npu_prepass=text_density_vitisai;vitisai_events=...` while keeping
   `extraction_method=windowsml_ocr`.
+- Strict NPU proof gate:
+  `pnpm nx run exam-prep-backend:ocr-windowsml-npu-smoke --skip-nx-cache`
+  writes `ocr-windowsml-npu-smoke-*.json` and exits non-zero unless ORT profile
+  provider counts show NPU provider node execution for the text-density
+  prepass.
+- Production summary gate: packaged WindowsML production summaries keep
+  `windowsml_npu_prepass_evidence` as observation only. Missing prepass
+  scheduling is `attempted_not_scheduled`, not an OCR production failure.
 - No-regression gate: backend tests, Angular tests/lint, Tauri tests, desktop
   package QA scripts, and `git diff --check` must pass.
 
@@ -67,8 +75,21 @@ Implemented in the working tree:
   evidence.
 - Added a WindowsML runtime unit test proving NPU prepass evidence is merged
   into a `windowsml_ocr` OCR result.
+- Added a strict WindowsML NPU smoke target for prepass scheduling proof.
+- Updated packaged production summaries to schema v2 so WindowsML OCR success
+  is not conflated with NPU prepass scheduling.
 - Regenerated the OpenAPI client after removing `amd_npu_ocr` from backend
   enums.
+
+## Deferred
+
+- Rename remaining low-level AMD/VitisAI helper names only after benchmark and
+  diagnostic script names no longer depend on them. Until then, treat those
+  names as hardware evidence, not product surface.
+- Evaluate NPU-friendly OCR model candidates only after license review and only
+  as internal WindowsML stages.
+- Keep `xrt-smi` power/efficiency reporting as hardware metadata. Missing watts
+  or detected hardware must never be interpreted as proof that OCR ran on NPU.
 
 ## References
 

@@ -173,7 +173,7 @@ test('WindowsML NPU prepass evidence requires VitisAI provider events', () => {
         'npu_prepass_unavailable=vitisai_events_missing;vitisai_events=0;cpu_events=5',
       vitisai_events: 0,
       cpu_events: 5,
-      reason: 'vitisai_events_missing',
+      reason: 'attempted_not_scheduled',
     },
   );
 
