@@ -6,15 +6,13 @@ export interface PackageQaOptions {
   readonly backendRuntimeEntrypoint?: string;
   readonly ocrRuntimeRoot?: string;
   readonly ocrRuntimeManifest?: string;
-  readonly directmlOcrRuntimeRoot?: string;
-  readonly directmlOcrRuntimeManifest?: string;
-  readonly amdNpuOcrRuntimeRoot?: string;
-  readonly amdNpuOcrRuntimeManifest?: string;
+  readonly windowsmlOcrRuntimeRoot?: string;
+  readonly windowsmlOcrRuntimeManifest?: string;
   readonly expectedTargetTriple?: string;
   readonly healthTimeoutMs?: number;
   readonly dataDir?: string;
   readonly llmModel?: string;
-  readonly ocrProvider?: 'directml' | 'paddle' | 'amd_npu';
+  readonly ocrProvider?: 'windowsml' | 'paddle';
   readonly ocrPageWorkers?: number;
 }
 
@@ -25,9 +23,8 @@ export interface RuntimeHealthOptions {
   readonly dataDir?: string;
   readonly llmModel?: string;
   readonly ocrRuntimeManifest?: string;
-  readonly directmlOcrRuntimeManifest?: string;
-  readonly amdNpuOcrRuntimeManifest?: string;
-  readonly ocrProvider?: 'directml' | 'paddle' | 'amd_npu';
+  readonly windowsmlOcrRuntimeManifest?: string;
+  readonly ocrProvider?: 'windowsml' | 'paddle';
   readonly ocrPageWorkers?: number;
 }
 
@@ -76,15 +73,13 @@ export interface LlmHealthSummary {
 
 export interface RuntimeHealthSummary {
   readonly launch_env: {
-    readonly EXAM_PREP_OCR_PROVIDER: 'directml' | 'paddle' | 'amd_npu';
+    readonly EXAM_PREP_OCR_PROVIDER: 'windowsml' | 'paddle';
     readonly EXAM_PREP_OCR_RUNTIME_MODE: 'external';
     readonly EXAM_PREP_OCR_DEVICE: 'auto';
     readonly EXAM_PREP_OCR_RUNTIME_MANIFEST_PATH: string;
-    readonly EXAM_PREP_OCR_DIRECTML_DEVICE_ID: '-1';
-    readonly EXAM_PREP_DIRECTML_OCR_RUNTIME_MANIFEST_PATH: string;
-    readonly EXAM_PREP_AMD_NPU_OCR_RUNTIME_MANIFEST_PATH: string | null;
-    readonly EXAM_PREP_OCR_AMD_NPU_DEVICE_ID: string;
-    readonly EXAM_PREP_OCR_AMD_NPU_POLICY: string;
+    readonly EXAM_PREP_OCR_WINDOWSML_DEVICE_ID: '-1';
+    readonly EXAM_PREP_OCR_WINDOWSML_DEVICE_POLICY: string;
+    readonly EXAM_PREP_WINDOWSML_OCR_RUNTIME_MANIFEST_PATH: string;
     readonly EXAM_PREP_LLM_PROVIDER: 'ollama';
     readonly EXAM_PREP_OLLAMA_MODEL: string;
     readonly EXAM_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD: 'true';
@@ -140,12 +135,9 @@ export interface PackageQaReport {
     readonly ocr_runtime_root: string;
     readonly ocr_runtime_manifest: RuntimeManifestSummary;
     readonly ocr_runtime_artifacts: PublicFileRecord[];
-    readonly directml_ocr_runtime_root: string;
-    readonly directml_ocr_runtime_manifest: RuntimeManifestSummary;
-    readonly directml_ocr_runtime_artifacts: PublicFileRecord[];
-    readonly amd_npu_ocr_runtime_root?: string;
-    readonly amd_npu_ocr_runtime_manifest?: RuntimeManifestSummary;
-    readonly amd_npu_ocr_runtime_artifacts?: PublicFileRecord[];
+    readonly windowsml_ocr_runtime_root: string;
+    readonly windowsml_ocr_runtime_manifest: RuntimeManifestSummary;
+    readonly windowsml_ocr_runtime_artifacts: PublicFileRecord[];
     readonly size_gate: SizeGate;
   };
   readonly runtime: RuntimeHealthSummary;
@@ -176,10 +168,8 @@ export interface ParsedArgs {
   backendRuntimeEntrypoint?: string;
   ocrRuntimeRoot?: string;
   ocrRuntimeManifest?: string;
-  directmlOcrRuntimeRoot?: string;
-  directmlOcrRuntimeManifest?: string;
-  amdNpuOcrRuntimeRoot?: string;
-  amdNpuOcrRuntimeManifest?: string;
+  windowsmlOcrRuntimeRoot?: string;
+  windowsmlOcrRuntimeManifest?: string;
   expectedTargetTriple?: string;
   healthTimeoutMs?: number;
   ocrPageWorkers?: number;
@@ -193,9 +183,8 @@ export interface RuntimeLaunchEnvOptions {
   readonly dataDir: string;
   readonly llmModel: string;
   readonly ocrRuntimeManifest: string;
-  readonly directmlOcrRuntimeManifest: string;
-  readonly amdNpuOcrRuntimeManifest?: string;
-  readonly ocrProvider?: 'directml' | 'paddle' | 'amd_npu';
+  readonly windowsmlOcrRuntimeManifest: string;
+  readonly ocrProvider?: 'windowsml' | 'paddle';
   readonly ocrPageWorkers?: number;
   readonly baseEnv?: NodeJS.ProcessEnv;
 }

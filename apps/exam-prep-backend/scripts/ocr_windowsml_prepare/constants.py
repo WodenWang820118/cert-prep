@@ -8,8 +8,8 @@ from .model_types import SourceArtifact
 SCRIPT_DIR = Path(__file__).resolve().parents[1]
 BACKEND_ROOT = SCRIPT_DIR.parents[0]
 DEFAULT_OUTPUT_DIR = BACKEND_ROOT / ".benchmarks"
-DEFAULT_SOURCES_DIR = DEFAULT_OUTPUT_DIR / "ocr-directml-sources"
-DEFAULT_MODEL_DIR = DEFAULT_OUTPUT_DIR / "ocr-directml-models"
+DEFAULT_SOURCES_DIR = DEFAULT_OUTPUT_DIR / "ocr-windowsml-sources"
+DEFAULT_MODEL_DIR = DEFAULT_OUTPUT_DIR / "ocr-windowsml-models"
 CONVERSION_TIMEOUT_SECONDS = 600.0
 DOCKER_PADDLEX_IMAGE = (
     "ccr-2vdh3abv-pub.cnc.bj.baidubce.com/paddlex/"

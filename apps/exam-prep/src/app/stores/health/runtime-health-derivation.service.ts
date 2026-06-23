@@ -16,8 +16,7 @@ const MODEL_MISSING_REASON_CODES = new Set([
 ]);
 const OCR_RUNTIME_MISSING_REASON_CODES = new Set([
   'paddle_runtime_missing',
-  'directml_runtime_missing',
-  'amd_npu_runtime_missing',
+  'windowsml_runtime_missing',
 ]);
 
 @Injectable({ providedIn: 'root' })
@@ -71,38 +70,23 @@ export class RuntimeHealthDerivationService {
   ocrRuntimeKind(
     health: OCRHealthRead | null,
     requirements: readonly RuntimeRequirementRead[],
-  ): Extract<RuntimeKind, 'paddle_ocr' | 'directml_ocr' | 'amd_npu_ocr'> {
+  ): Extract<RuntimeKind, 'paddle_ocr' | 'windowsml_ocr'> {
     const healthProvider = this.normalizedCode(health?.provider);
     const healthReason = this.unavailableReason(health);
     if (
-      healthProvider === 'amd_npu' ||
-      healthReason.startsWith('amd_npu_')
+      healthProvider === 'windowsml' ||
+      healthReason.startsWith('windowsml_')
     ) {
-      return 'amd_npu_ocr';
-    }
-    if (
-      healthProvider === 'directml' ||
-      healthReason.startsWith('directml_')
-    ) {
-      return 'directml_ocr';
+      return 'windowsml_ocr';
     }
     if (
       requirements.some(
         (item) =>
-          item.kind === 'amd_npu_ocr' &&
-          this.normalizedCode(item.unavailable_reason).startsWith('amd_npu_'),
+          item.kind === 'windowsml_ocr' &&
+          this.normalizedCode(item.unavailable_reason).startsWith('windowsml_'),
       )
     ) {
-      return 'amd_npu_ocr';
-    }
-    if (
-      requirements.some(
-        (item) =>
-          item.kind === 'directml_ocr' &&
-          this.normalizedCode(item.unavailable_reason).startsWith('directml_'),
-      )
-    ) {
-      return 'directml_ocr';
+      return 'windowsml_ocr';
     }
     return 'paddle_ocr';
   }

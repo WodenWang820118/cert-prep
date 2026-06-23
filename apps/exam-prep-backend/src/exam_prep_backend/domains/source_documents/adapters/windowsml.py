@@ -7,11 +7,11 @@ import tempfile
 from time import perf_counter
 from typing import Any
 
-from exam_prep_backend.domains.source_documents.adapters.directml_device import (
-    AUTO_DIRECTML_DEVICE_ID,
-    DirectMLDeviceSelectionError,
-    directml_device_label,
-    resolve_directml_device_id,
+from exam_prep_backend.domains.source_documents.adapters.windowsml_device import (
+    AUTO_WINDOWSML_DEVICE_ID,
+    WindowsMLDeviceSelectionError,
+    windowsml_device_label,
+    resolve_windowsml_device_id,
 )
 from exam_prep_backend.domains.source_documents.ocr_contracts import OCRHealth, OCRPageResult
 from exam_prep_backend.exceptions import ProviderUnavailableError
@@ -30,26 +30,26 @@ PADDLEOCR37_REQUIRED_MODEL_FILES = (
 )
 
 
-class DirectMLOCRProvider:
-    """Blocked-until-ready DirectML OCR provider for the AMD iGPU production gate."""
+class WindowsMLOCRProvider:
+    """Blocked-until-ready WindowsML OCR provider for the packaged production gate."""
 
-    provider = "directml"
-    engine = "onnxruntime-directml"
+    provider = "windowsml"
+    engine = "onnxruntime-windowsml"
     page_workers = 1
 
     def health(self) -> OCRHealth:
         providers, version, import_error = _onnxruntime_state()
-        directml_available = "DmlExecutionProvider" in providers
-        unavailable_reason = _unavailable_reason(import_error, directml_available)
+        windowsml_available = "DmlExecutionProvider" in providers
+        unavailable_reason = _unavailable_reason(import_error, windowsml_available)
         return OCRHealth(
             provider=self.provider,
             engine=self.engine,
             available=False,
-            detail=_detail(import_error, directml_available),
+            detail=_detail(import_error, windowsml_available),
             python_version=platform.python_version(),
             paddle_version=None,
             paddleocr_version=version,
-            selected_device="amd_directml" if directml_available else None,
+            selected_device="windowsml" if windowsml_available else None,
             cuda_available=False,
             gpu_count=0,
             model_cache_dir=None,
@@ -59,40 +59,42 @@ class DirectMLOCRProvider:
 
     def extract_page_text(self, image_png: bytes, page_number: int) -> OCRPageResult:
         raise ProviderUnavailableError(
-            "DirectML OCR is gated until model artifacts, deterministic inference, "
-            "benchmark, and AMD/Nvidia routing evidence pass."
+            "WindowsML OCR is gated until model artifacts, deterministic inference, "
+            "benchmark, and hardware routing evidence pass."
         )
 
 
-class DirectMLRuntimeOCRProvider:
-    """Runnable DirectML OCR provider used inside the packaged DirectML runtime."""
+class WindowsMLRuntimeOCRProvider:
+    """Runnable WindowsML OCR provider used inside the packaged WindowsML runtime."""
 
-    provider = "directml"
-    engine = "paddleocr-3.7-onnxruntime-directml"
+    provider = "windowsml"
+    engine = "paddleocr-3.7-onnxruntime-windowsml"
     page_workers = 1
 
     def __init__(
         self,
         *,
         model_dir: Path,
-        device_id: int | None = AUTO_DIRECTML_DEVICE_ID,
+        device_id: int | None = AUTO_WINDOWSML_DEVICE_ID,
+        npu_policy: str = "PREFER_NPU",
     ) -> None:
         self.model_dir = model_dir
         self.device_id = device_id
-        self._runner = DirectMLOCRRunner(model_dir=model_dir, device_id=device_id)
+        self.npu_policy = npu_policy
+        self._runner = WindowsMLOCRRunner(model_dir=model_dir, device_id=device_id)
 
     def health(self) -> OCRHealth:
         providers, version, import_error = _onnxruntime_state()
         paddleocr_version, paddleocr_error = _paddleocr_state()
-        directml_available = "DmlExecutionProvider" in providers
+        windowsml_available = "DmlExecutionProvider" in providers
         selected_device_id, device_error = _resolve_health_device_id(
             self.device_id,
-            directml_available=directml_available,
+            windowsml_available=windowsml_available,
             import_error=import_error,
         )
         selected_device = (
-            directml_device_label(selected_device_id)
-            if directml_available and device_error is None
+            windowsml_device_label(selected_device_id)
+            if windowsml_available and device_error is None
             else None
         )
         missing_files = [
@@ -103,7 +105,7 @@ class DirectMLRuntimeOCRProvider:
         available = (
             import_error is None
             and paddleocr_error is None
-            and directml_available
+            and windowsml_available
             and device_error is None
             and not missing_files
         )
@@ -114,7 +116,7 @@ class DirectMLRuntimeOCRProvider:
             detail=_runtime_detail(
                 import_error,
                 paddleocr_error,
-                directml_available,
+                windowsml_available,
                 missing_files,
                 device_error,
             ),
@@ -129,48 +131,62 @@ class DirectMLRuntimeOCRProvider:
             unavailable_reason=_runtime_unavailable_reason(
                 import_error,
                 paddleocr_error,
-                directml_available,
+                windowsml_available,
                 missing_files,
                 device_error,
             ),
         )
 
     def extract_page_text(self, image_png: bytes, page_number: int) -> OCRPageResult:
+        npu_prepass = _try_windowsml_npu_prepass(
+            self.model_dir,
+            image_png,
+            policy=self.npu_policy,
+        )
         result = self._runner.extract_text(image_png)
+        device = result.device
+        fallback_reason = result.fallback_reason
+        if npu_prepass is not None:
+            device = f"windowsml:vitisai+{result.device}"
+            fallback_reason = (
+                "npu_prepass=text_density_vitisai;"
+                f"vitisai_events={npu_prepass['vitisai_event_count']};"
+                "paddleocr_det_rec=windowsml"
+            )
         return OCRPageResult(
             text=result.text,
-            extraction_method="directml_ocr",
-            device=result.device,
-            fallback_reason=result.fallback_reason,
-            duration_ms=result.duration_ms,
+            extraction_method="windowsml_ocr",
+            device=device,
+            fallback_reason=fallback_reason,
+            duration_ms=result.duration_ms + int(npu_prepass["duration_ms"] if npu_prepass else 0),
         )
 
 
 @dataclass(frozen=True)
-class DirectMLOCRTextResult:
+class WindowsMLOCRTextResult:
     text: str
     duration_ms: int
     box_count: int
     recognized_count: int
-    device: str = "amd_directml"
+    device: str = "amd_windowsml"
     fallback_reason: str | None = None
 
 
-class DirectMLOCRRunner:
-    """PaddleOCR 3.7 ONNXRuntime runner pinned to the AMD DirectML iGPU lane."""
+class WindowsMLOCRRunner:
+    """PaddleOCR 3.7 ONNXRuntime runner using the WindowsML execution lane."""
 
     def __init__(
         self,
         *,
         model_dir: Path,
-        device_id: int | None = AUTO_DIRECTML_DEVICE_ID,
+        device_id: int | None = AUTO_WINDOWSML_DEVICE_ID,
     ) -> None:
         self.model_dir = model_dir
         self.device_id = device_id
         self._selected_device_id: int | None | object = _UNRESOLVED_DEVICE_ID
         self._paddleocr: Any | None = None
 
-    def extract_text(self, image_png: bytes) -> DirectMLOCRTextResult:
+    def extract_text(self, image_png: bytes) -> WindowsMLOCRTextResult:
         started = perf_counter()
         image_path = self._write_temp_png(image_png)
         try:
@@ -178,7 +194,7 @@ class DirectMLOCRRunner:
         finally:
             image_path.unlink(missing_ok=True)
         lines = _extract_paddleocr_texts(results)
-        return DirectMLOCRTextResult(
+        return WindowsMLOCRTextResult(
             text="\n".join(lines),
             duration_ms=_elapsed_ms(started),
             box_count=_count_paddleocr_boxes(results),
@@ -188,7 +204,7 @@ class DirectMLOCRRunner:
         )
 
     def _write_temp_png(self, image_png: bytes) -> Path:
-        with tempfile.NamedTemporaryFile(prefix="exam-prep-directml-", suffix=".png", delete=False) as file:
+        with tempfile.NamedTemporaryFile(prefix="exam-prep-windowsml-", suffix=".png", delete=False) as file:
             file.write(image_png)
             return Path(file.name)
 
@@ -211,21 +227,21 @@ class DirectMLOCRRunner:
     def _engine_config(self) -> dict[str, Any]:
         return {
             "providers": ["DmlExecutionProvider", "CPUExecutionProvider"],
-            "provider_options": [{"device_id": self._directml_device_id()}, {}],
+            "provider_options": [{"device_id": self._windowsml_device_id()}, {}],
             "enable_mem_pattern": False,
             "execution_mode": "sequential",
         }
 
-    def _directml_device_id(self) -> int | None:
+    def _windowsml_device_id(self) -> int | None:
         if self._selected_device_id is _UNRESOLVED_DEVICE_ID:
             try:
-                self._selected_device_id = resolve_directml_device_id(self.device_id)
-            except DirectMLDeviceSelectionError as exc:
+                self._selected_device_id = resolve_windowsml_device_id(self.device_id)
+            except WindowsMLDeviceSelectionError as exc:
                 raise ProviderUnavailableError(str(exc)) from exc
         return self._selected_device_id  # type: ignore[return-value]
 
     def _device_label(self) -> str:
-        return directml_device_label(self._directml_device_id())
+        return windowsml_device_label(self._windowsml_device_id())
 
 
 def _onnxruntime_state() -> tuple[list[str], str | None, Exception | None]:
@@ -258,69 +274,69 @@ def _import_paddleocr() -> Any:
 
 def _unavailable_reason(
     import_error: Exception | None,
-    directml_available: bool,
+    windowsml_available: bool,
 ) -> str:
     if import_error is not None:
-        return "directml_runtime_missing"
-    if not directml_available:
-        return "directml_provider_unavailable"
-    return "directml_ocr_not_ready"
+        return "windowsml_runtime_missing"
+    if not windowsml_available:
+        return "windowsml_provider_unavailable"
+    return "windowsml_ocr_not_ready"
 
 
-def _detail(import_error: Exception | None, directml_available: bool) -> str:
+def _detail(import_error: Exception | None, windowsml_available: bool) -> str:
     if import_error is not None:
-        return f"AMD DirectML OCR runtime unavailable: {import_error}"
-    if not directml_available:
-        return "AMD DirectML OCR runtime is installed but DmlExecutionProvider is unavailable."
+        return f"WindowsML OCR runtime unavailable: {import_error}"
+    if not windowsml_available:
+        return "WindowsML OCR runtime is installed but DmlExecutionProvider is unavailable."
     return (
-        "AMD DirectML OCR runtime is present, but production OCR is blocked until "
-        "ONNX model artifacts, inference smoke, benchmark, and GPU routing checks pass."
+        "WindowsML OCR runtime is present, but production OCR is blocked until "
+        "ONNX model artifacts, inference smoke, benchmark, and hardware routing checks pass."
     )
 
 
 def _runtime_unavailable_reason(
     import_error: Exception | None,
     paddleocr_error: Exception | None,
-    directml_available: bool,
+    windowsml_available: bool,
     missing_files: list[str],
     device_error: Exception | None,
 ) -> str | None:
     if import_error is not None:
-        return "directml_runtime_missing"
+        return "windowsml_runtime_missing"
     if paddleocr_error is not None:
         return "paddleocr37_runtime_missing"
-    if not directml_available:
-        return "directml_provider_unavailable"
+    if not windowsml_available:
+        return "windowsml_provider_unavailable"
     if device_error is not None:
-        return "directml_device_unavailable"
+        return "windowsml_device_unavailable"
     if missing_files:
-        return "directml_model_artifacts_missing"
+        return "windowsml_model_artifacts_missing"
     return None
 
 
 def _runtime_detail(
     import_error: Exception | None,
     paddleocr_error: Exception | None,
-    directml_available: bool,
+    windowsml_available: bool,
     missing_files: list[str],
     device_error: Exception | None,
 ) -> str:
     if import_error is not None:
-        return f"AMD DirectML OCR runtime unavailable: {import_error}"
+        return f"WindowsML OCR runtime unavailable: {import_error}"
     if paddleocr_error is not None:
         return f"PaddleOCR 3.7 runtime unavailable: {paddleocr_error}"
-    if not directml_available:
-        return "AMD DirectML OCR runtime is installed but DmlExecutionProvider is unavailable."
+    if not windowsml_available:
+        return "WindowsML OCR runtime is installed but DmlExecutionProvider is unavailable."
     if device_error is not None:
-        return f"AMD DirectML OCR adapter selection failed: {device_error}"
+        return f"WindowsML OCR adapter selection failed: {device_error}"
     if missing_files:
-        return f"AMD DirectML OCR model artifacts are missing: {', '.join(missing_files)}."
-    return "AMD DirectML OCR runtime is ready with PaddleOCR 3.7, PP-OCRv6 medium, and AMD iGPU DirectML."
+        return f"WindowsML OCR model artifacts are missing: {', '.join(missing_files)}."
+    return "WindowsML OCR runtime is ready with PaddleOCR 3.7, PP-OCRv6 medium, and WindowsML."
 
 
-def _directml_providers(device_id: int | None) -> list[Any]:
+def _windowsml_providers(device_id: int | None) -> list[Any]:
     if device_id is not None and device_id < 0:
-        device_id = resolve_directml_device_id(device_id)
+        device_id = resolve_windowsml_device_id(device_id)
     if device_id is None:
         return ["DmlExecutionProvider", "CPUExecutionProvider"]
     return [
@@ -332,14 +348,14 @@ def _directml_providers(device_id: int | None) -> list[Any]:
 def _resolve_health_device_id(
     device_id: int | None,
     *,
-    directml_available: bool,
+    windowsml_available: bool,
     import_error: Exception | None,
 ) -> tuple[int | None, Exception | None]:
-    if import_error is not None or not directml_available:
+    if import_error is not None or not windowsml_available:
         return None, None
     try:
-        return resolve_directml_device_id(device_id), None
-    except DirectMLDeviceSelectionError as exc:
+        return resolve_windowsml_device_id(device_id), None
+    except WindowsMLDeviceSelectionError as exc:
         return None, exc
 
 
@@ -381,3 +397,27 @@ def _count_paddleocr_boxes(results: Any) -> int:
 
 def _elapsed_ms(started_at: float) -> int:
     return max(0, round((perf_counter() - started_at) * 1000))
+
+
+def _try_windowsml_npu_prepass(
+    model_dir: Path,
+    image_png: bytes,
+    *,
+    policy: str,
+) -> dict[str, int] | None:
+    try:
+        from exam_prep_backend.domains.source_documents.adapters.amd_npu import (
+            AmdNpuPrepassRunner,
+        )
+
+        result = AmdNpuPrepassRunner(
+            model_dir=model_dir,
+            device_id="auto",
+            policy=policy,
+        ).run(image_png)
+    except Exception:
+        return None
+    return {
+        "duration_ms": result.duration_ms,
+        "vitisai_event_count": result.vitisai_event_count,
+    }

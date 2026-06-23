@@ -53,8 +53,7 @@ pub(crate) struct BackendRuntimeInner {
     pub(crate) data_dir: PathBuf,
     pub(crate) backend_manifest_path: Option<PathBuf>,
     pub(crate) ocr_manifest_path: Option<PathBuf>,
-    pub(crate) directml_ocr_manifest_path: Option<PathBuf>,
-    pub(crate) amd_npu_ocr_manifest_path: Option<PathBuf>,
+    pub(crate) windowsml_ocr_manifest_path: Option<PathBuf>,
     pub(crate) config: Mutex<Option<BackendConfig>>,
     pub(crate) child: Mutex<Option<Child>>,
     pub(crate) job: Mutex<Option<RuntimeJob>>,
@@ -106,16 +105,14 @@ impl BackendState {
         data_dir: PathBuf,
         backend_manifest_path: Option<PathBuf>,
         ocr_manifest_path: Option<PathBuf>,
-        directml_ocr_manifest_path: Option<PathBuf>,
-        amd_npu_ocr_manifest_path: Option<PathBuf>,
+        windowsml_ocr_manifest_path: Option<PathBuf>,
     ) -> Self {
         Self {
             inner: Arc::new(BackendRuntimeInner {
                 data_dir,
                 backend_manifest_path,
                 ocr_manifest_path,
-                directml_ocr_manifest_path,
-                amd_npu_ocr_manifest_path,
+                windowsml_ocr_manifest_path,
                 config: Mutex::new(None),
                 child: Mutex::new(None),
                 job: Mutex::new(None),
@@ -356,7 +353,7 @@ mod tests {
     fn missing_runtime_status_is_installable() {
         let data_dir =
             std::env::temp_dir().join(format!("exam-prep-runtime-{}", uuid::Uuid::new_v4()));
-        let state = BackendState::new(data_dir.clone(), None, None, None, None);
+        let state = BackendState::new(data_dir.clone(), None, None, None);
 
         let status = state.status();
 

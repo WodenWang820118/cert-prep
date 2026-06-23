@@ -2,23 +2,20 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, relative, resolve } from 'node:path';
 
 import {
-  AMD_NPU_OCR_RUNTIME_PREFIX,
   BACKEND_RUNTIME_PREFIX,
-  DEFAULT_AMD_NPU_OCR_RUNTIME_MANIFEST,
-  DEFAULT_AMD_NPU_OCR_RUNTIME_ROOT,
   DEFAULT_BACKEND_RUNTIME_ENTRYPOINT,
   DEFAULT_BACKEND_RUNTIME_MANIFEST,
   DEFAULT_BACKEND_RUNTIME_ROOT,
   DEFAULT_BUNDLE_ROOT,
   DEFAULT_DATA_DIR,
   DEFAULT_LLM_MODEL,
-  DEFAULT_DIRECTML_OCR_RUNTIME_MANIFEST,
-  DEFAULT_DIRECTML_OCR_RUNTIME_ROOT,
+  DEFAULT_WINDOWSML_OCR_RUNTIME_MANIFEST,
+  DEFAULT_WINDOWSML_OCR_RUNTIME_ROOT,
   DEFAULT_OCR_RUNTIME_MANIFEST,
   DEFAULT_OCR_RUNTIME_ROOT,
   DEFAULT_TARGET_TRIPLE,
   OCR_RUNTIME_PREFIX,
-  DIRECTML_OCR_RUNTIME_PREFIX,
+  WINDOWSML_OCR_RUNTIME_PREFIX,
   defaultWorkspaceRoot,
 } from './constants.mts';
 import {
@@ -62,21 +59,13 @@ export async function createPackageQaReport(
     workspaceRoot,
     options.ocrRuntimeManifest ?? DEFAULT_OCR_RUNTIME_MANIFEST,
   );
-  const directmlOcrRuntimeRoot = resolve(
+  const windowsmlOcrRuntimeRoot = resolve(
     workspaceRoot,
-    options.directmlOcrRuntimeRoot ?? DEFAULT_DIRECTML_OCR_RUNTIME_ROOT,
+    options.windowsmlOcrRuntimeRoot ?? DEFAULT_WINDOWSML_OCR_RUNTIME_ROOT,
   );
-  const directmlOcrRuntimeManifest = resolve(
+  const windowsmlOcrRuntimeManifest = resolve(
     workspaceRoot,
-    options.directmlOcrRuntimeManifest ?? DEFAULT_DIRECTML_OCR_RUNTIME_MANIFEST,
-  );
-  const amdNpuOcrRuntimeRoot = resolve(
-    workspaceRoot,
-    options.amdNpuOcrRuntimeRoot ?? DEFAULT_AMD_NPU_OCR_RUNTIME_ROOT,
-  );
-  const amdNpuOcrRuntimeManifest = resolve(
-    workspaceRoot,
-    options.amdNpuOcrRuntimeManifest ?? DEFAULT_AMD_NPU_OCR_RUNTIME_MANIFEST,
+    options.windowsmlOcrRuntimeManifest ?? DEFAULT_WINDOWSML_OCR_RUNTIME_MANIFEST,
   );
   const expectedTargetTriple =
     options.expectedTargetTriple ?? DEFAULT_TARGET_TRIPLE;
@@ -108,16 +97,16 @@ export async function createPackageQaReport(
     expectedKind: 'paddle_ocr',
     artifactPrefix: OCR_RUNTIME_PREFIX,
   });
-  const directmlOcrRuntimeArtifacts = collectOcrRuntimeArtifacts(
-    directmlOcrRuntimeRoot,
+  const windowsmlOcrRuntimeArtifacts = collectOcrRuntimeArtifacts(
+    windowsmlOcrRuntimeRoot,
     workspaceRoot,
   );
-  const directmlOcrRuntimeManifestSummary = validateRuntimeManifest({
-    manifestPath: directmlOcrRuntimeManifest,
-    runtimeRoot: directmlOcrRuntimeRoot,
+  const windowsmlOcrRuntimeManifestSummary = validateRuntimeManifest({
+    manifestPath: windowsmlOcrRuntimeManifest,
+    runtimeRoot: windowsmlOcrRuntimeRoot,
     workspaceRoot,
-    expectedKind: 'directml_ocr',
-    artifactPrefix: DIRECTML_OCR_RUNTIME_PREFIX,
+    expectedKind: 'windowsml_ocr',
+    artifactPrefix: WINDOWSML_OCR_RUNTIME_PREFIX,
   });
   const targetTriple = backendRuntimeManifestSummary.target;
   if (targetTriple !== expectedTargetTriple) {
@@ -130,33 +119,9 @@ export async function createPackageQaReport(
       `Expected ${expectedTargetTriple} OCR runtime, found ${ocrRuntimeManifestSummary.target}`,
     );
   }
-  if (directmlOcrRuntimeManifestSummary.target !== expectedTargetTriple) {
+  if (windowsmlOcrRuntimeManifestSummary.target !== expectedTargetTriple) {
     throw new Error(
-      `Expected ${expectedTargetTriple} DirectML OCR runtime, found ${directmlOcrRuntimeManifestSummary.target}`,
-    );
-  }
-  const includeAmdNpuRuntime =
-    options.amdNpuOcrRuntimeRoot !== undefined ||
-    options.amdNpuOcrRuntimeManifest !== undefined ||
-    existsSync(amdNpuOcrRuntimeManifest);
-  const amdNpuOcrRuntimeArtifacts = includeAmdNpuRuntime
-    ? collectOcrRuntimeArtifacts(amdNpuOcrRuntimeRoot, workspaceRoot)
-    : [];
-  const amdNpuOcrRuntimeManifestSummary = includeAmdNpuRuntime
-    ? validateRuntimeManifest({
-        manifestPath: amdNpuOcrRuntimeManifest,
-        runtimeRoot: amdNpuOcrRuntimeRoot,
-        workspaceRoot,
-        expectedKind: 'amd_npu_ocr',
-        artifactPrefix: AMD_NPU_OCR_RUNTIME_PREFIX,
-      })
-    : undefined;
-  if (
-    amdNpuOcrRuntimeManifestSummary !== undefined &&
-    amdNpuOcrRuntimeManifestSummary.target !== expectedTargetTriple
-  ) {
-    throw new Error(
-      `Expected ${expectedTargetTriple} AMD NPU OCR runtime, found ${amdNpuOcrRuntimeManifestSummary.target}`,
+      `Expected ${expectedTargetTriple} WindowsML OCR runtime, found ${windowsmlOcrRuntimeManifestSummary.target}`,
     );
   }
   if (!existsSync(backendRuntimeEntrypoint)) {
@@ -172,8 +137,7 @@ export async function createPackageQaReport(
     dataDir: resolve(workspaceRoot, options.dataDir ?? DEFAULT_DATA_DIR),
     llmModel: options.llmModel ?? DEFAULT_LLM_MODEL,
     ocrRuntimeManifest,
-    directmlOcrRuntimeManifest,
-    amdNpuOcrRuntimeManifest,
+    windowsmlOcrRuntimeManifest,
     ocrProvider: options.ocrProvider,
     ocrPageWorkers: options.ocrPageWorkers,
   });
@@ -201,22 +165,12 @@ export async function createPackageQaReport(
       ocr_runtime_root: normalizePath(relative(workspaceRoot, ocrRuntimeRoot)),
       ocr_runtime_manifest: ocrRuntimeManifestSummary,
       ocr_runtime_artifacts: ocrRuntimeArtifacts.map(publicFileRecord),
-      directml_ocr_runtime_root: normalizePath(
-        relative(workspaceRoot, directmlOcrRuntimeRoot),
+      windowsml_ocr_runtime_root: normalizePath(
+        relative(workspaceRoot, windowsmlOcrRuntimeRoot),
       ),
-      directml_ocr_runtime_manifest: directmlOcrRuntimeManifestSummary,
-      directml_ocr_runtime_artifacts:
-        directmlOcrRuntimeArtifacts.map(publicFileRecord),
-      ...(amdNpuOcrRuntimeManifestSummary === undefined
-        ? {}
-        : {
-            amd_npu_ocr_runtime_root: normalizePath(
-              relative(workspaceRoot, amdNpuOcrRuntimeRoot),
-            ),
-            amd_npu_ocr_runtime_manifest: amdNpuOcrRuntimeManifestSummary,
-            amd_npu_ocr_runtime_artifacts:
-              amdNpuOcrRuntimeArtifacts.map(publicFileRecord),
-          }),
+      windowsml_ocr_runtime_manifest: windowsmlOcrRuntimeManifestSummary,
+      windowsml_ocr_runtime_artifacts:
+        windowsmlOcrRuntimeArtifacts.map(publicFileRecord),
       size_gate: sizeGate,
     },
     runtime,

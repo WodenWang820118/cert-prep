@@ -68,28 +68,16 @@ def ocr_provider_from_settings(settings: Settings) -> OCRProvider:
             model=settings.ollama_model,
             timeout_seconds=settings.ollama_timeout_seconds,
         )
-    if settings.ocr_provider == "directml":
+    if settings.ocr_provider == "windowsml":
         if settings.ocr_runtime_mode == "external":
-            from exam_prep_backend.domains.source_documents.adapters.external_directml import (
-                ExternalDirectMLOCRProvider,
+            from exam_prep_backend.domains.source_documents.adapters.external_windowsml import (
+                ExternalWindowsMLOCRProvider,
             )
 
-            return ExternalDirectMLOCRProvider(settings=settings)
-        from exam_prep_backend.domains.source_documents.adapters.directml import (
-            DirectMLOCRProvider,
+            return ExternalWindowsMLOCRProvider(settings=settings)
+        from exam_prep_backend.domains.source_documents.adapters.windowsml import (
+            WindowsMLOCRProvider,
         )
 
-        return DirectMLOCRProvider()
-    if settings.ocr_provider == "amd_npu":
-        if settings.ocr_runtime_mode == "external":
-            from exam_prep_backend.domains.source_documents.adapters.external_amd_npu import (
-                ExternalAmdNpuOCRProvider,
-            )
-
-            return ExternalAmdNpuOCRProvider(settings=settings)
-        from exam_prep_backend.domains.source_documents.adapters.amd_npu import (
-            AmdNpuOCRProvider,
-        )
-
-        return AmdNpuOCRProvider()
+        return WindowsMLOCRProvider()
     return FakeOCRProvider()

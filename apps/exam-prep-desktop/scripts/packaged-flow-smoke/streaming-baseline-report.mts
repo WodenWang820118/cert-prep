@@ -87,11 +87,7 @@ export interface StreamingBaselineReport {
 }
 
 interface GpuRoutingChecks {
-  directml_ocr_process_observed?: boolean;
-  amd_npu_ocr_process_observed?: boolean;
-  npu_ocr_process_observed?: boolean;
-  npu_ocr_uses_amd_igpu?: boolean;
-  npu_ocr_avoids_nvidia_dgpu?: boolean;
+  windowsml_ocr_process_observed?: boolean;
   ocr_uses_amd_igpu?: boolean;
   ocr_avoids_nvidia_dgpu?: boolean;
   reasoning_uses_nvidia_dgpu?: boolean;
@@ -353,7 +349,7 @@ function buildProductionSummary(
     streaming_practice_ready:
       report.streaming.practice_ready_from_streamed_questions,
   };
-  Object.assign(checks, providerRoutingChecks(run, gpuRoutingChecks, xrtSmiSummary));
+  Object.assign(checks, providerRoutingChecks(run, gpuRoutingChecks));
   const productionSummaryPath = join(run.options.outDir, 'production-summary.json');
 
   return {
@@ -385,11 +381,11 @@ function buildProductionSummary(
     gpu_routing_checks: gpuRoutingChecks,
     xrt_smi_summary: xrtSmiSummary,
     npu_power_or_efficiency_observations:
-      run.options.ocrProvider === 'amd_npu'
+      run.options.ocrProvider === 'windowsml'
         ? {
             power_watts_available: xrtSmiSummary?.power_watts_available === true,
             npu_detected: xrtSmiSummary?.npu_detected === true,
-            routing_evidence_required: true,
+            evidence_scope: 'windowsml_hardware_metadata',
           }
         : null,
     checks,
@@ -400,36 +396,21 @@ function buildProductionSummary(
 function providerRoutingChecks(
   run: SmokeRunState,
   gpuRoutingChecks: GpuRoutingChecks | null,
-  xrtSmiSummary: Record<string, unknown> | null,
 ): Record<string, boolean> {
-  if (run.options.ocrProvider === 'amd_npu') {
+  if (run.options.ocrProvider === 'windowsml') {
     return {
-      npu_ocr_process_observed: routingBoolean(
+      windowsml_ocr_process_observed: routingBoolean(
         gpuRoutingChecks,
-        'npu_ocr_process_observed',
+        'windowsml_ocr_process_observed',
       ),
-      npu_ocr_uses_amd_igpu: routingBoolean(
+      ocr_uses_amd_igpu: routingBoolean(gpuRoutingChecks, 'ocr_uses_amd_igpu'),
+      ocr_avoids_nvidia_dgpu: routingBoolean(
         gpuRoutingChecks,
-        'npu_ocr_uses_amd_igpu',
+        'ocr_avoids_nvidia_dgpu',
       ),
-      npu_ocr_avoids_nvidia_dgpu: routingBoolean(
-        gpuRoutingChecks,
-        'npu_ocr_avoids_nvidia_dgpu',
-      ),
-      xrt_smi_npu_detected: xrtSmiSummary?.npu_detected === true,
     };
   }
-  return {
-    directml_ocr_process_observed: routingBoolean(
-      gpuRoutingChecks,
-      'directml_ocr_process_observed',
-    ),
-    ocr_uses_amd_igpu: routingBoolean(gpuRoutingChecks, 'ocr_uses_amd_igpu'),
-    ocr_avoids_nvidia_dgpu: routingBoolean(
-      gpuRoutingChecks,
-      'ocr_avoids_nvidia_dgpu',
-    ),
-  };
+  return {};
 }
 
 function renderStreamingBaselineMarkdown(report: StreamingBaselineReport): string {

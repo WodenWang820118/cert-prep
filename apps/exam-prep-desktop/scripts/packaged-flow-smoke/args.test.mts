@@ -8,7 +8,7 @@ test('packaged flow smoke args validate numeric knobs', () => {
     '--cdp-port',
     '9555',
     '--ocr-provider',
-    'directml',
+    'windowsml',
     '--ocr-page-workers',
     '2',
     '--ollama-model',
@@ -28,7 +28,7 @@ test('packaged flow smoke args validate numeric knobs', () => {
   ]);
 
   assert.equal(parsed.cdpPort, 9555);
-  assert.equal(parsed.ocrProvider, 'directml');
+  assert.equal(parsed.ocrProvider, 'windowsml');
   assert.equal(parsed.ocrPageWorkers, 2);
   assert.equal(parsed.ollamaModel, 'qwen3.5:2b');
   assert.deepEqual(parsed.ollamaFallbackModels, ['qwen3.5:4b', 'qwen3.5:0.8b']);

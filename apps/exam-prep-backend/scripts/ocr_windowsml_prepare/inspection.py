@@ -121,7 +121,7 @@ def classify_prepare_status(
         "onnx_models_ready": bool(model_artifacts.get("ready")),
         "blockers": unique_blockers,
         "current_safe_action": (
-            "Keep DirectML OCR behind the production gate. Do not use CPU OCR as "
+            "Keep WindowsML OCR behind the production gate. Do not use CPU OCR as "
             "a silent fallback while ONNX assets or conversion tooling are missing."
         ),
         "recommended_next_step": recommended_next_step(state, unique_blockers),
@@ -130,7 +130,7 @@ def classify_prepare_status(
 
 def recommended_next_step(state: str, blockers: Sequence[str]) -> str:
     if state == "ready":
-        return "Run ocr-directml-session-smoke and then packaged DirectML streaming QA."
+        return "Run ocr-windowsml-session-smoke and then packaged WindowsML streaming QA."
     if "conversion_tool_unavailable" in blockers:
         return (
             "Run PaddleX/Paddle2ONNX conversion in a Python 3.8-3.12 release-prep "

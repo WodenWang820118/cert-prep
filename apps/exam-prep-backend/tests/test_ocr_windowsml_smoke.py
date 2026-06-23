@@ -7,7 +7,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from ocr_directml_smoke import (  # noqa: E402
+from ocr_windowsml_smoke import (  # noqa: E402
     build_session_smoke,
     classify_smoke_status,
     default_output_path,
@@ -71,28 +71,28 @@ def test_session_smoke_reports_session_failure(tmp_path: Path) -> None:
 
     assert smoke["state"] == "session_failed"
     assert status["state"] == "session_failed"
-    assert "directml_session_failed" in status["blockers"]
+    assert "windowsml_session_failed" in status["blockers"]
 
 
-def test_session_smoke_blocks_when_directml_probe_is_blocked(tmp_path: Path) -> None:
+def test_session_smoke_blocks_when_windowsml_probe_is_blocked(tmp_path: Path) -> None:
     probe = _probe_report(model_ready=True, model_dir=tmp_path)
-    probe["status"]["directml_provider_available"] = False
-    probe["status"]["blockers"] = ["directml_provider_unavailable"]
+    probe["status"]["windowsml_provider_available"] = False
+    probe["status"]["blockers"] = ["windowsml_provider_unavailable"]
 
     smoke = build_session_smoke(probe, session_runner=_unexpected_session_runner)
     status = classify_smoke_status(probe["status"], smoke)
 
     assert smoke["state"] == "skipped"
-    assert smoke["reason"] == "directml_provider_unavailable"
+    assert smoke["reason"] == "windowsml_provider_unavailable"
     assert status["state"] == "blocked"
-    assert status["blockers"] == ["directml_provider_unavailable"]
+    assert status["blockers"] == ["windowsml_provider_unavailable"]
 
 
-def test_directml_smoke_default_output_is_benchmark_artifact() -> None:
+def test_windowsml_smoke_default_output_is_benchmark_artifact() -> None:
     output = default_output_path()
 
     assert output.parent.name == ".benchmarks"
-    assert output.name.startswith("ocr-directml-smoke-")
+    assert output.name.startswith("ocr-windowsml-smoke-")
     assert output.suffix == ".json"
 
 
@@ -101,9 +101,9 @@ def _probe_report(*, model_ready: bool, model_dir: Path | None = None) -> dict[s
     return {
         "status": {
             "state": "ready" if model_ready else "ready_for_model",
-            "directml_provider_available": True,
+            "windowsml_provider_available": True,
             "amd_igpu_detected": True,
-            "directml_device_id": 0,
+            "windowsml_device_id": 0,
             "model_artifacts_ready": model_ready,
             "blockers": [] if model_ready else ["model_artifacts_missing"],
         },

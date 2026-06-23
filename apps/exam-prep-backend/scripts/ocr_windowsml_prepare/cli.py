@@ -28,7 +28,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--converter",
         choices=CONVERTERS,
-        default=os.environ.get("EXAM_PREP_DIRECTML_CONVERTER", "local"),
+        default=os.environ.get("EXAM_PREP_WINDOWSML_CONVERTER", "local"),
         help="Paddle2ONNX execution environment for missing or forced ONNX conversion.",
     )
     parser.add_argument(

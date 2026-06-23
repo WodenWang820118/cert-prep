@@ -331,7 +331,15 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-ocr-amd-npu = [
+ocr-cpu = [
+    { name = "paddleocr" },
+    { name = "paddlepaddle" },
+]
+ocr-gpu = [
+    { name = "paddleocr" },
+    { name = "paddlepaddle-gpu" },
+]
+ocr-windowsml = [
     { name = "numpy" },
     { name = "onnx" },
     { name = "onnxruntime-windowsml", version = "1.24.6.202605042033", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'win32'" },
@@ -346,25 +354,6 @@ ocr-amd-npu = [
     { name = "wasdk-microsoft-windows-ai-machinelearning", extra = ["all"], marker = "sys_platform == 'win32'" },
     { name = "wasdk-microsoft-windows-applicationmodel-dynamicdependency-bootstrap", marker = "sys_platform == 'win32'" },
 ]
-ocr-cpu = [
-    { name = "paddleocr" },
-    { name = "paddlepaddle" },
-]
-ocr-directml = [
-    { name = "numpy" },
-    { name = "onnxruntime-directml" },
-    { name = "opencv-contrib-python" },
-    { name = "paddle2onnx", marker = "python_full_version < '3.13'" },
-    { name = "paddleocr" },
-    { name = "paddlepaddle", marker = "python_full_version < '3.13'" },
-    { name = "paddlex", extra = ["ocr-core"] },
-    { name = "pyclipper" },
-    { name = "shapely" },
-]
-ocr-gpu = [
-    { name = "paddleocr" },
-    { name = "paddlepaddle-gpu" },
-]
 
 [package.dev-dependencies]
 dev = [
@@ -377,41 +366,32 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.124.0,<1.0.0" },
-    { name = "numpy", marker = "extra == 'ocr-amd-npu'", specifier = ">=2.0.0,<3.0.0" },
-    { name = "numpy", marker = "extra == 'ocr-directml'", specifier = ">=2.0.0,<3.0.0" },
+    { name = "numpy", marker = "extra == 'ocr-windowsml'", specifier = ">=2.0.0,<3.0.0" },
     { name = "ollama", specifier = ">=0.6.0,<1.0.0" },
-    { name = "onnx", marker = "extra == 'ocr-amd-npu'", specifier = ">=1.16.1,<=1.17.0" },
-    { name = "onnxruntime-directml", marker = "extra == 'ocr-directml'", specifier = ">=1.24.0,<2.0.0" },
-    { name = "onnxruntime-windowsml", marker = "extra == 'ocr-amd-npu'", specifier = ">=1.24.0,<2.0.0" },
-    { name = "opencv-contrib-python", marker = "extra == 'ocr-amd-npu'", specifier = ">=4.10.0,<5.0.0" },
-    { name = "opencv-contrib-python", marker = "extra == 'ocr-directml'", specifier = ">=4.10.0,<5.0.0" },
-    { name = "paddle2onnx", marker = "python_full_version < '3.13' and extra == 'ocr-amd-npu'", specifier = "==2.1.0" },
-    { name = "paddle2onnx", marker = "python_full_version < '3.13' and extra == 'ocr-directml'", specifier = "==2.1.0" },
-    { name = "paddleocr", marker = "extra == 'ocr-amd-npu'", specifier = "==3.7.0" },
-    { name = "paddleocr", marker = "extra == 'ocr-cpu'", specifier = ">=3.3.0,<4.0.0" },
-    { name = "paddleocr", marker = "extra == 'ocr-directml'", specifier = "==3.7.0" },
-    { name = "paddleocr", marker = "extra == 'ocr-gpu'", specifier = ">=3.3.0,<4.0.0" },
-    { name = "paddlepaddle", marker = "python_full_version < '3.13' and extra == 'ocr-amd-npu'", specifier = "==3.3.0", index = "https://www.paddlepaddle.org.cn/packages/stable/cpu/" },
-    { name = "paddlepaddle", marker = "python_full_version < '3.13' and extra == 'ocr-directml'", specifier = "==3.3.0", index = "https://www.paddlepaddle.org.cn/packages/stable/cpu/" },
+    { name = "onnx", marker = "extra == 'ocr-windowsml'", specifier = ">=1.16.1,<=1.17.0" },
+    { name = "onnxruntime-windowsml", marker = "extra == 'ocr-windowsml'", specifier = ">=1.24.0,<2.0.0" },
+    { name = "opencv-contrib-python", marker = "extra == 'ocr-windowsml'", specifier = ">=4.10.0,<5.0.0" },
+    { name = "paddle2onnx", marker = "python_full_version < '3.13' and extra == 'ocr-windowsml'", specifier = "==2.1.0" },
+    { name = "paddleocr", marker = "extra == 'ocr-cpu'", specifier = ">=3.7.0,<4.0.0" },
+    { name = "paddleocr", marker = "extra == 'ocr-gpu'", specifier = ">=3.7.0,<4.0.0" },
+    { name = "paddleocr", marker = "extra == 'ocr-windowsml'", specifier = "==3.7.0" },
+    { name = "paddlepaddle", marker = "python_full_version < '3.13' and extra == 'ocr-windowsml'", specifier = "==3.3.0", index = "https://www.paddlepaddle.org.cn/packages/stable/cpu/" },
     { name = "paddlepaddle", marker = "extra == 'ocr-cpu'", specifier = "==3.3.0", index = "https://www.paddlepaddle.org.cn/packages/stable/cpu/" },
     { name = "paddlepaddle-gpu", marker = "extra == 'ocr-gpu'", specifier = "==3.3.0", index = "https://www.paddlepaddle.org.cn/packages/stable/cu126/" },
-    { name = "paddlex", extras = ["ocr-core"], marker = "extra == 'ocr-amd-npu'", specifier = "==3.7.1" },
-    { name = "paddlex", extras = ["ocr-core"], marker = "extra == 'ocr-directml'", specifier = "==3.7.1" },
+    { name = "paddlex", extras = ["ocr-core"], marker = "extra == 'ocr-windowsml'", specifier = "==3.7.1" },
     { name = "pillow", specifier = ">=12.0.0,<13.0.0" },
-    { name = "pyclipper", marker = "extra == 'ocr-amd-npu'", specifier = ">=1.3.0,<2.0.0" },
-    { name = "pyclipper", marker = "extra == 'ocr-directml'", specifier = ">=1.3.0,<2.0.0" },
+    { name = "pyclipper", marker = "extra == 'ocr-windowsml'", specifier = ">=1.3.0,<2.0.0" },
     { name = "pydantic", specifier = ">=2.10.0,<3.0.0" },
     { name = "pydantic-settings", specifier = ">=2.6.0,<3.0.0" },
     { name = "pypdf", specifier = ">=6.0.0,<7.0.0" },
     { name = "pypdfium2", specifier = ">=5.0.0,<6.0.0" },
     { name = "python-multipart", specifier = ">=0.0.20,<1.0.0" },
-    { name = "shapely", marker = "extra == 'ocr-amd-npu'", specifier = ">=2.0.0,<3.0.0" },
-    { name = "shapely", marker = "extra == 'ocr-directml'", specifier = ">=2.0.0,<3.0.0" },
+    { name = "shapely", marker = "extra == 'ocr-windowsml'", specifier = ">=2.0.0,<3.0.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34.0,<1.0.0" },
-    { name = "wasdk-microsoft-windows-ai-machinelearning", extras = ["all"], marker = "sys_platform == 'win32' and extra == 'ocr-amd-npu'", specifier = ">=0.2.0" },
-    { name = "wasdk-microsoft-windows-applicationmodel-dynamicdependency-bootstrap", marker = "sys_platform == 'win32' and extra == 'ocr-amd-npu'", specifier = ">=0.2.0" },
+    { name = "wasdk-microsoft-windows-ai-machinelearning", extras = ["all"], marker = "sys_platform == 'win32' and extra == 'ocr-windowsml'", specifier = ">=0.2.0" },
+    { name = "wasdk-microsoft-windows-applicationmodel-dynamicdependency-bootstrap", marker = "sys_platform == 'win32' and extra == 'ocr-windowsml'", specifier = ">=0.2.0" },
 ]
-provides-extras = ["ocr-cpu", "ocr-gpu", "ocr-directml", "ocr-amd-npu"]
+provides-extras = ["ocr-cpu", "ocr-gpu", "ocr-windowsml"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1002,22 +982,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/3d/7c/67f4952d1b56b3f74a154b97d0dd0630d525923b354db117d04823b8b49b/onnx-1.17.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:4f3fb5cc4e2898ac5312a7dc03a65133dd2abf9a5e520e69afb880a7251ec97a", size = 16046307, upload-time = "2024-10-01T21:46:21.186Z" },
     { url = "https://files.pythonhosted.org/packages/ae/20/6da11042d2ab870dfb4ce4a6b52354d7651b6b4112038b6d2229ab9904c4/onnx-1.17.0-cp312-cp312-win32.whl", hash = "sha256:317870fca3349d19325a4b7d1b5628f6de3811e9710b1e3665c68b073d0e68d7", size = 14424235, upload-time = "2024-10-01T21:46:24.343Z" },
     { url = "https://files.pythonhosted.org/packages/35/55/c4d11bee1fdb0c4bd84b4e3562ff811a19b63266816870ae1f95567aa6e1/onnx-1.17.0-cp312-cp312-win_amd64.whl", hash = "sha256:659b8232d627a5460d74fd3c96947ae83db6d03f035ac633e20cd69cfa029227", size = 14530453, upload-time = "2024-10-01T21:46:26.981Z" },
-]
-
-[[package]]
-name = "onnxruntime-directml"
-version = "1.24.4"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "flatbuffers" },
-    { name = "numpy" },
-    { name = "packaging" },
-    { name = "protobuf" },
-    { name = "sympy" },
-]
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/88/ea/33814eb0ec96775eda4c1d30b0d86e91d7d2cd0d84c66d3915aef0e06fa3/onnxruntime_directml-1.24.4-cp312-cp312-win_amd64.whl", hash = "sha256:f2ecb68b7b7b259d2ef3112ae760149f9b5a1e7c0fbb73d539da6250a648a614", size = 25111930, upload-time = "2026-03-17T21:47:18.419Z" },
-    { url = "https://files.pythonhosted.org/packages/60/53/2bd2696fac19cf8ca55496a0bcfe431f3aff9579eabbb0e231dc238acf6f/onnxruntime_directml-1.24.4-cp313-cp313-win_amd64.whl", hash = "sha256:2f1031cb2281e5b27cca9efe0b9399317c7286e4d226f7a79d4ab79bbd94d19e", size = 25112253, upload-time = "2026-03-17T21:47:22.043Z" },
 ]
 
 [[package]]
@@ -1966,7 +1930,7 @@ name = "sympy"
 version = "1.14.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "mpmath" },
+    { name = "mpmath", marker = "sys_platform == 'win32'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/83/d3/803453b36afefb7c2bb238361cd4ae6125a569b4db67cd9e79846ba2d68c/sympy-1.14.0.tar.gz", hash = "sha256:d3d3fe8df1e5a0b42f0e7bdf50541697dbe7d23746e894990c030e2b05e72517", size = 7793921, upload-time = "2025-04-27T18:05:01.611Z" }
 wheels = [

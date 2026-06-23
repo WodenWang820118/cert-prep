@@ -587,8 +587,7 @@ export class HealthStore {
   private isOcrRuntimeKind(kind: RuntimeKind | null | undefined): boolean {
     return (
       kind === 'paddle_ocr' ||
-      kind === 'directml_ocr' ||
-      kind === 'amd_npu_ocr'
+      kind === 'windowsml_ocr'
     );
   }
 }

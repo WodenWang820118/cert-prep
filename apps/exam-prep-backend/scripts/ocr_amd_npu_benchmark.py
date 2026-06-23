@@ -32,7 +32,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output", type=Path, default=default_output_path())
     parser.add_argument("--model-dir", type=Path, default=DEFAULT_MODEL_DIR)
     parser.add_argument("--ensure-ready", action="store_true")
-    parser.add_argument("--compare-directml", action="store_true")
+    parser.add_argument("--compare-windowsml", action="store_true")
     parser.add_argument("--amd-npu-device-id", default="auto")
     parser.add_argument("--amd-npu-policy", default="PREFER_NPU")
     parser.add_argument("--fail-if-not-benchmark-ready", action="store_true")
@@ -43,7 +43,7 @@ def build_report(
     *,
     model_dir: Path = DEFAULT_MODEL_DIR,
     ensure_ready: bool = False,
-    compare_directml: bool = False,
+    compare_windowsml: bool = False,
     device_id: str = "auto",
     policy: str = "PREFER_NPU",
 ) -> dict[str, Any]:
@@ -53,7 +53,7 @@ def build_report(
         device_id=device_id,
         policy=policy,
     )
-    benchmark = build_benchmark(inference_report, compare_directml=compare_directml)
+    benchmark = build_benchmark(inference_report, compare_windowsml=compare_windowsml)
     status = classify_benchmark_status(inference_report["status"], benchmark)
     return {
         "schema_version": 1,
@@ -61,11 +61,11 @@ def build_report(
         "mode": {
             "name": "ocr_amd_npu_benchmark",
             "goal": (
-                "Compare AMD NPU OCR efficiency against DirectML only after "
+                "Compare AMD NPU OCR efficiency against WindowsML only after "
                 "strict session and real OCR gates pass."
             ),
             "does_not_change_runtime_defaults": True,
-            "compare_directml_requested": compare_directml,
+            "compare_windowsml_requested": compare_windowsml,
         },
         "inference_report": inference_report,
         "amd_npu_benchmark": benchmark,
@@ -76,7 +76,7 @@ def build_report(
 def build_benchmark(
     inference_report: dict[str, Any],
     *,
-    compare_directml: bool,
+    compare_windowsml: bool,
 ) -> dict[str, Any]:
     inference_status = inference_report.get("status", {})
     power = xrt_smi_summary()
@@ -84,7 +84,7 @@ def build_benchmark(
         return {
             "state": "skipped",
             "reason": inference_status.get("state") or "inference_not_ready",
-            "compare_directml_requested": compare_directml,
+            "compare_windowsml_requested": compare_windowsml,
             "npu_power_or_efficiency_observations": {
                 "power_watts_available": bool(power.get("power_watts_available")),
                 "xrt_smi_summary": power,
@@ -93,7 +93,7 @@ def build_benchmark(
     return {
         "state": "blocked",
         "reason": "amd_npu_benchmark_not_implemented",
-        "compare_directml_requested": compare_directml,
+        "compare_windowsml_requested": compare_windowsml,
         "npu_power_or_efficiency_observations": {
             "power_watts_available": bool(power.get("power_watts_available")),
             "xrt_smi_summary": power,
@@ -131,7 +131,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     report = build_report(
         model_dir=args.model_dir,
         ensure_ready=args.ensure_ready,
-        compare_directml=args.compare_directml,
+        compare_windowsml=args.compare_windowsml,
         device_id=args.amd_npu_device_id,
         policy=args.amd_npu_policy,
     )
@@ -139,7 +139,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(report, ensure_ascii=False, indent=2))
 
-    if (args.compare_directml or args.fail_if_not_benchmark_ready) and report["status"]["state"] != "benchmark_ready":
+    if (args.compare_windowsml or args.fail_if_not_benchmark_ready) and report["status"]["state"] != "benchmark_ready":
         raise SystemExit(1)
 
 

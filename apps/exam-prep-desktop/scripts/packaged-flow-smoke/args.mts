@@ -11,7 +11,7 @@ const DEFAULT_PRODUCTION_OUT_ROOT =
   'tmp/exam-prep-desktop/packaged-streaming-production';
 const DEFAULT_PDF_PATH = 'pdfs/\u30101\u30112025\u5e7407\u6708N1 \u771f\u9898.pdf';
 const DEFAULT_CDP_PORT = 9491;
-const DEFAULT_OCR_PROVIDER = 'directml';
+const DEFAULT_OCR_PROVIDER = 'windowsml';
 const DEFAULT_OCR_PAGE_WORKERS = 1;
 const DEFAULT_OLLAMA_MODEL = 'qwen3.5:4b';
 const DEFAULT_OLLAMA_FALLBACK_MODELS = ['qwen3.5:2b'];

@@ -7,7 +7,7 @@ import tarfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from ocr_directml_prepare_models import (  # noqa: E402
+from ocr_windowsml_prepare_models import (  # noqa: E402
     BACKEND_ROOT,
     ConversionResult,
     SourceArtifact,
@@ -101,9 +101,9 @@ def test_prepare_models_force_conversion_replaces_existing_models(tmp_path: Path
 
 
 def test_docker_work_path_uses_backend_mount() -> None:
-    source_dir = BACKEND_ROOT / ".benchmarks" / "ocr-directml-sources" / "extracted"
+    source_dir = BACKEND_ROOT / ".benchmarks" / "ocr-windowsml-sources" / "extracted"
 
-    assert docker_work_path(source_dir) == "/work/.benchmarks/ocr-directml-sources/extracted"
+    assert docker_work_path(source_dir) == "/work/.benchmarks/ocr-windowsml-sources/extracted"
 
 
 def test_safe_extract_tar_rejects_path_traversal(tmp_path: Path) -> None:
@@ -129,7 +129,7 @@ def test_prepare_models_default_output_is_benchmark_artifact() -> None:
     output = default_output_path()
 
     assert output.parent.name == ".benchmarks"
-    assert output.name.startswith("ocr-directml-prepare-models-")
+    assert output.name.startswith("ocr-windowsml-prepare-models-")
     assert output.suffix == ".json"
 
 

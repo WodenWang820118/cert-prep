@@ -23,22 +23,22 @@ sys.path.insert(0, str(SCRIPT_DIR))
 sys.path.insert(0, str(BACKEND_ROOT / "src"))
 
 from benchmark_ocr import DEFAULT_PAGE_3_ANCHORS  # noqa: E402
-from ocr_directml_inference_smoke import build_report as build_inference_report  # noqa: E402
-from ocr_directml_smoke import DIRECTML_DEVICE_LABEL  # noqa: E402
-from ocr_directml_probe import DEFAULT_MODEL_DIR  # noqa: E402
+from ocr_windowsml_inference_smoke import build_report as build_inference_report  # noqa: E402
+from ocr_windowsml_smoke import WINDOWSML_DEVICE_LABEL  # noqa: E402
+from ocr_windowsml_probe import DEFAULT_MODEL_DIR  # noqa: E402
 from exam_prep_backend.config import Settings  # noqa: E402
 from exam_prep_backend.domains.source_documents.adapters.benchmark import (  # noqa: E402
     benchmark_pdf_page,
 )
-from exam_prep_backend.domains.source_documents.adapters.directml import (  # noqa: E402
-    DirectMLOCRRunner,
+from exam_prep_backend.domains.source_documents.adapters.windowsml import (  # noqa: E402
+    WindowsMLOCRRunner,
 )
 from exam_prep_backend.domains.source_documents.ocr import OCRPageResult  # noqa: E402
 
 
 def default_output_path() -> Path:
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    return DEFAULT_OUTPUT_DIR / f"ocr-directml-benchmark-{stamp}.json"
+    return DEFAULT_OUTPUT_DIR / f"ocr-windowsml-benchmark-{stamp}.json"
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -50,7 +50,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--fail-if-not-benchmark-ready",
         action="store_true",
-        help="Exit non-zero unless DirectML OCR benchmark evidence is ready.",
+        help="Exit non-zero unless WindowsML OCR benchmark evidence is ready.",
     )
     return parser.parse_args(argv)
 
@@ -73,16 +73,16 @@ def build_report(
         "schema_version": 1,
         "generated_at": datetime.now(UTC).isoformat(),
         "mode": {
-            "name": "ocr_directml_benchmark",
+            "name": "ocr_windowsml_benchmark",
             "goal": (
-                "Benchmark AMD DirectML OCR on the JLPT page-3 fixture after "
+                "Benchmark AMD WindowsML OCR on the JLPT page-3 fixture after "
                 "deterministic inference is implemented and passing."
             ),
             "does_not_pull_models": True,
             "does_not_change_runtime_defaults": True,
         },
         "inference_report": inference_report,
-        "directml_benchmark": benchmark,
+        "windowsml_benchmark": benchmark,
         "status": status,
     }
 
@@ -110,15 +110,15 @@ def build_benchmark(
             "pdf_path": str(pdf_path),
             "warm_ocr_latency_ms": None,
             "cpu_baseline_latency_ms": CPU_BASELINE_LATENCY_MS,
-            "device": DIRECTML_DEVICE_LABEL,
+            "device": WINDOWSML_DEVICE_LABEL,
         }
-    provider = _DirectMLBenchmarkProvider(
+    provider = _WindowsMLBenchmarkProvider(
         model_dir=model_dir,
-        device_id=_directml_device_id(inference_report),
+        device_id=_windowsml_device_id(inference_report),
     )
     try:
         result = benchmark_pdf_page(
-            Settings(ocr_provider="directml"),
+            Settings(ocr_provider="windowsml"),
             pdf_path=pdf_path,
             page_number=page_number,
             anchors=DEFAULT_PAGE_3_ANCHORS if page_number == 3 else [],
@@ -127,13 +127,13 @@ def build_benchmark(
     except Exception as exc:
         return {
             "state": "failed",
-            "reason": "directml_benchmark_failed",
+            "reason": "windowsml_benchmark_failed",
             "error": str(exc),
             "pdf_path": str(pdf_path),
             "page_number": page_number,
             "warm_ocr_latency_ms": None,
             "cpu_baseline_latency_ms": CPU_BASELINE_LATENCY_MS,
-            "device": DIRECTML_DEVICE_LABEL,
+            "device": WINDOWSML_DEVICE_LABEL,
         }
     warm_ms = int(result["warm_ocr_ms"])
     anchors_present = result.get("anchors_present", {})
@@ -145,7 +145,7 @@ def build_benchmark(
     passed = text_present and latency_beats_cpu and not missing_anchors
     return {
         "state": "passed" if passed else "failed",
-        "reason": None if passed else "directml_benchmark_gate_failed",
+        "reason": None if passed else "windowsml_benchmark_gate_failed",
         "pdf_path": str(pdf_path),
         "page_number": page_number,
         "warm_ocr_latency_ms": warm_ms,
@@ -155,7 +155,7 @@ def build_benchmark(
         "text_present": text_present,
         "missing_anchors": missing_anchors,
         "benchmark_result": result,
-        "device": DIRECTML_DEVICE_LABEL,
+        "device": WINDOWSML_DEVICE_LABEL,
     }
 
 
@@ -166,9 +166,9 @@ def classify_benchmark_status(
     blockers = list(inference_status.get("blockers", []))
     benchmark_state = str(benchmark.get("state") or "unknown")
     if benchmark_state == "blocked":
-        blockers.append(str(benchmark.get("reason") or "directml_benchmark_blocked"))
+        blockers.append(str(benchmark.get("reason") or "windowsml_benchmark_blocked"))
     elif benchmark_state == "failed":
-        blockers.append(str(benchmark.get("reason") or "directml_benchmark_failed"))
+        blockers.append(str(benchmark.get("reason") or "windowsml_benchmark_failed"))
     benchmark_ready = benchmark_state == "passed"
     return {
         "state": "benchmark_ready" if benchmark_ready else "ready_for_inference",
@@ -176,34 +176,34 @@ def classify_benchmark_status(
         "inference_ready": bool(inference_status.get("inference_ready")),
         "benchmark_ready": benchmark_ready,
         "current_safe_action": (
-            "Keep OCR on the AMD iGPU DirectML lane only when benchmark and routing "
+            "Keep OCR on the AMD iGPU WindowsML lane only when benchmark and routing "
             "evidence beat the CPU baseline and avoid Nvidia residency."
         ),
     }
 
 
-class _DirectMLBenchmarkProvider:
-    provider = "directml"
-    engine = "onnxruntime-directml"
+class _WindowsMLBenchmarkProvider:
+    provider = "windowsml"
+    engine = "onnxruntime-windowsml"
     page_workers = 1
 
     def __init__(self, *, model_dir: Path, device_id: int | None) -> None:
-        self._runner = DirectMLOCRRunner(model_dir=model_dir, device_id=device_id)
+        self._runner = WindowsMLOCRRunner(model_dir=model_dir, device_id=device_id)
 
     def extract_page_text(self, image_png: bytes, page_number: int) -> OCRPageResult:
         result = self._runner.extract_text(image_png)
         return OCRPageResult(
             text=result.text,
-            extraction_method="directml_ocr",
+            extraction_method="windowsml_ocr",
             device=result.device,
             fallback_reason=None,
             duration_ms=result.duration_ms,
         )
 
 
-def _directml_device_id(inference_report: dict[str, Any]) -> int | None:
-    smoke = inference_report.get("directml_inference_smoke", {})
-    raw = smoke.get("directml_device_id")
+def _windowsml_device_id(inference_report: dict[str, Any]) -> int | None:
+    smoke = inference_report.get("windowsml_inference_smoke", {})
+    raw = smoke.get("windowsml_device_id")
     return raw if isinstance(raw, int) and raw >= 0 else None
 
 

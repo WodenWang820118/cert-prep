@@ -1,4 +1,3 @@
-import type { MutableAggregate } from './resource-sampling-types.mts';
 import {
   addOptionalAggregate,
   finalizeAggregate,

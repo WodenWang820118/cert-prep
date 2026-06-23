@@ -6,16 +6,16 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = resolve(scriptDir, '../../..');
 const sourcePath = join(
   workspaceRoot,
-  'apps/exam-prep-backend/dist/ocr-directml-runtime/directml-ocr-runtime-manifest.json',
+  'apps/exam-prep-backend/dist/ocr-windowsml-runtime/windowsml-ocr-runtime-manifest.json',
 );
 const resourceDir = join(
   workspaceRoot,
   'apps/exam-prep-desktop/src-tauri/resources',
 );
-const targetPath = join(resourceDir, 'directml-ocr-runtime-manifest.json');
+const targetPath = join(resourceDir, 'windowsml-ocr-runtime-manifest.json');
 
 if (!existsSync(sourcePath)) {
-  throw new Error(`DirectML OCR runtime manifest was not built: ${sourcePath}`);
+  throw new Error(`WindowsML OCR runtime manifest was not built: ${sourcePath}`);
 }
 
 mkdirSync(resourceDir, { recursive: true });
@@ -28,4 +28,4 @@ if (manifest.artifact && !manifest.artifact.url && manifest.artifact.file_name) 
   ).href;
 }
 writeFileSync(targetPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
-console.log(`Synced DirectML OCR runtime manifest to ${targetPath}`);
+console.log(`Synced WindowsML OCR runtime manifest to ${targetPath}`);

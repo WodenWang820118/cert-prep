@@ -200,8 +200,8 @@ export class ModelHealthViewModelService {
   }
 
   private ocrTitle(state: ModelHealthViewState): string {
-    if (state.ocrHealth?.provider === 'directml') {
-      return 'AMD DirectML OCR';
+    if (state.ocrHealth?.provider === 'windowsml') {
+      return 'WindowsML OCR';
     }
     return 'PaddleOCR';
   }

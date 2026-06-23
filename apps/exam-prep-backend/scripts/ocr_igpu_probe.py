@@ -100,7 +100,7 @@ def classify_igpu_status(
         str(device).lower() for device in paddle.get("custom_device_types", []) or []
     ]
     providers = [str(provider) for provider in onnxruntime.get("providers", []) or []]
-    has_directml_provider = "DmlExecutionProvider" in providers
+    has_windowsml_provider = "DmlExecutionProvider" in providers
 
     blockers: list[str] = []
     if not amd_adapters:
@@ -109,20 +109,20 @@ def classify_igpu_status(
         blockers.append("paddle_import_failed")
     if not paddle.get("compiled_with_rocm"):
         blockers.append("paddle_wheel_not_rocm")
-    if "dml" not in custom_device_types and "directml" not in custom_device_types:
-        blockers.append("paddle_has_no_directml_custom_device")
+    if "dml" not in custom_device_types and "windowsml" not in custom_device_types:
+        blockers.append("paddle_has_no_windowsml_custom_device")
     if available_devices and all(device.startswith("gpu") for device in available_devices):
         blockers.append("paddle_devices_are_cuda_only")
-    if not has_directml_provider:
-        blockers.append("onnxruntime_directml_not_available")
+    if not has_windowsml_provider:
+        blockers.append("onnxruntime_windowsml_not_available")
 
     paddle_can_target_amd = bool(paddle.get("compiled_with_rocm")) or any(
-        device in {"dml", "directml", "rocm"} for device in custom_device_types
+        device in {"dml", "windowsml", "rocm"} for device in custom_device_types
     )
-    onnx_directml_candidate = bool(amd_adapters and has_directml_provider)
+    onnx_windowsml_candidate = bool(amd_adapters and has_windowsml_provider)
     if amd_adapters and paddle_can_target_amd:
         state = "candidate"
-    elif onnx_directml_candidate:
+    elif onnx_windowsml_candidate:
         state = "needs_alternative_backend"
     else:
         state = "blocked"
@@ -132,7 +132,7 @@ def classify_igpu_status(
         "amd_igpu_detected": bool(amd_adapters),
         "nvidia_dgpu_detected": bool(nvidia_adapters),
         "paddle_can_target_amd_igpu": paddle_can_target_amd,
-        "onnx_directml_candidate": onnx_directml_candidate,
+        "onnx_windowsml_candidate": onnx_windowsml_candidate,
         "blockers": blockers,
         "current_safe_action": (
             "Keep PaddleOCR off the experimental iGPU lane. The current Paddle "
@@ -140,7 +140,7 @@ def classify_igpu_status(
             "until an AMD-capable backend is implemented."
         ),
         "recommended_next_step": (
-            "Prototype a separate OCR backend using ONNX Runtime DirectML or Windows "
+            "Prototype a separate OCR backend using ONNX Runtime WindowsML or Windows "
             "ML after exporting PP-OCR models to ONNX; do not silently fall back to "
             "CPU for the iGPU lane."
         ),

@@ -123,23 +123,15 @@ import { WorkspaceFacade } from '../../stores/workspace.facade';
       (visibleChange)="health.setRuntimeInstallConsentVisible($event)"
     >
       <div class="grid gap-3">
-        @if (health.runtimeInstallConsentKind() === 'amd_npu_ocr') {
+        @if (health.runtimeInstallConsentKind() === 'windowsml_ocr') {
           <p class="m-0 text-sm leading-6 text-color">
-            Install the AMD NPU OCR runtime for image-only PDFs?
-          </p>
-          <p class="m-0 text-sm leading-6 text-muted-color">
-            This runtime is gated behind strict Windows ML VitisAI session and
-            OCR evidence. DirectML remains the default until the NPU lane passes
-            production checks.
-          </p>
-        } @else if (health.runtimeInstallConsentKind() === 'directml_ocr') {
-          <p class="m-0 text-sm leading-6 text-color">
-            Install the AMD DirectML OCR runtime for image-only PDFs?
+            Install the WindowsML OCR runtime for image-only PDFs?
           </p>
           <p class="m-0 text-sm leading-6 text-muted-color">
             The runtime is downloaded from the release asset, verified, and
-            extracted under your user app data. OCR stays on the AMD iGPU so
-            the Nvidia GPU remains available for reasoning.
+            extracted under your user app data. OCR can route through the
+            WindowsML hardware stack while the Nvidia GPU remains available for
+            reasoning.
           </p>
         } @else if (health.runtimeInstallConsentKind() === 'paddle_ocr') {
           <p class="m-0 text-sm leading-6 text-color">

@@ -33,10 +33,10 @@ def test_ocr_igpu_probe_blocks_cuda_only_paddle_on_amd_laptop() -> None:
     assert status["paddle_can_target_amd_igpu"] is False
     assert "paddle_wheel_not_rocm" in status["blockers"]
     assert "paddle_devices_are_cuda_only" in status["blockers"]
-    assert "onnxruntime_directml_not_available" in status["blockers"]
+    assert "onnxruntime_windowsml_not_available" in status["blockers"]
 
 
-def test_ocr_igpu_probe_marks_directml_as_alternative_backend_candidate() -> None:
+def test_ocr_igpu_probe_marks_windowsml_as_alternative_backend_candidate() -> None:
     status = classify_igpu_status(
         windows_video_controllers=[{"Name": "AMD Radeon(TM) 880M Graphics"}],
         paddle={
@@ -50,7 +50,7 @@ def test_ocr_igpu_probe_marks_directml_as_alternative_backend_candidate() -> Non
 
     assert status["state"] == "needs_alternative_backend"
     assert status["paddle_can_target_amd_igpu"] is False
-    assert status["onnx_directml_candidate"] is True
+    assert status["onnx_windowsml_candidate"] is True
 
 
 def test_ocr_igpu_probe_marks_rocm_paddle_as_candidate() -> None:

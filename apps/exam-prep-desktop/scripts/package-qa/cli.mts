@@ -33,14 +33,10 @@ export function parsePackageQaArgs(
       parsed.ocrRuntimeRoot = readValue(arg);
     } else if (arg === '--ocr-runtime-manifest') {
       parsed.ocrRuntimeManifest = readValue(arg);
-    } else if (arg === '--directml-ocr-runtime-root') {
-      parsed.directmlOcrRuntimeRoot = readValue(arg);
-    } else if (arg === '--directml-ocr-runtime-manifest') {
-      parsed.directmlOcrRuntimeManifest = readValue(arg);
-    } else if (arg === '--amd-npu-ocr-runtime-root') {
-      parsed.amdNpuOcrRuntimeRoot = readValue(arg);
-    } else if (arg === '--amd-npu-ocr-runtime-manifest') {
-      parsed.amdNpuOcrRuntimeManifest = readValue(arg);
+    } else if (arg === '--windowsml-ocr-runtime-root') {
+      parsed.windowsmlOcrRuntimeRoot = readValue(arg);
+    } else if (arg === '--windowsml-ocr-runtime-manifest') {
+      parsed.windowsmlOcrRuntimeManifest = readValue(arg);
     } else if (arg === '--target') {
       parsed.expectedTargetTriple = readValue(arg);
     } else if (arg === '--health-timeout-ms') {

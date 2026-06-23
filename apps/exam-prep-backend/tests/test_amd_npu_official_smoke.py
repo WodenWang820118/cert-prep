@@ -24,7 +24,7 @@ def test_official_smoke_status_allows_cpu_events_when_vitisai_ran() -> None:
 
     assert status["state"] == "npu_active"
     assert status["npu_active"] is True
-    assert status["directml_provider_in_session"] is False
+    assert status["windowsml_provider_in_session"] is False
     assert status["nvidia_ep_device_bound"] is False
     assert status["cpu_events_detected"] is True
     assert status["blockers"] == []

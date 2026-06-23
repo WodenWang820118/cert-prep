@@ -13,19 +13,15 @@ from runtime_build.artifacts import (
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 RUNTIME_ENTRY = BACKEND_ROOT / "src" / "exam_prep_backend" / "ocr_runtime.py"
-DIRECTML_RUNTIME_ENTRY = BACKEND_ROOT / "src" / "exam_prep_backend" / "ocr_directml_runtime.py"
-AMD_NPU_RUNTIME_ENTRY = BACKEND_ROOT / "src" / "exam_prep_backend" / "ocr_amd_npu_runtime.py"
+WINDOWSML_RUNTIME_ENTRY = BACKEND_ROOT / "src" / "exam_prep_backend" / "ocr_windowsml_runtime.py"
 DIST_DIR = BACKEND_ROOT / "dist"
 BUILD_DIR = BACKEND_ROOT / "build"
 OUTPUT_DIR = DIST_DIR / "ocr-runtime"
-DIRECTML_OUTPUT_DIR = DIST_DIR / "ocr-directml-runtime"
-AMD_NPU_OUTPUT_DIR = DIST_DIR / "ocr-amd-npu-runtime"
+WINDOWSML_OUTPUT_DIR = DIST_DIR / "ocr-windowsml-runtime"
 EXE_NAME = "exam-prep-ocr-runtime.exe"
-DIRECTML_EXE_NAME = "exam-prep-ocr-directml-runtime.exe"
-AMD_NPU_EXE_NAME = "exam-prep-ocr-amd-npu-runtime.exe"
+WINDOWSML_EXE_NAME = "exam-prep-ocr-windowsml-runtime.exe"
 PADDLE_EXE_PATH = DIST_DIR / EXE_NAME
-DIRECTML_EXE_PATH = DIST_DIR / DIRECTML_EXE_NAME
-AMD_NPU_EXE_PATH = DIST_DIR / AMD_NPU_EXE_NAME
+WINDOWSML_EXE_PATH = DIST_DIR / WINDOWSML_EXE_NAME
 PADDLE_COLLECT_ALL = ["paddle", "paddleocr", "paddlex"]
 PADDLE_METADATA = [
     "imagesize",
@@ -37,7 +33,7 @@ PADDLE_METADATA = [
     "python-bidi",
     "shapely",
 ]
-DIRECTML_COLLECT_ALL = [
+WINDOWSML_COLLECT_ALL = [
     "bidi",
     "cv2",
     "imagesize",
@@ -51,22 +47,7 @@ DIRECTML_COLLECT_ALL = [
     "pypdfium2",
     "shapely",
 ]
-DIRECTML_METADATA = [
-    "imagesize",
-    "numpy",
-    "onnx",
-    "onnxruntime-directml",
-    "opencv-contrib-python",
-    "modelscope",
-    "paddleocr",
-    "paddlex",
-    "pillow",
-    "pyclipper",
-    "pypdfium2",
-    "python-bidi",
-    "shapely",
-]
-AMD_NPU_METADATA = [
+WINDOWSML_METADATA = [
     "imagesize",
     "numpy",
     "onnx",
@@ -81,7 +62,7 @@ AMD_NPU_METADATA = [
     "python-bidi",
     "shapely",
 ]
-DIRECTML_EXCLUDES = [
+WINDOWSML_EXCLUDES = [
     "_pytest",
     "exam_prep_backend.domains.runtime_installations",
     "exam_prep_backend.domains.source_documents.adapters.external_paddle",
@@ -99,10 +80,9 @@ DIRECTML_EXCLUDES = [
 LANE_METADATA = {
     "cpu": "paddlepaddle",
     "gpu": "paddlepaddle-gpu",
-    "directml": "onnxruntime-directml",
-    "amd-npu": "onnxruntime-windowsml",
+    "windowsml": "onnxruntime-windowsml",
 }
-DIRECTML_MODEL_FILES = (
+WINDOWSML_MODEL_FILES = (
     "det/inference.onnx",
     "det/inference.yml",
     "rec/inference.onnx",
@@ -118,17 +98,14 @@ def main() -> None:
     parser.add_argument("--target", default="x86_64-pc-windows-msvc")
     parser.add_argument("--version", default="0.1.0")
     parser.add_argument(
-        "--directml-model-dir",
+        "--windowsml-model-dir",
         type=Path,
-        default=BACKEND_ROOT / ".benchmarks" / "ocr-directml-models",
+        default=BACKEND_ROOT / ".benchmarks" / "ocr-windowsml-models",
     )
     args = parser.parse_args()
 
-    if args.lane == "directml":
-        _build_directml_runtime(args)
-        return
-    if args.lane == "amd-npu":
-        _build_amd_npu_runtime(args)
+    if args.lane == "windowsml":
+        _build_windowsml_runtime(args)
         return
     _build_paddle_runtime(args)
 
@@ -154,85 +131,47 @@ def _build_paddle_runtime(args: argparse.Namespace) -> None:
     print(f"Wrote OCR runtime manifest to {manifest_path}")
 
 
-def _build_directml_runtime(args: argparse.Namespace) -> None:
-    model_files = _directml_model_files(args.directml_model_dir)
+def _build_windowsml_runtime(args: argparse.Namespace) -> None:
+    model_files = _windowsml_model_files(args.windowsml_model_dir)
     _run(_pyinstaller_command(args.lane))
     _run(
         [
-            str(DIRECTML_EXE_PATH),
+            str(WINDOWSML_EXE_PATH),
             "--provider",
-            "directml",
+            "windowsml",
             "--model-dir",
-            str(args.directml_model_dir),
+            str(args.windowsml_model_dir),
             "--ocr-self-test",
         ]
     )
-    zip_path = DIRECTML_OUTPUT_DIR / f"exam-prep-ocr-directml-runtime-{args.target}.zip"
-    manifest_path = DIRECTML_OUTPUT_DIR / "directml-ocr-runtime-manifest.json"
+    zip_path = WINDOWSML_OUTPUT_DIR / f"exam-prep-ocr-windowsml-runtime-{args.target}.zip"
+    manifest_path = WINDOWSML_OUTPUT_DIR / "windowsml-ocr-runtime-manifest.json"
     write_runtime_artifact(
         RuntimeArtifactSpec(
-            kind="directml_ocr",
+            kind="windowsml_ocr",
             version=args.version,
             target=args.target,
-            entrypoint=DIRECTML_EXE_NAME,
-            source_path=DIRECTML_EXE_PATH,
-            archive_name=DIRECTML_EXE_NAME,
+            entrypoint=WINDOWSML_EXE_NAME,
+            source_path=WINDOWSML_EXE_PATH,
+            archive_name=WINDOWSML_EXE_NAME,
             zip_path=zip_path,
             manifest_path=manifest_path,
             extra_files=tuple(
-                (path, path.relative_to(args.directml_model_dir).as_posix())
+                (path, path.relative_to(args.windowsml_model_dir).as_posix())
                 for path in model_files
             ),
         )
     )
-    print(f"Wrote DirectML OCR runtime artifact to {zip_path}")
-    print(f"Wrote DirectML OCR runtime manifest to {manifest_path}")
-
-
-def _build_amd_npu_runtime(args: argparse.Namespace) -> None:
-    model_files = _directml_model_files(args.directml_model_dir)
-    _run(_pyinstaller_command(args.lane))
-    _run(
-        [
-            str(AMD_NPU_EXE_PATH),
-            "--provider",
-            "amd_npu",
-            "--model-dir",
-            str(args.directml_model_dir),
-            "--ensure-ready",
-            "--ocr-self-test",
-        ]
-    )
-    zip_path = AMD_NPU_OUTPUT_DIR / f"exam-prep-ocr-amd-npu-runtime-{args.target}.zip"
-    manifest_path = AMD_NPU_OUTPUT_DIR / "amd-npu-ocr-runtime-manifest.json"
-    write_runtime_artifact(
-        RuntimeArtifactSpec(
-            kind="amd_npu_ocr",
-            version=args.version,
-            target=args.target,
-            entrypoint=AMD_NPU_EXE_NAME,
-            source_path=AMD_NPU_EXE_PATH,
-            archive_name=AMD_NPU_EXE_NAME,
-            zip_path=zip_path,
-            manifest_path=manifest_path,
-            extra_files=tuple(
-                (path, path.relative_to(args.directml_model_dir).as_posix())
-                for path in model_files
-            ),
-        )
-    )
-    print(f"Wrote AMD NPU OCR runtime artifact to {zip_path}")
-    print(f"Wrote AMD NPU OCR runtime manifest to {manifest_path}")
+    print(f"Wrote WindowsML OCR runtime artifact to {zip_path}")
+    print(f"Wrote WindowsML OCR runtime manifest to {manifest_path}")
 
 
 def _pyinstaller_command(lane: str) -> list[str]:
     exe_base_name = {
-        "directml": "exam-prep-ocr-directml-runtime",
-        "amd-npu": "exam-prep-ocr-amd-npu-runtime",
+        "windowsml": "exam-prep-ocr-windowsml-runtime",
     }.get(lane, "exam-prep-ocr-runtime")
     entrypoint = {
-        "directml": DIRECTML_RUNTIME_ENTRY,
-        "amd-npu": AMD_NPU_RUNTIME_ENTRY,
+        "windowsml": WINDOWSML_RUNTIME_ENTRY,
     }.get(lane, RUNTIME_ENTRY)
     command = [
         sys.executable,
@@ -251,9 +190,9 @@ def _pyinstaller_command(lane: str) -> list[str]:
         "--specpath",
         str(BUILD_DIR),
     ]
-    if lane in {"directml", "amd-npu"}:
-        collect_all = DIRECTML_COLLECT_ALL
-        metadata = AMD_NPU_METADATA if lane == "amd-npu" else DIRECTML_METADATA
+    if lane == "windowsml":
+        collect_all = WINDOWSML_COLLECT_ALL
+        metadata = WINDOWSML_METADATA
     else:
         collect_all = PADDLE_COLLECT_ALL
         metadata = [
@@ -264,17 +203,17 @@ def _pyinstaller_command(lane: str) -> list[str]:
         command.extend(["--collect-all", package_name])
     for distribution_name in metadata:
         command.extend(["--copy-metadata", distribution_name])
-    if lane in {"directml", "amd-npu"}:
-        for module_name in DIRECTML_EXCLUDES:
+    if lane == "windowsml":
+        for module_name in WINDOWSML_EXCLUDES:
             command.extend(["--exclude-module", module_name])
     return command
 
 
-def _directml_model_files(model_dir: Path) -> list[Path]:
-    missing = [name for name in DIRECTML_MODEL_FILES if not (model_dir / name).is_file()]
+def _windowsml_model_files(model_dir: Path) -> list[Path]:
+    missing = [name for name in WINDOWSML_MODEL_FILES if not (model_dir / name).is_file()]
     if missing:
-        raise SystemExit(f"Missing DirectML OCR model files: {', '.join(missing)}")
-    return [model_dir / name for name in DIRECTML_MODEL_FILES]
+        raise SystemExit(f"Missing WindowsML OCR model files: {', '.join(missing)}")
+    return [model_dir / name for name in WINDOWSML_MODEL_FILES]
 
 
 def _run(command: list[str]) -> None:

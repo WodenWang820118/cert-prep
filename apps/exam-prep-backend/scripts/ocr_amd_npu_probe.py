@@ -22,7 +22,7 @@ DEFAULT_OUTPUT_DIR = BACKEND_ROOT / ".benchmarks"
 sys.path.insert(0, str(SCRIPT_DIR))
 sys.path.insert(0, str(BACKEND_ROOT / "src"))
 
-from ocr_directml_probe import (  # noqa: E402
+from ocr_windowsml_probe import (  # noqa: E402
     DEFAULT_MODEL_DIR,
     inspect_model_artifacts,
     resolve_powershell_executable,
@@ -69,7 +69,7 @@ def build_report(
             "name": "ocr_amd_npu_probe",
             "goal": (
                 "Verify the opt-in Windows ML VitisAI lane for AMD NPU OCR "
-                "without changing the production DirectML default."
+                "without changing the production WindowsML default."
             ),
             "does_not_change_runtime_defaults": True,
             "does_not_run_ocr_inference": True,
@@ -126,7 +126,7 @@ def classify_probe_status(
         "power_watts_available": bool(xrt_smi.get("power_watts_available")),
         "blockers": list(dict.fromkeys(blockers)),
         "current_safe_action": (
-            "Keep directml as the packaged default until strict NPU session, "
+            "Keep windowsml as the packaged default until strict NPU session, "
             "real OCR inference, routing, and no-regression gates pass."
         ),
     }

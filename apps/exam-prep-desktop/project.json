@@ -35,31 +35,19 @@
         "exam-prep:build",
         "sync-backend-runtime-manifest",
         "sync-runtime-manifest",
-        "sync-directml-runtime-manifest"
+        "sync-windowsml-runtime-manifest"
       ],
       "outputs": ["{projectRoot}/src-tauri/target"],
       "options": {
         "command": "pnpm exec tauri build --target x86_64-pc-windows-msvc --ci --config apps/exam-prep-desktop/src-tauri/tauri.conf.json"
       }
     },
-    "build-directml": {
+    "build-windowsml": {
       "executor": "nx:run-commands",
       "dependsOn": [
         "exam-prep:build",
         "sync-backend-runtime-manifest",
-        "sync-directml-runtime-manifest"
-      ],
-      "outputs": ["{projectRoot}/src-tauri/target"],
-      "options": {
-        "command": "pnpm exec tauri build --target x86_64-pc-windows-msvc --ci --config apps/exam-prep-desktop/src-tauri/tauri.conf.json"
-      }
-    },
-    "build-amd-npu": {
-      "executor": "nx:run-commands",
-      "dependsOn": [
-        "exam-prep:build",
-        "sync-backend-runtime-manifest",
-        "sync-amd-npu-runtime-manifest"
+        "sync-windowsml-runtime-manifest"
       ],
       "outputs": ["{projectRoot}/src-tauri/target"],
       "options": {
@@ -92,24 +80,14 @@
         "command": "node apps/exam-prep-desktop/scripts/sync-runtime-manifest.mts"
       }
     },
-    "sync-directml-runtime-manifest": {
+    "sync-windowsml-runtime-manifest": {
       "executor": "nx:run-commands",
-      "dependsOn": ["exam-prep-backend:build-ocr-runtime-directml"],
+      "dependsOn": ["exam-prep-backend:build-ocr-runtime-windowsml"],
       "outputs": [
-        "{projectRoot}/src-tauri/resources/directml-ocr-runtime-manifest.json"
+        "{projectRoot}/src-tauri/resources/windowsml-ocr-runtime-manifest.json"
       ],
       "options": {
-        "command": "node apps/exam-prep-desktop/scripts/sync-directml-runtime-manifest.mts"
-      }
-    },
-    "sync-amd-npu-runtime-manifest": {
-      "executor": "nx:run-commands",
-      "dependsOn": ["exam-prep-backend:build-ocr-runtime-amd-npu"],
-      "outputs": [
-        "{projectRoot}/src-tauri/resources/amd-npu-ocr-runtime-manifest.json"
-      ],
-      "options": {
-        "command": "node apps/exam-prep-desktop/scripts/sync-amd-npu-runtime-manifest.mts"
+        "command": "node apps/exam-prep-desktop/scripts/sync-windowsml-runtime-manifest.mts"
       }
     },
     "sync-backend-runtime-manifest": {
@@ -153,37 +131,26 @@
         "command": "node apps/exam-prep-desktop/scripts/packaged-flow-smoke.mts --ocr-page-workers 1 --ollama-model qwen3.5:4b --streaming-draft-page-limit 1 --streaming-draft-workers 1 --wait-for-streaming-complete"
       }
     },
-    "packaged-streaming-baseline-directml": {
+    "packaged-streaming-baseline-windowsml": {
       "cache": false,
       "executor": "nx:run-commands",
-      "dependsOn": ["build-directml"],
+      "dependsOn": ["build-windowsml"],
       "outputs": [
         "{workspaceRoot}/tmp/exam-prep-desktop/packaged-streaming-baseline"
       ],
       "options": {
-        "command": "node apps/exam-prep-desktop/scripts/packaged-flow-smoke.mts --ocr-provider directml --ocr-page-workers 1 --ollama-model qwen3.5:4b --streaming-draft-page-limit 1 --streaming-draft-workers 1 --wait-for-streaming-complete"
+        "command": "node apps/exam-prep-desktop/scripts/packaged-flow-smoke.mts --ocr-provider windowsml --ocr-page-workers 1 --ollama-model qwen3.5:4b --streaming-draft-page-limit 1 --streaming-draft-workers 1 --wait-for-streaming-complete"
       }
     },
-    "packaged-streaming-production-directml": {
+    "packaged-streaming-production-windowsml": {
       "cache": false,
       "executor": "nx:run-commands",
-      "dependsOn": ["build-directml"],
+      "dependsOn": ["build-windowsml"],
       "outputs": [
         "{workspaceRoot}/tmp/exam-prep-desktop/packaged-streaming-production"
       ],
       "options": {
-        "command": "node apps/exam-prep-desktop/scripts/packaged-flow-smoke.mts --production-summary --allow-ocr-chunk-variance --ocr-provider directml --ocr-page-workers 1 --ollama-model qwen3.5:4b --ollama-fallback-models qwen3.5:2b --streaming-draft-page-limit 1 --streaming-draft-workers 1 --wait-for-streaming-complete --verify-streaming-practice-ready"
-      }
-    },
-    "packaged-streaming-production-amd-npu": {
-      "cache": false,
-      "executor": "nx:run-commands",
-      "dependsOn": ["build-amd-npu"],
-      "outputs": [
-        "{workspaceRoot}/tmp/exam-prep-desktop/packaged-streaming-production"
-      ],
-      "options": {
-        "command": "node apps/exam-prep-desktop/scripts/packaged-flow-smoke.mts --production-summary --allow-ocr-chunk-variance --ocr-provider amd_npu --ocr-page-workers 1 --ollama-model qwen3.5:4b --ollama-fallback-models qwen3.5:2b --streaming-draft-page-limit 1 --streaming-draft-workers 1 --wait-for-streaming-complete --verify-streaming-practice-ready"
+        "command": "node apps/exam-prep-desktop/scripts/packaged-flow-smoke.mts --production-summary --allow-ocr-chunk-variance --ocr-provider windowsml --ocr-page-workers 1 --ollama-model qwen3.5:4b --ollama-fallback-models qwen3.5:2b --streaming-draft-page-limit 1 --streaming-draft-workers 1 --wait-for-streaming-complete --verify-streaming-practice-ready"
       }
     },
     "typecheck-scripts": {

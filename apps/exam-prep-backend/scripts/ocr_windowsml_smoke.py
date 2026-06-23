@@ -19,7 +19,7 @@ DEFAULT_OUTPUT_DIR = BACKEND_ROOT / ".benchmarks"
 sys.path.insert(0, str(SCRIPT_DIR))
 sys.path.insert(0, str(BACKEND_ROOT / "src"))
 
-from ocr_directml_probe import (  # noqa: E402
+from ocr_windowsml_probe import (  # noqa: E402
     DEFAULT_MODEL_DIR,
     REQUIRED_MODEL_FILES,
     build_report as build_probe_report,
@@ -27,14 +27,14 @@ from ocr_directml_probe import (  # noqa: E402
 
 
 SESSION_MODEL_FILES = tuple(name for name in REQUIRED_MODEL_FILES if name.endswith(".onnx"))
-DIRECTML_DEVICE_LABEL = "amd_directml"
-DIRECTML_PROVIDERS = ["DmlExecutionProvider", "CPUExecutionProvider"]
+WINDOWSML_DEVICE_LABEL = "amd_windowsml"
+WINDOWSML_PROVIDERS = ["DmlExecutionProvider", "CPUExecutionProvider"]
 SessionSmokeRunner = Callable[[dict[str, Path], int | None], dict[str, Any]]
 
 
 def default_output_path() -> Path:
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    return DEFAULT_OUTPUT_DIR / f"ocr-directml-smoke-{stamp}.json"
+    return DEFAULT_OUTPUT_DIR / f"ocr-windowsml-smoke-{stamp}.json"
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -44,12 +44,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--fail-if-blocked",
         action="store_true",
-        help="Exit non-zero only when DirectML itself is unavailable.",
+        help="Exit non-zero only when WindowsML itself is unavailable.",
     )
     parser.add_argument(
         "--fail-if-not-session-ready",
         action="store_true",
-        help="Exit non-zero unless DirectML sessions can be created for required models.",
+        help="Exit non-zero unless WindowsML sessions can be created for required models.",
     )
     return parser.parse_args(argv)
 
@@ -66,17 +66,17 @@ def build_report(
         "schema_version": 1,
         "generated_at": datetime.now(UTC).isoformat(),
         "mode": {
-            "name": "ocr_directml_session_smoke",
+            "name": "ocr_windowsml_session_smoke",
             "goal": (
                 "Verify that required PP-OCRv6 ONNX model files can create ONNX "
-                "Runtime DirectML sessions before production OCR packaging."
+                "Runtime WindowsML sessions before production OCR packaging."
             ),
             "does_not_pull_models": True,
             "does_not_change_runtime_defaults": True,
             "runs_ocr_inference": False,
         },
         "probe": probe,
-        "directml_session_smoke": session_smoke,
+        "windowsml_session_smoke": session_smoke,
         "status": status,
     }
 
@@ -86,10 +86,10 @@ def build_session_smoke(
     *,
     session_runner: SessionSmokeRunner | None = None,
 ) -> dict[str, Any]:
-    session_runner = session_runner or run_directml_session_smoke
+    session_runner = session_runner or run_windowsml_session_smoke
     status = probe.get("status", {})
-    if not status.get("directml_provider_available"):
-        return skipped_session_smoke("directml_provider_unavailable")
+    if not status.get("windowsml_provider_available"):
+        return skipped_session_smoke("windowsml_provider_unavailable")
     if not status.get("amd_igpu_detected"):
         return skipped_session_smoke("amd_igpu_not_detected")
 
@@ -104,15 +104,15 @@ def build_session_smoke(
             **skipped_session_smoke("model_artifacts_missing"),
             "missing_required": missing_names,
         }
-    return session_runner(model_files, directml_device_id(status))
+    return session_runner(model_files, windowsml_device_id(status))
 
 
 def skipped_session_smoke(reason: str) -> dict[str, Any]:
     return {
         "state": "skipped",
         "reason": reason,
-        "providers_requested": directml_provider_names(),
-        "session_options": directml_session_options_metadata(),
+        "providers_requested": windowsml_provider_names(),
+        "session_options": windowsml_session_options_metadata(),
         "sessions": [],
         "errors": [],
     }
@@ -135,12 +135,12 @@ def required_model_paths(model_artifacts: dict[str, Any]) -> dict[str, Path]:
     return result
 
 
-def directml_device_id(probe_status: dict[str, Any]) -> int | None:
-    raw = probe_status.get("directml_device_id")
+def windowsml_device_id(probe_status: dict[str, Any]) -> int | None:
+    raw = probe_status.get("windowsml_device_id")
     return raw if isinstance(raw, int) and raw >= 0 else None
 
 
-def directml_providers(device_id: int | None) -> list[Any]:
+def windowsml_providers(device_id: int | None) -> list[Any]:
     if device_id is None:
         return ["DmlExecutionProvider", "CPUExecutionProvider"]
     return [
@@ -149,32 +149,32 @@ def directml_providers(device_id: int | None) -> list[Any]:
     ]
 
 
-def directml_provider_names() -> list[str]:
-    return list(DIRECTML_PROVIDERS)
+def windowsml_provider_names() -> list[str]:
+    return list(WINDOWSML_PROVIDERS)
 
 
-def directml_session_options_metadata() -> dict[str, Any]:
+def windowsml_session_options_metadata() -> dict[str, Any]:
     return {
         "enable_mem_pattern": False,
         "execution_mode": "ORT_SEQUENTIAL",
-        "execution_policy": "paddleocr37_directml",
-        "selection_mode": "directml_amd_igpu",
-        "providers_requested": directml_provider_names(),
+        "execution_policy": "paddleocr37_windowsml",
+        "selection_mode": "windowsml_amd_igpu",
+        "providers_requested": windowsml_provider_names(),
         "reason": (
             "PaddleOCR 3.7 engine='onnxruntime' validates provider names through "
-            "ONNX Runtime and currently uses DirectML plus CPU fallback."
+            "ONNX Runtime and currently uses WindowsML plus CPU fallback."
         ),
     }
 
 
-def create_directml_session_options(ort: Any) -> Any:
+def create_windowsml_session_options(ort: Any) -> Any:
     options = ort.SessionOptions()
     options.enable_mem_pattern = False
     options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
     return options
 
 
-def run_directml_session_smoke(
+def run_windowsml_session_smoke(
     model_files: dict[str, Path],
     device_id: int | None,
 ) -> dict[str, Any]:
@@ -186,9 +186,9 @@ def run_directml_session_smoke(
     except Exception as exc:
         return {
             "state": "session_failed",
-            "providers_requested": directml_provider_names(),
-            "device": DIRECTML_DEVICE_LABEL,
-            "session_options": directml_session_options_metadata(),
+            "providers_requested": windowsml_provider_names(),
+            "device": WINDOWSML_DEVICE_LABEL,
+            "session_options": windowsml_session_options_metadata(),
             "sessions": sessions,
             "errors": [{"model": "*", "error": str(exc)}],
         }
@@ -196,11 +196,11 @@ def run_directml_session_smoke(
     for model_name in SESSION_MODEL_FILES:
         model_path = model_files[model_name]
         try:
-            options = create_directml_session_options(ort)
+            options = create_windowsml_session_options(ort)
             session = ort.InferenceSession(
                 str(model_path),
                 sess_options=options,
-                providers=directml_providers(device_id),
+                providers=windowsml_providers(device_id),
             )
             sessions.append(session_metadata(model_name, model_path, session))
         except Exception as exc:
@@ -208,10 +208,10 @@ def run_directml_session_smoke(
 
     return {
         "state": "session_ready" if not errors else "session_failed",
-        "providers_requested": directml_provider_names(),
-        "device": DIRECTML_DEVICE_LABEL,
-        "directml_device_id": device_id,
-        "session_options": directml_session_options_metadata(),
+        "providers_requested": windowsml_provider_names(),
+        "device": WINDOWSML_DEVICE_LABEL,
+        "windowsml_device_id": device_id,
+        "session_options": windowsml_session_options_metadata(),
         "sessions": sessions,
         "errors": errors,
     }
@@ -263,9 +263,9 @@ def classify_smoke_status(
     blockers = list(probe_status.get("blockers", []))
     session_state = str(session_smoke.get("state") or "unknown")
     if session_state == "session_failed":
-        blockers.append("directml_session_failed")
+        blockers.append("windowsml_session_failed")
 
-    if not probe_status.get("directml_provider_available") or not probe_status.get("amd_igpu_detected"):
+    if not probe_status.get("windowsml_provider_available") or not probe_status.get("amd_igpu_detected"):
         state = "blocked"
     elif session_state == "session_ready":
         state = "session_ready"
@@ -277,12 +277,12 @@ def classify_smoke_status(
     return {
         "state": state,
         "blockers": blockers,
-        "directml_provider_available": bool(probe_status.get("directml_provider_available")),
+        "windowsml_provider_available": bool(probe_status.get("windowsml_provider_available")),
         "amd_igpu_detected": bool(probe_status.get("amd_igpu_detected")),
         "model_artifacts_ready": bool(probe_status.get("model_artifacts_ready")),
         "session_ready": session_state == "session_ready",
         "current_safe_action": (
-            "Keep OCR on the AMD iGPU DirectML lane only when DirectML session "
+            "Keep OCR on the AMD iGPU WindowsML lane only when WindowsML session "
             "creation, inference correctness, latency, and adapter telemetry pass."
         ),
         "recommended_next_step": _recommended_next_step(state),
@@ -292,12 +292,12 @@ def classify_smoke_status(
 def _recommended_next_step(state: str) -> str:
     if state == "session_ready":
         return (
-            "Run deterministic PaddleOCR 3.7 DirectML inference and adapter telemetry."
+            "Run deterministic PaddleOCR 3.7 WindowsML inference and adapter telemetry."
         )
     if state == "session_failed":
         return "Inspect ONNX compatibility errors and adjust/export PP-OCR artifacts."
     if state == "blocked":
-        return "Restore DirectML provider and AMD adapter visibility before model work."
+        return "Restore WindowsML provider and AMD adapter visibility before model work."
     return "Place required PP-OCR ONNX artifacts in the model directory and rerun this smoke."
 
 

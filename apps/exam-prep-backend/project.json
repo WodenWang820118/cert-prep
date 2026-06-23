@@ -97,105 +97,60 @@
         "command": "uv run --extra ocr-gpu python scripts/ocr_igpu_probe.py"
       }
     },
-    "ocr-directml-probe": {
+    "ocr-windowsml-probe": {
       "cache": false,
       "executor": "nx:run-commands",
       "outputs": ["{projectRoot}/.benchmarks"],
       "options": {
         "cwd": "apps/exam-prep-backend",
-        "command": "uv run --exact --reinstall-package onnxruntime-directml --python 3.12 --extra ocr-directml python scripts/ocr_directml_probe.py"
+        "command": "uv run --exact --reinstall-package onnxruntime-windowsml --python 3.12 --extra ocr-windowsml python scripts/ocr_windowsml_probe.py"
       }
     },
-    "ocr-directml-prepare-models": {
+    "ocr-windowsml-prepare-models": {
       "cache": false,
       "parallelism": false,
       "executor": "nx:run-commands",
       "outputs": ["{projectRoot}/.benchmarks"],
       "options": {
         "cwd": "apps/exam-prep-backend",
-        "command": "uv run --exact --reinstall-package onnxruntime-directml --python 3.12 --extra ocr-directml python scripts/ocr_directml_prepare_models.py"
+        "command": "uv run --exact --reinstall-package onnxruntime-windowsml --python 3.12 --extra ocr-windowsml python scripts/ocr_windowsml_prepare_models.py"
       }
     },
-    "ocr-directml-prepare-models-docker": {
+    "ocr-windowsml-prepare-models-docker": {
       "cache": false,
       "parallelism": false,
       "executor": "nx:run-commands",
       "outputs": ["{projectRoot}/.benchmarks"],
       "options": {
         "cwd": "apps/exam-prep-backend",
-        "command": "uv run --exact --reinstall-package onnxruntime-directml --python 3.12 --extra ocr-directml python scripts/ocr_directml_prepare_models.py --converter docker --force-conversion --fail-if-not-ready"
+        "command": "uv run --exact --reinstall-package onnxruntime-windowsml --python 3.12 --extra ocr-windowsml python scripts/ocr_windowsml_prepare_models.py --converter docker --force-conversion --fail-if-not-ready"
       }
     },
-    "ocr-directml-session-smoke": {
+    "ocr-windowsml-session-smoke": {
       "cache": false,
       "executor": "nx:run-commands",
       "outputs": ["{projectRoot}/.benchmarks"],
       "options": {
         "cwd": "apps/exam-prep-backend",
-        "command": "uv run --exact --reinstall-package onnxruntime-directml --python 3.12 --extra ocr-directml python scripts/ocr_directml_smoke.py"
+        "command": "uv run --exact --reinstall-package onnxruntime-windowsml --python 3.12 --extra ocr-windowsml python scripts/ocr_windowsml_smoke.py"
       }
     },
-    "ocr-directml-inference-smoke": {
+    "ocr-windowsml-inference-smoke": {
       "cache": false,
       "executor": "nx:run-commands",
       "outputs": ["{projectRoot}/.benchmarks"],
       "options": {
         "cwd": "apps/exam-prep-backend",
-        "command": "uv run --exact --reinstall-package onnxruntime-directml --python 3.12 --extra ocr-directml python scripts/ocr_directml_inference_smoke.py"
+        "command": "uv run --exact --reinstall-package onnxruntime-windowsml --python 3.12 --extra ocr-windowsml python scripts/ocr_windowsml_inference_smoke.py"
       }
     },
-    "ocr-directml-benchmark": {
+    "ocr-windowsml-benchmark": {
       "cache": false,
       "executor": "nx:run-commands",
       "outputs": ["{projectRoot}/.benchmarks"],
       "options": {
         "cwd": "apps/exam-prep-backend",
-        "command": "uv run --exact --reinstall-package onnxruntime-directml --python 3.12 --extra ocr-directml python scripts/ocr_directml_benchmark.py"
-      }
-    },
-    "ocr-amd-npu-probe": {
-      "cache": false,
-      "executor": "nx:run-commands",
-      "outputs": ["{projectRoot}/.benchmarks"],
-      "options": {
-        "cwd": "apps/exam-prep-backend",
-        "command": "uv run --exact --reinstall-package onnxruntime-windowsml --python 3.12 --extra ocr-amd-npu python scripts/ocr_amd_npu_probe.py"
-      }
-    },
-    "ocr-amd-npu-session-smoke": {
-      "cache": false,
-      "executor": "nx:run-commands",
-      "outputs": ["{projectRoot}/.benchmarks"],
-      "options": {
-        "cwd": "apps/exam-prep-backend",
-        "command": "uv run --exact --reinstall-package onnxruntime-windowsml --python 3.12 --extra ocr-amd-npu python scripts/ocr_amd_npu_smoke.py"
-      }
-    },
-    "ocr-amd-npu-inference-smoke": {
-      "cache": false,
-      "executor": "nx:run-commands",
-      "outputs": ["{projectRoot}/.benchmarks"],
-      "options": {
-        "cwd": "apps/exam-prep-backend",
-        "command": "uv run --exact --reinstall-package onnxruntime-windowsml --python 3.12 --extra ocr-amd-npu python scripts/ocr_amd_npu_inference_smoke.py"
-      }
-    },
-    "ocr-amd-npu-benchmark": {
-      "cache": false,
-      "executor": "nx:run-commands",
-      "outputs": ["{projectRoot}/.benchmarks"],
-      "options": {
-        "cwd": "apps/exam-prep-backend",
-        "command": "uv run --exact --reinstall-package onnxruntime-windowsml --python 3.12 --extra ocr-amd-npu python scripts/ocr_amd_npu_benchmark.py --ensure-ready"
-      }
-    },
-    "amd-npu-official-smoke": {
-      "cache": false,
-      "executor": "nx:run-commands",
-      "outputs": ["{projectRoot}/.benchmarks"],
-      "options": {
-        "cwd": "apps/exam-prep-backend",
-        "command": "uv run --exact --reinstall-package onnxruntime-windowsml --python 3.12 --extra ocr-amd-npu python scripts/amd_npu_official_smoke.py --ensure-ready --fail-if-not-npu-active"
+        "command": "uv run --exact --reinstall-package onnxruntime-windowsml --python 3.12 --extra ocr-windowsml python scripts/ocr_windowsml_benchmark.py"
       }
     },
     "reasoning-bakeoff": {
@@ -274,27 +229,16 @@
         "command": "uv run --extra ocr-gpu python scripts/build_ocr_runtime.py --lane gpu --target x86_64-pc-windows-msvc"
       }
     },
-    "build-ocr-runtime-directml": {
+    "build-ocr-runtime-windowsml": {
       "cache": true,
       "parallelism": false,
       "executor": "nx:run-commands",
-      "dependsOn": ["ocr-directml-prepare-models"],
+      "dependsOn": ["ocr-windowsml-prepare-models"],
       "inputs": ["production"],
-      "outputs": ["{projectRoot}/dist/ocr-directml-runtime"],
+      "outputs": ["{projectRoot}/dist/ocr-windowsml-runtime"],
       "options": {
         "cwd": "apps/exam-prep-backend",
-        "command": "uv run --exact --reinstall-package onnxruntime-directml --python 3.12 --extra ocr-directml python scripts/build_ocr_runtime.py --lane directml --target x86_64-pc-windows-msvc"
-      }
-    },
-    "build-ocr-runtime-amd-npu": {
-      "cache": true,
-      "parallelism": false,
-      "executor": "nx:run-commands",
-      "inputs": ["production"],
-      "outputs": ["{projectRoot}/dist/ocr-amd-npu-runtime"],
-      "options": {
-        "cwd": "apps/exam-prep-backend",
-        "command": "uv run --exact --reinstall-package onnxruntime-directml --python 3.12 --extra ocr-directml python scripts/ocr_directml_prepare_models.py && uv run --exact --reinstall-package onnxruntime-windowsml --python 3.12 --extra ocr-amd-npu python scripts/ocr_amd_npu_inference_smoke.py --ensure-ready --fail-if-not-inference-ready && uv run --exact --reinstall-package onnxruntime-windowsml --python 3.12 --extra ocr-amd-npu python scripts/build_ocr_runtime.py --lane amd-npu --target x86_64-pc-windows-msvc"
+        "command": "uv run --exact --reinstall-package onnxruntime-windowsml --python 3.12 --extra ocr-windowsml python scripts/build_ocr_runtime.py --lane windowsml --target x86_64-pc-windows-msvc"
       }
     },
     "generate-openapi-client": {

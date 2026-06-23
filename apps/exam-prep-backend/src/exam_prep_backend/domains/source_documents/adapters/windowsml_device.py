@@ -10,30 +10,30 @@ import subprocess
 from typing import Any
 
 
-AUTO_DIRECTML_DEVICE_ID = -1
+AUTO_WINDOWSML_DEVICE_ID = -1
 COMMAND_TIMEOUT_SECONDS = 10.0
 
 
-class DirectMLDeviceSelectionError(RuntimeError):
-    """Raised when the AMD DirectML adapter cannot be selected safely."""
+class WindowsMLDeviceSelectionError(RuntimeError):
+    """Raised when the WindowsML adapter cannot be selected safely."""
 
 
-def resolve_directml_device_id(requested_device_id: int | None) -> int | None:
+def resolve_windowsml_device_id(requested_device_id: int | None) -> int | None:
     if requested_device_id is None or requested_device_id >= 0:
         return requested_device_id
     adapter = select_amd_dxgi_adapter(dxgi_adapter_snapshot())
     resolved = adapter_index(adapter)
     if resolved is None:
-        raise DirectMLDeviceSelectionError(
-            "AMD DirectML OCR adapter could not be resolved from DXGI adapters."
+        raise WindowsMLDeviceSelectionError(
+            "WindowsML OCR adapter could not be resolved from DXGI adapters."
         )
     return resolved
 
 
-def directml_device_label(device_id: int | None) -> str:
+def windowsml_device_label(device_id: int | None) -> str:
     if device_id is None:
-        return "amd_directml"
-    return f"amd_directml:{device_id}"
+        return "amd_windowsml"
+    return f"amd_windowsml:{device_id}"
 
 
 def dxgi_adapter_snapshot() -> list[dict[str, Any]]:

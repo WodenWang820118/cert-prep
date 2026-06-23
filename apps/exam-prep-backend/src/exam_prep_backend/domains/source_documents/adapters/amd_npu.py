@@ -12,13 +12,9 @@ import tempfile
 from time import perf_counter
 from typing import Any
 
-from exam_prep_backend.domains.source_documents.adapters.directml import (
-    DirectMLOCRRunner,
+from exam_prep_backend.domains.source_documents.adapters.windowsml import (
     PADDLEOCR37_REQUIRED_MODEL_FILES,
-    _onnxruntime_state,
-    _paddleocr_state,
 )
-from exam_prep_backend.domains.source_documents.ocr_contracts import OCRHealth, OCRPageResult
 from exam_prep_backend.exceptions import ProviderUnavailableError
 
 
@@ -36,149 +32,6 @@ AMD_NPU_POLICY_NAMES = {
     "PREFER_GPU",
     "MAX_PERFORMANCE",
 }
-REAL_OCR_GATE_DETAIL = (
-    "AMD NPU PaddleOCR sessions are ready for NPU-preferred execution, but "
-    "packaged OCR remains gated until real OCR inference and routing evidence pass."
-)
-
-
-class AmdNpuOCRProvider:
-    """Blocked-until-ready AMD NPU OCR provider for the Windows ML lane."""
-
-    provider = "amd_npu"
-    engine = "onnxruntime-windowsml-vitisai"
-    page_workers = 1
-
-    def health(self) -> OCRHealth:
-        bootstrap = windows_ml_bootstrap_snapshot(ensure_ready=False)
-        unavailable_reason = _bootstrap_unavailable_reason(bootstrap)
-        return OCRHealth(
-            provider=self.provider,
-            engine=self.engine,
-            available=False,
-            detail=_bootstrap_detail(bootstrap),
-            python_version=platform.python_version(),
-            paddle_version=None,
-            paddleocr_version=bootstrap.get("onnxruntime_version"),
-            selected_device=AMD_NPU_DEVICE_LABEL
-            if bootstrap.get("vitisai_npu_ready")
-            else None,
-            cuda_available=False,
-            gpu_count=0,
-            model_cache_dir=None,
-            fallback_reason=None,
-            unavailable_reason=unavailable_reason,
-        )
-
-    def extract_page_text(self, image_png: bytes, page_number: int) -> OCRPageResult:
-        raise ProviderUnavailableError(
-            "AMD NPU OCR is gated until VitisAI participation inference, "
-            "real OCR inference, packaged streaming, and routing evidence pass."
-        )
-
-
-class AmdNpuRuntimeOCRProvider:
-    """Packaged AMD NPU OCR runtime gate.
-
-    The current product lane intentionally reports unavailable until the
-    PaddleOCR ONNX detection and recognition sessions run in NPU-preferred
-    mode and record VitisAI participation evidence.
-    """
-
-    provider = "amd_npu"
-    engine = "paddleocr-3.7-onnxruntime-windowsml-vitisai-participation"
-    page_workers = 1
-
-    def __init__(
-        self,
-        *,
-        model_dir: Path,
-        directml_device_id: int = -1,
-        npu_device_id: str = "auto",
-        npu_policy: str = "PREFER_NPU",
-        ensure_ready: bool = False,
-    ) -> None:
-        self.model_dir = model_dir
-        self.directml_device_id = directml_device_id
-        self.npu_device_id = npu_device_id
-        self.npu_policy = normalize_npu_policy(npu_policy)
-        self.ensure_ready = ensure_ready
-        self._ocr_runner = DirectMLOCRRunner(
-            model_dir=model_dir,
-            device_id=directml_device_id,
-        )
-        self._prepass_runner = AmdNpuPrepassRunner(
-            model_dir=model_dir,
-            device_id=npu_device_id,
-            policy=self.npu_policy,
-        )
-
-    def health(self) -> OCRHealth:
-        _providers, ort_version, ort_import_error = _onnxruntime_state()
-        paddleocr_version, paddleocr_error = _paddleocr_state()
-        directml_available = "DmlExecutionProvider" in _providers
-        missing_files = missing_model_files(self.model_dir)
-        session_report = npu_preferred_session_report(
-            model_dir=self.model_dir,
-            ensure_ready=self.ensure_ready,
-            policy=self.npu_policy,
-            device_id=self.npu_device_id,
-        )
-        session_state = str(session_report["status"]["state"])
-        unavailable_reason = _runtime_unavailable_reason(
-            ort_import_error=ort_import_error,
-            paddleocr_error=paddleocr_error,
-            missing_files=missing_files,
-            session_report=session_report,
-            directml_available=directml_available,
-        )
-        available = (
-            unavailable_reason is None
-            and session_report["status"].get("state") == "session_ready"
-        )
-        detail = _runtime_detail(
-            ort_import_error=ort_import_error,
-            paddleocr_error=paddleocr_error,
-            missing_files=missing_files,
-            session_report=session_report,
-            directml_available=directml_available,
-        )
-        selected_device = AMD_NPU_DEVICE_LABEL if session_state == "session_ready" else None
-        return OCRHealth(
-            provider=self.provider,
-            engine=self.engine,
-            available=available,
-            detail=detail,
-            python_version=platform.python_version(),
-            paddle_version=None,
-            paddleocr_version=paddleocr_version or ort_version,
-            selected_device=selected_device,
-            cuda_available=False,
-            gpu_count=0,
-            model_cache_dir=str(self.model_dir),
-            fallback_reason=None,
-            unavailable_reason=unavailable_reason,
-        )
-
-    def extract_page_text(self, image_png: bytes, page_number: int) -> OCRPageResult:
-        health = self.health()
-        if not health.available:
-            raise ProviderUnavailableError(health.detail or REAL_OCR_GATE_DETAIL)
-        prepass = self._prepass_runner.run(image_png)
-        result = self._ocr_runner.extract_text(image_png)
-        return OCRPageResult(
-            text=result.text,
-            extraction_method="amd_npu_ocr",
-            device=f"{AMD_NPU_DEVICE_LABEL}+{result.device}",
-            fallback_reason=(
-                "npu_prepass=text_density_vitisai;"
-                f"vitisai_events={prepass.vitisai_event_count};"
-                "paddleocr_det_rec=directml"
-            ),
-            duration_ms=result.duration_ms + prepass.duration_ms,
-        )
-
-
 @dataclass(frozen=True)
 class AmdNpuPrepassResult:
     duration_ms: int
@@ -520,7 +373,7 @@ def skipped_participation_session_smoke(reason: str) -> dict[str, Any]:
         "cpu_fallback_allowed": True,
         "cpu_events_detected": False,
         "vitisai_provider_detected": False,
-        "directml_provider_detected": False,
+        "windowsml_provider_detected": False,
         "sessions": [],
         "errors": [],
     }
@@ -641,7 +494,7 @@ def run_npu_preferred_session_smoke(
                     "cpu_fallback_allowed": True,
                     "cpu_provider_detected": "CPUExecutionProvider" in providers,
                     "vitisai_provider_detected": AMD_NPU_PROVIDER_NAME in providers,
-                    "directml_provider_detected": "DmlExecutionProvider" in providers,
+                    "windowsml_provider_detected": "DmlExecutionProvider" in providers,
                 }
             )
         except Exception as exc:
@@ -657,10 +510,10 @@ def run_npu_preferred_session_smoke(
     vitisai_provider_detected = all(
         bool(session.get("vitisai_provider_detected")) for session in sessions
     )
-    directml_provider_detected = any(
-        bool(session.get("directml_provider_detected")) for session in sessions
+    windowsml_provider_detected = any(
+        bool(session.get("windowsml_provider_detected")) for session in sessions
     )
-    if not vitisai_provider_detected or directml_provider_detected:
+    if not vitisai_provider_detected or windowsml_provider_detected:
         return failed_participation_session_smoke(
             reason="amd_npu_session_failed",
             errors=[],
@@ -675,7 +528,7 @@ def run_npu_preferred_session_smoke(
             bool(session.get("cpu_provider_detected")) for session in sessions
         ),
         "vitisai_provider_detected": vitisai_provider_detected,
-        "directml_provider_detected": directml_provider_detected,
+        "windowsml_provider_detected": windowsml_provider_detected,
         "policy": normalize_npu_policy(policy),
         "device_id": device_id,
         "sessions": sessions,
@@ -699,8 +552,8 @@ def failed_participation_session_smoke(
         ),
         "vitisai_provider_detected": bool(sessions)
         and all(bool(session.get("vitisai_provider_detected")) for session in sessions),
-        "directml_provider_detected": any(
-            bool(session.get("directml_provider_detected")) for session in sessions
+        "windowsml_provider_detected": any(
+            bool(session.get("windowsml_provider_detected")) for session in sessions
         ),
         "sessions": sessions,
         "errors": errors,
@@ -1124,8 +977,8 @@ def classify_npu_preferred_session_status(
     session_state = str(session_smoke.get("state") or "unknown")
     if session_state == "session_failed":
         blockers.append(str(session_smoke.get("reason") or "amd_npu_session_failed"))
-    if session_smoke.get("directml_provider_detected"):
-        blockers.append("amd_npu_unexpected_directml_provider")
+    if session_smoke.get("windowsml_provider_detected"):
+        blockers.append("amd_npu_unexpected_windowsml_provider")
     if session_state == "session_ready" and not session_smoke.get("vitisai_provider_detected"):
         blockers.append("amd_npu_session_failed")
     blockers = list(dict.fromkeys(blockers))
@@ -1145,7 +998,7 @@ def classify_npu_preferred_session_status(
         "cpu_fallback_allowed": True,
         "cpu_events_detected": bool(session_smoke.get("cpu_events_detected")),
         "vitisai_provider_detected": bool(session_smoke.get("vitisai_provider_detected")),
-        "directml_provider_detected": bool(session_smoke.get("directml_provider_detected")),
+        "windowsml_provider_detected": bool(session_smoke.get("windowsml_provider_detected")),
         "blockers": blockers,
         "current_safe_action": (
             "Keep amd_npu opt-in until PaddleOCR inference records VitisAI/NPU "
@@ -1424,13 +1277,13 @@ def _runtime_unavailable_reason(
     paddleocr_error: Exception | None,
     missing_files: list[str],
     session_report: dict[str, Any],
-    directml_available: bool,
+    windowsml_available: bool,
 ) -> str | None:
     if ort_import_error is not None or missing_files:
         return "amd_npu_runtime_missing"
     if paddleocr_error is not None:
         return "amd_npu_runtime_unhealthy"
-    if not directml_available:
+    if not windowsml_available:
         return "amd_npu_runtime_unhealthy"
     if session_report["status"].get("cpu_fallback_detected"):
         return "amd_npu_cpu_fallback_detected"
@@ -1445,7 +1298,7 @@ def _runtime_detail(
     paddleocr_error: Exception | None,
     missing_files: list[str],
     session_report: dict[str, Any],
-    directml_available: bool,
+    windowsml_available: bool,
 ) -> str:
     if ort_import_error is not None:
         return f"AMD NPU OCR runtime unavailable: {ort_import_error}"
@@ -1453,7 +1306,7 @@ def _runtime_detail(
         return f"AMD NPU OCR model artifacts are missing: {', '.join(missing_files)}."
     if paddleocr_error is not None:
         return f"PaddleOCR 3.7 runtime unavailable: {paddleocr_error}"
-    if not directml_available:
+    if not windowsml_available:
         return "AMD NPU hybrid OCR runtime requires DmlExecutionProvider for PaddleOCR."
     status = session_report["status"]
     if status.get("cpu_fallback_detected"):
@@ -1463,5 +1316,5 @@ def _runtime_detail(
         return f"AMD NPU VitisAI OCR session is not ready: {blockers}."
     return (
         "AMD NPU hybrid OCR runtime is ready: VitisAI NPU prepass plus "
-        "PaddleOCR 3.7 DirectML detection/recognition."
+        "PaddleOCR 3.7 WindowsML detection/recognition."
     )

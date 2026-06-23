@@ -6,8 +6,8 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from ocr_directml_probe import (  # noqa: E402
-    classify_directml_status,
+from ocr_windowsml_probe import (  # noqa: E402
+    classify_windowsml_status,
     default_output_path,
     inspect_model_artifacts,
     select_amd_dxgi_adapter,
@@ -40,10 +40,10 @@ REQUIRED_MODEL_FILES = (
 )
 
 
-def test_directml_probe_blocks_when_provider_is_missing(tmp_path: Path) -> None:
+def test_windowsml_probe_blocks_when_provider_is_missing(tmp_path: Path) -> None:
     artifacts = inspect_model_artifacts(tmp_path / "models")
 
-    status = classify_directml_status(
+    status = classify_windowsml_status(
         providers=["CPUExecutionProvider"],
         import_error=None,
         model_artifacts=artifacts,
@@ -52,15 +52,15 @@ def test_directml_probe_blocks_when_provider_is_missing(tmp_path: Path) -> None:
     )
 
     assert status["state"] == "blocked"
-    assert status["directml_provider_available"] is False
-    assert "directml_provider_unavailable" in status["blockers"]
+    assert status["windowsml_provider_available"] is False
+    assert "windowsml_provider_unavailable" in status["blockers"]
     assert "model_artifacts_missing" in status["blockers"]
 
 
-def test_directml_probe_reports_ready_for_model_when_directml_exists(tmp_path: Path) -> None:
+def test_windowsml_probe_reports_ready_for_model_when_windowsml_exists(tmp_path: Path) -> None:
     artifacts = inspect_model_artifacts(tmp_path / "models")
 
-    status = classify_directml_status(
+    status = classify_windowsml_status(
         providers=["DmlExecutionProvider", "CPUExecutionProvider"],
         import_error=None,
         model_artifacts=artifacts,
@@ -69,22 +69,22 @@ def test_directml_probe_reports_ready_for_model_when_directml_exists(tmp_path: P
     )
 
     assert status["state"] == "ready_for_model"
-    assert status["directml_provider_available"] is True
+    assert status["windowsml_provider_available"] is True
     assert status["amd_igpu_detected"] is True
     assert status["nvidia_dgpu_detected"] is True
-    assert status["directml_device_id"] == 0
+    assert status["windowsml_device_id"] == 0
     assert status["model_artifacts_ready"] is False
     assert status["blockers"] == ["model_artifacts_missing"]
 
 
-def test_directml_probe_reports_ready_when_required_artifacts_exist(tmp_path: Path) -> None:
+def test_windowsml_probe_reports_ready_when_required_artifacts_exist(tmp_path: Path) -> None:
     model_dir = tmp_path / "models"
     model_dir.mkdir()
     for file_name in REQUIRED_MODEL_FILES:
         _write_model_file(model_dir, file_name)
 
     artifacts = inspect_model_artifacts(model_dir)
-    status = classify_directml_status(
+    status = classify_windowsml_status(
         providers=["DmlExecutionProvider", "CPUExecutionProvider"],
         import_error=None,
         model_artifacts=artifacts,
@@ -98,14 +98,14 @@ def test_directml_probe_reports_ready_when_required_artifacts_exist(tmp_path: Pa
     assert status["blockers"] == []
 
 
-def test_directml_probe_blocks_without_amd_adapter(tmp_path: Path) -> None:
+def test_windowsml_probe_blocks_without_amd_adapter(tmp_path: Path) -> None:
     model_dir = tmp_path / "models"
     model_dir.mkdir()
     for file_name in REQUIRED_MODEL_FILES:
         _write_model_file(model_dir, file_name)
 
     artifacts = inspect_model_artifacts(model_dir)
-    status = classify_directml_status(
+    status = classify_windowsml_status(
         providers=["DmlExecutionProvider", "CPUExecutionProvider"],
         import_error=None,
         model_artifacts=artifacts,
@@ -114,13 +114,13 @@ def test_directml_probe_blocks_without_amd_adapter(tmp_path: Path) -> None:
     )
 
     assert status["state"] == "blocked"
-    assert status["directml_provider_available"] is True
+    assert status["windowsml_provider_available"] is True
     assert status["amd_igpu_detected"] is False
     assert status["model_artifacts_ready"] is True
     assert status["blockers"] == ["amd_igpu_not_detected"]
 
 
-def test_directml_probe_rejects_empty_required_model_file(tmp_path: Path) -> None:
+def test_windowsml_probe_rejects_empty_required_model_file(tmp_path: Path) -> None:
     model_dir = tmp_path / "models"
     model_dir.mkdir()
     (model_dir / "det").mkdir(parents=True)
@@ -138,7 +138,7 @@ def test_directml_probe_rejects_empty_required_model_file(tmp_path: Path) -> Non
     assert artifacts["missing_required"] == ["rec/inference.onnx"]
 
 
-def test_directml_probe_requires_pipeline_contract(tmp_path: Path) -> None:
+def test_windowsml_probe_requires_pipeline_contract(tmp_path: Path) -> None:
     model_dir = tmp_path / "models"
     model_dir.mkdir()
     for file_name in REQUIRED_MODEL_FILES:
@@ -152,25 +152,25 @@ def test_directml_probe_requires_pipeline_contract(tmp_path: Path) -> None:
     assert artifacts["missing_required"] == ["pipeline.json"]
 
 
-def test_directml_probe_selects_amd_dxgi_adapter_index() -> None:
+def test_windowsml_probe_selects_amd_dxgi_adapter_index() -> None:
     selected = select_amd_dxgi_adapter(DXGI_ADAPTERS)
 
     assert selected is not None
     assert selected["adapter_index"] == 0
 
 
-def test_directml_probe_selects_amd_when_nvidia_is_first_adapter() -> None:
+def test_windowsml_probe_selects_amd_when_nvidia_is_first_adapter() -> None:
     selected = select_amd_dxgi_adapter([DXGI_ADAPTERS[1], DXGI_ADAPTERS[0] | {"adapter_index": 1}])
 
     assert selected is not None
     assert selected["adapter_index"] == 1
 
 
-def test_directml_probe_default_output_is_benchmark_artifact() -> None:
+def test_windowsml_probe_default_output_is_benchmark_artifact() -> None:
     output = default_output_path()
 
     assert output.parent.name == ".benchmarks"
-    assert output.name.startswith("ocr-directml-probe-")
+    assert output.name.startswith("ocr-windowsml-probe-")
     assert output.suffix == ".json"
 
 

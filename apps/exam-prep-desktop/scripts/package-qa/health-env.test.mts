@@ -80,8 +80,7 @@ test('runtime launch env sets OCR page workers only from explicit QA config', ()
     dataDir: 'data',
     llmModel: 'qwen3.5:4b',
     ocrRuntimeManifest: 'ocr-runtime-manifest.json',
-    directmlOcrRuntimeManifest: 'directml-ocr-runtime-manifest.json',
-    amdNpuOcrRuntimeManifest: 'amd-npu-ocr-runtime-manifest.json',
+    windowsmlOcrRuntimeManifest: 'windowsml-ocr-runtime-manifest.json',
   };
 
   const ambientOnly = buildRuntimeLaunchEnv({
@@ -93,26 +92,14 @@ test('runtime launch env sets OCR page workers only from explicit QA config', ()
     ambientOnly.EXAM_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD,
     'true',
   );
-  assert.equal(ambientOnly.EXAM_PREP_OCR_PROVIDER, 'directml');
+  assert.equal(ambientOnly.EXAM_PREP_OCR_PROVIDER, 'windowsml');
   assert.equal(
-    ambientOnly.EXAM_PREP_DIRECTML_OCR_RUNTIME_MANIFEST_PATH,
-    'directml-ocr-runtime-manifest.json',
+    ambientOnly.EXAM_PREP_WINDOWSML_OCR_RUNTIME_MANIFEST_PATH,
+    'windowsml-ocr-runtime-manifest.json',
   );
-  assert.equal(ambientOnly.EXAM_PREP_OCR_DIRECTML_DEVICE_ID, '-1');
-  assert.equal(
-    ambientOnly.EXAM_PREP_AMD_NPU_OCR_RUNTIME_MANIFEST_PATH,
-    'amd-npu-ocr-runtime-manifest.json',
-  );
-  assert.equal(ambientOnly.EXAM_PREP_OCR_AMD_NPU_DEVICE_ID, 'auto');
-  assert.equal(ambientOnly.EXAM_PREP_OCR_AMD_NPU_POLICY, 'PREFER_NPU');
+  assert.equal(ambientOnly.EXAM_PREP_OCR_WINDOWSML_DEVICE_ID, '-1');
+  assert.equal(ambientOnly.EXAM_PREP_OCR_WINDOWSML_DEVICE_POLICY, 'PREFER_NPU');
   assert.equal(ambientOnly.PATH, 'test-path');
-
-  const amdNpu = buildRuntimeLaunchEnv({
-    ...baseOptions,
-    ocrProvider: 'amd_npu',
-    baseEnv: {},
-  });
-  assert.equal(amdNpu.EXAM_PREP_OCR_PROVIDER, 'amd_npu');
 
   const explicit = buildRuntimeLaunchEnv({
     ...baseOptions,

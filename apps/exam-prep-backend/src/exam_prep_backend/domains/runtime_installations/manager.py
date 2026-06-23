@@ -86,17 +86,13 @@ class RuntimeInstallationManager:
         installers: list[RuntimeInstaller] | None = None,
     ) -> None:
         from exam_prep_backend.domains.runtime_installations.installers import (
-            AmdNpuOcrRuntimeInstaller,
-            DirectMLOcrRuntimeInstaller,
+            WindowsMLOcrRuntimeInstaller,
             OllamaModelInstaller,
             OllamaRuntimeInstaller,
             PaddleOcrRuntimeInstaller,
         )
-        from exam_prep_backend.domains.source_documents.adapters.external_amd_npu import (
-            ExternalAmdNpuOCRProvider,
-        )
-        from exam_prep_backend.domains.source_documents.adapters.external_directml import (
-            ExternalDirectMLOCRProvider,
+        from exam_prep_backend.domains.source_documents.adapters.external_windowsml import (
+            ExternalWindowsMLOCRProvider,
         )
         from exam_prep_backend.domains.source_documents.adapters.external_paddle import (
             ExternalPaddleOCRProvider,
@@ -119,20 +115,12 @@ class RuntimeInstallationManager:
                             else ExternalPaddleOCRProvider(settings)
                         ),
                     ),
-                    DirectMLOcrRuntimeInstaller(
+                    WindowsMLOcrRuntimeInstaller(
                         settings,
                         (
                             ocr_provider
-                            if getattr(ocr_provider, "provider", None) == "directml"
-                            else ExternalDirectMLOCRProvider(settings)
-                        ),
-                    ),
-                    AmdNpuOcrRuntimeInstaller(
-                        settings,
-                        (
-                            ocr_provider
-                            if getattr(ocr_provider, "provider", None) == "amd_npu"
-                            else ExternalAmdNpuOCRProvider(settings)
+                            if getattr(ocr_provider, "provider", None) == "windowsml"
+                            else ExternalWindowsMLOCRProvider(settings)
                         ),
                     ),
                 ]

@@ -19,7 +19,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT_DIR = BACKEND_ROOT / ".benchmarks"
-DEFAULT_MODEL_DIR = BACKEND_ROOT / ".benchmarks" / "ocr-directml-models"
+DEFAULT_MODEL_DIR = BACKEND_ROOT / ".benchmarks" / "ocr-windowsml-models"
 COMMAND_TIMEOUT_SECONDS = 10.0
 REQUIRED_MODEL_FILES = (
     "det/inference.onnx",
@@ -34,7 +34,7 @@ OPTIONAL_MODEL_FILES = ()
 
 def default_output_path() -> Path:
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    return DEFAULT_OUTPUT_DIR / f"ocr-directml-probe-{stamp}.json"
+    return DEFAULT_OUTPUT_DIR / f"ocr-windowsml-probe-{stamp}.json"
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -44,12 +44,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--fail-if-blocked",
         action="store_true",
-        help="Exit non-zero only when DirectML itself is unavailable.",
+        help="Exit non-zero only when WindowsML itself is unavailable.",
     )
     parser.add_argument(
         "--fail-if-not-ready",
         action="store_true",
-        help="Exit non-zero unless DirectML and all required model artifacts are present.",
+        help="Exit non-zero unless WindowsML and all required model artifacts are present.",
     )
     return parser.parse_args(argv)
 
@@ -59,7 +59,7 @@ def build_report(model_dir: Path = DEFAULT_MODEL_DIR) -> dict[str, Any]:
     windows_video_controllers = windows_video_controller_snapshot()
     dxgi_adapters = dxgi_adapter_snapshot()
     artifacts = inspect_model_artifacts(model_dir)
-    status = classify_directml_status(
+    status = classify_windowsml_status(
         providers=providers_snapshot.get("providers", []),
         import_error=providers_snapshot.get("import_error"),
         model_artifacts=artifacts,
@@ -70,9 +70,9 @@ def build_report(model_dir: Path = DEFAULT_MODEL_DIR) -> dict[str, Any]:
         "schema_version": 1,
         "generated_at": datetime.now(UTC).isoformat(),
         "mode": {
-            "name": "ocr_directml_probe",
+            "name": "ocr_windowsml_probe",
             "goal": (
-                "Verify whether ONNX Runtime DirectML can host the AMD iGPU "
+                "Verify whether ONNX Runtime WindowsML can host the AMD iGPU "
                 "PaddleOCR 3.7 PP-OCRv6 runtime."
             ),
             "does_not_pull_models": True,
@@ -153,7 +153,7 @@ def model_file_state(path: Path, *, name: str | None = None) -> dict[str, Any]:
     }
 
 
-def classify_directml_status(
+def classify_windowsml_status(
     *,
     providers: Sequence[str],
     import_error: object | None,
@@ -162,7 +162,7 @@ def classify_directml_status(
     dxgi_adapters: Sequence[dict[str, Any]] = (),
 ) -> dict[str, Any]:
     provider_names = [str(provider) for provider in providers]
-    directml_available = "DmlExecutionProvider" in provider_names
+    windowsml_available = "DmlExecutionProvider" in provider_names
     amd_dxgi_adapter = select_amd_dxgi_adapter(dxgi_adapters)
     amd_adapters = [
         controller
@@ -186,16 +186,16 @@ def classify_directml_status(
 
     if import_error:
         blockers.append("onnxruntime_import_failed")
-    if not directml_available:
-        blockers.append("directml_provider_unavailable")
+    if not windowsml_available:
+        blockers.append("windowsml_provider_unavailable")
     if not amd_igpu_detected:
         blockers.append("amd_igpu_not_detected")
-    if directml_available and amd_igpu_detected and amd_dxgi_adapter_index is None:
+    if windowsml_available and amd_igpu_detected and amd_dxgi_adapter_index is None:
         blockers.append("amd_dxgi_adapter_index_unavailable")
     if not model_artifacts.get("ready", False):
         blockers.append("model_artifacts_missing")
 
-    if not directml_available or not amd_igpu_detected or amd_dxgi_adapter_index is None:
+    if not windowsml_available or not amd_igpu_detected or amd_dxgi_adapter_index is None:
         state = "blocked"
     elif model_artifacts.get("ready", False):
         state = "ready"
@@ -204,11 +204,11 @@ def classify_directml_status(
 
     return {
         "state": state,
-        "directml_provider_available": directml_available,
+        "windowsml_provider_available": windowsml_available,
         "amd_igpu_detected": amd_igpu_detected,
         "nvidia_dgpu_detected": bool(nvidia_adapters) or bool(dxgi_nvidia_adapters),
-        "directml_device_id": amd_dxgi_adapter_index,
-        "directml_device_selection": {
+        "windowsml_device_id": amd_dxgi_adapter_index,
+        "windowsml_device_selection": {
             "device_id": amd_dxgi_adapter_index,
             "source": "dxgi_adapter_index" if amd_dxgi_adapter_index is not None else None,
             "adapter": amd_dxgi_adapter,
@@ -216,11 +216,11 @@ def classify_directml_status(
         "model_artifacts_ready": bool(model_artifacts.get("ready", False)),
         "blockers": blockers,
         "current_safe_action": (
-            "Keep OCR on the AMD iGPU DirectML lane only when DirectML, AMD adapter "
+            "Keep OCR on the AMD iGPU WindowsML lane only when WindowsML, AMD adapter "
             "selection, and PP-OCRv6 artifacts are all ready."
         ),
         "recommended_next_step": (
-            "Run PaddleOCR 3.7 DirectML session and inference smoke before packaged QA."
+            "Run PaddleOCR 3.7 WindowsML session and inference smoke before packaged QA."
         ),
     }
 

@@ -25,7 +25,7 @@ from .source_artifacts import download_file, ensure_source_artifact, extract_sou
 
 def default_output_path() -> Path:
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    return DEFAULT_OUTPUT_DIR / f"ocr-directml-prepare-models-{stamp}.json"
+    return DEFAULT_OUTPUT_DIR / f"ocr-windowsml-prepare-models-{stamp}.json"
 
 
 def build_report(
@@ -86,10 +86,10 @@ def build_report(
         "schema_version": 1,
         "generated_at": datetime.now(UTC).isoformat(),
         "mode": {
-            "name": "ocr_directml_prepare_models",
+            "name": "ocr_windowsml_prepare_models",
             "goal": (
                 "Prepare official PP-OCRv6 medium assets for the PaddleOCR 3.7 "
-                "ONNXRuntime DirectML production gate without changing app startup behavior."
+                "ONNXRuntime WindowsML production gate without changing app startup behavior."
             ),
             "does_not_change_runtime_defaults": True,
             "does_not_run_ocr_inference": True,

@@ -92,46 +92,28 @@ function gpuRoutingChecksForProcessUsage(
   }>,
   processNames: ReadonlySet<string>,
 ): Record<string, boolean | number> {
-  const directmlOcrUsage = processGpuUsage.filter(
-    (usage) => usage.name === 'exam-prep-ocr-directml-runtime.exe',
-  );
-  const amdNpuOcrUsage = processGpuUsage.filter(
-    (usage) => usage.name === 'exam-prep-ocr-amd-npu-runtime.exe',
+  const windowsmlOcrUsage = processGpuUsage.filter(
+    (usage) => usage.name === 'exam-prep-ocr-windowsml-runtime.exe',
   );
   const reasoningUsage = processGpuUsage.filter(
     (usage) => isReasoningProcessName(usage.name),
   );
   const ocrNvidiaMaxBytes = maxProcessGpuBytes(
-    directmlOcrUsage.filter((usage) => usage.adapter_kind === 'nvidia_dgpu'),
+    windowsmlOcrUsage.filter((usage) => usage.adapter_kind === 'nvidia_dgpu'),
   );
-  const amdNpuOcrNvidiaMaxBytes = maxProcessGpuBytes(
-    amdNpuOcrUsage.filter((usage) => usage.adapter_kind === 'nvidia_dgpu'),
-  );
-  const directmlOcrProcessObserved =
-    processNames.has('exam-prep-ocr-directml-runtime.exe') ||
-    directmlOcrUsage.length > 0;
-  const amdNpuOcrProcessObserved =
-    processNames.has('exam-prep-ocr-amd-npu-runtime.exe') ||
-    amdNpuOcrUsage.length > 0;
+  const windowsmlOcrProcessObserved =
+    processNames.has('exam-prep-ocr-windowsml-runtime.exe') ||
+    windowsmlOcrUsage.length > 0;
   return {
-    directml_ocr_process_observed: directmlOcrProcessObserved,
+    windowsml_ocr_process_observed: windowsmlOcrProcessObserved,
     ocr_uses_amd_igpu: hasAnyProcessGpuUsage(
-      directmlOcrUsage.filter((usage) => usage.adapter_kind === 'amd_igpu'),
+      windowsmlOcrUsage.filter((usage) => usage.adapter_kind === 'amd_igpu'),
     ),
     ocr_avoids_nvidia_dgpu:
-      directmlOcrProcessObserved &&
+      windowsmlOcrProcessObserved &&
       ocrNvidiaMaxBytes <= NVIDIA_OCR_PROCESS_MEMORY_GATE_BYTES,
     ocr_nvidia_process_memory_max_bytes: ocrNvidiaMaxBytes,
     ocr_nvidia_process_memory_gate_bytes: NVIDIA_OCR_PROCESS_MEMORY_GATE_BYTES,
-    amd_npu_ocr_process_observed: amdNpuOcrProcessObserved,
-    npu_ocr_process_observed: amdNpuOcrProcessObserved,
-    npu_ocr_uses_amd_igpu: hasAnyProcessGpuUsage(
-      amdNpuOcrUsage.filter((usage) => usage.adapter_kind === 'amd_igpu'),
-    ),
-    npu_ocr_avoids_nvidia_dgpu:
-      amdNpuOcrProcessObserved &&
-      amdNpuOcrNvidiaMaxBytes <= NVIDIA_OCR_PROCESS_MEMORY_GATE_BYTES,
-    npu_ocr_nvidia_process_memory_max_bytes: amdNpuOcrNvidiaMaxBytes,
     reasoning_uses_nvidia_dgpu: hasAnyProcessGpuUsage(
       reasoningUsage.filter((usage) => usage.adapter_kind === 'nvidia_dgpu'),
     ),

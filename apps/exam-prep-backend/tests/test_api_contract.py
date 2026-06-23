@@ -25,8 +25,7 @@ def test_status_like_fields_are_documented_as_openapi_enums(tmp_path) -> None:
         "paddle_ocr_cpu_fallback",
         "paddle_ocr_gpu",
         "paddle_ocr_gpu_fallback",
-        "directml_ocr",
-        "amd_npu_ocr",
+        "windowsml_ocr",
         "fake_ocr",
     ]
     assert _enum_values(openapi, "DocumentRead", "content_profile") == [

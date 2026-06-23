@@ -21,13 +21,13 @@ DEFAULT_OUTPUT_DIR = BACKEND_ROOT / ".benchmarks"
 
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from ocr_directml_probe import DEFAULT_MODEL_DIR  # noqa: E402
-from ocr_directml_smoke import (  # noqa: E402
-    DIRECTML_DEVICE_LABEL,
+from ocr_windowsml_probe import DEFAULT_MODEL_DIR  # noqa: E402
+from ocr_windowsml_smoke import (  # noqa: E402
+    WINDOWSML_DEVICE_LABEL,
     build_report as build_session_report,
 )
-from exam_prep_backend.domains.source_documents.adapters.directml import (  # noqa: E402
-    DirectMLRuntimeOCRProvider,
+from exam_prep_backend.domains.source_documents.adapters.windowsml import (  # noqa: E402
+    WindowsMLRuntimeOCRProvider,
 )
 
 
@@ -38,7 +38,7 @@ DETERMINISTIC_IMAGE_SIZE = (640, 180)
 
 def default_output_path() -> Path:
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    return DEFAULT_OUTPUT_DIR / f"ocr-directml-inference-smoke-{stamp}.json"
+    return DEFAULT_OUTPUT_DIR / f"ocr-windowsml-inference-smoke-{stamp}.json"
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -48,7 +48,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--fail-if-not-inference-ready",
         action="store_true",
-        help="Exit non-zero unless the deterministic DirectML OCR inference gate passes.",
+        help="Exit non-zero unless the deterministic WindowsML OCR inference gate passes.",
     )
     return parser.parse_args(argv)
 
@@ -68,16 +68,16 @@ def build_report(
         "schema_version": 1,
         "generated_at": datetime.now(UTC).isoformat(),
         "mode": {
-            "name": "ocr_directml_inference_smoke",
+            "name": "ocr_windowsml_inference_smoke",
             "goal": (
-                "Run a deterministic PP-OCR ONNX inference on AMD DirectML before "
-                "allowing DirectML OCR to become a production provider."
+                "Run a deterministic PP-OCR ONNX inference on AMD WindowsML before "
+                "allowing WindowsML OCR to become a production provider."
             ),
             "does_not_pull_models": True,
             "does_not_change_runtime_defaults": True,
         },
         "session_report": session_report,
-        "directml_inference_smoke": inference_smoke,
+        "windowsml_inference_smoke": inference_smoke,
         "status": status,
     }
 
@@ -96,30 +96,30 @@ def build_inference_smoke(
             "text": "",
         }
     if inference_runner is None:
-        return run_directml_recognition_smoke(session_report)
+        return run_windowsml_recognition_smoke(session_report)
     return inference_runner(session_report)
 
 
-def run_directml_recognition_smoke(session_report: dict[str, Any]) -> dict[str, Any]:
+def run_windowsml_recognition_smoke(session_report: dict[str, Any]) -> dict[str, Any]:
     try:
         from PIL import Image, ImageDraw, ImageFont
     except Exception as exc:
-        return failed_inference_smoke("directml_inference_import_failed", exc)
+        return failed_inference_smoke("windowsml_inference_import_failed", exc)
 
     model_dir = model_dir_from_session_report(session_report)
     if model_dir is None:
         return {
             "state": "skipped",
             "reason": "model_dir_missing",
-            "device": "amd_directml",
+            "device": "amd_windowsml",
             "text": "",
         }
 
     started = perf_counter()
     try:
-        provider = DirectMLRuntimeOCRProvider(
+        provider = WindowsMLRuntimeOCRProvider(
             model_dir=model_dir,
-            device_id=directml_device_id(session_report),
+            device_id=windowsml_device_id(session_report),
         )
         image = create_deterministic_text_image(
             text=DETERMINISTIC_TEXT,
@@ -129,18 +129,18 @@ def run_directml_recognition_smoke(session_report: dict[str, Any]) -> dict[str, 
         )
         result = provider.extract_page_text(image_to_png(image), 1)
     except Exception as exc:
-        return failed_inference_smoke("directml_inference_failed", exc)
+        return failed_inference_smoke("windowsml_inference_failed", exc)
 
     duration_ms = int((perf_counter() - started) * 1000)
     text = result.text.replace(" ", "").replace("\n", "")
     expected_text_matched = DETERMINISTIC_TEXT in text
     return {
         "state": "passed" if expected_text_matched else "failed",
-        "reason": None if expected_text_matched else "directml_inference_text_mismatch",
+        "reason": None if expected_text_matched else "windowsml_inference_text_mismatch",
         "scope": "full_page_ocr",
         "model_dir": str(model_dir),
-        "device": DIRECTML_DEVICE_LABEL,
-        "directml_device_id": directml_device_id(session_report),
+        "device": WINDOWSML_DEVICE_LABEL,
+        "windowsml_device_id": windowsml_device_id(session_report),
         "expected_text": DETERMINISTIC_TEXT,
         "text": result.text,
         "expected_text_matched": expected_text_matched,
@@ -157,7 +157,7 @@ def failed_inference_smoke(reason: str, exc: Exception) -> dict[str, Any]:
         "state": "failed",
         "reason": reason,
         "error": str(exc),
-        "device": DIRECTML_DEVICE_LABEL,
+        "device": WINDOWSML_DEVICE_LABEL,
         "text": "",
     }
 
@@ -169,9 +169,9 @@ def model_dir_from_session_report(session_report: dict[str, Any]) -> Path | None
     return Path(str(model_dir)) if model_dir else None
 
 
-def directml_device_id(session_report: dict[str, Any]) -> int | None:
-    smoke = session_report.get("directml_session_smoke", {})
-    raw = smoke.get("directml_device_id")
+def windowsml_device_id(session_report: dict[str, Any]) -> int | None:
+    smoke = session_report.get("windowsml_session_smoke", {})
+    raw = smoke.get("windowsml_device_id")
     return raw if isinstance(raw, int) and raw >= 0 else None
 
 
@@ -223,14 +223,14 @@ def classify_inference_status(
     )
 
     if inference_state == "blocked":
-        blockers.append(str(inference_smoke.get("reason") or "directml_inference_blocked"))
+        blockers.append(str(inference_smoke.get("reason") or "windowsml_inference_blocked"))
     elif inference_state == "failed":
-        blockers.append(str(inference_smoke.get("reason") or "directml_inference_failed"))
+        blockers.append(str(inference_smoke.get("reason") or "windowsml_inference_failed"))
 
     inference_ready = (
         inference_state == "passed"
         and bool(text)
-        and device == DIRECTML_DEVICE_LABEL
+        and device == WINDOWSML_DEVICE_LABEL
         and expected_text_matched
     )
     if inference_ready:
@@ -250,7 +250,7 @@ def classify_inference_status(
         "device": device or None,
         "non_empty_text": bool(text),
         "current_safe_action": (
-            "Keep DirectML OCR behind the production gate until deterministic "
+            "Keep WindowsML OCR behind the production gate until deterministic "
             "inference, full-page latency, and GPU routing evidence pass."
         ),
     }

@@ -147,14 +147,14 @@ def run_amd_npu_participation_inference_smoke(
         item.get("state") == "profiled" for item in model_profiles
     )
     npu_compute_detected = bool(profile.get("npu_compute_detected"))
-    directml_provider_detected = bool(profile.get("directml_provider_detected"))
+    windowsml_provider_detected = bool(profile.get("windowsml_provider_detected"))
 
-    if all_models_profiled and npu_compute_detected and not directml_provider_detected:
+    if all_models_profiled and npu_compute_detected and not windowsml_provider_detected:
         state = "passed"
         reason = None
-    elif directml_provider_detected:
+    elif windowsml_provider_detected:
         state = "blocked"
-        reason = "amd_npu_unexpected_directml_provider"
+        reason = "amd_npu_unexpected_windowsml_provider"
     elif not npu_compute_detected:
         state = "blocked"
         reason = "amd_npu_no_profiled_vitisai_compute"
@@ -173,7 +173,7 @@ def run_amd_npu_participation_inference_smoke(
         "npu_compute_detected": npu_compute_detected,
         "cpu_fallback_allowed": True,
         "cpu_events_detected": bool(profile.get("cpu_events_detected")),
-        "directml_provider_detected": directml_provider_detected,
+        "windowsml_provider_detected": windowsml_provider_detected,
         "npu_participating_models": profile.get("npu_participating_models", []),
         "npu_participation_coverage": profile.get("npu_participation_coverage"),
         "paddleocr_model_npu_compute_detected": bool(
@@ -287,10 +287,10 @@ def profile_vitisai_paddleocr_models(
             bool(result.get("cpu_events_detected")) for result in model_results
         )
         or bool(prepass_result.get("cpu_events_detected")),
-        "directml_provider_detected": any(
-            bool(result.get("directml_provider_detected")) for result in model_results
+        "windowsml_provider_detected": any(
+            bool(result.get("windowsml_provider_detected")) for result in model_results
         )
-        or bool(prepass_result.get("directml_provider_detected")),
+        or bool(prepass_result.get("windowsml_provider_detected")),
         "bootstrap": bootstrap,
     }
 
@@ -343,7 +343,7 @@ def profile_ocr_npu_prepass(
             "cpu_event_count": provider_event_counts.get("CPUExecutionProvider", 0),
             "cpu_fallback_allowed": True,
             "cpu_events_detected": provider_event_counts.get("CPUExecutionProvider", 0) > 0,
-            "directml_provider_detected": "DmlExecutionProvider" in providers
+            "windowsml_provider_detected": "DmlExecutionProvider" in providers
             or provider_event_counts.get("DmlExecutionProvider", 0) > 0,
         }
     except Exception as exc:
@@ -358,7 +358,7 @@ def profile_ocr_npu_prepass(
             "cpu_event_count": 0,
             "cpu_fallback_allowed": True,
             "cpu_events_detected": False,
-            "directml_provider_detected": False,
+            "windowsml_provider_detected": False,
         }
 
 
@@ -490,7 +490,7 @@ def profile_vitisai_model(
             "cpu_event_count": provider_event_counts.get("CPUExecutionProvider", 0),
             "cpu_fallback_allowed": True,
             "cpu_events_detected": provider_event_counts.get("CPUExecutionProvider", 0) > 0,
-            "directml_provider_detected": "DmlExecutionProvider" in providers
+            "windowsml_provider_detected": "DmlExecutionProvider" in providers
             or provider_event_counts.get("DmlExecutionProvider", 0) > 0,
         }
     except Exception as exc:
@@ -506,7 +506,7 @@ def profile_vitisai_model(
             "cpu_event_count": 0,
             "cpu_fallback_allowed": True,
             "cpu_events_detected": False,
-            "directml_provider_detected": False,
+            "windowsml_provider_detected": False,
         }
 
 
@@ -593,7 +593,7 @@ def classify_inference_status(
     blockers = list(session_status.get("blockers", []))
     state = str(inference_smoke.get("state") or "unknown")
     npu_compute_detected = bool(inference_smoke.get("npu_compute_detected"))
-    directml_provider_detected = bool(inference_smoke.get("directml_provider_detected"))
+    windowsml_provider_detected = bool(inference_smoke.get("windowsml_provider_detected"))
     if state == "blocked":
         blockers.append(str(inference_smoke.get("reason") or "amd_npu_inference_blocked"))
     elif state == "failed":
@@ -602,7 +602,7 @@ def classify_inference_status(
         state == "passed"
         and str(inference_smoke.get("device") or "").startswith("amd_npu")
         and npu_compute_detected
-        and not directml_provider_detected
+        and not windowsml_provider_detected
     )
     if inference_ready:
         status_state = "inference_ready"
@@ -619,7 +619,7 @@ def classify_inference_status(
         "npu_compute_detected": npu_compute_detected,
         "cpu_fallback_allowed": True,
         "cpu_events_detected": bool(inference_smoke.get("cpu_events_detected")),
-        "directml_provider_detected": directml_provider_detected,
+        "windowsml_provider_detected": windowsml_provider_detected,
         "npu_participating_models": inference_smoke.get("npu_participating_models", []),
         "npu_participation_coverage": inference_smoke.get("npu_participation_coverage"),
         "non_empty_text": False,

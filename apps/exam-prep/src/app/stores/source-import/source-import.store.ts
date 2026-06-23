@@ -159,8 +159,7 @@ export class SourceImportStore {
     } else if (
       [
         'paddle_runtime_missing',
-        'directml_runtime_missing',
-        'amd_npu_runtime_missing',
+        'windowsml_runtime_missing',
       ].includes(this.operations.errorCode() ?? '')
     ) {
       await this.refreshRuntimeHealth();

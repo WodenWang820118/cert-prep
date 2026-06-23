@@ -29,8 +29,7 @@ test('windows resource sampling script captures CPU, process, and GPU counters',
   assert.match(script, /GPU Process Memory/);
   assert.match(script, /GPU Engine/);
   assert.match(script, /exam-prep-desktop\.exe/);
-  assert.match(script, /exam-prep-ocr-directml-runtime\.exe/);
-  assert.match(script, /exam-prep-ocr-amd-npu-runtime\.exe/);
+  assert.match(script, /exam-prep-ocr-windowsml-runtime\.exe/);
   assert.match(script, /llama-server\.exe/);
   assert.match(script, /ollama\.exe/);
   assert.match(script, /ollama app\.exe/);
@@ -173,8 +172,7 @@ test('resource summary finalizer preserves closeout evidence and target process 
         metrics: { dedicated_usage: { max: number } };
       }>;
       gpu_routing_checks: {
-        directml_ocr_process_observed: boolean;
-        npu_ocr_process_observed: boolean;
+        windowsml_ocr_process_observed: boolean;
         ocr_uses_amd_igpu: boolean;
         ocr_avoids_nvidia_dgpu: boolean;
       };
@@ -197,8 +195,7 @@ test('resource summary finalizer preserves closeout evidence and target process 
       summary.named_target_process_gpu_usage[0].metrics.dedicated_usage.max,
       2048,
     );
-    assert.equal(summary.gpu_routing_checks.directml_ocr_process_observed, false);
-    assert.equal(summary.gpu_routing_checks.npu_ocr_process_observed, false);
+    assert.equal(summary.gpu_routing_checks.windowsml_ocr_process_observed, false);
     assert.equal(summary.gpu_routing_checks.ocr_uses_amd_igpu, false);
     assert.equal(summary.gpu_routing_checks.ocr_avoids_nvidia_dgpu, false);
     assert.equal(summary.nvidia_smi_summary.memory_used_mib.max, 1936);
@@ -277,8 +274,7 @@ test('adapter-aware summary joins GPU LUID metrics to DXGI adapter kinds', () =>
       name: string;
     }>;
     gpu_routing_checks: {
-      directml_ocr_process_observed: boolean;
-      npu_ocr_process_observed: boolean;
+      windowsml_ocr_process_observed: boolean;
       ocr_uses_amd_igpu: boolean;
       ocr_avoids_nvidia_dgpu: boolean;
       reasoning_uses_nvidia_dgpu: boolean;
@@ -313,17 +309,16 @@ test('adapter-aware summary joins GPU LUID metrics to DXGI adapter kinds', () =>
     summary.named_target_process_gpu_usage[0].name,
     'exam-prep-ocr-runtime.exe',
   );
-  assert.equal(summary.gpu_routing_checks.directml_ocr_process_observed, false);
-  assert.equal(summary.gpu_routing_checks.npu_ocr_process_observed, false);
+  assert.equal(summary.gpu_routing_checks.windowsml_ocr_process_observed, false);
   assert.equal(summary.gpu_routing_checks.ocr_uses_amd_igpu, false);
   assert.equal(summary.gpu_routing_checks.ocr_avoids_nvidia_dgpu, false);
   assert.equal(summary.gpu_routing_checks.reasoning_uses_nvidia_dgpu, false);
   assert.equal(summary.gpu_routing_checks.gpu_luid_map_usable, true);
 });
 
-test('adapter-aware summary exposes DirectML OCR and reasoning GPU routing gates', () => {
+test('adapter-aware summary exposes WindowsML OCR and reasoning GPU routing gates', () => {
   const windowsSummary = summarizeWindowsResourceCsv(`timestamp,source,path,pid,name,metric,value,unit
-"2026-06-21T00:00:00Z","windows_process","Win32_Process","42","exam-prep-ocr-directml-runtime.exe","working_set_bytes","1024","bytes"
+"2026-06-21T00:00:00Z","windows_process","Win32_Process","42","exam-prep-ocr-windowsml-runtime.exe","working_set_bytes","1024","bytes"
 "2026-06-21T00:00:00Z","windows_process","Win32_Process","77","llama-server.exe","working_set_bytes","2048","bytes"
 "2026-06-21T00:00:00Z","windows_gpu_counter","\\\\MSI\\GPU Adapter Memory(luid_0x00000000_0x000136C5_phys_0)\\Dedicated Usage","","","\\\\MSI\\GPU Adapter Memory(luid_0x00000000_0x000136C5_phys_0)\\Dedicated Usage","256","raw"
 "2026-06-21T00:00:00Z","windows_gpu_counter","\\\\MSI\\GPU Adapter Memory(luid_0x00000000_0x0001FBC5_phys_0)\\Dedicated Usage","","","\\\\MSI\\GPU Adapter Memory(luid_0x00000000_0x0001FBC5_phys_0)\\Dedicated Usage","512","raw"
@@ -339,8 +334,7 @@ test('adapter-aware summary exposes DirectML OCR and reasoning GPU routing gates
     dxgiAdapter('0x00000000_0x0001fbc5', 'NVIDIA GeForce RTX 4060 Laptop GPU', 'nvidia_dgpu'),
   ]) as {
     gpu_routing_checks: {
-      directml_ocr_process_observed: boolean;
-      npu_ocr_process_observed: boolean;
+      windowsml_ocr_process_observed: boolean;
       ocr_uses_amd_igpu: boolean;
       ocr_avoids_nvidia_dgpu: boolean;
       ocr_nvidia_process_memory_max_bytes: number;
@@ -349,8 +343,7 @@ test('adapter-aware summary exposes DirectML OCR and reasoning GPU routing gates
     };
   };
 
-  assert.equal(summary.gpu_routing_checks.directml_ocr_process_observed, true);
-  assert.equal(summary.gpu_routing_checks.npu_ocr_process_observed, false);
+  assert.equal(summary.gpu_routing_checks.windowsml_ocr_process_observed, true);
   assert.equal(summary.gpu_routing_checks.ocr_uses_amd_igpu, true);
   assert.equal(summary.gpu_routing_checks.ocr_avoids_nvidia_dgpu, true);
   assert.equal(
@@ -359,30 +352,6 @@ test('adapter-aware summary exposes DirectML OCR and reasoning GPU routing gates
   );
   assert.equal(summary.gpu_routing_checks.reasoning_uses_nvidia_dgpu, true);
   assert.equal(summary.gpu_routing_checks.gpu_luid_map_usable, true);
-});
-
-test('adapter-aware summary exposes AMD NPU OCR routing gates', () => {
-  const windowsSummary = summarizeWindowsResourceCsv(`timestamp,source,path,pid,name,metric,value,unit
-"2026-06-21T00:00:00Z","windows_process","Win32_Process","42","exam-prep-ocr-amd-npu-runtime.exe","working_set_bytes","1024","bytes"
-"2026-06-21T00:00:00Z","windows_gpu_counter","\\\\MSI\\GPU Process Memory(pid_42_luid_0x00000000_0x000136C5_phys_0)\\Shared Usage","","","\\\\MSI\\GPU Process Memory(pid_42_luid_0x00000000_0x000136C5_phys_0)\\Shared Usage","8192","raw"
-`);
-
-  const summary = summarizeGpuByAdapter(windowsSummary, [
-    dxgiAdapter('0x00000000_0x000136c5', 'AMD Radeon(TM) 880M Graphics', 'amd_igpu'),
-    dxgiAdapter('0x00000000_0x0001fbc5', 'NVIDIA GeForce RTX 4060 Laptop GPU', 'nvidia_dgpu'),
-  ]) as {
-    gpu_routing_checks: {
-      amd_npu_ocr_process_observed: boolean;
-      npu_ocr_process_observed: boolean;
-      npu_ocr_uses_amd_igpu: boolean;
-      npu_ocr_avoids_nvidia_dgpu: boolean;
-    };
-  };
-
-  assert.equal(summary.gpu_routing_checks.amd_npu_ocr_process_observed, true);
-  assert.equal(summary.gpu_routing_checks.npu_ocr_process_observed, true);
-  assert.equal(summary.gpu_routing_checks.npu_ocr_uses_amd_igpu, true);
-  assert.equal(summary.gpu_routing_checks.npu_ocr_avoids_nvidia_dgpu, true);
 });
 
 test('nvidia smi summary aggregates utilization, memory, and power peaks', () => {

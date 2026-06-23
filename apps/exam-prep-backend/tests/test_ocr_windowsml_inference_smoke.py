@@ -7,7 +7,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from ocr_directml_inference_smoke import (  # noqa: E402
+from ocr_windowsml_inference_smoke import (  # noqa: E402
     build_inference_smoke,
     classify_inference_status,
     default_output_path,
@@ -49,14 +49,14 @@ def test_inference_smoke_blocks_on_text_mismatch() -> None:
     assert smoke["state"] == "failed"
     assert status["state"] == "blocked"
     assert status["inference_ready"] is False
-    assert "directml_inference_text_mismatch" in status["blockers"]
+    assert "windowsml_inference_text_mismatch" in status["blockers"]
 
 
-def test_directml_inference_default_output_is_benchmark_artifact() -> None:
+def test_windowsml_inference_default_output_is_benchmark_artifact() -> None:
     output = default_output_path()
 
     assert output.parent.name == ".benchmarks"
-    assert output.name.startswith("ocr-directml-inference-smoke-")
+    assert output.name.startswith("ocr-windowsml-inference-smoke-")
     assert output.suffix == ".json"
 
 
@@ -64,7 +64,7 @@ def _passed_runner(_session_report: dict[str, Any]) -> dict[str, Any]:
     return {
         "state": "passed",
         "scope": "full_page_ocr",
-        "device": "amd_directml",
+        "device": "amd_windowsml",
         "expected_text": "TEST",
         "text": "TEST",
         "expected_text_matched": True,
@@ -75,9 +75,9 @@ def _passed_runner(_session_report: dict[str, Any]) -> dict[str, Any]:
 def _mismatch_runner(_session_report: dict[str, Any]) -> dict[str, Any]:
     return {
         "state": "failed",
-        "reason": "directml_inference_text_mismatch",
+        "reason": "windowsml_inference_text_mismatch",
         "scope": "full_page_ocr",
-        "device": "amd_directml",
+        "device": "amd_windowsml",
         "expected_text": "TEST",
         "text": "TEXT",
         "expected_text_matched": False,

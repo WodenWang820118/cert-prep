@@ -10,17 +10,17 @@ from typing import Any
 
 from exam_prep_backend.config import Settings
 from exam_prep_backend.domains.source_documents.adapters.diagnostics import run_ocr_diagnostics
-from exam_prep_backend.domains.source_documents.adapters.directml import (
-    DirectMLRuntimeOCRProvider,
+from exam_prep_backend.domains.source_documents.adapters.windowsml import (
+    WindowsMLRuntimeOCRProvider,
 )
 from exam_prep_backend.domains.source_documents.adapters.paddle import PaddleOCRProvider
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--provider", choices=["paddle", "directml"], default="paddle")
+    parser.add_argument("--provider", choices=["paddle", "windowsml"], default="paddle")
     parser.add_argument("--device", default="auto")
-    parser.add_argument("--directml-device-id", type=int, default=-1)
+    parser.add_argument("--windowsml-device-id", type=int, default=-1)
     parser.add_argument("--model-dir", type=Path)
     parser.add_argument("--ocr-health", action="store_true")
     parser.add_argument("--ocr-self-test", action="store_true")
@@ -59,24 +59,24 @@ def main() -> None:
     parser.error("one of --ocr-health, --ocr-self-test, --ocr-page, or --ocr-worker is required")
 
 
-def _provider_from_args(args: argparse.Namespace) -> PaddleOCRProvider | DirectMLRuntimeOCRProvider:
-    if args.provider == "directml":
-        return DirectMLRuntimeOCRProvider(
-            model_dir=args.model_dir or _default_directml_model_dir(),
-            device_id=args.directml_device_id,
+def _provider_from_args(args: argparse.Namespace) -> PaddleOCRProvider | WindowsMLRuntimeOCRProvider:
+    if args.provider == "windowsml":
+        return WindowsMLRuntimeOCRProvider(
+            model_dir=args.model_dir or _default_windowsml_model_dir(),
+            device_id=args.windowsml_device_id,
         )
     return PaddleOCRProvider(device=args.device)
 
 
 def _self_test(args: argparse.Namespace) -> dict[str, Any]:
-    if args.provider == "directml":
+    if args.provider == "windowsml":
         provider = _provider_from_args(args)
         try:
             result = provider.extract_page_text(_self_test_png(), 1)
         except Exception as exc:
             return {
                 "ok": False,
-                "provider": "directml",
+                "provider": "windowsml",
                 "error_type": type(exc).__name__,
                 "error": str(exc),
                 "cause": str(exc.__cause__) if exc.__cause__ is not None else None,
@@ -86,7 +86,7 @@ def _self_test(args: argparse.Namespace) -> dict[str, Any]:
         normalized = result.text.replace(" ", "").replace("\n", "")
         return {
             "ok": "OCR" in normalized and "TEST" in normalized,
-            "provider": "directml",
+            "provider": "windowsml",
             "result": asdict(result),
         }
     return run_ocr_diagnostics(
@@ -94,13 +94,13 @@ def _self_test(args: argparse.Namespace) -> dict[str, Any]:
     )
 
 
-def _default_directml_model_dir() -> Path:
+def _default_windowsml_model_dir() -> Path:
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
-    return Path(__file__).resolve().parents[2] / ".benchmarks" / "ocr-directml-models"
+    return Path(__file__).resolve().parents[2] / ".benchmarks" / "ocr-windowsml-models"
 
 
-def _run_worker(provider: PaddleOCRProvider | DirectMLRuntimeOCRProvider) -> None:
+def _run_worker(provider: PaddleOCRProvider | WindowsMLRuntimeOCRProvider) -> None:
     for line in sys.stdin:
         if not line.strip():
             continue

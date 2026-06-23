@@ -284,7 +284,7 @@ def run_vitisai_cnn_smoke(
             "provider_binding": {
                 "session_providers": providers,
                 "selected_ep_device": selected_device_metadata,
-                "directml_provider_in_session": "DmlExecutionProvider" in providers,
+                "windowsml_provider_in_session": "DmlExecutionProvider" in providers,
                 "vitisai_provider_in_session": AMD_NPU_PROVIDER_NAME in providers,
                 "nvidia_provider_in_session": False,
                 "nvidia_ep_device_bound": False,
@@ -551,8 +551,8 @@ def classify_smoke_status(
         "npu_active": npu_active,
         "vitisai_npu_ready": bool(bootstrap.get("vitisai_npu_ready")),
         "npu_compute_detected": bool(execution.get("npu_compute_detected")),
-        "directml_provider_in_session": bool(
-            execution.get("provider_binding", {}).get("directml_provider_in_session")
+        "windowsml_provider_in_session": bool(
+            execution.get("provider_binding", {}).get("windowsml_provider_in_session")
         ),
         "nvidia_ep_device_bound": bool(
             execution.get("provider_binding", {}).get("nvidia_ep_device_bound")

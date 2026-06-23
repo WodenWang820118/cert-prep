@@ -55,7 +55,7 @@ class Settings(BaseSettings):
         ]
     )
     llm_provider: Literal["fake", "ollama"] = "fake"
-    ocr_provider: Literal["fake", "ollama", "paddle", "directml", "amd_npu"] = "fake"
+    ocr_provider: Literal["fake", "ollama", "paddle", "windowsml"] = "fake"
     ocr_device: str = "auto"
     ocr_benchmark: bool = False
     ollama_host: str = "http://127.0.0.1:11434"
@@ -66,13 +66,10 @@ class Settings(BaseSettings):
     ocr_runtime_mode: Literal["external", "inprocess"] = "external"
     ocr_runtime_dir: Path | None = None
     ocr_runtime_manifest_path: Path | None = None
-    directml_ocr_runtime_dir: Path | None = None
-    directml_ocr_runtime_manifest_path: Path | None = None
-    ocr_directml_device_id: int = Field(default=-1, ge=-1)
-    amd_npu_ocr_runtime_dir: Path | None = None
-    amd_npu_ocr_runtime_manifest_path: Path | None = None
-    ocr_amd_npu_device_id: str = "auto"
-    ocr_amd_npu_policy: Literal[
+    windowsml_ocr_runtime_dir: Path | None = None
+    windowsml_ocr_runtime_manifest_path: Path | None = None
+    ocr_windowsml_device_id: int = Field(default=-1, ge=-1)
+    ocr_windowsml_device_policy: Literal[
         "DEFAULT",
         "MAX_EFFICIENCY",
         "MIN_OVERALL_POWER",
@@ -82,6 +79,11 @@ class Settings(BaseSettings):
     ] = "PREFER_NPU"
     ocr_runtime_timeout_seconds: float = 300.0
     runtime_install_timeout_seconds: float = 900.0
+
+    @field_validator("ocr_windowsml_device_policy", mode="before")
+    @classmethod
+    def normalize_windowsml_device_policy(cls, value):
+        return str(value or "PREFER_NPU").strip().upper()
 
     @property
     def database_path(self) -> Path:
@@ -99,13 +101,7 @@ class Settings(BaseSettings):
         return (self.ocr_runtime_dir or self.data_dir / "runtimes" / "paddle_ocr").resolve()
 
     @property
-    def resolved_directml_ocr_runtime_dir(self) -> Path:
+    def resolved_windowsml_ocr_runtime_dir(self) -> Path:
         return (
-            self.directml_ocr_runtime_dir or self.data_dir / "runtimes" / "directml_ocr"
-        ).resolve()
-
-    @property
-    def resolved_amd_npu_ocr_runtime_dir(self) -> Path:
-        return (
-            self.amd_npu_ocr_runtime_dir or self.data_dir / "runtimes" / "amd_npu_ocr"
+            self.windowsml_ocr_runtime_dir or self.data_dir / "runtimes" / "windowsml_ocr"
         ).resolve()

@@ -12,8 +12,7 @@ class RuntimeRequirementKind(StrEnum):
     OLLAMA = "ollama"
     OLLAMA_MODEL = "ollama_model"
     PADDLE_OCR = "paddle_ocr"
-    DIRECTML_OCR = "directml_ocr"
-    AMD_NPU_OCR = "amd_npu_ocr"
+    WINDOWSML_OCR = "windowsml_ocr"
 
 
 class RuntimeInstallationStatus(StrEnum):

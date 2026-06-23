@@ -597,6 +597,25 @@ Deferred gate:
   user-controlled and should only run after those models are intentionally
   installed.
 
+2026-06-23 WindowsML OCR NPU participation update:
+
+- Standalone `amd_npu` OCR productization is retired again, this time after the
+  WindowsML refactor. Public surfaces are `windowsml` provider,
+  `windowsml_ocr` runtime kind, and `windowsml_ocr` extraction method.
+- Removed the standalone AMD NPU runtime entrypoint and product/package targets;
+  desktop/Angular only expose WindowsML OCR and Paddle OCR.
+- `onnxruntime-windowsml` replaces `onnxruntime-directml` in the accelerated OCR
+  lane. PaddleOCR remains at least 3.7 in every OCR extra, with
+  `ocr-windowsml` pinned to `paddleocr==3.7.0`.
+- NPU participation is now an internal WindowsML stage: the packaged WindowsML
+  runtime attempts a VitisAI text-density prepass using
+  `EXAM_PREP_OCR_WINDOWSML_DEVICE_POLICY`, then runs PaddleOCR det/rec through
+  the WindowsML ONNX Runtime runner. OCR output remains `windowsml_ocr` even
+  when NPU evidence is recorded.
+- Low-level AMD/VitisAI helper names remain only as hardware evidence because
+  the current WindowsML NPU EP is `VitisAIExecutionProvider`; they are not user
+  installable runtime names.
+
 ## Retired Risk Notes
 
 - Regenerate the OpenAPI client whenever backend schemas/routes change.

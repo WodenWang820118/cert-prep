@@ -22,9 +22,9 @@ from exam_prep_backend.domains.source_documents.ocr_contracts import OCRHealth, 
 from exam_prep_backend.errors import ProviderUnavailableError
 
 
-class ExternalDirectMLOCRProvider:
-    provider = "directml"
-    engine = "onnxruntime-directml"
+class ExternalWindowsMLOCRProvider:
+    provider = "windowsml"
+    engine = "onnxruntime-windowsml"
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
@@ -34,13 +34,13 @@ class ExternalDirectMLOCRProvider:
 
     def health(self) -> OCRHealth:
         entrypoint = self._entrypoint()
-        runtime_dir = self._settings.resolved_directml_ocr_runtime_dir
+        runtime_dir = self._settings.resolved_windowsml_ocr_runtime_dir
         if entrypoint is None:
             return OCRHealth(
                 provider=self.provider,
                 engine=self.engine,
                 available=False,
-                detail="AMD DirectML OCR runtime is not installed.",
+                detail="WindowsML OCR runtime is not installed.",
                 python_version=platform.python_version(),
                 paddle_version=None,
                 paddleocr_version=None,
@@ -49,7 +49,7 @@ class ExternalDirectMLOCRProvider:
                 gpu_count=0,
                 model_cache_dir=str(runtime_dir),
                 fallback_reason=None,
-                unavailable_reason="directml_runtime_missing",
+                unavailable_reason="windowsml_runtime_missing",
             )
         try:
             payload = self._run_json(entrypoint, [*self._runtime_args(), "--ocr-health"])
@@ -62,7 +62,7 @@ class ExternalDirectMLOCRProvider:
                 provider=self.provider,
                 engine=self.engine,
                 available=False,
-                detail=f"AMD DirectML OCR runtime is unhealthy: {exc}",
+                detail=f"WindowsML OCR runtime is unhealthy: {exc}",
                 python_version=platform.python_version(),
                 paddle_version=None,
                 paddleocr_version=None,
@@ -71,13 +71,13 @@ class ExternalDirectMLOCRProvider:
                 gpu_count=0,
                 model_cache_dir=str(runtime_dir),
                 fallback_reason=None,
-                unavailable_reason="directml_runtime_unhealthy",
+                unavailable_reason="windowsml_runtime_unhealthy",
             )
 
     def prepare_for_document_ocr(self) -> None:
         entrypoint = self._entrypoint()
         if entrypoint is None:
-            raise ProviderUnavailableError("AMD DirectML OCR runtime is not installed.")
+            raise ProviderUnavailableError("WindowsML OCR runtime is not installed.")
         self._prewarm_primary_worker(entrypoint, raise_on_failure=True)
 
     def close(self) -> None:
@@ -86,7 +86,7 @@ class ExternalDirectMLOCRProvider:
     def extract_page_text(self, image_png: bytes, page_number: int) -> OCRPageResult:
         entrypoint = self._entrypoint()
         if entrypoint is None:
-            raise ProviderUnavailableError("AMD DirectML OCR runtime is not installed.")
+            raise ProviderUnavailableError("WindowsML OCR runtime is not installed.")
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as image_file:
             image_file.write(image_png)
@@ -117,11 +117,11 @@ class ExternalDirectMLOCRProvider:
                 if isinstance(exc, ProviderUnavailableError):
                     raise
                 raise ProviderUnavailableError(
-                    f"AMD DirectML OCR runtime is unhealthy: {exc}"
+                    f"WindowsML OCR runtime is unhealthy: {exc}"
                 ) from exc
 
     def _entrypoint(self) -> Path | None:
-        runtime_dir = self._settings.resolved_directml_ocr_runtime_dir
+        runtime_dir = self._settings.resolved_windowsml_ocr_runtime_dir
         manifest_path = runtime_dir / "runtime-manifest.json"
         if not manifest_path.is_file():
             return None
@@ -129,7 +129,7 @@ class ExternalDirectMLOCRProvider:
         manifest = parse_ocr_runtime_manifest(
             payload,
             manifest_path,
-            expected_kind=RuntimeRequirementKind.DIRECTML_OCR,
+            expected_kind=RuntimeRequirementKind.WINDOWSML_OCR,
         )
         entrypoint = runtime_dir / manifest.entrypoint
         return entrypoint if entrypoint.is_file() else None
@@ -139,9 +139,9 @@ class ExternalDirectMLOCRProvider:
         try:
             payload = json.loads(output)
         except json.JSONDecodeError as exc:
-            raise ProviderUnavailableError("AMD DirectML OCR runtime returned invalid JSON.") from exc
+            raise ProviderUnavailableError("WindowsML OCR runtime returned invalid JSON.") from exc
         if not isinstance(payload, dict):
-            raise ProviderUnavailableError("AMD DirectML OCR runtime returned a non-object payload.")
+            raise ProviderUnavailableError("WindowsML OCR runtime returned a non-object payload.")
         return payload
 
     def _extract_page_text_oneshot(
@@ -176,7 +176,7 @@ class ExternalDirectMLOCRProvider:
             self._worker_pool = _OcrWorkerPool(
                 entrypoint=entrypoint,
                 worker_args=[*self._runtime_args(), "--ocr-worker"],
-                worker_label="AMD DirectML OCR",
+                worker_label="WindowsML OCR",
                 worker_count=self.page_workers,
                 initial_worker_count=initial_worker_count,
                 timeout_seconds=self._settings.ocr_runtime_timeout_seconds,
@@ -190,12 +190,14 @@ class ExternalDirectMLOCRProvider:
                 self._worker_pool = None
 
     def _runtime_args(self) -> list[str]:
-        runtime_dir = self._settings.resolved_directml_ocr_runtime_dir
+        runtime_dir = self._settings.resolved_windowsml_ocr_runtime_dir
         return [
             "--provider",
-            "directml",
+            "windowsml",
             "--model-dir",
             str(runtime_dir),
-            "--directml-device-id",
-            str(self._settings.ocr_directml_device_id),
+            "--windowsml-device-id",
+            str(self._settings.ocr_windowsml_device_id),
+            "--windowsml-device-policy",
+            self._settings.ocr_windowsml_device_policy,
         ]

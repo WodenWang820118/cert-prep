@@ -70,7 +70,7 @@ def test_amd_npu_inference_gate_stays_blocked_without_vitisai_events() -> None:
             "npu_compute_detected": False,
             "cpu_fallback_allowed": True,
             "cpu_events_detected": True,
-            "directml_provider_detected": False,
+            "windowsml_provider_detected": False,
         },
     )
     status = classify_inference_status(session_report["status"], smoke)
@@ -107,7 +107,7 @@ def test_amd_npu_inference_gate_passes_with_partial_npu_participation() -> None:
             "npu_compute_detected": True,
             "cpu_fallback_allowed": True,
             "cpu_events_detected": True,
-            "directml_provider_detected": False,
+            "windowsml_provider_detected": False,
             "npu_participating_models": ["ocr_prepass/text_density"],
             "npu_participation_coverage": {"participating": 1, "total": 3},
         },
