@@ -29,6 +29,7 @@ from cert_prep_ollama.server import ensure_ollama_server_running, resolve_ollama
 
 
 STREAMING_PREWARM_KEEP_ALIVE = "5m"
+STREAMING_RELEASE_KEEP_ALIVE = 0
 T = TypeVar("T")
 
 
@@ -131,7 +132,7 @@ class OllamaProvider:
         *,
         num_ctx: int = 8192,
         num_predict: int = 4096,
-        keep_alive: str | float | None = STREAMING_PREWARM_KEEP_ALIVE,
+        keep_alive: str | float | int | None = STREAMING_PREWARM_KEEP_ALIVE,
     ) -> list[DraftSuggestion]:
         """Ask Ollama for structured JSON drafts and validate grounded results."""
 
@@ -226,6 +227,7 @@ class OllamaProvider:
         *,
         num_ctx: int = 1024,
         num_predict: int = 128,
+        keep_alive: str | float | int | None = STREAMING_PREWARM_KEEP_ALIVE,
     ) -> DraftSuggestion | None:
         """Ask Ollama to complete one extracted draft with answer/rationale JSON."""
 
@@ -247,7 +249,7 @@ class OllamaProvider:
                             "num_predict": num_predict,
                         },
                         think=False,
-                        keep_alive=STREAMING_PREWARM_KEEP_ALIVE,
+                        keep_alive=keep_alive,
                     )
                 )
             )

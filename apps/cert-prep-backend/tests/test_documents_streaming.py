@@ -20,6 +20,8 @@ from document_test_llm_fakes import (
     InvalidJsonReasoningExamProvider,
     MissingModelExamProvider,
     MockExamProvider,
+    ReleaseRecordingFastFlowLMProvider,
+    ReleaseKeepAliveRecordingOllamaProvider,
     TimeoutReasoningExamProvider,
 )
 from document_test_ocr_fakes import (
@@ -185,6 +187,83 @@ def test_streaming_draft_generation_uses_fast_first_completion_before_reasoning(
     ).json()["items"]
     assert jobs[0]["status"] == "succeeded"
     assert jobs[0]["generated_count"] == 1
+
+
+def test_streaming_draft_generation_releases_ollama_model_after_completion(
+    tmp_path: Path,
+    auth_headers,
+) -> None:
+    llm_provider = ReleaseKeepAliveRecordingOllamaProvider()
+    client = TestClient(
+        create_app(
+            settings=Settings(
+                data_dir=tmp_path,
+                api_token="test-token",
+                streaming_draft_generation_on_upload=True,
+                streaming_draft_generation_page_limit=1,
+            ),
+            llm_provider=llm_provider,
+            ocr_provider=JlptBlockOcrProvider(),
+            document_processing_async_jobs=False,
+            streaming_draft_generation_async_jobs=False,
+        )
+    )
+    project_id = _create_project(client, auth_headers)
+
+    response = client.post(
+        f"/projects/{project_id}/documents",
+        headers=auth_headers,
+        files={"file": ("scan.pdf", minimal_pdf(""), "application/pdf")},
+    )
+
+    assert response.status_code == 201
+    document = response.json()
+    jobs = client.get(
+        f"/projects/{project_id}/documents/{document['id']}/draft-jobs",
+        headers=auth_headers,
+    ).json()["items"]
+    assert jobs[0]["status"] == "succeeded"
+    assert jobs[0]["generated_count"] == 1
+    assert llm_provider.fast_first_keep_alive_values == [0]
+    assert llm_provider.reasoning_keep_alive_values == [0]
+
+
+def test_streaming_draft_generation_releases_fastflowlm_resources_after_completion(
+    tmp_path: Path,
+    auth_headers,
+) -> None:
+    llm_provider = ReleaseRecordingFastFlowLMProvider()
+    client = TestClient(
+        create_app(
+            settings=Settings(
+                data_dir=tmp_path,
+                api_token="test-token",
+                streaming_draft_generation_on_upload=True,
+                streaming_draft_generation_page_limit=1,
+            ),
+            llm_provider=llm_provider,
+            ocr_provider=JlptBlockOcrProvider(),
+            document_processing_async_jobs=False,
+            streaming_draft_generation_async_jobs=False,
+        )
+    )
+    project_id = _create_project(client, auth_headers)
+
+    response = client.post(
+        f"/projects/{project_id}/documents",
+        headers=auth_headers,
+        files={"file": ("scan.pdf", minimal_pdf(""), "application/pdf")},
+    )
+
+    assert response.status_code == 201
+    document = response.json()
+    jobs = client.get(
+        f"/projects/{project_id}/documents/{document['id']}/draft-jobs",
+        headers=auth_headers,
+    ).json()["items"]
+    assert jobs[0]["status"] == "succeeded"
+    assert jobs[0]["generated_count"] == 1
+    assert llm_provider.release_calls == 1
 
 
 def test_streaming_draft_generation_treats_invalid_json_as_empty_page(

@@ -6,10 +6,12 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
-from threading import Lock
+from threading import Lock, Timer
+import time
 from typing import Any, TypeVar
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from urllib.parse import urlparse
 
 from cert_prep_backend.api.errors import ProviderUnavailableError
 from cert_prep_backend.domains.mock_exams.deterministic_parser import (
@@ -40,6 +42,9 @@ DEFAULT_FASTFLOWLM_BASE_URL = "http://127.0.0.1:52625/v1"
 DEFAULT_FASTFLOWLM_PRIMARY_MODEL = "qwen3.5:4b"
 FASTFLOWLM_RAM_FALLBACK_MODEL = "qwen3.5:2b"
 DEFAULT_FASTFLOWLM_PRIMARY_MIN_AVAILABLE_RAM_BYTES = 6 * 1024 * 1024 * 1024
+DEFAULT_FASTFLOWLM_AUTO_START_SERVER = True
+DEFAULT_FASTFLOWLM_SERVER_START_TIMEOUT_SECONDS = 90.0
+DEFAULT_FASTFLOWLM_OWNED_SERVER_IDLE_TIMEOUT_SECONDS = 5.0
 T = TypeVar("T")
 
 
@@ -58,6 +63,13 @@ class FastFlowLMProvider:
         primary_min_available_ram_bytes: int = (
             DEFAULT_FASTFLOWLM_PRIMARY_MIN_AVAILABLE_RAM_BYTES
         ),
+        auto_start_server: bool = DEFAULT_FASTFLOWLM_AUTO_START_SERVER,
+        server_start_timeout_seconds: float = (
+            DEFAULT_FASTFLOWLM_SERVER_START_TIMEOUT_SECONDS
+        ),
+        owned_server_idle_timeout_seconds: float = (
+            DEFAULT_FASTFLOWLM_OWNED_SERVER_IDLE_TIMEOUT_SECONDS
+        ),
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
@@ -73,12 +85,21 @@ class FastFlowLMProvider:
                 if fallback.strip() and fallback.strip() != model
             )
         )
+        self.auto_start_server = auto_start_server
+        self.server_start_timeout_seconds = max(0.1, server_start_timeout_seconds)
+        self.owned_server_idle_timeout_seconds = max(0.0, owned_server_idle_timeout_seconds)
         self._model_lock = Lock()
         self._unusable_models: set[str] = set()
         self._runtime_effective_model: str | None = None
         self._last_primary_failure: str | None = None
         self._runtime_fallback_reason: str | None = None
         self._primary_memory_blocked = False
+        self._server_lock = Lock()
+        self._owned_server_process: subprocess.Popen | None = None
+        self._owned_server_model: str | None = None
+        self._idle_shutdown_timer: Timer | None = None
+        self._active_requests = 0
+        self._release_requested = False
 
     def health(self) -> ProviderHealth:
         """Return FastFlowLM server and configured-model availability."""
@@ -281,6 +302,30 @@ class FastFlowLMProvider:
             raise ProviderUnavailableError(output or "FastFlowLM model pull failed.")
         progress(ModelPullProgress(status="success", completed=100, total=100))
 
+    def release_resources(self) -> None:
+        """Release any FastFlowLM server process owned by this provider after idle."""
+
+        process_to_stop = None
+        with self._server_lock:
+            self._release_requested = True
+            if self._active_requests > 0 or self._owned_server_process is None:
+                return
+            process_to_stop = self._schedule_owned_server_shutdown_locked()
+        if process_to_stop is not None:
+            _terminate_process(process_to_stop)
+
+    def close(self) -> None:
+        """Stop the FastFlowLM server process when this provider started it."""
+
+        with self._server_lock:
+            self._cancel_idle_shutdown_locked()
+            process_to_stop = self._owned_server_process
+            self._owned_server_process = None
+            self._owned_server_model = None
+            self._release_requested = False
+        if process_to_stop is not None:
+            _terminate_process(process_to_stop)
+
     def _health_from_model_names(self, model_names: set[str]) -> ProviderHealth:
         self._refresh_primary_ram_state()
         effective_model = self._effective_model_from(model_names)
@@ -304,12 +349,12 @@ class FastFlowLMProvider:
         )
 
     def _available_model_candidates(self) -> tuple[str, ...]:
+        self._refresh_primary_ram_state()
         try:
-            model_names = self._served_model_names()
+            model_names = self._served_model_names_for_generation()
         except Exception as exc:
             raise ProviderUnavailableError(f"FastFlowLM unavailable: {exc}") from exc
 
-        self._refresh_primary_ram_state()
         unusable_models = self._runtime_unusable_models()
         candidates = tuple(
             candidate
@@ -366,27 +411,190 @@ class FastFlowLMProvider:
         return f"model available via fallback {effective_model}"
 
     def _with_model_fallback(self, operation: Callable[[str], T]) -> T:
-        errors: list[str] = []
-        for model in self._available_model_candidates():
+        self._begin_generation_request()
+        try:
+            errors: list[str] = []
+            for model in self._available_model_candidates():
+                try:
+                    result = operation(model)
+                except Exception as exc:
+                    if _is_transient_fastflowlm_generation_error(exc):
+                        raise ProviderUnavailableError(
+                            f"FastFlowLM transient generation error for {model}: "
+                            f"{_short_error(exc)}"
+                        ) from exc
+                    errors.append(f"{model}: {_short_error(exc)}")
+                    if not _is_non_fatal_fastflowlm_generation_error(exc):
+                        self._mark_model_unusable(model, exc)
+                    continue
+
+                self._record_model_success(model)
+                return result
+
+            detail = "FastFlowLM unavailable for configured and fallback models"
+            if errors:
+                detail = f"{detail}: {'; '.join(errors)}"
+            raise ProviderUnavailableError(detail)
+        finally:
+            self._end_generation_request()
+
+    def _served_model_names_for_generation(self) -> set[str]:
+        try:
+            return self._served_model_names()
+        except Exception as exc:
+            if not self.auto_start_server:
+                raise
+            self._start_owned_server_if_needed(exc)
+            return self._wait_for_owned_server_ready()
+
+    def _begin_generation_request(self) -> None:
+        with self._server_lock:
+            self._active_requests += 1
+            self._release_requested = False
+            self._cancel_idle_shutdown_locked()
+
+    def _end_generation_request(self) -> None:
+        process_to_stop = None
+        with self._server_lock:
+            self._active_requests = max(0, self._active_requests - 1)
+            if self._active_requests == 0 and self._release_requested:
+                process_to_stop = self._schedule_owned_server_shutdown_locked()
+        if process_to_stop is not None:
+            _terminate_process(process_to_stop)
+
+    def _start_owned_server_if_needed(self, initial_exc: Exception) -> None:
+        endpoint = self._local_server_endpoint()
+        if endpoint is None:
+            raise initial_exc
+        host, port = endpoint
+
+        executable = resolve_fastflowlm_executable()
+        if executable is None:
+            raise ProviderUnavailableError("FastFlowLM is not installed.") from initial_exc
+
+        model_to_serve = self._model_to_serve_for_auto_start()
+        with self._server_lock:
+            if self._owned_server_process is not None:
+                if self._owned_server_process.poll() is None:
+                    return
+                self._owned_server_process = None
+                self._owned_server_model = None
+
+            creationflags = (
+                getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+            )
+            process = self._start_owned_server_process(
+                executable=executable,
+                model=model_to_serve,
+                host=host,
+                port=port,
+                creationflags=creationflags,
+            )
+            self._owned_server_process = process
+            self._owned_server_model = model_to_serve
+            self._release_requested = False
+
+    def _start_owned_server_process(
+        self,
+        *,
+        executable: Path,
+        model: str,
+        host: str,
+        port: int,
+        creationflags: int,
+    ) -> subprocess.Popen:
+        return subprocess.Popen(
+            [
+                str(executable),
+                "serve",
+                model,
+                "--host",
+                host,
+                "--port",
+                str(port),
+                "--quiet",
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=creationflags,
+        )
+
+    def _wait_for_owned_server_ready(self) -> set[str]:
+        deadline = time.monotonic() + self.server_start_timeout_seconds
+        last_error: Exception | None = None
+        while time.monotonic() < deadline:
+            process = self._owned_server_process_snapshot()
+            if process is None:
+                break
+            if process.poll() is not None:
+                raise ProviderUnavailableError("FastFlowLM server exited during startup.")
             try:
-                result = operation(model)
+                return self._served_model_names()
             except Exception as exc:
-                if _is_transient_fastflowlm_generation_error(exc):
-                    raise ProviderUnavailableError(
-                        f"FastFlowLM transient generation error for {model}: {_short_error(exc)}"
-                    ) from exc
-                errors.append(f"{model}: {_short_error(exc)}")
-                if not _is_non_fatal_fastflowlm_generation_error(exc):
-                    self._mark_model_unusable(model, exc)
-                continue
+                last_error = exc
+                time.sleep(0.5)
 
-            self._record_model_success(model)
-            return result
+        self.close()
+        detail = _short_error(last_error) if last_error else "startup timed out"
+        raise ProviderUnavailableError(f"FastFlowLM server did not become ready: {detail}")
 
-        detail = "FastFlowLM unavailable for configured and fallback models"
-        if errors:
-            detail = f"{detail}: {'; '.join(errors)}"
-        raise ProviderUnavailableError(detail)
+    def _owned_server_process_snapshot(self) -> subprocess.Popen | None:
+        with self._server_lock:
+            return self._owned_server_process
+
+    def _model_to_serve_for_auto_start(self) -> str:
+        unusable_models = self._runtime_unusable_models()
+        for candidate in (self.model, *self.fallback_models):
+            if candidate not in unusable_models:
+                return candidate
+        return self.model
+
+    def _local_server_endpoint(self) -> tuple[str, int] | None:
+        parsed = urlparse(self.base_url)
+        host = parsed.hostname or ""
+        if host not in {"127.0.0.1", "localhost"}:
+            return None
+        return host, parsed.port or 52625
+
+    def _schedule_owned_server_shutdown_locked(self) -> subprocess.Popen | None:
+        if self._owned_server_process is None:
+            return None
+        self._cancel_idle_shutdown_locked()
+        if self.owned_server_idle_timeout_seconds <= 0:
+            process = self._owned_server_process
+            self._owned_server_process = None
+            self._owned_server_model = None
+            self._release_requested = False
+            return process
+
+        timer = Timer(
+            self.owned_server_idle_timeout_seconds,
+            self._stop_owned_server_if_idle,
+        )
+        timer.daemon = True
+        self._idle_shutdown_timer = timer
+        timer.start()
+        return None
+
+    def _stop_owned_server_if_idle(self) -> None:
+        process_to_stop = None
+        with self._server_lock:
+            self._idle_shutdown_timer = None
+            if self._active_requests > 0 or not self._release_requested:
+                return
+            process_to_stop = self._owned_server_process
+            self._owned_server_process = None
+            self._owned_server_model = None
+            self._release_requested = False
+        if process_to_stop is not None:
+            _terminate_process(process_to_stop)
+
+    def _cancel_idle_shutdown_locked(self) -> None:
+        if self._idle_shutdown_timer is None:
+            return
+        self._idle_shutdown_timer.cancel()
+        self._idle_shutdown_timer = None
 
     def _chat_json(
         self,
@@ -566,7 +774,20 @@ class FastFlowLMProvider:
                 return
             self._unusable_models.discard(self.model)
             self._last_primary_failure = None
+            self._runtime_effective_model = None
+            self._runtime_fallback_reason = None
             self._primary_memory_blocked = False
+
+
+def _terminate_process(process: subprocess.Popen) -> None:
+    if process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)
 
 
 def resolve_fastflowlm_executable() -> Path | None:

@@ -50,6 +50,9 @@ def create_app(
             yield
         finally:
             app.state.streaming_draft_generation_manager.close()
+            llm_provider_close = getattr(app.state.llm_provider, "close", None)
+            if callable(llm_provider_close):
+                llm_provider_close()
             ocr_provider_close = getattr(app.state.ocr_provider, "close", None)
             if callable(ocr_provider_close):
                 ocr_provider_close()

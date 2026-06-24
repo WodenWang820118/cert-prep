@@ -51,6 +51,11 @@ def provider_from_settings(settings: Settings):
             primary_min_available_ram_bytes=(
                 settings.fastflowlm_primary_min_available_ram_bytes
             ),
+            auto_start_server=settings.fastflowlm_auto_start_server,
+            server_start_timeout_seconds=settings.fastflowlm_server_start_timeout_seconds,
+            owned_server_idle_timeout_seconds=(
+                settings.fastflowlm_owned_server_idle_timeout_seconds
+            ),
         )
     return FakeLLMProvider(model=settings.ollama_model)
 

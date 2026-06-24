@@ -251,6 +251,8 @@ def test_provider_from_settings_can_select_fastflowlm(tmp_path) -> None:
     assert provider.model == "qwen3.5:4b"
     assert provider.fallback_models == ("qwen3.5:2b",)
     assert provider.base_url == "http://127.0.0.1:52625/v1"
+    assert provider.auto_start_server is True
+    assert provider.owned_server_idle_timeout_seconds == 5.0
 
 
 def test_fastflowlm_health_reports_missing_runtime_without_model_download(monkeypatch) -> None:
@@ -498,6 +500,160 @@ def test_fastflowlm_generation_skips_4b_when_available_ram_is_low(
     assert health.effective_model == "qwen3.5:2b"
 
 
+def test_fastflowlm_generation_retries_4b_after_ram_recovers(monkeypatch) -> None:
+    available_ram_bytes = {"value": 3 * GIB}
+    monkeypatch.setattr(
+        fastflowlm_transport,
+        "available_system_ram_bytes",
+        lambda: available_ram_bytes["value"],
+    )
+    provider = RecordingFastFlowLMProvider(
+        models=["qwen3.5:4b", "qwen3.5:2b"],
+        chat_content='{"answer":"2","rationale":"Fallback fits.","confidence":0.7}',
+        primary_min_available_ram_bytes=6 * GIB,
+    )
+    chunk = SourceChunk(
+        id="chunk-1",
+        page_number=1,
+        text="Question text. 1 first 2 second 3 third 4 fourth",
+        source_excerpt="Question text.",
+    )
+    candidate = DraftSuggestion(
+        chunk_id=chunk.id,
+        question="Question text.",
+        choices=["1 first", "2 second", "3 third", "4 fourth"],
+        answer="",
+        answer_key_source="manual",
+        rationale="",
+        citation_page=1,
+        source_excerpt="Question text.",
+    )
+
+    first_suggestion = provider.generate_fast_first_draft(chunk, candidate)
+
+    assert first_suggestion is not None
+    assert first_suggestion.answer == "2 second"
+    chat_requests = [
+        request for request in provider.requests if request["path"] == "/chat/completions"
+    ]
+    assert [request["body"]["model"] for request in chat_requests] == ["qwen3.5:2b"]
+    low_ram_health = provider.health()
+    assert low_ram_health.effective_model == "qwen3.5:2b"
+    assert low_ram_health.fallback_reason is not None
+
+    available_ram_bytes["value"] = 8 * GIB
+
+    second_suggestion = provider.generate_fast_first_draft(chunk, candidate)
+
+    assert second_suggestion is not None
+    assert second_suggestion.answer == "2 second"
+    chat_requests = [
+        request for request in provider.requests if request["path"] == "/chat/completions"
+    ]
+    assert [request["body"]["model"] for request in chat_requests] == [
+        "qwen3.5:2b",
+        "qwen3.5:4b",
+    ]
+    recovered_health = provider.health()
+    assert recovered_health.effective_model == "qwen3.5:4b"
+    assert recovered_health.fallback_reason is None
+
+
+def test_fastflowlm_generation_autostarts_and_releases_owned_server(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        fastflowlm_transport,
+        "resolve_fastflowlm_executable",
+        lambda: Path("flm"),
+    )
+    provider = AutoStartFastFlowLMProvider(
+        models=["qwen3.5:4b"],
+        chat_content='{"answer":"2","rationale":"Owned server fits.","confidence":0.7}',
+        owned_server_idle_timeout_seconds=0,
+    )
+    chunk = SourceChunk(
+        id="chunk-1",
+        page_number=1,
+        text="Question text. 1 first 2 second 3 third 4 fourth",
+        source_excerpt="Question text.",
+    )
+    candidate = DraftSuggestion(
+        chunk_id=chunk.id,
+        question="Question text.",
+        choices=["1 first", "2 second", "3 third", "4 fourth"],
+        answer="",
+        answer_key_source="manual",
+        rationale="",
+        citation_page=1,
+        source_excerpt="Question text.",
+    )
+
+    suggestion = provider.generate_fast_first_draft(chunk, candidate)
+
+    assert suggestion is not None
+    assert suggestion.answer == "2 second"
+    assert provider.started_servers == [
+        {"model": "qwen3.5:4b", "host": "127.0.0.1", "port": 52625}
+    ]
+    assert provider.processes[0].terminate_calls == 0
+
+    provider.release_resources()
+
+    assert provider.processes[0].terminate_calls == 1
+    assert provider.processes[0].kill_calls == 0
+
+
+def test_fastflowlm_autostarts_fallback_server_when_primary_ram_is_low(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        fastflowlm_transport,
+        "resolve_fastflowlm_executable",
+        lambda: Path("flm"),
+    )
+    monkeypatch.setattr(
+        fastflowlm_transport,
+        "available_system_ram_bytes",
+        lambda: 3 * GIB,
+    )
+    provider = AutoStartFastFlowLMProvider(
+        models=["qwen3.5:4b", "qwen3.5:2b"],
+        chat_content='{"answer":"2","rationale":"Fallback fits.","confidence":0.7}',
+        primary_min_available_ram_bytes=6 * GIB,
+        owned_server_idle_timeout_seconds=0,
+    )
+    chunk = SourceChunk(
+        id="chunk-1",
+        page_number=1,
+        text="Question text. 1 first 2 second 3 third 4 fourth",
+        source_excerpt="Question text.",
+    )
+    candidate = DraftSuggestion(
+        chunk_id=chunk.id,
+        question="Question text.",
+        choices=["1 first", "2 second", "3 third", "4 fourth"],
+        answer="",
+        answer_key_source="manual",
+        rationale="",
+        citation_page=1,
+        source_excerpt="Question text.",
+    )
+
+    suggestion = provider.generate_fast_first_draft(chunk, candidate)
+
+    assert suggestion is not None
+    assert provider.started_servers == [
+        {"model": "qwen3.5:2b", "host": "127.0.0.1", "port": 52625}
+    ]
+    chat_requests = [
+        request for request in provider.requests if request["path"] == "/chat/completions"
+    ]
+    assert [request["body"]["model"] for request in chat_requests] == ["qwen3.5:2b"]
+    provider.release_resources()
+    assert provider.processes[0].terminate_calls == 1
+
+
 def test_ollama_health_uses_installed_fallback_without_pull(monkeypatch) -> None:
     fake_client = RecordingOllamaClient(models=["qwen3.5:2b"])
     monkeypatch.setattr(
@@ -726,6 +882,51 @@ def test_ollama_fast_first_draft_maps_compact_json_to_candidate_choice(
     assert suggestion.rationale == "Qwen picked the closest reading."
     assert suggestion.confidence == 0.8
     assert fake_client.chat_calls[0]["format"] == "json"
+    assert fake_client.pull_calls == 0
+
+
+def test_ollama_fast_first_draft_forwards_keep_alive_override(
+    monkeypatch,
+) -> None:
+    fake_client = RecordingOllamaClient(
+        models=["qwen3.5:4b"],
+        chat_content='{"answer":"2","rationale":"Qwen picked the answer.","confidence":0.7}',
+    )
+    monkeypatch.setattr(
+        ollama_transport, "resolve_ollama_executable", lambda: Path("ollama")
+    )
+    provider = OllamaProvider(
+        host="http://127.0.0.1:11434",
+        model="qwen3.5:4b",
+        timeout_seconds=1,
+    )
+    provider._client = fake_client
+    chunk = SourceChunk(
+        id="chunk-2",
+        page_number=2,
+        text="Question text. 1 first 2 second 3 third 4 fourth",
+        source_excerpt="Question text.",
+    )
+    candidate = DraftSuggestion(
+        chunk_id=chunk.id,
+        question="Question text.",
+        choices=["1 first", "2 second", "3 third", "4 fourth"],
+        answer="",
+        answer_key_source="manual",
+        rationale="",
+        citation_page=2,
+        source_excerpt="Question text.",
+    )
+
+    suggestion = provider.generate_fast_first_draft(
+        chunk,
+        candidate,
+        keep_alive=ollama_transport.STREAMING_RELEASE_KEEP_ALIVE,
+    )
+
+    assert suggestion is not None
+    assert suggestion.answer == "2 second"
+    assert fake_client.chat_calls[0]["keep_alive"] == 0
     assert fake_client.pull_calls == 0
 
 
@@ -1051,6 +1252,102 @@ class RecordingFastFlowLMProvider(FastFlowLMProvider):
             model = body.get("model") if isinstance(body, dict) else None
             if isinstance(model, str) and model in self.fail_models:
                 raise self.fail_models[model]
+            return {"choices": [{"message": {"content": self.chat_content}}]}
+        raise AssertionError(f"Unexpected request: {method} {path}")
+
+
+class RecordingFastFlowLMProcess:
+    def __init__(self) -> None:
+        self.returncode: int | None = None
+        self.terminate_calls = 0
+        self.kill_calls = 0
+        self.wait_timeouts: list[float | int | None] = []
+
+    def poll(self) -> int | None:
+        return self.returncode
+
+    def terminate(self) -> None:
+        self.terminate_calls += 1
+        self.returncode = 0
+
+    def kill(self) -> None:
+        self.kill_calls += 1
+        self.returncode = -9
+
+    def wait(self, timeout: float | int | None = None) -> int:
+        self.wait_timeouts.append(timeout)
+        if self.returncode is None:
+            self.returncode = 0
+        return self.returncode
+
+
+class AutoStartFastFlowLMProvider(FastFlowLMProvider):
+    def __init__(
+        self,
+        *,
+        models: list[str],
+        chat_content: str,
+        primary_min_available_ram_bytes: int = 0,
+        owned_server_idle_timeout_seconds: float = 0,
+    ) -> None:
+        super().__init__(
+            base_url="http://127.0.0.1:52625/v1",
+            model="qwen3.5:4b",
+            timeout_seconds=1,
+            fallback_models=["qwen3.5:2b"],
+            primary_min_available_ram_bytes=primary_min_available_ram_bytes,
+            server_start_timeout_seconds=0.1,
+            owned_server_idle_timeout_seconds=owned_server_idle_timeout_seconds,
+        )
+        self.models = models
+        self.chat_content = chat_content
+        self.server_available = False
+        self.started_servers: list[dict] = []
+        self.processes: list[RecordingFastFlowLMProcess] = []
+        self.requests: list[dict] = []
+
+    def _start_owned_server_process(
+        self,
+        *,
+        executable: Path,
+        model: str,
+        host: str,
+        port: int,
+        creationflags: int,
+    ):
+        self.started_servers.append(
+            {
+                "model": model,
+                "host": host,
+                "port": port,
+            }
+        )
+        self.server_available = True
+        process = RecordingFastFlowLMProcess()
+        self.processes.append(process)
+        return process
+
+    def _request_json(
+        self,
+        method: str,
+        path: str,
+        *,
+        body: dict | None = None,
+        timeout_seconds: float | None = None,
+    ) -> dict:
+        self.requests.append(
+            {
+                "method": method,
+                "path": path,
+                "body": copy.deepcopy(body),
+                "timeout_seconds": timeout_seconds,
+            }
+        )
+        if path == "/models":
+            if not self.server_available:
+                raise ProviderUnavailableError("connection refused")
+            return {"data": [{"id": model} for model in self.models]}
+        if path == "/chat/completions":
             return {"choices": [{"message": {"content": self.chat_content}}]}
         raise AssertionError(f"Unexpected request: {method} {path}")
 

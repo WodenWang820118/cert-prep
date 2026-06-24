@@ -48,17 +48,19 @@ def test_backend_sidecar_pyinstaller_command_keeps_uvicorn_app_import() -> None:
 
 def test_app_lifespan_closes_closeable_ocr_provider(tmp_path: Path) -> None:
     ocr_provider = CloseableOcrProvider()
+    llm_provider = CloseableLlmProvider()
 
     with TestClient(
         create_app(
             settings=Settings(data_dir=tmp_path, api_token="test-token"),
-            llm_provider=object(),
+            llm_provider=llm_provider,
             ocr_provider=ocr_provider,
             streaming_draft_generation_async_jobs=False,
         )
     ) as client:
         assert client.get("/health").status_code == 200
 
+    assert llm_provider.close_calls == 1
     assert ocr_provider.close_calls == 1
 
 
@@ -79,6 +81,17 @@ def _load_script_module(name: str) -> ModuleType:
 
 class CloseableOcrProvider:
     page_workers = 1
+
+    def __init__(self) -> None:
+        self.close_calls = 0
+
+    def close(self) -> None:
+        self.close_calls += 1
+
+
+class CloseableLlmProvider:
+    provider = "test-llm"
+    model = "test-model"
 
     def __init__(self) -> None:
         self.close_calls = 0

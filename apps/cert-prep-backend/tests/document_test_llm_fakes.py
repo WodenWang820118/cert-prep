@@ -163,3 +163,74 @@ class TimeoutReasoningExamProvider(InvalidJsonReasoningExamProvider):
         num_predict: int,
     ) -> list[DraftSuggestion]:
         raise ProviderUnavailableError("FastFlowLM transient generation error: timed out")
+
+
+class ReleaseRecordingFastFlowLMProvider(MockExamProvider):
+    provider = "fastflowlm"
+    model = "qwen3.5:4b"
+    auto_start_server = True
+
+    def __init__(self) -> None:
+        self.release_calls = 0
+
+    def health(self) -> ProviderHealth:
+        return ProviderHealth(
+            provider=self.provider,
+            model=self.model,
+            available=False,
+            detail="FastFlowLM server unavailable at http://127.0.0.1:52625/v1",
+            unavailable_reason="fastflowlm_not_running",
+        )
+
+    def release_resources(self) -> None:
+        self.release_calls += 1
+
+
+class ReleaseKeepAliveRecordingOllamaProvider(MockExamProvider):
+    provider = "ollama"
+    model = "qwen3.5:4b"
+
+    def __init__(self) -> None:
+        self.fast_first_keep_alive_values: list[str | float | int | None] = []
+        self.reasoning_keep_alive_values: list[str | float | int | None] = []
+
+    def generate_fast_first_draft(
+        self,
+        source_chunk: SourceChunk,
+        candidate: DraftSuggestion,
+        *,
+        keep_alive: str | float | int | None = None,
+    ) -> DraftSuggestion | None:
+        self.fast_first_keep_alive_values.append(keep_alive)
+        return None
+
+    def generate_reasoning_drafts(
+        self,
+        chunks: list[SourceChunk] | tuple[SourceChunk, ...],
+        limit: int,
+        *,
+        num_ctx: int,
+        num_predict: int,
+        keep_alive: str | float | int | None = None,
+    ) -> list[DraftSuggestion]:
+        self.reasoning_keep_alive_values.append(keep_alive)
+        if not chunks or limit <= 0:
+            return []
+        chunk = chunks[0]
+        return [
+            DraftSuggestion(
+                chunk_id=chunk.id,
+                question=f"JLPT question {chunk.page_number}: choose the correct word.",
+                choices=["A correct", "B wrong"],
+                answer="A correct",
+                answer_key_source="ai_inferred",
+                rationale="OCR text identifies A as the correct option.",
+                citation_page=chunk.page_number,
+                source_excerpt=f"JLPT question {chunk.page_number}: choose the correct word.",
+            )
+        ]
+
+    def generate_drafts(
+        self, chunks: list[SourceChunk] | tuple[SourceChunk, ...], limit: int
+    ) -> list[DraftSuggestion]:
+        raise AssertionError("streaming hybrid path should use fast-first reasoning")

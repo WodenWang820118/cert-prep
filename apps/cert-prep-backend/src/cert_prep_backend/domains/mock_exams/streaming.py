@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from inspect import Parameter, signature
 from threading import BoundedSemaphore, Thread
 
 from cert_prep_backend.api.errors import ProviderUnavailableError
@@ -16,6 +17,7 @@ from cert_prep_backend.domains.mock_exams.models import (
     SourceChunk,
 )
 from cert_prep_backend.domains.mock_exams.normalization import as_editable_question
+from cert_prep_backend.domains.mock_exams.ollama_transport import STREAMING_RELEASE_KEEP_ALIVE
 from cert_prep_backend.domains.mock_exams.ports import DraftGenerationProvider
 from cert_prep_backend.domains.mock_exams.provider import generate_drafts_for_strategy
 from cert_prep_backend.domains.source_documents import repository as documents_repository
@@ -164,8 +166,12 @@ class StreamingDraftGenerationManager:
             draft_jobs.mark_skipped_provider_unavailable(db, job_id, detail=str(exc))
         except Exception as exc:
             draft_jobs.mark_failed(db, job_id, detail=f"request_failed: {exc}")
+        finally:
+            self._release_provider_resources()
 
     def _provider_unavailable(self, db: Database, job: dict) -> bool:
+        if _provider_starts_on_generation(self._provider):
+            return False
         health = self._provider.health()
         if health.available:
             return False
@@ -179,6 +185,8 @@ class StreamingDraftGenerationManager:
         return True
 
     def _provider_unavailable_for_jobs(self, db: Database, jobs: list[dict]) -> bool:
+        if _provider_starts_on_generation(self._provider):
+            return False
         health = self._provider.health()
         if health.available:
             return False
@@ -204,6 +212,11 @@ class StreamingDraftGenerationManager:
     def _run_job_with_slot(self, db: Database, job_id: str, limit: int) -> None:
         with self._job_slots:
             self._run_job(db, job_id, limit)
+
+    def _release_provider_resources(self) -> None:
+        release_resources = getattr(self._provider, "release_resources", None)
+        if callable(release_resources):
+            release_resources()
 
 
 def _mark_provider_unavailable_job(
@@ -234,7 +247,12 @@ def _generate_streaming_fast_first_drafts(
         fast_first = getattr(provider, "generate_fast_first_draft", None)
         if deterministic and callable(fast_first):
             try:
-                suggestion = fast_first(source_chunk, deterministic[0])
+                suggestion = _call_streaming_provider_method(
+                    provider,
+                    fast_first,
+                    source_chunk,
+                    deterministic[0],
+                )
             except ProviderUnavailableError as exc:
                 if not _is_non_fatal_generation_error(exc):
                     raise
@@ -246,7 +264,9 @@ def _generate_streaming_fast_first_drafts(
         if callable(reasoning):
             prompt_chunk = _compact_reasoning_chunk(source_chunk)
             try:
-                suggestions = reasoning(
+                suggestions = _call_streaming_provider_method(
+                    provider,
+                    reasoning,
                     [prompt_chunk],
                     first_limit,
                     num_ctx=STREAMING_FAST_FIRST_NUM_CTX,
@@ -261,6 +281,41 @@ def _generate_streaming_fast_first_drafts(
             return []
 
     return generate_drafts_for_strategy(provider, [source_chunk], first_limit, strategy)
+
+
+def _call_streaming_provider_method(
+    provider: DraftGenerationProvider,
+    method,
+    *args,
+    **kwargs,
+):
+    if _should_release_after_streaming(provider) and _accepts_keyword(
+        method, "keep_alive"
+    ):
+        kwargs["keep_alive"] = STREAMING_RELEASE_KEEP_ALIVE
+    return method(*args, **kwargs)
+
+
+def _should_release_after_streaming(provider: DraftGenerationProvider) -> bool:
+    return str(getattr(provider, "provider", "")).lower() == "ollama"
+
+
+def _provider_starts_on_generation(provider: DraftGenerationProvider) -> bool:
+    return (
+        str(getattr(provider, "provider", "")).lower() == "fastflowlm"
+        and bool(getattr(provider, "auto_start_server", False))
+    )
+
+
+def _accepts_keyword(method, keyword: str) -> bool:
+    try:
+        parameters = signature(method).parameters
+    except (TypeError, ValueError):
+        return False
+    return keyword in parameters or any(
+        parameter.kind == Parameter.VAR_KEYWORD
+        for parameter in parameters.values()
+    )
 
 
 def _should_enqueue_streaming_chunk(
