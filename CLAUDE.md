@@ -21,3 +21,10 @@
 - The `nx-generate` skill handles generator discovery internally - don't call nx_docs just to look up generator syntax
 
 <!-- nx configuration end-->
+
+# Claude Profile CLIs
+
+- `claude-deepseek` and `claude-glm` are CLI wrappers, not Codex MCP servers. Use them through shell commands when a second-opinion review, plan critique, or adversarial evaluation is requested.
+- Prefer non-interactive calls with `-p/--print` and ask for a user-visible structured report. Do not request hidden chain-of-thought.
+- Required report fields for reviews are `publicReasoningSummary`, `evidenceChecked`, `findings`, `blockers`, `risks`, `missingDecisions`, `suggestedMarkdownSection`, and `writeRecommendation`.
+- Relay the structured report in the Codex session before or alongside any file write that depends on it.
