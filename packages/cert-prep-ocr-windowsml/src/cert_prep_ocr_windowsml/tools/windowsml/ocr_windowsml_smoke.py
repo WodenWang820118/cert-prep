@@ -25,7 +25,8 @@ SESSION_MODEL_FILES = (
     "rec/inference.onnx",
 )
 WINDOWSML_DEVICE_LABEL = "amd_windowsml"
-WINDOWSML_PROVIDERS = ["DmlExecutionProvider", "CPUExecutionProvider"]
+WINDOWSML_IGPU_PROVIDER = "DmlExecutionProvider"
+WINDOWSML_PROVIDERS = [WINDOWSML_IGPU_PROVIDER, "CPUExecutionProvider"]
 SessionSmokeRunner = Callable[[dict[str, Path], int | None], dict[str, Any]]
 
 
@@ -146,9 +147,9 @@ def windowsml_device_id(probe_status: dict[str, Any]) -> int | None:
 
 def windowsml_providers(device_id: int | None) -> list[Any]:
     if device_id is None:
-        return ["DmlExecutionProvider", "CPUExecutionProvider"]
+        return windowsml_provider_names()
     return [
-        ("DmlExecutionProvider", {"device_id": str(device_id)}),
+        (WINDOWSML_IGPU_PROVIDER, {"device_id": str(device_id)}),
         "CPUExecutionProvider",
     ]
 
@@ -166,7 +167,8 @@ def windowsml_session_options_metadata() -> dict[str, Any]:
         "providers_requested": windowsml_provider_names(),
         "reason": (
             "PaddleOCR 3.7 engine='onnxruntime' validates provider names through "
-            "ONNX Runtime and currently uses WindowsML plus CPU fallback."
+            "ONNX Runtime and currently uses the WindowsML iGPU lane plus CPU "
+            "fallback for unsupported operators."
         ),
     }
 
@@ -383,7 +385,7 @@ def summarize_provider_mix(profile_path: Path) -> dict[str, Any]:
         "providers_seen": providers_seen,
         "provider_counts": provider_counts,
         "mixed_execution_detected": (
-            "DmlExecutionProvider" in provider_counts
+            WINDOWSML_IGPU_PROVIDER in provider_counts
             and "CPUExecutionProvider" in provider_counts
         ),
     }
@@ -406,7 +408,7 @@ def _extract_provider_from_profile_event(event: Any) -> str:
 def _normalize_provider_name(value: str) -> str:
     lowered = value.lower()
     if "dmlexecutionprovider" in lowered:
-        return "DmlExecutionProvider"
+        return WINDOWSML_IGPU_PROVIDER
     if "cpuexecutionprovider" in lowered:
         return "CPUExecutionProvider"
     if value in WINDOWSML_PROVIDERS:

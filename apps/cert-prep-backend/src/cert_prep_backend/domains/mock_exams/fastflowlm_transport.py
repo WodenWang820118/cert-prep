@@ -37,6 +37,9 @@ from cert_prep_backend.domains.mock_exams.reasoning_parser import (
 
 
 DEFAULT_FASTFLOWLM_BASE_URL = "http://127.0.0.1:52625/v1"
+DEFAULT_FASTFLOWLM_PRIMARY_MODEL = "qwen3.5:4b"
+FASTFLOWLM_RAM_FALLBACK_MODEL = "qwen3.5:2b"
+DEFAULT_FASTFLOWLM_PRIMARY_MIN_AVAILABLE_RAM_BYTES = 6 * 1024 * 1024 * 1024
 T = TypeVar("T")
 
 
@@ -52,11 +55,17 @@ class FastFlowLMProvider:
         timeout_seconds: float,
         fallback_models: Sequence[str] = (),
         model_pull_timeout_seconds: float | None = None,
+        primary_min_available_ram_bytes: int = (
+            DEFAULT_FASTFLOWLM_PRIMARY_MIN_AVAILABLE_RAM_BYTES
+        ),
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.timeout_seconds = timeout_seconds
         self.model_pull_timeout_seconds = model_pull_timeout_seconds or timeout_seconds
+        self.primary_min_available_ram_bytes = max(
+            0, int(primary_min_available_ram_bytes)
+        )
         self.fallback_models = tuple(
             dict.fromkeys(
                 fallback.strip()
@@ -69,6 +78,7 @@ class FastFlowLMProvider:
         self._runtime_effective_model: str | None = None
         self._last_primary_failure: str | None = None
         self._runtime_fallback_reason: str | None = None
+        self._primary_memory_blocked = False
 
     def health(self) -> ProviderHealth:
         """Return FastFlowLM server and configured-model availability."""
@@ -272,6 +282,7 @@ class FastFlowLMProvider:
         progress(ModelPullProgress(status="success", completed=100, total=100))
 
     def _health_from_model_names(self, model_names: set[str]) -> ProviderHealth:
+        self._refresh_primary_ram_state()
         effective_model = self._effective_model_from(model_names)
         available = effective_model is not None
         fallback_reason = self._fallback_reason(effective_model)
@@ -298,6 +309,7 @@ class FastFlowLMProvider:
         except Exception as exc:
             raise ProviderUnavailableError(f"FastFlowLM unavailable: {exc}") from exc
 
+        self._refresh_primary_ram_state()
         unusable_models = self._runtime_unusable_models()
         candidates = tuple(
             candidate
@@ -332,10 +344,22 @@ class FastFlowLMProvider:
         runtime_reason = self._runtime_reason_for(effective_model)
         if runtime_reason:
             return runtime_reason
+        primary_failure = self._primary_failure_reason()
+        if primary_failure:
+            return (
+                f"Configured model {self.model} is unavailable "
+                f"({_short_error_text(primary_failure)}); using fallback {effective_model}."
+            )
         return f"Configured model {self.model} is missing; using fallback {effective_model}."
 
     def _health_detail(self, effective_model: str | None) -> str:
         if effective_model is None:
+            primary_failure = self._primary_failure_reason()
+            if primary_failure:
+                return (
+                    f"{_short_error_text(primary_failure)}; fallback model "
+                    f"{FASTFLOWLM_RAM_FALLBACK_MODEL} is not served."
+                )
             return "model not found"
         if effective_model == self.model:
             return "model available"
@@ -462,6 +486,7 @@ class FastFlowLMProvider:
             self._unusable_models.add(model)
             if model == self.model:
                 self._last_primary_failure = _short_error(exc)
+                self._primary_memory_blocked = False
             if self._runtime_effective_model == model:
                 self._runtime_effective_model = None
                 self._runtime_fallback_reason = None
@@ -471,6 +496,7 @@ class FastFlowLMProvider:
             if model == self.model:
                 self._runtime_effective_model = None
                 self._runtime_fallback_reason = None
+                self._primary_memory_blocked = False
                 return
 
             self._runtime_effective_model = model
@@ -497,6 +523,50 @@ class FastFlowLMProvider:
             if self._runtime_effective_model != effective_model:
                 return None
             return self._runtime_fallback_reason
+
+    def _primary_failure_reason(self) -> str | None:
+        with self._model_lock:
+            return self._last_primary_failure
+
+    def _refresh_primary_ram_state(self) -> None:
+        if not self._should_guard_primary_ram():
+            return
+        available_ram = available_system_ram_bytes()
+        if available_ram is None:
+            return
+        if available_ram < self.primary_min_available_ram_bytes:
+            self._mark_primary_blocked_by_ram(available_ram)
+            return
+        self._clear_primary_ram_block()
+
+    def _should_guard_primary_ram(self) -> bool:
+        return (
+            self.primary_min_available_ram_bytes > 0
+            and self.model == DEFAULT_FASTFLOWLM_PRIMARY_MODEL
+            and FASTFLOWLM_RAM_FALLBACK_MODEL in self.fallback_models
+        )
+
+    def _mark_primary_blocked_by_ram(self, available_ram: int) -> None:
+        reason = (
+            f"Available system RAM {_format_gib(available_ram)} is below the "
+            f"{_format_gib(self.primary_min_available_ram_bytes)} required for "
+            f"{self.model}; trying fallback {FASTFLOWLM_RAM_FALLBACK_MODEL}"
+        )
+        with self._model_lock:
+            self._unusable_models.add(self.model)
+            self._last_primary_failure = reason
+            self._primary_memory_blocked = True
+            if self._runtime_effective_model == self.model:
+                self._runtime_effective_model = None
+                self._runtime_fallback_reason = None
+
+    def _clear_primary_ram_block(self) -> None:
+        with self._model_lock:
+            if not self._primary_memory_blocked:
+                return
+            self._unusable_models.discard(self.model)
+            self._last_primary_failure = None
+            self._primary_memory_blocked = False
 
 
 def resolve_fastflowlm_executable() -> Path | None:
@@ -527,6 +597,49 @@ def resolve_fastflowlm_executable() -> Path | None:
             ]
         )
     return next((candidate for candidate in candidates if candidate.is_file()), None)
+
+
+def available_system_ram_bytes() -> int | None:
+    """Return currently available physical RAM, or None when the OS probe is unavailable."""
+
+    if os.name == "nt":
+        return _windows_available_system_ram_bytes()
+    try:
+        page_size = os.sysconf("SC_PAGE_SIZE")
+        available_pages = os.sysconf("SC_AVPHYS_PAGES")
+    except (AttributeError, OSError, ValueError):
+        return None
+    if not isinstance(page_size, int) or not isinstance(available_pages, int):
+        return None
+    return page_size * available_pages
+
+
+def _windows_available_system_ram_bytes() -> int | None:
+    try:
+        import ctypes
+    except ImportError:
+        return None
+
+    class MemoryStatusEx(ctypes.Structure):
+        _fields_ = [
+            ("dwLength", ctypes.c_ulong),
+            ("dwMemoryLoad", ctypes.c_ulong),
+            ("ullTotalPhys", ctypes.c_ulonglong),
+            ("ullAvailPhys", ctypes.c_ulonglong),
+            ("ullTotalPageFile", ctypes.c_ulonglong),
+            ("ullAvailPageFile", ctypes.c_ulonglong),
+            ("ullTotalVirtual", ctypes.c_ulonglong),
+            ("ullAvailVirtual", ctypes.c_ulonglong),
+            ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
+        ]
+
+    status = MemoryStatusEx()
+    status.dwLength = ctypes.sizeof(MemoryStatusEx)
+    try:
+        ok = ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status))
+    except (AttributeError, OSError, ValueError):
+        return None
+    return int(status.ullAvailPhys) if ok else None
 
 
 def extract_openai_model_names(response: Any) -> set[str]:
@@ -589,3 +702,7 @@ def _is_transient_fastflowlm_generation_error(exc: Exception) -> bool:
 
 def _short_error(exc: Exception) -> str:
     return _short_error_text(str(exc) or exc.__class__.__name__)
+
+
+def _format_gib(value: int) -> str:
+    return f"{value / (1024**3):.1f} GiB"

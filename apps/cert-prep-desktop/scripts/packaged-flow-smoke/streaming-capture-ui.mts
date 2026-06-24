@@ -72,7 +72,7 @@ export async function observeStreamingDraftUiUntil(
 
   if (run.metrics.ui_timings_ms.streaming_question_status_visible === undefined) {
     run.metrics.observations.push(
-      'Streaming question status was not visible before parse completion.',
+      'Streaming question status was not visible before OCR parse completion.',
     );
   }
 }

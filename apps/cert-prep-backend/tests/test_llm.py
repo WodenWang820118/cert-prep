@@ -31,6 +31,7 @@ from cert_prep_backend.api.errors import ProviderUnavailableError
 
 
 AUTH_HEADERS = {"Authorization": "Bearer test-token"}
+GIB = 1024 * 1024 * 1024
 
 
 def test_draft_parser_rejects_cover_and_instruction_text_as_exam_items() -> None:
@@ -430,6 +431,71 @@ def test_fastflowlm_timeout_does_not_switch_to_fallback_model() -> None:
     assert health.available is True
     assert health.effective_model == "qwen3.5:4b"
     assert health.fallback_reason is None
+
+
+def test_fastflowlm_health_falls_back_to_2b_when_available_ram_is_low(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        fastflowlm_transport,
+        "available_system_ram_bytes",
+        lambda: 3 * GIB,
+    )
+    provider = RecordingFastFlowLMProvider(
+        models=["qwen3.5:4b", "qwen3.5:2b"],
+        primary_min_available_ram_bytes=6 * GIB,
+    )
+
+    health = provider.health()
+
+    assert health.available is True
+    assert health.configured_model == "qwen3.5:4b"
+    assert health.effective_model == "qwen3.5:2b"
+    assert health.fallback_reason is not None
+    assert "Available system RAM 3.0 GiB" in health.fallback_reason
+    assert "using fallback qwen3.5:2b" in health.fallback_reason
+
+
+def test_fastflowlm_generation_skips_4b_when_available_ram_is_low(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        fastflowlm_transport,
+        "available_system_ram_bytes",
+        lambda: 3 * GIB,
+    )
+    provider = RecordingFastFlowLMProvider(
+        models=["qwen3.5:4b", "qwen3.5:2b"],
+        chat_content='{"answer":"2","rationale":"Fallback fits.","confidence":0.7}',
+        primary_min_available_ram_bytes=6 * GIB,
+    )
+    chunk = SourceChunk(
+        id="chunk-1",
+        page_number=1,
+        text="Question text. 1 first 2 second 3 third 4 fourth",
+        source_excerpt="Question text.",
+    )
+    candidate = DraftSuggestion(
+        chunk_id=chunk.id,
+        question="Question text.",
+        choices=["1 first", "2 second", "3 third", "4 fourth"],
+        answer="",
+        answer_key_source="manual",
+        rationale="",
+        citation_page=1,
+        source_excerpt="Question text.",
+    )
+
+    suggestion = provider.generate_fast_first_draft(chunk, candidate)
+
+    assert suggestion is not None
+    assert suggestion.answer == "2 second"
+    chat_requests = [
+        request for request in provider.requests if request["path"] == "/chat/completions"
+    ]
+    assert [request["body"]["model"] for request in chat_requests] == ["qwen3.5:2b"]
+    health = provider.health()
+    assert health.effective_model == "qwen3.5:2b"
 
 
 def test_ollama_health_uses_installed_fallback_without_pull(monkeypatch) -> None:
@@ -941,12 +1007,14 @@ class RecordingFastFlowLMProvider(FastFlowLMProvider):
         chat_content: str = '{"items":[]}',
         fail_response_format: bool = False,
         fail_models: dict[str, Exception] | None = None,
+        primary_min_available_ram_bytes: int = 0,
     ) -> None:
         super().__init__(
             base_url="http://127.0.0.1:52625/v1",
             model="qwen3.5:4b",
             timeout_seconds=1,
             fallback_models=["qwen3.5:2b"],
+            primary_min_available_ram_bytes=primary_min_available_ram_bytes,
         )
         self.models = models
         self.chat_content = chat_content

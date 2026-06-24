@@ -246,13 +246,6 @@ def _process_document_upload(
             ocr_worker_count=progress.ocr_worker_count,
             first_chunk_ms=progress.first_chunk_ms,
         )
-        if progress.page is not None:
-            streaming_questions.enqueue_page(
-                db,
-                project_id=project_id,
-                document_id=document_id,
-                page_number=progress.page_number,
-            )
 
     try:
         extraction = extract_pdf_pages(
@@ -270,6 +263,15 @@ def _process_document_upload(
             document_id=document_id,
             extraction=extraction,
         )
+        if document["chunks_count"] > 0:
+            streaming_questions.enqueue_document(
+                db,
+                project_id=project_id,
+                document_id=document_id,
+            )
+            document = source_documents_repository.get_document(
+                db, project_id, document_id
+            )
         if (
             settings.auto_generate_exam_on_upload
             and not settings.streaming_draft_generation_on_upload

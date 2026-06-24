@@ -109,7 +109,7 @@ def classify_igpu_status(
         blockers.append("paddle_import_failed")
     if not paddle.get("compiled_with_rocm"):
         blockers.append("paddle_wheel_not_rocm")
-    if "dml" not in custom_device_types and "windowsml" not in custom_device_types:
+    if "windowsml" not in custom_device_types:
         blockers.append("paddle_has_no_windowsml_custom_device")
     if available_devices and all(device.startswith("gpu") for device in available_devices):
         blockers.append("paddle_devices_are_cuda_only")
@@ -117,7 +117,7 @@ def classify_igpu_status(
         blockers.append("onnxruntime_windowsml_not_available")
 
     paddle_can_target_amd = bool(paddle.get("compiled_with_rocm")) or any(
-        device in {"dml", "windowsml", "rocm"} for device in custom_device_types
+        device in {"windowsml", "rocm"} for device in custom_device_types
     )
     onnx_windowsml_candidate = bool(amd_adapters and has_windowsml_provider)
     if amd_adapters and paddle_can_target_amd:
@@ -136,13 +136,12 @@ def classify_igpu_status(
         "blockers": blockers,
         "current_safe_action": (
             "Keep PaddleOCR off the experimental iGPU lane. The current Paddle "
-            "wheel exposes CUDA gpu:0 only, so production OCR remains Nvidia-routed "
-            "until an AMD-capable backend is implemented."
+            "wheel exposes CUDA gpu:0 only. Product OCR should use the packaged "
+            "WindowsML runtime for AMD iGPU routing."
         ),
         "recommended_next_step": (
-            "Prototype a separate OCR backend using ONNX Runtime WindowsML or Windows "
-            "ML after exporting PP-OCR models to ONNX; do not silently fall back to "
-            "CPU for the iGPU lane."
+            "Use the package-owned WindowsML OCR runtime and keep this Paddle probe "
+            "as legacy diagnostic evidence only."
         ),
     }
 

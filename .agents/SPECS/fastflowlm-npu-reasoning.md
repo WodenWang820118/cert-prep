@@ -19,6 +19,7 @@ OpenAI-compatible server when the app is configured for FastFlowLM.
   - `CERT_PREP_FASTFLOWLM_BASE_URL=http://127.0.0.1:52625/v1`
   - `CERT_PREP_FASTFLOWLM_MODEL=qwen3.5:4b`
   - `CERT_PREP_FASTFLOWLM_FALLBACK_MODELS=qwen3.5:2b`
+  - `CERT_PREP_FASTFLOWLM_PRIMARY_MIN_AVAILABLE_RAM_BYTES=6442450944`
 - FastFlowLM runtime expectation:
   - User starts FastFlowLM with `flm serve qwen3.5:4b`.
   - The backend uses `GET /v1/models` and `POST /v1/chat/completions`.
@@ -43,6 +44,9 @@ OpenAI-compatible server when the app is configured for FastFlowLM.
 - FastFlowLM installed but no server: health is unavailable with a runtime
   not-running reason.
 - Server running but `qwen3.5:4b` not served: health reports `model_missing`.
+- Available system RAM below the configured `qwen3.5:4b` threshold: health and
+  generation skip the 4B primary when possible and try served fallback
+  `qwen3.5:2b` without auto-pulling it.
 - JSON-mode request rejected: generation retries once without `response_format`
   and still validates returned JSON before saving drafts.
 - Invalid model JSON never creates playable questions.
@@ -54,6 +58,8 @@ OpenAI-compatible server when the app is configured for FastFlowLM.
 - `/llm/health` distinguishes missing FastFlowLM runtime from missing model.
 - Draft generation can parse an OpenAI-compatible chat-completion response into
   grounded editable questions.
+- Low available RAM can select served fallback `qwen3.5:2b` and exposes the
+  RAM reason through `fallback_reason`.
 - Desktop launch env and packaged smoke args can select FastFlowLM without
   hardcoded Ollama.
 - Runtime UI labels FastFlowLM accurately and does not show "Ollama ready" for
@@ -61,11 +67,16 @@ OpenAI-compatible server when the app is configured for FastFlowLM.
 
 ## Test Plan
 
+- Direct CLI gate:
+  `pnpm nx run cert-prep-backend:streaming-cli-test`.
 - Backend pytest for settings, provider health, and OpenAI-compatible draft
-  generation.
+  generation stays in the direct CLI lane for fast development feedback,
+  including low-RAM fallback to `qwen3.5:2b`.
 - Desktop script tests for provider args and env surface.
 - Angular component/store tests for FastFlowLM runtime-missing UI.
 - Rust cargo tests for Tauri backend env selection.
+- Packaged gate:
+  `pnpm nx run cert-prep-desktop:packaged-streaming-production-windowsml --skip-nx-cache`.
 
 ## Closeout Evidence
 
@@ -84,7 +95,16 @@ OpenAI-compatible server when the app is configured for FastFlowLM.
   - Command:
     `pnpm nx run cert-prep-desktop:packaged-streaming-production-windowsml --skip-nx-cache`.
   - Artifact:
-    `tmp/cert-prep-desktop/packaged-streaming-production/2026-06-23T16-13-20-807Z/production-summary.json`.
+    `tmp/cert-prep-desktop/packaged-streaming-production/2026-06-24T10-41-20-877Z/production-summary.json`.
   - Result: `status: passed`, `error_count: 0`, selected/effective model
-    `qwen3.5:4b`, `fallback_reason: null`, 46/46 OCR pages, and 10/10
-    streaming jobs succeeded.
+    `qwen3.5:4b`, `fallback_reason: null`, 46/46 OCR pages, one
+    document-capped streaming job succeeded, and Full Exam started from the
+    streamed question.
+  - Pipeline evidence: the first usable question appeared after parse
+    completion (`first_usable_after_parse_complete: true`), matching the
+    current OCR-complete-then-reasoning contract.
+  - Routing evidence: WindowsML OCR observed
+    `cert-prep-ocr-windowsml-runtime.exe` on AMD iGPU and avoided Nvidia dGPU
+    process memory (`ocr_nvidia_process_memory_max_bytes: 0`).
+  - Process evidence: packaged app cleanup was graceful with no app/backend/OCR
+    residue; the smoke-started FastFlowLM PID was stopped after the run.

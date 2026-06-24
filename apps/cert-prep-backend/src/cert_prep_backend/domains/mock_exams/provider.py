@@ -48,6 +48,9 @@ def provider_from_settings(settings: Settings):
             fallback_models=settings.fastflowlm_fallback_models,
             timeout_seconds=settings.fastflowlm_timeout_seconds,
             model_pull_timeout_seconds=settings.runtime_install_timeout_seconds,
+            primary_min_available_ram_bytes=(
+                settings.fastflowlm_primary_min_available_ram_bytes
+            ),
         )
     return FakeLLMProvider(model=settings.ollama_model)
 

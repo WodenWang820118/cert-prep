@@ -17,7 +17,7 @@ This specification extends and reconciles the rules defined in [.agents/SPECS/do
 
 | Platform | Node ID | Default / Override | Accelerator | Distribution / Packaging |
 | :--- | :--- | :--- | :--- | :--- |
-| **Windows** | `windowsml` | **Default** | DirectML / AMD iGPU / Intel / Nvidia | Zip package extraction to local runtime dir |
+| **Windows** | `windowsml` | **Default** | WindowsML-loaded AMD iGPU, CPU fallback visible | Zip package extraction to local runtime dir |
 | **Windows** | `paddle` | Override | CUDA dGPU or CPU fallback | Custom Zip package / pip dependency |
 | **macOS** | `paddle` | **Default** | CPU-first (MPS / Metal deferred) | Plat-specific Zip package / local virtualenv |
 | **Linux** | `paddle` | **Default** | CUDA dGPU / CPU fallback (ROCm deferred)| Plat-specific Zip package / AppImage resource |
@@ -40,6 +40,9 @@ This specification extends and reconciles the rules defined in [.agents/SPECS/do
 
 ### Default vs. High-Capability LLM
 - `qwen3.5:4b` remains the default, low-latency, editing/study model.
+- On Windows FastFlowLM, low available system RAM may fall back from
+  `qwen3.5:4b` to the served `qwen3.5:2b` model with visible
+  `fallback_reason`; this does not auto-download the fallback model.
 - `qwen3.5:9b` is introduced as a higher-capability option for advanced explanation tasks.
 
 ### Fallback Graph Policy
@@ -55,8 +58,11 @@ This specification extends and reconciles the rules defined in [.agents/SPECS/do
 
 Before any candidate node is promoted to **Product-Ready**, it must satisfy the following validation gates:
 
-1. **Install Gate**: Verify the platform-specific zip/virtualenv/AppImage artifact extracts cleanly on the target OS, and is correctly tracked by a target manifest containing the package hash.
-2. **Health Gate**: The provider endpoint must successfully return a health payload specifying the configured/effective model, selected device ID, and diagnostic telemetry.
-3. **Smoke Gate**: Pass at least one packaged flow/streaming smoke test using the target node.
-4. **Resource Gate**: Peak RAM/VRAM usage must be recorded during active inference and verify it fits within platform-specific budgets (e.g. Nvidia dGPU vs AMD iGPU vs CPU).
-5. **Fallback Gate**: Verify that error handling behaves as expected (e.g., OOM raises visible alerts, missing models trigger confirmation-gated downloads).
+1. **Direct CLI Gate**: Pass the fast backend target that exercises streaming
+   sequencing, provider health/fallback behavior, and node policy without
+   building a packaged app.
+2. **Install Gate**: Verify the platform-specific zip/virtualenv/AppImage artifact extracts cleanly on the target OS, and is correctly tracked by a target manifest containing the package hash.
+3. **Health Gate**: The provider endpoint must successfully return a health payload specifying the configured/effective model, selected device ID, and diagnostic telemetry.
+4. **Packaged Smoke Gate**: Pass at least one packaged flow/streaming smoke test using the target node.
+5. **Resource Gate**: Peak RAM/VRAM usage must be recorded during active inference and verify it fits within platform-specific budgets (e.g. Nvidia dGPU vs AMD iGPU vs CPU).
+6. **Fallback Gate**: Verify that error handling behaves as expected (e.g., OOM raises visible alerts, missing models trigger confirmation-gated downloads).

@@ -34,8 +34,8 @@ test('production summary passes when WindowsML OCR is routed to AMD iGPU', () =>
     assert.equal(summary.schema_version, 2);
     assert.equal(summary.status, 'passed');
     assert.equal(summary.checks.fastflowlm_health_available, true);
-    assert.equal(summary.checks.fastflowlm_selected_configured_model, true);
-    assert.equal(summary.checks.fastflowlm_no_fallback, true);
+    assert.equal(summary.checks.fastflowlm_model_selection_allowed, true);
+    assert.equal(summary.checks.fastflowlm_no_unexpected_fallback, true);
     assert.equal(summary.checks.windowsml_ocr_process_observed, true);
     assert.equal(summary.checks.ocr_uses_amd_igpu, true);
     assert.equal(summary.checks.ocr_avoids_nvidia_dgpu, true);
@@ -70,8 +70,8 @@ test('production summary accepts FastFlowLM NPU reasoning without NVIDIA dGPU us
     assert.equal(summary.status, 'passed');
     assert.equal(summary.checks.reasoning_uses_nvidia_dgpu, undefined);
     assert.equal(summary.checks.fastflowlm_health_available, true);
-    assert.equal(summary.checks.fastflowlm_selected_configured_model, true);
-    assert.equal(summary.checks.fastflowlm_no_fallback, true);
+    assert.equal(summary.checks.fastflowlm_model_selection_allowed, true);
+    assert.equal(summary.checks.fastflowlm_no_unexpected_fallback, true);
   } finally {
     rmSync(workspaceRoot, { recursive: true, force: true });
   }
@@ -116,6 +116,54 @@ test('production summary still requires NVIDIA dGPU usage for Ollama reasoning',
     assert.equal(summary.status, 'failed');
     assert.equal(summary.checks.reasoning_uses_nvidia_dgpu, false);
     assert.equal(summary.checks.fastflowlm_health_available, undefined);
+  } finally {
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test('production summary accepts FastFlowLM low-RAM fallback to qwen3.5:2b', () => {
+  const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-prep-production-summary-'));
+  try {
+    const outDir = join(workspaceRoot, 'out');
+    mkdirSync(outDir);
+    writeFileSync(
+      join(outDir, 'windows-resource-summary.json'),
+      JSON.stringify({
+        gpu_routing_checks: {
+          windowsml_ocr_process_observed: true,
+          ocr_uses_amd_igpu: true,
+          ocr_avoids_nvidia_dgpu: true,
+          reasoning_uses_nvidia_dgpu: false,
+          gpu_luid_map_usable: true,
+        },
+      }),
+      'utf8',
+    );
+    const run = productionRunState(workspaceRoot, outDir);
+    run.metrics.llm_effective_model = 'qwen3.5:2b';
+    run.metrics.llm_fallback_reason =
+      'Available system RAM 3.0 GiB is below the 6.0 GiB required for qwen3.5:4b; using fallback qwen3.5:2b.';
+    const report = productionReport();
+    report.runtime.llm_effective_model = 'qwen3.5:2b';
+    report.runtime.llm_fallback_reason = run.metrics.llm_fallback_reason;
+    report.runtime.llm_health = {
+      provider: 'fastflowlm',
+      available: true,
+      model: 'qwen3.5:4b',
+      configured_model: 'qwen3.5:4b',
+      effective_model: 'qwen3.5:2b',
+      fallback_models: ['qwen3.5:2b'],
+      fallback_reason: run.metrics.llm_fallback_reason,
+      detail: 'model available via fallback qwen3.5:2b',
+    };
+
+    const summary = buildProductionSummary(run, report);
+
+    assert.equal(summary.status, 'passed');
+    assert.equal(summary.selected_model, 'qwen3.5:2b');
+    assert.equal(summary.checks.fastflowlm_health_available, true);
+    assert.equal(summary.checks.fastflowlm_model_selection_allowed, true);
+    assert.equal(summary.checks.fastflowlm_no_unexpected_fallback, true);
   } finally {
     rmSync(workspaceRoot, { recursive: true, force: true });
   }
@@ -261,7 +309,7 @@ function productionReport(): StreamingBaselineReport {
       generated_count: 8,
       question_count: 8,
       usable_question_count: 8,
-      first_usable_before_parse_complete: true,
+      first_usable_after_parse_complete: true,
       practice_ready_from_streamed_questions: true,
       job_snapshot_count: 1,
       question_snapshot_count: 1,
@@ -281,7 +329,7 @@ function productionReport(): StreamingBaselineReport {
       ocr_completed_46_pages: true,
       ocr_chunks_present: true,
       first_chunk_under_gate: true,
-      first_usable_before_parse_complete: true,
+      first_usable_after_parse_complete: true,
       all_jobs_terminal: true,
       all_jobs_succeeded: true,
       generated_equals_usable: true,

@@ -123,7 +123,8 @@ def build_pipeline_contract(
             for artifact in artifacts
         ],
         "runtime_contract": {
-            "provider": "DmlExecutionProvider",
+            "provider": "windowsml",
+            "provider_id": "DmlExecutionProvider",
             "device_selection": "dxgi_adapter_index",
             "ocr_engine": "PaddleOCR 3.7 engine='onnxruntime'",
             "session_options": {

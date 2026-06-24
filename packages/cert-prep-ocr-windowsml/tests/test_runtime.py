@@ -79,7 +79,7 @@ def test_windowsml_auto_device_selects_amd_after_nvidia(monkeypatch) -> None:
     assert windowsml_device.resolve_windowsml_device_id(-1) == 1
 
 
-def test_windowsml_runtime_provider_engine_config_uses_amd_igpu_dml_only(
+def test_windowsml_runtime_provider_engine_config_uses_amd_igpu_provider(
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(windowsml, "resolve_windowsml_device_id", lambda _device_id: 0)

@@ -29,7 +29,7 @@ from document_test_ocr_fakes import (
 )
 
 
-def test_streaming_draft_job_creates_draft_before_document_is_ready(
+def test_streaming_draft_job_waits_until_document_is_ready(
     tmp_path: Path,
     auth_headers,
 ) -> None:
@@ -73,25 +73,31 @@ def test_streaming_draft_job_creates_draft_before_document_is_ready(
             chunks_count=1,
         )
         assert partial["status"] == "processing"
-
-        drafts = _wait_for_question_drafts(client, auth_headers, project_id, count=1)
-        assert drafts[0]["status"] == "approved"
-        assert drafts[0]["citation_page"] == 2
-        assert drafts[0]["answer_key_source"] == "ai_inferred"
-
-        jobs = _wait_for_draft_jobs(
-            client,
-            auth_headers,
-            project_id,
-            document["id"],
-            status="succeeded",
-        )
-        assert jobs[0]["generated_count"] == 1
+        assert _draft_job_statuses(
+            client, auth_headers, project_id, document["id"]
+        ) == []
+        drafts = client.get(f"/projects/{project_id}/question-drafts", headers=auth_headers)
+        assert drafts.status_code == 200
+        assert drafts.json()["items"] == []
     finally:
         ocr_provider.release_page_one.set()
 
     ready = _wait_for_document_status(client, auth_headers, project_id, document["id"], "ready")
     assert ready["chunks_count"] == 2
+    jobs = _wait_for_draft_jobs(
+        client,
+        auth_headers,
+        project_id,
+        document["id"],
+        status="succeeded",
+    )
+    assert len(jobs) == 1
+    assert jobs[0]["generated_count"] == 1
+
+    drafts = _wait_for_question_drafts(client, auth_headers, project_id, count=1)
+    assert drafts[0]["status"] == "approved"
+    assert drafts[0]["citation_page"] == 1
+    assert drafts[0]["answer_key_source"] == "ai_inferred"
 
 
 def test_streaming_draft_generation_skips_notice_pages(

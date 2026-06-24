@@ -23,6 +23,15 @@
         "command": "uv run pytest"
       }
     },
+    "streaming-cli-test": {
+      "cache": true,
+      "executor": "nx:run-commands",
+      "inputs": ["default"],
+      "options": {
+        "cwd": "apps/cert-prep-backend",
+        "command": "uv run pytest tests/test_documents_streaming.py tests/test_ocr_igpu_probe.py tests/test_llm.py -k \"streaming or fastflowlm or igpu\""
+      }
+    },
     "lint": {
       "cache": true,
       "executor": "nx:run-commands",

@@ -29,6 +29,7 @@ REQUIRED_MODEL_FILES = (
     "pipeline.json",
 )
 OPTIONAL_MODEL_FILES = ()
+WINDOWSML_IGPU_PROVIDER = "DmlExecutionProvider"
 
 
 def default_output_path() -> Path:
@@ -161,7 +162,7 @@ def classify_windowsml_status(
     dxgi_adapters: Sequence[dict[str, Any]] = (),
 ) -> dict[str, Any]:
     provider_names = [str(provider) for provider in providers]
-    windowsml_available = "DmlExecutionProvider" in provider_names
+    windowsml_available = WINDOWSML_IGPU_PROVIDER in provider_names
     amd_dxgi_adapter = select_amd_dxgi_adapter(dxgi_adapters)
     amd_adapters = [
         controller

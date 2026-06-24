@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from threading import BoundedSemaphore, Thread
 
+from cert_prep_backend.api.errors import ProviderUnavailableError
 from cert_prep_backend.core.config import Settings
-from cert_prep_backend.persistence.database import Database
 from cert_prep_backend.domains.mock_exams import draft_jobs
 from cert_prep_backend.domains.mock_exams import repository as drafts_repository
 from cert_prep_backend.domains.mock_exams.deterministic_parser import (
@@ -19,15 +19,16 @@ from cert_prep_backend.domains.mock_exams.normalization import as_editable_quest
 from cert_prep_backend.domains.mock_exams.ports import DraftGenerationProvider
 from cert_prep_backend.domains.mock_exams.provider import generate_drafts_for_strategy
 from cert_prep_backend.domains.source_documents import repository as documents_repository
-from cert_prep_backend.api.errors import NotFoundError, ProviderUnavailableError
+from cert_prep_backend.persistence.database import Database
 
 
 STREAMING_FAST_FIRST_NUM_CTX = 2048
 STREAMING_FAST_FIRST_NUM_PREDICT = 512
+STREAMING_DRAFTS_PER_JOB_LIMIT = 1
 
 
 class StreamingDraftGenerationManager:
-    """Runs page-ready draft generation from SQLite-backed local jobs."""
+    """Runs post-OCR draft generation from SQLite-backed local jobs."""
 
     def __init__(
         self,
@@ -41,62 +42,50 @@ class StreamingDraftGenerationManager:
         self._async_jobs = async_jobs
         self._job_slots = BoundedSemaphore(settings.streaming_draft_workers)
         self._job_threads: list[Thread] = []
-        self._prewarm_thread: Thread | None = None
-        if async_jobs and settings.streaming_draft_generation_on_upload:
-            self._start_provider_prewarm()
 
-    def enqueue_page(
+    def enqueue_document(
         self,
         db: Database,
         *,
         project_id: str,
         document_id: str,
-        page_number: int,
-    ) -> dict | None:
+    ) -> list[dict]:
         if not self._settings.streaming_draft_generation_on_upload:
-            return None
-
-        try:
-            chunk = documents_repository.get_chunk_by_page(
-                db, project_id, document_id, page_number
-            )
-        except NotFoundError:
-            return None
+            return []
 
         strategy = self._settings.streaming_draft_generation_strategy
-        source_chunk = _source_chunk_from_record(chunk)
-        if not _should_enqueue_streaming_chunk(
-            source_chunk, DraftGenerationStrategy(strategy)
-        ):
-            return None
+        max_jobs = self._settings.streaming_draft_generation_page_limit
+        jobs: list[dict] = []
+        for chunk in documents_repository.get_source_chunks(db, project_id, document_id):
+            if len(jobs) >= max_jobs:
+                break
 
-        job = draft_jobs.enqueue_chunk_job(
-            db,
-            project_id=project_id,
-            document_id=document_id,
-            chunk_id=chunk["id"],
-            page_number=page_number,
-            strategy=strategy,
-            provider=str(getattr(self._provider, "provider", "unknown")),
-            model=str(getattr(self._provider, "model", "")),
-        )
-        if not draft_jobs.should_run(job):
-            return job
+            source_chunk = _source_chunk_from_record(chunk)
+            if not _should_enqueue_streaming_chunk(
+                source_chunk, DraftGenerationStrategy(strategy)
+            ):
+                continue
 
-        page_limit = self._settings.streaming_draft_generation_page_limit
-        if self._async_jobs:
-            self._start_job_thread(db, job["id"], page_limit)
-        else:
-            self._run_job(db, job["id"], page_limit)
-        return job
+            jobs.append(
+                draft_jobs.enqueue_chunk_job(
+                    db,
+                    project_id=project_id,
+                    document_id=document_id,
+                    chunk_id=chunk["id"],
+                    page_number=chunk["page_number"],
+                    strategy=strategy,
+                    provider=str(getattr(self._provider, "provider", "unknown")),
+                    model=str(getattr(self._provider, "model", "")),
+                )
+            )
+
+        self._schedule_jobs(db, jobs)
+        return draft_jobs.list_document_jobs(db, project_id, document_id)
 
     def close(self) -> None:
         for worker in self._job_threads:
             worker.join(timeout=1)
         self._job_threads.clear()
-        if self._prewarm_thread is not None:
-            self._prewarm_thread.join(timeout=1)
-            self._prewarm_thread = None
 
     def recover_jobs(self, db: Database) -> int:
         if not self._settings.streaming_draft_generation_on_upload:
@@ -126,16 +115,19 @@ class StreamingDraftGenerationManager:
         return draft_jobs.list_document_jobs(db, project_id, document_id)
 
     def _schedule_jobs(self, db: Database, jobs: list[dict]) -> int:
-        page_limit = self._settings.streaming_draft_generation_page_limit
+        runnable_jobs = [job for job in jobs if draft_jobs.should_run(job)]
+        if not runnable_jobs:
+            return 0
+        if self._provider_unavailable_for_jobs(db, runnable_jobs):
+            return 0
+
         scheduled_count = 0
-        for job in jobs:
-            if not draft_jobs.should_run(job):
-                continue
+        for job in runnable_jobs:
             scheduled_count += 1
             if self._async_jobs:
-                self._start_job_thread(db, job["id"], page_limit)
+                self._start_job_thread(db, job["id"], STREAMING_DRAFTS_PER_JOB_LIMIT)
             else:
-                self._run_job(db, job["id"], page_limit)
+                self._run_job(db, job["id"], STREAMING_DRAFTS_PER_JOB_LIMIT)
         return scheduled_count
 
     def _run_job(self, db: Database, job_id: str, limit: int) -> None:
@@ -178,13 +170,24 @@ class StreamingDraftGenerationManager:
         if health.available:
             return False
 
-        reason = health.unavailable_reason or "provider_unavailable"
-        detail = health.detail
-        if reason == "model_missing":
-            draft_jobs.mark_skipped_missing_model(db, job["id"], detail=detail)
-            return True
+        _mark_provider_unavailable_job(
+            db,
+            job,
+            health.unavailable_reason,
+            health.detail or "provider unavailable",
+        )
+        return True
 
-        draft_jobs.mark_skipped_provider_unavailable(db, job["id"], detail=detail)
+    def _provider_unavailable_for_jobs(self, db: Database, jobs: list[dict]) -> bool:
+        health = self._provider.health()
+        if health.available:
+            return False
+
+        detail = health.detail or "provider unavailable"
+        for job in jobs:
+            _mark_provider_unavailable_job(
+                db, job, health.unavailable_reason, detail
+            )
         return True
 
     def _start_job_thread(self, db: Database, job_id: str, limit: int) -> None:
@@ -202,26 +205,19 @@ class StreamingDraftGenerationManager:
         with self._job_slots:
             self._run_job(db, job_id, limit)
 
-    def _start_provider_prewarm(self) -> None:
-        prewarm = getattr(self._provider, "prewarm", None)
-        if not callable(prewarm):
-            return
 
-        self._prewarm_thread = Thread(
-            target=self._prewarm_provider,
-            name="streaming-draft-prewarm",
-            daemon=True,
-        )
-        self._prewarm_thread.start()
+def _mark_provider_unavailable_job(
+    db: Database,
+    job: dict,
+    unavailable_reason: str | None,
+    detail: str,
+) -> None:
+    reason = unavailable_reason or "provider_unavailable"
+    if reason == "model_missing":
+        draft_jobs.mark_skipped_missing_model(db, job["id"], detail=detail)
+        return
 
-    def _prewarm_provider(self) -> None:
-        prewarm = getattr(self._provider, "prewarm", None)
-        if not callable(prewarm):
-            return
-        try:
-            prewarm()
-        except Exception:
-            return
+    draft_jobs.mark_skipped_provider_unavailable(db, job["id"], detail=detail)
 
 
 def _generate_streaming_fast_first_drafts(

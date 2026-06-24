@@ -34,7 +34,8 @@ Move the WindowsML OCR runtime implementation out of `apps/cert-prep-backend` an
 - PyInstaller must package the new import root and still exclude unrelated backend OCR providers.
 - Existing tests that monkeypatch WindowsML internals import from `cert_prep_ocr_windowsml` and package tooling modules directly.
 - Old backend WindowsML shim imports are intentionally unsupported.
-- No WindowsML health payload may claim reasoning/OCR success without the existing DirectML and provider-health evidence.
+- No WindowsML health payload may claim OCR success without WindowsML provider
+  health, selected AMD iGPU evidence, and packaged runtime evidence.
 
 ## Acceptance Criteria
 

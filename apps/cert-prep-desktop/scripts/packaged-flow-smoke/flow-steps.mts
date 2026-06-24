@@ -81,7 +81,6 @@ export async function uploadAndParsePdf(run: SmokeRunState): Promise<void> {
       run.metrics.observations.push(
         `Captured upload document reference for streaming API polling: ${uploadedDocument.documentId}.`,
       );
-      await captureLlmHealth(run, uploadedDocument);
     } else {
       run.metrics.observations.push(
         'Upload document response was not captured; streaming evidence is limited to UI/API responses.',
@@ -120,6 +119,7 @@ export async function uploadAndParsePdf(run: SmokeRunState): Promise<void> {
     recordOcrCompletionFromText(run, await bodyText(run));
     if (uploadedDocument) {
       await captureDocumentOcrEvidence(run, uploadedDocument);
+      await captureLlmHealth(run, uploadedDocument);
     }
     if (run.options.waitForStreamingComplete) {
       if (!uploadedDocument) {

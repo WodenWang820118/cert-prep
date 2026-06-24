@@ -36,7 +36,7 @@ def test_ocr_igpu_probe_blocks_cuda_only_paddle_on_amd_laptop() -> None:
     assert "onnxruntime_windowsml_not_available" in status["blockers"]
 
 
-def test_ocr_igpu_probe_marks_windowsml_as_alternative_backend_candidate() -> None:
+def test_ocr_igpu_probe_marks_windowsml_runtime_as_alternative_backend_candidate() -> None:
     status = classify_igpu_status(
         windows_video_controllers=[{"Name": "AMD Radeon(TM) 880M Graphics"}],
         paddle={

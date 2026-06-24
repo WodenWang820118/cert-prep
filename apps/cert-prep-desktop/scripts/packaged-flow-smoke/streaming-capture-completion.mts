@@ -97,9 +97,9 @@ function assertSuccessfulStreamingBaseline(
   if (firstUsable === undefined || parseComplete === undefined) {
     throw new Error('Streaming baseline missed first usable or parse-complete timing.');
   }
-  if (firstUsable >= parseComplete) {
+  if (firstUsable < parseComplete) {
     throw new Error(
-      `First usable qwen question (${firstUsable}ms) was not visible before parse completion (${parseComplete}ms).`,
+      `First usable qwen question (${firstUsable}ms) was visible before OCR parse completion (${parseComplete}ms).`,
     );
   }
   const ocr = run.metrics.ocr_completion;

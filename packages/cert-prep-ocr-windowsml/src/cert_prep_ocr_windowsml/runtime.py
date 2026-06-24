@@ -18,7 +18,7 @@ from cert_prep_ocr_windowsml.exceptions import ProviderUnavailableError
 
 
 _UNRESOLVED_DEVICE_ID = object()
-DML_PROVIDER = "DmlExecutionProvider"
+WINDOWSML_IGPU_PROVIDER = "DmlExecutionProvider"
 CPU_PROVIDER = "CPUExecutionProvider"
 PADDLEOCR37_DET_MODEL_NAME = "PP-OCRv6_medium_det"
 PADDLEOCR37_REC_MODEL_NAME = "PP-OCRv6_medium_rec"
@@ -55,7 +55,7 @@ class WindowsMLRuntimeOCRProvider:
     def health(self) -> OCRHealth:
         providers, version, import_error = _onnxruntime_state()
         paddleocr_version, paddleocr_error = _paddleocr_state()
-        windowsml_available = "DmlExecutionProvider" in providers
+        windowsml_available = WINDOWSML_IGPU_PROVIDER in providers
         selected_device_id, device_error = _resolve_health_device_id(
             self.device_id,
             windowsml_available=windowsml_available,
@@ -185,7 +185,7 @@ class WindowsMLOCRRunner:
 
     def _engine_config(self) -> dict[str, Any]:
         return {
-            "providers": [DML_PROVIDER, CPU_PROVIDER],
+            "providers": [WINDOWSML_IGPU_PROVIDER, CPU_PROVIDER],
             "provider_options": [{"device_id": self._windowsml_device_id()}, {}],
             "enable_mem_pattern": False,
             "execution_mode": "sequential",
@@ -263,14 +263,14 @@ def _runtime_detail(
     if paddleocr_error is not None:
         return f"PaddleOCR 3.7 runtime unavailable: {paddleocr_error}"
     if not windowsml_available:
-        return "WindowsML OCR runtime is installed but DmlExecutionProvider is unavailable."
+        return "WindowsML OCR runtime is installed but the iGPU provider is unavailable."
     if device_error is not None:
         return f"WindowsML OCR adapter selection failed: {device_error}"
     if missing_files:
         return f"WindowsML OCR model artifacts are missing: {', '.join(missing_files)}."
     return (
         "WindowsML OCR runtime is ready with PaddleOCR 3.7, PP-OCRv6 medium, "
-        "DmlExecutionProvider, and AMD iGPU selection."
+        "WindowsML iGPU selection, and CPU fallback for unsupported operators."
     )
 
 

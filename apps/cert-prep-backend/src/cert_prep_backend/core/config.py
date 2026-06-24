@@ -13,6 +13,7 @@ DEFAULT_FASTFLOWLM_MODEL = "qwen3.5:4b"
 DEFAULT_FASTFLOWLM_BASE_URL = "http://127.0.0.1:52625/v1"
 DEFAULT_OLLAMA_FALLBACK_MODELS = ("qwen3.5:2b",)
 DEFAULT_FASTFLOWLM_FALLBACK_MODELS = ("qwen3.5:2b",)
+DEFAULT_FASTFLOWLM_PRIMARY_MIN_AVAILABLE_RAM_BYTES = 6 * 1024 * 1024 * 1024
 
 
 def default_data_dir() -> Path:
@@ -76,6 +77,10 @@ class Settings(BaseSettings):
         default_factory=default_fastflowlm_fallback_models
     )
     fastflowlm_timeout_seconds: float = 120.0
+    fastflowlm_primary_min_available_ram_bytes: int = Field(
+        default=DEFAULT_FASTFLOWLM_PRIMARY_MIN_AVAILABLE_RAM_BYTES,
+        ge=0,
+    )
     ocr_runtime_mode: Literal["external", "inprocess"] = "external"
     ocr_runtime_dir: Path | None = None
     ocr_runtime_manifest_path: Path | None = None

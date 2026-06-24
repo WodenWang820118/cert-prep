@@ -9,9 +9,12 @@ one opaque "GPU" switch.
 The current Windows production lane is:
 
 - OCR: `windowsml` external runtime through `packages/cert-prep-ocr-windowsml`
-  with ONNX Runtime `DmlExecutionProvider + CPUExecutionProvider`.
+  with WindowsML-loaded AMD iGPU execution and visible CPU fallback for
+  unsupported operators.
 - LLM: `fastflowlm` with `qwen3.5:4b` through the OpenAI-compatible local
   FastFlowLM server.
+- Direct CLI test: `cert-prep-backend:streaming-cli-test` for fast backend
+  streaming, FastFlowLM, and WindowsML/iGPU policy checks before packaging.
 - Desktop smoke: `cert-prep-desktop:packaged-streaming-production-windowsml`
   with `--ocr-provider windowsml --llm-provider fastflowlm --llm-model qwen3.5:4b`.
 
@@ -68,7 +71,8 @@ the completed WindowsML or FastFlowLM evidence.
 
 ### OCR Nodes
 
-- Windows default: keep `windowsml` for iGPU OCR with DirectML/WindowsML evidence.
+- Windows default: keep `windowsml` for iGPU OCR with WindowsML health,
+  selected-device, packaged smoke, and resource telemetry evidence.
 - Windows generic PaddleOCR: support only as a separate `paddle` node, not as
   the default WindowsML node. Prove CUDA dGPU or CPU fallback explicitly.
 - Linux PaddleOCR: start with CUDA dGPU plus CPU fallback. Treat ROCm as a
@@ -81,7 +85,8 @@ the completed WindowsML or FastFlowLM evidence.
 ### LLM Nodes
 
 - `qwen3.5:4b` FastFlowLM NPU node: already specified for Windows; keep it
-  OpenAI-compatible and user-started.
+  OpenAI-compatible and user-started. It may use the served `qwen3.5:2b`
+  fallback when available system RAM is below the configured 4B threshold.
 - `qwen3.5:4b` Ollama GPU node: keep provider `ollama`, require health to report
   configured/effective model and packaged smoke to record GPU/resource evidence.
 - `qwen3.5:4b` TensorRT node: first decide the API boundary. It should become
@@ -458,6 +463,7 @@ First actionable slice:
   `pnpm nx run cert-prep-ocr-windowsml:test`
   `pnpm nx run cert-prep-ollama:test`
 - Backend gates:
+  `pnpm nx run cert-prep-backend:streaming-cli-test`
   `pnpm nx run cert-prep-backend:test`
   `pnpm nx run cert-prep-backend:lint`
 - Desktop gates:

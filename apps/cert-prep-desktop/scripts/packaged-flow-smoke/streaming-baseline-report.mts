@@ -70,7 +70,7 @@ export interface StreamingBaselineReport {
     generated_count: number;
     question_count: number;
     usable_question_count: number;
-    first_usable_before_parse_complete: boolean;
+    first_usable_after_parse_complete: boolean;
     practice_ready_from_streamed_questions: boolean;
     job_snapshot_count: number;
     question_snapshot_count: number;
@@ -186,10 +186,10 @@ function buildStreamingBaselineReport(run: SmokeRunState): StreamingBaselineRepo
   const firstUsable =
     run.metrics.streaming_questions.first_usable_question_visible_ms;
   const parseComplete = timings.parse_complete_visible;
-  const firstUsableBeforeParseComplete =
+  const firstUsableAfterParseComplete =
     firstUsable !== undefined &&
     parseComplete !== undefined &&
-    firstUsable < parseComplete;
+    firstUsable >= parseComplete;
   const chunksAccepted = acceptedOcrChunkCount(run);
   const checks = {
     no_script_errors: run.metrics.errors.length === 0,
@@ -204,7 +204,7 @@ function buildStreamingBaselineReport(run: SmokeRunState): StreamingBaselineRepo
       ? { ocr_chunks_present: chunksAccepted }
       : { ocr_completed_46_chunks: chunksAccepted }),
     first_chunk_under_gate: run.metrics.first_chunk_under_gate,
-    first_usable_before_parse_complete: firstUsableBeforeParseComplete,
+    first_usable_after_parse_complete: firstUsableAfterParseComplete,
     all_jobs_terminal: completionState.all_terminal,
     all_jobs_succeeded: completionState.all_succeeded,
     generated_equals_usable:
@@ -298,7 +298,7 @@ function buildStreamingBaselineReport(run: SmokeRunState): StreamingBaselineRepo
       generated_count: latestJob?.generated_count ?? 0,
       question_count: latestQuestion?.item_count ?? 0,
       usable_question_count: latestQuestion?.usable_question_count ?? 0,
-      first_usable_before_parse_complete: firstUsableBeforeParseComplete,
+      first_usable_after_parse_complete: firstUsableAfterParseComplete,
       practice_ready_from_streamed_questions:
         run.metrics.practice_ready_from_streamed_questions === true,
       job_snapshot_count: run.metrics.streaming_questions.job_snapshots.length,
@@ -400,15 +400,19 @@ function reasoningProviderChecks(
   gpuRoutingChecks: GpuRoutingChecks | null,
 ): Record<string, boolean> {
   if (run.options.llmProvider === 'fastflowlm') {
+    const selectedConfigured =
+      selectedModel !== null && selectedModel === configuredModel;
+    const allowedRamFallback = isAllowedFastFlowLmRamFallback(
+      configuredModel,
+      selectedModel,
+      fallbackReason,
+    );
     return {
       fastflowlm_health_available:
         llmHealth?.provider === 'fastflowlm' && llmHealth.available === true,
-      fastflowlm_selected_configured_model:
-        selectedModel !== null && selectedModel === configuredModel,
-      fastflowlm_no_fallback:
-        fallbackReason === null &&
-        selectedModel !== null &&
-        selectedModel === configuredModel,
+      fastflowlm_model_selection_allowed: selectedConfigured || allowedRamFallback,
+      fastflowlm_no_unexpected_fallback:
+        fallbackReason === null ? selectedConfigured : allowedRamFallback,
     };
   }
 
@@ -418,6 +422,25 @@ function reasoningProviderChecks(
       'reasoning_uses_nvidia_dgpu',
     ),
   };
+}
+
+function isAllowedFastFlowLmRamFallback(
+  configuredModel: string,
+  selectedModel: string | null,
+  fallbackReason: string | null,
+): boolean {
+  if (
+    configuredModel !== 'qwen3.5:4b' ||
+    selectedModel !== 'qwen3.5:2b' ||
+    fallbackReason === null
+  ) {
+    return false;
+  }
+  const normalizedReason = fallbackReason.toLowerCase();
+  return (
+    normalizedReason.includes('qwen3.5:2b') &&
+    (normalizedReason.includes('ram') || normalizedReason.includes('memory'))
+  );
 }
 
 function providerRoutingChecks(
