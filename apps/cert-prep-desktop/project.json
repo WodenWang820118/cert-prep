@@ -96,6 +96,16 @@
         "command": "node apps/cert-prep-desktop/scripts/package-qa.mts"
       }
     },
+    "process-residue-audit": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "outputs": [
+        "{workspaceRoot}/tmp/cert-prep-desktop/process-residue-audit"
+      ],
+      "options": {
+        "command": "node apps/cert-prep-desktop/scripts/process-residue-audit.mts"
+      }
+    },
     "packaged-flow-smoke": {
       "cache": false,
       "executor": "nx:run-commands",
@@ -158,7 +168,7 @@
       "dependsOn": ["typecheck-scripts"],
       "inputs": ["default"],
       "options": {
-        "command": "node --test apps/cert-prep-desktop/scripts/package-qa/artifacts.test.mts apps/cert-prep-desktop/scripts/package-qa/health-env.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/args.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/processes.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/resource-sampling.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/streaming-baseline-report.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/streaming-evidence.test.mts"
+        "command": "node --test apps/cert-prep-desktop/scripts/package-qa/artifacts.test.mts apps/cert-prep-desktop/scripts/package-qa/health-env.test.mts apps/cert-prep-desktop/scripts/process-lifecycle/processes.test.mts apps/cert-prep-desktop/scripts/process-residue-audit.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/app-lifecycle.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/args.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/resource-sampling.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/streaming-baseline-report.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/streaming-evidence.test.mts"
       }
     },
     "cargo-test": {

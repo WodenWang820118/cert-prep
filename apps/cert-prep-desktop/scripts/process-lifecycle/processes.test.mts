@@ -6,6 +6,7 @@ import type { ChildProcess } from 'node:child_process';
 
 import {
   closeMainWindowPowerShellCommand,
+  classifyProcessForAudit,
   collectProcessTree,
   createShutdownCleanupHandler,
   isCertPrepResidue,
@@ -27,6 +28,7 @@ test('process snapshot parsing normalizes single and array PowerShell JSON outpu
         Name: 'node.exe',
         ExecutablePath: 'C:\\Program Files\\nodejs\\node.exe',
         CommandLine: 'node script.mts',
+        WorkingSetSize: '123456',
       }),
     ),
     [
@@ -36,6 +38,7 @@ test('process snapshot parsing normalizes single and array PowerShell JSON outpu
         name: 'node.exe',
         executablePath: 'C:\\Program Files\\nodejs\\node.exe',
         commandLine: 'node script.mts',
+        workingSetBytes: 123456,
       },
     ],
   );
@@ -92,6 +95,110 @@ test('new node helper cleanup excludes baseline and protected service processes'
     selected.map((record) => record.pid),
     [200, 201, 204],
   );
+});
+
+test('audit classification protects Python and Node resident tooling', () => {
+  const workspaceRoot = 'C:\\software-dev\\cert-prep';
+  const protectedRecords = [
+    processRecord(
+      100,
+      1,
+      'python.exe',
+      'python C:\\Users\\User\\.mcp\\agy-codex\\server.py',
+    ),
+    processRecord(101, 1, 'node.exe', 'node C:\\tools\\nx-mcp\\server.js'),
+    processRecord(
+      102,
+      1,
+      'node.exe',
+      'node C:\\Users\\User\\.claude\\profiles\\deepseek\\server.js',
+    ),
+  ];
+
+  for (const record of protectedRecords) {
+    const result = classifyProcessForAudit(record, { workspaceRoot });
+    assert.equal(result.classification, 'tooling_resident');
+    assert.equal(result.recommendedAction, 'protected_do_not_touch');
+    assert.equal(result.protected, true);
+    assert.match(result.evidence[0] ?? '', /matched protected command fragment:/);
+  }
+});
+
+test('audit classification maps workspace runtimes and unknowns to safe actions', () => {
+  const workspaceRoot = 'C:\\software-dev\\cert-prep';
+  const cases = [
+    {
+      record: processRecord(
+        200,
+        1,
+        'node.exe',
+        'node C:\\software-dev\\cert-prep\\node_modules\\playwright\\test-server.js',
+      ),
+      classification: 'workspace_tooling_review',
+      recommendedAction: 'review_only',
+      protected: false,
+    },
+    {
+      record: processRecord(
+        205,
+        1,
+        'node.exe',
+        'node "C:\\software-dev\\cert-prep\\node_modules\\.bin\\\\..\\nx\\dist\\bin\\nx.js" "run" "cert-prep-desktop:process-residue-audit"',
+      ),
+      classification: 'workspace_tooling_review',
+      recommendedAction: 'review_only',
+      protected: false,
+    },
+    {
+      record: processRecord(
+        201,
+        1,
+        'node.exe',
+        'node C:\\software-dev\\cert-prep\\tools\\helper.mts',
+      ),
+      classification: 'workspace_node_helper',
+      recommendedAction: 'investigate_owner',
+      protected: false,
+    },
+    {
+      record: processRecord(
+        202,
+        1,
+        'python.exe',
+        'python C:\\software-dev\\cert-prep\\apps\\cert-prep-backend\\src\\cert_prep_backend\\entrypoints\\server.py',
+      ),
+      classification: 'workspace_python_runtime',
+      recommendedAction: 'investigate_owner',
+      protected: false,
+    },
+    {
+      record: processRecord(203, 1, 'cert-prep-backend.exe', 'cert-prep-backend.exe'),
+      classification: 'cert_prep_residue',
+      recommendedAction: 'manual_cleanup_candidate',
+      protected: false,
+    },
+    {
+      record: processRecord(204, 1, 'python.exe', 'python C:\\other\\script.py'),
+      classification: 'unknown',
+      recommendedAction: 'manual_investigation',
+      protected: false,
+    },
+  ] as const;
+
+  for (const expected of cases) {
+    assert.deepEqual(
+      {
+        ...classifyProcessForAudit(expected.record, { workspaceRoot }),
+        evidence: undefined,
+      },
+      {
+        classification: expected.classification,
+        recommendedAction: expected.recommendedAction,
+        protected: expected.protected,
+        evidence: undefined,
+      },
+    );
+  }
 });
 
 test('owned process tracker cleanup is idempotent for exited children', async () => {
@@ -191,5 +298,6 @@ function processRecord(
     name,
     executablePath: '',
     commandLine,
+    workingSetBytes: null,
   };
 }

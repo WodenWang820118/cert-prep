@@ -32,7 +32,7 @@ import type {
 import {
   installProcessShutdownCleanup,
   OwnedProcessTracker,
-} from '../packaged-flow-smoke/processes.mts';
+} from '../process-lifecycle/processes.mts';
 
 /** Summarizes OCR health into the stable package QA report shape. */
 export function summarizeOcrHealth(health: JsonRecord): OcrHealthSummary {

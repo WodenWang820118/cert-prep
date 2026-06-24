@@ -2,30 +2,25 @@ import { spawnSync, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import {
-  normalizeForCommandLine,
-  numberField,
-  stringField,
-  trimCapture,
-} from './text-utils.mts';
-import type {
-  ProcessRecord,
-  ProcessSnapshot,
-  PublicProcessRecord,
-  SelectNodeHelpersOptions,
-} from './types.mts';
-
 const PROCESS_SNAPSHOT_MAX_BUFFER = 64 * 1024 * 1024;
 const WINDOWS_PROCESS_SNAPSHOT_TIMEOUT_MS = 15_000;
 const WINDOWS_CLOSE_REQUEST_TIMEOUT_MS = 5_000;
 const WINDOWS_TASKKILL_TIMEOUT_MS = 5_000;
+const CAPTURE_LIMIT = 12_000;
 const CERT_PREP_PROCESS_NAMES = new Set([
   'cert-prep-desktop.exe',
   'cert-prep-backend.exe',
   'cert-prep-ocr-runtime.exe',
 ]);
-const PROTECTED_NODE_COMMAND_FRAGMENTS = [
+const PROTECTED_COMMAND_FRAGMENTS = [
   'nx-mcp',
+  '/.mcp/agy-codex/server.py',
+  '/.mcp/',
+  '/.codex/',
+  '/codex',
+  'codex',
+  '/.claude/',
+  'claude',
   'vscode',
   'visual studio code',
   'extensionhost',
@@ -39,7 +34,63 @@ type JsonProcessRow = {
   Name?: unknown;
   ExecutablePath?: unknown;
   CommandLine?: unknown;
+  WorkingSetSize?: unknown;
 };
+
+export interface ProcessRecord {
+  pid: number;
+  parentPid: number;
+  name: string;
+  executablePath: string;
+  commandLine: string;
+  workingSetBytes: number | null;
+}
+
+export interface PublicProcessRecord {
+  pid: number;
+  parentPid: number;
+  name: string;
+  commandLine: string;
+}
+
+export interface ProcessSnapshot {
+  all: ProcessRecord[];
+  nodePids: Set<number>;
+}
+
+export interface SelectNodeHelpersOptions {
+  beforeNodePids: ReadonlySet<number>;
+  after: readonly ProcessRecord[];
+  ownerPid: number;
+  workspaceRoot: string;
+  runMarker: string;
+}
+
+export type ProcessClassification =
+  | 'cert_prep_residue'
+  | 'workspace_node_helper'
+  | 'workspace_python_runtime'
+  | 'tooling_resident'
+  | 'workspace_tooling_review'
+  | 'unknown';
+
+export type RecommendedProcessAction =
+  | 'manual_cleanup_candidate'
+  | 'investigate_owner'
+  | 'protected_do_not_touch'
+  | 'review_only'
+  | 'manual_investigation';
+
+export interface ProcessClassificationResult {
+  classification: ProcessClassification;
+  recommendedAction: RecommendedProcessAction;
+  protected: boolean;
+  evidence: string[];
+}
+
+export interface ProcessClassificationOptions {
+  workspaceRoot: string;
+}
 
 export interface ProcessTerminationResult {
   attempted: boolean;
@@ -91,6 +142,7 @@ export function parseProcessSnapshotJson(stdout: string): ProcessRecord[] {
       name: stringField(row.Name),
       executablePath: stringField(row.ExecutablePath),
       commandLine: stringField(row.CommandLine),
+      workingSetBytes: nullableNumberField(row.WorkingSetSize),
     }))
     .filter((record) => record.pid > 0);
 }
@@ -108,7 +160,7 @@ export function snapshotWindowsProcesses(): ProcessRecord[] {
       '-ExecutionPolicy',
       'Bypass',
       '-Command',
-      "$ErrorActionPreference = 'Stop'; Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,ExecutablePath,CommandLine | ConvertTo-Json -Compress",
+      "$ErrorActionPreference = 'Stop'; Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,ExecutablePath,CommandLine,WorkingSetSize | ConvertTo-Json -Compress",
     ],
     {
       encoding: 'utf8',
@@ -136,7 +188,7 @@ export function processSnapshot(): ProcessSnapshot {
     all,
     nodePids: new Set(
       all
-        .filter((record) => record.name.toLowerCase() === 'node.exe')
+        .filter((record) => isNodeProcessName(record.name.toLowerCase()))
         .map((record) => record.pid),
     ),
   };
@@ -215,6 +267,81 @@ export function isCertPrepResidue(record: ProcessRecord): boolean {
   );
 }
 
+/** Classifies a process for read-only residue audit reporting. */
+export function classifyProcessForAudit(
+  record: ProcessRecord,
+  { workspaceRoot }: ProcessClassificationOptions,
+): ProcessClassificationResult {
+  const name = record.name.toLowerCase();
+  const commandLine = normalizeForCommandLine(record.commandLine);
+  const executablePath = normalizeForCommandLine(record.executablePath);
+  const workspaceNeedle = normalizeForCommandLine(workspaceRoot);
+  const evidence: string[] = [];
+
+  const protectedFragment = PROTECTED_COMMAND_FRAGMENTS.find((fragment) =>
+    commandLine.includes(fragment),
+  );
+  if (protectedFragment) {
+    return {
+      classification: 'tooling_resident',
+      recommendedAction: 'protected_do_not_touch',
+      protected: true,
+      evidence: [`matched protected command fragment: ${protectedFragment}`],
+    };
+  }
+
+  if (isCertPrepResidue(record)) {
+    return {
+      classification: 'cert_prep_residue',
+      recommendedAction: 'manual_cleanup_candidate',
+      protected: false,
+      evidence: ['matched cert-prep runtime residue marker'],
+    };
+  }
+
+  const isWorkspaceProcess =
+    Boolean(workspaceNeedle) &&
+    (commandLine.includes(workspaceNeedle) || executablePath.includes(workspaceNeedle));
+  if (isWorkspaceProcess) {
+    evidence.push('matched workspace root');
+  }
+
+  if (isNodeProcessName(name)) {
+    if (isWorkspaceToolingReviewCommand(commandLine)) {
+      return {
+        classification: 'workspace_tooling_review',
+        recommendedAction: 'review_only',
+        protected: false,
+        evidence: [...evidence, 'matched Nx/Playwright resident tooling marker'],
+      };
+    }
+    if (isWorkspaceProcess) {
+      return {
+        classification: 'workspace_node_helper',
+        recommendedAction: 'investigate_owner',
+        protected: false,
+        evidence,
+      };
+    }
+  }
+
+  if (isPythonProcessName(name) && isWorkspaceProcess) {
+    return {
+      classification: 'workspace_python_runtime',
+      recommendedAction: 'investigate_owner',
+      protected: false,
+      evidence,
+    };
+  }
+
+  return {
+    classification: 'unknown',
+    recommendedAction: 'manual_investigation',
+    protected: false,
+    evidence,
+  };
+}
+
 /** Filters a launched app process tree down to cert-prep runtime residue. */
 export function selectCertPrepResidue(
   processes: readonly ProcessRecord[],
@@ -238,7 +365,7 @@ export function selectNewWorkspaceNodeHelpers({
   const markerNeedle = normalizeForCommandLine(runMarker);
 
   return after.filter((record) => {
-    if (record.name.toLowerCase() !== 'node.exe') {
+    if (!isNodeProcessName(record.name.toLowerCase())) {
       return false;
     }
     if (record.pid === ownerPid || beforeNodePids.has(record.pid)) {
@@ -447,8 +574,62 @@ export function publicProcessRecord(record: ProcessRecord): PublicProcessRecord 
 
 function isProtectedNodeProcess(record: ProcessRecord): boolean {
   const commandLine = normalizeForCommandLine(record.commandLine);
-  return PROTECTED_NODE_COMMAND_FRAGMENTS.some((fragment) =>
+  return PROTECTED_COMMAND_FRAGMENTS.some((fragment) =>
     commandLine.includes(fragment),
+  );
+}
+
+/** Coerces process/API numeric fields into finite report-safe numbers. */
+function numberField(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? value
+    : Number(value) || 0;
+}
+
+function nullableNumberField(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+  const parsed = numberField(value);
+  return parsed > 0 ? parsed : null;
+}
+
+/** Coerces optional process/API fields into report-safe strings. */
+function stringField(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+/** Normalizes Windows and POSIX separators for report paths and matching. */
+function normalizePath(path: string): string {
+  return path.split(/[\\/]+/).join('/');
+}
+
+/** Normalizes a command line fragment for case-insensitive Windows matching. */
+function normalizeForCommandLine(value: string): string {
+  return normalizePath(value).toLowerCase();
+}
+
+/** Keeps captured output bounded before it enters reports or errors. */
+function trimCapture(value: string): string {
+  return value.trim().slice(-CAPTURE_LIMIT);
+}
+
+function isNodeProcessName(name: string): boolean {
+  return name === 'node.exe' || name === 'node';
+}
+
+function isPythonProcessName(name: string): boolean {
+  return name === 'python.exe' || name === 'pythonw.exe' || name === 'python';
+}
+
+function isWorkspaceToolingReviewCommand(commandLine: string): boolean {
+  return (
+    commandLine.includes('test-server') ||
+    commandLine.includes('playwright') ||
+    commandLine.includes('/nx/dist/bin/nx.js') ||
+    commandLine.includes('/node_modules/.bin/../nx/') ||
+    commandLine.includes('/.nx/') ||
+    (commandLine.includes('nx') && commandLine.includes('daemon'))
   );
 }
 

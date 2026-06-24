@@ -24,6 +24,13 @@ and process cleanup.
   product artifact.
 - Runtime manifest hash churn should only be committed when the artifact change
   is part of the intended slice.
+- Process residue handling is audit-first. The desktop process residue audit may
+  classify and recommend actions for Node/Python processes, but it must not kill
+  processes by default.
+- Scoped cleanup is limited to processes launched and owned by the active
+  package QA or packaged-flow script. Future cleanup commands require manual
+  confirmation and must protect Codex, MCP, Claude, Nx, VS Code, servicehub, and
+  other known tooling residents.
 
 ## Evidence
 
@@ -33,6 +40,10 @@ and process cleanup.
   `gracefulExited`, `fallbackUsed`, `exitCode`, and residual process lists.
 - The 2026-06-21 packaged smoke completed with empty residual process lists and
   no `cert-prep` process residue after close.
+- `cert-prep-desktop:process-residue-audit` provides a read-only Windows
+  process-table report with PID, parent PID, command line, working set when
+  available, classification, protection status, evidence, and recommended
+  action.
 - Python/PaddleOCR health can settle after startup; QA runner checks are scoped
   to the runtime dialog so background document text cannot falsely satisfy OCR
   readiness.

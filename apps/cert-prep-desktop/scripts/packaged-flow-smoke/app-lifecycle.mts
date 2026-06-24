@@ -12,7 +12,7 @@ import {
   selectNewWorkspaceNodeHelpers,
   snapshotWindowsProcesses,
   terminateProcessTreeByPid,
-} from './processes.mts';
+} from '../process-lifecycle/processes.mts';
 import { packagedAppDataDir } from './runtime-sync.mts';
 import {
   activePage,
@@ -24,10 +24,76 @@ import {
 } from './runner-context.mts';
 import { observeStreamingApiResponses } from './streaming-capture.mts';
 import { errorMessage } from './text-utils.mts';
-import type { CloseSummary, PublicProcessRecord, SmokeRunState } from './types.mts';
+import type { PublicProcessRecord } from '../process-lifecycle/processes.mts';
+import type { CloseSummary, SmokeRunState } from './types.mts';
 
-const cleanupPromises = new WeakMap<SmokeRunState, Promise<void>>();
-const cleanupFinished = new WeakSet<SmokeRunState>();
+interface CleanupWithTimeoutController<T extends object> {
+  cleanupWithTimeout(target: T): Promise<void>;
+  isFinished(target: T): boolean;
+}
+
+interface CleanupWithTimeoutOptions<T extends object> {
+  cleanup: (target: T) => Promise<void>;
+  timeoutMs: number;
+  delayForTimeout?: (timeoutMs: number) => Promise<void>;
+}
+
+export function createCleanupWithTimeoutController<T extends object>({
+  cleanup,
+  timeoutMs,
+  delayForTimeout = delay,
+}: CleanupWithTimeoutOptions<T>): CleanupWithTimeoutController<T> {
+  const actualCleanupPromises = new WeakMap<T, Promise<void>>();
+  const timeoutViewPromises = new WeakMap<T, Promise<void>>();
+  const cleanupFinished = new WeakSet<T>();
+
+  return {
+    cleanupWithTimeout(target) {
+      if (cleanupFinished.has(target)) {
+        return Promise.resolve();
+      }
+
+      let actualCleanup = actualCleanupPromises.get(target);
+      if (!actualCleanup) {
+        actualCleanup = cleanup(target)
+          .then(() => {
+            cleanupFinished.add(target);
+          })
+          .finally(() => {
+            actualCleanupPromises.delete(target);
+            timeoutViewPromises.delete(target);
+          });
+        actualCleanupPromises.set(target, actualCleanup);
+      }
+
+      const existingTimeoutView = timeoutViewPromises.get(target);
+      if (existingTimeoutView) {
+        return existingTimeoutView;
+      }
+
+      const timeoutView = Promise.race([
+        actualCleanup,
+        delayForTimeout(timeoutMs).then(() => {
+          throw new Error(
+            `closeout cleanup timed out after ${timeoutMs}ms; cleanup is still running`,
+          );
+        }),
+      ]).finally(() => {
+        timeoutViewPromises.delete(target);
+      });
+      timeoutViewPromises.set(target, timeoutView);
+      return timeoutView;
+    },
+    isFinished(target) {
+      return cleanupFinished.has(target);
+    },
+  };
+}
+
+const cleanupAfterRunController = createCleanupWithTimeoutController({
+  cleanup: cleanupAfterRun,
+  timeoutMs: 90_000,
+});
 
 export async function closeAppAndCheckResidue(
   run: SmokeRunState,
@@ -267,26 +333,7 @@ async function cleanupAfterRun(run: SmokeRunState): Promise<void> {
 }
 
 export async function cleanupAfterRunWithTimeout(run: SmokeRunState): Promise<void> {
-  if (cleanupFinished.has(run)) {
-    return;
-  }
-  const existing = cleanupPromises.get(run);
-  if (existing) {
-    return existing;
-  }
-
-  const timeoutMs = 90_000;
-  const cleanup = Promise.race([
-    cleanupAfterRun(run),
-    delay(timeoutMs).then(() => {
-      throw new Error(`closeout cleanup timed out after ${timeoutMs}ms`);
-    }),
-  ]).finally(() => {
-    cleanupFinished.add(run);
-    cleanupPromises.delete(run);
-  });
-  cleanupPromises.set(run, cleanup);
-  await cleanup;
+  await cleanupAfterRunController.cleanupWithTimeout(run);
 }
 
 async function waitForChildExit(

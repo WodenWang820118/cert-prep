@@ -12,7 +12,7 @@ import {
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { resolveWindowsPowerShellExecutable } from './processes.mts';
+import { resolveWindowsPowerShellExecutable } from '../process-lifecycle/processes.mts';
 import type { BackendRuntimeManifest, SmokeMetrics } from './types.mts';
 
 const PROCESS_SNAPSHOT_MAX_BUFFER = 64 * 1024 * 1024;

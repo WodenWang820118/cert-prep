@@ -1,5 +1,9 @@
 import type { Browser, Page } from 'playwright';
 import type { ChildProcess } from 'node:child_process';
+import type {
+  ProcessSnapshot,
+  PublicProcessRecord,
+} from '../process-lifecycle/processes.mts';
 
 export interface SmokeOptions {
   workspaceRoot: string;
@@ -165,26 +169,6 @@ export interface BackendRuntimeManifest {
   };
 }
 
-export interface ProcessRecord {
-  pid: number;
-  parentPid: number;
-  name: string;
-  executablePath: string;
-  commandLine: string;
-}
-
-export interface PublicProcessRecord {
-  pid: number;
-  parentPid: number;
-  name: string;
-  commandLine: string;
-}
-
-export interface ProcessSnapshot {
-  all: ProcessRecord[];
-  nodePids: Set<number>;
-}
-
 export interface CloseSummary {
   label: string;
   app_pid: number | null;
@@ -207,14 +191,6 @@ export interface ChildExitState {
 export interface ResourceSamplingController {
   readonly artifacts: ResourceSamplingArtifacts;
   stop(): Promise<void>;
-}
-
-export interface SelectNodeHelpersOptions {
-  beforeNodePids: ReadonlySet<number>;
-  after: readonly ProcessRecord[];
-  ownerPid: number;
-  workspaceRoot: string;
-  runMarker: string;
 }
 
 export interface SmokeRunState {

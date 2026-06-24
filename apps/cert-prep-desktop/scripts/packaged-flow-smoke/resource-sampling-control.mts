@@ -2,7 +2,7 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { appendFileSync, createWriteStream, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
-import { resolveWindowsPowerShellExecutable } from './processes.mts';
+import { resolveWindowsPowerShellExecutable } from '../process-lifecycle/processes.mts';
 import {
   dxgiAdapterProbeScript,
   windowsResourceSamplingScript,

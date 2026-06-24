@@ -1,4 +1,4 @@
-import type { OwnedProcessCleanupResult } from '../packaged-flow-smoke/processes.mts';
+import type { OwnedProcessCleanupResult } from '../process-lifecycle/processes.mts';
 
 export interface PackageQaOptions {
   readonly workspaceRoot?: string;

@@ -11,7 +11,10 @@ import {
   uploadAndParsePdf,
   verifyStreamingPracticeReady,
 } from './flow-steps.mts';
-import { installProcessShutdownCleanup, processSnapshot } from './processes.mts';
+import {
+  installProcessShutdownCleanup,
+  processSnapshot,
+} from '../process-lifecycle/processes.mts';
 import { preparePackagedBackendRuntimeForSmoke } from './runtime-sync.mts';
 import { installOcrRuntimeIfNeeded, installPythonRuntimeIfNeeded } from './runtime-install-flow.mts';
 import { startResourceSampling } from './resource-sampling.mts';

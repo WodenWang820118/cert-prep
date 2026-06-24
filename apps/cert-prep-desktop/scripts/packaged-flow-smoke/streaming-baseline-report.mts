@@ -12,9 +12,9 @@ import {
 } from './streaming-capture.mts';
 import { streamingJobCompletionState } from './streaming-evidence.mts';
 import { isRecord, normalizePath } from './text-utils.mts';
+import type { PublicProcessRecord } from '../process-lifecycle/processes.mts';
 import type {
   LlmHealthSnapshot,
-  PublicProcessRecord,
   ResourceSamplingArtifacts,
   SmokeRunState,
   StreamingJobCompletionState,
