@@ -1,12 +1,18 @@
 import assert from 'node:assert/strict';
+import {
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
 
-import {
-  parsePackageQaArgs,
-  parsePackageQaEnv,
-} from './cli.mts';
+import { parsePackageQaArgs, parsePackageQaEnv } from './cli.mts';
 import {
   buildRuntimeLaunchEnv,
+  collectRuntimeHealth,
   summarizeLlmHealth,
   summarizeOcrHealth,
 } from './health.mts';
@@ -121,8 +127,94 @@ test('runtime launch env sets OCR page workers only from explicit QA config', ()
   assert.equal(explicit.CERT_PREP_OCR_PAGE_WORKERS, '3');
 });
 
+test('runtime health reports cleanup for launched backend child', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cert-prep-package-qa-'));
+  try {
+    const scriptPath = writeBackendFixture(dir, `
+import http from 'node:http';
+const port = Number(process.env.CERT_PREP_PORT);
+const payloads = {
+  '/health': { status: 'ok' },
+  '/ocr/health': { provider: 'windowsml', engine: 'test', available: true },
+  '/llm/health': { provider: 'fastflowlm', model: 'test', available: true },
+};
+http.createServer((request, response) => {
+  const payload = payloads[request.url] ?? { status: 'not_found' };
+  response.writeHead(payload.status === 'not_found' ? 404 : 200, {
+    'content-type': 'application/json',
+  });
+  response.end(JSON.stringify(payload));
+}).listen(port, '127.0.0.1');
+`);
+
+    const runtime = await collectRuntimeHealth({
+      backendRuntimeEntrypoint: process.execPath,
+      backendRuntimeArgs: [scriptPath],
+      workspaceRoot: dir,
+      dataDir: join(dir, 'data'),
+      windowsmlOcrRuntimeManifest: join(dir, 'windowsml-ocr-runtime-manifest.json'),
+      timeoutMs: 5_000,
+    });
+
+    assert.deepEqual(runtime.system_health, { status: 'ok' });
+    assert.equal(runtime.cleanup.backend_process?.label, 'package-qa-backend-runtime');
+    assert.equal(runtime.cleanup.backend_process?.attempted, true);
+    assert.match(
+      runtime.cleanup.backend_process?.method ?? '',
+      /^(taskkill_process_tree|signal_process)$/,
+    );
+    assert.equal(runtime.cleanup.backend_process?.stopped, true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('runtime health timeout still stops launched backend child', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cert-prep-package-qa-timeout-'));
+  const pidPath = join(dir, 'backend.pid');
+  try {
+    const scriptPath = writeBackendFixture(dir, `
+import { writeFileSync } from 'node:fs';
+writeFileSync(${JSON.stringify(pidPath)}, String(process.pid));
+setInterval(() => {}, 1000);
+`);
+
+    await assert.rejects(
+      collectRuntimeHealth({
+        backendRuntimeEntrypoint: process.execPath,
+        backendRuntimeArgs: [scriptPath],
+        workspaceRoot: dir,
+        dataDir: join(dir, 'data'),
+        windowsmlOcrRuntimeManifest: join(dir, 'windowsml-ocr-runtime-manifest.json'),
+        timeoutMs: 500,
+      }),
+      /Backend runtime did not become healthy/,
+    );
+
+    const pid = Number(readFileSync(pidPath, 'utf8'));
+    assert.equal(isProcessRunning(pid), false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('initialInstallerSizeGate warns and fails at configured thresholds', () => {
   assert.equal(initialInstallerSizeGate([{ mb: 100 }]).status, 'passed');
   assert.equal(initialInstallerSizeGate([{ mb: 180 }]).status, 'warning');
   assert.equal(initialInstallerSizeGate([{ mb: 300 }]).status, 'failed');
 });
+
+function writeBackendFixture(dir: string, script: string): string {
+  const scriptPath = join(dir, 'backend-fixture.mjs');
+  writeFileSync(scriptPath, script, 'utf8');
+  return scriptPath;
+}
+
+function isProcessRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}

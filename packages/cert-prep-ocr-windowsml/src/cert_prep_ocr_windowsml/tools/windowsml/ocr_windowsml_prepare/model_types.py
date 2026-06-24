@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -25,6 +26,7 @@ class ConversionResult:
     stderr: str
     output_model: Path | None = None
     blocker: str | None = None
+    cleanup: dict[str, Any] | None = None
 
 
 DownloadFn = Callable[[str, Path], None]

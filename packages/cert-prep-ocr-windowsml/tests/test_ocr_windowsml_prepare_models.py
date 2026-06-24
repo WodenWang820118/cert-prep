@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
+import shutil
 import tarfile
+
+from cert_prep_ocr_windowsml.tools.windowsml.ocr_windowsml_prepare import conversion as conversion_module
 from cert_prep_ocr_windowsml.tools.windowsml.ocr_windowsml_prepare_models import (
     BACKEND_ROOT,
     ConversionResult,
@@ -103,6 +107,58 @@ def test_docker_work_path_uses_backend_mount() -> None:
     source_dir = BACKEND_ROOT / ".benchmarks" / "ocr-windowsml-sources" / "extracted"
 
     assert docker_work_path(source_dir) == "/work/.benchmarks/ocr-windowsml-sources/extracted"
+
+
+def test_docker_conversion_timeout_cleans_owned_container(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    artifact = SourceArtifact(
+        kind="det",
+        model_name="fixture_det_model",
+        url="https://example.test/model.tar",
+        filename="model.tar",
+        sha256="0",
+        byte_size=0,
+        archive_root="fixture",
+        target_onnx_name="det/inference.onnx",
+    )
+    source_dir = tmp_path / "source"
+    output_dir = tmp_path / "output"
+    source_dir.mkdir()
+    docker_exe = str(tmp_path / "docker.exe")
+    calls: list[list[str]] = []
+    real_which = shutil.which
+
+    def fake_which(name: str) -> str | None:
+        return docker_exe if name == "docker" else real_which(name)
+
+    def fake_run(command, **kwargs):
+        calls.append(list(command))
+        if command[1] == "run":
+            cidfile = Path(command[command.index("--cidfile") + 1])
+            cidfile.write_text("container-123", encoding="utf-8")
+            raise subprocess.TimeoutExpired(command, kwargs.get("timeout"))
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(conversion_module, "BACKEND_ROOT", tmp_path)
+    monkeypatch.setattr(conversion_module.shutil, "which", fake_which)
+    monkeypatch.setattr(conversion_module.subprocess, "run", fake_run)
+
+    result = conversion_module.run_docker_paddlex_conversion(
+        artifact,
+        source_dir,
+        output_dir,
+    )
+
+    assert result.blocker == "conversion_timeout"
+    assert result.cleanup is not None
+    assert result.cleanup["container_id"] == "container-123"
+    assert [call[1:3] for call in calls] == [
+        ["run", "--rm"],
+        ["stop", "container-123"],
+        ["rm", "-f"],
+    ]
 
 
 def test_safe_extract_tar_rejects_path_traversal(tmp_path: Path) -> None:

@@ -26,6 +26,9 @@ import { observeStreamingApiResponses } from './streaming-capture.mts';
 import { errorMessage } from './text-utils.mts';
 import type { CloseSummary, PublicProcessRecord, SmokeRunState } from './types.mts';
 
+const cleanupPromises = new WeakMap<SmokeRunState, Promise<void>>();
+const cleanupFinished = new WeakSet<SmokeRunState>();
+
 export async function closeAppAndCheckResidue(
   run: SmokeRunState,
   label: string,
@@ -264,13 +267,26 @@ async function cleanupAfterRun(run: SmokeRunState): Promise<void> {
 }
 
 export async function cleanupAfterRunWithTimeout(run: SmokeRunState): Promise<void> {
+  if (cleanupFinished.has(run)) {
+    return;
+  }
+  const existing = cleanupPromises.get(run);
+  if (existing) {
+    return existing;
+  }
+
   const timeoutMs = 90_000;
-  await Promise.race([
+  const cleanup = Promise.race([
     cleanupAfterRun(run),
     delay(timeoutMs).then(() => {
       throw new Error(`closeout cleanup timed out after ${timeoutMs}ms`);
     }),
-  ]);
+  ]).finally(() => {
+    cleanupFinished.add(run);
+    cleanupPromises.delete(run);
+  });
+  cleanupPromises.set(run, cleanup);
+  await cleanup;
 }
 
 async function waitForChildExit(

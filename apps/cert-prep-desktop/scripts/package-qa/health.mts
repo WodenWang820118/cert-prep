@@ -1,4 +1,4 @@
-import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdirSync } from 'node:fs';
 import { createServer } from 'node:net';
@@ -29,6 +29,10 @@ import type {
   RuntimeLaunchEnvOptions,
   WaitForJsonOptions,
 } from './types.mts';
+import {
+  installProcessShutdownCleanup,
+  OwnedProcessTracker,
+} from '../packaged-flow-smoke/processes.mts';
 
 /** Summarizes OCR health into the stable package QA report shape. */
 export function summarizeOcrHealth(health: JsonRecord): OcrHealthSummary {
@@ -59,6 +63,7 @@ export function summarizeLlmHealth(health: JsonRecord): LlmHealthSummary {
 /** Launches the packaged backend and collects health endpoints for the report. */
 export async function collectRuntimeHealth({
   backendRuntimeEntrypoint,
+  backendRuntimeArgs = [],
   workspaceRoot = defaultWorkspaceRoot,
   timeoutMs = 120_000,
   dataDir = resolve(workspaceRoot, DEFAULT_DATA_DIR),
@@ -76,6 +81,7 @@ export async function collectRuntimeHealth({
   const baseUrl = `http://127.0.0.1:${port}`;
   const output: OutputCapture = { stdout: '', stderr: '' };
   const state: ChildState = { exited: false, code: null, signal: null };
+  const ownedProcesses = new OwnedProcessTracker();
 
   mkdirSync(dataDir, { recursive: true });
   const childEnv = buildRuntimeLaunchEnv({
@@ -89,11 +95,17 @@ export async function collectRuntimeHealth({
     ocrPageWorkers,
   });
 
-  const child = spawn(backendRuntimeEntrypoint, [], {
+  const child = spawn(backendRuntimeEntrypoint, backendRuntimeArgs, {
     cwd: workspaceRoot,
     env: childEnv,
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
+  });
+  ownedProcesses.registerChild('package-qa-backend-runtime', child);
+  const removeShutdownCleanup = installProcessShutdownCleanup({
+    cleanup: async (reason) => {
+      await ownedProcesses.cleanup(`package_qa_${reason}`);
+    },
   });
 
   child.stdout?.on('data', (chunk) => appendCapture(output, 'stdout', chunk));
@@ -104,6 +116,8 @@ export async function collectRuntimeHealth({
     state.signal = signal;
   });
 
+  let runtime: Omit<RuntimeHealthSummary, 'cleanup'> | null = null;
+  let cleanup: RuntimeHealthSummary['cleanup'] = { backend_process: null };
   try {
     const systemHealth = await waitForJson(`${baseUrl}/health`, {
       state,
@@ -117,7 +131,7 @@ export async function collectRuntimeHealth({
       await fetchJson(`${baseUrl}/llm/health`, token),
     );
 
-    return {
+    runtime = {
       launch_env: {
         CERT_PREP_OCR_PROVIDER: ocrProvider,
         CERT_PREP_OCR_RUNTIME_MODE: 'external',
@@ -142,8 +156,23 @@ export async function collectRuntimeHealth({
       backend_output_tail: output,
     };
   } finally {
-    await stopChild(child, state);
+    try {
+      const [backendProcessCleanup = null] = await ownedProcesses.cleanup(
+        'runtime_health_finally',
+      );
+      cleanup = { backend_process: backendProcessCleanup };
+    } finally {
+      removeShutdownCleanup();
+    }
   }
+
+  if (runtime === null) {
+    throw new Error('Package QA runtime health did not produce a summary.');
+  }
+  return {
+    ...runtime,
+    cleanup,
+  };
 }
 
 /** Builds the controlled environment used to launch the packaged backend. */
@@ -246,24 +275,4 @@ function appendCapture(
   chunk: Buffer | string,
 ): void {
   output[key] = `${output[key]}${chunk.toString()}`.slice(-CAPTURE_LIMIT);
-}
-
-async function stopChild(
-  child: ChildProcess,
-  state: ChildState,
-): Promise<void> {
-  if (state.exited) {
-    return;
-  }
-  if (process.platform === 'win32' && child.pid) {
-    spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], {
-      stdio: 'ignore',
-    });
-  } else {
-    child.kill();
-  }
-  await Promise.race([once(child, 'exit'), delay(5_000)]);
-  if (!state.exited) {
-    child.kill('SIGKILL');
-  }
 }

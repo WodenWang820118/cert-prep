@@ -1,3 +1,5 @@
+import type { OwnedProcessCleanupResult } from '../packaged-flow-smoke/processes.mts';
+
 export interface PackageQaOptions {
   readonly workspaceRoot?: string;
   readonly bundleRoot?: string;
@@ -17,6 +19,7 @@ export interface PackageQaOptions {
 
 export interface RuntimeHealthOptions {
   readonly backendRuntimeEntrypoint: string;
+  readonly backendRuntimeArgs?: readonly string[];
   readonly workspaceRoot?: string;
   readonly timeoutMs?: number;
   readonly dataDir?: string;
@@ -91,6 +94,9 @@ export interface RuntimeHealthSummary {
     readonly llm: JsonRecord;
   };
   readonly backend_output_tail: OutputCapture;
+  readonly cleanup: {
+    readonly backend_process: OwnedProcessCleanupResult | null;
+  };
 }
 
 export interface RuntimeManifest {

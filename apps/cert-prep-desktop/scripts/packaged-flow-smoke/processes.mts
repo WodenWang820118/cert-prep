@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawnSync, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -40,6 +40,41 @@ type JsonProcessRow = {
   ExecutablePath?: unknown;
   CommandLine?: unknown;
 };
+
+export interface ProcessTerminationResult {
+  attempted: boolean;
+  method: 'taskkill_process_tree' | 'signal_process' | 'already_exited';
+  exitCode: number | null;
+  error: string | null;
+}
+
+export interface OwnedProcessCleanupResult {
+  label: string;
+  pid: number | null;
+  reason: string;
+  attempted: boolean;
+  method: ProcessTerminationResult['method'];
+  alreadyExited: boolean;
+  forced: boolean;
+  stopped: boolean;
+  exitCode: number | null;
+  signal: NodeJS.Signals | null;
+  error: string | null;
+}
+
+export interface ShutdownCleanupOptions {
+  cleanup: (reason: string, error: unknown | null) => Promise<void> | void;
+  exit?: (code?: number) => never | void;
+  onCleanupError?: (error: unknown) => void;
+}
+
+type ShutdownHandler = (
+  reason: string,
+  error: unknown | null,
+  exitCode: number,
+) => Promise<void>;
+
+const DEFAULT_TRACKED_PROCESS_WAIT_MS = 5_000;
 
 /** Parses the PowerShell CIM process JSON shape used by Windows smoke cleanup. */
 export function parseProcessSnapshotJson(stdout: string): ProcessRecord[] {
@@ -222,6 +257,111 @@ export function selectNewWorkspaceNodeHelpers({
   });
 }
 
+/** Tracks child processes owned by this script invocation for scoped cleanup. */
+export class OwnedProcessTracker {
+  private readonly processes = new Map<number, { label: string; child: ChildProcess }>();
+  private cleanupPromise: Promise<OwnedProcessCleanupResult[]> | null = null;
+  private cleanupResults: OwnedProcessCleanupResult[] | null = null;
+
+  registerChild(label: string, child: ChildProcess): void {
+    if (child.pid === undefined) {
+      return;
+    }
+    this.processes.set(child.pid, { label, child });
+  }
+
+  async cleanup(reason: string): Promise<OwnedProcessCleanupResult[]> {
+    if (this.cleanupResults) {
+      return this.cleanupResults;
+    }
+    if (this.cleanupPromise) {
+      return this.cleanupPromise;
+    }
+
+    this.cleanupPromise = Promise.all(
+      [...this.processes.values()].map(({ label, child }) =>
+        cleanupTrackedChild(label, child, reason),
+      ),
+    ).then((results) => {
+      this.cleanupResults = results;
+      return results;
+    });
+    return this.cleanupPromise;
+  }
+
+  cleanupSync(reason: string): OwnedProcessCleanupResult[] {
+    if (this.cleanupResults) {
+      return this.cleanupResults;
+    }
+    const results = [...this.processes.values()].map(({ label, child }) =>
+      cleanupTrackedChildSync(label, child, reason),
+    );
+    this.cleanupResults = results;
+    return results;
+  }
+}
+
+/** Creates a reusable shutdown handler whose cleanup can only run once. */
+export function createShutdownCleanupHandler({
+  cleanup,
+  exit = process.exit,
+  onCleanupError = (error) => console.error(error),
+}: ShutdownCleanupOptions): ShutdownHandler {
+  let cleanupStarted = false;
+  return async (reason, error, exitCode) => {
+    if (cleanupStarted) {
+      return;
+    }
+    cleanupStarted = true;
+    try {
+      await cleanup(reason, error);
+    } catch (cleanupError) {
+      onCleanupError(cleanupError);
+    }
+    if (error) {
+      console.error(error);
+    }
+    process.exitCode = exitCode;
+    exit(exitCode);
+  };
+}
+
+/** Installs scoped process cleanup for interrupts and fatal Node errors. */
+export function installProcessShutdownCleanup(
+  options: ShutdownCleanupOptions,
+): () => void {
+  const handler = createShutdownCleanupHandler(options);
+  const signalHandlers = new Map<NodeJS.Signals, () => void>();
+  for (const [signal, exitCode] of [
+    ['SIGINT', 130],
+    ['SIGTERM', 143],
+    ['SIGHUP', 129],
+  ] as const) {
+    const listener = () => {
+      void handler(signal, null, exitCode);
+    };
+    process.once(signal, listener);
+    signalHandlers.set(signal, listener);
+  }
+
+  const uncaughtException = (error: Error) => {
+    void handler('uncaughtException', error, 1);
+  };
+  const unhandledRejection = (reason: unknown) => {
+    void handler('unhandledRejection', reason, 1);
+  };
+  process.once('uncaughtException', uncaughtException);
+  process.once('unhandledRejection', unhandledRejection);
+
+  return () => {
+    for (const [signal, listener] of signalHandlers) {
+      process.off(signal, listener);
+    }
+    process.off('uncaughtException', uncaughtException);
+    process.off('unhandledRejection', unhandledRejection);
+  };
+}
+
 /** Builds the normal Windows close command used before forced termination. */
 export function closeMainWindowPowerShellCommand(pid: number): string {
   return [
@@ -258,18 +398,39 @@ export function requestWindowsCloseByPid(pid: number): boolean {
 }
 
 /** Force-terminates a process tree after graceful close has failed. */
-export function terminateProcessTreeByPid(pid: number): void {
+export function terminateProcessTreeByPid(pid: number): ProcessTerminationResult {
   if (process.platform === 'win32') {
-    spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], {
+    const result = spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], {
       stdio: 'ignore',
       windowsHide: true,
       timeout: WINDOWS_TASKKILL_TIMEOUT_MS,
     });
+    return {
+      attempted: true,
+      method: 'taskkill_process_tree',
+      exitCode: result.status ?? null,
+      error:
+        result.error?.message ??
+        (result.status === 0 || result.status === null
+          ? null
+          : `taskkill exited ${result.status}`),
+    };
   } else {
     try {
       process.kill(pid, 'SIGTERM');
+      return {
+        attempted: true,
+        method: 'signal_process',
+        exitCode: null,
+        error: null,
+      };
     } catch {
-      // Process already exited.
+      return {
+        attempted: false,
+        method: 'already_exited',
+        exitCode: null,
+        error: null,
+      };
     }
   }
 }
@@ -289,4 +450,78 @@ function isProtectedNodeProcess(record: ProcessRecord): boolean {
   return PROTECTED_NODE_COMMAND_FRAGMENTS.some((fragment) =>
     commandLine.includes(fragment),
   );
+}
+
+async function cleanupTrackedChild(
+  label: string,
+  child: ChildProcess,
+  reason: string,
+): Promise<OwnedProcessCleanupResult> {
+  const initial = cleanupTrackedChildSync(label, child, reason);
+  if (initial.alreadyExited || child.pid === undefined) {
+    return initial;
+  }
+  const stopped = await waitForTrackedChildExit(child, DEFAULT_TRACKED_PROCESS_WAIT_MS);
+  return {
+    ...initial,
+    stopped,
+    exitCode: child.exitCode,
+    signal: child.signalCode,
+    error: stopped ? initial.error : initial.error ?? 'process did not exit after cleanup',
+  };
+}
+
+function cleanupTrackedChildSync(
+  label: string,
+  child: ChildProcess,
+  reason: string,
+): OwnedProcessCleanupResult {
+  const pid = child.pid ?? null;
+  const alreadyExited = child.exitCode !== null || child.signalCode !== null;
+  if (alreadyExited || pid === null) {
+    return {
+      label,
+      pid,
+      reason,
+      attempted: false,
+      method: 'already_exited',
+      alreadyExited,
+      forced: false,
+      stopped: alreadyExited,
+      exitCode: child.exitCode,
+      signal: child.signalCode,
+      error: null,
+    };
+  }
+
+  const termination = terminateProcessTreeByPid(pid);
+  return {
+    label,
+    pid,
+    reason,
+    attempted: termination.attempted,
+    method: termination.method,
+    alreadyExited: false,
+    forced: termination.attempted,
+    stopped: false,
+    exitCode: child.exitCode ?? termination.exitCode,
+    signal: child.signalCode,
+    error: termination.error,
+  };
+}
+
+async function waitForTrackedChildExit(
+  child: ChildProcess,
+  timeoutMs: number,
+): Promise<boolean> {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return true;
+  }
+  return await new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), timeoutMs);
+    child.once('exit', () => {
+      clearTimeout(timer);
+      resolve(true);
+    });
+  });
 }

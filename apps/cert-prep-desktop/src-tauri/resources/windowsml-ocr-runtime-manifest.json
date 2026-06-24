@@ -6,8 +6,8 @@
   "entrypoint": "cert-prep-ocr-windowsml-runtime.exe",
   "artifact": {
     "file_name": "cert-prep-ocr-windowsml-runtime-x86_64-pc-windows-msvc.zip",
-    "sha256": "eb009176421a6b22f907ca72cdcd60d5ba7f1a5bee603954fa6861d5f413f84f",
-    "bytes": 277463990,
+    "sha256": "f162be4011794be93876d1527194584ebbe45ca355ef05045df3a26f44e724ef",
+    "bytes": 277464224,
     "url": "file:///C:/software-dev/cert-prep/apps/cert-prep-backend/dist/ocr-windowsml-runtime/cert-prep-ocr-windowsml-runtime-x86_64-pc-windows-msvc.zip"
   }
 }

@@ -5,7 +5,10 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
+from fastapi.testclient import TestClient
+
 from cert_prep_backend.api.app import create_app
+from cert_prep_backend.core.config import Settings
 
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
@@ -43,6 +46,22 @@ def test_backend_sidecar_pyinstaller_command_keeps_uvicorn_app_import() -> None:
     assert "cert_prep_backend.api.app" in hidden_imports
 
 
+def test_app_lifespan_closes_closeable_ocr_provider(tmp_path: Path) -> None:
+    ocr_provider = CloseableOcrProvider()
+
+    with TestClient(
+        create_app(
+            settings=Settings(data_dir=tmp_path, api_token="test-token"),
+            llm_provider=object(),
+            ocr_provider=ocr_provider,
+            streaming_draft_generation_async_jobs=False,
+        )
+    ) as client:
+        assert client.get("/health").status_code == 200
+
+    assert ocr_provider.close_calls == 1
+
+
 def _load_script_module(name: str) -> ModuleType:
     script_path = SCRIPTS_DIR / f"{name}.py"
     spec = importlib.util.spec_from_file_location(name, script_path)
@@ -56,3 +75,13 @@ def _load_script_module(name: str) -> ModuleType:
     finally:
         sys.path.remove(str(SCRIPTS_DIR))
     return module
+
+
+class CloseableOcrProvider:
+    page_workers = 1
+
+    def __init__(self) -> None:
+        self.close_calls = 0
+
+    def close(self) -> None:
+        self.close_calls += 1

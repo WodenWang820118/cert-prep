@@ -143,6 +143,7 @@ def conversion_report(
         "command": conversion.command,
         "stdout": conversion.stdout,
         "stderr": conversion.stderr,
+        "cleanup": conversion.cleanup,
         "output_model": str(conversion.output_model) if conversion.output_model else None,
         "bytes": target.stat().st_size if target.is_file() else 0,
     }
@@ -291,10 +292,14 @@ def run_docker_paddlex_conversion(
         )
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    cidfile = output_dir / f".paddlex-{artifact.kind}.cid"
+    cidfile.unlink(missing_ok=True)
     command = [
         docker_exe,
         "run",
         "--rm",
+        "--cidfile",
+        str(cidfile),
         "-v",
         f"{BACKEND_ROOT.resolve()}:/work",
         "-w",
@@ -321,12 +326,27 @@ def run_docker_paddlex_conversion(
             timeout=CONVERSION_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired as exc:
+        cleanup = cleanup_docker_container(docker_exe, cidfile)
         return ConversionResult(
             state="failed",
             command=command,
             stdout=str(exc.stdout or ""),
             stderr=str(exc.stderr or ""),
             blocker="conversion_timeout",
+            cleanup=cleanup,
+        )
+    except KeyboardInterrupt:
+        cleanup_docker_container(docker_exe, cidfile)
+        raise
+    except Exception as exc:
+        cleanup = cleanup_docker_container(docker_exe, cidfile)
+        return ConversionResult(
+            state="failed",
+            command=command,
+            stdout="",
+            stderr=str(exc),
+            blocker="conversion_failed",
+            cleanup=cleanup,
         )
 
     output_model = output_dir / "inference.onnx"
@@ -348,6 +368,55 @@ def run_docker_paddlex_conversion(
         stderr=stderr,
         blocker=classify_conversion_blocker(combined),
     )
+
+
+def cleanup_docker_container(docker_exe: str, cidfile: Path) -> dict[str, Any]:
+    cleanup: dict[str, Any] = {
+        "attempted": True,
+        "cidfile": str(cidfile),
+        "container_id": None,
+        "stop_exit_code": None,
+        "rm_exit_code": None,
+        "error": None,
+    }
+    try:
+        container_id = cidfile.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        cleanup["attempted"] = False
+        cleanup["error"] = "cidfile_missing"
+        return cleanup
+    except Exception as exc:
+        cleanup["error"] = str(exc)
+        return cleanup
+
+    if not container_id:
+        cleanup["attempted"] = False
+        cleanup["error"] = "container_id_missing"
+        return cleanup
+
+    cleanup["container_id"] = container_id
+    try:
+        stop = subprocess.run(
+            [docker_exe, "stop", container_id],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        cleanup["stop_exit_code"] = stop.returncode
+        remove = subprocess.run(
+            [docker_exe, "rm", "-f", container_id],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        cleanup["rm_exit_code"] = remove.returncode
+    except Exception as exc:
+        cleanup["error"] = str(exc)
+    finally:
+        cidfile.unlink(missing_ok=True)
+    return cleanup
 
 
 def docker_work_path(path: Path) -> str:

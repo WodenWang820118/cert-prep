@@ -1,11 +1,15 @@
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import type { ChildProcess } from 'node:child_process';
 
 import {
   closeMainWindowPowerShellCommand,
   collectProcessTree,
+  createShutdownCleanupHandler,
   isCertPrepResidue,
+  OwnedProcessTracker,
   parseProcessSnapshotJson,
   resolveWindowsPowerShellExecutable,
   selectCertPrepResidue,
@@ -88,6 +92,60 @@ test('new node helper cleanup excludes baseline and protected service processes'
     selected.map((record) => record.pid),
     [200, 201, 204],
   );
+});
+
+test('owned process tracker cleanup is idempotent for exited children', async () => {
+  const child = Object.assign(new EventEmitter(), {
+    pid: 4242,
+    exitCode: 0,
+    signalCode: null,
+  }) as ChildProcess;
+  const tracker = new OwnedProcessTracker();
+  tracker.registerChild('already-exited', child);
+
+  const first = await tracker.cleanup('first');
+  const second = tracker.cleanupSync('second');
+
+  assert.deepEqual(first, [
+    {
+      label: 'already-exited',
+      pid: 4242,
+      reason: 'first',
+      attempted: false,
+      method: 'already_exited',
+      alreadyExited: true,
+      forced: false,
+      stopped: true,
+      exitCode: 0,
+      signal: null,
+      error: null,
+    },
+  ]);
+  assert.deepEqual(second, first);
+});
+
+test('shutdown cleanup handler runs cleanup and exit only once', async () => {
+  const previousExitCode = process.exitCode;
+  const cleanupReasons: string[] = [];
+  const exitCodes: number[] = [];
+  try {
+    const handler = createShutdownCleanupHandler({
+      cleanup: async (reason) => {
+        cleanupReasons.push(reason);
+      },
+      exit: (code) => {
+        exitCodes.push(code ?? 0);
+      },
+    });
+
+    await handler('SIGINT', null, 130);
+    await handler('SIGTERM', null, 143);
+
+    assert.deepEqual(cleanupReasons, ['SIGINT']);
+    assert.deepEqual(exitCodes, [130]);
+  } finally {
+    process.exitCode = previousExitCode;
+  }
 });
 
 test('close helper requests a normal Windows main-window close by PID', () => {

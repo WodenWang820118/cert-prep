@@ -3,8 +3,10 @@ from __future__ import annotations
 import atexit
 from collections import deque
 import json
+import os
 import platform
 from queue import Empty, Queue
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -248,6 +250,7 @@ class _OcrWorkerPool:
     def close(self) -> None:
         for worker in self._workers:
             worker.close()
+        self._workers.clear()
 
     def _create_worker(self) -> _JsonlOcrWorker:
         return _JsonlOcrWorker(
@@ -363,10 +366,11 @@ class _JsonlOcrWorker:
         try:
             if self._process.stdin is not None:
                 self._process.stdin.close()
-            self._process.terminate()
-            self._process.wait(timeout=2)
         except Exception:
-            self._process.kill()
+            pass
+        if _wait_for_process_exit(self._process, timeout_seconds=1.0):
+            return
+        _terminate_process_tree(self._process)
 
     def _ensure_running(self) -> None:
         if self._process.poll() is not None:
@@ -464,3 +468,57 @@ def _entrypoint_command(entrypoint: Path, args: list[str]) -> list[str]:
             *args,
         ]
     return [str(entrypoint), *args]
+
+
+def _terminate_process_tree(process: subprocess.Popen) -> None:
+    if process.poll() is not None:
+        return
+
+    if os.name == "nt":
+        try:
+            subprocess.run(
+                [_taskkill_executable(), "/PID", str(process.pid), "/T", "/F"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            if _wait_for_process_exit(process, timeout_seconds=2.0):
+                return
+        except Exception:
+            pass
+
+    try:
+        process.terminate()
+    except Exception:
+        pass
+    if _wait_for_process_exit(process, timeout_seconds=2.0):
+        return
+    try:
+        process.kill()
+    except Exception:
+        pass
+    _wait_for_process_exit(process, timeout_seconds=2.0)
+
+
+def _wait_for_process_exit(process: subprocess.Popen, *, timeout_seconds: float) -> bool:
+    try:
+        process.wait(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired:
+        return False
+    except Exception:
+        return process.poll() is not None
+    return process.poll() is not None
+
+
+def _taskkill_executable() -> str:
+    path = shutil.which("taskkill.exe") or shutil.which("taskkill")
+    if path:
+        return path
+    system_root = os.environ.get("SystemRoot")
+    if system_root:
+        candidate = Path(system_root) / "System32" / "taskkill.exe"
+        if candidate.is_file():
+            return str(candidate)
+    return "taskkill.exe"

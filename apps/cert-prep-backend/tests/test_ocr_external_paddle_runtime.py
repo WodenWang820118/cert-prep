@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
 
 import pytest
 
+from cert_prep_backend.domains.source_documents.adapters import external_paddle
 from cert_prep_backend.core.config import Settings
 from cert_prep_backend.domains.source_documents.adapters.external_paddle import (
     ExternalPaddleOCRProvider,
@@ -48,6 +50,59 @@ if args.ocr_worker:
         "worker_job:1",
         "worker_job:2",
     ]
+
+
+def test_external_paddle_worker_pool_close_clears_workers(tmp_path: Path) -> None:
+    provider, _log_path = external_provider_with_runtime(
+        tmp_path,
+        worker_body="""
+if args.ocr_worker:
+    for line in sys.stdin:
+        job = json.loads(line)
+        print(json.dumps({
+            'id': job.get('id'),
+            'ok': True,
+            'result': {
+                'text': 'worker page',
+                'extraction_method': 'paddle_ocr_cpu',
+                'device': 'cpu',
+                'fallback_reason': None,
+                'duration_ms': 11,
+            },
+        }), flush=True)
+    raise SystemExit(0)
+""",
+    )
+
+    provider.prepare_for_document_ocr()
+    assert provider._worker_pool is not None
+    assert len(provider._worker_pool._workers) == 1
+
+    provider.close()
+    assert provider._worker_pool is None
+    provider.close()
+
+
+def test_external_paddle_windows_process_tree_cleanup_uses_taskkill(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    process = FakeProcess(pid=4321)
+    calls: list[list[str]] = []
+
+    def fake_run(command, **_kwargs):
+        calls.append(command)
+        process.returncode = 1
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(external_paddle.os, "name", "nt", raising=False)
+    monkeypatch.setattr(external_paddle, "_taskkill_executable", lambda: "taskkill.exe")
+    monkeypatch.setattr(external_paddle.subprocess, "run", fake_run)
+
+    external_paddle._terminate_process_tree(process)
+
+    assert calls == [["taskkill.exe", "/PID", "4321", "/T", "/F"]]
+    assert process.terminate_calls == 0
+    assert process.kill_calls == 0
 
 
 def test_external_paddle_health_prewarms_only_primary_worker_then_expands(
@@ -100,6 +155,30 @@ if args.ocr_worker:
         "worker_start",
         "worker_job:8",
     ]
+
+
+class FakeProcess:
+    def __init__(self, *, pid: int) -> None:
+        self.pid = pid
+        self.returncode: int | None = None
+        self.terminate_calls = 0
+        self.kill_calls = 0
+
+    def poll(self) -> int | None:
+        return self.returncode
+
+    def wait(self, timeout: float | None = None) -> int:
+        assert timeout is not None
+        if self.returncode is None:
+            raise subprocess.TimeoutExpired(["fake"], timeout)
+        return self.returncode
+
+    def terminate(self) -> None:
+        self.terminate_calls += 1
+
+    def kill(self) -> None:
+        self.kill_calls += 1
+        self.returncode = -9
 
 
 def test_external_paddle_health_does_not_prewarm_unavailable_runtime(

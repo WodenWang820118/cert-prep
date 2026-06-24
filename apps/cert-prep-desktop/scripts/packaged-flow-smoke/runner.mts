@@ -11,7 +11,7 @@ import {
   uploadAndParsePdf,
   verifyStreamingPracticeReady,
 } from './flow-steps.mts';
-import { processSnapshot } from './processes.mts';
+import { installProcessShutdownCleanup, processSnapshot } from './processes.mts';
 import { preparePackagedBackendRuntimeForSmoke } from './runtime-sync.mts';
 import { installOcrRuntimeIfNeeded, installPythonRuntimeIfNeeded } from './runtime-install-flow.mts';
 import { startResourceSampling } from './resource-sampling.mts';
@@ -160,6 +160,22 @@ export async function runPackagedFlowSmokeCli(argv: readonly string[] = process.
     streamingApiPollErrorCaptured: false,
   };
   mkdirSync(run.options.outDir, { recursive: true });
+  const removeShutdownCleanup = installProcessShutdownCleanup({
+    cleanup: async (reason, error) => {
+      run.metrics.status = 'failed';
+      run.metrics.errors.push(
+        `shutdown cleanup started after ${reason}: ${error ? errorMessage(error) : 'no error payload'}`,
+      );
+      writeCloseoutArtifacts(run, `shutdown-${reason}-pre-cleanup`, {
+        recordBaselineFailure: false,
+      });
+      await cleanupAfterRunWithTimeout(run);
+      writeCloseoutArtifacts(run, `shutdown-${reason}-final`, {
+        recordBaselineFailure: true,
+      });
+      logFinalMetricsSummary(run);
+    },
+  });
 
   try {
     await runFlow(run);
@@ -175,12 +191,16 @@ export async function runPackagedFlowSmokeCli(argv: readonly string[] = process.
       });
     }
   } finally {
-    writeCloseoutArtifacts(run, 'pre-cleanup', { recordBaselineFailure: false });
-    await cleanupAfterRunWithTimeout(run).catch((error) => {
-      run.metrics.errors.push(`cleanup failed: ${errorMessage(error)}`);
-    });
-    writeCloseoutArtifacts(run, 'final', { recordBaselineFailure: true });
-    logFinalMetricsSummary(run);
+    try {
+      writeCloseoutArtifacts(run, 'pre-cleanup', { recordBaselineFailure: false });
+      await cleanupAfterRunWithTimeout(run).catch((error) => {
+        run.metrics.errors.push(`cleanup failed: ${errorMessage(error)}`);
+      });
+      writeCloseoutArtifacts(run, 'final', { recordBaselineFailure: true });
+      logFinalMetricsSummary(run);
+    } finally {
+      removeShutdownCleanup();
+    }
   }
 
   process.exitCode = run.metrics.status === 'completed' && run.metrics.errors.length === 0 ? 0 : 1;
