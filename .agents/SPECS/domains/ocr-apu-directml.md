@@ -1,10 +1,10 @@
 # OCR APU DirectML Spec
 
 Archived status: this document is historical DirectML implementation and
-measurement evidence. As of 2026-06-23, the current packaged accelerated OCR
+measurement evidence. As of 2026-06-24, the current packaged accelerated OCR
 product lane is WindowsML (`CERT_PREP_OCR_PROVIDER=windowsml`) with PaddleOCR
-3.7 det/rec on the AMD iGPU through DML/CPU mixed execution. NPU participation
-is tracked only as internal WindowsML prepass evidence and strict smoke proof.
+3.7 det/rec on the AMD iGPU through DML/CPU mixed execution. PaddleOCR NPU,
+WindowsML NPU prepass, and WindowsML device-policy proof paths are retired.
 
 ## Purpose
 
@@ -256,7 +256,7 @@ ONNX Runtime DirectML production gate rather than a configuration change to
   `provider_options=[{'device_id': 1}, {}]`, initialized in `775 ms`, inferred
   in `287 ms`, decoded `OCRTEST`, and the internal det/rec sessions reported
   `DmlExecutionProvider + CPUExecutionProvider`.
-- PaddleOCR 3.7 Windows ML hybrid provider-name attempt:
+- Retired PaddleOCR 3.7 Windows ML hybrid provider-name attempt:
   Windows ML registration discovered `MIGraphXExecutionProvider` and
   `VitisAIExecutionProvider` EP devices, but PaddleX 3.7's
   `ONNXRuntimeRunner` validates providers against
@@ -265,10 +265,9 @@ ONNX Runtime DirectML production gate rather than a configuration change to
   with provider-unavailable before session creation.
 - Replacement assessment:
   PaddleOCR 3.7 is a strong refactor candidate for deleting most custom
-  PP-OCR preprocessing/postprocessing in the AMD iGPU DML lane. It is not yet
-  a replacement for the explicit Windows ML `add_provider_for_devices()`
-  NPU+iGPU lane unless PaddleX exposes EP-device binding or a local wrapper
-  patches its runner.
+  PP-OCR preprocessing/postprocessing in the AMD iGPU DML lane. The NPU+iGPU
+  replacement lane is retired; reopen it only through a fresh product decision
+  and new proof harness.
 
 ## Acceptance Criteria
 
@@ -303,9 +302,8 @@ ONNX Runtime DirectML production gate rather than a configuration change to
 - PaddleOCR 3.7 ONNXRuntime isolated probe passes CPU and AMD iGPU DML
   inference on `OCRTEST`, records internal session providers, and leaves
   production defaults unchanged.
-- PaddleOCR 3.7 is not accepted as an NPU+iGPU replacement until it can express
-  Windows ML EP-device binding or otherwise prove VitisAI+MIGraphX session
-  creation and inference through the high-level OCR pipeline.
+- PaddleOCR 3.7 remains accepted for CPU and AMD iGPU DML validation only. Do
+  not add NPU/iGPU hybrid acceptance criteria without a new approved spec.
 
 ## Test Plan
 

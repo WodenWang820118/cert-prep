@@ -25,8 +25,9 @@ those flows.
   parameter reduction, scored bakeoff reruns, or default-model changes.
 - Nvidia GPU headroom should be preserved for larger Ollama reasoning models.
   Packaged accelerated OCR now defaults to WindowsML OCR on the AMD iGPU, with
-  NPU participation recorded only as internal prepass evidence when ORT profile
-  data proves provider scheduling. Paddle CUDA remains an override/debug path.
+  PaddleOCR det/rec routed through DML/CPU mixed execution. PaddleOCR NPU,
+  NPU prepass, and WindowsML device-policy proof paths are retired. Paddle CUDA
+  remains an override/debug path.
 - No Kafka or external broker is used for the first local-first streaming
   implementation. The current design uses a SQLite-backed job queue/outbox and
   bounded local workers.
@@ -575,16 +576,10 @@ Historical AMD NPU OCR research:
   - `pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`.
   - `pnpm nx run cert-prep-backend:lint --skip-nx-cache`.
   - `pnpm nx run cert-prep-backend:test --skip-nx-cache`.
-  - `pnpm nx run cert-prep-backend:ocr-amd-npu-probe --skip-nx-cache --args="--ensure-ready"`.
-  - `pnpm nx run cert-prep-backend:ocr-amd-npu-session-smoke --skip-nx-cache --args="--ensure-ready"`.
-  - `pnpm nx run cert-prep-backend:ocr-amd-npu-model-compat --skip-nx-cache --args="--ensure-ready --session-timeout-seconds 180"`.
-  - `pnpm nx run cert-prep-backend:ocr-amd-npu-model-compat --skip-nx-cache --args="--candidate-kind static_qdq_a8w8 --ensure-ready --session-timeout-seconds 120 --calibration-samples 2"`.
-  - `pnpm nx run cert-prep-backend:ocr-amd-npu-reference-scout --skip-nx-cache --args="--online"`.
-  - `pnpm nx run cert-prep-backend:ocr-amd-npu-reference-scout-python312 --skip-nx-cache`.
-  - `pnpm nx run cert-prep-backend:ocr-amd-npu-inference-smoke --skip-nx-cache --args="--ensure-ready"`.
-  - `pnpm nx run cert-prep-backend:ocr-windowsml-policy-mixed-probe --skip-nx-cache --args="--ensure-ready --policy PREFER_NPU --policy PREFER_GPU --session-timeout-seconds 240"`.
-  - `pnpm nx run cert-prep-backend:ocr-windowsml-policy-mixed-probe --skip-nx-cache --args="--ensure-ready --policy PREFER_NPU --run-zero-inference --session-timeout-seconds 300"`.
-  - `pnpm nx run cert-prep-backend:ocr-paddle37-onnxruntime-probe --skip-nx-cache`.
+  - `pnpm nx run cert-prep-backend:ocr-windowsml-probe --skip-nx-cache`.
+  - `pnpm nx run cert-prep-backend:ocr-windowsml-session-smoke --skip-nx-cache`.
+  - `pnpm nx run cert-prep-backend:ocr-windowsml-inference-smoke --skip-nx-cache`.
+  - `pnpm nx run cert-prep-backend:ocr-windowsml-benchmark --skip-nx-cache`.
 
 ## Active Backlog
 
@@ -596,24 +591,20 @@ Deferred gate:
   user-controlled and should only run after those models are intentionally
   installed.
 
-2026-06-23 WindowsML OCR NPU participation update:
+2026-06-24 PaddleOCR NPU removal update:
 
-- Standalone `amd_npu` OCR productization is retired again, this time after the
-  WindowsML refactor. Public surfaces are `windowsml` provider,
-  `windowsml_ocr` runtime kind, and `windowsml_ocr` extraction method.
-- Removed the standalone AMD NPU runtime entrypoint and product/package targets;
-  desktop/Angular only expose WindowsML OCR and Paddle OCR.
-- `onnxruntime-windowsml` replaces `onnxruntime-directml` in the accelerated OCR
-  lane. PaddleOCR remains at least 3.7 in every OCR extra, with
-  `ocr-windowsml` pinned to `paddleocr==3.7.0`.
-- NPU participation is now an internal WindowsML stage: the packaged WindowsML
-  runtime attempts a VitisAI text-density prepass using
-  `CERT_PREP_OCR_WINDOWSML_DEVICE_POLICY`, then runs PaddleOCR det/rec through
-  the WindowsML ONNX Runtime runner. OCR output remains `windowsml_ocr` even
-  when NPU evidence is recorded.
-- Low-level AMD/VitisAI helper names remain only as hardware evidence because
-  the current WindowsML NPU EP is `VitisAIExecutionProvider`; they are not user
-  installable runtime names.
+- Standalone `amd_npu` OCR productization remains retired.
+- The later internal WindowsML NPU prepass/device-policy proof path is also
+  retired. Do not use `CERT_PREP_OCR_WINDOWSML_DEVICE_POLICY`,
+  `--windowsml-device-policy`, `npu_prepass`, or PaddleOCR NPU smoke/proof
+  targets in current OCR work.
+- Public OCR surfaces remain `windowsml` provider, `windowsml_ocr` runtime kind,
+  and `windowsml_ocr` extraction method.
+- `onnxruntime-windowsml` remains the accelerated OCR dependency. PaddleOCR 3.7
+  det/rec uses DML/CPU mixed execution on the AMD iGPU in the current product
+  lane.
+- FastFlowLM reasoning NPU notes are separate from OCR and do not imply any
+  PaddleOCR NPU implementation.
 
 ## Retired Risk Notes
 

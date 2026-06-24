@@ -18,7 +18,6 @@ Move the WindowsML OCR runtime implementation out of `apps/cert-prep-backend` an
 - Backend app import surface:
   - `cert_prep_ocr_windowsml.runtime.WindowsMLRuntimeOCRProvider`
   - `cert_prep_ocr_windowsml.runtime.WindowsMLOCRRunner`
-  - `cert_prep_ocr_windowsml.npu_prepass`
 - WindowsML diagnostics and model preparation CLIs live in the package. Backend `ocr-windowsml-*` Nx target names remain stable and call package modules directly with `python -m`.
 - The package owns WindowsML OCR runtime dataclasses and provider-unavailable exception for runtime-side use. Backend integration continues to communicate through the existing JSON runtime contract.
 
@@ -41,7 +40,7 @@ Move the WindowsML OCR runtime implementation out of `apps/cert-prep-backend` an
 
 - `pnpm nx show projects --json` includes `cert-prep-ocr-windowsml`.
 - Backend WindowsML runtime code imports from `cert_prep_ocr_windowsml`, not from legacy backend adapter shims.
-- Existing backend Nx targets for WindowsML probe, prepare, smoke, inference smoke, NPU smoke, benchmark, and runtime build still resolve.
+- Existing backend Nx targets for WindowsML probe, prepare, smoke, inference smoke, benchmark, and runtime build still resolve.
 - Package-owned WindowsML runner/probe/prepare/smoke tests pass through `pnpm nx run cert-prep-ocr-windowsml:test`.
 - `pnpm nx run cert-prep-backend:lint` passes.
 
