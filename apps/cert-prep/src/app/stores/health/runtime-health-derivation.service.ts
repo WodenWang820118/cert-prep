@@ -18,6 +18,10 @@ const OCR_RUNTIME_MISSING_REASON_CODES = new Set([
   'paddle_runtime_missing',
   'windowsml_runtime_missing',
 ]);
+const LLM_RUNTIME_MISSING_REASON_CODES = new Set([
+  'fastflowlm_missing',
+  'ollama_missing',
+]);
 
 @Injectable({ providedIn: 'root' })
 export class RuntimeHealthDerivationService {
@@ -52,6 +56,30 @@ export class RuntimeHealthDerivationService {
       this.runtimeUnavailableReason(requirements, 'ollama') ===
         'ollama_missing'
     );
+  }
+
+  isLlmRuntimeMissing(
+    health: LLMHealthRead | null,
+    requirements: readonly RuntimeRequirementRead[],
+  ): boolean {
+    if (LLM_RUNTIME_MISSING_REASON_CODES.has(this.unavailableReason(health))) {
+      return true;
+    }
+    return this.isOllamaMissing(health, requirements);
+  }
+
+  llmProviderLabel(health: LLMHealthRead | null): string {
+    const provider = this.normalizedCode(health?.provider);
+    if (provider === 'fastflowlm') {
+      return 'FastFlowLM';
+    }
+    if (provider === 'ollama') {
+      return 'Ollama';
+    }
+    if (provider === 'fake') {
+      return 'Fake LLM';
+    }
+    return 'LLM provider';
   }
 
   isOcrRuntimeMissing(

@@ -108,6 +108,7 @@ export async function createPackageQaReport(
     workspaceRoot,
     timeoutMs: options.healthTimeoutMs,
     dataDir: resolve(workspaceRoot, options.dataDir ?? DEFAULT_DATA_DIR),
+    llmProvider: options.llmProvider,
     llmModel: options.llmModel ?? DEFAULT_LLM_MODEL,
     windowsmlOcrRuntimeManifest,
     ocrProvider: options.ocrProvider,

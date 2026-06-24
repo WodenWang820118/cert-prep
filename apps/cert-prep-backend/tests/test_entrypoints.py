@@ -30,6 +30,19 @@ def test_pyinstaller_entry_paths_exist() -> None:
     )
 
 
+def test_backend_sidecar_pyinstaller_command_keeps_uvicorn_app_import() -> None:
+    build_sidecar = _load_script_module("build_sidecar")
+
+    command = build_sidecar._pyinstaller_command("lite")
+
+    hidden_imports = [
+        command[index + 1]
+        for index, value in enumerate(command)
+        if value == "--hidden-import"
+    ]
+    assert "cert_prep_backend.api.app" in hidden_imports
+
+
 def _load_script_module(name: str) -> ModuleType:
     script_path = SCRIPTS_DIR / f"{name}.py"
     spec = importlib.util.spec_from_file_location(name, script_path)

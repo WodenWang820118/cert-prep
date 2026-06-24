@@ -10,6 +10,7 @@ export interface SmokeOptions {
   cdpPort: number;
   ocrProvider: string;
   ocrPageWorkers: number;
+  llmProvider: string;
   ollamaModel: string;
   ollamaFallbackModels: string[];
   streamingDraftPageLimit?: number;
@@ -34,6 +35,7 @@ export interface SmokeMetrics {
   project_name?: string;
   selected_answer?: string;
   wrong_answer?: string;
+  llm_provider: string;
   llm_model: string;
   llm_configured_model?: string;
   llm_effective_model?: string;

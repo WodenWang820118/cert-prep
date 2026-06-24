@@ -9,6 +9,7 @@ import {
   CAPTURE_LIMIT,
   DEFAULT_DATA_DIR,
   DEFAULT_WINDOWSML_OCR_RUNTIME_MANIFEST,
+  DEFAULT_LLM_PROVIDER,
   DEFAULT_LLM_MODEL,
   defaultWorkspaceRoot,
 } from './constants.mts';
@@ -61,6 +62,7 @@ export async function collectRuntimeHealth({
   workspaceRoot = defaultWorkspaceRoot,
   timeoutMs = 120_000,
   dataDir = resolve(workspaceRoot, DEFAULT_DATA_DIR),
+  llmProvider = DEFAULT_LLM_PROVIDER,
   llmModel = DEFAULT_LLM_MODEL,
   windowsmlOcrRuntimeManifest = resolve(
     workspaceRoot,
@@ -80,6 +82,7 @@ export async function collectRuntimeHealth({
     port,
     token,
     dataDir,
+    llmProvider,
     llmModel,
     windowsmlOcrRuntimeManifest,
     ocrProvider,
@@ -122,8 +125,9 @@ export async function collectRuntimeHealth({
         CERT_PREP_OCR_WINDOWSML_DEVICE_ID: '-1',
         CERT_PREP_WINDOWSML_OCR_RUNTIME_MANIFEST_PATH:
           windowsmlOcrRuntimeManifest,
-        CERT_PREP_LLM_PROVIDER: 'ollama',
+        CERT_PREP_LLM_PROVIDER: llmProvider,
         CERT_PREP_OLLAMA_MODEL: llmModel,
+        CERT_PREP_FASTFLOWLM_MODEL: llmModel,
         CERT_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD: 'true',
         CERT_PREP_OCR_PAGE_WORKERS:
           childEnv.CERT_PREP_OCR_PAGE_WORKERS ?? null,
@@ -147,6 +151,7 @@ export function buildRuntimeLaunchEnv({
   port,
   token,
   dataDir,
+  llmProvider = DEFAULT_LLM_PROVIDER,
   llmModel,
   windowsmlOcrRuntimeManifest,
   ocrProvider = 'windowsml',
@@ -160,7 +165,7 @@ export function buildRuntimeLaunchEnv({
     CERT_PREP_PORT: String(port),
     CERT_PREP_API_TOKEN: token,
     CERT_PREP_DATA_DIR: dataDir,
-    CERT_PREP_LLM_PROVIDER: 'ollama',
+    CERT_PREP_LLM_PROVIDER: llmProvider,
     CERT_PREP_OCR_PROVIDER: ocrProvider,
     CERT_PREP_OCR_RUNTIME_MODE: 'external',
     CERT_PREP_OCR_DEVICE: 'auto',
@@ -168,6 +173,7 @@ export function buildRuntimeLaunchEnv({
       windowsmlOcrRuntimeManifest,
     CERT_PREP_OCR_WINDOWSML_DEVICE_ID: '-1',
     CERT_PREP_OLLAMA_MODEL: llmModel,
+    CERT_PREP_FASTFLOWLM_MODEL: llmModel,
     CERT_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD: 'true',
     PYTHONIOENCODING: 'utf-8',
   });

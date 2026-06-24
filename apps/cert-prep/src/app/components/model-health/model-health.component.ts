@@ -85,7 +85,8 @@ import { WorkspaceFacade } from '../../stores/workspace.facade';
     >
       <div class="grid gap-3">
         <p class="m-0 text-sm leading-6 text-color">
-          Download {{ health.configuredModelName() }} with Ollama?
+          Download {{ health.configuredModelName() }} with
+          {{ health.llmProviderLabel() }}?
         </p>
         <p class="m-0 text-sm leading-6 text-muted-color">
           This starts a background download and can take several minutes on a
@@ -190,7 +191,7 @@ export class ModelHealthComponent {
       llmHealth: this.health.llmHealth(),
       ocrHealth: this.health.ocrHealth(),
       ocrPhase: this.health.ocrPhase(),
-      ollamaMissing: this.health.isOllamaMissing(),
+      llmRuntimeMissing: this.health.isLlmRuntimeMissing(),
       modelMissing: this.health.isModelMissing(),
       ocrRuntimeMissing: this.health.isOcrRuntimeMissing(),
       configuredModelName: this.health.configuredModelName(),

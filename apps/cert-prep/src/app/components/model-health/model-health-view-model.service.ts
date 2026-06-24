@@ -46,7 +46,7 @@ export class ModelHealthViewModelService {
     state: ModelHealthViewState,
   ): RuntimeStatusSectionView {
     return {
-      title: 'Ollama',
+      title: this.llmRuntimeLabel(state),
       statusLabel: this.ollamaStatusLabel(state),
       severity: this.ollamaSeverity(state),
       detail: this.ollamaDetail(state),
@@ -83,12 +83,12 @@ export class ModelHealthViewModelService {
 
   private ollamaChipLabel(state: ModelHealthViewState): string {
     if (!state.backendReady) {
-      return 'Ollama waiting';
+      return `${this.llmRuntimeLabel(state)} waiting`;
     }
-    if (state.ollamaMissing) {
-      return 'Ollama missing';
+    if (state.llmRuntimeMissing) {
+      return `${this.llmRuntimeLabel(state)} missing`;
     }
-    return state.llmHealth?.provider ?? 'Ollama unknown';
+    return this.llmRuntimeLabel(state);
   }
 
   private modelChipLabel(state: ModelHealthViewState): string {
@@ -146,19 +146,17 @@ export class ModelHealthViewModelService {
       return 'Waiting for Python backend runtime.';
     }
     if (state.llmHealth === null) {
-      return 'Ollama status unavailable.';
+      return `${this.llmRuntimeLabel(state)} status unavailable.`;
     }
-    return state.ollamaMissing
-      ? 'Ollama is not installed.'
-      : state.llmHealth.detail;
+    return state.llmHealth.detail;
   }
 
   private modelDetail(state: ModelHealthViewState): string {
     if (!state.backendReady) {
       return 'Waiting for Python backend runtime.';
     }
-    if (state.ollamaMissing) {
-      return 'Install Ollama before downloading the reasoning model.';
+    if (state.llmRuntimeMissing) {
+      return `Start or install ${this.llmRuntimeLabel(state)} before using the reasoning model.`;
     }
     if (state.llmHealth === null) {
       return 'Model status unavailable.';
@@ -210,14 +208,17 @@ export class ModelHealthViewModelService {
     if (!state.backendReady) {
       return 'Waiting';
     }
-    if (state.ollamaMissing) {
+    if (state.llmRuntimeMissing) {
       return 'Missing';
     }
-    return state.llmHealth === null ? 'Unknown' : 'Ready';
+    if (state.llmHealth === null) {
+      return 'Unknown';
+    }
+    return state.llmHealth.available ? 'Ready' : 'Offline';
   }
 
   private modelStatusLabel(state: ModelHealthViewState): string {
-    if (!state.backendReady || state.ollamaMissing) {
+    if (!state.backendReady || state.llmRuntimeMissing) {
       return 'Waiting';
     }
     if (state.modelMissing) {
@@ -265,11 +266,14 @@ export class ModelHealthViewModelService {
     if (!state.backendReady) {
       return 'info';
     }
-    return state.ollamaMissing ? 'danger' : 'success';
+    if (state.llmRuntimeMissing) {
+      return 'danger';
+    }
+    return state.llmHealth?.available === false ? 'warn' : 'success';
   }
 
   private modelSeverity(state: ModelHealthViewState): HealthStatusSeverity {
-    if (!state.backendReady || state.ollamaMissing) {
+    if (!state.backendReady || state.llmRuntimeMissing) {
       return 'info';
     }
     return state.modelMissing
@@ -279,6 +283,20 @@ export class ModelHealthViewModelService {
       : state.llmHealth?.available
         ? 'success'
         : 'warn';
+  }
+
+  private llmRuntimeLabel(state: ModelHealthViewState): string {
+    const provider = state.llmHealth?.provider?.trim().toLowerCase();
+    if (provider === 'fastflowlm') {
+      return 'FastFlowLM';
+    }
+    if (provider === 'ollama') {
+      return 'Ollama';
+    }
+    if (provider === 'fake') {
+      return 'Fake LLM';
+    }
+    return 'LLM runtime';
   }
 
   private ocrSeverity(state: ModelHealthViewState): HealthStatusSeverity {

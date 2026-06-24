@@ -58,11 +58,20 @@ test('health summaries keep OCR fallback and LLM model state', () => {
 
 test('package QA parses OCR page worker count from QA-specific inputs', () => {
   assert.deepEqual(
-    parsePackageQaEnv({ CERT_PREP_PACKAGE_QA_OCR_PAGE_WORKERS: '2' }),
-    { ocrPageWorkers: 2 },
+    parsePackageQaEnv({
+      CERT_PREP_PACKAGE_QA_LLM_PROVIDER: 'ollama',
+      CERT_PREP_PACKAGE_QA_OCR_PAGE_WORKERS: '2',
+    }),
+    { llmProvider: 'ollama', ocrPageWorkers: 2 },
   );
   assert.equal(
-    parsePackageQaArgs(['--ocr-page-workers', '4'], {
+    parsePackageQaArgs(['--llm-provider', 'fastflowlm', '--ocr-page-workers', '4'], {
+      CERT_PREP_PACKAGE_QA_OCR_PAGE_WORKERS: '2',
+    }).llmProvider,
+    'fastflowlm',
+  );
+  assert.equal(
+    parsePackageQaArgs(['--llm-provider', 'fastflowlm', '--ocr-page-workers', '4'], {
       CERT_PREP_PACKAGE_QA_OCR_PAGE_WORKERS: '2',
     }).ocrPageWorkers,
     4,
@@ -92,6 +101,8 @@ test('runtime launch env sets OCR page workers only from explicit QA config', ()
     'true',
   );
   assert.equal(ambientOnly.CERT_PREP_OCR_PROVIDER, 'windowsml');
+  assert.equal(ambientOnly.CERT_PREP_LLM_PROVIDER, 'fastflowlm');
+  assert.equal(ambientOnly.CERT_PREP_FASTFLOWLM_MODEL, 'qwen3.5:4b');
   assert.equal(
     ambientOnly.CERT_PREP_WINDOWSML_OCR_RUNTIME_MANIFEST_PATH,
     'windowsml-ocr-runtime-manifest.json',
@@ -102,9 +113,11 @@ test('runtime launch env sets OCR page workers only from explicit QA config', ()
 
   const explicit = buildRuntimeLaunchEnv({
     ...baseOptions,
+    llmProvider: 'ollama',
     ocrPageWorkers: 3,
     baseEnv: { CERT_PREP_OCR_PAGE_WORKERS: '9' },
   });
+  assert.equal(explicit.CERT_PREP_LLM_PROVIDER, 'ollama');
   assert.equal(explicit.CERT_PREP_OCR_PAGE_WORKERS, '3');
 });
 

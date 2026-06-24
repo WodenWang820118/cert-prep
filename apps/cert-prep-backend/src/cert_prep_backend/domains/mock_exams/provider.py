@@ -9,6 +9,7 @@ from cert_prep_backend.domains.mock_exams.deterministic_parser import (
     source_text_for_prompt as _source_text_for_prompt,
 )
 from cert_prep_backend.domains.mock_exams.fake_provider import FakeLLMProvider
+from cert_prep_backend.domains.mock_exams.fastflowlm_transport import FastFlowLMProvider
 from cert_prep_backend.domains.mock_exams.models import (
     DraftGenerationStrategy,
     DraftSuggestion,
@@ -39,6 +40,14 @@ def provider_from_settings(settings: Settings):
             model=settings.ollama_model,
             fallback_models=settings.ollama_fallback_models,
             timeout_seconds=settings.ollama_timeout_seconds,
+        )
+    if settings.llm_provider == "fastflowlm":
+        return FastFlowLMProvider(
+            base_url=settings.fastflowlm_base_url,
+            model=settings.fastflowlm_model,
+            fallback_models=settings.fastflowlm_fallback_models,
+            timeout_seconds=settings.fastflowlm_timeout_seconds,
+            model_pull_timeout_seconds=settings.runtime_install_timeout_seconds,
         )
     return FakeLLMProvider(model=settings.ollama_model)
 
@@ -81,6 +90,7 @@ def _playable_suggestions(
 __all__ = [
     "EXAM_ITEMS_SCHEMA",
     "FakeLLMProvider",
+    "FastFlowLMProvider",
     "MAX_PROMPT_SOURCE_CHARS",
     "OllamaProvider",
     "_as_editable_question",

@@ -157,10 +157,14 @@ export async function launchAppAndConnect(run: SmokeRunState): Promise<void> {
     CERT_PREP_DESKTOP_DATA_DIR: packagedAppDataDir(run.options.appDataDir),
     CERT_PREP_BACKEND_LOG_DIR: run.options.outDir,
     CERT_PREP_BACKEND_READY_TIMEOUT_SECS: '90',
+    CERT_PREP_LLM_PROVIDER: run.options.llmProvider,
     CERT_PREP_OCR_PROVIDER: run.options.ocrProvider,
     CERT_PREP_OCR_PAGE_WORKERS: String(run.options.ocrPageWorkers),
     CERT_PREP_OLLAMA_MODEL: run.options.ollamaModel,
     CERT_PREP_OLLAMA_FALLBACK_MODELS:
+      run.options.ollamaFallbackModels.join(','),
+    CERT_PREP_FASTFLOWLM_MODEL: run.options.ollamaModel,
+    CERT_PREP_FASTFLOWLM_FALLBACK_MODELS:
       run.options.ollamaFallbackModels.join(','),
     ...(run.options.streamingDraftPageLimit
       ? {

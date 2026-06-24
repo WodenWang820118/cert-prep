@@ -175,6 +175,9 @@ export async function captureLlmHealth(
   }
 
   run.metrics.llm_health = health;
+  if (health.provider) {
+    run.metrics.llm_provider = health.provider;
+  }
   run.metrics.llm_configured_model =
     health.configured_model ?? health.model ?? run.options.ollamaModel;
   run.metrics.llm_effective_model = health.available

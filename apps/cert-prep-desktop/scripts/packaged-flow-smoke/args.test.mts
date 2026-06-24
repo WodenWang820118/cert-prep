@@ -11,9 +11,11 @@ test('packaged flow smoke args validate numeric knobs', () => {
     'windowsml',
     '--ocr-page-workers',
     '2',
-    '--ollama-model',
+    '--llm-provider',
+    'fastflowlm',
+    '--llm-model',
     'qwen3.5:2b',
-    '--ollama-fallback-models',
+    '--llm-fallback-models',
     'qwen3.5:4b, qwen3.5:0.8b',
     '--streaming-draft-page-limit',
     '1',
@@ -30,6 +32,7 @@ test('packaged flow smoke args validate numeric knobs', () => {
   assert.equal(parsed.cdpPort, 9555);
   assert.equal(parsed.ocrProvider, 'windowsml');
   assert.equal(parsed.ocrPageWorkers, 2);
+  assert.equal(parsed.llmProvider, 'fastflowlm');
   assert.equal(parsed.ollamaModel, 'qwen3.5:2b');
   assert.deepEqual(parsed.ollamaFallbackModels, ['qwen3.5:4b', 'qwen3.5:0.8b']);
   assert.equal(parsed.streamingDraftPageLimit, 1);
@@ -91,11 +94,27 @@ test('packaged streaming production enables completion wait and production outpu
   assert.equal(parsed.waitForStreamingComplete, true);
   assert.equal(parsed.verifyStreamingPracticeReady, false);
   assert.deepEqual(parsed.ollamaFallbackModels, ['qwen3.5:2b']);
+  assert.equal(parsed.llmProvider, 'fastflowlm');
   assert.match(
     parsed.outDir,
     /tmp[\\/]cert-prep-desktop[\\/]packaged-streaming-production[\\/]/,
   );
   assert.equal(parsed.appDataDir, `${parsed.outDir}\\app-data`);
+});
+
+test('packaged flow smoke keeps ollama argument aliases for old QA commands', () => {
+  const parsed = parsePackagedFlowSmokeArgs([
+    '--llm-provider',
+    'ollama',
+    '--ollama-model',
+    'qwen3.5:2b',
+    '--ollama-fallback-models',
+    'qwen3.5:0.8b',
+  ]);
+
+  assert.equal(parsed.llmProvider, 'ollama');
+  assert.equal(parsed.ollamaModel, 'qwen3.5:2b');
+  assert.deepEqual(parsed.ollamaFallbackModels, ['qwen3.5:0.8b']);
 });
 
 test('streaming practice-ready verification implies completion wait', () => {

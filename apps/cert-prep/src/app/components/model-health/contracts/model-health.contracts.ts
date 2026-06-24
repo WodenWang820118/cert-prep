@@ -59,7 +59,7 @@ export interface ModelHealthViewState {
   readonly llmHealth: LLMHealthRead | null;
   readonly ocrHealth: OCRHealthRead | null;
   readonly ocrPhase: OcrHealthPhase;
-  readonly ollamaMissing: boolean;
+  readonly llmRuntimeMissing: boolean;
   readonly modelMissing: boolean;
   readonly ocrRuntimeMissing: boolean;
   readonly configuredModelName: string;

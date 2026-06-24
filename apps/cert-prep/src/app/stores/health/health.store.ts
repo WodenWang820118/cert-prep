@@ -94,6 +94,15 @@ export class HealthStore {
       this.runtimeRequirements(),
     ),
   );
+  readonly isLlmRuntimeMissing = computed(() =>
+    this.runtimeHealth.isLlmRuntimeMissing(
+      this.llmHealth(),
+      this.runtimeRequirements(),
+    ),
+  );
+  readonly llmProviderLabel = computed(() =>
+    this.runtimeHealth.llmProviderLabel(this.llmHealth()),
+  );
   readonly isOcrRuntimeMissing = computed(() =>
     this.runtimeHealth.isOcrRuntimeMissing(
       this.ocrHealth(),

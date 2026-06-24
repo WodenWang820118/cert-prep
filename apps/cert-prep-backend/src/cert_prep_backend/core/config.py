@@ -9,7 +9,10 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from cert_prep_ollama.models import DEFAULT_OLLAMA_MODEL
 
+DEFAULT_FASTFLOWLM_MODEL = "qwen3.5:4b"
+DEFAULT_FASTFLOWLM_BASE_URL = "http://127.0.0.1:52625/v1"
 DEFAULT_OLLAMA_FALLBACK_MODELS = ("qwen3.5:2b",)
+DEFAULT_FASTFLOWLM_FALLBACK_MODELS = ("qwen3.5:2b",)
 
 
 def default_data_dir() -> Path:
@@ -22,6 +25,10 @@ def default_data_dir() -> Path:
 
 def default_ollama_fallback_models() -> list[str]:
     return list(DEFAULT_OLLAMA_FALLBACK_MODELS)
+
+
+def default_fastflowlm_fallback_models() -> list[str]:
+    return list(DEFAULT_FASTFLOWLM_FALLBACK_MODELS)
 
 
 class Settings(BaseSettings):
@@ -54,7 +61,7 @@ class Settings(BaseSettings):
             "tauri://localhost",
         ]
     )
-    llm_provider: Literal["fake", "ollama"] = "fake"
+    llm_provider: Literal["fake", "ollama", "fastflowlm"] = "fake"
     ocr_provider: Literal["fake", "ollama", "paddle", "windowsml"] = "fake"
     ocr_device: str = "auto"
     ocr_benchmark: bool = False
@@ -63,6 +70,12 @@ class Settings(BaseSettings):
     ollama_fallback_models: Annotated[list[str], NoDecode] = Field(
         default_factory=default_ollama_fallback_models
     )
+    fastflowlm_base_url: str = DEFAULT_FASTFLOWLM_BASE_URL
+    fastflowlm_model: str = DEFAULT_FASTFLOWLM_MODEL
+    fastflowlm_fallback_models: Annotated[list[str], NoDecode] = Field(
+        default_factory=default_fastflowlm_fallback_models
+    )
+    fastflowlm_timeout_seconds: float = 120.0
     ocr_runtime_mode: Literal["external", "inprocess"] = "external"
     ocr_runtime_dir: Path | None = None
     ocr_runtime_manifest_path: Path | None = None
@@ -79,6 +92,13 @@ class Settings(BaseSettings):
     @field_validator("ollama_fallback_models", mode="before")
     @classmethod
     def parse_ollama_fallback_models(cls, value):
+        if isinstance(value, str):
+            return [model.strip() for model in value.split(",") if model.strip()]
+        return value
+
+    @field_validator("fastflowlm_fallback_models", mode="before")
+    @classmethod
+    def parse_fastflowlm_fallback_models(cls, value):
         if isinstance(value, str):
             return [model.strip() for model in value.split(",") if model.strip()]
         return value

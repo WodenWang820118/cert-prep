@@ -16,7 +16,10 @@ export const DEFAULT_WINDOWSML_OCR_RUNTIME_ROOT =
 export const DEFAULT_WINDOWSML_OCR_RUNTIME_MANIFEST =
   'apps/cert-prep-desktop/src-tauri/resources/windowsml-ocr-runtime-manifest.json';
 export const DEFAULT_DATA_DIR = 'tmp/cert-prep-desktop/package-qa/data';
+export const DEFAULT_LLM_PROVIDER = 'fastflowlm';
 export const DEFAULT_LLM_MODEL = 'qwen3.5:4b';
+export const PACKAGE_QA_LLM_PROVIDER_ENV =
+  'CERT_PREP_PACKAGE_QA_LLM_PROVIDER';
 export const PACKAGE_QA_OCR_PAGE_WORKERS_ENV =
   'CERT_PREP_PACKAGE_QA_OCR_PAGE_WORKERS';
 export const BACKEND_RUNTIME_PREFIX = 'cert-prep-backend-runtime-';

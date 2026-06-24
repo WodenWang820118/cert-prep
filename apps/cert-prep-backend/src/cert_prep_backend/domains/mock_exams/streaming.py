@@ -346,5 +346,7 @@ def _is_non_fatal_generation_error(exc: Exception) -> bool:
             "invalid json",
             "unreadable response",
             "non-object json response",
+            "timed out",
+            "timeout",
         )
     )

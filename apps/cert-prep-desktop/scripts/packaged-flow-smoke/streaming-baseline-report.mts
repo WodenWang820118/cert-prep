@@ -55,6 +55,7 @@ export interface StreamingBaselineReport {
     streaming_draft_page_limit: number | null;
     streaming_draft_workers: number | null;
     streaming_complete_timeout_ms: number;
+    llm_provider: string;
   };
   timings_ms: Record<string, number | null>;
   ocr_completion: {
@@ -105,6 +106,7 @@ interface PackagedStreamingProductionSummary {
   fallback_models: string[];
   fallback_reason: string | null;
   llm_health: LlmHealthSnapshot | null;
+  llm_provider: string;
   artifacts: {
     production_summary_json: string;
     baseline_json: string;
@@ -253,6 +255,7 @@ function buildStreamingBaselineReport(run: SmokeRunState): StreamingBaselineRepo
       app_data_dir: run.options.appDataDir
         ? normalizePath(relative(run.options.workspaceRoot, run.options.appDataDir))
         : null,
+      llm_provider: run.options.llmProvider,
       llm_model: run.options.ollamaModel,
       llm_configured_model:
         run.metrics.llm_configured_model ?? run.options.ollamaModel,
@@ -329,6 +332,9 @@ export function buildProductionSummary(
     run.metrics.llm_configured_model ?? report.runtime.llm_configured_model;
   const effectiveModel =
     run.metrics.llm_effective_model ?? report.runtime.llm_effective_model;
+  const fallbackReason =
+    run.metrics.llm_fallback_reason ?? report.runtime.llm_fallback_reason;
+  const llmHealth = run.metrics.llm_health ?? report.runtime.llm_health;
   const selectedModel = effectiveModel;
   const checks: Record<string, boolean> = {
     no_script_errors: run.metrics.errors.length === 0,
@@ -336,9 +342,13 @@ export function buildProductionSummary(
       report.ocr_completion.pages_processed === EXPECTED_BASELINE_PAGES &&
       report.ocr_completion.total_pages === EXPECTED_BASELINE_PAGES,
     ocr_chunks_present: acceptedOcrChunkCount(run),
-    reasoning_uses_nvidia_dgpu: routingBoolean(
+    ...reasoningProviderChecks(
+      run,
+      configuredModel,
+      selectedModel,
+      fallbackReason,
+      llmHealth,
       gpuRoutingChecks,
-      'reasoning_uses_nvidia_dgpu',
     ),
     streaming_jobs_succeeded: report.streaming.completion_state.all_succeeded,
     selected_model_produced_usable_questions:
@@ -354,13 +364,13 @@ export function buildProductionSummary(
     status: Object.values(checks).every(Boolean) ? 'passed' : 'failed',
     generated_at: report.generated_at,
     selected_model: selectedModel,
+    llm_provider: report.runtime.llm_provider,
     configured_model: configuredModel,
     effective_model: effectiveModel,
     fallback_models:
       run.metrics.llm_fallback_models ?? report.runtime.llm_fallback_models,
-    fallback_reason:
-      run.metrics.llm_fallback_reason ?? report.runtime.llm_fallback_reason,
-    llm_health: run.metrics.llm_health ?? report.runtime.llm_health,
+    fallback_reason: fallbackReason,
+    llm_health: llmHealth,
     artifacts: {
       production_summary_json: normalizePath(
         relative(run.options.workspaceRoot, productionSummaryPath),
@@ -378,6 +388,35 @@ export function buildProductionSummary(
     gpu_routing_checks: gpuRoutingChecks,
     checks,
     errors: run.metrics.errors,
+  };
+}
+
+function reasoningProviderChecks(
+  run: SmokeRunState,
+  configuredModel: string,
+  selectedModel: string | null,
+  fallbackReason: string | null,
+  llmHealth: LlmHealthSnapshot | null,
+  gpuRoutingChecks: GpuRoutingChecks | null,
+): Record<string, boolean> {
+  if (run.options.llmProvider === 'fastflowlm') {
+    return {
+      fastflowlm_health_available:
+        llmHealth?.provider === 'fastflowlm' && llmHealth.available === true,
+      fastflowlm_selected_configured_model:
+        selectedModel !== null && selectedModel === configuredModel,
+      fastflowlm_no_fallback:
+        fallbackReason === null &&
+        selectedModel !== null &&
+        selectedModel === configuredModel,
+    };
+  }
+
+  return {
+    reasoning_uses_nvidia_dgpu: routingBoolean(
+      gpuRoutingChecks,
+      'reasoning_uses_nvidia_dgpu',
+    ),
   };
 }
 

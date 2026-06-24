@@ -151,3 +151,15 @@ class InvalidJsonReasoningExamProvider(MockExamProvider):
         self, chunks: list[SourceChunk] | tuple[SourceChunk, ...], limit: int
     ) -> list[DraftSuggestion]:
         raise AssertionError("streaming hybrid path should not retry full generation")
+
+
+class TimeoutReasoningExamProvider(InvalidJsonReasoningExamProvider):
+    def generate_reasoning_drafts(
+        self,
+        chunks: list[SourceChunk] | tuple[SourceChunk, ...],
+        limit: int,
+        *,
+        num_ctx: int,
+        num_predict: int,
+    ) -> list[DraftSuggestion]:
+        raise ProviderUnavailableError("FastFlowLM transient generation error: timed out")

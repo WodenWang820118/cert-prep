@@ -33,9 +33,89 @@ test('production summary passes when WindowsML OCR is routed to AMD iGPU', () =>
 
     assert.equal(summary.schema_version, 2);
     assert.equal(summary.status, 'passed');
+    assert.equal(summary.checks.fastflowlm_health_available, true);
+    assert.equal(summary.checks.fastflowlm_selected_configured_model, true);
+    assert.equal(summary.checks.fastflowlm_no_fallback, true);
     assert.equal(summary.checks.windowsml_ocr_process_observed, true);
     assert.equal(summary.checks.ocr_uses_amd_igpu, true);
     assert.equal(summary.checks.ocr_avoids_nvidia_dgpu, true);
+  } finally {
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test('production summary accepts FastFlowLM NPU reasoning without NVIDIA dGPU usage', () => {
+  const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-prep-production-summary-'));
+  try {
+    const outDir = join(workspaceRoot, 'out');
+    mkdirSync(outDir);
+    writeFileSync(
+      join(outDir, 'windows-resource-summary.json'),
+      JSON.stringify({
+        gpu_routing_checks: {
+          windowsml_ocr_process_observed: true,
+          ocr_uses_amd_igpu: true,
+          ocr_avoids_nvidia_dgpu: true,
+          reasoning_uses_nvidia_dgpu: false,
+          gpu_luid_map_usable: true,
+        },
+      }),
+      'utf8',
+    );
+    const summary = buildProductionSummary(
+      productionRunState(workspaceRoot, outDir),
+      productionReport(),
+    );
+
+    assert.equal(summary.status, 'passed');
+    assert.equal(summary.checks.reasoning_uses_nvidia_dgpu, undefined);
+    assert.equal(summary.checks.fastflowlm_health_available, true);
+    assert.equal(summary.checks.fastflowlm_selected_configured_model, true);
+    assert.equal(summary.checks.fastflowlm_no_fallback, true);
+  } finally {
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test('production summary still requires NVIDIA dGPU usage for Ollama reasoning', () => {
+  const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-prep-production-summary-'));
+  try {
+    const outDir = join(workspaceRoot, 'out');
+    mkdirSync(outDir);
+    writeFileSync(
+      join(outDir, 'windows-resource-summary.json'),
+      JSON.stringify({
+        gpu_routing_checks: {
+          windowsml_ocr_process_observed: true,
+          ocr_uses_amd_igpu: true,
+          ocr_avoids_nvidia_dgpu: true,
+          reasoning_uses_nvidia_dgpu: false,
+          gpu_luid_map_usable: true,
+        },
+      }),
+      'utf8',
+    );
+    const run = productionRunState(workspaceRoot, outDir);
+    run.options.llmProvider = 'ollama';
+    run.metrics.llm_provider = 'ollama';
+    const report = productionReport();
+    report.runtime.llm_provider = 'ollama';
+    report.runtime.llm_health = {
+      provider: 'ollama',
+      available: true,
+      model: 'qwen3.5:4b',
+      configured_model: 'qwen3.5:4b',
+      effective_model: 'qwen3.5:4b',
+      fallback_models: ['qwen3.5:2b'],
+      fallback_reason: null,
+      detail: 'model available',
+    };
+
+    const summary = buildProductionSummary(run, report);
+
+    assert.equal(summary.status, 'failed');
+    assert.equal(summary.checks.reasoning_uses_nvidia_dgpu, false);
+    assert.equal(summary.checks.fastflowlm_health_available, undefined);
   } finally {
     rmSync(workspaceRoot, { recursive: true, force: true });
   }
@@ -54,6 +134,7 @@ function productionRunState(
       cdpPort: 9222,
       ocrProvider: 'windowsml',
       ocrPageWorkers: 1,
+      llmProvider: 'fastflowlm',
       ollamaModel: 'qwen3.5:4b',
       ollamaFallbackModels: ['qwen3.5:2b'],
       waitForStreamingComplete: true,
@@ -71,6 +152,7 @@ function productionRunState(
       ui_timings_ms: {},
       observations: [],
       errors: [],
+      llm_provider: 'fastflowlm',
       llm_model: 'qwen3.5:4b',
       llm_effective_model: 'qwen3.5:4b',
       llm_fallback_models: ['qwen3.5:2b'],
@@ -141,7 +223,7 @@ function productionReport(): StreamingBaselineReport {
       llm_fallback_models: ['qwen3.5:2b'],
       llm_fallback_reason: null,
       llm_health: {
-        provider: 'ollama',
+        provider: 'fastflowlm',
         available: true,
         model: 'qwen3.5:4b',
         configured_model: 'qwen3.5:4b',
@@ -151,6 +233,7 @@ function productionReport(): StreamingBaselineReport {
         detail: 'model available',
       },
       ocr_provider: 'windowsml',
+      llm_provider: 'fastflowlm',
       ocr_page_workers: 1,
       streaming_draft_page_limit: 1,
       streaming_draft_workers: 1,

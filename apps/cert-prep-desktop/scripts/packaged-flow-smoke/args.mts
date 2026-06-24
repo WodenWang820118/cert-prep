@@ -14,6 +14,7 @@ const DEFAULT_PDF_PATH = 'pdfs/\u30101\u30112025\u5e7407\u6708N1 \u771f\u9898.pd
 const DEFAULT_CDP_PORT = 9491;
 const DEFAULT_OCR_PROVIDER = 'windowsml';
 const DEFAULT_OCR_PAGE_WORKERS = 1;
+const DEFAULT_LLM_PROVIDER = 'fastflowlm';
 const DEFAULT_OLLAMA_FALLBACK_MODELS = ['qwen3.5:2b'];
 const DEFAULT_STREAMING_COMPLETE_TIMEOUT_MS = 1_200_000;
 
@@ -46,11 +47,16 @@ export function parsePackagedFlowSmokeArgs(
       process.env.CERT_PREP_PACKAGE_SMOKE_OCR_PAGE_WORKERS ??
         DEFAULT_OCR_PAGE_WORKERS,
     ),
+    llmProvider:
+      process.env.CERT_PREP_PACKAGE_SMOKE_LLM_PROVIDER?.trim() ||
+      DEFAULT_LLM_PROVIDER,
     ollamaModel:
+      process.env.CERT_PREP_PACKAGE_SMOKE_LLM_MODEL?.trim() ||
       process.env.CERT_PREP_PACKAGE_SMOKE_OLLAMA_MODEL?.trim() ||
       DEFAULT_LLM_MODEL,
     ollamaFallbackModels: stringList(
-      process.env.CERT_PREP_PACKAGE_SMOKE_OLLAMA_FALLBACK_MODELS,
+      process.env.CERT_PREP_PACKAGE_SMOKE_LLM_FALLBACK_MODELS ??
+        process.env.CERT_PREP_PACKAGE_SMOKE_OLLAMA_FALLBACK_MODELS,
       DEFAULT_OLLAMA_FALLBACK_MODELS,
     ),
     streamingDraftPageLimit: optionalPositiveInteger(
@@ -100,6 +106,12 @@ export function parsePackagedFlowSmokeArgs(
       parsed.ocrProvider = nonEmptyString(readValue(arg), arg);
     } else if (arg === '--ocr-page-workers') {
       parsed.ocrPageWorkers = positiveInteger(Number(readValue(arg)), arg);
+    } else if (arg === '--llm-provider') {
+      parsed.llmProvider = nonEmptyString(readValue(arg), arg).toLowerCase();
+    } else if (arg === '--llm-model') {
+      parsed.ollamaModel = nonEmptyString(readValue(arg), arg);
+    } else if (arg === '--llm-fallback-models') {
+      parsed.ollamaFallbackModels = stringList(readValue(arg), []);
     } else if (arg === '--ollama-model') {
       parsed.ollamaModel = nonEmptyString(readValue(arg), arg);
     } else if (arg === '--ollama-fallback-models') {
@@ -135,6 +147,7 @@ export function parsePackagedFlowSmokeArgs(
     'ocrPageWorkers',
   );
   parsed.ocrProvider = nonEmptyString(parsed.ocrProvider, 'ocrProvider');
+  parsed.llmProvider = nonEmptyString(parsed.llmProvider, 'llmProvider').toLowerCase();
   parsed.ollamaModel = nonEmptyString(parsed.ollamaModel, 'ollamaModel');
   parsed.ollamaFallbackModels = nonEmptyStringList(
     parsed.ollamaFallbackModels,

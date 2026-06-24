@@ -123,6 +123,7 @@ export async function runPackagedFlowSmokeCli(argv: readonly string[] = process.
     ui_timings_ms: {},
     observations: [],
     errors: [],
+    llm_provider: parsedOptions.llmProvider,
     llm_model: parsedOptions.ollamaModel,
     llm_configured_model: parsedOptions.ollamaModel,
     llm_fallback_models: parsedOptions.ollamaFallbackModels,

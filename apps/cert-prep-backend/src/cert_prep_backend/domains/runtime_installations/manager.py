@@ -91,29 +91,36 @@ class RuntimeInstallationManager:
         installers: list[RuntimeInstaller] | None = None,
     ) -> None:
         from cert_prep_backend.domains.runtime_installations.installers import (
+            LLMModelInstaller,
             WindowsMLOcrRuntimeInstaller,
             PaddleOcrRuntimeInstaller,
         )
         from cert_prep_backend.domains.source_documents.adapters.external_windowsml import (
             ExternalWindowsMLOCRProvider,
         )
-        from cert_prep_ollama.installers import OllamaModelInstaller, OllamaRuntimeInstaller
+        from cert_prep_ollama.installers import OllamaRuntimeInstaller
         from cert_prep_backend.domains.source_documents.adapters.external_paddle import (
             ExternalPaddleOCRProvider,
         )
 
         self._settings = settings
         self._async_jobs = async_jobs
+        llm_provider_name = str(getattr(llm_provider, "provider", "")).lower()
+        llm_runtime_installers: list[RuntimeInstaller] = []
+        if llm_provider_name == "ollama":
+            llm_runtime_installers.append(
+                OllamaRuntimeInstaller(
+                    ollama_host=settings.ollama_host,
+                    runtime_install_timeout_seconds=settings.runtime_install_timeout_seconds,
+                )
+            )
         self._installers = {
             installer.kind: installer
             for installer in (
                 installers
                 or [
-                    OllamaRuntimeInstaller(
-                        ollama_host=settings.ollama_host,
-                        runtime_install_timeout_seconds=settings.runtime_install_timeout_seconds,
-                    ),
-                    OllamaModelInstaller(llm_provider),
+                    *llm_runtime_installers,
+                    LLMModelInstaller(llm_provider),
                     PaddleOcrRuntimeInstaller(
                         settings,
                         (

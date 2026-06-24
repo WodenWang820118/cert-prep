@@ -1,12 +1,20 @@
+import copy
 from collections.abc import Sequence
 from pathlib import Path
 from threading import Event
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
 
 from cert_prep_backend.api.app import create_app
-from cert_prep_backend.core.config import DEFAULT_OLLAMA_MODEL, Settings
+from cert_prep_backend.core.config import (
+    DEFAULT_FASTFLOWLM_MODEL,
+    DEFAULT_OLLAMA_MODEL,
+    Settings,
+)
+from cert_prep_backend.domains.mock_exams.fastflowlm_transport import FastFlowLMProvider
+from cert_prep_backend.domains.mock_exams import fastflowlm_transport
 from cert_prep_backend.domains.mock_exams.models import DraftSuggestion, SourceChunk
 from cert_prep_backend.domains.mock_exams.ports import ModelPullProgress, ProviderHealth
 from cert_prep_backend.domains.mock_exams.ollama_transport import OllamaProvider
@@ -17,6 +25,7 @@ from cert_prep_backend.domains.mock_exams.provider import (
     _extract_jlpt_question_blocks,
     _json_response,
     _source_text_for_prompt,
+    provider_from_settings,
 )
 from cert_prep_backend.api.errors import ProviderUnavailableError
 
@@ -214,6 +223,213 @@ def test_settings_parse_env_ollama_fallback_models(monkeypatch, tmp_path) -> Non
     settings = Settings()
 
     assert settings.ollama_fallback_models == ["qwen3.5:2b", "gemma4:12b"]
+
+
+def test_settings_parse_comma_separated_fastflowlm_fallback_models(tmp_path) -> None:
+    settings = Settings(
+        data_dir=tmp_path,
+        fastflowlm_fallback_models="qwen3.5:2b, qwen3.5:0.8b, ",
+    )
+
+    assert settings.fastflowlm_fallback_models == ["qwen3.5:2b", "qwen3.5:0.8b"]
+
+
+def test_provider_from_settings_can_select_fastflowlm(tmp_path) -> None:
+    provider = provider_from_settings(
+        Settings(
+            data_dir=tmp_path,
+            llm_provider="fastflowlm",
+            fastflowlm_model="qwen3.5:4b",
+            fastflowlm_fallback_models=["qwen3.5:2b"],
+            fastflowlm_base_url="http://127.0.0.1:52625/v1/",
+        )
+    )
+
+    assert isinstance(provider, FastFlowLMProvider)
+    assert provider.provider == "fastflowlm"
+    assert provider.model == "qwen3.5:4b"
+    assert provider.fallback_models == ("qwen3.5:2b",)
+    assert provider.base_url == "http://127.0.0.1:52625/v1"
+
+
+def test_fastflowlm_health_reports_missing_runtime_without_model_download(monkeypatch) -> None:
+    monkeypatch.setattr(fastflowlm_transport, "resolve_fastflowlm_executable", lambda: None)
+    provider = FastFlowLMProvider(
+        base_url="http://127.0.0.1:1/v1",
+        model=DEFAULT_FASTFLOWLM_MODEL,
+        timeout_seconds=0.05,
+        fallback_models=["qwen3.5:2b"],
+    )
+
+    health = provider.health()
+
+    assert health.available is False
+    assert health.provider == "fastflowlm"
+    assert health.model == DEFAULT_FASTFLOWLM_MODEL
+    assert health.configured_model == DEFAULT_FASTFLOWLM_MODEL
+    assert health.unavailable_reason == "fastflowlm_missing"
+    assert health.fallback_models == ("qwen3.5:2b",)
+    assert "FastFlowLM is not installed" in health.detail
+
+
+def test_fastflowlm_executable_resolution_accepts_official_flm_install_dir(
+    monkeypatch, tmp_path
+) -> None:
+    install_dir = tmp_path / "flm"
+    install_dir.mkdir()
+    executable = install_dir / "flm.exe"
+    executable.write_text("", encoding="utf-8")
+    monkeypatch.setattr(fastflowlm_transport.shutil, "which", lambda _: None)
+    monkeypatch.setenv("ProgramFiles", str(tmp_path))
+    monkeypatch.setenv("ProgramFiles(x86)", str(tmp_path / "x86"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+
+    assert fastflowlm_transport.resolve_fastflowlm_executable() == executable
+
+
+def test_fastflowlm_pull_uses_runtime_install_timeout(monkeypatch, tmp_path) -> None:
+    executable = tmp_path / "flm.exe"
+    executable.write_text("", encoding="utf-8")
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        fastflowlm_transport,
+        "resolve_fastflowlm_executable",
+        lambda: executable,
+    )
+
+    def fake_run(*args, **kwargs):
+        captured["args"] = args
+        captured.update(kwargs)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(fastflowlm_transport.subprocess, "run", fake_run)
+    provider = FastFlowLMProvider(
+        base_url="http://127.0.0.1:52625/v1",
+        model="qwen3.5:4b",
+        timeout_seconds=5,
+        model_pull_timeout_seconds=900,
+    )
+
+    provider.pull_model(lambda _progress: None)
+
+    assert captured["timeout"] == 900
+    assert captured["args"][0] == [str(executable), "pull", "qwen3.5:4b"]
+
+
+def test_fastflowlm_health_uses_served_fallback_model() -> None:
+    provider = RecordingFastFlowLMProvider(models=["qwen3.5:2b"])
+
+    health = provider.health()
+
+    assert health.available is True
+    assert health.configured_model == "qwen3.5:4b"
+    assert health.effective_model == "qwen3.5:2b"
+    assert (
+        health.fallback_reason
+        == "Configured model qwen3.5:4b is missing; using fallback qwen3.5:2b."
+    )
+    assert provider.requests[0]["path"] == "/models"
+
+
+def test_fastflowlm_reasoning_drafts_use_openai_compatible_chat() -> None:
+    provider = RecordingFastFlowLMProvider(
+        models=["qwen3.5:4b"],
+        chat_content=(
+            '{"items":[{"chunk_id":"chunk-1","citation_page":1,'
+            '"question":"Mondai 1 Choose the correct reading.",'
+            '"choices":["1 first","2 second","3 third","4 fourth"],'
+            '"answer":"1 first","answer_key_source":"ai_inferred",'
+            '"rationale":"The source supports choice 1.",'
+            '"source_excerpt":"Mondai 1 Choose the correct reading.",'
+            '"confidence":0.9}]}'
+        ),
+    )
+    chunk = SourceChunk(
+        id="chunk-1",
+        page_number=1,
+        text="Mondai 1 Choose the correct reading. 1 first 2 second 3 third 4 fourth",
+        source_excerpt="Mondai 1 Choose the correct reading.",
+    )
+
+    suggestions = provider.generate_reasoning_drafts([chunk], limit=1)
+
+    assert len(suggestions) == 1
+    assert suggestions[0].question == "Mondai 1 Choose the correct reading."
+    assert suggestions[0].answer == "1 first"
+    chat_request = provider.requests[-1]
+    assert chat_request["path"] == "/chat/completions"
+    assert chat_request["body"]["model"] == "qwen3.5:4b"
+    assert chat_request["body"]["response_format"] == {"type": "json_object"}
+
+
+def test_fastflowlm_json_mode_retries_without_response_format() -> None:
+    provider = RecordingFastFlowLMProvider(
+        models=["qwen3.5:4b"],
+        chat_content='{"answer":"2","rationale":"Choice 2 fits.","confidence":0.7}',
+        fail_response_format=True,
+    )
+    chunk = SourceChunk(
+        id="chunk-1",
+        page_number=1,
+        text="Question text. 1 first 2 second 3 third 4 fourth",
+        source_excerpt="Question text.",
+    )
+    candidate = DraftSuggestion(
+        chunk_id=chunk.id,
+        question="Question text.",
+        choices=["1 first", "2 second", "3 third", "4 fourth"],
+        answer="",
+        answer_key_source="manual",
+        rationale="",
+        citation_page=1,
+        source_excerpt="Question text.",
+    )
+
+    suggestion = provider.generate_fast_first_draft(chunk, candidate)
+
+    assert suggestion is not None
+    assert suggestion.answer == "2 second"
+    chat_requests = [
+        request for request in provider.requests if request["path"] == "/chat/completions"
+    ]
+    assert "response_format" in chat_requests[0]["body"]
+    assert "response_format" not in chat_requests[1]["body"]
+
+
+def test_fastflowlm_timeout_does_not_switch_to_fallback_model() -> None:
+    provider = RecordingFastFlowLMProvider(
+        models=["qwen3.5:4b", "qwen3.5:2b"],
+        chat_content='{"answer":"2","rationale":"Choice 2 fits.","confidence":0.7}',
+        fail_models={"qwen3.5:4b": ProviderUnavailableError("timed out")},
+    )
+    chunk = SourceChunk(
+        id="chunk-1",
+        page_number=1,
+        text="Question text. 1 first 2 second 3 third 4 fourth",
+        source_excerpt="Question text.",
+    )
+    candidate = DraftSuggestion(
+        chunk_id=chunk.id,
+        question="Question text.",
+        choices=["1 first", "2 second", "3 third", "4 fourth"],
+        answer="",
+        answer_key_source="manual",
+        rationale="",
+        citation_page=1,
+        source_excerpt="Question text.",
+    )
+
+    suggestion = provider.generate_fast_first_draft(chunk, candidate)
+
+    assert suggestion is None
+    chat_requests = [
+        request for request in provider.requests if request["path"] == "/chat/completions"
+    ]
+    assert [request["body"]["model"] for request in chat_requests] == ["qwen3.5:4b"]
+    health = provider.health()
+    assert health.available is True
+    assert health.effective_model == "qwen3.5:4b"
+    assert health.fallback_reason is None
 
 
 def test_ollama_health_uses_installed_fallback_without_pull(monkeypatch) -> None:
@@ -715,6 +931,60 @@ class RecordingOllamaClient:
     def pull(self, *_args, **_kwargs):
         self.pull_calls += 1
         raise AssertionError("prewarm must not pull models")
+
+
+class RecordingFastFlowLMProvider(FastFlowLMProvider):
+    def __init__(
+        self,
+        *,
+        models: list[str],
+        chat_content: str = '{"items":[]}',
+        fail_response_format: bool = False,
+        fail_models: dict[str, Exception] | None = None,
+    ) -> None:
+        super().__init__(
+            base_url="http://127.0.0.1:52625/v1",
+            model="qwen3.5:4b",
+            timeout_seconds=1,
+            fallback_models=["qwen3.5:2b"],
+        )
+        self.models = models
+        self.chat_content = chat_content
+        self.fail_response_format = fail_response_format
+        self.fail_models = fail_models or {}
+        self.requests: list[dict] = []
+
+    def _request_json(
+        self,
+        method: str,
+        path: str,
+        *,
+        body: dict | None = None,
+        timeout_seconds: float | None = None,
+    ) -> dict:
+        self.requests.append(
+            {
+                "method": method,
+                "path": path,
+                "body": copy.deepcopy(body),
+                "timeout_seconds": timeout_seconds,
+            }
+        )
+        if path == "/models":
+            return {"data": [{"id": model} for model in self.models]}
+        if (
+            path == "/chat/completions"
+            and self.fail_response_format
+            and isinstance(body, dict)
+            and "response_format" in body
+        ):
+            raise ProviderUnavailableError("response_format is not supported")
+        if path == "/chat/completions":
+            model = body.get("model") if isinstance(body, dict) else None
+            if isinstance(model, str) and model in self.fail_models:
+                raise self.fail_models[model]
+            return {"choices": [{"message": {"content": self.chat_content}}]}
+        raise AssertionError(f"Unexpected request: {method} {path}")
 
 
 class FlakyListOllamaClient(RecordingOllamaClient):

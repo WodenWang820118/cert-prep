@@ -111,6 +111,36 @@ describe('ModelHealthComponent status display', () => {
     expect(buttonByText(document.body, 'Download model')).toBeNull();
   });
 
+  it('shows FastFlowLM runtime missing without offering Ollama install', () => {
+    const fixture = TestBed.createComponent(ModelHealthComponent);
+    const health = TestBed.inject(HealthStore);
+    health.systemHealth.set(systemHealth());
+    health.llmHealth.set({
+      provider: 'fastflowlm',
+      model: 'qwen3.5:4b',
+      available: false,
+      detail: 'FastFlowLM is not installed.',
+      unavailable_reason: 'fastflowlm_missing',
+      configured_model: 'qwen3.5:4b',
+      effective_model: null,
+      fallback_models: ['qwen3.5:2b'],
+      fallback_reason: null,
+    } as LLMHealthRead & { unavailable_reason: string });
+    health.ocrHealth.set(ocrHealth());
+
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('FastFlowLM missing');
+
+    buttonByText(fixture.nativeElement, 'Manage runtime')?.click();
+    fixture.detectChanges();
+
+    expect(document.body.textContent).toContain('FastFlowLM');
+    expect(document.body.textContent).toContain('Missing');
+    expect(buttonByText(document.body, 'Install Ollama')).toBeNull();
+    expect(buttonByText(document.body, 'Download qwen3.5:4b')).toBeNull();
+  });
+
   it('shows OCR checking copy while health is still settling', () => {
     const fixture = TestBed.createComponent(ModelHealthComponent);
     const health = TestBed.inject(HealthStore);

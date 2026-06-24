@@ -34,6 +34,9 @@ LITE_EXCLUDES = [
 
 COMMON_COLLECT_ALL = ["paddle", "paddleocr", "paddlex"]
 COMMON_METADATA = ["paddleocr", "paddlex"]
+COMMON_HIDDEN_IMPORTS = [
+    "cert_prep_backend.api.app",
+]
 OCR_CORE_METADATA = [
     "imagesize",
     "opencv-contrib-python",
@@ -81,6 +84,8 @@ def _pyinstaller_command(lane: str) -> list[str]:
     for package_name in COMMON_COLLECT_ALL:
         if lane != "lite":
             command.extend(["--collect-all", package_name])
+    for module_name in COMMON_HIDDEN_IMPORTS:
+        command.extend(["--hidden-import", module_name])
     if lane == "lite":
         for module_name in LITE_EXCLUDES:
             command.extend(["--exclude-module", module_name])

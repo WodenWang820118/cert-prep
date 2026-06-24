@@ -24,6 +24,81 @@ from cert_prep_contracts.runtime import (
     RuntimeRequirementKind,
     RuntimeRequirementSnapshot,
 )
+from cert_prep_contracts.llm import ModelPullProgress
+
+
+class LLMModelInstaller:
+    """Installer and health snapshot for the configured reasoning model."""
+
+    kind = RuntimeRequirementKind.OLLAMA_MODEL
+
+    def __init__(self, provider: object) -> None:
+        self._provider = provider
+        self.provider = str(getattr(provider, "provider", "llm"))
+        self.model = str(getattr(provider, "model", "configured model"))
+
+    def requirement(self) -> RuntimeRequirementSnapshot:
+        """Return model availability without starting a download."""
+
+        if not callable(getattr(self._provider, "pull_model", None)):
+            return RuntimeRequirementSnapshot(
+                kind=self.kind,
+                label="Reasoning model",
+                available=False,
+                detail="Configured LLM provider does not support model downloads.",
+                unavailable_reason="unsupported_provider",
+                version=self.model,
+            )
+        health = self._provider.health() if hasattr(self._provider, "health") else None
+        unavailable_reason = getattr(health, "unavailable_reason", None)
+        available = bool(getattr(health, "available", False))
+        detail = str(getattr(health, "detail", "Model health is unavailable."))
+        if not available and unavailable_reason is None and "model" in detail.lower():
+            unavailable_reason = "model_missing"
+        return RuntimeRequirementSnapshot(
+            kind=self.kind,
+            label=f"{_provider_label(self.provider)} model",
+            available=available,
+            detail=detail,
+            unavailable_reason=unavailable_reason,
+            version=self.model,
+        )
+
+    def validate_installable(self) -> None:
+        """Raise when the configured provider cannot pull models."""
+
+        if not callable(getattr(self._provider, "pull_model", None)):
+            raise ProviderUnavailableError(
+                "Configured LLM provider does not support model downloads."
+            )
+
+    def install(
+        self, progress: Callable[[RuntimeInstallProgress], None]
+    ) -> RuntimeInstallationStatus:
+        """Pull the configured model through the provider's download API."""
+
+        pull = getattr(self._provider, "pull_model", None)
+        if not callable(pull):
+            raise ProviderUnavailableError(
+                "Configured LLM provider does not support model downloads."
+            )
+
+        def record_model_progress(model_progress: ModelPullProgress) -> None:
+            progress(
+                RuntimeInstallProgress(
+                    detail=model_progress.status or "model download running",
+                    completed=model_progress.completed,
+                    total=model_progress.total,
+                )
+            )
+
+        try:
+            pull(record_model_progress)
+        except Exception as exc:
+            raise ProviderUnavailableError(
+                f"{_provider_label(self.provider)} unavailable: {exc}"
+            ) from exc
+        return RuntimeInstallationStatus.SUCCEEDED
 
 
 class PaddleOcrRuntimeInstaller:
@@ -81,6 +156,17 @@ class PaddleOcrRuntimeInstaller:
             shutil.move(str(temp_dir), runtime_dir)
         write_installed_ocr_manifest(runtime_dir, manifest)
         return RuntimeInstallationStatus.SUCCEEDED
+
+
+def _provider_label(provider: str) -> str:
+    normalized = provider.strip().lower()
+    if normalized == "fastflowlm":
+        return "FastFlowLM"
+    if normalized == "ollama":
+        return "Ollama"
+    if normalized == "fake":
+        return "Fake LLM"
+    return provider.strip() or "LLM provider"
 
 
 class WindowsMLOcrRuntimeInstaller:

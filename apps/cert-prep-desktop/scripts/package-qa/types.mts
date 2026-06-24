@@ -9,6 +9,7 @@ export interface PackageQaOptions {
   readonly expectedTargetTriple?: string;
   readonly healthTimeoutMs?: number;
   readonly dataDir?: string;
+  readonly llmProvider?: string;
   readonly llmModel?: string;
   readonly ocrProvider?: 'windowsml';
   readonly ocrPageWorkers?: number;
@@ -19,6 +20,7 @@ export interface RuntimeHealthOptions {
   readonly workspaceRoot?: string;
   readonly timeoutMs?: number;
   readonly dataDir?: string;
+  readonly llmProvider?: string;
   readonly llmModel?: string;
   readonly windowsmlOcrRuntimeManifest?: string;
   readonly ocrProvider?: 'windowsml';
@@ -75,8 +77,9 @@ export interface RuntimeHealthSummary {
     readonly CERT_PREP_OCR_DEVICE: 'auto';
     readonly CERT_PREP_OCR_WINDOWSML_DEVICE_ID: '-1';
     readonly CERT_PREP_WINDOWSML_OCR_RUNTIME_MANIFEST_PATH: string;
-    readonly CERT_PREP_LLM_PROVIDER: 'ollama';
+    readonly CERT_PREP_LLM_PROVIDER: string;
     readonly CERT_PREP_OLLAMA_MODEL: string;
+    readonly CERT_PREP_FASTFLOWLM_MODEL: string;
     readonly CERT_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD: 'true';
     readonly CERT_PREP_OCR_PAGE_WORKERS: string | null;
   };
@@ -162,6 +165,7 @@ export interface ParsedArgs {
   windowsmlOcrRuntimeManifest?: string;
   expectedTargetTriple?: string;
   healthTimeoutMs?: number;
+  llmProvider?: string;
   ocrPageWorkers?: number;
 }
 
@@ -171,6 +175,7 @@ export interface RuntimeLaunchEnvOptions {
   readonly port: number;
   readonly token: string;
   readonly dataDir: string;
+  readonly llmProvider?: string;
   readonly llmModel: string;
   readonly windowsmlOcrRuntimeManifest: string;
   readonly ocrProvider?: 'windowsml';
