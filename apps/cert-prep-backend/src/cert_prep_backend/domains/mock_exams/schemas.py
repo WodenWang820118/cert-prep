@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from cert_prep_backend.domains.runtime_schemas import MachineInventoryRead
 from cert_prep_backend.domains.exam_content import QuestionItemKind, QuestionItemKindValue
 from cert_prep_backend.domains.mock_exams.models import (
     AnswerKeySource,
@@ -109,6 +110,48 @@ class LLMHealthRead(BaseModel):
     effective_model: str | None = None
     fallback_models: list[str] = Field(default_factory=list)
     fallback_reason: str | None = None
+    profile_id: str | None = None
+    base_model: str | None = None
+    modelfile_sha256: str | None = None
+    profile_reason: str | None = None
+    profile_warnings: list[str] = Field(default_factory=list)
+
+
+class OllamaModelProfileRead(BaseModel):
+    profile_id: str
+    display_name: str
+    description: str
+    base_model: str
+    local_model: str
+    context_window: int
+    system_prompt: str
+    parameters: dict[str, str | int | float | bool] = Field(default_factory=dict)
+    min_total_ram_bytes: int | None = None
+    min_available_ram_bytes: int | None = None
+    min_free_disk_bytes: int | None = None
+    min_vram_bytes: int | None = None
+    auto_selectable: bool
+    explicit_opt_in_required: bool
+    fallback_profile_ids: list[str] = Field(default_factory=list)
+
+
+class OllamaProfilesRead(BaseModel):
+    items: list[OllamaModelProfileRead]
+
+
+class OllamaProfileSelectionRead(BaseModel):
+    profile_enabled: bool
+    profile_id: str | None = None
+    selected_profile: OllamaModelProfileRead | None = None
+    support_status: str
+    reason: str
+    fallback_profiles: list[OllamaModelProfileRead] = Field(default_factory=list)
+    fallback_models: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    inventory: MachineInventoryRead | None = None
+    modelfile_sha256: str | None = None
+    effective_model: str
+    base_model: str | None = None
 
 
 class ModelDownloadRead(BaseModel):

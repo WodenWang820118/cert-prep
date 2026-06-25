@@ -95,6 +95,7 @@ class RuntimeInstallationManager:
             WindowsMLOcrRuntimeInstaller,
             PaddleOcrRuntimeInstaller,
         )
+        from cert_prep_backend.domains.mock_exams.provider import LazyDraftGenerationProvider
         from cert_prep_backend.domains.source_documents.adapters.external_windowsml import (
             ExternalWindowsMLOCRProvider,
         )
@@ -105,7 +106,8 @@ class RuntimeInstallationManager:
 
         self._settings = settings
         self._async_jobs = async_jobs
-        llm_provider_name = str(getattr(llm_provider, "provider", "")).lower()
+        provider_str = str(getattr(llm_provider, "provider", "") or "").lower()
+        llm_provider_name = provider_str or settings.llm_provider.lower()
         llm_runtime_installers: list[RuntimeInstaller] = []
         if llm_provider_name == "ollama":
             llm_runtime_installers.append(
@@ -114,13 +116,35 @@ class RuntimeInstallationManager:
                     runtime_install_timeout_seconds=settings.runtime_install_timeout_seconds,
                 )
             )
+        llm_model_installer: RuntimeInstaller = LLMModelInstaller(llm_provider)
+        if (
+            llm_provider_name == "ollama"
+            and settings.llm_provider == "ollama"
+            and settings.ollama_profile_enabled
+        ):
+            llm_model_installer = _LazyOllamaProfileInstaller(settings)
+        elif llm_provider_name == "ollama" and not isinstance(
+            llm_provider,
+            LazyDraftGenerationProvider,
+        ):
+            profile_selection = getattr(llm_provider, "profile_selection", None)
+            if profile_selection is not None:
+                from cert_prep_ollama.profile_installer import OllamaProfileInstaller
+
+                llm_model_installer = OllamaProfileInstaller(
+                    profile_selection.selected_profile,
+                    fallback_profiles=profile_selection.fallback_profiles,
+                    host=settings.ollama_host,
+                    timeout_seconds=settings.ollama_timeout_seconds,
+                    runtime_install_timeout_seconds=settings.runtime_install_timeout_seconds,
+                )
         self._installers = {
             installer.kind: installer
             for installer in (
                 installers
                 or [
                     *llm_runtime_installers,
-                    LLMModelInstaller(llm_provider),
+                    llm_model_installer,
                     PaddleOcrRuntimeInstaller(
                         settings,
                         (
@@ -171,6 +195,7 @@ class RuntimeInstallationManager:
                 raise ProviderUnavailableError(str(exc)) from exc
 
         with self._lock:
+            self._evict_terminal_jobs_locked()
             existing = self._active_job_for(installer.kind)
             if existing is not None:
                 return existing.snapshot()
@@ -292,6 +317,8 @@ class RuntimeInstallationManager:
             if error is not _MISSING:
                 job.error = error  # type: ignore[assignment]
             job.updated_at = utcnow()
+            if job.status in _TERMINAL_JOB_STATUSES:
+                self._evict_terminal_jobs_locked()
 
     def _active_job_for(self, kind: RuntimeRequirementKind) -> _RuntimeInstallationJob | None:
         for job in self._jobs.values():
@@ -325,3 +352,84 @@ class RuntimeInstallationManager:
             created_at=now,
             updated_at=now,
         )
+
+    def _evict_terminal_jobs_locked(self) -> None:
+        if len(self._jobs) <= _MAX_RETAINED_JOBS:
+            return
+        terminal_jobs = sorted(
+            (
+                job
+                for job in self._jobs.values()
+                if job.status in _TERMINAL_JOB_STATUSES
+            ),
+            key=lambda job: job.updated_at,
+        )
+        for job in terminal_jobs:
+            if len(self._jobs) <= _MAX_RETAINED_JOBS:
+                break
+            self._jobs.pop(job.id, None)
+
+
+_MAX_RETAINED_JOBS = 100
+_TERMINAL_JOB_STATUSES = {
+    RuntimeInstallationStatus.SUCCEEDED,
+    RuntimeInstallationStatus.FAILED,
+}
+
+
+class _LazyOllamaProfileInstaller:
+    kind = RuntimeRequirementKind.OLLAMA_MODEL
+    provider = "ollama"
+
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+        self._lock = Lock()
+        self._installer: RuntimeInstaller | None = None
+
+    @property
+    def model(self) -> str:
+        installer = self._installer
+        if installer is not None:
+            return installer.model
+        return f"ollama-profile:{self._settings.ollama_profile_id}"
+
+    def requirement(self) -> RuntimeRequirementSnapshot:
+        return self._delegate().requirement()
+
+    def validate_installable(self) -> None:
+        validate = getattr(self._delegate(), "validate_installable", None)
+        if callable(validate):
+            validate()
+
+    def install(
+        self,
+        progress: Callable[[RuntimeInstallProgress], None],
+    ) -> RuntimeInstallationStatus:
+        return self._delegate().install(progress)
+
+    def _delegate(self) -> RuntimeInstaller:
+        installer = self._installer
+        if installer is not None:
+            return installer
+        with self._lock:
+            if self._installer is None:
+                from cert_prep_backend.domains.mock_exams.ollama_profiles import (
+                    ollama_profile_selection_from_settings,
+                )
+                from cert_prep_ollama.profile_installer import OllamaProfileInstaller
+
+                profile_selection = ollama_profile_selection_from_settings(self._settings)
+                if profile_selection is None:
+                    raise ProviderUnavailableError(
+                        "Ollama profile selection is not available."
+                    )
+                self._installer = OllamaProfileInstaller(
+                    profile_selection.selected_profile,
+                    fallback_profiles=profile_selection.fallback_profiles,
+                    host=self._settings.ollama_host,
+                    timeout_seconds=self._settings.ollama_timeout_seconds,
+                    runtime_install_timeout_seconds=(
+                        self._settings.runtime_install_timeout_seconds
+                    ),
+                )
+            return self._installer

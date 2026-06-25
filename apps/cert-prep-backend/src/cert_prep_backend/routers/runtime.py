@@ -2,9 +2,14 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, status
 
-from cert_prep_backend.api.dependencies import get_runtime_installation_manager
+from cert_prep_backend.api.dependencies import get_runtime_installation_manager, get_settings
+from cert_prep_backend.core.config import Settings
+from cert_prep_backend.domains.mock_exams.ollama_profiles import (
+    collect_ollama_machine_inventory,
+)
 from cert_prep_backend.domains.runtime_installations import RuntimeInstallationManager
 from cert_prep_backend.domains.runtime_schemas import (
+    MachineInventoryRead,
     RuntimeInstallationRead,
     RuntimeRequirementsRead,
 )
@@ -20,6 +25,14 @@ def runtime_requirements(
     manager: RuntimeInstallationManager = Depends(get_runtime_installation_manager),
 ):
     return {"items": manager.requirements()}
+
+
+@router.get("/machine-inventory", response_model=MachineInventoryRead)
+def machine_inventory(
+    refresh: bool = False,
+    settings: Settings = Depends(get_settings),
+):
+    return collect_ollama_machine_inventory(settings, refresh=refresh)
 
 
 @router.post(

@@ -1,0 +1,296 @@
+from __future__ import annotations
+
+from cert_prep_contracts.hardware import (
+    MachineAcceleratorSnapshot,
+    MachineCpuSnapshot,
+    MachineInventorySnapshot,
+    MachineRamSnapshot,
+    MachineStorageSnapshot,
+)
+from cert_prep_contracts.llm import ModelPullProgress
+from cert_prep_contracts.llm_profiles import OllamaProfileSupportStatus
+from cert_prep_ollama import profile_installer as profile_installer_module
+from cert_prep_ollama.modelfiles import modelfile_sha256, render_modelfile
+from cert_prep_ollama.profile_installer import OllamaProfileInstaller
+from cert_prep_ollama.profiles import (
+    DEFAULT_PROFILE_ID,
+    GIB,
+    HIGH_CONTEXT_PROFILE_ID,
+    LOW_RESOURCE_PROFILE_ID,
+    profile_by_id,
+    profile_catalog,
+    select_ollama_profile,
+)
+
+
+def test_profile_catalog_keeps_9b_explicit_opt_in_only() -> None:
+    profiles = {profile.profile_id: profile for profile in profile_catalog()}
+
+    assert LOW_RESOURCE_PROFILE_ID in profiles
+    assert DEFAULT_PROFILE_ID in profiles
+    assert HIGH_CONTEXT_PROFILE_ID in profiles
+    assert profiles["qwen3.5-9b-study-16k"].explicit_opt_in_required is True
+    assert profiles["qwen3.5-9b-study-16k"].auto_selectable is False
+
+
+def test_modelfile_rendering_is_deterministic() -> None:
+    profile = profile_by_id(DEFAULT_PROFILE_ID)
+
+    first = render_modelfile(profile)
+    second = render_modelfile(profile)
+
+    assert first == second
+    assert first.startswith("FROM qwen3.5:4b\n")
+    assert "PARAMETER num_ctx 8192\n" in first
+    assert modelfile_sha256(profile) == modelfile_sha256(profile)
+
+
+def test_auto_selection_uses_2b_for_clearly_low_inventory() -> None:
+    selection = select_ollama_profile(
+        _inventory(total_ram=6 * GIB, available_ram=3 * GIB, free_disk=7 * GIB)
+    )
+
+    assert selection.profile_id == LOW_RESOURCE_PROFILE_ID
+    assert selection.selected_profile.base_model == "qwen3.5:2b"
+
+
+def test_auto_selection_uses_2b_when_available_ram_is_low() -> None:
+    selection = select_ollama_profile(
+        _inventory(total_ram=12 * GIB, available_ram=1 * GIB, free_disk=32 * GIB)
+    )
+
+    assert selection.profile_id == LOW_RESOURCE_PROFILE_ID
+
+
+def test_whitespace_profile_id_falls_back_to_auto() -> None:
+    selection = select_ollama_profile(
+        _inventory(total_ram=16 * GIB, available_ram=8 * GIB, free_disk=64 * GIB),
+        profile_id="   ",
+    )
+
+    assert selection.profile_id == DEFAULT_PROFILE_ID
+
+
+def test_auto_selection_keeps_default_profile_when_inventory_is_incomplete() -> None:
+    selection = select_ollama_profile(
+        _inventory(total_ram=None, available_ram=None, free_disk=None)
+    )
+
+    assert selection.profile_id == DEFAULT_PROFILE_ID
+    assert selection.support_status == OllamaProfileSupportStatus.WARNING
+    assert "incomplete" in selection.reason
+
+
+def test_auto_selection_default_profile_reports_requirement_warnings() -> None:
+    selection = select_ollama_profile(
+        _inventory(total_ram=12 * GIB, available_ram=None, free_disk=32 * GIB)
+    )
+
+    assert selection.profile_id == DEFAULT_PROFILE_ID
+    assert selection.support_status == OllamaProfileSupportStatus.WARNING
+    assert "Available RAM is unknown." in selection.warnings
+
+
+def test_auto_selection_can_use_high_context_4b_but_never_9b() -> None:
+    selection = select_ollama_profile(
+        _inventory(
+            total_ram=32 * GIB,
+            available_ram=16 * GIB,
+            free_disk=128 * GIB,
+            gpu_memory=12 * GIB,
+        )
+    )
+
+    assert selection.profile_id == HIGH_CONTEXT_PROFILE_ID
+    assert selection.selected_profile.base_model == "qwen3.5:4b"
+
+
+def test_explicit_9b_selection_is_allowed_with_warning_on_small_machine() -> None:
+    selection = select_ollama_profile(
+        _inventory(total_ram=8 * GIB, available_ram=4 * GIB, free_disk=20 * GIB),
+        profile_id="qwen3.5-9b-study-16k",
+    )
+
+    assert selection.profile_id == "qwen3.5-9b-study-16k"
+    assert selection.support_status == OllamaProfileSupportStatus.WARNING
+    assert selection.selected_profile.base_model == "qwen3.5:9b"
+
+
+def test_profile_installer_pulls_base_model_and_creates_local_profile() -> None:
+    profile = profile_by_id(DEFAULT_PROFILE_ID)
+    client = FakeOllamaClient()
+    progress: list[tuple[str, int | None, int | None]] = []
+    installer = OllamaProfileInstaller(
+        profile,
+        client=client,
+        ensure_server=False,
+    )
+
+    status = installer.install(
+        lambda item: progress.append((item.detail, item.completed, item.total))
+    )
+
+    assert status.value == "succeeded"
+    assert client.pull_calls == [(profile.base_model, True)]
+    assert client.create_calls == [
+        {
+            "model": profile.local_model,
+            "from_": profile.base_model,
+            "system": profile.system_prompt,
+            "parameters": {
+                "num_ctx": 8192,
+                "num_predict": 4096,
+                "temperature": 0,
+            },
+            "stream": True,
+        }
+    ]
+    assert progress == [
+        (f"Pulling base model {profile.base_model}.", None, None),
+        ("pulling manifest", None, None),
+        ("downloading", 50, 100),
+        (f"Creating profile model {profile.local_model}.", None, None),
+        ("creating profile", None, None),
+        ("success", 100, 100),
+    ]
+
+
+def test_profile_installer_accepts_running_api_without_cli(monkeypatch) -> None:
+    profile = profile_by_id(DEFAULT_PROFILE_ID)
+    client = FakeOllamaClient()
+    monkeypatch.setattr(
+        profile_installer_module,
+        "resolve_ollama_executable",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        profile_installer_module,
+        "ensure_ollama_server_running",
+        lambda _host, *, executable=None, timeout_seconds=30.0: True,
+    )
+    installer = OllamaProfileInstaller(profile, client=client)
+
+    requirement = installer.requirement()
+
+    assert requirement.available is False
+    assert requirement.unavailable_reason == "model_missing"
+
+
+def test_profile_installer_creates_selected_and_fallback_profiles() -> None:
+    profile = profile_by_id(DEFAULT_PROFILE_ID)
+    fallback = profile_by_id(LOW_RESOURCE_PROFILE_ID)
+    client = FakeOllamaClient()
+    installer = OllamaProfileInstaller(
+        profile,
+        fallback_profiles=(fallback,),
+        client=client,
+        ensure_server=False,
+    )
+
+    installer.install(lambda _item: None)
+
+    assert client.pull_calls == [(profile.base_model, True), (fallback.base_model, True)]
+    assert [call["model"] for call in client.create_calls] == [
+        profile.local_model,
+        fallback.local_model,
+    ]
+    assert set(client.models) == {profile.local_model, fallback.local_model}
+
+
+def test_profile_installer_reports_missing_registration() -> None:
+    profile = profile_by_id(DEFAULT_PROFILE_ID)
+    client = FakeOllamaClient(register_created_models=False)
+    installer = OllamaProfileInstaller(
+        profile,
+        client=client,
+        ensure_server=False,
+    )
+
+    try:
+        installer.install(lambda _item: None)
+    except Exception as exc:
+        assert "was not registered" in str(exc)
+    else:
+        raise AssertionError("Expected missing registration to fail.")
+
+
+def test_profile_installer_fails_create_stream_error() -> None:
+    profile = profile_by_id(DEFAULT_PROFILE_ID)
+    client = FakeOllamaClient(create_error="template parse failed")
+    installer = OllamaProfileInstaller(
+        profile,
+        client=client,
+        ensure_server=False,
+    )
+
+    try:
+        installer.install(lambda _item: None)
+    except Exception as exc:
+        assert "profile creation failed" in str(exc)
+        assert getattr(exc, "code", None) == "ollama_create_failed"
+    else:
+        raise AssertionError("Expected create stream error to fail.")
+
+
+class FakeOllamaClient:
+    def __init__(
+        self,
+        *,
+        register_created_models: bool = True,
+        create_error: str | None = None,
+    ) -> None:
+        self.models: list[str] = []
+        self.pull_calls: list[tuple[str, bool]] = []
+        self.create_calls: list[dict[str, object]] = []
+        self.register_created_models = register_created_models
+        self.create_error = create_error
+
+    def list(self):
+        return {"models": [{"model": model} for model in self.models]}
+
+    def pull(self, model: str, *, stream: bool):
+        self.pull_calls.append((model, stream))
+        yield {"status": "pulling manifest"}
+        yield {"status": "downloading", "completed": 50, "total": 100}
+
+    def create(self, **kwargs):
+        self.create_calls.append(kwargs)
+        if self.create_error is not None:
+            yield {"error": self.create_error}
+            return
+        model = kwargs.get("model")
+        if self.register_created_models and isinstance(model, str):
+            self.models.append(model)
+        yield {"status": "creating profile"}
+        yield ModelPullProgress(status="success", completed=100, total=100)
+
+
+def _inventory(
+    *,
+    total_ram: int | None,
+    available_ram: int | None,
+    free_disk: int | None,
+    gpu_memory: int | None = None,
+) -> MachineInventorySnapshot:
+    accelerators = ()
+    if gpu_memory is not None:
+        accelerators = (
+            MachineAcceleratorSnapshot(
+                kind="gpu",
+                vendor="nvidia",
+                name="Test GPU",
+                memory_bytes=gpu_memory,
+            ),
+        )
+    return MachineInventorySnapshot(
+        platform="Windows",
+        platform_version="11",
+        architecture="AMD64",
+        cpu=MachineCpuSnapshot(architecture="AMD64", logical_cores=12),
+        ram=MachineRamSnapshot(
+            total_bytes=total_ram,
+            available_bytes=available_ram,
+        ),
+        storage=MachineStorageSnapshot(path="C:/cert-prep", free_bytes=free_disk),
+        accelerators=accelerators,
+    )

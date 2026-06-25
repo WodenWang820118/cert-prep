@@ -19,6 +19,7 @@ from cert_prep_backend.domains.mock_exams.models import DraftSuggestion, SourceC
 from cert_prep_backend.domains.mock_exams.ports import ModelPullProgress, ProviderHealth
 from cert_prep_backend.domains.mock_exams.ollama_transport import OllamaProvider
 from cert_prep_backend.domains.mock_exams import ollama_transport
+from cert_prep_backend.domains.mock_exams import ollama_profiles as ollama_profile_module
 from cert_prep_backend.domains.mock_exams.provider import (
     MAX_PROMPT_SOURCE_CHARS,
     _draft_suggestion_from_item,
@@ -28,6 +29,19 @@ from cert_prep_backend.domains.mock_exams.provider import (
     provider_from_settings,
 )
 from cert_prep_backend.api.errors import ProviderUnavailableError
+from cert_prep_contracts.hardware import (
+    MachineCpuSnapshot,
+    MachineInventorySnapshot,
+    MachineRamSnapshot,
+    MachineStorageSnapshot,
+)
+from cert_prep_contracts.runtime import (
+    RuntimeInstallationStatus,
+    RuntimeInstallProgress,
+    RuntimeRequirementKind,
+    RuntimeRequirementSnapshot,
+)
+from cert_prep_ollama.profiles import DEFAULT_PROFILE_ID, select_ollama_profile
 
 
 AUTH_HEADERS = {"Authorization": "Bearer test-token"}
@@ -253,6 +267,70 @@ def test_provider_from_settings_can_select_fastflowlm(tmp_path) -> None:
     assert provider.base_url == "http://127.0.0.1:52625/v1"
     assert provider.auto_start_server is True
     assert provider.owned_server_idle_timeout_seconds == 5.0
+
+
+def test_settings_parse_ollama_profile_controls(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("CERT_PREP_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("CERT_PREP_OLLAMA_PROFILE_ENABLED", "false")
+    monkeypatch.setenv("CERT_PREP_OLLAMA_PROFILE_ID", "qwen3.5-2b-study-4k")
+    monkeypatch.setenv("CERT_PREP_OLLAMA_PROFILE_INVENTORY_TIMEOUT_SECONDS", "1.5")
+
+    settings = Settings()
+
+    assert settings.ollama_profile_enabled is False
+    assert settings.ollama_profile_id == "qwen3.5-2b-study-4k"
+    assert settings.ollama_profile_inventory_timeout_seconds == 1.5
+
+
+def test_settings_normalizes_ollama_profile_id(tmp_path) -> None:
+    settings = Settings(
+        data_dir=tmp_path,
+        ollama_profile_id="  qwen3.5-2b-study-4k  ",
+    )
+    auto_settings = Settings(data_dir=tmp_path, ollama_profile_id="   ")
+
+    assert settings.ollama_profile_id == "qwen3.5-2b-study-4k"
+    assert auto_settings.ollama_profile_id == "auto"
+
+
+def test_provider_from_settings_uses_selected_ollama_profile(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setattr(
+        ollama_profile_module,
+        "collect_machine_inventory",
+        lambda **_kwargs: _profile_inventory(total_ram=16 * GIB, free_disk=64 * GIB),
+    )
+
+    provider = provider_from_settings(
+        Settings(data_dir=tmp_path, llm_provider="ollama", ollama_profile_id="auto")
+    )
+
+    assert isinstance(provider, OllamaProvider)
+    assert provider.profile_selection is not None
+    assert provider.profile_selection.profile_id == DEFAULT_PROFILE_ID
+    assert provider.model == "cert-prep-qwen3.5-4b-study-8k"
+    assert provider.fallback_models == ("cert-prep-qwen3.5-2b-study-4k",)
+
+
+def test_provider_from_settings_preserves_raw_ollama_model_when_profile_disabled(
+    tmp_path,
+) -> None:
+    provider = provider_from_settings(
+        Settings(
+            data_dir=tmp_path,
+            llm_provider="ollama",
+            ollama_profile_enabled=False,
+            ollama_model="custom-local:latest",
+            ollama_fallback_models=["fallback-local:latest"],
+        )
+    )
+
+    assert isinstance(provider, OllamaProvider)
+    assert provider.profile_selection is None
+    assert provider.model == "custom-local:latest"
+    assert provider.fallback_models == ("fallback-local:latest",)
 
 
 def test_fastflowlm_health_reports_missing_runtime_without_model_download(monkeypatch) -> None:
@@ -683,6 +761,224 @@ def test_ollama_health_uses_installed_fallback_without_pull(monkeypatch) -> None
     assert fake_client.pull_calls == 0
 
 
+def test_ollama_health_includes_profile_selection_fields(monkeypatch) -> None:
+    selection = select_ollama_profile(
+        _profile_inventory(total_ram=16 * GIB, free_disk=64 * GIB),
+        profile_id=DEFAULT_PROFILE_ID,
+    )
+    fake_client = RecordingOllamaClient(models=[selection.selected_profile.local_model])
+    monkeypatch.setattr(
+        ollama_transport, "resolve_ollama_executable", lambda: Path("ollama")
+    )
+    provider = OllamaProvider(
+        host="http://127.0.0.1:11434",
+        model=selection.selected_profile.local_model,
+        timeout_seconds=1,
+        fallback_models=[profile.local_model for profile in selection.fallback_profiles],
+        profile_selection=selection,
+    )
+    provider._client = fake_client
+
+    health = provider.health()
+
+    assert health.available is True
+    assert health.profile_id == DEFAULT_PROFILE_ID
+    assert health.base_model == "qwen3.5:4b"
+    assert health.modelfile_sha256 == selection.modelfile_sha256
+    assert health.profile_reason == selection.reason
+    assert health.profile_warnings == selection.warnings
+    assert health.effective_model == selection.selected_profile.local_model
+    assert fake_client.pull_calls == 0
+
+
+def test_ollama_runtime_unusable_models_can_recover() -> None:
+    provider = OllamaProvider(
+        host="http://127.0.0.1:11434",
+        model="qwen3.5:4b",
+        timeout_seconds=1,
+        fallback_models=["qwen3.5:2b"],
+    )
+
+    provider._mark_model_unusable("qwen3.5:4b", RuntimeError("transient OOM"))
+    assert "qwen3.5:4b" in provider._runtime_unusable_models()
+
+    provider._record_model_success("qwen3.5:4b")
+
+    assert "qwen3.5:4b" not in provider._runtime_unusable_models()
+
+
+def test_ollama_profile_apis_return_200(monkeypatch, tmp_path) -> None:
+    inventory = _profile_inventory(total_ram=16 * GIB, free_disk=64 * GIB)
+    monkeypatch.setattr(
+        ollama_profile_module,
+        "collect_machine_inventory",
+        lambda **_kwargs: inventory,
+    )
+    client = TestClient(
+        create_app(
+            settings=Settings(
+                data_dir=tmp_path,
+                api_token="test-token",
+                llm_provider="ollama",
+            ),
+            runtime_installation_async_jobs=False,
+        )
+    )
+
+    profiles_response = client.get("/llm/profiles", headers=AUTH_HEADERS)
+    selection_response = client.get("/llm/profile-selection", headers=AUTH_HEADERS)
+    inventory_response = client.get("/runtime/machine-inventory", headers=AUTH_HEADERS)
+
+    assert profiles_response.status_code == 200
+    assert any(
+        item["profile_id"] == DEFAULT_PROFILE_ID
+        for item in profiles_response.json()["items"]
+    )
+    assert selection_response.status_code == 200
+    assert selection_response.json()["profile_id"] == DEFAULT_PROFILE_ID
+    assert selection_response.json()["effective_model"] == "cert-prep-qwen3.5-4b-study-8k"
+    assert inventory_response.status_code == 200
+    assert inventory_response.json()["ram"]["total_bytes"] == 16 * GIB
+
+
+def test_ollama_profile_selection_api_reports_disabled_raw_model(tmp_path) -> None:
+    client = TestClient(
+        create_app(
+            settings=Settings(
+                data_dir=tmp_path,
+                api_token="test-token",
+                llm_provider="ollama",
+                ollama_profile_enabled=False,
+                ollama_model="raw-local:latest",
+                ollama_fallback_models=["raw-fallback:latest"],
+            ),
+            runtime_installation_async_jobs=False,
+        )
+    )
+
+    response = client.get("/llm/profile-selection", headers=AUTH_HEADERS)
+
+    assert response.status_code == 200
+    assert response.json()["profile_enabled"] is False
+    assert response.json()["effective_model"] == "raw-local:latest"
+    assert response.json()["fallback_models"] == ["raw-fallback:latest"]
+
+
+def test_ollama_machine_inventory_is_cached_and_refreshable(monkeypatch, tmp_path) -> None:
+    inventories = [
+        _profile_inventory(total_ram=16 * GIB, free_disk=64 * GIB),
+        _profile_inventory(total_ram=12 * GIB, free_disk=32 * GIB),
+    ]
+    calls: list[object] = []
+
+    def fake_collect_machine_inventory(**_kwargs):
+        calls.append(object())
+        return inventories[min(len(calls) - 1, len(inventories) - 1)]
+
+    monkeypatch.setattr(
+        ollama_profile_module,
+        "collect_machine_inventory",
+        fake_collect_machine_inventory,
+    )
+    settings = Settings(data_dir=tmp_path, llm_provider="ollama")
+
+    first = ollama_profile_module.collect_ollama_machine_inventory(settings)
+    second = ollama_profile_module.collect_ollama_machine_inventory(settings)
+    refreshed = ollama_profile_module.collect_ollama_machine_inventory(
+        settings,
+        refresh=True,
+    )
+
+    assert first is second
+    assert refreshed is inventories[1]
+    assert len(calls) == 2
+
+
+def test_ollama_profile_inventory_is_deferred_until_used(monkeypatch, tmp_path) -> None:
+    calls: list[object] = []
+    inventory = _profile_inventory(total_ram=16 * GIB, free_disk=64 * GIB)
+
+    def fake_collect_machine_inventory(**_kwargs):
+        calls.append(object())
+        return inventory
+
+    monkeypatch.setattr(
+        ollama_profile_module,
+        "collect_machine_inventory",
+        fake_collect_machine_inventory,
+    )
+
+    client = TestClient(
+        create_app(
+            settings=Settings(
+                data_dir=tmp_path,
+                api_token="test-token",
+                llm_provider="ollama",
+            ),
+            runtime_installation_async_jobs=False,
+        )
+    )
+
+    assert calls == []
+    assert client.get("/health").status_code == 200
+    assert calls == []
+
+    response = client.get("/llm/profile-selection", headers=AUTH_HEADERS)
+
+    assert response.status_code == 200
+    assert response.json()["profile_id"] == DEFAULT_PROFILE_ID
+    assert len(calls) == 1
+
+
+def test_model_download_installs_selected_ollama_profile(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    inventory = _profile_inventory(total_ram=16 * GIB, free_disk=64 * GIB)
+    install_events: list[tuple[object, ...]] = []
+    monkeypatch.setattr(
+        ollama_profile_module,
+        "collect_machine_inventory",
+        lambda **_kwargs: inventory,
+    )
+
+    from cert_prep_ollama import profile_installer as profile_installer_module
+
+    monkeypatch.setattr(
+        profile_installer_module,
+        "OllamaProfileInstaller",
+        lambda profile, **kwargs: FakeProfileInstaller(
+            profile,
+            install_events,
+            fallback_profiles=kwargs.get("fallback_profiles", ()),
+        ),
+    )
+    client = TestClient(
+        create_app(
+            settings=Settings(
+                data_dir=tmp_path,
+                api_token="test-token",
+                llm_provider="ollama",
+            ),
+            runtime_installation_async_jobs=False,
+        )
+    )
+
+    response = client.post("/llm/model-downloads", headers=AUTH_HEADERS)
+
+    assert response.status_code == 202
+    assert response.json()["model"] == "cert-prep-qwen3.5-4b-study-8k"
+    assert response.json()["status"] == "succeeded"
+    assert install_events == [
+        ("init", DEFAULT_PROFILE_ID, ("qwen3.5-2b-study-4k",)),
+        (
+            "install",
+            "cert-prep-qwen3.5-4b-study-8k",
+            ("cert-prep-qwen3.5-2b-study-4k",),
+        ),
+    ]
+
+
 def test_ollama_health_uses_http_api_when_cli_is_not_on_path(monkeypatch) -> None:
     fake_client = RecordingOllamaClient(models=["qwen3.5:2b"])
     monkeypatch.setattr(ollama_transport, "resolve_ollama_executable", lambda: None)
@@ -1048,6 +1344,31 @@ def test_model_download_starts_only_from_explicit_post(tmp_path) -> None:
     }
 
 
+def test_model_download_installs_raw_model_when_profile_disabled(tmp_path) -> None:
+    provider = RecordingDownloadProvider(available=False, detail="model not found")
+    provider.model = "raw-local:latest"
+    client = TestClient(
+        create_app(
+            settings=Settings(
+                data_dir=tmp_path,
+                api_token="test-token",
+                llm_provider="ollama",
+                ollama_profile_enabled=False,
+                ollama_model="raw-local:latest",
+            ),
+            llm_provider=provider,
+            runtime_installation_async_jobs=False,
+        )
+    )
+
+    response = client.post("/llm/model-downloads", headers=AUTH_HEADERS)
+
+    assert response.status_code == 202
+    assert provider.pull_calls == 1
+    assert response.json()["model"] == "raw-local:latest"
+    assert response.json()["status"] == "succeeded"
+
+
 def test_model_download_poll_returns_job_status(tmp_path) -> None:
     provider = RecordingDownloadProvider(available=False, detail="model not found")
     client = TestClient(
@@ -1140,6 +1461,68 @@ def _assert_rejected_as_non_exam_item(rejected_text: str) -> None:
     )
 
     assert suggestion is None
+
+
+class FakeProfileInstaller:
+    kind = RuntimeRequirementKind.OLLAMA_MODEL
+    provider = "ollama"
+
+    def __init__(
+        self,
+        profile,
+        events: list[tuple[object, ...]],
+        *,
+        fallback_profiles=(),
+    ) -> None:
+        self.profile = profile
+        self.model = profile.local_model
+        self.fallback_profiles = tuple(fallback_profiles)
+        self._events = events
+        self._events.append(
+            ("init", profile.profile_id, tuple(profile.profile_id for profile in self.fallback_profiles))
+        )
+
+    def requirement(self) -> RuntimeRequirementSnapshot:
+        return RuntimeRequirementSnapshot(
+            kind=self.kind,
+            label="Ollama profile model",
+            available=False,
+            detail="profile model missing",
+            unavailable_reason="model_missing",
+            version=self.model,
+        )
+
+    def validate_installable(self) -> None:
+        return None
+
+    def install(self, progress) -> RuntimeInstallationStatus:
+        self._events.append(
+            ("install", self.model, tuple(profile.local_model for profile in self.fallback_profiles))
+        )
+        progress(RuntimeInstallProgress("created profile model", completed=100, total=100))
+        return RuntimeInstallationStatus.SUCCEEDED
+
+
+def _profile_inventory(
+    *,
+    total_ram: int,
+    free_disk: int,
+) -> MachineInventorySnapshot:
+    return MachineInventorySnapshot(
+        platform="Windows",
+        platform_version="11",
+        architecture="AMD64",
+        cpu=MachineCpuSnapshot(architecture="AMD64", logical_cores=12),
+        ram=MachineRamSnapshot(
+            total_bytes=total_ram,
+            available_bytes=max(total_ram // 2, 1),
+        ),
+        storage=MachineStorageSnapshot(
+            path="C:/cert-prep",
+            free_bytes=free_disk,
+            total_bytes=256 * GIB,
+        ),
+    )
 
 
 class RecordingDownloadProvider:

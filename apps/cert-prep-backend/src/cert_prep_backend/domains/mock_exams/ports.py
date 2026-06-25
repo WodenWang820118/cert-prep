@@ -24,6 +24,11 @@ class ProviderHealth:
     effective_model: str | None = None
     fallback_models: tuple[str, ...] = ()
     fallback_reason: str | None = None
+    profile_id: str | None = None
+    base_model: str | None = None
+    modelfile_sha256: str | None = None
+    profile_reason: str | None = None
+    profile_warnings: tuple[str, ...] = ()
 
 
 class DraftGenerationProvider(Protocol):

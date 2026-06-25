@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 import json
 from threading import Lock
+import time
 from typing import Any, TypeVar
 
 import ollama
@@ -24,12 +25,15 @@ from cert_prep_backend.domains.mock_exams.reasoning_parser import (
     json_response,
 )
 from cert_prep_backend.api.errors import ProviderUnavailableError
+from cert_prep_contracts.llm_profiles import OllamaProfileSelection
 from cert_prep_ollama.models import extract_model_names, pull_progress
 from cert_prep_ollama.server import ensure_ollama_server_running, resolve_ollama_executable
 
 
 STREAMING_PREWARM_KEEP_ALIVE = "5m"
 STREAMING_RELEASE_KEEP_ALIVE = 0
+# Transient Ollama failures often reflect memory pressure; retry after a quiet window.
+MODEL_RETRY_AFTER_SECONDS = 300.0
 T = TypeVar("T")
 
 
@@ -44,9 +48,11 @@ class OllamaProvider:
         model: str,
         timeout_seconds: float,
         fallback_models: Sequence[str] = (),
+        profile_selection: OllamaProfileSelection | None = None,
     ) -> None:
         self.host = host
         self.model = model
+        self.profile_selection = profile_selection
         self.fallback_models = tuple(
             dict.fromkeys(
                 fallback.strip()
@@ -56,7 +62,7 @@ class OllamaProvider:
         )
         self._client = ollama.Client(host=host, timeout=timeout_seconds)
         self._model_lock = Lock()
-        self._unusable_models: set[str] = set()
+        self._unusable_models: dict[str, float] = {}
         self._runtime_effective_model: str | None = None
         self._last_primary_failure: str | None = None
         self._runtime_fallback_reason: str | None = None
@@ -91,6 +97,7 @@ class OllamaProvider:
                 unavailable_reason=unavailable_reason,
                 configured_model=self.model,
                 fallback_models=self.fallback_models,
+                **self._profile_health_fields(),
             )
 
         return self._health_from_model_names(model_names)
@@ -110,7 +117,20 @@ class OllamaProvider:
             effective_model=effective_model,
             fallback_models=self.fallback_models,
             fallback_reason=fallback_reason,
+            **self._profile_health_fields(),
         )
+
+    def _profile_health_fields(self) -> dict[str, object]:
+        selection = self.profile_selection
+        if selection is None:
+            return {}
+        return {
+            "profile_id": selection.profile_id,
+            "base_model": selection.selected_profile.base_model,
+            "modelfile_sha256": selection.modelfile_sha256,
+            "profile_reason": selection.reason,
+            "profile_warnings": selection.warnings,
+        }
 
     def generate_drafts(self, chunks: Sequence[SourceChunk], limit: int) -> list[DraftSuggestion]:
         """Generate drafts by combining deterministic extraction with reasoning fallback."""
@@ -297,8 +317,7 @@ class OllamaProvider:
         raise ProviderUnavailableError(health.detail)
 
     def _effective_model_from(self, model_names: set[str]) -> str | None:
-        unusable_models = self._runtime_unusable_models()
-        runtime_effective_model = self._runtime_selected_model()
+        unusable_models, runtime_effective_model = self._runtime_model_state()
         if (
             runtime_effective_model
             and runtime_effective_model in model_names
@@ -345,8 +364,7 @@ class OllamaProvider:
         if candidates:
             return candidates
 
-        health = self.health()
-        raise ProviderUnavailableError(health.detail)
+        raise ProviderUnavailableError(self._health_detail(None))
 
     def _with_model_fallback(self, operation: Callable[[str], T]) -> T:
         errors: list[str] = []
@@ -369,7 +387,8 @@ class OllamaProvider:
 
     def _mark_model_unusable(self, model: str, exc: Exception) -> None:
         with self._model_lock:
-            self._unusable_models.add(model)
+            self._prune_unusable_models_locked()
+            self._unusable_models[model] = time.monotonic()
             if model == self.model:
                 self._last_primary_failure = _short_error(exc)
             if self._runtime_effective_model == model:
@@ -378,6 +397,7 @@ class OllamaProvider:
 
     def _record_model_success(self, model: str) -> None:
         with self._model_lock:
+            self._unusable_models.pop(model, None)
             if model == self.model:
                 self._runtime_effective_model = None
                 self._runtime_fallback_reason = None
@@ -396,11 +416,27 @@ class OllamaProvider:
 
     def _runtime_unusable_models(self) -> set[str]:
         with self._model_lock:
+            self._prune_unusable_models_locked()
             return set(self._unusable_models)
 
     def _runtime_selected_model(self) -> str | None:
         with self._model_lock:
             return self._runtime_effective_model
+
+    def _runtime_model_state(self) -> tuple[set[str], str | None]:
+        with self._model_lock:
+            self._prune_unusable_models_locked()
+            return set(self._unusable_models), self._runtime_effective_model
+
+    def _prune_unusable_models_locked(self) -> None:
+        retry_before = time.monotonic() - MODEL_RETRY_AFTER_SECONDS
+        expired = [
+            model
+            for model, marked_at in self._unusable_models.items()
+            if marked_at <= retry_before
+        ]
+        for model in expired:
+            self._unusable_models.pop(model, None)
 
     def _runtime_reason_for(self, effective_model: str) -> str | None:
         with self._model_lock:

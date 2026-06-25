@@ -9,3 +9,7 @@ class OllamaError(Exception):
 
 class ProviderUnavailableError(OllamaError):
     """Raised when an Ollama provider or its prerequisites are not available."""
+
+    def __init__(self, message: str, *, code: str = "provider_unavailable") -> None:
+        super().__init__(message)
+        self.code = code

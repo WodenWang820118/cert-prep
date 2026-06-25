@@ -7,9 +7,11 @@ import subprocess
 from zipfile import ZipFile
 
 from fastapi.testclient import TestClient
+import pytest
 
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.core.config import Settings
+from cert_prep_backend.domains.mock_exams.provider import LazyDraftGenerationProvider
 from cert_prep_backend.domains.runtime_installations import (
     WindowsMLOcrRuntimeInstaller,
     PaddleOcrRuntimeInstaller,
@@ -73,6 +75,41 @@ def test_runtime_installation_starts_only_from_post(tmp_path: Path) -> None:
     assert response.json()["status"] == "succeeded"
     assert response.json()["completed"] == 100
     assert installer.install_calls == 1
+
+
+def test_lazy_ollama_provider_does_not_resolve_during_manager_setup(
+    tmp_path: Path,
+) -> None:
+    resolve_calls = 0
+
+    def resolve_provider():
+        nonlocal resolve_calls
+        resolve_calls += 1
+        return object()
+
+    llm_provider = LazyDraftGenerationProvider(
+        resolve_provider,
+        provider="ollama",
+        model="raw-local:latest",
+    )
+
+    RuntimeInstallationManager(
+        settings=Settings(
+            data_dir=tmp_path,
+            api_token="test-token",
+            llm_provider="ollama",
+            ollama_profile_enabled=False,
+        ),
+        llm_provider=llm_provider,
+        ocr_provider=FakeOcrProvider(),
+        async_jobs=False,
+    )
+
+    with pytest.raises(AttributeError):
+        getattr(llm_provider, "profile_selection")
+    with pytest.raises(AttributeError):
+        getattr(llm_provider, "heath")
+    assert resolve_calls == 0
 
 
 def test_paddle_runtime_install_rejects_checksum_mismatch(tmp_path: Path) -> None:

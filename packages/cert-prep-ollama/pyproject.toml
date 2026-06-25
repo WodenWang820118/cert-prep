@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12,<3.14"
 dependencies = [
     "cert-prep-contracts",
+    "httpx>=0.27.0,<1.0.0",
     "ollama>=0.6.0,<1.0.0",
 ]
 

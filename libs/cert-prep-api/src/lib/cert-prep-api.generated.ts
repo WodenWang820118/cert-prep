@@ -18,9 +18,17 @@ export interface Components {
     DraftStatus: string;
     HTTPValidationError: { "detail"?: Components['schemas']['ValidationError'][] };
     HealthResponse: { "status": string; "app": string; "version": string; "python_version": string; "runtime_mode": string };
-    LLMHealthRead: { "provider": string; "model": string; "available": boolean; "detail": string; "unavailable_reason"?: string | null; "configured_model"?: string | null; "effective_model"?: string | null; "fallback_models"?: string[]; "fallback_reason"?: string | null };
+    LLMHealthRead: { "provider": string; "model": string; "available": boolean; "detail": string; "unavailable_reason"?: string | null; "configured_model"?: string | null; "effective_model"?: string | null; "fallback_models"?: string[]; "fallback_reason"?: string | null; "profile_id"?: string | null; "base_model"?: string | null; "modelfile_sha256"?: string | null; "profile_reason"?: string | null; "profile_warnings"?: string[] };
+    MachineAcceleratorRead: { "kind": string; "name": string; "vendor"?: string | null; "memory_bytes"?: number | null; "driver_version"?: string | null; "device_id"?: string | null };
+    MachineCpuRead: { "architecture": string; "name"?: string | null; "physical_cores"?: number | null; "logical_cores"?: number | null };
+    MachineInventoryRead: { "platform": string; "platform_version": string; "architecture": string; "cpu": Components['schemas']['MachineCpuRead']; "ram": Components['schemas']['MachineRamRead']; "storage": Components['schemas']['MachineStorageRead']; "accelerators"?: Components['schemas']['MachineAcceleratorRead'][]; "warnings"?: string[]; "schema_version"?: number };
+    MachineRamRead: { "total_bytes"?: number | null; "available_bytes"?: number | null };
+    MachineStorageRead: { "path": string; "free_bytes"?: number | null; "total_bytes"?: number | null };
     ModelDownloadRead: { "id": string; "provider": string; "model": string; "status": string; "detail": string; "completed": number | null; "total": number | null; "created_at": string; "updated_at": string; "error"?: string | null };
     OCRHealthRead: { "provider": string; "engine": string; "available": boolean; "detail": string; "python_version": string; "paddle_version": string | null; "paddleocr_version": string | null; "selected_device": string | null; "cuda_available": boolean; "gpu_count": number; "model_cache_dir": string | null; "fallback_reason": string | null; "unavailable_reason"?: string | null };
+    OllamaModelProfileRead: { "profile_id": string; "display_name": string; "description": string; "base_model": string; "local_model": string; "context_window": number; "system_prompt": string; "parameters"?: Record<string, unknown>; "min_total_ram_bytes"?: number | null; "min_available_ram_bytes"?: number | null; "min_free_disk_bytes"?: number | null; "min_vram_bytes"?: number | null; "auto_selectable": boolean; "explicit_opt_in_required": boolean; "fallback_profile_ids"?: string[] };
+    OllamaProfileSelectionRead: { "profile_enabled": boolean; "profile_id"?: string | null; "selected_profile"?: Components['schemas']['OllamaModelProfileRead'] | null; "support_status": string; "reason": string; "fallback_profiles"?: Components['schemas']['OllamaModelProfileRead'][]; "fallback_models"?: string[]; "warnings"?: string[]; "inventory"?: Components['schemas']['MachineInventoryRead'] | null; "modelfile_sha256"?: string | null; "effective_model": string; "base_model"?: string | null };
+    OllamaProfilesRead: { "items": Components['schemas']['OllamaModelProfileRead'][] };
     PdfExtractionMethod: string;
     PracticeAttemptCreate: { "question_id": string; "selected_answer": string };
     PracticeAttemptRead: { "id": string; "session_id": string; "project_id": string; "question_id": string; "selected_answer": string; "is_correct": boolean; "created_at": string };
@@ -63,8 +71,16 @@ export type DraftStatus = Components['schemas']['DraftStatus'];
 export type HTTPValidationError = Components['schemas']['HTTPValidationError'];
 export type HealthResponse = Components['schemas']['HealthResponse'];
 export type LLMHealthRead = Components['schemas']['LLMHealthRead'];
+export type MachineAcceleratorRead = Components['schemas']['MachineAcceleratorRead'];
+export type MachineCpuRead = Components['schemas']['MachineCpuRead'];
+export type MachineInventoryRead = Components['schemas']['MachineInventoryRead'];
+export type MachineRamRead = Components['schemas']['MachineRamRead'];
+export type MachineStorageRead = Components['schemas']['MachineStorageRead'];
 export type ModelDownloadRead = Components['schemas']['ModelDownloadRead'];
 export type OCRHealthRead = Components['schemas']['OCRHealthRead'];
+export type OllamaModelProfileRead = Components['schemas']['OllamaModelProfileRead'];
+export type OllamaProfileSelectionRead = Components['schemas']['OllamaProfileSelectionRead'];
+export type OllamaProfilesRead = Components['schemas']['OllamaProfilesRead'];
 export type PdfExtractionMethod = Components['schemas']['PdfExtractionMethod'];
 export type PracticeAttemptCreate = Components['schemas']['PracticeAttemptCreate'];
 export type PracticeAttemptRead = Components['schemas']['PracticeAttemptRead'];
@@ -124,10 +140,13 @@ export interface CertPrepGeneratedClient {
   recordPracticeAttempt(projectId: string, sessionId: string, body: Components['schemas']['PracticeAttemptCreate']): Promise<Components['schemas']['PracticeAttemptRead']>;
   listWrongAnswers(projectId: string): Promise<Components['schemas']['WrongAnswerList']>;
   llmHealth(): Promise<Components['schemas']['LLMHealthRead']>;
+  llmProfiles(): Promise<Components['schemas']['OllamaProfilesRead']>;
+  llmProfileSelection(): Promise<Components['schemas']['OllamaProfileSelectionRead']>;
   startModelDownload(): Promise<Components['schemas']['ModelDownloadRead']>;
   getModelDownload(jobId: string): Promise<Components['schemas']['ModelDownloadRead']>;
   ocrHealth(): Promise<Components['schemas']['OCRHealthRead']>;
   runtimeRequirements(): Promise<Components['schemas']['RuntimeRequirementsRead']>;
+  machineInventory(): Promise<Components['schemas']['MachineInventoryRead']>;
   startRuntimeInstallation(kind: string): Promise<Components['schemas']['RuntimeInstallationRead']>;
   getRuntimeInstallation(jobId: string): Promise<Components['schemas']['RuntimeInstallationRead']>;
 }
@@ -178,6 +197,10 @@ export function createCertPrepGeneratedClient(
       transport.request<Components['schemas']['WrongAnswerList']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/wrong-answers` }),
     llmHealth: () =>
       transport.request<Components['schemas']['LLMHealthRead']>({ method: 'GET' as const, path: "/llm/health" }),
+    llmProfiles: () =>
+      transport.request<Components['schemas']['OllamaProfilesRead']>({ method: 'GET' as const, path: "/llm/profiles" }),
+    llmProfileSelection: () =>
+      transport.request<Components['schemas']['OllamaProfileSelectionRead']>({ method: 'GET' as const, path: "/llm/profile-selection" }),
     startModelDownload: () =>
       transport.request<Components['schemas']['ModelDownloadRead']>({ method: 'POST' as const, path: "/llm/model-downloads" }),
     getModelDownload: (jobId: string) =>
@@ -186,6 +209,8 @@ export function createCertPrepGeneratedClient(
       transport.request<Components['schemas']['OCRHealthRead']>({ method: 'GET' as const, path: "/ocr/health" }),
     runtimeRequirements: () =>
       transport.request<Components['schemas']['RuntimeRequirementsRead']>({ method: 'GET' as const, path: "/runtime/requirements" }),
+    machineInventory: () =>
+      transport.request<Components['schemas']['MachineInventoryRead']>({ method: 'GET' as const, path: "/runtime/machine-inventory" }),
     startRuntimeInstallation: (kind: string) =>
       transport.request<Components['schemas']['RuntimeInstallationRead']>({ method: 'POST' as const, path: `/runtime/installations/${encodeURIComponent(kind)}` }),
     getRuntimeInstallation: (jobId: string) =>

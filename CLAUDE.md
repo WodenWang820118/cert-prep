@@ -29,3 +29,10 @@
 - Prefer `Agent` tool calls for multi-step review, critique, or adversarial evaluation prompts, and ask for a user-visible structured report. Do not request hidden chain-of-thought.
 - Required report fields for reviews are `publicReasoningSummary`, `evidenceChecked`, `findings`, `blockers`, `risks`, `missingDecisions`, `suggestedMarkdownSection`, and `writeRecommendation`.
 - Relay the structured report in the Codex session before or alongside any file write that depends on it.
+
+# Antigravity MCP Server
+
+- `agy_mcp` is the Codex MCP server for Antigravity CLI. Use it for second-opinion review, plan critique, adversarial evaluation, or repository-grounded planning; use this general MCP name consistently.
+- If the namespace is not already available in the active tool list, use `tool_search` to lazy-load `agy_mcp` before falling back to any shell command.
+- Prefer `mode=review` for code review and `mode=planning` for implementation planning. Keep it read-only unless the user explicitly authorizes writes.
+- AGY has the global `grill-me` skill installed at `C:\Users\User\.gemini\config\skills\grill-me\SKILL.md`. When the user asks to be grilled or to stress-test a plan, ask `agy_mcp` to use `grill-me` and return user-visible questions or a concise report.

@@ -71,6 +71,9 @@ class Settings(BaseSettings):
     ocr_benchmark: bool = False
     ollama_host: str = "http://127.0.0.1:11434"
     ollama_model: str = DEFAULT_OLLAMA_MODEL
+    ollama_profile_enabled: bool = True
+    ollama_profile_id: str = "auto"
+    ollama_profile_inventory_timeout_seconds: float = Field(default=5.0, ge=0.1)
     ollama_fallback_models: Annotated[list[str], NoDecode] = Field(
         default_factory=default_ollama_fallback_models
     )
@@ -111,6 +114,13 @@ class Settings(BaseSettings):
     def parse_ollama_fallback_models(cls, value):
         if isinstance(value, str):
             return [model.strip() for model in value.split(",") if model.strip()]
+        return value
+
+    @field_validator("ollama_profile_id", mode="before")
+    @classmethod
+    def parse_ollama_profile_id(cls, value):
+        if isinstance(value, str):
+            return value.strip() or "auto"
         return value
 
     @field_validator("fastflowlm_fallback_models", mode="before")
