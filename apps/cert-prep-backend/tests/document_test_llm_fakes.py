@@ -168,7 +168,10 @@ class TimeoutReasoningExamProvider(InvalidJsonReasoningExamProvider):
 class ReleaseRecordingFastFlowLMProvider(MockExamProvider):
     provider = "fastflowlm"
     model = "qwen3.5:4b"
-    auto_start_server = True
+
+    @property
+    def starts_on_generation(self) -> bool:
+        return True
 
     def __init__(self) -> None:
         self.release_calls = 0
@@ -193,6 +196,9 @@ class ReleaseKeepAliveRecordingOllamaProvider(MockExamProvider):
     def __init__(self) -> None:
         self.fast_first_keep_alive_values: list[str | float | int | None] = []
         self.reasoning_keep_alive_values: list[str | float | int | None] = []
+
+    def streaming_generation_kwargs(self) -> dict[str, int]:
+        return {"keep_alive": 0}
 
     def generate_fast_first_draft(
         self,

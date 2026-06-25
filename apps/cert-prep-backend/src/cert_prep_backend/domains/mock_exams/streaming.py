@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from inspect import Parameter, signature
 from threading import BoundedSemaphore, Thread
 
 from cert_prep_backend.api.errors import ProviderUnavailableError
@@ -17,9 +16,19 @@ from cert_prep_backend.domains.mock_exams.models import (
     SourceChunk,
 )
 from cert_prep_backend.domains.mock_exams.normalization import as_editable_question
-from cert_prep_backend.domains.mock_exams.ollama_transport import STREAMING_RELEASE_KEEP_ALIVE
-from cert_prep_backend.domains.mock_exams.ports import DraftGenerationProvider
+from cert_prep_backend.domains.mock_exams.ports import (
+    DraftGenerationProvider,
+    FastFirstDraftProvider,
+    ReasoningDraftProvider,
+    ResourceReleasingProvider,
+    StartsOnGenerationProvider,
+    StreamingGenerationOptionsProvider,
+    provider_capability,
+)
 from cert_prep_backend.domains.mock_exams.provider import generate_drafts_for_strategy
+from cert_prep_backend.domains.mock_exams.response_parsing import (
+    is_non_fatal_generation_error,
+)
 from cert_prep_backend.domains.source_documents import repository as documents_repository
 from cert_prep_backend.persistence.database import Database
 
@@ -63,9 +72,7 @@ class StreamingDraftGenerationManager:
                 break
 
             source_chunk = _source_chunk_from_record(chunk)
-            if not _should_enqueue_streaming_chunk(
-                source_chunk, DraftGenerationStrategy(strategy)
-            ):
+            if not _should_enqueue_streaming_chunk(source_chunk, DraftGenerationStrategy(strategy)):
                 continue
 
             jobs.append(
@@ -193,9 +200,7 @@ class StreamingDraftGenerationManager:
 
         detail = health.detail or "provider unavailable"
         for job in jobs:
-            _mark_provider_unavailable_job(
-                db, job, health.unavailable_reason, detail
-            )
+            _mark_provider_unavailable_job(db, job, health.unavailable_reason, detail)
         return True
 
     def _start_job_thread(self, db: Database, job_id: str, limit: int) -> None:
@@ -214,9 +219,9 @@ class StreamingDraftGenerationManager:
             self._run_job(db, job_id, limit)
 
     def _release_provider_resources(self) -> None:
-        release_resources = getattr(self._provider, "release_resources", None)
-        if callable(release_resources):
-            release_resources()
+        provider = provider_capability(self._provider, ResourceReleasingProvider)
+        if provider is not None:
+            provider.release_resources()
 
 
 def _mark_provider_unavailable_job(
@@ -244,36 +249,36 @@ def _generate_streaming_fast_first_drafts(
         return []
     if strategy == DraftGenerationStrategy.HYBRID_REASONING:
         deterministic = extract_jlpt_question_blocks([source_chunk], 1)
-        fast_first = getattr(provider, "generate_fast_first_draft", None)
-        if deterministic and callable(fast_first):
+        fast_first_provider = provider_capability(provider, FastFirstDraftProvider)
+        if deterministic and fast_first_provider is not None:
             try:
                 suggestion = _call_streaming_provider_method(
                     provider,
-                    fast_first,
+                    fast_first_provider.generate_fast_first_draft,
                     source_chunk,
                     deterministic[0],
                 )
             except ProviderUnavailableError as exc:
-                if not _is_non_fatal_generation_error(exc):
+                if not is_non_fatal_generation_error(exc):
                     raise
                 suggestion = None
             if suggestion is not None:
                 return [suggestion]
 
-        reasoning = getattr(provider, "generate_reasoning_drafts", None)
-        if callable(reasoning):
+        reasoning_provider = provider_capability(provider, ReasoningDraftProvider)
+        if reasoning_provider is not None:
             prompt_chunk = _compact_reasoning_chunk(source_chunk)
             try:
                 suggestions = _call_streaming_provider_method(
                     provider,
-                    reasoning,
+                    reasoning_provider.generate_reasoning_drafts,
                     [prompt_chunk],
                     first_limit,
                     num_ctx=STREAMING_FAST_FIRST_NUM_CTX,
                     num_predict=STREAMING_FAST_FIRST_NUM_PREDICT,
                 )
             except ProviderUnavailableError as exc:
-                if not _is_non_fatal_generation_error(exc):
+                if not is_non_fatal_generation_error(exc):
                     raise
                 return []
             if suggestions:
@@ -289,33 +294,20 @@ def _call_streaming_provider_method(
     *args,
     **kwargs,
 ):
-    if _should_release_after_streaming(provider) and _accepts_keyword(
-        method, "keep_alive"
-    ):
-        kwargs["keep_alive"] = STREAMING_RELEASE_KEEP_ALIVE
+    kwargs.update(_streaming_generation_kwargs(provider))
     return method(*args, **kwargs)
 
 
-def _should_release_after_streaming(provider: DraftGenerationProvider) -> bool:
-    return str(getattr(provider, "provider", "")).lower() == "ollama"
+def _streaming_generation_kwargs(provider: DraftGenerationProvider) -> dict[str, object]:
+    options_provider = provider_capability(provider, StreamingGenerationOptionsProvider)
+    if options_provider is None:
+        return {}
+    return dict(options_provider.streaming_generation_kwargs())
 
 
 def _provider_starts_on_generation(provider: DraftGenerationProvider) -> bool:
-    return (
-        str(getattr(provider, "provider", "")).lower() == "fastflowlm"
-        and bool(getattr(provider, "auto_start_server", False))
-    )
-
-
-def _accepts_keyword(method, keyword: str) -> bool:
-    try:
-        parameters = signature(method).parameters
-    except (TypeError, ValueError):
-        return False
-    return keyword in parameters or any(
-        parameter.kind == Parameter.VAR_KEYWORD
-        for parameter in parameters.values()
-    )
+    starts_provider = provider_capability(provider, StartsOnGenerationProvider)
+    return bool(starts_provider and starts_provider.starts_on_generation)
 
 
 def _should_enqueue_streaming_chunk(
@@ -383,21 +375,5 @@ def _refresh_document_exam_count(db: Database, project_id: str, document_id: str
         project_id=project_id,
         document_id=document_id,
         status=next_status,
-        exam_item_count=drafts_repository.count_document_drafts(
-            db, project_id, document_id
-        ),
-    )
-
-
-def _is_non_fatal_generation_error(exc: Exception) -> bool:
-    error = " ".join(str(exc).lower().split())
-    return any(
-        marker in error
-        for marker in (
-            "invalid json",
-            "unreadable response",
-            "non-object json response",
-            "timed out",
-            "timeout",
-        )
+        exam_item_count=drafts_repository.count_document_drafts(db, project_id, document_id),
     )

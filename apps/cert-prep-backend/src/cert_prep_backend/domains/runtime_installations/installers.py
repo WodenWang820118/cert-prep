@@ -6,6 +6,10 @@ import shutil
 from pathlib import Path
 
 from cert_prep_backend.core.config import Settings
+from cert_prep_backend.domains.mock_exams.ports import (
+    ModelDownloadProvider,
+    provider_capability,
+)
 from cert_prep_backend.domains.runtime_installations.archive import (
     extract_zip_safely,
     resolve_ocr_runtime_artifact,
@@ -40,7 +44,8 @@ class LLMModelInstaller:
     def requirement(self) -> RuntimeRequirementSnapshot:
         """Return model availability without starting a download."""
 
-        if not callable(getattr(self._provider, "pull_model", None)):
+        model_provider = provider_capability(self._provider, ModelDownloadProvider)
+        if model_provider is None:
             return RuntimeRequirementSnapshot(
                 kind=self.kind,
                 label="Reasoning model",
@@ -67,7 +72,7 @@ class LLMModelInstaller:
     def validate_installable(self) -> None:
         """Raise when the configured provider cannot pull models."""
 
-        if not callable(getattr(self._provider, "pull_model", None)):
+        if provider_capability(self._provider, ModelDownloadProvider) is None:
             raise ProviderUnavailableError(
                 "Configured LLM provider does not support model downloads."
             )
@@ -77,8 +82,8 @@ class LLMModelInstaller:
     ) -> RuntimeInstallationStatus:
         """Pull the configured model through the provider's download API."""
 
-        pull = getattr(self._provider, "pull_model", None)
-        if not callable(pull):
+        model_provider = provider_capability(self._provider, ModelDownloadProvider)
+        if model_provider is None:
             raise ProviderUnavailableError(
                 "Configured LLM provider does not support model downloads."
             )
@@ -93,7 +98,7 @@ class LLMModelInstaller:
             )
 
         try:
-            pull(record_model_progress)
+            model_provider.pull_model(record_model_progress)
         except Exception as exc:
             raise ProviderUnavailableError(
                 f"{_provider_label(self.provider)} unavailable: {exc}"

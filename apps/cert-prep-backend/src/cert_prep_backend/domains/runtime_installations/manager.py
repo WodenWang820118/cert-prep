@@ -8,6 +8,10 @@ from typing import Protocol
 from uuid import uuid4
 
 from cert_prep_backend.core.config import Settings
+from cert_prep_backend.domains.mock_exams.ports import (
+    OllamaRuntimeInstallationProvider,
+    provider_capability,
+)
 from cert_prep_backend.domains.runtime_installations.models import (
     RuntimeInstallationSnapshot,
     utcnow,
@@ -95,7 +99,6 @@ class RuntimeInstallationManager:
             WindowsMLOcrRuntimeInstaller,
             PaddleOcrRuntimeInstaller,
         )
-        from cert_prep_backend.domains.mock_exams.provider import LazyDraftGenerationProvider
         from cert_prep_backend.domains.source_documents.adapters.external_windowsml import (
             ExternalWindowsMLOCRProvider,
         )
@@ -106,10 +109,16 @@ class RuntimeInstallationManager:
 
         self._settings = settings
         self._async_jobs = async_jobs
-        provider_str = str(getattr(llm_provider, "provider", "") or "").lower()
-        llm_provider_name = provider_str or settings.llm_provider.lower()
+        ollama_runtime_provider = provider_capability(
+            llm_provider,
+            OllamaRuntimeInstallationProvider,
+        )
+        supports_ollama_runtime = bool(
+            ollama_runtime_provider
+            and ollama_runtime_provider.supports_ollama_runtime_installation
+        )
         llm_runtime_installers: list[RuntimeInstaller] = []
-        if llm_provider_name == "ollama":
+        if supports_ollama_runtime:
             llm_runtime_installers.append(
                 OllamaRuntimeInstaller(
                     ollama_host=settings.ollama_host,
@@ -118,15 +127,11 @@ class RuntimeInstallationManager:
             )
         llm_model_installer: RuntimeInstaller = LLMModelInstaller(llm_provider)
         if (
-            llm_provider_name == "ollama"
-            and settings.llm_provider == "ollama"
+            supports_ollama_runtime
             and settings.ollama_profile_enabled
         ):
             llm_model_installer = _LazyOllamaProfileInstaller(settings)
-        elif llm_provider_name == "ollama" and not isinstance(
-            llm_provider,
-            LazyDraftGenerationProvider,
-        ):
+        elif supports_ollama_runtime:
             profile_selection = getattr(llm_provider, "profile_selection", None)
             if profile_selection is not None:
                 from cert_prep_ollama.profile_installer import OllamaProfileInstaller

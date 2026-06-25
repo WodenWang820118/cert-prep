@@ -13,9 +13,15 @@ from cert_prep_backend.core.config import (
     DEFAULT_OLLAMA_MODEL,
     Settings,
 )
+from cert_prep_backend.domains.mock_exams import fastflowlm_resolver
 from cert_prep_backend.domains.mock_exams.fastflowlm_transport import FastFlowLMProvider
 from cert_prep_backend.domains.mock_exams import fastflowlm_transport
-from cert_prep_backend.domains.mock_exams.models import DraftSuggestion, SourceChunk
+from cert_prep_backend.domains.mock_exams.model_fallback import ModelFallbackEngine
+from cert_prep_backend.domains.mock_exams.models import (
+    DraftGenerationStrategy,
+    DraftSuggestion,
+    SourceChunk,
+)
 from cert_prep_backend.domains.mock_exams.ports import ModelPullProgress, ProviderHealth
 from cert_prep_backend.domains.mock_exams.ollama_transport import OllamaProvider
 from cert_prep_backend.domains.mock_exams import ollama_transport
@@ -26,6 +32,7 @@ from cert_prep_backend.domains.mock_exams.provider import (
     _extract_jlpt_question_blocks,
     _json_response,
     _source_text_for_prompt,
+    generate_drafts_for_strategy,
     provider_from_settings,
 )
 from cert_prep_backend.api.errors import ProviderUnavailableError
@@ -62,10 +69,7 @@ def test_draft_parser_accepts_jlpt_like_choice_item() -> None:
     chunk = SourceChunk(
         id="chunk-2",
         page_number=3,
-        text=(
-            "Mondai 1 Choose the correct reading. "
-            "1 seikai 2 gotou 3 betsu 4 hoka"
-        ),
+        text=("Mondai 1 Choose the correct reading. 1 seikai 2 gotou 3 betsu 4 hoka"),
         source_excerpt="Mondai 1 Choose the correct reading.",
     )
 
@@ -136,6 +140,69 @@ def test_draft_parser_rejects_invalid_json_and_grounding_mismatches() -> None:
         )
         is None
     )
+
+
+def test_model_fallback_engine_records_runtime_fallback_reason() -> None:
+    engine = ModelFallbackEngine(
+        primary_model="qwen3.5:4b",
+        fallback_models=["qwen3.5:2b"],
+        retry_after_seconds=300,
+    )
+
+    engine.mark_model_unusable("qwen3.5:4b", RuntimeError("transient OOM"))
+    assert engine.available_model_candidates({"qwen3.5:4b", "qwen3.5:2b"}) == ("qwen3.5:2b",)
+
+    engine.record_model_success("qwen3.5:2b")
+
+    assert engine.fallback_reason("qwen3.5:2b") == (
+        "Configured model qwen3.5:4b was unavailable during generation "
+        "(transient OOM); using fallback qwen3.5:2b."
+    )
+
+    engine.record_model_success("qwen3.5:4b")
+
+    assert engine.runtime_unusable_models() == set()
+    assert engine.fallback_reason("qwen3.5:4b") is None
+
+
+def test_generate_drafts_for_strategy_uses_reasoning_provider_protocol() -> None:
+    class CustomReasoningProvider:
+        provider = "custom-reasoning"
+        model = "custom-model"
+
+        def generate_drafts(self, _chunks, _limit):
+            raise AssertionError("reasoning-capable providers should use reasoning drafts")
+
+        def generate_reasoning_drafts(self, chunks, limit, **_kwargs):
+            chunk = chunks[0]
+            return [
+                DraftSuggestion(
+                    chunk_id=chunk.id,
+                    question="JLPT question: choose the correct word.",
+                    choices=["A correct", "B wrong"],
+                    answer="A correct",
+                    answer_key_source="ai_inferred",
+                    rationale="The visible source supports A.",
+                    citation_page=chunk.page_number,
+                    source_excerpt="JLPT question: choose the correct word.",
+                )
+            ][:limit]
+
+    chunk = SourceChunk(
+        id="chunk-1",
+        page_number=1,
+        text="JLPT question: choose the correct word. A correct B wrong",
+        source_excerpt="JLPT question: choose the correct word.",
+    )
+
+    suggestions = generate_drafts_for_strategy(
+        CustomReasoningProvider(),
+        [chunk],
+        1,
+        DraftGenerationStrategy.HYBRID_REASONING,
+    )
+
+    assert [suggestion.answer for suggestion in suggestions] == ["A correct"]
 
 
 def test_ollama_prompt_source_skips_notice_pages_and_stays_bounded() -> None:
@@ -360,7 +427,7 @@ def test_fastflowlm_executable_resolution_accepts_official_flm_install_dir(
     install_dir.mkdir()
     executable = install_dir / "flm.exe"
     executable.write_text("", encoding="utf-8")
-    monkeypatch.setattr(fastflowlm_transport.shutil, "which", lambda _: None)
+    monkeypatch.setattr(fastflowlm_resolver.shutil, "which", lambda _: None)
     monkeypatch.setenv("ProgramFiles", str(tmp_path))
     monkeypatch.setenv("ProgramFiles(x86)", str(tmp_path / "x86"))
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
@@ -671,9 +738,7 @@ def test_fastflowlm_generation_autostarts_and_releases_owned_server(
 
     assert suggestion is not None
     assert suggestion.answer == "2 second"
-    assert provider.started_servers == [
-        {"model": "qwen3.5:4b", "host": "127.0.0.1", "port": 52625}
-    ]
+    assert provider.started_servers == [{"model": "qwen3.5:4b", "host": "127.0.0.1", "port": 52625}]
     assert provider.processes[0].terminate_calls == 0
 
     provider.release_resources()
@@ -721,9 +786,7 @@ def test_fastflowlm_autostarts_fallback_server_when_primary_ram_is_low(
     suggestion = provider.generate_fast_first_draft(chunk, candidate)
 
     assert suggestion is not None
-    assert provider.started_servers == [
-        {"model": "qwen3.5:2b", "host": "127.0.0.1", "port": 52625}
-    ]
+    assert provider.started_servers == [{"model": "qwen3.5:2b", "host": "127.0.0.1", "port": 52625}]
     chat_requests = [
         request for request in provider.requests if request["path"] == "/chat/completions"
     ]
@@ -734,9 +797,7 @@ def test_fastflowlm_autostarts_fallback_server_when_primary_ram_is_low(
 
 def test_ollama_health_uses_installed_fallback_without_pull(monkeypatch) -> None:
     fake_client = RecordingOllamaClient(models=["qwen3.5:2b"])
-    monkeypatch.setattr(
-        ollama_transport, "resolve_ollama_executable", lambda: Path("ollama")
-    )
+    monkeypatch.setattr(ollama_transport, "resolve_ollama_executable", lambda: Path("ollama"))
     provider = OllamaProvider(
         host="http://127.0.0.1:11434",
         model="qwen3.5:4b",
@@ -767,9 +828,7 @@ def test_ollama_health_includes_profile_selection_fields(monkeypatch) -> None:
         profile_id=DEFAULT_PROFILE_ID,
     )
     fake_client = RecordingOllamaClient(models=[selection.selected_profile.local_model])
-    monkeypatch.setattr(
-        ollama_transport, "resolve_ollama_executable", lambda: Path("ollama")
-    )
+    monkeypatch.setattr(ollama_transport, "resolve_ollama_executable", lambda: Path("ollama"))
     provider = OllamaProvider(
         host="http://127.0.0.1:11434",
         model=selection.selected_profile.local_model,
@@ -831,8 +890,7 @@ def test_ollama_profile_apis_return_200(monkeypatch, tmp_path) -> None:
 
     assert profiles_response.status_code == 200
     assert any(
-        item["profile_id"] == DEFAULT_PROFILE_ID
-        for item in profiles_response.json()["items"]
+        item["profile_id"] == DEFAULT_PROFILE_ID for item in profiles_response.json()["items"]
     )
     assert selection_response.status_code == 200
     assert selection_response.json()["profile_id"] == DEFAULT_PROFILE_ID
@@ -1093,9 +1151,7 @@ def test_ollama_prewarm_skips_missing_model_without_pull(monkeypatch) -> None:
 
 def test_ollama_prewarm_uses_available_fallback_model(monkeypatch) -> None:
     fake_client = RecordingOllamaClient(models=["qwen3.5:2b"])
-    monkeypatch.setattr(
-        ollama_transport, "resolve_ollama_executable", lambda: Path("ollama")
-    )
+    monkeypatch.setattr(ollama_transport, "resolve_ollama_executable", lambda: Path("ollama"))
     provider = OllamaProvider(
         host="http://127.0.0.1:11434",
         model="qwen3.5:4b",
@@ -1115,9 +1171,7 @@ def test_ollama_prewarm_falls_back_when_primary_runtime_fails(monkeypatch) -> No
         models=["qwen3.5:4b", "qwen3.5:2b"],
         fail_models={"qwen3.5:4b": RuntimeError("model requires more memory")},
     )
-    monkeypatch.setattr(
-        ollama_transport, "resolve_ollama_executable", lambda: Path("ollama")
-    )
+    monkeypatch.setattr(ollama_transport, "resolve_ollama_executable", lambda: Path("ollama"))
     provider = OllamaProvider(
         host="http://127.0.0.1:11434",
         model="qwen3.5:4b",
@@ -1188,9 +1242,7 @@ def test_ollama_fast_first_draft_forwards_keep_alive_override(
         models=["qwen3.5:4b"],
         chat_content='{"answer":"2","rationale":"Qwen picked the answer.","confidence":0.7}',
     )
-    monkeypatch.setattr(
-        ollama_transport, "resolve_ollama_executable", lambda: Path("ollama")
-    )
+    monkeypatch.setattr(ollama_transport, "resolve_ollama_executable", lambda: Path("ollama"))
     provider = OllamaProvider(
         host="http://127.0.0.1:11434",
         model="qwen3.5:4b",
@@ -1234,9 +1286,7 @@ def test_ollama_fast_first_draft_falls_back_when_primary_runtime_fails(
         chat_content='{"answer":"2","rationale":"Fallback picked the answer.","confidence":0.72}',
         fail_models={"qwen3.5:4b": RuntimeError("model requires more memory")},
     )
-    monkeypatch.setattr(
-        ollama_transport, "resolve_ollama_executable", lambda: Path("ollama")
-    )
+    monkeypatch.setattr(ollama_transport, "resolve_ollama_executable", lambda: Path("ollama"))
     provider = OllamaProvider(
         host="http://127.0.0.1:11434",
         model="qwen3.5:4b",
@@ -1280,9 +1330,7 @@ def test_ollama_fast_first_invalid_json_does_not_mark_model_unusable(
     monkeypatch,
 ) -> None:
     fake_client = RecordingOllamaClient(models=["qwen3.5:4b"], chat_content="not-json")
-    monkeypatch.setattr(
-        ollama_transport, "resolve_ollama_executable", lambda: Path("ollama")
-    )
+    monkeypatch.setattr(ollama_transport, "resolve_ollama_executable", lambda: Path("ollama"))
     provider = OllamaProvider(
         host="http://127.0.0.1:11434",
         model="qwen3.5:4b",
@@ -1479,7 +1527,11 @@ class FakeProfileInstaller:
         self.fallback_profiles = tuple(fallback_profiles)
         self._events = events
         self._events.append(
-            ("init", profile.profile_id, tuple(profile.profile_id for profile in self.fallback_profiles))
+            (
+                "init",
+                profile.profile_id,
+                tuple(profile.profile_id for profile in self.fallback_profiles),
+            )
         )
 
     def requirement(self) -> RuntimeRequirementSnapshot:
@@ -1497,7 +1549,11 @@ class FakeProfileInstaller:
 
     def install(self, progress) -> RuntimeInstallationStatus:
         self._events.append(
-            ("install", self.model, tuple(profile.local_model for profile in self.fallback_profiles))
+            (
+                "install",
+                self.model,
+                tuple(profile.local_model for profile in self.fallback_profiles),
+            )
         )
         progress(RuntimeInstallProgress("created profile model", completed=100, total=100))
         return RuntimeInstallationStatus.SUCCEEDED
@@ -1542,9 +1598,7 @@ class RecordingDownloadProvider:
             detail=self.detail,
         )
 
-    def generate_drafts(
-        self, chunks: Sequence[SourceChunk], limit: int
-    ) -> list[DraftSuggestion]:
+    def generate_drafts(self, chunks: Sequence[SourceChunk], limit: int) -> list[DraftSuggestion]:
         return []
 
     def pull_model(self, progress) -> None:
@@ -1630,7 +1684,7 @@ class RecordingFastFlowLMProvider(FastFlowLMProvider):
             and isinstance(body, dict)
             and "response_format" in body
         ):
-            raise ProviderUnavailableError("response_format is not supported")
+            raise ProviderUnavailableError("FastFlowLM HTTP 400: response_format is not supported")
         if path == "/chat/completions":
             model = body.get("model") if isinstance(body, dict) else None
             if isinstance(model, str) and model in self.fail_models:

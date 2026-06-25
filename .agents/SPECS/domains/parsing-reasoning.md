@@ -142,6 +142,27 @@ Do not use or recreate these in current OCR work:
 FastFlowLM reasoning NPU notes are separate from OCR and do not imply any
 PaddleOCR NPU implementation.
 
+## Provider Boundary Refactor Evidence
+
+2026-06-25 backend LLM provider refactor:
+
+- Shared primary/fallback model state now lives in `model_fallback.py` and is
+  composed by both Ollama and FastFlowLM providers.
+- Shared compact JSON, answer, confidence, fast-first prompt, and error
+  normalization now lives in `response_parsing.py`.
+- FastFlowLM HTTP, owned-server lifecycle, executable resolution, and RAM probes
+  are split into focused backend-domain modules; FastFlowLM no longer imports
+  helpers from `ollama_transport.py`.
+- Streaming and runtime-installation dispatch use provider capabilities for
+  reasoning, fast-first generation, resource release, generation startup, and
+  streaming kwargs instead of concrete provider or provider-name checks.
+- Evidence: `pnpm nx run cert-prep-backend:test -- tests/test_llm.py
+  tests/test_documents_streaming.py tests/test_runtime_installations.py` passed
+  72 tests; `pnpm nx run cert-prep-backend:streaming-cli-test` passed 33
+  selected tests; `pnpm nx run cert-prep-backend:test --skip-nx-cache` passed
+  162 tests; `pnpm nx run cert-prep-backend:lint --skip-nx-cache` passed; and
+  `git diff --check` passed with CRLF conversion warnings only.
+
 ## Verification
 
 - Orientation:

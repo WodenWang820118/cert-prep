@@ -6,6 +6,10 @@ from conftest import minimal_pdf
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.core.config import Settings
 from cert_prep_backend.domains.mock_exams import draft_jobs
+from cert_prep_backend.domains.mock_exams.streaming import (
+    _call_streaming_provider_method,
+    _provider_starts_on_generation,
+)
 from document_test_helpers import (
     _create_project,
     _draft_job_statuses,
@@ -29,6 +33,44 @@ from document_test_ocr_fakes import (
     JlptBlockOcrProvider,
     NoticePageOcrProvider,
 )
+
+
+def test_streaming_generation_startup_uses_provider_capability() -> None:
+    class CustomStartsOnGenerationProvider:
+        provider = "custom-local-llm"
+
+        @property
+        def starts_on_generation(self) -> bool:
+            return True
+
+    class NameOnlyFastFlowLMProvider:
+        provider = "fastflowlm"
+        auto_start_server = True
+
+    assert _provider_starts_on_generation(CustomStartsOnGenerationProvider()) is True
+    assert _provider_starts_on_generation(NameOnlyFastFlowLMProvider()) is False
+
+
+def test_streaming_generation_kwargs_are_provider_owned() -> None:
+    class CustomStreamingOptionsProvider:
+        provider = "custom-local-llm"
+
+        def __init__(self) -> None:
+            self.keep_alive_values: list[object] = []
+
+        def streaming_generation_kwargs(self) -> dict[str, int]:
+            return {"keep_alive": 0}
+
+        def complete(self, *, keep_alive=None):
+            self.keep_alive_values.append(keep_alive)
+            return "ok"
+
+    provider = CustomStreamingOptionsProvider()
+
+    result = _call_streaming_provider_method(provider, provider.complete)
+
+    assert result == "ok"
+    assert provider.keep_alive_values == [0]
 
 
 def test_streaming_draft_job_waits_until_document_is_ready(

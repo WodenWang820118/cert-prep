@@ -7,7 +7,6 @@ import subprocess
 from zipfile import ZipFile
 
 from fastapi.testclient import TestClient
-import pytest
 
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.core.config import Settings
@@ -105,10 +104,7 @@ def test_lazy_ollama_provider_does_not_resolve_during_manager_setup(
         async_jobs=False,
     )
 
-    with pytest.raises(AttributeError):
-        getattr(llm_provider, "profile_selection")
-    with pytest.raises(AttributeError):
-        getattr(llm_provider, "heath")
+    assert llm_provider.profile_selection is None
     assert resolve_calls == 0
 
 

@@ -1,28 +1,34 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-import json
-from threading import Lock
-import time
 from typing import Any, TypeVar
-
-import ollama
 
 from cert_prep_backend.domains.mock_exams.deterministic_parser import (
     extract_jlpt_question_blocks,
     source_text_for_prompt,
 )
+from cert_prep_backend.domains.mock_exams.model_fallback import ModelFallbackEngine
 from cert_prep_backend.domains.mock_exams.models import (
     AnswerKeySource,
     DraftSuggestion,
     SourceChunk,
 )
 from cert_prep_backend.domains.mock_exams.normalization import dedupe_suggestions
+from cert_prep_backend.domains.mock_exams.ollama_client import OllamaClient
 from cert_prep_backend.domains.mock_exams.ports import ProviderHealth
 from cert_prep_backend.domains.mock_exams.reasoning_parser import (
     EXAM_ITEMS_SCHEMA,
     draft_suggestion_from_item,
     json_response,
+)
+from cert_prep_backend.domains.mock_exams.response_parsing import (
+    answer_from_payload,
+    confidence_from_payload,
+    fast_first_prompt,
+    is_non_fatal_generation_error,
+    is_runtime_model_failure,
+    json_object_response_or_unavailable,
+    short_error,
 )
 from cert_prep_backend.api.errors import ProviderUnavailableError
 from cert_prep_contracts.llm_profiles import OllamaProfileSelection
@@ -49,23 +55,30 @@ class OllamaProvider:
         timeout_seconds: float,
         fallback_models: Sequence[str] = (),
         profile_selection: OllamaProfileSelection | None = None,
+        client: Any | None = None,
     ) -> None:
         self.host = host
         self.model = model
         self.profile_selection = profile_selection
-        self.fallback_models = tuple(
-            dict.fromkeys(
-                fallback.strip()
-                for fallback in fallback_models
-                if fallback.strip() and fallback.strip() != model
-            )
+        self._fallback_engine = ModelFallbackEngine(
+            primary_model=model,
+            fallback_models=fallback_models,
+            retry_after_seconds=MODEL_RETRY_AFTER_SECONDS,
+            error_shortener=short_error,
         )
-        self._client = ollama.Client(host=host, timeout=timeout_seconds)
-        self._model_lock = Lock()
-        self._unusable_models: dict[str, float] = {}
-        self._runtime_effective_model: str | None = None
-        self._last_primary_failure: str | None = None
-        self._runtime_fallback_reason: str | None = None
+        self.fallback_models = self._fallback_engine.fallback_models
+        self._client = client or OllamaClient(host=host, timeout_seconds=timeout_seconds)
+
+    @property
+    def supports_ollama_runtime_installation(self) -> bool:
+        return True
+
+    @property
+    def starts_on_generation(self) -> bool:
+        return False
+
+    def streaming_generation_kwargs(self) -> dict[str, Any]:
+        return {"keep_alive": STREAMING_RELEASE_KEEP_ALIVE}
 
     def health(self) -> ProviderHealth:
         """Return Ollama process and configured-model availability."""
@@ -253,13 +266,13 @@ class OllamaProvider:
 
         try:
             payload = self._with_model_fallback(
-                lambda model: _json_object_response_or_unavailable(
+                lambda model: json_object_response_or_unavailable(
                     self._client.chat(
                         model=model,
                         messages=[
                             {
                                 "role": "user",
-                                "content": _fast_first_prompt(candidate),
+                                "content": fast_first_prompt(candidate),
                             }
                         ],
                         format="json",
@@ -270,14 +283,15 @@ class OllamaProvider:
                         },
                         think=False,
                         keep_alive=keep_alive,
-                    )
+                    ),
+                    provider_label="Ollama",
                 )
             )
         except ProviderUnavailableError as exc:
-            if _is_non_fatal_generation_error(exc):
+            if is_non_fatal_generation_error(exc):
                 return None
             raise
-        answer = _answer_from_payload(payload.get("answer"), candidate.choices)
+        answer = answer_from_payload(payload.get("answer"), candidate.choices)
         if answer is None:
             return None
 
@@ -296,7 +310,7 @@ class OllamaProvider:
             rationale=rationale_text,
             citation_page=source_chunk.page_number,
             source_excerpt=candidate.source_excerpt,
-            confidence=_confidence_from_payload(payload.get("confidence")),
+            confidence=confidence_from_payload(payload.get("confidence")),
             source_order=candidate.source_order,
             source_question_number=candidate.source_question_number,
             item_kind=candidate.item_kind,
@@ -317,27 +331,10 @@ class OllamaProvider:
         raise ProviderUnavailableError(health.detail)
 
     def _effective_model_from(self, model_names: set[str]) -> str | None:
-        unusable_models, runtime_effective_model = self._runtime_model_state()
-        if (
-            runtime_effective_model
-            and runtime_effective_model in model_names
-            and runtime_effective_model not in unusable_models
-        ):
-            return runtime_effective_model
-        for candidate in (self.model, *self.fallback_models):
-            if candidate in unusable_models:
-                continue
-            if candidate in model_names:
-                return candidate
-        return None
+        return self._fallback_engine.effective_model_from(model_names)
 
     def _fallback_reason(self, effective_model: str | None) -> str | None:
-        if effective_model is None or effective_model == self.model:
-            return None
-        runtime_reason = self._runtime_reason_for(effective_model)
-        if runtime_reason:
-            return runtime_reason
-        return f"Configured model {self.model} is missing; using fallback {effective_model}."
+        return self._fallback_engine.fallback_reason(effective_model)
 
     def _health_detail(self, effective_model: str | None) -> str:
         if effective_model is None:
@@ -355,12 +352,7 @@ class OllamaProvider:
         except Exception as exc:
             raise ProviderUnavailableError(f"Ollama unavailable: {exc}") from exc
 
-        unusable_models = self._runtime_unusable_models()
-        candidates = tuple(
-            candidate
-            for candidate in (self.model, *self.fallback_models)
-            if candidate in model_names and candidate not in unusable_models
-        )
+        candidates = self._fallback_engine.available_model_candidates(model_names)
         if candidates:
             return candidates
 
@@ -372,8 +364,8 @@ class OllamaProvider:
             try:
                 result = operation(model)
             except Exception as exc:
-                errors.append(f"{model}: {_short_error(exc)}")
-                if _is_runtime_model_failure(exc):
+                errors.append(f"{model}: {short_error(exc)}")
+                if is_runtime_model_failure(exc):
                     self._mark_model_unusable(model, exc)
                 continue
 
@@ -386,165 +378,10 @@ class OllamaProvider:
         raise ProviderUnavailableError(detail)
 
     def _mark_model_unusable(self, model: str, exc: Exception) -> None:
-        with self._model_lock:
-            self._prune_unusable_models_locked()
-            self._unusable_models[model] = time.monotonic()
-            if model == self.model:
-                self._last_primary_failure = _short_error(exc)
-            if self._runtime_effective_model == model:
-                self._runtime_effective_model = None
-                self._runtime_fallback_reason = None
+        self._fallback_engine.mark_model_unusable(model, exc)
 
     def _record_model_success(self, model: str) -> None:
-        with self._model_lock:
-            self._unusable_models.pop(model, None)
-            if model == self.model:
-                self._runtime_effective_model = None
-                self._runtime_fallback_reason = None
-                return
-
-            self._runtime_effective_model = model
-            if self._last_primary_failure:
-                self._runtime_fallback_reason = (
-                    f"Configured model {self.model} was unavailable during generation "
-                    f"({_short_error_text(self._last_primary_failure)}); using fallback {model}."
-                )
-            else:
-                self._runtime_fallback_reason = (
-                    f"Configured model {self.model} is missing; using fallback {model}."
-                )
+        self._fallback_engine.record_model_success(model)
 
     def _runtime_unusable_models(self) -> set[str]:
-        with self._model_lock:
-            self._prune_unusable_models_locked()
-            return set(self._unusable_models)
-
-    def _runtime_selected_model(self) -> str | None:
-        with self._model_lock:
-            return self._runtime_effective_model
-
-    def _runtime_model_state(self) -> tuple[set[str], str | None]:
-        with self._model_lock:
-            self._prune_unusable_models_locked()
-            return set(self._unusable_models), self._runtime_effective_model
-
-    def _prune_unusable_models_locked(self) -> None:
-        retry_before = time.monotonic() - MODEL_RETRY_AFTER_SECONDS
-        expired = [
-            model
-            for model, marked_at in self._unusable_models.items()
-            if marked_at <= retry_before
-        ]
-        for model in expired:
-            self._unusable_models.pop(model, None)
-
-    def _runtime_reason_for(self, effective_model: str) -> str | None:
-        with self._model_lock:
-            if self._runtime_effective_model != effective_model:
-                return None
-            return self._runtime_fallback_reason
-
-
-def _fast_first_prompt(candidate: DraftSuggestion) -> str:
-    choices = "\n".join(str(choice) for choice in candidate.choices)
-    return (
-        "Return only compact JSON with keys answer, rationale, confidence. "
-        "Answer must be one of the visible choices or its leading number. "
-        "Rationale must be concise and user-facing; do not include hidden reasoning.\n"
-        f"Question: {candidate.question}\n"
-        f"Choices:\n{choices}\n"
-        f"Source excerpt:\n{candidate.source_excerpt}\n"
-        "Pick the best answer from the choices."
-    )
-
-
-def _json_object_response(response: Any) -> dict[str, Any]:
-    content = getattr(getattr(response, "message", None), "content", None)
-    if content is None and isinstance(response, dict):
-        message = response.get("message")
-        if isinstance(message, dict):
-            content = message.get("content")
-    if not isinstance(content, str):
-        return {}
-    try:
-        payload = json.loads(content)
-    except json.JSONDecodeError:
-        return {}
-    return payload if isinstance(payload, dict) else {}
-
-
-def _json_object_response_or_unavailable(response: Any) -> dict[str, Any]:
-    payload = _json_object_response(response)
-    if not payload:
-        raise ProviderUnavailableError("Ollama returned invalid JSON.")
-    return payload
-
-
-def _answer_from_payload(value: Any, choices: Sequence[str]) -> str | None:
-    if not isinstance(value, str | int | float):
-        return None
-    answer = str(value).strip()
-    if not answer:
-        return None
-
-    normalized_answer = _normalize_answer(answer)
-    for choice in choices:
-        if _normalize_answer(choice) == normalized_answer:
-            return choice
-
-    if answer.isdigit():
-        for choice in choices:
-            if choice.strip().startswith(answer):
-                return choice
-
-    for choice in choices:
-        normalized_choice = _normalize_answer(choice)
-        if normalized_answer in normalized_choice or normalized_choice in normalized_answer:
-            return choice
-    return None
-
-
-def _normalize_answer(value: str) -> str:
-    return " ".join(value.strip().lower().split())
-
-
-def _confidence_from_payload(value: Any) -> float | None:
-    if isinstance(value, int | float):
-        return max(0.0, min(1.0, float(value)))
-    if isinstance(value, str):
-        value_lower = value.strip().lower()
-        if value_lower in {"high", "confident"}:
-            return 0.8
-        if value_lower in {"medium", "moderate"}:
-            return 0.6
-        if value_lower in {"low", "uncertain"}:
-            return 0.4
-        try:
-            return max(0.0, min(1.0, float(value_lower)))
-        except ValueError:
-            return None
-    return None
-
-
-def _short_error(exc: Exception) -> str:
-    return _short_error_text(str(exc) or exc.__class__.__name__)
-
-
-def _short_error_text(value: str) -> str:
-    return " ".join(value.split())[:240]
-
-
-def _is_runtime_model_failure(exc: Exception) -> bool:
-    return not _is_non_fatal_generation_error(exc)
-
-
-def _is_non_fatal_generation_error(exc: Exception) -> bool:
-    error = _short_error(exc).lower()
-    return any(
-        marker in error
-        for marker in (
-            "invalid json",
-            "unreadable response",
-            "non-object json response",
-        )
-    )
+        return self._fallback_engine.runtime_unusable_models()

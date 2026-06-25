@@ -28,6 +28,10 @@ from cert_prep_backend.domains.mock_exams.ollama_transport import (
 from cert_prep_backend.domains.mock_exams.ollama_profiles import (
     ollama_profile_selection_from_settings,
 )
+from cert_prep_backend.domains.mock_exams.ports import (
+    ReasoningDraftProvider,
+    provider_capability,
+)
 from cert_prep_backend.domains.mock_exams.reasoning_parser import (
     EXAM_ITEMS_SCHEMA,
     draft_suggestion_from_item as _draft_suggestion_from_item,
@@ -64,9 +68,7 @@ def provider_from_settings(settings: Settings):
             fallback_models=settings.fastflowlm_fallback_models,
             timeout_seconds=settings.fastflowlm_timeout_seconds,
             model_pull_timeout_seconds=settings.runtime_install_timeout_seconds,
-            primary_min_available_ram_bytes=(
-                settings.fastflowlm_primary_min_available_ram_bytes
-            ),
+            primary_min_available_ram_bytes=(settings.fastflowlm_primary_min_available_ram_bytes),
             auto_start_server=settings.fastflowlm_auto_start_server,
             server_start_timeout_seconds=settings.fastflowlm_server_start_timeout_seconds,
             owned_server_idle_timeout_seconds=(
@@ -79,16 +81,30 @@ def provider_from_settings(settings: Settings):
 class LazyDraftGenerationProvider:
     """Delay provider creation until an endpoint actually needs it."""
 
+    _LAZY_PROVIDER_EXTENSION_ATTRIBUTES: frozenset[str] = frozenset(
+        {
+            "generate_reasoning_drafts",
+            "generate_fast_first_draft",
+            "release_resources",
+            "prewarm",
+            "pull_model",
+        }
+    )
+
     def __init__(
         self,
         factory: Callable[[], object],
         *,
         provider: str,
         model: str,
+        supports_ollama_runtime_installation: bool = False,
+        starts_on_generation: bool = False,
     ) -> None:
         self._factory = factory
         self._provider_hint = provider
         self._model_hint = model
+        self._supports_ollama_runtime_installation = supports_ollama_runtime_installation
+        self._starts_on_generation = starts_on_generation
         self._lock = Lock()
         self._provider: object | None = None
 
@@ -105,6 +121,27 @@ class LazyDraftGenerationProvider:
         if resolved is None:
             return self._model_hint
         return str(getattr(resolved, "model", self._model_hint))
+
+    @property
+    def supports_ollama_runtime_installation(self) -> bool:
+        resolved = self._provider
+        if resolved is None:
+            return self._supports_ollama_runtime_installation
+        return bool(getattr(resolved, "supports_ollama_runtime_installation", False))
+
+    @property
+    def starts_on_generation(self) -> bool:
+        resolved = self._provider
+        if resolved is None:
+            return self._starts_on_generation
+        return bool(getattr(resolved, "starts_on_generation", False))
+
+    @property
+    def profile_selection(self):
+        resolved = self._provider
+        if resolved is None:
+            return None
+        return getattr(resolved, "profile_selection", None)
 
     def health(self):
         return self._resolved_provider().health()
@@ -124,6 +161,13 @@ class LazyDraftGenerationProvider:
         if callable(close):
             close()
 
+    def streaming_generation_kwargs(self) -> dict[str, object]:
+        resolved = self._resolved_provider()
+        kwargs = getattr(resolved, "streaming_generation_kwargs", None)
+        if callable(kwargs):
+            return dict(kwargs())
+        return {}
+
     def resolved_provider(self) -> object:
         """Return the underlying provider, resolving it on first access."""
 
@@ -139,8 +183,8 @@ class LazyDraftGenerationProvider:
             return self._provider
 
     def __getattr__(self, name: str):
-        if name not in _LAZY_PROVIDER_EXTENSION_ATTRIBUTES:
-            raise AttributeError(name)
+        if name not in self._LAZY_PROVIDER_EXTENSION_ATTRIBUTES:
+            raise AttributeError(f"{type(self).__name__!r} object has no attribute {name!r}")
         return getattr(self._resolved_provider(), name)
 
 
@@ -151,6 +195,10 @@ def lazy_provider_from_settings(settings: Settings) -> LazyDraftGenerationProvid
         lambda: provider_from_settings(settings),
         provider=settings.llm_provider,
         model=_provider_model_hint(settings),
+        supports_ollama_runtime_installation=settings.llm_provider == "ollama",
+        starts_on_generation=(
+            settings.llm_provider == "fastflowlm" and settings.fastflowlm_auto_start_server
+        ),
     )
 
 
@@ -166,8 +214,9 @@ def generate_drafts_for_strategy(
     if strategy == DraftGenerationStrategy.DETERMINISTIC_ONLY:
         return _playable_suggestions(deterministic, limit)
 
-    if isinstance(provider, OllamaProvider):
-        generated = provider.generate_reasoning_drafts(chunks, limit)
+    reasoning_provider = provider_capability(provider, ReasoningDraftProvider)
+    if reasoning_provider is not None:
+        generated = reasoning_provider.generate_reasoning_drafts(chunks, limit)
     else:
         generated = provider.generate_drafts(chunks, limit)
     generated = [_as_editable_question(suggestion) for suggestion in generated]
@@ -183,9 +232,7 @@ def _playable_suggestions(
     return [
         suggestion
         for suggestion in suggestions
-        if suggestion.answer
-        and suggestion.answer in suggestion.choices
-        and suggestion.rationale
+        if suggestion.answer and suggestion.answer in suggestion.choices and suggestion.rationale
     ][:limit]
 
 
@@ -195,15 +242,6 @@ def _provider_model_hint(settings: Settings) -> str:
     if settings.llm_provider == "ollama" and settings.ollama_profile_enabled:
         return f"ollama-profile:{settings.ollama_profile_id}"
     return settings.ollama_model
-
-
-_LAZY_PROVIDER_EXTENSION_ATTRIBUTES = {
-    "auto_start_server",
-    "generate_fast_first_draft",
-    "generate_reasoning_drafts",
-    "pull_model",
-    "release_resources",
-}
 
 
 __all__ = [
