@@ -1,6 +1,8 @@
 import { TestBed } from '@angular/core/testing';
+import { provideRouter, Router } from '@angular/router';
 import { CERT_PREP_API, LLMHealthRead } from '../../cert-prep-api';
 import { HealthStore } from '../../stores/health/health.store';
+import { RuntimeManagerPage } from '../../pages/runtime-manager/runtime-manager.page';
 import { ModelHealthComponent } from './model-health.component';
 import {
   availableLlmHealth,
@@ -39,12 +41,16 @@ describe('ModelHealthComponent status display', () => {
 
     await TestBed.configureTestingModule({
       imports: [ModelHealthComponent],
-      providers: [{ provide: CERT_PREP_API, useValue: apiClient }],
+      providers: [
+        { provide: CERT_PREP_API, useValue: apiClient },
+        provideRouter([{ path: 'runtime', component: RuntimeManagerPage }]),
+      ],
     }).compileComponents();
   });
 
-  it('renders compact status chips and keeps details in the manager', () => {
+  it('renders compact status chips and navigates to the runtime page', async () => {
     const fixture = TestBed.createComponent(ModelHealthComponent);
+    const router = TestBed.inject(Router);
     const health = TestBed.inject(HealthStore);
     health.systemHealth.set(systemHealth());
     health.llmHealth.set(availableLlmHealth());
@@ -63,11 +69,9 @@ describe('ModelHealthComponent status display', () => {
 
     buttonByText(fixture.nativeElement, 'Manage runtime')?.click();
     fixture.detectChanges();
+    await fixture.whenStable();
 
-    expect(document.body.textContent).toContain('Runtime details');
-    expect(document.body.textContent).toContain('Python backend');
-    expect(document.body.textContent).toContain('Reasoning model');
-    expect(document.body.textContent).toContain('PaddleOCR');
+    expect(router.url).toBe('/runtime');
   });
 
   it('shows effective fallback model and still offers primary model download', () => {
@@ -85,13 +89,6 @@ describe('ModelHealthComponent status display', () => {
     expect(fixture.nativeElement.textContent).not.toContain(
       'Reasoning model missing',
     );
-
-    buttonByText(fixture.nativeElement, 'Manage runtime')?.click();
-    fixture.detectChanges();
-
-    expect(document.body.textContent).toContain('Ready via fallback');
-    expect(document.body.textContent).toContain('primary qwen3.5:4b');
-    expect(buttonByText(document.body, 'Download qwen3.5:4b')).not.toBeNull();
   });
 
   it('hides the download action for generic offline health', () => {
@@ -105,10 +102,8 @@ describe('ModelHealthComponent status display', () => {
     health.ocrHealth.set(ocrHealth());
 
     fixture.detectChanges();
-    buttonByText(fixture.nativeElement, 'Manage runtime')?.click();
-    fixture.detectChanges();
 
-    expect(buttonByText(document.body, 'Download model')).toBeNull();
+    expect(fixture.nativeElement.textContent).not.toContain('Download model');
   });
 
   it('shows FastFlowLM runtime missing without offering Ollama install', () => {
@@ -131,14 +126,8 @@ describe('ModelHealthComponent status display', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).toContain('FastFlowLM missing');
-
-    buttonByText(fixture.nativeElement, 'Manage runtime')?.click();
-    fixture.detectChanges();
-
-    expect(document.body.textContent).toContain('FastFlowLM');
-    expect(document.body.textContent).toContain('Missing');
-    expect(buttonByText(document.body, 'Install Ollama')).toBeNull();
-    expect(buttonByText(document.body, 'Download qwen3.5:4b')).toBeNull();
+    expect(fixture.nativeElement.textContent).not.toContain('Install Ollama');
+    expect(fixture.nativeElement.textContent).not.toContain('Download qwen3.5:4b');
   });
 
   it('shows OCR checking copy while health is still settling', () => {
@@ -153,14 +142,6 @@ describe('ModelHealthComponent status display', () => {
 
     expect(fixture.nativeElement.textContent).toContain('OCR checking');
     expect(fixture.nativeElement.textContent).not.toContain('OCR unknown');
-
-    buttonByText(fixture.nativeElement, 'Manage runtime')?.click();
-    fixture.detectChanges();
-
-    expect(document.body.textContent).toContain('Checking');
-    expect(document.body.textContent).toContain(
-      'Checking PaddleOCR runtime health.',
-    );
   });
 
   it('shows stale OCR copy while refreshing a cached OCR status', async () => {
@@ -178,14 +159,6 @@ describe('ModelHealthComponent status display', () => {
 
     expect(fixture.nativeElement.textContent).toContain('OCR stale');
     expect(fixture.nativeElement.textContent).not.toContain('OCR unknown');
-
-    buttonByText(fixture.nativeElement, 'Manage runtime')?.click();
-    fixture.detectChanges();
-
-    expect(document.body.textContent).toContain('Stale');
-    expect(document.body.textContent).toContain(
-      'Refreshing cached PaddleOCR status.',
-    );
   });
 
   it('shows WindowsML OCR runtime install copy when WindowsML runtime is missing', () => {
@@ -204,18 +177,8 @@ describe('ModelHealthComponent status display', () => {
     });
 
     fixture.detectChanges();
-    buttonByText(fixture.nativeElement, 'Manage runtime')?.click();
-    fixture.detectChanges();
 
-    expect(document.body.textContent).toContain('WindowsML OCR');
-    buttonByText(document.body, 'Install OCR')?.click();
-    fixture.detectChanges();
-
-    expect(document.body.textContent).toContain(
-      'Install the WindowsML OCR runtime for image-only PDFs?',
-    );
-    expect(document.body.textContent).toContain(
-      'the Nvidia GPU remains available for reasoning',
-    );
+    expect(fixture.nativeElement.textContent).toContain('OCR missing');
+    expect(fixture.nativeElement.textContent).not.toContain('OCR unknown');
   });
 });

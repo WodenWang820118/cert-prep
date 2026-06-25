@@ -35,3 +35,16 @@ test('completes the local practice loop with a mocked API', async ({
 
   expect(api.seenPaths()).toEqual(expectedSeenPaths(api));
 });
+
+test('opens the runtime manager before project creation', async ({ page }) => {
+  await installMockCertPrepApi(page);
+  await seedMockApiConfig(page, apiBaseUrl, devToken);
+
+  await page.goto('/runtime');
+
+  await expect(
+    page.getByRole('heading', { name: 'Manage runtime' }),
+  ).toBeVisible();
+  await expect(page.getByText('Python backend')).toBeVisible();
+  await expect(page.getByText('Select or create a project.')).toBeHidden();
+});

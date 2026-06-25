@@ -14,7 +14,7 @@
 
   body {
     margin: 0;
-    background: var(--p-surface-50);
+    background: #f3f4f5;
     color: var(--p-text-color);
     font-family: var(--font-sans);
   }
@@ -34,6 +34,7 @@
   }
 
   app-model-health,
+  app-runtime-consent-dialogs,
   app-project-rail,
   app-source-import-panel,
   app-draft-review-panel,
@@ -44,6 +45,148 @@
 }
 
 @layer components {
+  .workbench-shell {
+    --workbench-border: #c8ced8;
+    --workbench-border-soft: #dce1e8;
+    --workbench-panel: #ffffff;
+    --workbench-panel-muted: #f8f9fa;
+    --workbench-canvas: #f3f4f5;
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+
+  .workbench-topbar {
+    display: grid;
+    grid-template-columns: minmax(16rem, 1fr) minmax(0, 52rem);
+    align-items: center;
+    gap: 1rem;
+    min-height: 4.75rem;
+    padding: 0.75rem 1.25rem;
+    border-bottom: 1px solid var(--workbench-border);
+    background: var(--workbench-panel-muted);
+  }
+
+  .workbench-message-strip {
+    display: grid;
+    gap: 0.5rem;
+    padding: 0.75rem 1.25rem;
+    border-bottom: 1px solid var(--workbench-border-soft);
+    background: var(--workbench-canvas);
+  }
+
+  .workbench-body {
+    display: grid;
+    grid-template-columns: minmax(17rem, 20rem) minmax(0, 1fr);
+    min-height: 0;
+  }
+
+  .workbench-sidebar {
+    display: grid;
+    align-content: start;
+    gap: 1.25rem;
+    min-width: 0;
+    padding: 1rem;
+    border-right: 1px solid var(--workbench-border);
+    background: var(--workbench-panel-muted);
+  }
+
+  .workbench-nav {
+    display: grid;
+    gap: 0.25rem;
+  }
+
+  .workbench-nav-link {
+    display: grid;
+    grid-template-columns: 1.5rem minmax(0, 1fr);
+    align-items: center;
+    gap: 0.75rem;
+    min-height: 2.75rem;
+    padding: 0.625rem 0.75rem;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    color: var(--p-text-muted-color);
+    font-size: 0.875rem;
+    font-weight: 700;
+    text-decoration: none;
+  }
+
+  .workbench-nav-link:hover {
+    border-color: var(--workbench-border-soft);
+    background: #ffffff;
+    color: var(--p-text-color);
+  }
+
+  .workbench-nav-link.is-active {
+    border-color: #a8c8ff;
+    background: #d6e3ff;
+    color: #001b3d;
+  }
+
+  .workbench-main {
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+    padding: 1.25rem;
+    background: var(--workbench-canvas);
+  }
+
+  .workbench-page {
+    display: grid;
+    gap: 1rem;
+    max-width: 88rem;
+    margin: 0 auto;
+  }
+
+  .workbench-page-header {
+    display: flex;
+    align-items: end;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--workbench-border);
+  }
+
+  .workbench-page-header h2 {
+    margin: 0;
+    color: var(--p-text-color);
+    font-size: 1.875rem;
+    line-height: 2.25rem;
+    font-weight: 800;
+  }
+
+  .workbench-eyebrow {
+    margin: 0 0 0.25rem;
+    color: var(--p-text-muted-color);
+    font-size: 0.75rem;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  .build-workbench-grid {
+    display: grid;
+    grid-template-columns: minmax(22rem, 0.95fr) minmax(24rem, 1.05fr);
+    align-items: start;
+    gap: 1rem;
+  }
+
+  .runtime-grid {
+    display: grid;
+    gap: 0.75rem;
+    border: 1px solid var(--workbench-border);
+    border-radius: 8px;
+    background: var(--workbench-panel);
+    padding: 1rem;
+  }
+
+  .empty-workbench-state {
+    border: 1px dashed var(--p-surface-300);
+    border-radius: 8px;
+    background: var(--workbench-panel);
+    padding: 1rem;
+    color: var(--p-text-muted-color);
+    font-size: 0.875rem;
+  }
+
   .exam-card {
     border: 1px solid var(--p-surface-200);
     border-radius: 8px;
@@ -51,11 +194,11 @@
   }
 
   .exam-card .p-card-body {
-    padding: 1rem;
+    padding: 0;
   }
 
   .exam-card .p-card-content {
-    padding: 0;
+    padding: 1rem;
   }
 
   .project-select-button.p-button {
@@ -73,19 +216,108 @@
     box-shadow: inset 4px 0 0 var(--p-primary-color);
   }
 
-  .mode-nav-button.p-button {
-    justify-content: flex-start;
-    width: 100%;
-    min-height: 2.75rem;
-    border-color: var(--p-surface-200);
-    color: var(--p-text-color);
-    text-align: left;
+  @media (max-width: 1100px) {
+    .workbench-topbar {
+      grid-template-columns: 1fr;
+    }
+
+    .workbench-body {
+      grid-template-columns: 1fr;
+    }
+
+    .workbench-sidebar {
+      border-right: 0;
+      border-bottom: 1px solid var(--workbench-border);
+    }
+
+    .workbench-nav {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .build-workbench-grid {
+      grid-template-columns: 1fr;
+    }
   }
 
-  .mode-nav-button.is-selected.p-button {
-    border-color: var(--p-primary-color);
-    background: var(--p-highlight-background);
-    color: var(--p-text-color);
-    box-shadow: inset 0 -3px 0 var(--p-primary-color);
+  @media (max-width: 680px) {
+    .workbench-topbar {
+      gap: 0.75rem;
+      min-height: 0;
+      padding-block: 0.75rem;
+    }
+
+    .workbench-topbar,
+    .workbench-message-strip,
+    .workbench-sidebar,
+    .workbench-main {
+      padding-inline: 0.75rem;
+    }
+
+    .workbench-message-strip {
+      padding-block: 0.5rem;
+    }
+
+    .workbench-sidebar {
+      gap: 0.75rem;
+      padding-block: 0.75rem;
+    }
+
+    .workbench-nav {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.5rem;
+    }
+
+    .workbench-nav-link {
+      grid-template-columns: auto minmax(0, 1fr);
+      min-width: 0;
+      min-height: 2.5rem;
+      padding: 0.5rem 0.75rem;
+      font-size: 0.8125rem;
+    }
+
+    .workbench-nav-link span {
+      overflow-wrap: anywhere;
+      white-space: nowrap;
+    }
+
+    .project-rail {
+      gap: 0.75rem;
+    }
+
+    .project-rail > form {
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: end;
+      gap: 0.5rem;
+    }
+
+    .project-rail .project-rail-header {
+      display: none;
+    }
+
+    .project-list-section {
+      grid-template-columns: minmax(0, 1fr);
+      align-items: stretch;
+      gap: 0.5rem;
+    }
+
+    .project-list-label {
+      white-space: nowrap;
+    }
+
+    .workbench-main {
+      padding-block: 0.75rem;
+    }
+
+    .workbench-page-header {
+      align-items: start;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .workbench-page-header h2 {
+      font-size: 1.5rem;
+      line-height: 1.875rem;
+    }
   }
 }

@@ -1,0 +1,18 @@
+:host {
+  display: block;
+}
+
+.project-rail {
+  min-width: 0;
+}
+
+.project-rail-field {
+  display: grid;
+  gap: 0.375rem;
+}
+
+@media (max-width: 680px) {
+  .project-rail-header {
+    display: none;
+  }
+}

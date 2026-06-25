@@ -1,13 +1,15 @@
-import { Component, effect, inject, OnInit, signal } from '@angular/core';
-import { Button } from 'primeng/button';
+import { Component, effect, inject, OnInit } from '@angular/core';
+import {
+  Router,
+  RouterLink,
+  RouterLinkActive,
+  RouterOutlet,
+} from '@angular/router';
 import { Message } from 'primeng/message';
-import { DraftReviewPanelComponent } from './components/draft-review-panel/draft-review-panel.component';
 import { ModelHealthComponent } from './components/model-health/model-health.component';
-import { PracticePanelComponent } from './components/practice-panel/practice-panel.component';
+import { RuntimeConsentDialogsComponent } from './components/model-health/runtime-consent-dialogs.component';
 import { ProjectRailComponent } from './components/project-rail/project-rail.component';
-import { SourceImportPanelComponent } from './components/source-import-panel/source-import-panel.component';
-import { WrongAnswerReviewComponent } from './components/wrong-answer-review/wrong-answer-review.component';
-import type { StudyMode, StudyModeOption } from './contracts/app.contracts';
+import type { StudyPageOption } from './contracts/app.contracts';
 import { OperationStore } from './stores/operation.store';
 import { ProjectStore } from './stores/project.store';
 import { DesktopRuntimeStore } from './stores/desktop-runtime/desktop-runtime.store';
@@ -17,14 +19,13 @@ const LAST_PROJECT_STORAGE_KEY = 'certPrepLastProjectId';
 
 @Component({
   imports: [
-    Button,
-    DraftReviewPanelComponent,
     Message,
     ModelHealthComponent,
-    PracticePanelComponent,
     ProjectRailComponent,
-    SourceImportPanelComponent,
-    WrongAnswerReviewComponent,
+    RuntimeConsentDialogsComponent,
+    RouterLink,
+    RouterLinkActive,
+    RouterOutlet,
   ],
   selector: 'app-root',
   templateUrl: './app.html',
@@ -32,16 +33,32 @@ const LAST_PROJECT_STORAGE_KEY = 'certPrepLastProjectId';
 })
 export class App implements OnInit {
   protected readonly title = 'Cert Prep';
-  protected readonly activeMode = signal<StudyMode>('build');
-  protected readonly studyModes: readonly StudyModeOption[] = [
-    { id: 'build', label: 'Build', icon: 'pi pi-wrench' },
-    { id: 'full_exam', label: 'Full Exam', icon: 'pi pi-file-check' },
-    { id: 'random_quiz', label: 'Random Quiz', icon: 'pi pi-sync' },
-    { id: 'review', label: 'Review', icon: 'pi pi-history' },
+  protected readonly studyPages: readonly StudyPageOption[] = [
+    { id: 'build', label: 'Build', icon: 'pi pi-wrench', path: '/build' },
+    {
+      id: 'full_exam',
+      label: 'Full Exam',
+      icon: 'pi pi-file-check',
+      path: '/full-exam',
+    },
+    {
+      id: 'random_quiz',
+      label: 'Random Quiz',
+      icon: 'pi pi-sync',
+      path: '/random-quiz',
+    },
+    {
+      id: 'runtime',
+      label: 'Runtime',
+      icon: 'pi pi-sliders-h',
+      path: '/runtime',
+    },
+    { id: 'review', label: 'Review', icon: 'pi pi-history', path: '/review' },
   ];
   protected readonly desktopRuntime = inject(DesktopRuntimeStore);
   protected readonly operations = inject(OperationStore);
   protected readonly projects = inject(ProjectStore);
+  private readonly router = inject(Router);
   private readonly workspace = inject(WorkspaceFacade);
   private readonly startupProjectId = this.readLastProjectId();
   private hasAttemptedInitialStartupLoad = false;
@@ -86,10 +103,6 @@ export class App implements OnInit {
           throw error;
         });
       });
-  }
-
-  protected selectMode(mode: StudyMode): void {
-    this.activeMode.set(mode);
   }
 
   private async loadStartupState(): Promise<void> {
@@ -157,5 +170,10 @@ export class App implements OnInit {
     } catch {
       return null;
     }
+  }
+
+  protected isRuntimeRoute(): boolean {
+    const path = this.router.url.split(/[?#]/, 1)[0];
+    return path === '/runtime';
   }
 }

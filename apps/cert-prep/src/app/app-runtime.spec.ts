@@ -1,5 +1,7 @@
 import { TestBed } from '@angular/core/testing';
+import { provideRouter, Router } from '@angular/router';
 import { App } from './app';
+import { appRoutes } from './app.routes';
 import { CERT_PREP_API } from './cert-prep-api';
 import {
   appDocument,
@@ -9,6 +11,8 @@ import {
   availableOcrHealth,
   backendHealth,
 } from './app.spec-helpers';
+import { DesktopRuntimeBridgeService } from './stores/desktop-runtime/desktop-runtime-bridge.service';
+import type { DesktopRuntimeStatus } from './stores/desktop-runtime/contracts/desktop-runtime.contracts';
 import { OperationStore } from './stores/operation.store';
 import { ProjectStore } from './stores/project.store';
 import { WorkspaceFacade } from './stores/workspace.facade';
@@ -23,7 +27,10 @@ describe('App runtime loading', () => {
 
     await TestBed.configureTestingModule({
       imports: [App],
-      providers: [{ provide: CERT_PREP_API, useValue: apiClient }],
+      providers: [
+        { provide: CERT_PREP_API, useValue: apiClient },
+        provideRouter(appRoutes),
+      ],
     }).compileComponents();
   });
 
@@ -71,6 +78,75 @@ describe('App runtime loading', () => {
   });
 });
 
+describe('App desktop runtime recovery routes', () => {
+  let apiClient: ReturnType<typeof createApiClient>;
+  let desktopRuntimeBridge: {
+    isDesktop: ReturnType<typeof vi.fn>;
+    invoke: ReturnType<typeof vi.fn>;
+  };
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    apiClient = createApiClient();
+    desktopRuntimeBridge = {
+      isDesktop: vi.fn().mockReturnValue(true),
+      invoke: vi.fn().mockResolvedValue(missingPythonRuntimeStatus()),
+    };
+
+    await TestBed.configureTestingModule({
+      imports: [App],
+      providers: [
+        { provide: CERT_PREP_API, useValue: apiClient },
+        { provide: DesktopRuntimeBridgeService, useValue: desktopRuntimeBridge },
+        provideRouter(appRoutes),
+      ],
+    }).compileComponents();
+  });
+
+  it('redirects study routes to runtime management when the Python backend runtime is missing', async () => {
+    const fixture = TestBed.createComponent(App);
+    const router = TestBed.inject(Router);
+    const compiled = fixture.nativeElement as HTMLElement;
+    fixture.detectChanges();
+
+    await router.navigateByUrl('/build');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(router.url).toBe('/runtime');
+      expect(compiled.textContent).toContain('Manage runtime');
+      expect(compiled.textContent).toContain('Install runtime');
+    });
+    expect(compiled.textContent).toContain(
+      'Python backend runtime is missing.',
+    );
+    expect(compiled.textContent).not.toContain('Source PDF');
+  });
+
+  it('renders the runtime route and install action when the Python backend runtime is missing', async () => {
+    const fixture = TestBed.createComponent(App);
+    const router = TestBed.inject(Router);
+    const compiled = fixture.nativeElement as HTMLElement;
+    fixture.detectChanges();
+
+    await router.navigateByUrl('/runtime');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(compiled.textContent).toContain('Manage runtime');
+      expect(compiled.textContent).toContain('Install runtime');
+    });
+    expect(compiled.textContent).toContain(
+      'Python backend runtime is missing.',
+    );
+  });
+});
+
 function createApiClient() {
   return {
     health: vi.fn().mockResolvedValue(backendHealth()),
@@ -85,5 +161,17 @@ function createApiClient() {
     listDocumentChunks: vi.fn().mockResolvedValue({ items: [] }),
     listQuestionDrafts: vi.fn().mockResolvedValue({ items: [editableAppQuestion] }),
     listWrongAnswers: vi.fn().mockResolvedValue({ items: [] }),
+  };
+}
+
+function missingPythonRuntimeStatus(): DesktopRuntimeStatus {
+  return {
+    kind: 'python_backend',
+    label: 'Python backend',
+    available: false,
+    running: false,
+    status: 'missing',
+    detail: 'Python backend runtime is missing.',
+    unavailableReason: 'python_runtime_missing',
   };
 }

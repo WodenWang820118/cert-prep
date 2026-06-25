@@ -1,0 +1,127 @@
+<section class="workbench-page runtime-page">
+  <header class="workbench-page-header runtime-page-header">
+    <div>
+      <p class="workbench-eyebrow">System</p>
+      <h2>Manage runtime</h2>
+    </div>
+    <p-button
+      label="Refresh all"
+      icon="pi pi-refresh"
+      severity="secondary"
+      [outlined]="true"
+      [disabled]="operations.isBusyFor(['health', 'startup'])"
+      (onClick)="refreshAll()"
+    />
+  </header>
+
+  <section class="runtime-grid" aria-label="Runtime details">
+    <app-runtime-status-row [section]="viewModel().python">
+      <ng-container actions>
+        @if (desktopRuntime.canInstallPythonRuntime()) {
+          <p-button
+            label="Install runtime"
+            icon="pi pi-download"
+            severity="warn"
+            [outlined]="true"
+            [disabled]="desktopRuntime.installStarting()"
+            (onClick)="desktopRuntime.openInstallConsent()"
+          />
+        }
+        @if (desktopRuntime.installation()) {
+          <p-button
+            label="Refresh runtime"
+            icon="pi pi-refresh"
+            severity="secondary"
+            [outlined]="true"
+            [disabled]="desktopRuntime.installStarting()"
+            (onClick)="desktopRuntime.refreshInstallation()"
+          />
+        }
+      </ng-container>
+      @if (desktopRuntime.installProgress(); as progress) {
+        <p-progressbar progress class="sm:col-span-2" [value]="progress" />
+      }
+    </app-runtime-status-row>
+
+    <app-runtime-status-row [section]="viewModel().ollama">
+      <ng-container actions>
+        @if (desktopRuntime.isBackendReady() && health.canInstallOllama()) {
+          <p-button
+            label="Install Ollama"
+            icon="pi pi-download"
+            severity="warn"
+            [outlined]="true"
+            [disabled]="health.runtimeInstallStarting()"
+            (onClick)="health.openOllamaInstallConsent()"
+          />
+        }
+      </ng-container>
+    </app-runtime-status-row>
+
+    <app-runtime-status-row [section]="viewModel().model">
+      <ng-container actions>
+        @if (desktopRuntime.isBackendReady() && health.canDownloadModel()) {
+          <p-button
+            [label]="modelDownloadActionLabel()"
+            icon="pi pi-download"
+            severity="warn"
+            [outlined]="true"
+            [disabled]="health.modelDownloadStarting()"
+            (onClick)="health.openModelDownloadConsent()"
+          />
+        }
+        @if (health.modelDownload()) {
+          <p-button
+            label="Refresh model"
+            icon="pi pi-refresh"
+            severity="secondary"
+            [outlined]="true"
+            [disabled]="health.modelDownloadStarting()"
+            (onClick)="health.refreshModelDownload()"
+          />
+        }
+      </ng-container>
+      @if (health.modelDownload(); as download) {
+        <div progress class="grid gap-2 sm:col-span-2" aria-live="polite">
+          <p class="m-0 text-sm text-muted-color">{{ download.message }}</p>
+          @if (download.progress !== null) {
+            <p-progressbar [value]="download.progress" />
+          }
+        </div>
+      }
+    </app-runtime-status-row>
+
+    <app-runtime-status-row [section]="viewModel().ocr">
+      <ng-container actions>
+        @if (desktopRuntime.isBackendReady() && health.canInstallOcrRuntime()) {
+          <p-button
+            label="Install OCR"
+            icon="pi pi-download"
+            severity="warn"
+            [outlined]="true"
+            [disabled]="health.runtimeInstallStarting()"
+            (onClick)="health.openOcrRuntimeInstallConsent()"
+          />
+        }
+        @if (health.runtimeInstall()) {
+          <p-button
+            label="Refresh install"
+            icon="pi pi-refresh"
+            severity="secondary"
+            [outlined]="true"
+            [disabled]="health.runtimeInstallStarting()"
+            (onClick)="health.refreshRuntimeInstallation()"
+          />
+        }
+      </ng-container>
+      @if (health.runtimeInstall(); as install) {
+        <div progress class="grid gap-2 sm:col-span-2" aria-live="polite">
+          <p class="m-0 text-sm text-muted-color">{{ install.message }}</p>
+          @if (install.progress !== null) {
+            <p-progressbar [value]="install.progress" />
+          }
+        </div>
+      }
+    </app-runtime-status-row>
+  </section>
+</section>

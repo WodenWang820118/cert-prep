@@ -1,52 +1,59 @@
-<div class="grid gap-4">
-  <p-card styleClass="exam-card">
-    <form class="grid gap-3" (ngSubmit)="workspace.createProject()">
-      <h2 class="m-0 text-base font-bold text-color">Projects</h2>
-      <div class="grid gap-1.5">
-        <label class="text-sm font-semibold text-muted-color" for="projectName">
-          Name
-        </label>
-        <input
-          pInputText
-          id="projectName"
-          name="projectName"
-          type="text"
-          autocomplete="off"
-          fluid
-          [ngModel]="projects.projectName()"
-          (ngModelChange)="projects.setProjectName($event)"
-        />
-      </div>
-      <div class="grid gap-1.5">
-        <label
-          class="text-sm font-semibold text-muted-color"
-          for="projectDescription"
-        >
-          Description
-        </label>
-        <textarea
-          pTextarea
-          id="projectDescription"
-          name="projectDescription"
-          rows="3"
-          [autoResize]="true"
-          [fluid]="true"
-          [ngModel]="projects.projectDescription()"
-          (ngModelChange)="projects.setProjectDescription($event)"
-        ></textarea>
-      </div>
-      <p-button
-        label="Create project"
-        icon="pi pi-plus"
-        type="submit"
-        [fluid]="true"
-        [disabled]="operations.isBusyFor('project') || projects.projectName().trim().length === 0"
-        [loading]="operations.isBusyFor('project')"
-      />
-    </form>
-  </p-card>
+<div class="project-rail grid gap-4">
+  <form class="grid gap-3" (ngSubmit)="workspace.createProject()">
+    <div class="project-rail-header">
+      <p class="m-0 text-xs font-bold uppercase text-muted-color">
+        Local Workspace
+      </p>
+      <h2 class="m-0 mt-1 text-lg font-bold text-color">Projects</h2>
+    </div>
 
-  <div class="grid gap-2" aria-label="Project list">
+    <div class="project-rail-field project-rail-name">
+      <label class="text-sm font-semibold text-muted-color" for="projectName">
+        Name
+      </label>
+      <input
+        pInputText
+        id="projectName"
+        name="projectName"
+        type="text"
+        autocomplete="off"
+        fluid
+        [ngModel]="projects.projectName()"
+        (ngModelChange)="projects.setProjectName($event)"
+      />
+    </div>
+    <div class="project-rail-field project-rail-description">
+      <label
+        class="text-sm font-semibold text-muted-color"
+        for="projectDescription"
+      >
+        Description
+      </label>
+      <textarea
+        pTextarea
+        id="projectDescription"
+        name="projectDescription"
+        rows="3"
+        [autoResize]="true"
+        [fluid]="true"
+        [ngModel]="projects.projectDescription()"
+        (ngModelChange)="projects.setProjectDescription($event)"
+      ></textarea>
+    </div>
+    <p-button
+      label="Create project"
+      icon="pi pi-plus"
+      type="submit"
+      [fluid]="true"
+      [disabled]="operations.isBusyFor('project') || projects.projectName().trim().length === 0"
+      [loading]="operations.isBusyFor('project')"
+    />
+  </form>
+
+  <section class="project-list-section grid gap-2" aria-label="Project list">
+    <p class="project-list-label m-0 text-xs font-bold uppercase text-muted-color">
+      Recent Projects
+    </p>
     @for (project of projects.projects(); track project.id) {
       <p-button
         type="button"
@@ -71,5 +78,5 @@
         No projects yet.
       </p>
     }
-  </div>
+  </section>
 </div>

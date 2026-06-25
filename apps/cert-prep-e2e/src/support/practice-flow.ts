@@ -56,7 +56,7 @@ export async function startRandomQuiz(
   page: Page,
   api: MockCertPrepApi,
 ): Promise<void> {
-  await page.getByRole('button', { name: 'Random Quiz' }).click();
+  await page.getByRole('link', { name: 'Random Quiz' }).click();
   await expect(page.getByText('1 questions available')).toBeVisible();
   await page.getByRole('button', { name: 'Start random quiz' }).click();
   await expect(page.getByText(`Session ${api.session.id}`)).toBeVisible();
@@ -70,7 +70,7 @@ export async function submitWrongAnswerAndOpenReview(
   await page.getByRole('button', { name: 'Submit answer' }).click();
 
   await expect(page.getByText('Needs review')).toBeVisible();
-  await page.getByRole('button', { name: 'Review' }).click();
+  await page.getByRole('link', { name: 'Review' }).click();
   await expect(page.getByText(`Correct: ${api.draft.answer}`)).toBeVisible();
   await expect(page.getByText(api.draft.rationale)).toBeVisible();
 }

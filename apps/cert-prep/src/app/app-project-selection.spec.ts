@@ -1,5 +1,7 @@
 import { TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { App } from './app';
+import { appRoutes } from './app.routes';
 import { CERT_PREP_API } from './cert-prep-api';
 import {
   appDocument,
@@ -23,7 +25,10 @@ describe('App project selection', () => {
 
     await TestBed.configureTestingModule({
       imports: [App],
-      providers: [{ provide: CERT_PREP_API, useValue: apiClient }],
+      providers: [
+        { provide: CERT_PREP_API, useValue: apiClient },
+        provideRouter(appRoutes),
+      ],
     }).compileComponents();
   });
 

@@ -1,15 +1,16 @@
+import { Component } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { CERT_PREP_API } from '../../cert-prep-api';
+import { RuntimeManagerPage } from '../../pages/runtime-manager/runtime-manager.page';
 import { HealthStore } from '../../stores/health/health.store';
-import { ModelHealthComponent } from './model-health.component';
+import { RuntimeConsentDialogsComponent } from './runtime-consent-dialogs.component';
 import {
   buttonByText,
   missingModelHealth,
   ocrHealth,
-  systemHealth,
 } from './model-health.component.spec-helpers';
 
-describe('ModelHealthComponent runtime actions', () => {
+describe('Runtime manager actions', () => {
   let apiClient: {
     getModelDownload: ReturnType<typeof vi.fn>;
     getRuntimeInstallation: ReturnType<typeof vi.fn>;
@@ -27,7 +28,7 @@ describe('ModelHealthComponent runtime actions', () => {
     apiClient = {
       getModelDownload: vi.fn(),
       getRuntimeInstallation: vi.fn(),
-      health: vi.fn().mockResolvedValue(systemHealth()),
+      health: vi.fn(),
       llmHealth: vi.fn(),
       ocrHealth: vi.fn(),
       runtimeRequirements: vi.fn().mockResolvedValue({ items: [] }),
@@ -36,21 +37,19 @@ describe('ModelHealthComponent runtime actions', () => {
     };
 
     await TestBed.configureTestingModule({
-      imports: [ModelHealthComponent],
+      imports: [RuntimeActionHostComponent],
       providers: [{ provide: CERT_PREP_API, useValue: apiClient }],
     }).compileComponents();
   });
 
   it('opens consent and cancel does not start the download', async () => {
-    const fixture = TestBed.createComponent(ModelHealthComponent);
+    const fixture = TestBed.createComponent(RuntimeActionHostComponent);
     const health = TestBed.inject(HealthStore);
     health.llmHealth.set(missingModelHealth());
     health.ocrHealth.set(ocrHealth());
     fixture.detectChanges();
 
-    buttonByText(fixture.nativeElement, 'Manage runtime')?.click();
-    fixture.detectChanges();
-    buttonByText(document.body, 'Download reasoner:7b')?.click();
+    buttonByText(fixture.nativeElement, 'Download reasoner:7b')?.click();
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -68,7 +67,7 @@ describe('ModelHealthComponent runtime actions', () => {
   });
 
   it('opens Ollama install consent for missing Ollama', async () => {
-    const fixture = TestBed.createComponent(ModelHealthComponent);
+    const fixture = TestBed.createComponent(RuntimeActionHostComponent);
     const health = TestBed.inject(HealthStore);
     health.llmHealth.set({
       ...missingModelHealth(),
@@ -78,9 +77,7 @@ describe('ModelHealthComponent runtime actions', () => {
     health.ocrHealth.set(ocrHealth());
     fixture.detectChanges();
 
-    buttonByText(fixture.nativeElement, 'Manage runtime')?.click();
-    fixture.detectChanges();
-    buttonByText(document.body, 'Install Ollama')?.click();
+    buttonByText(fixture.nativeElement, 'Install Ollama')?.click();
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -97,3 +94,12 @@ describe('ModelHealthComponent runtime actions', () => {
     expect(apiClient.startRuntimeInstallation).not.toHaveBeenCalled();
   });
 });
+
+@Component({
+  imports: [RuntimeManagerPage, RuntimeConsentDialogsComponent],
+  template: `
+    <app-runtime-manager-page />
+    <app-runtime-consent-dialogs />
+  `,
+})
+class RuntimeActionHostComponent {}
