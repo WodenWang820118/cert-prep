@@ -58,7 +58,7 @@ describe('Runtime manager actions', () => {
       'Download reasoner:7b with Ollama?',
     );
 
-    buttonByText(document.body, 'Cancel')?.click();
+    lastButtonByText(document.body, 'Cancel')?.click();
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -86,7 +86,7 @@ describe('Runtime manager actions', () => {
       'Install Ollama for local AI generation?',
     );
 
-    buttonByText(document.body, 'Cancel')?.click();
+    lastButtonByText(document.body, 'Cancel')?.click();
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -103,3 +103,11 @@ describe('Runtime manager actions', () => {
   `,
 })
 class RuntimeActionHostComponent {}
+
+function lastButtonByText(root: ParentNode, text: string): HTMLButtonElement | null {
+  return (
+    Array.from(root.querySelectorAll('button'))
+      .reverse()
+      .find((button) => button.textContent?.includes(text)) ?? null
+  );
+}

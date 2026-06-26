@@ -7,10 +7,8 @@ import type { RuntimeStatusChipView } from './contracts/model-health.contracts';
   selector: 'app-runtime-status-chip-bar',
   imports: [Button, Tag],
   template: `
-    <div
-      class="flex flex-wrap items-center justify-end gap-2 rounded-lg border border-surface-200 bg-surface-0 p-2 shadow-sm"
-    >
-      <div class="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+    <div class="runtime-chip-bar">
+      <div class="runtime-chip-list">
         @for (chip of chips; track chip.label) {
           <p-tag
             [severity]="chip.severity"
@@ -19,17 +17,20 @@ import type { RuntimeStatusChipView } from './contracts/model-health.contracts';
           />
         }
       </div>
-      <p-button
-        label="Manage runtime"
-        icon="pi pi-sliders-h"
-        severity="secondary"
-        [outlined]="true"
-        (onClick)="manageRuntime.emit()"
-      />
+      @if (showManageButton) {
+        <p-button
+          label="Manage runtime"
+          icon="pi pi-sliders-h"
+          severity="secondary"
+          [outlined]="true"
+          (onClick)="manageRuntime.emit()"
+        />
+      }
     </div>
   `,
 })
 export class RuntimeStatusChipBarComponent {
   @Input({ required: true }) chips: readonly RuntimeStatusChipView[] = [];
+  @Input() showManageButton = true;
   @Output() readonly manageRuntime = new EventEmitter<void>();
 }

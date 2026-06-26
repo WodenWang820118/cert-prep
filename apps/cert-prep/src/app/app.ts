@@ -1,15 +1,26 @@
-import { Component, effect, inject, OnInit } from '@angular/core';
+import { CdkTrapFocus } from '@angular/cdk/a11y';
 import {
+  Component,
+  ElementRef,
+  OnDestroy,
+  OnInit,
+  ViewChild,
+  effect,
+  inject,
+  signal,
+} from '@angular/core';
+import {
+  NavigationEnd,
   Router,
   RouterLink,
   RouterLinkActive,
   RouterOutlet,
 } from '@angular/router';
-import { Message } from 'primeng/message';
-import { ModelHealthComponent } from './components/model-health/model-health.component';
+import { Subscription } from 'rxjs';
 import { RuntimeConsentDialogsComponent } from './components/model-health/runtime-consent-dialogs.component';
 import { ProjectRailComponent } from './components/project-rail/project-rail.component';
 import type { StudyPageOption } from './contracts/app.contracts';
+import { RuntimeManagerPage } from './pages/runtime-manager/runtime-manager.page';
 import { OperationStore } from './stores/operation.store';
 import { ProjectStore } from './stores/project.store';
 import { DesktopRuntimeStore } from './stores/desktop-runtime/desktop-runtime.store';
@@ -19,9 +30,9 @@ const LAST_PROJECT_STORAGE_KEY = 'certPrepLastProjectId';
 
 @Component({
   imports: [
-    Message,
-    ModelHealthComponent,
+    CdkTrapFocus,
     ProjectRailComponent,
+    RuntimeManagerPage,
     RuntimeConsentDialogsComponent,
     RouterLink,
     RouterLinkActive,
@@ -31,7 +42,10 @@ const LAST_PROJECT_STORAGE_KEY = 'certPrepLastProjectId';
   templateUrl: './app.html',
   styleUrl: './app.css',
 })
-export class App implements OnInit {
+export class App implements OnInit, OnDestroy {
+  @ViewChild('runtimeManagerDialog')
+  private runtimeManagerDialog?: ElementRef<HTMLElement>;
+
   protected readonly title = 'Cert Prep';
   protected readonly studyPages: readonly StudyPageOption[] = [
     { id: 'build', label: 'Build', icon: 'pi pi-wrench', path: '/build' },
@@ -47,25 +61,33 @@ export class App implements OnInit {
       icon: 'pi pi-sync',
       path: '/random-quiz',
     },
-    {
-      id: 'runtime',
-      label: 'Runtime',
-      icon: 'pi pi-sliders-h',
-      path: '/runtime',
-    },
     { id: 'review', label: 'Review', icon: 'pi pi-history', path: '/review' },
   ];
   protected readonly desktopRuntime = inject(DesktopRuntimeStore);
   protected readonly operations = inject(OperationStore);
   protected readonly projects = inject(ProjectStore);
+  protected readonly currentPath = signal('');
+  protected readonly runtimeManagerOpen = signal(false);
   private readonly router = inject(Router);
   private readonly workspace = inject(WorkspaceFacade);
   private readonly startupProjectId = this.readLastProjectId();
   private hasAttemptedInitialStartupLoad = false;
   private hasAppliedStartupProjectSelection = false;
   private loadingStartupState = false;
+  private runtimeManagerRestoreFocus: HTMLElement | null = null;
+  private runtimeManagerFocusTimer: ReturnType<typeof setTimeout> | null = null;
+  private runtimeManagerRestoreFocusTimer: ReturnType<typeof setTimeout> | null =
+    null;
+  private readonly routerEventsSubscription: Subscription;
 
   constructor() {
+    this.currentPath.set(this.urlPath(this.router.url));
+    this.routerEventsSubscription = this.router.events.subscribe((event) => {
+      if (event instanceof NavigationEnd) {
+        this.currentPath.set(this.urlPath(event.urlAfterRedirects));
+      }
+    });
+
     effect(() => {
       const selectedProjectId = this.projects.selectedProjectId();
       const backendReady = this.desktopRuntime.isBackendReady();
@@ -103,6 +125,12 @@ export class App implements OnInit {
           throw error;
         });
       });
+  }
+
+  ngOnDestroy(): void {
+    this.routerEventsSubscription.unsubscribe();
+    this.clearRuntimeManagerFocusTimer();
+    this.clearRuntimeManagerRestoreFocusTimer();
   }
 
   private async loadStartupState(): Promise<void> {
@@ -154,7 +182,8 @@ export class App implements OnInit {
   private writeLastProjectId(projectId: string): void {
     try {
       this.projectStorage()?.setItem(LAST_PROJECT_STORAGE_KEY, projectId);
-    } catch {
+    } catch (error) {
+      console.warn('Unable to persist the last selected project.', error);
       // Storage persistence is a convenience; startup should continue without it.
     }
   }
@@ -173,7 +202,70 @@ export class App implements OnInit {
   }
 
   protected isRuntimeRoute(): boolean {
-    const path = this.router.url.split(/[?#]/, 1)[0];
-    return path === '/runtime';
+    return this.currentPath() === '/runtime';
+  }
+
+  protected openRuntimeManager(): void {
+    this.clearRuntimeManagerRestoreFocusTimer();
+    this.runtimeManagerRestoreFocus = this.activeElement();
+    this.runtimeManagerOpen.set(true);
+    this.runtimeManagerFocusTimer = setTimeout(() => {
+      this.runtimeManagerFocusTimer = null;
+      this.focusRuntimeManagerDialog();
+    });
+  }
+
+  protected closeRuntimeManager(): void {
+    if (!this.runtimeManagerOpen()) {
+      return;
+    }
+
+    this.clearRuntimeManagerFocusTimer();
+    this.runtimeManagerOpen.set(false);
+    const restoreFocus = this.runtimeManagerRestoreFocus;
+    this.runtimeManagerRestoreFocus = null;
+    if (restoreFocus?.isConnected) {
+      this.runtimeManagerRestoreFocusTimer = setTimeout(() => {
+        this.runtimeManagerRestoreFocusTimer = null;
+        restoreFocus.focus();
+      });
+    }
+  }
+
+  private urlPath(url: string): string {
+    return url.split(/[?#]/, 1)[0];
+  }
+
+  private focusRuntimeManagerDialog(): void {
+    const dialog = this.runtimeManagerDialog?.nativeElement;
+    if (!this.runtimeManagerOpen() || dialog === undefined) {
+      return;
+    }
+
+    (
+      dialog.querySelector<HTMLElement>(
+        'button[aria-label="Close runtime manager"], button:not([disabled])',
+      ) ?? dialog
+    ).focus();
+  }
+
+  private clearRuntimeManagerFocusTimer(): void {
+    if (this.runtimeManagerFocusTimer !== null) {
+      clearTimeout(this.runtimeManagerFocusTimer);
+      this.runtimeManagerFocusTimer = null;
+    }
+  }
+
+  private clearRuntimeManagerRestoreFocusTimer(): void {
+    if (this.runtimeManagerRestoreFocusTimer !== null) {
+      clearTimeout(this.runtimeManagerRestoreFocusTimer);
+      this.runtimeManagerRestoreFocusTimer = null;
+    }
+  }
+
+  private activeElement(): HTMLElement | null {
+    return document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
   }
 }

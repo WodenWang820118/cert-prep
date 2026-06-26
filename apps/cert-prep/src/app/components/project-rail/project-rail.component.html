@@ -1,82 +1,83 @@
-<div class="project-rail grid gap-4">
-  <form class="grid gap-3" (ngSubmit)="workspace.createProject()">
-    <div class="project-rail-header">
-      <p class="m-0 text-xs font-bold uppercase text-muted-color">
-        Local Workspace
-      </p>
-      <h2 class="m-0 mt-1 text-lg font-bold text-color">Projects</h2>
+<div class="project-rail">
+  <div class="project-rail-heading">
+    <div class="project-rail-icon" aria-hidden="true">
+      <i class="pi pi-folder"></i>
     </div>
+    <div>
+      <p class="workbench-section-label">Local Workspace</p>
+      <h2>Projects</h2>
+    </div>
+  </div>
 
-    <div class="project-rail-field project-rail-name">
-      <label class="text-sm font-semibold text-muted-color" for="projectName">
-        Name
+  @if (!createFormOpen()) {
+    <button
+      class="project-create-toggle"
+      type="button"
+      (click)="openCreateForm()"
+    >
+      <i class="pi pi-plus" aria-hidden="true"></i>
+      <span>Create project</span>
+    </button>
+  } @else {
+    <form
+      class="project-create-form"
+      data-testid="project-create-form"
+      (ngSubmit)="createProject()"
+    >
+      <label class="workbench-field" for="projectName">
+        <span>Name</span>
+        <input
+          pInputText
+          id="projectName"
+          name="projectName"
+          type="text"
+          autocomplete="off"
+          [ngModel]="projects.projectName()"
+          (ngModelChange)="projects.setProjectName($event)"
+        />
       </label>
-      <input
-        pInputText
-        id="projectName"
-        name="projectName"
-        type="text"
-        autocomplete="off"
-        fluid
-        [ngModel]="projects.projectName()"
-        (ngModelChange)="projects.setProjectName($event)"
-      />
-    </div>
-    <div class="project-rail-field project-rail-description">
-      <label
-        class="text-sm font-semibold text-muted-color"
-        for="projectDescription"
+      <label class="workbench-field" for="projectDescription">
+        <span>Description</span>
+        <textarea
+          pTextarea
+          id="projectDescription"
+          name="projectDescription"
+          rows="3"
+          [autoResize]="true"
+          [ngModel]="projects.projectDescription()"
+          (ngModelChange)="projects.setProjectDescription($event)"
+        ></textarea>
+      </label>
+      <button
+        class="project-create-toggle"
+        type="submit"
+        [disabled]="operations.isBusyFor('project') || projects.projectName().trim().length === 0"
       >
-        Description
-      </label>
-      <textarea
-        pTextarea
-        id="projectDescription"
-        name="projectDescription"
-        rows="3"
-        [autoResize]="true"
-        [fluid]="true"
-        [ngModel]="projects.projectDescription()"
-        (ngModelChange)="projects.setProjectDescription($event)"
-      ></textarea>
-    </div>
-    <p-button
-      label="Create project"
-      icon="pi pi-plus"
-      type="submit"
-      [fluid]="true"
-      [disabled]="operations.isBusyFor('project') || projects.projectName().trim().length === 0"
-      [loading]="operations.isBusyFor('project')"
-    />
-  </form>
+        <i
+          [class]="operations.isBusyFor('project') ? 'pi pi-spin pi-spinner' : 'pi pi-plus'"
+          aria-hidden="true"
+        ></i>
+        <span>Create project</span>
+      </button>
+    </form>
+  }
 
-  <section class="project-list-section grid gap-2" aria-label="Project list">
-    <p class="project-list-label m-0 text-xs font-bold uppercase text-muted-color">
-      Recent Projects
-    </p>
+  <section class="project-list-section" aria-label="Project list">
+    <p class="project-list-label">Recent Projects</p>
     @for (project of projects.projects(); track project.id) {
-      <p-button
+      <button
         type="button"
-        severity="secondary"
-        [outlined]="project.id !== projects.selectedProjectId()"
-        styleClass="project-select-button w-full justify-start text-left"
-        (onClick)="workspace.selectProject(project.id)"
+        class="project-list-item"
+        [class.is-selected]="project.id === projects.selectedProjectId()"
+        (click)="workspace.selectProject(project.id)"
       >
-        <span class="grid min-w-0 gap-1">
-          <strong class="truncate text-sm">{{ project.name }}</strong>
-          @if (project.description) {
-            <span class="truncate text-xs text-muted-color">
-              {{ project.description }}
-            </span>
-          }
-        </span>
-      </p-button>
+        <strong>{{ project.name }}</strong>
+        @if (project.description) {
+          <span>{{ project.description }}</span>
+        }
+      </button>
     } @empty {
-      <p
-        class="m-0 rounded-lg border border-dashed border-surface-300 bg-surface-0 p-3 text-sm text-muted-color"
-      >
-        No projects yet.
-      </p>
+      <p class="project-empty-state">No projects yet.</p>
     }
   </section>
 </div>

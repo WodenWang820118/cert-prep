@@ -32,6 +32,12 @@ export class PracticeStore {
   readonly lastAttempt = signal<PracticeAttemptRead | null>(null);
   readonly answeredQuestionIds = signal<ReadonlySet<string>>(new Set<string>());
   readonly questionCount = computed(() => this.drafts.playableQuestions().length);
+  readonly effectiveRandomQuestionCount = computed(() =>
+    this.sessionPayloads.effectiveRandomQuestionCount(
+      this.sessionQuestionCount(),
+      this.questionCount(),
+    ),
+  );
   readonly questionsByDocument = computed(() => {
     const counts = new Map<string, number>();
     for (const draft of this.drafts.playableQuestions()) {

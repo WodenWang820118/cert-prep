@@ -22,8 +22,8 @@ test('completes the local practice loop with a mocked API', async ({
 
   await page.goto('/');
 
-  await expectRuntimeReady(page);
   await createProject(page, api);
+  await expectRuntimeReady(page);
   await uploadDocumentAndExpectDraft(page, api);
   await startRandomQuiz(page, api);
   expect(api.practiceSessionPayload()).toMatchObject({

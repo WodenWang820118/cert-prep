@@ -146,7 +146,7 @@ export async function clickButtonPattern(
 ): Promise<void> {
   const timeout = buttonOptions.timeout ?? 20_000;
   const locator = activePage(run)
-    .locator('button')
+    .locator('button, a')
     .filter({ hasText: pattern })
     .first();
   await locator.waitFor({ state: 'visible', timeout });
@@ -156,7 +156,7 @@ export async function clickButtonPattern(
 export async function clickConsentInstall(run: SmokeRunState): Promise<void> {
   const buttons = activePage(run)
     .locator('button')
-    .filter({ hasText: /^s*Installs*$/ });
+    .filter({ hasText: /^\s*Install\s*$/ });
   const count = await buttons.count();
   if (count === 0) {
     throw new Error('No Install consent button found');
@@ -173,17 +173,27 @@ export async function clickConsentInstall(run: SmokeRunState): Promise<void> {
 }
 
 export async function openRuntimeDrawer(run: SmokeRunState): Promise<void> {
-  if (/Runtime details/.test(await bodyText(run))) {
+  if ((await runtimeDrawerLocator(run).count()) > 0) {
     return;
   }
   await clickButtonText(run, 'Manage runtime');
-  await waitText(run, /Runtime details/, 10_000, 'runtime drawer visible');
+  await runtimeDrawerLocator(run).waitFor({ state: 'visible', timeout: 10_000 });
+  const elapsed = await waitText(
+    run,
+    /Python backend|Developer backend|WindowsML OCR|PaddleOCR|FastFlowLM|Ollama/i,
+    10_000,
+    'runtime view visible',
+  );
+  log(run, `runtime view locator visible after ${elapsed}ms`);
 }
 
 export function runtimeDrawerLocator(run: SmokeRunState): Locator {
   return activePage(run)
-    .locator('.p-dialog, [role="dialog"]')
-    .filter({ hasText: /Runtime details/ })
+    .locator('[aria-label="Runtime details"], .p-dialog, [role="dialog"]')
+    .filter({
+      hasText:
+        /Python backend|Developer backend|WindowsML OCR|PaddleOCR|FastFlowLM|Ollama|Runtime details/i,
+    })
     .last();
 }
 
@@ -217,11 +227,29 @@ export async function waitRuntimeDrawerText(
 }
 
 export async function closeRuntimeDrawer(run: SmokeRunState): Promise<void> {
-  if (!/Runtime details/.test(await bodyText(run))) {
+  const drawer = runtimeDrawerLocator(run);
+  if ((await drawer.count()) === 0) {
+    return;
+  }
+  const dialogCount = await activePage(run)
+    .locator('.p-dialog, [role="dialog"]')
+    .filter({
+      hasText:
+        /Manage runtime|Runtime details|Python backend|WindowsML OCR|PaddleOCR/i,
+    })
+    .count();
+  if (dialogCount === 0) {
+    await clickButtonPattern(run, /^\s*Build\s*$/);
+    await waitText(
+      run,
+      /Projects|Create project|Recent projects|Local Workspace/i,
+      10_000,
+      'workspace view visible',
+    );
     return;
   }
   const closeButtons = activePage(run).locator(
-    'button[aria-label="Close"], button.p-dialog-header-close',
+    'button[aria-label="Close runtime manager"], button[aria-label="Close"], button.p-dialog-header-close',
   );
   const count = await closeButtons.count();
   if (count > 0) {
@@ -229,21 +257,14 @@ export async function closeRuntimeDrawer(run: SmokeRunState): Promise<void> {
   } else {
     await activePage(run).keyboard.press('Escape');
   }
-  const start = Date.now();
-  while (Date.now() - start < 10_000) {
-    if (!/Runtime details/.test(await bodyText(run))) {
-      return;
-    }
-    await delay(250);
-  }
-  throw new Error('Runtime drawer did not close');
+  await drawer.waitFor({ state: 'hidden', timeout: 10_000 });
 }
 
 export async function refreshRuntimeDrawer(run: SmokeRunState): Promise<void> {
   await openRuntimeDrawer(run);
   const refresh = activePage(run)
     .locator('button')
-    .filter({ hasText: /^s*Refreshs*$/ })
+    .filter({ hasText: /^\s*Refresh(?: all)?\s*$/ })
     .first();
   try {
     await refresh.waitFor({ state: 'visible', timeout: 10_000 });

@@ -1,198 +1,229 @@
-<p-card styleClass="exam-card">
-  <div class="grid gap-4">
-    <div
-      class="grid gap-3 md:grid-cols-[2.25rem_minmax(0,1fr)_auto] md:items-start"
-    >
-      <span
-        class="grid h-9 w-9 place-items-center rounded-md border border-primary-200 bg-primary-50 text-sm font-bold text-primary"
-      >
-        {{ sessionMode === 'full_document' ? 'FE' : 'RQ' }}
-      </span>
-      <div class="min-w-0">
-        <h2 id="practice-heading" class="m-0 text-base font-bold text-color">
-          {{ modeTitle() }}
-        </h2>
-        <p class="m-0 mt-1 text-sm text-muted-color">
-          {{ modeSummary() }}
-        </p>
-      </div>
-      @if (practice.practiceSession(); as session) {
-        <p-tag [value]="session.status" severity="info" [rounded]="true" />
-      }
+<section class="practice-workbench">
+  <header class="practice-page-header">
+    <div>
+      <h2>{{ modeTitle() }}</h2>
+      <p>{{ modeSummary() }}</p>
     </div>
-
-    @if (sessionMode === 'full_document') {
-      <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
-        <label class="grid gap-1.5 text-sm font-semibold text-muted-color">
-          <span>Parsed document</span>
-          <select
-            class="h-11 rounded-md border border-surface-300 bg-surface-0 px-3 text-sm font-semibold text-color"
-            [ngModel]="practice.fullExamDocumentSelectValue()"
-            (ngModelChange)="practice.setSelectedDocumentId($event)"
-          >
-            @for (document of practice.fullExamDocuments(); track document.id) {
-              <option [value]="document.id">
-                {{ document.filename }} -
-                {{ practice.questionCountForDocument(document.id) }} questions
-              </option>
-            }
-          </select>
-        </label>
-        <p-button
-          [label]="startButtonLabel()"
-          icon="pi pi-play"
-          type="button"
-          [disabled]="operations.isBusyFor('session') || !practice.canCreatePracticeSession(sessionMode)"
-          [loading]="operations.isBusyFor('session')"
-          (onClick)="startPracticeSession()"
-        />
-      </div>
-
-      <dl class="grid gap-2 sm:grid-cols-3">
-        <div class="rounded-md border border-surface-200 bg-surface-50 p-3">
-          <dt class="text-xs font-bold uppercase text-muted-color">
-            Documents
-          </dt>
-          <dd class="m-0 mt-1 text-sm font-semibold text-color">
-            {{ practice.fullExamDocuments().length }}
-          </dd>
-        </div>
-        <div class="rounded-md border border-surface-200 bg-surface-50 p-3">
-          <dt class="text-xs font-bold uppercase text-muted-color">
-            Questions
-          </dt>
-          <dd class="m-0 mt-1 text-sm font-semibold text-color">
-            {{ practice.selectedDocumentQuestionCount() }}
-          </dd>
-        </div>
-        <div class="rounded-md border border-surface-200 bg-surface-50 p-3">
-          <dt class="text-xs font-bold uppercase text-muted-color">
-            Progress
-          </dt>
-          <dd class="m-0 mt-1 text-sm font-semibold text-color">
-            {{ practice.sessionProgress() }}
-          </dd>
-        </div>
-      </dl>
-    } @else {
-      <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_10rem_auto] md:items-end">
-        <div class="rounded-md border border-surface-200 bg-surface-50 p-3">
-          <p class="m-0 text-xs font-bold uppercase text-muted-color">
-            Questions
-          </p>
-          <p class="m-0 mt-1 text-lg font-bold text-color">
-            {{ practice.questionCount() }}
-          </p>
-        </div>
-        <label class="grid gap-1.5 text-sm font-semibold text-muted-color">
-          <span>Questions</span>
-          <input
-            pInputText
-            name="sessionQuestionCount"
-            type="number"
-            min="1"
-            max="100"
-            [ngModel]="practice.sessionQuestionCount()"
-            (ngModelChange)="practice.setSessionQuestionCount($event)"
-          />
-        </label>
-        <p-button
-          [label]="startButtonLabel()"
-          icon="pi pi-play"
-          type="button"
-          [disabled]="operations.isBusyFor('session') || !practice.canCreatePracticeSession(sessionMode)"
-          [loading]="operations.isBusyFor('session')"
-          (onClick)="startPracticeSession()"
-        />
-      </div>
-    }
-
-    @if (!practice.canCreatePracticeSession(sessionMode)) {
-      <p
-        class="m-0 rounded-lg border border-dashed border-surface-300 bg-surface-0 p-3 text-sm text-muted-color"
-      >
-        {{ practice.sessionStartBlocker(sessionMode) }}
-      </p>
-    }
-
-    <div class="grid gap-3">
-      <div
-        class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-surface-200 bg-surface-50 px-3 py-2 text-sm font-semibold text-color"
-      >
-        <span>Runner</span>
-        <span class="text-muted-color">
-          {{ practice.sessionProgress() }} answered
-        </span>
-      </div>
-    </div>
-
     @if (practice.practiceSession(); as session) {
-      <div
-        class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-surface-200 bg-surface-50 px-3 py-2 text-sm font-semibold text-color"
-      >
-        <span>Session {{ session.id }}</span>
-        <span class="text-muted-color">{{ session.status }}</span>
-      </div>
+      <span class="practice-status-chip">{{ session.status }}</span>
     }
+  </header>
 
-    @if (practice.activeQuestion(); as question) {
-      <article class="grid gap-4 rounded-lg border border-surface-200 bg-surface-0 p-4">
-        <h3 class="m-0 text-base font-semibold leading-6 text-color">
-          {{ question.question }}
-        </h3>
-        <fieldset class="m-0 grid gap-2 border-0 p-0">
-          <legend class="pb-1 text-sm font-bold text-muted-color">
-            Choices
-          </legend>
-          @for (choice of question.choices; track $index) {
-            <div
-              class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-md border border-surface-200 bg-surface-50 p-3"
+  <section class="practice-setup-card" aria-labelledby="practice-setup-title">
+    <div class="practice-setup-main">
+      <div>
+        <p class="practice-section-label" id="practice-setup-title">
+          {{ sessionMode() === 'full_document' ? 'Source Document' : 'Random Draw' }}
+        </p>
+        @if (sessionMode() === 'full_document') {
+          <label class="practice-select-field">
+            <i class="pi pi-file" aria-hidden="true"></i>
+            <select
+              [ngModel]="practice.fullExamDocumentSelectValue()"
+              (ngModelChange)="practice.setSelectedDocumentId($event)"
             >
-              <p-radiobutton
-                name="practiceAnswer"
-                [inputId]="'practice-choice-' + $index"
-                [value]="choice"
-                [ngModel]="practice.selectedAnswer()"
-                (ngModelChange)="practice.selectAnswer($event)"
-              />
+              @for (document of practice.fullExamDocuments(); track document.id) {
+                <option [value]="document.id">
+                  {{ document.filename }} -
+                  {{ practice.questionCountForDocument(document.id) }} questions
+                </option>
+              }
+            </select>
+          </label>
+        } @else {
+          <label class="practice-count-field">
+            <span>Random draw size</span>
+            <input
+              name="sessionQuestionCount"
+              type="number"
+              min="1"
+              max="100"
+              [ngModel]="practice.sessionQuestionCount()"
+              (ngModelChange)="practice.setSessionQuestionCount($event)"
+            />
+          </label>
+        }
+      </div>
+
+      <button
+        class="practice-primary-button"
+        type="button"
+        [disabled]="operations.isBusyFor('session') || !practice.canCreatePracticeSession(sessionMode())"
+        (click)="startPracticeSession()"
+      >
+        <i
+          class="pi"
+          [class.pi-play]="!operations.isBusyFor('session')"
+          [class.pi-spinner]="operations.isBusyFor('session')"
+          [class.pi-spin]="operations.isBusyFor('session')"
+          aria-hidden="true"
+        ></i>
+        <span>{{ startButtonLabel() }}</span>
+      </button>
+    </div>
+
+    <dl class="practice-metrics">
+      <div>
+        <dt>{{ sessionMode() === 'full_document' ? 'Documents' : 'Available' }}</dt>
+        <dd>
+          {{
+            sessionMode() === 'full_document'
+              ? practice.fullExamDocuments().length
+              : practice.questionCount()
+          }}
+        </dd>
+      </div>
+      <div>
+        <dt>{{ sessionMode() === 'full_document' ? 'Questions' : 'Draw Size' }}</dt>
+        <dd>
+          {{
+            sessionMode() === 'full_document'
+              ? practice.selectedDocumentQuestionCount()
+              : practice.effectiveRandomQuestionCount()
+          }}
+        </dd>
+      </div>
+      <div>
+        <dt>Progress</dt>
+        <dd class="practice-progress-metric">
+          <span>{{ progressPercent() }}%</span>
+          <span class="practice-progress-track" aria-hidden="true">
+            <span
+              class="practice-progress-fill"
+              [style.width.%]="progressPercent()"
+            ></span>
+          </span>
+        </dd>
+      </div>
+    </dl>
+  </section>
+
+  @if (!practice.canCreatePracticeSession(sessionMode())) {
+    <p class="practice-blocker">
+      {{ practice.sessionStartBlocker(sessionMode()) }}
+    </p>
+  }
+
+  <div class="practice-runner-grid">
+    <section class="practice-runner-main" aria-labelledby="practice-runner-title">
+      <div class="practice-runner-header">
+        <h3 id="practice-runner-title">
+          <span>{{ activeQuestionNumber() }}</span>
+          Question {{ activeQuestionNumber() }} of {{ sessionTotal() }}
+        </h3>
+        <button class="practice-flag-button" type="button" disabled>
+          <i class="pi pi-flag" aria-hidden="true"></i>
+          <span>Mark for review</span>
+        </button>
+      </div>
+
+      @if (practice.activeQuestion(); as question) {
+        <article class="practice-question-card">
+          <p class="practice-question-text">{{ question.question }}</p>
+
+          <fieldset class="practice-choice-fieldset">
+            <legend>Choices</legend>
+            @for (choice of question.choices; track $index) {
               <label
-                class="text-sm text-color"
+                class="practice-choice-row"
+                [class.is-selected]="practice.selectedAnswer() === choice"
                 [for]="'practice-choice-' + $index"
               >
-                {{ choice }}
+                <input
+                  [id]="'practice-choice-' + $index"
+                  name="practiceAnswer"
+                  type="radio"
+                  [value]="choice"
+                  [ngModel]="practice.selectedAnswer()"
+                  (ngModelChange)="practice.selectAnswer($event)"
+                />
+                <span>
+                  <strong>{{ choiceKey($index) }}.</strong>
+                  {{ choice }}
+                </span>
               </label>
-            </div>
-          }
-        </fieldset>
-        <p-button
-          label="Submit answer"
-          icon="pi pi-send"
-          type="button"
-          [disabled]="operations.isBusyFor('attempt') || practice.selectedAnswer().length === 0"
-          [loading]="operations.isBusyFor('attempt')"
-          (onClick)="practice.submitAnswer()"
-        />
-      </article>
-    } @else if (practice.sessionComplete()) {
-      <p
-        class="m-0 rounded-lg border border-dashed border-surface-300 bg-surface-0 p-3 text-sm text-muted-color"
-      >
-        Practice set complete.
-        Correct answers are removed from the wrong-answer list after submission.
-      </p>
-    } @else {
-      <p
-        class="m-0 rounded-lg border border-dashed border-surface-300 bg-surface-0 p-3 text-sm text-muted-color"
-      >
-        No active practice question.
-      </p>
-    }
+            }
+          </fieldset>
 
-    @if (practice.lastAttempt(); as attempt) {
-      <p-message
-        [severity]="attempt.is_correct ? 'success' : 'warn'"
-        [text]="attempt.is_correct ? 'Last answer: Correct' : 'Last answer: Needs review'"
-      />
-    }
+          <div class="practice-question-actions">
+            <button
+              class="practice-secondary-button"
+              type="button"
+              [disabled]="practice.selectedAnswer().length === 0"
+              (click)="practice.selectAnswer('')"
+            >
+              Clear selection
+            </button>
+            <button
+              class="practice-submit-button"
+              type="button"
+              [disabled]="operations.isBusyFor('attempt') || practice.selectedAnswer().length === 0"
+              (click)="practice.submitAnswer()"
+            >
+              <i
+                class="pi"
+                [class.pi-send]="!operations.isBusyFor('attempt')"
+                [class.pi-spinner]="operations.isBusyFor('attempt')"
+                [class.pi-spin]="operations.isBusyFor('attempt')"
+                aria-hidden="true"
+              ></i>
+              <span>Submit answer</span>
+            </button>
+          </div>
+        </article>
+      } @else if (practice.sessionComplete()) {
+        <p class="practice-empty-state">
+          Practice set complete. Correct answers are removed from the
+          wrong-answer list after submission.
+        </p>
+      } @else {
+        <p class="practice-empty-state">No active practice question.</p>
+      }
+
+      @if (practice.lastAttempt(); as attempt) {
+        <p
+          class="practice-attempt-message"
+          [class.is-correct]="attempt.is_correct"
+        >
+          {{ attempt.is_correct ? 'Last answer: Correct' : 'Last answer: Needs review' }}
+        </p>
+      }
+    </section>
+
+    <aside class="practice-session-rail" aria-label="Session details">
+      <section>
+        <h3>Session Details</h3>
+        <dl>
+          <div>
+            <dt>Session ID</dt>
+            <dd>
+              {{ practice.practiceSession()?.id ?? 'Not started' }}
+            </dd>
+          </div>
+          <div>
+            <dt>Status</dt>
+            <dd>{{ practice.practiceSession()?.status ?? 'Ready' }}</dd>
+          </div>
+          <div>
+            <dt>Answered</dt>
+            <dd>{{ practice.sessionProgress() }}</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section>
+        <h3>Question Navigator</h3>
+        <div class="practice-question-nav">
+          @for (item of questionNavigatorItems(); track item.number) {
+            <span
+              [class.is-answered]="item.state === 'answered'"
+              [class.is-current]="item.state === 'current'"
+            >
+              {{ item.number }}
+            </span>
+          }
+        </div>
+      </section>
+    </aside>
   </div>
-</p-card>
+</section>

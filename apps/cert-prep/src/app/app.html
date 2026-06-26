@@ -1,51 +1,73 @@
-<main class="workbench-shell min-h-screen bg-surface-50 text-color">
+<app-runtime-consent-dialogs />
+
+<main class="workbench-shell min-h-screen text-color">
   <header class="workbench-topbar">
-    <div class="flex min-w-0 items-center gap-3">
-      <span
-        class="grid h-9 w-9 place-items-center rounded-md bg-primary text-primary-contrast"
-      >
+    <div class="workbench-brand">
+      <span class="workbench-brand-mark" aria-hidden="true">
         <i class="pi pi-book"></i>
       </span>
-      <div class="min-w-0">
-        <p
-          class="m-0 text-xs font-bold uppercase text-muted-color"
-        >
-          Local workspace
-        </p>
-        <h1 class="m-0 text-2xl font-bold leading-tight text-color">
-          {{ title }}
-        </h1>
-      </div>
+      <h1>{{ title }}</h1>
     </div>
 
-    <section class="min-w-0" aria-label="Runtime status">
-      <app-model-health />
-    </section>
+    <div class="workbench-topbar-actions" aria-label="Application actions">
+      <button
+        class="workbench-runtime-button"
+        type="button"
+        (click)="openRuntimeManager()"
+      >
+        <i class="pi pi-wrench" aria-hidden="true"></i>
+        <span>Manage runtime</span>
+      </button>
+      <button
+        class="workbench-icon-button"
+        type="button"
+        aria-label="Settings"
+        disabled
+      >
+        <i class="pi pi-cog" aria-hidden="true"></i>
+      </button>
+      <button
+        class="workbench-icon-button"
+        type="button"
+        aria-label="Account"
+        disabled
+      >
+        <i class="pi pi-user" aria-hidden="true"></i>
+      </button>
+    </div>
   </header>
 
-  <app-runtime-consent-dialogs />
-
-  <div class="workbench-message-strip" aria-live="polite">
-    <p-message
-      severity="info"
-      variant="simple"
-      icon="pi pi-info-circle"
-      [text]="operations.status()"
-    />
-    @if (operations.error(); as errorMessage) {
-      <p-message
-        severity="error"
-        variant="simple"
-        icon="pi pi-exclamation-triangle"
-        role="alert"
-        [text]="errorMessage"
-      />
-    }
-  </div>
+  @if (operations.error(); as error) {
+    <section
+      class="workbench-message-strip is-error"
+      role="alert"
+      aria-live="assertive"
+    >
+      <i class="pi pi-exclamation-circle" aria-hidden="true"></i>
+      <span>{{ error }}</span>
+    </section>
+  } @else if (operations.busy()) {
+    <section class="workbench-message-strip" aria-live="polite">
+      <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
+      <span>Working...</span>
+    </section>
+  } @else if (operations.status() !== 'Ready') {
+    <section
+      class="workbench-message-strip is-success"
+      role="status"
+      aria-live="polite"
+    >
+      <i class="pi pi-check-circle" aria-hidden="true"></i>
+      <span>{{ operations.status() }}</span>
+    </section>
+  }
 
   <div class="workbench-body">
     <aside class="workbench-sidebar" aria-label="Workspace navigation">
+      <app-project-rail />
+
       <nav class="workbench-nav" aria-label="Study pages">
+        <p class="workbench-section-label">Study Mode</p>
         @for (page of studyPages; track page.id) {
           <a
             #activePage="routerLinkActive"
@@ -60,8 +82,6 @@
           </a>
         }
       </nav>
-
-      <app-project-rail />
     </aside>
 
     <section class="workbench-main" aria-label="Study workspace">
@@ -80,4 +100,47 @@
       }
     </section>
   </div>
+
+  <footer class="workbench-footer">
+    <span>(c) 2024 Cert Prep Workbench</span>
+    <nav aria-label="Product links">
+      <span class="workbench-footer-link" aria-disabled="true">
+        Documentation
+      </span>
+      <span class="workbench-footer-link" aria-disabled="true">
+        Privacy Policy
+      </span>
+      <span class="workbench-footer-link" aria-disabled="true">
+        System Status
+      </span>
+    </nav>
+  </footer>
+
+  @if (runtimeManagerOpen()) {
+    <section
+      #runtimeManagerDialog
+      class="runtime-manager-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="runtime-manager-modal-title"
+      tabindex="-1"
+      cdkTrapFocus
+      cdkTrapFocusAutoCapture
+      (keydown.escape)="closeRuntimeManager()"
+    >
+      <app-runtime-manager-page
+        [modal]="true"
+        titleId="runtime-manager-modal-title"
+        (closeRequested)="closeRuntimeManager()"
+      />
+      <button
+        class="runtime-manager-backdrop"
+        type="button"
+        tabindex="-1"
+        aria-label="Close runtime manager"
+        aria-hidden="true"
+        (click)="closeRuntimeManager()"
+      ></button>
+    </section>
+  }
 </main>

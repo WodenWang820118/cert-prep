@@ -1,7 +1,5 @@
 import { Component, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Button } from 'primeng/button';
-import { Card } from 'primeng/card';
 import { ProgressBar } from 'primeng/progressbar';
 import { Tag } from 'primeng/tag';
 import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
@@ -11,42 +9,52 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
 
 @Component({
   selector: 'app-source-import-panel',
-  imports: [Button, Card, FormsModule, ProgressBar, Tag],
+  imports: [FormsModule, ProgressBar, Tag],
   template: `
-    <p-card styleClass="exam-card">
-      <div class="grid gap-4">
-        <div class="grid grid-cols-[2.25rem_minmax(0,1fr)] items-start gap-3">
-          <span
-            class="grid h-9 w-9 place-items-center rounded-md border border-primary-200 bg-primary-50 text-sm font-bold text-primary"
-          >
-            01
+    <section class="workbench-panel" aria-labelledby="source-heading">
+      <header class="workbench-panel-header">
+        <div class="workbench-panel-title">
+          <span class="workbench-panel-icon" aria-hidden="true">
+            <i class="pi pi-file-pdf"></i>
           </span>
-          <div class="min-w-0">
-            <h2 id="source-heading" class="m-0 text-base font-bold text-color">
-              Source PDF
-            </h2>
-            <p class="m-0 mt-1 truncate text-sm text-muted-color">
-              {{ projects.selectedProject()?.name }}
-            </p>
+          <h2 id="source-heading">Step 01: Source PDF</h2>
+        </div>
+        <label class="workbench-secondary-button" for="sourcePdfFile">
+          <i class="pi pi-upload" aria-hidden="true"></i>
+          <span>Choose PDF</span>
+        </label>
+      </header>
+
+      <div class="workbench-panel-body">
+        <input
+          id="sourcePdfFile"
+          class="sr-only"
+          type="file"
+          accept="application/pdf"
+          aria-label="PDF file"
+          (change)="chooseFile($event)"
+        />
+
+        <div class="workbench-file-row">
+          <div class="workbench-file-name">
+            <i class="pi pi-file" aria-hidden="true"></i>
+            <span>
+              {{
+                sourceImport.selectedFile()?.name ??
+                  sourceImport.uploadedDocument()?.filename ??
+                  'No PDF selected'
+              }}
+            </span>
           </div>
+          <span class="workbench-tag">
+            {{ sourceImport.uploadedDocument()?.status ?? 'Waiting' }}
+          </span>
         </div>
 
-        <div
-          class="grid gap-3 md:grid-cols-[minmax(0,1fr)_11rem_auto] md:items-end"
-        >
-          <label class="grid gap-1.5 text-sm font-semibold text-muted-color">
-            <span>PDF file</span>
-            <input
-              class="w-full rounded-md border border-surface-300 bg-surface-0 p-2 text-sm text-color file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-2 file:text-sm file:font-semibold file:text-primary-contrast"
-              type="file"
-              accept="application/pdf"
-              (change)="chooseFile($event)"
-            />
-          </label>
-          <label class="grid gap-1.5 text-sm font-semibold text-muted-color">
+        <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_10rem_auto] md:items-end">
+          <label class="workbench-field">
             <span>Language</span>
             <select
-              class="h-11 rounded-md border border-surface-300 bg-surface-0 px-3 text-sm font-semibold text-color"
               [ngModel]="sourceImport.languageHint()"
               (ngModelChange)="sourceImport.setLanguageHint($event)"
             >
@@ -55,22 +63,26 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
               }
             </select>
           </label>
-          <p-button
-            label="Upload PDF"
-            icon="pi pi-upload"
+          <button
+            class="workbench-action-button"
             type="button"
             [disabled]="operations.isBusyFor('upload') || !sourceImport.canUpload()"
-            [loading]="operations.isBusyFor('upload')"
-            (onClick)="uploadDocument()"
-          />
+            (click)="uploadDocument()"
+          >
+            <i
+              [class]="operations.isBusyFor('upload') ? 'pi pi-spin pi-spinner' : 'pi pi-upload'"
+              aria-hidden="true"
+            ></i>
+            <span>Upload PDF</span>
+          </button>
         </div>
 
         @if (sourceImport.uploadedDocument(); as document) {
           <section
-            class="grid gap-3 rounded-md border border-surface-200 bg-surface-50 p-3"
+            class="grid gap-3"
             aria-live="polite"
           >
-            <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-surface-200 bg-surface-50 p-3">
               <div class="min-w-0">
                 <p class="m-0 truncate text-sm font-semibold text-color">
                   {{ sourceImport.parseStageText() }}
@@ -92,85 +104,55 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
             />
           </section>
 
-          <dl class="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-            <div class="rounded-md border border-surface-200 bg-surface-50 p-3">
-              <dt class="text-xs font-bold uppercase text-muted-color">File</dt>
-              <dd class="m-0 mt-1 truncate text-sm font-semibold text-color">
-                {{ document.filename }}
-              </dd>
+          <dl class="workbench-metrics">
+            <div class="workbench-metric">
+              <dt>File Size</dt>
+              <dd>{{ formatFileSize(sourceImport.selectedFile()) }}</dd>
             </div>
-            <div class="rounded-md border border-surface-200 bg-surface-50 p-3">
-              <dt class="text-xs font-bold uppercase text-muted-color">Pages</dt>
-              <dd class="m-0 mt-1 text-sm font-semibold text-color">
-                {{ document.page_count }}
-              </dd>
+            <div class="workbench-metric">
+              <dt>Pages</dt>
+              <dd>{{ document.page_count }}</dd>
             </div>
-            <div class="rounded-md border border-surface-200 bg-surface-50 p-3">
-              <dt class="text-xs font-bold uppercase text-muted-color">
-                Text chunks
-              </dt>
-              <dd class="m-0 mt-1 text-sm font-semibold text-color">
-                {{ document.chunks_count }}
-              </dd>
+            <div class="workbench-metric">
+              <dt>Text Chunks</dt>
+              <dd>{{ document.chunks_count }}</dd>
             </div>
-            <div class="rounded-md border border-surface-200 bg-surface-50 p-3">
-              <dt class="text-xs font-bold uppercase text-muted-color">
-                Mock items
-              </dt>
-              <dd class="m-0 mt-1 text-sm font-semibold text-color">
+            <div class="workbench-metric">
+              <dt>Mock Items</dt>
+              <dd>
                 {{ document.exam_item_count }}
               </dd>
             </div>
-            <div class="rounded-md border border-surface-200 bg-surface-50 p-3">
-              <dt class="text-xs font-bold uppercase text-muted-color">
-                Processed
-              </dt>
-              <dd class="m-0 mt-1 text-sm font-semibold text-color">
+            <div class="workbench-metric">
+              <dt>Processed</dt>
+              <dd>
                 {{ document.processed_page_count }}
               </dd>
             </div>
-            <div class="rounded-md border border-surface-200 bg-surface-50 p-3">
-              <dt class="text-xs font-bold uppercase text-muted-color">
-                Language
-              </dt>
-              <dd class="m-0 mt-1 text-sm font-semibold text-color">
+            <div class="workbench-metric">
+              <dt>Language</dt>
+              <dd>
                 {{ document.language_hint }}
               </dd>
             </div>
-            <div class="rounded-md border border-surface-200 bg-surface-50 p-3">
-              <dt class="text-xs font-bold uppercase text-muted-color">Status</dt>
-              <dd class="m-0 mt-1">
-                <p-tag [value]="document.status" [rounded]="true" />
-              </dd>
+            <div class="workbench-metric">
+              <dt>Status</dt>
+              <dd>{{ document.status }}</dd>
             </div>
-            <div class="rounded-md border border-surface-200 bg-surface-50 p-3">
-              <dt class="text-xs font-bold uppercase text-muted-color">
-                Extraction
-              </dt>
-              <dd class="m-0 mt-1">
-                <p-tag
-                  [value]="document.extraction_method"
-                  severity="secondary"
-                  [rounded]="true"
-                />
-              </dd>
+            <div class="workbench-metric">
+              <dt>Extraction</dt>
+              <dd>{{ document.extraction_method }}</dd>
             </div>
-            <div class="rounded-md border border-surface-200 bg-surface-50 p-3">
-              <dt class="text-xs font-bold uppercase text-muted-color">
-                OCR device
-              </dt>
-              <dd class="m-0 mt-1 text-sm font-semibold text-color">
+            <div class="workbench-metric">
+              <dt>OCR Device</dt>
+              <dd>
                 {{ document.ocr_device || 'none' }}
               </dd>
             </div>
             @for (metric of sourceImport.parsingMetrics(document); track metric.label) {
-              <div class="rounded-md border border-surface-200 bg-surface-50 p-3">
-                <dt class="text-xs font-bold uppercase text-muted-color">
-                  {{ metric.label }}
-                </dt>
-                <dd class="m-0 mt-1 text-sm font-semibold text-color">
-                  {{ metric.value }}
-                </dd>
+              <div class="workbench-metric">
+                <dt>{{ metric.label }}</dt>
+                <dd>{{ metric.value }}</dd>
               </div>
             }
             @if (document.ocr_fallback_reason) {
@@ -189,56 +171,43 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
 
           @if (sourceImport.previewChunks().length > 0) {
             <section
-              class="grid gap-3 rounded-md border border-surface-200 bg-surface-0 p-3"
+              class="workbench-preview"
               aria-labelledby="extracted-text-heading"
             >
-              <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="workbench-preview-header">
                 <h3
                   id="extracted-text-heading"
-                  class="m-0 text-sm font-bold uppercase text-muted-color"
                 >
-                  Extracted text
+                  Extracted Text Preview
                 </h3>
-                <p-tag
-                  [value]="sourceImport.chunks().length + ' chunks'"
-                  severity="secondary"
-                  [rounded]="true"
-                />
+                <i class="pi pi-search" aria-hidden="true"></i>
               </div>
-              <div class="grid max-h-96 gap-2 overflow-auto pr-1">
+              <div class="workbench-preview-list">
                 @for (chunk of sourceImport.previewChunks(); track chunk.id) {
-                  <article class="grid gap-1 rounded-md bg-surface-50 p-3">
-                    <div class="flex flex-wrap items-center gap-2">
-                      <p-tag
-                        [value]="'Page ' + chunk.page_number"
-                        severity="secondary"
-                        [rounded]="true"
-                      />
-                      <span class="text-xs font-semibold text-muted-color">
-                        {{ chunk.extraction_method }}
-                      </span>
-                    </div>
-                    <p class="m-0 whitespace-pre-wrap text-sm leading-6 text-color">
+                  <article class="workbench-preview-chunk">
+                    <strong>
+                      Page {{ chunk.page_number }} - Chunk {{ chunk.chunk_index + 1 }}
+                    </strong>
+                    <p class="whitespace-pre-wrap">
                       {{ chunk.text }}
                     </p>
                   </article>
                 }
                 @if (sourceImport.hiddenChunkCount() > 0) {
                   <div
-                    class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-dashed border-surface-300 p-3"
+                    class="flex flex-wrap items-center justify-between gap-2 p-3"
                   >
                     <p class="m-0 text-sm text-muted-color">
                       {{ sourceImport.hiddenChunkCount() }} more chunks available.
                     </p>
-                    <p-button
-                      label="Show more"
-                      icon="pi pi-chevron-down"
-                      severity="secondary"
-                      [outlined]="true"
-                      size="small"
+                    <button
+                      class="workbench-secondary-button"
                       type="button"
-                      (onClick)="sourceImport.showMoreChunks()"
-                    />
+                      (click)="sourceImport.showMoreChunks()"
+                    >
+                      <i class="pi pi-chevron-down" aria-hidden="true"></i>
+                      <span>Show more</span>
+                    </button>
                   </div>
                 }
               </div>
@@ -250,9 +219,13 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
               Waiting for the first extracted chunk.
             </p>
           }
+        } @else {
+          <p class="m-0 rounded-md border border-dashed border-surface-300 bg-surface-0 p-3 text-sm text-muted-color">
+            Choose a PDF and upload it to start extraction.
+          </p>
         }
       </div>
-    </p-card>
+    </section>
   `,
 })
 export class SourceImportPanelComponent {
@@ -272,5 +245,16 @@ export class SourceImportPanelComponent {
     if (document !== null && project !== null) {
       await this.drafts.load(project.id);
     }
+  }
+
+  protected formatFileSize(file: File | null): string {
+    if (file === null) {
+      return '-';
+    }
+    const megaBytes = file.size / (1024 * 1024);
+    if (megaBytes >= 1) {
+      return `${megaBytes.toFixed(1)} MB`;
+    }
+    return `${Math.max(1, Math.round(file.size / 1024))} KB`;
   }
 }

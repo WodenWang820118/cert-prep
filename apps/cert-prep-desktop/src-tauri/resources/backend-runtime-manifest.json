@@ -6,8 +6,8 @@
   "entrypoint": "cert-prep-backend.exe",
   "artifact": {
     "file_name": "cert-prep-backend-runtime-x86_64-pc-windows-msvc.zip",
-    "sha256": "2670ddf0485d313a56ed9e1ae7fe0385dba8b6234f748acc69f6f87ff5db48ef",
-    "bytes": 31319708,
+    "sha256": "27a097d5fa3b0bbb0693d0de56b02334d5c1897c44e717df1546e04fcc328e27",
+    "bytes": 31374142,
     "url": "file:///C:/software-dev/cert-prep/apps/cert-prep-backend/dist/backend-runtime/cert-prep-backend-runtime-x86_64-pc-windows-msvc.zip"
   }
 }

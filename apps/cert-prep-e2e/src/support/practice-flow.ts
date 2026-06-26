@@ -16,7 +16,7 @@ export async function seedMockApiConfig(
 }
 
 export async function expectRuntimeReady(page: Page): Promise<void> {
-  await expect(page.getByRole('heading', { name: 'Cert Prep' })).toBeVisible();
+  await expect(page.locator('h1', { hasText: 'Cert Prep' })).toBeVisible();
   await expect(page.getByText('qwen3.5:4b')).toBeVisible();
   await expect(page.getByText('fake')).toBeVisible();
   await expect(page.getByText('paddle / gpu:0')).toBeVisible();
@@ -26,6 +26,7 @@ export async function createProject(
   page: Page,
   api: MockCertPrepApi,
 ): Promise<void> {
+  await page.getByRole('button', { name: 'Create project' }).click();
   await page.getByLabel('Name').fill(api.project.name);
   await page.getByLabel('Description').fill(api.project.description);
   await page.getByRole('button', { name: 'Create project' }).click();
@@ -59,7 +60,7 @@ export async function startRandomQuiz(
   await page.getByRole('link', { name: 'Random Quiz' }).click();
   await expect(page.getByText('1 questions available')).toBeVisible();
   await page.getByRole('button', { name: 'Start random quiz' }).click();
-  await expect(page.getByText(`Session ${api.session.id}`)).toBeVisible();
+  await expect(page.getByText(api.session.id, { exact: true })).toBeVisible();
 }
 
 export async function submitWrongAnswerAndOpenReview(
@@ -71,6 +72,14 @@ export async function submitWrongAnswerAndOpenReview(
 
   await expect(page.getByText('Needs review')).toBeVisible();
   await page.getByRole('link', { name: 'Review' }).click();
-  await expect(page.getByText(`Correct: ${api.draft.answer}`)).toBeVisible();
+
+  const correctAnswerPanel = page.getByRole('region', {
+    name: 'Correct answer',
+  });
+  await expect(correctAnswerPanel).toBeVisible();
+  await expect(correctAnswerPanel.getByText('Correct Answer')).toBeVisible();
+  await expect(
+    correctAnswerPanel.getByText(api.draft.answer, { exact: true }),
+  ).toBeVisible();
   await expect(page.getByText(api.draft.rationale)).toBeVisible();
 }

@@ -1,66 +1,73 @@
-<p-card styleClass="exam-card">
-  <div class="grid gap-4">
-    <div class="flex flex-wrap items-start justify-between gap-3">
-      <div>
-        <h2 id="review-heading" class="m-0 text-base font-bold text-color">
-          Wrong Answers
-        </h2>
-        <p class="m-0 mt-1 text-sm text-muted-color">
-          {{ review.wrongAnswers().length }} recorded
-        </p>
-      </div>
-      <p-button
-        label="Refresh"
-        icon="pi pi-refresh"
-        severity="secondary"
-        [outlined]="true"
-        type="button"
-        [disabled]="operations.isBusyFor('review') || projects.selectedProject() === null"
-        [loading]="operations.isBusyFor('review')"
-        (onClick)="review.refresh()"
-      />
+<section class="wrong-answer-review" aria-labelledby="review-heading">
+  <header class="review-header">
+    <div>
+      <h2 id="review-heading">Wrong Answers</h2>
+      <p>{{ review.wrongAnswers().length }} recorded</p>
     </div>
 
-    <div class="grid max-h-[calc(100vh-14rem)] gap-3 overflow-auto pr-1">
-      @for (wrong of review.wrongAnswers(); track wrong.attempt_id) {
-        <article
-          class="grid gap-2 rounded-lg border border-surface-200 bg-surface-0 p-3"
-        >
-          <p-tag
-            [value]="'Page ' + (wrong.citation_page ?? 'n/a')"
-            severity="danger"
-            [rounded]="true"
-          />
-          <h3 class="m-0 text-sm font-semibold leading-5 text-color">
-            {{ wrong.question }}
-          </h3>
-          <p class="m-0 text-sm text-muted-color">
-            Selected: {{ wrong.selected_answer }}
-          </p>
-          <p class="m-0 text-sm text-muted-color">
-            Correct: {{ wrong.correct_answer ?? 'Not set' }}
-          </p>
-          @if (wrong.rationale) {
-            <p class="m-0 text-sm leading-5 text-color">
-              {{ wrong.rationale }}
-            </p>
-          }
-          @if (wrong.source_excerpt) {
-            <blockquote
-              class="border-l-4 border-primary-300 bg-primary-50 px-3 py-2 text-sm leading-5 text-color"
-            >
-              {{ wrong.source_excerpt }}
-            </blockquote>
-          }
-        </article>
-      } @empty {
-        <p
-          class="m-0 rounded-lg border border-dashed border-surface-300 bg-surface-0 p-3 text-sm text-muted-color"
-        >
+    <button
+      class="review-refresh-button"
+      type="button"
+      [disabled]="operations.isBusyFor('review') || projects.selectedProject() === null"
+      (click)="review.refresh()"
+    >
+      <i
+        [class]="operations.isBusyFor('review') ? 'pi pi-spin pi-spinner' : 'pi pi-refresh'"
+        aria-hidden="true"
+      ></i>
+      <span>Refresh</span>
+    </button>
+  </header>
+
+  <div class="wrong-answer-list">
+    @for (wrong of review.wrongAnswers(); track wrong.attempt_id) {
+      <article class="wrong-answer-card">
+        <span class="page-chip">Page {{ wrong.citation_page ?? 'n/a' }}</span>
+
+        <h3>{{ wrong.question }}</h3>
+
+        <div class="answer-comparison">
+          <section class="answer-panel is-selected" aria-label="Your answer">
+            <span>Your Answer</span>
+            <p>{{ wrong.selected_answer }}</p>
+          </section>
+
+          <section class="answer-panel is-correct" aria-label="Correct answer">
+            <span>
+              <i class="pi pi-check-circle" aria-hidden="true"></i>
+              Correct Answer
+            </span>
+            <p>{{ wrong.correct_answer ?? 'Not set' }}</p>
+          </section>
+        </div>
+
+        @if (wrong.rationale) {
+          <section class="review-rationale" aria-label="Rationale">
+            <h4>Rationale</h4>
+            <p>{{ wrong.rationale }}</p>
+          </section>
+        }
+
+        @if (wrong.source_excerpt) {
+          <section class="review-source" aria-label="Source excerpt">
+            <h4>Source</h4>
+            <p>{{ wrong.source_excerpt }}</p>
+          </section>
+        }
+      </article>
+    } @empty {
+      <article class="empty-review-state">
+        <h3>No wrong answers yet.</h3>
+        <p>
           Wrong answers will appear here after a practice attempt needs review.
           Answer correctly in a later session to clear them.
         </p>
-      }
-    </div>
+      </article>
+    }
   </div>
-</p-card>
+
+  <p class="review-footnote">
+    <i class="pi pi-info-circle" aria-hidden="true"></i>
+    <span>Answer correctly in a later session to clear them.</span>
+  </p>
+</section>

@@ -3,6 +3,7 @@ import { CERT_PREP_API } from '../../cert-prep-api';
 import { HealthStore } from '../../stores/health/health.store';
 import {
   availableLlmHealth,
+  buttonByText,
   fallbackLlmHealth,
   missingModelHealth,
   ocrHealth,
@@ -130,5 +131,29 @@ describe('RuntimeManagerPage', () => {
       'WindowsML OCR runtime is not installed.',
     );
     expect(fixture.nativeElement.textContent).toContain('Install OCR');
+  });
+
+  it('does not render close controls on the route surface', () => {
+    const fixture = TestBed.createComponent(RuntimeManagerPage);
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(
+      compiled.querySelector('[aria-label="Close runtime manager"]'),
+    ).toBeNull();
+    expect(buttonByText(compiled, 'Cancel')).toBeNull();
+    expect(buttonByText(compiled, 'Refresh all')).not.toBeNull();
+  });
+
+  it('emits close requests from the modal surface', () => {
+    const fixture = TestBed.createComponent(RuntimeManagerPage);
+    const closeRequested = vi.fn();
+    fixture.componentRef.setInput('modal', true);
+    fixture.componentInstance.closeRequested.subscribe(closeRequested);
+    fixture.detectChanges();
+
+    buttonByText(fixture.nativeElement, 'Cancel')?.click();
+
+    expect(closeRequested).toHaveBeenCalledOnce();
   });
 });

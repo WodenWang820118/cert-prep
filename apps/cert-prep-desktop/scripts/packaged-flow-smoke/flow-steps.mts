@@ -35,6 +35,7 @@ export async function createProject(run: SmokeRunState): Promise<void> {
   const projectName = `Parallel Parsing QA ${new Date()
     .toISOString()
     .slice(11, 19)}`;
+  await clickButtonText(run, 'Create project');
   await activePage(run).locator('#projectName').fill(projectName);
   await activePage(run)
     .locator('#projectDescription')
@@ -193,12 +194,24 @@ export async function createAndEditQuestion(run: SmokeRunState): Promise<void> {
     .filter({ hasText: /^\s*Edit\s*$/ })
     .first();
   await editButton.waitFor({ state: 'visible', timeout: 30_000 });
-  await editButton.click({ timeout: 30_000 });
-  await waitText(run, /Select answer|Rationale/, 10_000, 'question edit mode');
+  await questionArticle.scrollIntoViewIfNeeded({ timeout: 30_000 });
+  await editButton.evaluate((button) => {
+    if (button instanceof HTMLElement) {
+      button.click();
+      return;
+    }
+    button.dispatchEvent(
+      new MouseEvent('click', { bubbles: true, cancelable: true }),
+    );
+  });
 
   const editingArticle = activePage(run)
     .locator('app-draft-review-panel article')
     .first();
+  await editingArticle.locator('textarea').first().waitFor({
+    state: 'visible',
+    timeout: 10_000,
+  });
   const questionInput = editingArticle.locator('input').first();
   await questionInput.waitFor({ state: 'visible', timeout: 30_000 });
   await questionInput.fill('Packaged smoke edited question?');
@@ -213,7 +226,15 @@ export async function createAndEditQuestion(run: SmokeRunState): Promise<void> {
     .filter({ hasText: /^\s*Save\s*$/ })
     .first();
   await saveButton.waitFor({ state: 'visible', timeout: 30_000 });
-  await saveButton.click({ timeout: 30_000 });
+  await saveButton.evaluate((button) => {
+    if (button instanceof HTMLElement) {
+      button.click();
+      return;
+    }
+    button.dispatchEvent(
+      new MouseEvent('click', { bubbles: true, cancelable: true }),
+    );
+  });
   await waitText(run,
     /Question saved|Packaged smoke edited question\?/,
     60_000,

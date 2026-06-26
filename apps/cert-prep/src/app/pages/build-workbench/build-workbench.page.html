@@ -1,10 +1,20 @@
 <section class="workbench-page">
   <header class="workbench-page-header">
     <div>
-      <p class="workbench-eyebrow">Build</p>
-      <h2>Cert Prep Workbench</h2>
+      <p class="workbench-eyebrow">Local Workspace</p>
+      <h2>Cert Prep</h2>
     </div>
+    <section class="workbench-status-region" aria-label="Runtime status">
+      <app-model-health [showManageButton]="false" />
+    </section>
   </header>
+
+  <div class="workbench-info-banner" aria-live="polite">
+    <i class="pi pi-info-circle" aria-hidden="true"></i>
+    <span>
+      Workspace ready. Select a source document to begin building your exam.
+    </span>
+  </div>
 
   <div class="build-workbench-grid">
     <app-source-import-panel />

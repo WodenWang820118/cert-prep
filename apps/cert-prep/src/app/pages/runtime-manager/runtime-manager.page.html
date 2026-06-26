@@ -1,17 +1,16 @@
-<section class="workbench-page runtime-page">
-  <header class="workbench-page-header runtime-page-header">
-    <div>
-      <p class="workbench-eyebrow">System</p>
-      <h2>Manage runtime</h2>
-    </div>
-    <p-button
-      label="Refresh all"
-      icon="pi pi-refresh"
-      severity="secondary"
-      [outlined]="true"
-      [disabled]="operations.isBusyFor(['health', 'startup'])"
-      (onClick)="refreshAll()"
-    />
+<section class="runtime-modal-surface" [class.is-route-surface]="!modal">
+  <header class="runtime-modal-header">
+    <h2 [id]="titleId">Manage runtime</h2>
+    @if (modal) {
+      <button
+        class="runtime-modal-icon-button"
+        type="button"
+        aria-label="Close runtime manager"
+        (click)="close()"
+      >
+        <i class="pi pi-times" aria-hidden="true"></i>
+      </button>
+    }
   </header>
 
   <section class="runtime-grid" aria-label="Runtime details">
@@ -124,4 +123,31 @@
       }
     </app-runtime-status-row>
   </section>
+
+  <footer class="runtime-modal-footer">
+    @if (modal) {
+      <button
+        class="runtime-modal-cancel"
+        type="button"
+        (click)="close()"
+      >
+        Cancel
+      </button>
+    }
+    <button
+      class="runtime-modal-refresh"
+      type="button"
+      [disabled]="operations.isBusyFor(['health', 'startup'])"
+      (click)="refreshAll()"
+    >
+      <i
+        class="pi"
+        [class.pi-refresh]="!operations.isBusyFor(['health', 'startup'])"
+        [class.pi-spinner]="operations.isBusyFor(['health', 'startup'])"
+        [class.pi-spin]="operations.isBusyFor(['health', 'startup'])"
+        aria-hidden="true"
+      ></i>
+      <span>Refresh all</span>
+    </button>
+  </footer>
 </section>

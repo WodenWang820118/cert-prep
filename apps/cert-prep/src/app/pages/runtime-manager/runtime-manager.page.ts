@@ -1,4 +1,11 @@
-import { Component, computed, inject } from '@angular/core';
+import {
+  Component,
+  EventEmitter,
+  Input,
+  Output,
+  computed,
+  inject,
+} from '@angular/core';
 import { Button } from 'primeng/button';
 import { ProgressBar } from 'primeng/progressbar';
 import { ModelHealthViewModelFacade } from '../../components/model-health/model-health-view-model.facade';
@@ -14,6 +21,10 @@ import { OperationStore } from '../../stores/operation.store';
   styleUrl: './runtime-manager.page.css',
 })
 export class RuntimeManagerPage {
+  @Input() modal = false;
+  @Input() titleId = 'runtime-manager-route-title';
+  @Output() readonly closeRequested = new EventEmitter<void>();
+
   protected readonly desktopRuntime = inject(DesktopRuntimeStore);
   protected readonly health = inject(HealthStore);
   protected readonly operations = inject(OperationStore);
@@ -33,5 +44,11 @@ export class RuntimeManagerPage {
       return;
     }
     await this.desktopRuntime.load();
+  }
+
+  protected close(): void {
+    if (this.modal) {
+      this.closeRequested.emit();
+    }
   }
 }

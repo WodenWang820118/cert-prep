@@ -6,11 +6,13 @@ import { CERT_PREP_API } from './cert-prep-api';
 import {
   appDocument,
   appProject,
+  buttonByText,
   editableAppQuestion,
   availableLlmHealth,
   availableOcrHealth,
   backendHealth,
 } from './app.spec-helpers';
+import { OperationStore } from './stores/operation.store';
 
 describe('App', () => {
   let apiClient: ReturnType<typeof createApiClient>;
@@ -35,13 +37,6 @@ describe('App', () => {
     fixture.detectChanges();
 
     const compiled = fixture.nativeElement as HTMLElement;
-    await vi.waitFor(() => {
-      fixture.detectChanges();
-      expect(compiled.textContent).toContain('Python 3.13.5');
-      expect(compiled.textContent).toContain('Reasoning model: reasoner:7b');
-      expect(compiled.textContent).toContain('fake');
-    });
-
     expect(compiled.querySelector('h1')?.textContent).toContain('Cert Prep');
     expect(compiled.textContent).toContain('Create project');
     expect(linkByText(compiled, 'Build')).not.toBeNull();
@@ -52,7 +47,12 @@ describe('App', () => {
     await router.navigateByUrl('/build');
     fixture.detectChanges();
     await fixture.whenStable();
-    fixture.detectChanges();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(compiled.textContent).toContain('Python 3.13.5');
+      expect(compiled.textContent).toContain('Reasoning model: reasoner:7b');
+      expect(compiled.textContent).toContain('fake');
+    });
 
     expect(compiled.textContent).toContain('Source PDF');
     expect(compiled.textContent).toContain('Mock Exam Items');
@@ -63,7 +63,7 @@ describe('App', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(compiled.textContent).toContain('Parsed document');
+    expect(compiled.textContent).toContain('Source Document');
     expect(compiled.textContent).toContain('security.pdf');
     expect(compiled.textContent).toContain('Start full exam');
     expect(compiled.textContent).not.toContain('Source PDF');
@@ -73,7 +73,7 @@ describe('App', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(compiled.textContent).toContain('Questions');
+    expect(compiled.textContent).toContain('Random Draw');
     expect(compiled.textContent).toContain('Start random quiz');
 
     await router.navigateByUrl('/review');
@@ -82,6 +82,18 @@ describe('App', () => {
     fixture.detectChanges();
 
     expect(compiled.textContent).toContain('Wrong Answers');
+  });
+
+  it('renders the latest successful operation status', () => {
+    const fixture = TestBed.createComponent(App);
+    const operations = TestBed.inject(OperationStore);
+    operations.status.set('Project saved');
+    fixture.detectChanges();
+
+    const status = (fixture.nativeElement as HTMLElement).querySelector(
+      '[role="status"]',
+    );
+    expect(status?.textContent).toContain('Project saved');
   });
 
   it('renders the runtime route before a project exists', async () => {
@@ -101,6 +113,44 @@ describe('App', () => {
       expect(compiled.textContent).toContain('Python backend');
     });
     expect(compiled.textContent).not.toContain('Select or create a project.');
+  });
+
+  it('opens the topbar runtime manager as an accessible modal dialog', async () => {
+    const fixture = TestBed.createComponent(App);
+    const compiled = fixture.nativeElement as HTMLElement;
+    fixture.detectChanges();
+
+    const manageRuntimeButton = buttonByText(compiled, 'Manage runtime');
+    expect(manageRuntimeButton).not.toBeNull();
+
+    manageRuntimeButton?.focus();
+    manageRuntimeButton?.click();
+    fixture.detectChanges();
+    await new Promise((resolve) => setTimeout(resolve));
+
+    const dialog = compiled.querySelector<HTMLElement>('[role="dialog"]');
+    expect(dialog).not.toBeNull();
+    expect(dialog?.getAttribute('aria-modal')).toBe('true');
+    expect(dialog?.getAttribute('aria-labelledby')).toBe(
+      'runtime-manager-modal-title',
+    );
+    expect(compiled.querySelector('#runtime-manager-modal-title')?.textContent)
+      .toContain('Manage runtime');
+    expect(document.activeElement).toBe(
+      dialog?.querySelector('[aria-label="Close runtime manager"]'),
+    );
+    expect(
+      dialog
+        ?.querySelector('.runtime-manager-backdrop')
+        ?.getAttribute('tabindex'),
+    ).toBe('-1');
+
+    dialog?.dispatchEvent(
+      new KeyboardEvent('keydown', { bubbles: true, key: 'Escape' }),
+    );
+    fixture.detectChanges();
+
+    expect(compiled.querySelector('[role="dialog"]')).toBeNull();
   });
 });
 

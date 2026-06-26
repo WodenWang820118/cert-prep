@@ -13,6 +13,17 @@ export class PracticeSessionPayloadService {
     return this.clampInteger(value, 1, 100);
   }
 
+  effectiveRandomQuestionCount(
+    sessionQuestionCount: number,
+    questionCount: number,
+  ): number {
+    if (questionCount <= 0) {
+      return 0;
+    }
+
+    return Math.min(sessionQuestionCount, questionCount);
+  }
+
   createPayload(args: {
     readonly mode: PracticeSessionMode;
     readonly fullExamDocumentId: string | null;
@@ -30,9 +41,12 @@ export class PracticeSessionPayloadService {
 
     return {
       mode: args.mode,
-      question_count: Math.min(
-        args.sessionQuestionCount,
-        Math.max(1, args.questionCount),
+      question_count: Math.max(
+        1,
+        this.effectiveRandomQuestionCount(
+          args.sessionQuestionCount,
+          args.questionCount,
+        ),
       ),
     };
   }
