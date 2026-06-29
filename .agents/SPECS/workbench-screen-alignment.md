@@ -77,6 +77,31 @@ runner language and density while keeping its random-draw controls.
   refresh action, question cards, page chips, side-by-side answer panels,
   rationale/source metadata, and compact footer guidance.
 
+## 2026-06-26 Packaged Alignment Checkpoint
+
+Closed in the packaged UI/backend/design gap audit:
+
+- The app shell uses Stitch workbench typography, Info Blue primary actions,
+  neutral surfaces, 1px outlined zones, compact topbar structure, and disabled
+  settings/account/footer placeholders where they are design parity markers.
+- Runtime management opens from `Manage runtime` as a modal-oriented surface;
+  the `/runtime` route remains a matching fallback, and both surfaces expose
+  `aria-label="Runtime details"` for stable automation.
+- Build, Full Exam, Random Quiz, and Wrong Answers now share the workbench page
+  language instead of separate card/pill-heavy visual systems.
+- Review includes recorded count, refresh, page chips, comparison panels,
+  rationale/source metadata, and footer guidance from the Stitch reference.
+
+Open alignment risks to keep visible:
+
+- Decide whether disabled settings/account/footer placeholders become real app
+  surfaces or remain non-interactive design parity markers.
+- Shared UI test helpers must support both router links and buttons where the
+  product presents them as command surfaces.
+- Critical PrimeNG-backed controls such as draft Edit/Save need stable role
+  names or test IDs so packaged WebView smoke tests do not depend on framework
+  internals.
+
 ## Verification
 
 - Run `pnpm nx run cert-prep:lint --skip-nx-cache`.

@@ -36,8 +36,14 @@ and process cleanup.
 
 - Package QA has verified backend/WindowsML OCR runtime manifests, runtime
   launch env, and Windows x64 bundle artifacts.
+- The 2026-06-26 package QA passed
+  `pnpm nx run cert-prep-desktop:package-qa` and recorded MSI, NSIS, backend
+  runtime, and WindowsML OCR runtime artifacts, plus expected unavailable
+  runtime states in the QA data directory.
 - Packaged flow smoke now records restart and final close summaries with
   `gracefulExited`, `fallbackUsed`, `exitCode`, and residual process lists.
+- The 2026-06-26 packaged flow smoke passed after the harness was aligned with
+  the workbench UI.
 - The 2026-06-21 packaged smoke completed with empty residual process lists and
   no `cert-prep` process residue after close.
 - `cert-prep-desktop:process-residue-audit` provides a read-only Windows
@@ -56,5 +62,8 @@ and process cleanup.
   packaging scripts or runtime distribution changes.
 - Cargo PDB filename collision warning is known and not part of the active
   parsing/reasoning gate.
+- PyInstaller hidden-import warnings and ONNXRuntime provider bridge warnings
+  are known from the 2026-06-26 package round; the WindowsML OCR smoke still
+  returned ready.
 - Generated runtime manifests may remain dirty after local packaged smoke runs;
   stage them only when the artifact bytes/hash update is intentional.

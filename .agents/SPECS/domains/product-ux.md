@@ -19,6 +19,9 @@ or review flows.
   review/editing, practice, and wrong-answer review.
 - Runtime status is compact: header chips plus a Manage runtime drawer, not a
   large first-screen checklist.
+- Runtime status can be healthy while practice is still blocked by missing
+  playable questions. Build, Full Exam, and Random Quiz must surface the
+  practice-blocking reason when streamed questions exist but are not selectable.
 - Source import uses `language_hint`; `auto` remains the default, while QA uses
   `ja` for the JLPT production PDF.
 - Polling is the current async parsing transport. SSE/WebSocket remains a
@@ -40,6 +43,9 @@ or review flows.
 - Latest packaged flow smoke evidence is tracked in
   `domains/parsing-reasoning.md` because it now gates first-chunk and reasoning
   behavior.
+- The 2026-06-26 packaged UI/backend/design gap audit passed mocked app e2e and
+  packaged flow smoke after the smoke harness was aligned with the new
+  workbench UI.
 
 ## Open Risks
 
@@ -50,3 +56,6 @@ or review flows.
   parsing/reasoning TODO.
 - Session/debug replay for random seeds should stay backend-testable so UI
   failures can be reproduced without fragile manual clicks.
+- The packaged flow smoke currently records `MOCK ITEMS 0` after manual question
+  creation. Decide whether that metric is parsed/generated-only or should also
+  include manually authored draft questions.

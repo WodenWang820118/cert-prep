@@ -119,6 +119,23 @@ after the WindowsML desktop package is built:
 - Process cleanup reports graceful close where possible and no residual smoke
   processes after final close.
 
+2026-06-26 packaged gap audit status:
+
+- `pnpm nx run cert-prep-desktop:packaged-streaming-production-windowsml`
+  remained blocked as release evidence even though WindowsML OCR completed
+  46/46 pages, produced 46 chunks, one streaming job succeeded, and one usable
+  question was generated.
+- The blocking product gap is that Full Exam still reported `0 questions in
+  selected document` for the selected document after the production streaming
+  run. Reconcile streaming draft persistence, project/document selection, and
+  the practice query path before calling the packaged release gate closed.
+- The run did not prove the configured `qwen3.5:4b` FastFlowLM node:
+  FastFlowLM was unavailable and model-selection checks were false even though
+  the streaming job reached a terminal success state.
+- Production summaries must carry `selected_model`, `effective_model`, provider
+  health, and fallback/blocker attribution whenever generated questions are
+  reported.
+
 Resource artifacts for packaged runs:
 
 - `metrics.json`
