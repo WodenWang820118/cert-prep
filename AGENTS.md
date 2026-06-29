@@ -24,7 +24,7 @@
 
 # Claude Profile MCP Servers
 
-- `claude-deepseek` and `claude-glm` are Codex MCP servers, not shell CLI wrappers. Use the `mcp__claude_deepseek` and `mcp__claude_glm` tool namespaces when a second-opinion review, plan critique, or adversarial evaluation is requested.
+- `claude-deepseek-mcp` and `claude-glm-mcp` are Codex MCP servers, not shell CLI wrappers. Use the `mcp__claude_deepseek_mcp` and `mcp__claude_glm_mcp` tool namespaces when a second-opinion review, plan critique, or adversarial evaluation is requested. `claude-deepseek` and `claude-glm` are user CLI wrappers only; do not route Codex MCP calls through those names.
 - If the namespace is not already available in the active tool list, use `tool_search` to lazy-load it before falling back to any shell command. Only use a CLI fallback when the MCP server is unavailable and the user has approved or explicitly requested that fallback.
 - Prefer `Agent` tool calls for multi-step review, critique, or adversarial evaluation prompts, and ask for a user-visible structured report. Do not request hidden chain-of-thought.
 - Required report fields for reviews are `publicReasoningSummary`, `evidenceChecked`, `findings`, `blockers`, `risks`, `missingDecisions`, `suggestedMarkdownSection`, and `writeRecommendation`.
