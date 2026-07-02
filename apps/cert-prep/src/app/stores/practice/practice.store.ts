@@ -91,7 +91,13 @@ export class PracticeStore {
       return null;
     }
 
-    return this.drafts.drafts().find((draft) => draft.id === nextQuestionId) ?? null;
+    // Keep stale or future non-playable session rows aligned with
+    // .agents/TODOS/ui-function-alignment-audit.md.
+    return (
+      this.drafts
+        .playableQuestions()
+        .find((draft) => draft.id === nextQuestionId) ?? null
+    );
   });
   readonly sessionProgress = computed(() => {
     const session = this.practiceSession();

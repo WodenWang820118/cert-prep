@@ -4,6 +4,7 @@ import {
   DraftGenerationJobRead,
   CERT_PREP_API,
   ProjectRead,
+  QuestionDraftRead,
 } from '../../cert-prep-api';
 import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
 import { ProjectStore } from '../../stores/project.store';
@@ -64,6 +65,32 @@ describe('DraftReviewPanelComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Model missing');
     expect(retryButton?.textContent).toContain('Retry generation');
   });
+
+  it('distinguishes non-playable drafts from playable practice questions', () => {
+    const projects = TestBed.inject(ProjectStore);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    const drafts = TestBed.inject(DraftReviewStore);
+    projects.projects.set([projectRead()]);
+    projects.select('project-1');
+    sourceImport.uploadedDocument.set(documentRead());
+    drafts.drafts.set([
+      questionDraft({ id: 'playable-draft' }),
+      questionDraft({
+        id: 'rejected-draft',
+        status: 'rejected',
+        rejection_reason: 'No supported answer.',
+      }),
+    ]);
+
+    const fixture = TestBed.createComponent(DraftReviewPanelComponent);
+    fixture.detectChanges();
+
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('1 playable / 2 total questions generated.');
+    expect(text).toContain('Playable');
+    expect(text).toContain('Not playable');
+    expect(text).toContain('No supported answer.');
+  });
 });
 
 function projectRead(): ProjectRead {
@@ -122,6 +149,35 @@ function draftJob(
     generated_count: 0,
     retry_count: 0,
     last_error: null,
+    created_at: '2026-06-09T00:00:00Z',
+    updated_at: '2026-06-09T00:00:00Z',
+    ...overrides,
+  };
+}
+
+function questionDraft(
+  overrides: Partial<QuestionDraftRead> = {},
+): QuestionDraftRead {
+  return {
+    id: 'draft-1',
+    project_id: 'project-1',
+    document_id: 'document-1',
+    chunk_id: 'chunk-1',
+    question: 'Which answer is supported by the source?',
+    choices: ['A', 'B'],
+    answer: 'A',
+    answer_key_source: 'ai_inferred',
+    rationale: 'The source supports A.',
+    citation_page: 1,
+    source_excerpt: 'The cited source supports answer A.',
+    confidence: null,
+    source_order: 10001,
+    source_question_number: '1',
+    item_kind: 'vocabulary_single',
+    group_key: null,
+    group_prompt: null,
+    status: 'approved',
+    rejection_reason: null,
     created_at: '2026-06-09T00:00:00Z',
     updated_at: '2026-06-09T00:00:00Z',
     ...overrides,

@@ -84,7 +84,7 @@ describe('App', () => {
     expect(compiled.textContent).toContain('Wrong Answers');
   });
 
-  it('renders the latest successful operation status', () => {
+  it('does not render routine operation success as a global strip', () => {
     const fixture = TestBed.createComponent(App);
     const operations = TestBed.inject(OperationStore);
     operations.status.set('Project saved');
@@ -93,7 +93,10 @@ describe('App', () => {
     const status = (fixture.nativeElement as HTMLElement).querySelector(
       '[role="status"]',
     );
-    expect(status?.textContent).toContain('Project saved');
+    expect(status).toBeNull();
+    expect((fixture.nativeElement as HTMLElement).textContent).not.toContain(
+      'Project saved',
+    );
   });
 
   it('renders the runtime route before a project exists', async () => {

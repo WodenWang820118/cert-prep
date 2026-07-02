@@ -16,6 +16,7 @@ import { ProjectStore } from '../project.store';
 import { SourceImportStore } from '../source-import/source-import.store';
 
 const STREAMING_DRAFT_POLL_INTERVAL_MS = 1500;
+const PLAYABLE_DRAFT_STATUS = 'approved';
 
 @Injectable({ providedIn: 'root' })
 export class DraftReviewStore {
@@ -33,7 +34,9 @@ export class DraftReviewStore {
   readonly draftJobs = signal<DraftGenerationJobRead[]>([]);
   readonly editingDraftId = signal<string | null>(null);
   readonly draftEdits = signal<Record<string, DraftEdit>>({});
-  readonly playableQuestions = computed(() => this.drafts());
+  readonly playableQuestions = computed(() =>
+    this.drafts().filter((draft) => this.isPlayableDraft(draft)),
+  );
   readonly draftJobSummary = computed(() =>
     this.summarizeDraftJobs(this.draftJobs()),
   );
@@ -88,6 +91,14 @@ export class DraftReviewStore {
 
   isEditing(draft: QuestionDraftRead): boolean {
     return this.editingDraftId() === draft.id;
+  }
+
+  isPlayableDraft(draft: QuestionDraftRead): boolean {
+    return draft.status === PLAYABLE_DRAFT_STATUS;
+  }
+
+  draftStatusLabel(draft: QuestionDraftRead): string {
+    return this.isPlayableDraft(draft) ? 'Playable' : 'Not playable';
   }
 
   draftEdit(draft: QuestionDraftRead): DraftEdit {

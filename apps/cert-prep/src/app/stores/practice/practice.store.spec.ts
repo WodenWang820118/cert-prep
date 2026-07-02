@@ -27,6 +27,10 @@ describe('PracticeStore session modes', () => {
     editableQuestion('draft-1', documents[0].id),
     editableQuestion('draft-2', documents[1].id),
     editableQuestion('draft-3', documents[1].id),
+    editableQuestion('draft-4', documents[1].id, {
+      status: 'rejected',
+      rejection_reason: 'No supported answer.',
+    }),
   ];
   const session: PracticeSessionRead = {
     id: 'session-1',
@@ -88,6 +92,35 @@ describe('PracticeStore session modes', () => {
       question_count: 3,
     });
   });
+
+  it('excludes non-approved drafts from practice availability', async () => {
+    const store = TestBed.inject(PracticeStore);
+    store.setSelectedDocumentId(documents[1].id);
+
+    expect(store.questionCount()).toBe(3);
+    expect(store.selectedDocumentQuestionCount()).toBe(2);
+
+    await store.createPracticeSession('full_document');
+
+    expect(apiClient.createPracticeSession).toHaveBeenCalledWith(project.id, {
+      mode: 'full_document',
+      document_id: documents[1].id,
+      question_count: 2,
+    });
+  });
+
+  it('does not surface a non-approved in-session draft as active', () => {
+    const store = TestBed.inject(PracticeStore);
+    store.practiceSession.set({
+      ...session,
+      id: 'session-rejected',
+      question_ids: ['draft-4'],
+      question_count: 1,
+    });
+
+    expect(store.activeQuestion()).toBeNull();
+    expect(store.sessionComplete()).toBe(false);
+  });
 });
 
 function documentRead(id: string, filename: string): DocumentRead {
@@ -119,7 +152,11 @@ function documentRead(id: string, filename: string): DocumentRead {
   };
 }
 
-function editableQuestion(id: string, documentId: string): QuestionDraftRead {
+function editableQuestion(
+  id: string,
+  documentId: string,
+  overrides: Partial<QuestionDraftRead> = {},
+): QuestionDraftRead {
   return {
     id,
     project_id: 'project-1',
@@ -142,5 +179,6 @@ function editableQuestion(id: string, documentId: string): QuestionDraftRead {
     rejection_reason: null,
     created_at: '2026-06-17T00:00:00Z',
     updated_at: '2026-06-17T00:00:00Z',
+    ...overrides,
   };
 }

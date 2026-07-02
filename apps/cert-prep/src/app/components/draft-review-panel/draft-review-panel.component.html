@@ -8,7 +8,8 @@
         <h2 id="drafts-heading">Step 02: Mock Exam Items</h2>
       </div>
       <p class="workbench-panel-subtitle">
-        {{ drafts.playableQuestions().length }} editable questions generated.
+        {{ drafts.playableQuestions().length }} playable /
+        {{ drafts.drafts().length }} total questions generated.
       </p>
       @if (drafts.draftJobSummary().total > 0 || sourceImport.isParsing()) {
         <div class="mt-2 flex flex-wrap items-center gap-2" aria-live="polite">
@@ -78,12 +79,20 @@
           [attr.data-draft-id]="draft.id"
         >
           <div class="workbench-question-meta">
-            <span class="workbench-tag is-primary">Playable</span>
+            <span
+              class="workbench-tag"
+              [class.is-primary]="drafts.isPlayableDraft(draft)"
+            >
+              {{ drafts.draftStatusLabel(draft) }}
+            </span>
             <span>ID: {{ draft.id }}</span>
             @if (draft.citation_page) {
               <span>Page {{ draft.citation_page }}</span>
             }
             <span>{{ draft.answer_key_source }}</span>
+            @if (!drafts.isPlayableDraft(draft) && draft.rejection_reason) {
+              <span>{{ draft.rejection_reason }}</span>
+            }
           </div>
 
           @if (drafts.isEditing(draft)) {

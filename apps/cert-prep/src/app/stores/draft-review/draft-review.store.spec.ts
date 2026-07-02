@@ -39,13 +39,32 @@ describe('DraftReviewStore editable questions', () => {
     apiClient.listDocumentDraftJobs.mockResolvedValue({ items: [] });
   });
 
-  it('exposes generated rows as playable editable questions', () => {
+  it('exposes approved rows as playable editable questions', () => {
     const store = TestBed.inject(DraftReviewStore);
     const question = questionDraft();
 
     store.drafts.set([question]);
 
     expect(store.playableQuestions()).toEqual([question]);
+    expect(store.isPlayableDraft(question)).toBe(true);
+    expect(store.draftStatusLabel(question)).toBe('Playable');
+  });
+
+  it('keeps non-approved rows editable but out of practice eligibility', () => {
+    const store = TestBed.inject(DraftReviewStore);
+    const approved = questionDraft({ id: 'approved-draft' });
+    const rejected = questionDraft({
+      id: 'rejected-draft',
+      status: 'rejected',
+      rejection_reason: 'Insufficient answer choices.',
+    });
+
+    store.drafts.set([approved, rejected]);
+
+    expect(store.drafts()).toEqual([approved, rejected]);
+    expect(store.playableQuestions()).toEqual([approved]);
+    expect(store.isPlayableDraft(rejected)).toBe(false);
+    expect(store.draftStatusLabel(rejected)).toBe('Not playable');
   });
 
   it('saves edited question text without a promotion request', async () => {
