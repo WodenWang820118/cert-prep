@@ -5,14 +5,13 @@ import type {
   LanguageHint,
 } from './contracts/source-import.contracts';
 import { DocumentParsingMetricsService } from './document-parsing-metrics.service';
+import { DocumentLibraryStore } from './document-library.store';
 import { HealthStore } from '../health/health.store';
 import { OperationStore } from '../operation.store';
 import { ProjectStore } from '../project.store';
 
 const DOCUMENT_POLL_INTERVAL_MS = 1500;
 const FIRST_CHUNK_POLL_INTERVAL_MS = 500;
-const INITIAL_CHUNK_PREVIEW_LIMIT = 6;
-const CHUNK_PREVIEW_STEP = 6;
 const FINAL_DOCUMENT_STATUSES = new Set([
   'ready',
   'exam_failed',
@@ -23,6 +22,7 @@ const FINAL_DOCUMENT_STATUSES = new Set([
 @Injectable({ providedIn: 'root' })
 export class SourceImportStore {
   private readonly api = inject(CERT_PREP_API);
+  private readonly library = inject(DocumentLibraryStore);
   private readonly health = inject(HealthStore);
   private readonly metrics = inject(DocumentParsingMetricsService);
   private readonly operations = inject(OperationStore);
@@ -39,32 +39,15 @@ export class SourceImportStore {
   ];
   readonly languageHint = signal<LanguageHint>('auto');
   readonly selectedFile = signal<File | null>(null);
-  readonly documents = signal<DocumentRead[]>([]);
-  readonly activeDocumentId = signal<string | null>(null);
-  readonly uploadedDocument = signal<DocumentRead | null>(null);
-  readonly chunks = signal<ChunkRead[]>([]);
-  readonly visibleChunkLimit = signal(INITIAL_CHUNK_PREVIEW_LIMIT);
-  readonly activeDocument = computed(() => {
-    const activeId = this.activeDocumentId();
-    const uploaded = this.uploadedDocument();
-    if (activeId === null) {
-      return uploaded;
-    }
-
-    return (
-      this.documents().find((document) => document.id === activeId) ??
-      (uploaded?.id === activeId ? uploaded : null)
-    );
-  });
-  readonly activeDocumentSelectValue = computed(
-    () => this.activeDocumentId() ?? '',
-  );
-  readonly previewChunks = computed(() =>
-    this.chunks().slice(0, this.visibleChunkLimit()),
-  );
-  readonly hiddenChunkCount = computed(() =>
-    Math.max(0, this.chunks().length - this.previewChunks().length),
-  );
+  readonly documents = this.library.documents;
+  readonly activeDocumentId = this.library.activeDocumentId;
+  readonly uploadedDocument = this.library.uploadedDocument;
+  readonly chunks = this.library.chunks;
+  readonly visibleChunkLimit = this.library.visibleChunkLimit;
+  readonly activeDocument = this.library.activeDocument;
+  readonly activeDocumentSelectValue = this.library.activeDocumentSelectValue;
+  readonly previewChunks = this.library.previewChunks;
+  readonly hiddenChunkCount = this.library.hiddenChunkCount;
   readonly isParsing = computed(
     () => this.activeDocument()?.status === 'processing',
   );
@@ -116,20 +99,13 @@ export class SourceImportStore {
 
   chooseFile(file: File | null): void {
     this.selectedFile.set(file);
-    this.activeDocumentId.set(null);
-    this.uploadedDocument.set(null);
-    this.chunks.set([]);
-    this.visibleChunkLimit.set(INITIAL_CHUNK_PREVIEW_LIMIT);
+    this.library.clearActiveDocument();
     this.stopDocumentPolling();
   }
 
   reset(): void {
     this.selectedFile.set(null);
-    this.documents.set([]);
-    this.activeDocumentId.set(null);
-    this.uploadedDocument.set(null);
-    this.chunks.set([]);
-    this.visibleChunkLimit.set(INITIAL_CHUNK_PREVIEW_LIMIT);
+    this.library.reset();
     this.stopDocumentPolling();
   }
 
@@ -141,7 +117,7 @@ export class SourceImportStore {
   }
 
   showMoreChunks(): void {
-    this.visibleChunkLimit.update((limit) => limit + CHUNK_PREVIEW_STEP);
+    this.library.showMoreChunks();
   }
 
   parsingMetrics(document: DocumentRead): DocumentParsingMetric[] {
@@ -170,9 +146,8 @@ export class SourceImportStore {
       this.api.uploadDocument(project.id, formData),
     );
     if (document !== null) {
-      this.upsertDocument(document);
+      this.library.upsertDocument(document);
       this.setActiveDocument(document);
-      this.visibleChunkLimit.set(INITIAL_CHUNK_PREVIEW_LIMIT);
       await this.refreshUploadedDocument(project.id, document.id);
     } else if (
       [
@@ -188,11 +163,8 @@ export class SourceImportStore {
 
   async loadLatestDocument(projectId: string): Promise<void> {
     const documents = await this.api.listDocuments(projectId);
-    this.documents.set(documents.items);
-    const activeDocument =
-      documents.items.find((document) => document.id === this.activeDocumentId()) ??
-      documents.items[0] ??
-      null;
+    this.library.setDocuments(documents.items);
+    const activeDocument = this.library.chooseActiveFromDocuments();
     this.setActiveDocument(activeDocument);
     if (activeDocument === null) {
       this.chunks.set([]);
@@ -203,17 +175,9 @@ export class SourceImportStore {
   }
 
   setActiveDocumentId(documentId: string | null): void {
-    if (documentId === null) {
-      this.setActiveDocument(null);
-      return;
+    if (this.library.setActiveDocumentId(documentId)) {
+      this.stopDocumentPolling();
     }
-
-    const document = this.documents().find((item) => item.id === documentId);
-    if (document === undefined) {
-      return;
-    }
-
-    this.setActiveDocument(document);
   }
 
   async selectDocument(documentId: string): Promise<void> {
@@ -224,8 +188,7 @@ export class SourceImportStore {
       return;
     }
     if (previousDocumentId !== documentId) {
-      this.chunks.set([]);
-      this.visibleChunkLimit.set(INITIAL_CHUNK_PREVIEW_LIMIT);
+      this.library.clearChunks();
       this.stopDocumentPolling();
     }
 
@@ -251,12 +214,12 @@ export class SourceImportStore {
         this.api.getDocument(project, document),
         this.loadDocumentChunks(project, document),
       ]);
-      this.upsertDocument(nextDocument);
+      this.library.upsertDocument(nextDocument);
       if (!this.isCurrentProjectDocument(project, document)) {
         return;
       }
       this.setActiveDocument(nextDocument);
-      this.chunks.set(chunks);
+      this.library.setChunks(chunks);
       if (nextDocument.status === 'processing') {
         this.scheduleDocumentPolling(project, document);
       } else {
@@ -279,28 +242,10 @@ export class SourceImportStore {
     }
   }
 
-  private upsertDocument(document: DocumentRead): void {
-    this.documents.update((documents) => {
-      const existingIndex = documents.findIndex((item) => item.id === document.id);
-      if (existingIndex === -1) {
-        return [document, ...documents];
-      }
-
-      return documents.map((item, index) =>
-        index === existingIndex ? document : item,
-      );
-    });
-  }
-
   private setActiveDocument(document: DocumentRead | null): void {
-    const nextDocumentId = document?.id ?? null;
-    if (this.activeDocumentId() !== nextDocumentId) {
-      this.chunks.set([]);
-      this.visibleChunkLimit.set(INITIAL_CHUNK_PREVIEW_LIMIT);
+    if (this.library.setActiveDocument(document)) {
       this.stopDocumentPolling();
     }
-    this.activeDocumentId.set(nextDocumentId);
-    this.uploadedDocument.set(document);
   }
 
   private async refreshRuntimeHealth(): Promise<void> {
@@ -340,9 +285,9 @@ export class SourceImportStore {
       if (!this.isCurrentProjectDocument(projectId, documentId)) {
         return;
       }
-      this.upsertDocument(document);
+      this.library.upsertDocument(document);
       this.setActiveDocument(document);
-      this.chunks.set(chunks);
+      this.library.setChunks(chunks);
       if (!FINAL_DOCUMENT_STATUSES.has(document.status)) {
         this.scheduleDocumentPolling(projectId, documentId);
       }

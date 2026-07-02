@@ -1,40 +1,38 @@
 import { computed, effect, inject, Injectable, signal } from '@angular/core';
 import {
-  DraftGenerationJobRead,
   CERT_PREP_API,
   QuestionDraftRead,
 } from '../../cert-prep-api';
 import type {
   DraftEdit,
-  DraftJobSummary,
   DraftGenerationStrategy,
 } from './contracts/draft-review.contracts';
 import { DraftEditService } from './draft-edit.service';
+import { DraftEditSessionStore } from './draft-edit-session.store';
+import { DraftPlayabilityService } from './draft-playability.service';
+import { DraftStreamingJobsStore } from './draft-streaming-jobs.store';
 import { HealthStore } from '../health/health.store';
 import { OperationStore } from '../operation.store';
 import { ProjectStore } from '../project.store';
 import { SourceImportStore } from '../source-import/source-import.store';
 
-const STREAMING_DRAFT_POLL_INTERVAL_MS = 1500;
-const PLAYABLE_DRAFT_STATUS = 'approved';
-
 @Injectable({ providedIn: 'root' })
 export class DraftReviewStore {
   private readonly api = inject(CERT_PREP_API);
   private readonly edits = inject(DraftEditService);
+  private readonly editSession = inject(DraftEditSessionStore);
   private readonly health = inject(HealthStore);
   private readonly operations = inject(OperationStore);
+  private readonly playability = inject(DraftPlayabilityService);
   private readonly projects = inject(ProjectStore);
   private readonly sourceImport = inject(SourceImportStore);
-  private draftJobsDocumentKey: string | null = null;
-  private streamingDraftPollKey: string | null = null;
-  private streamingDraftPollTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly streamingJobs = inject(DraftStreamingJobsStore);
 
   readonly questionLimit = signal(3);
   readonly drafts = signal<QuestionDraftRead[]>([]);
-  readonly draftJobs = signal<DraftGenerationJobRead[]>([]);
-  readonly editingDraftId = signal<string | null>(null);
-  readonly draftEdits = signal<Record<string, DraftEdit>>({});
+  readonly draftJobs = this.streamingJobs.draftJobs;
+  readonly editingDraftId = this.editSession.editingDraftId;
+  readonly draftEdits = this.editSession.draftEdits;
   readonly playableQuestions = computed(() =>
     this.drafts().filter((draft) => this.isPlayableDraft(draft)),
   );
@@ -47,43 +45,16 @@ export class DraftReviewStore {
   readonly activeDocumentPlayableQuestions = computed(() =>
     this.activeDocumentDrafts().filter((draft) => this.isPlayableDraft(draft)),
   );
-  readonly draftJobSummary = computed(() =>
-    this.summarizeDraftJobs(this.draftJobs()),
-  );
-  readonly canRetryDraftJobs = computed(() => {
-    const summary = this.draftJobSummary();
-    return summary.skipped > 0 || summary.failed > 0;
-  });
+  readonly draftJobSummary = this.streamingJobs.draftJobSummary;
+  readonly canRetryDraftJobs = this.streamingJobs.canRetryDraftJobs;
 
   constructor() {
     effect(() => {
       const projectId = this.projects.selectedProjectId();
       const document = this.sourceImport.activeDocument();
-      const documentKey =
-        projectId !== null && document !== null
-          ? `${projectId}:${document.id}`
-          : null;
-      const hasActiveJobs =
-        documentKey !== null &&
-        this.streamingDraftPollKey === documentKey &&
-        this.hasActiveDraftJobs(this.draftJobs());
-      const shouldPoll =
-        documentKey !== null &&
-        ((document?.status === 'processing' && document.chunks_count > 0) ||
-          hasActiveJobs);
-
-      if (shouldPoll && document !== null && projectId !== null) {
-        this.ensureStreamingDraftPolling(projectId, document.id);
-      } else if (documentKey === null) {
-        this.stopStreamingDraftPolling({ clearJobs: true });
-      } else if (
-        this.draftJobsDocumentKey !== null &&
-        this.draftJobsDocumentKey !== documentKey
-      ) {
-        this.stopStreamingDraftPolling({ clearJobs: true });
-      } else {
-        this.stopStreamingDraftPolling();
-      }
+      this.streamingJobs.syncPolling(projectId, document, (id) =>
+        this.load(id),
+      );
     });
   }
 
@@ -98,11 +69,8 @@ export class DraftReviewStore {
 
   reset(): void {
     this.drafts.set([]);
-    this.draftJobs.set([]);
-    this.draftJobsDocumentKey = null;
-    this.editingDraftId.set(null);
-    this.draftEdits.set({});
-    this.stopStreamingDraftPolling();
+    this.editSession.reset();
+    this.streamingJobs.reset();
   }
 
   setQuestionLimit(value: string | number): void {
@@ -110,79 +78,51 @@ export class DraftReviewStore {
   }
 
   isEditing(draft: QuestionDraftRead): boolean {
-    return this.editingDraftId() === draft.id;
+    return this.editSession.isEditing(draft);
   }
 
   isPlayableDraft(draft: QuestionDraftRead): boolean {
-    const choices = this.nonEmptyValues(draft.choices);
-    const answer = this.trimmedValue(draft.answer);
-    return (
-      draft.status === PLAYABLE_DRAFT_STATUS &&
-      this.hasText(draft.question) &&
-      choices.length >= 2 &&
-      answer.length > 0 &&
-      choices.includes(answer) &&
-      this.hasText(draft.rationale) &&
-      this.hasEvidence(draft)
-    );
+    return this.playability.isPlayableDraft(draft);
   }
 
   draftStatusLabel(draft: QuestionDraftRead): string {
-    return this.isPlayableDraft(draft) ? 'Playable' : 'Not playable';
+    return this.playability.statusLabel(draft);
   }
 
   draftEdit(draft: QuestionDraftRead): DraftEdit {
-    return this.draftEdits()[draft.id] ?? this.edits.editFromDraft(draft);
+    return this.editSession.draftEdit(draft);
   }
 
   startEdit(draft: QuestionDraftRead): void {
-    this.draftEdits.update((edits) => ({
-      ...edits,
-      [draft.id]: this.edits.editFromDraft(draft),
-    }));
-    this.editingDraftId.set(draft.id);
+    this.editSession.startEdit(draft);
   }
 
   cancelEdit(draft: QuestionDraftRead): void {
-    this.removeDraftEdit(draft.id);
-    if (this.editingDraftId() === draft.id) {
-      this.editingDraftId.set(null);
-    }
+    this.editSession.cancelEdit(draft);
   }
 
   setEditQuestion(draftId: string, question: string): void {
-    this.patchDraftEdit(draftId, (edit) => ({ ...edit, question }));
+    this.editSession.setEditQuestion(draftId, this.drafts(), question);
   }
 
   setEditChoice(draftId: string, index: number, choice: string): void {
-    this.patchDraftEdit(draftId, (edit) => {
-      const choices = [...edit.choices];
-      choices[index] = choice;
-      return { ...edit, choices };
-    });
+    this.editSession.setEditChoice(draftId, this.drafts(), index, choice);
   }
 
   addEditChoice(draftId: string): void {
-    this.patchDraftEdit(draftId, (edit) => ({
-      ...edit,
-      choices: [...edit.choices, ''],
-    }));
+    this.editSession.addEditChoice(draftId, this.drafts());
   }
 
   removeEditChoice(draftId: string, index: number): void {
-    this.patchDraftEdit(draftId, (edit) => {
-      const choices = edit.choices.filter((_, choiceIndex) => choiceIndex !== index);
-      const answer = choices.includes(edit.answer) ? edit.answer : '';
-      return { ...edit, choices, answer };
-    });
+    this.editSession.removeEditChoice(draftId, this.drafts(), index);
   }
 
   setEditAnswer(draftId: string, answer: string): void {
-    this.patchDraftEdit(draftId, (edit) => ({ ...edit, answer }));
+    this.editSession.setEditAnswer(draftId, this.drafts(), answer);
   }
 
   setEditRationale(draftId: string, rationale: string): void {
-    this.patchDraftEdit(draftId, (edit) => ({ ...edit, rationale }));
+    this.editSession.setEditRationale(draftId, this.drafts(), rationale);
   }
 
   async generateDrafts(
@@ -214,7 +154,7 @@ export class DraftReviewStore {
 
     this.drafts.set(drafts.items);
     await this.load(project.id);
-    await this.loadDraftJobs(project.id, document.id);
+    await this.streamingJobs.loadDraftJobs(project.id, document.id);
     await this.sourceImport.refreshUploadedDocument(project.id, document.id);
   }
 
@@ -261,11 +201,13 @@ export class DraftReviewStore {
       return;
     }
 
-    this.draftJobs.set(jobs.items);
+    this.streamingJobs.setDraftJobs(jobs.items);
     await this.load(project.id);
     await this.sourceImport.refreshUploadedDocument(project.id, document.id);
-    if (this.hasActiveDraftJobs(jobs.items)) {
-      this.ensureStreamingDraftPolling(project.id, document.id);
+    if (this.streamingJobs.hasActiveDraftJobs(jobs.items)) {
+      this.streamingJobs.ensurePolling(project.id, document.id, (id) =>
+        this.load(id),
+      );
     }
   }
 
@@ -301,250 +243,11 @@ export class DraftReviewStore {
     });
   }
 
-  private patchDraftEdit(
-    draftId: string,
-    updater: (edit: DraftEdit) => DraftEdit,
-  ): void {
-    const draft = this.drafts().find((candidate) => candidate.id === draftId);
-    const current =
-      this.draftEdits()[draftId] ??
-      (draft ? this.edits.editFromDraft(draft) : null);
-    if (current === null) {
-      return;
-    }
-    this.draftEdits.update((edits) => ({
-      ...edits,
-      [draftId]: updater(current),
-    }));
-  }
-
-  private removeDraftEdit(draftId: string): void {
-    this.draftEdits.update((edits) => {
-      const next = { ...edits };
-      delete next[draftId];
-      return next;
-    });
-  }
-
   private updatePayload(draft: QuestionDraftRead) {
-    return this.edits.updatePayload(draft, this.draftEdit(draft));
+    return this.editSession.updatePayload(draft);
   }
 
   private generatePayload(strategy: DraftGenerationStrategy) {
     return this.edits.generatePayload(this.questionLimit(), strategy);
-  }
-
-  private ensureStreamingDraftPolling(
-    projectId: string,
-    documentId: string,
-  ): void {
-    const nextKey = `${projectId}:${documentId}`;
-    if (this.streamingDraftPollKey !== nextKey) {
-      this.stopStreamingDraftPolling({ clearJobs: true });
-      this.streamingDraftPollKey = nextKey;
-      void this.pollStreamingDrafts(projectId, documentId);
-      return;
-    }
-
-    if (this.streamingDraftPollTimer === null) {
-      this.scheduleStreamingDraftPolling(projectId, documentId);
-    }
-  }
-
-  private scheduleStreamingDraftPolling(
-    projectId: string,
-    documentId: string,
-  ): void {
-    this.streamingDraftPollTimer = setTimeout(() => {
-      this.streamingDraftPollTimer = null;
-      void this.pollStreamingDrafts(projectId, documentId);
-    }, STREAMING_DRAFT_POLL_INTERVAL_MS);
-  }
-
-  private async pollStreamingDrafts(
-    projectId: string,
-    documentId: string,
-  ): Promise<void> {
-    if (this.streamingDraftPollKey !== `${projectId}:${documentId}`) {
-      return;
-    }
-
-    try {
-      await Promise.all([
-        this.load(projectId),
-        this.loadDraftJobs(projectId, documentId).catch(() => undefined),
-      ]);
-    } catch {
-      this.stopStreamingDraftPolling();
-      return;
-    }
-
-    const document = this.sourceImport.activeDocument();
-    const selectedProjectId = this.projects.selectedProjectId();
-    if (
-      selectedProjectId === projectId &&
-      document?.id === documentId &&
-      (document.status === 'processing' || this.hasActiveDraftJobs(this.draftJobs()))
-    ) {
-      this.scheduleStreamingDraftPolling(projectId, documentId);
-    } else {
-      this.stopStreamingDraftPolling();
-    }
-  }
-
-  private stopStreamingDraftPolling(
-    options: { clearJobs?: boolean } = {},
-  ): void {
-    if (this.streamingDraftPollTimer !== null) {
-      clearTimeout(this.streamingDraftPollTimer);
-      this.streamingDraftPollTimer = null;
-    }
-    this.streamingDraftPollKey = null;
-    if (options.clearJobs) {
-      this.draftJobs.set([]);
-      this.draftJobsDocumentKey = null;
-    }
-  }
-
-  private async loadDraftJobs(
-    projectId: string,
-    documentId: string,
-  ): Promise<void> {
-    const documentKey = `${projectId}:${documentId}`;
-    const jobs = await this.api.listDocumentDraftJobs(projectId, documentId);
-    if (!this.isCurrentProjectDocument(projectId, documentId)) {
-      return;
-    }
-
-    this.draftJobsDocumentKey = documentKey;
-    this.draftJobs.set(jobs.items);
-  }
-
-  private hasActiveDraftJobs(jobs: DraftGenerationJobRead[]): boolean {
-    return jobs.some((job) => ['pending', 'running'].includes(job.status));
-  }
-
-  private isCurrentProjectDocument(projectId: string, documentId: string): boolean {
-    return (
-      this.projects.selectedProjectId() === projectId &&
-      this.sourceImport.activeDocument()?.id === documentId
-    );
-  }
-
-  private nonEmptyValues(values: string[]): string[] {
-    return values
-      .map((value) => value.trim())
-      .filter((value) => value.length > 0);
-  }
-
-  private hasText(value: string | null): boolean {
-    return this.trimmedValue(value).length > 0;
-  }
-
-  private trimmedValue(value: string | null): string {
-    return value?.trim() ?? '';
-  }
-
-  private hasEvidence(draft: QuestionDraftRead): boolean {
-    return draft.citation_page !== null || this.hasText(draft.source_excerpt);
-  }
-
-  private summarizeDraftJobs(jobs: DraftGenerationJobRead[]): DraftJobSummary {
-    const total = jobs.length;
-    const active = jobs.filter((job) =>
-      ['pending', 'running'].includes(job.status),
-    ).length;
-    const succeeded = jobs.filter((job) => job.status === 'succeeded').length;
-    const skipped = jobs.filter((job) =>
-      ['skipped_missing_model', 'skipped_provider_unavailable'].includes(
-        job.status,
-      ),
-    ).length;
-    const failed = jobs.filter((job) => job.status === 'failed').length;
-    const generatedCount = jobs.reduce(
-      (count, job) => count + job.generated_count,
-      0,
-    );
-
-    if (total === 0) {
-      return {
-        total,
-        active,
-        succeeded,
-        skipped,
-        failed,
-        generatedCount,
-        label: 'No question jobs',
-        detail: 'Waiting for parsed pages.',
-        severity: 'secondary',
-      };
-    }
-    if (active > 0) {
-      return {
-        total,
-        active,
-        succeeded,
-        skipped,
-        failed,
-        generatedCount,
-        label: `Generating ${active}/${total}`,
-        detail: `${generatedCount} questions ready so far.`,
-        severity: 'info',
-      };
-    }
-    if (failed > 0) {
-      return {
-        total,
-        active,
-        succeeded,
-        skipped,
-        failed,
-        generatedCount,
-        label: 'Question generation needs attention',
-        detail: `${failed} job${failed === 1 ? '' : 's'} failed.`,
-        severity: 'danger',
-      };
-    }
-    if (skipped > 0 && succeeded === 0) {
-      const missingModel = jobs.some(
-        (job) => job.status === 'skipped_missing_model',
-      );
-      return {
-        total,
-        active,
-        succeeded,
-        skipped,
-        failed,
-        generatedCount,
-        label: missingModel ? 'Model missing' : 'Reasoning unavailable',
-        detail: `${skipped} job${skipped === 1 ? '' : 's'} skipped.`,
-        severity: 'warn',
-      };
-    }
-    if (succeeded > 0) {
-      return {
-        total,
-        active,
-        succeeded,
-        skipped,
-        failed,
-        generatedCount,
-        label: `${generatedCount} questions ready`,
-        detail: `${succeeded}/${total} jobs completed.`,
-        severity: skipped > 0 ? 'warn' : 'success',
-      };
-    }
-
-    return {
-      total,
-      active,
-      succeeded,
-      skipped,
-      failed,
-      generatedCount,
-      label: 'Question jobs settled',
-      detail: `${total} jobs completed without questions.`,
-      severity: 'secondary',
-    };
   }
 }
