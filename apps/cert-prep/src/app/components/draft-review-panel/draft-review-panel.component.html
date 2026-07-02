@@ -8,8 +8,9 @@
         <h2 id="drafts-heading">Step 02: Mock Exam Items</h2>
       </div>
       <p class="workbench-panel-subtitle">
-        {{ drafts.playableQuestions().length }} playable /
-        {{ drafts.drafts().length }} total questions generated.
+        {{ drafts.activeDocumentPlayableQuestions().length }} active playable /
+        {{ drafts.activeDocumentDrafts().length }} active /
+        {{ drafts.drafts().length }} project total.
       </p>
       @if (drafts.draftJobSummary().total > 0 || sourceImport.isParsing()) {
         <div class="mt-2 flex flex-wrap items-center gap-2" aria-live="polite">
@@ -72,7 +73,7 @@
     </div>
 
     <div class="workbench-question-list">
-      @for (draft of drafts.drafts(); track draft.id) {
+      @for (draft of drafts.activeDocumentDrafts(); track draft.id) {
         <article
           class="workbench-question-card"
           data-testid="draft-question-card"
@@ -253,7 +254,7 @@
       } @empty {
         <article class="workbench-question-card">
           <span class="workbench-tag">Draft</span>
-          <h3>No mock exam items for this project.</h3>
+          <h3>No mock exam items for the active document.</h3>
           <button
             class="workbench-link-button"
             type="button"

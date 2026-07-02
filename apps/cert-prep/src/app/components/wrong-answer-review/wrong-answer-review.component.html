@@ -6,7 +6,7 @@
     </div>
 
     <button
-      class="review-refresh-button"
+      class="workbench-secondary-button review-refresh-button"
       type="button"
       [disabled]="operations.isBusyFor('review') || projects.selectedProject() === null"
       (click)="review.refresh()"
@@ -22,6 +22,8 @@
   <div class="wrong-answer-list">
     @for (wrong of review.wrongAnswers(); track wrong.attempt_id) {
       <article class="wrong-answer-card">
+        @let explanation = review.explanationFor(wrong.attempt_id);
+
         <span class="page-chip">Page {{ wrong.citation_page ?? 'n/a' }}</span>
 
         <h3>{{ wrong.question }}</h3>
@@ -54,6 +56,47 @@
             <p>{{ wrong.source_excerpt }}</p>
           </section>
         }
+
+        <section class="ai-review" aria-label="Discuss mistake with AI">
+          <button
+            class="workbench-secondary-button ai-discuss-button"
+            type="button"
+            [disabled]="explanation.loading"
+            (click)="review.discussMistake(wrong)"
+          >
+            <i
+              [class]="explanation.loading ? 'pi pi-spin pi-spinner' : 'pi pi-comments'"
+              aria-hidden="true"
+            ></i>
+            <span>
+              {{
+                explanation.loading
+                  ? 'Discussing mistake...'
+                  : 'Discuss mistake with AI'
+              }}
+            </span>
+          </button>
+
+          @if (explanation.result) {
+            <div
+              class="ai-explanation"
+              [class.is-fallback]="explanation.fallback"
+            >
+              <h4>
+                {{
+                  explanation.fallback
+                    ? 'Grounded fallback explanation'
+                    : 'AI explanation'
+                }}
+              </h4>
+              <p>{{ explanation.result }}</p>
+
+              @if (explanation.error) {
+                <p class="ai-explanation-note">{{ explanation.error }}</p>
+              }
+            </div>
+          }
+        </section>
       </article>
     } @empty {
       <article class="empty-review-state">

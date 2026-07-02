@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { CERT_PREP_API } from '../../cert-prep-api';
+import type { QuestionDraftRead } from '../../cert-prep-api';
 import { DraftReviewStore } from './draft-review.store';
 import { ProjectStore } from '../project.store';
 import { SourceImportStore } from '../source-import/source-import.store';
@@ -67,6 +68,85 @@ describe('DraftReviewStore editable questions', () => {
     expect(store.draftStatusLabel(rejected)).toBe('Not playable');
   });
 
+  it('excludes approved rows that are missing playable question fields', () => {
+    const store = TestBed.inject(DraftReviewStore);
+    const playable = questionDraft({ id: 'playable-draft' });
+    const incompleteCases: ReadonlyArray<{
+      readonly overrides: Partial<QuestionDraftRead>;
+    }> = [
+      { overrides: { question: '   ' } },
+      { overrides: { choices: ['A', '   '] } },
+      { overrides: { choices: ['A', 'B'], answer: '   ' } },
+      { overrides: { choices: ['A', 'B'], answer: 'C' } },
+      { overrides: { rationale: '   ' } },
+      { overrides: { citation_page: null, source_excerpt: null } },
+      { overrides: { citation_page: null, source_excerpt: '   ' } },
+    ];
+    const incompleteDrafts = incompleteCases.map((testCase, index) =>
+      questionDraft({
+        id: `incomplete-draft-${index + 1}`,
+        ...testCase.overrides,
+      }),
+    );
+
+    store.drafts.set([playable, ...incompleteDrafts]);
+
+    expect(store.playableQuestions()).toEqual([playable]);
+    for (const draft of incompleteDrafts) {
+      expect(store.isPlayableDraft(draft)).toBe(false);
+      expect(store.draftStatusLabel(draft)).toBe('Not playable');
+    }
+  });
+
+  it('keeps project playable questions while scoping review rows to the active document', () => {
+    const store = TestBed.inject(DraftReviewStore);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    const firstDocument = documentRead({ id: 'document-1', filename: 'first.pdf' });
+    const secondDocument = documentRead({
+      id: 'document-2',
+      filename: 'second.pdf',
+    });
+    const firstQuestion = questionDraft({
+      id: 'first-draft',
+      document_id: firstDocument.id,
+    });
+    const secondQuestion = questionDraft({
+      id: 'second-draft',
+      document_id: secondDocument.id,
+    });
+    sourceImport.documents.set([firstDocument, secondDocument]);
+    sourceImport.setActiveDocumentId(secondDocument.id);
+
+    store.drafts.set([firstQuestion, secondQuestion]);
+
+    expect(store.playableQuestions()).toEqual([firstQuestion, secondQuestion]);
+    expect(store.activeDocumentDrafts()).toEqual([secondQuestion]);
+    expect(store.activeDocumentPlayableQuestions()).toEqual([secondQuestion]);
+  });
+
+  it('ignores stale draft loads after the selected project changes', async () => {
+    const store = TestBed.inject(DraftReviewStore);
+    const projects = TestBed.inject(ProjectStore);
+    const currentProjectDraft = questionDraft({
+      id: 'current-project-draft',
+      project_id: 'project-2',
+    });
+    const staleProjectDraft = questionDraft({
+      id: 'stale-project-draft',
+      project_id: 'project-1',
+    });
+    const staleDrafts = deferred<{ items: QuestionDraftRead[] }>();
+    apiClient.listQuestionDrafts.mockReturnValueOnce(staleDrafts.promise);
+    store.drafts.set([currentProjectDraft]);
+
+    const load = store.load('project-1');
+    projects.select('project-2');
+    staleDrafts.resolve({ items: [staleProjectDraft] });
+    await load;
+
+    expect(store.drafts()).toEqual([currentProjectDraft]);
+  });
+
   it('saves edited question text without a promotion request', async () => {
     const store = TestBed.inject(DraftReviewStore);
     const question = questionDraft({
@@ -108,7 +188,7 @@ describe('DraftReviewStore editable questions', () => {
     const sourceImport = TestBed.inject(SourceImportStore);
     const question = questionDraft();
     const refreshedDocument = documentRead({ exam_item_count: 1 });
-    sourceImport.uploadedDocument.set(documentRead());
+    activateDocument(sourceImport, documentRead());
     apiClient.generateDocumentDrafts.mockResolvedValue({ items: [question] });
     apiClient.getDocument.mockResolvedValue(refreshedDocument);
     apiClient.listQuestionDrafts.mockResolvedValue({ items: [question] });
@@ -123,3 +203,22 @@ describe('DraftReviewStore editable questions', () => {
     expect(sourceImport.documents()).toEqual([refreshedDocument]);
   });
 });
+
+function activateDocument(
+  sourceImport: SourceImportStore,
+  document: ReturnType<typeof documentRead>,
+): void {
+  sourceImport.documents.set([document]);
+  sourceImport.setActiveDocumentId(document.id);
+}
+
+function deferred<T>(): {
+  readonly promise: Promise<T>;
+  readonly resolve: (value: T) => void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolver) => {
+    resolve = resolver;
+  });
+  return { promise, resolve };
+}

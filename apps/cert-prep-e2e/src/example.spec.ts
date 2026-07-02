@@ -6,34 +6,166 @@ import {
   installMockCertPrepApi,
 } from './support/mock-api';
 import {
-  createProject,
-  expectRuntimeReady,
+  completePracticeQuestions,
+  createWorkspaceWithUploadedDocument,
+  expectFullExamDocumentOptions,
+  expectRandomQuizAvailableCount,
+  expectWrongAnswerReview,
+  runMultiPdfIsolationScenario,
   seedMockApiConfig,
   startRandomQuiz,
-  submitWrongAnswerAndOpenReview,
   uploadDocumentAndExpectDraft,
+  wrongChoiceForDraft,
 } from './support/practice-flow';
 
-test('completes the local practice loop with a mocked API', async ({
+test('completes Random Quiz for every playable mocked draft and records wrong answers', async ({
   page,
 }) => {
   const api = await installMockCertPrepApi(page);
   await seedMockApiConfig(page, apiBaseUrl, devToken);
 
-  await page.goto('/');
-
-  await createProject(page, api);
-  await expectRuntimeReady(page);
-  await uploadDocumentAndExpectDraft(page, api);
+  await createWorkspaceWithUploadedDocument(page, api);
   await startRandomQuiz(page, api);
+
   expect(api.practiceSessionPayload()).toMatchObject({
     mode: 'random_draw',
-    question_count: 1,
+    question_count: api.playableDrafts.length,
   });
 
-  await submitWrongAnswerAndOpenReview(page, api);
+  await completePracticeQuestions(
+    page,
+    api,
+    api.playableDrafts,
+    wrongChoiceForDraft,
+  );
+  await expectWrongAnswerReview(page, api, api.playableDrafts);
 
   expect(api.seenPaths()).toEqual(expectedSeenPaths(api));
+});
+
+test('keeps Full Exam sessions isolated to the selected PDF document', async ({
+  page,
+}) => {
+  const api = await installMockCertPrepApi(page);
+  await seedMockApiConfig(page, apiBaseUrl, devToken);
+
+  await runMultiPdfIsolationScenario(page, api);
+  expect(api.practiceSessionPayloads()).toHaveLength(2);
+});
+
+test('clears document draft practice and review state when switching projects', async ({
+  page,
+}) => {
+  const api = await installMockCertPrepApi(page);
+  await seedMockApiConfig(page, apiBaseUrl, devToken);
+
+  await createWorkspaceWithUploadedDocument(page, api);
+  await page.getByRole('button', { name: 'Create project' }).click();
+  await page.getByLabel('Name').fill(api.secondaryProject.name);
+  await page.getByLabel('Description').fill(api.secondaryProject.description);
+  await page.getByRole('button', { name: 'Create project' }).click();
+  await uploadDocumentAndExpectDraft(page, api, {
+    document: api.secondaryDocument,
+    draft: api.secondaryDraft,
+  });
+
+  await page.getByRole('button', { name: new RegExp(api.project.name) }).click();
+  await expect(
+    page
+      .locator('.workbench-file-name')
+      .getByText(api.document.filename, { exact: true }),
+  ).toBeVisible();
+  await page.getByRole('link', { name: 'Random Quiz' }).click();
+  await startRandomQuiz(page, api, 1);
+  await completePracticeQuestions(page, api, [api.draft], wrongChoiceForDraft);
+  await page.getByRole('link', { name: 'Review' }).click();
+  await expect(page.getByText(api.draft.question)).toBeVisible();
+
+  const requestMarker = api.markRequestLog();
+  await page
+    .getByRole('button', { name: new RegExp(api.secondaryProject.name) })
+    .click();
+  await expect(
+    page.getByText(
+      'Wrong answers will appear here after a practice attempt needs review.',
+    ),
+  ).toBeVisible();
+  await expect(page.getByText(api.draft.question)).toBeHidden();
+
+  await page.getByRole('link', { name: 'Build' }).click();
+  await expect(
+    page
+      .locator('.workbench-file-name')
+      .getByText(api.secondaryDocument.filename, { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText(api.secondaryDraft.question)).toBeVisible();
+  await expect(page.getByText(api.document.filename)).toBeHidden();
+  await expect(page.getByText(api.draft.question)).toBeHidden();
+
+  await page.getByRole('link', { name: 'Random Quiz' }).click();
+  await expectRandomQuizAvailableCount(page, api.secondaryPlayableDrafts.length);
+  await expect(
+    page.getByLabel('Session details').getByText('Not started'),
+  ).toBeVisible();
+  await page
+    .getByRole('spinbutton', { name: 'Random draw size' })
+    .fill('1');
+  await page.getByRole('button', { name: 'Start random quiz' }).click();
+  await expect
+    .poll(() => api.practiceSessionPayload(api.secondaryProject.id))
+    .toMatchObject({ mode: 'random_draw', question_count: 1 });
+
+  const pathsAfterSwitch = api.requestLogSince(requestMarker);
+  expect(pathsAfterSwitch).toEqual(
+    expect.arrayContaining([
+      `GET /projects/${api.secondaryProject.id}/documents`,
+      `GET /projects/${api.secondaryProject.id}/question-drafts`,
+      `GET /projects/${api.secondaryProject.id}/wrong-answers`,
+      `POST /projects/${api.secondaryProject.id}/practice-sessions`,
+    ]),
+  );
+  expect(
+    pathsAfterSwitch.filter((path) =>
+      path.includes(`/projects/${api.project.id}/`),
+    ),
+  ).toEqual([]);
+});
+
+test('excludes incomplete approved-looking drafts from Random Quiz and Full Exam', async ({
+  page,
+}) => {
+  const api = await installMockCertPrepApi(page);
+  await seedMockApiConfig(page, apiBaseUrl, devToken);
+  expect(api.incompleteApprovedDrafts.length).toBeGreaterThan(0);
+
+  await createWorkspaceWithUploadedDocument(page, api);
+
+  await page.getByRole('link', { name: 'Random Quiz' }).click();
+  await expectRandomQuizAvailableCount(page, api.playableDrafts.length);
+  await page
+    .getByRole('spinbutton', { name: 'Random draw size' })
+    .fill('100');
+  await page.getByRole('button', { name: 'Start random quiz' }).click();
+  await expect
+    .poll(() => api.practiceSessionPayload())
+    .not.toBeNull();
+  expect(api.practiceSessionPayload()).toMatchObject({
+    mode: 'random_draw',
+    question_count: api.playableDrafts.length,
+  });
+
+  await expectFullExamDocumentOptions(page, api);
+  await page.getByRole('combobox').selectOption(api.fullExamDocument.id);
+  await page.getByRole('button', { name: 'Start full exam' }).click();
+  await expect
+    .poll(() => api.practiceSessionPayload())
+    .toMatchObject({ mode: 'full_document' });
+  expect(api.practiceSessionPayload()).toMatchObject({
+    mode: 'full_document',
+    document_id: api.fullExamDocument.id,
+    question_count: api.playableDraftsForDocument(api.fullExamDocument.id)
+      .length,
+  });
 });
 
 test('opens the runtime manager before project creation', async ({ page }) => {

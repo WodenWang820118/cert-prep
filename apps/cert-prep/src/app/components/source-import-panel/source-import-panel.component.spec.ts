@@ -20,6 +20,7 @@ describe('SourceImportPanelComponent', () => {
     vi.clearAllMocks();
     apiClient.getDocument.mockResolvedValue(documentRead());
     apiClient.listDocumentChunks.mockResolvedValue({ items: [] });
+    apiClient.listQuestionDrafts.mockResolvedValue({ items: [] });
 
     await TestBed.configureTestingModule({
       imports: [SourceImportPanelComponent],
@@ -46,7 +47,8 @@ describe('SourceImportPanelComponent', () => {
   it('renders parsing metrics when the document carries timing fields', () => {
     const fixture = TestBed.createComponent(SourceImportPanelComponent);
     const sourceImport = TestBed.inject(SourceImportStore);
-    sourceImport.uploadedDocument.set(
+    activateDocument(
+      sourceImport,
       documentRead({
         parse_wall_time_ms: 1234,
         render_time_ms: 456,
@@ -74,7 +76,7 @@ describe('SourceImportPanelComponent', () => {
   it('hides parsing metrics that are absent from older document payloads', () => {
     const fixture = TestBed.createComponent(SourceImportPanelComponent);
     const sourceImport = TestBed.inject(SourceImportStore);
-    sourceImport.uploadedDocument.set(documentRead({ ocr_duration_ms: 0 }));
+    activateDocument(sourceImport, documentRead({ ocr_duration_ms: 0 }));
 
     fixture.detectChanges();
 
@@ -88,7 +90,8 @@ describe('SourceImportPanelComponent', () => {
   it('renders complete ready documents at 100 percent progress', () => {
     const fixture = TestBed.createComponent(SourceImportPanelComponent);
     const sourceImport = TestBed.inject(SourceImportStore);
-    sourceImport.uploadedDocument.set(
+    activateDocument(
+      sourceImport,
       documentRead({
         chunks_count: 8,
         processed_page_count: 7,
@@ -101,6 +104,60 @@ describe('SourceImportPanelComponent', () => {
     expect(sourceImport.progressPercent()).toBe(100);
     expect(sourceImport.progressLabel()).toBe('8/8 pages');
     expect(fixture.nativeElement.textContent).toContain('8/8 pages / 8 chunks');
+  });
+
+  it('renders the project document library and refreshes the selected document', async () => {
+    const fixture = TestBed.createComponent(SourceImportPanelComponent);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    const firstDocument = documentRead({ id: 'document-1', filename: 'first.pdf' });
+    const secondDocument = documentRead({
+      id: 'document-2',
+      filename: 'second.pdf',
+      chunks_count: 3,
+    });
+    sourceImport.documents.set([firstDocument, secondDocument]);
+    sourceImport.setActiveDocumentId(firstDocument.id);
+    apiClient.getDocument.mockResolvedValue(secondDocument);
+    apiClient.listDocumentChunks.mockResolvedValue({
+      items: [
+        {
+          id: 'chunk-2',
+          document_id: secondDocument.id,
+          page_number: 1,
+          chunk_index: 0,
+          text: 'Second document text',
+          raw_text: 'Second document text',
+          line_start: 1,
+          line_end: 1,
+          line_count: 1,
+          source_excerpt: 'Second document text',
+          extraction_method: 'paddle_ocr_gpu',
+          content_profile: 'unknown',
+          created_at: '2026-06-18T00:00:01Z',
+        },
+      ],
+    });
+
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain(
+      'Project document library',
+    );
+    const selector = documentSelector(fixture.nativeElement);
+    expect(selector).not.toBeNull();
+    await (
+      fixture.componentInstance as unknown as {
+        selectDocument(documentId: string): Promise<void>;
+      }
+    ).selectDocument(secondDocument.id);
+    fixture.detectChanges();
+
+    expect(apiClient.getDocument).toHaveBeenCalledWith(
+      'project-1',
+      secondDocument.id,
+    );
+    expect(sourceImport.activeDocumentId()).toBe(secondDocument.id);
+    expect(sourceImport.chunks()[0]?.document_id).toBe(secondDocument.id);
   });
 
   it('keeps upload disabled while runtime health is waiting for first OCR status', async () => {
@@ -148,7 +205,8 @@ describe('SourceImportPanelComponent', () => {
     vi.useFakeTimers();
     TestBed.createComponent(SourceImportPanelComponent);
     const sourceImport = TestBed.inject(SourceImportStore);
-    sourceImport.uploadedDocument.set(
+    activateDocument(
+      sourceImport,
       documentRead({ status: 'processing', chunks_count: 0 }),
     );
     apiClient.getDocument
@@ -245,4 +303,20 @@ function uploadButton(root: ParentNode): HTMLButtonElement | null {
       button.textContent?.includes('Upload PDF'),
     ) ?? null
   );
+}
+
+function documentSelector(root: ParentNode): HTMLSelectElement | null {
+  return (
+    Array.from(root.querySelectorAll('select')).find((select) =>
+      select.textContent?.includes('second.pdf'),
+    ) ?? null
+  );
+}
+
+function activateDocument(
+  sourceImport: SourceImportStore,
+  document: DocumentRead,
+): void {
+  sourceImport.documents.set([document]);
+  sourceImport.setActiveDocumentId(document.id);
 }

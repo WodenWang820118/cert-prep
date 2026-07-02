@@ -76,6 +76,57 @@ describe('SourceImportStore polling', () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(apiClient.getDocument).toHaveBeenCalledTimes(3);
   });
+
+  it('loads project documents and makes the latest document active explicitly', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    const latestDocument = documentRead({ id: 'document-2', filename: 'latest.pdf' });
+    apiClient.listDocuments.mockResolvedValue({
+      items: [latestDocument, documentRead()],
+    });
+    apiClient.getDocument.mockResolvedValue(latestDocument);
+    apiClient.listDocumentChunks.mockResolvedValue({
+      items: [chunkRead({ document_id: latestDocument.id })],
+    });
+
+    await store.loadLatestDocument('project-1');
+
+    expect(store.documents()).toEqual([latestDocument, documentRead()]);
+    expect(store.activeDocumentId()).toBe(latestDocument.id);
+    expect(store.uploadedDocument()).toEqual(latestDocument);
+    expect(store.activeDocument()).toEqual(latestDocument);
+    expect(store.chunks()).toEqual([chunkRead({ document_id: latestDocument.id })]);
+  });
+
+  it('selects a project document and refreshes its status and chunks', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    const firstDocument = documentRead({ id: 'document-1', filename: 'first.pdf' });
+    const secondDocument = documentRead({ id: 'document-2', filename: 'second.pdf' });
+    const refreshedSecondDocument = documentRead({
+      id: secondDocument.id,
+      filename: secondDocument.filename,
+      chunks_count: 2,
+    });
+    store.documents.set([firstDocument, secondDocument]);
+    store.setActiveDocumentId(firstDocument.id);
+    apiClient.getDocument.mockResolvedValue(refreshedSecondDocument);
+    apiClient.listDocumentChunks.mockResolvedValue({
+      items: [chunkRead({ document_id: secondDocument.id })],
+    });
+
+    await store.selectDocument(secondDocument.id);
+
+    expect(apiClient.getDocument).toHaveBeenCalledWith(
+      'project-1',
+      secondDocument.id,
+    );
+    expect(apiClient.listDocumentChunks).toHaveBeenCalledWith(
+      'project-1',
+      secondDocument.id,
+    );
+    expect(store.activeDocumentId()).toBe(secondDocument.id);
+    expect(store.uploadedDocument()).toEqual(refreshedSecondDocument);
+    expect(store.chunks()).toEqual([chunkRead({ document_id: secondDocument.id })]);
+  });
 });
 
 function documentRead(overrides: Partial<DocumentRead> = {}): DocumentRead {

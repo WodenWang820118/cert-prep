@@ -58,6 +58,14 @@ export class PracticeStore {
       );
   });
   readonly effectiveFullExamDocumentId = computed(() => {
+    const activeDocumentId = this.sourceImport.activeDocumentId();
+    if (
+      activeDocumentId !== null &&
+      this.fullExamDocuments().some((document) => document.id === activeDocumentId)
+    ) {
+      return activeDocumentId;
+    }
+
     const selectedId = this.selectedDocumentId();
     if (
       selectedId !== null &&
@@ -139,6 +147,9 @@ export class PracticeStore {
       (document) => document.id === documentId,
     );
     this.selectedDocumentId.set(nextDocument?.id ?? null);
+    if (nextDocument !== undefined) {
+      this.sourceImport.setActiveDocumentId(nextDocument.id);
+    }
   }
 
   questionCountForDocument(documentId: string): number {

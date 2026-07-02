@@ -26,6 +26,7 @@ export class DraftReviewStore {
   private readonly operations = inject(OperationStore);
   private readonly projects = inject(ProjectStore);
   private readonly sourceImport = inject(SourceImportStore);
+  private draftJobsDocumentKey: string | null = null;
   private streamingDraftPollKey: string | null = null;
   private streamingDraftPollTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -36,6 +37,15 @@ export class DraftReviewStore {
   readonly draftEdits = signal<Record<string, DraftEdit>>({});
   readonly playableQuestions = computed(() =>
     this.drafts().filter((draft) => this.isPlayableDraft(draft)),
+  );
+  readonly activeDocumentDrafts = computed(() => {
+    const documentId = this.sourceImport.activeDocumentId();
+    return documentId === null
+      ? this.drafts()
+      : this.drafts().filter((draft) => draft.document_id === documentId);
+  });
+  readonly activeDocumentPlayableQuestions = computed(() =>
+    this.activeDocumentDrafts().filter((draft) => this.isPlayableDraft(draft)),
   );
   readonly draftJobSummary = computed(() =>
     this.summarizeDraftJobs(this.draftJobs()),
@@ -48,7 +58,7 @@ export class DraftReviewStore {
   constructor() {
     effect(() => {
       const projectId = this.projects.selectedProjectId();
-      const document = this.sourceImport.uploadedDocument();
+      const document = this.sourceImport.activeDocument();
       const documentKey =
         projectId !== null && document !== null
           ? `${projectId}:${document.id}`
@@ -66,6 +76,11 @@ export class DraftReviewStore {
         this.ensureStreamingDraftPolling(projectId, document.id);
       } else if (documentKey === null) {
         this.stopStreamingDraftPolling({ clearJobs: true });
+      } else if (
+        this.draftJobsDocumentKey !== null &&
+        this.draftJobsDocumentKey !== documentKey
+      ) {
+        this.stopStreamingDraftPolling({ clearJobs: true });
       } else {
         this.stopStreamingDraftPolling();
       }
@@ -74,12 +89,17 @@ export class DraftReviewStore {
 
   async load(projectId: string): Promise<void> {
     const drafts = await this.api.listQuestionDrafts(projectId);
+    if (this.projects.selectedProjectId() !== projectId) {
+      return;
+    }
+
     this.drafts.set(drafts.items);
   }
 
   reset(): void {
     this.drafts.set([]);
     this.draftJobs.set([]);
+    this.draftJobsDocumentKey = null;
     this.editingDraftId.set(null);
     this.draftEdits.set({});
     this.stopStreamingDraftPolling();
@@ -94,7 +114,17 @@ export class DraftReviewStore {
   }
 
   isPlayableDraft(draft: QuestionDraftRead): boolean {
-    return draft.status === PLAYABLE_DRAFT_STATUS;
+    const choices = this.nonEmptyValues(draft.choices);
+    const answer = this.trimmedValue(draft.answer);
+    return (
+      draft.status === PLAYABLE_DRAFT_STATUS &&
+      this.hasText(draft.question) &&
+      choices.length >= 2 &&
+      answer.length > 0 &&
+      choices.includes(answer) &&
+      this.hasText(draft.rationale) &&
+      this.hasEvidence(draft)
+    );
   }
 
   draftStatusLabel(draft: QuestionDraftRead): string {
@@ -159,7 +189,7 @@ export class DraftReviewStore {
     strategy: DraftGenerationStrategy = 'hybrid_reasoning',
   ): Promise<void> {
     const project = this.projects.selectedProject();
-    const document = this.sourceImport.uploadedDocument();
+    const document = this.sourceImport.activeDocument();
     if (project === null || document === null) {
       this.operations.fail('Upload a text PDF before generating questions.');
       return;
@@ -216,7 +246,7 @@ export class DraftReviewStore {
 
   async retryDraftJobs(): Promise<void> {
     const project = this.projects.selectedProject();
-    const document = this.sourceImport.uploadedDocument();
+    const document = this.sourceImport.activeDocument();
     if (project === null || document === null) {
       this.operations.fail('Select a parsed document before retrying question generation.');
       return;
@@ -349,7 +379,7 @@ export class DraftReviewStore {
       return;
     }
 
-    const document = this.sourceImport.uploadedDocument();
+    const document = this.sourceImport.activeDocument();
     const selectedProjectId = this.projects.selectedProjectId();
     if (
       selectedProjectId === projectId &&
@@ -372,6 +402,7 @@ export class DraftReviewStore {
     this.streamingDraftPollKey = null;
     if (options.clearJobs) {
       this.draftJobs.set([]);
+      this.draftJobsDocumentKey = null;
     }
   }
 
@@ -379,12 +410,43 @@ export class DraftReviewStore {
     projectId: string,
     documentId: string,
   ): Promise<void> {
+    const documentKey = `${projectId}:${documentId}`;
     const jobs = await this.api.listDocumentDraftJobs(projectId, documentId);
+    if (!this.isCurrentProjectDocument(projectId, documentId)) {
+      return;
+    }
+
+    this.draftJobsDocumentKey = documentKey;
     this.draftJobs.set(jobs.items);
   }
 
   private hasActiveDraftJobs(jobs: DraftGenerationJobRead[]): boolean {
     return jobs.some((job) => ['pending', 'running'].includes(job.status));
+  }
+
+  private isCurrentProjectDocument(projectId: string, documentId: string): boolean {
+    return (
+      this.projects.selectedProjectId() === projectId &&
+      this.sourceImport.activeDocument()?.id === documentId
+    );
+  }
+
+  private nonEmptyValues(values: string[]): string[] {
+    return values
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0);
+  }
+
+  private hasText(value: string | null): boolean {
+    return this.trimmedValue(value).length > 0;
+  }
+
+  private trimmedValue(value: string | null): string {
+    return value?.trim() ?? '';
+  }
+
+  private hasEvidence(draft: QuestionDraftRead): boolean {
+    return draft.citation_page !== null || this.hasText(draft.source_excerpt);
   }
 
   private summarizeDraftJobs(jobs: DraftGenerationJobRead[]): DraftJobSummary {

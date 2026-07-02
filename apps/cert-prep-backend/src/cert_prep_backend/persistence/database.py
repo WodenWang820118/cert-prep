@@ -245,6 +245,27 @@ MIGRATIONS: Final[tuple[tuple[int, str], ...]] = (
             ON draft_generation_jobs(status, updated_at);
         """,
     ),
+    (
+        13,
+        """
+        CREATE TABLE practice_session_questions (
+            session_id TEXT NOT NULL REFERENCES practice_sessions(id) ON DELETE CASCADE,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            question_id TEXT NOT NULL,
+            question_order INTEGER NOT NULL,
+            question TEXT NOT NULL,
+            choices_json TEXT NOT NULL,
+            correct_answer TEXT,
+            rationale TEXT,
+            citation_page INTEGER,
+            source_excerpt TEXT,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (session_id, question_id)
+        );
+        CREATE INDEX idx_practice_session_questions_project
+            ON practice_session_questions(project_id, session_id, question_order);
+        """,
+    ),
 )
 
 

@@ -7,6 +7,7 @@ from cert_prep_backend.domains.practice.models import (
     PracticeAttempt,
     PracticeQuestion,
     PracticeSession,
+    QuestionDraftStatus,
     WrongAnswer,
 )
 
@@ -21,6 +22,26 @@ SELECTED_ANSWER_NOT_AVAILABLE_MESSAGE = "Selected answer is not one of the avail
 
 class PracticeRuleViolation(ValueError):
     pass
+
+
+def is_playable_practice_question(question: PracticeQuestion) -> bool:
+    if question.status is not QuestionDraftStatus.APPROVED:
+        return False
+    if not question.question.strip():
+        return False
+
+    nonempty_choices = [choice.strip() for choice in question.choices if choice.strip()]
+    if len(nonempty_choices) < 2:
+        return False
+
+    correct_answer = (question.correct_answer or "").strip()
+    if not correct_answer or correct_answer not in nonempty_choices:
+        return False
+
+    if not (question.rationale or "").strip():
+        return False
+
+    return question.citation_page is not None or bool((question.source_excerpt or "").strip())
 
 
 def select_session_question_ids(

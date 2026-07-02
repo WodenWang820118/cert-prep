@@ -31,6 +31,12 @@ describe('PracticeStore session modes', () => {
       status: 'rejected',
       rejection_reason: 'No supported answer.',
     }),
+    editableQuestion('draft-5', documents[0].id, { question: '   ' }),
+    editableQuestion('draft-6', documents[1].id, { answer: 'C' }),
+    editableQuestion('draft-7', documents[1].id, {
+      citation_page: null,
+      source_excerpt: null,
+    }),
   ];
   const session: PracticeSessionRead = {
     id: 'session-1',
@@ -68,6 +74,8 @@ describe('PracticeStore session modes', () => {
     const store = TestBed.inject(PracticeStore);
     store.setSelectedDocumentId(documents[1].id);
 
+    expect(store.selectedDocumentQuestionCount()).toBe(2);
+
     await store.createPracticeSession('full_document');
 
     expect(apiClient.createPracticeSession).toHaveBeenCalledWith(project.id, {
@@ -81,9 +89,25 @@ describe('PracticeStore session modes', () => {
     );
   });
 
-  it('sends a random-draw payload capped to editable question count', async () => {
+  it('defaults full-document sessions to the active document when playable', async () => {
+    const store = TestBed.inject(PracticeStore);
+    TestBed.inject(SourceImportStore).setActiveDocumentId(documents[1].id);
+
+    await store.createPracticeSession('full_document');
+
+    expect(apiClient.createPracticeSession).toHaveBeenCalledWith(project.id, {
+      mode: 'full_document',
+      document_id: documents[1].id,
+      question_count: 2,
+    });
+  });
+
+  it('sends a random-draw payload capped to playable question count', async () => {
     const store = TestBed.inject(PracticeStore);
     store.setSessionQuestionCount(10);
+
+    expect(store.questionCount()).toBe(3);
+    expect(store.effectiveRandomQuestionCount()).toBe(3);
 
     await store.createPracticeSession('random_draw');
 
@@ -93,7 +117,7 @@ describe('PracticeStore session modes', () => {
     });
   });
 
-  it('excludes non-approved drafts from practice availability', async () => {
+  it('excludes non-playable drafts from practice availability', async () => {
     const store = TestBed.inject(PracticeStore);
     store.setSelectedDocumentId(documents[1].id);
 
@@ -115,6 +139,19 @@ describe('PracticeStore session modes', () => {
       ...session,
       id: 'session-rejected',
       question_ids: ['draft-4'],
+      question_count: 1,
+    });
+
+    expect(store.activeQuestion()).toBeNull();
+    expect(store.sessionComplete()).toBe(false);
+  });
+
+  it('does not surface an incomplete approved in-session draft as active', () => {
+    const store = TestBed.inject(PracticeStore);
+    store.practiceSession.set({
+      ...session,
+      id: 'session-incomplete',
+      question_ids: ['draft-5'],
       question_count: 1,
     });
 

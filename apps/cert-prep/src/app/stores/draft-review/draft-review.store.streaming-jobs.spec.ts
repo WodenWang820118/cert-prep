@@ -55,7 +55,8 @@ describe('DraftReviewStore streaming jobs', () => {
       ],
     });
 
-    sourceImport.uploadedDocument.set(
+    activateDocument(
+      sourceImport,
       documentRead({ status: 'processing', chunks_count: 1 }),
     );
     TestBed.tick();
@@ -77,7 +78,7 @@ describe('DraftReviewStore streaming jobs', () => {
       }),
     );
 
-    sourceImport.uploadedDocument.set(documentRead({ status: 'ready' }));
+    activateDocument(sourceImport, documentRead({ status: 'ready' }));
     TestBed.tick();
     await Promise.resolve();
   });
@@ -89,7 +90,8 @@ describe('DraftReviewStore streaming jobs', () => {
     apiClient.listQuestionDrafts.mockResolvedValue({ items: [draft] });
     apiClient.listDocumentDraftJobs.mockRejectedValue(new Error('jobs offline'));
 
-    sourceImport.uploadedDocument.set(
+    activateDocument(
+      sourceImport,
       documentRead({ status: 'processing', chunks_count: 1 }),
     );
     TestBed.tick();
@@ -113,7 +115,8 @@ describe('DraftReviewStore streaming jobs', () => {
       ],
     });
 
-    sourceImport.uploadedDocument.set(
+    activateDocument(
+      sourceImport,
       documentRead({ status: 'processing', chunks_count: 1 }),
     );
     TestBed.tick();
@@ -129,6 +132,40 @@ describe('DraftReviewStore streaming jobs', () => {
     );
   });
 
+  it('ignores stale draft job responses after the active document changes', async () => {
+    const store = TestBed.inject(DraftReviewStore);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    const firstDocument = documentRead({
+      id: 'document-1',
+      status: 'processing',
+      chunks_count: 1,
+    });
+    const secondDocument = documentRead({
+      id: 'document-2',
+      filename: 'second.pdf',
+      status: 'ready',
+    });
+    const draftJobs = deferred<{
+      items: ReturnType<typeof draftJob>[];
+    }>();
+    apiClient.listQuestionDrafts.mockResolvedValue({ items: [] });
+    apiClient.listDocumentDraftJobs.mockReturnValueOnce(draftJobs.promise);
+
+    activateDocument(sourceImport, firstDocument, [firstDocument, secondDocument]);
+    TestBed.tick();
+    await Promise.resolve();
+
+    activateDocument(sourceImport, secondDocument, [firstDocument, secondDocument]);
+    TestBed.tick();
+    draftJobs.resolve({
+      items: [draftJob({ document_id: firstDocument.id, status: 'running' })],
+    });
+    await draftJobs.promise;
+    await Promise.resolve();
+
+    expect(store.draftJobs()).toEqual([]);
+  });
+
   it('retries skipped streaming question jobs for the current document', async () => {
     const store = TestBed.inject(DraftReviewStore);
     const sourceImport = TestBed.inject(SourceImportStore);
@@ -142,7 +179,7 @@ describe('DraftReviewStore streaming jobs', () => {
       generated_count: 1,
       retry_count: 1,
     });
-    sourceImport.uploadedDocument.set(documentRead());
+    activateDocument(sourceImport, documentRead());
     store.draftJobs.set([skippedJob]);
     apiClient.retryDocumentDraftJobs.mockResolvedValue({ items: [succeededJob] });
     apiClient.listQuestionDrafts.mockResolvedValue({ items: [draft] });
@@ -158,3 +195,23 @@ describe('DraftReviewStore streaming jobs', () => {
     expect(apiClient.getDocument).toHaveBeenCalledWith('project-1', 'document-1');
   });
 });
+
+function activateDocument(
+  sourceImport: SourceImportStore,
+  document: ReturnType<typeof documentRead>,
+  documents: ReturnType<typeof documentRead>[] = [document],
+): void {
+  sourceImport.documents.set(documents);
+  sourceImport.setActiveDocumentId(document.id);
+}
+
+function deferred<T>(): {
+  readonly promise: Promise<T>;
+  readonly resolve: (value: T) => void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolver) => {
+    resolve = resolver;
+  });
+  return { promise, resolve };
+}

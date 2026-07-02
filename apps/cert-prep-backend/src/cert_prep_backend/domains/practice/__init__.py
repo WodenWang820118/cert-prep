@@ -17,6 +17,7 @@ from cert_prep_backend.domains.practice.policies import (
     current_wrong_answers,
     ensure_question_belongs_to_session,
     ensure_selected_answer_is_available,
+    is_playable_practice_question,
     select_random_session_question_ids,
     select_session_question_ids,
 )
@@ -38,6 +39,7 @@ __all__ = [
     "current_wrong_answers",
     "ensure_question_belongs_to_session",
     "ensure_selected_answer_is_available",
+    "is_playable_practice_question",
     "select_random_session_question_ids",
     "select_session_question_ids",
 ]

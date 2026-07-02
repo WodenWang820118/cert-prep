@@ -43,7 +43,7 @@ describe('DraftReviewStore generation', () => {
     const store = TestBed.inject(DraftReviewStore);
     const sourceImport = TestBed.inject(SourceImportStore);
     const draft = questionDraft();
-    sourceImport.uploadedDocument.set(documentRead());
+    activateDocument(sourceImport, documentRead());
     apiClient.generateDocumentDrafts.mockResolvedValue({ items: [draft] });
     apiClient.listQuestionDrafts.mockResolvedValue({ items: [draft] });
 
@@ -65,7 +65,7 @@ describe('DraftReviewStore generation', () => {
     const sourceImport = TestBed.inject(SourceImportStore);
     const draft = questionDraft();
     store.setQuestionLimit(8);
-    sourceImport.uploadedDocument.set(documentRead());
+    activateDocument(sourceImport, documentRead());
     apiClient.generateDocumentDrafts.mockResolvedValue({ items: [draft] });
     apiClient.listQuestionDrafts.mockResolvedValue({ items: [draft] });
 
@@ -82,3 +82,11 @@ describe('DraftReviewStore generation', () => {
     );
   });
 });
+
+function activateDocument(
+  sourceImport: SourceImportStore,
+  document: ReturnType<typeof documentRead>,
+): void {
+  sourceImport.documents.set([document]);
+  sourceImport.setActiveDocumentId(document.id);
+}

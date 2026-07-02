@@ -12,6 +12,7 @@ from cert_prep_backend.domains.practice import (
     QuestionDraftStatus,
     build_practice_attempt,
     current_wrong_answers,
+    is_playable_practice_question,
     select_session_question_ids,
 )
 
@@ -49,6 +50,85 @@ def test_select_session_questions_preserves_playable_order_and_requires_question
         select_session_question_ids([], 10)
 
     assert str(exc_info.value) == NO_PLAYABLE_QUESTIONS_MESSAGE
+
+
+def test_playable_practice_question_requires_complete_approved_grounded_content() -> None:
+    question = PracticeQuestion(
+        id="question-1",
+        question="Which access model should be applied?",
+        choices=("Use least privilege", "Allow unrestricted access"),
+        correct_answer="Use least privilege",
+        rationale="The document says permissions should remain scoped.",
+        citation_page=1,
+    )
+
+    assert is_playable_practice_question(question) is True
+    assert (
+        is_playable_practice_question(
+            PracticeQuestion(
+                id="question-2",
+                question="   ",
+                choices=question.choices,
+                correct_answer=question.correct_answer,
+                rationale=question.rationale,
+                citation_page=question.citation_page,
+            )
+        )
+        is False
+    )
+    assert (
+        is_playable_practice_question(
+            PracticeQuestion(
+                id="question-3",
+                question=question.question,
+                choices=("Use least privilege", "   "),
+                correct_answer=question.correct_answer,
+                rationale=question.rationale,
+                citation_page=question.citation_page,
+            )
+        )
+        is False
+    )
+    assert (
+        is_playable_practice_question(
+            PracticeQuestion(
+                id="question-4",
+                question=question.question,
+                choices=question.choices,
+                correct_answer="Missing answer",
+                rationale=question.rationale,
+                citation_page=question.citation_page,
+            )
+        )
+        is False
+    )
+    assert (
+        is_playable_practice_question(
+            PracticeQuestion(
+                id="question-5",
+                question=question.question,
+                choices=question.choices,
+                correct_answer=question.correct_answer,
+                rationale=" ",
+                citation_page=question.citation_page,
+            )
+        )
+        is False
+    )
+    assert (
+        is_playable_practice_question(
+            PracticeQuestion(
+                id="question-6",
+                question=question.question,
+                choices=question.choices,
+                correct_answer=question.correct_answer,
+                rationale=question.rationale,
+                citation_page=None,
+                source_excerpt="",
+            )
+        )
+        is False
+    )
 
 
 def test_practice_attempt_policy_validates_membership_and_grades_answer() -> None:

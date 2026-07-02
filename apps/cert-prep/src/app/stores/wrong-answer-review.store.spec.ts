@@ -1,8 +1,9 @@
 import { TestBed } from '@angular/core/testing';
 import {
   CERT_PREP_API,
-  ProjectRead,
-  WrongAnswerRead,
+  type ProjectRead,
+  type WrongAnswerExplanationRead,
+  type WrongAnswerRead,
 } from '../cert-prep-api';
 import { OperationStore } from './operation.store';
 import { ProjectStore } from './project.store';
@@ -28,12 +29,36 @@ describe('WrongAnswerReviewStore', () => {
     source_excerpt: 'Relevant source excerpt.',
     created_at: '2026-06-23T00:00:00Z',
   };
-  const apiClient = {
-    listWrongAnswers: vi.fn(),
+  const explanationResponse = (
+    explanation: string,
+    fallback: boolean,
+  ): WrongAnswerExplanationRead => ({
+    attempt_id: wrongAnswer.attempt_id,
+    explanation,
+    provider: 'ollama',
+    model: 'qwen3.5:4b',
+    fallback,
+    grounded_fields: {
+      question: wrongAnswer.question,
+      selected_answer: wrongAnswer.selected_answer,
+      correct_answer: wrongAnswer.correct_answer,
+      rationale: wrongAnswer.rationale,
+      citation_page: wrongAnswer.citation_page,
+      source_excerpt: wrongAnswer.source_excerpt,
+    },
+  });
+  let apiClient: {
+    listWrongAnswers: ReturnType<typeof vi.fn>;
+    explainWrongAnswer: ReturnType<typeof vi.fn>;
   };
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    apiClient = {
+      listWrongAnswers: vi.fn(),
+      explainWrongAnswer: vi
+        .fn()
+        .mockRejectedValue(new Error('AI provider unavailable')),
+    };
     TestBed.configureTestingModule({
       providers: [{ provide: CERT_PREP_API, useValue: apiClient }],
     });
@@ -75,5 +100,92 @@ describe('WrongAnswerReviewStore', () => {
     expect(apiClient.listWrongAnswers).toHaveBeenCalledWith(project.id);
     expect(store.wrongAnswers()).toEqual([wrongAnswer]);
     expect(operations.status()).toBe('Review refreshed');
+  });
+
+  it('tracks per-attempt loading and AI explanation results', async () => {
+    let resolveExplanation:
+      | ((value: WrongAnswerExplanationRead) => void)
+      | undefined;
+    apiClient.explainWrongAnswer = vi.fn(
+      () =>
+        new Promise<WrongAnswerExplanationRead>((resolve) => {
+          resolveExplanation = resolve;
+        }),
+    );
+    const store = TestBed.inject(WrongAnswerReviewStore);
+
+    const request = store.discussMistake(wrongAnswer);
+
+    expect(apiClient.explainWrongAnswer).toHaveBeenCalledWith(
+      project.id,
+      wrongAnswer.attempt_id,
+    );
+    expect(store.explanationFor(wrongAnswer.attempt_id)).toEqual({
+      loading: true,
+      result: null,
+      error: null,
+      fallback: false,
+    });
+
+    resolveExplanation?.(
+      explanationResponse('AI explanation grounded in the source.', false),
+    );
+    await request;
+
+    expect(store.explanationFor(wrongAnswer.attempt_id)).toEqual({
+      loading: false,
+      result: 'AI explanation grounded in the source.',
+      error: null,
+      fallback: false,
+    });
+  });
+
+  it('preserves backend fallback flags on successful explanations', async () => {
+    apiClient.explainWrongAnswer.mockResolvedValue(
+      explanationResponse('Backend fallback grounded in the source.', true),
+    );
+    const store = TestBed.inject(WrongAnswerReviewStore);
+
+    await store.discussMistake(wrongAnswer);
+
+    expect(store.explanationFor(wrongAnswer.attempt_id)).toEqual({
+      loading: false,
+      result: 'Backend fallback grounded in the source.',
+      error: null,
+      fallback: true,
+    });
+  });
+
+  it('uses grounded fallback copy when the AI explanation request is rejected', async () => {
+    const store = TestBed.inject(WrongAnswerReviewStore);
+
+    await store.discussMistake(wrongAnswer);
+
+    expect(store.explanationFor(wrongAnswer.attempt_id)).toEqual({
+      loading: false,
+      result:
+        'You chose B, but the recorded correct answer is A. The rationale says: The citation supports A. The source on page 3 says: Relevant source excerpt.',
+      error: 'AI provider unavailable',
+      fallback: true,
+    });
+  });
+
+  it('keeps refresh and clearing available after AI explanation failure', async () => {
+    apiClient.explainWrongAnswer = vi
+      .fn()
+      .mockRejectedValue(new Error('AI provider unavailable'));
+    apiClient.listWrongAnswers.mockResolvedValue({ items: [wrongAnswer] });
+    const store = TestBed.inject(WrongAnswerReviewStore);
+
+    await store.discussMistake(wrongAnswer);
+    await store.refresh();
+
+    expect(apiClient.listWrongAnswers).toHaveBeenCalledWith(project.id);
+    expect(store.wrongAnswers()).toEqual([wrongAnswer]);
+
+    store.reset();
+
+    expect(store.wrongAnswers()).toEqual([]);
+    expect(store.explanations()).toEqual({});
   });
 });

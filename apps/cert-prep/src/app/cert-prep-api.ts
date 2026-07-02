@@ -32,6 +32,7 @@ export type {
   RuntimeRequirementKind,
   RuntimeRequirementRead,
   RuntimeRequirementsRead,
+  WrongAnswerExplanationRead,
   WrongAnswerList,
   WrongAnswerRead,
 } from '@cert-prep/api';

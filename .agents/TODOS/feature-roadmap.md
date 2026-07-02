@@ -2,6 +2,9 @@
 
 Date: 2026-07-02
 
+Status: Priority TODOs completed on 2026-07-02. Keep this file active only for
+the Additional Product TODOs below.
+
 ## Purpose
 
 This TODO tracks the next product-feature slices after the UI/function audit.
@@ -11,22 +14,26 @@ review, AI explanation, multi-PDF workflows, and project isolation.
 
 ## Current State
 
-- The existing Playwright flow covers one mocked project, one PDF, one playable
-  draft, Random Quiz, one wrong attempt, and Review navigation.
-- Practice supports Random Quiz and Full Exam modes. Full Exam already builds
-  payloads from a selected ready document with playable question counts.
-- Backend documents, chunks, drafts, practice sessions, and wrong answers are
-  structurally project-scoped, and uploaded PDFs are stored under a project
-  upload directory.
-- The frontend `SourceImportStore` keeps a document list, but the Source PDF
-  and Draft Review surfaces still behave like a latest/current-document
-  workbench rather than a visible project document library.
-- Wrong Answers review displays current wrong answers, rationale, and source
-  evidence. There is no AI mistake-discussion API, store state, or UI yet.
+- Playwright now covers completing all playable Random Quiz questions,
+  completing Full Exam for a selected document, excluding incomplete
+  approved-looking drafts, wrong-answer AI/fallback review, multi-PDF Full Exam
+  isolation, and project-switch state clearing.
+- Practice supports Random Quiz and Full Exam modes using the shared playable
+  predicate: approved question text, at least two nonempty choices, answer in
+  choices, rationale, and citation page or source excerpt evidence.
+- Source PDF, Draft Review, and Full Exam now share explicit active document
+  selection. Draft Review defaults to active-document questions and displays
+  active/project counts.
+- Wrong Answers review includes per-card grounded AI explanation with
+  deterministic fallback when local AI is unavailable.
+- Backend project-isolation regressions cover documents, chunks, drafts,
+  practice sessions, attempts, wrong answers, and wrong-answer explanations.
 
-## Priority TODOs
+## Completed Priority TODOs
 
 ### 1. Complete parsed-question practice e2e
+
+Status: Completed 2026-07-02.
 
 Goal: every parsed/generated playable question can be answered end to end.
 
@@ -54,6 +61,8 @@ Likely touchpoints:
 
 ### 2. Wrong-answer review plus AI explanation
 
+Status: Completed 2026-07-02.
+
 Goal: reviewing mistakes stays deterministic, while AI provides optional
 grounded help.
 
@@ -80,6 +89,8 @@ Likely touchpoints:
 - `apps/cert-prep/src/app/components/wrong-answer-review/*`
 
 ### 3. Multiple PDFs per project and project isolation
+
+Status: Completed 2026-07-02.
 
 Goal: one project can intentionally work with multiple PDFs, while projects
 remain isolated.
@@ -112,6 +123,22 @@ Likely touchpoints:
 - `apps/cert-prep-backend/tests/test_question_drafts.py`
 - `apps/cert-prep-backend/tests/test_practice.py`
 
+## Completion Evidence
+
+- Backend: `pnpm nx run cert-prep-backend:test --skip-nx-cache` passed 172
+  tests; `pnpm nx run cert-prep-backend:lint --skip-nx-cache` passed.
+- Frontend: `pnpm nx run cert-prep:test --skip-nx-cache` passed 103 tests;
+  `pnpm nx run cert-prep:lint --skip-nx-cache` passed.
+- API client: `cert-prep-api` lint, typecheck, and Vitest passed after OpenAPI
+  generation.
+- E2E: `pnpm nx run cert-prep-e2e:e2e --skip-nx-cache` passed 15 tests across
+  Chromium, Firefox, and WebKit; lint passed.
+- Build: `pnpm nx run cert-prep:build` passed with warning-only bundle/CSS
+  budgets.
+- Recordings: Chromium videos were generated in
+  `dist/.playwright/apps/cert-prep-e2e/recordings/` for
+  `practice-complete`, `wrong-answer-ai`, and `multi-pdf-isolation`.
+
 ## Additional Product TODOs
 
 - Add a review retry loop: retry one wrong question or start a Review Quiz from
@@ -121,6 +148,11 @@ Likely touchpoints:
 - Decide whether the disabled "Mark for review" practice action becomes a real
   saved flag or is removed. If promoted, separate user-flagged items from
   incorrect-attempt items in Review.
+- Completed 2026-07-02: add session-time question snapshots for grading and
+  wrong-answer review. New practice sessions persist selected playable question
+  fields, attempts grade from that snapshot with a live-draft fallback for
+  older sessions, and targeted backend practice/migration tests plus backend
+  lint passed.
 - Decide whether wrong-answer responses should include `document_id` and
   filename for per-PDF grouping/filtering.
 

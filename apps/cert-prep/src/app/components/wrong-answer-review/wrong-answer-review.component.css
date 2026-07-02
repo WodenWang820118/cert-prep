@@ -32,21 +32,12 @@
   line-height: 1.5rem;
 }
 
-.review-refresh-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 2.25rem;
+.review-refresh-button,
+.ai-discuss-button {
   gap: 0.5rem;
-  border: 1px solid var(--workbench-border);
-  border-radius: 5px;
-  background: var(--workbench-surface);
-  padding: 0.5rem 0.875rem;
+  padding-inline: 0.875rem;
   color: var(--workbench-text);
   font-size: 0.875rem;
-  font-weight: 700;
-  letter-spacing: 0;
-  cursor: pointer;
 }
 
 .review-refresh-button:hover:not(:disabled) {
@@ -118,7 +109,8 @@
 
 .answer-panel span,
 .review-rationale h4,
-.review-source h4 {
+.review-source h4,
+.ai-explanation h4 {
   margin: 0;
   color: var(--workbench-muted);
   font-size: 0.75rem;
@@ -132,7 +124,8 @@
 .review-rationale p,
 .review-source p,
 .empty-review-state p,
-.review-footnote {
+.review-footnote,
+.ai-explanation p {
   margin: 0;
   color: var(--workbench-text);
   font-size: 0.9375rem;
@@ -173,7 +166,8 @@
 }
 
 .review-rationale,
-.review-source {
+.review-source,
+.ai-review {
   display: grid;
   gap: 0.375rem;
   border-top: 1px solid var(--workbench-border-soft);
@@ -189,6 +183,44 @@
 
 .review-source p {
   color: var(--workbench-muted);
+}
+
+.ai-review {
+  gap: 0.75rem;
+}
+
+.ai-discuss-button {
+  width: fit-content;
+  border-color: var(--workbench-primary-border);
+  background: #f5f8ff;
+}
+
+.ai-discuss-button:hover:not(:disabled) {
+  background: #eef3ff;
+}
+
+.ai-discuss-button:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.ai-explanation {
+  display: grid;
+  gap: 0.375rem;
+  border: 1px solid var(--workbench-primary-border);
+  border-radius: 6px;
+  background: #f5f8ff;
+  padding: 0.75rem;
+}
+
+.ai-explanation.is-fallback {
+  border-color: #ffd89d;
+  background: #fff9ef;
+}
+
+p.ai-explanation-note {
+  color: var(--workbench-muted);
+  font-size: 0.8125rem;
 }
 
 .empty-review-state {
@@ -215,7 +247,8 @@
     flex-direction: column;
   }
 
-  .review-refresh-button {
+  .review-refresh-button,
+  .ai-discuss-button {
     width: 100%;
   }
 

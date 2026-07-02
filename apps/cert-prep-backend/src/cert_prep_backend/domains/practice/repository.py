@@ -10,12 +10,14 @@ from cert_prep_backend.domains.practice.models import (
     PracticeQuestion,
     PracticeSession,
     PracticeSessionMode,
+    WrongAnswer,
 )
 from cert_prep_backend.domains.practice.policies import (
     DOCUMENT_REQUIRED_FOR_FULL_DOCUMENT_MESSAGE,
     PracticeRuleViolation,
     build_practice_attempt,
     current_wrong_answers,
+    is_playable_practice_question,
     select_random_session_question_ids,
     select_session_question_ids,
 )
@@ -94,6 +96,14 @@ def create_session(
                 now,
             ),
         )
+        _insert_session_question_snapshots(
+            connection,
+            session_id=session_id,
+            project_id=project_id,
+            question_rows=question_rows,
+            question_ids=question_ids,
+            created_at=now,
+        )
         row = _session_query(connection, project_id, session_id)
     if row is None:
         raise NotFoundError("Practice session not found.")
@@ -116,35 +126,22 @@ def record_attempt(
     question_id: str,
     selected_answer: str,
 ) -> dict:
-    session_record = get_session(db, project_id, session_id)
-    session = PracticeSession(
-        id=session_record["id"],
-        project_id=session_record["project_id"],
-        question_ids=tuple(session_record["question_ids"]),
-        status=session_record["status"],
-        mode=session_record["mode"],
-        source_document_id=session_record["document_id"],
-        requested_question_count=session_record["question_count"],
-        random_seed=session_record["random_seed"],
-        created_at=session_record["created_at"],
-        completed_at=session_record["completed_at"],
-    )
-
     now = utc_now()
     attempt_id = str(uuid4())
     with db.connect() as connection:
-        question = connection.execute(
-            """
-            SELECT *
-            FROM question_drafts
-            WHERE project_id = ? AND id = ? AND status = 'approved'
-            """,
-            (project_id, question_id),
-        ).fetchone()
-        if question is None:
+        connection.execute("BEGIN IMMEDIATE")
+        session_row = _session_query(connection, project_id, session_id)
+        if session_row is None:
+            raise NotFoundError("Practice session not found.")
+        session = _practice_session_from_row(session_row)
+        practice_question = _practice_question_for_attempt(
+            connection,
+            project_id=project_id,
+            session_id=session_id,
+            question_id=question_id,
+        )
+        if practice_question is None:
             raise NotFoundError("Playable question not found.")
-
-        practice_question = _practice_question_from_row(question)
         try:
             attempt = build_practice_attempt(
                 attempt_id=attempt_id,
@@ -182,37 +179,154 @@ def record_attempt(
 
 
 def list_wrong_answers(db: Database, project_id: str) -> list[dict]:
-    ensure_project_exists(db, project_id)
     with db.connect() as connection:
-        rows = connection.execute(
-            """
-            SELECT
-                practice_attempts.id AS attempt_id,
-                practice_attempts.session_id,
-                practice_attempts.question_id,
-                practice_attempts.selected_answer,
-                practice_attempts.is_correct,
-                practice_attempts.created_at,
-                question_drafts.question,
-                question_drafts.choices_json,
-                question_drafts.answer AS correct_answer,
-                question_drafts.rationale,
-                question_drafts.citation_page,
-                question_drafts.source_excerpt
-            FROM practice_attempts
-            JOIN question_drafts ON question_drafts.id = practice_attempts.question_id
-            WHERE practice_attempts.project_id = ?
-            ORDER BY practice_attempts.created_at DESC
-            """,
-            (project_id,),
-        ).fetchall()
+        _ensure_project_exists(connection, project_id)
+        rows = _wrong_answer_rows(connection, project_id)
 
+    return [wrong_answer.to_record() for wrong_answer in _current_wrong_answers(project_id, rows)]
+
+
+def get_current_wrong_answer(db: Database, project_id: str, attempt_id: str) -> WrongAnswer:
+    with db.connect() as connection:
+        _ensure_project_exists(connection, project_id)
+        rows = _wrong_answer_rows_for_attempt(connection, project_id, attempt_id)
+
+    for wrong_answer in _current_wrong_answers(project_id, rows):
+        if wrong_answer.attempt_id == attempt_id:
+            return wrong_answer
+    raise NotFoundError("Wrong answer not found.")
+
+
+def _wrong_answer_rows(connection, project_id: str) -> list[Row]:
+    return connection.execute(
+        """
+        SELECT
+            practice_attempts.id AS attempt_id,
+            practice_attempts.session_id,
+            practice_attempts.question_id,
+            practice_attempts.selected_answer,
+            practice_attempts.is_correct,
+            practice_attempts.created_at,
+            CASE
+                WHEN practice_session_questions.question_id IS NOT NULL
+                THEN practice_session_questions.question
+                ELSE question_drafts.question
+            END AS question,
+            CASE
+                WHEN practice_session_questions.question_id IS NOT NULL
+                THEN practice_session_questions.choices_json
+                ELSE question_drafts.choices_json
+            END AS choices_json,
+            CASE
+                WHEN practice_session_questions.question_id IS NOT NULL
+                THEN practice_session_questions.correct_answer
+                ELSE question_drafts.answer
+            END AS correct_answer,
+            CASE
+                WHEN practice_session_questions.question_id IS NOT NULL
+                THEN practice_session_questions.rationale
+                ELSE question_drafts.rationale
+            END AS rationale,
+            CASE
+                WHEN practice_session_questions.question_id IS NOT NULL
+                THEN practice_session_questions.citation_page
+                ELSE question_drafts.citation_page
+            END AS citation_page,
+            CASE
+                WHEN practice_session_questions.question_id IS NOT NULL
+                THEN practice_session_questions.source_excerpt
+                ELSE question_drafts.source_excerpt
+            END AS source_excerpt
+        FROM practice_attempts
+        LEFT JOIN practice_session_questions
+            ON practice_session_questions.project_id = practice_attempts.project_id
+            AND practice_session_questions.session_id = practice_attempts.session_id
+            AND practice_session_questions.question_id = practice_attempts.question_id
+        LEFT JOIN question_drafts
+            ON question_drafts.project_id = practice_attempts.project_id
+            AND question_drafts.id = practice_attempts.question_id
+        WHERE practice_attempts.project_id = ?
+            AND (
+                practice_session_questions.question_id IS NOT NULL
+                OR question_drafts.id IS NOT NULL
+            )
+        ORDER BY practice_attempts.created_at DESC
+        """,
+        (project_id,),
+    ).fetchall()
+
+
+def _wrong_answer_rows_for_attempt(connection, project_id: str, attempt_id: str) -> list[Row]:
+    return connection.execute(
+        """
+        WITH target_attempt AS (
+            SELECT question_id, created_at
+            FROM practice_attempts
+            WHERE project_id = ? AND id = ?
+        )
+        SELECT
+            practice_attempts.id AS attempt_id,
+            practice_attempts.session_id,
+            practice_attempts.question_id,
+            practice_attempts.selected_answer,
+            practice_attempts.is_correct,
+            practice_attempts.created_at,
+            CASE
+                WHEN practice_session_questions.question_id IS NOT NULL
+                THEN practice_session_questions.question
+                ELSE question_drafts.question
+            END AS question,
+            CASE
+                WHEN practice_session_questions.question_id IS NOT NULL
+                THEN practice_session_questions.choices_json
+                ELSE question_drafts.choices_json
+            END AS choices_json,
+            CASE
+                WHEN practice_session_questions.question_id IS NOT NULL
+                THEN practice_session_questions.correct_answer
+                ELSE question_drafts.answer
+            END AS correct_answer,
+            CASE
+                WHEN practice_session_questions.question_id IS NOT NULL
+                THEN practice_session_questions.rationale
+                ELSE question_drafts.rationale
+            END AS rationale,
+            CASE
+                WHEN practice_session_questions.question_id IS NOT NULL
+                THEN practice_session_questions.citation_page
+                ELSE question_drafts.citation_page
+            END AS citation_page,
+            CASE
+                WHEN practice_session_questions.question_id IS NOT NULL
+                THEN practice_session_questions.source_excerpt
+                ELSE question_drafts.source_excerpt
+            END AS source_excerpt
+        FROM target_attempt
+        JOIN practice_attempts
+            ON practice_attempts.project_id = ?
+            AND practice_attempts.question_id = target_attempt.question_id
+            AND practice_attempts.created_at >= target_attempt.created_at
+        LEFT JOIN practice_session_questions
+            ON practice_session_questions.project_id = practice_attempts.project_id
+            AND practice_session_questions.session_id = practice_attempts.session_id
+            AND practice_session_questions.question_id = practice_attempts.question_id
+        LEFT JOIN question_drafts
+            ON question_drafts.project_id = practice_attempts.project_id
+            AND question_drafts.id = practice_attempts.question_id
+        WHERE practice_session_questions.question_id IS NOT NULL
+            OR question_drafts.id IS NOT NULL
+        ORDER BY practice_attempts.created_at DESC
+        """,
+        (project_id, attempt_id, project_id),
+    ).fetchall()
+
+
+def _current_wrong_answers(project_id: str, rows: list[Row]) -> tuple[WrongAnswer, ...]:
     attempts = [_practice_attempt_from_wrong_answer_row(project_id, row) for row in rows]
-    questions = {
-        row["question_id"]: _practice_question_from_wrong_answer_row(row)
-        for row in rows
-    }
-    return [wrong_answer.to_record() for wrong_answer in current_wrong_answers(attempts, questions)]
+    questions: dict[str, PracticeQuestion] = {}
+    for row in rows:
+        questions.setdefault(row["question_id"], _practice_question_from_wrong_answer_row(row))
+    return current_wrong_answers(attempts, questions)
 
 
 def _session_query(connection, project_id: str, session_id: str) -> Row | None:
@@ -220,6 +334,12 @@ def _session_query(connection, project_id: str, session_id: str) -> Row | None:
         "SELECT * FROM practice_sessions WHERE project_id = ? AND id = ?",
         (project_id, session_id),
     ).fetchone()
+
+
+def _ensure_project_exists(connection, project_id: str) -> None:
+    row = connection.execute("SELECT 1 FROM projects WHERE id = ?", (project_id,)).fetchone()
+    if row is None:
+        raise NotFoundError("Project not found.")
 
 
 def _playable_question_rows(
@@ -230,9 +350,9 @@ def _playable_question_rows(
     document_id: str | None,
 ) -> list[Row]:
     if mode is PracticeSessionMode.FULL_DOCUMENT:
-        return connection.execute(
+        rows = connection.execute(
             """
-            SELECT id
+            SELECT *
             FROM question_drafts
             WHERE project_id = ? AND document_id = ? AND status = 'approved'
             ORDER BY
@@ -244,16 +364,107 @@ def _playable_question_rows(
             """,
             (project_id, document_id),
         ).fetchall()
+        return _playable_rows(rows)
 
-    return connection.execute(
+    rows = connection.execute(
         """
-        SELECT id
+        SELECT *
         FROM question_drafts
         WHERE project_id = ? AND status = 'approved'
         ORDER BY id
         """,
         (project_id,),
     ).fetchall()
+    return _playable_rows(rows)
+
+
+def _playable_rows(rows: list[Row]) -> list[Row]:
+    return [
+        row
+        for row in rows
+        if is_playable_practice_question(_practice_question_from_row(row))
+    ]
+
+
+def _insert_session_question_snapshots(
+    connection,
+    *,
+    session_id: str,
+    project_id: str,
+    question_rows: list[Row],
+    question_ids: tuple[str, ...],
+    created_at: str,
+) -> None:
+    rows_by_id = {row["id"]: row for row in question_rows}
+    connection.executemany(
+        """
+        INSERT INTO practice_session_questions(
+            session_id, project_id, question_id, question_order, question,
+            choices_json, correct_answer, rationale, citation_page, source_excerpt,
+            created_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+            (
+                session_id,
+                project_id,
+                question_id,
+                index,
+                rows_by_id[question_id]["question"],
+                rows_by_id[question_id]["choices_json"],
+                rows_by_id[question_id]["answer"],
+                rows_by_id[question_id]["rationale"],
+                rows_by_id[question_id]["citation_page"],
+                rows_by_id[question_id]["source_excerpt"],
+                created_at,
+            )
+            for index, question_id in enumerate(question_ids)
+        ],
+    )
+
+
+def _practice_question_for_attempt(
+    connection,
+    *,
+    project_id: str,
+    session_id: str,
+    question_id: str,
+) -> PracticeQuestion | None:
+    snapshot_row = connection.execute(
+        """
+        SELECT
+            question_id AS id,
+            choices_json,
+            correct_answer AS answer,
+            question,
+            'approved' AS status,
+            rationale,
+            citation_page,
+            source_excerpt
+        FROM practice_session_questions
+        WHERE project_id = ? AND session_id = ? AND question_id = ?
+        """,
+        (project_id, session_id, question_id),
+    ).fetchone()
+    if snapshot_row is not None:
+        return _practice_question_from_row(snapshot_row)
+
+    question_row = connection.execute(
+        """
+        SELECT *
+        FROM question_drafts
+        WHERE project_id = ? AND id = ? AND status = 'approved'
+        """,
+        (project_id, question_id),
+    ).fetchone()
+    if question_row is None:
+        return None
+
+    practice_question = _practice_question_from_row(question_row)
+    if not is_playable_practice_question(practice_question):
+        return None
+    return practice_question
 
 
 def _effective_question_count(
@@ -270,18 +481,22 @@ def _effective_question_count(
 
 
 def _session_from_row(row: Row) -> dict:
-    return {
-        "id": row["id"],
-        "project_id": row["project_id"],
-        "question_ids": json.loads(row["question_ids_json"]),
-        "mode": row["mode"],
-        "document_id": row["source_document_id"],
-        "question_count": row["requested_question_count"],
-        "random_seed": row["random_seed"],
-        "status": row["status"],
-        "created_at": row["created_at"],
-        "completed_at": row["completed_at"],
-    }
+    return _practice_session_from_row(row).to_record()
+
+
+def _practice_session_from_row(row: Row) -> PracticeSession:
+    return PracticeSession(
+        id=row["id"],
+        project_id=row["project_id"],
+        question_ids=tuple(json.loads(row["question_ids_json"])),
+        status=row["status"],
+        mode=row["mode"],
+        source_document_id=row["source_document_id"],
+        requested_question_count=row["requested_question_count"],
+        random_seed=row["random_seed"],
+        created_at=row["created_at"],
+        completed_at=row["completed_at"],
+    )
 
 
 def _attempt_from_row(row: Row) -> dict:

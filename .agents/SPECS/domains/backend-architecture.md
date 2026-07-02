@@ -21,6 +21,13 @@ SQLite, OCR, runtime installation, question generation, and practice.
   `cert_prep_backend.domains.runtime_installations` package boundary.
 - Behavior-preserving refactors should keep external Tauri command, REST, and
   generated client contracts stable unless the spec explicitly says otherwise.
+- Practice session selection and attempt lookup share the backend playable
+  predicate: approved question text, at least two nonempty choices, answer in
+  choices, rationale, and source evidence from citation page or source excerpt.
+- Wrong-answer explanation API is
+  `POST /projects/{project_id}/wrong-answers/{attempt_id}/explanation`.
+  It must re-resolve the attempt as a current wrong answer in the same project
+  before returning grounded fields, provider/model metadata, and fallback state.
 
 ## Refactor Evidence
 
@@ -36,6 +43,12 @@ SQLite, OCR, runtime installation, question generation, and practice.
 - Verification lanes for the refactor included backend pytest/ruff, Angular
   lint/test/build, desktop script typecheck/package-QA tests, cargo tests, and
   packaged production smoke.
+- The 2026-07-02 feature-roadmap slice added project-isolation regression
+  coverage for documents, chunks, question drafts, practice sessions, practice
+  attempts, wrong answers, and wrong-answer explanations. The full backend gate
+  passed with 172 pytest tests and ruff.
+- OpenAPI generation was rerun for `WrongAnswerExplanationRead` and the
+  generated `cert-prep-api` client passed lint, typecheck, and Vitest.
 
 ## Open Risks
 

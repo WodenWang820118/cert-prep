@@ -41,13 +41,13 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
             <span>
               {{
                 sourceImport.selectedFile()?.name ??
-                  sourceImport.uploadedDocument()?.filename ??
+                  sourceImport.activeDocument()?.filename ??
                   'No PDF selected'
               }}
             </span>
           </div>
           <span class="workbench-tag">
-            {{ sourceImport.uploadedDocument()?.status ?? 'Waiting' }}
+            {{ sourceImport.activeDocument()?.status ?? 'Waiting' }}
           </span>
         </div>
 
@@ -77,7 +77,24 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
           </button>
         </div>
 
-        @if (sourceImport.uploadedDocument(); as document) {
+        @if (sourceImport.documents().length > 0) {
+          <label class="workbench-field">
+            <span>Project document library</span>
+            <select
+              [ngModel]="sourceImport.activeDocumentSelectValue()"
+              (ngModelChange)="selectDocument($event)"
+            >
+              @for (document of sourceImport.documents(); track document.id) {
+                <option [value]="document.id">
+                  {{ document.filename }} - {{ document.status }} -
+                  {{ document.chunks_count }} chunks
+                </option>
+              }
+            </select>
+          </label>
+        }
+
+        @if (sourceImport.activeDocument(); as document) {
           <section
             class="grid gap-3"
             aria-live="polite"
@@ -243,6 +260,14 @@ export class SourceImportPanelComponent {
     const document = await this.sourceImport.uploadDocument();
     const project = this.projects.selectedProject();
     if (document !== null && project !== null) {
+      await this.drafts.load(project.id);
+    }
+  }
+
+  protected async selectDocument(documentId: string): Promise<void> {
+    await this.sourceImport.selectDocument(documentId);
+    const project = this.projects.selectedProject();
+    if (project !== null) {
       await this.drafts.load(project.id);
     }
   }

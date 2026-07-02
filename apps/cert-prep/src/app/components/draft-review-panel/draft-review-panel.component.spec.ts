@@ -34,7 +34,7 @@ describe('DraftReviewPanelComponent', () => {
     const drafts = TestBed.inject(DraftReviewStore);
     projects.projects.set([projectRead()]);
     projects.select('project-1');
-    sourceImport.uploadedDocument.set(documentRead());
+    activateDocument(sourceImport, documentRead());
     drafts.draftJobs.set([draftJob({ status: 'running' })]);
 
     const fixture = TestBed.createComponent(DraftReviewPanelComponent);
@@ -53,7 +53,7 @@ describe('DraftReviewPanelComponent', () => {
     const drafts = TestBed.inject(DraftReviewStore);
     projects.projects.set([projectRead()]);
     projects.select('project-1');
-    sourceImport.uploadedDocument.set(documentRead());
+    activateDocument(sourceImport, documentRead());
     drafts.draftJobs.set([draftJob({ status: 'skipped_missing_model' })]);
 
     const fixture = TestBed.createComponent(DraftReviewPanelComponent);
@@ -72,7 +72,7 @@ describe('DraftReviewPanelComponent', () => {
     const drafts = TestBed.inject(DraftReviewStore);
     projects.projects.set([projectRead()]);
     projects.select('project-1');
-    sourceImport.uploadedDocument.set(documentRead());
+    activateDocument(sourceImport, documentRead());
     drafts.drafts.set([
       questionDraft({ id: 'playable-draft' }),
       questionDraft({
@@ -86,10 +86,39 @@ describe('DraftReviewPanelComponent', () => {
     fixture.detectChanges();
 
     const text = fixture.nativeElement.textContent as string;
-    expect(text).toContain('1 playable / 2 total questions generated.');
+    expect(text).toContain('1 active playable / 2 active / 2 project total.');
     expect(text).toContain('Playable');
     expect(text).toContain('Not playable');
     expect(text).toContain('No supported answer.');
+  });
+
+  it('defaults the visible draft list to the active document', () => {
+    const projects = TestBed.inject(ProjectStore);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    const drafts = TestBed.inject(DraftReviewStore);
+    const firstDocument = documentRead({ id: 'document-1', filename: 'first.pdf' });
+    const secondDocument = documentRead({ id: 'document-2', filename: 'second.pdf' });
+    projects.projects.set([projectRead()]);
+    projects.select('project-1');
+    sourceImport.documents.set([firstDocument, secondDocument]);
+    sourceImport.setActiveDocumentId(secondDocument.id);
+    drafts.drafts.set([
+      questionDraft({ id: 'active-draft', document_id: secondDocument.id }),
+      questionDraft({
+        id: 'other-draft',
+        document_id: firstDocument.id,
+        question: 'Question from another PDF',
+      }),
+    ]);
+
+    const fixture = TestBed.createComponent(DraftReviewPanelComponent);
+    fixture.detectChanges();
+
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('1 active playable / 1 active / 2 project total.');
+    expect(text).toContain('active-draft');
+    expect(text).not.toContain('other-draft');
+    expect(text).not.toContain('Question from another PDF');
   });
 });
 
@@ -182,4 +211,12 @@ function questionDraft(
     updated_at: '2026-06-09T00:00:00Z',
     ...overrides,
   };
+}
+
+function activateDocument(
+  sourceImport: SourceImportStore,
+  document: DocumentRead,
+): void {
+  sourceImport.documents.set([document]);
+  sourceImport.setActiveDocumentId(document.id);
 }

@@ -29,6 +29,15 @@ or review flows.
 - Manual answer/rationale entry is a production fallback, not a debug-only path.
 - Full Exam and Random Quiz consume playable editable questions. Older
   approval-gated draft language is superseded.
+- A playable question requires approved status, question text, at least two
+  nonempty choices, an answer present in the choices, rationale, and either a
+  citation page or source excerpt.
+- Source PDF, Draft Review, and Full Exam share an explicit active document
+  selection. Draft Review defaults to active-document questions and shows active
+  counts against the project total.
+- Wrong-answer AI help is a per-card, single grounded explanation. Provider
+  failures fall back to deterministic copy and must not block refresh, manual
+  review, or clearing by a later correct attempt.
 
 ## Evidence
 
@@ -46,6 +55,14 @@ or review flows.
 - The 2026-06-26 packaged UI/backend/design gap audit passed mocked app e2e and
   packaged flow smoke after the smoke harness was aligned with the new
   workbench UI.
+- The 2026-07-02 feature-roadmap implementation added deterministic Playwright
+  coverage for completing every playable Random Quiz question, completing Full
+  Exam questions for the selected PDF, excluding incomplete approved-looking
+  drafts, wrong-answer AI/fallback review, two-PDF Full Exam isolation, and
+  project-switch state clearing.
+- Reference recordings were generated under
+  `dist/.playwright/apps/cert-prep-e2e/recordings/` for
+  `practice-complete`, `wrong-answer-ai`, and `multi-pdf-isolation`.
 
 ## Open Risks
 
@@ -59,3 +76,5 @@ or review flows.
 - The packaged flow smoke currently records `MOCK ITEMS 0` after manual question
   creation. Decide whether that metric is parsed/generated-only or should also
   include manually authored draft questions.
+- Bundle and component CSS warning budgets remain noisy after the feature
+  roadmap slice, although the production build gate passes.

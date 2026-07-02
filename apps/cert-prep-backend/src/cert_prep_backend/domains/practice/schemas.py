@@ -55,3 +55,21 @@ class WrongAnswerRead(BaseModel):
 
 class WrongAnswerList(BaseModel):
     items: list[WrongAnswerRead]
+
+
+class WrongAnswerGroundedFields(BaseModel):
+    question: str
+    selected_answer: str
+    correct_answer: str | None
+    rationale: str | None
+    citation_page: int | None
+    source_excerpt: str | None
+
+
+class WrongAnswerExplanationRead(BaseModel):
+    attempt_id: str
+    explanation: str
+    provider: str
+    model: str
+    grounded_fields: WrongAnswerGroundedFields
+    fallback: bool

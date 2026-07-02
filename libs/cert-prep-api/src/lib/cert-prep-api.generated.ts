@@ -51,6 +51,8 @@ export interface Components {
     RuntimeRequirementsRead: { "items": Components['schemas']['RuntimeRequirementRead'][] };
     SourceDocumentStatus: string;
     ValidationError: { "loc": (string | number)[]; "msg": string; "type": string; "input"?: unknown; "ctx"?: Record<string, unknown> };
+    WrongAnswerExplanationRead: { "attempt_id": string; "explanation": string; "provider": string; "model": string; "grounded_fields": Components['schemas']['WrongAnswerGroundedFields']; "fallback": boolean };
+    WrongAnswerGroundedFields: { "question": string; "selected_answer": string; "correct_answer": string | null; "rationale": string | null; "citation_page": number | null; "source_excerpt": string | null };
     WrongAnswerList: { "items": Components['schemas']['WrongAnswerRead'][] };
     WrongAnswerRead: { "attempt_id": string; "session_id": string; "question_id": string; "question": string; "selected_answer": string; "correct_answer": string | null; "rationale": string | null; "citation_page": number | null; "source_excerpt": string | null; "created_at": string };
   };
@@ -103,6 +105,8 @@ export type RuntimeRequirementRead = Components['schemas']['RuntimeRequirementRe
 export type RuntimeRequirementsRead = Components['schemas']['RuntimeRequirementsRead'];
 export type SourceDocumentStatus = Components['schemas']['SourceDocumentStatus'];
 export type ValidationError = Components['schemas']['ValidationError'];
+export type WrongAnswerExplanationRead = Components['schemas']['WrongAnswerExplanationRead'];
+export type WrongAnswerGroundedFields = Components['schemas']['WrongAnswerGroundedFields'];
 export type WrongAnswerList = Components['schemas']['WrongAnswerList'];
 export type WrongAnswerRead = Components['schemas']['WrongAnswerRead'];
 
@@ -139,6 +143,7 @@ export interface CertPrepGeneratedClient {
   getPracticeSession(projectId: string, sessionId: string): Promise<Components['schemas']['PracticeSessionRead']>;
   recordPracticeAttempt(projectId: string, sessionId: string, body: Components['schemas']['PracticeAttemptCreate']): Promise<Components['schemas']['PracticeAttemptRead']>;
   listWrongAnswers(projectId: string): Promise<Components['schemas']['WrongAnswerList']>;
+  explainWrongAnswer(projectId: string, attemptId: string): Promise<Components['schemas']['WrongAnswerExplanationRead']>;
   llmHealth(): Promise<Components['schemas']['LLMHealthRead']>;
   llmProfiles(): Promise<Components['schemas']['OllamaProfilesRead']>;
   llmProfileSelection(): Promise<Components['schemas']['OllamaProfileSelectionRead']>;
@@ -195,6 +200,8 @@ export function createCertPrepGeneratedClient(
       transport.request<Components['schemas']['PracticeAttemptRead']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/practice-sessions/${encodeURIComponent(sessionId)}/attempts`, body }),
     listWrongAnswers: (projectId: string) =>
       transport.request<Components['schemas']['WrongAnswerList']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/wrong-answers` }),
+    explainWrongAnswer: (projectId: string, attemptId: string) =>
+      transport.request<Components['schemas']['WrongAnswerExplanationRead']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/wrong-answers/${encodeURIComponent(attemptId)}/explanation` }),
     llmHealth: () =>
       transport.request<Components['schemas']['LLMHealthRead']>({ method: 'GET' as const, path: "/llm/health" }),
     llmProfiles: () =>
