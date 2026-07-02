@@ -153,6 +153,7 @@ export async function runPackagedFlowSmokeCli(argv: readonly string[] = process.
     appExit: null,
     nvidia: null,
     resourceSampling: null,
+    videoRecording: null,
     browser: null,
     page: null,
     port: parsedOptions.cdpPort,

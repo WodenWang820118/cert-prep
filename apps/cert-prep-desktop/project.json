@@ -150,6 +150,17 @@
         "command": "node apps/cert-prep-desktop/scripts/packaged-flow-smoke.mts --production-summary --allow-ocr-chunk-variance --ocr-provider windowsml --ocr-page-workers 1 --llm-provider fastflowlm --llm-model qwen3.5:4b --llm-fallback-models qwen3.5:2b --streaming-draft-page-limit 1 --streaming-draft-workers 1 --wait-for-streaming-complete --verify-streaming-practice-ready"
       }
     },
+    "packaged-streaming-production-recorded-windowsml": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "dependsOn": ["build-windowsml"],
+      "outputs": [
+        "{workspaceRoot}/tmp/cert-prep-desktop/packaged-streaming-production-recorded"
+      ],
+      "options": {
+        "command": "node apps/cert-prep-desktop/scripts/packaged-flow-smoke.mts --production-summary --allow-ocr-chunk-variance --ocr-provider windowsml --ocr-page-workers 1 --llm-provider fastflowlm --llm-model qwen3.5:4b --llm-fallback-models qwen3.5:2b --streaming-draft-page-limit 1 --streaming-draft-workers 1 --wait-for-streaming-complete --verify-streaming-practice-ready --record-video --out-root tmp/cert-prep-desktop/packaged-streaming-production-recorded"
+      }
+    },
     "typecheck-scripts": {
       "cache": true,
       "executor": "nx:run-commands",

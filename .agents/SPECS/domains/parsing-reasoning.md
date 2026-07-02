@@ -119,6 +119,17 @@ after the WindowsML desktop package is built:
 - Process cleanup reports graceful close where possible and no residual smoke
   processes after final close.
 
+Recorded production evidence is optional unless the recorded production target
+is used. `cert-prep-desktop:packaged-streaming-production-recorded-windowsml`
+adds Playwright WebView2 screencast evidence to the same packaged production
+smoke and writes timestamped output under
+`tmp/cert-prep-desktop/packaged-streaming-production-recorded`. When recording
+is enabled, `metrics.json`, `streaming-baseline.json`, `streaming-baseline.md`,
+and `production-summary.json` must reference at least one completed non-empty
+`.webm` artifact with bytes, SHA-256, capture source, and recording status.
+Browser-only Playwright e2e videos are review aids, not packaged production
+acceptance evidence.
+
 2026-06-26 packaged gap audit status:
 
 - `pnpm nx run cert-prep-desktop:packaged-streaming-production-windowsml`
@@ -141,6 +152,7 @@ Resource artifacts for packaged runs:
 - `metrics.json`
 - `streaming-baseline.json`
 - `production-summary.json`
+- `*.webm` acceptance recordings when the recorded production target is used
 - `windows-dxgi-adapters.json`
 - `windows-resource-sampling.csv`
 - `windows-resource-summary.json`

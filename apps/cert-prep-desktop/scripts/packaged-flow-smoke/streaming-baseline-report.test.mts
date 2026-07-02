@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 
 import {
+  buildStreamingBaselineReport,
   buildProductionSummary,
   type StreamingBaselineReport,
 } from './streaming-baseline-report.mts';
@@ -169,6 +170,105 @@ test('production summary accepts FastFlowLM low-RAM fallback to qwen3.5:2b', () 
   }
 });
 
+test('production summary includes completed video evidence when recording is enabled', () => {
+  const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-prep-production-summary-'));
+  try {
+    const outDir = join(workspaceRoot, 'out');
+    mkdirSync(outDir);
+    writeFileSync(
+      join(outDir, 'windows-resource-summary.json'),
+      JSON.stringify({
+        gpu_routing_checks: {
+          windowsml_ocr_process_observed: true,
+          ocr_uses_amd_igpu: true,
+          ocr_avoids_nvidia_dgpu: true,
+        },
+      }),
+      'utf8',
+    );
+    const video = completedVideoArtifact();
+    const run = productionRunState(workspaceRoot, outDir);
+    run.options.recordVideo = true;
+    run.metrics.video_artifacts = [video];
+    const report = productionReport();
+    report.artifacts.video_recordings = [video];
+
+    const summary = buildProductionSummary(run, report);
+
+    assert.equal(summary.status, 'passed');
+    assert.equal(summary.checks.video_recording_completed, true);
+    assert.deepEqual(summary.artifacts.video_recordings, [video]);
+  } finally {
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test('streaming baseline report includes video evidence when recording is enabled', () => {
+  const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-prep-baseline-video-'));
+  try {
+    const outDir = join(workspaceRoot, 'out');
+    mkdirSync(outDir);
+    writeFileSync(join(workspaceRoot, 'fixture.pdf'), 'fixture', 'utf8');
+    const video = completedVideoArtifact();
+    const run = productionRunState(workspaceRoot, outDir);
+    run.options.recordVideo = true;
+    run.metrics.video_artifacts = [video];
+
+    const report = buildStreamingBaselineReport(run);
+
+    assert.equal(report.checks.video_recording_completed, true);
+    assert.deepEqual(report.artifacts.video_recordings, [video]);
+  } finally {
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test('streaming baseline report omits video check when recording is disabled', () => {
+  const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-prep-baseline-video-'));
+  try {
+    const outDir = join(workspaceRoot, 'out');
+    mkdirSync(outDir);
+    writeFileSync(join(workspaceRoot, 'fixture.pdf'), 'fixture', 'utf8');
+
+    const report = buildStreamingBaselineReport(
+      productionRunState(workspaceRoot, outDir),
+    );
+
+    assert.equal(report.checks.video_recording_completed, undefined);
+    assert.equal(report.artifacts.video_recordings, undefined);
+  } finally {
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test('production summary fails when requested video evidence is missing', () => {
+  const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-prep-production-summary-'));
+  try {
+    const outDir = join(workspaceRoot, 'out');
+    mkdirSync(outDir);
+    writeFileSync(
+      join(outDir, 'windows-resource-summary.json'),
+      JSON.stringify({
+        gpu_routing_checks: {
+          windowsml_ocr_process_observed: true,
+          ocr_uses_amd_igpu: true,
+          ocr_avoids_nvidia_dgpu: true,
+        },
+      }),
+      'utf8',
+    );
+    const run = productionRunState(workspaceRoot, outDir);
+    run.options.recordVideo = true;
+
+    const summary = buildProductionSummary(run, productionReport());
+
+    assert.equal(summary.status, 'failed');
+    assert.equal(summary.checks.video_recording_completed, false);
+  } finally {
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
 function productionRunState(
   workspaceRoot: string,
   outDir: string,
@@ -191,6 +291,7 @@ function productionRunState(
       productionSummary: true,
       allowOcrChunkVariance: true,
       verifyStreamingPracticeReady: true,
+      recordVideo: false,
     },
     metrics: {
       status: 'completed',
@@ -228,6 +329,7 @@ function productionRunState(
     appExit: null,
     nvidia: null,
     resourceSampling: null,
+    videoRecording: null,
     browser: null,
     page: null,
     port: 9222,
@@ -237,6 +339,18 @@ function productionRunState(
     streamingDraftCaptureOpen: false,
     streamingApiPollErrorCaptured: false,
   } as unknown as SmokeRunState;
+}
+
+function completedVideoArtifact() {
+  return {
+    path: 'out/01-acceptance-recording.webm',
+    bytes: 123,
+    sha256: 'video-sha',
+    capture_source: 'playwright_screencast' as const,
+    status: 'completed' as const,
+    started_at: '2026-06-23T00:00:00.000Z',
+    finished_at: '2026-06-23T00:01:00.000Z',
+  };
 }
 
 function productionReport(): StreamingBaselineReport {

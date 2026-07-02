@@ -24,6 +24,10 @@ import {
 } from './runner-context.mts';
 import { observeStreamingApiResponses } from './streaming-capture.mts';
 import { errorMessage } from './text-utils.mts';
+import {
+  startAcceptanceVideo,
+  stopAcceptanceVideo,
+} from './video-evidence.mts';
 import type { PublicProcessRecord } from '../process-lifecycle/processes.mts';
 import type { CloseSummary, SmokeRunState } from './types.mts';
 
@@ -99,6 +103,7 @@ export async function closeAppAndCheckResidue(
   run: SmokeRunState,
   label: string,
 ): Promise<CloseSummary> {
+  await stopAcceptanceVideo(run);
   const currentApp = run.app;
   const pid = currentApp?.pid ?? null;
   if (!currentApp || !pid) {
@@ -280,6 +285,7 @@ export async function launchAppAndConnect(run: SmokeRunState): Promise<void> {
     (await context.waitForEvent('page', { timeout: 30_000 }));
   observeStreamingApiResponses(run, run.page);
   await run.page.setViewportSize({ width: 1440, height: 1000 });
+  await startAcceptanceVideoForSmoke(run);
   await run.page
     .waitForLoadState('domcontentloaded', { timeout: 30_000 })
     .catch((error) => {
@@ -292,6 +298,17 @@ export async function launchAppAndConnect(run: SmokeRunState): Promise<void> {
     60_000,
     'app shell loaded',
   );
+}
+
+export async function startAcceptanceVideoForSmoke(
+  run: SmokeRunState,
+  startVideo: (run: SmokeRunState) => Promise<void> = startAcceptanceVideo,
+): Promise<void> {
+  await startVideo(run).catch((error) => {
+    run.metrics.observations.push(
+      `acceptance video start failed: ${errorMessage(error)}`,
+    );
+  });
 }
 
 async function cleanupAfterRun(run: SmokeRunState): Promise<void> {

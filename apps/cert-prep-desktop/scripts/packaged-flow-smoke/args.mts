@@ -77,6 +77,7 @@ export function parsePackagedFlowSmokeArgs(
     productionSummary: false,
     allowOcrChunkVariance: false,
     verifyStreamingPracticeReady: false,
+    recordVideo: booleanEnv(process.env.CERT_PREP_PACKAGE_SMOKE_RECORD_VIDEO),
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -97,6 +98,10 @@ export function parsePackagedFlowSmokeArgs(
     } else if (arg === '--out-dir') {
       outDirExplicit = true;
       parsed.outDir = resolve(workspaceRoot, readValue(arg));
+    } else if (arg === '--out-root') {
+      // --out-root is timestamped here, so streaming defaults must not replace it.
+      outDirExplicit = true;
+      parsed.outDir = resolve(workspaceRoot, readValue(arg), timestamp);
     } else if (arg === '--app-data-dir') {
       appDataDirExplicit = true;
       parsed.appDataDir = resolve(workspaceRoot, readValue(arg));
@@ -137,6 +142,8 @@ export function parsePackagedFlowSmokeArgs(
     } else if (arg === '--verify-streaming-practice-ready') {
       parsed.verifyStreamingPracticeReady = true;
       parsed.waitForStreamingComplete = true;
+    } else if (arg === '--record-video') {
+      parsed.recordVideo = true;
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
@@ -212,4 +219,11 @@ function nonEmptyStringList(values: readonly string[], name: string): string[] {
     unique.add(trimmed);
   }
   return [...unique];
+}
+
+function booleanEnv(value: string | undefined): boolean {
+  if (value === undefined) {
+    return false;
+  }
+  return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
 }

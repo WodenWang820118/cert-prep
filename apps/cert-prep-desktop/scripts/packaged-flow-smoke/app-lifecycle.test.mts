@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import { setImmediate } from 'node:timers/promises';
 import { test } from 'node:test';
 
-import { createCleanupWithTimeoutController } from './app-lifecycle.mts';
+import {
+  createCleanupWithTimeoutController,
+  startAcceptanceVideoForSmoke,
+} from './app-lifecycle.mts';
+import type { SmokeRunState } from './types.mts';
 
 test('cleanup timeout does not mark the underlying cleanup as finished', async () => {
   const target = {};
@@ -67,4 +71,20 @@ test('concurrent cleanup timeout callers reuse one actual cleanup', async () => 
 
   assert.equal(cleanupCalls, 1);
   assert.equal(controller.isFinished(target), true);
+});
+
+test('acceptance video start failures are recorded without aborting smoke', async () => {
+  const run = {
+    metrics: {
+      observations: [],
+    },
+  } as unknown as SmokeRunState;
+
+  await startAcceptanceVideoForSmoke(run, async () => {
+    throw new Error('screencast denied');
+  });
+
+  assert.deepEqual(run.metrics.observations, [
+    'acceptance video start failed: screencast denied',
+  ]);
 });

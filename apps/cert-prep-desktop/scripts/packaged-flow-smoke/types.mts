@@ -25,6 +25,7 @@ export interface SmokeOptions {
   productionSummary: boolean;
   allowOcrChunkVariance: boolean;
   verifyStreamingPracticeReady: boolean;
+  recordVideo: boolean;
 }
 
 export interface SmokeMetrics {
@@ -33,6 +34,7 @@ export interface SmokeMetrics {
   finished_at?: string;
   out_dir: string;
   screenshots: string[];
+  video_artifacts?: VideoArtifact[];
   ui_timings_ms: Record<string, number>;
   observations: string[];
   errors: string[];
@@ -83,6 +85,23 @@ export interface ResourceSamplingArtifacts {
   windows_counters_csv?: string;
   windows_summary_json?: string;
   windows_dxgi_adapters_json?: string;
+}
+
+export interface VideoArtifact {
+  readonly path: string;
+  bytes: number;
+  sha256: string;
+  readonly capture_source: 'playwright_screencast';
+  status: 'recording' | 'completed' | 'failed';
+  readonly started_at: string;
+  finished_at?: string;
+  error?: string;
+}
+
+export interface VideoRecordingState {
+  readonly artifact: VideoArtifact;
+  readonly filePath: string;
+  active: boolean;
 }
 
 export interface StreamingQuestionsMetrics {
@@ -200,6 +219,7 @@ export interface SmokeRunState {
   appExit: ChildExitState | null;
   nvidia: ChildProcess | null;
   resourceSampling: ResourceSamplingController | null;
+  videoRecording: VideoRecordingState | null;
   browser: Browser | null;
   page: Page | null;
   port: number;

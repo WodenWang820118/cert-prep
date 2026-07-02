@@ -12,12 +12,14 @@ import {
 } from './streaming-capture.mts';
 import { streamingJobCompletionState } from './streaming-evidence.mts';
 import { isRecord, normalizePath } from './text-utils.mts';
+import { videoEvidencePassed } from './video-evidence.mts';
 import type { PublicProcessRecord } from '../process-lifecycle/processes.mts';
 import type {
   LlmHealthSnapshot,
   ResourceSamplingArtifacts,
   SmokeRunState,
   StreamingJobCompletionState,
+  VideoArtifact,
 } from './types.mts';
 
 export interface StreamingBaselineReport {
@@ -31,6 +33,7 @@ export interface StreamingBaselineReport {
     baseline_json: string;
     baseline_markdown: string;
     screenshots: string[];
+    video_recordings?: VideoArtifact[];
     gpu_sampling?: string;
     resource_sampling?: ResourceSamplingArtifacts;
   };
@@ -112,6 +115,7 @@ interface PackagedStreamingProductionSummary {
     baseline_json: string;
     baseline_markdown: string;
     metrics_json: string;
+    video_recordings?: VideoArtifact[];
     resource_sampling?: ResourceSamplingArtifacts;
   };
   timings_ms: StreamingBaselineReport['timings_ms'];
@@ -176,7 +180,9 @@ export function writeStreamingBaselineArtifacts(
   }
 }
 
-function buildStreamingBaselineReport(run: SmokeRunState): StreamingBaselineReport {
+export function buildStreamingBaselineReport(
+  run: SmokeRunState,
+): StreamingBaselineReport {
   const latestJob = latestStreamingJobSnapshot(run);
   const latestQuestion = latestStreamingQuestionSnapshot(run);
   const finalStatusCounts = latestJob?.status_counts ?? {};
@@ -217,6 +223,9 @@ function buildStreamingBaselineReport(run: SmokeRunState): StreamingBaselineRepo
             run.metrics.practice_ready_from_streamed_questions === true,
         }
       : {}),
+    ...(run.options.recordVideo
+      ? { video_recording_completed: videoEvidencePassed(run) }
+      : {}),
   };
   const status = Object.values(checks).every(Boolean) ? 'passed' : 'failed';
   const metricsPath = join(run.options.outDir, 'metrics.json');
@@ -238,6 +247,9 @@ function buildStreamingBaselineReport(run: SmokeRunState): StreamingBaselineRepo
         relative(run.options.workspaceRoot, baselineMarkdownPath),
       ),
       screenshots: run.metrics.screenshots,
+      ...(run.metrics.video_artifacts?.length
+        ? { video_recordings: run.metrics.video_artifacts }
+        : {}),
       ...(run.metrics.gpu_sampling ? { gpu_sampling: run.metrics.gpu_sampling } : {}),
       ...(run.metrics.resource_sampling
         ? { resource_sampling: run.metrics.resource_sampling }
@@ -355,6 +367,9 @@ export function buildProductionSummary(
       selectedModel !== null && report.streaming.usable_question_count > 0,
     streaming_practice_ready:
       report.streaming.practice_ready_from_streamed_questions,
+    ...(run.options.recordVideo
+      ? { video_recording_completed: videoEvidencePassed(run) }
+      : {}),
   };
   Object.assign(checks, providerRoutingChecks(run, gpuRoutingChecks));
   const productionSummaryPath = join(run.options.outDir, 'production-summary.json');
@@ -378,6 +393,9 @@ export function buildProductionSummary(
       baseline_json: report.artifacts.baseline_json,
       baseline_markdown: report.artifacts.baseline_markdown,
       metrics_json: report.artifacts.metrics_json,
+      ...(report.artifacts.video_recordings?.length
+        ? { video_recordings: report.artifacts.video_recordings }
+        : {}),
       ...(report.artifacts.resource_sampling
         ? { resource_sampling: report.artifacts.resource_sampling }
         : {}),
@@ -487,6 +505,7 @@ Artifacts:
 - Metrics: ${report.artifacts.metrics_json}
 - Baseline JSON: ${report.artifacts.baseline_json}
 - Screenshots: ${report.artifacts.screenshots.length}
+- Video recordings: ${report.artifacts.video_recordings?.length ?? 0}
 ${renderResourceSamplingMarkdown(report.artifacts.resource_sampling)}
 `;
 }

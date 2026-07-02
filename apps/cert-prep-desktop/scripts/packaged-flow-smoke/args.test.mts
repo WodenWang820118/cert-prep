@@ -130,3 +130,32 @@ test('streaming practice-ready verification implies completion wait', () => {
     /tmp[\\/]cert-prep-desktop[\\/]packaged-streaming-baseline[\\/]/,
   );
 });
+
+test('record video can be enabled by flag or environment', () => {
+  assert.equal(
+    parsePackagedFlowSmokeArgs(['--record-video'], 'C:\\workspace').recordVideo,
+    true,
+  );
+
+  const previous = process.env.CERT_PREP_PACKAGE_SMOKE_RECORD_VIDEO;
+  try {
+    process.env.CERT_PREP_PACKAGE_SMOKE_RECORD_VIDEO = '1';
+    assert.equal(parsePackagedFlowSmokeArgs([], 'C:\\workspace').recordVideo, true);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.CERT_PREP_PACKAGE_SMOKE_RECORD_VIDEO;
+    } else {
+      process.env.CERT_PREP_PACKAGE_SMOKE_RECORD_VIDEO = previous;
+    }
+  }
+});
+
+test('packaged flow smoke can write timestamped output under an explicit root', () => {
+  const parsed = parsePackagedFlowSmokeArgs(
+    ['--production-summary', '--out-root', 'tmp/recorded-production'],
+    'C:\\workspace',
+  );
+
+  assert.match(parsed.outDir, /tmp[\\/]recorded-production[\\/]/);
+  assert.equal(parsed.appDataDir, `${parsed.outDir}\\app-data`);
+});
