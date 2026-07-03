@@ -38,6 +38,9 @@ or review flows.
 - Wrong-answer AI help is a per-card, single grounded explanation. Provider
   failures fall back to deterministic copy and must not block refresh, manual
   review, or clearing by a later correct attempt.
+- Practice sessions persist the selected playable question fields at session
+  creation. Attempts and wrong-answer review grade/read from that session-time
+  snapshot, with a live-draft fallback only for older sessions.
 
 ## Evidence
 
@@ -63,6 +66,8 @@ or review flows.
 - Reference recordings were generated under
   `dist/.playwright/apps/cert-prep-e2e/recordings/` for
   `practice-complete`, `wrong-answer-ai`, and `multi-pdf-isolation`.
+- The 2026-07-02 session-snapshot slice keeps grading and wrong-answer review
+  stable even if an editable question changes after the session starts.
 
 ## Open Risks
 
@@ -78,3 +83,6 @@ or review flows.
   include manually authored draft questions.
 - Bundle and component CSS warning budgets remain noisy after the feature
   roadmap slice, although the production build gate passes.
+- Review retry, weak-area metrics, Mark for review policy, and wrong-answer
+  document metadata are still active product decisions in
+  `.agents/TODOS/feature-roadmap.md`.

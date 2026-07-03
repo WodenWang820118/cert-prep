@@ -102,6 +102,36 @@ Open alignment risks to keep visible:
   names or test IDs so packaged WebView smoke tests do not depend on framework
   internals.
 
+## 2026-07-02 UI / Function Alignment Checkpoint
+
+The UI/function alignment audit started as an evidence matrix across Build,
+Source Import, Draft Review, Full Exam, Random Quiz, Runtime, Wrong Answers,
+shell chrome, project rail, and shared stores. The correction pass closed the
+highest-risk mismatches:
+
+- Draft Review and Practice now share the same playable-question boundary:
+  approved status, question text, at least two choices, answer in choices,
+  rationale, and citation page or source excerpt evidence. Defensive
+  non-playable rows remain frontend handling for future or legacy data; the
+  backend contract still emits approved rows.
+- Practice counts, active-question lookup, Random Quiz, and Full Exam use the
+  playable set instead of raw draft rows.
+- Routine success/status messages are no longer rendered as global shell
+  strips. The app shell reserves global strips for blocking errors and active
+  work.
+
+Remaining product-policy work is intentionally tracked in
+`.agents/TODOS/ui-function-alignment-audit.md`:
+
+- decide whether `/runtime` route mode fully matches modal controls or remains
+  a compatibility route;
+- decide whether standalone model-health Manage opens the modal or keeps route
+  navigation;
+- add active-session and populated wrong-answer coverage where product behavior
+  is already wired;
+- decide whether Settings, Account, footer links, and Mark for review stay as
+  disabled placeholders or become real surfaces.
+
 ## Verification
 
 - Run `pnpm nx run cert-prep:lint --skip-nx-cache`.

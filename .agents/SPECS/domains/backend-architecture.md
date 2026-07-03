@@ -24,6 +24,10 @@ SQLite, OCR, runtime installation, question generation, and practice.
 - Practice session selection and attempt lookup share the backend playable
   predicate: approved question text, at least two nonempty choices, answer in
   choices, rationale, and source evidence from citation page or source excerpt.
+- Practice sessions persist selected question snapshots when the session is
+  created. Attempt grading and wrong-answer review prefer the immutable
+  snapshot and fall back to the live draft only for sessions created before the
+  snapshot table exists.
 - Wrong-answer explanation API is
   `POST /projects/{project_id}/wrong-answers/{attempt_id}/explanation`.
   It must re-resolve the attempt as a current wrong answer in the same project
@@ -49,6 +53,9 @@ SQLite, OCR, runtime installation, question generation, and practice.
   passed with 172 pytest tests and ruff.
 - OpenAPI generation was rerun for `WrongAnswerExplanationRead` and the
   generated `cert-prep-api` client passed lint, typecheck, and Vitest.
+- The 2026-07-02 session-snapshot slice added backend practice and migration
+  coverage for grading against stored session question fields and reading the
+  latest wrong-answer attempt from the session snapshot; backend lint passed.
 
 ## Open Risks
 

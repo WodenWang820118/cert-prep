@@ -17,9 +17,18 @@ temporary implementation slices.
 
 ## Active Backlog
 
-Active work belongs in `.agents/TODOS/`. At this checkpoint the active backlog
-is empty. Recreate a TODO file only for executable open work; completed evidence
-belongs in the owning SPECS domain.
+Active work belongs in `.agents/TODOS/`. Completed evidence belongs in the
+owning SPECS domain.
+
+Current TODO files:
+
+- `cross-platform-runtime-nodes.md` - deferred restart point for future
+  macOS/Linux/runtime-node expansion; not release-blocking.
+- `feature-roadmap.md` - active product backlog for review retry,
+  weak-area metrics, Mark for review policy, and wrong-answer document
+  metadata.
+- `ui-function-alignment-audit.md` - active follow-up backlog for runtime
+  surface policy, practice/review coverage, and placeholder policy.
 
 ## Retired Slice Files
 
