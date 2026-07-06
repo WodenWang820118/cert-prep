@@ -3,6 +3,7 @@ export type StudyPageId =
   | 'full_exam'
   | 'random_quiz'
   | 'runtime'
+  | 'dashboard'
   | 'review';
 
 /**

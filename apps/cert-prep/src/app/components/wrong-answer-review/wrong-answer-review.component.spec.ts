@@ -8,6 +8,7 @@ import {
   type WrongAnswerExplanationRead,
   type WrongAnswerRead,
 } from '../../cert-prep-api';
+import { OperationStore } from '../../stores/operation.store';
 import { ProjectStore } from '../../stores/project.store';
 import { SourceImportStore } from '../../stores/source-import/source-import.store';
 import { WrongAnswerReviewStore } from '../../stores/wrong-answer-review.store';
@@ -224,6 +225,29 @@ describe('WrongAnswerReviewComponent', () => {
     expect(refreshButton(fixture.nativeElement as HTMLElement)?.disabled).toBe(
       false,
     );
+  });
+
+  it('disables review actions while review or session work is running', () => {
+    const fixture = TestBed.createComponent(WrongAnswerReviewComponent);
+    selectProject();
+    TestBed.inject(WrongAnswerReviewStore).wrongAnswers.set([wrongAnswer]);
+    const operations = TestBed.inject(OperationStore);
+
+    operations.busy.set('session');
+    fixture.detectChanges();
+
+    let element = fixture.nativeElement as HTMLElement;
+    expect(refreshButton(element)?.disabled).toBe(true);
+    expect(buttonByText(element, 'Start review quiz')?.disabled).toBe(true);
+    expect(buttonByText(element, 'Retry')?.disabled).toBe(true);
+
+    operations.busy.set('review');
+    fixture.detectChanges();
+
+    element = fixture.nativeElement as HTMLElement;
+    expect(refreshButton(element)?.disabled).toBe(true);
+    expect(buttonByText(element, 'Start review quiz')?.disabled).toBe(true);
+    expect(buttonByText(element, 'Retry')?.disabled).toBe(true);
   });
 
   it('starts a review quiz for all current wrong answers', async () => {

@@ -43,6 +43,7 @@ describe('App', () => {
     expect(linkByText(compiled, 'Build')).not.toBeNull();
     expect(linkByText(compiled, 'Full Exam')).not.toBeNull();
     expect(linkByText(compiled, 'Random Quiz')).not.toBeNull();
+    expect(linkByText(compiled, 'Dashboard')).not.toBeNull();
     expect(linkByText(compiled, 'Review')).not.toBeNull();
 
     await router.navigateByUrl('/build');
@@ -76,6 +77,14 @@ describe('App', () => {
 
     expect(compiled.textContent).toContain('Random Draw');
     expect(compiled.textContent).toContain('Start random quiz');
+
+    await router.navigateByUrl('/dashboard');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(compiled.textContent).toContain('Project weakness analysis');
+    expect(compiled.textContent).not.toContain('Wrong Answers');
 
     await router.navigateByUrl('/review');
     fixture.detectChanges();

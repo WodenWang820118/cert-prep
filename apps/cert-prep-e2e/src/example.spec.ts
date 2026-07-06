@@ -10,10 +10,12 @@ import {
   createWorkspaceWithUploadedDocument,
   expectFullExamDocumentOptions,
   expectRandomQuizAvailableCount,
+  expectWrongAnswerDashboard,
   expectWrongAnswerReview,
   runMultiPdfIsolationScenario,
   retryWrongAnswerAndClearReview,
   seedMockApiConfig,
+  startDashboardWeakAreaRetry,
   startReviewQuizForAllWrongAnswersAndClearReview,
   startRandomQuiz,
   uploadDocumentAndExpectDraft,
@@ -77,6 +79,30 @@ test('starts a review quiz from all current wrong answers', async ({ page }) => 
   expect(api.wrongAnswers()).toHaveLength(0);
 });
 
+test('shows project dashboard weak areas and starts a focused retry', async ({
+  page,
+}) => {
+  const api = await installMockCertPrepApi(page);
+  await seedMockApiConfig(page, apiBaseUrl, devToken);
+
+  await createWorkspaceWithUploadedDocument(page, api);
+  await startRandomQuiz(page, api, 2);
+  await completePracticeQuestions(
+    page,
+    api,
+    api.playableDrafts.slice(0, 2),
+    wrongChoiceForDraft,
+  );
+  await expectWrongAnswerDashboard(page, api);
+  await startDashboardWeakAreaRetry(page, api, {
+    documentId: api.document.id,
+    citationPage: 1,
+  });
+  expect(api.practiceSessionPayload()).toMatchObject({
+    mode: 'review_retry',
+  });
+});
+
 test('clears document draft practice and review state when switching projects', async ({
   page,
 }) => {
@@ -118,6 +144,11 @@ test('clears document draft practice and review state when switching projects', 
   ).toBeVisible();
   await expect(page.getByText(api.draft.question)).toBeHidden();
 
+  await page.getByRole('link', { name: 'Dashboard' }).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await expect(page.getByText('No weakness data yet.')).toBeVisible();
+  await expect(page.getByText(api.draft.question)).toBeHidden();
+
   await page.getByRole('link', { name: 'Build' }).click();
   await expect(
     page
@@ -148,6 +179,7 @@ test('clears document draft practice and review state when switching projects', 
       `GET /projects/${api.secondaryProject.id}/documents`,
       `GET /projects/${api.secondaryProject.id}/question-drafts`,
       `GET /projects/${api.secondaryProject.id}/wrong-answers`,
+      `GET /projects/${api.secondaryProject.id}/wrong-answers/summary`,
       `POST /projects/${api.secondaryProject.id}/practice-sessions`,
     ]),
   );

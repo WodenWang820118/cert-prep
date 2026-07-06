@@ -29,6 +29,13 @@ export const appRoutes: Route[] = [
     title: 'Random Quiz - Cert Prep',
   },
   {
+    path: 'dashboard',
+    canActivate: [requireBackendRuntimeReady],
+    loadComponent: () =>
+      import('./pages/dashboard/dashboard.page').then((m) => m.DashboardPage),
+    title: 'Dashboard - Cert Prep',
+  },
+  {
     path: 'runtime',
     loadComponent: () =>
       import('./pages/runtime-manager/runtime-manager.page').then(

@@ -61,6 +61,12 @@ export class App implements OnInit, OnDestroy {
       icon: 'pi pi-sync',
       path: '/random-quiz',
     },
+    {
+      id: 'dashboard',
+      label: 'Dashboard',
+      icon: 'pi pi-chart-bar',
+      path: '/dashboard',
+    },
     { id: 'review', label: 'Review', icon: 'pi pi-history', path: '/review' },
   ];
   protected readonly desktopRuntime = inject(DesktopRuntimeStore);

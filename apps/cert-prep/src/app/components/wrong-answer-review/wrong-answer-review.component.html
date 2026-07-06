@@ -14,7 +14,7 @@
       >
         <i
           [class]="
-            operations.isBusyFor('session')
+            operations.isBusyFor(busyActions)
               ? 'pi pi-spin pi-spinner'
               : 'pi pi-refresh'
           "
@@ -27,13 +27,13 @@
         class="workbench-secondary-button review-refresh-button"
         type="button"
         [disabled]="
-          operations.isBusyFor('review') || projects.selectedProject() === null
+          operations.isBusyFor(busyActions) || projects.selectedProject() === null
         "
         (click)="review.refresh()"
       >
         <i
           [class]="
-            operations.isBusyFor('review')
+            operations.isBusyFor(busyActions)
               ? 'pi pi-spin pi-spinner'
               : 'pi pi-refresh'
           "
@@ -118,14 +118,14 @@
               class="workbench-secondary-button retry-button"
               type="button"
               [disabled]="
-                operations.isBusyFor('session') ||
+                operations.isBusyFor(busyActions) ||
                 projects.selectedProject() === null
               "
               (click)="retryWrongAnswer(wrong)"
             >
               <i
                 [class]="
-                  operations.isBusyFor('session')
+                  operations.isBusyFor(busyActions)
                     ? 'pi pi-spin pi-spinner'
                     : 'pi pi-refresh'
                 "

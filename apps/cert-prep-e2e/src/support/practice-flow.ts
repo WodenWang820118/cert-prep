@@ -382,6 +382,76 @@ export async function startReviewQuizForAllWrongAnswersAndClearReview(
   expect(api.wrongAnswers()).toHaveLength(0);
 }
 
+export async function expectWrongAnswerDashboard(
+  page: Page,
+  api: MockCertPrepApi,
+): Promise<void> {
+  const wrongAnswers = api.wrongAnswers();
+  expect(wrongAnswers.length).toBeGreaterThan(0);
+  await openDashboardPage(page);
+  await expect(page.getByText('Project weakness analysis')).toBeVisible();
+  await expect(
+    page.locator('.dashboard-kpis').getByText('Current Wrong', {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.getByText('Weak Areas By Source')).toBeVisible();
+  await expect(page.getByText('Answer Patterns')).toBeVisible();
+  await expect(
+    page.locator('.weak-area-list').getByText(api.document.filename).first(),
+  ).toBeVisible();
+
+  const summary = api.wrongAnswerSummary();
+  await expect(
+    page
+      .locator('.dashboard-kpis div')
+      .filter({ hasText: 'Current Wrong' })
+      .getByText(String(summary.current_wrong_count), { exact: true }),
+  ).toBeVisible();
+  for (const wrongAnswer of wrongAnswers) {
+    await expect(
+      page.getByText(`Page ${wrongAnswer.citation_page}`).first(),
+    ).toBeVisible();
+    await expect(page.getByText(wrongAnswer.selected_answer).first()).toBeVisible();
+    await expect(
+      page.getByText(wrongAnswer.correct_answer ?? '').first(),
+    ).toBeVisible();
+  }
+}
+
+export async function startDashboardWeakAreaRetry(
+  page: Page,
+  api: MockCertPrepApi,
+  area: {
+    readonly documentId: string;
+    readonly citationPage: number;
+  },
+): Promise<void> {
+  const matchingAttemptIds = api
+    .wrongAnswers()
+    .filter(
+      (wrongAnswer) =>
+        wrongAnswer.document_id === area.documentId &&
+        wrongAnswer.citation_page === area.citationPage,
+    )
+    .map((wrongAnswer) => wrongAnswer.attempt_id);
+  expect(matchingAttemptIds).toHaveLength(1);
+
+  await page
+    .locator('.weak-area-row')
+    .filter({ hasText: `Page ${area.citationPage}` })
+    .getByRole('button', { name: 'Retry 1 question' })
+    .click();
+  await expect(page.getByRole('heading', { name: 'Random Quiz' })).toBeVisible();
+  await expect
+    .poll(() => api.practiceSessionPayload())
+    .toMatchObject({
+      mode: 'review_retry',
+      wrong_attempt_ids: matchingAttemptIds,
+      question_count: matchingAttemptIds.length,
+    });
+}
+
 export async function expectWrongAnswerReview(
   page: Page,
   api: MockCertPrepApi,
@@ -515,5 +585,13 @@ async function openReviewPage(page: Page): Promise<void> {
   await expect(page).toHaveURL(/\/review$/);
   await expect(
     page.getByRole('heading', { name: 'Wrong Answers', exact: true }),
+  ).toBeVisible();
+}
+
+async function openDashboardPage(page: Page): Promise<void> {
+  await page.getByRole('link', { name: 'Dashboard' }).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await expect(
+    page.getByRole('heading', { name: 'Dashboard', exact: true }),
   ).toBeVisible();
 }

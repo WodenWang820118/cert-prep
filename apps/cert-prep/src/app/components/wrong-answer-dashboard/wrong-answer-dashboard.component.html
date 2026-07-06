@@ -1,0 +1,176 @@
+<section class="wrong-answer-dashboard" aria-labelledby="dashboard-heading">
+  <header class="dashboard-header">
+    <div>
+      <p class="dashboard-eyebrow">Project weakness analysis</p>
+      <h2 id="dashboard-heading">Dashboard</h2>
+      <p>{{ projects.selectedProject()?.name ?? 'Select a project' }}</p>
+    </div>
+
+    <button
+      class="workbench-secondary-button dashboard-refresh-button"
+      type="button"
+      [disabled]="
+        operations.isBusyFor(busyActions) || projects.selectedProject() === null
+      "
+      (click)="refresh()"
+    >
+      <i
+        [class]="
+          operations.isBusyFor(busyActions)
+            ? 'pi pi-spin pi-spinner'
+            : 'pi pi-refresh'
+        "
+        aria-hidden="true"
+      ></i>
+      <span>Refresh</span>
+    </button>
+  </header>
+
+  <dl class="dashboard-kpis" aria-label="Weakness summary">
+    @for (metric of metrics(); track metric.label) {
+      <div [class]="'is-' + metric.tone">
+        <dt>{{ metric.label }}</dt>
+        <dd>{{ metric.value }}</dd>
+      </div>
+    }
+  </dl>
+
+  @if (hasDashboardData()) {
+    <section class="dashboard-grid" aria-label="Weakness details">
+      <article class="dashboard-panel weak-area-panel">
+        <header>
+          <div>
+            <h3>Weak Areas By Source</h3>
+            <p>Current and cleared mistakes grouped by PDF page.</p>
+          </div>
+        </header>
+
+        <div class="weak-area-list">
+          @for (area of weakAreas(); track area.key) {
+            <section class="weak-area-row">
+              <div class="weak-area-source">
+                <span>{{ area.documentLabel }}</span>
+                <strong>{{ area.pageLabel }}</strong>
+              </div>
+              <div class="weak-area-counts">
+                <span>
+                  <strong>{{ area.currentWrongCount }}</strong>
+                  current
+                </span>
+                <span>
+                  <strong>{{ area.clearedCount }}</strong>
+                  cleared
+                </span>
+                <span>{{ area.lastWrongLabel }}</span>
+              </div>
+              <button
+                class="workbench-secondary-button dashboard-retry-button"
+                type="button"
+                [disabled]="
+                  area.attemptIds.length === 0 ||
+                  operations.isBusyFor(busyActions)
+                "
+                (click)="retryAttemptIds(area.attemptIds)"
+              >
+                <i class="pi pi-refresh" aria-hidden="true"></i>
+                <span>
+                  {{
+                    area.attemptIds.length === 0
+                      ? 'Cleared'
+                      : retryLabel(area.attemptIds)
+                  }}
+                </span>
+              </button>
+            </section>
+          } @empty {
+            <p class="dashboard-muted">No source clusters yet.</p>
+          }
+        </div>
+      </article>
+
+      <article class="dashboard-panel repeated-panel">
+        <header>
+          <div>
+            <h3>Repeated Misses</h3>
+            <p>Questions that have missed more than once.</p>
+          </div>
+        </header>
+
+        <div class="repeated-list">
+          @for (miss of repeatedMisses(); track miss.questionId) {
+            <section class="repeated-row">
+              <div>
+                <p class="repeated-meta">
+                  {{ miss.documentLabel }} - {{ miss.pageLabel }} -
+                  {{ miss.missCount }} misses - {{ miss.lastWrongLabel }}
+                </p>
+                <h4>{{ miss.question }}</h4>
+                @if (miss.sourceExcerpt) {
+                  <p class="repeated-source">{{ miss.sourceExcerpt }}</p>
+                }
+              </div>
+              <button
+                class="workbench-secondary-button dashboard-retry-button"
+                type="button"
+                [disabled]="
+                  miss.attemptIds.length === 0 ||
+                  operations.isBusyFor(busyActions)
+                "
+                (click)="retryAttemptIds(miss.attemptIds)"
+              >
+                <i class="pi pi-refresh" aria-hidden="true"></i>
+                <span>
+                  {{
+                    miss.attemptIds.length === 0
+                      ? 'Cleared'
+                      : retryLabel(miss.attemptIds)
+                  }}
+                </span>
+              </button>
+            </section>
+          } @empty {
+            <p class="dashboard-muted">No repeated misses yet.</p>
+          }
+        </div>
+      </article>
+
+      <article class="dashboard-panel answer-pattern-panel">
+        <header>
+          <div>
+            <h3>Answer Patterns</h3>
+            <p>Current wrong answers grouped by selected and correct answer.</p>
+          </div>
+        </header>
+
+        <div class="answer-pattern-list">
+          @for (pattern of answerPatterns(); track pattern.key) {
+            <section class="answer-pattern-row">
+              <div class="answer-pattern-flow">
+                <span>{{ pattern.selectedAnswer }}</span>
+                <i class="pi pi-arrow-right" aria-hidden="true"></i>
+                <strong>{{ pattern.correctAnswer }}</strong>
+              </div>
+              <span class="answer-pattern-count">{{ pattern.count }}</span>
+              <ul>
+                @for (sample of pattern.samples; track $index) {
+                  <li>{{ sample }}</li>
+                }
+              </ul>
+            </section>
+          } @empty {
+            <p class="dashboard-muted">No current wrong-answer patterns.</p>
+          }
+        </div>
+      </article>
+    </section>
+  } @else {
+    <article class="dashboard-empty-state">
+      <i class="pi pi-chart-bar" aria-hidden="true"></i>
+      <h3>No weakness data yet.</h3>
+      <p>
+        Practice questions in this project first. Missed answers will appear
+        here as source clusters, repeated misses, and answer patterns.
+      </p>
+    </article>
+  }
+</section>
