@@ -7,11 +7,14 @@ import {
 } from './support/mock-api';
 import {
   completePracticeQuestions,
+  createProject,
   createWorkspaceWithUploadedDocument,
   expectFullExamDocumentOptions,
   expectRandomQuizAvailableCount,
+  expectRuntimeReady,
   expectWrongAnswerDashboard,
   expectWrongAnswerReview,
+  runMultiPdfBatchUploadScenario,
   runMultiPdfIsolationScenario,
   retryWrongAnswerAndClearReview,
   seedMockApiConfig,
@@ -55,6 +58,53 @@ test('keeps Full Exam sessions isolated to the selected PDF document', async ({
 
   await runMultiPdfIsolationScenario(page, api);
   expect(api.practiceSessionPayloads()).toHaveLength(2);
+});
+
+test('uploads multiple PDFs in one batch and starts Full Exam for the selected PDF', async ({
+  page,
+}) => {
+  const api = await installMockCertPrepApi(page);
+  await seedMockApiConfig(page, apiBaseUrl, devToken);
+
+  await runMultiPdfBatchUploadScenario(page, api);
+  expect(api.practiceSessionPayloads()).toHaveLength(1);
+});
+
+test('matches binary multipart uploads by filename instead of seeded order', async ({
+  page,
+}) => {
+  const api = await installMockCertPrepApi(page);
+  await seedMockApiConfig(page, apiBaseUrl, devToken);
+  const [firstDocument, secondDocument] = api.documents;
+  if (firstDocument === undefined || secondDocument === undefined) {
+    throw new Error('Binary multipart upload matching requires two documents.');
+  }
+
+  await page.goto('/');
+  await createProject(page, api);
+  await expectRuntimeReady(page);
+
+  const binaryPdf = Buffer.from([
+    0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37, 0x0a, 0xff, 0xfe, 0x00,
+    0x80,
+  ]);
+  await page.getByLabel('PDF file').setInputFiles([
+    {
+      name: secondDocument.filename,
+      mimeType: 'application/pdf',
+      buffer: binaryPdf,
+    },
+    {
+      name: firstDocument.filename,
+      mimeType: 'application/pdf',
+      buffer: binaryPdf,
+    },
+  ]);
+  await page.getByRole('button', { name: 'Upload PDF' }).click();
+
+  await expect
+    .poll(() => api.uploadedDocuments().map((document) => document.id))
+    .toEqual([secondDocument.id, firstDocument.id]);
 });
 
 test('retries a wrong answer from Review and clears it after a correct answer', async ({

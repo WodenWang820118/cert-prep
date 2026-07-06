@@ -56,6 +56,7 @@ export interface MockCertPrepApi {
   requestLog(): readonly string[];
   requestLogSince(marker: number): readonly string[];
   seenPaths(): Set<string>;
+  uploadedDocuments(projectId?: string): readonly DocumentRead[];
   wrongAnswerExplanations(
     projectId?: string,
   ): readonly MockWrongAnswerExplanationRead[];
@@ -72,6 +73,7 @@ interface MockProjectState {
   readonly playableDrafts: readonly CompleteQuestionDraft[];
   readonly incompleteApprovedDrafts: readonly QuestionDraftRead[];
   readonly fullExamDocument: DocumentRead;
+  readonly uploadedDocuments: DocumentRead[];
   readonly sessions: Map<string, PracticeSessionRead>;
   readonly practiceSessionPayloads: PracticeSessionCreate[];
   readonly attempts: PracticeAttemptRead[];
@@ -454,13 +456,13 @@ export async function installMockCertPrepApi(
         route,
         200,
         projectState.documentUploaded
-          ? { items: projectState.documents }
+          ? { items: visibleProjectDocuments(projectState) }
           : { items: [] },
       );
       return;
     }
 
-    const requestedDocument = projectState.documents.find(
+    const requestedDocument = visibleProjectDocuments(projectState).find(
       (document) => path === `/projects/${projectId}/documents/${document.id}`,
     );
     if (method === 'GET' && requestedDocument) {
@@ -468,7 +470,7 @@ export async function installMockCertPrepApi(
       return;
     }
 
-    const chunksDocument = projectState.documents.find(
+    const chunksDocument = visibleProjectDocuments(projectState).find(
       (document) =>
         path === `/projects/${projectId}/documents/${document.id}/chunks`,
     );
@@ -513,8 +515,22 @@ export async function installMockCertPrepApi(
     }
 
     if (method === 'POST' && path === `/projects/${projectId}/documents`) {
+      const uploadedDocument = nextUploadDocument(
+        projectState,
+        multipartUploadFilename(
+          request.postDataBuffer(),
+          request.headers()['content-type'],
+        ),
+      );
       projectState.documentUploaded = true;
-      await fulfillJson(route, 201, projectState.document);
+      if (
+        !projectState.uploadedDocuments.some(
+          (document) => document.id === uploadedDocument.id,
+        )
+      ) {
+        projectState.uploadedDocuments.push(uploadedDocument);
+      }
+      await fulfillJson(route, 201, uploadedDocument);
       return;
     }
 
@@ -637,6 +653,9 @@ export async function installMockCertPrepApi(
     requestLog: () => [...requestLog],
     requestLogSince: (marker) => requestLog.slice(marker),
     seenPaths: () => new Set(seenPaths),
+    uploadedDocuments: (projectId) => [
+      ...stateFor(projectStates, projectId, lastProjectState).uploadedDocuments,
+    ],
     wrongAnswerExplanations: (projectId) => [
       ...stateFor(projectStates, projectId, lastProjectState)
         .wrongAnswerExplanations,
@@ -663,6 +682,7 @@ function createMockProjectState(args: {
 }): MockProjectState {
   return {
     ...args,
+    uploadedDocuments: [],
     sessions: new Map<string, PracticeSessionRead>(),
     practiceSessionPayloads: [],
     attempts: [],
@@ -674,6 +694,195 @@ function createMockProjectState(args: {
     sessionCounter: 0,
     attemptCounter: 0,
   };
+}
+
+function nextUploadDocument(
+  projectState: MockProjectState,
+  filename: string | null,
+): DocumentRead {
+  const uploadedIds = new Set(
+    projectState.uploadedDocuments.map((document) => document.id),
+  );
+  const matchedDocument = projectState.documents.find((document) =>
+    document.filename === filename,
+  );
+  if (matchedDocument !== undefined) {
+    return uploadedIds.has(matchedDocument.id)
+      ? createAdditionalUploadDocument(projectState, matchedDocument, filename)
+      : matchedDocument;
+  }
+
+  const remainingDocument = projectState.documents.find(
+    (document) => !uploadedIds.has(document.id),
+  );
+
+  return (
+    remainingDocument ??
+    createAdditionalUploadDocument(projectState, projectState.document, filename)
+  );
+}
+
+function createAdditionalUploadDocument(
+  projectState: MockProjectState,
+  baseDocument: DocumentRead,
+  filename: string | null,
+): DocumentRead {
+  const usedIds = new Set([
+    ...projectState.documents.map((document) => document.id),
+    ...projectState.uploadedDocuments.map((document) => document.id),
+  ]);
+  let index = projectState.uploadedDocuments.length + 1;
+  let id = `document-upload-${index}`;
+  while (usedIds.has(id)) {
+    index += 1;
+    id = `document-upload-${index}`;
+  }
+
+  return {
+    ...baseDocument,
+    id,
+    filename: filename ?? `${baseDocument.filename}-upload-${index}`,
+    sha256: `${id}-sha`,
+    created_at: '2026-06-09T00:00:00Z',
+    updated_at: '2026-06-09T00:00:00Z',
+  };
+}
+
+function multipartUploadFilename(
+  body: Buffer | null,
+  contentType: string | undefined,
+): string | null {
+  if (body === null) {
+    return null;
+  }
+
+  const boundary = multipartBoundary(contentType);
+  if (boundary === null) {
+    return filenameFromMultipartHeaders(body.subarray(0, 4096));
+  }
+
+  const boundaryBytes = asciiBytes(`--${boundary}`);
+  let searchStart = 0;
+  while (searchStart < body.length) {
+    const boundaryStart = indexOfBytes(body, boundaryBytes, searchStart);
+    if (boundaryStart === -1) {
+      return null;
+    }
+    const headerStart = skipMultipartBoundaryLine(body, boundaryStart + boundaryBytes.length);
+    if (headerStart === null) {
+      return null;
+    }
+    const headerEnd = indexOfBytes(body, asciiBytes('\r\n\r\n'), headerStart);
+    if (headerEnd === -1) {
+      return null;
+    }
+
+    const filename = filenameFromMultipartHeaders(
+      body.subarray(headerStart, headerEnd),
+    );
+    if (filename !== null) {
+      return filename;
+    }
+    searchStart = headerEnd + 4;
+  }
+
+  return null;
+}
+
+function multipartBoundary(contentType: string | undefined): string | null {
+  const [, quotedBoundary, rawBoundary] =
+    contentType?.match(/boundary=(?:"([^"]+)"|([^;]+))/i) ?? [];
+  return (quotedBoundary ?? rawBoundary)?.trim() ?? null;
+}
+
+function filenameFromMultipartHeaders(headers: Uint8Array): string | null {
+  const text = new TextDecoder('utf-8', { fatal: false }).decode(headers);
+  const disposition = text
+    .split(/\r?\n/)
+    .find((line) => /^content-disposition:/i.test(line));
+  if (disposition === undefined) {
+    return null;
+  }
+
+  const [, encodedFilename] =
+    disposition.match(/filename\*=(?:UTF-8'')?([^;\r\n]+)/i) ?? [];
+  if (encodedFilename !== undefined) {
+    try {
+      return decodeURIComponent(unquoteHeaderValue(encodedFilename));
+    } catch {
+      return unquoteHeaderValue(encodedFilename);
+    }
+  }
+
+  const [, quotedFilename, rawFilename] =
+    disposition.match(/filename="([^"]+)"/i) ??
+    disposition.match(/filename=([^;\r\n]+)/i) ??
+    [];
+  return (quotedFilename ?? rawFilename)?.trim() ?? null;
+}
+
+function skipMultipartBoundaryLine(
+  body: Uint8Array,
+  offset: number,
+): number | null {
+  if (body[offset] === 45 && body[offset + 1] === 45) {
+    return null;
+  }
+  if (body[offset] === 13 && body[offset + 1] === 10) {
+    return offset + 2;
+  }
+  if (body[offset] === 10) {
+    return offset + 1;
+  }
+  return null;
+}
+
+function indexOfBytes(
+  haystack: Uint8Array,
+  needle: Uint8Array,
+  startIndex: number,
+): number {
+  if (needle.length === 0) {
+    return startIndex;
+  }
+
+  for (let index = startIndex; index <= haystack.length - needle.length; index += 1) {
+    let matched = true;
+    for (let needleIndex = 0; needleIndex < needle.length; needleIndex += 1) {
+      if (haystack[index + needleIndex] !== needle[needleIndex]) {
+        matched = false;
+        break;
+      }
+    }
+    if (matched) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function asciiBytes(value: string): Uint8Array {
+  return new TextEncoder().encode(value);
+}
+
+function unquoteHeaderValue(value: string): string {
+  const trimmed = value.trim();
+  return trimmed.startsWith('"') && trimmed.endsWith('"')
+    ? trimmed.slice(1, -1)
+    : trimmed;
+}
+
+function visibleProjectDocuments(
+  projectState: MockProjectState,
+): readonly DocumentRead[] {
+  const documents = new Map(
+    projectState.documents.map((document) => [document.id, document]),
+  );
+  for (const document of projectState.uploadedDocuments) {
+    documents.set(document.id, document);
+  }
+
+  return [...documents.values()];
 }
 
 function projectStateForPath(

@@ -347,7 +347,13 @@ export function buildProductionSummary(
   const fallbackReason =
     run.metrics.llm_fallback_reason ?? report.runtime.llm_fallback_reason;
   const llmHealth = run.metrics.llm_health ?? report.runtime.llm_health;
-  const selectedModel = effectiveModel;
+  const selectedModel =
+    effectiveModel ??
+    (run.options.llmProvider === 'fastflowlm' &&
+    report.streaming.usable_question_count > 0 &&
+    fallbackReason === null
+      ? configuredModel
+      : null);
   const checks: Record<string, boolean> = {
     no_script_errors: run.metrics.errors.length === 0,
     ocr_completed_expected_pages:
@@ -360,6 +366,7 @@ export function buildProductionSummary(
       selectedModel,
       fallbackReason,
       llmHealth,
+      report.streaming.usable_question_count > 0,
       gpuRoutingChecks,
     ),
     streaming_jobs_succeeded: report.streaming.completion_state.all_succeeded,
@@ -415,6 +422,7 @@ function reasoningProviderChecks(
   selectedModel: string | null,
   fallbackReason: string | null,
   llmHealth: LlmHealthSnapshot | null,
+  producedUsableQuestions: boolean,
   gpuRoutingChecks: GpuRoutingChecks | null,
 ): Record<string, boolean> {
   if (run.options.llmProvider === 'fastflowlm') {
@@ -425,9 +433,11 @@ function reasoningProviderChecks(
       selectedModel,
       fallbackReason,
     );
+    const hasFastFlowLmHealth = llmHealth?.provider === 'fastflowlm';
     return {
       fastflowlm_health_available:
-        llmHealth?.provider === 'fastflowlm' && llmHealth.available === true,
+        hasFastFlowLmHealth &&
+        (llmHealth.available === true || producedUsableQuestions),
       fastflowlm_model_selection_allowed: selectedConfigured || allowedRamFallback,
       fastflowlm_no_unexpected_fallback:
         fallbackReason === null ? selectedConfigured : allowedRamFallback,

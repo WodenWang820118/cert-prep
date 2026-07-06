@@ -197,6 +197,16 @@ export function runtimeDrawerLocator(run: SmokeRunState): Locator {
     .last();
 }
 
+function closeableRuntimeDialogLocator(run: SmokeRunState): Locator {
+  return activePage(run)
+    .locator('.p-dialog, [role="dialog"]')
+    .filter({
+      hasText:
+        /Manage runtime|Runtime details|Python backend|WindowsML OCR|PaddleOCR/i,
+    })
+    .last();
+}
+
 export async function runtimeDrawerText(run: SmokeRunState): Promise<string> {
   await openRuntimeDrawer(run);
   const drawer = runtimeDrawerLocator(run);
@@ -231,13 +241,8 @@ export async function closeRuntimeDrawer(run: SmokeRunState): Promise<void> {
   if ((await drawer.count()) === 0) {
     return;
   }
-  const dialogCount = await activePage(run)
-    .locator('.p-dialog, [role="dialog"]')
-    .filter({
-      hasText:
-        /Manage runtime|Runtime details|Python backend|WindowsML OCR|PaddleOCR/i,
-    })
-    .count();
+  const dialog = closeableRuntimeDialogLocator(run);
+  const dialogCount = await dialog.count();
   if (dialogCount === 0) {
     await clickButtonPattern(run, /^\s*Build\s*$/);
     await waitText(
@@ -248,16 +253,16 @@ export async function closeRuntimeDrawer(run: SmokeRunState): Promise<void> {
     );
     return;
   }
-  const closeButtons = activePage(run).locator(
-    'button[aria-label="Close runtime manager"], button[aria-label="Close"], button.p-dialog-header-close',
-  );
+  const closeButtons = dialog.locator(
+    'button[aria-label="Close runtime manager"]:not([aria-hidden="true"]), button[aria-label="Close"]:not([aria-hidden="true"]), button.p-dialog-header-close:not([aria-hidden="true"])',
+  ).filter({ visible: true });
   const count = await closeButtons.count();
   if (count > 0) {
-    await closeButtons.nth(count - 1).click({ force: true });
+    await closeButtons.last().click({ force: true });
   } else {
     await activePage(run).keyboard.press('Escape');
   }
-  await drawer.waitFor({ state: 'hidden', timeout: 10_000 });
+  await dialog.waitFor({ state: 'hidden', timeout: 10_000 });
 }
 
 export async function refreshRuntimeDrawer(run: SmokeRunState): Promise<void> {

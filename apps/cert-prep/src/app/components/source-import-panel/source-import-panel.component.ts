@@ -19,7 +19,11 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
           </span>
           <h2 id="source-heading">Step 01: Source PDF</h2>
         </div>
-        <label class="workbench-secondary-button" for="sourcePdfFile">
+        <label
+          class="workbench-secondary-button"
+          [attr.for]="isUploadBusy() ? null : 'sourcePdfFile'"
+          [attr.aria-disabled]="isUploadBusy()"
+        >
           <i class="pi pi-upload" aria-hidden="true"></i>
           <span>Choose PDF</span>
         </label>
@@ -31,25 +35,55 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
           class="sr-only"
           type="file"
           accept="application/pdf"
+          multiple
           aria-label="PDF file"
-          (change)="chooseFile($event)"
+          [disabled]="isUploadBusy()"
+          (change)="chooseFiles($event)"
         />
 
         <div class="workbench-file-row">
           <div class="workbench-file-name">
             <i class="pi pi-file" aria-hidden="true"></i>
-            <span>
-              {{
-                sourceImport.selectedFile()?.name ??
-                  sourceImport.activeDocument()?.filename ??
-                  'No PDF selected'
-              }}
-            </span>
+            <span>{{ sourceImport.selectedFileLabel() }}</span>
           </div>
           <span class="workbench-tag">
-            {{ sourceImport.activeDocument()?.status ?? 'Waiting' }}
+            {{
+              sourceImport.isUploading()
+                ? 'Uploading'
+                : sourceImport.activeDocument()?.status ?? 'Waiting'
+            }}
           </span>
         </div>
+
+        @if (sourceImport.uploadItems().length > 0) {
+          <div class="grid gap-2" aria-label="Selected PDF upload status">
+            @for (item of sourceImport.uploadItems(); track item.id) {
+              <div
+                class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-surface-200 bg-surface-0 p-3"
+              >
+                <div class="min-w-0">
+                  <p class="m-0 truncate text-sm font-semibold text-color">
+                    {{ item.file.name }}
+                  </p>
+                  <p class="m-0 mt-1 text-xs font-semibold text-muted-color">
+                    {{ formatFileSize(item.file) }}
+                    @if (item.document) {
+                      / {{ item.document.chunks_count }} chunks
+                    }
+                    @if (item.error) {
+                      / {{ item.error }}
+                    }
+                  </p>
+                </div>
+                <p-tag
+                  [value]="uploadStatusLabel(item.status)"
+                  [severity]="uploadStatusSeverity(item.status)"
+                  [rounded]="true"
+                />
+              </div>
+            }
+          </div>
+        }
 
         <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_10rem_auto] md:items-end">
           <label class="workbench-field">
@@ -124,7 +158,7 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
           <dl class="workbench-metrics">
             <div class="workbench-metric">
               <dt>File Size</dt>
-              <dd>{{ formatFileSize(sourceImport.selectedFile()) }}</dd>
+              <dd>{{ formatFileSize(activeDocumentFile()) }}</dd>
             </div>
             <div class="workbench-metric">
               <dt>Pages</dt>
@@ -251,15 +285,18 @@ export class SourceImportPanelComponent {
   protected readonly projects = inject(ProjectStore);
   protected readonly sourceImport = inject(SourceImportStore);
 
-  protected chooseFile(event: Event): void {
+  protected chooseFiles(event: Event): void {
+    if (this.isUploadBusy()) {
+      return;
+    }
     const input = event.target as HTMLInputElement;
-    this.sourceImport.chooseFile(input.files?.item(0) ?? null);
+    this.sourceImport.chooseFiles(Array.from(input.files ?? []));
   }
 
   protected async uploadDocument(): Promise<void> {
-    const document = await this.sourceImport.uploadDocument();
+    const documents = await this.sourceImport.uploadDocuments();
     const project = this.projects.selectedProject();
-    if (document !== null && project !== null) {
+    if (documents.length > 0 && project !== null) {
       await this.drafts.load(project.id);
     }
   }
@@ -281,5 +318,47 @@ export class SourceImportPanelComponent {
       return `${megaBytes.toFixed(1)} MB`;
     }
     return `${Math.max(1, Math.round(file.size / 1024))} KB`;
+  }
+
+  protected activeDocumentFile(): File | null {
+    const document = this.sourceImport.activeDocument();
+    if (document === null) {
+      return this.sourceImport.selectedFile();
+    }
+
+    return (
+      this.sourceImport.uploadItems().find((item) => item.document?.id === document.id)
+        ?.file ?? null
+    );
+  }
+
+  protected isUploadBusy(): boolean {
+    return this.sourceImport.isUploading() || this.operations.isBusyFor('upload');
+  }
+
+  protected uploadStatusLabel(status: string): string {
+    if (status === 'queued') {
+      return 'Queued';
+    }
+    if (status === 'uploading') {
+      return 'Uploading';
+    }
+    if (status === 'uploaded') {
+      return 'Uploaded';
+    }
+    return 'Failed';
+  }
+
+  protected uploadStatusSeverity(status: string): 'success' | 'info' | 'warn' | 'danger' {
+    if (status === 'uploaded') {
+      return 'success';
+    }
+    if (status === 'uploading') {
+      return 'info';
+    }
+    if (status === 'failed') {
+      return 'danger';
+    }
+    return 'warn';
   }
 }

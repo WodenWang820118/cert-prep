@@ -203,6 +203,7 @@ export async function captureDocumentOcrEvidence(
     return;
   }
 
+  recordDocumentOcrCompletionEvidence(run, payload);
   const device = stringField(payload.ocr_device).trim() || 'unknown';
   const fallback = stringField(payload.ocr_fallback_reason).trim();
   run.metrics.observations.push(
@@ -210,6 +211,19 @@ export async function captureDocumentOcrEvidence(
       ? `Document OCR completed on ${device}; fallback_reason=${fallback}.`
       : `Document OCR completed on ${device}.`,
   );
+}
+
+export function recordDocumentOcrCompletionEvidence(
+  run: SmokeRunState,
+  payload: Record<string, unknown>,
+): void {
+  run.metrics.ocr_completion = {
+    pages_processed: valueNumber(payload, 'processed_page_count'),
+    total_pages: valueNumber(payload, 'page_count'),
+    chunks: valueNumber(payload, 'chunks_count'),
+    expected_pages: run.metrics.ocr_completion?.expected_pages ?? 46,
+    expected_chunks: run.metrics.ocr_completion?.expected_chunks ?? 46,
+  };
 }
 
 async function streamingApiGet(

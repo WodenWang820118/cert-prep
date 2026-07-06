@@ -3,6 +3,7 @@ import { ChunkRead, DocumentRead, CERT_PREP_API } from '../../cert-prep-api';
 import type {
   DocumentParsingMetric,
   LanguageHint,
+  SourceUploadItem,
 } from './contracts/source-import.contracts';
 import { DocumentParsingMetricsService } from './document-parsing-metrics.service';
 import { DocumentLibraryStore } from './document-library.store';
@@ -28,6 +29,7 @@ export class SourceImportStore {
   private readonly operations = inject(OperationStore);
   private readonly projects = inject(ProjectStore);
   private documentPollTimer: ReturnType<typeof setTimeout> | null = null;
+  private uploadItemCounter = 0;
 
   readonly languageHints: readonly LanguageHint[] = [
     'auto',
@@ -38,7 +40,37 @@ export class SourceImportStore {
     'mixed',
   ];
   readonly languageHint = signal<LanguageHint>('auto');
-  readonly selectedFile = signal<File | null>(null);
+  readonly uploadItems = signal<SourceUploadItem[]>([]);
+  readonly selectedFiles = computed(() =>
+    this.uploadItems().map((item) => item.file),
+  );
+  readonly selectedFile = computed(() => this.selectedFiles()[0] ?? null);
+  readonly isUploading = computed(() =>
+    this.uploadItems().some((item) => item.status === 'uploading'),
+  );
+  readonly pendingUploadCount = computed(
+    () =>
+      this.uploadItems().filter((item) =>
+        ['queued', 'failed'].includes(item.status),
+      ).length,
+  );
+  readonly uploadedFileCount = computed(
+    () =>
+      this.uploadItems().filter((item) => item.status === 'uploaded').length,
+  );
+  readonly failedUploadCount = computed(
+    () => this.uploadItems().filter((item) => item.status === 'failed').length,
+  );
+  readonly selectedFileLabel = computed(() => {
+    const files = this.selectedFiles();
+    if (files.length === 0) {
+      return this.activeDocument()?.filename ?? 'No PDF selected';
+    }
+    if (files.length === 1) {
+      return files[0]?.name ?? 'No PDF selected';
+    }
+    return `${files.length} PDFs selected`;
+  });
   readonly documents = this.library.documents;
   readonly activeDocumentId = this.library.activeDocumentId;
   readonly uploadedDocument = this.library.uploadedDocument;
@@ -84,8 +116,9 @@ export class SourceImportStore {
   readonly canUpload = computed(
     () =>
       this.projects.selectedProject() !== null &&
-      this.selectedFile() !== null &&
-      !this.health.isOcrHealthLoading(),
+      this.pendingUploadCount() > 0 &&
+      !this.health.isOcrHealthLoading() &&
+      !this.isUploading(),
   );
   readonly canGenerateDrafts = computed(() => {
     const document = this.activeDocument();
@@ -98,13 +131,25 @@ export class SourceImportStore {
   });
 
   chooseFile(file: File | null): void {
-    this.selectedFile.set(file);
+    this.chooseFiles(file === null ? [] : [file]);
+  }
+
+  chooseFiles(files: readonly File[]): void {
+    this.uploadItems.set(
+      files.map((file) => ({
+        id: `source-upload-${++this.uploadItemCounter}`,
+        file,
+        status: 'queued',
+        document: null,
+        error: null,
+      })),
+    );
     this.library.clearActiveDocument();
     this.stopDocumentPolling();
   }
 
   reset(): void {
-    this.selectedFile.set(null);
+    this.uploadItems.set([]);
     this.library.reset();
     this.stopDocumentPolling();
   }
@@ -125,40 +170,104 @@ export class SourceImportStore {
   }
 
   async uploadDocument(): Promise<DocumentRead | null> {
+    const documents = await this.uploadDocuments();
+    return documents.length > 0 ? documents[documents.length - 1] : null;
+  }
+
+  async uploadDocuments(): Promise<DocumentRead[]> {
     const project = this.projects.selectedProject();
-    const file = this.selectedFile();
-    if (project === null || file === null) {
-      this.operations.fail('Choose a project and PDF before uploading.');
-      return null;
+    const uploadItems = this.uploadItems().filter((item) =>
+      ['queued', 'failed'].includes(item.status),
+    );
+    if (project === null || uploadItems.length === 0) {
+      this.operations.fail('Choose a project and one or more PDFs before uploading.');
+      return [];
+    }
+    if (this.isUploading() || this.operations.busy() === 'upload') {
+      return [];
     }
     if (this.health.isOcrHealthLoading()) {
       this.operations.fail(
         'OCR runtime is warming up. Try again when runtime health finishes.',
       );
-      return null;
+      return [];
     }
 
-    const formData = new FormData();
-    formData.append('file', file, file.name);
-    formData.append('language_hint', this.languageHint());
+    const uploadedDocuments: DocumentRead[] = [];
+    let runtimePromptNeeded = false;
 
-    const document = await this.operations.run('upload', 'PDF uploaded', () =>
-      this.api.uploadDocument(project.id, formData),
-    );
-    if (document !== null) {
-      this.library.upsertDocument(document);
-      this.setActiveDocument(document);
-      await this.refreshUploadedDocument(project.id, document.id);
-    } else if (
-      [
-        'paddle_runtime_missing',
-        'windowsml_runtime_missing',
-      ].includes(this.operations.errorCode() ?? '')
-    ) {
+    this.operations.busy.set('upload');
+    this.operations.error.set(null);
+    this.operations.errorCode.set(null);
+    this.markUploadItems(uploadItems, {
+      status: 'queued',
+      error: null,
+    });
+
+    try {
+      for (const item of uploadItems) {
+        this.updateUploadItem(item.id, {
+          status: 'uploading',
+          error: null,
+        });
+
+        try {
+          const document = await this.uploadSingleDocument(project.id, item.file);
+          uploadedDocuments.push(document);
+          this.updateUploadItem(item.id, {
+            status: 'uploaded',
+            document,
+            error: null,
+          });
+          this.library.upsertDocument(document);
+        } catch (error) {
+          const errorCode = this.getUploadErrorCode(error);
+          runtimePromptNeeded ||=
+            errorCode === 'paddle_runtime_missing' ||
+            errorCode === 'windowsml_runtime_missing';
+          this.updateUploadItem(item.id, {
+            status: 'failed',
+            error: this.getUploadErrorMessage(error),
+          });
+        }
+      }
+    } finally {
+      if (this.operations.busy() === 'upload') {
+        this.operations.busy.set(null);
+      }
+    }
+
+    if (runtimePromptNeeded) {
       await this.refreshRuntimeHealth();
       this.health.openOcrRuntimeInstallConsent();
     }
-    return document;
+
+    const activeDocument =
+      uploadedDocuments.length > 0
+        ? uploadedDocuments[uploadedDocuments.length - 1]
+        : null;
+    if (activeDocument !== null) {
+      this.setActiveDocument(activeDocument);
+      await this.refreshUploadedDocument(project.id, activeDocument.id);
+    }
+
+    const failedCount = this.failedUploadCount();
+    if (uploadedDocuments.length > 0) {
+      this.operations.status.set(
+        uploadedDocuments.length === 1
+          ? 'PDF uploaded'
+          : `${uploadedDocuments.length} PDFs uploaded`,
+      );
+    }
+    if (failedCount > 0) {
+      this.operations.error.set(
+        failedCount === 1
+          ? '1 PDF failed to upload.'
+          : `${failedCount} PDFs failed to upload.`,
+      );
+    }
+
+    return uploadedDocuments;
   }
 
   async loadLatestDocument(projectId: string): Promise<void> {
@@ -242,6 +351,49 @@ export class SourceImportStore {
     }
   }
 
+  private async uploadSingleDocument(
+    projectId: string,
+    file: File,
+  ): Promise<DocumentRead> {
+    const formData = new FormData();
+    formData.append('file', file, file.name);
+    formData.append('language_hint', this.languageHint());
+    return this.api.uploadDocument(projectId, formData);
+  }
+
+  private markUploadItems(
+    items: readonly SourceUploadItem[],
+    patch: Partial<Omit<SourceUploadItem, 'id' | 'file'>>,
+  ): void {
+    const ids = new Set(items.map((item) => item.id));
+    this.uploadItems.update((currentItems) =>
+      currentItems.map((item) =>
+        ids.has(item.id)
+          ? {
+              ...item,
+              ...patch,
+            }
+          : item,
+      ),
+    );
+  }
+
+  private updateUploadItem(
+    id: string,
+    patch: Partial<Omit<SourceUploadItem, 'id' | 'file'>>,
+  ): void {
+    this.uploadItems.update((items) =>
+      items.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              ...patch,
+            }
+          : item,
+      ),
+    );
+  }
+
   private setActiveDocument(document: DocumentRead | null): void {
     if (this.library.setActiveDocument(document)) {
       this.stopDocumentPolling();
@@ -254,6 +406,46 @@ export class SourceImportStore {
     } catch {
       // Keep the use-time prompt available even if the health refresh failed.
     }
+  }
+
+  private getUploadErrorMessage(error: unknown): string {
+    const httpError = error as { error?: unknown; message?: unknown };
+    if (this.hasMessage(httpError.error)) {
+      return httpError.error.message;
+    }
+
+    if (typeof httpError.error === 'string' && httpError.error.length > 0) {
+      return httpError.error;
+    }
+
+    if (typeof httpError.message === 'string' && httpError.message.length > 0) {
+      return httpError.message;
+    }
+
+    return 'The local cert prep service did not complete the upload.';
+  }
+
+  private hasMessage(value: unknown): value is { message: string } {
+    return (
+      typeof value === 'object' &&
+      value !== null &&
+      'message' in value &&
+      typeof (value as { message?: unknown }).message === 'string'
+    );
+  }
+
+  private getUploadErrorCode(error: unknown): string | null {
+    const httpError = error as { error?: unknown };
+    if (
+      typeof httpError.error === 'object' &&
+      httpError.error !== null &&
+      'code' in httpError.error &&
+      typeof (httpError.error as { code?: unknown }).code === 'string'
+    ) {
+      return (httpError.error as { code: string }).code;
+    }
+
+    return null;
   }
 
   private scheduleDocumentPolling(projectId: string, documentId: string): void {

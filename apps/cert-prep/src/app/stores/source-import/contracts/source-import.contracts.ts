@@ -1,3 +1,5 @@
+import type { DocumentRead } from '../../../cert-prep-api';
+
 /**
  * Optional OCR/parser language hint sent with an uploaded source PDF.
  */
@@ -15,6 +17,16 @@ export type LanguageHint =
 export interface DocumentParsingMetric {
   readonly label: string;
   readonly value: string;
+}
+
+export type SourceUploadStatus = 'queued' | 'uploading' | 'uploaded' | 'failed';
+
+export interface SourceUploadItem {
+  readonly id: string;
+  readonly file: File;
+  readonly status: SourceUploadStatus;
+  readonly document: DocumentRead | null;
+  readonly error: string | null;
 }
 
 /**

@@ -160,6 +160,160 @@ describe('SourceImportPanelComponent', () => {
     expect(sourceImport.chunks()[0]?.document_id).toBe(secondDocument.id);
   });
 
+  it('shows the active uploaded document file size after a batch upload', () => {
+    const fixture = TestBed.createComponent(SourceImportPanelComponent);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    const firstDocument = documentRead({ id: 'document-small', filename: 'small.pdf' });
+    const secondDocument = documentRead({
+      id: 'document-large',
+      filename: 'large.pdf',
+    });
+    const smallFile = new File(['%PDF-1.7'], 'small.pdf', {
+      type: 'application/pdf',
+    });
+    const largeFile = new File([new Uint8Array(2 * 1024 * 1024)], 'large.pdf', {
+      type: 'application/pdf',
+    });
+    sourceImport.uploadItems.set([
+      {
+        id: 'source-upload-1',
+        file: smallFile,
+        status: 'uploaded',
+        document: firstDocument,
+        error: null,
+      },
+      {
+        id: 'source-upload-2',
+        file: largeFile,
+        status: 'uploaded',
+        document: secondDocument,
+        error: null,
+      },
+    ]);
+    sourceImport.documents.set([firstDocument, secondDocument]);
+    sourceImport.setActiveDocumentId(secondDocument.id);
+
+    fixture.detectChanges();
+
+    expect(metricValue(fixture.nativeElement, 'File Size')).toBe('2.0 MB');
+  });
+
+  it('does not reuse a selected file size for an unrelated library document', () => {
+    const fixture = TestBed.createComponent(SourceImportPanelComponent);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    const document = documentRead({
+      id: 'document-library',
+      filename: 'library.pdf',
+    });
+    sourceImport.uploadItems.set([
+      {
+        id: 'source-upload-1',
+        file: new File([new Uint8Array(2 * 1024 * 1024)], 'new-selection.pdf', {
+          type: 'application/pdf',
+        }),
+        status: 'queued',
+        document: null,
+        error: null,
+      },
+    ]);
+    sourceImport.documents.set([document]);
+    sourceImport.setActiveDocumentId(document.id);
+
+    fixture.detectChanges();
+
+    expect(metricValue(fixture.nativeElement, 'File Size')).toBe('-');
+  });
+
+  it('renders selected, uploaded, and failed PDF states from a multiple file input', async () => {
+    const fixture = TestBed.createComponent(SourceImportPanelComponent);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    apiClient.uploadDocument.mockImplementation(
+      (_projectId: string, body: FormData) => {
+        const file = body.get('file') as File;
+        if (file.name === 'failed.pdf') {
+          return Promise.reject({ error: { message: 'Invalid PDF' } });
+        }
+        return Promise.resolve(
+          documentRead({
+            id: 'document-uploaded',
+            filename: file.name,
+            chunks_count: 4,
+          }),
+        );
+      },
+    );
+    sourceImport.chooseFiles([
+      new File(['%PDF-1.7'], 'uploaded.pdf', { type: 'application/pdf' }),
+      new File(['not a pdf'], 'failed.pdf', { type: 'application/pdf' }),
+    ]);
+
+    fixture.detectChanges();
+
+    const input = fixture.nativeElement.querySelector(
+      '#sourcePdfFile',
+    ) as HTMLInputElement | null;
+    expect(input?.multiple).toBe(true);
+    expect(fixture.nativeElement.textContent).toContain('2 PDFs selected');
+    expect(fixture.nativeElement.textContent).toContain('Queued');
+
+    await sourceImport.uploadDocuments();
+    fixture.detectChanges();
+
+    const text = fixture.nativeElement.textContent;
+    expect(uploadButton(fixture.nativeElement)?.textContent).toContain(
+      'Upload PDF',
+    );
+    expect(text).toContain('uploaded.pdf');
+    expect(text).toContain('failed.pdf');
+    expect(text).toContain('Uploaded');
+    expect(text).toContain('Failed');
+    expect(text).toContain('Invalid PDF');
+  });
+
+  it('keeps the file chooser disabled while a batch upload is in flight', async () => {
+    const fixture = TestBed.createComponent(SourceImportPanelComponent);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    let resolveUpload!: (document: DocumentRead) => void;
+    apiClient.uploadDocument.mockReturnValue(
+      new Promise<DocumentRead>((resolve) => {
+        resolveUpload = resolve;
+      }),
+    );
+    sourceImport.chooseFiles([
+      new File(['%PDF-1.7'], 'busy.pdf', { type: 'application/pdf' }),
+    ]);
+
+    const uploadPromise = sourceImport.uploadDocuments();
+    await Promise.resolve();
+    fixture.detectChanges();
+
+    const input = fixture.nativeElement.querySelector(
+      '#sourcePdfFile',
+    ) as HTMLInputElement | null;
+    const chooser = fixture.nativeElement.querySelector(
+      'label.workbench-secondary-button',
+    ) as HTMLLabelElement | null;
+    expect(input?.disabled).toBe(true);
+    expect(chooser?.getAttribute('for')).toBeNull();
+    (
+      fixture.componentInstance as unknown as {
+        chooseFiles(event: Event): void;
+      }
+    ).chooseFiles({
+      target: {
+        files: [
+          new File(['%PDF-1.7'], 'replacement.pdf', {
+            type: 'application/pdf',
+          }),
+        ],
+      },
+    } as unknown as Event);
+    expect(sourceImport.selectedFile()?.name).toBe('busy.pdf');
+
+    resolveUpload(documentRead({ id: 'document-busy', filename: 'busy.pdf' }));
+    await uploadPromise;
+  });
+
   it('keeps upload disabled while runtime health is waiting for first OCR status', async () => {
     const fixture = TestBed.createComponent(SourceImportPanelComponent);
     const health = TestBed.inject(HealthStore);
@@ -311,6 +465,13 @@ function documentSelector(root: ParentNode): HTMLSelectElement | null {
       select.textContent?.includes('second.pdf'),
     ) ?? null
   );
+}
+
+function metricValue(root: ParentNode, label: string): string | null {
+  const metric = Array.from(root.querySelectorAll('.workbench-metric')).find(
+    (item) => item.querySelector('dt')?.textContent?.trim() === label,
+  );
+  return metric?.querySelector('dd')?.textContent?.trim() ?? null;
 }
 
 function activateDocument(

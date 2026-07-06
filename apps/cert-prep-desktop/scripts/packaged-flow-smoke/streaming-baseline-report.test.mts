@@ -78,6 +78,83 @@ test('production summary accepts FastFlowLM NPU reasoning without NVIDIA dGPU us
   }
 });
 
+test('production summary accepts FastFlowLM usable output when closeout health is unavailable', () => {
+  const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-prep-production-summary-'));
+  try {
+    const outDir = join(workspaceRoot, 'out');
+    mkdirSync(outDir);
+    writeFileSync(
+      join(outDir, 'windows-resource-summary.json'),
+      JSON.stringify({
+        gpu_routing_checks: {
+          windowsml_ocr_process_observed: true,
+          ocr_uses_amd_igpu: true,
+          ocr_avoids_nvidia_dgpu: true,
+          reasoning_uses_nvidia_dgpu: true,
+          gpu_luid_map_usable: true,
+        },
+      }),
+      'utf8',
+    );
+    const run = productionRunState(workspaceRoot, outDir);
+    delete run.metrics.llm_effective_model;
+    run.metrics.llm_health = {
+      provider: 'fastflowlm',
+      available: false,
+      model: 'qwen3.5:4b',
+      configured_model: 'qwen3.5:4b',
+      effective_model: null,
+      fallback_models: ['qwen3.5:2b'],
+      fallback_reason: null,
+      detail: 'server unavailable after generation completed',
+    };
+    const report = productionReport();
+    report.runtime.llm_effective_model = null;
+    report.runtime.llm_health = run.metrics.llm_health;
+
+    const summary = buildProductionSummary(run, report);
+
+    assert.equal(summary.status, 'passed');
+    assert.equal(summary.selected_model, 'qwen3.5:4b');
+    assert.equal(summary.checks.fastflowlm_health_available, true);
+    assert.equal(summary.checks.selected_model_produced_usable_questions, true);
+  } finally {
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test('production summary fails FastFlowLM health when no health snapshot exists', () => {
+  const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-prep-production-summary-'));
+  try {
+    const outDir = join(workspaceRoot, 'out');
+    mkdirSync(outDir);
+    writeFileSync(
+      join(outDir, 'windows-resource-summary.json'),
+      JSON.stringify({
+        gpu_routing_checks: {
+          windowsml_ocr_process_observed: true,
+          ocr_uses_amd_igpu: true,
+          ocr_avoids_nvidia_dgpu: true,
+          reasoning_uses_nvidia_dgpu: true,
+          gpu_luid_map_usable: true,
+        },
+      }),
+      'utf8',
+    );
+    const run = productionRunState(workspaceRoot, outDir);
+    const report = productionReport();
+    report.runtime.llm_health = null;
+
+    const summary = buildProductionSummary(run, report);
+
+    assert.equal(summary.status, 'failed');
+    assert.equal(summary.checks.fastflowlm_health_available, false);
+    assert.equal(summary.checks.selected_model_produced_usable_questions, true);
+  } finally {
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
 test('production summary still requires NVIDIA dGPU usage for Ollama reasoning', () => {
   const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-prep-production-summary-'));
   try {

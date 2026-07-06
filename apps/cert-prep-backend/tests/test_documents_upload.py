@@ -6,7 +6,8 @@ from fastapi.testclient import TestClient
 from conftest import minimal_pdf
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.core.config import Settings
-from document_test_helpers import _create_project
+from document_test_helpers import _create_project, _wait_for_question_drafts
+from document_test_llm_fakes import MockExamProvider
 from document_test_ocr_fakes import MockOllamaOcrProvider, MockPaddleOcrProvider
 
 
@@ -86,6 +87,116 @@ def test_pdf_upload_hashes_stores_extracts_and_chunks_by_page(
     assert detail.status_code == 200
     assert detail.json()["id"] == document["id"]
     assert detail.json()["language_hint"] == "ja"
+
+
+def test_sequential_pdf_uploads_in_one_project_keep_document_scoped_chunks(
+    tmp_path: Path, auth_headers
+) -> None:
+    client = TestClient(
+        create_app(
+            settings=Settings(
+                data_dir=tmp_path,
+                api_token="test-token",
+                streaming_draft_generation_on_upload=True,
+                streaming_draft_generation_page_limit=1,
+            ),
+            llm_provider=MockExamProvider(),
+            document_processing_async_jobs=False,
+            streaming_draft_generation_async_jobs=False,
+        )
+    )
+    project_id = _create_project(client, auth_headers)
+
+    first_response = client.post(
+        f"/projects/{project_id}/documents",
+        headers=auth_headers,
+        files={
+            "file": (
+                "identity.pdf",
+                minimal_pdf(
+                    "Mondai 1 Alpha document page one covers identity proofing. "
+                    "1 A correct 2 B wrong 3 C wrong 4 D wrong",
+                    "Alpha document page two covers password rotation.",
+                ),
+                "application/pdf",
+            )
+        },
+    )
+    second_response = client.post(
+        f"/projects/{project_id}/documents",
+        headers=auth_headers,
+        files={
+            "file": (
+                "network.pdf",
+                minimal_pdf(
+                    "Mondai 1 Beta document page one covers firewall policy. "
+                    "1 A correct 2 B wrong 3 C wrong 4 D wrong",
+                    "Beta document page two covers network segmentation.",
+                ),
+                "application/pdf",
+            )
+        },
+    )
+
+    assert first_response.status_code == 201
+    assert second_response.status_code == 201
+    first_document = first_response.json()
+    second_document = second_response.json()
+    assert first_document["id"] != second_document["id"]
+
+    documents_response = client.get(f"/projects/{project_id}/documents", headers=auth_headers)
+    assert documents_response.status_code == 200
+    documents_by_id = {
+        document["id"]: document for document in documents_response.json()["items"]
+    }
+    assert {first_document["id"], second_document["id"]}.issubset(documents_by_id)
+    assert documents_by_id[first_document["id"]]["filename"] == "identity.pdf"
+    assert documents_by_id[second_document["id"]]["filename"] == "network.pdf"
+
+    first_chunks_response = client.get(
+        f"/projects/{project_id}/documents/{first_document['id']}/chunks",
+        headers=auth_headers,
+    )
+    second_chunks_response = client.get(
+        f"/projects/{project_id}/documents/{second_document['id']}/chunks",
+        headers=auth_headers,
+    )
+
+    assert first_chunks_response.status_code == 200
+    assert second_chunks_response.status_code == 200
+    first_chunks = first_chunks_response.json()["items"]
+    second_chunks = second_chunks_response.json()["items"]
+    assert [chunk["page_number"] for chunk in first_chunks] == [1, 2]
+    assert [chunk["page_number"] for chunk in second_chunks] == [1, 2]
+    assert "Alpha document page one" in first_chunks[0]["text"]
+    assert "Alpha document page two" in first_chunks[1]["text"]
+    assert "Beta document page one" not in first_chunks[0]["text"]
+    assert "Beta document page two" not in first_chunks[1]["text"]
+    assert "Beta document page one" in second_chunks[0]["text"]
+    assert "Beta document page two" in second_chunks[1]["text"]
+    assert "Alpha document page one" not in second_chunks[0]["text"]
+    assert "Alpha document page two" not in second_chunks[1]["text"]
+
+    drafts = _wait_for_question_drafts(client, auth_headers, project_id, count=2)
+    drafts_by_document_id = {
+        document_id: [
+            draft for draft in drafts if draft["document_id"] == document_id
+        ]
+        for document_id in [first_document["id"], second_document["id"]]
+    }
+    assert {first_document["id"], second_document["id"]} == {
+        draft["document_id"] for draft in drafts
+    }
+    assert len(drafts_by_document_id[first_document["id"]]) == 1
+    assert len(drafts_by_document_id[second_document["id"]]) == 1
+    first_draft = drafts_by_document_id[first_document["id"]][0]
+    second_draft = drafts_by_document_id[second_document["id"]][0]
+    assert first_draft["answer_key_source"] == "ai_inferred"
+    assert second_draft["answer_key_source"] == "ai_inferred"
+    assert "Alpha document page one" in first_draft["source_excerpt"]
+    assert "Beta document page one" not in first_draft["source_excerpt"]
+    assert "Beta document page one" in second_draft["source_excerpt"]
+    assert "Alpha document page one" not in second_draft["source_excerpt"]
 
 
 def test_scanned_pdf_upload_is_detected_without_chunks(client: TestClient, auth_headers) -> None:

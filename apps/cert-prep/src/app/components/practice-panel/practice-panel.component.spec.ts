@@ -1,5 +1,9 @@
 import { TestBed } from '@angular/core/testing';
-import { appProject, editableAppQuestion } from '../../app.spec-helpers';
+import {
+  appDocument,
+  appProject,
+  editableAppQuestion,
+} from '../../app.spec-helpers';
 import {
   CERT_PREP_API,
   type PracticeSessionRead,
@@ -49,6 +53,56 @@ describe('PracticePanelComponent', () => {
 
     expect(metricValue(fixture.nativeElement, 'Draw Size')).toBe('1');
     expect(fixture.nativeElement.textContent).toContain('Question 1 of 1');
+  });
+
+  it('loads project documents and drafts before rendering full exam readiness', async () => {
+    const projects = TestBed.inject(ProjectStore);
+    projects.projects.set([appProject]);
+    projects.select(appProject.id);
+    apiClient.listDocuments.mockResolvedValue({ items: [appDocument] });
+    apiClient.getDocument.mockResolvedValue(appDocument);
+    apiClient.listQuestionDrafts.mockResolvedValue({
+      items: [editableAppQuestion],
+    });
+
+    const fixture = TestBed.createComponent(PracticePanelComponent);
+    fixture.componentRef.setInput('sessionMode', 'full_document');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(apiClient.listDocuments).toHaveBeenCalledWith(appProject.id);
+    expect(apiClient.listQuestionDrafts).toHaveBeenCalledWith(appProject.id);
+    expect(metricValue(fixture.nativeElement, 'Documents')).toBe('1');
+    expect(metricValue(fixture.nativeElement, 'Questions')).toBe('1');
+    expect(buttonByText(fixture.nativeElement, 'Start full exam')?.disabled).toBe(
+      false,
+    );
+  });
+
+  it('reports practice input load failures instead of leaking an unhandled rejection', async () => {
+    const projects = TestBed.inject(ProjectStore);
+    const operations = TestBed.inject(OperationStore);
+    const unhandledRejection = vi.fn();
+    projects.projects.set([appProject]);
+    projects.select(appProject.id);
+    apiClient.listQuestionDrafts.mockRejectedValue(new Error('offline'));
+    window.addEventListener('unhandledrejection', unhandledRejection);
+
+    try {
+      const fixture = TestBed.createComponent(PracticePanelComponent);
+      fixture.componentRef.setInput('sessionMode', 'random_draw');
+      fixture.detectChanges();
+
+      await vi.waitFor(() =>
+        expect(operations.error()).toBe(
+          'Practice data could not be loaded. Try refreshing the project.',
+        ),
+      );
+      expect(unhandledRejection).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('unhandledrejection', unhandledRejection);
+    }
   });
 
   it('selects an answer in an active practice session', async () => {
@@ -270,5 +324,9 @@ function createApiClient() {
   return {
     recordPracticeAttempt: vi.fn(),
     listWrongAnswers: vi.fn().mockResolvedValue({ items: [] }),
+    listQuestionDrafts: vi.fn().mockResolvedValue({ items: [] }),
+    listDocuments: vi.fn().mockResolvedValue({ items: [] }),
+    getDocument: vi.fn().mockResolvedValue(appDocument),
+    listDocumentChunks: vi.fn().mockResolvedValue({ items: [] }),
   };
 }

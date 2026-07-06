@@ -1,8 +1,11 @@
-import { Component, computed, inject, input } from '@angular/core';
+import { Component, OnInit, computed, inject, input } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
 import { OperationStore } from '../../stores/operation.store';
 import type { PracticeSessionMode } from '../../stores/practice/contracts/practice.contracts';
 import { PracticeStore } from '../../stores/practice/practice.store';
+import { ProjectStore } from '../../stores/project.store';
+import { SourceImportStore } from '../../stores/source-import/source-import.store';
 
 interface QuestionNavigatorItem {
   readonly number: number;
@@ -15,8 +18,12 @@ interface QuestionNavigatorItem {
   templateUrl: './practice-panel.component.html',
   styleUrl: './practice-panel.component.css',
 })
-export class PracticePanelComponent {
+export class PracticePanelComponent implements OnInit {
   readonly sessionMode = input<PracticeSessionMode>('random_draw');
+
+  private readonly drafts = inject(DraftReviewStore);
+  private readonly projects = inject(ProjectStore);
+  private readonly sourceImport = inject(SourceImportStore);
 
   protected readonly operations = inject(OperationStore);
   protected readonly practice = inject(PracticeStore);
@@ -104,6 +111,29 @@ export class PracticePanelComponent {
 
   protected async startPracticeSession(): Promise<void> {
     await this.practice.createPracticeSession(this.sessionMode());
+  }
+
+  ngOnInit(): void {
+    void this.loadPracticeInputs().catch(() => {
+      this.operations.fail(
+        'Practice data could not be loaded. Try refreshing the project.',
+      );
+    });
+  }
+
+  private async loadPracticeInputs(): Promise<void> {
+    const project = this.projects.selectedProject();
+    if (project === null) {
+      return;
+    }
+
+    await Promise.all([
+      this.drafts.load(project.id),
+      this.sessionMode() === 'full_document' &&
+      this.sourceImport.documents().length === 0
+        ? this.sourceImport.loadLatestDocument(project.id)
+        : Promise.resolve(),
+    ]);
   }
 }
 

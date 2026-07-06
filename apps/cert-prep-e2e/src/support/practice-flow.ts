@@ -204,6 +204,52 @@ export async function runMultiPdfIsolationScenario(
   }
 }
 
+export async function runMultiPdfBatchUploadScenario(
+  page: Page,
+  api: MockCertPrepApi,
+): Promise<void> {
+  const [firstDocument, secondDocument] = api.documents;
+  if (firstDocument === undefined || secondDocument === undefined) {
+    throw new Error('Multi-PDF batch upload requires two mocked documents.');
+  }
+
+  await page.goto('/');
+  await createProject(page, api);
+  await expectRuntimeReady(page);
+
+  const requestMarker = api.markRequestLog();
+  await page.getByLabel('PDF file').setInputFiles(
+    [firstDocument, secondDocument].map((document) => ({
+      name: document.filename,
+      mimeType: 'application/pdf',
+      buffer: Buffer.from(`%PDF-1.4\n% mocked ${document.id} pdf\n`),
+    })),
+  );
+  await page.getByRole('button', { name: 'Upload PDF' }).click();
+
+  await expectDocumentLibraryOption(page, firstDocument);
+  await expectDocumentLibraryOption(page, secondDocument);
+  expect(
+    api
+      .requestLogSince(requestMarker)
+      .filter(
+        (path) => path === `POST /projects/${api.project.id}/documents`,
+      ),
+  ).toHaveLength(2);
+
+  for (const document of [firstDocument, secondDocument]) {
+    await selectDocumentFromLibrary(page, document);
+    const [draft] = api.playableDraftsForDocument(document.id);
+    if (draft === undefined) {
+      throw new Error(`Document ${document.id} needs a playable mocked draft.`);
+    }
+    await expectAiInferredPlayableDraft(page, draft);
+  }
+
+  await startFullExam(page, api, secondDocument);
+  expectFullExamSessionToUseOnlyDocument(api, secondDocument);
+}
+
 export function expectFullExamSessionToUseOnlyDocument(
   api: MockCertPrepApi,
   document: DocumentRead,
@@ -226,6 +272,37 @@ export function expectFullExamSessionToUseOnlyDocument(
   expect(session?.question_ids).toEqual(
     expect.not.arrayContaining(excludedDraftIds),
   );
+}
+
+async function expectDocumentLibraryOption(
+  page: Page,
+  document: DocumentRead,
+): Promise<void> {
+  await expect(
+    page
+      .getByLabel('Project document library')
+      .locator('option', { hasText: document.filename }),
+  ).toHaveCount(1);
+}
+
+async function selectDocumentFromLibrary(
+  page: Page,
+  document: DocumentRead,
+): Promise<void> {
+  const documentLibrary = page.getByLabel('Project document library');
+  await documentLibrary.selectOption(document.id);
+  await expect(documentLibrary).toHaveValue(document.id);
+}
+
+async function expectAiInferredPlayableDraft(
+  page: Page,
+  draft: CompleteQuestionDraft,
+): Promise<void> {
+  const card = page.getByTestId('draft-question-card').filter({
+    hasText: draft.question,
+  });
+  await expect(card.getByText('Playable', { exact: true })).toBeVisible();
+  await expect(card.getByText('ai_inferred', { exact: true })).toBeVisible();
 }
 
 export async function expectRandomQuizAvailableCount(
