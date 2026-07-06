@@ -185,12 +185,16 @@ PaddleOCR NPU implementation.
 - Streaming and runtime-installation dispatch use provider capabilities for
   reasoning, fast-first generation, resource release, generation startup, and
   streaming kwargs instead of concrete provider or provider-name checks.
-- Evidence: `pnpm nx run cert-prep-backend:test -- tests/test_llm.py
-  tests/test_documents_streaming.py tests/test_runtime_installations.py` passed
-  72 tests; `pnpm nx run cert-prep-backend:streaming-cli-test` passed 33
-  selected tests; `pnpm nx run cert-prep-backend:test --skip-nx-cache` passed
-  162 tests; `pnpm nx run cert-prep-backend:lint --skip-nx-cache` passed; and
-  `git diff --check` passed with CRLF conversion warnings only.
+- Evidence: the former `tests/test_llm.py` coverage now lives in
+  `tests/test_llm_draft_parsing.py`, `tests/test_llm_provider_settings.py`,
+  `tests/test_fastflowlm_provider.py`, `tests/test_ollama_provider.py`, and
+  `tests/test_model_downloads.py`; run those with
+  `tests/test_documents_streaming.py` and `tests/test_runtime_installations.py`
+  for the provider-boundary slice. `pnpm nx run
+  cert-prep-backend:streaming-cli-test` passed 33 selected tests; `pnpm nx run
+  cert-prep-backend:test --skip-nx-cache` passed 162 tests; `pnpm nx run
+  cert-prep-backend:lint --skip-nx-cache` passed; and `git diff --check`
+  passed with CRLF conversion warnings only.
 
 ## Verification
 
