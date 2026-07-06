@@ -111,10 +111,6 @@
           <span>{{ activeQuestionNumber() }}</span>
           Question {{ activeQuestionNumber() }} of {{ sessionTotal() }}
         </h3>
-        <button class="practice-flag-button" type="button" disabled>
-          <i class="pi pi-flag" aria-hidden="true"></i>
-          <span>Mark for review</span>
-        </button>
       </div>
 
       @if (practice.activeQuestion(); as question) {

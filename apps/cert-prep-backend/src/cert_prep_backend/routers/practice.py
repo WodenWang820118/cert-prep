@@ -14,6 +14,7 @@ from cert_prep_backend.domains.practice.schemas import (
     PracticeSessionRead,
     WrongAnswerExplanationRead,
     WrongAnswerList,
+    WrongAnswerSummaryRead,
 )
 from cert_prep_backend.api.errors import NotFoundError, ValidationError, not_found_error, validation_error
 
@@ -39,6 +40,7 @@ def create_practice_session(
             document_id=payload.document_id,
             question_count=payload.question_count,
             random_seed=payload.random_seed,
+            wrong_attempt_ids=payload.wrong_attempt_ids,
         )
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
@@ -87,6 +89,14 @@ def record_practice_attempt(
 def list_wrong_answers(project_id: str, db: Database = Depends(get_database)) -> dict:
     try:
         return {"items": practice_repository.list_wrong_answers(db, project_id)}
+    except NotFoundError as exc:
+        raise not_found_error(str(exc)) from exc
+
+
+@router.get("/wrong-answers/summary", response_model=WrongAnswerSummaryRead)
+def summarize_wrong_answers(project_id: str, db: Database = Depends(get_database)) -> dict:
+    try:
+        return practice_repository.summarize_wrong_answers(db, project_id)
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
 

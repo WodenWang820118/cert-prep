@@ -30,6 +30,18 @@ def test_practice_session_attempts_and_wrong_answer_review(client: TestClient, a
     assert session["document_id"] is None
     assert session["question_count"] == 5
     assert isinstance(session["random_seed"], int)
+    assert session["questions"] == [
+        {
+            "id": question["id"],
+            "question": question["question"],
+            "choices": question["choices"],
+            "answer": question["answer"],
+            "rationale": question["rationale"],
+            "citation_page": question["citation_page"],
+            "source_excerpt": question["source_excerpt"],
+            "document_id": document_id,
+        }
+    ]
 
     attempt = client.post(
         f"/projects/{project_id}/practice-sessions/{session['id']}/attempts",
@@ -46,6 +58,8 @@ def test_practice_session_attempts_and_wrong_answer_review(client: TestClient, a
     assert item["selected_answer"] == "Ignore the cited source"
     assert item["correct_answer"] == "Apply the cited concept"
     assert item["citation_page"] == 1
+    assert item["document_id"] == document_id
+    assert item["document_id"] == document_id
 
     corrected = client.post(
         f"/projects/{project_id}/practice-sessions/{session['id']}/attempts",
@@ -60,6 +74,355 @@ def test_practice_session_attempts_and_wrong_answer_review(client: TestClient, a
     )
     assert resolved_wrong_answers.status_code == 200
     assert resolved_wrong_answers.json()["items"] == []
+
+
+def test_review_retry_session_uses_current_wrong_answer_snapshots(
+    client: TestClient, auth_headers
+) -> None:
+    project_id = _create_project(client, auth_headers)
+    document_id = _upload_document(client, auth_headers, project_id)
+    question = _create_manual_question(client, auth_headers, project_id, document_id)
+    session = client.post(
+        f"/projects/{project_id}/practice-sessions",
+        headers=auth_headers,
+        json={"question_count": 1},
+    ).json()
+    wrong_attempt = client.post(
+        f"/projects/{project_id}/practice-sessions/{session['id']}/attempts",
+        headers=auth_headers,
+        json={
+            "question_id": question["id"],
+            "selected_answer": "Allow unrestricted access",
+        },
+    ).json()
+
+    retry_response = client.post(
+        f"/projects/{project_id}/practice-sessions",
+        headers=auth_headers,
+        json={"mode": "review_retry", "wrong_attempt_ids": [wrong_attempt["id"]]},
+    )
+
+    assert retry_response.status_code == 201
+    retry = retry_response.json()
+    assert retry["mode"] == "review_retry"
+    assert retry["question_ids"] == [question["id"]]
+    assert retry["questions"] == [
+        {
+            "id": question["id"],
+            "question": "Which access model should be applied?",
+            "choices": ["Use least privilege", "Allow unrestricted access"],
+            "answer": "Use least privilege",
+            "rationale": "The document says permissions should remain scoped.",
+            "citation_page": 1,
+            "source_excerpt": "Least privilege keeps cloud permissions scoped.",
+            "document_id": document_id,
+        }
+    ]
+
+    corrected = client.post(
+        f"/projects/{project_id}/practice-sessions/{retry['id']}/attempts",
+        headers=auth_headers,
+        json={
+            "question_id": question["id"],
+            "selected_answer": "Use least privilege",
+        },
+    )
+    assert corrected.status_code == 201
+    assert corrected.json()["is_correct"] is True
+    assert (
+        client.get(f"/projects/{project_id}/wrong-answers", headers=auth_headers).json()[
+            "items"
+        ]
+        == []
+    )
+
+
+def test_review_retry_rejects_cleared_wrong_attempt(client: TestClient, auth_headers) -> None:
+    project_id = _create_project(client, auth_headers)
+    document_id = _upload_document(client, auth_headers, project_id)
+    question = _create_manual_question(client, auth_headers, project_id, document_id)
+    session = client.post(
+        f"/projects/{project_id}/practice-sessions",
+        headers=auth_headers,
+        json={"question_count": 1},
+    ).json()
+    wrong_attempt = client.post(
+        f"/projects/{project_id}/practice-sessions/{session['id']}/attempts",
+        headers=auth_headers,
+        json={
+            "question_id": question["id"],
+            "selected_answer": "Allow unrestricted access",
+        },
+    ).json()
+    client.post(
+        f"/projects/{project_id}/practice-sessions/{session['id']}/attempts",
+        headers=auth_headers,
+        json={
+            "question_id": question["id"],
+            "selected_answer": "Use least privilege",
+        },
+    )
+
+    retry_response = client.post(
+        f"/projects/{project_id}/practice-sessions",
+        headers=auth_headers,
+        json={"mode": "review_retry", "wrong_attempt_ids": [wrong_attempt["id"]]},
+    )
+
+    assert retry_response.status_code == 422
+    assert retry_response.json() == {
+        "code": "validation_error",
+        "message": "Wrong attempt ids must refer to current wrong answers in this project.",
+    }
+
+
+def test_wrong_answer_summary_counts_current_cleared_and_repeated_misses(
+    client: TestClient, auth_headers
+) -> None:
+    project_id = _create_project(client, auth_headers)
+    document_id = _upload_document(client, auth_headers, project_id)
+    first = _create_manual_question(client, auth_headers, project_id, document_id)
+    second = _create_manual_question(
+        client,
+        auth_headers,
+        project_id,
+        document_id,
+        question="Which review habit is grounded?",
+        choices=["Check the source", "Guess from memory"],
+        answer="Check the source",
+        rationale="The source tells learners to check the citation.",
+        source_order=20,
+    )
+    session = client.post(
+        f"/projects/{project_id}/practice-sessions",
+        headers=auth_headers,
+        json={"question_count": 2, "random_seed": 12345},
+    ).json()
+    for question, selected in [
+        (first, "Allow unrestricted access"),
+        (first, "Allow unrestricted access"),
+        (first, "Use least privilege"),
+        (second, "Guess from memory"),
+    ]:
+        response = client.post(
+            f"/projects/{project_id}/practice-sessions/{session['id']}/attempts",
+            headers=auth_headers,
+            json={"question_id": question["id"], "selected_answer": selected},
+        )
+        assert response.status_code == 201
+
+    summary = client.get(
+        f"/projects/{project_id}/wrong-answers/summary", headers=auth_headers
+    )
+
+    assert summary.status_code == 200
+    body = summary.json()
+    assert body["current_wrong_count"] == 1
+    assert body["cleared_count"] == 1
+    assert body["last_wrong_date"] is not None
+    assert body["repeated_misses"][0]["question_id"] == first["id"]
+    assert body["repeated_misses"][0]["miss_count"] == 2
+    assert body["clusters"] == [
+        {
+            "document_id": document_id,
+            "citation_page": 1,
+            "current_wrong_count": 1,
+            "cleared_count": 1,
+            "last_wrong_at": body["clusters"][0]["last_wrong_at"],
+        }
+    ]
+
+
+def test_review_retry_session_uses_selected_current_wrong_answers(
+    client: TestClient, auth_headers
+) -> None:
+    project_id = _create_project(client, auth_headers)
+    document_id = _upload_document(client, auth_headers, project_id)
+    first_question = _create_manual_question(client, auth_headers, project_id, document_id)
+    second_question = _create_manual_question(
+        client,
+        auth_headers,
+        project_id,
+        document_id,
+        question="Which permissions should be rotated?",
+        choices=["Temporary credentials", "Global administrator"],
+        answer="Temporary credentials",
+        rationale="The source says short-lived credentials reduce blast radius.",
+    )
+    session = client.post(
+        f"/projects/{project_id}/practice-sessions",
+        headers=auth_headers,
+        json={"mode": "full_document", "document_id": document_id},
+    ).json()
+    first_wrong = client.post(
+        f"/projects/{project_id}/practice-sessions/{session['id']}/attempts",
+        headers=auth_headers,
+        json={
+            "question_id": first_question["id"],
+            "selected_answer": "Allow unrestricted access",
+        },
+    ).json()
+    second_wrong = client.post(
+        f"/projects/{project_id}/practice-sessions/{session['id']}/attempts",
+        headers=auth_headers,
+        json={
+            "question_id": second_question["id"],
+            "selected_answer": "Global administrator",
+        },
+    ).json()
+
+    targeted = client.post(
+        f"/projects/{project_id}/practice-sessions",
+        headers=auth_headers,
+        json={"mode": "review_retry", "wrong_attempt_ids": [second_wrong["id"]]},
+    )
+    all_current = client.post(
+        f"/projects/{project_id}/practice-sessions",
+        headers=auth_headers,
+        json={"mode": "review_retry"},
+    )
+
+    assert targeted.status_code == 201
+    targeted_session = targeted.json()
+    assert targeted_session["mode"] == "review_retry"
+    assert targeted_session["document_id"] is None
+    assert targeted_session["question_count"] == 1
+    assert targeted_session["question_ids"] == [second_question["id"]]
+    assert targeted_session["questions"][0]["document_id"] == document_id
+    assert targeted_session["questions"][0]["answer"] == "Temporary credentials"
+
+    assert all_current.status_code == 201
+    all_current_session = all_current.json()
+    assert all_current_session["mode"] == "review_retry"
+    assert set(all_current_session["question_ids"]) == {
+        first_question["id"],
+        second_question["id"],
+    }
+    assert all_current_session["question_count"] == 2
+
+    cleared = client.post(
+        f"/projects/{project_id}/practice-sessions/{targeted_session['id']}/attempts",
+        headers=auth_headers,
+        json={
+            "question_id": second_question["id"],
+            "selected_answer": "Temporary credentials",
+        },
+    )
+    assert cleared.status_code == 201
+    invalid_retry = client.post(
+        f"/projects/{project_id}/practice-sessions",
+        headers=auth_headers,
+        json={"mode": "review_retry", "wrong_attempt_ids": [second_wrong["id"]]},
+    )
+    assert invalid_retry.status_code == 422
+    assert first_wrong["id"] != second_wrong["id"]
+
+
+def test_wrong_answer_summary_groups_current_cleared_and_repeated_misses(
+    client: TestClient, auth_headers
+) -> None:
+    project_id = _create_project(client, auth_headers)
+    document_id = _upload_document(client, auth_headers, project_id)
+    repeated_question = _create_manual_question(client, auth_headers, project_id, document_id)
+    cleared_question = _create_manual_question(
+        client,
+        auth_headers,
+        project_id,
+        document_id,
+        question="Which credential lifetime is preferred?",
+        choices=["Short-lived", "Permanent"],
+        answer="Short-lived",
+        rationale="The source favors short-lived credentials.",
+    )
+    session = client.post(
+        f"/projects/{project_id}/practice-sessions",
+        headers=auth_headers,
+        json={"mode": "full_document", "document_id": document_id},
+    ).json()
+    for _ in range(2):
+        response = client.post(
+            f"/projects/{project_id}/practice-sessions/{session['id']}/attempts",
+            headers=auth_headers,
+            json={
+                "question_id": repeated_question["id"],
+                "selected_answer": "Allow unrestricted access",
+            },
+        )
+        assert response.status_code == 201
+    response = client.post(
+        f"/projects/{project_id}/practice-sessions/{session['id']}/attempts",
+        headers=auth_headers,
+        json={"question_id": cleared_question["id"], "selected_answer": "Permanent"},
+    )
+    assert response.status_code == 201
+    response = client.post(
+        f"/projects/{project_id}/practice-sessions/{session['id']}/attempts",
+        headers=auth_headers,
+        json={"question_id": cleared_question["id"], "selected_answer": "Short-lived"},
+    )
+    assert response.status_code == 201
+
+    summary_response = client.get(
+        f"/projects/{project_id}/wrong-answers/summary",
+        headers=auth_headers,
+    )
+
+    assert summary_response.status_code == 200
+    summary = summary_response.json()
+    assert summary["current_wrong_count"] == 1
+    assert summary["cleared_count"] == 1
+    assert summary["last_wrong_date"] is not None
+    assert summary["repeated_misses"] == [
+        {
+            "question_id": repeated_question["id"],
+            "question": repeated_question["question"],
+            "document_id": document_id,
+            "citation_page": 1,
+            "source_excerpt": repeated_question["source_excerpt"],
+            "miss_count": 2,
+            "last_wrong_at": summary["repeated_misses"][0]["last_wrong_at"],
+        }
+    ]
+    assert summary["clusters"] == [
+        {
+            "document_id": document_id,
+            "citation_page": 1,
+            "current_wrong_count": 1,
+            "cleared_count": 1,
+            "last_wrong_at": summary["clusters"][0]["last_wrong_at"],
+        }
+    ]
+
+
+def test_session_question_document_id_falls_back_for_old_snapshots(
+    client: TestClient, auth_headers
+) -> None:
+    project_id = _create_project(client, auth_headers)
+    document_id = _upload_document(client, auth_headers, project_id)
+    question = _create_manual_question(client, auth_headers, project_id, document_id)
+    session = client.post(
+        f"/projects/{project_id}/practice-sessions",
+        headers=auth_headers,
+        json={"question_count": 1},
+    ).json()
+
+    with client.app.state.database.connect() as connection:
+        connection.execute(
+            """
+            UPDATE practice_session_questions
+            SET document_id = NULL
+            WHERE session_id = ? AND question_id = ?
+            """,
+            (session["id"], question["id"]),
+        )
+
+    response = client.get(
+        f"/projects/{project_id}/practice-sessions/{session['id']}",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    assert response.json()["questions"][0]["document_id"] == document_id
 
 
 def test_wrong_answer_explanation_uses_current_grounded_fields(
@@ -371,6 +734,45 @@ def test_practice_attempt_rejects_answer_outside_choices(client: TestClient, aut
         "code": "validation_error",
         "message": "Selected answer is not one of the available choices.",
     }
+
+
+def test_legacy_practice_attempt_fallback_does_not_require_live_playability(
+    client: TestClient, auth_headers
+) -> None:
+    project_id = _create_project(client, auth_headers)
+    document_id = _upload_document(client, auth_headers, project_id)
+    question = _create_manual_question(client, auth_headers, project_id, document_id)
+    session = client.post(
+        f"/projects/{project_id}/practice-sessions",
+        headers=auth_headers,
+        json={"question_count": 1},
+    ).json()
+
+    with client.app.state.database.connect() as connection:
+        connection.execute(
+            "DELETE FROM practice_session_questions WHERE session_id = ?",
+            (session["id"],),
+        )
+        connection.execute(
+            """
+            UPDATE question_drafts
+            SET rationale = ''
+            WHERE project_id = ? AND id = ?
+            """,
+            (project_id, question["id"]),
+        )
+
+    response = client.post(
+        f"/projects/{project_id}/practice-sessions/{session['id']}/attempts",
+        headers=auth_headers,
+        json={
+            "question_id": question["id"],
+            "selected_answer": "Use least privilege",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["is_correct"] is True
 
 
 def test_practice_attempt_grades_against_session_question_snapshot(

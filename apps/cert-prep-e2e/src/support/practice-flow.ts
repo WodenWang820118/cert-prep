@@ -121,8 +121,9 @@ export async function startFullExam(
     documentSelect.locator(`option[value="${document.id}"]`),
   ).toHaveCount(1);
   await documentSelect.selectOption(document.id);
-  await expect(page.getByText(`${questionCount} questions in selected document`))
-    .toBeVisible();
+  await expect(
+    page.getByText(`${questionCount} questions in selected document`),
+  ).toBeVisible();
   await page.getByRole('button', { name: 'Start full exam' }).click();
   await expectCurrentSessionVisible(page, api);
 }
@@ -297,6 +298,90 @@ export async function submitWrongAnswerAndOpenReview(
   await expectWrongAnswerReview(page, api, [draft]);
 }
 
+export async function retryWrongAnswerAndClearReview(
+  page: Page,
+  api: MockCertPrepApi,
+): Promise<void> {
+  const draft = api.draft;
+  await completePracticeQuestions(page, api, [draft], wrongChoiceForDraft);
+
+  const wrongAnswer = api
+    .wrongAnswers()
+    .find((candidate) => candidate.question_id === draft.id);
+  expect(wrongAnswer).toBeDefined();
+
+  await openReviewPage(page);
+  await expect(page.getByText('1 recorded')).toBeVisible();
+  await page
+    .locator('article.wrong-answer-card')
+    .filter({ hasText: draft.question })
+    .getByRole('button', { name: 'Retry' })
+    .click();
+
+  await expect(
+    page.getByRole('heading', { name: 'Random Quiz' }),
+  ).toBeVisible();
+  await expect
+    .poll(() => api.practiceSessionPayload())
+    .toMatchObject({
+      mode: 'review_retry',
+      wrong_attempt_ids: [wrongAnswer?.attempt_id],
+      question_count: 1,
+    });
+
+  await completePracticeQuestions(
+    page,
+    api,
+    [draft],
+    (question) => question.answer,
+  );
+  expect(api.wrongAnswers()).toHaveLength(0);
+
+  await openReviewPage(page);
+  await expect(
+    page.getByText(
+      'Wrong answers will appear here after a practice attempt needs review.',
+    ),
+  ).toBeVisible();
+  expect(api.wrongAnswerSummary().current_wrong_count).toBe(0);
+  expect(api.wrongAnswerSummary().cleared_count).toBe(1);
+}
+
+export async function startReviewQuizForAllWrongAnswersAndClearReview(
+  page: Page,
+  api: MockCertPrepApi,
+): Promise<void> {
+  const drafts = api.playableDrafts.slice(0, 2);
+  await completePracticeQuestions(page, api, drafts, wrongChoiceForDraft);
+  const wrongAttemptIds = api
+    .wrongAnswers()
+    .map((wrongAnswer) => wrongAnswer.attempt_id);
+  expect(wrongAttemptIds).toHaveLength(drafts.length);
+
+  await openReviewPage(page);
+  await expect(page.getByText(`${drafts.length} recorded`)).toBeVisible();
+  await page.getByRole('button', { name: 'Start review quiz' }).click();
+
+  await expect(
+    page.getByRole('heading', { name: 'Random Quiz' }),
+  ).toBeVisible();
+  await expect
+    .poll(() => api.practiceSessionPayload())
+    .toMatchObject({
+      mode: 'review_retry',
+      wrong_attempt_ids: wrongAttemptIds,
+      question_count: drafts.length,
+    });
+
+  await completePracticeQuestions(
+    page,
+    api,
+    drafts,
+    (question) => question.answer,
+  );
+  expect(api.wrongAnswers()).toHaveLength(0);
+}
+
 export async function expectWrongAnswerReview(
   page: Page,
   api: MockCertPrepApi,
@@ -304,7 +389,7 @@ export async function expectWrongAnswerReview(
 ): Promise<void> {
   const wrongAnswers = api.wrongAnswers();
   expect(wrongAnswers).toHaveLength(drafts.length);
-  await page.getByRole('link', { name: 'Review' }).click();
+  await openReviewPage(page);
   await expect(page.getByText(`${drafts.length} recorded`)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Refresh' })).toBeEnabled();
 
@@ -374,12 +459,12 @@ async function expectCurrentSessionVisible(
   page: Page,
   api: MockCertPrepApi,
 ): Promise<void> {
-  await expect
-    .poll(() => api.currentSession()?.id ?? null)
-    .not.toBeNull();
+  await expect.poll(() => api.currentSession()?.id ?? null).not.toBeNull();
   const session = api.currentSession();
   expect(session).not.toBeNull();
-  await expect(page.getByText(session?.id ?? '', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText(session?.id ?? '', { exact: true }),
+  ).toBeVisible();
 }
 
 async function expectSessionProgress(
@@ -409,21 +494,26 @@ async function expectWrongAnswerExplanation(
         api
           .wrongAnswerExplanations()
           .find(
-            (explanation) =>
-              explanation.attempt_id === wrongAnswer?.attempt_id,
+            (explanation) => explanation.attempt_id === wrongAnswer?.attempt_id,
           )?.explanation ?? null,
     )
     .not.toBeNull();
 
   const explanation = api
     .wrongAnswerExplanations()
-    .find(
-      (candidate) => candidate.attempt_id === wrongAnswer?.attempt_id,
-    );
+    .find((candidate) => candidate.attempt_id === wrongAnswer?.attempt_id);
   expect(explanation).toBeDefined();
   await expect(card.getByText(explanation?.explanation ?? '')).toBeVisible();
 
   if (explanation?.fallback) {
     await expect(card.getByText('Local AI is not ready')).toBeVisible();
   }
+}
+
+async function openReviewPage(page: Page): Promise<void> {
+  await page.getByRole('link', { name: 'Review' }).click();
+  await expect(page).toHaveURL(/\/review$/);
+  await expect(
+    page.getByRole('heading', { name: 'Wrong Answers', exact: true }),
+  ).toBeVisible();
 }

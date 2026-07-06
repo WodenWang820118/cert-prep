@@ -15,6 +15,8 @@ import { ProjectStore } from '../project.store';
 import { SourceImportStore } from '../source-import/source-import.store';
 import { WrongAnswerReviewStore } from '../wrong-answer-review.store';
 
+type PracticeSessionQuestion = PracticeSessionRead['questions'][number];
+
 @Injectable({ providedIn: 'root' })
 export class PracticeStore {
   private readonly api = inject(CERT_PREP_API);
@@ -31,7 +33,9 @@ export class PracticeStore {
   readonly selectedAnswer = signal('');
   readonly lastAttempt = signal<PracticeAttemptRead | null>(null);
   readonly answeredQuestionIds = signal<ReadonlySet<string>>(new Set<string>());
-  readonly questionCount = computed(() => this.drafts.playableQuestions().length);
+  readonly questionCount = computed(
+    () => this.drafts.playableQuestions().length,
+  );
   readonly effectiveRandomQuestionCount = computed(() =>
     this.sessionPayloads.effectiveRandomQuestionCount(
       this.sessionQuestionCount(),
@@ -61,7 +65,9 @@ export class PracticeStore {
     const activeDocumentId = this.sourceImport.activeDocumentId();
     if (
       activeDocumentId !== null &&
-      this.fullExamDocuments().some((document) => document.id === activeDocumentId)
+      this.fullExamDocuments().some(
+        (document) => document.id === activeDocumentId,
+      )
     ) {
       return activeDocumentId;
     }
@@ -92,15 +98,20 @@ export class PracticeStore {
     }
 
     const answered = this.answeredQuestionIds();
+    const questionIds = this.questionIdsForSession(session);
     const nextQuestionId =
-      session.question_ids.find((questionId) => !answered.has(questionId)) ??
-      null;
+      questionIds.find((questionId) => !answered.has(questionId)) ?? null;
     if (nextQuestionId === null) {
       return null;
     }
 
-    // Keep stale or future non-playable session rows aligned with
-    // .agents/TODOS/ui-function-alignment-audit.md.
+    const snapshotQuestion = this.snapshotQuestion(session, nextQuestionId);
+    if (snapshotQuestion !== null) {
+      return snapshotQuestion;
+    }
+
+    // Older sessions can lack immutable snapshots. In that compatibility path,
+    // only still-playable live drafts are surfaced to the runner.
     return (
       this.drafts
         .playableQuestions()
@@ -113,14 +124,16 @@ export class PracticeStore {
       return '0/0';
     }
 
-    return `${this.answeredQuestionIds().size}/${session.question_ids.length}`;
+    return `${this.answeredQuestionIds().size}/${this.questionIdsForSession(session).length}`;
   });
   readonly sessionComplete = computed(() => {
     const session = this.practiceSession();
+    const questionIds =
+      session === null ? [] : this.questionIdsForSession(session);
     return (
       session !== null &&
-      session.question_ids.length > 0 &&
-      this.answeredQuestionIds().size >= session.question_ids.length
+      questionIds.length > 0 &&
+      this.answeredQuestionIds().size >= questionIds.length
     );
   });
 
@@ -161,6 +174,10 @@ export class PracticeStore {
       return false;
     }
 
+    if (this.reviewRetryInProgress() && mode !== 'review_retry') {
+      return false;
+    }
+
     if (mode === 'full_document') {
       return (
         this.effectiveFullExamDocumentId() !== null &&
@@ -174,6 +191,10 @@ export class PracticeStore {
   sessionStartBlocker(mode: PracticeSessionMode): string {
     if (this.projects.selectedProject() === null) {
       return 'Select a project before starting practice.';
+    }
+
+    if (this.reviewRetryInProgress() && mode !== 'review_retry') {
+      return 'Finish the active review retry before starting a new practice session.';
     }
 
     if (mode === 'full_document') {
@@ -202,7 +223,10 @@ export class PracticeStore {
       'session',
       'Practice session ready',
       async () => {
-        const created = await this.api.createPracticeSession(project.id, payload);
+        const created = await this.api.createPracticeSession(
+          project.id,
+          payload,
+        );
         return this.api.getPracticeSession(project.id, created.id);
       },
     );
@@ -217,6 +241,43 @@ export class PracticeStore {
     await this.drafts.load(project.id);
   }
 
+  async createReviewRetrySession(
+    attemptIds: readonly string[],
+  ): Promise<boolean> {
+    const project = this.projects.selectedProject();
+    if (project === null) {
+      this.operations.fail('Select a project before starting review practice.');
+      return false;
+    }
+
+    if (attemptIds.length === 0) {
+      this.operations.fail('Choose at least one wrong answer to retry.');
+      return false;
+    }
+
+    const session = await this.operations.run(
+      'session',
+      'Review practice ready',
+      async () => {
+        const created = await this.api.createPracticeSession(project.id, {
+          mode: 'review_retry',
+          wrong_attempt_ids: [...attemptIds],
+          question_count: attemptIds.length,
+        });
+        return this.api.getPracticeSession(project.id, created.id);
+      },
+    );
+    if (session === null) {
+      return false;
+    }
+
+    this.practiceSession.set(session);
+    this.answeredQuestionIds.set(new Set<string>());
+    this.selectedAnswer.set('');
+    this.lastAttempt.set(null);
+    return true;
+  }
+
   private sessionPayload(mode: PracticeSessionMode): PracticeSessionPayload {
     return this.sessionPayloads.createPayload({
       mode,
@@ -225,6 +286,32 @@ export class PracticeStore {
       sessionQuestionCount: this.sessionQuestionCount(),
       questionCount: this.questionCount(),
     });
+  }
+
+  private questionIdsForSession(
+    session: PracticeSessionRead,
+  ): readonly string[] {
+    return session.questions.length > 0
+      ? session.questions.map((question) => question.id)
+      : session.question_ids;
+  }
+
+  private snapshotQuestion(
+    session: PracticeSessionRead,
+    questionId: string,
+  ): PracticeSessionQuestion | null {
+    return (
+      session.questions.find((question) => question.id === questionId) ?? null
+    );
+  }
+
+  private reviewRetryInProgress(): boolean {
+    const session = this.practiceSession();
+    return (
+      session !== null &&
+      session.mode === 'review_retry' &&
+      !this.sessionComplete()
+    );
   }
 
   async submitAnswer(): Promise<void> {
@@ -242,11 +329,14 @@ export class PracticeStore {
       return;
     }
 
-    const attempt = await this.operations.run('attempt', 'Answer recorded', () =>
-      this.api.recordPracticeAttempt(project.id, session.id, {
-        question_id: question.id,
-        selected_answer: answer,
-      }),
+    const attempt = await this.operations.run(
+      'attempt',
+      'Answer recorded',
+      () =>
+        this.api.recordPracticeAttempt(project.id, session.id, {
+          question_id: question.id,
+          selected_answer: answer,
+        }),
     );
     if (attempt === null) {
       return;

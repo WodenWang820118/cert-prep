@@ -24,11 +24,10 @@ Current TODO files:
 
 - `cross-platform-runtime-nodes.md` - deferred restart point for future
   macOS/Linux/runtime-node expansion; not release-blocking.
-- `feature-roadmap.md` - active product backlog for review retry,
-  weak-area metrics, Mark for review policy, and wrong-answer document
-  metadata.
-- `ui-function-alignment-audit.md` - active follow-up backlog for runtime
-  surface policy, practice/review coverage, and placeholder policy.
+
+The 2026-07-03 active product and UI/function TODOs were folded into
+`domains/product-ux.md`, `domains/backend-architecture.md`,
+`domains/runtime-packaging.md`, and `workbench-screen-alignment.md`.
 
 ## Retired Slice Files
 

@@ -13,6 +13,7 @@ import type {
   RuntimeRequirementsRead,
   WrongAnswerExplanationRead,
   WrongAnswerRead,
+  WrongAnswerSummaryRead,
 } from '@cert-prep/api';
 
 export const apiBaseUrl = 'http://127.0.0.1:8765';
@@ -59,6 +60,7 @@ export interface MockCertPrepApi {
     projectId?: string,
   ): readonly MockWrongAnswerExplanationRead[];
   wrongAnswers(projectId?: string): readonly WrongAnswerRead[];
+  wrongAnswerSummary(projectId?: string): WrongAnswerSummaryRead;
 }
 
 interface MockProjectState {
@@ -205,9 +207,11 @@ export async function installMockCertPrepApi(
         'The upload button state',
       ],
       answer: 'The selected answer and the correct answer',
-      rationale: 'Wrong-answer review compares the selected and correct answers.',
+      rationale:
+        'Wrong-answer review compares the selected and correct answers.',
       citation_page: 3,
-      source_excerpt: 'Store wrong attempts with both selected and correct answers.',
+      source_excerpt:
+        'Store wrong attempts with both selected and correct answers.',
       source_order: 20002,
       source_question_number: '2',
     }),
@@ -290,7 +294,9 @@ export async function installMockCertPrepApi(
       source_question_number: '1',
     }),
   ] as const satisfies readonly QuestionDraftRead[];
-  const secondaryPlayableDrafts = secondaryDrafts.filter(isCompletePlayableDraft);
+  const secondaryPlayableDrafts = secondaryDrafts.filter(
+    isCompletePlayableDraft,
+  );
   const secondaryDraft = secondaryPlayableDrafts.find(hasSourceExcerpt);
   if (secondaryDraft === undefined) {
     throw new Error('Mock API requires a secondary playable draft excerpt.');
@@ -400,8 +406,8 @@ export async function installMockCertPrepApi(
 
     if (method === 'GET' && path === '/projects') {
       await fulfillJson(route, 200, {
-        items: createdProjectIds.flatMap((projectId) =>
-          projectStates.get(projectId)?.project ?? [],
+        items: createdProjectIds.flatMap(
+          (projectId) => projectStates.get(projectId)?.project ?? [],
         ),
       });
       return;
@@ -471,6 +477,14 @@ export async function installMockCertPrepApi(
       return;
     }
 
+    if (
+      method === 'GET' &&
+      path === `/projects/${projectId}/wrong-answers/summary`
+    ) {
+      await fulfillJson(route, 200, createWrongAnswerSummary(projectState));
+      return;
+    }
+
     if (method === 'GET' && path === `/projects/${projectId}/wrong-answers`) {
       await fulfillJson(route, 200, { items: projectState.wrongAnswers });
       return;
@@ -516,6 +530,7 @@ export async function installMockCertPrepApi(
       projectState.currentSession = createPracticeSession({
         payload: practiceSessionPayload,
         playableDrafts: projectState.playableDrafts,
+        wrongAnswers: projectState.wrongAnswers,
         projectId,
         sessionNumber: ++projectState.sessionCounter,
       });
@@ -550,7 +565,9 @@ export async function installMockCertPrepApi(
       }
 
       if (method === 'POST' && suffix === 'attempts') {
-        const payload = parseJsonBody<PracticeAttemptCreate>(request.postData());
+        const payload = parseJsonBody<PracticeAttemptCreate>(
+          request.postData(),
+        );
         const draft = projectState.drafts.find(
           (candidate) => candidate.id === payload.question_id,
         );
@@ -572,6 +589,8 @@ export async function installMockCertPrepApi(
         projectState.attempts.push(attempt);
         if (!attempt.is_correct) {
           projectState.wrongAnswers.push(createWrongAnswer(attempt, draft));
+        } else {
+          clearWrongAnswersForQuestion(projectState, attempt.question_id);
         }
 
         await fulfillJson(route, 201, attempt);
@@ -598,7 +617,9 @@ export async function installMockCertPrepApi(
     secondaryPlayableDrafts,
     incompleteApprovedDrafts,
     fullExamDocument: documents[0],
-    attempts: (projectId) => [...stateFor(projectStates, projectId, lastProjectState).attempts],
+    attempts: (projectId) => [
+      ...stateFor(projectStates, projectId, lastProjectState).attempts,
+    ],
     currentSession: (projectId) =>
       stateFor(projectStates, projectId, lastProjectState).currentSession,
     markRequestLog: () => requestLog.length,
@@ -607,7 +628,8 @@ export async function installMockCertPrepApi(
         (draft) => draft.document_id === documentId,
       ),
     practiceSessionPayload: (projectId) =>
-      stateFor(projectStates, projectId, lastProjectState).practiceSessionPayload,
+      stateFor(projectStates, projectId, lastProjectState)
+        .practiceSessionPayload,
     practiceSessionPayloads: (projectId) => [
       ...stateFor(projectStates, projectId, lastProjectState)
         .practiceSessionPayloads,
@@ -622,6 +644,10 @@ export async function installMockCertPrepApi(
     wrongAnswers: (projectId) => [
       ...stateFor(projectStates, projectId, lastProjectState).wrongAnswers,
     ],
+    wrongAnswerSummary: (projectId) =>
+      createWrongAnswerSummary(
+        stateFor(projectStates, projectId, lastProjectState),
+      ),
   };
 }
 
@@ -655,7 +681,9 @@ function projectStateForPath(
   projectStates: ReadonlyMap<string, MockProjectState>,
 ): MockProjectState | null {
   const [, projectId] = path.match(/^\/projects\/([^/]+)(?:\/|$)/) ?? [];
-  return projectId ? (projectStates.get(decodeURIComponent(projectId)) ?? null) : null;
+  return projectId
+    ? (projectStates.get(decodeURIComponent(projectId)) ?? null)
+    : null;
 }
 
 function stateFor(
@@ -672,10 +700,12 @@ function stateFor(
 
 export function expectedSeenPaths(api: MockCertPrepApi): Set<string> {
   const session = api.currentSession();
-  const explanationPaths = api.wrongAnswerExplanations().map(
-    (explanation) =>
-      `POST /projects/${api.project.id}/wrong-answers/${explanation.attempt_id}/explanation`,
-  );
+  const explanationPaths = api
+    .wrongAnswerExplanations()
+    .map(
+      (explanation) =>
+        `POST /projects/${api.project.id}/wrong-answers/${explanation.attempt_id}/explanation`,
+    );
   return new Set([
     'GET /health',
     'GET /llm/health',
@@ -696,6 +726,7 @@ export function expectedSeenPaths(api: MockCertPrepApi): Set<string> {
         ]
       : []),
     `GET /projects/${api.project.id}/wrong-answers`,
+    `GET /projects/${api.project.id}/wrong-answers/summary`,
     ...explanationPaths,
   ]);
 }
@@ -788,16 +819,18 @@ function incompleteDraft(
 function createPracticeSession(args: {
   readonly payload: PracticeSessionCreate;
   readonly playableDrafts: readonly CompleteQuestionDraft[];
+  readonly wrongAnswers: readonly WrongAnswerRead[];
   readonly projectId: string;
   readonly sessionNumber: number;
 }): PracticeSessionRead {
   const mode = args.payload.mode ?? 'random_draw';
   const documentId =
     mode === 'full_document' ? (args.payload.document_id ?? null) : null;
-  const pool =
-    mode === 'full_document' && documentId !== null
-      ? args.playableDrafts.filter((draft) => draft.document_id === documentId)
-      : args.playableDrafts;
+  const pool = practiceSessionPool(
+    args.payload,
+    args.playableDrafts,
+    args.wrongAnswers,
+  );
   const requestedCount = Math.max(
     1,
     Math.trunc(args.payload.question_count ?? pool.length),
@@ -810,6 +843,9 @@ function createPracticeSession(args: {
     id: `session-${args.sessionNumber}`,
     project_id: args.projectId,
     question_ids: questionIds,
+    questions: pool
+      .slice(0, Math.min(requestedCount, pool.length))
+      .map(practiceSessionQuestion),
     mode,
     document_id: documentId,
     question_count: questionIds.length,
@@ -817,6 +853,46 @@ function createPracticeSession(args: {
     status: 'active',
     created_at: '2026-06-09T00:00:00Z',
     completed_at: null,
+  };
+}
+
+function practiceSessionPool(
+  payload: PracticeSessionCreate,
+  playableDrafts: readonly CompleteQuestionDraft[],
+  wrongAnswers: readonly WrongAnswerRead[],
+): readonly CompleteQuestionDraft[] {
+  const mode = payload.mode ?? 'random_draw';
+  if (mode === 'review_retry') {
+    const attemptIds = new Set(payload.wrong_attempt_ids ?? []);
+    const questionIds = new Set(
+      wrongAnswers
+        .filter((wrongAnswer) => attemptIds.has(wrongAnswer.attempt_id))
+        .map((wrongAnswer) => wrongAnswer.question_id),
+    );
+    return playableDrafts.filter((draft) => questionIds.has(draft.id));
+  }
+
+  if (mode === 'full_document' && payload.document_id != null) {
+    return playableDrafts.filter(
+      (draft) => draft.document_id === payload.document_id,
+    );
+  }
+
+  return playableDrafts;
+}
+
+function practiceSessionQuestion(
+  draft: CompleteQuestionDraft,
+): PracticeSessionRead['questions'][number] {
+  return {
+    id: draft.id,
+    question: draft.question,
+    choices: [...draft.choices],
+    answer: draft.answer,
+    rationale: draft.rationale,
+    citation_page: draft.citation_page,
+    source_excerpt: draft.source_excerpt,
+    document_id: draft.document_id,
   };
 }
 
@@ -852,8 +928,111 @@ function createWrongAnswer(
     rationale: draft.rationale,
     citation_page: draft.citation_page,
     source_excerpt: draft.source_excerpt,
+    document_id: draft.document_id,
     created_at: attempt.created_at,
   };
+}
+
+function clearWrongAnswersForQuestion(
+  projectState: MockProjectState,
+  questionId: string,
+): void {
+  for (
+    let index = projectState.wrongAnswers.length - 1;
+    index >= 0;
+    index -= 1
+  ) {
+    if (projectState.wrongAnswers[index]?.question_id === questionId) {
+      projectState.wrongAnswers.splice(index, 1);
+    }
+  }
+}
+
+function createWrongAnswerSummary(
+  projectState: MockProjectState,
+): WrongAnswerSummaryRead {
+  const wrongAttempts = projectState.attempts.filter(
+    (attempt) => !attempt.is_correct,
+  );
+  const correctQuestionIds = new Set(
+    projectState.attempts
+      .filter((attempt) => attempt.is_correct)
+      .map((attempt) => attempt.question_id),
+  );
+  const currentQuestionIds = new Set(
+    projectState.wrongAnswers.map((wrongAnswer) => wrongAnswer.question_id),
+  );
+  const clearedWrongAttempts = wrongAttempts.filter(
+    (attempt) =>
+      correctQuestionIds.has(attempt.question_id) &&
+      !currentQuestionIds.has(attempt.question_id),
+  );
+
+  return {
+    current_wrong_count: projectState.wrongAnswers.length,
+    cleared_count: clearedWrongAttempts.length,
+    last_wrong_date: projectState.wrongAnswers.at(-1)?.created_at ?? null,
+    repeated_misses: repeatedMisses(projectState, wrongAttempts),
+    clusters: wrongAnswerClusters(projectState),
+  };
+}
+
+function repeatedMisses(
+  projectState: MockProjectState,
+  wrongAttempts: readonly PracticeAttemptRead[],
+): WrongAnswerSummaryRead['repeated_misses'] {
+  const counts = new Map<string, number>();
+  for (const attempt of wrongAttempts) {
+    counts.set(attempt.question_id, (counts.get(attempt.question_id) ?? 0) + 1);
+  }
+
+  return [...counts.entries()]
+    .filter(([, missCount]) => missCount > 1)
+    .flatMap(([questionId, missCount]) => {
+      const draft = projectState.drafts.find(
+        (candidate) => candidate.id === questionId,
+      );
+      const lastWrongAt = wrongAttempts
+        .filter((attempt) => attempt.question_id === questionId)
+        .at(-1)?.created_at;
+      if (draft === undefined || lastWrongAt === undefined) {
+        return [];
+      }
+
+      return [
+        {
+          question_id: questionId,
+          question: draft.question,
+          document_id: draft.document_id,
+          citation_page: draft.citation_page,
+          source_excerpt: draft.source_excerpt,
+          miss_count: missCount,
+          last_wrong_at: lastWrongAt,
+        },
+      ];
+    });
+}
+
+function wrongAnswerClusters(
+  projectState: MockProjectState,
+): WrongAnswerSummaryRead['clusters'] {
+  const clusters = new Map<
+    string,
+    WrongAnswerSummaryRead['clusters'][number]
+  >();
+  for (const wrongAnswer of projectState.wrongAnswers) {
+    const key = `${wrongAnswer.document_id ?? 'none'}:${wrongAnswer.citation_page ?? 'none'}`;
+    const current = clusters.get(key);
+    clusters.set(key, {
+      document_id: wrongAnswer.document_id,
+      citation_page: wrongAnswer.citation_page,
+      current_wrong_count: (current?.current_wrong_count ?? 0) + 1,
+      cleared_count: current?.cleared_count ?? 0,
+      last_wrong_at: wrongAnswer.created_at,
+    });
+  }
+
+  return [...clusters.values()];
 }
 
 function createWrongAnswerExplanation(
@@ -862,7 +1041,8 @@ function createWrongAnswerExplanation(
   const fallback = isFallbackAttempt(wrongAnswer.attempt_id);
   const correctAnswer = wrongAnswer.correct_answer ?? 'the recorded answer key';
   const rationale =
-    wrongAnswer.rationale ?? 'Review the recorded rationale and source excerpt.';
+    wrongAnswer.rationale ??
+    'Review the recorded rationale and source excerpt.';
   const sourceExcerpt =
     wrongAnswer.source_excerpt ?? 'No source excerpt was recorded.';
   const explanation = fallback
@@ -912,7 +1092,9 @@ function isCompletePlayableDraft(
 function hasSourceExcerpt(
   draft: QuestionDraftRead,
 ): draft is QuestionDraftRead & { readonly source_excerpt: string } {
-  return draft.source_excerpt !== null && draft.source_excerpt.trim().length > 0;
+  return (
+    draft.source_excerpt !== null && draft.source_excerpt.trim().length > 0
+  );
 }
 
 function wrongAnswerExplanationAttemptId(

@@ -3,7 +3,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 from cert_prep_backend.api.errors import NotFoundError, ValidationError
-from cert_prep_backend.domains.practice.models import PracticeQuestion
+from cert_prep_backend.domains.practice.models import PracticeQuestion, PracticeSession
 from cert_prep_backend.domains.practice.policies import (
     PracticeRuleViolation,
     build_practice_attempt,
@@ -36,7 +36,7 @@ def record_attempt(
         session = practice_session_from_row(session_row)
         practice_question = _practice_question_for_attempt(
             connection,
-            project_id=project_id,
+            session=session,
             session_id=session_id,
             question_id=question_id,
         )
@@ -81,7 +81,7 @@ def record_attempt(
 def _practice_question_for_attempt(
     connection,
     *,
-    project_id: str,
+    session: PracticeSession,
     session_id: str,
     question_id: str,
 ) -> PracticeQuestion | None:
@@ -95,27 +95,39 @@ def _practice_question_for_attempt(
             'approved' AS status,
             rationale,
             citation_page,
-            source_excerpt
+            source_excerpt,
+            document_id
         FROM practice_session_questions
         WHERE project_id = ? AND session_id = ? AND question_id = ?
         """,
-        (project_id, session_id, question_id),
+        (session.project_id, session_id, question_id),
     ).fetchone()
     if snapshot_row is not None:
         return practice_question_from_row(snapshot_row)
 
     question_row = connection.execute(
         """
-        SELECT *
+        SELECT
+            id,
+            choices_json,
+            answer,
+            question,
+            status,
+            rationale,
+            citation_page,
+            source_excerpt,
+            document_id
         FROM question_drafts
-        WHERE project_id = ? AND id = ? AND status = 'approved'
+        WHERE project_id = ? AND id = ?
         """,
-        (project_id, question_id),
+        (session.project_id, question_id),
     ).fetchone()
     if question_row is None:
         return None
 
     practice_question = practice_question_from_row(question_row)
+    if session.includes_question(question_id):
+        return practice_question
     if not is_playable_practice_question(practice_question):
         return None
     return practice_question

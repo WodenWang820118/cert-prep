@@ -265,5 +265,6 @@ def test_current_wrong_answers_uses_latest_attempt_per_question() -> None:
         "rationale": "The page says it directly.",
         "citation_page": 2,
         "source_excerpt": "Grounded answer evidence.",
+        "document_id": None,
         "created_at": "2026-06-11T00:04:00Z",
     }

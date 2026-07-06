@@ -10,6 +10,7 @@ import {
   availableLlmHealth,
   availableOcrHealth,
   backendHealth,
+  emptyWrongAnswerSummary,
   secondAppDocument,
   secondAppProject,
 } from './app.spec-helpers';
@@ -111,5 +112,6 @@ function createApiClient() {
     listDocumentChunks: vi.fn().mockResolvedValue({ items: [] }),
     listQuestionDrafts: vi.fn().mockResolvedValue({ items: [editableAppQuestion] }),
     listWrongAnswers: vi.fn().mockResolvedValue({ items: [] }),
+    summarizeWrongAnswers: vi.fn().mockResolvedValue(emptyWrongAnswerSummary()),
   };
 }

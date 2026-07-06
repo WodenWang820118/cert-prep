@@ -5,26 +5,81 @@
       <p>{{ review.wrongAnswers().length }} recorded</p>
     </div>
 
-    <button
-      class="workbench-secondary-button review-refresh-button"
-      type="button"
-      [disabled]="operations.isBusyFor('review') || projects.selectedProject() === null"
-      (click)="review.refresh()"
-    >
-      <i
-        [class]="operations.isBusyFor('review') ? 'pi pi-spin pi-spinner' : 'pi pi-refresh'"
-        aria-hidden="true"
-      ></i>
-      <span>Refresh</span>
-    </button>
+    <div class="review-header-actions">
+      <button
+        class="workbench-secondary-button review-start-button"
+        type="button"
+        [disabled]="!canStartReviewQuiz()"
+        (click)="startReviewQuiz()"
+      >
+        <i
+          [class]="
+            operations.isBusyFor('session')
+              ? 'pi pi-spin pi-spinner'
+              : 'pi pi-refresh'
+          "
+          aria-hidden="true"
+        ></i>
+        <span>Start review quiz</span>
+      </button>
+
+      <button
+        class="workbench-secondary-button review-refresh-button"
+        type="button"
+        [disabled]="
+          operations.isBusyFor('review') || projects.selectedProject() === null
+        "
+        (click)="review.refresh()"
+      >
+        <i
+          [class]="
+            operations.isBusyFor('review')
+              ? 'pi pi-spin pi-spinner'
+              : 'pi pi-refresh'
+          "
+          aria-hidden="true"
+        ></i>
+        <span>Refresh</span>
+      </button>
+    </div>
   </header>
+
+  @if (review.summary(); as summary) {
+    <dl class="review-summary" aria-label="Weak-area summary">
+      <div>
+        <dt>Current</dt>
+        <dd>{{ summary.current_wrong_count }}</dd>
+      </div>
+      <div>
+        <dt>Cleared</dt>
+        <dd>{{ summary.cleared_count }}</dd>
+      </div>
+      <div>
+        <dt>Repeated</dt>
+        <dd>{{ summary.repeated_misses.length }}</dd>
+      </div>
+      <div>
+        <dt>Last Wrong</dt>
+        <dd>{{ lastWrongDateLabel(summary.last_wrong_date) }}</dd>
+      </div>
+      <div>
+        <dt>Weak Areas</dt>
+        <dd>{{ summary.clusters.length }}</dd>
+      </div>
+    </dl>
+  }
 
   <div class="wrong-answer-list">
     @for (wrong of review.wrongAnswers(); track wrong.attempt_id) {
       <article class="wrong-answer-card">
         @let explanation = review.explanationFor(wrong.attempt_id);
 
-        <span class="page-chip">Page {{ wrong.citation_page ?? 'n/a' }}</span>
+        <div class="review-card-meta">
+          <span class="page-chip">Page {{ wrong.citation_page ?? 'n/a' }}</span>
+          @if (documentLabel(wrong.document_id); as label) {
+            <span class="document-chip">{{ label }}</span>
+          }
+        </div>
 
         <h3>{{ wrong.question }}</h3>
 
@@ -58,24 +113,50 @@
         }
 
         <section class="ai-review" aria-label="Discuss mistake with AI">
-          <button
-            class="workbench-secondary-button ai-discuss-button"
-            type="button"
-            [disabled]="explanation.loading"
-            (click)="review.discussMistake(wrong)"
-          >
-            <i
-              [class]="explanation.loading ? 'pi pi-spin pi-spinner' : 'pi pi-comments'"
-              aria-hidden="true"
-            ></i>
-            <span>
-              {{
-                explanation.loading
-                  ? 'Discussing mistake...'
-                  : 'Discuss mistake with AI'
-              }}
-            </span>
-          </button>
+          <div class="review-card-actions">
+            <button
+              class="workbench-secondary-button retry-button"
+              type="button"
+              [disabled]="
+                operations.isBusyFor('session') ||
+                projects.selectedProject() === null
+              "
+              (click)="retryWrongAnswer(wrong)"
+            >
+              <i
+                [class]="
+                  operations.isBusyFor('session')
+                    ? 'pi pi-spin pi-spinner'
+                    : 'pi pi-refresh'
+                "
+                aria-hidden="true"
+              ></i>
+              <span>Retry</span>
+            </button>
+
+            <button
+              class="workbench-secondary-button ai-discuss-button"
+              type="button"
+              [disabled]="explanation.loading"
+              (click)="review.discussMistake(wrong)"
+            >
+              <i
+                [class]="
+                  explanation.loading
+                    ? 'pi pi-spin pi-spinner'
+                    : 'pi pi-comments'
+                "
+                aria-hidden="true"
+              ></i>
+              <span>
+                {{
+                  explanation.loading
+                    ? 'Discussing mistake...'
+                    : 'Discuss mistake with AI'
+                }}
+              </span>
+            </button>
+          </div>
 
           @if (explanation.result) {
             <div

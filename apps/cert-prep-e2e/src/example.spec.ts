@@ -12,7 +12,9 @@ import {
   expectRandomQuizAvailableCount,
   expectWrongAnswerReview,
   runMultiPdfIsolationScenario,
+  retryWrongAnswerAndClearReview,
   seedMockApiConfig,
+  startReviewQuizForAllWrongAnswersAndClearReview,
   startRandomQuiz,
   uploadDocumentAndExpectDraft,
   wrongChoiceForDraft,
@@ -53,6 +55,28 @@ test('keeps Full Exam sessions isolated to the selected PDF document', async ({
   expect(api.practiceSessionPayloads()).toHaveLength(2);
 });
 
+test('retries a wrong answer from Review and clears it after a correct answer', async ({
+  page,
+}) => {
+  const api = await installMockCertPrepApi(page);
+  await seedMockApiConfig(page, apiBaseUrl, devToken);
+
+  await createWorkspaceWithUploadedDocument(page, api);
+  await startRandomQuiz(page, api, 1);
+  await retryWrongAnswerAndClearReview(page, api);
+  expect(api.wrongAnswers()).toHaveLength(0);
+});
+
+test('starts a review quiz from all current wrong answers', async ({ page }) => {
+  const api = await installMockCertPrepApi(page);
+  await seedMockApiConfig(page, apiBaseUrl, devToken);
+
+  await createWorkspaceWithUploadedDocument(page, api);
+  await startRandomQuiz(page, api, 2);
+  await startReviewQuizForAllWrongAnswersAndClearReview(page, api);
+  expect(api.wrongAnswers()).toHaveLength(0);
+});
+
 test('clears document draft practice and review state when switching projects', async ({
   page,
 }) => {
@@ -69,7 +93,9 @@ test('clears document draft practice and review state when switching projects', 
     draft: api.secondaryDraft,
   });
 
-  await page.getByRole('button', { name: new RegExp(api.project.name) }).click();
+  await page
+    .getByRole('button', { name: new RegExp(api.project.name) })
+    .click();
   await expect(
     page
       .locator('.workbench-file-name')
@@ -103,13 +129,14 @@ test('clears document draft practice and review state when switching projects', 
   await expect(page.getByText(api.draft.question)).toBeHidden();
 
   await page.getByRole('link', { name: 'Random Quiz' }).click();
-  await expectRandomQuizAvailableCount(page, api.secondaryPlayableDrafts.length);
+  await expectRandomQuizAvailableCount(
+    page,
+    api.secondaryPlayableDrafts.length,
+  );
   await expect(
     page.getByLabel('Session details').getByText('Not started'),
   ).toBeVisible();
-  await page
-    .getByRole('spinbutton', { name: 'Random draw size' })
-    .fill('1');
+  await page.getByRole('spinbutton', { name: 'Random draw size' }).fill('1');
   await page.getByRole('button', { name: 'Start random quiz' }).click();
   await expect
     .poll(() => api.practiceSessionPayload(api.secondaryProject.id))
@@ -142,13 +169,9 @@ test('excludes incomplete approved-looking drafts from Random Quiz and Full Exam
 
   await page.getByRole('link', { name: 'Random Quiz' }).click();
   await expectRandomQuizAvailableCount(page, api.playableDrafts.length);
-  await page
-    .getByRole('spinbutton', { name: 'Random draw size' })
-    .fill('100');
+  await page.getByRole('spinbutton', { name: 'Random draw size' }).fill('100');
   await page.getByRole('button', { name: 'Start random quiz' }).click();
-  await expect
-    .poll(() => api.practiceSessionPayload())
-    .not.toBeNull();
+  await expect.poll(() => api.practiceSessionPayload()).not.toBeNull();
   expect(api.practiceSessionPayload()).toMatchObject({
     mode: 'random_draw',
     question_count: api.playableDrafts.length,

@@ -42,7 +42,9 @@ export class PracticePanelComponent {
   protected readonly sessionTotal = computed(() => {
     const session = this.practice.practiceSession();
     if (session !== null) {
-      return session.question_ids.length;
+      return session.questions.length > 0
+        ? session.questions.length
+        : session.question_ids.length;
     }
 
     return this.sessionMode() === 'full_document'
@@ -69,7 +71,11 @@ export class PracticePanelComponent {
       );
     }
 
-    const index = session.question_ids.indexOf(question.id);
+    const questionIds =
+      session.questions.length > 0
+        ? session.questions.map((snapshotQuestion) => snapshotQuestion.id)
+        : session.question_ids;
+    const index = questionIds.indexOf(question.id);
     return index === -1 ? this.answeredCount() + 1 : index + 1;
   });
 

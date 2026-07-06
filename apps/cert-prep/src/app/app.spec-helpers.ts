@@ -5,6 +5,7 @@ import type {
   OCRHealthRead,
   ProjectRead,
   QuestionDraftRead,
+  WrongAnswerSummaryRead,
 } from './cert-prep-api';
 
 export const appProject: ProjectRead = {
@@ -114,6 +115,16 @@ export function availableOcrHealth(): OCRHealthRead {
     model_cache_dir: null,
     fallback_reason: null,
     unavailable_reason: null,
+  };
+}
+
+export function emptyWrongAnswerSummary(): WrongAnswerSummaryRead {
+  return {
+    current_wrong_count: 0,
+    cleared_count: 0,
+    last_wrong_date: null,
+    repeated_misses: [],
+    clusters: [],
   };
 }
 

@@ -16,6 +16,9 @@ from cert_prep_backend.domains.practice.wrong_answer_repository import (
 from cert_prep_backend.domains.practice.wrong_answer_repository import (
     list_wrong_answers as _list_wrong_answers,
 )
+from cert_prep_backend.domains.practice.wrong_answer_repository import (
+    summarize_wrong_answers as _summarize_wrong_answers,
+)
 from cert_prep_backend.persistence.database import Database
 
 
@@ -27,6 +30,7 @@ def create_session(
     document_id: str | None = None,
     question_count: int | None = None,
     random_seed: int | None = None,
+    wrong_attempt_ids: list[str] | None = None,
 ) -> dict:
     return _create_session(
         db,
@@ -35,6 +39,7 @@ def create_session(
         document_id=document_id,
         question_count=question_count,
         random_seed=random_seed,
+        wrong_attempt_ids=wrong_attempt_ids,
     )
 
 
@@ -65,3 +70,7 @@ def list_wrong_answers(db: Database, project_id: str) -> list[dict]:
 
 def get_current_wrong_answer(db: Database, project_id: str, attempt_id: str) -> WrongAnswer:
     return _get_current_wrong_answer(db, project_id, attempt_id)
+
+
+def summarize_wrong_answers(db: Database, project_id: str) -> dict:
+    return _summarize_wrong_answers(db, project_id)

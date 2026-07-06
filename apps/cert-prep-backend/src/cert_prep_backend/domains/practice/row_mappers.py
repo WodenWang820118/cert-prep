@@ -51,6 +51,7 @@ def practice_question_from_row(row: Row) -> PracticeQuestion:
         rationale=row["rationale"],
         citation_page=row["citation_page"],
         source_excerpt=row["source_excerpt"],
+        document_id=row["document_id"],
     )
 
 
@@ -75,4 +76,5 @@ def practice_question_from_wrong_answer_row(row: Row) -> PracticeQuestion:
         rationale=row["rationale"],
         citation_page=row["citation_page"],
         source_excerpt=row["source_excerpt"],
+        document_id=row["document_id"],
     )

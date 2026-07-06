@@ -120,17 +120,19 @@ highest-risk mismatches:
   strips. The app shell reserves global strips for blocking errors and active
   work.
 
-Remaining product-policy work is intentionally tracked in
-`.agents/TODOS/ui-function-alignment-audit.md`:
+The 2026-07-03 closeout resolved the remaining product-policy work:
 
-- decide whether `/runtime` route mode fully matches modal controls or remains
-  a compatibility route;
-- decide whether standalone model-health Manage opens the modal or keeps route
-  navigation;
-- add active-session and populated wrong-answer coverage where product behavior
-  is already wired;
-- decide whether Settings, Account, footer links, and Mark for review stay as
-  disabled placeholders or become real surfaces.
+- Topbar `Manage runtime` opens the shell modal.
+- `/runtime` remains an unguarded recovery/deep-link route rendering the same
+  runtime details without modal-only close or cancel affordances.
+- Standalone `ModelHealthComponent` keeps route navigation to `/runtime` for
+  compatibility outside the app shell.
+- Practice and Review have focused coverage for active-session answer
+  selection, clearing, disabled/busy submit states, navigator state, populated
+  wrong-answer retry, and empty review states.
+- Settings, Account, and footer links remain disabled design-parity
+  placeholders; `Mark for review` was removed from the practice runner until a
+  persisted user-flag feature exists.
 
 ## Verification
 

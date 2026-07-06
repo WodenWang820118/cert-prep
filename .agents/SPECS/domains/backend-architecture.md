@@ -32,6 +32,16 @@ SQLite, OCR, runtime installation, question generation, and practice.
   `POST /projects/{project_id}/wrong-answers/{attempt_id}/explanation`.
   It must re-resolve the attempt as a current wrong answer in the same project
   before returning grounded fields, provider/model metadata, and fallback state.
+- Practice sessions support `review_retry` mode. `PracticeSessionCreate` accepts
+  optional `wrong_attempt_ids`; omitted means all current wrong answers for the
+  project, while a provided list narrows retry to those current wrong-answer
+  attempts.
+- `PracticeSessionRead` includes `questions`, a session snapshot DTO with
+  question text, choices, answer, rationale, citation page, source excerpt, and
+  nullable `document_id`. `question_ids` remains for compatibility.
+- `WrongAnswerRead` includes nullable `document_id`, and the project-scoped
+  wrong-answer summary endpoint is
+  `GET /projects/{project_id}/wrong-answers/summary`.
 
 ## Refactor Evidence
 
@@ -56,6 +66,11 @@ SQLite, OCR, runtime installation, question generation, and practice.
 - The 2026-07-02 session-snapshot slice added backend practice and migration
   coverage for grading against stored session question fields and reading the
   latest wrong-answer attempt from the session snapshot; backend lint passed.
+- The 2026-07-03 review retry slice added SQLite migration 14 for nullable
+  `practice_session_questions.document_id`, backend coverage for
+  `review_retry`, generated OpenAPI/client updates, and aggregation coverage
+  for current wrong counts, cleared counts, repeated misses, and
+  document/page clusters.
 
 ## Open Risks
 

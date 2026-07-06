@@ -11,6 +11,7 @@ import {
   availableLlmHealth,
   availableOcrHealth,
   backendHealth,
+  emptyWrongAnswerSummary,
 } from './app.spec-helpers';
 import { OperationStore } from './stores/operation.store';
 
@@ -99,6 +100,28 @@ describe('App', () => {
     );
   });
 
+  it('keeps shell placeholder controls disabled and footer links inert', () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(buttonByLabel(compiled, 'Settings')?.disabled).toBe(true);
+    expect(buttonByLabel(compiled, 'Account')?.disabled).toBe(true);
+
+    const footerLinks = Array.from(
+      compiled.querySelectorAll<HTMLElement>('.workbench-footer-link'),
+    );
+    expect(footerLinks.map((link) => link.textContent?.trim())).toEqual([
+      'Documentation',
+      'Privacy Policy',
+      'System Status',
+    ]);
+    for (const link of footerLinks) {
+      expect(link.getAttribute('aria-disabled')).toBe('true');
+      expect(link.tagName).toBe('SPAN');
+    }
+  });
+
   it('renders the runtime route before a project exists', async () => {
     apiClient.listProjects.mockResolvedValueOnce({ items: [] });
     const fixture = TestBed.createComponent(App);
@@ -115,6 +138,10 @@ describe('App', () => {
       expect(compiled.textContent).toContain('Manage runtime');
       expect(compiled.textContent).toContain('Python backend');
     });
+    expect(
+      compiled.querySelector('[aria-label="Close runtime manager"]'),
+    ).toBeNull();
+    expect(buttonByText(compiled, 'Cancel')).toBeNull();
     expect(compiled.textContent).not.toContain('Select or create a project.');
   });
 
@@ -165,6 +192,12 @@ function linkByText(root: ParentNode, text: string): HTMLAnchorElement | null {
   );
 }
 
+function buttonByLabel(root: ParentNode, label: string): HTMLButtonElement | null {
+  return root.querySelector<HTMLButtonElement>(
+    `button[aria-label="${label}"]`,
+  );
+}
+
 function createApiClient() {
   return {
     health: vi.fn().mockResolvedValue({
@@ -181,5 +214,6 @@ function createApiClient() {
     listDocumentChunks: vi.fn().mockResolvedValue({ items: [] }),
     listQuestionDrafts: vi.fn().mockResolvedValue({ items: [editableAppQuestion] }),
     listWrongAnswers: vi.fn().mockResolvedValue({ items: [] }),
+    summarizeWrongAnswers: vi.fn().mockResolvedValue(emptyWrongAnswerSummary()),
   };
 }

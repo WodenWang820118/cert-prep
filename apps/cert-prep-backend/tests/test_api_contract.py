@@ -58,10 +58,12 @@ def test_status_like_fields_are_documented_as_openapi_enums(tmp_path) -> None:
     assert _enum_values(openapi, "PracticeSessionCreate", "mode") == [
         "random_draw",
         "full_document",
+        "review_retry",
     ]
     assert _enum_values(openapi, "PracticeSessionRead", "mode") == [
         "random_draw",
         "full_document",
+        "review_retry",
     ]
 
 

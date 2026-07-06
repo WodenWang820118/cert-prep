@@ -69,6 +69,7 @@ def test_saved_exam_runtime_metadata_columns_are_migrated(tmp_path: Path) -> Non
         "citation_page",
         "source_excerpt",
         "created_at",
+        "document_id",
     } <= set(session_question_columns)
 
 

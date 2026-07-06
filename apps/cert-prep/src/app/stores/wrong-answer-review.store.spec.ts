@@ -27,7 +27,33 @@ describe('WrongAnswerReviewStore', () => {
     rationale: 'The citation supports A.',
     citation_page: 3,
     source_excerpt: 'Relevant source excerpt.',
+    document_id: 'document-1',
     created_at: '2026-06-23T00:00:00Z',
+  };
+  const summary = {
+    current_wrong_count: 1,
+    cleared_count: 2,
+    last_wrong_date: wrongAnswer.created_at,
+    repeated_misses: [
+      {
+        question_id: wrongAnswer.question_id,
+        question: wrongAnswer.question,
+        document_id: wrongAnswer.document_id,
+        citation_page: wrongAnswer.citation_page,
+        source_excerpt: wrongAnswer.source_excerpt,
+        miss_count: 2,
+        last_wrong_at: wrongAnswer.created_at,
+      },
+    ],
+    clusters: [
+      {
+        document_id: wrongAnswer.document_id,
+        citation_page: wrongAnswer.citation_page,
+        current_wrong_count: 1,
+        cleared_count: 2,
+        last_wrong_at: wrongAnswer.created_at,
+      },
+    ],
   };
   const explanationResponse = (
     explanation: string,
@@ -49,12 +75,14 @@ describe('WrongAnswerReviewStore', () => {
   });
   let apiClient: {
     listWrongAnswers: ReturnType<typeof vi.fn>;
+    summarizeWrongAnswers: ReturnType<typeof vi.fn>;
     explainWrongAnswer: ReturnType<typeof vi.fn>;
   };
 
   beforeEach(() => {
     apiClient = {
       listWrongAnswers: vi.fn(),
+      summarizeWrongAnswers: vi.fn().mockResolvedValue(summary),
       explainWrongAnswer: vi
         .fn()
         .mockRejectedValue(new Error('AI provider unavailable')),
@@ -75,7 +103,9 @@ describe('WrongAnswerReviewStore', () => {
     await store.load(project.id);
 
     expect(apiClient.listWrongAnswers).toHaveBeenCalledWith(project.id);
+    expect(apiClient.summarizeWrongAnswers).toHaveBeenCalledWith(project.id);
     expect(store.wrongAnswers()).toEqual([wrongAnswer]);
+    expect(store.summary()).toEqual(summary);
   });
 
   it('guards refresh until a project is selected', async () => {
@@ -87,7 +117,10 @@ describe('WrongAnswerReviewStore', () => {
     await store.refresh();
 
     expect(apiClient.listWrongAnswers).not.toHaveBeenCalled();
-    expect(operations.error()).toBe('Select a project before refreshing review.');
+    expect(apiClient.summarizeWrongAnswers).not.toHaveBeenCalled();
+    expect(operations.error()).toBe(
+      'Select a project before refreshing review.',
+    );
   });
 
   it('refreshes review rows through the operation store', async () => {
@@ -98,7 +131,9 @@ describe('WrongAnswerReviewStore', () => {
     await store.refresh();
 
     expect(apiClient.listWrongAnswers).toHaveBeenCalledWith(project.id);
+    expect(apiClient.summarizeWrongAnswers).toHaveBeenCalledWith(project.id);
     expect(store.wrongAnswers()).toEqual([wrongAnswer]);
+    expect(store.summary()).toEqual(summary);
     expect(operations.status()).toBe('Review refreshed');
   });
 
@@ -186,6 +221,7 @@ describe('WrongAnswerReviewStore', () => {
     store.reset();
 
     expect(store.wrongAnswers()).toEqual([]);
+    expect(store.summary()).toBeNull();
     expect(store.explanations()).toEqual({});
   });
 });

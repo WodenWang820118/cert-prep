@@ -35,6 +35,7 @@ export type {
   WrongAnswerExplanationRead,
   WrongAnswerList,
   WrongAnswerRead,
+  WrongAnswerSummaryRead,
 } from '@cert-prep/api';
 
 const DEFAULT_LOCAL_API_BASE_URL = 'http://127.0.0.1:8765';

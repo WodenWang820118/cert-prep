@@ -10,9 +10,12 @@ not alternative versions of one screen.
 ## Runtime Surface
 
 The Stitch runtime reference is a modal overlay. The app should expose runtime
-management from the topbar as a modal surface. If the `/runtime` route remains
-for tests or deep links, it should render the same modal-oriented UI instead of
-introducing a fifth visual pattern.
+management from the topbar as a modal surface. The `/runtime` route remains an
+unguarded recovery and deep-link surface, including when the packaged Python
+backend runtime is missing. It should render the same runtime details without
+modal-only close or cancel affordances instead of introducing a fifth visual
+pattern. Standalone `ModelHealthComponent` Manage actions keep navigating to
+`/runtime` so the component remains compatible outside the app shell.
 
 ## Random Quiz
 

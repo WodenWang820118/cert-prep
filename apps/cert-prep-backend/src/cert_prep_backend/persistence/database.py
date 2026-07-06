@@ -266,6 +266,13 @@ MIGRATIONS: Final[tuple[tuple[int, str], ...]] = (
             ON practice_session_questions(project_id, session_id, question_order);
         """,
     ),
+    (
+        14,
+        """
+        ALTER TABLE practice_session_questions
+            ADD COLUMN document_id TEXT;
+        """,
+    ),
 )
 
 

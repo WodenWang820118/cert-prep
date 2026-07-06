@@ -10,12 +10,25 @@ class PracticeSessionCreate(BaseModel):
     document_id: str | None = None
     question_count: int | None = Field(default=None, ge=1, le=100)
     random_seed: int | None = None
+    wrong_attempt_ids: list[str] | None = None
+
+
+class PracticeSessionQuestionRead(BaseModel):
+    id: str
+    question: str
+    choices: list[str]
+    answer: str | None
+    rationale: str | None
+    citation_page: int | None
+    source_excerpt: str | None
+    document_id: str | None
 
 
 class PracticeSessionRead(BaseModel):
     id: str
     project_id: str
     question_ids: list[str]
+    questions: list[PracticeSessionQuestionRead]
     mode: PracticeSessionMode
     document_id: str | None
     question_count: int
@@ -50,11 +63,38 @@ class WrongAnswerRead(BaseModel):
     rationale: str | None
     citation_page: int | None
     source_excerpt: str | None
+    document_id: str | None
     created_at: str
 
 
 class WrongAnswerList(BaseModel):
     items: list[WrongAnswerRead]
+
+
+class WrongAnswerRepeatedMissRead(BaseModel):
+    question_id: str
+    question: str
+    document_id: str | None
+    citation_page: int | None
+    source_excerpt: str | None
+    miss_count: int
+    last_wrong_at: str
+
+
+class WrongAnswerClusterRead(BaseModel):
+    document_id: str | None
+    citation_page: int | None
+    current_wrong_count: int
+    cleared_count: int
+    last_wrong_at: str | None
+
+
+class WrongAnswerSummaryRead(BaseModel):
+    current_wrong_count: int
+    cleared_count: int
+    last_wrong_date: str | None
+    repeated_misses: list[WrongAnswerRepeatedMissRead]
+    clusters: list[WrongAnswerClusterRead]
 
 
 class WrongAnswerGroundedFields(BaseModel):

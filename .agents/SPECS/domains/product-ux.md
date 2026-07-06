@@ -41,6 +41,20 @@ or review flows.
 - Practice sessions persist the selected playable question fields at session
   creation. Attempts and wrong-answer review grade/read from that session-time
   snapshot, with a live-draft fallback only for older sessions.
+- Wrong Answers supports focused retry paths: per-card `Retry` starts a
+  `review_retry` session for that attempt, and `Start review quiz` starts a
+  `review_retry` session for all current wrong answers. Both flows navigate to
+  the existing practice runner and use session-time question snapshots.
+- Wrong Answers shows compact weak-area metrics from the backend summary:
+  current and cleared counts, last wrong date, repeated misses, and source page
+  clusters. The summary remains project-scoped and distinguishes current wrong
+  answers from cleared history.
+- Wrong-answer responses carry `document_id` for per-PDF grouping. Filenames
+  remain client-derived from loaded documents instead of duplicating filename
+  metadata on the wrong-answer DTO.
+- `Mark for review` is removed from the practice runner until there is a real
+  persisted user flag. Settings, Account, and footer links remain disabled
+  design-parity placeholders.
 
 ## Evidence
 
@@ -68,6 +82,13 @@ or review flows.
   `practice-complete`, `wrong-answer-ai`, and `multi-pdf-isolation`.
 - The 2026-07-02 session-snapshot slice keeps grading and wrong-answer review
   stable even if an editable question changes after the session starts.
+- The 2026-07-03 review retry slice added per-card retry, all-current-wrong
+  review quiz startup, weak-area summary metrics, wrong-answer `document_id`,
+  and practice runner snapshot rendering from `PracticeSessionRead.questions`.
+- The 2026-07-03 UI placeholder closeout removed the disabled `Mark for
+  review` affordance and added focused coverage for answer selection, clearing,
+  disabled/busy submit states, navigator state, and disabled shell
+  placeholders.
 
 ## Open Risks
 
@@ -84,5 +105,5 @@ or review flows.
 - Bundle and component CSS warning budgets remain noisy after the feature
   roadmap slice, although the production build gate passes.
 - Review retry, weak-area metrics, Mark for review policy, and wrong-answer
-  document metadata are still active product decisions in
-  `.agents/TODOS/feature-roadmap.md`.
+  document metadata were closed on 2026-07-03. Reopen a new TODO only for a
+  persisted user-flag review feature or heavier analytics surface.

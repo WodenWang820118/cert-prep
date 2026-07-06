@@ -11,6 +11,7 @@ class PracticeSessionStatus(str, Enum):
 class PracticeSessionMode(str, Enum):
     RANDOM_DRAW = "random_draw"
     FULL_DOCUMENT = "full_document"
+    REVIEW_RETRY = "review_retry"
 
 
 class QuestionDraftStatus(str, Enum):
@@ -63,6 +64,7 @@ class PracticeQuestion:
     rationale: str | None = None
     citation_page: int | None = None
     source_excerpt: str | None = None
+    document_id: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "choices", tuple(self.choices))
@@ -103,11 +105,13 @@ class WrongAnswer:
     session_id: str
     question_id: str
     question: str
+    choices: tuple[str, ...]
     selected_answer: str
     correct_answer: str | None
     rationale: str | None
     citation_page: int | None
     source_excerpt: str | None
+    document_id: str | None
     created_at: str
 
     @classmethod
@@ -119,11 +123,13 @@ class WrongAnswer:
             session_id=attempt.session_id,
             question_id=attempt.question_id,
             question=question.question,
+            choices=question.choices,
             selected_answer=attempt.selected_answer,
             correct_answer=question.correct_answer,
             rationale=question.rationale,
             citation_page=question.citation_page,
             source_excerpt=question.source_excerpt,
+            document_id=question.document_id,
             created_at=attempt.created_at,
         )
 
@@ -138,5 +144,6 @@ class WrongAnswer:
             "rationale": self.rationale,
             "citation_page": self.citation_page,
             "source_excerpt": self.source_excerpt,
+            "document_id": self.document_id,
             "created_at": self.created_at,
         }

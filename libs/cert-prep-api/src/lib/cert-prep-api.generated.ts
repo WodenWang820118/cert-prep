@@ -32,9 +32,10 @@ export interface Components {
     PdfExtractionMethod: string;
     PracticeAttemptCreate: { "question_id": string; "selected_answer": string };
     PracticeAttemptRead: { "id": string; "session_id": string; "project_id": string; "question_id": string; "selected_answer": string; "is_correct": boolean; "created_at": string };
-    PracticeSessionCreate: { "mode"?: Components['schemas']['PracticeSessionMode']; "document_id"?: string | null; "question_count"?: number | null; "random_seed"?: number | null };
+    PracticeSessionCreate: { "mode"?: Components['schemas']['PracticeSessionMode']; "document_id"?: string | null; "question_count"?: number | null; "random_seed"?: number | null; "wrong_attempt_ids"?: string[] | null };
     PracticeSessionMode: string;
-    PracticeSessionRead: { "id": string; "project_id": string; "question_ids": string[]; "mode": Components['schemas']['PracticeSessionMode']; "document_id": string | null; "question_count": number; "random_seed": number | null; "status": string; "created_at": string; "completed_at": string | null };
+    PracticeSessionQuestionRead: { "id": string; "question": string; "choices": string[]; "answer": string | null; "rationale": string | null; "citation_page": number | null; "source_excerpt": string | null; "document_id": string | null };
+    PracticeSessionRead: { "id": string; "project_id": string; "question_ids": string[]; "questions": Components['schemas']['PracticeSessionQuestionRead'][]; "mode": Components['schemas']['PracticeSessionMode']; "document_id": string | null; "question_count": number; "random_seed": number | null; "status": string; "created_at": string; "completed_at": string | null };
     ProjectCreate: { "name": string; "description"?: string };
     ProjectList: { "items": Components['schemas']['ProjectRead'][] };
     ProjectRead: { "id": string; "name": string; "description": string; "created_at": string; "updated_at": string };
@@ -51,10 +52,13 @@ export interface Components {
     RuntimeRequirementsRead: { "items": Components['schemas']['RuntimeRequirementRead'][] };
     SourceDocumentStatus: string;
     ValidationError: { "loc": (string | number)[]; "msg": string; "type": string; "input"?: unknown; "ctx"?: Record<string, unknown> };
+    WrongAnswerClusterRead: { "document_id": string | null; "citation_page": number | null; "current_wrong_count": number; "cleared_count": number; "last_wrong_at": string | null };
     WrongAnswerExplanationRead: { "attempt_id": string; "explanation": string; "provider": string; "model": string; "grounded_fields": Components['schemas']['WrongAnswerGroundedFields']; "fallback": boolean };
     WrongAnswerGroundedFields: { "question": string; "selected_answer": string; "correct_answer": string | null; "rationale": string | null; "citation_page": number | null; "source_excerpt": string | null };
     WrongAnswerList: { "items": Components['schemas']['WrongAnswerRead'][] };
-    WrongAnswerRead: { "attempt_id": string; "session_id": string; "question_id": string; "question": string; "selected_answer": string; "correct_answer": string | null; "rationale": string | null; "citation_page": number | null; "source_excerpt": string | null; "created_at": string };
+    WrongAnswerRead: { "attempt_id": string; "session_id": string; "question_id": string; "question": string; "selected_answer": string; "correct_answer": string | null; "rationale": string | null; "citation_page": number | null; "source_excerpt": string | null; "document_id": string | null; "created_at": string };
+    WrongAnswerRepeatedMissRead: { "question_id": string; "question": string; "document_id": string | null; "citation_page": number | null; "source_excerpt": string | null; "miss_count": number; "last_wrong_at": string };
+    WrongAnswerSummaryRead: { "current_wrong_count": number; "cleared_count": number; "last_wrong_date": string | null; "repeated_misses": Components['schemas']['WrongAnswerRepeatedMissRead'][]; "clusters": Components['schemas']['WrongAnswerClusterRead'][] };
   };
 }
 
@@ -88,6 +92,7 @@ export type PracticeAttemptCreate = Components['schemas']['PracticeAttemptCreate
 export type PracticeAttemptRead = Components['schemas']['PracticeAttemptRead'];
 export type PracticeSessionCreate = Components['schemas']['PracticeSessionCreate'];
 export type PracticeSessionMode = Components['schemas']['PracticeSessionMode'];
+export type PracticeSessionQuestionRead = Components['schemas']['PracticeSessionQuestionRead'];
 export type PracticeSessionRead = Components['schemas']['PracticeSessionRead'];
 export type ProjectCreate = Components['schemas']['ProjectCreate'];
 export type ProjectList = Components['schemas']['ProjectList'];
@@ -105,10 +110,13 @@ export type RuntimeRequirementRead = Components['schemas']['RuntimeRequirementRe
 export type RuntimeRequirementsRead = Components['schemas']['RuntimeRequirementsRead'];
 export type SourceDocumentStatus = Components['schemas']['SourceDocumentStatus'];
 export type ValidationError = Components['schemas']['ValidationError'];
+export type WrongAnswerClusterRead = Components['schemas']['WrongAnswerClusterRead'];
 export type WrongAnswerExplanationRead = Components['schemas']['WrongAnswerExplanationRead'];
 export type WrongAnswerGroundedFields = Components['schemas']['WrongAnswerGroundedFields'];
 export type WrongAnswerList = Components['schemas']['WrongAnswerList'];
 export type WrongAnswerRead = Components['schemas']['WrongAnswerRead'];
+export type WrongAnswerRepeatedMissRead = Components['schemas']['WrongAnswerRepeatedMissRead'];
+export type WrongAnswerSummaryRead = Components['schemas']['WrongAnswerSummaryRead'];
 
 export type CertPrepHttpMethod = 'DELETE' | 'GET' | 'PATCH' | 'POST';
 
@@ -143,6 +151,7 @@ export interface CertPrepGeneratedClient {
   getPracticeSession(projectId: string, sessionId: string): Promise<Components['schemas']['PracticeSessionRead']>;
   recordPracticeAttempt(projectId: string, sessionId: string, body: Components['schemas']['PracticeAttemptCreate']): Promise<Components['schemas']['PracticeAttemptRead']>;
   listWrongAnswers(projectId: string): Promise<Components['schemas']['WrongAnswerList']>;
+  summarizeWrongAnswers(projectId: string): Promise<Components['schemas']['WrongAnswerSummaryRead']>;
   explainWrongAnswer(projectId: string, attemptId: string): Promise<Components['schemas']['WrongAnswerExplanationRead']>;
   llmHealth(): Promise<Components['schemas']['LLMHealthRead']>;
   llmProfiles(): Promise<Components['schemas']['OllamaProfilesRead']>;
@@ -200,6 +209,8 @@ export function createCertPrepGeneratedClient(
       transport.request<Components['schemas']['PracticeAttemptRead']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/practice-sessions/${encodeURIComponent(sessionId)}/attempts`, body }),
     listWrongAnswers: (projectId: string) =>
       transport.request<Components['schemas']['WrongAnswerList']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/wrong-answers` }),
+    summarizeWrongAnswers: (projectId: string) =>
+      transport.request<Components['schemas']['WrongAnswerSummaryRead']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/wrong-answers/summary` }),
     explainWrongAnswer: (projectId: string, attemptId: string) =>
       transport.request<Components['schemas']['WrongAnswerExplanationRead']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/wrong-answers/${encodeURIComponent(attemptId)}/explanation` }),
     llmHealth: () =>

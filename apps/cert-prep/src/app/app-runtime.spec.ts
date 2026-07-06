@@ -10,6 +10,7 @@ import {
   availableLlmHealth,
   availableOcrHealth,
   backendHealth,
+  emptyWrongAnswerSummary,
 } from './app.spec-helpers';
 import { DesktopRuntimeBridgeService } from './stores/desktop-runtime/desktop-runtime-bridge.service';
 import type { DesktopRuntimeStatus } from './stores/desktop-runtime/contracts/desktop-runtime.contracts';
@@ -161,6 +162,7 @@ function createApiClient() {
     listDocumentChunks: vi.fn().mockResolvedValue({ items: [] }),
     listQuestionDrafts: vi.fn().mockResolvedValue({ items: [editableAppQuestion] }),
     listWrongAnswers: vi.fn().mockResolvedValue({ items: [] }),
+    summarizeWrongAnswers: vi.fn().mockResolvedValue(emptyWrongAnswerSummary()),
   };
 }
 

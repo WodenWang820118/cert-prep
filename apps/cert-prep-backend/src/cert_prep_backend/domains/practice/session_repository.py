@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import json
 import secrets
+from collections.abc import Mapping
 from sqlite3 import Row
 from uuid import uuid4
 
 from cert_prep_backend.api.errors import NotFoundError, ValidationError
-from cert_prep_backend.domains.practice.models import PracticeSessionMode
+from cert_prep_backend.domains.practice.models import PracticeSessionMode, WrongAnswer
 from cert_prep_backend.domains.practice.policies import (
     DOCUMENT_REQUIRED_FOR_FULL_DOCUMENT_MESSAGE,
     PracticeRuleViolation,
@@ -19,12 +20,26 @@ from cert_prep_backend.domains.practice.row_mappers import (
     practice_question_from_row,
     session_to_record,
 )
+from cert_prep_backend.domains.practice.wrong_answer_repository import (
+    list_current_wrong_answer_models,
+)
 from cert_prep_backend.domains.projects.repository import ensure_project_exists
 from cert_prep_backend.domains.source_documents import repository as documents_repository
 from cert_prep_backend.persistence.database import Database, utc_now
 
 
 DEFAULT_RANDOM_QUESTION_COUNT = 10
+QUESTION_DRAFT_PRACTICE_COLUMNS = """
+    id,
+    question,
+    choices_json,
+    answer,
+    status,
+    rationale,
+    citation_page,
+    source_excerpt,
+    document_id
+"""
 
 
 def create_session(
@@ -35,6 +50,7 @@ def create_session(
     document_id: str | None = None,
     question_count: int | None = None,
     random_seed: int | None = None,
+    wrong_attempt_ids: list[str] | None = None,
 ) -> dict:
     ensure_project_exists(db, project_id)
     session_mode = PracticeSessionMode(mode)
@@ -51,6 +67,7 @@ def create_session(
             project_id=project_id,
             mode=session_mode,
             document_id=document_id,
+            wrong_attempt_ids=wrong_attempt_ids,
         )
         effective_count = _effective_question_count(
             mode=session_mode,
@@ -66,9 +83,16 @@ def create_session(
                     stored_seed,
                 )
                 stored_document_id = None
-            else:
+            elif session_mode is PracticeSessionMode.FULL_DOCUMENT:
                 stored_seed = None
                 stored_document_id = document_id
+                question_ids = select_session_question_ids(
+                    [row["id"] for row in question_rows],
+                    effective_count,
+                )
+            else:
+                stored_seed = None
+                stored_document_id = None
                 question_ids = select_session_question_ids(
                     [row["id"] for row in question_rows],
                     effective_count,
@@ -103,17 +127,17 @@ def create_session(
             created_at=now,
         )
         row = fetch_practice_session_row(connection, project_id, session_id)
-    if row is None:
-        raise NotFoundError("Practice session not found.")
-    return session_to_record(row)
+        if row is None:
+            raise NotFoundError("Practice session not found.")
+        return _session_record(connection, row)
 
 
 def get_session(db: Database, project_id: str, session_id: str) -> dict:
     with db.connect() as connection:
         row = fetch_practice_session_row(connection, project_id, session_id)
-    if row is None:
-        raise NotFoundError("Practice session not found.")
-    return session_to_record(row)
+        if row is None:
+            raise NotFoundError("Practice session not found.")
+        return _session_record(connection, row)
 
 
 def _playable_question_rows(
@@ -122,11 +146,19 @@ def _playable_question_rows(
     project_id: str,
     mode: PracticeSessionMode,
     document_id: str | None,
-) -> list[Row]:
+    wrong_attempt_ids: list[str] | None,
+) -> list[Row | dict[str, object]]:
+    if mode is PracticeSessionMode.REVIEW_RETRY:
+        return _review_retry_question_rows(
+            connection,
+            project_id=project_id,
+            wrong_attempt_ids=wrong_attempt_ids,
+        )
+
     if mode is PracticeSessionMode.FULL_DOCUMENT:
         rows = connection.execute(
-            """
-            SELECT *
+            f"""
+            SELECT {QUESTION_DRAFT_PRACTICE_COLUMNS}
             FROM question_drafts
             WHERE project_id = ? AND document_id = ? AND status = 'approved'
             ORDER BY
@@ -141,8 +173,8 @@ def _playable_question_rows(
         return _playable_rows(rows)
 
     rows = connection.execute(
-        """
-        SELECT *
+        f"""
+        SELECT {QUESTION_DRAFT_PRACTICE_COLUMNS}
         FROM question_drafts
         WHERE project_id = ? AND status = 'approved'
         ORDER BY id
@@ -150,6 +182,46 @@ def _playable_question_rows(
         (project_id,),
     ).fetchall()
     return _playable_rows(rows)
+
+
+def _review_retry_question_rows(
+    connection,
+    *,
+    project_id: str,
+    wrong_attempt_ids: list[str] | None,
+) -> list[dict[str, object]]:
+    current_wrong_answers = list_current_wrong_answer_models(connection, project_id)
+    if wrong_attempt_ids is not None:
+        current_by_attempt_id = {
+            wrong_answer.attempt_id: wrong_answer for wrong_answer in current_wrong_answers
+        }
+        unique_attempt_ids = list(dict.fromkeys(wrong_attempt_ids))
+        try:
+            current_wrong_answers = [
+                current_by_attempt_id[attempt_id] for attempt_id in unique_attempt_ids
+            ]
+        except KeyError as exc:
+            raise ValidationError(
+                "Wrong attempt ids must refer to current wrong answers in this project."
+            ) from exc
+
+    if not current_wrong_answers:
+        raise ValidationError("No current wrong answers are available for review retry.")
+
+    return [_review_retry_question_row(wrong_answer) for wrong_answer in current_wrong_answers]
+
+
+def _review_retry_question_row(wrong_answer: WrongAnswer) -> dict[str, object]:
+    return {
+        "id": wrong_answer.question_id,
+        "question": wrong_answer.question,
+        "choices_json": json.dumps(list(wrong_answer.choices)),
+        "answer": wrong_answer.correct_answer,
+        "rationale": wrong_answer.rationale,
+        "citation_page": wrong_answer.citation_page,
+        "source_excerpt": wrong_answer.source_excerpt,
+        "document_id": wrong_answer.document_id,
+    }
 
 
 def _playable_rows(rows: list[Row]) -> list[Row]:
@@ -165,7 +237,7 @@ def _insert_session_question_snapshots(
     *,
     session_id: str,
     project_id: str,
-    question_rows: list[Row],
+    question_rows: list[Mapping[str, object]],
     question_ids: tuple[str, ...],
     created_at: str,
 ) -> None:
@@ -175,9 +247,9 @@ def _insert_session_question_snapshots(
         INSERT INTO practice_session_questions(
             session_id, project_id, question_id, question_order, question,
             choices_json, correct_answer, rationale, citation_page, source_excerpt,
-            created_at
+            created_at, document_id
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
             (
@@ -192,6 +264,7 @@ def _insert_session_question_snapshots(
                 rows_by_id[question_id]["citation_page"],
                 rows_by_id[question_id]["source_excerpt"],
                 created_at,
+                rows_by_id[question_id]["document_id"],
             )
             for index, question_id in enumerate(question_ids)
         ],
@@ -206,6 +279,88 @@ def _effective_question_count(
 ) -> int:
     if requested_question_count is not None:
         return requested_question_count
-    if mode is PracticeSessionMode.FULL_DOCUMENT and available_question_count > 0:
+    if mode in {PracticeSessionMode.FULL_DOCUMENT, PracticeSessionMode.REVIEW_RETRY}:
         return available_question_count
     return DEFAULT_RANDOM_QUESTION_COUNT
+
+
+def _session_record(connection, row: Row) -> dict:
+    record = session_to_record(row)
+    record["questions"] = _session_question_records(
+        connection,
+        project_id=row["project_id"],
+        session_id=row["id"],
+        question_ids=record["question_ids"],
+    )
+    return record
+
+
+def _session_question_records(
+    connection,
+    *,
+    project_id: str,
+    session_id: str,
+    question_ids: list[str],
+) -> list[dict[str, object]]:
+    snapshot_rows = connection.execute(
+        """
+        SELECT
+            practice_session_questions.question_id AS id,
+            practice_session_questions.question,
+            practice_session_questions.choices_json,
+            practice_session_questions.correct_answer AS answer,
+            practice_session_questions.rationale,
+            practice_session_questions.citation_page,
+            practice_session_questions.source_excerpt,
+            COALESCE(practice_session_questions.document_id, question_drafts.document_id)
+                AS document_id
+        FROM practice_session_questions
+        LEFT JOIN question_drafts
+            ON question_drafts.project_id = practice_session_questions.project_id
+            AND question_drafts.id = practice_session_questions.question_id
+        WHERE practice_session_questions.project_id = ?
+            AND practice_session_questions.session_id = ?
+        """,
+        (project_id, session_id),
+    ).fetchall()
+    rows_by_id: dict[str, Row] = {row["id"]: row for row in snapshot_rows}
+    missing_question_ids = [
+        question_id for question_id in question_ids if question_id not in rows_by_id
+    ]
+    if missing_question_ids:
+        placeholders = ", ".join("?" for _ in missing_question_ids)
+        draft_rows = connection.execute(
+            f"""
+            SELECT
+                id,
+                question,
+                choices_json,
+                answer,
+                rationale,
+                citation_page,
+                source_excerpt,
+                document_id
+            FROM question_drafts
+            WHERE project_id = ? AND id IN ({placeholders})
+            """,
+            (project_id, *missing_question_ids),
+        ).fetchall()
+        rows_by_id.update({row["id"]: row for row in draft_rows})
+    return [
+        _session_question_record(rows_by_id[question_id])
+        for question_id in question_ids
+        if question_id in rows_by_id
+    ]
+
+
+def _session_question_record(row: Row) -> dict[str, object]:
+    return {
+        "id": row["id"],
+        "question": row["question"],
+        "choices": list(json.loads(row["choices_json"])),
+        "answer": row["answer"],
+        "rationale": row["rationale"],
+        "citation_page": row["citation_page"],
+        "source_excerpt": row["source_excerpt"],
+        "document_id": row["document_id"],
+    }

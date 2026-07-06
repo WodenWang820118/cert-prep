@@ -32,7 +32,18 @@
   line-height: 1.5rem;
 }
 
+.review-header-actions,
+.review-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .review-refresh-button,
+.review-start-button,
+.retry-button,
 .ai-discuss-button {
   gap: 0.5rem;
   padding-inline: 0.875rem;
@@ -40,14 +51,56 @@
   font-size: 0.875rem;
 }
 
-.review-refresh-button:hover:not(:disabled) {
+.review-refresh-button:hover:not(:disabled),
+.review-start-button:hover:not(:disabled),
+.retry-button:hover:not(:disabled) {
   border-color: var(--workbench-primary-border);
   background: #eef3ff;
 }
 
-.review-refresh-button:disabled {
+.review-refresh-button:disabled,
+.review-start-button:disabled,
+.retry-button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.review-start-button,
+.retry-button {
+  border-color: var(--workbench-primary-border);
+  background: #f5f8ff;
+}
+
+.review-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.review-summary div {
+  display: grid;
+  gap: 0.125rem;
+  border: 1px solid var(--workbench-border-soft);
+  border-radius: 6px;
+  background: var(--workbench-surface-low);
+  padding: 0.625rem 0.75rem;
+}
+
+.review-summary dt {
+  color: var(--workbench-muted);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  line-height: 1rem;
+}
+
+.review-summary dd {
+  margin: 0;
+  color: var(--workbench-text);
+  font-size: 1.125rem;
+  font-weight: 800;
+  line-height: 1.5rem;
 }
 
 .wrong-answer-list {
@@ -67,7 +120,14 @@
   padding: 1.25rem 1.5rem;
 }
 
-.page-chip {
+.review-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.page-chip,
+.document-chip {
   display: inline-flex;
   align-items: center;
   width: fit-content;
@@ -80,6 +140,11 @@
   font-size: 0.875rem;
   font-weight: 500;
   line-height: 1.25rem;
+}
+
+.document-chip {
+  background: #f5f8ff;
+  color: var(--workbench-text);
 }
 
 .wrong-answer-card h3,
@@ -247,9 +312,20 @@ p.ai-explanation-note {
     flex-direction: column;
   }
 
+  .review-header-actions,
+  .review-card-actions {
+    width: 100%;
+  }
+
   .review-refresh-button,
+  .review-start-button,
+  .retry-button,
   .ai-discuss-button {
     width: 100%;
+  }
+
+  .review-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .answer-comparison {

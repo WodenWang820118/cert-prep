@@ -42,6 +42,7 @@ describe('PracticeStore session modes', () => {
     id: 'session-1',
     project_id: project.id,
     question_ids: ['draft-1'],
+    questions: [],
     mode: 'random_draw',
     document_id: null,
     question_count: 1,
@@ -157,6 +158,81 @@ describe('PracticeStore session modes', () => {
 
     expect(store.activeQuestion()).toBeNull();
     expect(store.sessionComplete()).toBe(false);
+  });
+
+  it('surfaces session snapshot questions before live draft rows', () => {
+    const store = TestBed.inject(PracticeStore);
+    store.practiceSession.set({
+      ...session,
+      question_ids: ['draft-1'],
+      questions: [
+        {
+          id: 'draft-1',
+          question: 'Snapshot question text?',
+          choices: ['Snapshot A', 'Snapshot B'],
+          answer: 'Snapshot A',
+          rationale: 'Snapshot rationale.',
+          citation_page: 7,
+          source_excerpt: 'Snapshot source excerpt.',
+          document_id: documents[0].id,
+        },
+      ],
+    });
+
+    expect(store.activeQuestion()).toEqual({
+      id: 'draft-1',
+      question: 'Snapshot question text?',
+      choices: ['Snapshot A', 'Snapshot B'],
+      answer: 'Snapshot A',
+      rationale: 'Snapshot rationale.',
+      citation_page: 7,
+      source_excerpt: 'Snapshot source excerpt.',
+      document_id: documents[0].id,
+    });
+  });
+
+  it('creates review retry sessions for wrong attempts', async () => {
+    const store = TestBed.inject(PracticeStore);
+
+    await expect(store.createReviewRetrySession(['attempt-1'])).resolves.toBe(
+      true,
+    );
+
+    expect(apiClient.createPracticeSession).toHaveBeenCalledWith(project.id, {
+      mode: 'review_retry',
+      wrong_attempt_ids: ['attempt-1'],
+      question_count: 1,
+    });
+    expect(store.practiceSession()).toEqual(session);
+  });
+
+  it('blocks a new random session while review retry is still active', async () => {
+    const store = TestBed.inject(PracticeStore);
+    store.practiceSession.set({
+      ...session,
+      mode: 'review_retry',
+      questions: [
+        {
+          id: 'draft-1',
+          question: 'Retry the missed question?',
+          choices: ['A', 'B'],
+          answer: 'A',
+          rationale: 'Because A is cited.',
+          citation_page: 1,
+          source_excerpt: 'Source excerpt.',
+          document_id: documents[0].id,
+        },
+      ],
+    });
+
+    expect(store.canCreatePracticeSession('random_draw')).toBe(false);
+    expect(store.sessionStartBlocker('random_draw')).toBe(
+      'Finish the active review retry before starting a new practice session.',
+    );
+
+    await store.createPracticeSession('random_draw');
+
+    expect(apiClient.createPracticeSession).not.toHaveBeenCalled();
   });
 });
 

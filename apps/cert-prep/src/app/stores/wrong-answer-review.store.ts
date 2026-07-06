@@ -17,6 +17,9 @@ export interface WrongAnswerExplanationState {
 type WrongAnswerExplanationRead = Awaited<
   ReturnType<CertPrepGeneratedClient['explainWrongAnswer']>
 >;
+type WrongAnswerSummaryRead = Awaited<
+  ReturnType<CertPrepGeneratedClient['summarizeWrongAnswers']>
+>;
 
 const EMPTY_EXPLANATION_STATE: WrongAnswerExplanationState = {
   loading: false,
@@ -32,18 +35,24 @@ export class WrongAnswerReviewStore {
   private readonly projects = inject(ProjectStore);
 
   readonly wrongAnswers = signal<WrongAnswerRead[]>([]);
+  readonly summary = signal<WrongAnswerSummaryRead | null>(null);
   readonly explanations = signal<Record<string, WrongAnswerExplanationState>>(
     {},
   );
 
   async load(projectId: string): Promise<void> {
-    const wrongAnswers = await this.api.listWrongAnswers(projectId);
+    const [wrongAnswers, summary] = await Promise.all([
+      this.api.listWrongAnswers(projectId),
+      this.api.summarizeWrongAnswers(projectId),
+    ]);
     this.wrongAnswers.set(wrongAnswers.items);
+    this.summary.set(summary);
     this.pruneExplanations(wrongAnswers.items);
   }
 
   reset(): void {
     this.wrongAnswers.set([]);
+    this.summary.set(null);
     this.explanations.set({});
   }
 
@@ -54,13 +63,16 @@ export class WrongAnswerReviewStore {
       return;
     }
 
-    const wrongAnswers = await this.operations.run(
-      'review',
-      'Review refreshed',
-      () => this.api.listWrongAnswers(project.id),
+    const review = await this.operations.run('review', 'Review refreshed', () =>
+      Promise.all([
+        this.api.listWrongAnswers(project.id),
+        this.api.summarizeWrongAnswers(project.id),
+      ]),
     );
-    if (wrongAnswers !== null) {
+    if (review !== null) {
+      const [wrongAnswers, summary] = review;
       this.wrongAnswers.set(wrongAnswers.items);
+      this.summary.set(summary);
       this.pruneExplanations(wrongAnswers.items);
     }
   }
@@ -95,10 +107,7 @@ export class WrongAnswerReviewStore {
       const response = await explanationRequest;
       const explanation = this.extractExplanation(response);
       if (explanation === null) {
-        this.setFallback(
-          wrongAnswer,
-          'The AI explanation response was empty.',
-        );
+        this.setFallback(wrongAnswer, 'The AI explanation response was empty.');
         return;
       }
 

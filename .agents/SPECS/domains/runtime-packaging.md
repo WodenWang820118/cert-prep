@@ -14,6 +14,11 @@ and process cleanup.
   SHA-256, target, entrypoint, and release/local URL.
 - Python backend and WindowsML OCR runtime readiness are required for packaged
   OCR/manual PDF workflows.
+- Runtime management has two supported entrypoints: the app topbar opens the
+  shell modal, while `/runtime` remains an unguarded recovery/deep-link route
+  rendering the same runtime details without modal-only close or cancel
+  controls. Standalone `ModelHealthComponent` instances keep route navigation
+  for app-shell compatibility.
 - Ollama and model availability are optional reasoning dependencies. They must
   never block OCR, source import, manual questions, Full Exam, Random Quiz, or
   wrong-answer review.
