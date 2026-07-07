@@ -13,12 +13,18 @@ import { ProjectStore } from '../project.store';
 
 const DOCUMENT_POLL_INTERVAL_MS = 1500;
 const FIRST_CHUNK_POLL_INTERVAL_MS = 500;
+const DEFAULT_UPLOAD_BATCH_SIZE = 2;
+const MIN_UPLOAD_BATCH_SIZE = 1;
+const MAX_UPLOAD_BATCH_SIZE = 4;
 const FINAL_DOCUMENT_STATUSES = new Set([
   'ready',
   'exam_failed',
   'no_text_detected',
   'ocr_failed',
 ]);
+type UploadBatchResult =
+  | { item: SourceUploadItem; document: DocumentRead }
+  | { item: SourceUploadItem; error: unknown };
 
 @Injectable({ providedIn: 'root' })
 export class SourceImportStore {
@@ -39,7 +45,9 @@ export class SourceImportStore {
     'en',
     'mixed',
   ];
+  readonly uploadBatchSizes = [1, 2, 3, 4] as const;
   readonly languageHint = signal<LanguageHint>('auto');
+  readonly uploadBatchSize = signal(DEFAULT_UPLOAD_BATCH_SIZE);
   readonly uploadItems = signal<SourceUploadItem[]>([]);
   readonly selectedFiles = computed(() =>
     this.uploadItems().map((item) => item.file),
@@ -161,6 +169,16 @@ export class SourceImportStore {
     this.languageHint.set(next);
   }
 
+  setUploadBatchSize(value: number | string): void {
+    const parsed = Number(value);
+    const normalized = Number.isFinite(parsed)
+      ? Math.trunc(parsed)
+      : DEFAULT_UPLOAD_BATCH_SIZE;
+    this.uploadBatchSize.set(
+      Math.min(MAX_UPLOAD_BATCH_SIZE, Math.max(MIN_UPLOAD_BATCH_SIZE, normalized)),
+    );
+  }
+
   showMoreChunks(): void {
     this.library.showMoreChunks();
   }
@@ -195,6 +213,7 @@ export class SourceImportStore {
 
     const uploadedDocuments: DocumentRead[] = [];
     let runtimePromptNeeded = false;
+    const uploadBatchSize = this.uploadBatchSize();
 
     this.operations.busy.set('upload');
     this.operations.error.set(null);
@@ -205,30 +224,43 @@ export class SourceImportStore {
     });
 
     try {
-      for (const item of uploadItems) {
-        this.updateUploadItem(item.id, {
+      for (let index = 0; index < uploadItems.length; index += uploadBatchSize) {
+        const batch = uploadItems.slice(index, index + uploadBatchSize);
+        this.markUploadItems(batch, {
           status: 'uploading',
           error: null,
         });
 
-        try {
-          const document = await this.uploadSingleDocument(project.id, item.file);
-          uploadedDocuments.push(document);
-          this.updateUploadItem(item.id, {
-            status: 'uploaded',
-            document,
-            error: null,
-          });
-          this.library.upsertDocument(document);
-        } catch (error) {
-          const errorCode = this.getUploadErrorCode(error);
-          runtimePromptNeeded ||=
-            errorCode === 'paddle_runtime_missing' ||
-            errorCode === 'windowsml_runtime_missing';
-          this.updateUploadItem(item.id, {
-            status: 'failed',
-            error: this.getUploadErrorMessage(error),
-          });
+        const results: UploadBatchResult[] = await Promise.all(
+          batch.map(async (item) => {
+            try {
+              const document = await this.uploadSingleDocument(project.id, item.file);
+              return { item, document };
+            } catch (error) {
+              return { item, error };
+            }
+          }),
+        );
+
+        for (const result of results) {
+          if ('document' in result) {
+            uploadedDocuments.push(result.document);
+            this.updateUploadItem(result.item.id, {
+              status: 'uploaded',
+              document: result.document,
+              error: null,
+            });
+            this.library.upsertDocument(result.document);
+          } else {
+            const errorCode = this.getUploadErrorCode(result.error);
+            runtimePromptNeeded ||=
+              errorCode === 'paddle_runtime_missing' ||
+              errorCode === 'windowsml_runtime_missing';
+            this.updateUploadItem(result.item.id, {
+              status: 'failed',
+              error: this.getUploadErrorMessage(result.error),
+            });
+          }
         }
       }
     } finally {

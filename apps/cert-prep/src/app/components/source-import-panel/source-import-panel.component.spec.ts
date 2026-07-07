@@ -270,6 +270,27 @@ describe('SourceImportPanelComponent', () => {
     expect(text).toContain('Invalid PDF');
   });
 
+  it('lets the user adjust the upload batch size', async () => {
+    const fixture = TestBed.createComponent(SourceImportPanelComponent);
+    const sourceImport = TestBed.inject(SourceImportStore);
+
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const selector = batchSizeSelector(fixture.nativeElement);
+    expect(selector).not.toBeNull();
+    if (selector === null) {
+      throw new Error('Batch size selector was not rendered.');
+    }
+    expect(selector?.value).toBe('2');
+
+    selector.value = '3';
+    selector.dispatchEvent(new Event('change'));
+    fixture.detectChanges();
+
+    expect(sourceImport.uploadBatchSize()).toBe(3);
+  });
+
   it('keeps the file chooser disabled while a batch upload is in flight', async () => {
     const fixture = TestBed.createComponent(SourceImportPanelComponent);
     const sourceImport = TestBed.inject(SourceImportStore);
@@ -464,6 +485,14 @@ function documentSelector(root: ParentNode): HTMLSelectElement | null {
     Array.from(root.querySelectorAll('select')).find((select) =>
       select.textContent?.includes('second.pdf'),
     ) ?? null
+  );
+}
+
+function batchSizeSelector(root: ParentNode): HTMLSelectElement | null {
+  return (
+    Array.from(root.querySelectorAll('label.workbench-field')).find((label) =>
+      label.textContent?.includes('Batch size'),
+    )?.querySelector('select') ?? null
   );
 }
 

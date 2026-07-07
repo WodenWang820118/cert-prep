@@ -285,7 +285,7 @@ class Database:
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
         self.migrate()
-        connection = sqlite3.connect(self.path)
+        connection = sqlite3.connect(self.path, timeout=30.0)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
         try:
@@ -304,6 +304,8 @@ class Database:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             with sqlite3.connect(self.path) as connection:
                 connection.execute("PRAGMA foreign_keys = ON")
+                connection.execute("PRAGMA journal_mode = WAL")
+                connection.execute("PRAGMA busy_timeout = 30000")
                 connection.execute(
                     """
                     CREATE TABLE IF NOT EXISTS schema_migrations (

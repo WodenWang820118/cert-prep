@@ -134,7 +134,7 @@ describe('SourceImportStore polling', () => {
     expect(store.chunks()).toEqual([chunkRead({ document_id: secondDocument.id })]);
   });
 
-  it('uploads selected PDFs sequentially', async () => {
+  it('uploads selected PDFs in two-document batches by default', async () => {
     const store = TestBed.inject(SourceImportStore);
     const firstUpload = deferred<DocumentRead>();
     const secondUpload = deferred<DocumentRead>();
@@ -162,7 +162,7 @@ describe('SourceImportStore polling', () => {
     const uploadPromise = store.uploadDocuments();
     await Promise.resolve();
 
-    expect(startedUploads).toEqual(['first.pdf']);
+    expect(startedUploads).toEqual(['first.pdf', 'second.pdf']);
     firstUpload.resolve(documentRead({ id: 'document-1', filename: 'first.pdf' }));
     await flushPromises();
 
@@ -184,7 +184,72 @@ describe('SourceImportStore polling', () => {
     expect(store.uploadedFileCount()).toBe(3);
   });
 
-  it('ignores reentrant upload calls while a sequential batch is in progress', async () => {
+  it('uses the configured upload batch size for the whole upload run', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    store.setUploadBatchSize(3);
+    const uploads = new Map(
+      ['first.pdf', 'second.pdf', 'third.pdf', 'fourth.pdf'].map((name) => [
+        name,
+        deferred<DocumentRead>(),
+      ]),
+    );
+    const startedUploads: string[] = [];
+    apiClient.uploadDocument.mockImplementation((_projectId: string, body: FormData) => {
+      const file = body.get('file') as File;
+      startedUploads.push(file.name);
+      return uploads.get(file.name)?.promise;
+    });
+    store.chooseFiles([
+      pdfFile('first.pdf'),
+      pdfFile('second.pdf'),
+      pdfFile('third.pdf'),
+      pdfFile('fourth.pdf'),
+    ]);
+
+    const uploadPromise = store.uploadDocuments();
+    await Promise.resolve();
+
+    expect(startedUploads).toEqual(['first.pdf', 'second.pdf', 'third.pdf']);
+    store.setUploadBatchSize(1);
+    uploads.get('first.pdf')?.resolve(
+      documentRead({ id: 'document-1', filename: 'first.pdf' }),
+    );
+    uploads.get('second.pdf')?.resolve(
+      documentRead({ id: 'document-2', filename: 'second.pdf' }),
+    );
+    uploads.get('third.pdf')?.resolve(
+      documentRead({ id: 'document-3', filename: 'third.pdf' }),
+    );
+    await flushPromises();
+
+    expect(startedUploads).toEqual([
+      'first.pdf',
+      'second.pdf',
+      'third.pdf',
+      'fourth.pdf',
+    ]);
+    uploads.get('fourth.pdf')?.resolve(
+      documentRead({ id: 'document-4', filename: 'fourth.pdf' }),
+    );
+    await uploadPromise;
+
+    expect(store.activeDocumentId()).toBe('document-4');
+  });
+
+  it('clamps upload batch size to the supported range', () => {
+    const store = TestBed.inject(SourceImportStore);
+
+    store.setUploadBatchSize(99);
+    expect(store.uploadBatchSize()).toBe(4);
+
+    store.setUploadBatchSize(0);
+    expect(store.uploadBatchSize()).toBe(1);
+
+    store.setUploadBatchSize('not-a-number');
+    expect(store.uploadBatchSize()).toBe(2);
+  });
+
+  it('ignores reentrant upload calls while a document batch is in progress', async () => {
     const store = TestBed.inject(SourceImportStore);
     const firstUpload = deferred<DocumentRead>();
     const secondUpload = deferred<DocumentRead>();
@@ -206,7 +271,7 @@ describe('SourceImportStore polling', () => {
     const reentrantResult = await store.uploadDocuments();
 
     expect(reentrantResult).toEqual([]);
-    expect(startedUploads).toEqual(['first.pdf']);
+    expect(startedUploads).toEqual(['first.pdf', 'second.pdf']);
 
     firstUpload.resolve(documentRead({ id: 'document-1', filename: 'first.pdf' }));
     await flushPromises();

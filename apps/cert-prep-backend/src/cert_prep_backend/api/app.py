@@ -1,7 +1,7 @@
 import platform
 import sqlite3
 import sys
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -22,6 +22,13 @@ from cert_prep_backend.domains.mock_exams.streaming import StreamingDraftGenerat
 from cert_prep_backend.domains.runtime_installations import RuntimeInstallationManager
 from cert_prep_backend.domains.source_documents import repository as source_documents_repository
 from cert_prep_backend.domains.source_documents.ocr import OCRProvider, ocr_provider_from_settings
+from cert_prep_backend.domains.source_documents.ocr_provider_pool import (
+    DocumentOCRProviderPool,
+    OCRProviderFactory,
+    factory_provider_pool,
+    provider_pool_from_settings,
+    shared_provider_pool,
+)
 from cert_prep_backend.routers import documents, drafts, llm, ocr, practice, projects, runtime
 
 
@@ -37,6 +44,7 @@ def create_app(
     settings: Settings | None = None,
     llm_provider: LLMProvider | None = None,
     ocr_provider: OCRProvider | None = None,
+    document_ocr_provider_factory: OCRProviderFactory | None = None,
     runtime_installation_manager: RuntimeInstallationManager | None = None,
     runtime_installation_async_jobs: bool = True,
     document_processing_async_jobs: bool = True,
@@ -50,6 +58,7 @@ def create_app(
             yield
         finally:
             app.state.streaming_draft_generation_manager.close()
+            app.state.document_ocr_provider_pool.close()
             llm_provider_close = getattr(app.state.llm_provider, "close", None)
             if callable(llm_provider_close):
                 llm_provider_close()
@@ -68,6 +77,11 @@ def create_app(
     source_documents_repository.recover_processing_documents(app.state.database)
     app.state.llm_provider = llm_provider or lazy_provider_from_settings(app_settings)
     app.state.ocr_provider = ocr_provider or ocr_provider_from_settings(app_settings)
+    app.state.document_ocr_provider_pool = _document_ocr_provider_pool(
+        settings=app_settings,
+        ocr_provider=ocr_provider,
+        provider_factory=document_ocr_provider_factory,
+    )
     app.state.document_processing_async_jobs = document_processing_async_jobs
     app.state.streaming_draft_generation_manager = StreamingDraftGenerationManager(
         settings=app_settings,
@@ -145,6 +159,19 @@ def create_app(
     app.include_router(runtime.router, dependencies=protected_dependencies)
 
     return app
+
+
+def _document_ocr_provider_pool(
+    *,
+    settings: Settings,
+    ocr_provider: OCRProvider | None,
+    provider_factory: Callable[[], OCRProvider] | None,
+) -> DocumentOCRProviderPool:
+    if provider_factory is not None:
+        return factory_provider_pool(settings, provider_factory)
+    if ocr_provider is not None:
+        return shared_provider_pool(ocr_provider)
+    return provider_pool_from_settings(settings)
 
 
 def _error_content(status_code: int, detail: Any) -> dict[str, Any]:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from threading import Thread
 
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile, status
@@ -8,8 +9,8 @@ from cert_prep_backend.core.config import Settings
 from cert_prep_backend.persistence.database import Database
 from cert_prep_backend.api.dependencies import (
     get_database,
+    get_document_ocr_provider_pool,
     get_llm_provider,
-    get_ocr_provider,
     get_settings,
     get_streaming_draft_generation_manager,
 )
@@ -20,7 +21,9 @@ from cert_prep_backend.domains.mock_exams.ports import DraftGenerationProvider a
 from cert_prep_backend.domains.mock_exams.streaming import StreamingDraftGenerationManager
 from cert_prep_backend.domains.projects import repository as projects_repository
 from cert_prep_backend.domains.source_documents import repository as source_documents_repository
-from cert_prep_backend.domains.source_documents.ocr import OCRProvider
+from cert_prep_backend.domains.source_documents.ocr_provider_pool import (
+    DocumentOCRProviderPool,
+)
 from cert_prep_backend.domains.source_documents.pdf_extraction import (
     PdfExtractionProgress,
     extract_pdf_pages,
@@ -62,7 +65,7 @@ async def upload_document(
     db: Database = Depends(get_database),
     settings: Settings = Depends(get_settings),
     llm_provider: LLMProvider = Depends(get_llm_provider),
-    ocr_provider: OCRProvider = Depends(get_ocr_provider),
+    ocr_provider_pool: DocumentOCRProviderPool = Depends(get_document_ocr_provider_pool),
     streaming_questions: StreamingDraftGenerationManager = Depends(
         get_streaming_draft_generation_manager
     ),
@@ -77,7 +80,7 @@ async def upload_document(
         page_count = inspect_pdf_page_count(content, max_pages=settings.max_pdf_pages)
         sha256 = sha256_hex(content)
         storage_path = store_pdf(settings, project_id, sha256, content)
-        _prepare_document_ocr_provider(ocr_provider)
+        await _prepare_document_ocr_provider_pool(ocr_provider_pool)
         document = source_documents_repository.create_processing_document(
             db,
             project_id=project_id,
@@ -95,7 +98,7 @@ async def upload_document(
                     db,
                     settings,
                     llm_provider,
-                    ocr_provider,
+                    ocr_provider_pool,
                     streaming_questions,
                     project_id,
                     document["id"],
@@ -109,7 +112,7 @@ async def upload_document(
             db,
             settings,
             llm_provider,
-            ocr_provider,
+            ocr_provider_pool,
             streaming_questions,
             project_id,
             document["id"],
@@ -162,6 +165,13 @@ async def _read_limited_upload(file: UploadFile, max_bytes: int) -> bytes:
     return b"".join(chunks)
 
 
+async def _prepare_document_ocr_provider_pool(
+    ocr_provider_pool: DocumentOCRProviderPool,
+) -> None:
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, ocr_provider_pool.prepare)
+
+
 def _validate_pdf_upload_metadata(file: UploadFile) -> None:
     content_type = (file.content_type or "").lower()
     filename = (file.filename or "").lower()
@@ -169,12 +179,6 @@ def _validate_pdf_upload_metadata(file: UploadFile) -> None:
         ".pdf"
     ):
         raise validation_error("Only PDF uploads are supported.")
-
-
-def _prepare_document_ocr_provider(ocr_provider: OCRProvider) -> None:
-    prepare = getattr(ocr_provider, "prepare_for_document_ocr", None)
-    if callable(prepare):
-        prepare()
 
 
 def _auto_generate_exam_items(
@@ -224,7 +228,7 @@ def _process_document_upload(
     db: Database,
     settings: Settings,
     llm_provider: LLMProvider,
-    ocr_provider: OCRProvider,
+    ocr_provider_pool: DocumentOCRProviderPool,
     streaming_questions: StreamingDraftGenerationManager,
     project_id: str,
     document_id: str,
@@ -248,15 +252,16 @@ def _process_document_upload(
         )
 
     try:
-        extraction = extract_pdf_pages(
-            content,
-            max_pages=settings.max_pdf_pages,
-            max_page_text_chars=settings.max_page_text_chars,
-            max_total_text_chars=settings.max_total_text_chars,
-            ocr_provider=ocr_provider,
-            ocr_render_scale=settings.ocr_render_scale,
-            on_page_processed=record_progress,
-        )
+        with ocr_provider_pool.acquire() as ocr_provider:
+            extraction = extract_pdf_pages(
+                content,
+                max_pages=settings.max_pdf_pages,
+                max_page_text_chars=settings.max_page_text_chars,
+                max_total_text_chars=settings.max_total_text_chars,
+                ocr_provider=ocr_provider,
+                ocr_render_scale=settings.ocr_render_scale,
+                on_page_processed=record_progress,
+            )
         document = source_documents_repository.complete_document_extraction(
             db,
             project_id=project_id,

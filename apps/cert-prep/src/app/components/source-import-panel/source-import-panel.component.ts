@@ -85,7 +85,7 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
           </div>
         }
 
-        <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_10rem_auto] md:items-end">
+        <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_8rem_auto] md:items-end">
           <label class="workbench-field">
             <span>Language</span>
             <select
@@ -94,6 +94,18 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
             >
               @for (language of sourceImport.languageHints; track language) {
                 <option [value]="language">{{ language }}</option>
+              }
+            </select>
+          </label>
+          <label class="workbench-field">
+            <span>Batch size</span>
+            <select
+              [ngModel]="sourceImport.uploadBatchSize()"
+              [disabled]="isUploadBusy()"
+              (ngModelChange)="sourceImport.setUploadBatchSize($event)"
+            >
+              @for (size of sourceImport.uploadBatchSizes; track size) {
+                <option [value]="size">{{ size }}</option>
               }
             </select>
           </label>
