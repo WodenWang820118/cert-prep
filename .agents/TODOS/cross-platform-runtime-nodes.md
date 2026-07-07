@@ -40,11 +40,11 @@ Resume this TODO only if one of these becomes a real product goal:
 
 ## Current Gaps To Recheck
 
-- `.agents/SPECS/runtime-nodes.md` exists and is the controlling cross-platform
-  node spec.
+- `.agents/SPECS/domains/parsing-reasoning.md` owns the cross-platform runtime
+  node classification and evidence gates.
 - `packages/cert-prep-ocr-paddle` does not exist yet.
-- `.agents/DECISIONS/paddleocr-package-boundary.md` does not exist yet.
-- `.agents/DECISIONS/tensorrt-api-boundary.md` does not exist yet.
+- PaddleOCR package-boundary details are not decided yet.
+- TensorRT API-boundary details are not decided yet.
 - Tauri launch still defaults to `fastflowlm` and `windowsml`, and provider
   allowlists are hardcoded.
 - Packaged smoke and Package QA are still WindowsML/FastFlowLM-oriented.
@@ -53,15 +53,17 @@ Resume this TODO only if one of these becomes a real product goal:
 
 If this TODO needs cleanup before full implementation, do only this:
 
-1. Create `.agents/DECISIONS/paddleocr-package-boundary.md` and explicitly
-   defer `packages/cert-prep-ocr-paddle` until cross-platform OCR is reopened.
-2. Create `.agents/DECISIONS/tensorrt-api-boundary.md` and explicitly defer
-   TensorRT until a real local API is chosen.
+1. Add a `PaddleOCR Package Boundary` note to
+   `.agents/SPECS/domains/parsing-reasoning.md` and explicitly defer
+   `packages/cert-prep-ocr-paddle` until cross-platform OCR is reopened.
+2. Add a `TensorRT API Boundary` note to
+   `.agents/SPECS/domains/parsing-reasoning.md` and explicitly defer TensorRT
+   until a real local API is chosen.
 3. Leave runtime behavior unchanged.
 
 Suggested checks for that docs-only slice:
 
-- `git diff --check -- .agents/TODOS/cross-platform-runtime-nodes.md .agents/DECISIONS/paddleocr-package-boundary.md .agents/DECISIONS/tensorrt-api-boundary.md`
+- `git diff --check -- .agents/TODOS/cross-platform-runtime-nodes.md .agents/SPECS/domains/parsing-reasoning.md`
 
 ## Full Implementation Gate
 

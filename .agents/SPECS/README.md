@@ -1,40 +1,41 @@
 # Cert Prep Specs
 
-This folder is organized by durable product/domain ownership instead of by
-temporary implementation slices.
+This folder is the durable product memory for Cert Prep. It is organized by
+long-lived ownership domains, not by temporary implementation slices.
 
-## Domains
+## Domain Index
 
-- `domains/product-ux.md` - product baseline, UI workflow, async parsing UX,
-  practice/review flows, and user-facing acceptance notes.
-- `domains/runtime-packaging.md` - Tauri packaging, downloadable runtimes,
-  runtime health/install UX, package QA, and process cleanup evidence.
-- `domains/backend-architecture.md` - backend domain boundaries, SOLID/DDD
-  refactor decisions, OpenAPI ownership, persistence rules, and schema risks.
-- `domains/parsing-reasoning.md` - OCR parsing performance, direct editable
-  questions, streaming qwen prototype, live bakeoff/deferred model gates, and
-  closed TODO evidence.
+- `domains/product-ux.md` - product baseline, UI system, workbench screens,
+  async parsing UX, practice, review, and user-facing acceptance evidence.
+- `domains/parsing-reasoning.md` - OCR runtime lanes, WindowsML package
+  ownership, streaming reasoning, FastFlowLM policy, runtime-node candidates,
+  and parsing/reasoning acceptance gates.
+- `domains/runtime-packaging.md` - Tauri packaging, downloadable runtime
+  artifacts, runtime health/install UX, package QA, artifact sizes, and process
+  cleanup evidence.
+- `domains/backend-architecture.md` - backend domain boundaries, persistence,
+  OpenAPI/generated-client ownership, DDD/SOLID refactor policy, and schema
+  risks.
+- `domains/workspace-governance.md` - workspace naming, package manager and Nx
+  conventions, broad refactor slicing, documentation closeout rules, and
+  cross-agent governance notes.
 
 ## Active Backlog
 
-Active work belongs in `.agents/TODOS/`. Completed evidence belongs in the
-owning SPECS domain.
+Active work belongs in `.agents/TODOS/`. Completed decisions, verification
+evidence, and closed TODO content belong in the owning domain spec.
 
 Current TODO files:
 
 - `cross-platform-runtime-nodes.md` - deferred restart point for future
   macOS/Linux/runtime-node expansion; not release-blocking.
 
-The 2026-07-03 active product and UI/function TODOs were folded into
-`domains/product-ux.md`, `domains/backend-architecture.md`,
-`domains/runtime-packaging.md`, and `workbench-screen-alignment.md`.
+## Retired Sources
 
-The 2026-07-07 `multi-pdf-upload-reasoning.md` TODO was completed and folded
-into `domains/product-ux.md`, `domains/backend-architecture.md`, and
-`domains/parsing-reasoning.md`.
+The former `.agents/DECISIONS/` files and root-level slice specs were folded
+into the domain specs above. Keep future decision records in the relevant
+domain file unless a temporary research note is explicitly needed.
 
-## Retired Slice Files
-
-The older slice-specific spec and QA files were merged into the domain specs
-above and removed. Keep future evidence in the owning domain unless a temporary
-research note is explicitly needed.
+Closeout rule: when a TODO or decision file is completed, merge durable content
+into the owning domain spec, keep `.agents/TODOS/` active-only, and remove the
+obsolete markdown file.

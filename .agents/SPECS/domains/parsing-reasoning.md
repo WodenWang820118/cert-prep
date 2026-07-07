@@ -24,6 +24,42 @@ telemetry, and artifact-backed QA evidence for packaged desktop flows.
 The retired pre-WindowsML iGPU product lane must not be revived as a provider,
 target, package, runtime manifest, or product-ready evidence path.
 
+## Runtime Node Classification
+
+Current and candidate runtime nodes are classified by platform and accelerator.
+Only nodes that satisfy the evidence gates in this spec can be promoted to
+product-ready.
+
+OCR nodes:
+
+| Platform | Node ID | Status | Accelerator | Distribution |
+| --- | --- | --- | --- | --- |
+| Windows | `windowsml` | default | WindowsML-loaded AMD iGPU, CPU fallback visible | zip package extraction to local runtime dir |
+| Windows | `paddle` | override/debug | CUDA dGPU or CPU fallback | custom zip package or pip dependency |
+| macOS | `paddle` | deferred default candidate | CPU first, MPS/Metal deferred | platform zip package or local virtualenv |
+| Linux | `paddle` | deferred default candidate | CUDA dGPU or CPU fallback, ROCm deferred | platform zip package or AppImage resource |
+
+LLM nodes:
+
+| Platform | Provider | Target model | Status | Accelerator |
+| --- | --- | --- | --- | --- |
+| Windows | `fastflowlm` | `qwen3.5:4b` | default | OpenAI-compatible local server |
+| Windows | `ollama` | `qwen3.5:4b` | override | local Ollama |
+| Windows | `ollama` | `qwen3.5:9b` | hardware-gated override | local Ollama |
+| macOS | `ollama` | `qwen3.5:4b` | deferred default candidate | Apple Silicon GPU/CPU |
+| macOS | `ollama` | `qwen3.5:9b` | hardware-gated override | Apple Silicon GPU/CPU |
+| Linux | `ollama` | `qwen3.5:4b` | deferred default candidate | Nvidia CUDA/CPU |
+| Linux | `ollama` | `qwen3.5:9b` | hardware-gated override | Nvidia CUDA/CPU |
+
+Fallback policy:
+
+- `qwen3.5:4b` remains the default low-latency editing/study model.
+- `qwen3.5:9b` is a higher-capability explanation candidate, not a silent
+  fallback.
+- Ollama OOM or timeout on a `9b` request must surface a visible error instead
+  of automatically falling back to `4b`.
+- Missing local Ollama models can trigger confirmation-gated download jobs.
+
 ## Pipeline Contract
 
 1. The desktop/backend starts OCR only when a file upload requires parsing.
@@ -59,10 +95,38 @@ bounded local workers.
 - PaddleOCR NPU, NPU prepass, WindowsML device-policy proof paths, and old
   iGPU provider surfaces are retired.
 
+## WindowsML Package Ownership
+
+- `packages/cert-prep-ocr-windowsml` owns the reusable WindowsML OCR runtime
+  implementation.
+- Python import root: `cert_prep_ocr_windowsml`.
+- Backend app integrations import package-owned runtime code instead of legacy
+  backend adapter shims.
+- Backend `ocr-windowsml-*` Nx target names remain stable workspace entrypoints,
+  but their commands execute package modules directly with `python -m`.
+- Backend-specific contracts stay in the backend app. The WindowsML package
+  must not import `cert_prep_backend`.
+- The first extracted package is implementation-specific rather than a generic
+  OCR platform framework; future Intel/Windows and Linux combinations should be
+  explicit sibling packages.
+- Editable path dependency must be visible to `uv run` from
+  `apps/cert-prep-backend`.
+- PyInstaller must package the new import root while excluding unrelated
+  backend OCR providers.
+- Old backend WindowsML shim imports are intentionally unsupported.
+- No WindowsML health payload may claim OCR success without WindowsML provider
+  health, selected AMD iGPU evidence, and packaged runtime evidence.
+
 ## Reasoning Decisions
 
 - FastFlowLM is the current Windows reasoning provider and is treated as an
   OpenAI-compatible local server path.
+- FastFlowLM is used through its OpenAI-compatible server instead of shelling
+  out per prompt. Server mode matches the streaming job and health-check
+  architecture.
+- Runtime installation remains explicit. Health may detect `flm`, but it must
+  not install FastFlowLM or pull `qwen3.5:4b`.
+- Keep Ollama available as a supported provider for existing setups and tests.
 - FastFlowLM checks available system RAM before selecting the default 4B model;
   if RAM is below the configured threshold, it tries served fallback
   `qwen3.5:2b` and records the reason in model health.
@@ -74,6 +138,36 @@ bounded local workers.
   not be treated as startup defaults.
 - Reasoning comparator work must collect RAM/VRAM residency evidence before
   parameter reduction, scored bakeoff reruns, or default-model changes.
+- Packaged production summaries are provider-aware: Ollama still requires
+  Nvidia dGPU reasoning evidence, while FastFlowLM requires model health,
+  configured/effective model selection, and explicit fallback/blocker metadata.
+
+## FastFlowLM Interfaces
+
+- Backend env:
+  - `CERT_PREP_LLM_PROVIDER=fastflowlm`
+  - `CERT_PREP_FASTFLOWLM_BASE_URL=http://127.0.0.1:52625/v1`
+  - `CERT_PREP_FASTFLOWLM_MODEL=qwen3.5:4b`
+  - `CERT_PREP_FASTFLOWLM_FALLBACK_MODELS=qwen3.5:2b`
+  - `CERT_PREP_FASTFLOWLM_PRIMARY_MIN_AVAILABLE_RAM_BYTES=6442450944`
+- Runtime expectation:
+  - User starts FastFlowLM with `flm serve qwen3.5:4b`.
+  - The backend uses `GET /v1/models` and `POST /v1/chat/completions`.
+- Existing backend API remains unchanged:
+  - `GET /llm/health`
+  - `POST /llm/model-downloads`
+  - `GET /llm/model-downloads/{job_id}`
+
+FastFlowLM failure modes:
+
+- FastFlowLM not installed: health reports an unavailable runtime.
+- FastFlowLM installed but no server is running: health reports a not-running
+  reason.
+- Server running but `qwen3.5:4b` is not served: health reports
+  `model_missing`.
+- JSON-mode rejection retries once without `response_format`, then still
+  validates grounded JSON before saving questions.
+- Invalid model JSON never creates playable questions.
 
 ## Direct Editable Questions
 

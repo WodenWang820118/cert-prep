@@ -13,10 +13,17 @@ or review flows.
 
 ## Decisions
 
+- Use a new Cert Prep app family beside the existing starter/sample apps.
 - Projects own source PDFs, parsed chunks, editable question records, practice
   sessions, and wrong-answer review state.
 - The Angular UI keeps workflow panels for projects, source import, question
   review/editing, practice, and wrong-answer review.
+- Use PrimeNG 21 with Angular 21.
+- Use Tailwind CSS 4 through `@tailwindcss/postcss`.
+- Integrate PrimeNG and Tailwind through `tailwindcss-primeui` CSS imports,
+  keeping PrimeNG's CSS layer before Tailwind utilities.
+- Keep standalone Angular components and signal stores. Import PrimeNG modules
+  per component instead of centralizing every UI dependency in the root app.
 - Runtime status is compact: header chips plus a Manage runtime drawer, not a
   large first-screen checklist.
 - Runtime status can be healthy while practice is still blocked by missing
@@ -60,6 +67,61 @@ or review flows.
 - `Mark for review` is removed from the practice runner until there is a real
   persisted user flag. Settings, Account, and footer links remain disabled
   design-parity placeholders.
+
+## Workbench Screen Contract
+
+The Stitch workbench folders are separate page references, not alternative
+versions of one screen:
+
+- `design/stitch_cert_prep_workbench` maps to Build at `/build`.
+- `design/stitch_cert_prep_workbench2` maps to Full Exam at `/full-exam`.
+- `design/stitch_cert_prep_workbench3` maps to the Manage Runtime modal opened
+  from the app topbar.
+- `design/stitch_cert_prep_workbench4` maps to Wrong Answers at `/review`.
+- Random Quiz has no dedicated Stitch frame. It inherits the Full Exam runner
+  structure and keeps only mode-specific random-draw controls.
+
+Shared workbench rules:
+
+- Use Inter typography, JetBrains Mono for technical data, neutral surfaces,
+  Info Blue primary actions, flat 1px outlines, 8px radius, and a 4px spacing
+  rhythm.
+- Keep the application as a workbench: compact controls, dense readable zones,
+  no gradients, no decorative shadows, and no nested decorative card shells.
+- Reserve global strips for blocking errors or active work. Routine ready or
+  success states stay inside the relevant panel or are omitted.
+- Preserve current product behavior and stores during UI alignment passes.
+
+Page requirements:
+
+- Build: show `Cert Prep`, runtime chips in the page header, the workspace
+  banner, and the two-column Source PDF / Mock Exam Items workbench.
+- Full Exam: show a source-document selector, `Start full exam`, compact
+  document/question/session metrics, stable choice rows, `Submit answer`, and
+  a right-side session details / question navigator rail when useful.
+- Random Quiz: reuse Full Exam runner language and density, with random-draw
+  question count controls.
+- Manage Runtime: expose Python Backend, LLM Runtime, Reasoning Model, and OCR
+  rows plus refresh, cancel, and close controls. `/runtime` remains a matching
+  unguarded recovery/deep-link route.
+- Review: show recorded count, refresh, question cards, page chips,
+  side-by-side answer panels, rationale/source metadata, and compact footer
+  guidance.
+
+## Original Product Guardrails
+
+- Support multiple-choice questions first.
+- Save local state in SQLite owned by the Python backend.
+- Store original PDFs by SHA-256 under the app data directory.
+- Use OpenAPI as the backend/frontend contract source.
+- Use fake LLM providers for deterministic automated tests.
+- Use selectable-text extraction where available and OCR for image-only
+  production flows; vision-only extraction remains outside the current release
+  lane.
+- No direct filesystem or SQLite access from Angular.
+- No live LLM calls in deterministic tests.
+- No question record should become playable without citation fields or a
+  source excerpt.
 
 ## Evidence
 

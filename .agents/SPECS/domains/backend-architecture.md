@@ -9,8 +9,15 @@ SQLite, OCR, runtime installation, question generation, and practice.
 ## Decisions
 
 - Domain code lives under `cert_prep_backend/domains/<domain>/`.
+- Shared platform modules can stay in place when they serve multiple domains.
 - Public DTOs are owned by their backend domain. OpenAPI client generation must
   be rerun after route/schema changes.
+- Endpoint paths and JSON field names stay stable unless a spec explicitly
+  authorizes a contract change.
+- Status-like fields may receive OpenAPI enum polish while preserving existing
+  serialized string values.
+- Historically string-backed fields can use enum-or-string DTO annotations so
+  OpenAPI documents known values without rejecting legacy/custom strings.
 - SQLite remains backend-owned; Angular must not read or write local files
   directly.
 - OCR workers must not write directly to the shared SQLite database. The backend
@@ -47,6 +54,39 @@ SQLite, OCR, runtime installation, question generation, and practice.
   `POST /projects/{project_id}/documents` as the only upload endpoint, and
   chunks, generated drafts, practice selection, attempts, and wrong-answer
   review stay scoped by `document_id`.
+
+## DDD And SOLID Refactor Policy
+
+Accepted:
+
+- Use `cert_prep_backend/domains/<domain>/` instead of layer-only package
+  names.
+- Keep generated mock exam drafts as `approved` when that is the current tested
+  behavior.
+- Remove schema and non-schema compatibility facades after callers move to
+  domain modules.
+- Use `pnpm nx ...` for verification.
+- Require a second-opinion implementation review before closing broad backend
+  refactor slices when requested by the active plan.
+
+Deferred:
+
+- ORM adoption.
+- SQLite schema redesign.
+- Frontend UX changes bundled into backend refactors.
+- TypeScript generated-client literal-union support.
+- Live LLM/OCR smoke checks as required automated gates.
+
+Guardrails:
+
+- No catch-all `utils.py` or god service.
+- No large unrelated cleanup.
+- No direct Angular filesystem or SQLite access.
+- No live provider calls in deterministic tests.
+- Every behavior move must be covered by characterization tests or existing API
+  tests.
+- Behavior-preserving refactors must keep REST/OpenAPI, Tauri command, and
+  package QA JSON contracts stable unless the owning spec says otherwise.
 
 ## Refactor Evidence
 

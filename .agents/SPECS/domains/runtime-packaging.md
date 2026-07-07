@@ -10,8 +10,19 @@ and process cleanup.
 
 - The packaged app should use downloadable release/runtime artifacts rather than
   assuming machine-wide Python or hidden global setup.
+- Python runtime means the packaged PyInstaller backend executable zip, not a
+  system Python installer.
+- The initial Windows installer ships the Angular UI plus manifest resources
+  and a lite backend sidecar only.
 - Runtime artifacts are described by manifests with file name, byte size,
   SHA-256, target, entrypoint, and release/local URL.
+- Runtime payloads are release assets addressed by manifest URLs. Release
+  automation provides `CERT_PREP_RUNTIME_ASSET_BASE_URL` for distributable
+  runtime manifests.
+- Keep only `cert-prep-backend-x86_64-pc-windows-msvc.exe` in Tauri
+  `externalBin`.
+- Supersede the bundled GPU Paddle OCR sidecar with a lite backend sidecar plus
+  an optional OCR runtime artifact.
 - Python backend and WindowsML OCR runtime readiness are required for packaged
   OCR/manual PDF workflows.
 - Runtime management has two supported entrypoints: the app topbar opens the
@@ -23,6 +34,8 @@ and process cleanup.
   never block OCR, source import, manual questions, Full Exam, Random Quiz, or
   wrong-answer review.
 - Runtime install/download actions require explicit user consent.
+- Health checks and app startup must not install Ollama, pull models, or
+  install OCR runtimes implicitly.
 - Package QA schema v2 must verify MSI/NSIS artifacts, backend runtime zip,
   WindowsML OCR runtime zip, manifests, launch env, and script-level gates
   through Nx targets. The legacy Paddle OCR runtime manifest is not a packaged
@@ -36,6 +49,21 @@ and process cleanup.
   package QA or packaged-flow script. Future cleanup commands require manual
   confirmation and must protect Codex, MCP, Claude, Nx, VS Code, servicehub, and
   other known tooling residents.
+
+## Rejected Packaging Options
+
+- Installing machine-wide Python is rejected because it affects user systems
+  and complicates version support.
+- Bundling Ollama model files is rejected because installer size and
+  model-licensing/storage become packaging concerns.
+- Keeping the backend only as a bundled `externalBin` is rejected because the
+  UI cannot guide recovery when the runtime is missing.
+- Bundling PaddleOCR or WindowsML OCR into the initial installer is rejected
+  because every install would pay the OCR payload cost.
+- CPU-only OCR runtime packaging is rejected for the Windows optional runtime
+  because it does not satisfy the GPU-auto product requirement.
+- Blocking pull requests or UI startup on large model/runtime downloads is
+  rejected; runtime work must be explicit and progress-visible.
 
 ## Evidence
 
@@ -58,6 +86,38 @@ and process cleanup.
 - Python/PaddleOCR health can settle after startup; QA runner checks are scoped
   to the runtime dialog so background document text cannot falsely satisfy OCR
   readiness.
+
+## Size And Artifact Evidence
+
+Historical package-size closeout for the deferred-runtime lane:
+
+- Final QA report: `tmp/cert-prep-desktop/package-qa/package-qa.json`.
+- Target: Windows x64, `x86_64-pc-windows-msvc`.
+- Previous bundled baseline: MSI about 637.88 MB, NSIS about 637.01 MB,
+  bundled sidecar about 636.29 MB.
+- Current MSI bundle:
+  `apps/cert-prep-desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/Cert Prep_0.1.0_x64_en-US.msi`,
+  49,299,456 bytes / 47.02 MB.
+- Current NSIS setup bundle:
+  `apps/cert-prep-desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/Cert Prep_0.1.0_x64-setup.exe`,
+  48,254,842 bytes / 46.02 MB.
+- Lite synced sidecar:
+  `apps/cert-prep-desktop/src-tauri/binaries/cert-prep-backend-x86_64-pc-windows-msvc.exe`,
+  45,577,793 bytes / 43.47 MB.
+- Optional OCR runtime ZIP:
+  `apps/cert-prep-backend/dist/ocr-runtime/cert-prep-ocr-runtime-x86_64-pc-windows-msvc.zip`,
+  663,364,398 bytes / 632.63 MB.
+- OCR runtime manifest:
+  `apps/cert-prep-backend/dist/ocr-runtime/ocr-runtime-manifest.json`,
+  SHA-256 `f1c27a61c4bd13dd10567d8b8ca712360d18ae416990c335b17a281596134f42`.
+- Angular browser output: `dist/apps/cert-prep/browser`, 1,373,475 bytes /
+  1.31 MB.
+- Size gate passed: largest initial artifact 47.02 MB, under the 150 MB warning
+  threshold and 250 MB failure threshold.
+- Runtime QA passed sidecar health. OCR health reports runtime missing in
+  external mode until the optional runtime is installed.
+- LLM QA is read-only when Ollama is unavailable; install/model jobs remain
+  confirmation-gated.
 
 ## Open Risks
 
