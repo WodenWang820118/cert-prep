@@ -35,6 +35,11 @@ or review flows.
 - Source PDF, Draft Review, and Full Exam share an explicit active document
   selection. Draft Review defaults to active-document questions and shows active
   counts against the project total.
+- Source import supports selecting multiple PDFs in one batch while preserving
+  the document library. The client uploads files sequentially, keeps
+  selected/uploaded/failed item states visible, treats successful uploads as
+  partial success when another file fails, and makes the most recent successful
+  document active.
 - Wrong-answer AI help is a per-card, single grounded explanation. Provider
   failures fall back to deterministic copy and must not block refresh, manual
   review, or clearing by a later correct attempt.
@@ -89,6 +94,10 @@ or review flows.
   review` affordance and added focused coverage for answer selection, clearing,
   disabled/busy submit states, navigator state, and disabled shell
   placeholders.
+- The 2026-07-07 multi-PDF source-import closeout verified batch selection,
+  sequential per-file uploads, failed-file visibility, active-document handoff,
+  binary multipart filename matching, selected-PDF Full Exam startup, and
+  reference `multi-pdf-isolation` recordings.
 
 ## Open Risks
 

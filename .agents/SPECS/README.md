@@ -29,6 +29,10 @@ The 2026-07-03 active product and UI/function TODOs were folded into
 `domains/product-ux.md`, `domains/backend-architecture.md`,
 `domains/runtime-packaging.md`, and `workbench-screen-alignment.md`.
 
+The 2026-07-07 `multi-pdf-upload-reasoning.md` TODO was completed and folded
+into `domains/product-ux.md`, `domains/backend-architecture.md`, and
+`domains/parsing-reasoning.md`.
+
 ## Retired Slice Files
 
 The older slice-specific spec and QA files were merged into the domain specs

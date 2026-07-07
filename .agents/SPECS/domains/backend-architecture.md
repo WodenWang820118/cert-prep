@@ -42,6 +42,11 @@ SQLite, OCR, runtime installation, question generation, and practice.
 - `WrongAnswerRead` includes nullable `document_id`, and the project-scoped
   wrong-answer summary endpoint is
   `GET /projects/{project_id}/wrong-answers/summary`.
+- Multi-PDF upload remains a client-side batch workflow over the existing
+  single-document boundary. Backend v1 keeps
+  `POST /projects/{project_id}/documents` as the only upload endpoint, and
+  chunks, generated drafts, practice selection, attempts, and wrong-answer
+  review stay scoped by `document_id`.
 
 ## Refactor Evidence
 
@@ -71,6 +76,9 @@ SQLite, OCR, runtime installation, question generation, and practice.
   `review_retry`, generated OpenAPI/client updates, and aggregation coverage
   for current wrong counts, cleared counts, repeated misses, and
   document/page clusters.
+- The 2026-07-07 multi-PDF closeout kept the REST contract stable and verified
+  sequential uploads in one project, document-scoped chunks, upload-triggered
+  streaming draft generation, and per-document `ai_inferred` drafts.
 
 ## Open Risks
 

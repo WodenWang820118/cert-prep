@@ -37,6 +37,10 @@ target, package, runtime manifest, or product-ready evidence path.
 6. After OCR and reasoning jobs reach terminal states, the packaged smoke must
    close the OCR and reasoning background processes.
 7. New uploads are the trigger to start the OCR and reasoning processes again.
+8. Client-side multi-PDF batches call the same upload endpoint once per file.
+   Each successful document independently triggers OCR and streaming reasoning;
+   failed reasoning remains visible/retryable and must not block OCR, manual
+   editing, practice, or wrong-answer review for successfully uploaded files.
 
 No Kafka or external broker is used for the first local-first streaming
 implementation. The current design uses a SQLite-backed job queue/outbox and
@@ -195,6 +199,27 @@ PaddleOCR NPU implementation.
   cert-prep-backend:test --skip-nx-cache` passed 162 tests; `pnpm nx run
   cert-prep-backend:lint --skip-nx-cache` passed; and `git diff --check`
   passed with CRLF conversion warnings only.
+
+## Multi-PDF Upload And AI-Inferred Practice Evidence
+
+2026-07-07 closeout:
+
+- Multi-PDF source import is complete as a client-side sequential batch over
+  `POST /projects/{project_id}/documents`.
+- Successful files remain available in the project document library; failed
+  files remain visible for retry; the latest successful upload becomes the
+  active document.
+- Upload-triggered streaming draft generation is document-scoped, and
+  generated `ai_inferred` drafts stay editable and playable through the
+  existing Draft Review, Full Exam, and Random Quiz paths when they meet the
+  playable predicate.
+- Verification passed with `pnpm nx run cert-prep:test --skip-nx-cache`,
+  `pnpm nx run cert-prep-backend:test --skip-nx-cache`,
+  `pnpm nx run cert-prep-e2e:e2e-ci--src/example.spec.ts --skip-nx-cache`, and
+  `pnpm nx run cert-prep-e2e:e2e-ci--src/recording.spec.ts --skip-nx-cache`.
+  The monolithic `cert-prep-e2e:e2e` run was attempted first and timed out
+  before emitting useful Playwright results, so the two atomized e2e targets
+  are the recorded acceptance evidence for this closeout.
 
 ## Verification
 
