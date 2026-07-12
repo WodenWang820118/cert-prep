@@ -304,12 +304,6 @@ class OllamaProvider:
         for update in self._client.pull(self.model, stream=True):
             progress(pull_progress(update))
 
-    def _available_effective_model(self) -> str:
-        health = self.health()
-        if health.available and health.effective_model:
-            return health.effective_model
-        raise ProviderUnavailableError(health.detail)
-
     def _effective_model_from(self, model_names: set[str]) -> str | None:
         return self._fallback_engine.effective_model_from(model_names)
 

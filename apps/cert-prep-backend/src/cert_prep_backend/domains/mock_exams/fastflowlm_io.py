@@ -62,24 +62,6 @@ class FastFlowLMIOMixin:
             request_json=self._request_json,
         )
 
-    def _chat_content(
-        self,
-        model: str,
-        messages: Sequence[dict[str, str]],
-        *,
-        max_tokens: int,
-        context_tokens: int,
-        json_mode: bool = False,
-    ) -> str:
-        return self._client.chat_content(
-            model,
-            messages,
-            max_tokens=max_tokens,
-            context_tokens=context_tokens,
-            json_mode=json_mode,
-            request_json=self._request_json,
-        )
-
     def _request_json(
         self,
         method: str,

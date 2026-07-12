@@ -138,10 +138,6 @@ class ModelFallbackEngine:
             self._prune_unusable_models_locked()
             return set(self._unusable_models)
 
-    def runtime_selected_model(self) -> str | None:
-        with self._lock:
-            return self._runtime_effective_model
-
     def runtime_model_state(self) -> tuple[set[str], str | None]:
         with self._lock:
             self._prune_unusable_models_locked()

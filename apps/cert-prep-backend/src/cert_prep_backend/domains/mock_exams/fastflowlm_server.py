@@ -37,7 +37,6 @@ class FastFlowLMServerManager:
         self._model_to_serve = model_to_serve
         self._lock = Lock()
         self._owned_server_process: subprocess.Popen | None = None
-        self._owned_server_model: str | None = None
         self._idle_shutdown_timer: Timer | None = None
         self._active_requests = 0
         self._release_requested = False
@@ -78,7 +77,6 @@ class FastFlowLMServerManager:
             self._cancel_idle_shutdown_locked()
             process_to_stop = self._owned_server_process
             self._owned_server_process = None
-            self._owned_server_model = None
             self._release_requested = False
         if process_to_stop is not None:
             terminate_process(process_to_stop)
@@ -99,7 +97,6 @@ class FastFlowLMServerManager:
                 if self._owned_server_process.poll() is None:
                     return
                 self._owned_server_process = None
-                self._owned_server_model = None
 
             creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
             process = self._start_process(
@@ -110,7 +107,6 @@ class FastFlowLMServerManager:
                 creationflags=creationflags,
             )
             self._owned_server_process = process
-            self._owned_server_model = model_to_serve
             self._release_requested = False
 
     def _wait_for_owned_server_ready(self) -> set[str]:
@@ -153,7 +149,6 @@ class FastFlowLMServerManager:
         if self.owned_server_idle_timeout_seconds <= 0:
             process = self._owned_server_process
             self._owned_server_process = None
-            self._owned_server_model = None
             self._release_requested = False
             return process
 
@@ -174,7 +169,6 @@ class FastFlowLMServerManager:
                 return
             process_to_stop = self._owned_server_process
             self._owned_server_process = None
-            self._owned_server_model = None
             self._release_requested = False
         if process_to_stop is not None:
             terminate_process(process_to_stop)

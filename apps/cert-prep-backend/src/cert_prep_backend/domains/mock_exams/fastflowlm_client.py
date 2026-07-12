@@ -9,12 +9,6 @@ from urllib.request import Request, urlopen
 from cert_prep_backend.api.errors import ProviderUnavailableError
 
 
-RequestJson = Callable[
-    [str, str],
-    dict[str, Any],
-]
-
-
 class FastFlowLMClient:
     """OpenAI-compatible HTTP client for FastFlowLM."""
 
