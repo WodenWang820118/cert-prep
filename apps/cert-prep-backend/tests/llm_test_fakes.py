@@ -244,6 +244,7 @@ class AutoStartFastFlowLMProvider(FastFlowLMProvider):
             primary_min_available_ram_bytes=primary_min_available_ram_bytes,
             server_start_timeout_seconds=0.1,
             owned_server_idle_timeout_seconds=owned_server_idle_timeout_seconds,
+            owned_server_process_terminator=lambda process: process.terminate(),
         )
         self.models = models
         self.chat_content = chat_content

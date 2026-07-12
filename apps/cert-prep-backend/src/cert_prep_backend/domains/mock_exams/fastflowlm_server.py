@@ -24,6 +24,7 @@ class FastFlowLMServerManager:
         owned_server_idle_timeout_seconds: float,
         executable_resolver: Callable[[], Path | None],
         start_process: Callable[..., subprocess.Popen],
+        process_terminator: Callable[[subprocess.Popen], None],
         served_model_names: Callable[[], set[str]],
         model_to_serve: Callable[[], str],
     ) -> None:
@@ -33,6 +34,7 @@ class FastFlowLMServerManager:
         self.owned_server_idle_timeout_seconds = max(0.0, owned_server_idle_timeout_seconds)
         self._executable_resolver = executable_resolver
         self._start_process = start_process
+        self._process_terminator = process_terminator
         self._served_model_names = served_model_names
         self._model_to_serve = model_to_serve
         self._lock = Lock()
@@ -60,7 +62,7 @@ class FastFlowLMServerManager:
             if self._active_requests == 0 and self._release_requested:
                 process_to_stop = self._schedule_owned_server_shutdown_locked()
         if process_to_stop is not None:
-            terminate_process(process_to_stop)
+            self._process_terminator(process_to_stop)
 
     def release_resources(self) -> None:
         process_to_stop = None
@@ -70,7 +72,7 @@ class FastFlowLMServerManager:
                 return
             process_to_stop = self._schedule_owned_server_shutdown_locked()
         if process_to_stop is not None:
-            terminate_process(process_to_stop)
+            self._process_terminator(process_to_stop)
 
     def close(self) -> None:
         with self._lock:
@@ -79,7 +81,7 @@ class FastFlowLMServerManager:
             self._owned_server_process = None
             self._release_requested = False
         if process_to_stop is not None:
-            terminate_process(process_to_stop)
+            self._process_terminator(process_to_stop)
 
     def _start_owned_server_if_needed(self, initial_exc: Exception) -> None:
         endpoint = self._local_server_endpoint()
@@ -171,7 +173,7 @@ class FastFlowLMServerManager:
             self._owned_server_process = None
             self._release_requested = False
         if process_to_stop is not None:
-            terminate_process(process_to_stop)
+            self._process_terminator(process_to_stop)
 
     def _cancel_idle_shutdown_locked(self) -> None:
         if self._idle_shutdown_timer is None:
@@ -198,20 +200,12 @@ def start_fastflowlm_server_process(
             "--port",
             str(port),
             "--quiet",
+            "--cors",
+            "0",
         ],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
+        cwd=executable.parent,
         creationflags=creationflags,
     )
-
-
-def terminate_process(process: subprocess.Popen) -> None:
-    if process.poll() is not None:
-        return
-    process.terminate()
-    try:
-        process.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait(timeout=5)

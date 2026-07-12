@@ -16,15 +16,18 @@ from cert_prep_backend.api.errors import (
     TermsAcceptanceRequiredError,
 )
 from cert_prep_backend.core.config import Settings
+from cert_prep_backend.domains.mock_exams.provider import LazyDraftGenerationProvider
 from cert_prep_backend.domains.runtime_installations.fastflowlm import (
     FastFlowLMRuntimeInstaller,
     _StrictGitHubRedirectHandler,
-    _terminate_owned_process_tree,
     _verify_fastflowlm_signature_metadata,
     _write_bounded_response,
     download_fastflowlm_installer,
     verify_fastflowlm_authenticode,
     verify_fastflowlm_installer_hash,
+)
+from cert_prep_backend.domains.mock_exams.fastflowlm_process import (
+    terminate_fastflowlm_process_tree,
 )
 from cert_prep_backend.domains.runtime_installations.installers import LLMModelInstaller
 from cert_prep_backend.domains.runtime_installations.manager import RuntimeInstallationManager
@@ -66,7 +69,7 @@ def test_fastflowlm_runtime_installer_requires_pinned_terms_before_work(
         executable_resolver=lambda: None,
     )
     monkeypatch.setattr(
-        "cert_prep_backend.domains.runtime_installations.fastflowlm.os.name",
+        "cert_prep_backend.domains.mock_exams.fastflowlm_process.os.name",
         "nt",
     )
     monkeypatch.setattr(
@@ -389,18 +392,18 @@ def test_installer_timeout_uses_absolute_taskkill_and_waits(
         "nt",
     )
     monkeypatch.setattr(
-        "cert_prep_backend.domains.runtime_installations.fastflowlm."
-        "resolve_windows_system_executable",
+        "cert_prep_backend.domains.mock_exams.fastflowlm_process."
+        "_resolve_windows_system_executable",
         lambda _name: taskkill,
     )
     monkeypatch.setattr(
-        "cert_prep_backend.domains.runtime_installations.fastflowlm.subprocess.run",
+        "cert_prep_backend.domains.mock_exams.fastflowlm_process.subprocess.run",
         lambda command, **_kwargs: (
             commands.append(command) or subprocess.CompletedProcess(command, 0)
         ),
     )
 
-    _terminate_owned_process_tree(process)
+    terminate_fastflowlm_process_tree(process)
 
     assert commands == [[str(taskkill), "/PID", "42", "/T", "/F"]]
     assert process.wait_calls == [15]
@@ -412,21 +415,21 @@ def test_installer_timeout_fails_closed_when_taskkill_fails(
 ) -> None:
     process = _OwnedProcess()
     monkeypatch.setattr(
-        "cert_prep_backend.domains.runtime_installations.fastflowlm.os.name",
+        "cert_prep_backend.domains.mock_exams.fastflowlm_process.os.name",
         "nt",
     )
     monkeypatch.setattr(
-        "cert_prep_backend.domains.runtime_installations.fastflowlm."
-        "resolve_windows_system_executable",
+        "cert_prep_backend.domains.mock_exams.fastflowlm_process."
+        "_resolve_windows_system_executable",
         lambda _name: Path(r"C:\Windows\System32\taskkill.exe"),
     )
     monkeypatch.setattr(
-        "cert_prep_backend.domains.runtime_installations.fastflowlm.subprocess.run",
+        "cert_prep_backend.domains.mock_exams.fastflowlm_process.subprocess.run",
         lambda command, **_kwargs: subprocess.CompletedProcess(command, 1),
     )
 
     with pytest.raises(ProviderUnavailableError, match="could not be terminated cleanly"):
-        _terminate_owned_process_tree(process)
+        terminate_fastflowlm_process_tree(process)
 
     assert process.killed is True
     assert process.wait_calls == [5]
@@ -447,6 +450,23 @@ def test_fastflowlm_model_installer_requires_pinned_terms() -> None:
     accepted = True
     assert installer.install(lambda _progress: None) == RuntimeInstallationStatus.SUCCEEDED
     assert provider.pull_calls == 1
+    assert provider.onboarding_events == ["prepare", "pull", "verify"]
+
+
+def test_fastflowlm_model_installer_resolves_production_lazy_capabilities() -> None:
+    provider = _ModelProvider()
+    lazy_provider = LazyDraftGenerationProvider(
+        lambda: provider,
+        provider="fastflowlm",
+        model="qwen3.5:4b",
+    )
+    installer = LLMModelInstaller(
+        lazy_provider,
+        fastflowlm_terms_accepted=lambda: True,
+    )
+
+    assert installer.install(lambda _progress: None) == RuntimeInstallationStatus.SUCCEEDED
+    assert provider.onboarding_events == ["prepare", "pull", "verify"]
 
 
 def test_runtime_endpoint_reports_versioned_terms_requirement(tmp_path: Path) -> None:
@@ -487,13 +507,21 @@ class _ModelProvider:
 
     def __init__(self) -> None:
         self.pull_calls = 0
+        self.onboarding_events: list[str] = []
 
     def health(self):
         return SimpleNamespace(available=False, detail="model missing", unavailable_reason=None)
 
     def pull_model(self, progress) -> None:
         self.pull_calls += 1
+        self.onboarding_events.append("pull")
         progress(ModelPullProgress(status="complete", completed=1, total=1))
+
+    def prepare_model_onboarding(self, _progress) -> None:
+        self.onboarding_events.append("prepare")
+
+    def verify_model_onboarding(self, _progress) -> None:
+        self.onboarding_events.append("verify")
 
 
 class _BytesResponse(BytesIO):

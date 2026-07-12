@@ -19,6 +19,12 @@ from cert_prep_backend.domains.mock_exams.fastflowlm_generation import (
 )
 from cert_prep_backend.domains.mock_exams.fastflowlm_health import FastFlowLMHealthMixin
 from cert_prep_backend.domains.mock_exams.fastflowlm_io import FastFlowLMIOMixin
+from cert_prep_backend.domains.mock_exams.fastflowlm_onboarding import (
+    FastFlowLMModelOnboarding,
+)
+from cert_prep_backend.domains.mock_exams.fastflowlm_process import (
+    terminate_fastflowlm_process_tree,
+)
 from cert_prep_backend.domains.mock_exams.fastflowlm_resolver import (
     resolve_fastflowlm_executable,
 )
@@ -42,11 +48,13 @@ from cert_prep_backend.domains.mock_exams.response_parsing import (
     short_error,
 )
 from cert_prep_backend.domains.mock_exams.system_probes import available_system_ram_bytes
-from cert_prep_contracts.llm import ModelPullProgress
+from cert_prep_contracts.llm import (
+    DEFAULT_LLM_LOW_RESOURCE_MODEL,
+    DEFAULT_LLM_PRIMARY_MODEL,
+    ModelPullProgress,
+)
 
 
-DEFAULT_FASTFLOWLM_PRIMARY_MODEL = "qwen3.5:4b"
-FASTFLOWLM_RAM_FALLBACK_MODEL = "qwen3.5:2b"
 DEFAULT_FASTFLOWLM_PRIMARY_MIN_AVAILABLE_RAM_BYTES = 6 * 1024 * 1024 * 1024
 DEFAULT_FASTFLOWLM_AUTO_START_SERVER = True
 DEFAULT_FASTFLOWLM_SERVER_START_TIMEOUT_SECONDS = 90.0
@@ -62,8 +70,8 @@ class FastFlowLMProvider(
     """FastFlowLM-backed mock exam draft provider using its OpenAI-compatible API."""
 
     provider = "fastflowlm"
-    _primary_model_name = DEFAULT_FASTFLOWLM_PRIMARY_MODEL
-    _ram_fallback_model = FASTFLOWLM_RAM_FALLBACK_MODEL
+    _primary_model_name = DEFAULT_LLM_PRIMARY_MODEL
+    _ram_fallback_model = DEFAULT_LLM_LOW_RESOURCE_MODEL
 
     def __init__(
         self,
@@ -78,6 +86,9 @@ class FastFlowLMProvider(
         server_start_timeout_seconds: float = (DEFAULT_FASTFLOWLM_SERVER_START_TIMEOUT_SECONDS),
         owned_server_idle_timeout_seconds: float = (
             DEFAULT_FASTFLOWLM_OWNED_SERVER_IDLE_TIMEOUT_SECONDS
+        ),
+        owned_server_process_terminator: Callable[[subprocess.Popen], None] = (
+            terminate_fastflowlm_process_tree
         ),
     ) -> None:
         self.base_url = base_url.rstrip("/")
@@ -114,8 +125,15 @@ class FastFlowLMProvider(
             owned_server_idle_timeout_seconds=self.owned_server_idle_timeout_seconds,
             executable_resolver=lambda: resolve_fastflowlm_executable(self.executable_path),
             start_process=self._start_owned_server_process,
+            process_terminator=owned_server_process_terminator,
             served_model_names=self._served_model_names,
             model_to_serve=self._model_to_serve_for_auto_start,
+        )
+        self._model_onboarding = FastFlowLMModelOnboarding(
+            model=self.model,
+            executable_resolver=lambda: resolve_fastflowlm_executable(self.executable_path),
+            command_timeout_seconds=self.model_pull_timeout_seconds,
+            server_start_timeout_seconds=self.server_start_timeout_seconds,
         )
 
     @property
@@ -301,12 +319,36 @@ class FastFlowLMProvider(
             encoding="utf-8",
             errors="replace",
             timeout=max(60, int(self.model_pull_timeout_seconds)),
+            cwd=executable.parent,
+            stdin=subprocess.DEVNULL,
             creationflags=creationflags,
         )
         if completed.returncode != 0:
             output = (completed.stderr or completed.stdout or "").strip()
             raise ProviderUnavailableError(output or "FastFlowLM model pull failed.")
-        progress(ModelPullProgress(status="success", completed=100, total=100))
+        progress(
+            ModelPullProgress(
+                status=f"downloaded {self.model}; verification pending",
+                completed=100,
+                total=100,
+            )
+        )
+
+    def prepare_model_onboarding(
+        self,
+        progress: Callable[[ModelPullProgress], None],
+    ) -> None:
+        """Validate the pinned FastFlowLM runtime before pulling the model."""
+
+        self._model_onboarding.prepare(progress)
+
+    def verify_model_onboarding(
+        self,
+        progress: Callable[[ModelPullProgress], None],
+    ) -> None:
+        """Prove the exact model on an isolated app-owned FastFlowLM server."""
+
+        self._model_onboarding.verify(progress)
 
     def release_resources(self) -> None:
         """Release any FastFlowLM server process owned by this provider after idle."""

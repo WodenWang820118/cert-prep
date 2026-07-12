@@ -11,6 +11,7 @@ __all__ = [
     "DraftGenerationProvider",
     "FastFirstDraftProvider",
     "ModelDownloadProvider",
+    "ModelOnboardingProvider",
     "OllamaRuntimeInstallationProvider",
     "ProviderHealth",
     "ReasoningDraftProvider",
@@ -92,6 +93,25 @@ class ModelDownloadProvider(Protocol):
 
     def pull_model(self, progress: Callable[[_ModelPullProgress], None]) -> None:
         """Pull/install the configured model after explicit user confirmation."""
+        pass
+
+
+@runtime_checkable
+class ModelOnboardingProvider(Protocol):
+    """Provider capability for preflight and post-download model verification."""
+
+    def prepare_model_onboarding(
+        self,
+        progress: Callable[[_ModelPullProgress], None],
+    ) -> None:
+        """Validate the runtime before downloading the configured model."""
+        pass
+
+    def verify_model_onboarding(
+        self,
+        progress: Callable[[_ModelPullProgress], None],
+    ) -> None:
+        """Prove the downloaded model works on an app-owned runtime."""
         pass
 
 

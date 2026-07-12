@@ -8,6 +8,7 @@ from pathlib import Path
 from cert_prep_backend.core.config import Settings
 from cert_prep_backend.domains.mock_exams.ports import (
     ModelDownloadProvider,
+    ModelOnboardingProvider,
     provider_capability,
 )
 from cert_prep_backend.domains.runtime_installations.archive import (
@@ -95,6 +96,13 @@ class LLMModelInstaller:
             raise ProviderUnavailableError(
                 "Configured LLM provider does not support model downloads."
             )
+        if (
+            self.kind == RuntimeRequirementKind.FASTFLOWLM_MODEL
+            and provider_capability(self._provider, ModelOnboardingProvider) is None
+        ):
+            raise ProviderUnavailableError(
+                "FastFlowLM provider does not support verified model onboarding."
+            )
 
     def install(
         self, progress: Callable[[RuntimeInstallProgress], None]
@@ -107,6 +115,11 @@ class LLMModelInstaller:
             raise ProviderUnavailableError(
                 "Configured LLM provider does not support model downloads."
             )
+        onboarding_provider = (
+            provider_capability(self._provider, ModelOnboardingProvider)
+            if self.kind == RuntimeRequirementKind.FASTFLOWLM_MODEL
+            else None
+        )
 
         def record_model_progress(model_progress: ModelPullProgress) -> None:
             progress(
@@ -118,7 +131,11 @@ class LLMModelInstaller:
             )
 
         try:
+            if onboarding_provider is not None:
+                onboarding_provider.prepare_model_onboarding(record_model_progress)
             model_provider.pull_model(record_model_progress)
+            if onboarding_provider is not None:
+                onboarding_provider.verify_model_onboarding(record_model_progress)
         except Exception as exc:
             raise ProviderUnavailableError(
                 f"{_provider_label(self.provider)} unavailable: {exc}"

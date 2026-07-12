@@ -1,0 +1,7 @@
+{
+  "amd_device_found": true,
+  "npu_driver_ok": true,
+  "object": "npu_stack_validation",
+  "platform": "windows",
+  "ready": true
+}

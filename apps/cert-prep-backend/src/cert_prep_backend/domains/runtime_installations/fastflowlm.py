@@ -26,6 +26,9 @@ from cert_prep_backend.core.config import Settings
 from cert_prep_backend.domains.mock_exams.fastflowlm_resolver import (
     resolve_fastflowlm_executable,
 )
+from cert_prep_backend.domains.mock_exams.fastflowlm_process import (
+    terminate_fastflowlm_process_tree,
+)
 from cert_prep_backend.domains.mock_exams.provider_selection import (
     provider_selection_from_settings,
 )
@@ -33,7 +36,6 @@ from cert_prep_backend.domains.runtime_installations.wintrust import (
     AuthenticodeInspectionError,
     AuthenticodeSignature,
     inspect_authenticode_signature,
-    resolve_windows_system_executable,
 )
 from cert_prep_contracts.llm import FASTFLOWLM_RUNTIME_TRUST_POLICY
 from cert_prep_contracts.runtime import (
@@ -192,7 +194,7 @@ class FastFlowLMRuntimeInstaller:
         try:
             stdout, stderr = process.communicate(timeout=max(60.0, timeout_seconds))
         except subprocess.TimeoutExpired as exc:
-            _terminate_owned_process_tree(process)
+            terminate_fastflowlm_process_tree(process)
             raise ProviderUnavailableError("FastFlowLM installer timed out.") from exc
         if process.returncode != 0:
             detail = (stderr or stdout or "").strip()
@@ -355,40 +357,6 @@ def _set_read_idle_timeout(response) -> None:
         response.fp.raw._sock.settimeout(_READ_IDLE_TIMEOUT_SECONDS)  # noqa: SLF001
     except (AttributeError, OSError):
         pass
-
-
-def _terminate_owned_process_tree(process: subprocess.Popen[str]) -> None:
-    if process.poll() is not None:
-        return
-    if os.name == "nt":
-        try:
-            taskkill = resolve_windows_system_executable("taskkill.exe")
-            completed = subprocess.run(
-                [str(taskkill), "/PID", str(process.pid), "/T", "/F"],
-                check=False,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=15,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
-            if completed.returncode != 0:
-                raise OSError("taskkill could not terminate the installer process tree")
-            process.wait(timeout=15)
-        except (AuthenticodeInspectionError, OSError, subprocess.TimeoutExpired) as exc:
-            if process.poll() is None:
-                process.kill()
-                process.wait(timeout=5)
-            raise ProviderUnavailableError(
-                "FastFlowLM installer process tree could not be terminated cleanly."
-            ) from exc
-        return
-    process.terminate()
-    try:
-        process.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait(timeout=5)
 
 
 def _normalize_thumbprint(value: str) -> str:
