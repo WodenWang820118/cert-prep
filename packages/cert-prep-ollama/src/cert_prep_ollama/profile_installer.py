@@ -48,7 +48,6 @@ class OllamaProfileInstaller:
         self.profiles = (profile, *fallback_profiles)
         self.model = profile.local_model
         self.host = host
-        self._timeout_seconds = timeout_seconds
         self._runtime_install_timeout_seconds = runtime_install_timeout_seconds
         self._client = client or ollama.Client(host=host, timeout=timeout_seconds)
         self._ensure_server = ensure_server

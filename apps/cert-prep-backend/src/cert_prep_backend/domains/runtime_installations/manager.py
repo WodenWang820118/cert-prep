@@ -107,7 +107,6 @@ class RuntimeInstallationManager:
             ExternalPaddleOCRProvider,
         )
 
-        self._settings = settings
         self._async_jobs = async_jobs
         ollama_runtime_provider = provider_capability(
             llm_provider,
