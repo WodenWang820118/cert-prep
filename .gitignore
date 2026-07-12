@@ -19,7 +19,6 @@ apps/**/build/
 apps/**/dist/
 apps/**/src-tauri/target/
 apps/**/src-tauri/gen/
-apps/**/src-tauri/binaries/
 
 # IDEs and editors
 /.idea

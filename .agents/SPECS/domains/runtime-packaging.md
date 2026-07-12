@@ -12,17 +12,16 @@ and process cleanup.
   assuming machine-wide Python or hidden global setup.
 - Python runtime means the packaged PyInstaller backend executable zip, not a
   system Python installer.
-- The initial Windows installer ships the Angular UI plus manifest resources
-  and a lite backend sidecar only.
+- The backend build has one supported PyInstaller owner:
+  `cert-prep-backend:build-backend-runtime`. CPU/GPU OCR payloads remain owned
+  by the separate OCR runtime builder.
 - Runtime artifacts are described by manifests with file name, byte size,
   SHA-256, target, entrypoint, and release/local URL.
 - Runtime payloads are release assets addressed by manifest URLs. Release
   automation provides `CERT_PREP_RUNTIME_ASSET_BASE_URL` for distributable
   runtime manifests.
-- Keep only `cert-prep-backend-x86_64-pc-windows-msvc.exe` in Tauri
-  `externalBin`.
-- Supersede the bundled GPU Paddle OCR sidecar with a lite backend sidecar plus
-  an optional OCR runtime artifact.
+- The retired Tauri `externalBin`/sidecar sync path is unsupported; desktop
+  runtime startup must not depend on `src-tauri/binaries`.
 - Python backend and WindowsML OCR runtime readiness are required for packaged
   OCR/manual PDF workflows.
 - Runtime management has two supported entrypoints: the app topbar opens the

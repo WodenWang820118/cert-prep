@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Default desktop permissions for the cert prep app.",
   "windows": ["main"],
-  "permissions": ["core:default", "shell:default"]
+  "permissions": ["core:default"]
 }

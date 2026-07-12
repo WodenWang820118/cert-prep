@@ -20,12 +20,16 @@ def test_app_factory_import_path_is_available() -> None:
 
 
 def test_pyinstaller_entry_paths_exist() -> None:
-    build_sidecar = _load_script_module("build_sidecar")
+    build_backend_runtime = _load_script_module("build_backend_runtime")
     build_ocr_runtime = _load_script_module("build_ocr_runtime")
 
-    assert build_sidecar.SIDECAR_ENTRY.is_file()
-    assert build_sidecar.SIDECAR_ENTRY == (
-        BACKEND_ROOT / "src" / "cert_prep_backend" / "entrypoints" / "sidecar.py"
+    assert build_backend_runtime.BACKEND_ENTRY.is_file()
+    assert build_backend_runtime.BACKEND_ENTRY == (
+        BACKEND_ROOT
+        / "src"
+        / "cert_prep_backend"
+        / "entrypoints"
+        / "backend_runtime.py"
     )
     assert build_ocr_runtime.RUNTIME_ENTRY.is_file()
     assert build_ocr_runtime.RUNTIME_ENTRY == (
@@ -33,10 +37,10 @@ def test_pyinstaller_entry_paths_exist() -> None:
     )
 
 
-def test_backend_sidecar_pyinstaller_command_keeps_uvicorn_app_import() -> None:
-    build_sidecar = _load_script_module("build_sidecar")
+def test_backend_runtime_pyinstaller_command_keeps_uvicorn_app_import() -> None:
+    build_backend_runtime = _load_script_module("build_backend_runtime")
 
-    command = build_sidecar._pyinstaller_command("lite")
+    command = build_backend_runtime._pyinstaller_command()
 
     hidden_imports = [
         command[index + 1]

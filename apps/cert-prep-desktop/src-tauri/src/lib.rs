@@ -20,7 +20,6 @@ use constants::{BACKEND_RUNTIME_MANIFEST, WINDOWSML_OCR_RUNTIME_MANIFEST};
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             let data_dir = resolved_app_data_dir(app)?;
             fs::create_dir_all(&data_dir)

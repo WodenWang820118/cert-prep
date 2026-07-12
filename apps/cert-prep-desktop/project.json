@@ -11,7 +11,7 @@
       "executor": "nx:run-commands",
       "options": {
         "cwd": "apps/cert-prep-desktop",
-        "command": "eslint . --ignore-pattern src-tauri/target/** --ignore-pattern src-tauri/binaries/**"
+        "command": "eslint . --ignore-pattern src-tauri/target/**"
       }
     },
     "dev": {
@@ -39,22 +39,6 @@
       "outputs": ["{projectRoot}/src-tauri/target"],
       "options": {
         "command": "pnpm exec tauri build --target x86_64-pc-windows-msvc --ci --config apps/cert-prep-desktop/src-tauri/tauri.conf.json"
-      }
-    },
-    "sync-sidecar": {
-      "executor": "nx:run-commands",
-      "dependsOn": ["cert-prep-backend:build-sidecar"],
-      "outputs": ["{projectRoot}/src-tauri/binaries"],
-      "options": {
-        "command": "node apps/cert-prep-desktop/scripts/sync-sidecar.mts"
-      }
-    },
-    "sync-sidecar-gpu": {
-      "executor": "nx:run-commands",
-      "dependsOn": ["cert-prep-backend:build-sidecar-gpu"],
-      "outputs": ["{projectRoot}/src-tauri/binaries"],
-      "options": {
-        "command": "node apps/cert-prep-desktop/scripts/sync-sidecar.mts --target x86_64-pc-windows-msvc"
       }
     },
     "sync-runtime-manifest": {

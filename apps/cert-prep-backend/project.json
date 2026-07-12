@@ -180,17 +180,6 @@
         "command": "uv run python scripts/reasoning_memory.py"
       }
     },
-    "build-sidecar": {
-      "cache": true,
-      "parallelism": false,
-      "executor": "nx:run-commands",
-      "inputs": ["production"],
-      "outputs": ["{projectRoot}/dist"],
-      "options": {
-        "cwd": "apps/cert-prep-backend",
-        "command": "uv run python scripts/build_sidecar.py --lane lite"
-      }
-    },
     "build-backend-runtime": {
       "cache": true,
       "parallelism": false,
@@ -199,31 +188,7 @@
       "outputs": ["{projectRoot}/dist/backend-runtime"],
       "options": {
         "cwd": "apps/cert-prep-backend",
-        "command": "uv run python scripts/build_sidecar.py --lane lite --target x86_64-pc-windows-msvc"
-      }
-    },
-    "build-sidecar-cpu": {
-      "cache": true,
-      "parallelism": false,
-      "executor": "nx:run-commands",
-      "dependsOn": ["ocr-setup-cpu"],
-      "inputs": ["production"],
-      "outputs": ["{projectRoot}/dist"],
-      "options": {
-        "cwd": "apps/cert-prep-backend",
-        "command": "uv run --extra ocr-cpu python scripts/build_sidecar.py --lane cpu"
-      }
-    },
-    "build-sidecar-gpu": {
-      "cache": true,
-      "parallelism": false,
-      "executor": "nx:run-commands",
-      "dependsOn": ["ocr-setup-gpu-capable"],
-      "inputs": ["production"],
-      "outputs": ["{projectRoot}/dist"],
-      "options": {
-        "cwd": "apps/cert-prep-backend",
-        "command": "uv run --extra ocr-gpu python scripts/build_sidecar.py --lane gpu"
+        "command": "uv run python scripts/build_backend_runtime.py --target x86_64-pc-windows-msvc"
       }
     },
     "build-ocr-runtime-gpu": {

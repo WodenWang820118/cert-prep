@@ -1,5 +1,5 @@
 {
   "extends": "../../../tsconfig.scripts.json",
   "include": ["./**/*.mts"],
-  "exclude": ["../src-tauri/target/**", "../src-tauri/binaries/**"]
+  "exclude": ["../src-tauri/target/**"]
 }
