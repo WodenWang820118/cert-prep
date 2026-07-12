@@ -1,5 +1,5 @@
 import { inject, Injectable } from '@angular/core';
-import { CERT_PREP_API, type CertPrepGeneratedClient } from '../../cert-prep-api';
+import { CERT_PREP_API } from '../../cert-prep-api';
 import type {
   ModelDownloadApiClient,
   RuntimeInstallationApiClient,
@@ -9,37 +9,20 @@ import type {
 export class RuntimeApiClientsService {
   private readonly api = inject(CERT_PREP_API);
 
-  modelDownloadClient(): ModelDownloadApiClient | null {
-    const client = this.api as CertPrepGeneratedClient &
-      Partial<ModelDownloadApiClient>;
-    if (
-      typeof client.startModelDownload !== 'function' ||
-      typeof client.getModelDownload !== 'function'
-    ) {
-      return null;
-    }
-
+  modelDownloadClient(): ModelDownloadApiClient {
     return {
-      startModelDownload: () => client.startModelDownload(),
-      getModelDownload: (jobId) => client.getModelDownload(jobId),
+      startModelDownload: () => this.api.startModelDownload(),
+      getModelDownload: (jobId) => this.api.getModelDownload(jobId),
     };
   }
 
-  runtimeInstallationClient(): RuntimeInstallationApiClient | null {
-    const client = this.api as CertPrepGeneratedClient &
-      Partial<RuntimeInstallationApiClient>;
-    if (
-      typeof client.runtimeRequirements !== 'function' ||
-      typeof client.startRuntimeInstallation !== 'function' ||
-      typeof client.getRuntimeInstallation !== 'function'
-    ) {
-      return null;
-    }
-
+  runtimeInstallationClient(): RuntimeInstallationApiClient {
     return {
-      runtimeRequirements: () => client.runtimeRequirements(),
-      startRuntimeInstallation: (kind) => client.startRuntimeInstallation(kind),
-      getRuntimeInstallation: (jobId) => client.getRuntimeInstallation(jobId),
+      runtimeRequirements: () => this.api.runtimeRequirements(),
+      startRuntimeInstallation: (kind) =>
+        this.api.startRuntimeInstallation(kind),
+      getRuntimeInstallation: (jobId) =>
+        this.api.getRuntimeInstallation(jobId),
     };
   }
 }

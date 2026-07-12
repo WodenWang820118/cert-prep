@@ -92,10 +92,7 @@ export interface RuntimeInstallationView {
   readonly error: string | null;
 }
 
-/**
- * Loose record shape used when normalizing runtime job responses from evolving
- * backend and Tauri command contracts.
- */
+/** Canonical runtime job payload narrowed defensively at the UI boundary. */
 export type RuntimeJobRecord = Record<string, unknown>;
 
 /**
@@ -114,15 +111,3 @@ export interface ModelDownloadViewContext {
 export interface RuntimeInstallationViewContext {
   readonly currentJobId: string | null;
 }
-
-/**
- * Backends may expose model-missing details under several diagnostic fields
- * while the OpenAPI contract stabilizes.
- */
-export type LLMHealthWithMissingReason = LLMHealthRead &
-  Partial<{
-    code: string;
-    error_code: string;
-    reason: string;
-    unavailable_reason: string;
-  }>;

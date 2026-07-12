@@ -4,16 +4,8 @@ import type {
   OCRHealthRead,
   RuntimeRequirementRead,
 } from '../../cert-prep-api';
-import type {
-  LLMHealthWithMissingReason,
-  RuntimeKind,
-} from './contracts/health-runtime.contracts';
+import type { RuntimeKind } from './contracts/health-runtime.contracts';
 
-const MODEL_MISSING_REASON_CODES = new Set([
-  'model_missing',
-  'missing_model',
-  'ollama_model_missing',
-]);
 const OCR_RUNTIME_MISSING_REASON_CODES = new Set([
   'paddle_runtime_missing',
   'windowsml_runtime_missing',
@@ -26,25 +18,10 @@ const LLM_RUNTIME_MISSING_REASON_CODES = new Set([
 @Injectable({ providedIn: 'root' })
 export class RuntimeHealthDerivationService {
   isModelMissing(health: LLMHealthRead | null): boolean {
-    if (health === null || health.available !== false) {
-      return false;
-    }
-
-    const extended = health as LLMHealthWithMissingReason;
-    const reason = [
-      extended.code,
-      extended.error_code,
-      extended.reason,
-      extended.unavailable_reason,
-    ]
-      .map((value) => this.normalizedCode(value))
-      .find((value) => value.length > 0);
-
-    if (reason !== undefined && MODEL_MISSING_REASON_CODES.has(reason)) {
-      return true;
-    }
-
-    return /\bmodel\b.*\b(missing|not found)\b/i.test(health.detail);
+    return (
+      health?.available === false &&
+      this.unavailableReason(health) === 'model_missing'
+    );
   }
 
   isOllamaMissing(

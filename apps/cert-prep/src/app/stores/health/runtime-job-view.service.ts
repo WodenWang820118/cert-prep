@@ -11,24 +11,6 @@ import type {
 } from './contracts/health-runtime.contracts';
 import { RuntimeHealthDerivationService } from './runtime-health-derivation.service';
 
-const MODEL_DOWNLOAD_WAITING_STATUSES = new Set([
-  'waiting',
-  'waiting_for_user',
-  'user_action_required',
-]);
-const MODEL_DOWNLOAD_DONE_STATUSES = new Set([
-  'complete',
-  'completed',
-  'done',
-  'success',
-  'succeeded',
-]);
-const MODEL_DOWNLOAD_FAILED_STATUSES = new Set([
-  'cancelled',
-  'canceled',
-  'error',
-  'failed',
-]);
 const RUNTIME_KIND_LABELS: Record<string, string> = {
   ollama: 'Ollama',
   ollama_model: 'Ollama model',
@@ -48,12 +30,10 @@ export class RuntimeJobViewService {
     const record = this.asRecord(response);
     const status =
       this.readString(record, 'status') ??
-      this.readString(record, 'state') ??
       this.readString(record, 'phase') ??
       fallbackPhase;
     const error = this.readString(record, 'error');
     const phase = this.phaseFrom(
-      record,
       this.derivation.normalizedCode(status),
       fallbackPhase,
       error,
@@ -61,14 +41,11 @@ export class RuntimeJobViewService {
     const progress = this.progressFrom(record, phase);
     const message =
       error ??
-      this.readString(record, 'message') ??
       this.readString(record, 'detail') ??
       this.defaultDownloadMessage(phase);
 
     return {
       jobId:
-        this.readString(record, 'job_id') ??
-        this.readString(record, 'jobId') ??
         this.readString(record, 'id') ??
         context.currentJobId,
       model: this.readString(record, 'model') ?? context.modelName ?? 'model',
@@ -90,12 +67,10 @@ export class RuntimeJobViewService {
     const kind = this.runtimeKindFrom(record, fallbackKind);
     const status =
       this.readString(record, 'status') ??
-      this.readString(record, 'state') ??
       this.readString(record, 'phase') ??
       fallbackPhase;
     const error = this.readString(record, 'error');
     const phase = this.phaseFrom(
-      record,
       this.derivation.normalizedCode(status),
       fallbackPhase,
       error,
@@ -103,14 +78,11 @@ export class RuntimeJobViewService {
     const progress = this.progressFrom(record, phase);
     const message =
       error ??
-      this.readString(record, 'message') ??
       this.readString(record, 'detail') ??
       this.defaultRuntimeInstallMessage(kind, phase);
 
     return {
       jobId:
-        this.readString(record, 'job_id') ??
-        this.readString(record, 'jobId') ??
         this.readString(record, 'id') ??
         context.currentJobId,
       kind,
@@ -216,23 +188,19 @@ export class RuntimeJobViewService {
   }
 
   private phaseFrom(
-    record: RuntimeJobRecord,
     status: string,
     fallbackPhase: DownloadPhase,
     error: string | null,
   ): DownloadPhase {
-    if (error !== null || MODEL_DOWNLOAD_FAILED_STATUSES.has(status)) {
+    if (error !== null || status === 'failed') {
       return 'failed';
     }
 
-    if (MODEL_DOWNLOAD_WAITING_STATUSES.has(status)) {
+    if (status === 'waiting_for_user') {
       return 'waiting_for_user';
     }
 
-    if (
-      this.readBoolean(record, 'done') ||
-      MODEL_DOWNLOAD_DONE_STATUSES.has(status)
-    ) {
+    if (status === 'succeeded') {
       return 'succeeded';
     }
 
@@ -243,20 +211,13 @@ export class RuntimeJobViewService {
     record: RuntimeJobRecord,
     phase: DownloadPhase,
   ): number | null {
-    const direct =
-      this.readNumber(record, 'progress') ??
-      this.readNumber(record, 'percent') ??
-      this.readNumber(record, 'percentage');
+    const direct = this.readNumber(record, 'progress');
     if (direct !== null) {
       return this.percent(direct);
     }
 
-    const completed =
-      this.readNumber(record, 'completed') ??
-      this.readNumber(record, 'downloaded_bytes');
-    const total =
-      this.readNumber(record, 'total') ??
-      this.readNumber(record, 'total_bytes');
+    const completed = this.readNumber(record, 'completed');
+    const total = this.readNumber(record, 'total');
     if (completed !== null && total !== null && total > 0) {
       return this.percent((completed / total) * 100);
     }
@@ -322,13 +283,6 @@ export class RuntimeJobViewService {
   ): number | null {
     const value = record[key];
     return typeof value === 'number' && Number.isFinite(value) ? value : null;
-  }
-
-  private readBoolean(
-    record: RuntimeJobRecord,
-    key: keyof RuntimeJobRecord,
-  ): boolean {
-    return record[key] === true;
   }
 
   private runtimeKindFrom(

@@ -86,14 +86,6 @@ export class RuntimeActionsStore {
     }
 
     const client = this.runtimeApi.modelDownloadClient();
-    if (client === null) {
-      const message = 'Model download API is unavailable.';
-      this.modelDownloadConsentVisible.set(false);
-      this.modelDownload.set(this.failedDownload(message, context));
-      this.operations.fail(message);
-      return;
-    }
-
     this.clearModelDownloadPollTimer();
     this.modelDownloadStarting.set(true);
     this.modelDownload.set(
@@ -158,14 +150,6 @@ export class RuntimeActionsStore {
     }
 
     const client = this.runtimeApi.runtimeInstallationClient();
-    if (client === null) {
-      const message = 'Runtime installation API is unavailable.';
-      this.runtimeInstallConsentKind.set(null);
-      this.runtimeInstall.set(this.failedRuntimeInstall(kind, message));
-      this.operations.fail(message);
-      return;
-    }
-
     this.clearRuntimeInstallPollTimer();
     this.runtimeInstallStarting.set(true);
     this.runtimeInstall.set(this.jobView.startingRuntimeInstall(kind));
@@ -198,13 +182,6 @@ export class RuntimeActionsStore {
     }
 
     const client = this.runtimeApi.runtimeInstallationClient();
-    if (client === null) {
-      const message = 'Runtime installation API is unavailable.';
-      this.runtimeInstall.set({ ...current, phase: 'failed', error: message });
-      this.operations.fail(message);
-      return;
-    }
-
     this.clearRuntimeInstallPollTimer();
 
     try {
@@ -236,13 +213,6 @@ export class RuntimeActionsStore {
     }
 
     const client = this.runtimeApi.modelDownloadClient();
-    if (client === null) {
-      const message = 'Model download API is unavailable.';
-      this.modelDownload.set({ ...current, phase: 'failed', error: message });
-      this.operations.fail(message);
-      return;
-    }
-
     this.clearModelDownloadPollTimer();
 
     try {

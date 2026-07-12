@@ -60,10 +60,6 @@ export class HealthSnapshotService {
 
   private async loadRuntimeRequirements() {
     const client = this.runtimeApi.runtimeInstallationClient();
-    if (client === null) {
-      return [];
-    }
-
     return (await client.runtimeRequirements()).items;
   }
 }
