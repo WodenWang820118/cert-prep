@@ -16,9 +16,14 @@ export interface Components {
     DraftGenerationJobRead: { "id": string; "project_id": string; "document_id": string; "chunk_id": string; "page_number": number; "strategy": Components['schemas']['DraftGenerationStrategy']; "status": string; "provider": string; "model": string; "generated_count": number; "retry_count": number; "last_error": string | null; "created_at": string; "updated_at": string };
     DraftGenerationStrategy: string;
     DraftStatus: string;
+    FastFlowLMTermsDecision: string;
+    FastFlowLMTermsDecisionRequest: { "decision": Components['schemas']['FastFlowLMTermsDecision']; "terms_version": string };
     HTTPValidationError: { "detail"?: Components['schemas']['ValidationError'][] };
     HealthResponse: { "status": string; "app": string; "version": string; "python_version": string; "runtime_mode": string };
     LLMHealthRead: { "provider": string; "model": string; "available": boolean; "detail": string; "unavailable_reason"?: string | null; "configured_model"?: string | null; "effective_model"?: string | null; "fallback_models"?: string[]; "fallback_reason"?: string | null; "profile_id"?: string | null; "base_model"?: string | null; "modelfile_sha256"?: string | null; "profile_reason"?: string | null; "profile_warnings"?: string[] };
+    LLMProviderName: string;
+    LLMProviderPreference: string;
+    LLMProviderSelectionRead: { "preference": Components['schemas']['LLMProviderPreference']; "selected_provider": Components['schemas']['LLMProviderName']; "effective_provider": Components['schemas']['LLMProviderName']; "configured_model": string; "effective_model": string; "selection_reason": string; "fallback_reason"?: string | null; "hardware_compatible": boolean; "requires_terms_acceptance": boolean; "terms_accepted": boolean; "terms_version"?: string | null; "terms_url"?: string | null; "runtime_requirement_kind"?: Components['schemas']['RuntimeRequirementKind'] | null; "model_requirement_kind"?: Components['schemas']['RuntimeRequirementKind'] | null };
     MachineAcceleratorRead: { "kind": string; "name": string; "vendor"?: string | null; "memory_bytes"?: number | null; "driver_version"?: string | null; "device_id"?: string | null };
     MachineCpuRead: { "architecture": string; "name"?: string | null; "physical_cores"?: number | null; "logical_cores"?: number | null };
     MachineInventoryRead: { "platform": string; "platform_version": string; "architecture": string; "cpu": Components['schemas']['MachineCpuRead']; "ram": Components['schemas']['MachineRamRead']; "storage": Components['schemas']['MachineStorageRead']; "accelerators"?: Components['schemas']['MachineAcceleratorRead'][]; "warnings"?: string[]; "schema_version"?: number };
@@ -74,9 +79,14 @@ export type DraftGenerationJobList = Components['schemas']['DraftGenerationJobLi
 export type DraftGenerationJobRead = Components['schemas']['DraftGenerationJobRead'];
 export type DraftGenerationStrategy = Components['schemas']['DraftGenerationStrategy'];
 export type DraftStatus = Components['schemas']['DraftStatus'];
+export type FastFlowLMTermsDecision = Components['schemas']['FastFlowLMTermsDecision'];
+export type FastFlowLMTermsDecisionRequest = Components['schemas']['FastFlowLMTermsDecisionRequest'];
 export type HTTPValidationError = Components['schemas']['HTTPValidationError'];
 export type HealthResponse = Components['schemas']['HealthResponse'];
 export type LLMHealthRead = Components['schemas']['LLMHealthRead'];
+export type LLMProviderName = Components['schemas']['LLMProviderName'];
+export type LLMProviderPreference = Components['schemas']['LLMProviderPreference'];
+export type LLMProviderSelectionRead = Components['schemas']['LLMProviderSelectionRead'];
 export type MachineAcceleratorRead = Components['schemas']['MachineAcceleratorRead'];
 export type MachineCpuRead = Components['schemas']['MachineCpuRead'];
 export type MachineInventoryRead = Components['schemas']['MachineInventoryRead'];
@@ -154,6 +164,8 @@ export interface CertPrepGeneratedClient {
   summarizeWrongAnswers(projectId: string): Promise<Components['schemas']['WrongAnswerSummaryRead']>;
   explainWrongAnswer(projectId: string, attemptId: string): Promise<Components['schemas']['WrongAnswerExplanationRead']>;
   llmHealth(): Promise<Components['schemas']['LLMHealthRead']>;
+  llmProviderSelection(): Promise<Components['schemas']['LLMProviderSelectionRead']>;
+  decideFastflowlmTerms(body: Components['schemas']['FastFlowLMTermsDecisionRequest']): Promise<Components['schemas']['LLMProviderSelectionRead']>;
   llmProfiles(): Promise<Components['schemas']['OllamaProfilesRead']>;
   llmProfileSelection(): Promise<Components['schemas']['OllamaProfileSelectionRead']>;
   startModelDownload(): Promise<Components['schemas']['ModelDownloadRead']>;
@@ -215,6 +227,10 @@ export function createCertPrepGeneratedClient(
       transport.request<Components['schemas']['WrongAnswerExplanationRead']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/wrong-answers/${encodeURIComponent(attemptId)}/explanation` }),
     llmHealth: () =>
       transport.request<Components['schemas']['LLMHealthRead']>({ method: 'GET' as const, path: "/llm/health" }),
+    llmProviderSelection: () =>
+      transport.request<Components['schemas']['LLMProviderSelectionRead']>({ method: 'GET' as const, path: "/llm/provider-selection" }),
+    decideFastflowlmTerms: (body: Components['schemas']['FastFlowLMTermsDecisionRequest']) =>
+      transport.request<Components['schemas']['LLMProviderSelectionRead']>({ method: 'POST' as const, path: "/llm/provider-selection/fastflowlm-terms-decision", body }),
     llmProfiles: () =>
       transport.request<Components['schemas']['OllamaProfilesRead']>({ method: 'GET' as const, path: "/llm/profiles" }),
     llmProfileSelection: () =>

@@ -29,6 +29,13 @@ class LLMProviderName(StrEnum):
     FAKE = "fake"
 
 
+class FastFlowLMTermsDecision(StrEnum):
+    """Durable decision for the exact pinned FastFlowLM terms version."""
+
+    ACCEPTED = "accepted"
+    DECLINED = "declined"
+
+
 @dataclass(frozen=True, slots=True)
 class LLMRuntimePolicy:
     """Single shared model/provider policy for the desktop product."""
@@ -97,15 +104,9 @@ FASTFLOWLM_RUNTIME_TRUST_POLICY = FastFlowLMRuntimeTrustPolicy(
     # Captured from flm.exe installed by the exact allowlisted installer above.
     executable_bytes=6_475_264,
     executable_sha256="92ecc734e65251ce79b4e65b9be88c4561c44a8d835f6ccbf341d8491e9ee218",
-    # Captured with Get-AuthenticodeSignature from the pinned installer URL on
-    # 2026-07-11 after the size and SHA-256 checks above matched.
-    signer_subject=(
-        "OID.1.3.6.1.4.1.311.60.2.1.3=US, "
-        "OID.1.3.6.1.4.1.311.60.2.1.2=Delaware, "
-        "OID.2.5.4.15=Private Organization, CN=FastFlowLM Inc., "
-        "SERIALNUMBER=10267153, O=FastFlowLM Inc., L=Warwick, "
-        "S=Rhode Island, C=US"
-    ),
+    # Native CertGetNameStringW simple-display subject captured from the exact
+    # allowlisted installer after the size and SHA-256 checks above matched.
+    signer_subject="FastFlowLM Inc.",
     signer_thumbprint="EBD8F43D1208A9F34CEC082CE94AD98D67BB2FF9",
     terms_url=(
         "https://raw.githubusercontent.com/FastFlowLM/FastFlowLM/"
@@ -128,6 +129,7 @@ __all__ = [
     "DEFAULT_LLM_LOW_RESOURCE_MODEL",
     "DEFAULT_LLM_PRIMARY_MODEL",
     "DEFAULT_LLM_RUNTIME_POLICY",
+    "FastFlowLMTermsDecision",
     "FASTFLOWLM_RUNTIME_TRUST_POLICY",
     "FastFlowLMRuntimeTrustPolicy",
     "GenerationAttribution",

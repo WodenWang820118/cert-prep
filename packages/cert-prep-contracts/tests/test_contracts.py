@@ -3,6 +3,7 @@ from __future__ import annotations
 from cert_prep_contracts import (
     DEFAULT_LLM_RUNTIME_POLICY,
     FASTFLOWLM_RUNTIME_TRUST_POLICY,
+    FastFlowLMTermsDecision,
     GenerationAttribution,
     LLMProviderName,
     LLMProviderPreference,
@@ -98,6 +99,9 @@ def test_llm_runtime_policy_and_provider_selection_are_shared_value_types() -> N
     assert len(FASTFLOWLM_RUNTIME_TRUST_POLICY.installer_sha256) == 64
     assert FASTFLOWLM_RUNTIME_TRUST_POLICY.executable_bytes == 6_475_264
     assert len(FASTFLOWLM_RUNTIME_TRUST_POLICY.executable_sha256) == 64
+    assert FASTFLOWLM_RUNTIME_TRUST_POLICY.signer_subject == "FastFlowLM Inc."
+    assert len(FASTFLOWLM_RUNTIME_TRUST_POLICY.signer_thumbprint) == 40
+    assert FastFlowLMTermsDecision.ACCEPTED.value == "accepted"
 
 
 def test_machine_inventory_and_ollama_profiles_are_pure_value_types() -> None:

@@ -12,12 +12,20 @@ from cert_prep_backend.domains.mock_exams.ports import (
     OllamaRuntimeInstallationProvider,
     provider_capability,
 )
+from cert_prep_backend.domains.mock_exams.provider_preferences import (
+    fastflowlm_terms_are_accepted,
+)
 from cert_prep_backend.domains.runtime_installations.models import (
     RuntimeInstallationSnapshot,
     utcnow,
 )
 from cert_prep_backend.domains.source_documents.ocr import OCRProvider
-from cert_prep_backend.api.errors import ProviderUnavailableError
+from cert_prep_backend.api.errors import (
+    ProviderReconfigurationConflictError,
+    ProviderUnavailableError,
+    TermsAcceptanceRequiredError,
+)
+from cert_prep_backend.persistence.database import Database
 from cert_prep_contracts.runtime import (
     RuntimeInstallationStatus,
     RuntimeInstallProgress,
@@ -91,64 +99,35 @@ class RuntimeInstallationManager:
         settings: Settings,
         llm_provider: object,
         ocr_provider: OCRProvider,
+        db: Database | None = None,
         async_jobs: bool = True,
         installers: list[RuntimeInstaller] | None = None,
     ) -> None:
         from cert_prep_backend.domains.runtime_installations.installers import (
-            LLMModelInstaller,
             WindowsMLOcrRuntimeInstaller,
             PaddleOcrRuntimeInstaller,
         )
         from cert_prep_backend.domains.source_documents.adapters.external_windowsml import (
             ExternalWindowsMLOCRProvider,
         )
-        from cert_prep_ollama.installers import OllamaRuntimeInstaller
         from cert_prep_backend.domains.source_documents.adapters.external_paddle import (
             ExternalPaddleOCRProvider,
         )
 
         self._async_jobs = async_jobs
-        ollama_runtime_provider = provider_capability(
+        self._settings = settings
+        self._db = db or Database(settings)
+        llm_installers = _build_llm_installers(
+            settings,
             llm_provider,
-            OllamaRuntimeInstallationProvider,
+            terms_accepted=lambda: fastflowlm_terms_are_accepted(self._db),
         )
-        supports_ollama_runtime = bool(
-            ollama_runtime_provider
-            and ollama_runtime_provider.supports_ollama_runtime_installation
-        )
-        llm_runtime_installers: list[RuntimeInstaller] = []
-        if supports_ollama_runtime:
-            llm_runtime_installers.append(
-                OllamaRuntimeInstaller(
-                    ollama_host=settings.ollama_host,
-                    runtime_install_timeout_seconds=settings.runtime_install_timeout_seconds,
-                )
-            )
-        llm_model_installer: RuntimeInstaller = LLMModelInstaller(llm_provider)
-        if (
-            supports_ollama_runtime
-            and settings.ollama_profile_enabled
-        ):
-            llm_model_installer = _LazyOllamaProfileInstaller(settings)
-        elif supports_ollama_runtime:
-            profile_selection = getattr(llm_provider, "profile_selection", None)
-            if profile_selection is not None:
-                from cert_prep_ollama.profile_installer import OllamaProfileInstaller
-
-                llm_model_installer = OllamaProfileInstaller(
-                    profile_selection.selected_profile,
-                    fallback_profiles=profile_selection.fallback_profiles,
-                    host=settings.ollama_host,
-                    timeout_seconds=settings.ollama_timeout_seconds,
-                    runtime_install_timeout_seconds=settings.runtime_install_timeout_seconds,
-                )
         self._installers = {
             installer.kind: installer
             for installer in (
                 installers
                 or [
-                    *llm_runtime_installers,
-                    llm_model_installer,
+                    *llm_installers,
                     PaddleOcrRuntimeInstaller(
                         settings,
                         (
@@ -169,32 +148,91 @@ class RuntimeInstallationManager:
             )
         }
         self._jobs: dict[str, _RuntimeInstallationJob] = {}
+        self._job_installers: dict[str, RuntimeInstaller] = {}
+        self._llm_start_reservations = 0
         self._lock = Lock()
 
     def requirements(self) -> list[RuntimeRequirementSnapshot]:
         """Return runtime requirements without starting installation work."""
 
-        return [
-            self._installers[kind].requirement()
-            for kind in RuntimeRequirementKind
-            if kind in self._installers
-        ]
+        with self._lock:
+            installers = [
+                self._installers[kind]
+                for kind in RuntimeRequirementKind
+                if kind in self._installers
+            ]
+        return [installer.requirement() for installer in installers]
+
+    def reconfigure_llm_provider(
+        self,
+        llm_provider: object,
+        *,
+        apply_policy_decision: Callable[[], None],
+    ) -> None:
+        """Refresh only LLM installers while preserving OCR jobs and installers."""
+
+        with self._lock:
+            if self._llm_start_reservations or any(
+                job.kind in _LLM_REQUIREMENT_KINDS
+                and job.status in _ACTIVE_JOB_STATUSES
+                for job in self._jobs.values()
+            ):
+                raise ProviderReconfigurationConflictError(
+                    "LLM provider policy cannot change while an LLM installation is active."
+                )
+            apply_policy_decision()
+            llm_installers = _build_llm_installers(
+                self._settings,
+                llm_provider,
+                terms_accepted=lambda: fastflowlm_terms_are_accepted(self._db),
+            )
+            retained = {
+                kind: installer
+                for kind, installer in self._installers.items()
+                if kind not in _LLM_REQUIREMENT_KINDS
+            }
+            retained.update({installer.kind: installer for installer in llm_installers})
+            self._installers = retained
 
     def start_model_installation(self) -> RuntimeInstallationSnapshot:
         """Start the selected provider's model installation job."""
 
-        for kind in (
-            RuntimeRequirementKind.FASTFLOWLM_MODEL,
-            RuntimeRequirementKind.OLLAMA_MODEL,
-        ):
-            if kind in self._installers:
-                return self.start_installation(kind)
+        with self._lock:
+            kind = next(
+                (
+                    candidate
+                    for candidate in (
+                        RuntimeRequirementKind.FASTFLOWLM_MODEL,
+                        RuntimeRequirementKind.OLLAMA_MODEL,
+                    )
+                    if candidate in self._installers
+                ),
+                None,
+            )
+        if kind is not None:
+            return self.start_installation(kind)
         raise ProviderUnavailableError("No model installer is configured.")
 
     def start_installation(self, kind: RuntimeRequirementKind | str) -> RuntimeInstallationSnapshot:
         """Start or reuse an installation job for the requested requirement."""
 
-        installer = self._installer(RuntimeRequirementKind(kind))
+        normalized_kind = RuntimeRequirementKind(kind)
+        reserved = normalized_kind in _LLM_REQUIREMENT_KINDS
+        with self._lock:
+            installer = self._installer(normalized_kind)
+            if reserved:
+                self._llm_start_reservations += 1
+        try:
+            return self._start_installation_with_installer(installer)
+        finally:
+            if reserved:
+                with self._lock:
+                    self._llm_start_reservations -= 1
+
+    def _start_installation_with_installer(
+        self,
+        installer: RuntimeInstaller,
+    ) -> RuntimeInstallationSnapshot:
         requirement = installer.requirement()
         if requirement.available:
             return self._completed_snapshot(installer, requirement)
@@ -202,6 +240,8 @@ class RuntimeInstallationManager:
         if callable(validate):
             try:
                 validate()
+            except TermsAcceptanceRequiredError:
+                raise
             except ProviderUnavailableError:
                 raise
             except OllamaProviderUnavailableError as exc:
@@ -229,6 +269,7 @@ class RuntimeInstallationManager:
                 updated_at=now,
             )
             self._jobs[job.id] = job
+            self._job_installers[job.id] = installer
 
         if self._async_jobs:
             Thread(target=self._run_installation, args=(job.id, installer), daemon=True).start()
@@ -246,7 +287,7 @@ class RuntimeInstallationManager:
             snapshot = job.snapshot()
 
         if snapshot.status == RuntimeInstallationStatus.WAITING_FOR_USER:
-            installer = self._installers.get(snapshot.kind)
+            installer = self._job_installers.get(job_id)
             if installer is not None:
                 requirement = installer.requirement()
                 if requirement.available:
@@ -337,11 +378,7 @@ class RuntimeInstallationManager:
 
     def _active_job_for(self, kind: RuntimeRequirementKind) -> _RuntimeInstallationJob | None:
         for job in self._jobs.values():
-            if job.kind == kind and job.status in {
-                RuntimeInstallationStatus.QUEUED,
-                RuntimeInstallationStatus.RUNNING,
-                RuntimeInstallationStatus.WAITING_FOR_USER,
-            }:
+            if job.kind == kind and job.status in _ACTIVE_JOB_STATUSES:
                 return job
         return None
 
@@ -383,13 +420,83 @@ class RuntimeInstallationManager:
             if len(self._jobs) <= _MAX_RETAINED_JOBS:
                 break
             self._jobs.pop(job.id, None)
+            self._job_installers.pop(job.id, None)
 
 
 _MAX_RETAINED_JOBS = 100
+_ACTIVE_JOB_STATUSES = {
+    RuntimeInstallationStatus.QUEUED,
+    RuntimeInstallationStatus.RUNNING,
+    RuntimeInstallationStatus.WAITING_FOR_USER,
+}
 _TERMINAL_JOB_STATUSES = {
     RuntimeInstallationStatus.SUCCEEDED,
     RuntimeInstallationStatus.FAILED,
 }
+_LLM_REQUIREMENT_KINDS = {
+    RuntimeRequirementKind.FASTFLOWLM,
+    RuntimeRequirementKind.FASTFLOWLM_MODEL,
+    RuntimeRequirementKind.OLLAMA,
+    RuntimeRequirementKind.OLLAMA_MODEL,
+}
+
+
+def _build_llm_installers(
+    settings: Settings,
+    llm_provider: object,
+    *,
+    terms_accepted: Callable[[], bool],
+) -> list[RuntimeInstaller]:
+    from cert_prep_backend.domains.runtime_installations.fastflowlm import (
+        FastFlowLMRuntimeInstaller,
+    )
+    from cert_prep_backend.domains.runtime_installations.installers import LLMModelInstaller
+    from cert_prep_ollama.installers import OllamaRuntimeInstaller
+
+    ollama_runtime_provider = provider_capability(
+        llm_provider,
+        OllamaRuntimeInstallationProvider,
+    )
+    supports_ollama_runtime = bool(
+        ollama_runtime_provider
+        and ollama_runtime_provider.supports_ollama_runtime_installation
+    )
+    runtime_installers: list[RuntimeInstaller] = []
+    selected_provider = str(getattr(llm_provider, "provider", "")).casefold()
+    if selected_provider == "fastflowlm":
+        runtime_installers.append(
+            FastFlowLMRuntimeInstaller(
+                settings,
+                terms_accepted=terms_accepted,
+            )
+        )
+    elif supports_ollama_runtime:
+        runtime_installers.append(
+            OllamaRuntimeInstaller(
+                ollama_host=settings.ollama_host,
+                runtime_install_timeout_seconds=settings.runtime_install_timeout_seconds,
+            )
+        )
+
+    model_installer: RuntimeInstaller = LLMModelInstaller(
+        llm_provider,
+        fastflowlm_terms_accepted=terms_accepted,
+    )
+    if supports_ollama_runtime and settings.ollama_profile_enabled:
+        model_installer = _LazyOllamaProfileInstaller(settings)
+    elif supports_ollama_runtime:
+        profile_selection = getattr(llm_provider, "profile_selection", None)
+        if profile_selection is not None:
+            from cert_prep_ollama.profile_installer import OllamaProfileInstaller
+
+            model_installer = OllamaProfileInstaller(
+                profile_selection.selected_profile,
+                fallback_profiles=profile_selection.fallback_profiles,
+                host=settings.ollama_host,
+                timeout_seconds=settings.ollama_timeout_seconds,
+                runtime_install_timeout_seconds=settings.runtime_install_timeout_seconds,
+            )
+    return [*runtime_installers, model_installer]
 
 
 class _LazyOllamaProfileInstaller:

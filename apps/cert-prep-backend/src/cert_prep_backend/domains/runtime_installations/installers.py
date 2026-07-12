@@ -21,7 +21,10 @@ from cert_prep_backend.domains.runtime_installations.manifest import (
 )
 from cert_prep_backend.domains.runtime_installations.processes import run_ocr_runtime_command
 from cert_prep_backend.domains.source_documents.ocr import OCRProvider
-from cert_prep_backend.api.errors import ProviderUnavailableError
+from cert_prep_backend.api.errors import (
+    ProviderUnavailableError,
+    TermsAcceptanceRequiredError,
+)
 from cert_prep_contracts.runtime import (
     RuntimeInstallationStatus,
     RuntimeInstallProgress,
@@ -34,8 +37,14 @@ from cert_prep_contracts.llm import ModelPullProgress
 class LLMModelInstaller:
     """Installer and health snapshot for the configured reasoning model."""
 
-    def __init__(self, provider: object) -> None:
+    def __init__(
+        self,
+        provider: object,
+        *,
+        fastflowlm_terms_accepted: Callable[[], bool] | None = None,
+    ) -> None:
         self._provider = provider
+        self._fastflowlm_terms_accepted = fastflowlm_terms_accepted or (lambda: False)
         self.provider = str(getattr(provider, "provider", "llm"))
         self.model = str(getattr(provider, "model", "configured model"))
         self.kind = (
@@ -75,6 +84,13 @@ class LLMModelInstaller:
     def validate_installable(self) -> None:
         """Raise when the configured provider cannot pull models."""
 
+        if (
+            self.kind == RuntimeRequirementKind.FASTFLOWLM_MODEL
+            and not self._fastflowlm_terms_accepted()
+        ):
+            raise TermsAcceptanceRequiredError(
+                "FastFlowLM terms must be explicitly accepted before model download."
+            )
         if provider_capability(self._provider, ModelDownloadProvider) is None:
             raise ProviderUnavailableError(
                 "Configured LLM provider does not support model downloads."
@@ -85,6 +101,7 @@ class LLMModelInstaller:
     ) -> RuntimeInstallationStatus:
         """Pull the configured model through the provider's download API."""
 
+        self.validate_installable()
         model_provider = provider_capability(self._provider, ModelDownloadProvider)
         if model_provider is None:
             raise ProviderUnavailableError(

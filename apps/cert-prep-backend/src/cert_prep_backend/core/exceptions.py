@@ -18,3 +18,11 @@ class InvalidPdfError(ValidationError):
 
 class ProviderUnavailableError(BackendError):
     """Raised when a provider or its prerequisites are not available."""
+
+
+class TermsAcceptanceRequiredError(BackendError):
+    """Raised when pinned third-party terms have not been accepted."""
+
+
+class ProviderReconfigurationConflictError(BackendError):
+    """Raised when provider policy changes would race active provider work."""

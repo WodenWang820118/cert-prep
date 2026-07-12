@@ -140,12 +140,14 @@ class StreamingDraftGenerationManager:
         return scheduled_count
 
     def _run_job(self, db: Database, job_id: str, limit: int) -> None:
+        job_provider: DraftGenerationProvider | None = None
         try:
+            job_provider = _provider_for_job(self._provider)
             job = draft_jobs.get_job(db, job_id)
             if not draft_jobs.should_run(job):
                 return
             job = draft_jobs.mark_running(db, job_id)
-            if self._provider_unavailable(db, job):
+            if self._provider_unavailable(db, job, job_provider):
                 return
 
             chunk = documents_repository.get_chunk(
@@ -155,7 +157,7 @@ class StreamingDraftGenerationManager:
             suggestions = [
                 as_editable_question(suggestion)
                 for suggestion in _generate_streaming_fast_first_drafts(
-                    self._provider,
+                    job_provider,
                     source_chunk,
                     limit,
                     DraftGenerationStrategy(job["strategy"]),
@@ -174,12 +176,18 @@ class StreamingDraftGenerationManager:
         except Exception as exc:
             draft_jobs.mark_failed(db, job_id, detail=f"request_failed: {exc}")
         finally:
-            self._release_provider_resources()
+            if job_provider is not None:
+                _release_provider_resources(job_provider)
 
-    def _provider_unavailable(self, db: Database, job: dict) -> bool:
-        if _provider_starts_on_generation(self._provider):
+    def _provider_unavailable(
+        self,
+        db: Database,
+        job: dict,
+        provider: DraftGenerationProvider,
+    ) -> bool:
+        if _provider_starts_on_generation(provider):
             return False
-        health = self._provider.health()
+        health = provider.health()
         if health.available:
             return False
 
@@ -218,11 +226,6 @@ class StreamingDraftGenerationManager:
         with self._job_slots:
             self._run_job(db, job_id, limit)
 
-    def _release_provider_resources(self) -> None:
-        provider = provider_capability(self._provider, ResourceReleasingProvider)
-        if provider is not None:
-            provider.release_resources()
-
 
 def _mark_provider_unavailable_job(
     db: Database,
@@ -236,6 +239,21 @@ def _mark_provider_unavailable_job(
         return
 
     draft_jobs.mark_skipped_provider_unavailable(db, job["id"], detail=detail)
+
+
+def _provider_for_job(provider: DraftGenerationProvider) -> DraftGenerationProvider:
+    """Bind one concrete provider so a policy change cannot split a job."""
+
+    resolved_provider = getattr(provider, "resolved_provider", None)
+    if not callable(resolved_provider):
+        return provider
+    return resolved_provider()
+
+
+def _release_provider_resources(provider: DraftGenerationProvider) -> None:
+    releasing_provider = provider_capability(provider, ResourceReleasingProvider)
+    if releasing_provider is not None:
+        releasing_provider.release_resources()
 
 
 def _generate_streaming_fast_first_drafts(

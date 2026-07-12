@@ -10,6 +10,12 @@ from cert_prep_backend.domains.mock_exams.models import (
     DraftGenerationStrategy,
     DraftStatusValue,
 )
+from cert_prep_contracts.llm import (
+    FastFlowLMTermsDecision,
+    LLMProviderName,
+    LLMProviderPreference,
+)
+from cert_prep_contracts.runtime import RuntimeRequirementKind
 
 
 class DraftGenerateRequest(BaseModel):
@@ -115,6 +121,32 @@ class LLMHealthRead(BaseModel):
     modelfile_sha256: str | None = None
     profile_reason: str | None = None
     profile_warnings: list[str] = Field(default_factory=list)
+
+
+class LLMProviderSelectionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    preference: LLMProviderPreference
+    selected_provider: LLMProviderName
+    effective_provider: LLMProviderName
+    configured_model: str
+    effective_model: str
+    selection_reason: str
+    fallback_reason: str | None = None
+    hardware_compatible: bool
+    requires_terms_acceptance: bool
+    terms_accepted: bool
+    terms_version: str | None = None
+    terms_url: str | None = None
+    runtime_requirement_kind: RuntimeRequirementKind | None = None
+    model_requirement_kind: RuntimeRequirementKind | None = None
+
+
+class FastFlowLMTermsDecisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision: FastFlowLMTermsDecision
+    terms_version: str
 
 
 class OllamaModelProfileRead(BaseModel):

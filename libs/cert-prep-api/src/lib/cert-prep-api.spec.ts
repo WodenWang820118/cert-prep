@@ -48,4 +48,30 @@ describe('createCertPrepGeneratedClient', () => {
       },
     ]);
   });
+
+  it('uses the dedicated provider-selection terms decision endpoint', async () => {
+    const transport = new RecordingTransport();
+    const client = createCertPrepGeneratedClient(transport);
+
+    await client.llmProviderSelection();
+    await client.decideFastflowlmTerms({
+      decision: 'accepted',
+      terms_version: '0.9.43',
+    });
+
+    expect(transport.requests).toEqual([
+      {
+        method: 'GET',
+        path: '/llm/provider-selection',
+      },
+      {
+        method: 'POST',
+        path: '/llm/provider-selection/fastflowlm-terms-decision',
+        body: {
+          decision: 'accepted',
+          terms_version: '0.9.43',
+        },
+      },
+    ]);
+  });
 });

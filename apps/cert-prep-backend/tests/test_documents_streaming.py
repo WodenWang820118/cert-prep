@@ -6,9 +6,12 @@ from conftest import minimal_pdf
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.core.config import Settings
 from cert_prep_backend.domains.mock_exams import draft_jobs
+from cert_prep_backend.domains.mock_exams.provider import LazyDraftGenerationProvider
 from cert_prep_backend.domains.mock_exams.streaming import (
     _call_streaming_provider_method,
+    _provider_for_job,
     _provider_starts_on_generation,
+    _release_provider_resources,
 )
 from document_test_helpers import (
     _create_project,
@@ -71,6 +74,29 @@ def test_streaming_generation_kwargs_are_provider_owned() -> None:
 
     assert result == "ok"
     assert provider.keep_alive_values == [0]
+
+
+def test_streaming_job_releases_the_provider_bound_before_reconfiguration(
+    tmp_path: Path,
+) -> None:
+    old_provider = ReleaseRecordingFastFlowLMProvider()
+    new_provider = ReleaseRecordingFastFlowLMProvider()
+    providers = iter([old_provider, new_provider])
+    lazy_provider = LazyDraftGenerationProvider(
+        lambda: next(providers),
+        provider="fastflowlm",
+        model="qwen3.5:4b",
+    )
+    bound_provider = _provider_for_job(lazy_provider)
+
+    lazy_provider.reconfigure_from_settings(
+        Settings(data_dir=tmp_path, llm_provider="fake")
+    )
+    assert _provider_for_job(lazy_provider) is new_provider
+    _release_provider_resources(bound_provider)
+
+    assert old_provider.release_calls == 1
+    assert new_provider.release_calls == 0
 
 
 def test_streaming_draft_job_waits_until_document_is_ready(

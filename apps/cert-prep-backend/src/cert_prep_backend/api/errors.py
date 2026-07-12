@@ -9,6 +9,8 @@ from cert_prep_backend.core.exceptions import (
     InvalidPdfError,
     NotFoundError,
     ProviderUnavailableError,
+    ProviderReconfigurationConflictError,
+    TermsAcceptanceRequiredError,
     ValidationError,
 )
 
@@ -17,6 +19,8 @@ __all__ = [
     "InvalidPdfError",
     "NotFoundError",
     "ProviderUnavailableError",
+    "ProviderReconfigurationConflictError",
+    "TermsAcceptanceRequiredError",
     "ValidationError",
     "api_error",
     "not_found_error",
