@@ -6,7 +6,6 @@ from cert_prep_backend.domains.source_documents.chunks import (
     list_chunks,
 )
 from cert_prep_backend.domains.source_documents.documents import (
-    create_document,
     create_processing_document,
     get_document,
     list_documents,
@@ -22,7 +21,6 @@ from cert_prep_backend.domains.source_documents.records import ensure_document_e
 
 __all__ = [
     "complete_document_extraction",
-    "create_document",
     "create_processing_document",
     "ensure_document_exists",
     "fail_document_extraction",
