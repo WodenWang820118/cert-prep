@@ -29,7 +29,7 @@ export type CompleteQuestionDraftWithExcerpt = CompleteQuestionDraft & {
   readonly source_excerpt: string;
 };
 
-export type MockWrongAnswerExplanationRead = WrongAnswerExplanationRead;
+type MockWrongAnswerExplanationRead = WrongAnswerExplanationRead;
 
 export interface MockCertPrepApi {
   readonly project: ProjectRead;

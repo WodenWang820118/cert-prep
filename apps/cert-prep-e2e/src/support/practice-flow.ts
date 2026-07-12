@@ -250,7 +250,7 @@ export async function runMultiPdfBatchUploadScenario(
   expectFullExamSessionToUseOnlyDocument(api, secondDocument);
 }
 
-export function expectFullExamSessionToUseOnlyDocument(
+function expectFullExamSessionToUseOnlyDocument(
   api: MockCertPrepApi,
   document: DocumentRead,
 ): void {
@@ -364,15 +364,6 @@ export async function completePracticeQuestions(
   ).toBeVisible();
   await expect(page.getByText('100%')).toBeVisible();
   expect(api.attempts()).toHaveLength(initialAttemptCount + drafts.length);
-}
-
-export async function submitWrongAnswerAndOpenReview(
-  page: Page,
-  api: MockCertPrepApi,
-): Promise<void> {
-  const draft = api.draft;
-  await completePracticeQuestions(page, api, [draft], wrongChoiceForDraft);
-  await expectWrongAnswerReview(page, api, [draft]);
 }
 
 export async function retryWrongAnswerAndClearReview(
