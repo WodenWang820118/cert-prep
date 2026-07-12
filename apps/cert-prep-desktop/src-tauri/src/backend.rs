@@ -301,8 +301,12 @@ pub(crate) fn resource_path<R: Runtime>(app: &tauri::App<R>, file_name: &str) ->
     None
 }
 
-fn resource_candidates(file_name: &str) -> [String; 2] {
-    [file_name.to_string(), format!("resources/{file_name}")]
+fn resource_candidates(file_name: &str) -> [String; 3] {
+    [
+        file_name.to_string(),
+        format!("resources/{file_name}"),
+        format!("generated-resources/{file_name}"),
+    ]
 }
 
 #[cfg(test)]
@@ -344,7 +348,8 @@ mod tests {
             resource_candidates(BACKEND_RUNTIME_MANIFEST),
             [
                 "backend-runtime-manifest.json".to_string(),
-                "resources/backend-runtime-manifest.json".to_string()
+                "resources/backend-runtime-manifest.json".to_string(),
+                "generated-resources/backend-runtime-manifest.json".to_string()
             ]
         );
     }

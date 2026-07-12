@@ -1,6 +1,6 @@
 [project]
 name = "cert-prep-contracts"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 description = "Shared Python value types and provider protocols for cert-prep projects."
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
@@ -19,4 +19,3 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
-

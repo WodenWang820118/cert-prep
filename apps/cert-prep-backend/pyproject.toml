@@ -1,6 +1,6 @@
 [project]
 name = "cert-prep-backend"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 description = "Local sidecar API for the cert prep desktop app."
 readme = "README.md"
 requires-python = ">=3.12,<3.14"

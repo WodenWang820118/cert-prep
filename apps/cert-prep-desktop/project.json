@@ -17,13 +17,15 @@
     "dev": {
       "continuous": true,
       "executor": "nx:run-commands",
+      "dependsOn": ["prepare-runtime-resources-dev"],
       "options": {
+        "env": { "CERT_PREP_ALLOW_LOCAL_OCR_RUNTIME_URL": "true" },
         "command": "pnpm exec tauri dev --config apps/cert-prep-desktop/src-tauri/tauri.conf.json"
       }
     },
     "build": {
       "executor": "nx:run-commands",
-      "dependsOn": ["cert-prep:build", "sync-backend-runtime-manifest"],
+      "dependsOn": ["cert-prep:build", "prepare-runtime-resources"],
       "outputs": ["{projectRoot}/src-tauri/target"],
       "options": {
         "command": "pnpm exec tauri build --config apps/cert-prep-desktop/src-tauri/tauri.conf.json"
@@ -31,44 +33,42 @@
     },
     "build-windowsml": {
       "executor": "nx:run-commands",
-      "dependsOn": [
-        "cert-prep:build",
-        "sync-backend-runtime-manifest",
-        "sync-windowsml-runtime-manifest"
-      ],
+      "dependsOn": ["cert-prep:build", "prepare-runtime-resources"],
       "outputs": ["{projectRoot}/src-tauri/target"],
       "options": {
         "command": "pnpm exec tauri build --target x86_64-pc-windows-msvc --ci --config apps/cert-prep-desktop/src-tauri/tauri.conf.json"
       }
     },
-    "sync-runtime-manifest": {
+    "build-windowsml-dev": {
       "executor": "nx:run-commands",
-      "dependsOn": ["cert-prep-backend:build-ocr-runtime-gpu"],
-      "outputs": [
-        "{projectRoot}/src-tauri/resources/ocr-runtime-manifest.json"
-      ],
+      "dependsOn": ["cert-prep:build", "prepare-runtime-resources-dev"],
+      "outputs": ["{projectRoot}/src-tauri/target"],
       "options": {
-        "command": "node apps/cert-prep-desktop/scripts/sync-runtime-manifest.mts"
+        "command": "pnpm exec tauri build --target x86_64-pc-windows-msvc --ci --config apps/cert-prep-desktop/src-tauri/tauri.conf.json"
       }
     },
-    "sync-windowsml-runtime-manifest": {
+    "prepare-runtime-resources": {
+      "cache": false,
       "executor": "nx:run-commands",
-      "dependsOn": ["cert-prep-backend:build-ocr-runtime-windowsml"],
-      "outputs": [
-        "{projectRoot}/src-tauri/resources/windowsml-ocr-runtime-manifest.json"
+      "dependsOn": [
+        "cert-prep-backend:build-backend-runtime",
+        "cert-prep-backend:build-ocr-runtime-windowsml"
       ],
+      "outputs": ["{projectRoot}/src-tauri/generated-resources"],
       "options": {
-        "command": "node apps/cert-prep-desktop/scripts/sync-windowsml-runtime-manifest.mts"
+        "command": "node apps/cert-prep-desktop/scripts/prepare-runtime-resources.mts --mode release"
       }
     },
-    "sync-backend-runtime-manifest": {
+    "prepare-runtime-resources-dev": {
+      "cache": false,
       "executor": "nx:run-commands",
-      "dependsOn": ["cert-prep-backend:build-backend-runtime"],
-      "outputs": [
-        "{projectRoot}/src-tauri/resources/backend-runtime-manifest.json"
+      "dependsOn": [
+        "cert-prep-backend:build-backend-runtime",
+        "cert-prep-backend:build-ocr-runtime-windowsml"
       ],
+      "outputs": ["{projectRoot}/src-tauri/generated-resources"],
       "options": {
-        "command": "node apps/cert-prep-desktop/scripts/sync-backend-runtime-manifest.mts"
+        "command": "node apps/cert-prep-desktop/scripts/prepare-runtime-resources.mts --mode dev"
       }
     },
     "package-qa": {
@@ -94,11 +94,21 @@
       "cache": false,
       "executor": "nx:run-commands",
       "dependsOn": ["build-windowsml"],
-      "outputs": [
-        "{workspaceRoot}/tmp/cert-prep-desktop/packaged-flow-smoke"
-      ],
+      "outputs": ["{workspaceRoot}/tmp/cert-prep-desktop/packaged-flow-smoke"],
       "options": {
         "command": "node apps/cert-prep-desktop/scripts/packaged-flow-smoke.mts"
+      }
+    },
+    "packaged-flow-smoke-dev": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "dependsOn": ["build-windowsml-dev"],
+      "outputs": [
+        "{workspaceRoot}/tmp/cert-prep-desktop/packaged-flow-smoke-dev"
+      ],
+      "options": {
+        "env": { "CERT_PREP_ALLOW_LOCAL_OCR_RUNTIME_URL": "true" },
+        "command": "node apps/cert-prep-desktop/scripts/packaged-flow-smoke.mts --out-root tmp/cert-prep-desktop/packaged-flow-smoke-dev"
       }
     },
     "packaged-streaming-baseline": {
@@ -163,7 +173,7 @@
       "dependsOn": ["typecheck-scripts"],
       "inputs": ["default"],
       "options": {
-        "command": "node --test apps/cert-prep-desktop/scripts/package-qa/artifacts.test.mts apps/cert-prep-desktop/scripts/package-qa/health-env.test.mts apps/cert-prep-desktop/scripts/process-lifecycle/processes.test.mts apps/cert-prep-desktop/scripts/process-residue-audit.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/app-lifecycle.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/args.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/ocr-completion.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/resource-sampling.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/streaming-baseline-report.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/streaming-evidence.test.mts"
+        "command": "node --test apps/cert-prep-desktop/scripts/prepare-runtime-resources.test.mts apps/cert-prep-desktop/scripts/package-qa/artifacts.test.mts apps/cert-prep-desktop/scripts/process-lifecycle/processes.test.mts apps/cert-prep-desktop/scripts/process-residue-audit.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/app-lifecycle.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/args.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/ocr-completion.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/resource-sampling.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/streaming-baseline-report.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/streaming-evidence.test.mts"
       }
     },
     "cargo-test": {

@@ -177,7 +177,7 @@ wheels = [
 
 [[package]]
 name = "cert-prep-backend"
-version = "0.1.0"
+version = "0.1.0a1"
 source = { virtual = "." }
 dependencies = [
     { name = "cert-prep-contracts" },
@@ -247,7 +247,7 @@ dev = [
 
 [[package]]
 name = "cert-prep-contracts"
-version = "0.1.0"
+version = "0.1.0a1"
 source = { editable = "../../packages/cert-prep-contracts" }
 
 [package.metadata]
@@ -260,7 +260,7 @@ dev = [
 
 [[package]]
 name = "cert-prep-ocr-windowsml"
-version = "0.1.0"
+version = "0.1.0a1"
 source = { editable = "../../packages/cert-prep-ocr-windowsml" }
 dependencies = [
     { name = "cert-prep-contracts" },
@@ -311,7 +311,7 @@ dev = [
 
 [[package]]
 name = "cert-prep-ollama"
-version = "0.1.0"
+version = "0.1.0a1"
 source = { editable = "../../packages/cert-prep-ollama" }
 dependencies = [
     { name = "cert-prep-contracts" },

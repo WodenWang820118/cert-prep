@@ -40,7 +40,7 @@ COMMON_HIDDEN_IMPORTS = [
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--target", default="x86_64-pc-windows-msvc")
-    parser.add_argument("--version", default="0.1.0")
+    parser.add_argument("--version", default="0.1.0-alpha.1")
     args = parser.parse_args()
 
     _run(_pyinstaller_command())
@@ -77,8 +77,11 @@ def _run(command: list[str]) -> None:
 
 
 def _write_runtime_artifact(*, target: str, version: str) -> None:
-    zip_path = RUNTIME_OUTPUT_DIR / f"cert-prep-backend-runtime-{target}.zip"
+    zip_path = RUNTIME_OUTPUT_DIR / f"cert-prep-backend-runtime-{version}-{target}.zip"
     manifest_path = RUNTIME_OUTPUT_DIR / "backend-runtime-manifest.json"
+    for stale_path in RUNTIME_OUTPUT_DIR.glob("cert-prep-backend-runtime-*.zip"):
+        if stale_path != zip_path:
+            stale_path.unlink()
     write_runtime_artifact(
         RuntimeArtifactSpec(
             kind="python_backend",

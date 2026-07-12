@@ -1,6 +1,6 @@
 [project]
 name = "cert-prep-ollama"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 description = "Ollama infrastructure utilities shared across cert-prep projects."
 readme = "README.md"
 requires-python = ">=3.12,<3.14"

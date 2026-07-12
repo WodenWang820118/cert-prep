@@ -1,33 +1,9 @@
-import type { OwnedProcessCleanupResult } from '../process-lifecycle/processes.mts';
-
 export interface PackageQaOptions {
   readonly workspaceRoot?: string;
   readonly bundleRoot?: string;
-  readonly backendRuntimeRoot?: string;
-  readonly backendRuntimeManifest?: string;
-  readonly backendRuntimeEntrypoint?: string;
-  readonly windowsmlOcrRuntimeRoot?: string;
-  readonly windowsmlOcrRuntimeManifest?: string;
+  readonly packagedResourceRoot?: string;
+  readonly tauriConfig?: string;
   readonly expectedTargetTriple?: string;
-  readonly healthTimeoutMs?: number;
-  readonly dataDir?: string;
-  readonly llmProvider?: string;
-  readonly llmModel?: string;
-  readonly ocrProvider?: 'windowsml';
-  readonly ocrPageWorkers?: number;
-}
-
-export interface RuntimeHealthOptions {
-  readonly backendRuntimeEntrypoint: string;
-  readonly backendRuntimeArgs?: readonly string[];
-  readonly workspaceRoot?: string;
-  readonly timeoutMs?: number;
-  readonly dataDir?: string;
-  readonly llmProvider?: string;
-  readonly llmModel?: string;
-  readonly windowsmlOcrRuntimeManifest?: string;
-  readonly ocrProvider?: 'windowsml';
-  readonly ocrPageWorkers?: number;
 }
 
 export interface FileRecord {
@@ -53,52 +29,6 @@ export interface SizeGate {
   readonly detail: string;
 }
 
-export interface OcrHealthSummary {
-  readonly provider: unknown;
-  readonly engine: unknown;
-  readonly available: unknown;
-  readonly detail: unknown;
-  readonly selected_device: unknown;
-  readonly cuda_available: unknown;
-  readonly gpu_count: unknown;
-  readonly fallback_reason: unknown;
-  readonly unavailable_reason: unknown;
-}
-
-export interface LlmHealthSummary {
-  readonly provider: unknown;
-  readonly model: unknown;
-  readonly available: unknown;
-  readonly detail: unknown;
-  readonly unavailable_reason: unknown;
-}
-
-export interface RuntimeHealthSummary {
-  readonly launch_env: {
-    readonly CERT_PREP_OCR_PROVIDER: 'windowsml';
-    readonly CERT_PREP_OCR_RUNTIME_MODE: 'external';
-    readonly CERT_PREP_OCR_DEVICE: 'auto';
-    readonly CERT_PREP_OCR_WINDOWSML_DEVICE_ID: '-1';
-    readonly CERT_PREP_WINDOWSML_OCR_RUNTIME_MANIFEST_PATH: string;
-    readonly CERT_PREP_LLM_PROVIDER: string;
-    readonly CERT_PREP_OLLAMA_MODEL: string;
-    readonly CERT_PREP_FASTFLOWLM_MODEL: string;
-    readonly CERT_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD: 'true';
-    readonly CERT_PREP_OCR_PAGE_WORKERS: string | null;
-  };
-  readonly system_health: unknown;
-  readonly ocr_health: OcrHealthSummary;
-  readonly llm_health: LlmHealthSummary;
-  readonly raw_health: {
-    readonly ocr: JsonRecord;
-    readonly llm: JsonRecord;
-  };
-  readonly backend_output_tail: OutputCapture;
-  readonly cleanup: {
-    readonly backend_process: OwnedProcessCleanupResult | null;
-  };
-}
-
 export interface RuntimeManifest {
   readonly kind: string;
   readonly version: string;
@@ -112,19 +42,17 @@ export interface RuntimeManifest {
   };
 }
 
-export interface RuntimeManifestSummary {
-  readonly kind: string;
-  readonly version: string;
-  readonly target: string;
-  readonly entrypoint: string;
-  readonly url: string | null;
-  readonly manifest: PublicFileRecord;
-  readonly artifact: PublicFileRecord;
-}
-
 export interface PackageQaReport {
-  readonly schema_version: 2;
+  readonly schema_version: 3;
   readonly generated_at: string;
+  readonly assessment: {
+    readonly status: 'blocked';
+    readonly evidence_scope: 'static_tauri_release_resources';
+    readonly blockers: readonly [
+      'installer_contents_not_verified',
+      'fresh_install_not_verified',
+    ];
+  };
   readonly target: {
     readonly rust_triple: string;
     readonly platform: NodeJS.Platform;
@@ -133,66 +61,35 @@ export interface PackageQaReport {
   readonly package: {
     readonly bundle_root: string;
     readonly bundle_artifacts: PublicFileRecord[];
-    readonly backend_runtime_root: string;
-    readonly backend_runtime_manifest: RuntimeManifestSummary;
-    readonly backend_runtime_artifacts: PublicFileRecord[];
-    readonly windowsml_ocr_runtime_root: string;
-    readonly windowsml_ocr_runtime_manifest: RuntimeManifestSummary;
-    readonly windowsml_ocr_runtime_artifacts: PublicFileRecord[];
+    readonly packaged_resource_root: string;
+    readonly resource_contract: PackagedResourceContract;
     readonly size_gate: SizeGate;
   };
-  readonly runtime: RuntimeHealthSummary;
-}
-
-export interface OutputCapture {
-  stdout: string;
-  stderr: string;
-}
-
-export interface ChildState {
-  exited: boolean;
-  code: number | null;
-  signal: NodeJS.Signals | null;
-}
-
-export interface WaitForJsonOptions {
-  readonly state: ChildState;
-  readonly output: OutputCapture;
-  readonly timeoutMs: number;
 }
 
 export interface ParsedArgs {
   output?: string;
   bundleRoot?: string;
-  backendRuntimeRoot?: string;
-  backendRuntimeManifest?: string;
-  backendRuntimeEntrypoint?: string;
-  windowsmlOcrRuntimeRoot?: string;
-  windowsmlOcrRuntimeManifest?: string;
+  packagedResourceRoot?: string;
+  tauriConfig?: string;
   expectedTargetTriple?: string;
-  healthTimeoutMs?: number;
-  llmProvider?: string;
-  ocrPageWorkers?: number;
 }
 
-export type JsonRecord = Record<string, unknown>;
-
-export interface RuntimeLaunchEnvOptions {
-  readonly port: number;
-  readonly token: string;
-  readonly dataDir: string;
-  readonly llmProvider?: string;
-  readonly llmModel: string;
-  readonly windowsmlOcrRuntimeManifest: string;
-  readonly ocrProvider?: 'windowsml';
-  readonly ocrPageWorkers?: number;
-  readonly baseEnv?: NodeJS.ProcessEnv;
-}
-
-export interface RuntimeManifestValidationOptions {
-  readonly manifestPath: string;
-  readonly runtimeRoot: string;
-  readonly workspaceRoot?: string;
-  readonly expectedKind: string;
-  readonly artifactPrefix: string;
+export interface PackagedResourceContract {
+  readonly evidence_scope: 'static_tauri_release_resources';
+  readonly installer_contents_verified: false;
+  readonly fresh_install_verified: false;
+  readonly alpha_release_gate: 'blocked_pending_clean_install';
+  readonly backend_bundled: true;
+  readonly windowsml_ocr_bundled: false;
+  readonly release_urls_only: true;
+  readonly version: '0.1.0-alpha.1';
+  readonly windows_msi_version: '0.1.0.1';
+  readonly python_runtime_version: '3.12';
+  readonly channel: 'unsigned_public_alpha';
+  readonly signed: false;
+  readonly target: string;
+  readonly tauri_resource_mapping: 'generated-resources/* -> resources/ plus legal/*';
+  readonly resource_files: PublicFileRecord[];
+  readonly legal_files: PublicFileRecord[];
 }

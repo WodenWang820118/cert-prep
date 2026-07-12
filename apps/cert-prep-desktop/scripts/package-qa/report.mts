@@ -1,29 +1,20 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { dirname, relative, resolve } from 'node:path';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { basename, dirname, relative, resolve } from 'node:path';
 
 import {
-  BACKEND_RUNTIME_PREFIX,
-  DEFAULT_BACKEND_RUNTIME_ENTRYPOINT,
-  DEFAULT_BACKEND_RUNTIME_MANIFEST,
-  DEFAULT_BACKEND_RUNTIME_ROOT,
+  ALPHA_VERSION,
   DEFAULT_BUNDLE_ROOT,
-  DEFAULT_DATA_DIR,
-  DEFAULT_LLM_MODEL,
-  DEFAULT_WINDOWSML_OCR_RUNTIME_MANIFEST,
-  DEFAULT_WINDOWSML_OCR_RUNTIME_ROOT,
+  DEFAULT_PACKAGED_RESOURCE_ROOT,
+  DEFAULT_TAURI_CONFIG,
   DEFAULT_TARGET_TRIPLE,
-  WINDOWSML_OCR_RUNTIME_PREFIX,
   defaultWorkspaceRoot,
 } from './constants.mts';
 import {
-  collectBackendRuntimeArtifacts,
   collectBundleArtifacts,
-  collectOcrRuntimeArtifacts,
   normalizePath,
   publicFileRecord,
 } from './files.mts';
-import { collectRuntimeHealth } from './health.mts';
-import { validateRuntimeManifest } from './manifest.mts';
+import { validatePackagedResourceContract } from './resource-contract.mts';
 import { initialInstallerSizeGate } from './size-gate.mts';
 import type { PackageQaOptions, PackageQaReport } from './types.mts';
 
@@ -36,115 +27,79 @@ export async function createPackageQaReport(
     workspaceRoot,
     options.bundleRoot ?? DEFAULT_BUNDLE_ROOT,
   );
-  const backendRuntimeRoot = resolve(
-    workspaceRoot,
-    options.backendRuntimeRoot ?? DEFAULT_BACKEND_RUNTIME_ROOT,
-  );
-  const backendRuntimeManifest = resolve(
-    workspaceRoot,
-    options.backendRuntimeManifest ?? DEFAULT_BACKEND_RUNTIME_MANIFEST,
-  );
-  const backendRuntimeEntrypoint = resolve(
-    workspaceRoot,
-    options.backendRuntimeEntrypoint ?? DEFAULT_BACKEND_RUNTIME_ENTRYPOINT,
-  );
-  const windowsmlOcrRuntimeRoot = resolve(
-    workspaceRoot,
-    options.windowsmlOcrRuntimeRoot ?? DEFAULT_WINDOWSML_OCR_RUNTIME_ROOT,
-  );
-  const windowsmlOcrRuntimeManifest = resolve(
-    workspaceRoot,
-    options.windowsmlOcrRuntimeManifest ?? DEFAULT_WINDOWSML_OCR_RUNTIME_MANIFEST,
-  );
   const expectedTargetTriple =
     options.expectedTargetTriple ?? DEFAULT_TARGET_TRIPLE;
+  const packagedResourceRoot = resolve(
+    workspaceRoot,
+    options.packagedResourceRoot ?? DEFAULT_PACKAGED_RESOURCE_ROOT,
+  );
+  const tauriConfig = resolve(
+    workspaceRoot,
+    options.tauriConfig ?? DEFAULT_TAURI_CONFIG,
+  );
 
   const bundleArtifacts = collectBundleArtifacts(bundleRoot, workspaceRoot);
-  if (bundleArtifacts.length === 0) {
-    throw new Error(`No bundle artifacts found under ${bundleRoot}`);
-  }
+  validateBundleArtifacts(bundleArtifacts, bundleRoot);
 
-  const backendRuntimeArtifacts = collectBackendRuntimeArtifacts(
-    backendRuntimeRoot,
-    workspaceRoot,
-  );
-  const backendRuntimeManifestSummary = validateRuntimeManifest({
-    manifestPath: backendRuntimeManifest,
-    runtimeRoot: backendRuntimeRoot,
-    workspaceRoot,
-    expectedKind: 'python_backend',
-    artifactPrefix: BACKEND_RUNTIME_PREFIX,
-  });
-  const windowsmlOcrRuntimeArtifacts = collectOcrRuntimeArtifacts(
-    windowsmlOcrRuntimeRoot,
-    workspaceRoot,
-  );
-  const windowsmlOcrRuntimeManifestSummary = validateRuntimeManifest({
-    manifestPath: windowsmlOcrRuntimeManifest,
-    runtimeRoot: windowsmlOcrRuntimeRoot,
-    workspaceRoot,
-    expectedKind: 'windowsml_ocr',
-    artifactPrefix: WINDOWSML_OCR_RUNTIME_PREFIX,
-  });
-  const targetTriple = backendRuntimeManifestSummary.target;
-  if (targetTriple !== expectedTargetTriple) {
-    throw new Error(
-      `Expected ${expectedTargetTriple} backend runtime, found ${targetTriple}`,
-    );
-  }
-  if (windowsmlOcrRuntimeManifestSummary.target !== expectedTargetTriple) {
-    throw new Error(
-      `Expected ${expectedTargetTriple} WindowsML OCR runtime, found ${windowsmlOcrRuntimeManifestSummary.target}`,
-    );
-  }
-  if (!existsSync(backendRuntimeEntrypoint)) {
-    throw new Error(
-      `Backend runtime entrypoint was not built: ${backendRuntimeEntrypoint}`,
-    );
-  }
-
-  const runtime = await collectRuntimeHealth({
-    backendRuntimeEntrypoint,
-    workspaceRoot,
-    timeoutMs: options.healthTimeoutMs,
-    dataDir: resolve(workspaceRoot, options.dataDir ?? DEFAULT_DATA_DIR),
-    llmProvider: options.llmProvider,
-    llmModel: options.llmModel ?? DEFAULT_LLM_MODEL,
-    windowsmlOcrRuntimeManifest,
-    ocrProvider: options.ocrProvider,
-    ocrPageWorkers: options.ocrPageWorkers,
-  });
   const sizeGate = initialInstallerSizeGate(bundleArtifacts);
-  if (sizeGate.status === 'failed') {
-    throw new Error(sizeGate.detail);
-  }
+  const resourceContract = validatePackagedResourceContract({
+    resourceRoot: packagedResourceRoot,
+    tauriConfig,
+    workspaceRoot,
+    expectedTargetTriple,
+  });
 
   return {
-    schema_version: 2,
+    schema_version: 3,
     generated_at: new Date().toISOString(),
+    assessment: {
+      status: 'blocked',
+      evidence_scope: 'static_tauri_release_resources',
+      blockers: [
+        'installer_contents_not_verified',
+        'fresh_install_not_verified',
+      ],
+    },
     target: {
-      rust_triple: targetTriple,
+      rust_triple: resourceContract.target,
       platform: process.platform,
       arch: process.arch,
     },
     package: {
       bundle_root: normalizePath(relative(workspaceRoot, bundleRoot)),
       bundle_artifacts: bundleArtifacts.map(publicFileRecord),
-      backend_runtime_root: normalizePath(
-        relative(workspaceRoot, backendRuntimeRoot),
+      packaged_resource_root: normalizePath(
+        relative(workspaceRoot, packagedResourceRoot),
       ),
-      backend_runtime_manifest: backendRuntimeManifestSummary,
-      backend_runtime_artifacts: backendRuntimeArtifacts.map(publicFileRecord),
-      windowsml_ocr_runtime_root: normalizePath(
-        relative(workspaceRoot, windowsmlOcrRuntimeRoot),
-      ),
-      windowsml_ocr_runtime_manifest: windowsmlOcrRuntimeManifestSummary,
-      windowsml_ocr_runtime_artifacts:
-        windowsmlOcrRuntimeArtifacts.map(publicFileRecord),
+      resource_contract: resourceContract,
       size_gate: sizeGate,
     },
-    runtime,
   };
+}
+
+export function validateBundleArtifacts(
+  bundleArtifacts: readonly { readonly path: string }[],
+  bundleRoot = 'bundle root',
+): void {
+  const msi = bundleArtifacts.filter((item) =>
+    item.path.toLowerCase().endsWith('.msi'),
+  );
+  const nsis = bundleArtifacts.filter(
+    (item) =>
+      item.path.toLowerCase().endsWith('.exe') &&
+      basename(item.path).toLowerCase().includes('setup'),
+  );
+  if (
+    bundleArtifacts.length !== 2 ||
+    msi.length !== 1 ||
+    nsis.length !== 1 ||
+    !msi[0].path.includes(ALPHA_VERSION) ||
+    !nsis[0].path.includes(ALPHA_VERSION)
+  ) {
+    throw new Error(
+      `Expected exactly one ${ALPHA_VERSION} MSI and one NSIS installer under ${bundleRoot}; stale or unexpected bundles are not allowed.`,
+    );
+  }
 }
 
 /** Writes a package QA report with the stable pretty-printed JSON format. */

@@ -15,7 +15,6 @@ import {
   installProcessShutdownCleanup,
   processSnapshot,
 } from '../process-lifecycle/processes.mts';
-import { preparePackagedBackendRuntimeForSmoke } from './runtime-sync.mts';
 import { installOcrRuntimeIfNeeded, installPythonRuntimeIfNeeded } from './runtime-install-flow.mts';
 import { startResourceSampling } from './resource-sampling.mts';
 import { log, screenshot } from './runner-context.mts';
@@ -45,12 +44,6 @@ async function runFlow(run: SmokeRunState): Promise<void> {
     run.metrics.resource_sampling = run.resourceSampling.artifacts;
     run.metrics.gpu_sampling = run.resourceSampling.artifacts.nvidia_smi_csv;
   }
-  preparePackagedBackendRuntimeForSmoke({
-    workspaceRoot: run.options.workspaceRoot,
-    outDir: run.options.outDir,
-    appDataDir: run.options.appDataDir,
-    metrics: run.metrics,
-  });
   await launchAppAndConnect(run);
   await installPythonRuntimeIfNeeded(run);
   await installOcrRuntimeIfNeeded(run);

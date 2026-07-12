@@ -75,6 +75,7 @@ WINDOWSML_METADATA = [
 ]
 WINDOWSML_EXCLUDES = [
     "_pytest",
+    "aistudio_sdk",
     "cert_prep_backend.domains.runtime_installations",
     "cert_prep_backend.domains.source_documents.adapters.external_paddle",
     "cert_prep_backend.domains.source_documents.adapters.ollama",
@@ -107,7 +108,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--lane", choices=sorted(LANE_METADATA), default="gpu")
     parser.add_argument("--target", default="x86_64-pc-windows-msvc")
-    parser.add_argument("--version", default="0.1.0")
+    parser.add_argument("--version", default="0.1.0-alpha.1")
     parser.add_argument(
         "--windowsml-model-dir",
         type=Path,
@@ -145,6 +146,7 @@ def _build_paddle_runtime(args: argparse.Namespace) -> None:
 def _build_windowsml_runtime(args: argparse.Namespace) -> None:
     model_files = _windowsml_model_files(args.windowsml_model_dir)
     _run(_pyinstaller_command(args.lane))
+    _assert_forbidden_runtime_modules_absent(WINDOWSML_EXE_PATH)
     _run(
         [
             str(WINDOWSML_EXE_PATH),
@@ -155,8 +157,15 @@ def _build_windowsml_runtime(args: argparse.Namespace) -> None:
             "--ocr-self-test",
         ]
     )
-    zip_path = WINDOWSML_OUTPUT_DIR / f"cert-prep-ocr-windowsml-runtime-{args.target}.zip"
+    zip_path = WINDOWSML_OUTPUT_DIR / (
+        f"cert-prep-ocr-windowsml-runtime-{args.version}-{args.target}.zip"
+    )
     manifest_path = WINDOWSML_OUTPUT_DIR / "windowsml-ocr-runtime-manifest.json"
+    for stale_path in WINDOWSML_OUTPUT_DIR.glob(
+        "cert-prep-ocr-windowsml-runtime-*.zip"
+    ):
+        if stale_path != zip_path:
+            stale_path.unlink()
     write_runtime_artifact(
         RuntimeArtifactSpec(
             kind="windowsml_ocr",
@@ -175,6 +184,26 @@ def _build_windowsml_runtime(args: argparse.Namespace) -> None:
     )
     print(f"Wrote WindowsML OCR runtime artifact to {zip_path}")
     print(f"Wrote WindowsML OCR runtime manifest to {manifest_path}")
+
+
+def _assert_forbidden_runtime_modules_absent(executable: Path) -> None:
+    from PyInstaller.archive.readers import CArchiveReader
+
+    archive = CArchiveReader(str(executable))
+    module_names = set(archive.toc)
+    for name in archive.toc:
+        if str(name).endswith(".pyz"):
+            module_names.update(archive.open_embedded_archive(name).toc)
+    forbidden = sorted(
+        name
+        for name in module_names
+        if str(name) == "aistudio_sdk" or str(name).startswith("aistudio_sdk.")
+    )
+    if forbidden:
+        raise SystemExit(
+            "WindowsML OCR runtime contains the unapproved aistudio-sdk package: "
+            + ", ".join(forbidden[:5])
+        )
 
 
 def _pyinstaller_command(lane: str) -> list[str]:

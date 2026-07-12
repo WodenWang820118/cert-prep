@@ -16,26 +16,15 @@ export function collectBundleArtifacts(
   return collectFiles(bundleRoot, workspaceRoot);
 }
 
-/** Collects sorted backend runtime artifacts beneath the runtime root. */
-export function collectBackendRuntimeArtifacts(
-  runtimeRoot: string,
+/** Collects sorted files beneath the packaged resource root. */
+export function collectPackagedResourceArtifacts(
+  resourceRoot: string,
   workspaceRoot = defaultWorkspaceRoot,
 ): FileRecord[] {
-  if (!existsSync(runtimeRoot)) {
+  if (!existsSync(resourceRoot)) {
     return [];
   }
-  return collectFiles(runtimeRoot, workspaceRoot);
-}
-
-/** Collects sorted OCR runtime artifacts beneath the runtime root. */
-export function collectOcrRuntimeArtifacts(
-  ocrRuntimeRoot: string,
-  workspaceRoot = defaultWorkspaceRoot,
-): FileRecord[] {
-  if (!existsSync(ocrRuntimeRoot)) {
-    return [];
-  }
-  return collectFiles(ocrRuntimeRoot, workspaceRoot);
+  return collectFiles(resourceRoot, workspaceRoot);
 }
 
 /** Converts bytes to a two-decimal MiB value for report fields. */

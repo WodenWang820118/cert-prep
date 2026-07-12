@@ -175,19 +175,6 @@ export interface UploadedDocumentRef {
   documentId: string;
 }
 
-export interface BackendRuntimeManifest {
-  kind: string;
-  version: string;
-  target: string;
-  entrypoint: string;
-  artifact: {
-    file_name: string;
-    sha256: string;
-    bytes: number;
-    url?: string | null;
-  };
-}
-
 export interface CloseSummary {
   label: string;
   app_pid: number | null;

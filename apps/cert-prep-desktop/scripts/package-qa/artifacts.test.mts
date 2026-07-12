@@ -5,16 +5,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, test } from 'node:test';
 
-import {
-  bytesToMb,
-  collectBackendRuntimeArtifacts,
-  collectBundleArtifacts,
-  collectOcrRuntimeArtifacts,
-} from './files.mts';
-import {
-  targetTripleFromRuntimeArtifactName,
-  validateRuntimeManifest,
-} from './manifest.mts';
+import { bytesToMb, collectBundleArtifacts } from './files.mts';
+import { validatePackagedResourceContract } from './resource-contract.mts';
+import { createPackageQaReport, validateBundleArtifacts } from './report.mts';
 
 const tempRoots: string[] = [];
 
@@ -25,54 +18,6 @@ afterEach(() => {
       rmSync(tempRoot, { recursive: true, force: true });
     }
   }
-});
-
-test('collectOcrRuntimeArtifacts records optional OCR runtime zip and manifest', () => {
-  const workspaceRoot = makeTempWorkspace();
-  const runtimeRoot = join(
-    workspaceRoot,
-    'apps/cert-prep-backend/dist/ocr-runtime',
-  );
-  mkdirSync(runtimeRoot, { recursive: true });
-  writeFileSync(
-    join(runtimeRoot, 'cert-prep-ocr-runtime-x86_64-pc-windows-msvc.zip'),
-    'zip',
-  );
-  writeFileSync(join(runtimeRoot, 'ocr-runtime-manifest.json'), '{}');
-
-  const artifacts = collectOcrRuntimeArtifacts(runtimeRoot, workspaceRoot);
-
-  assert.deepEqual(
-    artifacts.map((artifact) => artifact.path),
-    [
-      'apps/cert-prep-backend/dist/ocr-runtime/cert-prep-ocr-runtime-x86_64-pc-windows-msvc.zip',
-      'apps/cert-prep-backend/dist/ocr-runtime/ocr-runtime-manifest.json',
-    ],
-  );
-});
-
-test('collectBackendRuntimeArtifacts records backend runtime zip and manifest', () => {
-  const workspaceRoot = makeTempWorkspace();
-  const runtimeRoot = join(
-    workspaceRoot,
-    'apps/cert-prep-backend/dist/backend-runtime',
-  );
-  mkdirSync(runtimeRoot, { recursive: true });
-  writeFileSync(
-    join(runtimeRoot, 'cert-prep-backend-runtime-x86_64-pc-windows-msvc.zip'),
-    'zip',
-  );
-  writeFileSync(join(runtimeRoot, 'backend-runtime-manifest.json'), '{}');
-
-  const artifacts = collectBackendRuntimeArtifacts(runtimeRoot, workspaceRoot);
-
-  assert.deepEqual(
-    artifacts.map((artifact) => artifact.path),
-    [
-      'apps/cert-prep-backend/dist/backend-runtime/backend-runtime-manifest.json',
-      'apps/cert-prep-backend/dist/backend-runtime/cert-prep-backend-runtime-x86_64-pc-windows-msvc.zip',
-    ],
-  );
 });
 
 test('collectBundleArtifacts records sorted relative paths and sizes', () => {
@@ -110,86 +55,238 @@ test('collectBundleArtifacts records sorted relative paths and sizes', () => {
   assert.equal(bytesToMb(1024 * 1024 * 1.5), 1.5);
 });
 
-test('validateRuntimeManifest checks optional URL, target, size, and checksum', () => {
+test('bundle gate requires exactly one alpha MSI and NSIS pair', () => {
   const workspaceRoot = makeTempWorkspace();
-  const runtimeRoot = join(
-    workspaceRoot,
-    'apps/cert-prep-backend/dist/backend-runtime',
+  const bundleRoot = join(workspaceRoot, 'bundle');
+  const msiRoot = join(bundleRoot, 'msi');
+  const nsisRoot = join(bundleRoot, 'nsis');
+  mkdirSync(msiRoot, { recursive: true });
+  mkdirSync(nsisRoot, { recursive: true });
+  writeFileSync(join(msiRoot, 'Cert Prep_0.1.0-alpha.1_x64_en-US.msi'), 'msi');
+  writeFileSync(
+    join(nsisRoot, 'Cert Prep_0.1.0-alpha.1_x64-setup.exe'),
+    'nsis',
   );
-  const resourceRoot = join(
-    workspaceRoot,
-    'apps/cert-prep-desktop/src-tauri/resources',
+  validateBundleArtifacts(collectBundleArtifacts(bundleRoot, workspaceRoot));
+
+  writeFileSync(join(msiRoot, 'Cert Prep_0.1.0_x64_en-US.msi'), 'stale');
+  assert.throws(
+    () =>
+      validateBundleArtifacts(
+        collectBundleArtifacts(bundleRoot, workspaceRoot),
+      ),
+    /stale or unexpected bundles/,
   );
-  mkdirSync(runtimeRoot, { recursive: true });
+});
+
+test('packaged resource contract proves hybrid resources and rejects dev references', async () => {
+  const workspaceRoot = makeTempWorkspace();
+  const resourceRoot = join(workspaceRoot, 'release', 'resources');
   mkdirSync(resourceRoot, { recursive: true });
-  const artifactPath = join(
-    runtimeRoot,
-    'cert-prep-backend-runtime-x86_64-pc-windows-msvc.zip',
+  const backendName =
+    'cert-prep-backend-runtime-0.1.0-alpha.1-x86_64-pc-windows-msvc.zip';
+  const ocrName =
+    'cert-prep-ocr-windowsml-runtime-0.1.0-alpha.1-x86_64-pc-windows-msvc.zip';
+  writeFileSync(join(resourceRoot, backendName), 'runtime');
+  const backendManifestPath = join(
+    resourceRoot,
+    'backend-runtime-manifest.json',
   );
-  writeFileSync(artifactPath, 'backend-runtime');
-  const manifestPath = join(resourceRoot, 'backend-runtime-manifest.json');
   writeFileSync(
-    manifestPath,
+    backendManifestPath,
     JSON.stringify({
       kind: 'python_backend',
-      version: '0.1.0',
+      version: '0.1.0-alpha.1',
       target: 'x86_64-pc-windows-msvc',
-      entrypoint: 'cert-prep-backend.exe',
+      entrypoint: 'backend.exe',
       artifact: {
-        file_name: 'cert-prep-backend-runtime-x86_64-pc-windows-msvc.zip',
-        sha256: sha256('backend-runtime'),
-        bytes: Buffer.byteLength('backend-runtime'),
-        url: 'https://example.test/cert-prep-backend-runtime-x86_64-pc-windows-msvc.zip',
-      },
-    }),
-  );
-
-  const summary = validateRuntimeManifest({
-    manifestPath,
-    runtimeRoot,
-    workspaceRoot,
-    expectedKind: 'python_backend',
-    artifactPrefix: 'cert-prep-backend-runtime-',
-  });
-
-  assert.equal(summary.target, 'x86_64-pc-windows-msvc');
-  assert.equal(
-    summary.url,
-    'https://example.test/cert-prep-backend-runtime-x86_64-pc-windows-msvc.zip',
-  );
-  assert.equal(
-    targetTripleFromRuntimeArtifactName(
-      'cert-prep-backend-runtime-x86_64-pc-windows-msvc.zip',
-      'cert-prep-backend-runtime-',
-    ),
-    'x86_64-pc-windows-msvc',
-  );
-
-  writeFileSync(
-    manifestPath,
-    JSON.stringify({
-      kind: 'python_backend',
-      version: '0.1.0',
-      target: 'x86_64-pc-windows-msvc',
-      entrypoint: 'cert-prep-backend.exe',
-      artifact: {
-        file_name: 'cert-prep-backend-runtime-x86_64-pc-windows-msvc.zip',
-        sha256: sha256('backend-runtime'),
-        bytes: Buffer.byteLength('backend-runtime'),
+        file_name: backendName,
+        sha256: sha256('runtime'),
+        bytes: Buffer.byteLength('runtime'),
         url: null,
       },
     }),
   );
+  const ocrManifestPath = join(
+    resourceRoot,
+    'windowsml-ocr-runtime-manifest.json',
+  );
+  writeFileSync(
+    ocrManifestPath,
+    JSON.stringify({
+      kind: 'windowsml_ocr',
+      version: '0.1.0-alpha.1',
+      target: 'x86_64-pc-windows-msvc',
+      entrypoint: 'ocr.exe',
+      artifact: {
+        file_name: ocrName,
+        sha256: sha256('ocr'),
+        bytes: Buffer.byteLength('ocr'),
+        url: `https://github.com/example/cert-prep/releases/download/cert-prep-v0.1.0-alpha.1/${ocrName}`,
+      },
+    }),
+  );
+  writeFileSync(
+    join(resourceRoot, 'release-metadata.json'),
+    JSON.stringify({
+      schema_version: 1,
+      version: '0.1.0-alpha.1',
+      windows_msi_version: '0.1.0.1',
+      python_runtime_version: '3.12',
+      release_tag: 'cert-prep-v0.1.0-alpha.1',
+      channel: 'unsigned_public_alpha',
+      distribution_mode: 'release',
+      signed: false,
+      warnings: {
+        smartscreen: 'Unsigned public Alpha.',
+        production_ready: false,
+      },
+      sha256_verification: { required: true, algorithm: 'SHA-256' },
+      runtime_assets: {
+        backend: {
+          file_name: backendName,
+          sha256: sha256('runtime'),
+          bytes: Buffer.byteLength('runtime'),
+        },
+        windowsml_ocr: {
+          file_name: ocrName,
+          sha256: sha256('ocr'),
+          bytes: Buffer.byteLength('ocr'),
+        },
+      },
+    }),
+  );
+  const legalRoot = join(workspaceRoot, 'release', 'legal');
+  mkdirSync(legalRoot, { recursive: true });
+  for (const name of [
+    'LICENSE',
+    'PRIVACY.md',
+    'CHANGELOG.md',
+    'THIRD_PARTY_NOTICES.md',
+  ]) {
+    writeFileSync(join(legalRoot, name), name);
+  }
+  const tauriConfig = join(workspaceRoot, 'tauri.conf.json');
+  writeFileSync(
+    tauriConfig,
+    JSON.stringify({
+      bundle: {
+        windows: { wix: { version: '0.1.0.1' } },
+        resources: {
+          'generated-resources/*': 'resources/',
+          '../../../LICENSE': 'legal/LICENSE',
+          '../../../PRIVACY.md': 'legal/PRIVACY.md',
+          '../../../CHANGELOG.md': 'legal/CHANGELOG.md',
+          '../../../THIRD_PARTY_NOTICES.md': 'legal/THIRD_PARTY_NOTICES.md',
+        },
+      },
+    }),
+  );
 
-  const localSummary = validateRuntimeManifest({
-    manifestPath,
-    runtimeRoot,
+  const contract = validatePackagedResourceContract({
+    resourceRoot,
+    tauriConfig,
     workspaceRoot,
-    expectedKind: 'python_backend',
-    artifactPrefix: 'cert-prep-backend-runtime-',
   });
 
-  assert.equal(localSummary.url, null);
+  assert.equal(contract.backend_bundled, true);
+  assert.equal(contract.windowsml_ocr_bundled, false);
+  assert.equal(contract.evidence_scope, 'static_tauri_release_resources');
+  assert.equal(contract.installer_contents_verified, false);
+  assert.equal(contract.fresh_install_verified, false);
+  assert.equal(contract.alpha_release_gate, 'blocked_pending_clean_install');
+  assert.equal(contract.resource_files.length, 4);
+  assert.equal(contract.legal_files.length, 4);
+  assert.equal(contract.channel, 'unsigned_public_alpha');
+  assert.equal(contract.windows_msi_version, '0.1.0.1');
+  assert.equal(contract.python_runtime_version, '3.12');
+  assert.equal(contract.target, 'x86_64-pc-windows-msvc');
+
+  const bundleRoot = join(workspaceRoot, 'bundle');
+  mkdirSync(join(bundleRoot, 'msi'), { recursive: true });
+  mkdirSync(join(bundleRoot, 'nsis'), { recursive: true });
+  writeFileSync(
+    join(bundleRoot, 'msi', 'Cert Prep_0.1.0-alpha.1_x64_en-US.msi'),
+    'msi',
+  );
+  writeFileSync(
+    join(bundleRoot, 'nsis', 'Cert Prep_0.1.0-alpha.1_x64-setup.exe'),
+    'nsis',
+  );
+  const report = await createPackageQaReport({
+    workspaceRoot,
+    bundleRoot,
+    packagedResourceRoot: resourceRoot,
+    tauriConfig,
+  });
+  assert.deepEqual(report.assessment, {
+    status: 'blocked',
+    evidence_scope: 'static_tauri_release_resources',
+    blockers: ['installer_contents_not_verified', 'fresh_install_not_verified'],
+  });
+
+  writeFileSync(
+    ocrManifestPath,
+    JSON.stringify({
+      kind: 'windowsml_ocr',
+      version: '0.1.0-alpha.1',
+      target: 'x86_64-pc-windows-msvc',
+      entrypoint: 'ocr.exe',
+      artifact: {
+        file_name: ocrName,
+        sha256: sha256('ocr'),
+        bytes: Buffer.byteLength('ocr'),
+        url: 'file:///C:/software-dev/cert-prep/ocr.zip',
+      },
+    }),
+  );
+  assert.throws(
+    () =>
+      validatePackagedResourceContract({
+        resourceRoot,
+        tauriConfig,
+        workspaceRoot,
+      }),
+    /versioned GitHub Release URL/,
+  );
+
+  writeFileSync(
+    ocrManifestPath,
+    JSON.stringify({
+      kind: 'windowsml_ocr',
+      version: '0.1.0-alpha.1',
+      target: 'x86_64-pc-windows-msvc',
+      entrypoint: 'ocr.exe',
+      artifact: {
+        file_name: ocrName,
+        sha256: sha256('ocr'),
+        bytes: Buffer.byteLength('ocr'),
+        url: `https://github.com/example/cert-prep/releases/download/cert-prep-v0.1.0-alpha.1/${ocrName}`,
+      },
+    }),
+  );
+  writeFileSync(join(resourceRoot, backendName), 'tampered-runtime');
+  assert.throws(
+    () =>
+      validatePackagedResourceContract({
+        resourceRoot,
+        tauriConfig,
+        workspaceRoot,
+      }),
+    /byte count|checksum/,
+  );
+
+  writeFileSync(join(resourceRoot, backendName), 'runtime');
+  writeFileSync(join(resourceRoot, 'stale-runtime.zip'), 'stale');
+  assert.throws(
+    () =>
+      validatePackagedResourceContract({
+        resourceRoot,
+        tauriConfig,
+        workspaceRoot,
+      }),
+    /exactly the declared backend ZIP/,
+  );
 });
 
 /** Creates an isolated workspace tree because artifact paths are report-relative. */

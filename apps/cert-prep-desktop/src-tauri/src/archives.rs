@@ -1,184 +1,182 @@
 use std::{
-    fs,
-    path::{Path, PathBuf},
-    process::Command,
+    fs::{self, OpenOptions},
+    io,
+    path::{Component, Path},
 };
 
-pub(crate) fn download_artifact(url: &str, destination: &Path) -> Result<(), String> {
-    if url.starts_with("file://") {
-        let source_path = file_url_to_path(url)?;
-        fs::copy(&source_path, destination)
-            .map(|_| ())
-            .map_err(|error| format!("failed to copy runtime artifact: {error}"))
-    } else if Path::new(url).is_file() {
-        fs::copy(Path::new(url), destination)
-            .map(|_| ())
-            .map_err(|error| format!("failed to copy runtime artifact: {error}"))
-    } else if url.starts_with("http://") || url.starts_with("https://") {
-        powershell(&format!(
-            "$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri '{}' -OutFile '{}'",
-            ps_quote(url),
-            ps_quote(&destination.display().to_string())
-        ))
-        .map_err(|error| format!("failed to download runtime artifact: {error}"))
-    } else {
-        Err(format!("unsupported runtime artifact URL: {url}"))
-    }
-}
+use zip::ZipArchive;
 
-fn file_url_to_path(url: &str) -> Result<PathBuf, String> {
-    let raw_path = url
-        .strip_prefix("file://")
-        .ok_or_else(|| format!("not a file URL: {url}"))?;
-    let decoded = percent_decode_utf8(raw_path)?;
+const MAX_RUNTIME_ARCHIVE_ENTRIES: usize = 10_000;
+const MAX_EXTRACTED_RUNTIME_BYTES: u64 = 1024 * 1024 * 1024;
 
-    #[cfg(windows)]
-    {
-        let without_drive_slash =
-            if decoded.starts_with('/') && decoded.as_bytes().get(2) == Some(&b':') {
-                &decoded[1..]
-            } else {
-                decoded.as_str()
-            };
-        Ok(PathBuf::from(without_drive_slash.replace('/', "\\")))
-    }
-
-    #[cfg(not(windows))]
-    {
-        Ok(PathBuf::from(decoded))
-    }
-}
-
-fn percent_decode_utf8(input: &str) -> Result<String, String> {
-    let bytes = input.as_bytes();
-    let mut decoded = Vec::with_capacity(bytes.len());
-    let mut index = 0;
-    while index < bytes.len() {
-        if bytes[index] == b'%' {
-            let high = bytes
-                .get(index + 1)
-                .and_then(|byte| hex_value(*byte))
-                .ok_or_else(|| format!("invalid percent escape in file URL: {input}"))?;
-            let low = bytes
-                .get(index + 2)
-                .and_then(|byte| hex_value(*byte))
-                .ok_or_else(|| format!("invalid percent escape in file URL: {input}"))?;
-            decoded.push((high << 4) | low);
-            index += 3;
-        } else {
-            decoded.push(bytes[index]);
-            index += 1;
-        }
-    }
-    String::from_utf8(decoded).map_err(|error| format!("invalid UTF-8 in file URL: {error}"))
-}
-
-fn hex_value(byte: u8) -> Option<u8> {
-    match byte {
-        b'0'..=b'9' => Some(byte - b'0'),
-        b'a'..=b'f' => Some(byte - b'a' + 10),
-        b'A'..=b'F' => Some(byte - b'A' + 10),
-        _ => None,
-    }
-}
-
+/// Extracts a trusted-by-digest runtime ZIP without invoking a shell.
+///
+/// Every archive path must be a plain relative path. Links, special files,
+/// alternate data stream names, duplicate files, traversal, and oversized
+/// archives are rejected before they can escape or mutate the destination.
 pub(crate) fn extract_zip(artifact: &Path, destination: &Path) -> Result<(), String> {
-    powershell(&format!(
-        "Expand-Archive -LiteralPath '{}' -DestinationPath '{}' -Force",
-        ps_quote(&artifact.display().to_string()),
-        ps_quote(&destination.display().to_string())
-    ))
-    .map_err(|error| format!("failed to extract runtime artifact: {error}"))
-}
-
-fn powershell(script: &str) -> Result<(), String> {
-    let output = Command::new(powershell_executable())
-        .args([
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            script,
-        ])
-        .output()
-        .map_err(|error| error.to_string())?;
-    if output.status.success() {
-        return Ok(());
+    let file = fs::File::open(artifact).map_err(|error| {
+        format!(
+            "failed to open runtime artifact {}: {error}",
+            artifact.display()
+        )
+    })?;
+    let mut archive = ZipArchive::new(file)
+        .map_err(|error| format!("failed to read runtime ZIP: {error}"))?;
+    if archive.len() > MAX_RUNTIME_ARCHIVE_ENTRIES {
+        return Err(format!(
+            "runtime ZIP has too many entries: {}",
+            archive.len()
+        ));
     }
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    Err(if stderr.is_empty() { stdout } else { stderr })
+
+    let total_bytes = (0..archive.len()).try_fold(0_u64, |total, index| {
+        let entry = archive
+            .by_index(index)
+            .map_err(|error| format!("failed to inspect runtime ZIP entry: {error}"))?;
+        total
+            .checked_add(entry.size())
+            .ok_or_else(|| "runtime ZIP expanded size overflowed.".to_string())
+    })?;
+    if total_bytes > MAX_EXTRACTED_RUNTIME_BYTES {
+        return Err(format!(
+            "runtime ZIP expands to {total_bytes} bytes, above the safety limit."
+        ));
+    }
+
+    fs::create_dir_all(destination)
+        .map_err(|error| format!("failed to create runtime extraction directory: {error}"))?;
+    for index in 0..archive.len() {
+        let mut entry = archive
+            .by_index(index)
+            .map_err(|error| format!("failed to read runtime ZIP entry: {error}"))?;
+        let relative_path = safe_entry_path(&entry)?;
+        let output_path = destination.join(relative_path);
+
+        if entry.is_dir() {
+            fs::create_dir_all(&output_path)
+                .map_err(|error| format!("failed to create runtime directory: {error}"))?;
+            continue;
+        }
+        if let Some(parent) = output_path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|error| format!("failed to create runtime directory: {error}"))?;
+        }
+        let mut output = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&output_path)
+            .map_err(|error| {
+                format!(
+                    "failed to create runtime file {}: {error}",
+                    output_path.display()
+                )
+            })?;
+        io::copy(&mut entry, &mut output)
+            .map_err(|error| format!("failed to extract runtime file: {error}"))?;
+    }
+    Ok(())
 }
 
-fn powershell_executable() -> PathBuf {
-    ["SystemRoot", "WINDIR"]
-        .iter()
-        .filter_map(|key| std::env::var(key).ok())
-        .map(|root| {
-            PathBuf::from(root)
-                .join("System32")
-                .join("WindowsPowerShell")
-                .join("v1.0")
-                .join("powershell.exe")
+fn safe_entry_path(entry: &zip::read::ZipFile<'_>) -> Result<std::path::PathBuf, String> {
+    let name = entry.name();
+    if name.contains('\\') {
+        return Err(format!("runtime ZIP entry uses an unsafe separator: {name}"));
+    }
+    if entry.unix_mode().is_some_and(|mode| {
+        let file_type = mode & 0o170000;
+        !matches!(file_type, 0 | 0o040000 | 0o100000)
+    }) {
+        return Err(format!("runtime ZIP entry is a link or special file: {name}"));
+    }
+    let enclosed = entry
+        .enclosed_name()
+        .ok_or_else(|| format!("runtime ZIP entry escapes the destination: {name}"))?;
+    if enclosed.as_os_str().is_empty()
+        || enclosed.components().any(|component| match component {
+            Component::Normal(value) => value.to_string_lossy().contains(':'),
+            _ => true,
         })
-        .find(|path| path.is_file())
-        .unwrap_or_else(|| PathBuf::from("powershell.exe"))
-}
-
-fn ps_quote(value: &str) -> String {
-    value.replace('\'', "''")
+    {
+        return Err(format!("runtime ZIP entry path is unsafe: {name}"));
+    }
+    Ok(enclosed.to_path_buf())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Write};
+    use zip::write::SimpleFileOptions;
 
     #[test]
-    fn file_url_to_path_accepts_windows_drive_urls() {
-        let path =
-            file_url_to_path("file:///C:/software-dev/cert-prep/runtime.zip").expect("file URL");
+    fn extracts_regular_files_without_shelling_out() {
+        let root = temp_root();
+        let archive = root.join("runtime.zip");
+        write_zip(&archive, "bin/backend.exe", b"runtime", 0o100644);
+        let destination = root.join("extract");
 
-        #[cfg(windows)]
-        assert_eq!(
-            path,
-            PathBuf::from(r"C:\software-dev\cert-prep\runtime.zip")
-        );
+        extract_zip(&archive, &destination).expect("extract runtime");
 
-        #[cfg(not(windows))]
-        assert_eq!(
-            path,
-            PathBuf::from("/C:/software-dev/cert-prep/runtime.zip")
-        );
+        let mut content = String::new();
+        fs::File::open(destination.join("bin/backend.exe"))
+            .expect("entrypoint")
+            .read_to_string(&mut content)
+            .expect("read entrypoint");
+        assert_eq!(content, "runtime");
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
-    fn file_url_to_path_decodes_percent_escaped_utf8() {
-        let path = file_url_to_path("file:///C:/runtime%20cache/%E6%B8%AC%E8%A9%A6.zip")
-            .expect("file URL");
+    fn rejects_parent_traversal_entries() {
+        let root = temp_root();
+        let archive = root.join("runtime.zip");
+        write_zip(&archive, "../escape.exe", b"runtime", 0o100644);
 
-        #[cfg(windows)]
-        assert_eq!(path, PathBuf::from(r"C:\runtime cache\測試.zip"));
+        let error = extract_zip(&archive, &root.join("extract")).expect_err("reject traversal");
 
-        #[cfg(not(windows))]
-        assert_eq!(path, PathBuf::from("/C:/runtime cache/測試.zip"));
+        assert!(error.contains("escapes the destination"));
+        assert!(!root.join("escape.exe").exists());
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
-    fn powershell_executable_prefers_windows_absolute_path() {
-        let executable = powershell_executable();
+    fn rejects_symbolic_link_entries() {
+        let root = temp_root();
+        let archive = root.join("runtime.zip");
+        let file = fs::File::create(&archive).expect("archive");
+        let mut writer = zip::ZipWriter::new(file);
+        writer
+            .add_symlink(
+                "backend-link",
+                "backend.exe",
+                SimpleFileOptions::default(),
+            )
+            .expect("symlink entry");
+        writer.finish().expect("finish zip");
 
-        if let Ok(root) = std::env::var("SystemRoot") {
-            let expected = PathBuf::from(root)
-                .join("System32")
-                .join("WindowsPowerShell")
-                .join("v1.0")
-                .join("powershell.exe");
-            if expected.is_file() {
-                assert_eq!(executable, expected);
-                return;
-            }
-        }
+        let error = extract_zip(&archive, &root.join("extract")).expect_err("reject symlink");
 
-        assert_eq!(executable, PathBuf::from("powershell.exe"));
+        assert!(error.contains("link or special file"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    fn temp_root() -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "cert-prep-archive-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir_all(&root).expect("temp root");
+        root
+    }
+
+    fn write_zip(path: &Path, name: &str, content: &[u8], mode: u32) {
+        let file = fs::File::create(path).expect("archive");
+        let mut writer = zip::ZipWriter::new(file);
+        writer
+            .start_file(name, SimpleFileOptions::default().unix_permissions(mode))
+            .expect("zip entry");
+        writer.write_all(content).expect("zip content");
+        writer.finish().expect("finish zip");
     }
 }
