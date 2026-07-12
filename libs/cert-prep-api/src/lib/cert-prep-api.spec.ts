@@ -74,4 +74,23 @@ describe('createCertPrepGeneratedClient', () => {
       },
     ]);
   });
+
+  it('uses the generated active-session and abandon endpoints', async () => {
+    const transport = new RecordingTransport();
+    const client = createCertPrepGeneratedClient(transport);
+
+    await client.listActivePracticeSessions('project/one');
+    await client.abandonPracticeSession('project/one', 'session two');
+
+    expect(transport.requests).toEqual([
+      {
+        method: 'GET',
+        path: '/projects/project%2Fone/practice-sessions',
+      },
+      {
+        method: 'POST',
+        path: '/projects/project%2Fone/practice-sessions/session%20two/abandon',
+      },
+    ]);
+  });
 });

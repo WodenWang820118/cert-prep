@@ -50,6 +50,12 @@ def test_project_scoped_records_are_invisible_to_other_projects(
     assert _items(
         client.get(f"/projects/{other_project_id}/wrong-answers", headers=auth_headers)
     ) == []
+    assert _items(
+        client.get(
+            f"/projects/{other_project_id}/practice-sessions",
+            headers=auth_headers,
+        )
+    ) == []
 
     _assert_not_found(
         client.get(
@@ -112,6 +118,13 @@ def test_project_scoped_records_are_invisible_to_other_projects(
                 "question_id": owner_question["id"],
                 "selected_answer": "Allow unrestricted access",
             },
+        ),
+        "Practice session not found.",
+    )
+    _assert_not_found(
+        client.post(
+            f"/projects/{other_project_id}/practice-sessions/{owner_session['id']}/abandon",
+            headers=auth_headers,
         ),
         "Practice session not found.",
     )

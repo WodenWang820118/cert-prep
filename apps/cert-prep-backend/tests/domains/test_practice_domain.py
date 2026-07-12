@@ -33,6 +33,8 @@ def test_practice_models_preserve_current_serialized_values() -> None:
     )
 
     assert PracticeSessionStatus.ACTIVE.value == "active"
+    assert PracticeSessionStatus.COMPLETED.value == "completed"
+    assert PracticeSessionStatus.ABANDONED.value == "abandoned"
     assert QuestionDraftStatus.APPROVED.value == "approved"
     assert session.to_record()["status"] == "active"
     assert session.to_record()["question_ids"] == ["question-1"]
@@ -40,6 +42,8 @@ def test_practice_models_preserve_current_serialized_values() -> None:
     assert session.to_record()["document_id"] is None
     assert session.to_record()["question_count"] == 10
     assert session.to_record()["random_seed"] is None
+    assert session.to_record()["completed_at"] is None
+    assert session.to_record()["abandoned_at"] is None
     assert question.status is QuestionDraftStatus.APPROVED
 
 

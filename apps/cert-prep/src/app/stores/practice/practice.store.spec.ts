@@ -50,6 +50,8 @@ describe('PracticeStore session modes', () => {
     status: 'active',
     created_at: '2026-06-17T00:00:00Z',
     completed_at: null,
+    abandoned_at: null,
+    attempts: [],
   };
   const apiClient = {
     createPracticeSession: vi.fn().mockResolvedValue(session),

@@ -1,3 +1,6 @@
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
+
 from fastapi.testclient import TestClient
 
 from practice_test_support import (
@@ -207,15 +210,32 @@ def test_review_retry_session_uses_selected_current_wrong_answers(
         },
     ).json()
 
-    targeted = client.post(
-        f"/projects/{project_id}/practice-sessions",
-        headers=auth_headers,
-        json={"mode": "review_retry", "wrong_attempt_ids": [second_wrong["id"]]},
-    )
     all_current = client.post(
         f"/projects/{project_id}/practice-sessions",
         headers=auth_headers,
         json={"mode": "review_retry"},
+    )
+
+    assert all_current.status_code == 201
+    all_current_session = all_current.json()
+    assert all_current_session["mode"] == "review_retry"
+    assert set(all_current_session["question_ids"]) == {
+        first_question["id"],
+        second_question["id"],
+    }
+    assert all_current_session["question_count"] == 2
+
+    abandoned = client.post(
+        f"/projects/{project_id}/practice-sessions/{all_current_session['id']}/abandon",
+        headers=auth_headers,
+    )
+    assert abandoned.status_code == 200
+    assert abandoned.json()["status"] == "abandoned"
+
+    targeted = client.post(
+        f"/projects/{project_id}/practice-sessions",
+        headers=auth_headers,
+        json={"mode": "review_retry", "wrong_attempt_ids": [second_wrong["id"]]},
     )
 
     assert targeted.status_code == 201
@@ -226,15 +246,6 @@ def test_review_retry_session_uses_selected_current_wrong_answers(
     assert targeted_session["question_ids"] == [second_question["id"]]
     assert targeted_session["questions"][0]["document_id"] == document_id
     assert targeted_session["questions"][0]["answer"] == "Temporary credentials"
-
-    assert all_current.status_code == 201
-    all_current_session = all_current.json()
-    assert all_current_session["mode"] == "review_retry"
-    assert set(all_current_session["question_ids"]) == {
-        first_question["id"],
-        second_question["id"],
-    }
-    assert all_current_session["question_count"] == 2
 
     cleared = client.post(
         f"/projects/{project_id}/practice-sessions/{targeted_session['id']}/attempts",
@@ -342,13 +353,18 @@ def test_random_draw_session_uses_fixed_seed_deterministically(
         headers=auth_headers,
         json=payload,
     )
+    assert first.status_code == 201
+    abandoned = client.post(
+        f"/projects/{project_id}/practice-sessions/{first.json()['id']}/abandon",
+        headers=auth_headers,
+    )
+    assert abandoned.status_code == 200
     second = client.post(
         f"/projects/{project_id}/practice-sessions",
         headers=auth_headers,
         json=payload,
     )
 
-    assert first.status_code == 201
     assert second.status_code == 201
     first_session = first.json()
     second_session = second.json()
@@ -427,3 +443,219 @@ def test_full_exam_session_excludes_incomplete_approved_rows(
     assert session["question_count"] == 2
     assert session["question_ids"] == [first["id"], second["id"]]
     assert incomplete["id"] not in session["question_ids"]
+
+
+def test_active_session_can_be_discovered_abandoned_and_replaced(
+    client: TestClient, auth_headers
+) -> None:
+    project_id = _create_project(client, auth_headers)
+    document_id = _upload_document(client, auth_headers, project_id)
+    question = _create_manual_question(client, auth_headers, project_id, document_id)
+
+    created = client.post(
+        f"/projects/{project_id}/practice-sessions",
+        headers=auth_headers,
+        json={"question_count": 1},
+    )
+
+    assert created.status_code == 201
+    session = created.json()
+    assert session["status"] == "active"
+    assert session["completed_at"] is None
+    assert session["abandoned_at"] is None
+    assert session["attempts"] == []
+
+    active = client.get(
+        f"/projects/{project_id}/practice-sessions",
+        headers=auth_headers,
+    )
+    assert active.status_code == 200
+    assert active.json() == {
+        "items": [
+            {
+                "id": session["id"],
+                "project_id": project_id,
+                "mode": "random_draw",
+                "document_id": None,
+                "status": "active",
+                "created_at": session["created_at"],
+            }
+        ]
+    }
+
+    conflict = client.post(
+        f"/projects/{project_id}/practice-sessions",
+        headers=auth_headers,
+        json={"question_count": 1},
+    )
+    assert conflict.status_code == 409
+    assert conflict.json() == {
+        "code": "active_session_exists",
+        "message": "An active practice session already exists for this project.",
+        "details": {"active_session": active.json()["items"][0]},
+    }
+
+    abandoned = client.post(
+        f"/projects/{project_id}/practice-sessions/{session['id']}/abandon",
+        headers=auth_headers,
+    )
+    assert abandoned.status_code == 200
+    abandoned_session = abandoned.json()
+    assert abandoned_session["status"] == "abandoned"
+    assert abandoned_session["abandoned_at"] is not None
+    assert abandoned_session["completed_at"] is None
+    assert client.get(
+        f"/projects/{project_id}/practice-sessions", headers=auth_headers
+    ).json() == {"items": []}
+
+    repeated_abandon = client.post(
+        f"/projects/{project_id}/practice-sessions/{session['id']}/abandon",
+        headers=auth_headers,
+    )
+    assert repeated_abandon.status_code == 200
+    assert repeated_abandon.json()["abandoned_at"] == abandoned_session["abandoned_at"]
+
+    rejected_attempt = client.post(
+        f"/projects/{project_id}/practice-sessions/{session['id']}/attempts",
+        headers=auth_headers,
+        json={"question_id": question["id"], "selected_answer": question["answer"]},
+    )
+    assert rejected_attempt.status_code == 409
+    assert rejected_attempt.json() == {
+        "code": "practice_session_abandoned",
+        "message": "Abandoned practice sessions cannot accept attempts.",
+    }
+
+    replacement = client.post(
+        f"/projects/{project_id}/practice-sessions",
+        headers=auth_headers,
+        json={"question_count": 1},
+    )
+    assert replacement.status_code == 201
+    assert replacement.json()["id"] != session["id"]
+
+
+def test_session_completion_uses_distinct_coverage_and_preserves_attempt_history(
+    client: TestClient, auth_headers
+) -> None:
+    project_id = _create_project(client, auth_headers)
+    document_id = _upload_document(client, auth_headers, project_id)
+    first = _create_manual_question(client, auth_headers, project_id, document_id)
+    second = _create_manual_question(
+        client,
+        auth_headers,
+        project_id,
+        document_id,
+        question="Which credential should be preferred?",
+        choices=["Temporary credential", "Permanent administrator"],
+        answer="Temporary credential",
+    )
+    session = client.post(
+        f"/projects/{project_id}/practice-sessions",
+        headers=auth_headers,
+        json={"mode": "full_document", "document_id": document_id},
+    ).json()
+
+    first_attempt = client.post(
+        f"/projects/{project_id}/practice-sessions/{session['id']}/attempts",
+        headers=auth_headers,
+        json={"question_id": first["id"], "selected_answer": first["answer"]},
+    )
+    repeated_first = client.post(
+        f"/projects/{project_id}/practice-sessions/{session['id']}/attempts",
+        headers=auth_headers,
+        json={"question_id": first["id"], "selected_answer": first["answer"]},
+    )
+    assert first_attempt.status_code == 201
+    assert repeated_first.status_code == 201
+
+    still_active = client.get(
+        f"/projects/{project_id}/practice-sessions/{session['id']}",
+        headers=auth_headers,
+    ).json()
+    assert still_active["status"] == "active"
+    assert still_active["completed_at"] is None
+    assert [attempt["id"] for attempt in still_active["attempts"]] == [
+        first_attempt.json()["id"],
+        repeated_first.json()["id"],
+    ]
+
+    last_distinct = client.post(
+        f"/projects/{project_id}/practice-sessions/{session['id']}/attempts",
+        headers=auth_headers,
+        json={"question_id": second["id"], "selected_answer": second["answer"]},
+    )
+    assert last_distinct.status_code == 201
+
+    completed = client.get(
+        f"/projects/{project_id}/practice-sessions/{session['id']}",
+        headers=auth_headers,
+    ).json()
+    assert completed["status"] == "completed"
+    assert completed["completed_at"] == last_distinct.json()["created_at"]
+    assert completed["abandoned_at"] is None
+    assert len(completed["attempts"]) == 3
+    assert client.get(
+        f"/projects/{project_id}/practice-sessions", headers=auth_headers
+    ).json() == {"items": []}
+
+    repeated_after_completion = client.post(
+        f"/projects/{project_id}/practice-sessions/{session['id']}/attempts",
+        headers=auth_headers,
+        json={"question_id": first["id"], "selected_answer": first["answer"]},
+    )
+    assert repeated_after_completion.status_code == 201
+    after_repeat = client.get(
+        f"/projects/{project_id}/practice-sessions/{session['id']}",
+        headers=auth_headers,
+    ).json()
+    assert after_repeat["completed_at"] == completed["completed_at"]
+    assert len(after_repeat["attempts"]) == 4
+
+    abandon_completed = client.post(
+        f"/projects/{project_id}/practice-sessions/{session['id']}/abandon",
+        headers=auth_headers,
+    )
+    assert abandon_completed.status_code == 409
+    assert abandon_completed.json() == {
+        "code": "practice_session_completed",
+        "message": "Completed practice sessions cannot be abandoned.",
+    }
+
+
+def test_concurrent_session_creation_keeps_exactly_one_active_session(
+    client: TestClient, auth_headers
+) -> None:
+    project_id = _create_project(client, auth_headers)
+    document_id = _upload_document(client, auth_headers, project_id)
+    _create_manual_question(client, auth_headers, project_id, document_id)
+    start = Barrier(2)
+
+    def create_session() -> tuple[int, dict]:
+        start.wait()
+        response = client.post(
+            f"/projects/{project_id}/practice-sessions",
+            headers=auth_headers,
+            json={"question_count": 1},
+        )
+        return response.status_code, response.json()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(lambda _index: create_session(), range(2)))
+
+    assert sorted(status_code for status_code, _payload in results) == [201, 409]
+    conflict_payload = next(payload for status_code, payload in results if status_code == 409)
+    created_payload = next(payload for status_code, payload in results if status_code == 201)
+    assert conflict_payload["code"] == "active_session_exists"
+    assert conflict_payload["details"]["active_session"]["id"] == created_payload["id"]
+
+    with client.app.state.database.connect() as connection:
+        active_count = connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM practice_sessions
+            WHERE project_id = ? AND status = 'active'
+            """,
+            (project_id,),
+        ).fetchone()[0]
+    assert active_count == 1

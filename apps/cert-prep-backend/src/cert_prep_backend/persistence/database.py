@@ -273,6 +273,109 @@ MIGRATIONS: Final[tuple[tuple[int, str], ...]] = (
             ADD COLUMN document_id TEXT;
         """,
     ),
+    (
+        15,
+        """
+        ALTER TABLE practice_sessions
+            ADD COLUMN abandoned_at TEXT;
+
+        UPDATE practice_sessions AS sessions
+        SET status = 'completed',
+            completed_at = COALESCE(
+                completed_at,
+                (
+                    SELECT MAX(first_answered_at)
+                    FROM (
+                        SELECT MIN(attempts.created_at) AS first_answered_at
+                        FROM practice_attempts AS attempts
+                        WHERE attempts.session_id = sessions.id
+                            AND attempts.project_id = sessions.project_id
+                            AND attempts.question_id IN (
+                                SELECT value FROM json_each(sessions.question_ids_json)
+                            )
+                        GROUP BY attempts.question_id
+                    ) AS first_answers
+                ),
+                created_at
+            ),
+            abandoned_at = NULL
+        WHERE (
+                SELECT COUNT(DISTINCT value)
+                FROM json_each(sessions.question_ids_json)
+            ) > 0
+            AND (
+                SELECT COUNT(DISTINCT attempts.question_id)
+                FROM practice_attempts AS attempts
+                WHERE attempts.session_id = sessions.id
+                    AND attempts.project_id = sessions.project_id
+                    AND attempts.question_id IN (
+                        SELECT value FROM json_each(sessions.question_ids_json)
+                    )
+            ) = (
+                SELECT COUNT(DISTINCT value)
+                FROM json_each(sessions.question_ids_json)
+            );
+
+        UPDATE practice_sessions AS sessions
+        SET completed_at = COALESCE(
+                completed_at,
+                (
+                    SELECT MAX(first_answered_at)
+                    FROM (
+                        SELECT MIN(attempts.created_at) AS first_answered_at
+                        FROM practice_attempts AS attempts
+                        WHERE attempts.session_id = sessions.id
+                            AND attempts.project_id = sessions.project_id
+                            AND attempts.question_id IN (
+                                SELECT value FROM json_each(sessions.question_ids_json)
+                            )
+                        GROUP BY attempts.question_id
+                    ) AS first_answers
+                ),
+                created_at
+            ),
+            abandoned_at = NULL
+        WHERE status = 'completed';
+
+        UPDATE practice_sessions AS sessions
+        SET status = 'abandoned',
+            completed_at = NULL,
+            abandoned_at = COALESCE(
+                (
+                    SELECT MAX(attempts.created_at)
+                    FROM practice_attempts AS attempts
+                    WHERE attempts.session_id = sessions.id
+                        AND attempts.project_id = sessions.project_id
+                ),
+                created_at
+            )
+        WHERE status <> 'completed';
+
+        WITH ranked_incomplete AS (
+            SELECT
+                id,
+                ROW_NUMBER() OVER (
+                    PARTITION BY project_id
+                    ORDER BY created_at DESC, id DESC
+                ) AS session_rank
+            FROM practice_sessions
+            WHERE status = 'abandoned'
+        )
+        UPDATE practice_sessions
+        SET status = 'active',
+            completed_at = NULL,
+            abandoned_at = NULL
+        WHERE id IN (
+            SELECT id
+            FROM ranked_incomplete
+            WHERE session_rank = 1
+        );
+
+        CREATE UNIQUE INDEX idx_practice_sessions_one_active_per_project
+            ON practice_sessions(project_id)
+            WHERE status = 'active';
+        """,
+    ),
 )
 
 
@@ -314,18 +417,23 @@ class Database:
                     );
                     """
                 )
+                connection.commit()
                 applied = {
                     row[0] for row in connection.execute("SELECT version FROM schema_migrations")
                 }
                 for version, sql in MIGRATIONS:
                     if version in applied:
                         continue
-                    connection.executescript(sql)
-                    connection.execute(
-                        "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
-                        (version, utc_now()),
-                    )
-                connection.commit()
+                    try:
+                        connection.executescript(f"BEGIN IMMEDIATE;\n{sql}")
+                        connection.execute(
+                            "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                            (version, utc_now()),
+                        )
+                        connection.commit()
+                    except BaseException:
+                        connection.rollback()
+                        raise
             self._migrated = True
 
 

@@ -3,7 +3,12 @@ from __future__ import annotations
 from uuid import uuid4
 
 from cert_prep_backend.api.errors import NotFoundError, ValidationError
-from cert_prep_backend.domains.practice.models import PracticeQuestion, PracticeSession
+from cert_prep_backend.domains.practice.exceptions import PracticeSessionConflict
+from cert_prep_backend.domains.practice.models import (
+    PracticeQuestion,
+    PracticeSession,
+    PracticeSessionStatus,
+)
 from cert_prep_backend.domains.practice.policies import (
     PracticeRuleViolation,
     build_practice_attempt,
@@ -34,6 +39,11 @@ def record_attempt(
         if session_row is None:
             raise NotFoundError("Practice session not found.")
         session = practice_session_from_row(session_row)
+        if session.status is PracticeSessionStatus.ABANDONED:
+            raise PracticeSessionConflict(
+                "practice_session_abandoned",
+                "Abandoned practice sessions cannot accept attempts.",
+            )
         practice_question = _practice_question_for_attempt(
             connection,
             session=session,
@@ -71,11 +81,52 @@ def record_attempt(
                 attempt.created_at,
             ),
         )
+        _complete_session_after_full_coverage(
+            connection,
+            session=session,
+            completed_at=now,
+        )
         row = connection.execute(
             "SELECT * FROM practice_attempts WHERE id = ?",
             (attempt_id,),
         ).fetchone()
     return attempt_to_record(row)
+
+
+def _complete_session_after_full_coverage(
+    connection,
+    *,
+    session: PracticeSession,
+    completed_at: str,
+) -> None:
+    if session.status is not PracticeSessionStatus.ACTIVE:
+        return
+
+    required_question_ids = tuple(dict.fromkeys(session.question_ids))
+    required_question_count = len(required_question_ids)
+    if required_question_count == 0:
+        return
+    placeholders = ", ".join("?" for _ in required_question_ids)
+    answered_question_count = connection.execute(
+        f"""
+        SELECT COUNT(DISTINCT question_id)
+        FROM practice_attempts
+        WHERE project_id = ? AND session_id = ?
+            AND question_id IN ({placeholders})
+        """,
+        (session.project_id, session.id, *required_question_ids),
+    ).fetchone()[0]
+    if answered_question_count < required_question_count:
+        return
+
+    connection.execute(
+        """
+        UPDATE practice_sessions
+        SET status = 'completed', completed_at = COALESCE(completed_at, ?)
+        WHERE project_id = ? AND id = ? AND status = 'active'
+        """,
+        (completed_at, session.project_id, session.id),
+    )
 
 
 def _practice_question_for_attempt(

@@ -7,7 +7,12 @@ from sqlite3 import Row
 from uuid import uuid4
 
 from cert_prep_backend.api.errors import NotFoundError, ValidationError
-from cert_prep_backend.domains.practice.models import PracticeSessionMode, WrongAnswer
+from cert_prep_backend.domains.practice.exceptions import PracticeSessionConflict
+from cert_prep_backend.domains.practice.models import (
+    PracticeSessionMode,
+    PracticeSessionStatus,
+    WrongAnswer,
+)
 from cert_prep_backend.domains.practice.policies import (
     DOCUMENT_REQUIRED_FOR_FULL_DOCUMENT_MESSAGE,
     PracticeRuleViolation,
@@ -15,15 +20,18 @@ from cert_prep_backend.domains.practice.policies import (
     select_random_session_question_ids,
     select_session_question_ids,
 )
-from cert_prep_backend.domains.practice.query_helpers import fetch_practice_session_row
+from cert_prep_backend.domains.practice.query_helpers import (
+    ensure_project_row_exists,
+    fetch_practice_session_row,
+)
 from cert_prep_backend.domains.practice.row_mappers import (
+    attempt_to_record,
     practice_question_from_row,
     session_to_record,
 )
 from cert_prep_backend.domains.practice.wrong_answer_repository import (
     list_current_wrong_answer_models,
 )
-from cert_prep_backend.domains.projects.repository import ensure_project_exists
 from cert_prep_backend.domains.source_documents import repository as documents_repository
 from cert_prep_backend.persistence.database import Database, utc_now
 
@@ -52,7 +60,6 @@ def create_session(
     random_seed: int | None = None,
     wrong_attempt_ids: list[str] | None = None,
 ) -> dict:
-    ensure_project_exists(db, project_id)
     session_mode = PracticeSessionMode(mode)
     if session_mode is PracticeSessionMode.FULL_DOCUMENT and document_id is None:
         raise ValidationError(DOCUMENT_REQUIRED_FOR_FULL_DOCUMENT_MESSAGE)
@@ -62,6 +69,16 @@ def create_session(
     now = utc_now()
     session_id = str(uuid4())
     with db.connect() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        ensure_project_row_exists(connection, project_id)
+        active_row = _fetch_active_session_row(connection, project_id)
+        if active_row is not None:
+            active_session = _session_summary_record(active_row)
+            raise PracticeSessionConflict(
+                "active_session_exists",
+                "An active practice session already exists for this project.",
+                details={"active_session": active_session},
+            )
         question_rows = _playable_question_rows(
             connection,
             project_id=project_id,
@@ -138,6 +155,45 @@ def get_session(db: Database, project_id: str, session_id: str) -> dict:
         if row is None:
             raise NotFoundError("Practice session not found.")
         return _session_record(connection, row)
+
+
+def list_active_sessions(db: Database, project_id: str) -> list[dict]:
+    with db.connect() as connection:
+        ensure_project_row_exists(connection, project_id)
+        active_row = _fetch_active_session_row(connection, project_id)
+        if active_row is None:
+            return []
+        return [_session_summary_record(active_row)]
+
+
+def abandon_session(db: Database, project_id: str, session_id: str) -> dict:
+    now = utc_now()
+    with db.connect() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        row = fetch_practice_session_row(connection, project_id, session_id)
+        if row is None:
+            raise NotFoundError("Practice session not found.")
+
+        session_status = PracticeSessionStatus(row["status"])
+        if session_status is PracticeSessionStatus.COMPLETED:
+            raise PracticeSessionConflict(
+                "practice_session_completed",
+                "Completed practice sessions cannot be abandoned.",
+            )
+        if session_status is PracticeSessionStatus.ACTIVE:
+            connection.execute(
+                """
+                UPDATE practice_sessions
+                SET status = 'abandoned', abandoned_at = ?
+                WHERE project_id = ? AND id = ? AND status = 'active'
+                """,
+                (now, project_id, session_id),
+            )
+
+        updated_row = fetch_practice_session_row(connection, project_id, session_id)
+        if updated_row is None:
+            raise NotFoundError("Practice session not found.")
+        return _session_record(connection, updated_row)
 
 
 def _playable_question_rows(
@@ -292,7 +348,54 @@ def _session_record(connection, row: Row) -> dict:
         session_id=row["id"],
         question_ids=record["question_ids"],
     )
+    record["attempts"] = _session_attempt_records(
+        connection,
+        project_id=row["project_id"],
+        session_id=row["id"],
+    )
     return record
+
+
+def _fetch_active_session_row(connection, project_id: str) -> Row | None:
+    return connection.execute(
+        """
+        SELECT *
+        FROM practice_sessions
+        WHERE project_id = ? AND status = 'active'
+        ORDER BY created_at DESC, id DESC
+        LIMIT 1
+        """,
+        (project_id,),
+    ).fetchone()
+
+
+def _session_summary_record(row: Row) -> dict[str, object]:
+    return {
+        "id": row["id"],
+        "project_id": row["project_id"],
+        "mode": row["mode"],
+        "document_id": row["source_document_id"],
+        "status": row["status"],
+        "created_at": row["created_at"],
+    }
+
+
+def _session_attempt_records(
+    connection,
+    *,
+    project_id: str,
+    session_id: str,
+) -> list[dict[str, object]]:
+    rows = connection.execute(
+        """
+        SELECT *
+        FROM practice_attempts
+        WHERE project_id = ? AND session_id = ?
+        ORDER BY created_at, id
+        """,
+        (project_id, session_id),
+    ).fetchall()
+    return [attempt_to_record(row) for row in rows]
 
 
 def _session_question_records(

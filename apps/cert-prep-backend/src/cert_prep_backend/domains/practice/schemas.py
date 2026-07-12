@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
-from cert_prep_backend.domains.practice.models import PracticeSessionMode
+from cert_prep_backend.domains.practice.models import PracticeSessionMode, PracticeSessionStatus
 
 
 class PracticeSessionCreate(BaseModel):
@@ -24,6 +26,39 @@ class PracticeSessionQuestionRead(BaseModel):
     document_id: str | None
 
 
+class PracticeAttemptRead(BaseModel):
+    id: str
+    session_id: str
+    project_id: str
+    question_id: str
+    selected_answer: str
+    is_correct: bool
+    created_at: str
+
+
+class PracticeSessionSummaryRead(BaseModel):
+    id: str
+    project_id: str
+    mode: PracticeSessionMode
+    document_id: str | None
+    status: PracticeSessionStatus
+    created_at: str
+
+
+class PracticeSessionList(BaseModel):
+    items: list[PracticeSessionSummaryRead]
+
+
+class PracticeSessionConflictRead(BaseModel):
+    code: Literal[
+        "active_session_exists",
+        "practice_session_completed",
+        "practice_session_abandoned",
+    ]
+    message: str
+    details: dict[str, object] | None = None
+
+
 class PracticeSessionRead(BaseModel):
     id: str
     project_id: str
@@ -33,24 +68,16 @@ class PracticeSessionRead(BaseModel):
     document_id: str | None
     question_count: int
     random_seed: int | None
-    status: str
+    status: PracticeSessionStatus
     created_at: str
     completed_at: str | None
+    abandoned_at: str | None
+    attempts: list[PracticeAttemptRead]
 
 
 class PracticeAttemptCreate(BaseModel):
     question_id: str
     selected_answer: str = Field(min_length=1)
-
-
-class PracticeAttemptRead(BaseModel):
-    id: str
-    session_id: str
-    project_id: str
-    question_id: str
-    selected_answer: str
-    is_correct: bool
-    created_at: str
 
 
 class WrongAnswerRead(BaseModel):

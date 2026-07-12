@@ -5,10 +5,16 @@ from cert_prep_backend.domains.practice.attempt_repository import (
 )
 from cert_prep_backend.domains.practice.models import PracticeSessionMode, WrongAnswer
 from cert_prep_backend.domains.practice.session_repository import (
+    abandon_session as _abandon_session,
+)
+from cert_prep_backend.domains.practice.session_repository import (
     create_session as _create_session,
 )
 from cert_prep_backend.domains.practice.session_repository import (
     get_session as _get_session,
+)
+from cert_prep_backend.domains.practice.session_repository import (
+    list_active_sessions as _list_active_sessions,
 )
 from cert_prep_backend.domains.practice.wrong_answer_repository import (
     get_current_wrong_answer as _get_current_wrong_answer,
@@ -45,6 +51,14 @@ def create_session(
 
 def get_session(db: Database, project_id: str, session_id: str) -> dict:
     return _get_session(db, project_id, session_id)
+
+
+def list_active_sessions(db: Database, project_id: str) -> list[dict]:
+    return _list_active_sessions(db, project_id)
+
+
+def abandon_session(db: Database, project_id: str, session_id: str) -> dict:
+    return _abandon_session(db, project_id, session_id)
 
 
 def record_attempt(

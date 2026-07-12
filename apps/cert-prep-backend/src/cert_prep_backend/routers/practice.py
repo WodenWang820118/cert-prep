@@ -1,22 +1,31 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from cert_prep_backend.api.dependencies import get_database, get_llm_provider
+from cert_prep_backend.api.errors import (
+    NotFoundError,
+    ValidationError,
+    api_error,
+    not_found_error,
+    validation_error,
+)
 from cert_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
-from cert_prep_backend.persistence.database import Database
 from cert_prep_backend.domains.practice import explanations as practice_explanations
 from cert_prep_backend.domains.practice import repository as practice_repository
+from cert_prep_backend.domains.practice.exceptions import PracticeSessionConflict
 from cert_prep_backend.domains.practice.schemas import (
     PracticeAttemptCreate,
     PracticeAttemptRead,
+    PracticeSessionConflictRead,
     PracticeSessionCreate,
+    PracticeSessionList,
     PracticeSessionRead,
     WrongAnswerExplanationRead,
     WrongAnswerList,
     WrongAnswerSummaryRead,
 )
-from cert_prep_backend.api.errors import NotFoundError, ValidationError, not_found_error, validation_error
+from cert_prep_backend.persistence.database import Database
 
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["practice"])
@@ -26,6 +35,12 @@ router = APIRouter(prefix="/projects/{project_id}", tags=["practice"])
     "/practice-sessions",
     response_model=PracticeSessionRead,
     status_code=status.HTTP_201_CREATED,
+    responses={
+        status.HTTP_409_CONFLICT: {
+            "model": PracticeSessionConflictRead,
+            "description": "An active practice session already exists.",
+        }
+    },
 )
 def create_practice_session(
     project_id: str,
@@ -46,6 +61,19 @@ def create_practice_session(
         raise not_found_error(str(exc)) from exc
     except ValidationError as exc:
         raise validation_error(str(exc)) from exc
+    except PracticeSessionConflict as exc:
+        raise _practice_session_conflict_error(exc) from exc
+
+
+@router.get("/practice-sessions", response_model=PracticeSessionList)
+def list_active_practice_sessions(
+    project_id: str,
+    db: Database = Depends(get_database),
+) -> dict:
+    try:
+        return {"items": practice_repository.list_active_sessions(db, project_id)}
+    except NotFoundError as exc:
+        raise not_found_error(str(exc)) from exc
 
 
 @router.get("/practice-sessions/{session_id}", response_model=PracticeSessionRead)
@@ -61,9 +89,38 @@ def get_practice_session(
 
 
 @router.post(
+    "/practice-sessions/{session_id}/abandon",
+    response_model=PracticeSessionRead,
+    responses={
+        status.HTTP_409_CONFLICT: {
+            "model": PracticeSessionConflictRead,
+            "description": "The practice session is already completed.",
+        }
+    },
+)
+def abandon_practice_session(
+    project_id: str,
+    session_id: str,
+    db: Database = Depends(get_database),
+) -> dict:
+    try:
+        return practice_repository.abandon_session(db, project_id, session_id)
+    except NotFoundError as exc:
+        raise not_found_error(str(exc)) from exc
+    except PracticeSessionConflict as exc:
+        raise _practice_session_conflict_error(exc) from exc
+
+
+@router.post(
     "/practice-sessions/{session_id}/attempts",
     response_model=PracticeAttemptRead,
     status_code=status.HTTP_201_CREATED,
+    responses={
+        status.HTTP_409_CONFLICT: {
+            "model": PracticeSessionConflictRead,
+            "description": "The practice session was abandoned.",
+        }
+    },
 )
 def record_practice_attempt(
     project_id: str,
@@ -83,6 +140,8 @@ def record_practice_attempt(
         raise not_found_error(str(exc)) from exc
     except ValidationError as exc:
         raise validation_error(str(exc)) from exc
+    except PracticeSessionConflict as exc:
+        raise _practice_session_conflict_error(exc) from exc
 
 
 @router.get("/wrong-answers", response_model=WrongAnswerList)
@@ -116,3 +175,12 @@ def explain_wrong_answer(
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
     return practice_explanations.explain_wrong_answer(llm_provider, wrong_answer)
+
+
+def _practice_session_conflict_error(exc: PracticeSessionConflict) -> HTTPException:
+    return api_error(
+        status.HTTP_409_CONFLICT,
+        exc.code,
+        exc.message,
+        exc.details,
+    )

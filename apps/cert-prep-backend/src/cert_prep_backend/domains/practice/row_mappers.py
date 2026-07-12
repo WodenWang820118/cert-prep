@@ -26,6 +26,7 @@ def practice_session_from_row(row: Row) -> PracticeSession:
         random_seed=row["random_seed"],
         created_at=row["created_at"],
         completed_at=row["completed_at"],
+        abandoned_at=row["abandoned_at"],
     )
 
 

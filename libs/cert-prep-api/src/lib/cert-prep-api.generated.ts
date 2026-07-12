@@ -37,10 +37,14 @@ export interface Components {
     PdfExtractionMethod: string;
     PracticeAttemptCreate: { "question_id": string; "selected_answer": string };
     PracticeAttemptRead: { "id": string; "session_id": string; "project_id": string; "question_id": string; "selected_answer": string; "is_correct": boolean; "created_at": string };
+    PracticeSessionConflictRead: { "code": string; "message": string; "details"?: Record<string, unknown> | null };
     PracticeSessionCreate: { "mode"?: Components['schemas']['PracticeSessionMode']; "document_id"?: string | null; "question_count"?: number | null; "random_seed"?: number | null; "wrong_attempt_ids"?: string[] | null };
+    PracticeSessionList: { "items": Components['schemas']['PracticeSessionSummaryRead'][] };
     PracticeSessionMode: string;
     PracticeSessionQuestionRead: { "id": string; "question": string; "choices": string[]; "answer": string | null; "rationale": string | null; "citation_page": number | null; "source_excerpt": string | null; "document_id": string | null };
-    PracticeSessionRead: { "id": string; "project_id": string; "question_ids": string[]; "questions": Components['schemas']['PracticeSessionQuestionRead'][]; "mode": Components['schemas']['PracticeSessionMode']; "document_id": string | null; "question_count": number; "random_seed": number | null; "status": string; "created_at": string; "completed_at": string | null };
+    PracticeSessionRead: { "id": string; "project_id": string; "question_ids": string[]; "questions": Components['schemas']['PracticeSessionQuestionRead'][]; "mode": Components['schemas']['PracticeSessionMode']; "document_id": string | null; "question_count": number; "random_seed": number | null; "status": Components['schemas']['PracticeSessionStatus']; "created_at": string; "completed_at": string | null; "abandoned_at": string | null; "attempts": Components['schemas']['PracticeAttemptRead'][] };
+    PracticeSessionStatus: string;
+    PracticeSessionSummaryRead: { "id": string; "project_id": string; "mode": Components['schemas']['PracticeSessionMode']; "document_id": string | null; "status": Components['schemas']['PracticeSessionStatus']; "created_at": string };
     ProjectCreate: { "name": string; "description"?: string };
     ProjectList: { "items": Components['schemas']['ProjectRead'][] };
     ProjectRead: { "id": string; "name": string; "description": string; "created_at": string; "updated_at": string };
@@ -100,10 +104,14 @@ export type OllamaProfilesRead = Components['schemas']['OllamaProfilesRead'];
 export type PdfExtractionMethod = Components['schemas']['PdfExtractionMethod'];
 export type PracticeAttemptCreate = Components['schemas']['PracticeAttemptCreate'];
 export type PracticeAttemptRead = Components['schemas']['PracticeAttemptRead'];
+export type PracticeSessionConflictRead = Components['schemas']['PracticeSessionConflictRead'];
 export type PracticeSessionCreate = Components['schemas']['PracticeSessionCreate'];
+export type PracticeSessionList = Components['schemas']['PracticeSessionList'];
 export type PracticeSessionMode = Components['schemas']['PracticeSessionMode'];
 export type PracticeSessionQuestionRead = Components['schemas']['PracticeSessionQuestionRead'];
 export type PracticeSessionRead = Components['schemas']['PracticeSessionRead'];
+export type PracticeSessionStatus = Components['schemas']['PracticeSessionStatus'];
+export type PracticeSessionSummaryRead = Components['schemas']['PracticeSessionSummaryRead'];
 export type ProjectCreate = Components['schemas']['ProjectCreate'];
 export type ProjectList = Components['schemas']['ProjectList'];
 export type ProjectRead = Components['schemas']['ProjectRead'];
@@ -158,7 +166,9 @@ export interface CertPrepGeneratedClient {
   listQuestionDrafts(projectId: string): Promise<Components['schemas']['QuestionDraftList']>;
   updateQuestionDraft(projectId: string, draftId: string, body: Components['schemas']['QuestionDraftUpdate']): Promise<Components['schemas']['QuestionDraftRead']>;
   createPracticeSession(projectId: string, body: Components['schemas']['PracticeSessionCreate']): Promise<Components['schemas']['PracticeSessionRead']>;
+  listActivePracticeSessions(projectId: string): Promise<Components['schemas']['PracticeSessionList']>;
   getPracticeSession(projectId: string, sessionId: string): Promise<Components['schemas']['PracticeSessionRead']>;
+  abandonPracticeSession(projectId: string, sessionId: string): Promise<Components['schemas']['PracticeSessionRead']>;
   recordPracticeAttempt(projectId: string, sessionId: string, body: Components['schemas']['PracticeAttemptCreate']): Promise<Components['schemas']['PracticeAttemptRead']>;
   listWrongAnswers(projectId: string): Promise<Components['schemas']['WrongAnswerList']>;
   summarizeWrongAnswers(projectId: string): Promise<Components['schemas']['WrongAnswerSummaryRead']>;
@@ -215,8 +225,12 @@ export function createCertPrepGeneratedClient(
       transport.request<Components['schemas']['QuestionDraftRead']>({ method: 'PATCH' as const, path: `/projects/${encodeURIComponent(projectId)}/question-drafts/${encodeURIComponent(draftId)}`, body }),
     createPracticeSession: (projectId: string, body: Components['schemas']['PracticeSessionCreate']) =>
       transport.request<Components['schemas']['PracticeSessionRead']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/practice-sessions`, body }),
+    listActivePracticeSessions: (projectId: string) =>
+      transport.request<Components['schemas']['PracticeSessionList']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/practice-sessions` }),
     getPracticeSession: (projectId: string, sessionId: string) =>
       transport.request<Components['schemas']['PracticeSessionRead']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/practice-sessions/${encodeURIComponent(sessionId)}` }),
+    abandonPracticeSession: (projectId: string, sessionId: string) =>
+      transport.request<Components['schemas']['PracticeSessionRead']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/practice-sessions/${encodeURIComponent(sessionId)}/abandon` }),
     recordPracticeAttempt: (projectId: string, sessionId: string, body: Components['schemas']['PracticeAttemptCreate']) =>
       transport.request<Components['schemas']['PracticeAttemptRead']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/practice-sessions/${encodeURIComponent(sessionId)}/attempts`, body }),
     listWrongAnswers: (projectId: string) =>

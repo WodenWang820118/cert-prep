@@ -6,6 +6,8 @@ from enum import Enum
 
 class PracticeSessionStatus(str, Enum):
     ACTIVE = "active"
+    COMPLETED = "completed"
+    ABANDONED = "abandoned"
 
 
 class PracticeSessionMode(str, Enum):
@@ -30,6 +32,7 @@ class PracticeSession:
     requested_question_count: int = 10
     random_seed: int | None = None
     completed_at: str | None = None
+    abandoned_at: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "question_ids", tuple(self.question_ids))
@@ -51,6 +54,7 @@ class PracticeSession:
             "random_seed": self.random_seed,
             "created_at": self.created_at,
             "completed_at": self.completed_at,
+            "abandoned_at": self.abandoned_at,
         }
 
 

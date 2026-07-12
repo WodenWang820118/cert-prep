@@ -142,6 +142,8 @@ describe('WrongAnswerDashboardComponent', () => {
     status: 'active',
     created_at: '2026-06-23T00:00:00Z',
     completed_at: null,
+    abandoned_at: null,
+    attempts: [],
   };
   let apiClient: {
     createPracticeSession: ReturnType<typeof vi.fn>;

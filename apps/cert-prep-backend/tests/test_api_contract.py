@@ -65,6 +65,36 @@ def test_status_like_fields_are_documented_as_openapi_enums(tmp_path) -> None:
         "full_document",
         "review_retry",
     ]
+    assert _enum_values(openapi, "PracticeSessionRead", "status") == [
+        "active",
+        "completed",
+        "abandoned",
+    ]
+
+
+def test_practice_session_conflicts_are_documented(tmp_path) -> None:
+    openapi = create_app(Settings(data_dir=tmp_path, api_token="contract-token")).openapi()
+
+    assert _enum_values(openapi, "PracticeSessionConflictRead", "code") == [
+        "active_session_exists",
+        "practice_session_completed",
+        "practice_session_abandoned",
+    ]
+    assert _response_schema_name(openapi, "/projects/{project_id}/practice-sessions", "post", 409) == (
+        "PracticeSessionConflictRead"
+    )
+    assert _response_schema_name(
+        openapi,
+        "/projects/{project_id}/practice-sessions/{session_id}/abandon",
+        "post",
+        409,
+    ) == "PracticeSessionConflictRead"
+    assert _response_schema_name(
+        openapi,
+        "/projects/{project_id}/practice-sessions/{session_id}/attempts",
+        "post",
+        409,
+    ) == "PracticeSessionConflictRead"
 
 
 def _enum_values(openapi: dict[str, Any], schema_name: str, property_name: str) -> list[str]:
@@ -82,3 +112,15 @@ def _enum_values(openapi: dict[str, Any], schema_name: str, property_name: str) 
 def _resolve_ref(openapi: dict[str, Any], ref: str) -> dict[str, Any]:
     schema_name = ref.rsplit("/", 1)[-1]
     return openapi["components"]["schemas"][schema_name]
+
+
+def _response_schema_name(
+    openapi: dict[str, Any],
+    path: str,
+    method: str,
+    status_code: int,
+) -> str:
+    schema = openapi["paths"][path][method]["responses"][str(status_code)]["content"][
+        "application/json"
+    ]["schema"]
+    return schema["$ref"].rsplit("/", 1)[-1]
