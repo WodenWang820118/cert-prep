@@ -19,6 +19,46 @@ from llm_test_fakes import (
 AUTH_HEADERS = {"Authorization": "Bearer test-token"}
 
 
+class RecordingSelectedModelManager:
+    def __init__(self) -> None:
+        self.start_calls = 0
+
+    def start_model_installation(self, **_kwargs):
+        self.start_calls += 1
+        return {
+            "id": "selected-model-job",
+            "provider": "fastflowlm",
+            "model": "qwen3.5:4b",
+            "status": "queued",
+            "detail": "selected model installation queued",
+            "completed": 0,
+            "total": None,
+            "created_at": "2026-07-12T00:00:00Z",
+            "updated_at": "2026-07-12T00:00:00Z",
+            "error": None,
+        }
+
+
+def test_model_download_uses_the_selected_model_installer(tmp_path) -> None:
+    manager = RecordingSelectedModelManager()
+    client = TestClient(
+        create_app(
+            settings=Settings(
+                data_dir=tmp_path,
+                api_token="test-token",
+                llm_provider="fake",
+            ),
+            runtime_installation_manager=manager,
+        )
+    )
+
+    response = client.post("/llm/model-downloads", headers=AUTH_HEADERS)
+
+    assert response.status_code == 202
+    assert response.json()["provider"] == "fastflowlm"
+    assert manager.start_calls == 1
+
+
 def test_model_download_installs_selected_ollama_profile(
     monkeypatch,
     tmp_path,

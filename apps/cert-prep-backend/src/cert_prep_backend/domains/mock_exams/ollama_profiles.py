@@ -50,10 +50,12 @@ def collect_ollama_machine_inventory(settings: Settings, *, refresh: bool = Fals
 
 def ollama_profile_selection_from_settings(
     settings: Settings,
+    *,
+    provider_selected: bool = False,
 ) -> OllamaProfileSelection | None:
     """Resolve selected Ollama profile when profile selection is enabled."""
 
-    if settings.llm_provider != "ollama" or not settings.ollama_profile_enabled:
+    if (settings.llm_provider != "ollama" and not provider_selected) or not settings.ollama_profile_enabled:
         return None
     inventory = collect_ollama_machine_inventory(settings)
     return select_ollama_profile(inventory, profile_id=settings.ollama_profile_id)
@@ -68,7 +70,16 @@ def profile_catalog_payload() -> dict[str, Any]:
 def profile_selection_payload(settings: Settings) -> dict[str, Any]:
     """Return profile selection payload, including disabled/raw-model mode."""
 
-    selection = ollama_profile_selection_from_settings(settings)
+    from cert_prep_backend.domains.mock_exams.provider_selection import (
+        provider_selection_from_settings,
+    )
+    from cert_prep_contracts.llm import LLMProviderName
+
+    selected_provider = provider_selection_from_settings(settings).selected_provider
+    selection = ollama_profile_selection_from_settings(
+        settings,
+        provider_selected=selected_provider == LLMProviderName.OLLAMA,
+    )
     if selection is None:
         return {
             "profile_enabled": False,

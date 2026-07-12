@@ -11,6 +11,8 @@ class RuntimeRequirementKind(StrEnum):
 
     OLLAMA = "ollama"
     OLLAMA_MODEL = "ollama_model"
+    FASTFLOWLM = "fastflowlm"
+    FASTFLOWLM_MODEL = "fastflowlm_model"
     PADDLE_OCR = "paddle_ocr"
     WINDOWSML_OCR = "windowsml_ocr"
 

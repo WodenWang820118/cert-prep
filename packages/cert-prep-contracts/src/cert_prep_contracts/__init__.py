@@ -7,7 +7,19 @@ from cert_prep_contracts.hardware import (
     MachineRamSnapshot,
     MachineStorageSnapshot,
 )
-from cert_prep_contracts.llm import ModelPullProgress
+from cert_prep_contracts.llm import (
+    DEFAULT_LLM_LOW_RESOURCE_MODEL,
+    DEFAULT_LLM_PRIMARY_MODEL,
+    DEFAULT_LLM_RUNTIME_POLICY,
+    FASTFLOWLM_RUNTIME_TRUST_POLICY,
+    FastFlowLMRuntimeTrustPolicy,
+    GenerationAttribution,
+    LLMProviderName,
+    LLMProviderPreference,
+    LLMProviderSelection,
+    LLMRuntimePolicy,
+    ModelPullProgress,
+)
 from cert_prep_contracts.llm_profiles import (
     OllamaModelProfile,
     OllamaParameterValue,
@@ -23,6 +35,16 @@ from cert_prep_contracts.runtime import (
 )
 
 __all__ = [
+    "DEFAULT_LLM_LOW_RESOURCE_MODEL",
+    "DEFAULT_LLM_PRIMARY_MODEL",
+    "DEFAULT_LLM_RUNTIME_POLICY",
+    "FASTFLOWLM_RUNTIME_TRUST_POLICY",
+    "FastFlowLMRuntimeTrustPolicy",
+    "GenerationAttribution",
+    "LLMProviderName",
+    "LLMProviderPreference",
+    "LLMProviderSelection",
+    "LLMRuntimePolicy",
     "MachineAcceleratorSnapshot",
     "MachineCpuSnapshot",
     "MachineInventorySnapshot",

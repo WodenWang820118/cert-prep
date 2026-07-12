@@ -3,10 +3,12 @@ from fastapi.testclient import TestClient
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.core.config import Settings
 from cert_prep_backend.domains.mock_exams import ollama_profiles as ollama_profile_module
+from cert_prep_backend.domains.mock_exams import provider as provider_module
 from cert_prep_backend.domains.mock_exams.fastflowlm_transport import FastFlowLMProvider
 from cert_prep_backend.domains.mock_exams.model_fallback import ModelFallbackEngine
 from cert_prep_backend.domains.mock_exams.ollama_transport import OllamaProvider
 from cert_prep_backend.domains.mock_exams.provider import provider_from_settings
+from cert_prep_contracts.llm import LLMProviderName
 from cert_prep_ollama.profiles import DEFAULT_PROFILE_ID
 from llm_test_fakes import GIB, RecordingDownloadProvider, _profile_inventory
 
@@ -79,7 +81,12 @@ def test_settings_parse_comma_separated_fastflowlm_fallback_models(tmp_path) -> 
 
     assert settings.fastflowlm_fallback_models == ["qwen3.5:2b", "qwen3.5:0.8b"]
 
-def test_provider_from_settings_can_select_fastflowlm(tmp_path) -> None:
+def test_provider_from_settings_can_select_fastflowlm(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        provider_module,
+        "_selected_provider_from_settings",
+        lambda _settings: LLMProviderName.FASTFLOWLM,
+    )
     provider = provider_from_settings(
         Settings(
             data_dir=tmp_path,

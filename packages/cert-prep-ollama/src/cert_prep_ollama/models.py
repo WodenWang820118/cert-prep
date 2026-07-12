@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from cert_prep_contracts.llm import ModelPullProgress as _ModelPullProgress
+from cert_prep_contracts.llm import (
+    DEFAULT_LLM_PRIMARY_MODEL,
+    ModelPullProgress as _ModelPullProgress,
+)
 
 
-DEFAULT_OLLAMA_MODEL = "qwen3.5:4b"
+DEFAULT_OLLAMA_MODEL = DEFAULT_LLM_PRIMARY_MODEL
 
 
 def extract_model_names(response: Any) -> set[str]:

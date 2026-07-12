@@ -4,15 +4,20 @@ import os
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+from cert_prep_contracts.llm import (
+    DEFAULT_LLM_LOW_RESOURCE_MODEL,
+    DEFAULT_LLM_PRIMARY_MODEL,
+    DEFAULT_LLM_RUNTIME_POLICY,
+)
 from cert_prep_ollama.models import DEFAULT_OLLAMA_MODEL
 
-DEFAULT_FASTFLOWLM_MODEL = "qwen3.5:4b"
+DEFAULT_FASTFLOWLM_MODEL = DEFAULT_LLM_PRIMARY_MODEL
 DEFAULT_FASTFLOWLM_BASE_URL = "http://127.0.0.1:52625/v1"
-DEFAULT_OLLAMA_FALLBACK_MODELS = ("qwen3.5:2b",)
-DEFAULT_FASTFLOWLM_FALLBACK_MODELS = ("qwen3.5:2b",)
+DEFAULT_OLLAMA_FALLBACK_MODELS = (DEFAULT_LLM_LOW_RESOURCE_MODEL,)
+DEFAULT_FASTFLOWLM_FALLBACK_MODELS = (DEFAULT_LLM_LOW_RESOURCE_MODEL,)
 DEFAULT_FASTFLOWLM_PRIMARY_MIN_AVAILABLE_RAM_BYTES = 6 * 1024 * 1024 * 1024
 DEFAULT_FASTFLOWLM_AUTO_START_SERVER = True
 DEFAULT_FASTFLOWLM_SERVER_START_TIMEOUT_SECONDS = 90.0
@@ -66,7 +71,9 @@ class Settings(BaseSettings):
             "tauri://localhost",
         ]
     )
-    llm_provider: Literal["fake", "ollama", "fastflowlm"] = "fake"
+    llm_provider: Literal["auto", "fake", "ollama", "fastflowlm"] = (
+        DEFAULT_LLM_RUNTIME_POLICY.preference.value
+    )
     ocr_provider: Literal["fake", "ollama", "paddle", "windowsml"] = "fake"
     ocr_device: str = "auto"
     ocr_benchmark: bool = False
@@ -80,6 +87,9 @@ class Settings(BaseSettings):
     )
     fastflowlm_base_url: str = DEFAULT_FASTFLOWLM_BASE_URL
     fastflowlm_model: str = DEFAULT_FASTFLOWLM_MODEL
+    fastflowlm_executable_path: Path | None = None
+    fastflowlm_terms_accepted_version: str | None = None
+    fastflowlm_terms_declined: bool = False
     fastflowlm_fallback_models: Annotated[list[str], NoDecode] = Field(
         default_factory=default_fastflowlm_fallback_models
     )
@@ -130,6 +140,14 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return [model.strip() for model in value.split(",") if model.strip()]
         return value
+
+    @model_validator(mode="after")
+    def validate_fastflowlm_terms_state(self) -> Settings:
+        if self.fastflowlm_terms_declined and self.fastflowlm_terms_accepted_version:
+            raise ValueError(
+                "FastFlowLM terms cannot be accepted and declined at the same time."
+            )
+        return self
 
     @property
     def resolved_ocr_runtime_dir(self) -> Path:

@@ -4,13 +4,21 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 import subprocess
+from types import SimpleNamespace
 from zipfile import ZipFile
 
 from fastapi.testclient import TestClient
 
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.core.config import Settings
+from cert_prep_backend.domains.mock_exams import (
+    ollama_profiles as ollama_profile_module,
+)
+from cert_prep_backend.domains.mock_exams import (
+    provider_selection as provider_selection_module,
+)
 from cert_prep_backend.domains.mock_exams.provider import LazyDraftGenerationProvider
+from cert_prep_backend.domains.runtime_installations.installers import LLMModelInstaller
 from cert_prep_backend.domains.runtime_installations import (
     WindowsMLOcrRuntimeInstaller,
     PaddleOcrRuntimeInstaller,
@@ -24,6 +32,7 @@ from cert_prep_contracts.runtime import (
     RuntimeRequirementKind,
     RuntimeRequirementSnapshot,
 )
+from llm_test_fakes import GIB, _profile_inventory
 
 
 AUTH_HEADERS = {"Authorization": "Bearer test-token"}
@@ -50,6 +59,48 @@ def test_runtime_requirements_are_read_only(tmp_path: Path) -> None:
     assert response.status_code == 200
     assert response.json()["items"][0]["kind"] == "ollama"
     assert installer.install_calls == 0
+
+
+def test_model_installer_uses_the_selected_provider_requirement_kind() -> None:
+    assert LLMModelInstaller(
+        SimpleNamespace(provider="fastflowlm", model="qwen3.5:4b")
+    ).kind == RuntimeRequirementKind.FASTFLOWLM_MODEL
+    assert LLMModelInstaller(
+        SimpleNamespace(provider="ollama", model="qwen3.5:4b")
+    ).kind == RuntimeRequirementKind.OLLAMA_MODEL
+
+
+def test_auto_selected_ollama_runtime_requirements_resolve_a_profile(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    inventory = _profile_inventory(total_ram=16 * GIB, free_disk=64 * GIB)
+    monkeypatch.setattr(
+        provider_selection_module,
+        "_cached_machine_inventory",
+        lambda _timeout: inventory,
+    )
+    monkeypatch.setattr(
+        ollama_profile_module,
+        "collect_machine_inventory",
+        lambda **_kwargs: inventory,
+    )
+    client = TestClient(
+        create_app(
+            settings=Settings(
+                data_dir=tmp_path,
+                api_token="test-token",
+                llm_provider="auto",
+            ),
+            runtime_installation_async_jobs=False,
+        )
+    )
+
+    response = client.get("/runtime/requirements", headers=AUTH_HEADERS)
+
+    assert response.status_code == 200
+    requirements = {item["kind"]: item for item in response.json()["items"]}
+    assert requirements["ollama_model"]["available"] is False
 
 
 def test_runtime_installation_starts_only_from_post(tmp_path: Path) -> None:

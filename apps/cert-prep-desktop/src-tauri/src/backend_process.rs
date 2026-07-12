@@ -175,8 +175,8 @@ fn configured_llm_provider() -> String {
     std::env::var("CERT_PREP_LLM_PROVIDER")
         .ok()
         .map(|value| value.trim().to_ascii_lowercase())
-        .filter(|value| matches!(value.as_str(), "fastflowlm" | "ollama"))
-        .unwrap_or_else(|| "fastflowlm".to_string())
+        .filter(|value| matches!(value.as_str(), "auto" | "fastflowlm" | "ollama"))
+        .unwrap_or_else(|| "auto".to_string())
 }
 
 fn configured_ocr_provider() -> String {
@@ -242,6 +242,13 @@ pub(crate) fn external_backend_env() -> Option<BackendConfig> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, MutexGuard};
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    fn lock_env() -> MutexGuard<'static, ()> {
+        ENV_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
 
     #[test]
     fn reserve_loopback_port_returns_bindable_port() {
@@ -257,6 +264,7 @@ mod tests {
 
     #[test]
     fn configured_ollama_model_override_uses_explicit_non_empty_value() {
+        let _env = lock_env();
         std::env::remove_var("CERT_PREP_OLLAMA_MODEL");
 
         assert_eq!(configured_ollama_model_override(), None);
@@ -275,6 +283,7 @@ mod tests {
 
     #[test]
     fn configured_fastflowlm_model_override_uses_explicit_non_empty_value() {
+        let _env = lock_env();
         std::env::remove_var("CERT_PREP_FASTFLOWLM_MODEL");
 
         assert_eq!(configured_fastflowlm_model_override(), None);
@@ -292,10 +301,11 @@ mod tests {
     }
 
     #[test]
-    fn configured_llm_provider_defaults_to_fastflowlm_and_allows_ollama() {
+    fn configured_llm_provider_defaults_to_auto_and_allows_explicit_providers() {
+        let _env = lock_env();
         std::env::remove_var("CERT_PREP_LLM_PROVIDER");
 
-        assert_eq!(configured_llm_provider(), "fastflowlm");
+        assert_eq!(configured_llm_provider(), "auto");
 
         std::env::set_var("CERT_PREP_LLM_PROVIDER", " ollama ");
         assert_eq!(configured_llm_provider(), "ollama");
@@ -303,14 +313,18 @@ mod tests {
         std::env::set_var("CERT_PREP_LLM_PROVIDER", " FASTFLOWLM ");
         assert_eq!(configured_llm_provider(), "fastflowlm");
 
+        std::env::set_var("CERT_PREP_LLM_PROVIDER", " AUTO ");
+        assert_eq!(configured_llm_provider(), "auto");
+
         std::env::set_var("CERT_PREP_LLM_PROVIDER", "openai");
-        assert_eq!(configured_llm_provider(), "fastflowlm");
+        assert_eq!(configured_llm_provider(), "auto");
 
         std::env::remove_var("CERT_PREP_LLM_PROVIDER");
     }
 
     #[test]
     fn configured_ocr_provider_defaults_to_windowsml_and_allows_explicit_overrides() {
+        let _env = lock_env();
         std::env::remove_var("CERT_PREP_OCR_PROVIDER");
 
         assert_eq!(configured_ocr_provider(), "windowsml");
@@ -329,6 +343,7 @@ mod tests {
 
     #[test]
     fn backend_launch_env_collects_auditable_runtime_settings() {
+        let _env = lock_env();
         std::env::remove_var("CERT_PREP_OLLAMA_MODEL");
         std::env::remove_var("CERT_PREP_FASTFLOWLM_MODEL");
         std::env::remove_var("CERT_PREP_LLM_PROVIDER");
@@ -344,7 +359,7 @@ mod tests {
             env_value(&env, "CERT_PREP_DATA_DIR"),
             Some("cert-prep-data")
         );
-        assert_eq!(env_value(&env, "CERT_PREP_LLM_PROVIDER"), Some("fastflowlm"));
+        assert_eq!(env_value(&env, "CERT_PREP_LLM_PROVIDER"), Some("auto"));
         assert_eq!(env_value(&env, "CERT_PREP_OCR_PROVIDER"), Some("windowsml"));
         assert_eq!(
             env_value(&env, "CERT_PREP_OCR_RUNTIME_MODE"),
@@ -365,6 +380,7 @@ mod tests {
 
     #[test]
     fn backend_launch_env_forwards_explicit_ollama_model_override() {
+        let _env = lock_env();
         std::env::set_var("CERT_PREP_OLLAMA_MODEL", " qwen3.5:2b ");
         std::env::set_var("CERT_PREP_LLM_PROVIDER", "ollama");
 
@@ -382,6 +398,8 @@ mod tests {
 
     #[test]
     fn backend_launch_env_forwards_explicit_fastflowlm_model_override() {
+        let _env = lock_env();
+        std::env::set_var("CERT_PREP_LLM_PROVIDER", "fastflowlm");
         std::env::set_var("CERT_PREP_FASTFLOWLM_MODEL", " qwen3.5:4b ");
 
         let env = backend_launch_env(Path::new("cert-prep-data"), 8123, "test-token");
@@ -393,10 +411,12 @@ mod tests {
         );
 
         std::env::remove_var("CERT_PREP_FASTFLOWLM_MODEL");
+        std::env::remove_var("CERT_PREP_LLM_PROVIDER");
     }
 
     #[test]
     fn backend_ready_timeout_uses_positive_override_or_default() {
+        let _env = lock_env();
         std::env::remove_var("CERT_PREP_BACKEND_READY_TIMEOUT_SECS");
 
         assert_eq!(backend_ready_timeout(), Duration::from_secs(60));
@@ -412,6 +432,7 @@ mod tests {
 
     #[test]
     fn external_backend_env_requires_url_and_token() {
+        let _env = lock_env();
         std::env::remove_var("CERT_PREP_BACKEND_URL");
         std::env::remove_var("CERT_PREP_BACKEND_TOKEN");
         assert_eq!(external_backend_env(), None);

@@ -34,12 +34,15 @@ from cert_prep_contracts.llm import ModelPullProgress
 class LLMModelInstaller:
     """Installer and health snapshot for the configured reasoning model."""
 
-    kind = RuntimeRequirementKind.OLLAMA_MODEL
-
     def __init__(self, provider: object) -> None:
         self._provider = provider
         self.provider = str(getattr(provider, "provider", "llm"))
         self.model = str(getattr(provider, "model", "configured model"))
+        self.kind = (
+            RuntimeRequirementKind.FASTFLOWLM_MODEL
+            if self.provider == "fastflowlm"
+            else RuntimeRequirementKind.OLLAMA_MODEL
+        )
 
     def requirement(self) -> RuntimeRequirementSnapshot:
         """Return model availability without starting a download."""

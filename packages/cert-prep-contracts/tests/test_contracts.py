@@ -1,6 +1,12 @@
 from __future__ import annotations
 
 from cert_prep_contracts import (
+    DEFAULT_LLM_RUNTIME_POLICY,
+    FASTFLOWLM_RUNTIME_TRUST_POLICY,
+    GenerationAttribution,
+    LLMProviderName,
+    LLMProviderPreference,
+    LLMProviderSelection,
     MachineCpuSnapshot,
     MachineInventorySnapshot,
     MachineRamSnapshot,
@@ -32,6 +38,8 @@ def test_runtime_contracts_are_value_types() -> None:
     assert requirement.kind.value == "windowsml_ocr"
     assert requirement.bytes == progress.total
     assert RuntimeInstallationStatus.RUNNING.value == "running"
+    assert RuntimeRequirementKind.FASTFLOWLM.value == "fastflowlm"
+    assert RuntimeRequirementKind.FASTFLOWLM_MODEL.value == "fastflowlm_model"
 
 
 def test_llm_and_ocr_contracts_keep_shared_payload_shape() -> None:
@@ -61,6 +69,33 @@ def test_llm_and_ocr_contracts_keep_shared_payload_shape() -> None:
     assert pull_progress.completed == 1
     assert health.unavailable_reason is None
     assert page.text == "sample"
+
+
+def test_llm_runtime_policy_and_provider_selection_are_shared_value_types() -> None:
+    selection = LLMProviderSelection(
+        preference=LLMProviderPreference.AUTO,
+        selected_provider=LLMProviderName.FASTFLOWLM,
+        effective_provider=LLMProviderName.FASTFLOWLM,
+        configured_model=DEFAULT_LLM_RUNTIME_POLICY.primary_model,
+        effective_model=DEFAULT_LLM_RUNTIME_POLICY.primary_model,
+        selection_reason="compatible XDNA2 hardware",
+        fallback_reason=None,
+        hardware_compatible=True,
+        requires_terms_acceptance=True,
+        terms_accepted=False,
+        terms_version="0.9.43",
+        terms_url=FASTFLOWLM_RUNTIME_TRUST_POLICY.terms_url,
+        runtime_requirement_kind=RuntimeRequirementKind.FASTFLOWLM,
+        model_requirement_kind=RuntimeRequirementKind.FASTFLOWLM_MODEL,
+    )
+    attribution = GenerationAttribution("fastflowlm", "qwen3.5:4b")
+
+    assert selection.preference.value == "auto"
+    assert selection.model_requirement_kind is not None
+    assert selection.model_requirement_kind.value == "fastflowlm_model"
+    assert attribution.effective_model == DEFAULT_LLM_RUNTIME_POLICY.primary_model
+    assert FASTFLOWLM_RUNTIME_TRUST_POLICY.version == "0.9.43"
+    assert len(FASTFLOWLM_RUNTIME_TRUST_POLICY.installer_sha256) == 64
 
 
 def test_machine_inventory_and_ollama_profiles_are_pure_value_types() -> None:

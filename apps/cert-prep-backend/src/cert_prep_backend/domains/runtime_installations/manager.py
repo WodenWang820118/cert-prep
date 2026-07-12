@@ -180,6 +180,17 @@ class RuntimeInstallationManager:
             if kind in self._installers
         ]
 
+    def start_model_installation(self) -> RuntimeInstallationSnapshot:
+        """Start the selected provider's model installation job."""
+
+        for kind in (
+            RuntimeRequirementKind.FASTFLOWLM_MODEL,
+            RuntimeRequirementKind.OLLAMA_MODEL,
+        ):
+            if kind in self._installers:
+                return self.start_installation(kind)
+        raise ProviderUnavailableError("No model installer is configured.")
+
     def start_installation(self, kind: RuntimeRequirementKind | str) -> RuntimeInstallationSnapshot:
         """Start or reuse an installation job for the requested requirement."""
 
@@ -422,7 +433,10 @@ class _LazyOllamaProfileInstaller:
                 )
                 from cert_prep_ollama.profile_installer import OllamaProfileInstaller
 
-                profile_selection = ollama_profile_selection_from_settings(self._settings)
+                profile_selection = ollama_profile_selection_from_settings(
+                    self._settings,
+                    provider_selected=True,
+                )
                 if profile_selection is None:
                     raise ProviderUnavailableError(
                         "Ollama profile selection is not available."

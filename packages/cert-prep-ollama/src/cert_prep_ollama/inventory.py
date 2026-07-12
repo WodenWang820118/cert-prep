@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 import ctypes
 import json
 import os
@@ -11,6 +12,7 @@ from pathlib import Path
 import shutil
 import subprocess
 from typing import Any
+from xml.etree import ElementTree
 
 from cert_prep_contracts.hardware import (
     MachineAcceleratorSnapshot,
@@ -30,7 +32,7 @@ def collect_machine_inventory(
 
     warnings: list[str] = []
     storage_path = _storage_probe_path(model_storage_path)
-    cpu = _cpu_snapshot()
+    cpu = _cpu_snapshot(timeout_seconds)
     ram = _ram_snapshot(warnings)
     storage = _storage_snapshot(storage_path, warnings)
     accelerators = _accelerators(timeout_seconds, warnings)
@@ -46,11 +48,35 @@ def collect_machine_inventory(
     )
 
 
-def _cpu_snapshot() -> MachineCpuSnapshot:
+def _cpu_snapshot(timeout_seconds: float) -> MachineCpuSnapshot:
+    if os.name == "nt":
+        windows_snapshot = _windows_cpu_snapshot(timeout_seconds)
+        if windows_snapshot is not None:
+            return windows_snapshot
     return MachineCpuSnapshot(
         architecture=platform.machine() or "",
         name=platform.processor() or None,
         logical_cores=os.cpu_count(),
+    )
+
+
+def _windows_cpu_snapshot(timeout_seconds: float) -> MachineCpuSnapshot | None:
+    payload = _run_windows_powershell_json(
+        "Get-CimInstance Win32_Processor | Select-Object -First 1 "
+        "Name,NumberOfCores,NumberOfLogicalProcessors | ConvertTo-Json -Compress",
+        timeout_seconds,
+    )
+    records = _records(payload)
+    if not records:
+        return None
+    record = records[0]
+    return MachineCpuSnapshot(
+        architecture=platform.machine() or "",
+        name=_string_or_none(record.get("Name")) or platform.processor() or None,
+        physical_cores=_int_or_none(record.get("NumberOfCores")),
+        logical_cores=(
+            _int_or_none(record.get("NumberOfLogicalProcessors")) or os.cpu_count()
+        ),
     )
 
 
@@ -250,34 +276,147 @@ def _windows_npu_accelerators(
     timeout_seconds: float,
     warnings: list[str],
 ) -> list[MachineAcceleratorSnapshot]:
-    # NOTE: the PowerShell filter mirrors _is_npu_device so that we don't
-    # pull back every PnP device; the Python-side check is a safety net.
+    roots = [
+        _run_windows_pnputil_xml(device_class, timeout_seconds)
+        for device_class in ("ComputeAccelerator", "Neural", "System")
+    ]
+    if all(root is not None for root in roots):
+        return _npu_snapshots_from_pnputil(
+            root for root in roots if root is not None
+        )
+
+    payload = _windows_npu_powershell_payload(timeout_seconds)
+    if payload is None:
+        warnings.append("Unable to collect Windows NPU inventory.")
+        return []
+    return _npu_snapshots_from_records(_records(payload))
+
+
+def _run_windows_pnputil_xml(
+    device_class: str,
+    timeout_seconds: float,
+) -> ElementTree.Element | None:
+    try:
+        completed = subprocess.run(
+            [
+                _resolve_windows_pnputil(),
+                "/enum-devices",
+                "/connected",
+                "/class",
+                device_class,
+                "/drivers",
+                "/format",
+                "xml",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=max(timeout_seconds, 0.1),
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if completed.returncode != 0 or not completed.stdout.strip():
+        return None
+    try:
+        return ElementTree.fromstring(completed.stdout)
+    except ElementTree.ParseError:
+        return None
+
+
+def _resolve_windows_pnputil() -> str:
+    system_root = os.environ.get("SystemRoot") or os.environ.get("WINDIR")
+    if system_root:
+        candidate = Path(system_root) / "System32" / "pnputil.exe"
+        if candidate.is_file():
+            return str(candidate)
+    return shutil.which("pnputil.exe") or "pnputil.exe"
+
+
+def _npu_snapshots_from_pnputil(
+    roots: Iterable[ElementTree.Element],
+) -> list[MachineAcceleratorSnapshot]:
+    records: list[dict[str, Any]] = []
+    for root in roots:
+        for device in root.findall("./Device"):
+            records.append(
+                {
+                    "FriendlyName": device.findtext("./DeviceDescription"),
+                    "Class": device.findtext("./ClassName"),
+                    "InstanceId": device.get("InstanceId"),
+                    "Manufacturer": device.findtext("./ManufacturerName"),
+                    "DriverVersion": _pnputil_installed_driver_version(device),
+                }
+            )
+    return _npu_snapshots_from_records(records)
+
+
+def _pnputil_installed_driver_version(device: ElementTree.Element) -> str | None:
+    installed_name = _string_or_none(device.findtext("./DriverName"))
+    candidates = device.findall("./MatchingDrivers/DriverName")
+    for candidate in candidates:
+        candidate_name = _string_or_none(candidate.get("DriverName"))
+        status = _string_or_none(candidate.findtext("./Status")) or ""
+        if installed_name and candidate_name != installed_name:
+            continue
+        if not installed_name and "installed" not in status.casefold():
+            continue
+        value = _string_or_none(candidate.findtext("./DriverVersion"))
+        versions = re.findall(r"\d+(?:\.\d+){2,}", value or "")
+        if versions:
+            return versions[-1]
+    return None
+
+
+def _windows_npu_powershell_payload(timeout_seconds: float) -> Any | None:
+    # Fallback for Windows builds where PnPUtil XML output is unavailable.
     command = (
         "Get-PnpDevice -PresentOnly | "
         "Where-Object { "
         "$_.FriendlyName -match '\\b(NPU|IPU)\\b|Neural|AI Boost' -or "
         "$_.Class -match 'Neural' "
         "} | "
-        "Select-Object FriendlyName,Class,InstanceId | ConvertTo-Json -Compress"
+        "ForEach-Object { "
+        "$driverVersion = (Get-PnpDeviceProperty -InstanceId $_.InstanceId "
+        "-KeyName 'DEVPKEY_Device_DriverVersion' "
+        "-ErrorAction SilentlyContinue).Data; "
+        "[PSCustomObject]@{ "
+        "FriendlyName = $_.FriendlyName; Class = $_.Class; "
+        "InstanceId = $_.InstanceId; DriverVersion = $driverVersion "
+        "} "
+        "} | ConvertTo-Json -Compress"
     )
-    payload = _run_windows_powershell_json(command, timeout_seconds)
-    if payload is None:
-        warnings.append("Unable to collect Windows NPU inventory.")
-        return []
+    return _run_windows_powershell_json(command, timeout_seconds)
+
+
+def _npu_snapshots_from_records(
+    records: list[dict[str, Any]],
+) -> list[MachineAcceleratorSnapshot]:
     accelerators: list[MachineAcceleratorSnapshot] = []
-    for item in _records(payload):
+    seen_ids: set[str] = set()
+    for item in records:
         name = _string_or_none(item.get("FriendlyName"))
         if not name:
             continue
         device_class = _string_or_none(item.get("Class")) or ""
         if not _is_npu_device(name, device_class):
             continue
+        device_id = _string_or_none(item.get("InstanceId"))
+        dedupe_key = (device_id or f"{device_class}:{name}").casefold()
+        if dedupe_key in seen_ids:
+            continue
+        seen_ids.add(dedupe_key)
+        manufacturer = _string_or_none(item.get("Manufacturer"))
         accelerators.append(
             MachineAcceleratorSnapshot(
                 kind="npu",
-                vendor=_vendor_from_name(name),
+                vendor=_vendor_from_name(
+                    " ".join(value for value in (manufacturer, name) if value)
+                ),
                 name=name,
-                device_id=_string_or_none(item.get("InstanceId")),
+                driver_version=_string_or_none(item.get("DriverVersion")),
+                device_id=device_id,
             )
         )
     return accelerators

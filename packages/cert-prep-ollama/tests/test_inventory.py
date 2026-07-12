@@ -5,7 +5,11 @@ from pathlib import Path
 import pytest
 
 from cert_prep_ollama import inventory
-from cert_prep_ollama.inventory import _is_npu_device, _resolve_windows_powershell
+from cert_prep_ollama.inventory import (
+    _is_npu_device,
+    _resolve_windows_powershell,
+    _windows_cpu_snapshot,
+)
 
 
 # -- genuine NPU / accelerator names ------------------------------------------
@@ -88,3 +92,70 @@ def test_resolves_windows_powershell_when_path_is_reduced(
     monkeypatch.delenv("WINDIR", raising=False)
 
     assert _resolve_windows_powershell() == str(powershell)
+
+
+def test_windows_cpu_snapshot_uses_marketing_name_for_hardware_policy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        inventory,
+        "_run_windows_powershell_json",
+        lambda _command, _timeout: {
+            "Name": "AMD Ryzen AI 9 H 365 w/ Radeon 880M",
+            "NumberOfCores": 10,
+            "NumberOfLogicalProcessors": 20,
+        },
+    )
+
+    snapshot = _windows_cpu_snapshot(1)
+
+    assert snapshot is not None
+    assert snapshot.name == "AMD Ryzen AI 9 H 365 w/ Radeon 880M"
+    assert snapshot.physical_cores == 10
+    assert snapshot.logical_cores == 20
+
+
+def test_windows_npu_snapshot_uses_the_installed_device_driver(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    compute_accelerator_xml = inventory.ElementTree.fromstring(
+        """
+        <PnpUtil>
+          <Device InstanceId="PCI\\VEN_1022&amp;DEV_17F0\\1">
+            <DeviceDescription>NPU Compute Accelerator Device</DeviceDescription>
+            <ClassName>ComputeAccelerator</ClassName>
+            <ManufacturerName>AMD</ManufacturerName>
+            <DriverName>oem509.inf</DriverName>
+            <MatchingDrivers>
+              <DriverName DriverName="oem509.inf">
+                <DriverVersion>10/10/2025 32.0.203.314</DriverVersion>
+                <Status>BestRanked/Installed</Status>
+              </DriverName>
+              <DriverName DriverName="oem23.inf">
+                <DriverVersion>08/21/2024 2.1.0.0</DriverVersion>
+                <Status>BestRanked/Installed/Extension</Status>
+              </DriverName>
+            </MatchingDrivers>
+          </Device>
+        </PnpUtil>
+        """
+    )
+    empty_xml = inventory.ElementTree.fromstring("<PnpUtil />")
+    monkeypatch.setattr(
+        inventory,
+        "_run_windows_pnputil_xml",
+        lambda device_class, _timeout: (
+            compute_accelerator_xml
+            if device_class == "ComputeAccelerator"
+            else empty_xml
+        ),
+    )
+    warnings: list[str] = []
+
+    snapshots = inventory._windows_npu_accelerators(1, warnings)
+
+    assert warnings == []
+    assert len(snapshots) == 1
+    assert snapshots[0].vendor == "amd"
+    assert snapshots[0].driver_version == "32.0.203.314"
+    assert snapshots[0].device_id == "PCI\\VEN_1022&DEV_17F0\\1"

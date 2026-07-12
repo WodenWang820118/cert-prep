@@ -21,7 +21,6 @@ from cert_prep_backend.domains.mock_exams.schemas import (
 )
 from cert_prep_backend.domains.runtime_installations import RuntimeInstallationManager
 from cert_prep_backend.api.errors import ProviderUnavailableError, api_error, not_found_error
-from cert_prep_contracts.runtime import RuntimeRequirementKind
 
 
 router = APIRouter(prefix="/llm", tags=["llm"])
@@ -51,7 +50,7 @@ def start_model_download(
     manager: RuntimeInstallationManager = Depends(get_runtime_installation_manager),
 ):
     try:
-        return manager.start_installation(RuntimeRequirementKind.OLLAMA_MODEL)
+        return manager.start_model_installation()
     except ProviderUnavailableError as exc:
         raise api_error(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
