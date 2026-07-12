@@ -19,9 +19,9 @@ import {
 } from './package-qa/constants.mts';
 
 const WINDOWSML_RELEASE_BASE_URL_ENV = 'CERT_PREP_WINDOWSML_OCR_ASSET_BASE_URL';
-export const ALPHA_RELEASE_TAG = `cert-prep-v${ALPHA_VERSION}`;
+const ALPHA_RELEASE_TAG = `cert-prep-v${ALPHA_VERSION}`;
 
-export type RuntimeResourceMode = 'dev' | 'release';
+type RuntimeResourceMode = 'dev' | 'release';
 
 interface RuntimeManifest {
   readonly schema_version?: number;
@@ -37,7 +37,7 @@ interface RuntimeManifest {
   };
 }
 
-export interface PrepareRuntimeResourcesOptions {
+interface PrepareRuntimeResourcesOptions {
   readonly workspaceRoot: string;
   readonly mode: RuntimeResourceMode;
   readonly outputDir?: string;
@@ -46,7 +46,7 @@ export interface PrepareRuntimeResourcesOptions {
   readonly windowsmlReleaseBaseUrl?: string;
 }
 
-export interface PreparedRuntimeResources {
+interface PreparedRuntimeResources {
   readonly outputDir: string;
   readonly backendManifestPath: string;
   readonly backendArtifactPath: string;

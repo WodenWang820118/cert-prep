@@ -10,7 +10,7 @@ import {
   type RecommendedProcessAction,
 } from './process-lifecycle/processes.mts';
 
-export interface ProcessResidueAuditRecord {
+interface ProcessResidueAuditRecord {
   readonly pid: number;
   readonly parentPid: number;
   readonly name: string;
@@ -23,7 +23,7 @@ export interface ProcessResidueAuditRecord {
   readonly evidence: string[];
 }
 
-export interface ProcessResidueAuditReport {
+interface ProcessResidueAuditReport {
   readonly schemaVersion: 1;
   readonly generatedAt: string;
   readonly platform: NodeJS.Platform;
@@ -32,7 +32,7 @@ export interface ProcessResidueAuditReport {
   readonly processes: ProcessResidueAuditRecord[];
 }
 
-export interface ProcessResidueAuditOptions {
+interface ProcessResidueAuditOptions {
   readonly workspaceRoot: string;
   readonly platform?: NodeJS.Platform;
   readonly generatedAt?: string;

@@ -19,7 +19,7 @@ export interface PublicFileRecord {
   readonly mb: number;
 }
 
-export type SizeGateStatus = 'passed' | 'warning' | 'failed';
+type SizeGateStatus = 'passed' | 'warning' | 'failed';
 
 export interface SizeGate {
   readonly status: SizeGateStatus;

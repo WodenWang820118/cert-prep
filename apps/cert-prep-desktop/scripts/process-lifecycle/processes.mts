@@ -58,7 +58,7 @@ export interface ProcessSnapshot {
   nodePids: Set<number>;
 }
 
-export interface SelectNodeHelpersOptions {
+interface SelectNodeHelpersOptions {
   beforeNodePids: ReadonlySet<number>;
   after: readonly ProcessRecord[];
   ownerPid: number;
@@ -81,25 +81,25 @@ export type RecommendedProcessAction =
   | 'review_only'
   | 'manual_investigation';
 
-export interface ProcessClassificationResult {
+interface ProcessClassificationResult {
   classification: ProcessClassification;
   recommendedAction: RecommendedProcessAction;
   protected: boolean;
   evidence: string[];
 }
 
-export interface ProcessClassificationOptions {
+interface ProcessClassificationOptions {
   workspaceRoot: string;
 }
 
-export interface ProcessTerminationResult {
+interface ProcessTerminationResult {
   attempted: boolean;
   method: 'taskkill_process_tree' | 'signal_process' | 'already_exited';
   exitCode: number | null;
   error: string | null;
 }
 
-export interface OwnedProcessCleanupResult {
+interface OwnedProcessCleanupResult {
   label: string;
   pid: number | null;
   reason: string;
@@ -113,7 +113,7 @@ export interface OwnedProcessCleanupResult {
   error: string | null;
 }
 
-export interface ShutdownCleanupOptions {
+interface ShutdownCleanupOptions {
   cleanup: (reason: string, error: unknown | null) => Promise<void> | void;
   exit?: (code?: number) => never | void;
   onCleanupError?: (error: unknown) => void;

@@ -98,13 +98,13 @@ export interface VideoArtifact {
   error?: string;
 }
 
-export interface VideoRecordingState {
+interface VideoRecordingState {
   readonly artifact: VideoArtifact;
   readonly filePath: string;
   active: boolean;
 }
 
-export interface StreamingQuestionsMetrics {
+interface StreamingQuestionsMetrics {
   job_snapshots: StreamingDraftJobSnapshot[];
   question_snapshots: StreamingQuestionSnapshot[];
   status_counts: Record<string, number>;
@@ -116,7 +116,7 @@ export interface StreamingQuestionsMetrics {
   blocker?: string;
 }
 
-export interface OcrCompletionMetrics {
+interface OcrCompletionMetrics {
   pages_processed: number | null;
   total_pages: number | null;
   chunks: number | null;
@@ -124,7 +124,7 @@ export interface OcrCompletionMetrics {
   expected_chunks: 46;
 }
 
-export interface StreamingBaselineArtifacts {
+interface StreamingBaselineArtifacts {
   status: 'passed' | 'failed';
   json: string;
   markdown: string;
@@ -188,13 +188,13 @@ export interface CloseSummary {
   residualProcesses: PublicProcessRecord[];
 }
 
-export interface ChildExitState {
+interface ChildExitState {
   exited: boolean;
   code: number | null;
   signal: NodeJS.Signals | null;
 }
 
-export interface ResourceSamplingController {
+interface ResourceSamplingController {
   readonly artifacts: ResourceSamplingArtifacts;
   stop(): Promise<void>;
 }

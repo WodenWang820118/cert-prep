@@ -33,7 +33,7 @@ export function bytesToMb(bytes: number): number {
 }
 
 /** Builds a workspace-relative file record with byte and MiB sizes. */
-export function fileRecord(
+function fileRecord(
   filePath: string,
   workspaceRoot: string,
 ): FileRecord {

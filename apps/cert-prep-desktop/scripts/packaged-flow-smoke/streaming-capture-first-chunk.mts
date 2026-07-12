@@ -11,7 +11,7 @@ import { bodyText, log } from './runner-context.mts';
 export const FIRST_CHUNK_TEXT_PATTERN = /Extracted text|Page \d+|\b[1-9]\d* chunks\b/;
 const FIRST_CHUNK_VISIBLE_TIMEOUT_MS = FIRST_CHUNK_GATE_MS + 260_000;
 
-export interface FirstChunkObservation {
+interface FirstChunkObservation {
   readonly done: Promise<void>;
   stop(): void;
 }

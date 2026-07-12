@@ -187,7 +187,7 @@ export async function openRuntimeDrawer(run: SmokeRunState): Promise<void> {
   log(run, `runtime view locator visible after ${elapsed}ms`);
 }
 
-export function runtimeDrawerLocator(run: SmokeRunState): Locator {
+function runtimeDrawerLocator(run: SmokeRunState): Locator {
   return activePage(run)
     .locator('[aria-label="Runtime details"], .p-dialog, [role="dialog"]')
     .filter({
