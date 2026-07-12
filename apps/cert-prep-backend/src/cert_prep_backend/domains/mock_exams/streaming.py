@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from threading import BoundedSemaphore, Thread
 
 from cert_prep_backend.api.errors import ProviderUnavailableError
@@ -19,6 +20,8 @@ from cert_prep_backend.domains.mock_exams.normalization import as_editable_quest
 from cert_prep_backend.domains.mock_exams.ports import (
     DraftGenerationProvider,
     FastFirstDraftProvider,
+    GenerationAttribution,
+    GenerationAttributionProvider,
     ReasoningDraftProvider,
     ResourceReleasingProvider,
     StartsOnGenerationProvider,
@@ -26,9 +29,6 @@ from cert_prep_backend.domains.mock_exams.ports import (
     provider_capability,
 )
 from cert_prep_backend.domains.mock_exams.provider import generate_drafts_for_strategy
-from cert_prep_backend.domains.mock_exams.response_parsing import (
-    is_non_fatal_generation_error,
-)
 from cert_prep_backend.domains.source_documents import repository as documents_repository
 from cert_prep_backend.persistence.database import Database
 
@@ -36,6 +36,8 @@ from cert_prep_backend.persistence.database import Database
 STREAMING_FAST_FIRST_NUM_CTX = 2048
 STREAMING_FAST_FIRST_NUM_PREDICT = 512
 STREAMING_DRAFTS_PER_JOB_LIMIT = 1
+
+logger = logging.getLogger(__name__)
 
 
 class StreamingDraftGenerationManager:
@@ -141,6 +143,7 @@ class StreamingDraftGenerationManager:
 
     def _run_job(self, db: Database, job_id: str, limit: int) -> None:
         job_provider: DraftGenerationProvider | None = None
+        generation_started = False
         try:
             job_provider = _provider_for_job(self._provider)
             job = draft_jobs.get_job(db, job_id)
@@ -154,6 +157,8 @@ class StreamingDraftGenerationManager:
                 db, job["project_id"], job["document_id"], job["chunk_id"]
             )
             source_chunk = _source_chunk_from_record(chunk)
+            _reset_generation_attribution(job_provider)
+            generation_started = True
             suggestions = [
                 as_editable_question(suggestion)
                 for suggestion in _generate_streaming_fast_first_drafts(
@@ -163,16 +168,35 @@ class StreamingDraftGenerationManager:
                     DraftGenerationStrategy(job["strategy"]),
                 )
             ]
-            drafts = drafts_repository.append_generated_drafts(
+            attribution = _generation_attribution(job_provider)
+            drafts_repository.append_generated_drafts_and_mark_job_succeeded(
                 db,
+                job_id=job_id,
                 project_id=job["project_id"],
                 document_id=job["document_id"],
+                chunk_id=job["chunk_id"],
                 suggestions=suggestions,
+                effective_provider=(
+                    attribution.effective_provider if attribution is not None else None
+                ),
+                effective_model=(
+                    attribution.effective_model if attribution is not None else None
+                ),
+                fallback_reason=(
+                    attribution.fallback_reason if attribution is not None else None
+                ),
             )
-            draft_jobs.mark_succeeded(db, job_id, generated_count=len(drafts))
-            _refresh_document_exam_count(db, job["project_id"], job["document_id"])
+            _refresh_document_exam_count_after_success(
+                db,
+                job_id=job_id,
+                project_id=job["project_id"],
+                document_id=job["document_id"],
+            )
         except ProviderUnavailableError as exc:
-            draft_jobs.mark_skipped_provider_unavailable(db, job_id, detail=str(exc))
+            if generation_started:
+                draft_jobs.mark_failed(db, job_id, detail=f"request_failed: {exc}")
+            else:
+                draft_jobs.mark_skipped_provider_unavailable(db, job_id, detail=str(exc))
         except Exception as exc:
             draft_jobs.mark_failed(db, job_id, detail=f"request_failed: {exc}")
         finally:
@@ -256,6 +280,21 @@ def _release_provider_resources(provider: DraftGenerationProvider) -> None:
         releasing_provider.release_resources()
 
 
+def _reset_generation_attribution(provider: DraftGenerationProvider) -> None:
+    attribution_provider = provider_capability(provider, GenerationAttributionProvider)
+    if attribution_provider is not None:
+        attribution_provider.reset_generation_attribution()
+
+
+def _generation_attribution(
+    provider: DraftGenerationProvider,
+) -> GenerationAttribution | None:
+    attribution_provider = provider_capability(provider, GenerationAttributionProvider)
+    if attribution_provider is None:
+        return None
+    return attribution_provider.get_generation_attribution()
+
+
 def _generate_streaming_fast_first_drafts(
     provider: DraftGenerationProvider,
     source_chunk: SourceChunk,
@@ -269,36 +308,26 @@ def _generate_streaming_fast_first_drafts(
         deterministic = extract_jlpt_question_blocks([source_chunk], 1)
         fast_first_provider = provider_capability(provider, FastFirstDraftProvider)
         if deterministic and fast_first_provider is not None:
-            try:
-                suggestion = _call_streaming_provider_method(
-                    provider,
-                    fast_first_provider.generate_fast_first_draft,
-                    source_chunk,
-                    deterministic[0],
-                )
-            except ProviderUnavailableError as exc:
-                if not is_non_fatal_generation_error(exc):
-                    raise
-                suggestion = None
+            suggestion = _call_streaming_provider_method(
+                provider,
+                fast_first_provider.generate_fast_first_draft,
+                source_chunk,
+                deterministic[0],
+            )
             if suggestion is not None:
                 return [suggestion]
 
         reasoning_provider = provider_capability(provider, ReasoningDraftProvider)
         if reasoning_provider is not None:
             prompt_chunk = _compact_reasoning_chunk(source_chunk)
-            try:
-                suggestions = _call_streaming_provider_method(
-                    provider,
-                    reasoning_provider.generate_reasoning_drafts,
-                    [prompt_chunk],
-                    first_limit,
-                    num_ctx=STREAMING_FAST_FIRST_NUM_CTX,
-                    num_predict=STREAMING_FAST_FIRST_NUM_PREDICT,
-                )
-            except ProviderUnavailableError as exc:
-                if not is_non_fatal_generation_error(exc):
-                    raise
-                return []
+            suggestions = _call_streaming_provider_method(
+                provider,
+                reasoning_provider.generate_reasoning_drafts,
+                [prompt_chunk],
+                first_limit,
+                num_ctx=STREAMING_FAST_FIRST_NUM_CTX,
+                num_predict=STREAMING_FAST_FIRST_NUM_PREDICT,
+            )
             if suggestions:
                 return suggestions
             return []
@@ -395,3 +424,22 @@ def _refresh_document_exam_count(db: Database, project_id: str, document_id: str
         status=next_status,
         exam_item_count=drafts_repository.count_document_drafts(db, project_id, document_id),
     )
+
+
+def _refresh_document_exam_count_after_success(
+    db: Database,
+    *,
+    job_id: str,
+    project_id: str,
+    document_id: str,
+) -> None:
+    """Refresh the derived count without reversing a committed job success."""
+
+    try:
+        _refresh_document_exam_count(db, project_id, document_id)
+    except Exception:
+        logger.warning(
+            "Draft job %s succeeded but the document exam count refresh failed.",
+            job_id,
+            exc_info=True,
+        )

@@ -95,6 +95,9 @@ class DraftGenerationJobRead(BaseModel):
     status: str
     provider: str
     model: str
+    effective_provider: str | None
+    effective_model: str | None
+    fallback_reason: str | None
     generated_count: int
     retry_count: int
     last_error: str | None

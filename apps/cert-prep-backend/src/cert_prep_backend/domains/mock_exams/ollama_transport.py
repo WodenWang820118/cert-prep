@@ -15,7 +15,10 @@ from cert_prep_backend.domains.mock_exams.models import (
 )
 from cert_prep_backend.domains.mock_exams.normalization import dedupe_suggestions
 from cert_prep_backend.domains.mock_exams.ollama_client import OllamaClient
-from cert_prep_backend.domains.mock_exams.ports import ProviderHealth
+from cert_prep_backend.domains.mock_exams.ports import (
+    GenerationAttribution,
+    ProviderHealth,
+)
 from cert_prep_backend.domains.mock_exams.reasoning_parser import (
     EXAM_ITEMS_SCHEMA,
     draft_suggestion_from_item,
@@ -148,6 +151,7 @@ class OllamaProvider:
     def generate_drafts(self, chunks: Sequence[SourceChunk], limit: int) -> list[DraftSuggestion]:
         """Generate drafts by combining deterministic extraction with reasoning fallback."""
 
+        self.reset_generation_attribution()
         if not chunks:
             return []
 
@@ -169,6 +173,7 @@ class OllamaProvider:
     ) -> list[DraftSuggestion]:
         """Ask Ollama for structured JSON drafts and validate grounded results."""
 
+        self.reset_generation_attribution()
         if not chunks or limit <= 0:
             return []
 
@@ -244,6 +249,7 @@ class OllamaProvider:
     ) -> DraftSuggestion | None:
         """Ask Ollama to complete one extracted draft with answer/rationale JSON."""
 
+        self.reset_generation_attribution()
         try:
             payload = self._with_model_fallback(
                 lambda model: json_object_response_or_unavailable(
@@ -333,12 +339,14 @@ class OllamaProvider:
         raise ProviderUnavailableError(self._health_detail(None))
 
     def _with_model_fallback(self, operation: Callable[[str], T]) -> T:
+        self.reset_generation_attribution()
         errors: list[str] = []
         for model in self._available_model_candidates():
             try:
                 result = operation(model)
             except Exception as exc:
                 errors.append(f"{model}: {short_error(exc)}")
+                self._record_generation_failure(model, exc)
                 if is_runtime_model_failure(exc):
                     self._mark_model_unusable(model, exc)
                 continue
@@ -351,8 +359,24 @@ class OllamaProvider:
             detail = f"{detail}: {'; '.join(errors)}"
         raise ProviderUnavailableError(detail)
 
+    def reset_generation_attribution(self) -> None:
+        self._fallback_engine.reset_generation_attribution()
+
+    def get_generation_attribution(self) -> GenerationAttribution | None:
+        attribution = self._fallback_engine.generation_attribution()
+        if attribution is None:
+            return None
+        return GenerationAttribution(
+            effective_provider=self.provider,
+            effective_model=attribution.effective_model,
+            fallback_reason=attribution.fallback_reason,
+        )
+
     def _mark_model_unusable(self, model: str, exc: Exception) -> None:
         self._fallback_engine.mark_model_unusable(model, exc)
+
+    def _record_generation_failure(self, model: str, exc: Exception) -> None:
+        self._fallback_engine.record_generation_failure(model, exc)
 
     def _record_model_success(self, model: str) -> None:
         self._fallback_engine.record_model_success(model)

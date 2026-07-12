@@ -376,6 +376,17 @@ MIGRATIONS: Final[tuple[tuple[int, str], ...]] = (
             WHERE status = 'active';
         """,
     ),
+    (
+        16,
+        """
+        ALTER TABLE draft_generation_jobs
+            ADD COLUMN effective_provider TEXT;
+        ALTER TABLE draft_generation_jobs
+            ADD COLUMN effective_model TEXT;
+        ALTER TABLE draft_generation_jobs
+            ADD COLUMN fallback_reason TEXT;
+        """,
+    ),
 )
 
 

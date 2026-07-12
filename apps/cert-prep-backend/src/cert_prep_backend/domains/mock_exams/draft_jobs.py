@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from sqlite3 import Row
+from sqlite3 import Connection, Row
 from uuid import uuid4
 
-from cert_prep_backend.persistence.database import Database, utc_now
+from cert_prep_backend.api.errors import NotFoundError
 from cert_prep_backend.domains.projects.repository import ensure_project_exists
 from cert_prep_backend.domains.source_documents import repository as documents_repository
-from cert_prep_backend.api.errors import NotFoundError
+from cert_prep_backend.persistence.database import Database, utc_now
 
 
 class DraftGenerationJobStatus(StrEnum):
@@ -110,6 +110,9 @@ def recover_runnable_jobs(db: Database) -> list[dict]:
             """
             UPDATE draft_generation_jobs
             SET status = ?,
+                effective_provider = NULL,
+                effective_model = NULL,
+                fallback_reason = NULL,
                 last_error = 'Draft generation was interrupted before completion.',
                 updated_at = ?
             WHERE status = ?
@@ -152,6 +155,9 @@ def retry_document_jobs(
             SET status = ?,
                 provider = ?,
                 model = ?,
+                effective_provider = NULL,
+                effective_model = NULL,
+                fallback_reason = NULL,
                 generated_count = 0,
                 retry_count = retry_count + 1,
                 last_error = NULL,
@@ -205,14 +211,94 @@ def mark_running(db: Database, job_id: str) -> dict:
     )
 
 
-def mark_succeeded(db: Database, job_id: str, *, generated_count: int) -> dict:
-    return _update_job(
-        db,
-        job_id,
-        status=DraftGenerationJobStatus.SUCCEEDED,
-        generated_count=generated_count,
-        last_error=None,
+def mark_succeeded(
+    db: Database,
+    job_id: str,
+    *,
+    generated_count: int,
+    effective_provider: str | None = None,
+    effective_model: str | None = None,
+    fallback_reason: str | None = None,
+) -> dict:
+    with db.connect() as connection:
+        return mark_succeeded_in_transaction(
+            connection,
+            job_id,
+            generated_count=generated_count,
+            effective_provider=effective_provider,
+            effective_model=effective_model,
+            fallback_reason=fallback_reason,
+        )
+
+
+def mark_succeeded_in_transaction(
+    connection: Connection,
+    job_id: str,
+    *,
+    generated_count: int,
+    effective_provider: str | None,
+    effective_model: str | None,
+    fallback_reason: str | None,
+    expected_project_id: str | None = None,
+    expected_document_id: str | None = None,
+    expected_chunk_id: str | None = None,
+) -> dict:
+    """Persist successful attribution using the caller's open transaction."""
+
+    now = utc_now()
+    connection.execute(
+        """
+        UPDATE draft_generation_jobs
+        SET status = ?,
+            effective_provider = ?,
+            effective_model = ?,
+            fallback_reason = ?,
+            generated_count = ?,
+            last_error = NULL,
+            updated_at = ?
+        WHERE id = ?
+          AND (? IS NULL OR project_id = ?)
+          AND (? IS NULL OR document_id = ?)
+          AND (? IS NULL OR chunk_id = ?)
+        """,
+        (
+            DraftGenerationJobStatus.SUCCEEDED,
+            effective_provider,
+            effective_model,
+            fallback_reason,
+            generated_count,
+            now,
+            job_id,
+            expected_project_id,
+            expected_project_id,
+            expected_document_id,
+            expected_document_id,
+            expected_chunk_id,
+            expected_chunk_id,
+        ),
     )
+    row = connection.execute(
+        """
+        SELECT *
+        FROM draft_generation_jobs
+        WHERE id = ?
+          AND (? IS NULL OR project_id = ?)
+          AND (? IS NULL OR document_id = ?)
+          AND (? IS NULL OR chunk_id = ?)
+        """,
+        (
+            job_id,
+            expected_project_id,
+            expected_project_id,
+            expected_document_id,
+            expected_document_id,
+            expected_chunk_id,
+            expected_chunk_id,
+        ),
+    ).fetchone()
+    if row is None:
+        raise NotFoundError("Draft generation job not found.")
+    return job_from_row(row)
 
 
 def mark_skipped_missing_model(db: Database, job_id: str, *, detail: str) -> dict:
@@ -261,6 +347,9 @@ def job_from_row(row: Row) -> dict:
         "status": row["status"],
         "provider": row["provider"],
         "model": row["model"],
+        "effective_provider": row["effective_provider"],
+        "effective_model": row["effective_model"],
+        "fallback_reason": row["fallback_reason"],
         "generated_count": row["generated_count"],
         "retry_count": row["retry_count"],
         "last_error": row["last_error"],
@@ -283,6 +372,9 @@ def _update_job(
             """
             UPDATE draft_generation_jobs
             SET status = ?,
+                effective_provider = NULL,
+                effective_model = NULL,
+                fallback_reason = NULL,
                 generated_count = ?,
                 last_error = ?,
                 retry_count = CASE

@@ -1,15 +1,21 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from conftest import minimal_pdf
 from cert_prep_backend.api.app import create_app
+from cert_prep_backend.api.errors import (
+    NotFoundError,
+    ProviderUnavailableError,
+    ValidationError,
+)
 from cert_prep_backend.core.config import DEFAULT_OLLAMA_MODEL, Settings
+from cert_prep_backend.domains.mock_exams import draft_jobs
+from cert_prep_backend.domains.mock_exams import repository as drafts_repository
 from cert_prep_backend.domains.mock_exams.models import (
     AnswerKeySource,
     DraftStatus,
     DraftSuggestion,
 )
-from cert_prep_backend.domains.mock_exams import repository as drafts_repository
-from cert_prep_backend.api.errors import ProviderUnavailableError
 from cert_prep_backend.domains.mock_exams.ports import ProviderHealth
 from cert_prep_backend.domains.mock_exams.schemas import DraftGenerateRequest
 
@@ -217,6 +223,218 @@ def test_streaming_append_preserves_existing_drafts_and_dedupes_retries(
     assert first[0]["id"] in draft_ids
 
 
+def test_atomic_streaming_success_preserves_configured_and_records_effective_runtime(
+    client: TestClient,
+    auth_headers,
+) -> None:
+    project_id = _create_project(client, auth_headers)
+    document_id = _upload_document(client, auth_headers, project_id)
+    chunk = client.get(
+        f"/projects/{project_id}/documents/{document_id}/chunks",
+        headers=auth_headers,
+    ).json()["items"][0]
+    job = draft_jobs.enqueue_chunk_job(
+        client.app.state.database,
+        project_id=project_id,
+        document_id=document_id,
+        chunk_id=chunk["id"],
+        page_number=chunk["page_number"],
+        strategy="hybrid_reasoning",
+        provider="fastflowlm",
+        model="qwen3.5:4b",
+    )
+    draft_jobs.mark_running(client.app.state.database, job["id"])
+    suggestion = _streaming_suggestion(chunk, question_number="atomic-success")
+
+    drafts = drafts_repository.append_generated_drafts_and_mark_job_succeeded(
+        client.app.state.database,
+        job_id=job["id"],
+        project_id=project_id,
+        document_id=document_id,
+        chunk_id=chunk["id"],
+        suggestions=[suggestion],
+        effective_provider="fastflowlm",
+        effective_model="qwen3.5:2b",
+        fallback_reason="Available system RAM requires the low-resource model.",
+    )
+
+    stored_job = draft_jobs.get_job(client.app.state.database, job["id"])
+    assert len(drafts) == 1
+    assert stored_job["status"] == "succeeded"
+    assert stored_job["generated_count"] == 1
+    assert stored_job["provider"] == "fastflowlm"
+    assert stored_job["model"] == "qwen3.5:4b"
+    assert stored_job["effective_provider"] == "fastflowlm"
+    assert stored_job["effective_model"] == "qwen3.5:2b"
+    assert stored_job["fallback_reason"] == (
+        "Available system RAM requires the low-resource model."
+    )
+
+    deterministic_job = draft_jobs.enqueue_chunk_job(
+        client.app.state.database,
+        project_id=project_id,
+        document_id=document_id,
+        chunk_id=chunk["id"],
+        page_number=chunk["page_number"],
+        strategy="deterministic_only",
+        provider="",
+        model="",
+    )
+    draft_jobs.mark_running(client.app.state.database, deterministic_job["id"])
+    deterministic_drafts = (
+        drafts_repository.append_generated_drafts_and_mark_job_succeeded(
+            client.app.state.database,
+            job_id=deterministic_job["id"],
+            project_id=project_id,
+            document_id=document_id,
+            chunk_id=chunk["id"],
+            suggestions=[],
+            effective_provider=None,
+            effective_model=None,
+            fallback_reason=None,
+        )
+    )
+    stored_deterministic_job = draft_jobs.get_job(
+        client.app.state.database, deterministic_job["id"]
+    )
+    assert deterministic_drafts == []
+    assert stored_deterministic_job["status"] == "succeeded"
+    assert stored_deterministic_job["effective_provider"] is None
+    assert stored_deterministic_job["effective_model"] is None
+    assert stored_deterministic_job["fallback_reason"] is None
+
+
+def test_atomic_streaming_success_rolls_back_drafts_when_job_update_fails(
+    client: TestClient,
+    auth_headers,
+) -> None:
+    project_id = _create_project(client, auth_headers)
+    document_id = _upload_document(client, auth_headers, project_id)
+    chunk = client.get(
+        f"/projects/{project_id}/documents/{document_id}/chunks",
+        headers=auth_headers,
+    ).json()["items"][0]
+    job = draft_jobs.enqueue_chunk_job(
+        client.app.state.database,
+        project_id=project_id,
+        document_id=document_id,
+        chunk_id=chunk["id"],
+        page_number=chunk["page_number"],
+        strategy="hybrid_reasoning",
+        provider="fastflowlm",
+        model="qwen3.5:4b",
+    )
+    draft_jobs.mark_running(client.app.state.database, job["id"])
+    suggestion = _streaming_suggestion(chunk, question_number="rolled-back")
+
+    with pytest.raises(NotFoundError, match="Draft generation job not found"):
+        drafts_repository.append_generated_drafts_and_mark_job_succeeded(
+            client.app.state.database,
+            job_id="missing-job",
+            project_id=project_id,
+            document_id=document_id,
+            chunk_id=chunk["id"],
+            suggestions=[suggestion],
+            effective_provider="fastflowlm",
+            effective_model="qwen3.5:4b",
+            fallback_reason=None,
+        )
+
+    assert drafts_repository.list_drafts(client.app.state.database, project_id) == []
+    stored_job = draft_jobs.get_job(client.app.state.database, job["id"])
+    assert stored_job["status"] == "running"
+    assert stored_job["effective_provider"] is None
+    assert stored_job["effective_model"] is None
+    assert stored_job["fallback_reason"] is None
+
+    with client.app.state.database.connect() as connection:
+        connection.execute(
+            """
+            UPDATE draft_generation_jobs
+            SET effective_provider = 'stale-provider',
+                effective_model = 'stale-model',
+                fallback_reason = 'stale-reason'
+            WHERE id = ?
+            """,
+            (job["id"],),
+        )
+    recovered = draft_jobs.recover_runnable_jobs(client.app.state.database)
+    recovered_job = next(item for item in recovered if item["id"] == job["id"])
+    assert recovered_job["status"] == "pending"
+    assert recovered_job["effective_provider"] is None
+    assert recovered_job["effective_model"] is None
+    assert recovered_job["fallback_reason"] is None
+
+
+def test_atomic_streaming_success_rejects_and_rolls_back_cross_document_chunks(
+    client: TestClient,
+    auth_headers,
+) -> None:
+    project_id = _create_project(client, auth_headers)
+    document_id = _upload_document(client, auth_headers, project_id)
+    other_document_id = _upload_document(client, auth_headers, project_id)
+    chunks = client.get(
+        f"/projects/{project_id}/documents/{document_id}/chunks",
+        headers=auth_headers,
+    ).json()["items"]
+    other_chunks = client.get(
+        f"/projects/{project_id}/documents/{other_document_id}/chunks",
+        headers=auth_headers,
+    ).json()["items"]
+    chunk = chunks[0]
+    other_chunk = other_chunks[0]
+    job = draft_jobs.enqueue_chunk_job(
+        client.app.state.database,
+        project_id=project_id,
+        document_id=document_id,
+        chunk_id=chunk["id"],
+        page_number=chunk["page_number"],
+        strategy="hybrid_reasoning",
+        provider="fastflowlm",
+        model="qwen3.5:4b",
+    )
+    draft_jobs.mark_running(client.app.state.database, job["id"])
+    mismatched_suggestion = _streaming_suggestion(
+        other_chunk,
+        question_number="cross-document",
+    )
+
+    with pytest.raises(
+        ValidationError,
+        match="Generated draft does not belong to the draft job chunk",
+    ):
+        drafts_repository.append_generated_drafts_and_mark_job_succeeded(
+            client.app.state.database,
+            job_id=job["id"],
+            project_id=project_id,
+            document_id=document_id,
+            chunk_id=chunk["id"],
+            suggestions=[mismatched_suggestion],
+            effective_provider="fastflowlm",
+            effective_model="qwen3.5:4b",
+            fallback_reason=None,
+        )
+
+    with pytest.raises(NotFoundError, match="Draft generation job not found"):
+        drafts_repository.append_generated_drafts_and_mark_job_succeeded(
+            client.app.state.database,
+            job_id=job["id"],
+            project_id=project_id,
+            document_id=document_id,
+            chunk_id=other_chunk["id"],
+            suggestions=[mismatched_suggestion],
+            effective_provider="fastflowlm",
+            effective_model="qwen3.5:4b",
+            fallback_reason=None,
+        )
+
+    assert drafts_repository.list_drafts(client.app.state.database, project_id) == []
+    stored_job = draft_jobs.get_job(client.app.state.database, job["id"])
+    assert stored_job["status"] == "running"
+    assert stored_job["effective_provider"] is None
+    assert stored_job["effective_model"] is None
+
+
 def test_custom_answer_key_source_remains_backward_compatible(
     client: TestClient, auth_headers
 ) -> None:
@@ -310,6 +528,20 @@ def _create_project(client: TestClient, auth_headers) -> str:
     response = client.post("/projects", headers=auth_headers, json={"name": "Cloud"})
     assert response.status_code == 201
     return response.json()["id"]
+
+
+def _streaming_suggestion(chunk: dict, *, question_number: str) -> DraftSuggestion:
+    return DraftSuggestion(
+        chunk_id=chunk["id"],
+        question=f"Which action applies to {question_number}?",
+        choices=["Apply the cited concept", "Ignore the cited source"],
+        answer="Apply the cited concept",
+        answer_key_source=AnswerKeySource.AI_INFERRED,
+        rationale="The cited source supports the correct answer.",
+        citation_page=chunk["page_number"],
+        source_excerpt=chunk["source_excerpt"],
+        source_question_number=question_number,
+    )
 
 
 class UnavailableExamProvider:

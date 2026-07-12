@@ -1,10 +1,25 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from threading import Lock
+from dataclasses import dataclass
+from threading import Lock, local
 import time
 
 from cert_prep_backend.domains.mock_exams.response_parsing import short_error_text
+
+
+@dataclass(frozen=True, slots=True)
+class ModelGenerationAttribution:
+    """Model and fallback reason recorded for one successful generation call."""
+
+    effective_model: str
+    fallback_reason: str | None
+
+
+class _GenerationState(local):
+    def __init__(self) -> None:
+        self.attribution: ModelGenerationAttribution | None = None
+        self.primary_failure: str | None = None
 
 
 class ModelFallbackEngine:
@@ -36,6 +51,18 @@ class ModelFallbackEngine:
         self._last_primary_failure: str | None = None
         self._runtime_fallback_reason: str | None = None
         self._primary_memory_blocked = False
+        self._generation_state = _GenerationState()
+
+    def reset_generation_attribution(self) -> None:
+        """Clear only the current thread's per-generation attribution."""
+
+        self._generation_state.attribution = None
+        self._generation_state.primary_failure = None
+
+    def generation_attribution(self) -> ModelGenerationAttribution | None:
+        """Return the current thread's last successful generation attribution."""
+
+        return self._generation_state.attribution
 
     def effective_model_from(self, model_names: set[str]) -> str | None:
         unusable_models, runtime_effective_model = self.runtime_model_state()
@@ -84,6 +111,7 @@ class ModelFallbackEngine:
 
     def mark_model_unusable(self, model: str, exc: Exception) -> None:
         failure = self._short_error(exc)
+        self._record_generation_failure_text(model, failure)
         with self._lock:
             self._prune_unusable_models_locked()
             self._unusable_models[model] = time.monotonic()
@@ -94,27 +122,41 @@ class ModelFallbackEngine:
                 self._runtime_effective_model = None
                 self._runtime_fallback_reason = None
 
+    def record_generation_failure(self, model: str, exc: Exception) -> None:
+        """Remember a current-call failure without changing runtime model health."""
+
+        self._record_generation_failure_text(model, self._short_error(exc))
+
     def record_model_success(self, model: str) -> None:
+        fallback_reason: str | None = None
         with self._lock:
             self._unusable_models.pop(model, None)
             if model == self.primary_model:
                 self._runtime_effective_model = None
                 self._runtime_fallback_reason = None
                 self._primary_memory_blocked = False
-                return
-
-            self._runtime_effective_model = model
-            if self._last_primary_failure:
-                self._runtime_fallback_reason = (
-                    f"Configured model {self.primary_model} was unavailable during generation "
-                    f"({short_error_text(self._last_primary_failure)}); using fallback {model}."
-                )
             else:
-                self._runtime_fallback_reason = (
-                    f"Configured model {self.primary_model} is missing; using fallback {model}."
+                self._runtime_effective_model = model
+                fallback_reason = _fallback_reason_for(
+                    primary_model=self.primary_model,
+                    effective_model=model,
+                    primary_failure=self._generation_state.primary_failure,
                 )
+                self._runtime_fallback_reason = _fallback_reason_for(
+                    primary_model=self.primary_model,
+                    effective_model=model,
+                    primary_failure=self._last_primary_failure,
+                )
+
+        self._generation_state.attribution = ModelGenerationAttribution(
+            effective_model=model,
+            fallback_reason=fallback_reason,
+        )
+        self._generation_state.primary_failure = None
 
     def mark_primary_blocked(self, reason: str) -> None:
+        self._generation_state.attribution = None
+        self._generation_state.primary_failure = reason
         with self._lock:
             self._unusable_models[self.primary_model] = time.monotonic()
             self._last_primary_failure = reason
@@ -168,3 +210,22 @@ class ModelFallbackEngine:
         ]
         for model in expired:
             self._unusable_models.pop(model, None)
+
+    def _record_generation_failure_text(self, model: str, failure: str) -> None:
+        self._generation_state.attribution = None
+        if model == self.primary_model:
+            self._generation_state.primary_failure = failure
+
+
+def _fallback_reason_for(
+    *,
+    primary_model: str,
+    effective_model: str,
+    primary_failure: str | None,
+) -> str:
+    if primary_failure:
+        return (
+            f"Configured model {primary_model} was unavailable during generation "
+            f"({short_error_text(primary_failure)}); using fallback {effective_model}."
+        )
+    return f"Configured model {primary_model} is missing; using fallback {effective_model}."

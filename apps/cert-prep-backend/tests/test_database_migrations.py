@@ -58,6 +58,9 @@ def test_saved_exam_runtime_metadata_columns_are_migrated(tmp_path: Path) -> Non
         "status",
         "provider",
         "model",
+        "effective_provider",
+        "effective_model",
+        "fallback_reason",
         "generated_count",
         "retry_count",
         "last_error",
@@ -194,6 +197,32 @@ def test_failed_migration_rolls_back_schema_and_reopens_cleanly(
     assert versions_after_reopen == [1, 2]
 
 
+def test_migration_16_preserves_configured_job_values_and_backfills_null_attribution(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(data_dir=tmp_path, api_token="test-token")
+    _create_v15_draft_job_fixture(settings.database_path)
+
+    Database(settings).migrate()
+
+    with sqlite3.connect(settings.database_path) as connection:
+        connection.row_factory = sqlite3.Row
+        job = connection.execute(
+            "SELECT * FROM draft_generation_jobs WHERE id = 'draft-job'"
+        ).fetchone()
+        applied = connection.execute(
+            "SELECT version FROM schema_migrations WHERE version = 16"
+        ).fetchone()
+
+    assert job is not None
+    assert job["provider"] == "fastflowlm"
+    assert job["model"] == "qwen3.5:4b"
+    assert job["effective_provider"] is None
+    assert job["effective_model"] is None
+    assert job["fallback_reason"] is None
+    assert applied is not None
+
+
 def _columns(connection, table_name: str) -> dict[str, str | None]:
     rows = connection.execute(f"PRAGMA table_info({table_name})").fetchall()
     return {row["name"]: row["dflt_value"] for row in rows}
@@ -315,4 +344,69 @@ def _create_v14_practice_fixture(database_path: Path) -> None:
                     "2026-01-10T00:00:00Z",
                 ),
             ],
+        )
+
+
+def _create_v15_draft_job_fixture(database_path: Path) -> None:
+    database_path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(database_path) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE schema_migrations (
+                version INTEGER PRIMARY KEY,
+                applied_at TEXT NOT NULL
+            );
+            """
+        )
+        for version, sql in MIGRATIONS:
+            if version >= 16:
+                break
+            connection.executescript(sql)
+            connection.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                (version, f"migration-{version}"),
+            )
+
+        connection.execute(
+            """
+            INSERT INTO projects(id, name, description, created_at, updated_at)
+            VALUES ('project', 'Project', '', '2026-01-01', '2026-01-01')
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO documents(
+                id, project_id, filename, sha256, storage_path, page_count,
+                has_text, status, created_at
+            )
+            VALUES (
+                'document', 'project', 'source.pdf', 'sha', 'source.pdf', 1,
+                1, 'ready', '2026-01-01'
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO document_chunks(
+                id, project_id, document_id, page_number, chunk_index, text,
+                source_excerpt, created_at
+            )
+            VALUES (
+                'chunk', 'project', 'document', 1, 0, 'Source text',
+                'Source text', '2026-01-01'
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO draft_generation_jobs(
+                id, project_id, document_id, chunk_id, page_number, strategy,
+                status, provider, model, created_at, updated_at
+            )
+            VALUES (
+                'draft-job', 'project', 'document', 'chunk', 1,
+                'hybrid_reasoning', 'succeeded', 'fastflowlm', 'qwen3.5:4b',
+                '2026-01-01', '2026-01-01'
+            )
+            """
         )

@@ -1,3 +1,5 @@
+from threading import Event, Thread
+
 from fastapi.testclient import TestClient
 
 from cert_prep_backend.api.app import create_app
@@ -37,6 +39,63 @@ def test_model_fallback_engine_records_runtime_fallback_reason() -> None:
 
     assert engine.runtime_unusable_models() == set()
     assert engine.fallback_reason("qwen3.5:4b") is None
+
+
+def test_model_fallback_generation_attribution_is_thread_local() -> None:
+    engine = ModelFallbackEngine(
+        primary_model="qwen3.5:4b",
+        fallback_models=["qwen3.5:2b"],
+        retry_after_seconds=300,
+    )
+    primary_failed = Event()
+    other_thread_recorded = Event()
+    attributions = {}
+
+    def record_fallback() -> None:
+        engine.reset_generation_attribution()
+        engine.mark_model_unusable("qwen3.5:4b", RuntimeError("fallback-thread OOM"))
+        primary_failed.set()
+        assert other_thread_recorded.wait(timeout=5)
+        engine.record_model_success("qwen3.5:2b")
+        attributions["fallback"] = engine.generation_attribution()
+
+    def record_without_local_failure() -> None:
+        assert primary_failed.wait(timeout=5)
+        engine.reset_generation_attribution()
+        engine.record_model_success("qwen3.5:2b")
+        attributions["other_fallback"] = engine.generation_attribution()
+        engine.reset_generation_attribution()
+        engine.record_model_success("qwen3.5:4b")
+        attributions["primary"] = engine.generation_attribution()
+        other_thread_recorded.set()
+
+    fallback_thread = Thread(target=record_fallback)
+    primary_thread = Thread(target=record_without_local_failure)
+    fallback_thread.start()
+    primary_thread.start()
+    fallback_thread.join(timeout=5)
+    primary_thread.join(timeout=5)
+
+    assert fallback_thread.is_alive() is False
+    assert primary_thread.is_alive() is False
+    fallback = attributions["fallback"]
+    other_fallback = attributions["other_fallback"]
+    primary = attributions["primary"]
+    assert fallback is not None
+    assert fallback.effective_model == "qwen3.5:2b"
+    assert fallback.fallback_reason == (
+        "Configured model qwen3.5:4b was unavailable during generation "
+        "(fallback-thread OOM); using fallback qwen3.5:2b."
+    )
+    assert other_fallback is not None
+    assert other_fallback.effective_model == "qwen3.5:2b"
+    assert other_fallback.fallback_reason == (
+        "Configured model qwen3.5:4b is missing; using fallback qwen3.5:2b."
+    )
+    assert primary is not None
+    assert primary.effective_model == "qwen3.5:4b"
+    assert primary.fallback_reason is None
+    assert engine.generation_attribution() is None
 
 def test_llm_health_does_not_pull_missing_ollama_model(tmp_path) -> None:
     provider = RecordingDownloadProvider(available=False, detail="model not found")

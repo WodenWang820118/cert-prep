@@ -1,6 +1,8 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from cert_prep_backend.api.errors import ProviderUnavailableError
 from cert_prep_backend.core.config import DEFAULT_FASTFLOWLM_MODEL
 from cert_prep_backend.domains.mock_exams import fastflowlm_resolver, fastflowlm_transport
@@ -129,6 +131,14 @@ def test_fastflowlm_reasoning_drafts_use_openai_compatible_chat() -> None:
     assert chat_request["path"] == "/chat/completions"
     assert chat_request["body"]["model"] == "qwen3.5:4b"
     assert chat_request["body"]["response_format"] == {"type": "json_object"}
+    attribution = provider.get_generation_attribution()
+    assert attribution is not None
+    assert attribution.effective_provider == "fastflowlm"
+    assert attribution.effective_model == "qwen3.5:4b"
+    assert attribution.fallback_reason is None
+
+    assert provider.generate_reasoning_drafts([], limit=1) == []
+    assert provider.get_generation_attribution() is None
 
 def test_fastflowlm_json_mode_retries_without_response_format() -> None:
     provider = RecordingFastFlowLMProvider(
@@ -186,9 +196,13 @@ def test_fastflowlm_timeout_does_not_switch_to_fallback_model() -> None:
         source_excerpt="Question text.",
     )
 
-    suggestion = provider.generate_fast_first_draft(chunk, candidate)
+    with pytest.raises(
+        ProviderUnavailableError,
+        match="FastFlowLM transient generation error for qwen3.5:4b: timed out",
+    ):
+        provider.generate_fast_first_draft(chunk, candidate)
 
-    assert suggestion is None
+    assert provider.get_generation_attribution() is None
     chat_requests = [
         request for request in provider.requests if request["path"] == "/chat/completions"
     ]
@@ -197,6 +211,44 @@ def test_fastflowlm_timeout_does_not_switch_to_fallback_model() -> None:
     assert health.available is True
     assert health.effective_model == "qwen3.5:4b"
     assert health.fallback_reason is None
+
+
+def test_fastflowlm_invalid_json_does_not_switch_to_fallback_model() -> None:
+    provider = RecordingFastFlowLMProvider(
+        models=["qwen3.5:4b", "qwen3.5:2b"],
+        chat_content='{"answer":"2","rationale":"Fallback fits.","confidence":0.7}',
+        fail_models={
+            "qwen3.5:4b": ProviderUnavailableError(
+                "FastFlowLM returned invalid JSON."
+            )
+        },
+    )
+    chunk = SourceChunk(
+        id="chunk-1",
+        page_number=1,
+        text="Question text. 1 first 2 second 3 third 4 fourth",
+        source_excerpt="Question text.",
+    )
+    candidate = DraftSuggestion(
+        chunk_id=chunk.id,
+        question="Question text.",
+        choices=["1 first", "2 second", "3 third", "4 fourth"],
+        answer="",
+        answer_key_source="manual",
+        rationale="",
+        citation_page=1,
+        source_excerpt="Question text.",
+    )
+
+    with pytest.raises(ProviderUnavailableError, match="invalid JSON"):
+        provider.generate_fast_first_draft(chunk, candidate)
+
+    assert provider.get_generation_attribution() is None
+    chat_requests = [
+        request for request in provider.requests if request["path"] == "/chat/completions"
+    ]
+    assert [request["body"]["model"] for request in chat_requests] == ["qwen3.5:4b"]
+
 
 def test_fastflowlm_health_falls_back_to_2b_when_available_ram_is_low(
     monkeypatch,
@@ -258,6 +310,14 @@ def test_fastflowlm_generation_skips_4b_when_available_ram_is_low(
         request for request in provider.requests if request["path"] == "/chat/completions"
     ]
     assert [request["body"]["model"] for request in chat_requests] == ["qwen3.5:2b"]
+    attribution = provider.get_generation_attribution()
+    assert attribution is not None
+    assert attribution.effective_provider == "fastflowlm"
+    assert attribution.effective_model == "qwen3.5:2b"
+    assert attribution.fallback_reason is not None
+    assert "qwen3.5:4b" in attribution.fallback_reason
+    assert "qwen3.5:2b" in attribution.fallback_reason
+    assert provider.model == "qwen3.5:4b"
     health = provider.health()
     assert health.effective_model == "qwen3.5:2b"
 
@@ -301,6 +361,10 @@ def test_fastflowlm_generation_retries_4b_after_ram_recovers(monkeypatch) -> Non
     low_ram_health = provider.health()
     assert low_ram_health.effective_model == "qwen3.5:2b"
     assert low_ram_health.fallback_reason is not None
+    low_ram_attribution = provider.get_generation_attribution()
+    assert low_ram_attribution is not None
+    assert low_ram_attribution.effective_model == "qwen3.5:2b"
+    assert low_ram_attribution.fallback_reason is not None
 
     available_ram_bytes["value"] = 8 * GIB
 
@@ -318,6 +382,11 @@ def test_fastflowlm_generation_retries_4b_after_ram_recovers(monkeypatch) -> Non
     recovered_health = provider.health()
     assert recovered_health.effective_model == "qwen3.5:4b"
     assert recovered_health.fallback_reason is None
+    recovered_attribution = provider.get_generation_attribution()
+    assert recovered_attribution is not None
+    assert recovered_attribution.effective_provider == "fastflowlm"
+    assert recovered_attribution.effective_model == "qwen3.5:4b"
+    assert recovered_attribution.fallback_reason is None
 
 def test_fastflowlm_generation_autostarts_and_releases_owned_server(
     monkeypatch,

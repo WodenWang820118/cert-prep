@@ -97,6 +97,23 @@ def test_practice_session_conflicts_are_documented(tmp_path) -> None:
     ) == "PracticeSessionConflictRead"
 
 
+def test_draft_job_effective_attribution_is_required_and_nullable(tmp_path) -> None:
+    openapi = create_app(Settings(data_dir=tmp_path, api_token="contract-token")).openapi()
+    schema = openapi["components"]["schemas"]["DraftGenerationJobRead"]
+
+    attribution_fields = {
+        "effective_provider",
+        "effective_model",
+        "fallback_reason",
+    }
+    assert attribution_fields | {"provider", "model"} <= set(schema["required"])
+    for field in attribution_fields:
+        assert {item.get("type") for item in schema["properties"][field]["anyOf"]} == {
+            "string",
+            "null",
+        }
+
+
 def _enum_values(openapi: dict[str, Any], schema_name: str, property_name: str) -> list[str]:
     schema = openapi["components"]["schemas"][schema_name]["properties"][property_name]
     if "$ref" in schema:

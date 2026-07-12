@@ -15,7 +15,6 @@ from cert_prep_backend.domains.mock_exams.deterministic_parser import (
 from cert_prep_backend.domains.mock_exams.fastflowlm_client import FastFlowLMClient
 from cert_prep_backend.domains.mock_exams.fastflowlm_generation import (
     FastFlowLMGenerationMixin,
-    _is_non_fatal_fastflowlm_generation_error,
 )
 from cert_prep_backend.domains.mock_exams.fastflowlm_health import FastFlowLMHealthMixin
 from cert_prep_backend.domains.mock_exams.fastflowlm_io import FastFlowLMIOMixin
@@ -175,6 +174,7 @@ class FastFlowLMProvider(
     def generate_drafts(self, chunks: Sequence[SourceChunk], limit: int) -> list[DraftSuggestion]:
         """Generate drafts by combining deterministic extraction with reasoning fallback."""
 
+        self.reset_generation_attribution()
         if not chunks:
             return []
 
@@ -195,6 +195,7 @@ class FastFlowLMProvider(
     ) -> list[DraftSuggestion]:
         """Ask FastFlowLM for structured JSON drafts and validate grounded results."""
 
+        self.reset_generation_attribution()
         if not chunks or limit <= 0:
             return []
 
@@ -263,19 +264,15 @@ class FastFlowLMProvider(
     ) -> DraftSuggestion | None:
         """Ask FastFlowLM to complete one extracted draft with answer/rationale JSON."""
 
-        try:
-            payload = self._with_model_fallback(
-                lambda model: self._chat_json(
-                    model,
-                    [{"role": "user", "content": fast_first_prompt(candidate)}],
-                    max_tokens=num_predict,
-                    context_tokens=num_ctx,
-                )
+        self.reset_generation_attribution()
+        payload = self._with_model_fallback(
+            lambda model: self._chat_json(
+                model,
+                [{"role": "user", "content": fast_first_prompt(candidate)}],
+                max_tokens=num_predict,
+                context_tokens=num_ctx,
             )
-        except ProviderUnavailableError as exc:
-            if _is_non_fatal_fastflowlm_generation_error(exc):
-                return None
-            raise
+        )
         answer = answer_from_payload(payload.get("answer"), candidate.choices)
         if answer is None:
             return None

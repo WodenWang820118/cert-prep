@@ -10,6 +10,8 @@ from cert_prep_contracts.llm import ModelPullProgress as _ModelPullProgress
 __all__ = [
     "DraftGenerationProvider",
     "FastFirstDraftProvider",
+    "GenerationAttribution",
+    "GenerationAttributionProvider",
     "ModelDownloadProvider",
     "ModelOnboardingProvider",
     "OllamaRuntimeInstallationProvider",
@@ -42,6 +44,15 @@ class ProviderHealth:
     modelfile_sha256: str | None = None
     profile_reason: str | None = None
     profile_warnings: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class GenerationAttribution:
+    """Effective provider/model that completed the current generation call."""
+
+    effective_provider: str
+    effective_model: str
+    fallback_reason: str | None = None
 
 
 class DraftGenerationProvider(Protocol):
@@ -84,6 +95,19 @@ class FastFirstDraftProvider(Protocol):
         **kwargs: Any,
     ) -> DraftSuggestion | None:
         """Complete answer/rationale fields for one deterministic draft."""
+        pass
+
+
+@runtime_checkable
+class GenerationAttributionProvider(Protocol):
+    """Provider capability for job-local effective model attribution."""
+
+    def reset_generation_attribution(self) -> None:
+        """Clear attribution before starting a new generation call or job."""
+        pass
+
+    def get_generation_attribution(self) -> GenerationAttribution | None:
+        """Return attribution recorded by the current thread's last successful call."""
         pass
 
 

@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import json
-from sqlite3 import Row
+from sqlite3 import Connection, Row
 from uuid import uuid4
 
-from cert_prep_backend.persistence.database import Database, utc_now
+from cert_prep_backend.api.errors import NotFoundError, ValidationError
+from cert_prep_backend.domains.mock_exams import draft_jobs
 from cert_prep_backend.domains.mock_exams.models import DraftSuggestion
 from cert_prep_backend.domains.mock_exams.schemas import QuestionDraftCreate, QuestionDraftUpdate
-from cert_prep_backend.domains.source_documents import repository as documents_repository
 from cert_prep_backend.domains.projects.repository import ensure_project_exists
-from cert_prep_backend.api.errors import NotFoundError, ValidationError
+from cert_prep_backend.domains.source_documents import repository as documents_repository
+from cert_prep_backend.persistence.database import Database, utc_now
 
 
 def create_draft(db: Database, project_id: str, payload: QuestionDraftCreate) -> dict:
@@ -128,57 +129,51 @@ def append_generated_drafts(
     """Append streaming draft suggestions without deleting in-review work."""
 
     ensure_project_exists(db, project_id)
-    now = utc_now()
-    draft_ids: list[str] = []
     with db.connect() as connection:
-        for index, suggestion in enumerate(suggestions, start=1):
-            if _matching_generated_draft_exists(
-                connection,
-                project_id=project_id,
-                document_id=document_id,
-                suggestion=suggestion,
-            ):
-                continue
-            draft_id = str(uuid4())
-            draft_ids.append(draft_id)
-            connection.execute(
-                """
-                INSERT INTO question_drafts(
-                    id, project_id, document_id, chunk_id, question, choices_json,
-                    answer, answer_key_source, rationale, citation_page, source_excerpt, status,
-                    confidence, source_order, source_question_number, item_kind, group_key, group_prompt,
-                    rejection_reason, created_at, updated_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
-                """,
-                (
-                    draft_id,
-                    project_id,
-                    document_id,
-                    suggestion.chunk_id,
-                    suggestion.question,
-                    json.dumps(suggestion.choices),
-                    suggestion.answer,
-                    suggestion.answer_key_source,
-                    suggestion.rationale,
-                    suggestion.citation_page,
-                    suggestion.source_excerpt,
-                    suggestion.status.value,
-                    suggestion.confidence,
-                    suggestion.source_order or index,
-                    suggestion.source_question_number,
-                    suggestion.item_kind.value,
-                    suggestion.group_key,
-                    suggestion.group_prompt,
-                    now,
-                    now,
-                ),
-            )
-        rows = [
-            row
-            for draft_id in draft_ids
-            if (row := _draft_query(connection, project_id, draft_id)) is not None
-        ]
+        rows = _append_generated_drafts_in_transaction(
+            connection,
+            project_id=project_id,
+            document_id=document_id,
+            suggestions=suggestions,
+        )
+    return [_draft_from_row(row) for row in rows]
+
+
+def append_generated_drafts_and_mark_job_succeeded(
+    db: Database,
+    *,
+    job_id: str,
+    project_id: str,
+    document_id: str,
+    chunk_id: str,
+    suggestions: list[DraftSuggestion],
+    effective_provider: str | None,
+    effective_model: str | None,
+    fallback_reason: str | None,
+) -> list[dict]:
+    """Append drafts and complete their job in one durable transaction."""
+
+    ensure_project_exists(db, project_id)
+    if any(suggestion.chunk_id != chunk_id for suggestion in suggestions):
+        raise ValidationError("Generated draft does not belong to the draft job chunk.")
+    with db.connect() as connection:
+        rows = _append_generated_drafts_in_transaction(
+            connection,
+            project_id=project_id,
+            document_id=document_id,
+            suggestions=suggestions,
+        )
+        draft_jobs.mark_succeeded_in_transaction(
+            connection,
+            job_id,
+            generated_count=len(rows),
+            effective_provider=effective_provider,
+            effective_model=effective_model,
+            fallback_reason=fallback_reason,
+            expected_project_id=project_id,
+            expected_document_id=document_id,
+            expected_chunk_id=chunk_id,
+        )
     return [_draft_from_row(row) for row in rows]
 
 
@@ -353,6 +348,65 @@ def _matching_generated_draft_exists(
         ),
     ).fetchone()
     return row is not None
+
+
+def _append_generated_drafts_in_transaction(
+    connection: Connection,
+    *,
+    project_id: str,
+    document_id: str,
+    suggestions: list[DraftSuggestion],
+) -> list[Row]:
+    now = utc_now()
+    draft_ids: list[str] = []
+    for index, suggestion in enumerate(suggestions, start=1):
+        if _matching_generated_draft_exists(
+            connection,
+            project_id=project_id,
+            document_id=document_id,
+            suggestion=suggestion,
+        ):
+            continue
+        draft_id = str(uuid4())
+        draft_ids.append(draft_id)
+        connection.execute(
+            """
+            INSERT INTO question_drafts(
+                id, project_id, document_id, chunk_id, question, choices_json,
+                answer, answer_key_source, rationale, citation_page, source_excerpt, status,
+                confidence, source_order, source_question_number, item_kind, group_key, group_prompt,
+                rejection_reason, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+            """,
+            (
+                draft_id,
+                project_id,
+                document_id,
+                suggestion.chunk_id,
+                suggestion.question,
+                json.dumps(suggestion.choices),
+                suggestion.answer,
+                suggestion.answer_key_source,
+                suggestion.rationale,
+                suggestion.citation_page,
+                suggestion.source_excerpt,
+                suggestion.status.value,
+                suggestion.confidence,
+                suggestion.source_order or index,
+                suggestion.source_question_number,
+                suggestion.item_kind.value,
+                suggestion.group_key,
+                suggestion.group_prompt,
+                now,
+                now,
+            ),
+        )
+    return [
+        row
+        for draft_id in draft_ids
+        if (row := _draft_query(connection, project_id, draft_id)) is not None
+    ]
 
 
 def _draft_from_row(row: Row) -> dict:
