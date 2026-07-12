@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -8,6 +14,7 @@ import {
   buildStreamingBaselineReport,
   buildProductionSummary,
   type StreamingBaselineReport,
+  writeStreamingBaselineArtifacts,
 } from './streaming-baseline-report.mts';
 import type { SmokeRunState } from './types.mts';
 
@@ -32,14 +39,21 @@ test('production summary passes when WindowsML OCR is routed to AMD iGPU', () =>
     const run = productionRunState(workspaceRoot, outDir);
     const summary = buildProductionSummary(run, productionReport());
 
-    assert.equal(summary.schema_version, 2);
+    assert.equal(summary.schema_version, 3);
     assert.equal(summary.status, 'passed');
-    assert.equal(summary.checks.fastflowlm_health_available, true);
-    assert.equal(summary.checks.fastflowlm_model_selection_allowed, true);
-    assert.equal(summary.checks.fastflowlm_no_unexpected_fallback, true);
+    assert.equal(summary.provider_preference, 'auto');
+    assert.equal(summary.llm_provider, 'fastflowlm');
+    assert.equal(summary.checks.fastflowlm_exact_job_attribution, true);
+    assert.equal(summary.checks.fastflowlm_no_job_fallback, true);
+    assert.equal(summary.checks.generation_ready_at_start, true);
+    assert.equal(summary.checks.resources_released_at_end, true);
     assert.equal(summary.checks.windowsml_ocr_process_observed, true);
     assert.equal(summary.checks.ocr_uses_amd_igpu, true);
     assert.equal(summary.checks.ocr_avoids_nvidia_dgpu, true);
+    assert.doesNotMatch(
+      JSON.stringify(summary),
+      /commandLine|parentPid|C:\\\\Users|Bearer\s+/i,
+    );
   } finally {
     rmSync(workspaceRoot, { recursive: true, force: true });
   }
@@ -70,9 +84,8 @@ test('production summary accepts FastFlowLM NPU reasoning without NVIDIA dGPU us
 
     assert.equal(summary.status, 'passed');
     assert.equal(summary.checks.reasoning_uses_nvidia_dgpu, undefined);
-    assert.equal(summary.checks.fastflowlm_health_available, true);
-    assert.equal(summary.checks.fastflowlm_model_selection_allowed, true);
-    assert.equal(summary.checks.fastflowlm_no_unexpected_fallback, true);
+    assert.equal(summary.checks.fastflowlm_exact_job_attribution, true);
+    assert.equal(summary.checks.fastflowlm_no_job_fallback, true);
   } finally {
     rmSync(workspaceRoot, { recursive: true, force: true });
   }
@@ -116,14 +129,15 @@ test('production summary accepts FastFlowLM usable output when closeout health i
 
     assert.equal(summary.status, 'passed');
     assert.equal(summary.selected_model, 'qwen3.5:4b');
-    assert.equal(summary.checks.fastflowlm_health_available, true);
+    assert.equal(summary.checks.fastflowlm_exact_job_attribution, true);
+    assert.equal(summary.checks.fastflowlm_health_available, undefined);
     assert.equal(summary.checks.selected_model_produced_usable_questions, true);
   } finally {
     rmSync(workspaceRoot, { recursive: true, force: true });
   }
 });
 
-test('production summary fails FastFlowLM health when no health snapshot exists', () => {
+test('production summary does not use health as FastFlowLM execution evidence', () => {
   const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-prep-production-summary-'));
   try {
     const outDir = join(workspaceRoot, 'out');
@@ -147,8 +161,9 @@ test('production summary fails FastFlowLM health when no health snapshot exists'
 
     const summary = buildProductionSummary(run, report);
 
-    assert.equal(summary.status, 'failed');
-    assert.equal(summary.checks.fastflowlm_health_available, false);
+    assert.equal(summary.status, 'passed');
+    assert.equal(summary.checks.fastflowlm_health_available, undefined);
+    assert.equal(summary.checks.fastflowlm_exact_job_attribution, true);
     assert.equal(summary.checks.selected_model_produced_usable_questions, true);
   } finally {
     rmSync(workspaceRoot, { recursive: true, force: true });
@@ -176,6 +191,10 @@ test('production summary still requires NVIDIA dGPU usage for Ollama reasoning',
     const run = productionRunState(workspaceRoot, outDir);
     run.options.llmProvider = 'ollama';
     run.metrics.llm_provider = 'ollama';
+    const job = run.metrics.streaming_questions.job_snapshots[0]?.jobs[0];
+    assert.ok(job);
+    job.configured_provider = 'ollama';
+    job.effective_provider = 'ollama';
     const report = productionReport();
     report.runtime.llm_provider = 'ollama';
     report.runtime.llm_health = {
@@ -193,13 +212,13 @@ test('production summary still requires NVIDIA dGPU usage for Ollama reasoning',
 
     assert.equal(summary.status, 'failed');
     assert.equal(summary.checks.reasoning_uses_nvidia_dgpu, false);
-    assert.equal(summary.checks.fastflowlm_health_available, undefined);
+    assert.equal(summary.checks.fastflowlm_exact_job_attribution, undefined);
   } finally {
     rmSync(workspaceRoot, { recursive: true, force: true });
   }
 });
 
-test('production summary accepts FastFlowLM low-RAM fallback to qwen3.5:2b', () => {
+test('production summary rejects FastFlowLM low-RAM fallback in the XDNA lane', () => {
   const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-prep-production-summary-'));
   try {
     const outDir = join(workspaceRoot, 'out');
@@ -221,6 +240,10 @@ test('production summary accepts FastFlowLM low-RAM fallback to qwen3.5:2b', () 
     run.metrics.llm_effective_model = 'qwen3.5:2b';
     run.metrics.llm_fallback_reason =
       'Available system RAM 3.0 GiB is below the 6.0 GiB required for qwen3.5:4b; using fallback qwen3.5:2b.';
+    const job = run.metrics.streaming_questions.job_snapshots[0]?.jobs[0];
+    assert.ok(job);
+    job.effective_model = 'qwen3.5:2b';
+    job.fallback_reason = run.metrics.llm_fallback_reason;
     const report = productionReport();
     report.runtime.llm_effective_model = 'qwen3.5:2b';
     report.runtime.llm_fallback_reason = run.metrics.llm_fallback_reason;
@@ -237,11 +260,10 @@ test('production summary accepts FastFlowLM low-RAM fallback to qwen3.5:2b', () 
 
     const summary = buildProductionSummary(run, report);
 
-    assert.equal(summary.status, 'passed');
+    assert.equal(summary.status, 'failed');
     assert.equal(summary.selected_model, 'qwen3.5:2b');
-    assert.equal(summary.checks.fastflowlm_health_available, true);
-    assert.equal(summary.checks.fastflowlm_model_selection_allowed, true);
-    assert.equal(summary.checks.fastflowlm_no_unexpected_fallback, true);
+    assert.equal(summary.checks.fastflowlm_exact_job_attribution, false);
+    assert.equal(summary.checks.fastflowlm_no_job_fallback, false);
   } finally {
     rmSync(workspaceRoot, { recursive: true, force: true });
   }
@@ -346,6 +368,304 @@ test('production summary fails when requested video evidence is missing', () => 
   }
 });
 
+test('streaming baseline does not treat missing cleanup evidence as no residue', () => {
+  const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-prep-baseline-cleanup-'));
+  try {
+    const outDir = join(workspaceRoot, 'out');
+    mkdirSync(outDir);
+    writeFileSync(join(workspaceRoot, 'fixture.pdf'), 'fixture', 'utf8');
+
+    const report = buildStreamingBaselineReport(
+      productionRunState(workspaceRoot, outDir),
+    );
+
+    assert.equal(report.status, 'failed');
+    assert.equal(report.checks.graceful_close, false);
+    assert.equal(report.checks.no_residual_processes, false);
+  } finally {
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test('production summary stays incomplete before cleanup finalization', () => {
+  const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-prep-production-summary-'));
+  try {
+    const outDir = join(workspaceRoot, 'out');
+    mkdirSync(outDir);
+    writePassingResourceSummary(outDir);
+
+    const summary = buildProductionSummary(
+      productionRunState(workspaceRoot, outDir),
+      productionReport(),
+      { finalized: false },
+    );
+
+    assert.equal(summary.status, 'incomplete');
+    assert.equal(summary.checks.cleanup_finalized, false);
+  } finally {
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test('final artifact write keeps baseline and production failures consistent', () => {
+  const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-prep-production-write-'));
+  try {
+    const outDir = join(workspaceRoot, 'out');
+    mkdirSync(outDir);
+    writeFileSync(join(workspaceRoot, 'fixture.pdf'), 'fixture', 'utf8');
+    writePassingResourceSummary(outDir);
+    const run = productionRunState(workspaceRoot, outDir);
+    delete run.metrics.generation_readiness_at_start;
+    run.metrics.ui_timings_ms.parse_complete_visible = 100;
+    run.metrics.streaming_questions.first_usable_question_visible_ms = 101;
+    run.metrics.streaming_questions.question_snapshots = [
+      {
+        elapsed_ms: 101,
+        source: 'question-drafts',
+        item_count: 8,
+        usable_question_count: 8,
+      },
+    ];
+    run.metrics.final_close = passingCloseSummary();
+    run.metrics.process_cleanup = {
+      node_cleanup_summary: {
+        baseline_node_count: 0,
+        closed_count: 0,
+        closed: [],
+      },
+      new_node_helpers_closed: [],
+      residue_after_close: [],
+    };
+
+    writeStreamingBaselineArtifacts(run, {
+      finalized: true,
+      recordFailure: true,
+    });
+
+    const baseline = JSON.parse(
+      readFileSync(join(outDir, 'streaming-baseline.json'), 'utf8'),
+    ) as { status: string };
+    const production = JSON.parse(
+      readFileSync(join(outDir, 'production-summary.json'), 'utf8'),
+    ) as { status: string };
+    assert.equal(baseline.status, 'failed');
+    assert.equal(production.status, 'failed');
+    assert.match(run.metrics.errors.join('\n'), /production checks failed/i);
+  } finally {
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test('production summary fails closed when readiness or release evidence is missing', () => {
+  const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-prep-production-summary-'));
+  try {
+    const outDir = join(workspaceRoot, 'out');
+    mkdirSync(outDir);
+    writePassingResourceSummary(outDir);
+
+    const missingReadiness = productionRunState(workspaceRoot, outDir);
+    delete missingReadiness.metrics.generation_readiness_at_start;
+    const readinessSummary = buildProductionSummary(
+      missingReadiness,
+      productionReport(),
+    );
+    assert.equal(readinessSummary.status, 'failed');
+    assert.equal(readinessSummary.checks.generation_ready_at_start, false);
+
+    const missingRelease = productionRunState(workspaceRoot, outDir);
+    delete missingRelease.metrics.resources_released_at_end;
+    const releaseSummary = buildProductionSummary(
+      missingRelease,
+      productionReport(),
+    );
+    assert.equal(releaseSummary.status, 'failed');
+    assert.equal(releaseSummary.checks.resources_released_at_end, false);
+
+    const unobservedRelease = productionRunState(workspaceRoot, outDir);
+    assert.ok(unobservedRelease.metrics.resources_released_at_end);
+    unobservedRelease.metrics.resources_released_at_end.observed_owned_processes = [];
+    assert.equal(
+      buildProductionSummary(unobservedRelease, productionReport()).checks
+        .resources_released_at_end,
+      false,
+    );
+
+    const untrustedReadiness = productionRunState(workspaceRoot, outDir);
+    const runtimeRequirement =
+      untrustedReadiness.metrics.generation_readiness_at_start?.runtime_requirements.find(
+        (requirement) => requirement.kind === 'fastflowlm',
+      );
+    assert.ok(runtimeRequirement);
+    runtimeRequirement.installed_path_verified = false;
+    assert.equal(
+      buildProductionSummary(untrustedReadiness, productionReport()).checks
+        .generation_ready_at_start,
+      false,
+    );
+
+    const mismatchedPreference = productionRunState(workspaceRoot, outDir);
+    assert.ok(mismatchedPreference.metrics.generation_readiness_at_start);
+    assert.ok(
+      mismatchedPreference.metrics.generation_readiness_at_start
+        .provider_selection,
+    );
+    mismatchedPreference.metrics.generation_readiness_at_start.provider_selection.preference =
+      'fastflowlm';
+    assert.equal(
+      buildProductionSummary(mismatchedPreference, productionReport()).checks
+        .generation_ready_at_start,
+      false,
+    );
+
+    const emptyExam = productionRunState(workspaceRoot, outDir);
+    emptyExam.metrics.full_exam_question_count = 0;
+    const emptyExamSummary = buildProductionSummary(
+      emptyExam,
+      productionReport(),
+    );
+    assert.equal(emptyExamSummary.status, 'failed');
+    assert.equal(emptyExamSummary.checks.full_exam_questions_present, false);
+  } finally {
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test('production summary rejects usable output without persisted job attribution', () => {
+  const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-prep-production-summary-'));
+  try {
+    const outDir = join(workspaceRoot, 'out');
+    mkdirSync(outDir);
+    writePassingResourceSummary(outDir);
+    const run = productionRunState(workspaceRoot, outDir);
+    run.metrics.streaming_questions.job_snapshots = [];
+
+    const summary = buildProductionSummary(run, productionReport());
+
+    assert.equal(summary.status, 'failed');
+    assert.equal(summary.selected_model, null);
+    assert.equal(summary.llm_provider, null);
+    assert.equal(summary.checks.producing_job_attribution_present, false);
+    assert.equal(summary.checks.supported_effective_provider, false);
+  } finally {
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test('production summary rejects incomplete and mixed producing-job attribution', () => {
+  const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-prep-production-summary-'));
+  try {
+    const outDir = join(workspaceRoot, 'out');
+    mkdirSync(outDir);
+    writePassingResourceSummary(outDir);
+    const incompleteRun = productionRunState(workspaceRoot, outDir);
+    const incompleteJob =
+      incompleteRun.metrics.streaming_questions.job_snapshots[0]?.jobs[0];
+    assert.ok(incompleteJob);
+    incompleteJob.effective_model = null;
+    incompleteJob.attribution_complete = false;
+
+    const incompleteSummary = buildProductionSummary(
+      incompleteRun,
+      productionReport(),
+    );
+    assert.equal(incompleteSummary.status, 'failed');
+    assert.equal(incompleteSummary.selected_model, null);
+    assert.equal(
+      incompleteSummary.checks.producing_job_attribution_complete,
+      false,
+    );
+
+    const mixedRun = productionRunState(workspaceRoot, outDir);
+    const snapshot = mixedRun.metrics.streaming_questions.job_snapshots[0];
+    assert.ok(snapshot);
+    snapshot.jobs.push({
+      id: 'job-2',
+      status: 'succeeded',
+      generated_count: 1,
+      configured_provider: 'fastflowlm',
+      configured_model: 'qwen3.5:4b',
+      effective_provider: 'fastflowlm',
+      effective_model: 'qwen3.5:2b',
+      fallback_reason: 'low memory fallback',
+      attribution_complete: true,
+    });
+    snapshot.item_count = 2;
+    snapshot.status_counts = { succeeded: 2 };
+    snapshot.generated_count = 9;
+
+    const mixedSummary = buildProductionSummary(mixedRun, productionReport());
+    assert.equal(mixedSummary.status, 'failed');
+    assert.equal(mixedSummary.selected_model, null);
+    assert.equal(mixedSummary.checks.fastflowlm_exact_job_attribution, false);
+
+    const zeroOutputFallbackRun = productionRunState(workspaceRoot, outDir);
+    const zeroOutputSnapshot =
+      zeroOutputFallbackRun.metrics.streaming_questions.job_snapshots[0];
+    assert.ok(zeroOutputSnapshot);
+    zeroOutputSnapshot.jobs.push({
+      id: 'job-zero-output-fallback',
+      status: 'succeeded',
+      generated_count: 0,
+      configured_provider: 'fastflowlm',
+      configured_model: 'qwen3.5:4b',
+      effective_provider: 'fastflowlm',
+      effective_model: 'qwen3.5:2b',
+      fallback_reason: 'low memory fallback',
+      attribution_complete: true,
+    });
+    zeroOutputSnapshot.item_count = 2;
+    zeroOutputSnapshot.status_counts = { succeeded: 2 };
+    const zeroOutputReport = productionReport();
+    zeroOutputReport.streaming.job_count = 2;
+    zeroOutputReport.streaming.final_status_counts = { succeeded: 2 };
+    zeroOutputReport.streaming.completion_state.total_count = 2;
+    zeroOutputReport.streaming.completion_state.terminal_count = 2;
+    zeroOutputReport.streaming.completion_state.succeeded_count = 2;
+
+    const zeroOutputSummary = buildProductionSummary(
+      zeroOutputFallbackRun,
+      zeroOutputReport,
+    );
+    assert.equal(zeroOutputSummary.status, 'failed');
+    assert.equal(zeroOutputSummary.producing_jobs.length, 1);
+    assert.equal(zeroOutputSummary.succeeded_jobs.length, 2);
+    assert.equal(zeroOutputSummary.checks.fastflowlm_exact_job_attribution, false);
+  } finally {
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+function writePassingResourceSummary(outDir: string): void {
+  writeFileSync(
+    join(outDir, 'windows-resource-summary.json'),
+    JSON.stringify({
+      gpu_routing_checks: {
+        windowsml_ocr_process_observed: true,
+        ocr_uses_amd_igpu: true,
+        ocr_avoids_nvidia_dgpu: true,
+        reasoning_uses_nvidia_dgpu: true,
+        gpu_luid_map_usable: true,
+      },
+    }),
+    'utf8',
+  );
+}
+
+function passingCloseSummary() {
+  return {
+    label: 'final cleanup',
+    app_pid: 42,
+    normal_close_requested: true,
+    exited_after_normal_close: true,
+    forced: false,
+    residue: [],
+    gracefulExited: true,
+    fallbackUsed: false,
+    exitCode: 0,
+    residualProcesses: [],
+  };
+}
+
 function productionRunState(
   workspaceRoot: string,
   outDir: string,
@@ -359,7 +679,7 @@ function productionRunState(
       cdpPort: 9222,
       ocrProvider: 'windowsml',
       ocrPageWorkers: 1,
-      llmProvider: 'fastflowlm',
+      llmProvider: 'auto',
       ollamaModel: 'qwen3.5:4b',
       ollamaFallbackModels: ['qwen3.5:2b'],
       waitForStreamingComplete: true,
@@ -378,10 +698,57 @@ function productionRunState(
       ui_timings_ms: {},
       observations: [],
       errors: [],
-      llm_provider: 'fastflowlm',
+      llm_provider: 'auto',
       llm_model: 'qwen3.5:4b',
       llm_effective_model: 'qwen3.5:4b',
       llm_fallback_models: ['qwen3.5:2b'],
+      generation_readiness_at_start: {
+        captured_at: '2026-06-23T00:00:00.000Z',
+        ready: true,
+        provider_selection: {
+          preference: 'auto',
+          selected_provider: 'fastflowlm',
+          effective_provider: 'fastflowlm',
+          configured_model: 'qwen3.5:4b',
+          effective_model: 'qwen3.5:4b',
+          selection_reason: 'Compatible XDNA2 hardware selected FastFlowLM.',
+          fallback_reason: null,
+          hardware_compatible: true,
+          requires_terms_acceptance: true,
+          terms_accepted: true,
+          terms_version: '0.9.43',
+          runtime_requirement_kind: 'fastflowlm',
+          model_requirement_kind: 'fastflowlm_model',
+        },
+        runtime_requirements: [
+          {
+            kind: 'fastflowlm',
+            available: true,
+            version: '0.9.43',
+            installed_path_verified: true,
+          },
+          {
+            kind: 'fastflowlm_model',
+            available: true,
+            version: 'qwen3.5:4b',
+            installed_path_verified: false,
+          },
+        ],
+        blockers: [],
+      },
+      resources_released_at_end: {
+        captured_at: '2026-06-23T00:01:00.000Z',
+        released: true,
+        stable_empty_snapshots: 2,
+        observed_owned_processes: [
+          {
+            pid: 99,
+            name: 'flm.exe',
+          },
+        ],
+        alive_owned_processes: [],
+      },
+      full_exam_question_count: 8,
       ocr_provider: 'windowsml',
       first_chunk_gate_ms: 15000,
       first_chunk_under_gate: true,
@@ -394,7 +761,28 @@ function productionRunState(
       },
       practice_ready_from_streamed_questions: true,
       streaming_questions: {
-        job_snapshots: [],
+        job_snapshots: [
+          {
+            elapsed_ms: 1_000,
+            source: 'draft-jobs',
+            item_count: 1,
+            status_counts: { succeeded: 1 },
+            generated_count: 8,
+            jobs: [
+              {
+                id: 'job-1',
+                status: 'succeeded',
+                generated_count: 8,
+                configured_provider: 'fastflowlm',
+                configured_model: 'qwen3.5:4b',
+                effective_provider: 'fastflowlm',
+                effective_model: 'qwen3.5:4b',
+                fallback_reason: null,
+                attribution_complete: true,
+              },
+            ],
+          },
+        ],
         question_snapshots: [],
         status_counts: {},
       },
@@ -472,7 +860,7 @@ function productionReport(): StreamingBaselineReport {
         detail: 'model available',
       },
       ocr_provider: 'windowsml',
-      llm_provider: 'fastflowlm',
+      llm_provider: 'auto',
       ocr_page_workers: 1,
       streaming_draft_page_limit: 1,
       streaming_draft_workers: 1,
@@ -485,13 +873,13 @@ function productionReport(): StreamingBaselineReport {
       chunks: 46,
     },
     streaming: {
-      job_count: 10,
-      final_status_counts: { succeeded: 10 },
+      job_count: 1,
+      final_status_counts: { succeeded: 1 },
       completion_state: {
-        total_count: 10,
+        total_count: 1,
         active_count: 0,
-        terminal_count: 10,
-        succeeded_count: 10,
+        terminal_count: 1,
+        succeeded_count: 1,
         failed_count: 0,
         skipped_count: 0,
         all_terminal: true,

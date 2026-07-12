@@ -48,6 +48,9 @@ export interface SmokeMetrics {
   llm_fallback_models: string[];
   llm_fallback_reason?: string | null;
   llm_health?: LlmHealthSnapshot;
+  generation_readiness_at_start?: GenerationReadinessSnapshot;
+  resources_released_at_end?: ResourcesReleasedAtEndSnapshot;
+  full_exam_question_count?: number;
   ocr_provider: string;
   first_chunk_gate_ms: number;
   first_chunk_under_gate: boolean;
@@ -141,6 +144,62 @@ export interface LlmHealthSnapshot {
   detail: string | null;
 }
 
+export interface LlmProviderSelectionSnapshot {
+  preference: string | null;
+  selected_provider: string | null;
+  effective_provider: string | null;
+  configured_model: string | null;
+  effective_model: string | null;
+  selection_reason: string | null;
+  fallback_reason: string | null;
+  hardware_compatible: boolean | null;
+  requires_terms_acceptance: boolean | null;
+  terms_accepted: boolean | null;
+  terms_version: string | null;
+  runtime_requirement_kind: string | null;
+  model_requirement_kind: string | null;
+}
+
+export interface RuntimeRequirementSnapshot {
+  kind: string | null;
+  available: boolean | null;
+  version: string | null;
+  installed_path_verified: boolean;
+}
+
+export interface GenerationReadinessSnapshot {
+  captured_at: string;
+  ready: boolean;
+  provider_selection: LlmProviderSelectionSnapshot | null;
+  runtime_requirements: RuntimeRequirementSnapshot[];
+  blockers: string[];
+}
+
+export interface StreamingDraftJobAttribution {
+  id: string | null;
+  status: string | null;
+  generated_count: number;
+  configured_provider: string | null;
+  configured_model: string | null;
+  effective_provider: string | null;
+  effective_model: string | null;
+  fallback_reason: string | null;
+  attribution_complete: boolean;
+}
+
+export interface ResourcesReleasedAtEndSnapshot {
+  captured_at: string;
+  released: boolean;
+  stable_empty_snapshots: number;
+  observed_owned_processes: OwnedProcessEvidence[];
+  alive_owned_processes: OwnedProcessEvidence[];
+}
+
+export interface OwnedProcessEvidence {
+  pid: number;
+  name: string;
+}
+
 export interface StreamingJobCompletionState {
   total_count: number;
   active_count: number;
@@ -158,6 +217,7 @@ export interface StreamingDraftJobSnapshot {
   item_count: number;
   status_counts: Record<string, number>;
   generated_count: number;
+  jobs: StreamingDraftJobAttribution[];
   blocker?: string;
 }
 

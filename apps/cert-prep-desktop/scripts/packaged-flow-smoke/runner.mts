@@ -77,11 +77,20 @@ function saveMetrics(run: SmokeRunState): void {
 function writeCloseoutArtifacts(
   run: SmokeRunState,
   label: string,
-  { recordBaselineFailure }: { readonly recordBaselineFailure: boolean },
+  {
+    finalized,
+    recordBaselineFailure,
+  }: {
+    readonly finalized: boolean;
+    readonly recordBaselineFailure: boolean;
+  },
 ): void {
   try {
     run.metrics.observations.push(`closeout checkpoint: ${label}`);
-    writeStreamingBaselineArtifacts(run, { recordFailure: recordBaselineFailure });
+    writeStreamingBaselineArtifacts(run, {
+      finalized,
+      recordFailure: recordBaselineFailure,
+    });
     saveMetrics(run);
   } catch (error) {
     run.metrics.errors.push(
@@ -164,10 +173,12 @@ export async function runPackagedFlowSmokeCli(argv: readonly string[] = process.
         `shutdown cleanup started after ${reason}: ${error ? errorMessage(error) : 'no error payload'}`,
       );
       writeCloseoutArtifacts(run, `shutdown-${reason}-pre-cleanup`, {
+        finalized: false,
         recordBaselineFailure: false,
       });
       await cleanupAfterRunWithTimeout(run);
       writeCloseoutArtifacts(run, `shutdown-${reason}-final`, {
+        finalized: true,
         recordBaselineFailure: true,
       });
       logFinalMetricsSummary(run);
@@ -189,11 +200,17 @@ export async function runPackagedFlowSmokeCli(argv: readonly string[] = process.
     }
   } finally {
     try {
-      writeCloseoutArtifacts(run, 'pre-cleanup', { recordBaselineFailure: false });
+      writeCloseoutArtifacts(run, 'pre-cleanup', {
+        finalized: false,
+        recordBaselineFailure: false,
+      });
       await cleanupAfterRunWithTimeout(run).catch((error) => {
         run.metrics.errors.push(`cleanup failed: ${errorMessage(error)}`);
       });
-      writeCloseoutArtifacts(run, 'final', { recordBaselineFailure: true });
+      writeCloseoutArtifacts(run, 'final', {
+        finalized: true,
+        recordBaselineFailure: true,
+      });
       logFinalMetricsSummary(run);
     } finally {
       removeShutdownCleanup();

@@ -30,19 +30,44 @@ test('streaming draft job snapshots keep status evidence without response secret
   const payload = {
     items: [
       {
+        id: 'job-running',
         status: 'running',
         generated_count: 0,
+        provider: 'fastflowlm',
+        model: 'qwen3.5:4b',
+        effective_provider: null,
+        effective_model: null,
+        fallback_reason: null,
         question: 'SECRET streamed question',
         authorization: 'Bearer hidden-token',
       },
-      { status: 'skipped_missing_model', generated_count: 2 },
-      { status: 'running', generated_count: 1 },
+      {
+        id: 'job-skipped',
+        status: 'skipped_missing_model',
+        generated_count: 2,
+        provider: 'fastflowlm',
+        model: 'qwen3.5:4b',
+        effective_provider: null,
+        effective_model: null,
+        fallback_reason: null,
+      },
+      {
+        id: 'job-succeeded',
+        status: 'succeeded',
+        generated_count: 1,
+        provider: 'fastflowlm',
+        model: 'qwen3.5:4b',
+        effective_provider: 'fastflowlm',
+        effective_model: 'qwen3.5:4b',
+        fallback_reason: null,
+      },
     ],
   };
 
   assert.deepEqual(draftJobStatusCounts(payload), {
-    running: 2,
+    running: 1,
     skipped_missing_model: 1,
+    succeeded: 1,
   });
 
   const snapshot = sanitizeDraftJobSnapshot(payload, 42.4);
@@ -52,10 +77,46 @@ test('streaming draft job snapshots keep status evidence without response secret
     source: 'draft-jobs',
     item_count: 3,
     status_counts: {
-      running: 2,
+      running: 1,
       skipped_missing_model: 1,
+      succeeded: 1,
     },
-    generated_count: 3,
+    generated_count: 1,
+    jobs: [
+      {
+        id: 'job-running',
+        status: 'running',
+        generated_count: 0,
+        configured_provider: 'fastflowlm',
+        configured_model: 'qwen3.5:4b',
+        effective_provider: null,
+        effective_model: null,
+        fallback_reason: null,
+        attribution_complete: false,
+      },
+      {
+        id: 'job-skipped',
+        status: 'skipped_missing_model',
+        generated_count: 2,
+        configured_provider: 'fastflowlm',
+        configured_model: 'qwen3.5:4b',
+        effective_provider: null,
+        effective_model: null,
+        fallback_reason: null,
+        attribution_complete: false,
+      },
+      {
+        id: 'job-succeeded',
+        status: 'succeeded',
+        generated_count: 1,
+        configured_provider: 'fastflowlm',
+        configured_model: 'qwen3.5:4b',
+        effective_provider: 'fastflowlm',
+        effective_model: 'qwen3.5:4b',
+        fallback_reason: null,
+        attribution_complete: true,
+      },
+    ],
     blocker: 'skipped_missing_model',
   });
   assert.doesNotMatch(JSON.stringify(snapshot), /SECRET|hidden-token|Bearer/i);
@@ -86,6 +147,52 @@ test('streaming question snapshots count usable questions without storing text',
     usable_question_count: 1,
   });
   assert.doesNotMatch(JSON.stringify(snapshot), /SECRET|hidden-token|Bearer/i);
+});
+
+test('streaming job attribution fails closed when required nullable fields are absent', () => {
+  const snapshot = sanitizeDraftJobSnapshot(
+    {
+      items: [
+        {
+          id: 'job-1',
+          status: 'succeeded',
+          generated_count: 1,
+          provider: 'fastflowlm',
+          model: 'qwen3.5:4b',
+          effective_provider: 'fastflowlm',
+          effective_model: 'qwen3.5:4b',
+        },
+      ],
+    },
+    10,
+  );
+
+  assert.equal(snapshot.generated_count, 1);
+  assert.equal(snapshot.jobs[0]?.fallback_reason, null);
+  assert.equal(snapshot.jobs[0]?.attribution_complete, false);
+});
+
+test('streaming job attribution rejects whitespace-only fallback evidence', () => {
+  const snapshot = sanitizeDraftJobSnapshot(
+    {
+      items: [
+        {
+          id: 'job-1',
+          status: 'succeeded',
+          generated_count: 1,
+          provider: 'fastflowlm',
+          model: 'qwen3.5:4b',
+          effective_provider: 'fastflowlm',
+          effective_model: 'qwen3.5:4b',
+          fallback_reason: '   ',
+        },
+      ],
+    },
+    10,
+  );
+
+  assert.equal(snapshot.jobs[0]?.fallback_reason, '');
+  assert.equal(snapshot.jobs[0]?.attribution_complete, false);
 });
 
 test('streaming job completion state separates active, success, and blockers', () => {

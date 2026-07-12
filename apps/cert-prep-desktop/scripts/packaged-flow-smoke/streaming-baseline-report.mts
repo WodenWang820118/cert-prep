@@ -15,9 +15,12 @@ import { isRecord, normalizePath } from './text-utils.mts';
 import { videoEvidencePassed } from './video-evidence.mts';
 import type { PublicProcessRecord } from '../process-lifecycle/processes.mts';
 import type {
+  GenerationReadinessSnapshot,
   LlmHealthSnapshot,
   ResourceSamplingArtifacts,
+  ResourcesReleasedAtEndSnapshot,
   SmokeRunState,
+  StreamingDraftJobAttribution,
   StreamingJobCompletionState,
   VideoArtifact,
 } from './types.mts';
@@ -100,16 +103,23 @@ interface GpuRoutingChecks {
 }
 
 interface PackagedStreamingProductionSummary {
-  schema_version: 2;
-  status: 'passed' | 'failed';
+  schema_version: 3;
+  status: 'incomplete' | 'passed' | 'failed';
   generated_at: string;
   selected_model: string | null;
-  configured_model: string;
+  configured_model: string | null;
   effective_model: string | null;
   fallback_models: string[];
   fallback_reason: string | null;
   llm_health: LlmHealthSnapshot | null;
-  llm_provider: string;
+  llm_provider: string | null;
+  provider_preference: string;
+  configured_provider: string | null;
+  generation_ready_at_start: GenerationReadinessSnapshot | null;
+  succeeded_jobs: StreamingDraftJobAttribution[];
+  producing_jobs: StreamingDraftJobAttribution[];
+  resources_released_at_end: ResourcesReleasedAtEndSnapshot | null;
+  full_exam_question_count: number | null;
   artifacts: {
     production_summary_json: string;
     baseline_json: string;
@@ -129,10 +139,12 @@ interface PackagedStreamingProductionSummary {
 export function writeStreamingBaselineArtifacts(
   run: SmokeRunState,
   {
+    finalized,
     recordFailure = true,
   }: {
+    readonly finalized: boolean;
     readonly recordFailure?: boolean;
-  } = {},
+  },
 ): void {
   if (!run.options.waitForStreamingComplete) {
     return;
@@ -140,18 +152,28 @@ export function writeStreamingBaselineArtifacts(
 
   let report = buildStreamingBaselineReport(run);
   let productionSummary = run.options.productionSummary
-    ? buildProductionSummary(run, report)
+    ? buildProductionSummary(run, report, { finalized })
     : null;
   if (
     report.status === 'failed' &&
+    finalized &&
     recordFailure &&
     productionSummary?.status !== 'passed'
   ) {
     run.metrics.errors.push('Streaming baseline checks failed.');
     report = buildStreamingBaselineReport(run);
     productionSummary = run.options.productionSummary
-      ? buildProductionSummary(run, report)
+      ? buildProductionSummary(run, report, { finalized })
       : null;
+  }
+  if (
+    productionSummary?.status === 'failed' &&
+    finalized &&
+    recordFailure
+  ) {
+    run.metrics.errors.push('Packaged streaming production checks failed.');
+    report = buildStreamingBaselineReport(run);
+    productionSummary = buildProductionSummary(run, report, { finalized });
   }
   const jsonPath = join(run.options.outDir, 'streaming-baseline.json');
   const markdownPath = join(run.options.outDir, 'streaming-baseline.md');
@@ -163,12 +185,7 @@ export function writeStreamingBaselineArtifacts(
     markdown: normalizePath(relative(run.options.workspaceRoot, markdownPath)),
   };
   if (run.options.productionSummary) {
-    productionSummary ??= buildProductionSummary(run, report);
-    if (productionSummary.status === 'failed' && recordFailure) {
-      run.metrics.errors.push('Packaged streaming production checks failed.');
-      report = buildStreamingBaselineReport(run);
-      productionSummary = buildProductionSummary(run, report);
-    }
+    productionSummary ??= buildProductionSummary(run, report, { finalized });
     const productionSummaryPath = join(run.options.outDir, 'production-summary.json');
     writeFileSync(
       productionSummaryPath,
@@ -201,8 +218,10 @@ export function buildStreamingBaselineReport(
     no_script_errors: run.metrics.errors.length === 0,
     graceful_close: run.metrics.final_close?.gracefulExited === true,
     no_residual_processes:
-      (run.metrics.final_close?.residualProcesses.length ?? 0) === 0 &&
-      (run.metrics.process_cleanup?.residue_after_close.length ?? 0) === 0,
+      run.metrics.final_close !== undefined &&
+      run.metrics.process_cleanup !== undefined &&
+      run.metrics.final_close.residualProcesses.length === 0 &&
+      run.metrics.process_cleanup.residue_after_close.length === 0,
     ocr_completed_46_pages:
       run.metrics.ocr_completion?.pages_processed === EXPECTED_BASELINE_PAGES &&
       run.metrics.ocr_completion?.total_pages === EXPECTED_BASELINE_PAGES,
@@ -337,41 +356,98 @@ export function buildStreamingBaselineReport(
 export function buildProductionSummary(
   run: SmokeRunState,
   report: StreamingBaselineReport,
+  { finalized = true }: { readonly finalized?: boolean } = {},
 ): PackagedStreamingProductionSummary {
   const resourceSummary = readResourceSummary(run);
   const gpuRoutingChecks = readGpuRoutingChecks(resourceSummary);
-  const configuredModel =
-    run.metrics.llm_configured_model ?? report.runtime.llm_configured_model;
-  const effectiveModel =
-    run.metrics.llm_effective_model ?? report.runtime.llm_effective_model;
-  const fallbackReason =
-    run.metrics.llm_fallback_reason ?? report.runtime.llm_fallback_reason;
+  const finalJobs = latestStreamingJobSnapshot(run)?.jobs ?? [];
+  const succeededJobs = finalJobs.filter((job) => job.status === 'succeeded');
+  const producingJobs = succeededJobs.filter((job) => job.generated_count > 0);
+  const configuredProvider = uniqueCompleteValue(
+    succeededJobs.map((job) => job.configured_provider),
+  );
+  const configuredModel = uniqueCompleteValue(
+    succeededJobs.map((job) => job.configured_model),
+  );
+  const effectiveProvider = uniqueCompleteValue(
+    succeededJobs.map((job) => job.effective_provider),
+  );
+  const effectiveModel = uniqueCompleteValue(
+    succeededJobs.map((job) => job.effective_model),
+  );
+  const fallbackReason = uniqueFallbackReason(succeededJobs);
   const llmHealth = run.metrics.llm_health ?? report.runtime.llm_health;
-  const selectedModel =
-    effectiveModel ??
-    (run.options.llmProvider === 'fastflowlm' &&
-    report.streaming.usable_question_count > 0 &&
-    fallbackReason === null
-      ? configuredModel
-      : null);
+  const exactFastFlowLmJobs =
+    succeededJobs.length > 0 &&
+    succeededJobs.every(
+      (job) =>
+        job.attribution_complete &&
+        job.configured_provider === 'fastflowlm' &&
+        job.configured_model === 'qwen3.5:4b' &&
+        job.effective_provider === 'fastflowlm' &&
+        job.effective_model === 'qwen3.5:4b' &&
+        job.fallback_reason === null,
+  );
+  const resourcesReleased = run.metrics.resources_released_at_end;
+  const readinessAtStart = run.metrics.generation_readiness_at_start;
   const checks: Record<string, boolean> = {
+    cleanup_finalized: finalized,
+    smoke_completed: run.metrics.status === 'completed',
     no_script_errors: run.metrics.errors.length === 0,
+    streaming_baseline_passed: report.status === 'passed',
+    graceful_close: report.checks.graceful_close === true,
+    no_residual_processes: report.checks.no_residual_processes === true,
+    generation_ready_at_start: generationReadinessPassed(
+      readinessAtStart,
+      effectiveProvider,
+      effectiveModel,
+      report.runtime.llm_provider,
+    ),
+    final_job_evidence_complete:
+      finalJobs.length === report.streaming.job_count &&
+      finalJobs.length === report.streaming.completion_state.total_count &&
+      finalJobs.every((job) => job.status !== null) &&
+      succeededJobs.length ===
+        report.streaming.completion_state.succeeded_count,
+    succeeded_job_attribution_complete:
+      succeededJobs.length > 0 &&
+      succeededJobs.every((job) => job.attribution_complete),
+    producing_job_attribution_present: producingJobs.length > 0,
+    producing_job_attribution_complete:
+      producingJobs.length > 0 &&
+      producingJobs.every((job) => job.attribution_complete),
+    producing_job_provider_consistent:
+      configuredProvider !== null &&
+      configuredProvider === effectiveProvider,
+    resources_released_at_end: resourcesReleasedPassed(
+      resourcesReleased,
+      effectiveProvider,
+    ),
+    full_exam_questions_present:
+      (run.metrics.full_exam_question_count ?? 0) > 0,
     ocr_completed_expected_pages:
       report.ocr_completion.pages_processed === EXPECTED_BASELINE_PAGES &&
       report.ocr_completion.total_pages === EXPECTED_BASELINE_PAGES,
     ocr_chunks_present: acceptedOcrChunkCount(run),
-    ...reasoningProviderChecks(
-      run,
-      configuredModel,
-      selectedModel,
-      fallbackReason,
-      llmHealth,
-      report.streaming.usable_question_count > 0,
-      gpuRoutingChecks,
-    ),
+    ...(effectiveProvider === 'fastflowlm'
+      ? {
+          fastflowlm_exact_job_attribution: exactFastFlowLmJobs,
+          fastflowlm_no_job_fallback:
+            succeededJobs.length > 0 &&
+            succeededJobs.every((job) => job.fallback_reason === null),
+          provider_preference_auto: report.runtime.llm_provider === 'auto',
+        }
+      : effectiveProvider === 'ollama'
+        ? {
+          reasoning_uses_nvidia_dgpu: routingBoolean(
+            gpuRoutingChecks,
+            'reasoning_uses_nvidia_dgpu',
+          ),
+          }
+        : { supported_effective_provider: false }),
     streaming_jobs_succeeded: report.streaming.completion_state.all_succeeded,
     selected_model_produced_usable_questions:
-      selectedModel !== null && report.streaming.usable_question_count > 0,
+      effectiveModel !== null && report.streaming.usable_question_count > 0,
     streaming_practice_ready:
       report.streaming.practice_ready_from_streamed_questions,
     ...(run.options.recordVideo
@@ -380,19 +456,27 @@ export function buildProductionSummary(
   };
   Object.assign(checks, providerRoutingChecks(run, gpuRoutingChecks));
   const productionSummaryPath = join(run.options.outDir, 'production-summary.json');
+  const checksPassed = Object.values(checks).every(Boolean);
 
   return {
-    schema_version: 2,
-    status: Object.values(checks).every(Boolean) ? 'passed' : 'failed',
+    schema_version: 3,
+    status: finalized ? (checksPassed ? 'passed' : 'failed') : 'incomplete',
     generated_at: report.generated_at,
-    selected_model: selectedModel,
-    llm_provider: report.runtime.llm_provider,
+    selected_model: effectiveModel,
+    llm_provider: effectiveProvider,
+    provider_preference: report.runtime.llm_provider,
+    configured_provider: configuredProvider,
     configured_model: configuredModel,
     effective_model: effectiveModel,
     fallback_models:
       run.metrics.llm_fallback_models ?? report.runtime.llm_fallback_models,
     fallback_reason: fallbackReason,
     llm_health: llmHealth,
+    generation_ready_at_start: readinessAtStart ?? null,
+    succeeded_jobs: succeededJobs,
+    producing_jobs: producingJobs,
+    resources_released_at_end: resourcesReleased ?? null,
+    full_exam_question_count: run.metrics.full_exam_question_count ?? null,
     artifacts: {
       production_summary_json: normalizePath(
         relative(run.options.workspaceRoot, productionSummaryPath),
@@ -416,58 +500,113 @@ export function buildProductionSummary(
   };
 }
 
-function reasoningProviderChecks(
-  run: SmokeRunState,
-  configuredModel: string,
-  selectedModel: string | null,
-  fallbackReason: string | null,
-  llmHealth: LlmHealthSnapshot | null,
-  producedUsableQuestions: boolean,
-  gpuRoutingChecks: GpuRoutingChecks | null,
-): Record<string, boolean> {
-  if (run.options.llmProvider === 'fastflowlm') {
-    const selectedConfigured =
-      selectedModel !== null && selectedModel === configuredModel;
-    const allowedRamFallback = isAllowedFastFlowLmRamFallback(
-      configuredModel,
-      selectedModel,
-      fallbackReason,
-    );
-    const hasFastFlowLmHealth = llmHealth?.provider === 'fastflowlm';
-    return {
-      fastflowlm_health_available:
-        hasFastFlowLmHealth &&
-        (llmHealth.available === true || producedUsableQuestions),
-      fastflowlm_model_selection_allowed: selectedConfigured || allowedRamFallback,
-      fastflowlm_no_unexpected_fallback:
-        fallbackReason === null ? selectedConfigured : allowedRamFallback,
-    };
+function uniqueCompleteValue(values: readonly (string | null)[]): string | null {
+  if (values.length === 0 || values.some((value) => value === null)) {
+    return null;
   }
-
-  return {
-    reasoning_uses_nvidia_dgpu: routingBoolean(
-      gpuRoutingChecks,
-      'reasoning_uses_nvidia_dgpu',
-    ),
-  };
+  const unique = new Set(values);
+  return unique.size === 1 ? (values[0] ?? null) : null;
 }
 
-function isAllowedFastFlowLmRamFallback(
-  configuredModel: string,
-  selectedModel: string | null,
-  fallbackReason: string | null,
+function uniqueFallbackReason(
+  jobs: readonly StreamingDraftJobAttribution[],
+): string | null {
+  if (jobs.length === 0 || jobs.every((job) => job.fallback_reason === null)) {
+    return null;
+  }
+  const reasons = jobs.map((job) => job.fallback_reason);
+  return uniqueCompleteValue(reasons);
+}
+
+function generationReadinessPassed(
+  snapshot: GenerationReadinessSnapshot | undefined,
+  effectiveProvider: string | null,
+  effectiveModel: string | null,
+  providerPreference: string,
 ): boolean {
   if (
-    configuredModel !== 'qwen3.5:4b' ||
-    selectedModel !== 'qwen3.5:2b' ||
-    fallbackReason === null
+    snapshot?.ready !== true ||
+    snapshot.blockers.length > 0 ||
+    snapshot.provider_selection === null ||
+    effectiveProvider === null ||
+    effectiveModel === null
   ) {
     return false;
   }
-  const normalizedReason = fallbackReason.toLowerCase();
+  const selection = snapshot.provider_selection;
+  if (
+    selection.preference !== providerPreference ||
+    selection.selected_provider !== effectiveProvider ||
+    selection.effective_provider !== effectiveProvider ||
+    selection.configured_model !== effectiveModel ||
+    selection.effective_model !== effectiveModel
+  ) {
+    return false;
+  }
+
+  if (effectiveProvider === 'fastflowlm') {
+    return (
+      selection.hardware_compatible === true &&
+      selection.requires_terms_acceptance === true &&
+      selection.terms_accepted === true &&
+      selection.terms_version === '0.9.43' &&
+      selection.fallback_reason === null &&
+      selection.runtime_requirement_kind === 'fastflowlm' &&
+      selection.model_requirement_kind === 'fastflowlm_model' &&
+      runtimeRequirementAvailable(
+        snapshot,
+        'fastflowlm',
+        '0.9.43',
+        true,
+      ) &&
+      runtimeRequirementAvailable(
+        snapshot,
+        'fastflowlm_model',
+        effectiveModel,
+        false,
+      )
+    );
+  }
+
   return (
-    normalizedReason.includes('qwen3.5:2b') &&
-    (normalizedReason.includes('ram') || normalizedReason.includes('memory'))
+    effectiveProvider === 'ollama' &&
+    runtimeRequirementAvailable(snapshot, 'ollama', null, true) &&
+    runtimeRequirementAvailable(snapshot, 'ollama_model', effectiveModel, false)
+  );
+}
+
+function runtimeRequirementAvailable(
+  snapshot: GenerationReadinessSnapshot,
+  kind: string,
+  version: string | null,
+  requireInstalledPath: boolean,
+): boolean {
+  return snapshot.runtime_requirements.some(
+    (requirement) =>
+      requirement.kind === kind &&
+      requirement.available === true &&
+      (version === null || requirement.version === version) &&
+      (!requireInstalledPath || requirement.installed_path_verified),
+  );
+}
+
+function resourcesReleasedPassed(
+  snapshot: ResourcesReleasedAtEndSnapshot | undefined,
+  effectiveProvider: string | null,
+): boolean {
+  if (
+    snapshot?.released !== true ||
+    snapshot.stable_empty_snapshots < 2 ||
+    snapshot.observed_owned_processes.length === 0 ||
+    snapshot.alive_owned_processes.length > 0
+  ) {
+    return false;
+  }
+  return (
+    effectiveProvider !== 'fastflowlm' ||
+    snapshot.observed_owned_processes.some(
+      (process) => process.name.toLowerCase() === 'flm.exe',
+    )
   );
 }
 

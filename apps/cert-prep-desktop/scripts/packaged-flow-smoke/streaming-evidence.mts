@@ -1,5 +1,6 @@
 import { isRecord, numberField, stringField } from './text-utils.mts';
 import type {
+  StreamingDraftJobAttribution,
   StreamingJobCompletionState,
   StreamingDraftJobSnapshot,
   StreamingQuestionSnapshot,
@@ -53,12 +54,14 @@ export function sanitizeDraftJobSnapshot(
 ): StreamingDraftJobSnapshot {
   const items = responseItems(payload);
   const statusCounts = draftJobStatusCounts(payload);
-  const generatedCount = items.reduce<number>((total, item) => {
-    if (!isRecord(item)) {
-      return total;
-    }
-    return total + numberField(item.generated_count);
-  }, 0);
+  const jobs = items.map(sanitizeDraftJobAttribution);
+  const generatedCount = jobs.reduce<number>(
+    (total, job) =>
+      job.status === 'succeeded' && job.generated_count > 0
+        ? total + job.generated_count
+        : total,
+    0,
+  );
   const blocker = streamingDraftBlockerFromStatusCounts(statusCounts);
   return {
     elapsed_ms: normalizedElapsedMs(elapsedMs),
@@ -66,8 +69,84 @@ export function sanitizeDraftJobSnapshot(
     item_count: items.length,
     status_counts: statusCounts,
     generated_count: generatedCount,
+    jobs,
     ...(blocker ? { blocker } : {}),
   };
+}
+
+function sanitizeDraftJobAttribution(
+  item: unknown,
+): StreamingDraftJobAttribution {
+  if (!isRecord(item)) {
+    return incompleteDraftJobAttribution();
+  }
+
+  const id = nullableTrimmedString(item.id);
+  const status = nullableTrimmedString(item.status);
+  const configuredProvider = nullableTrimmedString(item.provider);
+  const configuredModel = nullableTrimmedString(item.model);
+  const effectiveProvider = nullableTrimmedString(item.effective_provider);
+  const effectiveModel = nullableTrimmedString(item.effective_model);
+  const rawGeneratedCount = item.generated_count;
+  const generatedCountValid =
+    typeof rawGeneratedCount === 'number' &&
+    Number.isFinite(rawGeneratedCount) &&
+    Number.isInteger(rawGeneratedCount) &&
+    rawGeneratedCount >= 0;
+  const generatedCount = generatedCountValid
+    ? Math.trunc(rawGeneratedCount)
+    : 0;
+  const fallbackFieldPresent = Object.hasOwn(item, 'fallback_reason');
+  const rawFallbackReason = item.fallback_reason;
+  const fallbackFieldValid =
+    fallbackFieldPresent &&
+    (rawFallbackReason === null ||
+      (typeof rawFallbackReason === 'string' &&
+        rawFallbackReason.trim().length > 0));
+  const fallbackReason =
+    typeof rawFallbackReason === 'string' ? rawFallbackReason.trim() : null;
+
+  return {
+    id,
+    status,
+    generated_count: generatedCount,
+    configured_provider: configuredProvider,
+    configured_model: configuredModel,
+    effective_provider: effectiveProvider,
+    effective_model: effectiveModel,
+    fallback_reason: fallbackReason,
+    attribution_complete:
+      id !== null &&
+      status !== null &&
+      generatedCountValid &&
+      configuredProvider !== null &&
+      configuredModel !== null &&
+      effectiveProvider !== null &&
+      effectiveModel !== null &&
+      fallbackFieldValid,
+  };
+}
+
+function incompleteDraftJobAttribution(): StreamingDraftJobAttribution {
+  return {
+    id: null,
+    status: null,
+    generated_count: 0,
+    configured_provider: null,
+    configured_model: null,
+    effective_provider: null,
+    effective_model: null,
+    fallback_reason: null,
+    attribution_complete: false,
+  };
+}
+
+function nullableTrimmedString(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed || null;
 }
 
 /** Stores only counts for generated editable questions from qwen responses. */
