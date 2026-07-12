@@ -1,4 +1,4 @@
-export type StudyPageId =
+type StudyPageId =
   | 'build'
   | 'full_exam'
   | 'random_quiz'

@@ -40,7 +40,7 @@ export type {
 
 const DEFAULT_LOCAL_API_BASE_URL = 'http://127.0.0.1:8765';
 
-export interface BackendConfig {
+interface BackendConfig {
   base_url: string;
   token: string;
 }
@@ -112,7 +112,7 @@ export class CertPrepRuntimeConfig {
 }
 
 @Injectable({ providedIn: 'root' })
-export class CertPrepAuthenticatedTransport {
+class CertPrepAuthenticatedTransport {
   private readonly http = inject(HttpClient);
   private readonly runtimeConfig = inject(CertPrepRuntimeConfig);
 

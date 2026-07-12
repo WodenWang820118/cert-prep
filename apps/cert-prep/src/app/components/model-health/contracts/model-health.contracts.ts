@@ -39,7 +39,7 @@ export interface ModelHealthViewModel {
   readonly ocr: RuntimeStatusSectionView;
 }
 
-export interface DesktopRuntimeStatusView {
+interface DesktopRuntimeStatusView {
   readonly status: string;
   readonly detail: string;
   readonly running: boolean;
