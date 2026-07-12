@@ -7,6 +7,7 @@ import type {
   UploadedDocumentRef,
 } from './types.mts';
 import { activePage } from './runner-context.mts';
+import { fullExamQuestionCountFromSession } from './streaming-evidence.mts';
 import {
   recordStreamingDraftJobSnapshot,
   recordStreamingQuestionSnapshot,
@@ -70,6 +71,65 @@ export async function waitForUploadDocumentResponse(run: SmokeRunState): Promise
   }
 
   return uploadedDocumentRefFromResponse(run, response, payload);
+}
+
+export async function captureFullExamSessionCreate(
+  run: SmokeRunState,
+): Promise<number> {
+  const uploadedDocument = run.uploadedDocument;
+  if (!uploadedDocument) {
+    throw new Error('Cannot prove Full Exam scope without the uploaded document.');
+  }
+  const expectedUrl = new URL(
+    `${uploadedDocument.apiBaseUrl}/projects/${encodeURIComponent(
+      uploadedDocument.projectId,
+    )}/practice-sessions`,
+  );
+  const response = await activePage(run).waitForResponse(
+    (candidate) => {
+      if (candidate.request().method().toUpperCase() !== 'POST') {
+        return false;
+      }
+      try {
+        const candidateUrl = new URL(candidate.url());
+        return (
+          candidateUrl.origin === expectedUrl.origin &&
+          candidateUrl.pathname === expectedUrl.pathname
+        );
+      } catch {
+        return false;
+      }
+    },
+    { timeout: 30_000 },
+  );
+  if (response.status() !== 201) {
+    throw new Error(
+      `Full Exam session creation returned HTTP ${response.status()}.`,
+    );
+  }
+
+  let requestPayload: unknown;
+  let responsePayload: unknown;
+  try {
+    requestPayload = response.request().postDataJSON();
+    responsePayload = await response.json();
+  } catch {
+    throw new Error('Full Exam session evidence was not valid JSON.');
+  }
+  const questionCount = fullExamQuestionCountFromSession(
+    requestPayload,
+    responsePayload,
+    {
+      projectId: uploadedDocument.projectId,
+      documentId: uploadedDocument.documentId,
+    },
+  );
+  if (questionCount === null) {
+    throw new Error(
+      'Full Exam session did not prove a non-empty, practice-ready selected-document scope.',
+    );
+  }
+  return questionCount;
 }
 
 function uploadedDocumentRefFromResponse(

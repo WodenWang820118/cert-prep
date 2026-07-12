@@ -6,6 +6,7 @@ import {
   draftJobStatusCounts,
   FIRST_CHUNK_GATE_MS,
   firstChunkGateMetrics,
+  fullExamQuestionCountFromSession,
   sanitizeDraftJobSnapshot,
   sanitizeQuestionSnapshot,
   streamingJobCompletionState,
@@ -149,6 +150,165 @@ test('streaming question snapshots count usable questions without storing text',
   assert.doesNotMatch(JSON.stringify(snapshot), /SECRET|hidden-token|Bearer/i);
 });
 
+test('Full Exam evidence returns only the validated selected-document count', () => {
+  const request = validFullExamRequest();
+  const response = validFullExamResponse();
+
+  const count = fullExamQuestionCountFromSession(request, response, {
+    projectId: 'project-1',
+    documentId: 'document-1',
+  });
+
+  assert.equal(count, 2);
+  assert.doesNotMatch(JSON.stringify({ count }), /SECRET|Bearer|choice/i);
+});
+
+test('Full Exam evidence rejects stale counts, scope drift, and unusable questions', () => {
+  const expected = { projectId: 'project-1', documentId: 'document-1' };
+
+  const empty = validFullExamResponse();
+  empty.question_ids = [];
+  empty.questions = [];
+  assert.equal(
+    fullExamQuestionCountFromSession(validFullExamRequest(), empty, expected),
+    null,
+  );
+
+  const staleCount = validFullExamResponse();
+  staleCount.question_count = 5;
+  assert.equal(
+    fullExamQuestionCountFromSession(
+      validFullExamRequest(),
+      staleCount,
+      expected,
+    ),
+    null,
+  );
+
+  const requestedCountMismatch = validFullExamRequest();
+  requestedCountMismatch.question_count = 5;
+  assert.equal(
+    fullExamQuestionCountFromSession(
+      requestedCountMismatch,
+      validFullExamResponse(),
+      expected,
+    ),
+    null,
+  );
+
+  const duplicateIds = validFullExamResponse();
+  duplicateIds.question_ids = ['question-1', 'question-1'];
+  assert.equal(
+    fullExamQuestionCountFromSession(
+      validFullExamRequest(),
+      duplicateIds,
+      expected,
+    ),
+    null,
+  );
+
+  const wrongOrder = validFullExamResponse();
+  wrongOrder.question_ids = ['question-2', 'question-1'];
+  assert.equal(
+    fullExamQuestionCountFromSession(
+      validFullExamRequest(),
+      wrongOrder,
+      expected,
+    ),
+    null,
+  );
+
+  const wrongDocument = validFullExamResponse();
+  wrongDocument.questions[0] = {
+    ...wrongDocument.questions[0],
+    document_id: 'document-2',
+  };
+  assert.equal(
+    fullExamQuestionCountFromSession(
+      validFullExamRequest(),
+      wrongDocument,
+      expected,
+    ),
+    null,
+  );
+
+  const invalidAnswer = validFullExamResponse();
+  invalidAnswer.questions[0] = {
+    ...invalidAnswer.questions[0],
+    answer: 'not-an-option',
+  };
+  assert.equal(
+    fullExamQuestionCountFromSession(
+      validFullExamRequest(),
+      invalidAnswer,
+      expected,
+    ),
+    null,
+  );
+
+  const missingRationale = validFullExamResponse();
+  missingRationale.questions[0] = {
+    ...missingRationale.questions[0],
+    rationale: '   ',
+  };
+  assert.equal(
+    fullExamQuestionCountFromSession(
+      validFullExamRequest(),
+      missingRationale,
+      expected,
+    ),
+    null,
+  );
+
+  const missingEvidence = validFullExamResponse();
+  missingEvidence.questions[0] = {
+    ...missingEvidence.questions[0],
+    citation_page: null,
+    source_excerpt: '   ',
+  };
+  assert.equal(
+    fullExamQuestionCountFromSession(
+      validFullExamRequest(),
+      missingEvidence,
+      expected,
+    ),
+    null,
+  );
+
+  const wrongRequestMode = validFullExamRequest();
+  wrongRequestMode.mode = 'random_draw';
+  assert.equal(
+    fullExamQuestionCountFromSession(
+      wrongRequestMode,
+      validFullExamResponse(),
+      expected,
+    ),
+    null,
+  );
+
+  const wrongResponseDocument = validFullExamResponse();
+  wrongResponseDocument.document_id = 'document-2';
+  assert.equal(
+    fullExamQuestionCountFromSession(
+      validFullExamRequest(),
+      wrongResponseDocument,
+      expected,
+    ),
+    null,
+  );
+
+  const wrongProject = validFullExamResponse();
+  wrongProject.project_id = 'project-2';
+  assert.equal(
+    fullExamQuestionCountFromSession(
+      validFullExamRequest(),
+      wrongProject,
+      expected,
+    ),
+    null,
+  );
+});
+
 test('streaming job attribution fails closed when required nullable fields are absent', () => {
   const snapshot = sanitizeDraftJobSnapshot(
     {
@@ -245,3 +405,45 @@ test('first chunk gate metrics use strict under-threshold timing', () => {
     first_chunk_under_gate: false,
   });
 });
+
+function validFullExamRequest() {
+  return {
+    mode: 'full_document',
+    document_id: 'document-1',
+    question_count: 2,
+  };
+}
+
+function validFullExamResponse() {
+  return {
+    id: 'session-1',
+    project_id: 'project-1',
+    mode: 'full_document',
+    document_id: 'document-1',
+    question_count: 2,
+    status: 'active',
+    question_ids: ['question-1', 'question-2'],
+    questions: [
+      {
+        id: 'question-1',
+        question: 'SECRET first prompt',
+        choices: ['SECRET choice A', 'choice B'],
+        answer: 'SECRET choice A',
+        rationale: 'SECRET rationale',
+        citation_page: 1,
+        source_excerpt: null,
+        document_id: 'document-1',
+      },
+      {
+        id: 'question-2',
+        question: 'SECRET second prompt',
+        choices: ['choice C', 'choice D'],
+        answer: 'choice D',
+        rationale: 'Second rationale',
+        citation_page: null,
+        source_excerpt: 'Second source excerpt',
+        document_id: 'document-1',
+      },
+    ],
+  };
+}

@@ -1,6 +1,7 @@
 export {
   answerForVisiblePracticeQuestion,
   captureDocumentOcrEvidence,
+  captureFullExamSessionCreate,
   captureLlmHealth,
   createPackagedSmokeQuestion,
   firstSourceChunk,

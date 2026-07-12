@@ -8,6 +8,11 @@ import type {
 
 export const FIRST_CHUNK_GATE_MS = 15_000;
 
+interface FullExamScope {
+  projectId: string;
+  documentId: string;
+}
+
 const TERMINAL_STREAMING_JOB_STATUSES = new Set([
   'succeeded',
   'failed',
@@ -149,6 +154,36 @@ function nullableTrimmedString(value: unknown): string | null {
   return trimmed || null;
 }
 
+function positiveInteger(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0
+    ? value
+    : null;
+}
+
+function practiceReadyQuestion(question: Record<string, unknown>): boolean {
+  const prompt = nullableTrimmedString(question.question);
+  const answer = nullableTrimmedString(question.answer);
+  const rationale = nullableTrimmedString(question.rationale);
+  const sourceExcerpt = nullableTrimmedString(question.source_excerpt);
+  const citationPage = positiveInteger(question.citation_page);
+  if (
+    !prompt ||
+    !answer ||
+    !rationale ||
+    (!sourceExcerpt && citationPage === null) ||
+    !Array.isArray(question.choices)
+  ) {
+    return false;
+  }
+  const choices = question.choices.map(nullableTrimmedString);
+  return (
+    choices.length >= 2 &&
+    choices.every((choice) => choice !== null) &&
+    new Set(choices).size === choices.length &&
+    choices.includes(answer)
+  );
+}
+
 /** Stores only counts for generated editable questions from qwen responses. */
 export function sanitizeQuestionSnapshot(
   payload: unknown,
@@ -161,6 +196,61 @@ export function sanitizeQuestionSnapshot(
     item_count: items.length,
     usable_question_count: items.filter(isUsableQuestionPayload).length,
   };
+}
+
+/** Returns the actual Full Exam size only when request and response prove one document scope. */
+export function fullExamQuestionCountFromSession(
+  requestPayload: unknown,
+  responsePayload: unknown,
+  expected: FullExamScope,
+): number | null {
+  if (!isRecord(requestPayload) || !isRecord(responsePayload)) {
+    return null;
+  }
+  const requestedCount = positiveInteger(requestPayload.question_count);
+  const responseCount = positiveInteger(responsePayload.question_count);
+  const questionIds = Array.isArray(responsePayload.question_ids)
+    ? responsePayload.question_ids
+    : [];
+  const questions = Array.isArray(responsePayload.questions)
+    ? responsePayload.questions
+    : [];
+  if (
+    requestPayload.mode !== 'full_document' ||
+    requestPayload.document_id !== expected.documentId ||
+    responsePayload.mode !== 'full_document' ||
+    responsePayload.project_id !== expected.projectId ||
+    responsePayload.document_id !== expected.documentId ||
+    responsePayload.status !== 'active' ||
+    !nullableTrimmedString(responsePayload.id) ||
+    requestedCount === null ||
+    responseCount === null ||
+    requestedCount !== responseCount ||
+    responseCount !== questionIds.length ||
+    responseCount !== questions.length
+  ) {
+    return null;
+  }
+
+  const normalizedIds = questionIds.map(nullableTrimmedString);
+  if (
+    normalizedIds.some((id) => id === null) ||
+    new Set(normalizedIds).size !== responseCount
+  ) {
+    return null;
+  }
+  for (let index = 0; index < questions.length; index += 1) {
+    const question = questions[index];
+    if (
+      !isRecord(question) ||
+      question.id !== normalizedIds[index] ||
+      question.document_id !== expected.documentId ||
+      !practiceReadyQuestion(question)
+    ) {
+      return null;
+    }
+  }
+  return responseCount;
 }
 
 /** Merges status-count maps while preserving prior observations. */

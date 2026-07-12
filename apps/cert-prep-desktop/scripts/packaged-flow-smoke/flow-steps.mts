@@ -14,6 +14,7 @@ import {
 import {
   answerForVisiblePracticeQuestion,
   captureDocumentOcrEvidence,
+  captureFullExamSessionCreate,
   captureLlmHealth,
   createPackagedSmokeQuestion,
   EXPECTED_BASELINE_CHUNKS,
@@ -261,7 +262,11 @@ export async function verifyStreamingPracticeReady(
     if (await startButton.isEnabled()) {
       run.metrics.ui_timings_ms.practice_ready_visible_ms = Date.now() - parseStart;
       await screenshot(run, 'streaming-practice-ready');
-      await startButton.click({ timeout: 30_000 });
+      const [fullExamQuestionCount] = await Promise.all([
+        captureFullExamSessionCreate(run),
+        startButton.click({ timeout: 30_000 }),
+      ]);
+      run.metrics.full_exam_question_count = fullExamQuestionCount;
       await waitText(
         run,
         /Submit answer|Choices/,
