@@ -76,6 +76,8 @@ class FastFlowLMRuntimeTrustPolicy:
     installer_file_name: str
     installer_bytes: int
     installer_sha256: str
+    executable_bytes: int
+    executable_sha256: str
     signer_subject: str
     signer_thumbprint: str
     terms_url: str
@@ -92,6 +94,9 @@ FASTFLOWLM_RUNTIME_TRUST_POLICY = FastFlowLMRuntimeTrustPolicy(
     installer_file_name="flm-setup-v0.9.43.exe",
     installer_bytes=18_577_840,
     installer_sha256="0b0ec2c049222bba8e15f1d4d7093f89f2f25a6beeddd03bdb1fcac69002315e",
+    # Captured from flm.exe installed by the exact allowlisted installer above.
+    executable_bytes=6_475_264,
+    executable_sha256="92ecc734e65251ce79b4e65b9be88c4561c44a8d835f6ccbf341d8491e9ee218",
     # Captured with Get-AuthenticodeSignature from the pinned installer URL on
     # 2026-07-11 after the size and SHA-256 checks above matched.
     signer_subject=(

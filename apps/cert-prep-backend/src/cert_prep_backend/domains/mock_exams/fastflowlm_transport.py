@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 import json
 import os
+from pathlib import Path
 import subprocess
 from typing import Any
 
@@ -69,6 +70,7 @@ class FastFlowLMProvider(
         base_url: str,
         model: str,
         timeout_seconds: float,
+        executable_path: Path | None = None,
         fallback_models: Sequence[str] = (),
         model_pull_timeout_seconds: float | None = None,
         primary_min_available_ram_bytes: int = (DEFAULT_FASTFLOWLM_PRIMARY_MIN_AVAILABLE_RAM_BYTES),
@@ -80,6 +82,7 @@ class FastFlowLMProvider(
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
+        self.executable_path = executable_path
         self.timeout_seconds = timeout_seconds
         self.model_pull_timeout_seconds = model_pull_timeout_seconds or timeout_seconds
         self.primary_min_available_ram_bytes = max(0, int(primary_min_available_ram_bytes))
@@ -109,7 +112,7 @@ class FastFlowLMProvider(
             auto_start_server=self.auto_start_server,
             server_start_timeout_seconds=self.server_start_timeout_seconds,
             owned_server_idle_timeout_seconds=self.owned_server_idle_timeout_seconds,
-            executable_resolver=lambda: resolve_fastflowlm_executable(),
+            executable_resolver=lambda: resolve_fastflowlm_executable(self.executable_path),
             start_process=self._start_owned_server_process,
             served_model_names=self._served_model_names,
             model_to_serve=self._model_to_serve_for_auto_start,
@@ -132,7 +135,7 @@ class FastFlowLMProvider(
         try:
             model_names = self._served_model_names()
         except Exception as exc:
-            executable = resolve_fastflowlm_executable()
+            executable = resolve_fastflowlm_executable(self.executable_path)
             if executable is None:
                 detail = "FastFlowLM is not installed."
                 unavailable_reason = "fastflowlm_missing"
@@ -285,7 +288,7 @@ class FastFlowLMProvider(
     def pull_model(self, progress: Callable[[ModelPullProgress], None]) -> None:
         """Pull the configured FastFlowLM model after explicit user confirmation."""
 
-        executable = resolve_fastflowlm_executable()
+        executable = resolve_fastflowlm_executable(self.executable_path)
         if executable is None:
             raise ProviderUnavailableError("FastFlowLM is not installed.")
         progress(ModelPullProgress(status=f"pulling {self.model}"))

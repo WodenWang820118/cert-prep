@@ -4,16 +4,27 @@ from collections.abc import Callable, Sequence
 import json
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.parse import urlsplit
+from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 from cert_prep_backend.api.errors import ProviderUnavailableError
+
+
+class _RejectRedirects(HTTPRedirectHandler):
+    def redirect_request(self, *_args, **_kwargs):
+        return None
+
+
+_NO_PROXY_HANDLER = ProxyHandler({})
+_REJECT_REDIRECTS = _RejectRedirects()
+_LOOPBACK_OPENER = build_opener(_NO_PROXY_HANDLER, _REJECT_REDIRECTS)
 
 
 class FastFlowLMClient:
     """OpenAI-compatible HTTP client for FastFlowLM."""
 
     def __init__(self, *, base_url: str, timeout_seconds: float) -> None:
-        self.base_url = base_url.rstrip("/")
+        self.base_url = _validated_loopback_base_url(base_url)
         self.timeout_seconds = timeout_seconds
 
     def served_model_names(
@@ -106,7 +117,10 @@ class FastFlowLMClient:
             method=method,
         )
         try:
-            with urlopen(request, timeout=timeout_seconds or self.timeout_seconds) as response:
+            with _LOOPBACK_OPENER.open(
+                request,
+                timeout=timeout_seconds or self.timeout_seconds,
+            ) as response:
                 payload = response.read().decode("utf-8")
         except HTTPError as exc:
             detail = exc.read().decode("utf-8", errors="replace").strip()
@@ -122,6 +136,29 @@ class FastFlowLMClient:
         if not isinstance(decoded, dict):
             raise ProviderUnavailableError("FastFlowLM returned non-object response JSON.")
         return decoded
+
+
+def _validated_loopback_base_url(value: str) -> str:
+    parsed = urlsplit(value)
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise ProviderUnavailableError("FastFlowLM base URL has an invalid port.") from exc
+    if (
+        parsed.scheme != "http"
+        or parsed.hostname != "127.0.0.1"
+        or port is None
+        or port == 0
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or parsed.path.rstrip("/") != "/v1"
+    ):
+        raise ProviderUnavailableError(
+            "FastFlowLM base URL must be http://127.0.0.1:<port>/v1."
+        )
+    return f"http://127.0.0.1:{port}/v1"
 
 
 def extract_openai_model_names(response: Any) -> set[str]:

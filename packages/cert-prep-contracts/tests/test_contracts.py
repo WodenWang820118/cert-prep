@@ -96,6 +96,8 @@ def test_llm_runtime_policy_and_provider_selection_are_shared_value_types() -> N
     assert attribution.effective_model == DEFAULT_LLM_RUNTIME_POLICY.primary_model
     assert FASTFLOWLM_RUNTIME_TRUST_POLICY.version == "0.9.43"
     assert len(FASTFLOWLM_RUNTIME_TRUST_POLICY.installer_sha256) == 64
+    assert FASTFLOWLM_RUNTIME_TRUST_POLICY.executable_bytes == 6_475_264
+    assert len(FASTFLOWLM_RUNTIME_TRUST_POLICY.executable_sha256) == 64
 
 
 def test_machine_inventory_and_ollama_profiles_are_pure_value_types() -> None:

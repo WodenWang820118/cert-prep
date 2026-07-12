@@ -10,7 +10,11 @@ from llm_test_fakes import AutoStartFastFlowLMProvider, GIB, RecordingFastFlowLM
 
 
 def test_fastflowlm_health_reports_missing_runtime_without_model_download(monkeypatch) -> None:
-    monkeypatch.setattr(fastflowlm_transport, "resolve_fastflowlm_executable", lambda: None)
+    monkeypatch.setattr(
+        fastflowlm_transport,
+        "resolve_fastflowlm_executable",
+        lambda *_args: None,
+    )
     provider = FastFlowLMProvider(
         base_url="http://127.0.0.1:1/v1",
         model=DEFAULT_FASTFLOWLM_MODEL,
@@ -31,16 +35,28 @@ def test_fastflowlm_health_reports_missing_runtime_without_model_download(monkey
 def test_fastflowlm_executable_resolution_accepts_official_flm_install_dir(
     monkeypatch, tmp_path
 ) -> None:
-    install_dir = tmp_path / "flm"
-    install_dir.mkdir()
+    program_files = tmp_path / "Program Files"
+    install_dir = program_files / "flm"
+    install_dir.mkdir(parents=True)
     executable = install_dir / "flm.exe"
     executable.write_text("", encoding="utf-8")
-    monkeypatch.setattr(fastflowlm_resolver.shutil, "which", lambda _: None)
-    monkeypatch.setenv("ProgramFiles", str(tmp_path))
-    monkeypatch.setenv("ProgramFiles(x86)", str(tmp_path / "x86"))
-    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    monkeypatch.setattr(fastflowlm_resolver.os, "name", "nt")
+    monkeypatch.setattr(
+        fastflowlm_resolver,
+        "_known_folder_path",
+        lambda folder_id: (
+            program_files
+            if folder_id == fastflowlm_resolver._FOLDER_ID_PROGRAM_FILES
+            else tmp_path / "unused"
+        ),
+    )
+    monkeypatch.setattr(
+        fastflowlm_resolver,
+        "is_allowlisted_fastflowlm_executable",
+        lambda path: path == executable.resolve(),
+    )
 
-    assert fastflowlm_transport.resolve_fastflowlm_executable() == executable
+    assert fastflowlm_transport.resolve_fastflowlm_executable() == executable.resolve()
 
 def test_fastflowlm_pull_uses_runtime_install_timeout(monkeypatch, tmp_path) -> None:
     executable = tmp_path / "flm.exe"
@@ -49,7 +65,7 @@ def test_fastflowlm_pull_uses_runtime_install_timeout(monkeypatch, tmp_path) -> 
     monkeypatch.setattr(
         fastflowlm_transport,
         "resolve_fastflowlm_executable",
-        lambda: executable,
+        lambda *_args: executable,
     )
 
     def fake_run(*args, **kwargs):
@@ -309,7 +325,7 @@ def test_fastflowlm_generation_autostarts_and_releases_owned_server(
     monkeypatch.setattr(
         fastflowlm_transport,
         "resolve_fastflowlm_executable",
-        lambda: Path("flm"),
+        lambda *_args: Path("flm"),
     )
     provider = AutoStartFastFlowLMProvider(
         models=["qwen3.5:4b"],
@@ -351,7 +367,7 @@ def test_fastflowlm_autostarts_fallback_server_when_primary_ram_is_low(
     monkeypatch.setattr(
         fastflowlm_transport,
         "resolve_fastflowlm_executable",
-        lambda: Path("flm"),
+        lambda *_args: Path("flm"),
     )
     monkeypatch.setattr(
         fastflowlm_transport,

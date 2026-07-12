@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import Annotated, Literal
+from urllib.parse import urlsplit
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -140,6 +141,30 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return [model.strip() for model in value.split(",") if model.strip()]
         return value
+
+    @field_validator("fastflowlm_base_url")
+    @classmethod
+    def validate_fastflowlm_base_url(cls, value: str) -> str:
+        parsed = urlsplit(value)
+        try:
+            port = parsed.port
+        except ValueError as exc:
+            raise ValueError("FastFlowLM base URL has an invalid port.") from exc
+        if (
+            parsed.scheme != "http"
+            or parsed.hostname != "127.0.0.1"
+            or port is None
+            or port == 0
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+            or parsed.path.rstrip("/") != "/v1"
+        ):
+            raise ValueError(
+                "FastFlowLM base URL must be http://127.0.0.1:<port>/v1."
+            )
+        return f"http://127.0.0.1:{port}/v1"
 
     @model_validator(mode="after")
     def validate_fastflowlm_terms_state(self) -> Settings:
