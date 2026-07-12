@@ -6,14 +6,13 @@ import subprocess
 
 import pytest
 
+from cert_prep_contracts.llm import ModelPullProgress
+from cert_prep_contracts.runtime import RuntimeInstallationStatus, RuntimeRequirementKind
 from cert_prep_ollama import installers as installer_module
 from cert_prep_ollama import server as server_module
 from cert_prep_ollama.exceptions import ProviderUnavailableError
 from cert_prep_ollama.installers import OllamaModelInstaller, OllamaRuntimeInstaller
 from cert_prep_ollama.models import (
-    ModelPullProgress,
-    RuntimeInstallationStatus,
-    RuntimeRequirementKind,
     extract_model_names,
     pull_progress,
 )

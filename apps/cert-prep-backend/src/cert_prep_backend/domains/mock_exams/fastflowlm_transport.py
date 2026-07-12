@@ -29,7 +29,7 @@ from cert_prep_backend.domains.mock_exams.models import (
     SourceChunk,
 )
 from cert_prep_backend.domains.mock_exams.normalization import dedupe_suggestions
-from cert_prep_backend.domains.mock_exams.ports import ModelPullProgress, ProviderHealth
+from cert_prep_backend.domains.mock_exams.ports import ProviderHealth
 from cert_prep_backend.domains.mock_exams.reasoning_parser import (
     EXAM_ITEMS_SCHEMA,
     draft_suggestion_from_item,
@@ -41,9 +41,9 @@ from cert_prep_backend.domains.mock_exams.response_parsing import (
     short_error,
 )
 from cert_prep_backend.domains.mock_exams.system_probes import available_system_ram_bytes
+from cert_prep_contracts.llm import ModelPullProgress
 
 
-DEFAULT_FASTFLOWLM_BASE_URL = "http://127.0.0.1:52625/v1"
 DEFAULT_FASTFLOWLM_PRIMARY_MODEL = "qwen3.5:4b"
 FASTFLOWLM_RAM_FALLBACK_MODEL = "qwen3.5:2b"
 DEFAULT_FASTFLOWLM_PRIMARY_MIN_AVAILABLE_RAM_BYTES = 6 * 1024 * 1024 * 1024
@@ -231,25 +231,6 @@ class FastFlowLMProvider(
             if len(suggestions) >= limit:
                 break
         return suggestions
-
-    def prewarm(self) -> None:
-        """Send a tiny request to the already-running FastFlowLM server."""
-
-        health = self.health()
-        if not health.available or not health.effective_model:
-            return
-
-        try:
-            self._with_model_fallback(
-                lambda model: self._chat_content(
-                    model,
-                    [{"role": "user", "content": "Reply with ok."}],
-                    max_tokens=1,
-                    context_tokens=512,
-                )
-            )
-        except ProviderUnavailableError:
-            return
 
     def generate_fast_first_draft(
         self,

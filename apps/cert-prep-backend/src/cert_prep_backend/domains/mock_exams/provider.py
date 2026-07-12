@@ -86,7 +86,6 @@ class LazyDraftGenerationProvider:
             "generate_reasoning_drafts",
             "generate_fast_first_draft",
             "release_resources",
-            "prewarm",
             "pull_model",
         }
     )

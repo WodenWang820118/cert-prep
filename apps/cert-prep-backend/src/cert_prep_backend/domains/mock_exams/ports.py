@@ -5,15 +5,12 @@ from dataclasses import dataclass
 from typing import Any, Protocol, TypeVar, runtime_checkable
 
 from cert_prep_backend.domains.mock_exams.models import DraftSuggestion, SourceChunk
-from cert_prep_contracts.llm import ModelPullProgress
+from cert_prep_contracts.llm import ModelPullProgress as _ModelPullProgress
 
-# Re-export for backward compatibility.
 __all__ = [
     "DraftGenerationProvider",
     "FastFirstDraftProvider",
     "ModelDownloadProvider",
-    "ModelLifecycleProvider",
-    "ModelPullProgress",
     "OllamaRuntimeInstallationProvider",
     "ProviderHealth",
     "ReasoningDraftProvider",
@@ -93,20 +90,7 @@ class FastFirstDraftProvider(Protocol):
 class ModelDownloadProvider(Protocol):
     """Provider capability for explicit model downloads."""
 
-    def pull_model(self, progress: Callable[[ModelPullProgress], None]) -> None:
-        """Pull/install the configured model after explicit user confirmation."""
-        pass
-
-
-@runtime_checkable
-class ModelLifecycleProvider(Protocol):
-    """Provider capability for explicit model lifecycle operations."""
-
-    def prewarm(self) -> None:
-        """Warm an available model without installing missing runtime assets."""
-        pass
-
-    def pull_model(self, progress: Callable[[ModelPullProgress], None]) -> None:
+    def pull_model(self, progress: Callable[[_ModelPullProgress], None]) -> None:
         """Pull/install the configured model after explicit user confirmation."""
         pass
 

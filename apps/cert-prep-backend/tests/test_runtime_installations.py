@@ -18,7 +18,7 @@ from cert_prep_backend.domains.runtime_installations import (
     run_ocr_runtime_command,
 )
 from cert_prep_backend.domains.source_documents.ocr import OCRHealth, OCRPageResult
-from cert_prep_ollama.models import (
+from cert_prep_contracts.runtime import (
     RuntimeInstallationStatus,
     RuntimeInstallProgress,
     RuntimeRequirementKind,

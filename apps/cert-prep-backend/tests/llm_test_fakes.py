@@ -7,13 +7,14 @@ from cert_prep_backend.api.errors import ProviderUnavailableError
 from cert_prep_backend.core.config import DEFAULT_OLLAMA_MODEL
 from cert_prep_backend.domains.mock_exams.fastflowlm_transport import FastFlowLMProvider
 from cert_prep_backend.domains.mock_exams.models import DraftSuggestion, SourceChunk
-from cert_prep_backend.domains.mock_exams.ports import ModelPullProgress, ProviderHealth
+from cert_prep_backend.domains.mock_exams.ports import ProviderHealth
 from cert_prep_contracts.hardware import (
     MachineCpuSnapshot,
     MachineInventorySnapshot,
     MachineRamSnapshot,
     MachineStorageSnapshot,
 )
+from cert_prep_contracts.llm import ModelPullProgress
 from cert_prep_contracts.runtime import (
     RuntimeInstallationStatus,
     RuntimeInstallProgress,
@@ -145,7 +146,7 @@ class RecordingOllamaClient:
 
     def pull(self, *_args, **_kwargs):
         self.pull_calls += 1
-        raise AssertionError("prewarm must not pull models")
+        raise AssertionError("provider probe must not pull models")
 
 class RecordingFastFlowLMProvider(FastFlowLMProvider):
     def __init__(

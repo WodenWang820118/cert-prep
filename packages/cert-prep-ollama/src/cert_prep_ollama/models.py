@@ -1,16 +1,10 @@
-"""Ollama model helpers and compatibility exports."""
+"""Ollama model helpers."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from cert_prep_contracts.llm import ModelPullProgress
-from cert_prep_contracts.runtime import (
-    RuntimeInstallationStatus,
-    RuntimeInstallProgress,
-    RuntimeRequirementKind,
-    RuntimeRequirementSnapshot,
-)
+from cert_prep_contracts.llm import ModelPullProgress as _ModelPullProgress
 
 
 DEFAULT_OLLAMA_MODEL = "qwen3.5:4b"
@@ -32,7 +26,7 @@ def extract_model_names(response: Any) -> set[str]:
     return names
 
 
-def pull_progress(response: Any) -> ModelPullProgress:
+def pull_progress(response: Any) -> _ModelPullProgress:
     """Normalize streamed Ollama pull progress into domain progress values."""
 
     status = getattr(response, "status", None)
@@ -42,7 +36,7 @@ def pull_progress(response: Any) -> ModelPullProgress:
         status = response.get("status", status)
         completed = response.get("completed", completed)
         total = response.get("total", total)
-    return ModelPullProgress(
+    return _ModelPullProgress(
         status=status if isinstance(status, str) else "downloading model",
         completed=completed if isinstance(completed, int) else None,
         total=total if isinstance(total, int) else None,
@@ -51,11 +45,6 @@ def pull_progress(response: Any) -> ModelPullProgress:
 
 __all__ = [
     "DEFAULT_OLLAMA_MODEL",
-    "ModelPullProgress",
-    "RuntimeInstallationStatus",
-    "RuntimeInstallProgress",
-    "RuntimeRequirementKind",
-    "RuntimeRequirementSnapshot",
     "extract_model_names",
     "pull_progress",
 ]

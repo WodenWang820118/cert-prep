@@ -233,26 +233,6 @@ class OllamaProvider:
                 break
         return suggestions
 
-    def prewarm(self) -> None:
-        """Keep the configured Ollama model warm without downloading missing models."""
-
-        health = self.health()
-        if not health.available or not health.effective_model:
-            return
-
-        try:
-            self._with_model_fallback(
-                lambda model: self._client.chat(
-                    model=model,
-                    messages=[{"role": "user", "content": "Reply with ok."}],
-                    options={"temperature": 0, "num_ctx": 512, "num_predict": 1},
-                    think=False,
-                    keep_alive=STREAMING_PREWARM_KEEP_ALIVE,
-                )
-            )
-        except ProviderUnavailableError:
-            return
-
     def generate_fast_first_draft(
         self,
         source_chunk: SourceChunk,
