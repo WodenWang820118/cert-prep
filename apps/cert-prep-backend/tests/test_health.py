@@ -12,7 +12,7 @@ def test_health_endpoint_returns_app_status() -> None:
     assert response.json() == {
         "status": "ok",
         "app": "cert-prep-backend",
-        "version": "0.1.0",
+        "version": "0.1.0-alpha.1",
         "python_version": response.json()["python_version"],
         "runtime_mode": "source",
     }

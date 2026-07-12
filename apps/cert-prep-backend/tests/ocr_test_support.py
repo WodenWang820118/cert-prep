@@ -67,8 +67,8 @@ def external_provider_with_runtime(
                 "entrypoint": entrypoint.name,
                 "artifact": {
                     "file_name": "runtime.zip",
-                    "sha256": "0",
-                    "bytes": 0,
+                    "sha256": "0" * 64,
+                    "bytes": 1,
                     "url": None,
                 },
             }
