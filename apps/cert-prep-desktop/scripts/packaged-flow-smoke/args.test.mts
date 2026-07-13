@@ -161,12 +161,18 @@ test('packaged flow smoke can write timestamped output under an explicit root', 
   assert.equal(parsed.appDataDir, `${parsed.outDir}\\app-data`);
 });
 
-test('both packaged production targets exercise auto provider selection', () => {
+test('packaged targets keep one explicit WindowsML baseline and auto production lanes', () => {
   const project = JSON.parse(
     readFileSync(new URL('../../project.json', import.meta.url), 'utf8'),
   ) as {
     targets?: Record<string, { options?: { command?: string } }>;
   };
+  assert.equal(project.targets?.['packaged-streaming-baseline'], undefined);
+  const baselineCommand =
+    project.targets?.['packaged-streaming-baseline-windowsml']?.options
+      ?.command ?? '';
+  assert.match(baselineCommand, /--ocr-provider windowsml(?:\s|$)/);
+
   for (const target of [
     'packaged-streaming-production-windowsml',
     'packaged-streaming-production-recorded-windowsml',
