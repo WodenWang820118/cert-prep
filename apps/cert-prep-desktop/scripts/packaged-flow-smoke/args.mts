@@ -52,11 +52,9 @@ export function parsePackagedFlowSmokeArgs(
       DEFAULT_LLM_PROVIDER,
     ollamaModel:
       process.env.CERT_PREP_PACKAGE_SMOKE_LLM_MODEL?.trim() ||
-      process.env.CERT_PREP_PACKAGE_SMOKE_OLLAMA_MODEL?.trim() ||
       DEFAULT_LLM_MODEL,
     ollamaFallbackModels: stringList(
-      process.env.CERT_PREP_PACKAGE_SMOKE_LLM_FALLBACK_MODELS ??
-        process.env.CERT_PREP_PACKAGE_SMOKE_OLLAMA_FALLBACK_MODELS,
+      process.env.CERT_PREP_PACKAGE_SMOKE_LLM_FALLBACK_MODELS,
       DEFAULT_OLLAMA_FALLBACK_MODELS,
     ),
     streamingDraftPageLimit: optionalPositiveInteger(
@@ -116,10 +114,6 @@ export function parsePackagedFlowSmokeArgs(
     } else if (arg === '--llm-model') {
       parsed.ollamaModel = nonEmptyString(readValue(arg), arg);
     } else if (arg === '--llm-fallback-models') {
-      parsed.ollamaFallbackModels = stringList(readValue(arg), []);
-    } else if (arg === '--ollama-model') {
-      parsed.ollamaModel = nonEmptyString(readValue(arg), arg);
-    } else if (arg === '--ollama-fallback-models') {
       parsed.ollamaFallbackModels = stringList(readValue(arg), []);
     } else if (arg === '--streaming-draft-page-limit') {
       parsed.streamingDraftPageLimit = positiveInteger(Number(readValue(arg)), arg);

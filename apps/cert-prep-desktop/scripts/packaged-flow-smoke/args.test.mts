@@ -51,7 +51,7 @@ test('packaged flow smoke args validate numeric knobs', () => {
     /positive integer/,
   );
   assert.throws(
-    () => parsePackagedFlowSmokeArgs(['--ollama-model', ' ']),
+    () => parsePackagedFlowSmokeArgs(['--llm-model', ' ']),
     /must not be empty/,
   );
   assert.throws(
@@ -103,19 +103,13 @@ test('packaged streaming production enables completion wait and production outpu
   assert.equal(parsed.appDataDir, `${parsed.outDir}\\app-data`);
 });
 
-test('packaged flow smoke keeps ollama argument aliases for old QA commands', () => {
-  const parsed = parsePackagedFlowSmokeArgs([
-    '--llm-provider',
-    'ollama',
-    '--ollama-model',
-    'qwen3.5:2b',
-    '--ollama-fallback-models',
-    'qwen3.5:0.8b',
-  ]);
-
-  assert.equal(parsed.llmProvider, 'ollama');
-  assert.equal(parsed.ollamaModel, 'qwen3.5:2b');
-  assert.deepEqual(parsed.ollamaFallbackModels, ['qwen3.5:0.8b']);
+test('packaged flow smoke rejects retired Ollama model argument aliases', () => {
+  for (const alias of ['--ollama-model', '--ollama-fallback-models']) {
+    assert.throws(
+      () => parsePackagedFlowSmokeArgs([alias, 'qwen3.5:2b']),
+      new RegExp(`Unknown argument: ${alias}`),
+    );
+  }
 });
 
 test('streaming practice-ready verification implies completion wait', () => {
