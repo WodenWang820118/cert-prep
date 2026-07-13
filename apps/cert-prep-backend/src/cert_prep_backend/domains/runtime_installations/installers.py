@@ -7,6 +7,7 @@ from pathlib import Path
 
 from cert_prep_backend.core.config import Settings
 from cert_prep_backend.domains.mock_exams.ports import (
+    FastFlowLMModelInventoryProvider,
     ModelDownloadProvider,
     ModelOnboardingProvider,
     provider_capability,
@@ -57,6 +58,8 @@ class LLMModelInstaller:
     def requirement(self) -> RuntimeRequirementSnapshot:
         """Return model availability without starting a download."""
 
+        if self.kind == RuntimeRequirementKind.FASTFLOWLM_MODEL:
+            return self._fastflowlm_requirement()
         model_provider = provider_capability(self._provider, ModelDownloadProvider)
         if model_provider is None:
             return RuntimeRequirementSnapshot(
@@ -79,6 +82,63 @@ class LLMModelInstaller:
             available=available,
             detail=detail,
             unavailable_reason=unavailable_reason,
+            version=self.model,
+        )
+
+    def _fastflowlm_requirement(self) -> RuntimeRequirementSnapshot:
+        if not self._fastflowlm_terms_accepted():
+            return RuntimeRequirementSnapshot(
+                kind=self.kind,
+                label="FastFlowLM model",
+                available=False,
+                detail="FastFlowLM terms must be explicitly accepted.",
+                unavailable_reason="fastflowlm_terms_required",
+                version=self.model,
+            )
+        if provider_capability(self._provider, ModelDownloadProvider) is None:
+            return RuntimeRequirementSnapshot(
+                kind=self.kind,
+                label="FastFlowLM model",
+                available=False,
+                detail="Configured FastFlowLM provider does not support model downloads.",
+                unavailable_reason="unsupported_provider",
+                version=self.model,
+            )
+        inventory_provider = provider_capability(
+            self._provider,
+            FastFlowLMModelInventoryProvider,
+        )
+        if inventory_provider is None:
+            return RuntimeRequirementSnapshot(
+                kind=self.kind,
+                label="FastFlowLM model",
+                available=False,
+                detail="Configured FastFlowLM provider does not support trusted model inventory.",
+                unavailable_reason="unsupported_provider",
+                version=self.model,
+            )
+        try:
+            installed_models = inventory_provider.installed_fastflowlm_models()
+        except ProviderUnavailableError as exc:
+            return RuntimeRequirementSnapshot(
+                kind=self.kind,
+                label="FastFlowLM model",
+                available=False,
+                detail=f"FastFlowLM model inventory unavailable: {exc}",
+                unavailable_reason="model_inventory_unavailable",
+                version=self.model,
+            )
+        available = self.model in installed_models
+        return RuntimeRequirementSnapshot(
+            kind=self.kind,
+            label="FastFlowLM model",
+            available=available,
+            detail=(
+                f"FastFlowLM model {self.model} is installed."
+                if available
+                else f"FastFlowLM model {self.model} is not installed."
+            ),
+            unavailable_reason=None if available else "model_missing",
             version=self.model,
         )
 

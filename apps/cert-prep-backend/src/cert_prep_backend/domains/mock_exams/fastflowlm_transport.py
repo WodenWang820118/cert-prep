@@ -58,6 +58,7 @@ DEFAULT_FASTFLOWLM_PRIMARY_MIN_AVAILABLE_RAM_BYTES = 6 * 1024 * 1024 * 1024
 DEFAULT_FASTFLOWLM_AUTO_START_SERVER = True
 DEFAULT_FASTFLOWLM_SERVER_START_TIMEOUT_SECONDS = 90.0
 DEFAULT_FASTFLOWLM_OWNED_SERVER_IDLE_TIMEOUT_SECONDS = 5.0
+DEFAULT_FASTFLOWLM_MODEL_INVENTORY_TIMEOUT_SECONDS = 15.0
 FASTFLOWLM_MODEL_RETRY_AFTER_SECONDS = 300.0
 
 
@@ -80,6 +81,9 @@ class FastFlowLMProvider(
         executable_path: Path | None = None,
         fallback_models: Sequence[str] = (),
         model_pull_timeout_seconds: float | None = None,
+        model_inventory_timeout_seconds: float = (
+            DEFAULT_FASTFLOWLM_MODEL_INVENTORY_TIMEOUT_SECONDS
+        ),
         primary_min_available_ram_bytes: int = (DEFAULT_FASTFLOWLM_PRIMARY_MIN_AVAILABLE_RAM_BYTES),
         auto_start_server: bool = DEFAULT_FASTFLOWLM_AUTO_START_SERVER,
         server_start_timeout_seconds: float = (DEFAULT_FASTFLOWLM_SERVER_START_TIMEOUT_SECONDS),
@@ -132,6 +136,7 @@ class FastFlowLMProvider(
             model=self.model,
             executable_resolver=lambda: resolve_fastflowlm_executable(self.executable_path),
             command_timeout_seconds=self.model_pull_timeout_seconds,
+            inventory_timeout_seconds=model_inventory_timeout_seconds,
             server_start_timeout_seconds=self.server_start_timeout_seconds,
         )
 
@@ -330,6 +335,11 @@ class FastFlowLMProvider(
                 total=100,
             )
         )
+
+    def installed_fastflowlm_models(self) -> set[str]:
+        """Return model tags from the trusted offline FastFlowLM CLI."""
+
+        return self._model_onboarding.installed_models()
 
     def prepare_model_onboarding(
         self,

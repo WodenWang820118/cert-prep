@@ -10,6 +10,7 @@ from cert_prep_contracts.llm import ModelPullProgress as _ModelPullProgress
 __all__ = [
     "DraftGenerationProvider",
     "FastFirstDraftProvider",
+    "FastFlowLMModelInventoryProvider",
     "GenerationAttribution",
     "GenerationAttributionProvider",
     "ModelDownloadProvider",
@@ -136,6 +137,15 @@ class ModelOnboardingProvider(Protocol):
         progress: Callable[[_ModelPullProgress], None],
     ) -> None:
         """Prove the downloaded model works on an app-owned runtime."""
+        pass
+
+
+@runtime_checkable
+class FastFlowLMModelInventoryProvider(Protocol):
+    """Provider capability for trusted offline FastFlowLM model inventory."""
+
+    def installed_fastflowlm_models(self) -> set[str]:
+        """Return exact model tags reported installed by the trusted CLI."""
         pass
 
 

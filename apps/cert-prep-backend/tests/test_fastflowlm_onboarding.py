@@ -9,6 +9,12 @@ from typing import Any
 import pytest
 
 from cert_prep_backend.api.errors import ProviderUnavailableError
+from cert_prep_backend.domains.mock_exams import (
+    fastflowlm_onboarding as fastflowlm_onboarding_module,
+)
+from cert_prep_backend.domains.mock_exams import (
+    fastflowlm_transport as fastflowlm_transport_module,
+)
 from cert_prep_backend.domains.mock_exams.fastflowlm_onboarding import (
     FastFlowLMModelOnboarding,
     parse_installed_fastflowlm_models,
@@ -19,6 +25,7 @@ from cert_prep_backend.domains.mock_exams.fastflowlm_onboarding import (
 from cert_prep_backend.domains.mock_exams.fastflowlm_server import (
     start_fastflowlm_server_process,
 )
+from cert_prep_backend.domains.mock_exams.fastflowlm_transport import FastFlowLMProvider
 from cert_prep_backend.domains.runtime_installations.installers import LLMModelInstaller
 from cert_prep_contracts.llm import DEFAULT_LLM_PRIMARY_MODEL
 
@@ -149,11 +156,14 @@ def test_onboarding_refuses_non_primary_model_before_resolving() -> None:
         model="qwen3.5:2b",
         executable_resolver=resolve,
         command_timeout_seconds=30,
+        inventory_timeout_seconds=15,
         server_start_timeout_seconds=1,
     )
 
     with pytest.raises(ProviderUnavailableError, match=DEFAULT_LLM_PRIMARY_MODEL):
         onboarding.prepare(lambda _progress: None)
+    with pytest.raises(ProviderUnavailableError, match=DEFAULT_LLM_PRIMARY_MODEL):
+        onboarding.installed_models()
     assert resolved is False
 
 
@@ -173,6 +183,91 @@ def test_onboarding_rejects_only_2b_after_pull_without_starting_server() -> None
     assert [event[1] for event in events] == [
         ("list", "--filter", "installed", "--json")
     ]
+
+
+def test_offline_inventory_uses_only_the_trusted_list_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[Any] = []
+    monkeypatch.setattr(
+        fastflowlm_onboarding_module,
+        "run_fastflowlm_command",
+        _CommandRunner(events=events),
+    )
+    monkeypatch.setattr(
+        fastflowlm_onboarding_module,
+        "allocate_loopback_port",
+        lambda: pytest.fail("port must not be allocated"),
+    )
+    monkeypatch.setattr(
+        fastflowlm_onboarding_module,
+        "start_fastflowlm_onboarding_server",
+        lambda *_args: pytest.fail("server must not start"),
+    )
+    monkeypatch.setattr(
+        fastflowlm_onboarding_module,
+        "_create_client",
+        lambda *_args: pytest.fail("client must not be created"),
+    )
+    monkeypatch.setattr(
+        fastflowlm_transport_module,
+        "resolve_fastflowlm_executable",
+        lambda _configured=None: EXECUTABLE,
+    )
+    provider = FastFlowLMProvider(
+        base_url="http://127.0.0.1:52668/v1",
+        model=DEFAULT_LLM_PRIMARY_MODEL,
+        timeout_seconds=30.0,
+        model_inventory_timeout_seconds=7.0,
+    )
+
+    installed_models = provider.installed_fastflowlm_models()
+
+    assert installed_models == {"qwen3.5:2b", DEFAULT_LLM_PRIMARY_MODEL}
+    assert events == [
+        (
+            "command",
+            ("list", "--filter", "installed", "--json"),
+            EXECUTABLE,
+            7.0,
+        )
+    ]
+
+
+@pytest.mark.parametrize("resolved", [None, Path("relative/flm.exe")])
+def test_offline_inventory_rejects_untrusted_executable_before_cli(
+    resolved: Path | None,
+) -> None:
+    onboarding = _onboarding(
+        executable_resolver=lambda: resolved,
+        command_runner=lambda *_args: pytest.fail("CLI must not run"),
+    )
+
+    with pytest.raises(ProviderUnavailableError, match="allowlisted path"):
+        onboarding.installed_models()
+
+
+@pytest.mark.parametrize(
+    ("stdout", "message"),
+    [
+        ("not-json", "invalid JSON"),
+        ("[]", "non-object"),
+    ],
+)
+def test_offline_inventory_rejects_invalid_cli_json(
+    stdout: str,
+    message: str,
+) -> None:
+    def run_invalid_json(executable, arguments, timeout_seconds):
+        assert executable == EXECUTABLE
+        assert tuple(arguments) == ("list", "--filter", "installed", "--json")
+        assert timeout_seconds == 15.0
+        return subprocess.CompletedProcess(arguments, 0, stdout=stdout, stderr="")
+
+    onboarding = _onboarding(command_runner=run_invalid_json)
+
+    with pytest.raises(ProviderUnavailableError, match=message):
+        onboarding.installed_models()
 
 
 def test_owned_process_exit_after_models_cannot_be_hidden_by_http_fake() -> None:
@@ -251,6 +346,13 @@ def test_cli_runner_uses_absolute_executable_and_fixed_working_directory(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict[str, Any] = {}
+    monkeypatch.setenv("SystemRoot", r"C:\Windows")
+    monkeypatch.setenv("PATH", r"C:\malicious")
+    monkeypatch.setenv("CERT_PREP_API_TOKEN", "backend-secret")
+    monkeypatch.setenv("CERT_PREP_DATA_DIR", r"C:\private-data")
+    monkeypatch.setenv("GITHUB_TOKEN", "ci-secret")
+    monkeypatch.setenv("ACTIONS_ID_TOKEN_REQUEST_TOKEN", "oidc-secret")
+    monkeypatch.setenv("NPM_TOKEN", "release-secret")
 
     def fake_run(command, **kwargs):
         captured["command"] = command
@@ -268,6 +370,19 @@ def test_cli_runner_uses_absolute_executable_and_fixed_working_directory(
     assert captured["kwargs"]["cwd"] == EXECUTABLE.parent
     assert captured["kwargs"]["stdin"] is subprocess.DEVNULL
     assert captured["kwargs"]["timeout"] == 12.0
+    environment = captured["kwargs"]["env"]
+    normalized_environment = {
+        key.casefold(): value for key, value in environment.items()
+    }
+    assert normalized_environment["systemroot"] == r"C:\Windows"
+    assert {
+        "actions_id_token_request_token",
+        "cert_prep_api_token",
+        "cert_prep_data_dir",
+        "github_token",
+        "npm_token",
+        "path",
+    }.isdisjoint(normalized_environment)
     assert "shell" not in captured["kwargs"]
 
 
@@ -440,6 +555,7 @@ def _onboarding(**overrides) -> FastFlowLMModelOnboarding:
         "model": DEFAULT_LLM_PRIMARY_MODEL,
         "executable_resolver": lambda: EXECUTABLE,
         "command_timeout_seconds": 30.0,
+        "inventory_timeout_seconds": 15.0,
         "server_start_timeout_seconds": 0.1,
         "command_runner": _CommandRunner(),
         "port_allocator": lambda: 58431,

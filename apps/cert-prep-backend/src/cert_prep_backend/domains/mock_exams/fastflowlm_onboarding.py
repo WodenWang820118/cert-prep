@@ -21,6 +21,25 @@ _ONBOARDING_HOST = "127.0.0.1"
 _ONBOARDING_CONTEXT_TOKENS = 256
 _ONBOARDING_MAX_TOKENS = 4
 _SERVER_POLL_SECONDS = 0.5
+_FASTFLOWLM_ENVIRONMENT_KEYS = frozenset(
+    key.casefold()
+    for key in (
+        "APPDATA",
+        "CommonProgramFiles",
+        "CommonProgramFiles(x86)",
+        "LOCALAPPDATA",
+        "NUMBER_OF_PROCESSORS",
+        "PROCESSOR_ARCHITECTURE",
+        "ProgramData",
+        "ProgramFiles",
+        "ProgramFiles(x86)",
+        "SystemRoot",
+        "TEMP",
+        "TMP",
+        "USERPROFILE",
+        "WINDIR",
+    )
+)
 
 
 class FastFlowLMModelOnboarding:
@@ -32,6 +51,7 @@ class FastFlowLMModelOnboarding:
         model: str,
         executable_resolver: Callable[[], Path | None],
         command_timeout_seconds: float,
+        inventory_timeout_seconds: float,
         server_start_timeout_seconds: float,
         command_runner: Callable[
             [Path, Sequence[str], float], subprocess.CompletedProcess[str]
@@ -47,6 +67,7 @@ class FastFlowLMModelOnboarding:
         self._model = model
         self._executable_resolver = executable_resolver
         self._command_timeout_seconds = max(1.0, command_timeout_seconds)
+        self._inventory_timeout_seconds = max(1.0, inventory_timeout_seconds)
         self._server_start_timeout_seconds = max(0.1, server_start_timeout_seconds)
         self._command_runner = command_runner or run_fastflowlm_command
         self._port_allocator = port_allocator or allocate_loopback_port
@@ -65,11 +86,22 @@ class FastFlowLMModelOnboarding:
         validation = self._run_json(executable, ("validate", "--json"))
         validate_fastflowlm_preflight(validation)
         progress(ModelPullProgress(status="checking installed FastFlowLM models"))
+        self._installed_models(executable)
+
+    def installed_models(self) -> set[str]:
+        """Read the trusted CLI inventory without starting a server."""
+
+        self._require_primary_model()
+        executable = self._require_executable()
+        return self._installed_models(executable)
+
+    def _installed_models(self, executable: Path) -> set[str]:
         installed = self._run_json(
             executable,
             ("list", "--filter", "installed", "--json"),
+            timeout_seconds=self._inventory_timeout_seconds,
         )
-        parse_installed_fastflowlm_models(installed)
+        return parse_installed_fastflowlm_models(installed)
 
     def verify(self, progress: Callable[[ModelPullProgress], None]) -> None:
         """Check and run the exact primary model on a dedicated loopback port."""
@@ -77,11 +109,7 @@ class FastFlowLMModelOnboarding:
         self._require_primary_model()
         executable = self._require_executable()
         progress(ModelPullProgress(status=f"verifying installed {self._model}"))
-        installed = self._run_json(
-            executable,
-            ("list", "--filter", "installed", "--json"),
-        )
-        if self._model not in parse_installed_fastflowlm_models(installed):
+        if self._model not in self._installed_models(executable):
             raise ProviderUnavailableError(
                 f"FastFlowLM did not report {self._model} as installed."
             )
@@ -118,8 +146,18 @@ class FastFlowLMModelOnboarding:
             self._process_terminator(process)
         progress(ModelPullProgress(status="FastFlowLM model onboarding verified"))
 
-    def _run_json(self, executable: Path, arguments: Sequence[str]) -> dict[str, Any]:
-        completed = self._run(executable, arguments)
+    def _run_json(
+        self,
+        executable: Path,
+        arguments: Sequence[str],
+        *,
+        timeout_seconds: float | None = None,
+    ) -> dict[str, Any]:
+        completed = self._run(
+            executable,
+            arguments,
+            timeout_seconds=timeout_seconds,
+        )
         try:
             payload = json.loads(completed.stdout)
         except json.JSONDecodeError as exc:
@@ -136,12 +174,19 @@ class FastFlowLMModelOnboarding:
         self,
         executable: Path,
         arguments: Sequence[str],
+        *,
+        timeout_seconds: float | None = None,
     ) -> subprocess.CompletedProcess[str]:
+        effective_timeout = (
+            self._command_timeout_seconds
+            if timeout_seconds is None
+            else max(1.0, timeout_seconds)
+        )
         try:
             completed = self._command_runner(
                 executable,
                 tuple(arguments),
-                self._command_timeout_seconds,
+                effective_timeout,
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise ProviderUnavailableError(
@@ -259,6 +304,7 @@ def run_fastflowlm_command(
         errors="replace",
         timeout=timeout_seconds,
         cwd=executable.parent,
+        env=_fastflowlm_subprocess_environment(),
         stdin=subprocess.DEVNULL,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
     )
@@ -296,12 +342,23 @@ def start_fastflowlm_onboarding_server(
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         cwd=executable.parent,
+        env=_fastflowlm_subprocess_environment(),
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
     )
 
 
 def _create_client(base_url: str, timeout_seconds: float) -> FastFlowLMClient:
     return FastFlowLMClient(base_url=base_url, timeout_seconds=timeout_seconds)
+
+
+def _fastflowlm_subprocess_environment() -> dict[str, str]:
+    """Return only non-secret OS paths needed by the trusted FastFlowLM CLI."""
+
+    return {
+        key: value
+        for key, value in os.environ.items()
+        if key.casefold() in _FASTFLOWLM_ENVIRONMENT_KEYS
+    }
 
 
 def _require_owned_process_alive(process: Any) -> None:
