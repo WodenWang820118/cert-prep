@@ -235,6 +235,12 @@ export interface UploadedDocumentRef {
   documentId: string;
 }
 
+export interface ProjectApiRef {
+  apiBaseUrl: string;
+  authorization: string;
+  projectId: string;
+}
+
 export interface CloseSummary {
   label: string;
   app_pid: number | null;
@@ -271,6 +277,7 @@ export interface SmokeRunState {
   page: Page | null;
   port: number;
   processBaseline: ProcessSnapshot;
+  projectApi: ProjectApiRef | null;
   uploadedDocument: UploadedDocumentRef | null;
   streamingDraftParseStartedAt: number | null;
   streamingDraftCaptureOpen: boolean;

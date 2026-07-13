@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import { parsePackagedFlowSmokeArgs } from './args.mts';
@@ -94,7 +95,7 @@ test('packaged streaming production enables completion wait and production outpu
   assert.equal(parsed.waitForStreamingComplete, true);
   assert.equal(parsed.verifyStreamingPracticeReady, false);
   assert.deepEqual(parsed.ollamaFallbackModels, ['qwen3.5:2b']);
-  assert.equal(parsed.llmProvider, 'fastflowlm');
+  assert.equal(parsed.llmProvider, 'auto');
   assert.match(
     parsed.outDir,
     /tmp[\\/]cert-prep-desktop[\\/]packaged-streaming-production[\\/]/,
@@ -158,4 +159,20 @@ test('packaged flow smoke can write timestamped output under an explicit root', 
 
   assert.match(parsed.outDir, /tmp[\\/]recorded-production[\\/]/);
   assert.equal(parsed.appDataDir, `${parsed.outDir}\\app-data`);
+});
+
+test('both packaged production targets exercise auto provider selection', () => {
+  const project = JSON.parse(
+    readFileSync(new URL('../../project.json', import.meta.url), 'utf8'),
+  ) as {
+    targets?: Record<string, { options?: { command?: string } }>;
+  };
+  for (const target of [
+    'packaged-streaming-production-windowsml',
+    'packaged-streaming-production-recorded-windowsml',
+  ]) {
+    const command = project.targets?.[target]?.options?.command ?? '';
+    assert.match(command, /--llm-provider auto(?:\s|$)/);
+    assert.doesNotMatch(command, /--llm-provider fastflowlm(?:\s|$)/);
+  }
 });

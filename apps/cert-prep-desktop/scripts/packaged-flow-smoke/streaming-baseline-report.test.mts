@@ -170,6 +170,109 @@ test('production summary does not use health as FastFlowLM execution evidence', 
   }
 });
 
+test('production summary aligns Ollama policy, profile alias, and job attribution', () => {
+  const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-prep-production-summary-'));
+  try {
+    const outDir = join(workspaceRoot, 'out');
+    mkdirSync(outDir);
+    writeFileSync(
+      join(outDir, 'windows-resource-summary.json'),
+      JSON.stringify({
+        gpu_routing_checks: {
+          windowsml_ocr_process_observed: true,
+          ocr_uses_amd_igpu: true,
+          ocr_avoids_nvidia_dgpu: true,
+          reasoning_uses_nvidia_dgpu: true,
+          gpu_luid_map_usable: true,
+        },
+      }),
+      'utf8',
+    );
+    const profileModel = 'cert-prep-qwen3.5-4b-study-8k';
+    const run = productionRunState(workspaceRoot, outDir);
+    const readiness = run.metrics.generation_readiness_at_start;
+    const selection = readiness?.provider_selection;
+    const job = run.metrics.streaming_questions.job_snapshots[0]?.jobs[0];
+    assert.ok(readiness);
+    assert.ok(selection);
+    assert.ok(job);
+
+    run.metrics.llm_provider = 'ollama';
+    run.metrics.llm_configured_model = profileModel;
+    run.metrics.llm_effective_model = profileModel;
+    run.metrics.llm_fallback_reason = null;
+    run.metrics.llm_health = {
+      provider: 'ollama',
+      available: true,
+      model: profileModel,
+      configured_model: profileModel,
+      effective_model: profileModel,
+      fallback_models: ['cert-prep-qwen3.5-2b-study-4k'],
+      fallback_reason: null,
+      detail: 'profile model available',
+    };
+    selection.selected_provider = 'ollama';
+    selection.effective_provider = 'ollama';
+    selection.configured_model = 'qwen3.5:4b';
+    selection.effective_model = profileModel;
+    selection.selection_reason = 'provider_selection_reported';
+    selection.fallback_reason = 'provider_fallback_reported';
+    selection.hardware_compatible = false;
+    selection.requires_terms_acceptance = false;
+    selection.terms_accepted = false;
+    selection.terms_version = null;
+    selection.runtime_requirement_kind = 'ollama';
+    selection.model_requirement_kind = 'ollama_model';
+    readiness.runtime_requirements = [
+      {
+        kind: 'ollama',
+        available: true,
+        version: '0.12.0',
+        installed_path_verified: true,
+      },
+      {
+        kind: 'ollama_model',
+        available: true,
+        version: profileModel,
+        installed_path_verified: false,
+      },
+    ];
+    job.configured_provider = 'ollama';
+    job.configured_model = profileModel;
+    job.effective_provider = 'ollama';
+    job.effective_model = profileModel;
+    job.fallback_reason = null;
+    run.metrics.resources_released_at_end = {
+      captured_at: '2026-06-23T00:01:00.000Z',
+      released: true,
+      stable_empty_snapshots: 2,
+      observed_owned_processes: [{ pid: 99, name: 'ollama.exe' }],
+      alive_owned_processes: [],
+    };
+
+    const report = productionReport();
+    report.runtime.llm_provider = 'auto';
+    report.runtime.llm_configured_model = profileModel;
+    report.runtime.llm_effective_model = profileModel;
+    report.runtime.llm_fallback_models = [
+      'cert-prep-qwen3.5-2b-study-4k',
+    ];
+    report.runtime.llm_health = run.metrics.llm_health;
+
+    const summary = buildProductionSummary(run, report);
+
+    assert.equal(summary.status, 'passed');
+    assert.equal(summary.provider_preference, 'auto');
+    assert.equal(summary.configured_model, profileModel);
+    assert.equal(summary.effective_model, profileModel);
+    assert.equal(summary.checks.generation_ready_at_start, true);
+    assert.equal(summary.checks.reasoning_uses_nvidia_dgpu, true);
+    assert.equal(summary.checks.fastflowlm_exact_job_attribution, undefined);
+  } finally {
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
 test('production summary still requires NVIDIA dGPU usage for Ollama reasoning', () => {
   const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-prep-production-summary-'));
   try {

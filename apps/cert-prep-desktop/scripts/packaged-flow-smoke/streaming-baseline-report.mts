@@ -400,7 +400,9 @@ export function buildProductionSummary(
     generation_ready_at_start: generationReadinessPassed(
       readinessAtStart,
       effectiveProvider,
+      configuredModel,
       effectiveModel,
+      run.options.ollamaModel,
       report.runtime.llm_provider,
     ),
     final_job_evidence_complete:
@@ -521,7 +523,9 @@ function uniqueFallbackReason(
 function generationReadinessPassed(
   snapshot: GenerationReadinessSnapshot | undefined,
   effectiveProvider: string | null,
+  configuredModel: string | null,
   effectiveModel: string | null,
+  policyConfiguredModel: string,
   providerPreference: string,
 ): boolean {
   if (
@@ -529,23 +533,28 @@ function generationReadinessPassed(
     snapshot.blockers.length > 0 ||
     snapshot.provider_selection === null ||
     effectiveProvider === null ||
+    configuredModel === null ||
     effectiveModel === null
   ) {
     return false;
   }
   const selection = snapshot.provider_selection;
+  // Provider selection keeps the policy model in configured_model, while an
+  // Ollama job's configured model is the resolved local profile alias.
   if (
     selection.preference !== providerPreference ||
     selection.selected_provider !== effectiveProvider ||
     selection.effective_provider !== effectiveProvider ||
-    selection.configured_model !== effectiveModel ||
-    selection.effective_model !== effectiveModel
+    selection.configured_model !== policyConfiguredModel ||
+    selection.effective_model !== configuredModel
   ) {
     return false;
   }
 
   if (effectiveProvider === 'fastflowlm') {
     return (
+      configuredModel === policyConfiguredModel &&
+      effectiveModel === configuredModel &&
       selection.hardware_compatible === true &&
       selection.requires_terms_acceptance === true &&
       selection.terms_accepted === true &&
@@ -562,7 +571,7 @@ function generationReadinessPassed(
       runtimeRequirementAvailable(
         snapshot,
         'fastflowlm_model',
-        effectiveModel,
+        configuredModel,
         false,
       )
     );
@@ -571,7 +580,7 @@ function generationReadinessPassed(
   return (
     effectiveProvider === 'ollama' &&
     runtimeRequirementAvailable(snapshot, 'ollama', null, true) &&
-    runtimeRequirementAvailable(snapshot, 'ollama_model', effectiveModel, false)
+    runtimeRequirementAvailable(snapshot, 'ollama_model', configuredModel, false)
   );
 }
 

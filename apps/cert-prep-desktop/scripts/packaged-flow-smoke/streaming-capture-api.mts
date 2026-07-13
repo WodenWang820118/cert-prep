@@ -9,6 +9,10 @@ import type {
 import { activePage } from './runner-context.mts';
 import { fullExamQuestionCountFromSession } from './streaming-evidence.mts';
 import {
+  isProjectDocumentsCollectionResponse,
+  projectApiRefMatchesResponse,
+} from './generation-readiness.mts';
+import {
   recordStreamingDraftJobSnapshot,
   recordStreamingQuestionSnapshot,
 } from './streaming-capture-snapshots.mts';
@@ -47,20 +51,32 @@ async function recordStreamingApiResponse(run: SmokeRunState, response: Response
 }
 
 export async function waitForUploadDocumentResponse(run: SmokeRunState): Promise<UploadedDocumentRef | null> {
+  if (!run.projectApi) {
+    run.metrics.observations.push(
+      'Upload response capture skipped because project API context was unavailable.',
+    );
+    return null;
+  }
   const response = await activePage(run)
     .waitForResponse(
       (candidate) =>
-        candidate.request().method().toUpperCase() === 'POST' &&
-        isDocumentsCollectionUrl(candidate.url()),
+        isProjectDocumentsCollectionResponse(run.projectApi, candidate),
       { timeout: 120_000 },
     )
-    .catch((error) => {
+    .catch(() => {
       run.metrics.observations.push(
-        `Upload document response capture timed out: ${errorMessage(error)}`,
+        'Upload document response capture timed out.',
       );
       return null;
     });
   if (!response) {
+    return null;
+  }
+
+  if (response.status() !== 201) {
+    run.metrics.observations.push(
+      'Upload document response did not return the expected status.',
+    );
     return null;
   }
 
@@ -139,51 +155,30 @@ function uploadedDocumentRefFromResponse(
 ): UploadedDocumentRef | null {
   const id = valueString(payload, 'id');
   const projectId = valueString(payload, 'project_id');
-  if (!id || !projectId) {
+  const projectApi = run.projectApi;
+  if (
+    !id ||
+    !UUID_PATTERN.test(id) ||
+    !projectId ||
+    !projectApi ||
+    projectId !== projectApi.projectId ||
+    !projectApiRefMatchesResponse(projectApi, response)
+  ) {
     run.metrics.observations.push(
-      'Upload document response did not include project_id and id.',
+      'Upload document response did not match the captured project API context.',
     );
     return null;
   }
-
-  const apiBaseUrl = apiBaseUrlFromResponse(response);
-  if (!apiBaseUrl) {
-    run.metrics.observations.push(
-      'Upload document response URL could not be converted to an API base URL.',
-    );
-    return null;
-  }
-
-  const requestHeaders = response.request().headers();
   return {
-    apiBaseUrl,
-    authorization: requestHeaders.authorization ?? null,
+    apiBaseUrl: projectApi.apiBaseUrl,
+    authorization: projectApi.authorization,
     projectId,
     documentId: id,
   };
 }
 
-function isDocumentsCollectionUrl(value: string): boolean {
-  try {
-    return /\/projects\/[^/]+\/documents\/?$/.test(new URL(value).pathname);
-  } catch {
-    return false;
-  }
-}
-
-function apiBaseUrlFromResponse(response: Response): string | null {
-  try {
-    const parsed = new URL(response.url());
-    const markerIndex = parsed.pathname.indexOf('/projects/');
-    if (markerIndex < 0) {
-      return null;
-    }
-    const basePath = parsed.pathname.slice(0, markerIndex).replace(/\/+$/, '');
-    return `${parsed.origin}${basePath}`;
-  } catch {
-    return null;
-  }
-}
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function valueString(payload: object, key: string): string | null {
   const value = (payload as Record<string, unknown>)[key];

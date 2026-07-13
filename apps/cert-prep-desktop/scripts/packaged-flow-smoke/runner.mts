@@ -22,6 +22,7 @@ import { writeStreamingBaselineArtifacts } from './streaming-baseline-report.mts
 import { refreshFirstChunkGateMetrics } from './streaming-capture.mts';
 import { FIRST_CHUNK_GATE_MS } from './streaming-evidence.mts';
 import { errorMessage, normalizePath } from './text-utils.mts';
+import { unavailableGenerationReadinessSnapshot } from './generation-readiness.mts';
 import type { SmokeMetrics, SmokeRunState } from './types.mts';
 
 async function runFlow(run: SmokeRunState): Promise<void> {
@@ -132,6 +133,9 @@ export async function runPackagedFlowSmokeCli(argv: readonly string[] = process.
     llm_model: parsedOptions.ollamaModel,
     llm_configured_model: parsedOptions.ollamaModel,
     llm_fallback_models: parsedOptions.ollamaFallbackModels,
+    generation_readiness_at_start: unavailableGenerationReadinessSnapshot(
+      'capture_not_reached',
+    ),
     ocr_provider: parsedOptions.ocrProvider,
     first_chunk_gate_ms: FIRST_CHUNK_GATE_MS,
     first_chunk_under_gate: false,
@@ -160,6 +164,7 @@ export async function runPackagedFlowSmokeCli(argv: readonly string[] = process.
     page: null,
     port: parsedOptions.cdpPort,
     processBaseline: { all: [], nodePids: new Set() },
+    projectApi: null,
     uploadedDocument: null,
     streamingDraftParseStartedAt: null,
     streamingDraftCaptureOpen: false,

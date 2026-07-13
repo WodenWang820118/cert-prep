@@ -29,6 +29,7 @@ import {
   waitForUploadDocumentResponse,
 } from './streaming-capture.mts';
 import { FIRST_CHUNK_GATE_MS } from './streaming-evidence.mts';
+import { captureGenerationReadinessAtProjectCreate } from './generation-readiness.mts';
 import type { SmokeRunState } from './types.mts';
 
 export async function createProject(run: SmokeRunState): Promise<void> {
@@ -43,7 +44,9 @@ export async function createProject(run: SmokeRunState): Promise<void> {
     .fill(
       'Packaged QA flow for parallel parsing, reasoning model UX, and wrong-answer review.',
     );
-  await clickButtonText(run, 'Create project');
+  await captureGenerationReadinessAtProjectCreate(run, () =>
+    clickButtonText(run, 'Create project'),
+  );
   await waitText(run,
     new RegExp(escapeRegExp(projectName)),
     30_000,
