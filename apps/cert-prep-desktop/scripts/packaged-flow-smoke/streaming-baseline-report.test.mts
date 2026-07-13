@@ -245,8 +245,11 @@ test('production summary aligns Ollama policy, profile alias, and job attributio
     run.metrics.resources_released_at_end = {
       captured_at: '2026-06-23T00:01:00.000Z',
       released: true,
+      pre_close_captured_at: '2026-06-23T00:00:55.000Z',
+      pre_close_release_proven: true,
+      pre_close_stable_empty_snapshots: 2,
       stable_empty_snapshots: 2,
-      observed_owned_processes: [{ pid: 99, name: 'ollama.exe' }],
+      observed_owned_processes: [],
       alive_owned_processes: [],
     };
 
@@ -268,6 +271,16 @@ test('production summary aligns Ollama policy, profile alias, and job attributio
     assert.equal(summary.checks.generation_ready_at_start, true);
     assert.equal(summary.checks.reasoning_uses_nvidia_dgpu, true);
     assert.equal(summary.checks.fastflowlm_exact_job_attribution, undefined);
+
+    run.metrics.resources_released_at_end.observed_owned_processes = [
+      { pid: 99, name: 'flm.exe' },
+    ];
+    const conflictingProviderSummary = buildProductionSummary(run, report);
+    assert.equal(conflictingProviderSummary.status, 'failed');
+    assert.equal(
+      conflictingProviderSummary.checks.resources_released_at_end,
+      false,
+    );
   } finally {
     rmSync(workspaceRoot, { recursive: true, force: true });
   }
@@ -593,6 +606,15 @@ test('production summary fails closed when readiness or release evidence is miss
       false,
     );
 
+    const singlePreCloseSnapshot = productionRunState(workspaceRoot, outDir);
+    assert.ok(singlePreCloseSnapshot.metrics.resources_released_at_end);
+    singlePreCloseSnapshot.metrics.resources_released_at_end.pre_close_stable_empty_snapshots = 1;
+    assert.equal(
+      buildProductionSummary(singlePreCloseSnapshot, productionReport()).checks
+        .resources_released_at_end,
+      false,
+    );
+
     const untrustedReadiness = productionRunState(workspaceRoot, outDir);
     const runtimeRequirement =
       untrustedReadiness.metrics.generation_readiness_at_start?.runtime_requirements.find(
@@ -842,6 +864,9 @@ function productionRunState(
       resources_released_at_end: {
         captured_at: '2026-06-23T00:01:00.000Z',
         released: true,
+        pre_close_captured_at: '2026-06-23T00:00:55.000Z',
+        pre_close_release_proven: true,
+        pre_close_stable_empty_snapshots: 2,
         stable_empty_snapshots: 2,
         observed_owned_processes: [
           {

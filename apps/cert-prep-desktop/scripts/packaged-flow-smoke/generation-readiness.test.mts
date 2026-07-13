@@ -97,6 +97,7 @@ test('captures generation readiness from the exact project response before uploa
     authorization: AUTHORIZATION,
     projectId: PROJECT_ID,
   });
+  assert.equal(run.trustedFastFlowExecutablePath, INSTALLED_PATH);
   const readiness = run.metrics.generation_readiness_at_start;
   assert.ok(readiness);
   assert.equal(readiness.captured_at, '2026-07-13T01:00:01.000Z');

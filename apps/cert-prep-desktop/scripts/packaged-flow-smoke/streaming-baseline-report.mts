@@ -605,18 +605,24 @@ function resourcesReleasedPassed(
 ): boolean {
   if (
     snapshot?.released !== true ||
+    snapshot.pre_close_release_proven !== true ||
+    snapshot.pre_close_captured_at === null ||
+    snapshot.pre_close_stable_empty_snapshots < 2 ||
     snapshot.stable_empty_snapshots < 2 ||
-    snapshot.observed_owned_processes.length === 0 ||
     snapshot.alive_owned_processes.length > 0
   ) {
     return false;
   }
-  return (
-    effectiveProvider !== 'fastflowlm' ||
-    snapshot.observed_owned_processes.some(
-      (process) => process.name.toLowerCase() === 'flm.exe',
-    )
+  const fastFlowObserved = snapshot.observed_owned_processes.some(
+    (process) => process.name.toLowerCase() === 'flm.exe',
   );
+  if (effectiveProvider === 'fastflowlm') {
+    return fastFlowObserved;
+  }
+  if (effectiveProvider === 'ollama') {
+    return !fastFlowObserved;
+  }
+  return false;
 }
 
 function providerRoutingChecks(

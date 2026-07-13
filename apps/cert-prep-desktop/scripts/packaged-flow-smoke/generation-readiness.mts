@@ -55,6 +55,11 @@ interface EndpointResult {
   readonly blocker: string | null;
 }
 
+interface SanitizedRuntimeRequirements {
+  readonly requirements: RuntimeRequirementSnapshot[];
+  readonly trustedFastFlowExecutablePath: string | null;
+}
+
 export function unavailableGenerationReadinessSnapshot(
   blocker: string,
   now: () => Date = () => new Date(),
@@ -82,6 +87,7 @@ export async function captureGenerationReadinessAtProjectCreate(
     ),
   };
   run.projectApi = null;
+  run.trustedFastFlowExecutablePath = null;
 
   const listener = listenForProjectResponse(
     page,
@@ -270,7 +276,7 @@ async function generationReadinessFromProjectResponse(
         selectionResult.payload,
         projectApi.authorization,
       );
-  const runtimeRequirements = requirementsResult.blocker
+  const sanitizedRequirements = requirementsResult.blocker
     ? null
     : sanitizeRuntimeRequirements(
         requirementsResult.payload,
@@ -280,11 +286,13 @@ async function generationReadinessFromProjectResponse(
   if (!selectionResult.blocker && !providerSelection) {
     blockers.push('provider_selection_schema_invalid');
   }
-  if (!requirementsResult.blocker && !runtimeRequirements) {
+  if (!requirementsResult.blocker && !sanitizedRequirements) {
     blockers.push('runtime_requirements_schema_invalid');
   }
-  const requirements = runtimeRequirements ?? [];
-  if (providerSelection && runtimeRequirements) {
+  const requirements = sanitizedRequirements?.requirements ?? [];
+  run.trustedFastFlowExecutablePath =
+    sanitizedRequirements?.trustedFastFlowExecutablePath ?? null;
+  if (providerSelection && sanitizedRequirements) {
     addReadinessBlockers(
       blockers,
       providerSelection,
@@ -510,13 +518,14 @@ function sanitizeRuntimeRequirements(
   payload: unknown,
   authorization: string,
   installedPathVerifier: (path: string) => boolean,
-): RuntimeRequirementSnapshot[] | null {
+): SanitizedRuntimeRequirements | null {
   if (!isRecord(payload) || !Array.isArray(payload.items)) {
     return null;
   }
   const forbiddenValues = authorizationSensitiveValues(authorization);
   const kinds = new Set<string>();
   const requirements: RuntimeRequirementSnapshot[] = [];
+  let trustedFastFlowExecutablePath: string | null = null;
   for (const item of payload.items) {
     if (!isRecord(item)) {
       return null;
@@ -544,17 +553,26 @@ function sanitizeRuntimeRequirements(
       return null;
     }
     kinds.add(kind);
+    const installedPathVerified = verifyLocalInstalledPath(
+      installedPath,
+      installedPathVerifier,
+    );
     requirements.push({
       kind,
       available: item.available,
       version,
-      installed_path_verified: verifyLocalInstalledPath(
-        installedPath,
-        installedPathVerifier,
-      ),
+      installed_path_verified: installedPathVerified,
     });
+    if (
+      kind === 'fastflowlm' &&
+      item.available &&
+      installedPathVerified &&
+      installedPath
+    ) {
+      trustedFastFlowExecutablePath = installedPath;
+    }
   }
-  return requirements;
+  return { requirements, trustedFastFlowExecutablePath };
 }
 
 function addReadinessBlockers(

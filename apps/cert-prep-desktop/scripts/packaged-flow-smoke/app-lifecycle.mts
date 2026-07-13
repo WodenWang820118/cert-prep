@@ -25,6 +25,11 @@ import {
 import { observeStreamingApiResponses } from './streaming-capture.mts';
 import { errorMessage } from './text-utils.mts';
 import {
+  finalizeOwnedFastFlowProcessEvidence,
+  observeOwnedFastFlowProcesses,
+  stopOwnedFastFlowProcessObservation,
+} from './owned-fastflow-process-lifecycle.mts';
+import {
   startAcceptanceVideo,
   stopAcceptanceVideo,
 } from './video-evidence.mts';
@@ -104,6 +109,8 @@ export async function closeAppAndCheckResidue(
   label: string,
 ): Promise<CloseSummary> {
   await stopAcceptanceVideo(run);
+  await stopOwnedFastFlowProcessObservation(run);
+  await observeOwnedFastFlowProcesses(run);
   const currentApp = run.app;
   const pid = currentApp?.pid ?? null;
   if (!currentApp || !pid) {
@@ -323,6 +330,8 @@ async function cleanupAfterRun(run: SmokeRunState): Promise<void> {
       cleanupResidue.push(...close.residue);
     }
   }
+
+  await finalizeOwnedFastFlowProcessEvidence(run);
 
   if (run.resourceSampling) {
     await run.resourceSampling.stop().catch((error) => {

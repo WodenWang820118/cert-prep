@@ -4,6 +4,7 @@ import type {
   ProcessSnapshot,
   PublicProcessRecord,
 } from '../process-lifecycle/processes.mts';
+import type { OwnedFastFlowProcessTracker } from './owned-fastflow-process-lifecycle.mts';
 
 export interface SmokeOptions {
   workspaceRoot: string;
@@ -190,6 +191,9 @@ export interface StreamingDraftJobAttribution {
 export interface ResourcesReleasedAtEndSnapshot {
   captured_at: string;
   released: boolean;
+  pre_close_captured_at: string | null;
+  pre_close_release_proven: boolean;
+  pre_close_stable_empty_snapshots: number;
   stable_empty_snapshots: number;
   observed_owned_processes: OwnedProcessEvidence[];
   alive_owned_processes: OwnedProcessEvidence[];
@@ -277,6 +281,8 @@ export interface SmokeRunState {
   page: Page | null;
   port: number;
   processBaseline: ProcessSnapshot;
+  ownedFastFlowProcesses: OwnedFastFlowProcessTracker | null;
+  trustedFastFlowExecutablePath: string | null;
   projectApi: ProjectApiRef | null;
   uploadedDocument: UploadedDocumentRef | null;
   streamingDraftParseStartedAt: number | null;

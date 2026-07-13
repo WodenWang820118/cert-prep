@@ -23,6 +23,10 @@ import { refreshFirstChunkGateMetrics } from './streaming-capture.mts';
 import { FIRST_CHUNK_GATE_MS } from './streaming-evidence.mts';
 import { errorMessage, normalizePath } from './text-utils.mts';
 import { unavailableGenerationReadinessSnapshot } from './generation-readiness.mts';
+import {
+  initializeOwnedFastFlowProcessTracker,
+  startOwnedFastFlowProcessObservation,
+} from './owned-fastflow-process-lifecycle.mts';
 import type { SmokeMetrics, SmokeRunState } from './types.mts';
 
 async function runFlow(run: SmokeRunState): Promise<void> {
@@ -35,6 +39,7 @@ async function runFlow(run: SmokeRunState): Promise<void> {
 
   log(run, `artifact dir ${run.options.outDir}`);
   run.processBaseline = processSnapshot();
+  initializeOwnedFastFlowProcessTracker(run);
   run.resourceSampling = startResourceSampling({
     skipGpuSampling: run.options.skipGpuSampling,
     outDir: run.options.outDir,
@@ -49,6 +54,7 @@ async function runFlow(run: SmokeRunState): Promise<void> {
   await installPythonRuntimeIfNeeded(run);
   await installOcrRuntimeIfNeeded(run);
   await createProject(run);
+  await startOwnedFastFlowProcessObservation(run);
   await uploadAndParsePdf(run);
   if (run.options.waitForStreamingComplete) {
     if (run.options.verifyStreamingPracticeReady) {
@@ -164,6 +170,8 @@ export async function runPackagedFlowSmokeCli(argv: readonly string[] = process.
     page: null,
     port: parsedOptions.cdpPort,
     processBaseline: { all: [], nodePids: new Set() },
+    ownedFastFlowProcesses: null,
+    trustedFastFlowExecutablePath: null,
     projectApi: null,
     uploadedDocument: null,
     streamingDraftParseStartedAt: null,

@@ -1,4 +1,4 @@
-import { spawnSync, type ChildProcess } from 'node:child_process';
+import { execFile, spawnSync, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -34,6 +34,7 @@ type JsonProcessRow = {
   Name?: unknown;
   ExecutablePath?: unknown;
   CommandLine?: unknown;
+  CreationDate?: unknown;
   WorkingSetSize?: unknown;
 };
 
@@ -43,6 +44,7 @@ export interface ProcessRecord {
   name: string;
   executablePath: string;
   commandLine: string;
+  creationDate: string;
   workingSetBytes: number | null;
 }
 
@@ -142,6 +144,7 @@ export function parseProcessSnapshotJson(stdout: string): ProcessRecord[] {
       name: stringField(row.Name),
       executablePath: stringField(row.ExecutablePath),
       commandLine: stringField(row.CommandLine),
+      creationDate: stringField(row.CreationDate),
       workingSetBytes: nullableNumberField(row.WorkingSetSize),
     }))
     .filter((record) => record.pid > 0);
@@ -155,13 +158,7 @@ export function snapshotWindowsProcesses(): ProcessRecord[] {
 
   const result = spawnSync(
     resolveWindowsPowerShellExecutable(),
-    [
-      '-NoProfile',
-      '-ExecutionPolicy',
-      'Bypass',
-      '-Command',
-      "$ErrorActionPreference = 'Stop'; Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,ExecutablePath,CommandLine,WorkingSetSize | ConvertTo-Json -Compress",
-    ],
+    windowsProcessSnapshotArguments(),
     {
       encoding: 'utf8',
       windowsHide: true,
@@ -179,6 +176,51 @@ export function snapshotWindowsProcesses(): ProcessRecord[] {
     );
   }
   return parseProcessSnapshotJson(result.stdout);
+}
+
+/** Captures the same process table without blocking Playwright's event loop. */
+export async function snapshotWindowsProcessesAsync(): Promise<ProcessRecord[]> {
+  if (process.platform !== 'win32') {
+    return [];
+  }
+
+  return await new Promise<ProcessRecord[]>((resolve, reject) => {
+    execFile(
+      resolveWindowsPowerShellExecutable(),
+      windowsProcessSnapshotArguments(),
+      {
+        encoding: 'utf8',
+        windowsHide: true,
+        maxBuffer: PROCESS_SNAPSHOT_MAX_BUFFER,
+        timeout: WINDOWS_PROCESS_SNAPSHOT_TIMEOUT_MS,
+      },
+      (error, stdout, stderr) => {
+        if (error) {
+          reject(
+            new Error(
+              `Process snapshot failed: ${trimCapture(stderr || error.message)}`,
+            ),
+          );
+          return;
+        }
+        try {
+          resolve(parseProcessSnapshotJson(stdout));
+        } catch (parseError) {
+          reject(parseError);
+        }
+      },
+    );
+  });
+}
+
+function windowsProcessSnapshotArguments(): string[] {
+  return [
+    '-NoProfile',
+    '-ExecutionPolicy',
+    'Bypass',
+    '-Command',
+    "$ErrorActionPreference = 'Stop'; Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,ExecutablePath,CommandLine,CreationDate,WorkingSetSize | ConvertTo-Json -Compress",
+  ];
 }
 
 /** Captures all processes plus the Node PID baseline for this verification run. */

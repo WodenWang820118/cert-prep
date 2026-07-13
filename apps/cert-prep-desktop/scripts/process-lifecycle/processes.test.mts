@@ -28,6 +28,7 @@ test('process snapshot parsing normalizes single and array PowerShell JSON outpu
         Name: 'node.exe',
         ExecutablePath: 'C:\\Program Files\\nodejs\\node.exe',
         CommandLine: 'node script.mts',
+        CreationDate: '/Date(1783938486647)/',
         WorkingSetSize: '123456',
       }),
     ),
@@ -38,6 +39,7 @@ test('process snapshot parsing normalizes single and array PowerShell JSON outpu
         name: 'node.exe',
         executablePath: 'C:\\Program Files\\nodejs\\node.exe',
         commandLine: 'node script.mts',
+        creationDate: '/Date(1783938486647)/',
         workingSetBytes: 123456,
       },
     ],
@@ -298,6 +300,7 @@ function processRecord(
     name,
     executablePath: '',
     commandLine,
+    creationDate: '/Date(1783938486647)/',
     workingSetBytes: null,
   };
 }

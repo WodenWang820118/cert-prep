@@ -102,6 +102,7 @@ function processRecord(
     name,
     executablePath: '',
     commandLine,
+    creationDate: '/Date(1783938486647)/',
     workingSetBytes,
   };
 }
