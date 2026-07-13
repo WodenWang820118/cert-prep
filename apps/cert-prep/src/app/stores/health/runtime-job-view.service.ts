@@ -12,6 +12,8 @@ import type {
 import { RuntimeHealthDerivationService } from './runtime-health-derivation.service';
 
 const RUNTIME_KIND_LABELS: Record<string, string> = {
+  fastflowlm: 'FastFlowLM',
+  fastflowlm_model: 'FastFlowLM model',
   ollama: 'Ollama',
   ollama_model: 'Ollama model',
   paddle_ocr: 'PaddleOCR runtime',
@@ -293,6 +295,8 @@ export class RuntimeJobViewService {
       this.readString(record, 'kind') ?? fallbackKind,
     );
     return kind === 'ollama' ||
+      kind === 'fastflowlm' ||
+      kind === 'fastflowlm_model' ||
       kind === 'ollama_model' ||
       kind === 'paddle_ocr' ||
       kind === 'windowsml_ocr'

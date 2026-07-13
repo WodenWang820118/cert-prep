@@ -17,11 +17,18 @@ const LLM_RUNTIME_MISSING_REASON_CODES = new Set([
 
 @Injectable({ providedIn: 'root' })
 export class RuntimeHealthDerivationService {
-  isModelMissing(health: LLMHealthRead | null): boolean {
-    return (
-      health?.available === false &&
-      this.unavailableReason(health) === 'model_missing'
+  isModelMissing(
+    health: LLMHealthRead | null,
+    requirements: readonly RuntimeRequirementRead[] = [],
+  ): boolean {
+    const provider = this.normalizedCode(health?.provider);
+    const requirementMissing = this.modelRequirementMissing(
+      requirements,
+      provider === 'fastflowlm' ? 'fastflowlm_model' : 'ollama_model',
     );
+    return provider === 'fastflowlm'
+      ? requirementMissing
+      : requirementMissing || this.isModelMissingFromHealth(health);
   }
 
   isOllamaMissing(
@@ -35,6 +42,53 @@ export class RuntimeHealthDerivationService {
     );
   }
 
+  isFastFlowMissing(
+    health: LLMHealthRead | null,
+    requirements: readonly RuntimeRequirementRead[],
+  ): boolean {
+    return (
+      this.unavailableReason(health) === 'fastflowlm_missing' ||
+      this.runtimeUnavailableReason(requirements, 'fastflowlm') ===
+        'fastflowlm_missing'
+    );
+  }
+
+  isFastFlowTermsRequired(
+    requirements: readonly RuntimeRequirementRead[],
+  ): boolean {
+    return (
+      this.runtimeUnavailableReason(requirements, 'fastflowlm') ===
+        'fastflowlm_terms_required' ||
+      this.runtimeUnavailableReason(requirements, 'fastflowlm_model') ===
+        'fastflowlm_terms_required'
+    );
+  }
+
+  isFastFlowInstallationRequired(
+    requirements: readonly RuntimeRequirementRead[],
+  ): boolean {
+    return (
+      this.runtimeUnavailableReason(requirements, 'fastflowlm') ===
+      'fastflowlm_missing'
+    );
+  }
+
+  isFastFlowRuntimeAvailable(
+    requirements: readonly RuntimeRequirementRead[],
+  ): boolean {
+    const requirement = requirements.find(
+      (item) => item.kind === 'fastflowlm',
+    );
+    return (
+      requirement?.available === true &&
+      this.normalizedCode(requirement.unavailable_reason).length === 0
+    );
+  }
+
+  isFastFlowProvider(health: LLMHealthRead | null): boolean {
+    return this.normalizedCode(health?.provider) === 'fastflowlm';
+  }
+
   isLlmRuntimeMissing(
     health: LLMHealthRead | null,
     requirements: readonly RuntimeRequirementRead[],
@@ -42,7 +96,11 @@ export class RuntimeHealthDerivationService {
     if (LLM_RUNTIME_MISSING_REASON_CODES.has(this.unavailableReason(health))) {
       return true;
     }
-    return this.isOllamaMissing(health, requirements);
+    return (
+      this.isFastFlowMissing(health, requirements) ||
+      this.isFastFlowTermsRequired(requirements) ||
+      this.isOllamaMissing(health, requirements)
+    );
   }
 
   llmProviderLabel(health: LLMHealthRead | null): string {
@@ -120,8 +178,14 @@ export class RuntimeHealthDerivationService {
     );
   }
 
-  isConfiguredModelMissing(health: LLMHealthRead | null): boolean {
-    return this.isModelMissing(health) || this.isModelFallbackActive(health);
+  isConfiguredModelMissing(
+    health: LLMHealthRead | null,
+    requirements: readonly RuntimeRequirementRead[] = [],
+  ): boolean {
+    return (
+      this.isModelMissing(health, requirements) ||
+      this.isModelFallbackActive(health)
+    );
   }
 
   isModelFallbackActive(health: LLMHealthRead | null): boolean {
@@ -157,6 +221,24 @@ export class RuntimeHealthDerivationService {
   ): string {
     const requirement = requirements.find((item) => item.kind === kind);
     return this.normalizedCode(requirement?.unavailable_reason);
+  }
+
+  private isModelMissingFromHealth(health: LLMHealthRead | null): boolean {
+    return (
+      health?.available === false &&
+      this.unavailableReason(health) === 'model_missing'
+    );
+  }
+
+  private modelRequirementMissing(
+    requirements: readonly RuntimeRequirementRead[],
+    kind: Extract<RuntimeKind, 'fastflowlm_model' | 'ollama_model'>,
+  ): boolean {
+    const requirement = requirements.find((item) => item.kind === kind);
+    return (
+      requirement?.available === false &&
+      this.normalizedCode(requirement.unavailable_reason) === 'model_missing'
+    );
   }
 
   private normalizedModelName(value: unknown): string {

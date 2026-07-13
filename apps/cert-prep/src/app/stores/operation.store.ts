@@ -14,6 +14,10 @@ type BusyAction =
 
 @Injectable({ providedIn: 'root' })
 export class OperationStore {
+  private readonly runEpochs = new Map<BusyAction, number>();
+  private readonly activeActionCounts = signal<
+    ReadonlyMap<BusyAction, number>
+  >(new Map());
   readonly busy = signal<BusyAction | null>(null);
   readonly status = signal('Ready');
   readonly error = signal<string | null>(null);
@@ -23,22 +27,29 @@ export class OperationStore {
     action: BusyAction,
     successMessage: string,
     task: () => Promise<T>,
+    shouldApply: () => boolean = () => true,
   ): Promise<T | null> {
-    this.busy.set(action);
+    const epoch = (this.runEpochs.get(action) ?? 0) + 1;
+    this.runEpochs.set(action, epoch);
+    const isCurrent = () =>
+      epoch === this.runEpochs.get(action) && shouldApply();
+    this.beginAction(action);
     this.error.set(null);
     this.errorCode.set(null);
     try {
       const result = await task();
-      this.status.set(successMessage);
+      if (isCurrent()) {
+        this.status.set(successMessage);
+      }
       return result;
     } catch (error) {
-      this.error.set(this.getErrorMessage(error));
-      this.errorCode.set(this.getErrorCode(error));
+      if (isCurrent()) {
+        this.error.set(this.getErrorMessage(error));
+        this.errorCode.set(this.getErrorCode(error));
+      }
       return null;
     } finally {
-      if (this.busy() === action) {
-        this.busy.set(null);
-      }
+      this.endAction(action);
     }
   }
 
@@ -48,10 +59,35 @@ export class OperationStore {
 
   isBusyFor(action: string | readonly string[]): boolean {
     const current = this.busy();
-    if (current === null) {
-      return false;
+    const requested = Array.isArray(action) ? action : [action];
+    return requested.some(
+      (candidate) =>
+        candidate === current ||
+        (this.activeActionCounts().get(candidate as BusyAction) ?? 0) > 0,
+    );
+  }
+
+  private beginAction(action: BusyAction): void {
+    const counts = new Map(this.activeActionCounts());
+    counts.set(action, (counts.get(action) ?? 0) + 1);
+    this.activeActionCounts.set(counts);
+    this.busy.set(action);
+  }
+
+  private endAction(action: BusyAction): void {
+    const counts = new Map(this.activeActionCounts());
+    const remainingForAction = Math.max(0, (counts.get(action) ?? 1) - 1);
+    if (remainingForAction === 0) {
+      counts.delete(action);
+    } else {
+      counts.set(action, remainingForAction);
     }
-    return Array.isArray(action) ? action.includes(current) : current === action;
+    this.activeActionCounts.set(counts);
+
+    if (this.busy() === action) {
+      const remaining = [...counts.keys()];
+      this.busy.set(remaining[remaining.length - 1] ?? null);
+    }
   }
 
   private getErrorMessage(error: unknown): string {

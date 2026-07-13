@@ -10,6 +10,74 @@ import { RuntimeJobViewService } from '../../stores/health/runtime-job-view.serv
   imports: [Button, Dialog],
   template: `
     <p-dialog
+      [header]="'FastFlowLM v' + health.fastFlowTermsVersion() + ' terms'"
+      [visible]="health.fastFlowTermsConsentVisible()"
+      [modal]="true"
+      [draggable]="false"
+      [resizable]="false"
+      [closable]="!health.fastFlowTermsDecisionSaving()"
+      [closeOnEscape]="!health.fastFlowTermsDecisionSaving()"
+      [dismissableMask]="false"
+      [style]="{ width: 'min(92vw, 38rem)' }"
+      (visibleChange)="setFastFlowTermsConsentVisible($event)"
+    >
+      <div class="grid gap-3">
+        <p class="m-0 text-sm leading-6 text-color">
+          Review the official FastFlowLM v{{ health.fastFlowTermsVersion() }}
+          terms before Cert Prep downloads or runs the official installer.
+        </p>
+        <p class="m-0 text-sm leading-6 text-muted-color">
+          Cert Prep does not redistribute FastFlowLM. Declining selects the
+          Ollama onboarding path instead.
+        </p>
+        <a
+          class="text-sm font-medium text-primary underline"
+          [href]="health.fastFlowTermsUrl()"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Read the official FastFlowLM terms
+        </a>
+        <label
+          class="flex items-start gap-2 text-sm leading-6 text-color"
+          for="fastflowlm-terms-acknowledgement"
+        >
+          <input
+            id="fastflowlm-terms-acknowledgement"
+            type="checkbox"
+            class="mt-1"
+            [checked]="health.fastFlowTermsAcknowledged()"
+            [disabled]="health.fastFlowTermsDecisionSaving()"
+            (change)="setFastFlowTermsAcknowledged($event)"
+          />
+          <span>I have read and accept the FastFlowLM terms</span>
+        </label>
+        <p class="m-0 text-xs leading-5 text-muted-color">
+          Powered by FastFlowLM
+        </p>
+        <div class="flex flex-wrap justify-end gap-2 pt-2">
+          <p-button
+            label="Decline and use Ollama"
+            severity="secondary"
+            [outlined]="true"
+            [disabled]="health.fastFlowTermsDecisionSaving()"
+            (onClick)="health.declineFastFlowTerms()"
+          />
+          <p-button
+            label="Accept FastFlowLM terms"
+            severity="warn"
+            [disabled]="
+              !health.fastFlowTermsAcknowledged() ||
+              health.fastFlowTermsDecisionSaving()
+            "
+            [loading]="health.fastFlowTermsDecisionSaving()"
+            (onClick)="health.acceptFastFlowTerms()"
+          />
+        </div>
+      </div>
+    </p-dialog>
+
+    <p-dialog
       header="Install Python backend runtime"
       [visible]="desktopRuntime.installConsentVisible()"
       [modal]="true"
@@ -119,6 +187,15 @@ import { RuntimeJobViewService } from '../../stores/health/runtime-job-view.serv
             The runtime is downloaded from the release asset, verified, and
             extracted under your user app data.
           </p>
+        } @else if (health.runtimeInstallConsentKind() === 'fastflowlm') {
+          <p class="m-0 text-sm leading-6 text-color">
+            Install FastFlowLM for local AI generation?
+          </p>
+          <p class="m-0 text-sm leading-6 text-muted-color">
+            Cert Prep downloads the pinned official installer, verifies its
+            size, SHA-256 digest, and Authenticode identity, then starts it.
+            Return here and refresh the status if Windows asks for confirmation.
+          </p>
         } @else {
           <p class="m-0 text-sm leading-6 text-color">
             Install Ollama for local AI generation?
@@ -156,4 +233,17 @@ export class RuntimeConsentDialogsComponent {
   protected readonly runtimeInstallConsentLabel = computed(() =>
     this.runtimeJobs.runtimeLabel(this.health.runtimeInstallConsentKind()),
   );
+
+  protected setFastFlowTermsConsentVisible(visible: boolean): void {
+    if (!visible) {
+      this.health.closeFastFlowTermsConsent();
+    }
+  }
+
+  protected setFastFlowTermsAcknowledged(event: Event): void {
+    const input = event.target;
+    if (input instanceof HTMLInputElement) {
+      this.health.setFastFlowTermsAcknowledged(input.checked);
+    }
+  }
 }

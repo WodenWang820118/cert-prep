@@ -52,4 +52,32 @@ describe('OperationStore', () => {
     expect(store.isBusyFor(['health', 'runtime'])).toBe(true);
     expect(store.isBusyFor('project')).toBe(false);
   });
+
+  it('does not suppress one action failure when another action starts later', async () => {
+    const store = TestBed.inject(OperationStore);
+    let rejectQuestions!: (reason: unknown) => void;
+    const questions = store.run(
+      'questions',
+      'Questions generated',
+      () =>
+        new Promise<never>((_resolve, reject) => {
+          rejectQuestions = reject;
+        }),
+    );
+
+    await store.run('upload', 'Upload complete', async () => 'uploaded');
+    expect(store.busy()).toBe('questions');
+    expect(store.isBusyFor('questions')).toBe(true);
+    rejectQuestions({
+      error: {
+        code: 'provider_unavailable',
+        message: 'FastFlowLM onboarding is required.',
+      },
+    });
+    await questions;
+
+    expect(store.errorCode()).toBe('provider_unavailable');
+    expect(store.error()).toBe('FastFlowLM onboarding is required.');
+    expect(store.busy()).toBeNull();
+  });
 });

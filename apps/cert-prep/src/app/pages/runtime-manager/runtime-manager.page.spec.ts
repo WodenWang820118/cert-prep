@@ -74,6 +74,89 @@ describe('RuntimeManagerPage', () => {
     expect(fixture.nativeElement.textContent).toContain('Download qwen3.5:4b');
   });
 
+  it('requires FastFlowLM terms review before runtime or model installation', () => {
+    const health = TestBed.inject(HealthStore);
+    health.systemHealth.set(systemHealth());
+    health.llmHealth.set({
+      ...missingModelHealth(),
+      provider: 'fastflowlm',
+      model: 'qwen3.5:4b',
+      detail: 'FastFlowLM terms must be accepted.',
+      unavailable_reason: 'fastflowlm_not_running',
+    });
+    health.ocrHealth.set(ocrHealth());
+    health.runtimeRequirements.set([
+      fastFlowRuntimeAvailableRequirement(),
+      fastFlowModelRequirement('fastflowlm_terms_required'),
+    ]);
+
+    const fixture = TestBed.createComponent(RuntimeManagerPage);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain(
+      'Review FastFlowLM terms',
+    );
+    expect(fixture.nativeElement.textContent).not.toContain(
+      'Install FastFlowLM',
+    );
+    expect(fixture.nativeElement.textContent).not.toContain(
+      'Download qwen3.5:4b',
+    );
+  });
+
+  it('offers FastFlowLM installation after terms are accepted', () => {
+    const health = TestBed.inject(HealthStore);
+    health.systemHealth.set(systemHealth());
+    health.llmHealth.set({
+      ...missingModelHealth(),
+      provider: 'fastflowlm',
+      model: 'qwen3.5:4b',
+      detail: 'FastFlowLM is not installed.',
+      unavailable_reason: 'fastflowlm_missing',
+    });
+    health.ocrHealth.set(ocrHealth());
+    health.runtimeRequirements.set([
+      fastFlowRuntimeMissingRequirement('fastflowlm_missing'),
+    ]);
+
+    const fixture = TestBed.createComponent(RuntimeManagerPage);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Install FastFlowLM');
+    expect(fixture.nativeElement.textContent).not.toContain(
+      'Review FastFlowLM terms',
+    );
+    expect(fixture.nativeElement.textContent).not.toContain(
+      'Download qwen3.5:4b',
+    );
+  });
+
+  it('offers the FastFlowLM model only after its runtime is ready', () => {
+    const health = TestBed.inject(HealthStore);
+    health.systemHealth.set(systemHealth());
+    health.llmHealth.set({
+      ...missingModelHealth(),
+      provider: 'fastflowlm',
+      model: 'qwen3.5:4b',
+      configured_model: 'qwen3.5:4b',
+      detail: 'FastFlowLM server is not running.',
+      unavailable_reason: 'fastflowlm_not_running',
+    });
+    health.ocrHealth.set(ocrHealth());
+    health.runtimeRequirements.set([
+      fastFlowRuntimeAvailableRequirement(),
+      fastFlowModelRequirement('model_missing'),
+    ]);
+
+    const fixture = TestBed.createComponent(RuntimeManagerPage);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Download qwen3.5:4b');
+    expect(fixture.nativeElement.textContent).not.toContain(
+      'Install FastFlowLM',
+    );
+  });
+
   it('renders OCR checking detail while health is loading', () => {
     const health = TestBed.inject(HealthStore);
     health.systemHealth.set(systemHealth());
@@ -157,3 +240,39 @@ describe('RuntimeManagerPage', () => {
     expect(closeRequested).toHaveBeenCalledOnce();
   });
 });
+
+function fastFlowRuntimeMissingRequirement(unavailableReason: string) {
+  return {
+    kind: 'fastflowlm',
+    label: 'FastFlowLM',
+    available: false,
+    detail: 'FastFlowLM setup is required.',
+    unavailable_reason: unavailableReason,
+    version: '0.9.43',
+    bytes: 18_577_840,
+    installed_path: null,
+  };
+}
+
+function fastFlowRuntimeAvailableRequirement() {
+  return {
+    ...fastFlowRuntimeMissingRequirement('fastflowlm_missing'),
+    available: true,
+    detail: 'FastFlowLM 0.9.43 is installed.',
+    unavailable_reason: null,
+    installed_path: 'C:\\Program Files\\flm\\flm.exe',
+  };
+}
+
+function fastFlowModelRequirement(unavailableReason: string) {
+  return {
+    kind: 'fastflowlm_model',
+    label: 'FastFlowLM model',
+    available: false,
+    detail: 'FastFlowLM model setup is required.',
+    unavailable_reason: unavailableReason,
+    version: 'qwen3.5:4b',
+    bytes: null,
+    installed_path: null,
+  };
+}

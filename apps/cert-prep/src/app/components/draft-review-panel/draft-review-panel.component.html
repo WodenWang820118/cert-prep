@@ -258,7 +258,10 @@
           <button
             class="workbench-link-button"
             type="button"
-            [disabled]="!sourceImport.canGenerateDrafts()"
+            [disabled]="
+              operations.isBusyFor('questions') ||
+              !sourceImport.canGenerateDrafts()
+            "
             (click)="drafts.generateDrafts('hybrid_reasoning')"
           >
             Generate questions when a source PDF is ready

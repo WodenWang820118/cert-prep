@@ -61,6 +61,29 @@ describe('RuntimeJobViewService', () => {
     expect(view.message).toBe('Model download is running.');
   });
 
+  it('labels FastFlowLM runtime and model installation jobs', () => {
+    expect(service.runtimeLabel('fastflowlm')).toBe('FastFlowLM');
+    expect(service.runtimeLabel('fastflowlm_model')).toBe('FastFlowLM model');
+  });
+
+  it('keeps canonical FastFlowLM job kinds from backend responses', () => {
+    const runtime = service.toRuntimeInstallationView(
+      { id: 'runtime-1', kind: 'fastflowlm', status: 'running' },
+      'ollama',
+      'running',
+      { currentJobId: null },
+    );
+    const model = service.toRuntimeInstallationView(
+      { id: 'model-1', kind: 'fastflowlm_model', status: 'running' },
+      'ollama_model',
+      'running',
+      { currentJobId: null },
+    );
+
+    expect(runtime.kind).toBe('fastflowlm');
+    expect(model.kind).toBe('fastflowlm_model');
+  });
+
   it.each([
     'waiting',
     'user_action_required',

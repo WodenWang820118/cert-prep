@@ -169,8 +169,20 @@ export class DraftReviewStore {
     }
 
     try {
-      await this.health.load();
+      if (!(await this.health.load())) {
+        return;
+      }
     } catch {
+      return;
+    }
+
+    if (this.health.canReviewFastFlowTerms()) {
+      await this.health.openFastFlowTermsConsent();
+      return;
+    }
+
+    if (this.health.canInstallFastFlow()) {
+      this.health.openFastFlowInstallConsent();
       return;
     }
 

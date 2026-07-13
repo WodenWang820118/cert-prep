@@ -15,7 +15,9 @@ interface RuntimeActionContext {
   readonly canDownloadModel: () => boolean;
   readonly canInstallRuntime: (kind: RuntimeKind) => boolean;
   readonly configuredModelName: () => string;
-  readonly refreshHealthAfterRuntimeChange: () => Promise<void>;
+  readonly refreshHealthAfterRuntimeChange: (
+    kind?: RuntimeKind,
+  ) => Promise<void>;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -153,6 +155,7 @@ export class RuntimeActionsStore {
     this.clearRuntimeInstallPollTimer();
     this.runtimeInstallStarting.set(true);
     this.runtimeInstall.set(this.jobView.startingRuntimeInstall(kind));
+    let continuation: Promise<void> | null = null;
 
     try {
       const response = await client.startRuntimeInstallation(kind);
@@ -163,7 +166,7 @@ export class RuntimeActionsStore {
       );
       this.runtimeInstall.set(status);
       this.runtimeInstallConsentKind.set(null);
-      this.continueRuntimeInstallation(status, context);
+      continuation = this.continueRuntimeInstallation(status, context);
     } catch (error) {
       const message = this.jobView.errorMessage(error);
       this.runtimeInstall.set(this.failedRuntimeInstall(kind, message));
@@ -171,6 +174,8 @@ export class RuntimeActionsStore {
     } finally {
       this.runtimeInstallStarting.set(false);
     }
+
+    await continuation;
   }
 
   async refreshRuntimeInstallation(
@@ -192,7 +197,7 @@ export class RuntimeActionsStore {
         current.phase,
       );
       this.runtimeInstall.set(status);
-      this.continueRuntimeInstallation(status, context);
+      await this.continueRuntimeInstallation(status, context);
     } catch (error) {
       const message = this.jobView.errorMessage(error);
       this.runtimeInstall.set({
@@ -254,12 +259,12 @@ export class RuntimeActionsStore {
     this.scheduleModelDownloadPoll(context);
   }
 
-  private continueRuntimeInstallation(
+  private async continueRuntimeInstallation(
     status: RuntimeInstallationView,
     context: RuntimeActionContext,
-  ): void {
+  ): Promise<void> {
     if (status.phase === 'succeeded') {
-      void this.refreshHealthAfterRuntimeChange(context);
+      await this.refreshHealthAfterRuntimeChange(context, status.kind);
       return;
     }
 
@@ -277,9 +282,10 @@ export class RuntimeActionsStore {
 
   private async refreshHealthAfterRuntimeChange(
     context: RuntimeActionContext,
+    kind?: RuntimeKind,
   ): Promise<void> {
     try {
-      await context.refreshHealthAfterRuntimeChange();
+      await context.refreshHealthAfterRuntimeChange(kind);
     } catch (error) {
       this.operations.fail(this.jobView.errorMessage(error));
     }

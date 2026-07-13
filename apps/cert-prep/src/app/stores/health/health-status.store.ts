@@ -17,7 +17,6 @@ import { RuntimeHealthDerivationService } from './runtime-health-derivation.serv
 export class HealthStatusStore {
   private readonly actions = inject(RuntimeActionsStore);
   private readonly runtimeHealth = inject(RuntimeHealthDerivationService);
-  private healthSnapshotLoadCount = 0;
 
   readonly llmHealth = signal<LLMHealthRead | null>(null);
   readonly systemHealth = signal<HealthResponse | null>(null);
@@ -29,10 +28,16 @@ export class HealthStatusStore {
   readonly runtimeRequirements = signal<RuntimeRequirementRead[]>([]);
 
   readonly isModelMissing = computed(() =>
-    this.runtimeHealth.isModelMissing(this.llmHealth()),
+    this.runtimeHealth.isModelMissing(
+      this.llmHealth(),
+      this.runtimeRequirements(),
+    ),
   );
   readonly isConfiguredModelMissing = computed(() =>
-    this.runtimeHealth.isConfiguredModelMissing(this.llmHealth()),
+    this.runtimeHealth.isConfiguredModelMissing(
+      this.llmHealth(),
+      this.runtimeRequirements(),
+    ),
   );
   readonly isModelFallbackActive = computed(() =>
     this.runtimeHealth.isModelFallbackActive(this.llmHealth()),
@@ -42,6 +47,20 @@ export class HealthStatusStore {
       this.llmHealth(),
       this.runtimeRequirements(),
     ),
+  );
+  readonly isFastFlowTermsRequired = computed(() =>
+    this.runtimeHealth.isFastFlowTermsRequired(this.runtimeRequirements()),
+  );
+  readonly isFastFlowInstallationRequired = computed(() =>
+    this.runtimeHealth.isFastFlowInstallationRequired(
+      this.runtimeRequirements(),
+    ),
+  );
+  readonly isFastFlowRuntimeAvailable = computed(() =>
+    this.runtimeHealth.isFastFlowRuntimeAvailable(this.runtimeRequirements()),
+  );
+  readonly isFastFlowProvider = computed(() =>
+    this.runtimeHealth.isFastFlowProvider(this.llmHealth()),
   );
   readonly isLlmRuntimeMissing = computed(() =>
     this.runtimeHealth.isLlmRuntimeMissing(
@@ -105,20 +124,13 @@ export class HealthStatusStore {
   );
 
   beginHealthSnapshotLoad(): void {
-    this.healthSnapshotLoadCount += 1;
     this.healthSnapshotLoading.set(true);
     this.ocrHealthLoadFailed.set(false);
     this.ocrHealthRefreshPending.set(true);
   }
 
   endHealthSnapshotLoad(): void {
-    this.healthSnapshotLoadCount = Math.max(
-      0,
-      this.healthSnapshotLoadCount - 1,
-    );
-    if (this.healthSnapshotLoadCount === 0) {
-      this.healthSnapshotLoading.set(false);
-    }
+    this.healthSnapshotLoading.set(false);
   }
 
   applyHealthSnapshot(snapshot: Partial<HealthSnapshot>): void {

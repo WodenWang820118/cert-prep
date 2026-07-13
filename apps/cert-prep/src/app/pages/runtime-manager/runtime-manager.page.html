@@ -44,6 +44,30 @@
 
     <app-runtime-status-row [section]="viewModel().ollama">
       <ng-container actions>
+        @if (
+          desktopRuntime.isBackendReady() &&
+          health.isFastFlowTermsRequired()
+        ) {
+          <p-button
+            label="Review FastFlowLM terms"
+            icon="pi pi-external-link"
+            severity="warn"
+            [outlined]="true"
+            [loading]="health.fastFlowTermsLoading()"
+            [disabled]="health.fastFlowTermsDecisionSaving()"
+            (onClick)="health.openFastFlowTermsConsent()"
+          />
+        }
+        @if (desktopRuntime.isBackendReady() && health.canInstallFastFlow()) {
+          <p-button
+            label="Install FastFlowLM"
+            icon="pi pi-download"
+            severity="warn"
+            [outlined]="true"
+            [disabled]="health.runtimeInstallStarting()"
+            (onClick)="health.openFastFlowInstallConsent()"
+          />
+        }
         @if (desktopRuntime.isBackendReady() && health.canInstallOllama()) {
           <p-button
             label="Install Ollama"
@@ -54,7 +78,25 @@
             (onClick)="health.openOllamaInstallConsent()"
           />
         }
+        @if (llmRuntimeInstall()) {
+          <p-button
+            label="Refresh install"
+            icon="pi pi-refresh"
+            severity="secondary"
+            [outlined]="true"
+            [disabled]="health.runtimeInstallStarting()"
+            (onClick)="health.refreshRuntimeInstallation()"
+          />
+        }
       </ng-container>
+      @if (llmRuntimeInstall(); as install) {
+        <div progress class="grid gap-2 sm:col-span-2" aria-live="polite">
+          <p class="m-0 text-sm text-muted-color">{{ install.message }}</p>
+          @if (install.progress !== null) {
+            <p-progressbar [value]="install.progress" />
+          }
+        </div>
+      }
     </app-runtime-status-row>
 
     <app-runtime-status-row [section]="viewModel().model">
@@ -102,7 +144,7 @@
             (onClick)="health.openOcrRuntimeInstallConsent()"
           />
         }
-        @if (health.runtimeInstall()) {
+        @if (ocrRuntimeInstall()) {
           <p-button
             label="Refresh install"
             icon="pi pi-refresh"
@@ -113,7 +155,7 @@
           />
         }
       </ng-container>
-      @if (health.runtimeInstall(); as install) {
+      @if (ocrRuntimeInstall(); as install) {
         <div progress class="grid gap-2 sm:col-span-2" aria-live="polite">
           <p class="m-0 text-sm text-muted-color">{{ install.message }}</p>
           @if (install.progress !== null) {

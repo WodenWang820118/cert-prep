@@ -21,6 +21,8 @@ export type DownloadPhase =
  * Runtime requirement kinds the Angular health UI knows how to present.
  */
 export type RuntimeKind =
+  | 'fastflowlm'
+  | 'fastflowlm_model'
   | 'ollama'
   | 'ollama_model'
   | 'paddle_ocr'
