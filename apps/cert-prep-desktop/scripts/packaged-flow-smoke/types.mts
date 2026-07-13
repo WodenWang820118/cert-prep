@@ -6,6 +6,8 @@ import type {
 } from '../process-lifecycle/processes.mts';
 import type { OwnedFastFlowProcessTracker } from './owned-fastflow-process-lifecycle.mts';
 
+export type AcceptanceLane = 'none' | 'xdna2-fastflow';
+
 export interface SmokeOptions {
   workspaceRoot: string;
   exePath: string;
@@ -18,6 +20,7 @@ export interface SmokeOptions {
   llmProvider: string;
   ollamaModel: string;
   ollamaFallbackModels: string[];
+  acceptanceLane?: AcceptanceLane;
   streamingDraftPageLimit?: number;
   streamingDraftWorkers?: number;
   waitForStreamingComplete: boolean;
@@ -59,6 +62,7 @@ export interface SmokeMetrics {
   streaming_draft_workers?: number;
   wait_for_streaming_complete?: boolean;
   app_data_dir?: string;
+  acceptance_isolation_at_launch?: AcceptanceIsolationSnapshot;
   ocr_completion?: OcrCompletionMetrics;
   streaming_baseline?: StreamingBaselineArtifacts;
   production_summary?: string;
@@ -81,6 +85,15 @@ export interface SmokeMetrics {
   streaming_questions: StreamingQuestionsMetrics;
   gpu_sampling?: string;
   resource_sampling?: ResourceSamplingArtifacts;
+}
+
+export interface AcceptanceIsolationSnapshot {
+  readonly captured_at: string;
+  readonly out_dir_created_by_runner: boolean;
+  readonly app_data_dir_created_by_runner: boolean;
+  readonly app_data_dir_empty_at_launch: boolean;
+  readonly paths_within_workspace_run_root: boolean;
+  readonly reparse_points_absent: boolean;
 }
 
 export interface ResourceSamplingArtifacts {

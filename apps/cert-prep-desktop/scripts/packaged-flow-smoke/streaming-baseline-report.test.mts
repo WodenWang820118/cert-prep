@@ -39,8 +39,11 @@ test('production summary passes when WindowsML OCR is routed to AMD iGPU', () =>
     const run = productionRunState(workspaceRoot, outDir);
     const summary = buildProductionSummary(run, productionReport());
 
-    assert.equal(summary.schema_version, 3);
+    assert.equal(summary.schema_version, 4);
     assert.equal(summary.status, 'passed');
+    assert.equal(summary.acceptance_lane, 'none');
+    assert.equal(summary.acceptance_isolation_at_launch, null);
+    assert.equal(summary.policy_model, 'qwen3.5:4b');
     assert.equal(summary.provider_preference, 'auto');
     assert.equal(summary.llm_provider, 'fastflowlm');
     assert.equal(summary.checks.fastflowlm_exact_job_attribution, true);
@@ -53,6 +56,77 @@ test('production summary passes when WindowsML OCR is routed to AMD iGPU', () =>
     assert.doesNotMatch(
       JSON.stringify(summary),
       /commandLine|parentPid|C:\\\\Users|Bearer\s+/i,
+    );
+  } finally {
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test('XDNA2 acceptance lane binds auto selection to exact FastFlow evidence', () => {
+  const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-prep-production-summary-'));
+  try {
+    const outDir = join(workspaceRoot, 'out');
+    mkdirSync(outDir);
+    writePassingResourceSummary(outDir);
+    const run = productionRunState(workspaceRoot, outDir);
+    run.options.acceptanceLane = 'xdna2-fastflow';
+    recordPassingAcceptanceIsolation(run);
+    const report = productionReport();
+
+    const summary = buildProductionSummary(run, report);
+
+    assert.equal(summary.status, 'passed');
+    assert.equal(summary.acceptance_lane, 'xdna2-fastflow');
+    assert.equal(summary.checks.acceptance_lane_preference_exact, true);
+    assert.equal(summary.checks.acceptance_lane_provider_exact, true);
+    assert.equal(summary.checks.acceptance_lane_model_exact, true);
+    assert.equal(summary.checks.acceptance_lane_no_fallback, true);
+    assert.equal(summary.checks.acceptance_lane_fresh_run_isolation, true);
+    assert.equal(summary.checks.acceptance_lane_process_isolation, true);
+
+    const selection = run.metrics.generation_readiness_at_start?.provider_selection;
+    const job = run.metrics.streaming_questions.job_snapshots[0]?.jobs[0];
+    assert.ok(selection);
+    assert.ok(job);
+    selection.selected_provider = 'ollama';
+    selection.effective_provider = 'ollama';
+    job.configured_provider = 'ollama';
+    job.effective_provider = 'ollama';
+
+    const providerDrift = buildProductionSummary(run, report);
+    assert.equal(providerDrift.status, 'failed');
+    assert.equal(
+      providerDrift.checks.acceptance_lane_provider_exact,
+      false,
+    );
+
+    selection.selected_provider = 'fastflowlm';
+    selection.effective_provider = 'fastflowlm';
+    job.configured_provider = 'fastflowlm';
+    job.effective_provider = 'fastflowlm';
+    run.processBaseline.all.push({
+      pid: 91,
+      parentPid: 1,
+      name: 'flm.exe',
+      executablePath: 'C:\\FastFlowLM\\flm.exe',
+      commandLine: 'flm serve',
+      creationDate: '20260713000000.000000+000',
+      workingSetBytes: 1,
+    });
+    const contaminatedBaseline = buildProductionSummary(run, report);
+    assert.equal(contaminatedBaseline.status, 'failed');
+    assert.equal(
+      contaminatedBaseline.checks.acceptance_lane_process_isolation,
+      false,
+    );
+
+    run.processBaseline.all.length = 0;
+    delete run.metrics.acceptance_isolation_at_launch;
+    const missingFreshnessEvidence = buildProductionSummary(run, report);
+    assert.equal(missingFreshnessEvidence.status, 'failed');
+    assert.equal(
+      missingFreshnessEvidence.checks.acceptance_lane_fresh_run_isolation,
+      false,
     );
   } finally {
     rmSync(workspaceRoot, { recursive: true, force: true });
@@ -759,6 +833,17 @@ test('production summary rejects incomplete and mixed producing-job attribution'
     rmSync(workspaceRoot, { recursive: true, force: true });
   }
 });
+
+function recordPassingAcceptanceIsolation(run: SmokeRunState): void {
+  run.metrics.acceptance_isolation_at_launch = {
+    captured_at: '2026-07-13T00:00:00.000Z',
+    out_dir_created_by_runner: true,
+    app_data_dir_created_by_runner: true,
+    app_data_dir_empty_at_launch: true,
+    paths_within_workspace_run_root: true,
+    reparse_points_absent: true,
+  };
+}
 
 function writePassingResourceSummary(outDir: string): void {
   writeFileSync(

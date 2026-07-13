@@ -15,6 +15,8 @@ import { isRecord, normalizePath } from './text-utils.mts';
 import { videoEvidencePassed } from './video-evidence.mts';
 import type { PublicProcessRecord } from '../process-lifecycle/processes.mts';
 import type {
+  AcceptanceIsolationSnapshot,
+  AcceptanceLane,
   GenerationReadinessSnapshot,
   LlmHealthSnapshot,
   ResourceSamplingArtifacts,
@@ -103,9 +105,12 @@ interface GpuRoutingChecks {
 }
 
 interface PackagedStreamingProductionSummary {
-  schema_version: 3;
+  schema_version: 4;
   status: 'incomplete' | 'passed' | 'failed';
   generated_at: string;
+  acceptance_lane: AcceptanceLane;
+  acceptance_isolation_at_launch: AcceptanceIsolationSnapshot | null;
+  policy_model: string | null;
   selected_model: string | null;
   configured_model: string | null;
   effective_model: string | null;
@@ -457,13 +462,30 @@ export function buildProductionSummary(
       : {}),
   };
   Object.assign(checks, providerRoutingChecks(run, gpuRoutingChecks));
+  Object.assign(
+    checks,
+    acceptanceLaneChecks(
+      run.options.acceptanceLane ?? 'none',
+      report.runtime.llm_provider,
+      readinessAtStart,
+      succeededJobs,
+      resourcesReleased,
+      run.metrics.acceptance_isolation_at_launch,
+      run.processBaseline.all,
+    ),
+  );
   const productionSummaryPath = join(run.options.outDir, 'production-summary.json');
   const checksPassed = Object.values(checks).every(Boolean);
 
   return {
-    schema_version: 3,
+    schema_version: 4,
     status: finalized ? (checksPassed ? 'passed' : 'failed') : 'incomplete',
     generated_at: report.generated_at,
+    acceptance_lane: run.options.acceptanceLane ?? 'none',
+    acceptance_isolation_at_launch:
+      run.metrics.acceptance_isolation_at_launch ?? null,
+    policy_model:
+      readinessAtStart?.provider_selection?.configured_model ?? null,
     selected_model: effectiveModel,
     llm_provider: effectiveProvider,
     provider_preference: report.runtime.llm_provider,
@@ -623,6 +645,75 @@ function resourcesReleasedPassed(
     return !fastFlowObserved;
   }
   return false;
+}
+
+function acceptanceLaneChecks(
+  lane: AcceptanceLane,
+  reportedPreference: string,
+  readiness: GenerationReadinessSnapshot | undefined,
+  succeededJobs: readonly StreamingDraftJobAttribution[],
+  resourcesReleased: ResourcesReleasedAtEndSnapshot | undefined,
+  isolationAtLaunch: AcceptanceIsolationSnapshot | undefined,
+  processBaseline: readonly { readonly name: string }[],
+): Record<string, boolean> {
+  if (lane === 'none') {
+    return {};
+  }
+
+  const expectedPreference = 'auto';
+  const expectedProvider = 'fastflowlm';
+  const selection = readiness?.provider_selection;
+  const jobsPresent = succeededJobs.length > 0;
+  const providerExact =
+    selection?.selected_provider === expectedProvider &&
+    selection.effective_provider === expectedProvider &&
+    jobsPresent &&
+    succeededJobs.every(
+      (job) =>
+        job.attribution_complete &&
+        job.configured_provider === expectedProvider &&
+        job.effective_provider === expectedProvider,
+    );
+  const modelExact =
+    selection?.configured_model === 'qwen3.5:4b' &&
+    selection.effective_model === 'qwen3.5:4b' &&
+    jobsPresent &&
+    succeededJobs.every(
+      (job) =>
+        job.configured_model === 'qwen3.5:4b' &&
+        job.effective_model === 'qwen3.5:4b',
+    );
+  const noFallback =
+    selection?.fallback_reason === null &&
+    jobsPresent &&
+    succeededJobs.every((job) => job.fallback_reason === null);
+
+  return {
+    acceptance_lane_preference_exact:
+      reportedPreference === expectedPreference &&
+      selection?.preference === expectedPreference,
+    acceptance_lane_provider_exact: providerExact,
+    acceptance_lane_model_exact: modelExact,
+    acceptance_lane_no_fallback: noFallback,
+    acceptance_lane_fresh_run_isolation:
+      acceptanceIsolationPassed(isolationAtLaunch),
+    acceptance_lane_process_isolation:
+      !processBaseline.some(
+        (process) => process.name.toLowerCase() === 'flm.exe',
+      ) && resourcesReleasedPassed(resourcesReleased, expectedProvider),
+  };
+}
+
+function acceptanceIsolationPassed(
+  snapshot: AcceptanceIsolationSnapshot | undefined,
+): boolean {
+  return (
+    snapshot?.out_dir_created_by_runner === true &&
+    snapshot.app_data_dir_created_by_runner === true &&
+    snapshot.app_data_dir_empty_at_launch === true &&
+    snapshot.paths_within_workspace_run_root === true &&
+    snapshot.reparse_points_absent === true
+  );
 }
 
 function providerRoutingChecks(

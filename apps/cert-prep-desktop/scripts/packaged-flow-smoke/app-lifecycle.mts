@@ -1,6 +1,24 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { appendFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import {
+  appendFileSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+} from 'node:fs';
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { chromium } from 'playwright';
@@ -46,6 +64,16 @@ interface CleanupWithTimeoutOptions<T extends object> {
   timeoutMs: number;
   delayForTimeout?: (timeoutMs: number) => Promise<void>;
 }
+
+const ACCEPTANCE_ENV_PREFIXES = [
+  'cert_prep_',
+  'ollama_',
+  'fastflowlm_',
+  'flm_',
+  'webview2_',
+] as const;
+const ACCEPTANCE_REMOVED_ENV_NAMES = new Set(['no_proxy']);
+const ACCEPTANCE_LOOPBACK_NO_PROXY = 'localhost,127.0.0.1,::1';
 
 export function createCleanupWithTimeoutController<T extends object>({
   cleanup,
@@ -232,36 +260,7 @@ export async function restartAndVerifyPersistence(run: SmokeRunState): Promise<v
 }
 
 export async function launchAppAndConnect(run: SmokeRunState): Promise<void> {
-  const env = {
-    ...process.env,
-    WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${run.port}`,
-    CERT_PREP_DESKTOP_DATA_DIR: packagedAppDataDir(run.options.appDataDir),
-    CERT_PREP_BACKEND_LOG_DIR: run.options.outDir,
-    CERT_PREP_BACKEND_READY_TIMEOUT_SECS: '90',
-    CERT_PREP_LLM_PROVIDER: run.options.llmProvider,
-    CERT_PREP_OCR_PROVIDER: run.options.ocrProvider,
-    CERT_PREP_OCR_PAGE_WORKERS: String(run.options.ocrPageWorkers),
-    CERT_PREP_OLLAMA_MODEL: run.options.ollamaModel,
-    CERT_PREP_OLLAMA_FALLBACK_MODELS:
-      run.options.ollamaFallbackModels.join(','),
-    CERT_PREP_FASTFLOWLM_MODEL: run.options.ollamaModel,
-    CERT_PREP_FASTFLOWLM_FALLBACK_MODELS:
-      run.options.ollamaFallbackModels.join(','),
-    ...(run.options.streamingDraftPageLimit
-      ? {
-          CERT_PREP_STREAMING_DRAFT_GENERATION_PAGE_LIMIT: String(
-            run.options.streamingDraftPageLimit,
-          ),
-        }
-      : {}),
-    ...(run.options.streamingDraftWorkers
-      ? {
-          CERT_PREP_STREAMING_DRAFT_WORKERS: String(
-            run.options.streamingDraftWorkers,
-          ),
-        }
-      : {}),
-  };
+  const env = buildAppLaunchEnvironment(run);
   const child = spawn(run.options.exePath, [], {
     cwd: run.options.workspaceRoot,
     env,
@@ -305,6 +304,241 @@ export async function launchAppAndConnect(run: SmokeRunState): Promise<void> {
     60_000,
     'app shell loaded',
   );
+}
+
+export function buildAppLaunchEnvironment(
+  run: SmokeRunState,
+  inherited: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  const acceptanceLane = run.options.acceptanceLane ?? 'none';
+  const baseEnvironment = sanitizeInheritedLaunchEnvironment(
+    inherited,
+    acceptanceLane,
+  );
+  const appDataDir = launchAppDataDir(run);
+  return {
+    ...baseEnvironment,
+    ...(acceptanceLane === 'none'
+      ? {}
+      : {
+          NO_PROXY: ACCEPTANCE_LOOPBACK_NO_PROXY,
+          WEBVIEW2_USER_DATA_FOLDER: join(appDataDir, 'webview2'),
+        }),
+    WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${run.port}`,
+    CERT_PREP_DESKTOP_DATA_DIR: appDataDir,
+    CERT_PREP_BACKEND_LOG_DIR: run.options.outDir,
+    CERT_PREP_BACKEND_READY_TIMEOUT_SECS: '90',
+    CERT_PREP_LLM_PROVIDER: run.options.llmProvider,
+    CERT_PREP_OCR_PROVIDER: run.options.ocrProvider,
+    CERT_PREP_OCR_PAGE_WORKERS: String(run.options.ocrPageWorkers),
+    CERT_PREP_OLLAMA_MODEL: run.options.ollamaModel,
+    CERT_PREP_OLLAMA_FALLBACK_MODELS:
+      run.options.ollamaFallbackModels.join(','),
+    CERT_PREP_FASTFLOWLM_MODEL: run.options.ollamaModel,
+    CERT_PREP_FASTFLOWLM_FALLBACK_MODELS:
+      run.options.ollamaFallbackModels.join(','),
+    ...(run.options.streamingDraftPageLimit
+      ? {
+          CERT_PREP_STREAMING_DRAFT_GENERATION_PAGE_LIMIT: String(
+            run.options.streamingDraftPageLimit,
+          ),
+        }
+      : {}),
+    ...(run.options.streamingDraftWorkers
+      ? {
+          CERT_PREP_STREAMING_DRAFT_WORKERS: String(
+            run.options.streamingDraftWorkers,
+          ),
+        }
+      : {}),
+  };
+}
+
+export function sanitizeInheritedLaunchEnvironment(
+  inherited: Readonly<NodeJS.ProcessEnv>,
+  acceptanceLane: SmokeRunState['options']['acceptanceLane'],
+): NodeJS.ProcessEnv {
+  const entries = Object.entries(inherited).filter(
+    (entry): entry is [string, string] => entry[1] !== undefined,
+  );
+  if ((acceptanceLane ?? 'none') === 'none') {
+    return Object.fromEntries(entries);
+  }
+  return Object.fromEntries(
+    entries.filter(([name]) => {
+      const normalizedName = name.toLowerCase();
+      return (
+        !ACCEPTANCE_REMOVED_ENV_NAMES.has(normalizedName) &&
+        !ACCEPTANCE_ENV_PREFIXES.some((prefix) =>
+          normalizedName.startsWith(prefix),
+        )
+      );
+    }),
+  );
+}
+
+export function prepareRunDirectories(
+  run: SmokeRunState,
+  now: () => Date = () => new Date(),
+  hooks: {
+    readonly afterAppDataCreated?: (stagingAppDataDir: string) => void;
+  } = {},
+): void {
+  if ((run.options.acceptanceLane ?? 'none') === 'none') {
+    mkdirSync(run.options.outDir, { recursive: true });
+    return;
+  }
+
+  const workspaceRoot = resolve(run.options.workspaceRoot);
+  const runRoot = resolve(workspaceRoot, 'tmp', 'cert-prep-desktop');
+  const outDir = resolve(run.options.outDir);
+  const appDataDir = resolve(requiredAcceptanceAppDataDir(run));
+  const capturedAt = now().toISOString();
+
+  requireStrictDescendant(outDir, runRoot, 'Acceptance output directory');
+  requireStrictDescendant(
+    appDataDir,
+    outDir,
+    'Acceptance app-data directory',
+  );
+  if (!samePath(dirname(appDataDir), outDir)) {
+    throw new Error(
+      'Acceptance app-data directory must be a direct child of its fresh output directory.',
+    );
+  }
+
+  assertExistingPathSegmentsAreCanonical(workspaceRoot, dirname(outDir));
+  mkdirSync(dirname(outDir), { recursive: true });
+  assertExistingPathSegmentsAreCanonical(workspaceRoot, dirname(outDir));
+  if (existsSync(outDir)) {
+    throw new Error(
+      `Acceptance output directory must not exist before the run: ${outDir}`,
+    );
+  }
+
+  const stagingOutDir = join(
+    dirname(outDir),
+    `.${basename(outDir)}.preparing-${randomUUID()}`,
+  );
+  const stagingAppDataDir = join(stagingOutDir, basename(appDataDir));
+  let stagingCreated = false;
+  let committed = false;
+  try {
+    createFreshDirectory(stagingOutDir, 'Acceptance staging directory');
+    stagingCreated = true;
+    assertExistingPathSegmentsAreCanonical(workspaceRoot, stagingOutDir);
+    createFreshDirectory(
+      stagingAppDataDir,
+      'Acceptance staging app-data directory',
+    );
+    assertExistingPathSegmentsAreCanonical(workspaceRoot, stagingAppDataDir);
+    hooks.afterAppDataCreated?.(stagingAppDataDir);
+    if (readdirSync(stagingAppDataDir).length !== 0) {
+      throw new Error(
+        'Acceptance app-data directory was modified before atomic commit.',
+      );
+    }
+    renameSync(stagingOutDir, outDir);
+    committed = true;
+  } catch (error) {
+    if (stagingCreated && !committed) {
+      rmSync(stagingOutDir, { recursive: true, force: true });
+    }
+    throw error;
+  }
+
+  run.metrics.acceptance_isolation_at_launch = {
+    captured_at: capturedAt,
+    out_dir_created_by_runner: true,
+    app_data_dir_created_by_runner: true,
+    app_data_dir_empty_at_launch: true,
+    paths_within_workspace_run_root: true,
+    reparse_points_absent: true,
+  };
+}
+
+function launchAppDataDir(run: SmokeRunState): string {
+  if ((run.options.acceptanceLane ?? 'none') !== 'none') {
+    return packagedAppDataDir(requiredAcceptanceAppDataDir(run));
+  }
+  return packagedAppDataDir(run.options.appDataDir);
+}
+
+function requiredAcceptanceAppDataDir(run: SmokeRunState): string {
+  const appDataDir = run.options.appDataDir?.trim();
+  if (!appDataDir) {
+    throw new Error('Acceptance lane requires an explicit isolated app-data directory.');
+  }
+  return appDataDir;
+}
+
+function requireStrictDescendant(
+  child: string,
+  parent: string,
+  label: string,
+): void {
+  const childRelative = relative(parent, child);
+  if (
+    childRelative.length === 0 ||
+    childRelative === '..' ||
+    childRelative.startsWith(`..${sep}`) ||
+    isAbsolute(childRelative)
+  ) {
+    throw new Error(`${label} must stay under ${parent}.`);
+  }
+}
+
+function assertExistingPathSegmentsAreCanonical(
+  root: string,
+  target: string,
+): void {
+  requireStrictDescendant(target, dirname(root), 'Acceptance path');
+  const targetRelative = relative(root, target);
+  if (
+    targetRelative === '..' ||
+    targetRelative.startsWith(`..${sep}`) ||
+    isAbsolute(targetRelative)
+  ) {
+    throw new Error(`Acceptance path must stay under workspace root ${root}.`);
+  }
+
+  let current = root;
+  assertCanonicalDirectory(current);
+  for (const segment of targetRelative.split(sep).filter(Boolean)) {
+    current = join(current, segment);
+    if (existsSync(current)) {
+      assertCanonicalDirectory(current);
+    }
+  }
+}
+
+function assertCanonicalDirectory(path: string): void {
+  const stat = lstatSync(path);
+  const realPath = realpathSync.native(path);
+  if (stat.isSymbolicLink() || !samePath(realPath, resolve(path))) {
+    throw new Error(`Acceptance path must not traverse a reparse point: ${path}`);
+  }
+}
+
+function createFreshDirectory(path: string, label: string): void {
+  if (existsSync(path)) {
+    throw new Error(`${label} must not exist before the run: ${path}`);
+  }
+  try {
+    mkdirSync(path);
+  } catch (error) {
+    throw new Error(
+      `${label} could not be created atomically at ${path}: ${errorMessage(error)}`,
+    );
+  }
+}
+
+function samePath(left: string, right: string): boolean {
+  const normalize = (value: string): string => {
+    const normalized = resolve(value).replace(/[\\/]+$/, '');
+    return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+  };
+  return normalize(left) === normalize(right);
 }
 
 export async function startAcceptanceVideoForSmoke(

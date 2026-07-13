@@ -1,8 +1,13 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 import { parsePackagedFlowSmokeArgs } from './args.mts';
-import { cleanupAfterRunWithTimeout, launchAppAndConnect, restartAndVerifyPersistence } from './app-lifecycle.mts';
+import {
+  cleanupAfterRunWithTimeout,
+  launchAppAndConnect,
+  prepareRunDirectories,
+  restartAndVerifyPersistence,
+} from './app-lifecycle.mts';
 import {
   createAndEditQuestion,
   createProject,
@@ -178,7 +183,7 @@ export async function runPackagedFlowSmokeCli(argv: readonly string[] = process.
     streamingDraftCaptureOpen: false,
     streamingApiPollErrorCaptured: false,
   };
-  mkdirSync(run.options.outDir, { recursive: true });
+  prepareRunDirectories(run);
   const removeShutdownCleanup = installProcessShutdownCleanup({
     cleanup: async (reason, error) => {
       run.metrics.status = 'failed';

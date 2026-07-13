@@ -2,7 +2,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { DEFAULT_LLM_MODEL } from '../package-qa/constants.mts';
-import type { SmokeOptions } from './types.mts';
+import type { AcceptanceLane, SmokeOptions } from './types.mts';
 
 const DEFAULT_TARGET_TRIPLE = 'x86_64-pc-windows-msvc';
 const DEFAULT_OUT_ROOT = 'tmp/cert-prep-desktop/packaged-flow-smoke';
@@ -16,6 +16,8 @@ const DEFAULT_OCR_PROVIDER = 'windowsml';
 const DEFAULT_OCR_PAGE_WORKERS = 1;
 const DEFAULT_LLM_PROVIDER = 'auto';
 const DEFAULT_OLLAMA_FALLBACK_MODELS = ['qwen3.5:2b'];
+const ACCEPTANCE_LLM_MODEL = 'qwen3.5:4b';
+const ACCEPTANCE_LLM_FALLBACK_MODELS = ['qwen3.5:2b'] as const;
 const DEFAULT_STREAMING_COMPLETE_TIMEOUT_MS = 1_200_000;
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
@@ -57,6 +59,7 @@ export function parsePackagedFlowSmokeArgs(
       process.env.CERT_PREP_PACKAGE_SMOKE_LLM_FALLBACK_MODELS,
       DEFAULT_OLLAMA_FALLBACK_MODELS,
     ),
+    acceptanceLane: 'none',
     streamingDraftPageLimit: optionalPositiveInteger(
       process.env.CERT_PREP_PACKAGE_SMOKE_STREAMING_DRAFT_PAGE_LIMIT,
       'CERT_PREP_PACKAGE_SMOKE_STREAMING_DRAFT_PAGE_LIMIT',
@@ -115,6 +118,8 @@ export function parsePackagedFlowSmokeArgs(
       parsed.ollamaModel = nonEmptyString(readValue(arg), arg);
     } else if (arg === '--llm-fallback-models') {
       parsed.ollamaFallbackModels = stringList(readValue(arg), []);
+    } else if (arg === '--acceptance-lane') {
+      parsed.acceptanceLane = acceptanceLane(readValue(arg), arg);
     } else if (arg === '--streaming-draft-page-limit') {
       parsed.streamingDraftPageLimit = positiveInteger(Number(readValue(arg)), arg);
     } else if (arg === '--streaming-draft-workers') {
@@ -158,6 +163,7 @@ export function parsePackagedFlowSmokeArgs(
     parsed.streamingCompleteTimeoutMs,
     'streamingCompleteTimeoutMs',
   );
+  validateAcceptanceLane(parsed);
   if (parsed.waitForStreamingComplete && !outDirExplicit) {
     const outRoot = parsed.productionSummary
       ? DEFAULT_PRODUCTION_OUT_ROOT
@@ -213,6 +219,74 @@ function nonEmptyStringList(values: readonly string[], name: string): string[] {
     unique.add(trimmed);
   }
   return [...unique];
+}
+
+function acceptanceLane(value: string, name: string): AcceptanceLane {
+  const normalized = nonEmptyString(value, name).toLowerCase();
+  switch (normalized) {
+    case 'none':
+    case 'xdna2-fastflow':
+      return normalized;
+    default:
+      throw new Error(
+        `${name} must be one of: none, xdna2-fastflow.`,
+      );
+  }
+}
+
+function validateAcceptanceLane(options: SmokeOptions): void {
+  const lane = options.acceptanceLane ?? 'none';
+  if (lane === 'none') {
+    return;
+  }
+
+  requireAcceptanceLane(lane, options.productionSummary, '--production-summary');
+  requireAcceptanceLane(
+    lane,
+    options.ocrProvider === 'windowsml',
+    '--ocr-provider windowsml',
+  );
+  requireAcceptanceLane(
+    lane,
+    options.verifyStreamingPracticeReady,
+    '--verify-streaming-practice-ready',
+  );
+
+  requireAcceptanceLane(
+    lane,
+    options.llmProvider === 'auto',
+    '--llm-provider auto',
+  );
+  requireAcceptanceLane(
+    lane,
+    options.ollamaModel === ACCEPTANCE_LLM_MODEL,
+    `--llm-model ${ACCEPTANCE_LLM_MODEL}`,
+  );
+  requireAcceptanceLane(
+    lane,
+    sameStringList(options.ollamaFallbackModels, ACCEPTANCE_LLM_FALLBACK_MODELS),
+    `--llm-fallback-models ${ACCEPTANCE_LLM_FALLBACK_MODELS.join(',')} exactly`,
+  );
+}
+
+function requireAcceptanceLane(
+  lane: Exclude<AcceptanceLane, 'none'>,
+  condition: boolean,
+  requirement: string,
+): void {
+  if (!condition) {
+    throw new Error(`Acceptance lane "${lane}" requires ${requirement}.`);
+  }
+}
+
+function sameStringList(
+  actual: readonly string[],
+  expected: readonly string[],
+): boolean {
+  return (
+    actual.length === expected.length &&
+    actual.every((value, index) => value === expected[index])
+  );
 }
 
 function booleanEnv(value: string | undefined): boolean {
