@@ -23,25 +23,30 @@ export function buildValidResilienceEvidence(
   options: EvidenceFixtureOptions = {},
 ): Record<string, unknown> {
   const candidate = options.candidate ?? FIXTURE_CANDIDATE;
+  const startedAt = options.startedAt ?? '2026-07-11T01:00:01.100Z';
+  const completedAt = options.completedAt ?? '2026-07-11T01:00:03.900Z';
+  const commitStartedAt = new Date(
+    (Date.parse(startedAt) + Date.parse(completedAt)) / 2,
+  ).toISOString();
   return {
     schemaVersion: 2,
     check,
     passed: true,
     candidate,
     acceptanceRunId: options.acceptanceRunId ?? 'acceptance-run-0001',
-    startedAt: options.startedAt ?? '2026-07-11T01:00:01.100Z',
-    completedAt: options.completedAt ?? '2026-07-11T01:00:03.900Z',
+    startedAt,
+    completedAt,
     observations: [
       {
-        at: options.startedAt ?? '2026-07-11T01:00:01.100Z',
+        at: startedAt,
         event: `${check}.started`,
       },
       {
-        at: options.completedAt ?? '2026-07-11T01:00:03.900Z',
+        at: completedAt,
         event: `${check}.verified`,
       },
     ],
-    proof: validProof(check),
+    proof: validProof(check, commitStartedAt),
   };
 }
 
@@ -95,7 +100,10 @@ export function buildValidSessionRestartEvidence(
   };
 }
 
-function validProof(check: ResilienceCheck): Record<string, unknown> {
+function validProof(
+  check: ResilienceCheck,
+  commitStartedAt: string,
+): Record<string, unknown> {
   const projectId = 'project-1';
   const documentId = 'document-1';
   const operationId = 'operation-1';
@@ -160,15 +168,39 @@ function validProof(check: ResilienceCheck): Record<string, unknown> {
     };
   }
   if (check === 'draft') {
-    return cancellationProof(projectId, documentId, operationId, cancel, terminal);
-  }
-  if (check === 'runtime' || check === 'model') {
     return cancellationProof(
-      undefined,
-      undefined,
+      {
+        projectId,
+        documentId,
+        provider: 'fake',
+        model: 'fixture-draft-model',
+      },
+      operationId,
+      cancel,
+      terminal,
+      commitStartedAt,
+    );
+  }
+  if (check === 'runtime') {
+    return cancellationProof(
+      {
+        kind: 'windowsml_ocr',
+        provider: 'windowsml',
+        model: 'fixture-runtime-model',
+      },
       operationId,
       operation(operationId, 'cancel_requested', 'canceling', false),
       operation(operationId, 'canceled', 'canceled', false),
+      commitStartedAt,
+    );
+  }
+  if (check === 'model') {
+    return cancellationProof(
+      { provider: 'ollama', model: 'qwen3.5:4b' },
+      operationId,
+      operation(operationId, 'cancel_requested', 'canceling', false),
+      operation(operationId, 'canceled', 'canceled', false),
+      commitStartedAt,
     );
   }
   if (check === 'cancelVsCompleteRace') {
@@ -230,24 +262,49 @@ function validProof(check: ResilienceCheck): Record<string, unknown> {
 }
 
 function cancellationProof(
-  projectId: string | undefined,
-  documentId: string | undefined,
+  scope: {
+    readonly projectId?: string;
+    readonly documentId?: string;
+    readonly kind?: string;
+    readonly provider: string;
+    readonly model: string;
+  },
   operationId: string,
   cancelResponse: Record<string, unknown>,
   terminalResponse: Record<string, unknown>,
+  commitStartedAt: string,
 ): Record<string, unknown> {
+  const responseScope = {
+    ...(scope.projectId ? { project_id: scope.projectId } : {}),
+    ...(scope.documentId ? { document_id: scope.documentId } : {}),
+    ...(scope.kind ? { kind: scope.kind } : {}),
+    provider: scope.provider,
+    model: scope.model,
+  };
   return {
-    ...(projectId ? { projectId } : {}),
-    ...(documentId ? { documentId } : {}),
+    ...(scope.projectId ? { projectId: scope.projectId } : {}),
+    ...(scope.documentId ? { documentId: scope.documentId } : {}),
+    ...(scope.kind ? { kind: scope.kind } : {}),
+    provider: scope.provider,
+    model: scope.model,
     operationId,
-    cancelResponse,
-    terminalResponse,
+    cancelResponse: { ...cancelResponse, ...responseScope },
+    terminalResponse: { ...terminalResponse, ...responseScope },
     nonCancellableResponse: {
       operationId: 'operation-commit',
-      phase: 'committing',
-      cancellable: false,
-      httpStatus: 409,
-      errorCode: 'operation_not_cancellable',
+      commitStartedAt,
+      observedResponse: {
+        id: 'operation-commit',
+        status: 'running',
+        phase: 'committing',
+        cancellable: false,
+        commit_started_at: commitStartedAt,
+        ...responseScope,
+      },
+      rejectionResponse: {
+        status: 409,
+        body: { code: 'operation_not_cancellable' },
+      },
     },
   };
 }

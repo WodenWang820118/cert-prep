@@ -11,15 +11,33 @@ import {
 
 export type CancelableOperationKind = 'draft' | 'runtime' | 'model';
 
-export interface CancelableOperationScenario {
+interface CancelableOperationScenarioBase {
   readonly kind: CancelableOperationKind;
   readonly startPath: string;
   readonly operationPath: (operationId: string) => string;
   readonly startData?: unknown;
-  readonly projectId?: string;
-  readonly documentId?: string;
   readonly timeoutMs: number;
 }
+
+export type CancelableOperationScenario =
+  | (CancelableOperationScenarioBase & {
+      readonly kind: 'draft';
+      readonly projectId: string;
+      readonly documentId: string;
+      readonly provider: string;
+      readonly model: string;
+    })
+  | (CancelableOperationScenarioBase & {
+      readonly kind: 'runtime';
+      readonly operationKind: string;
+      readonly provider: string;
+      readonly model: string;
+    })
+  | (CancelableOperationScenarioBase & {
+      readonly kind: 'model';
+      readonly provider: string;
+      readonly model: string;
+    });
 
 export async function runCancelableOperationScenario(
   transport: JsonTransport,
@@ -84,20 +102,48 @@ export async function runCancelableOperationScenario(
     `${scenario.kind} commit operation id`,
   );
   const commitPath = scenario.operationPath(commitOperationId);
-  const committing = exactOperation(
+  const commitObserved = exactOperation(
     await pollJson(
       transport,
       commitPath,
-      (body) => body.phase === 'committing' && body.cancellable === false,
+      (body) => {
+        const scoped = exactOperation(
+          body,
+          scenario,
+          commitOperationId,
+        );
+        return optionalCommitStartedAt(
+          scoped.commit_started_at,
+          `${scenario.kind} commit_started_at`,
+        ) !== null;
+      },
       {
         timeoutMs: scenario.timeoutMs,
-        intervalMs: 25,
-        label: `${scenario.kind} committing phase`,
+        label: `${scenario.kind} durable commit transition`,
       },
     ),
     scenario,
     commitOperationId,
   );
+  const commitStartedAt = optionalCommitStartedAt(
+    commitObserved.commit_started_at,
+    `${scenario.kind} commit_started_at`,
+  );
+  if (commitStartedAt === null) {
+    throw new Error(`${scenario.kind} commit transition was not persisted.`);
+  }
+  const commitPhase = stringField(
+    commitObserved.phase,
+    `${scenario.kind} committed response phase`,
+  );
+  if (
+    !['committing', 'completed'].includes(commitPhase) ||
+    commitObserved.cancellable !== false
+  ) {
+    throw new Error(
+      `${scenario.kind} durable commit response was not non-cancellable.`,
+    );
+  }
   const rejection = await transport.request('DELETE', commitPath);
   requireApiErrorCode(
     rejection,
@@ -107,17 +153,15 @@ export async function runCancelableOperationScenario(
   );
 
   return {
-    ...(scenario.projectId ? { projectId: scenario.projectId } : {}),
-    ...(scenario.documentId ? { documentId: scenario.documentId } : {}),
+    ...proofScope(scenario),
     operationId,
     cancelResponse,
     terminalResponse,
     nonCancellableResponse: {
       operationId: commitOperationId,
-      phase: committing.phase,
-      cancellable: committing.cancellable,
-      httpStatus: rejection.status,
-      errorCode: 'operation_not_cancellable',
+      commitStartedAt,
+      observedResponse: commitObserved,
+      rejectionResponse: rejection,
     },
   };
 }
@@ -127,39 +171,73 @@ function exactOperation(
   scenario: CancelableOperationScenario,
   expectedOperationId?: string,
 ): Record<string, unknown> {
-  const value = {
-    id: stringField(body.id, `${scenario.kind} response id`),
-    status: stringField(body.status, `${scenario.kind} response status`),
-    phase: stringField(body.phase, `${scenario.kind} response phase`),
-    cancellable: booleanField(
-      body.cancellable,
-      `${scenario.kind} response cancellable`,
-    ),
-    ...(body.project_id === undefined
-      ? {}
-      : {
-          project_id: stringField(
-            body.project_id,
-            `${scenario.kind} response project_id`,
-          ),
-        }),
-    ...(body.document_id === undefined
-      ? {}
-      : {
-          document_id: stringField(
-            body.document_id,
-            `${scenario.kind} response document_id`,
-          ),
-        }),
-  };
+  const operationId = stringField(body.id, `${scenario.kind} response id`);
+  stringField(body.status, `${scenario.kind} response status`);
+  stringField(body.phase, `${scenario.kind} response phase`);
+  booleanField(body.cancellable, `${scenario.kind} response cancellable`);
+  optionalCommitStartedAt(
+    body.commit_started_at,
+    `${scenario.kind} response commit_started_at`,
+  );
   if (
-    (expectedOperationId !== undefined && value.id !== expectedOperationId) ||
-    (scenario.projectId !== undefined &&
-      value.project_id !== scenario.projectId) ||
-    (scenario.documentId !== undefined &&
-      value.document_id !== scenario.documentId)
+    expectedOperationId !== undefined &&
+    operationId !== expectedOperationId
   ) {
     throw new Error(`${scenario.kind} response scope did not match the request.`);
   }
-  return value;
+  assertOperationScope(body, scenario);
+  return body;
+}
+
+function assertOperationScope(
+  body: Record<string, unknown>,
+  scenario: CancelableOperationScenario,
+): void {
+  const provider = stringField(
+    body.provider,
+    `${scenario.kind} response provider`,
+  );
+  const model = stringField(body.model, `${scenario.kind} response model`);
+  const matchesCommonScope =
+    provider === scenario.provider && model === scenario.model;
+  const matchesKindScope =
+    scenario.kind !== 'runtime' ||
+    stringField(body.kind, 'runtime response kind') === scenario.operationKind;
+  const matchesDocumentScope =
+    scenario.kind !== 'draft' ||
+    (stringField(body.project_id, 'draft response project_id') ===
+      scenario.projectId &&
+      stringField(body.document_id, 'draft response document_id') ===
+        scenario.documentId);
+  if (!matchesCommonScope || !matchesKindScope || !matchesDocumentScope) {
+    throw new Error(`${scenario.kind} response scope did not match the request.`);
+  }
+}
+
+function optionalCommitStartedAt(value: unknown, label: string): string | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  const normalized = stringField(value, label);
+  if (!Number.isFinite(Date.parse(normalized))) {
+    throw new Error(`${label} must be a valid timestamp.`);
+  }
+  return normalized;
+}
+
+function proofScope(
+  scenario: CancelableOperationScenario,
+): Record<string, string> {
+  const common = { provider: scenario.provider, model: scenario.model };
+  if (scenario.kind === 'draft') {
+    return {
+      ...common,
+      projectId: scenario.projectId,
+      documentId: scenario.documentId,
+    };
+  }
+  if (scenario.kind === 'runtime') {
+    return { ...common, kind: scenario.operationKind };
+  }
+  return common;
 }

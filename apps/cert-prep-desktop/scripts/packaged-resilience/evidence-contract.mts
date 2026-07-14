@@ -73,6 +73,19 @@ interface OperationSnapshot {
   readonly cancellable: boolean;
   readonly projectId?: string;
   readonly documentId?: string | null;
+  readonly kind?: string;
+  readonly provider?: string;
+  readonly model?: string;
+  readonly commitStartedAt?: string | null;
+}
+
+interface EvidenceWindow {
+  readonly startedAt: number;
+  readonly completedAt: number;
+}
+
+interface ValidatedEnvelope extends EvidenceWindow {
+  readonly detail: Record<string, unknown>;
 }
 
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -86,8 +99,9 @@ export function validateResilienceEvidence(
   expectedCheck: ResilienceCheck,
   context: EvidenceValidationContext = {},
 ): ResilienceEvidence {
-  const detail = validateEnvelope(value, expectedCheck, context);
-  validateCheckProof(expectedCheck, detail.proof);
+  const envelope = validateEnvelope(value, expectedCheck, context);
+  validateCheckProof(expectedCheck, envelope.detail.proof, envelope);
+  const { detail } = envelope;
   return detail as unknown as ResilienceEvidence;
 }
 
@@ -95,7 +109,7 @@ export function validateSessionRestartEvidence(
   value: unknown,
   context: EvidenceValidationContext = {},
 ): SessionRestartEvidence {
-  const detail = validateEnvelope(value, 'sessionRestart', context);
+  const { detail } = validateEnvelope(value, 'sessionRestart', context);
   validateSessionRestartProof(detail.proof);
   return detail as unknown as SessionRestartEvidence;
 }
@@ -104,7 +118,7 @@ function validateEnvelope(
   value: unknown,
   expectedCheck: ResilienceCheck | 'sessionRestart',
   context: EvidenceValidationContext,
-): Record<string, unknown> {
+): ValidatedEnvelope {
   const detail = record(value, `${expectedCheck} evidence`);
   if (
     detail.schemaVersion !== RESILIENCE_EVIDENCE_SCHEMA_VERSION ||
@@ -148,7 +162,7 @@ function validateEnvelope(
     expectedCheck,
   );
   record(detail.proof, `${expectedCheck} proof`);
-  return detail;
+  return { detail, startedAt, completedAt };
 }
 
 function validateCandidate(
@@ -249,6 +263,7 @@ function validateObservations(
 function validateCheckProof(
   check: ResilienceCheck,
   rawProof: unknown,
+  window: EvidenceWindow,
 ): void {
   const proof = record(rawProof, `${check} proof`);
   switch (check) {
@@ -259,11 +274,11 @@ function validateCheckProof(
       validateOcrProof(proof);
       return;
     case 'draft':
-      validateScopedCancellationProof(proof, check, true);
+      validateScopedCancellationProof(proof, check, window);
       return;
     case 'runtime':
     case 'model':
-      validateScopedCancellationProof(proof, check, false);
+      validateScopedCancellationProof(proof, check, window);
       return;
     case 'cancelVsCompleteRace':
       validateRaceProof(proof);
@@ -363,41 +378,84 @@ function validateOcrProof(proof: Record<string, unknown>): void {
 function validateScopedCancellationProof(
   proof: Record<string, unknown>,
   check: 'draft' | 'runtime' | 'model',
-  documentScoped: boolean,
+  window: EvidenceWindow,
 ): void {
-  const projectId = documentScoped
+  const projectId = check === 'draft'
     ? scopedId(proof.projectId, check, 'projectId')
     : undefined;
-  const documentId = documentScoped
+  const documentId = check === 'draft'
     ? scopedId(proof.documentId, check, 'documentId')
     : undefined;
+  const kind = check === 'runtime'
+    ? nonEmptyString(proof.kind, check, 'kind')
+    : undefined;
+  const provider = nonEmptyString(proof.provider, check, 'provider');
+  const model = nonEmptyString(proof.model, check, 'model');
+  const expectedScope = { projectId, documentId, kind, provider, model };
   const operationId = operationIdField(proof.operationId, check, 'operationId');
   const cancel = operationSnapshot(proof.cancelResponse, check, {
-    projectId,
-    documentId,
+    ...expectedScope,
     operationId,
     statuses: ['cancel_requested', 'canceled'],
   });
   const terminal = operationSnapshot(proof.terminalResponse, check, {
-    projectId,
-    documentId,
+    ...expectedScope,
     operationId,
     statuses: ['canceled'],
   });
-  const rejection = record(proof.nonCancellableResponse, `${check} non-cancellable response`);
-  const rejectionOperationId = operationIdField(
-    rejection.operationId,
+  const nonCancellable = record(
+    proof.nonCancellableResponse,
+    `${check} non-cancellable response`,
+  );
+  const commitOperationId = operationIdField(
+    nonCancellable.operationId,
     check,
     'nonCancellableResponse.operationId',
   );
+  const commitStartedAtText = nonEmptyString(
+    nonCancellable.commitStartedAt,
+    check,
+    'nonCancellableResponse.commitStartedAt',
+  );
+  const commitStartedAt = timestamp(
+    commitStartedAtText,
+    check,
+    'nonCancellableResponse.commitStartedAt',
+  );
+  const observed = operationSnapshot(
+    nonCancellable.observedResponse,
+    check,
+    {
+      ...expectedScope,
+      operationId: commitOperationId,
+      statuses: ['running', 'succeeded'],
+    },
+  );
+  const rejection = record(
+    nonCancellable.rejectionResponse,
+    `${check} rejection response`,
+  );
+  const rejectionBody = record(
+    rejection.body,
+    `${check} rejection response body`,
+  );
+  const rejectionDetail =
+    typeof rejectionBody.detail === 'object' &&
+    rejectionBody.detail !== null &&
+    !Array.isArray(rejectionBody.detail)
+      ? record(rejectionBody.detail, `${check} rejection detail`)
+      : rejectionBody;
   if (
     cancel.cancellable !== false ||
     terminal.cancellable !== false ||
-    rejectionOperationId.length === 0 ||
-    rejection.phase !== 'committing' ||
-    rejection.cancellable !== false ||
-    rejection.httpStatus !== 409 ||
-    rejection.errorCode !== 'operation_not_cancellable'
+    commitOperationId === operationId ||
+    commitStartedAt < window.startedAt ||
+    commitStartedAt > window.completedAt ||
+    observed.commitStartedAt !== commitStartedAtText ||
+    !['committing', 'completed'].includes(observed.phase) ||
+    observed.cancellable !== false ||
+    rejection.status !== 409 ||
+    (rejectionDetail.code ?? rejectionBody.code) !== 'operation_not_cancellable'
   ) {
     fail(check, 'cancel or non-cancellable commit evidence is incomplete');
   }
@@ -543,6 +601,9 @@ function operationSnapshot(
     readonly statuses: readonly string[];
     readonly projectId?: string;
     readonly documentId?: string | null;
+    readonly kind?: string;
+    readonly provider?: string;
+    readonly model?: string;
   },
 ): OperationSnapshot {
   const value = record(raw, `${check} operation response`);
@@ -565,12 +626,35 @@ function operationSnapshot(
             ),
           }
         : {}),
+    ...(value.kind !== undefined
+      ? { kind: nonEmptyString(value.kind, check, 'response.kind') }
+      : {}),
+    ...(value.provider !== undefined
+      ? { provider: nonEmptyString(value.provider, check, 'response.provider') }
+      : {}),
+    ...(value.model !== undefined
+      ? { model: nonEmptyString(value.model, check, 'response.model') }
+      : {}),
+    ...(value.commit_started_at === null
+      ? { commitStartedAt: null }
+      : value.commit_started_at !== undefined
+        ? {
+            commitStartedAt: timestampText(
+              value.commit_started_at,
+              check,
+              'response.commit_started_at',
+            ),
+          }
+        : {}),
   };
   if (
     snapshot.id !== expected.operationId ||
     !expected.statuses.includes(snapshot.status) ||
     (expected.projectId !== undefined && snapshot.projectId !== expected.projectId) ||
-    (expected.documentId !== undefined && snapshot.documentId !== expected.documentId)
+    (expected.documentId !== undefined && snapshot.documentId !== expected.documentId) ||
+    (expected.kind !== undefined && snapshot.kind !== expected.kind) ||
+    (expected.provider !== undefined && snapshot.provider !== expected.provider) ||
+    (expected.model !== undefined && snapshot.model !== expected.model)
   ) {
     fail(check, 'operation response scope or terminal state does not match');
   }
@@ -627,12 +711,17 @@ function booleanField(value: unknown, check: string, field: string): boolean {
 }
 
 function timestamp(value: unknown, check: string, field: string): number {
-  const normalized = nonEmptyString(value, check, field);
+  const normalized = timestampText(value, check, field);
   const parsed = Date.parse(normalized);
-  if (!Number.isFinite(parsed)) {
+  return parsed;
+}
+
+function timestampText(value: unknown, check: string, field: string): string {
+  const normalized = nonEmptyString(value, check, field);
+  if (!Number.isFinite(Date.parse(normalized))) {
     fail(check, `${field} must be an ISO timestamp`);
   }
-  return parsed;
+  return normalized;
 }
 
 function positiveInteger(value: unknown): number {

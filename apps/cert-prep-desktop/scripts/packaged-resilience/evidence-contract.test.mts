@@ -141,10 +141,14 @@ test('partial cleanup requires chunks and every derived metric to remain zero', 
   );
 });
 
-test('draft/runtime/model cancellation requires a real 409 committing-phase response', () => {
+test('draft/runtime/model cancellation requires durable exact commit evidence and a real 409', () => {
   for (const check of ['draft', 'runtime', 'model'] as const) {
     const evidence = validEvidence(check);
     const proof = evidence.proof as Record<string, unknown>;
+    const nonCancellableResponse = proof.nonCancellableResponse as Record<
+      string,
+      unknown
+    >;
     assert.throws(
       () =>
         validateResilienceEvidence(
@@ -153,8 +157,11 @@ test('draft/runtime/model cancellation requires a real 409 committing-phase resp
             proof: {
               ...proof,
               nonCancellableResponse: {
-                ...(proof.nonCancellableResponse as object),
-                httpStatus: 200,
+                ...nonCancellableResponse,
+                rejectionResponse: {
+                  status: 200,
+                  body: { code: 'operation_not_cancellable' },
+                },
               },
             },
           },
@@ -163,7 +170,85 @@ test('draft/runtime/model cancellation requires a real 409 committing-phase resp
         ),
       /non-cancellable commit evidence/,
     );
+    assert.throws(
+      () =>
+        validateResilienceEvidence(
+          {
+            ...evidence,
+            proof: {
+              ...proof,
+              nonCancellableResponse: {
+                ...nonCancellableResponse,
+                commitStartedAt: '2026-07-14T00:00:10.000Z',
+              },
+            },
+          },
+          check,
+          context,
+        ),
+      /non-cancellable commit evidence/,
+    );
+    const observedResponse = nonCancellableResponse.observedResponse as Record<
+      string,
+      unknown
+    >;
+    assert.throws(
+      () =>
+        validateResilienceEvidence(
+          {
+            ...evidence,
+            proof: {
+              ...proof,
+              nonCancellableResponse: {
+                ...nonCancellableResponse,
+                observedResponse: {
+                  ...observedResponse,
+                  id: 'operation-other',
+                },
+              },
+            },
+          },
+          check,
+          context,
+        ),
+      /scope or terminal state/,
+    );
   }
+});
+
+test('durable non-cancellable proof may be observed after commit completed', () => {
+  const evidence = validEvidence('runtime');
+  const proof = evidence.proof as Record<string, unknown>;
+  const nonCancellableResponse = proof.nonCancellableResponse as Record<
+    string,
+    unknown
+  >;
+  const observedResponse = nonCancellableResponse.observedResponse as Record<
+    string,
+    unknown
+  >;
+
+  assert.equal(
+    validateResilienceEvidence(
+      {
+        ...evidence,
+        proof: {
+          ...proof,
+          nonCancellableResponse: {
+            ...nonCancellableResponse,
+            observedResponse: {
+              ...observedResponse,
+              status: 'succeeded',
+              phase: 'completed',
+            },
+          },
+        },
+      },
+      'runtime',
+      context,
+    ).check,
+    'runtime',
+  );
 });
 
 test('race, crash recovery, and process residue cannot pass from one terminal sample', () => {
@@ -393,17 +478,30 @@ function validProof(check: ResilienceCheck): Record<string, unknown> {
       };
     case 'draft':
       return scopedCancellation(
-        projectId,
-        documentId,
+        {
+          projectId,
+          documentId,
+          provider: 'fake',
+          model: 'fixture-draft-model',
+        },
         operationId,
         cancelResponse,
         terminalResponse,
       );
     case 'runtime':
+      return scopedCancellation(
+        {
+          kind: 'windowsml_ocr',
+          provider: 'windowsml',
+          model: 'fixture-runtime-model',
+        },
+        operationId,
+        operation(operationId, 'cancel_requested', 'canceling', false),
+        operation(operationId, 'canceled', 'canceled', false),
+      );
     case 'model':
       return scopedCancellation(
-        undefined,
-        undefined,
+        { provider: 'ollama', model: 'qwen3.5:4b' },
         operationId,
         operation(operationId, 'cancel_requested', 'canceling', false),
         operation(operationId, 'canceled', 'canceled', false),
@@ -466,24 +564,49 @@ function validProof(check: ResilienceCheck): Record<string, unknown> {
 }
 
 function scopedCancellation(
-  projectId: string | undefined,
-  documentId: string | undefined,
+  scope: {
+    readonly projectId?: string;
+    readonly documentId?: string;
+    readonly kind?: string;
+    readonly provider: string;
+    readonly model: string;
+  },
   operationId: string,
   cancelResponse: Record<string, unknown>,
   terminalResponse: Record<string, unknown>,
 ): Record<string, unknown> {
+  const responseScope = {
+    ...(scope.projectId ? { project_id: scope.projectId } : {}),
+    ...(scope.documentId ? { document_id: scope.documentId } : {}),
+    ...(scope.kind ? { kind: scope.kind } : {}),
+    provider: scope.provider,
+    model: scope.model,
+  };
+  const commitStartedAt = '2026-07-14T00:00:05.000Z';
   return {
-    ...(projectId ? { projectId } : {}),
-    ...(documentId ? { documentId } : {}),
+    ...(scope.projectId ? { projectId: scope.projectId } : {}),
+    ...(scope.documentId ? { documentId: scope.documentId } : {}),
+    ...(scope.kind ? { kind: scope.kind } : {}),
+    provider: scope.provider,
+    model: scope.model,
     operationId,
-    cancelResponse,
-    terminalResponse,
+    cancelResponse: { ...cancelResponse, ...responseScope },
+    terminalResponse: { ...terminalResponse, ...responseScope },
     nonCancellableResponse: {
       operationId: 'operation-commit',
-      phase: 'committing',
-      cancellable: false,
-      httpStatus: 409,
-      errorCode: 'operation_not_cancellable',
+      commitStartedAt,
+      observedResponse: {
+        id: 'operation-commit',
+        status: 'running',
+        phase: 'committing',
+        cancellable: false,
+        commit_started_at: commitStartedAt,
+        ...responseScope,
+      },
+      rejectionResponse: {
+        status: 409,
+        body: { code: 'operation_not_cancellable' },
+      },
     },
   };
 }
