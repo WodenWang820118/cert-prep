@@ -23,6 +23,31 @@
           {
             "glob": "**/*",
             "input": "apps/cert-prep/public"
+          },
+          {
+            "glob": "README.md",
+            "input": ".",
+            "output": "legal"
+          },
+          {
+            "glob": "PRIVACY.md",
+            "input": ".",
+            "output": "legal"
+          },
+          {
+            "glob": "LICENSE",
+            "input": ".",
+            "output": "legal"
+          },
+          {
+            "glob": "THIRD_PARTY_NOTICES.md",
+            "input": ".",
+            "output": "legal"
+          },
+          {
+            "glob": "CHANGELOG.md",
+            "input": ".",
+            "output": "legal"
           }
         ],
         "styles": ["apps/cert-prep/src/styles.css"]
