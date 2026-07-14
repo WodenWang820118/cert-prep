@@ -14,7 +14,9 @@ telemetry, and artifact-backed QA evidence for packaged desktop flows.
 - OCR runtime process: `cert-prep-ocr-windowsml-runtime.exe`.
 - OCR device goal: WindowsML-loaded AMD iGPU, with CPU fallback kept visible in
   health/evidence when unsupported operators require it.
-- LLM provider: `fastflowlm`.
+- LLM provider policy: `auto`; compatible XDNA2 systems prefer `fastflowlm`,
+  while unsupported hardware, an old driver, or declined FastFlow terms routes
+  onboarding to `ollama`.
 - LLM model: `qwen3.5:4b`, with `qwen3.5:2b` as the explicit fallback model.
 - Direct CLI test target:
   `pnpm nx run cert-prep-backend:streaming-cli-test`.
@@ -32,24 +34,24 @@ product-ready.
 
 OCR nodes:
 
-| Platform | Node ID | Status | Accelerator | Distribution |
-| --- | --- | --- | --- | --- |
-| Windows | `windowsml` | default | WindowsML-loaded AMD iGPU, CPU fallback visible | zip package extraction to local runtime dir |
-| Windows | `paddle` | override/debug | CUDA dGPU or CPU fallback | custom zip package or pip dependency |
-| macOS | `paddle` | deferred default candidate | CPU first, MPS/Metal deferred | platform zip package or local virtualenv |
-| Linux | `paddle` | deferred default candidate | CUDA dGPU or CPU fallback, ROCm deferred | platform zip package or AppImage resource |
+| Platform | Node ID     | Status                     | Accelerator                                     | Distribution                                |
+| -------- | ----------- | -------------------------- | ----------------------------------------------- | ------------------------------------------- |
+| Windows  | `windowsml` | default                    | WindowsML-loaded AMD iGPU, CPU fallback visible | zip package extraction to local runtime dir |
+| Windows  | `paddle`    | override/debug             | CUDA dGPU or CPU fallback                       | custom zip package or pip dependency        |
+| macOS    | `paddle`    | deferred default candidate | CPU first, MPS/Metal deferred                   | platform zip package or local virtualenv    |
+| Linux    | `paddle`    | deferred default candidate | CUDA dGPU or CPU fallback, ROCm deferred        | platform zip package or AppImage resource   |
 
 LLM nodes:
 
-| Platform | Provider | Target model | Status | Accelerator |
-| --- | --- | --- | --- | --- |
-| Windows | `fastflowlm` | `qwen3.5:4b` | default | OpenAI-compatible local server |
-| Windows | `ollama` | `qwen3.5:4b` | override | local Ollama |
-| Windows | `ollama` | `qwen3.5:9b` | hardware-gated override | local Ollama |
-| macOS | `ollama` | `qwen3.5:4b` | deferred default candidate | Apple Silicon GPU/CPU |
-| macOS | `ollama` | `qwen3.5:9b` | hardware-gated override | Apple Silicon GPU/CPU |
-| Linux | `ollama` | `qwen3.5:4b` | deferred default candidate | Nvidia CUDA/CPU |
-| Linux | `ollama` | `qwen3.5:9b` | hardware-gated override | Nvidia CUDA/CPU |
+| Platform | Provider     | Target model | Status                     | Accelerator                    |
+| -------- | ------------ | ------------ | -------------------------- | ------------------------------ |
+| Windows  | `fastflowlm` | `qwen3.5:4b` | default                    | OpenAI-compatible local server |
+| Windows  | `ollama`     | `qwen3.5:4b` | override                   | local Ollama                   |
+| Windows  | `ollama`     | `qwen3.5:9b` | hardware-gated override    | local Ollama                   |
+| macOS    | `ollama`     | `qwen3.5:4b` | deferred default candidate | Apple Silicon GPU/CPU          |
+| macOS    | `ollama`     | `qwen3.5:9b` | hardware-gated override    | Apple Silicon GPU/CPU          |
+| Linux    | `ollama`     | `qwen3.5:4b` | deferred default candidate | Nvidia CUDA/CPU                |
+| Linux    | `ollama`     | `qwen3.5:9b` | hardware-gated override    | Nvidia CUDA/CPU                |
 
 Fallback policy:
 
@@ -119,8 +121,62 @@ bounded local workers.
 
 ## Reasoning Decisions
 
-- FastFlowLM is the current Windows reasoning provider and is treated as an
-  OpenAI-compatible local server path.
+### Public Alpha Provider And Evidence Contract (2026-07-11)
+
+- One shared runtime policy owns `auto`, the `qwen3.5:4b` primary model, and
+  the `qwen3.5:2b` low-resource fallback. Backend selection is authoritative;
+  Angular consumes the provider-selection API and packaged scripts consume
+  generated release metadata instead of copying defaults.
+- Auto-selection does not silently hide missing dependencies. Compatible
+  XDNA2 hardware with a missing FastFlow runtime/model remains selected for
+  explicit onboarding. Unsupported hardware, an unsupported driver, or
+  declined upstream terms selects Ollama. A generation failure never switches
+  providers inside the same job; the failed job remains attributed and the UI
+  offers an explicit provider change.
+- App-managed FastFlow installation is pinned to official v0.9.43: 18,577,840
+  bytes, SHA-256
+  `0b0ec2c049222bba8e15f1d4d7093f89f2f25a6beeddd03bdb1fcac69002315e`,
+  signer thumbprint `EBD8F43D1208A9F34CEC082CE94AD98D67BB2FF9`, and a valid timestamped
+  Authenticode signature. Unallowlisted executables and arbitrary PATH/cwd
+  resolution fail closed.
+- Existing draft job `provider` and `model` fields mean configured values.
+  Persisted `effective_provider`, `effective_model`, and `fallback_reason`
+  record what actually generated output. Draft inserts, attribution, and job
+  success commit atomically.
+- Post-job provider health is not generation proof because an owned FastFlow
+  server is deliberately released after a job. Production evidence records
+  readiness at generation start, effective provider/model, fallback reason,
+  and resource release separately.
+- `MOCK ITEMS` and practice readiness use one definition: distinct editable
+  questions in the selected scope with valid choices and an answer. Full Exam
+  and packaged summaries use the same query.
+
+### Public Alpha Recovery And Cancellation Contract (2026-07-11)
+
+- Migration 15 gives practice sessions `active`, `completed`, and `abandoned`
+  lifecycle semantics, backfills completed sessions from distinct answered
+  questions, and enforces one active session per project. Angular restores the
+  ordered attempts and requires an explicit Resume or two-step Abandon choice.
+- Migration 16 preserves configured draft provider/model and adds effective
+  attribution. Migrations 17 and 18 persist upload/OCR and automatic/manual
+  draft operations. Migration 19 persists runtime/model installation jobs so
+  cancel and crash recovery are not process-memory-only states.
+- Long work uses `queued -> running -> cancel_requested -> canceled`; terminal
+  states are irreversible. The cancel/success race is decided under the owning
+  lock/transaction, and draft inserts plus success commit atomically.
+- Uploads carry `X-Cert-Prep-Operation-Id` so a pre-response AbortController
+  cancellation leaves a server-side tombstone. OCR cancellation preserves the
+  source PDF for Retry while removing partial chunks/metrics and suppressing
+  draft enqueue. Owned runtime/model/helper processes are terminated by process
+  tree; non-cancellable commit phases are reported honestly.
+- Polling retries transient failures after 1, 2, and 4 seconds. Exhaustion
+  stops the spinner and exposes an actionable Retry state; stale responses may
+  not overwrite a newer cancel/retry operation.
+
+- On compatible XDNA2 Windows systems, FastFlowLM is the preferred reasoning
+  provider and is treated as an OpenAI-compatible local server path. The
+  authoritative `auto` policy routes unsupported hardware, old drivers, or
+  declined FastFlow terms to Ollama onboarding.
 - FastFlowLM is used through its OpenAI-compatible server instead of shelling
   out per prompt. Server mode matches the streaming job and health-check
   architecture.
@@ -217,8 +273,9 @@ after the WindowsML desktop package is built:
 - Process cleanup reports graceful close where possible and no residual smoke
   processes after final close.
 
-Recorded production evidence is optional unless the recorded production target
-is used. `cert-prep-desktop:packaged-streaming-production-recorded-windowsml`
+Recorded production evidence is optional for local development unless the
+recorded production target is used; public Alpha hardware acceptance always
+requires a recording. `cert-prep-desktop:packaged-streaming-production-recorded-windowsml`
 adds Playwright WebView2 screencast evidence to the same packaged production
 smoke and writes timestamped output under
 `tmp/cert-prep-desktop/packaged-streaming-production-recorded`. When recording
@@ -235,7 +292,7 @@ acceptance evidence.
   46/46 pages, produced 46 chunks, one streaming job succeeded, and one usable
   question was generated.
 - The blocking product gap is that Full Exam still reported `0 questions in
-  selected document` for the selected document after the production streaming
+selected document` for the selected document after the production streaming
   run. Reconcile streaming draft persistence, project/document selection, and
   the practice query path before calling the packaged release gate closed.
 - The run did not prove the configured `qwen3.5:4b` FastFlowLM node:
@@ -244,6 +301,56 @@ acceptance evidence.
 - Production summaries must carry `selected_model`, `effective_model`, provider
   health, and fallback/blocker attribution whenever generated questions are
   reported.
+
+2026-07-11 local remediation status:
+
+- The provider-selection API/generated client, exact configured/effective job
+  attribution, transactional question persistence, shared practice-ready
+  query, session recovery, and cancellation state machines are implemented and
+  covered by backend/frontend tests.
+- `cert-prep-e2e:e2e-real-backend` runs without `page.route`, starts an
+  ephemeral backend with deterministic OCR/LLM fakes, and passed the
+  create-answer-restart-Resume-complete-restart flow. Its five browser tests
+  also cover real multipart multi-PDF upload, two transient 503 polling
+  failures followed by recovery, pre-document-ID upload cancellation with a
+  409 tombstone/stale-response guard, and two-step Abandon persisted by the
+  practice API.
+- The full backend suite passed 238 tests; Angular passed 160 tests; desktop
+  Cargo passed 23 tests; package QA tests passed 61 tests; release tooling
+  passed 27 Node plus 21 Python tests; mock Playwright passed 13 tests and the
+  no-route real-backend project passed 5 tests. The Python 3.12 WindowsML runtime build
+  also passed its executable self-test.
+- These results retire the code-level causes behind the 2026-06-26 evidence
+  inconsistency, but they do not close the packaged B3 gate. Closure still
+  requires the exact public candidate SHA on the protected clean-snapshot
+  XDNA2 lane: four PDFs, effective FastFlow `qwen3.5:4b`, no provider/model
+  fallback, usable questions above zero, Full Exam count above zero, resource
+  release, restart/cancel cleanup with individually hashed evidence, and a
+  completed-run-bound WebM whose stream/duration/frames pass the protected
+  runner's SHA-pinned `ffprobe`.
+
+2026-07-14 local cancellation and integration closeout:
+
+- Commit `175ea89` completed automatic/manual draft, runtime-install, and
+  model-install GET/DELETE flows, persisted cancellation recovery, atomic
+  cancel-versus-commit behavior, OpenAPI-first schemas, and the regenerated
+  TypeScript client. Angular forwards `AbortSignal`, derives honest
+  `phase/cancellable` state, and rejects stale operation responses.
+- Migration 20 repairs duplicate active document operations before adding the
+  partial unique index. Migration 21 keeps immutable draft attribution through
+  `source_chunk_id`, uses `ON DELETE SET NULL` for removed chunks, and recovers
+  detached jobs. Every migration runs in its own `BEGIN IMMEDIATE` transaction
+  so a failed version rolls back completely and can be retried.
+- Commit `bfb7ca6` added the isolated no-route real-backend Playwright project.
+  Its five local tests cover generation/Full Exam, multi-PDF upload, bounded
+  polling recovery, pre-document-ID cancellation with stale-response rejection,
+  and persisted session Resume/Abandon behavior.
+- Current local verification passed backend lint plus 370 tests with 2 skipped,
+  Angular lint plus 221 tests, API 3 tests and typecheck, contracts 4 tests,
+  and real-backend Playwright 5 tests.
+- This evidence closes the local implementation milestone only. It is not a
+  packaged B3 result, hosted CI result, protected hardware result, or
+  candidate-bound release claim.
 
 Resource artifacts for packaged runs:
 
@@ -289,9 +396,9 @@ PaddleOCR NPU implementation.
   `tests/test_model_downloads.py`; run those with
   `tests/test_documents_streaming.py` and `tests/test_runtime_installations.py`
   for the provider-boundary slice. `pnpm nx run
-  cert-prep-backend:streaming-cli-test` passed 33 selected tests; `pnpm nx run
-  cert-prep-backend:test --skip-nx-cache` passed 162 tests; `pnpm nx run
-  cert-prep-backend:lint --skip-nx-cache` passed; and `git diff --check`
+cert-prep-backend:streaming-cli-test` passed 33 selected tests; `pnpm nx run
+cert-prep-backend:test --skip-nx-cache` passed 162 tests; `pnpm nx run
+cert-prep-backend:lint --skip-nx-cache` passed; and `git diff --check`
   passed with CRLF conversion warnings only.
 
 ## Multi-PDF Upload And AI-Inferred Practice Evidence
@@ -335,7 +442,10 @@ PaddleOCR NPU implementation.
 
 ## Active Backlog
 
-No active parsing/reasoning TODO file remains at this checkpoint.
+`.agents/TODOS/alpha-launch-readiness.md` remains active until the public OCR
+asset, checkout-free MSI/NSIS clean installs, and protected AMD/XDNA2 recorded
+acceptance gates pass. Local implementation evidence must not be promoted to a
+Public Alpha-ready claim before those external gates close.
 
 Deferred comparator reruns remain user-controlled and should only run after the
 target models are intentionally installed.
