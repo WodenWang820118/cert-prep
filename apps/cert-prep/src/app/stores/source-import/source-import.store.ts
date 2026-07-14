@@ -62,10 +62,6 @@ export class SourceImportStore {
         ['queued', 'failed'].includes(item.status),
       ).length,
   );
-  readonly uploadedFileCount = computed(
-    () =>
-      this.uploadItems().filter((item) => item.status === 'uploaded').length,
-  );
   readonly failedUploadCount = computed(
     () => this.uploadItems().filter((item) => item.status === 'failed').length,
   );
@@ -138,10 +134,6 @@ export class SourceImportStore {
     );
   });
 
-  chooseFile(file: File | null): void {
-    this.chooseFiles(file === null ? [] : [file]);
-  }
-
   chooseFiles(files: readonly File[]): void {
     this.uploadItems.set(
       files.map((file) => ({
@@ -185,11 +177,6 @@ export class SourceImportStore {
 
   parsingMetrics(document: DocumentRead): DocumentParsingMetric[] {
     return this.metrics.parsingMetrics(document);
-  }
-
-  async uploadDocument(): Promise<DocumentRead | null> {
-    const documents = await this.uploadDocuments();
-    return documents.length > 0 ? documents[documents.length - 1] : null;
   }
 
   async uploadDocuments(): Promise<DocumentRead[]> {

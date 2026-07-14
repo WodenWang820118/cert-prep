@@ -341,9 +341,9 @@ describe('SourceImportPanelComponent', () => {
     const operations = TestBed.inject(OperationStore);
     const sourceImport = TestBed.inject(SourceImportStore);
     health.healthSnapshotLoading.set(true);
-    sourceImport.chooseFile(
+    sourceImport.chooseFiles([
       new File(['%PDF-1.7'], 'runtime.pdf', { type: 'application/pdf' }),
-    );
+    ]);
 
     fixture.detectChanges();
 
@@ -351,7 +351,7 @@ describe('SourceImportPanelComponent', () => {
     expect(sourceImport.canUpload()).toBe(false);
     expect(uploadButton(fixture.nativeElement)?.disabled).toBe(true);
 
-    await sourceImport.uploadDocument();
+    await sourceImport.uploadDocuments();
 
     expect(apiClient.uploadDocument).not.toHaveBeenCalled();
     expect(operations.error()).toBe(
@@ -365,9 +365,9 @@ describe('SourceImportPanelComponent', () => {
     const sourceImport = TestBed.inject(SourceImportStore);
     health.ocrHealth.set(ocrHealth());
     health.healthSnapshotLoading.set(true);
-    sourceImport.chooseFile(
+    sourceImport.chooseFiles([
       new File(['%PDF-1.7'], 'runtime.pdf', { type: 'application/pdf' }),
-    );
+    ]);
 
     fixture.detectChanges();
 

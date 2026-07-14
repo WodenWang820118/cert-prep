@@ -181,7 +181,9 @@ describe('SourceImportStore polling', () => {
       'uploaded',
     ]);
     expect(store.activeDocumentId()).toBe('document-3');
-    expect(store.uploadedFileCount()).toBe(3);
+    expect(
+      store.uploadItems().filter((item) => item.status === 'uploaded'),
+    ).toHaveLength(3);
   });
 
   it('uses the configured upload batch size for the whole upload run', async () => {
