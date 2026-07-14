@@ -23,6 +23,7 @@ from cert_prep_backend.domains.mock_exams.provider_preferences import (
 )
 from cert_prep_backend.domains.mock_exams.streaming import StreamingDraftGenerationManager
 from cert_prep_backend.domains.runtime_installations import RuntimeInstallationManager
+from cert_prep_backend.domains.source_documents import operations as document_operations
 from cert_prep_backend.domains.source_documents import repository as source_documents_repository
 from cert_prep_backend.domains.source_documents.ocr import OCRProvider, ocr_provider_from_settings
 from cert_prep_backend.domains.source_documents.ocr_provider_pool import (
@@ -78,6 +79,7 @@ def create_app(
     app.state.settings = app_settings
     app.state.database = Database(app_settings)
     apply_persisted_fastflowlm_terms_decision(app_settings, app.state.database)
+    document_operations.recover_operations(app.state.database)
     source_documents_repository.recover_processing_documents(app.state.database)
     app.state.llm_provider = llm_provider or lazy_provider_from_settings(app_settings)
     app.state.ocr_provider = ocr_provider or ocr_provider_from_settings(app_settings)

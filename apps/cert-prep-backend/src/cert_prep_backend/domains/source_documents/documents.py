@@ -25,33 +25,61 @@ def create_processing_document(
     document_id = str(uuid4())
     now = utc_now()
     with db.connect() as connection:
-        connection.execute(
-            """
-            INSERT INTO documents(
-                id, project_id, filename, sha256, storage_path, page_count,
-                has_text, status, extraction_method, ocr_device, ocr_fallback_reason,
-                ocr_duration_ms, processed_page_count, parse_wall_duration_ms,
-                render_duration_ms, ocr_engine_duration_ms, ocr_worker_count,
-                first_chunk_ms, exam_item_count, language_hint,
-                content_profile, classification_detail, created_at, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, 0, ?, 'none', NULL, NULL, 0, 0, 0, 0, 0, 0, 0, 0, ?,
-                'unknown', '', ?, ?)
-            """,
-            (
-                document_id,
-                project_id,
-                filename,
-                sha256,
-                storage_path,
-                page_count,
-                SourceDocumentStatus.PROCESSING,
-                language_hint,
-                now,
-                now,
-            ),
+        document = insert_processing_document(
+            connection,
+            document_id=document_id,
+            project_id=project_id,
+            filename=filename,
+            sha256=sha256,
+            language_hint=language_hint,
+            storage_path=storage_path,
+            page_count=page_count,
+            now=now,
         )
-        row = document_query(connection, project_id, document_id)
+    return document
+
+
+def insert_processing_document(
+    connection,
+    *,
+    document_id: str,
+    project_id: str,
+    filename: str,
+    sha256: str,
+    language_hint: str,
+    storage_path: str,
+    page_count: int,
+    now: str,
+) -> dict:
+    """Insert processing metadata using the caller's transaction."""
+
+    connection.execute(
+        """
+        INSERT INTO documents(
+            id, project_id, filename, sha256, storage_path, page_count,
+            has_text, status, extraction_method, ocr_device, ocr_fallback_reason,
+            ocr_duration_ms, processed_page_count, parse_wall_duration_ms,
+            render_duration_ms, ocr_engine_duration_ms, ocr_worker_count,
+            first_chunk_ms, exam_item_count, language_hint,
+            content_profile, classification_detail, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, 0, ?, 'none', NULL, NULL, 0, 0, 0, 0, 0, 0, 0, 0, ?,
+            'unknown', '', ?, ?)
+        """,
+        (
+            document_id,
+            project_id,
+            filename,
+            sha256,
+            storage_path,
+            page_count,
+            SourceDocumentStatus.PROCESSING,
+            language_hint,
+            now,
+            now,
+        ),
+    )
+    row = document_query(connection, project_id, document_id)
     if row is None:
         raise NotFoundError("Document not found.")
     return document_from_row(row)
