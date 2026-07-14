@@ -231,7 +231,10 @@ describe('SourceImportPanelComponent', () => {
       (_projectId: string, body: FormData) => {
         const file = body.get('file') as File;
         if (file.name === 'failed.pdf') {
-          return Promise.reject({ error: { message: 'Invalid PDF' } });
+          return Promise.reject({
+            status: 422,
+            error: { message: 'Invalid PDF' },
+          });
         }
         return Promise.resolve(
           documentRead({
@@ -268,6 +271,49 @@ describe('SourceImportPanelComponent', () => {
     expect(text).toContain('Uploaded');
     expect(text).toContain('Failed');
     expect(text).toContain('Invalid PDF');
+  });
+
+  it('exposes accessible per-row Cancel and Retry actions', async () => {
+    const fixture = TestBed.createComponent(SourceImportPanelComponent);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    sourceImport.uploadItems.set([
+      {
+        id: 'source-upload-cancel',
+        file: new File(['%PDF-1.7'], 'cancel-me.pdf', {
+          type: 'application/pdf',
+        }),
+        status: 'queued',
+        document: null,
+        error: null,
+      },
+      {
+        id: 'source-upload-retry',
+        file: new File(['broken'], 'retry-me.pdf', {
+          type: 'application/pdf',
+        }),
+        status: 'failed',
+        document: null,
+        error: 'Invalid PDF',
+      },
+    ]);
+
+    fixture.detectChanges();
+
+    const cancel = fixture.nativeElement.querySelector(
+      'button[aria-label="Cancel upload of cancel-me.pdf"]',
+    ) as HTMLButtonElement | null;
+    const retry = fixture.nativeElement.querySelector(
+      'button[aria-label="Retry upload of retry-me.pdf"]',
+    ) as HTMLButtonElement | null;
+    expect(cancel?.textContent?.trim()).toBe('Cancel');
+    expect(retry?.textContent?.trim()).toBe('Retry');
+
+    cancel?.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(sourceImport.uploadItems()[0]?.status).toBe('canceled');
+    expect(fixture.nativeElement.textContent).toContain('Canceled');
   });
 
   it('lets the user adjust the upload batch size', async () => {

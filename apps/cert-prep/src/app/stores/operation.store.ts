@@ -25,7 +25,7 @@ export class OperationStore {
 
   async run<T>(
     action: BusyAction,
-    successMessage: string,
+    successMessage: string | ((result: T) => string),
     task: () => Promise<T>,
     shouldApply: () => boolean = () => true,
   ): Promise<T | null> {
@@ -39,7 +39,11 @@ export class OperationStore {
     try {
       const result = await task();
       if (isCurrent()) {
-        this.status.set(successMessage);
+        this.status.set(
+          typeof successMessage === 'function'
+            ? successMessage(result)
+            : successMessage,
+        );
       }
       return result;
     } catch (error) {

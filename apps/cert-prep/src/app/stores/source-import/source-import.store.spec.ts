@@ -1,6 +1,11 @@
 import { TestBed } from '@angular/core/testing';
 import { CERT_PREP_API } from '../../cert-prep-api';
-import type { ChunkRead, DocumentRead } from '../../cert-prep-api';
+import type {
+  ChunkRead,
+  DocumentOperationRead,
+  DocumentRead,
+} from '../../cert-prep-api';
+import { OperationStore } from '../operation.store';
 import { ProjectStore } from '../project.store';
 import { SourceImportStore } from './source-import.store';
 
@@ -10,6 +15,9 @@ describe('SourceImportStore polling', () => {
     listDocumentChunks: vi.fn(),
     listDocuments: vi.fn(),
     uploadDocument: vi.fn(),
+    retryDocumentProcessing: vi.fn(),
+    getDocumentOperation: vi.fn(),
+    cancelDocumentOperation: vi.fn(),
     health: vi.fn(),
     llmHealth: vi.fn(),
     ocrHealth: vi.fn(),
@@ -18,7 +26,7 @@ describe('SourceImportStore polling', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     TestBed.configureTestingModule({
       providers: [{ provide: CERT_PREP_API, useValue: apiClient }],
     });
@@ -28,6 +36,18 @@ describe('SourceImportStore polling', () => {
         Promise.resolve(documentRead({ id: documentId })),
     );
     apiClient.listDocumentChunks.mockResolvedValue({ items: [] });
+    apiClient.cancelDocumentOperation.mockImplementation(
+      (projectId: string, operationId: string) =>
+        Promise.resolve(
+          operationRead({
+            id: operationId,
+            project_id: projectId,
+            status: 'canceled',
+            phase: 'canceled',
+            cancellable: false,
+          }),
+        ),
+    );
 
     const projects = TestBed.inject(ProjectStore);
     projects.projects.set([
@@ -44,6 +64,7 @@ describe('SourceImportStore polling', () => {
 
   afterEach(() => {
     TestBed.inject(SourceImportStore).reset();
+    vi.restoreAllMocks();
     vi.useRealTimers();
   });
 
@@ -287,6 +308,7 @@ describe('SourceImportStore polling', () => {
 
   it('uploads selected PDFs in two-document batches by default', async () => {
     const store = TestBed.inject(SourceImportStore);
+    const operations = TestBed.inject(OperationStore);
     const firstUpload = deferred<DocumentRead>();
     const secondUpload = deferred<DocumentRead>();
     const thirdUpload = deferred<DocumentRead>();
@@ -295,10 +317,14 @@ describe('SourceImportStore polling', () => {
       ['second.pdf', secondUpload],
       ['third.pdf', thirdUpload],
     ]);
+    const thirdStarted = deferred<void>();
     const startedUploads: string[] = [];
     apiClient.uploadDocument.mockImplementation((_projectId: string, body: FormData) => {
       const file = body.get('file') as File;
       startedUploads.push(file.name);
+      if (file.name === 'third.pdf') {
+        thirdStarted.resolve();
+      }
       return uploads.get(file.name)?.promise;
     });
     apiClient.getDocument.mockImplementation((_projectId: string, documentId: string) =>
@@ -314,12 +340,17 @@ describe('SourceImportStore polling', () => {
     await Promise.resolve();
 
     expect(startedUploads).toEqual(['first.pdf', 'second.pdf']);
+    expect(operations.isBusyFor('upload')).toBe(true);
     firstUpload.resolve(documentRead({ id: 'document-1', filename: 'first.pdf' }));
-    await flushPromises();
+    await thirdStarted.promise;
 
-    expect(startedUploads).toEqual(['first.pdf', 'second.pdf']);
+    expect(startedUploads).toEqual([
+      'first.pdf',
+      'second.pdf',
+      'third.pdf',
+    ]);
+    expect(operations.isBusyFor('upload')).toBe(true);
     secondUpload.resolve(documentRead({ id: 'document-2', filename: 'second.pdf' }));
-    await flushPromises();
 
     expect(startedUploads).toEqual(['first.pdf', 'second.pdf', 'third.pdf']);
     thirdUpload.resolve(documentRead({ id: 'document-3', filename: 'third.pdf' }));
@@ -332,9 +363,7 @@ describe('SourceImportStore polling', () => {
       'uploaded',
     ]);
     expect(store.activeDocumentId()).toBe('document-3');
-    expect(
-      store.uploadItems().filter((item) => item.status === 'uploaded'),
-    ).toHaveLength(3);
+    expect(operations.isBusyFor('upload')).toBe(false);
   });
 
   it('uses the configured upload batch size for the whole upload run', async () => {
@@ -346,10 +375,14 @@ describe('SourceImportStore polling', () => {
         deferred<DocumentRead>(),
       ]),
     );
+    const fourthStarted = deferred<void>();
     const startedUploads: string[] = [];
     apiClient.uploadDocument.mockImplementation((_projectId: string, body: FormData) => {
       const file = body.get('file') as File;
       startedUploads.push(file.name);
+      if (file.name === 'fourth.pdf') {
+        fourthStarted.resolve();
+      }
       return uploads.get(file.name)?.promise;
     });
     store.chooseFiles([
@@ -373,7 +406,7 @@ describe('SourceImportStore polling', () => {
     uploads.get('third.pdf')?.resolve(
       documentRead({ id: 'document-3', filename: 'third.pdf' }),
     );
-    await flushPromises();
+    await fourthStarted.promise;
 
     expect(startedUploads).toEqual([
       'first.pdf',
@@ -427,7 +460,6 @@ describe('SourceImportStore polling', () => {
     expect(startedUploads).toEqual(['first.pdf', 'second.pdf']);
 
     firstUpload.resolve(documentRead({ id: 'document-1', filename: 'first.pdf' }));
-    await flushPromises();
     expect(startedUploads).toEqual(['first.pdf', 'second.pdf']);
 
     secondUpload.resolve(documentRead({ id: 'document-2', filename: 'second.pdf' }));
@@ -442,7 +474,7 @@ describe('SourceImportStore polling', () => {
 
   it('keeps successful uploads when one PDF fails', async () => {
     const store = TestBed.inject(SourceImportStore);
-    const failed = new Error('Invalid PDF');
+    const failed = { status: 400, message: 'Invalid PDF' };
     apiClient.uploadDocument.mockImplementation(
       (_projectId: string, body: FormData) => {
         const file = body.get('file') as File;
@@ -476,9 +508,19 @@ describe('SourceImportStore polling', () => {
     expect(store.documents()[0]).toEqual(
       expect.objectContaining({ id: 'document-good' }),
     );
+    expect(TestBed.inject(OperationStore).status()).toBe(
+      '1 PDF upload accepted; 1 did not complete',
+    );
   });
 
   it('retries failed PDFs without uploading successful items again', async () => {
+    const firstOperationId = fixedOperationId(5);
+    const failedOperationId = fixedOperationId(8);
+    const retryOperationId = fixedOperationId(6);
+    vi.spyOn(crypto, 'randomUUID')
+      .mockReturnValueOnce(firstOperationId)
+      .mockReturnValueOnce(failedOperationId)
+      .mockReturnValueOnce(retryOperationId);
     const store = TestBed.inject(SourceImportStore);
     const uploadedNames: string[] = [];
     let badUploadAttempts = 0;
@@ -491,6 +533,7 @@ describe('SourceImportStore polling', () => {
         }
         if (file.name === 'bad.pdf' && badUploadAttempts === 1) {
           return Promise.reject({
+            status: 422,
             error: { message: 'The PDF could not be parsed.' },
           });
         }
@@ -510,10 +553,12 @@ describe('SourceImportStore polling', () => {
       'uploaded',
       'failed',
     ]);
-    expect(store.canUpload()).toBe(true);
+    expect(store.canUpload()).toBe(false);
 
     uploadedNames.length = 0;
-    await store.uploadDocuments();
+    const failedItem = store.uploadItems().find((item) => item.status === 'failed');
+    expect(failedItem).toBeDefined();
+    await store.retryUpload(failedItem?.id ?? 'missing');
 
     expect(uploadedNames).toEqual(['bad.pdf']);
     expect(store.uploadItems().map((item) => item.status)).toEqual([
@@ -522,6 +567,832 @@ describe('SourceImportStore polling', () => {
     ]);
     expect(store.failedUploadCount()).toBe(0);
     expect(store.activeDocumentId()).toBe('document-bad.pdf');
+    expect(apiClient.uploadDocument.mock.calls[0]?.[2]).toEqual(
+      expect.objectContaining({
+        headers: { 'X-Cert-Prep-Operation-Id': firstOperationId },
+      }),
+    );
+    expect(apiClient.uploadDocument.mock.calls[2]?.[2]).toEqual(
+      expect.objectContaining({
+        headers: { 'X-Cert-Prep-Operation-Id': retryOperationId },
+      }),
+    );
+  });
+
+  it('cancels a queued PDF locally without claiming an operation id', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    store.chooseFiles([pdfFile('queued.pdf')]);
+
+    await store.cancelUpload(store.uploadItems()[0]?.id ?? 'missing');
+
+    expect(store.uploadItems()[0]?.status).toBe('canceled');
+    expect(apiClient.uploadDocument).not.toHaveBeenCalled();
+    expect(apiClient.cancelDocumentOperation).not.toHaveBeenCalled();
+  });
+
+  it('releases normal processing handoffs without retaining upload cancel ownership', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    apiClient.uploadDocument.mockImplementation(
+      (_projectId: string, body: FormData) => {
+        const file = body.get('file') as File;
+        return Promise.resolve(
+          documentRead({
+            id: `document-${file.name}`,
+            filename: file.name,
+            status: 'processing',
+            has_text: false,
+            chunks_count: 0,
+          }),
+        );
+      },
+    );
+    store.chooseFiles([pdfFile('first.pdf'), pdfFile('second.pdf')]);
+
+    await store.uploadDocuments();
+
+    expect(store.uploadItems().map((item) => item.status)).toEqual([
+      'uploaded',
+      'uploaded',
+    ]);
+    expect(
+      store.uploadItems().map((item) => store.canCancelUpload(item)),
+    ).toEqual([false, false]);
+    store.reset();
+    expect(apiClient.cancelDocumentOperation).not.toHaveBeenCalled();
+  });
+
+  it('starts the next queued PDF after one sibling is canceled', async () => {
+    const operationIds = [
+      fixedOperationId(12),
+      fixedOperationId(13),
+      fixedOperationId(14),
+    ];
+    vi.spyOn(crypto, 'randomUUID')
+      .mockReturnValueOnce(operationIds[0])
+      .mockReturnValueOnce(operationIds[1])
+      .mockReturnValueOnce(operationIds[2]);
+    const store = TestBed.inject(SourceImportStore);
+    const uploads = new Map(
+      ['first.pdf', 'second.pdf', 'third.pdf'].map((name) => [
+        name,
+        deferred<DocumentRead>(),
+      ]),
+    );
+    const started: string[] = [];
+    const signals = new Map<string, AbortSignal>();
+    const thirdStarted = deferred<void>();
+    apiClient.uploadDocument.mockImplementation(
+      (
+        _projectId: string,
+        body: FormData,
+        options?: { signal?: AbortSignal },
+      ) => {
+        const file = body.get('file') as File;
+        started.push(file.name);
+        if (options?.signal !== undefined) {
+          signals.set(file.name, options.signal);
+        }
+        if (file.name === 'third.pdf') {
+          thirdStarted.resolve();
+        }
+        return uploads.get(file.name)?.promise;
+      },
+    );
+    store.chooseFiles([
+      pdfFile('first.pdf'),
+      pdfFile('second.pdf'),
+      pdfFile('third.pdf'),
+    ]);
+
+    const uploadPromise = store.uploadDocuments();
+    expect(started).toEqual(['first.pdf', 'second.pdf']);
+    await store.cancelUpload(store.uploadItems()[0]?.id ?? 'missing');
+    await thirdStarted.promise;
+
+    expect(signals.get('first.pdf')?.aborted).toBe(true);
+    expect(signals.get('second.pdf')?.aborted).toBe(false);
+    expect(started).toEqual(['first.pdf', 'second.pdf', 'third.pdf']);
+    uploads.get('second.pdf')?.resolve(
+      documentRead({ id: 'document-second', filename: 'second.pdf' }),
+    );
+    uploads.get('third.pdf')?.resolve(
+      documentRead({ id: 'document-third', filename: 'third.pdf' }),
+    );
+    await uploadPromise;
+
+    expect(store.uploadItems().map((item) => item.status)).toEqual([
+      'canceled',
+      'uploaded',
+      'uploaded',
+    ]);
+  });
+
+  it('uses the exact private operation id to cancel an in-flight POST', async () => {
+    const operationId = fixedOperationId(1);
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue(operationId);
+    const store = TestBed.inject(SourceImportStore);
+    const uploadStarted = deferred<void>();
+    const canceled = deferred<DocumentOperationRead>();
+    apiClient.uploadDocument.mockImplementation(
+      (
+        _projectId: string,
+        _body: FormData,
+        options?: { signal?: AbortSignal },
+      ) =>
+        new Promise<DocumentRead>((_resolve, reject) => {
+          uploadStarted.resolve();
+          options?.signal?.addEventListener('abort', () => {
+            reject(new DOMException('Upload canceled.', 'AbortError'));
+          });
+        }),
+    );
+    apiClient.cancelDocumentOperation.mockReturnValue(canceled.promise);
+    store.chooseFiles([pdfFile('in-flight.pdf')]);
+
+    const uploadPromise = store.uploadDocuments();
+    await uploadStarted.promise;
+
+    const options = apiClient.uploadDocument.mock.calls[0]?.[2] as
+      | { headers?: Record<string, string>; signal?: AbortSignal }
+      | undefined;
+    expect(options?.headers).toEqual({
+      'X-Cert-Prep-Operation-Id': operationId,
+    });
+    expect(store.uploadItems()[0]).not.toHaveProperty('operationId');
+
+    await store.cancelUpload(store.uploadItems()[0]?.id ?? 'missing');
+
+    expect(apiClient.cancelDocumentOperation).toHaveBeenCalledWith(
+      'project-1',
+      operationId,
+    );
+    expect(options?.signal?.aborted).toBe(true);
+    expect(store.uploadItems()[0]?.status).toBe('cancel_requested');
+    canceled.resolve(
+      operationRead({
+        id: operationId,
+        status: 'canceled',
+        phase: 'canceled',
+        cancellable: false,
+      }),
+    );
+    const documents = await uploadPromise;
+
+    expect(store.uploadItems()[0]?.status).toBe('canceled');
+    expect(documents).toEqual([]);
+    const operations = TestBed.inject(OperationStore);
+    expect(operations.isBusyFor('upload')).toBe(false);
+    expect(operations.status()).toBe('PDF upload canceled');
+  });
+
+  it('keeps publish-wins when completion beats an in-flight cancellation', async () => {
+    const operationId = fixedOperationId(2);
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue(operationId);
+    const store = TestBed.inject(SourceImportStore);
+    const upload = deferred<DocumentRead>();
+    const cancel = deferred<DocumentOperationRead>();
+    const published = documentRead({
+      id: 'document-published',
+      status: 'ready',
+    });
+    apiClient.uploadDocument.mockReturnValue(upload.promise);
+    apiClient.cancelDocumentOperation.mockReturnValue(cancel.promise);
+    apiClient.getDocument.mockResolvedValue(published);
+    store.chooseFiles([pdfFile('published.pdf')]);
+
+    const uploadPromise = store.uploadDocuments();
+    await store.cancelUpload(store.uploadItems()[0]?.id ?? 'missing');
+    cancel.resolve(
+      operationRead({
+        id: operationId,
+        document_id: published.id,
+        status: 'succeeded',
+        phase: 'completed',
+        cancellable: false,
+      }),
+    );
+
+    await uploadPromise;
+    upload.resolve(published);
+    await Promise.resolve();
+
+    expect(store.uploadItems()[0]).toEqual(
+      expect.objectContaining({
+        status: 'uploaded',
+        document: expect.objectContaining({ id: published.id }),
+      }),
+    );
+    expect(store.activeDocumentId()).toBe(published.id);
+    const publishedItem = store.uploadItems()[0];
+    expect(publishedItem).toBeDefined();
+    expect(
+      publishedItem === undefined
+        ? undefined
+        : store.canCancelUpload(publishedItem),
+    ).toBe(false);
+  });
+
+  it('keeps cancel_requested with an attached document until cancellation is terminal', async () => {
+    const operationId = fixedOperationId(10);
+    const retryOperationId = fixedOperationId(11);
+    vi.spyOn(crypto, 'randomUUID')
+      .mockReturnValueOnce(operationId)
+      .mockReturnValueOnce(retryOperationId);
+    const store = TestBed.inject(SourceImportStore);
+    const upload = deferred<DocumentRead>();
+    const cancellation = deferred<DocumentOperationRead>();
+    const cancelRequestedDocument = documentRead({
+      status: 'cancel_requested',
+      has_text: false,
+      chunks_count: 0,
+    });
+    const canceledDocument = documentRead({
+      status: 'canceled',
+      has_text: false,
+      chunks_count: 0,
+    });
+    const retryingDocument = documentRead({
+      status: 'processing',
+      has_text: false,
+      chunks_count: 0,
+    });
+    apiClient.uploadDocument.mockReturnValue(upload.promise);
+    apiClient.cancelDocumentOperation.mockReturnValue(cancellation.promise);
+    apiClient.getDocument
+      .mockResolvedValueOnce(cancelRequestedDocument)
+      .mockResolvedValueOnce(canceledDocument)
+      .mockResolvedValueOnce(retryingDocument);
+    apiClient.getDocumentOperation.mockResolvedValue(
+      operationRead({
+        id: operationId,
+        document_id: canceledDocument.id,
+        status: 'canceled',
+        phase: 'canceled',
+        cancellable: false,
+      }),
+    );
+    store.chooseFiles([pdfFile('cancel-processing.pdf')]);
+
+    const uploadPromise = store.uploadDocuments();
+    await store.cancelUpload(store.uploadItems()[0]?.id ?? 'missing');
+    cancellation.resolve(
+      operationRead({
+        id: operationId,
+        document_id: cancelRequestedDocument.id,
+        status: 'cancel_requested',
+        phase: 'canceling',
+        cancellable: false,
+      }),
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(store.uploadItems()[0]?.status).toBe('cancel_requested');
+    await vi.advanceTimersByTimeAsync(1000);
+    await uploadPromise;
+    expect(store.uploadItems()[0]).toEqual(
+      expect.objectContaining({
+        status: 'canceled',
+        document: expect.objectContaining({ status: 'canceled' }),
+      }),
+    );
+
+    apiClient.retryDocumentProcessing.mockResolvedValue(
+      operationRead({
+        id: retryOperationId,
+        document_id: canceledDocument.id,
+      }),
+    );
+    await store.retryUpload(store.uploadItems()[0]?.id ?? 'missing');
+
+    expect(apiClient.retryDocumentProcessing).toHaveBeenCalledWith(
+      'project-1',
+      canceledDocument.id,
+      expect.objectContaining({
+        headers: { 'X-Cert-Prep-Operation-Id': retryOperationId },
+      }),
+    );
+    expect(store.uploadItems()[0]?.status).toBe('uploaded');
+    upload.resolve(cancelRequestedDocument);
+  });
+
+  it('retries a cancellation tombstone after ambiguous DELETE and GET 404', async () => {
+    const operationId = fixedOperationId(3);
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue(operationId);
+    const store = TestBed.inject(SourceImportStore);
+    apiClient.uploadDocument.mockReturnValue(deferred<DocumentRead>().promise);
+    apiClient.cancelDocumentOperation
+      .mockRejectedValueOnce(new Error('connection reset'))
+      .mockResolvedValueOnce(
+        operationRead({
+          id: operationId,
+          status: 'canceled',
+          phase: 'canceled',
+          cancellable: false,
+        }),
+      );
+    apiClient.getDocumentOperation.mockRejectedValue({ status: 404 });
+    store.chooseFiles([pdfFile('ambiguous.pdf')]);
+
+    const uploadPromise = store.uploadDocuments();
+    await store.cancelUpload(store.uploadItems()[0]?.id ?? 'missing');
+    await vi.advanceTimersByTimeAsync(1000);
+    await uploadPromise;
+
+    expect(apiClient.getDocumentOperation).toHaveBeenCalledWith(
+      'project-1',
+      operationId,
+    );
+    expect(apiClient.cancelDocumentOperation).toHaveBeenCalledTimes(2);
+    expect(apiClient.cancelDocumentOperation).toHaveBeenNthCalledWith(
+      2,
+      'project-1',
+      operationId,
+    );
+    expect(store.uploadItems()[0]?.status).toBe('canceled');
+  });
+
+  it('tombstones and ignores a stale upload result after reset', async () => {
+    const operationId = fixedOperationId(4);
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue(operationId);
+    const store = TestBed.inject(SourceImportStore);
+    const upload = deferred<DocumentRead>();
+    apiClient.uploadDocument.mockReturnValue(upload.promise);
+    store.chooseFiles([pdfFile('stale.pdf')]);
+
+    const uploadPromise = store.uploadDocuments();
+    const signal = (
+      apiClient.uploadDocument.mock.calls[0]?.[2] as
+        | { signal?: AbortSignal }
+        | undefined
+    )?.signal;
+    store.reset();
+    upload.resolve(documentRead({ id: 'stale-document' }));
+    await uploadPromise;
+
+    expect(signal?.aborted).toBe(true);
+    expect(apiClient.cancelDocumentOperation).toHaveBeenCalledWith(
+      'project-1',
+      operationId,
+    );
+    expect(store.uploadItems()).toEqual([]);
+    expect(store.documents()).toEqual([]);
+  });
+
+  it('handles the original cancel rejection when reset detaches the operation', async () => {
+    const operationId = fixedOperationId(22);
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue(operationId);
+    const store = TestBed.inject(SourceImportStore);
+    const originalDelete = deferred<DocumentOperationRead>();
+    apiClient.uploadDocument.mockImplementation(
+      (
+        _projectId: string,
+        _body: FormData,
+        options?: { signal?: AbortSignal },
+      ) =>
+        new Promise<DocumentRead>((_resolve, reject) => {
+          options?.signal?.addEventListener('abort', () => {
+            reject(new DOMException('Canceled.', 'AbortError'));
+          });
+        }),
+    );
+    apiClient.cancelDocumentOperation
+      .mockReturnValueOnce(originalDelete.promise)
+      .mockResolvedValueOnce(
+        operationRead({
+          id: operationId,
+          status: 'canceled',
+          phase: 'canceled',
+          cancellable: false,
+        }),
+      );
+    store.chooseFiles([pdfFile('cancel-reset.pdf')]);
+
+    const uploadPromise = store.uploadDocuments();
+    void store.cancelUpload(store.uploadItems()[0]?.id ?? 'missing');
+    store.reset();
+    originalDelete.reject(new Error('original DELETE disconnected'));
+    await uploadPromise;
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(apiClient.cancelDocumentOperation).toHaveBeenCalledTimes(2);
+    expect(apiClient.cancelDocumentOperation).toHaveBeenNthCalledWith(
+      2,
+      'project-1',
+      operationId,
+    );
+    expect(store.uploadItems()).toEqual([]);
+  });
+
+  it('returns no stale partial successes when reset invalidates an upload run', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    const firstUpload = deferred<DocumentRead>();
+    apiClient.uploadDocument.mockImplementation(
+      (
+        _projectId: string,
+        body: FormData,
+        options?: { signal?: AbortSignal },
+      ) => {
+        const file = body.get('file') as File;
+        if (file.name === 'accepted-before-reset.pdf') {
+          return firstUpload.promise;
+        }
+        return new Promise<DocumentRead>((_resolve, reject) => {
+          options?.signal?.addEventListener('abort', () => {
+            reject(new DOMException('Context changed.', 'AbortError'));
+          });
+        });
+      },
+    );
+    store.chooseFiles([
+      pdfFile('accepted-before-reset.pdf'),
+      pdfFile('pending-at-reset.pdf'),
+    ]);
+
+    const uploadPromise = store.uploadDocuments();
+    firstUpload.resolve(
+      documentRead({
+        id: 'document-before-reset',
+        filename: 'accepted-before-reset.pdf',
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.uploadItems()[0]?.status).toBe('uploaded');
+
+    store.reset();
+    const documents = await uploadPromise;
+
+    expect(documents).toEqual([]);
+    expect(store.documents()).toEqual([]);
+    expect(TestBed.inject(OperationStore).status()).toBe('Ready');
+  });
+
+  it('continues detached tombstone reconciliation after reset transport failures', async () => {
+    const operationId = fixedOperationId(15);
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue(operationId);
+    const store = TestBed.inject(SourceImportStore);
+    apiClient.uploadDocument.mockImplementation(
+      (
+        _projectId: string,
+        _body: FormData,
+        options?: { signal?: AbortSignal },
+      ) =>
+        new Promise<DocumentRead>((_resolve, reject) => {
+          options?.signal?.addEventListener('abort', () => {
+            reject(new DOMException('Context changed.', 'AbortError'));
+          });
+        }),
+    );
+    apiClient.cancelDocumentOperation
+      .mockRejectedValueOnce(new Error('delete unavailable 1'))
+      .mockRejectedValueOnce(new Error('delete unavailable 2'))
+      .mockRejectedValueOnce(new Error('delete unavailable 3'))
+      .mockResolvedValue(
+        operationRead({
+          id: operationId,
+          status: 'canceled',
+          phase: 'canceled',
+          cancellable: false,
+        }),
+      );
+    apiClient.getDocumentOperation.mockRejectedValue(
+      new Error('get unavailable'),
+    );
+    store.chooseFiles([pdfFile('detached.pdf')]);
+
+    const uploadPromise = store.uploadDocuments();
+    store.reset();
+    await uploadPromise;
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(apiClient.cancelDocumentOperation).toHaveBeenCalledTimes(1);
+    expect(apiClient.getDocumentOperation).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(apiClient.cancelDocumentOperation).toHaveBeenCalledTimes(3);
+    expect(apiClient.getDocumentOperation).toHaveBeenCalledTimes(3);
+
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(apiClient.cancelDocumentOperation).toHaveBeenCalledTimes(4);
+    expect(apiClient.cancelDocumentOperation).toHaveBeenLastCalledWith(
+      'project-1',
+      operationId,
+    );
+
+    await vi.advanceTimersByTimeAsync(8000);
+    expect(apiClient.cancelDocumentOperation).toHaveBeenCalledTimes(4);
+  });
+
+  it('rejects a foreign operation snapshot and re-queries the expected id', async () => {
+    const operationId = fixedOperationId(16);
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue(operationId);
+    const store = TestBed.inject(SourceImportStore);
+    apiClient.uploadDocument.mockRejectedValue(new Error('connection lost'));
+    apiClient.getDocumentOperation
+      .mockResolvedValueOnce(
+        operationRead({
+          id: fixedOperationId(17),
+          document_id: 'foreign-document',
+          status: 'succeeded',
+          phase: 'completed',
+          cancellable: false,
+        }),
+      )
+      .mockResolvedValueOnce(
+        operationRead({
+          id: operationId,
+          document_id: 'expected-document',
+          status: 'succeeded',
+          phase: 'completed',
+          cancellable: false,
+        }),
+      );
+    apiClient.getDocument.mockResolvedValue(
+      documentRead({ id: 'expected-document' }),
+    );
+    store.chooseFiles([pdfFile('foreign-snapshot.pdf')]);
+
+    const uploadPromise = store.uploadDocuments();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(apiClient.getDocumentOperation).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(1000);
+    const documents = await uploadPromise;
+
+    expect(apiClient.getDocumentOperation).toHaveBeenNthCalledWith(
+      2,
+      'project-1',
+      operationId,
+    );
+    expect(apiClient.getDocument).toHaveBeenCalledTimes(1);
+    expect(apiClient.getDocument).toHaveBeenCalledWith(
+      'project-1',
+      'expected-document',
+    );
+    expect(documents).toEqual([
+      expect.objectContaining({ id: 'expected-document' }),
+    ]);
+  });
+
+  it('preserves the authoritative document id when its terminal read is temporarily unavailable', async () => {
+    const operationId = fixedOperationId(18);
+    const retryOperationId = fixedOperationId(19);
+    vi.spyOn(crypto, 'randomUUID')
+      .mockReturnValueOnce(operationId)
+      .mockReturnValueOnce(retryOperationId);
+    const store = TestBed.inject(SourceImportStore);
+    const documentId = 'document-terminal';
+    apiClient.uploadDocument.mockRejectedValue(new Error('connection lost'));
+    apiClient.getDocumentOperation.mockResolvedValue(
+      operationRead({
+        id: operationId,
+        document_id: documentId,
+        status: 'failed',
+        phase: 'failed',
+        cancellable: false,
+        error: 'OCR failed.',
+      }),
+    );
+    apiClient.getDocument.mockRejectedValue(new Error('document unavailable'));
+    store.chooseFiles([pdfFile('terminal-document.pdf')]);
+
+    const uploadPromise = store.uploadDocuments();
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(2000);
+    await vi.advanceTimersByTimeAsync(4000);
+    const firstResult = await uploadPromise;
+
+    expect(firstResult).toEqual([]);
+    expect(store.uploadItems()[0]).toEqual(
+      expect.objectContaining({
+        status: 'status_unavailable',
+        document: null,
+      }),
+    );
+
+    apiClient.getDocument.mockResolvedValueOnce(
+      documentRead({
+        id: documentId,
+        status: 'ocr_failed',
+        has_text: false,
+        chunks_count: 0,
+      }),
+    );
+    await store.retryUpload(store.uploadItems()[0]?.id ?? 'missing');
+
+    expect(store.uploadItems()[0]).toEqual(
+      expect.objectContaining({
+        status: 'failed',
+        document: expect.objectContaining({ id: documentId }),
+      }),
+    );
+    expect(apiClient.uploadDocument).toHaveBeenCalledTimes(1);
+
+    apiClient.retryDocumentProcessing.mockResolvedValue(
+      operationRead({
+        id: retryOperationId,
+        document_id: documentId,
+        status: 'running',
+        phase: 'processing',
+        cancellable: true,
+      }),
+    );
+    apiClient.getDocument.mockResolvedValueOnce(
+      documentRead({
+        id: documentId,
+        status: 'processing',
+        has_text: false,
+        chunks_count: 0,
+      }),
+    );
+    await store.retryUpload(store.uploadItems()[0]?.id ?? 'missing');
+
+    expect(apiClient.retryDocumentProcessing).toHaveBeenCalledWith(
+      'project-1',
+      documentId,
+      expect.objectContaining({
+        headers: { 'X-Cert-Prep-Operation-Id': retryOperationId },
+      }),
+    );
+    expect(apiClient.uploadDocument).toHaveBeenCalledTimes(1);
+    expect(store.uploadItems()[0]?.status).toBe('uploaded');
+  });
+
+  it('does not consume transport retry budget for normal nonterminal progress', async () => {
+    const operationId = fixedOperationId(20);
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue(operationId);
+    const store = TestBed.inject(SourceImportStore);
+    apiClient.uploadDocument.mockRejectedValue(new Error('connection lost'));
+    apiClient.getDocumentOperation.mockImplementation(() => {
+      if (apiClient.getDocumentOperation.mock.calls.length < 10) {
+        return Promise.resolve(
+          operationRead({
+            id: operationId,
+            status: 'queued',
+            phase: 'uploading',
+            cancellable: true,
+          }),
+        );
+      }
+      return Promise.resolve(
+        operationRead({
+          id: operationId,
+          document_id: 'document-eventual',
+          status: 'succeeded',
+          phase: 'completed',
+          cancellable: false,
+        }),
+      );
+    });
+    apiClient.getDocument.mockResolvedValue(
+      documentRead({ id: 'document-eventual' }),
+    );
+    store.chooseFiles([pdfFile('slow-progress.pdf')]);
+
+    const uploadPromise = store.uploadDocuments();
+    await vi.advanceTimersByTimeAsync(0);
+    for (let index = 0; index < 8; index += 1) {
+      await vi.advanceTimersByTimeAsync(1000);
+    }
+
+    expect(apiClient.getDocumentOperation).toHaveBeenCalledTimes(9);
+    expect(store.uploadItems()[0]).toEqual(
+      expect.objectContaining({ status: 'uploading', error: null }),
+    );
+
+    await vi.advanceTimersByTimeAsync(1000);
+    const documents = await uploadPromise;
+    expect(documents).toEqual([
+      expect.objectContaining({ id: 'document-eventual' }),
+    ]);
+  });
+
+  it('retains the exact operation after 1, 2, and 4 second transport retries', async () => {
+    const operationId = fixedOperationId(7);
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue(operationId);
+    const store = TestBed.inject(SourceImportStore);
+    const getStarted = [deferred<void>(), deferred<void>(), deferred<void>(), deferred<void>()];
+    apiClient.uploadDocument.mockRejectedValue(new Error('connection lost'));
+    apiClient.getDocumentOperation.mockImplementation(() => {
+      getStarted[apiClient.getDocumentOperation.mock.calls.length - 1]?.resolve();
+      return Promise.reject(new Error('still unavailable'));
+    });
+    store.chooseFiles([pdfFile('bounded.pdf')]);
+
+    const uploadPromise = store.uploadDocuments();
+    await getStarted[0]?.promise;
+    await vi.advanceTimersByTimeAsync(999);
+    expect(apiClient.getDocumentOperation).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await getStarted[1]?.promise;
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(apiClient.getDocumentOperation).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    await getStarted[2]?.promise;
+    await vi.advanceTimersByTimeAsync(3999);
+    expect(apiClient.getDocumentOperation).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(1);
+    await getStarted[3]?.promise;
+    await uploadPromise;
+
+    expect(apiClient.getDocumentOperation).toHaveBeenCalledTimes(4);
+    expect(store.uploadItems()[0]).toEqual(
+      expect.objectContaining({
+        status: 'status_unavailable',
+        error: 'Upload status is unavailable. Retry status check.',
+      }),
+    );
+
+    apiClient.getDocumentOperation.mockResolvedValue(
+      operationRead({
+        id: operationId,
+        document_id: 'document-recovered',
+        status: 'succeeded',
+        phase: 'completed',
+        cancellable: false,
+      }),
+    );
+    apiClient.getDocument.mockResolvedValue(
+      documentRead({ id: 'document-recovered' }),
+    );
+
+    await store.retryUpload(store.uploadItems()[0]?.id ?? 'missing');
+
+    expect(apiClient.uploadDocument).toHaveBeenCalledTimes(1);
+    expect(crypto.randomUUID).toHaveBeenCalledTimes(1);
+    expect(apiClient.getDocumentOperation).toHaveBeenLastCalledWith(
+      'project-1',
+      operationId,
+    );
+    expect(store.uploadItems()[0]).toEqual(
+      expect.objectContaining({
+        status: 'uploaded',
+        document: expect.objectContaining({ id: 'document-recovered' }),
+      }),
+    );
+  });
+
+  it('resumes an unavailable cancellation with DELETE on the same operation', async () => {
+    const operationId = fixedOperationId(21);
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue(operationId);
+    const store = TestBed.inject(SourceImportStore);
+    apiClient.uploadDocument.mockImplementation(
+      (
+        _projectId: string,
+        _body: FormData,
+        options?: { signal?: AbortSignal },
+      ) =>
+        new Promise<DocumentRead>((_resolve, reject) => {
+          options?.signal?.addEventListener('abort', () => {
+            reject(new DOMException('Canceled.', 'AbortError'));
+          });
+        }),
+    );
+    apiClient.cancelDocumentOperation.mockRejectedValue(
+      new Error('delete unavailable'),
+    );
+    apiClient.getDocumentOperation.mockRejectedValue(
+      new Error('get unavailable'),
+    );
+    store.chooseFiles([pdfFile('cancel-status.pdf')]);
+
+    const uploadPromise = store.uploadDocuments();
+    await store.cancelUpload(store.uploadItems()[0]?.id ?? 'missing');
+    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(2000);
+    await vi.advanceTimersByTimeAsync(4000);
+    await uploadPromise;
+
+    expect(store.uploadItems()[0]).toEqual(
+      expect.objectContaining({
+        status: 'status_unavailable',
+        error: 'Cancellation status is unavailable. Retry status check.',
+      }),
+    );
+    const deleteCallCount = apiClient.cancelDocumentOperation.mock.calls.length;
+    apiClient.cancelDocumentOperation.mockResolvedValue(
+      operationRead({
+        id: operationId,
+        status: 'canceled',
+        phase: 'canceled',
+        cancellable: false,
+      }),
+    );
+
+    await store.retryUpload(store.uploadItems()[0]?.id ?? 'missing');
+
+    expect(apiClient.cancelDocumentOperation).toHaveBeenCalledTimes(
+      deleteCallCount + 1,
+    );
+    expect(apiClient.cancelDocumentOperation).toHaveBeenLastCalledWith(
+      'project-1',
+      operationId,
+    );
+    expect(apiClient.uploadDocument).toHaveBeenCalledTimes(1);
+    expect(crypto.randomUUID).toHaveBeenCalledTimes(1);
+    expect(store.uploadItems()[0]?.status).toBe('canceled');
   });
 });
 
@@ -574,14 +1445,31 @@ function chunkRead(overrides: Partial<ChunkRead> = {}): ChunkRead {
   };
 }
 
-function pdfFile(name: string): File {
-  return new File(['%PDF-1.7'], name, { type: 'application/pdf' });
+function operationRead(
+  overrides: Partial<DocumentOperationRead> = {},
+): DocumentOperationRead {
+  return {
+    id: fixedOperationId(9),
+    project_id: 'project-1',
+    document_id: null,
+    status: 'running',
+    phase: 'processing',
+    cancellable: true,
+    error: null,
+    created_at: '2026-06-18T00:00:00Z',
+    updated_at: '2026-06-18T00:00:01Z',
+    ...overrides,
+  };
 }
 
-async function flushPromises(times = 4): Promise<void> {
-  for (let index = 0; index < times; index += 1) {
-    await Promise.resolve();
-  }
+function fixedOperationId(
+  suffix: number,
+): `${string}-${string}-${string}-${string}-${string}` {
+  return `00000000-0000-4000-8000-${suffix.toString().padStart(12, '0')}`;
+}
+
+function pdfFile(name: string): File {
+  return new File(['%PDF-1.7'], name, { type: 'application/pdf' });
 }
 
 function deferred<T>(): {

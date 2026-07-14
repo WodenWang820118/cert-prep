@@ -19,7 +19,14 @@ export interface DocumentParsingMetric {
   readonly value: string;
 }
 
-type SourceUploadStatus = 'queued' | 'uploading' | 'uploaded' | 'failed';
+export type SourceUploadStatus =
+  | 'queued'
+  | 'uploading'
+  | 'cancel_requested'
+  | 'status_unavailable'
+  | 'canceled'
+  | 'uploaded'
+  | 'failed';
 
 export interface SourceUploadItem {
   readonly id: string;

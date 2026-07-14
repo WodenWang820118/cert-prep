@@ -41,6 +41,19 @@ describe('OperationStore', () => {
     expect(store.busy()).toBeNull();
   });
 
+  it('derives the success message from the completed result', async () => {
+    const store = TestBed.inject(OperationStore);
+
+    const result = await store.run(
+      'upload',
+      (accepted: string[]) => `${accepted.length} uploads accepted`,
+      async () => ['document-1', 'document-2'],
+    );
+
+    expect(result).toEqual(['document-1', 'document-2']);
+    expect(store.status()).toBe('2 uploads accepted');
+  });
+
   it('supports direct failure messages and action-specific busy checks', () => {
     const store = TestBed.inject(OperationStore);
 

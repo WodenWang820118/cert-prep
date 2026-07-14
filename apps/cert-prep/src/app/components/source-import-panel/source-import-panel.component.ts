@@ -75,11 +75,34 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
                     }
                   </p>
                 </div>
-                <p-tag
-                  [value]="uploadStatusLabel(item.status)"
-                  [severity]="uploadStatusSeverity(item.status)"
-                  [rounded]="true"
-                />
+                <div class="flex items-center gap-2">
+                  <p-tag
+                    [value]="uploadStatusLabel(item.status)"
+                    [severity]="uploadStatusSeverity(item.status)"
+                    [rounded]="true"
+                  />
+                  @if (sourceImport.canCancelUpload(item)) {
+                    <button
+                      class="workbench-secondary-button"
+                      type="button"
+                      [attr.aria-label]="'Cancel upload of ' + item.file.name"
+                      [disabled]="item.status === 'cancel_requested'"
+                      (click)="cancelUpload(item.id)"
+                    >
+                      Cancel
+                    </button>
+                  }
+                  @if (sourceImport.canRetryUpload(item)) {
+                    <button
+                      class="workbench-secondary-button"
+                      type="button"
+                      [attr.aria-label]="'Retry upload of ' + item.file.name"
+                      (click)="retryUpload(item.id)"
+                    >
+                      Retry
+                    </button>
+                  }
+                </div>
               </div>
             }
           </div>
@@ -306,11 +329,25 @@ export class SourceImportPanelComponent {
   }
 
   protected async uploadDocument(): Promise<void> {
-    const documents = await this.sourceImport.uploadDocuments();
-    const project = this.projects.selectedProject();
-    if (documents.length > 0 && project !== null) {
-      await this.drafts.load(project.id);
+    const projectId = this.projects.selectedProject()?.id;
+    if (projectId === undefined) {
+      return;
     }
+    const documents = await this.sourceImport.uploadDocuments();
+    if (
+      documents.length > 0 &&
+      this.projects.selectedProject()?.id === projectId
+    ) {
+      await this.drafts.load(projectId);
+    }
+  }
+
+  protected async cancelUpload(itemId: string): Promise<void> {
+    await this.sourceImport.cancelUpload(itemId);
+  }
+
+  protected async retryUpload(itemId: string): Promise<void> {
+    await this.sourceImport.retryUpload(itemId);
   }
 
   protected async selectDocument(documentId: string): Promise<void> {
@@ -355,6 +392,15 @@ export class SourceImportPanelComponent {
     if (status === 'uploading') {
       return 'Uploading';
     }
+    if (status === 'cancel_requested') {
+      return 'Cancel requested';
+    }
+    if (status === 'status_unavailable') {
+      return 'Status unavailable';
+    }
+    if (status === 'canceled') {
+      return 'Canceled';
+    }
     if (status === 'uploaded') {
       return 'Uploaded';
     }
@@ -368,7 +414,7 @@ export class SourceImportPanelComponent {
     if (status === 'uploading') {
       return 'info';
     }
-    if (status === 'failed') {
+    if (status === 'failed' || status === 'status_unavailable') {
       return 'danger';
     }
     return 'warn';

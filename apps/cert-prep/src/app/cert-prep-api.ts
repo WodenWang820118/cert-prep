@@ -15,6 +15,7 @@ import {
 
 export type {
   ChunkRead,
+  DocumentOperationRead,
   DocumentRead,
   DraftGenerateRequest,
   DraftGenerationJobList,
