@@ -387,6 +387,107 @@ MIGRATIONS: Final[tuple[tuple[int, str], ...]] = (
             ADD COLUMN fallback_reason TEXT;
         """,
     ),
+    (
+        17,
+        """
+        CREATE TABLE document_operations (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            document_id TEXT REFERENCES documents(id) ON DELETE CASCADE,
+            status TEXT NOT NULL,
+            phase TEXT NOT NULL,
+            cancellable INTEGER NOT NULL,
+            error TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE INDEX idx_document_operations_project
+            ON document_operations(project_id, created_at);
+        CREATE INDEX idx_document_operations_document
+            ON document_operations(project_id, document_id, updated_at);
+        """,
+    ),
+    (
+        18,
+        """
+        ALTER TABLE draft_generation_jobs
+            ADD COLUMN phase TEXT NOT NULL DEFAULT 'queued';
+        ALTER TABLE draft_generation_jobs
+            ADD COLUMN cancellable INTEGER NOT NULL DEFAULT 1;
+
+        UPDATE draft_generation_jobs
+        SET phase = CASE status
+                WHEN 'pending' THEN 'queued'
+                WHEN 'running' THEN 'generating'
+                WHEN 'succeeded' THEN 'completed'
+                WHEN 'failed' THEN 'failed'
+                WHEN 'skipped_provider_unavailable' THEN 'failed'
+                WHEN 'skipped_missing_model' THEN 'failed'
+                ELSE phase
+            END,
+            cancellable = CASE
+                WHEN status IN (
+                    'succeeded',
+                    'failed',
+                    'skipped_provider_unavailable',
+                    'skipped_missing_model'
+                ) THEN 0
+                ELSE 1
+            END;
+
+        CREATE TABLE manual_draft_generation_operations (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+            limit_count INTEGER NOT NULL,
+            strategy TEXT NOT NULL,
+            status TEXT NOT NULL,
+            phase TEXT NOT NULL,
+            cancellable INTEGER NOT NULL,
+            provider TEXT NOT NULL,
+            model TEXT NOT NULL,
+            effective_provider TEXT,
+            effective_model TEXT,
+            fallback_reason TEXT,
+            generated_count INTEGER NOT NULL DEFAULT 0,
+            error TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE INDEX idx_manual_draft_operations_document
+            ON manual_draft_generation_operations(project_id, document_id, created_at);
+        CREATE UNIQUE INDEX idx_manual_draft_operations_one_active
+            ON manual_draft_generation_operations(project_id, document_id)
+            WHERE status IN ('queued', 'running', 'cancel_requested');
+        """,
+    ),
+    (
+        19,
+        """
+        CREATE TABLE runtime_installation_jobs (
+            id TEXT PRIMARY KEY,
+            kind TEXT NOT NULL,
+            provider TEXT NOT NULL,
+            model TEXT NOT NULL,
+            status TEXT NOT NULL,
+            phase TEXT NOT NULL,
+            cancellable INTEGER NOT NULL,
+            detail TEXT NOT NULL,
+            completed INTEGER,
+            total INTEGER,
+            error TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE INDEX idx_runtime_installation_jobs_updated
+            ON runtime_installation_jobs(updated_at DESC);
+        CREATE UNIQUE INDEX idx_runtime_installation_jobs_one_active_kind
+            ON runtime_installation_jobs(kind)
+            WHERE status IN (
+                'queued', 'running', 'cancel_requested', 'waiting_for_user'
+            );
+        """,
+    ),
 )
 
 

@@ -19,6 +19,13 @@ def test_saved_exam_runtime_metadata_columns_are_migrated(tmp_path: Path) -> Non
         chunk_columns = _columns(connection, "document_chunks")
         draft_columns = _columns(connection, "question_drafts")
         draft_job_columns = _columns(connection, "draft_generation_jobs")
+        manual_draft_operation_columns = _columns(
+            connection, "manual_draft_generation_operations"
+        )
+        document_operation_columns = _columns(connection, "document_operations")
+        runtime_installation_columns = _columns(
+            connection, "runtime_installation_jobs"
+        )
         session_columns = _columns(connection, "practice_sessions")
         session_question_columns = _columns(connection, "practice_session_questions")
 
@@ -64,7 +71,52 @@ def test_saved_exam_runtime_metadata_columns_are_migrated(tmp_path: Path) -> Non
         "generated_count",
         "retry_count",
         "last_error",
+        "phase",
+        "cancellable",
     } <= set(draft_job_columns)
+    assert {
+        "id",
+        "project_id",
+        "document_id",
+        "limit_count",
+        "strategy",
+        "status",
+        "phase",
+        "cancellable",
+        "provider",
+        "model",
+        "effective_provider",
+        "effective_model",
+        "fallback_reason",
+        "generated_count",
+        "error",
+    } <= set(manual_draft_operation_columns)
+    assert {
+        "id",
+        "project_id",
+        "document_id",
+        "status",
+        "phase",
+        "cancellable",
+        "error",
+        "created_at",
+        "updated_at",
+    } <= set(document_operation_columns)
+    assert {
+        "id",
+        "kind",
+        "provider",
+        "model",
+        "status",
+        "phase",
+        "cancellable",
+        "detail",
+        "completed",
+        "total",
+        "error",
+        "created_at",
+        "updated_at",
+    } <= set(runtime_installation_columns)
     assert {
         "session_id",
         "project_id",
@@ -221,6 +273,153 @@ def test_migration_16_preserves_configured_job_values_and_backfills_null_attribu
     assert job["effective_model"] is None
     assert job["fallback_reason"] is None
     assert applied is not None
+
+
+def test_migration_18_backfills_job_phase_and_cancellability(tmp_path: Path) -> None:
+    settings = Settings(data_dir=tmp_path, api_token="test-token")
+    _create_v16_draft_job_fixture(settings.database_path)
+
+    Database(settings).migrate()
+    Database(settings).migrate()
+
+    with sqlite3.connect(settings.database_path) as connection:
+        connection.row_factory = sqlite3.Row
+        jobs = {
+            row["status"]: row
+            for row in connection.execute(
+                """
+                SELECT status, phase, cancellable
+                FROM draft_generation_jobs
+                ORDER BY status
+                """
+            ).fetchall()
+        }
+        applied_versions = [
+            row[0]
+            for row in connection.execute(
+                """
+                SELECT version
+                FROM schema_migrations
+                WHERE version >= 17
+                ORDER BY version
+                """
+            ).fetchall()
+        ]
+
+    assert (jobs["pending"]["phase"], jobs["pending"]["cancellable"]) == (
+        "queued",
+        1,
+    )
+    assert (jobs["running"]["phase"], jobs["running"]["cancellable"]) == (
+        "generating",
+        1,
+    )
+    assert (jobs["succeeded"]["phase"], jobs["succeeded"]["cancellable"]) == (
+        "completed",
+        0,
+    )
+    assert (jobs["failed"]["phase"], jobs["failed"]["cancellable"]) == (
+        "failed",
+        0,
+    )
+    assert (
+        jobs["skipped_provider_unavailable"]["phase"],
+        jobs["skipped_provider_unavailable"]["cancellable"],
+    ) == ("failed", 0)
+    assert (
+        jobs["skipped_missing_model"]["phase"],
+        jobs["skipped_missing_model"]["cancellable"],
+    ) == ("failed", 0)
+    assert applied_versions == [17, 18, 19]
+
+
+def test_active_operation_indexes_reject_duplicate_work(tmp_path: Path) -> None:
+    settings = Settings(data_dir=tmp_path, api_token="test-token")
+    _create_v16_draft_job_fixture(settings.database_path)
+    Database(settings).migrate()
+
+    with sqlite3.connect(settings.database_path) as connection:
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute(
+            """
+            INSERT INTO manual_draft_generation_operations(
+                id, project_id, document_id, limit_count, strategy, status,
+                phase, cancellable, provider, model, created_at, updated_at
+            )
+            VALUES (
+                'manual-active', 'project', 'document', 1, 'hybrid_reasoning',
+                'running', 'generating', 1, 'fastflowlm', 'qwen3.5:4b',
+                '2026-01-02', '2026-01-02'
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO manual_draft_generation_operations(
+                id, project_id, document_id, limit_count, strategy, status,
+                phase, cancellable, provider, model, created_at, updated_at
+            )
+            VALUES (
+                'manual-terminal', 'project', 'document', 1,
+                'hybrid_reasoning', 'succeeded', 'completed', 0,
+                'fastflowlm', 'qwen3.5:4b', '2026-01-03', '2026-01-03'
+            )
+            """
+        )
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                """
+                INSERT INTO manual_draft_generation_operations(
+                    id, project_id, document_id, limit_count, strategy, status,
+                    phase, cancellable, provider, model, created_at, updated_at
+                )
+                VALUES (
+                    'manual-conflict', 'project', 'document', 1,
+                    'hybrid_reasoning', 'queued', 'queued', 1, 'fastflowlm',
+                    'qwen3.5:4b', '2026-01-03', '2026-01-03'
+                )
+                """
+            )
+        connection.execute(
+            """
+            INSERT INTO runtime_installation_jobs(
+                id, kind, provider, model, status, phase, cancellable, detail,
+                created_at, updated_at
+            )
+            VALUES (
+                'runtime-active', 'windowsml_ocr', 'windowsml', '',
+                'waiting_for_user', 'waiting_for_user', 1, 'Consent required',
+                '2026-01-02', '2026-01-02'
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO runtime_installation_jobs(
+                id, kind, provider, model, status, phase, cancellable, detail,
+                created_at, updated_at
+            )
+            VALUES (
+                'runtime-terminal', 'windowsml_ocr', 'windowsml', '',
+                'succeeded', 'completed', 0, 'Ready',
+                '2026-01-03', '2026-01-03'
+            )
+            """
+        )
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                """
+                INSERT INTO runtime_installation_jobs(
+                    id, kind, provider, model, status, phase, cancellable,
+                    detail, created_at, updated_at
+                )
+                VALUES (
+                    'runtime-conflict', 'windowsml_ocr', 'windowsml', '',
+                    'cancel_requested', 'canceling', 0, 'Canceling',
+                    '2026-01-03', '2026-01-03'
+                )
+                """
+            )
 
 
 def _columns(connection, table_name: str) -> dict[str, str | None]:
@@ -409,4 +608,44 @@ def _create_v15_draft_job_fixture(database_path: Path) -> None:
                 '2026-01-01', '2026-01-01'
             )
             """
+        )
+
+
+def _create_v16_draft_job_fixture(database_path: Path) -> None:
+    _create_v15_draft_job_fixture(database_path)
+    with sqlite3.connect(database_path) as connection:
+        for version, sql in MIGRATIONS:
+            if version < 16:
+                continue
+            if version >= 17:
+                break
+            connection.executescript(sql)
+            connection.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                (version, f"migration-{version}"),
+            )
+        connection.executemany(
+            """
+            INSERT INTO draft_generation_jobs(
+                id, project_id, document_id, chunk_id, page_number, strategy,
+                status, provider, model, created_at, updated_at
+            )
+            VALUES (?, 'project', 'document', 'chunk', 1, ?, ?,
+                'fastflowlm', 'qwen3.5:4b', '2026-01-01', '2026-01-01')
+            """,
+            [
+                ("draft-pending", "pending-strategy", "pending"),
+                ("draft-running", "running-strategy", "running"),
+                ("draft-failed", "failed-strategy", "failed"),
+                (
+                    "draft-provider-unavailable",
+                    "provider-unavailable-strategy",
+                    "skipped_provider_unavailable",
+                ),
+                (
+                    "draft-model-missing",
+                    "model-missing-strategy",
+                    "skipped_missing_model",
+                ),
+            ],
         )
