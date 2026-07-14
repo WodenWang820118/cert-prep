@@ -5,7 +5,13 @@ import type {
   CertPrepGeneratedClient,
   CertPrepHttpRequest,
 } from '@cert-prep/api';
-import { firstValueFrom } from 'rxjs';
+import {
+  defer,
+  firstValueFrom,
+  Observable,
+  switchMap,
+  takeUntil,
+} from 'rxjs';
 
 export type {
   ChunkRead,
@@ -118,19 +124,50 @@ class CertPrepAuthenticatedTransport {
   private readonly http = inject(HttpClient);
   private readonly runtimeConfig = inject(CertPrepRuntimeConfig);
 
-  async request<TResponse>(request: CertPrepHttpRequest): Promise<TResponse> {
-    const config = await this.runtimeConfig.getBackendConfig();
-    return firstValueFrom(
-      this.http.request<TResponse>(
-        request.method,
-        this.url(config.base_url, request.path),
-        {
-          body: request.body,
-          headers: new HttpHeaders({
-            Authorization: `Bearer ${config.token}`,
-          }),
-        },
+  request<TResponse>(request: CertPrepHttpRequest): Promise<TResponse> {
+    const response = defer(() => this.runtimeConfig.getBackendConfig()).pipe(
+      switchMap((config) =>
+        this.http.request<TResponse>(
+          request.method,
+          this.url(config.base_url, request.path),
+          {
+            body: request.body,
+            headers: new HttpHeaders(request.headers ?? {})
+              .delete('Authorization')
+              .set('Authorization', `Bearer ${config.token}`),
+          },
+        ),
       ),
+    );
+
+    return firstValueFrom(
+      request.signal === undefined
+        ? response
+        : response.pipe(takeUntil(this.abortError(request.signal))),
+    );
+  }
+
+  private abortError(signal: AbortSignal): Observable<never> {
+    return new Observable<never>((subscriber) => {
+      const onAbort = (): void => subscriber.error(this.abortReason(signal));
+      if (signal.aborted) {
+        onAbort();
+        return undefined;
+      }
+
+      signal.addEventListener('abort', onAbort, { once: true });
+      if (signal.aborted) {
+        onAbort();
+      }
+
+      return () => signal.removeEventListener('abort', onAbort);
+    });
+  }
+
+  private abortReason(signal: AbortSignal): unknown {
+    return (
+      signal.reason ??
+      new DOMException('The operation was aborted.', 'AbortError')
     );
   }
 
