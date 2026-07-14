@@ -193,13 +193,47 @@ and process cleanup.
 - Commit `bfb7ca6` pinned Node 24, pnpm 10.33.2, Python 3.12/uv, and Rust stable,
   and added Windows CI plus the isolated real-backend E2E lane. A hosted run on
   committed HEAD is still required.
-- Current local verification passed desktop lint with two pre-existing
+- Verification through `bfb7ca6` passed desktop lint with two pre-existing
   warnings, package QA 124 tests, release tooling 30 Node plus 21 Python tests,
   Cargo 23 tests, E2E lint with two pre-existing warnings, and real-backend E2E
   5 tests.
-- No `packaged-document-cancellation-windowsml` Nx target or candidate-bound
-  nine-check output exists yet. The exact candidate, clean-install, protected
-  AMD/XDNA2, WebM/`ffprobe`, and public-release gates therefore remain open.
+- Commit `9f87f31` added the fail-closed
+  `packaged-document-cancellation-windowsml` Nx target. It validates the exact
+  candidate root and identity, installed executable, PDF, harness digest, and
+  acceptance run ID before it can atomically publish exactly five
+  document-level evidence files: `upload`, `ocr`, `cancelVsCompleteRace`,
+  `crashRecovery`, and `partialDataRemoved`. Evidence publication additionally
+  requires a residue-free final cleanup.
+- Local contract verification for `9f87f31` passed script type checking,
+  package QA 147 tests, and release tooling with 30 Node plus 21 Python tests
+  and Ruff. The heavyweight target has not run against the exact installed
+  candidate, and no candidate-bound five-file output exists. Separate
+  `draft`, `runtime`, `model`, and `ownedProcessesReleased` files plus the
+  session-restart evidence are also still required; the nine-check parent gate
+  remains open.
+
+### Additional Local Release Prerequisites (2026-07-14)
+
+- Commit `f460d19` copies `README.md`, `PRIVACY.md`, `LICENSE`,
+  `THIRD_PARTY_NOTICES.md`, and `CHANGELOG.md` into the Angular `legal` build
+  directory so packaged legal links have concrete assets. Frontend lint,
+  221 tests, and build passed; the existing bundle-budget warnings remain.
+- Commit `346c0b7` adds an explicit QA-only
+  `CERT_PREP_PACKAGE_QA_AUTO_INSTALL_BUNDLED_BACKEND=true` startup switch. It
+  starts bundled-backend installation only when the installed backend cannot
+  launch, enabling the checkout-free clean-install harness without changing
+  normal explicit-consent behavior. Cargo 23 tests and release tooling with 30
+  Node plus 21 Python tests and Ruff passed locally.
+- Commit `4e1a717` makes WindowsML model preparation use isolated Python 3.12
+  with copied uv links and installs an offline AIStudio stub before PaddleOCR
+  import, preventing the optional downloader path from entering the packaged
+  runtime. OCR lint and 36 tests, backend lint, and 370 backend tests with 2
+  skips passed. The real WindowsML runtime build/self-test passed and produced
+  a local 275,729,817-byte ZIP with SHA-256
+  `c76565bd0d2de60e7938f74da89fc8758b8274ad47c4209a92eb2cdaa473438b`.
+- These are committed local prerequisites only. They do not establish an
+  anonymous public OCR asset, a frozen exact candidate, hosted MSI/NSIS clean
+  installs, protected AMD/XDNA2 evidence, or Public Alpha readiness.
 
 ## Size And Artifact Evidence
 

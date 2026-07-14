@@ -5,7 +5,7 @@ Target: public unsigned Windows 11 x64 alpha `0.1.0-alpha.1`, tag
 
 Checkpoint: 2026-07-14. Checked items are committed local milestones; unchecked
 items remain required Public Alpha gates. The original worktree checkpoint was
-main HEAD `9313e7e`; the local implementation commits now end at `bfb7ca6`.
+main HEAD `9313e7e`; the local implementation commits now end at `9f87f31`.
 Completed local implementation evidence belongs in
 `.agents/SPECS/domains/runtime-packaging.md` and
 `.agents/SPECS/domains/parsing-reasoning.md`. Dirty worktree changes, ignored
@@ -39,6 +39,12 @@ count as completed Alpha gates.
       candidate-bound JSON for `upload`, `ocr`,
       `draft`, `runtime`, `model`, `cancelVsCompleteRace`, `crashRecovery`,
       `partialDataRemoved`, and `ownedProcessesReleased`.
+  - [x] Implement and locally verify
+    `cert-prep-desktop:packaged-document-cancellation-windowsml` (`9f87f31`).
+    Its fail-closed runner can produce only the five document-level files
+    `upload`, `ocr`, `cancelVsCompleteRace`, `crashRecovery`, and
+    `partialDataRemoved`. It has not been run against the exact installed
+    candidate, so this parent gate remains open.
   - Complete the pending packaged OCR lane for
     `cancel -> cancel_requested -> canceled -> same-document Retry -> ready`.
     Bind every action and terminal state to the exact authenticated
@@ -53,8 +59,9 @@ count as completed Alpha gates.
   - Cover practice-session restart after one answer, explicit Resume,
     completion, and a second restart; `sessionRestartPassed` must be backed by
     real evidence rather than a bare boolean.
-    Verify: add/run `cert-prep-desktop:packaged-document-cancellation-windowsml`
-    plus the remaining packaged resilience lanes, then validate the nine
+    Verify: run `cert-prep-desktop:packaged-document-cancellation-windowsml`
+    against the exact installed candidate plus the remaining packaged
+    resilience lanes, then validate the nine
     per-check evidence files through `cert-prep-desktop:release-tool-test`.
 
 ## Phase 4 — Land CI And Real Integration Coverage
@@ -97,6 +104,13 @@ count as completed Alpha gates.
       resource-release evidence are independently present.
 
 ## Phase 0/1/4 — Provision And Execute The Public Release Chain
+
+- [x] Implement, locally verify, and commit the remaining local release-chain
+      prerequisites: packaged legal assets (`f460d19`), the explicit QA-only
+      bundled-backend install switch (`346c0b7`), and isolated/offline
+      WindowsML OCR build hardening (`4e1a717`). These commits do not prove a
+      public OCR asset, exact candidate, hosted clean install, or release
+      readiness.
 
 - [ ] Create/configure the public GitHub repository and protected
       `alpha-release`/`alpha-hardware` environments. Pin the provisioned AMD
