@@ -128,14 +128,51 @@ class LLMModelInstaller:
                 "Configured LLM provider does not support model downloads."
             )
 
+        last_completed: int | None = None
+        last_total: int | None = None
+
+        def capture_model_progress(
+            model_progress: ModelPullProgress,
+        ) -> tuple[int | None, int | None]:
+            nonlocal last_completed, last_total
+            if model_progress.completed is not None:
+                last_completed = model_progress.completed
+            if model_progress.total is not None:
+                last_total = model_progress.total
+            return last_completed, last_total
+
         def record_model_progress(model_progress: ModelPullProgress) -> None:
+            completed, total = capture_model_progress(model_progress)
             progress(
                 RuntimeInstallProgress(
                     detail=model_progress.status or "model download running",
-                    completed=model_progress.completed,
-                    total=model_progress.total,
+                    completed=completed,
+                    total=total,
                     phase="model_download",
                     cancellable=True,
+                )
+            )
+
+        def record_preparation_progress(model_progress: ModelPullProgress) -> None:
+            progress(
+                RuntimeInstallProgress(
+                    detail=model_progress.status or "model onboarding preparation running",
+                    completed=model_progress.completed,
+                    total=model_progress.total,
+                    phase="model_onboarding",
+                    cancellable=True,
+                )
+            )
+
+        def record_verification_progress(model_progress: ModelPullProgress) -> None:
+            completed, total = capture_model_progress(model_progress)
+            progress(
+                RuntimeInstallProgress(
+                    detail=model_progress.status or "model verification running",
+                    completed=completed,
+                    total=total,
+                    phase="committing",
+                    cancellable=False,
                 )
             )
 
@@ -160,7 +197,9 @@ class LLMModelInstaller:
                         cancellable=True,
                     )
                 )
-                onboarding_provider.prepare_model_onboarding(record_model_progress)
+                onboarding_provider.prepare_model_onboarding(
+                    record_preparation_progress
+                )
             progress(
                 RuntimeInstallProgress(
                     "Downloading the selected model.",
@@ -169,15 +208,37 @@ class LLMModelInstaller:
                 )
             )
             model_provider.pull_model(record_model_progress)
+            progress(
+                RuntimeInstallProgress(
+                    "Committing the selected model.",
+                    completed=last_completed,
+                    total=last_total,
+                    phase="committing",
+                    cancellable=False,
+                )
+            )
             if onboarding_provider is not None:
                 progress(
                     RuntimeInstallProgress(
                         "Verifying model onboarding.",
-                        phase="model_verification",
-                        cancellable=True,
+                        completed=last_completed,
+                        total=last_total,
+                        phase="committing",
+                        cancellable=False,
                     )
                 )
-                onboarding_provider.verify_model_onboarding(record_model_progress)
+                onboarding_provider.verify_model_onboarding(
+                    record_verification_progress
+                )
+                progress(
+                    RuntimeInstallProgress(
+                        "Model onboarding verified.",
+                        completed=last_completed,
+                        total=last_total,
+                        phase="committing",
+                        cancellable=False,
+                    )
+                )
         except Exception as exc:
             raise ProviderUnavailableError(
                 f"{_provider_label(self.provider)} unavailable: {exc}"

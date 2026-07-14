@@ -119,7 +119,7 @@ def test_explicit_9b_selection_is_allowed_with_warning_on_small_machine() -> Non
 def test_profile_installer_pulls_base_model_and_creates_local_profile() -> None:
     profile = profile_by_id(DEFAULT_PROFILE_ID)
     client = FakeOllamaClient()
-    progress: list[tuple[str, int | None, int | None]] = []
+    progress: list[tuple[str, int | None, int | None, str | None, bool | None]] = []
     installer = OllamaProfileInstaller(
         profile,
         client=client,
@@ -127,7 +127,15 @@ def test_profile_installer_pulls_base_model_and_creates_local_profile() -> None:
     )
 
     status = installer.install(
-        lambda item: progress.append((item.detail, item.completed, item.total))
+        lambda item: progress.append(
+            (
+                item.detail,
+                item.completed,
+                item.total,
+                item.phase,
+                item.cancellable,
+            )
+        )
     )
 
     assert status.value == "succeeded"
@@ -146,12 +154,27 @@ def test_profile_installer_pulls_base_model_and_creates_local_profile() -> None:
         }
     ]
     assert progress == [
-        (f"Pulling base model {profile.base_model}.", None, None),
-        ("pulling manifest", None, None),
-        ("downloading", 50, 100),
-        (f"Creating profile model {profile.local_model}.", None, None),
-        ("creating profile", None, None),
-        ("success", 100, 100),
+        (
+            f"Pulling base model {profile.base_model}.",
+            None,
+            None,
+            "model_download",
+            True,
+        ),
+        ("pulling manifest", None, None, "model_download", True),
+        ("downloading", 50, 100, "model_download", True),
+        ("Committing Ollama profile models.", 50, 100, "committing", False),
+        (
+            f"Creating profile model {profile.local_model}.",
+            50,
+            100,
+            "committing",
+            False,
+        ),
+        ("creating profile", 50, 100, "committing", False),
+        ("success", 23, 23, "committing", False),
+        ("Verifying Ollama profile registration.", 23, 23, "committing", False),
+        ("Ollama profile registration verified.", 23, 23, "committing", False),
     ]
 
 
@@ -187,7 +210,9 @@ def test_profile_installer_creates_selected_and_fallback_profiles() -> None:
         ensure_server=False,
     )
 
-    installer.install(lambda _item: None)
+    progress = []
+
+    installer.install(progress.append)
 
     assert client.pull_calls == [(profile.base_model, True), (fallback.base_model, True)]
     assert [call["model"] for call in client.create_calls] == [
@@ -195,6 +220,22 @@ def test_profile_installer_creates_selected_and_fallback_profiles() -> None:
         fallback.local_model,
     ]
     assert set(client.models) == {profile.local_model, fallback.local_model}
+    commit_index = next(
+        index for index, item in enumerate(progress) if item.phase == "committing"
+    )
+    assert [item.detail for item in progress[:commit_index]] == [
+        f"Pulling base model {profile.base_model}.",
+        "pulling manifest",
+        "downloading",
+        f"Pulling base model {fallback.base_model}.",
+        "pulling manifest",
+        "downloading",
+    ]
+    assert all(item.cancellable is True for item in progress[:commit_index])
+    assert all(
+        item.phase == "committing" and item.cancellable is False
+        for item in progress[commit_index:]
+    )
 
 
 def test_profile_installer_reports_missing_registration() -> None:
@@ -262,7 +303,7 @@ class FakeOllamaClient:
         if self.register_created_models and isinstance(model, str):
             self.models.append(model)
         yield {"status": "creating profile"}
-        yield ModelPullProgress(status="success", completed=100, total=100)
+        yield ModelPullProgress(status="success", completed=23, total=23)
 
 
 def _inventory(
