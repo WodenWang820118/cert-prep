@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import HTTPException, status
+from pydantic import BaseModel
 
 from cert_prep_backend.core.exceptions import (
     BackendError,
@@ -15,6 +16,7 @@ from cert_prep_backend.core.exceptions import (
 )
 
 __all__ = [
+    "ApiErrorRead",
     "BackendError",
     "InvalidPdfError",
     "NotFoundError",
@@ -26,6 +28,12 @@ __all__ = [
     "not_found_error",
     "validation_error",
 ]
+
+
+class ApiErrorRead(BaseModel):
+    code: str
+    message: str
+    details: dict[str, Any] | None = None
 
 
 def api_error(

@@ -70,7 +70,10 @@ def test_upload_prepare_failure_reports_missing_paddle_runtime(
 
     response = client.post(
         f"/projects/{project_id}/documents",
-        headers=auth_headers,
+        headers={
+            **auth_headers,
+            "X-Cert-Prep-Operation-Id": "prepare-failure",
+        },
         files={"file": ("scan.pdf", minimal_pdf(""), "application/pdf")},
     )
 
@@ -83,6 +86,14 @@ def test_upload_prepare_failure_reports_missing_paddle_runtime(
     documents = client.get(f"/projects/{project_id}/documents", headers=auth_headers)
     assert documents.status_code == 200
     assert documents.json()["items"] == []
+    operation = client.get(
+        f"/projects/{project_id}/document-operations/prepare-failure",
+        headers=auth_headers,
+    )
+    assert operation.status_code == 200
+    assert operation.json()["status"] == "failed"
+    assert operation.json()["error"] == "OCR runtime is unavailable."
+    assert list(tmp_path.rglob("*.pdf")) == []
 
 
 def test_image_only_pdf_uses_ocr_and_creates_draft_mock_exam(

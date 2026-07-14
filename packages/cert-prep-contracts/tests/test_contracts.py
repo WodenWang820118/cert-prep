@@ -1,7 +1,13 @@
 from __future__ import annotations
 
+import pytest
+
 from cert_prep_contracts import (
     DEFAULT_LLM_RUNTIME_POLICY,
+    DOCUMENT_STATUS_VALUES,
+    DocumentOperationPhase,
+    DocumentOperationRead,
+    DocumentOperationStatus,
     FASTFLOWLM_RUNTIME_TRUST_POLICY,
     FastFlowLMTermsDecision,
     GenerationAttribution,
@@ -22,6 +28,8 @@ from cert_prep_contracts import (
     RuntimeInstallProgress,
     RuntimeRequirementKind,
     RuntimeRequirementSnapshot,
+    SourceDocumentStatus,
+    SourceDocumentStatusValue,
 )
 
 
@@ -41,6 +49,55 @@ def test_runtime_contracts_are_value_types() -> None:
     assert RuntimeInstallationStatus.RUNNING.value == "running"
     assert RuntimeRequirementKind.FASTFLOWLM.value == "fastflowlm"
     assert RuntimeRequirementKind.FASTFLOWLM_MODEL.value == "fastflowlm_model"
+
+
+def test_document_operation_contract_keeps_nullable_fields_required() -> None:
+    operation = DocumentOperationRead(
+        id="operation-id",
+        project_id="project-id",
+        document_id=None,
+        status=DocumentOperationStatus.CANCELED,
+        phase=DocumentOperationPhase.CANCELED,
+        cancellable=False,
+        error=None,
+        created_at="2026-07-14T00:00:00Z",
+        updated_at="2026-07-14T00:00:01Z",
+    )
+
+    assert operation.document_id is None
+    assert operation.error is None
+    assert operation.phase is DocumentOperationPhase.CANCELED
+    assert tuple(status.value for status in SourceDocumentStatus) == (
+        "processing",
+        "cancel_requested",
+        "canceled",
+        "ready",
+        "exam_failed",
+        "no_text_detected",
+        "ocr_failed",
+    )
+    assert DOCUMENT_STATUS_VALUES == tuple(status.value for status in SourceDocumentStatus)
+    status_value: SourceDocumentStatusValue = "future_status"
+    assert status_value == "future_status"
+    assert tuple(status.value for status in DocumentOperationStatus) == (
+        "queued",
+        "running",
+        "cancel_requested",
+        "canceled",
+        "succeeded",
+        "failed",
+    )
+
+    with pytest.raises(TypeError):
+        DocumentOperationRead(  # type: ignore[call-arg]
+            id="operation-id",
+            project_id="project-id",
+            status=DocumentOperationStatus.RUNNING,
+            phase=DocumentOperationPhase.PROCESSING,
+            cancellable=True,
+            created_at="2026-07-14T00:00:00Z",
+            updated_at="2026-07-14T00:00:01Z",
+        )
 
 
 def test_llm_and_ocr_contracts_keep_shared_payload_shape() -> None:

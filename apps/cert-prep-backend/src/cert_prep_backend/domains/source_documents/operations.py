@@ -98,58 +98,71 @@ def cancel_operation(
                 (operation_id, project_id, now, now),
             )
             return _required_operation(_operation_query_by_id(connection, operation_id))
+        return _cancel_existing_operation(
+            connection,
+            operation=_operation_from_row(row),
+            project_id=project_id,
+            now=now,
+        )
 
-        operation = _operation_from_row(row)
-        _assert_operation_project(operation, project_id)
-        status = str(operation["status"])
-        if status in TERMINAL_STATUSES or status == "cancel_requested":
-            return operation
-        if status == "queued":
-            connection.execute(
+
+def cancel_document_processing(
+    db: Database,
+    *,
+    project_id: str,
+    document_id: str,
+) -> dict:
+    """Cancel the operation owning a document without a lookup/cancel race."""
+
+    ensure_project_exists(db, project_id)
+    now = utc_now()
+    with db.connect() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        document = connection.execute(
+            "SELECT status FROM documents WHERE project_id = ? AND id = ?",
+            (project_id, document_id),
+        ).fetchone()
+        if document is None:
+            raise NotFoundError("Document not found.")
+        row = connection.execute(
+            """
+            SELECT *
+            FROM document_operations
+            WHERE project_id = ? AND document_id = ?
+                AND status IN ('queued', 'running', 'cancel_requested')
+            LIMIT 1
+            """,
+            (project_id, document_id),
+        ).fetchone()
+        if row is not None:
+            return _cancel_existing_operation(
+                connection,
+                operation=_operation_from_row(row),
+                project_id=project_id,
+                now=now,
+            )
+        if document["status"] == "canceled":
+            canceled = connection.execute(
                 """
-                UPDATE document_operations
-                SET status = 'canceled', phase = 'canceled', cancellable = 0,
-                    error = NULL, updated_at = ?
-                WHERE id = ? AND project_id = ? AND status = 'queued'
+                SELECT *
+                FROM document_operations
+                WHERE project_id = ? AND document_id = ? AND status = 'canceled'
+                ORDER BY updated_at DESC, created_at DESC, id DESC
+                LIMIT 1
                 """,
-                (now, operation_id, project_id),
+                (project_id, document_id),
+            ).fetchone()
+            if canceled is not None:
+                return _operation_from_row(canceled)
+            raise DocumentOperationStateError(
+                "Canceled document has no owning document operation."
             )
-            return _required_operation(_operation_query_by_id(connection, operation_id))
-        if (
-            status == "running"
-            and operation["phase"] == "processing"
-            and operation["cancellable"]
-        ):
-            updated = connection.execute(
-                """
-                UPDATE document_operations
-                SET status = 'cancel_requested', phase = 'canceling',
-                    cancellable = 0, updated_at = ?
-                WHERE id = ? AND project_id = ? AND status = 'running'
-                    AND phase = 'processing' AND cancellable = 1
-                """,
-                (now, operation_id, project_id),
+        if document["status"] in {"processing", "cancel_requested"}:
+            raise DocumentOperationStateError(
+                "Processing document has no active document operation."
             )
-            if updated.rowcount != 1:
-                raise DocumentOperationStateError(
-                    "Document operation changed while cancellation was requested."
-                )
-            if operation["document_id"] is not None:
-                connection.execute(
-                    """
-                    UPDATE documents
-                    SET status = 'cancel_requested', updated_at = ?
-                    WHERE project_id = ? AND id = ? AND status = 'processing'
-                    """,
-                    (now, project_id, operation["document_id"]),
-                )
-            return _required_operation(_operation_query_by_id(connection, operation_id))
-        if status == "running" and not operation["cancellable"]:
-            raise OperationNotCancellableError(
-                "Document processing is committing and can no longer be canceled."
-            )
-        raise DocumentOperationStateError(
-            f"Document operation cannot be canceled from {status}/{operation['phase']}."
+        raise OperationNotCancellableError(
+            "Document does not have active extraction to cancel."
         )
 
 
@@ -409,6 +422,12 @@ def start_retry_operation(
         connection.execute("BEGIN IMMEDIATE")
         existing_operation = _operation_query_by_id(connection, next_operation_id)
         if existing_operation is not None:
+            existing = _operation_from_row(existing_operation)
+            _assert_operation_project(existing, project_id)
+            if existing["status"] in {"cancel_requested", "canceled"}:
+                raise DocumentProcessingCanceledError(
+                    "Document retry was canceled before it started."
+                )
             raise DocumentOperationConflictError(
                 "Document operation id is already in use."
             )
@@ -556,6 +575,67 @@ def _operation_query_by_id(connection: Connection, operation_id: str) -> Row | N
     ).fetchone()
 
 
+def _cancel_existing_operation(
+    connection: Connection,
+    *,
+    operation: dict,
+    project_id: str,
+    now: str,
+) -> dict:
+    _assert_operation_project(operation, project_id)
+    operation_id = str(operation["id"])
+    status = str(operation["status"])
+    if status in TERMINAL_STATUSES or status == "cancel_requested":
+        return operation
+    if status == "queued":
+        connection.execute(
+            """
+            UPDATE document_operations
+            SET status = 'canceled', phase = 'canceled', cancellable = 0,
+                error = NULL, updated_at = ?
+            WHERE id = ? AND project_id = ? AND status = 'queued'
+            """,
+            (now, operation_id, project_id),
+        )
+        return _required_operation(_operation_query_by_id(connection, operation_id))
+    if (
+        status == "running"
+        and operation["phase"] == "processing"
+        and operation["cancellable"]
+    ):
+        updated = connection.execute(
+            """
+            UPDATE document_operations
+            SET status = 'cancel_requested', phase = 'canceling',
+                cancellable = 0, updated_at = ?
+            WHERE id = ? AND project_id = ? AND status = 'running'
+                AND phase = 'processing' AND cancellable = 1
+            """,
+            (now, operation_id, project_id),
+        )
+        if updated.rowcount != 1:
+            raise DocumentOperationStateError(
+                "Document operation changed while cancellation was requested."
+            )
+        if operation["document_id"] is not None:
+            connection.execute(
+                """
+                UPDATE documents
+                SET status = 'cancel_requested', updated_at = ?
+                WHERE project_id = ? AND id = ? AND status = 'processing'
+                """,
+                (now, project_id, operation["document_id"]),
+            )
+        return _required_operation(_operation_query_by_id(connection, operation_id))
+    if status == "running" and not operation["cancellable"]:
+        raise OperationNotCancellableError(
+            "Document processing is committing and can no longer be canceled."
+        )
+    raise DocumentOperationStateError(
+        f"Document operation cannot be canceled from {status}/{operation['phase']}."
+    )
+
+
 def _required_operation(row: Row | None) -> dict:
     if row is None:
         raise NotFoundError("Document operation not found.")
@@ -586,6 +666,7 @@ def _operation_from_row(row: Row) -> dict:
 __all__ = [
     "DocumentOperationClaim",
     "acknowledge_cancellation",
+    "cancel_document_processing",
     "cancel_operation",
     "claim_operation",
     "create_and_attach_document",

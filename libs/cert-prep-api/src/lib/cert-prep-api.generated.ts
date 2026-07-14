@@ -5,11 +5,15 @@
 export interface Components {
   schemas: {
     AnswerKeySource: string;
+    ApiErrorRead: { "code": string; "message": string; "details"?: Record<string, unknown> | null };
     Body_upload_document_projects__project_id__documents_post: { "file": string; "language_hint"?: string };
     ChunkList: { "items": Components['schemas']['ChunkRead'][] };
     ChunkRead: { "id": string; "document_id": string; "page_number": number; "chunk_index": number; "text": string; "raw_text": string; "line_start": number | null; "line_end": number | null; "line_count": number; "source_excerpt": string; "extraction_method": Components['schemas']['PdfExtractionMethod'] | string; "content_profile": Components['schemas']['ContentProfile'] | string; "created_at": string };
     ContentProfile: string;
     DocumentList: { "items": Components['schemas']['DocumentRead'][] };
+    DocumentOperationPhase: "uploading" | "processing" | "canceling" | "committing" | "canceled" | "completed" | "failed";
+    DocumentOperationRead: { "id": string; "project_id": string; "document_id": string | null; "status": Components['schemas']['DocumentOperationStatus']; "phase": Components['schemas']['DocumentOperationPhase']; "cancellable": boolean; "error": string | null; "created_at": string; "updated_at": string };
+    DocumentOperationStatus: "queued" | "running" | "cancel_requested" | "canceled" | "succeeded" | "failed";
     DocumentRead: { "id": string; "project_id": string; "filename": string; "sha256": string; "language_hint": string; "page_count": number; "has_text": boolean; "status": Components['schemas']['SourceDocumentStatus'] | string; "extraction_method": Components['schemas']['PdfExtractionMethod'] | string; "ocr_device": string | null; "ocr_fallback_reason": string | null; "ocr_duration_ms": number; "processed_page_count": number; "parse_wall_duration_ms": number; "render_duration_ms": number; "ocr_engine_duration_ms": number; "ocr_worker_count": number; "first_chunk_ms": number; "exam_item_count": number; "content_profile": Components['schemas']['ContentProfile'] | string; "classification_detail": string; "chunks_count": number; "created_at": string; "updated_at": string };
     DraftGenerateRequest: { "limit"?: number; "strategy"?: Components['schemas']['DraftGenerationStrategy'] };
     DraftGenerationJobList: { "items": Components['schemas']['DraftGenerationJobRead'][] };
@@ -72,11 +76,15 @@ export interface Components {
 }
 
 export type AnswerKeySource = Components['schemas']['AnswerKeySource'];
+export type ApiErrorRead = Components['schemas']['ApiErrorRead'];
 export type Body_upload_document_projects__project_id__documents_post = Components['schemas']['Body_upload_document_projects__project_id__documents_post'];
 export type ChunkList = Components['schemas']['ChunkList'];
 export type ChunkRead = Components['schemas']['ChunkRead'];
 export type ContentProfile = Components['schemas']['ContentProfile'];
 export type DocumentList = Components['schemas']['DocumentList'];
+export type DocumentOperationPhase = Components['schemas']['DocumentOperationPhase'];
+export type DocumentOperationRead = Components['schemas']['DocumentOperationRead'];
+export type DocumentOperationStatus = Components['schemas']['DocumentOperationStatus'];
 export type DocumentRead = Components['schemas']['DocumentRead'];
 export type DraftGenerateRequest = Components['schemas']['DraftGenerateRequest'];
 export type DraftGenerationJobList = Components['schemas']['DraftGenerationJobList'];
@@ -138,10 +146,17 @@ export type WrongAnswerSummaryRead = Components['schemas']['WrongAnswerSummaryRe
 
 export type CertPrepHttpMethod = 'DELETE' | 'GET' | 'PATCH' | 'POST';
 
+export interface CertPrepRequestOptions {
+  headers?: Record<string, string>;
+  signal?: AbortSignal;
+}
+
 export interface CertPrepHttpRequest {
   method: CertPrepHttpMethod;
   path: string;
   body?: unknown;
+  headers?: Record<string, string>;
+  signal?: AbortSignal;
 }
 
 export interface CertPrepTransport {
@@ -149,119 +164,131 @@ export interface CertPrepTransport {
 }
 
 export interface CertPrepGeneratedClient {
-  health(): Promise<Components['schemas']['HealthResponse']>;
-  listProjects(): Promise<Components['schemas']['ProjectList']>;
-  createProject(body: Components['schemas']['ProjectCreate']): Promise<Components['schemas']['ProjectRead']>;
-  getProject(projectId: string): Promise<Components['schemas']['ProjectRead']>;
-  updateProject(projectId: string, body: Components['schemas']['ProjectUpdate']): Promise<Components['schemas']['ProjectRead']>;
-  deleteProject(projectId: string): Promise<void>;
-  listDocuments(projectId: string): Promise<Components['schemas']['DocumentList']>;
-  uploadDocument(projectId: string, body: FormData): Promise<Components['schemas']['DocumentRead']>;
-  getDocument(projectId: string, documentId: string): Promise<Components['schemas']['DocumentRead']>;
-  listDocumentChunks(projectId: string, documentId: string): Promise<Components['schemas']['ChunkList']>;
-  generateDocumentDrafts(projectId: string, documentId: string, body: Components['schemas']['DraftGenerateRequest']): Promise<Components['schemas']['QuestionDraftList']>;
-  listDocumentDraftJobs(projectId: string, documentId: string): Promise<Components['schemas']['DraftGenerationJobList']>;
-  retryDocumentDraftJobs(projectId: string, documentId: string): Promise<Components['schemas']['DraftGenerationJobList']>;
-  createQuestionDraft(projectId: string, body: Components['schemas']['QuestionDraftCreate']): Promise<Components['schemas']['QuestionDraftRead']>;
-  listQuestionDrafts(projectId: string): Promise<Components['schemas']['QuestionDraftList']>;
-  updateQuestionDraft(projectId: string, draftId: string, body: Components['schemas']['QuestionDraftUpdate']): Promise<Components['schemas']['QuestionDraftRead']>;
-  createPracticeSession(projectId: string, body: Components['schemas']['PracticeSessionCreate']): Promise<Components['schemas']['PracticeSessionRead']>;
-  listActivePracticeSessions(projectId: string): Promise<Components['schemas']['PracticeSessionList']>;
-  getPracticeSession(projectId: string, sessionId: string): Promise<Components['schemas']['PracticeSessionRead']>;
-  abandonPracticeSession(projectId: string, sessionId: string): Promise<Components['schemas']['PracticeSessionRead']>;
-  recordPracticeAttempt(projectId: string, sessionId: string, body: Components['schemas']['PracticeAttemptCreate']): Promise<Components['schemas']['PracticeAttemptRead']>;
-  listWrongAnswers(projectId: string): Promise<Components['schemas']['WrongAnswerList']>;
-  summarizeWrongAnswers(projectId: string): Promise<Components['schemas']['WrongAnswerSummaryRead']>;
-  explainWrongAnswer(projectId: string, attemptId: string): Promise<Components['schemas']['WrongAnswerExplanationRead']>;
-  llmHealth(): Promise<Components['schemas']['LLMHealthRead']>;
-  llmProviderSelection(): Promise<Components['schemas']['LLMProviderSelectionRead']>;
-  decideFastflowlmTerms(body: Components['schemas']['FastFlowLMTermsDecisionRequest']): Promise<Components['schemas']['LLMProviderSelectionRead']>;
-  llmProfiles(): Promise<Components['schemas']['OllamaProfilesRead']>;
-  llmProfileSelection(): Promise<Components['schemas']['OllamaProfileSelectionRead']>;
-  startModelDownload(): Promise<Components['schemas']['ModelDownloadRead']>;
-  getModelDownload(jobId: string): Promise<Components['schemas']['ModelDownloadRead']>;
-  ocrHealth(): Promise<Components['schemas']['OCRHealthRead']>;
-  runtimeRequirements(): Promise<Components['schemas']['RuntimeRequirementsRead']>;
-  machineInventory(): Promise<Components['schemas']['MachineInventoryRead']>;
-  startRuntimeInstallation(kind: string): Promise<Components['schemas']['RuntimeInstallationRead']>;
-  getRuntimeInstallation(jobId: string): Promise<Components['schemas']['RuntimeInstallationRead']>;
+  health(options?: CertPrepRequestOptions): Promise<Components['schemas']['HealthResponse']>;
+  listProjects(options?: CertPrepRequestOptions): Promise<Components['schemas']['ProjectList']>;
+  createProject(body: Components['schemas']['ProjectCreate'], options?: CertPrepRequestOptions): Promise<Components['schemas']['ProjectRead']>;
+  getProject(projectId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['ProjectRead']>;
+  updateProject(projectId: string, body: Components['schemas']['ProjectUpdate'], options?: CertPrepRequestOptions): Promise<Components['schemas']['ProjectRead']>;
+  deleteProject(projectId: string, options?: CertPrepRequestOptions): Promise<void>;
+  listDocuments(projectId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['DocumentList']>;
+  uploadDocument(projectId: string, body: FormData, options?: CertPrepRequestOptions): Promise<Components['schemas']['DocumentRead']>;
+  getDocument(projectId: string, documentId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['DocumentRead']>;
+  cancelDocumentProcessing(projectId: string, documentId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['DocumentOperationRead']>;
+  retryDocumentProcessing(projectId: string, documentId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['DocumentOperationRead']>;
+  listDocumentChunks(projectId: string, documentId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['ChunkList']>;
+  getDocumentOperation(projectId: string, operationId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['DocumentOperationRead']>;
+  cancelDocumentOperation(projectId: string, operationId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['DocumentOperationRead']>;
+  generateDocumentDrafts(projectId: string, documentId: string, body: Components['schemas']['DraftGenerateRequest'], options?: CertPrepRequestOptions): Promise<Components['schemas']['QuestionDraftList']>;
+  listDocumentDraftJobs(projectId: string, documentId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['DraftGenerationJobList']>;
+  retryDocumentDraftJobs(projectId: string, documentId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['DraftGenerationJobList']>;
+  createQuestionDraft(projectId: string, body: Components['schemas']['QuestionDraftCreate'], options?: CertPrepRequestOptions): Promise<Components['schemas']['QuestionDraftRead']>;
+  listQuestionDrafts(projectId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['QuestionDraftList']>;
+  updateQuestionDraft(projectId: string, draftId: string, body: Components['schemas']['QuestionDraftUpdate'], options?: CertPrepRequestOptions): Promise<Components['schemas']['QuestionDraftRead']>;
+  createPracticeSession(projectId: string, body: Components['schemas']['PracticeSessionCreate'], options?: CertPrepRequestOptions): Promise<Components['schemas']['PracticeSessionRead']>;
+  listActivePracticeSessions(projectId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['PracticeSessionList']>;
+  getPracticeSession(projectId: string, sessionId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['PracticeSessionRead']>;
+  abandonPracticeSession(projectId: string, sessionId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['PracticeSessionRead']>;
+  recordPracticeAttempt(projectId: string, sessionId: string, body: Components['schemas']['PracticeAttemptCreate'], options?: CertPrepRequestOptions): Promise<Components['schemas']['PracticeAttemptRead']>;
+  listWrongAnswers(projectId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['WrongAnswerList']>;
+  summarizeWrongAnswers(projectId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['WrongAnswerSummaryRead']>;
+  explainWrongAnswer(projectId: string, attemptId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['WrongAnswerExplanationRead']>;
+  llmHealth(options?: CertPrepRequestOptions): Promise<Components['schemas']['LLMHealthRead']>;
+  llmProviderSelection(options?: CertPrepRequestOptions): Promise<Components['schemas']['LLMProviderSelectionRead']>;
+  decideFastflowlmTerms(body: Components['schemas']['FastFlowLMTermsDecisionRequest'], options?: CertPrepRequestOptions): Promise<Components['schemas']['LLMProviderSelectionRead']>;
+  llmProfiles(options?: CertPrepRequestOptions): Promise<Components['schemas']['OllamaProfilesRead']>;
+  llmProfileSelection(options?: CertPrepRequestOptions): Promise<Components['schemas']['OllamaProfileSelectionRead']>;
+  startModelDownload(options?: CertPrepRequestOptions): Promise<Components['schemas']['ModelDownloadRead']>;
+  getModelDownload(jobId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['ModelDownloadRead']>;
+  ocrHealth(options?: CertPrepRequestOptions): Promise<Components['schemas']['OCRHealthRead']>;
+  runtimeRequirements(options?: CertPrepRequestOptions): Promise<Components['schemas']['RuntimeRequirementsRead']>;
+  machineInventory(options?: CertPrepRequestOptions): Promise<Components['schemas']['MachineInventoryRead']>;
+  startRuntimeInstallation(kind: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['RuntimeInstallationRead']>;
+  getRuntimeInstallation(jobId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['RuntimeInstallationRead']>;
 }
 
 export function createCertPrepGeneratedClient(
   transport: CertPrepTransport,
 ): CertPrepGeneratedClient {
   return {
-    health: () =>
-      transport.request<Components['schemas']['HealthResponse']>({ method: 'GET' as const, path: "/health" }),
-    listProjects: () =>
-      transport.request<Components['schemas']['ProjectList']>({ method: 'GET' as const, path: "/projects" }),
-    createProject: (body: Components['schemas']['ProjectCreate']) =>
-      transport.request<Components['schemas']['ProjectRead']>({ method: 'POST' as const, path: "/projects", body }),
-    getProject: (projectId: string) =>
-      transport.request<Components['schemas']['ProjectRead']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}` }),
-    updateProject: (projectId: string, body: Components['schemas']['ProjectUpdate']) =>
-      transport.request<Components['schemas']['ProjectRead']>({ method: 'PATCH' as const, path: `/projects/${encodeURIComponent(projectId)}`, body }),
-    deleteProject: (projectId: string) =>
-      transport.request<void>({ method: 'DELETE' as const, path: `/projects/${encodeURIComponent(projectId)}` }),
-    listDocuments: (projectId: string) =>
-      transport.request<Components['schemas']['DocumentList']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/documents` }),
-    uploadDocument: (projectId: string, body: FormData) =>
-      transport.request<Components['schemas']['DocumentRead']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/documents`, body }),
-    getDocument: (projectId: string, documentId: string) =>
-      transport.request<Components['schemas']['DocumentRead']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}` }),
-    listDocumentChunks: (projectId: string, documentId: string) =>
-      transport.request<Components['schemas']['ChunkList']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/chunks` }),
-    generateDocumentDrafts: (projectId: string, documentId: string, body: Components['schemas']['DraftGenerateRequest']) =>
-      transport.request<Components['schemas']['QuestionDraftList']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/drafts`, body }),
-    listDocumentDraftJobs: (projectId: string, documentId: string) =>
-      transport.request<Components['schemas']['DraftGenerationJobList']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/draft-jobs` }),
-    retryDocumentDraftJobs: (projectId: string, documentId: string) =>
-      transport.request<Components['schemas']['DraftGenerationJobList']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/draft-jobs/retry` }),
-    createQuestionDraft: (projectId: string, body: Components['schemas']['QuestionDraftCreate']) =>
-      transport.request<Components['schemas']['QuestionDraftRead']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/question-drafts`, body }),
-    listQuestionDrafts: (projectId: string) =>
-      transport.request<Components['schemas']['QuestionDraftList']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/question-drafts` }),
-    updateQuestionDraft: (projectId: string, draftId: string, body: Components['schemas']['QuestionDraftUpdate']) =>
-      transport.request<Components['schemas']['QuestionDraftRead']>({ method: 'PATCH' as const, path: `/projects/${encodeURIComponent(projectId)}/question-drafts/${encodeURIComponent(draftId)}`, body }),
-    createPracticeSession: (projectId: string, body: Components['schemas']['PracticeSessionCreate']) =>
-      transport.request<Components['schemas']['PracticeSessionRead']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/practice-sessions`, body }),
-    listActivePracticeSessions: (projectId: string) =>
-      transport.request<Components['schemas']['PracticeSessionList']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/practice-sessions` }),
-    getPracticeSession: (projectId: string, sessionId: string) =>
-      transport.request<Components['schemas']['PracticeSessionRead']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/practice-sessions/${encodeURIComponent(sessionId)}` }),
-    abandonPracticeSession: (projectId: string, sessionId: string) =>
-      transport.request<Components['schemas']['PracticeSessionRead']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/practice-sessions/${encodeURIComponent(sessionId)}/abandon` }),
-    recordPracticeAttempt: (projectId: string, sessionId: string, body: Components['schemas']['PracticeAttemptCreate']) =>
-      transport.request<Components['schemas']['PracticeAttemptRead']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/practice-sessions/${encodeURIComponent(sessionId)}/attempts`, body }),
-    listWrongAnswers: (projectId: string) =>
-      transport.request<Components['schemas']['WrongAnswerList']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/wrong-answers` }),
-    summarizeWrongAnswers: (projectId: string) =>
-      transport.request<Components['schemas']['WrongAnswerSummaryRead']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/wrong-answers/summary` }),
-    explainWrongAnswer: (projectId: string, attemptId: string) =>
-      transport.request<Components['schemas']['WrongAnswerExplanationRead']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/wrong-answers/${encodeURIComponent(attemptId)}/explanation` }),
-    llmHealth: () =>
-      transport.request<Components['schemas']['LLMHealthRead']>({ method: 'GET' as const, path: "/llm/health" }),
-    llmProviderSelection: () =>
-      transport.request<Components['schemas']['LLMProviderSelectionRead']>({ method: 'GET' as const, path: "/llm/provider-selection" }),
-    decideFastflowlmTerms: (body: Components['schemas']['FastFlowLMTermsDecisionRequest']) =>
-      transport.request<Components['schemas']['LLMProviderSelectionRead']>({ method: 'POST' as const, path: "/llm/provider-selection/fastflowlm-terms-decision", body }),
-    llmProfiles: () =>
-      transport.request<Components['schemas']['OllamaProfilesRead']>({ method: 'GET' as const, path: "/llm/profiles" }),
-    llmProfileSelection: () =>
-      transport.request<Components['schemas']['OllamaProfileSelectionRead']>({ method: 'GET' as const, path: "/llm/profile-selection" }),
-    startModelDownload: () =>
-      transport.request<Components['schemas']['ModelDownloadRead']>({ method: 'POST' as const, path: "/llm/model-downloads" }),
-    getModelDownload: (jobId: string) =>
-      transport.request<Components['schemas']['ModelDownloadRead']>({ method: 'GET' as const, path: `/llm/model-downloads/${encodeURIComponent(jobId)}` }),
-    ocrHealth: () =>
-      transport.request<Components['schemas']['OCRHealthRead']>({ method: 'GET' as const, path: "/ocr/health" }),
-    runtimeRequirements: () =>
-      transport.request<Components['schemas']['RuntimeRequirementsRead']>({ method: 'GET' as const, path: "/runtime/requirements" }),
-    machineInventory: () =>
-      transport.request<Components['schemas']['MachineInventoryRead']>({ method: 'GET' as const, path: "/runtime/machine-inventory" }),
-    startRuntimeInstallation: (kind: string) =>
-      transport.request<Components['schemas']['RuntimeInstallationRead']>({ method: 'POST' as const, path: `/runtime/installations/${encodeURIComponent(kind)}` }),
-    getRuntimeInstallation: (jobId: string) =>
-      transport.request<Components['schemas']['RuntimeInstallationRead']>({ method: 'GET' as const, path: `/runtime/installations/${encodeURIComponent(jobId)}` }),
+    health: (options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['HealthResponse']>({ method: 'GET' as const, path: "/health", ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    listProjects: (options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['ProjectList']>({ method: 'GET' as const, path: "/projects", ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    createProject: (body: Components['schemas']['ProjectCreate'], options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['ProjectRead']>({ method: 'POST' as const, path: "/projects", body, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    getProject: (projectId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['ProjectRead']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    updateProject: (projectId: string, body: Components['schemas']['ProjectUpdate'], options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['ProjectRead']>({ method: 'PATCH' as const, path: `/projects/${encodeURIComponent(projectId)}`, body, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    deleteProject: (projectId: string, options?: CertPrepRequestOptions) =>
+      transport.request<void>({ method: 'DELETE' as const, path: `/projects/${encodeURIComponent(projectId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    listDocuments: (projectId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['DocumentList']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/documents`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    uploadDocument: (projectId: string, body: FormData, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['DocumentRead']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/documents`, body, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    getDocument: (projectId: string, documentId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['DocumentRead']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    cancelDocumentProcessing: (projectId: string, documentId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['DocumentOperationRead']>({ method: 'DELETE' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/processing`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    retryDocumentProcessing: (projectId: string, documentId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['DocumentOperationRead']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/retry`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    listDocumentChunks: (projectId: string, documentId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['ChunkList']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/chunks`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    getDocumentOperation: (projectId: string, operationId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['DocumentOperationRead']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/document-operations/${encodeURIComponent(operationId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    cancelDocumentOperation: (projectId: string, operationId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['DocumentOperationRead']>({ method: 'DELETE' as const, path: `/projects/${encodeURIComponent(projectId)}/document-operations/${encodeURIComponent(operationId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    generateDocumentDrafts: (projectId: string, documentId: string, body: Components['schemas']['DraftGenerateRequest'], options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['QuestionDraftList']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/drafts`, body, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    listDocumentDraftJobs: (projectId: string, documentId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['DraftGenerationJobList']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/draft-jobs`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    retryDocumentDraftJobs: (projectId: string, documentId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['DraftGenerationJobList']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/draft-jobs/retry`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    createQuestionDraft: (projectId: string, body: Components['schemas']['QuestionDraftCreate'], options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['QuestionDraftRead']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/question-drafts`, body, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    listQuestionDrafts: (projectId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['QuestionDraftList']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/question-drafts`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    updateQuestionDraft: (projectId: string, draftId: string, body: Components['schemas']['QuestionDraftUpdate'], options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['QuestionDraftRead']>({ method: 'PATCH' as const, path: `/projects/${encodeURIComponent(projectId)}/question-drafts/${encodeURIComponent(draftId)}`, body, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    createPracticeSession: (projectId: string, body: Components['schemas']['PracticeSessionCreate'], options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['PracticeSessionRead']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/practice-sessions`, body, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    listActivePracticeSessions: (projectId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['PracticeSessionList']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/practice-sessions`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    getPracticeSession: (projectId: string, sessionId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['PracticeSessionRead']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/practice-sessions/${encodeURIComponent(sessionId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    abandonPracticeSession: (projectId: string, sessionId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['PracticeSessionRead']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/practice-sessions/${encodeURIComponent(sessionId)}/abandon`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    recordPracticeAttempt: (projectId: string, sessionId: string, body: Components['schemas']['PracticeAttemptCreate'], options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['PracticeAttemptRead']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/practice-sessions/${encodeURIComponent(sessionId)}/attempts`, body, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    listWrongAnswers: (projectId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['WrongAnswerList']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/wrong-answers`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    summarizeWrongAnswers: (projectId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['WrongAnswerSummaryRead']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/wrong-answers/summary`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    explainWrongAnswer: (projectId: string, attemptId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['WrongAnswerExplanationRead']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/wrong-answers/${encodeURIComponent(attemptId)}/explanation`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    llmHealth: (options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['LLMHealthRead']>({ method: 'GET' as const, path: "/llm/health", ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    llmProviderSelection: (options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['LLMProviderSelectionRead']>({ method: 'GET' as const, path: "/llm/provider-selection", ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    decideFastflowlmTerms: (body: Components['schemas']['FastFlowLMTermsDecisionRequest'], options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['LLMProviderSelectionRead']>({ method: 'POST' as const, path: "/llm/provider-selection/fastflowlm-terms-decision", body, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    llmProfiles: (options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['OllamaProfilesRead']>({ method: 'GET' as const, path: "/llm/profiles", ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    llmProfileSelection: (options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['OllamaProfileSelectionRead']>({ method: 'GET' as const, path: "/llm/profile-selection", ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    startModelDownload: (options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['ModelDownloadRead']>({ method: 'POST' as const, path: "/llm/model-downloads", ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    getModelDownload: (jobId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['ModelDownloadRead']>({ method: 'GET' as const, path: `/llm/model-downloads/${encodeURIComponent(jobId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    ocrHealth: (options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['OCRHealthRead']>({ method: 'GET' as const, path: "/ocr/health", ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    runtimeRequirements: (options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['RuntimeRequirementsRead']>({ method: 'GET' as const, path: "/runtime/requirements", ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    machineInventory: (options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['MachineInventoryRead']>({ method: 'GET' as const, path: "/runtime/machine-inventory", ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    startRuntimeInstallation: (kind: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['RuntimeInstallationRead']>({ method: 'POST' as const, path: `/runtime/installations/${encodeURIComponent(kind)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    getRuntimeInstallation: (jobId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['RuntimeInstallationRead']>({ method: 'GET' as const, path: `/runtime/installations/${encodeURIComponent(jobId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
   };
 }

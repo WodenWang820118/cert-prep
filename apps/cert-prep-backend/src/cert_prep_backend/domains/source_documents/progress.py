@@ -119,27 +119,6 @@ def record_extraction_progress(
     return document_from_row(row)
 
 
-def complete_document_extraction(
-    db: Database,
-    *,
-    project_id: str,
-    document_id: str,
-    extraction: PdfExtractionResult,
-) -> dict:
-    """Replace temporary progress with the final PDF extraction result."""
-
-    now = utc_now()
-    with db.connect() as connection:
-        document = complete_document_extraction_in_transaction(
-            connection,
-            project_id=project_id,
-            document_id=document_id,
-            extraction=extraction,
-            now=now,
-        )
-    return document
-
-
 def complete_document_extraction_in_transaction(
     connection,
     *,
@@ -245,41 +224,6 @@ def _assert_progress_operation(
         raise DocumentProcessingCanceledError(
             "Document processing is no longer active."
         )
-
-
-def fail_document_extraction(
-    db: Database,
-    *,
-    project_id: str,
-    document_id: str,
-    status: str,
-    detail: str,
-) -> dict:
-    """Record a terminal extraction failure for a source document."""
-
-    now = utc_now()
-    with db.connect() as connection:
-        connection.execute("BEGIN IMMEDIATE")
-        existing = document_query(connection, project_id, document_id)
-        if existing is None:
-            raise NotFoundError("Document not found.")
-        if existing["status"] in {"cancel_requested", "canceled"}:
-            return document_from_row(existing)
-        connection.execute(
-            """
-            UPDATE documents
-            SET status = ?,
-                extraction_method = 'ocr_failed',
-                ocr_fallback_reason = ?,
-                updated_at = ?
-            WHERE project_id = ? AND id = ?
-            """,
-            (status, detail, now, project_id, document_id),
-        )
-        row = document_query(connection, project_id, document_id)
-    if row is None:
-        raise NotFoundError("Document not found.")
-    return document_from_row(row)
 
 
 def recover_processing_documents(db: Database) -> int:

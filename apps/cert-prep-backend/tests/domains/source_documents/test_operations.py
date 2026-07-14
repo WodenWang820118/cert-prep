@@ -22,7 +22,6 @@ from cert_prep_backend.domains.source_documents.models import (
 from cert_prep_backend.domains.mock_exams import draft_jobs
 from cert_prep_backend.domains.source_documents import operations
 from cert_prep_backend.domains.source_documents.progress import (
-    fail_document_extraction,
     record_extraction_progress,
 )
 from cert_prep_backend.persistence.database import Database
@@ -491,34 +490,6 @@ def test_persisted_legacy_committing_state_rejects_cancel(tmp_path: Path) -> Non
             project_id="project",
             operation_id="upload",
         )
-
-
-def test_legacy_failure_writer_cannot_overwrite_cancel_requested_document(
-    tmp_path: Path,
-) -> None:
-    db = _database(tmp_path)
-    _insert_project(db, "project")
-    _attach(db, operation_id="upload", document_id="document")
-    operations.cancel_operation(
-        db,
-        project_id="project",
-        operation_id="upload",
-    )
-
-    document = fail_document_extraction(
-        db,
-        project_id="project",
-        document_id="document",
-        status="ocr_failed",
-        detail="late OCR failure",
-    )
-
-    assert document["status"] == "cancel_requested"
-    assert operations.get_operation(
-        db,
-        project_id="project",
-        operation_id="upload",
-    )["status"] == "cancel_requested"
 
 
 def test_concurrent_retry_has_one_owner_and_recovery_is_idempotent(

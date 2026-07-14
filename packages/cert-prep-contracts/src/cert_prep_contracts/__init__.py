@@ -1,5 +1,13 @@
 """Shared Python contracts for cert-prep apps and runtime packages."""
 
+from cert_prep_contracts.documents import (
+    DOCUMENT_STATUS_VALUES,
+    DocumentOperationPhase,
+    DocumentOperationRead,
+    DocumentOperationStatus,
+    SourceDocumentStatus,
+    SourceDocumentStatusValue,
+)
 from cert_prep_contracts.hardware import (
     MachineAcceleratorSnapshot,
     MachineCpuSnapshot,
@@ -39,6 +47,10 @@ __all__ = [
     "DEFAULT_LLM_LOW_RESOURCE_MODEL",
     "DEFAULT_LLM_PRIMARY_MODEL",
     "DEFAULT_LLM_RUNTIME_POLICY",
+    "DOCUMENT_STATUS_VALUES",
+    "DocumentOperationPhase",
+    "DocumentOperationRead",
+    "DocumentOperationStatus",
     "FASTFLOWLM_RUNTIME_TRUST_POLICY",
     "FastFlowLMTermsDecision",
     "FastFlowLMRuntimeTrustPolicy",
@@ -64,4 +76,6 @@ __all__ = [
     "RuntimeInstallProgress",
     "RuntimeRequirementKind",
     "RuntimeRequirementSnapshot",
+    "SourceDocumentStatus",
+    "SourceDocumentStatusValue",
 ]

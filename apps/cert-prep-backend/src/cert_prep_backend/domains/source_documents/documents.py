@@ -1,42 +1,11 @@
 from __future__ import annotations
 
-from uuid import uuid4
-
 from cert_prep_backend.persistence.database import Database, utc_now
 from cert_prep_backend.domains.projects.repository import ensure_project_exists
+from cert_prep_backend.domains.source_documents.models import SourcePdf
 from cert_prep_backend.domains.source_documents.records import document_from_row, document_query
 from cert_prep_backend.domains.source_documents.statuses import SourceDocumentStatus
 from cert_prep_backend.api.errors import NotFoundError
-
-
-def create_processing_document(
-    db: Database,
-    *,
-    project_id: str,
-    filename: str,
-    sha256: str,
-    language_hint: str,
-    storage_path: str,
-    page_count: int,
-) -> dict:
-    """Persist document metadata before background extraction starts."""
-
-    ensure_project_exists(db, project_id)
-    document_id = str(uuid4())
-    now = utc_now()
-    with db.connect() as connection:
-        document = insert_processing_document(
-            connection,
-            document_id=document_id,
-            project_id=project_id,
-            filename=filename,
-            sha256=sha256,
-            language_hint=language_hint,
-            storage_path=storage_path,
-            page_count=page_count,
-            now=now,
-        )
-    return document
 
 
 def insert_processing_document(
@@ -113,6 +82,27 @@ def get_document(db: Database, project_id: str, document_id: str) -> dict:
     if row is None:
         raise NotFoundError("Document not found.")
     return document_from_row(row)
+
+
+def get_source_pdf(db: Database, project_id: str, document_id: str) -> SourcePdf:
+    """Load the private source-PDF metadata used by retry processing."""
+
+    with db.connect() as connection:
+        row = connection.execute(
+            """
+            SELECT filename, sha256, storage_path
+            FROM documents
+            WHERE project_id = ? AND id = ?
+            """,
+            (project_id, document_id),
+        ).fetchone()
+    if row is None:
+        raise NotFoundError("Document not found.")
+    return SourcePdf(
+        filename=str(row["filename"]),
+        sha256=str(row["sha256"]),
+        storage_path=str(row["storage_path"]),
+    )
 
 
 def update_exam_state(

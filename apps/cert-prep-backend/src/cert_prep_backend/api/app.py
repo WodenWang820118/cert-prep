@@ -106,7 +106,11 @@ def create_app(
         CORSMiddleware,
         allow_origins=app_settings.allowed_origins,
         allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type"],
+        allow_headers=[
+            "Authorization",
+            "Content-Type",
+            "X-Cert-Prep-Operation-Id",
+        ],
     )
 
     @app.exception_handler(StarletteHTTPException)
@@ -157,6 +161,7 @@ def create_app(
     protected_dependencies = [Depends(require_bearer_auth)]
     app.include_router(projects.router, dependencies=protected_dependencies)
     app.include_router(documents.router, dependencies=protected_dependencies)
+    app.include_router(documents.operations_router, dependencies=protected_dependencies)
     app.include_router(drafts.documents_router, dependencies=protected_dependencies)
     app.include_router(drafts.draft_jobs_router, dependencies=protected_dependencies)
     app.include_router(drafts.drafts_router, dependencies=protected_dependencies)

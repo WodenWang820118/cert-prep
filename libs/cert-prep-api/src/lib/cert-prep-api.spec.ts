@@ -93,4 +93,49 @@ describe('createCertPrepGeneratedClient', () => {
       },
     ]);
   });
+
+  it('forwards document operation headers, signals, and cancellation routes', async () => {
+    const transport = new RecordingTransport();
+    const client = createCertPrepGeneratedClient(transport);
+    const controller = new AbortController();
+    const formData = new FormData();
+
+    await client.uploadDocument('project/one', formData, {
+      headers: { 'X-Cert-Prep-Operation-Id': 'upload-1' },
+      signal: controller.signal,
+    });
+    await client.getDocumentOperation('project/one', 'upload/1');
+    await client.cancelDocumentOperation('project/one', 'upload/1');
+    await client.cancelDocumentProcessing('project/one', 'document/1');
+    await client.retryDocumentProcessing('project/one', 'document/1', {
+      headers: { 'X-Cert-Prep-Operation-Id': 'retry-1' },
+    });
+
+    expect(transport.requests).toEqual([
+      {
+        method: 'POST',
+        path: '/projects/project%2Fone/documents',
+        body: formData,
+        headers: { 'X-Cert-Prep-Operation-Id': 'upload-1' },
+        signal: controller.signal,
+      },
+      {
+        method: 'GET',
+        path: '/projects/project%2Fone/document-operations/upload%2F1',
+      },
+      {
+        method: 'DELETE',
+        path: '/projects/project%2Fone/document-operations/upload%2F1',
+      },
+      {
+        method: 'DELETE',
+        path: '/projects/project%2Fone/documents/document%2F1/processing',
+      },
+      {
+        method: 'POST',
+        path: '/projects/project%2Fone/documents/document%2F1/retry',
+        headers: { 'X-Cert-Prep-Operation-Id': 'retry-1' },
+      },
+    ]);
+  });
 });

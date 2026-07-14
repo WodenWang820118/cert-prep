@@ -5,6 +5,12 @@ from typing import Any
 
 
 HTTP_METHODS = {"delete", "get", "patch", "post"}
+CLOSED_ENUM_SCHEMAS = frozenset(
+    {
+        "DocumentOperationPhase",
+        "DocumentOperationStatus",
+    }
+)
 
 
 def render_typescript(openapi: dict[str, Any]) -> str:
@@ -20,7 +26,7 @@ def render_typescript(openapi: dict[str, Any]) -> str:
         "  schemas: {",
     ]
     for name in sorted(schemas):
-        lines.append(f"    {name}: {render_schema_type(schemas[name], schemas)};")
+        lines.append(f"    {name}: {render_component_schema_type(name, schemas)};")
     lines.extend(["  };", "}", ""])
 
     for alias in sorted(schemas):
@@ -30,10 +36,17 @@ def render_typescript(openapi: dict[str, Any]) -> str:
             "",
             "export type CertPrepHttpMethod = 'DELETE' | 'GET' | 'PATCH' | 'POST';",
             "",
+            "export interface CertPrepRequestOptions {",
+            "  headers?: Record<string, string>;",
+            "  signal?: AbortSignal;",
+            "}",
+            "",
             "export interface CertPrepHttpRequest {",
             "  method: CertPrepHttpMethod;",
             "  path: string;",
             "  body?: unknown;",
+            "  headers?: Record<string, string>;",
+            "  signal?: AbortSignal;",
             "}",
             "",
             "export interface CertPrepTransport {",
@@ -78,6 +91,14 @@ def collect_operations(
                 )
             )
     return operations
+
+
+def render_component_schema_type(name: str, schemas: dict[str, Any]) -> str:
+    schema = schemas[name]
+    enum_values = schema.get("enum")
+    if name in CLOSED_ENUM_SCHEMAS and isinstance(enum_values, list) and enum_values:
+        return " | ".join(json.dumps(value) for value in enum_values)
+    return render_schema_type(schema, schemas)
 
 
 def render_schema_type(schema: dict[str, Any], schemas: dict[str, Any]) -> str:
@@ -193,6 +214,12 @@ class ClientOperation:
         ]
         if self.request_type is not None:
             request_parts.append("body")
+        request_parts.extend(
+            [
+                "...(options?.headers === undefined ? {} : { headers: options.headers })",
+                "...(options?.signal === undefined ? {} : { signal: options.signal })",
+            ]
+        )
         return [
             f"    {self.name}: ({self.arguments()}) =>",
             f"      transport.request<{self.response_type}>({{ {', '.join(request_parts)} }}),",
@@ -202,6 +229,7 @@ class ClientOperation:
         arguments = [f"{to_camel(parameter)}: string" for parameter in self.parameters]
         if self.request_type is not None:
             arguments.append(f"body: {self.request_type}")
+        arguments.append("options?: CertPrepRequestOptions")
         return ", ".join(arguments)
 
     def path_expression(self) -> str:

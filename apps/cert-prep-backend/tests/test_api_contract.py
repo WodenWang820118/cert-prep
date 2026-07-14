@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from fastapi.testclient import TestClient
+
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.core.config import Settings
 
@@ -11,6 +13,8 @@ def test_status_like_fields_are_documented_as_openapi_enums(tmp_path) -> None:
 
     assert _enum_values(openapi, "DocumentRead", "status") == [
         "processing",
+        "cancel_requested",
+        "canceled",
         "ready",
         "exam_failed",
         "no_text_detected",
@@ -70,6 +74,147 @@ def test_status_like_fields_are_documented_as_openapi_enums(tmp_path) -> None:
         "completed",
         "abandoned",
     ]
+    assert _enum_values(openapi, "DocumentOperationRead", "status") == [
+        "queued",
+        "running",
+        "cancel_requested",
+        "canceled",
+        "succeeded",
+        "failed",
+    ]
+    assert _enum_values(openapi, "DocumentOperationRead", "phase") == [
+        "uploading",
+        "processing",
+        "canceling",
+        "committing",
+        "canceled",
+        "completed",
+        "failed",
+    ]
+
+
+def test_document_operation_routes_and_upload_header_are_documented(tmp_path) -> None:
+    openapi = create_app(Settings(data_dir=tmp_path, api_token="contract-token")).openapi()
+    operation_schema = openapi["components"]["schemas"]["DocumentOperationRead"]
+
+    assert set(operation_schema["required"]) == {
+        "id",
+        "project_id",
+        "document_id",
+        "status",
+        "phase",
+        "cancellable",
+        "error",
+        "created_at",
+        "updated_at",
+    }
+    for field in ("document_id", "error"):
+        assert {item.get("type") for item in operation_schema["properties"][field]["anyOf"]} == {
+            "string",
+            "null",
+        }
+
+    assert _response_schema_name(
+        openapi,
+        "/projects/{project_id}/document-operations/{operation_id}",
+        "get",
+        200,
+    ) == "DocumentOperationRead"
+    assert _response_schema_name(
+        openapi,
+        "/projects/{project_id}/document-operations/{operation_id}",
+        "delete",
+        202,
+    ) == "DocumentOperationRead"
+    assert _response_schema_name(
+        openapi,
+        "/projects/{project_id}/documents/{document_id}/processing",
+        "delete",
+        202,
+    ) == "DocumentOperationRead"
+    assert _response_schema_name(
+        openapi,
+        "/projects/{project_id}/documents/{document_id}/retry",
+        "post",
+        202,
+    ) == "DocumentOperationRead"
+    assert _response_schema_name(
+        openapi,
+        "/projects/{project_id}/document-operations/{operation_id}",
+        "get",
+        404,
+    ) == "ApiErrorRead"
+    assert _response_schema_name(
+        openapi,
+        "/projects/{project_id}/document-operations/{operation_id}",
+        "delete",
+        409,
+    ) == "ApiErrorRead"
+    assert _response_schema_name(
+        openapi,
+        "/projects/{project_id}/documents",
+        "post",
+        503,
+    ) == "ApiErrorRead"
+    assert _response_schema_name(
+        openapi,
+        "/projects/{project_id}/documents/{document_id}/retry",
+        "post",
+        409,
+    ) == "ApiErrorRead"
+    for path, method in (
+        (
+            "/projects/{project_id}/document-operations/{operation_id}",
+            "get",
+        ),
+        (
+            "/projects/{project_id}/document-operations/{operation_id}",
+            "delete",
+        ),
+        ("/projects/{project_id}/documents", "post"),
+        ("/projects/{project_id}/documents/{document_id}/retry", "post"),
+    ):
+        assert _response_schema_name(openapi, path, method, 422) == "ApiErrorRead"
+
+    upload = openapi["paths"]["/projects/{project_id}/documents"]["post"]
+    header = next(
+        parameter
+        for parameter in upload["parameters"]
+        if parameter["name"] == "X-Cert-Prep-Operation-Id"
+    )
+    header_schema = next(
+        item for item in header["schema"]["anyOf"] if item.get("type") == "string"
+    )
+    assert header["in"] == "header"
+    assert header["required"] is False
+    assert header_schema["minLength"] == 1
+    assert header_schema["maxLength"] == 128
+    assert header_schema["pattern"] == "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$"
+
+
+def test_operation_id_validation_uses_the_documented_error_envelope(tmp_path) -> None:
+    app = create_app(Settings(data_dir=tmp_path, api_token="contract-token"))
+    auth_headers = {"Authorization": "Bearer contract-token"}
+
+    with TestClient(app) as client:
+        invalid_path = client.get(
+            "/projects/project-id/document-operations/!invalid",
+            headers=auth_headers,
+        )
+        invalid_header = client.post(
+            "/projects/project-id/documents/document-id/retry",
+            headers={
+                **auth_headers,
+                "X-Cert-Prep-Operation-Id": "!invalid",
+            },
+        )
+
+    for response in (invalid_path, invalid_header):
+        assert response.status_code == 422
+        payload = response.json()
+        assert payload["code"] == "validation_error"
+        assert payload["message"] == "Request validation failed."
+        assert payload["details"]["errors"]
 
 
 def test_practice_session_conflicts_are_documented(tmp_path) -> None:

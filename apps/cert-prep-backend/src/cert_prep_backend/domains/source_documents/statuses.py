@@ -3,17 +3,11 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Final, TypeAlias
 
-
-class SourceDocumentStatus(StrEnum):
-    PROCESSING = "processing"
-    READY = "ready"
-    EXAM_FAILED = "exam_failed"
-    NO_TEXT_DETECTED = "no_text_detected"
-    OCR_FAILED = "ocr_failed"
-
-
-SourceDocumentStatusValue: TypeAlias = SourceDocumentStatus | str
-DOCUMENT_STATUS_VALUES: Final[tuple[str, ...]] = tuple(status.value for status in SourceDocumentStatus)
+from cert_prep_contracts.documents import (
+    DOCUMENT_STATUS_VALUES as DOCUMENT_STATUS_VALUES,
+    SourceDocumentStatus as SourceDocumentStatus,
+    SourceDocumentStatusValue as SourceDocumentStatusValue,
+)
 
 
 class PdfExtractionMethod(StrEnum):

@@ -1,11 +1,33 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path as FilePath
 from threading import Thread
+from typing import Annotated
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Form, Request, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Path,
+    Request,
+    UploadFile,
+    status,
+)
+
+from cert_prep_contracts.documents import DocumentOperationRead
 
 from cert_prep_backend.core.config import Settings
+from cert_prep_backend.core.exceptions import (
+    DocumentOperationConflictError,
+    DocumentOperationStateError,
+    DocumentProcessingCanceledError,
+    OperationNotCancellableError,
+)
 from cert_prep_backend.persistence.database import Database
 from cert_prep_backend.api.dependencies import (
     get_database,
@@ -20,6 +42,7 @@ from cert_prep_backend.domains.mock_exams.normalization import as_editable_quest
 from cert_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
 from cert_prep_backend.domains.mock_exams.streaming import StreamingDraftGenerationManager
 from cert_prep_backend.domains.projects import repository as projects_repository
+from cert_prep_backend.domains.source_documents import operations as document_operations
 from cert_prep_backend.domains.source_documents import repository as source_documents_repository
 from cert_prep_backend.domains.source_documents.ocr_provider_pool import (
     DocumentOCRProviderPool,
@@ -32,6 +55,7 @@ from cert_prep_backend.domains.source_documents.pdf_extraction import (
 from cert_prep_backend.domains.source_documents.schemas import ChunkList, DocumentList, DocumentRead
 from cert_prep_backend.domains.source_documents.storage import sha256_hex, store_pdf
 from cert_prep_backend.api.errors import (
+    ApiErrorRead,
     InvalidPdfError,
     NotFoundError,
     ProviderUnavailableError,
@@ -42,7 +66,95 @@ from cert_prep_backend.api.errors import (
 
 
 router = APIRouter(prefix="/projects/{project_id}/documents", tags=["documents"])
+operations_router = APIRouter(
+    prefix="/projects/{project_id}/document-operations",
+    tags=["document-operations"],
+)
 LANGUAGE_HINTS = {"auto", "ja", "zh-Hant", "zh-Hans", "en", "mixed"}
+OPERATION_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$"
+OperationIdHeader = Annotated[
+    str | None,
+    Header(
+        alias="X-Cert-Prep-Operation-Id",
+        min_length=1,
+        max_length=128,
+        pattern=OPERATION_ID_PATTERN,
+    ),
+]
+OperationIdPath = Annotated[
+    str,
+    Path(min_length=1, max_length=128, pattern=OPERATION_ID_PATTERN),
+]
+NOT_FOUND_RESPONSE = {
+    "model": ApiErrorRead,
+    "description": "The project, document, or operation was not found.",
+}
+OPERATION_CONFLICT_RESPONSE = {
+    "model": ApiErrorRead,
+    "description": "The requested document operation transition was rejected.",
+}
+OCR_UNAVAILABLE_RESPONSE = {
+    "model": ApiErrorRead,
+    "description": "The configured OCR runtime is unavailable.",
+}
+VALIDATION_ERROR_RESPONSE = {
+    "model": ApiErrorRead,
+    "description": "Request validation failed.",
+}
+
+
+@operations_router.get(
+    "/{operation_id}",
+    response_model=DocumentOperationRead,
+    responses={
+        status.HTTP_404_NOT_FOUND: NOT_FOUND_RESPONSE,
+        status.HTTP_422_UNPROCESSABLE_CONTENT: VALIDATION_ERROR_RESPONSE,
+    },
+)
+def get_document_operation(
+    project_id: str,
+    operation_id: OperationIdPath,
+    db: Database = Depends(get_database),
+) -> dict:
+    try:
+        return document_operations.get_operation(
+            db,
+            project_id=project_id,
+            operation_id=operation_id,
+        )
+    except NotFoundError as exc:
+        raise not_found_error(str(exc)) from exc
+
+
+@operations_router.delete(
+    "/{operation_id}",
+    response_model=DocumentOperationRead,
+    status_code=status.HTTP_202_ACCEPTED,
+    responses={
+        status.HTTP_404_NOT_FOUND: NOT_FOUND_RESPONSE,
+        status.HTTP_409_CONFLICT: OPERATION_CONFLICT_RESPONSE,
+        status.HTTP_422_UNPROCESSABLE_CONTENT: VALIDATION_ERROR_RESPONSE,
+    },
+)
+def cancel_document_operation(
+    project_id: str,
+    operation_id: OperationIdPath,
+    db: Database = Depends(get_database),
+) -> dict:
+    try:
+        return document_operations.cancel_operation(
+            db,
+            project_id=project_id,
+            operation_id=operation_id,
+        )
+    except NotFoundError as exc:
+        raise not_found_error(str(exc)) from exc
+    except DocumentOperationConflictError as exc:
+        raise _operation_conflict_error(str(exc)) from exc
+    except OperationNotCancellableError as exc:
+        raise _operation_not_cancellable_error(str(exc)) from exc
+    except DocumentOperationStateError as exc:
+        raise _operation_state_conflict_error(str(exc)) from exc
 
 
 @router.get("", response_model=DocumentList)
@@ -56,12 +168,23 @@ def list_documents(
         raise not_found_error(str(exc)) from exc
 
 
-@router.post("", response_model=DocumentRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=DocumentRead,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        status.HTTP_404_NOT_FOUND: NOT_FOUND_RESPONSE,
+        status.HTTP_409_CONFLICT: OPERATION_CONFLICT_RESPONSE,
+        status.HTTP_422_UNPROCESSABLE_CONTENT: VALIDATION_ERROR_RESPONSE,
+        status.HTTP_503_SERVICE_UNAVAILABLE: OCR_UNAVAILABLE_RESPONSE,
+    },
+)
 async def upload_document(
     request: Request,
     project_id: str,
     file: UploadFile = File(...),
     language_hint: str = Form(default="auto"),
+    operation_id_header: OperationIdHeader = None,
     db: Database = Depends(get_database),
     settings: Settings = Depends(get_settings),
     llm_provider: LLMProvider = Depends(get_llm_provider),
@@ -71,19 +194,53 @@ async def upload_document(
     ),
 ) -> dict:
     _validate_pdf_upload_metadata(file)
-    content = await _read_limited_upload(file, settings.max_upload_bytes)
-    if not content:
-        raise validation_error("PDF is empty.")
-
+    operation_id = operation_id_header or str(uuid4())
+    claimed = False
     try:
         projects_repository.ensure_project_exists(db, project_id)
-        page_count = inspect_pdf_page_count(content, max_pages=settings.max_pdf_pages)
-        sha256 = sha256_hex(content)
-        storage_path = store_pdf(settings, project_id, sha256, content)
-        await _prepare_document_ocr_provider_pool(ocr_provider_pool)
-        document = source_documents_repository.create_processing_document(
+        claim = document_operations.claim_operation(
             db,
             project_id=project_id,
+            operation_id=operation_id,
+        )
+        if not claim.acquired:
+            if claim.operation["status"] in {"cancel_requested", "canceled"}:
+                raise _operation_canceled_error(
+                    "Document upload was canceled before it started."
+                )
+            raise _operation_conflict_error(
+                "Document operation id is already in use."
+            )
+        claimed = True
+        content = await _read_limited_upload(file, settings.max_upload_bytes)
+        if not content:
+            raise validation_error("PDF is empty.")
+        page_count = inspect_pdf_page_count(content, max_pages=settings.max_pdf_pages)
+        try:
+            await _prepare_document_ocr_provider_pool(ocr_provider_pool)
+        except ProviderUnavailableError as exc:
+            document_operations.finish_failed(
+                db,
+                project_id=project_id,
+                operation_id=operation_id,
+                error="OCR runtime is unavailable.",
+            )
+            raise api_error(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                code="paddle_runtime_missing",
+                message=str(exc),
+            ) from exc
+        _ensure_upload_operation_queued(
+            db,
+            project_id=project_id,
+            operation_id=operation_id,
+        )
+        sha256 = sha256_hex(content)
+        storage_path = store_pdf(settings, project_id, sha256, content)
+        document = document_operations.create_and_attach_document(
+            db,
+            project_id=project_id,
+            operation_id=operation_id,
             filename=file.filename or f"{sha256}.pdf",
             sha256=sha256,
             language_hint=_normalized_language_hint(language_hint),
@@ -92,20 +249,17 @@ async def upload_document(
         )
 
         if bool(getattr(request.app.state, "document_processing_async_jobs", True)):
-            Thread(
-                target=_process_document_upload,
-                args=(
-                    db,
-                    settings,
-                    llm_provider,
-                    ocr_provider_pool,
-                    streaming_questions,
-                    project_id,
-                    document["id"],
-                    content,
-                ),
-                daemon=True,
-            ).start()
+            _start_document_processing_worker(
+                db=db,
+                settings=settings,
+                llm_provider=llm_provider,
+                ocr_provider_pool=ocr_provider_pool,
+                streaming_questions=streaming_questions,
+                project_id=project_id,
+                document_id=document["id"],
+                operation_id=operation_id,
+                content=content,
+            )
             return document
 
         return _process_document_upload(
@@ -116,18 +270,46 @@ async def upload_document(
             streaming_questions,
             project_id,
             document["id"],
+            operation_id,
             content,
         )
+    except HTTPException:
+        if claimed:
+            document_operations.finish_failed(
+                db,
+                project_id=project_id,
+                operation_id=operation_id,
+                error="Document upload did not pass validation.",
+            )
+        raise
     except InvalidPdfError as exc:
+        if claimed:
+            document_operations.finish_failed(
+                db,
+                project_id=project_id,
+                operation_id=operation_id,
+                error="PDF validation failed.",
+            )
         raise validation_error(str(exc)) from exc
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
-    except ProviderUnavailableError as exc:
-        raise api_error(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            code="paddle_runtime_missing",
-            message=str(exc),
-        ) from exc
+    except DocumentProcessingCanceledError as exc:
+        raise _operation_canceled_error(str(exc)) from exc
+    except DocumentOperationConflictError as exc:
+        raise _operation_conflict_error(str(exc)) from exc
+    except OperationNotCancellableError as exc:
+        raise _operation_not_cancellable_error(str(exc)) from exc
+    except DocumentOperationStateError as exc:
+        raise _operation_state_conflict_error(str(exc)) from exc
+    except Exception:
+        if claimed:
+            document_operations.finish_failed(
+                db,
+                project_id=project_id,
+                operation_id=operation_id,
+                error="Document upload failed.",
+            )
+        raise
 
 
 @router.get("/{document_id}", response_model=DocumentRead)
@@ -140,6 +322,137 @@ def get_document(
         return source_documents_repository.get_document(db, project_id, document_id)
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
+
+
+@router.delete(
+    "/{document_id}/processing",
+    response_model=DocumentOperationRead,
+    status_code=status.HTTP_202_ACCEPTED,
+    responses={
+        status.HTTP_404_NOT_FOUND: NOT_FOUND_RESPONSE,
+        status.HTTP_409_CONFLICT: OPERATION_CONFLICT_RESPONSE,
+    },
+)
+def cancel_document_processing(
+    project_id: str,
+    document_id: str,
+    db: Database = Depends(get_database),
+) -> dict:
+    try:
+        return document_operations.cancel_document_processing(
+            db,
+            project_id=project_id,
+            document_id=document_id,
+        )
+    except NotFoundError as exc:
+        raise not_found_error(str(exc)) from exc
+    except OperationNotCancellableError as exc:
+        raise _operation_not_cancellable_error(str(exc)) from exc
+    except DocumentOperationStateError as exc:
+        raise _operation_state_conflict_error(str(exc)) from exc
+
+
+@router.post(
+    "/{document_id}/retry",
+    response_model=DocumentOperationRead,
+    status_code=status.HTTP_202_ACCEPTED,
+    responses={
+        status.HTTP_404_NOT_FOUND: NOT_FOUND_RESPONSE,
+        status.HTTP_409_CONFLICT: OPERATION_CONFLICT_RESPONSE,
+        status.HTTP_422_UNPROCESSABLE_CONTENT: VALIDATION_ERROR_RESPONSE,
+        status.HTTP_503_SERVICE_UNAVAILABLE: OCR_UNAVAILABLE_RESPONSE,
+    },
+)
+async def retry_document_processing(
+    request: Request,
+    project_id: str,
+    document_id: str,
+    operation_id_header: OperationIdHeader = None,
+    db: Database = Depends(get_database),
+    settings: Settings = Depends(get_settings),
+    llm_provider: LLMProvider = Depends(get_llm_provider),
+    ocr_provider_pool: DocumentOCRProviderPool = Depends(get_document_ocr_provider_pool),
+    streaming_questions: StreamingDraftGenerationManager = Depends(
+        get_streaming_draft_generation_manager
+    ),
+) -> dict:
+    operation_id = operation_id_header or str(uuid4())
+    try:
+        source_pdf = source_documents_repository.get_source_pdf(
+            db,
+            project_id,
+            document_id,
+        )
+        content = _read_stored_source_pdf(
+            settings,
+            project_id=project_id,
+            storage_path=source_pdf.storage_path,
+            expected_sha256=source_pdf.sha256,
+        )
+        inspect_pdf_page_count(content, max_pages=settings.max_pdf_pages)
+        await _prepare_document_ocr_provider_pool(ocr_provider_pool)
+        operation = document_operations.start_retry_operation(
+            db,
+            project_id=project_id,
+            document_id=document_id,
+            operation_id=operation_id,
+        )
+        if bool(getattr(request.app.state, "document_processing_async_jobs", True)):
+            _start_document_processing_worker(
+                db=db,
+                settings=settings,
+                llm_provider=llm_provider,
+                ocr_provider_pool=ocr_provider_pool,
+                streaming_questions=streaming_questions,
+                project_id=project_id,
+                document_id=document_id,
+                operation_id=operation_id,
+                content=content,
+            )
+            return operation
+
+        _process_document_upload(
+            db,
+            settings,
+            llm_provider,
+            ocr_provider_pool,
+            streaming_questions,
+            project_id,
+            document_id,
+            operation_id,
+            content,
+        )
+        return document_operations.get_operation(
+            db,
+            project_id=project_id,
+            operation_id=operation_id,
+        )
+    except NotFoundError as exc:
+        raise not_found_error(str(exc)) from exc
+    except InvalidPdfError as exc:
+        raise _document_source_missing_error(
+            "The stored source PDF is unavailable for retry."
+        ) from exc
+    except ProviderUnavailableError as exc:
+        raise api_error(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            code="paddle_runtime_missing",
+            message=str(exc),
+        ) from exc
+    except DocumentProcessingCanceledError as exc:
+        raise _operation_canceled_error(str(exc)) from exc
+    except DocumentOperationConflictError as exc:
+        raise api_error(
+            status_code=status.HTTP_409_CONFLICT,
+            code="document_retry_conflict",
+            message=str(exc),
+        ) from exc
+    except DocumentOperationStateError as exc:
+        raise api_error(
+            status_code=status.HTTP_409_CONFLICT,
+            code="document_retry_not_allowed",
+            message=str(exc),
+        ) from exc
 
 
 @router.get("/{document_id}/chunks", response_model=ChunkList)
@@ -170,6 +483,79 @@ async def _prepare_document_ocr_provider_pool(
 ) -> None:
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, ocr_provider_pool.prepare)
+
+
+def _read_stored_source_pdf(
+    settings: Settings,
+    *,
+    project_id: str,
+    storage_path: str,
+    expected_sha256: str,
+) -> bytes:
+    expected_root = (settings.data_dir / "uploads" / project_id).resolve()
+    try:
+        source_path = FilePath(storage_path).resolve(strict=True)
+        source_path.relative_to(expected_root)
+        stat = source_path.stat()
+    except (OSError, ValueError) as exc:
+        raise _document_source_missing_error(
+            "The stored source PDF is unavailable for retry."
+        ) from exc
+    if not source_path.is_file() or stat.st_size <= 0 or stat.st_size > settings.max_upload_bytes:
+        raise _document_source_missing_error(
+            "The stored source PDF is unavailable for retry."
+        )
+    try:
+        content = source_path.read_bytes()
+    except OSError as exc:
+        raise _document_source_missing_error(
+            "The stored source PDF is unavailable for retry."
+        ) from exc
+    if sha256_hex(content) != expected_sha256:
+        raise _document_source_missing_error(
+            "The stored source PDF failed integrity verification."
+        )
+    return content
+
+
+def _start_document_processing_worker(
+    *,
+    db: Database,
+    settings: Settings,
+    llm_provider: LLMProvider,
+    ocr_provider_pool: DocumentOCRProviderPool,
+    streaming_questions: StreamingDraftGenerationManager,
+    project_id: str,
+    document_id: str,
+    operation_id: str,
+    content: bytes,
+) -> None:
+    worker = Thread(
+        target=_process_document_upload,
+        args=(
+            db,
+            settings,
+            llm_provider,
+            ocr_provider_pool,
+            streaming_questions,
+            project_id,
+            document_id,
+            operation_id,
+            content,
+        ),
+        name=f"document-processing-{operation_id[:8]}",
+        daemon=True,
+    )
+    try:
+        worker.start()
+    except Exception:
+        document_operations.finish_failed(
+            db,
+            project_id=project_id,
+            operation_id=operation_id,
+            error="Document processing worker could not start.",
+        )
+        raise
 
 
 def _validate_pdf_upload_metadata(file: UploadFile) -> None:
@@ -232,6 +618,7 @@ def _process_document_upload(
     streaming_questions: StreamingDraftGenerationManager,
     project_id: str,
     document_id: str,
+    operation_id: str,
     content: bytes,
 ) -> dict:
     def record_progress(progress: PdfExtractionProgress) -> None:
@@ -249,10 +636,23 @@ def _process_document_upload(
             ocr_engine_duration_ms=progress.ocr_engine_duration_ms,
             ocr_worker_count=progress.ocr_worker_count,
             first_chunk_ms=progress.first_chunk_ms,
+            operation_id=operation_id,
         )
 
     try:
+        _ensure_document_operation_running(
+            db,
+            project_id=project_id,
+            document_id=document_id,
+            operation_id=operation_id,
+        )
         with ocr_provider_pool.acquire() as ocr_provider:
+            _ensure_document_operation_running(
+                db,
+                project_id=project_id,
+                document_id=document_id,
+                operation_id=operation_id,
+            )
             extraction = extract_pdf_pages(
                 content,
                 max_pages=settings.max_pdf_pages,
@@ -262,9 +662,10 @@ def _process_document_upload(
                 ocr_render_scale=settings.ocr_render_scale,
                 on_page_processed=record_progress,
             )
-        document = source_documents_repository.complete_document_extraction(
+        document = document_operations.publish_success(
             db,
             project_id=project_id,
+            operation_id=operation_id,
             document_id=document_id,
             extraction=extraction,
         )
@@ -290,29 +691,77 @@ def _process_document_upload(
                 limit=settings.auto_generate_exam_limit,
             )
         return document
-    except InvalidPdfError as exc:
-        return source_documents_repository.fail_document_extraction(
+    except DocumentProcessingCanceledError:
+        document_operations.acknowledge_cancellation(
             db,
             project_id=project_id,
-            document_id=document_id,
-            status="ocr_failed",
-            detail=str(exc),
+            operation_id=operation_id,
         )
-    except ProviderUnavailableError as exc:
-        return source_documents_repository.fail_document_extraction(
+        return source_documents_repository.get_document(db, project_id, document_id)
+    except (InvalidPdfError, ProviderUnavailableError) as exc:
+        document_operations.finish_failed(
             db,
             project_id=project_id,
-            document_id=document_id,
-            status="ocr_failed",
-            detail=str(exc),
+            operation_id=operation_id,
+            error=str(exc),
         )
-    except Exception as exc:
-        return source_documents_repository.fail_document_extraction(
+        return source_documents_repository.get_document(db, project_id, document_id)
+    except Exception:
+        document_operations.finish_failed(
             db,
             project_id=project_id,
-            document_id=document_id,
-            status="ocr_failed",
-            detail=f"Parsing failed: {exc}",
+            operation_id=operation_id,
+            error="Document processing failed.",
+        )
+        return source_documents_repository.get_document(db, project_id, document_id)
+
+
+def _ensure_document_operation_running(
+    db: Database,
+    *,
+    project_id: str,
+    document_id: str,
+    operation_id: str,
+) -> None:
+    operation = document_operations.get_operation(
+        db,
+        project_id=project_id,
+        operation_id=operation_id,
+    )
+    if not (
+        operation["document_id"] == document_id
+        and operation["status"] == "running"
+        and operation["phase"] == "processing"
+        and operation["cancellable"]
+    ):
+        raise DocumentProcessingCanceledError(
+            "Document processing is no longer active."
+        )
+
+
+def _ensure_upload_operation_queued(
+    db: Database,
+    *,
+    project_id: str,
+    operation_id: str,
+) -> None:
+    operation = document_operations.get_operation(
+        db,
+        project_id=project_id,
+        operation_id=operation_id,
+    )
+    if operation["status"] in {"cancel_requested", "canceled"}:
+        raise DocumentProcessingCanceledError(
+            "Document upload was canceled before it started."
+        )
+    if not (
+        operation["document_id"] is None
+        and operation["status"] == "queued"
+        and operation["phase"] == "uploading"
+        and operation["cancellable"]
+    ):
+        raise DocumentOperationStateError(
+            "Document upload operation is no longer available."
         )
 
 
@@ -340,3 +789,23 @@ def _update_document_exam_state(
 
 def _normalized_language_hint(language_hint: str) -> str:
     return language_hint if language_hint in LANGUAGE_HINTS else "auto"
+
+
+def _operation_canceled_error(message: str) -> HTTPException:
+    return api_error(status.HTTP_409_CONFLICT, "operation_canceled", message)
+
+
+def _operation_conflict_error(message: str) -> HTTPException:
+    return api_error(status.HTTP_409_CONFLICT, "operation_conflict", message)
+
+
+def _operation_not_cancellable_error(message: str) -> HTTPException:
+    return api_error(status.HTTP_409_CONFLICT, "operation_not_cancellable", message)
+
+
+def _operation_state_conflict_error(message: str) -> HTTPException:
+    return api_error(status.HTTP_409_CONFLICT, "operation_state_conflict", message)
+
+
+def _document_source_missing_error(message: str) -> HTTPException:
+    return api_error(status.HTTP_409_CONFLICT, "document_source_missing", message)

@@ -73,9 +73,10 @@ def test_async_upload_prepares_document_ocr_before_starting_processing(
     thread_observations: list[tuple[str, list[str]]] = []
 
     class RecordingThread:
-        def __init__(self, *, target, args, daemon: bool) -> None:
+        def __init__(self, *, target, args, name: str, daemon: bool) -> None:
             self.target = target
             self.args = args
+            self.name = name
             self.daemon = daemon
             thread_observations.append(("constructed", list(ocr_provider.calls)))
 
