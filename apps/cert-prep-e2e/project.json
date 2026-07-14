@@ -26,6 +26,27 @@
         "{workspaceRoot}/dist/.playwright/apps/cert-prep-e2e/test-output",
         "{workspaceRoot}/dist/.playwright/apps/cert-prep-e2e/playwright-report"
       ]
+    },
+    "e2e-real-backend": {
+      "executor": "nx:run-commands",
+      "dependsOn": [],
+      "options": {
+        "cwd": "apps/cert-prep-e2e",
+        "command": "playwright test --config playwright.real-backend.config.ts"
+      },
+      "cache": false,
+      "inputs": [
+        "default",
+        "^production",
+        "^{projectRoot}/tsconfig*.json",
+        {
+          "externalDependencies": ["@playwright/test"]
+        }
+      ],
+      "outputs": [
+        "{workspaceRoot}/dist/.playwright/apps/cert-prep-e2e/real-backend-output",
+        "{workspaceRoot}/dist/.playwright/apps/cert-prep-e2e/playwright-report"
+      ]
     }
   }
 }

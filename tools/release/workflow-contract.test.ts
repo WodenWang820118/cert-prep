@@ -48,6 +48,18 @@ test('all third-party actions are pinned to full commit SHAs', () => {
   }
 });
 
+test('release workflow pins setup-uv to the verified v8.3.2 commit', () => {
+  const setupUvUses = workflow.match(/astral-sh\/setup-uv@([0-9a-f]{40})/g) ?? [];
+  assert.ok(setupUvUses.length > 0);
+  assert.ok(
+    setupUvUses.every(
+      (value) =>
+        value ===
+        'astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990',
+    ),
+  );
+});
+
 test('every release job uses the explicit Node 24 runtime contract', () => {
   const setupNodeCount = (workflow.match(/uses: actions\/setup-node@/g) ?? [])
     .length;

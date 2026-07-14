@@ -2,40 +2,122 @@ name: CI
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
-  actions: read
   contents: read
 
+env:
+  CI: 'true'
+  NX_CLOUD_DISTRIBUTED_EXECUTION: 'false'
+
 jobs:
-  main:
-    runs-on: ubuntu-latest
+  portable-quality:
+    name: Portable quality
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
-          filter: tree:0
           fetch-depth: 0
 
-      # This enables task distribution via Nx Cloud
-      # Run this command as early as possible, before dependencies are installed
-      # Learn more at https://nx.dev/ci/reference/nx-cloud-cli#npx-nxcloud-startcirun
-      - run: npx nx start-ci-run --distribute-on="3 linux-medium-js" --stop-agents-after="e2e"
-
-      # Cache node_modules
-      - uses: actions/setup-node@v4
+      - name: Install pnpm
+        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
         with:
-          node-version: 20
-          cache: 'npm'
+          version: 10.33.2
+          run_install: false
 
-      - run: npm ci
-      - run: npx playwright install --only-shell
+      - name: Install Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: .node-version
+          cache: pnpm
 
-      # Prepend any command with "nx record --" to record its logs to Nx Cloud
-      - run: npx nx record -- echo Hello World
-      - run: npx nx run-many -t lint test build typecheck e2e
-      # Nx Cloud recommends fixes for failures to help you get CI green faster. Learn more: https://nx.dev/ci/features/self-healing-ci
-      - run: npx nx fix-ci
-        if: always()
+      - name: Install uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990
+        with:
+          version: 0.9.18
+          enable-cache: true
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Sync backend Python environment
+        run: uv sync --project apps/cert-prep-backend --frozen
+
+      - name: Lint and test portable projects
+        run: >-
+          pnpm nx run-many -t lint test
+          --projects=cert-prep,cert-prep-contracts,cert-prep-ollama,cert-prep-ocr-windowsml,cert-prep-backend
+          --parallel=3
+
+      - name: Build Angular application
+        run: pnpm nx run cert-prep:build
+
+      - name: Install Chromium for browser integration
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Test mocked browser regression
+        run: pnpm nx run cert-prep-e2e:e2e --args="--project=chromium --workers=2"
+
+      - name: Test the browser against the real backend
+        run: pnpm nx run cert-prep-e2e:e2e-real-backend
+
+  windows-quality:
+    name: Windows product quality
+    runs-on: windows-2025
+    steps:
+      - name: Check out source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
+        with:
+          version: 10.33.2
+          run_install: false
+
+      - name: Install Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990
+        with:
+          version: 0.9.18
+          enable-cache: true
+
+      - name: Install Rust
+        shell: pwsh
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy,rustfmt
+          rustup show active-toolchain
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Sync backend Python environment
+        run: uv sync --project apps/cert-prep-backend --frozen
+
+      - name: Test Windows-owned Python and Angular projects
+        run: >-
+          pnpm nx run-many -t lint test
+          --projects=cert-prep-contracts,cert-prep-ollama,cert-prep-ocr-windowsml,cert-prep-backend,cert-prep
+          --parallel=2
+
+      - name: Type-check desktop scripts
+        run: pnpm nx run cert-prep-desktop:typecheck-scripts
+
+      - name: Test package QA
+        run: pnpm nx run cert-prep-desktop:package-qa-test
+
+      - name: Test Tauri host
+        run: pnpm nx run cert-prep-desktop:cargo-test
