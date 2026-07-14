@@ -60,6 +60,7 @@ def test_saved_exam_runtime_metadata_columns_are_migrated(tmp_path: Path) -> Non
         "project_id",
         "document_id",
         "chunk_id",
+        "source_chunk_id",
         "page_number",
         "strategy",
         "status",
@@ -330,7 +331,7 @@ def test_migration_18_backfills_job_phase_and_cancellability(tmp_path: Path) -> 
         jobs["skipped_missing_model"]["phase"],
         jobs["skipped_missing_model"]["cancellable"],
     ) == ("failed", 0)
-    assert applied_versions == [17, 18, 19]
+    assert applied_versions == [17, 18, 19, 20, 21]
 
 
 def test_active_operation_indexes_reject_duplicate_work(tmp_path: Path) -> None:
@@ -420,6 +421,300 @@ def test_active_operation_indexes_reject_duplicate_work(tmp_path: Path) -> None:
                 )
                 """
             )
+
+
+def test_migration_20_allows_terminal_history_but_rejects_two_active_document_operations(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(data_dir=tmp_path, api_token="test-token")
+    _create_v16_draft_job_fixture(settings.database_path)
+    Database(settings).migrate()
+
+    with sqlite3.connect(settings.database_path) as connection:
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute(
+            """
+            INSERT INTO document_operations(
+                id, project_id, document_id, status, phase, cancellable,
+                created_at, updated_at
+            )
+            VALUES (
+                'document-terminal', 'project', 'document', 'failed',
+                'failed', 0, '2026-01-02', '2026-01-02'
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO document_operations(
+                id, project_id, document_id, status, phase, cancellable,
+                created_at, updated_at
+            )
+            VALUES (
+                'document-active', 'project', 'document', 'running',
+                'processing', 1, '2026-01-03', '2026-01-03'
+            )
+            """
+        )
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                """
+                INSERT INTO document_operations(
+                    id, project_id, document_id, status, phase, cancellable,
+                    created_at, updated_at
+                )
+                VALUES (
+                    'document-conflict', 'project', 'document',
+                    'cancel_requested', 'canceling', 0,
+                    '2026-01-04', '2026-01-04'
+                )
+                """
+            )
+
+
+def test_migration_21_preserves_terminal_draft_attribution_after_chunk_cleanup(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(data_dir=tmp_path, api_token="test-token")
+    _create_v20_draft_job_fixture(settings.database_path)
+    Database(settings).migrate()
+
+    with sqlite3.connect(settings.database_path) as connection:
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute(
+            """
+            UPDATE draft_generation_jobs
+            SET effective_provider = 'fastflowlm',
+                effective_model = 'qwen3.5:4b',
+                fallback_reason = 'configured'
+            WHERE id = 'draft-job'
+            """
+        )
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                "UPDATE draft_generation_jobs SET chunk_id = 'missing' WHERE id = 'draft-job'"
+            )
+        connection.execute(
+            """
+            DELETE FROM draft_generation_jobs
+            WHERE status IN ('pending', 'running', 'cancel_requested')
+            """
+        )
+        connection.execute("DELETE FROM document_chunks WHERE id = 'chunk'")
+        jobs = connection.execute(
+            """
+            SELECT id, project_id, document_id, chunk_id, source_chunk_id,
+                page_number, strategy, status, provider, model,
+                effective_provider, effective_model, fallback_reason
+            FROM draft_generation_jobs
+            ORDER BY id
+            """
+        ).fetchall()
+        foreign_keys = connection.execute(
+            "PRAGMA foreign_key_list(draft_generation_jobs)"
+        ).fetchall()
+        foreign_key_violations = connection.execute(
+            "PRAGMA foreign_key_check"
+        ).fetchall()
+        applied = connection.execute(
+            "SELECT COUNT(*) FROM schema_migrations WHERE version = 21"
+        ).fetchone()[0]
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                """
+                INSERT INTO draft_generation_jobs(
+                    id, project_id, document_id, chunk_id, source_chunk_id,
+                    page_number, strategy, status, provider, model,
+                    created_at, updated_at
+                )
+                VALUES (
+                    'invalid-job', 'project', 'document', 'missing', 'missing', 1,
+                    'deterministic_only', 'pending', 'fastflowlm', 'qwen3.5:4b',
+                    '2026-01-02', '2026-01-02'
+                )
+                """
+            )
+
+    assert {row["id"] for row in jobs} == {
+        "draft-job",
+        "draft-failed",
+        "draft-provider-unavailable",
+        "draft-model-missing",
+    }
+    assert any(
+        row["from"] == "chunk_id"
+        and row["table"] == "document_chunks"
+        and row["on_delete"] == "SET NULL"
+        for row in foreign_keys
+    )
+    assert foreign_key_violations == []
+    assert applied == 1
+    assert all(row["chunk_id"] is None for row in jobs)
+    assert all(row["source_chunk_id"] == "chunk" for row in jobs)
+    succeeded = next(row for row in jobs if row["id"] == "draft-job")
+    assert tuple(succeeded) == (
+        "draft-job",
+        "project",
+        "document",
+        None,
+        "chunk",
+        1,
+        "hybrid_reasoning",
+        "succeeded",
+        "fastflowlm",
+        "qwen3.5:4b",
+        "fastflowlm",
+        "qwen3.5:4b",
+        "configured",
+    )
+
+
+def test_migration_21_rejects_cross_document_legacy_attribution_atomically(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(data_dir=tmp_path, api_token="test-token")
+    _create_v20_draft_job_fixture(settings.database_path)
+    with sqlite3.connect(settings.database_path) as connection:
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute(
+            """
+            INSERT INTO documents(
+                id, project_id, filename, sha256, storage_path, page_count,
+                has_text, status, created_at, updated_at
+            )
+            VALUES (
+                'other-document', 'project', 'other.pdf', 'other-sha',
+                'other.pdf', 1, 1, 'ready', '2026-01-02', '2026-01-02'
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO document_chunks(
+                id, project_id, document_id, page_number, chunk_index,
+                text, source_excerpt, created_at
+            )
+            VALUES (
+                'other-chunk', 'project', 'other-document', 1, 0,
+                'Other source', 'Other source', '2026-01-02'
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO draft_generation_jobs(
+                id, project_id, document_id, chunk_id, page_number, strategy,
+                status, provider, model, created_at, updated_at
+            )
+            VALUES (
+                'cross-document-job', 'project', 'document', 'other-chunk', 1,
+                'cross-document', 'failed', 'fastflowlm', 'qwen3.5:4b',
+                '2026-01-02', '2026-01-02'
+            )
+            """
+        )
+
+    with pytest.raises(
+        sqlite3.IntegrityError,
+        match="draft job chunk must belong to its document",
+    ):
+        Database(settings).migrate()
+
+    with sqlite3.connect(settings.database_path) as connection:
+        connection.row_factory = sqlite3.Row
+        columns_after_failure = _columns(connection, "draft_generation_jobs")
+        migration_21_count = connection.execute(
+            "SELECT COUNT(*) FROM schema_migrations WHERE version = 21"
+        ).fetchone()[0]
+        invalid_row_count = connection.execute(
+            "SELECT COUNT(*) FROM draft_generation_jobs WHERE id = 'cross-document-job'"
+        ).fetchone()[0]
+        temporary_table_count = connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM sqlite_master
+            WHERE type = 'table' AND name = 'draft_generation_jobs_v21'
+            """
+        ).fetchone()[0]
+
+    assert "source_chunk_id" not in columns_after_failure
+    assert migration_21_count == 0
+    assert invalid_row_count == 1
+    assert temporary_table_count == 0
+
+    with sqlite3.connect(settings.database_path) as connection:
+        connection.execute(
+            "DELETE FROM draft_generation_jobs WHERE id = 'cross-document-job'"
+        )
+    Database(settings).migrate()
+    with sqlite3.connect(settings.database_path) as connection:
+        connection.row_factory = sqlite3.Row
+        assert "source_chunk_id" in _columns(connection, "draft_generation_jobs")
+        assert connection.execute(
+            "SELECT COUNT(*) FROM schema_migrations WHERE version = 21"
+        ).fetchone()[0] == 1
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+def test_migration_20_repairs_populated_v19_duplicate_active_operations(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(data_dir=tmp_path, api_token="test-token")
+    _create_v19_duplicate_operation_fixture(settings.database_path)
+
+    Database(settings).migrate()
+    Database(settings).migrate()
+
+    with sqlite3.connect(settings.database_path) as connection:
+        connection.row_factory = sqlite3.Row
+        operations = {
+            row["id"]: row
+            for row in connection.execute(
+                "SELECT * FROM document_operations ORDER BY id"
+            ).fetchall()
+        }
+        applied = connection.execute(
+            "SELECT COUNT(*) FROM schema_migrations WHERE version = 20"
+        ).fetchone()[0]
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute(
+                """
+                INSERT INTO document_operations(
+                    id, project_id, document_id, status, phase, cancellable,
+                    created_at, updated_at
+                )
+                VALUES (
+                    'post-migration-conflict', 'project', 'document', 'queued',
+                    'queued', 1, '2026-01-06', '2026-01-06'
+                )
+                """
+            )
+
+    assert applied == 1
+    assert operations["cancel-requested"]["status"] == "cancel_requested"
+    assert operations["cancel-requested"]["phase"] == "canceling"
+    assert operations["cancel-requested"]["cancellable"] == 0
+    for operation_id in ("queued-newest", "running-newer"):
+        operation = operations[operation_id]
+        assert (operation["status"], operation["phase"], operation["cancellable"]) == (
+            "failed",
+            "failed",
+            0,
+        )
+        assert operation["error"] == (
+            "Superseded while repairing duplicate active document operations."
+        )
+    assert (operations["terminal-history"]["status"], operations["terminal-history"]["error"]) == (
+        "succeeded",
+        None,
+    )
+    assert operations["unattached-a"]["status"] == "queued"
+    assert operations["unattached-b"]["status"] == "running"
+    assert operations["running-priority"]["status"] == "running"
+    assert operations["queued-later"]["status"] == "failed"
+    assert operations["tie-z"]["status"] == "running"
+    assert operations["tie-a"]["status"] == "failed"
 
 
 def _columns(connection, table_name: str) -> dict[str, str | None]:
@@ -646,6 +941,174 @@ def _create_v16_draft_job_fixture(database_path: Path) -> None:
                     "draft-model-missing",
                     "model-missing-strategy",
                     "skipped_missing_model",
+                ),
+            ],
+        )
+
+
+def _create_v20_draft_job_fixture(database_path: Path) -> None:
+    _create_v16_draft_job_fixture(database_path)
+    with sqlite3.connect(database_path) as connection:
+        for version, sql in MIGRATIONS:
+            if version < 17:
+                continue
+            if version >= 21:
+                break
+            connection.executescript(sql)
+            connection.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                (version, f"migration-{version}"),
+            )
+
+
+def _create_v19_duplicate_operation_fixture(database_path: Path) -> None:
+    _create_v16_draft_job_fixture(database_path)
+    with sqlite3.connect(database_path) as connection:
+        for version, sql in MIGRATIONS:
+            if version < 17:
+                continue
+            if version >= 20:
+                break
+            connection.executescript(sql)
+            connection.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                (version, f"migration-{version}"),
+            )
+        connection.executemany(
+            """
+            INSERT INTO documents(
+                id, project_id, filename, sha256, storage_path, page_count,
+                has_text, status, created_at, updated_at
+            )
+            VALUES (?, 'project', ?, ?, ?, 1, 0, 'processing', ?, ?)
+            """,
+            [
+                (
+                    "document-running-priority",
+                    "running.pdf",
+                    "running-sha",
+                    "running.pdf",
+                    "2026-01-01",
+                    "2026-01-01",
+                ),
+                (
+                    "document-tie",
+                    "tie.pdf",
+                    "tie-sha",
+                    "tie.pdf",
+                    "2026-01-01",
+                    "2026-01-01",
+                ),
+            ],
+        )
+        connection.executemany(
+            """
+            INSERT INTO document_operations(
+                id, project_id, document_id, status, phase, cancellable,
+                error, created_at, updated_at
+            )
+            VALUES (?, 'project', ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    "terminal-history",
+                    "document",
+                    "succeeded",
+                    "completed",
+                    0,
+                    None,
+                    "2026-01-01",
+                    "2026-01-01",
+                ),
+                (
+                    "cancel-requested",
+                    "document",
+                    "cancel_requested",
+                    "canceling",
+                    0,
+                    None,
+                    "2026-01-02",
+                    "2026-01-02",
+                ),
+                (
+                    "running-newer",
+                    "document",
+                    "running",
+                    "processing",
+                    1,
+                    None,
+                    "2026-01-03",
+                    "2026-01-04",
+                ),
+                (
+                    "queued-newest",
+                    "document",
+                    "queued",
+                    "queued",
+                    1,
+                    None,
+                    "2026-01-05",
+                    "2026-01-05",
+                ),
+                (
+                    "unattached-a",
+                    None,
+                    "queued",
+                    "queued",
+                    1,
+                    None,
+                    "2026-01-03",
+                    "2026-01-03",
+                ),
+                (
+                    "unattached-b",
+                    None,
+                    "running",
+                    "processing",
+                    1,
+                    None,
+                    "2026-01-04",
+                    "2026-01-04",
+                ),
+                (
+                    "running-priority",
+                    "document-running-priority",
+                    "running",
+                    "processing",
+                    1,
+                    None,
+                    "2026-01-01",
+                    "2026-01-01",
+                ),
+                (
+                    "queued-later",
+                    "document-running-priority",
+                    "queued",
+                    "queued",
+                    1,
+                    None,
+                    "2026-01-09",
+                    "2026-01-09",
+                ),
+                (
+                    "tie-a",
+                    "document-tie",
+                    "running",
+                    "processing",
+                    1,
+                    None,
+                    "2026-01-02",
+                    "2026-01-02",
+                ),
+                (
+                    "tie-z",
+                    "document-tie",
+                    "running",
+                    "processing",
+                    1,
+                    None,
+                    "2026-01-02",
+                    "2026-01-02",
                 ),
             ],
         )

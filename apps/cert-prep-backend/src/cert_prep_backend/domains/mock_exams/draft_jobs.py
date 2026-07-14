@@ -52,17 +52,19 @@ def enqueue_chunk_job(
         connection.execute(
             """
             INSERT INTO draft_generation_jobs(
-                id, project_id, document_id, chunk_id, page_number, strategy,
+                id, project_id, document_id, chunk_id, source_chunk_id,
+                page_number, strategy,
                 status, provider, model, generated_count, retry_count,
                 last_error, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NULL, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NULL, ?, ?)
             ON CONFLICT(document_id, chunk_id, strategy) DO NOTHING
             """,
             (
                 str(uuid4()),
                 project_id,
                 document_id,
+                chunk_id,
                 chunk_id,
                 page_number,
                 strategy,
@@ -110,12 +112,36 @@ def recover_runnable_jobs(db: Database) -> list[dict]:
             """
             UPDATE draft_generation_jobs
             SET status = ?,
+                phase = 'failed',
+                cancellable = 0,
+                last_error = COALESCE(
+                    last_error,
+                    'Source chunk is no longer available.'
+                ),
+                updated_at = ?
+            WHERE chunk_id IS NULL
+              AND status IN (?, ?)
+            """,
+            (
+                DraftGenerationJobStatus.FAILED,
+                now,
+                DraftGenerationJobStatus.PENDING,
+                DraftGenerationJobStatus.RUNNING,
+            ),
+        )
+        connection.execute(
+            """
+            UPDATE draft_generation_jobs
+            SET status = ?,
+                phase = 'queued',
+                cancellable = 1,
                 effective_provider = NULL,
                 effective_model = NULL,
                 fallback_reason = NULL,
                 last_error = 'Draft generation was interrupted before completion.',
                 updated_at = ?
             WHERE status = ?
+              AND chunk_id IS NOT NULL
             """,
             (
                 DraftGenerationJobStatus.PENDING,
@@ -128,6 +154,7 @@ def recover_runnable_jobs(db: Database) -> list[dict]:
             SELECT *
             FROM draft_generation_jobs
             WHERE status = ?
+              AND chunk_id IS NOT NULL
             ORDER BY updated_at, page_number, created_at, id
             """,
             (DraftGenerationJobStatus.PENDING,),
@@ -153,6 +180,8 @@ def retry_document_jobs(
             """
             UPDATE draft_generation_jobs
             SET status = ?,
+                phase = 'queued',
+                cancellable = 1,
                 provider = ?,
                 model = ?,
                 effective_provider = NULL,
@@ -165,6 +194,7 @@ def retry_document_jobs(
             WHERE project_id = ?
               AND document_id = ?
               AND status IN (?, ?, ?)
+              AND chunk_id IS NOT NULL
             """,
             (
                 DraftGenerationJobStatus.PENDING,
@@ -183,6 +213,7 @@ def retry_document_jobs(
             WHERE project_id = ?
               AND document_id = ?
               AND status = ?
+              AND chunk_id IS NOT NULL
             ORDER BY updated_at, page_number, created_at, id
             """,
             (project_id, document_id, DraftGenerationJobStatus.PENDING),
@@ -341,7 +372,7 @@ def job_from_row(row: Row) -> dict:
         "id": row["id"],
         "project_id": row["project_id"],
         "document_id": row["document_id"],
-        "chunk_id": row["chunk_id"],
+        "chunk_id": row["chunk_id"] or row["source_chunk_id"],
         "page_number": row["page_number"],
         "strategy": row["strategy"],
         "status": row["status"],

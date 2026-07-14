@@ -488,6 +488,138 @@ MIGRATIONS: Final[tuple[tuple[int, str], ...]] = (
             );
         """,
     ),
+    (
+        20,
+        """
+        WITH ranked_active AS (
+            SELECT
+                id,
+                ROW_NUMBER() OVER (
+                    PARTITION BY project_id, document_id
+                    ORDER BY
+                        CASE status
+                            WHEN 'cancel_requested' THEN 0
+                            WHEN 'running' THEN 1
+                            ELSE 2
+                        END,
+                        updated_at DESC,
+                        created_at DESC,
+                        id DESC
+                ) AS operation_rank
+            FROM document_operations
+            WHERE document_id IS NOT NULL
+                AND status IN ('queued', 'running', 'cancel_requested')
+        )
+        UPDATE document_operations
+        SET status = 'failed',
+            phase = 'failed',
+            cancellable = 0,
+            error = COALESCE(
+                error,
+                'Superseded while repairing duplicate active document operations.'
+            )
+        WHERE id IN (
+            SELECT id
+            FROM ranked_active
+            WHERE operation_rank > 1
+        );
+
+        CREATE UNIQUE INDEX idx_document_operations_one_active_document
+            ON document_operations(project_id, document_id)
+            WHERE document_id IS NOT NULL
+                AND status IN ('queued', 'running', 'cancel_requested');
+        """,
+    ),
+    (
+        21,
+        """
+        CREATE TABLE draft_generation_jobs_v21 (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+            chunk_id TEXT REFERENCES document_chunks(id) ON DELETE SET NULL,
+            source_chunk_id TEXT NOT NULL,
+            page_number INTEGER NOT NULL,
+            strategy TEXT NOT NULL,
+            status TEXT NOT NULL,
+            provider TEXT NOT NULL DEFAULT '',
+            model TEXT NOT NULL DEFAULT '',
+            generated_count INTEGER NOT NULL DEFAULT 0,
+            retry_count INTEGER NOT NULL DEFAULT 0,
+            last_error TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            effective_provider TEXT,
+            effective_model TEXT,
+            fallback_reason TEXT,
+            phase TEXT NOT NULL DEFAULT 'queued',
+            cancellable INTEGER NOT NULL DEFAULT 1,
+            CHECK(chunk_id IS NULL OR chunk_id = source_chunk_id),
+            UNIQUE(document_id, chunk_id, strategy)
+        );
+
+        CREATE TRIGGER trg_draft_generation_jobs_validate_chunk_insert
+        BEFORE INSERT ON draft_generation_jobs_v21
+        WHEN NEW.chunk_id IS NULL
+            OR NOT EXISTS (
+                SELECT 1
+                FROM document_chunks
+                WHERE id = NEW.chunk_id
+                    AND project_id = NEW.project_id
+                    AND document_id = NEW.document_id
+            )
+        BEGIN
+            SELECT RAISE(ABORT, 'draft job chunk must belong to its document');
+        END;
+
+        INSERT INTO draft_generation_jobs_v21(
+            id, project_id, document_id, chunk_id, source_chunk_id,
+            page_number, strategy,
+            status, provider, model, generated_count, retry_count, last_error,
+            created_at, updated_at, effective_provider, effective_model,
+            fallback_reason, phase, cancellable
+        )
+        SELECT
+            id, project_id, document_id, chunk_id, chunk_id,
+            page_number, strategy,
+            status, provider, model, generated_count, retry_count, last_error,
+            created_at, updated_at, effective_provider, effective_model,
+            fallback_reason, phase, cancellable
+        FROM draft_generation_jobs;
+
+        DROP TABLE draft_generation_jobs;
+        ALTER TABLE draft_generation_jobs_v21 RENAME TO draft_generation_jobs;
+
+        CREATE INDEX idx_draft_generation_jobs_document
+            ON draft_generation_jobs(project_id, document_id, created_at);
+        CREATE INDEX idx_draft_generation_jobs_status
+            ON draft_generation_jobs(status, updated_at);
+
+        CREATE TRIGGER trg_draft_generation_jobs_validate_chunk_update
+        BEFORE UPDATE OF chunk_id ON draft_generation_jobs
+        WHEN NEW.chunk_id IS NOT NULL
+            AND NOT EXISTS (
+                SELECT 1
+                FROM document_chunks
+                WHERE id = NEW.chunk_id
+                    AND project_id = NEW.project_id
+                    AND document_id = NEW.document_id
+            )
+        BEGIN
+            SELECT RAISE(ABORT, 'draft job chunk must belong to its document');
+        END;
+
+        CREATE TRIGGER trg_draft_generation_jobs_immutable_attribution
+        BEFORE UPDATE OF project_id, document_id, source_chunk_id
+            ON draft_generation_jobs
+        WHEN NEW.project_id IS NOT OLD.project_id
+            OR NEW.document_id IS NOT OLD.document_id
+            OR NEW.source_chunk_id IS NOT OLD.source_chunk_id
+        BEGIN
+            SELECT RAISE(ABORT, 'draft job attribution is immutable');
+        END;
+        """,
+    ),
 )
 
 
