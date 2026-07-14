@@ -34,7 +34,10 @@ pub fn run() {
             if let Some(config) = external_backend_env() {
                 state.set_config(config);
             } else {
-                let _ = state.try_launch_installed_backend();
+                let launch_result = state.try_launch_installed_backend();
+                if launch_result.is_err() && package_qa_auto_install_enabled() {
+                    state.start_installation();
+                }
             }
             app.manage(state);
             Ok(())
@@ -59,6 +62,17 @@ pub fn run() {
         .expect("failed to run cert prep desktop app");
 }
 
+fn package_qa_auto_install_enabled() -> bool {
+    std::env::var("CERT_PREP_PACKAGE_QA_AUTO_INSTALL_BUNDLED_BACKEND")
+        .ok()
+        .as_deref()
+        .is_some_and(package_qa_auto_install_value)
+}
+
+fn package_qa_auto_install_value(value: &str) -> bool {
+    value.trim().eq_ignore_ascii_case("true")
+}
+
 fn resolved_app_data_dir(app: &tauri::App) -> Result<PathBuf, String> {
     if let Ok(value) = std::env::var("CERT_PREP_DESKTOP_DATA_DIR") {
         let trimmed = value.trim();
@@ -70,4 +84,16 @@ fn resolved_app_data_dir(app: &tauri::App) -> Result<PathBuf, String> {
     app.path()
         .app_data_dir()
         .map_err(|error| format!("failed to resolve app data directory: {error}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::package_qa_auto_install_value;
+
+    #[test]
+    fn bundled_backend_auto_install_is_explicitly_qa_only() {
+        assert!(package_qa_auto_install_value(" true "));
+        assert!(!package_qa_auto_install_value("1"));
+        assert!(!package_qa_auto_install_value("false"));
+    }
 }
