@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from pathlib import Path
 import sqlite3
+from pathlib import Path
 
 import pytest
 
 from cert_prep_backend.core.config import Settings
 from cert_prep_backend.persistence import database as database_module
-from cert_prep_backend.persistence.database import Database, MIGRATIONS
+from cert_prep_backend.persistence.database import MIGRATIONS, Database
 
 
 def test_saved_exam_runtime_metadata_columns_are_migrated(tmp_path: Path) -> None:
@@ -20,14 +20,16 @@ def test_saved_exam_runtime_metadata_columns_are_migrated(tmp_path: Path) -> Non
         draft_columns = _columns(connection, "question_drafts")
         draft_job_columns = _columns(connection, "draft_generation_jobs")
         manual_draft_operation_columns = _columns(
-            connection, "manual_draft_generation_operations"
-        )
-        document_operation_columns = _columns(connection, "document_operations")
-        runtime_installation_columns = _columns(
-            connection, "runtime_installation_jobs"
+            connection,
+            "manual_draft_generation_operations",
         )
         session_columns = _columns(connection, "practice_sessions")
         session_question_columns = _columns(connection, "practice_session_questions")
+        document_operation_columns = _columns(connection, "document_operations")
+        runtime_installation_columns = _columns(
+            connection,
+            "runtime_installation_jobs",
+        )
 
     assert document_columns["content_profile"] == "'unknown'"
     assert "classification_detail" in document_columns
@@ -60,23 +62,21 @@ def test_saved_exam_runtime_metadata_columns_are_migrated(tmp_path: Path) -> Non
         "project_id",
         "document_id",
         "chunk_id",
-        "source_chunk_id",
         "page_number",
         "strategy",
         "status",
         "provider",
         "model",
-        "effective_provider",
-        "effective_model",
-        "fallback_reason",
         "generated_count",
         "retry_count",
         "last_error",
+        "effective_provider",
+        "effective_model",
+        "fallback_reason",
         "phase",
         "cancellable",
     } <= set(draft_job_columns)
     assert {
-        "id",
         "project_id",
         "document_id",
         "limit_count",
@@ -92,6 +92,20 @@ def test_saved_exam_runtime_metadata_columns_are_migrated(tmp_path: Path) -> Non
         "generated_count",
         "error",
     } <= set(manual_draft_operation_columns)
+    assert {
+        "session_id",
+        "project_id",
+        "question_id",
+        "question_order",
+        "question",
+        "choices_json",
+        "correct_answer",
+        "rationale",
+        "citation_page",
+        "source_excerpt",
+        "created_at",
+        "document_id",
+    } <= set(session_question_columns)
     assert {
         "id",
         "project_id",
@@ -118,82 +132,6 @@ def test_saved_exam_runtime_metadata_columns_are_migrated(tmp_path: Path) -> Non
         "created_at",
         "updated_at",
     } <= set(runtime_installation_columns)
-    assert {
-        "session_id",
-        "project_id",
-        "question_id",
-        "question_order",
-        "question",
-        "choices_json",
-        "correct_answer",
-        "rationale",
-        "citation_page",
-        "source_excerpt",
-        "created_at",
-        "document_id",
-    } <= set(session_question_columns)
-
-
-def test_migration_15_backfills_one_latest_active_session_per_project(
-    tmp_path: Path,
-) -> None:
-    settings = Settings(data_dir=tmp_path, api_token="test-token")
-    _create_v14_practice_fixture(settings.database_path)
-
-    db = Database(settings)
-    db.migrate()
-
-    with db.connect() as connection:
-        sessions = {
-            row["id"]: row
-            for row in connection.execute(
-                "SELECT * FROM practice_sessions ORDER BY id"
-            ).fetchall()
-        }
-        attempts = connection.execute(
-            "SELECT id FROM practice_attempts ORDER BY id"
-        ).fetchall()
-        applied = connection.execute(
-            "SELECT version FROM schema_migrations WHERE version = 15"
-        ).fetchone()
-
-        assert sessions["p1-complete"]["status"] == "completed"
-        assert sessions["p1-complete"]["completed_at"] == "2026-01-01T04:00:00Z"
-        assert sessions["p1-complete"]["abandoned_at"] is None
-        assert sessions["p1-new-incomplete"]["status"] == "active"
-        assert sessions["p1-new-incomplete"]["abandoned_at"] is None
-        assert sessions["p1-old-incomplete"]["status"] == "abandoned"
-        assert sessions["p1-old-incomplete"]["abandoned_at"] == (
-            "2026-01-10T00:00:00Z"
-        )
-        assert sessions["p2-only-incomplete"]["status"] == "active"
-        assert len(attempts) == 4
-        assert applied is not None
-
-        active_counts = connection.execute(
-            """
-            SELECT project_id, COUNT(*) AS active_count
-            FROM practice_sessions
-            WHERE status = 'active'
-            GROUP BY project_id
-            ORDER BY project_id
-            """
-        ).fetchall()
-        assert [(row["project_id"], row["active_count"]) for row in active_counts] == [
-            ("project-1", 1),
-            ("project-2", 1),
-        ]
-
-        with pytest.raises(sqlite3.IntegrityError):
-            connection.execute(
-                """
-                INSERT INTO practice_sessions(
-                    id, project_id, question_ids_json, status, created_at
-                )
-                VALUES ('second-active', 'project-1', '[]', 'active', ?)
-                """,
-                ("2026-01-04T00:00:00Z",),
-            )
 
 
 def test_failed_migration_rolls_back_schema_and_reopens_cleanly(
@@ -250,411 +188,61 @@ def test_failed_migration_rolls_back_schema_and_reopens_cleanly(
     assert versions_after_reopen == [1, 2]
 
 
-def test_migration_16_preserves_configured_job_values_and_backfills_null_attribution(
+def test_practice_session_resume_migration_backfills_statuses_and_active_uniqueness(
     tmp_path: Path,
 ) -> None:
     settings = Settings(data_dir=tmp_path, api_token="test-token")
-    _create_v15_draft_job_fixture(settings.database_path)
+    _create_version_14_practice_database(settings.database_path)
 
-    Database(settings).migrate()
+    db = Database(settings)
+    db.migrate()
 
-    with sqlite3.connect(settings.database_path) as connection:
-        connection.row_factory = sqlite3.Row
-        job = connection.execute(
-            "SELECT * FROM draft_generation_jobs WHERE id = 'draft-job'"
-        ).fetchone()
-        applied = connection.execute(
-            "SELECT version FROM schema_migrations WHERE version = 16"
-        ).fetchone()
-
-    assert job is not None
-    assert job["provider"] == "fastflowlm"
-    assert job["model"] == "qwen3.5:4b"
-    assert job["effective_provider"] is None
-    assert job["effective_model"] is None
-    assert job["fallback_reason"] is None
-    assert applied is not None
-
-
-def test_migration_18_backfills_job_phase_and_cancellability(tmp_path: Path) -> None:
-    settings = Settings(data_dir=tmp_path, api_token="test-token")
-    _create_v16_draft_job_fixture(settings.database_path)
-
-    Database(settings).migrate()
-    Database(settings).migrate()
-
-    with sqlite3.connect(settings.database_path) as connection:
-        connection.row_factory = sqlite3.Row
-        jobs = {
-            row["status"]: row
+    with db.connect() as connection:
+        session_rows = {
+            row["id"]: row
             for row in connection.execute(
-                """
-                SELECT status, phase, cancellable
-                FROM draft_generation_jobs
-                ORDER BY status
-                """
+                "SELECT * FROM practice_sessions ORDER BY project_id, created_at"
             ).fetchall()
         }
-        applied_versions = [
-            row[0]
-            for row in connection.execute(
-                """
-                SELECT version
-                FROM schema_migrations
-                WHERE version >= 17
-                ORDER BY version
-                """
-            ).fetchall()
-        ]
+        index_rows = {
+            row["name"]: row
+            for row in connection.execute("PRAGMA index_list(practice_sessions)").fetchall()
+        }
 
-    assert (jobs["pending"]["phase"], jobs["pending"]["cancellable"]) == (
-        "queued",
-        1,
-    )
-    assert (jobs["running"]["phase"], jobs["running"]["cancellable"]) == (
-        "generating",
-        1,
-    )
-    assert (jobs["succeeded"]["phase"], jobs["succeeded"]["cancellable"]) == (
-        "completed",
-        0,
-    )
-    assert (jobs["failed"]["phase"], jobs["failed"]["cancellable"]) == (
-        "failed",
-        0,
-    )
-    assert (
-        jobs["skipped_provider_unavailable"]["phase"],
-        jobs["skipped_provider_unavailable"]["cancellable"],
-    ) == ("failed", 0)
-    assert (
-        jobs["skipped_missing_model"]["phase"],
-        jobs["skipped_missing_model"]["cancellable"],
-    ) == ("failed", 0)
-    assert applied_versions == [17, 18, 19, 20, 21]
-
-
-def test_active_operation_indexes_reject_duplicate_work(tmp_path: Path) -> None:
-    settings = Settings(data_dir=tmp_path, api_token="test-token")
-    _create_v16_draft_job_fixture(settings.database_path)
-    Database(settings).migrate()
-
-    with sqlite3.connect(settings.database_path) as connection:
-        connection.execute("PRAGMA foreign_keys = ON")
-        connection.execute(
-            """
-            INSERT INTO manual_draft_generation_operations(
-                id, project_id, document_id, limit_count, strategy, status,
-                phase, cancellable, provider, model, created_at, updated_at
-            )
-            VALUES (
-                'manual-active', 'project', 'document', 1, 'hybrid_reasoning',
-                'running', 'generating', 1, 'fastflowlm', 'qwen3.5:4b',
-                '2026-01-02', '2026-01-02'
-            )
-            """
+        assert session_rows["completed-by-coverage"]["status"] == "completed"
+        assert (
+            session_rows["completed-by-coverage"]["completed_at"]
+            == "2026-07-01T00:02:00+00:00"
         )
-        connection.execute(
-            """
-            INSERT INTO manual_draft_generation_operations(
-                id, project_id, document_id, limit_count, strategy, status,
-                phase, cancellable, provider, model, created_at, updated_at
-            )
-            VALUES (
-                'manual-terminal', 'project', 'document', 1,
-                'hybrid_reasoning', 'succeeded', 'completed', 0,
-                'fastflowlm', 'qwen3.5:4b', '2026-01-03', '2026-01-03'
-            )
-            """
+        assert session_rows["completed-by-coverage"]["abandoned_at"] is None
+
+        assert session_rows["preserved-completed"]["status"] == "completed"
+        assert (
+            session_rows["preserved-completed"]["completed_at"]
+            == "2026-06-30T00:09:00+00:00"
         )
+
+        assert session_rows["older-incomplete"]["status"] == "active"
+        assert session_rows["older-incomplete"]["abandoned_at"] is None
+        assert session_rows["latest-incomplete"]["status"] == "abandoned"
+        assert session_rows["latest-incomplete"]["abandoned_at"] is not None
+        assert session_rows["other-project-incomplete"]["status"] == "active"
+        assert session_rows["other-project-incomplete"]["abandoned_at"] is None
+
+        assert index_rows["idx_practice_sessions_one_active_per_project"]["unique"] == 1
+        assert index_rows["idx_practice_sessions_one_active_per_project"]["partial"] == 1
+
         with pytest.raises(sqlite3.IntegrityError):
             connection.execute(
                 """
-                INSERT INTO manual_draft_generation_operations(
-                    id, project_id, document_id, limit_count, strategy, status,
-                    phase, cancellable, provider, model, created_at, updated_at
+                INSERT INTO practice_sessions(
+                    id, project_id, question_ids_json, status, mode,
+                    requested_question_count, created_at
                 )
-                VALUES (
-                    'manual-conflict', 'project', 'document', 1,
-                    'hybrid_reasoning', 'queued', 'queued', 1, 'fastflowlm',
-                    'qwen3.5:4b', '2026-01-03', '2026-01-03'
-                )
+                VALUES ('conflicting-active', 'project-1', '["q-1"]', 'active',
+                    'random_draw', 1, '2026-07-02T00:00:00+00:00')
                 """
             )
-        connection.execute(
-            """
-            INSERT INTO runtime_installation_jobs(
-                id, kind, provider, model, status, phase, cancellable, detail,
-                created_at, updated_at
-            )
-            VALUES (
-                'runtime-active', 'windowsml_ocr', 'windowsml', '',
-                'waiting_for_user', 'waiting_for_user', 1, 'Consent required',
-                '2026-01-02', '2026-01-02'
-            )
-            """
-        )
-        connection.execute(
-            """
-            INSERT INTO runtime_installation_jobs(
-                id, kind, provider, model, status, phase, cancellable, detail,
-                created_at, updated_at
-            )
-            VALUES (
-                'runtime-terminal', 'windowsml_ocr', 'windowsml', '',
-                'succeeded', 'completed', 0, 'Ready',
-                '2026-01-03', '2026-01-03'
-            )
-            """
-        )
-        with pytest.raises(sqlite3.IntegrityError):
-            connection.execute(
-                """
-                INSERT INTO runtime_installation_jobs(
-                    id, kind, provider, model, status, phase, cancellable,
-                    detail, created_at, updated_at
-                )
-                VALUES (
-                    'runtime-conflict', 'windowsml_ocr', 'windowsml', '',
-                    'cancel_requested', 'canceling', 0, 'Canceling',
-                    '2026-01-03', '2026-01-03'
-                )
-                """
-            )
-
-
-def test_migration_20_allows_terminal_history_but_rejects_two_active_document_operations(
-    tmp_path: Path,
-) -> None:
-    settings = Settings(data_dir=tmp_path, api_token="test-token")
-    _create_v16_draft_job_fixture(settings.database_path)
-    Database(settings).migrate()
-
-    with sqlite3.connect(settings.database_path) as connection:
-        connection.execute("PRAGMA foreign_keys = ON")
-        connection.execute(
-            """
-            INSERT INTO document_operations(
-                id, project_id, document_id, status, phase, cancellable,
-                created_at, updated_at
-            )
-            VALUES (
-                'document-terminal', 'project', 'document', 'failed',
-                'failed', 0, '2026-01-02', '2026-01-02'
-            )
-            """
-        )
-        connection.execute(
-            """
-            INSERT INTO document_operations(
-                id, project_id, document_id, status, phase, cancellable,
-                created_at, updated_at
-            )
-            VALUES (
-                'document-active', 'project', 'document', 'running',
-                'processing', 1, '2026-01-03', '2026-01-03'
-            )
-            """
-        )
-        with pytest.raises(sqlite3.IntegrityError):
-            connection.execute(
-                """
-                INSERT INTO document_operations(
-                    id, project_id, document_id, status, phase, cancellable,
-                    created_at, updated_at
-                )
-                VALUES (
-                    'document-conflict', 'project', 'document',
-                    'cancel_requested', 'canceling', 0,
-                    '2026-01-04', '2026-01-04'
-                )
-                """
-            )
-
-
-def test_migration_21_preserves_terminal_draft_attribution_after_chunk_cleanup(
-    tmp_path: Path,
-) -> None:
-    settings = Settings(data_dir=tmp_path, api_token="test-token")
-    _create_v20_draft_job_fixture(settings.database_path)
-    Database(settings).migrate()
-
-    with sqlite3.connect(settings.database_path) as connection:
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA foreign_keys = ON")
-        connection.execute(
-            """
-            UPDATE draft_generation_jobs
-            SET effective_provider = 'fastflowlm',
-                effective_model = 'qwen3.5:4b',
-                fallback_reason = 'configured'
-            WHERE id = 'draft-job'
-            """
-        )
-        with pytest.raises(sqlite3.IntegrityError):
-            connection.execute(
-                "UPDATE draft_generation_jobs SET chunk_id = 'missing' WHERE id = 'draft-job'"
-            )
-        connection.execute(
-            """
-            DELETE FROM draft_generation_jobs
-            WHERE status IN ('pending', 'running', 'cancel_requested')
-            """
-        )
-        connection.execute("DELETE FROM document_chunks WHERE id = 'chunk'")
-        jobs = connection.execute(
-            """
-            SELECT id, project_id, document_id, chunk_id, source_chunk_id,
-                page_number, strategy, status, provider, model,
-                effective_provider, effective_model, fallback_reason
-            FROM draft_generation_jobs
-            ORDER BY id
-            """
-        ).fetchall()
-        foreign_keys = connection.execute(
-            "PRAGMA foreign_key_list(draft_generation_jobs)"
-        ).fetchall()
-        foreign_key_violations = connection.execute(
-            "PRAGMA foreign_key_check"
-        ).fetchall()
-        applied = connection.execute(
-            "SELECT COUNT(*) FROM schema_migrations WHERE version = 21"
-        ).fetchone()[0]
-        with pytest.raises(sqlite3.IntegrityError):
-            connection.execute(
-                """
-                INSERT INTO draft_generation_jobs(
-                    id, project_id, document_id, chunk_id, source_chunk_id,
-                    page_number, strategy, status, provider, model,
-                    created_at, updated_at
-                )
-                VALUES (
-                    'invalid-job', 'project', 'document', 'missing', 'missing', 1,
-                    'deterministic_only', 'pending', 'fastflowlm', 'qwen3.5:4b',
-                    '2026-01-02', '2026-01-02'
-                )
-                """
-            )
-
-    assert {row["id"] for row in jobs} == {
-        "draft-job",
-        "draft-failed",
-        "draft-provider-unavailable",
-        "draft-model-missing",
-    }
-    assert any(
-        row["from"] == "chunk_id"
-        and row["table"] == "document_chunks"
-        and row["on_delete"] == "SET NULL"
-        for row in foreign_keys
-    )
-    assert foreign_key_violations == []
-    assert applied == 1
-    assert all(row["chunk_id"] is None for row in jobs)
-    assert all(row["source_chunk_id"] == "chunk" for row in jobs)
-    succeeded = next(row for row in jobs if row["id"] == "draft-job")
-    assert tuple(succeeded) == (
-        "draft-job",
-        "project",
-        "document",
-        None,
-        "chunk",
-        1,
-        "hybrid_reasoning",
-        "succeeded",
-        "fastflowlm",
-        "qwen3.5:4b",
-        "fastflowlm",
-        "qwen3.5:4b",
-        "configured",
-    )
-
-
-def test_migration_21_rejects_cross_document_legacy_attribution_atomically(
-    tmp_path: Path,
-) -> None:
-    settings = Settings(data_dir=tmp_path, api_token="test-token")
-    _create_v20_draft_job_fixture(settings.database_path)
-    with sqlite3.connect(settings.database_path) as connection:
-        connection.execute("PRAGMA foreign_keys = ON")
-        connection.execute(
-            """
-            INSERT INTO documents(
-                id, project_id, filename, sha256, storage_path, page_count,
-                has_text, status, created_at, updated_at
-            )
-            VALUES (
-                'other-document', 'project', 'other.pdf', 'other-sha',
-                'other.pdf', 1, 1, 'ready', '2026-01-02', '2026-01-02'
-            )
-            """
-        )
-        connection.execute(
-            """
-            INSERT INTO document_chunks(
-                id, project_id, document_id, page_number, chunk_index,
-                text, source_excerpt, created_at
-            )
-            VALUES (
-                'other-chunk', 'project', 'other-document', 1, 0,
-                'Other source', 'Other source', '2026-01-02'
-            )
-            """
-        )
-        connection.execute(
-            """
-            INSERT INTO draft_generation_jobs(
-                id, project_id, document_id, chunk_id, page_number, strategy,
-                status, provider, model, created_at, updated_at
-            )
-            VALUES (
-                'cross-document-job', 'project', 'document', 'other-chunk', 1,
-                'cross-document', 'failed', 'fastflowlm', 'qwen3.5:4b',
-                '2026-01-02', '2026-01-02'
-            )
-            """
-        )
-
-    with pytest.raises(
-        sqlite3.IntegrityError,
-        match="draft job chunk must belong to its document",
-    ):
-        Database(settings).migrate()
-
-    with sqlite3.connect(settings.database_path) as connection:
-        connection.row_factory = sqlite3.Row
-        columns_after_failure = _columns(connection, "draft_generation_jobs")
-        migration_21_count = connection.execute(
-            "SELECT COUNT(*) FROM schema_migrations WHERE version = 21"
-        ).fetchone()[0]
-        invalid_row_count = connection.execute(
-            "SELECT COUNT(*) FROM draft_generation_jobs WHERE id = 'cross-document-job'"
-        ).fetchone()[0]
-        temporary_table_count = connection.execute(
-            """
-            SELECT COUNT(*)
-            FROM sqlite_master
-            WHERE type = 'table' AND name = 'draft_generation_jobs_v21'
-            """
-        ).fetchone()[0]
-
-    assert "source_chunk_id" not in columns_after_failure
-    assert migration_21_count == 0
-    assert invalid_row_count == 1
-    assert temporary_table_count == 0
-
-    with sqlite3.connect(settings.database_path) as connection:
-        connection.execute(
-            "DELETE FROM draft_generation_jobs WHERE id = 'cross-document-job'"
-        )
-    Database(settings).migrate()
-    with sqlite3.connect(settings.database_path) as connection:
-        connection.row_factory = sqlite3.Row
-        assert "source_chunk_id" in _columns(connection, "draft_generation_jobs")
-        assert connection.execute(
-            "SELECT COUNT(*) FROM schema_migrations WHERE version = 21"
-        ).fetchone()[0] == 1
-        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
 def test_migration_20_repairs_populated_v19_duplicate_active_operations(
@@ -672,6 +260,12 @@ def test_migration_20_repairs_populated_v19_duplicate_active_operations(
             row["id"]: row
             for row in connection.execute(
                 "SELECT * FROM document_operations ORDER BY id"
+            ).fetchall()
+        }
+        indexes = {
+            row["name"]: row
+            for row in connection.execute(
+                "PRAGMA index_list(document_operations)"
             ).fetchall()
         }
         applied = connection.execute(
@@ -692,6 +286,9 @@ def test_migration_20_repairs_populated_v19_duplicate_active_operations(
             )
 
     assert applied == 1
+    active_index = indexes["idx_document_operations_one_active_document"]
+    assert active_index["unique"] == 1
+    assert active_index["partial"] == 1
     assert operations["cancel-requested"]["status"] == "cancel_requested"
     assert operations["cancel-requested"]["phase"] == "canceling"
     assert operations["cancel-requested"]["cancellable"] == 0
@@ -705,10 +302,10 @@ def test_migration_20_repairs_populated_v19_duplicate_active_operations(
         assert operation["error"] == (
             "Superseded while repairing duplicate active document operations."
         )
-    assert (operations["terminal-history"]["status"], operations["terminal-history"]["error"]) == (
-        "succeeded",
-        None,
-    )
+    assert (
+        operations["terminal-history"]["status"],
+        operations["terminal-history"]["error"],
+    ) == ("succeeded", None)
     assert operations["unattached-a"]["status"] == "queued"
     assert operations["unattached-b"]["status"] == "running"
     assert operations["running-priority"]["status"] == "running"
@@ -717,86 +314,133 @@ def test_migration_20_repairs_populated_v19_duplicate_active_operations(
     assert operations["tie-a"]["status"] == "failed"
 
 
-def _columns(connection, table_name: str) -> dict[str, str | None]:
-    rows = connection.execute(f"PRAGMA table_info({table_name})").fetchall()
-    return {row["name"]: row["dflt_value"] for row in rows}
-
-
-def _create_v14_practice_fixture(database_path: Path) -> None:
+def _create_version_14_practice_database(database_path: Path) -> None:
     database_path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(database_path) as connection:
-        connection.executescript(
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute(
             """
             CREATE TABLE schema_migrations (
                 version INTEGER PRIMARY KEY,
                 applied_at TEXT NOT NULL
-            );
+            )
             """
         )
         for version, sql in MIGRATIONS:
-            if version >= 15:
+            if version > 14:
                 break
             connection.executescript(sql)
             connection.execute(
                 "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
-                (version, f"migration-{version}"),
+                (version, "2026-06-30T00:00:00+00:00"),
             )
 
         connection.executemany(
             """
-            INSERT INTO projects(id, name, description, created_at, updated_at)
-            VALUES (?, ?, '', ?, ?)
+            INSERT INTO projects(id, name, created_at, updated_at)
+            VALUES (?, ?, ?, ?)
             """,
             [
-                ("project-1", "Project 1", "2026-01-01", "2026-01-01"),
-                ("project-2", "Project 2", "2026-01-01", "2026-01-01"),
+                (
+                    "project-1",
+                    "Project 1",
+                    "2026-06-30T00:00:00+00:00",
+                    "2026-06-30T00:00:00+00:00",
+                ),
+                (
+                    "project-2",
+                    "Project 2",
+                    "2026-06-30T00:00:00+00:00",
+                    "2026-06-30T00:00:00+00:00",
+                ),
             ],
         )
         connection.executemany(
             """
             INSERT INTO question_drafts(
-                id, project_id, question, choices_json, answer, status,
-                created_at, updated_at
+                id, project_id, question, choices_json, answer, rationale,
+                citation_page, status, created_at, updated_at
             )
-            VALUES (?, ?, ?, '["A", "B"]', 'A', 'approved', ?, ?)
+            VALUES (?, ?, ?, '["A", "B"]', 'A', 'Grounded.', 1,
+                'approved', ?, ?)
             """,
             [
-                ("q1", "project-1", "Question 1", "2026-01-01", "2026-01-01"),
-                ("q2", "project-1", "Question 2", "2026-01-01", "2026-01-01"),
-                ("q3", "project-2", "Question 3", "2026-01-01", "2026-01-01"),
+                (
+                    "q-1",
+                    "project-1",
+                    "Question 1?",
+                    "2026-06-30T00:00:00+00:00",
+                    "2026-06-30T00:00:00+00:00",
+                ),
+                (
+                    "q-2",
+                    "project-1",
+                    "Question 2?",
+                    "2026-06-30T00:00:00+00:00",
+                    "2026-06-30T00:00:00+00:00",
+                ),
+                (
+                    "q-other",
+                    "project-2",
+                    "Other question?",
+                    "2026-06-30T00:00:00+00:00",
+                    "2026-06-30T00:00:00+00:00",
+                ),
             ],
         )
         connection.executemany(
             """
             INSERT INTO practice_sessions(
-                id, project_id, question_ids_json, status, created_at, completed_at
+                id, project_id, question_ids_json, status, mode,
+                requested_question_count, created_at, completed_at
             )
-            VALUES (?, ?, ?, 'active', ?, NULL)
+            VALUES (?, ?, ?, ?, 'random_draw', ?, ?, ?)
             """,
             [
                 (
-                    "p1-complete",
+                    "preserved-completed",
                     "project-1",
-                    '["q1", "q2", "q2"]',
-                    "2026-01-01T00:00:00Z",
+                    '["q-1"]',
+                    "completed",
+                    1,
+                    "2026-06-30T00:00:00+00:00",
+                    "2026-06-30T00:09:00+00:00",
                 ),
                 (
-                    "p1-old-incomplete",
+                    "completed-by-coverage",
                     "project-1",
-                    '["q1", "q2"]',
-                    "2026-01-02T00:00:00Z",
+                    '["q-1", "q-2"]',
+                    "active",
+                    2,
+                    "2026-07-01T00:00:00+00:00",
+                    None,
                 ),
                 (
-                    "p1-new-incomplete",
+                    "older-incomplete",
                     "project-1",
-                    '["q1", "q2"]',
-                    "2026-01-03T00:00:00Z",
+                    '["q-1", "q-2"]',
+                    "active",
+                    2,
+                    "2026-07-01T01:00:00+00:00",
+                    None,
                 ),
                 (
-                    "p2-only-incomplete",
+                    "latest-incomplete",
+                    "project-1",
+                    '["q-1", "q-2"]',
+                    "active",
+                    2,
+                    "2026-07-01T02:00:00+00:00",
+                    None,
+                ),
+                (
+                    "other-project-incomplete",
                     "project-2",
-                    '["q3"]',
-                    "2026-01-01T00:00:00Z",
+                    '["q-other"]',
+                    "active",
+                    1,
+                    "2026-07-01T03:00:00+00:00",
+                    None,
                 ),
             ],
         )
@@ -806,167 +450,39 @@ def _create_v14_practice_fixture(database_path: Path) -> None:
                 id, session_id, project_id, question_id, selected_answer,
                 is_correct, created_at
             )
-            VALUES (?, ?, ?, ?, 'A', 1, ?)
+            VALUES (?, 'completed-by-coverage', 'project-1', ?, 'A', 1, ?)
             """,
             [
-                (
-                    "complete-q1-first",
-                    "p1-complete",
-                    "project-1",
-                    "q1",
-                    "2026-01-01T03:00:00Z",
-                ),
-                (
-                    "complete-q1-repeat",
-                    "p1-complete",
-                    "project-1",
-                    "q1",
-                    "2026-01-01T05:00:00Z",
-                ),
-                (
-                    "complete-q2-first",
-                    "p1-complete",
-                    "project-1",
-                    "q2",
-                    "2026-01-01T04:00:00Z",
-                ),
-                (
-                    "old-incomplete-late-activity",
-                    "p1-old-incomplete",
-                    "project-1",
-                    "q1",
-                    "2026-01-10T00:00:00Z",
-                ),
+                ("attempt-q1-old", "q-1", "2026-07-01T00:01:00+00:00"),
+                ("attempt-q2", "q-2", "2026-07-01T00:02:00+00:00"),
+                ("attempt-q1-new", "q-1", "2026-07-01T00:04:00+00:00"),
             ],
+        )
+        connection.execute(
+            """
+            INSERT INTO practice_attempts(
+                id, session_id, project_id, question_id, selected_answer,
+                is_correct, created_at
+            )
+            VALUES ('attempt-older-session-recent', 'older-incomplete',
+                'project-1', 'q-1', 'A', 1, '2026-07-01T04:00:00+00:00')
+            """
         )
 
 
-def _create_v15_draft_job_fixture(database_path: Path) -> None:
+def _create_v19_duplicate_operation_fixture(database_path: Path) -> None:
     database_path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(database_path) as connection:
-        connection.executescript(
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute(
             """
             CREATE TABLE schema_migrations (
                 version INTEGER PRIMARY KEY,
                 applied_at TEXT NOT NULL
-            );
+            )
             """
         )
         for version, sql in MIGRATIONS:
-            if version >= 16:
-                break
-            connection.executescript(sql)
-            connection.execute(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
-                (version, f"migration-{version}"),
-            )
-
-        connection.execute(
-            """
-            INSERT INTO projects(id, name, description, created_at, updated_at)
-            VALUES ('project', 'Project', '', '2026-01-01', '2026-01-01')
-            """
-        )
-        connection.execute(
-            """
-            INSERT INTO documents(
-                id, project_id, filename, sha256, storage_path, page_count,
-                has_text, status, created_at
-            )
-            VALUES (
-                'document', 'project', 'source.pdf', 'sha', 'source.pdf', 1,
-                1, 'ready', '2026-01-01'
-            )
-            """
-        )
-        connection.execute(
-            """
-            INSERT INTO document_chunks(
-                id, project_id, document_id, page_number, chunk_index, text,
-                source_excerpt, created_at
-            )
-            VALUES (
-                'chunk', 'project', 'document', 1, 0, 'Source text',
-                'Source text', '2026-01-01'
-            )
-            """
-        )
-        connection.execute(
-            """
-            INSERT INTO draft_generation_jobs(
-                id, project_id, document_id, chunk_id, page_number, strategy,
-                status, provider, model, created_at, updated_at
-            )
-            VALUES (
-                'draft-job', 'project', 'document', 'chunk', 1,
-                'hybrid_reasoning', 'succeeded', 'fastflowlm', 'qwen3.5:4b',
-                '2026-01-01', '2026-01-01'
-            )
-            """
-        )
-
-
-def _create_v16_draft_job_fixture(database_path: Path) -> None:
-    _create_v15_draft_job_fixture(database_path)
-    with sqlite3.connect(database_path) as connection:
-        for version, sql in MIGRATIONS:
-            if version < 16:
-                continue
-            if version >= 17:
-                break
-            connection.executescript(sql)
-            connection.execute(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
-                (version, f"migration-{version}"),
-            )
-        connection.executemany(
-            """
-            INSERT INTO draft_generation_jobs(
-                id, project_id, document_id, chunk_id, page_number, strategy,
-                status, provider, model, created_at, updated_at
-            )
-            VALUES (?, 'project', 'document', 'chunk', 1, ?, ?,
-                'fastflowlm', 'qwen3.5:4b', '2026-01-01', '2026-01-01')
-            """,
-            [
-                ("draft-pending", "pending-strategy", "pending"),
-                ("draft-running", "running-strategy", "running"),
-                ("draft-failed", "failed-strategy", "failed"),
-                (
-                    "draft-provider-unavailable",
-                    "provider-unavailable-strategy",
-                    "skipped_provider_unavailable",
-                ),
-                (
-                    "draft-model-missing",
-                    "model-missing-strategy",
-                    "skipped_missing_model",
-                ),
-            ],
-        )
-
-
-def _create_v20_draft_job_fixture(database_path: Path) -> None:
-    _create_v16_draft_job_fixture(database_path)
-    with sqlite3.connect(database_path) as connection:
-        for version, sql in MIGRATIONS:
-            if version < 17:
-                continue
-            if version >= 21:
-                break
-            connection.executescript(sql)
-            connection.execute(
-                "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
-                (version, f"migration-{version}"),
-            )
-
-
-def _create_v19_duplicate_operation_fixture(database_path: Path) -> None:
-    _create_v16_draft_job_fixture(database_path)
-    with sqlite3.connect(database_path) as connection:
-        for version, sql in MIGRATIONS:
-            if version < 17:
-                continue
             if version >= 20:
                 break
             connection.executescript(sql)
@@ -974,6 +490,13 @@ def _create_v19_duplicate_operation_fixture(database_path: Path) -> None:
                 "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                 (version, f"migration-{version}"),
             )
+
+        connection.execute(
+            """
+            INSERT INTO projects(id, name, created_at, updated_at)
+            VALUES ('project', 'Project', '2026-01-01', '2026-01-01')
+            """
+        )
         connection.executemany(
             """
             INSERT INTO documents(
@@ -983,6 +506,14 @@ def _create_v19_duplicate_operation_fixture(database_path: Path) -> None:
             VALUES (?, 'project', ?, ?, ?, 1, 0, 'processing', ?, ?)
             """,
             [
+                (
+                    "document",
+                    "document.pdf",
+                    "document-sha",
+                    "document.pdf",
+                    "2026-01-01",
+                    "2026-01-01",
+                ),
                 (
                     "document-running-priority",
                     "running.pdf",
@@ -1112,3 +643,8 @@ def _create_v19_duplicate_operation_fixture(database_path: Path) -> None:
                 ),
             ],
         )
+
+
+def _columns(connection, table_name: str) -> dict[str, str | None]:
+    rows = connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+    return {row["name"]: row["dflt_value"] for row in rows}

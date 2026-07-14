@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 
 from cert_prep_backend.api.dependencies import (
-    get_database,
     get_llm_provider,
+    get_database,
     get_runtime_installation_manager,
     get_settings,
 )
@@ -14,12 +14,6 @@ from cert_prep_backend.domains.mock_exams.ollama_profiles import (
     profile_selection_payload,
 )
 from cert_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
-from cert_prep_backend.domains.mock_exams.provider_preferences import (
-    persist_fastflowlm_terms_decision,
-)
-from cert_prep_backend.domains.mock_exams.provider_selection import (
-    provider_selection_from_settings,
-)
 from cert_prep_backend.domains.mock_exams.schemas import (
     FastFlowLMTermsDecisionRequest,
     LLMHealthRead,
@@ -28,16 +22,23 @@ from cert_prep_backend.domains.mock_exams.schemas import (
     OllamaProfileSelectionRead,
     OllamaProfilesRead,
 )
+from cert_prep_backend.domains.mock_exams.provider_preferences import (
+    persist_fastflowlm_terms_decision,
+)
+from cert_prep_backend.domains.mock_exams.provider_selection import (
+    provider_selection_from_settings,
+)
 from cert_prep_backend.domains.runtime_installations import RuntimeInstallationManager
+from cert_prep_backend.domains.runtime_schemas import RuntimeInstallationStartRequest
 from cert_prep_backend.api.errors import (
-    ProviderReconfigurationConflictError,
     ProviderUnavailableError,
     TermsAcceptanceRequiredError,
     api_error,
     not_found_error,
 )
-from cert_prep_backend.persistence.database import Database
+from cert_prep_backend.core.exceptions import OperationNotCancellableError
 from cert_prep_contracts.llm import FASTFLOWLM_RUNTIME_TRUST_POLICY
+from cert_prep_backend.persistence.database import Database
 
 
 router = APIRouter(prefix="/llm", tags=["llm"])
@@ -65,33 +66,18 @@ def llm_provider_selection(
     response_model=LLMProviderSelectionRead,
 )
 def decide_fastflowlm_terms(
+    request: Request,
     payload: FastFlowLMTermsDecisionRequest,
     settings: Settings = Depends(get_settings),
     db: Database = Depends(get_database),
     provider: LLMProvider = Depends(get_llm_provider),
-    manager: RuntimeInstallationManager = Depends(get_runtime_installation_manager),
 ):
-    reconfigure_provider = getattr(provider, "reconfigure_from_settings", None)
-    if not callable(reconfigure_provider):
-        raise api_error(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            code="provider_unavailable",
-            message="Configured LLM provider cannot apply a policy decision at runtime.",
-        )
-
-    def apply_policy_decision() -> None:
+    try:
         persist_fastflowlm_terms_decision(
             settings,
             db,
             decision=payload.decision,
             terms_version=payload.terms_version,
-        )
-        reconfigure_provider(settings)
-
-    try:
-        manager.reconfigure_llm_provider(
-            provider,
-            apply_policy_decision=apply_policy_decision,
         )
     except ValueError as exc:
         raise api_error(
@@ -99,12 +85,20 @@ def decide_fastflowlm_terms(
             code="validation_error",
             message=str(exc),
         ) from exc
-    except ProviderReconfigurationConflictError as exc:
-        raise api_error(
-            status_code=status.HTTP_409_CONFLICT,
-            code="provider_reconfiguration_conflict",
-            message=str(exc),
-        ) from exc
+
+    reconfigure = getattr(provider, "reconfigure_from_settings", None)
+    if callable(reconfigure):
+        reconfigure(settings)
+
+    old_manager = request.app.state.runtime_installation_manager
+    old_manager.close()
+    request.app.state.runtime_installation_manager = RuntimeInstallationManager(
+        settings=settings,
+        llm_provider=provider,
+        ocr_provider=request.app.state.ocr_provider,
+        db=db,
+        async_jobs=request.app.state.runtime_installation_async_jobs,
+    )
     return provider_selection_from_settings(
         settings,
         effective_provider=str(getattr(provider, "provider", "")),
@@ -128,10 +122,15 @@ def llm_profile_selection(settings: Settings = Depends(get_settings)):
     status_code=status.HTTP_202_ACCEPTED,
 )
 def start_model_download(
+    payload: RuntimeInstallationStartRequest | None = None,
     manager: RuntimeInstallationManager = Depends(get_runtime_installation_manager),
 ):
     try:
-        return manager.start_model_installation()
+        return manager.start_model_installation(
+            fastflowlm_terms_accepted_version=(
+                payload.fastflowlm_terms_accepted_version if payload else None
+            )
+        )
     except TermsAcceptanceRequiredError as exc:
         raise api_error(
             status_code=status.HTTP_409_CONFLICT,
@@ -159,3 +158,20 @@ def get_model_download(
         return manager.get_installation(job_id)
     except KeyError as exc:
         raise not_found_error("Model download job was not found.") from exc
+
+
+@router.delete("/model-downloads/{job_id}", response_model=ModelDownloadRead)
+def cancel_model_download(
+    job_id: str,
+    manager: RuntimeInstallationManager = Depends(get_runtime_installation_manager),
+):
+    try:
+        return manager.cancel_installation(job_id)
+    except KeyError as exc:
+        raise not_found_error("Model download job was not found.") from exc
+    except OperationNotCancellableError as exc:
+        raise api_error(
+            status_code=status.HTTP_409_CONFLICT,
+            code="operation_not_cancellable",
+            message=str(exc),
+        ) from exc

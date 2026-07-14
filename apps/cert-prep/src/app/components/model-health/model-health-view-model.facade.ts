@@ -19,6 +19,7 @@ export class ModelHealthViewModelFacade {
       desktopInstallDetail: this.desktopRuntime.installation()?.detail ?? null,
       systemHealth: this.health.systemHealth(),
       llmHealth: this.health.llmHealth(),
+      providerSelection: this.health.providerSelection(),
       ocrHealth: this.health.ocrHealth(),
       ocrPhase: this.health.ocrPhase(),
       llmRuntimeMissing: this.health.isLlmRuntimeMissing(),

@@ -22,6 +22,8 @@ class RuntimeInstallationStatus(StrEnum):
 
     QUEUED = "queued"
     RUNNING = "running"
+    CANCEL_REQUESTED = "cancel_requested"
+    CANCELED = "canceled"
     WAITING_FOR_USER = "waiting_for_user"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
@@ -48,6 +50,8 @@ class RuntimeInstallProgress:
     detail: str
     completed: int | None = None
     total: int | None = None
+    phase: str | None = None
+    cancellable: bool | None = None
 
 
 __all__ = [
@@ -56,4 +60,3 @@ __all__ = [
     "RuntimeRequirementKind",
     "RuntimeRequirementSnapshot",
 ]
-

@@ -148,7 +148,7 @@ def test_wrong_answer_review_uses_latest_attempt_session_snapshot(
         headers=auth_headers,
         json={"question_count": 1},
     ).json()
-    completed_old = client.post(
+    completed_old_session = client.post(
         f"/projects/{project_id}/practice-sessions/{old_key_session['id']}/attempts",
         headers=auth_headers,
         json={
@@ -156,7 +156,7 @@ def test_wrong_answer_review_uses_latest_attempt_session_snapshot(
             "selected_answer": "Use least privilege",
         },
     )
-    assert completed_old.status_code == 201
+    assert completed_old_session.status_code == 201
 
     updated = client.patch(
         f"/projects/{project_id}/question-drafts/{question['id']}",

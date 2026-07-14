@@ -10,12 +10,16 @@ from cert_prep_backend.domains.mock_exams.models import (
     DraftGenerationStrategy,
     DraftStatusValue,
 )
+from cert_prep_backend.domains.mock_exams.draft_jobs import DraftGenerationJobStatus
+from cert_prep_backend.domains.mock_exams.manual_operations import (
+    ManualDraftOperationStatus,
+)
 from cert_prep_contracts.llm import (
     FastFlowLMTermsDecision,
     LLMProviderName,
     LLMProviderPreference,
 )
-from cert_prep_contracts.runtime import RuntimeRequirementKind
+from cert_prep_contracts.runtime import RuntimeInstallationStatus, RuntimeRequirementKind
 
 
 class DraftGenerateRequest(BaseModel):
@@ -92,7 +96,9 @@ class DraftGenerationJobRead(BaseModel):
     chunk_id: str
     page_number: int
     strategy: DraftGenerationStrategy
-    status: str
+    status: DraftGenerationJobStatus
+    phase: str
+    cancellable: bool
     provider: str
     model: str
     effective_provider: str | None
@@ -107,6 +113,26 @@ class DraftGenerationJobRead(BaseModel):
 
 class DraftGenerationJobList(BaseModel):
     items: list[DraftGenerationJobRead]
+
+
+class ManualDraftGenerationOperationRead(BaseModel):
+    id: str
+    project_id: str
+    document_id: str
+    limit: int
+    strategy: DraftGenerationStrategy
+    status: ManualDraftOperationStatus
+    phase: str
+    cancellable: bool
+    provider: str
+    model: str
+    effective_provider: str | None = None
+    effective_model: str | None = None
+    fallback_reason: str | None = None
+    generated_count: int
+    error: str | None = None
+    created_at: str
+    updated_at: str
 
 
 class LLMHealthRead(BaseModel):
@@ -149,7 +175,7 @@ class FastFlowLMTermsDecisionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     decision: FastFlowLMTermsDecision
-    terms_version: str
+    terms_version: str | None = None
 
 
 class OllamaModelProfileRead(BaseModel):
@@ -195,7 +221,9 @@ class ModelDownloadRead(BaseModel):
     id: str
     provider: str
     model: str
-    status: str
+    status: RuntimeInstallationStatus
+    phase: str
+    cancellable: bool
     detail: str
     completed: int | None
     total: int | None

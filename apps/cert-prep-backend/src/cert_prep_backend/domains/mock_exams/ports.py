@@ -5,16 +5,17 @@ from dataclasses import dataclass
 from typing import Any, Protocol, TypeVar, runtime_checkable
 
 from cert_prep_backend.domains.mock_exams.models import DraftSuggestion, SourceChunk
-from cert_prep_contracts.llm import ModelPullProgress as _ModelPullProgress
+from cert_prep_contracts.llm import (
+    GenerationAttribution,
+    ModelPullProgress as _ModelPullProgress,
+)
 
 __all__ = [
     "DraftGenerationProvider",
     "FastFirstDraftProvider",
-    "FastFlowLMModelInventoryProvider",
-    "GenerationAttribution",
     "GenerationAttributionProvider",
-    "ModelDownloadProvider",
     "ModelOnboardingProvider",
+    "ModelDownloadProvider",
     "OllamaRuntimeInstallationProvider",
     "ProviderHealth",
     "ReasoningDraftProvider",
@@ -45,15 +46,6 @@ class ProviderHealth:
     modelfile_sha256: str | None = None
     profile_reason: str | None = None
     profile_warnings: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True, slots=True)
-class GenerationAttribution:
-    """Effective provider/model that completed the current generation call."""
-
-    effective_provider: str
-    effective_model: str
-    fallback_reason: str | None = None
 
 
 class DraftGenerationProvider(Protocol):
@@ -100,19 +92,6 @@ class FastFirstDraftProvider(Protocol):
 
 
 @runtime_checkable
-class GenerationAttributionProvider(Protocol):
-    """Provider capability for job-local effective model attribution."""
-
-    def reset_generation_attribution(self) -> None:
-        """Clear attribution before starting a new generation call or job."""
-        pass
-
-    def get_generation_attribution(self) -> GenerationAttribution | None:
-        """Return attribution recorded by the current thread's last successful call."""
-        pass
-
-
-@runtime_checkable
 class ModelDownloadProvider(Protocol):
     """Provider capability for explicit model downloads."""
 
@@ -122,30 +101,34 @@ class ModelDownloadProvider(Protocol):
 
 
 @runtime_checkable
+class GenerationAttributionProvider(Protocol):
+    """Provider capability for per-worker generation truth."""
+
+    def reset_generation_attribution(self) -> None:
+        """Clear attribution before one durable generation job."""
+        pass
+
+    def generation_attribution(self) -> GenerationAttribution:
+        """Return provider/model truth from the latest successful generation call."""
+        pass
+
+
+@runtime_checkable
 class ModelOnboardingProvider(Protocol):
-    """Provider capability for preflight and post-download model verification."""
+    """Provider capability for bounded pre/post model-install readiness probes."""
 
     def prepare_model_onboarding(
         self,
         progress: Callable[[_ModelPullProgress], None],
     ) -> None:
-        """Validate the runtime before downloading the configured model."""
+        """Validate the runtime and inspect installed models before pulling."""
         pass
 
     def verify_model_onboarding(
         self,
         progress: Callable[[_ModelPullProgress], None],
     ) -> None:
-        """Prove the downloaded model works on an app-owned runtime."""
-        pass
-
-
-@runtime_checkable
-class FastFlowLMModelInventoryProvider(Protocol):
-    """Provider capability for trusted offline FastFlowLM model inventory."""
-
-    def installed_fastflowlm_models(self) -> set[str]:
-        """Return exact model tags reported installed by the trusted CLI."""
+        """Check the model, owned server, model API, and tiny completion."""
         pass
 
 

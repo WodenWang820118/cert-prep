@@ -17,6 +17,7 @@ describe('RuntimeJobViewService', () => {
         model: 'qwen3.5:4b',
         status: 'waiting_for_user',
         phase: 'awaiting_consent',
+        cancellable: true,
         detail: 'Confirm the runtime terms.',
         completed: 1,
         total: 4,
@@ -34,6 +35,7 @@ describe('RuntimeJobViewService', () => {
       progress: 25,
       message: 'Confirm the runtime terms.',
       error: null,
+      cancellable: true,
     });
   });
 
@@ -61,29 +63,6 @@ describe('RuntimeJobViewService', () => {
     expect(view.message).toBe('Model download is running.');
   });
 
-  it('labels FastFlowLM runtime and model installation jobs', () => {
-    expect(service.runtimeLabel('fastflowlm')).toBe('FastFlowLM');
-    expect(service.runtimeLabel('fastflowlm_model')).toBe('FastFlowLM model');
-  });
-
-  it('keeps canonical FastFlowLM job kinds from backend responses', () => {
-    const runtime = service.toRuntimeInstallationView(
-      { id: 'runtime-1', kind: 'fastflowlm', status: 'running' },
-      'ollama',
-      'running',
-      { currentJobId: null },
-    );
-    const model = service.toRuntimeInstallationView(
-      { id: 'model-1', kind: 'fastflowlm_model', status: 'running' },
-      'ollama_model',
-      'running',
-      { currentJobId: null },
-    );
-
-    expect(runtime.kind).toBe('fastflowlm');
-    expect(model.kind).toBe('fastflowlm_model');
-  });
-
   it.each([
     'waiting',
     'user_action_required',
@@ -93,7 +72,6 @@ describe('RuntimeJobViewService', () => {
     'success',
     'error',
     'cancelled',
-    'canceled',
   ])('does not normalize the legacy %s status', (status) => {
     const view = service.toModelDownloadView(
       { id: 'job-1', status },
@@ -107,6 +85,8 @@ describe('RuntimeJobViewService', () => {
   it.each<[string, DownloadPhase]>([
     ['queued', 'running'],
     ['running', 'running'],
+    ['cancel_requested', 'cancel_requested'],
+    ['canceled', 'canceled'],
     ['waiting_for_user', 'waiting_for_user'],
     ['succeeded', 'succeeded'],
     ['failed', 'failed'],

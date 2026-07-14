@@ -99,12 +99,27 @@ def fastflowlm_hardware_compatibility(
     if not _has_xdna2_accelerator(inventory):
         return False, "No compatible AMD XDNA2 NPU was detected."
 
-    driver_versions = [
-        accelerator.driver_version
+    xdna2_accelerators = [
+        accelerator
         for accelerator in inventory.accelerators
         if _is_xdna2_npu(accelerator, inventory.cpu.name)
-        and accelerator.driver_version
     ]
+    driver_versions = [
+        accelerator.driver_version
+        for accelerator in xdna2_accelerators
+        if accelerator.driver_version
+    ]
+    if not driver_versions and any(
+        _is_vendorless_generic_npu(accelerator)
+        for accelerator in xdna2_accelerators
+    ):
+        driver_versions = [
+            accelerator.driver_version
+            for accelerator in inventory.accelerators
+            if accelerator.kind.casefold() == "gpu"
+            and _is_amd_accelerator(accelerator)
+            and accelerator.driver_version
+        ]
     if not driver_versions:
         return False, "The AMD accelerator driver version could not be verified."
     minimum = FASTFLOWLM_RUNTIME_TRUST_POLICY.minimum_windows_driver_version
@@ -211,13 +226,28 @@ def _is_xdna2_npu(
     accelerator: MachineAcceleratorSnapshot,
     cpu_name: str | None,
 ) -> bool:
-    if accelerator.kind.casefold() != "npu" or not _is_amd_accelerator(accelerator):
+    if accelerator.kind.casefold() != "npu":
+        return False
+    known_xdna2_cpu = _is_known_xdna2_cpu(cpu_name)
+    if not _is_amd_accelerator(accelerator) and not (
+        known_xdna2_cpu and _is_vendorless_generic_npu(accelerator)
+    ):
         return False
     name = accelerator.name.casefold()
     return (
         "xdna2" in name
         or "xdna 2" in name
-        or _is_known_xdna2_cpu(cpu_name)
+        or known_xdna2_cpu
+    )
+
+
+def _is_vendorless_generic_npu(
+    accelerator: MachineAcceleratorSnapshot,
+) -> bool:
+    return (
+        accelerator.kind.casefold() == "npu"
+        and not accelerator.vendor
+        and not accelerator.device_id
     )
 
 

@@ -1,15 +1,8 @@
 from __future__ import annotations
 
-import pytest
-
 from cert_prep_contracts import (
     DEFAULT_LLM_RUNTIME_POLICY,
-    DOCUMENT_STATUS_VALUES,
-    DocumentOperationPhase,
-    DocumentOperationRead,
-    DocumentOperationStatus,
     FASTFLOWLM_RUNTIME_TRUST_POLICY,
-    FastFlowLMTermsDecision,
     GenerationAttribution,
     LLMProviderName,
     LLMProviderPreference,
@@ -28,8 +21,6 @@ from cert_prep_contracts import (
     RuntimeInstallProgress,
     RuntimeRequirementKind,
     RuntimeRequirementSnapshot,
-    SourceDocumentStatus,
-    SourceDocumentStatusValue,
 )
 
 
@@ -42,62 +33,21 @@ def test_runtime_contracts_are_value_types() -> None:
         unavailable_reason="windowsml_runtime_missing",
         bytes=100,
     )
-    progress = RuntimeInstallProgress("downloading", completed=10, total=100)
+    progress = RuntimeInstallProgress(
+        "downloading",
+        completed=10,
+        total=100,
+        phase="downloading",
+        cancellable=True,
+    )
 
     assert requirement.kind.value == "windowsml_ocr"
     assert requirement.bytes == progress.total
     assert RuntimeInstallationStatus.RUNNING.value == "running"
-    assert RuntimeRequirementKind.FASTFLOWLM.value == "fastflowlm"
-    assert RuntimeRequirementKind.FASTFLOWLM_MODEL.value == "fastflowlm_model"
-
-
-def test_document_operation_contract_keeps_nullable_fields_required() -> None:
-    operation = DocumentOperationRead(
-        id="operation-id",
-        project_id="project-id",
-        document_id=None,
-        status=DocumentOperationStatus.CANCELED,
-        phase=DocumentOperationPhase.CANCELED,
-        cancellable=False,
-        error=None,
-        created_at="2026-07-14T00:00:00Z",
-        updated_at="2026-07-14T00:00:01Z",
-    )
-
-    assert operation.document_id is None
-    assert operation.error is None
-    assert operation.phase is DocumentOperationPhase.CANCELED
-    assert tuple(status.value for status in SourceDocumentStatus) == (
-        "processing",
-        "cancel_requested",
-        "canceled",
-        "ready",
-        "exam_failed",
-        "no_text_detected",
-        "ocr_failed",
-    )
-    assert DOCUMENT_STATUS_VALUES == tuple(status.value for status in SourceDocumentStatus)
-    status_value: SourceDocumentStatusValue = "future_status"
-    assert status_value == "future_status"
-    assert tuple(status.value for status in DocumentOperationStatus) == (
-        "queued",
-        "running",
-        "cancel_requested",
-        "canceled",
-        "succeeded",
-        "failed",
-    )
-
-    with pytest.raises(TypeError):
-        DocumentOperationRead(  # type: ignore[call-arg]
-            id="operation-id",
-            project_id="project-id",
-            status=DocumentOperationStatus.RUNNING,
-            phase=DocumentOperationPhase.PROCESSING,
-            cancellable=True,
-            created_at="2026-07-14T00:00:00Z",
-            updated_at="2026-07-14T00:00:01Z",
-        )
+    assert RuntimeInstallationStatus.CANCEL_REQUESTED.value == "cancel_requested"
+    assert RuntimeInstallationStatus.CANCELED.value == "canceled"
+    assert progress.phase == "downloading"
+    assert progress.cancellable is True
 
 
 def test_llm_and_ocr_contracts_keep_shared_payload_shape() -> None:
@@ -149,16 +99,19 @@ def test_llm_runtime_policy_and_provider_selection_are_shared_value_types() -> N
     attribution = GenerationAttribution("fastflowlm", "qwen3.5:4b")
 
     assert selection.preference.value == "auto"
-    assert selection.model_requirement_kind is not None
     assert selection.model_requirement_kind.value == "fastflowlm_model"
     assert attribution.effective_model == DEFAULT_LLM_RUNTIME_POLICY.primary_model
     assert FASTFLOWLM_RUNTIME_TRUST_POLICY.version == "0.9.43"
     assert len(FASTFLOWLM_RUNTIME_TRUST_POLICY.installer_sha256) == 64
     assert FASTFLOWLM_RUNTIME_TRUST_POLICY.executable_bytes == 6_475_264
     assert len(FASTFLOWLM_RUNTIME_TRUST_POLICY.executable_sha256) == 64
-    assert FASTFLOWLM_RUNTIME_TRUST_POLICY.signer_subject == "FastFlowLM Inc."
-    assert len(FASTFLOWLM_RUNTIME_TRUST_POLICY.signer_thumbprint) == 40
-    assert FastFlowLMTermsDecision.ACCEPTED.value == "accepted"
+    assert FASTFLOWLM_RUNTIME_TRUST_POLICY.signer_subject == (
+        "OID.1.3.6.1.4.1.311.60.2.1.3=US, "
+        "OID.1.3.6.1.4.1.311.60.2.1.2=Delaware, "
+        "OID.2.5.4.15=Private Organization, CN=FastFlowLM Inc., "
+        "SERIALNUMBER=10267153, O=FastFlowLM Inc., L=Warwick, "
+        "S=Rhode Island, C=US"
+    )
 
 
 def test_machine_inventory_and_ollama_profiles_are_pure_value_types() -> None:

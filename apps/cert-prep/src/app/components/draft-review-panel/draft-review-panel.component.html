@@ -12,6 +12,54 @@
         {{ drafts.activeDocumentDrafts().length }} active /
         {{ drafts.drafts().length }} project total.
       </p>
+      @if (drafts.manualDraftOperation(); as operation) {
+        <div class="mt-2 flex flex-wrap items-center gap-2" aria-live="polite">
+          <p-tag
+            [value]="'Manual generation: ' + operation.status"
+            [severity]="operation.status === 'succeeded' ? 'success' : operation.status === 'failed' ? 'danger' : operation.status === 'canceled' ? 'warn' : 'info'"
+            [rounded]="true"
+          />
+          <span class="text-sm text-muted-color">
+            {{ operation.phase }} / {{ operation.generated_count }} questions
+          </span>
+          @if (drafts.canCancelManualDraftOperation()) {
+            <button
+              class="workbench-secondary-button"
+              type="button"
+              [disabled]="drafts.manualDraftCanceling()"
+              (click)="drafts.cancelManualDraftOperation()"
+            >
+              <i
+                [class]="drafts.manualDraftCanceling() ? 'pi pi-spin pi-spinner' : 'pi pi-times'"
+                aria-hidden="true"
+              ></i>
+              <span>Cancel manual generation</span>
+            </button>
+          } @else if (drafts.isManualDraftOperationActive()) {
+            <span class="text-xs font-semibold text-muted-color">
+              Final commit is not cancellable.
+            </span>
+          }
+        </div>
+      }
+      @if (drafts.manualDraftPollingError(); as pollingError) {
+        <div
+          class="mt-2 flex flex-wrap items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 p-3"
+          role="alert"
+        >
+          <span class="text-sm font-semibold text-red-900">
+            {{ pollingError }}
+          </span>
+          <button
+            class="workbench-secondary-button"
+            type="button"
+            (click)="drafts.retryManualDraftPolling()"
+          >
+            <i class="pi pi-refresh" aria-hidden="true"></i>
+            <span>Retry manual progress</span>
+          </button>
+        </div>
+      }
       @if (drafts.draftJobSummary().total > 0 || sourceImport.isParsing()) {
         <div class="mt-2 flex flex-wrap items-center gap-2" aria-live="polite">
           <p-tag
@@ -36,17 +84,49 @@
               <span>Retry generation</span>
             </button>
           }
+          @if (drafts.canCancelActiveDraftJobs()) {
+            <button
+              class="workbench-secondary-button"
+              type="button"
+              [disabled]="drafts.cancelingDraftJobs()"
+              (click)="drafts.cancelActiveDraftJobs()"
+            >
+              <i
+                [class]="drafts.cancelingDraftJobs() ? 'pi pi-spin pi-spinner' : 'pi pi-times'"
+                aria-hidden="true"
+              ></i>
+              <span>Cancel background generation</span>
+            </button>
+          }
+        </div>
+      }
+      @if (drafts.pollingError(); as pollingError) {
+        <div
+          class="mt-2 flex flex-wrap items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 p-3"
+          role="alert"
+        >
+          <span class="text-sm font-semibold text-red-900">
+            {{ pollingError }}
+          </span>
+          <button
+            class="workbench-secondary-button"
+            type="button"
+            (click)="drafts.retryDraftPolling()"
+          >
+            <i class="pi pi-refresh" aria-hidden="true"></i>
+            <span>Retry progress</span>
+          </button>
         </div>
       }
     </div>
     <button
       class="workbench-action-button"
       type="button"
-      [disabled]="operations.isBusyFor('questions') || !sourceImport.canGenerateDrafts()"
+      [disabled]="operations.isBusyFor('questions') || drafts.isManualDraftOperationActive() || !sourceImport.canGenerateDrafts()"
       (click)="drafts.generateDrafts('hybrid_reasoning')"
     >
       <i
-        [class]="operations.isBusyFor('questions') ? 'pi pi-spin pi-spinner' : 'pi pi-sparkles'"
+        [class]="operations.isBusyFor('questions') || drafts.isManualDraftProgressActive() ? 'pi pi-spin pi-spinner' : 'pi pi-sparkles'"
         aria-hidden="true"
       ></i>
       <span>Generate questions</span>
@@ -258,10 +338,7 @@
           <button
             class="workbench-link-button"
             type="button"
-            [disabled]="
-              operations.isBusyFor('questions') ||
-              !sourceImport.canGenerateDrafts()
-            "
+            [disabled]="!sourceImport.canGenerateDrafts()"
             (click)="drafts.generateDrafts('hybrid_reasoning')"
           >
             Generate questions when a source PDF is ready

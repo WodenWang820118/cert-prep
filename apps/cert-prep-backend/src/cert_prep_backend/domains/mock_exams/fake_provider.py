@@ -10,6 +10,7 @@ from cert_prep_backend.domains.mock_exams.models import (
     SourceChunk,
 )
 from cert_prep_backend.domains.mock_exams.ports import ProviderHealth
+from cert_prep_contracts.llm import GenerationAttribution
 
 
 class FakeLLMProvider:
@@ -31,6 +32,12 @@ class FakeLLMProvider:
             configured_model=self.model,
             effective_model=self.model,
         )
+
+    def reset_generation_attribution(self) -> None:
+        return None
+
+    def generation_attribution(self) -> GenerationAttribution:
+        return GenerationAttribution(self.provider, self.model)
 
     def generate_drafts(self, chunks: Sequence[SourceChunk], limit: int) -> list[DraftSuggestion]:
         """Generate deterministic placeholder drafts from source chunks."""

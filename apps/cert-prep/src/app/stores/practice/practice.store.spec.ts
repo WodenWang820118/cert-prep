@@ -57,6 +57,8 @@ describe('PracticeStore session modes', () => {
     createPracticeSession: vi.fn().mockResolvedValue(session),
     getPracticeSession: vi.fn().mockResolvedValue(session),
     listQuestionDrafts: vi.fn().mockResolvedValue({ items: questions }),
+    listActivePracticeSessions: vi.fn().mockResolvedValue({ items: [] }),
+    abandonPracticeSession: vi.fn(),
   };
 
   beforeEach(() => {
@@ -236,7 +238,100 @@ describe('PracticeStore session modes', () => {
 
     expect(apiClient.createPracticeSession).not.toHaveBeenCalled();
   });
+
+  it('requires an explicit resume and rebuilds progress from ordered attempts', async () => {
+    const store = TestBed.inject(PracticeStore);
+    const resumable = {
+      id: 'session-resume',
+      project_id: project.id,
+      mode: 'random_draw' as const,
+      document_id: null,
+      status: 'active' as const,
+      created_at: '2026-07-11T00:00:00Z',
+    };
+    const firstAttempt = {
+      id: 'attempt-1',
+      session_id: resumable.id,
+      project_id: project.id,
+      question_id: 'draft-1',
+      selected_answer: 'A',
+      is_correct: true,
+      created_at: '2026-07-11T00:01:00Z',
+    };
+    apiClient.listActivePracticeSessions.mockResolvedValue({
+      items: [resumable],
+    });
+    apiClient.getPracticeSession.mockResolvedValue({
+      ...session,
+      id: resumable.id,
+      question_ids: ['draft-1', 'draft-2'],
+      questions: [
+        sessionQuestion('draft-1', 'First?'),
+        sessionQuestion('draft-2', 'Second?'),
+      ],
+      question_count: 2,
+      attempts: [firstAttempt],
+    });
+
+    await store.loadActiveSession(project.id);
+
+    expect(store.resumableSession()).toEqual(resumable);
+    expect(store.practiceSession()).toBeNull();
+    expect(store.canCreatePracticeSession('random_draw')).toBe(false);
+
+    await store.resumeActiveSession();
+
+    expect(store.resumableSession()).toBeNull();
+    expect(store.answeredQuestionIds()).toEqual(new Set(['draft-1']));
+    expect(store.lastAttempt()).toEqual(firstAttempt);
+    expect(store.activeQuestion()?.id).toBe('draft-2');
+  });
+
+  it('requires two steps before abandoning a resumable session', async () => {
+    const store = TestBed.inject(PracticeStore);
+    const resumable = {
+      id: 'session-abandon',
+      project_id: project.id,
+      mode: 'full_document' as const,
+      document_id: documents[0].id,
+      status: 'active' as const,
+      created_at: '2026-07-11T00:00:00Z',
+    };
+    store.resumableSession.set(resumable);
+    apiClient.abandonPracticeSession.mockResolvedValue({
+      ...session,
+      id: resumable.id,
+      status: 'abandoned',
+      abandoned_at: '2026-07-11T00:02:00Z',
+    });
+
+    await store.confirmAbandonActiveSession();
+    expect(apiClient.abandonPracticeSession).not.toHaveBeenCalled();
+
+    store.requestAbandonActiveSession();
+    expect(store.abandonConfirmationPending()).toBe(true);
+    await store.confirmAbandonActiveSession();
+
+    expect(apiClient.abandonPracticeSession).toHaveBeenCalledWith(
+      project.id,
+      resumable.id,
+    );
+    expect(store.resumableSession()).toBeNull();
+  });
 });
+
+function sessionQuestion(id: string, question: string) {
+  return {
+    id,
+    question,
+    choices: ['A', 'B'],
+    answer: 'A',
+    rationale: 'Grounded.',
+    citation_page: 1,
+    source_excerpt: 'Source.',
+    document_id: 'document-1',
+  };
+}
 
 function documentRead(id: string, filename: string): DocumentRead {
   return {

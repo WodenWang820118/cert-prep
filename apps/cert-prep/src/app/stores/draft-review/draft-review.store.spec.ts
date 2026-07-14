@@ -4,11 +4,17 @@ import type { QuestionDraftRead } from '../../cert-prep-api';
 import { DraftReviewStore } from './draft-review.store';
 import { ProjectStore } from '../project.store';
 import { SourceImportStore } from '../source-import/source-import.store';
-import { documentRead, questionDraft } from './draft-review.store.spec-helpers';
+import {
+  documentRead,
+  manualDraftOperation,
+  questionDraft,
+} from './draft-review.store.spec-helpers';
 
 describe('DraftReviewStore editable questions', () => {
   const apiClient = {
-    generateDocumentDrafts: vi.fn(),
+    startManualDraftOperation: vi.fn(),
+    getManualDraftOperation: vi.fn(),
+    cancelManualDraftOperation: vi.fn(),
     getDocument: vi.fn(),
     listDocumentChunks: vi.fn(),
     listDocumentDraftJobs: vi.fn(),
@@ -184,16 +190,28 @@ describe('DraftReviewStore editable questions', () => {
   });
 
   it('refreshes document metadata after generated questions are returned', async () => {
+    vi.useFakeTimers();
     const store = TestBed.inject(DraftReviewStore);
     const sourceImport = TestBed.inject(SourceImportStore);
     const question = questionDraft();
     const refreshedDocument = documentRead({ exam_item_count: 1 });
     activateDocument(sourceImport, documentRead());
-    apiClient.generateDocumentDrafts.mockResolvedValue({ items: [question] });
+    apiClient.startManualDraftOperation.mockResolvedValue(
+      manualDraftOperation(),
+    );
+    apiClient.getManualDraftOperation.mockResolvedValue(
+      manualDraftOperation({
+        status: 'succeeded',
+        phase: 'succeeded',
+        cancellable: false,
+        generated_count: 1,
+      }),
+    );
     apiClient.getDocument.mockResolvedValue(refreshedDocument);
     apiClient.listQuestionDrafts.mockResolvedValue({ items: [question] });
 
     await store.generateDrafts('hybrid_reasoning');
+    await vi.advanceTimersByTimeAsync(1500);
 
     expect(store.drafts()).toEqual([question]);
     expect(apiClient.listDocumentDraftJobs).toHaveBeenCalledWith(
@@ -201,6 +219,7 @@ describe('DraftReviewStore editable questions', () => {
       'document-1',
     );
     expect(sourceImport.documents()).toEqual([refreshedDocument]);
+    vi.useRealTimers();
   });
 });
 

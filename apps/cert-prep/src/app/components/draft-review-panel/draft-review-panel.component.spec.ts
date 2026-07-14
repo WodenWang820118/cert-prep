@@ -7,10 +7,10 @@ import {
   QuestionDraftRead,
 } from '../../cert-prep-api';
 import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
-import { OperationStore } from '../../stores/operation.store';
 import { ProjectStore } from '../../stores/project.store';
 import { SourceImportStore } from '../../stores/source-import/source-import.store';
 import { DraftReviewPanelComponent } from './draft-review-panel.component';
+import { manualDraftOperation } from '../../stores/draft-review/draft-review.store.spec-helpers';
 
 describe('DraftReviewPanelComponent', () => {
   const apiClient = {
@@ -67,6 +67,27 @@ describe('DraftReviewPanelComponent', () => {
     expect(retryButton?.textContent).toContain('Retry generation');
   });
 
+  it('renders cancellation controls for manual and background generation', () => {
+    const projects = TestBed.inject(ProjectStore);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    const drafts = TestBed.inject(DraftReviewStore);
+    projects.projects.set([projectRead()]);
+    projects.select('project-1');
+    activateDocument(sourceImport, documentRead());
+    drafts.manualDraftOperation.set(manualDraftOperation());
+    drafts.draftJobs.set([draftJob({ status: 'running' })]);
+
+    const fixture = TestBed.createComponent(DraftReviewPanelComponent);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain(
+      'Cancel manual generation',
+    );
+    expect(fixture.nativeElement.textContent).toContain(
+      'Cancel background generation',
+    );
+  });
+
   it('distinguishes non-playable drafts from playable practice questions', () => {
     const projects = TestBed.inject(ProjectStore);
     const sourceImport = TestBed.inject(SourceImportStore);
@@ -121,27 +142,6 @@ describe('DraftReviewPanelComponent', () => {
     expect(text).not.toContain('other-draft');
     expect(text).not.toContain('Question from another PDF');
   });
-
-  it('disables empty-state generation while question generation is active', () => {
-    const projects = TestBed.inject(ProjectStore);
-    const sourceImport = TestBed.inject(SourceImportStore);
-    const operations = TestBed.inject(OperationStore);
-    projects.projects.set([projectRead()]);
-    projects.select('project-1');
-    activateDocument(sourceImport, documentRead());
-
-    const fixture = TestBed.createComponent(DraftReviewPanelComponent);
-    fixture.detectChanges();
-    const generateButton = fixture.nativeElement.querySelector(
-      '.workbench-question-card .workbench-link-button',
-    ) as HTMLButtonElement | null;
-    expect(generateButton?.disabled).toBe(false);
-
-    operations.busy.set('questions');
-    fixture.detectChanges();
-
-    expect(generateButton?.disabled).toBe(true);
-  });
 });
 
 function projectRead(): ProjectRead {
@@ -195,6 +195,8 @@ function draftJob(
     page_number: 1,
     strategy: 'hybrid_reasoning',
     status: 'pending',
+    phase: 'queued',
+    cancellable: true,
     provider: 'ollama',
     model: 'qwen3.5:4b',
     effective_provider: null,

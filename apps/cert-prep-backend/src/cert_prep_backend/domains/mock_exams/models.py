@@ -29,6 +29,7 @@ class AnswerKeySource(StrEnum):
 
 
 DraftStatusValue: TypeAlias = DraftStatus | str
+DraftGenerationStrategyValue: TypeAlias = DraftGenerationStrategy | str
 AnswerKeySourceValue: TypeAlias = AnswerKeySource | str
 
 GENERATED_DRAFT_STATUS = DraftStatus.APPROVED

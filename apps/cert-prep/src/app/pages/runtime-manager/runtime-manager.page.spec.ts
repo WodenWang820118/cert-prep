@@ -10,6 +10,9 @@ import {
   systemHealth,
 } from '../../components/model-health/model-health.component.spec-helpers';
 import { RuntimeManagerPage } from './runtime-manager.page';
+import {
+  providerSelection,
+} from '../../stores/health/health.store.spec-helpers';
 
 describe('RuntimeManagerPage', () => {
   let apiClient: {
@@ -74,37 +77,49 @@ describe('RuntimeManagerPage', () => {
     expect(fixture.nativeElement.textContent).toContain('Download qwen3.5:4b');
   });
 
-  it('requires FastFlowLM terms review before runtime or model installation', () => {
+  it('renders backend-owned auto selection and explicit fallback attribution', () => {
     const health = TestBed.inject(HealthStore);
     health.systemHealth.set(systemHealth());
     health.llmHealth.set({
-      ...missingModelHealth(),
-      provider: 'fastflowlm',
+      ...availableLlmHealth(),
+      provider: 'ollama',
       model: 'qwen3.5:4b',
-      detail: 'FastFlowLM terms must be accepted.',
-      unavailable_reason: 'fastflowlm_not_running',
+      configured_model: 'qwen3.5:4b',
+      effective_model: 'qwen3.5:4b',
     });
+    health.providerSelection.set(
+      providerSelection({
+        selected_provider: 'ollama',
+        effective_provider: 'ollama',
+        selection_reason:
+          'Auto-selected Ollama: The AMD accelerator driver must be at least 32.0.203.304.',
+        fallback_reason:
+          'The AMD accelerator driver must be at least 32.0.203.304.',
+        hardware_compatible: false,
+        requires_terms_acceptance: false,
+        terms_version: null,
+        terms_url: null,
+        runtime_requirement_kind: 'ollama',
+        model_requirement_kind: 'ollama_model',
+      }),
+    );
     health.ocrHealth.set(ocrHealth());
-    health.runtimeRequirements.set([
-      fastFlowRuntimeAvailableRequirement(),
-      fastFlowModelRequirement('fastflowlm_terms_required'),
-    ]);
 
     const fixture = TestBed.createComponent(RuntimeManagerPage);
     fixture.detectChanges();
 
+    expect(fixture.nativeElement.textContent).toContain('LLM provider policy');
+    expect(fixture.nativeElement.textContent).toContain('Auto selection');
     expect(fixture.nativeElement.textContent).toContain(
-      'Review FastFlowLM terms',
+      'Ollama / qwen3.5:4b',
     );
-    expect(fixture.nativeElement.textContent).not.toContain(
-      'Install FastFlowLM',
-    );
-    expect(fixture.nativeElement.textContent).not.toContain(
-      'Download qwen3.5:4b',
+    expect(fixture.nativeElement.textContent).toContain('Fallback active');
+    expect(fixture.nativeElement.textContent).toContain(
+      'The AMD accelerator driver must be at least 32.0.203.304.',
     );
   });
 
-  it('offers FastFlowLM installation after terms are accepted', () => {
+  it('offers FastFlow onboarding when auto selection requires its runtime', () => {
     const health = TestBed.inject(HealthStore);
     health.systemHealth.set(systemHealth());
     health.llmHealth.set({
@@ -114,47 +129,24 @@ describe('RuntimeManagerPage', () => {
       detail: 'FastFlowLM is not installed.',
       unavailable_reason: 'fastflowlm_missing',
     });
-    health.ocrHealth.set(ocrHealth());
+    health.providerSelection.set(providerSelection());
     health.runtimeRequirements.set([
-      fastFlowRuntimeMissingRequirement('fastflowlm_missing'),
+      {
+        kind: 'fastflowlm',
+        label: 'FastFlowLM',
+        available: false,
+        detail: 'FastFlowLM is not installed.',
+        unavailable_reason: 'fastflowlm_missing',
+      },
     ]);
+    health.ocrHealth.set(ocrHealth());
 
     const fixture = TestBed.createComponent(RuntimeManagerPage);
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.textContent).toContain('Install FastFlowLM');
-    expect(fixture.nativeElement.textContent).not.toContain(
-      'Review FastFlowLM terms',
-    );
-    expect(fixture.nativeElement.textContent).not.toContain(
-      'Download qwen3.5:4b',
-    );
-  });
-
-  it('offers the FastFlowLM model only after its runtime is ready', () => {
-    const health = TestBed.inject(HealthStore);
-    health.systemHealth.set(systemHealth());
-    health.llmHealth.set({
-      ...missingModelHealth(),
-      provider: 'fastflowlm',
-      model: 'qwen3.5:4b',
-      configured_model: 'qwen3.5:4b',
-      detail: 'FastFlowLM server is not running.',
-      unavailable_reason: 'fastflowlm_not_running',
-    });
-    health.ocrHealth.set(ocrHealth());
-    health.runtimeRequirements.set([
-      fastFlowRuntimeAvailableRequirement(),
-      fastFlowModelRequirement('model_missing'),
-    ]);
-
-    const fixture = TestBed.createComponent(RuntimeManagerPage);
-    fixture.detectChanges();
-
-    expect(fixture.nativeElement.textContent).toContain('Download qwen3.5:4b');
-    expect(fixture.nativeElement.textContent).not.toContain(
-      'Install FastFlowLM',
-    );
+    expect(fixture.nativeElement.textContent).toContain('FastFlowLM');
+    expect(buttonByText(fixture.nativeElement, 'Install FastFlowLM')).not.toBeNull();
+    expect(buttonByText(fixture.nativeElement, 'Install Ollama')).toBeNull();
   });
 
   it('renders OCR checking detail while health is loading', () => {
@@ -228,6 +220,40 @@ describe('RuntimeManagerPage', () => {
     expect(buttonByText(compiled, 'Refresh all')).not.toBeNull();
   });
 
+  it('renders cancellation controls only for cancellable active jobs', () => {
+    const health = TestBed.inject(HealthStore);
+    health.systemHealth.set(systemHealth());
+    health.llmHealth.set(availableLlmHealth());
+    health.ocrHealth.set(ocrHealth());
+    health.modelDownload.set({
+      jobId: 'model-job-1',
+      model: 'qwen3.5:4b',
+      phase: 'running',
+      status: 'running',
+      progress: 25,
+      message: 'Downloading model',
+      error: null,
+      cancellable: true,
+    });
+    health.runtimeInstall.set({
+      jobId: 'runtime-job-1',
+      kind: 'ollama',
+      label: 'Ollama',
+      phase: 'running',
+      status: 'running',
+      progress: 25,
+      message: 'Installing Ollama',
+      error: null,
+      cancellable: true,
+    });
+
+    const fixture = TestBed.createComponent(RuntimeManagerPage);
+    fixture.detectChanges();
+
+    expect(buttonByText(fixture.nativeElement, 'Cancel model')).not.toBeNull();
+    expect(buttonByText(fixture.nativeElement, 'Cancel install')).not.toBeNull();
+  });
+
   it('emits close requests from the modal surface', () => {
     const fixture = TestBed.createComponent(RuntimeManagerPage);
     const closeRequested = vi.fn();
@@ -240,39 +266,3 @@ describe('RuntimeManagerPage', () => {
     expect(closeRequested).toHaveBeenCalledOnce();
   });
 });
-
-function fastFlowRuntimeMissingRequirement(unavailableReason: string) {
-  return {
-    kind: 'fastflowlm',
-    label: 'FastFlowLM',
-    available: false,
-    detail: 'FastFlowLM setup is required.',
-    unavailable_reason: unavailableReason,
-    version: '0.9.43',
-    bytes: 18_577_840,
-    installed_path: null,
-  };
-}
-
-function fastFlowRuntimeAvailableRequirement() {
-  return {
-    ...fastFlowRuntimeMissingRequirement('fastflowlm_missing'),
-    available: true,
-    detail: 'FastFlowLM 0.9.43 is installed.',
-    unavailable_reason: null,
-    installed_path: 'C:\\Program Files\\flm\\flm.exe',
-  };
-}
-
-function fastFlowModelRequirement(unavailableReason: string) {
-  return {
-    kind: 'fastflowlm_model',
-    label: 'FastFlowLM model',
-    available: false,
-    detail: 'FastFlowLM model setup is required.',
-    unavailable_reason: unavailableReason,
-    version: 'qwen3.5:4b',
-    bytes: null,
-    installed_path: null,
-  };
-}

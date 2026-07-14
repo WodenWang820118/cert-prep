@@ -12,6 +12,7 @@ from llm_test_fakes import (
     FakeProfileInstaller,
     GIB,
     RecordingDownloadProvider,
+    RecordingFastFlowLMOnboardingProvider,
     _profile_inventory,
 )
 
@@ -30,6 +31,8 @@ class RecordingSelectedModelManager:
             "provider": "fastflowlm",
             "model": "qwen3.5:4b",
             "status": "queued",
+            "phase": "queued",
+            "cancellable": True,
             "detail": "selected model installation queued",
             "completed": 0,
             "total": None,
@@ -126,6 +129,8 @@ def test_model_download_starts_only_from_explicit_post(tmp_path) -> None:
         "provider": "ollama",
         "model": DEFAULT_OLLAMA_MODEL,
         "status": "succeeded",
+        "phase": "completed",
+        "cancellable": False,
         "detail": "model download complete",
         "completed": 100,
         "total": 100,
@@ -218,3 +223,63 @@ def test_model_download_rejects_provider_without_pull_support(client, auth_heade
         "code": "provider_unavailable",
         "message": "Configured LLM provider does not support model downloads.",
     }
+
+
+def test_fastflowlm_model_download_requires_versioned_terms_acceptance(tmp_path) -> None:
+    provider = RecordingDownloadProvider(available=False, detail="model not found")
+    provider.provider = "fastflowlm"
+    client = TestClient(
+        create_app(
+            settings=Settings(
+                data_dir=tmp_path,
+                api_token="test-token",
+                llm_provider="fastflowlm",
+            ),
+            llm_provider=provider,
+            runtime_installation_async_jobs=False,
+        )
+    )
+
+    rejected = client.post("/llm/model-downloads", headers=AUTH_HEADERS)
+    accepted = client.post(
+        "/llm/model-downloads",
+        headers=AUTH_HEADERS,
+        json={"fastflowlm_terms_accepted_version": "0.9.43"},
+    )
+
+    assert rejected.status_code == 409
+    assert rejected.json()["code"] == "terms_acceptance_required"
+    assert rejected.json()["details"]["terms_version"] == "0.9.43"
+    assert accepted.status_code == 202
+    assert accepted.json()["provider"] == "fastflowlm"
+    assert accepted.json()["status"] == "succeeded"
+    assert provider.pull_calls == 1
+
+
+def test_fastflowlm_model_download_runs_complete_onboarding_gate(tmp_path) -> None:
+    provider = RecordingFastFlowLMOnboardingProvider()
+    client = TestClient(
+        create_app(
+            settings=Settings(
+                data_dir=tmp_path,
+                api_token="test-token",
+                llm_provider="fastflowlm",
+            ),
+            llm_provider=provider,
+            runtime_installation_async_jobs=False,
+        )
+    )
+
+    response = client.post(
+        "/llm/model-downloads",
+        headers=AUTH_HEADERS,
+        json={"fastflowlm_terms_accepted_version": "0.9.43"},
+    )
+
+    assert response.status_code == 202
+    assert response.json()["status"] == "succeeded"
+    assert provider.events == [
+        "validate/list",
+        "pull",
+        "check/serve/models/completion",
+    ]

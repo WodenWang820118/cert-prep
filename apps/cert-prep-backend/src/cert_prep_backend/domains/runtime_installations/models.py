@@ -25,6 +25,8 @@ class RuntimeInstallationSnapshot:
     provider: str
     model: str
     status: RuntimeInstallationStatus
+    phase: str
+    cancellable: bool
     detail: str
     completed: int | None
     total: int | None

@@ -15,14 +15,12 @@ from cert_prep_backend.domains.mock_exams.deterministic_parser import (
 from cert_prep_backend.domains.mock_exams.fastflowlm_client import FastFlowLMClient
 from cert_prep_backend.domains.mock_exams.fastflowlm_generation import (
     FastFlowLMGenerationMixin,
+    _is_non_fatal_fastflowlm_generation_error,
 )
 from cert_prep_backend.domains.mock_exams.fastflowlm_health import FastFlowLMHealthMixin
 from cert_prep_backend.domains.mock_exams.fastflowlm_io import FastFlowLMIOMixin
 from cert_prep_backend.domains.mock_exams.fastflowlm_onboarding import (
     FastFlowLMModelOnboarding,
-)
-from cert_prep_backend.domains.mock_exams.fastflowlm_process import (
-    terminate_fastflowlm_process_tree,
 )
 from cert_prep_backend.domains.mock_exams.fastflowlm_resolver import (
     resolve_fastflowlm_executable,
@@ -50,10 +48,13 @@ from cert_prep_backend.domains.mock_exams.system_probes import available_system_
 from cert_prep_contracts.llm import (
     DEFAULT_LLM_LOW_RESOURCE_MODEL,
     DEFAULT_LLM_PRIMARY_MODEL,
+    GenerationAttribution,
     ModelPullProgress,
 )
 
 
+DEFAULT_FASTFLOWLM_PRIMARY_MODEL = DEFAULT_LLM_PRIMARY_MODEL
+FASTFLOWLM_RAM_FALLBACK_MODEL = DEFAULT_LLM_LOW_RESOURCE_MODEL
 DEFAULT_FASTFLOWLM_PRIMARY_MIN_AVAILABLE_RAM_BYTES = 6 * 1024 * 1024 * 1024
 DEFAULT_FASTFLOWLM_AUTO_START_SERVER = True
 DEFAULT_FASTFLOWLM_SERVER_START_TIMEOUT_SECONDS = 90.0
@@ -70,8 +71,8 @@ class FastFlowLMProvider(
     """FastFlowLM-backed mock exam draft provider using its OpenAI-compatible API."""
 
     provider = "fastflowlm"
-    _primary_model_name = DEFAULT_LLM_PRIMARY_MODEL
-    _ram_fallback_model = DEFAULT_LLM_LOW_RESOURCE_MODEL
+    _primary_model_name = DEFAULT_FASTFLOWLM_PRIMARY_MODEL
+    _ram_fallback_model = FASTFLOWLM_RAM_FALLBACK_MODEL
 
     def __init__(
         self,
@@ -89,9 +90,6 @@ class FastFlowLMProvider(
         server_start_timeout_seconds: float = (DEFAULT_FASTFLOWLM_SERVER_START_TIMEOUT_SECONDS),
         owned_server_idle_timeout_seconds: float = (
             DEFAULT_FASTFLOWLM_OWNED_SERVER_IDLE_TIMEOUT_SECONDS
-        ),
-        owned_server_process_terminator: Callable[[subprocess.Popen], None] = (
-            terminate_fastflowlm_process_tree
         ),
     ) -> None:
         self.base_url = base_url.rstrip("/")
@@ -128,13 +126,14 @@ class FastFlowLMProvider(
             owned_server_idle_timeout_seconds=self.owned_server_idle_timeout_seconds,
             executable_resolver=lambda: resolve_fastflowlm_executable(self.executable_path),
             start_process=self._start_owned_server_process,
-            process_terminator=owned_server_process_terminator,
             served_model_names=self._served_model_names,
             model_to_serve=self._model_to_serve_for_auto_start,
         )
         self._model_onboarding = FastFlowLMModelOnboarding(
             model=self.model,
-            executable_resolver=lambda: resolve_fastflowlm_executable(self.executable_path),
+            executable_resolver=lambda: resolve_fastflowlm_executable(
+                self.executable_path
+            ),
             command_timeout_seconds=self.model_pull_timeout_seconds,
             inventory_timeout_seconds=model_inventory_timeout_seconds,
             server_start_timeout_seconds=self.server_start_timeout_seconds,
@@ -150,6 +149,12 @@ class FastFlowLMProvider(
 
     def streaming_generation_kwargs(self) -> dict[str, Any]:
         return {}
+
+    def reset_generation_attribution(self) -> None:
+        self._fallback_engine.reset_generation_attribution()
+
+    def generation_attribution(self) -> GenerationAttribution:
+        return self._fallback_engine.generation_attribution(self.provider)
 
     def health(self) -> ProviderHealth:
         """Return FastFlowLM server and configured-model availability."""
@@ -179,7 +184,6 @@ class FastFlowLMProvider(
     def generate_drafts(self, chunks: Sequence[SourceChunk], limit: int) -> list[DraftSuggestion]:
         """Generate drafts by combining deterministic extraction with reasoning fallback."""
 
-        self.reset_generation_attribution()
         if not chunks:
             return []
 
@@ -200,7 +204,6 @@ class FastFlowLMProvider(
     ) -> list[DraftSuggestion]:
         """Ask FastFlowLM for structured JSON drafts and validate grounded results."""
 
-        self.reset_generation_attribution()
         if not chunks or limit <= 0:
             return []
 
@@ -259,6 +262,63 @@ class FastFlowLMProvider(
                 break
         return suggestions
 
+    def prepare_model_onboarding(
+        self,
+        progress: Callable[[ModelPullProgress], None],
+    ) -> None:
+        """Validate the NPU stack and inspect installed models before pulling."""
+
+        executable = self._required_executable()
+        validation = self._run_cli_json(executable, ["validate", "--json"])
+        if validation.get("ready") is not True:
+            raise ProviderUnavailableError(
+                "FastFlowLM NPU validation did not report a ready runtime."
+            )
+        progress(ModelPullProgress(status="FastFlowLM NPU validation passed"))
+        installed = self._installed_model_names_from_cli(executable)
+        state = "already installed" if self.model in installed else "not installed"
+        progress(ModelPullProgress(status=f"{self.model} is {state}"))
+
+    def verify_model_onboarding(
+        self,
+        progress: Callable[[ModelPullProgress], None],
+    ) -> None:
+        """Run check, owned serve, model-list, and tiny-completion gates."""
+
+        executable = self._required_executable()
+        installed = self._installed_model_names_from_cli(executable)
+        if self.model not in installed:
+            raise ProviderUnavailableError(
+                f"FastFlowLM model {self.model} was not listed as installed after pull."
+            )
+        self._run_cli(executable, ["check", self.model])
+        progress(ModelPullProgress(status=f"FastFlowLM check passed for {self.model}"))
+        self.reset_generation_attribution()
+        try:
+            self._with_model_fallback(
+                lambda model: self._chat_content(
+                    model,
+                    [{"role": "user", "content": "Reply with ok."}],
+                    max_tokens=2,
+                    context_tokens=512,
+                )
+            )
+            attribution = self.generation_attribution()
+            if not attribution.effective_model:
+                raise ProviderUnavailableError(
+                    "FastFlowLM tiny completion did not record an effective model."
+                )
+            progress(
+                ModelPullProgress(
+                    status=(
+                        "FastFlowLM owned server, /v1/models, and tiny completion passed "
+                        f"with {attribution.effective_model}"
+                    )
+                )
+            )
+        finally:
+            self._server_manager.close()
+
     def generate_fast_first_draft(
         self,
         source_chunk: SourceChunk,
@@ -269,15 +329,19 @@ class FastFlowLMProvider(
     ) -> DraftSuggestion | None:
         """Ask FastFlowLM to complete one extracted draft with answer/rationale JSON."""
 
-        self.reset_generation_attribution()
-        payload = self._with_model_fallback(
-            lambda model: self._chat_json(
-                model,
-                [{"role": "user", "content": fast_first_prompt(candidate)}],
-                max_tokens=num_predict,
-                context_tokens=num_ctx,
+        try:
+            payload = self._with_model_fallback(
+                lambda model: self._chat_json(
+                    model,
+                    [{"role": "user", "content": fast_first_prompt(candidate)}],
+                    max_tokens=num_predict,
+                    context_tokens=num_ctx,
+                )
             )
-        )
+        except ProviderUnavailableError as exc:
+            if _is_non_fatal_fastflowlm_generation_error(exc):
+                return None
+            raise
         answer = answer_from_payload(payload.get("answer"), candidate.choices)
         if answer is None:
             return None
@@ -308,9 +372,7 @@ class FastFlowLMProvider(
     def pull_model(self, progress: Callable[[ModelPullProgress], None]) -> None:
         """Pull the configured FastFlowLM model after explicit user confirmation."""
 
-        executable = resolve_fastflowlm_executable(self.executable_path)
-        if executable is None:
-            raise ProviderUnavailableError("FastFlowLM is not installed.")
+        executable = self._required_executable()
         progress(ModelPullProgress(status=f"pulling {self.model}"))
         creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
         completed = subprocess.run(
@@ -321,41 +383,71 @@ class FastFlowLMProvider(
             encoding="utf-8",
             errors="replace",
             timeout=max(60, int(self.model_pull_timeout_seconds)),
-            cwd=executable.parent,
-            stdin=subprocess.DEVNULL,
             creationflags=creationflags,
         )
         if completed.returncode != 0:
             output = (completed.stderr or completed.stdout or "").strip()
             raise ProviderUnavailableError(output or "FastFlowLM model pull failed.")
-        progress(
-            ModelPullProgress(
-                status=f"downloaded {self.model}; verification pending",
-                completed=100,
-                total=100,
-            )
-        )
+        progress(ModelPullProgress(status="success", completed=100, total=100))
 
     def installed_fastflowlm_models(self) -> set[str]:
-        """Return model tags from the trusted offline FastFlowLM CLI."""
+        """Read model inventory through the allowlisted offline CLI path only."""
 
         return self._model_onboarding.installed_models()
 
-    def prepare_model_onboarding(
-        self,
-        progress: Callable[[ModelPullProgress], None],
-    ) -> None:
-        """Validate the pinned FastFlowLM runtime before pulling the model."""
+    def _required_executable(self) -> Path:
+        executable = resolve_fastflowlm_executable(self.executable_path)
+        if executable is None:
+            raise ProviderUnavailableError(
+                "Allowlisted FastFlowLM 0.9.43 is not installed in a trusted location."
+            )
+        return executable
 
-        self._model_onboarding.prepare(progress)
+    def _installed_model_names_from_cli(self, executable: Path) -> set[str]:
+        payload = self._run_cli_json(
+            executable,
+            ["list", "--filter", "installed", "--json"],
+        )
+        models = payload.get("models", [])
+        if not isinstance(models, list):
+            raise ProviderUnavailableError("FastFlowLM installed-model inventory is invalid.")
+        names: set[str] = set()
+        for item in models:
+            if not isinstance(item, dict) or item.get("installed") is False:
+                continue
+            name = item.get("model") or item.get("name")
+            if isinstance(name, str) and name.strip():
+                names.add(name.strip())
+        return names
 
-    def verify_model_onboarding(
-        self,
-        progress: Callable[[ModelPullProgress], None],
-    ) -> None:
-        """Prove the exact model on an isolated app-owned FastFlowLM server."""
+    def _run_cli_json(self, executable: Path, args: list[str]) -> dict[str, Any]:
+        output = self._run_cli(executable, args)
+        try:
+            payload = json.loads(output)
+        except json.JSONDecodeError as exc:
+            raise ProviderUnavailableError("FastFlowLM CLI returned invalid JSON.") from exc
+        if not isinstance(payload, dict):
+            raise ProviderUnavailableError("FastFlowLM CLI returned an invalid payload.")
+        return payload
 
-        self._model_onboarding.verify(progress)
+    def _run_cli(self, executable: Path, args: list[str]) -> str:
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+        completed = subprocess.run(
+            [str(executable), *args],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=max(60, int(self.model_pull_timeout_seconds)),
+            creationflags=creationflags,
+        )
+        if completed.returncode != 0:
+            detail = (completed.stderr or completed.stdout or "").strip()
+            raise ProviderUnavailableError(
+                detail or f"FastFlowLM {' '.join(args)} failed."
+            )
+        return completed.stdout
 
     def release_resources(self) -> None:
         """Release any FastFlowLM server process owned by this provider after idle."""

@@ -17,11 +17,12 @@ export interface Components {
     DocumentRead: { "id": string; "project_id": string; "filename": string; "sha256": string; "language_hint": string; "page_count": number; "has_text": boolean; "status": Components['schemas']['SourceDocumentStatus'] | string; "extraction_method": Components['schemas']['PdfExtractionMethod'] | string; "ocr_device": string | null; "ocr_fallback_reason": string | null; "ocr_duration_ms": number; "processed_page_count": number; "parse_wall_duration_ms": number; "render_duration_ms": number; "ocr_engine_duration_ms": number; "ocr_worker_count": number; "first_chunk_ms": number; "exam_item_count": number; "content_profile": Components['schemas']['ContentProfile'] | string; "classification_detail": string; "chunks_count": number; "created_at": string; "updated_at": string };
     DraftGenerateRequest: { "limit"?: number; "strategy"?: Components['schemas']['DraftGenerationStrategy'] };
     DraftGenerationJobList: { "items": Components['schemas']['DraftGenerationJobRead'][] };
-    DraftGenerationJobRead: { "id": string; "project_id": string; "document_id": string; "chunk_id": string; "page_number": number; "strategy": Components['schemas']['DraftGenerationStrategy']; "status": string; "provider": string; "model": string; "effective_provider": string | null; "effective_model": string | null; "fallback_reason": string | null; "generated_count": number; "retry_count": number; "last_error": string | null; "created_at": string; "updated_at": string };
+    DraftGenerationJobRead: { "id": string; "project_id": string; "document_id": string; "chunk_id": string; "page_number": number; "strategy": Components['schemas']['DraftGenerationStrategy']; "status": Components['schemas']['DraftGenerationJobStatus']; "phase": string; "cancellable": boolean; "provider": string; "model": string; "effective_provider": string | null; "effective_model": string | null; "fallback_reason": string | null; "generated_count": number; "retry_count": number; "last_error": string | null; "created_at": string; "updated_at": string };
+    DraftGenerationJobStatus: "pending" | "running" | "cancel_requested" | "canceled" | "succeeded" | "skipped_provider_unavailable" | "skipped_missing_model" | "failed";
     DraftGenerationStrategy: string;
     DraftStatus: string;
-    FastFlowLMTermsDecision: string;
-    FastFlowLMTermsDecisionRequest: { "decision": Components['schemas']['FastFlowLMTermsDecision']; "terms_version": string };
+    FastFlowLMTermsDecision: "accepted" | "declined";
+    FastFlowLMTermsDecisionRequest: { "decision": Components['schemas']['FastFlowLMTermsDecision']; "terms_version"?: string | null };
     HTTPValidationError: { "detail"?: Components['schemas']['ValidationError'][] };
     HealthResponse: { "status": string; "app": string; "version": string; "python_version": string; "runtime_mode": string };
     LLMHealthRead: { "provider": string; "model": string; "available": boolean; "detail": string; "unavailable_reason"?: string | null; "configured_model"?: string | null; "effective_model"?: string | null; "fallback_models"?: string[]; "fallback_reason"?: string | null; "profile_id"?: string | null; "base_model"?: string | null; "modelfile_sha256"?: string | null; "profile_reason"?: string | null; "profile_warnings"?: string[] };
@@ -33,7 +34,9 @@ export interface Components {
     MachineInventoryRead: { "platform": string; "platform_version": string; "architecture": string; "cpu": Components['schemas']['MachineCpuRead']; "ram": Components['schemas']['MachineRamRead']; "storage": Components['schemas']['MachineStorageRead']; "accelerators"?: Components['schemas']['MachineAcceleratorRead'][]; "warnings"?: string[]; "schema_version"?: number };
     MachineRamRead: { "total_bytes"?: number | null; "available_bytes"?: number | null };
     MachineStorageRead: { "path": string; "free_bytes"?: number | null; "total_bytes"?: number | null };
-    ModelDownloadRead: { "id": string; "provider": string; "model": string; "status": string; "detail": string; "completed": number | null; "total": number | null; "created_at": string; "updated_at": string; "error"?: string | null };
+    ManualDraftGenerationOperationRead: { "id": string; "project_id": string; "document_id": string; "limit": number; "strategy": Components['schemas']['DraftGenerationStrategy']; "status": Components['schemas']['ManualDraftOperationStatus']; "phase": string; "cancellable": boolean; "provider": string; "model": string; "effective_provider"?: string | null; "effective_model"?: string | null; "fallback_reason"?: string | null; "generated_count": number; "error"?: string | null; "created_at": string; "updated_at": string };
+    ManualDraftOperationStatus: "queued" | "running" | "cancel_requested" | "canceled" | "succeeded" | "failed";
+    ModelDownloadRead: { "id": string; "provider": string; "model": string; "status": Components['schemas']['RuntimeInstallationStatus']; "phase": string; "cancellable": boolean; "detail": string; "completed": number | null; "total": number | null; "created_at": string; "updated_at": string; "error"?: string | null };
     OCRHealthRead: { "provider": string; "engine": string; "available": boolean; "detail": string; "python_version": string; "paddle_version": string | null; "paddleocr_version": string | null; "selected_device": string | null; "cuda_available": boolean; "gpu_count": number; "model_cache_dir": string | null; "fallback_reason": string | null; "unavailable_reason"?: string | null };
     OllamaModelProfileRead: { "profile_id": string; "display_name": string; "description": string; "base_model": string; "local_model": string; "context_window": number; "system_prompt": string; "parameters"?: Record<string, unknown>; "min_total_ram_bytes"?: number | null; "min_available_ram_bytes"?: number | null; "min_free_disk_bytes"?: number | null; "min_vram_bytes"?: number | null; "auto_selectable": boolean; "explicit_opt_in_required": boolean; "fallback_profile_ids"?: string[] };
     OllamaProfileSelectionRead: { "profile_enabled": boolean; "profile_id"?: string | null; "selected_profile"?: Components['schemas']['OllamaModelProfileRead'] | null; "support_status": string; "reason": string; "fallback_profiles"?: Components['schemas']['OllamaModelProfileRead'][]; "fallback_models"?: string[]; "warnings"?: string[]; "inventory"?: Components['schemas']['MachineInventoryRead'] | null; "modelfile_sha256"?: string | null; "effective_model": string; "base_model"?: string | null };
@@ -41,7 +44,6 @@ export interface Components {
     PdfExtractionMethod: string;
     PracticeAttemptCreate: { "question_id": string; "selected_answer": string };
     PracticeAttemptRead: { "id": string; "session_id": string; "project_id": string; "question_id": string; "selected_answer": string; "is_correct": boolean; "created_at": string };
-    PracticeSessionConflictRead: { "code": string; "message": string; "details"?: Record<string, unknown> | null };
     PracticeSessionCreate: { "mode"?: Components['schemas']['PracticeSessionMode']; "document_id"?: string | null; "question_count"?: number | null; "random_seed"?: number | null; "wrong_attempt_ids"?: string[] | null };
     PracticeSessionList: { "items": Components['schemas']['PracticeSessionSummaryRead'][] };
     PracticeSessionMode: string;
@@ -58,8 +60,9 @@ export interface Components {
     QuestionDraftRead: { "id": string; "project_id": string; "document_id": string | null; "chunk_id": string | null; "question": string; "choices": string[]; "answer": string | null; "answer_key_source": Components['schemas']['AnswerKeySource'] | string; "rationale": string | null; "citation_page": number | null; "source_excerpt": string | null; "confidence": number | null; "source_order": number | null; "source_question_number": string | null; "item_kind": Components['schemas']['QuestionItemKind'] | string; "group_key": string | null; "group_prompt": string | null; "status": Components['schemas']['DraftStatus'] | string; "rejection_reason": string | null; "created_at": string; "updated_at": string };
     QuestionDraftUpdate: { "question"?: string | null; "choices"?: string[] | null; "answer"?: string | null; "answer_key_source"?: Components['schemas']['AnswerKeySource'] | string | null; "rationale"?: string | null; "citation_page"?: number | null; "source_excerpt"?: string | null; "confidence"?: number | null; "source_order"?: number | null; "source_question_number"?: string | null; "item_kind"?: Components['schemas']['QuestionItemKind'] | string | null; "group_key"?: string | null; "group_prompt"?: string | null };
     QuestionItemKind: string;
-    RuntimeInstallationRead: { "id": string; "kind": Components['schemas']['RuntimeRequirementKind']; "provider": string; "model": string; "status": Components['schemas']['RuntimeInstallationStatus']; "detail": string; "completed": number | null; "total": number | null; "created_at": string; "updated_at": string; "error"?: string | null };
-    RuntimeInstallationStatus: string;
+    RuntimeInstallationRead: { "id": string; "kind": Components['schemas']['RuntimeRequirementKind']; "provider": string; "model": string; "status": Components['schemas']['RuntimeInstallationStatus']; "phase": string; "cancellable": boolean; "detail": string; "completed": number | null; "total": number | null; "created_at": string; "updated_at": string; "error"?: string | null };
+    RuntimeInstallationStartRequest: { "fastflowlm_terms_accepted_version"?: string | null };
+    RuntimeInstallationStatus: "queued" | "running" | "cancel_requested" | "canceled" | "waiting_for_user" | "succeeded" | "failed";
     RuntimeRequirementKind: string;
     RuntimeRequirementRead: { "kind": Components['schemas']['RuntimeRequirementKind']; "label": string; "available": boolean; "detail": string; "unavailable_reason": string | null; "version"?: string | null; "bytes"?: number | null; "installed_path"?: string | null };
     RuntimeRequirementsRead: { "items": Components['schemas']['RuntimeRequirementRead'][] };
@@ -89,6 +92,7 @@ export type DocumentRead = Components['schemas']['DocumentRead'];
 export type DraftGenerateRequest = Components['schemas']['DraftGenerateRequest'];
 export type DraftGenerationJobList = Components['schemas']['DraftGenerationJobList'];
 export type DraftGenerationJobRead = Components['schemas']['DraftGenerationJobRead'];
+export type DraftGenerationJobStatus = Components['schemas']['DraftGenerationJobStatus'];
 export type DraftGenerationStrategy = Components['schemas']['DraftGenerationStrategy'];
 export type DraftStatus = Components['schemas']['DraftStatus'];
 export type FastFlowLMTermsDecision = Components['schemas']['FastFlowLMTermsDecision'];
@@ -104,6 +108,8 @@ export type MachineCpuRead = Components['schemas']['MachineCpuRead'];
 export type MachineInventoryRead = Components['schemas']['MachineInventoryRead'];
 export type MachineRamRead = Components['schemas']['MachineRamRead'];
 export type MachineStorageRead = Components['schemas']['MachineStorageRead'];
+export type ManualDraftGenerationOperationRead = Components['schemas']['ManualDraftGenerationOperationRead'];
+export type ManualDraftOperationStatus = Components['schemas']['ManualDraftOperationStatus'];
 export type ModelDownloadRead = Components['schemas']['ModelDownloadRead'];
 export type OCRHealthRead = Components['schemas']['OCRHealthRead'];
 export type OllamaModelProfileRead = Components['schemas']['OllamaModelProfileRead'];
@@ -112,7 +118,6 @@ export type OllamaProfilesRead = Components['schemas']['OllamaProfilesRead'];
 export type PdfExtractionMethod = Components['schemas']['PdfExtractionMethod'];
 export type PracticeAttemptCreate = Components['schemas']['PracticeAttemptCreate'];
 export type PracticeAttemptRead = Components['schemas']['PracticeAttemptRead'];
-export type PracticeSessionConflictRead = Components['schemas']['PracticeSessionConflictRead'];
 export type PracticeSessionCreate = Components['schemas']['PracticeSessionCreate'];
 export type PracticeSessionList = Components['schemas']['PracticeSessionList'];
 export type PracticeSessionMode = Components['schemas']['PracticeSessionMode'];
@@ -130,6 +135,7 @@ export type QuestionDraftRead = Components['schemas']['QuestionDraftRead'];
 export type QuestionDraftUpdate = Components['schemas']['QuestionDraftUpdate'];
 export type QuestionItemKind = Components['schemas']['QuestionItemKind'];
 export type RuntimeInstallationRead = Components['schemas']['RuntimeInstallationRead'];
+export type RuntimeInstallationStartRequest = Components['schemas']['RuntimeInstallationStartRequest'];
 export type RuntimeInstallationStatus = Components['schemas']['RuntimeInstallationStatus'];
 export type RuntimeRequirementKind = Components['schemas']['RuntimeRequirementKind'];
 export type RuntimeRequirementRead = Components['schemas']['RuntimeRequirementRead'];
@@ -147,7 +153,7 @@ export type WrongAnswerSummaryRead = Components['schemas']['WrongAnswerSummaryRe
 export type CertPrepHttpMethod = 'DELETE' | 'GET' | 'PATCH' | 'POST';
 
 export interface CertPrepRequestOptions {
-  headers?: Record<string, string>;
+  headers?: Readonly<Record<string, string>>;
   signal?: AbortSignal;
 }
 
@@ -155,7 +161,7 @@ export interface CertPrepHttpRequest {
   method: CertPrepHttpMethod;
   path: string;
   body?: unknown;
-  headers?: Record<string, string>;
+  headers?: Readonly<Record<string, string>>;
   signal?: AbortSignal;
 }
 
@@ -181,6 +187,10 @@ export interface CertPrepGeneratedClient {
   generateDocumentDrafts(projectId: string, documentId: string, body: Components['schemas']['DraftGenerateRequest'], options?: CertPrepRequestOptions): Promise<Components['schemas']['QuestionDraftList']>;
   listDocumentDraftJobs(projectId: string, documentId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['DraftGenerationJobList']>;
   retryDocumentDraftJobs(projectId: string, documentId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['DraftGenerationJobList']>;
+  cancelDocumentDraftJob(projectId: string, documentId: string, jobId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['DraftGenerationJobRead']>;
+  startManualDraftOperation(projectId: string, documentId: string, body: Components['schemas']['DraftGenerateRequest'], options?: CertPrepRequestOptions): Promise<Components['schemas']['ManualDraftGenerationOperationRead']>;
+  getManualDraftOperation(projectId: string, documentId: string, operationId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['ManualDraftGenerationOperationRead']>;
+  cancelManualDraftOperation(projectId: string, documentId: string, operationId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['ManualDraftGenerationOperationRead']>;
   createQuestionDraft(projectId: string, body: Components['schemas']['QuestionDraftCreate'], options?: CertPrepRequestOptions): Promise<Components['schemas']['QuestionDraftRead']>;
   listQuestionDrafts(projectId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['QuestionDraftList']>;
   updateQuestionDraft(projectId: string, draftId: string, body: Components['schemas']['QuestionDraftUpdate'], options?: CertPrepRequestOptions): Promise<Components['schemas']['QuestionDraftRead']>;
@@ -197,13 +207,15 @@ export interface CertPrepGeneratedClient {
   decideFastflowlmTerms(body: Components['schemas']['FastFlowLMTermsDecisionRequest'], options?: CertPrepRequestOptions): Promise<Components['schemas']['LLMProviderSelectionRead']>;
   llmProfiles(options?: CertPrepRequestOptions): Promise<Components['schemas']['OllamaProfilesRead']>;
   llmProfileSelection(options?: CertPrepRequestOptions): Promise<Components['schemas']['OllamaProfileSelectionRead']>;
-  startModelDownload(options?: CertPrepRequestOptions): Promise<Components['schemas']['ModelDownloadRead']>;
+  startModelDownload(body?: Components['schemas']['RuntimeInstallationStartRequest'] | null, options?: CertPrepRequestOptions): Promise<Components['schemas']['ModelDownloadRead']>;
   getModelDownload(jobId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['ModelDownloadRead']>;
+  cancelModelDownload(jobId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['ModelDownloadRead']>;
   ocrHealth(options?: CertPrepRequestOptions): Promise<Components['schemas']['OCRHealthRead']>;
   runtimeRequirements(options?: CertPrepRequestOptions): Promise<Components['schemas']['RuntimeRequirementsRead']>;
   machineInventory(options?: CertPrepRequestOptions): Promise<Components['schemas']['MachineInventoryRead']>;
-  startRuntimeInstallation(kind: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['RuntimeInstallationRead']>;
+  startRuntimeInstallation(kind: string, body?: Components['schemas']['RuntimeInstallationStartRequest'] | null, options?: CertPrepRequestOptions): Promise<Components['schemas']['RuntimeInstallationRead']>;
   getRuntimeInstallation(jobId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['RuntimeInstallationRead']>;
+  cancelRuntimeInstallation(jobId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['RuntimeInstallationRead']>;
 }
 
 export function createCertPrepGeneratedClient(
@@ -244,6 +256,14 @@ export function createCertPrepGeneratedClient(
       transport.request<Components['schemas']['DraftGenerationJobList']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/draft-jobs`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
     retryDocumentDraftJobs: (projectId: string, documentId: string, options?: CertPrepRequestOptions) =>
       transport.request<Components['schemas']['DraftGenerationJobList']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/draft-jobs/retry`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    cancelDocumentDraftJob: (projectId: string, documentId: string, jobId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['DraftGenerationJobRead']>({ method: 'DELETE' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/draft-jobs/${encodeURIComponent(jobId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    startManualDraftOperation: (projectId: string, documentId: string, body: Components['schemas']['DraftGenerateRequest'], options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['ManualDraftGenerationOperationRead']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/draft-operations`, body, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    getManualDraftOperation: (projectId: string, documentId: string, operationId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['ManualDraftGenerationOperationRead']>({ method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/draft-operations/${encodeURIComponent(operationId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    cancelManualDraftOperation: (projectId: string, documentId: string, operationId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['ManualDraftGenerationOperationRead']>({ method: 'DELETE' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/draft-operations/${encodeURIComponent(operationId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
     createQuestionDraft: (projectId: string, body: Components['schemas']['QuestionDraftCreate'], options?: CertPrepRequestOptions) =>
       transport.request<Components['schemas']['QuestionDraftRead']>({ method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/question-drafts`, body, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
     listQuestionDrafts: (projectId: string, options?: CertPrepRequestOptions) =>
@@ -276,19 +296,23 @@ export function createCertPrepGeneratedClient(
       transport.request<Components['schemas']['OllamaProfilesRead']>({ method: 'GET' as const, path: "/llm/profiles", ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
     llmProfileSelection: (options?: CertPrepRequestOptions) =>
       transport.request<Components['schemas']['OllamaProfileSelectionRead']>({ method: 'GET' as const, path: "/llm/profile-selection", ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
-    startModelDownload: (options?: CertPrepRequestOptions) =>
-      transport.request<Components['schemas']['ModelDownloadRead']>({ method: 'POST' as const, path: "/llm/model-downloads", ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    startModelDownload: (body?: Components['schemas']['RuntimeInstallationStartRequest'] | null, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['ModelDownloadRead']>({ method: 'POST' as const, path: "/llm/model-downloads", body, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
     getModelDownload: (jobId: string, options?: CertPrepRequestOptions) =>
       transport.request<Components['schemas']['ModelDownloadRead']>({ method: 'GET' as const, path: `/llm/model-downloads/${encodeURIComponent(jobId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    cancelModelDownload: (jobId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['ModelDownloadRead']>({ method: 'DELETE' as const, path: `/llm/model-downloads/${encodeURIComponent(jobId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
     ocrHealth: (options?: CertPrepRequestOptions) =>
       transport.request<Components['schemas']['OCRHealthRead']>({ method: 'GET' as const, path: "/ocr/health", ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
     runtimeRequirements: (options?: CertPrepRequestOptions) =>
       transport.request<Components['schemas']['RuntimeRequirementsRead']>({ method: 'GET' as const, path: "/runtime/requirements", ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
     machineInventory: (options?: CertPrepRequestOptions) =>
       transport.request<Components['schemas']['MachineInventoryRead']>({ method: 'GET' as const, path: "/runtime/machine-inventory", ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
-    startRuntimeInstallation: (kind: string, options?: CertPrepRequestOptions) =>
-      transport.request<Components['schemas']['RuntimeInstallationRead']>({ method: 'POST' as const, path: `/runtime/installations/${encodeURIComponent(kind)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    startRuntimeInstallation: (kind: string, body?: Components['schemas']['RuntimeInstallationStartRequest'] | null, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['RuntimeInstallationRead']>({ method: 'POST' as const, path: `/runtime/installations/${encodeURIComponent(kind)}`, body, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
     getRuntimeInstallation: (jobId: string, options?: CertPrepRequestOptions) =>
       transport.request<Components['schemas']['RuntimeInstallationRead']>({ method: 'GET' as const, path: `/runtime/installations/${encodeURIComponent(jobId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    cancelRuntimeInstallation: (jobId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['RuntimeInstallationRead']>({ method: 'DELETE' as const, path: `/runtime/installations/${encodeURIComponent(jobId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
   };
 }

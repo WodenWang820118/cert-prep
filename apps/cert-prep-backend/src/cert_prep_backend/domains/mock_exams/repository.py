@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 import json
-from sqlite3 import Connection, Row
+from sqlite3 import Row
 from uuid import uuid4
 
-from cert_prep_backend.api.errors import NotFoundError, ValidationError
-from cert_prep_backend.domains.mock_exams import draft_jobs
-from cert_prep_backend.domains.mock_exams.models import DraftSuggestion
-from cert_prep_backend.domains.mock_exams.schemas import QuestionDraftCreate, QuestionDraftUpdate
-from cert_prep_backend.domains.projects.repository import ensure_project_exists
-from cert_prep_backend.domains.source_documents import repository as documents_repository
 from cert_prep_backend.persistence.database import Database, utc_now
+from cert_prep_backend.domains.mock_exams.models import DraftSuggestion
+from cert_prep_backend.domains.mock_exams.draft_jobs import DraftJobCanceledError
+from cert_prep_backend.domains.mock_exams.schemas import QuestionDraftCreate, QuestionDraftUpdate
+from cert_prep_backend.domains.source_documents import repository as documents_repository
+from cert_prep_backend.domains.projects.repository import ensure_project_exists
+from cert_prep_backend.api.errors import NotFoundError, ValidationError
 
 
 def create_draft(db: Database, project_id: str, payload: QuestionDraftCreate) -> dict:
@@ -130,7 +130,7 @@ def append_generated_drafts(
 
     ensure_project_exists(db, project_id)
     with db.connect() as connection:
-        rows = _append_generated_drafts_in_transaction(
+        rows = _append_generated_drafts(
             connection,
             project_id=project_id,
             document_id=document_id,
@@ -139,42 +139,234 @@ def append_generated_drafts(
     return [_draft_from_row(row) for row in rows]
 
 
-def append_generated_drafts_and_mark_job_succeeded(
+def append_generated_drafts_and_complete_job(
     db: Database,
     *,
     job_id: str,
     project_id: str,
     document_id: str,
-    chunk_id: str,
     suggestions: list[DraftSuggestion],
     effective_provider: str | None,
     effective_model: str | None,
     fallback_reason: str | None,
 ) -> list[dict]:
-    """Append drafts and complete their job in one durable transaction."""
+    """Commit generated drafts and their exact successful job attribution atomically."""
 
     ensure_project_exists(db, project_id)
-    if any(suggestion.chunk_id != chunk_id for suggestion in suggestions):
-        raise ValidationError("Generated draft does not belong to the draft job chunk.")
     with db.connect() as connection:
-        rows = _append_generated_drafts_in_transaction(
+        rows = _append_generated_drafts(
             connection,
             project_id=project_id,
             document_id=document_id,
             suggestions=suggestions,
         )
-        draft_jobs.mark_succeeded_in_transaction(
-            connection,
-            job_id,
-            generated_count=len(rows),
-            effective_provider=effective_provider,
-            effective_model=effective_model,
-            fallback_reason=fallback_reason,
-            expected_project_id=project_id,
-            expected_document_id=document_id,
-            expected_chunk_id=chunk_id,
+        now = utc_now()
+        connection.execute(
+            """
+            UPDATE documents
+            SET status = CASE
+                    WHEN status = 'processing' THEN 'processing'
+                    WHEN has_text = 1 AND EXISTS (
+                        SELECT 1
+                        FROM document_chunks
+                        WHERE document_chunks.project_id = documents.project_id
+                          AND document_chunks.document_id = documents.id
+                    ) THEN 'ready'
+                    ELSE 'exam_failed'
+                END,
+                exam_item_count = (
+                    SELECT COUNT(*)
+                    FROM question_drafts
+                    WHERE question_drafts.project_id = documents.project_id
+                      AND question_drafts.document_id = documents.id
+                ),
+                updated_at = ?
+            WHERE project_id = ? AND id = ?
+            """,
+            (now, project_id, document_id),
         )
+        updated_job = connection.execute(
+            """
+            UPDATE draft_generation_jobs
+            SET status = 'succeeded',
+                phase = 'completed',
+                cancellable = 0,
+                generated_count = ?,
+                last_error = NULL,
+                effective_provider = ?,
+                effective_model = ?,
+                fallback_reason = ?,
+                updated_at = ?
+            WHERE id = ? AND project_id = ? AND document_id = ?
+                AND status = 'running'
+                AND phase = 'committing'
+                AND cancellable = 0
+            """,
+            (
+                len(rows),
+                effective_provider,
+                effective_model,
+                fallback_reason,
+                now,
+                job_id,
+                project_id,
+                document_id,
+            ),
+        )
+        if updated_job.rowcount != 1:
+            job = connection.execute(
+                """
+                SELECT status
+                FROM draft_generation_jobs
+                WHERE id = ? AND project_id = ? AND document_id = ?
+                """,
+                (job_id, project_id, document_id),
+            ).fetchone()
+            if job is not None and job["status"] in {"cancel_requested", "canceled"}:
+                raise DraftJobCanceledError("Draft generation was canceled before commit.")
+            raise NotFoundError(
+                "Draft generation job was not in its atomic commit phase."
+            )
     return [_draft_from_row(row) for row in rows]
+
+
+def append_generated_drafts_and_complete_manual_operation(
+    db: Database,
+    *,
+    operation_id: str,
+    project_id: str,
+    document_id: str,
+    suggestions: list[DraftSuggestion],
+    effective_provider: str | None,
+    effective_model: str | None,
+    fallback_reason: str | None,
+) -> list[dict]:
+    """Atomically publish manual drafts and the operation's final attribution."""
+
+    ensure_project_exists(db, project_id)
+    with db.connect() as connection:
+        rows = _append_generated_drafts(
+            connection,
+            project_id=project_id,
+            document_id=document_id,
+            suggestions=suggestions,
+        )
+        now = utc_now()
+        connection.execute(
+            """
+            UPDATE documents
+            SET status = CASE WHEN status = 'processing' THEN 'processing' ELSE 'ready' END,
+                exam_item_count = (
+                    SELECT COUNT(*)
+                    FROM question_drafts
+                    WHERE question_drafts.project_id = documents.project_id
+                      AND question_drafts.document_id = documents.id
+                ),
+                updated_at = ?
+            WHERE project_id = ? AND id = ?
+            """,
+            (now, project_id, document_id),
+        )
+        updated = connection.execute(
+            """
+            UPDATE manual_draft_generation_operations
+            SET status = 'succeeded', phase = 'completed', cancellable = 0,
+                generated_count = ?, error = NULL,
+                effective_provider = ?, effective_model = ?, fallback_reason = ?,
+                updated_at = ?
+            WHERE id = ? AND project_id = ? AND document_id = ?
+              AND status = 'running' AND phase = 'committing' AND cancellable = 0
+            """,
+            (
+                len(rows),
+                effective_provider,
+                effective_model,
+                fallback_reason,
+                now,
+                operation_id,
+                project_id,
+                document_id,
+            ),
+        )
+        if updated.rowcount != 1:
+            operation = connection.execute(
+                """
+                SELECT status
+                FROM manual_draft_generation_operations
+                WHERE id = ? AND project_id = ? AND document_id = ?
+                """,
+                (operation_id, project_id, document_id),
+            ).fetchone()
+            if operation is not None and operation["status"] in {
+                "cancel_requested",
+                "canceled",
+            }:
+                raise DraftJobCanceledError(
+                    "Manual draft generation was canceled before commit."
+                )
+            raise NotFoundError(
+                "Manual draft generation was not in its atomic commit phase."
+            )
+    return [_draft_from_row(row) for row in rows]
+
+
+def _append_generated_drafts(
+    connection,
+    *,
+    project_id: str,
+    document_id: str,
+    suggestions: list[DraftSuggestion],
+) -> list[Row]:
+    now = utc_now()
+    draft_ids: list[str] = []
+    for index, suggestion in enumerate(suggestions, start=1):
+        if _matching_generated_draft_exists(
+            connection,
+            project_id=project_id,
+            document_id=document_id,
+            suggestion=suggestion,
+        ):
+            continue
+        draft_id = str(uuid4())
+        draft_ids.append(draft_id)
+        connection.execute(
+            """
+            INSERT INTO question_drafts(
+                id, project_id, document_id, chunk_id, question, choices_json,
+                answer, answer_key_source, rationale, citation_page, source_excerpt, status,
+                confidence, source_order, source_question_number, item_kind, group_key, group_prompt,
+                rejection_reason, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+            """,
+            (
+                draft_id,
+                project_id,
+                document_id,
+                suggestion.chunk_id,
+                suggestion.question,
+                json.dumps(suggestion.choices),
+                suggestion.answer,
+                suggestion.answer_key_source,
+                suggestion.rationale,
+                suggestion.citation_page,
+                suggestion.source_excerpt,
+                suggestion.status.value,
+                suggestion.confidence,
+                suggestion.source_order or index,
+                suggestion.source_question_number,
+                suggestion.item_kind.value,
+                suggestion.group_key,
+                suggestion.group_prompt,
+                now,
+                now,
+            ),
+        )
+    return [
+        row
+        for draft_id in draft_ids
+        if (row := _draft_query(connection, project_id, draft_id)) is not None
+    ]
 
 
 def list_drafts(db: Database, project_id: str) -> list[dict]:
@@ -190,19 +382,6 @@ def list_drafts(db: Database, project_id: str) -> list[dict]:
             (project_id,),
         ).fetchall()
     return [_draft_from_row(row) for row in rows]
-
-
-def count_document_drafts(db: Database, project_id: str, document_id: str) -> int:
-    with db.connect() as connection:
-        row = connection.execute(
-            """
-            SELECT COUNT(*) AS draft_count
-            FROM question_drafts
-            WHERE project_id = ? AND document_id = ?
-            """,
-            (project_id, document_id),
-        ).fetchone()
-    return int(row["draft_count"]) if row is not None else 0
 
 
 def update_draft(
@@ -348,65 +527,6 @@ def _matching_generated_draft_exists(
         ),
     ).fetchone()
     return row is not None
-
-
-def _append_generated_drafts_in_transaction(
-    connection: Connection,
-    *,
-    project_id: str,
-    document_id: str,
-    suggestions: list[DraftSuggestion],
-) -> list[Row]:
-    now = utc_now()
-    draft_ids: list[str] = []
-    for index, suggestion in enumerate(suggestions, start=1):
-        if _matching_generated_draft_exists(
-            connection,
-            project_id=project_id,
-            document_id=document_id,
-            suggestion=suggestion,
-        ):
-            continue
-        draft_id = str(uuid4())
-        draft_ids.append(draft_id)
-        connection.execute(
-            """
-            INSERT INTO question_drafts(
-                id, project_id, document_id, chunk_id, question, choices_json,
-                answer, answer_key_source, rationale, citation_page, source_excerpt, status,
-                confidence, source_order, source_question_number, item_kind, group_key, group_prompt,
-                rejection_reason, created_at, updated_at
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
-            """,
-            (
-                draft_id,
-                project_id,
-                document_id,
-                suggestion.chunk_id,
-                suggestion.question,
-                json.dumps(suggestion.choices),
-                suggestion.answer,
-                suggestion.answer_key_source,
-                suggestion.rationale,
-                suggestion.citation_page,
-                suggestion.source_excerpt,
-                suggestion.status.value,
-                suggestion.confidence,
-                suggestion.source_order or index,
-                suggestion.source_question_number,
-                suggestion.item_kind.value,
-                suggestion.group_key,
-                suggestion.group_prompt,
-                now,
-                now,
-            ),
-        )
-    return [
-        row
-        for draft_id in draft_ids
-        if (row := _draft_query(connection, project_id, draft_id)) is not None
-    ]
 
 
 def _draft_from_row(row: Row) -> dict:

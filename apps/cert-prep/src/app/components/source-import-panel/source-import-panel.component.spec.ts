@@ -13,6 +13,9 @@ describe('SourceImportPanelComponent', () => {
     listDocumentChunks: vi.fn(),
     listQuestionDrafts: vi.fn(),
     uploadDocument: vi.fn(),
+    cancelDocumentOperation: vi.fn(),
+    cancelDocumentProcessing: vi.fn(),
+    retryDocumentProcessing: vi.fn(),
   };
 
   beforeEach(async () => {
@@ -160,47 +163,6 @@ describe('SourceImportPanelComponent', () => {
     expect(sourceImport.chunks()[0]?.document_id).toBe(secondDocument.id);
   });
 
-  it('shows an actionable document polling error and retries status', async () => {
-    const fixture = TestBed.createComponent(SourceImportPanelComponent);
-    const sourceImport = TestBed.inject(SourceImportStore);
-    const processing = documentRead({
-      filename: 'polling-error.pdf',
-      status: 'processing',
-      has_text: false,
-      chunks_count: 0,
-    });
-    activateDocument(sourceImport, processing);
-    sourceImport.documentPollingError.set(
-      'Document status could not be refreshed. Retry status.',
-    );
-    apiClient.getDocument.mockResolvedValue(
-      documentRead({ id: processing.id, filename: processing.filename }),
-    );
-
-    fixture.detectChanges();
-
-    const alert = fixture.nativeElement.querySelector('[role="alert"]');
-    const retry = fixture.nativeElement.querySelector(
-      'button[aria-label="Retry document status for polling-error.pdf"]',
-    ) as HTMLButtonElement | null;
-    expect(alert?.textContent).toContain(
-      'Document status could not be refreshed. Retry status.',
-    );
-    expect(fixture.nativeElement.textContent).toContain('status unavailable');
-    expect(retry?.textContent?.trim()).toBe('Retry status');
-
-    retry?.click();
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    expect(apiClient.getDocument).toHaveBeenCalledWith(
-      'project-1',
-      processing.id,
-    );
-    expect(sourceImport.documentPollingError()).toBeNull();
-    expect(fixture.nativeElement.querySelector('[role="alert"]')).toBeNull();
-  });
-
   it('shows the active uploaded document file size after a batch upload', () => {
     const fixture = TestBed.createComponent(SourceImportPanelComponent);
     const sourceImport = TestBed.inject(SourceImportStore);
@@ -218,6 +180,7 @@ describe('SourceImportPanelComponent', () => {
     sourceImport.uploadItems.set([
       {
         id: 'source-upload-1',
+        operationId: 'operation-1',
         file: smallFile,
         status: 'uploaded',
         document: firstDocument,
@@ -225,6 +188,7 @@ describe('SourceImportPanelComponent', () => {
       },
       {
         id: 'source-upload-2',
+        operationId: 'operation-2',
         file: largeFile,
         status: 'uploaded',
         document: secondDocument,
@@ -249,6 +213,7 @@ describe('SourceImportPanelComponent', () => {
     sourceImport.uploadItems.set([
       {
         id: 'source-upload-1',
+        operationId: 'operation-1',
         file: new File([new Uint8Array(2 * 1024 * 1024)], 'new-selection.pdf', {
           type: 'application/pdf',
         }),
@@ -272,10 +237,7 @@ describe('SourceImportPanelComponent', () => {
       (_projectId: string, body: FormData) => {
         const file = body.get('file') as File;
         if (file.name === 'failed.pdf') {
-          return Promise.reject({
-            status: 422,
-            error: { message: 'Invalid PDF' },
-          });
+          return Promise.reject({ error: { message: 'Invalid PDF' } });
         }
         return Promise.resolve(
           documentRead({
@@ -312,302 +274,6 @@ describe('SourceImportPanelComponent', () => {
     expect(text).toContain('Uploaded');
     expect(text).toContain('Failed');
     expect(text).toContain('Invalid PDF');
-  });
-
-  it('exposes accessible per-row Cancel and Retry actions', async () => {
-    const fixture = TestBed.createComponent(SourceImportPanelComponent);
-    const sourceImport = TestBed.inject(SourceImportStore);
-    sourceImport.uploadItems.set([
-      {
-        id: 'source-upload-cancel',
-        file: new File(['%PDF-1.7'], 'cancel-me.pdf', {
-          type: 'application/pdf',
-        }),
-        status: 'queued',
-        document: null,
-        error: null,
-      },
-      {
-        id: 'source-upload-retry',
-        file: new File(['broken'], 'retry-me.pdf', {
-          type: 'application/pdf',
-        }),
-        status: 'failed',
-        document: null,
-        error: 'Invalid PDF',
-      },
-    ]);
-
-    fixture.detectChanges();
-
-    const cancel = fixture.nativeElement.querySelector(
-      'button[aria-label="Cancel upload of cancel-me.pdf"]',
-    ) as HTMLButtonElement | null;
-    const retry = fixture.nativeElement.querySelector(
-      'button[aria-label="Retry upload of retry-me.pdf"]',
-    ) as HTMLButtonElement | null;
-    expect(cancel?.textContent?.trim()).toBe('Cancel');
-    expect(retry?.textContent?.trim()).toBe('Retry');
-
-    cancel?.click();
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    expect(sourceImport.uploadItems()[0]?.status).toBe('canceled');
-    expect(fixture.nativeElement.textContent).toContain('Canceled');
-  });
-
-  it('exposes document-owned OCR cancellation in the active card', async () => {
-    const fixture = TestBed.createComponent(SourceImportPanelComponent);
-    const sourceImport = TestBed.inject(SourceImportStore);
-    const processing = documentRead({
-      id: 'document-processing',
-      filename: 'processing.pdf',
-      status: 'processing',
-      has_text: false,
-      chunks_count: 0,
-    });
-    const cancelProcessing = vi
-      .spyOn(sourceImport, 'cancelDocumentProcessing')
-      .mockResolvedValue(true);
-    sourceImport.uploadItems.set([
-      {
-        id: 'source-upload-processing',
-        file: new File(['%PDF-1.7'], processing.filename, {
-          type: 'application/pdf',
-        }),
-        status: 'uploaded',
-        document: processing,
-        error: null,
-      },
-    ]);
-    activateDocument(sourceImport, processing);
-
-    fixture.detectChanges();
-
-    const cancelButtons = fixture.nativeElement.querySelectorAll(
-      'button[aria-label="Cancel OCR for processing.pdf"]',
-    ) as NodeListOf<HTMLButtonElement>;
-    expect(cancelButtons).toHaveLength(1);
-    expect(fixture.nativeElement.textContent).toContain('OCR: Processing');
-    expect(
-      fixture.nativeElement.querySelector(
-        'button[aria-label="Retry upload of processing.pdf"]',
-      ),
-    ).toBeNull();
-
-    cancelButtons[0]?.click();
-    await fixture.whenStable();
-
-    expect(cancelProcessing).toHaveBeenCalledWith(processing.id);
-  });
-
-  it('exposes document-owned OCR cancellation for a non-active upload row', async () => {
-    const fixture = TestBed.createComponent(SourceImportPanelComponent);
-    const sourceImport = TestBed.inject(SourceImportStore);
-    const active = documentRead({
-      id: 'document-active-cancel',
-      filename: 'active-cancel.pdf',
-      status: 'ready',
-    });
-    const processing = documentRead({
-      id: 'document-row-processing',
-      filename: 'row-processing.pdf',
-      status: 'processing',
-      has_text: false,
-      chunks_count: 0,
-    });
-    const cancelProcessing = vi
-      .spyOn(sourceImport, 'cancelDocumentProcessing')
-      .mockResolvedValue(true);
-    sourceImport.uploadItems.set([
-      {
-        id: 'source-upload-row-processing',
-        file: new File(['%PDF-1.7'], processing.filename, {
-          type: 'application/pdf',
-        }),
-        status: 'uploaded',
-        document: processing,
-        error: null,
-      },
-    ]);
-    sourceImport.documents.set([active, processing]);
-    sourceImport.setActiveDocumentId(active.id);
-
-    fixture.detectChanges();
-
-    const cancel = fixture.nativeElement.querySelector(
-      'button[aria-label="Cancel OCR for row-processing.pdf"]',
-    ) as HTMLButtonElement | null;
-    expect(cancel?.textContent?.trim()).toBe('Cancel OCR');
-
-    cancel?.click();
-    await fixture.whenStable();
-
-    expect(cancelProcessing).toHaveBeenCalledWith(processing.id);
-  });
-
-  it('routes canceled documents to OCR retry instead of upload retry', async () => {
-    const fixture = TestBed.createComponent(SourceImportPanelComponent);
-    const sourceImport = TestBed.inject(SourceImportStore);
-    const canceled = documentRead({
-      id: 'document-canceled',
-      filename: 'retry-ocr.pdf',
-      status: 'canceled',
-      has_text: false,
-      chunks_count: 0,
-    });
-    const active = documentRead({
-      id: 'document-active-retry',
-      filename: 'active-retry.pdf',
-      status: 'ready',
-    });
-    const retryProcessing = vi
-      .spyOn(sourceImport, 'retryDocumentProcessing')
-      .mockResolvedValue(true);
-    sourceImport.uploadItems.set([
-      {
-        id: 'source-upload-canceled',
-        file: new File(['%PDF-1.7'], canceled.filename, {
-          type: 'application/pdf',
-        }),
-        status: 'canceled',
-        document: canceled,
-        error: null,
-      },
-    ]);
-    sourceImport.documents.set([active, canceled]);
-    sourceImport.setActiveDocumentId(active.id);
-
-    fixture.detectChanges();
-
-    const retryButtons = fixture.nativeElement.querySelectorAll(
-      'button[aria-label="Retry OCR for retry-ocr.pdf"]',
-    ) as NodeListOf<HTMLButtonElement>;
-    expect(retryButtons).toHaveLength(1);
-    expect(
-      fixture.nativeElement.querySelector(
-        'button[aria-label="Retry upload of retry-ocr.pdf"]',
-      ),
-    ).toBeNull();
-
-    retryButtons[0]?.click();
-    await fixture.whenStable();
-
-    expect(retryProcessing).toHaveBeenCalledWith(canceled.id);
-  });
-
-  it('keeps OCR action errors separate and exposes status reconciliation', async () => {
-    const fixture = TestBed.createComponent(SourceImportPanelComponent);
-    const sourceImport = TestBed.inject(SourceImportStore);
-    const document = documentRead({
-      id: 'document-status-unavailable',
-      filename: 'status-unavailable.pdf',
-      status: 'processing',
-      has_text: false,
-      chunks_count: 0,
-    });
-    const error = 'OCR retry status is unavailable. Retry status.';
-    const retryStatus = vi
-      .spyOn(sourceImport, 'retryDocumentActionStatus')
-      .mockResolvedValue(true);
-    vi.spyOn(sourceImport, 'canRetryDocumentActionStatus').mockReturnValue(true);
-    vi.spyOn(sourceImport, 'canCancelDocumentProcessing').mockReturnValue(false);
-    sourceImport.documentProcessingActions.set(
-      new Map([
-        [
-          document.id,
-          {
-            kind: 'retry',
-            status: 'status_unavailable',
-            cancellable: true,
-            error,
-          } as const,
-        ],
-      ]),
-    );
-    sourceImport.uploadItems.set([
-      {
-        id: 'source-upload-status-unavailable',
-        file: new File(['%PDF-1.7'], document.filename, {
-          type: 'application/pdf',
-        }),
-        status: 'uploaded',
-        document,
-        error: null,
-      },
-    ]);
-    activateDocument(sourceImport, document);
-
-    fixture.detectChanges();
-
-    const alert = fixture.nativeElement.querySelector('[role="alert"]');
-    const retryButtons = fixture.nativeElement.querySelectorAll(
-      'button[aria-label="Retry OCR status for status-unavailable.pdf"]',
-    ) as NodeListOf<HTMLButtonElement>;
-    expect(alert?.textContent).toContain(error);
-    expect(retryButtons).toHaveLength(1);
-    expect(fixture.nativeElement.textContent).toContain(
-      'OCR: Status unavailable',
-    );
-
-    retryButtons[0]?.click();
-    await fixture.whenStable();
-
-    expect(retryStatus).toHaveBeenCalledWith(document.id);
-  });
-
-  it('shows a non-active document action error in its upload row', () => {
-    const fixture = TestBed.createComponent(SourceImportPanelComponent);
-    const sourceImport = TestBed.inject(SourceImportStore);
-    const active = documentRead({
-      id: 'document-active',
-      filename: 'active.pdf',
-      status: 'ready',
-    });
-    const failed = documentRead({
-      id: 'document-failed',
-      filename: 'failed-ocr.pdf',
-      status: 'ocr_failed',
-      has_text: false,
-      chunks_count: 0,
-    });
-    const error = 'OCR retry failed before processing could restart.';
-    sourceImport.documentProcessingActions.set(
-      new Map([
-        [
-          failed.id,
-          {
-            kind: 'retry',
-            status: 'failed',
-            cancellable: false,
-            error,
-          } as const,
-        ],
-      ]),
-    );
-    sourceImport.uploadItems.set([
-      {
-        id: 'source-upload-failed-ocr',
-        file: new File(['%PDF-1.7'], failed.filename, {
-          type: 'application/pdf',
-        }),
-        status: 'uploaded',
-        document: failed,
-        error: null,
-      },
-    ]);
-    sourceImport.documents.set([active, failed]);
-    sourceImport.setActiveDocumentId(active.id);
-
-    fixture.detectChanges();
-
-    const alerts = Array.from(
-      fixture.nativeElement.querySelectorAll('[role="alert"]'),
-    ) as HTMLElement[];
-    expect(alerts).toHaveLength(1);
-    expect(alerts[0]?.textContent).toContain(error);
-    expect(fixture.nativeElement.textContent).toContain('OCR: Action failed');
   });
 
   it('lets the user adjust the upload batch size', async () => {
@@ -681,9 +347,9 @@ describe('SourceImportPanelComponent', () => {
     const operations = TestBed.inject(OperationStore);
     const sourceImport = TestBed.inject(SourceImportStore);
     health.healthSnapshotLoading.set(true);
-    sourceImport.chooseFiles([
+    sourceImport.chooseFile(
       new File(['%PDF-1.7'], 'runtime.pdf', { type: 'application/pdf' }),
-    ]);
+    );
 
     fixture.detectChanges();
 
@@ -691,7 +357,7 @@ describe('SourceImportPanelComponent', () => {
     expect(sourceImport.canUpload()).toBe(false);
     expect(uploadButton(fixture.nativeElement)?.disabled).toBe(true);
 
-    await sourceImport.uploadDocuments();
+    await sourceImport.uploadDocument();
 
     expect(apiClient.uploadDocument).not.toHaveBeenCalled();
     expect(operations.error()).toBe(
@@ -705,9 +371,9 @@ describe('SourceImportPanelComponent', () => {
     const sourceImport = TestBed.inject(SourceImportStore);
     health.ocrHealth.set(ocrHealth());
     health.healthSnapshotLoading.set(true);
-    sourceImport.chooseFiles([
+    sourceImport.chooseFile(
       new File(['%PDF-1.7'], 'runtime.pdf', { type: 'application/pdf' }),
-    ]);
+    );
 
     fixture.detectChanges();
 

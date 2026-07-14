@@ -11,6 +11,7 @@ from cert_prep_backend.domains.runtime_installations import RuntimeInstallationM
 from cert_prep_backend.domains.runtime_schemas import (
     MachineInventoryRead,
     RuntimeInstallationRead,
+    RuntimeInstallationStartRequest,
     RuntimeRequirementsRead,
 )
 from cert_prep_backend.api.errors import (
@@ -19,6 +20,7 @@ from cert_prep_backend.api.errors import (
     api_error,
     not_found_error,
 )
+from cert_prep_backend.core.exceptions import OperationNotCancellableError
 from cert_prep_contracts.llm import FASTFLOWLM_RUNTIME_TRUST_POLICY
 from cert_prep_contracts.runtime import RuntimeRequirementKind
 
@@ -48,10 +50,16 @@ def machine_inventory(
 )
 def start_runtime_installation(
     kind: RuntimeRequirementKind,
+    payload: RuntimeInstallationStartRequest | None = None,
     manager: RuntimeInstallationManager = Depends(get_runtime_installation_manager),
 ):
     try:
-        return manager.start_installation(kind)
+        return manager.start_installation(
+            kind,
+            fastflowlm_terms_accepted_version=(
+                payload.fastflowlm_terms_accepted_version if payload else None
+            ),
+        )
     except TermsAcceptanceRequiredError as exc:
         raise api_error(
             status_code=status.HTTP_409_CONFLICT,
@@ -79,3 +87,20 @@ def get_runtime_installation(
         return manager.get_installation(job_id)
     except KeyError as exc:
         raise not_found_error("Runtime installation job was not found.") from exc
+
+
+@router.delete("/installations/{job_id}", response_model=RuntimeInstallationRead)
+def cancel_runtime_installation(
+    job_id: str,
+    manager: RuntimeInstallationManager = Depends(get_runtime_installation_manager),
+):
+    try:
+        return manager.cancel_installation(job_id)
+    except KeyError as exc:
+        raise not_found_error("Runtime installation job was not found.") from exc
+    except OperationNotCancellableError as exc:
+        raise api_error(
+            status_code=status.HTTP_409_CONFLICT,
+            code="operation_not_cancellable",
+            message=str(exc),
+        ) from exc

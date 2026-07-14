@@ -72,6 +72,7 @@ export class WorkspaceFacade {
           this.sourceImport.loadLatestDocument(projectId),
           this.drafts.load(projectId),
           this.review.load(projectId),
+          this.practice.loadActiveSession(projectId),
         ]);
       },
     );

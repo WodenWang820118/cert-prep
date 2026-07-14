@@ -1,9 +1,7 @@
 from cert_prep_backend.domains.mock_exams.models import DraftSuggestion, SourceChunk
-from cert_prep_backend.domains.mock_exams.ports import (
-    GenerationAttribution,
-    ProviderHealth,
-)
+from cert_prep_backend.domains.mock_exams.ports import ProviderHealth
 from cert_prep_backend.api.errors import ProviderUnavailableError
+from cert_prep_contracts.llm import GenerationAttribution
 
 
 class MockExamProvider:
@@ -129,38 +127,6 @@ class FastFirstCompletionExamProvider(MockExamProvider):
         raise AssertionError("streaming hybrid path should use fast-first reasoning")
 
 
-class AttributedFallbackExamProvider(MockExamProvider):
-    provider = "fastflowlm"
-    model = "qwen3.5:4b"
-    fallback_model = "qwen3.5:2b"
-    fallback_reason = (
-        "Configured model qwen3.5:4b was unavailable during generation; "
-        "using fallback qwen3.5:2b."
-    )
-
-    def __init__(self) -> None:
-        self._attribution: GenerationAttribution | None = None
-
-    def reset_generation_attribution(self) -> None:
-        self._attribution = None
-
-    def get_generation_attribution(self) -> GenerationAttribution | None:
-        return self._attribution
-
-    def generate_fast_first_draft(
-        self,
-        source_chunk: SourceChunk,
-        candidate: DraftSuggestion,
-    ) -> DraftSuggestion | None:
-        suggestion = super().generate_fast_first_draft(source_chunk, candidate)
-        self._attribution = GenerationAttribution(
-            effective_provider=self.provider,
-            effective_model=self.fallback_model,
-            fallback_reason=self.fallback_reason,
-        )
-        return suggestion
-
-
 class InvalidJsonReasoningExamProvider(MockExamProvider):
     provider = "ollama"
     model = "qwen3.5:4b"
@@ -210,6 +176,19 @@ class ReleaseRecordingFastFlowLMProvider(MockExamProvider):
 
     def __init__(self) -> None:
         self.release_calls = 0
+
+    def reset_generation_attribution(self) -> None:
+        return None
+
+    def generation_attribution(self) -> GenerationAttribution:
+        return GenerationAttribution(
+            effective_provider="fastflowlm",
+            effective_model="qwen3.5:2b",
+            fallback_reason=(
+                "Available system RAM is below the primary requirement; "
+                "using fallback qwen3.5:2b."
+            ),
+        )
 
     def health(self) -> ProviderHealth:
         return ProviderHealth(

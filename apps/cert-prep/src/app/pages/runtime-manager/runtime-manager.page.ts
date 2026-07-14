@@ -38,20 +38,14 @@ export class RuntimeManagerPage {
       : `Download ${this.health.configuredModelName()}`,
   );
 
-  protected readonly llmRuntimeInstall = computed(() => {
-    const install = this.health.runtimeInstall();
-    return install !== null &&
-      (install.kind === 'fastflowlm' || install.kind === 'ollama')
-      ? install
-      : null;
+  protected readonly hasLlmRuntimeInstallation = computed(() => {
+    const kind = this.health.runtimeInstall()?.kind;
+    return kind === 'ollama' || kind === 'fastflowlm';
   });
 
-  protected readonly ocrRuntimeInstall = computed(() => {
-    const install = this.health.runtimeInstall();
-    return install !== null &&
-      (install.kind === 'paddle_ocr' || install.kind === 'windowsml_ocr')
-      ? install
-      : null;
+  protected readonly hasOcrRuntimeInstallation = computed(() => {
+    const kind = this.health.runtimeInstall()?.kind;
+    return kind === 'paddle_ocr' || kind === 'windowsml_ocr';
   });
 
   protected async refreshAll(): Promise<void> {

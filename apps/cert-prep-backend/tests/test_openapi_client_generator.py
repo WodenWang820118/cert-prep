@@ -21,7 +21,7 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 from openapi_client.typescript import render_typescript  # noqa: E402
 
 
-def _schema() -> dict:
+def _schema(*, request_required: bool = True) -> dict:
     return {
         "components": {
             "schemas": {
@@ -31,6 +31,22 @@ def _schema() -> dict:
                     "required": ["value"],
                 },
                 "DocumentOperationStatus": {
+                    "type": "string",
+                    "enum": ["queued", "running", "canceled"],
+                },
+                "DraftGenerationJobStatus": {
+                    "type": "string",
+                    "enum": ["pending", "running", "canceled"],
+                },
+                "FastFlowLMTermsDecision": {
+                    "type": "string",
+                    "enum": ["accepted", "declined"],
+                },
+                "ManualDraftOperationStatus": {
+                    "type": "string",
+                    "enum": ["queued", "running", "canceled"],
+                },
+                "RuntimeInstallationStatus": {
                     "type": "string",
                     "enum": ["queued", "running", "canceled"],
                 },
@@ -49,7 +65,7 @@ def _schema() -> dict:
                 "post": {
                     "operationId": "run_example",
                     "requestBody": {
-                        "required": True,
+                        "required": request_required,
                         "content": {
                             "application/json": {
                                 "schema": {"$ref": "#/components/schemas/Payload"}
@@ -67,7 +83,7 @@ def test_generated_client_exposes_request_options_as_the_last_argument() -> None
     output = render_typescript(_schema())
 
     assert "export interface CertPrepRequestOptions {" in output
-    assert "headers?: Record<string, string>;" in output
+    assert "headers?: Readonly<Record<string, string>>;" in output
     assert "signal?: AbortSignal;" in output
     assert (
         "getExample(exampleId: string, options?: CertPrepRequestOptions): Promise<void>"
@@ -83,7 +99,7 @@ def test_generated_client_exposes_request_options_as_the_last_argument() -> None
 def test_generated_client_conditionally_forwards_headers_and_abort_signal() -> None:
     output = render_typescript(_schema())
 
-    assert "headers?: Record<string, string>;" in output
+    assert "headers?: Readonly<Record<string, string>>;" in output
     assert "signal?: AbortSignal;" in output
     assert "{ headers: options.headers }" in output
     assert "{ signal: options.signal }" in output
@@ -95,7 +111,23 @@ def test_generated_client_preserves_openapi_enum_literals() -> None:
     output = render_typescript(_schema())
 
     assert 'DocumentOperationStatus: "queued" | "running" | "canceled";' in output
+    assert 'DraftGenerationJobStatus: "pending" | "running" | "canceled";' in output
+    assert 'FastFlowLMTermsDecision: "accepted" | "declined";' in output
+    assert 'ManualDraftOperationStatus: "queued" | "running" | "canceled";' in output
+    assert 'RuntimeInstallationStatus: "queued" | "running" | "canceled";' in output
     assert "LegacyStatus: string;" in output
+
+
+def test_generated_client_preserves_optional_request_body() -> None:
+    output = render_typescript(_schema(request_required=False))
+
+    assert "runExample(exampleId: string, body?: Components['schemas']['Payload']" in output
+
+
+def test_generated_client_preserves_required_request_body() -> None:
+    output = render_typescript(_schema(request_required=True))
+
+    assert "runExample(exampleId: string, body: Components['schemas']['Payload']" in output
 
 
 def test_tracked_client_is_byte_exact_for_live_openapi(tmp_path: Path) -> None:

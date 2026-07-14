@@ -1,6 +1,5 @@
 import { computed, inject, Injectable, signal } from '@angular/core';
-import { CERT_PREP_API } from '../../cert-prep-api';
-import type { ChunkRead, DocumentRead } from '../../cert-prep-api';
+import { ChunkRead, DocumentRead, CERT_PREP_API } from '../../cert-prep-api';
 import type {
   DocumentParsingMetric,
   LanguageHint,
@@ -8,30 +7,26 @@ import type {
 } from './contracts/source-import.contracts';
 import { DocumentParsingMetricsService } from './document-parsing-metrics.service';
 import { DocumentLibraryStore } from './document-library.store';
-import {
-  DocumentProcessingLifecycle,
-  type DocumentProcessingActionView,
-} from './document-processing-lifecycle';
 import { HealthStore } from '../health/health.store';
 import { OperationStore } from '../operation.store';
 import { ProjectStore } from '../project.store';
-import {
-  SourceUploadLifecycle,
-  type UploadTransportRun,
-} from './source-upload-lifecycle';
 
 const DOCUMENT_POLL_INTERVAL_MS = 1500;
 const FIRST_CHUNK_POLL_INTERVAL_MS = 500;
-const DOCUMENT_POLL_RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
+const POLL_RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
 const DEFAULT_UPLOAD_BATCH_SIZE = 2;
 const MIN_UPLOAD_BATCH_SIZE = 1;
 const MAX_UPLOAD_BATCH_SIZE = 4;
-const ACTIVE_DOCUMENT_STATUSES = new Set(['processing', 'cancel_requested']);
-const RETRYABLE_DOCUMENT_STATUSES = new Set([
-  'canceled',
-  'ocr_failed',
+const FINAL_DOCUMENT_STATUSES = new Set([
+  'ready',
+  'exam_failed',
   'no_text_detected',
+  'ocr_failed',
+  'canceled',
 ]);
+type UploadBatchResult =
+  | { item: SourceUploadItem; document: DocumentRead }
+  | { item: SourceUploadItem; error: unknown };
 
 @Injectable({ providedIn: 'root' })
 export class SourceImportStore {
@@ -43,61 +38,8 @@ export class SourceImportStore {
   private readonly projects = inject(ProjectStore);
   private documentPollTimer: ReturnType<typeof setTimeout> | null = null;
   private documentPollFailureCount = 0;
-  private documentListRequestEpoch = 0;
-  private documentRefreshRequestEpoch = 0;
-  private contextEpoch = 0;
   private uploadItemCounter = 0;
-  private readonly uploadLifecycle = new SourceUploadLifecycle({
-    item: (itemId) =>
-      this.uploadItems().find((candidate) => candidate.id === itemId),
-    current: (projectId, contextEpoch) =>
-      this.isCurrentContext(projectId, contextEpoch),
-    patch: (itemId, patch) => this.updateUploadItem(itemId, patch),
-    accept: (document, pollDocument) =>
-      this.acceptLifecycleDocument(document, pollDocument),
-    upload: (projectId, item, operationId, signal) => {
-      const formData = new FormData();
-      formData.append('file', item.file, item.file.name);
-      formData.append('language_hint', this.languageHint());
-      return this.api.uploadDocument(projectId, formData, {
-        headers: { 'X-Cert-Prep-Operation-Id': operationId },
-        signal,
-      });
-    },
-    getDocument: (projectId, documentId) =>
-      this.api.getDocument(projectId, documentId),
-    getOperation: (projectId, operationId) =>
-      this.api.getDocumentOperation(projectId, operationId),
-    cancelOperation: (projectId, operationId) =>
-      this.api.cancelDocumentOperation(projectId, operationId),
-    errorMessage: (error) => this.getUploadErrorMessage(error),
-    errorCode: (error) => this.getUploadErrorCode(error),
-  });
-  private readonly documentProcessingLifecycle =
-    new DocumentProcessingLifecycle({
-      current: (projectId, contextEpoch) =>
-        this.isCurrentContext(projectId, contextEpoch),
-      setView: (documentId, view) =>
-        this.setDocumentProcessingView(documentId, view),
-      acceptDocument: (document) =>
-        this.acceptDocumentProcessingDocument(document),
-      retryDocument: (projectId, documentId, operationId, signal) =>
-        this.api.retryDocumentProcessing(projectId, documentId, {
-          headers: { 'X-Cert-Prep-Operation-Id': operationId },
-          signal,
-        }),
-      cancelDocument: (projectId, documentId) =>
-        this.api.cancelDocumentProcessing(projectId, documentId),
-      getDocument: (projectId, documentId) =>
-        this.api.getDocument(projectId, documentId),
-      getOperation: (projectId, operationId) =>
-        this.api.getDocumentOperation(projectId, operationId),
-      cancelOperation: (projectId, operationId) =>
-        this.api.cancelDocumentOperation(projectId, operationId),
-      errorMessage: (error) => this.getUploadErrorMessage(error),
-      errorCode: (error) => this.getUploadErrorCode(error),
-      runtimeMissing: () => this.handleMissingOcrRuntime(),
-    });
+  private readonly uploadAbortControllers = new Map<string, AbortController>();
 
   readonly languageHints: readonly LanguageHint[] = [
     'auto',
@@ -111,27 +53,26 @@ export class SourceImportStore {
   readonly languageHint = signal<LanguageHint>('auto');
   readonly uploadBatchSize = signal(DEFAULT_UPLOAD_BATCH_SIZE);
   readonly uploadItems = signal<SourceUploadItem[]>([]);
-  readonly documentPollingError = signal<string | null>(null);
-  readonly documentProcessingActions = signal<
-    ReadonlyMap<string, DocumentProcessingActionView>
-  >(new Map());
+  readonly pollingError = signal<string | null>(null);
   readonly selectedFiles = computed(() =>
     this.uploadItems().map((item) => item.file),
   );
   readonly selectedFile = computed(() => this.selectedFiles()[0] ?? null);
   readonly isUploading = computed(() =>
-    this.uploadItems().some((item) =>
-      ['uploading', 'cancel_requested'].includes(item.status),
-    ),
+    this.uploadItems().some((item) => item.status === 'uploading'),
   );
   readonly pendingUploadCount = computed(
-    () => this.uploadItems().filter((item) => item.status === 'queued').length,
-  );
-  readonly failedUploadCount = computed(
     () =>
       this.uploadItems().filter((item) =>
-        ['failed', 'status_unavailable'].includes(item.status),
+        ['queued', 'failed'].includes(item.status),
       ).length,
+  );
+  readonly uploadedFileCount = computed(
+    () =>
+      this.uploadItems().filter((item) => item.status === 'uploaded').length,
+  );
+  readonly failedUploadCount = computed(
+    () => this.uploadItems().filter((item) => item.status === 'failed').length,
   );
   readonly selectedFileLabel = computed(() => {
     const files = this.selectedFiles();
@@ -152,10 +93,10 @@ export class SourceImportStore {
   readonly activeDocumentSelectValue = this.library.activeDocumentSelectValue;
   readonly previewChunks = this.library.previewChunks;
   readonly hiddenChunkCount = this.library.hiddenChunkCount;
-  readonly isParsing = computed(
-    () =>
-      this.activeDocument()?.status === 'processing' &&
-      this.documentPollingError() === null,
+  readonly isParsing = computed(() =>
+    ['processing', 'cancel_requested'].includes(
+      this.activeDocument()?.status ?? '',
+    ),
   );
   readonly progressPercent = computed(() =>
     this.metrics.progressPercent(this.activeDocument()),
@@ -168,13 +109,16 @@ export class SourceImportStore {
     if (document === null) {
       return 'No source PDF uploaded.';
     }
-    if (this.documentPollingError() !== null) {
-      return 'Parsing status is unavailable.';
-    }
     if (document.status === 'processing') {
       return document.chunks_count > 0
         ? 'Parsing continues; completed chunks are already available.'
         : 'Parsing started; waiting for the first completed page.';
+    }
+    if (document.status === 'cancel_requested') {
+      return 'Cancel requested; waiting for the active parser checkpoint.';
+    }
+    if (document.status === 'canceled') {
+      return 'Parsing canceled. The original PDF is retained and can be retried.';
     }
     if (document.status === 'ready') {
       return 'Parsing complete.';
@@ -207,11 +151,15 @@ export class SourceImportStore {
     );
   });
 
+  chooseFile(file: File | null): void {
+    this.chooseFiles(file === null ? [] : [file]);
+  }
+
   chooseFiles(files: readonly File[]): void {
-    this.invalidateUploadContext();
     this.uploadItems.set(
       files.map((file) => ({
         id: `source-upload-${++this.uploadItemCounter}`,
+        operationId: this.newOperationId(),
         file,
         status: 'queued',
         document: null,
@@ -219,12 +167,19 @@ export class SourceImportStore {
       })),
     );
     this.library.clearActiveDocument();
+    this.stopDocumentPolling();
+    this.resetDocumentPollingFailure();
   }
 
   reset(): void {
-    this.invalidateUploadContext();
+    for (const controller of this.uploadAbortControllers.values()) {
+      controller.abort();
+    }
+    this.uploadAbortControllers.clear();
     this.uploadItems.set([]);
     this.library.reset();
+    this.stopDocumentPolling();
+    this.resetDocumentPollingFailure();
   }
 
   setLanguageHint(value: string): void {
@@ -252,16 +207,21 @@ export class SourceImportStore {
     return this.metrics.parsingMetrics(document);
   }
 
+  async uploadDocument(): Promise<DocumentRead | null> {
+    const documents = await this.uploadDocuments();
+    return documents.length > 0 ? documents[documents.length - 1] : null;
+  }
+
   async uploadDocuments(): Promise<DocumentRead[]> {
     const project = this.projects.selectedProject();
-    const itemIds = this.uploadItems()
-      .filter((item) => item.status === 'queued')
-      .map((item) => item.id);
-    if (project === null || itemIds.length === 0) {
+    const uploadItems = this.uploadItems().filter((item) =>
+      ['queued', 'failed'].includes(item.status),
+    );
+    if (project === null || uploadItems.length === 0) {
       this.operations.fail('Choose a project and one or more PDFs before uploading.');
       return [];
     }
-    if (this.uploadLifecycle.hasActiveRun() || this.operations.isBusyFor('upload')) {
+    if (this.isUploading() || this.operations.busy() === 'upload') {
       return [];
     }
     if (this.health.isOcrHealthLoading()) {
@@ -270,156 +230,130 @@ export class SourceImportStore {
       );
       return [];
     }
-    return this.runUploadTransports(project.id, itemIds);
-  }
 
-  canCancelUpload(item: SourceUploadItem): boolean {
-    return ['queued', 'uploading', 'cancel_requested'].includes(item.status);
-  }
+    const uploadedDocuments: DocumentRead[] = [];
+    let runtimePromptNeeded = false;
+    const uploadBatchSize = this.uploadBatchSize();
 
-  canRetryUpload(item: SourceUploadItem): boolean {
-    if (item.status === 'status_unavailable') {
-      return true;
-    }
-    return (
-      item.document === null &&
-      ['failed', 'canceled'].includes(item.status)
-    );
-  }
+    this.operations.busy.set('upload');
+    this.operations.error.set(null);
+    this.operations.errorCode.set(null);
+    this.markUploadItems(uploadItems, {
+      status: 'queued',
+      error: null,
+    });
 
-  documentProcessingState(
-    documentId: string,
-  ): DocumentProcessingActionView | null {
-    return this.documentProcessingActions().get(documentId) ?? null;
-  }
+    try {
+      for (let index = 0; index < uploadItems.length; index += uploadBatchSize) {
+        const batch = uploadItems
+          .slice(index, index + uploadBatchSize)
+          .filter((item) =>
+            ['queued', 'failed'].includes(
+              this.uploadItems().find((current) => current.id === item.id)
+                ?.status ?? 'canceled',
+            ),
+          );
+        if (batch.length === 0) {
+          continue;
+        }
+        this.markUploadItems(batch, {
+          status: 'uploading',
+          error: null,
+        });
 
-  documentProcessingError(documentId: string): string | null {
-    return this.documentProcessingState(documentId)?.error ?? null;
-  }
+        const results: UploadBatchResult[] = await Promise.all(
+          batch.map(async (item) => {
+            try {
+              const document = await this.uploadSingleDocument(project.id, item);
+              return { item, document };
+            } catch (error) {
+              return { item, error };
+            }
+          }),
+        );
 
-  canCancelDocumentProcessing(document: DocumentRead): boolean {
-    const action = this.documentProcessingState(document.id);
-    if (this.documentProcessingLifecycle.hasActiveAttempt(document.id)) {
-      return action?.kind === 'retry' && action.cancellable;
-    }
-    return ACTIVE_DOCUMENT_STATUSES.has(document.status);
-  }
-
-  canRetryDocumentProcessing(document: DocumentRead): boolean {
-    return (
-      RETRYABLE_DOCUMENT_STATUSES.has(document.status) &&
-      !this.documentProcessingLifecycle.hasActiveAttempt(document.id) &&
-      !this.health.isOcrHealthLoading()
-    );
-  }
-
-  canRetryDocumentActionStatus(documentId: string): boolean {
-    return (
-      this.documentProcessingLifecycle.hasActiveAttempt(documentId) &&
-      this.documentProcessingState(documentId)?.status ===
-        'status_unavailable'
-    );
-  }
-
-  async cancelUpload(itemId: string): Promise<void> {
-    const item = this.uploadItems().find((candidate) => candidate.id === itemId);
-    if (item === undefined || !this.canCancelUpload(item)) {
-      return;
-    }
-    this.uploadLifecycle.cancel(itemId);
-  }
-
-  async retryUpload(itemId: string): Promise<void> {
-    const projectId = this.projects.selectedProject()?.id;
-    const item = this.uploadItems().find((candidate) => candidate.id === itemId);
-    if (projectId !== undefined && item?.status === 'status_unavailable') {
-      const resumed = this.uploadLifecycle.resume(itemId);
-      if (resumed?.kind === 'new-run') {
-        await this.finishUploadTransports(projectId, [itemId], resumed.run);
+        for (const result of results) {
+          if ('document' in result) {
+            uploadedDocuments.push(result.document);
+            this.updateUploadItem(result.item.id, {
+              status: 'uploaded',
+              document: result.document,
+              error: null,
+            });
+            this.library.upsertDocument(result.document);
+          } else {
+            const currentStatus = this.uploadItems().find(
+              (item) => item.id === result.item.id,
+            )?.status;
+            if (
+              currentStatus === 'cancel_requested' ||
+              currentStatus === 'canceled' ||
+              this.isAbortError(result.error)
+            ) {
+              this.updateUploadItem(result.item.id, {
+                status: 'canceled',
+                error: null,
+              });
+              continue;
+            }
+            const errorCode = this.getUploadErrorCode(result.error);
+            runtimePromptNeeded ||=
+              errorCode === 'paddle_runtime_missing' ||
+              errorCode === 'windowsml_runtime_missing';
+            this.updateUploadItem(result.item.id, {
+              status: 'failed',
+              error: this.getUploadErrorMessage(result.error),
+            });
+          }
+        }
       }
-      return;
+    } finally {
+      if (this.operations.busy() === 'upload') {
+        this.operations.busy.set(null);
+      }
     }
-    if (
-      projectId === undefined ||
-      item === undefined ||
-      item.document !== null ||
-      !this.canRetryUpload(item) ||
-      this.health.isOcrHealthLoading() ||
-      !this.updateUploadItem(itemId, { status: 'queued', error: null })
-    ) {
-      return;
+
+    if (runtimePromptNeeded) {
+      await this.refreshRuntimeHealth();
+      this.health.openOcrRuntimeInstallConsent();
     }
-    if (this.uploadLifecycle.hasActiveRun()) {
-      this.uploadLifecycle.begin(
-        projectId,
-        this.contextEpoch,
-        [itemId],
-        this.uploadBatchSize(),
+
+    const activeDocument =
+      uploadedDocuments.length > 0
+        ? uploadedDocuments[uploadedDocuments.length - 1]
+        : null;
+    if (activeDocument !== null) {
+      this.setActiveDocument(activeDocument);
+      await this.refreshUploadedDocument(project.id, activeDocument.id);
+    }
+
+    const failedCount = this.failedUploadCount();
+    if (uploadedDocuments.length > 0) {
+      this.operations.status.set(
+        uploadedDocuments.length === 1
+          ? 'PDF uploaded'
+          : `${uploadedDocuments.length} PDFs uploaded`,
       );
-      return;
     }
-    await this.runUploadTransports(projectId, [itemId]);
-  }
+    if (failedCount > 0) {
+      this.operations.error.set(
+        failedCount === 1
+          ? '1 PDF failed to upload.'
+          : `${failedCount} PDFs failed to upload.`,
+      );
+    }
 
-  async cancelDocumentProcessing(documentId: string): Promise<boolean> {
-    const projectId = this.projects.selectedProject()?.id;
-    const document = this.findProjectDocument(documentId);
-    if (
-      projectId === undefined ||
-      document === null ||
-      !this.canCancelDocumentProcessing(document)
-    ) {
-      return false;
-    }
-    return this.documentProcessingLifecycle.cancel(
-      projectId,
-      this.contextEpoch,
-      documentId,
-    );
-  }
-
-  async retryDocumentProcessing(documentId: string): Promise<boolean> {
-    const projectId = this.projects.selectedProject()?.id;
-    const document = this.findProjectDocument(documentId);
-    if (
-      projectId === undefined ||
-      document === null ||
-      !this.canRetryDocumentProcessing(document)
-    ) {
-      return false;
-    }
-    if (this.activeDocumentId() === documentId) {
-      this.library.clearChunks();
-    }
-    return this.documentProcessingLifecycle.retry(
-      projectId,
-      this.contextEpoch,
-      documentId,
-    );
-  }
-
-  async retryDocumentActionStatus(documentId: string): Promise<boolean> {
-    if (!this.canRetryDocumentActionStatus(documentId)) {
-      return false;
-    }
-    return this.documentProcessingLifecycle.resume(documentId);
+    return uploadedDocuments;
   }
 
   async loadLatestDocument(projectId: string): Promise<void> {
-    const requestEpoch = ++this.documentListRequestEpoch;
     const documents = await this.api.listDocuments(projectId);
-    if (
-      requestEpoch !== this.documentListRequestEpoch ||
-      this.projects.selectedProject()?.id !== projectId
-    ) {
-      return;
-    }
     this.library.setDocuments(documents.items);
     const activeDocument = this.library.chooseActiveFromDocuments();
     this.setActiveDocument(activeDocument);
     if (activeDocument === null) {
       this.chunks.set([]);
-      this.resetDocumentPollingState();
+      this.stopDocumentPolling();
       return;
     }
     await this.refreshUploadedDocument(projectId, activeDocument.id);
@@ -427,8 +361,8 @@ export class SourceImportStore {
 
   setActiveDocumentId(documentId: string | null): void {
     if (this.library.setActiveDocumentId(documentId)) {
-      this.documentRefreshRequestEpoch += 1;
-      this.resetDocumentPollingState();
+      this.stopDocumentPolling();
+      this.resetDocumentPollingFailure();
     }
   }
 
@@ -441,22 +375,9 @@ export class SourceImportStore {
     }
     if (previousDocumentId !== documentId) {
       this.library.clearChunks();
+      this.stopDocumentPolling();
     }
 
-    await this.refreshUploadedDocument(projectId, documentId);
-  }
-
-  async retryDocumentPolling(): Promise<void> {
-    const projectId = this.projects.selectedProject()?.id;
-    const documentId = this.activeDocumentId();
-    if (
-      projectId === undefined ||
-      documentId === null ||
-      this.documentPollingError() === null
-    ) {
-      return;
-    }
-    this.resetDocumentPollingState();
     await this.refreshUploadedDocument(projectId, documentId);
   }
 
@@ -467,39 +388,130 @@ export class SourceImportStore {
     const project = projectId ?? this.projects.selectedProject()?.id;
     const document =
       documentId ?? this.activeDocumentId() ?? this.activeDocument()?.id;
-    if (
-      project === undefined ||
-      document === undefined ||
-      this.projects.selectedProject()?.id !== project
-    ) {
+    if (project === undefined || document === undefined) {
       return;
     }
     if (documentId !== undefined && this.activeDocumentId() !== documentId) {
       this.activeDocumentId.set(documentId);
-      this.documentRefreshRequestEpoch += 1;
     }
-    const requestEpoch = ++this.documentRefreshRequestEpoch;
 
     try {
       const [nextDocument, chunks] = await Promise.all([
         this.api.getDocument(project, document),
         this.loadDocumentChunks(project, document),
       ]);
-      if (!this.ownsDocumentRefresh(requestEpoch, project, document)) {
+      this.library.upsertDocument(nextDocument);
+      if (!this.isCurrentProjectDocument(project, document)) {
         return;
       }
-      this.recordDocumentPollingSuccess();
-      this.library.upsertDocument(nextDocument);
       this.setActiveDocument(nextDocument);
       this.library.setChunks(chunks);
-      this.updateUploadDocumentSnapshot(nextDocument);
-      if (ACTIVE_DOCUMENT_STATUSES.has(nextDocument.status)) {
+      this.resetDocumentPollingFailure();
+      if (
+        ['processing', 'cancel_requested'].includes(nextDocument.status)
+      ) {
         this.scheduleDocumentPolling(project, document);
       } else {
         this.stopDocumentPolling();
       }
     } catch {
-      this.handleDocumentPollingFailure(requestEpoch, project, document);
+      this.handleDocumentPollingFailure(project, document);
+    }
+  }
+
+  retryDocumentPolling(): void {
+    const projectId = this.projects.selectedProject()?.id;
+    const documentId = this.activeDocumentId();
+    if (projectId === undefined || documentId === null) {
+      return;
+    }
+
+    this.resetDocumentPollingFailure();
+    void this.refreshUploadedDocument(projectId, documentId);
+  }
+
+  canCancelUploadItem(item: SourceUploadItem): boolean {
+    return (
+      ['queued', 'uploading', 'cancel_requested'].includes(item.status) ||
+      (item.status === 'uploaded' &&
+        ['processing', 'cancel_requested'].includes(item.document?.status ?? ''))
+    );
+  }
+
+  async cancelUploadItem(itemId: string): Promise<void> {
+    const projectId = this.projects.selectedProject()?.id;
+    const item = this.uploadItems().find((candidate) => candidate.id === itemId);
+    if (
+      projectId === undefined ||
+      item === undefined ||
+      !this.canCancelUploadItem(item)
+    ) {
+      return;
+    }
+
+    this.updateUploadItem(item.id, {
+      status: 'cancel_requested',
+      error: null,
+    });
+    this.uploadAbortControllers.get(item.id)?.abort();
+    try {
+      if (item.document?.id !== undefined) {
+        await this.api.cancelDocumentProcessing(projectId, item.document.id);
+      } else {
+        await this.api.cancelDocumentOperation(projectId, item.operationId);
+      }
+      this.updateUploadItem(item.id, { status: 'canceled', error: null });
+      if (item.document?.id !== undefined) {
+        await this.refreshUploadedDocument(projectId, item.document.id);
+      }
+    } catch (error) {
+      this.updateUploadItem(item.id, {
+        status: 'failed',
+        error: this.getUploadErrorMessage(error),
+      });
+    }
+  }
+
+  async cancelActiveDocumentProcessing(): Promise<void> {
+    const projectId = this.projects.selectedProject()?.id;
+    const document = this.activeDocument();
+    if (
+      projectId === undefined ||
+      document === null ||
+      !['processing', 'cancel_requested'].includes(document.status)
+    ) {
+      return;
+    }
+    const canceled = await this.operations.run(
+      'document-cancel',
+      'Parsing cancellation requested',
+      () => this.api.cancelDocumentProcessing(projectId, document.id),
+    );
+    if (canceled !== null) {
+      await this.refreshUploadedDocument(projectId, document.id);
+    }
+  }
+
+  async retryActiveDocumentProcessing(): Promise<void> {
+    const projectId = this.projects.selectedProject()?.id;
+    const document = this.activeDocument();
+    if (
+      projectId === undefined ||
+      document === null ||
+      !['canceled', 'ocr_failed', 'no_text_detected', 'exam_failed'].includes(
+        document.status,
+      )
+    ) {
+      return;
+    }
+    const retried = await this.operations.run(
+      'document-retry',
+      'Parsing restarted',
+      () => this.api.retryDocumentProcessing(projectId, document.id),
+    );
+    if (retried !== null) {
+      this.resetDocumentPollingFailure();
+      await this.refreshUploadedDocument(projectId, document.id);
     }
   }
 
@@ -507,232 +519,65 @@ export class SourceImportStore {
     projectId: string,
     documentId: string,
   ): Promise<ChunkRead[]> {
+    const chunks = await this.api.listDocumentChunks(projectId, documentId);
+    return chunks.items;
+  }
+
+  private async uploadSingleDocument(
+    projectId: string,
+    item: SourceUploadItem,
+  ): Promise<DocumentRead> {
+    const formData = new FormData();
+    formData.append('file', item.file, item.file.name);
+    formData.append('language_hint', this.languageHint());
+    const controller = new AbortController();
+    this.uploadAbortControllers.set(item.id, controller);
     try {
-      const chunks = await this.api.listDocumentChunks(projectId, documentId);
-      return chunks.items;
-    } catch {
-      return [];
+      return await this.api.uploadDocument(projectId, formData, {
+        headers: { 'X-Cert-Prep-Operation-Id': item.operationId },
+        signal: controller.signal,
+      });
+    } finally {
+      this.uploadAbortControllers.delete(item.id);
     }
   }
 
-  private async runUploadTransports(
-    projectId: string,
-    itemIds: readonly string[],
-  ): Promise<DocumentRead[]> {
-    const contextEpoch = this.contextEpoch;
-    const run = this.uploadLifecycle.begin(
-      projectId,
-      contextEpoch,
-      itemIds,
-      this.uploadBatchSize(),
+  private markUploadItems(
+    items: readonly SourceUploadItem[],
+    patch: Partial<Omit<SourceUploadItem, 'id' | 'file'>>,
+  ): void {
+    const ids = new Set(items.map((item) => item.id));
+    this.uploadItems.update((currentItems) =>
+      currentItems.map((item) =>
+        ids.has(item.id)
+          ? {
+              ...item,
+              ...patch,
+            }
+          : item,
+      ),
     );
-    return this.finishUploadTransports(projectId, itemIds, run);
-  }
-
-  private async finishUploadTransports(
-    projectId: string,
-    itemIds: readonly string[],
-    run: UploadTransportRun,
-  ): Promise<DocumentRead[]> {
-    const result = await this.operations.run(
-      'upload',
-      (documents) => this.uploadOutcomeMessage(itemIds, documents),
-      async () => {
-        await run.done;
-        return [...run.documents];
-      },
-      () => this.isCurrentContext(projectId, run.contextEpoch),
-    );
-    if (!this.isCurrentContext(projectId, run.contextEpoch)) {
-      return [];
-    }
-    if (
-      run.runtimePromptNeeded &&
-      this.isCurrentContext(projectId, run.contextEpoch)
-    ) {
-      await this.refreshRuntimeHealth();
-      if (this.isCurrentContext(projectId, run.contextEpoch)) {
-        this.health.openOcrRuntimeInstallConsent();
-      }
-    }
-    const failedCount = this.failedUploadCount();
-    if (
-      failedCount > 0 &&
-      this.isCurrentContext(projectId, run.contextEpoch)
-    ) {
-      this.operations.error.set(
-        failedCount === 1
-          ? '1 PDF failed to upload.'
-          : `${failedCount} PDFs failed to upload.`,
-      );
-    }
-    return result ?? [];
-  }
-
-  private uploadOutcomeMessage(
-    itemIds: readonly string[],
-    documents: readonly DocumentRead[],
-  ): string {
-    const acceptedCount = documents.length;
-    const incompleteCount = Math.max(0, itemIds.length - acceptedCount);
-    if (acceptedCount > 0) {
-      const accepted =
-        acceptedCount === 1
-          ? '1 PDF upload accepted'
-          : `${acceptedCount} PDF uploads accepted`;
-      return incompleteCount === 0
-        ? accepted
-        : `${accepted}; ${incompleteCount} did not complete`;
-    }
-
-    const itemIdSet = new Set(itemIds);
-    const items = this.uploadItems().filter((item) => itemIdSet.has(item.id));
-    if (
-      items.length === itemIds.length &&
-      items.every((item) => item.status === 'canceled')
-    ) {
-      return itemIds.length === 1
-        ? 'PDF upload canceled'
-        : `${itemIds.length} PDF uploads canceled`;
-    }
-    return itemIds.length === 1
-      ? 'PDF upload did not complete'
-      : 'No PDF uploads completed';
   }
 
   private updateUploadItem(
     id: string,
     patch: Partial<Omit<SourceUploadItem, 'id' | 'file'>>,
-  ): boolean {
-    let updated = false;
+  ): void {
     this.uploadItems.update((items) =>
-      items.map((item) => {
-        if (item.id !== id) {
-          return item;
-        }
-        updated = true;
-        return { ...item, ...patch };
-      }),
+      items.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              ...patch,
+            }
+          : item,
+      ),
     );
-    return updated;
-  }
-
-  private acceptLifecycleDocument(
-    document: DocumentRead,
-    pollDocument: boolean,
-  ): void {
-    this.library.upsertDocument(document);
-    this.setActiveDocument(document);
-    if (ACTIVE_DOCUMENT_STATUSES.has(document.status) && pollDocument) {
-      this.scheduleDocumentPolling(document.project_id, document.id);
-    }
-  }
-
-  private invalidateUploadContext(): void {
-    this.documentProcessingLifecycle.invalidate();
-    this.contextEpoch += 1;
-    this.documentListRequestEpoch += 1;
-    this.documentRefreshRequestEpoch += 1;
-    this.resetDocumentPollingState();
-    this.uploadLifecycle.invalidate();
-  }
-
-  private setDocumentProcessingView(
-    documentId: string,
-    view: DocumentProcessingActionView | null,
-  ): void {
-    const actions = new Map(this.documentProcessingActions());
-    if (view === null) {
-      actions.delete(documentId);
-    } else {
-      actions.set(documentId, view);
-    }
-    this.documentProcessingActions.set(actions);
-
-    if (this.activeDocumentId() !== documentId) {
-      return;
-    }
-    this.resetDocumentPollingState();
-    if (view !== null && view.status !== 'failed') {
-      return;
-    }
-
-    const document = this.activeDocument();
-    const projectId = this.projects.selectedProject()?.id;
-    if (document === null || projectId === undefined) {
-      return;
-    }
-    if (ACTIVE_DOCUMENT_STATUSES.has(document.status)) {
-      this.scheduleDocumentPolling(projectId, document.id);
-    } else if (view === null && document.status === 'ready') {
-      void this.refreshDocumentChunksAfterAction(projectId, document.id);
-    }
-  }
-
-  private acceptDocumentProcessingDocument(document: DocumentRead): void {
-    if (this.projects.selectedProject()?.id !== document.project_id) {
-      return;
-    }
-    this.library.upsertDocument(document);
-    this.updateUploadDocumentSnapshot(document);
-    if (this.activeDocumentId() !== document.id) {
-      return;
-    }
-
-    this.documentRefreshRequestEpoch += 1;
-    this.resetDocumentPollingState();
-    this.library.setActiveDocument(document);
-    if (document.chunks_count === 0) {
-      this.library.clearChunks();
-    }
-  }
-
-  private async refreshDocumentChunksAfterAction(
-    projectId: string,
-    documentId: string,
-  ): Promise<void> {
-    const contextEpoch = this.contextEpoch;
-    try {
-      const chunks = await this.api.listDocumentChunks(projectId, documentId);
-      if (
-        this.isCurrentContext(projectId, contextEpoch) &&
-        this.activeDocumentId() === documentId &&
-        !this.documentProcessingLifecycle.hasActiveAttempt(documentId)
-      ) {
-        this.library.setChunks(chunks.items);
-      }
-    } catch {
-      // Keep the last visible chunks; document status remains authoritative.
-    }
-  }
-
-  private findProjectDocument(documentId: string): DocumentRead | null {
-    const projectId = this.projects.selectedProject()?.id;
-    if (projectId === undefined) {
-      return null;
-    }
-    const document =
-      this.documents().find((candidate) => candidate.id === documentId) ??
-      this.uploadItems().find((item) => item.document?.id === documentId)
-        ?.document ??
-      null;
-    return document?.project_id === projectId ? document : null;
-  }
-
-  private handleMissingOcrRuntime(): void {
-    const contextEpoch = this.contextEpoch;
-    void (async () => {
-      await this.refreshRuntimeHealth();
-      if (contextEpoch === this.contextEpoch) {
-        this.health.openOcrRuntimeInstallConsent();
-      }
-    })();
   }
 
   private setActiveDocument(document: DocumentRead | null): void {
     if (this.library.setActiveDocument(document)) {
-      this.documentRefreshRequestEpoch += 1;
-      this.resetDocumentPollingState();
+      this.stopDocumentPolling();
     }
   }
 
@@ -784,44 +629,12 @@ export class SourceImportStore {
     return null;
   }
 
-  private scheduleDocumentPolling(
-    projectId: string,
-    documentId: string,
-    delayMs = this.documentPollIntervalMs(),
-  ): void {
+  private scheduleDocumentPolling(projectId: string, documentId: string): void {
     this.stopDocumentPolling();
     this.documentPollTimer = setTimeout(() => {
       this.documentPollTimer = null;
       void this.pollDocument(projectId, documentId);
-    }, delayMs);
-  }
-
-  private handleDocumentPollingFailure(
-    requestEpoch: number,
-    projectId: string,
-    documentId: string,
-  ): void {
-    if (!this.ownsDocumentRefresh(requestEpoch, projectId, documentId)) {
-      return;
-    }
-    this.stopDocumentPolling();
-    if (
-      this.documentPollFailureCount >= DOCUMENT_POLL_RETRY_DELAYS_MS.length
-    ) {
-      this.documentPollingError.set(
-        'Document status could not be refreshed. Retry status.',
-      );
-      return;
-    }
-    const delay =
-      DOCUMENT_POLL_RETRY_DELAYS_MS[this.documentPollFailureCount];
-    this.documentPollFailureCount += 1;
-    this.scheduleDocumentPolling(projectId, documentId, delay);
-  }
-
-  private recordDocumentPollingSuccess(): void {
-    this.documentPollFailureCount = 0;
-    this.documentPollingError.set(null);
+    }, this.documentPollIntervalMs());
   }
 
   private documentPollIntervalMs(): number {
@@ -832,38 +645,58 @@ export class SourceImportStore {
       : DOCUMENT_POLL_INTERVAL_MS;
   }
 
-  private async pollDocument(
-    projectId: string,
-    documentId: string,
-  ): Promise<void> {
+  private async pollDocument(projectId: string, documentId: string): Promise<void> {
     if (!this.isCurrentProjectDocument(projectId, documentId)) {
       return;
     }
-    const requestEpoch = ++this.documentRefreshRequestEpoch;
 
     try {
       const [document, chunks] = await Promise.all([
         this.api.getDocument(projectId, documentId),
         this.loadDocumentChunks(projectId, documentId),
       ]);
-      if (!this.ownsDocumentRefresh(requestEpoch, projectId, documentId)) {
+      if (!this.isCurrentProjectDocument(projectId, documentId)) {
         return;
       }
-      this.recordDocumentPollingSuccess();
       this.library.upsertDocument(document);
       this.setActiveDocument(document);
       this.library.setChunks(chunks);
-      this.updateUploadDocumentSnapshot(document);
-      if (ACTIVE_DOCUMENT_STATUSES.has(document.status)) {
+      this.resetDocumentPollingFailure();
+      if (!FINAL_DOCUMENT_STATUSES.has(document.status)) {
         this.scheduleDocumentPolling(projectId, documentId);
       }
     } catch {
-      this.handleDocumentPollingFailure(
-        requestEpoch,
-        projectId,
-        documentId,
-      );
+      this.handleDocumentPollingFailure(projectId, documentId);
     }
+  }
+
+  private handleDocumentPollingFailure(
+    projectId: string,
+    documentId: string,
+  ): void {
+    this.stopDocumentPolling();
+    if (!this.isCurrentProjectDocument(projectId, documentId)) {
+      return;
+    }
+
+    const delay = POLL_RETRY_DELAYS_MS[this.documentPollFailureCount];
+    if (delay !== undefined) {
+      this.documentPollFailureCount += 1;
+      this.documentPollTimer = setTimeout(() => {
+        this.documentPollTimer = null;
+        void this.pollDocument(projectId, documentId);
+      }, delay);
+      return;
+    }
+
+    this.pollingError.set(
+      'Parsing progress could not be refreshed. The local job may still be running.',
+    );
+  }
+
+  private resetDocumentPollingFailure(): void {
+    this.documentPollFailureCount = 0;
+    this.pollingError.set(null);
   }
 
   private stopDocumentPolling(): void {
@@ -873,12 +706,6 @@ export class SourceImportStore {
     }
   }
 
-  private resetDocumentPollingState(): void {
-    this.stopDocumentPolling();
-    this.documentPollFailureCount = 0;
-    this.documentPollingError.set(null);
-  }
-
   private isCurrentProjectDocument(projectId: string, documentId: string): boolean {
     return (
       this.projects.selectedProject()?.id === projectId &&
@@ -886,29 +713,21 @@ export class SourceImportStore {
     );
   }
 
-  private ownsDocumentRefresh(
-    requestEpoch: number,
-    projectId: string,
-    documentId: string,
-  ): boolean {
+  private isAbortError(error: unknown): boolean {
     return (
-      requestEpoch === this.documentRefreshRequestEpoch &&
-      this.isCurrentProjectDocument(projectId, documentId)
+      typeof error === 'object' &&
+      error !== null &&
+      'name' in error &&
+      (error as { name?: unknown }).name === 'AbortError'
     );
   }
 
-  private updateUploadDocumentSnapshot(document: DocumentRead): void {
-    this.uploadItems.update((items) =>
-      items.map((item) =>
-        item.document?.id === document.id ? { ...item, document } : item,
-      ),
-    );
-  }
-
-  private isCurrentContext(projectId: string, contextEpoch: number): boolean {
-    return (
-      this.contextEpoch === contextEpoch &&
-      this.projects.selectedProject()?.id === projectId
-    );
+  private newOperationId(): string {
+    const cryptoRef = globalThis.crypto;
+    return typeof cryptoRef?.randomUUID === 'function'
+      ? cryptoRef.randomUUID()
+      : `source-${Date.now()}-${this.uploadItemCounter}-${Math.random()
+          .toString(16)
+          .slice(2)}`;
   }
 }

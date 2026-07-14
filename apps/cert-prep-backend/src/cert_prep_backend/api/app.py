@@ -23,8 +23,8 @@ from cert_prep_backend.domains.mock_exams.provider_preferences import (
 )
 from cert_prep_backend.domains.mock_exams.streaming import StreamingDraftGenerationManager
 from cert_prep_backend.domains.runtime_installations import RuntimeInstallationManager
-from cert_prep_backend.domains.source_documents import operations as document_operations
 from cert_prep_backend.domains.source_documents import repository as source_documents_repository
+from cert_prep_backend.domains.source_documents.operations import recover_operations
 from cert_prep_backend.domains.source_documents.ocr import OCRProvider, ocr_provider_from_settings
 from cert_prep_backend.domains.source_documents.ocr_provider_pool import (
     DocumentOCRProviderPool,
@@ -61,6 +61,7 @@ def create_app(
         try:
             yield
         finally:
+            app.state.runtime_installation_manager.close()
             app.state.streaming_draft_generation_manager.close()
             app.state.document_ocr_provider_pool.close()
             llm_provider_close = getattr(app.state.llm_provider, "close", None)
@@ -79,7 +80,7 @@ def create_app(
     app.state.settings = app_settings
     app.state.database = Database(app_settings)
     apply_persisted_fastflowlm_terms_decision(app_settings, app.state.database)
-    document_operations.recover_operations(app.state.database)
+    recover_operations(app.state.database)
     source_documents_repository.recover_processing_documents(app.state.database)
     app.state.llm_provider = llm_provider or lazy_provider_from_settings(app_settings)
     app.state.ocr_provider = ocr_provider or ocr_provider_from_settings(app_settings)
@@ -89,6 +90,7 @@ def create_app(
         provider_factory=document_ocr_provider_factory,
     )
     app.state.document_processing_async_jobs = document_processing_async_jobs
+    app.state.runtime_installation_async_jobs = runtime_installation_async_jobs
     app.state.streaming_draft_generation_manager = StreamingDraftGenerationManager(
         settings=app_settings,
         provider=app.state.llm_provider,
@@ -164,6 +166,7 @@ def create_app(
     app.include_router(documents.operations_router, dependencies=protected_dependencies)
     app.include_router(drafts.documents_router, dependencies=protected_dependencies)
     app.include_router(drafts.draft_jobs_router, dependencies=protected_dependencies)
+    app.include_router(drafts.manual_operations_router, dependencies=protected_dependencies)
     app.include_router(drafts.drafts_router, dependencies=protected_dependencies)
     app.include_router(practice.router, dependencies=protected_dependencies)
     app.include_router(llm.router, dependencies=protected_dependencies)

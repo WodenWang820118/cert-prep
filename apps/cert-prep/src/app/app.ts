@@ -74,6 +74,7 @@ export class App implements OnInit, OnDestroy {
   protected readonly projects = inject(ProjectStore);
   protected readonly currentPath = signal('');
   protected readonly runtimeManagerOpen = signal(false);
+  protected readonly aboutDialogOpen = signal(false);
   private readonly router = inject(Router);
   private readonly workspace = inject(WorkspaceFacade);
   private readonly startupProjectId = this.readLastProjectId();
@@ -219,6 +220,14 @@ export class App implements OnInit, OnDestroy {
       this.runtimeManagerFocusTimer = null;
       this.focusRuntimeManagerDialog();
     });
+  }
+
+  protected openAboutDialog(): void {
+    this.aboutDialogOpen.set(true);
+  }
+
+  protected closeAboutDialog(): void {
+    this.aboutDialogOpen.set(false);
   }
 
   protected closeRuntimeManager(): void {

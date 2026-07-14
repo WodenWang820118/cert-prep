@@ -7,6 +7,7 @@ import {
 } from '../../cert-prep-api';
 import type {
   HealthSnapshot,
+  LLMProviderSelectionRead,
   OcrHealthPhase,
   RuntimeKind,
 } from './contracts/health-runtime.contracts';
@@ -17,10 +18,12 @@ import { RuntimeHealthDerivationService } from './runtime-health-derivation.serv
 export class HealthStatusStore {
   private readonly actions = inject(RuntimeActionsStore);
   private readonly runtimeHealth = inject(RuntimeHealthDerivationService);
+  private healthSnapshotLoadCount = 0;
 
   readonly llmHealth = signal<LLMHealthRead | null>(null);
   readonly systemHealth = signal<HealthResponse | null>(null);
   readonly ocrHealth = signal<OCRHealthRead | null>(null);
+  readonly providerSelection = signal<LLMProviderSelectionRead | null>(null);
   readonly healthSnapshotLoading = signal(false);
   private readonly ocrHealthLoadFailed = signal(false);
   private readonly ocrHealthRefreshPending = signal(false);
@@ -28,19 +31,19 @@ export class HealthStatusStore {
   readonly runtimeRequirements = signal<RuntimeRequirementRead[]>([]);
 
   readonly isModelMissing = computed(() =>
-    this.runtimeHealth.isModelMissing(
-      this.llmHealth(),
-      this.runtimeRequirements(),
-    ),
+    this.runtimeHealth.isModelMissing(this.llmHealth()),
   );
   readonly isConfiguredModelMissing = computed(() =>
     this.runtimeHealth.isConfiguredModelMissing(
       this.llmHealth(),
-      this.runtimeRequirements(),
+      this.providerSelection(),
     ),
   );
   readonly isModelFallbackActive = computed(() =>
-    this.runtimeHealth.isModelFallbackActive(this.llmHealth()),
+    this.runtimeHealth.isModelFallbackActive(
+      this.llmHealth(),
+      this.providerSelection(),
+    ),
   );
   readonly isOllamaMissing = computed(() =>
     this.runtimeHealth.isOllamaMissing(
@@ -48,28 +51,41 @@ export class HealthStatusStore {
       this.runtimeRequirements(),
     ),
   );
-  readonly isFastFlowTermsRequired = computed(() =>
-    this.runtimeHealth.isFastFlowTermsRequired(this.runtimeRequirements()),
-  );
-  readonly isFastFlowInstallationRequired = computed(() =>
-    this.runtimeHealth.isFastFlowInstallationRequired(
+  readonly isFastFlowRuntimeMissing = computed(() =>
+    this.runtimeHealth.isFastFlowRuntimeMissing(
+      this.llmHealth(),
       this.runtimeRequirements(),
+      this.providerSelection(),
     ),
-  );
-  readonly isFastFlowRuntimeAvailable = computed(() =>
-    this.runtimeHealth.isFastFlowRuntimeAvailable(this.runtimeRequirements()),
-  );
-  readonly isFastFlowProvider = computed(() =>
-    this.runtimeHealth.isFastFlowProvider(this.llmHealth()),
   );
   readonly isLlmRuntimeMissing = computed(() =>
     this.runtimeHealth.isLlmRuntimeMissing(
       this.llmHealth(),
       this.runtimeRequirements(),
+      this.providerSelection(),
     ),
   );
   readonly llmProviderLabel = computed(() =>
-    this.runtimeHealth.llmProviderLabel(this.llmHealth()),
+    this.runtimeHealth.llmProviderLabel(
+      this.llmHealth(),
+      this.providerSelection(),
+    ),
+  );
+  readonly selectedProviderLabel = computed(() =>
+    this.runtimeHealth.providerLabel(
+      this.providerSelection()?.selected_provider,
+    ),
+  );
+  readonly effectiveProviderLabel = computed(() =>
+    this.runtimeHealth.providerLabel(
+      this.providerSelection()?.effective_provider,
+    ),
+  );
+  readonly isFastFlowSelected = computed(
+    () =>
+      this.runtimeHealth.normalizedCode(
+        this.providerSelection()?.selected_provider,
+      ) === 'fastflowlm',
   );
   readonly isOcrRuntimeMissing = computed(() =>
     this.runtimeHealth.isOcrRuntimeMissing(
@@ -114,23 +130,32 @@ export class HealthStatusStore {
     this.runtimeHealth.configuredModelName(
       this.llmHealth(),
       this.actions.modelDownload()?.model,
+      this.providerSelection(),
     ),
   );
   readonly effectiveModelName = computed(() =>
     this.runtimeHealth.effectiveModelName(
       this.llmHealth(),
       this.actions.modelDownload()?.model,
+      this.providerSelection(),
     ),
   );
 
   beginHealthSnapshotLoad(): void {
+    this.healthSnapshotLoadCount += 1;
     this.healthSnapshotLoading.set(true);
     this.ocrHealthLoadFailed.set(false);
     this.ocrHealthRefreshPending.set(true);
   }
 
   endHealthSnapshotLoad(): void {
-    this.healthSnapshotLoading.set(false);
+    this.healthSnapshotLoadCount = Math.max(
+      0,
+      this.healthSnapshotLoadCount - 1,
+    );
+    if (this.healthSnapshotLoadCount === 0) {
+      this.healthSnapshotLoading.set(false);
+    }
   }
 
   applyHealthSnapshot(snapshot: Partial<HealthSnapshot>): void {
@@ -146,9 +171,16 @@ export class HealthStatusStore {
       this.ocrHealthRefreshPending.set(false);
       this.ocrHealthStale.set(false);
     }
+    if (snapshot.providerSelection !== undefined) {
+      this.providerSelection.set(snapshot.providerSelection);
+    }
     if (snapshot.runtimeRequirements !== undefined) {
       this.runtimeRequirements.set(snapshot.runtimeRequirements);
     }
+  }
+
+  applyProviderSelection(selection: LLMProviderSelectionRead): void {
+    this.providerSelection.set(selection);
   }
 
   recordOcrHealthResult(snapshot: Partial<HealthSnapshot>): void {

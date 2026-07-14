@@ -341,6 +341,7 @@ MIGRATIONS: Final[tuple[tuple[int, str], ...]] = (
         SET status = 'abandoned',
             completed_at = NULL,
             abandoned_at = COALESCE(
+                abandoned_at,
                 (
                     SELECT MAX(attempts.created_at)
                     FROM practice_attempts AS attempts
@@ -351,19 +352,34 @@ MIGRATIONS: Final[tuple[tuple[int, str], ...]] = (
             )
         WHERE status <> 'completed';
 
-        WITH ranked_incomplete AS (
+        WITH incomplete_activity AS (
+            SELECT
+                sessions.id,
+                sessions.project_id,
+                sessions.created_at,
+                COALESCE(
+                    (
+                        SELECT MAX(attempts.created_at)
+                        FROM practice_attempts AS attempts
+                        WHERE attempts.session_id = sessions.id
+                            AND attempts.project_id = sessions.project_id
+                    ),
+                    sessions.created_at
+                ) AS last_activity_at
+            FROM practice_sessions AS sessions
+            WHERE sessions.status = 'abandoned'
+        ),
+        ranked_incomplete AS (
             SELECT
                 id,
                 ROW_NUMBER() OVER (
                     PARTITION BY project_id
-                    ORDER BY created_at DESC, id DESC
+                    ORDER BY last_activity_at DESC, created_at DESC, id DESC
                 ) AS session_rank
-            FROM practice_sessions
-            WHERE status = 'abandoned'
+            FROM incomplete_activity
         )
         UPDATE practice_sessions
         SET status = 'active',
-            completed_at = NULL,
             abandoned_at = NULL
         WHERE id IN (
             SELECT id

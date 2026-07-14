@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from cert_prep_backend.api.dependencies import get_database, get_llm_provider
 from cert_prep_backend.api.errors import (
+    ApiErrorRead,
     NotFoundError,
     ValidationError,
     api_error,
@@ -17,7 +18,6 @@ from cert_prep_backend.domains.practice.exceptions import PracticeSessionConflic
 from cert_prep_backend.domains.practice.schemas import (
     PracticeAttemptCreate,
     PracticeAttemptRead,
-    PracticeSessionConflictRead,
     PracticeSessionCreate,
     PracticeSessionList,
     PracticeSessionRead,
@@ -29,18 +29,19 @@ from cert_prep_backend.persistence.database import Database
 
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["practice"])
+PRACTICE_SESSION_CONFLICT_RESPONSES = {
+    status.HTTP_409_CONFLICT: {
+        "model": ApiErrorRead,
+        "description": "The practice session state conflicts with the requested operation.",
+    }
+}
 
 
 @router.post(
     "/practice-sessions",
     response_model=PracticeSessionRead,
     status_code=status.HTTP_201_CREATED,
-    responses={
-        status.HTTP_409_CONFLICT: {
-            "model": PracticeSessionConflictRead,
-            "description": "An active practice session already exists.",
-        }
-    },
+    responses=PRACTICE_SESSION_CONFLICT_RESPONSES,
 )
 def create_practice_session(
     project_id: str,
@@ -91,12 +92,7 @@ def get_practice_session(
 @router.post(
     "/practice-sessions/{session_id}/abandon",
     response_model=PracticeSessionRead,
-    responses={
-        status.HTTP_409_CONFLICT: {
-            "model": PracticeSessionConflictRead,
-            "description": "The practice session is already completed.",
-        }
-    },
+    responses=PRACTICE_SESSION_CONFLICT_RESPONSES,
 )
 def abandon_practice_session(
     project_id: str,
@@ -115,12 +111,7 @@ def abandon_practice_session(
     "/practice-sessions/{session_id}/attempts",
     response_model=PracticeAttemptRead,
     status_code=status.HTTP_201_CREATED,
-    responses={
-        status.HTTP_409_CONFLICT: {
-            "model": PracticeSessionConflictRead,
-            "description": "The practice session was abandoned.",
-        }
-    },
+    responses=PRACTICE_SESSION_CONFLICT_RESPONSES,
 )
 def record_practice_attempt(
     project_id: str,

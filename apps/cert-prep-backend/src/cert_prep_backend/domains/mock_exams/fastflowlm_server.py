@@ -24,7 +24,6 @@ class FastFlowLMServerManager:
         owned_server_idle_timeout_seconds: float,
         executable_resolver: Callable[[], Path | None],
         start_process: Callable[..., subprocess.Popen],
-        process_terminator: Callable[[subprocess.Popen], None],
         served_model_names: Callable[[], set[str]],
         model_to_serve: Callable[[], str],
     ) -> None:
@@ -34,11 +33,11 @@ class FastFlowLMServerManager:
         self.owned_server_idle_timeout_seconds = max(0.0, owned_server_idle_timeout_seconds)
         self._executable_resolver = executable_resolver
         self._start_process = start_process
-        self._process_terminator = process_terminator
         self._served_model_names = served_model_names
         self._model_to_serve = model_to_serve
         self._lock = Lock()
         self._owned_server_process: subprocess.Popen | None = None
+        self._owned_server_model: str | None = None
         self._idle_shutdown_timer: Timer | None = None
         self._active_requests = 0
         self._release_requested = False
@@ -62,7 +61,7 @@ class FastFlowLMServerManager:
             if self._active_requests == 0 and self._release_requested:
                 process_to_stop = self._schedule_owned_server_shutdown_locked()
         if process_to_stop is not None:
-            self._process_terminator(process_to_stop)
+            terminate_process(process_to_stop)
 
     def release_resources(self) -> None:
         process_to_stop = None
@@ -72,16 +71,17 @@ class FastFlowLMServerManager:
                 return
             process_to_stop = self._schedule_owned_server_shutdown_locked()
         if process_to_stop is not None:
-            self._process_terminator(process_to_stop)
+            terminate_process(process_to_stop)
 
     def close(self) -> None:
         with self._lock:
             self._cancel_idle_shutdown_locked()
             process_to_stop = self._owned_server_process
             self._owned_server_process = None
+            self._owned_server_model = None
             self._release_requested = False
         if process_to_stop is not None:
-            self._process_terminator(process_to_stop)
+            terminate_process(process_to_stop)
 
     def _start_owned_server_if_needed(self, initial_exc: Exception) -> None:
         endpoint = self._local_server_endpoint()
@@ -99,6 +99,7 @@ class FastFlowLMServerManager:
                 if self._owned_server_process.poll() is None:
                     return
                 self._owned_server_process = None
+                self._owned_server_model = None
 
             creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
             process = self._start_process(
@@ -109,6 +110,7 @@ class FastFlowLMServerManager:
                 creationflags=creationflags,
             )
             self._owned_server_process = process
+            self._owned_server_model = model_to_serve
             self._release_requested = False
 
     def _wait_for_owned_server_ready(self) -> set[str]:
@@ -151,6 +153,7 @@ class FastFlowLMServerManager:
         if self.owned_server_idle_timeout_seconds <= 0:
             process = self._owned_server_process
             self._owned_server_process = None
+            self._owned_server_model = None
             self._release_requested = False
             return process
 
@@ -171,9 +174,10 @@ class FastFlowLMServerManager:
                 return
             process_to_stop = self._owned_server_process
             self._owned_server_process = None
+            self._owned_server_model = None
             self._release_requested = False
         if process_to_stop is not None:
-            self._process_terminator(process_to_stop)
+            terminate_process(process_to_stop)
 
     def _cancel_idle_shutdown_locked(self) -> None:
         if self._idle_shutdown_timer is None:
@@ -209,3 +213,14 @@ def start_fastflowlm_server_process(
         cwd=executable.parent,
         creationflags=creationflags,
     )
+
+
+def terminate_process(process: subprocess.Popen) -> None:
+    if process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)

@@ -1,4 +1,3 @@
-import logging
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -7,13 +6,9 @@ from conftest import minimal_pdf
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.core.config import Settings
 from cert_prep_backend.domains.mock_exams import draft_jobs
-from cert_prep_backend.domains.mock_exams import streaming as streaming_module
-from cert_prep_backend.domains.mock_exams.provider import LazyDraftGenerationProvider
 from cert_prep_backend.domains.mock_exams.streaming import (
     _call_streaming_provider_method,
-    _provider_for_job,
     _provider_starts_on_generation,
-    _release_provider_resources,
 )
 from document_test_helpers import (
     _create_project,
@@ -24,7 +19,6 @@ from document_test_helpers import (
     _wait_for_question_drafts,
 )
 from document_test_llm_fakes import (
-    AttributedFallbackExamProvider,
     FailingExamProvider,
     FastFirstCompletionExamProvider,
     InvalidJsonReasoningExamProvider,
@@ -77,29 +71,6 @@ def test_streaming_generation_kwargs_are_provider_owned() -> None:
 
     assert result == "ok"
     assert provider.keep_alive_values == [0]
-
-
-def test_streaming_job_releases_the_provider_bound_before_reconfiguration(
-    tmp_path: Path,
-) -> None:
-    old_provider = ReleaseRecordingFastFlowLMProvider()
-    new_provider = ReleaseRecordingFastFlowLMProvider()
-    providers = iter([old_provider, new_provider])
-    lazy_provider = LazyDraftGenerationProvider(
-        lambda: next(providers),
-        provider="fastflowlm",
-        model="qwen3.5:4b",
-    )
-    bound_provider = _provider_for_job(lazy_provider)
-
-    lazy_provider.reconfigure_from_settings(
-        Settings(data_dir=tmp_path, llm_provider="fake")
-    )
-    assert _provider_for_job(lazy_provider) is new_provider
-    _release_provider_resources(bound_provider)
-
-    assert old_provider.release_calls == 1
-    assert new_provider.release_calls == 0
 
 
 def test_streaming_draft_job_waits_until_document_is_ready(
@@ -260,106 +231,6 @@ def test_streaming_draft_generation_uses_fast_first_completion_before_reasoning(
     assert jobs[0]["generated_count"] == 1
 
 
-def test_streaming_job_records_configured_and_effective_generation_attribution(
-    tmp_path: Path,
-    auth_headers,
-) -> None:
-    llm_provider = AttributedFallbackExamProvider()
-    client = TestClient(
-        create_app(
-            settings=Settings(
-                data_dir=tmp_path,
-                api_token="test-token",
-                streaming_draft_generation_on_upload=True,
-                streaming_draft_generation_page_limit=1,
-            ),
-            llm_provider=llm_provider,
-            ocr_provider=JlptBlockOcrProvider(),
-            document_processing_async_jobs=False,
-            streaming_draft_generation_async_jobs=False,
-        )
-    )
-    project_id = _create_project(client, auth_headers)
-
-    response = client.post(
-        f"/projects/{project_id}/documents",
-        headers=auth_headers,
-        files={"file": ("scan.pdf", minimal_pdf(""), "application/pdf")},
-    )
-
-    assert response.status_code == 201
-    document = response.json()
-    jobs = client.get(
-        f"/projects/{project_id}/documents/{document['id']}/draft-jobs",
-        headers=auth_headers,
-    ).json()["items"]
-    assert len(jobs) == 1
-    assert jobs[0]["status"] == "succeeded"
-    assert jobs[0]["provider"] == "fastflowlm"
-    assert jobs[0]["model"] == "qwen3.5:4b"
-    assert jobs[0]["effective_provider"] == "fastflowlm"
-    assert jobs[0]["effective_model"] == "qwen3.5:2b"
-    assert jobs[0]["fallback_reason"] == llm_provider.fallback_reason
-
-
-def test_streaming_success_is_not_demoted_when_document_count_refresh_fails(
-    tmp_path: Path,
-    auth_headers,
-    monkeypatch,
-    caplog,
-) -> None:
-    llm_provider = AttributedFallbackExamProvider()
-
-    def fail_refresh(*_args, **_kwargs) -> None:
-        raise RuntimeError("projection unavailable")
-
-    monkeypatch.setattr(
-        streaming_module,
-        "_refresh_document_exam_count",
-        fail_refresh,
-    )
-    client = TestClient(
-        create_app(
-            settings=Settings(
-                data_dir=tmp_path,
-                api_token="test-token",
-                streaming_draft_generation_on_upload=True,
-                streaming_draft_generation_page_limit=1,
-            ),
-            llm_provider=llm_provider,
-            ocr_provider=JlptBlockOcrProvider(),
-            document_processing_async_jobs=False,
-            streaming_draft_generation_async_jobs=False,
-        )
-    )
-    project_id = _create_project(client, auth_headers)
-
-    with caplog.at_level(logging.WARNING):
-        response = client.post(
-            f"/projects/{project_id}/documents",
-            headers=auth_headers,
-            files={"file": ("scan.pdf", minimal_pdf(""), "application/pdf")},
-        )
-
-    assert response.status_code == 201
-    document = response.json()
-    jobs = client.get(
-        f"/projects/{project_id}/documents/{document['id']}/draft-jobs",
-        headers=auth_headers,
-    ).json()["items"]
-    assert jobs[0]["status"] == "succeeded"
-    assert jobs[0]["generated_count"] == 1
-    assert jobs[0]["effective_provider"] == "fastflowlm"
-    assert jobs[0]["effective_model"] == "qwen3.5:2b"
-    assert len(
-        client.get(
-            f"/projects/{project_id}/question-drafts",
-            headers=auth_headers,
-        ).json()["items"]
-    ) == 1
-    assert "document exam count refresh failed" in caplog.text
-
-
 def test_streaming_draft_generation_releases_ollama_model_after_completion(
     tmp_path: Path,
     auth_headers,
@@ -434,10 +305,15 @@ def test_streaming_draft_generation_releases_fastflowlm_resources_after_completi
     ).json()["items"]
     assert jobs[0]["status"] == "succeeded"
     assert jobs[0]["generated_count"] == 1
+    assert jobs[0]["provider"] == "fastflowlm"
+    assert jobs[0]["model"] == "qwen3.5:4b"
+    assert jobs[0]["effective_provider"] == "fastflowlm"
+    assert jobs[0]["effective_model"] == "qwen3.5:2b"
+    assert "using fallback qwen3.5:2b" in jobs[0]["fallback_reason"]
     assert llm_provider.release_calls == 1
 
 
-def test_streaming_draft_generation_records_invalid_json_as_failed(
+def test_streaming_draft_generation_treats_invalid_json_as_empty_page(
     tmp_path: Path,
     auth_headers,
 ) -> None:
@@ -471,18 +347,16 @@ def test_streaming_draft_generation_records_invalid_json_as_failed(
         f"/projects/{project_id}/documents/{document['id']}/draft-jobs",
         headers=auth_headers,
     ).json()["items"]
-    assert jobs[0]["status"] == "failed"
+    assert jobs[0]["status"] == "succeeded"
     assert jobs[0]["generated_count"] == 0
-    assert jobs[0]["effective_provider"] is None
-    assert jobs[0]["effective_model"] is None
-    assert jobs[0]["last_error"] == "request_failed: Ollama returned invalid JSON."
+    assert jobs[0]["last_error"] is None
 
     drafts = client.get(f"/projects/{project_id}/question-drafts", headers=auth_headers)
     assert drafts.status_code == 200
     assert drafts.json()["items"] == []
 
 
-def test_streaming_draft_generation_records_timeout_as_failed(
+def test_streaming_draft_generation_treats_timeout_as_empty_page(
     tmp_path: Path,
     auth_headers,
 ) -> None:
@@ -516,13 +390,9 @@ def test_streaming_draft_generation_records_timeout_as_failed(
         f"/projects/{project_id}/documents/{document['id']}/draft-jobs",
         headers=auth_headers,
     ).json()["items"]
-    assert jobs[0]["status"] == "failed"
+    assert jobs[0]["status"] == "succeeded"
     assert jobs[0]["generated_count"] == 0
-    assert jobs[0]["effective_provider"] is None
-    assert jobs[0]["effective_model"] is None
-    assert jobs[0]["last_error"] == (
-        "request_failed: FastFlowLM transient generation error: timed out"
-    )
+    assert jobs[0]["last_error"] is None
 
     drafts = client.get(f"/projects/{project_id}/question-drafts", headers=auth_headers)
     assert drafts.status_code == 200

@@ -244,7 +244,6 @@ class AutoStartFastFlowLMProvider(FastFlowLMProvider):
             primary_min_available_ram_bytes=primary_min_available_ram_bytes,
             server_start_timeout_seconds=0.1,
             owned_server_idle_timeout_seconds=owned_server_idle_timeout_seconds,
-            owned_server_process_terminator=lambda process: process.terminate(),
         )
         self.models = models
         self.chat_content = chat_content
@@ -337,3 +336,24 @@ class FailingDownloadProvider(RecordingDownloadProvider):
         self.pull_calls += 1
         progress(ModelPullProgress(status="pulling manifest"))
         raise RuntimeError("connection refused")
+
+
+class RecordingFastFlowLMOnboardingProvider(RecordingDownloadProvider):
+    provider = "fastflowlm"
+    model = "qwen3.5:4b"
+
+    def __init__(self) -> None:
+        super().__init__(available=False, detail="model not found")
+        self.events: list[str] = []
+
+    def prepare_model_onboarding(self, progress) -> None:
+        self.events.append("validate/list")
+        progress(ModelPullProgress(status="runtime validated"))
+
+    def pull_model(self, progress) -> None:
+        self.events.append("pull")
+        super().pull_model(progress)
+
+    def verify_model_onboarding(self, progress) -> None:
+        self.events.append("check/serve/models/completion")
+        progress(ModelPullProgress(status="generation ready"))

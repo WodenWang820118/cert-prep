@@ -25,12 +25,14 @@ export type {
   HealthResponse,
   LLMHealthRead,
   LLMProviderSelectionRead,
+  ManualDraftGenerationOperationRead,
   ModelDownloadRead,
   OCRHealthRead,
   PracticeAttemptCreate,
   PracticeAttemptRead,
   PracticeSessionCreate,
   PracticeSessionRead,
+  PracticeSessionSummaryRead,
   ProjectCreate,
   ProjectList,
   ProjectRead,
@@ -49,7 +51,7 @@ export type {
 
 const DEFAULT_LOCAL_API_BASE_URL = 'http://127.0.0.1:8765';
 
-interface BackendConfig {
+export interface BackendConfig {
   base_url: string;
   token: string;
 }
@@ -121,7 +123,7 @@ export class CertPrepRuntimeConfig {
 }
 
 @Injectable({ providedIn: 'root' })
-class CertPrepAuthenticatedTransport {
+export class CertPrepAuthenticatedTransport {
   private readonly http = inject(HttpClient);
   private readonly runtimeConfig = inject(CertPrepRuntimeConfig);
 

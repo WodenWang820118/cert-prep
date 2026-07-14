@@ -25,6 +25,10 @@ class RuntimeRequirementsRead(BaseModel):
     items: list[RuntimeRequirementRead]
 
 
+class RuntimeInstallationStartRequest(BaseModel):
+    fastflowlm_terms_accepted_version: str | None = None
+
+
 class RuntimeInstallationRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -33,6 +37,8 @@ class RuntimeInstallationRead(BaseModel):
     provider: str
     model: str
     status: RuntimeInstallationStatus
+    phase: str
+    cancellable: bool
     detail: str
     completed: int | None
     total: int | None

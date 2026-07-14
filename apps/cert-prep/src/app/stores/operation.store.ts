@@ -5,6 +5,8 @@ type BusyAction =
   | 'health'
   | 'project'
   | 'upload'
+  | 'document-cancel'
+  | 'document-retry'
   | 'questions'
   | 'saveDraft'
   | 'session'

@@ -109,7 +109,7 @@ describe('App', () => {
     );
   });
 
-  it('keeps shell placeholder controls disabled and footer links inert', () => {
+  it('keeps shell placeholder controls disabled and exposes packaged legal links', () => {
     const fixture = TestBed.createComponent(App);
     fixture.detectChanges();
 
@@ -118,17 +118,44 @@ describe('App', () => {
     expect(buttonByLabel(compiled, 'Account')?.disabled).toBe(true);
 
     const footerLinks = Array.from(
-      compiled.querySelectorAll<HTMLElement>('.workbench-footer-link'),
+      compiled.querySelectorAll<HTMLAnchorElement>('.workbench-footer-link'),
     );
     expect(footerLinks.map((link) => link.textContent?.trim())).toEqual([
       'Documentation',
       'Privacy Policy',
-      'System Status',
+      'License',
+      'Third-Party Notices',
+      'Changelog',
     ]);
     for (const link of footerLinks) {
-      expect(link.getAttribute('aria-disabled')).toBe('true');
-      expect(link.tagName).toBe('SPAN');
+      expect(link.getAttribute('href')).toMatch(/^legal\//);
+      expect(link.getAttribute('target')).toBe('_blank');
+      expect(link.getAttribute('rel')).toBe('noopener');
     }
+  });
+
+  it('identifies the unsigned public alpha and exposes verification guidance', () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const aboutButton = buttonByLabel(compiled, 'About Cert Prep');
+    expect(aboutButton?.disabled).toBe(false);
+    aboutButton?.click();
+    fixture.detectChanges();
+
+    const dialog = compiled.querySelector<HTMLElement>('[role="dialog"]');
+    expect(dialog?.textContent).toContain('unsigned_public_alpha');
+    expect(dialog?.textContent).toContain('Cert Prep 0.1.0-alpha.1');
+    expect(dialog?.textContent).toContain('SmartScreen');
+    expect(dialog?.textContent).toContain('SHA-256');
+    if (dialog === null) {
+      throw new Error('Expected the About dialog to be open.');
+    }
+
+    buttonByLabel(dialog, 'Close About Cert Prep')?.click();
+    fixture.detectChanges();
+    expect(compiled.querySelector('[role="dialog"]')).toBeNull();
   });
 
   it('renders the runtime route before a project exists', async () => {

@@ -21,7 +21,7 @@ class ProviderUnavailableError(BackendError):
 
 
 class TermsAcceptanceRequiredError(BackendError):
-    """Raised when pinned third-party terms have not been accepted."""
+    """Raised when an explicit third-party terms acknowledgement is missing."""
 
 
 class ProviderReconfigurationConflictError(BackendError):
@@ -33,11 +33,11 @@ class DocumentOperationConflictError(BackendError):
 
 
 class DocumentProcessingCanceledError(BackendError):
-    """Raised when cancellation wins before document results are published."""
+    """Raised when canceled document work reaches a persistence checkpoint."""
 
 
 class OperationNotCancellableError(BackendError):
-    """Raised when an operation can no longer accept cancellation."""
+    """Raised when work has entered a non-interruptible commit phase."""
 
 
 class DocumentOperationStateError(BackendError):

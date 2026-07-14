@@ -65,6 +65,82 @@
   padding: 1.5rem;
 }
 
+.provider-selection-summary {
+  display: grid;
+  gap: 0.75rem;
+  border-bottom: 1px solid var(--workbench-border, #c2c6d4);
+  background: color-mix(
+    in srgb,
+    var(--workbench-primary, #00488d) 7%,
+    var(--workbench-surface, #ffffff)
+  );
+  padding: 1rem 1.5rem;
+}
+
+.provider-selection-heading,
+.provider-selection-grid {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.provider-selection-heading h3,
+.provider-selection-heading p,
+.provider-selection-summary dl,
+.provider-selection-summary dd,
+.provider-selection-summary p {
+  margin: 0;
+}
+
+.provider-selection-heading h3 {
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.provider-selection-eyebrow,
+.provider-selection-grid dt {
+  color: var(--workbench-muted, #424752);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.provider-selection-badge {
+  border-radius: 999px;
+  background: #fff2cc;
+  color: #5c4300;
+  padding: 0.25rem 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.provider-selection-grid {
+  justify-content: flex-start;
+}
+
+.provider-selection-grid > div {
+  min-width: min(13rem, 45%);
+}
+
+.provider-selection-grid dd {
+  margin-top: 0.125rem;
+  font-size: 0.875rem;
+  font-weight: 750;
+}
+
+.provider-selection-reason,
+.provider-selection-fallback {
+  color: var(--workbench-muted, #424752);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+.provider-selection-fallback {
+  color: #5c4300;
+}
+
 .runtime-modal-footer {
   justify-content: flex-end;
   border-top: 1px solid var(--workbench-border, #c2c6d4);
@@ -111,8 +187,19 @@
 @media (max-width: 680px) {
   .runtime-modal-header,
   .runtime-modal-footer,
-  .runtime-grid {
+  .runtime-grid,
+  .provider-selection-summary {
     padding: 1rem;
+  }
+
+  .provider-selection-heading,
+  .provider-selection-grid {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .provider-selection-grid > div {
+    min-width: 0;
   }
 
   .runtime-modal-footer {

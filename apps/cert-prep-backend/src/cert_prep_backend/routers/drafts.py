@@ -15,7 +15,9 @@ from cert_prep_backend.domains.mock_exams.ports import DraftGenerationProvider a
 from cert_prep_backend.domains.mock_exams.provider import generate_drafts_for_strategy
 from cert_prep_backend.domains.mock_exams.schemas import (
     DraftGenerateRequest,
+    DraftGenerationJobRead,
     DraftGenerationJobList,
+    ManualDraftGenerationOperationRead,
     QuestionDraftCreate,
     QuestionDraftList,
     QuestionDraftRead,
@@ -39,6 +41,10 @@ documents_router = APIRouter(
 )
 draft_jobs_router = APIRouter(
     prefix="/projects/{project_id}/documents/{document_id}/draft-jobs",
+    tags=["question-drafts"],
+)
+manual_operations_router = APIRouter(
+    prefix="/projects/{project_id}/documents/{document_id}/draft-operations",
     tags=["question-drafts"],
 )
 drafts_router = APIRouter(prefix="/projects/{project_id}/question-drafts", tags=["question-drafts"])
@@ -77,6 +83,110 @@ def retry_document_draft_jobs(
                 document_id=document_id,
             )
         }
+    except NotFoundError as exc:
+        raise not_found_error(str(exc)) from exc
+
+
+@draft_jobs_router.delete("/{job_id}", response_model=DraftGenerationJobRead)
+def cancel_document_draft_job(
+    project_id: str,
+    document_id: str,
+    job_id: str,
+    db: Database = Depends(get_database),
+) -> dict:
+    try:
+        return draft_jobs.request_cancel(
+            db,
+            project_id=project_id,
+            document_id=document_id,
+            job_id=job_id,
+        )
+    except draft_jobs.DraftJobNotCancellableError as exc:
+        raise api_error(
+            status.HTTP_409_CONFLICT,
+            "operation_not_cancellable",
+            str(exc),
+        ) from exc
+    except NotFoundError as exc:
+        raise not_found_error(str(exc)) from exc
+
+
+@manual_operations_router.post(
+    "",
+    response_model=ManualDraftGenerationOperationRead,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def start_manual_draft_operation(
+    project_id: str,
+    document_id: str,
+    payload: DraftGenerateRequest,
+    db: Database = Depends(get_database),
+    streaming_questions: StreamingDraftGenerationManager = Depends(
+        get_streaming_draft_generation_manager
+    ),
+) -> dict:
+    try:
+        return streaming_questions.start_manual_operation(
+            db,
+            project_id=project_id,
+            document_id=document_id,
+            limit=payload.limit,
+            strategy=payload.strategy,
+        )
+    except NotFoundError as exc:
+        raise not_found_error(str(exc)) from exc
+
+
+@manual_operations_router.get(
+    "/{operation_id}",
+    response_model=ManualDraftGenerationOperationRead,
+)
+def get_manual_draft_operation(
+    project_id: str,
+    document_id: str,
+    operation_id: str,
+    db: Database = Depends(get_database),
+    streaming_questions: StreamingDraftGenerationManager = Depends(
+        get_streaming_draft_generation_manager
+    ),
+) -> dict:
+    try:
+        return streaming_questions.get_manual_operation(
+            db,
+            project_id=project_id,
+            document_id=document_id,
+            operation_id=operation_id,
+        )
+    except NotFoundError as exc:
+        raise not_found_error(str(exc)) from exc
+
+
+@manual_operations_router.delete(
+    "/{operation_id}",
+    response_model=ManualDraftGenerationOperationRead,
+)
+def cancel_manual_draft_operation(
+    project_id: str,
+    document_id: str,
+    operation_id: str,
+    db: Database = Depends(get_database),
+    streaming_questions: StreamingDraftGenerationManager = Depends(
+        get_streaming_draft_generation_manager
+    ),
+) -> dict:
+    try:
+        return streaming_questions.cancel_manual_operation(
+            db,
+            project_id=project_id,
+            document_id=document_id,
+            operation_id=operation_id,
+        )
+    except draft_jobs.DraftJobNotCancellableError as exc:
+        raise api_error(
+            status.HTTP_409_CONFLICT,
+            "operation_not_cancellable",
+            str(exc),
+        ) from exc
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
 

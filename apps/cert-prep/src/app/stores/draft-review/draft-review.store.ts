@@ -1,6 +1,7 @@
 import { computed, effect, inject, Injectable, signal } from '@angular/core';
 import {
   CERT_PREP_API,
+  type ManualDraftGenerationOperationRead,
   QuestionDraftRead,
 } from '../../cert-prep-api';
 import type {
@@ -16,6 +17,9 @@ import { OperationStore } from '../operation.store';
 import { ProjectStore } from '../project.store';
 import { SourceImportStore } from '../source-import/source-import.store';
 
+const MANUAL_DRAFT_POLL_INTERVAL_MS = 1500;
+const MANUAL_DRAFT_POLL_RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
+
 @Injectable({ providedIn: 'root' })
 export class DraftReviewStore {
   private readonly api = inject(CERT_PREP_API);
@@ -27,10 +31,17 @@ export class DraftReviewStore {
   private readonly projects = inject(ProjectStore);
   private readonly sourceImport = inject(SourceImportStore);
   private readonly streamingJobs = inject(DraftStreamingJobsStore);
+  private manualDraftPollTimer: ReturnType<typeof setTimeout> | null = null;
+  private manualDraftPollFailureCount = 0;
 
   readonly questionLimit = signal(3);
   readonly drafts = signal<QuestionDraftRead[]>([]);
   readonly draftJobs = this.streamingJobs.draftJobs;
+  readonly manualDraftOperation = signal<ManualDraftGenerationOperationRead | null>(
+    null,
+  );
+  readonly manualDraftCanceling = signal(false);
+  readonly manualDraftPollingError = signal<string | null>(null);
   readonly editingDraftId = this.editSession.editingDraftId;
   readonly draftEdits = this.editSession.draftEdits;
   readonly playableQuestions = computed(() =>
@@ -47,11 +58,42 @@ export class DraftReviewStore {
   );
   readonly draftJobSummary = this.streamingJobs.draftJobSummary;
   readonly canRetryDraftJobs = this.streamingJobs.canRetryDraftJobs;
+  readonly canCancelActiveDraftJobs =
+    this.streamingJobs.canCancelActiveDraftJobs;
+  readonly cancelingDraftJobs = this.streamingJobs.cancelingDraftJobs;
+  readonly pollingError = this.streamingJobs.pollingError;
+  readonly isManualDraftOperationActive = computed(() => {
+    const status = this.manualDraftOperation()?.status;
+    return ['queued', 'running', 'cancel_requested'].includes(status ?? '');
+  });
+  readonly isManualDraftProgressActive = computed(
+    () =>
+      this.isManualDraftOperationActive() &&
+      this.manualDraftPollingError() === null,
+  );
+  readonly canCancelManualDraftOperation = computed(() => {
+    const operation = this.manualDraftOperation();
+    return (
+      operation !== null &&
+      operation.cancellable &&
+      ['queued', 'running', 'cancel_requested'].includes(operation.status) &&
+      !this.manualDraftCanceling()
+    );
+  });
 
   constructor() {
     effect(() => {
       const projectId = this.projects.selectedProjectId();
       const document = this.sourceImport.activeDocument();
+      const operation = this.manualDraftOperation();
+      if (
+        operation !== null &&
+        (operation.project_id !== projectId || operation.document_id !== document?.id)
+      ) {
+        this.clearManualDraftPollTimer();
+        this.manualDraftOperation.set(null);
+        this.resetManualDraftPollingFailure();
+      }
       this.streamingJobs.syncPolling(projectId, document, (id) =>
         this.load(id),
       );
@@ -71,6 +113,9 @@ export class DraftReviewStore {
     this.drafts.set([]);
     this.editSession.reset();
     this.streamingJobs.reset();
+    this.clearManualDraftPollTimer();
+    this.manualDraftOperation.set(null);
+    this.resetManualDraftPollingFailure();
   }
 
   setQuestionLimit(value: string | number): void {
@@ -135,54 +180,91 @@ export class DraftReviewStore {
       return;
     }
 
-    const drafts = await this.operations.run(
+    if (this.isManualDraftOperationActive()) {
+      return;
+    }
+
+    const operation = await this.operations.run(
       'questions',
       strategy === 'deterministic_only'
-        ? 'Deterministic questions generated'
-        : 'Reasoning questions generated',
+        ? 'Deterministic question generation queued'
+        : 'Reasoning question generation queued',
       () =>
-        this.api.generateDocumentDrafts(
+        this.api.startManualDraftOperation(
           project.id,
           document.id,
           this.generatePayload(strategy),
         ),
     );
-    if (drafts === null) {
+    if (operation === null) {
       await this.openMissingAiRuntimePrompt(strategy);
       return;
     }
 
-    this.drafts.set(drafts.items);
-    await this.load(project.id);
-    await this.streamingJobs.loadDraftJobs(project.id, document.id);
-    await this.sourceImport.refreshUploadedDocument(project.id, document.id);
+    this.manualDraftOperation.set(operation);
+    this.resetManualDraftPollingFailure();
+    this.continueManualDraftOperation(operation, strategy);
+  }
+
+  async cancelManualDraftOperation(): Promise<void> {
+    const operation = this.manualDraftOperation();
+    if (operation === null || !this.canCancelManualDraftOperation()) {
+      return;
+    }
+    this.manualDraftCanceling.set(true);
+    try {
+      const canceled = await this.api.cancelManualDraftOperation(
+        operation.project_id,
+        operation.document_id,
+        operation.id,
+      );
+      if (!this.isCurrentManualDraftOperation(operation)) {
+        return;
+      }
+      this.manualDraftOperation.set(canceled);
+      this.continueManualDraftOperation(
+        canceled,
+        operation.strategy as DraftGenerationStrategy,
+      );
+    } catch (error) {
+      this.operations.fail(this.errorMessage(error));
+    } finally {
+      this.manualDraftCanceling.set(false);
+    }
+  }
+
+  async cancelActiveDraftJobs(): Promise<void> {
+    await this.streamingJobs.cancelActiveDraftJobs();
+  }
+
+  retryManualDraftPolling(): void {
+    const operation = this.manualDraftOperation();
+    if (operation === null || !this.isManualDraftOperationActive()) {
+      return;
+    }
+    this.clearManualDraftPollTimer();
+    this.resetManualDraftPollingFailure();
+    void this.refreshManualDraftOperation(
+      operation,
+      operation.strategy as DraftGenerationStrategy,
+    );
   }
 
   private async openMissingAiRuntimePrompt(
     strategy: DraftGenerationStrategy,
+    providerUnavailable = false,
   ): Promise<void> {
     if (
       strategy !== 'hybrid_reasoning' ||
-      this.operations.errorCode() !== 'provider_unavailable'
+      (!providerUnavailable &&
+        this.operations.errorCode() !== 'provider_unavailable')
     ) {
       return;
     }
 
     try {
-      if (!(await this.health.load())) {
-        return;
-      }
+      await this.health.load();
     } catch {
-      return;
-    }
-
-    if (this.health.canReviewFastFlowTerms()) {
-      await this.health.openFastFlowTermsConsent();
-      return;
-    }
-
-    if (this.health.canInstallFastFlow()) {
-      this.health.openFastFlowInstallConsent();
       return;
     }
 
@@ -223,6 +305,18 @@ export class DraftReviewStore {
     }
   }
 
+  retryDraftPolling(): void {
+    const project = this.projects.selectedProject();
+    const document = this.sourceImport.activeDocument();
+    if (project === null || document === null) {
+      return;
+    }
+
+    this.streamingJobs.retryPolling(project.id, document.id, (projectId) =>
+      this.load(projectId),
+    );
+  }
+
   async saveDraft(draft: QuestionDraftRead): Promise<QuestionDraftRead | null> {
     const project = this.projects.selectedProject();
     if (project === null) {
@@ -261,5 +355,115 @@ export class DraftReviewStore {
 
   private generatePayload(strategy: DraftGenerationStrategy) {
     return this.edits.generatePayload(this.questionLimit(), strategy);
+  }
+
+  private continueManualDraftOperation(
+    operation: ManualDraftGenerationOperationRead,
+    strategy: DraftGenerationStrategy,
+  ): void {
+    this.clearManualDraftPollTimer();
+    if (operation.status === 'succeeded') {
+      void this.completeManualDraftOperation(operation);
+      return;
+    }
+    if (operation.status === 'failed') {
+      this.operations.fail(
+        operation.error ?? 'Question generation did not complete.',
+      );
+      void this.openMissingAiRuntimePrompt(strategy, true);
+      return;
+    }
+    if (operation.status === 'canceled') {
+      return;
+    }
+    this.manualDraftPollTimer = setTimeout(() => {
+      this.manualDraftPollTimer = null;
+      void this.refreshManualDraftOperation(operation, strategy);
+    }, MANUAL_DRAFT_POLL_INTERVAL_MS);
+  }
+
+  private async refreshManualDraftOperation(
+    operation: ManualDraftGenerationOperationRead,
+    strategy: DraftGenerationStrategy,
+  ): Promise<void> {
+    if (!this.isCurrentManualDraftOperation(operation)) {
+      return;
+    }
+    try {
+      const refreshed = await this.api.getManualDraftOperation(
+        operation.project_id,
+        operation.document_id,
+        operation.id,
+      );
+      if (!this.isCurrentManualDraftOperation(operation)) {
+        return;
+      }
+      this.manualDraftOperation.set(refreshed);
+      this.resetManualDraftPollingFailure();
+      this.continueManualDraftOperation(refreshed, strategy);
+    } catch {
+      const delay =
+        MANUAL_DRAFT_POLL_RETRY_DELAYS_MS[this.manualDraftPollFailureCount];
+      if (delay === undefined) {
+        this.clearManualDraftPollTimer();
+        this.manualDraftPollingError.set(
+          'Question generation progress could not be refreshed. Retry the status check or cancel the operation.',
+        );
+        return;
+      }
+      this.manualDraftPollFailureCount += 1;
+      this.manualDraftPollTimer = setTimeout(() => {
+        this.manualDraftPollTimer = null;
+        void this.refreshManualDraftOperation(operation, strategy);
+      }, delay);
+    }
+  }
+
+  private async completeManualDraftOperation(
+    operation: ManualDraftGenerationOperationRead,
+  ): Promise<void> {
+    if (!this.isCurrentManualDraftOperation(operation)) {
+      return;
+    }
+    await Promise.all([
+      this.load(operation.project_id),
+      this.streamingJobs.loadDraftJobs(
+        operation.project_id,
+        operation.document_id,
+      ),
+      this.sourceImport.refreshUploadedDocument(
+        operation.project_id,
+        operation.document_id,
+      ),
+    ]);
+  }
+
+  private isCurrentManualDraftOperation(
+    operation: ManualDraftGenerationOperationRead,
+  ): boolean {
+    return (
+      this.manualDraftOperation()?.id === operation.id &&
+      this.projects.selectedProjectId() === operation.project_id &&
+      this.sourceImport.activeDocument()?.id === operation.document_id
+    );
+  }
+
+  private clearManualDraftPollTimer(): void {
+    if (this.manualDraftPollTimer !== null) {
+      clearTimeout(this.manualDraftPollTimer);
+      this.manualDraftPollTimer = null;
+    }
+  }
+
+  private resetManualDraftPollingFailure(): void {
+    this.manualDraftPollFailureCount = 0;
+    this.manualDraftPollingError.set(null);
+  }
+
+  private errorMessage(error: unknown): string {
+    if (error instanceof Error && error.message.trim().length > 0) {
+      return error.message;
+    }
+    return 'Question generation operation failed.';
   }
 }

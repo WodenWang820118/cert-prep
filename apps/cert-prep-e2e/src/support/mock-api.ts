@@ -3,10 +3,12 @@ import type {
   DocumentRead,
   HealthResponse,
   LLMHealthRead,
+  LLMProviderSelectionRead,
   OCRHealthRead,
   PracticeAttemptCreate,
   PracticeAttemptRead,
   PracticeSessionCreate,
+  PracticeSessionList,
   PracticeSessionRead,
   ProjectRead,
   QuestionDraftRead,
@@ -29,7 +31,7 @@ export type CompleteQuestionDraftWithExcerpt = CompleteQuestionDraft & {
   readonly source_excerpt: string;
 };
 
-type MockWrongAnswerExplanationRead = WrongAnswerExplanationRead;
+export type MockWrongAnswerExplanationRead = WrongAnswerExplanationRead;
 
 export interface MockCertPrepApi {
   readonly project: ProjectRead;
@@ -381,6 +383,27 @@ export async function installMockCertPrepApi(
       return;
     }
 
+    if (method === 'GET' && path === '/llm/provider-selection') {
+      const body = {
+        preference: 'auto',
+        selected_provider: 'fake',
+        effective_provider: 'fake',
+        configured_model: 'qwen3.5:4b',
+        effective_model: 'qwen3.5:4b',
+        selection_reason: 'Deterministic browser-test provider.',
+        fallback_reason: null,
+        hardware_compatible: false,
+        requires_terms_acceptance: false,
+        terms_accepted: false,
+        terms_version: null,
+        terms_url: null,
+        runtime_requirement_kind: null,
+        model_requirement_kind: null,
+      } satisfies LLMProviderSelectionRead;
+      await fulfillJson(route, 200, body);
+      return;
+    }
+
     if (method === 'GET' && path === '/ocr/health') {
       const body = {
         provider: 'paddle',
@@ -531,6 +554,15 @@ export async function installMockCertPrepApi(
         projectState.uploadedDocuments.push(uploadedDocument);
       }
       await fulfillJson(route, 201, uploadedDocument);
+      return;
+    }
+
+    if (
+      method === 'GET' &&
+      path === `/projects/${projectId}/practice-sessions`
+    ) {
+      const body = { items: [] } satisfies PracticeSessionList;
+      await fulfillJson(route, 200, body);
       return;
     }
 
@@ -703,8 +735,8 @@ function nextUploadDocument(
   const uploadedIds = new Set(
     projectState.uploadedDocuments.map((document) => document.id),
   );
-  const matchedDocument = projectState.documents.find((document) =>
-    document.filename === filename,
+  const matchedDocument = projectState.documents.find(
+    (document) => document.filename === filename,
   );
   if (matchedDocument !== undefined) {
     return uploadedIds.has(matchedDocument.id)
@@ -718,7 +750,11 @@ function nextUploadDocument(
 
   return (
     remainingDocument ??
-    createAdditionalUploadDocument(projectState, projectState.document, filename)
+    createAdditionalUploadDocument(
+      projectState,
+      projectState.document,
+      filename,
+    )
   );
 }
 
@@ -768,7 +804,10 @@ function multipartUploadFilename(
     if (boundaryStart === -1) {
       return null;
     }
-    const headerStart = skipMultipartBoundaryLine(body, boundaryStart + boundaryBytes.length);
+    const headerStart = skipMultipartBoundaryLine(
+      body,
+      boundaryStart + boundaryBytes.length,
+    );
     if (headerStart === null) {
       return null;
     }
@@ -846,7 +885,11 @@ function indexOfBytes(
     return startIndex;
   }
 
-  for (let index = startIndex; index <= haystack.length - needle.length; index += 1) {
+  for (
+    let index = startIndex;
+    index <= haystack.length - needle.length;
+    index += 1
+  ) {
     let matched = true;
     for (let needleIndex = 0; needleIndex < needle.length; needleIndex += 1) {
       if (haystack[index + needleIndex] !== needle[needleIndex]) {
@@ -918,6 +961,7 @@ export function expectedSeenPaths(api: MockCertPrepApi): Set<string> {
   return new Set([
     'GET /health',
     'GET /llm/health',
+    'GET /llm/provider-selection',
     'GET /ocr/health',
     'GET /runtime/requirements',
     'GET /projects',
@@ -927,6 +971,7 @@ export function expectedSeenPaths(api: MockCertPrepApi): Set<string> {
     `GET /projects/${api.project.id}/documents/${api.document.id}`,
     `GET /projects/${api.project.id}/documents/${api.document.id}/chunks`,
     `GET /projects/${api.project.id}/question-drafts`,
+    `GET /projects/${api.project.id}/practice-sessions`,
     `POST /projects/${api.project.id}/practice-sessions`,
     ...(session
       ? [

@@ -4,6 +4,7 @@ import type {
   OCRHealthRead,
 } from '../../../cert-prep-api';
 import type { OcrHealthPhase } from '../../../stores/health/contracts/health-runtime.contracts';
+import type { LLMProviderSelectionRead } from '../../../stores/health/contracts/health-runtime.contracts';
 
 /**
  * PrimeNG tag severities used by the health/runtime status UI.
@@ -28,18 +29,28 @@ export interface RuntimeStatusSectionView {
   readonly detail: string;
 }
 
+export interface ProviderSelectionSummaryView {
+  readonly preferenceLabel: string;
+  readonly selectedLabel: string;
+  readonly effectiveLabel: string;
+  readonly selectionReason: string;
+  readonly fallbackReason: string | null;
+  readonly fallbackActive: boolean;
+}
+
 /**
  * Complete presentation model for the runtime toolbar and manager rows.
  */
 export interface ModelHealthViewModel {
   readonly chips: readonly RuntimeStatusChipView[];
+  readonly providerSelection: ProviderSelectionSummaryView | null;
   readonly python: RuntimeStatusSectionView;
   readonly ollama: RuntimeStatusSectionView;
   readonly model: RuntimeStatusSectionView;
   readonly ocr: RuntimeStatusSectionView;
 }
 
-interface DesktopRuntimeStatusView {
+export interface DesktopRuntimeStatusView {
   readonly status: string;
   readonly detail: string;
   readonly running: boolean;
@@ -57,6 +68,7 @@ export interface ModelHealthViewState {
   readonly desktopInstallDetail: string | null;
   readonly systemHealth: HealthResponse | null;
   readonly llmHealth: LLMHealthRead | null;
+  readonly providerSelection: LLMProviderSelectionRead | null;
   readonly ocrHealth: OCRHealthRead | null;
   readonly ocrPhase: OcrHealthPhase;
   readonly llmRuntimeMissing: boolean;

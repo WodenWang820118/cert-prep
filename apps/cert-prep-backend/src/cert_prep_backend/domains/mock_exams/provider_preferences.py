@@ -1,45 +1,22 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
+from typing import Literal
 
 from cert_prep_backend.core.config import Settings
 from cert_prep_backend.persistence.database import Database, utc_now
-from cert_prep_contracts.llm import (
-    FASTFLOWLM_RUNTIME_TRUST_POLICY,
-    FastFlowLMTermsDecision,
-)
+from cert_prep_contracts.llm import FASTFLOWLM_RUNTIME_TRUST_POLICY
 
 
 FASTFLOWLM_TERMS_DECISION_KEY = "llm.fastflowlm_terms_decision"
-
-
-@dataclass(frozen=True, slots=True)
-class PersistedFastFlowLMTermsDecision:
-    decision: FastFlowLMTermsDecision
-    terms_version: str
+FastFlowLMTermsDecision = Literal["accepted", "declined"]
 
 
 def apply_persisted_fastflowlm_terms_decision(
     settings: Settings,
     db: Database,
-) -> PersistedFastFlowLMTermsDecision | None:
-    """Ignore ambient acceptance and apply only the durable local decision."""
-
-    settings.fastflowlm_terms_accepted_version = None
-    settings.fastflowlm_terms_declined = False
-    decision = read_fastflowlm_terms_decision(db)
-    if decision is None:
-        return None
-    if decision.decision == FastFlowLMTermsDecision.ACCEPTED:
-        settings.fastflowlm_terms_accepted_version = decision.terms_version
-    else:
-        settings.fastflowlm_terms_declined = True
-    return decision
-
-
-def read_fastflowlm_terms_decision(db: Database) -> PersistedFastFlowLMTermsDecision | None:
-    """Read only the exact current-version terms decision from app metadata."""
+) -> None:
+    """Apply the local user's durable terms decision before provider selection."""
 
     with db.connect() as connection:
         row = connection.execute(
@@ -47,33 +24,19 @@ def read_fastflowlm_terms_decision(db: Database) -> PersistedFastFlowLMTermsDeci
             (FASTFLOWLM_TERMS_DECISION_KEY,),
         ).fetchone()
     if row is None:
-        return None
+        return
     try:
         payload = json.loads(str(row["value"]))
     except (json.JSONDecodeError, TypeError):
-        return None
-    if not isinstance(payload, dict):
-        return None
+        return
     decision = payload.get("decision")
-    terms_version = payload.get("terms_version")
-    if terms_version != FASTFLOWLM_RUNTIME_TRUST_POLICY.version:
-        return None
-    try:
-        parsed_decision = FastFlowLMTermsDecision(decision)
-    except (TypeError, ValueError):
-        return None
-    return PersistedFastFlowLMTermsDecision(
-        decision=parsed_decision,
-        terms_version=terms_version,
-    )
-
-
-def fastflowlm_terms_are_accepted(db: Database) -> bool:
-    decision = read_fastflowlm_terms_decision(db)
-    return (
-        decision is not None
-        and decision.decision == FastFlowLMTermsDecision.ACCEPTED
-    )
+    version = payload.get("terms_version")
+    if decision == "accepted" and version == FASTFLOWLM_RUNTIME_TRUST_POLICY.version:
+        settings.fastflowlm_terms_accepted_version = version
+        settings.fastflowlm_terms_declined = False
+    elif decision == "declined":
+        settings.fastflowlm_terms_accepted_version = None
+        settings.fastflowlm_terms_declined = True
 
 
 def persist_fastflowlm_terms_decision(
@@ -81,25 +44,24 @@ def persist_fastflowlm_terms_decision(
     db: Database,
     *,
     decision: FastFlowLMTermsDecision,
-    terms_version: str,
-) -> PersistedFastFlowLMTermsDecision:
-    """Persist one explicit decision for the exact terms the user was shown."""
-
+    terms_version: str | None,
+) -> None:
     policy_version = FASTFLOWLM_RUNTIME_TRUST_POLICY.version
-    if terms_version != policy_version:
+    if decision == "accepted" and terms_version != policy_version:
         raise ValueError(f"FastFlowLM terms version must be {policy_version}.")
-    durable_decision = PersistedFastFlowLMTermsDecision(
-        decision=decision,
-        terms_version=terms_version,
-    )
+    if decision == "declined" and terms_version not in {None, policy_version}:
+        raise ValueError("FastFlowLM declined terms version is not allowlisted.")
+
+    accepted_version = policy_version if decision == "accepted" else None
     payload = json.dumps(
         {
-            "decision": durable_decision.decision,
-            "terms_version": durable_decision.terms_version,
+            "decision": decision,
+            "terms_version": accepted_version,
         },
         separators=(",", ":"),
         sort_keys=True,
     )
+    now = utc_now()
     with db.connect() as connection:
         connection.execute(
             """
@@ -109,17 +71,15 @@ def persist_fastflowlm_terms_decision(
                 value = excluded.value,
                 updated_at = excluded.updated_at
             """,
-            (FASTFLOWLM_TERMS_DECISION_KEY, payload, utc_now()),
+            (FASTFLOWLM_TERMS_DECISION_KEY, payload, now),
         )
-    apply_persisted_fastflowlm_terms_decision(settings, db)
-    return durable_decision
+    settings.fastflowlm_terms_accepted_version = accepted_version
+    settings.fastflowlm_terms_declined = decision == "declined"
 
 
 __all__ = [
     "FASTFLOWLM_TERMS_DECISION_KEY",
-    "PersistedFastFlowLMTermsDecision",
+    "FastFlowLMTermsDecision",
     "apply_persisted_fastflowlm_terms_decision",
-    "fastflowlm_terms_are_accepted",
     "persist_fastflowlm_terms_decision",
-    "read_fastflowlm_terms_decision",
 ]

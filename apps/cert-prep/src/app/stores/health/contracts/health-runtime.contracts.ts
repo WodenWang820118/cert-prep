@@ -6,6 +6,11 @@ import type {
   RuntimeInstallationRead,
   RuntimeRequirementRead,
 } from '../../../cert-prep-api';
+import type {
+  FastFlowLMTermsDecisionRequest as GeneratedFastFlowLMTermsDecisionRequest,
+  LLMProviderSelectionRead as GeneratedLLMProviderSelectionRead,
+  RuntimeInstallationStartRequest as GeneratedRuntimeInstallationStartRequest,
+} from '@cert-prep/api';
 
 /**
  * Runtime job lifecycle normalized for UI state and polling decisions.
@@ -13,6 +18,8 @@ import type {
 export type DownloadPhase =
   | 'starting'
   | 'running'
+  | 'cancel_requested'
+  | 'canceled'
   | 'waiting_for_user'
   | 'succeeded'
   | 'failed';
@@ -21,12 +28,27 @@ export type DownloadPhase =
  * Runtime requirement kinds the Angular health UI knows how to present.
  */
 export type RuntimeKind =
-  | 'fastflowlm'
-  | 'fastflowlm_model'
   | 'ollama'
   | 'ollama_model'
+  | 'fastflowlm'
+  | 'fastflowlm_model'
   | 'paddle_ocr'
   | 'windowsml_ocr';
+
+/**
+ * Backend-owned provider decision and consent request types generated from
+ * the shared OpenAPI contract.
+ */
+export type LLMProviderSelectionRead = GeneratedLLMProviderSelectionRead;
+export type FastFlowTermsDecisionRequest =
+  GeneratedFastFlowLMTermsDecisionRequest;
+export type RuntimeInstallationStartRequest =
+  GeneratedRuntimeInstallationStartRequest;
+
+export interface FastFlowTermsConsent {
+  readonly version: string;
+  readonly url: string;
+}
 
 /**
  * Coarse OCR readiness phase used by the runtime UI and upload gating.
@@ -47,15 +69,29 @@ export interface HealthSnapshot {
   readonly system?: HealthResponse;
   readonly llm?: LLMHealthRead;
   readonly ocr?: OCRHealthRead;
+  readonly providerSelection?: LLMProviderSelectionRead;
   readonly runtimeRequirements: RuntimeRequirementRead[];
+}
+
+/**
+ * Provider-selection and FastFlow terms-decision API surface used by health.
+ */
+export interface LLMProviderSelectionApiClient {
+  llmProviderSelection(): Promise<LLMProviderSelectionRead>;
+  decideFastflowlmTerms(
+    body: FastFlowTermsDecisionRequest,
+  ): Promise<LLMProviderSelectionRead>;
 }
 
 /**
  * Minimal model-download API surface used by the Angular health workflow.
  */
 export interface ModelDownloadApiClient {
-  startModelDownload(): Promise<ModelDownloadRead>;
+  startModelDownload(
+    body?: RuntimeInstallationStartRequest,
+  ): Promise<ModelDownloadRead>;
   getModelDownload(jobId: string): Promise<ModelDownloadRead>;
+  cancelModelDownload(jobId: string): Promise<ModelDownloadRead>;
 }
 
 /**
@@ -63,8 +99,12 @@ export interface ModelDownloadApiClient {
  */
 export interface RuntimeInstallationApiClient {
   runtimeRequirements(): Promise<{ items: RuntimeRequirementRead[] }>;
-  startRuntimeInstallation(kind: string): Promise<RuntimeInstallationRead>;
+  startRuntimeInstallation(
+    kind: string,
+    body?: RuntimeInstallationStartRequest,
+  ): Promise<RuntimeInstallationRead>;
   getRuntimeInstallation(jobId: string): Promise<RuntimeInstallationRead>;
+  cancelRuntimeInstallation(jobId: string): Promise<RuntimeInstallationRead>;
 }
 
 /**
@@ -78,6 +118,7 @@ export interface ModelDownloadView {
   readonly progress: number | null;
   readonly message: string;
   readonly error: string | null;
+  readonly cancellable: boolean;
 }
 
 /**
@@ -92,6 +133,7 @@ export interface RuntimeInstallationView {
   readonly progress: number | null;
   readonly message: string;
   readonly error: string | null;
+  readonly cancellable: boolean;
 }
 
 /** Canonical runtime job payload narrowed defensively at the UI boundary. */

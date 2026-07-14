@@ -2,7 +2,6 @@ import { Component, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ProgressBar } from 'primeng/progressbar';
 import { Tag } from 'primeng/tag';
-import type { DocumentRead } from '../../cert-prep-api';
 import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
 import { OperationStore } from '../../stores/operation.store';
 import { ProjectStore } from '../../stores/project.store';
@@ -75,88 +74,25 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
                       / {{ item.error }}
                     }
                   </p>
-                  @if (item.document; as document) {
-                    @if (
-                      document.id !== sourceImport.activeDocumentId() &&
-                      sourceImport.documentProcessingError(document.id);
-                      as processingError
-                    ) {
-                      <p
-                        class="m-0 mt-2 text-xs font-semibold text-red-700"
-                        role="alert"
-                      >
-                        {{ processingError }}
-                      </p>
-                    }
-                  }
                 </div>
-                <div class="flex flex-wrap items-center gap-2">
-                  <p-tag
-                    [value]="uploadStatusLabel(item.status)"
-                    [severity]="uploadStatusSeverity(item.status)"
-                    [rounded]="true"
-                  />
-                  @if (sourceImport.canCancelUpload(item)) {
-                    <button
-                      class="workbench-secondary-button"
-                      type="button"
-                      [attr.aria-label]="'Cancel upload of ' + item.file.name"
-                      [disabled]="item.status === 'cancel_requested'"
-                      (click)="cancelUpload(item.id)"
-                    >
-                      Cancel
-                    </button>
-                  }
-                  @if (sourceImport.canRetryUpload(item)) {
-                    <button
-                      class="workbench-secondary-button"
-                      type="button"
-                      [attr.aria-label]="'Retry upload of ' + item.file.name"
-                      (click)="retryUpload(item.id)"
-                    >
-                      Retry
-                    </button>
-                  }
-                  @if (item.document; as document) {
-                    <p-tag
-                      [value]="'OCR: ' + documentProcessingStatusLabel(document)"
-                      [severity]="documentProcessingStatusSeverity(document)"
-                      [rounded]="true"
-                    />
-                    @if (document.id !== sourceImport.activeDocumentId()) {
-                      @if (sourceImport.canCancelDocumentProcessing(document)) {
-                        <button
-                          class="workbench-secondary-button"
-                          type="button"
-                          [attr.aria-label]="'Cancel OCR for ' + item.file.name"
-                          (click)="cancelDocumentProcessing(document.id)"
-                        >
-                          Cancel OCR
-                        </button>
-                      }
-                      @if (sourceImport.canRetryDocumentProcessing(document)) {
-                        <button
-                          class="workbench-secondary-button"
-                          type="button"
-                          [attr.aria-label]="'Retry OCR for ' + item.file.name"
-                          (click)="retryDocumentProcessing(document.id)"
-                        >
-                          Retry OCR
-                        </button>
-                      }
-                      @if (sourceImport.canRetryDocumentActionStatus(document.id)) {
-                        <button
-                          class="workbench-secondary-button"
-                          type="button"
-                          [attr.aria-label]="'Retry OCR status for ' + item.file.name"
-                          (click)="retryDocumentActionStatus(document.id)"
-                        >
-                          Retry OCR status
-                        </button>
-                      }
-                    }
-                  }
-                </div>
+                <p-tag
+                  [value]="uploadStatusLabel(item.status)"
+                  [severity]="uploadStatusSeverity(item.status)"
+                  [rounded]="true"
+                />
+                @if (sourceImport.canCancelUploadItem(item)) {
+                  <button
+                    class="workbench-secondary-button"
+                    type="button"
+                    [disabled]="item.status === 'cancel_requested'"
+                    (click)="sourceImport.cancelUploadItem(item.id)"
+                  >
+                    <i class="pi pi-times" aria-hidden="true"></i>
+                    <span>
+                      {{ item.status === 'cancel_requested' ? 'Canceling' : 'Cancel' }}
+                    </span>
+                  </button>
+                }
               </div>
             }
           </div>
@@ -222,40 +158,6 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
             class="grid gap-3"
             aria-live="polite"
           >
-            @if (sourceImport.documentProcessingError(document.id); as processingError) {
-              <div
-                class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800"
-                role="alert"
-              >
-                <span>{{ processingError }}</span>
-                @if (sourceImport.canRetryDocumentActionStatus(document.id)) {
-                  <button
-                    class="workbench-secondary-button"
-                    type="button"
-                    [attr.aria-label]="'Retry OCR status for ' + document.filename"
-                    (click)="retryDocumentActionStatus(document.id)"
-                  >
-                    Retry OCR status
-                  </button>
-                }
-              </div>
-            }
-            @if (sourceImport.documentPollingError(); as pollingError) {
-              <div
-                class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800"
-                role="alert"
-              >
-                <span>{{ pollingError }}</span>
-                <button
-                  class="workbench-secondary-button"
-                  type="button"
-                  [attr.aria-label]="'Retry document status for ' + document.filename"
-                  (click)="retryDocumentStatus()"
-                >
-                  Retry status
-                </button>
-              </div>
-            }
             <div class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-surface-200 bg-surface-50 p-3">
               <div class="min-w-0">
                 <p class="m-0 truncate text-sm font-semibold text-color">
@@ -266,39 +168,64 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
                   chunks / {{ sourceImport.elapsedTime() }}
                 </p>
               </div>
-              <div class="flex flex-wrap items-center gap-2">
-                <p-tag
-                  [value]="sourceImport.documentPollingError() ? 'status unavailable' : documentProcessingStatusLabel(document)"
-                  [severity]="sourceImport.documentPollingError() ? 'danger' : documentProcessingStatusSeverity(document)"
-                  [rounded]="true"
-                />
-                @if (sourceImport.canCancelDocumentProcessing(document)) {
-                  <button
-                    class="workbench-secondary-button"
-                    type="button"
-                    [attr.aria-label]="'Cancel OCR for ' + document.filename"
-                    (click)="cancelDocumentProcessing(document.id)"
-                  >
-                    Cancel OCR
-                  </button>
-                }
-                @if (sourceImport.canRetryDocumentProcessing(document)) {
-                  <button
-                    class="workbench-secondary-button"
-                    type="button"
-                    [attr.aria-label]="'Retry OCR for ' + document.filename"
-                    (click)="retryDocumentProcessing(document.id)"
-                  >
-                    Retry OCR
-                  </button>
-                }
-              </div>
-            </div>
-            @if (!sourceImport.documentPollingError()) {
-              <p-progressbar
-                [value]="sourceImport.progressPercent()"
-                [showValue]="false"
+              <p-tag
+                [value]="document.status"
+                [severity]="document.status === 'processing' ? 'info' : document.status === 'ready' ? 'success' : 'warn'"
+                [rounded]="true"
               />
+              @if (document.status === 'processing' || document.status === 'cancel_requested') {
+                <button
+                  class="workbench-secondary-button"
+                  type="button"
+                  [disabled]="
+                    document.status === 'cancel_requested' ||
+                    operations.isBusyFor('document-cancel')
+                  "
+                  (click)="sourceImport.cancelActiveDocumentProcessing()"
+                >
+                  <i class="pi pi-times" aria-hidden="true"></i>
+                  <span>
+                    {{ document.status === 'cancel_requested' ? 'Canceling' : 'Cancel parsing' }}
+                  </span>
+                </button>
+              } @else if (
+                document.status === 'canceled' ||
+                document.status === 'ocr_failed' ||
+                document.status === 'no_text_detected' ||
+                document.status === 'exam_failed'
+              ) {
+                <button
+                  class="workbench-secondary-button"
+                  type="button"
+                  [disabled]="operations.isBusyFor('document-retry')"
+                  (click)="sourceImport.retryActiveDocumentProcessing()"
+                >
+                  <i class="pi pi-refresh" aria-hidden="true"></i>
+                  <span>Retry parsing</span>
+                </button>
+              }
+            </div>
+            <p-progressbar
+              [value]="sourceImport.progressPercent()"
+              [showValue]="false"
+            />
+            @if (sourceImport.pollingError(); as pollingError) {
+              <div
+                class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 p-3"
+                role="alert"
+              >
+                <span class="text-sm font-semibold text-red-900">
+                  {{ pollingError }}
+                </span>
+                <button
+                  class="workbench-secondary-button"
+                  type="button"
+                  (click)="sourceImport.retryDocumentPolling()"
+                >
+                  <i class="pi pi-refresh" aria-hidden="true"></i>
+                  <span>Retry progress</span>
+                </button>
+              </div>
             }
           </section>
 
@@ -441,43 +368,11 @@ export class SourceImportPanelComponent {
   }
 
   protected async uploadDocument(): Promise<void> {
-    const projectId = this.projects.selectedProject()?.id;
-    if (projectId === undefined) {
-      return;
-    }
     const documents = await this.sourceImport.uploadDocuments();
-    if (
-      documents.length > 0 &&
-      this.projects.selectedProject()?.id === projectId
-    ) {
-      await this.drafts.load(projectId);
+    const project = this.projects.selectedProject();
+    if (documents.length > 0 && project !== null) {
+      await this.drafts.load(project.id);
     }
-  }
-
-  protected async cancelUpload(itemId: string): Promise<void> {
-    await this.sourceImport.cancelUpload(itemId);
-  }
-
-  protected async retryUpload(itemId: string): Promise<void> {
-    await this.sourceImport.retryUpload(itemId);
-  }
-
-  protected async cancelDocumentProcessing(documentId: string): Promise<void> {
-    await this.sourceImport.cancelDocumentProcessing(documentId);
-  }
-
-  protected async retryDocumentProcessing(documentId: string): Promise<void> {
-    await this.sourceImport.retryDocumentProcessing(documentId);
-  }
-
-  protected async retryDocumentActionStatus(
-    documentId: string,
-  ): Promise<void> {
-    await this.sourceImport.retryDocumentActionStatus(documentId);
-  }
-
-  protected async retryDocumentStatus(): Promise<void> {
-    await this.sourceImport.retryDocumentPolling();
   }
 
   protected async selectDocument(documentId: string): Promise<void> {
@@ -522,17 +417,14 @@ export class SourceImportPanelComponent {
     if (status === 'uploading') {
       return 'Uploading';
     }
-    if (status === 'cancel_requested') {
-      return 'Cancel requested';
+    if (status === 'uploaded') {
+      return 'Uploaded';
     }
-    if (status === 'status_unavailable') {
-      return 'Status unavailable';
+    if (status === 'cancel_requested') {
+      return 'Canceling';
     }
     if (status === 'canceled') {
       return 'Canceled';
-    }
-    if (status === 'uploaded') {
-      return 'Uploaded';
     }
     return 'Failed';
   }
@@ -544,57 +436,11 @@ export class SourceImportPanelComponent {
     if (status === 'uploading') {
       return 'info';
     }
-    if (status === 'failed' || status === 'status_unavailable') {
+    if (status === 'failed') {
       return 'danger';
     }
-    return 'warn';
-  }
-
-  protected documentProcessingStatusLabel(document: DocumentRead): string {
-    const action = this.sourceImport.documentProcessingState(document.id);
-    if (action?.status === 'running') {
-      return action.kind === 'retry' ? 'Retrying' : 'Processing';
-    }
-    if (action?.status === 'cancel_requested') {
-      return 'Cancel requested';
-    }
-    if (action?.status === 'status_unavailable') {
-      return 'Status unavailable';
-    }
-    if (action?.status === 'failed') {
-      return 'Action failed';
-    }
-    if (document.status === 'ocr_failed') {
-      return 'OCR failed';
-    }
-    if (document.status === 'no_text_detected') {
-      return 'No text detected';
-    }
-    if (document.status === 'cancel_requested') {
-      return 'Cancel requested';
-    }
-    return document.status.charAt(0).toUpperCase() + document.status.slice(1);
-  }
-
-  protected documentProcessingStatusSeverity(
-    document: DocumentRead,
-  ): 'success' | 'info' | 'warn' | 'danger' {
-    const actionStatus =
-      this.sourceImport.documentProcessingState(document.id)?.status;
-    if (actionStatus === 'failed' || actionStatus === 'status_unavailable') {
-      return 'danger';
-    }
-    if (actionStatus === 'running' || document.status === 'processing') {
-      return 'info';
-    }
-    if (document.status === 'ready') {
-      return 'success';
-    }
-    if (
-      document.status === 'ocr_failed' ||
-      document.status === 'no_text_detected'
-    ) {
-      return 'danger';
+    if (status === 'canceled' || status === 'cancel_requested') {
+      return 'warn';
     }
     return 'warn';
   }

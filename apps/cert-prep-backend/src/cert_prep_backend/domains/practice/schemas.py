@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Literal
-
 from pydantic import BaseModel, Field
 
 from cert_prep_backend.domains.practice.models import PracticeSessionMode, PracticeSessionStatus
@@ -47,16 +45,6 @@ class PracticeSessionSummaryRead(BaseModel):
 
 class PracticeSessionList(BaseModel):
     items: list[PracticeSessionSummaryRead]
-
-
-class PracticeSessionConflictRead(BaseModel):
-    code: Literal[
-        "active_session_exists",
-        "practice_session_completed",
-        "practice_session_abandoned",
-    ]
-    message: str
-    details: dict[str, object] | None = None
 
 
 class PracticeSessionRead(BaseModel):

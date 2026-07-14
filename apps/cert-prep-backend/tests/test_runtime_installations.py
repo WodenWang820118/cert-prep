@@ -7,6 +7,7 @@ import subprocess
 from types import SimpleNamespace
 from zipfile import ZipFile
 
+import pytest
 from fastapi.testclient import TestClient
 
 from cert_prep_backend.api.app import create_app
@@ -20,22 +21,111 @@ from cert_prep_backend.domains.mock_exams import (
 from cert_prep_backend.domains.mock_exams.provider import LazyDraftGenerationProvider
 from cert_prep_backend.domains.runtime_installations.installers import LLMModelInstaller
 from cert_prep_backend.domains.runtime_installations import (
+    FastFlowLMRuntimeInstaller,
     WindowsMLOcrRuntimeInstaller,
     PaddleOcrRuntimeInstaller,
     RuntimeInstallationManager,
     run_ocr_runtime_command,
 )
-from cert_prep_backend.domains.source_documents.ocr import OCRHealth, OCRPageResult
+from cert_prep_backend.domains.runtime_installations.fastflowlm import (
+    verify_fastflowlm_authenticode,
+    verify_fastflowlm_installer_hash,
+)
+from cert_prep_backend.persistence.database import Database
+from cert_prep_backend.api.errors import (
+    ProviderUnavailableError,
+    TermsAcceptanceRequiredError,
+)
+from cert_prep_contracts.llm import FASTFLOWLM_RUNTIME_TRUST_POLICY
 from cert_prep_contracts.runtime import (
     RuntimeInstallationStatus,
     RuntimeInstallProgress,
     RuntimeRequirementKind,
     RuntimeRequirementSnapshot,
 )
+from cert_prep_backend.domains.source_documents.ocr import OCRHealth, OCRPageResult
 from llm_test_fakes import GIB, _profile_inventory
 
 
 AUTH_HEADERS = {"Authorization": "Bearer test-token"}
+
+
+def test_runtime_jobs_persist_across_manager_recreation(tmp_path: Path) -> None:
+    settings = Settings(data_dir=tmp_path, api_token="test-token")
+    db = Database(settings)
+    installer = FakeInstaller(RuntimeRequirementKind.OLLAMA_MODEL)
+    manager = RuntimeInstallationManager(
+        settings=settings,
+        llm_provider=object(),
+        ocr_provider=FakeOcrProvider(),
+        db=db,
+        installers=[installer],
+        async_jobs=False,
+    )
+
+    completed = manager.start_installation(RuntimeRequirementKind.OLLAMA_MODEL)
+    restored = RuntimeInstallationManager(
+        settings=settings,
+        llm_provider=object(),
+        ocr_provider=FakeOcrProvider(),
+        db=Database(settings),
+        installers=[FakeInstaller(RuntimeRequirementKind.OLLAMA_MODEL)],
+        async_jobs=False,
+    ).get_installation(completed.id)
+
+    assert restored.status == RuntimeInstallationStatus.SUCCEEDED
+    assert restored.completed == 100
+
+
+def test_runtime_job_crash_recovery_is_fail_closed(tmp_path: Path) -> None:
+    settings = Settings(data_dir=tmp_path, api_token="test-token")
+    db = Database(settings)
+    with db.connect() as connection:
+        connection.executemany(
+            """
+            INSERT INTO runtime_installation_jobs(
+                id, kind, provider, model, status, phase, cancellable,
+                detail, completed, total, error, created_at, updated_at
+            )
+            VALUES (?, ?, 'test', '', ?, ?, 1, 'in flight', NULL, NULL,
+                NULL, '2026-07-11T00:00:00+00:00',
+                '2026-07-11T00:00:00+00:00')
+            """,
+            [
+                (
+                    "running-job",
+                    RuntimeRequirementKind.OLLAMA.value,
+                    RuntimeInstallationStatus.RUNNING.value,
+                    "installing",
+                ),
+                (
+                    "canceling-job",
+                    RuntimeRequirementKind.PADDLE_OCR.value,
+                    RuntimeInstallationStatus.CANCEL_REQUESTED.value,
+                    "canceling",
+                ),
+            ],
+        )
+
+    manager = RuntimeInstallationManager(
+        settings=settings,
+        llm_provider=object(),
+        ocr_provider=FakeOcrProvider(),
+        db=db,
+        installers=[
+            FakeInstaller(RuntimeRequirementKind.OLLAMA),
+            FakeInstaller(RuntimeRequirementKind.PADDLE_OCR),
+        ],
+        async_jobs=False,
+    )
+
+    interrupted = manager.get_installation("running-job")
+    canceled = manager.get_installation("canceling-job")
+    assert interrupted.status == RuntimeInstallationStatus.FAILED
+    assert interrupted.phase == "interrupted"
+    assert interrupted.cancellable is False
+    assert canceled.status == RuntimeInstallationStatus.CANCELED
+    assert canceled.cancellable is False
 
 
 def test_runtime_requirements_are_read_only(tmp_path: Path) -> None:
@@ -125,6 +215,182 @@ def test_runtime_installation_starts_only_from_post(tmp_path: Path) -> None:
     assert response.json()["status"] == "succeeded"
     assert response.json()["completed"] == 100
     assert installer.install_calls == 1
+
+
+def test_fastflowlm_runtime_install_requires_exact_terms_version(tmp_path: Path) -> None:
+    installer = FakeInstaller(RuntimeRequirementKind.FASTFLOWLM)
+    manager = RuntimeInstallationManager(
+        settings=Settings(data_dir=tmp_path, api_token="test-token"),
+        llm_provider=object(),
+        ocr_provider=FakeOcrProvider(),
+        installers=[installer],
+        async_jobs=False,
+    )
+    client = TestClient(
+        create_app(
+            settings=Settings(data_dir=tmp_path, api_token="test-token"),
+            runtime_installation_manager=manager,
+        )
+    )
+
+    rejected = client.post(
+        "/runtime/installations/fastflowlm",
+        headers=AUTH_HEADERS,
+        json={"fastflowlm_terms_accepted_version": "0.9.42"},
+    )
+    accepted = client.post(
+        "/runtime/installations/fastflowlm",
+        headers=AUTH_HEADERS,
+        json={"fastflowlm_terms_accepted_version": "0.9.43"},
+    )
+
+    assert rejected.status_code == 409
+    assert rejected.json()["code"] == "terms_acceptance_required"
+    assert accepted.status_code == 202
+    assert accepted.json()["status"] == "succeeded"
+    assert installer.install_calls == 1
+
+
+def test_fastflowlm_runtime_installer_verifies_before_executing(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    events: list[str] = []
+    installed = tmp_path / "Program Files" / "flm" / "flm.exe"
+
+    def download(path: Path) -> None:
+        events.append("download")
+        path.write_bytes(b"installer")
+
+    def verify_artifact(_path: Path) -> None:
+        events.append("hash")
+
+    def verify_signature(_path: Path) -> None:
+        events.append("signature")
+
+    def run_installer(_path: Path, _timeout: float) -> None:
+        events.append("execute")
+        installed.parent.mkdir(parents=True)
+        installed.write_bytes(b"flm")
+
+    installer = FastFlowLMRuntimeInstaller(
+        Settings(data_dir=tmp_path, llm_provider="fastflowlm"),
+        downloader=download,
+        artifact_verifier=verify_artifact,
+        signature_verifier=verify_signature,
+        installer_runner=run_installer,
+        executable_resolver=lambda: installed if installed.is_file() else None,
+    )
+    monkeypatch.setattr(installer, "validate_installable", lambda: None)
+
+    with pytest.raises(TermsAcceptanceRequiredError, match="explicitly accepted"):
+        installer.install(lambda _progress: None)
+    assert events == []
+
+    installer.authorize_terms("0.9.43")
+
+    result = installer.install(lambda _progress: None)
+
+    assert result == RuntimeInstallationStatus.SUCCEEDED
+    assert events == ["download", "hash", "signature", "execute"]
+
+
+def test_fastflowlm_runtime_installer_uses_owned_runner_by_default(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    events: list[str] = []
+    installed = tmp_path / "Program Files" / "flm" / "flm.exe"
+
+    def run_owned_installer(_path: Path, _timeout: float) -> None:
+        events.append("owned-execute")
+        installed.parent.mkdir(parents=True)
+        installed.write_bytes(b"flm")
+
+    installer = FastFlowLMRuntimeInstaller(
+        Settings(data_dir=tmp_path, llm_provider="fastflowlm"),
+        downloader=lambda path: path.write_bytes(b"installer"),
+        artifact_verifier=lambda _path: None,
+        signature_verifier=lambda _path: None,
+        executable_resolver=lambda: installed if installed.is_file() else None,
+    )
+    monkeypatch.setattr(installer, "validate_installable", lambda: None)
+    monkeypatch.setattr(installer, "_run_owned_installer", run_owned_installer)
+    installer.authorize_terms("0.9.43")
+
+    result = installer.install(lambda _progress: None)
+
+    assert result == RuntimeInstallationStatus.SUCCEEDED
+    assert events == ["owned-execute"]
+
+
+def test_fastflowlm_installer_hash_fails_closed_before_signature(tmp_path: Path) -> None:
+    installer = tmp_path / "flm-setup.exe"
+    installer.write_bytes(b"tampered")
+
+    with pytest.raises(ProviderUnavailableError, match="size does not match"):
+        verify_fastflowlm_installer_hash(installer)
+
+
+@pytest.mark.parametrize(
+    ("signature", "message"),
+    [
+        (
+            {
+                "Status": "NotSigned",
+                "SignerThumbprint": None,
+                "SignerSubject": None,
+                "Timestamped": False,
+            },
+            "valid signature",
+        ),
+        (
+            {
+                "Status": "Valid",
+                "SignerThumbprint": "0" * 40,
+                "SignerSubject": FASTFLOWLM_RUNTIME_TRUST_POLICY.signer_subject,
+                "Timestamped": True,
+            },
+            "signer is not allowlisted",
+        ),
+        (
+            {
+                "Status": "Valid",
+                "SignerThumbprint": FASTFLOWLM_RUNTIME_TRUST_POLICY.signer_thumbprint,
+                "SignerSubject": "CN=FastFlowLM Imposter",
+                "Timestamped": True,
+            },
+            "signer subject is not allowlisted",
+        ),
+        (
+            {
+                "Status": "Valid",
+                "SignerThumbprint": FASTFLOWLM_RUNTIME_TRUST_POLICY.signer_thumbprint,
+                "SignerSubject": FASTFLOWLM_RUNTIME_TRUST_POLICY.signer_subject,
+                "Timestamped": False,
+            },
+            "not timestamped",
+        ),
+    ],
+)
+def test_fastflowlm_authenticode_rejects_untrusted_metadata(
+    monkeypatch,
+    tmp_path: Path,
+    signature: dict,
+    message: str,
+) -> None:
+    monkeypatch.setattr(
+        "cert_prep_backend.domains.runtime_installations.fastflowlm.subprocess.run",
+        lambda *_args, **_kwargs: subprocess.CompletedProcess(
+            [],
+            0,
+            stdout=json.dumps(signature),
+            stderr="",
+        ),
+    )
+
+    with pytest.raises(ProviderUnavailableError, match=message):
+        verify_fastflowlm_authenticode(tmp_path / "flm-setup.exe")
 
 
 def test_lazy_ollama_provider_does_not_resolve_during_manager_setup(

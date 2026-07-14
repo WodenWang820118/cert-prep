@@ -11,6 +11,7 @@ import {
 
 describe('DraftReviewStore streaming jobs', () => {
   const apiClient = {
+    cancelDocumentDraftJob: vi.fn(),
     generateDocumentDrafts: vi.fn(),
     getDocument: vi.fn(),
     listDocumentChunks: vi.fn(),
@@ -100,6 +101,41 @@ describe('DraftReviewStore streaming jobs', () => {
 
     expect(store.drafts()).toEqual([draft]);
     expect(store.draftJobs()).toEqual([]);
+  });
+
+  it('stops after bounded polling retries and lets the user retry explicitly', async () => {
+    vi.useFakeTimers();
+    try {
+      const store = TestBed.inject(DraftReviewStore);
+      const sourceImport = TestBed.inject(SourceImportStore);
+      apiClient.listQuestionDrafts.mockResolvedValue({ items: [] });
+      apiClient.listDocumentDraftJobs.mockRejectedValue(new Error('jobs offline'));
+
+      activateDocument(
+        sourceImport,
+        documentRead({ status: 'processing', chunks_count: 1 }),
+      );
+      TestBed.tick();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      await vi.advanceTimersByTimeAsync(1000);
+      await vi.advanceTimersByTimeAsync(2000);
+      await vi.advanceTimersByTimeAsync(4000);
+
+      expect(apiClient.listDocumentDraftJobs).toHaveBeenCalledTimes(4);
+      expect(store.pollingError()).toContain('could not be refreshed');
+
+      apiClient.listDocumentDraftJobs.mockResolvedValue({ items: [] });
+      store.retryDraftPolling();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(store.pollingError()).toBeNull();
+      expect(apiClient.listDocumentDraftJobs).toHaveBeenCalledTimes(5);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('surfaces skipped streaming question jobs when the reasoning model is missing', async () => {
@@ -193,6 +229,28 @@ describe('DraftReviewStore streaming jobs', () => {
     expect(store.draftJobs()).toEqual([succeededJob]);
     expect(store.drafts()).toEqual([draft]);
     expect(apiClient.getDocument).toHaveBeenCalledWith('project-1', 'document-1');
+  });
+
+  it('cancels every cancellable background generation job for the active document', async () => {
+    const store = TestBed.inject(DraftReviewStore);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    const runningJob = draftJob({ status: 'running', phase: 'generating' });
+    const canceledJob = draftJob({
+      status: 'cancel_requested',
+      phase: 'canceling',
+    });
+    activateDocument(sourceImport, documentRead());
+    store.draftJobs.set([runningJob]);
+    apiClient.cancelDocumentDraftJob.mockResolvedValue(canceledJob);
+
+    await store.cancelActiveDraftJobs();
+
+    expect(apiClient.cancelDocumentDraftJob).toHaveBeenCalledWith(
+      'project-1',
+      'document-1',
+      'job-1',
+    );
+    expect(store.draftJobs()).toEqual([canceledJob]);
   });
 });
 

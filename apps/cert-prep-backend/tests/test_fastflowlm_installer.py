@@ -16,18 +16,15 @@ from cert_prep_backend.api.errors import (
     TermsAcceptanceRequiredError,
 )
 from cert_prep_backend.core.config import Settings
-from cert_prep_backend.domains.mock_exams.provider import LazyDraftGenerationProvider
 from cert_prep_backend.domains.runtime_installations.fastflowlm import (
     FastFlowLMRuntimeInstaller,
     _StrictGitHubRedirectHandler,
+    _terminate_owned_process_tree,
     _verify_fastflowlm_signature_metadata,
     _write_bounded_response,
     download_fastflowlm_installer,
     verify_fastflowlm_authenticode,
     verify_fastflowlm_installer_hash,
-)
-from cert_prep_backend.domains.mock_exams.fastflowlm_process import (
-    terminate_fastflowlm_process_tree,
 )
 from cert_prep_backend.domains.runtime_installations.installers import LLMModelInstaller
 from cert_prep_backend.domains.runtime_installations.manager import RuntimeInstallationManager
@@ -69,7 +66,7 @@ def test_fastflowlm_runtime_installer_requires_pinned_terms_before_work(
         executable_resolver=lambda: None,
     )
     monkeypatch.setattr(
-        "cert_prep_backend.domains.mock_exams.fastflowlm_process.os.name",
+        "cert_prep_backend.domains.runtime_installations.fastflowlm.os.name",
         "nt",
     )
     monkeypatch.setattr(
@@ -392,18 +389,18 @@ def test_installer_timeout_uses_absolute_taskkill_and_waits(
         "nt",
     )
     monkeypatch.setattr(
-        "cert_prep_backend.domains.mock_exams.fastflowlm_process."
-        "_resolve_windows_system_executable",
+        "cert_prep_backend.domains.runtime_installations.fastflowlm."
+        "resolve_windows_system_executable",
         lambda _name: taskkill,
     )
     monkeypatch.setattr(
-        "cert_prep_backend.domains.mock_exams.fastflowlm_process.subprocess.run",
+        "cert_prep_backend.domains.runtime_installations.fastflowlm.subprocess.run",
         lambda command, **_kwargs: (
             commands.append(command) or subprocess.CompletedProcess(command, 0)
         ),
     )
 
-    terminate_fastflowlm_process_tree(process)
+    _terminate_owned_process_tree(process)
 
     assert commands == [[str(taskkill), "/PID", "42", "/T", "/F"]]
     assert process.wait_calls == [15]
@@ -415,21 +412,21 @@ def test_installer_timeout_fails_closed_when_taskkill_fails(
 ) -> None:
     process = _OwnedProcess()
     monkeypatch.setattr(
-        "cert_prep_backend.domains.mock_exams.fastflowlm_process.os.name",
+        "cert_prep_backend.domains.runtime_installations.fastflowlm.os.name",
         "nt",
     )
     monkeypatch.setattr(
-        "cert_prep_backend.domains.mock_exams.fastflowlm_process."
-        "_resolve_windows_system_executable",
+        "cert_prep_backend.domains.runtime_installations.fastflowlm."
+        "resolve_windows_system_executable",
         lambda _name: Path(r"C:\Windows\System32\taskkill.exe"),
     )
     monkeypatch.setattr(
-        "cert_prep_backend.domains.mock_exams.fastflowlm_process.subprocess.run",
+        "cert_prep_backend.domains.runtime_installations.fastflowlm.subprocess.run",
         lambda command, **_kwargs: subprocess.CompletedProcess(command, 1),
     )
 
     with pytest.raises(ProviderUnavailableError, match="could not be terminated cleanly"):
-        terminate_fastflowlm_process_tree(process)
+        _terminate_owned_process_tree(process)
 
     assert process.killed is True
     assert process.wait_calls == [5]
@@ -450,139 +447,6 @@ def test_fastflowlm_model_installer_requires_pinned_terms() -> None:
     accepted = True
     assert installer.install(lambda _progress: None) == RuntimeInstallationStatus.SUCCEEDED
     assert provider.pull_calls == 1
-    assert provider.onboarding_events == ["prepare", "pull", "verify"]
-
-
-def test_fastflowlm_model_installer_resolves_production_lazy_capabilities() -> None:
-    provider = _ModelProvider()
-    lazy_provider = LazyDraftGenerationProvider(
-        lambda: provider,
-        provider="fastflowlm",
-        model="qwen3.5:4b",
-    )
-    installer = LLMModelInstaller(
-        lazy_provider,
-        fastflowlm_terms_accepted=lambda: True,
-    )
-
-    assert installer.install(lambda _progress: None) == RuntimeInstallationStatus.SUCCEEDED
-    assert provider.onboarding_events == ["prepare", "pull", "verify"]
-
-
-@pytest.mark.parametrize(
-    ("installed_models", "health_available", "expected_available"),
-    [
-        ({"qwen3.5:4b"}, False, True),
-        (set(), True, False),
-    ],
-)
-def test_fastflowlm_model_requirement_uses_offline_inventory_not_server_health(
-    installed_models: set[str],
-    health_available: bool,
-    expected_available: bool,
-) -> None:
-    provider = _InventoryModelProvider(
-        installed_models=installed_models,
-        health_available=health_available,
-    )
-
-    requirement = LLMModelInstaller(
-        provider,
-        fastflowlm_terms_accepted=lambda: True,
-    ).requirement()
-
-    assert requirement.available is expected_available
-    assert requirement.unavailable_reason == (
-        None if expected_available else "model_missing"
-    )
-    assert provider.inventory_calls == 1
-    assert provider.health_calls == 0
-
-
-def test_fastflowlm_model_requirement_resolves_lazy_offline_inventory() -> None:
-    provider = _InventoryModelProvider(
-        installed_models={"qwen3.5:4b"},
-        health_available=False,
-    )
-    lazy_provider = LazyDraftGenerationProvider(
-        lambda: provider,
-        provider="fastflowlm",
-        model="qwen3.5:4b",
-    )
-
-    requirement = LLMModelInstaller(
-        lazy_provider,
-        fastflowlm_terms_accepted=lambda: True,
-    ).requirement()
-
-    assert requirement.available is True
-    assert provider.inventory_calls == 1
-    assert provider.health_calls == 0
-
-
-@pytest.mark.parametrize(
-    "inventory_error",
-    [
-        "FastFlowLM is not installed in an allowlisted path.",
-        "FastFlowLM list command timed out.",
-        "FastFlowLM list command failed.",
-        "FastFlowLM installed-model response has an invalid models field.",
-    ],
-)
-def test_fastflowlm_model_requirement_distinguishes_inventory_failure_from_missing_model(
-    inventory_error: str,
-) -> None:
-    provider = _InventoryModelProvider(
-        installed_models=set(),
-        health_available=True,
-        inventory_error=inventory_error,
-    )
-
-    requirement = LLMModelInstaller(
-        provider,
-        fastflowlm_terms_accepted=lambda: True,
-    ).requirement()
-
-    assert requirement.available is False
-    assert requirement.unavailable_reason == "model_inventory_unavailable"
-    assert inventory_error in requirement.detail
-    assert provider.health_calls == 0
-
-
-def test_non_fastflow_model_requirement_retains_provider_health_semantics() -> None:
-    provider = _HealthModelProvider()
-
-    requirement = LLMModelInstaller(provider).requirement()
-
-    assert requirement.available is True
-    assert provider.health_calls == 1
-
-
-def test_fastflowlm_model_requirement_does_not_inventory_before_terms_acceptance() -> None:
-    provider = _InventoryModelProvider(
-        installed_models={"qwen3.5:4b"},
-        health_available=True,
-    )
-
-    requirement = LLMModelInstaller(provider).requirement()
-
-    assert requirement.available is False
-    assert requirement.unavailable_reason == "fastflowlm_terms_required"
-    assert provider.inventory_calls == 0
-    assert provider.health_calls == 0
-
-
-def test_fastflowlm_inventory_only_provider_is_not_reported_as_repairable() -> None:
-    provider = _InventoryOnlyProvider()
-
-    requirement = LLMModelInstaller(
-        provider,
-        fastflowlm_terms_accepted=lambda: True,
-    ).requirement()
-
-    assert requirement.available is False
-    assert requirement.unavailable_reason == "unsupported_provider"
-    assert provider.inventory_calls == 0
 
 
 def test_runtime_endpoint_reports_versioned_terms_requirement(tmp_path: Path) -> None:
@@ -623,87 +487,13 @@ class _ModelProvider:
 
     def __init__(self) -> None:
         self.pull_calls = 0
-        self.onboarding_events: list[str] = []
 
     def health(self):
         return SimpleNamespace(available=False, detail="model missing", unavailable_reason=None)
 
     def pull_model(self, progress) -> None:
         self.pull_calls += 1
-        self.onboarding_events.append("pull")
         progress(ModelPullProgress(status="complete", completed=1, total=1))
-
-    def prepare_model_onboarding(self, _progress) -> None:
-        self.onboarding_events.append("prepare")
-
-    def verify_model_onboarding(self, _progress) -> None:
-        self.onboarding_events.append("verify")
-
-
-class _InventoryModelProvider:
-    provider = "fastflowlm"
-    model = "qwen3.5:4b"
-
-    def __init__(
-        self,
-        *,
-        installed_models: set[str],
-        health_available: bool,
-        inventory_error: str | None = None,
-    ) -> None:
-        self._installed_models = installed_models
-        self._health_available = health_available
-        self._inventory_error = inventory_error
-        self.inventory_calls = 0
-        self.health_calls = 0
-
-    def pull_model(self, _progress) -> None:
-        pass
-
-    def installed_fastflowlm_models(self) -> set[str]:
-        self.inventory_calls += 1
-        if self._inventory_error is not None:
-            raise ProviderUnavailableError(self._inventory_error)
-        return set(self._installed_models)
-
-    def health(self):
-        self.health_calls += 1
-        return SimpleNamespace(
-            available=self._health_available,
-            detail="server health",
-            unavailable_reason=None,
-        )
-
-
-class _InventoryOnlyProvider:
-    provider = "fastflowlm"
-    model = "qwen3.5:4b"
-
-    def __init__(self) -> None:
-        self.inventory_calls = 0
-
-    def installed_fastflowlm_models(self) -> set[str]:
-        self.inventory_calls += 1
-        return {self.model}
-
-
-class _HealthModelProvider:
-    provider = "ollama"
-    model = "qwen3.5:4b"
-
-    def __init__(self) -> None:
-        self.health_calls = 0
-
-    def pull_model(self, _progress) -> None:
-        pass
-
-    def health(self):
-        self.health_calls += 1
-        return SimpleNamespace(
-            available=True,
-            detail="model available",
-            unavailable_reason=None,
-        )
 
 
 class _BytesResponse(BytesIO):

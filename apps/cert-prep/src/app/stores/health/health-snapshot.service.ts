@@ -28,6 +28,14 @@ export class HealthSnapshotService {
       onPartialSnapshot?.({ ocr: value });
       return value;
     });
+    const providerSelection = this.loadProviderSelection()
+      .then((value) => {
+        if (value !== undefined) {
+          onPartialSnapshot?.({ providerSelection: value });
+        }
+        return value;
+      })
+      .catch(() => undefined);
     const runtimeRequirements = this.loadRuntimeRequirements()
       .then((value) => {
         onPartialSnapshot?.({ runtimeRequirements: value });
@@ -35,8 +43,19 @@ export class HealthSnapshotService {
       })
       .catch(() => []);
 
-    const [systemResult, llmResult, ocrResult, requirementsResult] =
-      await Promise.allSettled([system, llm, ocr, runtimeRequirements]);
+    const [
+      systemResult,
+      llmResult,
+      ocrResult,
+      providerSelectionResult,
+      requirementsResult,
+    ] = await Promise.allSettled([
+      system,
+      llm,
+      ocr,
+      providerSelection,
+      runtimeRequirements,
+    ]);
 
     const failures = [systemResult, llmResult, ocrResult].filter(
       (result): result is PromiseRejectedResult =>
@@ -51,6 +70,10 @@ export class HealthSnapshotService {
         systemResult.status === 'fulfilled' ? systemResult.value : undefined,
       llm: llmResult.status === 'fulfilled' ? llmResult.value : undefined,
       ocr: ocrResult.status === 'fulfilled' ? ocrResult.value : undefined,
+      providerSelection:
+        providerSelectionResult.status === 'fulfilled'
+          ? providerSelectionResult.value
+          : undefined,
       runtimeRequirements:
         requirementsResult.status === 'fulfilled'
           ? requirementsResult.value
@@ -61,5 +84,10 @@ export class HealthSnapshotService {
   private async loadRuntimeRequirements() {
     const client = this.runtimeApi.runtimeInstallationClient();
     return (await client.runtimeRequirements()).items;
+  }
+
+  private async loadProviderSelection() {
+    const client = this.runtimeApi.providerSelectionClient();
+    return client.llmProviderSelection();
   }
 }

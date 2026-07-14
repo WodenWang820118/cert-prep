@@ -5,16 +5,20 @@ import {
   llmHealth,
   modelDownload,
   ocrHealth,
+  providerSelection,
 } from './health.store.spec-helpers';
 
 describe('HealthStore model downloads', () => {
   const apiClient = {
     health: vi.fn(),
     llmHealth: vi.fn(),
+    llmProviderSelection: vi.fn(),
+    decideFastflowlmTerms: vi.fn(),
     ocrHealth: vi.fn(),
     runtimeRequirements: vi.fn(),
     startModelDownload: vi.fn(),
     getModelDownload: vi.fn(),
+    cancelModelDownload: vi.fn(),
     startRuntimeInstallation: vi.fn(),
     getRuntimeInstallation: vi.fn(),
   };
@@ -30,6 +34,19 @@ describe('HealthStore model downloads', () => {
       runtime_mode: 'source',
     });
     apiClient.llmHealth.mockResolvedValue(llmHealth({ available: false }));
+    apiClient.llmProviderSelection.mockResolvedValue(
+      providerSelection({
+        selected_provider: 'ollama',
+        effective_provider: 'ollama',
+        selection_reason: 'Auto-selected Ollama for this device.',
+        hardware_compatible: false,
+        requires_terms_acceptance: false,
+        terms_version: null,
+        terms_url: null,
+        runtime_requirement_kind: 'ollama',
+        model_requirement_kind: 'ollama_model',
+      }),
+    );
     apiClient.ocrHealth.mockResolvedValue({
       ...ocrHealth(),
       fallback_reason: 'cuda_unavailable',
@@ -128,5 +145,90 @@ describe('HealthStore model downloads', () => {
     expect(apiClient.startModelDownload).toHaveBeenCalledTimes(1);
     expect(store.modelDownload()?.model).toBe('qwen3.5:4b');
     expect(store.modelDownload()?.phase).toBe('succeeded');
+  });
+
+  it('persists exact FastFlow terms before starting the official model pull', async () => {
+    const store = TestBed.inject(HealthStore);
+    const fastFlowSelection = providerSelection();
+    apiClient.llmProviderSelection.mockResolvedValue(fastFlowSelection);
+    apiClient.decideFastflowlmTerms.mockResolvedValue({
+      ...fastFlowSelection,
+      terms_accepted: true,
+    });
+    apiClient.llmHealth.mockResolvedValue(
+      llmHealth({
+        provider: 'fastflowlm',
+        model: 'qwen3.5:4b',
+        available: false,
+        detail: 'FastFlowLM model is missing.',
+        unavailable_reason: 'model_missing',
+        configured_model: 'qwen3.5:4b',
+        effective_model: 'qwen3.5:4b',
+      }),
+    );
+    apiClient.runtimeRequirements.mockResolvedValue({
+      items: [
+        {
+          kind: 'fastflowlm',
+          label: 'FastFlowLM',
+          available: true,
+          detail: 'FastFlowLM is ready.',
+          unavailable_reason: null,
+        },
+        {
+          kind: 'fastflowlm_model',
+          label: 'FastFlowLM model',
+          available: false,
+          detail: 'qwen3.5:4b is missing.',
+          unavailable_reason: 'model_missing',
+        },
+      ],
+    });
+    apiClient.startModelDownload.mockResolvedValue(
+      modelDownload({
+        provider: 'fastflowlm',
+        model: 'qwen3.5:4b',
+        status: 'running',
+      }),
+    );
+    await store.load();
+
+    store.openModelDownloadConsent();
+    store.setFastFlowTermsAcknowledged(true);
+    await store.confirmModelDownload();
+
+    expect(apiClient.decideFastflowlmTerms).toHaveBeenCalledWith({
+      decision: 'accepted',
+      terms_version: '0.9.43',
+    });
+    expect(apiClient.startModelDownload).toHaveBeenCalledWith({
+      fastflowlm_terms_accepted_version: '0.9.43',
+    });
+    expect(
+      apiClient.decideFastflowlmTerms.mock.invocationCallOrder[0],
+    ).toBeLessThan(apiClient.startModelDownload.mock.invocationCallOrder[0]);
+  });
+
+  it('cancels an active model download through the generated API', async () => {
+    const store = TestBed.inject(HealthStore);
+    apiClient.startModelDownload.mockResolvedValue(
+      modelDownload({ status: 'running', phase: 'downloading' }),
+    );
+    apiClient.cancelModelDownload.mockResolvedValue(
+      modelDownload({
+        status: 'canceled',
+        phase: 'canceled',
+        cancellable: false,
+      }),
+    );
+    await store.load();
+    store.openModelDownloadConsent();
+    await store.confirmModelDownload();
+
+    await store.cancelModelDownload();
+
+    expect(apiClient.cancelModelDownload).toHaveBeenCalledWith('job-1');
+    expect(store.modelDownload()?.phase).toBe('canceled');
+    expect(store.canCancelModelDownload()).toBe(false);
   });
 });

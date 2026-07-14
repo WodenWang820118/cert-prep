@@ -23,13 +23,14 @@ export type SourceUploadStatus =
   | 'queued'
   | 'uploading'
   | 'cancel_requested'
-  | 'status_unavailable'
   | 'canceled'
+  | 'status_unavailable'
   | 'uploaded'
   | 'failed';
 
 export interface SourceUploadItem {
   readonly id: string;
+  readonly operationId: string;
   readonly file: File;
   readonly status: SourceUploadStatus;
   readonly document: DocumentRead | null;

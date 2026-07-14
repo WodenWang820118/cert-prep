@@ -4,7 +4,6 @@ from collections.abc import Callable
 from typing import TypeVar
 
 from cert_prep_backend.api.errors import ProviderUnavailableError
-from cert_prep_backend.domains.mock_exams.ports import GenerationAttribution
 from cert_prep_backend.domains.mock_exams.response_parsing import (
     is_non_fatal_generation_error as is_non_fatal_llm_generation_error,
     short_error,
@@ -40,48 +39,35 @@ class FastFlowLMGenerationMixin:
             include_primary_failure=True,
         )
 
-    def reset_generation_attribution(self) -> None:
-        self._fallback_engine.reset_generation_attribution()
-
-    def get_generation_attribution(self) -> GenerationAttribution | None:
-        attribution = self._fallback_engine.generation_attribution()
-        if attribution is None:
-            return None
-        return GenerationAttribution(
-            effective_provider=self.provider,
-            effective_model=attribution.effective_model,
-            fallback_reason=attribution.fallback_reason,
-        )
-
     def _with_model_fallback(self, operation: Callable[[str], T]) -> T:
-        self.reset_generation_attribution()
         self._server_manager.begin_generation_request()
         try:
+            errors: list[str] = []
             for model in self._available_model_candidates():
                 try:
                     result = operation(model)
                 except Exception as exc:
-                    self._record_generation_failure(model, exc)
-                    transient = _is_transient_fastflowlm_generation_error(exc)
-                    if not transient and not is_non_fatal_llm_generation_error(exc):
+                    if _is_transient_fastflowlm_generation_error(exc):
+                        raise ProviderUnavailableError(
+                            f"FastFlowLM transient generation error for {model}: {short_error(exc)}"
+                        ) from exc
+                    errors.append(f"{model}: {short_error(exc)}")
+                    if not _is_non_fatal_fastflowlm_generation_error(exc):
                         self._mark_model_unusable(model, exc)
-                    label = "transient generation error" if transient else "generation error"
-                    raise ProviderUnavailableError(
-                        f"FastFlowLM {label} for {model}: {short_error(exc)}"
-                    ) from exc
+                    continue
 
                 self._record_model_success(model)
                 return result
 
-            raise ProviderUnavailableError("FastFlowLM has no usable model candidate.")
+            detail = "FastFlowLM unavailable for configured and fallback models"
+            if errors:
+                detail = f"{detail}: {'; '.join(errors)}"
+            raise ProviderUnavailableError(detail)
         finally:
             self._server_manager.end_generation_request()
 
     def _mark_model_unusable(self, model: str, exc: Exception) -> None:
         self._fallback_engine.mark_model_unusable(model, exc)
-
-    def _record_generation_failure(self, model: str, exc: Exception) -> None:
-        self._fallback_engine.record_generation_failure(model, exc)
 
     def _record_model_success(self, model: str) -> None:
         self._fallback_engine.record_model_success(model)
@@ -91,6 +77,10 @@ class FastFlowLMGenerationMixin:
 
     def _primary_failure_reason(self) -> str | None:
         return self._fallback_engine.primary_failure_reason()
+
+
+def _is_non_fatal_fastflowlm_generation_error(exc: Exception) -> bool:
+    return is_non_fatal_llm_generation_error(exc) or _is_transient_fastflowlm_generation_error(exc)
 
 
 def _is_transient_fastflowlm_generation_error(exc: Exception) -> bool:

@@ -94,7 +94,11 @@ class LazyDraftGenerationProvider:
         {
             "generate_reasoning_drafts",
             "generate_fast_first_draft",
+            "generation_attribution",
+            "prepare_model_onboarding",
             "release_resources",
+            "reset_generation_attribution",
+            "verify_model_onboarding",
             "pull_model",
         }
     )
@@ -115,7 +119,6 @@ class LazyDraftGenerationProvider:
         self._starts_on_generation = starts_on_generation
         self._lock = Lock()
         self._provider: object | None = None
-        self._retired_providers: list[object] = []
 
     @property
     def provider(self) -> str:
@@ -163,24 +166,19 @@ class LazyDraftGenerationProvider:
         return self._resolved_provider().generate_drafts(chunks, limit)
 
     def close(self) -> None:
-        with self._lock:
-            providers = [*self._retired_providers]
-            if self._provider is not None:
-                providers.append(self._provider)
-            self._provider = None
-            self._retired_providers.clear()
-        for resolved in {id(provider): provider for provider in providers}.values():
-            close = getattr(resolved, "close", None)
-            if callable(close):
-                close()
+        resolved = self._provider
+        if resolved is None:
+            return
+        close = getattr(resolved, "close", None)
+        if callable(close):
+            close()
 
     def reconfigure_from_settings(self, settings: Settings) -> None:
-        """Route future jobs to the new policy without interrupting in-flight jobs."""
+        """Reset the lazy provider after an explicit local policy decision."""
 
         selected_provider = _selected_provider_from_settings(settings).value
         with self._lock:
-            if self._provider is not None:
-                self._retired_providers.append(self._provider)
+            resolved = self._provider
             self._provider = None
             self._provider_hint = selected_provider
             self._model_hint = _provider_model_hint(settings, selected_provider)
@@ -189,6 +187,10 @@ class LazyDraftGenerationProvider:
                 selected_provider == "fastflowlm"
                 and settings.fastflowlm_auto_start_server
             )
+        if resolved is not None:
+            close = getattr(resolved, "close", None)
+            if callable(close):
+                close()
 
     def streaming_generation_kwargs(self) -> dict[str, object]:
         resolved = self._resolved_provider()
@@ -270,6 +272,9 @@ def _provider_model_hint(settings: Settings, selected_provider: str | None = Non
     provider = selected_provider or _selected_provider_from_settings(settings).value
     if provider == "fastflowlm":
         return settings.fastflowlm_model
+    # Keep the lazy hint at the shared configured model. Hardware inventory and
+    # any profile-specific local alias are resolved only when the provider is
+    # first used.
     return settings.ollama_model
 
 

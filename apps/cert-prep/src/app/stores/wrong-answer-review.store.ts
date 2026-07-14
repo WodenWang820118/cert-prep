@@ -7,7 +7,7 @@ import {
 import { OperationStore } from './operation.store';
 import { ProjectStore } from './project.store';
 
-interface WrongAnswerExplanationState {
+export interface WrongAnswerExplanationState {
   loading: boolean;
   result: string | null;
   error: string | null;

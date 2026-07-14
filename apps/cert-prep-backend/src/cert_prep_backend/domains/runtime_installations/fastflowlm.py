@@ -3,10 +3,12 @@ from __future__ import annotations
 from collections.abc import Callable
 import hashlib
 import hmac
+import json
 import os
 from pathlib import Path
 import subprocess
 from tempfile import TemporaryDirectory
+from threading import Lock
 import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
@@ -26,16 +28,12 @@ from cert_prep_backend.core.config import Settings
 from cert_prep_backend.domains.mock_exams.fastflowlm_resolver import (
     resolve_fastflowlm_executable,
 )
-from cert_prep_backend.domains.mock_exams.fastflowlm_process import (
-    terminate_fastflowlm_process_tree,
-)
 from cert_prep_backend.domains.mock_exams.provider_selection import (
     provider_selection_from_settings,
 )
 from cert_prep_backend.domains.runtime_installations.wintrust import (
-    AuthenticodeInspectionError,
     AuthenticodeSignature,
-    inspect_authenticode_signature,
+    resolve_windows_system_executable,
 )
 from cert_prep_contracts.llm import FASTFLOWLM_RUNTIME_TRUST_POLICY
 from cert_prep_contracts.runtime import (
@@ -85,7 +83,17 @@ class FastFlowLMRuntimeInstaller:
         self._resolve_executable = executable_resolver or (
             lambda: resolve_fastflowlm_executable(settings.fastflowlm_executable_path)
         )
-        self._terms_accepted = terms_accepted or (lambda: False)
+        self._authorization_lock = Lock()
+        self._authorized_terms_version: str | None = None
+        self._terms_accepted = terms_accepted
+        self._process_lock = Lock()
+        self._owned_process: subprocess.Popen[str] | None = None
+
+    def authorize_terms(self, version: str) -> None:
+        if version != FASTFLOWLM_RUNTIME_TRUST_POLICY.version:
+            raise TermsAcceptanceRequiredError("FastFlowLM terms version is not allowlisted.")
+        with self._authorization_lock:
+            self._authorized_terms_version = version
 
     def requirement(self) -> RuntimeRequirementSnapshot:
         executable = self._resolve_executable()
@@ -100,16 +108,12 @@ class FastFlowLMRuntimeInstaller:
                 bytes=FASTFLOWLM_RUNTIME_TRUST_POLICY.installer_bytes,
                 installed_path=str(executable),
             )
-
         selection = provider_selection_from_settings(self._settings)
         detail = "FastFlowLM is not installed."
         reason = "fastflowlm_missing"
         if not selection.hardware_compatible:
             detail = selection.fallback_reason or selection.selection_reason
             reason = "fastflowlm_hardware_incompatible"
-        elif not self._terms_accepted():
-            detail = "FastFlowLM terms must be accepted before installation."
-            reason = "fastflowlm_terms_required"
         return RuntimeRequirementSnapshot(
             kind=self.kind,
             label="FastFlowLM",
@@ -130,23 +134,22 @@ class FastFlowLMRuntimeInstaller:
             raise ProviderUnavailableError(
                 selection.fallback_reason or selection.selection_reason
             )
-        if not self._terms_accepted():
-            raise TermsAcceptanceRequiredError(
-                "FastFlowLM terms must be explicitly accepted before installation."
-            )
 
     def install(
         self,
         progress: Callable[[RuntimeInstallProgress], None],
     ) -> RuntimeInstallationStatus:
+        self._consume_terms_authorization()
         self.validate_installable()
         policy = FASTFLOWLM_RUNTIME_TRUST_POLICY
         with TemporaryDirectory(prefix="cert-prep-fastflowlm-") as temp_name:
             installer = Path(temp_name) / policy.installer_file_name
             progress(
                 RuntimeInstallProgress(
-                    f"Downloading FastFlowLM {policy.version} from its official release.",
+                    f"Downloading FastFlowLM {policy.version} from the official release.",
                     total=policy.installer_bytes,
+                    phase="downloading",
+                    cancellable=True,
                 )
             )
             self._download(installer)
@@ -155,11 +158,19 @@ class FastFlowLMRuntimeInstaller:
                     "Verifying FastFlowLM checksum and Authenticode signature.",
                     completed=policy.installer_bytes,
                     total=policy.installer_bytes,
+                    phase="verifying",
+                    cancellable=True,
                 )
             )
             self._verify_artifact(installer)
             self._verify_signature(installer)
-            progress(RuntimeInstallProgress("Starting the verified FastFlowLM installer."))
+            progress(
+                RuntimeInstallProgress(
+                    "Starting the verified FastFlowLM installer.",
+                    phase="installing",
+                    cancellable=True,
+                )
+            )
             if self._run_installer is None:
                 self._run_owned_installer(
                     installer,
@@ -171,18 +182,34 @@ class FastFlowLMRuntimeInstaller:
         executable = self._resolve_executable()
         if executable is None:
             return RuntimeInstallationStatus.WAITING_FOR_USER
-        progress(RuntimeInstallProgress("FastFlowLM is installed."))
+        progress(
+            RuntimeInstallProgress(
+                "FastFlowLM is installed.",
+                phase="verifying_installation",
+                cancellable=True,
+            )
+        )
         return RuntimeInstallationStatus.SUCCEEDED
 
+    def cancel(self) -> None:
+        """Terminate only the installer process started by this instance."""
+
+        with self._process_lock:
+            process = self._owned_process
+        if process is None or process.poll() is not None:
+            return
+        _terminate_owned_process_tree(process)
+
     def _run_owned_installer(self, installer: Path, timeout_seconds: float) -> None:
+        command = [
+            str(installer),
+            "/VERYSILENT",
+            "/SUPPRESSMSGBOXES",
+            "/NORESTART",
+            "/SP-",
+        ]
         process = subprocess.Popen(
-            [
-                str(installer),
-                "/VERYSILENT",
-                "/SUPPRESSMSGBOXES",
-                "/NORESTART",
-                "/SP-",
-            ],
+            command,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -191,14 +218,30 @@ class FastFlowLMRuntimeInstaller:
             errors="replace",
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
+        with self._process_lock:
+            self._owned_process = process
         try:
             stdout, stderr = process.communicate(timeout=max(60.0, timeout_seconds))
         except subprocess.TimeoutExpired as exc:
-            terminate_fastflowlm_process_tree(process)
+            _terminate_owned_process_tree(process)
             raise ProviderUnavailableError("FastFlowLM installer timed out.") from exc
+        finally:
+            with self._process_lock:
+                if self._owned_process is process:
+                    self._owned_process = None
         if process.returncode != 0:
             detail = (stderr or stdout or "").strip()
             raise ProviderUnavailableError(detail or "FastFlowLM installer failed.")
+
+    def _consume_terms_authorization(self) -> None:
+        with self._authorization_lock:
+            version = self._authorized_terms_version
+            self._authorized_terms_version = None
+        legacy_authorized = self._terms_accepted is not None and self._terms_accepted()
+        if version != FASTFLOWLM_RUNTIME_TRUST_POLICY.version and not legacy_authorized:
+            raise TermsAcceptanceRequiredError(
+                "FastFlowLM terms must be explicitly accepted before installation."
+            )
 
 
 def download_fastflowlm_installer(
@@ -253,8 +296,6 @@ def download_fastflowlm_installer(
 
 
 def verify_fastflowlm_installer_hash(installer: Path) -> None:
-    """Fail closed unless installer bytes and SHA-256 match the shared policy."""
-
     policy = FASTFLOWLM_RUNTIME_TRUST_POLICY
     try:
         actual_bytes = installer.stat().st_size
@@ -271,13 +312,43 @@ def verify_fastflowlm_installer_hash(installer: Path) -> None:
 
 
 def verify_fastflowlm_authenticode(installer: Path) -> None:
-    """Fail closed unless native WinVerifyTrust metadata matches the pinned signer."""
+    """Fail closed unless WinVerifyTrust metadata matches the pinned signer."""
 
+    if os.name != "nt":
+        raise ProviderUnavailableError("Authenticode verification requires Windows.")
+    script = (
+        "$signature = Get-AuthenticodeSignature -LiteralPath $args[0]; "
+        "[pscustomobject]@{"
+        "Status=[string]$signature.Status;"
+        "SignerThumbprint=[string]$signature.SignerCertificate.Thumbprint;"
+        "SignerSubject=[string]$signature.SignerCertificate.Subject;"
+        "Timestamped=($null -ne $signature.TimeStamperCertificate)"
+        "} | ConvertTo-Json -Compress"
+    )
+    completed = subprocess.run(
+        [_windows_powershell(), "-NoProfile", "-NonInteractive", "-Command", script, str(installer)],
+        check=False,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=30,
+    )
+    if completed.returncode != 0:
+        raise ProviderUnavailableError("FastFlowLM Authenticode verification failed.")
     try:
-        signature = inspect_authenticode_signature(installer)
-    except AuthenticodeInspectionError as exc:
-        raise ProviderUnavailableError(str(exc)) from exc
-    _verify_fastflowlm_signature_metadata(signature)
+        signature = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        raise ProviderUnavailableError("FastFlowLM Authenticode result was invalid.") from exc
+    if signature.get("Status") != "Valid":
+        raise ProviderUnavailableError("FastFlowLM installer does not have a valid signature.")
+    _verify_fastflowlm_signature_metadata(
+        AuthenticodeSignature(
+            subject=str(signature.get("SignerSubject") or ""),
+            thumbprint=str(signature.get("SignerThumbprint") or ""),
+            timestamped=signature.get("Timestamped") is True,
+        )
+    )
 
 
 def _verify_fastflowlm_signature_metadata(signature: AuthenticodeSignature) -> None:
@@ -359,12 +430,51 @@ def _set_read_idle_timeout(response) -> None:
         pass
 
 
-def _normalize_thumbprint(value: str) -> str:
-    return "".join(value.split()).upper()
+def _terminate_owned_process_tree(process: subprocess.Popen[str]) -> None:
+    """Terminate and reap exactly the installer process tree owned by this job."""
+
+    if process.poll() is not None:
+        return
+    taskkill_failed = False
+    if os.name == "nt":
+        taskkill = resolve_windows_system_executable("taskkill.exe")
+        completed = subprocess.run(
+            [str(taskkill), "/PID", str(process.pid), "/T", "/F"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if completed.returncode == 0:
+            process.wait(timeout=15)
+            return
+        taskkill_failed = True
+
+    process.kill()
+    process.wait(timeout=5)
+    if taskkill_failed:
+        raise ProviderUnavailableError(
+            "FastFlowLM installer process tree could not be terminated cleanly."
+        )
 
 
-def _normalize_subject(value: str) -> str:
-    return " ".join(value.split()).casefold()
+def _windows_powershell() -> str:
+    windows_dir = os.environ.get("SystemRoot") or os.environ.get("WINDIR") or r"C:\Windows"
+    return str(
+        Path(windows_dir)
+        / "System32"
+        / "WindowsPowerShell"
+        / "v1.0"
+        / "powershell.exe"
+    )
+
+
+def _normalize_thumbprint(value: object) -> str:
+    return "".join(str(value or "").split()).upper()
+
+
+def _normalize_subject(value: object) -> str:
+    return " ".join(str(value or "").split()).casefold()
 
 
 __all__ = [

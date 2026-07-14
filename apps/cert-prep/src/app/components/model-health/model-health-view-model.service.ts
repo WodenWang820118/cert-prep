@@ -21,10 +21,35 @@ export class ModelHealthViewModelService {
         { label: this.modelChipLabel(state), severity: model.severity },
         { label: this.ocrChipLabel(state), severity: ocr.severity },
       ],
+      providerSelection: this.providerSelectionSummary(state),
       python,
       ollama,
       model,
       ocr,
+    };
+  }
+
+  private providerSelectionSummary(
+    state: ModelHealthViewState,
+  ): ModelHealthViewModel['providerSelection'] {
+    const selection = state.providerSelection;
+    if (selection === null) {
+      return null;
+    }
+
+    const selectedProvider = this.providerLabel(selection.selected_provider);
+    const effectiveProvider = this.providerLabel(selection.effective_provider);
+    const fallbackActive =
+      Boolean(selection.fallback_reason?.trim()) ||
+      selection.selected_provider !== selection.effective_provider ||
+      selection.configured_model !== selection.effective_model;
+    return {
+      preferenceLabel: this.preferenceLabel(selection.preference),
+      selectedLabel: `${selectedProvider} / ${selection.configured_model}`,
+      effectiveLabel: `${effectiveProvider} / ${selection.effective_model}`,
+      selectionReason: selection.selection_reason,
+      fallbackReason: selection.fallback_reason ?? null,
+      fallbackActive,
     };
   }
 
@@ -162,6 +187,13 @@ export class ModelHealthViewModelService {
       return 'Model status unavailable.';
     }
     if (state.modelFallbackActive) {
+      if (state.providerSelection?.fallback_reason) {
+        return [
+          `Effective ${this.providerLabel(state.providerSelection.effective_provider)}`,
+          `${state.effectiveModelName}.`,
+          `Fallback: ${state.providerSelection.fallback_reason}`,
+        ].join(' ');
+      }
       return [
         `Ready via fallback ${state.effectiveModelName};`,
         `primary ${state.configuredModelName} is not installed.`,
@@ -286,7 +318,13 @@ export class ModelHealthViewModelService {
   }
 
   private llmRuntimeLabel(state: ModelHealthViewState): string {
-    const provider = state.llmHealth?.provider?.trim().toLowerCase();
+    return this.providerLabel(
+      state.providerSelection?.selected_provider ?? state.llmHealth?.provider,
+    );
+  }
+
+  private providerLabel(providerValue: string | null | undefined): string {
+    const provider = providerValue?.trim().toLowerCase();
     if (provider === 'fastflowlm') {
       return 'FastFlowLM';
     }
@@ -297,6 +335,14 @@ export class ModelHealthViewModelService {
       return 'Fake LLM';
     }
     return 'LLM runtime';
+  }
+
+  private preferenceLabel(preferenceValue: string): string {
+    const preference = preferenceValue.trim().toLowerCase();
+    if (preference === 'auto') {
+      return 'Auto';
+    }
+    return this.providerLabel(preferenceValue);
   }
 
   private ocrSeverity(state: ModelHealthViewState): HealthStatusSeverity {

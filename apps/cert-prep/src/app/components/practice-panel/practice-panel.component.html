@@ -9,6 +9,63 @@
     }
   </header>
 
+  @if (practice.resumableSession(); as resumable) {
+    <section
+      class="practice-resume-card"
+      aria-labelledby="practice-resume-title"
+    >
+      <div>
+        <p class="practice-section-label">Active session found</p>
+        <h3 id="practice-resume-title">Continue your unfinished practice?</h3>
+        <p>
+          {{ resumable.mode }} session {{ resumable.id }} is still active.
+          Resume restores answered questions and opens the next unanswered item.
+        </p>
+      </div>
+      @if (practice.abandonConfirmationPending()) {
+        <div class="practice-resume-confirm" role="alert">
+          <p>Abandon this session? Answer history is retained, but it cannot be resumed.</p>
+          <div>
+            <button
+              class="practice-secondary-button"
+              type="button"
+              (click)="practice.cancelAbandonActiveSession()"
+            >
+              Keep session
+            </button>
+            <button
+              class="practice-danger-button"
+              type="button"
+              [disabled]="operations.isBusyFor('session')"
+              (click)="practice.confirmAbandonActiveSession()"
+            >
+              Confirm abandon
+            </button>
+          </div>
+        </div>
+      } @else {
+        <div class="practice-resume-actions">
+          <button
+            class="practice-secondary-button"
+            type="button"
+            (click)="practice.requestAbandonActiveSession()"
+          >
+            Abandon
+          </button>
+          <button
+            class="practice-primary-button"
+            type="button"
+            [disabled]="operations.isBusyFor('session')"
+            (click)="practice.resumeActiveSession()"
+          >
+            <i class="pi pi-play" aria-hidden="true"></i>
+            Resume session
+          </button>
+        </div>
+      }
+    </section>
+  }
+
   <section class="practice-setup-card" aria-labelledby="practice-setup-title">
     <div class="practice-setup-main">
       <div>

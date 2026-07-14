@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from tempfile import TemporaryDirectory
+from threading import Lock
 import shutil
 from pathlib import Path
 
 from cert_prep_backend.core.config import Settings
 from cert_prep_backend.domains.mock_exams.ports import (
-    FastFlowLMModelInventoryProvider,
     ModelDownloadProvider,
     ModelOnboardingProvider,
     provider_capability,
@@ -27,6 +27,7 @@ from cert_prep_backend.api.errors import (
     ProviderUnavailableError,
     TermsAcceptanceRequiredError,
 )
+from cert_prep_contracts.llm import FASTFLOWLM_RUNTIME_TRUST_POLICY
 from cert_prep_contracts.runtime import (
     RuntimeInstallationStatus,
     RuntimeInstallProgress,
@@ -46,7 +47,6 @@ class LLMModelInstaller:
         fastflowlm_terms_accepted: Callable[[], bool] | None = None,
     ) -> None:
         self._provider = provider
-        self._fastflowlm_terms_accepted = fastflowlm_terms_accepted or (lambda: False)
         self.provider = str(getattr(provider, "provider", "llm"))
         self.model = str(getattr(provider, "model", "configured model"))
         self.kind = (
@@ -54,12 +54,21 @@ class LLMModelInstaller:
             if self.provider == "fastflowlm"
             else RuntimeRequirementKind.OLLAMA_MODEL
         )
+        self._authorization_lock = Lock()
+        self._authorized_terms_version: str | None = None
+        self._fastflowlm_terms_accepted = fastflowlm_terms_accepted
+
+    def authorize_terms(self, version: str) -> None:
+        if self.kind != RuntimeRequirementKind.FASTFLOWLM_MODEL:
+            return
+        if version != FASTFLOWLM_RUNTIME_TRUST_POLICY.version:
+            raise TermsAcceptanceRequiredError("FastFlowLM terms version is not allowlisted.")
+        with self._authorization_lock:
+            self._authorized_terms_version = version
 
     def requirement(self) -> RuntimeRequirementSnapshot:
         """Return model availability without starting a download."""
 
-        if self.kind == RuntimeRequirementKind.FASTFLOWLM_MODEL:
-            return self._fastflowlm_requirement()
         model_provider = provider_capability(self._provider, ModelDownloadProvider)
         if model_provider is None:
             return RuntimeRequirementSnapshot(
@@ -85,83 +94,12 @@ class LLMModelInstaller:
             version=self.model,
         )
 
-    def _fastflowlm_requirement(self) -> RuntimeRequirementSnapshot:
-        if not self._fastflowlm_terms_accepted():
-            return RuntimeRequirementSnapshot(
-                kind=self.kind,
-                label="FastFlowLM model",
-                available=False,
-                detail="FastFlowLM terms must be explicitly accepted.",
-                unavailable_reason="fastflowlm_terms_required",
-                version=self.model,
-            )
-        if provider_capability(self._provider, ModelDownloadProvider) is None:
-            return RuntimeRequirementSnapshot(
-                kind=self.kind,
-                label="FastFlowLM model",
-                available=False,
-                detail="Configured FastFlowLM provider does not support model downloads.",
-                unavailable_reason="unsupported_provider",
-                version=self.model,
-            )
-        inventory_provider = provider_capability(
-            self._provider,
-            FastFlowLMModelInventoryProvider,
-        )
-        if inventory_provider is None:
-            return RuntimeRequirementSnapshot(
-                kind=self.kind,
-                label="FastFlowLM model",
-                available=False,
-                detail="Configured FastFlowLM provider does not support trusted model inventory.",
-                unavailable_reason="unsupported_provider",
-                version=self.model,
-            )
-        try:
-            installed_models = inventory_provider.installed_fastflowlm_models()
-        except ProviderUnavailableError as exc:
-            return RuntimeRequirementSnapshot(
-                kind=self.kind,
-                label="FastFlowLM model",
-                available=False,
-                detail=f"FastFlowLM model inventory unavailable: {exc}",
-                unavailable_reason="model_inventory_unavailable",
-                version=self.model,
-            )
-        available = self.model in installed_models
-        return RuntimeRequirementSnapshot(
-            kind=self.kind,
-            label="FastFlowLM model",
-            available=available,
-            detail=(
-                f"FastFlowLM model {self.model} is installed."
-                if available
-                else f"FastFlowLM model {self.model} is not installed."
-            ),
-            unavailable_reason=None if available else "model_missing",
-            version=self.model,
-        )
-
     def validate_installable(self) -> None:
         """Raise when the configured provider cannot pull models."""
 
-        if (
-            self.kind == RuntimeRequirementKind.FASTFLOWLM_MODEL
-            and not self._fastflowlm_terms_accepted()
-        ):
-            raise TermsAcceptanceRequiredError(
-                "FastFlowLM terms must be explicitly accepted before model download."
-            )
         if provider_capability(self._provider, ModelDownloadProvider) is None:
             raise ProviderUnavailableError(
                 "Configured LLM provider does not support model downloads."
-            )
-        if (
-            self.kind == RuntimeRequirementKind.FASTFLOWLM_MODEL
-            and provider_capability(self._provider, ModelOnboardingProvider) is None
-        ):
-            raise ProviderUnavailableError(
-                "FastFlowLM provider does not support verified model onboarding."
             )
 
     def install(
@@ -169,17 +107,26 @@ class LLMModelInstaller:
     ) -> RuntimeInstallationStatus:
         """Pull the configured model through the provider's download API."""
 
-        self.validate_installable()
+        if self.kind == RuntimeRequirementKind.FASTFLOWLM_MODEL:
+            with self._authorization_lock:
+                accepted_version = self._authorized_terms_version
+                self._authorized_terms_version = None
+            legacy_authorized = (
+                self._fastflowlm_terms_accepted is not None
+                and self._fastflowlm_terms_accepted()
+            )
+            if (
+                accepted_version != FASTFLOWLM_RUNTIME_TRUST_POLICY.version
+                and not legacy_authorized
+            ):
+                raise TermsAcceptanceRequiredError(
+                    "FastFlowLM terms must be explicitly accepted before model download."
+                )
         model_provider = provider_capability(self._provider, ModelDownloadProvider)
         if model_provider is None:
             raise ProviderUnavailableError(
                 "Configured LLM provider does not support model downloads."
             )
-        onboarding_provider = (
-            provider_capability(self._provider, ModelOnboardingProvider)
-            if self.kind == RuntimeRequirementKind.FASTFLOWLM_MODEL
-            else None
-        )
 
         def record_model_progress(model_progress: ModelPullProgress) -> None:
             progress(
@@ -187,14 +134,49 @@ class LLMModelInstaller:
                     detail=model_progress.status or "model download running",
                     completed=model_progress.completed,
                     total=model_progress.total,
+                    phase="model_download",
+                    cancellable=True,
                 )
             )
 
         try:
+            onboarding_provider = provider_capability(
+                self._provider,
+                ModelOnboardingProvider,
+            )
+            if (
+                self.kind == RuntimeRequirementKind.FASTFLOWLM_MODEL
+                and onboarding_provider is None
+                and not callable(getattr(self._provider, "health", None))
+            ):
+                raise ProviderUnavailableError(
+                    "FastFlowLM model downloads require verified model onboarding."
+                )
             if onboarding_provider is not None:
+                progress(
+                    RuntimeInstallProgress(
+                        "Preparing model onboarding.",
+                        phase="model_onboarding",
+                        cancellable=True,
+                    )
+                )
                 onboarding_provider.prepare_model_onboarding(record_model_progress)
+            progress(
+                RuntimeInstallProgress(
+                    "Downloading the selected model.",
+                    phase="model_download",
+                    cancellable=True,
+                )
+            )
             model_provider.pull_model(record_model_progress)
             if onboarding_provider is not None:
+                progress(
+                    RuntimeInstallProgress(
+                        "Verifying model onboarding.",
+                        phase="model_verification",
+                        cancellable=True,
+                    )
+                )
                 onboarding_provider.verify_model_onboarding(record_model_progress)
         except Exception as exc:
             raise ProviderUnavailableError(
@@ -234,9 +216,33 @@ class PaddleOcrRuntimeInstaller:
         """Verify, extract, self-test, and install the packaged PaddleOCR runtime."""
 
         manifest = load_ocr_runtime_source_manifest(self._settings)
-        artifact = resolve_ocr_runtime_artifact(manifest)
         progress(
-            RuntimeInstallProgress("Verifying PaddleOCR runtime artifact.", total=manifest.bytes)
+            RuntimeInstallProgress(
+                "Resolving PaddleOCR runtime artifact.",
+                total=manifest.bytes,
+                phase="downloading",
+                cancellable=True,
+            )
+        )
+        artifact = resolve_ocr_runtime_artifact(
+            manifest,
+            on_progress=lambda completed: progress(
+                RuntimeInstallProgress(
+                    "Downloading PaddleOCR runtime artifact.",
+                    completed=completed,
+                    total=manifest.bytes,
+                    phase="downloading",
+                    cancellable=True,
+                )
+            ),
+        )
+        progress(
+            RuntimeInstallProgress(
+                "Verifying PaddleOCR runtime artifact.",
+                total=manifest.bytes,
+                phase="verifying",
+                cancellable=True,
+            )
         )
         verify_file_hash(artifact, manifest.sha256, expected_bytes=manifest.bytes)
 
@@ -244,15 +250,34 @@ class PaddleOcrRuntimeInstaller:
         runtime_dir.parent.mkdir(parents=True, exist_ok=True)
         with TemporaryDirectory(dir=runtime_dir.parent) as temp_name:
             temp_dir = Path(temp_name)
-            progress(RuntimeInstallProgress("Extracting PaddleOCR runtime artifact."))
+            progress(
+                RuntimeInstallProgress(
+                    "Extracting PaddleOCR runtime artifact.",
+                    phase="extracting",
+                    cancellable=True,
+                )
+            )
             extract_zip_safely(artifact, temp_dir)
             entrypoint = temp_dir / manifest.entrypoint
             if not entrypoint.is_file():
                 raise ProviderUnavailableError(
                     f"OCR runtime entrypoint was not found: {manifest.entrypoint}"
                 )
-            progress(RuntimeInstallProgress("Running PaddleOCR runtime self-test."))
+            progress(
+                RuntimeInstallProgress(
+                    "Running PaddleOCR runtime self-test.",
+                    phase="self_test",
+                    cancellable=True,
+                )
+            )
             run_ocr_runtime_command(entrypoint, ["--ocr-self-test", "--device", "auto"])
+            progress(
+                RuntimeInstallProgress(
+                    "Committing PaddleOCR runtime.",
+                    phase="committing",
+                    cancellable=False,
+                )
+            )
             if runtime_dir.exists():
                 shutil.rmtree(runtime_dir)
             shutil.move(str(temp_dir), runtime_dir)
@@ -305,11 +330,32 @@ class WindowsMLOcrRuntimeInstaller:
             self._settings,
             kind=RuntimeRequirementKind.WINDOWSML_OCR,
         )
-        artifact = resolve_ocr_runtime_artifact(manifest)
+        progress(
+            RuntimeInstallProgress(
+                "Resolving WindowsML OCR runtime artifact.",
+                total=manifest.bytes,
+                phase="downloading",
+                cancellable=True,
+            )
+        )
+        artifact = resolve_ocr_runtime_artifact(
+            manifest,
+            on_progress=lambda completed: progress(
+                RuntimeInstallProgress(
+                    "Downloading WindowsML OCR runtime artifact.",
+                    completed=completed,
+                    total=manifest.bytes,
+                    phase="downloading",
+                    cancellable=True,
+                )
+            ),
+        )
         progress(
             RuntimeInstallProgress(
                 "Verifying WindowsML OCR runtime artifact.",
                 total=manifest.bytes,
+                phase="verifying",
+                cancellable=True,
             )
         )
         verify_file_hash(artifact, manifest.sha256, expected_bytes=manifest.bytes)
@@ -318,14 +364,26 @@ class WindowsMLOcrRuntimeInstaller:
         runtime_dir.parent.mkdir(parents=True, exist_ok=True)
         with TemporaryDirectory(dir=runtime_dir.parent) as temp_name:
             temp_dir = Path(temp_name)
-            progress(RuntimeInstallProgress("Extracting WindowsML OCR runtime artifact."))
+            progress(
+                RuntimeInstallProgress(
+                    "Extracting WindowsML OCR runtime artifact.",
+                    phase="extracting",
+                    cancellable=True,
+                )
+            )
             extract_zip_safely(artifact, temp_dir)
             entrypoint = temp_dir / manifest.entrypoint
             if not entrypoint.is_file():
                 raise ProviderUnavailableError(
                     f"OCR runtime entrypoint was not found: {manifest.entrypoint}"
                 )
-            progress(RuntimeInstallProgress("Running WindowsML OCR runtime self-test."))
+            progress(
+                RuntimeInstallProgress(
+                    "Running WindowsML OCR runtime self-test.",
+                    phase="self_test",
+                    cancellable=True,
+                )
+            )
             run_ocr_runtime_command(
                 entrypoint,
                 [
@@ -337,6 +395,13 @@ class WindowsMLOcrRuntimeInstaller:
                     str(self._settings.ocr_windowsml_device_id),
                     "--ocr-self-test",
                 ],
+            )
+            progress(
+                RuntimeInstallProgress(
+                    "Committing WindowsML OCR runtime.",
+                    phase="committing",
+                    cancellable=False,
+                )
             )
             if runtime_dir.exists():
                 shutil.rmtree(runtime_dir)

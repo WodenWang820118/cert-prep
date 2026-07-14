@@ -1,18 +1,20 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from sqlite3 import Connection, Row
+from sqlite3 import Row
 from uuid import uuid4
 
-from cert_prep_backend.api.errors import NotFoundError
+from cert_prep_backend.persistence.database import Database, utc_now
 from cert_prep_backend.domains.projects.repository import ensure_project_exists
 from cert_prep_backend.domains.source_documents import repository as documents_repository
-from cert_prep_backend.persistence.database import Database, utc_now
+from cert_prep_backend.api.errors import NotFoundError
 
 
 class DraftGenerationJobStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
+    CANCEL_REQUESTED = "cancel_requested"
+    CANCELED = "canceled"
     SUCCEEDED = "succeeded"
     SKIPPED_PROVIDER_UNAVAILABLE = "skipped_provider_unavailable"
     SKIPPED_MISSING_MODEL = "skipped_missing_model"
@@ -24,12 +26,22 @@ TERMINAL_STATUSES = {
     DraftGenerationJobStatus.SKIPPED_PROVIDER_UNAVAILABLE,
     DraftGenerationJobStatus.SKIPPED_MISSING_MODEL,
     DraftGenerationJobStatus.FAILED,
+    DraftGenerationJobStatus.CANCELED,
 }
 RETRYABLE_STATUSES = {
     DraftGenerationJobStatus.SKIPPED_PROVIDER_UNAVAILABLE,
     DraftGenerationJobStatus.SKIPPED_MISSING_MODEL,
     DraftGenerationJobStatus.FAILED,
+    DraftGenerationJobStatus.CANCELED,
 }
+
+
+class DraftJobCanceledError(RuntimeError):
+    """Raised when cancellation wins before a draft job commit begins."""
+
+
+class DraftJobNotCancellableError(RuntimeError):
+    """Raised after a draft job has entered its atomic commit phase."""
 
 
 def enqueue_chunk_job(
@@ -135,18 +147,30 @@ def recover_runnable_jobs(db: Database) -> list[dict]:
             SET status = ?,
                 phase = 'queued',
                 cancellable = 1,
-                effective_provider = NULL,
-                effective_model = NULL,
-                fallback_reason = NULL,
                 last_error = 'Draft generation was interrupted before completion.',
                 updated_at = ?
             WHERE status = ?
-              AND chunk_id IS NOT NULL
             """,
             (
                 DraftGenerationJobStatus.PENDING,
                 now,
                 DraftGenerationJobStatus.RUNNING,
+            ),
+        )
+        connection.execute(
+            """
+            UPDATE draft_generation_jobs
+            SET status = ?,
+                phase = 'canceled',
+                cancellable = 0,
+                last_error = NULL,
+                updated_at = ?
+            WHERE status = ?
+            """,
+            (
+                DraftGenerationJobStatus.CANCELED,
+                now,
+                DraftGenerationJobStatus.CANCEL_REQUESTED,
             ),
         )
         rows = connection.execute(
@@ -193,7 +217,7 @@ def retry_document_jobs(
                 updated_at = ?
             WHERE project_id = ?
               AND document_id = ?
-              AND status IN (?, ?, ?)
+              AND status IN (?, ?, ?, ?)
               AND chunk_id IS NOT NULL
             """,
             (
@@ -233,103 +257,149 @@ def get_job(db: Database, job_id: str) -> dict:
 
 
 def mark_running(db: Database, job_id: str) -> dict:
-    return _update_job(
-        db,
-        job_id,
-        status=DraftGenerationJobStatus.RUNNING,
-        generated_count=0,
-        last_error=None,
-    )
-
-
-def mark_succeeded(
-    db: Database,
-    job_id: str,
-    *,
-    generated_count: int,
-    effective_provider: str | None = None,
-    effective_model: str | None = None,
-    fallback_reason: str | None = None,
-) -> dict:
-    with db.connect() as connection:
-        return mark_succeeded_in_transaction(
-            connection,
-            job_id,
-            generated_count=generated_count,
-            effective_provider=effective_provider,
-            effective_model=effective_model,
-            fallback_reason=fallback_reason,
-        )
-
-
-def mark_succeeded_in_transaction(
-    connection: Connection,
-    job_id: str,
-    *,
-    generated_count: int,
-    effective_provider: str | None,
-    effective_model: str | None,
-    fallback_reason: str | None,
-    expected_project_id: str | None = None,
-    expected_document_id: str | None = None,
-    expected_chunk_id: str | None = None,
-) -> dict:
-    """Persist successful attribution using the caller's open transaction."""
-
     now = utc_now()
-    connection.execute(
-        """
-        UPDATE draft_generation_jobs
-        SET status = ?,
-            effective_provider = ?,
-            effective_model = ?,
-            fallback_reason = ?,
-            generated_count = ?,
-            last_error = NULL,
-            updated_at = ?
-        WHERE id = ?
-          AND (? IS NULL OR project_id = ?)
-          AND (? IS NULL OR document_id = ?)
-          AND (? IS NULL OR chunk_id = ?)
-        """,
-        (
-            DraftGenerationJobStatus.SUCCEEDED,
-            effective_provider,
-            effective_model,
-            fallback_reason,
-            generated_count,
-            now,
-            job_id,
-            expected_project_id,
-            expected_project_id,
-            expected_document_id,
-            expected_document_id,
-            expected_chunk_id,
-            expected_chunk_id,
-        ),
-    )
-    row = connection.execute(
-        """
-        SELECT *
-        FROM draft_generation_jobs
-        WHERE id = ?
-          AND (? IS NULL OR project_id = ?)
-          AND (? IS NULL OR document_id = ?)
-          AND (? IS NULL OR chunk_id = ?)
-        """,
-        (
-            job_id,
-            expected_project_id,
-            expected_project_id,
-            expected_document_id,
-            expected_document_id,
-            expected_chunk_id,
-            expected_chunk_id,
-        ),
-    ).fetchone()
+    with db.connect() as connection:
+        connection.execute(
+            """
+            UPDATE draft_generation_jobs
+            SET status = ?, phase = 'generating', cancellable = 1,
+                generated_count = 0, last_error = NULL, updated_at = ?
+            WHERE id = ? AND status = ?
+            """,
+            (
+                DraftGenerationJobStatus.RUNNING,
+                now,
+                job_id,
+                DraftGenerationJobStatus.PENDING,
+            ),
+        )
+        row = connection.execute(
+            "SELECT * FROM draft_generation_jobs WHERE id = ?",
+            (job_id,),
+        ).fetchone()
     if row is None:
         raise NotFoundError("Draft generation job not found.")
     return job_from_row(row)
+
+
+def begin_commit(db: Database, job_id: str) -> dict:
+    """Win the cancel-vs-commit race and publish the non-cancellable phase."""
+
+    now = utc_now()
+    with db.connect() as connection:
+        updated = connection.execute(
+            """
+            UPDATE draft_generation_jobs
+            SET phase = 'committing', cancellable = 0, updated_at = ?
+            WHERE id = ? AND status = ? AND cancellable = 1
+            """,
+            (now, job_id, DraftGenerationJobStatus.RUNNING),
+        )
+        row = connection.execute(
+            "SELECT * FROM draft_generation_jobs WHERE id = ?",
+            (job_id,),
+        ).fetchone()
+        if row is None:
+            raise NotFoundError("Draft generation job not found.")
+        if updated.rowcount != 1:
+            current = DraftGenerationJobStatus(row["status"])
+            if current in {
+                DraftGenerationJobStatus.CANCEL_REQUESTED,
+                DraftGenerationJobStatus.CANCELED,
+            }:
+                if current == DraftGenerationJobStatus.CANCEL_REQUESTED:
+                    connection.execute(
+                        """
+                        UPDATE draft_generation_jobs
+                        SET status = ?, phase = 'canceled', cancellable = 0,
+                            last_error = NULL, updated_at = ?
+                        WHERE id = ? AND status = ?
+                        """,
+                        (
+                            DraftGenerationJobStatus.CANCELED,
+                            now,
+                            job_id,
+                            DraftGenerationJobStatus.CANCEL_REQUESTED,
+                        ),
+                    )
+                raise DraftJobCanceledError("Draft generation was canceled.")
+            if current in TERMINAL_STATUSES:
+                return job_from_row(row)
+            raise DraftJobNotCancellableError(
+                "Draft generation is not in a cancellable running phase."
+            )
+    return job_from_row(row)
+
+
+def request_cancel(
+    db: Database,
+    *,
+    project_id: str,
+    document_id: str,
+    job_id: str,
+) -> dict:
+    """Cancel pending work or request cooperative cancellation for running work."""
+
+    documents_repository.ensure_document_exists(db, project_id, document_id)
+    now = utc_now()
+    with db.connect() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        row = connection.execute(
+            """
+            SELECT * FROM draft_generation_jobs
+            WHERE id = ? AND project_id = ? AND document_id = ?
+            """,
+            (job_id, project_id, document_id),
+        ).fetchone()
+        if row is None:
+            raise NotFoundError("Draft generation job not found.")
+        current = DraftGenerationJobStatus(row["status"])
+        if current in TERMINAL_STATUSES:
+            return job_from_row(row)
+        if current == DraftGenerationJobStatus.CANCEL_REQUESTED:
+            return job_from_row(row)
+        if not bool(row["cancellable"]):
+            raise DraftJobNotCancellableError(
+                "Draft generation is committing and can no longer be canceled."
+            )
+        next_status = (
+            DraftGenerationJobStatus.CANCELED
+            if current == DraftGenerationJobStatus.PENDING
+            else DraftGenerationJobStatus.CANCEL_REQUESTED
+        )
+        next_phase = "canceled" if next_status == DraftGenerationJobStatus.CANCELED else "canceling"
+        connection.execute(
+            """
+            UPDATE draft_generation_jobs
+            SET status = ?, phase = ?, cancellable = ?, last_error = NULL, updated_at = ?
+            WHERE id = ? AND status = ? AND cancellable = 1
+            """,
+            (
+                next_status,
+                next_phase,
+                0,
+                now,
+                job_id,
+                current,
+            ),
+        )
+        row = connection.execute(
+            "SELECT * FROM draft_generation_jobs WHERE id = ?",
+            (job_id,),
+        ).fetchone()
+    if row is None:
+        raise NotFoundError("Draft generation job not found.")
+    return job_from_row(row)
+
+
+def mark_canceled(db: Database, job_id: str) -> dict:
+    return _update_job(
+        db,
+        job_id,
+        status=DraftGenerationJobStatus.CANCELED,
+        generated_count=0,
+        last_error=None,
+    )
 
 
 def mark_skipped_missing_model(db: Database, job_id: str, *, detail: str) -> dict:
@@ -364,7 +434,7 @@ def mark_failed(db: Database, job_id: str, *, detail: str) -> dict:
 
 def should_run(job: dict) -> bool:
     status = DraftGenerationJobStatus(job["status"])
-    return status not in TERMINAL_STATUSES and status != DraftGenerationJobStatus.RUNNING
+    return status == DraftGenerationJobStatus.PENDING
 
 
 def job_from_row(row: Row) -> dict:
@@ -378,9 +448,11 @@ def job_from_row(row: Row) -> dict:
         "status": row["status"],
         "provider": row["provider"],
         "model": row["model"],
-        "effective_provider": row["effective_provider"],
-        "effective_model": row["effective_model"],
-        "fallback_reason": row["fallback_reason"],
+        "effective_provider": _optional_row_value(row, "effective_provider"),
+        "effective_model": _optional_row_value(row, "effective_model"),
+        "fallback_reason": _optional_row_value(row, "fallback_reason"),
+        "phase": _optional_row_value(row, "phase") or "queued",
+        "cancellable": bool(_optional_row_value(row, "cancellable")),
         "generated_count": row["generated_count"],
         "retry_count": row["retry_count"],
         "last_error": row["last_error"],
@@ -399,22 +471,44 @@ def _update_job(
 ) -> dict:
     now = utc_now()
     with db.connect() as connection:
-        connection.execute(
+        connection.execute("BEGIN IMMEDIATE")
+        row = connection.execute(
+            "SELECT * FROM draft_generation_jobs WHERE id = ?",
+            (job_id,),
+        ).fetchone()
+        if row is None:
+            raise NotFoundError("Draft generation job not found.")
+        current = DraftGenerationJobStatus(row["status"])
+        if current in TERMINAL_STATUSES:
+            return job_from_row(row)
+        if current == DraftGenerationJobStatus.CANCEL_REQUESTED:
+            status = DraftGenerationJobStatus.CANCELED
+            generated_count = 0
+            last_error = None
+        phase = _terminal_phase(status)
+        updated = connection.execute(
             """
             UPDATE draft_generation_jobs
             SET status = ?,
-                effective_provider = NULL,
-                effective_model = NULL,
-                fallback_reason = NULL,
+                phase = ?,
+                cancellable = 0,
                 generated_count = ?,
                 last_error = ?,
                 retry_count = CASE
                     WHEN ? = 'failed' THEN retry_count + 1 ELSE retry_count END,
                 updated_at = ?
-            WHERE id = ?
+            WHERE id = ? AND status = ?
             """,
-            (status, generated_count, last_error, status, now, job_id),
+            (status, phase, generated_count, last_error, status, now, job_id, current),
         )
+        if updated.rowcount != 1:
+            row = connection.execute(
+                "SELECT * FROM draft_generation_jobs WHERE id = ?",
+                (job_id,),
+            ).fetchone()
+            if row is None:
+                raise NotFoundError("Draft generation job not found.")
+            return job_from_row(row)
         row = connection.execute(
             "SELECT * FROM draft_generation_jobs WHERE id = ?",
             (job_id,),
@@ -422,3 +516,15 @@ def _update_job(
     if row is None:
         raise NotFoundError("Draft generation job not found.")
     return job_from_row(row)
+
+
+def _optional_row_value(row: Row, column: str):
+    return row[column] if column in row.keys() else None
+
+
+def _terminal_phase(status: DraftGenerationJobStatus) -> str:
+    if status == DraftGenerationJobStatus.SUCCEEDED:
+        return "completed"
+    if status == DraftGenerationJobStatus.CANCELED:
+        return "canceled"
+    return "failed"

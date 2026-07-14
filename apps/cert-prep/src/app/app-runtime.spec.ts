@@ -161,6 +161,7 @@ function createApiClient() {
     getDocument: vi.fn().mockResolvedValue(appDocument),
     listDocumentChunks: vi.fn().mockResolvedValue({ items: [] }),
     listQuestionDrafts: vi.fn().mockResolvedValue({ items: [editableAppQuestion] }),
+    listActivePracticeSessions: vi.fn().mockResolvedValue({ items: [] }),
     listWrongAnswers: vi.fn().mockResolvedValue({ items: [] }),
     summarizeWrongAnswers: vi.fn().mockResolvedValue(emptyWrongAnswerSummary()),
   };

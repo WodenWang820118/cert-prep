@@ -10,74 +10,6 @@ import { RuntimeJobViewService } from '../../stores/health/runtime-job-view.serv
   imports: [Button, Dialog],
   template: `
     <p-dialog
-      [header]="'FastFlowLM v' + health.fastFlowTermsVersion() + ' terms'"
-      [visible]="health.fastFlowTermsConsentVisible()"
-      [modal]="true"
-      [draggable]="false"
-      [resizable]="false"
-      [closable]="!health.fastFlowTermsDecisionSaving()"
-      [closeOnEscape]="!health.fastFlowTermsDecisionSaving()"
-      [dismissableMask]="false"
-      [style]="{ width: 'min(92vw, 38rem)' }"
-      (visibleChange)="setFastFlowTermsConsentVisible($event)"
-    >
-      <div class="grid gap-3">
-        <p class="m-0 text-sm leading-6 text-color">
-          Review the official FastFlowLM v{{ health.fastFlowTermsVersion() }}
-          terms before Cert Prep downloads or runs the official installer.
-        </p>
-        <p class="m-0 text-sm leading-6 text-muted-color">
-          Cert Prep does not redistribute FastFlowLM. Declining selects the
-          Ollama onboarding path instead.
-        </p>
-        <a
-          class="text-sm font-medium text-primary underline"
-          [href]="health.fastFlowTermsUrl()"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Read the official FastFlowLM terms
-        </a>
-        <label
-          class="flex items-start gap-2 text-sm leading-6 text-color"
-          for="fastflowlm-terms-acknowledgement"
-        >
-          <input
-            id="fastflowlm-terms-acknowledgement"
-            type="checkbox"
-            class="mt-1"
-            [checked]="health.fastFlowTermsAcknowledged()"
-            [disabled]="health.fastFlowTermsDecisionSaving()"
-            (change)="setFastFlowTermsAcknowledged($event)"
-          />
-          <span>I have read and accept the FastFlowLM terms</span>
-        </label>
-        <p class="m-0 text-xs leading-5 text-muted-color">
-          Powered by FastFlowLM
-        </p>
-        <div class="flex flex-wrap justify-end gap-2 pt-2">
-          <p-button
-            label="Decline and use Ollama"
-            severity="secondary"
-            [outlined]="true"
-            [disabled]="health.fastFlowTermsDecisionSaving()"
-            (onClick)="health.declineFastFlowTerms()"
-          />
-          <p-button
-            label="Accept FastFlowLM terms"
-            severity="warn"
-            [disabled]="
-              !health.fastFlowTermsAcknowledged() ||
-              health.fastFlowTermsDecisionSaving()
-            "
-            [loading]="health.fastFlowTermsDecisionSaving()"
-            (onClick)="health.acceptFastFlowTerms()"
-          />
-        </div>
-      </div>
-    </p-dialog>
-
-    <p-dialog
       header="Install Python backend runtime"
       [visible]="desktopRuntime.installConsentVisible()"
       [modal]="true"
@@ -122,8 +54,14 @@ import { RuntimeJobViewService } from '../../stores/health/runtime-job-view.serv
       [modal]="true"
       [draggable]="false"
       [resizable]="false"
-      [closable]="!health.modelDownloadStarting()"
-      [closeOnEscape]="!health.modelDownloadStarting()"
+      [closable]="
+        !health.modelDownloadStarting() &&
+        !health.fastFlowTermsDecisionPending()
+      "
+      [closeOnEscape]="
+        !health.modelDownloadStarting() &&
+        !health.fastFlowTermsDecisionPending()
+      "
       [dismissableMask]="false"
       [style]="{ width: 'min(92vw, 32rem)' }"
       (visibleChange)="health.setModelDownloadConsentVisible($event)"
@@ -137,19 +75,73 @@ import { RuntimeJobViewService } from '../../stores/health/runtime-job-view.serv
           This starts a background download and can take several minutes on a
           slower connection.
         </p>
+        @if (health.fastFlowTermsConsentRequired()) {
+          <div class="fastflow-terms-panel">
+            @if (health.fastFlowTerms(); as terms) {
+              <p class="m-0 text-sm leading-6 text-muted-color">
+                Cert Prep downloads the model through the official FastFlowLM
+                channel. Review the pinned v{{ terms.version }} original terms
+                before continuing.
+              </p>
+              <a
+                class="fastflow-terms-link"
+                [href]="terms.url"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Read FastFlowLM v{{ terms.version }} terms
+              </a>
+              <label class="fastflow-terms-check" for="fastflow-model-terms">
+                <input
+                  id="fastflow-model-terms"
+                  type="checkbox"
+                  [checked]="health.fastFlowTermsAcknowledged()"
+                  [disabled]="
+                    health.modelDownloadStarting() ||
+                    health.fastFlowTermsDecisionPending()
+                  "
+                  (change)="updateTermsAcknowledgement($event)"
+                />
+                <span>
+                  I have read and accept the FastFlowLM v{{ terms.version }}
+                  terms.
+                </span>
+              </label>
+            } @else {
+              <p class="fastflow-terms-error" role="alert">
+                FastFlowLM terms metadata is unavailable. Installation is
+                blocked; decline to continue with Ollama.
+              </p>
+            }
+          </div>
+        }
         <div class="flex flex-wrap justify-end gap-2 pt-2">
           <p-button
             label="Cancel"
             severity="secondary"
             [outlined]="true"
-            [disabled]="health.modelDownloadStarting()"
+            [disabled]="
+              health.modelDownloadStarting() ||
+              health.fastFlowTermsDecisionPending()
+            "
             (onClick)="health.cancelModelDownloadConsent()"
           />
+          @if (health.fastFlowTermsConsentRequired()) {
+            <p-button
+              label="Decline and use Ollama"
+              severity="secondary"
+              [outlined]="true"
+              [loading]="health.fastFlowTermsDecisionPending()"
+              [disabled]="health.modelDownloadStarting()"
+              (onClick)="declineFastFlowTerms()"
+            />
+          }
           <p-button
             label="Download"
             icon="pi pi-download"
             severity="warn"
             [loading]="health.modelDownloadStarting()"
+            [disabled]="!health.canConfirmFastFlowTerms()"
             (onClick)="health.confirmModelDownload()"
           />
         </div>
@@ -162,14 +154,31 @@ import { RuntimeJobViewService } from '../../stores/health/runtime-job-view.serv
       [modal]="true"
       [draggable]="false"
       [resizable]="false"
-      [closable]="!health.runtimeInstallStarting()"
-      [closeOnEscape]="!health.runtimeInstallStarting()"
+      [closable]="
+        !health.runtimeInstallStarting() &&
+        !health.fastFlowTermsDecisionPending()
+      "
+      [closeOnEscape]="
+        !health.runtimeInstallStarting() &&
+        !health.fastFlowTermsDecisionPending()
+      "
       [dismissableMask]="false"
       [style]="{ width: 'min(92vw, 34rem)' }"
       (visibleChange)="health.setRuntimeInstallConsentVisible($event)"
     >
       <div class="grid gap-3">
-        @if (health.runtimeInstallConsentKind() === 'windowsml_ocr') {
+        @if (health.runtimeInstallConsentKind() === 'fastflowlm') {
+          <p class="m-0 text-sm leading-6 text-color">
+            Install FastFlowLM from its official pinned release for local NPU
+            generation?
+          </p>
+          <p class="m-0 text-sm leading-6 text-muted-color">
+            Cert Prep verifies the pinned download size, SHA-256, Authenticode
+            signature, timestamp, signer subject, and signer thumbprint before
+            launching the official installer. The binary is not bundled or
+            mirrored by Cert Prep.
+          </p>
+        } @else if (health.runtimeInstallConsentKind() === 'windowsml_ocr') {
           <p class="m-0 text-sm leading-6 text-color">
             Install the WindowsML OCR runtime for image-only PDFs?
           </p>
@@ -187,15 +196,6 @@ import { RuntimeJobViewService } from '../../stores/health/runtime-job-view.serv
             The runtime is downloaded from the release asset, verified, and
             extracted under your user app data.
           </p>
-        } @else if (health.runtimeInstallConsentKind() === 'fastflowlm') {
-          <p class="m-0 text-sm leading-6 text-color">
-            Install FastFlowLM for local AI generation?
-          </p>
-          <p class="m-0 text-sm leading-6 text-muted-color">
-            Cert Prep downloads the pinned official installer, verifies its
-            size, SHA-256 digest, and Authenticode identity, then starts it.
-            Return here and refresh the status if Windows asks for confirmation.
-          </p>
         } @else {
           <p class="m-0 text-sm leading-6 text-color">
             Install Ollama for local AI generation?
@@ -205,24 +205,120 @@ import { RuntimeJobViewService } from '../../stores/health/runtime-job-view.serv
             the status if Windows asks for confirmation.
           </p>
         }
+        @if (health.fastFlowTermsConsentRequired()) {
+          <div class="fastflow-terms-panel">
+            @if (health.fastFlowTerms(); as terms) {
+              <p class="m-0 text-sm leading-6 text-muted-color">
+                Review the original publisher terms for the exact pinned
+                runtime version before the official installer is requested.
+              </p>
+              <a
+                class="fastflow-terms-link"
+                [href]="terms.url"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Read FastFlowLM v{{ terms.version }} terms
+              </a>
+              <label class="fastflow-terms-check" for="fastflow-runtime-terms">
+                <input
+                  id="fastflow-runtime-terms"
+                  type="checkbox"
+                  [checked]="health.fastFlowTermsAcknowledged()"
+                  [disabled]="
+                    health.runtimeInstallStarting() ||
+                    health.fastFlowTermsDecisionPending()
+                  "
+                  (change)="updateTermsAcknowledgement($event)"
+                />
+                <span>
+                  I have read and accept the FastFlowLM v{{ terms.version }}
+                  terms.
+                </span>
+              </label>
+            } @else {
+              <p class="fastflow-terms-error" role="alert">
+                FastFlowLM terms metadata is unavailable. Installation is
+                blocked; decline to continue with Ollama.
+              </p>
+            }
+          </div>
+        }
         <div class="flex flex-wrap justify-end gap-2 pt-2">
           <p-button
             label="Cancel"
             severity="secondary"
             [outlined]="true"
-            [disabled]="health.runtimeInstallStarting()"
+            [disabled]="
+              health.runtimeInstallStarting() ||
+              health.fastFlowTermsDecisionPending()
+            "
             (onClick)="health.cancelRuntimeInstallConsent()"
           />
+          @if (health.fastFlowTermsConsentRequired()) {
+            <p-button
+              label="Decline and use Ollama"
+              severity="secondary"
+              [outlined]="true"
+              [loading]="health.fastFlowTermsDecisionPending()"
+              [disabled]="health.runtimeInstallStarting()"
+              (onClick)="declineFastFlowTerms()"
+            />
+          }
           <p-button
             label="Install"
             icon="pi pi-download"
             severity="warn"
             [loading]="health.runtimeInstallStarting()"
+            [disabled]="!health.canConfirmFastFlowTerms()"
             (onClick)="health.confirmRuntimeInstallation()"
           />
         </div>
       </div>
     </p-dialog>
+  `,
+  styles: `
+    .fastflow-terms-panel {
+      display: grid;
+      gap: 0.75rem;
+      border: 1px solid var(--workbench-border, #c2c6d4);
+      border-radius: 0.625rem;
+      background: var(--workbench-surface-low, #f8f9fa);
+      padding: 0.875rem;
+    }
+
+    .fastflow-terms-link {
+      width: fit-content;
+      color: var(--workbench-primary, #00488d);
+      font-size: 0.875rem;
+      font-weight: 750;
+      text-decoration: underline;
+      text-underline-offset: 0.2em;
+    }
+
+    .fastflow-terms-check {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.625rem;
+      color: var(--workbench-text, #191c1d);
+      cursor: pointer;
+      font-size: 0.875rem;
+      line-height: 1.45;
+    }
+
+    .fastflow-terms-check input {
+      width: 1rem;
+      height: 1rem;
+      margin-top: 0.15rem;
+      accent-color: var(--workbench-primary, #00488d);
+    }
+
+    .fastflow-terms-error {
+      margin: 0;
+      color: var(--p-red-700, #b91c1c);
+      font-size: 0.875rem;
+      line-height: 1.45;
+    }
   `,
 })
 export class RuntimeConsentDialogsComponent {
@@ -234,16 +330,12 @@ export class RuntimeConsentDialogsComponent {
     this.runtimeJobs.runtimeLabel(this.health.runtimeInstallConsentKind()),
   );
 
-  protected setFastFlowTermsConsentVisible(visible: boolean): void {
-    if (!visible) {
-      this.health.closeFastFlowTermsConsent();
-    }
+  protected updateTermsAcknowledgement(event: Event): void {
+    const input = event.target as HTMLInputElement | null;
+    this.health.setFastFlowTermsAcknowledged(input?.checked === true);
   }
 
-  protected setFastFlowTermsAcknowledged(event: Event): void {
-    const input = event.target;
-    if (input instanceof HTMLInputElement) {
-      this.health.setFastFlowTermsAcknowledged(input.checked);
-    }
+  protected async declineFastFlowTerms(): Promise<void> {
+    await this.health.declineFastFlowTerms();
   }
 }

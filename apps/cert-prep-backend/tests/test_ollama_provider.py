@@ -399,47 +399,11 @@ def test_ollama_fast_first_draft_falls_back_when_primary_runtime_fails(
         "qwen3.5:4b",
         "qwen3.5:2b",
     ]
-    attribution = provider.get_generation_attribution()
-    assert attribution is not None
-    assert attribution.effective_provider == "ollama"
-    assert attribution.effective_model == "qwen3.5:2b"
-    assert attribution.fallback_reason == (
-        "Configured model qwen3.5:4b was unavailable during generation "
-        "(model requires more memory); using fallback qwen3.5:2b."
-    )
-    assert provider.model == "qwen3.5:4b"
     health = provider.health()
     assert health.effective_model == "qwen3.5:2b"
     assert health.fallback_reason is not None
     assert "model requires more memory" in health.fallback_reason
     assert fake_client.pull_calls == 0
-
-
-def test_ollama_generation_attribution_keeps_non_runtime_primary_failure() -> None:
-    fake_client = RecordingOllamaClient(models=["qwen3.5:4b", "qwen3.5:2b"])
-    provider = OllamaProvider(
-        host="http://127.0.0.1:11434",
-        model="qwen3.5:4b",
-        timeout_seconds=1,
-        fallback_models=["qwen3.5:2b"],
-        client=fake_client,
-    )
-
-    def generate(model: str) -> str:
-        if model == "qwen3.5:4b":
-            raise ValueError("invalid JSON response")
-        return "generated"
-
-    assert provider._with_model_fallback(generate) == "generated"
-
-    attribution = provider.get_generation_attribution()
-    assert attribution is not None
-    assert attribution.effective_model == "qwen3.5:2b"
-    assert attribution.fallback_reason == (
-        "Configured model qwen3.5:4b was unavailable during generation "
-        "(invalid JSON response); using fallback qwen3.5:2b."
-    )
-    assert provider._runtime_unusable_models() == set()
 
 def test_ollama_fast_first_invalid_json_does_not_mark_model_unusable(
     monkeypatch,

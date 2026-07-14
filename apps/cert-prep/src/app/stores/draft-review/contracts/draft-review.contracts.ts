@@ -16,7 +16,7 @@ export interface DraftEdit {
   rationale: string;
 }
 
-type DraftJobSummarySeverity =
+export type DraftJobSummarySeverity =
   | 'secondary'
   | 'info'
   | 'success'

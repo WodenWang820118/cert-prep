@@ -74,6 +74,25 @@ def test_status_like_fields_are_documented_as_openapi_enums(tmp_path) -> None:
         "completed",
         "abandoned",
     ]
+    assert _enum_values(openapi, "LLMProviderSelectionRead", "preference") == [
+        "auto",
+        "fastflowlm",
+        "ollama",
+        "fake",
+    ]
+    assert _enum_values(openapi, "LLMProviderSelectionRead", "selected_provider") == [
+        "fastflowlm",
+        "ollama",
+        "fake",
+    ]
+    assert _enum_values(openapi, "RuntimeRequirementRead", "kind") == [
+        "ollama",
+        "ollama_model",
+        "fastflowlm",
+        "fastflowlm_model",
+        "paddle_ocr",
+        "windowsml_ocr",
+    ]
     assert _enum_values(openapi, "DocumentOperationRead", "status") == [
         "queued",
         "running",
@@ -89,6 +108,33 @@ def test_status_like_fields_are_documented_as_openapi_enums(tmp_path) -> None:
         "committing",
         "canceled",
         "completed",
+        "failed",
+    ]
+    assert _enum_values(openapi, "DraftGenerationJobRead", "status") == [
+        "pending",
+        "running",
+        "cancel_requested",
+        "canceled",
+        "succeeded",
+        "skipped_provider_unavailable",
+        "skipped_missing_model",
+        "failed",
+    ]
+    assert _enum_values(openapi, "ManualDraftGenerationOperationRead", "status") == [
+        "queued",
+        "running",
+        "cancel_requested",
+        "canceled",
+        "succeeded",
+        "failed",
+    ]
+    assert _enum_values(openapi, "RuntimeInstallationRead", "status") == [
+        "queued",
+        "running",
+        "cancel_requested",
+        "canceled",
+        "waiting_for_user",
+        "succeeded",
         "failed",
     ]
 
@@ -220,26 +266,21 @@ def test_operation_id_validation_uses_the_documented_error_envelope(tmp_path) ->
 def test_practice_session_conflicts_are_documented(tmp_path) -> None:
     openapi = create_app(Settings(data_dir=tmp_path, api_token="contract-token")).openapi()
 
-    assert _enum_values(openapi, "PracticeSessionConflictRead", "code") == [
-        "active_session_exists",
-        "practice_session_completed",
-        "practice_session_abandoned",
-    ]
     assert _response_schema_name(openapi, "/projects/{project_id}/practice-sessions", "post", 409) == (
-        "PracticeSessionConflictRead"
+        "ApiErrorRead"
     )
     assert _response_schema_name(
         openapi,
         "/projects/{project_id}/practice-sessions/{session_id}/abandon",
         "post",
         409,
-    ) == "PracticeSessionConflictRead"
+    ) == "ApiErrorRead"
     assert _response_schema_name(
         openapi,
         "/projects/{project_id}/practice-sessions/{session_id}/attempts",
         "post",
         409,
-    ) == "PracticeSessionConflictRead"
+    ) == "ApiErrorRead"
 
 
 def test_draft_job_effective_attribution_is_required_and_nullable(tmp_path) -> None:

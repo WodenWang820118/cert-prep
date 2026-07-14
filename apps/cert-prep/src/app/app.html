@@ -21,6 +21,14 @@
       <button
         class="workbench-icon-button"
         type="button"
+        aria-label="About Cert Prep"
+        (click)="openAboutDialog()"
+      >
+        <i class="pi pi-info-circle" aria-hidden="true"></i>
+      </button>
+      <button
+        class="workbench-icon-button"
+        type="button"
         aria-label="Settings"
         disabled
       >
@@ -93,17 +101,23 @@
   </div>
 
   <footer class="workbench-footer">
-    <span>(c) 2024 Cert Prep Workbench</span>
+    <span>&copy; 2026 Cert Prep contributors / Public Alpha</span>
     <nav aria-label="Product links">
-      <span class="workbench-footer-link" aria-disabled="true">
+      <a class="workbench-footer-link" href="legal/README.md" target="_blank" rel="noopener">
         Documentation
-      </span>
-      <span class="workbench-footer-link" aria-disabled="true">
+      </a>
+      <a class="workbench-footer-link" href="legal/PRIVACY.md" target="_blank" rel="noopener">
         Privacy Policy
-      </span>
-      <span class="workbench-footer-link" aria-disabled="true">
-        System Status
-      </span>
+      </a>
+      <a class="workbench-footer-link" href="legal/LICENSE" target="_blank" rel="noopener">
+        License
+      </a>
+      <a class="workbench-footer-link" href="legal/THIRD_PARTY_NOTICES.md" target="_blank" rel="noopener">
+        Third-Party Notices
+      </a>
+      <a class="workbench-footer-link" href="legal/CHANGELOG.md" target="_blank" rel="noopener">
+        Changelog
+      </a>
     </nav>
   </footer>
 
@@ -131,6 +145,63 @@
         aria-label="Close runtime manager"
         aria-hidden="true"
         (click)="closeRuntimeManager()"
+      ></button>
+    </section>
+  }
+
+  @if (aboutDialogOpen()) {
+    <section
+      class="runtime-manager-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="about-alpha-title"
+      cdkTrapFocus
+      cdkTrapFocusAutoCapture
+      (keydown.escape)="closeAboutDialog()"
+    >
+      <article class="about-alpha-card">
+        <header>
+          <div>
+            <p class="about-alpha-channel">unsigned_public_alpha</p>
+            <h2 id="about-alpha-title">Cert Prep 0.1.0-alpha.1</h2>
+          </div>
+          <button
+            class="workbench-icon-button"
+            type="button"
+            aria-label="Close About Cert Prep"
+            (click)="closeAboutDialog()"
+          >
+            <i class="pi pi-times" aria-hidden="true"></i>
+          </button>
+        </header>
+
+        <p class="about-alpha-warning" role="note">
+          This Windows 11 x64 public alpha is not code-signed. Windows
+          SmartScreen may warn before installation. Compare the installer's
+          SHA-256 digest with the value published on the GitHub Release before
+          running it.
+        </p>
+        <p>
+          PDFs, generated questions, practice answers, and the database remain
+          on this device. Network access is limited to release, runtime, and
+          model downloads.
+        </p>
+        <nav aria-label="About Cert Prep links">
+          <a href="legal/PRIVACY.md" target="_blank" rel="noopener">Privacy</a>
+          <a href="legal/LICENSE" target="_blank" rel="noopener">License</a>
+          <a href="legal/THIRD_PARTY_NOTICES.md" target="_blank" rel="noopener">
+            Third-party notices
+          </a>
+          <a href="legal/CHANGELOG.md" target="_blank" rel="noopener">Changelog</a>
+        </nav>
+      </article>
+      <button
+        class="runtime-manager-backdrop"
+        type="button"
+        tabindex="-1"
+        aria-label="Close About Cert Prep"
+        aria-hidden="true"
+        (click)="closeAboutDialog()"
       ></button>
     </section>
   }

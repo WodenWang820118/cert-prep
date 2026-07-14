@@ -9,6 +9,10 @@ CLOSED_ENUM_SCHEMAS = frozenset(
     {
         "DocumentOperationPhase",
         "DocumentOperationStatus",
+        "DraftGenerationJobStatus",
+        "FastFlowLMTermsDecision",
+        "ManualDraftOperationStatus",
+        "RuntimeInstallationStatus",
     }
 )
 
@@ -37,7 +41,7 @@ def render_typescript(openapi: dict[str, Any]) -> str:
             "export type CertPrepHttpMethod = 'DELETE' | 'GET' | 'PATCH' | 'POST';",
             "",
             "export interface CertPrepRequestOptions {",
-            "  headers?: Record<string, string>;",
+            "  headers?: Readonly<Record<string, string>>;",
             "  signal?: AbortSignal;",
             "}",
             "",
@@ -45,7 +49,7 @@ def render_typescript(openapi: dict[str, Any]) -> str:
             "  method: CertPrepHttpMethod;",
             "  path: string;",
             "  body?: unknown;",
-            "  headers?: Record<string, string>;",
+            "  headers?: Readonly<Record<string, string>>;",
             "  signal?: AbortSignal;",
             "}",
             "",
@@ -177,6 +181,7 @@ class ClientOperation:
         path: str,
         parameters: list[str],
         request_type: str | None,
+        request_required: bool,
         response_type: str,
     ) -> None:
         self.name = name
@@ -184,6 +189,7 @@ class ClientOperation:
         self.path = path
         self.parameters = parameters
         self.request_type = request_type
+        self.request_required = request_required
         self.response_type = response_type
 
     @classmethod
@@ -201,6 +207,7 @@ class ClientOperation:
             path=path,
             parameters=path_parameters(path),
             request_type=request_body_type(operation, schemas),
+            request_required=bool(operation.get("requestBody", {}).get("required")),
             response_type=response_type(operation, schemas),
         )
 
@@ -228,7 +235,8 @@ class ClientOperation:
     def arguments(self) -> str:
         arguments = [f"{to_camel(parameter)}: string" for parameter in self.parameters]
         if self.request_type is not None:
-            arguments.append(f"body: {self.request_type}")
+            optional = "" if self.request_required else "?"
+            arguments.append(f"body{optional}: {self.request_type}")
         arguments.append("options?: CertPrepRequestOptions")
         return ", ".join(arguments)
 

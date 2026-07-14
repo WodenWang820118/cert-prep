@@ -7,6 +7,61 @@
   --font-mono: 'JetBrains Mono', 'Cascadia Mono', Consolas, monospace;
 }
 
+.practice-resume-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  border: 1px solid #b9c9e8;
+  border-radius: 10px;
+  background: #f3f7ff;
+  padding: 1.25rem;
+}
+
+.practice-resume-card h3,
+.practice-resume-card p {
+  margin: 0;
+}
+
+.practice-resume-card h3 + p,
+.practice-resume-confirm {
+  margin-top: 0.5rem;
+}
+
+.practice-resume-actions,
+.practice-resume-confirm > div {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+
+.practice-resume-confirm {
+  border-left: 3px solid #a53d2d;
+  padding-left: 1rem;
+}
+
+.practice-resume-confirm > div {
+  margin-top: 0.75rem;
+}
+
+.practice-danger-button {
+  min-height: 2.5rem;
+  border: 1px solid #a53d2d;
+  border-radius: 6px;
+  background: #a53d2d;
+  padding: 0.625rem 1rem;
+  color: white;
+  font-weight: 700;
+}
+
+@media (max-width: 760px) {
+  .practice-resume-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
 @layer base {
   html,
   body {
@@ -161,6 +216,12 @@
   .workbench-icon-button:disabled {
     opacity: 1;
     cursor: default;
+  }
+
+  .workbench-icon-button:not(:disabled):hover,
+  .workbench-icon-button:not(:disabled):focus-visible {
+    border-color: var(--workbench-primary-border);
+    background: #eef3ff;
   }
 
   .workbench-message-strip {
@@ -684,6 +745,11 @@
     text-decoration: none;
   }
 
+  .workbench-footer-link:hover,
+  .workbench-footer-link:focus-visible {
+    text-decoration: underline;
+  }
+
   .runtime-chip-bar {
     display: flex;
     align-items: center;
@@ -726,6 +792,62 @@
     z-index: 1;
     display: block;
     width: min(100%, 48rem);
+  }
+
+  .about-alpha-card {
+    position: relative;
+    z-index: 1;
+    width: min(100%, 38rem);
+    border: 1px solid var(--workbench-border);
+    border-radius: 10px;
+    background: var(--workbench-surface);
+    padding: 1.5rem;
+    box-shadow: 0 1.5rem 4rem rgb(20 28 38 / 22%);
+  }
+
+  .about-alpha-card header,
+  .about-alpha-card nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .about-alpha-card h2,
+  .about-alpha-card p {
+    margin: 0;
+  }
+
+  .about-alpha-card > p {
+    margin-top: 1rem;
+    line-height: 1.6;
+  }
+
+  .about-alpha-channel {
+    color: var(--workbench-primary);
+    font-size: 0.75rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .about-alpha-warning {
+    border-left: 4px solid #a86300;
+    border-radius: 4px;
+    background: #fff5df;
+    padding: 0.875rem 1rem;
+    color: #563500;
+  }
+
+  .about-alpha-card nav {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    margin-top: 1.25rem;
+  }
+
+  .about-alpha-card nav a {
+    color: var(--workbench-primary);
+    font-weight: 700;
   }
 
   .empty-workbench-state {

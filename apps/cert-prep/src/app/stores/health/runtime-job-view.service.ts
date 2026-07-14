@@ -56,6 +56,7 @@ export class RuntimeJobViewService {
       progress,
       message,
       error,
+      cancellable: this.readBoolean(record, 'cancellable'),
     };
   }
 
@@ -94,6 +95,7 @@ export class RuntimeJobViewService {
       progress,
       message,
       error,
+      cancellable: this.readBoolean(record, 'cancellable'),
     };
   }
 
@@ -106,6 +108,7 @@ export class RuntimeJobViewService {
       progress: null,
       message: 'Starting model download...',
       error: null,
+      cancellable: false,
     };
   }
 
@@ -119,6 +122,7 @@ export class RuntimeJobViewService {
       progress: null,
       message: `Starting ${this.runtimeLabel(kind)} installation...`,
       error: null,
+      cancellable: false,
     };
   }
 
@@ -135,6 +139,7 @@ export class RuntimeJobViewService {
       progress: current?.progress ?? null,
       message,
       error: message,
+      cancellable: false,
     };
   }
 
@@ -152,6 +157,7 @@ export class RuntimeJobViewService {
       progress: current?.progress ?? null,
       message,
       error: message,
+      cancellable: false,
     };
   }
 
@@ -194,6 +200,14 @@ export class RuntimeJobViewService {
     fallbackPhase: DownloadPhase,
     error: string | null,
   ): DownloadPhase {
+    if (status === 'canceled') {
+      return 'canceled';
+    }
+
+    if (status === 'cancel_requested') {
+      return 'cancel_requested';
+    }
+
     if (error !== null || status === 'failed') {
       return 'failed';
     }
@@ -241,6 +255,14 @@ export class RuntimeJobViewService {
       return 'Model download failed.';
     }
 
+    if (phase === 'canceled') {
+      return 'Model download canceled.';
+    }
+
+    if (phase === 'cancel_requested') {
+      return 'Canceling model download.';
+    }
+
     return 'Model download is running.';
   }
 
@@ -254,6 +276,14 @@ export class RuntimeJobViewService {
 
     if (phase === 'failed') {
       return `${this.runtimeLabel(kind)} installation failed.`;
+    }
+
+    if (phase === 'canceled') {
+      return `${this.runtimeLabel(kind)} installation canceled.`;
+    }
+
+    if (phase === 'cancel_requested') {
+      return `Canceling ${this.runtimeLabel(kind)} installation.`;
     }
 
     if (phase === 'waiting_for_user') {
@@ -287,6 +317,13 @@ export class RuntimeJobViewService {
     return typeof value === 'number' && Number.isFinite(value) ? value : null;
   }
 
+  private readBoolean(
+    record: RuntimeJobRecord,
+    key: keyof RuntimeJobRecord,
+  ): boolean {
+    return record[key] === true;
+  }
+
   private runtimeKindFrom(
     record: RuntimeJobRecord,
     fallbackKind: RuntimeKind,
@@ -295,9 +332,9 @@ export class RuntimeJobViewService {
       this.readString(record, 'kind') ?? fallbackKind,
     );
     return kind === 'ollama' ||
+      kind === 'ollama_model' ||
       kind === 'fastflowlm' ||
       kind === 'fastflowlm_model' ||
-      kind === 'ollama_model' ||
       kind === 'paddle_ocr' ||
       kind === 'windowsml_ocr'
       ? kind

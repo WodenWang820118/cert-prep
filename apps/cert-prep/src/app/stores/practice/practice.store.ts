@@ -3,6 +3,7 @@ import {
   CERT_PREP_API,
   PracticeAttemptRead,
   PracticeSessionRead,
+  PracticeSessionSummaryRead,
 } from '../../cert-prep-api';
 import type {
   PracticeSessionMode,
@@ -30,6 +31,8 @@ export class PracticeStore {
   readonly sessionQuestionCount = signal(5);
   readonly selectedDocumentId = signal<string | null>(null);
   readonly practiceSession = signal<PracticeSessionRead | null>(null);
+  readonly resumableSession = signal<PracticeSessionSummaryRead | null>(null);
+  readonly abandonConfirmationPending = signal(false);
   readonly selectedAnswer = signal('');
   readonly lastAttempt = signal<PracticeAttemptRead | null>(null);
   readonly answeredQuestionIds = signal<ReadonlySet<string>>(new Set<string>());
@@ -140,6 +143,8 @@ export class PracticeStore {
   reset(): void {
     this.selectedDocumentId.set(null);
     this.practiceSession.set(null);
+    this.resumableSession.set(null);
+    this.abandonConfirmationPending.set(false);
     this.selectedAnswer.set('');
     this.lastAttempt.set(null);
     this.answeredQuestionIds.set(new Set<string>());
@@ -174,6 +179,10 @@ export class PracticeStore {
       return false;
     }
 
+    if (this.resumableSession() !== null) {
+      return false;
+    }
+
     if (this.reviewRetryInProgress() && mode !== 'review_retry') {
       return false;
     }
@@ -191,6 +200,10 @@ export class PracticeStore {
   sessionStartBlocker(mode: PracticeSessionMode): string {
     if (this.projects.selectedProject() === null) {
       return 'Select a project before starting practice.';
+    }
+
+    if (this.resumableSession() !== null) {
+      return 'Resume or abandon the active practice session before starting another.';
     }
 
     if (this.reviewRetryInProgress() && mode !== 'review_retry') {
@@ -235,6 +248,8 @@ export class PracticeStore {
     }
 
     this.practiceSession.set(session);
+    this.resumableSession.set(null);
+    this.abandonConfirmationPending.set(false);
     this.answeredQuestionIds.set(new Set<string>());
     this.selectedAnswer.set('');
     this.lastAttempt.set(null);
@@ -272,10 +287,85 @@ export class PracticeStore {
     }
 
     this.practiceSession.set(session);
+    this.resumableSession.set(null);
+    this.abandonConfirmationPending.set(false);
     this.answeredQuestionIds.set(new Set<string>());
     this.selectedAnswer.set('');
     this.lastAttempt.set(null);
     return true;
+  }
+
+  async loadActiveSession(projectId: string): Promise<void> {
+    const sessions = await this.api.listActivePracticeSessions(projectId);
+    if (this.projects.selectedProject()?.id !== projectId) {
+      return;
+    }
+    this.resumableSession.set(sessions.items[0] ?? null);
+    this.abandonConfirmationPending.set(false);
+  }
+
+  async resumeActiveSession(): Promise<void> {
+    const project = this.projects.selectedProject();
+    const summary = this.resumableSession();
+    if (project === null || summary === null) {
+      return;
+    }
+    const session = await this.operations.run(
+      'session',
+      'Practice session resumed',
+      () => this.api.getPracticeSession(project.id, summary.id),
+    );
+    if (session === null || this.projects.selectedProject()?.id !== project.id) {
+      return;
+    }
+
+    this.practiceSession.set(session);
+    this.resumableSession.set(null);
+    this.abandonConfirmationPending.set(false);
+    this.answeredQuestionIds.set(
+      new Set(session.attempts.map((attempt) => attempt.question_id)),
+    );
+    this.lastAttempt.set(
+      session.attempts[session.attempts.length - 1] ?? null,
+    );
+    this.selectedAnswer.set('');
+    await this.drafts.load(project.id);
+  }
+
+  requestAbandonActiveSession(): void {
+    if (this.resumableSession() !== null) {
+      this.abandonConfirmationPending.set(true);
+    }
+  }
+
+  cancelAbandonActiveSession(): void {
+    this.abandonConfirmationPending.set(false);
+  }
+
+  async confirmAbandonActiveSession(): Promise<void> {
+    const project = this.projects.selectedProject();
+    const summary = this.resumableSession();
+    if (
+      project === null ||
+      summary === null ||
+      !this.abandonConfirmationPending()
+    ) {
+      return;
+    }
+    const abandoned = await this.operations.run(
+      'session',
+      'Practice session abandoned',
+      () => this.api.abandonPracticeSession(project.id, summary.id),
+    );
+    if (abandoned === null || this.projects.selectedProject()?.id !== project.id) {
+      return;
+    }
+    this.resumableSession.set(null);
+    this.abandonConfirmationPending.set(false);
+    this.practiceSession.set(null);
+    this.answeredQuestionIds.set(new Set<string>());
+    this.selectedAnswer.set('');
+    this.lastAttempt.set(null);
   }
 
   private sessionPayload(mode: PracticeSessionMode): PracticeSessionPayload {

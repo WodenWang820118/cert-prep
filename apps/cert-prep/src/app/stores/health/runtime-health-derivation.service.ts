@@ -4,7 +4,10 @@ import type {
   OCRHealthRead,
   RuntimeRequirementRead,
 } from '../../cert-prep-api';
-import type { RuntimeKind } from './contracts/health-runtime.contracts';
+import type {
+  LLMProviderSelectionRead,
+  RuntimeKind,
+} from './contracts/health-runtime.contracts';
 
 const OCR_RUNTIME_MISSING_REASON_CODES = new Set([
   'paddle_runtime_missing',
@@ -46,11 +49,7 @@ export class RuntimeHealthDerivationService {
     health: LLMHealthRead | null,
     requirements: readonly RuntimeRequirementRead[],
   ): boolean {
-    return (
-      this.unavailableReason(health) === 'fastflowlm_missing' ||
-      this.runtimeUnavailableReason(requirements, 'fastflowlm') ===
-        'fastflowlm_missing'
-    );
+    return this.isFastFlowRuntimeMissing(health, requirements);
   }
 
   isFastFlowTermsRequired(
@@ -92,7 +91,17 @@ export class RuntimeHealthDerivationService {
   isLlmRuntimeMissing(
     health: LLMHealthRead | null,
     requirements: readonly RuntimeRequirementRead[],
+    selection: LLMProviderSelectionRead | null = null,
   ): boolean {
+    const selectedKind = this.normalizedCode(
+      selection?.runtime_requirement_kind,
+    );
+    if (selectedKind === 'fastflowlm') {
+      return this.isFastFlowRuntimeMissing(health, requirements, selection);
+    }
+    if (selectedKind === 'ollama') {
+      return this.isOllamaMissing(health, requirements);
+    }
     if (LLM_RUNTIME_MISSING_REASON_CODES.has(this.unavailableReason(health))) {
       return true;
     }
@@ -103,8 +112,35 @@ export class RuntimeHealthDerivationService {
     );
   }
 
-  llmProviderLabel(health: LLMHealthRead | null): string {
-    const provider = this.normalizedCode(health?.provider);
+  isFastFlowRuntimeMissing(
+    health: LLMHealthRead | null,
+    requirements: readonly RuntimeRequirementRead[],
+    selection: LLMProviderSelectionRead | null = null,
+  ): boolean {
+    const selectedFastFlow =
+      this.normalizedCode(selection?.selected_provider) === 'fastflowlm';
+    return (
+      this.unavailableReason(health) === 'fastflowlm_missing' ||
+      this.runtimeUnavailableReason(requirements, 'fastflowlm') ===
+        'fastflowlm_missing' ||
+      (selectedFastFlow &&
+        requirements.some(
+          (item) => item.kind === 'fastflowlm' && item.available === false,
+        ))
+    );
+  }
+
+  llmProviderLabel(
+    health: LLMHealthRead | null,
+    selection: LLMProviderSelectionRead | null = null,
+  ): string {
+    return this.providerLabel(
+      selection?.selected_provider ?? health?.provider,
+    );
+  }
+
+  providerLabel(providerValue: unknown): string {
+    const provider = this.normalizedCode(providerValue);
     if (provider === 'fastflowlm') {
       return 'FastFlowLM';
     }
@@ -157,8 +193,10 @@ export class RuntimeHealthDerivationService {
   configuredModelName(
     health: LLMHealthRead | null,
     fallbackModel: string | null | undefined,
+    selection: LLMProviderSelectionRead | null = null,
   ): string {
     return (
+      selection?.configured_model ??
       health?.configured_model ??
       health?.model ??
       fallbackModel ??
@@ -169,8 +207,10 @@ export class RuntimeHealthDerivationService {
   effectiveModelName(
     health: LLMHealthRead | null,
     fallbackModel: string | null | undefined,
+    selection: LLMProviderSelectionRead | null = null,
   ): string {
     return (
+      selection?.effective_model ??
       health?.effective_model ??
       health?.model ??
       fallbackModel ??
@@ -180,15 +220,42 @@ export class RuntimeHealthDerivationService {
 
   isConfiguredModelMissing(
     health: LLMHealthRead | null,
-    requirements: readonly RuntimeRequirementRead[] = [],
+    selectionOrRequirements:
+      | LLMProviderSelectionRead
+      | readonly RuntimeRequirementRead[]
+      | null = null,
   ): boolean {
+    const requirements = this.isRequirementList(selectionOrRequirements)
+      ? selectionOrRequirements
+      : [];
+    const selection = this.isRequirementList(selectionOrRequirements)
+      ? null
+      : selectionOrRequirements;
     return (
       this.isModelMissing(health, requirements) ||
-      this.isModelFallbackActive(health)
+      this.isModelFallbackActive(health, selection)
     );
   }
 
-  isModelFallbackActive(health: LLMHealthRead | null): boolean {
+  isModelFallbackActive(
+    health: LLMHealthRead | null,
+    selection: LLMProviderSelectionRead | null = null,
+  ): boolean {
+    if (selection !== null) {
+      const configuredModel = this.normalizedModelName(
+        selection.configured_model,
+      );
+      const effectiveModel = this.normalizedModelName(
+        selection.effective_model,
+      );
+      if (
+        configuredModel.length > 0 &&
+        effectiveModel.length > 0 &&
+        configuredModel !== effectiveModel
+      ) {
+        return true;
+      }
+    }
     if (health === null || health.available !== true) {
       return false;
     }
@@ -228,6 +295,15 @@ export class RuntimeHealthDerivationService {
       health?.available === false &&
       this.unavailableReason(health) === 'model_missing'
     );
+  }
+
+  private isRequirementList(
+    value:
+      | LLMProviderSelectionRead
+      | readonly RuntimeRequirementRead[]
+      | null,
+  ): value is readonly RuntimeRequirementRead[] {
+    return Array.isArray(value);
   }
 
   private modelRequirementMissing(
