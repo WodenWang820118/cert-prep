@@ -54,10 +54,11 @@ import {
 } from './video-evidence.mts';
 import type {
   ProcessRecord,
-  ProcessTerminationResult,
   PublicProcessRecord,
 } from '../process-lifecycle/processes.mts';
 import type { CloseSummary, SmokeRunState } from './types.mts';
+
+type ProcessTerminationResult = ReturnType<typeof terminateProcessTreeByPid>;
 
 interface CleanupWithTimeoutController<T extends object> {
   cleanupWithTimeout(target: T): Promise<void>;
