@@ -5,6 +5,7 @@ import type { APIResponse, Page, Response } from 'playwright';
 
 import {
   captureGenerationReadinessAtProjectCreate,
+  captureProjectApiAfterRestart,
   isProjectDocumentsCollectionResponse,
 } from './generation-readiness.mts';
 import { waitForUploadDocumentResponse } from './streaming-capture-api.mts';
@@ -61,6 +62,76 @@ class FakePage {
     }
   }
 }
+
+class RestartFakePage {
+  reloadCalls = 0;
+  private readonly response: Response;
+  private predicate: ((response: Response) => boolean) | null = null;
+  private resolveResponse: ((response: Response) => void) | null = null;
+
+  constructor(response: Response) {
+    this.response = response;
+  }
+
+  waitForResponse(
+    predicate: (response: Response) => boolean,
+  ): Promise<Response> {
+    this.predicate = predicate;
+    return new Promise<Response>((resolve) => {
+      this.resolveResponse = resolve;
+    });
+  }
+
+  async reload(): Promise<null> {
+    this.reloadCalls += 1;
+    if (this.predicate?.(this.response)) {
+      this.resolveResponse?.(this.response);
+    }
+    return null;
+  }
+}
+
+test('restart API capture reloads and replaces the backend origin and token', async () => {
+  const restartedAuthorization = 'Bearer restarted-token';
+  const page = new RestartFakePage(
+    response({
+      url: 'http://127.0.0.1:8877/projects',
+      authorization: restartedAuthorization,
+      status: 200,
+      payload: { items: [{ id: PROJECT_ID }] },
+      method: 'GET',
+    }),
+  );
+
+  const projectApi = await captureProjectApiAfterRestart(
+    page as unknown as Page,
+    PROJECT_ID,
+  );
+
+  assert.equal(page.reloadCalls, 1);
+  assert.deepEqual(projectApi, {
+    apiBaseUrl: 'http://127.0.0.1:8877',
+    authorization: restartedAuthorization,
+    projectId: PROJECT_ID,
+  });
+});
+
+test('restart API capture rejects a project list without the exact project', async () => {
+  const page = new RestartFakePage(
+    response({
+      url: 'http://127.0.0.1:8877/projects',
+      authorization: 'Bearer restarted-token',
+      status: 200,
+      payload: { items: [{ id: DOCUMENT_ID }] },
+      method: 'GET',
+    }),
+  );
+
+  await assert.rejects(
+    captureProjectApiAfterRestart(page as unknown as Page, PROJECT_ID),
+    /did not contain the exact project/,
+  );
+});
 
 test('captures generation readiness from the exact project response before upload', async () => {
   const page = readyPage();

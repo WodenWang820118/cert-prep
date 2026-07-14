@@ -24,6 +24,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright';
 
 import {
+  collectProcessTree,
   publicProcessRecord,
   requestWindowsCloseByPid,
   selectCertPrepResidue,
@@ -51,7 +52,11 @@ import {
   startAcceptanceVideo,
   stopAcceptanceVideo,
 } from './video-evidence.mts';
-import type { PublicProcessRecord } from '../process-lifecycle/processes.mts';
+import type {
+  ProcessRecord,
+  ProcessTerminationResult,
+  PublicProcessRecord,
+} from '../process-lifecycle/processes.mts';
 import type { CloseSummary, SmokeRunState } from './types.mts';
 
 interface CleanupWithTimeoutController<T extends object> {
@@ -63,6 +68,19 @@ interface CleanupWithTimeoutOptions<T extends object> {
   cleanup: (target: T) => Promise<void>;
   timeoutMs: number;
   delayForTimeout?: (timeoutMs: number) => Promise<void>;
+}
+
+export interface ForcedCrashReconnectHooks {
+  readonly terminateProcessTree?: (pid: number) => ProcessTerminationResult;
+  readonly waitForExit?: (child: ChildProcess, timeoutMs: number) => Promise<boolean>;
+  readonly snapshotProcesses?: () => ProcessRecord[];
+  readonly waitAfterTermination?: (milliseconds: number) => Promise<unknown>;
+  readonly launch?: (run: SmokeRunState) => Promise<void>;
+}
+
+export interface ForcedCrashSummary {
+  readonly appPid: number;
+  readonly termination: ProcessTerminationResult;
 }
 
 const ACCEPTANCE_ENV_PREFIXES = [
@@ -257,6 +275,124 @@ export async function restartAndVerifyPersistence(run: SmokeRunState): Promise<v
   await screenshot(run, 'restart-persistence-build-state');
   run.metrics.restart.verified =
     /Parsing complete|Playable|Mock Exam Items|Source PDF/i.test(await bodyText(run));
+}
+
+export async function forceCrashAndReconnect(
+  run: SmokeRunState,
+  label: string,
+  {
+    terminateProcessTree = terminateProcessTreeByPid,
+    waitForExit = waitForChildExit,
+    snapshotProcesses = snapshotWindowsProcesses,
+    waitAfterTermination = delay,
+    launch = launchAppAndConnect,
+  }: ForcedCrashReconnectHooks = {},
+): Promise<ForcedCrashSummary> {
+  const crashedApp = run.app;
+  const appPid = crashedApp?.pid;
+  if (!crashedApp || !appPid || crashedApp.exitCode !== null || crashedApp.killed) {
+    throw new Error(`${label} requires a live packaged app process.`);
+  }
+
+  const ownedBeforeCrash = collectProcessTree(snapshotProcesses(), appPid);
+  if (
+    !ownedBeforeCrash.some((record) => record.pid === appPid) ||
+    ownedBeforeCrash.some((record) => record.name.trim().length === 0)
+  ) {
+    throw new Error(
+      `${label} could not capture the live app process identity before forced termination.`,
+    );
+  }
+
+  const termination = terminateProcessTree(appPid);
+  if (!termination.attempted || termination.error !== null) {
+    throw new Error(
+      `${label} could not force-terminate app process ${appPid}: ${termination.error ?? termination.method}.`,
+    );
+  }
+  if (!(await waitForExit(crashedApp, 15_000))) {
+    throw new Error(`${label} app process ${appPid} did not exit after forced termination.`);
+  }
+
+  await run.browser?.close().catch(ignoreCleanupError);
+  run.browser = null;
+  run.page = null;
+  run.app = null;
+  run.appExit = null;
+  run.projectApi = null;
+  run.uploadedDocument = null;
+
+  let residue: ProcessRecord[] = [];
+  let capturedOwnedResidue: ProcessRecord[] = [];
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    await waitAfterTermination(500);
+    const afterTermination = snapshotProcesses();
+    residue = selectCertPrepResidue(afterTermination, appPid);
+    capturedOwnedResidue = selectCapturedProcessResidue(
+      ownedBeforeCrash,
+      afterTermination,
+    );
+    if (residue.length === 0 && capturedOwnedResidue.length === 0) {
+      break;
+    }
+  }
+  if (residue.length > 0 || capturedOwnedResidue.length > 0) {
+    const remaining = uniqueProcessRecords([
+      ...capturedOwnedResidue,
+      ...residue,
+    ]);
+    throw new Error(
+      `${label} forced crash left process residue: ${remaining
+        .map((record) => `${record.name}#${record.pid}`)
+        .join(', ')}.`,
+    );
+  }
+
+  run.metrics.observations.push(
+    `${label} force-terminated packaged app process ${appPid} without a graceful close request.`,
+  );
+  run.port += 1;
+  await launch(run);
+  return { appPid, termination };
+}
+
+function selectCapturedProcessResidue(
+  captured: readonly ProcessRecord[],
+  current: readonly ProcessRecord[],
+): ProcessRecord[] {
+  const currentByPid = new Map(current.map((record) => [record.pid, record]));
+  return captured.filter((record) => {
+    const currentRecord = currentByPid.get(record.pid);
+    return currentRecord
+      ? sameProcessIdentity(record, currentRecord)
+      : false;
+  });
+}
+
+function sameProcessIdentity(
+  captured: ProcessRecord,
+  current: ProcessRecord,
+): boolean {
+  if (
+    captured.pid !== current.pid ||
+    captured.name.toLowerCase() !== current.name.toLowerCase()
+  ) {
+    return false;
+  }
+  const capturedCreationDate = captured.creationDate.trim();
+  const currentCreationDate = current.creationDate.trim();
+  return capturedCreationDate && currentCreationDate
+    ? capturedCreationDate === currentCreationDate
+    : true;
+}
+
+function uniqueProcessRecords(
+  records: readonly ProcessRecord[],
+): ProcessRecord[] {
+  return records.filter(
+    (record, index) =>
+      records.findIndex((candidate) => candidate.pid === record.pid) === index,
+  );
 }
 
 export async function launchAppAndConnect(run: SmokeRunState): Promise<void> {

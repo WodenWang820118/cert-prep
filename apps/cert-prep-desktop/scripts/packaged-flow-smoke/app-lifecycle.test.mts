@@ -12,14 +12,18 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { setImmediate } from 'node:timers/promises';
 import { test } from 'node:test';
+import type { ChildProcess } from 'node:child_process';
 
 import {
   buildAppLaunchEnvironment,
   createCleanupWithTimeoutController,
+  forceCrashAndReconnect,
   prepareRunDirectories,
   sanitizeInheritedLaunchEnvironment,
   startAcceptanceVideoForSmoke,
 } from './app-lifecycle.mts';
+import { selectCertPrepResidue } from '../process-lifecycle/processes.mts';
+import type { ProcessRecord } from '../process-lifecycle/processes.mts';
 import type { SmokeRunState } from './types.mts';
 
 test('cleanup timeout does not mark the underlying cleanup as finished', async () => {
@@ -101,6 +105,151 @@ test('acceptance video start failures are recorded without aborting smoke', asyn
   assert.deepEqual(run.metrics.observations, [
     'acceptance video start failed: screencast denied',
   ]);
+});
+
+test('forced crash reconnect terminates the app tree without a graceful close request', async () => {
+  const order: string[] = [];
+  const crashedApp = {
+    pid: 4_242,
+    exitCode: null,
+    killed: false,
+  } as unknown as ChildProcess;
+  const replacementApp = {
+    pid: 4_243,
+    exitCode: null,
+    killed: false,
+  } as unknown as ChildProcess;
+  const appProcess = processRecord(
+    4_242,
+    100,
+    'cert-prep-desktop.exe',
+    '20260714010000.000000+000',
+  );
+  let snapshotCalls = 0;
+  const run = {
+    app: crashedApp,
+    appExit: { exited: false, code: null, signal: null },
+    browser: {
+      close: async () => {
+        order.push('browser-close');
+      },
+    },
+    page: {},
+    projectApi: {
+      apiBaseUrl: 'http://127.0.0.1:8000',
+      authorization: 'Bearer stale',
+      projectId: 'project-1',
+    },
+    uploadedDocument: { documentId: 'document-1' },
+    metrics: { observations: [] },
+    port: 9591,
+  } as unknown as SmokeRunState;
+
+  const summary = await forceCrashAndReconnect(run, 'ocr crash recovery', {
+    terminateProcessTree(pid) {
+      assert.equal(pid, 4_242);
+      order.push('terminate-tree');
+      return {
+        attempted: true,
+        method: 'taskkill_process_tree',
+        exitCode: 0,
+        error: null,
+      };
+    },
+    async waitForExit(child, timeoutMs) {
+      assert.strictEqual(child, crashedApp);
+      assert.equal(timeoutMs, 15_000);
+      order.push('wait-for-exit');
+      return true;
+    },
+    snapshotProcesses: () => {
+      snapshotCalls += 1;
+      return snapshotCalls === 1 ? [appProcess] : [];
+    },
+    waitAfterTermination: async () => undefined,
+    async launch(target) {
+      order.push('launch');
+      target.app = replacementApp;
+    },
+  });
+
+  assert.deepEqual(order, [
+    'terminate-tree',
+    'wait-for-exit',
+    'browser-close',
+    'launch',
+  ]);
+  assert.equal(summary.appPid, 4_242);
+  assert.strictEqual(run.app, replacementApp);
+  assert.equal(run.port, 9592);
+  assert.equal(run.projectApi, null);
+  assert.equal(run.uploadedDocument, null);
+  assert.match(run.metrics.observations[0] ?? '', /without a graceful close request/);
+});
+
+test('forced crash detects a captured child after it is reparented', async () => {
+  const appPid = 5_242;
+  const childPid = 5_243;
+  const crashedApp = {
+    pid: appPid,
+    exitCode: null,
+    killed: false,
+  } as unknown as ChildProcess;
+  const root = processRecord(
+    appPid,
+    100,
+    'cert-prep-desktop.exe',
+    '20260714010100.000000+000',
+  );
+  const child = processRecord(
+    childPid,
+    appPid,
+    'cert-prep-backend.exe',
+    '20260714010101.000000+000',
+  );
+  const reparentedChild = { ...child, parentPid: 4 };
+  assert.deepEqual(selectCertPrepResidue([reparentedChild], appPid), []);
+
+  let snapshotCalls = 0;
+  let launchCalls = 0;
+  const run = {
+    app: crashedApp,
+    appExit: { exited: false, code: null, signal: null },
+    browser: { close: async () => undefined },
+    page: {},
+    projectApi: {
+      apiBaseUrl: 'http://127.0.0.1:8000',
+      authorization: 'Bearer stale',
+      projectId: 'project-1',
+    },
+    uploadedDocument: { documentId: 'document-1' },
+    metrics: { observations: [] },
+    port: 9591,
+  } as unknown as SmokeRunState;
+
+  await assert.rejects(
+    forceCrashAndReconnect(run, 'ocr crash recovery', {
+      terminateProcessTree: () => ({
+        attempted: true,
+        method: 'taskkill_process_tree',
+        exitCode: 0,
+        error: null,
+      }),
+      waitForExit: async () => true,
+      snapshotProcesses: () => {
+        snapshotCalls += 1;
+        return snapshotCalls === 1 ? [root, child] : [reparentedChild];
+      },
+      waitAfterTermination: async () => undefined,
+      launch: async () => {
+        launchCalls += 1;
+      },
+    }),
+    /cert-prep-backend\.exe#5243/,
+  );
+
+  assert.equal(snapshotCalls, 6);
+  assert.equal(launchCalls, 0);
 });
 
 test('XDNA2 acceptance strips inherited runtime overrides without mutation', () => {
@@ -322,6 +471,23 @@ test('XDNA2 acceptance rejects reparse points in the run path', () => {
     rmSync(workspaceRoot, { recursive: true, force: true });
   }
 });
+
+function processRecord(
+  pid: number,
+  parentPid: number,
+  name: string,
+  creationDate: string,
+): ProcessRecord {
+  return {
+    pid,
+    parentPid,
+    name,
+    creationDate,
+    executablePath: `C:\\Program Files\\Cert Prep\\${name}`,
+    commandLine: `"C:\\Program Files\\Cert Prep\\${name}"`,
+    workingSetBytes: null,
+  };
+}
 
 function launchEnvironmentRun(
   acceptanceLane: 'none' | 'xdna2-fastflow' | undefined,

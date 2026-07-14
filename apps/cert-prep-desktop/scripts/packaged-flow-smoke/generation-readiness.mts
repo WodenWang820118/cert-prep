@@ -34,6 +34,7 @@ const RUNTIME_KINDS = new Set([
 ]);
 
 type ReadinessPage = Pick<Page, 'on' | 'off' | 'request'>;
+type RestartProjectApiPage = Pick<Page, 'reload' | 'waitForResponse'>;
 
 export interface CaptureGenerationReadinessOptions {
   readonly page?: ReadinessPage;
@@ -164,6 +165,40 @@ export async function captureGenerationReadinessFromProjectApi(
   );
   run.metrics.generation_readiness_at_start = snapshot;
   return snapshot;
+}
+
+export async function captureProjectApiAfterRestart(
+  page: RestartProjectApiPage,
+  expectedProjectId: string,
+  timeoutMs = PROJECT_RESPONSE_TIMEOUT_MS,
+): Promise<ProjectApiRef> {
+  if (!UUID_PATTERN.test(expectedProjectId)) {
+    throw new Error('Restart project API capture requires an exact project UUID.');
+  }
+  const responsePromise = page.waitForResponse(
+    (response) => isAuthenticatedProjectListResponse(response),
+    { timeout: timeoutMs },
+  );
+  await page.reload({ waitUntil: 'domcontentloaded', timeout: timeoutMs });
+  const response = await responsePromise;
+  if (response.status() !== 200) {
+    throw new Error(`Restart project list returned HTTP ${response.status()}.`);
+  }
+  const payload = await response.json().catch(() => null);
+  if (!isRecord(payload) || !Array.isArray(payload.items)) {
+    throw new Error('Restart project list response was not valid JSON.');
+  }
+  const matchedProject = payload.items.find(
+    (item) => isRecord(item) && item.id === expectedProjectId,
+  );
+  if (!matchedProject) {
+    throw new Error('Restart project list did not contain the exact project.');
+  }
+  const projectApi = projectApiRefFromResponse(response, matchedProject);
+  if (!projectApi || projectApi.projectId !== expectedProjectId) {
+    throw new Error('Restart project API context was not safely captured.');
+  }
+  return projectApi;
 }
 
 export function projectApiRefMatchesResponse(
@@ -408,7 +443,7 @@ async function readJsonWithTimeout(
   }
 }
 
-function projectApiRefFromResponse(
+export function projectApiRefFromResponse(
   response: Response,
   payload: unknown,
 ): ProjectApiRef | null {
@@ -427,6 +462,15 @@ function projectApiRefFromResponse(
     return null;
   }
   return { apiBaseUrl, authorization, projectId };
+}
+
+function isAuthenticatedProjectListResponse(response: Response): boolean {
+  return (
+    response.request().method().toUpperCase() === 'GET' &&
+    response.status() === 200 &&
+    canonicalApiBaseUrl(response.url(), '/projects') !== null &&
+    authorizationHeader(response) !== null
+  );
 }
 
 function canonicalApiBaseUrl(value: string, collectionPath: string): string | null {
