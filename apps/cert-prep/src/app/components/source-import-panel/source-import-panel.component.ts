@@ -2,6 +2,7 @@ import { Component, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ProgressBar } from 'primeng/progressbar';
 import { Tag } from 'primeng/tag';
+import type { DocumentRead } from '../../cert-prep-api';
 import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
 import { OperationStore } from '../../stores/operation.store';
 import { ProjectStore } from '../../stores/project.store';
@@ -74,8 +75,22 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
                       / {{ item.error }}
                     }
                   </p>
+                  @if (item.document; as document) {
+                    @if (
+                      document.id !== sourceImport.activeDocumentId() &&
+                      sourceImport.documentProcessingError(document.id);
+                      as processingError
+                    ) {
+                      <p
+                        class="m-0 mt-2 text-xs font-semibold text-red-700"
+                        role="alert"
+                      >
+                        {{ processingError }}
+                      </p>
+                    }
+                  }
                 </div>
-                <div class="flex items-center gap-2">
+                <div class="flex flex-wrap items-center gap-2">
                   <p-tag
                     [value]="uploadStatusLabel(item.status)"
                     [severity]="uploadStatusSeverity(item.status)"
@@ -101,6 +116,45 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
                     >
                       Retry
                     </button>
+                  }
+                  @if (item.document; as document) {
+                    <p-tag
+                      [value]="'OCR: ' + documentProcessingStatusLabel(document)"
+                      [severity]="documentProcessingStatusSeverity(document)"
+                      [rounded]="true"
+                    />
+                    @if (document.id !== sourceImport.activeDocumentId()) {
+                      @if (sourceImport.canCancelDocumentProcessing(document)) {
+                        <button
+                          class="workbench-secondary-button"
+                          type="button"
+                          [attr.aria-label]="'Cancel OCR for ' + item.file.name"
+                          (click)="cancelDocumentProcessing(document.id)"
+                        >
+                          Cancel OCR
+                        </button>
+                      }
+                      @if (sourceImport.canRetryDocumentProcessing(document)) {
+                        <button
+                          class="workbench-secondary-button"
+                          type="button"
+                          [attr.aria-label]="'Retry OCR for ' + item.file.name"
+                          (click)="retryDocumentProcessing(document.id)"
+                        >
+                          Retry OCR
+                        </button>
+                      }
+                      @if (sourceImport.canRetryDocumentActionStatus(document.id)) {
+                        <button
+                          class="workbench-secondary-button"
+                          type="button"
+                          [attr.aria-label]="'Retry OCR status for ' + item.file.name"
+                          (click)="retryDocumentActionStatus(document.id)"
+                        >
+                          Retry OCR status
+                        </button>
+                      }
+                    }
                   }
                 </div>
               </div>
@@ -168,6 +222,24 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
             class="grid gap-3"
             aria-live="polite"
           >
+            @if (sourceImport.documentProcessingError(document.id); as processingError) {
+              <div
+                class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800"
+                role="alert"
+              >
+                <span>{{ processingError }}</span>
+                @if (sourceImport.canRetryDocumentActionStatus(document.id)) {
+                  <button
+                    class="workbench-secondary-button"
+                    type="button"
+                    [attr.aria-label]="'Retry OCR status for ' + document.filename"
+                    (click)="retryDocumentActionStatus(document.id)"
+                  >
+                    Retry OCR status
+                  </button>
+                }
+              </div>
+            }
             @if (sourceImport.documentPollingError(); as pollingError) {
               <div
                 class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800"
@@ -194,11 +266,33 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
                   chunks / {{ sourceImport.elapsedTime() }}
                 </p>
               </div>
-              <p-tag
-                [value]="sourceImport.documentPollingError() ? 'status unavailable' : document.status"
-                [severity]="sourceImport.documentPollingError() ? 'danger' : document.status === 'processing' ? 'info' : document.status === 'ready' ? 'success' : 'warn'"
-                [rounded]="true"
-              />
+              <div class="flex flex-wrap items-center gap-2">
+                <p-tag
+                  [value]="sourceImport.documentPollingError() ? 'status unavailable' : documentProcessingStatusLabel(document)"
+                  [severity]="sourceImport.documentPollingError() ? 'danger' : documentProcessingStatusSeverity(document)"
+                  [rounded]="true"
+                />
+                @if (sourceImport.canCancelDocumentProcessing(document)) {
+                  <button
+                    class="workbench-secondary-button"
+                    type="button"
+                    [attr.aria-label]="'Cancel OCR for ' + document.filename"
+                    (click)="cancelDocumentProcessing(document.id)"
+                  >
+                    Cancel OCR
+                  </button>
+                }
+                @if (sourceImport.canRetryDocumentProcessing(document)) {
+                  <button
+                    class="workbench-secondary-button"
+                    type="button"
+                    [attr.aria-label]="'Retry OCR for ' + document.filename"
+                    (click)="retryDocumentProcessing(document.id)"
+                  >
+                    Retry OCR
+                  </button>
+                }
+              </div>
             </div>
             @if (!sourceImport.documentPollingError()) {
               <p-progressbar
@@ -368,6 +462,20 @@ export class SourceImportPanelComponent {
     await this.sourceImport.retryUpload(itemId);
   }
 
+  protected async cancelDocumentProcessing(documentId: string): Promise<void> {
+    await this.sourceImport.cancelDocumentProcessing(documentId);
+  }
+
+  protected async retryDocumentProcessing(documentId: string): Promise<void> {
+    await this.sourceImport.retryDocumentProcessing(documentId);
+  }
+
+  protected async retryDocumentActionStatus(
+    documentId: string,
+  ): Promise<void> {
+    await this.sourceImport.retryDocumentActionStatus(documentId);
+  }
+
   protected async retryDocumentStatus(): Promise<void> {
     await this.sourceImport.retryDocumentPolling();
   }
@@ -437,6 +545,55 @@ export class SourceImportPanelComponent {
       return 'info';
     }
     if (status === 'failed' || status === 'status_unavailable') {
+      return 'danger';
+    }
+    return 'warn';
+  }
+
+  protected documentProcessingStatusLabel(document: DocumentRead): string {
+    const action = this.sourceImport.documentProcessingState(document.id);
+    if (action?.status === 'running') {
+      return action.kind === 'retry' ? 'Retrying' : 'Processing';
+    }
+    if (action?.status === 'cancel_requested') {
+      return 'Cancel requested';
+    }
+    if (action?.status === 'status_unavailable') {
+      return 'Status unavailable';
+    }
+    if (action?.status === 'failed') {
+      return 'Action failed';
+    }
+    if (document.status === 'ocr_failed') {
+      return 'OCR failed';
+    }
+    if (document.status === 'no_text_detected') {
+      return 'No text detected';
+    }
+    if (document.status === 'cancel_requested') {
+      return 'Cancel requested';
+    }
+    return document.status.charAt(0).toUpperCase() + document.status.slice(1);
+  }
+
+  protected documentProcessingStatusSeverity(
+    document: DocumentRead,
+  ): 'success' | 'info' | 'warn' | 'danger' {
+    const actionStatus =
+      this.sourceImport.documentProcessingState(document.id)?.status;
+    if (actionStatus === 'failed' || actionStatus === 'status_unavailable') {
+      return 'danger';
+    }
+    if (actionStatus === 'running' || document.status === 'processing') {
+      return 'info';
+    }
+    if (document.status === 'ready') {
+      return 'success';
+    }
+    if (
+      document.status === 'ocr_failed' ||
+      document.status === 'no_text_detected'
+    ) {
       return 'danger';
     }
     return 'warn';
