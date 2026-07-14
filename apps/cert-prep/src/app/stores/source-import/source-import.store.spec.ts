@@ -103,6 +103,53 @@ describe('SourceImportStore polling', () => {
     expect(store.chunks()).toEqual([chunkRead({ document_id: latestDocument.id })]);
   });
 
+  it('ignores a stale project document list response', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    const projects = TestBed.inject(ProjectStore);
+    const projectOneDocuments = deferred<{ items: DocumentRead[] }>();
+    apiClient.listDocuments.mockReturnValue(projectOneDocuments.promise);
+    projects.projects.update((items) => [
+      ...items,
+      {
+        id: 'project-2',
+        name: 'Second project',
+        description: '',
+        created_at: '2026-06-18T00:00:00Z',
+        updated_at: '2026-06-18T00:00:00Z',
+      },
+    ]);
+
+    const loadPromise = store.loadLatestDocument('project-1');
+    projects.select('project-2');
+    projectOneDocuments.resolve({ items: [documentRead()] });
+    await loadPromise;
+
+    expect(store.documents()).toEqual([]);
+    expect(store.activeDocument()).toBeNull();
+  });
+
+  it('keeps the newest same-project document list response', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    const olderResponse = deferred<{ items: DocumentRead[] }>();
+    const newerResponse = deferred<{ items: DocumentRead[] }>();
+    const olderDocument = documentRead({ id: 'document-old' });
+    const newerDocument = documentRead({ id: 'document-new' });
+    apiClient.listDocuments
+      .mockReturnValueOnce(olderResponse.promise)
+      .mockReturnValueOnce(newerResponse.promise);
+    apiClient.getDocument.mockResolvedValue(newerDocument);
+
+    const olderLoad = store.loadLatestDocument('project-1');
+    const newerLoad = store.loadLatestDocument('project-1');
+    newerResponse.resolve({ items: [newerDocument] });
+    await newerLoad;
+    olderResponse.resolve({ items: [olderDocument] });
+    await olderLoad;
+
+    expect(store.documents()).toEqual([newerDocument]);
+    expect(store.activeDocumentId()).toBe(newerDocument.id);
+  });
+
   it('selects a project document and refreshes its status and chunks', async () => {
     const store = TestBed.inject(SourceImportStore);
     const firstDocument = documentRead({ id: 'document-1', filename: 'first.pdf' });
@@ -132,6 +179,110 @@ describe('SourceImportStore polling', () => {
     expect(store.activeDocumentId()).toBe(secondDocument.id);
     expect(store.uploadedDocument()).toEqual(refreshedSecondDocument);
     expect(store.chunks()).toEqual([chunkRead({ document_id: secondDocument.id })]);
+  });
+
+  it('does not apply a stale document refresh after the project changes', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    const projects = TestBed.inject(ProjectStore);
+    const documentResponse = deferred<DocumentRead>();
+    const chunksResponse = deferred<{ items: ChunkRead[] }>();
+    projects.projects.update((items) => [
+      ...items,
+      {
+        id: 'project-2',
+        name: 'Second project',
+        description: '',
+        created_at: '2026-06-18T00:00:00Z',
+        updated_at: '2026-06-18T00:00:00Z',
+      },
+    ]);
+    apiClient.getDocument.mockReturnValue(documentResponse.promise);
+    apiClient.listDocumentChunks.mockReturnValue(chunksResponse.promise);
+
+    const refreshPromise = store.refreshUploadedDocument(
+      'project-1',
+      'document-1',
+    );
+    projects.select('project-2');
+    documentResponse.resolve(documentRead({ filename: 'stale.pdf' }));
+    chunksResponse.resolve({ items: [chunkRead()] });
+    await refreshPromise;
+
+    expect(store.documents()).toEqual([]);
+    expect(store.uploadedDocument()).toBeNull();
+    expect(store.chunks()).toEqual([]);
+  });
+
+  it('does not let an older same-document refresh replace terminal state', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    const olderDocument = deferred<DocumentRead>();
+    const newerDocument = deferred<DocumentRead>();
+    const olderChunks = deferred<{ items: ChunkRead[] }>();
+    const newerChunks = deferred<{ items: ChunkRead[] }>();
+    apiClient.getDocument
+      .mockReturnValueOnce(olderDocument.promise)
+      .mockReturnValueOnce(newerDocument.promise);
+    apiClient.listDocumentChunks
+      .mockReturnValueOnce(olderChunks.promise)
+      .mockReturnValueOnce(newerChunks.promise);
+
+    const olderRefresh = store.refreshUploadedDocument(
+      'project-1',
+      'document-1',
+    );
+    const newerRefresh = store.refreshUploadedDocument(
+      'project-1',
+      'document-1',
+    );
+    newerDocument.resolve(documentRead({ status: 'canceled' }));
+    newerChunks.resolve({ items: [] });
+    await newerRefresh;
+    olderDocument.resolve(documentRead({ status: 'cancel_requested' }));
+    olderChunks.resolve({ items: [] });
+    await olderRefresh;
+
+    expect(store.activeDocument()?.status).toBe('canceled');
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(apiClient.getDocument).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not let an older refresh failure clear a newer polling timer', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    const olderDocument = deferred<DocumentRead>();
+    apiClient.getDocument
+      .mockReturnValueOnce(olderDocument.promise)
+      .mockResolvedValueOnce(documentRead({ status: 'processing' }))
+      .mockResolvedValueOnce(documentRead({ status: 'ready' }));
+    apiClient.listDocumentChunks.mockResolvedValue({ items: [] });
+
+    const olderRefresh = store.refreshUploadedDocument(
+      'project-1',
+      'document-1',
+    );
+    await store.refreshUploadedDocument('project-1', 'document-1');
+    olderDocument.reject(new Error('stale request failed'));
+    await olderRefresh;
+
+    await vi.advanceTimersByTimeAsync(500);
+    expect(apiClient.getDocument).toHaveBeenCalledTimes(3);
+    expect(store.activeDocument()?.status).toBe('ready');
+  });
+
+  it('polls cancel_requested documents until canceled and then stops', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    apiClient.getDocument
+      .mockResolvedValueOnce(documentRead({ status: 'cancel_requested' }))
+      .mockResolvedValueOnce(documentRead({ status: 'canceled' }));
+    apiClient.listDocumentChunks.mockResolvedValue({ items: [] });
+
+    await store.refreshUploadedDocument('project-1', 'document-1');
+    await vi.advanceTimersByTimeAsync(1500);
+
+    expect(store.activeDocument()?.status).toBe('canceled');
+    expect(apiClient.getDocument).toHaveBeenCalledTimes(2);
+
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(apiClient.getDocument).toHaveBeenCalledTimes(2);
   });
 
   it('uploads selected PDFs in two-document batches by default', async () => {

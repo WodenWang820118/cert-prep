@@ -16,12 +16,7 @@ const FIRST_CHUNK_POLL_INTERVAL_MS = 500;
 const DEFAULT_UPLOAD_BATCH_SIZE = 2;
 const MIN_UPLOAD_BATCH_SIZE = 1;
 const MAX_UPLOAD_BATCH_SIZE = 4;
-const FINAL_DOCUMENT_STATUSES = new Set([
-  'ready',
-  'exam_failed',
-  'no_text_detected',
-  'ocr_failed',
-]);
+const ACTIVE_DOCUMENT_STATUSES = new Set(['processing', 'cancel_requested']);
 type UploadBatchResult =
   | { item: SourceUploadItem; document: DocumentRead }
   | { item: SourceUploadItem; error: unknown };
@@ -35,6 +30,8 @@ export class SourceImportStore {
   private readonly operations = inject(OperationStore);
   private readonly projects = inject(ProjectStore);
   private documentPollTimer: ReturnType<typeof setTimeout> | null = null;
+  private documentListRequestEpoch = 0;
+  private documentRefreshRequestEpoch = 0;
   private uploadItemCounter = 0;
 
   readonly languageHints: readonly LanguageHint[] = [
@@ -135,6 +132,7 @@ export class SourceImportStore {
   });
 
   chooseFiles(files: readonly File[]): void {
+    this.documentRefreshRequestEpoch += 1;
     this.uploadItems.set(
       files.map((file) => ({
         id: `source-upload-${++this.uploadItemCounter}`,
@@ -149,6 +147,8 @@ export class SourceImportStore {
   }
 
   reset(): void {
+    this.documentListRequestEpoch += 1;
+    this.documentRefreshRequestEpoch += 1;
     this.uploadItems.set([]);
     this.library.reset();
     this.stopDocumentPolling();
@@ -290,7 +290,14 @@ export class SourceImportStore {
   }
 
   async loadLatestDocument(projectId: string): Promise<void> {
+    const requestEpoch = ++this.documentListRequestEpoch;
     const documents = await this.api.listDocuments(projectId);
+    if (
+      requestEpoch !== this.documentListRequestEpoch ||
+      this.projects.selectedProject()?.id !== projectId
+    ) {
+      return;
+    }
     this.library.setDocuments(documents.items);
     const activeDocument = this.library.chooseActiveFromDocuments();
     this.setActiveDocument(activeDocument);
@@ -304,6 +311,7 @@ export class SourceImportStore {
 
   setActiveDocumentId(documentId: string | null): void {
     if (this.library.setActiveDocumentId(documentId)) {
+      this.documentRefreshRequestEpoch += 1;
       this.stopDocumentPolling();
     }
   }
@@ -333,28 +341,35 @@ export class SourceImportStore {
     if (project === undefined || document === undefined) {
       return;
     }
+    if (this.projects.selectedProject()?.id !== project) {
+      return;
+    }
     if (documentId !== undefined && this.activeDocumentId() !== documentId) {
       this.activeDocumentId.set(documentId);
+      this.documentRefreshRequestEpoch += 1;
     }
+    const requestEpoch = ++this.documentRefreshRequestEpoch;
 
     try {
       const [nextDocument, chunks] = await Promise.all([
         this.api.getDocument(project, document),
         this.loadDocumentChunks(project, document),
       ]);
-      this.library.upsertDocument(nextDocument);
-      if (!this.isCurrentProjectDocument(project, document)) {
+      if (!this.ownsDocumentRefresh(requestEpoch, project, document)) {
         return;
       }
+      this.library.upsertDocument(nextDocument);
       this.setActiveDocument(nextDocument);
       this.library.setChunks(chunks);
-      if (nextDocument.status === 'processing') {
+      if (ACTIVE_DOCUMENT_STATUSES.has(nextDocument.status)) {
         this.scheduleDocumentPolling(project, document);
       } else {
         this.stopDocumentPolling();
       }
     } catch {
-      this.stopDocumentPolling();
+      if (this.ownsDocumentRefresh(requestEpoch, project, document)) {
+        this.stopDocumentPolling();
+      }
     }
   }
 
@@ -415,6 +430,7 @@ export class SourceImportStore {
 
   private setActiveDocument(document: DocumentRead | null): void {
     if (this.library.setActiveDocument(document)) {
+      this.documentRefreshRequestEpoch += 1;
       this.stopDocumentPolling();
     }
   }
@@ -487,23 +503,26 @@ export class SourceImportStore {
     if (!this.isCurrentProjectDocument(projectId, documentId)) {
       return;
     }
+    const requestEpoch = ++this.documentRefreshRequestEpoch;
 
     try {
       const [document, chunks] = await Promise.all([
         this.api.getDocument(projectId, documentId),
         this.loadDocumentChunks(projectId, documentId),
       ]);
-      if (!this.isCurrentProjectDocument(projectId, documentId)) {
+      if (!this.ownsDocumentRefresh(requestEpoch, projectId, documentId)) {
         return;
       }
       this.library.upsertDocument(document);
       this.setActiveDocument(document);
       this.library.setChunks(chunks);
-      if (!FINAL_DOCUMENT_STATUSES.has(document.status)) {
+      if (ACTIVE_DOCUMENT_STATUSES.has(document.status)) {
         this.scheduleDocumentPolling(projectId, documentId);
       }
     } catch {
-      this.stopDocumentPolling();
+      if (this.ownsDocumentRefresh(requestEpoch, projectId, documentId)) {
+        this.stopDocumentPolling();
+      }
     }
   }
 
@@ -518,6 +537,17 @@ export class SourceImportStore {
     return (
       this.projects.selectedProject()?.id === projectId &&
       this.activeDocumentId() === documentId
+    );
+  }
+
+  private ownsDocumentRefresh(
+    requestEpoch: number,
+    projectId: string,
+    documentId: string,
+  ): boolean {
+    return (
+      requestEpoch === this.documentRefreshRequestEpoch &&
+      this.isCurrentProjectDocument(projectId, documentId)
     );
   }
 }
