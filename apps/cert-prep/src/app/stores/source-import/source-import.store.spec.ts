@@ -287,6 +287,108 @@ describe('SourceImportStore polling', () => {
     await vi.advanceTimersByTimeAsync(500);
     expect(apiClient.getDocument).toHaveBeenCalledTimes(3);
     expect(store.activeDocument()?.status).toBe('ready');
+    expect(store.documentPollingError()).toBeNull();
+  });
+
+  it('retries document polling after 1, 2, and 4 seconds and recovers on demand', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    const processing = documentRead({
+      status: 'processing',
+      has_text: false,
+      chunks_count: 0,
+    });
+    store.documents.set([processing]);
+    store.setActiveDocumentId(processing.id);
+    apiClient.getDocument.mockRejectedValue(new Error('backend unavailable'));
+
+    await store.refreshUploadedDocument('project-1', processing.id);
+    expect(apiClient.getDocument).toHaveBeenCalledTimes(1);
+    expect(store.documentPollingError()).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(999);
+    expect(apiClient.getDocument).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(apiClient.getDocument).toHaveBeenCalledTimes(2);
+
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(apiClient.getDocument).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(apiClient.getDocument).toHaveBeenCalledTimes(3);
+
+    await vi.advanceTimersByTimeAsync(3999);
+    expect(apiClient.getDocument).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(apiClient.getDocument).toHaveBeenCalledTimes(4);
+    expect(store.documentPollingError()).toBe(
+      'Document status could not be refreshed. Retry status.',
+    );
+    expect(store.isParsing()).toBe(false);
+    expect(store.parseStageText()).toBe('Parsing status is unavailable.');
+
+    apiClient.getDocument.mockResolvedValue(
+      documentRead({ id: processing.id, status: 'ready' }),
+    );
+    await store.retryDocumentPolling();
+
+    expect(apiClient.getDocument).toHaveBeenCalledTimes(5);
+    expect(store.documentPollingError()).toBeNull();
+    expect(store.activeDocument()?.status).toBe('ready');
+  });
+
+  it('restores the full retry budget after a successful document poll', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    const processing = documentRead({
+      status: 'processing',
+      has_text: false,
+      chunks_count: 0,
+    });
+    store.documents.set([processing]);
+    store.setActiveDocumentId(processing.id);
+    apiClient.getDocument
+      .mockRejectedValueOnce(new Error('first transient failure'))
+      .mockResolvedValueOnce(processing)
+      .mockRejectedValue(new Error('backend unavailable'));
+
+    await store.refreshUploadedDocument('project-1', processing.id);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(apiClient.getDocument).toHaveBeenCalledTimes(2);
+
+    await vi.advanceTimersByTimeAsync(500);
+    expect(apiClient.getDocument).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(apiClient.getDocument).toHaveBeenCalledTimes(4);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(apiClient.getDocument).toHaveBeenCalledTimes(5);
+    expect(store.documentPollingError()).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(apiClient.getDocument).toHaveBeenCalledTimes(6);
+    expect(store.documentPollingError()).toBe(
+      'Document status could not be refreshed. Retry status.',
+    );
+  });
+
+  it('clears an exhausted document polling error when the context resets', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    const processing = documentRead({
+      status: 'processing',
+      has_text: false,
+      chunks_count: 0,
+    });
+    store.documents.set([processing]);
+    store.setActiveDocumentId(processing.id);
+    apiClient.getDocument.mockRejectedValue(new Error('backend unavailable'));
+
+    await store.refreshUploadedDocument('project-1', processing.id);
+    await vi.advanceTimersByTimeAsync(7000);
+    expect(store.documentPollingError()).not.toBeNull();
+
+    const callsBeforeReset = apiClient.getDocument.mock.calls.length;
+    store.reset();
+    await vi.advanceTimersByTimeAsync(8000);
+
+    expect(store.documentPollingError()).toBeNull();
+    expect(apiClient.getDocument).toHaveBeenCalledTimes(callsBeforeReset);
   });
 
   it('polls cancel_requested documents until canceled and then stops', async () => {

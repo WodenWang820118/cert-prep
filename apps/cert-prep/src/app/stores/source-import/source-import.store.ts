@@ -18,6 +18,7 @@ import {
 
 const DOCUMENT_POLL_INTERVAL_MS = 1500;
 const FIRST_CHUNK_POLL_INTERVAL_MS = 500;
+const DOCUMENT_POLL_RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
 const DEFAULT_UPLOAD_BATCH_SIZE = 2;
 const MIN_UPLOAD_BATCH_SIZE = 1;
 const MAX_UPLOAD_BATCH_SIZE = 4;
@@ -32,6 +33,7 @@ export class SourceImportStore {
   private readonly operations = inject(OperationStore);
   private readonly projects = inject(ProjectStore);
   private documentPollTimer: ReturnType<typeof setTimeout> | null = null;
+  private documentPollFailureCount = 0;
   private documentListRequestEpoch = 0;
   private documentRefreshRequestEpoch = 0;
   private contextEpoch = 0;
@@ -80,6 +82,7 @@ export class SourceImportStore {
   readonly languageHint = signal<LanguageHint>('auto');
   readonly uploadBatchSize = signal(DEFAULT_UPLOAD_BATCH_SIZE);
   readonly uploadItems = signal<SourceUploadItem[]>([]);
+  readonly documentPollingError = signal<string | null>(null);
   readonly selectedFiles = computed(() =>
     this.uploadItems().map((item) => item.file),
   );
@@ -118,7 +121,9 @@ export class SourceImportStore {
   readonly previewChunks = this.library.previewChunks;
   readonly hiddenChunkCount = this.library.hiddenChunkCount;
   readonly isParsing = computed(
-    () => this.activeDocument()?.status === 'processing',
+    () =>
+      this.activeDocument()?.status === 'processing' &&
+      this.documentPollingError() === null,
   );
   readonly progressPercent = computed(() =>
     this.metrics.progressPercent(this.activeDocument()),
@@ -130,6 +135,9 @@ export class SourceImportStore {
     const document = this.activeDocument();
     if (document === null) {
       return 'No source PDF uploaded.';
+    }
+    if (this.documentPollingError() !== null) {
+      return 'Parsing status is unavailable.';
     }
     if (document.status === 'processing') {
       return document.chunks_count > 0
@@ -179,14 +187,12 @@ export class SourceImportStore {
       })),
     );
     this.library.clearActiveDocument();
-    this.stopDocumentPolling();
   }
 
   reset(): void {
     this.invalidateUploadContext();
     this.uploadItems.set([]);
     this.library.reset();
-    this.stopDocumentPolling();
   }
 
   setLanguageHint(value: string): void {
@@ -296,7 +302,7 @@ export class SourceImportStore {
     this.setActiveDocument(activeDocument);
     if (activeDocument === null) {
       this.chunks.set([]);
-      this.stopDocumentPolling();
+      this.resetDocumentPollingState();
       return;
     }
     await this.refreshUploadedDocument(projectId, activeDocument.id);
@@ -305,7 +311,7 @@ export class SourceImportStore {
   setActiveDocumentId(documentId: string | null): void {
     if (this.library.setActiveDocumentId(documentId)) {
       this.documentRefreshRequestEpoch += 1;
-      this.stopDocumentPolling();
+      this.resetDocumentPollingState();
     }
   }
 
@@ -318,9 +324,22 @@ export class SourceImportStore {
     }
     if (previousDocumentId !== documentId) {
       this.library.clearChunks();
-      this.stopDocumentPolling();
     }
 
+    await this.refreshUploadedDocument(projectId, documentId);
+  }
+
+  async retryDocumentPolling(): Promise<void> {
+    const projectId = this.projects.selectedProject()?.id;
+    const documentId = this.activeDocumentId();
+    if (
+      projectId === undefined ||
+      documentId === null ||
+      this.documentPollingError() === null
+    ) {
+      return;
+    }
+    this.resetDocumentPollingState();
     await this.refreshUploadedDocument(projectId, documentId);
   }
 
@@ -352,6 +371,7 @@ export class SourceImportStore {
       if (!this.ownsDocumentRefresh(requestEpoch, project, document)) {
         return;
       }
+      this.recordDocumentPollingSuccess();
       this.library.upsertDocument(nextDocument);
       this.setActiveDocument(nextDocument);
       this.library.setChunks(chunks);
@@ -362,9 +382,7 @@ export class SourceImportStore {
         this.stopDocumentPolling();
       }
     } catch {
-      if (this.ownsDocumentRefresh(requestEpoch, project, document)) {
-        this.stopDocumentPolling();
-      }
+      this.handleDocumentPollingFailure(requestEpoch, project, document);
     }
   }
 
@@ -497,14 +515,14 @@ export class SourceImportStore {
     this.contextEpoch += 1;
     this.documentListRequestEpoch += 1;
     this.documentRefreshRequestEpoch += 1;
-    this.stopDocumentPolling();
+    this.resetDocumentPollingState();
     this.uploadLifecycle.invalidate();
   }
 
   private setActiveDocument(document: DocumentRead | null): void {
     if (this.library.setActiveDocument(document)) {
       this.documentRefreshRequestEpoch += 1;
-      this.stopDocumentPolling();
+      this.resetDocumentPollingState();
     }
   }
 
@@ -559,12 +577,41 @@ export class SourceImportStore {
   private scheduleDocumentPolling(
     projectId: string,
     documentId: string,
+    delayMs = this.documentPollIntervalMs(),
   ): void {
     this.stopDocumentPolling();
     this.documentPollTimer = setTimeout(() => {
       this.documentPollTimer = null;
       void this.pollDocument(projectId, documentId);
-    }, this.documentPollIntervalMs());
+    }, delayMs);
+  }
+
+  private handleDocumentPollingFailure(
+    requestEpoch: number,
+    projectId: string,
+    documentId: string,
+  ): void {
+    if (!this.ownsDocumentRefresh(requestEpoch, projectId, documentId)) {
+      return;
+    }
+    this.stopDocumentPolling();
+    if (
+      this.documentPollFailureCount >= DOCUMENT_POLL_RETRY_DELAYS_MS.length
+    ) {
+      this.documentPollingError.set(
+        'Document status could not be refreshed. Retry status.',
+      );
+      return;
+    }
+    const delay =
+      DOCUMENT_POLL_RETRY_DELAYS_MS[this.documentPollFailureCount];
+    this.documentPollFailureCount += 1;
+    this.scheduleDocumentPolling(projectId, documentId, delay);
+  }
+
+  private recordDocumentPollingSuccess(): void {
+    this.documentPollFailureCount = 0;
+    this.documentPollingError.set(null);
   }
 
   private documentPollIntervalMs(): number {
@@ -592,6 +639,7 @@ export class SourceImportStore {
       if (!this.ownsDocumentRefresh(requestEpoch, projectId, documentId)) {
         return;
       }
+      this.recordDocumentPollingSuccess();
       this.library.upsertDocument(document);
       this.setActiveDocument(document);
       this.library.setChunks(chunks);
@@ -600,9 +648,11 @@ export class SourceImportStore {
         this.scheduleDocumentPolling(projectId, documentId);
       }
     } catch {
-      if (this.ownsDocumentRefresh(requestEpoch, projectId, documentId)) {
-        this.stopDocumentPolling();
-      }
+      this.handleDocumentPollingFailure(
+        requestEpoch,
+        projectId,
+        documentId,
+      );
     }
   }
 
@@ -611,6 +661,12 @@ export class SourceImportStore {
       clearTimeout(this.documentPollTimer);
       this.documentPollTimer = null;
     }
+  }
+
+  private resetDocumentPollingState(): void {
+    this.stopDocumentPolling();
+    this.documentPollFailureCount = 0;
+    this.documentPollingError.set(null);
   }
 
   private isCurrentProjectDocument(projectId: string, documentId: string): boolean {

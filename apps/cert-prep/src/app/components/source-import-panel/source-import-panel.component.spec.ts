@@ -160,6 +160,47 @@ describe('SourceImportPanelComponent', () => {
     expect(sourceImport.chunks()[0]?.document_id).toBe(secondDocument.id);
   });
 
+  it('shows an actionable document polling error and retries status', async () => {
+    const fixture = TestBed.createComponent(SourceImportPanelComponent);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    const processing = documentRead({
+      filename: 'polling-error.pdf',
+      status: 'processing',
+      has_text: false,
+      chunks_count: 0,
+    });
+    activateDocument(sourceImport, processing);
+    sourceImport.documentPollingError.set(
+      'Document status could not be refreshed. Retry status.',
+    );
+    apiClient.getDocument.mockResolvedValue(
+      documentRead({ id: processing.id, filename: processing.filename }),
+    );
+
+    fixture.detectChanges();
+
+    const alert = fixture.nativeElement.querySelector('[role="alert"]');
+    const retry = fixture.nativeElement.querySelector(
+      'button[aria-label="Retry document status for polling-error.pdf"]',
+    ) as HTMLButtonElement | null;
+    expect(alert?.textContent).toContain(
+      'Document status could not be refreshed. Retry status.',
+    );
+    expect(fixture.nativeElement.textContent).toContain('status unavailable');
+    expect(retry?.textContent?.trim()).toBe('Retry status');
+
+    retry?.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(apiClient.getDocument).toHaveBeenCalledWith(
+      'project-1',
+      processing.id,
+    );
+    expect(sourceImport.documentPollingError()).toBeNull();
+    expect(fixture.nativeElement.querySelector('[role="alert"]')).toBeNull();
+  });
+
   it('shows the active uploaded document file size after a batch upload', () => {
     const fixture = TestBed.createComponent(SourceImportPanelComponent);
     const sourceImport = TestBed.inject(SourceImportStore);

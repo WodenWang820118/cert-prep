@@ -168,6 +168,22 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
             class="grid gap-3"
             aria-live="polite"
           >
+            @if (sourceImport.documentPollingError(); as pollingError) {
+              <div
+                class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800"
+                role="alert"
+              >
+                <span>{{ pollingError }}</span>
+                <button
+                  class="workbench-secondary-button"
+                  type="button"
+                  [attr.aria-label]="'Retry document status for ' + document.filename"
+                  (click)="retryDocumentStatus()"
+                >
+                  Retry status
+                </button>
+              </div>
+            }
             <div class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-surface-200 bg-surface-50 p-3">
               <div class="min-w-0">
                 <p class="m-0 truncate text-sm font-semibold text-color">
@@ -179,15 +195,17 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
                 </p>
               </div>
               <p-tag
-                [value]="document.status"
-                [severity]="document.status === 'processing' ? 'info' : document.status === 'ready' ? 'success' : 'warn'"
+                [value]="sourceImport.documentPollingError() ? 'status unavailable' : document.status"
+                [severity]="sourceImport.documentPollingError() ? 'danger' : document.status === 'processing' ? 'info' : document.status === 'ready' ? 'success' : 'warn'"
                 [rounded]="true"
               />
             </div>
-            <p-progressbar
-              [value]="sourceImport.progressPercent()"
-              [showValue]="false"
-            />
+            @if (!sourceImport.documentPollingError()) {
+              <p-progressbar
+                [value]="sourceImport.progressPercent()"
+                [showValue]="false"
+              />
+            }
           </section>
 
           <dl class="workbench-metrics">
@@ -348,6 +366,10 @@ export class SourceImportPanelComponent {
 
   protected async retryUpload(itemId: string): Promise<void> {
     await this.sourceImport.retryUpload(itemId);
+  }
+
+  protected async retryDocumentStatus(): Promise<void> {
+    await this.sourceImport.retryDocumentPolling();
   }
 
   protected async selectDocument(documentId: string): Promise<void> {
