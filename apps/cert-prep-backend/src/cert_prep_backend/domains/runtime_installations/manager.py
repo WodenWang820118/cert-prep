@@ -63,6 +63,7 @@ class _RuntimeInstallationJob:
     total: int | None
     created_at: datetime
     updated_at: datetime
+    commit_started_at: datetime | None = None
     error: str | None = None
     cancellation: Event | None = None
 
@@ -80,6 +81,11 @@ class _RuntimeInstallationJob:
             total=self.total,
             created_at=self.created_at.isoformat(),
             updated_at=self.updated_at.isoformat(),
+            commit_started_at=(
+                self.commit_started_at.isoformat()
+                if self.commit_started_at is not None
+                else None
+            ),
             error=self.error,
         )
 
@@ -347,6 +353,13 @@ class RuntimeInstallationManager:
             job = self._jobs.get(job_id)
             if job is None:
                 raise KeyError(job_id)
+            if (
+                job.status == RuntimeInstallationStatus.SUCCEEDED
+                and job.commit_started_at is not None
+            ):
+                raise OperationNotCancellableError(
+                    "Runtime installation committed and can no longer be canceled."
+                )
             if job.status in _TERMINAL_JOB_STATUSES:
                 return job.snapshot()
             if job.status == RuntimeInstallationStatus.CANCEL_REQUESTED:
@@ -476,17 +489,29 @@ class RuntimeInstallationManager:
                 or (job.cancellation is not None and job.cancellation.is_set())
             ):
                 raise _RuntimeInstallationCanceled("Runtime installation was canceled.")
-            job.status = RuntimeInstallationStatus.RUNNING
-            job.phase = progress.phase or "installing"
-            job.cancellable = (
+            now = utcnow()
+            phase = progress.phase or "installing"
+            cancellable = (
                 progress.cancellable
                 if progress.cancellable is not None
                 else True
             )
+            if (
+                job.commit_started_at is None
+                and phase == "committing"
+                and not cancellable
+            ):
+                job.commit_started_at = now
+            if job.commit_started_at is not None:
+                phase = "committing"
+                cancellable = False
+            job.status = RuntimeInstallationStatus.RUNNING
+            job.phase = phase
+            job.cancellable = cancellable
             job.detail = progress.detail
             job.completed = progress.completed
             job.total = progress.total
-            job.updated_at = utcnow()
+            job.updated_at = now
             self._persist_job_locked(job)
 
     def _update_job(
@@ -623,6 +648,11 @@ class RuntimeInstallationManager:
                 total=row["total"],
                 created_at=datetime.fromisoformat(str(row["created_at"])),
                 updated_at=datetime.fromisoformat(str(row["updated_at"])),
+                commit_started_at=(
+                    datetime.fromisoformat(str(row["commit_started_at"]))
+                    if row["commit_started_at"] is not None
+                    else None
+                ),
                 error=row["error"],
                 cancellation=(
                     Event() if status not in _TERMINAL_JOB_STATUSES else None
@@ -638,9 +668,10 @@ class RuntimeInstallationManager:
                 """
                 INSERT INTO runtime_installation_jobs(
                     id, kind, provider, model, status, phase, cancellable,
-                    detail, completed, total, error, created_at, updated_at
+                    detail, completed, total, error, created_at, updated_at,
+                    commit_started_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     status = excluded.status,
                     phase = excluded.phase,
@@ -649,7 +680,8 @@ class RuntimeInstallationManager:
                     completed = excluded.completed,
                     total = excluded.total,
                     error = excluded.error,
-                    updated_at = excluded.updated_at
+                    updated_at = excluded.updated_at,
+                    commit_started_at = excluded.commit_started_at
                 """,
                 (
                     job.id,
@@ -665,6 +697,11 @@ class RuntimeInstallationManager:
                     job.error,
                     job.created_at.isoformat(),
                     job.updated_at.isoformat(),
+                    (
+                        job.commit_started_at.isoformat()
+                        if job.commit_started_at is not None
+                        else None
+                    ),
                 ),
             )
 

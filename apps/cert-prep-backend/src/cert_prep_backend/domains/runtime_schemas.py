@@ -44,6 +44,7 @@ class RuntimeInstallationRead(BaseModel):
     total: int | None
     created_at: str
     updated_at: str
+    commit_started_at: str | None = None
     error: str | None = None
 
 

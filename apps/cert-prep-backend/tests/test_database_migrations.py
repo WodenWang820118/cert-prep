@@ -91,6 +91,7 @@ def test_saved_exam_runtime_metadata_columns_are_migrated(tmp_path: Path) -> Non
         "fallback_reason",
         "generated_count",
         "error",
+        "commit_started_at",
     } <= set(manual_draft_operation_columns)
     assert {
         "session_id",
@@ -131,6 +132,7 @@ def test_saved_exam_runtime_metadata_columns_are_migrated(tmp_path: Path) -> Non
         "error",
         "created_at",
         "updated_at",
+        "commit_started_at",
     } <= set(runtime_installation_columns)
 
 
@@ -314,6 +316,49 @@ def test_migration_20_repairs_populated_v19_duplicate_active_operations(
     assert operations["tie-a"]["status"] == "failed"
 
 
+def test_migration_22_adds_nullable_commit_timestamps_without_rewriting_jobs(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(data_dir=tmp_path, api_token="test-token")
+    _create_v21_commit_transition_fixture(settings.database_path)
+
+    Database(settings).migrate()
+    Database(settings).migrate()
+
+    with sqlite3.connect(settings.database_path) as connection:
+        connection.row_factory = sqlite3.Row
+        manual_columns = _columns(
+            connection,
+            "manual_draft_generation_operations",
+        )
+        runtime_columns = _columns(connection, "runtime_installation_jobs")
+        manual = connection.execute(
+            "SELECT * FROM manual_draft_generation_operations WHERE id = 'manual-job'"
+        ).fetchone()
+        runtime = connection.execute(
+            "SELECT * FROM runtime_installation_jobs WHERE id = 'runtime-job'"
+        ).fetchone()
+        applied = connection.execute(
+            "SELECT COUNT(*) FROM schema_migrations WHERE version = 22"
+        ).fetchone()[0]
+
+    assert manual_columns["commit_started_at"] is None
+    assert runtime_columns["commit_started_at"] is None
+    assert manual is not None
+    assert (manual["status"], manual["phase"], manual["commit_started_at"]) == (
+        "running",
+        "generating",
+        None,
+    )
+    assert runtime is not None
+    assert (runtime["status"], runtime["phase"], runtime["commit_started_at"]) == (
+        "running",
+        "installing",
+        None,
+    )
+    assert applied == 1
+
+
 def _create_version_14_practice_database(database_path: Path) -> None:
     database_path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(database_path) as connection:
@@ -466,6 +511,74 @@ def _create_version_14_practice_database(database_path: Path) -> None:
             )
             VALUES ('attempt-older-session-recent', 'older-incomplete',
                 'project-1', 'q-1', 'A', 1, '2026-07-01T04:00:00+00:00')
+            """
+        )
+
+
+def _create_v21_commit_transition_fixture(database_path: Path) -> None:
+    database_path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(database_path) as connection:
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute(
+            """
+            CREATE TABLE schema_migrations (
+                version INTEGER PRIMARY KEY,
+                applied_at TEXT NOT NULL
+            )
+            """
+        )
+        for version, sql in MIGRATIONS:
+            if version >= 22:
+                break
+            connection.executescript(sql)
+            connection.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                (version, f"migration-{version}"),
+            )
+
+        connection.execute(
+            """
+            INSERT INTO projects(id, name, created_at, updated_at)
+            VALUES ('project', 'Project', '2026-07-13', '2026-07-13')
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO documents(
+                id, project_id, filename, sha256, storage_path, page_count,
+                has_text, status, created_at, updated_at
+            )
+            VALUES (
+                'document', 'project', 'source.pdf', 'sha256', 'source.pdf',
+                1, 1, 'ready', '2026-07-13', '2026-07-13'
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO manual_draft_generation_operations(
+                id, project_id, document_id, limit_count, strategy,
+                status, phase, cancellable, provider, model,
+                generated_count, created_at, updated_at
+            )
+            VALUES (
+                'manual-job', 'project', 'document', 1,
+                'hybrid_reasoning', 'running', 'generating', 1,
+                'ollama', 'qwen3.5:4b', 0, '2026-07-13', '2026-07-13'
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO runtime_installation_jobs(
+                id, kind, provider, model, status, phase, cancellable,
+                detail, created_at, updated_at
+            )
+            VALUES (
+                'runtime-job', 'ollama_model', 'ollama', 'qwen3.5:4b',
+                'running', 'installing', 1, 'pulling model',
+                '2026-07-13', '2026-07-13'
+            )
             """
         )
 

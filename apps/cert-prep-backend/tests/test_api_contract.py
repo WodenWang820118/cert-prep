@@ -300,6 +300,22 @@ def test_draft_job_effective_attribution_is_required_and_nullable(tmp_path) -> N
         }
 
 
+def test_commit_started_at_is_optional_and_nullable_for_durable_jobs(tmp_path) -> None:
+    openapi = create_app(Settings(data_dir=tmp_path, api_token="contract-token")).openapi()
+
+    for schema_name in (
+        "ManualDraftGenerationOperationRead",
+        "ModelDownloadRead",
+        "RuntimeInstallationRead",
+    ):
+        schema = openapi["components"]["schemas"][schema_name]
+        assert "commit_started_at" not in schema.get("required", [])
+        assert {
+            item.get("type")
+            for item in schema["properties"]["commit_started_at"]["anyOf"]
+        } == {"string", "null"}
+
+
 def _enum_values(openapi: dict[str, Any], schema_name: str, property_name: str) -> list[str]:
     schema = openapi["components"]["schemas"][schema_name]["properties"][property_name]
     if "$ref" in schema:

@@ -133,6 +133,7 @@ class ManualDraftGenerationOperationRead(BaseModel):
     error: str | None = None
     created_at: str
     updated_at: str
+    commit_started_at: str | None = None
 
 
 class LLMHealthRead(BaseModel):
@@ -229,4 +230,5 @@ class ModelDownloadRead(BaseModel):
     total: int | None
     created_at: str
     updated_at: str
+    commit_started_at: str | None = None
     error: str | None = None

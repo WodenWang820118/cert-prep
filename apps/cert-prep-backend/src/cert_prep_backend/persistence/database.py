@@ -636,6 +636,15 @@ MIGRATIONS: Final[tuple[tuple[int, str], ...]] = (
         END;
         """,
     ),
+    (
+        22,
+        """
+        ALTER TABLE manual_draft_generation_operations
+            ADD COLUMN commit_started_at TEXT;
+        ALTER TABLE runtime_installation_jobs
+            ADD COLUMN commit_started_at TEXT;
+        """,
+    ),
 )
 
 

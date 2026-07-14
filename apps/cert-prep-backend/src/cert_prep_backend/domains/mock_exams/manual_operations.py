@@ -111,7 +111,7 @@ def recover_operations(db: Database) -> list[dict]:
             UPDATE manual_draft_generation_operations
             SET status = 'queued', phase = 'queued', cancellable = 1,
                 error = 'Draft generation was interrupted before completion.',
-                updated_at = ?
+                commit_started_at = NULL, updated_at = ?
             WHERE status = 'running'
             """,
             (now,),
@@ -153,10 +153,12 @@ def begin_commit(db: Database, operation_id: str) -> dict:
         updated = connection.execute(
             """
             UPDATE manual_draft_generation_operations
-            SET phase = 'committing', cancellable = 0, updated_at = ?
+            SET phase = 'committing', cancellable = 0,
+                commit_started_at = COALESCE(commit_started_at, ?),
+                updated_at = ?
             WHERE id = ? AND status = 'running' AND cancellable = 1
             """,
-            (now, operation_id),
+            (now, now, operation_id),
         )
         row = connection.execute(
             "SELECT * FROM manual_draft_generation_operations WHERE id = ?",
@@ -182,6 +184,13 @@ def begin_commit(db: Database, operation_id: str) -> dict:
                     )
                 raise DraftJobCanceledError("Manual draft generation was canceled.")
             if current in TERMINAL_STATUSES:
+                return operation_from_row(row)
+            if (
+                current == ManualDraftOperationStatus.RUNNING
+                and row["phase"] == "committing"
+                and not bool(row["cancellable"])
+                and row["commit_started_at"] is not None
+            ):
                 return operation_from_row(row)
             raise DraftJobNotCancellableError(
                 "Manual draft generation is not in a cancellable running phase."
@@ -210,6 +219,13 @@ def request_cancel(
         if row is None:
             raise NotFoundError("Manual draft generation operation not found.")
         current = ManualDraftOperationStatus(row["status"])
+        if (
+            current == ManualDraftOperationStatus.SUCCEEDED
+            and row["commit_started_at"] is not None
+        ):
+            raise DraftJobNotCancellableError(
+                "Manual draft generation committed and can no longer be canceled."
+            )
         if current in TERMINAL_STATUSES:
             return operation_from_row(row)
         if current == ManualDraftOperationStatus.CANCEL_REQUESTED:
@@ -282,6 +298,7 @@ def operation_from_row(row: Row) -> dict:
         "error": row["error"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
+        "commit_started_at": row["commit_started_at"],
     }
 
 
@@ -300,7 +317,8 @@ def _transition(
         connection.execute(
             """
             UPDATE manual_draft_generation_operations
-            SET status = ?, phase = ?, cancellable = ?, error = ?, updated_at = ?
+            SET status = ?, phase = ?, cancellable = ?, error = ?,
+                commit_started_at = NULL, updated_at = ?
             WHERE id = ? AND status = ?
             """,
             (status, phase, int(cancellable), error, now, operation_id, expected),

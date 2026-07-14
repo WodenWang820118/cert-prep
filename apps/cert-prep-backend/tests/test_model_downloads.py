@@ -136,6 +136,7 @@ def test_model_download_starts_only_from_explicit_post(tmp_path) -> None:
         "total": 100,
         "created_at": response.json()["created_at"],
         "updated_at": response.json()["updated_at"],
+        "commit_started_at": response.json()["commit_started_at"],
         "error": None,
     }
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from threading import Event
 import time
@@ -10,12 +11,13 @@ from fastapi.testclient import TestClient
 
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.core.config import Settings
-from cert_prep_backend.domains.mock_exams import draft_jobs
+from cert_prep_backend.domains.mock_exams import draft_jobs, manual_operations
 from cert_prep_backend.domains.mock_exams import repository as drafts_repository
 from cert_prep_backend.domains.mock_exams.models import DraftSuggestion
 from cert_prep_backend.domains.mock_exams.ports import ProviderHealth
 from cert_prep_backend.domains.runtime_installations import RuntimeInstallationManager
 from cert_prep_backend.domains.source_documents.ocr import OCRHealth, OCRPageResult
+from cert_prep_backend.persistence.database import Database
 from cert_prep_contracts.runtime import (
     RuntimeInstallationStatus,
     RuntimeInstallProgress,
@@ -180,6 +182,13 @@ def test_model_commit_phase_returns_409_then_cannot_reverse_success(tmp_path: Pa
     )
     assert rejected.status_code == 409
     assert rejected.json()["code"] == "operation_not_cancellable"
+    committing = client.get(
+        f"/llm/model-downloads/{started.json()['id']}",
+        headers=AUTH_HEADERS,
+    ).json()
+    commit_started_at = committing["commit_started_at"]
+    assert commit_started_at is not None
+    datetime.fromisoformat(commit_started_at)
 
     installer.release.set()
     terminal = _wait_for_runtime_status(
@@ -189,11 +198,127 @@ def test_model_commit_phase_returns_409_then_cannot_reverse_success(tmp_path: Pa
     )
     assert terminal["phase"] == "completed"
     assert terminal["cancellable"] is False
+    assert terminal["commit_started_at"] == commit_started_at
     repeated = client.delete(
         f"/llm/model-downloads/{started.json()['id']}",
         headers=AUTH_HEADERS,
     )
-    assert repeated.json()["status"] == "succeeded"
+    assert repeated.status_code == 409
+    assert repeated.json()["code"] == "operation_not_cancellable"
+
+
+def test_runtime_commit_latch_persists_and_rejects_progress_regression(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(data_dir=tmp_path, api_token="test-token")
+    installer = CommitRegressionInstaller(RuntimeRequirementKind.WINDOWSML_OCR)
+    manager = RuntimeInstallationManager(
+        settings=settings,
+        llm_provider=object(),
+        ocr_provider=UnavailableOcrProvider(),
+        db=Database(settings),
+        installers=[installer],
+        async_jobs=True,
+    )
+    client = TestClient(
+        create_app(
+            settings=settings,
+            runtime_installation_manager=manager,
+        )
+    )
+
+    started = client.post(
+        "/runtime/installations/windowsml_ocr",
+        headers=AUTH_HEADERS,
+    ).json()
+    assert installer.commit_recorded.wait(timeout=2)
+    committing = client.get(
+        f"/runtime/installations/{started['id']}",
+        headers=AUTH_HEADERS,
+    ).json()
+    commit_started_at = committing["commit_started_at"]
+    assert committing["phase"] == "committing"
+    assert committing["cancellable"] is False
+    assert commit_started_at is not None
+    datetime.fromisoformat(commit_started_at)
+
+    installer.allow_regression.set()
+    assert installer.regression_recorded.wait(timeout=2)
+    latched = client.get(
+        f"/runtime/installations/{started['id']}",
+        headers=AUTH_HEADERS,
+    ).json()
+    assert latched["phase"] == "committing"
+    assert latched["cancellable"] is False
+    assert latched["commit_started_at"] == commit_started_at
+
+    installer.allow_finish.set()
+    terminal = _wait_for_runtime_status(
+        client,
+        f"/runtime/installations/{started['id']}",
+        "succeeded",
+    )
+    assert terminal["commit_started_at"] == commit_started_at
+
+    restored_manager = RuntimeInstallationManager(
+        settings=settings,
+        llm_provider=object(),
+        ocr_provider=UnavailableOcrProvider(),
+        db=Database(settings),
+        installers=[BlockingInstaller(RuntimeRequirementKind.WINDOWSML_OCR)],
+        async_jobs=False,
+    )
+    restored_client = TestClient(
+        create_app(
+            settings=settings,
+            runtime_installation_manager=restored_manager,
+        )
+    )
+    restored = restored_client.get(
+        f"/runtime/installations/{started['id']}",
+        headers=AUTH_HEADERS,
+    ).json()
+    assert restored["commit_started_at"] == commit_started_at
+    rejected = restored_client.delete(
+        f"/runtime/installations/{started['id']}",
+        headers=AUTH_HEADERS,
+    )
+    assert rejected.status_code == 409
+    assert rejected.json()["code"] == "operation_not_cancellable"
+
+
+def test_runtime_failed_after_commit_remains_idempotently_deletable(
+    tmp_path: Path,
+) -> None:
+    installer = FailingCommitInstaller(RuntimeRequirementKind.WINDOWSML_OCR)
+    manager = RuntimeInstallationManager(
+        settings=Settings(data_dir=tmp_path, api_token="test-token"),
+        llm_provider=object(),
+        ocr_provider=UnavailableOcrProvider(),
+        installers=[installer],
+        async_jobs=False,
+    )
+    client = TestClient(
+        create_app(
+            settings=Settings(data_dir=tmp_path, api_token="test-token"),
+            runtime_installation_manager=manager,
+        )
+    )
+
+    failed = client.post(
+        "/runtime/installations/windowsml_ocr",
+        headers=AUTH_HEADERS,
+    )
+    repeated = client.delete(
+        f"/runtime/installations/{failed.json()['id']}",
+        headers=AUTH_HEADERS,
+    )
+
+    assert failed.status_code == 202
+    assert failed.json()["status"] == "failed"
+    assert failed.json()["commit_started_at"] is not None
+    assert repeated.status_code == 200
+    assert repeated.json()["status"] == "failed"
 
 
 def test_manual_draft_operation_get_delete_prevents_late_draft_commit(
@@ -238,6 +363,116 @@ def test_manual_draft_operation_get_delete_prevents_late_draft_commit(
         headers=AUTH_HEADERS,
     )
     assert drafts.json()["items"] == []
+
+
+def test_manual_commit_timestamp_is_stable_and_recovery_clears_requeued_state(
+    client,
+    auth_headers,
+) -> None:
+    project_id, document_id, _chunk = _source_chunk(client, auth_headers)
+    operation = manual_operations.create_operation(
+        client.app.state.database,
+        project_id=project_id,
+        document_id=document_id,
+        limit=1,
+        strategy="hybrid_reasoning",
+        provider="ollama",
+        model="qwen3.5:4b",
+    )
+    manual_operations.mark_running(client.app.state.database, operation["id"])
+
+    first = manual_operations.begin_commit(
+        client.app.state.database,
+        operation["id"],
+    )
+    second = manual_operations.begin_commit(
+        client.app.state.database,
+        operation["id"],
+    )
+
+    assert first["commit_started_at"] is not None
+    datetime.fromisoformat(first["commit_started_at"])
+    assert second["commit_started_at"] == first["commit_started_at"]
+    recovered = {
+        item["id"]: item
+        for item in manual_operations.recover_operations(client.app.state.database)
+    }[operation["id"]]
+    assert recovered["status"] == "queued"
+    assert recovered["phase"] == "queued"
+    assert recovered["cancellable"] is True
+    assert recovered["commit_started_at"] is None
+
+
+def test_manual_succeeded_commit_delete_returns_409_but_failed_stays_idempotent(
+    client,
+    auth_headers,
+) -> None:
+    project_id, document_id, chunk = _source_chunk(client, auth_headers)
+    succeeded = manual_operations.create_operation(
+        client.app.state.database,
+        project_id=project_id,
+        document_id=document_id,
+        limit=1,
+        strategy="hybrid_reasoning",
+        provider="ollama",
+        model="qwen3.5:4b",
+    )
+    manual_operations.mark_running(client.app.state.database, succeeded["id"])
+    committing = manual_operations.begin_commit(
+        client.app.state.database,
+        succeeded["id"],
+    )
+    drafts_repository.append_generated_drafts_and_complete_manual_operation(
+        client.app.state.database,
+        operation_id=succeeded["id"],
+        project_id=project_id,
+        document_id=document_id,
+        suggestions=[_suggestion(chunk)],
+        effective_provider="ollama",
+        effective_model="qwen3.5:4b",
+        fallback_reason=None,
+    )
+    succeeded_endpoint = (
+        f"/projects/{project_id}/documents/{document_id}/draft-operations/"
+        f"{succeeded['id']}"
+    )
+
+    succeeded_delete = client.delete(succeeded_endpoint, headers=auth_headers)
+
+    assert committing["commit_started_at"] is not None
+    assert succeeded_delete.status_code == 409
+    assert succeeded_delete.json()["code"] == "operation_not_cancellable"
+
+    failed = manual_operations.create_operation(
+        client.app.state.database,
+        project_id=project_id,
+        document_id=document_id,
+        limit=1,
+        strategy="hybrid_reasoning",
+        provider="ollama",
+        model="qwen3.5:4b",
+    )
+    manual_operations.mark_running(client.app.state.database, failed["id"])
+    manual_operations.begin_commit(client.app.state.database, failed["id"])
+    terminal_failed = manual_operations.mark_failed(
+        client.app.state.database,
+        failed["id"],
+        "commit failed",
+    )
+    failed_endpoint = (
+        f"/projects/{project_id}/documents/{document_id}/draft-operations/"
+        f"{failed['id']}"
+    )
+
+    failed_delete = client.delete(failed_endpoint, headers=auth_headers)
+
+    assert terminal_failed["commit_started_at"] is not None
+    assert failed_delete.status_code == 200
+    assert failed_delete.json()["status"] == "failed"
+    assert (
+        failed_delete.json()["commit_started_at"]
+        == terminal_failed["commit_started_at"]
+    )
 
 
 def _runtime_manager(tmp_path: Path, installer) -> RuntimeInstallationManager:
@@ -319,6 +554,73 @@ class BlockingInstaller:
     def cancel(self) -> None:
         self.cancel_called.set()
         self.release.set()
+
+
+@dataclass
+class CommitRegressionInstaller:
+    kind: RuntimeRequirementKind
+    provider: str = "test-runtime"
+    model: str = "qwen3.5:4b"
+    commit_recorded: Event = field(default_factory=Event)
+    allow_regression: Event = field(default_factory=Event)
+    regression_recorded: Event = field(default_factory=Event)
+    allow_finish: Event = field(default_factory=Event)
+
+    def requirement(self) -> RuntimeRequirementSnapshot:
+        return RuntimeRequirementSnapshot(
+            kind=self.kind,
+            label=self.kind.value,
+            available=False,
+            detail=f"{self.kind.value} missing",
+            unavailable_reason=f"{self.kind.value}_missing",
+        )
+
+    def install(self, progress) -> RuntimeInstallationStatus:
+        progress(
+            RuntimeInstallProgress(
+                "commit started",
+                phase="committing",
+                cancellable=False,
+            )
+        )
+        self.commit_recorded.set()
+        assert self.allow_regression.wait(timeout=3)
+        progress(
+            RuntimeInstallProgress(
+                "stale installer progress",
+                phase="installing",
+                cancellable=True,
+            )
+        )
+        self.regression_recorded.set()
+        assert self.allow_finish.wait(timeout=3)
+        return RuntimeInstallationStatus.SUCCEEDED
+
+
+@dataclass
+class FailingCommitInstaller:
+    kind: RuntimeRequirementKind
+    provider: str = "test-runtime"
+    model: str = "qwen3.5:4b"
+
+    def requirement(self) -> RuntimeRequirementSnapshot:
+        return RuntimeRequirementSnapshot(
+            kind=self.kind,
+            label=self.kind.value,
+            available=False,
+            detail=f"{self.kind.value} missing",
+            unavailable_reason=f"{self.kind.value}_missing",
+        )
+
+    def install(self, progress) -> RuntimeInstallationStatus:
+        progress(
+            RuntimeInstallProgress(
+                "commit started",
+                phase="committing",
+                cancellable=False,
+            )
+        )
+        raise RuntimeError("commit failed")
 
 
 class UnavailableOcrProvider:
