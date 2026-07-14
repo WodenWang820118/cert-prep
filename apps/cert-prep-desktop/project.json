@@ -165,6 +165,18 @@
         "command": "node --test apps/cert-prep-desktop/scripts/prepare-runtime-resources.test.mts apps/cert-prep-desktop/scripts/package-qa/artifacts.test.mts apps/cert-prep-desktop/scripts/process-lifecycle/processes.test.mts apps/cert-prep-desktop/scripts/process-residue-audit.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/app-lifecycle.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/args.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/generation-readiness.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/ocr-completion.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/owned-fastflow-process-lifecycle.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/resource-sampling.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/streaming-baseline-report.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/streaming-evidence.test.mts"
       }
     },
+    "release-tool-test": {
+      "cache": true,
+      "executor": "nx:run-commands",
+      "inputs": [
+        "default",
+        "{workspaceRoot}/tools/release/**",
+        "{workspaceRoot}/.github/workflows/release-alpha.yml"
+      ],
+      "options": {
+        "command": "node --test tools/release/*.test.ts"
+      }
+    },
     "cargo-test": {
       "cache": true,
       "executor": "nx:run-commands",

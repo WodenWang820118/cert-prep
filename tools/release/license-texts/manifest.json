@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "texts": [
+    {
+      "license": "LGPL-2.1-or-later",
+      "file": "LGPL-2.1-or-later.txt",
+      "source": "https://raw.githubusercontent.com/spdx/license-list-data/v3.28.0/text/LGPL-2.1-or-later.txt",
+      "sha256": "5749785c8bdefafcb5d798270ed0a967036fe2ca63dcedade1627565dfef81d2"
+    }
+  ]
+}

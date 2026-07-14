@@ -1,0 +1,577 @@
+name: Release public unsigned alpha
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Alpha SemVer, for example 0.1.0-alpha.1
+        required: true
+        default: 0.1.0-alpha.1
+        type: string
+      confirm_public_repository:
+        description: Confirm this repository is public and intended for this release
+        required: true
+        default: false
+        type: boolean
+      confirm_release_environment_protected:
+        description: Confirm alpha-release and alpha-hardware environments have required reviewers
+        required: true
+        default: false
+        type: boolean
+      confirm_fastflow_terms:
+        description: Confirm the publisher satisfies and records the FastFlowLM alpha terms decision
+        required: true
+        default: false
+        type: boolean
+      confirm_hardware_runner_ready:
+        description: Confirm the protected cert-prep-alpha-hardware runner and harness are ready
+        required: true
+        default: false
+        type: boolean
+  push:
+    tags:
+      - 'cert-prep-v*-alpha.*'
+
+concurrency:
+  group: release-alpha-${{ github.ref_name }}-${{ inputs.version || 'tag' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CI: 'true'
+  NX_CLOUD_DISTRIBUTED_EXECUTION: 'false'
+  PNPM_VERSION: 10.33.2
+  PYTHON_VERSION: '3.12'
+
+jobs:
+  metadata:
+    name: Validate alpha metadata and prerequisites
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.metadata.outputs.version }}
+      tag: ${{ steps.metadata.outputs.tag }}
+      repository: ${{ steps.metadata.outputs.repository }}
+      commit_sha: ${{ steps.metadata.outputs.commit_sha }}
+      asset_base_url: ${{ steps.metadata.outputs.asset_base_url }}
+      candidate_artifact: ${{ steps.metadata.outputs.candidate_artifact }}
+      release_plan_artifact: ${{ steps.metadata.outputs.release_plan_artifact }}
+    steps:
+      - name: Check out exact release source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+
+      - name: Install Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+
+      - name: Test release tooling
+        run: node --test tools/release/*.test.ts
+
+      - name: Validate release identity
+        id: metadata
+        env:
+          REQUESTED_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || '' }}
+          PUBLIC_REPOSITORY_CONFIRMED: ${{ github.event_name == 'workflow_dispatch' && toJSON(inputs.confirm_public_repository) || vars.ALPHA_PUBLIC_REPOSITORY_CONFIRMED }}
+          RELEASE_ENVIRONMENT_PROTECTED: ${{ github.event_name == 'workflow_dispatch' && toJSON(inputs.confirm_release_environment_protected) || vars.ALPHA_RELEASE_ENVIRONMENT_PROTECTED }}
+          FASTFLOW_TERMS_CONFIRMED: ${{ github.event_name == 'workflow_dispatch' && toJSON(inputs.confirm_fastflow_terms) || vars.ALPHA_FASTFLOW_TERMS_CONFIRMED }}
+          HARDWARE_RUNNER_READY: ${{ github.event_name == 'workflow_dispatch' && toJSON(inputs.confirm_hardware_runner_ready) || vars.ALPHA_HARDWARE_RUNNER_READY }}
+        run: >-
+          node tools/release/metadata.ts
+          --event-name "${{ github.event_name }}"
+          --ref-name "${{ github.ref_name }}"
+          --version "$REQUESTED_VERSION"
+          --repository "${{ github.repository }}"
+          --sha "${{ github.sha }}"
+          --workspace-root .
+          --output-dir tmp/release-alpha/metadata
+          --public-repository-confirmed "$PUBLIC_REPOSITORY_CONFIRMED"
+          --release-environment-protected "$RELEASE_ENVIRONMENT_PROTECTED"
+          --fastflow-terms-confirmed "$FASTFLOW_TERMS_CONFIRMED"
+          --hardware-runner-ready "$HARDWARE_RUNNER_READY"
+
+      - name: Verify actual repository visibility
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          visibility="$(gh api "repos/${GITHUB_REPOSITORY}" --jq '.visibility')"
+          test "$visibility" = public || {
+            echo "Alpha release requires an actually public GitHub repository; found: $visibility" >&2
+            exit 1
+          }
+
+      - name: Upload immutable release plan
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ steps.metadata.outputs.release_plan_artifact }}
+          path: tmp/release-alpha/metadata/release-plan.json
+          if-no-files-found: error
+          retention-days: 7
+
+  windows-quality:
+    name: Windows release quality
+    needs: metadata
+    runs-on: windows-2025
+    steps:
+      - name: Check out exact release source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+
+      - name: Install Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff
+        with:
+          version: 0.9.18
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+
+      - name: Install Rust
+        shell: pwsh
+        run: rustup toolchain install stable --profile minimal --component clippy,rustfmt
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Sync backend Python environment
+        run: uv sync --project apps/cert-prep-backend --frozen --python ${{ env.PYTHON_VERSION }}
+
+      - name: Test Windows-owned projects
+        run: >-
+          pnpm nx run-many -t lint test
+          --projects=cert-prep-contracts,cert-prep-ollama,cert-prep-ocr-windowsml,cert-prep-backend,cert-prep-api,cert-prep
+          --parallel=2
+
+      - name: Type-check desktop release scripts
+        run: pnpm nx run cert-prep-desktop:typecheck-scripts
+
+      - name: Test package QA contract
+        run: pnpm nx run cert-prep-desktop:package-qa-test
+
+      - name: Test release metadata, SBOM and cleanup contracts
+        run: pnpm nx run cert-prep-desktop:release-tool-test
+
+      - name: Test Tauri host
+        run: pnpm nx run cert-prep-desktop:cargo-test
+
+      - name: Install Chromium for browser integration
+        run: pnpm exec playwright install chromium
+
+      - name: Test mocked browser regression
+        run: pnpm nx run cert-prep-e2e:e2e --args="--project=chromium --workers=2"
+
+      - name: Test the browser against the real backend
+        run: pnpm nx run cert-prep-e2e:e2e-real-backend
+
+  build-candidate:
+    name: Build one Windows alpha candidate
+    needs: [metadata, windows-quality]
+    runs-on: windows-2025
+    outputs:
+      candidate_id: ${{ steps.candidate.outputs.candidate_id }}
+    steps:
+      - name: Check out exact release source
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+
+      - name: Install Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff
+        with:
+          version: 0.9.18
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+
+      - name: Install Rust
+        shell: pwsh
+        run: rustup toolchain install stable --profile minimal --component clippy,rustfmt
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Sync backend Python environment
+        run: uv sync --project apps/cert-prep-backend --frozen --python ${{ env.PYTHON_VERSION }}
+
+      - name: Download validated release plan
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ needs.metadata.outputs.release_plan_artifact }}
+          path: tmp/release-alpha/metadata
+
+      - name: Build and verify installers through Nx
+        env:
+          CERT_PREP_WINDOWSML_OCR_ASSET_BASE_URL: ${{ needs.metadata.outputs.asset_base_url }}
+        run: pnpm nx run cert-prep-desktop:package-qa
+
+      - name: Collect fail-closed dependency inventories
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force tmp/release-alpha/inventory | Out-Null
+          pnpm licenses list --prod --json |
+            Set-Content -LiteralPath tmp/release-alpha/inventory/node-licenses.json -Encoding utf8NoBOM
+          uv run --isolated --project apps/cert-prep-backend --python ${{ env.PYTHON_VERSION }} `
+            python tools/release/collect-python-licenses.py `
+            --pyinstaller-executable apps/cert-prep-backend/dist/cert-prep-backend.exe `
+            --include-distribution PyInstaller==6.20.0 `
+            --output tmp/release-alpha/inventory/python-licenses.json
+          uv run --isolated --project apps/cert-prep-backend --python ${{ env.PYTHON_VERSION }} `
+            --extra ocr-windowsml python tools/release/collect-python-licenses.py `
+            --pyinstaller-executable apps/cert-prep-backend/dist/cert-prep-ocr-windowsml-runtime.exe `
+            --include-distribution PyInstaller==6.20.0 `
+            --output tmp/release-alpha/inventory/ocr-python-licenses.json
+          uv run --isolated --project apps/cert-prep-backend --python ${{ env.PYTHON_VERSION }} `
+            python tools/release/collect-runtime-payloads.py `
+            --runtime-manifest apps/cert-prep-desktop/src-tauri/generated-resources/windowsml-ocr-runtime-manifest.json `
+            --runtime-root apps/cert-prep-backend/dist/ocr-windowsml-runtime `
+            --output tmp/release-alpha/inventory/ocr-runtime-payloads.json
+          cargo metadata --format-version 1 --locked `
+            --manifest-path apps/cert-prep-desktop/src-tauri/Cargo.toml |
+            Set-Content -LiteralPath tmp/release-alpha/inventory/cargo-metadata.json -Encoding utf8NoBOM
+
+      - name: Assemble candidate, SBOMs, licenses and checksums
+        run: >-
+          node tools/release/assemble.ts
+          --mode candidate
+          --workspace-root .
+          --plan tmp/release-alpha/metadata/release-plan.json
+          --bundle-root apps/cert-prep-desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle
+          --generated-resources apps/cert-prep-desktop/src-tauri/generated-resources
+          --ocr-runtime-root apps/cert-prep-backend/dist/ocr-windowsml-runtime
+          --package-qa tmp/cert-prep-desktop/package-qa/package-qa.json
+          --node-licenses tmp/release-alpha/inventory/node-licenses.json
+          --python-licenses tmp/release-alpha/inventory/python-licenses.json
+          --ocr-python-licenses tmp/release-alpha/inventory/ocr-python-licenses.json
+          --ocr-runtime-payloads tmp/release-alpha/inventory/ocr-runtime-payloads.json
+          --cargo-metadata tmp/release-alpha/inventory/cargo-metadata.json
+          --output tmp/release-alpha/candidate
+
+      - name: Export candidate identity
+        id: candidate
+        shell: pwsh
+        run: |
+          $candidate = Get-Content -LiteralPath tmp/release-alpha/candidate/candidate.json -Raw |
+            ConvertFrom-Json
+          "candidate_id=$($candidate.candidateId)" >> $env:GITHUB_OUTPUT
+
+      - name: Upload the single candidate
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ needs.metadata.outputs.candidate_artifact }}
+          path: tmp/release-alpha/candidate
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+  publish-ocr-prerelease:
+    name: Publish public OCR bootstrap assets without clobber
+    needs: [metadata, build-candidate]
+    runs-on: ubuntu-24.04
+    environment: alpha-release
+    permissions:
+      contents: write
+    steps:
+      - name: Install Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+
+      - name: Download candidate without checkout
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ needs.metadata.outputs.candidate_artifact }}
+          path: candidate
+
+      - name: Publish or verify the two OCR assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          node candidate/harness/tools/release/publish-assets.ts
+          --mode ocr
+          --candidate-root candidate
+          --candidate-id '${{ needs.build-candidate.outputs.candidate_id }}'
+          --release-root candidate/release
+          --plan candidate/release/metadata/release-plan.json
+
+  clean-install:
+    name: Clean install (${{ matrix.package }})
+    needs: [metadata, build-candidate, publish-ocr-prerelease]
+    runs-on: windows-2025
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [msi, nsis]
+    steps:
+      - name: Download the exact candidate without checkout
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ needs.metadata.outputs.candidate_artifact }}
+          path: candidate
+
+      - name: Install, inspect resources, download OCR and launch
+        shell: pwsh
+        run: >-
+          ./candidate/harness/tools/release/clean-install.ps1
+          -PackageKind '${{ matrix.package }}'
+          -CandidateRoot ./candidate
+          -ExpectedCandidateId '${{ needs.build-candidate.outputs.candidate_id }}'
+          -ExpectedCommitSha '${{ needs.metadata.outputs.commit_sha }}'
+          -Output './clean-evidence/clean-install-${{ matrix.package }}.json'
+
+      - name: Upload clean-install evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: cert-prep-alpha-clean-${{ matrix.package }}-${{ needs.metadata.outputs.commit_sha }}
+          path: clean-evidence/clean-install-${{ matrix.package }}.json
+          if-no-files-found: error
+          retention-days: 14
+
+  hardware-acceptance:
+    name: Protected AMD WindowsML and FastFlow acceptance
+    needs: [metadata, build-candidate, clean-install]
+    runs-on: [self-hosted, Windows, X64, cert-prep-alpha-hardware]
+    environment: alpha-hardware
+    steps:
+      - name: Install Node without checkout
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+
+      - name: Download the exact candidate without checkout
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ needs.metadata.outputs.candidate_artifact }}
+          path: candidate
+
+      - name: Run externally provisioned clean-snapshot hardware harness
+        shell: pwsh
+        env:
+          ALPHA_HARDWARE_HARNESS: ${{ vars.ALPHA_HARDWARE_HARNESS }}
+          ALPHA_HARDWARE_HARNESS_SHA256: ${{ vars.ALPHA_HARDWARE_HARNESS_SHA256 }}
+        run: |
+          if (-not $env:ALPHA_HARDWARE_HARNESS -or
+              -not [IO.Path]::IsPathFullyQualified($env:ALPHA_HARDWARE_HARNESS) -or
+              -not (Test-Path -LiteralPath $env:ALPHA_HARDWARE_HARNESS -PathType Leaf)) {
+            throw 'ALPHA_HARDWARE_HARNESS must be a provisioned absolute script/executable path.'
+          }
+          if ($env:ALPHA_HARDWARE_HARNESS_SHA256 -notmatch '^[0-9a-fA-F]{64}$') {
+            throw 'ALPHA_HARDWARE_HARNESS_SHA256 must pin the approved harness.'
+          }
+          $harnessHash = (Get-FileHash -LiteralPath $env:ALPHA_HARDWARE_HARNESS -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($harnessHash -ne $env:ALPHA_HARDWARE_HARNESS_SHA256.ToLowerInvariant()) {
+            throw 'Provisioned hardware harness digest does not match the approved value.'
+          }
+          New-Item -ItemType Directory -Force hardware-evidence | Out-Null
+          & $env:ALPHA_HARDWARE_HARNESS `
+            --candidate-root (Resolve-Path ./candidate).Path `
+            --candidate-id '${{ needs.build-candidate.outputs.candidate_id }}' `
+            --version '${{ needs.metadata.outputs.version }}' `
+            --tag '${{ needs.metadata.outputs.tag }}' `
+            --commit '${{ needs.metadata.outputs.commit_sha }}' `
+            --harness-sha256 $harnessHash `
+            --output-root (Resolve-Path ./hardware-evidence).Path
+          if ($LASTEXITCODE -ne 0) { throw "Hardware harness failed with exit code $LASTEXITCODE." }
+
+      - name: Validate recorded hardware evidence contract
+        shell: pwsh
+        env:
+          ALPHA_HARDWARE_HARNESS_SHA256: ${{ vars.ALPHA_HARDWARE_HARNESS_SHA256 }}
+          ALPHA_FFPROBE_PATH: ${{ vars.ALPHA_FFPROBE_PATH }}
+          ALPHA_FFPROBE_SHA256: ${{ vars.ALPHA_FFPROBE_SHA256 }}
+        run: >-
+          node candidate/harness/tools/release/verify-hardware-result.ts
+          --result hardware-evidence/hardware-result.json
+          --plan candidate/release/metadata/release-plan.json
+          --evidence-root hardware-evidence
+          --candidate-id '${{ needs.build-candidate.outputs.candidate_id }}'
+          --harness-sha256 "$env:ALPHA_HARDWARE_HARNESS_SHA256"
+          --ffprobe-path "$env:ALPHA_FFPROBE_PATH"
+          --ffprobe-sha256 "$env:ALPHA_FFPROBE_SHA256"
+
+      - name: Upload protected hardware evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: cert-prep-alpha-hardware-${{ needs.metadata.outputs.commit_sha }}
+          path: hardware-evidence
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+  finalize-release:
+    name: Finalize release metadata and evidence
+    needs: [metadata, build-candidate, clean-install, hardware-acceptance]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+
+      - name: Download candidate without checkout
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ needs.metadata.outputs.candidate_artifact }}
+          path: candidate
+
+      - name: Download both clean-install evidence artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: cert-prep-alpha-clean-*-${{ needs.metadata.outputs.commit_sha }}
+          path: clean-evidence
+          merge-multiple: true
+
+      - name: Download protected hardware evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: cert-prep-alpha-hardware-${{ needs.metadata.outputs.commit_sha }}
+          path: hardware-evidence
+
+      - name: Finalize checksums, release metadata and both SBOM formats
+        run: >-
+          node candidate/harness/tools/release/assemble.ts
+          --mode finalize
+          --candidate candidate
+          --clean-evidence clean-evidence
+          --hardware-evidence hardware-evidence
+          --output final-bundle
+
+      - name: Upload final release bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: cert-prep-alpha-final-${{ needs.metadata.outputs.commit_sha }}
+          path: final-bundle/release
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+  attest-release:
+    name: Attest final release artifacts
+    needs: [metadata, finalize-release]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download final bundle without checkout
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: cert-prep-alpha-final-${{ needs.metadata.outputs.commit_sha }}
+          path: final-release
+
+      - name: Generate GitHub build provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be
+        with:
+          subject-path: final-release/**/*
+
+  publish-alpha:
+    name: Publish final unsigned public alpha
+    needs: [metadata, build-candidate, finalize-release, attest-release]
+    runs-on: ubuntu-24.04
+    environment: alpha-release
+    permissions:
+      contents: write
+    steps:
+      - name: Install Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+
+      - name: Download final release bundle without checkout
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: cert-prep-alpha-final-${{ needs.metadata.outputs.commit_sha }}
+          path: final-release
+
+      - name: Download candidate release tooling without checkout
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ needs.metadata.outputs.candidate_artifact }}
+          path: candidate
+
+      - name: Upload without clobber and keep the release a prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          node candidate/harness/tools/release/publish-assets.ts
+          --mode final
+          --candidate-root candidate
+          --candidate-id '${{ needs.build-candidate.outputs.candidate_id }}'
+          --release-root final-release
+          --plan final-release/metadata/release-plan.json
+
+      - name: Write release summary
+        run: |
+          {
+            echo "## Public unsigned Alpha published"
+            echo ""
+            echo "- Tag: ${{ needs.metadata.outputs.tag }}"
+            echo "- Commit: ${{ needs.metadata.outputs.commit_sha }}"
+            echo "- Candidate: ${{ needs.build-candidate.outputs.candidate_id }}"
+            echo "- Signing status: unsigned_public_alpha (GA remains blocked)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  cleanup-incomplete-prerelease:
+    name: Withdraw incomplete OCR prerelease after a failed gate
+    needs:
+      - metadata
+      - build-candidate
+      - publish-ocr-prerelease
+      - clean-install
+      - hardware-acceptance
+      - finalize-release
+      - attest-release
+      - publish-alpha
+    if: >-
+      ${{ always() &&
+          needs.publish-ocr-prerelease.result == 'success' &&
+          needs.publish-alpha.result != 'success' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Install Node without checkout
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+
+      - name: Download candidate release tooling without checkout
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ needs.metadata.outputs.candidate_artifact }}
+          path: candidate
+
+      - name: Delete the incomplete prerelease without deleting its source tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          node candidate/harness/tools/release/publish-assets.ts
+          --mode cleanup
+          --candidate-root candidate
+          --candidate-id '${{ needs.build-candidate.outputs.candidate_id }}'
+          --plan candidate/release/metadata/release-plan.json
