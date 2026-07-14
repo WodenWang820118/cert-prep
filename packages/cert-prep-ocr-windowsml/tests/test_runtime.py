@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 
+import pytest
 from cert_prep_ocr_windowsml import device as windowsml_device
 from cert_prep_ocr_windowsml import runtime as windowsml
 from cert_prep_ocr_windowsml.runtime import (
@@ -132,6 +134,25 @@ def test_windowsml_runner_extracts_text_without_fallback_evidence(
     assert result.text == "OCRTEST"
     assert result.device == "amd_windowsml:0"
     assert result.fallback_reason is None
+
+
+def test_windowsml_runtime_replaces_optional_aistudio_downloader_with_offline_stub(
+    monkeypatch,
+) -> None:
+    for name in (
+        "aistudio_sdk",
+        "aistudio_sdk.errors",
+        "aistudio_sdk.snapshot_download",
+    ):
+        monkeypatch.delitem(sys.modules, name, raising=False)
+
+    windowsml._install_offline_aistudio_stubs()
+
+    errors = sys.modules["aistudio_sdk.errors"]
+    downloads = sys.modules["aistudio_sdk.snapshot_download"]
+    assert issubclass(errors.NotExistError, Exception)
+    with pytest.raises(RuntimeError, match="bundled model files"):
+        downloads.snapshot_download("unused")
 
 
 def _write_paddleocr37_model_files(model_dir: Path) -> None:

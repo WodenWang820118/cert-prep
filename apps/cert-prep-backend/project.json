@@ -122,7 +122,8 @@
       "outputs": ["{projectRoot}/.benchmarks"],
       "options": {
         "cwd": "apps/cert-prep-backend",
-        "command": "uv run --exact --reinstall-package onnxruntime-windowsml --python 3.12 --extra ocr-windowsml python -m cert_prep_ocr_windowsml.tools.windowsml.ocr_windowsml_prepare_models"
+        "env": { "UV_LINK_MODE": "copy" },
+        "command": "uv run --isolated --python 3.12 --extra ocr-windowsml python -m cert_prep_ocr_windowsml.tools.windowsml.ocr_windowsml_prepare_models"
       }
     },
     "ocr-windowsml-prepare-models-docker": {

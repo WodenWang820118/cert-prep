@@ -3,8 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import platform
+import sys
 import tempfile
 from time import perf_counter
+from types import ModuleType
 from typing import Any
 
 from cert_prep_ocr_windowsml.contracts import OCRHealth, OCRPageResult
@@ -216,6 +218,7 @@ def _onnxruntime_state() -> tuple[list[str], str | None, Exception | None]:
 
 
 def _paddleocr_state() -> tuple[str | None, Exception | None]:
+    _install_offline_aistudio_stubs()
     try:
         import paddleocr  # type: ignore[import-not-found]
     except Exception as exc:
@@ -224,11 +227,41 @@ def _paddleocr_state() -> tuple[str | None, Exception | None]:
 
 
 def _import_paddleocr() -> Any:
+    _install_offline_aistudio_stubs()
     try:
         from paddleocr import PaddleOCR  # type: ignore[import-not-found]
     except Exception as exc:
         raise ProviderUnavailableError(f"PaddleOCR 3.7 runtime unavailable: {exc}") from exc
     return PaddleOCR
+
+
+def _install_offline_aistudio_stubs() -> None:
+    """Keep PaddleX's optional AIStudio downloader out of the packaged runtime."""
+    existing = sys.modules.get("aistudio_sdk")
+    if getattr(existing, "_cert_prep_offline_stub", False):
+        return
+
+    package = ModuleType("aistudio_sdk")
+    package.__path__ = []  # type: ignore[attr-defined]
+    package._cert_prep_offline_stub = True  # type: ignore[attr-defined]
+    errors = ModuleType("aistudio_sdk.errors")
+    downloads = ModuleType("aistudio_sdk.snapshot_download")
+
+    class NotExistError(Exception):
+        pass
+
+    def snapshot_download(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError(
+            "Cert Prep's WindowsML OCR runtime only uses its bundled model files."
+        )
+
+    errors.NotExistError = NotExistError  # type: ignore[attr-defined]
+    downloads.snapshot_download = snapshot_download  # type: ignore[attr-defined]
+    package.errors = errors  # type: ignore[attr-defined]
+    package.snapshot_download = downloads  # type: ignore[attr-defined]
+    sys.modules["aistudio_sdk"] = package
+    sys.modules["aistudio_sdk.errors"] = errors
+    sys.modules["aistudio_sdk.snapshot_download"] = downloads
 
 
 def _runtime_unavailable_reason(
