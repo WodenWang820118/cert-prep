@@ -6,7 +6,12 @@ import type {
 } from '../process-lifecycle/processes.mts';
 import type { OwnedFastFlowProcessTracker } from './owned-fastflow-process-lifecycle.mts';
 
-export type AcceptanceLane = 'none' | 'xdna2-fastflow';
+export type AcceptanceLane = 'none' | 'xdna2-fastflow' | 'ollama-fallback';
+
+export type OllamaFallbackTrigger =
+  | 'declined-terms'
+  | 'unsupported-xdna2'
+  | 'old-driver';
 
 export interface SmokeOptions {
   workspaceRoot: string;
@@ -21,6 +26,7 @@ export interface SmokeOptions {
   ollamaModel: string;
   ollamaFallbackModels: string[];
   acceptanceLane?: AcceptanceLane;
+  ollamaFallbackTrigger?: OllamaFallbackTrigger;
   streamingDraftPageLimit?: number;
   streamingDraftWorkers?: number;
   waitForStreamingComplete: boolean;
@@ -51,8 +57,11 @@ export interface SmokeMetrics {
   llm_effective_model?: string;
   llm_fallback_models: string[];
   llm_fallback_reason?: string | null;
+  provider_fallback_reason?: string | null;
+  model_fallback_reason?: string | null;
   llm_health?: LlmHealthSnapshot;
   generation_readiness_at_start?: GenerationReadinessSnapshot;
+  ollama_fallback_acceptance?: OllamaFallbackAcceptanceEvidence;
   resources_released_at_end?: ResourcesReleasedAtEndSnapshot;
   full_exam_question_count?: number;
   ocr_provider: string;
@@ -115,13 +124,13 @@ export interface VideoArtifact {
   error?: string;
 }
 
-interface VideoRecordingState {
+export interface VideoRecordingState {
   readonly artifact: VideoArtifact;
   readonly filePath: string;
   active: boolean;
 }
 
-interface StreamingQuestionsMetrics {
+export interface StreamingQuestionsMetrics {
   job_snapshots: StreamingDraftJobSnapshot[];
   question_snapshots: StreamingQuestionSnapshot[];
   status_counts: Record<string, number>;
@@ -133,7 +142,7 @@ interface StreamingQuestionsMetrics {
   blocker?: string;
 }
 
-interface OcrCompletionMetrics {
+export interface OcrCompletionMetrics {
   pages_processed: number | null;
   total_pages: number | null;
   chunks: number | null;
@@ -141,7 +150,7 @@ interface OcrCompletionMetrics {
   expected_chunks: 46;
 }
 
-interface StreamingBaselineArtifacts {
+export interface StreamingBaselineArtifacts {
   status: 'passed' | 'failed';
   json: string;
   markdown: string;
@@ -156,6 +165,91 @@ export interface LlmHealthSnapshot {
   fallback_models: string[];
   fallback_reason: string | null;
   detail: string | null;
+  profile_id?: string | null;
+  base_model?: string | null;
+  modelfile_sha256?: string | null;
+  profile_reason?: string | null;
+  profile_warnings?: string[];
+}
+
+export interface OllamaFallbackSelectionEvidence {
+  captured_at: string;
+  preference: 'auto';
+  selected_provider: 'fastflowlm' | 'ollama';
+  effective_provider: 'fastflowlm' | 'ollama';
+  configured_model: string;
+  effective_model: string;
+  provider_fallback_reason: string | null;
+  hardware_compatible: boolean;
+  requires_terms_acceptance: boolean;
+  terms_accepted: boolean;
+  terms_version: string | null;
+  runtime_requirement_kind: 'fastflowlm' | 'ollama';
+  model_requirement_kind: 'fastflowlm_model' | 'ollama_model';
+}
+
+export interface OllamaPhysicalInventoryEvidence {
+  schema_version: number;
+  platform: string;
+  platform_version: string;
+  architecture: string;
+  cpu_name: string | null;
+  total_ram_bytes: number | null;
+  available_ram_bytes: number | null;
+  accelerators: Array<{
+    kind: string;
+    name: string;
+    vendor: string | null;
+    driver_version: string | null;
+    device_id: string | null;
+  }>;
+  warnings: string[];
+}
+
+export interface OllamaProfileEvidence {
+  profile_enabled: boolean;
+  profile_id: string | null;
+  support_status: string;
+  selection_reason: string;
+  effective_model: string;
+  base_model: string | null;
+  modelfile_sha256: string | null;
+  fallback_models: string[];
+  inventory: OllamaPhysicalInventoryEvidence | null;
+}
+
+export interface OllamaRuntimeEvidence {
+  requirement_version: string | null;
+  installed_path_verified: true;
+  api_version: string;
+  installed_models: string[];
+  profile: OllamaProfileEvidence;
+}
+
+export interface OllamaResourceReleaseEvidence {
+  captured_at: string;
+  effective_model: string;
+  loaded_models: string[];
+  released: boolean;
+}
+
+export interface OllamaFallbackAcceptanceEvidence {
+  schema_version: 1;
+  trigger: OllamaFallbackTrigger;
+  trigger_mode: 'persisted_terms_decision' | 'physical_inventory_observation';
+  overrides_used: false;
+  fake_provider_observed: boolean;
+  decision_endpoint: string | null;
+  selection_before: OllamaFallbackSelectionEvidence;
+  selection_after_route: OllamaFallbackSelectionEvidence;
+  selection_after_restart: OllamaFallbackSelectionEvidence;
+  provider_fallback_reason: string;
+  model_fallback_reason: string | null;
+  runtime: OllamaRuntimeEvidence;
+  job_attribution: StreamingDraftJobAttribution[];
+  usable_question_count: number;
+  full_exam_question_count: number;
+  resource_release: OllamaResourceReleaseEvidence | null;
 }
 
 export interface LlmProviderSelectionSnapshot {
@@ -271,13 +365,13 @@ export interface CloseSummary {
   residualProcesses: PublicProcessRecord[];
 }
 
-interface ChildExitState {
+export interface ChildExitState {
   exited: boolean;
   code: number | null;
   signal: NodeJS.Signals | null;
 }
 
-interface ResourceSamplingController {
+export interface ResourceSamplingController {
   readonly artifacts: ResourceSamplingArtifacts;
   stop(): Promise<void>;
 }

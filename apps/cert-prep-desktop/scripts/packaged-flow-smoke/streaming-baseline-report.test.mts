@@ -360,6 +360,55 @@ test('production summary aligns Ollama policy, profile alias, and job attributio
   }
 });
 
+test('Ollama fallback lane keeps provider and model reasons separate and fails closed', () => {
+  const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-prep-production-summary-'));
+  try {
+    const outDir = join(workspaceRoot, 'out');
+    mkdirSync(outDir);
+    writePassingResourceSummary(outDir);
+    const run = productionRunState(workspaceRoot, outDir);
+    const report = productionReport();
+    configureOllamaFallbackAcceptance(run, report);
+
+    const summary = buildProductionSummary(run, report);
+
+    assert.equal(summary.status, 'passed');
+    assert.equal(summary.acceptance_lane, 'ollama-fallback');
+    assert.equal(
+      summary.provider_fallback_reason,
+      'FastFlowLM terms were declined.',
+    );
+    assert.equal(summary.model_fallback_reason, null);
+    assert.equal(summary.fallback_reason, null);
+    assert.equal(summary.checks.acceptance_lane_route_persisted, true);
+    assert.equal(summary.checks.acceptance_lane_runtime_real, true);
+    assert.equal(summary.checks.acceptance_lane_job_evidence_bound, true);
+    assert.equal(summary.checks.acceptance_lane_ollama_model_released, true);
+    assert.equal(summary.checks.acceptance_lane_no_overrides_or_fake, true);
+
+    assert.ok(run.metrics.ollama_fallback_acceptance);
+    run.metrics.ollama_fallback_acceptance.fake_provider_observed = true;
+    const fakeSummary = buildProductionSummary(run, report);
+    assert.equal(fakeSummary.status, 'failed');
+    assert.equal(
+      fakeSummary.checks.acceptance_lane_no_overrides_or_fake,
+      false,
+    );
+
+    run.metrics.ollama_fallback_acceptance.fake_provider_observed = false;
+    run.metrics.ollama_fallback_acceptance.model_fallback_reason =
+      run.metrics.ollama_fallback_acceptance.provider_fallback_reason;
+    const conflatedSummary = buildProductionSummary(run, report);
+    assert.equal(conflatedSummary.status, 'failed');
+    assert.equal(
+      conflatedSummary.checks.acceptance_lane_model_fallback_reason_separate,
+      false,
+    );
+  } finally {
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
 test('production summary still requires NVIDIA dGPU usage for Ollama reasoning', () => {
   const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-prep-production-summary-'));
   try {
@@ -859,6 +908,175 @@ function writePassingResourceSummary(outDir: string): void {
     }),
     'utf8',
   );
+}
+
+function configureOllamaFallbackAcceptance(
+  run: SmokeRunState,
+  report: StreamingBaselineReport,
+): void {
+  const profileModel = 'cert-prep-qwen3.5-4b-study-8k';
+  const readiness = run.metrics.generation_readiness_at_start;
+  const selection = readiness?.provider_selection;
+  const job = run.metrics.streaming_questions.job_snapshots[0]?.jobs[0];
+  assert.ok(readiness);
+  assert.ok(selection);
+  assert.ok(job);
+
+  run.options.acceptanceLane = 'ollama-fallback';
+  run.options.ollamaFallbackTrigger = 'declined-terms';
+  recordPassingAcceptanceIsolation(run);
+  run.metrics.llm_provider = 'ollama';
+  run.metrics.llm_configured_model = profileModel;
+  run.metrics.llm_effective_model = profileModel;
+  run.metrics.provider_fallback_reason = 'FastFlowLM terms were declined.';
+  run.metrics.model_fallback_reason = null;
+  run.metrics.llm_fallback_reason = null;
+  Object.assign(selection, {
+    selected_provider: 'ollama',
+    effective_provider: 'ollama',
+    configured_model: 'qwen3.5:4b',
+    effective_model: profileModel,
+    selection_reason: 'provider_selection_reported',
+    fallback_reason: 'provider_fallback_reported',
+    hardware_compatible: true,
+    requires_terms_acceptance: false,
+    terms_accepted: false,
+    terms_version: null,
+    runtime_requirement_kind: 'ollama',
+    model_requirement_kind: 'ollama_model',
+  });
+  readiness.runtime_requirements = [
+    {
+      kind: 'ollama',
+      available: true,
+      version: '0.12.0',
+      installed_path_verified: true,
+    },
+    {
+      kind: 'ollama_model',
+      available: true,
+      version: profileModel,
+      installed_path_verified: false,
+    },
+  ];
+  Object.assign(job, {
+    configured_provider: 'ollama',
+    configured_model: profileModel,
+    effective_provider: 'ollama',
+    effective_model: profileModel,
+    fallback_reason: null,
+  });
+  run.metrics.resources_released_at_end = {
+    captured_at: '2026-06-23T00:01:00.000Z',
+    released: true,
+    pre_close_captured_at: '2026-06-23T00:00:55.000Z',
+    pre_close_release_proven: true,
+    pre_close_stable_empty_snapshots: 2,
+    stable_empty_snapshots: 2,
+    observed_owned_processes: [],
+    alive_owned_processes: [],
+  };
+  const routedSelection = {
+    captured_at: '2026-06-23T00:00:05.000Z',
+    preference: 'auto' as const,
+    selected_provider: 'ollama' as const,
+    effective_provider: 'ollama' as const,
+    configured_model: 'qwen3.5:4b',
+    effective_model: profileModel,
+    provider_fallback_reason: 'FastFlowLM terms were declined.',
+    hardware_compatible: true,
+    requires_terms_acceptance: false,
+    terms_accepted: false,
+    terms_version: null,
+    runtime_requirement_kind: 'ollama' as const,
+    model_requirement_kind: 'ollama_model' as const,
+  };
+  run.metrics.ollama_fallback_acceptance = {
+    schema_version: 1,
+    trigger: 'declined-terms',
+    trigger_mode: 'persisted_terms_decision',
+    overrides_used: false,
+    fake_provider_observed: false,
+    decision_endpoint:
+      '/llm/provider-selection/fastflowlm-terms-decision',
+    selection_before: {
+      ...routedSelection,
+      captured_at: '2026-06-23T00:00:00.000Z',
+      selected_provider: 'fastflowlm',
+      effective_provider: 'fastflowlm',
+      provider_fallback_reason: null,
+      requires_terms_acceptance: true,
+      terms_version: '0.9.43',
+      runtime_requirement_kind: 'fastflowlm',
+      model_requirement_kind: 'fastflowlm_model',
+    },
+    selection_after_route: routedSelection,
+    selection_after_restart: {
+      ...routedSelection,
+      captured_at: '2026-06-23T00:00:10.000Z',
+    },
+    provider_fallback_reason: 'FastFlowLM terms were declined.',
+    model_fallback_reason: null,
+    runtime: {
+      requirement_version: '0.12.0',
+      installed_path_verified: true,
+      api_version: '0.12.0',
+      installed_models: [`${profileModel}:latest`],
+      profile: {
+        profile_enabled: true,
+        profile_id: 'qwen3.5-4b-study-8k',
+        support_status: 'supported',
+        selection_reason: 'Selected the default profile.',
+        effective_model: profileModel,
+        base_model: 'qwen3.5:4b',
+        modelfile_sha256: 'a'.repeat(64),
+        fallback_models: ['cert-prep-qwen3.5-2b-study-4k'],
+        inventory: {
+          schema_version: 1,
+          platform: 'Windows',
+          platform_version: '11',
+          architecture: 'AMD64',
+          cpu_name: 'AMD Ryzen AI',
+          total_ram_bytes: 16 * 1024 ** 3,
+          available_ram_bytes: 8 * 1024 ** 3,
+          accelerators: [],
+          warnings: [],
+        },
+      },
+    },
+    job_attribution: [job],
+    usable_question_count: 8,
+    full_exam_question_count: 8,
+    resource_release: {
+      captured_at: '2026-06-23T00:00:50.000Z',
+      effective_model: profileModel,
+      loaded_models: [],
+      released: true,
+    },
+  };
+
+  report.runtime.llm_provider = 'auto';
+  report.runtime.llm_configured_model = profileModel;
+  report.runtime.llm_effective_model = profileModel;
+  report.runtime.llm_fallback_models = [
+    'cert-prep-qwen3.5-2b-study-4k',
+  ];
+  report.runtime.llm_fallback_reason = null;
+  report.runtime.llm_health = {
+    provider: 'ollama',
+    available: true,
+    model: profileModel,
+    configured_model: profileModel,
+    effective_model: profileModel,
+    fallback_models: ['cert-prep-qwen3.5-2b-study-4k'],
+    fallback_reason: null,
+    detail: 'profile model available',
+    profile_id: 'qwen3.5-4b-study-8k',
+    base_model: 'qwen3.5:4b',
+    modelfile_sha256: 'a'.repeat(64),
+    profile_reason: 'Selected the default profile.',
+    profile_warnings: [],
+  };
 }
 
 function passingCloseSummary() {

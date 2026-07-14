@@ -139,6 +139,33 @@ export async function captureGenerationReadinessAtProjectCreate(
   }
 }
 
+export async function captureGenerationReadinessFromProjectApi(
+  run: SmokeRunState,
+  options: CaptureGenerationReadinessOptions = {},
+): Promise<GenerationReadinessSnapshot> {
+  const page = options.page ?? activePage(run);
+  const now = options.now ?? (() => new Date());
+  const projectApi = run.projectApi;
+  if (!projectApi) {
+    const snapshot = failedSnapshot(
+      now().toISOString(),
+      'project_api_reference_missing',
+    );
+    run.metrics.generation_readiness_at_start = snapshot;
+    return snapshot;
+  }
+  const snapshot = await generationReadinessFromProjectApi(
+    run,
+    page,
+    projectApi,
+    now().toISOString(),
+    options.requestTimeoutMs ?? READINESS_REQUEST_TIMEOUT_MS,
+    options.installedPathVerifier ?? isExistingRegularFile,
+  );
+  run.metrics.generation_readiness_at_start = snapshot;
+  return snapshot;
+}
+
 export function projectApiRefMatchesResponse(
   projectApi: ProjectApiRef | null,
   response: Response,
@@ -249,8 +276,24 @@ async function generationReadinessFromProjectResponse(
     return failedSnapshot(now().toISOString(), 'project_response_schema_invalid');
   }
   run.projectApi = projectApi;
-  const capturedAt = now().toISOString();
+  return generationReadinessFromProjectApi(
+    run,
+    page,
+    projectApi,
+    now().toISOString(),
+    requestTimeoutMs,
+    installedPathExists,
+  );
+}
 
+async function generationReadinessFromProjectApi(
+  run: SmokeRunState,
+  page: ReadinessPage,
+  projectApi: ProjectApiRef,
+  capturedAt: string,
+  requestTimeoutMs: number,
+  installedPathExists: (path: string) => boolean,
+): Promise<GenerationReadinessSnapshot> {
   const [selectionResult, requirementsResult] = await Promise.all([
     getReadinessJson(
       page,

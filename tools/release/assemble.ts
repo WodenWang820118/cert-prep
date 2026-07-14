@@ -274,6 +274,7 @@ export async function finalizeRelease(args) {
     'hardware-result.json',
     'recording-probe.json',
     hardwareResult.recording.path.replaceAll('\\', '/'),
+    hardwareResult.sessionRestart.path.replaceAll('\\', '/'),
     ...Object.values(hardwareResult.cancellation).map((record) =>
       record.path.replaceAll('\\', '/'),
     ),

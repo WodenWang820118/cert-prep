@@ -511,6 +511,12 @@ test('hardware evidence requires exact FastFlow attribution and four PDFs', () =
     resourcesReleasedAtEnd: true,
     fullExamQuestionCountPositive: true,
     sessionRestartPassed: true,
+    sessionRestart: {
+      passed: true,
+      path: 'session-restart.json',
+      bytes: 100,
+      sha256: '1'.repeat(64),
+    },
     cancellation: Object.fromEntries(
       HARDWARE_CANCELLATION_CHECKS.map((key) => [
         key,
@@ -556,6 +562,15 @@ test('hardware evidence requires exact FastFlow attribution and four PDFs', () =
         'e'.repeat(64),
       ),
     /effectiveModel/,
+  );
+  assert.throws(
+    () =>
+      validateHardwareResult(
+        { ...evidence, sessionRestart: undefined },
+        plan,
+        'e'.repeat(64),
+      ),
+    /session restart evidence/,
   );
 });
 

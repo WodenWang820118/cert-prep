@@ -2,7 +2,11 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { DEFAULT_LLM_MODEL } from '../package-qa/constants.mts';
-import type { AcceptanceLane, SmokeOptions } from './types.mts';
+import type {
+  AcceptanceLane,
+  OllamaFallbackTrigger,
+  SmokeOptions,
+} from './types.mts';
 
 const DEFAULT_TARGET_TRIPLE = 'x86_64-pc-windows-msvc';
 const DEFAULT_OUT_ROOT = 'tmp/cert-prep-desktop/packaged-flow-smoke';
@@ -120,6 +124,11 @@ export function parsePackagedFlowSmokeArgs(
       parsed.ollamaFallbackModels = stringList(readValue(arg), []);
     } else if (arg === '--acceptance-lane') {
       parsed.acceptanceLane = acceptanceLane(readValue(arg), arg);
+    } else if (arg === '--ollama-fallback-trigger') {
+      parsed.ollamaFallbackTrigger = ollamaFallbackTrigger(
+        readValue(arg),
+        arg,
+      );
     } else if (arg === '--streaming-draft-page-limit') {
       parsed.streamingDraftPageLimit = positiveInteger(Number(readValue(arg)), arg);
     } else if (arg === '--streaming-draft-workers') {
@@ -226,10 +235,28 @@ function acceptanceLane(value: string, name: string): AcceptanceLane {
   switch (normalized) {
     case 'none':
     case 'xdna2-fastflow':
+    case 'ollama-fallback':
       return normalized;
     default:
       throw new Error(
-        `${name} must be one of: none, xdna2-fastflow.`,
+        `${name} must be one of: none, xdna2-fastflow, ollama-fallback.`,
+      );
+  }
+}
+
+function ollamaFallbackTrigger(
+  value: string,
+  name: string,
+): OllamaFallbackTrigger {
+  const normalized = nonEmptyString(value, name).toLowerCase();
+  switch (normalized) {
+    case 'declined-terms':
+    case 'unsupported-xdna2':
+    case 'old-driver':
+      return normalized;
+    default:
+      throw new Error(
+        `${name} must be one of: declined-terms, unsupported-xdna2, old-driver.`,
       );
   }
 }
@@ -237,6 +264,11 @@ function acceptanceLane(value: string, name: string): AcceptanceLane {
 function validateAcceptanceLane(options: SmokeOptions): void {
   const lane = options.acceptanceLane ?? 'none';
   if (lane === 'none') {
+    if (options.ollamaFallbackTrigger !== undefined) {
+      throw new Error(
+        '--ollama-fallback-trigger requires --acceptance-lane ollama-fallback.',
+      );
+    }
     return;
   }
 
@@ -267,6 +299,17 @@ function validateAcceptanceLane(options: SmokeOptions): void {
     sameStringList(options.ollamaFallbackModels, ACCEPTANCE_LLM_FALLBACK_MODELS),
     `--llm-fallback-models ${ACCEPTANCE_LLM_FALLBACK_MODELS.join(',')} exactly`,
   );
+  if (lane === 'ollama-fallback') {
+    requireAcceptanceLane(
+      lane,
+      options.ollamaFallbackTrigger !== undefined,
+      '--ollama-fallback-trigger',
+    );
+  } else if (options.ollamaFallbackTrigger !== undefined) {
+    throw new Error(
+      'Acceptance lane "xdna2-fastflow" forbids --ollama-fallback-trigger.',
+    );
+  }
 }
 
 function requireAcceptanceLane(

@@ -99,6 +99,53 @@ test('packaged flow smoke accepts the typed XDNA2 lane', () => {
   );
 });
 
+test('packaged flow smoke accepts only physical or persisted Ollama fallback triggers', () => {
+  for (const trigger of [
+    'declined-terms',
+    'unsupported-xdna2',
+    'old-driver',
+  ] as const) {
+    const parsed = parsePackagedFlowSmokeArgs([
+      ...acceptanceLaneArgs('ollama-fallback', 'auto'),
+      '--ollama-fallback-trigger',
+      trigger,
+    ]);
+    assert.equal(parsed.acceptanceLane, 'ollama-fallback');
+    assert.equal(parsed.ollamaFallbackTrigger, trigger);
+  }
+
+  assert.throws(
+    () =>
+      parsePackagedFlowSmokeArgs([
+        ...acceptanceLaneArgs('ollama-fallback', 'auto'),
+        '--ollama-fallback-trigger',
+        'fake-hardware',
+      ]),
+    /must be one of: declined-terms, unsupported-xdna2, old-driver/,
+  );
+  assert.throws(
+    () => parsePackagedFlowSmokeArgs(acceptanceLaneArgs('ollama-fallback', 'auto')),
+    /requires --ollama-fallback-trigger/,
+  );
+  assert.throws(
+    () =>
+      parsePackagedFlowSmokeArgs([
+        '--ollama-fallback-trigger',
+        'declined-terms',
+      ]),
+    /requires --acceptance-lane ollama-fallback/,
+  );
+  assert.throws(
+    () =>
+      parsePackagedFlowSmokeArgs([
+        ...acceptanceLaneArgs('xdna2-fastflow', 'auto'),
+        '--ollama-fallback-trigger',
+        'declined-terms',
+      ]),
+    /forbids --ollama-fallback-trigger/,
+  );
+});
+
 test('XDNA2 acceptance fails fast when its packaged evidence contract drifts', () => {
   const xdna2 = acceptanceLaneArgs('xdna2-fastflow', 'auto');
   const cases: Array<{
@@ -261,6 +308,24 @@ test('packaged production targets pin the typed XDNA2 acceptance lane', () => {
   ];
   assert.equal(productionOutputs.every(Boolean), true);
   assert.equal(new Set(productionOutputs).size, productionOutputs.length);
+
+  const fallbackTarget =
+    project.targets?.['packaged-streaming-ollama-fallback-windowsml'];
+  const fallback = parsePackagedFlowSmokeArgs(
+    targetCommandArgs(fallbackTarget?.options?.command ?? ''),
+  );
+  assert.equal(fallback.acceptanceLane, 'ollama-fallback');
+  assert.equal(fallback.ollamaFallbackTrigger, 'declined-terms');
+  assert.equal(fallback.llmProvider, 'auto');
+  assert.equal(fallback.ollamaModel, 'qwen3.5:4b');
+  assert.deepEqual(fallback.ollamaFallbackModels, ['qwen3.5:2b']);
+  assert.equal(fallback.productionSummary, true);
+  assert.equal(fallback.ocrProvider, 'windowsml');
+  assert.equal(fallback.verifyStreamingPracticeReady, true);
+  assert.match(
+    fallbackTarget?.outputs?.[0] ?? '',
+    /packaged-streaming-ollama-fallback$/,
+  );
 });
 
 function acceptanceLaneArgs(

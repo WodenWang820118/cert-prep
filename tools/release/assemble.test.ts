@@ -12,6 +12,11 @@ import { tmpdir } from 'node:os';
 import test from 'node:test';
 
 import {
+  buildValidResilienceEvidence,
+  buildValidSessionRestartEvidence,
+} from '../../apps/cert-prep-desktop/scripts/packaged-resilience/evidence-fixtures.mts';
+
+import {
   assembleCandidate,
   finalizeRelease,
   rejectFastFlowBinaryInArchive,
@@ -329,18 +334,19 @@ test('candidate assembly proves hybrid runtime shape and writes release document
       Buffer.from('recording'),
     ]);
     writeFileSync(recordingPath, recording);
+    const candidate = {
+      candidateId: result.candidateId,
+      version: plan.version,
+      tag: plan.tag,
+      commitSha: plan.commitSha,
+      harnessSha256: 'c'.repeat(64),
+    };
     const cancellation = {};
     const cancellationRoot = join(hardware, 'cancellation');
     mkdirSync(cancellationRoot, { recursive: true });
     for (const key of HARDWARE_CANCELLATION_CHECKS) {
       const path = join(cancellationRoot, `${key}.json`);
-      writeJson(path, {
-        schemaVersion: 1,
-        check: key,
-        passed: true,
-        candidateId: result.candidateId,
-        observations: [`${key} evidence`],
-      });
+      writeJson(path, buildValidResilienceEvidence(key, { candidate }));
       cancellation[key] = {
         passed: true,
         path: `cancellation/${key}.json`,
@@ -348,6 +354,11 @@ test('candidate assembly proves hybrid runtime shape and writes release document
         sha256: await sha256File(path),
       };
     }
+    const sessionRestartPath = join(hardware, 'session-restart.json');
+    writeJson(
+      sessionRestartPath,
+      buildValidSessionRestartEvidence({ candidate }),
+    );
     writeJson(join(hardware, 'hardware-result.json'), {
       schemaVersion: 1,
       version: plan.version,
@@ -368,6 +379,12 @@ test('candidate assembly proves hybrid runtime shape and writes release document
       resourcesReleasedAtEnd: true,
       fullExamQuestionCountPositive: true,
       sessionRestartPassed: true,
+      sessionRestart: {
+        passed: true,
+        path: 'session-restart.json',
+        bytes: statSync(sessionRestartPath).size,
+        sha256: await sha256File(sessionRestartPath),
+      },
       cancellation,
       processResidueCount: 0,
       pdfs: Array.from({ length: 4 }, (_, index) => ({

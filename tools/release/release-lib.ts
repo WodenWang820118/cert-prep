@@ -15,6 +15,11 @@ import {
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+  validateResilienceEvidence,
+  validateSessionRestartEvidence,
+} from '../../apps/cert-prep-desktop/scripts/packaged-resilience/evidence-contract.mts';
+
 export const ALPHA_VERSION_PATTERN = /^\d+\.\d+\.\d+-alpha\.\d+$/;
 export const RELEASE_CHANNEL = 'unsigned_public_alpha';
 export const RELEASE_TAG_PREFIX = 'cert-prep-v';
@@ -1147,9 +1152,8 @@ export function validateHardwareResult(result, plan, expectedCandidateId) {
     throw new Error('Hardware evidence identity does not match the candidate.');
   }
   if (
-    expectedCandidateId &&
-    (result.candidateId !== expectedCandidateId ||
-      !/^[0-9a-f]{64}$/i.test(result.candidateId))
+    !/^[0-9a-f]{64}$/i.test(result.candidateId ?? '') ||
+    (expectedCandidateId && result.candidateId !== expectedCandidateId)
   ) {
     throw new Error(
       'Hardware evidence candidate ID does not match the downloaded candidate.',
@@ -1192,6 +1196,17 @@ export function validateHardwareResult(result, plan, expectedCandidateId) {
       throw new Error(`Hardware cancellation evidence check failed: ${key}.`);
     }
   }
+  if (
+    result.sessionRestart?.passed !== true ||
+    typeof result.sessionRestart.path !== 'string' ||
+    !result.sessionRestart.path.toLowerCase().endsWith('.json') ||
+    result.sessionRestart.bytes <= 0 ||
+    !/^[0-9a-f]{64}$/i.test(result.sessionRestart.sha256 ?? '')
+  ) {
+    throw new Error(
+      'Hardware session restart evidence must be a non-empty hashed JSON artifact.',
+    );
+  }
   const acceptanceStartedAt = Date.parse(result.acceptance?.startedAt ?? '');
   const acceptanceCompletedAt = Date.parse(
     result.acceptance?.completedAt ?? '',
@@ -1232,6 +1247,7 @@ export async function validateHardwareEvidenceFiles(result, evidenceRoot) {
   const resolvedEvidenceRoot = resolve(evidenceRoot);
   const records = [
     ['recording', result.recording],
+    ['sessionRestart', result.sessionRestart],
     ...HARDWARE_CANCELLATION_CHECKS.map((key) => [
       key,
       result.cancellation[key],
@@ -1256,19 +1272,24 @@ export async function validateHardwareEvidenceFiles(result, evidenceRoot) {
       try {
         detail = readJson(path);
       } catch {
-        throw new Error(`Hardware cancellation evidence is not JSON: ${key}.`);
+        throw new Error(`Hardware resilience evidence is not JSON: ${key}.`);
       }
-      if (
-        detail.schemaVersion !== 1 ||
-        detail.check !== key ||
-        detail.passed !== true ||
-        detail.candidateId !== result.candidateId ||
-        !Array.isArray(detail.observations) ||
-        detail.observations.length === 0
-      ) {
-        throw new Error(
-          `Hardware cancellation evidence contract failed: ${key}.`,
-        );
+      const context = {
+        candidate: {
+          candidateId: result.candidateId,
+          version: result.version,
+          tag: result.tag,
+          commitSha: result.commitSha,
+          harnessSha256: result.harnessSha256,
+        },
+        acceptanceRunId: result.acceptance.runId,
+        acceptanceStartedAt: result.acceptance.startedAt,
+        acceptanceCompletedAt: result.acceptance.completedAt,
+      };
+      if (key === 'sessionRestart') {
+        validateSessionRestartEvidence(detail, context);
+      } else {
+        validateResilienceEvidence(detail, key, context);
       }
     }
   }

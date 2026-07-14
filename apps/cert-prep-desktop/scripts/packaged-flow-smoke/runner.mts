@@ -32,6 +32,10 @@ import {
   initializeOwnedFastFlowProcessTracker,
   startOwnedFastFlowProcessObservation,
 } from './owned-fastflow-process-lifecycle.mts';
+import {
+  finalizeOllamaFallbackAcceptance,
+  prepareOllamaFallbackAcceptance,
+} from './ollama-fallback-acceptance.mts';
 import type { SmokeMetrics, SmokeRunState } from './types.mts';
 
 async function runFlow(run: SmokeRunState): Promise<void> {
@@ -59,12 +63,14 @@ async function runFlow(run: SmokeRunState): Promise<void> {
   await installPythonRuntimeIfNeeded(run);
   await installOcrRuntimeIfNeeded(run);
   await createProject(run);
+  await prepareOllamaFallbackAcceptance(run);
   await startOwnedFastFlowProcessObservation(run);
   await uploadAndParsePdf(run);
   if (run.options.waitForStreamingComplete) {
     if (run.options.verifyStreamingPracticeReady) {
       await verifyStreamingPracticeReady(run);
     }
+    await finalizeOllamaFallbackAcceptance(run);
     run.metrics.status = 'completed';
     log(run, 'streaming baseline completed');
     return;

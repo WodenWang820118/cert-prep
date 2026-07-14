@@ -19,6 +19,7 @@ import type {
   AcceptanceLane,
   GenerationReadinessSnapshot,
   LlmHealthSnapshot,
+  OllamaFallbackAcceptanceEvidence,
   ResourceSamplingArtifacts,
   ResourcesReleasedAtEndSnapshot,
   SmokeRunState,
@@ -115,6 +116,9 @@ interface PackagedStreamingProductionSummary {
   configured_model: string | null;
   effective_model: string | null;
   fallback_models: string[];
+  provider_fallback_reason: string | null;
+  model_fallback_reason: string | null;
+  /** @deprecated Use provider_fallback_reason and model_fallback_reason. */
   fallback_reason: string | null;
   llm_health: LlmHealthSnapshot | null;
   llm_provider: string | null;
@@ -123,6 +127,9 @@ interface PackagedStreamingProductionSummary {
   generation_ready_at_start: GenerationReadinessSnapshot | null;
   succeeded_jobs: StreamingDraftJobAttribution[];
   producing_jobs: StreamingDraftJobAttribution[];
+  ollama_fallback_acceptance:
+    | SmokeRunState['metrics']['ollama_fallback_acceptance']
+    | null;
   resources_released_at_end: ResourcesReleasedAtEndSnapshot | null;
   full_exam_question_count: number | null;
   artifacts: {
@@ -381,6 +388,12 @@ export function buildProductionSummary(
     succeededJobs.map((job) => job.effective_model),
   );
   const fallbackReason = uniqueFallbackReason(succeededJobs);
+  const providerFallbackReason =
+    run.metrics.ollama_fallback_acceptance?.provider_fallback_reason ??
+    run.metrics.provider_fallback_reason ??
+    null;
+  const modelFallbackReason =
+    fallbackReason ?? run.metrics.model_fallback_reason ?? null;
   const llmHealth = run.metrics.llm_health ?? report.runtime.llm_health;
   const exactFastFlowLmJobs =
     succeededJobs.length > 0 &&
@@ -472,6 +485,7 @@ export function buildProductionSummary(
       resourcesReleased,
       run.metrics.acceptance_isolation_at_launch,
       run.processBaseline.all,
+      run.metrics.ollama_fallback_acceptance,
     ),
   );
   const productionSummaryPath = join(run.options.outDir, 'production-summary.json');
@@ -494,11 +508,15 @@ export function buildProductionSummary(
     effective_model: effectiveModel,
     fallback_models:
       run.metrics.llm_fallback_models ?? report.runtime.llm_fallback_models,
-    fallback_reason: fallbackReason,
+    provider_fallback_reason: providerFallbackReason,
+    model_fallback_reason: modelFallbackReason,
+    fallback_reason: modelFallbackReason,
     llm_health: llmHealth,
     generation_ready_at_start: readinessAtStart ?? null,
     succeeded_jobs: succeededJobs,
     producing_jobs: producingJobs,
+    ollama_fallback_acceptance:
+      run.metrics.ollama_fallback_acceptance ?? null,
     resources_released_at_end: resourcesReleased ?? null,
     full_exam_question_count: run.metrics.full_exam_question_count ?? null,
     artifacts: {
@@ -655,9 +673,22 @@ function acceptanceLaneChecks(
   resourcesReleased: ResourcesReleasedAtEndSnapshot | undefined,
   isolationAtLaunch: AcceptanceIsolationSnapshot | undefined,
   processBaseline: readonly { readonly name: string }[],
+  ollamaEvidence: OllamaFallbackAcceptanceEvidence | undefined,
 ): Record<string, boolean> {
   if (lane === 'none') {
     return {};
+  }
+
+  if (lane === 'ollama-fallback') {
+    return ollamaFallbackAcceptanceChecks(
+      reportedPreference,
+      readiness,
+      succeededJobs,
+      resourcesReleased,
+      isolationAtLaunch,
+      processBaseline,
+      ollamaEvidence,
+    );
   }
 
   const expectedPreference = 'auto';
@@ -701,6 +732,100 @@ function acceptanceLaneChecks(
       !processBaseline.some(
         (process) => process.name.toLowerCase() === 'flm.exe',
       ) && resourcesReleasedPassed(resourcesReleased, expectedProvider),
+  };
+}
+
+function ollamaFallbackAcceptanceChecks(
+  reportedPreference: string,
+  readiness: GenerationReadinessSnapshot | undefined,
+  succeededJobs: readonly StreamingDraftJobAttribution[],
+  resourcesReleased: ResourcesReleasedAtEndSnapshot | undefined,
+  isolationAtLaunch: AcceptanceIsolationSnapshot | undefined,
+  processBaseline: readonly { readonly name: string }[],
+  evidence: OllamaFallbackAcceptanceEvidence | undefined,
+): Record<string, boolean> {
+  const selection = readiness?.provider_selection;
+  const providerReason = evidence?.provider_fallback_reason ?? null;
+  const modelReason = evidence?.model_fallback_reason ?? null;
+  const jobsPresent = succeededJobs.length > 0;
+  const allJobsOllama =
+    jobsPresent &&
+    succeededJobs.every(
+      (job) =>
+        job.attribution_complete &&
+        job.configured_provider === 'ollama' &&
+        job.effective_provider === 'ollama' &&
+        job.configured_model !== null &&
+        job.effective_model !== null &&
+        !/fake|deterministic/i.test(
+          `${job.configured_provider} ${job.effective_provider} ${job.configured_model} ${job.effective_model}`,
+        ),
+    );
+  const effectiveModels = succeededJobs
+    .map((job) => job.effective_model)
+    .filter((model): model is string => model !== null);
+  const acceptedModel =
+    effectiveModels.length === succeededJobs.length &&
+    effectiveModels.every((model) =>
+      /qwen3\.5(?::|-)(?:4b|2b)(?:\b|-)/i.test(model),
+    );
+  const lowResourceUsed = effectiveModels.some((model) =>
+    /qwen3\.5(?::|-)2b(?:\b|-)/i.test(model),
+  );
+  const persistedSelection = evidence?.selection_after_restart;
+  const routeSelection = evidence?.selection_after_route;
+  const evidenceJobIds = new Set(
+    evidence?.job_attribution.map((job) => job.id).filter(Boolean) ?? [],
+  );
+  return {
+    acceptance_lane_preference_exact:
+      reportedPreference === 'auto' && selection?.preference === 'auto',
+    acceptance_lane_provider_exact:
+      selection?.selected_provider === 'ollama' &&
+      selection.effective_provider === 'ollama' &&
+      allJobsOllama,
+    acceptance_lane_model_exact:
+      selection?.configured_model === 'qwen3.5:4b' && acceptedModel,
+    acceptance_lane_provider_fallback_reason_present:
+      typeof providerReason === 'string' && providerReason.length > 0,
+    acceptance_lane_model_fallback_reason_separate:
+      providerReason !== modelReason && (!lowResourceUsed || modelReason !== null),
+    acceptance_lane_route_persisted:
+      routeSelection?.selected_provider === 'ollama' &&
+      persistedSelection?.selected_provider === 'ollama' &&
+      routeSelection.provider_fallback_reason ===
+        persistedSelection.provider_fallback_reason &&
+      persistedSelection.provider_fallback_reason === providerReason,
+    acceptance_lane_no_overrides_or_fake:
+      evidence?.overrides_used === false &&
+      evidence.fake_provider_observed === false &&
+      allJobsOllama,
+    acceptance_lane_runtime_real:
+      Boolean(
+        evidence?.runtime.api_version &&
+          evidence.runtime.installed_path_verified &&
+          evidence.runtime.installed_models.length > 0 &&
+          evidence.runtime.profile.profile_enabled &&
+          evidence.runtime.profile.profile_id &&
+          evidence.runtime.profile.inventory,
+      ),
+    acceptance_lane_job_evidence_bound:
+      jobsPresent &&
+      succeededJobs.every((job) => job.id !== null && evidenceJobIds.has(job.id)),
+    acceptance_lane_usable_and_full_exam:
+      (evidence?.usable_question_count ?? 0) > 0 &&
+      (evidence?.full_exam_question_count ?? 0) > 0,
+    acceptance_lane_ollama_model_released:
+      evidence?.resource_release?.released === true &&
+      evidence.resource_release.loaded_models.every(
+        (model) => model !== evidence.resource_release?.effective_model,
+      ),
+    acceptance_lane_fresh_run_isolation:
+      acceptanceIsolationPassed(isolationAtLaunch),
+    acceptance_lane_process_isolation:
+      !processBaseline.some(
+        (process) => process.name.toLowerCase() === 'flm.exe',
+      ) && resourcesReleasedPassed(resourcesReleased, 'ollama'),
   };
 }
 

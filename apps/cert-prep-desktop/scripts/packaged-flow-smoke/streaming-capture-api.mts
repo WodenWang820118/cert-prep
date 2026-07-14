@@ -240,6 +240,7 @@ export async function captureLlmHealth(
     : health.effective_model ?? undefined;
   run.metrics.llm_fallback_models = health.fallback_models;
   run.metrics.llm_fallback_reason = health.fallback_reason;
+  run.metrics.model_fallback_reason = health.fallback_reason;
 }
 
 export async function captureDocumentOcrEvidence(
@@ -438,6 +439,15 @@ function sanitizeLlmHealth(payload: unknown): LlmHealthSnapshot | null {
       : [],
     fallback_reason: nullableString(payload.fallback_reason),
     detail: nullableString(payload.detail),
+    profile_id: nullableString(payload.profile_id),
+    base_model: nullableString(payload.base_model),
+    modelfile_sha256: nullableString(payload.modelfile_sha256),
+    profile_reason: nullableString(payload.profile_reason),
+    profile_warnings: Array.isArray(payload.profile_warnings)
+      ? payload.profile_warnings
+          .map((value) => stringField(value).trim())
+          .filter(Boolean)
+      : [],
   };
 }
 
