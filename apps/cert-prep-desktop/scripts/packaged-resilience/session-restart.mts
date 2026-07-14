@@ -32,7 +32,7 @@ export async function runSessionRestartScenario({
   await pollJson(
     transport,
     draftsPath,
-    (body) => usableQuestions(body).length >= 2,
+    (body) => usableQuestions(body, projectId, documentId).length >= 2,
     { timeoutMs, label: 'session restart question drafts' },
   );
   const sessionsPath = `/projects/${encoded(projectId)}/practice-sessions`;
@@ -45,10 +45,20 @@ export async function runSessionRestartScenario({
       'session restart create',
     ),
     projectId,
+    documentId,
   );
-  const sessionId = stringField(created.id, 'practice session id');
+  const sessionId = created.id;
   const sessionPath = `${sessionsPath}/${encoded(sessionId)}`;
-  const firstQuestion = sessionQuestions(created)[0];
+  if (
+    created.status !== 'active' ||
+    created.questions.length < 2 ||
+    created.attempts.length !== 0
+  ) {
+    throw new Error(
+      'New practice session was not an unanswered active session with at least two questions.',
+    );
+  }
+  const firstQuestion = created.questions[0];
   if (!firstQuestion) {
     throw new Error('Practice session did not contain a first question.');
   }
@@ -72,8 +82,12 @@ export async function runSessionRestartScenario({
       'active sessions after first restart',
     ),
     projectId,
+    documentId,
   );
-  if (!activeAfterFirstRestart.includes(sessionId)) {
+  if (
+    activeAfterFirstRestart.length !== 1 ||
+    activeAfterFirstRestart[0] !== sessionId
+  ) {
     throw new Error('First restart did not expose the exact active session.');
   }
 
@@ -98,15 +112,17 @@ export async function runSessionRestartScenario({
       'explicit Resume response',
     ),
     projectId,
+    documentId,
     sessionId,
   );
-  const restoredAttempts = sessionAttempts(resumed);
-  if (restoredAttempts.length !== 1) {
+  if (resumed.status !== 'active' || resumed.attempts.length !== 1) {
     throw new Error('Explicit Resume did not restore exactly one attempt.');
   }
 
-  const attemptedIds = new Set(restoredAttempts.map((attempt) => attempt.question_id));
-  for (const question of sessionQuestions(resumed)) {
+  const attemptedIds = new Set(
+    resumed.attempts.map((attempt) => attempt.questionId),
+  );
+  for (const question of resumed.questions) {
     if (attemptedIds.has(question.id)) {
       continue;
     }
@@ -126,13 +142,12 @@ export async function runSessionRestartScenario({
       'completed practice session',
     ),
     projectId,
+    documentId,
     sessionId,
   );
-  const questionCount = sessionQuestions(completed).length;
-  const attemptCount = sessionAttempts(completed).length;
-  if (completed.status !== 'completed' || attemptCount < questionCount) {
-    throw new Error('Practice session did not reach completed with all attempts.');
-  }
+  assertCompletedSession(completed, 'Practice session');
+  const questionCount = completed.questions.length;
+  const attemptCount = completed.attempts.length;
 
   ({ transport } = await restart('session-second-restart'));
   const activeAfterSecondRestart = activeSessionIds(
@@ -142,6 +157,7 @@ export async function runSessionRestartScenario({
       'active sessions after second restart',
     ),
     projectId,
+    documentId,
   );
   const completedAfterSecondRestart = exactSession(
     requireJsonObject(
@@ -150,14 +166,14 @@ export async function runSessionRestartScenario({
       'completed session after second restart',
     ),
     projectId,
+    documentId,
     sessionId,
   );
-  if (
-    activeAfterSecondRestart.length !== 0 ||
-    completedAfterSecondRestart.status !== 'completed'
-  ) {
+  assertCompletedSession(completedAfterSecondRestart, 'Restarted practice session');
+  if (activeAfterSecondRestart.length !== 0) {
     throw new Error('Second restart did not retain completion without Resume.');
   }
+  assertRetainedCompletion(completed, completedAfterSecondRestart);
 
   return {
     projectId,
@@ -167,8 +183,8 @@ export async function runSessionRestartScenario({
       projectId,
       activeSessionIds: activeAfterFirstRestart,
       explicitAction: 'resume',
-      resumedSessionId: stringField(resumed.id, 'resumed session id'),
-      restoredAttemptCount: restoredAttempts.length,
+      resumedSessionId: resumed.id,
+      restoredAttemptCount: resumed.attempts.length,
     },
     completion: {
       sessionId,
@@ -184,6 +200,23 @@ export async function runSessionRestartScenario({
   };
 }
 
+interface SessionQuestion {
+  readonly id: string;
+  readonly answer: string;
+}
+
+interface SessionAttempt {
+  readonly questionId: string;
+  readonly raw: Record<string, unknown>;
+}
+
+interface ValidatedSession {
+  readonly id: string;
+  readonly status: string;
+  readonly questions: readonly SessionQuestion[];
+  readonly attempts: readonly SessionAttempt[];
+}
+
 async function openRandomQuiz(page: Page): Promise<void> {
   const navigation = page
     .getByRole('button', { name: /^\s*Random Quiz\s*$/ })
@@ -197,56 +230,102 @@ async function openRandomQuiz(page: Page): Promise<void> {
 function exactSession(
   body: Record<string, unknown>,
   projectId: string,
+  documentId: string,
   sessionId?: string,
-): Record<string, unknown> {
+): ValidatedSession {
   if (
     body.project_id !== projectId ||
     (sessionId !== undefined && body.id !== sessionId)
   ) {
     throw new Error('Practice session response scope did not match.');
   }
-  stringField(body.id, 'session id');
-  stringField(body.status, 'session status');
-  sessionQuestions(body);
-  sessionAttempts(body);
-  return body;
+  if (body.mode !== 'full_document' || body.document_id !== documentId) {
+    throw new Error('Practice session document scope did not match.');
+  }
+  const id = stringField(body.id, 'session id');
+  const status = stringField(body.status, 'session status');
+  const questionIds = sessionQuestionIds(body);
+  const questions = sessionQuestions(body, documentId);
+  if (
+    questionIds.length !== questions.length ||
+    questionIds.some((questionId, index) => questionId !== questions[index]?.id)
+  ) {
+    throw new Error('Practice session question scope did not match.');
+  }
+  const attempts = sessionAttempts(body, projectId, id, new Set(questionIds));
+  return { id, status, questions, attempts };
 }
 
 function sessionQuestions(
   session: Record<string, unknown>,
-): Array<{ id: string; answer: string }> {
+  documentId: string,
+): SessionQuestion[] {
   if (!Array.isArray(session.questions) || session.questions.length === 0) {
     throw new Error('Practice session questions were missing.');
   }
+  const seen = new Set<string>();
   return session.questions.map((raw) => {
     if (typeof raw !== 'object' || raw === null) {
       throw new Error('Practice session question was invalid.');
     }
     const question = raw as Record<string, unknown>;
+    const id = stringField(question.id, 'session question id');
+    if (question.document_id !== documentId || seen.has(id)) {
+      throw new Error('Practice session question scope did not match.');
+    }
+    seen.add(id);
     return {
-      id: stringField(question.id, 'session question id'),
+      id,
       answer: stringField(question.answer, 'session question answer'),
     };
   });
 }
 
+function sessionQuestionIds(session: Record<string, unknown>): string[] {
+  if (!Array.isArray(session.question_ids) || session.question_ids.length === 0) {
+    throw new Error('Practice session question IDs were missing.');
+  }
+  const questionIds = session.question_ids.map((value) =>
+    stringField(value, 'session question ID'),
+  );
+  if (new Set(questionIds).size !== questionIds.length) {
+    throw new Error('Practice session question scope did not match.');
+  }
+  return questionIds;
+}
+
 function sessionAttempts(
   session: Record<string, unknown>,
-): Array<Record<string, unknown>> {
+  projectId: string,
+  sessionId: string,
+  questionIds: ReadonlySet<string>,
+): SessionAttempt[] {
   if (!Array.isArray(session.attempts)) {
     throw new Error('Practice session attempts were missing.');
   }
+  const seen = new Set<string>();
   return session.attempts.map((raw) => {
     if (typeof raw !== 'object' || raw === null) {
       throw new Error('Practice session attempt was invalid.');
     }
-    return raw as Record<string, unknown>;
+    const attempt = raw as Record<string, unknown>;
+    const questionId = stringField(
+      attempt.question_id,
+      'practice attempt question id',
+    );
+    if (!questionIds.has(questionId) || seen.has(questionId)) {
+      throw new Error('Practice session attempt question scope did not match.');
+    }
+    assertAttemptScope(attempt, projectId, sessionId, questionId);
+    seen.add(questionId);
+    return { questionId, raw: attempt };
   });
 }
 
 function activeSessionIds(
   body: Record<string, unknown>,
   projectId: string,
+  documentId: string,
 ): string[] {
   if (!Array.isArray(body.items)) {
     throw new Error('Active practice session list was invalid.');
@@ -256,7 +335,12 @@ function activeSessionIds(
       throw new Error('Active practice session item was invalid.');
     }
     const item = raw as Record<string, unknown>;
-    if (item.project_id !== projectId || item.status !== 'active') {
+    if (
+      item.project_id !== projectId ||
+      item.status !== 'active' ||
+      item.mode !== 'full_document' ||
+      item.document_id !== documentId
+    ) {
       throw new Error('Active session response was not bound to the project.');
     }
     return stringField(item.id, 'active session id');
@@ -276,17 +360,68 @@ function assertAttemptScope(
   ) {
     throw new Error('Practice attempt response scope did not match.');
   }
+  stringField(body.id, 'practice attempt id');
 }
 
-function usableQuestions(body: Record<string, unknown>): unknown[] {
+function usableQuestions(
+  body: Record<string, unknown>,
+  projectId: string,
+  documentId: string,
+): unknown[] {
   if (!Array.isArray(body.items)) {
-    return [];
+    throw new Error('Question draft response was invalid.');
+  }
+  for (const raw of body.items) {
+    if (
+      typeof raw !== 'object' ||
+      raw === null ||
+      (raw as Record<string, unknown>).project_id !== projectId
+    ) {
+      throw new Error('Question draft response scope did not match.');
+    }
   }
   return body.items.filter(
     (raw) =>
       typeof raw === 'object' &&
       raw !== null &&
+      (raw as Record<string, unknown>).document_id === documentId &&
       typeof (raw as Record<string, unknown>).answer === 'string' &&
       ((raw as Record<string, unknown>).answer as string).trim().length > 0,
   );
+}
+
+function assertCompletedSession(
+  session: ValidatedSession,
+  label: string,
+): void {
+  const answeredIds = new Set(
+    session.attempts.map((attempt) => attempt.questionId),
+  );
+  if (
+    session.status !== 'completed' ||
+    session.attempts.length !== session.questions.length ||
+    session.questions.some((question) => !answeredIds.has(question.id))
+  ) {
+    throw new Error(`${label} did not reach completed with all attempts.`);
+  }
+}
+
+function assertRetainedCompletion(
+  beforeRestart: ValidatedSession,
+  afterRestart: ValidatedSession,
+): void {
+  const beforeQuestions = beforeRestart.questions.map((question) => question.id);
+  const afterQuestions = afterRestart.questions.map((question) => question.id);
+  const beforeAttempts = beforeRestart.attempts.map(
+    (attempt) => attempt.questionId,
+  );
+  const afterAttempts = afterRestart.attempts.map(
+    (attempt) => attempt.questionId,
+  );
+  if (
+    JSON.stringify(beforeQuestions) !== JSON.stringify(afterQuestions) ||
+    JSON.stringify(beforeAttempts) !== JSON.stringify(afterAttempts)
+  ) {
+    throw new Error('Second restart did not retain the completed session state.');
+  }
 }
