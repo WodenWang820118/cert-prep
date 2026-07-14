@@ -30,6 +30,13 @@ test('document cancellation options verify the exact candidate and required file
     assert.equal(options.candidate.harnessSha256, 'b'.repeat(64));
     assert.equal(options.acceptanceRunId, 'acceptance-run-0001');
     assert.equal(options.diagnosticsRoot, `${fixture.outputRoot}.diagnostics`);
+    assert.equal(options.installation.packageKind, 'msi');
+    assert.equal(
+      options.installation.installerRelativePath,
+      'release/installers/Cert Prep_0.1.0-alpha.1_x64_en-US.msi',
+    );
+    assert.equal(options.installation.installedExeName, 'Cert Prep.exe');
+    assert.equal(options.installation.installedAt, '2026-07-14T00:00:00.000Z');
   } finally {
     fixture.cleanup();
   }
@@ -43,6 +50,7 @@ test('document cancellation options require every candidate-bound input', async 
       'CERT_PREP_RELEASE_CANDIDATE_ID',
       'ALPHA_HARDWARE_HARNESS_SHA256',
       'CERT_PREP_RESILIENCE_INSTALLED_EXE_PATH',
+      'CERT_PREP_RESILIENCE_INSTALL_RECEIPT_PATH',
       'CERT_PREP_RESILIENCE_PDF_PATH',
       'CERT_PREP_RESILIENCE_OUTPUT_ROOT',
       'CERT_PREP_RESILIENCE_ACCEPTANCE_RUN_ID',
@@ -131,10 +139,90 @@ test('document cancellation options reject a non-PDF payload', async () => {
   }
 });
 
+test('document cancellation options reject install-receipt candidate and binary drift', async (t) => {
+  const fixture = fixtureWorkspace();
+  try {
+    await t.test('candidate binding drift', async () => {
+      const receipt = JSON.parse(readFileSync(fixture.receiptPath, 'utf8')) as Record<
+        string,
+        unknown
+      >;
+      writeJson(fixture.receiptPath, {
+        ...receipt,
+        candidateId: 'f'.repeat(64),
+      });
+      await assert.rejects(
+        loadDocumentCancellationOptions(
+          fixture.environment,
+          fixture.workspaceRoot,
+        ),
+        /not bound to the exact candidate/,
+      );
+    });
+  } finally {
+    fixture.cleanup();
+  }
+
+  const executableDrift = fixtureWorkspace();
+  try {
+    writeFileSync(executableDrift.installedExePath, 'modified executable');
+    await assert.rejects(
+      loadDocumentCancellationOptions(
+        executableDrift.environment,
+        executableDrift.workspaceRoot,
+      ),
+      /executable identity does not match/,
+    );
+  } finally {
+    executableDrift.cleanup();
+  }
+
+  const installerDrift = fixtureWorkspace();
+  try {
+    writeFileSync(installerDrift.installerPath, 'modified installer');
+    await assert.rejects(
+      loadDocumentCancellationOptions(
+        installerDrift.environment,
+        installerDrift.workspaceRoot,
+      ),
+      /Candidate file identity does not match|installer does not match candidate\.json/,
+    );
+  } finally {
+    installerDrift.cleanup();
+  }
+
+  for (const [label, override] of [
+    ['non-fresh install', { freshInstallVerified: false }],
+    ['failed installer', { installerExitCode: 1 }],
+    ['invalid install timestamp', { installedAt: 'not-a-timestamp' }],
+  ] as const) {
+    const invalidReceipt = fixtureWorkspace();
+    try {
+      const receipt = JSON.parse(
+        readFileSync(invalidReceipt.receiptPath, 'utf8'),
+      ) as Record<string, unknown>;
+      writeJson(invalidReceipt.receiptPath, { ...receipt, ...override });
+      await assert.rejects(
+        loadDocumentCancellationOptions(
+          invalidReceipt.environment,
+          invalidReceipt.workspaceRoot,
+        ),
+        /receipt schema is invalid/,
+        label,
+      );
+    } finally {
+      invalidReceipt.cleanup();
+    }
+  }
+});
+
 interface FixtureWorkspace {
   readonly workspaceRoot: string;
   readonly outputRoot: string;
   readonly pdfPath: string;
+  readonly installedExePath: string;
+  readonly installerPath: string;
+  readonly receiptPath: string;
   readonly candidateId: string;
   readonly environment: Record<string, string>;
   cleanup(): void;
@@ -144,8 +232,10 @@ function fixtureWorkspace(): FixtureWorkspace {
   const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-prep-resilience-'));
   const candidateRoot = join(workspaceRoot, 'candidate');
   const releaseMetadataRoot = join(candidateRoot, 'release', 'metadata');
+  const releaseInstallerRoot = join(candidateRoot, 'release', 'installers');
   const harnessRoot = join(candidateRoot, 'harness');
   mkdirSync(releaseMetadataRoot, { recursive: true });
+  mkdirSync(releaseInstallerRoot, { recursive: true });
   mkdirSync(harnessRoot, { recursive: true });
   const plan = {
     version: '0.1.0-alpha.1',
@@ -153,6 +243,11 @@ function fixtureWorkspace(): FixtureWorkspace {
     commitSha: 'a'.repeat(40),
   };
   writeJson(join(releaseMetadataRoot, 'release-plan.json'), plan);
+  const installerPath = join(
+    releaseInstallerRoot,
+    'Cert Prep_0.1.0-alpha.1_x64_en-US.msi',
+  );
+  writeFileSync(installerPath, 'candidate installer payload');
   writeFileSync(join(harnessRoot, 'harness.txt'), 'pinned harness payload\n');
   const identities = [
     ...candidateFiles(join(candidateRoot, 'release'), 'release'),
@@ -180,17 +275,43 @@ function fixtureWorkspace(): FixtureWorkspace {
     'packaged-document-cancellation',
   );
   mkdirSync(join(outputRoot, '..'), { recursive: true });
+  const receiptPath = join(workspaceRoot, 'install-receipt.json');
+  writeJson(receiptPath, {
+    schemaVersion: 1,
+    candidateId,
+    acceptanceRunId: 'acceptance-run-0001',
+    harnessSha256: 'b'.repeat(64),
+    packageKind: 'msi',
+    installer: {
+      relativePath:
+        'release/installers/Cert Prep_0.1.0-alpha.1_x64_en-US.msi',
+      sha256: sha256(installerPath),
+    },
+    installedExecutable: {
+      path: installedExePath,
+      name: 'Cert Prep.exe',
+      bytes: statSync(installedExePath).size,
+      sha256: sha256(installedExePath),
+    },
+    freshInstallVerified: true,
+    installerExitCode: 0,
+    installedAt: '2026-07-14T00:00:00.000Z',
+  });
 
   return {
     workspaceRoot,
     outputRoot,
     pdfPath,
+    installedExePath,
+    installerPath,
+    receiptPath,
     candidateId,
     environment: {
       CERT_PREP_RESILIENCE_CANDIDATE_ROOT: candidateRoot,
       CERT_PREP_RELEASE_CANDIDATE_ID: candidateId,
       ALPHA_HARDWARE_HARNESS_SHA256: 'b'.repeat(64),
       CERT_PREP_RESILIENCE_INSTALLED_EXE_PATH: installedExePath,
+      CERT_PREP_RESILIENCE_INSTALL_RECEIPT_PATH: receiptPath,
       CERT_PREP_RESILIENCE_PDF_PATH: pdfPath,
       CERT_PREP_RESILIENCE_OUTPUT_ROOT: outputRoot,
       CERT_PREP_RESILIENCE_ACCEPTANCE_RUN_ID: 'acceptance-run-0001',
