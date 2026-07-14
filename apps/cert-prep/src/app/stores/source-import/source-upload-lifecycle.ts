@@ -35,12 +35,6 @@ export interface SourceUploadLifecycleHooks {
     operationId: string,
     signal: AbortSignal,
   ) => Promise<DocumentRead>;
-  readonly retry: (
-    projectId: string,
-    documentId: string,
-    operationId: string,
-    signal: AbortSignal,
-  ) => Promise<DocumentOperationRead>;
   readonly getDocument: (
     projectId: string,
     documentId: string,
@@ -245,7 +239,11 @@ export class SourceUploadLifecycle {
     ) {
       const itemId = run.queuedItemIds.shift();
       const item = itemId === undefined ? undefined : this.hooks.item(itemId);
-      if (item === undefined || item.status !== 'queued') {
+      if (
+        item === undefined ||
+        item.status !== 'queued' ||
+        item.document !== null
+      ) {
         continue;
       }
 
@@ -254,8 +252,8 @@ export class SourceUploadLifecycle {
         operationId: crypto.randomUUID(),
         controller: new AbortController(),
         run,
-        documentId: item.document?.id ?? null,
-        document: item.document,
+        documentId: null,
+        document: null,
         cancelRequested: false,
         slotHeld: true,
         transportRetryCount: 0,
@@ -277,19 +275,6 @@ export class SourceUploadLifecycle {
     item: SourceUploadItem,
   ): Promise<void> {
     try {
-      if (item.document !== null) {
-        const operation = await this.hooks.retry(
-          attempt.run.projectId,
-          item.document.id,
-          attempt.operationId,
-          attempt.controller.signal,
-        );
-        this.serialize(attempt, () =>
-          this.reconcileSnapshot(attempt, operation),
-        );
-        return;
-      }
-
       const document = await this.hooks.upload(
         attempt.run.projectId,
         item,

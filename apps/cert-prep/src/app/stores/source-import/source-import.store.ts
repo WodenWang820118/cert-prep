@@ -8,6 +8,10 @@ import type {
 } from './contracts/source-import.contracts';
 import { DocumentParsingMetricsService } from './document-parsing-metrics.service';
 import { DocumentLibraryStore } from './document-library.store';
+import {
+  DocumentProcessingLifecycle,
+  type DocumentProcessingActionView,
+} from './document-processing-lifecycle';
 import { HealthStore } from '../health/health.store';
 import { OperationStore } from '../operation.store';
 import { ProjectStore } from '../project.store';
@@ -23,6 +27,11 @@ const DEFAULT_UPLOAD_BATCH_SIZE = 2;
 const MIN_UPLOAD_BATCH_SIZE = 1;
 const MAX_UPLOAD_BATCH_SIZE = 4;
 const ACTIVE_DOCUMENT_STATUSES = new Set(['processing', 'cancel_requested']);
+const RETRYABLE_DOCUMENT_STATUSES = new Set([
+  'canceled',
+  'ocr_failed',
+  'no_text_detected',
+]);
 
 @Injectable({ providedIn: 'root' })
 export class SourceImportStore {
@@ -55,11 +64,6 @@ export class SourceImportStore {
         signal,
       });
     },
-    retry: (projectId, documentId, operationId, signal) =>
-      this.api.retryDocumentProcessing(projectId, documentId, {
-        headers: { 'X-Cert-Prep-Operation-Id': operationId },
-        signal,
-      }),
     getDocument: (projectId, documentId) =>
       this.api.getDocument(projectId, documentId),
     getOperation: (projectId, operationId) =>
@@ -69,6 +73,31 @@ export class SourceImportStore {
     errorMessage: (error) => this.getUploadErrorMessage(error),
     errorCode: (error) => this.getUploadErrorCode(error),
   });
+  private readonly documentProcessingLifecycle =
+    new DocumentProcessingLifecycle({
+      current: (projectId, contextEpoch) =>
+        this.isCurrentContext(projectId, contextEpoch),
+      setView: (documentId, view) =>
+        this.setDocumentProcessingView(documentId, view),
+      acceptDocument: (document) =>
+        this.acceptDocumentProcessingDocument(document),
+      retryDocument: (projectId, documentId, operationId, signal) =>
+        this.api.retryDocumentProcessing(projectId, documentId, {
+          headers: { 'X-Cert-Prep-Operation-Id': operationId },
+          signal,
+        }),
+      cancelDocument: (projectId, documentId) =>
+        this.api.cancelDocumentProcessing(projectId, documentId),
+      getDocument: (projectId, documentId) =>
+        this.api.getDocument(projectId, documentId),
+      getOperation: (projectId, operationId) =>
+        this.api.getDocumentOperation(projectId, operationId),
+      cancelOperation: (projectId, operationId) =>
+        this.api.cancelDocumentOperation(projectId, operationId),
+      errorMessage: (error) => this.getUploadErrorMessage(error),
+      errorCode: (error) => this.getUploadErrorCode(error),
+      runtimeMissing: () => this.handleMissingOcrRuntime(),
+    });
 
   readonly languageHints: readonly LanguageHint[] = [
     'auto',
@@ -83,6 +112,9 @@ export class SourceImportStore {
   readonly uploadBatchSize = signal(DEFAULT_UPLOAD_BATCH_SIZE);
   readonly uploadItems = signal<SourceUploadItem[]>([]);
   readonly documentPollingError = signal<string | null>(null);
+  readonly documentProcessingActions = signal<
+    ReadonlyMap<string, DocumentProcessingActionView>
+  >(new Map());
   readonly selectedFiles = computed(() =>
     this.uploadItems().map((item) => item.file),
   );
@@ -246,7 +278,47 @@ export class SourceImportStore {
   }
 
   canRetryUpload(item: SourceUploadItem): boolean {
-    return ['failed', 'canceled', 'status_unavailable'].includes(item.status);
+    if (item.status === 'status_unavailable') {
+      return true;
+    }
+    return (
+      item.document === null &&
+      ['failed', 'canceled'].includes(item.status)
+    );
+  }
+
+  documentProcessingState(
+    documentId: string,
+  ): DocumentProcessingActionView | null {
+    return this.documentProcessingActions().get(documentId) ?? null;
+  }
+
+  documentProcessingError(documentId: string): string | null {
+    return this.documentProcessingState(documentId)?.error ?? null;
+  }
+
+  canCancelDocumentProcessing(document: DocumentRead): boolean {
+    const action = this.documentProcessingState(document.id);
+    if (this.documentProcessingLifecycle.hasActiveAttempt(document.id)) {
+      return action?.kind === 'retry' && action.cancellable;
+    }
+    return ACTIVE_DOCUMENT_STATUSES.has(document.status);
+  }
+
+  canRetryDocumentProcessing(document: DocumentRead): boolean {
+    return (
+      RETRYABLE_DOCUMENT_STATUSES.has(document.status) &&
+      !this.documentProcessingLifecycle.hasActiveAttempt(document.id) &&
+      !this.health.isOcrHealthLoading()
+    );
+  }
+
+  canRetryDocumentActionStatus(documentId: string): boolean {
+    return (
+      this.documentProcessingLifecycle.hasActiveAttempt(documentId) &&
+      this.documentProcessingState(documentId)?.status ===
+        'status_unavailable'
+    );
   }
 
   async cancelUpload(itemId: string): Promise<void> {
@@ -270,6 +342,7 @@ export class SourceImportStore {
     if (
       projectId === undefined ||
       item === undefined ||
+      item.document !== null ||
       !this.canRetryUpload(item) ||
       this.health.isOcrHealthLoading() ||
       !this.updateUploadItem(itemId, { status: 'queued', error: null })
@@ -286,6 +359,50 @@ export class SourceImportStore {
       return;
     }
     await this.runUploadTransports(projectId, [itemId]);
+  }
+
+  async cancelDocumentProcessing(documentId: string): Promise<boolean> {
+    const projectId = this.projects.selectedProject()?.id;
+    const document = this.findProjectDocument(documentId);
+    if (
+      projectId === undefined ||
+      document === null ||
+      !this.canCancelDocumentProcessing(document)
+    ) {
+      return false;
+    }
+    return this.documentProcessingLifecycle.cancel(
+      projectId,
+      this.contextEpoch,
+      documentId,
+    );
+  }
+
+  async retryDocumentProcessing(documentId: string): Promise<boolean> {
+    const projectId = this.projects.selectedProject()?.id;
+    const document = this.findProjectDocument(documentId);
+    if (
+      projectId === undefined ||
+      document === null ||
+      !this.canRetryDocumentProcessing(document)
+    ) {
+      return false;
+    }
+    if (this.activeDocumentId() === documentId) {
+      this.library.clearChunks();
+    }
+    return this.documentProcessingLifecycle.retry(
+      projectId,
+      this.contextEpoch,
+      documentId,
+    );
+  }
+
+  async retryDocumentActionStatus(documentId: string): Promise<boolean> {
+    if (!this.canRetryDocumentActionStatus(documentId)) {
+      return false;
+    }
+    return this.documentProcessingLifecycle.resume(documentId);
   }
 
   async loadLatestDocument(projectId: string): Promise<void> {
@@ -512,11 +629,104 @@ export class SourceImportStore {
   }
 
   private invalidateUploadContext(): void {
+    this.documentProcessingLifecycle.invalidate();
     this.contextEpoch += 1;
     this.documentListRequestEpoch += 1;
     this.documentRefreshRequestEpoch += 1;
     this.resetDocumentPollingState();
     this.uploadLifecycle.invalidate();
+  }
+
+  private setDocumentProcessingView(
+    documentId: string,
+    view: DocumentProcessingActionView | null,
+  ): void {
+    const actions = new Map(this.documentProcessingActions());
+    if (view === null) {
+      actions.delete(documentId);
+    } else {
+      actions.set(documentId, view);
+    }
+    this.documentProcessingActions.set(actions);
+
+    if (this.activeDocumentId() !== documentId) {
+      return;
+    }
+    this.resetDocumentPollingState();
+    if (view !== null && view.status !== 'failed') {
+      return;
+    }
+
+    const document = this.activeDocument();
+    const projectId = this.projects.selectedProject()?.id;
+    if (document === null || projectId === undefined) {
+      return;
+    }
+    if (ACTIVE_DOCUMENT_STATUSES.has(document.status)) {
+      this.scheduleDocumentPolling(projectId, document.id);
+    } else if (view === null && document.status === 'ready') {
+      void this.refreshDocumentChunksAfterAction(projectId, document.id);
+    }
+  }
+
+  private acceptDocumentProcessingDocument(document: DocumentRead): void {
+    if (this.projects.selectedProject()?.id !== document.project_id) {
+      return;
+    }
+    this.library.upsertDocument(document);
+    this.updateUploadDocumentSnapshot(document);
+    if (this.activeDocumentId() !== document.id) {
+      return;
+    }
+
+    this.documentRefreshRequestEpoch += 1;
+    this.resetDocumentPollingState();
+    this.library.setActiveDocument(document);
+    if (document.chunks_count === 0) {
+      this.library.clearChunks();
+    }
+  }
+
+  private async refreshDocumentChunksAfterAction(
+    projectId: string,
+    documentId: string,
+  ): Promise<void> {
+    const contextEpoch = this.contextEpoch;
+    try {
+      const chunks = await this.api.listDocumentChunks(projectId, documentId);
+      if (
+        this.isCurrentContext(projectId, contextEpoch) &&
+        this.activeDocumentId() === documentId &&
+        !this.documentProcessingLifecycle.hasActiveAttempt(documentId)
+      ) {
+        this.library.setChunks(chunks.items);
+      }
+    } catch {
+      // Keep the last visible chunks; document status remains authoritative.
+    }
+  }
+
+  private findProjectDocument(documentId: string): DocumentRead | null {
+    const projectId = this.projects.selectedProject()?.id;
+    if (projectId === undefined) {
+      return null;
+    }
+    const document =
+      this.documents().find((candidate) => candidate.id === documentId) ??
+      this.uploadItems().find((item) => item.document?.id === documentId)
+        ?.document ??
+      null;
+    return document?.project_id === projectId ? document : null;
+  }
+
+  private handleMissingOcrRuntime(): void {
+    const contextEpoch = this.contextEpoch;
+    void (async () => {
+      await this.refreshRuntimeHealth();
+      if (contextEpoch === this.contextEpoch) {
+        this.health.openOcrRuntimeInstallConsent();
+      }
+    })();
   }
 
   private setActiveDocument(document: DocumentRead | null): void {

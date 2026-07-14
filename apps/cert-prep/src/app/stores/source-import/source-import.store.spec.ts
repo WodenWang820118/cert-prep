@@ -15,6 +15,7 @@ describe('SourceImportStore polling', () => {
     listDocumentChunks: vi.fn(),
     listDocuments: vi.fn(),
     uploadDocument: vi.fn(),
+    cancelDocumentProcessing: vi.fn(),
     retryDocumentProcessing: vi.fn(),
     getDocumentOperation: vi.fn(),
     cancelDocumentOperation: vi.fn(),
@@ -406,6 +407,64 @@ describe('SourceImportStore polling', () => {
 
     await vi.advanceTimersByTimeAsync(5000);
     expect(apiClient.getDocument).toHaveBeenCalledTimes(2);
+  });
+
+  it('cancels a restart-loaded document without an upload lifecycle attempt', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    const processing = documentRead({
+      status: 'processing',
+      has_text: false,
+      chunks_count: 0,
+    });
+    const cancelRequested = documentRead({
+      status: 'cancel_requested',
+      has_text: false,
+      chunks_count: 0,
+    });
+    const canceled = documentRead({
+      status: 'canceled',
+      has_text: false,
+      chunks_count: 0,
+    });
+    const cancelOperationId = fixedOperationId(30);
+    store.documents.set([processing]);
+    store.setActiveDocumentId(processing.id);
+    apiClient.cancelDocumentProcessing.mockResolvedValue(
+      operationRead({
+        id: cancelOperationId,
+        document_id: processing.id,
+        status: 'cancel_requested',
+        phase: 'canceling',
+        cancellable: false,
+      }),
+    );
+    apiClient.getDocument
+      .mockResolvedValueOnce(cancelRequested)
+      .mockResolvedValueOnce(canceled);
+    apiClient.getDocumentOperation.mockResolvedValue(
+      operationRead({
+        id: cancelOperationId,
+        document_id: processing.id,
+        status: 'canceled',
+        phase: 'canceled',
+        cancellable: false,
+      }),
+    );
+
+    await store.cancelDocumentProcessing(processing.id);
+
+    expect(apiClient.cancelDocumentProcessing).toHaveBeenCalledWith(
+      'project-1',
+      processing.id,
+    );
+    expect(store.documentProcessingState(processing.id)?.status).toBe(
+      'cancel_requested',
+    );
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(store.activeDocument()?.status).toBe('canceled');
+    expect(store.documentProcessingState(processing.id)).toBeNull();
+    expect(store.uploadItems()).toEqual([]);
   });
 
   it('uploads selected PDFs in two-document batches by default', async () => {
@@ -965,7 +1024,7 @@ describe('SourceImportStore polling', () => {
         document_id: canceledDocument.id,
       }),
     );
-    await store.retryUpload(store.uploadItems()[0]?.id ?? 'missing');
+    await store.retryDocumentProcessing(canceledDocument.id);
 
     expect(apiClient.retryDocumentProcessing).toHaveBeenCalledWith(
       'project-1',
@@ -974,7 +1033,21 @@ describe('SourceImportStore polling', () => {
         headers: { 'X-Cert-Prep-Operation-Id': retryOperationId },
       }),
     );
-    expect(store.uploadItems()[0]?.status).toBe('uploaded');
+    expect(store.uploadItems()[0]).toEqual(
+      expect.objectContaining({
+        status: 'canceled',
+        document: expect.objectContaining({ status: 'processing' }),
+      }),
+    );
+    expect(store.documentProcessingState(canceledDocument.id)).toEqual(
+      expect.objectContaining({ kind: 'retry', status: 'running' }),
+    );
+    const uploadItem = store.uploadItems()[0];
+    expect(uploadItem).toBeDefined();
+    if (uploadItem === undefined) {
+      throw new Error('Expected the canceled upload item to remain visible.');
+    }
+    expect(store.canRetryUpload(uploadItem)).toBe(false);
     upload.resolve(cancelRequestedDocument);
   });
 
@@ -1309,7 +1382,7 @@ describe('SourceImportStore polling', () => {
         chunks_count: 0,
       }),
     );
-    await store.retryUpload(store.uploadItems()[0]?.id ?? 'missing');
+    await store.retryDocumentProcessing(documentId);
 
     expect(apiClient.retryDocumentProcessing).toHaveBeenCalledWith(
       'project-1',
@@ -1319,7 +1392,15 @@ describe('SourceImportStore polling', () => {
       }),
     );
     expect(apiClient.uploadDocument).toHaveBeenCalledTimes(1);
-    expect(store.uploadItems()[0]?.status).toBe('uploaded');
+    expect(store.uploadItems()[0]).toEqual(
+      expect.objectContaining({
+        status: 'failed',
+        document: expect.objectContaining({ status: 'processing' }),
+      }),
+    );
+    expect(store.documentProcessingState(documentId)).toEqual(
+      expect.objectContaining({ kind: 'retry', status: 'running' }),
+    );
   });
 
   it('does not consume transport retry budget for normal nonterminal progress', async () => {
