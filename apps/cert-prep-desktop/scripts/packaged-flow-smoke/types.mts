@@ -241,8 +241,40 @@ export interface OllamaResourceReleaseEvidence {
   released: boolean;
 }
 
-export interface OllamaFallbackAcceptanceEvidence {
+export interface OllamaModelOnboardingJobEvidence {
+  id: string;
+  provider: 'ollama';
+  model: string;
+  initial_status: 'queued' | 'running' | 'succeeded';
+  final_status: 'succeeded';
+  observed_statuses: Array<'queued' | 'running' | 'succeeded'>;
+  observed_phases: string[];
+  created_at: string;
+  updated_at: string;
+  commit_started_at: string | null;
+}
+
+export interface OllamaModelOnboardingEvidence {
   schema_version: 1;
+  endpoint: '/llm/model-downloads';
+  mode: 'reused' | 'installed';
+  started_at: string;
+  completed_at: string;
+  profile_id: string;
+  effective_model: string;
+  base_model: string;
+  modelfile_sha256: string;
+  fallback_models: string[];
+  required_models: string[];
+  installed_models_before: string[];
+  missing_models_before: string[];
+  installed_models_after: string[];
+  profile_selection_stable: true;
+  job: OllamaModelOnboardingJobEvidence | null;
+}
+
+export interface OllamaFallbackAcceptanceEvidence {
+  schema_version: 2;
   trigger: OllamaFallbackTrigger;
   trigger_mode: 'persisted_terms_decision' | 'physical_inventory_observation';
   overrides_used: false;
@@ -253,6 +285,7 @@ export interface OllamaFallbackAcceptanceEvidence {
   selection_after_restart: OllamaFallbackSelectionEvidence;
   provider_fallback_reason: string;
   model_fallback_reason: string | null;
+  model_onboarding: OllamaModelOnboardingEvidence;
   runtime: OllamaRuntimeEvidence;
   job_attribution: StreamingDraftJobAttribution[];
   usable_question_count: number;

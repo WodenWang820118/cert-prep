@@ -28,6 +28,10 @@ import type {
   VideoArtifact,
 } from './types.mts';
 
+const OLLAMA_ONBOARDING_UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const SHA256_PATTERN = /^[0-9a-f]{64}$/;
+
 export interface StreamingBaselineReport {
   schema_version: 1;
   status: 'passed' | 'failed';
@@ -809,6 +813,8 @@ function ollamaFallbackAcceptanceChecks(
           evidence.runtime.profile.profile_id &&
           evidence.runtime.profile.inventory,
       ),
+    acceptance_lane_model_onboarding_verified:
+      ollamaModelOnboardingPassed(evidence),
     acceptance_lane_job_evidence_bound:
       jobsPresent &&
       succeededJobs.every((job) => job.id !== null && evidenceJobIds.has(job.id)),
@@ -827,6 +833,178 @@ function ollamaFallbackAcceptanceChecks(
         (process) => process.name.toLowerCase() === 'flm.exe',
       ) && resourcesReleasedPassed(resourcesReleased, 'ollama'),
   };
+}
+
+function ollamaModelOnboardingPassed(
+  evidence: OllamaFallbackAcceptanceEvidence | undefined,
+): boolean {
+  const onboarding = evidence?.model_onboarding;
+  const runtime = evidence?.runtime;
+  const profile = runtime?.profile;
+  const restartedSelection = evidence?.selection_after_restart;
+  if (
+    evidence?.schema_version !== 2 ||
+    onboarding?.schema_version !== 1 ||
+    onboarding.endpoint !== '/llm/model-downloads' ||
+    onboarding.profile_selection_stable !== true ||
+    typeof onboarding.started_at !== 'string' ||
+    typeof onboarding.completed_at !== 'string' ||
+    typeof restartedSelection?.captured_at !== 'string' ||
+    !validTimestampOrder(
+      onboarding.started_at,
+      onboarding.completed_at,
+      restartedSelection.captured_at,
+    ) ||
+    typeof onboarding.profile_id !== 'string' ||
+    onboarding.profile_id.length === 0 ||
+    typeof onboarding.effective_model !== 'string' ||
+    typeof onboarding.base_model !== 'string' ||
+    !SHA256_PATTERN.test(onboarding.modelfile_sha256) ||
+    !Array.isArray(onboarding.fallback_models) ||
+    !Array.isArray(onboarding.required_models) ||
+    !Array.isArray(onboarding.installed_models_before) ||
+    !Array.isArray(onboarding.missing_models_before) ||
+    !Array.isArray(onboarding.installed_models_after) ||
+    onboarding.required_models.length === 0 ||
+    onboarding.required_models.length !==
+      new Set(onboarding.required_models).size ||
+    onboarding.required_models[0] !== onboarding.effective_model ||
+    !sameStringList(
+      onboarding.required_models.slice(1),
+      onboarding.fallback_models,
+    ) ||
+    !sameStringList(
+      onboarding.required_models.filter(
+        (required) =>
+          !onboarding.installed_models_before.some((installed) =>
+            sameOllamaModelName(installed, required),
+          ),
+      ),
+      onboarding.missing_models_before,
+    ) ||
+    !onboarding.required_models.every((required) =>
+      onboarding.installed_models_after.some((installed) =>
+        sameOllamaModelName(installed, required),
+      ),
+    ) ||
+    !onboarding.required_models.every((required) =>
+      evidence.runtime.installed_models.some((installed) =>
+        sameOllamaModelName(installed, required),
+      ),
+    ) ||
+    profile?.profile_id !== onboarding.profile_id ||
+    profile.effective_model !== onboarding.effective_model ||
+    profile.base_model !== onboarding.base_model ||
+    profile.modelfile_sha256 !== onboarding.modelfile_sha256 ||
+    !sameStringList(profile.fallback_models, onboarding.fallback_models)
+  ) {
+    return false;
+  }
+  if (onboarding.mode === 'reused') {
+    return onboarding.job === null && onboarding.missing_models_before.length === 0;
+  }
+  const job = onboarding.job;
+  if (
+    onboarding.mode !== 'installed' ||
+    onboarding.missing_models_before.length === 0 ||
+    job === null ||
+    !OLLAMA_ONBOARDING_UUID_PATTERN.test(job.id) ||
+    job.provider !== 'ollama' ||
+    !sameOllamaModelName(job.model, onboarding.effective_model) ||
+    !['queued', 'running', 'succeeded'].includes(job.initial_status) ||
+    job.final_status !== 'succeeded' ||
+    !Array.isArray(job.observed_statuses) ||
+    job.observed_statuses.length < 2 ||
+    job.observed_statuses[0] !== job.initial_status ||
+    job.observed_statuses.at(-1) !== job.final_status ||
+    !monotonicOnboardingStatuses(job.observed_statuses) ||
+    !Array.isArray(job.observed_phases) ||
+    job.observed_phases.length !== job.observed_statuses.length ||
+    job.observed_phases.some(
+      (phase) => typeof phase !== 'string' || phase.trim().length === 0,
+    ) ||
+    job.observed_phases.at(-1) !== 'completed' ||
+    !validJobTimestampOrder(
+      onboarding.started_at,
+      onboarding.completed_at,
+      job.created_at,
+      job.updated_at,
+      job.commit_started_at,
+    )
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function validTimestampOrder(
+  startedAt: string,
+  completedAt: string,
+  restartedAt: string,
+): boolean {
+  const started = Date.parse(startedAt);
+  const completed = Date.parse(completedAt);
+  const restarted = Date.parse(restartedAt);
+  return (
+    Number.isFinite(started) &&
+    Number.isFinite(completed) &&
+    Number.isFinite(restarted) &&
+    started <= completed &&
+    completed <= restarted
+  );
+}
+
+function validJobTimestampOrder(
+  onboardingStartedAt: string,
+  onboardingCompletedAt: string,
+  createdAt: string,
+  updatedAt: string,
+  commitStartedAt: string | null,
+): boolean {
+  const onboardingStarted = Date.parse(onboardingStartedAt);
+  const onboardingCompleted = Date.parse(onboardingCompletedAt);
+  const created = Date.parse(createdAt);
+  const updated = Date.parse(updatedAt);
+  const commitStarted =
+    commitStartedAt === null ? null : Date.parse(commitStartedAt);
+  return (
+    Number.isFinite(created) &&
+    Number.isFinite(updated) &&
+    created >= onboardingStarted &&
+    updated >= created &&
+    updated <= onboardingCompleted &&
+    (commitStarted === null ||
+      (Number.isFinite(commitStarted) &&
+        commitStarted >= created &&
+        commitStarted <= updated))
+  );
+}
+
+function monotonicOnboardingStatuses(statuses: readonly string[]): boolean {
+  const ranks: Readonly<Record<string, number>> = {
+    queued: 0,
+    running: 1,
+    succeeded: 2,
+  };
+  return statuses.every(
+    (status, index) =>
+      Object.hasOwn(ranks, status) &&
+      (index === 0 || ranks[status] >= ranks[statuses[index - 1] ?? '']),
+  );
+}
+
+function sameStringList(
+  left: readonly string[],
+  right: readonly string[],
+): boolean {
+  return (
+    left.length === right.length && left.every((value, index) => value === right[index])
+  );
+}
+
+function sameOllamaModelName(left: string, right: string): boolean {
+  const normalize = (value: string) => value.toLowerCase().replace(/:latest$/, '');
+  return normalize(left) === normalize(right);
 }
 
 function acceptanceIsolationPassed(

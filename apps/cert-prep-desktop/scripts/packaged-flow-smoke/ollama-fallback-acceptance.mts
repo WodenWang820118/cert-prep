@@ -19,6 +19,8 @@ import type {
   OllamaFallbackAcceptanceEvidence,
   OllamaFallbackSelectionEvidence,
   OllamaFallbackTrigger,
+  OllamaModelOnboardingEvidence,
+  OllamaModelOnboardingJobEvidence,
   OllamaPhysicalInventoryEvidence,
   OllamaProfileEvidence,
   OllamaRuntimeEvidence,
@@ -43,6 +45,9 @@ const REQUEST_TIMEOUT_MS = 30_000;
 const RESTART_READINESS_REQUEST_TIMEOUT_MS = 180_000;
 const RELEASE_ATTEMPTS = 15;
 const RELEASE_INTERVAL_MS = 1_000;
+const MODEL_DOWNLOAD_PATH = '/llm/model-downloads';
+const MODEL_ONBOARDING_POLL_INTERVAL_MS = 1_000;
+const DEFAULT_MODEL_ONBOARDING_TIMEOUT_MS = 20 * 60 * 1_000;
 
 type AcceptancePage = Pick<
   Page,
@@ -53,6 +58,9 @@ export interface OllamaFallbackAcceptanceDependencies {
   readonly page?: AcceptancePage;
   readonly now?: () => Date;
   readonly waitBeforeRestart?: (milliseconds: number) => Promise<unknown>;
+  readonly waitForModelPoll?: (milliseconds: number) => Promise<unknown>;
+  readonly monotonicNow?: () => number;
+  readonly ensureModelOnboarding?: typeof ensureOllamaProfileModels;
   readonly closeAndCheck?: typeof closeAppAndCheckResidue;
   readonly launchAndConnect?: typeof launchAppAndConnect;
   readonly captureReadiness?: typeof captureGenerationReadinessFromProjectApi;
@@ -77,6 +85,15 @@ export async function prepareOllamaFallbackAcceptance(
       ? await persistTermsDecline(page, projectApi, selectionBefore, now)
       : await getProviderSelection(page, projectApi, now);
   assertOllamaFallbackRoute(trigger, selectionBefore, selectionAfterRoute);
+
+  const modelOnboarding = await (
+    dependencies.ensureModelOnboarding ?? ensureOllamaProfileModels
+  )(page, projectApi, {
+    timeoutMs: run.options.streamingCompleteTimeoutMs,
+    now,
+    monotonicNow: dependencies.monotonicNow,
+    wait: dependencies.waitForModelPoll,
+  });
 
   const previousProjectId = projectApi.projectId;
   run.metrics.restart = { attempted: true };
@@ -113,6 +130,7 @@ export async function prepareOllamaFallbackAcceptance(
     requiredProjectApi(run.projectApi),
     readiness,
   );
+  assertOnboardingSurvivedRestart(modelOnboarding, runtime);
   validatePhysicalTrigger(
     trigger,
     selectionAfterRestart,
@@ -129,7 +147,7 @@ export async function prepareOllamaFallbackAcceptance(
     selectionAfterRestart.provider_fallback_reason;
   run.metrics.model_fallback_reason = initialModelFallbackReason;
   run.metrics.ollama_fallback_acceptance = {
-    schema_version: 1,
+    schema_version: 2,
     trigger,
     trigger_mode:
       trigger === 'declined-terms'
@@ -145,6 +163,7 @@ export async function prepareOllamaFallbackAcceptance(
     provider_fallback_reason:
       selectionAfterRestart.provider_fallback_reason ?? '',
     model_fallback_reason: initialModelFallbackReason,
+    model_onboarding: modelOnboarding,
     runtime,
     job_attribution: [],
     usable_question_count: 0,
@@ -168,6 +187,557 @@ export async function captureOllamaFallbackReadinessAfterRestart(
     );
   }
   return readiness;
+}
+
+interface OllamaOnboardingProfilePlan {
+  readonly profileId: string;
+  readonly effectiveModel: string;
+  readonly baseModel: string;
+  readonly modelfileSha256: string;
+  readonly fallbackModels: readonly string[];
+  readonly requiredModels: readonly string[];
+}
+
+interface ModelDownloadJobSnapshot {
+  readonly id: string;
+  readonly provider: 'ollama';
+  readonly model: string;
+  readonly status: 'queued' | 'running' | 'succeeded';
+  readonly phase: string;
+  readonly cancellable: boolean;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly commitStartedAt: string | null;
+}
+
+interface EnsureOllamaProfileModelsOptions {
+  readonly timeoutMs?: number;
+  readonly now?: () => Date;
+  readonly monotonicNow?: () => number;
+  readonly wait?: (milliseconds: number) => Promise<unknown>;
+}
+
+class ModelOnboardingTimeoutError extends Error {}
+
+export async function ensureOllamaProfileModels(
+  page: Pick<Page, 'request'>,
+  projectApi: ProjectApiRef,
+  options: EnsureOllamaProfileModelsOptions = {},
+): Promise<OllamaModelOnboardingEvidence> {
+  const timeoutMs = options.timeoutMs ?? DEFAULT_MODEL_ONBOARDING_TIMEOUT_MS;
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) {
+    throw new Error('ollama_model_onboarding_timeout_invalid');
+  }
+  const now = options.now ?? (() => new Date());
+  const monotonicNow = options.monotonicNow ?? (() => performance.now());
+  const wait = options.wait ?? delay;
+  const startedAt = validDate(now(), 'ollama_model_onboarding_started_at');
+  const before = await captureOllamaOnboardingState(page, projectApi, true);
+  let installedModelsBefore = before.installedModels ?? [];
+  let missingModels = before.profile.requiredModels.filter(
+    (required) =>
+      !installedModelsBefore.some((model) => sameOllamaModel(model, required)),
+  );
+  let runtimeStartedWithAvailableModels = false;
+
+  let jobEvidence: OllamaModelOnboardingJobEvidence | null = null;
+  if (missingModels.length > 0) {
+    const initial = await startOllamaModelDownload(page, projectApi, before.profile);
+    const observed = [initial];
+    let current = initial;
+    const deadline = monotonicNow() + timeoutMs;
+    try {
+      if (before.installedModels === null && initial.status === 'succeeded') {
+        runtimeStartedWithAvailableModels = true;
+      }
+      while (!runtimeStartedWithAvailableModels) {
+        const remainingBeforePollMs = deadline - monotonicNow();
+        if (remainingBeforePollMs <= 0) {
+          throw new ModelOnboardingTimeoutError(
+            'ollama_model_onboarding_timed_out',
+          );
+        }
+        current = await getOllamaModelDownload(
+          page,
+          projectApi,
+          before.profile,
+          current,
+          Math.min(REQUEST_TIMEOUT_MS, Math.max(1, remainingBeforePollMs)),
+        );
+        observed.push(current);
+        if (current.status === 'succeeded') {
+          break;
+        }
+        const remainingMs = deadline - monotonicNow();
+        if (remainingMs <= 0) {
+          throw new ModelOnboardingTimeoutError(
+            'ollama_model_onboarding_timed_out',
+          );
+        }
+        await wait(Math.min(MODEL_ONBOARDING_POLL_INTERVAL_MS, remainingMs));
+      }
+    } catch (error) {
+      if (current.status !== 'succeeded' && current.cancellable) {
+        await cancelModelDownloadBestEffort(page, projectApi, current.id);
+      }
+      throw error;
+    }
+    if (!runtimeStartedWithAvailableModels) {
+      jobEvidence = {
+        id: current.id,
+        provider: 'ollama',
+        model: current.model,
+        initial_status: initial.status,
+        final_status: 'succeeded',
+        observed_statuses: observed.map((snapshot) => snapshot.status),
+        observed_phases: observed.map((snapshot) => snapshot.phase),
+        created_at: current.createdAt,
+        updated_at: current.updatedAt,
+        commit_started_at: current.commitStartedAt,
+      };
+    }
+  }
+
+  const after = await captureOllamaOnboardingState(page, projectApi);
+  if (after.installedModels === null) {
+    throw new Error('ollama_model_onboarding_models_after_unavailable');
+  }
+  assertSameOnboardingProfile(before.profile, after.profile);
+  assertRequiredModelsInstalled(
+    after.installedModels,
+    before.profile.requiredModels,
+    'ollama_model_onboarding_models_after',
+  );
+  const completedAt = validDate(now(), 'ollama_model_onboarding_completed_at');
+  if (completedAt.getTime() < startedAt.getTime()) {
+    throw new Error('ollama_model_onboarding_timestamp_order_invalid');
+  }
+  if (runtimeStartedWithAvailableModels) {
+    installedModelsBefore = after.installedModels;
+    missingModels = [];
+  }
+
+  return {
+    schema_version: 1,
+    endpoint: MODEL_DOWNLOAD_PATH,
+    mode: jobEvidence === null ? 'reused' : 'installed',
+    started_at: startedAt.toISOString(),
+    completed_at: completedAt.toISOString(),
+    profile_id: before.profile.profileId,
+    effective_model: before.profile.effectiveModel,
+    base_model: before.profile.baseModel,
+    modelfile_sha256: before.profile.modelfileSha256,
+    fallback_models: [...before.profile.fallbackModels],
+    required_models: [...before.profile.requiredModels],
+    installed_models_before: installedModelsBefore,
+    missing_models_before: missingModels,
+    installed_models_after: after.installedModels,
+    profile_selection_stable: true,
+    job: jobEvidence,
+  };
+}
+
+async function captureOllamaOnboardingState(
+  page: Pick<Page, 'request'>,
+  projectApi: ProjectApiRef,
+  allowUnavailableTags = false,
+): Promise<{
+  readonly profile: OllamaOnboardingProfilePlan;
+  readonly installedModels: string[] | null;
+}> {
+  const [profilePayload, tagsPayload] = await Promise.all([
+    getJson(page, `${projectApi.apiBaseUrl}/llm/profile-selection`, {
+      Authorization: projectApi.authorization,
+    }),
+    getOllamaTags(page, allowUnavailableTags),
+  ]);
+  return {
+    profile: sanitizeOllamaOnboardingProfile(profilePayload),
+    installedModels:
+      tagsPayload === null ? null : ollamaModelNames(tagsPayload),
+  };
+}
+
+async function getOllamaTags(
+  page: Pick<Page, 'request'>,
+  allowTransportFailure: boolean,
+): Promise<unknown | null> {
+  let response: APIResponse;
+  try {
+    response = await page.request.get(`${OLLAMA_API_BASE_URL}/api/tags`, {
+      maxRedirects: 0,
+      timeout: REQUEST_TIMEOUT_MS,
+    });
+  } catch (error) {
+    if (allowTransportFailure) {
+      return null;
+    }
+    throw error;
+  }
+  if (response.status() !== 200) {
+    throw new Error(`ollama_fallback_evidence_http_${response.status()}`);
+  }
+  return response.json();
+}
+
+function sanitizeOllamaOnboardingProfile(
+  payload: unknown,
+): OllamaOnboardingProfilePlan {
+  if (!isRecord(payload) || payload.profile_enabled !== true) {
+    throw new Error('ollama_model_onboarding_profile_disabled_or_invalid');
+  }
+  const profileId = safeString(payload.profile_id);
+  const effectiveModel = modelString(payload.effective_model);
+  const baseModel = modelString(payload.base_model);
+  const modelfileSha256 =
+    typeof payload.modelfile_sha256 === 'string' &&
+    SHA256_PATTERN.test(payload.modelfile_sha256)
+      ? payload.modelfile_sha256
+      : null;
+  const supportStatus = exactString(payload.support_status, [
+    'supported',
+    'warning',
+  ] as const);
+  const selected = sanitizeProfileIdentity(payload.selected_profile);
+  if (!Array.isArray(payload.fallback_profiles)) {
+    throw new Error('ollama_model_onboarding_fallback_profiles_invalid');
+  }
+  const fallbacks = payload.fallback_profiles.map(sanitizeProfileIdentity);
+  const fallbackModels = strictModelList(
+    payload.fallback_models,
+    'ollama_model_onboarding_fallback_models_invalid',
+  );
+  const fallbackProfileIds = fallbacks.map((profile) => profile.profileId);
+  const fallbackAliases = fallbacks.map((profile) => profile.localModel);
+  if (
+    !profileId ||
+    !effectiveModel ||
+    !baseModel ||
+    !modelfileSha256 ||
+    !supportStatus ||
+    selected.profileId !== profileId ||
+    selected.localModel !== effectiveModel ||
+    selected.baseModel !== baseModel ||
+    selected.explicitOptInRequired ||
+    !sameStringList(selected.fallbackProfileIds, fallbackProfileIds) ||
+    !sameStringList(fallbackModels, fallbackAliases)
+  ) {
+    throw new Error('ollama_model_onboarding_profile_contract_invalid');
+  }
+  const requiredModels = [effectiveModel, ...fallbackModels];
+  if (
+    new Set(requiredModels).size !== requiredModels.length ||
+    new Set([profileId, ...fallbackProfileIds]).size !==
+      fallbackProfileIds.length + 1 ||
+    ![selected, ...fallbacks].every(
+      (profile) =>
+        !profile.explicitOptInRequired &&
+        qwenModelFamily(profile.baseModel) !== null &&
+        qwenModelFamily(profile.localModel) !== null,
+    )
+  ) {
+    throw new Error('ollama_model_onboarding_profile_aliases_invalid');
+  }
+  return {
+    profileId,
+    effectiveModel,
+    baseModel,
+    modelfileSha256,
+    fallbackModels,
+    requiredModels,
+  };
+}
+
+function sanitizeProfileIdentity(value: unknown): {
+  readonly profileId: string;
+  readonly baseModel: string;
+  readonly localModel: string;
+  readonly explicitOptInRequired: boolean;
+  readonly fallbackProfileIds: readonly string[];
+} {
+  if (!isRecord(value)) {
+    throw new Error('ollama_model_onboarding_profile_identity_invalid');
+  }
+  const profileId = safeString(value.profile_id);
+  const baseModel = modelString(value.base_model);
+  const localModel = modelString(value.local_model);
+  const fallbackProfileIds = strictSafeStringList(
+    value.fallback_profile_ids,
+    'ollama_model_onboarding_profile_fallback_ids_invalid',
+  );
+  if (
+    !profileId ||
+    !baseModel ||
+    !localModel ||
+    typeof value.explicit_opt_in_required !== 'boolean'
+  ) {
+    throw new Error('ollama_model_onboarding_profile_identity_invalid');
+  }
+  return {
+    profileId,
+    baseModel,
+    localModel,
+    explicitOptInRequired: value.explicit_opt_in_required,
+    fallbackProfileIds,
+  };
+}
+
+async function startOllamaModelDownload(
+  page: Pick<Page, 'request'>,
+  projectApi: ProjectApiRef,
+  profile: OllamaOnboardingProfilePlan,
+): Promise<ModelDownloadJobSnapshot> {
+  const response = await page.request.post(
+    `${projectApi.apiBaseUrl}${MODEL_DOWNLOAD_PATH}`,
+    {
+      headers: { Authorization: projectApi.authorization },
+      maxRedirects: 0,
+      timeout: REQUEST_TIMEOUT_MS,
+    },
+  );
+  if (response.status() !== 202) {
+    throw new Error(`ollama_model_onboarding_start_http_${response.status()}`);
+  }
+  return modelDownloadSnapshot(await response.json(), profile, null);
+}
+
+async function getOllamaModelDownload(
+  page: Pick<Page, 'request'>,
+  projectApi: ProjectApiRef,
+  profile: OllamaOnboardingProfilePlan,
+  previous: ModelDownloadJobSnapshot,
+  requestTimeoutMs: number,
+): Promise<ModelDownloadJobSnapshot> {
+  const response = await page.request.get(
+    `${projectApi.apiBaseUrl}${MODEL_DOWNLOAD_PATH}/${encodeURIComponent(previous.id)}`,
+    {
+      headers: { Authorization: projectApi.authorization },
+      maxRedirects: 0,
+      timeout: requestTimeoutMs,
+    },
+  );
+  if (response.status() !== 200) {
+    throw new Error(`ollama_model_onboarding_poll_http_${response.status()}`);
+  }
+  return modelDownloadSnapshot(await response.json(), profile, previous);
+}
+
+function modelDownloadSnapshot(
+  payload: unknown,
+  profile: OllamaOnboardingProfilePlan,
+  previous: ModelDownloadJobSnapshot | null,
+): ModelDownloadJobSnapshot {
+  if (!isRecord(payload)) {
+    throw new Error('ollama_model_onboarding_job_schema_invalid');
+  }
+  const id = safeString(payload.id);
+  const model = modelString(payload.model);
+  const status = exactString(payload.status, [
+    'queued',
+    'running',
+    'succeeded',
+  ] as const);
+  const phase = safeString(payload.phase);
+  const detail = safeString(payload.detail);
+  const createdAt = timestampString(
+    payload.created_at,
+    'ollama_model_onboarding_job_created_at_invalid',
+  );
+  const updatedAt = timestampString(
+    payload.updated_at,
+    'ollama_model_onboarding_job_updated_at_invalid',
+  );
+  const commitStartedAt = nullableTimestampString(
+    payload.commit_started_at,
+    'ollama_model_onboarding_job_commit_started_at_invalid',
+  );
+  const completed = nullableNonNegativeInteger(payload.completed);
+  const total = nullableNonNegativeInteger(payload.total);
+  if (
+    !id ||
+    !UUID_PATTERN.test(id) ||
+    payload.provider !== 'ollama' ||
+    !model ||
+    !sameOllamaModel(model, profile.effectiveModel) ||
+    !status ||
+    !phase ||
+    !detail ||
+    typeof payload.cancellable !== 'boolean' ||
+    payload.error !== null ||
+    !Object.hasOwn(payload, 'completed') ||
+    !Object.hasOwn(payload, 'total') ||
+    completed === undefined ||
+    total === undefined ||
+    (completed !== null && total !== null && completed > total) ||
+    Date.parse(updatedAt) < Date.parse(createdAt) ||
+    (commitStartedAt !== null &&
+      (Date.parse(commitStartedAt) < Date.parse(createdAt) ||
+        Date.parse(commitStartedAt) > Date.parse(updatedAt))) ||
+    (status === 'succeeded' &&
+      (phase !== 'completed' || payload.cancellable !== false))
+  ) {
+    throw new Error('ollama_model_onboarding_job_contract_invalid');
+  }
+  const snapshot: ModelDownloadJobSnapshot = {
+    id,
+    provider: 'ollama',
+    model,
+    status,
+    phase,
+    cancellable: payload.cancellable,
+    createdAt,
+    updatedAt,
+    commitStartedAt,
+  };
+  if (previous) {
+    assertModelDownloadProgress(previous, snapshot);
+  }
+  return snapshot;
+}
+
+function assertModelDownloadProgress(
+  previous: ModelDownloadJobSnapshot,
+  current: ModelDownloadJobSnapshot,
+): void {
+  const ranks = { queued: 0, running: 1, succeeded: 2 } as const;
+  if (
+    current.id !== previous.id ||
+    current.provider !== previous.provider ||
+    !sameOllamaModel(current.model, previous.model) ||
+    current.createdAt !== previous.createdAt ||
+    Date.parse(current.updatedAt) < Date.parse(previous.updatedAt) ||
+    ranks[current.status] < ranks[previous.status] ||
+    (previous.commitStartedAt !== null &&
+      current.commitStartedAt !== previous.commitStartedAt)
+  ) {
+    throw new Error('ollama_model_onboarding_job_progress_invalid');
+  }
+}
+
+async function cancelModelDownloadBestEffort(
+  page: Pick<Page, 'request'>,
+  projectApi: ProjectApiRef,
+  jobId: string,
+): Promise<void> {
+  try {
+    await page.request.delete(
+      `${projectApi.apiBaseUrl}${MODEL_DOWNLOAD_PATH}/${encodeURIComponent(jobId)}`,
+      {
+        headers: { Authorization: projectApi.authorization },
+        maxRedirects: 0,
+        timeout: REQUEST_TIMEOUT_MS,
+      },
+    );
+  } catch {
+    // Preserve the original timeout as the acceptance failure.
+  }
+}
+
+function assertSameOnboardingProfile(
+  before: OllamaOnboardingProfilePlan,
+  after: OllamaOnboardingProfilePlan,
+): void {
+  if (
+    before.profileId !== after.profileId ||
+    before.effectiveModel !== after.effectiveModel ||
+    before.baseModel !== after.baseModel ||
+    before.modelfileSha256 !== after.modelfileSha256 ||
+    !sameStringList(before.fallbackModels, after.fallbackModels) ||
+    !sameStringList(before.requiredModels, after.requiredModels)
+  ) {
+    throw new Error('ollama_model_onboarding_profile_selection_drifted');
+  }
+}
+
+function assertRequiredModelsInstalled(
+  installed: readonly string[],
+  required: readonly string[],
+  error: string,
+): void {
+  if (
+    required.length === 0 ||
+    !required.every((expected) =>
+      installed.some((model) => sameOllamaModel(model, expected)),
+    )
+  ) {
+    throw new Error(error);
+  }
+}
+
+function assertOnboardingSurvivedRestart(
+  onboarding: OllamaModelOnboardingEvidence,
+  runtime: OllamaRuntimeEvidence,
+): void {
+  if (
+    runtime.profile.profile_id !== onboarding.profile_id ||
+    runtime.profile.effective_model !== onboarding.effective_model ||
+    runtime.profile.base_model !== onboarding.base_model ||
+    runtime.profile.modelfile_sha256 !== onboarding.modelfile_sha256 ||
+    !sameStringList(runtime.profile.fallback_models, onboarding.fallback_models)
+  ) {
+    throw new Error('ollama_model_onboarding_profile_drifted_after_restart');
+  }
+  assertRequiredModelsInstalled(
+    runtime.installed_models,
+    onboarding.required_models,
+    'ollama_model_onboarding_aliases_missing_after_restart',
+  );
+}
+
+function strictModelList(value: unknown, error: string): string[] {
+  if (!Array.isArray(value)) {
+    throw new Error(error);
+  }
+  const models = value.map(modelString);
+  if (models.some((model) => model === null)) {
+    throw new Error(error);
+  }
+  return models as string[];
+}
+
+function strictSafeStringList(value: unknown, error: string): string[] {
+  if (!Array.isArray(value)) {
+    throw new Error(error);
+  }
+  const strings = value.map(safeString);
+  if (strings.some((item) => item === null)) {
+    throw new Error(error);
+  }
+  return strings as string[];
+}
+
+function sameStringList(
+  left: readonly string[],
+  right: readonly string[],
+): boolean {
+  return (
+    left.length === right.length && left.every((value, index) => value === right[index])
+  );
+}
+
+function validDate(value: Date, error: string): Date {
+  if (!Number.isFinite(value.getTime())) {
+    throw new Error(error);
+  }
+  return value;
+}
+
+function timestampString(value: unknown, error: string): string {
+  const text = safeString(value);
+  if (!text || !Number.isFinite(Date.parse(text))) {
+    throw new Error(error);
+  }
+  return text;
+}
+
+function nullableTimestampString(
+  value: unknown,
+  error: string,
+): string | null {
+  if (value === null) {
+    return null;
+  }
+  return timestampString(value, error);
 }
 
 async function startPreRouteProcessObservation(

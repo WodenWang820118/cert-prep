@@ -16,7 +16,10 @@ import {
   type StreamingBaselineReport,
   writeStreamingBaselineArtifacts,
 } from './streaming-baseline-report.mts';
-import type { SmokeRunState } from './types.mts';
+import type {
+  OllamaFallbackAcceptanceEvidence,
+  SmokeRunState,
+} from './types.mts';
 
 test('production summary passes when WindowsML OCR is routed to AMD iGPU', () => {
   const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-prep-production-summary-'));
@@ -382,6 +385,10 @@ test('Ollama fallback lane keeps provider and model reasons separate and fails c
     assert.equal(summary.fallback_reason, null);
     assert.equal(summary.checks.acceptance_lane_route_persisted, true);
     assert.equal(summary.checks.acceptance_lane_runtime_real, true);
+    assert.equal(
+      summary.checks.acceptance_lane_model_onboarding_verified,
+      true,
+    );
     assert.equal(summary.checks.acceptance_lane_job_evidence_bound, true);
     assert.equal(summary.checks.acceptance_lane_ollama_model_released, true);
     assert.equal(summary.checks.acceptance_lane_no_overrides_or_fake, true);
@@ -404,6 +411,114 @@ test('Ollama fallback lane keeps provider and model reasons separate and fails c
       conflatedSummary.checks.acceptance_lane_model_fallback_reason_separate,
       false,
     );
+  } finally {
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test('production summary rejects malformed Ollama onboarding evidence', () => {
+  const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-prep-production-summary-'));
+  try {
+    const outDir = join(workspaceRoot, 'out');
+    mkdirSync(outDir);
+    writePassingResourceSummary(outDir);
+
+    const summarize = (
+      mutate: (evidence: OllamaFallbackAcceptanceEvidence) => void,
+    ) => {
+      const run = productionRunState(workspaceRoot, outDir);
+      const report = productionReport();
+      configureOllamaFallbackAcceptance(run, report);
+      const evidence = run.metrics.ollama_fallback_acceptance;
+      assert.ok(evidence);
+      mutate(evidence);
+      return buildProductionSummary(run, report);
+    };
+
+    const validInstalled = summarize((evidence) => {
+      configureInstalledModelOnboarding(evidence);
+    });
+    assert.equal(validInstalled.status, 'passed');
+    assert.equal(
+      validInstalled.checks.acceptance_lane_model_onboarding_verified,
+      true,
+    );
+
+    const invalidCases: ReadonlyArray<
+      readonly [string, (evidence: OllamaFallbackAcceptanceEvidence) => void]
+    > = [
+      [
+        'timestamp order',
+        (evidence) => {
+          evidence.model_onboarding.completed_at =
+            '2026-06-23T00:00:00.000Z';
+        },
+      ],
+      [
+        'runtime profile hash equality',
+        (evidence) => {
+          evidence.runtime.profile.modelfile_sha256 = 'b'.repeat(64);
+        },
+      ],
+      [
+        'installed-before and missing consistency',
+        (evidence) => {
+          evidence.model_onboarding.installed_models_before = [];
+        },
+      ],
+      [
+        'job UUID',
+        (evidence) => {
+          configureInstalledModelOnboarding(evidence);
+          assert.ok(evidence.model_onboarding.job);
+          evidence.model_onboarding.job.id = 'not-a-uuid';
+        },
+      ],
+      [
+        'job status progression',
+        (evidence) => {
+          configureInstalledModelOnboarding(evidence);
+          assert.ok(evidence.model_onboarding.job);
+          evidence.model_onboarding.job.initial_status = 'running';
+          evidence.model_onboarding.job.observed_statuses = [
+            'running',
+            'queued',
+            'succeeded',
+          ];
+        },
+      ],
+      [
+        'job terminal phase',
+        (evidence) => {
+          configureInstalledModelOnboarding(evidence);
+          assert.ok(evidence.model_onboarding.job);
+          evidence.model_onboarding.job.observed_phases = [
+            'queued',
+            'model_download',
+            'done',
+          ];
+        },
+      ],
+      [
+        'job timestamp order',
+        (evidence) => {
+          configureInstalledModelOnboarding(evidence);
+          assert.ok(evidence.model_onboarding.job);
+          evidence.model_onboarding.job.updated_at =
+            '2026-06-23T00:00:01.500Z';
+        },
+      ],
+    ];
+
+    for (const [caseName, mutate] of invalidCases) {
+      const summary = summarize(mutate);
+      assert.equal(summary.status, 'failed', caseName);
+      assert.equal(
+        summary.checks.acceptance_lane_model_onboarding_verified,
+        false,
+        caseName,
+      );
+    }
   } finally {
     rmSync(workspaceRoot, { recursive: true, force: true });
   }
@@ -992,7 +1107,7 @@ function configureOllamaFallbackAcceptance(
     model_requirement_kind: 'ollama_model' as const,
   };
   run.metrics.ollama_fallback_acceptance = {
-    schema_version: 1,
+    schema_version: 2,
     trigger: 'declined-terms',
     trigger_mode: 'persisted_terms_decision',
     overrides_used: false,
@@ -1017,11 +1132,41 @@ function configureOllamaFallbackAcceptance(
     },
     provider_fallback_reason: 'FastFlowLM terms were declined.',
     model_fallback_reason: null,
+    model_onboarding: {
+      schema_version: 1,
+      endpoint: '/llm/model-downloads',
+      mode: 'reused',
+      started_at: '2026-06-23T00:00:01.000Z',
+      completed_at: '2026-06-23T00:00:05.000Z',
+      profile_id: 'qwen3.5-4b-study-8k',
+      effective_model: profileModel,
+      base_model: 'qwen3.5:4b',
+      modelfile_sha256: 'a'.repeat(64),
+      fallback_models: ['cert-prep-qwen3.5-2b-study-4k'],
+      required_models: [
+        profileModel,
+        'cert-prep-qwen3.5-2b-study-4k',
+      ],
+      installed_models_before: [
+        `${profileModel}:latest`,
+        'cert-prep-qwen3.5-2b-study-4k:latest',
+      ],
+      missing_models_before: [],
+      installed_models_after: [
+        `${profileModel}:latest`,
+        'cert-prep-qwen3.5-2b-study-4k:latest',
+      ],
+      profile_selection_stable: true,
+      job: null,
+    },
     runtime: {
       requirement_version: '0.12.0',
       installed_path_verified: true,
       api_version: '0.12.0',
-      installed_models: [`${profileModel}:latest`],
+      installed_models: [
+        `${profileModel}:latest`,
+        'cert-prep-qwen3.5-2b-study-4k:latest',
+      ],
       profile: {
         profile_enabled: true,
         profile_id: 'qwen3.5-4b-study-8k',
@@ -1076,6 +1221,27 @@ function configureOllamaFallbackAcceptance(
     modelfile_sha256: 'a'.repeat(64),
     profile_reason: 'Selected the default profile.',
     profile_warnings: [],
+  };
+}
+
+function configureInstalledModelOnboarding(
+  evidence: OllamaFallbackAcceptanceEvidence,
+): void {
+  const onboarding = evidence.model_onboarding;
+  onboarding.mode = 'installed';
+  onboarding.installed_models_before = [];
+  onboarding.missing_models_before = [...onboarding.required_models];
+  onboarding.job = {
+    id: '11111111-1111-4111-8111-111111111111',
+    provider: 'ollama',
+    model: onboarding.effective_model,
+    initial_status: 'queued',
+    final_status: 'succeeded',
+    observed_statuses: ['queued', 'running', 'succeeded'],
+    observed_phases: ['queued', 'model_download', 'completed'],
+    created_at: '2026-06-23T00:00:02.000Z',
+    updated_at: '2026-06-23T00:00:04.000Z',
+    commit_started_at: '2026-06-23T00:00:03.000Z',
   };
 }
 

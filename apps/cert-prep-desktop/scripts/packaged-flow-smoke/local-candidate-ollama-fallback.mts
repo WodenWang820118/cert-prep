@@ -31,6 +31,7 @@ const REQUIRED_OLLAMA_ACCEPTANCE_CHECKS = [
   'acceptance_lane_route_persisted',
   'acceptance_lane_no_overrides_or_fake',
   'acceptance_lane_runtime_real',
+  'acceptance_lane_model_onboarding_verified',
   'acceptance_lane_job_evidence_bound',
   'acceptance_lane_usable_and_full_exam',
   'acceptance_lane_ollama_model_released',
@@ -38,6 +39,9 @@ const REQUIRED_OLLAMA_ACCEPTANCE_CHECKS = [
   'acceptance_lane_process_isolation',
 ] as const;
 const ACCEPTED_OLLAMA_MODEL = /qwen3\.5(?::|-)(?:4b|2b)(?:\b|-)/i;
+const SHA256_PATTERN = /^[0-9a-f]{64}$/;
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const defaultWorkspaceRoot = resolve(scriptDir, '../../../..');
 
@@ -318,6 +322,7 @@ function assertPassedOllamaFallbackSummary(
   );
   const processRelease = processReleaseEvidence(summary);
   const modelRelease = modelReleaseEvidence(release, effectiveModel);
+  const modelOnboarding = modelOnboardingEvidence(fallback);
   if (
     summary.schema_version !== 4 ||
     summary.status !== 'passed' ||
@@ -333,7 +338,7 @@ function assertPassedOllamaFallbackSummary(
     providerFallbackReason !== fallbackProviderReason ||
     modelFallbackReason !== fallbackModelReason ||
     modelFallbackReason === providerFallbackReason ||
-    fallback.schema_version !== 1 ||
+    fallback.schema_version !== 2 ||
     fallback.trigger !== 'declined-terms' ||
     fallback.overrides_used !== false ||
     fallback.fake_provider_observed !== false ||
@@ -359,7 +364,238 @@ function assertPassedOllamaFallbackSummary(
       process: processRelease,
       model: modelRelease,
     },
+    modelOnboarding,
   } as const;
+}
+
+function modelOnboardingEvidence(
+  fallback: Record<string, unknown>,
+): Readonly<Record<string, unknown>> {
+  const onboarding = record(
+    fallback.model_onboarding,
+    'production Ollama model onboarding',
+  );
+  const runtime = record(fallback.runtime, 'production Ollama runtime');
+  const profile = record(runtime.profile, 'production Ollama runtime profile');
+  const restartedSelection = record(
+    fallback.selection_after_restart,
+    'production restarted Ollama selection',
+  );
+  const startedAt = validTimestampString(
+    onboarding.started_at,
+    'production Ollama onboarding started_at',
+  );
+  const completedAt = validTimestampString(
+    onboarding.completed_at,
+    'production Ollama onboarding completed_at',
+  );
+  const restartedAt = validTimestampString(
+    restartedSelection.captured_at,
+    'production restarted Ollama selection captured_at',
+  );
+  const profileId = nonEmptyString(
+    onboarding.profile_id,
+    'production Ollama onboarding profile id',
+  );
+  const effectiveModel = acceptedOllamaModel(
+    onboarding.effective_model,
+    'production Ollama onboarding effective model',
+  );
+  const baseModel = acceptedOllamaModel(
+    onboarding.base_model,
+    'production Ollama onboarding base model',
+  );
+  const modelfileSha256 = nonEmptyString(
+    onboarding.modelfile_sha256,
+    'production Ollama onboarding Modelfile hash',
+  );
+  const fallbackModels = stringArray(
+    onboarding.fallback_models,
+    'production Ollama onboarding fallback models',
+  );
+  const requiredModels = stringArray(
+    onboarding.required_models,
+    'production Ollama onboarding required models',
+  );
+  const installedBefore = stringArray(
+    onboarding.installed_models_before,
+    'production Ollama onboarding installed models before',
+  );
+  const missingBefore = stringArray(
+    onboarding.missing_models_before,
+    'production Ollama onboarding missing models before',
+  );
+  const installedAfter = stringArray(
+    onboarding.installed_models_after,
+    'production Ollama onboarding installed models after',
+  );
+  const runtimeInstalled = stringArray(
+    runtime.installed_models,
+    'production Ollama runtime installed models',
+  );
+  const runtimeFallbackModels = stringArray(
+    profile.fallback_models,
+    'production Ollama runtime fallback models',
+  );
+  const expectedMissing = requiredModels.filter(
+    (required) => !containsOllamaModel(installedBefore, required),
+  );
+  const mode = onboarding.mode;
+  const job = onboarding.job;
+  if (
+    onboarding.schema_version !== 1 ||
+    onboarding.endpoint !== '/llm/model-downloads' ||
+    (mode !== 'reused' && mode !== 'installed') ||
+    onboarding.profile_selection_stable !== true ||
+    Date.parse(completedAt) < Date.parse(startedAt) ||
+    Date.parse(restartedAt) < Date.parse(completedAt) ||
+    !SHA256_PATTERN.test(modelfileSha256) ||
+    requiredModels.length === 0 ||
+    new Set(requiredModels).size !== requiredModels.length ||
+    requiredModels[0] !== effectiveModel ||
+    !sameStringArray(requiredModels.slice(1), fallbackModels) ||
+    !sameStringArray(expectedMissing, missingBefore) ||
+    !requiredModels.every((required) =>
+      containsOllamaModel(installedAfter, required),
+    ) ||
+    !requiredModels.every((required) =>
+      containsOllamaModel(runtimeInstalled, required),
+    ) ||
+    profile.profile_id !== profileId ||
+    profile.effective_model !== effectiveModel ||
+    profile.base_model !== baseModel ||
+    profile.modelfile_sha256 !== modelfileSha256 ||
+    !sameStringArray(runtimeFallbackModels, fallbackModels)
+  ) {
+    throw new Error(
+      'Production summary does not prove exact Ollama profile model onboarding.',
+    );
+  }
+
+  if (mode === 'reused') {
+    if (job !== null || missingBefore.length !== 0) {
+      throw new Error(
+        'Production summary Ollama reuse evidence is inconsistent.',
+      );
+    }
+    return {
+      mode,
+      profileId,
+      effectiveModel,
+      fallbackModels,
+      requiredModels,
+      installedAfter,
+      job: null,
+    } as const;
+  }
+
+  if (missingBefore.length === 0) {
+    throw new Error(
+      'Production summary Ollama install evidence has no missing profile alias.',
+    );
+  }
+  const jobRecord = record(job, 'production Ollama onboarding job');
+  const jobId = nonEmptyString(jobRecord.id, 'production Ollama onboarding job id');
+  const jobModel = acceptedOllamaModel(
+    jobRecord.model,
+    'production Ollama onboarding job model',
+  );
+  const observedStatuses = stringArray(
+    jobRecord.observed_statuses,
+    'production Ollama onboarding observed statuses',
+  );
+  const observedPhases = stringArray(
+    jobRecord.observed_phases,
+    'production Ollama onboarding observed phases',
+  );
+  const jobCreatedAt = validTimestampString(
+    jobRecord.created_at,
+    'production Ollama onboarding job created_at',
+  );
+  const jobUpdatedAt = validTimestampString(
+    jobRecord.updated_at,
+    'production Ollama onboarding job updated_at',
+  );
+  if (
+    !UUID_PATTERN.test(jobId) ||
+    jobRecord.provider !== 'ollama' ||
+    !sameOllamaModel(jobModel, effectiveModel) ||
+    !['queued', 'running', 'succeeded'].includes(
+      String(jobRecord.initial_status),
+    ) ||
+    jobRecord.final_status !== 'succeeded' ||
+    observedStatuses.length < 2 ||
+    observedStatuses[0] !== jobRecord.initial_status ||
+    observedStatuses.at(-1) !== 'succeeded' ||
+    observedStatuses.some(
+      (status) => !['queued', 'running', 'succeeded'].includes(status),
+    ) ||
+    !monotonicOnboardingStatuses(observedStatuses) ||
+    observedPhases.length !== observedStatuses.length ||
+    observedPhases.some((phase) => phase.trim().length === 0) ||
+    observedPhases.at(-1) !== 'completed' ||
+    Date.parse(jobCreatedAt) < Date.parse(startedAt) ||
+    Date.parse(jobUpdatedAt) < Date.parse(jobCreatedAt) ||
+    Date.parse(jobUpdatedAt) > Date.parse(completedAt)
+  ) {
+    throw new Error(
+      'Production summary Ollama onboarding job evidence is invalid.',
+    );
+  }
+  if (jobRecord.commit_started_at !== null) {
+    const commitStartedAt = validTimestampString(
+      jobRecord.commit_started_at,
+      'production Ollama onboarding job commit_started_at',
+    );
+    if (
+      Date.parse(commitStartedAt) < Date.parse(jobCreatedAt) ||
+      Date.parse(commitStartedAt) > Date.parse(jobUpdatedAt)
+    ) {
+      throw new Error(
+        'Production summary Ollama onboarding commit timestamp is invalid.',
+      );
+    }
+  }
+  return {
+    mode,
+    profileId,
+    effectiveModel,
+    fallbackModels,
+    requiredModels,
+    installedAfter,
+    jobId,
+  } as const;
+}
+
+function monotonicOnboardingStatuses(statuses: readonly string[]): boolean {
+  const ranks: Readonly<Record<string, number>> = {
+    queued: 0,
+    running: 1,
+    succeeded: 2,
+  };
+  return statuses.every(
+    (status, index) =>
+      Object.hasOwn(ranks, status) &&
+      (index === 0 || ranks[status] >= ranks[statuses[index - 1] ?? '']),
+  );
+}
+
+function containsOllamaModel(models: readonly string[], expected: string): boolean {
+  return models.some((model) => sameOllamaModel(model, expected));
+}
+
+function sameOllamaModel(left: string, right: string): boolean {
+  const normalize = (value: string) => value.toLowerCase().replace(/:latest$/, '');
+  return normalize(left) === normalize(right);
+}
+
+function sameStringArray(
+  left: readonly string[],
+  right: readonly string[],
+): boolean {
+  return (
+    left.length === right.length && left.every((value, index) => value === right[index])
+  );
 }
 
 function processReleaseEvidence(

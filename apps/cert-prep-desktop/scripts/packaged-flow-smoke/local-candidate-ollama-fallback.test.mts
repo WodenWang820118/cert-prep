@@ -241,6 +241,26 @@ test('local forced-Ollama evidence rejects incomplete or forged production outpu
         /not an accepted real Ollama model/,
       );
     });
+    await t.test('missing onboarded fallback alias', () => {
+      writePassedArtifacts(fixture.installedCandidate.outputRoot, metrics);
+      const summaryPath = join(
+        fixture.installedCandidate.outputRoot,
+        'production-summary.json',
+      );
+      const summary = JSON.parse(readFileSync(summaryPath, 'utf8')) as {
+        ollama_fallback_acceptance: {
+          model_onboarding: { installed_models_after: string[] };
+        };
+      };
+      summary.ollama_fallback_acceptance.model_onboarding.installed_models_after = [
+        'cert-prep-qwen3.5-4b-study-8k:latest',
+      ];
+      writeFileSync(summaryPath, `${JSON.stringify(summary, null, 2)}\n`);
+      assert.throws(
+        () => writeLocalCandidateOllamaFallbackEvidence(plan, metrics),
+        /does not prove exact Ollama profile model onboarding/,
+      );
+    });
     await t.test('fallback reason drift', () => {
       writePassedArtifacts(fixture.installedCandidate.outputRoot, metrics, {
         provider_fallback_reason: 'different reason',
@@ -484,12 +504,29 @@ function writePassedArtifacts(
     resources_released_at_end: processRelease(),
     checks: passingChecks(),
     ollama_fallback_acceptance: {
-      schema_version: 1,
+      schema_version: 2,
       trigger: 'declined-terms',
       overrides_used: false,
       fake_provider_observed: false,
       provider_fallback_reason: 'FastFlowLM terms were declined.',
       model_fallback_reason: null,
+      selection_after_restart: {
+        captured_at: '2026-07-15T00:01:30.000Z',
+      },
+      model_onboarding: onboardingSummaryEvidence(),
+      runtime: {
+        installed_models: [
+          'cert-prep-qwen3.5-4b-study-8k:latest',
+          'cert-prep-qwen3.5-2b-study-4k:latest',
+        ],
+        profile: {
+          profile_id: 'qwen3.5-4b-study-8k',
+          effective_model: 'cert-prep-qwen3.5-4b-study-8k',
+          base_model: 'qwen3.5:4b',
+          modelfile_sha256: 'a'.repeat(64),
+          fallback_models: ['cert-prep-qwen3.5-2b-study-4k'],
+        },
+      },
       resource_release: {
         captured_at: '2026-07-15T00:01:55.000Z',
         effective_model: 'cert-prep-qwen3.5-4b-study-8k',
@@ -517,12 +554,54 @@ function passingChecks(
     acceptance_lane_route_persisted: true,
     acceptance_lane_no_overrides_or_fake: true,
     acceptance_lane_runtime_real: true,
+    acceptance_lane_model_onboarding_verified: true,
     acceptance_lane_job_evidence_bound: true,
     acceptance_lane_usable_and_full_exam: true,
     acceptance_lane_ollama_model_released: true,
     acceptance_lane_fresh_run_isolation: true,
     acceptance_lane_process_isolation: true,
     ...overrides,
+  };
+}
+
+function onboardingSummaryEvidence(): Record<string, unknown> {
+  return {
+    schema_version: 1,
+    endpoint: '/llm/model-downloads',
+    mode: 'installed',
+    started_at: '2026-07-15T00:01:05.000Z',
+    completed_at: '2026-07-15T00:01:20.000Z',
+    profile_id: 'qwen3.5-4b-study-8k',
+    effective_model: 'cert-prep-qwen3.5-4b-study-8k',
+    base_model: 'qwen3.5:4b',
+    modelfile_sha256: 'a'.repeat(64),
+    fallback_models: ['cert-prep-qwen3.5-2b-study-4k'],
+    required_models: [
+      'cert-prep-qwen3.5-4b-study-8k',
+      'cert-prep-qwen3.5-2b-study-4k',
+    ],
+    installed_models_before: ['qwen3.5:4b'],
+    missing_models_before: [
+      'cert-prep-qwen3.5-4b-study-8k',
+      'cert-prep-qwen3.5-2b-study-4k',
+    ],
+    installed_models_after: [
+      'cert-prep-qwen3.5-4b-study-8k:latest',
+      'cert-prep-qwen3.5-2b-study-4k:latest',
+    ],
+    profile_selection_stable: true,
+    job: {
+      id: '11111111-1111-4111-8111-111111111111',
+      provider: 'ollama',
+      model: 'cert-prep-qwen3.5-4b-study-8k',
+      initial_status: 'queued',
+      final_status: 'succeeded',
+      observed_statuses: ['queued', 'running', 'succeeded'],
+      observed_phases: ['queued', 'model_download', 'completed'],
+      created_at: '2026-07-15T00:01:06.000Z',
+      updated_at: '2026-07-15T00:01:15.000Z',
+      commit_started_at: '2026-07-15T00:01:14.000Z',
+    },
   };
 }
 
