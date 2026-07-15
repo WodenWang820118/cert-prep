@@ -43,6 +43,7 @@ from cert_prep_contracts.runtime import (
     RuntimeRequirementKind,
     RuntimeRequirementSnapshot,
 )
+from cert_prep_ollama import profile_installer as ollama_profile_installer_module
 from cert_prep_backend.domains.source_documents.ocr import OCRHealth, OCRPageResult
 from llm_test_fakes import GIB, _profile_inventory
 
@@ -174,6 +175,11 @@ def test_auto_selected_ollama_runtime_requirements_resolve_a_profile(
         ollama_profile_module,
         "collect_machine_inventory",
         lambda **_kwargs: inventory,
+    )
+    monkeypatch.setattr(
+        ollama_profile_installer_module.OllamaProfileInstaller,
+        "_installed_model_names",
+        lambda _self: set(),
     )
     client = TestClient(
         create_app(
