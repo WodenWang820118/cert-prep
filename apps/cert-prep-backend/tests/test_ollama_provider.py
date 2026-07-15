@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from cert_prep_backend.api.app import create_app
@@ -18,6 +19,56 @@ from llm_test_fakes import (
 
 
 AUTH_HEADERS = {"Authorization": "Bearer test-token"}
+
+
+class SequencedOllamaClient(RecordingOllamaClient):
+    def __init__(self, *, models: list[str], chat_contents: list[str | Exception]) -> None:
+        super().__init__(models=models)
+        self._chat_contents = list(chat_contents)
+
+    def chat(self, **kwargs) -> dict:
+        if not self._chat_contents:
+            raise AssertionError("unexpected additional Ollama chat call")
+        next_content = self._chat_contents.pop(0)
+        if isinstance(next_content, Exception):
+            self.chat_calls.append(kwargs)
+            raise next_content
+        self.chat_content = next_content
+        return super().chat(**kwargs)
+
+
+def _reasoning_chunks() -> list[SourceChunk]:
+    return [
+        SourceChunk(
+            id="chunk-1",
+            page_number=2,
+            text="Question 1 Choose the correct word. A alpha B beta.",
+            source_excerpt="Question 1 Choose the correct word.",
+        ),
+        SourceChunk(
+            id="chunk-2",
+            page_number=3,
+            text="Question 2 Choose the correct word. A gamma B delta.",
+            source_excerpt="Question 2 Choose the correct word.",
+        ),
+    ]
+
+
+def _reasoning_item(chunk: SourceChunk, number: int) -> dict:
+    first, second = (("alpha", "beta") if number == 1 else ("gamma", "delta"))
+    question = f"Question {number} Choose the correct word."
+    return {
+        "chunk_id": chunk.id,
+        "citation_page": chunk.page_number,
+        "question": question,
+        "choices": [f"A {first}", f"B {second}"],
+        "answer": "A",
+        "answer_key_source": "ai_inferred",
+        "rationale": f"The visible source supports {first}.",
+        "source_excerpt": question,
+        "confidence": 0.9,
+        "source_question_number": str(number),
+    }
 
 
 def test_ollama_health_uses_installed_fallback_without_pull(monkeypatch) -> None:
@@ -108,6 +159,290 @@ def test_ollama_runtime_unusable_models_can_recover() -> None:
     provider._record_model_success("qwen3.5:4b")
 
     assert "qwen3.5:4b" not in provider._runtime_unusable_models()
+
+
+def test_ollama_reasoning_requests_exact_distinct_count_when_source_supports_it() -> None:
+    chunks = _reasoning_chunks()
+    fake_client = RecordingOllamaClient(
+        models=["qwen3.5:4b"],
+        chat_content=json.dumps(
+            {"items": [_reasoning_item(chunks[0], 1), _reasoning_item(chunks[1], 2)]}
+        ),
+    )
+    provider = OllamaProvider(
+        host="http://127.0.0.1:11434",
+        model="qwen3.5:4b",
+        timeout_seconds=1,
+        client=fake_client,
+    )
+
+    suggestions = provider.generate_reasoning_drafts(chunks, limit=2)
+
+    assert [suggestion.source_question_number for suggestion in suggestions] == ["1", "2"]
+    assert len(fake_client.chat_calls) == 1
+    prompt = fake_client.chat_calls[0]["messages"][1]["content"]
+    assert "If at least 2 valid items are present, return exactly 2" in prompt
+    assert "If fewer valid items are present, return only those items" in prompt
+    assert "Never invent, duplicate, or split an item" in prompt
+
+
+def test_ollama_reasoning_uses_one_supplemental_pass_for_a_short_grounded_result() -> None:
+    chunks = _reasoning_chunks()
+    fake_client = SequencedOllamaClient(
+        models=["qwen3.5:4b"],
+        chat_contents=[
+            json.dumps({"items": [_reasoning_item(chunks[0], 1)]}),
+            json.dumps({"items": [_reasoning_item(chunks[1], 2)]}),
+        ],
+    )
+    provider = OllamaProvider(
+        host="http://127.0.0.1:11434",
+        model="qwen3.5:4b",
+        timeout_seconds=1,
+        client=fake_client,
+    )
+
+    suggestions = provider.generate_reasoning_drafts(chunks, limit=2)
+
+    assert [suggestion.source_question_number for suggestion in suggestions] == ["1", "2"]
+    assert len(fake_client.chat_calls) == 2
+    assert fake_client.chat_calls[0]["model"] == fake_client.chat_calls[1]["model"]
+    assert fake_client.chat_calls[0]["options"] == fake_client.chat_calls[1]["options"]
+    assert fake_client.chat_calls[0]["keep_alive"] == fake_client.chat_calls[1]["keep_alive"]
+    supplemental_prompt = fake_client.chat_calls[1]["messages"][1]["content"]
+    assert "single supplemental pass" in supplemental_prompt
+    assert "chunk_id=chunk-1" in supplemental_prompt
+    assert "[[chunk_id:chunk-2 page:3]]" in supplemental_prompt
+
+
+def test_ollama_reasoning_supplements_a_malformed_initial_item_once() -> None:
+    chunks = [
+        *_reasoning_chunks(),
+        SourceChunk(
+            id="chunk-3",
+            page_number=4,
+            text="Question 3 Choose the correct word. A gamma B delta.",
+            source_excerpt="Question 3 Choose the correct word.",
+        ),
+    ]
+    malformed = {
+        **_reasoning_item(chunks[0], 1),
+        "choices": ["alpha"],
+        "answer": "alpha",
+    }
+    fake_client = SequencedOllamaClient(
+        models=["qwen3.5:4b"],
+        chat_contents=[
+            json.dumps({"items": [malformed]}),
+            json.dumps(
+                {"items": [_reasoning_item(chunks[2], 3), _reasoning_item(chunks[0], 1)]}
+            ),
+        ],
+    )
+    provider = OllamaProvider(
+        host="http://127.0.0.1:11434",
+        model="qwen3.5:4b",
+        timeout_seconds=1,
+        client=fake_client,
+    )
+
+    suggestions = provider.generate_reasoning_drafts(chunks, limit=2)
+
+    assert [suggestion.source_question_number for suggestion in suggestions] == ["3", "1"]
+    assert len(fake_client.chat_calls) == 2
+    supplemental_prompt = fake_client.chat_calls[1]["messages"][1]["content"]
+    assert "No item from the prior response passed strict validation" in supplemental_prompt
+    assert supplemental_prompt.index("[[chunk_id:chunk-3") < supplemental_prompt.index(
+        "[[chunk_id:chunk-1"
+    )
+
+
+def test_ollama_reasoning_stops_after_one_empty_supplemental_pass() -> None:
+    chunks = _reasoning_chunks()
+    fake_client = SequencedOllamaClient(
+        models=["qwen3.5:4b"],
+        chat_contents=[
+            json.dumps({"items": [_reasoning_item(chunks[0], 1)]}),
+            json.dumps({"items": []}),
+        ],
+    )
+    provider = OllamaProvider(
+        host="http://127.0.0.1:11434",
+        model="qwen3.5:4b",
+        timeout_seconds=1,
+        client=fake_client,
+    )
+
+    suggestions = provider.generate_reasoning_drafts(chunks, limit=2)
+
+    assert [suggestion.source_question_number for suggestion in suggestions] == ["1"]
+    assert len(fake_client.chat_calls) == 2
+
+
+def test_ollama_reasoning_discards_a_supplemental_duplicate_before_filling() -> None:
+    chunks = _reasoning_chunks()
+    fake_client = SequencedOllamaClient(
+        models=["qwen3.5:4b"],
+        chat_contents=[
+            json.dumps({"items": [_reasoning_item(chunks[0], 1)]}),
+            json.dumps(
+                {"items": [_reasoning_item(chunks[0], 1), _reasoning_item(chunks[1], 2)]}
+            ),
+        ],
+    )
+    provider = OllamaProvider(
+        host="http://127.0.0.1:11434",
+        model="qwen3.5:4b",
+        timeout_seconds=1,
+        client=fake_client,
+    )
+
+    suggestions = provider.generate_reasoning_drafts(chunks, limit=2)
+
+    assert [suggestion.source_question_number for suggestion in suggestions] == ["1", "2"]
+    assert len(fake_client.chat_calls) == 2
+
+
+def test_ollama_reasoning_does_not_supplement_a_single_item_streaming_request() -> None:
+    chunks = _reasoning_chunks()
+    malformed = {
+        **_reasoning_item(chunks[0], 1),
+        "choices": ["alpha"],
+        "answer": "alpha",
+    }
+    fake_client = SequencedOllamaClient(
+        models=["qwen3.5:4b"],
+        chat_contents=[json.dumps({"items": [malformed]})],
+    )
+    provider = OllamaProvider(
+        host="http://127.0.0.1:11434",
+        model="qwen3.5:4b",
+        timeout_seconds=1,
+        client=fake_client,
+    )
+
+    assert provider.generate_reasoning_drafts(chunks, limit=1) == []
+    assert len(fake_client.chat_calls) == 1
+
+
+def test_ollama_reasoning_does_not_supplement_notice_only_source() -> None:
+    notice = SourceChunk(
+        id="notice",
+        page_number=1,
+        text="JLPT N1 test booklet title and version notice.",
+        source_excerpt="JLPT N1 test booklet title and version notice.",
+    )
+    fake_client = SequencedOllamaClient(
+        models=["qwen3.5:4b"],
+        chat_contents=[json.dumps({"items": []})],
+    )
+    provider = OllamaProvider(
+        host="http://127.0.0.1:11434",
+        model="qwen3.5:4b",
+        timeout_seconds=1,
+        client=fake_client,
+    )
+
+    assert provider.generate_reasoning_drafts([notice], limit=2) == []
+    assert len(fake_client.chat_calls) == 1
+
+
+def test_ollama_reasoning_supplements_a_valid_source_classifier_false_negative() -> None:
+    chunks = [
+        SourceChunk(
+            id="chunk-1",
+            page_number=2,
+            text="Question 1. 1 foo 2 bar",
+            source_excerpt="Question 1.",
+        ),
+        SourceChunk(
+            id="chunk-2",
+            page_number=3,
+            text="Question 2. 1 baz 2 qux",
+            source_excerpt="Question 2.",
+        ),
+    ]
+    first = {
+        "chunk_id": "chunk-1",
+        "citation_page": 2,
+        "question": "Question 1.",
+        "choices": ["1 foo", "2 bar"],
+        "answer": "1",
+        "answer_key_source": "ai_inferred",
+        "rationale": "The visible source supports foo.",
+        "source_excerpt": "Question 1.",
+        "confidence": 0.9,
+        "source_question_number": "1",
+    }
+    second = {
+        "chunk_id": "chunk-2",
+        "citation_page": 3,
+        "question": "Question 2.",
+        "choices": ["1 baz", "2 qux"],
+        "answer": "2",
+        "answer_key_source": "ai_inferred",
+        "rationale": "The visible source supports qux.",
+        "source_excerpt": "Question 2.",
+        "confidence": 0.9,
+        "source_question_number": "2",
+    }
+    fake_client = SequencedOllamaClient(
+        models=["qwen3.5:4b"],
+        chat_contents=[
+            json.dumps({"items": [first]}),
+            json.dumps({"items": [second]}),
+        ],
+    )
+    provider = OllamaProvider(
+        host="http://127.0.0.1:11434",
+        model="qwen3.5:4b",
+        timeout_seconds=1,
+        client=fake_client,
+    )
+
+    suggestions = provider.generate_reasoning_drafts(chunks, limit=2)
+
+    assert [suggestion.source_question_number for suggestion in suggestions] == ["1", "2"]
+    assert len(fake_client.chat_calls) == 2
+
+
+def test_ollama_reasoning_restarts_both_passes_atomically_on_model_fallback() -> None:
+    chunks = _reasoning_chunks()
+    primary_item = {**_reasoning_item(chunks[0], 1), "rationale": "primary partial"}
+    fallback_items = [
+        {**_reasoning_item(chunks[0], 1), "rationale": "fallback first"},
+        {**_reasoning_item(chunks[1], 2), "rationale": "fallback second"},
+    ]
+    fake_client = SequencedOllamaClient(
+        models=["qwen3.5:4b", "qwen3.5:2b"],
+        chat_contents=[
+            json.dumps({"items": [primary_item]}),
+            RuntimeError("primary model runner crashed"),
+            json.dumps({"items": fallback_items}),
+        ],
+    )
+    provider = OllamaProvider(
+        host="http://127.0.0.1:11434",
+        model="qwen3.5:4b",
+        fallback_models=["qwen3.5:2b"],
+        timeout_seconds=1,
+        client=fake_client,
+    )
+
+    suggestions = provider.generate_reasoning_drafts(chunks, limit=2)
+
+    assert [call["model"] for call in fake_client.chat_calls] == [
+        "qwen3.5:4b",
+        "qwen3.5:4b",
+        "qwen3.5:2b",
+    ]
+    assert [suggestion.rationale for suggestion in suggestions] == [
+        "fallback first",
+        "fallback second",
+    ]
+    attribution = provider.generation_attribution()
+    assert attribution.effective_model == "qwen3.5:2b"
+    assert attribution.fallback_reason is not None
 
 def test_ollama_profile_apis_return_200(monkeypatch, tmp_path) -> None:
     inventory = _profile_inventory(total_ram=16 * GIB, free_disk=64 * GIB)

@@ -55,6 +55,88 @@ def test_draft_parser_accepts_jlpt_like_choice_item() -> None:
     assert suggestion.confidence == 0.82
 
 
+def test_draft_parser_accepts_exact_choice_text_without_its_visible_marker() -> None:
+    chunk = SourceChunk(
+        id="chunk-2",
+        page_number=3,
+        text="Question 1 Choose the reading. 1 surudoi 2 nibui 3 arai 4 ayaui",
+        source_excerpt="Question 1 Choose the reading.",
+    )
+
+    suggestion = _draft_suggestion_from_item(
+        {
+            "chunk_id": "chunk-2",
+            "citation_page": 3,
+            "question": "Question 1 Choose the reading.",
+            "choices": ["1 surudoi", "2 nibui", "3 arai", "4 ayaui"],
+            "answer": "nibui",
+            "answer_key_source": "ai_inferred",
+            "rationale": "The visible choices contain nibui.",
+            "source_excerpt": "Question 1 Choose the reading.",
+            "confidence": 0.82,
+        },
+        {3: chunk},
+        {"chunk-2": chunk},
+    )
+
+    assert suggestion is not None
+    assert suggestion.answer == "2 nibui"
+
+
+def test_draft_parser_rejects_ambiguous_unmarked_choice_text() -> None:
+    chunk = SourceChunk(
+        id="chunk-2",
+        page_number=3,
+        text="Question 1 Choose the word. 1 same 2 same",
+        source_excerpt="Question 1 Choose the word.",
+    )
+
+    suggestion = _draft_suggestion_from_item(
+        {
+            "chunk_id": "chunk-2",
+            "citation_page": 3,
+            "question": "Question 1 Choose the word.",
+            "choices": ["1 same", "2 same"],
+            "answer": "same",
+            "answer_key_source": "ai_inferred",
+            "rationale": "The answer is ambiguous.",
+            "source_excerpt": "Question 1 Choose the word.",
+            "confidence": 0.5,
+        },
+        {3: chunk},
+        {"chunk-2": chunk},
+    )
+
+    assert suggestion is None
+
+
+def test_draft_parser_rejects_answer_with_a_conflicting_visible_marker() -> None:
+    chunk = SourceChunk(
+        id="chunk-2",
+        page_number=3,
+        text="Question 1 Choose the word. 1 foo 2 bar",
+        source_excerpt="Question 1 Choose the word.",
+    )
+
+    suggestion = _draft_suggestion_from_item(
+        {
+            "chunk_id": "chunk-2",
+            "citation_page": 3,
+            "question": "Question 1 Choose the word.",
+            "choices": ["1 foo", "2 bar"],
+            "answer": "1 bar",
+            "answer_key_source": "ai_inferred",
+            "rationale": "The answer marker conflicts with its text.",
+            "source_excerpt": "Question 1 Choose the word.",
+            "confidence": 0.5,
+        },
+        {3: chunk},
+        {"chunk-2": chunk},
+    )
+
+    assert suggestion is None
+
+
 def test_draft_parser_aligns_whitespace_only_excerpt_to_original_source() -> None:
     grounded_excerpt = "1余暇の楽しみ方はいろいろある。\n1 ようか\n2 よか"
     chunk = SourceChunk(

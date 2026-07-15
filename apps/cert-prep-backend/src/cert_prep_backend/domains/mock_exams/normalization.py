@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 
 from cert_prep_backend.domains.mock_exams.models import DraftSuggestion
+
+
+_CHOICE_MARKER_PREFIX = re.compile(
+    r"^\s*(?:\([1-4A-Da-d]\)|[1-4A-Da-d](?:[.)、．:：-]|\s))\s*"
+)
 
 
 def normalize_answer(answer: str, choices: Sequence[str]) -> str:
@@ -19,7 +25,20 @@ def normalize_answer(answer: str, choices: Sequence[str]) -> str:
         stripped = choice.strip()
         if stripped.startswith(f"{normalized}.") or stripped.startswith(f"{normalized} "):
             return choice
+
+    answer_text = normalized
+    matching_choices = [
+        choice
+        for choice in choices
+        if _choice_text_without_marker(choice).casefold() == answer_text.casefold()
+    ]
+    if answer_text and len(matching_choices) == 1:
+        return matching_choices[0]
     return answer
+
+
+def _choice_text_without_marker(value: str) -> str:
+    return _CHOICE_MARKER_PREFIX.sub("", value, count=1).strip()
 
 
 def as_editable_question(suggestion: DraftSuggestion) -> DraftSuggestion:

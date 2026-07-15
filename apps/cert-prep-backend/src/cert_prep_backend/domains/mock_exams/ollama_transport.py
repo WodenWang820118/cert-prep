@@ -5,7 +5,8 @@ from typing import Any, TypeVar
 
 from cert_prep_backend.domains.mock_exams.deterministic_parser import (
     extract_jlpt_question_blocks,
-    source_text_for_prompt,
+    is_exam_source_chunk,
+    source_text_and_chunks_for_prompt,
 )
 from cert_prep_backend.domains.mock_exams.model_fallback import ModelFallbackEngine
 from cert_prep_backend.domains.mock_exams.models import (
@@ -179,66 +180,123 @@ class OllamaProvider:
         if not chunks or limit <= 0:
             return []
 
-        source = source_text_for_prompt(chunks, limit)
-        payload = self._with_model_fallback(
-            lambda model: json_response(
-                self._client.chat(
-                    model=model,
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": (
-                                "You convert OCR text from an uploaded JLPT exam into practice-ready "
-                                "mock exam questions. Preserve actual exam questions and choices. "
-                                "Ignore cover pages, title pages, notes, version notices, copyright "
-                                "notices, and general instructions; do not invent questions from them. "
-                                "Only output real multiple-choice exam items with a question stem and "
-                                "visible choices. If an explicit answer key is present, use it. If it "
-                                "is absent, infer the correct answer and mark answer_key_source as "
-                                "ai_inferred. Do not include chain-of-thought, hidden reasoning, or "
-                                "analysis. Only include a concise user-facing rationale."
-                            ),
-                        },
-                        {
-                            "role": "user",
-                            "content": (
-                                f"Create up to {limit} JLPT mock exam items from this page-delimited "
-                                "source text. For every item, set answer to the exact choice text, "
-                                "include a concise user-facing rationale, include confidence as a "
-                                "number from 0 to 1, keep citation_page from the source page, and "
-                                "include a source_excerpt copied exactly from the source text. If "
-                                "the source only contains title, note, version, or instruction text, "
-                                "return an empty items array for that text.\n\n"
-                                f"{source}"
-                            ),
-                        },
-                    ],
-                    format=EXAM_ITEMS_SCHEMA,
-                    options={
-                        "temperature": 0,
-                        "num_ctx": num_ctx,
-                        "num_predict": num_predict,
-                    },
-                    think=False,
-                    keep_alive=keep_alive,
-                )
+        source, prompt_chunks = source_text_and_chunks_for_prompt(chunks, limit)
+        return self._with_model_fallback(
+            lambda model: self._generate_reasoning_drafts_for_model(
+                model,
+                chunks,
+                source,
+                prompt_chunks,
+                limit=limit,
+                num_ctx=num_ctx,
+                num_predict=num_predict,
+                keep_alive=keep_alive,
             )
         )
-        raw_items = payload.get("items", [])
-        if not isinstance(raw_items, list):
-            return []
 
-        chunks_by_page = {chunk.page_number: chunk for chunk in chunks}
-        chunks_by_id = {chunk.id: chunk for chunk in chunks}
-        suggestions: list[DraftSuggestion] = []
-        for raw_item in raw_items:
-            suggestion = draft_suggestion_from_item(raw_item, chunks_by_page, chunks_by_id)
-            if suggestion is None:
-                continue
-            suggestions.append(suggestion)
-            if len(suggestions) >= limit:
-                break
-        return suggestions
+    def _generate_reasoning_drafts_for_model(
+        self,
+        model: str,
+        chunks: Sequence[SourceChunk],
+        source: str,
+        prompt_chunks: Sequence[SourceChunk],
+        *,
+        limit: int,
+        num_ctx: int,
+        num_predict: int,
+        keep_alive: str | float | int | None,
+    ) -> list[DraftSuggestion]:
+        payload = self._request_reasoning_payload(
+            model,
+            _reasoning_user_prompt(source, limit=limit),
+            num_ctx=num_ctx,
+            num_predict=num_predict,
+            keep_alive=keep_alive,
+        )
+
+        chunks_by_page = {chunk.page_number: chunk for chunk in prompt_chunks}
+        chunks_by_id = {chunk.id: chunk for chunk in prompt_chunks}
+        suggestions = _suggestions_from_reasoning_payload(
+            payload,
+            chunks_by_page=chunks_by_page,
+            chunks_by_id=chunks_by_id,
+            limit=limit,
+        )
+        if (
+            limit <= 1
+            or len(suggestions) >= limit
+            or (not suggestions and not any(is_exam_source_chunk(chunk) for chunk in chunks))
+        ):
+            return suggestions
+
+        missing = limit - len(suggestions)
+        supplemental_chunks = _prioritize_supplemental_chunks(
+            chunks,
+            prompted=prompt_chunks,
+            accepted=suggestions,
+        )
+        supplemental_source, supplemental_prompt_chunks = source_text_and_chunks_for_prompt(
+            supplemental_chunks,
+            missing,
+        )
+        supplemental_payload = self._request_reasoning_payload(
+            model,
+            _supplemental_reasoning_user_prompt(
+                supplemental_source,
+                limit=missing,
+                accepted=suggestions,
+            ),
+            num_ctx=num_ctx,
+            num_predict=num_predict,
+            keep_alive=keep_alive,
+        )
+        supplemental = _suggestions_from_reasoning_payload(
+            supplemental_payload,
+            chunks_by_page={chunk.page_number: chunk for chunk in supplemental_prompt_chunks},
+            chunks_by_id={chunk.id: chunk for chunk in supplemental_prompt_chunks},
+            limit=limit,
+        )
+        return dedupe_suggestions([*suggestions, *supplemental], limit)
+
+    def _request_reasoning_payload(
+        self,
+        model: str,
+        user_prompt: str,
+        *,
+        num_ctx: int,
+        num_predict: int,
+        keep_alive: str | float | int | None,
+    ) -> dict[str, Any]:
+        return json_response(
+            self._client.chat(
+                model=model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You convert OCR text from an uploaded JLPT exam into practice-ready "
+                            "mock exam questions. Preserve actual exam questions and choices. "
+                            "Ignore cover pages, title pages, notes, version notices, copyright "
+                            "notices, and general instructions; do not invent questions from them. "
+                            "Only output real multiple-choice exam items with a question stem and "
+                            "visible choices. If an explicit answer key is present, use it. If it "
+                            "is absent, infer the correct answer and mark answer_key_source as "
+                            "ai_inferred. Do not include chain-of-thought, hidden reasoning, or "
+                            "analysis. Only include a concise user-facing rationale."
+                        ),
+                    },
+                    {"role": "user", "content": user_prompt},
+                ],
+                format=EXAM_ITEMS_SCHEMA,
+                options={
+                    "temperature": 0,
+                    "num_ctx": num_ctx,
+                    "num_predict": num_predict,
+                },
+                think=False,
+                keep_alive=keep_alive,
+            )
+        )
 
     def generate_fast_first_draft(
         self,
@@ -372,3 +430,94 @@ class OllamaProvider:
 
     def _runtime_unusable_models(self) -> set[str]:
         return self._fallback_engine.runtime_unusable_models()
+
+
+def _suggestions_from_reasoning_payload(
+    payload: dict[str, Any],
+    *,
+    chunks_by_page: dict[int, SourceChunk],
+    chunks_by_id: dict[str, SourceChunk],
+    limit: int,
+) -> list[DraftSuggestion]:
+    raw_items = payload.get("items", [])
+    if not isinstance(raw_items, list):
+        return []
+
+    suggestions: list[DraftSuggestion] = []
+    for raw_item in raw_items:
+        suggestion = draft_suggestion_from_item(raw_item, chunks_by_page, chunks_by_id)
+        if suggestion is None:
+            continue
+        suggestions.append(suggestion)
+    return dedupe_suggestions(suggestions, limit)
+
+
+def _prioritize_supplemental_chunks(
+    chunks: Sequence[SourceChunk],
+    *,
+    prompted: Sequence[SourceChunk],
+    accepted: Sequence[DraftSuggestion],
+) -> list[SourceChunk]:
+    prompted_chunk_ids = {chunk.id for chunk in prompted}
+    accepted_chunk_ids = {suggestion.chunk_id for suggestion in accepted}
+    return [
+        *[chunk for chunk in chunks if chunk.id not in prompted_chunk_ids],
+        *[
+            chunk
+            for chunk in chunks
+            if chunk.id in prompted_chunk_ids and chunk.id not in accepted_chunk_ids
+        ],
+        *[chunk for chunk in chunks if chunk.id in accepted_chunk_ids],
+    ]
+
+
+def _reasoning_user_prompt(
+    source: str,
+    *,
+    limit: int,
+) -> str:
+    return (
+        "Return one item for each distinct visible multiple-choice exam item, "
+        f"up to {limit}. If at least {limit} valid items are present, return exactly {limit}. "
+        "If fewer valid items are present, return only those items, possibly an empty array. "
+        "Never invent, duplicate, or split an item merely to reach the requested count. "
+        "Inspect the complete supplied source before responding. Each item must have a complete "
+        "question stem and at least two visible choices, with each choice in a separate choices "
+        "array element. For every item, set answer to the exact choice text, include a concise "
+        "user-facing rationale, include confidence as a number from 0 to 1, keep "
+        "citation_page from the source page, and include a source_excerpt copied exactly "
+        "from the source text. If the source only contains title, note, version, or "
+        f"instruction text, return an empty items array for that text.\n\n{source}"
+    )
+
+
+def _supplemental_reasoning_user_prompt(
+    source: str,
+    *,
+    limit: int,
+    accepted: Sequence[DraftSuggestion],
+) -> str:
+    exclusions = "\n".join(
+        (
+            f"- chunk_id={suggestion.chunk_id}; "
+            f"source_question_number={suggestion.source_question_number or 'unknown'}; "
+            f"question={suggestion.question[:160]}"
+        )
+        for suggestion in accepted
+    )
+    accepted_context = (
+        f"Do not repeat these already accepted items:\n{exclusions}\n\n"
+        if exclusions
+        else "No item from the prior response passed strict validation.\n\n"
+    )
+    return (
+        "This is the single supplemental pass because the prior response did not yield enough "
+        "complete grounded items. Return only additional distinct visible multiple-choice exam "
+        f"items, up to {limit}. If at least {limit} additional valid items are present, return "
+        f"exactly {limit}. Never invent, duplicate, or split an item to reach the count. Each "
+        "item must have a complete question stem and at least two visible choices, with every "
+        "choice in a separate choices array element. Set answer to the exact choice text, include "
+        "a concise user-facing rationale, include confidence from 0 to 1, keep citation_page from "
+        "the source page, and copy source_excerpt exactly from the source text. "
+        f"{accepted_context}{source}"
+    )

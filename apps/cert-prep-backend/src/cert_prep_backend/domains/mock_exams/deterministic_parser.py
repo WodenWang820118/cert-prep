@@ -17,7 +17,18 @@ MAX_PROMPT_CHUNKS = 6
 def source_text_for_prompt(chunks: Sequence[SourceChunk], limit: int) -> str:
     """Build bounded page-delimited source text for the reasoning provider prompt."""
 
+    source, _ = source_text_and_chunks_for_prompt(chunks, limit)
+    return source
+
+
+def source_text_and_chunks_for_prompt(
+    chunks: Sequence[SourceChunk],
+    limit: int,
+) -> tuple[str, tuple[SourceChunk, ...]]:
+    """Build prompt text and return only the chunks actually represented in it."""
+
     sections: list[str] = []
+    selected_chunks: list[SourceChunk] = []
     used_chars = 0
     max_chunks = max(1, min(MAX_PROMPT_CHUNKS, max(1, limit)))
     candidates = [chunk for chunk in chunks if is_exam_source_chunk(chunk)]
@@ -40,8 +51,9 @@ def source_text_for_prompt(chunks: Sequence[SourceChunk], limit: int) -> str:
             else:
                 break
         sections.append(section)
+        selected_chunks.append(chunk)
         used_chars += len(section)
-    return "\n\n".join(sections)
+    return "\n\n".join(sections), tuple(selected_chunks)
 
 
 def is_exam_source_chunk(chunk: SourceChunk) -> bool:
