@@ -69,8 +69,17 @@ export const CERT_PREP_API = new InjectionToken<CertPrepGeneratedClient>(
 export class CertPrepRuntimeConfig {
   private configPromise: Promise<BackendConfig> | null = null;
 
-  async getBackendConfig(): Promise<BackendConfig> {
-    this.configPromise ??= this.loadBackendConfig();
+  getBackendConfig(): Promise<BackendConfig> {
+    if (this.configPromise === null) {
+      const configPromise = this.loadBackendConfig();
+      this.configPromise = configPromise;
+      void configPromise.catch(() => {
+        if (this.configPromise === configPromise) {
+          this.configPromise = null;
+        }
+      });
+    }
+
     return this.configPromise;
   }
 

@@ -27,8 +27,8 @@ export async function installPythonRuntimeIfNeeded(run: SmokeRunState): Promise<
   await waitText(run, /Install Python backend runtime/, 10_000, 'python install consent');
   await screenshot(run, 'python-install-consent');
   await clickConsentInstall(run);
-  await waitText(run,
-    /Projects|Select or create a project|Workspace ready|Python 3/,
+  await waitRuntimeDrawerText(run,
+    pythonRuntimeReadyPattern(),
     90_000,
     'python runtime ready',
   );
@@ -99,6 +99,10 @@ export async function installOcrRuntimeIfNeeded(run: SmokeRunState): Promise<voi
   await waitText(run, ocrReadyPattern(), 900_000, 'ocr runtime ready');
   run.metrics.ui_timings_ms.paddleocr_runtime_install = Date.now() - start;
   await screenshot(run, 'runtime-checklist-ready');
+}
+
+export function pythonRuntimeReadyPattern(): RegExp {
+  return /(?:^|\r?\n)[^\S\r\n]*Python backend runtime is (?:ready|running|already running)\.[^\S\r\n]*(?=\r?\n|$)/i;
 }
 
 function ocrInstallablePattern(): RegExp {

@@ -53,6 +53,44 @@ describe('CertPrepRuntimeConfig', () => {
       TestBed.inject(CertPrepRuntimeConfig).getBackendConfig(),
     ).rejects.toThrow('Desktop backend configuration is unavailable.');
   });
+
+  it('retries desktop config after a transient failure and caches the recovery', async () => {
+    localStorage.setItem('certPrepApiBaseUrl', 'http://127.0.0.1:9999/');
+    const recoveredConfig = {
+      base_url: 'http://127.0.0.1:9001/',
+      token: 'runtime-token',
+    };
+    const invoke = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('Backend is still starting.'))
+      .mockResolvedValueOnce(recoveredConfig);
+    Object.defineProperty(window, '__TAURI_INTERNALS__', {
+      configurable: true,
+      value: { invoke },
+    });
+    const runtimeConfig = TestBed.inject(CertPrepRuntimeConfig);
+
+    const firstLookup = runtimeConfig.getBackendConfig();
+    const concurrentLookup = runtimeConfig.getBackendConfig();
+    expect(concurrentLookup).toBe(firstLookup);
+    await expect(firstLookup).rejects.toThrow(
+      'Desktop backend configuration is unavailable.',
+    );
+    await expect(concurrentLookup).rejects.toThrow(
+      'Desktop backend configuration is unavailable.',
+    );
+    const recoveryLookup = runtimeConfig.getBackendConfig();
+    const concurrentRecoveryLookup = runtimeConfig.getBackendConfig();
+    expect(concurrentRecoveryLookup).toBe(recoveryLookup);
+    await expect(recoveryLookup).resolves.toEqual(recoveredConfig);
+    const cachedLookup = runtimeConfig.getBackendConfig();
+    expect(cachedLookup).toBe(recoveryLookup);
+    await expect(cachedLookup).resolves.toEqual(recoveredConfig);
+
+    expect(invoke).toHaveBeenCalledTimes(2);
+    expect(invoke).toHaveBeenNthCalledWith(1, 'backend_config', {}, undefined);
+    expect(invoke).toHaveBeenNthCalledWith(2, 'backend_config', {}, undefined);
+  });
 });
 
 describe('CertPrepAuthenticatedTransport', () => {
