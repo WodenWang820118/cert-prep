@@ -253,6 +253,72 @@ test('forced crash detects a captured child after it is reparented', async () =>
   assert.equal(launchCalls, 0);
 });
 
+test('forced crash ignores stale parent PID links from processes older than the app', async () => {
+  const appPid = 6_242;
+  const crashedApp = {
+    pid: appPid,
+    exitCode: null,
+    killed: false,
+  } as unknown as ChildProcess;
+  const root = processRecord(
+    appPid,
+    100,
+    'cert-prep-desktop.exe',
+    '/Date(2000)/',
+  );
+  const staleChild = processRecord(
+    6_243,
+    appPid,
+    'WebKitNetworkProcess.exe',
+    '/Date(1000)/',
+  );
+  const staleGrandchild = processRecord(
+    6_244,
+    staleChild.pid,
+    'conhost.exe',
+    '/Date(1001)/',
+  );
+  let snapshotCalls = 0;
+  let launchCalls = 0;
+  const run = {
+    app: crashedApp,
+    appExit: { exited: false, code: null, signal: null },
+    browser: { close: async () => undefined },
+    page: {},
+    projectApi: {
+      apiBaseUrl: 'http://127.0.0.1:8000',
+      authorization: 'Bearer stale',
+      projectId: 'project-1',
+    },
+    uploadedDocument: { documentId: 'document-1' },
+    metrics: { observations: [] },
+    port: 9591,
+  } as unknown as SmokeRunState;
+
+  await forceCrashAndReconnect(run, 'ocr crash recovery', {
+    terminateProcessTree: () => ({
+      attempted: true,
+      method: 'taskkill_process_tree',
+      exitCode: 0,
+      error: null,
+    }),
+    waitForExit: async () => true,
+    snapshotProcesses: () => {
+      snapshotCalls += 1;
+      return snapshotCalls === 1
+        ? [root, staleChild, staleGrandchild]
+        : [staleChild, staleGrandchild];
+    },
+    waitAfterTermination: async () => undefined,
+    launch: async () => {
+      launchCalls += 1;
+    },
+  });
+
+  assert.equal(snapshotCalls, 2);
+  assert.equal(launchCalls, 1);
+});
+
 test('XDNA2 acceptance strips inherited runtime overrides without mutation', () => {
   const inherited: NodeJS.ProcessEnv = {
     Path: 'C:\\Windows\\System32',

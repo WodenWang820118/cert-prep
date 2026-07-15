@@ -296,7 +296,7 @@ export async function forceCrashAndReconnect(
     throw new Error(`${label} requires a live packaged app process.`);
   }
 
-  const ownedBeforeCrash = collectProcessTree(snapshotProcesses(), appPid);
+  const ownedBeforeCrash = collectLiveProcessTree(snapshotProcesses(), appPid);
   if (
     !ownedBeforeCrash.some((record) => record.pid === appPid) ||
     ownedBeforeCrash.some((record) => record.name.trim().length === 0)
@@ -356,6 +356,67 @@ export async function forceCrashAndReconnect(
   run.port += 1;
   await launch(run);
   return { appPid, termination };
+}
+
+function collectLiveProcessTree(
+  processes: readonly ProcessRecord[],
+  rootPid: number,
+): ProcessRecord[] {
+  const tree = collectProcessTree(processes, rootPid);
+  const byPid = new Map(processes.map((record) => [record.pid, record]));
+  if (!byPid.has(rootPid)) {
+    return tree;
+  }
+  return tree.filter(
+    (record) =>
+      record.pid === rootPid ||
+      hasValidCreationChain(record, byPid, rootPid),
+  );
+}
+
+function hasValidCreationChain(
+  record: ProcessRecord,
+  byPid: ReadonlyMap<number, ProcessRecord>,
+  rootPid: number,
+): boolean {
+  let current = record;
+  const seen = new Set<number>();
+  while (current.pid !== rootPid) {
+    if (seen.has(current.pid)) {
+      return false;
+    }
+    seen.add(current.pid);
+    const parent = byPid.get(current.parentPid);
+    if (!parent) {
+      return false;
+    }
+    const childCreatedAt = processCreationEpochMs(current.creationDate);
+    const parentCreatedAt = processCreationEpochMs(parent.creationDate);
+    if (
+      childCreatedAt !== null &&
+      parentCreatedAt !== null &&
+      childCreatedAt < parentCreatedAt
+    ) {
+      return false;
+    }
+    current = parent;
+  }
+  return true;
+}
+
+function processCreationEpochMs(value: string): number | null {
+  const trimmed = value.trim();
+  const powershellDate = trimmed.match(
+    /^\/Date\((-?\d+)(?:[+-]\d{4})?\)\/$/,
+  );
+  const strictIsoDate =
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?(?:Z|[+-]\d{2}:\d{2})$/;
+  const epochMs = powershellDate
+    ? Number(powershellDate[1])
+    : strictIsoDate.test(trimmed)
+      ? Date.parse(trimmed)
+      : Number.NaN;
+  return Number.isSafeInteger(epochMs) && epochMs >= 0 ? epochMs : null;
 }
 
 function selectCapturedProcessResidue(
