@@ -137,6 +137,7 @@ test('atomic publication retries only transient Windows rename failures', async 
     const outputRoot = join(root, 'candidate');
     let calls = 0;
     const waits = [];
+    const retries = [];
     await publishCandidateAtomically(join(root, 'source'), outputRoot, {
       rename: () => {
         calls += 1;
@@ -147,11 +148,16 @@ test('atomic publication retries only transient Windows rename failures', async 
         }
       },
       wait: async (milliseconds) => waits.push(milliseconds),
+      reportRetry: (retry) => retries.push(retry),
       attempts: 3,
       retryDelayMs: 5,
     });
     assert.equal(calls, 3);
     assert.deepEqual(waits, [5, 5]);
+    assert.deepEqual(retries, [
+      { attempt: 1, code: 'EPERM' },
+      { attempt: 2, code: 'EBUSY' },
+    ]);
 
     const permanent = new Error('invalid source');
     permanent.code = 'ENOENT';

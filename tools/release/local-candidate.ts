@@ -366,8 +366,15 @@ export async function publishCandidateAtomically(
     rename = renameSync,
     wait = (milliseconds) =>
       new Promise((resolveWait) => setTimeout(resolveWait, milliseconds)),
-    attempts = 80,
-    retryDelayMs = 250,
+    reportRetry = ({ attempt, code }) => {
+      if (attempt === 1 || attempt % 15 === 0) {
+        process.stderr.write(
+          `Waiting for Windows to release candidate files (${code}, attempt ${attempt}).\n`,
+        );
+      }
+    },
+    attempts = 301,
+    retryDelayMs = 1000,
   } = {},
 ) {
   if (!Number.isSafeInteger(attempts) || attempts < 1) {
@@ -389,6 +396,7 @@ export async function publishCandidateAtomically(
       ) {
         throw error;
       }
+      reportRetry({ attempt, code: error.code });
       await wait(retryDelayMs);
     }
   }
