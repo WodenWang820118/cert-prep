@@ -157,6 +157,39 @@ def test_document_ocr_provider_pool_limits_async_documents_to_configured_paralle
         _wait_for_document_status(client, auth_headers, project_id, document["id"], "ready")
 
 
+def test_document_ocr_provider_pool_reuses_prepared_slot_before_cold_parallel_slot() -> None:
+    providers: list[ReusableBlockingOcrProvider] = []
+
+    def provider_factory() -> ReusableBlockingOcrProvider:
+        provider = ReusableBlockingOcrProvider()
+        providers.append(provider)
+        return provider
+
+    pool = DocumentOCRProviderPool(
+        max_parallel_documents=2,
+        provider_factory=provider_factory,
+        prepare_on_acquire=True,
+        close_providers_on_shutdown=True,
+    )
+
+    pool.prepare()
+
+    assert len(providers) == 1
+    assert providers[0].prepare_count == 1
+    with pool.acquire() as prepared_provider:
+        assert prepared_provider is providers[0]
+        assert len(providers) == 1
+        assert providers[0].prepare_count == 1
+
+        with pool.acquire() as parallel_provider:
+            assert len(providers) == 2
+            assert parallel_provider is providers[1]
+            assert [provider.prepare_count for provider in providers] == [1, 1]
+
+    pool.close()
+    assert [provider.close_count for provider in providers] == [1, 1]
+
+
 def test_document_ocr_provider_pool_release_does_not_close_provider() -> None:
     provider = CloseRaisingOcrProvider()
     pool = DocumentOCRProviderPool(

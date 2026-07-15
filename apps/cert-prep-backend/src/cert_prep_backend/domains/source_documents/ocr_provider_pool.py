@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from contextlib import suppress
-from queue import Queue
+from queue import LifoQueue
 from threading import Lock
 from types import TracebackType
 
@@ -49,8 +49,8 @@ class DocumentOCRProviderPool:
         self._provider_factory = provider_factory
         self._prepare_on_acquire = prepare_on_acquire
         self._close_providers_on_shutdown = close_providers_on_shutdown
-        self._available_slots: Queue[int] = Queue()
-        for slot_index in range(self._max_parallel_documents):
+        self._available_slots: LifoQueue[int] = LifoQueue()
+        for slot_index in reversed(range(self._max_parallel_documents)):
             self._available_slots.put(slot_index)
         self._providers: list[OCRProvider | None] = [
             None for _ in range(self._max_parallel_documents)
