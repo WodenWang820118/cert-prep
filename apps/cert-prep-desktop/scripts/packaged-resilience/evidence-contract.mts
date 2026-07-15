@@ -77,6 +77,13 @@ export interface EvidenceValidationContext {
   readonly acceptanceCompletedAt?: string;
 }
 
+export interface ManualDraftTerminalExpectation {
+  readonly operationId: string;
+  readonly commitStartedAt: string;
+  readonly projectId: string;
+  readonly documentId: string;
+}
+
 interface OperationSnapshot {
   readonly id: string;
   readonly status: string;
@@ -552,47 +559,49 @@ function validateScopedCancellationProof(
     fail(check, 'cancel or non-cancellable commit evidence is incomplete');
   }
   if (check === 'draft') {
-    validateManualDraftTerminal(
-      proof,
-      commitOperationId,
-      commitStartedAtText,
-      projectId as string,
-      documentId as string,
-    );
+    assertManualDraftTerminalEvidence(proof.manualDraftTerminalResponse, {
+      operationId: commitOperationId,
+      commitStartedAt: commitStartedAtText,
+      projectId: projectId as string,
+      documentId: documentId as string,
+    });
   }
   validateScenarioTransition(proof, check);
 }
 
-function validateManualDraftTerminal(
-  proof: Record<string, unknown>,
-  operationId: string,
-  commitStartedAt: string,
-  projectId: string,
-  documentId: string,
+export function assertManualDraftTerminalEvidence(
+  rawResponse: unknown,
+  expected: ManualDraftTerminalExpectation,
 ): void {
   const response = record(
-    proof.manualDraftTerminalResponse,
+    rawResponse,
     'draft manualDraftTerminalResponse',
   );
   const terminal = operationSnapshot(response, 'draft', {
-    operationId,
+    operationId: expected.operationId,
     statuses: ['succeeded'],
-    projectId,
-    documentId,
+    projectId: expected.projectId,
+    documentId: expected.documentId,
     provider: OLLAMA_PROVIDER,
     model: OLLAMA_MODEL,
   });
+  const generatedCount = response.generated_count;
   if (
     terminal.phase !== 'completed' ||
     terminal.cancellable !== false ||
-    terminal.commitStartedAt !== commitStartedAt ||
+    terminal.commitStartedAt !== expected.commitStartedAt ||
     response.strategy !== 'hybrid_reasoning' ||
-    positiveInteger(response.generated_count) < 2 ||
+    typeof generatedCount !== 'number' ||
+    !Number.isInteger(generatedCount) ||
+    generatedCount < 2 ||
     response.effective_provider !== OLLAMA_PROVIDER ||
     response.effective_model !== OLLAMA_MODEL ||
     (response.fallback_reason !== null && response.fallback_reason !== undefined)
   ) {
-    fail('draft', 'manual draft terminal attribution is incomplete');
+    fail(
+      'draft',
+      'manual draft terminal cannot satisfy durable evidence; expected hybrid_reasoning, at least 2 generated drafts, exact effective Ollama attribution, and no fallback',
+    );
   }
 }
 

@@ -60,7 +60,11 @@ import {
   writeResilienceEvidence,
   writeSessionRestartEvidence,
 } from './evidence-writer.mts';
-import type { ResilienceCheck } from './evidence-contract.mts';
+import {
+  assertManualDraftTerminalEvidence,
+  type ManualDraftTerminalExpectation,
+  type ResilienceCheck,
+} from './evidence-contract.mts';
 import {
   runCancelableOperationScenario,
   type CancelableOperationScenario,
@@ -463,9 +467,10 @@ export async function executeRemainingResilienceScenarios(
         ),
     };
     const proof = await runCancelableOperationScenario(transport, scenario);
+    const commitBinding = commitBindingFromProof(proof, 'draft');
     const manualDraftTerminalResponse = await waitForOperationSuccess(
       transport,
-      operationIdFromCommitProof(proof, 'draft'),
+      commitBinding.operationId,
       scenario.operationPath,
       {
         project_id: projectApi.projectId,
@@ -476,10 +481,14 @@ export async function executeRemainingResilienceScenarios(
       options.timeoutMs,
       'draft',
     );
-    const usableDraftCount = await waitForExactDocumentDrafts(
+    const usableDraftCount = await waitForValidatedManualDraftPublication(
       transport,
-      projectApi.projectId,
-      uploadedDocument.documentId,
+      manualDraftTerminalResponse,
+      {
+        ...commitBinding,
+        projectId: projectApi.projectId,
+        documentId: uploadedDocument.documentId,
+      },
       options.timeoutMs,
     );
     return {
@@ -859,6 +868,21 @@ export async function waitForExactDocumentDrafts(
   return usable.length;
 }
 
+export async function waitForValidatedManualDraftPublication(
+  transport: JsonTransport,
+  terminalResponse: Readonly<Record<string, unknown>>,
+  expected: ManualDraftTerminalExpectation,
+  timeoutMs: number,
+): Promise<number> {
+  assertManualDraftTerminalEvidence(terminalResponse, expected);
+  return waitForExactDocumentDrafts(
+    transport,
+    expected.projectId,
+    expected.documentId,
+    timeoutMs,
+  );
+}
+
 async function currentExactDocumentDraftCount(
   transport: JsonTransport,
   projectId: string,
@@ -944,18 +968,37 @@ function exactOperationScope(
   return operationId;
 }
 
-function operationIdFromCommitProof(
+interface CommitProofBinding {
+  readonly operationId: string;
+  readonly commitStartedAt: string;
+}
+
+function commitBindingFromProof(
   proof: Readonly<Record<string, unknown>>,
   label: string,
-): string {
+): CommitProofBinding {
   const raw = proof.nonCancellableResponse;
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
     throw new Error(`${label} non-cancellable proof was missing.`);
   }
-  return stringField(
-    (raw as Record<string, unknown>).operationId,
-    `${label} commit operation ID`,
-  );
+  const response = raw as Record<string, unknown>;
+  return {
+    operationId: stringField(
+      response.operationId,
+      `${label} commit operation ID`,
+    ),
+    commitStartedAt: stringField(
+      response.commitStartedAt,
+      `${label} commit started at`,
+    ),
+  };
+}
+
+function operationIdFromCommitProof(
+  proof: Readonly<Record<string, unknown>>,
+  label: string,
+): string {
+  return commitBindingFromProof(proof, label).operationId;
 }
 
 async function captureTimedProof(

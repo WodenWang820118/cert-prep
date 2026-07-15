@@ -20,11 +20,13 @@ import {
 import { writeSessionRestartEvidence } from './evidence-writer.mts';
 import type { OwnedProcessesReleasedProof } from './owned-process-evidence.mts';
 import type { RemainingResilienceOptions } from './remaining-options.mts';
+import type { JsonTransport } from './api-client.mts';
 import {
   runRemainingResilienceAcceptance,
   type RemainingResilienceRunnerDependencies,
   type RemainingScenarioProofs,
   type TimedProof,
+  waitForValidatedManualDraftPublication,
 } from './resilience-runner.mts';
 
 test('remaining resilience runner atomically publishes four checks and session restart after cleanup', async () => {
@@ -152,6 +154,47 @@ test('remaining resilience runner removes staging when session evidence write fa
   } finally {
     fixture.cleanup();
   }
+});
+
+test('manual draft terminal with zero generated drafts fails before publication polling', async () => {
+  let requestCount = 0;
+  const transport: JsonTransport = {
+    async request() {
+      requestCount += 1;
+      throw new Error('question drafts must not be polled');
+    },
+  };
+
+  await assert.rejects(
+    waitForValidatedManualDraftPublication(
+      transport,
+      {
+        id: 'operation-commit',
+        project_id: 'project-1',
+        document_id: 'document-1',
+        strategy: 'hybrid_reasoning',
+        status: 'succeeded',
+        phase: 'completed',
+        cancellable: false,
+        provider: 'ollama',
+        model: 'qwen3.5:4b',
+        effective_provider: 'ollama',
+        effective_model: 'qwen3.5:4b',
+        fallback_reason: null,
+        generated_count: 0,
+        commit_started_at: '2026-07-15T12:00:00.000Z',
+      },
+      {
+        operationId: 'operation-commit',
+        commitStartedAt: '2026-07-15T12:00:00.000Z',
+        projectId: 'project-1',
+        documentId: 'document-1',
+      },
+      10_000,
+    ),
+    /manual draft terminal cannot satisfy durable evidence; expected hybrid_reasoning, at least 2 generated drafts, exact effective Ollama attribution, and no fallback/,
+  );
+  assert.equal(requestCount, 0);
 });
 
 function testDependencies(
