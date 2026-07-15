@@ -859,17 +859,44 @@ function writeParsedJson(path, value, label) {
   writeJson(path, parsed);
 }
 
+export function resolveCommandInvocation(
+  command,
+  args,
+  platform = process.platform,
+) {
+  if (platform !== 'win32' || command !== 'pnpm') {
+    return { executable: command, args };
+  }
+  const commandTokens = ['pnpm.cmd', ...args];
+  const unsafeToken = commandTokens.find(
+    (token) => !/^[a-zA-Z0-9._:/\\-]+$/.test(token),
+  );
+  if (unsafeToken) {
+    throw new Error(
+      `Unsafe Windows pnpm command token: ${JSON.stringify(unsafeToken)}.`,
+    );
+  }
+  return {
+    executable: process.env.ComSpec || 'cmd.exe',
+    args: ['/d', '/s', '/c', commandTokens.join(' ')],
+  };
+}
+
 function runCommand(command, args, { cwd, capture = false } = {}) {
-  const executable =
-    process.platform === 'win32' && command === 'pnpm' ? 'pnpm.cmd' : command;
-  const result = spawnSync(executable, args, {
+  const invocation = resolveCommandInvocation(command, args);
+  const result = spawnSync(invocation.executable, invocation.args, {
     cwd,
     encoding: 'utf8',
     maxBuffer: 256 * 1024 * 1024,
     stdio: capture ? ['ignore', 'pipe', 'pipe'] : 'inherit',
   });
   if (result.error || result.status !== 0) {
-    const detail = capture ? String(result.stderr ?? '').trim() : '';
+    const outputDetail = capture
+      ? [result.stderr, result.stdout]
+          .map((value) => String(value ?? '').trim())
+          .find(Boolean)
+      : '';
+    const detail = result.error?.message || outputDetail;
     throw new Error(
       `${command} ${args.join(' ')} failed${detail ? `: ${detail}` : '.'}`,
     );

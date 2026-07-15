@@ -16,6 +16,7 @@ import {
   assertCleanSourceCheckout,
   assertSafeNewOutput,
   inspectLocalCandidateBuild,
+  resolveCommandInvocation,
   validateAssembledRuntimes,
 } from './local-candidate.ts';
 import {
@@ -100,6 +101,33 @@ test('local candidate source check rejects any tracked or untracked change', () 
   assert.doesNotThrow(() =>
     assertCleanSourceCheckout('C:/fixture', () => ''),
   );
+});
+
+test('local candidate invokes pnpm through cmd on Windows', () => {
+  assert.deepEqual(
+    resolveCommandInvocation(
+      'pnpm',
+      ['licenses', 'list', '--prod', '--json'],
+      'win32',
+    ),
+    {
+      executable: process.env.ComSpec || 'cmd.exe',
+      args: [
+        '/d',
+        '/s',
+        '/c',
+        'pnpm.cmd licenses list --prod --json',
+      ],
+    },
+  );
+  assert.throws(
+    () => resolveCommandInvocation('pnpm', ['licenses', '& whoami'], 'win32'),
+    /Unsafe Windows pnpm command token/,
+  );
+  assert.deepEqual(resolveCommandInvocation('pnpm', ['--version'], 'linux'), {
+    executable: 'pnpm',
+    args: ['--version'],
+  });
 });
 
 test('local candidate output is a new direct child of workspace tmp', () => {
