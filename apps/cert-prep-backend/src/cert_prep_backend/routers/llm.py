@@ -54,11 +54,7 @@ def llm_provider_selection(
     settings: Settings = Depends(get_settings),
     provider: LLMProvider = Depends(get_llm_provider),
 ):
-    return provider_selection_from_settings(
-        settings,
-        effective_provider=str(getattr(provider, "provider", "")),
-        effective_model=str(getattr(provider, "model", "")),
-    )
+    return _provider_selection_response(settings, provider)
 
 
 @router.post(
@@ -99,10 +95,16 @@ def decide_fastflowlm_terms(
         db=db,
         async_jobs=request.app.state.runtime_installation_async_jobs,
     )
+    return _provider_selection_response(settings, provider)
+
+
+def _provider_selection_response(settings: Settings, provider: LLMProvider):
+    resolve = getattr(provider, "resolved_provider", None)
+    effective_provider = resolve() if callable(resolve) else provider
     return provider_selection_from_settings(
         settings,
-        effective_provider=str(getattr(provider, "provider", "")),
-        effective_model=str(getattr(provider, "model", "")),
+        effective_provider=str(getattr(effective_provider, "provider", "")),
+        effective_model=str(getattr(effective_provider, "model", "")),
     )
 
 

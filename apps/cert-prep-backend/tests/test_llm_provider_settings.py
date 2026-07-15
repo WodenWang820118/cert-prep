@@ -156,6 +156,51 @@ def test_provider_selection_endpoint_reports_configured_and_effective_truth(tmp_
     assert response.json()["terms_url"].endswith("/v0.9.43/src/inno/terms.txt")
 
 
+def test_provider_selection_endpoint_resolves_profile_model_before_health(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    resolve_calls = 0
+    monkeypatch.setattr(
+        provider_selection_module,
+        "_cached_machine_inventory",
+        lambda _timeout: _profile_inventory(total_ram=16 * GIB, free_disk=64 * GIB),
+    )
+
+    class ResolvedOllamaProvider:
+        provider = "ollama"
+        model = "cert-prep-qwen3.5-4b-study-8k"
+
+    def resolve_provider():
+        nonlocal resolve_calls
+        resolve_calls += 1
+        return ResolvedOllamaProvider()
+
+    provider = provider_module.LazyDraftGenerationProvider(
+        resolve_provider,
+        provider="ollama",
+        model="qwen3.5:4b",
+        supports_ollama_runtime_installation=True,
+    )
+    client = TestClient(
+        create_app(
+            settings=Settings(
+                data_dir=tmp_path,
+                api_token="test-token",
+                llm_provider="ollama",
+            ),
+            llm_provider=provider,
+        )
+    )
+
+    response = client.get("/llm/provider-selection", headers=AUTH_HEADERS)
+
+    assert response.status_code == 200
+    assert response.json()["configured_model"] == "qwen3.5:4b"
+    assert response.json()["effective_model"] == "cert-prep-qwen3.5-4b-study-8k"
+    assert resolve_calls == 1
+
+
 def test_fastflowlm_terms_decision_endpoint_persists_exact_accepted_version(
     tmp_path,
 ) -> None:
