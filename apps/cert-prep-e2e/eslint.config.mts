@@ -9,7 +9,7 @@ export default [
   playwrightPlugin.configs['flat/recommended'],
   ...baseConfig,
   {
-    files: ['**/*.ts', '**/*.js', '**/*.mjs'],
+    files: ['**/*.ts', '**/*.js', '**/*.mts'],
     // Override or add rules here
     rules: {},
   },

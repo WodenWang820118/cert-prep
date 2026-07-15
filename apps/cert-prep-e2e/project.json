@@ -6,6 +6,18 @@
   "implicitDependencies": ["cert-prep"],
   "tags": ["scope:cert", "type:e2e"],
   "targets": {
+    "typecheck-scripts": {
+      "executor": "nx:run-commands",
+      "cache": true,
+      "inputs": [
+        "default",
+        "{workspaceRoot}/tsconfig.scripts.json",
+        "{projectRoot}/src/real-backend/tsconfig.json"
+      ],
+      "options": {
+        "command": "pnpm exec tsc -p apps/cert-prep-e2e/src/real-backend/tsconfig.json"
+      }
+    },
     "e2e": {
       "executor": "nx:run-commands",
       "dependsOn": [],
@@ -29,7 +41,7 @@
     },
     "e2e-real-backend": {
       "executor": "nx:run-commands",
-      "dependsOn": [],
+      "dependsOn": ["typecheck-scripts"],
       "options": {
         "cwd": "apps/cert-prep-e2e",
         "command": "playwright test --config playwright.real-backend.config.ts"

@@ -1,4 +1,23 @@
-import { createServer } from 'node:http';
+import {
+  createServer,
+  type IncomingHttpHeaders,
+  type IncomingMessage,
+  type ServerResponse,
+} from 'node:http';
+
+interface ProxyRule {
+  readonly id: string;
+  readonly method: string;
+  readonly pathPattern: string;
+  remainingFailures: number;
+  readonly failureStatus: number;
+  readonly delayBeforeForwardMs: number;
+  matched: number;
+  failures: number;
+  forwarded: number;
+  lastForwardStatus: number | null;
+  lastOperationId: string | null;
+}
 
 const listenHost = '127.0.0.1';
 const listenPort = Number.parseInt(
@@ -9,7 +28,7 @@ const backendBaseUrl = new URL(
   process.env.CERT_PREP_E2E_BACKEND_URL ?? 'http://127.0.0.1:8765',
 );
 
-let rules = [];
+let rules: ProxyRule[] = [];
 
 const server = createServer(async (request, response) => {
   try {
@@ -48,11 +67,14 @@ const server = createServer(async (request, response) => {
       }
     }
 
-    const targetUrl = new URL(`${requestUrl.pathname}${requestUrl.search}`, backendBaseUrl);
+    const targetUrl = new URL(
+      `${requestUrl.pathname}${requestUrl.search}`,
+      backendBaseUrl,
+    );
     const upstream = await fetch(targetUrl, {
       method: request.method,
       headers: forwardedHeaders(request.headers),
-      body: body.length === 0 ? undefined : body,
+      body: body.length === 0 ? undefined : Uint8Array.from(body),
       redirect: 'manual',
     });
     if (rule !== undefined) {
@@ -84,7 +106,11 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
   });
 }
 
-async function handleControlRequest(request, response, requestUrl) {
+async function handleControlRequest(
+  request: IncomingMessage,
+  response: ServerResponse,
+  requestUrl: URL,
+): Promise<void> {
   if (request.method === 'GET' && requestUrl.pathname === '/__e2e/health') {
     writeJson(response, 200, { status: 'ok' });
     return;
@@ -99,8 +125,13 @@ async function handleControlRequest(request, response, requestUrl) {
     return;
   }
   if (request.method === 'POST' && requestUrl.pathname === '/__e2e/rules') {
-    const input = JSON.parse((await readBody(request)).toString('utf8'));
-    rules = normalizeRules(input.rules);
+    const input: unknown = JSON.parse(
+      (await readBody(request)).toString('utf8'),
+    );
+    if (input === null || typeof input !== 'object') {
+      throw new TypeError('request body must be an object');
+    }
+    rules = normalizeRules((input as Record<string, unknown>)['rules']);
     writeJson(response, 200, { rules: rules.map(publicRule) });
     return;
   }
@@ -110,7 +141,7 @@ async function handleControlRequest(request, response, requestUrl) {
   });
 }
 
-function normalizeRules(input) {
+function normalizeRules(input: unknown): ProxyRule[] {
   if (!Array.isArray(input)) {
     throw new TypeError('rules must be an array');
   }
@@ -118,18 +149,22 @@ function normalizeRules(input) {
     if (candidate === null || typeof candidate !== 'object') {
       throw new TypeError(`rule ${index} must be an object`);
     }
-    const id = String(candidate.id ?? `rule-${index + 1}`);
-    const method = String(candidate.method ?? 'GET').toUpperCase();
-    const pathPattern = String(candidate.pathPattern ?? '.*');
+    const ruleInput = candidate as Record<string, unknown>;
+    const id = String(ruleInput['id'] ?? `rule-${index + 1}`);
+    const method = String(ruleInput['method'] ?? 'GET').toUpperCase();
+    const pathPattern = String(ruleInput['pathPattern'] ?? '.*');
     // Compile eagerly so malformed test rules fail at configuration time.
     new RegExp(pathPattern);
     return {
       id,
       method,
       pathPattern,
-      remainingFailures: positiveInteger(candidate.failCount, 0),
-      failureStatus: positiveInteger(candidate.failureStatus, 503),
-      delayBeforeForwardMs: positiveInteger(candidate.delayBeforeForwardMs, 0),
+      remainingFailures: positiveInteger(ruleInput['failCount'], 0),
+      failureStatus: positiveInteger(ruleInput['failureStatus'], 503),
+      delayBeforeForwardMs: positiveInteger(
+        ruleInput['delayBeforeForwardMs'],
+        0,
+      ),
       matched: 0,
       failures: 0,
       forwarded: 0,
@@ -139,7 +174,7 @@ function normalizeRules(input) {
   });
 }
 
-function matchingRule(method, pathname) {
+function matchingRule(method: string, pathname: string): ProxyRule | undefined {
   return rules.find(
     (rule) =>
       rule.method === method.toUpperCase() &&
@@ -147,7 +182,7 @@ function matchingRule(method, pathname) {
   );
 }
 
-function publicRule(rule) {
+function publicRule(rule: ProxyRule) {
   return {
     id: rule.id,
     method: rule.method,
@@ -161,20 +196,20 @@ function publicRule(rule) {
   };
 }
 
-function positiveInteger(value, fallback) {
+function positiveInteger(value: unknown, fallback: number): number {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
-function headerValue(value) {
+function headerValue(value: string | string[] | undefined): string | null {
   if (Array.isArray(value)) {
     return value[0] ?? null;
   }
   return value ?? null;
 }
 
-function forwardedHeaders(headers) {
-  const result = {};
+function forwardedHeaders(headers: IncomingHttpHeaders): Record<string, string> {
+  const result: Record<string, string> = {};
   for (const [name, value] of Object.entries(headers)) {
     if (
       value === undefined ||
@@ -187,20 +222,25 @@ function forwardedHeaders(headers) {
   return result;
 }
 
-async function readBody(request) {
-  const chunks = [];
+async function readBody(request: IncomingMessage): Promise<Buffer> {
+  const chunks: Buffer[] = [];
   for await (const chunk of request) {
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   }
   return Buffer.concat(chunks);
 }
 
-function writeJson(response, status, value, origin) {
+function writeJson(
+  response: ServerResponse,
+  status: number,
+  value: unknown,
+  origin?: string,
+): void {
   if (response.destroyed) {
     return;
   }
   const body = Buffer.from(JSON.stringify(value));
-  const headers = {
+  const headers: Record<string, string> = {
     'content-type': 'application/json',
     'content-length': String(body.length),
   };
@@ -212,6 +252,6 @@ function writeJson(response, status, value, origin) {
   response.end(body);
 }
 
-function delay(milliseconds) {
+function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }

@@ -48,7 +48,7 @@ export default defineConfig({
       },
     },
     {
-      command: 'node src/real-backend/backend-proxy.mjs',
+      command: 'node src/real-backend/backend-proxy.mts',
       url: 'http://127.0.0.1:8766/__e2e/health',
       cwd: join(workspaceRoot, 'apps', 'cert-prep-e2e'),
       reuseExistingServer: false,
