@@ -54,6 +54,85 @@ def test_draft_parser_accepts_jlpt_like_choice_item() -> None:
     assert suggestion.citation_page == 3
     assert suggestion.confidence == 0.82
 
+
+def test_draft_parser_aligns_whitespace_only_excerpt_to_original_source() -> None:
+    grounded_excerpt = "1余暇の楽しみ方はいろいろある。\n1 ようか\n2 よか"
+    chunk = SourceChunk(
+        id="chunk-2",
+        page_number=3,
+        text="問題1 余暇の楽しみ方はいろいろある。 1 ようか 2 よか 問題2",
+        raw_text=f"問題1\n{grounded_excerpt}\n問題2",
+        source_excerpt=grounded_excerpt,
+    )
+
+    suggestion = _draft_suggestion_from_item(
+        {
+            "chunk_id": "chunk-2",
+            "citation_page": 3,
+            "question": "余暇の楽しみ方はいろいろある。",
+            "choices": ["1 ようか", "2 よか"],
+            "answer": "1",
+            "answer_key_source": "ai_inferred",
+            "rationale": "Choice 1 is the correct reading.",
+            "source_excerpt": "1\u00a0余暇の楽しみ方はいろいろある。\u30001 ようか\t2 よか",
+            "confidence": 0.82,
+        },
+        {3: chunk},
+        {"chunk-2": chunk},
+    )
+
+    assert suggestion is not None
+    assert suggestion.source_excerpt == grounded_excerpt
+
+
+@pytest.mark.parametrize(
+    "source_excerpt",
+    [
+        pytest.param(
+            "1 余暇の楽しみ方はいろいろある。 1 ようか 2 よが",
+            id="character-drift",
+        ),
+        pytest.param(
+            "1 余暇の楽しみ方はいろいろある！ 1 ようか 2 よか",
+            id="punctuation-drift",
+        ),
+        pytest.param(
+            "1\u200b余暇の楽しみ方はいろいろある。 1 ようか 2 よか",
+            id="zero-width-space-is-not-whitespace",
+        ),
+        pytest.param("\u00a0\t\u3000", id="whitespace-only"),
+    ],
+)
+def test_draft_parser_rejects_non_whitespace_or_unsafe_excerpt_drift(
+    source_excerpt: str,
+) -> None:
+    grounded_excerpt = "1余暇の楽しみ方はいろいろある。\n1 ようか\n2 よか"
+    chunk = SourceChunk(
+        id="chunk-2",
+        page_number=3,
+        text=f"問題1\n{grounded_excerpt}\n問題2",
+        source_excerpt=grounded_excerpt,
+    )
+
+    suggestion = _draft_suggestion_from_item(
+        {
+            "chunk_id": "chunk-2",
+            "citation_page": 3,
+            "question": "余暇の楽しみ方はいろいろある。",
+            "choices": ["1 ようか", "2 よか"],
+            "answer": "1",
+            "answer_key_source": "ai_inferred",
+            "rationale": "Choice 1 is the correct reading.",
+            "source_excerpt": source_excerpt,
+            "confidence": 0.82,
+        },
+        {3: chunk},
+        {"chunk-2": chunk},
+    )
+
+    assert suggestion is None
+
+
 def test_draft_parser_rejects_invalid_json_and_grounding_mismatches() -> None:
     chunk = SourceChunk(
         id="chunk-2",

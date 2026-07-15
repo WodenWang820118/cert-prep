@@ -153,9 +153,35 @@ def _chunk_for_item(
 
 def _source_excerpt(raw_excerpt: Any, chunk: SourceChunk) -> str:
     excerpt = _text(raw_excerpt)
-    if excerpt and excerpt in chunk.raw_or_text():
+    if not excerpt:
+        return ""
+
+    source = chunk.raw_or_text()
+    if excerpt in source:
         return excerpt
-    return ""
+    return _whitespace_aligned_source_excerpt(excerpt, source)
+
+
+def _whitespace_aligned_source_excerpt(excerpt: str, source: str) -> str:
+    excerpt_without_whitespace = "".join(
+        character for character in excerpt if not character.isspace()
+    )
+    if not excerpt_without_whitespace:
+        return ""
+
+    source_characters: list[str] = []
+    source_indices: list[int] = []
+    for index, character in enumerate(source):
+        if character.isspace():
+            continue
+        source_characters.append(character)
+        source_indices.append(index)
+
+    start = "".join(source_characters).find(excerpt_without_whitespace)
+    if start < 0:
+        return ""
+    end = start + len(excerpt_without_whitespace) - 1
+    return source[source_indices[start] : source_indices[end] + 1]
 
 
 def _looks_like_exam_item(question: str, choices: list[str], source_excerpt: str) -> bool:
