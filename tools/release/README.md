@@ -66,6 +66,33 @@ Keep the isolated worktree and its OCR runtime ZIP in place while running the
 installed-app acceptance lanes. Passing local acceptance does not satisfy or
 close any public candidate, hosted clean-install, or GitHub publication gate.
 
+Before running resilience against the local candidate, verify that Cert Prep
+is not installed or running on the machine. The candidate-pinned harness can
+check its candidate, exact workspace HEAD, registry, process, and install-root
+preconditions without starting the installer:
+
+```powershell
+node tmp/local-alpha-candidate/harness/tools/release/local-install-acceptance.ts `
+  --workspace-root . `
+  --candidate-root tmp/local-alpha-candidate `
+  --output-root tmp/cert-prep-desktop/local-install-acceptance `
+  --dry-run true
+```
+
+Run the real current-user NSIS install acceptance through Nx:
+
+```powershell
+pnpm nx run cert-prep-desktop:local-install-acceptance-nsis --skip-nx-cache
+```
+
+The harness installs silently into its new isolated output root, verifies the
+HKCU uninstall registration and installed executable, and atomically writes a
+schema-v1 `install-receipt.json`. Its JSON output provides the exact candidate,
+acceptance-run, harness, executable, and receipt environment bindings required
+by both packaged resilience targets. A successful install is intentionally
+preserved for those targets; the harness never uninstalls it. Reruns fail
+closed until the existing Cert Prep installation state is handled explicitly.
+
 The workflow publishes the OCR ZIP/manifest first as a public mutable prerelease so clean
 runners can download it anonymously. Existing assets are reused only when their SHA-256
 digest matches; assets are never clobbered. Final installers remain withheld until both
