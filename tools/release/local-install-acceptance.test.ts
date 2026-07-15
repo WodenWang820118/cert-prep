@@ -377,6 +377,41 @@ test('manufacturer registry contract matches the rendered Tauri NSIS value', () 
   );
 });
 
+test('NSIS final uninstall removes only the product metadata key and an empty parent', () => {
+  const workspaceRoot = resolve(fileURLToPath(import.meta.url), '../../..');
+  const tauriRoot = join(
+    workspaceRoot,
+    'apps',
+    'cert-prep-desktop',
+    'src-tauri',
+  );
+  const config = JSON.parse(
+    readFileSync(join(tauriRoot, 'tauri.conf.json'), 'utf8'),
+  ) as {
+    readonly bundle?: {
+      readonly windows?: {
+        readonly nsis?: { readonly installerHooks?: string };
+      };
+    };
+  };
+  const configuredHook = config.bundle?.windows?.nsis?.installerHooks;
+
+  assert.equal(configuredHook, 'nsis/installer-hooks.nsh');
+  const hook = readFileSync(join(tauriRoot, configuredHook), 'utf8');
+  const instructions = hook
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith(';'));
+  assert.deepEqual(instructions, [
+    '!macro NSIS_HOOK_POSTUNINSTALL',
+    '${If} $UpdateMode <> 1',
+    'DeleteRegKey SHCTX "${MANUPRODUCTKEY}"',
+    'DeleteRegKey /ifempty SHCTX "${MANUKEY}"',
+    '${EndIf}',
+    '!macroend',
+  ]);
+});
+
 test('PowerShell resolver uses canonical SystemRoot executable with a reduced PATH', () => {
   const root = mkdtempSync(join(tmpdir(), 'cert-prep-powershell-resolver-'));
   try {

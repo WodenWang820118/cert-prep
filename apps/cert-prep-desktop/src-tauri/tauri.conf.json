@@ -31,6 +31,9 @@
     "windows": {
       "wix": {
         "version": "0.1.0.1"
+      },
+      "nsis": {
+        "installerHooks": "nsis/installer-hooks.nsh"
       }
     },
     "resources": {
