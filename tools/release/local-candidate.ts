@@ -336,7 +336,7 @@ export async function createLocalCandidate(args, run = runCommand) {
     if (pathEntryExists(outputRoot)) {
       throw new Error(`Local candidate output appeared during assembly: ${outputRoot}.`);
     }
-    renameSync(stagedCandidateRoot, outputRoot);
+    await publishCandidateAtomically(stagedCandidateRoot, outputRoot);
     const completed = {
       ...result,
       releaseRoot: join(outputRoot, 'release'),
@@ -350,6 +350,47 @@ export async function createLocalCandidate(args, run = runCommand) {
     return { ...completed, candidate };
   } finally {
     rmSync(scratchRoot, { recursive: true, force: true });
+  }
+}
+
+const TRANSIENT_WINDOWS_RENAME_ERRORS = new Set([
+  'EACCES',
+  'EBUSY',
+  'EPERM',
+]);
+
+export async function publishCandidateAtomically(
+  sourceRoot,
+  outputRoot,
+  {
+    rename = renameSync,
+    wait = (milliseconds) =>
+      new Promise((resolveWait) => setTimeout(resolveWait, milliseconds)),
+    attempts = 80,
+    retryDelayMs = 250,
+  } = {},
+) {
+  if (!Number.isSafeInteger(attempts) || attempts < 1) {
+    throw new Error('Atomic candidate publication requires at least one attempt.');
+  }
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    if (pathEntryExists(outputRoot)) {
+      throw new Error(
+        `Local candidate output appeared during publication: ${outputRoot}.`,
+      );
+    }
+    try {
+      await rename(sourceRoot, outputRoot);
+      return;
+    } catch (error) {
+      if (
+        attempt === attempts ||
+        !TRANSIENT_WINDOWS_RENAME_ERRORS.has(error?.code)
+      ) {
+        throw error;
+      }
+      await wait(retryDelayMs);
+    }
   }
 }
 

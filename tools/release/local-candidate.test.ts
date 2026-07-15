@@ -16,6 +16,7 @@ import {
   assertCleanSourceCheckout,
   assertSafeNewOutput,
   inspectLocalCandidateBuild,
+  publishCandidateAtomically,
   resolveCommandInvocation,
   validateAssembledRuntimes,
 } from './local-candidate.ts';
@@ -128,6 +129,52 @@ test('local candidate invokes pnpm through cmd on Windows', () => {
     executable: 'pnpm',
     args: ['--version'],
   });
+});
+
+test('atomic publication retries only transient Windows rename failures', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'cert-prep-local-publish-'));
+  try {
+    const outputRoot = join(root, 'candidate');
+    let calls = 0;
+    const waits = [];
+    await publishCandidateAtomically(join(root, 'source'), outputRoot, {
+      rename: () => {
+        calls += 1;
+        if (calls < 3) {
+          const error = new Error('temporarily locked');
+          error.code = calls === 1 ? 'EPERM' : 'EBUSY';
+          throw error;
+        }
+      },
+      wait: async (milliseconds) => waits.push(milliseconds),
+      attempts: 3,
+      retryDelayMs: 5,
+    });
+    assert.equal(calls, 3);
+    assert.deepEqual(waits, [5, 5]);
+
+    const permanent = new Error('invalid source');
+    permanent.code = 'ENOENT';
+    await assert.rejects(
+      publishCandidateAtomically(join(root, 'source'), outputRoot, {
+        rename: () => {
+          throw permanent;
+        },
+        wait: async () => assert.fail('permanent errors must not retry'),
+      }),
+      permanent,
+    );
+
+    mkdirSync(outputRoot);
+    await assert.rejects(
+      publishCandidateAtomically(join(root, 'source'), outputRoot, {
+        rename: () => assert.fail('destination races must fail before rename'),
+      }),
+      /output appeared during publication/,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('local candidate output is a new direct child of workspace tmp', () => {
