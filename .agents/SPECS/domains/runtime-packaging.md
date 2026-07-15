@@ -207,10 +207,27 @@ and process cleanup.
 - Local contract verification for `9f87f31` passed script type checking,
   package QA 147 tests, and release tooling with 30 Node plus 21 Python tests
   and Ruff. The heavyweight target has not run against the exact installed
-  candidate, and no candidate-bound five-file output exists. Separate
-  `draft`, `runtime`, `model`, and `ownedProcessesReleased` files plus the
-  session-restart evidence are also still required; the nine-check parent gate
-  remains open.
+  candidate, and no candidate-bound five-file output exists.
+- Commit `6e5db86` requires a fresh-install receipt bound to the candidate ID,
+  acceptance run, pinned harness, physical installer digest, installed
+  executable path/size/digest, successful installer exit, and install time.
+  Commit `d9fbfcc` requires that installation binding on every one of the nine
+  resilience proofs and the session-restart proof, and rejects evidence whose
+  run starts before installation.
+- Commits `65c3b85` and `f110dee` added an isolated real-Ollama lane and the
+  `packaged-remaining-resilience-windowsml` target. It starts canonical
+  `ollama.exe` on a dedicated loopback port with a new output-contained empty
+  model root, sanitizes inherited Ollama variables, and atomically publishes
+  only `draft`, `runtime`, `model`, `ownedProcessesReleased`, and
+  `session-restart.json` after app/Ollama cleanup. Process release is tied to
+  PID, name, creation time, executable path, and two stable empty snapshots.
+- The document and remaining-resilience targets deliberately form two halves
+  of one installed-candidate gate. Both must use the same candidate ID,
+  acceptance run ID, harness digest, and install receipt. Local verification
+  through `f110dee` passed script type checking, package QA 200 tests, release
+  tooling with 30 Node plus 21 Python tests and Ruff, and desktop lint with two
+  pre-existing warnings. Neither heavyweight target has run against the exact
+  installed candidate, so the nine-check parent gate remains open.
 
 ### Additional Local Release Prerequisites (2026-07-14)
 

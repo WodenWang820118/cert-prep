@@ -3,9 +3,9 @@
 Target: public unsigned Windows 11 x64 alpha `0.1.0-alpha.1`, tag
 `cert-prep-v0.1.0-alpha.1`.
 
-Checkpoint: 2026-07-14. Checked items are committed local milestones; unchecked
+Checkpoint: 2026-07-15. Checked items are committed local milestones; unchecked
 items remain required Public Alpha gates. The original worktree checkpoint was
-main HEAD `9313e7e`; the local implementation commits now end at `9f87f31`.
+main HEAD `9313e7e`; the local implementation commits now end at `f110dee`.
 Completed local implementation evidence belongs in
 `.agents/SPECS/domains/runtime-packaging.md` and
 `.agents/SPECS/domains/parsing-reasoning.md`. Dirty worktree changes, ignored
@@ -45,24 +45,28 @@ count as completed Alpha gates.
     `upload`, `ocr`, `cancelVsCompleteRace`, `crashRecovery`, and
     `partialDataRemoved`. It has not been run against the exact installed
     candidate, so this parent gate remains open.
-  - Complete the pending packaged OCR lane for
-    `cancel -> cancel_requested -> canceled -> same-document Retry -> ready`.
-    Bind every action and terminal state to the exact authenticated
-    project/document/operation response; global body-text matches are not
-    acceptable evidence.
-  - Prove canceled OCR removes partial chunks and derived metrics while keeping
-    the original PDF retryable, uses a distinct retry operation ID, and cannot
-    publish late data after cancellation wins.
-  - Cover upload-before-document-ID cancellation, draft/runtime/model cancel,
-    non-cancellable commit phases, app crash/restart recovery, and zero owned
-    process residue after final close.
-  - Cover practice-session restart after one answer, explicit Resume,
-    completion, and a second restart; `sessionRestartPassed` must be backed by
-    real evidence rather than a bare boolean.
-    Verify: run `cert-prep-desktop:packaged-document-cancellation-windowsml`
-    against the exact installed candidate plus the remaining packaged
-    resilience lanes, then validate the nine
-    per-check evidence files through `cert-prep-desktop:release-tool-test`.
+  - [x] Persist and locally verify the non-cancellable commit boundary, exact
+    practice-session scopes, fresh-install receipt binding, isolated Ollama,
+    and fail-closed post-cancel observation contracts (`54e3978`, `79a4b3b`,
+    `69c2beb`, `6e5db86`, `65c3b85`, `d9fbfcc`). Migration 22 exposes durable
+    `commit_started_at`; every resilience/session proof is bound to the exact
+    candidate, acceptance run, installed executable, and installer receipt.
+  - [x] Implement and locally verify
+    `cert-prep-desktop:packaged-remaining-resilience-windowsml` (`f110dee`).
+    Its atomic output is limited to `draft`, `runtime`, `model`,
+    `ownedProcessesReleased`, and the separately hashed session-restart file;
+    publication requires isolated-Ollama and app process cleanup. This is
+    local runner implementation, not exact-candidate evidence.
+  - [ ] Run both packaged targets against the same exact installed candidate,
+    candidate ID, acceptance run ID, pinned harness, and install receipt.
+    The document target must prove authenticated
+    `cancel -> cancel_requested -> canceled -> same-document Retry -> ready`,
+    partial-data removal, retryability, distinct operation IDs, and no late
+    publication. The remaining target must prove draft/runtime/model cancel
+    versus durable commit, two app restarts with explicit session Resume and
+    retained completion, and zero owned-process residue after final close.
+    Validate all nine per-check files and the session-restart digest through
+    `cert-prep-desktop:release-tool-test` before closing this parent gate.
 
 ## Phase 4 — Land CI And Real Integration Coverage
 

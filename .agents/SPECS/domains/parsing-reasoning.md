@@ -348,6 +348,27 @@ selected document` for the selected document after the production streaming
 - Current local verification passed backend lint plus 370 tests with 2 skipped,
   Angular lint plus 221 tests, API 3 tests and typecheck, contracts 4 tests,
   and real-backend Playwright 5 tests.
+- Commit `54e3978` added migration 22 and durable nullable
+  `commit_started_at` fields for manual draft and runtime/model installation
+  operations. New operations persist the transition into a non-cancellable
+  commit phase, and a later DELETE returns 409 after a committed success;
+  legacy terminal rows without that evidence keep their compatible response.
+- Commit `79a4b3b` makes packaged cancellation evidence poll that persisted
+  boundary and retain the raw GET plus DELETE-409 responses instead of
+  inferring commit from UI text. Commit `d9fbfcc` also requires both immediate
+  and delayed post-cancel state, with at least a one-second observation window,
+  before a later successful operation may begin.
+- Commit `69c2beb` binds session-restart evidence to the exact project,
+  document, session, question, and attempt scopes. It proves one answer, a
+  forced restart, explicit Resume, completion of every question, a second
+  forced restart, no remaining active session, and retained completed-session
+  identity and attempts.
+- Commit `f110dee` composes these contracts into the remaining packaged runner:
+  missing-model automatic drafts must terminate without usable questions,
+  committed manual generation must produce at least two usable questions for
+  the exact document, and runtime/model cancellation state must remain absent
+  before the successful commit transition. These are locally verified runner
+  contracts; exact installed-candidate JSON has not yet been produced.
 - This evidence closes the local implementation milestone only. It is not a
   packaged B3 result, hosted CI result, protected hardware result, or
   candidate-bound release claim.
