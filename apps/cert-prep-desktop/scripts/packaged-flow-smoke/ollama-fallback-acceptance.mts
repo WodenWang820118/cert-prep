@@ -198,17 +198,25 @@ interface OllamaOnboardingProfilePlan {
   readonly requiredModels: readonly string[];
 }
 
+type ModelDownloadStatus = 'queued' | 'running' | 'succeeded' | 'failed';
+
 interface ModelDownloadJobSnapshot {
   readonly id: string;
   readonly provider: 'ollama';
   readonly model: string;
-  readonly status: 'queued' | 'running' | 'succeeded';
+  readonly status: ModelDownloadStatus;
   readonly phase: string;
   readonly cancellable: boolean;
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly commitStartedAt: string | null;
+  readonly error: string | null;
 }
+
+type NonFailedModelDownloadJobSnapshot = ModelDownloadJobSnapshot & {
+  readonly status: Exclude<ModelDownloadStatus, 'failed'>;
+  readonly error: null;
+};
 
 interface EnsureOllamaProfileModelsOptions {
   readonly timeoutMs?: number;
@@ -243,8 +251,9 @@ export async function ensureOllamaProfileModels(
   let jobEvidence: OllamaModelOnboardingJobEvidence | null = null;
   if (missingModels.length > 0) {
     const initial = await startOllamaModelDownload(page, projectApi, before.profile);
-    const observed = [initial];
-    let current = initial;
+    throwIfModelDownloadFailed(initial);
+    const observed: NonFailedModelDownloadJobSnapshot[] = [initial];
+    let current: ModelDownloadJobSnapshot = initial;
     const deadline = monotonicNow() + timeoutMs;
     try {
       if (before.installedModels === null && initial.status === 'succeeded') {
@@ -264,6 +273,7 @@ export async function ensureOllamaProfileModels(
           current,
           Math.min(REQUEST_TIMEOUT_MS, Math.max(1, remainingBeforePollMs)),
         );
+        throwIfModelDownloadFailed(current);
         observed.push(current);
         if (current.status === 'succeeded') {
           break;
@@ -283,6 +293,9 @@ export async function ensureOllamaProfileModels(
       throw error;
     }
     if (!runtimeStartedWithAvailableModels) {
+      if (current.status !== 'succeeded') {
+        throw new Error('ollama_model_onboarding_job_did_not_succeed');
+      }
       jobEvidence = {
         id: current.id,
         provider: 'ollama',
@@ -536,6 +549,7 @@ function modelDownloadSnapshot(
     'queued',
     'running',
     'succeeded',
+    'failed',
   ] as const);
   const phase = safeString(payload.phase);
   const detail = safeString(payload.detail);
@@ -553,6 +567,7 @@ function modelDownloadSnapshot(
   );
   const completed = nullableNonNegativeInteger(payload.completed);
   const total = nullableNonNegativeInteger(payload.total);
+  const error = payload.error === null ? null : safeString(payload.error);
   if (
     !id ||
     !UUID_PATTERN.test(id) ||
@@ -563,17 +578,21 @@ function modelDownloadSnapshot(
     !phase ||
     !detail ||
     typeof payload.cancellable !== 'boolean' ||
-    payload.error !== null ||
     !Object.hasOwn(payload, 'completed') ||
     !Object.hasOwn(payload, 'total') ||
+    !Object.hasOwn(payload, 'error') ||
     completed === undefined ||
     total === undefined ||
+    (payload.error !== null && error === null) ||
     Date.parse(updatedAt) < Date.parse(createdAt) ||
     (commitStartedAt !== null &&
       (Date.parse(commitStartedAt) < Date.parse(createdAt) ||
         Date.parse(commitStartedAt) > Date.parse(updatedAt))) ||
     (status === 'succeeded' &&
-      (phase !== 'completed' || payload.cancellable !== false))
+      (phase !== 'completed' || payload.cancellable !== false || error !== null)) ||
+    (status === 'failed' &&
+      (phase !== 'failed' || payload.cancellable !== false || !error)) ||
+    (status !== 'succeeded' && status !== 'failed' && error !== null)
   ) {
     throw new Error('ollama_model_onboarding_job_contract_invalid');
   }
@@ -587,6 +606,7 @@ function modelDownloadSnapshot(
     createdAt,
     updatedAt,
     commitStartedAt,
+    error,
   };
   if (previous) {
     assertModelDownloadProgress(previous, snapshot);
@@ -598,18 +618,34 @@ function assertModelDownloadProgress(
   previous: ModelDownloadJobSnapshot,
   current: ModelDownloadJobSnapshot,
 ): void {
-  const ranks = { queued: 0, running: 1, succeeded: 2 } as const;
+  const allowedNextStatuses: Record<
+    ModelDownloadStatus,
+    readonly ModelDownloadStatus[]
+  > = {
+    queued: ['queued', 'running', 'succeeded', 'failed'],
+    running: ['running', 'succeeded', 'failed'],
+    succeeded: ['succeeded'],
+    failed: ['failed'],
+  };
   if (
     current.id !== previous.id ||
     current.provider !== previous.provider ||
     !sameOllamaModel(current.model, previous.model) ||
     current.createdAt !== previous.createdAt ||
     Date.parse(current.updatedAt) < Date.parse(previous.updatedAt) ||
-    ranks[current.status] < ranks[previous.status] ||
+    !allowedNextStatuses[previous.status].includes(current.status) ||
     (previous.commitStartedAt !== null &&
       current.commitStartedAt !== previous.commitStartedAt)
   ) {
     throw new Error('ollama_model_onboarding_job_progress_invalid');
+  }
+}
+
+function throwIfModelDownloadFailed(
+  current: ModelDownloadJobSnapshot,
+): asserts current is NonFailedModelDownloadJobSnapshot {
+  if (current.status === 'failed') {
+    throw new Error(`ollama_model_onboarding_job_failed:${current.error}`);
   }
 }
 

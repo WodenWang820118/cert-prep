@@ -458,6 +458,72 @@ test('model onboarding best-effort cancels its exact cancellable job after a rea
   );
 });
 
+test('model onboarding reports a terminal product failure without canceling it', async () => {
+  let deleteCalls = 0;
+  const jobs = [
+    modelDownloadJob('running', 'model_download', true, '2026-07-14T00:00:12.000Z'),
+    modelDownloadJob('failed', 'failed', false, '2026-07-14T00:00:13.000Z'),
+  ];
+  const page = onboardingPage({
+    tagsBefore: [{ name: 'qwen3.5:4b' }],
+    tagsAfter: [],
+    onPost: () =>
+      response(
+        202,
+        modelDownloadJob('queued', 'queued', true, '2026-07-14T00:00:11.000Z'),
+      ),
+    onPoll: () => response(200, jobs.shift()),
+    onDelete: () => {
+      deleteCalls += 1;
+      return response(200, {});
+    },
+  });
+
+  await assert.rejects(
+    ensureOllamaProfileModels(page, projectApi(), {
+      timeoutMs: 5_000,
+      now: dateSequence('2026-07-14T00:00:10.000Z'),
+      monotonicNow: numberSequence(0, 1, 2),
+      wait: async () => undefined,
+    }),
+    /ollama_model_onboarding_job_failed:Ollama profile model was not registered/,
+  );
+  assert.equal(deleteCalls, 0);
+});
+
+test('model onboarding rejects a missing or malformed error field', async (context) => {
+  for (const [label, errorValue] of [
+    ['missing', undefined],
+    ['number', 42],
+  ] as const) {
+    await context.test(label, async () => {
+      const job = modelDownloadJob(
+        'queued',
+        'queued',
+        true,
+        '2026-07-14T00:00:11.000Z',
+      );
+      if (errorValue === undefined) {
+        delete job.error;
+      } else {
+        job.error = errorValue;
+      }
+      const page = onboardingPage({
+        tagsBefore: [{ name: 'qwen3.5:4b' }],
+        tagsAfter: [],
+        onPost: () => response(202, job),
+      });
+
+      await assert.rejects(
+        ensureOllamaProfileModels(page, projectApi(), {
+          now: dateSequence('2026-07-14T00:00:10.000Z'),
+        }),
+        /ollama_model_onboarding_job_contract_invalid/,
+      );
+    });
+  }
+});
+
 function selection(
   overrides: Partial<OllamaFallbackSelectionEvidence> = {},
 ): OllamaFallbackSelectionEvidence {
@@ -644,7 +710,7 @@ function installedProfileTags(): Array<{ readonly name: string }> {
 }
 
 function modelDownloadJob(
-  status: 'queued' | 'running' | 'succeeded',
+  status: 'queued' | 'running' | 'succeeded' | 'failed',
   phase: string,
   cancellable: boolean,
   updatedAt: string,
@@ -656,14 +722,24 @@ function modelDownloadJob(
     status,
     phase,
     cancellable,
-    detail: status === 'succeeded' ? 'model download complete' : 'working',
+    detail:
+      status === 'succeeded'
+        ? 'model download complete'
+        : status === 'failed'
+          ? 'Ollama profile model was not registered'
+          : 'working',
     completed: status === 'succeeded' ? 100 : 0,
     total: 100,
     created_at: '2026-07-14T00:00:11.000Z',
     updated_at: updatedAt,
     commit_started_at:
-      status === 'succeeded' ? '2026-07-14T00:00:12.000Z' : null,
-    error: null,
+      status === 'succeeded' || status === 'failed'
+        ? '2026-07-14T00:00:12.000Z'
+        : null,
+    error:
+      status === 'failed'
+        ? 'Ollama profile model was not registered'
+        : null,
   };
 }
 
