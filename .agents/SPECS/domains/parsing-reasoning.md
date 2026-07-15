@@ -367,11 +367,72 @@ selected document` for the selected document after the production streaming
   missing-model automatic drafts must terminate without usable questions,
   committed manual generation must produce at least two usable questions for
   the exact document, and runtime/model cancellation state must remain absent
-  before the successful commit transition. These are locally verified runner
-  contracts; exact installed-candidate JSON has not yet been produced.
-- This evidence closes the local implementation milestone only. It is not a
-  packaged B3 result, hosted CI result, protected hardware result, or
-  candidate-bound release claim.
+  before the successful commit transition. Commit `cc4f3d0` makes the runner
+  stop immediately if a commit probe reaches `failed`, `canceled`, or
+  `succeeded` without the durable commit boundary. Commit `c7efc6f` retains and
+  validates the successful manual terminal payload, including exact project,
+  document, operation, strategy, generated count, effective provider/model,
+  and absence of fallback.
+- Commit `ca5ba1d` also rejects a terminal manual generation that reports
+  success without enough usable drafts. Commit `39874b3` aligns source excerpts
+  only after whitespace normalization while retaining exact grounding.
+  Commit `06db87d` requires a conditional exact item count and at least two
+  distinct visible choices, binds validation to the chunks actually included
+  in each prompt, normalizes marker-stripped answers only when they uniquely
+  match one exact choice, and rejects conflicting answer markers. Multi-item
+  batches may make at most one supplemental logical pass per model attempt;
+  that pass prioritizes unseen chunks and excludes duplicates before consuming
+  the remaining count. `limit=1` keeps the fast-first streaming latency path to
+  one call. Backend verification passed 397 tests with 2 skipped, Ruff, and
+  diff checks.
+
+2026-07-16 exact local candidate results:
+
+- A normal live `qwen3.5:4b` probe against all 46 exact chunks returned two raw
+  items, strictly accepted both, used one chat call, and used no model fallback.
+  A separate supplemental component probe selected unseen pages 4 and 5 but
+  accepted zero because the response supplied an incorrect `citation_page` and
+  conflicting answer formatting. That result proves fail-closed rejection; it
+  is not a successful live supplemental recovery.
+- Structural acceptance does not prove semantic answer correctness. One
+  accepted AI-inferred live item selected `けんせつ` for `検閲`; the expected
+  reading is `けんえき`. This remains a content-quality risk and is not evidence
+  that supplemental recovery succeeded live.
+- Product and harness commit
+  `06db87d1e19a6e1e2e633730a69ce89f5bfb4678`, candidate ID
+  `5ebde8afc5e956a98daf6bdd11e31742d7bcde00c714687236260c1a5c2350a6`,
+  and install run
+  `local-install-06db87d1e19a-1fb5fa29-2a1c-4aed-94ee-17e118716a2e`
+  bind every current local evidence file to the same NSIS install receipt.
+- The document resilience half passed. The N1 input SHA-256
+  `ec5f312d5c97ee91b87ec7fcbf1d33b4f4019fca367df376b48c1f4943a744c8`
+  produced 46 pages and 46 chunks with `windowsml_ocr`, device
+  `amd_windowsml:0`, and no fallback after same-document retry. Initial
+  operation `ocr-b41f8cca-30dd-4b5d-8df9-01d2d7ce632d` canceled and retry
+  `499434b0-9c72-425c-b0e1-6d6bc1bce49c` succeeded. Upload-before-ID,
+  cancel-versus-complete, crash recovery, partial-data removal, retryability,
+  two-second no-late-publication, atomic output, and cleanup all passed.
+- The remaining resilience half also passed against a fresh isolated model
+  store. Its automatic job ended `skipped_missing_model` with zero drafts;
+  manual operation `95d88df9-723b-4ea9-b877-ad4249063ac3` canceled and stayed
+  at zero usable drafts for the observation window. Operation
+  `9412851b-9ac3-498e-a536-29934adfcef7` then crossed the durable commit
+  boundary and succeeded with two usable drafts, effective
+  `ollama`/`qwen3.5:4b`, and no fallback. Runtime and model cancel-versus-commit
+  checks passed, session `a03c0c84-1933-4025-80c5-7a12fe254804` retained one
+  answer across explicit Resume, completed both questions, and remained
+  completed after the second restart.
+- The current-HEAD declined-terms route passed separately. Real Ollama API
+  `0.30.10` persisted `auto -> ollama` across restart and job
+  `b69a296c-9aed-45fd-9135-edc0d2c7a665` generated one usable Full Exam
+  question with complete configured/effective
+  `cert-prep-qwen3.5-4b-study-8k` attribution and no model fallback. All 14
+  acceptance checks rejected overrides and fakes and proved model and owned
+  process release.
+- These results close the current local nonpublishable resilience and
+  forced-provider checkpoints only. They are not a four-PDF B3 result, hosted
+  CI result, protected XDNA2 result, publishable-candidate result, or release
+  claim.
 
 Resource artifacts for packaged runs:
 

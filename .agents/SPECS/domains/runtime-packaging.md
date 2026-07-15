@@ -188,8 +188,8 @@ and process cleanup.
 - The same commit added the real-only
   `packaged-streaming-ollama-fallback-windowsml` target with fail-closed
   declined-terms, unsupported-XDNA2, and old-driver trigger contracts. The
-  heavyweight packaged run has not executed, so no real provider gate is
-  closed by these validators.
+  validators alone did not close a real provider gate; the exact local
+  candidate execution is recorded below.
 - Commit `bfb7ca6` pinned Node 24, pnpm 10.33.2, Python 3.12/uv, and Rust stable,
   and added Windows CI plus the isolated real-backend E2E lane. A hosted run on
   committed HEAD is still required.
@@ -206,8 +206,7 @@ and process cleanup.
   requires a residue-free final cleanup.
 - Local contract verification for `9f87f31` passed script type checking,
   package QA 147 tests, and release tooling with 30 Node plus 21 Python tests
-  and Ruff. The heavyweight target has not run against the exact installed
-  candidate, and no candidate-bound five-file output exists.
+  and Ruff. The exact installed-candidate execution is recorded below.
 - Commit `6e5db86` requires a fresh-install receipt bound to the candidate ID,
   acceptance run, pinned harness, physical installer digest, installed
   executable path/size/digest, successful installer exit, and install time.
@@ -223,11 +222,122 @@ and process cleanup.
   PID, name, creation time, executable path, and two stable empty snapshots.
 - The document and remaining-resilience targets deliberately form two halves
   of one installed-candidate gate. Both must use the same candidate ID,
-  acceptance run ID, harness digest, and install receipt. Local verification
-  through `f110dee` passed script type checking, package QA 200 tests, release
-  tooling with 30 Node plus 21 Python tests and Ruff, and desktop lint with two
-  pre-existing warnings. Neither heavyweight target has run against the exact
-  installed candidate, so the nine-check parent gate remains open.
+  acceptance run ID, harness digest, and install receipt. Commits `cc4f3d0`
+  and `c7efc6f` make terminal commit probes fail immediately on a failed or
+  canceled operation and require the successful manual-draft terminal payload
+  to prove exact effective Ollama/model attribution, at least two generated
+  questions, and no fallback. Local verification through `c7efc6f` passed
+  script type checking, package QA 262 tests with one skip, and desktop lint
+  with two pre-existing warnings. The exact current-candidate execution below
+  closes this local nonpublishable parent gate.
+- Commits `14875e6` and `8728cb0` moved release execution scripts and the final
+  E2E backend proxy to native TypeScript. The only remaining tracked `.mjs`
+  file is an ESLint configuration, not an execution script.
+
+### Exact Local Candidate Acceptance (2026-07-16)
+
+- Product and harness commit
+  `06db87d1e19a6e1e2e633730a69ce89f5bfb4678` produced local candidate ID
+  `5ebde8afc5e956a98daf6bdd11e31742d7bcde00c714687236260c1a5c2350a6`
+  and tag `cert-prep-local-v0.1.0-alpha.1-06db87d1e19a`. Its profile is
+  `local_nonpublishable` with `publishable=false`; it is not part of the public
+  release chain. Independent verification rehashed all 696 declared and actual
+  files with zero mismatch, missing, unexpected, or reparse entries and
+  recomputed the exact candidate ID. `candidate.json` SHA-256 is
+  `c0f08b071d6eab059e7dcbc149290130f2ebd45b28c19c5179c63f422acb4c47`;
+  harness SHA-256 is
+  `b99cc8d4a7e6dfa290cdffe652cc1b2a8b6083bc7c5c596e0b2e139756a33afd`.
+- The candidate contains NSIS SHA-256
+  `476e24012acdf9361d1e5189d52f31b4dfa4a65dc61b150fcf99d40a898fd183`
+  and MSI SHA-256
+  `263d5e176d69c8e996a3c5c02ec02202023b64823841c58f6f03ef07b4cad983`.
+  Install run
+  `local-install-06db87d1e19a-1fb5fa29-2a1c-4aed-94ee-17e118716a2e`
+  produced schema-v1 receipt SHA-256
+  `4e3f4a91cd6e824f2aef54e78cd009b12d33bcdfc20345e75e2a94f5cd15a941`
+  and acceptance-context SHA-256
+  `2251ff0e0dbe84015d4184b7befb72352ed457a32a6f7567a5274b6a8bb20388`.
+  The receipt bound a fresh NSIS install to `cert-prep-desktop.exe`
+  (9,339,904 bytes, SHA-256
+  `b2ab479940038b9b4fab5d30de89491ebda8075a29928d9fd7e3223fc27e0f25`).
+- `packaged-document-cancellation-windowsml` atomically published exactly five
+  schema-v2 evidence files under
+  `tmp/cert-prep-desktop/packaged-document-cancellation-06db87d-1fb5fa29-2a1c-4aed-94ee-17e118716a2e`.
+  Their SHA-256 values are:
+  - `upload.json`:
+    `9169323c9e81d0636be7ea58519efc89861cd2a463bbeac041bbc43b6e7f2175`;
+  - `ocr.json`:
+    `cc0e8e183ebad8550f3768ba15c1d1a2eef031fd8e2652dad249b8450a7e1ff7`;
+  - `cancelVsCompleteRace.json`:
+    `1e45d4f0e2a8862cebf0610d202ddf8f72cc06532085d626dc6305078d072704`;
+  - `crashRecovery.json`:
+    `31054d8a099c158b02deddcb4d0ae2ab67dfc4b03c399f22ed660b26126b3ff2`;
+  - `partialDataRemoved.json`:
+    `4ca311d6a1344118c6e4561167cfb4502b67956761ffa6efde75249334b3f5e0`.
+  Upload cancellation created no document. OCR operation
+  `ocr-b41f8cca-30dd-4b5d-8df9-01d2d7ce632d` canceled; distinct same-document
+  retry `499434b0-9c72-425c-b0e1-6d6bc1bce49c` completed all 46 pages and
+  chunks through `windowsml_ocr` on `amd_windowsml:0` with no fallback. The
+  race stayed canceled, crash recovery retained the same operation, partial
+  data returned to zero, and no late publication occurred during the
+  two-second observation window.
+- `packaged-remaining-resilience-windowsml` atomically published exactly five
+  files under
+  `tmp/cert-prep-desktop/packaged-remaining-resilience-06db87d-1fb5fa29-2a1c-4aed-94ee-17e118716a2e`.
+  Their SHA-256 values are:
+  - `draft.json`:
+    `be4a7a030711f35fd1e9b8a63af2206973b73b9ea5f085fa5580a916b24143bd`;
+  - `runtime.json`:
+    `f6db2e616bd361cddd4552647dbb459d27d522ba18cdbeba5d7893a69f9d73af`;
+  - `model.json`:
+    `e005545c788c86a3d1a826b086b732469f7ea3c9a6f016229d9fe22b16f76b44`;
+  - `ownedProcessesReleased.json`:
+    `2a560fd5de0494d4ab71b26ab54226a08c07a330581df1902c8c7be880fec82c`;
+  - `session-restart.json`:
+    `dc9bd3915d34fccfeeb42e54a2d011f1e689e5fcdddc19db6e5c2cc8bb99e4d9`.
+  The isolated model store began empty. Model and runtime cancel-versus-commit
+  checks passed; a canceled manual draft stayed at zero before a committed
+  manual operation generated two usable questions with effective
+  `ollama`/`qwen3.5:4b` and no fallback. Explicit Resume retained the first
+  answer, the two-question session completed, and a second restart preserved
+  completion. Two stable empty process snapshots proved zero residue.
+- The official `local-resilience-evidence-verify` target accepted all ten
+  document, remaining, and session artifacts with the exact candidate, harness,
+  acceptance run, receipt, installer, and installed-executable bindings.
+- The same installed candidate refreshed the current-HEAD declined-terms gate
+  under
+  `tmp/cert-prep-desktop/packaged-streaming-ollama-fallback-06db87d-1fb5fa29-2a1c-4aed-94ee-17e118716a2e`.
+  SHA-256 values are
+  `4bfd59567bd5087a0d4ff593c49df083f4c179af812e2f30fef1b4d0e0804bba`
+  for `local-ollama-fallback-evidence.json`,
+  `4b4b540a1a3381cc3c5042174abef5193c2439bd2f58a0cd1404e53eaef02e5d`
+  for `metrics.json`, and
+  `9c614dfd88da2e80be11efdf58190691422c593af255ed9ccdab89656c17125f`
+  for `production-summary.json`. Real Ollama API `0.30.10` persisted
+  declined-terms routing across restart. Job
+  `b69a296c-9aed-45fd-9135-edc0d2c7a665` generated one usable Full Exam
+  question with exact configured/effective
+  `cert-prep-qwen3.5-4b-study-8k` attribution and no model fallback. All 14
+  acceptance checks rejected fake and override paths and proved model and
+  owned-process release.
+- Final NSIS uninstall parsed the actual quoted registry `UninstallString` and
+  ran its 79,386-byte uninstaller (SHA-256
+  `a54e72705eb33057034d2f05eb6fd0b628b64a800b6b93d2deae577e30a92db5`)
+  with `/S`; exit code was zero. The install root, installed executable,
+  uninstaller, Cert Prep product key, and Cert Prep uninstall key were absent
+  afterward. The Exam Prep sibling retained identical HKCU and HKLM registry
+  snapshots. All 18 preserved candidate, receipt, and evidence fingerprints
+  were byte-for-byte unchanged. Ports `19640` through `19660` and all owned
+  app/backend/OCR/Ollama processes were absent. The unrelated global Ollama
+  remained PID `43052`, path
+  `C:\Users\User\AppData\Local\Programs\Ollama\ollama.EXE`, start time
+  `2026-07-06T02:54:56.1777980Z`, and sole listener
+  `127.0.0.1:11434`.
+- This closes only the exact local nonpublishable install, resilience,
+  forced-provider, combined-verifier, cleanup, and uninstall checkpoint. It
+  does not substitute for hosted MSI/NSIS clean installs, four-PDF B3,
+  protected XDNA2 evidence, a public OCR asset, or Public Alpha release
+  approval.
 
 ### Additional Local Release Prerequisites (2026-07-14)
 

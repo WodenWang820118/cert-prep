@@ -3,125 +3,56 @@
 Target: public unsigned Windows 11 x64 alpha `0.1.0-alpha.1`, tag
 `cert-prep-v0.1.0-alpha.1`.
 
-Checkpoint: 2026-07-15. Checked items are committed local milestones; unchecked
-items remain required Public Alpha gates. The original worktree checkpoint was
-main HEAD `9313e7e`; the local implementation commits now end at `f110dee`.
-Completed local implementation evidence belongs in
+Checkpoint: 2026-07-16. The exact local nonpublishable acceptance checkpoint
+uses product and harness commit
+`06db87d1e19a6e1e2e633730a69ce89f5bfb4678`, candidate ID
+`5ebde8afc5e956a98daf6bdd11e31742d7bcde00c714687236260c1a5c2350a6`,
+and install run
+`local-install-06db87d1e19a-1fb5fa29-2a1c-4aed-94ee-17e118716a2e`.
+Completed implementation and exact-run evidence is recorded in
 `.agents/SPECS/domains/runtime-packaging.md` and
 `.agents/SPECS/domains/parsing-reasoning.md`. Dirty worktree changes, ignored
-candidate clones, placeholder URLs, and schema-only evidence validators do not
-count as completed Alpha gates.
+candidate clones, placeholder URLs, and schema-only validators do not count as
+completed Alpha gates.
 
-## Phase 3 — Finish And Commit Resilience Owners
+## Closed Local Checkpoint
 
-- [x] Finish, verify, and commit the remaining long-task cancellation surfaces
-      (`175ea89`):
-  - automatic and manual draft-operation GET/DELETE flows, including atomic
-    draft insert plus terminal job state;
-  - runtime and model-install DELETE flows, persisted
-    `cancel_requested/canceled` recovery, and honest `phase/cancellable` state;
-  - Tauri-owned helper PID/process-tree tracking and cancellation cleanup;
-    this owner was already committed at the original checkpoint and its 23
-    Cargo tests were re-run after the phase commits;
-  - OpenAPI-first contract changes and regenerated TypeScript client, with no
-    hand edits to generated output.
-    Verify: `pnpm nx run cert-prep-backend:test --skip-nx-cache`,
-    `pnpm nx run cert-prep:test --skip-nx-cache`,
-    `pnpm nx run cert-prep-desktop:cargo-test --skip-nx-cache`, and
-    `pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`.
+- [x] Complete the current-HEAD local installed-app resilience, forced-Ollama,
+      combined evidence verification, owned-process cleanup, and real NSIS
+      uninstall gates. The immutable local candidate remains
+      `local_nonpublishable`; this checkpoint is not a public candidate,
+      protected hardware result, hosted clean-install result, or release claim.
 
-- [x] Implement, verify, and commit the fail-closed schema-v2 resilience
-      contracts, validators, and scenario primitives (`59aa070`). This local
-      milestone covers all nine evidence schemas plus separately hashed session
-      restart evidence; it is not installed-app acceptance evidence.
+## Remaining Public Alpha Gates
 
-- [ ] Execute the installed-app packaged resilience lanes and produce
-      candidate-bound JSON for `upload`, `ocr`,
-      `draft`, `runtime`, `model`, `cancelVsCompleteRace`, `crashRecovery`,
-      `partialDataRemoved`, and `ownedProcessesReleased`.
-  - [x] Implement and locally verify
-    `cert-prep-desktop:packaged-document-cancellation-windowsml` (`9f87f31`).
-    Its fail-closed runner can produce only the five document-level files
-    `upload`, `ocr`, `cancelVsCompleteRace`, `crashRecovery`, and
-    `partialDataRemoved`. It has not been run against the exact installed
-    candidate, so this parent gate remains open.
-  - [x] Persist and locally verify the non-cancellable commit boundary, exact
-    practice-session scopes, fresh-install receipt binding, isolated Ollama,
-    and fail-closed post-cancel observation contracts (`54e3978`, `79a4b3b`,
-    `69c2beb`, `6e5db86`, `65c3b85`, `d9fbfcc`). Migration 22 exposes durable
-    `commit_started_at`; every resilience/session proof is bound to the exact
-    candidate, acceptance run, installed executable, and installer receipt.
-  - [x] Implement and locally verify
-    `cert-prep-desktop:packaged-remaining-resilience-windowsml` (`f110dee`).
-    Its atomic output is limited to `draft`, `runtime`, `model`,
-    `ownedProcessesReleased`, and the separately hashed session-restart file;
-    publication requires isolated-Ollama and app process cleanup. This is
-    local runner implementation, not exact-candidate evidence.
-  - [ ] Run both packaged targets against the same exact installed candidate,
-    candidate ID, acceptance run ID, pinned harness, and install receipt.
-    The document target must prove authenticated
-    `cancel -> cancel_requested -> canceled -> same-document Retry -> ready`,
-    partial-data removal, retryability, distinct operation IDs, and no late
-    publication. The remaining target must prove draft/runtime/model cancel
-    versus durable commit, two app restarts with explicit session Resume and
-    retained completion, and zero owned-process residue after final close.
-    Validate all nine per-check files and the session-restart digest through
-    `cert-prep-desktop:release-tool-test` before closing this parent gate.
+GitHub, hosted, and public-asset work below is intentionally excluded from the
+current local execution scope.
 
-## Phase 4 — Land CI And Real Integration Coverage
-
-- [x] Implement, locally verify, and commit the Windows CI definition and
-      no-route real-backend Playwright project (`bfb7ca6`).
-  - The committed CI must pin Node 24, pnpm `10.33.2`, Python 3.12/uv, and Rust
-    stable, use `pnpm nx`, and run contracts/OCR/backend/frontend tests,
-    desktop script typecheck, Cargo tests, and package-QA tests on Windows.
-  - Keep mock E2E as the fast UI lane, but commit a separate project that does
-    not call `page.route`, starts an ephemeral backend with deterministic fake
-    OCR/LLM, and covers multi-PDF, session Resume/Abandon, polling recovery,
-    cancellation, and stale-response guards.
-    Local verify: `pnpm nx run cert-prep-e2e:lint --skip-nx-cache` and
-    `pnpm nx run cert-prep-e2e:e2e-real-backend --skip-nx-cache`.
+### Hosted Windows CI
 
 - [ ] Obtain a successful hosted Windows CI run from committed HEAD. Local
       workflow inspection and local Nx results do not satisfy this gate.
 
-## Phase 2 — Close Both Real Provider Acceptance Lanes
-
-- [x] Implement, verify, and commit the real-only forced-Ollama acceptance
-      target and fail-closed trigger validation (`59aa070`). The target accepts
-      only declined terms or physically observed unsupported-XDNA2/old-driver
-      routing and rejects overrides or fake-provider evidence.
-
-- [ ] Run the real forced-Ollama fallback/onboarding lane against the exact
-      packaged candidate. It must prove
-      the unsupported-XDNA2/old-driver/declined-FastFlow route, install or use a
-      real Ollama runtime, generate with `qwen3.5:4b` (or the explicit
-      `qwen3.5:2b` low-resource fallback), persist exact configured/effective
-      attribution and fallback reason, and release resources. Unit tests or a
-      deterministic fake provider are not sufficient for this gate.
+### Exact Publishable XDNA2 Acceptance
 
 - [ ] Re-run B3 on the exact publishable XDNA2 candidate. For each of four
       acceptance PDFs, prove WindowsML/iGPU OCR, configured/effective FastFlow
       `qwen3.5:4b`, no provider/model fallback, usable questions above zero,
       and Full Exam question count above zero. Health after owned FastFlow
       shutdown may be false only when start readiness, job attribution, and
-      resource-release evidence are independently present.
+      resource-release evidence are independently present. The current machine
+      and local nonpublishable candidate cannot close this protected hardware
+      gate.
 
-## Phase 0/1/4 — Provision And Execute The Public Release Chain
+### Public Repository And Release Chain
 
-- [x] Implement, locally verify, and commit the remaining local release-chain
-      prerequisites: packaged legal assets (`f460d19`), the explicit QA-only
-      bundled-backend install switch (`346c0b7`), and isolated/offline
-      WindowsML OCR build hardening (`4e1a717`). These commits do not prove a
-      public OCR asset, exact candidate, hosted clean install, or release
-      readiness.
-
-- [ ] Create/configure the public GitHub repository and protected
-      `alpha-release`/`alpha-hardware` environments. Pin the provisioned AMD
-      harness and `ffprobe` absolute paths/digests, configure required reviewers,
-      disable release-asset clobbering, and confirm the FastFlow
-      free-tier/publisher/attribution terms. If the publisher cannot confirm the
-      terms, intentionally rebuild as Ollama-only instead of weakening the gate.
+- [ ] Create and configure the public GitHub repository and protected
+      `alpha-release` and `alpha-hardware` environments. Pin the provisioned AMD
+      harness and `ffprobe` absolute paths and digests, configure required
+      reviewers, disable release-asset clobbering, and confirm the FastFlow
+      free-tier, publisher, and attribution terms. If the publisher cannot
+      confirm the terms, intentionally rebuild as Ollama-only instead of
+      weakening the gate.
 
 - [ ] Publish the versioned WindowsML OCR ZIP as an anonymously downloadable,
       no-clobber prerelease asset in the real `${{ github.repository }}`. The
@@ -129,7 +60,7 @@ count as completed Alpha gates.
       appear in a publishable manifest or installer.
 
 - [ ] Rebuild one exact candidate from the public OCR URL and freeze its
-      candidate ID/SHA. Regenerate and revalidate MSI, NSIS, bundled backend
+      candidate ID and SHA. Regenerate and revalidate MSI, NSIS, bundled backend
       ZIP, OCR ZIP, release metadata, approved license inventory, SPDX and
       CycloneDX SBOMs, SHA256SUMS, QA reports, and provenance inputs. Reject any
       digest drift, `file://` URL, development path, unknown license, missing
@@ -137,31 +68,34 @@ count as completed Alpha gates.
 
 - [ ] Run checkout-free hosted clean-install lanes for both MSI and NSIS using
       that same candidate SHA. From fresh app-data, prove bundled-backend
-      extraction/startup, anonymous OCR download/resume/hash validation,
-      installed-resource QA, migration startup, and complete process cleanup.
+      extraction and startup, anonymous OCR download, resume and hash
+      validation, installed-resource QA, migration startup, and complete
+      process cleanup.
 
 - [ ] Run the protected clean-snapshot AMD/XDNA2 hardware lane with the same
       installer SHA. It must execute the B3 checks, session restart, all nine
-      cancellation/race/recovery checks, process-residue audit, and a
+      cancellation, race, and recovery checks, process-residue audit, and a
       candidate-bound Playwright WebM. The SHA-pinned `ffprobe` result must show
-      a valid WebM/video stream, positive duration and dimensions, and decoded
+      a valid WebM video stream, positive duration and dimensions, and decoded
       frames.
 
 - [ ] Finalize attestations and publish only after both clean-install reports,
-      protected hardware evidence, SBOM/license allowlist, no-clobber OCR asset,
-      and GitHub environment approvals all pass. Release notes and
+      protected hardware evidence, SBOM and license allowlist, no-clobber OCR
+      asset, and GitHub environment approvals all pass. Release notes and
       `release-metadata.json` must say `unsigned_public_alpha`, explain the
       expected SmartScreen warning, and publish SHA-256 verification steps;
       never claim production or GA readiness.
 
-- [ ] Merge the final evidence and decisions into the two domain specs, delete
-      this TODO, and mark the release state exactly
-      `Public Alpha ready with unsigned exception` only after every checkbox
-      above is closed.
+### Final Closeout
+
+- [ ] Merge the final public, hosted, and protected-hardware evidence and
+      decisions into the two domain specs, delete this TODO, and mark the
+      release state exactly `Public Alpha ready with unsigned exception` only
+      after every checkbox above is closed.
       Verify: successful `release-alpha.yml` execution and
       `pnpm nx run cert-prep-desktop:packaged-streaming-production-recorded-windowsml --skip-nx-cache`
       against the published candidate SHA.
 
 The unsigned exception applies only to this public Alpha. GA remains blocked
-until the backend/OCR runtime executables, main executable, MSI, and NSIS are
-all Authenticode-signed.
+until the backend and OCR runtime executables, main executable, MSI, and NSIS
+are all Authenticode-signed.
