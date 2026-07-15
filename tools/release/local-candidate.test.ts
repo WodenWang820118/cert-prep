@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import {
   copyFileSync,
+  existsSync,
   mkdtempSync,
   mkdirSync,
   readFileSync,
@@ -16,13 +18,16 @@ import {
   assertCleanSourceCheckout,
   assertSafeNewOutput,
   inspectLocalCandidateBuild,
+  prepareCandidatePublicationCopy,
   publishCandidateAtomically,
+  removeCandidateScratchRootBestEffort,
   resolveCommandInvocation,
   validateAssembledRuntimes,
 } from './local-candidate.ts';
 import {
   LOCAL_NONPUBLISHABLE_PROFILE,
   sha256File,
+  validateCandidateFiles,
   writeJson,
 } from './release-lib.ts';
 
@@ -50,7 +55,10 @@ test('local candidate inspection binds exact packaged and file URL artifacts', a
     assert.equal(contract.release_urls_only, false);
     assert.equal(contract.local_file_ocr_only, true);
     assert.equal(contract.publishable, false);
-    assert.equal(contract.runtime_binding.windowsml_ocr.sha256, fixture.ocrHash);
+    assert.equal(
+      contract.runtime_binding.windowsml_ocr.sha256,
+      fixture.ocrHash,
+    );
     assert.equal(packageQa.package.size_gate.status, 'passed');
   } finally {
     fixture.cleanup();
@@ -70,10 +78,7 @@ test('local candidate inspection rejects an OCR URL outside its runtime root', a
     manifest.artifact.url = pathToFileURL(outside).href;
     writeJson(manifestPath, manifest);
     writeJson(
-      join(
-        fixture.packagedResourceRoot,
-        'windowsml-ocr-runtime-manifest.json',
-      ),
+      join(fixture.packagedResourceRoot, 'windowsml-ocr-runtime-manifest.json'),
       manifest,
     );
     await assert.rejects(
@@ -99,9 +104,7 @@ test('local candidate source check rejects any tracked or untracked change', () 
     () => assertCleanSourceCheckout('C:/fixture', dirty),
     /requires a clean source checkout.*apps\/example\.ts.*notes\.txt/,
   );
-  assert.doesNotThrow(() =>
-    assertCleanSourceCheckout('C:/fixture', () => ''),
-  );
+  assert.doesNotThrow(() => assertCleanSourceCheckout('C:/fixture', () => ''));
 });
 
 test('local candidate invokes pnpm through cmd on Windows', () => {
@@ -113,12 +116,7 @@ test('local candidate invokes pnpm through cmd on Windows', () => {
     ),
     {
       executable: process.env.ComSpec || 'cmd.exe',
-      args: [
-        '/d',
-        '/s',
-        '/c',
-        'pnpm.cmd licenses list --prod --json',
-      ],
+      args: ['/d', '/s', '/c', 'pnpm.cmd licenses list --prod --json'],
     },
   );
   assert.throws(
@@ -183,6 +181,125 @@ test('atomic publication retries only transient Windows rename failures', async 
   }
 });
 
+test('candidate publication copy is rebuilt only from validated identities', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'cert-prep-local-copy-'));
+  try {
+    const sourceRoot = join(root, 'source');
+    mkdirSync(join(sourceRoot, 'release'), { recursive: true });
+    mkdirSync(join(sourceRoot, 'harness'), { recursive: true });
+    writeFileSync(join(sourceRoot, 'release', 'artifact.bin'), 'artifact');
+    writeFileSync(join(sourceRoot, 'harness', 'runner.ts'), 'runner');
+    const files = [];
+    for (const relativePath of ['harness/runner.ts', 'release/artifact.bin']) {
+      files.push(
+        `${relativePath}:${await sha256File(join(sourceRoot, ...relativePath.split('/')))}`,
+      );
+    }
+    const candidate = {
+      schemaVersion: 1,
+      candidateId: createHash('sha256')
+        .update([...files].sort().join('\n'))
+        .digest('hex'),
+      files,
+    };
+    writeJson(join(sourceRoot, 'candidate.json'), candidate);
+    if (process.platform === 'win32') {
+      writeFileSync(
+        `${join(sourceRoot, 'release', 'artifact.bin')}:audit`,
+        'unbound alternate data stream',
+      );
+      writeFileSync(
+        `${join(sourceRoot, 'candidate.json')}:Zone.Identifier`,
+        'unbound zone metadata',
+      );
+    }
+    await validateCandidateFiles(sourceRoot, candidate);
+    writeFileSync(join(sourceRoot, 'unvalidated.txt'), 'must-not-publish');
+
+    const publicationRoot = await prepareCandidatePublicationCopy(
+      sourceRoot,
+      root,
+      candidate,
+    );
+    const publishedRoot = join(root, 'published');
+    await publishCandidateAtomically(publicationRoot, publishedRoot, {
+      attempts: 1,
+    });
+    assert.deepEqual(
+      JSON.parse(readFileSync(join(publishedRoot, 'candidate.json'), 'utf8')),
+      candidate,
+    );
+    assert.equal(
+      readFileSync(join(publishedRoot, 'release', 'artifact.bin'), 'utf8'),
+      'artifact',
+    );
+    assert.equal(existsSync(join(publishedRoot, 'unvalidated.txt')), false);
+    if (process.platform === 'win32') {
+      assert.equal(
+        existsSync(`${join(publishedRoot, 'release', 'artifact.bin')}:audit`),
+        false,
+      );
+      assert.equal(
+        existsSync(`${join(publishedRoot, 'candidate.json')}:Zone.Identifier`),
+        false,
+      );
+    }
+    const preseededRoot = join(root, 'preseeded-publication');
+    mkdirSync(preseededRoot);
+    writeFileSync(join(preseededRoot, 'undeclared.txt'), 'undeclared');
+    await assert.rejects(
+      prepareCandidatePublicationCopy(sourceRoot, root, candidate, {
+        createPublicationRoot: () => preseededRoot,
+      }),
+      /publication root must start empty/,
+    );
+    const unsafeCandidate = {
+      ...candidate,
+      files: [`release/artifact.bin:ads:${'a'.repeat(64)}`],
+    };
+    writeJson(join(sourceRoot, 'candidate.json'), unsafeCandidate);
+    await assert.rejects(
+      prepareCandidatePublicationCopy(
+        sourceRoot,
+        root,
+        unsafeCandidate,
+      ),
+      /Invalid validated candidate file identity/,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('scratch cleanup is independent and best effort', () => {
+  const root = mkdtempSync(join(tmpdir(), 'cert-prep-local-cleanup-'));
+  try {
+    const reports = [];
+    assert.equal(
+      removeCandidateScratchRootBestEffort(root, 'fixture scratch', {
+        remove: (_path, options) => {
+          assert.deepEqual(options, {
+            recursive: true,
+            force: true,
+            maxRetries: 3,
+            retryDelay: 100,
+          });
+          const error = new Error('locked');
+          error.code = 'EPERM';
+          throw error;
+        },
+        report: (message) => reports.push(message),
+      }),
+      false,
+    );
+    assert.deepEqual(reports, [
+      `Warning: unable to remove fixture scratch at ${root}: locked`,
+    ]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('local candidate output is a new direct child of workspace tmp', () => {
   const root = mkdtempSync(join(tmpdir(), 'cert-prep-local-output-'));
   try {
@@ -196,10 +313,7 @@ test('local candidate output is a new direct child of workspace tmp', () => {
     );
     const existing = join(root, 'tmp', 'existing');
     mkdirSync(existing);
-    assert.throws(
-      () => assertSafeNewOutput(root, existing),
-      /already exists/,
-    );
+    assert.throws(() => assertSafeNewOutput(root, existing), /already exists/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -264,7 +378,10 @@ test('final runtime validation rechecks QA hashes and the source OCR URL', async
       'windowsml-ocr-runtime-manifest.json',
       fixture.backendName,
     ]) {
-      copyFileSync(join(fixture.generatedResources, name), join(runtimeRoot, name));
+      copyFileSync(
+        join(fixture.generatedResources, name),
+        join(runtimeRoot, name),
+      );
     }
     copyFileSync(fixture.ocrArtifact, join(runtimeRoot, fixture.ocrName));
     await assert.doesNotReject(
@@ -313,14 +430,8 @@ async function createLocalFixture() {
   ]) {
     mkdirSync(path, { recursive: true });
   }
-  writeFileSync(
-    join(bundleRoot, `Cert Prep_${version}_x64_en-US.msi`),
-    'msi',
-  );
-  writeFileSync(
-    join(bundleRoot, `Cert Prep_${version}_x64-setup.exe`),
-    'nsis',
-  );
+  writeFileSync(join(bundleRoot, `Cert Prep_${version}_x64_en-US.msi`), 'msi');
+  writeFileSync(join(bundleRoot, `Cert Prep_${version}_x64-setup.exe`), 'nsis');
 
   const backendName = `cert-prep-backend-runtime-${version}-${target}.zip`;
   const backendArtifact = join(generatedResources, backendName);
@@ -425,8 +536,7 @@ async function createLocalFixture() {
           '../../../LICENSE': 'legal/LICENSE',
           '../../../PRIVACY.md': 'legal/PRIVACY.md',
           '../../../CHANGELOG.md': 'legal/CHANGELOG.md',
-          '../../../THIRD_PARTY_NOTICES.md':
-            'legal/THIRD_PARTY_NOTICES.md',
+          '../../../THIRD_PARTY_NOTICES.md': 'legal/THIRD_PARTY_NOTICES.md',
         },
       },
     },

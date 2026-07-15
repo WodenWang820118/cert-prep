@@ -10,6 +10,7 @@ import {
   rmSync,
   statSync,
 } from 'node:fs';
+import { open } from 'node:fs/promises';
 import {
   basename,
   dirname,
@@ -272,6 +273,7 @@ export async function createLocalCandidate(args, run = runCommand) {
   const scratchRoot = mkdtempSync(
     join(dirname(outputRoot), '.local-alpha-candidate-work-'),
   );
+  let publicationRoot;
   try {
     const planPath = join(scratchRoot, 'release-plan.json');
     const packageQaPath = join(scratchRoot, 'package-qa.json');
@@ -325,6 +327,17 @@ export async function createLocalCandidate(args, run = runCommand) {
     ) {
       throw new Error('Local candidate identity is not fail-closed.');
     }
+    publicationRoot = await prepareCandidatePublicationCopy(
+      stagedCandidateRoot,
+      dirname(outputRoot),
+      candidate,
+    );
+    await validateAssembledRuntimes(
+      publicationRoot,
+      generatedResources,
+      ocrRuntimeRoot,
+      packageQa.package.resource_contract.runtime_binding,
+    );
     assertCleanSourceCheckout(workspaceRoot, run);
     const finalCommitSha = run('git', ['rev-parse', 'HEAD'], {
       cwd: workspaceRoot,
@@ -336,7 +349,7 @@ export async function createLocalCandidate(args, run = runCommand) {
     if (pathEntryExists(outputRoot)) {
       throw new Error(`Local candidate output appeared during assembly: ${outputRoot}.`);
     }
-    await publishCandidateAtomically(stagedCandidateRoot, outputRoot);
+    await publishCandidateAtomically(publicationRoot, outputRoot);
     const completed = {
       ...result,
       releaseRoot: join(outputRoot, 'release'),
@@ -349,7 +362,161 @@ export async function createLocalCandidate(args, run = runCommand) {
     );
     return { ...completed, candidate };
   } finally {
-    rmSync(scratchRoot, { recursive: true, force: true });
+    if (publicationRoot) {
+      removeCandidateScratchRootBestEffort(
+        publicationRoot,
+        'candidate publication scratch',
+      );
+    }
+    removeCandidateScratchRootBestEffort(
+      scratchRoot,
+      'candidate assembly scratch',
+    );
+  }
+}
+
+export async function prepareCandidatePublicationCopy(
+  sourceRoot,
+  publicationParent,
+  candidate,
+  {
+    createPublicationRoot = (parent) =>
+      mkdtempSync(join(parent, '.local-alpha-candidate-publish-')),
+  } = {},
+) {
+  assertDirectoryEntryWithoutSymlink(
+    publicationParent,
+    'candidate publication parent',
+  );
+  const publicationRoot = createPublicationRoot(publicationParent);
+  try {
+    assertDirectoryEntryWithoutSymlink(
+      publicationRoot,
+      'candidate publication root',
+    );
+    if (readdirSync(publicationRoot).length !== 0) {
+      throw new Error('Candidate publication root must start empty.');
+    }
+    const sourceCandidatePath = join(sourceRoot, 'candidate.json');
+    const publicationCandidatePath = join(publicationRoot, 'candidate.json');
+    await copyDefaultDataStream(
+      sourceCandidatePath,
+      publicationCandidatePath,
+    );
+    if (
+      (await sha256File(sourceCandidatePath)) !==
+      (await sha256File(publicationCandidatePath))
+    ) {
+      throw new Error('Candidate identity changed while preparing publication.');
+    }
+    if (
+      JSON.stringify(readJson(publicationCandidatePath)) !==
+      JSON.stringify(candidate)
+    ) {
+      throw new Error(
+        'Published candidate identity does not match the validated source.',
+      );
+    }
+
+    for (const identity of candidate.files) {
+      const separator = identity.lastIndexOf(':');
+      const relativePath = identity.slice(0, separator);
+      const expectedSha256 = identity.slice(separator + 1);
+      const segments = relativePath.split('/');
+      if (
+        separator < 1 ||
+        !/^[0-9a-f]{64}$/.test(expectedSha256) ||
+        !['release', 'harness'].includes(segments[0]) ||
+        segments.some(
+          (segment) =>
+            !segment ||
+            segment === '.' ||
+            segment === '..' ||
+            /[:*?"<>|\\]/.test(segment),
+        )
+      ) {
+        throw new Error(`Invalid validated candidate file identity: ${identity}.`);
+      }
+      const source = join(sourceRoot, ...segments);
+      const destination = join(publicationRoot, ...segments);
+      assertRegularFileWithoutSymlink(source, 'validated candidate file');
+      mkdirSync(dirname(destination), { recursive: true });
+      await copyDefaultDataStream(source, destination);
+      assertRegularFileWithoutSymlink(destination, 'publication candidate file');
+      if ((await sha256File(destination)) !== expectedSha256) {
+        throw new Error(`Candidate publication copy changed ${relativePath}.`);
+      }
+    }
+    return publicationRoot;
+  } catch (error) {
+    removeCandidateScratchRootBestEffort(
+      publicationRoot,
+      'failed candidate publication scratch',
+    );
+    throw error;
+  }
+}
+
+async function copyDefaultDataStream(source, destination) {
+  const sourceHandle = await open(source, 'r');
+  try {
+    const destinationHandle = await open(destination, 'wx');
+    try {
+      const buffer = Buffer.allocUnsafe(1024 * 1024);
+      let position = 0;
+      while (true) {
+        const { bytesRead } = await sourceHandle.read(
+          buffer,
+          0,
+          buffer.length,
+          position,
+        );
+        if (bytesRead === 0) break;
+        let bytesWritten = 0;
+        while (bytesWritten < bytesRead) {
+          const result = await destinationHandle.write(
+            buffer,
+            bytesWritten,
+            bytesRead - bytesWritten,
+            position + bytesWritten,
+          );
+          if (result.bytesWritten === 0) {
+            throw new Error(`Unable to finish candidate file copy: ${source}.`);
+          }
+          bytesWritten += result.bytesWritten;
+        }
+        position += bytesRead;
+      }
+    } finally {
+      await destinationHandle.close();
+    }
+  } finally {
+    await sourceHandle.close();
+  }
+}
+
+export function removeCandidateScratchRootBestEffort(
+  path,
+  label,
+  {
+    remove = rmSync,
+    report = (message) => process.stderr.write(`${message}\n`),
+  } = {},
+) {
+  try {
+    if (!pathEntryExists(path)) return true;
+    remove(path, {
+      recursive: true,
+      force: true,
+      maxRetries: 3,
+      retryDelay: 100,
+    });
+    return true;
+  } catch (error) {
+    report(
+      `Warning: unable to remove ${label} at ${path}: ${error?.message ?? error}`,
+    );
+    return false;
   }
 }
 
