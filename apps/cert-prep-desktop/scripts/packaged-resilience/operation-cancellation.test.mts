@@ -227,6 +227,54 @@ test('rejects model scope drift on the durable commit response', async () => {
   transport.assertConsumed();
 });
 
+test('fails fast when the commit probe terminates before committing', async () => {
+  const scenario: CancelableOperationScenario = {
+    kind: 'draft',
+    startPath: '/projects/project-1/documents/document-1/draft-operations',
+    operationPath: (operationId) =>
+      `/projects/project-1/documents/document-1/draft-operations/${operationId}`,
+    startData: { limit: 5 },
+    projectId: 'project-1',
+    documentId: 'document-1',
+    provider: 'ollama',
+    model: 'qwen3.5:4b',
+    timeoutMs: 1_000,
+  };
+  const scope = {
+    project_id: scenario.projectId,
+    document_id: scenario.documentId,
+    provider: scenario.provider,
+    model: scenario.model,
+  };
+  const failedResponse = {
+    ...operation(
+      'commit-operation',
+      'failed',
+      'failed',
+      false,
+      scope,
+      null,
+    ),
+    error: 'Ollama returned invalid JSON',
+  };
+  const requests = successfulRequests(
+    scenario,
+    scope,
+    failedResponse,
+    {
+      status: 409,
+      body: { code: 'operation_not_cancellable' },
+    },
+  ).slice(0, -1);
+  const transport = new ScriptedTransport(requests);
+
+  await assert.rejects(
+    runCancelableOperationScenario(transport, scenario),
+    /commit probe reached failed before durable commit transition: Ollama returned invalid JSON/,
+  );
+  transport.assertConsumed();
+});
+
 function successfulRequests(
   scenario: CancelableOperationScenario,
   scope: Readonly<Record<string, string>>,

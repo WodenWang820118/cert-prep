@@ -118,10 +118,26 @@ export async function runCancelableOperationScenario(
           scenario,
           commitOperationId,
         );
-        return optionalCommitStartedAt(
+        const commitStartedAt = optionalCommitStartedAt(
           scoped.commit_started_at,
           `${scenario.kind} commit_started_at`,
-        ) !== null;
+        );
+        if (commitStartedAt !== null) {
+          return true;
+        }
+        const status = stringField(
+          scoped.status,
+          `${scenario.kind} commit probe status`,
+        );
+        if (['succeeded', 'failed', 'canceled'].includes(status)) {
+          const detail = typeof scoped.error === 'string'
+            ? `: ${scoped.error.trim().slice(0, 240)}`
+            : '';
+          throw new Error(
+            `${scenario.kind} commit probe reached ${status} before durable commit transition${detail}.`,
+          );
+        }
+        return false;
       },
       {
         timeoutMs: scenario.timeoutMs,
