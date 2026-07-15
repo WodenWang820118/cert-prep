@@ -397,6 +397,73 @@ test('draft/runtime/model cancellation requires a stable canceled state and exac
 
   const runtime = validEvidence('runtime');
   const runtimeProof = runtime.proof as Record<string, unknown>;
+  const requirementBefore = runtimeProof.requirementBefore as Record<
+    string,
+    unknown
+  >;
+  assert.throws(
+    () =>
+      validateResilienceEvidence(
+        {
+          ...runtime,
+          proof: {
+            ...runtimeProof,
+            requirementBefore: {
+              ...requirementBefore,
+              unavailableReason: 'windowsml_runtime_unhealthy',
+            },
+          },
+        },
+        'runtime',
+        context,
+      ),
+    /must equal windowsml_runtime_missing/,
+  );
+
+  const canceledState = runtimeProof.canceledState as Record<string, unknown>;
+  const immediate = canceledState.immediate as Record<string, unknown>;
+  assert.throws(
+    () =>
+      validateResilienceEvidence(
+        {
+          ...runtime,
+          proof: {
+            ...runtimeProof,
+            canceledState: {
+              ...canceledState,
+              immediate: {
+                ...immediate,
+                installTargetPathRelative: 'runtimes/other-windowsml',
+              },
+            },
+          },
+        },
+        'runtime',
+        context,
+      ),
+    /runtime installation target changed/,
+  );
+
+  assert.throws(
+    () =>
+      validateResilienceEvidence(
+        {
+          ...runtime,
+          proof: {
+            ...runtimeProof,
+            requirementAfter: {
+              kind: 'windowsml_ocr',
+              available: true,
+              installedPathRelative: 'runtimes/other-windowsml',
+            },
+          },
+        },
+        'runtime',
+        context,
+      ),
+    /runtime installation target changed/,
+  );
+
   assert.throws(
     () =>
       validateResilienceEvidence(
@@ -727,10 +794,11 @@ function validProof(check: ResilienceCheck): Record<string, unknown> {
         usableDraftCountAfterManual: 2,
       };
     case 'runtime': {
-      const unavailableRequirement = {
-        kind: 'windowsml_ocr',
-        available: false,
-        unavailableReason: 'runtime_not_installed',
+    const unavailableRequirement = {
+      kind: 'windowsml_ocr',
+      available: false,
+      unavailableReason: 'windowsml_runtime_missing',
+      installTargetPathRelative: 'runtimes/windowsml-ocr',
       };
       return {
         ...scopedCancellation(

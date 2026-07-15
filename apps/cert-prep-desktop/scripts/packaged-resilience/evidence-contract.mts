@@ -107,6 +107,7 @@ const COMMIT_SHA_PATTERN = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/i;
 const WINDOWSML_RUNTIME_KIND = 'windowsml_ocr';
 const WINDOWSML_RUNTIME_PROVIDER = 'windowsml';
 const WINDOWSML_RUNTIME_MODEL = 'pp-ocrv6-medium-windowsml';
+const WINDOWSML_RUNTIME_MISSING_REASON = 'windowsml_runtime_missing';
 const OLLAMA_PROVIDER = 'ollama';
 const OLLAMA_MODEL = 'qwen3.5:4b';
 
@@ -611,9 +612,18 @@ function validateRuntimeTransition(
   immediate: Record<string, unknown>,
   afterWindow: Record<string, unknown>,
 ): void {
-  validateUnavailableRuntimeRequirement(proof.requirementBefore, 'requirementBefore');
-  validateUnavailableRuntimeRequirement(immediate, 'canceledState.immediate');
-  validateUnavailableRuntimeRequirement(afterWindow, 'canceledState.afterWindow');
+  const targetBefore = validateUnavailableRuntimeRequirement(
+    proof.requirementBefore,
+    'requirementBefore',
+  );
+  const targetImmediate = validateUnavailableRuntimeRequirement(
+    immediate,
+    'canceledState.immediate',
+  );
+  const targetAfterWindow = validateUnavailableRuntimeRequirement(
+    afterWindow,
+    'canceledState.afterWindow',
+  );
   const requirementAfter = record(
     proof.requirementAfter,
     'runtime requirementAfter',
@@ -624,17 +634,24 @@ function validateRuntimeTransition(
   ) {
     fail('runtime', 'runtime installation transition is incomplete');
   }
-  safeRelativePath(
+  const installedPath = safeRelativePath(
     requirementAfter.installedPathRelative,
     'runtime',
     'requirementAfter.installedPathRelative',
   );
+  if (
+    targetBefore !== targetImmediate ||
+    targetBefore !== targetAfterWindow ||
+    targetBefore !== installedPath
+  ) {
+    fail('runtime', 'runtime installation target changed across the transition');
+  }
 }
 
 function validateUnavailableRuntimeRequirement(
   raw: unknown,
   field: string,
-): void {
+): string {
   const requirement = record(raw, `runtime ${field}`);
   if (
     requirement.kind !== WINDOWSML_RUNTIME_KIND ||
@@ -642,10 +659,16 @@ function validateUnavailableRuntimeRequirement(
   ) {
     fail('runtime', `${field} must be an unavailable WindowsML OCR requirement`);
   }
-  nonEmptyString(
+  exactString(
     requirement.unavailableReason,
+    WINDOWSML_RUNTIME_MISSING_REASON,
     'runtime',
     `${field}.unavailableReason`,
+  );
+  return safeRelativePath(
+    requirement.installTargetPathRelative,
+    'runtime',
+    `${field}.installTargetPathRelative`,
   );
 }
 

@@ -10,7 +10,15 @@ import {
   rmSync,
   statSync,
 } from 'node:fs';
-import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import {
@@ -78,6 +86,7 @@ const REMAINING_CHECKS = [
 const WINDOWSML_RUNTIME_KIND = 'windowsml_ocr';
 const WINDOWSML_RUNTIME_PROVIDER = 'windowsml';
 const WINDOWSML_RUNTIME_MODEL = 'pp-ocrv6-medium-windowsml';
+const WINDOWSML_RUNTIME_MISSING_REASON = 'windowsml_runtime_missing';
 const OLLAMA_MODEL = 'qwen3.5:4b';
 const AUTO_DRAFT_TERMINAL_STATUSES = new Set([
   'succeeded',
@@ -584,50 +593,56 @@ export async function exactWindowsMlRequirement(
       `WindowsML runtime availability was ${String(requirement.available)}; expected ${String(expectedAvailable)}.`,
     );
   }
+  if (!appDataDir) {
+    throw new Error('WindowsML runtime containment requires isolated app data.');
+  }
+  const canonicalAppData = realpathSync.native(resolve(appDataDir));
+  const installedPath = requirement.installed_path;
   if (!expectedAvailable) {
     if (
-      requirement.installed_path !== null ||
-      typeof requirement.unavailable_reason !== 'string' ||
-      requirement.unavailable_reason.trim().length === 0
+      requirement.unavailable_reason !== WINDOWSML_RUNTIME_MISSING_REASON ||
+      typeof installedPath !== 'string' ||
+      !isAbsolute(installedPath)
     ) {
       throw new Error('WindowsML runtime was not a clean missing prerequisite.');
     }
+    const resolvedInstallTarget = resolve(installedPath);
+    if (lstatSync(resolvedInstallTarget, { throwIfNoEntry: false })) {
+      throw new Error('WindowsML missing runtime target already existed.');
+    }
+    const canonicalInstallTarget = canonicalMissingTarget(resolvedInstallTarget);
+    const installTargetRelative = containedRuntimeRelativePath(
+      canonicalAppData,
+      canonicalInstallTarget,
+      'WindowsML missing runtime target was not contained by this acceptance app-data directory.',
+    );
     return {
       kind: WINDOWSML_RUNTIME_KIND,
       available: false,
       unavailableReason: requirement.unavailable_reason,
+      installTargetPathRelative: installTargetRelative,
     };
   }
 
-  if (!appDataDir) {
-    throw new Error('WindowsML runtime containment requires isolated app data.');
-  }
-  const installedPath = requirement.installed_path;
   if (
     typeof installedPath !== 'string' ||
     !isAbsolute(installedPath) ||
     !existsSync(installedPath) ||
+    !lstatSync(installedPath).isDirectory() ||
     lstatSync(installedPath).isSymbolicLink()
   ) {
     throw new Error('WindowsML installed path was missing or unsafe.');
   }
-  const canonicalAppData = realpathSync.native(resolve(appDataDir));
   const resolvedInstalledPath = resolve(installedPath);
   const canonicalInstalledPath = realpathSync.native(resolvedInstalledPath);
   if (!sameCanonicalPath(resolvedInstalledPath, canonicalInstalledPath)) {
     throw new Error('WindowsML installed path was not canonical.');
   }
-  const installedRelative = relative(canonicalAppData, canonicalInstalledPath);
-  if (
-    !installedRelative ||
-    installedRelative === '..' ||
-    installedRelative.startsWith(`..${sep}`) ||
-    isAbsolute(installedRelative)
-  ) {
-    throw new Error(
-      'WindowsML installed path was not contained by this acceptance app-data directory.',
-    );
-  }
+  const installedRelative = containedRuntimeRelativePath(
+    canonicalAppData,
+    canonicalInstalledPath,
+    'WindowsML installed path was not contained by this acceptance app-data directory.',
+  );
   if (requirement.unavailable_reason !== null) {
     throw new Error('Available WindowsML runtime retained an unavailable reason.');
   }
@@ -1218,6 +1233,44 @@ function sameCanonicalPath(left: string, right: string): boolean {
   return process.platform === 'win32'
     ? left.toLowerCase() === right.toLowerCase()
     : left === right;
+}
+
+function canonicalMissingTarget(resolvedTarget: string): string {
+  let ancestor = dirname(resolvedTarget);
+  let ancestorEntry = lstatSync(ancestor, { throwIfNoEntry: false });
+  while (!ancestorEntry) {
+    const parent = dirname(ancestor);
+    if (sameCanonicalPath(parent, ancestor)) {
+      throw new Error('WindowsML missing runtime target had no existing ancestor.');
+    }
+    ancestor = parent;
+    ancestorEntry = lstatSync(ancestor, { throwIfNoEntry: false });
+  }
+  if (!ancestorEntry.isDirectory() || ancestorEntry.isSymbolicLink()) {
+    throw new Error('WindowsML missing runtime target ancestor was unsafe.');
+  }
+  const canonicalAncestor = realpathSync.native(ancestor);
+  if (!sameCanonicalPath(ancestor, canonicalAncestor)) {
+    throw new Error('WindowsML missing runtime target ancestor was not canonical.');
+  }
+  return resolve(canonicalAncestor, relative(ancestor, resolvedTarget));
+}
+
+function containedRuntimeRelativePath(
+  canonicalAppData: string,
+  canonicalRuntimePath: string,
+  errorMessage: string,
+): string {
+  const runtimeRelative = relative(canonicalAppData, canonicalRuntimePath);
+  if (
+    !runtimeRelative ||
+    runtimeRelative === '..' ||
+    runtimeRelative.startsWith(`..${sep}`) ||
+    isAbsolute(runtimeRelative)
+  ) {
+    throw new Error(errorMessage);
+  }
+  return runtimeRelative.replaceAll('\\', '/');
 }
 
 function publishEvidenceAtomically(

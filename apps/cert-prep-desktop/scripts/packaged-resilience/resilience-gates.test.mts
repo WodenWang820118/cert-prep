@@ -58,7 +58,7 @@ test('WindowsML requirement must transition from missing to a canonical run-loca
   try {
     const appData = join(workspace, 'app-data');
     const installed = join(appData, 'runtimes', 'windowsml');
-    mkdirSync(installed, { recursive: true });
+    mkdirSync(join(appData, 'runtimes'), { recursive: true });
     const transport = new ScriptedTransport([
       response('/runtime/requirements', {
         items: [
@@ -66,7 +66,7 @@ test('WindowsML requirement must transition from missing to a canonical run-loca
             kind: 'windowsml_ocr',
             available: false,
             unavailable_reason: 'windowsml_runtime_missing',
-            installed_path: null,
+            installed_path: installed,
           },
         ],
       }),
@@ -82,13 +82,67 @@ test('WindowsML requirement must transition from missing to a canonical run-loca
       }),
     ]);
 
+    const missing = await exactWindowsMlRequirement(transport, false, appData);
+    assert.equal(missing.available, false);
     assert.equal(
-      (await exactWindowsMlRequirement(transport, false, appData)).available,
-      false,
+      missing.installTargetPathRelative,
+      'runtimes/windowsml',
     );
+    mkdirSync(installed);
     const ready = await exactWindowsMlRequirement(transport, true, appData);
     assert.equal(ready.available, true);
     assert.equal(ready.installedPathRelative, 'runtimes/windowsml');
+
+    const staleMissing = new ScriptedTransport([
+      response('/runtime/requirements', {
+        items: [
+          {
+            kind: 'windowsml_ocr',
+            available: false,
+            unavailable_reason: 'windowsml_runtime_missing',
+            installed_path: installed,
+          },
+        ],
+      }),
+    ]);
+    await assert.rejects(
+      exactWindowsMlRequirement(staleMissing, false, appData),
+      /missing runtime target already existed/,
+    );
+
+    const outsideMissing = new ScriptedTransport([
+      response('/runtime/requirements', {
+        items: [
+          {
+            kind: 'windowsml_ocr',
+            available: false,
+            unavailable_reason: 'windowsml_runtime_missing',
+            installed_path: join(workspace, 'outside-missing-runtime'),
+          },
+        ],
+      }),
+    ]);
+    await assert.rejects(
+      exactWindowsMlRequirement(outsideMissing, false, appData),
+      /missing runtime target was not contained/,
+    );
+
+    const unhealthyMissing = new ScriptedTransport([
+      response('/runtime/requirements', {
+        items: [
+          {
+            kind: 'windowsml_ocr',
+            available: false,
+            unavailable_reason: 'windowsml_runtime_unhealthy',
+            installed_path: join(appData, 'runtimes', 'unhealthy'),
+          },
+        ],
+      }),
+    ]);
+    await assert.rejects(
+      exactWindowsMlRequirement(unhealthyMissing, false, appData),
+      /not a clean missing prerequisite/,
+    );
 
     const outside = join(workspace, 'outside-runtime');
     mkdirSync(outside);
@@ -117,6 +171,22 @@ test('WindowsML requirement must transition from missing to a canonical run-loca
       linkedTarget,
       linkedParent,
       process.platform === 'win32' ? 'junction' : 'dir',
+    );
+    const linkedMissing = new ScriptedTransport([
+      response('/runtime/requirements', {
+        items: [
+          {
+            kind: 'windowsml_ocr',
+            available: false,
+            unavailable_reason: 'windowsml_runtime_missing',
+            installed_path: join(linkedParent, 'not-installed'),
+          },
+        ],
+      }),
+    ]);
+    await assert.rejects(
+      exactWindowsMlRequirement(linkedMissing, false, appData),
+      /target ancestor was unsafe/,
     );
     const reparseDrift = new ScriptedTransport([
       response('/runtime/requirements', {

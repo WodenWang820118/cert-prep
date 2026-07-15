@@ -215,7 +215,8 @@ function validProof(
     const unavailableRequirement = {
       kind: 'windowsml_ocr',
       available: false,
-      unavailableReason: 'runtime_not_installed',
+      unavailableReason: 'windowsml_runtime_missing',
+      installTargetPathRelative: 'runtimes/windowsml-ocr',
     };
     return {
       ...cancellationProof(
