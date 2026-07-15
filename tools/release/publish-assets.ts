@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import {
+  appendFileSync,
   lstatSync,
   mkdtempSync,
   readFileSync,
@@ -25,43 +26,59 @@ import {
   validateCandidateFiles,
 } from './release-lib.ts';
 
+const PUBLICATION_OWNER_MARKER =
+  /<!-- cert-prep-publication-owner:([1-9][0-9]*:[1-9][0-9]*:[0-9a-f]{64}) -->/gi;
+const PUBLICATION_STATE_MARKER =
+  /<!-- cert-prep-publication-state:(ocr-bootstrap|finalized):([0-9a-f]{64}) -->/gi;
+
 export async function publishAssets(args, gh = runGh) {
-  const { mode, plan, releaseRoot } = await validatePublishingInputs(args);
-  if (mode === 'cleanup') return cleanupIncompleteRelease(plan, gh);
-
-  const existingTagCommit = await resolveTagCommit(gh, plan, true);
-  if (existingTagCommit && existingTagCommit !== plan.commitSha) {
-    throw new Error('Existing release tag points to a different commit SHA.');
+  const { mode, plan, releaseRoot, candidate } =
+    await validatePublishingInputs(args);
+  const publicationOwner = validatePublicationOwner(
+    args['publication-owner'],
+    candidate.candidateId,
+  );
+  if (mode === 'cleanup') {
+    return cleanupIncompleteRelease(
+      plan,
+      publicationOwner,
+      candidate.candidateId,
+      gh,
+    );
   }
-
-  let release = viewRelease(gh, plan, true);
-  if (!release) {
-    if (mode !== 'ocr')
-      throw new Error('Final publish requires the OCR bootstrap prerelease.');
-    const notesPath = writeNotes(plan, 'ocr');
-    try {
-      gh([
-        'release',
-        'create',
-        plan.tag,
-        '--repo',
-        plan.repository,
-        '--target',
-        plan.commitSha,
-        '--title',
-        `Cert Prep ${plan.version} (unsigned public alpha)`,
-        '--notes-file',
-        notesPath,
-        '--prerelease',
-        '--latest=false',
-      ]);
-    } finally {
-      rmSync(dirname(notesPath), { recursive: true, force: true });
+  if (mode === 'reserve') {
+    const reservation = await inspectReleaseReservation(
+      plan,
+      publicationOwner,
+      candidate.candidateId,
+      true,
+      gh,
+    );
+    if (reservation.publicationState !== 'ocr-bootstrap') {
+      throw new Error(
+        'The candidate release is already finalized and cannot be reserved again.',
+      );
     }
-    release = viewRelease(gh, plan, false);
+    return {
+      releaseOwnedByCaller: reservation.releaseOwnedByCaller,
+      publicationState: reservation.publicationState,
+    };
   }
-  assertReleaseState(release, plan);
-  await assertTagCommit(gh, plan);
+
+  const reservation = await inspectReleaseReservation(
+    plan,
+    publicationOwner,
+    candidate.candidateId,
+    false,
+    gh,
+  );
+  if (
+    mode === 'ocr' &&
+    reservation.publicationState !== 'ocr-bootstrap'
+  ) {
+    throw new Error('OCR assets cannot be published to a finalized release.');
+  }
+  const { release, releaseOwner, releaseOwnedByCaller } = reservation;
 
   const desiredPaths = selectAssets(releaseRoot, mode);
   const desired = [];
@@ -97,7 +114,12 @@ export async function publishAssets(args, gh = runGh) {
   }
 
   if (mode === 'final') {
-    const notesPath = writeNotes(plan, 'final');
+    const notesPath = writeNotes(
+      plan,
+      'finalized',
+      releaseOwner,
+      candidate.candidateId,
+    );
     try {
       gh([
         'release',
@@ -116,17 +138,107 @@ export async function publishAssets(args, gh = runGh) {
     } finally {
       rmSync(dirname(notesPath), { recursive: true, force: true });
     }
+    const finalized = viewRelease(gh, plan, false);
+    assertReleaseState(finalized, plan);
+    if (
+      releasePublicationOwner(finalized, candidate.candidateId) !==
+        releaseOwner ||
+      releasePublicationState(finalized, candidate.candidateId) !== 'finalized'
+    ) {
+      throw new Error('Final release publication markers were not preserved.');
+    }
   }
   return {
     uploaded: assetPlan.upload.map((item) => item.name),
     reused: assetPlan.reuse,
+    releaseOwnedByCaller,
+    releaseFinalized: mode === 'final',
   };
+}
+
+async function inspectReleaseReservation(
+  plan,
+  publicationOwner,
+  candidateId,
+  allowCreate,
+  gh,
+) {
+  const existingTagCommit = await resolveTagCommit(gh, plan, true);
+  if (existingTagCommit && existingTagCommit !== plan.commitSha) {
+    throw new Error('Existing release tag points to a different commit SHA.');
+  }
+
+  let release = viewRelease(gh, plan, true);
+  let createdByCaller = false;
+  if (!release) {
+    if (!allowCreate) {
+      throw new Error(
+        'Asset publication requires a reserved OCR bootstrap prerelease.',
+      );
+    }
+    const notesPath = writeNotes(
+      plan,
+      'ocr-bootstrap',
+      publicationOwner,
+      candidateId,
+    );
+    try {
+      gh([
+        'release',
+        'create',
+        plan.tag,
+        '--repo',
+        plan.repository,
+        '--target',
+        plan.commitSha,
+        '--title',
+        `Cert Prep ${plan.version} (unsigned public alpha)`,
+        '--notes-file',
+        notesPath,
+        '--prerelease',
+        '--latest=false',
+      ]);
+      createdByCaller = true;
+    } finally {
+      rmSync(dirname(notesPath), { recursive: true, force: true });
+    }
+    release = viewRelease(gh, plan, false);
+  }
+  try {
+    assertReleaseState(release, plan);
+    const releaseOwner = releasePublicationOwner(release, candidateId);
+    const publicationState = releasePublicationState(release, candidateId);
+    await assertTagCommit(gh, plan);
+    return {
+      release,
+      releaseOwner,
+      releaseOwnedByCaller: releaseOwner === publicationOwner,
+      publicationState,
+    };
+  } catch (error) {
+    if (createdByCaller) {
+      try {
+        await cleanupIncompleteRelease(
+          plan,
+          publicationOwner,
+          candidateId,
+          gh,
+        );
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [error, cleanupError],
+          'Release reservation failed and its owned prerelease could not be withdrawn.',
+        );
+      }
+    }
+    throw error;
+  }
 }
 
 export async function validatePublishingInputs(args) {
   const mode = args.mode;
-  if (!['ocr', 'final', 'cleanup'].includes(mode)) {
-    throw new Error('--mode must be ocr, final, or cleanup.');
+  if (!['reserve', 'ocr', 'final', 'cleanup'].includes(mode)) {
+    throw new Error('--mode must be reserve, ocr, final, or cleanup.');
   }
   if (
     !args['candidate-root'] ||
@@ -156,7 +268,7 @@ export async function validatePublishingInputs(args) {
 
   const planPath = resolve(args.plan);
   let releaseRoot = null;
-  if (mode === 'cleanup') {
+  if (mode === 'reserve' || mode === 'cleanup') {
     if (planPath !== embeddedPlanPath) {
       throw new Error('Cleanup must use the candidate embedded release plan.');
     }
@@ -345,8 +457,17 @@ function listSafeReleaseFiles(root, prefix = '') {
   return files;
 }
 
-export async function cleanupIncompleteRelease(plan, gh = runGh) {
+export async function cleanupIncompleteRelease(
+  plan,
+  publicationOwner,
+  candidateId,
+  gh = runGh,
+) {
   assertPublishableReleasePlan(plan);
+  const expectedOwner = validatePublicationOwner(
+    publicationOwner,
+    candidateId,
+  );
   const existingTagCommit = await resolveTagCommit(gh, plan, true);
   if (!existingTagCommit) return { deleted: false };
   if (existingTagCommit !== plan.commitSha) {
@@ -355,6 +476,15 @@ export async function cleanupIncompleteRelease(plan, gh = runGh) {
   const release = viewRelease(gh, plan, true);
   if (!release) return { deleted: false };
   assertReleaseState(release, plan);
+  const actualOwner = releasePublicationOwner(release, candidateId);
+  if (actualOwner !== expectedOwner) {
+    throw new Error(
+      'Incomplete prerelease belongs to a different workflow run and will not be deleted.',
+    );
+  }
+  if (releasePublicationState(release, candidateId) !== 'ocr-bootstrap') {
+    throw new Error('A finalized public alpha release will not be deleted.');
+  }
   if (!Number.isInteger(release.databaseId) || release.databaseId <= 0) {
     throw new Error('Incomplete prerelease is missing its GitHub database ID.');
   }
@@ -392,7 +522,7 @@ function viewRelease(gh, plan, allowMissing) {
       '--repo',
       plan.repository,
       '--json',
-      'databaseId,tagName,isDraft,isPrerelease,isImmutable,targetCommitish,assets',
+      'databaseId,tagName,isDraft,isPrerelease,isImmutable,targetCommitish,assets,body',
     ],
     { allowMissing },
   );
@@ -476,15 +606,59 @@ async function hydrateMissingDigests(gh, existingAssets, desired, plan) {
   return output;
 }
 
-function writeNotes(plan, mode) {
+function writeNotes(plan, publicationState, publicationOwner, candidateId) {
   const directory = mkdtempSync(join(tmpdir(), 'cert-prep-release-notes-'));
   const path = join(directory, 'notes.md');
+  const marker = `<!-- cert-prep-publication-owner:${publicationOwner} -->`;
+  const stateMarker = `<!-- cert-prep-publication-state:${publicationState}:${candidateId} -->`;
   const body =
-    mode === 'ocr'
-      ? `# Cert Prep ${plan.version}\n\nThis is the OCR bootstrap stage for an unsigned public alpha. Installer assets are intentionally withheld until clean-install and protected hardware acceptance pass.\n\nThe WindowsML OCR asset is public so clean Windows runners can verify anonymous download and SHA-256 integrity.\n`
-      : `# Cert Prep ${plan.version}\n\nPublic Windows 11 x64 alpha. This build is **unsigned** and Windows SmartScreen is expected to warn. Verify downloads against \`SHA256SUMS\` before installing.\n\nThis remains an Alpha, not a production/GA release. FastFlowLM is downloaded only from its official channel after explicit terms acceptance and is not redistributed in these assets.\n`;
+    publicationState === 'ocr-bootstrap'
+      ? `# Cert Prep ${plan.version}\n\nThis is the OCR bootstrap stage for an unsigned public alpha. Installer assets are intentionally withheld until clean-install and protected hardware acceptance pass.\n\nThe WindowsML OCR asset is public so clean Windows runners can verify anonymous download and SHA-256 integrity.\n\n${marker}\n${stateMarker}\n`
+      : `# Cert Prep ${plan.version}\n\nPublic Windows 11 x64 alpha. This build is **unsigned** and Windows SmartScreen is expected to warn. Verify downloads against \`SHA256SUMS\` before installing.\n\nThis remains an Alpha, not a production/GA release. FastFlowLM is downloaded only from its official channel after explicit terms acceptance and is not redistributed in these assets.\n\n${marker}\n${stateMarker}\n`;
   writeFileSync(path, body, 'utf8');
   return path;
+}
+
+export function validatePublicationOwner(value, candidateId) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  const match = normalized.match(
+    /^([1-9][0-9]*):([1-9][0-9]*):([0-9a-f]{64})$/,
+  );
+  if (!match || match[3] !== String(candidateId ?? '').toLowerCase()) {
+    throw new Error(
+      'Publication owner must bind workflow run ID, run attempt, and candidate ID.',
+    );
+  }
+  return normalized;
+}
+
+export function releasePublicationOwner(release, candidateId) {
+  const matches = [
+    ...String(release?.body ?? '').matchAll(PUBLICATION_OWNER_MARKER),
+  ].map((match) => match[1].toLowerCase());
+  if (matches.length !== 1) {
+    throw new Error(
+      'GitHub prerelease must contain exactly one publication owner marker.',
+    );
+  }
+  return validatePublicationOwner(matches[0], candidateId);
+}
+
+export function releasePublicationState(release, candidateId) {
+  const matches = [
+    ...String(release?.body ?? '').matchAll(PUBLICATION_STATE_MARKER),
+  ];
+  const expectedCandidateId = String(candidateId ?? '').toLowerCase();
+  if (
+    matches.length !== 1 ||
+    !/^[0-9a-f]{64}$/.test(expectedCandidateId) ||
+    matches[0][2].toLowerCase() !== expectedCandidateId
+  ) {
+    throw new Error(
+      'GitHub prerelease must contain exactly one candidate-bound publication state marker.',
+    );
+  }
+  return matches[0][1].toLowerCase();
 }
 
 function runGh(args, { allowMissing = false } = {}) {
@@ -503,7 +677,26 @@ function runGh(args, { allowMissing = false } = {}) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  await publishAssets(args);
+  const result = await publishAssets(args);
+  if (process.env.GITHUB_OUTPUT) {
+    const outputs = [];
+    if (typeof result.releaseOwnedByCaller === 'boolean') {
+      outputs.push(
+        `release_owned_by_run=${String(result.releaseOwnedByCaller)}`,
+      );
+    }
+    if (typeof result.releaseFinalized === 'boolean') {
+      outputs.push(`release_finalized=${String(result.releaseFinalized)}`);
+    }
+    if (outputs.length > 0) {
+    appendFileSync(
+      process.env.GITHUB_OUTPUT,
+        `${outputs.join('\n')}\n`,
+      'utf8',
+    );
+    }
+  }
+  process.stdout.write(`${JSON.stringify(result)}\n`);
 }
 
 if (

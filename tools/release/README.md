@@ -3,7 +3,13 @@
 The release workflow is intentionally fail-closed. Before dispatching it, configure:
 
 - a **public** GitHub repository and repository Actions variables confirming the public-alpha decision;
+- `ALPHA_EXPECTED_REPOSITORY` set to the independently reviewed, exact
+  `OWNER/REPO` identity used for this release;
 - protected `alpha-release` and `alpha-hardware` environments with required reviewers;
+- default-branch protection plus a protected `cert-prep-v*` tag/ruleset; manual
+  dispatches must originate from the default branch, and tag-triggered commits
+  must be ancestors of that branch; manual and tag invocations for the same
+  canonical tag are serialized;
 - an online self-hosted Windows x64 runner labeled `cert-prep-alpha-hardware`;
 - `ALPHA_HARDWARE_HARNESS` in the hardware environment, pointing to an absolute, provisioned harness path, plus its reviewed `ALPHA_HARDWARE_HARNESS_SHA256`;
 - an absolute provisioned `ALPHA_FFPROBE_PATH` and reviewed `ALPHA_FFPROBE_SHA256` in the hardware environment;
@@ -15,6 +21,16 @@ For tag-triggered releases, set these repository variables to the literal value 
 - `ALPHA_RELEASE_ENVIRONMENT_PROTECTED`
 - `ALPHA_FASTFLOW_TERMS_CONFIRMED`
 - `ALPHA_HARDWARE_RUNNER_READY`
+
+The OCR bootstrap release contains a candidate-bound publication owner marker
+made from the workflow run ID and attempt. An identical prerelease may be reused
+without clobbering assets, but rollback only runs through the protected
+`alpha-release` environment and only the workflow run that created that
+prerelease may delete it. The workflow reserves the release and records that
+owner before uploading OCR assets, so a failed upload can be withdrawn safely.
+A separate candidate-bound state marker moves from `ocr-bootstrap` to
+`finalized`; cleanup rejects finalized releases even if a later workflow step
+fails.
 
 The candidate ID covers both publishable release files and the exact release
 harness scripts. The hardware harness executable is separately pinned by SHA-256. It

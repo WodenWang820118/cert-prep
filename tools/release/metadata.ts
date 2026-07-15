@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 
 import {
   assertExternalConfirmations,
+  assertReleaseInvocationContext,
   assertWorkspaceVersions,
   deriveReleaseIdentity,
   parseArgs,
@@ -17,6 +18,15 @@ export function buildReleasePlan(args) {
     requestedVersion: args.version,
     repository: args.repository,
     commitSha: args.sha,
+  });
+  assertReleaseInvocationContext({
+    eventName: args['event-name'],
+    ref: args.ref,
+    refName: args['ref-name'],
+    defaultBranch: args['default-branch'],
+    repository: args.repository,
+    expectedRepository: args['expected-repository'],
+    tag: plan.tag,
   });
   assertExternalConfirmations({
     publicRepository: args['public-repository-confirmed'],

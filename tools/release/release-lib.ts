@@ -251,6 +251,57 @@ export function deriveReleaseIdentity({
   };
 }
 
+export function assertReleaseInvocationContext({
+  eventName,
+  ref,
+  refName,
+  defaultBranch,
+  repository,
+  expectedRepository,
+  tag,
+}) {
+  if (!/^[^/\s]+\/[^/\s]+$/.test(expectedRepository ?? '')) {
+    throw new Error(
+      'ALPHA_EXPECTED_REPOSITORY must be the pinned GitHub OWNER/REPO identifier.',
+    );
+  }
+  if (repository !== expectedRepository) {
+    throw new Error(
+      `GitHub repository ${repository} does not match pinned release repository ${expectedRepository}.`,
+    );
+  }
+  if (
+    typeof defaultBranch !== 'string' ||
+    defaultBranch.trim() === '' ||
+    defaultBranch !== defaultBranch.trim() ||
+    defaultBranch.startsWith('refs/') ||
+    /\s/.test(defaultBranch)
+  ) {
+    throw new Error('GitHub default branch is missing or invalid.');
+  }
+
+  if (eventName === 'workflow_dispatch') {
+    if (
+      ref !== `refs/heads/${defaultBranch}` ||
+      refName !== defaultBranch
+    ) {
+      throw new Error(
+        `Manual alpha release must run from default branch ${defaultBranch}.`,
+      );
+    }
+    return;
+  }
+  if (eventName === 'push') {
+    if (ref !== `refs/tags/${tag}` || refName !== tag) {
+      throw new Error(`Tag alpha release must run from canonical ref refs/tags/${tag}.`);
+    }
+    return;
+  }
+  throw new Error(
+    'alpha releases only support tag push or workflow_dispatch.',
+  );
+}
+
 export function assertWorkspaceVersions(workspaceRoot, expectedVersion) {
   const tauriConfig = readJson(
     join(workspaceRoot, 'apps/cert-prep-desktop/src-tauri/tauri.conf.json'),

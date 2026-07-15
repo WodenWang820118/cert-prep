@@ -19,6 +19,7 @@ import {
   PUBLIC_UNSIGNED_ALPHA_PROFILE,
   assertExternalConfirmations,
   assertPublishableReleasePlan,
+  assertReleaseInvocationContext,
   collectLicensedComponents,
   createSpdxDocument,
   deriveReleaseIdentity,
@@ -127,6 +128,62 @@ test('tag events fail when tag and version cannot be made identical', () => {
   );
 });
 
+test('release invocation pins repository and canonical source ref', () => {
+  const base = {
+    defaultBranch: 'main',
+    repository: 'owner/cert-prep',
+    expectedRepository: 'owner/cert-prep',
+    tag: 'cert-prep-v0.1.0-alpha.1',
+  };
+  assert.doesNotThrow(() =>
+    assertReleaseInvocationContext({
+      ...base,
+      eventName: 'workflow_dispatch',
+      ref: 'refs/heads/main',
+      refName: 'main',
+    }),
+  );
+  assert.doesNotThrow(() =>
+    assertReleaseInvocationContext({
+      ...base,
+      eventName: 'push',
+      ref: 'refs/tags/cert-prep-v0.1.0-alpha.1',
+      refName: 'cert-prep-v0.1.0-alpha.1',
+    }),
+  );
+  assert.throws(
+    () =>
+      assertReleaseInvocationContext({
+        ...base,
+        expectedRepository: 'other/cert-prep',
+        eventName: 'workflow_dispatch',
+        ref: 'refs/heads/main',
+        refName: 'main',
+      }),
+    /does not match pinned release repository/,
+  );
+  assert.throws(
+    () =>
+      assertReleaseInvocationContext({
+        ...base,
+        eventName: 'workflow_dispatch',
+        ref: 'refs/heads/feature/release',
+        refName: 'feature/release',
+      }),
+    /must run from default branch main/,
+  );
+  assert.throws(
+    () =>
+      assertReleaseInvocationContext({
+        ...base,
+        eventName: 'push',
+        ref: 'refs/tags/cert-prep-v0.1.0-alpha.2',
+        refName: 'cert-prep-v0.1.0-alpha.1',
+      }),
+    /must run from canonical ref/,
+  );
+});
+
 test('external alpha prerequisites are fail-closed', () => {
   assert.throws(
     () =>
@@ -208,9 +265,12 @@ test('metadata validates every source release version', () => {
     );
     const plan = buildReleasePlan({
       'event-name': 'workflow_dispatch',
+      ref: 'refs/heads/main',
       'ref-name': 'main',
+      'default-branch': 'main',
       version: '0.1.0-alpha.1',
       repository: 'owner/cert-prep',
+      'expected-repository': 'owner/cert-prep',
       sha,
       'workspace-root': root,
       'public-repository-confirmed': 'true',

@@ -36,6 +36,24 @@ test('release workflow exposes dispatch and alpha tag triggers with confirmation
   }
 });
 
+test('metadata pins repository identity and canonical release source', () => {
+  const body = jobBody('metadata', 'windows-quality');
+  assert.match(body, /ALPHA_EXPECTED_REPOSITORY/);
+  assert.match(body, /--ref "\$\{\{ github\.ref \}\}"/);
+  assert.match(
+    body,
+    /--default-branch "\$\{\{ github\.event\.repository\.default_branch \}\}"/,
+  );
+  assert.match(body, /--expected-repository "\$EXPECTED_REPOSITORY"/);
+  assert.match(body, /git fetch --no-tags origin/);
+  assert.match(body, /git merge-base --is-ancestor "\$GITHUB_SHA"/);
+  assert.match(
+    workflow,
+    /group: release-alpha-\$\{\{ github\.event_name == 'workflow_dispatch' && format\('cert-prep-v\{0\}', inputs\.version\) \|\| github\.ref_name \}\}/,
+  );
+  assert.match(workflow, /cancel-in-progress:\s*false/);
+});
+
 test('all third-party actions are pinned to full commit SHAs', () => {
   const actionUses = [...workflow.matchAll(/uses:\s*([^\s@]+)@([^\s]+)/g)];
   assert.ok(actionUses.length > 10);
@@ -134,18 +152,37 @@ test('hardware gate is protected, labeled and consumes no checkout', () => {
 
 test('final publish is no-clobber, attested and contains both SBOM formats', () => {
   const ocrPublish = jobBody('publish-ocr-prerelease', 'clean-install');
+  const finalPublish = jobBody(
+    'publish-alpha',
+    'cleanup-incomplete-prerelease',
+  );
   assert.doesNotMatch(workflow, /--clobber/);
   assert.match(workflow, /actions\/attest-build-provenance@/);
   assert.match(workflow, /id-token:\s*write/);
   assert.match(workflow, /attestations:\s*write/);
   assert.match(workflow, /environment:\s*alpha-release/);
   assert.match(ocrPublish, /environment:\s*alpha-release/);
+  assert.match(
+    ocrPublish,
+    /release_owned_by_run:\s*\$\{\{ steps\.reserve_ocr\.outputs\.release_owned_by_run \}\}/,
+  );
+  assert.match(ocrPublish, /id:\s*reserve_ocr/);
+  assert.match(ocrPublish, /--mode reserve/);
+  assert.match(
+    ocrPublish,
+    /if:\s*\$\{\{ failure\(\) && steps\.reserve_ocr\.outputs\.release_owned_by_run == 'true' \}\}/,
+  );
+  assert.match(finalPublish, /id:\s*publish_final/);
+  assert.match(
+    finalPublish,
+    /release_finalized:\s*\$\{\{ steps\.publish_final\.outputs\.release_finalized \}\}/,
+  );
   assert.match(workflow, /SPDX|SBOM/i);
   assert.match(workflow, /CycloneDX|both SBOM formats/i);
   assert.match(workflow, /unsigned_public_alpha/);
   for (const body of [
     ocrPublish,
-    jobBody('publish-alpha', 'cleanup-incomplete-prerelease'),
+    finalPublish,
     jobBody('cleanup-incomplete-prerelease'),
   ]) {
     assert.match(body, /--candidate-root candidate/);
@@ -153,14 +190,26 @@ test('final publish is no-clobber, attested and contains both SBOM formats', () 
       body,
       /--candidate-id '\$\{\{ needs\.build-candidate\.outputs\.candidate_id \}\}'/,
     );
+    assert.match(
+      body,
+      /--publication-owner '\$\{\{ github\.run_id \}\}:\$\{\{ github\.run_attempt \}\}:\$\{\{ needs\.build-candidate\.outputs\.candidate_id \}\}'/,
+    );
   }
 });
 
 test('a failed post-OCR gate withdraws the incomplete prerelease', () => {
   const body = jobBody('cleanup-incomplete-prerelease');
   assert.match(body, /always\(\)/);
-  assert.match(body, /publish-ocr-prerelease\.result == 'success'/);
+  assert.match(
+    body,
+    /publish-ocr-prerelease\.outputs\.release_owned_by_run == 'true'/,
+  );
+  assert.match(
+    body,
+    /publish-alpha\.outputs\.release_finalized != 'true'/,
+  );
   assert.match(body, /publish-alpha\.result != 'success'/);
+  assert.match(body, /environment:\s*alpha-release/);
   assert.match(body, /--mode cleanup/);
   assert.doesNotMatch(body, /actions\/checkout@/);
 });

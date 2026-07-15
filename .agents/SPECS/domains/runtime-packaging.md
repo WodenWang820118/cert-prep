@@ -59,6 +59,24 @@ and process cleanup.
   that execute clean-install, hardware verification, finalization, and
   publishing. The separately provisioned AMD acceptance harness and `ffprobe`
   executable are protected-environment inputs pinned by SHA-256.
+- Public release identity is pinned twice without hardcoding an owner in the
+  repository: GitHub provides `${{ github.repository }}`, while the publisher
+  configures an independent `ALPHA_EXPECTED_REPOSITORY` repository variable.
+  Metadata generation fails unless they are identical. Manual dispatch must
+  originate from the repository default branch, tag dispatch must use the
+  canonical alpha tag ref, and the candidate commit must be an ancestor of the
+  fetched default branch. Manual and tag invocations that resolve to the same
+  canonical tag share one non-canceling concurrency group.
+- The OCR bootstrap release records an opaque owner composed of the workflow
+  run ID, run attempt, and candidate ID. Reusing an identical prerelease from a
+  previous run is allowed by the no-clobber contract, but only the run that
+  created the prerelease may delete it. Reservation records ownership before a
+  separate OCR upload step, so upload failure can withdraw the creating run's
+  partial prerelease. A second candidate-bound marker distinguishes
+  `ocr-bootstrap` from `finalized`; cleanup refuses the finalized state even if
+  a later workflow-summary step fails. Cleanup has `contents: write` only behind
+  the protected `alpha-release` environment and fails closed when either marker
+  is missing or differs.
 - Hardware acceptance cannot report cancellation/recovery with bare booleans.
   Every required check references its own candidate-bound JSON evidence and
   digest. The recording is time-bound to the completed run and must pass the

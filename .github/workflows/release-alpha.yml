@@ -33,7 +33,7 @@ on:
       - 'cert-prep-v*-alpha.*'
 
 concurrency:
-  group: release-alpha-${{ github.ref_name }}-${{ inputs.version || 'tag' }}
+  group: release-alpha-${{ github.event_name == 'workflow_dispatch' && format('cert-prep-v{0}', inputs.version) || github.ref_name }}
   cancel-in-progress: false
 
 permissions:
@@ -79,12 +79,16 @@ jobs:
           RELEASE_ENVIRONMENT_PROTECTED: ${{ github.event_name == 'workflow_dispatch' && toJSON(inputs.confirm_release_environment_protected) || vars.ALPHA_RELEASE_ENVIRONMENT_PROTECTED }}
           FASTFLOW_TERMS_CONFIRMED: ${{ github.event_name == 'workflow_dispatch' && toJSON(inputs.confirm_fastflow_terms) || vars.ALPHA_FASTFLOW_TERMS_CONFIRMED }}
           HARDWARE_RUNNER_READY: ${{ github.event_name == 'workflow_dispatch' && toJSON(inputs.confirm_hardware_runner_ready) || vars.ALPHA_HARDWARE_RUNNER_READY }}
+          EXPECTED_REPOSITORY: ${{ vars.ALPHA_EXPECTED_REPOSITORY }}
         run: >-
           node tools/release/metadata.ts
           --event-name "${{ github.event_name }}"
+          --ref "${{ github.ref }}"
           --ref-name "${{ github.ref_name }}"
+          --default-branch "${{ github.event.repository.default_branch }}"
           --version "$REQUESTED_VERSION"
           --repository "${{ github.repository }}"
+          --expected-repository "$EXPECTED_REPOSITORY"
           --sha "${{ github.sha }}"
           --workspace-root .
           --output-dir tmp/release-alpha/metadata
@@ -92,6 +96,16 @@ jobs:
           --release-environment-protected "$RELEASE_ENVIRONMENT_PROTECTED"
           --fastflow-terms-confirmed "$FASTFLOW_TERMS_CONFIRMED"
           --hardware-runner-ready "$HARDWARE_RUNNER_READY"
+
+      - name: Verify release commit belongs to the default branch
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          git fetch --no-tags origin "+refs/heads/$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH"
+          git merge-base --is-ancestor "$GITHUB_SHA" "refs/remotes/origin/$DEFAULT_BRANCH" || {
+            echo "Release commit is not an ancestor of the default branch: $DEFAULT_BRANCH" >&2
+            exit 1
+          }
 
       - name: Verify actual repository visibility
         env:
@@ -295,6 +309,8 @@ jobs:
     environment: alpha-release
     permissions:
       contents: write
+    outputs:
+      release_owned_by_run: ${{ steps.reserve_ocr.outputs.release_owned_by_run }}
     steps:
       - name: Install Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -307,6 +323,18 @@ jobs:
           name: ${{ needs.metadata.outputs.candidate_artifact }}
           path: candidate
 
+      - name: Reserve or verify the candidate-bound OCR prerelease
+        id: reserve_ocr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          node candidate/harness/tools/release/publish-assets.ts
+          --mode reserve
+          --candidate-root candidate
+          --candidate-id '${{ needs.build-candidate.outputs.candidate_id }}'
+          --publication-owner '${{ github.run_id }}:${{ github.run_attempt }}:${{ needs.build-candidate.outputs.candidate_id }}'
+          --plan candidate/release/metadata/release-plan.json
+
       - name: Publish or verify the two OCR assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -315,7 +343,20 @@ jobs:
           --mode ocr
           --candidate-root candidate
           --candidate-id '${{ needs.build-candidate.outputs.candidate_id }}'
+          --publication-owner '${{ github.run_id }}:${{ github.run_attempt }}:${{ needs.build-candidate.outputs.candidate_id }}'
           --release-root candidate/release
+          --plan candidate/release/metadata/release-plan.json
+
+      - name: Withdraw this run's prerelease after OCR bootstrap failure
+        if: ${{ failure() && steps.reserve_ocr.outputs.release_owned_by_run == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          node candidate/harness/tools/release/publish-assets.ts
+          --mode cleanup
+          --candidate-root candidate
+          --candidate-id '${{ needs.build-candidate.outputs.candidate_id }}'
+          --publication-owner '${{ github.run_id }}:${{ github.run_attempt }}:${{ needs.build-candidate.outputs.candidate_id }}'
           --plan candidate/release/metadata/release-plan.json
 
   clean-install:
@@ -496,6 +537,8 @@ jobs:
     environment: alpha-release
     permissions:
       contents: write
+    outputs:
+      release_finalized: ${{ steps.publish_final.outputs.release_finalized }}
     steps:
       - name: Install Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -515,6 +558,7 @@ jobs:
           path: candidate
 
       - name: Upload without clobber and keep the release a prerelease
+        id: publish_final
         env:
           GH_TOKEN: ${{ github.token }}
         run: >-
@@ -522,6 +566,7 @@ jobs:
           --mode final
           --candidate-root candidate
           --candidate-id '${{ needs.build-candidate.outputs.candidate_id }}'
+          --publication-owner '${{ github.run_id }}:${{ github.run_attempt }}:${{ needs.build-candidate.outputs.candidate_id }}'
           --release-root final-release
           --plan final-release/metadata/release-plan.json
 
@@ -549,9 +594,11 @@ jobs:
       - publish-alpha
     if: >-
       ${{ always() &&
-          needs.publish-ocr-prerelease.result == 'success' &&
+          needs.publish-ocr-prerelease.outputs.release_owned_by_run == 'true' &&
+          needs.publish-alpha.outputs.release_finalized != 'true' &&
           needs.publish-alpha.result != 'success' }}
     runs-on: ubuntu-24.04
+    environment: alpha-release
     permissions:
       contents: write
     steps:
@@ -574,4 +621,5 @@ jobs:
           --mode cleanup
           --candidate-root candidate
           --candidate-id '${{ needs.build-candidate.outputs.candidate_id }}'
+          --publication-owner '${{ github.run_id }}:${{ github.run_attempt }}:${{ needs.build-candidate.outputs.candidate_id }}'
           --plan candidate/release/metadata/release-plan.json
