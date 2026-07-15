@@ -45,6 +45,80 @@ test('all nine candidate-bound resilience contracts accept exact scoped proof', 
   }
 });
 
+test('draft evidence accepts exact effective Ollama attribution with null or absent fallback', () => {
+  const evidence = validEvidence('draft');
+  const proof = evidence.proof as Record<string, unknown>;
+  const terminal = proof.manualDraftTerminalResponse as Record<string, unknown>;
+  assert.equal(
+    validateResilienceEvidence(evidence, 'draft', context).check,
+    'draft',
+  );
+
+  const terminalWithoutFallback = { ...terminal };
+  delete terminalWithoutFallback.fallback_reason;
+  assert.equal(
+    validateResilienceEvidence(
+      {
+        ...evidence,
+        proof: {
+          ...proof,
+          manualDraftTerminalResponse: terminalWithoutFallback,
+        },
+      },
+      'draft',
+      context,
+    ).check,
+    'draft',
+  );
+});
+
+test('draft evidence rejects configured-only or drifted manual terminal attribution', () => {
+  const evidence = validEvidence('draft');
+  const proof = evidence.proof as Record<string, unknown>;
+  const terminal = proof.manualDraftTerminalResponse as Record<string, unknown>;
+  const mutations: ReadonlyArray<
+    readonly [string, (response: Record<string, unknown>) => void]
+  > = [
+    ['strategy', (response) => (response.strategy = 'deterministic_only')],
+    ['status', (response) => (response.status = 'failed')],
+    ['phase', (response) => (response.phase = 'failed')],
+    ['generated count', (response) => (response.generated_count = 1)],
+    ['effective provider', (response) => delete response.effective_provider],
+    ['effective model', (response) => delete response.effective_model],
+    ['fallback reason', (response) => (response.fallback_reason = 'used fallback')],
+  ];
+
+  for (const [label, mutate] of mutations) {
+    const changed = { ...terminal };
+    mutate(changed);
+    assert.throws(
+      () =>
+        validateResilienceEvidence(
+          {
+            ...evidence,
+            proof: { ...proof, manualDraftTerminalResponse: changed },
+          },
+          'draft',
+          context,
+        ),
+      /Resilience evidence contract failed for draft/,
+      label,
+    );
+  }
+
+  const configuredOnly = { ...proof };
+  delete configuredOnly.manualDraftTerminalResponse;
+  assert.throws(
+    () =>
+      validateResilienceEvidence(
+        { ...evidence, proof: configuredOnly },
+        'draft',
+        context,
+      ),
+    /manualDraftTerminalResponse must be an object/,
+  );
+});
+
 test('candidate binding accepts only the public tag or exact commit-bound local tag', () => {
   const localCandidate: CandidateBinding = {
     ...candidate,
@@ -780,6 +854,23 @@ function validProof(check: ResilienceCheck): Record<string, unknown> {
           cancelResponse,
           terminalResponse,
         ),
+        manualDraftTerminalResponse: {
+          id: 'operation-commit',
+          project_id: projectId,
+          document_id: documentId,
+          limit: 2,
+          strategy: 'hybrid_reasoning',
+          status: 'succeeded',
+          phase: 'completed',
+          cancellable: false,
+          provider: 'ollama',
+          model: 'qwen3.5:4b',
+          effective_provider: 'ollama',
+          effective_model: 'qwen3.5:4b',
+          fallback_reason: null,
+          generated_count: 2,
+          commit_started_at: '2026-07-14T00:00:05.000Z',
+        },
         canceledState: {
           observationWindowMs: 2_000,
           immediate: { usableDraftCount: 0 },

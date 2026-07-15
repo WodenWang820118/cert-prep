@@ -67,8 +67,34 @@ test('remaining resilience runner atomically publishes four checks and session r
     ) as Record<string, unknown>;
     const proof = draft.proof as Record<string, unknown>;
     const installation = proof.installationBinding as Record<string, unknown>;
+    const manualTerminal = proof.manualDraftTerminalResponse as Record<
+      string,
+      unknown
+    >;
     assert.equal(installation.receiptSha256, fixture.options.installation.receiptSha256);
     assert.equal(installation.installedExeSha256, 'f'.repeat(64));
+    assert.deepEqual(
+      {
+        operationId: manualTerminal.id,
+        strategy: manualTerminal.strategy,
+        status: manualTerminal.status,
+        phase: manualTerminal.phase,
+        generatedCount: manualTerminal.generated_count,
+        effectiveProvider: manualTerminal.effective_provider,
+        effectiveModel: manualTerminal.effective_model,
+        fallbackReason: manualTerminal.fallback_reason,
+      },
+      {
+        operationId: 'operation-commit',
+        strategy: 'hybrid_reasoning',
+        status: 'succeeded',
+        phase: 'completed',
+        generatedCount: 2,
+        effectiveProvider: 'ollama',
+        effectiveModel: 'qwen3.5:4b',
+        fallbackReason: null,
+      },
+    );
     assert.equal(result.sessionRestart.path, 'session-restart.json');
   } finally {
     fixture.cleanup();

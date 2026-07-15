@@ -463,7 +463,7 @@ export async function executeRemainingResilienceScenarios(
         ),
     };
     const proof = await runCancelableOperationScenario(transport, scenario);
-    await waitForOperationSuccess(
+    const manualDraftTerminalResponse = await waitForOperationSuccess(
       transport,
       operationIdFromCommitProof(proof, 'draft'),
       scenario.operationPath,
@@ -484,6 +484,7 @@ export async function executeRemainingResilienceScenarios(
     );
     return {
       ...proof,
+      manualDraftTerminalResponse,
       uploadTriggeredJobs: autoDrafts,
       usableDraftCountBeforeManual: autoDrafts.usableDraftCount,
       usableDraftCountAfterManual: usableDraftCount,

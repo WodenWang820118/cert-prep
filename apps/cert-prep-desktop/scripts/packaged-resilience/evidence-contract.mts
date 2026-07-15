@@ -551,7 +551,49 @@ function validateScopedCancellationProof(
   ) {
     fail(check, 'cancel or non-cancellable commit evidence is incomplete');
   }
+  if (check === 'draft') {
+    validateManualDraftTerminal(
+      proof,
+      commitOperationId,
+      commitStartedAtText,
+      projectId as string,
+      documentId as string,
+    );
+  }
   validateScenarioTransition(proof, check);
+}
+
+function validateManualDraftTerminal(
+  proof: Record<string, unknown>,
+  operationId: string,
+  commitStartedAt: string,
+  projectId: string,
+  documentId: string,
+): void {
+  const response = record(
+    proof.manualDraftTerminalResponse,
+    'draft manualDraftTerminalResponse',
+  );
+  const terminal = operationSnapshot(response, 'draft', {
+    operationId,
+    statuses: ['succeeded'],
+    projectId,
+    documentId,
+    provider: OLLAMA_PROVIDER,
+    model: OLLAMA_MODEL,
+  });
+  if (
+    terminal.phase !== 'completed' ||
+    terminal.cancellable !== false ||
+    terminal.commitStartedAt !== commitStartedAt ||
+    response.strategy !== 'hybrid_reasoning' ||
+    positiveInteger(response.generated_count) < 2 ||
+    response.effective_provider !== OLLAMA_PROVIDER ||
+    response.effective_model !== OLLAMA_MODEL ||
+    (response.fallback_reason !== null && response.fallback_reason !== undefined)
+  ) {
+    fail('draft', 'manual draft terminal attribution is incomplete');
+  }
 }
 
 function validateScenarioTransition(
