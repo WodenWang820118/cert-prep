@@ -114,6 +114,21 @@ receipt, installer, and executable after the run. It atomically emits
 provider/model/resource-release attribution to the candidate and hashed run
 artifacts. Local evidence does not close a public release gate.
 
+After both packaged resilience targets finish with the same six candidate and
+install bindings, verify their combined local evidence set through Nx:
+
+```powershell
+$env:CERT_PREP_RESILIENCE_DOCUMENT_OUTPUT_ROOT = '<absolute document-cancellation output root>'
+$env:CERT_PREP_RESILIENCE_REMAINING_OUTPUT_ROOT = '<absolute remaining-resilience output root>'
+pnpm nx run cert-prep-desktop:local-resilience-evidence-verify --skip-nx-cache
+```
+
+The verifier accepts only a `local_nonpublishable` candidate. It rejects an
+incomplete or extra file set, candidate/run/install-receipt drift, and binding
+changes during verification. On success it prints the byte count and SHA-256
+for all nine cancellation files plus `session-restart.json`; it does not write
+a hardware result, recording, release artifact, or other public-gate evidence.
+
 The workflow publishes the OCR ZIP/manifest first as a public mutable prerelease so clean
 runners can download it anonymously. Existing assets are reused only when their SHA-256
 digest matches; assets are never clobbered. Final installers remain withheld until both
