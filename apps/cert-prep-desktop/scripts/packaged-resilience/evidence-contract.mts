@@ -435,13 +435,13 @@ function validateOcrProof(proof: Record<string, unknown>): void {
     projectId,
     documentId,
     operationId: retryOperationId,
-    statuses: ['queued', 'running', 'completed'],
+    statuses: ['queued', 'running', 'succeeded'],
   });
   operationSnapshot(proof.retryTerminalResponse, 'ocr', {
     projectId,
     documentId,
     operationId: retryOperationId,
-    statuses: ['completed'],
+    statuses: ['succeeded'],
   });
   const readyDocument = record(proof.readyDocumentResponse, 'ocr ready document');
   if (

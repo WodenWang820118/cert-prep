@@ -274,7 +274,7 @@ export async function runDocumentCancelRetryScenario({
     projectId,
     documentId,
     operationId: retryOperationId,
-    statuses: ['queued', 'running', 'completed'],
+    statuses: ['queued', 'running', 'succeeded'],
   });
   const retryOperationPath = `/projects/${encoded(
     projectId,
@@ -283,14 +283,14 @@ export async function runDocumentCancelRetryScenario({
     await pollJson(
       transport,
       retryOperationPath,
-      (body) => body.status === 'completed',
+      (body) => body.status === 'succeeded',
       { timeoutMs, label: 'OCR retry terminal operation' },
     ),
     {
       projectId,
       documentId,
       operationId: retryOperationId,
-      statuses: ['completed'],
+      statuses: ['succeeded'],
     },
   );
   const readyDocumentResponse = exactDocument(

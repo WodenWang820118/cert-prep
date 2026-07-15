@@ -237,6 +237,24 @@ test('OCR evidence requires exact cancel, terminal, distinct retry, same documen
       ),
     /cancel-to-retry terminal sequence/,
   );
+  assert.throws(
+    () =>
+      validateResilienceEvidence(
+        {
+          ...evidence,
+          proof: {
+            ...proof,
+            retryTerminalResponse: {
+              ...(proof.retryTerminalResponse as object),
+              status: 'completed',
+            },
+          },
+        },
+        'ocr',
+        context,
+      ),
+    /scope or terminal state/,
+  );
 });
 
 test('partial cleanup requires chunks and every derived metric to remain zero', () => {
@@ -667,7 +685,7 @@ function validProof(check: ResilienceCheck): Record<string, unknown> {
         ),
         retryTerminalResponse: operation(
           'operation-2',
-          'completed',
+          'succeeded',
           'completed',
           false,
           projectId,

@@ -167,7 +167,7 @@ function validProof(
       ),
       retryTerminalResponse: operation(
         'operation-2',
-        'completed',
+        'succeeded',
         'completed',
         false,
         projectId,

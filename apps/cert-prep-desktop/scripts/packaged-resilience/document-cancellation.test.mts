@@ -69,6 +69,14 @@ test('OCR scenario proves partial cleanup, stable canceled state, distinct retry
   });
 
   assert.equal(result.ocr.initialOperationId === result.ocr.retryOperationId, false);
+  assert.deepEqual(result.ocr.retryTerminalResponse, {
+    id: 'retry-operation',
+    project_id: 'project-1',
+    document_id: 'document-1',
+    status: 'succeeded',
+    phase: 'completed',
+    cancellable: false,
+  });
   assert.equal(
     (result.ocr.readyDocumentResponse as Record<string, unknown>).id,
     'document-1',
@@ -145,7 +153,7 @@ function documentScenarioTransport(): QueueTransport {
       200,
       operation(
         'retry-operation',
-        'completed',
+        'succeeded',
         'completed',
         false,
         'document-1',
