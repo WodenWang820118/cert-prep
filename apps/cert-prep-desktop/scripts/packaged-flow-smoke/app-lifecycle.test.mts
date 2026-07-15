@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  realpathSync,
   readdirSync,
   rmSync,
   symlinkSync,
@@ -472,6 +473,66 @@ test('XDNA2 acceptance rejects reparse points in the run path', () => {
   }
 });
 
+test('Ollama acceptance injects only the typed isolated host and model root after sanitizing', () => {
+  const workspace = mkdtempSync(join(tmpdir(), 'cert-prep-ollama-env-'));
+  try {
+    const outDir = join(workspace, 'out');
+    const modelsDir = join(outDir, 'isolated-ollama-models');
+    mkdirSync(modelsDir, { recursive: true });
+    const run = launchEnvironmentRun('ollama-fallback');
+    run.options.outDir = outDir;
+    run.options.appDataDir = join(outDir, 'app-data');
+    run.options.llmProvider = 'ollama';
+    run.options.ollamaHost = 'http://127.0.0.1:11591';
+    run.options.ollamaModelsDir = modelsDir;
+    run.options.ollamaProfileEnabled = false;
+
+    const environment = buildAppLaunchEnvironment(run, {
+      CERT_PREP_OLLAMA_HOST: 'http://127.0.0.1:11434',
+      CERT_PREP_OLLAMA_PROFILE_ENABLED: 'true',
+      OLLAMA_HOST: '127.0.0.1:11434',
+      OLLAMA_MODELS: 'C:\\untrusted-models',
+    });
+    const normalized = normalizedEnvironment(environment);
+
+    assert.equal(normalized.cert_prep_llm_provider, 'ollama');
+    assert.equal(normalized.cert_prep_ollama_host, 'http://127.0.0.1:11591');
+    assert.equal(normalized.cert_prep_ollama_profile_enabled, 'false');
+    assert.equal(normalized.ollama_host, undefined);
+    assert.equal(normalized.ollama_models, realpathSync(modelsDir));
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test('Ollama acceptance rejects non-loopback hosts and model roots outside the run', () => {
+  const workspace = mkdtempSync(join(tmpdir(), 'cert-prep-ollama-env-reject-'));
+  try {
+    const outDir = join(workspace, 'out');
+    const outside = join(workspace, 'outside-models');
+    mkdirSync(outDir, { recursive: true });
+    mkdirSync(outside);
+    const run = launchEnvironmentRun('ollama-fallback');
+    run.options.outDir = outDir;
+    run.options.appDataDir = join(outDir, 'app-data');
+    run.options.ollamaHost = 'http://example.com:11591';
+    run.options.ollamaModelsDir = outside;
+    run.options.ollamaProfileEnabled = false;
+    assert.throws(
+      () => buildAppLaunchEnvironment(run, {}),
+      /exact loopback HTTP/,
+    );
+
+    run.options.ollamaHost = 'http://127.0.0.1:11591';
+    assert.throws(
+      () => buildAppLaunchEnvironment(run, {}),
+      /must stay inside the acceptance output directory/,
+    );
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
 function processRecord(
   pid: number,
   parentPid: number,
@@ -490,7 +551,7 @@ function processRecord(
 }
 
 function launchEnvironmentRun(
-  acceptanceLane: 'none' | 'xdna2-fastflow' | undefined,
+  acceptanceLane: 'none' | 'xdna2-fastflow' | 'ollama-fallback' | undefined,
 ): SmokeRunState {
   return {
     port: 9491,

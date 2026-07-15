@@ -25,6 +25,9 @@ export interface SmokeOptions {
   llmProvider: string;
   ollamaModel: string;
   ollamaFallbackModels: string[];
+  ollamaHost?: string;
+  ollamaModelsDir?: string;
+  ollamaProfileEnabled?: boolean;
   acceptanceLane?: AcceptanceLane;
   ollamaFallbackTrigger?: OllamaFallbackTrigger;
   streamingDraftPageLimit?: number;

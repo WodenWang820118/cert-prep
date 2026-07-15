@@ -453,6 +453,7 @@ export function buildAppLaunchEnvironment(
     acceptanceLane,
   );
   const appDataDir = launchAppDataDir(run);
+  const isolatedOllamaEnvironment = buildIsolatedOllamaLaunchEnvironment(run);
   return {
     ...baseEnvironment,
     ...(acceptanceLane === 'none'
@@ -471,6 +472,7 @@ export function buildAppLaunchEnvironment(
     CERT_PREP_OLLAMA_MODEL: run.options.ollamaModel,
     CERT_PREP_OLLAMA_FALLBACK_MODELS:
       run.options.ollamaFallbackModels.join(','),
+    ...isolatedOllamaEnvironment,
     CERT_PREP_FASTFLOWLM_MODEL: run.options.ollamaModel,
     CERT_PREP_FASTFLOWLM_FALLBACK_MODELS:
       run.options.ollamaFallbackModels.join(','),
@@ -488,6 +490,60 @@ export function buildAppLaunchEnvironment(
           ),
         }
       : {}),
+  };
+}
+
+function buildIsolatedOllamaLaunchEnvironment(
+  run: SmokeRunState,
+): NodeJS.ProcessEnv {
+  const host = run.options.ollamaHost;
+  const modelsDir = run.options.ollamaModelsDir;
+  const profileEnabled = run.options.ollamaProfileEnabled;
+  if (
+    host === undefined &&
+    modelsDir === undefined &&
+    profileEnabled === undefined
+  ) {
+    return {};
+  }
+  if (
+    typeof host !== 'string' ||
+    !/^http:\/\/127\.0\.0\.1:([1-9]\d{0,4})$/.test(host) ||
+    Number(new URL(host).port) > 65_535
+  ) {
+    throw new Error(
+      'Isolated Ollama host must be exact loopback HTTP with a valid port.',
+    );
+  }
+  if (
+    typeof modelsDir !== 'string' ||
+    !isAbsolute(modelsDir) ||
+    !existsSync(modelsDir) ||
+    lstatSync(modelsDir).isSymbolicLink() ||
+    !lstatSync(modelsDir).isDirectory()
+  ) {
+    throw new Error('Isolated Ollama models directory must be canonical and local.');
+  }
+  const canonicalOutDir = realpathSync(resolve(run.options.outDir));
+  const canonicalModelsDir = realpathSync(resolve(modelsDir));
+  const modelsRelative = relative(canonicalOutDir, canonicalModelsDir);
+  if (
+    !modelsRelative ||
+    modelsRelative === '..' ||
+    modelsRelative.startsWith(`..${sep}`) ||
+    isAbsolute(modelsRelative)
+  ) {
+    throw new Error(
+      'Isolated Ollama models directory must stay inside the acceptance output directory.',
+    );
+  }
+  if (typeof profileEnabled !== 'boolean') {
+    throw new Error('Isolated Ollama profile setting must be a boolean.');
+  }
+  return {
+    CERT_PREP_OLLAMA_HOST: host,
+    CERT_PREP_OLLAMA_PROFILE_ENABLED: String(profileEnabled).toLowerCase(),
+    OLLAMA_MODELS: canonicalModelsDir,
   };
 }
 
