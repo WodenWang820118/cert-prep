@@ -92,8 +92,10 @@ interface AcceptanceDependencies {
   readonly platform: NodeJS.Platform;
   readonly executingHarnessPath: string;
   readonly readWorkspaceHead: (workspaceRoot: string) => string;
+  readonly resolvePowerShellExecutable: () => string;
   readonly inspectHostState: (
     knownInstallRoots: readonly string[],
+    powershellExecutable: string,
   ) => HostInstallState;
   readonly runInstaller: (
     installerPath: string,
@@ -131,6 +133,8 @@ const defaultDependencies: AcceptanceDependencies = {
   platform: process.platform,
   executingHarnessPath: fileURLToPath(import.meta.url),
   readWorkspaceHead,
+  resolvePowerShellExecutable: () =>
+    resolveWindowsPowerShellExecutable(process.env),
   inspectHostState: inspectWindowsHostState,
   runInstaller: runNsisInstaller,
   now: () => new Date(),
@@ -149,8 +153,9 @@ export async function runLocalInstallAcceptance(
 
   const prepared = await prepareAcceptance(args, dependencies);
   const knownInstallRoots = knownCertPrepInstallRoots(process.env);
+  const powershellExecutable = dependencies.resolvePowerShellExecutable();
   assertFreshInstallPreconditions(
-    dependencies.inspectHostState(knownInstallRoots),
+    dependencies.inspectHostState(knownInstallRoots, powershellExecutable),
   );
 
   const dryRun = parseBooleanArgument(args['dry-run'], 'dry-run', false);
@@ -180,7 +185,7 @@ export async function runLocalInstallAcceptance(
 
   const installedExePath = verifyInstalledState(
     prepared,
-    dependencies.inspectHostState(knownInstallRoots),
+    dependencies.inspectHostState(knownInstallRoots, powershellExecutable),
   );
   const installedExe = statSync(installedExePath);
   const installedExeSha256 = await sha256File(installedExePath);
@@ -458,6 +463,7 @@ export function writeJsonAtomically(
 
 function inspectWindowsHostState(
   knownInstallRoots: readonly string[],
+  powershellExecutable: string,
 ): HostInstallState {
   const manufacturerPath = nsisManufacturerRegistryPath();
   const script = String.raw`
@@ -511,7 +517,7 @@ $processes = @(
 } | ConvertTo-Json -Depth 5 -Compress
 `;
   const invocation = spawnSync(
-    'powershell.exe',
+    powershellExecutable,
     [
       '-NoLogo',
       '-NoProfile',
@@ -542,6 +548,45 @@ $processes = @(
     ...parsed,
     existingInstallRoots: knownInstallRoots.filter(pathEntryExists),
   };
+}
+
+export function resolveWindowsPowerShellExecutable(
+  environment: Readonly<NodeJS.ProcessEnv> = process.env,
+): string {
+  const systemRoot = environment.SystemRoot?.trim();
+  if (systemRoot) {
+    if (!isAbsolute(systemRoot)) {
+      throw new Error('SystemRoot must be an absolute path.');
+    }
+    const preferred = resolve(
+      systemRoot,
+      'System32',
+      'WindowsPowerShell',
+      'v1.0',
+      'powershell.exe',
+    );
+    if (pathEntryExists(preferred)) {
+      return safeExistingFile(preferred, 'Windows PowerShell executable');
+    }
+  }
+
+  const pathValue = environment.PATH ?? environment.Path ?? '';
+  for (const rawEntry of pathValue.split(';')) {
+    const trimmed = rawEntry.trim();
+    const entry =
+      trimmed.startsWith('"') && trimmed.endsWith('"')
+        ? trimmed.slice(1, -1)
+        : trimmed;
+    if (!entry || !isAbsolute(entry)) continue;
+    const candidate = resolve(entry, 'powershell.exe');
+    if (pathEntryExists(candidate)) {
+      return safeExistingFile(candidate, 'Windows PowerShell executable');
+    }
+  }
+
+  throw new Error(
+    'Unable to resolve a canonical Windows PowerShell executable from SystemRoot or PATH.',
+  );
 }
 
 export function nsisManufacturerRegistryPath(): string {

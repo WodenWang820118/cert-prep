@@ -6,12 +6,13 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   readdirSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import test from 'node:test';
 
@@ -20,6 +21,7 @@ import {
   knownCertPrepInstallRoots,
   nsisInstallArguments,
   nsisManufacturerRegistryPath,
+  resolveWindowsPowerShellExecutable,
   runLocalInstallAcceptance,
   writeJsonAtomically,
   type HostInstallState,
@@ -66,10 +68,16 @@ test('dry run validates the exact candidate without installing or writing output
 test('installs NSIS into an isolated root and writes an exact atomic receipt', async () => {
   await withFixture(async (fixture) => {
     let installed = false;
+    const resolvedPowerShell =
+      'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
+    const inspectedWith: string[] = [];
     const now = new Date('2026-07-15T08:30:00.000Z');
     const dependencies = fixture.dependencies({
-      inspectHostState: () =>
-        installed ? fixture.installedHostState() : EMPTY_HOST_STATE,
+      resolvePowerShellExecutable: () => resolvedPowerShell,
+      inspectHostState: (_knownInstallRoots, powershellExecutable) => {
+        inspectedWith.push(powershellExecutable);
+        return installed ? fixture.installedHostState() : EMPTY_HOST_STATE;
+      },
       runInstaller: (installerPath, installRoot) => {
         assert.equal(installerPath, fixture.installerPath);
         assert.equal(installRoot, fixture.installRoot);
@@ -97,6 +105,7 @@ test('installs NSIS into an isolated root and writes an exact atomic receipt', a
     assert.equal(result.mode, 'installed');
     assert.equal(result.installedExePath, fixture.installedExePath);
     assert.equal(result.installReceiptPath, fixture.receiptPath);
+    assert.deepEqual(inspectedWith, [resolvedPowerShell, resolvedPowerShell]);
     assert.deepEqual(result.resilienceEnvironment, {
       CERT_PREP_RESILIENCE_CANDIDATE_ROOT: fixture.candidateRoot,
       CERT_PREP_RELEASE_CANDIDATE_ID: fixture.candidate.candidateId,
@@ -368,6 +377,45 @@ test('manufacturer registry contract matches the rendered Tauri NSIS value', () 
   );
 });
 
+test('PowerShell resolver uses canonical SystemRoot executable with a reduced PATH', () => {
+  const root = mkdtempSync(join(tmpdir(), 'cert-prep-powershell-resolver-'));
+  try {
+    const systemRoot = join(root, 'Windows');
+    const executable = join(
+      systemRoot,
+      'System32',
+      'WindowsPowerShell',
+      'v1.0',
+      'powershell.exe',
+    );
+    mkdirSync(dirname(executable), { recursive: true });
+    writeFileSync(executable, 'fixture Windows PowerShell executable');
+
+    assert.equal(
+      resolveWindowsPowerShellExecutable({ SystemRoot: systemRoot, PATH: '' }),
+      realpathSync(executable),
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('PowerShell resolver fails closed without a canonical executable', () => {
+  const root = mkdtempSync(join(tmpdir(), 'cert-prep-powershell-missing-'));
+  try {
+    assert.throws(
+      () =>
+        resolveWindowsPowerShellExecutable({
+          SystemRoot: join(root, 'missing'),
+          PATH: '',
+        }),
+      /Unable to resolve a canonical Windows PowerShell executable/,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('candidate-copied harness starts without workspace module imports', async () => {
   const root = mkdtempSync(join(tmpdir(), 'cert-prep-candidate-harness-'));
   try {
@@ -475,6 +523,8 @@ async function withFixture(run: (fixture: Fixture) => Promise<void>) {
       platform: 'win32' as const,
       executingHarnessPath: harnessPath,
       readWorkspaceHead: () => COMMIT_SHA,
+      resolvePowerShellExecutable: () =>
+        'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
       inspectHostState: () => EMPTY_HOST_STATE,
       runInstaller: () => {
         throw new Error('Test unexpectedly invoked the installer.');
