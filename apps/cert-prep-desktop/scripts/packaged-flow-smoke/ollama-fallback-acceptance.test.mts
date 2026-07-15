@@ -304,7 +304,16 @@ test('model onboarding lets the product endpoint start a stopped Ollama runtime 
 test('model onboarding installs missing profile aliases through the exact product job', async () => {
   const observedRequests: string[] = [];
   const jobs = [
-    modelDownloadJob('running', 'model_download', true, '2026-07-14T00:00:12.000Z'),
+    {
+      ...modelDownloadJob(
+        'running',
+        'model_download',
+        true,
+        '2026-07-14T00:00:12.000Z',
+      ),
+      completed: 2_741_180_928,
+      total: 11_354,
+    },
     modelDownloadJob('succeeded', 'completed', false, '2026-07-14T00:00:13.000Z'),
   ];
   const page = onboardingPage({

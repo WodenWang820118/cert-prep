@@ -568,7 +568,6 @@ function modelDownloadSnapshot(
     !Object.hasOwn(payload, 'total') ||
     completed === undefined ||
     total === undefined ||
-    (completed !== null && total !== null && completed > total) ||
     Date.parse(updatedAt) < Date.parse(createdAt) ||
     (commitStartedAt !== null &&
       (Date.parse(commitStartedAt) < Date.parse(createdAt) ||
