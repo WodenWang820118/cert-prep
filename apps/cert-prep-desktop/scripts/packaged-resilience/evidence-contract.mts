@@ -260,11 +260,13 @@ function validateCandidate(
     check,
     'harnessSha256',
   );
+  const publicTag = `cert-prep-v${version}`;
+  const localTag = `cert-prep-local-v${version}-${commitSha.slice(0, 12)}`;
   if (
     !SHA256_PATTERN.test(candidateId) ||
     !VERSION_PATTERN.test(version) ||
-    tag !== `cert-prep-v${version}` ||
     !COMMIT_SHA_PATTERN.test(commitSha) ||
+    (tag !== publicTag && tag !== localTag) ||
     !SHA256_PATTERN.test(harnessSha256)
   ) {
     fail(check, 'candidate identity is malformed');

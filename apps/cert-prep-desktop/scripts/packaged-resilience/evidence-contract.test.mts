@@ -45,6 +45,45 @@ test('all nine candidate-bound resilience contracts accept exact scoped proof', 
   }
 });
 
+test('candidate binding accepts only the public tag or exact commit-bound local tag', () => {
+  const localCandidate: CandidateBinding = {
+    ...candidate,
+    tag: `cert-prep-local-v${candidate.version}-${candidate.commitSha.slice(0, 12)}`,
+  };
+  assert.equal(
+    validateResilienceEvidence(
+      { ...validEvidence('ocr'), candidate: localCandidate },
+      'ocr',
+      { ...context, candidate: localCandidate },
+    ).candidate.tag,
+    localCandidate.tag,
+  );
+  assert.equal(
+    validateSessionRestartEvidence(
+      { ...validSessionRestartEvidence(), candidate: localCandidate },
+      { ...context, candidate: localCandidate },
+    ).candidate.tag,
+    localCandidate.tag,
+  );
+
+  for (const tag of [
+    `cert-prep-v${candidate.version}-${candidate.commitSha.slice(0, 12)}`,
+    `cert-prep-local-v${candidate.version}`,
+    `cert-prep-local-v${candidate.version}-${'d'.repeat(12)}`,
+  ]) {
+    const hybridCandidate = { ...candidate, tag };
+    assert.throws(
+      () =>
+        validateResilienceEvidence(
+          { ...validEvidence('ocr'), candidate: hybridCandidate },
+          'ocr',
+        ),
+      /candidate identity is malformed/,
+      tag,
+    );
+  }
+});
+
 test('candidate, acceptance run, evidence window, and structured observations fail closed', () => {
   const evidence = validEvidence('ocr');
   assert.throws(
