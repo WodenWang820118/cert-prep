@@ -2,7 +2,6 @@ import { createHash, randomUUID } from 'node:crypto';
 import {
   copyFileSync,
   cpSync,
-  createReadStream,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -12,6 +11,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
+import { open } from 'node:fs/promises';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -1611,12 +1611,14 @@ export function listFiles(root) {
 
 export async function sha256File(path) {
   const hash = createHash('sha256');
-  await new Promise((resolvePromise, reject) => {
-    const stream = createReadStream(path);
-    stream.on('data', (chunk) => hash.update(chunk));
-    stream.on('error', reject);
-    stream.on('end', resolvePromise);
-  });
+  const handle = await open(path, 'r');
+  try {
+    for await (const chunk of handle.createReadStream({ autoClose: false })) {
+      hash.update(chunk);
+    }
+  } finally {
+    await handle.close();
+  }
   return hash.digest('hex');
 }
 

@@ -4,6 +4,7 @@ import {
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -23,6 +24,7 @@ import {
   deriveReleaseIdentity,
   normalizeLicense,
   planAssetUploads,
+  sha256File,
   validateHardwareResult,
   windowsMsiVersionFor,
   writeReleaseDocuments,
@@ -30,6 +32,24 @@ import {
 import { assertReleaseState } from './publish-assets.ts';
 
 const sha = 'a'.repeat(40);
+
+test('file hashing closes its Windows handle before resolving', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'cert-prep-release-hash-'));
+  const destination = `${root}-renamed`;
+  try {
+    const file = join(root, 'candidate.bin');
+    writeFileSync(file, 'candidate-bytes');
+    assert.equal(
+      await sha256File(file),
+      'e8b471c16cc972d5e5e5be6ae2f93fecaf4e6c3dacbe15334bbcfc0b9a9d8eec',
+    );
+    renameSync(root, destination);
+    assert.equal(existsSync(join(destination, 'candidate.bin')), true);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(destination, { recursive: true, force: true });
+  }
+});
 
 test('legacy Cargo slash license shorthands normalize to SPDX OR expressions', () => {
   assert.equal(normalizeLicense('MIT/Apache-2.0'), 'MIT OR Apache-2.0');
