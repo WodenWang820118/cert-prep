@@ -36,7 +36,7 @@ import {
   finalizeOllamaFallbackAcceptance,
   prepareOllamaFallbackAcceptance,
 } from './ollama-fallback-acceptance.mts';
-import type { SmokeMetrics, SmokeRunState } from './types.mts';
+import type { SmokeMetrics, SmokeOptions, SmokeRunState } from './types.mts';
 
 async function runFlow(run: SmokeRunState): Promise<void> {
   if (!existsSync(run.options.exePath)) {
@@ -136,8 +136,17 @@ function logFinalMetricsSummary(run: SmokeRunState): void {
   );
 }
 
-export async function runPackagedFlowSmokeCli(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
-  const parsedOptions = parsePackagedFlowSmokeArgs(argv);
+export async function runPackagedFlowSmokeCli(
+  argv: readonly string[] = process.argv.slice(2),
+): Promise<void> {
+  const metrics = await runPackagedFlowSmoke(parsePackagedFlowSmokeArgs(argv));
+  process.exitCode =
+    metrics.status === 'completed' && metrics.errors.length === 0 ? 0 : 1;
+}
+
+export async function runPackagedFlowSmoke(
+  parsedOptions: SmokeOptions,
+): Promise<SmokeMetrics> {
   const initialMetrics: SmokeMetrics = {
     status: 'running',
     started_at: new Date().toISOString(),
@@ -241,5 +250,5 @@ export async function runPackagedFlowSmokeCli(argv: readonly string[] = process.
     }
   }
 
-  process.exitCode = run.metrics.status === 'completed' && run.metrics.errors.length === 0 ? 0 : 1;
+  return run.metrics;
 }

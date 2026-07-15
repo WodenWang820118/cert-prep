@@ -66,6 +66,16 @@
         "command": "node tmp/local-alpha-candidate/harness/tools/release/local-install-acceptance.ts --workspace-root . --candidate-root tmp/local-alpha-candidate --output-root tmp/cert-prep-desktop/local-install-acceptance"
       }
     },
+    "local-ollama-fallback-acceptance-nsis": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "outputs": [
+        "{workspaceRoot}/tmp/cert-prep-desktop/packaged-streaming-ollama-fallback-local"
+      ],
+      "options": {
+        "command": "node apps/cert-prep-desktop/scripts/packaged-streaming-ollama-fallback-local-windowsml.mts"
+      }
+    },
     "prepare-runtime-resources": {
       "cache": false,
       "executor": "nx:run-commands",
@@ -212,7 +222,7 @@
       "dependsOn": ["typecheck-scripts"],
       "inputs": ["default"],
       "options": {
-        "command": "node --test apps/cert-prep-desktop/scripts/prepare-runtime-resources.test.mts apps/cert-prep-desktop/scripts/package-qa/artifacts.test.mts apps/cert-prep-desktop/scripts/process-lifecycle/processes.test.mts apps/cert-prep-desktop/scripts/process-residue-audit.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/args.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/document-cancellation.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/document-runner.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/evidence-contract.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/ollama-isolation.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/operation-cancellation.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/owned-process-evidence.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/remaining-options.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/resilience-gates.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/resilience-runner.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/session-restart.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/app-lifecycle.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/args.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/generation-readiness.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/ocr-completion.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/ollama-fallback-acceptance.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/owned-fastflow-process-lifecycle.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/resource-sampling.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/streaming-baseline-report.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/streaming-evidence.test.mts"
+        "command": "node --test apps/cert-prep-desktop/scripts/prepare-runtime-resources.test.mts apps/cert-prep-desktop/scripts/package-qa/artifacts.test.mts apps/cert-prep-desktop/scripts/process-lifecycle/processes.test.mts apps/cert-prep-desktop/scripts/process-residue-audit.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/args.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/document-cancellation.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/document-runner.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/evidence-contract.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/ollama-isolation.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/operation-cancellation.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/owned-process-evidence.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/remaining-options.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/resilience-gates.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/resilience-runner.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/session-restart.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/app-lifecycle.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/args.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/generation-readiness.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/local-candidate-ollama-fallback.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/ocr-completion.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/ollama-fallback-acceptance.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/owned-fastflow-process-lifecycle.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/resource-sampling.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/streaming-baseline-report.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/streaming-evidence.test.mts"
       }
     },
     "release-tool-test": {

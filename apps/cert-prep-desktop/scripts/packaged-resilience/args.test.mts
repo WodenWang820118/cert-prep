@@ -14,7 +14,10 @@ import { tmpdir } from 'node:os';
 import { test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 
-import { loadDocumentCancellationOptions } from './args.mts';
+import {
+  loadDocumentCancellationOptions,
+  loadInstalledCandidateBinding,
+} from './args.mts';
 
 test('document cancellation options verify the exact candidate and required files', async () => {
   const fixture = fixtureWorkspace();
@@ -57,6 +60,28 @@ test('document cancellation options accept the exact local nonpublishable candid
       options.candidate.tag,
       `cert-prep-local-v0.1.0-alpha.1-${'a'.repeat(12)}`,
     );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('installed candidate binding can be revalidated after runner output exists', async () => {
+  const fixture = fixtureWorkspace({ profile: 'local_nonpublishable' });
+  try {
+    mkdirSync(fixture.outputRoot);
+    const environment = { ...fixture.environment };
+    delete environment.CERT_PREP_RESILIENCE_PDF_PATH;
+    delete environment.CERT_PREP_RESILIENCE_OUTPUT_ROOT;
+
+    const binding = await loadInstalledCandidateBinding(
+      environment,
+      fixture.workspaceRoot,
+    );
+
+    assert.equal(binding.candidate.candidateId, fixture.candidateId);
+    assert.equal(binding.candidateDistributionProfile, 'local_nonpublishable');
+    assert.equal(binding.installedExePath, fixture.installedExePath);
+    assert.equal(binding.installation.receiptPath, fixture.receiptPath);
   } finally {
     fixture.cleanup();
   }

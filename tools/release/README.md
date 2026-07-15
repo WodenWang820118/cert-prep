@@ -93,6 +93,27 @@ by both packaged resilience targets. A successful install is intentionally
 preserved for those targets; the harness never uninstalls it. Reruns fail
 closed until the existing Cert Prep installation state is handled explicitly.
 
+To run the real forced-Ollama fallback lane against that same installed local
+candidate, keep the six environment bindings printed by the install harness:
+`CERT_PREP_RESILIENCE_CANDIDATE_ROOT`, `CERT_PREP_RELEASE_CANDIDATE_ID`,
+`ALPHA_HARDWARE_HARNESS_SHA256`, `CERT_PREP_RESILIENCE_INSTALLED_EXE_PATH`,
+`CERT_PREP_RESILIENCE_INSTALL_RECEIPT_PATH`, and
+`CERT_PREP_RESILIENCE_ACCEPTANCE_RUN_ID`. Also set these run-specific values:
+
+```powershell
+$env:CERT_PREP_RESILIENCE_PDF_PATH = '<absolute canonical PDF path>'
+$env:CERT_PREP_RESILIENCE_OUTPUT_ROOT = '<workspace>\tmp\cert-prep-desktop\packaged-streaming-ollama-fallback-local\<new-run>'
+$env:CERT_PREP_RESILIENCE_CDP_PORT = '9691'
+pnpm nx run cert-prep-desktop:local-ollama-fallback-acceptance-nsis --skip-nx-cache
+```
+
+The target launches the receipt-bound installed executable without rebuilding
+it, propagates the verified local OCR profile, and revalidates the candidate,
+receipt, installer, and executable after the run. It atomically emits
+`local-ollama-fallback-evidence.json`, binding the acceptance checks and
+provider/model/resource-release attribution to the candidate and hashed run
+artifacts. Local evidence does not close a public release gate.
+
 The workflow publishes the OCR ZIP/manifest first as a public mutable prerelease so clean
 runners can download it anonymously. Existing assets are reused only when their SHA-256
 digest matches; assets are never clobbered. Final installers remain withheld until both

@@ -32,17 +32,21 @@ const DEFAULT_CDP_PORT = 9591;
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const defaultWorkspaceRoot = resolve(scriptDir, '../../../..');
 
-export interface DocumentCancellationRunnerOptions {
+export interface InstalledCandidateRunnerBinding {
   readonly workspaceRoot: string;
   readonly candidateRoot: string;
   readonly installedExePath: string;
-  readonly pdfPath: string;
-  readonly outputRoot: string;
-  readonly diagnosticsRoot: string;
   readonly acceptanceRunId: string;
   readonly candidate: CandidateBinding;
   readonly candidateDistributionProfile: CandidateDistributionProfile;
   readonly installation: InstalledCandidateBinding;
+}
+
+export interface DocumentCancellationRunnerOptions
+  extends InstalledCandidateRunnerBinding {
+  readonly pdfPath: string;
+  readonly outputRoot: string;
+  readonly diagnosticsRoot: string;
   readonly timeoutMs: number;
   readonly latePublishObservationWindowMs: number;
   readonly cdpPort: number;
@@ -97,15 +101,9 @@ export async function loadDocumentCancellationOptions(
   environment: Readonly<NodeJS.ProcessEnv> = process.env,
   workspaceRoot = defaultWorkspaceRoot,
 ): Promise<DocumentCancellationRunnerOptions> {
-  const resolvedWorkspaceRoot = realpathSync(resolve(workspaceRoot));
-  const candidateRoot = requiredAbsolutePath(
+  const installedCandidate = await loadInstalledCandidateBinding(
     environment,
-    'CERT_PREP_RESILIENCE_CANDIDATE_ROOT',
-  );
-  const installedExePath = requiredSafeFile(
-    environment,
-    'CERT_PREP_RESILIENCE_INSTALLED_EXE_PATH',
-    '.exe',
+    workspaceRoot,
   );
   const pdfPath = requiredSafeFile(
     environment,
@@ -120,7 +118,7 @@ export async function loadDocumentCancellationOptions(
   );
   requireStrictDescendant(
     outputRoot,
-    resolve(resolvedWorkspaceRoot, 'tmp', 'cert-prep-desktop'),
+    resolve(installedCandidate.workspaceRoot, 'tmp', 'cert-prep-desktop'),
     'CERT_PREP_RESILIENCE_OUTPUT_ROOT',
   );
   const diagnosticsRoot = `${outputRoot}.diagnostics`;
@@ -130,6 +128,57 @@ export async function loadDocumentCancellationOptions(
     );
   }
 
+  const timeoutMs = optionalPositiveInteger(
+    environment.CERT_PREP_RESILIENCE_TIMEOUT_MS,
+    'CERT_PREP_RESILIENCE_TIMEOUT_MS',
+    DEFAULT_TIMEOUT_MS,
+  );
+  const latePublishObservationWindowMs = optionalPositiveInteger(
+    environment.CERT_PREP_RESILIENCE_LATE_PUBLISH_WINDOW_MS,
+    'CERT_PREP_RESILIENCE_LATE_PUBLISH_WINDOW_MS',
+    DEFAULT_LATE_PUBLISH_WINDOW_MS,
+  );
+  if (latePublishObservationWindowMs < 1_000) {
+    throw new Error(
+      'CERT_PREP_RESILIENCE_LATE_PUBLISH_WINDOW_MS must be at least 1000.',
+    );
+  }
+
+  return {
+    ...installedCandidate,
+    pdfPath,
+    outputRoot,
+    diagnosticsRoot,
+    timeoutMs,
+    latePublishObservationWindowMs,
+    cdpPort: optionalPositiveInteger(
+      environment.CERT_PREP_RESILIENCE_CDP_PORT,
+      'CERT_PREP_RESILIENCE_CDP_PORT',
+      DEFAULT_CDP_PORT,
+    ),
+  };
+}
+
+/**
+ * Validates the exact candidate, release plan, installed executable, and
+ * schema-v1 install receipt without claiming or creating an acceptance output.
+ * Heavyweight runners can call this both before and after execution to reject
+ * candidate or installation drift.
+ */
+export async function loadInstalledCandidateBinding(
+  environment: Readonly<NodeJS.ProcessEnv> = process.env,
+  workspaceRoot = defaultWorkspaceRoot,
+): Promise<InstalledCandidateRunnerBinding> {
+  const resolvedWorkspaceRoot = realpathSync(resolve(workspaceRoot));
+  const candidateRoot = requiredAbsolutePath(
+    environment,
+    'CERT_PREP_RESILIENCE_CANDIDATE_ROOT',
+  );
+  const installedExePath = requiredSafeFile(
+    environment,
+    'CERT_PREP_RESILIENCE_INSTALLED_EXE_PATH',
+    '.exe',
+  );
   const expectedCandidateId = requiredPattern(
     environment,
     'CERT_PREP_RELEASE_CANDIDATE_ID',
@@ -172,29 +221,10 @@ export async function loadDocumentCancellationOptions(
     harnessSha256,
   });
 
-  const timeoutMs = optionalPositiveInteger(
-    environment.CERT_PREP_RESILIENCE_TIMEOUT_MS,
-    'CERT_PREP_RESILIENCE_TIMEOUT_MS',
-    DEFAULT_TIMEOUT_MS,
-  );
-  const latePublishObservationWindowMs = optionalPositiveInteger(
-    environment.CERT_PREP_RESILIENCE_LATE_PUBLISH_WINDOW_MS,
-    'CERT_PREP_RESILIENCE_LATE_PUBLISH_WINDOW_MS',
-    DEFAULT_LATE_PUBLISH_WINDOW_MS,
-  );
-  if (latePublishObservationWindowMs < 1_000) {
-    throw new Error(
-      'CERT_PREP_RESILIENCE_LATE_PUBLISH_WINDOW_MS must be at least 1000.',
-    );
-  }
-
   return {
     workspaceRoot: resolvedWorkspaceRoot,
     candidateRoot: realpathSync(candidateRoot),
     installedExePath,
-    pdfPath,
-    outputRoot,
-    diagnosticsRoot,
     acceptanceRunId,
     candidate: {
       candidateId: candidateDocument.candidateId.toLowerCase(),
@@ -205,13 +235,6 @@ export async function loadDocumentCancellationOptions(
     },
     candidateDistributionProfile,
     installation,
-    timeoutMs,
-    latePublishObservationWindowMs,
-    cdpPort: optionalPositiveInteger(
-      environment.CERT_PREP_RESILIENCE_CDP_PORT,
-      'CERT_PREP_RESILIENCE_CDP_PORT',
-      DEFAULT_CDP_PORT,
-    ),
   };
 }
 
