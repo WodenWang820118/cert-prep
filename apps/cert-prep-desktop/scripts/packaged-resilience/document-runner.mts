@@ -255,6 +255,7 @@ function createRunState(options: DocumentCancellationRunnerOptions): SmokeRunSta
     ollamaModel: 'qwen3.5:4b',
     ollamaFallbackModels: ['qwen3.5:2b'],
     acceptanceLane: 'xdna2-fastflow',
+    candidateDistributionProfile: options.candidateDistributionProfile,
     waitForStreamingComplete: false,
     streamingCompleteTimeoutMs: options.timeoutMs,
     skipGpuSampling: true,

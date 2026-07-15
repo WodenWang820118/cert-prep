@@ -473,6 +473,57 @@ test('XDNA2 acceptance rejects reparse points in the run path', () => {
   }
 });
 
+test('candidate-bound launch isolates the local OCR URL switch by distribution profile', () => {
+  const inherited = {
+    Cert_Prep_Allow_Local_Ocr_Runtime_Url: 'false',
+    CERT_PREP_ALLOW_LOCAL_OCR_RUNTIME_URL: 'false',
+  };
+  const publicRun = launchEnvironmentRun('none');
+  publicRun.options.candidateDistributionProfile = 'public_unsigned_alpha';
+  const publicEnvironment = buildAppLaunchEnvironment(publicRun, inherited);
+  assert.equal(
+    normalizedEnvironment(publicEnvironment)
+      .cert_prep_allow_local_ocr_runtime_url,
+    undefined,
+  );
+
+  const localRun = launchEnvironmentRun('none');
+  localRun.options.candidateDistributionProfile = 'local_nonpublishable';
+  const localEnvironment = buildAppLaunchEnvironment(localRun, inherited);
+  assert.equal(
+    normalizedEnvironment(localEnvironment).cert_prep_allow_local_ocr_runtime_url,
+    'true',
+  );
+  assert.equal(
+    Object.keys(localEnvironment).filter(
+      (name) =>
+        name.toLowerCase() === 'cert_prep_allow_local_ocr_runtime_url',
+    ).length,
+    1,
+  );
+});
+
+test('unbound packaged dev launch preserves only an explicitly inherited local OCR switch', () => {
+  const unboundRun = launchEnvironmentRun('none');
+  const explicitDevEnvironment = buildAppLaunchEnvironment(unboundRun, {
+    CERT_PREP_ALLOW_LOCAL_OCR_RUNTIME_URL: 'true',
+  });
+  assert.equal(
+    normalizedEnvironment(explicitDevEnvironment)
+      .cert_prep_allow_local_ocr_runtime_url,
+    'true',
+  );
+
+  const ordinaryEnvironment = buildAppLaunchEnvironment(unboundRun, {
+    SAFE_PARENT_VALUE: 'preserved',
+  });
+  assert.equal(
+    normalizedEnvironment(ordinaryEnvironment)
+      .cert_prep_allow_local_ocr_runtime_url,
+    undefined,
+  );
+});
+
 test('Ollama acceptance injects only the typed isolated host and model root after sanitizing', () => {
   const workspace = mkdtempSync(join(tmpdir(), 'cert-prep-ollama-env-'));
   try {

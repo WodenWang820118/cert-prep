@@ -235,6 +235,7 @@ function optionsFixture(): OptionsFixture {
       commitSha: 'b'.repeat(40),
       harnessSha256: 'c'.repeat(64),
     },
+    candidateDistributionProfile: 'public_unsigned_alpha',
     installation: {
       receiptPath: join(root, 'receipt.json'),
       receiptSha256: 'd'.repeat(64),

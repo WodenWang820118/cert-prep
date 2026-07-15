@@ -18,6 +18,7 @@ import {
 } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import type { CandidateDistributionProfile } from '../packaged-flow-smoke/types.mts';
 import type { CandidateBinding } from './evidence-contract.mts';
 
 const SHA256_PATTERN = /^[0-9a-f]{64}$/i;
@@ -40,6 +41,7 @@ export interface DocumentCancellationRunnerOptions {
   readonly diagnosticsRoot: string;
   readonly acceptanceRunId: string;
   readonly candidate: CandidateBinding;
+  readonly candidateDistributionProfile: CandidateDistributionProfile;
   readonly installation: InstalledCandidateBinding;
   readonly timeoutMs: number;
   readonly latePublishObservationWindowMs: number;
@@ -63,7 +65,10 @@ interface CandidateIdentityDocument {
   readonly candidateId: string;
   readonly version: string;
   readonly tag: string;
+  readonly repository: string;
   readonly commitSha: string;
+  readonly distributionProfile: CandidateDistributionProfile;
+  readonly publishable: boolean;
   readonly files: readonly string[];
 }
 
@@ -154,11 +159,10 @@ export async function loadDocumentCancellationOptions(
     resolve(candidateRoot, 'release', 'metadata', 'release-plan.json'),
     'release plan',
   );
-  for (const key of ['version', 'tag', 'commitSha'] as const) {
-    if (plan[key] !== candidateDocument[key]) {
-      throw new Error(`Verified candidate ${key} does not match the release plan.`);
-    }
-  }
+  const candidateDistributionProfile = await validateCandidateDistribution(
+    candidateDocument,
+    plan,
+  );
   const installation = await validateInstallReceipt({
     environment,
     candidateRoot,
@@ -199,6 +203,7 @@ export async function loadDocumentCancellationOptions(
       commitSha: candidateDocument.commitSha.toLowerCase(),
       harnessSha256,
     },
+    candidateDistributionProfile,
     installation,
     timeoutMs,
     latePublishObservationWindowMs,
@@ -447,16 +452,39 @@ async function validateCandidateRoot(
   candidateRoot: string,
   candidate: Record<string, unknown>,
 ): Promise<void> {
+  const releaseLib = await loadReleaseValidation();
+  await releaseLib.validateCandidateFiles(candidateRoot, candidate);
+}
+
+async function validateCandidateDistribution(
+  candidate: CandidateIdentityDocument,
+  plan: Record<string, unknown>,
+): Promise<CandidateDistributionProfile> {
+  const releaseLib = await loadReleaseValidation();
+  releaseLib.assertSupportedDistributionPlan(plan);
+  releaseLib.assertCandidateMatchesPlan(candidate, plan);
+  return candidate.distributionProfile;
+}
+
+interface ReleaseValidation {
+  readonly validateCandidateFiles: (
+    root: string,
+    value: Record<string, unknown>,
+  ) => Promise<unknown>;
+  readonly assertSupportedDistributionPlan: (
+    value: Record<string, unknown>,
+  ) => unknown;
+  readonly assertCandidateMatchesPlan: (
+    candidate: CandidateIdentityDocument,
+    plan: Record<string, unknown>,
+  ) => void;
+}
+
+async function loadReleaseValidation(): Promise<ReleaseValidation> {
   const releaseLibUrl = pathToFileURL(
     resolve(defaultWorkspaceRoot, 'tools', 'release', 'release-lib.ts'),
   ).href;
-  const releaseLib = (await import(releaseLibUrl)) as {
-    readonly validateCandidateFiles: (
-      root: string,
-      value: Record<string, unknown>,
-    ) => Promise<unknown>;
-  };
-  await releaseLib.validateCandidateFiles(candidateRoot, candidate);
+  return (await import(releaseLibUrl)) as ReleaseValidation;
 }
 
 function candidateIdentity(
@@ -465,15 +493,23 @@ function candidateIdentity(
   const candidateId = stringField(value.candidateId, 'candidateId');
   const version = stringField(value.version, 'version');
   const tag = stringField(value.tag, 'tag');
+  const repository = stringField(value.repository, 'repository');
   const commitSha = stringField(value.commitSha, 'commitSha');
+  const distributionProfile = stringField(
+    value.distributionProfile,
+    'distributionProfile',
+  );
+  const publishable = value.publishable;
   if (
     value.schemaVersion !== 1 ||
     !Array.isArray(value.files) ||
     !value.files.every((item) => typeof item === 'string') ||
     !SHA256_PATTERN.test(candidateId) ||
     !VERSION_PATTERN.test(version) ||
-    tag !== `cert-prep-v${version}` ||
-    !COMMIT_SHA_PATTERN.test(commitSha)
+    !COMMIT_SHA_PATTERN.test(commitSha) ||
+    (distributionProfile !== 'public_unsigned_alpha' &&
+      distributionProfile !== 'local_nonpublishable') ||
+    typeof publishable !== 'boolean'
   ) {
     throw new Error('Verified candidate identity fields are invalid.');
   }
@@ -482,7 +518,10 @@ function candidateIdentity(
     candidateId,
     version,
     tag,
+    repository,
     commitSha,
+    distributionProfile,
+    publishable,
     files: value.files,
   };
 }

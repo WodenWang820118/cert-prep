@@ -287,6 +287,7 @@ function runnerFixture(): RunnerFixture {
       diagnosticsRoot: `${outputRoot}.diagnostics`,
       acceptanceRunId: 'acceptance-run-0001',
       candidate: FIXTURE_CANDIDATE,
+      candidateDistributionProfile: 'public_unsigned_alpha',
       installation: {
         receiptPath: join(workspaceRoot, 'install-receipt.json'),
         receiptSha256: 'd'.repeat(64),

@@ -992,6 +992,7 @@ function createRunState(options: RemainingResilienceOptions): SmokeRunState {
     ollamaModelsDir: options.ollamaModelsRoot,
     ollamaProfileEnabled: false,
     acceptanceLane: 'ollama-fallback',
+    candidateDistributionProfile: options.candidateDistributionProfile,
     waitForStreamingComplete: false,
     streamingCompleteTimeoutMs: options.timeoutMs,
     streamingDraftPageLimit: 1,

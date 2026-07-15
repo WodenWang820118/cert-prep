@@ -8,6 +8,10 @@ import type { OwnedFastFlowProcessTracker } from './owned-fastflow-process-lifec
 
 export type AcceptanceLane = 'none' | 'xdna2-fastflow' | 'ollama-fallback';
 
+export type CandidateDistributionProfile =
+  | 'public_unsigned_alpha'
+  | 'local_nonpublishable';
+
 export type OllamaFallbackTrigger =
   | 'declined-terms'
   | 'unsupported-xdna2'
@@ -29,6 +33,7 @@ export interface SmokeOptions {
   ollamaModelsDir?: string;
   ollamaProfileEnabled?: boolean;
   acceptanceLane?: AcceptanceLane;
+  candidateDistributionProfile?: CandidateDistributionProfile;
   ollamaFallbackTrigger?: OllamaFallbackTrigger;
   streamingDraftPageLimit?: number;
   streamingDraftWorkers?: number;

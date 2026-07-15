@@ -357,6 +357,7 @@ function runnerFixture(): RunnerFixture {
         commitSha: 'a'.repeat(40),
         harnessSha256: 'c'.repeat(64),
       },
+      candidateDistributionProfile: 'public_unsigned_alpha',
       installation: {
         receiptPath: join(workspaceRoot, 'install-receipt.json'),
         receiptSha256: 'd'.repeat(64),

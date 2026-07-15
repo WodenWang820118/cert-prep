@@ -92,6 +92,7 @@ const ACCEPTANCE_ENV_PREFIXES = [
   'webview2_',
 ] as const;
 const ACCEPTANCE_REMOVED_ENV_NAMES = new Set(['no_proxy']);
+const LOCAL_OCR_RUNTIME_URL_ENV = 'cert_prep_allow_local_ocr_runtime_url';
 const ACCEPTANCE_LOOPBACK_NO_PROXY = 'localhost,127.0.0.1,::1';
 
 export function createCleanupWithTimeoutController<T extends object>({
@@ -452,10 +453,20 @@ export function buildAppLaunchEnvironment(
     inherited,
     acceptanceLane,
   );
+  const candidateDistributionProfile =
+    run.options.candidateDistributionProfile;
+  const guardedBaseEnvironment =
+    candidateDistributionProfile === undefined
+      ? baseEnvironment
+      : Object.fromEntries(
+          Object.entries(baseEnvironment).filter(
+            ([name]) => name.toLowerCase() !== LOCAL_OCR_RUNTIME_URL_ENV,
+          ),
+        );
   const appDataDir = launchAppDataDir(run);
   const isolatedOllamaEnvironment = buildIsolatedOllamaLaunchEnvironment(run);
   return {
-    ...baseEnvironment,
+    ...guardedBaseEnvironment,
     ...(acceptanceLane === 'none'
       ? {}
       : {
@@ -469,6 +480,9 @@ export function buildAppLaunchEnvironment(
     CERT_PREP_LLM_PROVIDER: run.options.llmProvider,
     CERT_PREP_OCR_PROVIDER: run.options.ocrProvider,
     CERT_PREP_OCR_PAGE_WORKERS: String(run.options.ocrPageWorkers),
+    ...(candidateDistributionProfile === 'local_nonpublishable'
+      ? { CERT_PREP_ALLOW_LOCAL_OCR_RUNTIME_URL: 'true' }
+      : {}),
     CERT_PREP_OLLAMA_MODEL: run.options.ollamaModel,
     CERT_PREP_OLLAMA_FALLBACK_MODELS:
       run.options.ollamaFallbackModels.join(','),

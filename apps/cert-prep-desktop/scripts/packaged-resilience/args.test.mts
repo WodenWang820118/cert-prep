@@ -12,6 +12,7 @@ import {
 import { join, relative } from 'node:path';
 import { tmpdir } from 'node:os';
 import { test } from 'node:test';
+import { pathToFileURL } from 'node:url';
 
 import { loadDocumentCancellationOptions } from './args.mts';
 
@@ -28,6 +29,7 @@ test('document cancellation options verify the exact candidate and required file
     assert.equal(options.candidate.tag, 'cert-prep-v0.1.0-alpha.1');
     assert.equal(options.candidate.commitSha, 'a'.repeat(40));
     assert.equal(options.candidate.harnessSha256, 'b'.repeat(64));
+    assert.equal(options.candidateDistributionProfile, 'public_unsigned_alpha');
     assert.equal(options.acceptanceRunId, 'acceptance-run-0001');
     assert.equal(options.diagnosticsRoot, `${fixture.outputRoot}.diagnostics`);
     assert.equal(options.installation.packageKind, 'msi');
@@ -40,6 +42,104 @@ test('document cancellation options verify the exact candidate and required file
   } finally {
     fixture.cleanup();
   }
+});
+
+test('document cancellation options accept the exact local nonpublishable candidate pair', async () => {
+  const fixture = fixtureWorkspace({ profile: 'local_nonpublishable' });
+  try {
+    const options = await loadDocumentCancellationOptions(
+      fixture.environment,
+      fixture.workspaceRoot,
+    );
+
+    assert.equal(options.candidateDistributionProfile, 'local_nonpublishable');
+    assert.equal(
+      options.candidate.tag,
+      `cert-prep-local-v0.1.0-alpha.1-${'a'.repeat(12)}`,
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('document cancellation options reject hybrid and malformed distribution identities', async (t) => {
+  await t.test('candidate profile does not match its public plan', async () => {
+    const fixture = fixtureWorkspace({
+      candidateOverrides: {
+        distributionProfile: 'local_nonpublishable',
+        publishable: false,
+      },
+    });
+    try {
+      await assert.rejects(
+        loadDocumentCancellationOptions(
+          fixture.environment,
+          fixture.workspaceRoot,
+        ),
+        /Candidate identity does not match release plan: distributionProfile/,
+      );
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  await t.test('public plan is not publishable', async () => {
+    const fixture = fixtureWorkspace({
+      planOverrides: { publishable: false },
+      candidateOverrides: { publishable: false },
+    });
+    try {
+      await assert.rejects(
+        loadDocumentCancellationOptions(
+          fixture.environment,
+          fixture.workspaceRoot,
+        ),
+        /exact supported distribution profile/,
+      );
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  await t.test('public asset base URL does not match its repository and tag', async () => {
+    const fixture = fixtureWorkspace({
+      planOverrides: { assetBaseUrl: 'https://example.invalid/releases' },
+    });
+    try {
+      await assert.rejects(
+        loadDocumentCancellationOptions(
+          fixture.environment,
+          fixture.workspaceRoot,
+        ),
+        /exact supported distribution profile/,
+      );
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  await t.test('local tag is not bound to the candidate commit SHA', async () => {
+    const fixture = fixtureWorkspace({
+      profile: 'local_nonpublishable',
+      planOverrides: {
+        tag: 'cert-prep-local-v0.1.0-alpha.1-deadbeefdead',
+      },
+      candidateOverrides: {
+        tag: 'cert-prep-local-v0.1.0-alpha.1-deadbeefdead',
+      },
+    });
+    try {
+      await assert.rejects(
+        loadDocumentCancellationOptions(
+          fixture.environment,
+          fixture.workspaceRoot,
+        ),
+        /exact supported distribution profile/,
+      );
+    } finally {
+      fixture.cleanup();
+    }
+  });
 });
 
 test('document cancellation options require every candidate-bound input', async (t) => {
@@ -228,7 +328,17 @@ interface FixtureWorkspace {
   cleanup(): void;
 }
 
-function fixtureWorkspace(): FixtureWorkspace {
+interface FixtureOptions {
+  readonly profile?: 'public_unsigned_alpha' | 'local_nonpublishable';
+  readonly planOverrides?: Readonly<Record<string, unknown>>;
+  readonly candidateOverrides?: Readonly<Record<string, unknown>>;
+}
+
+function fixtureWorkspace({
+  profile = 'public_unsigned_alpha',
+  planOverrides = {},
+  candidateOverrides = {},
+}: FixtureOptions = {}): FixtureWorkspace {
   const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-prep-resilience-'));
   const candidateRoot = join(workspaceRoot, 'candidate');
   const releaseMetadataRoot = join(candidateRoot, 'release', 'metadata');
@@ -237,10 +347,34 @@ function fixtureWorkspace(): FixtureWorkspace {
   mkdirSync(releaseMetadataRoot, { recursive: true });
   mkdirSync(releaseInstallerRoot, { recursive: true });
   mkdirSync(harnessRoot, { recursive: true });
+  const version = '0.1.0-alpha.1';
+  const commitSha = 'a'.repeat(40);
+  const repository =
+    profile === 'local_nonpublishable'
+      ? 'local/nonpublishable'
+      : 'example/cert-prep';
+  const tag =
+    profile === 'local_nonpublishable'
+      ? `cert-prep-local-v${version}-${commitSha.slice(0, 12)}`
+      : `cert-prep-v${version}`;
   const plan = {
-    version: '0.1.0-alpha.1',
-    tag: 'cert-prep-v0.1.0-alpha.1',
-    commitSha: 'a'.repeat(40),
+    version,
+    tag,
+    commitSha,
+    repository,
+    target: 'x86_64-pc-windows-msvc',
+    signed: false,
+    channel:
+      profile === 'local_nonpublishable'
+        ? 'local_nonpublishable'
+        : 'unsigned_public_alpha',
+    distributionProfile: profile,
+    publishable: profile === 'public_unsigned_alpha',
+    assetBaseUrl:
+      profile === 'local_nonpublishable'
+        ? pathToFileURL(join(candidateRoot, 'local-assets')).href
+        : `https://github.com/${repository}/releases/download/${tag}`,
+    ...planOverrides,
   };
   writeJson(join(releaseMetadataRoot, 'release-plan.json'), plan);
   const installerPath = join(
@@ -259,9 +393,14 @@ function fixtureWorkspace(): FixtureWorkspace {
   writeJson(join(candidateRoot, 'candidate.json'), {
     schemaVersion: 1,
     candidateId,
-    repository: 'example/cert-prep',
     files: identities,
-    ...plan,
+    version: plan.version,
+    tag: plan.tag,
+    repository: plan.repository,
+    commitSha: plan.commitSha,
+    distributionProfile: plan.distributionProfile,
+    publishable: plan.publishable,
+    ...candidateOverrides,
   });
 
   const installedExePath = join(workspaceRoot, 'Cert Prep.exe');
