@@ -135,6 +135,8 @@ test('packaged resource contract proves hybrid resources and rejects dev referen
       python_runtime_version: '3.12',
       release_tag: 'cert-prep-v0.1.0-alpha.1',
       channel: 'unsigned_public_alpha',
+      distribution_profile: 'public_unsigned_alpha',
+      publishable: true,
       distribution_mode: 'release',
       signed: false,
       warnings: {
@@ -144,11 +146,13 @@ test('packaged resource contract proves hybrid resources and rejects dev referen
       sha256_verification: { required: true, algorithm: 'SHA-256' },
       runtime_assets: {
         backend: {
+          distribution: 'bundled',
           file_name: backendName,
           sha256: sha256('runtime'),
           bytes: Buffer.byteLength('runtime'),
         },
         windowsml_ocr: {
+          distribution: 'github_release_download',
           file_name: ocrName,
           sha256: sha256('ocr'),
           bytes: Buffer.byteLength('ocr'),
@@ -224,6 +228,12 @@ test('packaged resource contract proves hybrid resources and rejects dev referen
     evidence_scope: 'static_tauri_release_resources',
     blockers: ['installer_contents_not_verified', 'fresh_install_not_verified'],
   });
+  const publishedContract = report.package.resource_contract as unknown as Record<
+    string,
+    unknown
+  >;
+  assert.equal(publishedContract.distribution_profile, 'public_unsigned_alpha');
+  assert.equal(publishedContract.publishable, true);
 
   writeFileSync(
     ocrManifestPath,

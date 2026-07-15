@@ -255,6 +255,8 @@ interface ReleaseMetadata {
   readonly python_runtime_version: string;
   readonly release_tag: string;
   readonly channel: string;
+  readonly distribution_profile: string;
+  readonly publishable: boolean;
   readonly distribution_mode: string;
   readonly signed: boolean;
   readonly warnings?: {
@@ -267,11 +269,13 @@ interface ReleaseMetadata {
   };
   readonly runtime_assets?: {
     readonly backend?: {
+      readonly distribution?: string;
       readonly file_name?: string;
       readonly sha256?: string;
       readonly bytes?: number;
     };
     readonly windowsml_ocr?: {
+      readonly distribution?: string;
       readonly file_name?: string;
       readonly sha256?: string;
       readonly bytes?: number;
@@ -297,6 +301,8 @@ function validateReleaseMetadata(
     metadata.python_runtime_version !== PYTHON_RUNTIME_VERSION ||
     metadata.release_tag !== `cert-prep-v${ALPHA_VERSION}` ||
     metadata.channel !== 'unsigned_public_alpha' ||
+    metadata.distribution_profile !== 'public_unsigned_alpha' ||
+    metadata.publishable !== true ||
     metadata.distribution_mode !== 'release' ||
     metadata.signed !== false ||
     metadata.warnings?.production_ready !== false ||
@@ -307,6 +313,13 @@ function validateReleaseMetadata(
     throw new Error(
       'Release metadata does not declare the unsigned public Alpha contract.',
     );
+  }
+  if (
+    metadata.runtime_assets?.backend?.distribution !== 'bundled' ||
+    metadata.runtime_assets?.windowsml_ocr?.distribution !==
+      'github_release_download'
+  ) {
+    throw new Error('Release metadata runtime distribution is not public.');
   }
   for (const [name, actual, expected] of [
     ['backend', metadata.runtime_assets?.backend, backend.artifact],

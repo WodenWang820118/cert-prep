@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import {
   mkdtempSync,
   mkdirSync,
@@ -7,7 +8,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
 
@@ -20,13 +21,18 @@ import {
   assembleCandidate,
   finalizeRelease,
   rejectFastFlowBinaryInArchive,
+  validatePackageQa,
 } from './assemble.ts';
 import {
   HARDWARE_CANCELLATION_CHECKS,
+  LOCAL_NONPUBLISHABLE_PROFILE,
+  PUBLIC_UNSIGNED_ALPHA_PROFILE,
   deriveReleaseIdentity,
+  listFiles,
   sha256File,
   writeJson,
 } from './release-lib.ts';
+import { validatePublishingInputs } from './publish-assets.ts';
 
 test('candidate assembly proves hybrid runtime shape and writes release documents', async () => {
   const root = mkdtempSync(join(tmpdir(), 'cert-prep-assemble-'));
@@ -104,6 +110,8 @@ test('candidate assembly proves hybrid runtime shape and writes release document
           backend_bundled: true,
           windowsml_ocr_bundled: false,
           release_urls_only: true,
+          distribution_profile: PUBLIC_UNSIGNED_ALPHA_PROFILE,
+          publishable: true,
           version: plan.version,
           windows_msi_version: plan.windowsMsiVersion,
           python_runtime_version: plan.pythonRuntimeVersion,
@@ -237,6 +245,11 @@ test('candidate assembly proves hybrid runtime shape and writes release document
     const candidateIdentity = JSON.parse(
       readFileSync(join(output, 'candidate.json'), 'utf8'),
     );
+    assert.equal(
+      candidateIdentity.distributionProfile,
+      PUBLIC_UNSIGNED_ALPHA_PROFILE,
+    );
+    assert.equal(candidateIdentity.publishable, true);
     assert.equal(
       candidateIdentity.files.some((identity) =>
         identity.startsWith('harness/tools/release/'),
@@ -472,6 +485,64 @@ test('candidate assembly proves hybrid runtime shape and writes release document
       finalMetadata.evidence.hardware,
       'passed-cert-prep-alpha-hardware',
     );
+    const finalReleaseRoot = join(finalOutput, 'release');
+    const finalPublishArgs = {
+      mode: 'final',
+      'candidate-root': output,
+      'candidate-id': result.candidateId,
+      'release-root': finalReleaseRoot,
+      plan: join(finalReleaseRoot, 'metadata', 'release-plan.json'),
+    };
+    await assert.doesNotReject(validatePublishingInputs(finalPublishArgs));
+
+    const injectedFinalFile = join(finalReleaseRoot, 'injected.exe');
+    writeFileSync(injectedFinalFile, 'injected');
+    await assert.rejects(
+      () => validatePublishingInputs(finalPublishArgs),
+      /missing or undeclared files/,
+    );
+    rmSync(injectedFinalFile);
+
+    const finalLicensePath = join(finalReleaseRoot, 'legal', 'LICENSE');
+    const originalFinalLicense = readFileSync(finalLicensePath);
+    writeFileSync(finalLicensePath, 'changed license');
+    await assert.rejects(
+      () => validatePublishingInputs(finalPublishArgs),
+      /artifact does not match metadata: legal\/LICENSE/,
+    );
+    writeFileSync(finalLicensePath, originalFinalLicense);
+
+    const finalChecksumsPath = join(finalReleaseRoot, 'SHA256SUMS');
+    const originalFinalChecksums = readFileSync(finalChecksumsPath, 'utf8');
+    writeFileSync(finalChecksumsPath, `${'0'.repeat(64)} *bogus.txt\n`);
+    await assert.rejects(
+      () => validatePublishingInputs(finalPublishArgs),
+      /SHA256SUMS does not cover the exact release files/,
+    );
+    writeFileSync(finalChecksumsPath, originalFinalChecksums);
+
+    const finalMetadataPath = join(
+      finalReleaseRoot,
+      'metadata',
+      'release-metadata.json',
+    );
+    const originalFinalMetadata = readFileSync(finalMetadataPath, 'utf8');
+    writeFileSync(finalLicensePath, 'candidate drift');
+    const driftedMetadata = JSON.parse(originalFinalMetadata);
+    const licenseArtifact = driftedMetadata.artifacts.find(
+      (artifact) => artifact.path === 'legal/LICENSE',
+    );
+    licenseArtifact.bytes = statSync(finalLicensePath).size;
+    licenseArtifact.sha256 = await sha256File(finalLicensePath);
+    writeJson(finalMetadataPath, driftedMetadata);
+    await rewriteChecksums(finalReleaseRoot);
+    await assert.rejects(
+      () => validatePublishingInputs(finalPublishArgs),
+      /changed candidate file: legal\/LICENSE/,
+    );
+    writeFileSync(finalLicensePath, originalFinalLicense);
+    writeFileSync(finalMetadataPath, originalFinalMetadata);
+    writeFileSync(finalChecksumsPath, originalFinalChecksums);
 
     const cleanMsiPath = join(clean, 'clean-install-msi.json');
     const cleanMsi = JSON.parse(readFileSync(cleanMsiPath, 'utf8'));
@@ -525,6 +596,17 @@ test('candidate assembly proves hybrid runtime shape and writes release document
   }
 });
 
+async function rewriteChecksums(releaseRoot) {
+  const files = listFiles(releaseRoot)
+    .filter((path) => basename(path) !== 'SHA256SUMS')
+    .sort();
+  const lines = [];
+  for (const path of files) {
+    lines.push(`${await sha256File(path)} *${basename(path)}`);
+  }
+  writeFileSync(join(releaseRoot, 'SHA256SUMS'), `${lines.join('\n')}\n`);
+}
+
 test('archive gate rejects redistributed FastFlow executables', () => {
   const root = mkdtempSync(join(tmpdir(), 'cert-prep-fastflow-archive-'));
   try {
@@ -541,3 +623,181 @@ test('archive gate rejects redistributed FastFlow executables', () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('package QA accepts only exact public or local distribution pairs', () => {
+  const publicPlan = deriveReleaseIdentity({
+    eventName: 'workflow_dispatch',
+    refName: 'main',
+    requestedVersion: '0.1.0-alpha.1',
+    repository: 'owner/cert-prep',
+    commitSha: 'a'.repeat(40),
+  });
+  const publicReport = packageQaFixture(publicPlan, {
+    release_urls_only: true,
+    distribution_profile: PUBLIC_UNSIGNED_ALPHA_PROFILE,
+    publishable: true,
+    channel: publicPlan.channel,
+  });
+  assert.doesNotThrow(() => validatePackageQa(publicReport, publicPlan));
+  assert.throws(
+    () =>
+      validatePackageQa(
+        {
+          ...publicReport,
+          package: {
+            ...publicReport.package,
+            resource_contract: {
+              ...publicReport.package.resource_contract,
+              publishable: false,
+            },
+          },
+        },
+        publicPlan,
+      ),
+    /unsigned hybrid alpha contract/,
+  );
+
+  const localPlan = {
+    ...publicPlan,
+    channel: LOCAL_NONPUBLISHABLE_PROFILE,
+    distributionProfile: LOCAL_NONPUBLISHABLE_PROFILE,
+    publishable: false,
+    tag: 'cert-prep-local-v0.1.0-alpha.1-aaaaaaaaaaaa',
+    repository: 'local/nonpublishable',
+    assetBaseUrl: 'file:///C:/cert-prep-local-runtime',
+  };
+  const localReport = packageQaFixture(localPlan, {
+    release_urls_only: false,
+    local_file_ocr_only: true,
+    distribution_profile: LOCAL_NONPUBLISHABLE_PROFILE,
+    publishable: false,
+    channel: LOCAL_NONPUBLISHABLE_PROFILE,
+  });
+  assert.doesNotThrow(() => validatePackageQa(localReport, localPlan));
+  assert.throws(
+    () =>
+      validatePackageQa(localReport, {
+        ...localPlan,
+        assetBaseUrl: publicPlan.assetBaseUrl,
+      }),
+    /exact supported distribution profile/,
+  );
+  assert.throws(
+    () =>
+      validatePackageQa(
+        {
+          ...localReport,
+          package: {
+            ...localReport.package,
+            resource_contract: {
+              ...localReport.package.resource_contract,
+              distribution_profile: PUBLIC_UNSIGNED_ALPHA_PROFILE,
+            },
+          },
+        },
+        localPlan,
+      ),
+    /local nonpublishable candidate contract/,
+  );
+});
+
+test('finalizer rejects local and mismatched candidates before touching output', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'cert-prep-finalize-guard-'));
+  try {
+    const output = join(root, 'output');
+    mkdirSync(output);
+    const sentinel = join(output, 'sentinel.txt');
+    writeFileSync(sentinel, 'keep');
+    const localPlan = {
+      schemaVersion: 1,
+      channel: LOCAL_NONPUBLISHABLE_PROFILE,
+      version: '0.1.0-alpha.1',
+      tag: 'cert-prep-local-v0.1.0-alpha.1-aaaaaaaaaaaa',
+      repository: 'local/nonpublishable',
+      commitSha: 'a'.repeat(40),
+      target: 'x86_64-pc-windows-msvc',
+      assetBaseUrl: 'file:///C:/cert-prep-local-runtime',
+      signed: false,
+      distributionProfile: LOCAL_NONPUBLISHABLE_PROFILE,
+      publishable: false,
+    };
+    const localCandidate = join(root, 'local-candidate');
+    await writeMinimalCandidate(localCandidate, localPlan);
+    await assert.rejects(
+      () => finalizeRelease({ candidate: localCandidate, output }),
+      /cannot be finalized or published/,
+    );
+    assert.equal(readFileSync(sentinel, 'utf8'), 'keep');
+
+    const publicPlan = deriveReleaseIdentity({
+      eventName: 'workflow_dispatch',
+      refName: 'main',
+      requestedVersion: '0.1.0-alpha.1',
+      repository: 'owner/cert-prep',
+      commitSha: 'a'.repeat(40),
+    });
+    const mismatchedCandidate = join(root, 'mismatched-candidate');
+    await writeMinimalCandidate(mismatchedCandidate, publicPlan, {
+      repository: 'other/cert-prep',
+    });
+    await assert.rejects(
+      () => finalizeRelease({ candidate: mismatchedCandidate, output }),
+      /does not match release plan: repository/,
+    );
+    assert.equal(readFileSync(sentinel, 'utf8'), 'keep');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+function packageQaFixture(plan, contract) {
+  return {
+    schema_version: 3,
+    target: { rust_triple: plan.target },
+    package: {
+      resource_contract: {
+        backend_bundled: true,
+        windowsml_ocr_bundled: false,
+        version: plan.version,
+        windows_msi_version: plan.windowsMsiVersion,
+        python_runtime_version: plan.pythonRuntimeVersion,
+        signed: false,
+        ...contract,
+      },
+      size_gate: { status: 'passed' },
+    },
+  };
+}
+
+async function writeMinimalCandidate(root, plan, candidateOverrides = {}) {
+  const releasePlanPath = join(
+    root,
+    'release',
+    'metadata',
+    'release-plan.json',
+  );
+  const harnessPath = join(root, 'harness', 'harness.txt');
+  mkdirSync(join(root, 'release', 'metadata'), { recursive: true });
+  mkdirSync(join(root, 'harness'), { recursive: true });
+  writeJson(releasePlanPath, plan);
+  writeFileSync(harnessPath, 'harness');
+  const files = [
+    `harness/harness.txt:${await sha256File(harnessPath)}`,
+    `release/metadata/release-plan.json:${await sha256File(releasePlanPath)}`,
+  ].sort();
+  const candidateId = createHash('sha256')
+    .update(files.join('\n'))
+    .digest('hex');
+  writeJson(join(root, 'candidate.json'), {
+    schemaVersion: 1,
+    candidateId,
+    version: plan.version,
+    tag: plan.tag,
+    repository: plan.repository,
+    commitSha: plan.commitSha,
+    distributionProfile: plan.distributionProfile,
+    publishable: plan.publishable,
+    files,
+    ...candidateOverrides,
+  });
+}

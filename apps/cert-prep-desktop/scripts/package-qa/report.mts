@@ -48,6 +48,11 @@ export async function createPackageQaReport(
     workspaceRoot,
     expectedTargetTriple,
   });
+  const publicResourceContract = {
+    ...resourceContract,
+    distribution_profile: 'public_unsigned_alpha' as const,
+    publishable: true as const,
+  };
 
   return {
     schema_version: 3,
@@ -71,7 +76,7 @@ export async function createPackageQaReport(
       packaged_resource_root: normalizePath(
         relative(workspaceRoot, packagedResourceRoot),
       ),
-      resource_contract: resourceContract,
+      resource_contract: publicResourceContract,
       size_gate: sizeGate,
     },
   };

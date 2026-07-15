@@ -42,6 +42,30 @@ The JavaScript release tools are native `.ts` ESM scripts executed directly by
 the repository-pinned Node 24 runtime; no transpiler or compatibility wrapper
 is part of the release harness.
 
+## Local nonpublishable acceptance candidate
+
+Installed-app and hardware acceptance may be exercised before GitHub release
+infrastructure is available. Build that candidate only from an isolated clean
+worktree at the commit under test:
+
+```powershell
+pnpm nx run cert-prep-desktop:local-candidate-windowsml --skip-nx-cache
+```
+
+The target deliberately uses the development WindowsML resource layout so the
+OCR ZIP remains a canonical local `file:` dependency. Its release plan,
+package-QA report, SBOM namespace, and candidate identity are permanently
+marked `local_nonpublishable`. The publisher, cleanup command, and finalizer
+reject this profile even if it is paired with a separate public-looking plan.
+The command also refuses a dirty checkout, symbolic-link inputs, an OCR URL
+that does not resolve to the declared ZIP, or an existing output path. It
+assembles and validates under a temporary same-volume directory before
+atomically renaming the candidate to `tmp/local-alpha-candidate`.
+
+Keep the isolated worktree and its OCR runtime ZIP in place while running the
+installed-app acceptance lanes. Passing local acceptance does not satisfy or
+close any public candidate, hosted clean-install, or GitHub publication gate.
+
 The workflow publishes the OCR ZIP/manifest first as a public mutable prerelease so clean
 runners can download it anonymously. Existing assets are reused only when their SHA-256
 digest matches; assets are never clobbered. Final installers remain withheld until both

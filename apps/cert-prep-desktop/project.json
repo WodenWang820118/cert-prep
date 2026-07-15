@@ -47,6 +47,15 @@
         "command": "pnpm exec tauri build --target x86_64-pc-windows-msvc --ci --config apps/cert-prep-desktop/src-tauri/tauri.conf.json"
       }
     },
+    "local-candidate-windowsml": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "dependsOn": ["build-windowsml-dev"],
+      "outputs": ["{workspaceRoot}/tmp/local-alpha-candidate"],
+      "options": {
+        "command": "node tools/release/local-candidate.ts --workspace-root . --output-root tmp/local-alpha-candidate"
+      }
+    },
     "prepare-runtime-resources": {
       "cache": false,
       "executor": "nx:run-commands",

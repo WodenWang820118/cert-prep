@@ -59,6 +59,12 @@ test('release resources bundle backend and reference OCR through HTTPS only', as
   assert.equal(metadata.windows_msi_version, '0.1.0.1');
   assert.equal(metadata.python_runtime_version, '3.12');
   assert.equal(metadata.channel, 'unsigned_public_alpha');
+  assert.equal(metadata.distribution_profile, 'public_unsigned_alpha');
+  assert.equal(metadata.publishable, true);
+  assert.equal(
+    metadata.runtime_assets.windowsml_ocr.distribution,
+    'github_release_download',
+  );
   assert.equal(metadata.signed, false);
   assert.equal(metadata.warnings.production_ready, false);
 });
@@ -92,7 +98,15 @@ test('dev resources use an explicit local OCR file URL', async () => {
   await prepareRuntimeResources({ ...fixture, outputDir, mode: 'dev' });
 
   const ocr = readJson(join(outputDir, 'windowsml-ocr-runtime-manifest.json'));
+  const metadata = readJson(join(outputDir, 'release-metadata.json'));
   assert.match(ocr.artifact.url, /^file:\/\//);
+  assert.equal(metadata.release_tag, 'cert-prep-local-v0.1.0-alpha.1');
+  assert.equal(metadata.channel, 'local_nonpublishable');
+  assert.equal(metadata.distribution_profile, 'local_nonpublishable');
+  assert.equal(metadata.publishable, false);
+  assert.equal(metadata.distribution_mode, 'dev');
+  assert.equal(metadata.runtime_assets.windowsml_ocr.distribution, 'local_file');
+  assert.match(metadata.warnings.smartscreen, /cannot be published/);
 });
 
 function createFixture(): {

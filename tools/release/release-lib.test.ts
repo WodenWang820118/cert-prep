@@ -14,8 +14,12 @@ import test from 'node:test';
 import { buildReleasePlan } from './metadata.ts';
 import {
   HARDWARE_CANCELLATION_CHECKS,
+  LOCAL_NONPUBLISHABLE_PROFILE,
+  PUBLIC_UNSIGNED_ALPHA_PROFILE,
   assertExternalConfirmations,
+  assertPublishableReleasePlan,
   collectLicensedComponents,
+  createSpdxDocument,
   deriveReleaseIdentity,
   normalizeLicense,
   planAssetUploads,
@@ -74,6 +78,8 @@ test('release identity derives and validates the canonical alpha tag', () => {
     'https://github.com/owner/cert-prep/releases/download/cert-prep-v0.1.0-alpha.1',
   );
   assert.equal(identity.channel, 'unsigned_public_alpha');
+  assert.equal(identity.distributionProfile, PUBLIC_UNSIGNED_ALPHA_PROFILE);
+  assert.equal(identity.publishable, true);
   assert.equal(identity.signed, false);
   assert.equal(identity.windowsMsiVersion, '0.1.0.1');
   assert.equal(identity.pythonRuntimeVersion, '3.12');
@@ -571,6 +577,43 @@ test('hardware evidence requires exact FastFlow attribution and four PDFs', () =
         'e'.repeat(64),
       ),
     /session restart evidence/,
+  );
+});
+
+test('publishable release plans require the exact public distribution pair', () => {
+  const publicPlan = deriveReleaseIdentity({
+    eventName: 'workflow_dispatch',
+    refName: 'main',
+    requestedVersion: '0.1.0-alpha.1',
+    repository: 'owner/cert-prep',
+    commitSha: sha,
+  });
+  assert.doesNotThrow(() => assertPublishableReleasePlan(publicPlan));
+  for (const rejected of [
+    {},
+    { ...publicPlan, publishable: false },
+    { ...publicPlan, distributionProfile: LOCAL_NONPUBLISHABLE_PROFILE },
+    { ...publicPlan, assetBaseUrl: 'file:///C:/runtime' },
+    { ...publicPlan, distributionProfile: 'public_alpha_typo' },
+  ]) {
+    assert.throws(() => assertPublishableReleasePlan(rejected));
+  }
+});
+
+test('local SPDX documents use a nonpublishable namespace', () => {
+  const local = createSpdxDocument(
+    {
+      version: '0.1.0-alpha.1',
+      tag: 'cert-prep-local-v0.1.0-alpha.1-aaaaaaaaaaaa',
+      repository: 'local/nonpublishable',
+      publishable: false,
+    },
+    [],
+    [],
+  );
+  assert.match(
+    local.documentNamespace,
+    /^https:\/\/local\.invalid\/cert-prep\//,
   );
 });
 

@@ -22,6 +22,8 @@ import {
 
 export const ALPHA_VERSION_PATTERN = /^\d+\.\d+\.\d+-alpha\.\d+$/;
 export const RELEASE_CHANNEL = 'unsigned_public_alpha';
+export const PUBLIC_UNSIGNED_ALPHA_PROFILE = 'public_unsigned_alpha';
+export const LOCAL_NONPUBLISHABLE_PROFILE = 'local_nonpublishable';
 export const RELEASE_TAG_PREFIX = 'cert-prep-v';
 export const TARGET_TRIPLE = 'x86_64-pc-windows-msvc';
 export const RELEASE_PYTHON_VERSION = '3.12';
@@ -37,6 +39,86 @@ export const HARDWARE_CANCELLATION_CHECKS = [
   'partialDataRemoved',
   'ownedProcessesReleased',
 ];
+
+export function assertSupportedDistributionPlan(plan) {
+  const version = String(plan?.version ?? '');
+  const commitSha = String(plan?.commitSha ?? '').toLowerCase();
+  const repository = String(plan?.repository ?? '');
+  const tag = String(plan?.tag ?? '');
+  const commonValid =
+    ALPHA_VERSION_PATTERN.test(version) &&
+    /^[0-9a-f]{40}$/.test(commitSha) &&
+    plan?.target === TARGET_TRIPLE &&
+    plan?.signed === false;
+  const isPublic =
+    commonValid &&
+    plan?.distributionProfile === PUBLIC_UNSIGNED_ALPHA_PROFILE &&
+    plan?.publishable === true &&
+    plan?.channel === RELEASE_CHANNEL &&
+    /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository) &&
+    tag === `${RELEASE_TAG_PREFIX}${version}` &&
+    plan?.assetBaseUrl ===
+      `https://github.com/${repository}/releases/download/${tag}`;
+  const isLocal =
+    commonValid &&
+    plan?.distributionProfile === LOCAL_NONPUBLISHABLE_PROFILE &&
+    plan?.publishable === false &&
+    plan?.channel === LOCAL_NONPUBLISHABLE_PROFILE &&
+    repository === 'local/nonpublishable' &&
+    tag === `cert-prep-local-v${version}-${commitSha.slice(0, 12)}` &&
+    isSafeLocalAssetBaseUrl(plan?.assetBaseUrl);
+  if (!isPublic && !isLocal) {
+    throw new Error(
+      'Release plan must declare an exact supported distribution profile.',
+    );
+  }
+  return plan;
+}
+
+function isSafeLocalAssetBaseUrl(rawUrl) {
+  if (typeof rawUrl !== 'string') return false;
+  try {
+    const url = new URL(rawUrl);
+    return (
+      url.protocol === 'file:' &&
+      !url.hostname &&
+      !url.username &&
+      !url.password &&
+      !url.search &&
+      !url.hash
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function assertPublishableReleasePlan(plan) {
+  assertSupportedDistributionPlan(plan);
+  if (
+    plan.distributionProfile !== PUBLIC_UNSIGNED_ALPHA_PROFILE ||
+    plan.publishable !== true
+  ) {
+    throw new Error(
+      'Local nonpublishable candidates cannot be finalized or published.',
+    );
+  }
+  return plan;
+}
+
+export function assertCandidateMatchesPlan(candidate, plan) {
+  for (const field of [
+    'version',
+    'tag',
+    'repository',
+    'commitSha',
+    'distributionProfile',
+    'publishable',
+  ]) {
+    if (candidate?.[field] !== plan?.[field]) {
+      throw new Error(`Candidate identity does not match release plan: ${field}.`);
+    }
+  }
+}
 
 const UNKNOWN_LICENSES = new Set([
   '',
@@ -153,6 +235,8 @@ export function deriveReleaseIdentity({
   return {
     schemaVersion: 1,
     channel: RELEASE_CHANNEL,
+    distributionProfile: PUBLIC_UNSIGNED_ALPHA_PROFILE,
+    publishable: true,
     version,
     tag,
     repository,
@@ -1019,7 +1103,10 @@ export function createSpdxDocument(
     dataLicense: 'CC0-1.0',
     SPDXID: 'SPDXRef-DOCUMENT',
     name: documentName ?? `cert-prep-${plan.version}`,
-    documentNamespace: `https://github.com/${plan.repository}/releases/${plan.tag}/spdx/${randomUUID()}`,
+    documentNamespace:
+      plan?.publishable === false
+        ? `https://local.invalid/cert-prep/${plan.tag}/spdx/${randomUUID()}`
+        : `https://github.com/${plan.repository}/releases/${plan.tag}/spdx/${randomUUID()}`,
     creationInfo: {
       created: new Date().toISOString(),
       creators: ['Tool: cert-prep-release-tools/1'],

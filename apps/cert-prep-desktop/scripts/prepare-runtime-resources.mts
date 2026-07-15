@@ -267,13 +267,22 @@ function releaseMetadata(
   backend: RuntimeManifest,
   windowsml: RuntimeManifest,
 ): object {
+  const localNonpublishable = mode === 'dev';
   return {
     schema_version: 1,
     version: ALPHA_VERSION,
     windows_msi_version: WINDOWS_MSI_VERSION,
     python_runtime_version: PYTHON_RUNTIME_VERSION,
-    release_tag: ALPHA_RELEASE_TAG,
-    channel: 'unsigned_public_alpha',
+    release_tag: localNonpublishable
+      ? `cert-prep-local-v${ALPHA_VERSION}`
+      : ALPHA_RELEASE_TAG,
+    channel: localNonpublishable
+      ? 'local_nonpublishable'
+      : 'unsigned_public_alpha',
+    distribution_profile: localNonpublishable
+      ? 'local_nonpublishable'
+      : 'public_unsigned_alpha',
+    publishable: !localNonpublishable,
     distribution_mode: mode,
     signed: false,
     platform: {
@@ -284,14 +293,18 @@ function releaseMetadata(
     },
     warnings: {
       smartscreen:
-        'This public Alpha is unsigned. Windows SmartScreen is expected to warn before installation.',
+        localNonpublishable
+          ? 'This local acceptance build is unsigned and cannot be published.'
+          : 'This public Alpha is unsigned. Windows SmartScreen is expected to warn before installation.',
       production_ready: false,
     },
     sha256_verification: {
       required: true,
       algorithm: 'SHA-256',
       instruction:
-        'Compare Get-FileHash -Algorithm SHA256 output with the SHA256SUMS.txt value published on the same GitHub Release.',
+        localNonpublishable
+          ? 'Compare the local WindowsML OCR ZIP with the SHA-256 value in its bundled manifest.'
+          : 'Compare Get-FileHash -Algorithm SHA256 output with the SHA256SUMS.txt value published on the same GitHub Release.',
     },
     runtime_assets: {
       backend: {
@@ -301,7 +314,9 @@ function releaseMetadata(
         bytes: backend.artifact.bytes,
       },
       windowsml_ocr: {
-        distribution: 'github_release_download',
+        distribution: localNonpublishable
+          ? 'local_file'
+          : 'github_release_download',
         file_name: windowsml.artifact.file_name,
         sha256: windowsml.artifact.sha256,
         bytes: windowsml.artifact.bytes,

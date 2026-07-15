@@ -15,8 +15,13 @@ import { basename, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import {
+  LOCAL_NONPUBLISHABLE_PROFILE,
+  PUBLIC_UNSIGNED_ALPHA_PROFILE,
   RELEASE_CHANNEL,
   TARGET_TRIPLE,
+  assertCandidateMatchesPlan,
+  assertPublishableReleasePlan,
+  assertSupportedDistributionPlan,
   collectLicensedComponents,
   copyInto,
   listFiles,
@@ -37,10 +42,11 @@ export async function assembleCandidate(args) {
   const outputRoot = resolve(args.output);
   const releaseRoot = join(outputRoot, 'release');
   const harnessRoot = join(outputRoot, 'harness');
+  const plan = readJson(resolve(args.plan));
+  assertSupportedDistributionPlan(plan);
   rmSync(outputRoot, { recursive: true, force: true });
   mkdirSync(releaseRoot, { recursive: true });
 
-  const plan = readJson(resolve(args.plan));
   const bundleRoot = resolve(args['bundle-root']);
   const generatedResources = resolve(args['generated-resources']);
   const ocrRuntimeRoot = resolve(args['ocr-runtime-root']);
@@ -230,6 +236,8 @@ export async function assembleCandidate(args) {
     tag: plan.tag,
     repository: plan.repository,
     commitSha: plan.commitSha,
+    distributionProfile: plan.distributionProfile,
+    publishable: plan.publishable,
     files: identities,
   });
   return { candidateId, releaseRoot, harnessRoot };
@@ -237,19 +245,19 @@ export async function assembleCandidate(args) {
 
 export async function finalizeRelease(args) {
   const candidateRoot = resolve(args.candidate);
+  const candidate = readJson(join(candidateRoot, 'candidate.json'));
+  await validateCandidateFiles(candidateRoot, candidate);
+  const sourcePlan = readJson(
+    join(candidateRoot, 'release', 'metadata', 'release-plan.json'),
+  );
+  assertPublishableReleasePlan(sourcePlan);
+  assertCandidateMatchesPlan(candidate, sourcePlan);
   const outputRoot = resolve(args.output);
   const releaseRoot = join(outputRoot, 'release');
   rmSync(outputRoot, { recursive: true, force: true });
   copyInto(join(candidateRoot, 'release'), releaseRoot);
   const plan = readJson(join(releaseRoot, 'metadata', 'release-plan.json'));
-  const candidate = readJson(join(candidateRoot, 'candidate.json'));
-  await validateCandidateFiles(candidateRoot, candidate);
-  if (
-    candidate.commitSha !== plan.commitSha ||
-    candidate.version !== plan.version
-  ) {
-    throw new Error('Candidate identity does not match release plan.');
-  }
+  assertCandidateMatchesPlan(candidate, plan);
 
   const hardwareRoot = resolve(args['hardware-evidence']);
   const hardwareResultPath = join(hardwareRoot, 'hardware-result.json');
@@ -513,14 +521,42 @@ async function validateRuntimeManifest({
   }
 }
 
-function validatePackageQa(report, plan) {
+export function validatePackageQa(report, plan) {
+  assertSupportedDistributionPlan(plan);
   const contract = report.package?.resource_contract;
+  if (
+    plan.distributionProfile === LOCAL_NONPUBLISHABLE_PROFILE &&
+    plan.publishable === false
+  ) {
+    if (
+      report.schema_version !== 3 ||
+      report.target?.rust_triple !== TARGET_TRIPLE ||
+      contract?.backend_bundled !== true ||
+      contract?.windowsml_ocr_bundled !== false ||
+      contract?.release_urls_only !== false ||
+      contract?.local_file_ocr_only !== true ||
+      contract?.distribution_profile !== LOCAL_NONPUBLISHABLE_PROFILE ||
+      contract?.publishable !== false ||
+      contract?.version !== plan.version ||
+      contract?.windows_msi_version !== plan.windowsMsiVersion ||
+      contract?.python_runtime_version !== plan.pythonRuntimeVersion ||
+      contract?.signed !== false ||
+      report.package?.size_gate?.status === 'failed'
+    ) {
+      throw new Error(
+        'Package QA report did not prove the local nonpublishable candidate contract.',
+      );
+    }
+    return;
+  }
   if (
     report.schema_version !== 3 ||
     report.target?.rust_triple !== TARGET_TRIPLE ||
     contract?.backend_bundled !== true ||
     contract?.windowsml_ocr_bundled !== false ||
     contract?.release_urls_only !== true ||
+    contract?.distribution_profile !== PUBLIC_UNSIGNED_ALPHA_PROFILE ||
+    contract?.publishable !== true ||
     contract?.version !== plan.version ||
     contract?.windows_msi_version !== plan.windowsMsiVersion ||
     contract?.python_runtime_version !== plan.pythonRuntimeVersion ||

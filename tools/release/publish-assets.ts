@@ -1,10 +1,22 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { basename, dirname, join, resolve } from 'node:path';
+import {
+  lstatSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 
 import {
+  HARDWARE_CANCELLATION_CHECKS,
+  assertCandidateMatchesPlan,
+  assertPublishableReleasePlan,
   listFiles,
   parseArgs,
   planAssetUploads,
@@ -14,13 +26,8 @@ import {
 } from './release-lib.ts';
 
 export async function publishAssets(args, gh = runGh) {
-  const plan = readJson(resolve(args.plan));
-  const mode = args.mode;
-  if (!['ocr', 'final', 'cleanup'].includes(mode))
-    throw new Error('--mode must be ocr, final, or cleanup.');
+  const { mode, plan, releaseRoot } = await validatePublishingInputs(args);
   if (mode === 'cleanup') return cleanupIncompleteRelease(plan, gh);
-
-  const releaseRoot = resolve(args['release-root']);
 
   const existingTagCommit = await resolveTagCommit(gh, plan, true);
   if (existingTagCommit && existingTagCommit !== plan.commitSha) {
@@ -116,7 +123,230 @@ export async function publishAssets(args, gh = runGh) {
   };
 }
 
+export async function validatePublishingInputs(args) {
+  const mode = args.mode;
+  if (!['ocr', 'final', 'cleanup'].includes(mode)) {
+    throw new Error('--mode must be ocr, final, or cleanup.');
+  }
+  if (
+    !args['candidate-root'] ||
+    !/^[0-9a-f]{64}$/i.test(args['candidate-id'] ?? '') ||
+    !args.plan
+  ) {
+    throw new Error(
+      'Publishing requires the downloaded candidate root, expected candidate ID, and release plan.',
+    );
+  }
+  const candidateRoot = resolve(args['candidate-root']);
+  const candidate = readJson(join(candidateRoot, 'candidate.json'));
+  await validateCandidateFiles(candidateRoot, candidate);
+  if (candidate.candidateId !== args['candidate-id'].toLowerCase()) {
+    throw new Error('Publishing candidate ID does not match workflow metadata.');
+  }
+
+  const embeddedPlanPath = join(
+    candidateRoot,
+    'release',
+    'metadata',
+    'release-plan.json',
+  );
+  const embeddedPlan = readJson(embeddedPlanPath);
+  assertPublishableReleasePlan(embeddedPlan);
+  assertCandidateMatchesPlan(candidate, embeddedPlan);
+
+  const planPath = resolve(args.plan);
+  let releaseRoot = null;
+  if (mode === 'cleanup') {
+    if (planPath !== embeddedPlanPath) {
+      throw new Error('Cleanup must use the candidate embedded release plan.');
+    }
+  } else {
+    if (!args['release-root']) {
+      throw new Error('Publishing assets requires --release-root.');
+    }
+    releaseRoot = resolve(args['release-root']);
+    const expectedPlanPath = join(releaseRoot, 'metadata', 'release-plan.json');
+    if (planPath !== expectedPlanPath) {
+      throw new Error('Release plan must be embedded in the selected release root.');
+    }
+    if (
+      mode === 'ocr' &&
+      releaseRoot !== join(candidateRoot, 'release')
+    ) {
+      throw new Error('OCR bootstrap must publish the exact candidate release root.');
+    }
+  }
+
+  const plan = readJson(planPath);
+  assertPublishableReleasePlan(plan);
+  assertCandidateMatchesPlan(candidate, plan);
+  if (!isDeepStrictEqual(plan, embeddedPlan)) {
+    throw new Error('Selected release plan differs from the candidate plan.');
+  }
+  if (mode === 'final') {
+    await validateFinalReleaseRoot(releaseRoot, embeddedPlan, candidate);
+  }
+  return { mode, plan, releaseRoot, candidate };
+}
+
+export async function validateFinalReleaseRoot(releaseRoot, plan, candidate) {
+  const metadataPath = join(
+    releaseRoot,
+    'metadata',
+    'release-metadata.json',
+  );
+  const metadata = readJson(metadataPath);
+  if (metadata.evidence?.candidateId !== candidate.candidateId) {
+    throw new Error('Final release metadata does not bind the candidate ID.');
+  }
+  for (const [key, value] of Object.entries(plan)) {
+    if (!isDeepStrictEqual(metadata[key], value)) {
+      throw new Error(`Final release metadata differs from its plan: ${key}.`);
+    }
+  }
+  const evidence = metadata.evidence;
+  const cancellationKeys = Object.keys(evidence.cancellationReports ?? {}).sort();
+  if (
+    evidence.cleanInstall !== 'passed-msi-and-nsis' ||
+    !Array.isArray(evidence.cleanInstallReports) ||
+    evidence.cleanInstallReports.length !== 2 ||
+    evidence.hardware !== 'passed-cert-prep-alpha-hardware' ||
+    !/^[0-9a-f]{64}$/i.test(evidence.hardwareResultSha256 ?? '') ||
+    !/^[0-9a-f]{64}$/i.test(evidence.recordingProbeSha256 ?? '') ||
+    !/^[0-9a-f]{64}$/i.test(evidence.recordingSha256 ?? '') ||
+    !/^[0-9a-f]{64}$/i.test(evidence.hardwareHarnessSha256 ?? '') ||
+    typeof evidence.acceptanceRunId !== 'string' ||
+    evidence.acceptanceRunId.trim() === '' ||
+    !isDeepStrictEqual(cancellationKeys, [...HARDWARE_CANCELLATION_CHECKS].sort()) ||
+    cancellationKeys.some(
+      (key) => !/^[0-9a-f]{64}$/i.test(evidence.cancellationReports[key] ?? ''),
+    )
+  ) {
+    throw new Error('Final release metadata lacks completed acceptance evidence.');
+  }
+
+  if (!Array.isArray(metadata.artifacts) || metadata.artifacts.length === 0) {
+    throw new Error('Final release metadata has no artifact inventory.');
+  }
+  const artifacts = new Map();
+  const artifactNames = new Set();
+  for (const artifact of metadata.artifacts) {
+    const path = String(artifact?.path ?? '').replaceAll('\\', '/');
+    const name = String(artifact?.fileName ?? '');
+    if (
+      !path ||
+      path.startsWith('/') ||
+      path.split('/').includes('..') ||
+      isAbsolute(path) ||
+      name !== basename(path) ||
+      artifacts.has(path) ||
+      artifactNames.has(name.toLowerCase()) ||
+      !Number.isSafeInteger(artifact?.bytes) ||
+      artifact.bytes < 1 ||
+      !/^[0-9a-f]{64}$/i.test(artifact?.sha256 ?? '')
+    ) {
+      throw new Error('Final release artifact inventory is invalid.');
+    }
+    artifacts.set(path, artifact);
+    artifactNames.add(name.toLowerCase());
+  }
+
+  const actualFiles = listSafeReleaseFiles(releaseRoot);
+  const expectedPaths = new Set([
+    ...artifacts.keys(),
+    'metadata/release-metadata.json',
+    'SHA256SUMS',
+  ]);
+  if (
+    actualFiles.size !== expectedPaths.size ||
+    [...actualFiles.keys()].some((path) => !expectedPaths.has(path))
+  ) {
+    throw new Error('Final release contains missing or undeclared files.');
+  }
+  for (const [path, artifact] of artifacts) {
+    const file = actualFiles.get(path);
+    if (
+      statSync(file).size !== artifact.bytes ||
+      (await sha256File(file)) !== artifact.sha256.toLowerCase()
+    ) {
+      throw new Error(`Final release artifact does not match metadata: ${path}.`);
+    }
+  }
+  await validateCandidateReleaseFiles(candidate, actualFiles);
+  await validateChecksumManifest(releaseRoot, actualFiles);
+  return metadata;
+}
+
+async function validateCandidateReleaseFiles(candidate, actualFiles) {
+  const mutable = /^(?:SHA256SUMS|metadata\/(?:release-metadata|license-inventory|cert-prep-alpha(?:-[a-z0-9-]+)?\.(?:spdx|cdx))\.json)$/;
+  for (const identity of candidate.files) {
+    const match = String(identity).match(/^release\/([^:]+):([0-9a-f]{64})$/i);
+    if (!match || mutable.test(match[1])) continue;
+    const file = actualFiles.get(match[1]);
+    if (!file || (await sha256File(file)) !== match[2].toLowerCase()) {
+      throw new Error(`Final release changed candidate file: ${match[1]}.`);
+    }
+  }
+}
+
+async function validateChecksumManifest(releaseRoot, actualFiles) {
+  const checksumPath = join(releaseRoot, 'SHA256SUMS');
+  const lines = readFileSync(checksumPath, 'utf8')
+    .split(/\r?\n/)
+    .filter(Boolean);
+  const expectedFiles = [...actualFiles.entries()].filter(
+    ([path]) => path !== 'SHA256SUMS',
+  );
+  if (lines.length !== expectedFiles.length) {
+    throw new Error('Final SHA256SUMS does not cover the exact release files.');
+  }
+  const byName = new Map(
+    expectedFiles.map(([path, file]) => [basename(path).toLowerCase(), file]),
+  );
+  if (byName.size !== expectedFiles.length) {
+    throw new Error('Final release file basenames are not unique.');
+  }
+  const seen = new Set();
+  for (const line of lines) {
+    const match = line.match(/^([0-9a-f]{64}) \*([^\\/]+)$/i);
+    const name = match?.[2]?.toLowerCase();
+    const file = name ? byName.get(name) : null;
+    if (!match || !file || seen.has(name)) {
+      throw new Error('Final SHA256SUMS contains an invalid file entry.');
+    }
+    seen.add(name);
+    if ((await sha256File(file)) !== match[1].toLowerCase()) {
+      throw new Error(`Final SHA256SUMS digest mismatch: ${match[2]}.`);
+    }
+  }
+}
+
+function listSafeReleaseFiles(root, prefix = '') {
+  const files = new Map();
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    const path = join(root, entry.name);
+    const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isSymbolicLink() || lstatSync(path).isSymbolicLink()) {
+      throw new Error(`Final release contains a symbolic link: ${relativePath}.`);
+    }
+    if (entry.isDirectory()) {
+      for (const [childPath, child] of listSafeReleaseFiles(
+        path,
+        relativePath,
+      )) {
+        files.set(childPath, child);
+      }
+    } else if (entry.isFile()) {
+      files.set(relativePath.split(sep).join('/'), path);
+    } else {
+      throw new Error(`Final release contains an unsafe entry: ${relativePath}.`);
+    }
+  }
+  return files;
+}
+
 export async function cleanupIncompleteRelease(plan, gh = runGh) {
+  assertPublishableReleasePlan(plan);
   const existingTagCommit = await resolveTagCommit(gh, plan, true);
   if (!existingTagCommit) return { deleted: false };
   if (existingTagCommit !== plan.commitSha) {
@@ -273,22 +503,6 @@ function runGh(args, { allowMissing = false } = {}) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const candidateRoot = resolve(args['candidate-root'] ?? '');
-  if (
-    !args['candidate-root'] ||
-    !/^[0-9a-f]{64}$/i.test(args['candidate-id'] ?? '')
-  ) {
-    throw new Error(
-      'Publishing requires the downloaded candidate root and expected candidate ID.',
-    );
-  }
-  const candidate = readJson(join(candidateRoot, 'candidate.json'));
-  await validateCandidateFiles(candidateRoot, candidate);
-  if (candidate.candidateId !== args['candidate-id'].toLowerCase()) {
-    throw new Error(
-      'Publishing candidate ID does not match workflow metadata.',
-    );
-  }
   await publishAssets(args);
 }
 
