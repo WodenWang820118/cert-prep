@@ -174,6 +174,9 @@ importers:
       nx:
         specifier: 22.7.5
         version: 22.7.5(@swc-node/register@1.11.1(@swc/core@1.15.8(@swc/helpers@0.5.18))(@swc/types@0.1.26)(typescript@5.9.3))(@swc/core@1.15.8(@swc/helpers@0.5.18))
+      playwright:
+        specifier: ^1.36.0
+        version: 1.60.0
       prettier:
         specifier: ^3.8.1
         version: 3.8.3
