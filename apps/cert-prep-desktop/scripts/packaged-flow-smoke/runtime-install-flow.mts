@@ -102,7 +102,7 @@ export async function installOcrRuntimeIfNeeded(run: SmokeRunState): Promise<voi
 }
 
 export function pythonRuntimeReadyPattern(): RegExp {
-  return /(?:^|\r?\n)[^\S\r\n]*Python backend runtime is (?:ready|running|already running)\.[^\S\r\n]*(?=\r?\n|$)/i;
+  return /(?:^|\r?\n)[^\S\r\n]*(?:Python backend runtime is (?:ready|running|already running)\.|Python \d+\.\d+(?:\.\d+)? \/ packaged)[^\S\r\n]*(?=\r?\n|$)/i;
 }
 
 function ocrInstallablePattern(): RegExp {
