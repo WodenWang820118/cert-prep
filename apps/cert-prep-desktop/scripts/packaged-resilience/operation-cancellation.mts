@@ -17,6 +17,9 @@ interface CancelableOperationScenarioBase {
   readonly operationPath: (operationId: string) => string;
   readonly startData?: unknown;
   readonly timeoutMs: number;
+  readonly afterCanceled?: (
+    terminalResponse: Readonly<Record<string, unknown>>,
+  ) => Promise<Readonly<Record<string, unknown>>>;
 }
 
 export type CancelableOperationScenario =
@@ -86,6 +89,9 @@ export async function runCancelableOperationScenario(
   if (terminalResponse.cancellable !== false) {
     throw new Error(`${scenario.kind} canceled terminal remained cancellable.`);
   }
+  const canceledState = scenario.afterCanceled
+    ? await scenario.afterCanceled(terminalResponse)
+    : undefined;
 
   const commitStart = exactOperation(
     requireJsonObject(
@@ -157,6 +163,7 @@ export async function runCancelableOperationScenario(
     operationId,
     cancelResponse,
     terminalResponse,
+    ...(canceledState ? { canceledState } : {}),
     nonCancellableResponse: {
       operationId: commitOperationId,
       commitStartedAt,

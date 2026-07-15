@@ -100,6 +100,57 @@ test('records a live committing draft response and exact 409 rejection', async (
   transport.assertConsumed();
 });
 
+test('proves canceled state before starting the non-cancellable commit probe', async () => {
+  let transport: ScriptedTransport | null = null;
+  const scenario: CancelableOperationScenario = {
+    kind: 'model',
+    startPath: '/llm/model-downloads',
+    operationPath: (operationId) => `/llm/model-downloads/${operationId}`,
+    provider: 'ollama',
+    model: 'qwen3.5:4b',
+    timeoutMs: 1_000,
+    afterCanceled: async (terminalResponse) => {
+      assert.equal(terminalResponse.status, 'canceled');
+      assert.ok(transport);
+      const clean = await transport.request('GET', '/isolated-ollama/clean');
+      assert.deepEqual(clean.body, { modelNames: [] });
+      return {
+        observationWindowMs: 1_000,
+        immediate: clean.body as Record<string, unknown>,
+        afterWindow: clean.body as Record<string, unknown>,
+      };
+    },
+  };
+  const scope = { provider: scenario.provider, model: scenario.model };
+  const observedResponse = operation(
+    'commit-operation',
+    'running',
+    'committing',
+    false,
+    scope,
+    '2026-07-14T00:00:05.000Z',
+  );
+  const requests = successfulRequests(scenario, scope, observedResponse, {
+    status: 409,
+    body: { code: 'operation_not_cancellable' },
+  });
+  requests.splice(3, 0, {
+    method: 'GET',
+    path: '/isolated-ollama/clean',
+    response: { status: 200, body: { modelNames: [] } },
+  });
+  transport = new ScriptedTransport(requests);
+
+  const proof = await runCancelableOperationScenario(transport, scenario);
+
+  assert.deepEqual(proof.canceledState, {
+    observationWindowMs: 1_000,
+    immediate: { modelNames: [] },
+    afterWindow: { modelNames: [] },
+  });
+  transport.assertConsumed();
+});
+
 test('consumes an already completed runtime commit transition before rejecting cancel', async () => {
   const scenario: CancelableOperationScenario = {
     kind: 'runtime',

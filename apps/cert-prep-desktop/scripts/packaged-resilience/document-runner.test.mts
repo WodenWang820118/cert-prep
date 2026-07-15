@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   readdirSync,
   rmSync,
   writeFileSync,
@@ -73,6 +74,32 @@ test('document runner publishes exactly five candidate-bound files after cleanup
       ),
       false,
     );
+    for (const check of [
+      'upload',
+      'ocr',
+      'cancelVsCompleteRace',
+      'crashRecovery',
+      'partialDataRemoved',
+    ] as const) {
+      const artifact = JSON.parse(
+        readFileSync(
+          join(fixture.options.outputRoot, 'cancellation', `${check}.json`),
+          'utf8',
+        ),
+      ) as { proof: { installationBinding: unknown } };
+      assert.deepEqual(artifact.proof.installationBinding, {
+        receiptSha256: fixture.options.installation.receiptSha256,
+        packageKind: fixture.options.installation.packageKind,
+        installerRelativePath:
+          fixture.options.installation.installerRelativePath,
+        installerSha256: fixture.options.installation.installerSha256,
+        installedExeName: fixture.options.installation.installedExeName,
+        installedExeBytes: fixture.options.installation.installedExeBytes,
+        installedExeSha256:
+          fixture.options.installation.installedExeSha256,
+        installedAt: fixture.options.installation.installedAt,
+      });
+    }
     assert.deepEqual(events, [
       'launch',
       'python-runtime',
@@ -289,7 +316,11 @@ function documentProofs(): DocumentCancellationProofs {
 }
 
 function proof(check: ResilienceCheck): Record<string, unknown> {
-  return buildValidResilienceEvidence(check).proof as Record<string, unknown>;
+  const value = {
+    ...(buildValidResilienceEvidence(check).proof as Record<string, unknown>),
+  };
+  delete value.installationBinding;
+  return value;
 }
 
 interface RunnerFixture {

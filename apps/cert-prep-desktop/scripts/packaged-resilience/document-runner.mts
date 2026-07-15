@@ -457,7 +457,26 @@ function envelope(
     startedAt,
     completedAt,
     observations,
-    proof,
+    proof: withInstallation(options, proof),
+  };
+}
+
+function withInstallation(
+  options: DocumentCancellationRunnerOptions,
+  proof: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+  return {
+    ...proof,
+    installationBinding: {
+      receiptSha256: options.installation.receiptSha256,
+      packageKind: options.installation.packageKind,
+      installerRelativePath: options.installation.installerRelativePath,
+      installerSha256: options.installation.installerSha256,
+      installedExeName: options.installation.installedExeName,
+      installedExeBytes: options.installation.installedExeBytes,
+      installedExeSha256: options.installation.installedExeSha256,
+      installedAt: options.installation.installedAt,
+    },
   };
 }
 

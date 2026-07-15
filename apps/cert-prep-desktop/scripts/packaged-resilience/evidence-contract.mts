@@ -22,6 +22,17 @@ export interface CandidateBinding {
   readonly harnessSha256: string;
 }
 
+export interface InstallationBinding {
+  readonly receiptSha256: string;
+  readonly packageKind: 'msi' | 'nsis';
+  readonly installerRelativePath: string;
+  readonly installerSha256: string;
+  readonly installedExeName: string;
+  readonly installedExeBytes: number;
+  readonly installedExeSha256: string;
+  readonly installedAt: string;
+}
+
 export interface EvidenceObservation {
   readonly at: string;
   readonly event: string;
@@ -93,6 +104,11 @@ const RUN_ID_PATTERN = /^[A-Za-z0-9._-]{8,128}$/;
 const VERSION_PATTERN = /^\d+\.\d+\.\d+-alpha\.\d+$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/i;
 const COMMIT_SHA_PATTERN = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/i;
+const WINDOWSML_RUNTIME_KIND = 'windowsml_ocr';
+const WINDOWSML_RUNTIME_PROVIDER = 'windowsml';
+const WINDOWSML_RUNTIME_MODEL = 'pp-ocrv6-medium-windowsml';
+const OLLAMA_PROVIDER = 'ollama';
+const OLLAMA_MODEL = 'qwen3.5:4b';
 
 export function validateResilienceEvidence(
   value: unknown,
@@ -161,8 +177,73 @@ function validateEnvelope(
     completedAt,
     expectedCheck,
   );
-  record(detail.proof, `${expectedCheck} proof`);
+  const proof = record(detail.proof, `${expectedCheck} proof`);
+  const installation = validateInstallationBinding(
+    proof.installationBinding,
+    expectedCheck,
+  );
+  if (Date.parse(installation.installedAt) > startedAt) {
+    fail(expectedCheck, 'installationBinding.installedAt must not be after evidence startedAt');
+  }
   return { detail, startedAt, completedAt };
+}
+
+function validateInstallationBinding(
+  raw: unknown,
+  check: string,
+): InstallationBinding {
+  const binding = record(raw, `${check} installationBinding`);
+  const receiptSha256 = sha256Field(
+    binding.receiptSha256,
+    check,
+    'installationBinding.receiptSha256',
+  );
+  if (binding.packageKind !== 'msi' && binding.packageKind !== 'nsis') {
+    fail(check, 'installationBinding.packageKind must be msi or nsis');
+  }
+  const installerRelativePath = safeRelativePath(
+    binding.installerRelativePath,
+    check,
+    'installationBinding.installerRelativePath',
+  );
+  const installerSha256 = sha256Field(
+    binding.installerSha256,
+    check,
+    'installationBinding.installerSha256',
+  );
+  const installedExeName = nonEmptyString(
+    binding.installedExeName,
+    check,
+    'installationBinding.installedExeName',
+  );
+  if (
+    !installedExeName.toLowerCase().endsWith('.exe') ||
+    installedExeName.includes('/') ||
+    installedExeName.includes('\\')
+  ) {
+    fail(check, 'installationBinding.installedExeName must be an executable file name');
+  }
+  const installedExeBytes = positiveInteger(binding.installedExeBytes);
+  const installedExeSha256 = sha256Field(
+    binding.installedExeSha256,
+    check,
+    'installationBinding.installedExeSha256',
+  );
+  const installedAt = timestampText(
+    binding.installedAt,
+    check,
+    'installationBinding.installedAt',
+  );
+  return {
+    receiptSha256,
+    packageKind: binding.packageKind,
+    installerRelativePath,
+    installerSha256,
+    installedExeName,
+    installedExeBytes,
+    installedExeSha256,
+    installedAt,
+  };
 }
 
 function validateCandidate(
@@ -387,10 +468,18 @@ function validateScopedCancellationProof(
     ? scopedId(proof.documentId, check, 'documentId')
     : undefined;
   const kind = check === 'runtime'
-    ? nonEmptyString(proof.kind, check, 'kind')
+    ? exactString(proof.kind, WINDOWSML_RUNTIME_KIND, check, 'kind')
     : undefined;
-  const provider = nonEmptyString(proof.provider, check, 'provider');
-  const model = nonEmptyString(proof.model, check, 'model');
+  const provider = check === 'runtime'
+    ? exactString(proof.provider, WINDOWSML_RUNTIME_PROVIDER, check, 'provider')
+    : check === 'draft' || check === 'model'
+      ? exactString(proof.provider, OLLAMA_PROVIDER, check, 'provider')
+      : undefined;
+  const model = check === 'runtime'
+    ? exactString(proof.model, WINDOWSML_RUNTIME_MODEL, check, 'model')
+    : check === 'draft' || check === 'model'
+      ? exactString(proof.model, OLLAMA_MODEL, check, 'model')
+      : undefined;
   const expectedScope = { projectId, documentId, kind, provider, model };
   const operationId = operationIdField(proof.operationId, check, 'operationId');
   const cancel = operationSnapshot(proof.cancelResponse, check, {
@@ -458,6 +547,158 @@ function validateScopedCancellationProof(
     (rejectionDetail.code ?? rejectionBody.code) !== 'operation_not_cancellable'
   ) {
     fail(check, 'cancel or non-cancellable commit evidence is incomplete');
+  }
+  validateScenarioTransition(proof, check);
+}
+
+function validateScenarioTransition(
+  proof: Record<string, unknown>,
+  check: 'draft' | 'runtime' | 'model',
+): void {
+  const canceledState = record(proof.canceledState, `${check} canceledState`);
+  if (positiveInteger(canceledState.observationWindowMs) < 1_000) {
+    fail(check, 'canceledState.observationWindowMs must be at least 1000');
+  }
+  const immediate = record(
+    canceledState.immediate,
+    `${check} canceledState.immediate`,
+  );
+  const afterWindow = record(
+    canceledState.afterWindow,
+    `${check} canceledState.afterWindow`,
+  );
+  switch (check) {
+    case 'draft':
+      validateDraftTransition(proof, immediate, afterWindow);
+      return;
+    case 'runtime':
+      validateRuntimeTransition(proof, immediate, afterWindow);
+      return;
+    case 'model':
+      validateModelTransition(proof, immediate, afterWindow);
+      return;
+  }
+}
+
+function validateDraftTransition(
+  proof: Record<string, unknown>,
+  immediate: Record<string, unknown>,
+  afterWindow: Record<string, unknown>,
+): void {
+  const uploadTriggeredJobs = record(
+    proof.uploadTriggeredJobs,
+    'draft uploadTriggeredJobs',
+  );
+  const jobCount = positiveInteger(uploadTriggeredJobs.jobCount);
+  const statuses = stringArray(uploadTriggeredJobs.statuses);
+  if (
+    statuses.length !== jobCount ||
+    !statuses.every((status) => status === 'skipped_missing_model') ||
+    nonNegativeInteger(uploadTriggeredJobs.usableDraftCount) !== 0 ||
+    nonNegativeInteger(proof.usableDraftCountBeforeManual) !== 0 ||
+    nonNegativeInteger(immediate.usableDraftCount) !== 0 ||
+    nonNegativeInteger(afterWindow.usableDraftCount) !== 0 ||
+    positiveInteger(proof.usableDraftCountAfterManual) < 2
+  ) {
+    fail('draft', 'draft cancellation and manual publish transition is incomplete');
+  }
+}
+
+function validateRuntimeTransition(
+  proof: Record<string, unknown>,
+  immediate: Record<string, unknown>,
+  afterWindow: Record<string, unknown>,
+): void {
+  validateUnavailableRuntimeRequirement(proof.requirementBefore, 'requirementBefore');
+  validateUnavailableRuntimeRequirement(immediate, 'canceledState.immediate');
+  validateUnavailableRuntimeRequirement(afterWindow, 'canceledState.afterWindow');
+  const requirementAfter = record(
+    proof.requirementAfter,
+    'runtime requirementAfter',
+  );
+  if (
+    requirementAfter.kind !== WINDOWSML_RUNTIME_KIND ||
+    requirementAfter.available !== true
+  ) {
+    fail('runtime', 'runtime installation transition is incomplete');
+  }
+  safeRelativePath(
+    requirementAfter.installedPathRelative,
+    'runtime',
+    'requirementAfter.installedPathRelative',
+  );
+}
+
+function validateUnavailableRuntimeRequirement(
+  raw: unknown,
+  field: string,
+): void {
+  const requirement = record(raw, `runtime ${field}`);
+  if (
+    requirement.kind !== WINDOWSML_RUNTIME_KIND ||
+    requirement.available !== false
+  ) {
+    fail('runtime', `${field} must be an unavailable WindowsML OCR requirement`);
+  }
+  nonEmptyString(
+    requirement.unavailableReason,
+    'runtime',
+    `${field}.unavailableReason`,
+  );
+}
+
+function validateModelTransition(
+  proof: Record<string, unknown>,
+  immediate: Record<string, unknown>,
+  afterWindow: Record<string, unknown>,
+): void {
+  validateOllamaTags(proof.tagsBefore, false, 'tagsBefore');
+  validateOllamaHealth(proof.healthBefore, false, 'healthBefore');
+  validateOllamaCanceledSnapshot(immediate, 'canceledState.immediate');
+  validateOllamaCanceledSnapshot(afterWindow, 'canceledState.afterWindow');
+  validateOllamaTags(proof.tagsAfter, true, 'tagsAfter');
+  validateOllamaHealth(proof.healthAfter, true, 'healthAfter');
+}
+
+function validateOllamaCanceledSnapshot(
+  snapshot: Record<string, unknown>,
+  field: string,
+): void {
+  validateOllamaTags(snapshot.tags, false, `${field}.tags`);
+  validateOllamaHealth(snapshot.health, false, `${field}.health`);
+}
+
+function validateOllamaTags(
+  raw: unknown,
+  installed: boolean,
+  field: string,
+): void {
+  const tags = record(raw, `model ${field}`);
+  const modelNames = stringArray(tags.modelNames);
+  if (
+    (!installed && modelNames.length !== 0) ||
+    (installed &&
+      (modelNames.length !== 1 || modelNames[0] !== OLLAMA_MODEL))
+  ) {
+    fail('model', `${field} does not prove the exact isolated Ollama model set`);
+  }
+}
+
+function validateOllamaHealth(
+  raw: unknown,
+  available: boolean,
+  field: string,
+): void {
+  const health = record(raw, `model ${field}`);
+  if (
+    health.provider !== OLLAMA_PROVIDER ||
+    health.model !== OLLAMA_MODEL ||
+    health.available !== available ||
+    (available
+      ? health.unavailableReason !== null || health.effectiveModel !== OLLAMA_MODEL
+      : health.unavailableReason !== 'model_missing' || health.effectiveModel !== null)
+  ) {
+    fail('model', `${field} does not prove the exact Ollama health state`);
   }
 }
 
@@ -689,6 +930,45 @@ function nonEmptyString(
     fail(check, `${field} must be a non-empty string`);
   }
   return String(value).trim();
+}
+
+function exactString(
+  value: unknown,
+  expected: string,
+  check: string,
+  field: string,
+): string {
+  const normalized = nonEmptyString(value, check, field);
+  if (normalized !== expected) {
+    fail(check, `${field} must equal ${expected}`);
+  }
+  return normalized;
+}
+
+function sha256Field(value: unknown, check: string, field: string): string {
+  const normalized = nonEmptyString(value, check, field);
+  if (!SHA256_PATTERN.test(normalized)) {
+    fail(check, `${field} must be a SHA-256 digest`);
+  }
+  return normalized;
+}
+
+function safeRelativePath(
+  value: unknown,
+  check: string,
+  field: string,
+): string {
+  const normalized = nonEmptyString(value, check, field).replaceAll('\\', '/');
+  const segments = normalized.split('/');
+  if (
+    normalized.startsWith('/') ||
+    /^[A-Za-z]:/.test(normalized) ||
+    normalized.includes('\0') ||
+    segments.some((segment) => segment === '' || segment === '.' || segment === '..')
+  ) {
+    fail(check, `${field} must be a safe relative path`);
+  }
+  return normalized;
 }
 
 function scopedId(value: unknown, check: string, field: string): string {

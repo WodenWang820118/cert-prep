@@ -1,5 +1,6 @@
 import type {
   CandidateBinding,
+  InstallationBinding,
   ResilienceCheck,
 } from './evidence-contract.mts';
 
@@ -9,6 +10,17 @@ export const FIXTURE_CANDIDATE: CandidateBinding = {
   tag: 'cert-prep-v0.1.0-alpha.1',
   commitSha: 'a'.repeat(40),
   harnessSha256: 'c'.repeat(64),
+};
+
+export const FIXTURE_INSTALLATION_BINDING: InstallationBinding = {
+  receiptSha256: 'd'.repeat(64),
+  packageKind: 'msi',
+  installerRelativePath: 'release/installers/Cert Prep.msi',
+  installerSha256: 'b'.repeat(64),
+  installedExeName: 'Cert Prep.exe',
+  installedExeBytes: 20,
+  installedExeSha256: 'f'.repeat(64),
+  installedAt: '2026-07-11T00:55:00.000Z',
 };
 
 export interface EvidenceFixtureOptions {
@@ -46,7 +58,10 @@ export function buildValidResilienceEvidence(
         event: `${check}.verified`,
       },
     ],
-    proof: validProof(check, commitStartedAt),
+    proof: {
+      ...validProof(check, commitStartedAt),
+      installationBinding: FIXTURE_INSTALLATION_BINDING,
+    },
   };
 }
 
@@ -75,6 +90,7 @@ export function buildValidSessionRestartEvidence(
       },
     ],
     proof: {
+      installationBinding: FIXTURE_INSTALLATION_BINDING,
       projectId: 'project-1',
       sessionId: 'session-1',
       answeredBeforeFirstRestart: 1,
@@ -168,40 +184,97 @@ function validProof(
     };
   }
   if (check === 'draft') {
-    return cancellationProof(
-      {
-        projectId,
-        documentId,
-        provider: 'fake',
-        model: 'fixture-draft-model',
+    return {
+      ...cancellationProof(
+        {
+          projectId,
+          documentId,
+          provider: 'ollama',
+          model: 'qwen3.5:4b',
+        },
+        operationId,
+        cancel,
+        terminal,
+        commitStartedAt,
+      ),
+      canceledState: {
+        observationWindowMs: 2_000,
+        immediate: { usableDraftCount: 0 },
+        afterWindow: { usableDraftCount: 0 },
       },
-      operationId,
-      cancel,
-      terminal,
-      commitStartedAt,
-    );
+      uploadTriggeredJobs: {
+        jobCount: 2,
+        statuses: ['skipped_missing_model', 'skipped_missing_model'],
+        usableDraftCount: 0,
+      },
+      usableDraftCountBeforeManual: 0,
+      usableDraftCountAfterManual: 2,
+    };
   }
   if (check === 'runtime') {
-    return cancellationProof(
-      {
-        kind: 'windowsml_ocr',
-        provider: 'windowsml',
-        model: 'fixture-runtime-model',
+    const unavailableRequirement = {
+      kind: 'windowsml_ocr',
+      available: false,
+      unavailableReason: 'runtime_not_installed',
+    };
+    return {
+      ...cancellationProof(
+        {
+          kind: 'windowsml_ocr',
+          provider: 'windowsml',
+          model: 'pp-ocrv6-medium-windowsml',
+        },
+        operationId,
+        operation(operationId, 'cancel_requested', 'canceling', false),
+        operation(operationId, 'canceled', 'canceled', false),
+        commitStartedAt,
+      ),
+      requirementBefore: unavailableRequirement,
+      canceledState: {
+        observationWindowMs: 2_000,
+        immediate: unavailableRequirement,
+        afterWindow: unavailableRequirement,
       },
-      operationId,
-      operation(operationId, 'cancel_requested', 'canceling', false),
-      operation(operationId, 'canceled', 'canceled', false),
-      commitStartedAt,
-    );
+      requirementAfter: {
+        kind: 'windowsml_ocr',
+        available: true,
+        installedPathRelative: 'runtimes/windowsml-ocr',
+      },
+    };
   }
   if (check === 'model') {
-    return cancellationProof(
-      { provider: 'ollama', model: 'qwen3.5:4b' },
-      operationId,
-      operation(operationId, 'cancel_requested', 'canceling', false),
-      operation(operationId, 'canceled', 'canceled', false),
-      commitStartedAt,
-    );
+    const missingTags = { modelNames: [] };
+    const missingHealth = {
+      provider: 'ollama',
+      model: 'qwen3.5:4b',
+      available: false,
+      unavailableReason: 'model_missing',
+      effectiveModel: null,
+    };
+    return {
+      ...cancellationProof(
+        { provider: 'ollama', model: 'qwen3.5:4b' },
+        operationId,
+        operation(operationId, 'cancel_requested', 'canceling', false),
+        operation(operationId, 'canceled', 'canceled', false),
+        commitStartedAt,
+      ),
+      tagsBefore: missingTags,
+      healthBefore: missingHealth,
+      canceledState: {
+        observationWindowMs: 2_000,
+        immediate: { tags: missingTags, health: missingHealth },
+        afterWindow: { tags: missingTags, health: missingHealth },
+      },
+      tagsAfter: { modelNames: ['qwen3.5:4b'] },
+      healthAfter: {
+        provider: 'ollama',
+        model: 'qwen3.5:4b',
+        available: true,
+        unavailableReason: null,
+        effectiveModel: 'qwen3.5:4b',
+      },
+    };
   }
   if (check === 'cancelVsCompleteRace') {
     return {

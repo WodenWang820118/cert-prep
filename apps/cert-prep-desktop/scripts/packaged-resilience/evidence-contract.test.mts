@@ -6,6 +6,7 @@ import {
   validateResilienceEvidence,
   validateSessionRestartEvidence,
   type CandidateBinding,
+  type InstallationBinding,
   type ResilienceCheck,
 } from './evidence-contract.mts';
 
@@ -15,6 +16,17 @@ const candidate: CandidateBinding = {
   tag: 'cert-prep-v0.1.0-alpha.1',
   commitSha: 'b'.repeat(40),
   harnessSha256: 'c'.repeat(64),
+};
+
+const installationBinding: InstallationBinding = {
+  receiptSha256: 'd'.repeat(64),
+  packageKind: 'msi',
+  installerRelativePath: 'release/installers/Cert Prep.msi',
+  installerSha256: 'e'.repeat(64),
+  installedExeName: 'Cert Prep.exe',
+  installedExeBytes: 1_024,
+  installedExeSha256: 'f'.repeat(64),
+  installedAt: '2026-07-13T23:55:00.000Z',
 };
 
 const context = {
@@ -73,6 +85,74 @@ test('candidate, acceptance run, evidence window, and structured observations fa
         context,
       ),
     /observation 0 must be an object/,
+  );
+});
+
+test('every resilience and session proof requires a structurally valid installation binding', () => {
+  for (const check of RESILIENCE_CHECKS) {
+    const evidence = validEvidence(check);
+    const proof = { ...(evidence.proof as Record<string, unknown>) };
+    delete proof.installationBinding;
+    assert.throws(
+      () =>
+        validateResilienceEvidence(
+          { ...evidence, proof },
+          check,
+          context,
+        ),
+      /installationBinding must be an object/,
+    );
+  }
+
+  const session = validSessionRestartEvidence();
+  const sessionProof = { ...(session.proof as Record<string, unknown>) };
+  delete sessionProof.installationBinding;
+  assert.throws(
+    () =>
+      validateSessionRestartEvidence(
+        { ...session, proof: sessionProof },
+        context,
+      ),
+    /installationBinding must be an object/,
+  );
+});
+
+test('installation binding rejects forged digests and unsafe installer paths', () => {
+  const evidence = validEvidence('ocr');
+  const proof = evidence.proof as Record<string, unknown>;
+  for (const forged of [
+    { ...installationBinding, receiptSha256: 'not-a-digest' },
+    { ...installationBinding, installerRelativePath: '../foreign.msi' },
+    { ...installationBinding, installedExeName: 'Cert Prep' },
+    { ...installationBinding, installedExeBytes: 0 },
+    { ...installationBinding, installedAt: 'not-a-timestamp' },
+  ]) {
+    assert.throws(() =>
+      validateResilienceEvidence(
+        { ...evidence, proof: { ...proof, installationBinding: forged } },
+        'ocr',
+        context,
+      ),
+    );
+  }
+
+  assert.throws(
+    () =>
+      validateResilienceEvidence(
+        {
+          ...evidence,
+          proof: {
+            ...proof,
+            installationBinding: {
+              ...installationBinding,
+              installedAt: '2026-07-14T00:00:02.000Z',
+            },
+          },
+        },
+        'ocr',
+        context,
+      ),
+    /installedAt must not be after evidence startedAt/,
   );
 });
 
@@ -214,6 +294,89 @@ test('draft/runtime/model cancellation requires durable exact commit evidence an
       /scope or terminal state/,
     );
   }
+});
+
+test('draft/runtime/model cancellation requires a stable canceled state and exact transition', () => {
+  for (const check of ['draft', 'runtime', 'model'] as const) {
+    const evidence = validEvidence(check);
+    const proof = { ...(evidence.proof as Record<string, unknown>) };
+    delete proof.canceledState;
+    assert.throws(
+      () => validateResilienceEvidence({ ...evidence, proof }, check, context),
+      /canceledState must be an object/,
+    );
+  }
+
+  const draft = validEvidence('draft');
+  const draftProof = draft.proof as Record<string, unknown>;
+  assert.throws(
+    () =>
+      validateResilienceEvidence(
+        { ...draft, proof: { ...draftProof, provider: 'fake' } },
+        'draft',
+        context,
+      ),
+    /provider must equal ollama/,
+  );
+  assert.throws(
+    () =>
+      validateResilienceEvidence(
+        {
+          ...draft,
+          proof: {
+            ...draftProof,
+            uploadTriggeredJobs: {
+              jobCount: 1,
+              statuses: ['completed'],
+              usableDraftCount: 0,
+            },
+          },
+        },
+        'draft',
+        context,
+      ),
+    /draft cancellation and manual publish transition/,
+  );
+
+  const runtime = validEvidence('runtime');
+  const runtimeProof = runtime.proof as Record<string, unknown>;
+  assert.throws(
+    () =>
+      validateResilienceEvidence(
+        {
+          ...runtime,
+          proof: {
+            ...runtimeProof,
+            requirementAfter: {
+              kind: 'windowsml_ocr',
+              available: true,
+              installedPathRelative: '../foreign-runtime',
+            },
+          },
+        },
+        'runtime',
+        context,
+      ),
+    /safe relative path/,
+  );
+
+  const model = validEvidence('model');
+  const modelProof = model.proof as Record<string, unknown>;
+  assert.throws(
+    () =>
+      validateResilienceEvidence(
+        {
+          ...model,
+          proof: {
+            ...modelProof,
+            tagsAfter: { modelNames: ['qwen3.5:4b', 'other-model'] },
+          },
+        },
+        'model',
+        context,
+      ),
+    /exact isolated Ollama model set/,
+  );
 });
 
 test('durable non-cancellable proof may be observed after commit completed', () => {
@@ -362,7 +525,10 @@ export function validEvidence(check: ResilienceCheck): Record<string, unknown> {
         status: 'canceled',
       },
     ],
-    proof: validProof(check),
+    proof: {
+      ...validProof(check),
+      installationBinding,
+    },
   };
 }
 
@@ -388,6 +554,7 @@ export function validSessionRestartEvidence(): Record<string, unknown> {
       },
     ],
     proof: {
+      installationBinding,
       projectId: 'project-1',
       sessionId: 'session-1',
       answeredBeforeFirstRestart: 1,
@@ -477,35 +644,94 @@ function validProof(check: ResilienceCheck): Record<string, unknown> {
         latePublishObservationWindowMs: 2_000,
       };
     case 'draft':
-      return scopedCancellation(
-        {
-          projectId,
-          documentId,
-          provider: 'fake',
-          model: 'fixture-draft-model',
+      return {
+        ...scopedCancellation(
+          {
+            projectId,
+            documentId,
+            provider: 'ollama',
+            model: 'qwen3.5:4b',
+          },
+          operationId,
+          cancelResponse,
+          terminalResponse,
+        ),
+        canceledState: {
+          observationWindowMs: 2_000,
+          immediate: { usableDraftCount: 0 },
+          afterWindow: { usableDraftCount: 0 },
         },
-        operationId,
-        cancelResponse,
-        terminalResponse,
-      );
-    case 'runtime':
-      return scopedCancellation(
-        {
+        uploadTriggeredJobs: {
+          jobCount: 2,
+          statuses: ['skipped_missing_model', 'skipped_missing_model'],
+          usableDraftCount: 0,
+        },
+        usableDraftCountBeforeManual: 0,
+        usableDraftCountAfterManual: 2,
+      };
+    case 'runtime': {
+      const unavailableRequirement = {
+        kind: 'windowsml_ocr',
+        available: false,
+        unavailableReason: 'runtime_not_installed',
+      };
+      return {
+        ...scopedCancellation(
+          {
+            kind: 'windowsml_ocr',
+            provider: 'windowsml',
+            model: 'pp-ocrv6-medium-windowsml',
+          },
+          operationId,
+          operation(operationId, 'cancel_requested', 'canceling', false),
+          operation(operationId, 'canceled', 'canceled', false),
+        ),
+        requirementBefore: unavailableRequirement,
+        canceledState: {
+          observationWindowMs: 2_000,
+          immediate: unavailableRequirement,
+          afterWindow: unavailableRequirement,
+        },
+        requirementAfter: {
           kind: 'windowsml_ocr',
-          provider: 'windowsml',
-          model: 'fixture-runtime-model',
+          available: true,
+          installedPathRelative: 'runtimes/windowsml-ocr',
         },
-        operationId,
-        operation(operationId, 'cancel_requested', 'canceling', false),
-        operation(operationId, 'canceled', 'canceled', false),
-      );
-    case 'model':
-      return scopedCancellation(
-        { provider: 'ollama', model: 'qwen3.5:4b' },
-        operationId,
-        operation(operationId, 'cancel_requested', 'canceling', false),
-        operation(operationId, 'canceled', 'canceled', false),
-      );
+      };
+    }
+    case 'model': {
+      const missingTags = { modelNames: [] };
+      const missingHealth = {
+        provider: 'ollama',
+        model: 'qwen3.5:4b',
+        available: false,
+        unavailableReason: 'model_missing',
+        effectiveModel: null,
+      };
+      return {
+        ...scopedCancellation(
+          { provider: 'ollama', model: 'qwen3.5:4b' },
+          operationId,
+          operation(operationId, 'cancel_requested', 'canceling', false),
+          operation(operationId, 'canceled', 'canceled', false),
+        ),
+        tagsBefore: missingTags,
+        healthBefore: missingHealth,
+        canceledState: {
+          observationWindowMs: 2_000,
+          immediate: { tags: missingTags, health: missingHealth },
+          afterWindow: { tags: missingTags, health: missingHealth },
+        },
+        tagsAfter: { modelNames: ['qwen3.5:4b'] },
+        healthAfter: {
+          provider: 'ollama',
+          model: 'qwen3.5:4b',
+          available: true,
+          unavailableReason: null,
+          effectiveModel: 'qwen3.5:4b',
+        },
+      };
+    }
     case 'cancelVsCompleteRace':
       return {
         operationId,
