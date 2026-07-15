@@ -18,6 +18,7 @@ import {
   assertCleanSourceCheckout,
   assertSafeNewOutput,
   inspectLocalCandidateBuild,
+  prepareCandidateAtomicHandoff,
   prepareCandidatePublicationCopy,
   publishCandidateAtomically,
   removeCandidateScratchRootBestEffort,
@@ -221,10 +222,16 @@ test('candidate publication copy is rebuilt only from validated identities', asy
       root,
       candidate,
     );
+    const handoff = await prepareCandidateAtomicHandoff(
+      publicationRoot,
+      root,
+      candidate,
+    );
     const publishedRoot = join(root, 'published');
-    await publishCandidateAtomically(publicationRoot, publishedRoot, {
+    await publishCandidateAtomically(handoff.root, publishedRoot, {
       attempts: 1,
     });
+    assert.equal(removeCandidateScratchRootBestEffort(handoff.parent, 'handoff'), true);
     assert.deepEqual(
       JSON.parse(readFileSync(join(publishedRoot, 'candidate.json'), 'utf8')),
       candidate,

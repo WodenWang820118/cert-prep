@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import {
+  cpSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -274,6 +275,7 @@ export async function createLocalCandidate(args, run = runCommand) {
     join(dirname(outputRoot), '.local-alpha-candidate-work-'),
   );
   let publicationRoot;
+  let handoffParent;
   try {
     const planPath = join(scratchRoot, 'release-plan.json');
     const packageQaPath = join(scratchRoot, 'package-qa.json');
@@ -338,6 +340,12 @@ export async function createLocalCandidate(args, run = runCommand) {
       ocrRuntimeRoot,
       packageQa.package.resource_contract.runtime_binding,
     );
+    const handoff = await prepareCandidateAtomicHandoff(
+      publicationRoot,
+      dirname(outputRoot),
+      candidate,
+    );
+    handoffParent = handoff.parent;
     assertCleanSourceCheckout(workspaceRoot, run);
     const finalCommitSha = run('git', ['rev-parse', 'HEAD'], {
       cwd: workspaceRoot,
@@ -349,7 +357,7 @@ export async function createLocalCandidate(args, run = runCommand) {
     if (pathEntryExists(outputRoot)) {
       throw new Error(`Local candidate output appeared during assembly: ${outputRoot}.`);
     }
-    await publishCandidateAtomically(publicationRoot, outputRoot);
+    await publishCandidateAtomically(handoff.root, outputRoot);
     const completed = {
       ...result,
       releaseRoot: join(outputRoot, 'release'),
@@ -362,6 +370,12 @@ export async function createLocalCandidate(args, run = runCommand) {
     );
     return { ...completed, candidate };
   } finally {
+    if (handoffParent) {
+      removeCandidateScratchRootBestEffort(
+        handoffParent,
+        'candidate handoff scratch',
+      );
+    }
     if (publicationRoot) {
       removeCandidateScratchRootBestEffort(
         publicationRoot,
@@ -419,24 +433,8 @@ export async function prepareCandidatePublicationCopy(
     }
 
     for (const identity of candidate.files) {
-      const separator = identity.lastIndexOf(':');
-      const relativePath = identity.slice(0, separator);
-      const expectedSha256 = identity.slice(separator + 1);
-      const segments = relativePath.split('/');
-      if (
-        separator < 1 ||
-        !/^[0-9a-f]{64}$/.test(expectedSha256) ||
-        !['release', 'harness'].includes(segments[0]) ||
-        segments.some(
-          (segment) =>
-            !segment ||
-            segment === '.' ||
-            segment === '..' ||
-            /[:*?"<>|\\]/.test(segment),
-        )
-      ) {
-        throw new Error(`Invalid validated candidate file identity: ${identity}.`);
-      }
+      const { relativePath, expectedSha256, segments } =
+        parseCandidateFileIdentity(identity);
       const source = join(sourceRoot, ...segments);
       const destination = join(publicationRoot, ...segments);
       assertRegularFileWithoutSymlink(source, 'validated candidate file');
@@ -495,6 +493,72 @@ async function copyDefaultDataStream(source, destination) {
   }
 }
 
+export async function prepareCandidateAtomicHandoff(
+  publicationRoot,
+  publicationParent,
+  candidate,
+) {
+  assertDirectoryEntryWithoutSymlink(
+    publicationParent,
+    'candidate handoff parent',
+  );
+  const parent = mkdtempSync(
+    join(publicationParent, '.local-alpha-candidate-handoff-'),
+  );
+  const root = join(parent, 'candidate');
+  try {
+    cpSync(publicationRoot, root, {
+      recursive: true,
+      errorOnExist: true,
+      force: false,
+    });
+    if (
+      JSON.stringify(readJson(join(root, 'candidate.json'))) !==
+      JSON.stringify(candidate)
+    ) {
+      throw new Error('Candidate handoff identity changed during the final copy.');
+    }
+    for (const identity of candidate.files) {
+      const { relativePath, expectedSha256, segments } =
+        parseCandidateFileIdentity(identity);
+      const path = join(root, ...segments);
+      assertRegularFileWithoutSymlink(path, 'candidate handoff file');
+      if ((await sha256File(path)) !== expectedSha256) {
+        throw new Error(`Candidate handoff copy changed ${relativePath}.`);
+      }
+    }
+    return { parent, root };
+  } catch (error) {
+    removeCandidateScratchRootBestEffort(
+      parent,
+      'failed candidate handoff scratch',
+    );
+    throw error;
+  }
+}
+
+function parseCandidateFileIdentity(identity) {
+  const separator = identity.lastIndexOf(':');
+  const relativePath = identity.slice(0, separator);
+  const expectedSha256 = identity.slice(separator + 1);
+  const segments = relativePath.split('/');
+  if (
+    separator < 1 ||
+    !/^[0-9a-f]{64}$/.test(expectedSha256) ||
+    !['release', 'harness'].includes(segments[0]) ||
+    segments.some(
+      (segment) =>
+        !segment ||
+        segment === '.' ||
+        segment === '..' ||
+        /[:*?"<>|\\]/.test(segment),
+    )
+  ) {
+    throw new Error(`Invalid validated candidate file identity: ${identity}.`);
+  }
+  return { relativePath, expectedSha256, segments };
+}
+
 export function removeCandidateScratchRootBestEffort(
   path,
   label,
@@ -540,8 +604,8 @@ export async function publishCandidateAtomically(
         );
       }
     },
-    attempts = 301,
-    retryDelayMs = 1000,
+    attempts = 21,
+    retryDelayMs = 250,
   } = {},
 ) {
   if (!Number.isSafeInteger(attempts) || attempts < 1) {
