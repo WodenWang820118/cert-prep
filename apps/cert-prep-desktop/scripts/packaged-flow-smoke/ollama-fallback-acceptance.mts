@@ -15,6 +15,7 @@ import {
 } from './runner-context.mts';
 import { isRecord } from './text-utils.mts';
 import type {
+  GenerationReadinessSnapshot,
   OllamaFallbackAcceptanceEvidence,
   OllamaFallbackSelectionEvidence,
   OllamaFallbackTrigger,
@@ -27,12 +28,10 @@ import type {
 } from './types.mts';
 
 const TERMS_VERSION = '0.9.43';
-const TERMS_DECISION_PATH =
-  '/llm/provider-selection/fastflowlm-terms-decision';
+const TERMS_DECISION_PATH = '/llm/provider-selection/fastflowlm-terms-decision';
 const OLLAMA_API_BASE_URL = 'http://127.0.0.1:11434';
 const DECLINED_TERMS_REASON = 'FastFlowLM terms were declined.';
-const UNSUPPORTED_XDNA2_REASON =
-  'No compatible AMD XDNA2 NPU was detected.';
+const UNSUPPORTED_XDNA2_REASON = 'No compatible AMD XDNA2 NPU was detected.';
 const OLD_DRIVER_REASON =
   /^The AMD accelerator driver must be at least \d+(?:\.\d+)+\.$/;
 const BEARER_PATTERN = /^Bearer [A-Za-z0-9._~+/=-]+$/;
@@ -41,6 +40,7 @@ const UUID_PATTERN =
 const MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const REQUEST_TIMEOUT_MS = 30_000;
+const RESTART_READINESS_REQUEST_TIMEOUT_MS = 180_000;
 const RELEASE_ATTEMPTS = 15;
 const RELEASE_INTERVAL_MS = 1_000;
 
@@ -70,11 +70,7 @@ export async function prepareOllamaFallbackAcceptance(
   const page = dependencies.page ?? activePage(run);
   const now = dependencies.now ?? (() => new Date());
   await startPreRouteProcessObservation(run);
-  const selectionBefore = await getProviderSelection(
-    page,
-    projectApi,
-    now,
-  );
+  const selectionBefore = await getProviderSelection(page, projectApi, now);
 
   const selectionAfterRoute =
     trigger === 'declined-terms'
@@ -106,21 +102,22 @@ export async function prepareOllamaFallbackAcceptance(
     selectionAfterRoute,
     selectionAfterRestart,
   );
-  const readiness = await (
-    dependencies.captureReadiness ?? captureGenerationReadinessFromProjectApi
-  )(run, { page: restartedPage });
-  if (!readiness.ready || readiness.blockers.length > 0) {
-    throw new Error(
-      `ollama_fallback_generation_readiness_failed:${readiness.blockers.join(',')}`,
-    );
-  }
+  const readiness = await captureOllamaFallbackReadinessAfterRestart(
+    run,
+    restartedPage,
+    dependencies.captureReadiness,
+  );
 
   const runtime = await captureOllamaRuntimeEvidence(
     restartedPage,
     requiredProjectApi(run.projectApi),
     readiness,
   );
-  validatePhysicalTrigger(trigger, selectionAfterRestart, runtime.profile.inventory);
+  validatePhysicalTrigger(
+    trigger,
+    selectionAfterRestart,
+    runtime.profile.inventory,
+  );
   await selectExistingProjectAfterRestart(run);
   run.metrics.restart.verified = true;
 
@@ -156,6 +153,23 @@ export async function prepareOllamaFallbackAcceptance(
   };
 }
 
+export async function captureOllamaFallbackReadinessAfterRestart(
+  run: SmokeRunState,
+  page: AcceptancePage,
+  captureReadiness: typeof captureGenerationReadinessFromProjectApi = captureGenerationReadinessFromProjectApi,
+): Promise<GenerationReadinessSnapshot> {
+  const readiness = await captureReadiness(run, {
+    page,
+    requestTimeoutMs: RESTART_READINESS_REQUEST_TIMEOUT_MS,
+  });
+  if (!readiness.ready || readiness.blockers.length > 0) {
+    throw new Error(
+      `ollama_fallback_generation_readiness_failed:${readiness.blockers.join(',')}`,
+    );
+  }
+  return readiness;
+}
+
 async function startPreRouteProcessObservation(
   run: SmokeRunState,
 ): Promise<void> {
@@ -188,8 +202,7 @@ export async function finalizeOllamaFallbackAcceptance(
   const evidence = requiredAcceptanceEvidence(
     run.metrics.ollama_fallback_acceptance,
   );
-  const finalJobSnapshot =
-    run.metrics.streaming_questions.job_snapshots.at(-1);
+  const finalJobSnapshot = run.metrics.streaming_questions.job_snapshots.at(-1);
   const jobs = finalJobSnapshot?.jobs ?? [];
   const producingJobs = jobs.filter(
     (job) => job.status === 'succeeded' && job.generated_count > 0,
@@ -365,10 +378,7 @@ function assertExpectedOllamaSelection(
     selection.terms_version !== null ||
     selection.runtime_requirement_kind !== 'ollama' ||
     selection.model_requirement_kind !== 'ollama_model' ||
-    !providerReasonMatchesTrigger(
-      trigger,
-      selection.provider_fallback_reason,
-    )
+    !providerReasonMatchesTrigger(trigger, selection.provider_fallback_reason)
   ) {
     throw new Error('ollama_fallback_selection_contract_failed');
   }
@@ -446,7 +456,9 @@ async function selectionFromResponse(
 async function captureOllamaRuntimeEvidence(
   page: Pick<Page, 'request'>,
   projectApi: ProjectApiRef,
-  readiness: NonNullable<SmokeRunState['metrics']['generation_readiness_at_start']>,
+  readiness: NonNullable<
+    SmokeRunState['metrics']['generation_readiness_at_start']
+  >,
 ): Promise<OllamaRuntimeEvidence> {
   const runtimeRequirement = readiness.runtime_requirements.find(
     (requirement) => requirement.kind === 'ollama',
@@ -475,7 +487,9 @@ async function captureOllamaRuntimeEvidence(
     !profile.profile_id ||
     !profile.inventory ||
     !apiVersion ||
-    !installedModels.some((model) => sameOllamaModel(model, profile.effective_model))
+    !installedModels.some((model) =>
+      sameOllamaModel(model, profile.effective_model),
+    )
   ) {
     throw new Error('ollama_fallback_runtime_profile_or_model_unverified');
   }
@@ -622,7 +636,9 @@ export function validatePhysicalTrigger(
   ) {
     throw new Error('ollama_fallback_physical_driver_evidence_missing');
   }
-  if (!providerReasonMatchesTrigger(trigger, selection.provider_fallback_reason)) {
+  if (
+    !providerReasonMatchesTrigger(trigger, selection.provider_fallback_reason)
+  ) {
     throw new Error('ollama_fallback_physical_trigger_mismatch');
   }
 }
@@ -648,9 +664,7 @@ async function recaptureProjectApiFromUi(
   if (
     !isRecord(payload) ||
     !Array.isArray(payload.items) ||
-    !payload.items.some(
-      (item) => isRecord(item) && item.id === projectId,
-    )
+    !payload.items.some((item) => isRecord(item) && item.id === projectId)
   ) {
     throw new Error('ollama_fallback_project_not_persisted');
   }
@@ -701,7 +715,9 @@ function isProjectListResponse(response: Response): boolean {
   }
   try {
     const url = new URL(response.url());
-    return url.pathname === '/projects' && loopbackOrigin(response.url()) !== null;
+    return (
+      url.pathname === '/projects' && loopbackOrigin(response.url()) !== null
+    );
   } catch {
     return false;
   }
@@ -845,9 +861,7 @@ function safeStringList(value: unknown): string[] | null {
     return null;
   }
   const strings = value.map(safeString);
-  return strings.some((item) => item === null)
-    ? null
-    : (strings as string[]);
+  return strings.some((item) => item === null) ? null : (strings as string[]);
 }
 
 function safeString(value: unknown): string | null {
@@ -866,7 +880,7 @@ function safeString(value: unknown): string | null {
 function nullableSafeString(value: unknown): string | null | undefined {
   return value === null || value === undefined
     ? null
-    : safeString(value) ?? undefined;
+    : (safeString(value) ?? undefined);
 }
 
 function modelString(value: unknown): string | null {
@@ -876,7 +890,7 @@ function modelString(value: unknown): string | null {
 function nullableModelString(value: unknown): string | null | undefined {
   return value === null || value === undefined
     ? null
-    : modelString(value) ?? undefined;
+    : (modelString(value) ?? undefined);
 }
 
 function nullableSha256(value: unknown): string | null | undefined {
@@ -887,9 +901,7 @@ function nullableSha256(value: unknown): string | null | undefined {
       : undefined;
 }
 
-function nullableNonNegativeInteger(
-  value: unknown,
-): number | null | undefined {
+function nullableNonNegativeInteger(value: unknown): number | null | undefined {
   return value === null || value === undefined
     ? null
     : typeof value === 'number' && Number.isSafeInteger(value) && value >= 0

@@ -5,16 +5,41 @@ import type { Page } from 'playwright';
 
 import {
   assertOllamaFallbackRoute,
+  captureOllamaFallbackReadinessAfterRestart,
   finalizeOllamaFallbackAcceptance,
   sanitizeOllamaFallbackSelection,
   validatePhysicalTrigger,
 } from './ollama-fallback-acceptance.mts';
 import type {
+  GenerationReadinessSnapshot,
   OllamaFallbackAcceptanceEvidence,
   OllamaFallbackSelectionEvidence,
   OllamaPhysicalInventoryEvidence,
   SmokeRunState,
 } from './types.mts';
+
+test('restart readiness allows the bounded WindowsML cold-start window', async () => {
+  const readiness: GenerationReadinessSnapshot = {
+    captured_at: '2026-07-15T00:00:00.000Z',
+    ready: true,
+    provider_selection: null,
+    runtime_requirements: [],
+    blockers: [],
+  };
+  let requestTimeoutMs: number | undefined;
+
+  const result = await captureOllamaFallbackReadinessAfterRestart(
+    {} as SmokeRunState,
+    {} as Page,
+    async (_run, options) => {
+      requestTimeoutMs = options?.requestTimeoutMs;
+      return readiness;
+    },
+  );
+
+  assert.equal(requestTimeoutMs, 180_000);
+  assert.equal(result, readiness);
+});
 
 test('selection contract accepts only real FastFlow-to-Ollama declined-terms routing', () => {
   const before = selection({
@@ -56,8 +81,7 @@ test('selection contract accepts only real FastFlow-to-Ollama declined-terms rou
 test('physical fallback triggers bind exact provider reasons to observed inventory', () => {
   const inventory = physicalInventory();
   const unsupported = selection({
-    provider_fallback_reason:
-      'No compatible AMD XDNA2 NPU was detected.',
+    provider_fallback_reason: 'No compatible AMD XDNA2 NPU was detected.',
     hardware_compatible: false,
   });
   assert.doesNotThrow(() =>
@@ -87,8 +111,7 @@ test('physical fallback triggers bind exact provider reasons to observed invento
     /driver_evidence_missing/,
   );
   assert.throws(
-    () =>
-      validatePhysicalTrigger('unsupported-xdna2', oldDriver, inventory),
+    () => validatePhysicalTrigger('unsupported-xdna2', oldDriver, inventory),
     /physical_trigger_mismatch/,
   );
 });
@@ -188,8 +211,14 @@ test('final evidence keeps provider and low-resource model fallback reasons sepa
     evidence.model_fallback_reason,
     'Primary model failed under memory pressure.',
   );
-  assert.equal(run.metrics.provider_fallback_reason, evidence.provider_fallback_reason);
-  assert.equal(run.metrics.model_fallback_reason, evidence.model_fallback_reason);
+  assert.equal(
+    run.metrics.provider_fallback_reason,
+    evidence.provider_fallback_reason,
+  );
+  assert.equal(
+    run.metrics.model_fallback_reason,
+    evidence.model_fallback_reason,
+  );
   assert.equal(evidence.usable_question_count, 2);
   assert.equal(evidence.full_exam_question_count, 4);
   assert.equal(evidence.resource_release?.released, true);
@@ -265,8 +294,7 @@ function acceptanceEvidence(): OllamaFallbackAcceptanceEvidence {
     trigger_mode: 'persisted_terms_decision',
     overrides_used: false,
     fake_provider_observed: false,
-    decision_endpoint:
-      '/llm/provider-selection/fastflowlm-terms-decision',
+    decision_endpoint: '/llm/provider-selection/fastflowlm-terms-decision',
     selection_before: selection({
       selected_provider: 'fastflowlm',
       effective_provider: 'fastflowlm',
