@@ -73,6 +73,27 @@ def test_ollama_health_includes_profile_selection_fields(monkeypatch) -> None:
     assert health.effective_model == selection.selected_profile.local_model
     assert fake_client.pull_calls == 0
 
+
+def test_ollama_health_accepts_implicit_latest_profile_alias(monkeypatch) -> None:
+    model = "cert-prep-qwen3.5-4b-study-8k"
+    fake_client = RecordingOllamaClient(models=[f"{model}:latest"])
+    monkeypatch.setattr(ollama_transport, "resolve_ollama_executable", lambda: Path("ollama"))
+    provider = OllamaProvider(
+        host="http://127.0.0.1:11434",
+        model=model,
+        timeout_seconds=1,
+    )
+    provider._client = fake_client
+
+    health = provider.health()
+
+    assert health.available is True
+    assert health.configured_model == model
+    assert health.effective_model == model
+    assert health.unavailable_reason is None
+    assert fake_client.pull_calls == 0
+
+
 def test_ollama_runtime_unusable_models_can_recover() -> None:
     provider = OllamaProvider(
         host="http://127.0.0.1:11434",

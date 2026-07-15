@@ -26,6 +26,11 @@ def extract_model_names(response: Any) -> set[str]:
             name = model.get("model") or model.get("name")
         if isinstance(name, str):
             names.add(name)
+            if name.endswith(":latest"):
+                # Ollama treats an omitted tag as the implicit `latest` tag.
+                untagged_name = name.removesuffix(":latest")
+                if untagged_name:
+                    names.add(untagged_name)
     return names
 
 

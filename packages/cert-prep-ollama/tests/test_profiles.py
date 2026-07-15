@@ -199,6 +199,21 @@ def test_profile_installer_accepts_running_api_without_cli(monkeypatch) -> None:
     assert requirement.unavailable_reason == "model_missing"
 
 
+def test_profile_installer_accepts_implicit_latest_profile_alias() -> None:
+    profile = profile_by_id(DEFAULT_PROFILE_ID)
+    client = FakeOllamaClient(list_created_models_with_latest_tag=True)
+    installer = OllamaProfileInstaller(
+        profile,
+        client=client,
+        ensure_server=False,
+    )
+
+    status = installer.install(lambda _item: None)
+
+    assert status.value == "succeeded"
+    assert client.models == [profile.local_model]
+
+
 def test_profile_installer_creates_selected_and_fallback_profiles() -> None:
     profile = profile_by_id(DEFAULT_PROFILE_ID)
     fallback = profile_by_id(LOW_RESOURCE_PROFILE_ID)
@@ -279,15 +294,22 @@ class FakeOllamaClient:
         *,
         register_created_models: bool = True,
         create_error: str | None = None,
+        list_created_models_with_latest_tag: bool = False,
     ) -> None:
         self.models: list[str] = []
         self.pull_calls: list[tuple[str, bool]] = []
         self.create_calls: list[dict[str, object]] = []
         self.register_created_models = register_created_models
         self.create_error = create_error
+        self.list_created_models_with_latest_tag = list_created_models_with_latest_tag
 
     def list(self):
-        return {"models": [{"model": model} for model in self.models]}
+        models = (
+            [f"{model}:latest" for model in self.models]
+            if self.list_created_models_with_latest_tag
+            else self.models
+        )
+        return {"models": [{"model": model} for model in models]}
 
     def pull(self, model: str, *, stream: bool):
         self.pull_calls.append((model, stream))
