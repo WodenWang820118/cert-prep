@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+import logging
 from typing import Any, TypeVar
 
 from cert_prep_backend.domains.mock_exams.deterministic_parser import (
@@ -31,7 +32,11 @@ from cert_prep_backend.domains.mock_exams.response_parsing import (
     json_object_response_or_unavailable,
     short_error,
 )
-from cert_prep_contracts.llm import GenerationAttribution
+from cert_prep_contracts.llm import (
+    GenerationAttribution,
+    LLMExecutionMode,
+    LLMExecutionPolicy,
+)
 from cert_prep_backend.api.errors import ProviderUnavailableError
 from cert_prep_contracts.llm_profiles import OllamaProfileSelection
 from cert_prep_contracts.runtime import RuntimeRequirementKind
@@ -44,6 +49,7 @@ STREAMING_RELEASE_KEEP_ALIVE = 0
 # Transient Ollama failures often reflect memory pressure; retry after a quiet window.
 MODEL_RETRY_AFTER_SECONDS = 300.0
 T = TypeVar("T")
+_LOGGER = logging.getLogger(__name__)
 
 
 class OllamaProvider:
@@ -58,11 +64,13 @@ class OllamaProvider:
         timeout_seconds: float,
         fallback_models: Sequence[str] = (),
         profile_selection: OllamaProfileSelection | None = None,
+        execution_policy: LLMExecutionPolicy | None = None,
         client: Any | None = None,
     ) -> None:
         self.host = host
         self.model = model
         self.profile_selection = profile_selection
+        self.execution_policy = execution_policy or LLMExecutionPolicy()
         self._fallback_engine = ModelFallbackEngine(
             primary_model=model,
             fallback_models=fallback_models,
@@ -71,6 +79,8 @@ class OllamaProvider:
         )
         self.fallback_models = self._fallback_engine.fallback_models
         self._client = client or OllamaClient(host=host, timeout_seconds=timeout_seconds)
+        if self.execution_policy.warning is not None:
+            _LOGGER.warning("Ollama CPU fallback: %s", self.execution_policy.warning)
 
     @property
     def runtime_requirement_kind(self) -> RuntimeRequirementKind:
@@ -119,7 +129,7 @@ class OllamaProvider:
                 unavailable_reason=unavailable_reason,
                 configured_model=self.model,
                 fallback_models=self.fallback_models,
-                **self._profile_health_fields(),
+                **self._health_metadata_fields(),
             )
 
         return self._health_from_model_names(model_names)
@@ -139,20 +149,37 @@ class OllamaProvider:
             effective_model=effective_model,
             fallback_models=self.fallback_models,
             fallback_reason=fallback_reason,
-            **self._profile_health_fields(),
+            **self._health_metadata_fields(),
         )
 
-    def _profile_health_fields(self) -> dict[str, object]:
+    def _health_metadata_fields(self) -> dict[str, object]:
+        fields: dict[str, object] = {
+            "execution_mode": self.execution_policy.mode,
+            "execution_warning": self.execution_policy.warning,
+        }
         selection = self.profile_selection
         if selection is None:
-            return {}
-        return {
-            "profile_id": selection.profile_id,
-            "base_model": selection.selected_profile.base_model,
-            "modelfile_sha256": selection.modelfile_sha256,
-            "profile_reason": selection.reason,
-            "profile_warnings": selection.warnings,
+            return fields
+        fields.update(
+            {
+                "profile_id": selection.profile_id,
+                "base_model": selection.selected_profile.base_model,
+                "modelfile_sha256": selection.modelfile_sha256,
+                "profile_reason": selection.reason,
+                "profile_warnings": selection.warnings,
+            }
+        )
+        return fields
+
+    def _chat_options(self, *, num_ctx: int, num_predict: int) -> dict[str, int]:
+        options = {
+            "temperature": 0,
+            "num_ctx": num_ctx,
+            "num_predict": num_predict,
         }
+        if self.execution_policy.mode == LLMExecutionMode.CPU:
+            options["num_gpu"] = 0
+        return options
 
     def generate_drafts(self, chunks: Sequence[SourceChunk], limit: int) -> list[DraftSuggestion]:
         """Generate drafts by combining deterministic extraction with reasoning fallback."""
@@ -289,11 +316,10 @@ class OllamaProvider:
                     {"role": "user", "content": user_prompt},
                 ],
                 format=EXAM_ITEMS_SCHEMA,
-                options={
-                    "temperature": 0,
-                    "num_ctx": num_ctx,
-                    "num_predict": num_predict,
-                },
+                options=self._chat_options(
+                    num_ctx=num_ctx,
+                    num_predict=num_predict,
+                ),
                 think=False,
                 keep_alive=keep_alive,
             )
@@ -322,11 +348,10 @@ class OllamaProvider:
                             }
                         ],
                         format="json",
-                        options={
-                            "temperature": 0,
-                            "num_ctx": num_ctx,
-                            "num_predict": num_predict,
-                        },
+                        options=self._chat_options(
+                            num_ctx=num_ctx,
+                            num_predict=num_predict,
+                        ),
                         think=False,
                         keep_alive=keep_alive,
                     ),

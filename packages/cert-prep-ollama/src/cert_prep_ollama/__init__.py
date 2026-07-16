@@ -26,6 +26,7 @@ from cert_prep_ollama.profiles import (
     fallback_models_for_selection,
     profile_by_id,
     profile_catalog,
+    select_ollama_execution_policy,
     select_ollama_profile,
 )
 from cert_prep_ollama.server import (
@@ -62,5 +63,6 @@ __all__ = [
     "pull_progress",
     "render_modelfile",
     "resolve_ollama_executable",
+    "select_ollama_execution_policy",
     "select_ollama_profile",
 ]

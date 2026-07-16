@@ -23,7 +23,8 @@ export interface Components {
     DraftStatus: string;
     HTTPValidationError: { "detail"?: Components['schemas']['ValidationError'][] };
     HealthResponse: { "status": string; "app": string; "version": string; "python_version": string; "runtime_mode": string };
-    LLMHealthRead: { "provider": string; "model": string; "available": boolean; "detail": string; "unavailable_reason"?: string | null; "configured_model"?: string | null; "effective_model"?: string | null; "fallback_models"?: string[]; "fallback_reason"?: string | null; "profile_id"?: string | null; "base_model"?: string | null; "modelfile_sha256"?: string | null; "profile_reason"?: string | null; "profile_warnings"?: string[] };
+    LLMExecutionMode: string;
+    LLMHealthRead: { "provider": string; "model": string; "available": boolean; "detail": string; "unavailable_reason"?: string | null; "configured_model"?: string | null; "effective_model"?: string | null; "fallback_models"?: string[]; "fallback_reason"?: string | null; "execution_mode"?: Components['schemas']['LLMExecutionMode'] | null; "execution_warning"?: string | null; "profile_id"?: string | null; "base_model"?: string | null; "modelfile_sha256"?: string | null; "profile_reason"?: string | null; "profile_warnings"?: string[] };
     LLMProviderName: string;
     LLMProviderPreference: string;
     LLMProviderSelectionRead: { "preference": Components['schemas']['LLMProviderPreference']; "selected_provider": Components['schemas']['LLMProviderName']; "effective_provider": Components['schemas']['LLMProviderName']; "configured_model": string; "effective_model": string; "selection_reason": string; "fallback_reason"?: string | null; "runtime_requirement_kind"?: Components['schemas']['RuntimeRequirementKind'] | null; "model_requirement_kind"?: Components['schemas']['RuntimeRequirementKind'] | null };
@@ -94,6 +95,7 @@ export type DraftGenerationStrategy = Components['schemas']['DraftGenerationStra
 export type DraftStatus = Components['schemas']['DraftStatus'];
 export type HTTPValidationError = Components['schemas']['HTTPValidationError'];
 export type HealthResponse = Components['schemas']['HealthResponse'];
+export type LLMExecutionMode = Components['schemas']['LLMExecutionMode'];
 export type LLMHealthRead = Components['schemas']['LLMHealthRead'];
 export type LLMProviderName = Components['schemas']['LLMProviderName'];
 export type LLMProviderPreference = Components['schemas']['LLMProviderPreference'];

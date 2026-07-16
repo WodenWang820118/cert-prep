@@ -66,6 +66,8 @@ def test_llm_health_uses_fake_provider_without_network(client: TestClient, auth_
         "effective_model": DEFAULT_OLLAMA_MODEL,
         "fallback_models": [],
         "fallback_reason": None,
+        "execution_mode": None,
+        "execution_warning": None,
         "profile_id": None,
         "base_model": None,
         "modelfile_sha256": None,

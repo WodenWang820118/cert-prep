@@ -7,6 +7,7 @@ import { ModelHealthComponent } from './model-health.component';
 import {
   availableLlmHealth,
   buttonByText,
+  cpuExecutionLlmHealth,
   fallbackLlmHealth,
   missingModelHealth,
   ocrHealth,
@@ -91,6 +92,48 @@ describe('ModelHealthComponent status display', () => {
     expect(fixture.nativeElement.textContent).not.toContain(
       'Reasoning model missing',
     );
+  });
+
+  it('shows CPU execution while retaining effective fallback model attribution', () => {
+    const fixture = TestBed.createComponent(ModelHealthComponent);
+    const health = TestBed.inject(HealthStore);
+    health.systemHealth.set(systemHealth());
+    health.llmHealth.set(
+      cpuExecutionLlmHealth({
+        effective_model: 'qwen3.5:2b',
+        fallback_models: ['qwen3.5:2b'],
+        fallback_reason:
+          'Configured model qwen3.5:4b is missing; using fallback qwen3.5:2b.',
+      }),
+    );
+    health.ocrHealth.set(ocrHealth());
+
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain(
+      'Reasoning model: qwen3.5:2b · 使用 CPU 中',
+    );
+    expect(fixture.nativeElement.textContent).not.toContain(
+      'Reasoning model missing',
+    );
+  });
+
+  it('does not report CPU execution while Ollama is offline', () => {
+    const fixture = TestBed.createComponent(ModelHealthComponent);
+    const health = TestBed.inject(HealthStore);
+    health.systemHealth.set(systemHealth());
+    health.llmHealth.set(
+      cpuExecutionLlmHealth({
+        available: false,
+        detail: 'Ollama unavailable: connection refused',
+        unavailable_reason: 'ollama_not_running',
+      }),
+    );
+    health.ocrHealth.set(ocrHealth());
+
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).not.toContain('使用 CPU 中');
   });
 
   it('hides the download action for generic offline health', () => {

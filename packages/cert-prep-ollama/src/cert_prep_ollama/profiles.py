@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
+import platform
 
 from cert_prep_contracts.hardware import MachineInventorySnapshot
+from cert_prep_contracts.llm import LLMExecutionMode, LLMExecutionPolicy
 from cert_prep_contracts.llm_profiles import (
     OllamaModelProfile,
     OllamaProfileSelection,
@@ -18,6 +20,10 @@ AUTO_PROFILE_ID = "auto"
 DEFAULT_PROFILE_ID = "qwen3.5-4b-study-8k"
 LOW_RESOURCE_PROFILE_ID = "qwen3.5-2b-study-4k"
 HIGH_CONTEXT_PROFILE_ID = "qwen3.5-4b-study-16k"
+WINDOWS_CPU_EXECUTION_WARNING = (
+    "Windows accelerator inventory did not confirm a GPU; "
+    "Ollama is running in forced CPU mode."
+)
 
 DEFAULT_OLLAMA_PROFILES: tuple[OllamaModelProfile, ...] = (
     OllamaModelProfile.from_mapping(
@@ -99,6 +105,29 @@ def profile_by_id(
         if profile.profile_id == normalized:
             return profile
     raise ValueError(f"Unknown Ollama profile id: {profile_id}")
+
+
+def select_ollama_execution_policy(
+    inventory: MachineInventorySnapshot | None,
+    *,
+    platform_name: str | None = None,
+) -> LLMExecutionPolicy:
+    """Choose a conservative execution mode without claiming GPU use."""
+
+    resolved_platform = (
+        inventory.platform if inventory is not None else platform_name or platform.system()
+    )
+    if resolved_platform.casefold() != "windows":
+        return LLMExecutionPolicy()
+    if inventory is not None and any(
+        accelerator.kind.casefold() == "gpu"
+        for accelerator in inventory.accelerators
+    ):
+        return LLMExecutionPolicy()
+    return LLMExecutionPolicy(
+        mode=LLMExecutionMode.CPU,
+        warning=WINDOWS_CPU_EXECUTION_WARNING,
+    )
 
 
 def select_ollama_profile(
@@ -346,5 +375,7 @@ __all__ = [
     "profile_by_id",
     "profile_catalog",
     "profile_requirement_warnings",
+    "select_ollama_execution_policy",
     "select_ollama_profile",
+    "WINDOWS_CPU_EXECUTION_WARNING",
 ]

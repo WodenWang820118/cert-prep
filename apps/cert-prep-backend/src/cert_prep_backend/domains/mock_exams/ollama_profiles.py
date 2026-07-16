@@ -3,9 +3,10 @@ from __future__ import annotations
 from dataclasses import asdict
 from threading import Lock
 import time
-from typing import Any
+from typing import Any, cast
 
 from cert_prep_backend.core.config import Settings
+from cert_prep_contracts.hardware import MachineInventorySnapshot
 from cert_prep_contracts.llm_profiles import (
     OllamaModelProfile,
     OllamaProfileSelection,
@@ -20,6 +21,7 @@ from cert_prep_ollama.profiles import (
 
 
 _INVENTORY_CACHE_TTL_SECONDS = 300.0
+_INVENTORY_NOT_PROVIDED = object()
 _inventory_cache_lock = Lock()
 # Process-local cache: multi-worker deployments collect once per worker per TTL.
 _inventory_cache: dict[tuple[str, float], tuple[float, object]] = {}
@@ -52,13 +54,21 @@ def ollama_profile_selection_from_settings(
     settings: Settings,
     *,
     provider_selected: bool = False,
+    inventory: MachineInventorySnapshot | None | object = _INVENTORY_NOT_PROVIDED,
 ) -> OllamaProfileSelection | None:
     """Resolve selected Ollama profile when profile selection is enabled."""
 
     if (settings.llm_provider != "ollama" and not provider_selected) or not settings.ollama_profile_enabled:
         return None
-    inventory = collect_ollama_machine_inventory(settings)
-    return select_ollama_profile(inventory, profile_id=settings.ollama_profile_id)
+    resolved_inventory = (
+        collect_ollama_machine_inventory(settings)
+        if inventory is _INVENTORY_NOT_PROVIDED
+        else cast(MachineInventorySnapshot | None, inventory)
+    )
+    return select_ollama_profile(
+        resolved_inventory,
+        profile_id=settings.ollama_profile_id,
+    )
 
 
 def profile_catalog_payload() -> dict[str, Any]:

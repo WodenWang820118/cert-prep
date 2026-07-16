@@ -7,7 +7,7 @@ from cert_prep_contracts.hardware import (
     MachineRamSnapshot,
     MachineStorageSnapshot,
 )
-from cert_prep_contracts.llm import ModelPullProgress
+from cert_prep_contracts.llm import LLMExecutionMode, ModelPullProgress
 from cert_prep_contracts.llm_profiles import OllamaProfileSupportStatus
 from cert_prep_ollama import profile_installer as profile_installer_module
 from cert_prep_ollama.modelfiles import modelfile_sha256, render_modelfile
@@ -19,6 +19,7 @@ from cert_prep_ollama.profiles import (
     LOW_RESOURCE_PROFILE_ID,
     profile_by_id,
     profile_catalog,
+    select_ollama_execution_policy,
     select_ollama_profile,
 )
 
@@ -103,6 +104,46 @@ def test_auto_selection_can_use_high_context_4b_but_never_9b() -> None:
 
     assert selection.profile_id == HIGH_CONTEXT_PROFILE_ID
     assert selection.selected_profile.base_model == "qwen3.5:4b"
+
+
+def test_windows_execution_policy_forces_cpu_without_gpu() -> None:
+    policy = select_ollama_execution_policy(
+        _inventory(total_ram=16 * GIB, available_ram=8 * GIB, free_disk=64 * GIB)
+    )
+
+    assert policy.mode == LLMExecutionMode.CPU
+    assert policy.warning is not None
+    assert "forced CPU mode" in policy.warning
+
+
+def test_windows_execution_policy_keeps_generic_gpu_in_auto_mode() -> None:
+    policy = select_ollama_execution_policy(
+        _inventory(
+            total_ram=16 * GIB,
+            available_ram=8 * GIB,
+            free_disk=64 * GIB,
+            gpu_memory=4 * GIB,
+            gpu_vendor=None,
+            gpu_name="Generic Graphics Adapter",
+        )
+    )
+
+    assert policy.mode == LLMExecutionMode.AUTO
+    assert policy.warning is None
+
+
+def test_execution_policy_keeps_non_windows_and_unknown_inventory_in_auto_mode() -> None:
+    policy = select_ollama_execution_policy(None, platform_name="Linux")
+
+    assert policy.mode == LLMExecutionMode.AUTO
+    assert policy.warning is None
+
+
+def test_windows_execution_policy_forces_cpu_when_inventory_failed() -> None:
+    policy = select_ollama_execution_policy(None, platform_name="Windows")
+
+    assert policy.mode == LLMExecutionMode.CPU
+    assert policy.warning is not None
 
 
 def test_explicit_9b_selection_is_allowed_with_warning_on_small_machine() -> None:
@@ -334,14 +375,16 @@ def _inventory(
     available_ram: int | None,
     free_disk: int | None,
     gpu_memory: int | None = None,
+    gpu_vendor: str | None = "nvidia",
+    gpu_name: str = "Test GPU",
 ) -> MachineInventorySnapshot:
     accelerators = ()
     if gpu_memory is not None:
         accelerators = (
             MachineAcceleratorSnapshot(
                 kind="gpu",
-                vendor="nvidia",
-                name="Test GPU",
+                vendor=gpu_vendor,
+                name=gpu_name,
                 memory_bytes=gpu_memory,
             ),
         )

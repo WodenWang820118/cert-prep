@@ -15,6 +15,7 @@ from cert_prep_backend.domains.mock_exams.manual_operations import (
     ManualDraftOperationStatus,
 )
 from cert_prep_contracts.llm import (
+    LLMExecutionMode,
     LLMProviderName,
     LLMProviderPreference,
 )
@@ -145,6 +146,8 @@ class LLMHealthRead(BaseModel):
     effective_model: str | None = None
     fallback_models: list[str] = Field(default_factory=list)
     fallback_reason: str | None = None
+    execution_mode: LLMExecutionMode | None = None
+    execution_warning: str | None = None
     profile_id: str | None = None
     base_model: str | None = None
     modelfile_sha256: str | None = None

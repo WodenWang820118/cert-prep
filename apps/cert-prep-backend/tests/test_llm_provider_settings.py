@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 from fastapi.testclient import TestClient
 
 from cert_prep_backend.api.app import create_app
@@ -7,7 +9,10 @@ from cert_prep_backend.domains.mock_exams import provider as provider_module
 from cert_prep_backend.domains.mock_exams.model_fallback import ModelFallbackEngine
 from cert_prep_backend.domains.mock_exams.ollama_transport import OllamaProvider
 from cert_prep_backend.domains.mock_exams.provider import provider_from_settings
+from cert_prep_contracts.hardware import MachineAcceleratorSnapshot
+from cert_prep_contracts.llm import LLMExecutionMode
 from cert_prep_contracts.runtime import RuntimeRequirementKind
+from cert_prep_ollama import profiles as ollama_package_profiles
 from cert_prep_ollama.profiles import DEFAULT_PROFILE_ID
 from llm_test_fakes import GIB, RecordingDownloadProvider, _profile_inventory
 
@@ -183,6 +188,7 @@ def test_provider_from_settings_auto_policy_builds_selected_ollama_provider(
 
     assert isinstance(provider, OllamaProvider)
     assert provider.model == "cert-prep-qwen3.5-4b-study-8k"
+    assert provider.execution_policy.mode == LLMExecutionMode.CPU
 
 
 def test_settings_parse_ollama_profile_controls(monkeypatch, tmp_path) -> None:
@@ -228,11 +234,44 @@ def test_provider_from_settings_uses_selected_ollama_profile(
     assert provider.profile_selection.profile_id == DEFAULT_PROFILE_ID
     assert provider.model == "cert-prep-qwen3.5-4b-study-8k"
     assert provider.fallback_models == ("cert-prep-qwen3.5-2b-study-4k",)
+    assert provider.execution_policy.mode == LLMExecutionMode.CPU
+
+
+def test_provider_from_settings_keeps_generic_gpu_in_auto_mode(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    inventory = replace(
+        _profile_inventory(total_ram=16 * GIB, free_disk=64 * GIB),
+        accelerators=(
+            MachineAcceleratorSnapshot(
+                kind="gpu",
+                name="Generic Graphics Adapter",
+            ),
+        ),
+    )
+    monkeypatch.setattr(
+        ollama_profile_module,
+        "collect_machine_inventory",
+        lambda **_kwargs: inventory,
+    )
+
+    provider = provider_from_settings(Settings(data_dir=tmp_path, llm_provider="ollama"))
+
+    assert isinstance(provider, OllamaProvider)
+    assert provider.execution_policy.mode == LLMExecutionMode.AUTO
+    assert provider.execution_policy.warning is None
 
 
 def test_provider_from_settings_preserves_raw_ollama_model_when_profile_disabled(
+    monkeypatch,
     tmp_path,
 ) -> None:
+    monkeypatch.setattr(
+        ollama_profile_module,
+        "collect_machine_inventory",
+        lambda **_kwargs: _profile_inventory(total_ram=16 * GIB, free_disk=64 * GIB),
+    )
     provider = provider_from_settings(
         Settings(
             data_dir=tmp_path,
@@ -247,3 +286,27 @@ def test_provider_from_settings_preserves_raw_ollama_model_when_profile_disabled
     assert provider.profile_selection is None
     assert provider.model == "custom-local:latest"
     assert provider.fallback_models == ("fallback-local:latest",)
+    assert provider.execution_policy.mode == LLMExecutionMode.CPU
+    assert provider.execution_policy.warning is not None
+
+
+def test_provider_from_settings_forces_cpu_when_windows_inventory_fails(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    def fail_inventory(**_kwargs):
+        raise RuntimeError("inventory probe failed")
+
+    monkeypatch.setattr(
+        ollama_profile_module,
+        "collect_machine_inventory",
+        fail_inventory,
+    )
+    monkeypatch.setattr(ollama_package_profiles.platform, "system", lambda: "Windows")
+
+    provider = provider_from_settings(Settings(data_dir=tmp_path, llm_provider="ollama"))
+
+    assert isinstance(provider, OllamaProvider)
+    assert provider.profile_selection is not None
+    assert provider.profile_selection.inventory is None
+    assert provider.execution_policy.mode == LLMExecutionMode.CPU

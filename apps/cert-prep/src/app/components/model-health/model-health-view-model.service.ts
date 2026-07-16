@@ -116,6 +116,9 @@ export class ModelHealthViewModelService {
     if (state.modelMissing) {
       return 'Reasoning model missing';
     }
+    if (this.cpuExecutionActive(state)) {
+      return `Reasoning model: ${state.effectiveModelName} · 使用 CPU 中`;
+    }
     return state.modelFallbackActive
       ? `Reasoning model: ${state.effectiveModelName}`
       : `Reasoning model: ${state.configuredModelName}`;
@@ -182,22 +185,33 @@ export class ModelHealthViewModelService {
     if (state.llmHealth === null) {
       return 'Model status unavailable.';
     }
+    if (this.cpuExecutionActive(state)) {
+      const warning =
+        state.llmHealth.execution_warning?.trim() || state.llmHealth.detail;
+      return state.modelFallbackActive
+        ? `${warning} ${this.modelFallbackDetail(state)}`
+        : warning;
+    }
     if (state.modelFallbackActive) {
-      if (state.providerSelection?.fallback_reason) {
-        return [
-          `Effective ${this.providerLabel(state.providerSelection.effective_provider)}`,
-          `${state.effectiveModelName}.`,
-          `Fallback: ${state.providerSelection.fallback_reason}`,
-        ].join(' ');
-      }
-      return [
-        `Ready via fallback ${state.effectiveModelName};`,
-        `primary ${state.configuredModelName} is not installed.`,
-      ].join(' ');
+      return this.modelFallbackDetail(state);
     }
     return state.modelMissing
       ? `${state.llmHealth.model} is missing locally.`
       : state.llmHealth.detail;
+  }
+
+  private modelFallbackDetail(state: ModelHealthViewState): string {
+    if (state.providerSelection?.fallback_reason) {
+      return [
+        `Effective ${this.providerLabel(state.providerSelection.effective_provider)}`,
+        `${state.effectiveModelName}.`,
+        `Fallback: ${state.providerSelection.fallback_reason}`,
+      ].join(' ');
+    }
+    return [
+      `Ready via fallback ${state.effectiveModelName};`,
+      `primary ${state.configuredModelName} is not installed.`,
+    ].join(' ');
   }
 
   private ocrDetail(state: ModelHealthViewState): string {
@@ -251,6 +265,9 @@ export class ModelHealthViewModelService {
     }
     if (state.modelMissing) {
       return 'Missing';
+    }
+    if (this.cpuExecutionActive(state)) {
+      return '使用 CPU 中';
     }
     if (state.modelFallbackActive) {
       return 'Ready via fallback';
@@ -306,11 +323,18 @@ export class ModelHealthViewModelService {
     }
     return state.modelMissing
       ? 'danger'
-      : state.modelFallbackActive
+      : this.cpuExecutionActive(state) || state.modelFallbackActive
         ? 'warn'
         : state.llmHealth?.available
           ? 'success'
           : 'warn';
+  }
+
+  private cpuExecutionActive(state: ModelHealthViewState): boolean {
+    return (
+      state.llmHealth?.available === true &&
+      state.llmHealth.execution_mode === 'cpu'
+    );
   }
 
   private llmRuntimeLabel(state: ModelHealthViewState): string {

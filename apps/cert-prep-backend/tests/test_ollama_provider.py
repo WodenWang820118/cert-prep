@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import Path
 
 from cert_prep_backend.api.app import create_app
@@ -7,6 +8,7 @@ from cert_prep_backend.domains.mock_exams import ollama_profiles as ollama_profi
 from cert_prep_backend.domains.mock_exams import ollama_transport
 from cert_prep_backend.domains.mock_exams.models import DraftSuggestion, SourceChunk
 from cert_prep_backend.domains.mock_exams.ollama_transport import OllamaProvider
+from cert_prep_contracts.llm import LLMExecutionMode, LLMExecutionPolicy
 from cert_prep_ollama.profiles import DEFAULT_PROFILE_ID, select_ollama_profile
 from fastapi.testclient import TestClient
 from llm_test_fakes import (
@@ -19,6 +21,13 @@ from llm_test_fakes import (
 
 
 AUTH_HEADERS = {"Authorization": "Bearer test-token"}
+
+
+def _cpu_execution_policy() -> LLMExecutionPolicy:
+    return LLMExecutionPolicy(
+        mode=LLMExecutionMode.CPU,
+        warning="Acceleration was not confirmed; using CPU.",
+    )
 
 
 class SequencedOllamaClient(RecordingOllamaClient):
@@ -125,6 +134,75 @@ def test_ollama_health_includes_profile_selection_fields(monkeypatch) -> None:
     assert fake_client.pull_calls == 0
 
 
+def test_ollama_cpu_policy_logs_once_and_health_reports_execution_metadata(
+    caplog,
+) -> None:
+    fake_client = RecordingOllamaClient(models=["qwen3.5:4b"])
+
+    with caplog.at_level(logging.WARNING, logger=ollama_transport.__name__):
+        provider = OllamaProvider(
+            host="http://127.0.0.1:11434",
+            model="qwen3.5:4b",
+            timeout_seconds=1,
+            execution_policy=_cpu_execution_policy(),
+            client=fake_client,
+        )
+        first = provider.health()
+        second = provider.health()
+
+    records = [
+        record for record in caplog.records if record.name == ollama_transport.__name__
+    ]
+    assert first.execution_mode == LLMExecutionMode.CPU
+    assert first.execution_warning == "Acceleration was not confirmed; using CPU."
+    assert first.fallback_reason is None
+    assert second.execution_mode == LLMExecutionMode.CPU
+    assert len(records) == 1
+    assert "Ollama CPU fallback" in records[0].message
+
+
+def test_ollama_unavailable_health_preserves_cpu_execution_metadata() -> None:
+    provider = OllamaProvider(
+        host="http://127.0.0.1:11434",
+        model="qwen3.5:4b",
+        timeout_seconds=1,
+        execution_policy=_cpu_execution_policy(),
+        client=RecordingOllamaClient(models=[]),
+    )
+
+    health = provider.health()
+
+    assert health.available is False
+    assert health.execution_mode == LLMExecutionMode.CPU
+    assert health.execution_warning is not None
+    assert health.fallback_reason is None
+
+
+def test_llm_health_api_serializes_cpu_execution_metadata(tmp_path) -> None:
+    provider = OllamaProvider(
+        host="http://127.0.0.1:11434",
+        model="qwen3.5:4b",
+        timeout_seconds=1,
+        execution_policy=_cpu_execution_policy(),
+        client=RecordingOllamaClient(models=["qwen3.5:4b"]),
+    )
+    client = TestClient(
+        create_app(
+            settings=Settings(data_dir=tmp_path, api_token="test-token"),
+            llm_provider=provider,
+        )
+    )
+
+    response = client.get("/llm/health", headers=AUTH_HEADERS)
+
+    assert response.status_code == 200
+    assert response.json()["execution_mode"] == "cpu"
+    assert response.json()["execution_warning"] == (
+        "Acceleration was not confirmed; using CPU."
+    )
+    assert response.json()["fallback_reason"] is None
+
+
 def test_ollama_health_accepts_implicit_latest_profile_alias(monkeypatch) -> None:
     model = "cert-prep-qwen3.5-4b-study-8k"
     fake_client = RecordingOllamaClient(models=[f"{model}:latest"])
@@ -184,6 +262,27 @@ def test_ollama_reasoning_requests_exact_distinct_count_when_source_supports_it(
     assert "If at least 2 valid items are present, return exactly 2" in prompt
     assert "If fewer valid items are present, return only those items" in prompt
     assert "Never invent, duplicate, or split an item" in prompt
+
+
+def test_ollama_reasoning_forces_num_gpu_zero_in_cpu_mode() -> None:
+    chunks = _reasoning_chunks()
+    fake_client = RecordingOllamaClient(
+        models=["qwen3.5:4b"],
+        chat_content=json.dumps(
+            {"items": [_reasoning_item(chunks[0], 1), _reasoning_item(chunks[1], 2)]}
+        ),
+    )
+    provider = OllamaProvider(
+        host="http://127.0.0.1:11434",
+        model="qwen3.5:4b",
+        timeout_seconds=1,
+        execution_policy=_cpu_execution_policy(),
+        client=fake_client,
+    )
+
+    provider.generate_reasoning_drafts(chunks, limit=2)
+
+    assert fake_client.chat_calls[0]["options"]["num_gpu"] == 0
 
 
 def test_ollama_reasoning_uses_one_supplemental_pass_for_a_short_grounded_result() -> None:
@@ -670,9 +769,10 @@ def test_ollama_fast_first_draft_maps_compact_json_to_candidate_choice(
     assert suggestion.rationale == "Qwen picked the closest reading."
     assert suggestion.confidence == 0.8
     assert fake_client.chat_calls[0]["format"] == "json"
+    assert "num_gpu" not in fake_client.chat_calls[0]["options"]
     assert fake_client.pull_calls == 0
 
-def test_ollama_fast_first_draft_forwards_keep_alive_override(
+def test_ollama_fast_first_draft_forwards_cpu_and_keep_alive_options(
     monkeypatch,
 ) -> None:
     fake_client = RecordingOllamaClient(
@@ -684,6 +784,7 @@ def test_ollama_fast_first_draft_forwards_keep_alive_override(
         host="http://127.0.0.1:11434",
         model="qwen3.5:4b",
         timeout_seconds=1,
+        execution_policy=_cpu_execution_policy(),
     )
     provider._client = fake_client
     chunk = SourceChunk(
@@ -712,6 +813,7 @@ def test_ollama_fast_first_draft_forwards_keep_alive_override(
     assert suggestion is not None
     assert suggestion.answer == "2 second"
     assert fake_client.chat_calls[0]["keep_alive"] == 0
+    assert fake_client.chat_calls[0]["options"]["num_gpu"] == 0
     assert fake_client.pull_calls == 0
 
 def test_ollama_fast_first_draft_falls_back_when_primary_runtime_fails(

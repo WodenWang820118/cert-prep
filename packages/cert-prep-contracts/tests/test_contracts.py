@@ -3,6 +3,8 @@ from __future__ import annotations
 from cert_prep_contracts import (
     DEFAULT_LLM_RUNTIME_POLICY,
     GenerationAttribution,
+    LLMExecutionMode,
+    LLMExecutionPolicy,
     LLMProviderName,
     LLMProviderPreference,
     LLMProviderSelection,
@@ -96,6 +98,19 @@ def test_llm_runtime_policy_and_provider_selection_are_shared_value_types() -> N
     assert selection.model_requirement_kind.value == "ollama_model"
     assert attribution.effective_provider == "future-provider"
     assert attribution.effective_model == "future-model"
+
+
+def test_llm_execution_policy_requires_warning_only_for_forced_cpu() -> None:
+    auto = LLMExecutionPolicy()
+    cpu = LLMExecutionPolicy(
+        mode=LLMExecutionMode.CPU,
+        warning="Acceleration was not confirmed; using CPU.",
+    )
+
+    assert auto.mode == LLMExecutionMode.AUTO
+    assert auto.warning is None
+    assert cpu.mode == LLMExecutionMode.CPU
+    assert cpu.warning is not None
 
 
 def test_machine_inventory_and_ollama_profiles_are_pure_value_types() -> None:

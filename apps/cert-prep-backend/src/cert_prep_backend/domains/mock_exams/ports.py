@@ -7,6 +7,7 @@ from typing import Any, Protocol, TypeVar, runtime_checkable
 from cert_prep_backend.domains.mock_exams.models import DraftSuggestion, SourceChunk
 from cert_prep_contracts.llm import (
     GenerationAttribution,
+    LLMExecutionMode,
     ModelPullProgress as _ModelPullProgress,
 )
 from cert_prep_contracts.runtime import RuntimeRequirementKind
@@ -42,6 +43,8 @@ class ProviderHealth:
     effective_model: str | None = None
     fallback_models: tuple[str, ...] = ()
     fallback_reason: str | None = None
+    execution_mode: LLMExecutionMode | None = None
+    execution_warning: str | None = None
     profile_id: str | None = None
     base_model: str | None = None
     modelfile_sha256: str | None = None

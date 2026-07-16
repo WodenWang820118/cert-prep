@@ -4,11 +4,13 @@ import { HealthStore } from '../../stores/health/health.store';
 import {
   availableLlmHealth,
   buttonByText,
+  cpuExecutionLlmHealth,
   fallbackLlmHealth,
   missingModelHealth,
   ocrHealth,
   systemHealth,
 } from '../../components/model-health/model-health.component.spec-helpers';
+import { ModelHealthViewModelFacade } from '../../components/model-health/model-health-view-model.facade';
 import { RuntimeManagerPage } from './runtime-manager.page';
 import { providerSelection } from '../../stores/health/health.store.spec-helpers';
 
@@ -108,6 +110,39 @@ describe('RuntimeManagerPage', () => {
     expect(fixture.nativeElement.textContent).toContain('Fallback active');
     expect(fixture.nativeElement.textContent).toContain(
       'The AMD accelerator driver must be at least 32.0.203.304.',
+    );
+  });
+
+  it('renders CPU execution as a warning without hiding model fallback detail', () => {
+    const health = TestBed.inject(HealthStore);
+    health.systemHealth.set(systemHealth());
+    health.llmHealth.set(
+      cpuExecutionLlmHealth({
+        effective_model: 'qwen3.5:2b',
+        fallback_models: ['qwen3.5:2b'],
+        fallback_reason:
+          'Configured model qwen3.5:4b is missing; using fallback qwen3.5:2b.',
+      }),
+    );
+    health.ocrHealth.set(ocrHealth());
+
+    const fixture = TestBed.createComponent(RuntimeManagerPage);
+    fixture.detectChanges();
+
+    const modelView = TestBed.inject(ModelHealthViewModelFacade).viewModel().model;
+    expect(modelView).toMatchObject({
+      statusLabel: '使用 CPU 中',
+      severity: 'warn',
+    });
+    expect(modelView.detail).toContain(
+      'GPU acceleration conditions were not met; Ollama is using CPU.',
+    );
+    expect(modelView.detail).toContain(
+      'Ready via fallback qwen3.5:2b; primary qwen3.5:4b is not installed.',
+    );
+    expect(fixture.nativeElement.textContent).toContain('使用 CPU 中');
+    expect(fixture.nativeElement.textContent).toContain(
+      'GPU acceleration conditions were not met; Ollama is using CPU.',
     );
   });
 

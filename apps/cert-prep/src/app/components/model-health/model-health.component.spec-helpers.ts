@@ -39,6 +39,26 @@ export function fallbackLlmHealth(): LLMHealthRead {
   };
 }
 
+export function cpuExecutionLlmHealth(
+  overrides: Partial<LLMHealthRead> = {},
+): LLMHealthRead {
+  return {
+    provider: 'ollama',
+    model: 'qwen3.5:4b',
+    available: true,
+    detail: 'model available',
+    unavailable_reason: null,
+    configured_model: 'qwen3.5:4b',
+    effective_model: 'qwen3.5:4b',
+    fallback_models: [],
+    fallback_reason: null,
+    execution_mode: 'cpu',
+    execution_warning:
+      'GPU acceleration conditions were not met; Ollama is using CPU.',
+    ...overrides,
+  };
+}
+
 export function missingModelHealth(): LLMHealthRead & {
   unavailable_reason: string;
 } {

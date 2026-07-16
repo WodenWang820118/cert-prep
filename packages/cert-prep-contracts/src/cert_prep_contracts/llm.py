@@ -27,6 +27,28 @@ class LLMProviderName(StrEnum):
     FAKE = "fake"
 
 
+class LLMExecutionMode(StrEnum):
+    """How a local LLM provider is instructed to choose compute hardware."""
+
+    AUTO = "auto"
+    CPU = "cpu"
+
+
+@dataclass(frozen=True, slots=True)
+class LLMExecutionPolicy:
+    """Execution mode and any non-blocking warning exposed to local clients."""
+
+    mode: LLMExecutionMode = LLMExecutionMode.AUTO
+    warning: str | None = None
+
+    def __post_init__(self) -> None:
+        warning = self.warning.strip() if self.warning is not None else None
+        if self.mode == LLMExecutionMode.CPU and not warning:
+            raise ValueError("CPU execution mode requires a warning.")
+        if self.mode == LLMExecutionMode.AUTO and self.warning is not None:
+            raise ValueError("Auto execution mode must not claim an execution warning.")
+
+
 @dataclass(frozen=True, slots=True)
 class LLMRuntimePolicy:
     """Single shared model/provider policy for the desktop product."""
@@ -77,6 +99,8 @@ __all__ = [
     "DEFAULT_LLM_PRIMARY_MODEL",
     "DEFAULT_LLM_RUNTIME_POLICY",
     "GenerationAttribution",
+    "LLMExecutionMode",
+    "LLMExecutionPolicy",
     "LLMProviderName",
     "LLMProviderPreference",
     "LLMProviderSelection",

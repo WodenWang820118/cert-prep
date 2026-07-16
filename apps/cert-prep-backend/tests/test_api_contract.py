@@ -83,6 +83,10 @@ def test_status_like_fields_are_documented_as_openapi_enums(tmp_path) -> None:
         "ollama",
         "fake",
     ]
+    assert _enum_values(openapi, "LLMHealthRead", "execution_mode") == [
+        "auto",
+        "cpu",
+    ]
     assert _enum_values(openapi, "RuntimeRequirementRead", "kind") == [
         "ollama",
         "ollama_model",

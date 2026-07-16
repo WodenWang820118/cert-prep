@@ -25,6 +25,7 @@ from cert_prep_backend.domains.mock_exams.ollama_transport import (
     pull_progress as _pull_progress,
 )
 from cert_prep_backend.domains.mock_exams.ollama_profiles import (
+    collect_ollama_machine_inventory,
     ollama_profile_selection_from_settings,
 )
 from cert_prep_backend.domains.mock_exams.ports import (
@@ -34,8 +35,10 @@ from cert_prep_backend.domains.mock_exams.ports import (
 from cert_prep_backend.domains.mock_exams.provider_selection import (
     provider_selection_from_settings,
 )
+from cert_prep_contracts.hardware import MachineInventorySnapshot
 from cert_prep_contracts.llm import LLMProviderName
 from cert_prep_contracts.runtime import RuntimeRequirementKind
+from cert_prep_ollama.profiles import select_ollama_execution_policy
 from cert_prep_backend.domains.mock_exams.reasoning_parser import (
     EXAM_ITEMS_SCHEMA,
     draft_suggestion_from_item as _draft_suggestion_from_item,
@@ -48,9 +51,11 @@ def provider_from_settings(settings: Settings):
 
     selected_provider = _selected_provider_from_settings(settings)
     if selected_provider == LLMProviderName.OLLAMA:
+        inventory = _ollama_inventory_from_settings(settings)
         profile_selection = ollama_profile_selection_from_settings(
             settings,
             provider_selected=True,
+            inventory=inventory,
         )
         model = (
             profile_selection.selected_profile.local_model
@@ -68,6 +73,7 @@ def provider_from_settings(settings: Settings):
             fallback_models=fallback_models,
             timeout_seconds=settings.ollama_timeout_seconds,
             profile_selection=profile_selection,
+            execution_policy=select_ollama_execution_policy(inventory),
         )
     return FakeLLMProvider(model=settings.ollama_model)
 
@@ -266,6 +272,15 @@ def _selected_provider_from_settings(settings: Settings) -> LLMProviderName:
     if settings.llm_provider == "auto":
         return provider_selection_from_settings(settings).selected_provider
     return LLMProviderName(settings.llm_provider)
+
+
+def _ollama_inventory_from_settings(
+    settings: Settings,
+) -> MachineInventorySnapshot | None:
+    try:
+        return collect_ollama_machine_inventory(settings)
+    except Exception:
+        return None
 
 
 __all__ = [
