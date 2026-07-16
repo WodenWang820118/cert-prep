@@ -17,6 +17,11 @@ telemetry, and artifact-backed QA evidence for packaged desktop flows.
 - LLM provider policy: `auto` resolves to the currently supported Ollama
   implementation. Public Alpha evidence must report configured/effective
   provider `ollama`.
+- Windows Ollama execution mode is independent of provider/model fallback. A
+  generic supported acceleration signal keeps Ollama in `auto`; otherwise the
+  backend selects `cpu`, passes `num_gpu=0`, logs a warning, returns the warning
+  from health, and the Angular status surface displays `使用 CPU 中`. No RTX
+  model is named or required by the product or Alpha acceptance contract.
 - Provider-neutral ports, lazy provider construction, selection metadata,
   health, and generation attribution remain extension points for future local
   providers. No retired provider-specific settings, runtime kinds, onboarding,
@@ -49,8 +54,8 @@ LLM nodes:
 
 | Platform | Provider | Target model | Status                     | Accelerator           |
 | -------- | -------- | ------------ | -------------------------- | --------------------- |
-| Windows  | `ollama` | `qwen3.5:4b` | default                    | local Ollama          |
-| Windows  | `ollama` | `qwen3.5:9b` | hardware-gated override    | local Ollama          |
+| Windows  | `ollama` | `qwen3.5:4b` | default                    | Ollama auto or forced CPU with warning |
+| Windows  | `ollama` | `qwen3.5:9b` | hardware-gated override    | Ollama auto or forced CPU with warning |
 | macOS    | `ollama` | `qwen3.5:4b` | deferred default candidate | Apple Silicon GPU/CPU |
 | macOS    | `ollama` | `qwen3.5:9b` | hardware-gated override    | Apple Silicon GPU/CPU |
 | Linux    | `ollama` | `qwen3.5:4b` | deferred default candidate | Nvidia CUDA/CPU       |
@@ -64,6 +69,9 @@ Fallback policy:
 - Ollama OOM or timeout on a `9b` request must surface a visible error instead
   of automatically falling back to `4b`.
 - Missing local Ollama models can trigger confirmation-gated download jobs.
+- Missing/unconfirmed Windows acceleration is not a missing-model condition.
+  It selects the CPU execution mode, warns about slower generation, and does
+  not populate provider/model `fallback_reason`.
 
 ## Pipeline Contract
 
@@ -143,6 +151,11 @@ bounded local workers.
 - Post-job provider health is not generation proof. Production evidence records
   readiness at generation start, effective provider/model, fallback reason,
   and resource release separately.
+- LLM health additionally reports `execution_mode` (`auto` or `cpu`) and
+  `execution_warning`. `cpu` is an enforced policy (`num_gpu=0`) and requires a
+  non-empty warning; `auto` makes no claim that a particular GPU was observed.
+  Hardware inventory is only an admission hint for choosing forced CPU, not
+  proof of actual Ollama GPU use.
 - `MOCK ITEMS` and practice readiness use one definition: distinct editable
   questions in the selected scope with valid choices and an answer. Full Exam
   and packaged summaries use the same query.
@@ -183,8 +196,8 @@ bounded local workers.
 - Reasoning comparator work must collect RAM/VRAM residency evidence before
   parameter reduction, scored bakeoff reruns, or default-model changes.
 - Packaged production summaries remain provider-aware and require model health,
-  configured/effective selection, explicit fallback/blocker metadata, and
-  Ollama reasoning on the Nvidia dGPU while WindowsML OCR uses the AMD iGPU.
+  configured/effective selection, explicit fallback/blocker metadata, explicit
+  execution mode/warning semantics, and WindowsML OCR use on the AMD iGPU.
 
 ## Provider Extension Interfaces
 
@@ -238,18 +251,18 @@ after the WindowsML desktop package is built:
 - OCR model/runtime artifacts are present, checksum-verified, and installed only
   through explicit runtime consent.
 - Resource telemetry observes `cert-prep-ocr-windowsml-runtime.exe`. Public
-  hardware verification derives OCR and reasoning routing directly from raw
-  Windows process/GPU counter rows plus the DXGI LUID map; summary booleans or
-  detailed aggregates cannot override contradictory raw evidence.
-- DXGI generation, Windows CSV rows, production/resource summaries, and Nvidia
-  SMI rows must all be fresh for the same acceptance window. The sampler binds
-  Nvidia's timezone-less timestamps to one explicit UTC offset captured at
-  both start and stop; timezone/DST drift fails closed.
+  hardware verification derives OCR routing directly from raw Windows
+  process/GPU counter rows plus the DXGI LUID map; summary booleans or detailed
+  aggregates cannot override contradictory raw evidence.
+- DXGI generation, Windows CSV rows, and production/resource summaries must all
+  be fresh for the same acceptance window. NVIDIA SMI is not started, declared,
+  or verified by the Alpha lane.
 - Reasoning provider health reports configured/effective provider and model,
-  fallback model list, and blocker/fallback reason.
-- Ollama Alpha evidence reports `reasoning_uses_nvidia_dgpu=true`; CPU or AMD
-  iGPU reasoning is a fail-closed hardware-routing blocker rather than a
-  silent performance fallback.
+  fallback model list, blocker/fallback reason, execution mode, and execution
+  warning. Provider/model fallback remains forbidden for Alpha evidence.
+- Ollama Alpha evidence accepts `execution_mode=auto` or `execution_mode=cpu`.
+  CPU mode requires a non-empty warning and visible `使用 CPU 中` frontend state;
+  neither mode requires NVIDIA/RTX telemetry or routing proof.
 - Streaming jobs reach terminal states, usable questions are generated, and Full
   Exam can start from streamed questions.
 - Process cleanup reports graceful close where possible and no residual smoke
@@ -305,11 +318,11 @@ selected document` for the selected document after the production streaming
   inconsistency, but they do not close the protected `public-alpha-b3-v1`
   hardware gate. Closure still requires the exact public candidate SHA on a
   protected clean-snapshot Windows x64 lane where WindowsML OCR is observed on
-  the AMD iGPU and Ollama reasoning is observed on the NVIDIA dGPU: four PDFs,
-  effective Ollama `qwen3.5:4b`, no provider/model fallback, usable questions
-  above zero, Full Exam count above zero, resource release, restart/cancel
-  cleanup with individually hashed evidence, and a completed-run-bound WebM
-  whose stream/duration/frames pass the protected runner's uniquely resolved
+  the AMD iGPU: four PDFs, effective Ollama `qwen3.5:4b`, no provider/model
+  fallback, explicit auto/CPU execution status, usable questions above zero,
+  Full Exam count above zero, resource release, restart/cancel cleanup with
+  individually hashed evidence, and a completed-run-bound WebM whose
+  stream/duration/frames pass the protected runner's uniquely resolved
   `ffprobe`, matched to its reviewed SHA-256 during preflight and rehashed by
   the verifier.
 
@@ -420,10 +433,11 @@ selected document` for the selected document after the production streaming
 
 ### Hardware Input And Routing Contract Closeout (2026-07-16)
 
-- Commit `58a156c2b0d703c2170e38c8edbf9fb63681fd2e` makes the Alpha
-  routing decision fail closed from raw evidence. Acceptance requires observed
-  WindowsML OCR use on the AMD iGPU, OCR Nvidia process memory at or below the
-  64 MiB gate, and Ollama reasoning use on the Nvidia dGPU. XDNA2, VitisAI, and
+- Commit `58a156c2b0d703c2170e38c8edbf9fb63681fd2e` implemented the
+  historical Alpha v2 routing decision from fail-closed raw evidence. It
+  required observed WindowsML OCR use on the AMD iGPU, OCR NVIDIA process
+  memory at or below the 64 MiB gate, and Ollama reasoning use on the NVIDIA
+  dGPU. XDNA2, VitisAI, and
   NPU capability or telemetry are not part of this Alpha contract. Missing
   AMD/Nvidia adapters, unmapped LUIDs, raw/summary contradictions, reused paths,
   stale timestamps, digest drift, or candidate/run identity drift are rejected.
@@ -437,6 +451,10 @@ selected document` for the selected document after the production streaming
   Ruff, script type checking, and 206 package-QA tests with one
   Windows-permission skip. This remains implementation evidence, not the
   protected four-PDF AMD/Nvidia acceptance run.
+- That v2 NVIDIA requirement is superseded before any canonical public Alpha
+  run by the v3 hardware result/v6 production summary contract: AMD iGPU OCR
+  remains fail-closed, while Ollama auto/CPU execution is explicit and NVIDIA
+  telemetry is absent.
 - The protected hardware workflow now configures the reviewed external harness
   path/hash, `ALPHA_ACCEPTANCE_PDF_DIR`, and the approved
   `ALPHA_FFPROBE_SHA256`; it derives the candidate-matched manifest and resolves
@@ -469,7 +487,6 @@ Resource artifacts for packaged runs:
 - `windows-dxgi-adapters.json`
 - `windows-resource-sampling.csv`
 - `windows-resource-summary.json`
-- `nvidia-smi.csv`
 
 ## Retired Surfaces
 
@@ -535,9 +552,10 @@ Do not use or recreate these in current OCR work:
 `.agents/TODOS/alpha-launch-readiness.md` remains active until the public OCR
 asset, checkout-free MSI/NSIS clean installs, and protected
 `public-alpha-b3-v1` recorded hardware acceptance gate pass. That hardware gate
-must prove WindowsML OCR on the AMD iGPU and Ollama reasoning on the NVIDIA
-dGPU. Local implementation evidence must not be promoted to a Public
-Alpha-ready claim before those external gates close.
+must prove WindowsML OCR on the AMD iGPU, exact Ollama provider/model attribution,
+and valid auto/CPU execution warning semantics. Local implementation evidence
+must not be promoted to a Public Alpha-ready claim before those external gates
+close.
 
 Deferred comparator reruns remain user-controlled and should only run after the
 target models are intentionally installed.

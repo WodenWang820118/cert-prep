@@ -97,17 +97,18 @@ and process cleanup.
   reviewed-SHA-pinned `ffprobe` gate for container, codec, dimensions, duration,
   and decoded frame count. Finalization revalidates the declared hardware files
   and both clean-install report schemas/digests before marking evidence passed.
-- Hardware result schema v2 binds the acceptance PDF manifest,
-  `production-summary.json`, Windows resource summary/CSV, DXGI adapter map,
-  and Nvidia SMI CSV to the candidate ID and acceptance run ID with path, byte
-  count, and SHA-256. Canonical paths must be unique, contained, non-linked,
-  digest-matched, and fresh for the acceptance window.
-- The verifier derives GPU routing from raw Windows process/GPU counter rows
-  and the DXGI LUID map, then requires the detailed resource summary and
-  production summary to match that derivation. Nvidia's timezone-less CSV is
-  normalized with the explicit UTC offset captured at sampler start and stop;
-  offset drift or stale rows fail closed. Finalization reruns the same contract
-  and rejects undeclared hardware files.
+- Hardware result schema v3 binds the acceptance PDF manifest,
+  `production-summary.json`, Windows resource summary/CSV, and DXGI adapter map
+  to the candidate ID and acceptance run ID with path, byte count, and SHA-256.
+  Canonical paths must be unique, contained, non-linked, digest-matched, and
+  fresh for the acceptance window. NVIDIA SMI is not a declared artifact.
+- The verifier derives WindowsML OCR routing from raw Windows process/GPU
+  counter rows and the DXGI LUID map, then requires the detailed resource
+  summary and production summary to match that derivation. The only required
+  adapter/routing gate is AMD iGPU OCR. Ollama evidence instead uses production
+  summary v6 health fields: `execution_mode=cpu` requires a warning, while
+  `execution_mode=auto` requires no warning and makes no GPU-routing claim.
+  Finalization reruns the same contract and rejects undeclared hardware files.
 
 - The packaged app should use downloadable release/runtime artifacts rather than
   assuming machine-wide Python or hidden global setup.
@@ -389,7 +390,7 @@ and process cleanup.
 - These are committed local prerequisites only. They do not establish an
   anonymous public OCR asset, a frozen exact candidate, hosted MSI/NSIS clean
   installs, protected `public-alpha-b3-v1` four-PDF hardware evidence from the
-  AMD iGPU/NVIDIA dGPU lane, or Public Alpha readiness.
+  then-current AMD iGPU/NVIDIA dGPU lane, or Public Alpha readiness.
 
 ### Public Repository And Hosted Quality Checkpoint (2026-07-16)
 
@@ -437,6 +438,9 @@ and process cleanup.
 - The current protected hardware contract binds WindowsML OCR to the AMD iGPU
   and Ollama reasoning to the NVIDIA dGPU. XDNA2, VitisAI, and NPU capability or
   telemetry are neither protected inputs nor acceptance gates.
+- This paragraph records the historical v2 contract at commit `58a156c`; it is
+  superseded before the canonical Alpha run by the v3 auto/CPU execution
+  contract below.
 - This closes the contract implementation only. It does not provision the
   protected runner or harness and is not a four-PDF hardware run, clean-install
   result, canonical release run, or Public Alpha readiness claim.
@@ -459,6 +463,23 @@ and process cleanup.
   producer, Playwright package, or packaged-flow/resilience runtime graph. A
   repo-owned candidate-bound producer is the next simplification phase; no
   hardware, release, or TODO gate is closed by this workflow-only reduction.
+
+### CPU Fallback Hardware Contract (2026-07-16)
+
+- Hardware result schema v3 and production summary schema v6 remove the NVIDIA
+  adapter, reasoning-routing, OCR-on-NVIDIA memory, `nvidia-smi`, and timezone
+  offset gates. The candidate producer must not create or declare NVIDIA SMI
+  artifacts; finalization rejects undeclared leftovers.
+- Windows CSV/DXGI evidence remains candidate-bound and fail-closed for the
+  WindowsML process and AMD iGPU use. Generic raw/summary identity, freshness,
+  mapping, containment, and digest checks remain unchanged.
+- Ollama provider/model identity is still exactly `ollama`/`qwen3.5:4b` with no
+  provider or model fallback. Execution is a separate contract: `auto` is
+  accepted without a GPU claim; `cpu` is accepted only with the backend warning
+  that Angular renders as `使用 CPU 中`.
+- The external harness must be updated and independently rehashed before
+  `ALPHA_HARDWARE_RUNNER_READY=true`. Historical v2 evidence is not accepted;
+  no canonical public Alpha hardware run exists to migrate.
 
 ## Size And Artifact Evidence
 
@@ -494,15 +515,14 @@ prerelease URL.
 
 - Public alpha publication remains blocked until an online protected
   clean-snapshot Windows x64 runner exposes a supported AMD iGPU for WindowsML
-  OCR and an NVIDIA dGPU for Ollama reasoning. The reviewed external harness,
-  PATH-provisioned `ffprobe`, anonymous OCR prerelease asset, checkout-free
-  clean MSI/NSIS lanes, and protected hardware acceptance must also exist. The
-  release must keep the Ollama-only Alpha contract rather than weakening the
-  gate.
+  OCR. The reviewed external harness, PATH-provisioned `ffprobe`, anonymous OCR
+  prerelease asset, checkout-free clean MSI/NSIS lanes, and protected hardware
+  acceptance must also exist. The release must keep the Ollama-only Alpha
+  provider/model contract while accepting explicit CPU execution.
 - The protected hardware gate must prove four PDFs, WindowsML/iGPU OCR, exact
   effective Ollama `qwen3.5:4b` attribution, usable and Full Exam counts above
-  zero, Ollama reasoning on the Nvidia dGPU, restart/cancellation cleanup with
-  per-check evidence, and a playable reviewed-SHA-pinned-`ffprobe`-validated
+  zero, valid auto/CPU execution warning semantics, restart/cancellation cleanup
+  with per-check evidence, and a playable reviewed-SHA-pinned-`ffprobe`-validated
   WebM from the same installer SHA.
 - The unsigned exception applies only to the public alpha. GA remains blocked
   until the runtime executables, main executable, MSI, and NSIS are all

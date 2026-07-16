@@ -16,7 +16,9 @@ local/hosted evidence belongs in
   runtime backed by `DmlExecutionProvider + CPUExecutionProvider`; its protected
   hardware gate requires observed use of a supported AMD iGPU. Ollama is the
   only Alpha reasoning adapter and remains an explicit external runtime/model
-  dependency.
+  dependency. Reasoning acceleration is not tied to an RTX model or a protected
+  NVIDIA lane: when supported acceleration cannot be confirmed, the backend
+  must warn, force Ollama CPU execution, and expose that state to the UI.
 - Provider-neutral ports, lazy construction, selection, health, and
   configured/effective attribution remain extension points. Adding another
   provider is not an Alpha task.
@@ -47,10 +49,10 @@ local/hosted evidence belongs in
 - [ ] Bring an online clean-snapshot Windows x64 runner into the
       `alpha-hardware` environment with labels `self-hosted`, `Windows`, `X64`,
       and `cert-prep-alpha-hardware`. The machine must expose a supported AMD
-      iGPU used by the WindowsML OCR runtime and an NVIDIA dGPU usable by Ollama
-      reasoning, and it must return to a known clean snapshot with no Cert
-      Prep-owned process, install, app-data, or port residue before each
-      acceptance run.
+      iGPU used by the WindowsML OCR runtime, and it must return to a known clean
+      snapshot with no Cert Prep-owned process, install, app-data, or port
+      residue before each acceptance run. No RTX/NVIDIA GPU model is a runner
+      requirement.
 
 - [ ] Provision Ollama and `qwen3.5:4b`, the external hardware harness, and
       exactly one `ffprobe` application on that runner's `PATH`. Provision the
@@ -62,10 +64,9 @@ local/hosted evidence belongs in
       `ALPHA_FFPROBE_SHA256`, in `alpha-hardware`. The workflow rejects harness
       reparse/digest drift immediately before execution, derives and
       candidate-checks the manifest, resolves `ffprobe` from `PATH`, and rejects
-      any executable whose digest differs from the approved value. This reduces
-      six machine inputs to four without changing the acceptance semantics. Set
-      repository variable `ALPHA_HARDWARE_RUNNER_READY=true` only after this
-      verification passes.
+      any executable whose digest differs from the approved value. Set repository
+      variable `ALPHA_HARDWARE_RUNNER_READY=true` only after the revised
+      AMD-iGPU/CPU-capable acceptance contract and these inputs pass preflight.
 
 ### 2. Freeze One Canonical Release Run
 
@@ -120,8 +121,11 @@ local/hosted evidence belongs in
   - configured/effective provider and model are exactly
     `ollama`/`qwen3.5:4b`, with no provider or model fallback;
   - every PDF produces usable questions and a non-zero Full Exam count;
-  - Ollama reasoning uses the NVIDIA dGPU, reaches generation readiness, and
-    releases the model after the job;
+  - Ollama reaches generation readiness and reports execution mode separately
+    from provider/model fallback. `auto` and forced `cpu` are both accepted;
+    `cpu` must carry the backend warning surfaced by the frontend as
+    `使用 CPU 中`. No RTX/NVIDIA routing or `nvidia-smi` evidence is required;
+  - the reasoning model is released after the job;
   - session restart succeeds, and the nine candidate-bound checks for upload,
     OCR, draft, runtime, model, cancel-versus-complete race, crash recovery,
     partial-data removal, and owned-process release each have their own JSON
