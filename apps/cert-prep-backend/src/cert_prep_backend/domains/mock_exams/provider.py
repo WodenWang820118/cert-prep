@@ -10,7 +10,6 @@ from cert_prep_backend.domains.mock_exams.deterministic_parser import (
     source_text_for_prompt as _source_text_for_prompt,
 )
 from cert_prep_backend.domains.mock_exams.fake_provider import FakeLLMProvider
-from cert_prep_backend.domains.mock_exams.fastflowlm_transport import FastFlowLMProvider
 from cert_prep_backend.domains.mock_exams.models import (
     DraftGenerationStrategy,
     DraftSuggestion,
@@ -36,6 +35,7 @@ from cert_prep_backend.domains.mock_exams.provider_selection import (
     provider_selection_from_settings,
 )
 from cert_prep_contracts.llm import LLMProviderName
+from cert_prep_contracts.runtime import RuntimeRequirementKind
 from cert_prep_backend.domains.mock_exams.reasoning_parser import (
     EXAM_ITEMS_SCHEMA,
     draft_suggestion_from_item as _draft_suggestion_from_item,
@@ -69,21 +69,6 @@ def provider_from_settings(settings: Settings):
             timeout_seconds=settings.ollama_timeout_seconds,
             profile_selection=profile_selection,
         )
-    if selected_provider == LLMProviderName.FASTFLOWLM:
-        return FastFlowLMProvider(
-            base_url=settings.fastflowlm_base_url,
-            model=settings.fastflowlm_model,
-            executable_path=settings.fastflowlm_executable_path,
-            fallback_models=settings.fastflowlm_fallback_models,
-            timeout_seconds=settings.fastflowlm_timeout_seconds,
-            model_pull_timeout_seconds=settings.runtime_install_timeout_seconds,
-            primary_min_available_ram_bytes=(settings.fastflowlm_primary_min_available_ram_bytes),
-            auto_start_server=settings.fastflowlm_auto_start_server,
-            server_start_timeout_seconds=settings.fastflowlm_server_start_timeout_seconds,
-            owned_server_idle_timeout_seconds=(
-                settings.fastflowlm_owned_server_idle_timeout_seconds
-            ),
-        )
     return FakeLLMProvider(model=settings.ollama_model)
 
 
@@ -109,13 +94,13 @@ class LazyDraftGenerationProvider:
         *,
         provider: str,
         model: str,
-        supports_ollama_runtime_installation: bool = False,
+        runtime_requirement_kind: RuntimeRequirementKind | None = None,
         starts_on_generation: bool = False,
     ) -> None:
         self._factory = factory
         self._provider_hint = provider
         self._model_hint = model
-        self._supports_ollama_runtime_installation = supports_ollama_runtime_installation
+        self._runtime_requirement_kind = runtime_requirement_kind
         self._starts_on_generation = starts_on_generation
         self._lock = Lock()
         self._provider: object | None = None
@@ -135,11 +120,11 @@ class LazyDraftGenerationProvider:
         return str(getattr(resolved, "model", self._model_hint))
 
     @property
-    def supports_ollama_runtime_installation(self) -> bool:
+    def runtime_requirement_kind(self) -> RuntimeRequirementKind | None:
         resolved = self._provider
         if resolved is None:
-            return self._supports_ollama_runtime_installation
-        return bool(getattr(resolved, "supports_ollama_runtime_installation", False))
+            return self._runtime_requirement_kind
+        return getattr(resolved, "runtime_requirement_kind", None)
 
     @property
     def starts_on_generation(self) -> bool:
@@ -182,11 +167,12 @@ class LazyDraftGenerationProvider:
             self._provider = None
             self._provider_hint = selected_provider
             self._model_hint = _provider_model_hint(settings, selected_provider)
-            self._supports_ollama_runtime_installation = selected_provider == "ollama"
-            self._starts_on_generation = (
-                selected_provider == "fastflowlm"
-                and settings.fastflowlm_auto_start_server
+            self._runtime_requirement_kind = (
+                RuntimeRequirementKind.OLLAMA
+                if selected_provider == "ollama"
+                else None
             )
+            self._starts_on_generation = False
         if resolved is not None:
             close = getattr(resolved, "close", None)
             if callable(close):
@@ -227,10 +213,10 @@ def lazy_provider_from_settings(settings: Settings) -> LazyDraftGenerationProvid
         lambda: provider_from_settings(settings),
         provider=selected_provider,
         model=_provider_model_hint(settings, selected_provider),
-        supports_ollama_runtime_installation=selected_provider == "ollama",
-        starts_on_generation=(
-            selected_provider == "fastflowlm" and settings.fastflowlm_auto_start_server
+        runtime_requirement_kind=(
+            RuntimeRequirementKind.OLLAMA if selected_provider == "ollama" else None
         ),
+        starts_on_generation=False,
     )
 
 
@@ -269,9 +255,7 @@ def _playable_suggestions(
 
 
 def _provider_model_hint(settings: Settings, selected_provider: str | None = None) -> str:
-    provider = selected_provider or _selected_provider_from_settings(settings).value
-    if provider == "fastflowlm":
-        return settings.fastflowlm_model
+    del selected_provider
     # Keep the lazy hint at the shared configured model. Hardware inventory and
     # any profile-specific local alias are resolved only when the provider is
     # first used.
@@ -279,7 +263,7 @@ def _provider_model_hint(settings: Settings, selected_provider: str | None = Non
 
 
 def _selected_provider_from_settings(settings: Settings) -> LLMProviderName:
-    if settings.llm_provider in {"auto", "fastflowlm"}:
+    if settings.llm_provider == "auto":
         return provider_selection_from_settings(settings).selected_provider
     return LLMProviderName(settings.llm_provider)
 
@@ -287,7 +271,6 @@ def _selected_provider_from_settings(settings: Settings) -> LLMProviderName:
 __all__ = [
     "EXAM_ITEMS_SCHEMA",
     "FakeLLMProvider",
-    "FastFlowLMProvider",
     "LazyDraftGenerationProvider",
     "MAX_PROMPT_SOURCE_CHARS",
     "OllamaProvider",

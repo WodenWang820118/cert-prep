@@ -9,9 +9,6 @@ from cert_prep_backend.domains.runtime_installations.installers import (
     WindowsMLOcrRuntimeInstaller,
     PaddleOcrRuntimeInstaller,
 )
-from cert_prep_backend.domains.runtime_installations.fastflowlm import (
-    FastFlowLMRuntimeInstaller,
-)
 from cert_prep_backend.domains.runtime_installations.manager import (
     RuntimeInstallationManager,
     RuntimeInstaller,
@@ -29,7 +26,6 @@ from cert_prep_backend.domains.runtime_installations.processes import run_ocr_ru
 
 __all__ = [
     "OcrRuntimeManifest",
-    "FastFlowLMRuntimeInstaller",
     "WindowsMLOcrRuntimeInstaller",
     "PaddleOcrRuntimeInstaller",
     "RuntimeInstallationManager",

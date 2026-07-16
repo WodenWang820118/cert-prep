@@ -29,7 +29,7 @@
       "inputs": ["default"],
       "options": {
         "cwd": "apps/cert-prep-backend",
-        "command": "uv run pytest tests/test_documents_streaming.py tests/test_ocr_igpu_probe.py tests/test_fastflowlm_provider.py -k \"streaming or fastflowlm or igpu\""
+        "command": "uv run pytest tests/test_documents_streaming.py tests/test_ocr_igpu_probe.py -k \"streaming or igpu\""
       }
     },
     "lint": {

@@ -1,11 +1,7 @@
-import copy
 from collections.abc import Sequence
-from pathlib import Path
 from threading import Event
 
-from cert_prep_backend.api.errors import ProviderUnavailableError
 from cert_prep_backend.core.config import DEFAULT_OLLAMA_MODEL
-from cert_prep_backend.domains.mock_exams.fastflowlm_transport import FastFlowLMProvider
 from cert_prep_backend.domains.mock_exams.models import DraftSuggestion, SourceChunk
 from cert_prep_backend.domains.mock_exams.ports import ProviderHealth
 from cert_prep_contracts.hardware import (
@@ -148,155 +144,6 @@ class RecordingOllamaClient:
         self.pull_calls += 1
         raise AssertionError("provider probe must not pull models")
 
-class RecordingFastFlowLMProvider(FastFlowLMProvider):
-    def __init__(
-        self,
-        *,
-        models: list[str],
-        chat_content: str = '{"items":[]}',
-        fail_response_format: bool = False,
-        fail_models: dict[str, Exception] | None = None,
-        primary_min_available_ram_bytes: int = 0,
-    ) -> None:
-        super().__init__(
-            base_url="http://127.0.0.1:52625/v1",
-            model="qwen3.5:4b",
-            timeout_seconds=1,
-            fallback_models=["qwen3.5:2b"],
-            primary_min_available_ram_bytes=primary_min_available_ram_bytes,
-        )
-        self.models = models
-        self.chat_content = chat_content
-        self.fail_response_format = fail_response_format
-        self.fail_models = fail_models or {}
-        self.requests: list[dict] = []
-
-    def _request_json(
-        self,
-        method: str,
-        path: str,
-        *,
-        body: dict | None = None,
-        timeout_seconds: float | None = None,
-    ) -> dict:
-        self.requests.append(
-            {
-                "method": method,
-                "path": path,
-                "body": copy.deepcopy(body),
-                "timeout_seconds": timeout_seconds,
-            }
-        )
-        if path == "/models":
-            return {"data": [{"id": model} for model in self.models]}
-        if (
-            path == "/chat/completions"
-            and self.fail_response_format
-            and isinstance(body, dict)
-            and "response_format" in body
-        ):
-            raise ProviderUnavailableError("FastFlowLM HTTP 400: response_format is not supported")
-        if path == "/chat/completions":
-            model = body.get("model") if isinstance(body, dict) else None
-            if isinstance(model, str) and model in self.fail_models:
-                raise self.fail_models[model]
-            return {"choices": [{"message": {"content": self.chat_content}}]}
-        raise AssertionError(f"Unexpected request: {method} {path}")
-
-class RecordingFastFlowLMProcess:
-    def __init__(self) -> None:
-        self.returncode: int | None = None
-        self.terminate_calls = 0
-        self.kill_calls = 0
-        self.wait_timeouts: list[float | int | None] = []
-
-    def poll(self) -> int | None:
-        return self.returncode
-
-    def terminate(self) -> None:
-        self.terminate_calls += 1
-        self.returncode = 0
-
-    def kill(self) -> None:
-        self.kill_calls += 1
-        self.returncode = -9
-
-    def wait(self, timeout: float | int | None = None) -> int:
-        self.wait_timeouts.append(timeout)
-        if self.returncode is None:
-            self.returncode = 0
-        return self.returncode
-
-class AutoStartFastFlowLMProvider(FastFlowLMProvider):
-    def __init__(
-        self,
-        *,
-        models: list[str],
-        chat_content: str,
-        primary_min_available_ram_bytes: int = 0,
-        owned_server_idle_timeout_seconds: float = 0,
-    ) -> None:
-        super().__init__(
-            base_url="http://127.0.0.1:52625/v1",
-            model="qwen3.5:4b",
-            timeout_seconds=1,
-            fallback_models=["qwen3.5:2b"],
-            primary_min_available_ram_bytes=primary_min_available_ram_bytes,
-            server_start_timeout_seconds=0.1,
-            owned_server_idle_timeout_seconds=owned_server_idle_timeout_seconds,
-        )
-        self.models = models
-        self.chat_content = chat_content
-        self.server_available = False
-        self.started_servers: list[dict] = []
-        self.processes: list[RecordingFastFlowLMProcess] = []
-        self.requests: list[dict] = []
-
-    def _start_owned_server_process(
-        self,
-        *,
-        executable: Path,
-        model: str,
-        host: str,
-        port: int,
-        creationflags: int,
-    ):
-        self.started_servers.append(
-            {
-                "model": model,
-                "host": host,
-                "port": port,
-            }
-        )
-        self.server_available = True
-        process = RecordingFastFlowLMProcess()
-        self.processes.append(process)
-        return process
-
-    def _request_json(
-        self,
-        method: str,
-        path: str,
-        *,
-        body: dict | None = None,
-        timeout_seconds: float | None = None,
-    ) -> dict:
-        self.requests.append(
-            {
-                "method": method,
-                "path": path,
-                "body": copy.deepcopy(body),
-                "timeout_seconds": timeout_seconds,
-            }
-        )
-        if path == "/models":
-            if not self.server_available:
-                raise ProviderUnavailableError("connection refused")
-            return {"data": [{"id": model} for model in self.models]}
-        if path == "/chat/completions":
-            return {"choices": [{"message": {"content": self.chat_content}}]}
-        raise AssertionError(f"Unexpected request: {method} {path}")
-
 class FlakyListOllamaClient(RecordingOllamaClient):
     def __init__(self, *, models: list[str]) -> None:
         super().__init__(models=models)
@@ -338,9 +185,9 @@ class FailingDownloadProvider(RecordingDownloadProvider):
         raise RuntimeError("connection refused")
 
 
-class RecordingFastFlowLMOnboardingProvider(RecordingDownloadProvider):
-    provider = "fastflowlm"
-    model = "qwen3.5:4b"
+class RecordingOnboardingProvider(RecordingDownloadProvider):
+    provider = "future-provider"
+    model = "future-model"
 
     def __init__(self) -> None:
         super().__init__(available=False, detail="model not found")

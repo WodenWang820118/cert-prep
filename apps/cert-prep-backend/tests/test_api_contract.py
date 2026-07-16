@@ -76,20 +76,16 @@ def test_status_like_fields_are_documented_as_openapi_enums(tmp_path) -> None:
     ]
     assert _enum_values(openapi, "LLMProviderSelectionRead", "preference") == [
         "auto",
-        "fastflowlm",
         "ollama",
         "fake",
     ]
     assert _enum_values(openapi, "LLMProviderSelectionRead", "selected_provider") == [
-        "fastflowlm",
         "ollama",
         "fake",
     ]
     assert _enum_values(openapi, "RuntimeRequirementRead", "kind") == [
         "ollama",
         "ollama_model",
-        "fastflowlm",
-        "fastflowlm_model",
         "paddle_ocr",
         "windowsml_ocr",
     ]

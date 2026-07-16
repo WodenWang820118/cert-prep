@@ -20,14 +20,6 @@ class ProviderUnavailableError(BackendError):
     """Raised when a provider or its prerequisites are not available."""
 
 
-class TermsAcceptanceRequiredError(BackendError):
-    """Raised when an explicit third-party terms acknowledgement is missing."""
-
-
-class ProviderReconfigurationConflictError(BackendError):
-    """Raised when provider policy changes would race active provider work."""
-
-
 class DocumentOperationConflictError(BackendError):
     """Raised when an operation id or document already belongs to other work."""
 

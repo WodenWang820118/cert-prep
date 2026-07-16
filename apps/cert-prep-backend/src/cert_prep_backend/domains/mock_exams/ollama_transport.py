@@ -34,6 +34,7 @@ from cert_prep_backend.domains.mock_exams.response_parsing import (
 from cert_prep_contracts.llm import GenerationAttribution
 from cert_prep_backend.api.errors import ProviderUnavailableError
 from cert_prep_contracts.llm_profiles import OllamaProfileSelection
+from cert_prep_contracts.runtime import RuntimeRequirementKind
 from cert_prep_ollama.models import extract_model_names, pull_progress
 from cert_prep_ollama.server import ensure_ollama_server_running, resolve_ollama_executable
 
@@ -72,8 +73,8 @@ class OllamaProvider:
         self._client = client or OllamaClient(host=host, timeout_seconds=timeout_seconds)
 
     @property
-    def supports_ollama_runtime_installation(self) -> bool:
-        return True
+    def runtime_requirement_kind(self) -> RuntimeRequirementKind:
+        return RuntimeRequirementKind.OLLAMA
 
     @property
     def starts_on_generation(self) -> bool:

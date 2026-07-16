@@ -9,6 +9,7 @@ from cert_prep_contracts.llm import (
     GenerationAttribution,
     ModelPullProgress as _ModelPullProgress,
 )
+from cert_prep_contracts.runtime import RuntimeRequirementKind
 
 __all__ = [
     "DraftGenerationProvider",
@@ -16,7 +17,7 @@ __all__ = [
     "GenerationAttributionProvider",
     "ModelOnboardingProvider",
     "ModelDownloadProvider",
-    "OllamaRuntimeInstallationProvider",
+    "RuntimeInstallationProvider",
     "ProviderHealth",
     "ReasoningDraftProvider",
     "ResourceReleasingProvider",
@@ -161,12 +162,12 @@ class StartsOnGenerationProvider(Protocol):
 
 
 @runtime_checkable
-class OllamaRuntimeInstallationProvider(Protocol):
-    """Provider capability for the Ollama runtime installer lane."""
+class RuntimeInstallationProvider(Protocol):
+    """Provider capability for declaring an installable local runtime."""
 
     @property
-    def supports_ollama_runtime_installation(self) -> bool:
-        """Return true when Ollama itself is a runtime requirement."""
+    def runtime_requirement_kind(self) -> RuntimeRequirementKind | None:
+        """Return the provider runtime requirement, if it is locally installable."""
         pass
 
 

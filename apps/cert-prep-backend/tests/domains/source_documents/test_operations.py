@@ -644,7 +644,7 @@ def _seed_partial_work(db: Database, document_id: str) -> None:
             )
             VALUES (
                 'partial-job', 'project', ?, 'partial-chunk', 'partial-chunk', 1,
-                'hybrid_reasoning', 'pending', 'fastflowlm', 'qwen3.5:4b',
+                'hybrid_reasoning', 'pending', 'future-provider', 'qwen3.5:4b',
                 '2026-07-14', '2026-07-14'
             )
             """,
@@ -671,7 +671,7 @@ def _seed_terminal_draft_history(
             VALUES (
                 'terminal-job', 'project', ?, 'partial-chunk', 1,
                 'deterministic_only', 'partial-chunk', ?, ?, 0,
-                'fastflowlm', 'qwen3.5:4b', 'fastflowlm', 'qwen3.5:4b',
+                'future-provider', 'qwen3.5:4b', 'future-provider', 'qwen3.5:4b',
                 'configured', 3, 1, 'historical detail',
                 '2026-07-13', '2026-07-14'
             )

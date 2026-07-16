@@ -22,7 +22,7 @@ def test_detached_terminal_job_keeps_public_attribution_and_is_not_retried(
         chunk_id="chunk",
         page_number=1,
         strategy="hybrid_reasoning",
-        provider="fastflowlm",
+        provider="future-provider",
         model="qwen3.5:4b",
     )
     terminal_before = draft_jobs.mark_failed(db, job["id"], detail="generation failed")
@@ -62,7 +62,7 @@ def test_recovery_terminalizes_detached_nonterminal_jobs(
         chunk_id="chunk",
         page_number=1,
         strategy="deterministic_only",
-        provider="fastflowlm",
+        provider="future-provider",
         model="qwen3.5:4b",
     )
     with db.connect() as connection:
@@ -128,7 +128,7 @@ def test_draft_job_attribution_constraints_reject_cross_document_drift(
         chunk_id="chunk-b",
         page_number=1,
         strategy="deterministic_only",
-        provider="fastflowlm",
+        provider="future-provider",
         model="qwen3.5:4b",
     )
     with db.connect() as connection:
@@ -207,7 +207,7 @@ def _insert_raw_job(
         )
         VALUES (
             ?, 'project', ?, ?, ?, 1, 'deterministic_only', 'pending',
-            'fastflowlm', 'qwen3.5:4b', '2026-07-14', '2026-07-14'
+            'future-provider', 'qwen3.5:4b', '2026-07-14', '2026-07-14'
         )
         """,
         (job_id, document_id, chunk_id, source_chunk_id),

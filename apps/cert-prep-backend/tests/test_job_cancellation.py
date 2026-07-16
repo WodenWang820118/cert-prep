@@ -77,7 +77,7 @@ def test_cancel_wins_before_draft_commit_and_rolls_back_inserts(
             project_id=project_id,
             document_id=document_id,
             suggestions=[_suggestion(chunk)],
-            effective_provider="fastflowlm",
+            effective_provider="future-provider",
             effective_model="qwen3.5:4b",
             fallback_reason=None,
         )
@@ -111,7 +111,7 @@ def test_draft_commit_phase_rejects_cancel_and_terminal_delete_is_idempotent(
         project_id=project_id,
         document_id=document_id,
         suggestions=[_suggestion(chunk)],
-        effective_provider="fastflowlm",
+        effective_provider="future-provider",
         effective_model="qwen3.5:4b",
         fallback_reason=None,
     )
@@ -649,7 +649,7 @@ class UnavailableOcrProvider:
 
 
 class BlockingDraftProvider:
-    provider = "fastflowlm"
+    provider = "future-provider"
     model = "qwen3.5:4b"
 
     def __init__(self) -> None:
@@ -713,7 +713,7 @@ def _enqueue(client, project_id: str, document_id: str, chunk: dict) -> dict:
         chunk_id=chunk["id"],
         page_number=chunk["page_number"],
         strategy="hybrid_reasoning",
-        provider="fastflowlm",
+        provider="future-provider",
         model="qwen3.5:4b",
     )
 

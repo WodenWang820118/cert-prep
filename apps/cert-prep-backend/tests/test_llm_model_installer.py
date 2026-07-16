@@ -9,8 +9,8 @@ from cert_prep_contracts.runtime import (
 
 
 class RecordingOnboardingProvider:
-    provider = "fastflowlm"
-    model = "qwen3.5:4b"
+    provider = "future-provider"
+    model = "future-model"
 
     def prepare_model_onboarding(self, progress) -> None:
         progress(ModelPullProgress(status="runtime validated"))
@@ -31,10 +31,7 @@ class RecordingOnboardingProvider:
 def test_model_installer_enters_commit_before_final_onboarding_verification() -> None:
     provider = RecordingOnboardingProvider()
     progress: list[RuntimeInstallProgress] = []
-    installer = LLMModelInstaller(
-        provider,
-        fastflowlm_terms_accepted=lambda: True,
-    )
+    installer = LLMModelInstaller(provider)
 
     status = installer.install(progress.append)
 

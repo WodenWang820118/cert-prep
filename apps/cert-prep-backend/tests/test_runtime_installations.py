@@ -7,7 +7,6 @@ import subprocess
 from types import SimpleNamespace
 from zipfile import ZipFile
 
-import pytest
 from fastapi.testclient import TestClient
 
 from cert_prep_backend.api.app import create_app
@@ -15,26 +14,15 @@ from cert_prep_backend.core.config import Settings
 from cert_prep_backend.domains.mock_exams import (
     ollama_profiles as ollama_profile_module,
 )
-from cert_prep_backend.domains.mock_exams import (
-    provider_selection as provider_selection_module,
-)
 from cert_prep_backend.domains.mock_exams.provider import LazyDraftGenerationProvider
 from cert_prep_backend.domains.runtime_installations.installers import LLMModelInstaller
 from cert_prep_backend.domains.runtime_installations import (
-    FastFlowLMRuntimeInstaller,
     WindowsMLOcrRuntimeInstaller,
     PaddleOcrRuntimeInstaller,
     RuntimeInstallationManager,
     run_ocr_runtime_command,
 )
-from cert_prep_backend.domains.runtime_installations.fastflowlm import (
-    verify_fastflowlm_installer_hash,
-)
 from cert_prep_backend.persistence.database import Database
-from cert_prep_backend.api.errors import (
-    ProviderUnavailableError,
-    TermsAcceptanceRequiredError,
-)
 from cert_prep_contracts.runtime import (
     RuntimeInstallationStatus,
     RuntimeInstallProgress,
@@ -150,10 +138,7 @@ def test_runtime_requirements_are_read_only(tmp_path: Path) -> None:
     assert installer.install_calls == 0
 
 
-def test_model_installer_uses_the_selected_provider_requirement_kind() -> None:
-    assert LLMModelInstaller(
-        SimpleNamespace(provider="fastflowlm", model="qwen3.5:4b")
-    ).kind == RuntimeRequirementKind.FASTFLOWLM_MODEL
+def test_model_installer_uses_the_ollama_alpha_requirement_kind() -> None:
     assert LLMModelInstaller(
         SimpleNamespace(provider="ollama", model="qwen3.5:4b")
     ).kind == RuntimeRequirementKind.OLLAMA_MODEL
@@ -164,11 +149,6 @@ def test_auto_selected_ollama_runtime_requirements_resolve_a_profile(
     tmp_path: Path,
 ) -> None:
     inventory = _profile_inventory(total_ram=16 * GIB, free_disk=64 * GIB)
-    monkeypatch.setattr(
-        provider_selection_module,
-        "_cached_machine_inventory",
-        lambda _timeout: inventory,
-    )
     monkeypatch.setattr(
         ollama_profile_module,
         "collect_machine_inventory",
@@ -221,121 +201,6 @@ def test_runtime_installation_starts_only_from_post(tmp_path: Path) -> None:
     assert installer.install_calls == 1
 
 
-def test_fastflowlm_runtime_install_requires_exact_terms_version(tmp_path: Path) -> None:
-    installer = FakeInstaller(RuntimeRequirementKind.FASTFLOWLM)
-    manager = RuntimeInstallationManager(
-        settings=Settings(data_dir=tmp_path, api_token="test-token"),
-        llm_provider=object(),
-        ocr_provider=FakeOcrProvider(),
-        installers=[installer],
-        async_jobs=False,
-    )
-    client = TestClient(
-        create_app(
-            settings=Settings(data_dir=tmp_path, api_token="test-token"),
-            runtime_installation_manager=manager,
-        )
-    )
-
-    rejected = client.post(
-        "/runtime/installations/fastflowlm",
-        headers=AUTH_HEADERS,
-        json={"fastflowlm_terms_accepted_version": "0.9.42"},
-    )
-    accepted = client.post(
-        "/runtime/installations/fastflowlm",
-        headers=AUTH_HEADERS,
-        json={"fastflowlm_terms_accepted_version": "0.9.43"},
-    )
-
-    assert rejected.status_code == 409
-    assert rejected.json()["code"] == "terms_acceptance_required"
-    assert accepted.status_code == 202
-    assert accepted.json()["status"] == "succeeded"
-    assert installer.install_calls == 1
-
-
-def test_fastflowlm_runtime_installer_verifies_before_executing(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    events: list[str] = []
-    installed = tmp_path / "Program Files" / "flm" / "flm.exe"
-
-    def download(path: Path) -> None:
-        events.append("download")
-        path.write_bytes(b"installer")
-
-    def verify_artifact(_path: Path) -> None:
-        events.append("hash")
-
-    def verify_signature(_path: Path) -> None:
-        events.append("signature")
-
-    def run_installer(_path: Path, _timeout: float) -> None:
-        events.append("execute")
-        installed.parent.mkdir(parents=True)
-        installed.write_bytes(b"flm")
-
-    installer = FastFlowLMRuntimeInstaller(
-        Settings(data_dir=tmp_path, llm_provider="fastflowlm"),
-        downloader=download,
-        artifact_verifier=verify_artifact,
-        signature_verifier=verify_signature,
-        installer_runner=run_installer,
-        executable_resolver=lambda: installed if installed.is_file() else None,
-    )
-    monkeypatch.setattr(installer, "validate_installable", lambda: None)
-
-    with pytest.raises(TermsAcceptanceRequiredError, match="explicitly accepted"):
-        installer.install(lambda _progress: None)
-    assert events == []
-
-    installer.authorize_terms("0.9.43")
-
-    result = installer.install(lambda _progress: None)
-
-    assert result == RuntimeInstallationStatus.SUCCEEDED
-    assert events == ["download", "hash", "signature", "execute"]
-
-
-def test_fastflowlm_runtime_installer_uses_owned_runner_by_default(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    events: list[str] = []
-    installed = tmp_path / "Program Files" / "flm" / "flm.exe"
-
-    def run_owned_installer(_path: Path, _timeout: float) -> None:
-        events.append("owned-execute")
-        installed.parent.mkdir(parents=True)
-        installed.write_bytes(b"flm")
-
-    installer = FastFlowLMRuntimeInstaller(
-        Settings(data_dir=tmp_path, llm_provider="fastflowlm"),
-        downloader=lambda path: path.write_bytes(b"installer"),
-        artifact_verifier=lambda _path: None,
-        signature_verifier=lambda _path: None,
-        executable_resolver=lambda: installed if installed.is_file() else None,
-    )
-    monkeypatch.setattr(installer, "validate_installable", lambda: None)
-    monkeypatch.setattr(installer, "_run_owned_installer", run_owned_installer)
-    installer.authorize_terms("0.9.43")
-
-    result = installer.install(lambda _progress: None)
-
-    assert result == RuntimeInstallationStatus.SUCCEEDED
-    assert events == ["owned-execute"]
-
-
-def test_fastflowlm_installer_hash_fails_closed_before_signature(tmp_path: Path) -> None:
-    installer = tmp_path / "flm-setup.exe"
-    installer.write_bytes(b"tampered")
-
-    with pytest.raises(ProviderUnavailableError, match="size does not match"):
-        verify_fastflowlm_installer_hash(installer)
-
-
 def test_lazy_ollama_provider_does_not_resolve_during_manager_setup(
     tmp_path: Path,
 ) -> None:
@@ -350,6 +215,7 @@ def test_lazy_ollama_provider_does_not_resolve_during_manager_setup(
         resolve_provider,
         provider="ollama",
         model="raw-local:latest",
+        runtime_requirement_kind=RuntimeRequirementKind.OLLAMA,
     )
 
     RuntimeInstallationManager(

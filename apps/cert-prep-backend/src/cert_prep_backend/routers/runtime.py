@@ -11,17 +11,14 @@ from cert_prep_backend.domains.runtime_installations import RuntimeInstallationM
 from cert_prep_backend.domains.runtime_schemas import (
     MachineInventoryRead,
     RuntimeInstallationRead,
-    RuntimeInstallationStartRequest,
     RuntimeRequirementsRead,
 )
 from cert_prep_backend.api.errors import (
     ProviderUnavailableError,
-    TermsAcceptanceRequiredError,
     api_error,
     not_found_error,
 )
 from cert_prep_backend.core.exceptions import OperationNotCancellableError
-from cert_prep_contracts.llm import FASTFLOWLM_RUNTIME_TRUST_POLICY
 from cert_prep_contracts.runtime import RuntimeRequirementKind
 
 
@@ -50,26 +47,10 @@ def machine_inventory(
 )
 def start_runtime_installation(
     kind: RuntimeRequirementKind,
-    payload: RuntimeInstallationStartRequest | None = None,
     manager: RuntimeInstallationManager = Depends(get_runtime_installation_manager),
 ):
     try:
-        return manager.start_installation(
-            kind,
-            fastflowlm_terms_accepted_version=(
-                payload.fastflowlm_terms_accepted_version if payload else None
-            ),
-        )
-    except TermsAcceptanceRequiredError as exc:
-        raise api_error(
-            status_code=status.HTTP_409_CONFLICT,
-            code="terms_acceptance_required",
-            message=str(exc),
-            details={
-                "terms_version": FASTFLOWLM_RUNTIME_TRUST_POLICY.version,
-                "terms_url": FASTFLOWLM_RUNTIME_TRUST_POLICY.terms_url,
-            },
-        ) from exc
+        return manager.start_installation(kind)
     except ProviderUnavailableError as exc:
         raise api_error(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

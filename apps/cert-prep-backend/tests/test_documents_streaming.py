@@ -24,7 +24,7 @@ from document_test_llm_fakes import (
     InvalidJsonReasoningExamProvider,
     MissingModelExamProvider,
     MockExamProvider,
-    ReleaseRecordingFastFlowLMProvider,
+    ReleaseRecordingProvider,
     ReleaseKeepAliveRecordingOllamaProvider,
     TimeoutReasoningExamProvider,
 )
@@ -43,12 +43,12 @@ def test_streaming_generation_startup_uses_provider_capability() -> None:
         def starts_on_generation(self) -> bool:
             return True
 
-    class NameOnlyFastFlowLMProvider:
-        provider = "fastflowlm"
+    class NameOnlyProvider:
+        provider = "future-provider"
         auto_start_server = True
 
     assert _provider_starts_on_generation(CustomStartsOnGenerationProvider()) is True
-    assert _provider_starts_on_generation(NameOnlyFastFlowLMProvider()) is False
+    assert _provider_starts_on_generation(NameOnlyProvider()) is False
 
 
 def test_streaming_generation_kwargs_are_provider_owned() -> None:
@@ -270,11 +270,11 @@ def test_streaming_draft_generation_releases_ollama_model_after_completion(
     assert llm_provider.reasoning_keep_alive_values == [0]
 
 
-def test_streaming_draft_generation_releases_fastflowlm_resources_after_completion(
+def test_streaming_draft_generation_releases_provider_resources_after_completion(
     tmp_path: Path,
     auth_headers,
 ) -> None:
-    llm_provider = ReleaseRecordingFastFlowLMProvider()
+    llm_provider = ReleaseRecordingProvider()
     client = TestClient(
         create_app(
             settings=Settings(
@@ -305,11 +305,11 @@ def test_streaming_draft_generation_releases_fastflowlm_resources_after_completi
     ).json()["items"]
     assert jobs[0]["status"] == "succeeded"
     assert jobs[0]["generated_count"] == 1
-    assert jobs[0]["provider"] == "fastflowlm"
-    assert jobs[0]["model"] == "qwen3.5:4b"
-    assert jobs[0]["effective_provider"] == "fastflowlm"
-    assert jobs[0]["effective_model"] == "qwen3.5:2b"
-    assert "using fallback qwen3.5:2b" in jobs[0]["fallback_reason"]
+    assert jobs[0]["provider"] == "future-provider"
+    assert jobs[0]["model"] == "future-model"
+    assert jobs[0]["effective_provider"] == "future-provider"
+    assert jobs[0]["effective_model"] == "future-model-fallback"
+    assert "using fallback future-model-fallback" in jobs[0]["fallback_reason"]
     assert llm_provider.release_calls == 1
 
 

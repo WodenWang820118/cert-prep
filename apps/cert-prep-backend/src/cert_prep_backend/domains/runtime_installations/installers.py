@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from tempfile import TemporaryDirectory
-from threading import Lock
 import shutil
 from pathlib import Path
 
@@ -23,11 +22,7 @@ from cert_prep_backend.domains.runtime_installations.manifest import (
 )
 from cert_prep_backend.domains.runtime_installations.processes import run_ocr_runtime_command
 from cert_prep_backend.domains.source_documents.ocr import OCRProvider
-from cert_prep_backend.api.errors import (
-    ProviderUnavailableError,
-    TermsAcceptanceRequiredError,
-)
-from cert_prep_contracts.llm import FASTFLOWLM_RUNTIME_TRUST_POLICY
+from cert_prep_backend.api.errors import ProviderUnavailableError
 from cert_prep_contracts.runtime import (
     RuntimeInstallationStatus,
     RuntimeInstallProgress,
@@ -40,31 +35,11 @@ from cert_prep_contracts.llm import ModelPullProgress
 class LLMModelInstaller:
     """Installer and health snapshot for the configured reasoning model."""
 
-    def __init__(
-        self,
-        provider: object,
-        *,
-        fastflowlm_terms_accepted: Callable[[], bool] | None = None,
-    ) -> None:
+    def __init__(self, provider: object) -> None:
         self._provider = provider
         self.provider = str(getattr(provider, "provider", "llm"))
         self.model = str(getattr(provider, "model", "configured model"))
-        self.kind = (
-            RuntimeRequirementKind.FASTFLOWLM_MODEL
-            if self.provider == "fastflowlm"
-            else RuntimeRequirementKind.OLLAMA_MODEL
-        )
-        self._authorization_lock = Lock()
-        self._authorized_terms_version: str | None = None
-        self._fastflowlm_terms_accepted = fastflowlm_terms_accepted
-
-    def authorize_terms(self, version: str) -> None:
-        if self.kind != RuntimeRequirementKind.FASTFLOWLM_MODEL:
-            return
-        if version != FASTFLOWLM_RUNTIME_TRUST_POLICY.version:
-            raise TermsAcceptanceRequiredError("FastFlowLM terms version is not allowlisted.")
-        with self._authorization_lock:
-            self._authorized_terms_version = version
+        self.kind = RuntimeRequirementKind.OLLAMA_MODEL
 
     def requirement(self) -> RuntimeRequirementSnapshot:
         """Return model availability without starting a download."""
@@ -107,21 +82,6 @@ class LLMModelInstaller:
     ) -> RuntimeInstallationStatus:
         """Pull the configured model through the provider's download API."""
 
-        if self.kind == RuntimeRequirementKind.FASTFLOWLM_MODEL:
-            with self._authorization_lock:
-                accepted_version = self._authorized_terms_version
-                self._authorized_terms_version = None
-            legacy_authorized = (
-                self._fastflowlm_terms_accepted is not None
-                and self._fastflowlm_terms_accepted()
-            )
-            if (
-                accepted_version != FASTFLOWLM_RUNTIME_TRUST_POLICY.version
-                and not legacy_authorized
-            ):
-                raise TermsAcceptanceRequiredError(
-                    "FastFlowLM terms must be explicitly accepted before model download."
-                )
         model_provider = provider_capability(self._provider, ModelDownloadProvider)
         if model_provider is None:
             raise ProviderUnavailableError(
@@ -181,14 +141,6 @@ class LLMModelInstaller:
                 self._provider,
                 ModelOnboardingProvider,
             )
-            if (
-                self.kind == RuntimeRequirementKind.FASTFLOWLM_MODEL
-                and onboarding_provider is None
-                and not callable(getattr(self._provider, "health", None))
-            ):
-                raise ProviderUnavailableError(
-                    "FastFlowLM model downloads require verified model onboarding."
-                )
             if onboarding_provider is not None:
                 progress(
                     RuntimeInstallProgress(
@@ -348,8 +300,6 @@ class PaddleOcrRuntimeInstaller:
 
 def _provider_label(provider: str) -> str:
     normalized = provider.strip().lower()
-    if normalized == "fastflowlm":
-        return "FastFlowLM"
     if normalized == "ollama":
         return "Ollama"
     if normalized == "fake":

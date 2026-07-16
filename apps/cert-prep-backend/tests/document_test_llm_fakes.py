@@ -163,12 +163,12 @@ class TimeoutReasoningExamProvider(InvalidJsonReasoningExamProvider):
         num_ctx: int,
         num_predict: int,
     ) -> list[DraftSuggestion]:
-        raise ProviderUnavailableError("FastFlowLM transient generation error: timed out")
+        raise ProviderUnavailableError("Provider transient generation error: timed out")
 
 
-class ReleaseRecordingFastFlowLMProvider(MockExamProvider):
-    provider = "fastflowlm"
-    model = "qwen3.5:4b"
+class ReleaseRecordingProvider(MockExamProvider):
+    provider = "future-provider"
+    model = "future-model"
 
     @property
     def starts_on_generation(self) -> bool:
@@ -182,11 +182,11 @@ class ReleaseRecordingFastFlowLMProvider(MockExamProvider):
 
     def generation_attribution(self) -> GenerationAttribution:
         return GenerationAttribution(
-            effective_provider="fastflowlm",
-            effective_model="qwen3.5:2b",
+            effective_provider="future-provider",
+            effective_model="future-model-fallback",
             fallback_reason=(
                 "Available system RAM is below the primary requirement; "
-                "using fallback qwen3.5:2b."
+                "using fallback future-model-fallback."
             ),
         )
 
@@ -195,8 +195,8 @@ class ReleaseRecordingFastFlowLMProvider(MockExamProvider):
             provider=self.provider,
             model=self.model,
             available=False,
-            detail="FastFlowLM server unavailable at http://127.0.0.1:52625/v1",
-            unavailable_reason="fastflowlm_not_running",
+            detail="Provider runtime is not running.",
+            unavailable_reason="provider_not_running",
         )
 
     def release_resources(self) -> None:

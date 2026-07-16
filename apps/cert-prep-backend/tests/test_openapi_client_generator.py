@@ -38,10 +38,6 @@ def _schema(*, request_required: bool = True) -> dict:
                     "type": "string",
                     "enum": ["pending", "running", "canceled"],
                 },
-                "FastFlowLMTermsDecision": {
-                    "type": "string",
-                    "enum": ["accepted", "declined"],
-                },
                 "ManualDraftOperationStatus": {
                     "type": "string",
                     "enum": ["queued", "running", "canceled"],
@@ -112,7 +108,6 @@ def test_generated_client_preserves_openapi_enum_literals() -> None:
 
     assert 'DocumentOperationStatus: "queued" | "running" | "canceled";' in output
     assert 'DraftGenerationJobStatus: "pending" | "running" | "canceled";' in output
-    assert 'FastFlowLMTermsDecision: "accepted" | "declined";' in output
     assert 'ManualDraftOperationStatus: "queued" | "running" | "canceled";' in output
     assert 'RuntimeInstallationStatus: "queued" | "running" | "canceled";' in output
     assert "LegacyStatus: string;" in output

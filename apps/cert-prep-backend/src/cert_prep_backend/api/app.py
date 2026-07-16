@@ -18,9 +18,6 @@ from cert_prep_backend.core.config import Settings
 from cert_prep_backend.persistence.database import Database
 from cert_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
 from cert_prep_backend.domains.mock_exams.provider import lazy_provider_from_settings
-from cert_prep_backend.domains.mock_exams.provider_preferences import (
-    apply_persisted_fastflowlm_terms_decision,
-)
 from cert_prep_backend.domains.mock_exams.streaming import StreamingDraftGenerationManager
 from cert_prep_backend.domains.runtime_installations import RuntimeInstallationManager
 from cert_prep_backend.domains.source_documents import repository as source_documents_repository
@@ -79,7 +76,6 @@ def create_app(
     )
     app.state.settings = app_settings
     app.state.database = Database(app_settings)
-    apply_persisted_fastflowlm_terms_decision(app_settings, app.state.database)
     recover_operations(app.state.database)
     source_documents_repository.recover_processing_documents(app.state.database)
     app.state.llm_provider = llm_provider or lazy_provider_from_settings(app_settings)

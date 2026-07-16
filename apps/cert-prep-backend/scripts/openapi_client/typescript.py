@@ -10,7 +10,6 @@ CLOSED_ENUM_SCHEMAS = frozenset(
         "DocumentOperationPhase",
         "DocumentOperationStatus",
         "DraftGenerationJobStatus",
-        "FastFlowLMTermsDecision",
         "ManualDraftOperationStatus",
         "RuntimeInstallationStatus",
     }

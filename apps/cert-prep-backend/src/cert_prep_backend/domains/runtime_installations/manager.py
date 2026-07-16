@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from cert_prep_backend.core.config import Settings
 from cert_prep_backend.domains.mock_exams.ports import (
-    OllamaRuntimeInstallationProvider,
+    RuntimeInstallationProvider,
     provider_capability,
 )
 from cert_prep_backend.domains.runtime_installations.models import (
@@ -19,9 +19,7 @@ from cert_prep_backend.domains.runtime_installations.models import (
 from cert_prep_backend.domains.source_documents.ocr import OCRProvider
 from cert_prep_backend.persistence.database import Database
 from cert_prep_backend.api.errors import ProviderUnavailableError
-from cert_prep_backend.api.errors import TermsAcceptanceRequiredError
 from cert_prep_backend.core.exceptions import OperationNotCancellableError
-from cert_prep_contracts.llm import FASTFLOWLM_RUNTIME_TRUST_POLICY
 from cert_prep_contracts.runtime import (
     RuntimeInstallationStatus,
     RuntimeInstallProgress,
@@ -119,9 +117,6 @@ class RuntimeInstallationManager:
             WindowsMLOcrRuntimeInstaller,
             PaddleOcrRuntimeInstaller,
         )
-        from cert_prep_backend.domains.runtime_installations.fastflowlm import (
-            FastFlowLMRuntimeInstaller,
-        )
         from cert_prep_backend.domains.source_documents.adapters.external_windowsml import (
             ExternalWindowsMLOCRProvider,
         )
@@ -133,31 +128,30 @@ class RuntimeInstallationManager:
         self._settings = settings
         self._db = db
         self._async_jobs = async_jobs
-        ollama_runtime_provider = provider_capability(
+        runtime_installation_provider = provider_capability(
             llm_provider,
-            OllamaRuntimeInstallationProvider,
+            RuntimeInstallationProvider,
         )
-        supports_ollama_runtime = bool(
-            ollama_runtime_provider
-            and ollama_runtime_provider.supports_ollama_runtime_installation
+        provider_runtime_kind = (
+            runtime_installation_provider.runtime_requirement_kind
+            if runtime_installation_provider is not None
+            else None
         )
         llm_runtime_installers: list[RuntimeInstaller] = []
-        if supports_ollama_runtime:
+        if provider_runtime_kind == RuntimeRequirementKind.OLLAMA:
             llm_runtime_installers.append(
                 OllamaRuntimeInstaller(
                     ollama_host=settings.ollama_host,
                     runtime_install_timeout_seconds=settings.runtime_install_timeout_seconds,
                 )
             )
-        if str(getattr(llm_provider, "provider", "")) == "fastflowlm":
-            llm_runtime_installers.append(FastFlowLMRuntimeInstaller(settings))
         llm_model_installer: RuntimeInstaller = LLMModelInstaller(llm_provider)
         if (
-            supports_ollama_runtime
+            provider_runtime_kind == RuntimeRequirementKind.OLLAMA
             and settings.ollama_profile_enabled
         ):
             llm_model_installer = _LazyOllamaProfileInstaller(settings)
-        elif supports_ollama_runtime:
+        elif provider_runtime_kind == RuntimeRequirementKind.OLLAMA:
             profile_selection = getattr(llm_provider, "profile_selection", None)
             if profile_selection is not None:
                 from cert_prep_ollama.profile_installer import OllamaProfileInstaller
@@ -202,10 +196,7 @@ class RuntimeInstallationManager:
             self._llm_model_requirement_kind = next(
                 (
                     kind
-                    for kind in (
-                        RuntimeRequirementKind.FASTFLOWLM_MODEL,
-                        RuntimeRequirementKind.OLLAMA_MODEL,
-                    )
+                    for kind in (RuntimeRequirementKind.OLLAMA_MODEL,)
                     if kind in self._installers
                 ),
                 preferred_model_kind,
@@ -224,23 +215,14 @@ class RuntimeInstallationManager:
             if kind in self._installers
         ]
 
-    def start_model_installation(
-        self,
-        *,
-        fastflowlm_terms_accepted_version: str | None = None,
-    ) -> RuntimeInstallationSnapshot:
+    def start_model_installation(self) -> RuntimeInstallationSnapshot:
         """Start the selected provider's model installation lane."""
 
-        return self.start_installation(
-            self._llm_model_requirement_kind,
-            fastflowlm_terms_accepted_version=fastflowlm_terms_accepted_version,
-        )
+        return self.start_installation(self._llm_model_requirement_kind)
 
     def start_installation(
         self,
         kind: RuntimeRequirementKind | str,
-        *,
-        fastflowlm_terms_accepted_version: str | None = None,
     ) -> RuntimeInstallationSnapshot:
         """Start or reuse an installation job for the requested requirement."""
 
@@ -248,29 +230,10 @@ class RuntimeInstallationManager:
         requirement = installer.requirement()
         if requirement.available:
             return self._completed_snapshot(installer, requirement)
-        accepted_terms_version = (
-            fastflowlm_terms_accepted_version
-            or self._settings.fastflowlm_terms_accepted_version
-        )
-        if installer.kind in {
-            RuntimeRequirementKind.FASTFLOWLM,
-            RuntimeRequirementKind.FASTFLOWLM_MODEL,
-        } and (
-            accepted_terms_version != FASTFLOWLM_RUNTIME_TRUST_POLICY.version
-        ):
-            raise TermsAcceptanceRequiredError(
-                "FastFlowLM terms must be accepted for the pinned runtime version "
-                f"{FASTFLOWLM_RUNTIME_TRUST_POLICY.version}."
-            )
-        authorize_terms = getattr(installer, "authorize_terms", None)
-        if callable(authorize_terms) and accepted_terms_version is not None:
-            authorize_terms(accepted_terms_version)
         validate = getattr(installer, "validate_installable", None)
         if callable(validate):
             try:
                 validate()
-            except TermsAcceptanceRequiredError:
-                raise
             except ProviderUnavailableError:
                 raise
             except OllamaProviderUnavailableError as exc:
@@ -470,10 +433,7 @@ class RuntimeInstallationManager:
             detail=(
                 "model download complete"
                 if installer.kind
-                in {
-                    RuntimeRequirementKind.OLLAMA_MODEL,
-                    RuntimeRequirementKind.FASTFLOWLM_MODEL,
-                }
+                == RuntimeRequirementKind.OLLAMA_MODEL
                 else snapshot.detail or f"{requirement.label} is ready"
             ),
             completed=snapshot.completed if snapshot.completed is not None else requirement.bytes,

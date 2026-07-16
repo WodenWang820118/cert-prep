@@ -19,7 +19,7 @@ def test_draft_insert_and_success_attribution_commit_together(client, auth_heade
         chunk_id=chunk["id"],
         page_number=chunk["page_number"],
         strategy="hybrid_reasoning",
-        provider="fastflowlm",
+        provider="future-provider",
         model="qwen3.5:4b",
     )
     draft_jobs.mark_running(client.app.state.database, job["id"])
@@ -31,14 +31,14 @@ def test_draft_insert_and_success_attribution_commit_together(client, auth_heade
         project_id=project_id,
         document_id=document_id,
         suggestions=[_suggestion(chunk)],
-        effective_provider="fastflowlm",
+        effective_provider="future-provider",
         effective_model="qwen3.5:2b",
         fallback_reason="primary model required more memory",
     )
 
     completed = draft_jobs.get_job(client.app.state.database, job["id"])
     assert completed["status"] == "succeeded"
-    assert completed["effective_provider"] == "fastflowlm"
+    assert completed["effective_provider"] == "future-provider"
     assert completed["effective_model"] == "qwen3.5:2b"
     assert completed["fallback_reason"] == "primary model required more memory"
     assert completed["phase"] == "completed"
@@ -58,7 +58,7 @@ def test_draft_insert_rolls_back_when_success_attribution_cannot_commit(
         chunk_id=chunk["id"],
         page_number=chunk["page_number"],
         strategy="hybrid_reasoning",
-        provider="fastflowlm",
+        provider="future-provider",
         model="qwen3.5:4b",
     )
     draft_jobs.mark_running(client.app.state.database, job["id"])
@@ -82,7 +82,7 @@ def test_draft_insert_rolls_back_when_success_attribution_cannot_commit(
             project_id=project_id,
             document_id=document_id,
             suggestions=[_suggestion(chunk)],
-            effective_provider="fastflowlm",
+            effective_provider="future-provider",
             effective_model="qwen3.5:4b",
             fallback_reason=None,
         )
