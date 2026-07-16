@@ -13,7 +13,6 @@ import {
   DEFAULT_TARGET_TRIPLE,
   PYTHON_RUNTIME_VERSION,
   WINDOWSML_OCR_RUNTIME_PREFIX,
-  WINDOWS_MSI_VERSION,
 } from './constants.mts';
 
 interface ValidateResourceContractOptions {
@@ -112,7 +111,6 @@ export function validatePackagedResourceContract({
     windowsml_ocr_bundled: false,
     release_urls_only: true,
     version: ALPHA_VERSION,
-    windows_msi_version: WINDOWS_MSI_VERSION,
     python_runtime_version: PYTHON_RUNTIME_VERSION,
     channel: 'unsigned_public_alpha',
     signed: false,
@@ -221,7 +219,7 @@ function validateTauriResourceMapping(path: string): void {
   const config = JSON.parse(readFileSync(path, 'utf8')) as {
     bundle?: {
       resources?: unknown;
-      windows?: { wix?: { version?: string } };
+      targets?: unknown;
     };
   };
   const resources = config.bundle?.resources;
@@ -240,7 +238,9 @@ function validateTauriResourceMapping(path: string): void {
     (resources as Record<string, unknown>)[
       '../../../THIRD_PARTY_NOTICES.md'
     ] !== 'legal/THIRD_PARTY_NOTICES.md' ||
-    config.bundle?.windows?.wix?.version !== WINDOWS_MSI_VERSION
+    !Array.isArray(config.bundle?.targets) ||
+    config.bundle.targets.length !== 1 ||
+    config.bundle.targets[0] !== 'nsis'
   ) {
     throw new Error(
       'Tauri must map generated runtime resources and legal documents into packaged resource paths.',
@@ -251,7 +251,6 @@ function validateTauriResourceMapping(path: string): void {
 interface ReleaseMetadata {
   readonly schema_version: number;
   readonly version: string;
-  readonly windows_msi_version: string;
   readonly python_runtime_version: string;
   readonly release_tag: string;
   readonly channel: string;
@@ -297,7 +296,6 @@ function validateReleaseMetadata(
     backend.version !== ALPHA_VERSION ||
     windowsml.version !== ALPHA_VERSION ||
     metadata.version !== ALPHA_VERSION ||
-    metadata.windows_msi_version !== WINDOWS_MSI_VERSION ||
     metadata.python_runtime_version !== PYTHON_RUNTIME_VERSION ||
     metadata.release_tag !== `cert-prep-v${ALPHA_VERSION}` ||
     metadata.channel !== 'unsigned_public_alpha' ||

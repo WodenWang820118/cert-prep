@@ -21,6 +21,7 @@ import {
 } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
+import { DEFAULT_LLM_MODEL } from '../package-qa/constants.mts';
 import {
   cleanupAfterRunWithTimeout,
   forceCrashAndReconnect,
@@ -91,7 +92,7 @@ const WINDOWSML_RUNTIME_KIND = 'windowsml_ocr';
 const WINDOWSML_RUNTIME_PROVIDER = 'windowsml';
 const WINDOWSML_RUNTIME_MODEL = 'pp-ocrv6-medium-windowsml';
 const WINDOWSML_RUNTIME_MISSING_REASON = 'windowsml_runtime_missing';
-const OLLAMA_MODEL = 'qwen3.5:4b';
+const OLLAMA_MODEL = DEFAULT_LLM_MODEL;
 const AUTO_DRAFT_TERMINAL_STATUSES = new Set([
   'succeeded',
   'skipped_provider_unavailable',
@@ -1093,8 +1094,6 @@ function createRunState(options: RemainingResilienceOptions): SmokeRunState {
     ocrProvider: 'windowsml',
     ocrPageWorkers: 1,
     llmProvider: 'ollama',
-    ollamaModel: OLLAMA_MODEL,
-    ollamaFallbackModels: [],
     ollamaHost: `http://${options.ollamaHost}`,
     ollamaModelsDir: options.ollamaModelsRoot,
     ollamaProfileEnabled: false,
@@ -1108,7 +1107,6 @@ function createRunState(options: RemainingResilienceOptions): SmokeRunState {
     productionSummary: false,
     allowOcrChunkVariance: true,
     verifyStreamingPracticeReady: false,
-    recordVideo: false,
   };
   const metrics: SmokeMetrics = {
     status: 'running',
@@ -1119,9 +1117,8 @@ function createRunState(options: RemainingResilienceOptions): SmokeRunState {
     observations: [],
     errors: [],
     llm_provider: smokeOptions.llmProvider,
-    llm_model: smokeOptions.ollamaModel,
-    llm_configured_model: smokeOptions.ollamaModel,
-    llm_fallback_models: smokeOptions.ollamaFallbackModels,
+    llm_model: DEFAULT_LLM_MODEL,
+    llm_configured_model: DEFAULT_LLM_MODEL,
     generation_readiness_at_start: unavailableGenerationReadinessSnapshot(
       'capture_not_reached',
     ),
@@ -1146,7 +1143,6 @@ function createRunState(options: RemainingResilienceOptions): SmokeRunState {
     app: null,
     appExit: null,
     resourceSampling: null,
-    videoRecording: null,
     browser: null,
     page: null,
     port: options.cdpPort,

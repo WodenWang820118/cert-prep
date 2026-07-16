@@ -66,7 +66,7 @@ export interface LocalResilienceEvidenceVerification {
   readonly acceptanceRunId: string;
   readonly installation: {
     readonly receiptSha256: string;
-    readonly packageKind: 'msi' | 'nsis';
+    readonly packageKind: 'nsis';
     readonly installerSha256: string;
     readonly installedExeSha256: string;
   };
@@ -191,7 +191,11 @@ function verifyCancellationTree<const Check extends ResilienceCheck>(
   },
 ): Readonly<Record<Check, VerifiedLocalEvidenceArtifact>> {
   if (lane === 'document') {
-    assertExactEntries(root, ['cancellation'], 'Document resilience evidence root');
+    assertExactEntries(
+      root,
+      ['cancellation'],
+      'Document resilience evidence root',
+    );
   }
   const cancellationRoot = canonicalDirectory(
     join(root, 'cancellation'),
@@ -274,7 +278,9 @@ function canonicalDirectory(path: string, label: string): string {
   }
   const canonicalPath = realpathSync.native(path);
   if (!samePath(canonicalPath, resolve(path))) {
-    throw new Error(`${label} must not traverse a reparse point or path alias.`);
+    throw new Error(
+      `${label} must not traverse a reparse point or path alias.`,
+    );
   }
   return canonicalPath;
 }
@@ -304,11 +310,17 @@ function readSafeArtifact(path: string, label: string): Buffer {
   }
   const canonicalPath = realpathSync.native(path);
   if (!samePath(canonicalPath, resolve(path))) {
-    throw new Error(`${label} must not traverse a reparse point or path alias.`);
+    throw new Error(
+      `${label} must not traverse a reparse point or path alias.`,
+    );
   }
   const payload = readFileSync(canonicalPath);
   const after = statSync(canonicalPath);
-  if (payload.length === 0 || before.size !== payload.length || after.size !== payload.length) {
+  if (
+    payload.length === 0 ||
+    before.size !== payload.length ||
+    after.size !== payload.length
+  ) {
     throw new Error(`${label} changed while it was being read or is empty.`);
   }
   return payload;
@@ -356,7 +368,10 @@ function assertBindingUnchanged(
   before: InstalledCandidateRunnerBinding,
   after: InstalledCandidateRunnerBinding,
 ): void {
-  if (JSON.stringify(bindingIdentity(before)) !== JSON.stringify(bindingIdentity(after))) {
+  if (
+    JSON.stringify(bindingIdentity(before)) !==
+    JSON.stringify(bindingIdentity(after))
+  ) {
     throw new Error(
       'Installed candidate binding changed while local resilience evidence was verified.',
     );

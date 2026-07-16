@@ -33,6 +33,7 @@ import {
   terminateProcessTreeByPid,
 } from '../process-lifecycle/processes.mts';
 import { packagedAppDataDir } from './runtime-sync.mts';
+import { DEFAULT_LLM_MODEL } from '../package-qa/constants.mts';
 import {
   activePage,
   bodyText,
@@ -43,10 +44,6 @@ import {
 } from './runner-context.mts';
 import { observeStreamingApiResponses } from './streaming-capture.mts';
 import { errorMessage } from './text-utils.mts';
-import {
-  startAcceptanceVideo,
-  stopAcceptanceVideo,
-} from './video-evidence.mts';
 import type {
   ProcessRecord,
   PublicProcessRecord,
@@ -85,6 +82,12 @@ export interface ForcedCrashSummary {
 const ACCEPTANCE_ENV_PREFIXES = ['cert_prep_', 'ollama_', 'webview2_'] as const;
 const ACCEPTANCE_REMOVED_ENV_NAMES = new Set(['no_proxy']);
 const LOCAL_OCR_RUNTIME_URL_ENV = 'cert_prep_allow_local_ocr_runtime_url';
+const RETIRED_MODEL_ENV_NAMES = new Set([
+  'cert_prep_ollama_model',
+  'cert_prep_ollama_fallback_models',
+  'cert_prep_package_smoke_llm_model',
+  'cert_prep_package_smoke_llm_fallback_models',
+]);
 const ACCEPTANCE_LOOPBACK_NO_PROXY = 'localhost,127.0.0.1,::1';
 
 export function createCleanupWithTimeoutController<T extends object>({
@@ -148,7 +151,6 @@ export async function closeAppAndCheckResidue(
   run: SmokeRunState,
   label: string,
 ): Promise<CloseSummary> {
-  await stopAcceptanceVideo(run);
   const currentApp = run.app;
   const pid = currentApp?.pid ?? null;
   if (!currentApp || !pid) {
@@ -496,7 +498,6 @@ export async function launchAppAndConnect(run: SmokeRunState): Promise<void> {
     (await context.waitForEvent('page', { timeout: 30_000 }));
   observeStreamingApiResponses(run, run.page);
   await run.page.setViewportSize({ width: 1440, height: 1000 });
-  await startAcceptanceVideoForSmoke(run);
   await run.page
     .waitForLoadState('domcontentloaded', { timeout: 30_000 })
     .catch((error) => {
@@ -522,14 +523,18 @@ export function buildAppLaunchEnvironment(
     acceptanceIsolation,
   );
   const candidateDistributionProfile = run.options.candidateDistributionProfile;
-  const guardedBaseEnvironment =
-    candidateDistributionProfile === undefined
-      ? baseEnvironment
-      : Object.fromEntries(
-          Object.entries(baseEnvironment).filter(
-            ([name]) => name.toLowerCase() !== LOCAL_OCR_RUNTIME_URL_ENV,
-          ),
-        );
+  const guardedBaseEnvironment = Object.fromEntries(
+    Object.entries(baseEnvironment).filter(([name]) => {
+      const normalizedName = name.toLowerCase();
+      if (RETIRED_MODEL_ENV_NAMES.has(normalizedName)) {
+        return false;
+      }
+      return (
+        candidateDistributionProfile === undefined ||
+        normalizedName !== LOCAL_OCR_RUNTIME_URL_ENV
+      );
+    }),
+  );
   const appDataDir = launchAppDataDir(run);
   const isolatedOllamaEnvironment = buildIsolatedOllamaLaunchEnvironment(run);
   return {
@@ -550,9 +555,7 @@ export function buildAppLaunchEnvironment(
     ...(candidateDistributionProfile === 'local_nonpublishable'
       ? { CERT_PREP_ALLOW_LOCAL_OCR_RUNTIME_URL: 'true' }
       : {}),
-    CERT_PREP_OLLAMA_MODEL: run.options.ollamaModel,
-    CERT_PREP_OLLAMA_FALLBACK_MODELS:
-      run.options.ollamaFallbackModels.join(','),
+    CERT_PREP_OLLAMA_MODEL: DEFAULT_LLM_MODEL,
     ...isolatedOllamaEnvironment,
     ...(run.options.streamingDraftPageLimit
       ? {
@@ -818,17 +821,6 @@ function samePath(left: string, right: string): boolean {
     return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
   };
   return normalize(left) === normalize(right);
-}
-
-export async function startAcceptanceVideoForSmoke(
-  run: SmokeRunState,
-  startVideo: (run: SmokeRunState) => Promise<void> = startAcceptanceVideo,
-): Promise<void> {
-  await startVideo(run).catch((error) => {
-    run.metrics.observations.push(
-      `acceptance video start failed: ${errorMessage(error)}`,
-    );
-  });
 }
 
 async function cleanupAfterRun(run: SmokeRunState): Promise<void> {

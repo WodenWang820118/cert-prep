@@ -24,7 +24,7 @@ export interface CandidateBinding {
 
 export interface InstallationBinding {
   readonly receiptSha256: string;
-  readonly packageKind: 'msi' | 'nsis';
+  readonly packageKind: 'nsis';
   readonly installerRelativePath: string;
   readonly installerSha256: string;
   readonly installedExeName: string;
@@ -149,7 +149,10 @@ function validateEnvelope(
     detail.check !== expectedCheck ||
     detail.passed !== true
   ) {
-    fail(expectedCheck, 'envelope must be schema v2, exact-check, and passed=true');
+    fail(
+      expectedCheck,
+      'envelope must be schema v2, exact-check, and passed=true',
+    );
   }
   const candidate = validateCandidate(detail.candidate, expectedCheck);
   validateCandidateContext(candidate, context.candidate, expectedCheck);
@@ -165,11 +168,15 @@ function validateEnvelope(
     context.acceptanceRunId !== undefined &&
     acceptanceRunId !== context.acceptanceRunId
   ) {
-    fail(expectedCheck, 'acceptanceRunId is not bound to the hardware run');
+    fail(expectedCheck, 'acceptanceRunId is not bound to the acceptance run');
   }
 
   const startedAt = timestamp(detail.startedAt, expectedCheck, 'startedAt');
-  const completedAt = timestamp(detail.completedAt, expectedCheck, 'completedAt');
+  const completedAt = timestamp(
+    detail.completedAt,
+    expectedCheck,
+    'completedAt',
+  );
   if (startedAt >= completedAt) {
     fail(expectedCheck, 'startedAt must be before completedAt');
   }
@@ -191,7 +198,10 @@ function validateEnvelope(
     expectedCheck,
   );
   if (Date.parse(installation.installedAt) > startedAt) {
-    fail(expectedCheck, 'installationBinding.installedAt must not be after evidence startedAt');
+    fail(
+      expectedCheck,
+      'installationBinding.installedAt must not be after evidence startedAt',
+    );
   }
   return { detail, startedAt, completedAt };
 }
@@ -206,14 +216,20 @@ function validateInstallationBinding(
     check,
     'installationBinding.receiptSha256',
   );
-  if (binding.packageKind !== 'msi' && binding.packageKind !== 'nsis') {
-    fail(check, 'installationBinding.packageKind must be msi or nsis');
+  if (binding.packageKind !== 'nsis') {
+    fail(check, 'installationBinding.packageKind must be nsis');
   }
   const installerRelativePath = safeRelativePath(
     binding.installerRelativePath,
     check,
     'installationBinding.installerRelativePath',
   );
+  if (!installerRelativePath.toLowerCase().endsWith('setup.exe')) {
+    fail(
+      check,
+      'installationBinding.installerRelativePath must reference an NSIS setup executable',
+    );
+  }
   const installerSha256 = sha256Field(
     binding.installerSha256,
     check,
@@ -229,7 +245,10 @@ function validateInstallationBinding(
     installedExeName.includes('/') ||
     installedExeName.includes('\\')
   ) {
-    fail(check, 'installationBinding.installedExeName must be an executable file name');
+    fail(
+      check,
+      'installationBinding.installedExeName must be an executable file name',
+    );
   }
   const installedExeBytes = positiveInteger(binding.installedExeBytes);
   const installedExeSha256 = sha256Field(
@@ -244,7 +263,7 @@ function validateInstallationBinding(
   );
   return {
     receiptSha256,
-    packageKind: binding.packageKind,
+    packageKind: 'nsis',
     installerRelativePath,
     installerSha256,
     installedExeName,
@@ -254,12 +273,13 @@ function validateInstallationBinding(
   };
 }
 
-function validateCandidate(
-  value: unknown,
-  check: string,
-): CandidateBinding {
+function validateCandidate(value: unknown, check: string): CandidateBinding {
   const candidate = record(value, `${check} candidate`);
-  const candidateId = nonEmptyString(candidate.candidateId, check, 'candidateId');
+  const candidateId = nonEmptyString(
+    candidate.candidateId,
+    check,
+    'candidateId',
+  );
   const version = nonEmptyString(candidate.version, check, 'version');
   const tag = nonEmptyString(candidate.tag, check, 'tag');
   const commitSha = nonEmptyString(candidate.commitSha, check, 'commitSha');
@@ -298,7 +318,7 @@ function validateCandidateContext(
     'harnessSha256',
   ] as const) {
     if (actual[key].toLowerCase() !== expected[key].toLowerCase()) {
-      fail(check, `candidate ${key} does not match the hardware result`);
+      fail(check, `candidate ${key} does not match the acceptance result`);
     }
   }
 }
@@ -388,7 +408,11 @@ function validateCheckProof(
 
 function validateUploadProof(proof: Record<string, unknown>): void {
   const projectId = scopedId(proof.projectId, 'upload', 'projectId');
-  const operationId = operationIdField(proof.operationId, 'upload', 'operationId');
+  const operationId = operationIdField(
+    proof.operationId,
+    'upload',
+    'operationId',
+  );
   const cancel = operationSnapshot(proof.cancelResponse, 'upload', {
     projectId,
     operationId,
@@ -451,7 +475,10 @@ function validateOcrProof(proof: Record<string, unknown>): void {
     operationId: retryOperationId,
     statuses: ['succeeded'],
   });
-  const readyDocument = record(proof.readyDocumentResponse, 'ocr ready document');
+  const readyDocument = record(
+    proof.readyDocumentResponse,
+    'ocr ready document',
+  );
   if (
     cancel.cancellable !== false ||
     terminal.cancellable !== false ||
@@ -471,25 +498,35 @@ function validateScopedCancellationProof(
   check: 'draft' | 'runtime' | 'model',
   window: EvidenceWindow,
 ): void {
-  const projectId = check === 'draft'
-    ? scopedId(proof.projectId, check, 'projectId')
-    : undefined;
-  const documentId = check === 'draft'
-    ? scopedId(proof.documentId, check, 'documentId')
-    : undefined;
-  const kind = check === 'runtime'
-    ? exactString(proof.kind, WINDOWSML_RUNTIME_KIND, check, 'kind')
-    : undefined;
-  const provider = check === 'runtime'
-    ? exactString(proof.provider, WINDOWSML_RUNTIME_PROVIDER, check, 'provider')
-    : check === 'draft' || check === 'model'
-      ? exactString(proof.provider, OLLAMA_PROVIDER, check, 'provider')
+  const projectId =
+    check === 'draft'
+      ? scopedId(proof.projectId, check, 'projectId')
       : undefined;
-  const model = check === 'runtime'
-    ? exactString(proof.model, WINDOWSML_RUNTIME_MODEL, check, 'model')
-    : check === 'draft' || check === 'model'
-      ? exactString(proof.model, OLLAMA_MODEL, check, 'model')
+  const documentId =
+    check === 'draft'
+      ? scopedId(proof.documentId, check, 'documentId')
       : undefined;
+  const kind =
+    check === 'runtime'
+      ? exactString(proof.kind, WINDOWSML_RUNTIME_KIND, check, 'kind')
+      : undefined;
+  const provider =
+    check === 'runtime'
+      ? exactString(
+          proof.provider,
+          WINDOWSML_RUNTIME_PROVIDER,
+          check,
+          'provider',
+        )
+      : check === 'draft' || check === 'model'
+        ? exactString(proof.provider, OLLAMA_PROVIDER, check, 'provider')
+        : undefined;
+  const model =
+    check === 'runtime'
+      ? exactString(proof.model, WINDOWSML_RUNTIME_MODEL, check, 'model')
+      : check === 'draft' || check === 'model'
+        ? exactString(proof.model, OLLAMA_MODEL, check, 'model')
+        : undefined;
   const expectedScope = { projectId, documentId, kind, provider, model };
   const operationId = operationIdField(proof.operationId, check, 'operationId');
   const cancel = operationSnapshot(proof.cancelResponse, check, {
@@ -521,15 +558,11 @@ function validateScopedCancellationProof(
     check,
     'nonCancellableResponse.commitStartedAt',
   );
-  const observed = operationSnapshot(
-    nonCancellable.observedResponse,
-    check,
-    {
-      ...expectedScope,
-      operationId: commitOperationId,
-      statuses: ['running', 'succeeded'],
-    },
-  );
+  const observed = operationSnapshot(nonCancellable.observedResponse, check, {
+    ...expectedScope,
+    operationId: commitOperationId,
+    statuses: ['running', 'succeeded'],
+  });
   const rejection = record(
     nonCancellable.rejectionResponse,
     `${check} rejection response`,
@@ -573,10 +606,7 @@ export function assertManualDraftTerminalEvidence(
   rawResponse: unknown,
   expected: ManualDraftTerminalExpectation,
 ): void {
-  const response = record(
-    rawResponse,
-    'draft manualDraftTerminalResponse',
-  );
+  const response = record(rawResponse, 'draft manualDraftTerminalResponse');
   const terminal = operationSnapshot(response, 'draft', {
     operationId: expected.operationId,
     statuses: ['succeeded'],
@@ -596,7 +626,8 @@ export function assertManualDraftTerminalEvidence(
     generatedCount < 2 ||
     response.effective_provider !== OLLAMA_PROVIDER ||
     response.effective_model !== OLLAMA_MODEL ||
-    (response.fallback_reason !== null && response.fallback_reason !== undefined)
+    (response.fallback_reason !== null &&
+      response.fallback_reason !== undefined)
   ) {
     fail(
       'draft',
@@ -654,7 +685,10 @@ function validateDraftTransition(
     nonNegativeInteger(afterWindow.usableDraftCount) !== 0 ||
     positiveInteger(proof.usableDraftCountAfterManual) < 2
   ) {
-    fail('draft', 'draft cancellation and manual publish transition is incomplete');
+    fail(
+      'draft',
+      'draft cancellation and manual publish transition is incomplete',
+    );
   }
 }
 
@@ -695,7 +729,10 @@ function validateRuntimeTransition(
     targetBefore !== targetAfterWindow ||
     targetBefore !== installedPath
   ) {
-    fail('runtime', 'runtime installation target changed across the transition');
+    fail(
+      'runtime',
+      'runtime installation target changed across the transition',
+    );
   }
 }
 
@@ -708,7 +745,10 @@ function validateUnavailableRuntimeRequirement(
     requirement.kind !== WINDOWSML_RUNTIME_KIND ||
     requirement.available !== false
   ) {
-    fail('runtime', `${field} must be an unavailable WindowsML OCR requirement`);
+    fail(
+      'runtime',
+      `${field} must be an unavailable WindowsML OCR requirement`,
+    );
   }
   exactString(
     requirement.unavailableReason,
@@ -753,10 +793,12 @@ function validateOllamaTags(
   const modelNames = stringArray(tags.modelNames);
   if (
     (!installed && modelNames.length !== 0) ||
-    (installed &&
-      (modelNames.length !== 1 || modelNames[0] !== OLLAMA_MODEL))
+    (installed && (modelNames.length !== 1 || modelNames[0] !== OLLAMA_MODEL))
   ) {
-    fail('model', `${field} does not prove the exact isolated Ollama model set`);
+    fail(
+      'model',
+      `${field} does not prove the exact isolated Ollama model set`,
+    );
   }
 }
 
@@ -771,8 +813,10 @@ function validateOllamaHealth(
     health.model !== OLLAMA_MODEL ||
     health.available !== available ||
     (available
-      ? health.unavailableReason !== null || health.effectiveModel !== OLLAMA_MODEL
-      : health.unavailableReason !== 'model_missing' || health.effectiveModel !== null)
+      ? health.unavailableReason !== null ||
+        health.effectiveModel !== OLLAMA_MODEL
+      : health.unavailableReason !== 'model_missing' ||
+        health.effectiveModel !== null)
   ) {
     fail('model', `${field} does not prove the exact Ollama health state`);
   }
@@ -827,7 +871,7 @@ function validateCrashRecoveryProof(proof: Record<string, unknown>): void {
     statuses: ['canceled'],
   });
   if (
-    before.status === 'running' && after.status === 'running' ||
+    (before.status === 'running' && after.status === 'running') ||
     terminal.cancellable !== false ||
     proof.sameOperationId !== true ||
     positiveInteger(proof.restartCount) < 1
@@ -853,7 +897,10 @@ function validatePartialDataProof(proof: Record<string, unknown>): void {
     proof.latePublishSuppressed !== true ||
     positiveInteger(proof.latePublishObservationWindowMs) < 1_000
   ) {
-    fail('partialDataRemoved', 'partial data cleanup or late-publish suppression failed');
+    fail(
+      'partialDataRemoved',
+      'partial data cleanup or late-publish suppression failed',
+    );
   }
 }
 
@@ -930,7 +977,13 @@ function operationSnapshot(
     phase: nonEmptyString(value.phase, check, 'response.phase'),
     cancellable: booleanField(value.cancellable, check, 'response.cancellable'),
     ...(value.project_id !== undefined
-      ? { projectId: nonEmptyString(value.project_id, check, 'response.project_id') }
+      ? {
+          projectId: nonEmptyString(
+            value.project_id,
+            check,
+            'response.project_id',
+          ),
+        }
       : {}),
     ...(value.document_id === null
       ? { documentId: null }
@@ -967,10 +1020,13 @@ function operationSnapshot(
   if (
     snapshot.id !== expected.operationId ||
     !expected.statuses.includes(snapshot.status) ||
-    (expected.projectId !== undefined && snapshot.projectId !== expected.projectId) ||
-    (expected.documentId !== undefined && snapshot.documentId !== expected.documentId) ||
+    (expected.projectId !== undefined &&
+      snapshot.projectId !== expected.projectId) ||
+    (expected.documentId !== undefined &&
+      snapshot.documentId !== expected.documentId) ||
     (expected.kind !== undefined && snapshot.kind !== expected.kind) ||
-    (expected.provider !== undefined && snapshot.provider !== expected.provider) ||
+    (expected.provider !== undefined &&
+      snapshot.provider !== expected.provider) ||
     (expected.model !== undefined && snapshot.model !== expected.model)
   ) {
     fail(check, 'operation response scope or terminal state does not match');
@@ -997,11 +1053,7 @@ function record(value: unknown, label: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function nonEmptyString(
-  value: unknown,
-  check: string,
-  field: string,
-): string {
+function nonEmptyString(value: unknown, check: string, field: string): string {
   if (typeof value !== 'string' || value.trim().length === 0) {
     fail(check, `${field} must be a non-empty string`);
   }
@@ -1040,7 +1092,9 @@ function safeRelativePath(
     normalized.startsWith('/') ||
     /^[A-Za-z]:/.test(normalized) ||
     normalized.includes('\0') ||
-    segments.some((segment) => segment === '' || segment === '.' || segment === '..')
+    segments.some(
+      (segment) => segment === '' || segment === '.' || segment === '..',
+    )
   ) {
     fail(check, `${field} must be a safe relative path`);
   }
@@ -1055,7 +1109,11 @@ function scopedId(value: unknown, check: string, field: string): string {
   return normalized;
 }
 
-function operationIdField(value: unknown, check: string, field: string): string {
+function operationIdField(
+  value: unknown,
+  check: string,
+  field: string,
+): string {
   return scopedId(value, check, field);
 }
 
@@ -1095,12 +1153,17 @@ function nonNegativeInteger(value: unknown): number {
 }
 
 function stringArray(value: unknown): string[] {
-  if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) {
+  if (
+    !Array.isArray(value) ||
+    !value.every((item) => typeof item === 'string')
+  ) {
     throw new Error('Evidence field must be a string array.');
   }
   return value;
 }
 
 function fail(check: string, message: string): never {
-  throw new Error(`Resilience evidence contract failed for ${check}: ${message}.`);
+  throw new Error(
+    `Resilience evidence contract failed for ${check}: ${message}.`,
+  );
 }

@@ -86,23 +86,18 @@ export function validateBundleArtifacts(
   bundleArtifacts: readonly { readonly path: string }[],
   bundleRoot = 'bundle root',
 ): void {
-  const msi = bundleArtifacts.filter((item) =>
-    item.path.toLowerCase().endsWith('.msi'),
-  );
   const nsis = bundleArtifacts.filter(
     (item) =>
       item.path.toLowerCase().endsWith('.exe') &&
       basename(item.path).toLowerCase().includes('setup'),
   );
   if (
-    bundleArtifacts.length !== 2 ||
-    msi.length !== 1 ||
+    bundleArtifacts.length !== 1 ||
     nsis.length !== 1 ||
-    !msi[0].path.includes(ALPHA_VERSION) ||
     !nsis[0].path.includes(ALPHA_VERSION)
   ) {
     throw new Error(
-      `Expected exactly one ${ALPHA_VERSION} MSI and one NSIS installer under ${bundleRoot}; stale or unexpected bundles are not allowed.`,
+      `Expected exactly one ${ALPHA_VERSION} NSIS installer under ${bundleRoot}; stale or unexpected bundles are not allowed.`,
     );
   }
 }

@@ -1,7 +1,6 @@
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { DEFAULT_LLM_MODEL } from '../package-qa/constants.mts';
 import type { SmokeOptions } from './types.mts';
 
 const DEFAULT_TARGET_TRIPLE = 'x86_64-pc-windows-msvc';
@@ -16,7 +15,6 @@ const DEFAULT_CDP_PORT = 9491;
 const DEFAULT_OCR_PROVIDER = 'windowsml';
 const DEFAULT_OCR_PAGE_WORKERS = 1;
 const DEFAULT_LLM_PROVIDER = 'auto';
-const DEFAULT_OLLAMA_FALLBACK_MODELS = ['qwen3.5:2b'];
 const DEFAULT_STREAMING_COMPLETE_TIMEOUT_MS = 1_200_000;
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
@@ -51,13 +49,6 @@ export function parsePackagedFlowSmokeArgs(
     llmProvider:
       process.env.CERT_PREP_PACKAGE_SMOKE_LLM_PROVIDER?.trim() ||
       DEFAULT_LLM_PROVIDER,
-    ollamaModel:
-      process.env.CERT_PREP_PACKAGE_SMOKE_LLM_MODEL?.trim() ||
-      DEFAULT_LLM_MODEL,
-    ollamaFallbackModels: stringList(
-      process.env.CERT_PREP_PACKAGE_SMOKE_LLM_FALLBACK_MODELS,
-      DEFAULT_OLLAMA_FALLBACK_MODELS,
-    ),
     streamingDraftPageLimit: optionalPositiveInteger(
       process.env.CERT_PREP_PACKAGE_SMOKE_STREAMING_DRAFT_PAGE_LIMIT,
       'CERT_PREP_PACKAGE_SMOKE_STREAMING_DRAFT_PAGE_LIMIT',
@@ -76,7 +67,6 @@ export function parsePackagedFlowSmokeArgs(
     productionSummary: false,
     allowOcrChunkVariance: false,
     verifyStreamingPracticeReady: false,
-    recordVideo: booleanEnv(process.env.CERT_PREP_PACKAGE_SMOKE_RECORD_VIDEO),
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -112,10 +102,6 @@ export function parsePackagedFlowSmokeArgs(
       parsed.ocrPageWorkers = positiveInteger(Number(readValue(arg)), arg);
     } else if (arg === '--llm-provider') {
       parsed.llmProvider = nonEmptyString(readValue(arg), arg).toLowerCase();
-    } else if (arg === '--llm-model') {
-      parsed.ollamaModel = nonEmptyString(readValue(arg), arg);
-    } else if (arg === '--llm-fallback-models') {
-      parsed.ollamaFallbackModels = stringList(readValue(arg), []);
     } else if (arg === '--streaming-draft-page-limit') {
       parsed.streamingDraftPageLimit = positiveInteger(
         Number(readValue(arg)),
@@ -143,8 +129,6 @@ export function parsePackagedFlowSmokeArgs(
     } else if (arg === '--verify-streaming-practice-ready') {
       parsed.verifyStreamingPracticeReady = true;
       parsed.waitForStreamingComplete = true;
-    } else if (arg === '--record-video') {
-      parsed.recordVideo = true;
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
@@ -159,11 +143,6 @@ export function parsePackagedFlowSmokeArgs(
     parsed.llmProvider,
     'llmProvider',
   ).toLowerCase();
-  parsed.ollamaModel = nonEmptyString(parsed.ollamaModel, 'ollamaModel');
-  parsed.ollamaFallbackModels = nonEmptyStringList(
-    parsed.ollamaFallbackModels,
-    'ollamaFallbackModels',
-  );
   parsed.streamingCompleteTimeoutMs = positiveInteger(
     parsed.streamingCompleteTimeoutMs,
     'streamingCompleteTimeoutMs',
@@ -203,31 +182,4 @@ function nonEmptyString(value: string, name: string): string {
     throw new Error(`${name} must not be empty.`);
   }
   return trimmed;
-}
-
-function stringList(
-  value: string | undefined,
-  defaultValues: readonly string[],
-): string[] {
-  const source = value === undefined ? defaultValues.join(',') : value;
-  return source
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function nonEmptyStringList(values: readonly string[], name: string): string[] {
-  const unique = new Set<string>();
-  for (const value of values) {
-    const trimmed = nonEmptyString(value, name);
-    unique.add(trimmed);
-  }
-  return [...unique];
-}
-
-function booleanEnv(value: string | undefined): boolean {
-  if (value === undefined) {
-    return false;
-  }
-  return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
 }

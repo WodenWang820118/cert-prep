@@ -56,7 +56,7 @@ test('release resources bundle backend and reference OCR through HTTPS only', as
     false,
   );
   assert.equal(metadata.version, '0.1.0-alpha.1');
-  assert.equal(metadata.windows_msi_version, '0.1.0.1');
+  assert.equal('windows_msi_version' in metadata, false);
   assert.equal(metadata.python_runtime_version, '3.12');
   assert.equal(metadata.channel, 'unsigned_public_alpha');
   assert.equal(metadata.distribution_profile, 'public_unsigned_alpha');
@@ -105,7 +105,10 @@ test('dev resources use an explicit local OCR file URL', async () => {
   assert.equal(metadata.distribution_profile, 'local_nonpublishable');
   assert.equal(metadata.publishable, false);
   assert.equal(metadata.distribution_mode, 'dev');
-  assert.equal(metadata.runtime_assets.windowsml_ocr.distribution, 'local_file');
+  assert.equal(
+    metadata.runtime_assets.windowsml_ocr.distribution,
+    'local_file',
+  );
   assert.match(metadata.warnings.smartscreen, /cannot be published/);
 });
 

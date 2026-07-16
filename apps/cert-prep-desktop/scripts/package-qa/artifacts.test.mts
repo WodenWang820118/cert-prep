@@ -27,16 +27,10 @@ test('collectBundleArtifacts records sorted relative paths and sizes', () => {
     'apps/cert-prep-desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle',
   );
   const nsisDir = join(bundleRoot, 'nsis');
-  const msiDir = join(bundleRoot, 'msi');
   mkdirSync(nsisDir, { recursive: true });
-  mkdirSync(msiDir, { recursive: true });
   writeFileSync(
     join(nsisDir, 'Cert Prep_0.1.0_x64-setup.exe'),
     Buffer.alloc(2048),
-  );
-  writeFileSync(
-    join(msiDir, 'Cert Prep_0.1.0_x64_en-US.msi'),
-    Buffer.alloc(1024),
   );
 
   const artifacts = collectBundleArtifacts(bundleRoot, workspaceRoot);
@@ -44,32 +38,28 @@ test('collectBundleArtifacts records sorted relative paths and sizes', () => {
   assert.deepEqual(
     artifacts.map((artifact) => artifact.path),
     [
-      'apps/cert-prep-desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/Cert Prep_0.1.0_x64_en-US.msi',
       'apps/cert-prep-desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/Cert Prep_0.1.0_x64-setup.exe',
     ],
   );
   assert.deepEqual(
     artifacts.map((artifact) => artifact.bytes),
-    [1024, 2048],
+    [2048],
   );
   assert.equal(bytesToMb(1024 * 1024 * 1.5), 1.5);
 });
 
-test('bundle gate requires exactly one alpha MSI and NSIS pair', () => {
+test('bundle gate requires exactly one alpha NSIS installer', () => {
   const workspaceRoot = makeTempWorkspace();
   const bundleRoot = join(workspaceRoot, 'bundle');
-  const msiRoot = join(bundleRoot, 'msi');
   const nsisRoot = join(bundleRoot, 'nsis');
-  mkdirSync(msiRoot, { recursive: true });
   mkdirSync(nsisRoot, { recursive: true });
-  writeFileSync(join(msiRoot, 'Cert Prep_0.1.0-alpha.1_x64_en-US.msi'), 'msi');
   writeFileSync(
     join(nsisRoot, 'Cert Prep_0.1.0-alpha.1_x64-setup.exe'),
     'nsis',
   );
   validateBundleArtifacts(collectBundleArtifacts(bundleRoot, workspaceRoot));
 
-  writeFileSync(join(msiRoot, 'Cert Prep_0.1.0_x64_en-US.msi'), 'stale');
+  writeFileSync(join(nsisRoot, 'Cert Prep_0.1.0_x64-setup.exe'), 'stale');
   assert.throws(
     () =>
       validateBundleArtifacts(
@@ -131,7 +121,6 @@ test('packaged resource contract proves hybrid resources and rejects dev referen
     JSON.stringify({
       schema_version: 1,
       version: '0.1.0-alpha.1',
-      windows_msi_version: '0.1.0.1',
       python_runtime_version: '3.12',
       release_tag: 'cert-prep-v0.1.0-alpha.1',
       channel: 'unsigned_public_alpha',
@@ -175,7 +164,7 @@ test('packaged resource contract proves hybrid resources and rejects dev referen
     tauriConfig,
     JSON.stringify({
       bundle: {
-        windows: { wix: { version: '0.1.0.1' } },
+        targets: ['nsis'],
         resources: {
           'generated-resources/*': 'resources/',
           '../../../LICENSE': 'legal/LICENSE',
@@ -202,17 +191,11 @@ test('packaged resource contract proves hybrid resources and rejects dev referen
   assert.equal(contract.resource_files.length, 4);
   assert.equal(contract.legal_files.length, 4);
   assert.equal(contract.channel, 'unsigned_public_alpha');
-  assert.equal(contract.windows_msi_version, '0.1.0.1');
   assert.equal(contract.python_runtime_version, '3.12');
   assert.equal(contract.target, 'x86_64-pc-windows-msvc');
 
   const bundleRoot = join(workspaceRoot, 'bundle');
-  mkdirSync(join(bundleRoot, 'msi'), { recursive: true });
   mkdirSync(join(bundleRoot, 'nsis'), { recursive: true });
-  writeFileSync(
-    join(bundleRoot, 'msi', 'Cert Prep_0.1.0-alpha.1_x64_en-US.msi'),
-    'msi',
-  );
   writeFileSync(
     join(bundleRoot, 'nsis', 'Cert Prep_0.1.0-alpha.1_x64-setup.exe'),
     'nsis',
@@ -228,10 +211,8 @@ test('packaged resource contract proves hybrid resources and rejects dev referen
     evidence_scope: 'static_tauri_release_resources',
     blockers: ['installer_contents_not_verified', 'fresh_install_not_verified'],
   });
-  const publishedContract = report.package.resource_contract as unknown as Record<
-    string,
-    unknown
-  >;
+  const publishedContract = report.package
+    .resource_contract as unknown as Record<string, unknown>;
   assert.equal(publishedContract.distribution_profile, 'public_unsigned_alpha');
   assert.equal(publishedContract.publishable, true);
 

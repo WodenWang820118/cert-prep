@@ -95,8 +95,7 @@ test('document runner publishes exactly five candidate-bound files after cleanup
         installerSha256: fixture.options.installation.installerSha256,
         installedExeName: fixture.options.installation.installedExeName,
         installedExeBytes: fixture.options.installation.installedExeBytes,
-        installedExeSha256:
-          fixture.options.installation.installedExeSha256,
+        installedExeSha256: fixture.options.installation.installedExeSha256,
         installedAt: fixture.options.installation.installedAt,
       });
     }
@@ -165,9 +164,7 @@ test('document runner removes staging and output when evidence writing fails mid
     assert.equal(existsSync(fixture.options.outputRoot), false);
     assert.equal(
       readdirSync(join(fixture.options.outputRoot, '..')).some((name) =>
-        name.startsWith(
-          `.${basename(fixture.options.outputRoot)}.preparing-`,
-        ),
+        name.startsWith(`.${basename(fixture.options.outputRoot)}.preparing-`),
       ),
       false,
     );
@@ -197,7 +194,9 @@ test('document runner refuses evidence publication when cleanup records residue'
   }
 });
 
-function runnerDependencies(events: string[]): Partial<DocumentRunnerDependencies> {
+function runnerDependencies(
+  events: string[],
+): Partial<DocumentRunnerDependencies> {
   let clock = Date.parse('2026-07-14T01:00:00.000Z');
   return {
     now: () => {
@@ -361,8 +360,9 @@ function runnerFixture(): RunnerFixture {
       installation: {
         receiptPath: join(workspaceRoot, 'install-receipt.json'),
         receiptSha256: 'd'.repeat(64),
-        packageKind: 'msi',
-        installerRelativePath: 'release/installers/Cert Prep.msi',
+        packageKind: 'nsis',
+        installerRelativePath:
+          'release/installers/Cert Prep_0.1.0-alpha.1_x64-setup.exe',
         installerSha256: 'b'.repeat(64),
         installedExeName: 'Cert Prep.exe',
         installedExeBytes: 20,

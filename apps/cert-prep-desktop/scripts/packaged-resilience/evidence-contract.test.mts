@@ -20,8 +20,9 @@ const candidate: CandidateBinding = {
 
 const installationBinding: InstallationBinding = {
   receiptSha256: 'd'.repeat(64),
-  packageKind: 'msi',
-  installerRelativePath: 'release/installers/Cert Prep.msi',
+  packageKind: 'nsis',
+  installerRelativePath:
+    'release/installers/Cert Prep_0.1.0-alpha.1_x64-setup.exe',
   installerSha256: 'e'.repeat(64),
   installedExeName: 'Cert Prep.exe',
   installedExeBytes: 1_024,
@@ -83,10 +84,16 @@ test('draft evidence rejects configured-only or drifted manual terminal attribut
     ['status', (response) => (response.status = 'failed')],
     ['phase', (response) => (response.phase = 'failed')],
     ['zero generated count', (response) => (response.generated_count = 0)],
-    ['insufficient generated count', (response) => (response.generated_count = 1)],
+    [
+      'insufficient generated count',
+      (response) => (response.generated_count = 1),
+    ],
     ['effective provider', (response) => delete response.effective_provider],
     ['effective model', (response) => delete response.effective_model],
-    ['fallback reason', (response) => (response.fallback_reason = 'used fallback')],
+    [
+      'fallback reason',
+      (response) => (response.fallback_reason = 'used fallback'),
+    ],
   ];
 
   for (const [label, mutate] of mutations) {
@@ -208,12 +215,7 @@ test('every resilience and session proof requires a structurally valid installat
     const proof = { ...(evidence.proof as Record<string, unknown>) };
     delete proof.installationBinding;
     assert.throws(
-      () =>
-        validateResilienceEvidence(
-          { ...evidence, proof },
-          check,
-          context,
-        ),
+      () => validateResilienceEvidence({ ...evidence, proof }, check, context),
       /installationBinding must be an object/,
     );
   }
@@ -236,7 +238,12 @@ test('installation binding rejects forged digests and unsafe installer paths', (
   const proof = evidence.proof as Record<string, unknown>;
   for (const forged of [
     { ...installationBinding, receiptSha256: 'not-a-digest' },
-    { ...installationBinding, installerRelativePath: '../foreign.msi' },
+    { ...installationBinding, installerRelativePath: '../foreign-setup.exe' },
+    { ...installationBinding, packageKind: 'msi' },
+    {
+      ...installationBinding,
+      installerRelativePath: 'release/installers/foreign.exe',
+    },
     { ...installationBinding, installedExeName: 'Cert Prep' },
     { ...installationBinding, installedExeBytes: 0 },
     { ...installationBinding, installedAt: 'not-a-timestamp' },
@@ -675,7 +682,8 @@ test('session restart needs answer, explicit Resume, completion, and a clean sec
           proof: {
             ...(evidence.proof as object),
             firstRestart: {
-              ...((evidence.proof as Record<string, unknown>).firstRestart as object),
+              ...((evidence.proof as Record<string, unknown>)
+                .firstRestart as object),
               explicitAction: 'automatic',
             },
           },
@@ -692,7 +700,8 @@ test('session restart needs answer, explicit Resume, completion, and a clean sec
           proof: {
             ...(evidence.proof as object),
             secondRestart: {
-              ...((evidence.proof as Record<string, unknown>).secondRestart as object),
+              ...((evidence.proof as Record<string, unknown>)
+                .secondRestart as object),
               activeSessionIds: ['session-1'],
             },
           },
@@ -886,11 +895,11 @@ function validProof(check: ResilienceCheck): Record<string, unknown> {
         usableDraftCountAfterManual: 2,
       };
     case 'runtime': {
-    const unavailableRequirement = {
-      kind: 'windowsml_ocr',
-      available: false,
-      unavailableReason: 'windowsml_runtime_missing',
-      installTargetPathRelative: 'runtimes/windowsml-ocr',
+      const unavailableRequirement = {
+        kind: 'windowsml_ocr',
+        available: false,
+        unavailableReason: 'windowsml_runtime_missing',
+        installTargetPathRelative: 'runtimes/windowsml-ocr',
       };
       return {
         ...scopedCancellation(

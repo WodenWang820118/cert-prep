@@ -427,7 +427,7 @@ function acceptanceResult(
     resilienceEnvironment: {
       CERT_PREP_RESILIENCE_CANDIDATE_ROOT: prepared.candidateRoot,
       CERT_PREP_RELEASE_CANDIDATE_ID: prepared.candidate.candidateId,
-      ALPHA_HARDWARE_HARNESS_SHA256: prepared.harnessSha256,
+      CERT_PREP_ACCEPTANCE_HARNESS_SHA256: prepared.harnessSha256,
       CERT_PREP_RESILIENCE_INSTALLED_EXE_PATH:
         receipt?.installedExecutable.path ??
         join(prepared.installRoot, INSTALLED_EXE_NAME),

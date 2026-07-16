@@ -385,12 +385,12 @@ test('provider model and runtime availability drift fail closed', async (t) => {
     page.routes.set(`${API_BASE_URL}/llm/provider-selection`, () =>
       apiResponse(200, {
         ...providerPayload(),
-        configured_model: 'qwen3.5:2b',
-        effective_model: 'qwen3.5:2b',
+        configured_model: 'unexpected:model',
+        effective_model: 'unexpected:model',
       }),
     );
     const payload = runtimePayload();
-    payload.items[1].version = 'qwen3.5:2b';
+    payload.items[1].version = 'unexpected:model';
     page.routes.set(`${API_BASE_URL}/runtime/requirements`, () =>
       apiResponse(200, payload),
     );
@@ -778,7 +778,7 @@ function response(options: {
 
 function smokeRun(): SmokeRunState {
   return {
-    options: { llmProvider: 'auto', ollamaModel: 'qwen3.5:4b' },
+    options: { llmProvider: 'auto' },
     metrics: {
       observations: [],
       generation_readiness_at_start: undefined,

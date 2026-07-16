@@ -15,7 +15,6 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   ALPHA_VERSION,
   PYTHON_RUNTIME_VERSION,
-  WINDOWS_MSI_VERSION,
 } from './package-qa/constants.mts';
 
 const WINDOWSML_RELEASE_BASE_URL_ENV = 'CERT_PREP_WINDOWSML_OCR_ASSET_BASE_URL';
@@ -271,7 +270,6 @@ function releaseMetadata(
   return {
     schema_version: 1,
     version: ALPHA_VERSION,
-    windows_msi_version: WINDOWS_MSI_VERSION,
     python_runtime_version: PYTHON_RUNTIME_VERSION,
     release_tag: localNonpublishable
       ? `cert-prep-local-v${ALPHA_VERSION}`
@@ -292,19 +290,17 @@ function releaseMetadata(
       target: backend.target,
     },
     warnings: {
-      smartscreen:
-        localNonpublishable
-          ? 'This local acceptance build is unsigned and cannot be published.'
-          : 'This public Alpha is unsigned. Windows SmartScreen is expected to warn before installation.',
+      smartscreen: localNonpublishable
+        ? 'This local acceptance build is unsigned and cannot be published.'
+        : 'This public Alpha is unsigned. Windows SmartScreen is expected to warn before installation.',
       production_ready: false,
     },
     sha256_verification: {
       required: true,
       algorithm: 'SHA-256',
-      instruction:
-        localNonpublishable
-          ? 'Compare the local WindowsML OCR ZIP with the SHA-256 value in its bundled manifest.'
-          : 'Compare Get-FileHash -Algorithm SHA256 output with the SHA256SUMS.txt value published on the same GitHub Release.',
+      instruction: localNonpublishable
+        ? 'Compare the local WindowsML OCR ZIP with the SHA-256 value in its bundled manifest.'
+        : 'Compare Get-FileHash -Algorithm SHA256 output with the SHA256SUMS.txt value published on the same GitHub Release.',
     },
     runtime_assets: {
       backend: {

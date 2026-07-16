@@ -14,7 +14,6 @@ import test from 'node:test';
 
 import { buildReleasePlan } from './metadata.ts';
 import {
-  HARDWARE_CANCELLATION_CHECKS,
   LOCAL_NONPUBLISHABLE_PROFILE,
   PUBLIC_UNSIGNED_ALPHA_PROFILE,
   assertExternalConfirmations,
@@ -26,27 +25,11 @@ import {
   normalizeLicense,
   planAssetUploads,
   sha256File,
-  validateAcceptancePdfManifest,
-  validateHardwareResult,
-  windowsMsiVersionFor,
   writeReleaseDocuments,
 } from './release-lib.ts';
 import { assertReleaseState } from './publish-assets.ts';
 
 const sha = 'a'.repeat(40);
-
-function acceptancePdfManifest() {
-  return {
-    schemaVersion: 1,
-    suiteId: 'public-alpha-b3-v1',
-    pdfs: Array.from({ length: 4 }, (_, index) => ({
-      logicalId: `pdf-${index + 1}`,
-      fileName: `pdf-${index + 1}.pdf`,
-      bytes: index + 1,
-      sha256: String(index + 1).repeat(64),
-    })),
-  };
-}
 
 test('file hashing closes its Windows handle before resolving', async () => {
   const root = mkdtempSync(join(tmpdir(), 'cert-prep-release-hash-'));
@@ -116,16 +99,7 @@ test('release identity derives and validates the canonical alpha tag', () => {
   assert.equal(identity.distributionProfile, PUBLIC_UNSIGNED_ALPHA_PROFILE);
   assert.equal(identity.publishable, true);
   assert.equal(identity.signed, false);
-  assert.equal(identity.windowsMsiVersion, '0.1.0.1');
   assert.equal(identity.pythonRuntimeVersion, '3.12');
-});
-
-test('public alpha maps to a deterministic MSI-safe numeric version', () => {
-  assert.equal(windowsMsiVersionFor('0.1.0-alpha.1'), '0.1.0.1');
-  assert.throws(
-    () => windowsMsiVersionFor('0.1.0-alpha.65536'),
-    /exceeds MSI field limits/,
-  );
 });
 
 test('tag events fail when tag and version cannot be made identical', () => {
@@ -204,9 +178,8 @@ test('external alpha prerequisites are fail-closed', () => {
       assertExternalConfirmations({
         publicRepository: 'true',
         protectedReleaseEnvironment: 'false',
-        hardwareRunner: 'false',
       }),
-    /protectedReleaseEnvironment, hardwareRunner/,
+    /protectedReleaseEnvironment/,
   );
 });
 
@@ -220,7 +193,7 @@ test('metadata validates every source release version', () => {
       join(root, 'apps/cert-prep-desktop/src-tauri/tauri.conf.json'),
       JSON.stringify({
         version: '0.1.0-alpha.1',
-        bundle: { windows: { wix: { version: '0.1.0.1' } } },
+        bundle: { targets: ['nsis'] },
       }),
     );
     writeFileSync(
@@ -254,7 +227,6 @@ test('metadata validates every source release version', () => {
       join(root, 'apps/cert-prep-desktop/scripts/package-qa/constants.mts'),
       [
         "export const ALPHA_VERSION = '0.1.0-alpha.1';",
-        "export const WINDOWS_MSI_VERSION = '0.1.0.1';",
         "export const PYTHON_RUNTIME_VERSION = '3.12';",
       ].join('\n'),
     );
@@ -288,12 +260,11 @@ test('metadata validates every source release version', () => {
       'workspace-root': root,
       'public-repository-confirmed': 'true',
       'release-environment-protected': 'true',
-      'hardware-runner-ready': 'true',
     });
     assert.deepEqual(plan.sourceVersions, {
       tauriVersion: '0.1.0-alpha.1',
       cargoVersion: '0.1.0-alpha.1',
-      windowsMsiVersion: '0.1.0.1',
+      tauriBundleTargets: ['nsis'],
       backendProjectVersion: '0.1.0-alpha.1',
       contractsProjectVersion: '0.1.0-alpha.1',
       ocrProjectVersion: '0.1.0-alpha.1',
@@ -301,10 +272,8 @@ test('metadata validates every source release version', () => {
       backendRuntimeVersion: '0.1.0-alpha.1',
       pythonRuntimeVersion: '3.12',
       packageQaAlphaVersion: '0.1.0-alpha.1',
-      packageQaWindowsMsiVersion: '0.1.0.1',
       packageQaPythonRuntimeVersion: '3.12',
     });
-    assert.equal(plan.windowsMsiVersion, '0.1.0.1');
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -362,11 +331,11 @@ test('license inventory normalizes ecosystems and rejects unknown licenses', () 
   );
 });
 
-test('release documents contain checksums, SPDX, CycloneDX and unsigned metadata', async () => {
+test('release documents contain checksums, SPDX and unsigned metadata', async () => {
   const root = mkdtempSync(join(tmpdir(), 'cert-prep-release-docs-'));
   try {
     mkdirSync(join(root, 'installers'), { recursive: true });
-    writeFileSync(join(root, 'installers', 'cert-prep.msi'), 'installer');
+    writeFileSync(join(root, 'installers', 'cert-prep-setup.exe'), 'installer');
     const plan = deriveReleaseIdentity({
       eventName: 'workflow_dispatch',
       refName: 'main',
@@ -392,19 +361,19 @@ test('release documents contain checksums, SPDX, CycloneDX and unsigned metadata
     });
     assert.match(
       readFileSync(join(root, 'SHA256SUMS'), 'utf8'),
-      /\*cert-prep\.msi/,
+      /\*cert-prep-setup\.exe/,
     );
     const spdx = JSON.parse(
       readFileSync(join(root, 'metadata', 'cert-prep-alpha.spdx.json'), 'utf8'),
-    );
-    const cdx = JSON.parse(
-      readFileSync(join(root, 'metadata', 'cert-prep-alpha.cdx.json'), 'utf8'),
     );
     const metadata = JSON.parse(
       readFileSync(join(root, 'metadata', 'release-metadata.json'), 'utf8'),
     );
     assert.equal(spdx.spdxVersion, 'SPDX-2.3');
-    assert.equal(cdx.specVersion, '1.6');
+    assert.equal(
+      existsSync(join(root, 'metadata', 'cert-prep-alpha.cdx.json')),
+      false,
+    );
     assert.equal(metadata.channel, 'unsigned_public_alpha');
     assert.equal(metadata.signed, false);
     const inventory = JSON.parse(
@@ -579,211 +548,6 @@ test('no-clobber planner only reuses identical digests', () => {
       ),
     /different digest/,
   );
-});
-
-test('hardware evidence requires exact Ollama attribution and four PDFs', () => {
-  const plan = deriveReleaseIdentity({
-    eventName: 'workflow_dispatch',
-    refName: 'main',
-    requestedVersion: '0.1.0-alpha.1',
-    repository: 'owner/cert-prep',
-    commitSha: sha,
-  });
-  const boundArtifact = (path) => ({
-    path,
-    bytes: 100,
-    sha256: '2'.repeat(64),
-    candidateId: 'e'.repeat(64),
-    acceptanceRunId: 'acceptance-run-0001',
-  });
-  const pdfManifest = acceptancePdfManifest();
-  const evidence = {
-    schemaVersion: 3,
-    version: plan.version,
-    tag: plan.tag,
-    commitSha: plan.commitSha,
-    candidateId: 'e'.repeat(64),
-    candidateShaVerified: true,
-    harnessSha256: 'c'.repeat(64),
-    cleanSnapshot: true,
-    windowsMlProvider: 'windowsml',
-    configuredProvider: 'ollama',
-    effectiveProvider: 'ollama',
-    configuredModel: 'qwen3.5:4b',
-    effectiveModel: 'qwen3.5:4b',
-    providerFallback: false,
-    modelFallback: false,
-    generationReadyAtStart: true,
-    resourcesReleasedAtEnd: true,
-    fullExamQuestionCountPositive: true,
-    sessionRestartPassed: true,
-    sessionRestart: {
-      passed: true,
-      path: 'session-restart.json',
-      bytes: 100,
-      sha256: '1'.repeat(64),
-    },
-    cancellation: Object.fromEntries(
-      HARDWARE_CANCELLATION_CHECKS.map((key) => [
-        key,
-        {
-          passed: true,
-          path: `cancellation/${key}.json`,
-          bytes: 100,
-          sha256: 'd'.repeat(64),
-        },
-      ]),
-    ),
-    processResidueCount: 0,
-    acceptancePdfManifest: boundArtifact(
-      'alpha-acceptance-pdf-manifest.json',
-    ),
-    pdfs: pdfManifest.pdfs.map((pdf) => ({
-      ...pdf,
-      usableQuestions: 1,
-      fullExamQuestionCount: 1,
-    })),
-    acceptance: {
-      runId: 'acceptance-run-0001',
-      startedAt: '2026-07-11T01:00:01.000Z',
-      completedAt: '2026-07-11T01:00:04.000Z',
-      completed: true,
-    },
-    productionSummary: boundArtifact('production-summary.json'),
-    gpuTelemetry: {
-      windowsResourceSummary: boundArtifact('windows-resource-summary.json'),
-      windowsResourceSampling: boundArtifact('windows-resource-sampling.csv'),
-      windowsDxgiAdapters: boundArtifact('windows-dxgi-adapters.json'),
-    },
-    recording: {
-      path: 'recording.webm',
-      captureSource: 'playwright_screencast',
-      bytes: 10,
-      sha256: 'f'.repeat(64),
-      acceptanceRunId: 'acceptance-run-0001',
-      startedAt: '2026-07-11T01:00:00.000Z',
-      completedAt: '2026-07-11T01:00:05.000Z',
-    },
-  };
-  assert.equal(
-    validateHardwareResult(evidence, plan, 'e'.repeat(64)),
-    evidence,
-  );
-  assert.throws(
-    () =>
-      validateHardwareResult(
-        { ...evidence, effectiveModel: 'qwen3.5:2b' },
-        plan,
-        'e'.repeat(64),
-      ),
-    /effectiveModel/,
-  );
-  assert.throws(
-    () =>
-      validateHardwareResult(
-        { ...evidence, sessionRestart: undefined },
-        plan,
-        'e'.repeat(64),
-      ),
-    /session restart evidence/,
-  );
-  assert.throws(
-    () =>
-      validateHardwareResult(
-        { ...evidence, schemaVersion: 2 },
-        plan,
-        'e'.repeat(64),
-      ),
-    /identity does not match/,
-  );
-  assert.throws(
-    () =>
-      validateHardwareResult(
-        {
-          ...evidence,
-          productionSummary: {
-            ...evidence.productionSummary,
-            sha256: '',
-          },
-        },
-        plan,
-        'e'.repeat(64),
-      ),
-    /productionSummary/,
-  );
-  assert.throws(
-    () =>
-      validateHardwareResult(
-        {
-          ...evidence,
-          gpuTelemetry: {
-            ...evidence.gpuTelemetry,
-            nvidiaSmi: boundArtifact('nvidia-smi.csv'),
-          },
-        },
-        plan,
-        'e'.repeat(64),
-      ),
-    /exact required artifacts/,
-  );
-});
-
-test('acceptance PDF manifest requires exact unique reviewed identities', () => {
-  const manifest = acceptancePdfManifest();
-  assert.equal(validateAcceptancePdfManifest(manifest), manifest);
-  for (const rejected of [
-    { ...manifest, schemaVersion: 2 },
-    { ...manifest, suiteId: 'other-suite' },
-    { ...manifest, extra: true },
-    { ...manifest, pdfs: manifest.pdfs.slice(0, 3) },
-    {
-      ...manifest,
-      pdfs: [
-        manifest.pdfs[0],
-        { ...manifest.pdfs[1], logicalId: manifest.pdfs[0].logicalId },
-        ...manifest.pdfs.slice(2),
-      ],
-    },
-    {
-      ...manifest,
-      pdfs: [
-        manifest.pdfs[0],
-        { ...manifest.pdfs[1], fileName: manifest.pdfs[0].fileName },
-        ...manifest.pdfs.slice(2),
-      ],
-    },
-    {
-      ...manifest,
-      pdfs: [
-        manifest.pdfs[0],
-        { ...manifest.pdfs[1], sha256: manifest.pdfs[0].sha256 },
-        ...manifest.pdfs.slice(2),
-      ],
-    },
-    {
-      ...manifest,
-      pdfs: [
-        { ...manifest.pdfs[0], fileName: 'nested/pdf-1.pdf' },
-        ...manifest.pdfs.slice(1),
-      ],
-    },
-    {
-      ...manifest,
-      pdfs: [
-        { ...manifest.pdfs[0], fileName: 'pdf-1.PDF' },
-        ...manifest.pdfs.slice(1),
-      ],
-    },
-    {
-      ...manifest,
-      pdfs: [
-        { ...manifest.pdfs[0], sha256: 'A'.repeat(64) },
-        ...manifest.pdfs.slice(1),
-      ],
-    },
-  ]) {
-    assert.throws(() => validateAcceptancePdfManifest(rejected));
-  }
 });
 
 test('publishable release plans require the exact public distribution pair', () => {

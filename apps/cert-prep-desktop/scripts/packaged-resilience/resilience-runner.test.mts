@@ -65,7 +65,10 @@ test('remaining resilience runner atomically publishes four checks and session r
       ],
     );
     const draft = JSON.parse(
-      readFileSync(join(result.outputRoot, 'cancellation', 'draft.json'), 'utf8'),
+      readFileSync(
+        join(result.outputRoot, 'cancellation', 'draft.json'),
+        'utf8',
+      ),
     ) as Record<string, unknown>;
     const proof = draft.proof as Record<string, unknown>;
     const installation = proof.installationBinding as Record<string, unknown>;
@@ -73,7 +76,10 @@ test('remaining resilience runner atomically publishes four checks and session r
       string,
       unknown
     >;
-    assert.equal(installation.receiptSha256, fixture.options.installation.receiptSha256);
+    assert.equal(
+      installation.receiptSha256,
+      fixture.options.installation.receiptSha256,
+    );
     assert.equal(installation.installedExeSha256, 'f'.repeat(64));
     assert.deepEqual(
       {
@@ -125,7 +131,10 @@ test('remaining resilience runner publishes nothing when a scenario fails', asyn
       false,
     );
     assert.ok(calls.includes('cleanup'));
-    assert.equal(calls.some((call) => call.startsWith('released:')), false);
+    assert.equal(
+      calls.some((call) => call.startsWith('released:')),
+      false,
+    );
   } finally {
     fixture.cleanup();
   }
@@ -334,7 +343,9 @@ interface RunnerFixture {
 }
 
 function runnerFixture(): RunnerFixture {
-  const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-prep-resilience-runner-'));
+  const workspaceRoot = mkdtempSync(
+    join(tmpdir(), 'cert-prep-resilience-runner-'),
+  );
   const pdfPath = join(workspaceRoot, 'acceptance.pdf');
   const installedExePath = join(workspaceRoot, 'Cert Prep.exe');
   writeFileSync(pdfPath, '%PDF-1.7 acceptance fixture');
@@ -360,8 +371,9 @@ function runnerFixture(): RunnerFixture {
       installation: {
         receiptPath: join(workspaceRoot, 'install-receipt.json'),
         receiptSha256: 'd'.repeat(64),
-        packageKind: 'msi',
-        installerRelativePath: 'release/installers/Cert Prep.msi',
+        packageKind: 'nsis',
+        installerRelativePath:
+          'release/installers/Cert Prep_0.1.0-alpha.1_x64-setup.exe',
         installerSha256: 'b'.repeat(64),
         installedExeName: 'Cert Prep.exe',
         installedExeBytes: 20,
@@ -373,10 +385,7 @@ function runnerFixture(): RunnerFixture {
       cdpPort: 9591,
       ollamaExePath: join(workspaceRoot, 'ollama.exe'),
       ollamaHost: '127.0.0.1:11591',
-      ollamaModelsRoot: join(
-        `${outputRoot}.diagnostics`,
-        'ollama-models',
-      ),
+      ollamaModelsRoot: join(`${outputRoot}.diagnostics`, 'ollama-models'),
     },
     cleanup() {
       rmSync(workspaceRoot, { recursive: true, force: true });

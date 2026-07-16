@@ -1,5 +1,6 @@
 import type { Page, Response } from 'playwright';
 
+import { DEFAULT_LLM_MODEL } from '../package-qa/constants.mts';
 import { errorMessage, isRecord, stringField } from './text-utils.mts';
 import type {
   LlmHealthSnapshot,
@@ -17,14 +18,23 @@ import {
   recordStreamingQuestionSnapshot,
 } from './streaming-capture-snapshots.mts';
 
-export function observeStreamingApiResponses(run: SmokeRunState, currentPage: Page): void {
+export function observeStreamingApiResponses(
+  run: SmokeRunState,
+  currentPage: Page,
+): void {
   currentPage.on('response', (response) => {
     void recordStreamingApiResponse(run, response);
   });
 }
 
-async function recordStreamingApiResponse(run: SmokeRunState, response: Response): Promise<void> {
-  if (!run.streamingDraftCaptureOpen || run.streamingDraftParseStartedAt === null) {
+async function recordStreamingApiResponse(
+  run: SmokeRunState,
+  response: Response,
+): Promise<void> {
+  if (
+    !run.streamingDraftCaptureOpen ||
+    run.streamingDraftParseStartedAt === null
+  ) {
     return;
   }
   if (response.request().method().toUpperCase() !== 'GET') {
@@ -50,7 +60,9 @@ async function recordStreamingApiResponse(run: SmokeRunState, response: Response
   }
 }
 
-export async function waitForUploadDocumentResponse(run: SmokeRunState): Promise<UploadedDocumentRef | null> {
+export async function waitForUploadDocumentResponse(
+  run: SmokeRunState,
+): Promise<UploadedDocumentRef | null> {
   if (!run.projectApi) {
     run.metrics.observations.push(
       'Upload response capture skipped because project API context was unavailable.',
@@ -82,7 +94,9 @@ export async function waitForUploadDocumentResponse(run: SmokeRunState): Promise
 
   const payload = await response.json().catch(() => null);
   if (!payload || typeof payload !== 'object') {
-    run.metrics.observations.push('Upload document response was not valid JSON.');
+    run.metrics.observations.push(
+      'Upload document response was not valid JSON.',
+    );
     return null;
   }
 
@@ -94,7 +108,9 @@ export async function captureFullExamSessionCreate(
 ): Promise<number> {
   const uploadedDocument = run.uploadedDocument;
   if (!uploadedDocument) {
-    throw new Error('Cannot prove Full Exam scope without the uploaded document.');
+    throw new Error(
+      'Cannot prove Full Exam scope without the uploaded document.',
+    );
   }
   const expectedUrl = new URL(
     `${uploadedDocument.apiBaseUrl}/projects/${encodeURIComponent(
@@ -234,11 +250,10 @@ export async function captureLlmHealth(
     run.metrics.llm_provider = health.provider;
   }
   run.metrics.llm_configured_model =
-    health.configured_model ?? health.model ?? run.options.ollamaModel;
+    health.configured_model ?? health.model ?? DEFAULT_LLM_MODEL;
   run.metrics.llm_effective_model = health.available
-    ? health.effective_model ?? health.model ?? undefined
-    : health.effective_model ?? undefined;
-  run.metrics.llm_fallback_models = health.fallback_models;
+    ? (health.effective_model ?? health.model ?? undefined)
+    : (health.effective_model ?? undefined);
   run.metrics.llm_fallback_reason = health.fallback_reason;
   run.metrics.model_fallback_reason = health.fallback_reason;
 }
@@ -255,7 +270,9 @@ export async function captureDocumentOcrEvidence(
     )}`,
   );
   if (!isRecord(payload)) {
-    run.metrics.observations.push('Document OCR evidence response was not valid JSON.');
+    run.metrics.observations.push(
+      'Document OCR evidence response was not valid JSON.',
+    );
     return;
   }
 
@@ -355,11 +372,15 @@ export async function firstSourceChunk(
   const items = responseItems(payload);
   const first = items[0];
   if (!first || typeof first !== 'object') {
-    throw new Error('Cannot create QA question because no source chunks were returned.');
+    throw new Error(
+      'Cannot create QA question because no source chunks were returned.',
+    );
   }
   const id = valueString(first, 'id');
   if (!id) {
-    throw new Error('Cannot create QA question because the first source chunk had no id.');
+    throw new Error(
+      'Cannot create QA question because the first source chunk had no id.',
+    );
   }
   return {
     id,
@@ -380,7 +401,9 @@ export async function answerForVisiblePracticeQuestion(
   questionText: string,
 ): Promise<string> {
   if (!run.uploadedDocument) {
-    throw new Error('Cannot answer practice question because no document API reference was captured.');
+    throw new Error(
+      'Cannot answer practice question because no document API reference was captured.',
+    );
   }
   const payload = await streamingApiGet(
     run,
@@ -389,7 +412,8 @@ export async function answerForVisiblePracticeQuestion(
   );
   const question = normalizedVisibleText(questionText);
   const match = responseItems(payload).find(
-    (item) => normalizedVisibleText(valueString(item, 'question') ?? '') === question,
+    (item) =>
+      normalizedVisibleText(valueString(item, 'question') ?? '') === question,
   );
   const answer = match ? valueString(match, 'answer') : null;
   if (!answer) {
@@ -413,7 +437,10 @@ function responseItems(payload: unknown): object[] {
   );
 }
 
-function recordStreamingApiPollError(run: SmokeRunState, message: string): void {
+function recordStreamingApiPollError(
+  run: SmokeRunState,
+  message: string,
+): void {
   if (run.streamingApiPollErrorCaptured) {
     return;
   }
@@ -432,11 +459,6 @@ function sanitizeLlmHealth(payload: unknown): LlmHealthSnapshot | null {
     model: nullableString(payload.model),
     configured_model: nullableString(payload.configured_model),
     effective_model: nullableString(payload.effective_model),
-    fallback_models: Array.isArray(payload.fallback_models)
-      ? payload.fallback_models
-          .map((value) => stringField(value).trim())
-          .filter(Boolean)
-      : [],
     fallback_reason: nullableString(payload.fallback_reason),
     execution_mode:
       payload.execution_mode === 'auto' || payload.execution_mode === 'cpu'

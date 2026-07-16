@@ -21,7 +21,6 @@ import {
   forceCrashAndReconnect,
   prepareRunDirectories,
   sanitizeInheritedLaunchEnvironment,
-  startAcceptanceVideoForSmoke,
 } from './app-lifecycle.mts';
 import { selectCertPrepResidue } from '../process-lifecycle/processes.mts';
 import type { ProcessRecord } from '../process-lifecycle/processes.mts';
@@ -90,22 +89,6 @@ test('concurrent cleanup timeout callers reuse one actual cleanup', async () => 
 
   assert.equal(cleanupCalls, 1);
   assert.equal(controller.isFinished(target), true);
-});
-
-test('acceptance video start failures are recorded without aborting smoke', async () => {
-  const run = {
-    metrics: {
-      observations: [],
-    },
-  } as unknown as SmokeRunState;
-
-  await startAcceptanceVideoForSmoke(run, async () => {
-    throw new Error('screencast denied');
-  });
-
-  assert.deepEqual(run.metrics.observations, [
-    'acceptance video start failed: screencast denied',
-  ]);
 });
 
 test('forced crash reconnect terminates the app tree without a graceful close request', async () => {
@@ -384,18 +367,27 @@ test('isolated acceptance strips inherited runtime overrides without mutation', 
   assert.deepEqual(Object.entries(inherited), originalEntries);
 });
 
-test('ordinary smoke preserves inherited environment behavior', () => {
+test('ordinary smoke preserves unrelated environment and pins the fixed model', () => {
   const inherited = {
     CERT_PREP_BACKEND_URL: 'http://127.0.0.1:9999',
+    CERT_PREP_OLLAMA_MODEL: 'unexpected:model',
+    CERT_PREP_OLLAMA_FALLBACK_MODELS: 'unexpected:fallback',
+    CERT_PREP_PACKAGE_SMOKE_LLM_MODEL: 'unexpected:model',
+    CERT_PREP_PACKAGE_SMOKE_LLM_FALLBACK_MODELS: 'unexpected:fallback',
   };
   const environment = buildAppLaunchEnvironment(
     launchEnvironmentRun(false),
     inherited,
   );
 
+  const normalized = normalizedEnvironment(environment);
+  assert.equal(normalized.cert_prep_backend_url, 'http://127.0.0.1:9999');
+  assert.equal(normalized.cert_prep_ollama_model, 'qwen3.5:4b');
+  assert.equal(normalized.cert_prep_ollama_fallback_models, undefined);
+  assert.equal(normalized.cert_prep_package_smoke_llm_model, undefined);
   assert.equal(
-    normalizedEnvironment(environment).cert_prep_backend_url,
-    'http://127.0.0.1:9999',
+    normalized.cert_prep_package_smoke_llm_fallback_models,
+    undefined,
   );
 });
 
@@ -592,7 +584,9 @@ test('Ollama acceptance injects only the typed isolated host and model root afte
 
     const environment = buildAppLaunchEnvironment(run, {
       CERT_PREP_OLLAMA_HOST: 'http://127.0.0.1:11434',
+      CERT_PREP_OLLAMA_MODEL: 'unexpected:model',
       CERT_PREP_OLLAMA_PROFILE_ENABLED: 'true',
+      CERT_PREP_PACKAGE_SMOKE_LLM_MODEL: 'unexpected:model',
       OLLAMA_HOST: '127.0.0.1:11434',
       OLLAMA_MODELS: 'C:\\untrusted-models',
     });
@@ -600,7 +594,9 @@ test('Ollama acceptance injects only the typed isolated host and model root afte
 
     assert.equal(normalized.cert_prep_llm_provider, 'ollama');
     assert.equal(normalized.cert_prep_ollama_host, 'http://127.0.0.1:11591');
+    assert.equal(normalized.cert_prep_ollama_model, 'qwen3.5:4b');
     assert.equal(normalized.cert_prep_ollama_profile_enabled, 'false');
+    assert.equal(normalized.cert_prep_package_smoke_llm_model, undefined);
     assert.equal(normalized.ollama_host, undefined);
     assert.equal(normalized.ollama_models, realpathSync(modelsDir));
   } finally {
@@ -663,8 +659,6 @@ function launchEnvironmentRun(acceptanceIsolation: boolean): SmokeRunState {
       llmProvider: 'auto',
       ocrProvider: 'windowsml',
       ocrPageWorkers: 1,
-      ollamaModel: 'qwen3.5:4b',
-      ollamaFallbackModels: ['qwen3.5:2b'],
     },
     metrics: {
       observations: [],

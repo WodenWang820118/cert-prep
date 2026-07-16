@@ -239,8 +239,9 @@ function optionsFixture(): OptionsFixture {
     installation: {
       receiptPath: join(root, 'receipt.json'),
       receiptSha256: 'd'.repeat(64),
-      packageKind: 'msi',
-      installerRelativePath: 'release/installers/cert-prep.msi',
+      packageKind: 'nsis',
+      installerRelativePath:
+        'release/installers/Cert Prep_0.1.0-alpha.1_x64-setup.exe',
       installerSha256: 'e'.repeat(64),
       installedExeName: 'Cert Prep.exe',
       installedExeBytes: 123,

@@ -231,7 +231,10 @@ test('candidate publication copy is rebuilt only from validated identities', asy
     await publishCandidateAtomically(handoff.root, publishedRoot, {
       attempts: 1,
     });
-    assert.equal(removeCandidateScratchRootBestEffort(handoff.parent, 'handoff'), true);
+    assert.equal(
+      removeCandidateScratchRootBestEffort(handoff.parent, 'handoff'),
+      true,
+    );
     assert.deepEqual(
       JSON.parse(readFileSync(join(publishedRoot, 'candidate.json'), 'utf8')),
       candidate,
@@ -266,11 +269,7 @@ test('candidate publication copy is rebuilt only from validated identities', asy
     };
     writeJson(join(sourceRoot, 'candidate.json'), unsafeCandidate);
     await assert.rejects(
-      prepareCandidatePublicationCopy(
-        sourceRoot,
-        root,
-        unsafeCandidate,
-      ),
+      prepareCandidatePublicationCopy(sourceRoot, root, unsafeCandidate),
       /Invalid validated candidate file identity/,
     );
   } finally {
@@ -437,7 +436,6 @@ async function createLocalFixture() {
   ]) {
     mkdirSync(path, { recursive: true });
   }
-  writeFileSync(join(bundleRoot, `Cert Prep_${version}_x64_en-US.msi`), 'msi');
   writeFileSync(join(bundleRoot, `Cert Prep_${version}_x64-setup.exe`), 'nsis');
 
   const backendName = `cert-prep-backend-runtime-${version}-${target}.zip`;
@@ -477,7 +475,6 @@ async function createLocalFixture() {
   const releaseMetadata = {
     schema_version: 1,
     version,
-    windows_msi_version: '0.1.0.1',
     python_runtime_version: '3.12',
     release_tag: `cert-prep-local-v${version}`,
     channel: 'local_nonpublishable',

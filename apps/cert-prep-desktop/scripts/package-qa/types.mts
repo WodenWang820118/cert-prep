@@ -84,7 +84,6 @@ export interface PackagedResourceContract {
   readonly windowsml_ocr_bundled: false;
   readonly release_urls_only: true;
   readonly version: '0.1.0-alpha.1';
-  readonly windows_msi_version: '0.1.0.1';
   readonly python_runtime_version: '3.12';
   readonly channel: 'unsigned_public_alpha';
   readonly signed: false;

@@ -3,7 +3,6 @@ import { fileURLToPath } from 'node:url';
 
 export const DEFAULT_TARGET_TRIPLE = 'x86_64-pc-windows-msvc';
 export const ALPHA_VERSION = '0.1.0-alpha.1';
-export const WINDOWS_MSI_VERSION = '0.1.0.1';
 export const PYTHON_RUNTIME_VERSION = '3.12';
 export const DEFAULT_OUTPUT =
   'tmp/cert-prep-desktop/package-qa/package-qa.json';

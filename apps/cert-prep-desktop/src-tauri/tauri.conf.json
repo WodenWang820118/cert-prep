@@ -26,12 +26,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["nsis"],
     "icon": ["icons/icon.ico"],
     "windows": {
-      "wix": {
-        "version": "0.1.0.1"
-      },
       "nsis": {
         "installerHooks": "nsis/installer-hooks.nsh"
       }

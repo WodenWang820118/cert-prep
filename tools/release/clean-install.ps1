@@ -1,9 +1,5 @@
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet('msi', 'nsis')]
-    [string]$PackageKind,
-
-    [Parameter(Mandatory = $true)]
     [string]$CandidateRoot,
 
     [Parameter(Mandatory = $true)]
@@ -62,6 +58,48 @@ function Get-CertPrepUninstallEntries {
                 Where-Object { $_.DisplayName -eq 'Cert Prep' }
         }
     )
+}
+
+function Invoke-CertPrepNsisUninstall(
+    [object[]]$Entries,
+    [string]$InstalledExecutable = '',
+    [string]$InstallRoot = ''
+) {
+    $selected = @($Entries | Where-Object { $_.UninstallString }) | Select-Object -First 1
+    if (-not $selected) {
+        throw 'The NSIS installation did not register an uninstaller.'
+    }
+    $rawUninstall = [string]$selected.UninstallString
+    $uninstaller = if ($rawUninstall -match '^"([^"]+)"') {
+        $Matches[1]
+    } else {
+        $rawUninstall.Split(' ')[0]
+    }
+    if (-not (Test-Path -LiteralPath $uninstaller -PathType Leaf)) {
+        throw "The registered NSIS uninstaller is missing: $uninstaller"
+    }
+    $process = Start-Process -FilePath $uninstaller -WindowStyle Hidden -Wait -PassThru `
+        -ArgumentList '/S'
+    if ($process.ExitCode -ne 0) {
+        throw "NSIS uninstall failed with exit code $($process.ExitCode)."
+    }
+
+    $entryPaths = @($Entries | ForEach-Object { [string]$_.PSPath })
+    $deadline = [DateTime]::UtcNow.AddSeconds(30)
+    do {
+        $registryEntryRemains = @(Get-CertPrepUninstallEntries | Where-Object {
+            [string]$_.PSPath -in $entryPaths
+        }).Count -gt 0
+        $executableRemoved = -not $InstalledExecutable -or
+            -not (Test-Path -LiteralPath $InstalledExecutable -PathType Leaf)
+        $installRootRemoved = -not $InstallRoot -or
+            -not (Test-Path -LiteralPath $InstallRoot)
+        if (-not $registryEntryRemains -and $executableRemoved -and $installRootRemoved) {
+            return
+        }
+        Start-Sleep -Milliseconds 500
+    } while ([DateTime]::UtcNow -lt $deadline)
+    throw 'NSIS uninstall did not remove its install root, executable, and registry entry.'
 }
 
 function Find-InstalledExecutable([object[]]$Entries) {
@@ -248,31 +286,29 @@ if ($computedCandidateId -ne $candidate.candidateId) {
     throw 'Candidate ID does not match the verified file identity set.'
 }
 
-$installerPattern = if ($PackageKind -eq 'msi') { '*.msi' } else { '*setup.exe' }
 $installers = @(Get-ChildItem -LiteralPath (Join-Path $candidateRoot 'release\installers') `
-    -File -Filter $installerPattern)
+    -File -Filter '*setup.exe')
 if ($installers.Count -ne 1) {
-    throw "Expected one $PackageKind installer, found $($installers.Count)."
+    throw "Expected one NSIS installer, found $($installers.Count)."
 }
 $installer = $installers[0]
 $beforeEntries = @(Get-CertPrepUninstallEntries)
+$newEntries = @()
+$executable = $null
+$installRoot = ''
 $appProcess = $null
 $backendEvidence = $null
 $contract = $null
-$ocrDownload = Join-Path $env:RUNNER_TEMP "$PackageKind-$($plan.version)-ocr.zip"
+$result = $null
+$uninstallVerified = $false
+$ocrDownload = Join-Path $env:RUNNER_TEMP "nsis-$($plan.version)-ocr.zip"
 $freshAppData = Join-Path $env:RUNNER_TEMP `
-    "cert-prep-clean-$PackageKind-$([Guid]::NewGuid().ToString('N'))"
+    "cert-prep-clean-nsis-$([Guid]::NewGuid().ToString('N'))"
 try {
-    if ($PackageKind -eq 'msi') {
-        $logPath = Join-Path $env:RUNNER_TEMP 'cert-prep-msi-install.log'
-        $process = Start-Process -FilePath 'msiexec.exe' -Wait -PassThru -ArgumentList @(
-            '/i', $installer.FullName, '/qn', '/norestart', '/l*v', $logPath
-        )
-    } else {
-        $process = Start-Process -FilePath $installer.FullName -Wait -PassThru -ArgumentList '/S'
-    }
+    $process = Start-Process -FilePath $installer.FullName -WindowStyle Hidden -Wait -PassThru `
+        -ArgumentList '/S'
     if ($process.ExitCode -ne 0) {
-        throw "$PackageKind installation failed with exit code $($process.ExitCode)."
+        throw "NSIS installation failed with exit code $($process.ExitCode)."
     }
 
     $afterEntries = @(Get-CertPrepUninstallEntries)
@@ -281,7 +317,8 @@ try {
         -not ($beforeEntries | Where-Object { $_.PSPath -eq $key })
     })
     $executable = Find-InstalledExecutable $(if ($newEntries.Count) { $newEntries } else { $afterEntries })
-    $contract = Assert-InstalledRuntimeContract $executable.Directory.FullName $plan
+    $installRoot = $executable.Directory.FullName
+    $contract = Assert-InstalledRuntimeContract $installRoot $plan
 
     Invoke-WebRequest -Uri $contract.ocr.artifact.url -OutFile $ocrDownload -UseBasicParsing
     if ((Get-Item -LiteralPath $ocrDownload).Length -ne $contract.ocr.artifact.bytes -or
@@ -315,7 +352,7 @@ try {
 
     $result = [ordered]@{
         schemaVersion = 1
-        packageKind = $PackageKind
+        packageKind = 'nsis'
         version = $plan.version
         tag = $plan.tag
         commitSha = $plan.commitSha
@@ -334,10 +371,8 @@ try {
         backendPythonVersion = $backendEvidence.health.python_version
         backendExecutable = $backendEvidence.executable
         backendPort = $backendEvidence.port
+        functionalSmoke = 'fresh-install-launch-backend-health'
     }
-    $outputPath = [IO.Path]::GetFullPath($Output)
-    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $outputPath) | Out-Null
-    $result | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $outputPath -Encoding utf8
 } finally {
     Stop-OwnedProcessTree $appProcess
     if ($backendEvidence -and $backendEvidence.pid) {
@@ -355,24 +390,23 @@ try {
         }
         Remove-Item -LiteralPath $resolvedFreshData -Recurse -Force
     }
-    if ($PackageKind -eq 'msi') {
-        Start-Process -FilePath 'msiexec.exe' -Wait -ArgumentList @(
-            '/x', $installer.FullName, '/qn', '/norestart'
-        ) -ErrorAction SilentlyContinue
-    } else {
-        foreach ($entry in @(Get-CertPrepUninstallEntries)) {
-            if ($entry.UninstallString) {
-                $rawUninstall = [string]$entry.UninstallString
-                $uninstaller = if ($rawUninstall -match '^"([^"]+)"') {
-                    $Matches[1]
-                } else {
-                    $rawUninstall.Split(' ')[0]
-                }
-                if (Test-Path -LiteralPath $uninstaller) {
-                    Start-Process -FilePath $uninstaller -Wait -ArgumentList '/S' `
-                        -ErrorAction SilentlyContinue
-                }
-            }
-        }
+    if ($newEntries.Count -eq 0) {
+        $newEntries = @(Get-CertPrepUninstallEntries | Where-Object {
+            $key = $_.PSPath
+            -not ($beforeEntries | Where-Object { $_.PSPath -eq $key })
+        })
+    }
+    if ($newEntries.Count -gt 0) {
+        $installedExecutable = if ($executable) { $executable.FullName } else { '' }
+        Invoke-CertPrepNsisUninstall $newEntries $installedExecutable $installRoot
+        if ($result) { $uninstallVerified = $true }
     }
 }
+
+if (-not $result -or -not $uninstallVerified) {
+    throw 'NSIS clean-install verification did not complete install, smoke, and uninstall.'
+}
+$result['uninstallVerified'] = $true
+$outputPath = [IO.Path]::GetFullPath($Output)
+New-Item -ItemType Directory -Force -Path (Split-Path -Parent $outputPath) | Out-Null
+$result | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $outputPath -Encoding utf8

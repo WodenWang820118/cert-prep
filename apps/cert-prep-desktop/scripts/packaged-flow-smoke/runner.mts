@@ -2,6 +2,7 @@ import { existsSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 import { parsePackagedFlowSmokeArgs } from './args.mts';
+import { DEFAULT_LLM_MODEL } from '../package-qa/constants.mts';
 import {
   cleanupAfterRunWithTimeout,
   launchAppAndConnect,
@@ -151,9 +152,8 @@ export async function runPackagedFlowSmoke(
     observations: [],
     errors: [],
     llm_provider: parsedOptions.llmProvider,
-    llm_model: parsedOptions.ollamaModel,
-    llm_configured_model: parsedOptions.ollamaModel,
-    llm_fallback_models: parsedOptions.ollamaFallbackModels,
+    llm_model: DEFAULT_LLM_MODEL,
+    llm_configured_model: DEFAULT_LLM_MODEL,
     generation_readiness_at_start: unavailableGenerationReadinessSnapshot(
       'capture_not_reached',
     ),
@@ -181,7 +181,6 @@ export async function runPackagedFlowSmoke(
     app: null,
     appExit: null,
     resourceSampling: null,
-    videoRecording: null,
     browser: null,
     page: null,
     port: parsedOptions.cdpPort,

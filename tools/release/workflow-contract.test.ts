@@ -3,11 +3,10 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import test from 'node:test';
 
-const workflowPath = resolve(
-  import.meta.dirname,
-  '../../.github/workflows/release-alpha.yml',
+const workflow = readFileSync(
+  resolve(import.meta.dirname, '../../.github/workflows/release-alpha.yml'),
+  'utf8',
 );
-const workflow = readFileSync(workflowPath, 'utf8');
 const gitAttributes = readFileSync(
   resolve(import.meta.dirname, '../../.gitattributes'),
   'utf8',
@@ -16,316 +15,203 @@ const cleanInstall = readFileSync(
   resolve(import.meta.dirname, 'clean-install.ps1'),
   'utf8',
 );
+const assemble = readFileSync(
+  resolve(import.meta.dirname, 'assemble.ts'),
+  'utf8',
+);
 
-function jobBody(name, nextName) {
-  const start = workflow.indexOf(`  ${name}:`);
+const jobNames = [
+  ...workflow
+    .slice(workflow.indexOf('\njobs:\n'))
+    .matchAll(/^  ([a-z][a-z0-9-]+):$/gm),
+].map((match) => match[1]);
+
+function jobBody(name) {
+  const index = jobNames.indexOf(name);
+  assert.notEqual(index, -1, `job ${name} must exist`);
+  const start = workflow.indexOf(`  ${name}:`, workflow.indexOf('\njobs:\n'));
+  const nextName = jobNames[index + 1];
   const end = nextName
     ? workflow.indexOf(`  ${nextName}:`, start + 1)
     : workflow.length;
-  assert.notEqual(start, -1, `job ${name} must exist`);
-  assert.notEqual(end, -1, `job ${nextName} must exist after ${name}`);
   return workflow.slice(start, end);
 }
 
-test('release workflow exposes dispatch and alpha tag triggers with confirmations', () => {
-  assert.match(workflow, /workflow_dispatch:/);
-  assert.match(workflow, /cert-prep-v\*-alpha\.\*/);
-  for (const input of [
-    'confirm_public_repository',
-    'confirm_release_environment_protected',
-    'confirm_hardware_runner_ready',
-  ]) {
-    assert.match(workflow, new RegExp(`${input}:`));
-  }
-  assert.match(workflow, /vars\.ALPHA_HARDWARE_RUNNER_READY/);
-  assert.doesNotMatch(workflow, /fastflow.terms/i);
+test('release workflow keeps only the four phased jobs', () => {
+  assert.deepEqual(jobNames, [
+    'build-candidate',
+    'clean-install',
+    'publish-alpha',
+    'cleanup-incomplete-prerelease',
+  ]);
+  assert.match(jobBody('clean-install'), /needs:\s*build-candidate/);
+  assert.match(
+    jobBody('publish-alpha'),
+    /needs:\s*\[build-candidate, clean-install\]/,
+  );
 });
 
-test('metadata pins repository identity and canonical release source', () => {
-  const body = jobBody('metadata', 'windows-quality');
-  assert.match(body, /ALPHA_EXPECTED_REPOSITORY/);
-  assert.match(body, /--ref "\$\{\{ github\.ref \}\}"/);
-  assert.match(
-    body,
-    /--default-branch "\$\{\{ github\.event\.repository\.default_branch \}\}"/,
-  );
-  assert.match(body, /--expected-repository "\$EXPECTED_REPOSITORY"/);
-  assert.match(body, /git fetch --no-tags origin/);
-  assert.match(body, /git merge-base --is-ancestor "\$GITHUB_SHA"/);
-  assert.match(
-    workflow,
-    /group: release-alpha-\$\{\{ github\.event_name == 'workflow_dispatch' && format\('cert-prep-v\{0\}', inputs\.version\) \|\| github\.ref_name \}\}/,
-  );
+test('dispatch and alpha-tag triggers require only public release confirmations', () => {
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.match(workflow, /cert-prep-v\*-alpha\.\*/);
+  assert.match(workflow, /confirm_public_repository:/);
+  assert.match(workflow, /confirm_release_environment_protected:/);
+  assert.doesNotMatch(workflow, /confirm_hardware_runner_ready/);
   assert.match(workflow, /cancel-in-progress:\s*false/);
 });
 
-test('all third-party actions are pinned to full commit SHAs', () => {
+test('all third-party actions are pinned and every Node setup uses Node 24', () => {
   const actionUses = [...workflow.matchAll(/uses:\s*([^\s@]+)@([^\s]+)/g)];
-  assert.ok(actionUses.length > 10);
+  assert.ok(actionUses.length >= 10);
   for (const [, action, ref] of actionUses) {
-    assert.match(
-      ref,
-      /^[0-9a-f]{40}$/,
-      `${action} must use an immutable commit SHA`,
-    );
+    assert.match(ref, /^[0-9a-f]{40}$/, `${action} must use an immutable SHA`);
   }
-});
-
-test('release workflow pins setup-uv to the verified v8.3.2 commit', () => {
-  const setupUvUses =
-    workflow.match(/astral-sh\/setup-uv@([0-9a-f]{40})/g) ?? [];
-  assert.ok(setupUvUses.length > 0);
-  assert.ok(
-    setupUvUses.every(
-      (value) =>
-        value === 'astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990',
-    ),
-  );
-});
-
-test('every release job uses the explicit Node 24 runtime contract', () => {
   const setupNodeCount = (workflow.match(/uses: actions\/setup-node@/g) ?? [])
     .length;
-  const node24Count = (workflow.match(/node-version:\s*24/g) ?? []).length;
-  assert.ok(setupNodeCount > 0);
-  assert.equal(node24Count, setupNodeCount);
-  assert.doesNotMatch(workflow, /node-version-file:/);
-});
-
-test('release JavaScript commands use Node 24 native TypeScript entrypoints', () => {
-  assert.equal(workflow.includes(`.${'mjs'}`), false);
-  assert.match(workflow, /node --test tools\/release\/\*\.test\.ts/);
-  for (const entrypoint of [
-    'metadata.ts',
-    'assemble.ts',
-    'publish-assets.ts',
-    'verify-hardware-result.ts',
-  ]) {
-    assert.match(workflow, new RegExp(`tools/release/${entrypoint}`));
-  }
-});
-
-test('acceptance PDF manifest has checkout-stable LF bytes', () => {
-  assert.match(
-    gitAttributes,
-    /^tools\/release\/alpha-acceptance-pdf-manifest\.json text eol=lf$/m,
-  );
-});
-
-test('Windows quality and candidate builds run through pnpm Nx', () => {
-  assert.match(workflow, /pnpm nx run-many -t lint test/);
-  assert.match(workflow, /pnpm nx run cert-prep-desktop:typecheck-scripts/);
-  assert.match(workflow, /pnpm nx run cert-prep-desktop:package-qa-test/);
-  assert.match(workflow, /pnpm nx run cert-prep-desktop:release-tool-test/);
-  assert.match(workflow, /pnpm nx run cert-prep-desktop:cargo-test/);
-  assert.match(workflow, /pnpm nx run cert-prep-desktop:package-qa/);
-  assert.match(workflow, /pnpm nx run cert-prep-e2e:e2e --args=/);
-  assert.match(workflow, /pnpm nx run cert-prep-e2e:e2e-real-backend/);
-  assert.match(workflow, /--isolated[\s\S]*--extra ocr-windowsml/);
-  assert.match(workflow, /--ocr-python-licenses/);
-  assert.match(workflow, /--include-distribution PyInstaller==6\.20\.0/);
-  assert.match(workflow, /collect-runtime-payloads\.py/);
-  assert.match(workflow, /--ocr-runtime-payloads/);
-  assert.match(workflow, /--pyinstaller-executable/);
-});
-
-test('clean-install matrix consumes the candidate without a checkout', () => {
-  const body = jobBody('clean-install', 'hardware-acceptance');
-  assert.match(body, /package:\s*\[msi, nsis\]/);
-  assert.match(body, /actions\/download-artifact@/);
-  assert.doesNotMatch(body, /actions\/checkout@/);
-  assert.match(body, /ExpectedCandidateId/);
-  assert.match(body, /ExpectedCommitSha/);
-  assert.match(
-    cleanInstall,
-    /CERT_PREP_PACKAGE_QA_AUTO_INSTALL_BUNDLED_BACKEND/,
-  );
-  assert.match(cleanInstall, /Wait-InstalledBackendHealth/);
-  assert.match(cleanInstall, /runtime_mode -eq 'packaged'/);
-  assert.match(cleanInstall, /health\.version -eq \$ExpectedVersion/);
-  assert.match(cleanInstall, /health\.python_version/);
-  assert.match(cleanInstall, /backendHealthVerified = \$true/);
-});
-
-test('hardware gate is protected, labeled and consumes no checkout', () => {
-  const body = jobBody('hardware-acceptance', 'finalize-release');
-  assert.match(
-    body,
-    /runs-on:\s*\[self-hosted, Windows, X64, cert-prep-alpha-hardware\]/,
-  );
-  assert.match(body, /environment:\s*alpha-hardware/);
-  assert.match(body, /ALPHA_HARDWARE_HARNESS/);
-  assert.match(body, /ALPHA_HARDWARE_HARNESS_SHA256/);
-  assert.match(body, /Get-FileHash[\s\S]*ALPHA_HARDWARE_HARNESS/);
-  assert.match(
-    body,
-    /Provisioned hardware harness must not be a reparse point/,
-  );
-  assert.match(body, /--harness-sha256/);
-  assert.match(body, /ALPHA_ACCEPTANCE_PDF_DIR:/);
-  assert.match(
-    body,
-    /IsPathFullyQualified\(\$env:ALPHA_ACCEPTANCE_PDF_DIR\)/,
-  );
-  assert.match(
-    body,
-    /Test-Path -LiteralPath \$env:ALPHA_ACCEPTANCE_PDF_DIR -PathType Container/,
-  );
-  assert.match(body, /ALPHA_ACCEPTANCE_PDF_DIR must not be a reparse point/);
-  assert.match(
-    body,
-    /Join-Path \$acceptancePdfDirPath 'alpha-acceptance-pdf-manifest\.json'/,
-  );
-  assert.match(
-    body,
-    /candidate\/harness\/tools\/release\/alpha-acceptance-pdf-manifest\.json/,
-  );
-  assert.match(
-    body,
-    /Provisioned acceptance PDF manifest digest does not match the candidate/,
-  );
-  assert.doesNotMatch(body, /ALPHA_ACCEPTANCE_PDF_MANIFEST(?:_SHA256)?\s*:/);
-  assert.doesNotMatch(body, /\$env:ALPHA_ACCEPTANCE_PDF_MANIFEST/);
-  assert.match(
-    body,
-    /\$evidenceAcceptancePdfManifest = 'hardware-evidence\/alpha-acceptance-pdf-manifest\.json'/,
-  );
-  assert.match(
-    body,
-    /Copy-Item[\s\S]*-Destination \$evidenceAcceptancePdfManifest/,
-  );
-  const harnessStepStart = body.indexOf(
-    '- name: Run externally provisioned clean-snapshot hardware harness',
-  );
-  const verifierStepStart = body.indexOf(
-    '- name: Validate recorded hardware evidence contract',
-  );
-  assert.notEqual(harnessStepStart, -1);
-  assert.ok(verifierStepStart > harnessStepStart);
-  const harnessStep = body.slice(harnessStepStart, verifierStepStart);
-  assert.match(
-    harnessStep,
-    /Get-FileHash -LiteralPath \$env:HARDWARE_HARNESS_PATH -Algorithm SHA256/,
-  );
-  assert.match(harnessStep, /Hardware harness digest drifted before execution/);
-  assert.match(
-    harnessStep,
-    /Hardware harness became a reparse point before execution/,
-  );
-  assert.ok(
-    harnessStep.indexOf('$executionHarnessHash =') <
-      harnessStep.indexOf('& $env:HARDWARE_HARNESS_PATH'),
-    'the approved harness must be rehashed immediately before invocation',
-  );
-  assert.match(harnessStep, /\$global:LASTEXITCODE = \$null/);
-  assert.match(harnessStep, /\$harnessSucceeded = \$\?/);
-  assert.match(
-    harnessStep,
-    /\$null -ne \$harnessExitCode -and \$harnessExitCode -ne 0/,
-  );
-  assert.doesNotMatch(harnessStep, /if \(\$LASTEXITCODE -ne 0\)/);
-  assert.ok(
-    body.indexOf(
-      'Copy-Item -LiteralPath $env:ACCEPTANCE_PDF_MANIFEST_PATH',
-    ) >
-      body.indexOf('Hardware harness failed:'),
-    'the protected manifest copy must happen after the harness finishes so an output-root reset cannot delete it',
-  );
   assert.equal(
-    (body.match(/--acceptance-pdf-manifest(?=\s)/g) ?? []).length,
-    2,
-  );
-  assert.equal(
-    (body.match(/--acceptance-pdf-manifest-sha256(?=\s)/g) ?? []).length,
-    2,
+    (workflow.match(/node-version:\s*24/g) ?? []).length,
+    setupNodeCount,
   );
   assert.match(
-    body,
-    /Get-Command -Name ffprobe -CommandType Application -All/,
+    workflow,
+    /astral-sh\/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990/,
   );
-  assert.match(body, /\$ffprobePaths\.Count -ne 1/);
-  assert.match(body, /Resolved ffprobe must not be a reparse point/);
-  assert.match(body, /ALPHA_FFPROBE_SHA256 must pin the approved ffprobe/);
-  assert.match(body, /Get-FileHash -LiteralPath \$ffprobePath -Algorithm SHA256/);
-  assert.match(body, /Resolved ffprobe digest does not match the approved value/);
-  assert.match(body, /steps\.hardware_inputs\.outputs\.ffprobe_path/);
-  assert.match(body, /steps\.hardware_inputs\.outputs\.ffprobe_sha256/);
-  assert.match(body, /--ffprobe-path/);
-  assert.match(body, /--ffprobe-sha256/);
-  assert.match(body, /ALPHA_FFPROBE_SHA256:/);
-  assert.doesNotMatch(body, /ALPHA_FFPROBE_PATH/);
-  const configuredMachineInputs = [
-    ...body.matchAll(/vars\.(ALPHA_[A-Z0-9_]+)/g),
-  ].map((match) => match[1]);
-  assert.deepEqual([...new Set(configuredMachineInputs)].sort(), [
-    'ALPHA_ACCEPTANCE_PDF_DIR',
-    'ALPHA_FFPROBE_SHA256',
-    'ALPHA_HARDWARE_HARNESS',
-    'ALPHA_HARDWARE_HARNESS_SHA256',
-  ]);
-  assert.doesNotMatch(body, /actions\/checkout@/);
-  assert.match(body, /verify-hardware-result\.ts/);
-  assert.match(body, /WindowsML and Ollama acceptance/);
-  assert.doesNotMatch(body, /FastFlow acceptance/);
 });
 
-test('final publish is no-clobber, attested and contains both SBOM formats', () => {
-  const ocrPublish = jobBody('publish-ocr-prerelease', 'clean-install');
-  const finalPublish = jobBody(
+test('candidate build validates the exact public release source and runs quality through Nx', () => {
+  const body = jobBody('build-candidate');
+  assert.match(body, /actions\/checkout@/);
+  assert.match(body, /fetch-depth:\s*0/);
+  assert.match(body, /--sha "\$\{\{ github\.sha \}\}"/);
+  assert.match(body, /git merge-base --is-ancestor/);
+  assert.match(body, /ALPHA_EXPECTED_REPOSITORY/);
+  assert.match(body, /gh api "repos\/\$env:GITHUB_REPOSITORY"/);
+  assert.match(body, /pnpm nx run-many -t lint test/);
+  assert.match(body, /pnpm nx run cert-prep-desktop:typecheck-scripts/);
+  assert.match(body, /pnpm nx run cert-prep-desktop:package-qa-test/);
+  assert.match(body, /pnpm nx run cert-prep-desktop:release-tool-test/);
+  assert.match(body, /pnpm nx run cert-prep-desktop:cargo-test/);
+  assert.match(body, /pnpm nx run cert-prep-e2e:e2e-real-backend/);
+  assert.equal((body.match(/e2e-real-backend/g) ?? []).length, 1);
+  assert.match(body, /pnpm nx run cert-prep-desktop:package-qa/);
+  assert.match(body, /--include-distribution PyInstaller==6\.20\.0/);
+  assert.match(body, /collect-runtime-payloads\.py/);
+  assert.match(body, /--mode candidate/);
+  assert.match(body, /candidate_id=/);
+});
+
+test('downstream jobs reuse the exact candidate without checkout or rebuild', () => {
+  for (const name of [
+    'clean-install',
     'publish-alpha',
     'cleanup-incomplete-prerelease',
-  );
-  assert.doesNotMatch(workflow, /--clobber/);
-  assert.match(workflow, /actions\/attest-build-provenance@/);
-  assert.match(workflow, /id-token:\s*write/);
-  assert.match(workflow, /attestations:\s*write/);
-  assert.match(workflow, /environment:\s*alpha-release/);
-  assert.match(ocrPublish, /environment:\s*alpha-release/);
-  assert.match(
-    ocrPublish,
-    /release_owned_by_run:\s*\$\{\{ steps\.reserve_ocr\.outputs\.release_owned_by_run \}\}/,
-  );
-  assert.match(ocrPublish, /id:\s*reserve_ocr/);
-  assert.match(ocrPublish, /--mode reserve/);
-  assert.match(
-    ocrPublish,
-    /if:\s*\$\{\{ failure\(\) && steps\.reserve_ocr\.outputs\.release_owned_by_run == 'true' \}\}/,
-  );
-  assert.match(finalPublish, /id:\s*publish_final/);
-  assert.match(
-    finalPublish,
-    /release_finalized:\s*\$\{\{ steps\.publish_final\.outputs\.release_finalized \}\}/,
-  );
-  assert.match(workflow, /SPDX|SBOM/i);
-  assert.match(workflow, /CycloneDX|both SBOM formats/i);
-  assert.match(workflow, /unsigned_public_alpha/);
-  for (const body of [
-    ocrPublish,
-    finalPublish,
-    jobBody('cleanup-incomplete-prerelease'),
   ]) {
-    assert.match(body, /--candidate-root candidate/);
-    assert.match(
-      body,
-      /--candidate-id '\$\{\{ needs\.build-candidate\.outputs\.candidate_id \}\}'/,
-    );
-    assert.match(
-      body,
-      /--publication-owner '\$\{\{ github\.run_id \}\}:\$\{\{ github\.run_attempt \}\}:\$\{\{ needs\.build-candidate\.outputs\.candidate_id \}\}'/,
-    );
+    const body = jobBody(name);
+    assert.match(body, /actions\/download-artifact@/);
+    assert.doesNotMatch(body, /actions\/checkout@/);
+    assert.doesNotMatch(body, /pnpm (?:install|nx)|cargo |uv sync/);
   }
+  assert.match(workflow, /candidate_artifact:/);
+  assert.match(workflow, /candidate_id:/);
+  assert.match(workflow, /ExpectedCandidateId/);
+  assert.match(workflow, /ExpectedCommitSha/);
 });
 
-test('a failed post-OCR gate withdraws the incomplete prerelease', () => {
+test('OCR bootstrap remains remote, candidate-bound and hash-verified', () => {
+  const body = jobBody('clean-install');
+  assert.match(body, /environment:\s*alpha-release/);
+  assert.match(body, /id:\s*reserve_ocr/);
+  assert.match(body, /--mode reserve/);
+  assert.match(body, /--mode ocr/);
+  assert.match(body, /--candidate-root candidate/);
+  assert.match(body, /--candidate-id/);
+  assert.match(body, /--publication-owner/);
+  assert.match(
+    cleanInstall,
+    /Invoke-WebRequest -Uri \$contract\.ocr\.artifact\.url/,
+  );
+  assert.match(
+    cleanInstall,
+    /Public OCR runtime download failed byte\/hash verification/,
+  );
+});
+
+test('clean-install proves one fresh NSIS install, launch, health check and uninstall', () => {
+  assert.doesNotMatch(cleanInstall, /ValidateSet\('msi'/i);
+  assert.doesNotMatch(cleanInstall, /\$PackageKind|msiexec/i);
+  assert.match(cleanInstall, /-Filter '\*setup\.exe'/);
+  assert.match(cleanInstall, /-ArgumentList '\/S'/);
+  assert.match(cleanInstall, /Wait-InstalledBackendHealth/);
+  assert.match(cleanInstall, /runtime_mode -eq 'packaged'/);
+  assert.match(cleanInstall, /freshAppDataVerified = \$true/);
+  assert.match(cleanInstall, /backendHealthVerified = \$true/);
+  assert.match(cleanInstall, /Invoke-CertPrepNsisUninstall/);
+  assert.match(cleanInstall, /uninstallVerified = \$true/);
+  assert.match(
+    cleanInstall,
+    /functionalSmoke = 'fresh-install-launch-backend-health'/,
+  );
+  assert.match(jobBody('clean-install'), /clean-install-nsis\.json/);
+  const uninstallFunction = cleanInstall.slice(
+    cleanInstall.indexOf('function Invoke-CertPrepNsisUninstall'),
+    cleanInstall.indexOf('function Find-InstalledExecutable'),
+  );
+  assert.doesNotMatch(uninstallFunction, /ErrorAction SilentlyContinue/);
+  assert.match(uninstallFunction, /installRootRemoved/);
+  assert.match(uninstallFunction, /Test-Path -LiteralPath \$InstallRoot/);
+  assert.ok(
+    cleanInstall.lastIndexOf('Invoke-CertPrepNsisUninstall') <
+      cleanInstall.indexOf("$result['uninstallVerified'] = $true"),
+    'the report must be marked verified only after uninstall succeeds',
+  );
+  assert.match(assemble, /['"]uninstallVerified['"]/);
+});
+
+test('final publish keeps SPDX, notices, checksums and anonymous verification', () => {
+  const body = jobBody('publish-alpha');
+  assert.match(body, /--mode finalize/);
+  assert.match(body, /--clean-evidence clean-evidence/);
+  assert.match(body, /--mode final/);
+  assert.match(body, /--mode verify-public/);
+  assert.match(body, /Verify every public asset anonymously against its hash/);
+  const anonymousStep = body.slice(
+    body.indexOf(
+      '- name: Verify every public asset anonymously against its hash',
+    ),
+    body.indexOf('- name: Write release summary'),
+  );
+  assert.doesNotMatch(anonymousStep, /GH_TOKEN|Authorization/);
+  assert.match(workflow, /SPDX SBOM/);
+  assert.match(workflow, /licenses and checksums/);
+  assert.doesNotMatch(workflow, /--clobber/);
+});
+
+test('failed pre-finalization publication cleans up only the owned prerelease', () => {
   const body = jobBody('cleanup-incomplete-prerelease');
   assert.match(body, /always\(\)/);
-  assert.match(
-    body,
-    /publish-ocr-prerelease\.outputs\.release_owned_by_run == 'true'/,
-  );
+  assert.match(body, /clean-install\.outputs\.release_owned_by_run == 'true'/);
   assert.match(body, /publish-alpha\.outputs\.release_finalized != 'true'/);
   assert.match(body, /publish-alpha\.result != 'success'/);
-  assert.match(body, /environment:\s*alpha-release/);
   assert.match(body, /--mode cleanup/);
-  assert.doesNotMatch(body, /actions\/checkout@/);
+  assert.match(body, /environment:\s*alpha-release/);
+});
+
+test('removed release gates and artifact formats cannot return unnoticed', () => {
+  const forbidden = [
+    /alpha-hardware/i,
+    /self-hosted/i,
+    /ALPHA_HARDWARE/i,
+    /acceptance[_ -]pdf/i,
+    /ffprobe/i,
+    /verify-hardware-result/i,
+    /hardware-evidence/i,
+    /CycloneDX|\.cdx\.json/i,
+    /attest|provenance/i,
+    /recording|video-evidence/i,
+    /\bmsi\b/i,
+  ];
+  for (const pattern of forbidden) {
+    assert.doesNotMatch(workflow, pattern);
+  }
+  assert.doesNotMatch(gitAttributes, /alpha-acceptance-pdf-manifest\.json/);
 });

@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   appendFileSync,
   lstatSync,
@@ -15,7 +16,6 @@ import { pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 
 import {
-  HARDWARE_CANCELLATION_CHECKS,
   assertCandidateMatchesPlan,
   assertPublishableReleasePlan,
   listFiles,
@@ -31,9 +31,16 @@ const PUBLICATION_OWNER_MARKER =
 const PUBLICATION_STATE_MARKER =
   /<!-- cert-prep-publication-state:(ocr-bootstrap|finalized):([0-9a-f]{64}) -->/gi;
 
-export async function publishAssets(args, gh = runGh) {
+export async function publishAssets(
+  args,
+  gh = runGh,
+  fetchImpl = globalThis.fetch,
+) {
   const { mode, plan, releaseRoot, candidate } =
     await validatePublishingInputs(args);
+  if (mode === 'verify-public') {
+    return verifyPublicReleaseAssets(plan, releaseRoot, fetchImpl);
+  }
   const publicationOwner = validatePublicationOwner(
     args['publication-owner'],
     candidate.candidateId,
@@ -229,8 +236,10 @@ async function inspectReleaseReservation(
 
 export async function validatePublishingInputs(args) {
   const mode = args.mode;
-  if (!['reserve', 'ocr', 'final', 'cleanup'].includes(mode)) {
-    throw new Error('--mode must be reserve, ocr, final, or cleanup.');
+  if (!['reserve', 'ocr', 'final', 'cleanup', 'verify-public'].includes(mode)) {
+    throw new Error(
+      '--mode must be reserve, ocr, final, cleanup, or verify-public.',
+    );
   }
   if (
     !args['candidate-root'] ||
@@ -290,7 +299,7 @@ export async function validatePublishingInputs(args) {
   if (!isDeepStrictEqual(plan, embeddedPlan)) {
     throw new Error('Selected release plan differs from the candidate plan.');
   }
-  if (mode === 'final') {
+  if (mode === 'final' || mode === 'verify-public') {
     await validateFinalReleaseRoot(releaseRoot, embeddedPlan, candidate);
   }
   return { mode, plan, releaseRoot, candidate };
@@ -307,31 +316,46 @@ export async function validateFinalReleaseRoot(releaseRoot, plan, candidate) {
       throw new Error(`Final release metadata differs from its plan: ${key}.`);
     }
   }
-  const evidence = metadata.evidence;
-  const cancellationKeys = Object.keys(
-    evidence.cancellationReports ?? {},
-  ).sort();
+  const evidence = metadata.evidence ?? {};
+  const cleanInstallReport = evidence.cleanInstallReports?.[0];
+  const evidenceKeys = Object.keys(evidence).sort();
+  const reportKeys = Object.keys(cleanInstallReport ?? {}).sort();
   if (
-    evidence.cleanInstall !== 'passed-msi-and-nsis' ||
+    !isDeepStrictEqual(evidenceKeys, [
+      'candidateId',
+      'cleanInstall',
+      'cleanInstallReports',
+    ]) ||
+    evidence.cleanInstall !== 'passed-nsis' ||
     !Array.isArray(evidence.cleanInstallReports) ||
-    evidence.cleanInstallReports.length !== 2 ||
-    evidence.hardware !== 'passed-cert-prep-alpha-hardware' ||
-    !/^[0-9a-f]{64}$/i.test(evidence.hardwareResultSha256 ?? '') ||
-    !/^[0-9a-f]{64}$/i.test(evidence.recordingProbeSha256 ?? '') ||
-    !/^[0-9a-f]{64}$/i.test(evidence.recordingSha256 ?? '') ||
-    !/^[0-9a-f]{64}$/i.test(evidence.hardwareHarnessSha256 ?? '') ||
-    typeof evidence.acceptanceRunId !== 'string' ||
-    evidence.acceptanceRunId.trim() === '' ||
-    !isDeepStrictEqual(
-      cancellationKeys,
-      [...HARDWARE_CANCELLATION_CHECKS].sort(),
-    ) ||
-    cancellationKeys.some(
-      (key) => !/^[0-9a-f]{64}$/i.test(evidence.cancellationReports[key] ?? ''),
-    )
+    evidence.cleanInstallReports.length !== 1 ||
+    cleanInstallReport?.packageKind !== 'nsis' ||
+    cleanInstallReport?.candidateId !== candidate.candidateId ||
+    cleanInstallReport?.commitSha !== plan.commitSha ||
+    cleanInstallReport?.publicOcrDownloadVerified !== true ||
+    cleanInstallReport?.appLaunchVerified !== true ||
+    cleanInstallReport?.freshAppDataVerified !== true ||
+    cleanInstallReport?.backendInstallVerified !== true ||
+    cleanInstallReport?.backendHealthVerified !== true ||
+    cleanInstallReport?.uninstallVerified !== true ||
+    !/^[0-9a-f]{64}$/i.test(cleanInstallReport?.reportSha256 ?? '') ||
+    !/^[0-9a-f]{64}$/i.test(cleanInstallReport?.installerSha256 ?? '') ||
+    !isDeepStrictEqual(reportKeys, [
+      'appLaunchVerified',
+      'backendHealthVerified',
+      'backendInstallVerified',
+      'candidateId',
+      'commitSha',
+      'freshAppDataVerified',
+      'installerSha256',
+      'packageKind',
+      'publicOcrDownloadVerified',
+      'reportSha256',
+      'uninstallVerified',
+    ])
   ) {
     throw new Error(
-      'Final release metadata lacks completed acceptance evidence.',
+      'Final release metadata lacks completed NSIS acceptance evidence.',
     );
   }
 
@@ -359,6 +383,24 @@ export async function validateFinalReleaseRoot(releaseRoot, plan, candidate) {
     }
     artifacts.set(path, artifact);
     artifactNames.add(name.toLowerCase());
+  }
+  assertFinalAssetPolicy([...artifacts.keys()]);
+  const nsisArtifacts = [...artifacts.entries()].filter(([path]) =>
+    /^installers\/.*setup\.exe$/i.test(path),
+  );
+  const cleanInstallArtifact = artifacts.get(
+    'evidence/clean-install/clean-install-nsis.json',
+  );
+  if (
+    nsisArtifacts.length !== 1 ||
+    nsisArtifacts[0][1].sha256.toLowerCase() !==
+      cleanInstallReport.installerSha256.toLowerCase() ||
+    cleanInstallArtifact?.sha256?.toLowerCase() !==
+      cleanInstallReport.reportSha256.toLowerCase()
+  ) {
+    throw new Error(
+      'Final release metadata does not bind the NSIS acceptance artifacts.',
+    );
   }
 
   const actualFiles = listSafeReleaseFiles(releaseRoot);
@@ -391,7 +433,7 @@ export async function validateFinalReleaseRoot(releaseRoot, plan, candidate) {
 
 async function validateCandidateReleaseFiles(candidate, actualFiles) {
   const mutable =
-    /^(?:SHA256SUMS|metadata\/(?:release-metadata|license-inventory|cert-prep-alpha(?:-[a-z0-9-]+)?\.(?:spdx|cdx))\.json)$/;
+    /^(?:SHA256SUMS|metadata\/(?:release-metadata|license-inventory|cert-prep-alpha(?:-[a-z0-9-]+)?\.spdx)\.json)$/;
   for (const identity of candidate.files) {
     const match = String(identity).match(/^release\/([^:]+):([0-9a-f]{64})$/i);
     if (!match || mutable.test(match[1])) continue;
@@ -400,6 +442,191 @@ async function validateCandidateReleaseFiles(candidate, actualFiles) {
       throw new Error(`Final release changed candidate file: ${match[1]}.`);
     }
   }
+}
+
+export async function verifyPublicReleaseAssets(
+  plan,
+  releaseRoot,
+  fetchImpl = globalThis.fetch,
+  retryDelay = defaultRetryDelay,
+) {
+  if (typeof fetchImpl !== 'function') {
+    throw new Error('Anonymous public verification requires the Fetch API.');
+  }
+  const files = listSafeReleaseFiles(releaseRoot);
+  const paths = [...files.keys()];
+  const assetNames = paths.map((path) => basename(path).toLowerCase());
+  if (new Set(assetNames).size !== assetNames.length) {
+    throw new Error('Public release asset basenames must be unique.');
+  }
+  assertFinalAssetPolicy(paths);
+  const requiredCoverage = [
+    ['NSIS installer', (path) => /^installers\/.*setup\.exe$/i.test(path)],
+    [
+      'WindowsML OCR runtime',
+      (path) =>
+        /^runtimes\/cert-prep-ocr-windowsml-runtime-.*\.zip$/i.test(path),
+    ],
+    [
+      'WindowsML OCR manifest',
+      (path) => /^runtimes\/windowsml-ocr-runtime-manifest\.json$/i.test(path),
+    ],
+    ['SPDX SBOM', (path) => /^metadata\/.*\.spdx\.json$/i.test(path)],
+    ['license inventory', (path) => path === 'metadata/license-inventory.json'],
+    ['third-party notices', (path) => path === 'legal/THIRD_PARTY_NOTICES.md'],
+    ['license texts', (path) => /^legal\/licenses\/texts\/[^/]+$/i.test(path)],
+    ['release metadata', (path) => path === 'metadata/release-metadata.json'],
+    ['release plan', (path) => path === 'metadata/release-plan.json'],
+    ['SHA256SUMS', (path) => path === 'SHA256SUMS'],
+  ];
+  for (const [label, predicate] of requiredCoverage) {
+    if (!paths.some(predicate)) {
+      throw new Error(`Public release is missing required ${label} coverage.`);
+    }
+  }
+  const expectedAssetNames = paths.map((path) => basename(path)).sort();
+  await loadPublicReleaseAssetNames(
+    plan,
+    expectedAssetNames,
+    fetchImpl,
+    retryDelay,
+  );
+
+  const verified = [];
+  for (const [path, localFile] of files) {
+    const expectedBytes = statSync(localFile).size;
+    const expectedSha256 = await sha256File(localFile);
+    const assetName = basename(path);
+    const url = `${plan.assetBaseUrl}/${encodeURIComponent(assetName)}`;
+    const actual = await downloadPublicAsset(url, fetchImpl);
+    if (
+      actual.bytes !== expectedBytes ||
+      actual.sha256 !== expectedSha256.toLowerCase()
+    ) {
+      throw new Error(
+        `Public release asset failed hash verification: ${assetName}.`,
+      );
+    }
+    verified.push(assetName);
+  }
+  return { anonymouslyVerified: verified.sort() };
+}
+
+function assertFinalAssetPolicy(paths) {
+  const installerPaths = paths.filter((path) => /^installers\//i.test(path));
+  const installablePaths = paths.filter((path) =>
+    /\.(?:exe|msi|msix|msixbundle|appx|appxbundle)$/i.test(path),
+  );
+  if (
+    installablePaths.length !== 1 ||
+    installerPaths.length !== 1 ||
+    installablePaths[0] !== installerPaths[0] ||
+    !/^installers\/[^/]*setup\.exe$/i.test(installerPaths[0])
+  ) {
+    throw new Error(
+      'Final release must contain only one NSIS setup installer.',
+    );
+  }
+  if (paths.some((path) => /\.msi$/i.test(path))) {
+    throw new Error('Final release must not contain MSI installers.');
+  }
+  if (paths.some((path) => /(?:cyclonedx|\.cdx\.json$)/i.test(path))) {
+    throw new Error('Final release must not contain CycloneDX assets.');
+  }
+}
+
+async function loadPublicReleaseAssetNames(
+  plan,
+  expectedAssetNames,
+  fetchImpl,
+  retryDelay,
+) {
+  const url = `https://api.github.com/repos/${plan.repository}/releases/tags/${encodeURIComponent(plan.tag)}`;
+  let lastError;
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    try {
+      const response = await fetchImpl(url, {
+        redirect: 'follow',
+        cache: 'no-store',
+      });
+      if (!response?.ok) {
+        throw new Error(`HTTP ${response?.status ?? 'unknown'}`);
+      }
+      const release = await response.json();
+      if (
+        release?.tag_name !== plan.tag ||
+        release?.draft !== false ||
+        release?.prerelease !== true ||
+        !Array.isArray(release?.assets)
+      ) {
+        throw new Error('Anonymous public release inventory is invalid.');
+      }
+      const names = release.assets.map((asset) => asset?.name);
+      if (
+        names.some(
+          (name) =>
+            typeof name !== 'string' ||
+            name.length === 0 ||
+            name !== basename(name),
+        ) ||
+        new Set(names.map((name) => name.toLowerCase())).size !== names.length
+      ) {
+        throw new Error('Anonymous public release asset names are invalid.');
+      }
+      names.sort();
+      if (!isDeepStrictEqual(names, expectedAssetNames)) {
+        throw new Error(
+          'Anonymous public release inventory does not match the final release files.',
+        );
+      }
+      return names;
+    } catch (error) {
+      lastError = error;
+      if (attempt < 4) {
+        await retryDelay(2 ** attempt * 1000);
+      }
+    }
+  }
+  throw new Error(
+    `Anonymous public release inventory failed: ${lastError instanceof Error ? lastError.message : lastError}`,
+  );
+}
+
+function defaultRetryDelay(milliseconds) {
+  return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
+}
+
+async function downloadPublicAsset(url, fetchImpl) {
+  let lastError;
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    try {
+      const response = await fetchImpl(url, {
+        redirect: 'follow',
+        cache: 'no-store',
+      });
+      if (!response?.ok || !response.body) {
+        throw new Error(`HTTP ${response?.status ?? 'unknown'}`);
+      }
+      const hash = createHash('sha256');
+      let bytes = 0;
+      for await (const chunk of response.body) {
+        const buffer = Buffer.from(chunk);
+        hash.update(buffer);
+        bytes += buffer.length;
+      }
+      return { bytes, sha256: hash.digest('hex') };
+    } catch (error) {
+      lastError = error;
+      if (attempt < 4) {
+        await new Promise((resolveDelay) =>
+          setTimeout(resolveDelay, 2 ** attempt * 1000),
+        );
+      }
+    }
+  }
+  throw new Error(
+    `Anonymous public asset download failed: ${url}: ${lastError instanceof Error ? lastError.message : lastError}`,
+  );
 }
 
 async function validateChecksumManifest(releaseRoot, actualFiles) {
@@ -615,8 +842,8 @@ function writeNotes(plan, publicationState, publicationOwner, candidateId) {
   const stateMarker = `<!-- cert-prep-publication-state:${publicationState}:${candidateId} -->`;
   const body =
     publicationState === 'ocr-bootstrap'
-      ? `# Cert Prep ${plan.version}\n\nThis is the OCR bootstrap stage for an unsigned public alpha. Installer assets are intentionally withheld until clean-install and protected hardware acceptance pass.\n\nThe WindowsML OCR asset is public so clean Windows runners can verify anonymous download and SHA-256 integrity.\n\n${marker}\n${stateMarker}\n`
-      : `# Cert Prep ${plan.version}\n\nPublic Windows 11 x64 alpha. This build is **unsigned** and Windows SmartScreen is expected to warn. Verify downloads against \`SHA256SUMS\` before installing.\n\nThis remains an Alpha, not a production/GA release. The supported Alpha reasoning runtime is Ollama.\n\n${marker}\n${stateMarker}\n`;
+      ? `# Cert Prep ${plan.version}\n\nThis is the OCR bootstrap stage for an unsigned public alpha. The NSIS installer is withheld until a fresh install, launch, backend-health, and uninstall smoke passes.\n\nThe WindowsML OCR asset is public so a clean Windows runner can verify anonymous download and SHA-256 integrity.\n\n${marker}\n${stateMarker}\n`
+      : `# Cert Prep ${plan.version}\n\nPublic Windows 11 x64 alpha. This NSIS build is **unsigned** and Windows SmartScreen is expected to warn. Verify downloads against \`SHA256SUMS\` before installing.\n\nThis remains an Alpha, not a production/GA release. The supported Alpha reasoning runtime is Ollama; incompatible acceleration falls back to CPU with an in-app warning.\n\n${marker}\n${stateMarker}\n`;
   writeFileSync(path, body, 'utf8');
   return path;
 }

@@ -14,8 +14,9 @@ export const FIXTURE_CANDIDATE: CandidateBinding = {
 
 export const FIXTURE_INSTALLATION_BINDING: InstallationBinding = {
   receiptSha256: 'd'.repeat(64),
-  packageKind: 'msi',
-  installerRelativePath: 'release/installers/Cert Prep.msi',
+  packageKind: 'nsis',
+  installerRelativePath:
+    'release/installers/Cert Prep_0.1.0-alpha.1_x64-setup.exe',
   installerSha256: 'b'.repeat(64),
   installedExeName: 'Cert Prep.exe',
   installedExeBytes: 20,

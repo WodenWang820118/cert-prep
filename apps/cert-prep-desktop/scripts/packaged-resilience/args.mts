@@ -42,8 +42,7 @@ export interface InstalledCandidateRunnerBinding {
   readonly installation: InstalledCandidateBinding;
 }
 
-export interface DocumentCancellationRunnerOptions
-  extends InstalledCandidateRunnerBinding {
+export interface DocumentCancellationRunnerOptions extends InstalledCandidateRunnerBinding {
   readonly pdfPath: string;
   readonly outputRoot: string;
   readonly diagnosticsRoot: string;
@@ -55,7 +54,7 @@ export interface DocumentCancellationRunnerOptions
 export interface InstalledCandidateBinding {
   readonly receiptPath: string;
   readonly receiptSha256: string;
-  readonly packageKind: 'msi' | 'nsis';
+  readonly packageKind: 'nsis';
   readonly installerRelativePath: string;
   readonly installerSha256: string;
   readonly installedExeName: string;
@@ -81,7 +80,7 @@ interface InstallReceiptDocument {
   readonly candidateId: string;
   readonly acceptanceRunId: string;
   readonly harnessSha256: string;
-  readonly packageKind: 'msi' | 'nsis';
+  readonly packageKind: 'nsis';
   readonly installer: {
     readonly relativePath: string;
     readonly sha256: string;
@@ -186,7 +185,7 @@ export async function loadInstalledCandidateBinding(
   ).toLowerCase();
   const harnessSha256 = requiredPattern(
     environment,
-    'ALPHA_HARDWARE_HARNESS_SHA256',
+    'CERT_PREP_ACCEPTANCE_HARNESS_SHA256',
     SHA256_PATTERN,
   ).toLowerCase();
   const acceptanceRunId = requiredPattern(
@@ -274,15 +273,14 @@ async function validateInstallReceipt({
   const installerRelativePath = safeCandidateRelativePath(
     receipt.installer.relativePath,
   );
-  const expectedInstallerExtension =
-    receipt.packageKind === 'msi' ? '.msi' : '.exe';
   if (
     !installerRelativePath.startsWith('release/installers/') ||
-    extname(installerRelativePath).toLowerCase() !== expectedInstallerExtension ||
-    (receipt.packageKind === 'nsis' &&
-      !basename(installerRelativePath).toLowerCase().endsWith('setup.exe'))
+    extname(installerRelativePath).toLowerCase() !== '.exe' ||
+    !basename(installerRelativePath).toLowerCase().endsWith('setup.exe')
   ) {
-    throw new Error('Installed candidate receipt package kind does not match its installer.');
+    throw new Error(
+      'Installed candidate receipt must reference an NSIS setup executable.',
+    );
   }
   const installerPath = safeCandidateFile(candidateRoot, installerRelativePath);
   const installerSha256 = await sha256File(installerPath);
@@ -329,18 +327,19 @@ async function validateInstallReceipt({
   };
 }
 
-function installReceipt(value: Record<string, unknown>): InstallReceiptDocument {
+function installReceipt(
+  value: Record<string, unknown>,
+): InstallReceiptDocument {
   const installer = jsonRecord(value.installer, 'installer');
   const installedExecutable = jsonRecord(
     value.installedExecutable,
     'installedExecutable',
   );
-  const packageKind = value.packageKind;
   const bytes = installedExecutable.bytes;
   const installedAt = receiptString(value.installedAt, 'installedAt');
   if (
     value.schemaVersion !== 1 ||
-    (packageKind !== 'msi' && packageKind !== 'nsis') ||
+    value.packageKind !== 'nsis' ||
     !Number.isSafeInteger(bytes) ||
     Number(bytes) < 1 ||
     value.freshInstallVerified !== true ||
@@ -351,7 +350,11 @@ function installReceipt(value: Record<string, unknown>): InstallReceiptDocument 
   }
   return {
     schemaVersion: 1,
-    candidateId: receiptPattern(value.candidateId, 'candidateId', SHA256_PATTERN),
+    candidateId: receiptPattern(
+      value.candidateId,
+      'candidateId',
+      SHA256_PATTERN,
+    ),
     acceptanceRunId: receiptPattern(
       value.acceptanceRunId,
       'acceptanceRunId',
@@ -362,10 +365,17 @@ function installReceipt(value: Record<string, unknown>): InstallReceiptDocument 
       'harnessSha256',
       SHA256_PATTERN,
     ),
-    packageKind,
+    packageKind: 'nsis',
     installer: {
-      relativePath: receiptString(installer.relativePath, 'installer.relativePath'),
-      sha256: receiptPattern(installer.sha256, 'installer.sha256', SHA256_PATTERN),
+      relativePath: receiptString(
+        installer.relativePath,
+        'installer.relativePath',
+      ),
+      sha256: receiptPattern(
+        installer.sha256,
+        'installer.sha256',
+        SHA256_PATTERN,
+      ),
     },
     installedExecutable: {
       path: receiptString(installedExecutable.path, 'installedExecutable.path'),
@@ -422,14 +432,19 @@ function safeCandidateRelativePath(value: string): string {
   if (
     value.includes('\\') ||
     value.startsWith('/') ||
-    value.split('/').some((part) => part.length === 0 || part === '.' || part === '..')
+    value
+      .split('/')
+      .some((part) => part.length === 0 || part === '.' || part === '..')
   ) {
     throw new Error('Installed candidate receipt installer path is unsafe.');
   }
   return value;
 }
 
-function safeCandidateFile(candidateRoot: string, relativePath: string): string {
+function safeCandidateFile(
+  candidateRoot: string,
+  relativePath: string,
+): string {
   const path = resolve(candidateRoot, ...relativePath.split('/'));
   requireStrictDescendant(path, candidateRoot, 'Installed candidate installer');
   if (
@@ -437,7 +452,9 @@ function safeCandidateFile(candidateRoot: string, relativePath: string): string 
     !statSync(path).isFile() ||
     lstatSync(path).isSymbolicLink()
   ) {
-    throw new Error('Installed candidate receipt installer is missing or unsafe.');
+    throw new Error(
+      'Installed candidate receipt installer is missing or unsafe.',
+    );
   }
   const canonicalPath = realpathSync(path);
   requireStrictDescendant(
@@ -458,7 +475,9 @@ function requiredReceiptAbsolutePath(value: string, label: string): string {
     !statSync(path).isFile() ||
     lstatSync(path).isSymbolicLink()
   ) {
-    throw new Error(`Installed candidate receipt ${label} is missing or unsafe.`);
+    throw new Error(
+      `Installed candidate receipt ${label} is missing or unsafe.`,
+    );
   }
   return realpathSync(path);
 }
@@ -572,7 +591,9 @@ function requiredSafeFile(
     lstatSync(path).isSymbolicLink() ||
     extname(path).toLowerCase() !== expectedExtension
   ) {
-    throw new Error(`${name} must identify a non-symlink ${expectedExtension} file.`);
+    throw new Error(
+      `${name} must identify a non-symlink ${expectedExtension} file.`,
+    );
   }
   return realpathSync(path);
 }
@@ -638,7 +659,9 @@ function stringField(value: unknown, name: string): string {
 function assertPdfHeader(path: string): void {
   const header = readFileSync(path).subarray(0, 5).toString('ascii');
   if (header !== '%PDF-') {
-    throw new Error('CERT_PREP_RESILIENCE_PDF_PATH does not contain a PDF header.');
+    throw new Error(
+      'CERT_PREP_RESILIENCE_PDF_PATH does not contain a PDF header.',
+    );
   }
 }
 

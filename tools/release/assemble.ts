@@ -1,11 +1,6 @@
 import { createHash } from 'node:crypto';
 import {
-  closeSync,
-  existsSync,
-  lstatSync,
   mkdirSync,
-  openSync,
-  readSync,
   readFileSync,
   readdirSync,
   rmSync,
@@ -15,7 +10,6 @@ import { basename, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import {
-  ALPHA_ACCEPTANCE_PDF_MANIFEST_FILE,
   LOCAL_NONPUBLISHABLE_PROFILE,
   PUBLIC_UNSIGNED_ALPHA_PROFILE,
   RELEASE_CHANNEL,
@@ -30,11 +24,7 @@ import {
   readJson,
   relativePosix,
   sha256File,
-  validateAcceptancePdfManifest,
   validateCandidateFiles,
-  validateHardwareEvidenceFiles,
-  validateHardwareResult,
-  validateRecordingProbeContract,
   writeJson,
   writeReleaseDocuments,
 } from './release-lib.ts';
@@ -56,23 +46,16 @@ export async function assembleCandidate(args) {
   const packageQa = readJson(packageQaPath);
   validatePackageQa(packageQa, plan);
 
-  const msi = findSingleFile(
-    bundleRoot,
-    (path) => path.toLowerCase().endsWith('.msi'),
-    'MSI',
-  );
   const nsis = findSingleFile(
     bundleRoot,
     (path) =>
       path.toLowerCase().endsWith('.exe') && /setup/i.test(basename(path)),
     'NSIS installer',
   );
-  for (const installer of [msi, nsis]) {
-    if (!basename(installer).includes(plan.version)) {
-      throw new Error(
-        `Installer name does not contain release version ${plan.version}.`,
-      );
-    }
+  if (!basename(nsis).includes(plan.version)) {
+    throw new Error(
+      `Installer name does not contain release version ${plan.version}.`,
+    );
   }
   const backendManifestPath = join(
     generatedResources,
@@ -112,7 +95,6 @@ export async function assembleCandidate(args) {
     );
   }
 
-  copyInto(msi, join(releaseRoot, 'installers', basename(msi)));
   copyInto(nsis, join(releaseRoot, 'installers', basename(nsis)));
   copyInto(
     backendManifestPath,
@@ -149,24 +131,6 @@ export async function assembleCandidate(args) {
   copyInto(
     join(workspaceRoot, 'tools', 'release'),
     join(harnessRoot, 'tools', 'release'),
-  );
-  copyInto(
-    join(
-      workspaceRoot,
-      'apps',
-      'cert-prep-desktop',
-      'scripts',
-      'packaged-resilience',
-      'evidence-contract.mts',
-    ),
-    join(
-      harnessRoot,
-      'apps',
-      'cert-prep-desktop',
-      'scripts',
-      'packaged-resilience',
-      'evidence-contract.mts',
-    ),
   );
   rmSync(join(harnessRoot, 'tools', 'release', '__pycache__'), {
     recursive: true,
@@ -205,11 +169,6 @@ export async function assembleCandidate(args) {
     ...backendComponents,
   ]);
   const artifactDependencies = [
-    {
-      id: 'msi',
-      artifactPath: `installers/${basename(msi)}`,
-      componentPurls: installerComponentPurls,
-    },
     {
       id: 'nsis',
       artifactPath: `installers/${basename(nsis)}`,
@@ -272,82 +231,12 @@ export async function finalizeRelease(args) {
   );
   assertPublishableReleasePlan(sourcePlan);
   assertCandidateMatchesPlan(candidate, sourcePlan);
-  const candidateAcceptancePdfManifestPath = join(
-    candidateRoot,
-    'harness',
-    'tools',
-    'release',
-    ALPHA_ACCEPTANCE_PDF_MANIFEST_FILE,
-  );
-  if (
-    !existsSync(candidateAcceptancePdfManifestPath) ||
-    !statSync(candidateAcceptancePdfManifestPath).isFile() ||
-    lstatSync(candidateAcceptancePdfManifestPath).isSymbolicLink()
-  ) {
-    throw new Error('Candidate acceptance PDF manifest is missing or unsafe.');
-  }
-  validateAcceptancePdfManifest(readJson(candidateAcceptancePdfManifestPath));
-  const candidateAcceptancePdfManifestSha256 = await sha256File(
-    candidateAcceptancePdfManifestPath,
-  );
   const outputRoot = resolve(args.output);
   const releaseRoot = join(outputRoot, 'release');
   rmSync(outputRoot, { recursive: true, force: true });
   copyInto(join(candidateRoot, 'release'), releaseRoot);
   const plan = readJson(join(releaseRoot, 'metadata', 'release-plan.json'));
   assertCandidateMatchesPlan(candidate, plan);
-
-  const hardwareRoot = resolve(args['hardware-evidence']);
-  const hardwareResultPath = join(hardwareRoot, 'hardware-result.json');
-  const hardwareResult = validateHardwareResult(
-    readJson(hardwareResultPath),
-    plan,
-    candidate.candidateId,
-  );
-  if (
-    hardwareResult.acceptancePdfManifest.sha256.toLowerCase() !==
-    candidateAcceptancePdfManifestSha256
-  ) {
-    throw new Error(
-      'Hardware acceptance PDF manifest does not match the candidate manifest.',
-    );
-  }
-  await validateHardwareEvidenceFiles(hardwareResult, hardwareRoot);
-  const recordingPath = resolve(hardwareRoot, hardwareResult.recording.path);
-  assertWebmHeader(recordingPath);
-  const probePath = join(hardwareRoot, 'recording-probe.json');
-  if (
-    !existsSync(probePath) ||
-    !statSync(probePath).isFile() ||
-    lstatSync(probePath).isSymbolicLink()
-  ) {
-    throw new Error('Hardware recording probe is missing or unsafe.');
-  }
-  validateRecordingProbeContract(readJson(probePath), hardwareResult);
-  const expectedHardwareFiles = new Set([
-    'hardware-result.json',
-    'recording-probe.json',
-    hardwareResult.acceptancePdfManifest.path.replaceAll('\\', '/'),
-    hardwareResult.productionSummary.path.replaceAll('\\', '/'),
-    ...Object.values(hardwareResult.gpuTelemetry).map((record) =>
-      record.path.replaceAll('\\', '/'),
-    ),
-    hardwareResult.recording.path.replaceAll('\\', '/'),
-    hardwareResult.sessionRestart.path.replaceAll('\\', '/'),
-    ...Object.values(hardwareResult.cancellation).map((record) =>
-      record.path.replaceAll('\\', '/'),
-    ),
-  ]);
-  const actualHardwareFiles = listFiles(hardwareRoot).map((path) =>
-    relativePosix(hardwareRoot, path),
-  );
-  if (
-    actualHardwareFiles.length !== expectedHardwareFiles.size ||
-    actualHardwareFiles.some((path) => !expectedHardwareFiles.has(path))
-  ) {
-    throw new Error('Hardware evidence contains missing or undeclared files.');
-  }
-  copyInto(hardwareRoot, join(releaseRoot, 'evidence', 'hardware'));
 
   const cleanEvidenceRoot = resolve(args['clean-evidence']);
   const cleanEvidence = await validateCleanInstallEvidence(
@@ -367,29 +256,8 @@ export async function finalizeRelease(args) {
     artifactDependencies: licenseInventory.artifactDependencies,
     evidence: {
       candidateId: candidate.candidateId,
-      cleanInstall: 'passed-msi-and-nsis',
+      cleanInstall: 'passed-nsis',
       cleanInstallReports: cleanEvidence,
-      hardware: 'passed-cert-prep-alpha-hardware',
-      hardwareResultSha256: await sha256File(hardwareResultPath),
-      recordingProbeSha256: await sha256File(probePath),
-      recordingSha256: hardwareResult.recording.sha256,
-      acceptanceRunId: hardwareResult.acceptance.runId,
-      hardwareHarnessSha256: hardwareResult.harnessSha256,
-      acceptancePdfManifestSha256:
-        hardwareResult.acceptancePdfManifest.sha256,
-      productionSummarySha256: hardwareResult.productionSummary.sha256,
-      gpuTelemetryReports: Object.fromEntries(
-        Object.entries(hardwareResult.gpuTelemetry).map(([key, record]) => [
-          key,
-          record.sha256,
-        ]),
-      ),
-      cancellationReports: Object.fromEntries(
-        Object.entries(hardwareResult.cancellation).map(([key, record]) => [
-          key,
-          record.sha256,
-        ]),
-      ),
     },
   });
   return { releaseRoot };
@@ -407,31 +275,25 @@ async function validateCleanInstallEvidence(
 ) {
   const files = listFiles(cleanEvidenceRoot);
   const validated = [];
-  const expectedNames = new Set([
-    'clean-install-msi.json',
-    'clean-install-nsis.json',
-  ]);
+  const expectedNames = new Set(['clean-install-nsis.json']);
   if (
     files.length !== expectedNames.size ||
     files.some((path) => !expectedNames.has(basename(path)))
   ) {
     throw new Error(
-      'Clean-install evidence must contain exactly one MSI and one NSIS result.',
+      'Clean-install evidence must contain exactly one NSIS result.',
     );
   }
   const installersRoot = join(candidateRoot, 'release', 'installers');
-  for (const kind of ['msi', 'nsis']) {
+  for (const kind of ['nsis']) {
     const path = files.find(
       (item) => basename(item) === `clean-install-${kind}.json`,
     );
     const evidence = readJson(path);
     const installer = findSingleFile(
       installersRoot,
-      kind === 'msi'
-        ? (item) => item.toLowerCase().endsWith('.msi')
-        : (item) =>
-            item.toLowerCase().endsWith('.exe') &&
-            /setup/i.test(basename(item)),
+      (item) =>
+        item.toLowerCase().endsWith('.exe') && /setup/i.test(basename(item)),
       `${kind} installer`,
     );
     const requiredTrue = [
@@ -441,6 +303,7 @@ async function validateCleanInstallEvidence(
       'freshAppDataVerified',
       'backendInstallVerified',
       'backendHealthVerified',
+      'uninstallVerified',
     ];
     if (
       evidence.schemaVersion !== 1 ||
@@ -467,6 +330,14 @@ async function validateCleanInstallEvidence(
     }
     validated.push({
       packageKind: kind,
+      candidateId: evidence.candidateId,
+      commitSha: evidence.commitSha,
+      publicOcrDownloadVerified: evidence.publicOcrDownloadVerified,
+      appLaunchVerified: evidence.appLaunchVerified,
+      freshAppDataVerified: evidence.freshAppDataVerified,
+      backendInstallVerified: evidence.backendInstallVerified,
+      backendHealthVerified: evidence.backendHealthVerified,
+      uninstallVerified: evidence.uninstallVerified,
       reportSha256: await sha256File(path),
       installerSha256: evidence.installerSha256,
     });
@@ -535,21 +406,6 @@ async function validateOcrRuntimePayloads(
   }
 }
 
-function assertWebmHeader(path) {
-  const header = Buffer.alloc(4);
-  const descriptor = openSync(path, 'r');
-  try {
-    if (readSync(descriptor, header, 0, header.length, 0) !== header.length) {
-      throw new Error('Hardware recording is too short to be a WebM file.');
-    }
-  } finally {
-    closeSync(descriptor);
-  }
-  if (!header.equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]))) {
-    throw new Error('Hardware recording does not contain a WebM EBML header.');
-  }
-}
-
 async function validateRuntimeManifest({
   manifest,
   root,
@@ -598,7 +454,6 @@ export function validatePackageQa(report, plan) {
       contract?.distribution_profile !== LOCAL_NONPUBLISHABLE_PROFILE ||
       contract?.publishable !== false ||
       contract?.version !== plan.version ||
-      contract?.windows_msi_version !== plan.windowsMsiVersion ||
       contract?.python_runtime_version !== plan.pythonRuntimeVersion ||
       contract?.signed !== false ||
       report.package?.size_gate?.status === 'failed'
@@ -618,7 +473,6 @@ export function validatePackageQa(report, plan) {
     contract?.distribution_profile !== PUBLIC_UNSIGNED_ALPHA_PROFILE ||
     contract?.publishable !== true ||
     contract?.version !== plan.version ||
-    contract?.windows_msi_version !== plan.windowsMsiVersion ||
     contract?.python_runtime_version !== plan.pythonRuntimeVersion ||
     contract?.channel !== RELEASE_CHANNEL ||
     contract?.signed !== false ||

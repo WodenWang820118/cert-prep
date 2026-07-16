@@ -19,9 +19,9 @@ import {
   releasePublicationState,
   validatePublishingInputs,
   validatePublicationOwner,
+  verifyPublicReleaseAssets,
 } from './publish-assets.ts';
 import {
-  HARDWARE_CANCELLATION_CHECKS,
   LOCAL_NONPUBLISHABLE_PROFILE,
   PUBLIC_UNSIGNED_ALPHA_PROFILE,
   sha256File,
@@ -281,12 +281,7 @@ test('reservation creates one bootstrap release without transferring ownership',
           'candidate-root': candidateRoot,
           'candidate-id': candidate.candidateId,
           'publication-owner': owner,
-          plan: join(
-            candidateRoot,
-            'release',
-            'metadata',
-            'release-plan.json',
-          ),
+          plan: join(candidateRoot, 'release', 'metadata', 'release-plan.json'),
         },
         gh,
       );
@@ -390,6 +385,50 @@ test('final publication marks the release before cleanup can observe success', a
   }
 });
 
+test('final publication rejects retired installers and CycloneDX before GitHub access', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'cert-prep-release-policy-'));
+  try {
+    for (const [index, path, message] of [
+      [
+        0,
+        'installers/Cert_Prep_0.1.0-alpha.1_x64.msi',
+        /only one NSIS setup installer/,
+      ],
+      [1, 'metadata/cert-prep-alpha.cdx.json', /must not contain CycloneDX/],
+      [2, 'extras/alternate-setup.exe', /only one NSIS setup installer/],
+    ]) {
+      const candidateRoot = join(root, `candidate-${index}`);
+      const candidate = await writeMinimalCandidate(candidateRoot, plan);
+      const releaseRoot = await writeFinalReleaseRoot(
+        join(root, `final-release-${index}`),
+        candidate,
+      );
+      await appendDeclaredFinalArtifact(releaseRoot, path, 'retired format');
+      let ghCalls = 0;
+      await assert.rejects(
+        publishAssets(
+          {
+            mode: 'final',
+            'candidate-root': candidateRoot,
+            'candidate-id': candidate.candidateId,
+            'publication-owner': `12345:1:${candidate.candidateId}`,
+            'release-root': releaseRoot,
+            plan: join(releaseRoot, 'metadata', 'release-plan.json'),
+          },
+          () => {
+            ghCalls += 1;
+            throw new Error('GitHub must not be reached');
+          },
+        ),
+        message,
+      );
+      assert.equal(ghCalls, 0);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('local candidates reject every publication mode before GitHub access', async () => {
   const root = mkdtempSync(join(tmpdir(), 'cert-prep-local-publish-'));
   try {
@@ -411,7 +450,13 @@ test('local candidates reject every publication mode before GitHub access', asyn
       ghCalls += 1;
       throw new Error('GitHub must not be reached');
     };
-    for (const mode of ['reserve', 'ocr', 'final', 'cleanup']) {
+    for (const mode of [
+      'reserve',
+      'ocr',
+      'final',
+      'cleanup',
+      'verify-public',
+    ]) {
       await assert.rejects(
         () =>
           publishAssets(
@@ -471,7 +516,117 @@ test('final publication requires metadata bound to the exact candidate', async (
           'release-root': releaseRoot,
           plan: planPath,
         }),
-      /lacks completed acceptance evidence/,
+      /lacks completed NSIS acceptance evidence/,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('public verification anonymously downloads and hashes every required asset', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'cert-prep-public-verify-'));
+  try {
+    const candidateRoot = join(root, 'candidate');
+    const candidate = await writeMinimalCandidate(candidateRoot, plan);
+    const releaseRoot = await writeFinalReleaseRoot(
+      join(root, 'final-release'),
+      candidate,
+    );
+    const metadata = JSON.parse(
+      readFileSync(
+        join(releaseRoot, 'metadata', 'release-metadata.json'),
+        'utf8',
+      ),
+    );
+    const publicPaths = [
+      ...metadata.artifacts.map((artifact) => artifact.path),
+      'metadata/release-metadata.json',
+      'SHA256SUMS',
+    ];
+    const byName = new Map(
+      publicPaths.map((path) => [
+        path.split('/').at(-1),
+        readFileSync(join(releaseRoot, ...path.split('/'))),
+      ]),
+    );
+    let publishedAssetNames = [...byName.keys()];
+    let staleInventoryResponses = 0;
+    const requests = [];
+    const fetchImpl = async (url, options) => {
+      requests.push({ url, options });
+      if (url.startsWith('https://api.github.com/')) {
+        const assetNames =
+          staleInventoryResponses > 0
+            ? [...publishedAssetNames, 'stale-bootstrap-only.zip']
+            : publishedAssetNames;
+        staleInventoryResponses = Math.max(0, staleInventoryResponses - 1);
+        return new Response(
+          JSON.stringify({
+            tag_name: plan.tag,
+            draft: false,
+            prerelease: true,
+            assets: assetNames.map((name) => ({ name })),
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        );
+      }
+      const payload = byName.get(decodeURIComponent(url.split('/').at(-1)));
+      return payload
+        ? new Response(payload, { status: 200 })
+        : new Response('missing', { status: 404 });
+    };
+
+    const result = await verifyPublicReleaseAssets(
+      plan,
+      releaseRoot,
+      fetchImpl,
+    );
+
+    assert.equal(result.anonymouslyVerified.length, publicPaths.length);
+    assert.equal(requests.length, publicPaths.length + 1);
+    assert.ok(
+      requests.every(
+        ({ options }) =>
+          !Object.hasOwn(options, 'headers') && options.redirect === 'follow',
+      ),
+    );
+
+    staleInventoryResponses = 1;
+    requests.length = 0;
+    const retriedResult = await verifyPublicReleaseAssets(
+      plan,
+      releaseRoot,
+      fetchImpl,
+      async () => undefined,
+    );
+    assert.equal(retriedResult.anonymouslyVerified.length, publicPaths.length);
+    assert.equal(
+      requests.filter(({ url }) => url.startsWith('https://api.github.com/'))
+        .length,
+      2,
+    );
+
+    publishedAssetNames = [...publishedAssetNames, 'unexpected-debug.zip'];
+    requests.length = 0;
+    await assert.rejects(
+      verifyPublicReleaseAssets(
+        plan,
+        releaseRoot,
+        fetchImpl,
+        async () => undefined,
+      ),
+      /inventory does not match/,
+    );
+    assert.equal(requests.length, 4);
+
+    mkdirSync(join(releaseRoot, 'duplicate'), { recursive: true });
+    writeFileSync(
+      join(releaseRoot, 'duplicate', 'SHA256SUMS'),
+      'duplicate basename',
+    );
+    await assert.rejects(
+      verifyPublicReleaseAssets(plan, releaseRoot, fetchImpl),
+      /asset basenames must be unique/,
     );
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -511,13 +666,32 @@ async function writeFinalReleaseRoot(root, candidate) {
   const metadataRoot = join(root, 'metadata');
   mkdirSync(metadataRoot, { recursive: true });
   const planPath = join(metadataRoot, 'release-plan.json');
-  const payloadPath = join(root, 'payload.bin');
   writeJson(planPath, plan);
-  writeFileSync(payloadPath, 'publishable payload');
+  const payloads = [
+    ['installers/Cert_Prep_0.1.0-alpha.1_x64-setup.exe', 'nsis'],
+    [
+      'runtimes/cert-prep-ocr-windowsml-runtime-0.1.0-alpha.1.zip',
+      'ocr runtime',
+    ],
+    ['runtimes/windowsml-ocr-runtime-manifest.json', '{"runtime":"windowsml"}'],
+    ['metadata/license-inventory.json', '{"components":[]}'],
+    ['metadata/cert-prep-alpha.spdx.json', '{"spdxVersion":"SPDX-2.3"}'],
+    ['legal/THIRD_PARTY_NOTICES.md', '# Notices'],
+    ['legal/licenses/texts/MIT.txt', 'MIT License'],
+    [
+      'evidence/clean-install/clean-install-nsis.json',
+      '{"packageKind":"nsis","uninstallVerified":true}',
+    ],
+  ];
+  for (const [path, content] of payloads) {
+    const file = join(root, ...path.split('/'));
+    mkdirSync(join(file, '..'), { recursive: true });
+    writeFileSync(file, content);
+  }
   const artifacts = await Promise.all(
     [
       ['metadata/release-plan.json', planPath],
-      ['payload.bin', payloadPath],
+      ...payloads.map(([path]) => [path, join(root, ...path.split('/'))]),
     ].map(async ([path, file]) => ({
       path,
       fileName: path.split('/').at(-1),
@@ -525,41 +699,71 @@ async function writeFinalReleaseRoot(root, candidate) {
       sha256: await sha256File(file),
     })),
   );
-  const evidenceDigest = 'd'.repeat(64);
   writeJson(join(metadataRoot, 'release-metadata.json'), {
     ...plan,
     evidence: {
       candidateId: candidate.candidateId,
-      cleanInstall: 'passed-msi-and-nsis',
-      cleanInstallReports: [{ package: 'msi' }, { package: 'nsis' }],
-      hardware: 'passed-cert-prep-alpha-hardware',
-      hardwareResultSha256: evidenceDigest,
-      recordingProbeSha256: evidenceDigest,
-      recordingSha256: evidenceDigest,
-      hardwareHarnessSha256: evidenceDigest,
-      acceptanceRunId: 'acceptance-run',
-      cancellationReports: Object.fromEntries(
-        HARDWARE_CANCELLATION_CHECKS.map((key) => [key, evidenceDigest]),
-      ),
+      cleanInstall: 'passed-nsis',
+      cleanInstallReports: [
+        {
+          packageKind: 'nsis',
+          candidateId: candidate.candidateId,
+          commitSha: plan.commitSha,
+          publicOcrDownloadVerified: true,
+          appLaunchVerified: true,
+          freshAppDataVerified: true,
+          backendInstallVerified: true,
+          backendHealthVerified: true,
+          uninstallVerified: true,
+          reportSha256: artifacts.find(
+            (artifact) =>
+              artifact.path ===
+              'evidence/clean-install/clean-install-nsis.json',
+          ).sha256,
+          installerSha256: artifacts.find((artifact) =>
+            artifact.path.startsWith('installers/'),
+          ).sha256,
+        },
+      ],
     },
     artifacts,
   });
+  await writeFinalChecksumManifest(root, artifacts);
+  return root;
+}
+
+async function appendDeclaredFinalArtifact(root, path, content) {
+  const file = join(root, ...path.split('/'));
+  mkdirSync(join(file, '..'), { recursive: true });
+  writeFileSync(file, content);
+  const metadataPath = join(root, 'metadata', 'release-metadata.json');
+  const metadata = JSON.parse(readFileSync(metadataPath, 'utf8'));
+  metadata.artifacts.push({
+    path,
+    fileName: path.split('/').at(-1),
+    bytes: statSync(file).size,
+    sha256: await sha256File(file),
+  });
+  writeJson(metadataPath, metadata);
+  await writeFinalChecksumManifest(root, metadata.artifacts);
+}
+
+async function writeFinalChecksumManifest(root, artifacts) {
   const checksummed = [
-    planPath,
-    payloadPath,
-    join(metadataRoot, 'release-metadata.json'),
+    ...artifacts.map((artifact) => join(root, ...artifact.path.split('/'))),
+    join(root, 'metadata', 'release-metadata.json'),
   ];
   writeFileSync(
     join(root, 'SHA256SUMS'),
     `${(
       await Promise.all(
-        checksummed.map(async (file) =>
-          `${await sha256File(file)} *${file.split(/[\\/]/).at(-1)}`,
+        checksummed.map(
+          async (file) =>
+            `${await sha256File(file)} *${file.split(/[\\/]/).at(-1)}`,
         ),
       )
     ).join('\n')}\n`,
   );
-  return root;
 }
 
 function sha256FileSync(path) {

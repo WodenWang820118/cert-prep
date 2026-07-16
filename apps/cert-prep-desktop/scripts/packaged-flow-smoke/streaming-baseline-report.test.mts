@@ -34,9 +34,11 @@ test('Ollama-only production summary binds readiness to exact job attribution', 
     assert.equal(summary.checks.generation_ready_at_start, true);
     assert.equal(summary.checks.resources_released_at_end, true);
     assert.equal(summary.checks.acceptance_fresh_run_isolation, true);
-    assert.equal(summary.checks.windowsml_ocr_process_observed, true);
-    assert.equal(summary.checks.ocr_uses_amd_igpu, true);
-    assert.equal(summary.checks.gpu_luid_map_usable, true);
+    assert.deepEqual(summary.gpu_routing_checks, {
+      windowsml_ocr_process_observed: true,
+      ocr_uses_amd_igpu: true,
+      gpu_luid_map_usable: true,
+    });
     assert.equal(summary.checks.ollama_model_exact, true);
     assert.equal(summary.checks.model_no_fallback, true);
     assert.equal(summary.execution_mode, 'auto');
@@ -115,7 +117,7 @@ test('Ollama-only production summary rejects auto execution with a warning', () 
   }
 });
 
-test('Ollama-only production summary keeps the AMD WindowsML gate', () => {
+test('Ollama-only production summary keeps GPU routing as non-blocking diagnostics', () => {
   const fixture = productionFixture();
   try {
     writeFileSync(
@@ -134,9 +136,13 @@ test('Ollama-only production summary keeps the AMD WindowsML gate', () => {
       buildStreamingBaselineReport(fixture.run),
     );
 
-    assert.equal(summary.status, 'failed');
-    assert.equal(summary.checks.windowsml_ocr_process_observed, true);
-    assert.equal(summary.checks.ocr_uses_amd_igpu, false);
+    assert.equal(summary.status, 'passed');
+    assert.deepEqual(summary.gpu_routing_checks, {
+      windowsml_ocr_process_observed: true,
+      ocr_uses_amd_igpu: false,
+      gpu_luid_map_usable: true,
+    });
+    assert.equal('ocr_uses_amd_igpu' in summary.checks, false);
   } finally {
     fixture.cleanup();
   }
@@ -280,8 +286,6 @@ function productionFixture(): {
       ocrProvider: 'windowsml',
       ocrPageWorkers: 1,
       llmProvider: 'ollama',
-      ollamaModel: 'qwen3.5:4b',
-      ollamaFallbackModels: ['qwen3.5:2b'],
       acceptanceIsolation: true,
       waitForStreamingComplete: true,
       streamingCompleteTimeoutMs: 300_000,
@@ -289,7 +293,6 @@ function productionFixture(): {
       productionSummary: true,
       allowOcrChunkVariance: true,
       verifyStreamingPracticeReady: true,
-      recordVideo: false,
     },
     metrics: {
       status: 'completed',
@@ -306,7 +309,6 @@ function productionFixture(): {
       llm_model: 'qwen3.5:4b',
       llm_configured_model: 'qwen3.5:4b',
       llm_effective_model: 'qwen3.5:4b',
-      llm_fallback_models: ['qwen3.5:2b'],
       provider_fallback_reason: null,
       model_fallback_reason: null,
       llm_health: {
@@ -315,7 +317,6 @@ function productionFixture(): {
         model: 'qwen3.5:4b',
         configured_model: 'qwen3.5:4b',
         effective_model: 'qwen3.5:4b',
-        fallback_models: ['qwen3.5:2b'],
         fallback_reason: null,
         execution_mode: 'auto',
         execution_warning: null,
@@ -434,7 +435,6 @@ function productionFixture(): {
     app: null,
     appExit: null,
     resourceSampling: null,
-    videoRecording: null,
     browser: null,
     page: null,
     port: 9222,

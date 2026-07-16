@@ -35,10 +35,10 @@ test('document cancellation options verify the exact candidate and required file
     assert.equal(options.candidateDistributionProfile, 'public_unsigned_alpha');
     assert.equal(options.acceptanceRunId, 'acceptance-run-0001');
     assert.equal(options.diagnosticsRoot, `${fixture.outputRoot}.diagnostics`);
-    assert.equal(options.installation.packageKind, 'msi');
+    assert.equal(options.installation.packageKind, 'nsis');
     assert.equal(
       options.installation.installerRelativePath,
-      'release/installers/Cert Prep_0.1.0-alpha.1_x64_en-US.msi',
+      'release/installers/Cert Prep_0.1.0-alpha.1_x64-setup.exe',
     );
     assert.equal(options.installation.installedExeName, 'Cert Prep.exe');
     assert.equal(options.installation.installedAt, '2026-07-14T00:00:00.000Z');
@@ -126,45 +126,51 @@ test('document cancellation options reject hybrid and malformed distribution ide
     }
   });
 
-  await t.test('public asset base URL does not match its repository and tag', async () => {
-    const fixture = fixtureWorkspace({
-      planOverrides: { assetBaseUrl: 'https://example.invalid/releases' },
-    });
-    try {
-      await assert.rejects(
-        loadDocumentCancellationOptions(
-          fixture.environment,
-          fixture.workspaceRoot,
-        ),
-        /exact supported distribution profile/,
-      );
-    } finally {
-      fixture.cleanup();
-    }
-  });
+  await t.test(
+    'public asset base URL does not match its repository and tag',
+    async () => {
+      const fixture = fixtureWorkspace({
+        planOverrides: { assetBaseUrl: 'https://example.invalid/releases' },
+      });
+      try {
+        await assert.rejects(
+          loadDocumentCancellationOptions(
+            fixture.environment,
+            fixture.workspaceRoot,
+          ),
+          /exact supported distribution profile/,
+        );
+      } finally {
+        fixture.cleanup();
+      }
+    },
+  );
 
-  await t.test('local tag is not bound to the candidate commit SHA', async () => {
-    const fixture = fixtureWorkspace({
-      profile: 'local_nonpublishable',
-      planOverrides: {
-        tag: 'cert-prep-local-v0.1.0-alpha.1-deadbeefdead',
-      },
-      candidateOverrides: {
-        tag: 'cert-prep-local-v0.1.0-alpha.1-deadbeefdead',
-      },
-    });
-    try {
-      await assert.rejects(
-        loadDocumentCancellationOptions(
-          fixture.environment,
-          fixture.workspaceRoot,
-        ),
-        /exact supported distribution profile/,
-      );
-    } finally {
-      fixture.cleanup();
-    }
-  });
+  await t.test(
+    'local tag is not bound to the candidate commit SHA',
+    async () => {
+      const fixture = fixtureWorkspace({
+        profile: 'local_nonpublishable',
+        planOverrides: {
+          tag: 'cert-prep-local-v0.1.0-alpha.1-deadbeefdead',
+        },
+        candidateOverrides: {
+          tag: 'cert-prep-local-v0.1.0-alpha.1-deadbeefdead',
+        },
+      });
+      try {
+        await assert.rejects(
+          loadDocumentCancellationOptions(
+            fixture.environment,
+            fixture.workspaceRoot,
+          ),
+          /exact supported distribution profile/,
+        );
+      } finally {
+        fixture.cleanup();
+      }
+    },
+  );
 });
 
 test('document cancellation options require every candidate-bound input', async (t) => {
@@ -173,7 +179,7 @@ test('document cancellation options require every candidate-bound input', async 
     for (const name of [
       'CERT_PREP_RESILIENCE_CANDIDATE_ROOT',
       'CERT_PREP_RELEASE_CANDIDATE_ID',
-      'ALPHA_HARDWARE_HARNESS_SHA256',
+      'CERT_PREP_ACCEPTANCE_HARNESS_SHA256',
       'CERT_PREP_RESILIENCE_INSTALLED_EXE_PATH',
       'CERT_PREP_RESILIENCE_INSTALL_RECEIPT_PATH',
       'CERT_PREP_RESILIENCE_PDF_PATH',
@@ -214,11 +220,11 @@ test('document cancellation options reject identity drift and reused output', as
         loadDocumentCancellationOptions(
           {
             ...fixture.environment,
-            ALPHA_HARDWARE_HARNESS_SHA256: 'not-a-digest',
+            CERT_PREP_ACCEPTANCE_HARNESS_SHA256: 'not-a-digest',
           },
           fixture.workspaceRoot,
         ),
-        /ALPHA_HARDWARE_HARNESS_SHA256 is invalid/,
+        /CERT_PREP_ACCEPTANCE_HARNESS_SHA256 is invalid/,
       );
     });
     await t.test('invalid run ID', async () => {
@@ -268,10 +274,9 @@ test('document cancellation options reject install-receipt candidate and binary 
   const fixture = fixtureWorkspace();
   try {
     await t.test('candidate binding drift', async () => {
-      const receipt = JSON.parse(readFileSync(fixture.receiptPath, 'utf8')) as Record<
-        string,
-        unknown
-      >;
+      const receipt = JSON.parse(
+        readFileSync(fixture.receiptPath, 'utf8'),
+      ) as Record<string, unknown>;
       writeJson(fixture.receiptPath, {
         ...receipt,
         candidateId: 'f'.repeat(64),
@@ -317,6 +322,7 @@ test('document cancellation options reject install-receipt candidate and binary 
   }
 
   for (const [label, override] of [
+    ['MSI receipt', { packageKind: 'msi' }],
     ['non-fresh install', { freshInstallVerified: false }],
     ['failed installer', { installerExitCode: 1 }],
     ['invalid install timestamp', { installedAt: 'not-a-timestamp' }],
@@ -404,7 +410,7 @@ function fixtureWorkspace({
   writeJson(join(releaseMetadataRoot, 'release-plan.json'), plan);
   const installerPath = join(
     releaseInstallerRoot,
-    'Cert Prep_0.1.0-alpha.1_x64_en-US.msi',
+    'Cert Prep_0.1.0-alpha.1_x64-setup.exe',
   );
   writeFileSync(installerPath, 'candidate installer payload');
   writeFileSync(join(harnessRoot, 'harness.txt'), 'pinned harness payload\n');
@@ -445,10 +451,9 @@ function fixtureWorkspace({
     candidateId,
     acceptanceRunId: 'acceptance-run-0001',
     harnessSha256: 'b'.repeat(64),
-    packageKind: 'msi',
+    packageKind: 'nsis',
     installer: {
-      relativePath:
-        'release/installers/Cert Prep_0.1.0-alpha.1_x64_en-US.msi',
+      relativePath: 'release/installers/Cert Prep_0.1.0-alpha.1_x64-setup.exe',
       sha256: sha256(installerPath),
     },
     installedExecutable: {
@@ -473,7 +478,7 @@ function fixtureWorkspace({
     environment: {
       CERT_PREP_RESILIENCE_CANDIDATE_ROOT: candidateRoot,
       CERT_PREP_RELEASE_CANDIDATE_ID: candidateId,
-      ALPHA_HARDWARE_HARNESS_SHA256: 'b'.repeat(64),
+      CERT_PREP_ACCEPTANCE_HARNESS_SHA256: 'b'.repeat(64),
       CERT_PREP_RESILIENCE_INSTALLED_EXE_PATH: installedExePath,
       CERT_PREP_RESILIENCE_INSTALL_RECEIPT_PATH: receiptPath,
       CERT_PREP_RESILIENCE_PDF_PATH: pdfPath,

@@ -92,7 +92,10 @@ test('records a live committing draft response and exact 409 rejection', async (
       model: scenario.model,
     },
   );
-  const nonCancellable = proof.nonCancellableResponse as Record<string, unknown>;
+  const nonCancellable = proof.nonCancellableResponse as Record<
+    string,
+    unknown
+  >;
   assert.equal(nonCancellable.operationId, 'commit-operation');
   assert.equal(nonCancellable.commitStartedAt, '2026-07-14T00:00:05.000Z');
   assert.strictEqual(nonCancellable.observedResponse, observedResponse);
@@ -184,7 +187,10 @@ test('consumes an already completed runtime commit transition before rejecting c
 
   const proof = await runCancelableOperationScenario(transport, scenario);
 
-  const nonCancellable = proof.nonCancellableResponse as Record<string, unknown>;
+  const nonCancellable = proof.nonCancellableResponse as Record<
+    string,
+    unknown
+  >;
   assert.strictEqual(nonCancellable.observedResponse, observedResponse);
   assert.strictEqual(nonCancellable.rejectionResponse, rejectionResponse);
   assert.equal(proof.kind, scenario.operationKind);
@@ -206,18 +212,13 @@ test('rejects model scope drift on the durable commit response', async () => {
     'succeeded',
     'completed',
     false,
-    { ...scope, model: 'qwen3.5:2b' },
+    { ...scope, model: 'unexpected:model' },
     '2026-07-14T00:00:05.000Z',
   );
-  const requests = successfulRequests(
-    scenario,
-    scope,
-    driftedResponse,
-    {
-      status: 409,
-      body: { code: 'operation_not_cancellable' },
-    },
-  ).slice(0, -1);
+  const requests = successfulRequests(scenario, scope, driftedResponse, {
+    status: 409,
+    body: { code: 'operation_not_cancellable' },
+  }).slice(0, -1);
   const transport = new ScriptedTransport(requests);
 
   await assert.rejects(
@@ -247,25 +248,13 @@ test('fails fast when the commit probe terminates before committing', async () =
     model: scenario.model,
   };
   const failedResponse = {
-    ...operation(
-      'commit-operation',
-      'failed',
-      'failed',
-      false,
-      scope,
-      null,
-    ),
+    ...operation('commit-operation', 'failed', 'failed', false, scope, null),
     error: 'Ollama returned invalid JSON',
   };
-  const requests = successfulRequests(
-    scenario,
-    scope,
-    failedResponse,
-    {
-      status: 409,
-      body: { code: 'operation_not_cancellable' },
-    },
-  ).slice(0, -1);
+  const requests = successfulRequests(scenario, scope, failedResponse, {
+    status: 409,
+    body: { code: 'operation_not_cancellable' },
+  }).slice(0, -1);
   const transport = new ScriptedTransport(requests);
 
   await assert.rejects(

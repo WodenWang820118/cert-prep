@@ -29,7 +29,6 @@ import {
   DEFAULT_PACKAGED_RESOURCE_ROOT,
   DEFAULT_TARGET_TRIPLE,
   PYTHON_RUNTIME_VERSION,
-  WINDOWS_MSI_VERSION,
 } from '../../apps/cert-prep-desktop/scripts/package-qa/constants.mts';
 import {
   collectBundleArtifacts,
@@ -101,7 +100,9 @@ export async function inspectLocalCandidateBuild({
   validateMetadataRuntime(releaseMetadata, backendManifest, ocrManifest);
 
   if (existsSync(join(generatedResources, ocrManifest.artifact.file_name))) {
-    throw new Error('The local WindowsML OCR ZIP must remain outside packaged resources.');
+    throw new Error(
+      'The local WindowsML OCR ZIP must remain outside packaged resources.',
+    );
   }
 
   const bundleArtifacts = collectBundleArtifacts(bundleRoot, workspaceRoot);
@@ -130,7 +131,9 @@ export async function inspectLocalCandidateBuild({
   const assetUrl = new URL(ocrManifest.artifact.url);
   const assetSuffix = `/${encodeURIComponent(ocrManifest.artifact.file_name)}`;
   if (!assetUrl.href.endsWith(assetSuffix)) {
-    throw new Error('WindowsML OCR runtime URL has an unexpected artifact name.');
+    throw new Error(
+      'WindowsML OCR runtime URL has an unexpected artifact name.',
+    );
   }
   const assetBaseUrl = assetUrl.href.slice(0, -assetSuffix.length);
   const plan = {
@@ -143,7 +146,6 @@ export async function inspectLocalCandidateBuild({
     repository: 'local/nonpublishable',
     commitSha: commitSha.toLowerCase(),
     target: DEFAULT_TARGET_TRIPLE,
-    windowsMsiVersion: WINDOWS_MSI_VERSION,
     pythonRuntimeVersion: PYTHON_RUNTIME_VERSION,
     assetBaseUrl,
     signed: false,
@@ -184,7 +186,6 @@ export async function inspectLocalCandidateBuild({
         distribution_profile: LOCAL_NONPUBLISHABLE_PROFILE,
         publishable: false,
         version: ALPHA_VERSION,
-        windows_msi_version: WINDOWS_MSI_VERSION,
         python_runtime_version: PYTHON_RUNTIME_VERSION,
         channel: LOCAL_NONPUBLISHABLE_PROFILE,
         signed: false,
@@ -245,18 +246,12 @@ export async function createLocalCandidate(args, run = runCommand) {
     capture: true,
   }).trim();
 
-  const bundleRoot = resolve(
-    workspaceRoot,
-    DEFAULT_BUNDLE_ROOT,
-  );
+  const bundleRoot = resolve(workspaceRoot, DEFAULT_BUNDLE_ROOT);
   const generatedResources = resolve(
     workspaceRoot,
     DEFAULT_GENERATED_RESOURCES,
   );
-  const ocrRuntimeRoot = resolve(
-    workspaceRoot,
-    DEFAULT_OCR_RUNTIME_ROOT,
-  );
+  const ocrRuntimeRoot = resolve(workspaceRoot, DEFAULT_OCR_RUNTIME_ROOT);
   const packagedResourceRoot = resolve(
     workspaceRoot,
     DEFAULT_PACKAGED_RESOURCE_ROOT,
@@ -352,10 +347,14 @@ export async function createLocalCandidate(args, run = runCommand) {
       capture: true,
     }).trim();
     if (finalCommitSha !== commitSha) {
-      throw new Error('Local candidate source commit changed before publication.');
+      throw new Error(
+        'Local candidate source commit changed before publication.',
+      );
     }
     if (pathEntryExists(outputRoot)) {
-      throw new Error(`Local candidate output appeared during assembly: ${outputRoot}.`);
+      throw new Error(
+        `Local candidate output appeared during assembly: ${outputRoot}.`,
+      );
     }
     await publishCandidateAtomically(handoff.root, outputRoot);
     const completed = {
@@ -365,9 +364,7 @@ export async function createLocalCandidate(args, run = runCommand) {
       outputRoot,
       candidateId: candidate.candidateId,
     };
-    process.stdout.write(
-      `${JSON.stringify(completed, null, 2)}\n`,
-    );
+    process.stdout.write(`${JSON.stringify(completed, null, 2)}\n`);
     return { ...completed, candidate };
   } finally {
     if (handoffParent) {
@@ -413,15 +410,14 @@ export async function prepareCandidatePublicationCopy(
     }
     const sourceCandidatePath = join(sourceRoot, 'candidate.json');
     const publicationCandidatePath = join(publicationRoot, 'candidate.json');
-    await copyDefaultDataStream(
-      sourceCandidatePath,
-      publicationCandidatePath,
-    );
+    await copyDefaultDataStream(sourceCandidatePath, publicationCandidatePath);
     if (
       (await sha256File(sourceCandidatePath)) !==
       (await sha256File(publicationCandidatePath))
     ) {
-      throw new Error('Candidate identity changed while preparing publication.');
+      throw new Error(
+        'Candidate identity changed while preparing publication.',
+      );
     }
     if (
       JSON.stringify(readJson(publicationCandidatePath)) !==
@@ -440,7 +436,10 @@ export async function prepareCandidatePublicationCopy(
       assertRegularFileWithoutSymlink(source, 'validated candidate file');
       mkdirSync(dirname(destination), { recursive: true });
       await copyDefaultDataStream(source, destination);
-      assertRegularFileWithoutSymlink(destination, 'publication candidate file');
+      assertRegularFileWithoutSymlink(
+        destination,
+        'publication candidate file',
+      );
       if ((await sha256File(destination)) !== expectedSha256) {
         throw new Error(`Candidate publication copy changed ${relativePath}.`);
       }
@@ -516,7 +515,9 @@ export async function prepareCandidateAtomicHandoff(
       JSON.stringify(readJson(join(root, 'candidate.json'))) !==
       JSON.stringify(candidate)
     ) {
-      throw new Error('Candidate handoff identity changed during the final copy.');
+      throw new Error(
+        'Candidate handoff identity changed during the final copy.',
+      );
     }
     for (const identity of candidate.files) {
       const { relativePath, expectedSha256, segments } =
@@ -584,11 +585,7 @@ export function removeCandidateScratchRootBestEffort(
   }
 }
 
-const TRANSIENT_WINDOWS_RENAME_ERRORS = new Set([
-  'EACCES',
-  'EBUSY',
-  'EPERM',
-]);
+const TRANSIENT_WINDOWS_RENAME_ERRORS = new Set(['EACCES', 'EBUSY', 'EPERM']);
 
 export async function publishCandidateAtomically(
   sourceRoot,
@@ -609,7 +606,9 @@ export async function publishCandidateAtomically(
   } = {},
 ) {
   if (!Number.isSafeInteger(attempts) || attempts < 1) {
-    throw new Error('Atomic candidate publication requires at least one attempt.');
+    throw new Error(
+      'Atomic candidate publication requires at least one attempt.',
+    );
   }
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     if (pathEntryExists(outputRoot)) {
@@ -643,10 +642,7 @@ function collectInventories({
   const nodeLicenses = join(inventoryRoot, 'node-licenses.json');
   const pythonLicenses = join(inventoryRoot, 'python-licenses.json');
   const ocrPythonLicenses = join(inventoryRoot, 'ocr-python-licenses.json');
-  const ocrRuntimePayloads = join(
-    inventoryRoot,
-    'ocr-runtime-payloads.json',
-  );
+  const ocrRuntimePayloads = join(inventoryRoot, 'ocr-runtime-payloads.json');
   const cargoMetadata = join(inventoryRoot, 'cargo-metadata.json');
   const nodeOutput = run('pnpm', ['licenses', 'list', '--prod', '--json'], {
     cwd: workspaceRoot,
@@ -728,11 +724,7 @@ function collectInventories({
     { cwd: workspaceRoot, capture: true },
   );
   writeParsedJson(cargoMetadata, cargoOutput, 'Cargo metadata');
-  for (const path of [
-    pythonLicenses,
-    ocrPythonLicenses,
-    ocrRuntimePayloads,
-  ]) {
+  for (const path of [pythonLicenses, ocrPythonLicenses, ocrRuntimePayloads]) {
     readJson(path);
   }
   return {
@@ -899,8 +891,16 @@ async function validatePackagedResourceCopies({
     'CHANGELOG.md',
     'THIRD_PARTY_NOTICES.md',
   ]) {
-    const source = assertContainedRegularFile(workspaceRoot, name, 'legal source');
-    const packaged = assertContainedRegularFile(legalRoot, name, 'packaged legal resource');
+    const source = assertContainedRegularFile(
+      workspaceRoot,
+      name,
+      'legal source',
+    );
+    const packaged = assertContainedRegularFile(
+      legalRoot,
+      name,
+      'packaged legal resource',
+    );
     if ((await sha256File(source)) !== (await sha256File(packaged))) {
       throw new Error(`Packaged legal resource changed: ${name}.`);
     }
@@ -925,7 +925,6 @@ function validateLocalReleaseMetadata(metadata) {
   if (
     metadata?.schema_version !== 1 ||
     metadata?.version !== ALPHA_VERSION ||
-    metadata?.windows_msi_version !== WINDOWS_MSI_VERSION ||
     metadata?.python_runtime_version !== PYTHON_RUNTIME_VERSION ||
     metadata?.release_tag !== `cert-prep-local-v${ALPHA_VERSION}` ||
     metadata?.channel !== LOCAL_NONPUBLISHABLE_PROFILE ||
@@ -943,7 +942,9 @@ function validateLocalReleaseMetadata(metadata) {
     metadata?.runtime_assets?.backend?.distribution !== 'bundled' ||
     metadata?.runtime_assets?.windowsml_ocr?.distribution !== 'local_file'
   ) {
-    throw new Error('Runtime resources do not declare a local dev distribution.');
+    throw new Error(
+      'Runtime resources do not declare a local dev distribution.',
+    );
   }
 }
 
@@ -984,7 +985,9 @@ function assertExactLocalFileUrl(rawUrl, expectedPath) {
     url.search ||
     url.hash
   ) {
-    throw new Error('WindowsML OCR runtime must use a local non-network file URL.');
+    throw new Error(
+      'WindowsML OCR runtime must use a local non-network file URL.',
+    );
   }
   let resolvedUrlPath;
   try {
@@ -992,8 +995,13 @@ function assertExactLocalFileUrl(rawUrl, expectedPath) {
   } catch {
     throw new Error('WindowsML OCR runtime file URL does not resolve.');
   }
-  if (normalizeComparablePath(resolvedUrlPath) !== normalizeComparablePath(expectedPath)) {
-    throw new Error('WindowsML OCR runtime file URL does not bind the declared artifact.');
+  if (
+    normalizeComparablePath(resolvedUrlPath) !==
+    normalizeComparablePath(expectedPath)
+  ) {
+    throw new Error(
+      'WindowsML OCR runtime file URL does not bind the declared artifact.',
+    );
   }
 }
 
@@ -1033,7 +1041,8 @@ function assertContainedRegularFile(root, fileName, label) {
 }
 
 function assertRegularFileWithoutSymlink(path, label) {
-  if (!existsSync(path)) throw new Error(`Required ${label} is missing: ${path}.`);
+  if (!existsSync(path))
+    throw new Error(`Required ${label} is missing: ${path}.`);
   const status = lstatSync(path);
   if (status.isSymbolicLink() || !status.isFile()) {
     throw new Error(`${label} must be a regular file: ${path}.`);
@@ -1050,7 +1059,9 @@ export function assertSafeNewOutput(workspaceRoot, outputRoot) {
     relativePath.startsWith(`..${sep}`) ||
     isAbsolute(relativePath)
   ) {
-    throw new Error('Local candidate output must be a child of workspace tmp/.');
+    throw new Error(
+      'Local candidate output must be a child of workspace tmp/.',
+    );
   }
   if (pathEntryExists(outputRoot)) {
     throw new Error(`Local candidate output already exists: ${outputRoot}.`);
@@ -1061,7 +1072,9 @@ function assertLocalCandidateArgs(args) {
   const allowed = new Set(['workspace-root', 'output-root']);
   const unexpected = Object.keys(args).filter((name) => !allowed.has(name));
   if (unexpected.length > 0) {
-    throw new Error(`Unexpected local candidate arguments: ${unexpected.join(', ')}.`);
+    throw new Error(
+      `Unexpected local candidate arguments: ${unexpected.join(', ')}.`,
+    );
   }
 }
 
@@ -1109,7 +1122,9 @@ function pathEntryExists(path) {
 
 function assertCommitSha(value) {
   if (!/^[0-9a-f]{40}$/i.test(value ?? '')) {
-    throw new Error('Local candidate requires an exact 40-character commit SHA.');
+    throw new Error(
+      'Local candidate requires an exact 40-character commit SHA.',
+    );
   }
 }
 

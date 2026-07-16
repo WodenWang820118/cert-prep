@@ -14,12 +14,7 @@ on:
         default: false
         type: boolean
       confirm_release_environment_protected:
-        description: Confirm alpha-release and alpha-hardware environments have required reviewers
-        required: true
-        default: false
-        type: boolean
-      confirm_hardware_runner_ready:
-        description: Confirm the protected cert-prep-alpha-hardware runner and harness are ready
+        description: Confirm the alpha-release environment has required reviewers
         required: true
         default: false
         type: boolean
@@ -41,154 +36,13 @@ env:
   PYTHON_VERSION: '3.12'
 
 jobs:
-  metadata:
-    name: Validate alpha metadata and prerequisites
-    runs-on: ubuntu-24.04
-    outputs:
-      version: ${{ steps.metadata.outputs.version }}
-      tag: ${{ steps.metadata.outputs.tag }}
-      repository: ${{ steps.metadata.outputs.repository }}
-      commit_sha: ${{ steps.metadata.outputs.commit_sha }}
-      asset_base_url: ${{ steps.metadata.outputs.asset_base_url }}
-      candidate_artifact: ${{ steps.metadata.outputs.candidate_artifact }}
-      release_plan_artifact: ${{ steps.metadata.outputs.release_plan_artifact }}
-    steps:
-      - name: Check out exact release source
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-        with:
-          fetch-depth: 0
-
-      - name: Install Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: 24
-
-      - name: Test release tooling
-        run: node --test tools/release/*.test.ts
-
-      - name: Validate release identity
-        id: metadata
-        env:
-          REQUESTED_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || '' }}
-          PUBLIC_REPOSITORY_CONFIRMED: ${{ github.event_name == 'workflow_dispatch' && toJSON(inputs.confirm_public_repository) || vars.ALPHA_PUBLIC_REPOSITORY_CONFIRMED }}
-          RELEASE_ENVIRONMENT_PROTECTED: ${{ github.event_name == 'workflow_dispatch' && toJSON(inputs.confirm_release_environment_protected) || vars.ALPHA_RELEASE_ENVIRONMENT_PROTECTED }}
-          HARDWARE_RUNNER_READY: ${{ github.event_name == 'workflow_dispatch' && toJSON(inputs.confirm_hardware_runner_ready) || vars.ALPHA_HARDWARE_RUNNER_READY }}
-          EXPECTED_REPOSITORY: ${{ vars.ALPHA_EXPECTED_REPOSITORY }}
-        run: >-
-          node tools/release/metadata.ts
-          --event-name "${{ github.event_name }}"
-          --ref "${{ github.ref }}"
-          --ref-name "${{ github.ref_name }}"
-          --default-branch "${{ github.event.repository.default_branch }}"
-          --version "$REQUESTED_VERSION"
-          --repository "${{ github.repository }}"
-          --expected-repository "$EXPECTED_REPOSITORY"
-          --sha "${{ github.sha }}"
-          --workspace-root .
-          --output-dir tmp/release-alpha/metadata
-          --public-repository-confirmed "$PUBLIC_REPOSITORY_CONFIRMED"
-          --release-environment-protected "$RELEASE_ENVIRONMENT_PROTECTED"
-          --hardware-runner-ready "$HARDWARE_RUNNER_READY"
-
-      - name: Verify release commit belongs to the default branch
-        env:
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-        run: |
-          git fetch --no-tags origin "+refs/heads/$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH"
-          git merge-base --is-ancestor "$GITHUB_SHA" "refs/remotes/origin/$DEFAULT_BRANCH" || {
-            echo "Release commit is not an ancestor of the default branch: $DEFAULT_BRANCH" >&2
-            exit 1
-          }
-
-      - name: Verify actual repository visibility
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          visibility="$(gh api "repos/${GITHUB_REPOSITORY}" --jq '.visibility')"
-          test "$visibility" = public || {
-            echo "Alpha release requires an actually public GitHub repository; found: $visibility" >&2
-            exit 1
-          }
-
-      - name: Upload immutable release plan
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: ${{ steps.metadata.outputs.release_plan_artifact }}
-          path: tmp/release-alpha/metadata/release-plan.json
-          if-no-files-found: error
-          retention-days: 7
-
-  windows-quality:
-    name: Windows release quality
-    needs: metadata
-    runs-on: windows-2025
-    steps:
-      - name: Check out exact release source
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-        with:
-          fetch-depth: 0
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
-        with:
-          version: ${{ env.PNPM_VERSION }}
-          run_install: false
-
-      - name: Install Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: 24
-          cache: pnpm
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990
-        with:
-          version: 0.9.18
-          python-version: ${{ env.PYTHON_VERSION }}
-          enable-cache: true
-
-      - name: Install Rust
-        shell: pwsh
-        run: rustup toolchain install stable --profile minimal --component clippy,rustfmt
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Sync backend Python environment
-        run: uv sync --project apps/cert-prep-backend --frozen --python ${{ env.PYTHON_VERSION }}
-
-      - name: Test Windows-owned projects
-        run: >-
-          pnpm nx run-many -t lint test
-          --projects=cert-prep-contracts,cert-prep-ollama,cert-prep-ocr-windowsml,cert-prep-backend,cert-prep-api,cert-prep
-          --parallel=2
-
-      - name: Type-check desktop release scripts
-        run: pnpm nx run cert-prep-desktop:typecheck-scripts
-
-      - name: Test package QA contract
-        run: pnpm nx run cert-prep-desktop:package-qa-test
-
-      - name: Test release metadata, SBOM and cleanup contracts
-        run: pnpm nx run cert-prep-desktop:release-tool-test
-
-      - name: Test Tauri host
-        run: pnpm nx run cert-prep-desktop:cargo-test
-
-      - name: Install Chromium for browser integration
-        run: pnpm exec playwright install chromium
-
-      - name: Test mocked browser regression
-        run: pnpm nx run cert-prep-e2e:e2e --args="--project=chromium --workers=2"
-
-      - name: Test the browser against the real backend
-        run: pnpm nx run cert-prep-e2e:e2e-real-backend
-
   build-candidate:
-    name: Build one Windows alpha candidate
-    needs: [metadata, windows-quality]
+    name: Validate and build one Windows alpha candidate
     runs-on: windows-2025
     outputs:
+      tag: ${{ steps.metadata.outputs.tag }}
+      commit_sha: ${{ steps.metadata.outputs.commit_sha }}
+      candidate_artifact: ${{ steps.metadata.outputs.candidate_artifact }}
       candidate_id: ${{ steps.candidate.outputs.candidate_id }}
     steps:
       - name: Check out exact release source
@@ -225,34 +79,99 @@ jobs:
       - name: Sync backend Python environment
         run: uv sync --project apps/cert-prep-backend --frozen --python ${{ env.PYTHON_VERSION }}
 
-      - name: Download validated release plan
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          name: ${{ needs.metadata.outputs.release_plan_artifact }}
-          path: tmp/release-alpha/metadata
-
-      - name: Build and verify installers through Nx
+      - name: Validate release identity
+        id: metadata
         env:
-          CERT_PREP_WINDOWSML_OCR_ASSET_BASE_URL: ${{ needs.metadata.outputs.asset_base_url }}
+          REQUESTED_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || '' }}
+          PUBLIC_REPOSITORY_CONFIRMED: ${{ github.event_name == 'workflow_dispatch' && toJSON(inputs.confirm_public_repository) || vars.ALPHA_PUBLIC_REPOSITORY_CONFIRMED }}
+          RELEASE_ENVIRONMENT_PROTECTED: ${{ github.event_name == 'workflow_dispatch' && toJSON(inputs.confirm_release_environment_protected) || vars.ALPHA_RELEASE_ENVIRONMENT_PROTECTED }}
+          EXPECTED_REPOSITORY: ${{ vars.ALPHA_EXPECTED_REPOSITORY }}
+        run: >-
+          node tools/release/metadata.ts
+          --event-name "${{ github.event_name }}"
+          --ref "${{ github.ref }}"
+          --ref-name "${{ github.ref_name }}"
+          --default-branch "${{ github.event.repository.default_branch }}"
+          --version "$env:REQUESTED_VERSION"
+          --repository "${{ github.repository }}"
+          --expected-repository "$env:EXPECTED_REPOSITORY"
+          --sha "${{ github.sha }}"
+          --workspace-root .
+          --output-dir tmp/release-alpha/metadata
+          --public-repository-confirmed "$env:PUBLIC_REPOSITORY_CONFIRMED"
+          --release-environment-protected "$env:RELEASE_ENVIRONMENT_PROTECTED"
+
+      - name: Verify release commit belongs to the default branch
+        shell: pwsh
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          git fetch --no-tags origin "+refs/heads/${env:DEFAULT_BRANCH}:refs/remotes/origin/${env:DEFAULT_BRANCH}"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not refresh the default branch before release validation."
+          }
+          git merge-base --is-ancestor $env:GITHUB_SHA "refs/remotes/origin/$env:DEFAULT_BRANCH"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Release commit is not an ancestor of the default branch: $env:DEFAULT_BRANCH"
+          }
+
+      - name: Verify actual repository visibility
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $visibility = gh api "repos/$env:GITHUB_REPOSITORY" --jq '.visibility'
+          if ($visibility -ne 'public') {
+            throw "Alpha release requires an actually public GitHub repository; found: $visibility"
+          }
+
+      - name: Test Windows-owned projects
+        run: >-
+          pnpm nx run-many -t lint test
+          --projects=cert-prep-contracts,cert-prep-ollama,cert-prep-ocr-windowsml,cert-prep-backend,cert-prep-api,cert-prep
+          --parallel=2
+
+      - name: Type-check desktop release scripts
+        run: pnpm nx run cert-prep-desktop:typecheck-scripts
+
+      - name: Test package QA contract
+        run: pnpm nx run cert-prep-desktop:package-qa-test
+
+      - name: Test release tooling contract
+        run: pnpm nx run cert-prep-desktop:release-tool-test
+
+      - name: Test Tauri host
+        run: pnpm nx run cert-prep-desktop:cargo-test
+
+      - name: Install Chromium for the functional smoke
+        run: pnpm exec playwright install chromium
+
+      - name: Run one end-to-end functional smoke
+        run: pnpm nx run cert-prep-e2e:e2e-real-backend
+
+      - name: Build and verify the NSIS installer through Nx
+        env:
+          CERT_PREP_WINDOWSML_OCR_ASSET_BASE_URL: ${{ steps.metadata.outputs.asset_base_url }}
         run: pnpm nx run cert-prep-desktop:package-qa
 
       - name: Collect fail-closed dependency inventories
         shell: pwsh
         run: |
+          $PSNativeCommandUseErrorActionPreference = $true
           New-Item -ItemType Directory -Force tmp/release-alpha/inventory | Out-Null
           pnpm licenses list --prod --json |
             Set-Content -LiteralPath tmp/release-alpha/inventory/node-licenses.json -Encoding utf8NoBOM
-          uv run --isolated --project apps/cert-prep-backend --python ${{ env.PYTHON_VERSION }} `
+          uv run --isolated --project apps/cert-prep-backend --python $env:PYTHON_VERSION `
             python tools/release/collect-python-licenses.py `
             --pyinstaller-executable apps/cert-prep-backend/dist/cert-prep-backend.exe `
             --include-distribution PyInstaller==6.20.0 `
             --output tmp/release-alpha/inventory/python-licenses.json
-          uv run --isolated --project apps/cert-prep-backend --python ${{ env.PYTHON_VERSION }} `
+          uv run --isolated --project apps/cert-prep-backend --python $env:PYTHON_VERSION `
             --extra ocr-windowsml python tools/release/collect-python-licenses.py `
             --pyinstaller-executable apps/cert-prep-backend/dist/cert-prep-ocr-windowsml-runtime.exe `
             --include-distribution PyInstaller==6.20.0 `
             --output tmp/release-alpha/inventory/ocr-python-licenses.json
-          uv run --isolated --project apps/cert-prep-backend --python ${{ env.PYTHON_VERSION }} `
+          uv run --isolated --project apps/cert-prep-backend --python $env:PYTHON_VERSION `
             python tools/release/collect-runtime-payloads.py `
             --runtime-manifest apps/cert-prep-desktop/src-tauri/generated-resources/windowsml-ocr-runtime-manifest.json `
             --runtime-root apps/cert-prep-backend/dist/ocr-windowsml-runtime `
@@ -261,7 +180,7 @@ jobs:
             --manifest-path apps/cert-prep-desktop/src-tauri/Cargo.toml |
             Set-Content -LiteralPath tmp/release-alpha/inventory/cargo-metadata.json -Encoding utf8NoBOM
 
-      - name: Assemble candidate, SBOMs, licenses and checksums
+      - name: Assemble the candidate, SPDX SBOM, licenses and checksums
         run: >-
           node tools/release/assemble.ts
           --mode candidate
@@ -286,34 +205,34 @@ jobs:
             ConvertFrom-Json
           "candidate_id=$($candidate.candidateId)" >> $env:GITHUB_OUTPUT
 
-      - name: Upload the single candidate
+      - name: Upload the single immutable candidate
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: ${{ needs.metadata.outputs.candidate_artifact }}
+          name: ${{ steps.metadata.outputs.candidate_artifact }}
           path: tmp/release-alpha/candidate
           if-no-files-found: error
           retention-days: 7
           compression-level: 0
 
-  publish-ocr-prerelease:
-    name: Publish public OCR bootstrap assets without clobber
-    needs: [metadata, build-candidate]
-    runs-on: ubuntu-24.04
+  clean-install:
+    name: Publish OCR bootstrap and verify a fresh NSIS install
+    needs: build-candidate
+    runs-on: windows-2025
     environment: alpha-release
     permissions:
       contents: write
     outputs:
       release_owned_by_run: ${{ steps.reserve_ocr.outputs.release_owned_by_run }}
     steps:
-      - name: Install Node
+      - name: Install Node without checkout
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 24
 
-      - name: Download candidate without checkout
+      - name: Download the exact candidate without checkout
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: ${{ needs.metadata.outputs.candidate_artifact }}
+          name: ${{ needs.build-candidate.outputs.candidate_artifact }}
           path: candidate
 
       - name: Reserve or verify the candidate-bound OCR prerelease
@@ -328,7 +247,7 @@ jobs:
           --publication-owner '${{ github.run_id }}:${{ github.run_attempt }}:${{ needs.build-candidate.outputs.candidate_id }}'
           --plan candidate/release/metadata/release-plan.json
 
-      - name: Publish or verify the two OCR assets
+      - name: Publish or verify the version-pinned OCR assets
         env:
           GH_TOKEN: ${{ github.token }}
         run: >-
@@ -340,302 +259,26 @@ jobs:
           --release-root candidate/release
           --plan candidate/release/metadata/release-plan.json
 
-      - name: Withdraw this run's prerelease after OCR bootstrap failure
-        if: ${{ failure() && steps.reserve_ocr.outputs.release_owned_by_run == 'true' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: >-
-          node candidate/harness/tools/release/publish-assets.ts
-          --mode cleanup
-          --candidate-root candidate
-          --candidate-id '${{ needs.build-candidate.outputs.candidate_id }}'
-          --publication-owner '${{ github.run_id }}:${{ github.run_attempt }}:${{ needs.build-candidate.outputs.candidate_id }}'
-          --plan candidate/release/metadata/release-plan.json
-
-  clean-install:
-    name: Clean install (${{ matrix.package }})
-    needs: [metadata, build-candidate, publish-ocr-prerelease]
-    runs-on: windows-2025
-    strategy:
-      fail-fast: false
-      matrix:
-        package: [msi, nsis]
-    steps:
-      - name: Download the exact candidate without checkout
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          name: ${{ needs.metadata.outputs.candidate_artifact }}
-          path: candidate
-
-      - name: Install, inspect resources, download OCR and launch
+      - name: Install, verify public OCR hash, launch, and uninstall NSIS
         shell: pwsh
         run: >-
           ./candidate/harness/tools/release/clean-install.ps1
-          -PackageKind '${{ matrix.package }}'
           -CandidateRoot ./candidate
           -ExpectedCandidateId '${{ needs.build-candidate.outputs.candidate_id }}'
-          -ExpectedCommitSha '${{ needs.metadata.outputs.commit_sha }}'
-          -Output './clean-evidence/clean-install-${{ matrix.package }}.json'
+          -ExpectedCommitSha '${{ needs.build-candidate.outputs.commit_sha }}'
+          -Output ./clean-evidence/clean-install-nsis.json
 
-      - name: Upload clean-install evidence
+      - name: Upload NSIS clean-install evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: cert-prep-alpha-clean-${{ matrix.package }}-${{ needs.metadata.outputs.commit_sha }}
-          path: clean-evidence/clean-install-${{ matrix.package }}.json
+          name: cert-prep-alpha-clean-nsis-${{ needs.build-candidate.outputs.commit_sha }}
+          path: clean-evidence/clean-install-nsis.json
           if-no-files-found: error
           retention-days: 14
 
-  hardware-acceptance:
-    name: Protected AMD WindowsML and Ollama acceptance
-    needs: [metadata, build-candidate, clean-install]
-    runs-on: [self-hosted, Windows, X64, cert-prep-alpha-hardware]
-    environment: alpha-hardware
-    steps:
-      - name: Install Node without checkout
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: 24
-
-      - name: Download the exact candidate without checkout
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          name: ${{ needs.metadata.outputs.candidate_artifact }}
-          path: candidate
-
-      - name: Resolve protected hardware inputs
-        id: hardware_inputs
-        shell: pwsh
-        env:
-          ALPHA_HARDWARE_HARNESS: ${{ vars.ALPHA_HARDWARE_HARNESS }}
-          ALPHA_HARDWARE_HARNESS_SHA256: ${{ vars.ALPHA_HARDWARE_HARNESS_SHA256 }}
-          ALPHA_ACCEPTANCE_PDF_DIR: ${{ vars.ALPHA_ACCEPTANCE_PDF_DIR }}
-          ALPHA_FFPROBE_SHA256: ${{ vars.ALPHA_FFPROBE_SHA256 }}
-        run: |
-          if (-not $env:ALPHA_HARDWARE_HARNESS -or
-              -not [IO.Path]::IsPathFullyQualified($env:ALPHA_HARDWARE_HARNESS) -or
-              -not (Test-Path -LiteralPath $env:ALPHA_HARDWARE_HARNESS -PathType Leaf)) {
-            throw 'ALPHA_HARDWARE_HARNESS must be a provisioned absolute script/executable path.'
-          }
-          if ($env:ALPHA_HARDWARE_HARNESS_SHA256 -notmatch '^[0-9a-fA-F]{64}$') {
-            throw 'ALPHA_HARDWARE_HARNESS_SHA256 must pin the approved harness.'
-          }
-          $harnessPath = (Resolve-Path -LiteralPath $env:ALPHA_HARDWARE_HARNESS).Path
-          $harnessItem = Get-Item -LiteralPath $harnessPath -Force
-          if (($harnessItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-            throw 'Provisioned hardware harness must not be a reparse point.'
-          }
-          $harnessHash = (Get-FileHash -LiteralPath $harnessPath -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($harnessHash -ne $env:ALPHA_HARDWARE_HARNESS_SHA256.ToLowerInvariant()) {
-            throw 'Provisioned hardware harness digest does not match the approved value.'
-          }
-          if (-not $env:ALPHA_ACCEPTANCE_PDF_DIR -or
-              -not [IO.Path]::IsPathFullyQualified($env:ALPHA_ACCEPTANCE_PDF_DIR) -or
-              -not (Test-Path -LiteralPath $env:ALPHA_ACCEPTANCE_PDF_DIR -PathType Container)) {
-            throw 'ALPHA_ACCEPTANCE_PDF_DIR must be a provisioned absolute directory.'
-          }
-          $acceptancePdfDirItem = Get-Item -LiteralPath $env:ALPHA_ACCEPTANCE_PDF_DIR -Force
-          if (($acceptancePdfDirItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-            throw 'ALPHA_ACCEPTANCE_PDF_DIR must not be a reparse point.'
-          }
-          $acceptancePdfDirPath = (Resolve-Path -LiteralPath $env:ALPHA_ACCEPTANCE_PDF_DIR).Path
-          $acceptancePdfManifestPath = Join-Path $acceptancePdfDirPath 'alpha-acceptance-pdf-manifest.json'
-          if (-not (Test-Path -LiteralPath $acceptancePdfManifestPath -PathType Leaf)) {
-            throw 'ALPHA_ACCEPTANCE_PDF_DIR must contain alpha-acceptance-pdf-manifest.json.'
-          }
-          $acceptancePdfManifestItem = Get-Item -LiteralPath $acceptancePdfManifestPath -Force
-          if (($acceptancePdfManifestItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-            throw 'Provisioned acceptance PDF manifest must not be a reparse point.'
-          }
-          $acceptancePdfManifestHash = (Get-FileHash -LiteralPath $acceptancePdfManifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
-          $candidateAcceptancePdfManifest = './candidate/harness/tools/release/alpha-acceptance-pdf-manifest.json'
-          if (-not (Test-Path -LiteralPath $candidateAcceptancePdfManifest -PathType Leaf)) {
-            throw 'Candidate acceptance PDF manifest is missing.'
-          }
-          $candidateAcceptancePdfManifestItem = Get-Item -LiteralPath $candidateAcceptancePdfManifest -Force
-          if (($candidateAcceptancePdfManifestItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-            throw 'Candidate acceptance PDF manifest must not be a reparse point.'
-          }
-          $candidateAcceptancePdfManifestHash = (Get-FileHash -LiteralPath $candidateAcceptancePdfManifest -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($acceptancePdfManifestHash -ne $candidateAcceptancePdfManifestHash) {
-            throw 'Provisioned acceptance PDF manifest digest does not match the candidate.'
-          }
-          $ffprobePaths = @(
-            Get-Command -Name ffprobe -CommandType Application -All -ErrorAction SilentlyContinue |
-              ForEach-Object { $_.Source } |
-              Where-Object { $_ } |
-              Sort-Object -Unique
-          )
-          if ($ffprobePaths.Count -ne 1) {
-            throw "Protected hardware acceptance requires exactly one ffprobe application on PATH; found $($ffprobePaths.Count)."
-          }
-          $ffprobePath = (Resolve-Path -LiteralPath $ffprobePaths[0]).Path
-          if (-not [IO.Path]::IsPathFullyQualified($ffprobePath) -or
-              -not (Test-Path -LiteralPath $ffprobePath -PathType Leaf)) {
-            throw 'Resolved ffprobe must be an existing absolute file.'
-          }
-          $ffprobeItem = Get-Item -LiteralPath $ffprobePath -Force
-          if (($ffprobeItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-            throw 'Resolved ffprobe must not be a reparse point.'
-          }
-          if ($env:ALPHA_FFPROBE_SHA256 -notmatch '^[0-9a-fA-F]{64}$') {
-            throw 'ALPHA_FFPROBE_SHA256 must pin the approved ffprobe executable.'
-          }
-          $ffprobeHash = (Get-FileHash -LiteralPath $ffprobePath -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($ffprobeHash -ne $env:ALPHA_FFPROBE_SHA256.ToLowerInvariant()) {
-            throw 'Resolved ffprobe digest does not match the approved value.'
-          }
-          "harness_path=$harnessPath" >> $env:GITHUB_OUTPUT
-          "harness_sha256=$harnessHash" >> $env:GITHUB_OUTPUT
-          "manifest_path=$acceptancePdfManifestPath" >> $env:GITHUB_OUTPUT
-          "manifest_sha256=$candidateAcceptancePdfManifestHash" >> $env:GITHUB_OUTPUT
-          "ffprobe_path=$ffprobePath" >> $env:GITHUB_OUTPUT
-          "ffprobe_sha256=$ffprobeHash" >> $env:GITHUB_OUTPUT
-
-      - name: Run externally provisioned clean-snapshot hardware harness
-        shell: pwsh
-        env:
-          HARDWARE_HARNESS_PATH: ${{ steps.hardware_inputs.outputs.harness_path }}
-          HARDWARE_HARNESS_SHA256: ${{ steps.hardware_inputs.outputs.harness_sha256 }}
-          ACCEPTANCE_PDF_MANIFEST_PATH: ${{ steps.hardware_inputs.outputs.manifest_path }}
-          ACCEPTANCE_PDF_MANIFEST_SHA256: ${{ steps.hardware_inputs.outputs.manifest_sha256 }}
-        run: |
-          New-Item -ItemType Directory -Force hardware-evidence | Out-Null
-          $executionHarnessItem = Get-Item -LiteralPath $env:HARDWARE_HARNESS_PATH -Force
-          if (($executionHarnessItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-            throw 'Hardware harness became a reparse point before execution.'
-          }
-          $executionHarnessHash = (Get-FileHash -LiteralPath $env:HARDWARE_HARNESS_PATH -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($executionHarnessHash -ne $env:HARDWARE_HARNESS_SHA256) {
-            throw 'Hardware harness digest drifted before execution.'
-          }
-          $global:LASTEXITCODE = $null
-          & $env:HARDWARE_HARNESS_PATH `
-            --candidate-root (Resolve-Path ./candidate).Path `
-            --candidate-id '${{ needs.build-candidate.outputs.candidate_id }}' `
-            --version '${{ needs.metadata.outputs.version }}' `
-            --tag '${{ needs.metadata.outputs.tag }}' `
-            --commit '${{ needs.metadata.outputs.commit_sha }}' `
-            --harness-sha256 $env:HARDWARE_HARNESS_SHA256 `
-            --acceptance-pdf-manifest $env:ACCEPTANCE_PDF_MANIFEST_PATH `
-            --acceptance-pdf-manifest-sha256 $env:ACCEPTANCE_PDF_MANIFEST_SHA256 `
-            --output-root (Resolve-Path ./hardware-evidence).Path
-          $harnessSucceeded = $?
-          $harnessExitCode = $LASTEXITCODE
-          if (-not $harnessSucceeded -or
-              ($null -ne $harnessExitCode -and $harnessExitCode -ne 0)) {
-            $exitDetail = if ($null -eq $harnessExitCode) {
-              'PowerShell invocation failed'
-            } else {
-              "exit code $harnessExitCode"
-            }
-            throw "Hardware harness failed: $exitDetail."
-          }
-          $evidenceAcceptancePdfManifest = 'hardware-evidence/alpha-acceptance-pdf-manifest.json'
-          Copy-Item -LiteralPath $env:ACCEPTANCE_PDF_MANIFEST_PATH -Destination $evidenceAcceptancePdfManifest -Force
-          $evidenceAcceptancePdfManifestHash = (Get-FileHash -LiteralPath $evidenceAcceptancePdfManifest -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($evidenceAcceptancePdfManifestHash -ne $env:ACCEPTANCE_PDF_MANIFEST_SHA256) {
-            throw 'Copied hardware-evidence acceptance PDF manifest digest drifted.'
-          }
-
-      - name: Validate recorded hardware evidence contract
-        shell: pwsh
-        env:
-          HARDWARE_HARNESS_SHA256: ${{ steps.hardware_inputs.outputs.harness_sha256 }}
-          ACCEPTANCE_PDF_MANIFEST_PATH: ${{ steps.hardware_inputs.outputs.manifest_path }}
-          ACCEPTANCE_PDF_MANIFEST_SHA256: ${{ steps.hardware_inputs.outputs.manifest_sha256 }}
-          RESOLVED_FFPROBE_PATH: ${{ steps.hardware_inputs.outputs.ffprobe_path }}
-          RESOLVED_FFPROBE_SHA256: ${{ steps.hardware_inputs.outputs.ffprobe_sha256 }}
-        run: >-
-          node candidate/harness/tools/release/verify-hardware-result.ts
-          --result hardware-evidence/hardware-result.json
-          --plan candidate/release/metadata/release-plan.json
-          --evidence-root hardware-evidence
-          --candidate-id '${{ needs.build-candidate.outputs.candidate_id }}'
-          --harness-sha256 "$env:HARDWARE_HARNESS_SHA256"
-          --acceptance-pdf-manifest "$env:ACCEPTANCE_PDF_MANIFEST_PATH"
-          --acceptance-pdf-manifest-sha256 "$env:ACCEPTANCE_PDF_MANIFEST_SHA256"
-          --ffprobe-path "$env:RESOLVED_FFPROBE_PATH"
-          --ffprobe-sha256 "$env:RESOLVED_FFPROBE_SHA256"
-
-      - name: Upload protected hardware evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: cert-prep-alpha-hardware-${{ needs.metadata.outputs.commit_sha }}
-          path: hardware-evidence
-          if-no-files-found: error
-          retention-days: 30
-          compression-level: 0
-
-  finalize-release:
-    name: Finalize release metadata and evidence
-    needs: [metadata, build-candidate, clean-install, hardware-acceptance]
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Install Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
-        with:
-          node-version: 24
-
-      - name: Download candidate without checkout
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          name: ${{ needs.metadata.outputs.candidate_artifact }}
-          path: candidate
-
-      - name: Download both clean-install evidence artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          pattern: cert-prep-alpha-clean-*-${{ needs.metadata.outputs.commit_sha }}
-          path: clean-evidence
-          merge-multiple: true
-
-      - name: Download protected hardware evidence
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          name: cert-prep-alpha-hardware-${{ needs.metadata.outputs.commit_sha }}
-          path: hardware-evidence
-
-      - name: Finalize checksums, release metadata and both SBOM formats
-        run: >-
-          node candidate/harness/tools/release/assemble.ts
-          --mode finalize
-          --candidate candidate
-          --clean-evidence clean-evidence
-          --hardware-evidence hardware-evidence
-          --output final-bundle
-
-      - name: Upload final release bundle
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: cert-prep-alpha-final-${{ needs.metadata.outputs.commit_sha }}
-          path: final-bundle/release
-          if-no-files-found: error
-          retention-days: 30
-          compression-level: 0
-
-  attest-release:
-    name: Attest final release artifacts
-    needs: [metadata, finalize-release]
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      id-token: write
-      attestations: write
-    steps:
-      - name: Download final bundle without checkout
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          name: cert-prep-alpha-final-${{ needs.metadata.outputs.commit_sha }}
-          path: final-release
-
-      - name: Generate GitHub build provenance
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be
-        with:
-          subject-path: final-release/**/*
-
   publish-alpha:
-    name: Publish final unsigned public alpha
-    needs: [metadata, build-candidate, finalize-release, attest-release]
+    name: Finalize and publish the unsigned public alpha
+    needs: [build-candidate, clean-install]
     runs-on: ubuntu-24.04
     environment: alpha-release
     permissions:
@@ -643,22 +286,30 @@ jobs:
     outputs:
       release_finalized: ${{ steps.publish_final.outputs.release_finalized }}
     steps:
-      - name: Install Node
+      - name: Install Node without checkout
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 24
 
-      - name: Download final release bundle without checkout
+      - name: Download candidate without checkout
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: cert-prep-alpha-final-${{ needs.metadata.outputs.commit_sha }}
-          path: final-release
-
-      - name: Download candidate release tooling without checkout
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
-        with:
-          name: ${{ needs.metadata.outputs.candidate_artifact }}
+          name: ${{ needs.build-candidate.outputs.candidate_artifact }}
           path: candidate
+
+      - name: Download NSIS clean-install evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: cert-prep-alpha-clean-nsis-${{ needs.build-candidate.outputs.commit_sha }}
+          path: clean-evidence
+
+      - name: Finalize checksums and candidate-bound release metadata
+        run: >-
+          node candidate/harness/tools/release/assemble.ts
+          --mode finalize
+          --candidate candidate
+          --clean-evidence clean-evidence
+          --output final-bundle
 
       - name: Upload without clobber and keep the release a prerelease
         id: publish_final
@@ -670,34 +321,36 @@ jobs:
           --candidate-root candidate
           --candidate-id '${{ needs.build-candidate.outputs.candidate_id }}'
           --publication-owner '${{ github.run_id }}:${{ github.run_attempt }}:${{ needs.build-candidate.outputs.candidate_id }}'
-          --release-root final-release
-          --plan final-release/metadata/release-plan.json
+          --release-root final-bundle/release
+          --plan final-bundle/release/metadata/release-plan.json
+
+      - name: Verify every public asset anonymously against its hash
+        run: >-
+          node candidate/harness/tools/release/publish-assets.ts
+          --mode verify-public
+          --candidate-root candidate
+          --candidate-id '${{ needs.build-candidate.outputs.candidate_id }}'
+          --release-root final-bundle/release
+          --plan final-bundle/release/metadata/release-plan.json
 
       - name: Write release summary
         run: |
           {
             echo "## Public unsigned Alpha published"
             echo ""
-            echo "- Tag: ${{ needs.metadata.outputs.tag }}"
-            echo "- Commit: ${{ needs.metadata.outputs.commit_sha }}"
+            echo "- Tag: ${{ needs.build-candidate.outputs.tag }}"
+            echo "- Commit: ${{ needs.build-candidate.outputs.commit_sha }}"
             echo "- Candidate: ${{ needs.build-candidate.outputs.candidate_id }}"
-            echo "- Signing status: unsigned_public_alpha (GA remains blocked)"
+            echo "- Installer: NSIS (unsigned)"
+            echo "- Public assets: anonymous download and SHA-256 verified"
           } >> "$GITHUB_STEP_SUMMARY"
 
   cleanup-incomplete-prerelease:
-    name: Withdraw incomplete OCR prerelease after a failed gate
-    needs:
-      - metadata
-      - build-candidate
-      - publish-ocr-prerelease
-      - clean-install
-      - hardware-acceptance
-      - finalize-release
-      - attest-release
-      - publish-alpha
+    name: Withdraw an incomplete OCR prerelease after failure
+    needs: [build-candidate, clean-install, publish-alpha]
     if: >-
       ${{ always() &&
-          needs.publish-ocr-prerelease.outputs.release_owned_by_run == 'true' &&
+          needs.clean-install.outputs.release_owned_by_run == 'true' &&
           needs.publish-alpha.outputs.release_finalized != 'true' &&
           needs.publish-alpha.result != 'success' }}
     runs-on: ubuntu-24.04
@@ -713,10 +366,10 @@ jobs:
       - name: Download candidate release tooling without checkout
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
-          name: ${{ needs.metadata.outputs.candidate_artifact }}
+          name: ${{ needs.build-candidate.outputs.candidate_artifact }}
           path: candidate
 
-      - name: Delete the incomplete prerelease without deleting its source tag
+      - name: Delete only this run's incomplete prerelease
         env:
           GH_TOKEN: ${{ github.token }}
         run: >-

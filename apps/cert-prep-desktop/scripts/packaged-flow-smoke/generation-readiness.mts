@@ -3,6 +3,7 @@ import { win32 } from 'node:path';
 
 import type { APIResponse, Page, Response } from 'playwright';
 
+import { DEFAULT_LLM_MODEL } from '../package-qa/constants.mts';
 import { activePage } from './runner-context.mts';
 import { isRecord } from './text-utils.mts';
 import type {
@@ -377,7 +378,7 @@ async function generationReadinessFromProjectApi(
       providerSelection,
       requirements,
       run.options.llmProvider,
-      run.options.ollamaModel,
+      DEFAULT_LLM_MODEL,
     );
   }
   return {

@@ -526,7 +526,7 @@ async function cliEvidenceFixture(): Promise<CliEvidenceFixture> {
     assetBaseUrl: pathToFileURL(join(candidateRoot, 'local-assets')).href,
   });
   const installerRelativePath =
-    'release/installers/Cert Prep_0.1.0-alpha.1_x64_en-US.msi';
+    'release/installers/Cert Prep_0.1.0-alpha.1_x64-setup.exe';
   const installerPath = join(
     candidateRoot,
     ...installerRelativePath.split('/'),
@@ -560,7 +560,7 @@ async function cliEvidenceFixture(): Promise<CliEvidenceFixture> {
     candidateId,
     acceptanceRunId: 'acceptance-run-0001',
     harnessSha256: FIXTURE_CANDIDATE.harnessSha256,
-    packageKind: 'msi',
+    packageKind: 'nsis',
     installer: {
       relativePath: installerRelativePath,
       sha256: sha256(installerPath),
@@ -579,7 +579,7 @@ async function cliEvidenceFixture(): Promise<CliEvidenceFixture> {
   const environment = {
     CERT_PREP_RESILIENCE_CANDIDATE_ROOT: candidateRoot,
     CERT_PREP_RELEASE_CANDIDATE_ID: candidateId,
-    ALPHA_HARDWARE_HARNESS_SHA256: FIXTURE_CANDIDATE.harnessSha256,
+    CERT_PREP_ACCEPTANCE_HARNESS_SHA256: FIXTURE_CANDIDATE.harnessSha256,
     CERT_PREP_RESILIENCE_INSTALLED_EXE_PATH: installedExePath,
     CERT_PREP_RESILIENCE_INSTALL_RECEIPT_PATH: receiptPath,
     CERT_PREP_RESILIENCE_ACCEPTANCE_RUN_ID: 'acceptance-run-0001',

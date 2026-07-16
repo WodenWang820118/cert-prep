@@ -14,10 +14,6 @@ test('packaged flow smoke args validate numeric knobs', () => {
     '2',
     '--llm-provider',
     'ollama',
-    '--llm-model',
-    'qwen3.5:2b',
-    '--llm-fallback-models',
-    'qwen3.5:4b, qwen3.5:0.8b',
     '--streaming-draft-page-limit',
     '1',
     '--streaming-draft-workers',
@@ -34,8 +30,6 @@ test('packaged flow smoke args validate numeric knobs', () => {
   assert.equal(parsed.ocrProvider, 'windowsml');
   assert.equal(parsed.ocrPageWorkers, 2);
   assert.equal(parsed.llmProvider, 'ollama');
-  assert.equal(parsed.ollamaModel, 'qwen3.5:2b');
-  assert.deepEqual(parsed.ollamaFallbackModels, ['qwen3.5:4b', 'qwen3.5:0.8b']);
   assert.equal(parsed.streamingDraftPageLimit, 1);
   assert.equal(parsed.streamingDraftWorkers, 2);
   assert.equal(parsed.waitForStreamingComplete, true);
@@ -49,10 +43,6 @@ test('packaged flow smoke args validate numeric knobs', () => {
   assert.throws(
     () => parsePackagedFlowSmokeArgs(['--streaming-draft-page-limit', '0']),
     /positive integer/,
-  );
-  assert.throws(
-    () => parsePackagedFlowSmokeArgs(['--llm-model', ' ']),
-    /must not be empty/,
   );
   assert.throws(
     () => parsePackagedFlowSmokeArgs(['--ocr-provider', ' ']),
@@ -94,7 +84,6 @@ test('packaged streaming production enables completion wait and production outpu
   assert.equal(parsed.allowOcrChunkVariance, true);
   assert.equal(parsed.waitForStreamingComplete, true);
   assert.equal(parsed.verifyStreamingPracticeReady, false);
-  assert.deepEqual(parsed.ollamaFallbackModels, ['qwen3.5:2b']);
   assert.equal(parsed.llmProvider, 'auto');
   assert.match(
     parsed.outDir,
@@ -103,10 +92,16 @@ test('packaged streaming production enables completion wait and production outpu
   assert.equal(parsed.appDataDir, `${parsed.outDir}\\app-data`);
 });
 
-test('packaged flow smoke rejects retired Ollama model argument aliases', () => {
-  for (const alias of ['--ollama-model', '--ollama-fallback-models']) {
+test('packaged flow smoke rejects retired model and video arguments', () => {
+  for (const alias of [
+    '--llm-model',
+    '--ollama-model',
+    '--ollama-fallback-models',
+    '--llm-fallback-models',
+    '--record-video',
+  ]) {
     assert.throws(
-      () => parsePackagedFlowSmokeArgs([alias, 'qwen3.5:2b']),
+      () => parsePackagedFlowSmokeArgs([alias, 'qwen3.5:4b']),
       new RegExp(`Unknown argument: ${alias}`),
     );
   }
@@ -126,35 +121,13 @@ test('streaming practice-ready verification implies completion wait', () => {
   );
 });
 
-test('record video can be enabled by flag or environment', () => {
-  assert.equal(
-    parsePackagedFlowSmokeArgs(['--record-video'], 'C:\\workspace').recordVideo,
-    true,
-  );
-
-  const previous = process.env.CERT_PREP_PACKAGE_SMOKE_RECORD_VIDEO;
-  try {
-    process.env.CERT_PREP_PACKAGE_SMOKE_RECORD_VIDEO = '1';
-    assert.equal(
-      parsePackagedFlowSmokeArgs([], 'C:\\workspace').recordVideo,
-      true,
-    );
-  } finally {
-    if (previous === undefined) {
-      delete process.env.CERT_PREP_PACKAGE_SMOKE_RECORD_VIDEO;
-    } else {
-      process.env.CERT_PREP_PACKAGE_SMOKE_RECORD_VIDEO = previous;
-    }
-  }
-});
-
 test('packaged flow smoke can write timestamped output under an explicit root', () => {
   const parsed = parsePackagedFlowSmokeArgs(
-    ['--production-summary', '--out-root', 'tmp/recorded-production'],
+    ['--production-summary', '--out-root', 'tmp/production'],
     'C:\\workspace',
   );
 
-  assert.match(parsed.outDir, /tmp[\\/]recorded-production[\\/]/);
+  assert.match(parsed.outDir, /tmp[\\/]production[\\/]/);
   assert.equal(parsed.appDataDir, `${parsed.outDir}\\app-data`);
 });
 
@@ -173,27 +146,20 @@ test('packaged production targets pin the Ollama-only Alpha policy', () => {
       ?.command ?? '';
   assert.match(baselineCommand, /--ocr-provider windowsml(?:\s|$)/);
 
-  for (const target of [
-    'packaged-streaming-production-windowsml',
-    'packaged-streaming-production-recorded-windowsml',
-  ]) {
-    const command = project.targets?.[target]?.options?.command ?? '';
-    const parsed = parsePackagedFlowSmokeArgs(targetCommandArgs(command));
-    assert.equal(parsed.llmProvider, 'ollama');
-    assert.equal(parsed.ollamaModel, 'qwen3.5:4b');
-    assert.deepEqual(parsed.ollamaFallbackModels, ['qwen3.5:2b']);
-    assert.equal(parsed.productionSummary, true);
-    assert.equal(parsed.ocrProvider, 'windowsml');
-    assert.equal(parsed.verifyStreamingPracticeReady, true);
-  }
-
-  const productionOutputs = [
-    project.targets?.['packaged-streaming-production-windowsml']?.outputs?.[0],
-    project.targets?.['packaged-streaming-production-recorded-windowsml']
-      ?.outputs?.[0],
-  ];
-  assert.equal(productionOutputs.every(Boolean), true);
-  assert.equal(new Set(productionOutputs).size, productionOutputs.length);
+  const productionTarget =
+    project.targets?.['packaged-streaming-production-windowsml'];
+  const command = productionTarget?.options?.command ?? '';
+  const parsed = parsePackagedFlowSmokeArgs(targetCommandArgs(command));
+  assert.equal(parsed.llmProvider, 'ollama');
+  assert.equal(parsed.productionSummary, true);
+  assert.equal(parsed.ocrProvider, 'windowsml');
+  assert.equal(parsed.verifyStreamingPracticeReady, true);
+  assert.doesNotMatch(command, /(?:fallback|record-video|llm-model)/);
+  assert.equal(
+    project.targets?.['packaged-streaming-production-recorded-windowsml'],
+    undefined,
+  );
+  assert.equal(Boolean(productionTarget?.outputs?.[0]), true);
 
   for (const target of Object.values(project.targets ?? {})) {
     assert.doesNotMatch(target.options?.command ?? '', /--acceptance-lane/);

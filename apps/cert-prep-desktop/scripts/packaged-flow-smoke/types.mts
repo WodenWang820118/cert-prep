@@ -19,8 +19,6 @@ export interface SmokeOptions {
   ocrProvider: string;
   ocrPageWorkers: number;
   llmProvider: string;
-  ollamaModel: string;
-  ollamaFallbackModels: string[];
   ollamaHost?: string;
   ollamaModelsDir?: string;
   ollamaProfileEnabled?: boolean;
@@ -34,7 +32,6 @@ export interface SmokeOptions {
   productionSummary: boolean;
   allowOcrChunkVariance: boolean;
   verifyStreamingPracticeReady: boolean;
-  recordVideo: boolean;
 }
 
 export interface SmokeMetrics {
@@ -43,7 +40,6 @@ export interface SmokeMetrics {
   finished_at?: string;
   out_dir: string;
   screenshots: string[];
-  video_artifacts?: VideoArtifact[];
   ui_timings_ms: Record<string, number>;
   observations: string[];
   errors: string[];
@@ -54,7 +50,6 @@ export interface SmokeMetrics {
   llm_model: string;
   llm_configured_model?: string;
   llm_effective_model?: string;
-  llm_fallback_models: string[];
   llm_fallback_reason?: string | null;
   provider_fallback_reason?: string | null;
   model_fallback_reason?: string | null;
@@ -108,23 +103,6 @@ export interface ResourceSamplingArtifacts {
   windows_dxgi_adapters_json?: string;
 }
 
-export interface VideoArtifact {
-  readonly path: string;
-  bytes: number;
-  sha256: string;
-  readonly capture_source: 'playwright_screencast';
-  status: 'recording' | 'completed' | 'failed';
-  readonly started_at: string;
-  finished_at?: string;
-  error?: string;
-}
-
-export interface VideoRecordingState {
-  readonly artifact: VideoArtifact;
-  readonly filePath: string;
-  active: boolean;
-}
-
 export interface StreamingQuestionsMetrics {
   job_snapshots: StreamingDraftJobSnapshot[];
   question_snapshots: StreamingQuestionSnapshot[];
@@ -157,7 +135,6 @@ export interface LlmHealthSnapshot {
   model: string | null;
   configured_model: string | null;
   effective_model: string | null;
-  fallback_models: string[];
   fallback_reason: string | null;
   execution_mode: 'auto' | 'cpu' | null;
   execution_warning: string | null;
@@ -295,7 +272,6 @@ export interface SmokeRunState {
   app: ChildProcess | null;
   appExit: ChildExitState | null;
   resourceSampling: ResourceSamplingController | null;
-  videoRecording: VideoRecordingState | null;
   browser: Browser | null;
   page: Page | null;
   port: number;

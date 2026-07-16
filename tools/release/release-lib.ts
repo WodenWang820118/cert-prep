@@ -15,11 +15,6 @@ import { open } from 'node:fs/promises';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import {
-  validateResilienceEvidence,
-  validateSessionRestartEvidence,
-} from '../../apps/cert-prep-desktop/scripts/packaged-resilience/evidence-contract.mts';
-
 export const ALPHA_VERSION_PATTERN = /^\d+\.\d+\.\d+-alpha\.\d+$/;
 export const RELEASE_CHANNEL = 'unsigned_public_alpha';
 export const PUBLIC_UNSIGNED_ALPHA_PROFILE = 'public_unsigned_alpha';
@@ -27,42 +22,6 @@ export const LOCAL_NONPUBLISHABLE_PROFILE = 'local_nonpublishable';
 export const RELEASE_TAG_PREFIX = 'cert-prep-v';
 export const TARGET_TRIPLE = 'x86_64-pc-windows-msvc';
 export const RELEASE_PYTHON_VERSION = '3.12';
-
-export const HARDWARE_CANCELLATION_CHECKS = [
-  'upload',
-  'ocr',
-  'draft',
-  'runtime',
-  'model',
-  'cancelVsCompleteRace',
-  'crashRecovery',
-  'partialDataRemoved',
-  'ownedProcessesReleased',
-];
-
-export const ALPHA_ACCEPTANCE_PDF_MANIFEST_FILE =
-  'alpha-acceptance-pdf-manifest.json';
-export const ALPHA_ACCEPTANCE_PDF_SUITE_ID = 'public-alpha-b3-v1';
-
-const HARDWARE_GPU_TELEMETRY_FILES = {
-  windowsResourceSummary: 'windows-resource-summary.json',
-  windowsResourceSampling: 'windows-resource-sampling.csv',
-  windowsDxgiAdapters: 'windows-dxgi-adapters.json',
-};
-const HARDWARE_PRODUCTION_SUMMARY_FILE = 'production-summary.json';
-const WINDOWSML_OCR_PROCESS = 'cert-prep-ocr-windowsml-runtime.exe';
-const ACCEPTANCE_PDF_MANIFEST_KEYS = ['pdfs', 'schemaVersion', 'suiteId'];
-const ACCEPTANCE_PDF_IDENTITY_KEYS = [
-  'bytes',
-  'fileName',
-  'logicalId',
-  'sha256',
-];
-const HARDWARE_PDF_RESULT_KEYS = [
-  ...ACCEPTANCE_PDF_IDENTITY_KEYS,
-  'fullExamQuestionCount',
-  'usableQuestions',
-].sort();
 
 export function assertSupportedDistributionPlan(plan) {
   const version = String(plan?.version ?? '');
@@ -268,7 +227,6 @@ export function deriveReleaseIdentity({
     repository,
     commitSha: commitSha.toLowerCase(),
     target: TARGET_TRIPLE,
-    windowsMsiVersion: windowsMsiVersionFor(version),
     pythonRuntimeVersion: RELEASE_PYTHON_VERSION,
     assetBaseUrl: `https://github.com/${repository}/releases/download/${tag}`,
     signed: false,
@@ -369,17 +327,13 @@ export function assertWorkspaceVersions(workspaceRoot, expectedVersion) {
   const packageQaAlphaVersion = packageQaConstants.match(
     /^export const ALPHA_VERSION = ['"]([^'"]+)['"];$/m,
   )?.[1];
-  const packageQaWindowsMsiVersion = packageQaConstants.match(
-    /^export const WINDOWS_MSI_VERSION = ['"]([^'"]+)['"];$/m,
-  )?.[1];
   const packageQaPythonRuntimeVersion = packageQaConstants.match(
     /^export const PYTHON_RUNTIME_VERSION = ['"]([^'"]+)['"];$/m,
   )?.[1];
   const backendProject = readJson(
     join(workspaceRoot, 'apps/cert-prep-backend/project.json'),
   );
-  const windowsMsiVersion = tauriConfig.bundle?.windows?.wix?.version;
-  const expectedWindowsMsiVersion = windowsMsiVersionFor(expectedVersion);
+  const tauriBundleTargets = tauriConfig.bundle?.targets;
   if (tauriConfig.version !== expectedVersion) {
     throw new Error(
       `Tauri version ${tauriConfig.version ?? '<missing>'} does not match ${expectedVersion}.`,
@@ -405,14 +359,17 @@ export function assertWorkspaceVersions(workspaceRoot, expectedVersion) {
       `Python runtime version ${pythonRuntimeVersion || '<missing>'} does not match ${RELEASE_PYTHON_VERSION}.`,
     );
   }
-  if (windowsMsiVersion !== expectedWindowsMsiVersion) {
+  if (
+    !Array.isArray(tauriBundleTargets) ||
+    tauriBundleTargets.length !== 1 ||
+    tauriBundleTargets[0] !== 'nsis'
+  ) {
     throw new Error(
-      `Windows MSI version ${windowsMsiVersion ?? '<missing>'} does not match ${expectedWindowsMsiVersion}.`,
+      'Tauri bundle targets must contain exactly the NSIS installer.',
     );
   }
   if (
     packageQaAlphaVersion !== expectedVersion ||
-    packageQaWindowsMsiVersion !== expectedWindowsMsiVersion ||
     packageQaPythonRuntimeVersion !== RELEASE_PYTHON_VERSION
   ) {
     throw new Error(
@@ -438,31 +395,13 @@ export function assertWorkspaceVersions(workspaceRoot, expectedVersion) {
   return {
     tauriVersion: tauriConfig.version,
     cargoVersion,
-    windowsMsiVersion,
+    tauriBundleTargets,
     ...pythonVersions,
     backendRuntimeVersion,
     pythonRuntimeVersion,
     packageQaAlphaVersion,
-    packageQaWindowsMsiVersion,
     packageQaPythonRuntimeVersion,
   };
-}
-
-export function windowsMsiVersionFor(version) {
-  const match = version.match(/^(\d+)\.(\d+)\.(\d+)-alpha\.(\d+)$/);
-  if (!match) {
-    throw new Error('Windows MSI mapping requires an alpha release version.');
-  }
-  const values = match.slice(1).map(Number);
-  if (
-    values[0] > 255 ||
-    values[1] > 255 ||
-    values[2] > 65_535 ||
-    values[3] > 65_535
-  ) {
-    throw new Error('Windows MSI mapped version exceeds MSI field limits.');
-  }
-  return values.join('.');
 }
 
 export function assertExternalConfirmations(confirmations) {
@@ -979,18 +918,9 @@ export async function writeReleaseDocuments({
   };
   const licenseInventoryPath = join(metadataDir, 'license-inventory.json');
   const spdxPath = join(metadataDir, 'cert-prep-alpha.spdx.json');
-  const cycloneDxPath = join(metadataDir, 'cert-prep-alpha.cdx.json');
-  const generatedDocumentPaths = [
-    licenseInventoryPath,
-    spdxPath,
-    cycloneDxPath,
-  ];
+  const generatedDocumentPaths = [licenseInventoryPath, spdxPath];
   writeJson(licenseInventoryPath, licenseInventory);
   writeJson(spdxPath, createSpdxDocument(plan, licensedComponents, artifacts));
-  writeJson(
-    cycloneDxPath,
-    createCycloneDxDocument(plan, licensedComponents, artifacts),
-  );
   const componentByPurl = new Map(
     licensedComponents.map((component) => [component.purl, component]),
   );
@@ -1006,10 +936,6 @@ export async function writeReleaseDocuments({
       metadataDir,
       `cert-prep-alpha-${scope.id}.spdx.json`,
     );
-    const scopedCycloneDxPath = join(
-      metadataDir,
-      `cert-prep-alpha-${scope.id}.cdx.json`,
-    );
     writeJson(
       scopedSpdxPath,
       createSpdxDocument(plan, scopedComponents, scopedArtifacts, {
@@ -1017,14 +943,7 @@ export async function writeReleaseDocuments({
         documentName: `cert-prep-${plan.version}-${scope.id}`,
       }),
     );
-    writeJson(
-      scopedCycloneDxPath,
-      createCycloneDxDocument(plan, scopedComponents, scopedArtifacts, {
-        artifactDependencyLinks: true,
-        documentName: scope.id,
-      }),
-    );
-    generatedDocumentPaths.push(scopedSpdxPath, scopedCycloneDxPath);
+    generatedDocumentPaths.push(scopedSpdxPath);
   }
   for (const path of generatedDocumentPaths) {
     artifacts.push({
@@ -1067,13 +986,11 @@ function validateArtifactDependencies(
     throw new Error('Artifact dependency mapping must be an array.');
   }
   const requiredIds = new Set([
-    'msi',
     'nsis',
     'backend-runtime',
     'windowsml-ocr-runtime',
   ]);
   const artifactPatterns = new Map([
-    ['msi', /^installers\/.*\.msi$/i],
     ['nsis', /^installers\/.*setup\.exe$/i],
     ['backend-runtime', /^runtimes\/cert-prep-backend-runtime-.*\.zip$/i],
     [
@@ -1119,7 +1036,7 @@ function validateArtifactDependencies(
     [...requiredIds].some((id) => !ids.has(id))
   ) {
     throw new Error(
-      'Artifact dependency mapping must cover MSI, NSIS, backend, and OCR artifacts.',
+      'Artifact dependency mapping must cover NSIS, backend, and OCR artifacts.',
     );
   }
   return normalized.sort((left, right) => left.id.localeCompare(right.id));
@@ -1210,1031 +1127,6 @@ export function createSpdxDocument(
         : []),
     ],
   };
-}
-
-export function createCycloneDxDocument(
-  plan,
-  components,
-  artifacts,
-  { artifactDependencyLinks = false, documentName } = {},
-) {
-  const artifactComponents = artifacts.map((artifact) => ({
-    type: 'file',
-    'bom-ref': `urn:cert-prep:artifact:${artifact.sha256}`,
-    name: artifact.path,
-    hashes: [{ alg: 'SHA-256', content: artifact.sha256 }],
-  }));
-  const libraryComponents = components.map((component) => ({
-    type: 'library',
-    'bom-ref': component.purl,
-    group: component.ecosystem,
-    name: component.name,
-    version: component.version,
-    purl: component.purl,
-    licenses: [{ expression: component.license }],
-  }));
-  const payloadComponents = components.flatMap((component) =>
-    (component.files ?? []).map((file) => ({
-      type: 'file',
-      'bom-ref': `${component.purl}#file:${encodeURIComponent(file.path)}`,
-      group: component.name,
-      name: file.path,
-      hashes: [{ alg: 'SHA-256', content: file.sha256 }],
-      licenses: [{ expression: component.license }],
-      properties: [
-        { name: 'cert-prep:payload-bytes', value: String(file.bytes) },
-      ],
-    })),
-  );
-  const dependencies = [
-    ...(artifactDependencyLinks
-      ? artifactComponents.map((artifact) => ({
-          ref: artifact['bom-ref'],
-          dependsOn: components.map((component) => component.purl),
-        }))
-      : []),
-    ...components
-      .filter((component) => (component.files ?? []).length > 0)
-      .map((component) => ({
-        ref: component.purl,
-        dependsOn: component.files.map(
-          (file) => `${component.purl}#file:${encodeURIComponent(file.path)}`,
-        ),
-      })),
-  ];
-  return {
-    bomFormat: 'CycloneDX',
-    specVersion: '1.6',
-    serialNumber: `urn:uuid:${randomUUID()}`,
-    version: 1,
-    metadata: {
-      timestamp: new Date().toISOString(),
-      component: {
-        type: 'application',
-        'bom-ref': `pkg:generic/cert-prep@${encodeURIComponent(plan.version)}`,
-        name: documentName ?? 'cert-prep',
-        version: plan.version,
-        licenses: [{ license: { id: 'MIT' } }],
-      },
-    },
-    components: [
-      ...libraryComponents,
-      ...payloadComponents,
-      ...artifactComponents,
-    ],
-    ...(dependencies.length > 0 ? { dependencies } : {}),
-  };
-}
-
-export function validateAcceptancePdfManifest(manifest) {
-  if (
-    !hasExactObjectKeys(manifest, ACCEPTANCE_PDF_MANIFEST_KEYS) ||
-    manifest.schemaVersion !== 1 ||
-    manifest.suiteId !== ALPHA_ACCEPTANCE_PDF_SUITE_ID ||
-    !Array.isArray(manifest.pdfs) ||
-    manifest.pdfs.length !== 4
-  ) {
-    throw new Error('Acceptance PDF manifest schema is invalid.');
-  }
-  const logicalIds = new Set();
-  const fileNames = new Set();
-  const digests = new Set();
-  for (const pdf of manifest.pdfs) {
-    if (
-      !hasExactObjectKeys(pdf, ACCEPTANCE_PDF_IDENTITY_KEYS) ||
-      typeof pdf.logicalId !== 'string' ||
-      pdf.logicalId.trim() !== pdf.logicalId ||
-      pdf.logicalId.length === 0 ||
-      typeof pdf.fileName !== 'string' ||
-      pdf.fileName.trim() !== pdf.fileName ||
-      pdf.fileName.length === 0 ||
-      pdf.fileName.includes('/') ||
-      pdf.fileName.includes('\\') ||
-      basename(pdf.fileName) !== pdf.fileName ||
-      !pdf.fileName.endsWith('.pdf') ||
-      !Number.isSafeInteger(pdf.bytes) ||
-      pdf.bytes <= 0 ||
-      !/^[0-9a-f]{64}$/.test(pdf.sha256 ?? '') ||
-      logicalIds.has(pdf.logicalId) ||
-      fileNames.has(pdf.fileName) ||
-      digests.has(pdf.sha256)
-    ) {
-      throw new Error(
-        'Acceptance PDF manifest entries must have unique exact identities.',
-      );
-    }
-    logicalIds.add(pdf.logicalId);
-    fileNames.add(pdf.fileName);
-    digests.add(pdf.sha256);
-  }
-  return manifest;
-}
-
-export function validateHardwareResult(result, plan, expectedCandidateId) {
-  const requiredChecks = {
-    candidateShaVerified: true,
-    cleanSnapshot: true,
-    windowsMlProvider: 'windowsml',
-    configuredProvider: 'ollama',
-    effectiveProvider: 'ollama',
-    configuredModel: 'qwen3.5:4b',
-    effectiveModel: 'qwen3.5:4b',
-    providerFallback: false,
-    modelFallback: false,
-    generationReadyAtStart: true,
-    resourcesReleasedAtEnd: true,
-    fullExamQuestionCountPositive: true,
-    sessionRestartPassed: true,
-    processResidueCount: 0,
-  };
-  if (
-    result.schemaVersion !== 3 ||
-    result.version !== plan.version ||
-    result.tag !== plan.tag ||
-    result.commitSha !== plan.commitSha ||
-    !/^[0-9a-f]{64}$/i.test(result.harnessSha256 ?? '')
-  ) {
-    throw new Error('Hardware evidence identity does not match the candidate.');
-  }
-  if (
-    !/^[0-9a-f]{64}$/i.test(result.candidateId ?? '') ||
-    (expectedCandidateId && result.candidateId !== expectedCandidateId)
-  ) {
-    throw new Error(
-      'Hardware evidence candidate ID does not match the downloaded candidate.',
-    );
-  }
-  if (!Array.isArray(result.pdfs) || result.pdfs.length !== 4) {
-    throw new Error(
-      'Hardware evidence must cover exactly four acceptance PDFs.',
-    );
-  }
-  for (const pdf of result.pdfs) {
-    if (
-      !hasExactObjectKeys(pdf, HARDWARE_PDF_RESULT_KEYS) ||
-      !Number.isSafeInteger(pdf.usableQuestions) ||
-      !Number.isSafeInteger(pdf.fullExamQuestionCount)
-    ) {
-      throw new Error('Hardware acceptance PDF result schema is invalid.');
-    }
-  }
-  validateAcceptancePdfManifest({
-    schemaVersion: 1,
-    suiteId: ALPHA_ACCEPTANCE_PDF_SUITE_ID,
-    pdfs: result.pdfs.map(({ logicalId, fileName, bytes, sha256 }) => ({
-      logicalId,
-      fileName,
-      bytes,
-      sha256,
-    })),
-  });
-  for (const [key, expected] of Object.entries(requiredChecks)) {
-    if (result[key] !== expected) {
-      throw new Error(`Hardware evidence check failed: ${key}.`);
-    }
-  }
-  for (const key of HARDWARE_CANCELLATION_CHECKS) {
-    const evidence = result.cancellation?.[key];
-    if (
-      evidence?.passed !== true ||
-      typeof evidence.path !== 'string' ||
-      !evidence.path.toLowerCase().endsWith('.json') ||
-      evidence.bytes <= 0 ||
-      !/^[0-9a-f]{64}$/i.test(evidence.sha256 ?? '')
-    ) {
-      throw new Error(`Hardware cancellation evidence check failed: ${key}.`);
-    }
-  }
-  if (
-    result.sessionRestart?.passed !== true ||
-    typeof result.sessionRestart.path !== 'string' ||
-    !result.sessionRestart.path.toLowerCase().endsWith('.json') ||
-    result.sessionRestart.bytes <= 0 ||
-    !/^[0-9a-f]{64}$/i.test(result.sessionRestart.sha256 ?? '')
-  ) {
-    throw new Error(
-      'Hardware session restart evidence must be a non-empty hashed JSON artifact.',
-    );
-  }
-  const acceptanceStartedAt = Date.parse(result.acceptance?.startedAt ?? '');
-  const acceptanceCompletedAt = Date.parse(
-    result.acceptance?.completedAt ?? '',
-  );
-  const recordingStartedAt = Date.parse(result.recording?.startedAt ?? '');
-  const recordingCompletedAt = Date.parse(result.recording?.completedAt ?? '');
-  if (
-    result.acceptance?.completed !== true ||
-    !/^[A-Za-z0-9._-]{8,128}$/.test(result.acceptance?.runId ?? '') ||
-    !Number.isFinite(acceptanceStartedAt) ||
-    !Number.isFinite(acceptanceCompletedAt) ||
-    acceptanceStartedAt >= acceptanceCompletedAt ||
-    result.recording?.acceptanceRunId !== result.acceptance.runId ||
-    !Number.isFinite(recordingStartedAt) ||
-    !Number.isFinite(recordingCompletedAt) ||
-    recordingStartedAt > acceptanceStartedAt ||
-    recordingCompletedAt < acceptanceCompletedAt
-  ) {
-    throw new Error(
-      'Hardware evidence recording is not bound to the completed acceptance run.',
-    );
-  }
-  if (
-    String(result.acceptancePdfManifest?.path ?? '').replaceAll('\\', '/') !==
-    ALPHA_ACCEPTANCE_PDF_MANIFEST_FILE
-  ) {
-    throw new Error(
-      'Hardware acceptance PDF manifest must use the exact evidence path.',
-    );
-  }
-  validateBoundHardwareArtifactReference(
-    result.acceptancePdfManifest,
-    ALPHA_ACCEPTANCE_PDF_MANIFEST_FILE,
-    'acceptancePdfManifest',
-    result,
-  );
-  validateBoundHardwareArtifactReference(
-    result.productionSummary,
-    HARDWARE_PRODUCTION_SUMMARY_FILE,
-    'productionSummary',
-    result,
-  );
-  if (
-    !result.gpuTelemetry ||
-    Object.keys(result.gpuTelemetry).length !==
-      Object.keys(HARDWARE_GPU_TELEMETRY_FILES).length
-  ) {
-    throw new Error(
-      'Hardware GPU telemetry must declare the exact required artifacts.',
-    );
-  }
-  for (const [key, fileName] of Object.entries(
-    HARDWARE_GPU_TELEMETRY_FILES,
-  )) {
-    validateBoundHardwareArtifactReference(
-      result.gpuTelemetry[key],
-      fileName,
-      `gpuTelemetry.${key}`,
-      result,
-    );
-  }
-  if (
-    typeof result.recording?.path !== 'string' ||
-    !result.recording.path.toLowerCase().endsWith('.webm') ||
-    result.recording?.captureSource !== 'playwright_screencast' ||
-    !/^[0-9a-f]{64}$/i.test(result.recording?.sha256 ?? '') ||
-    result.recording?.bytes <= 0
-  ) {
-    throw new Error(
-      'Hardware evidence must include a non-empty hashed recording.',
-    );
-  }
-  return result;
-}
-
-export async function validateHardwareEvidenceFiles(result, evidenceRoot) {
-  const resolvedEvidenceRoot = resolve(evidenceRoot);
-  const records = [
-    ['acceptancePdfManifest', result.acceptancePdfManifest],
-    ['productionSummary', result.productionSummary],
-    ...Object.keys(HARDWARE_GPU_TELEMETRY_FILES).map((key) => [
-      `gpuTelemetry.${key}`,
-      result.gpuTelemetry[key],
-    ]),
-    ['recording', result.recording],
-    ['sessionRestart', result.sessionRestart],
-    ...HARDWARE_CANCELLATION_CHECKS.map((key) => [
-      key,
-      result.cancellation[key],
-    ]),
-  ];
-  const paths = new Set();
-  const resolvedPaths = new Map();
-  for (const [key, record] of records) {
-    const path = resolveEvidencePath(resolvedEvidenceRoot, record.path, key);
-    const canonicalPath = realpathSync(path);
-    const canonicalKey =
-      process.platform === 'win32'
-        ? canonicalPath.toLowerCase()
-        : canonicalPath;
-    const relativePath = relativePosix(resolvedEvidenceRoot, canonicalPath);
-    if (paths.has(canonicalKey)) {
-      throw new Error(`Hardware evidence path is reused: ${relativePath}.`);
-    }
-    paths.add(canonicalKey);
-    resolvedPaths.set(key, path);
-    if (statSync(path).size !== record.bytes) {
-      throw new Error(`Hardware evidence byte count does not match: ${key}.`);
-    }
-    if ((await sha256File(path)) !== record.sha256.toLowerCase()) {
-      throw new Error(`Hardware evidence digest does not match: ${key}.`);
-    }
-    if (key === 'sessionRestart' || HARDWARE_CANCELLATION_CHECKS.includes(key)) {
-      let detail;
-      try {
-        detail = readJson(path);
-      } catch {
-        throw new Error(`Hardware resilience evidence is not JSON: ${key}.`);
-      }
-      const context = {
-        candidate: {
-          candidateId: result.candidateId,
-          version: result.version,
-          tag: result.tag,
-          commitSha: result.commitSha,
-          harnessSha256: result.harnessSha256,
-        },
-        acceptanceRunId: result.acceptance.runId,
-        acceptanceStartedAt: result.acceptance.startedAt,
-        acceptanceCompletedAt: result.acceptance.completedAt,
-      };
-      if (key === 'sessionRestart') {
-        validateSessionRestartEvidence(detail, context);
-      } else {
-        validateResilienceEvidence(detail, key, context);
-      }
-    }
-  }
-  const acceptancePdfManifest = validateAcceptancePdfManifest(
-    readHardwareJson(
-      resolvedPaths.get('acceptancePdfManifest'),
-      'acceptancePdfManifest',
-    ),
-  );
-  validateHardwarePdfResults(result.pdfs, acceptancePdfManifest);
-  const productionSummary = readHardwareJson(
-    resolvedPaths.get('productionSummary'),
-    'productionSummary',
-  );
-  const windowsResourceSummary = readHardwareJson(
-    resolvedPaths.get('gpuTelemetry.windowsResourceSummary'),
-    'gpuTelemetry.windowsResourceSummary',
-  );
-  const dxgiAdapters = readHardwareJson(
-    resolvedPaths.get('gpuTelemetry.windowsDxgiAdapters'),
-    'gpuTelemetry.windowsDxgiAdapters',
-  );
-  const windowsResourceSampling = readFileSync(
-    resolvedPaths.get('gpuTelemetry.windowsResourceSampling'),
-    'utf8',
-  ).replace(/^\uFEFF/, '');
-  validateHardwareProductionEvidence({
-    result,
-    productionSummary,
-    windowsResourceSummary,
-    windowsResourceSampling,
-    dxgiAdapters,
-  });
-  return result;
-}
-
-function validateHardwarePdfResults(results, manifest) {
-  const expectedById = new Map(
-    manifest.pdfs.map((pdf) => [pdf.logicalId, pdf]),
-  );
-  for (const result of results) {
-    const expected = expectedById.get(result.logicalId);
-    if (
-      !expected ||
-      result.fileName !== expected.fileName ||
-      result.bytes !== expected.bytes ||
-      result.sha256 !== expected.sha256
-    ) {
-      throw new Error(
-        'Hardware acceptance PDF results do not match the reviewed manifest exact set.',
-      );
-    }
-  }
-  if (
-    !results.every(
-      (item) => item.usableQuestions > 0 && item.fullExamQuestionCount > 0,
-    )
-  ) {
-    throw new Error(
-      'Every hardware acceptance PDF must produce usable and Full Exam questions.',
-    );
-  }
-}
-
-function hasExactObjectKeys(value, expectedKeys) {
-  return (
-    value !== null &&
-    typeof value === 'object' &&
-    !Array.isArray(value) &&
-    Object.keys(value).sort().join('\0') === [...expectedKeys].sort().join('\0')
-  );
-}
-
-function validateBoundHardwareArtifactReference(
-  record,
-  expectedFileName,
-  label,
-  result,
-) {
-  const normalizedPath = String(record?.path ?? '').replaceAll('\\', '/');
-  if (
-    !normalizedPath ||
-    normalizedPath.split('/').at(-1)?.toLowerCase() !== expectedFileName ||
-    !Number.isInteger(record?.bytes) ||
-    record.bytes <= 0 ||
-    !/^[0-9a-f]{64}$/i.test(record?.sha256 ?? '') ||
-    record.candidateId !== result.candidateId ||
-    record.acceptanceRunId !== result.acceptance?.runId
-  ) {
-    throw new Error(
-      `Hardware evidence artifact reference is invalid or identity-mismatched: ${label}.`,
-    );
-  }
-}
-
-function readHardwareJson(path, label) {
-  try {
-    return readJson(path);
-  } catch {
-    throw new Error(`Hardware evidence artifact is not JSON: ${label}.`);
-  }
-}
-
-function validateHardwareProductionEvidence({
-  result,
-  productionSummary,
-  windowsResourceSummary,
-  windowsResourceSampling,
-  dxgiAdapters,
-}) {
-  const acceptanceWindow = hardwareAcceptanceWindow(result);
-  validateTimestampWithinHardwareAcceptance(
-    productionSummary.generated_at,
-    acceptanceWindow,
-    'productionSummary.generated_at',
-  );
-  validateTimestampWithinHardwareAcceptance(
-    windowsResourceSummary.finalized_at,
-    acceptanceWindow,
-    'gpuTelemetry.windowsResourceSummary.finalized_at',
-  );
-  validateTimestampWithinHardwareAcceptance(
-    dxgiAdapters.generated_at,
-    acceptanceWindow,
-    'gpuTelemetry.windowsDxgiAdapters.generated_at',
-  );
-  if (
-    productionSummary.schema_version !== 6 ||
-    productionSummary.status !== 'passed' ||
-    productionSummary.provider_policy !== 'ollama-only-alpha' ||
-    productionSummary.provider_preference !== 'ollama' ||
-    productionSummary.configured_provider !== 'ollama' ||
-    productionSummary.llm_provider !== 'ollama' ||
-    productionSummary.policy_model !== 'qwen3.5:4b' ||
-    productionSummary.selected_model !== 'qwen3.5:4b' ||
-    productionSummary.configured_model !== 'qwen3.5:4b' ||
-    productionSummary.effective_model !== 'qwen3.5:4b' ||
-    productionSummary.provider_fallback_reason !== null ||
-    productionSummary.model_fallback_reason !== null ||
-    productionSummary.fallback_reason !== null ||
-    !Number.isInteger(productionSummary.full_exam_question_count) ||
-    productionSummary.full_exam_question_count <= 0
-  ) {
-    throw new Error(
-      'Hardware production summary does not prove the exact Ollama alpha contract.',
-    );
-  }
-  const executionMode = productionSummary.execution_mode;
-  const executionWarning = productionSummary.execution_warning;
-  if (
-    !(
-      (executionMode === 'auto' && executionWarning === null) ||
-      (executionMode === 'cpu' &&
-        typeof executionWarning === 'string' &&
-        executionWarning.trim().length > 0)
-    )
-  ) {
-    throw new Error(
-      'Hardware production summary execution mode or warning is invalid.',
-    );
-  }
-  const llmHealth = productionSummary.llm_health;
-  if (
-    !llmHealth ||
-    llmHealth.provider !== 'ollama' ||
-    llmHealth.available !== true ||
-    llmHealth.configured_model !== 'qwen3.5:4b' ||
-    llmHealth.effective_model !== 'qwen3.5:4b' ||
-    llmHealth.fallback_reason !== null ||
-    llmHealth.execution_mode !== executionMode ||
-    llmHealth.execution_warning !== executionWarning
-  ) {
-    throw new Error(
-      'Hardware production summary health execution metadata is inconsistent.',
-    );
-  }
-  validateGenerationReadiness(
-    productionSummary.generation_ready_at_start,
-    acceptanceWindow,
-  );
-  validateResourceRelease(
-    productionSummary.resources_released_at_end,
-    acceptanceWindow,
-  );
-  const requiredChecks = [
-    'ollama_provider_exact',
-    'ollama_model_exact',
-    'provider_no_fallback',
-    'model_no_fallback',
-    'execution_mode_supported',
-    'execution_warning_consistent',
-    'generation_ready_at_start',
-    'resources_released_at_end',
-    'full_exam_questions_present',
-  ];
-  if (
-    !requiredChecks.every(
-      (key) => productionSummary.checks?.[key] === true,
-    ) ||
-    !Array.isArray(productionSummary.succeeded_jobs) ||
-    productionSummary.succeeded_jobs.length === 0 ||
-    !productionSummary.succeeded_jobs.every(
-      (job) =>
-        job?.configured_provider === 'ollama' &&
-        job.effective_provider === 'ollama' &&
-        job.configured_model === 'qwen3.5:4b' &&
-        job.effective_model === 'qwen3.5:4b' &&
-        job.fallback_reason === null &&
-        job.attribution_complete === true,
-    )
-  ) {
-    throw new Error(
-      'Hardware production summary attribution or release checks are incomplete.',
-    );
-  }
-  validateTelemetryArtifactDeclarations(
-    productionSummary.artifacts?.resource_sampling,
-    'productionSummary.artifacts.resource_sampling',
-  );
-  validateTelemetryArtifactDeclarations(
-    windowsResourceSummary.artifacts,
-    'gpuTelemetry.windowsResourceSummary.artifacts',
-  );
-  const adaptersByLuid = validateHardwareDxgiAdapters(dxgiAdapters);
-  const rawGpuEvidence = deriveHardwareGpuRoutingFromWindowsCsv(
-    windowsResourceSampling,
-    adaptersByLuid,
-    acceptanceWindow,
-  );
-  const summaryGpuEvidence = deriveHardwareGpuRoutingFromResourceSummary(
-    windowsResourceSummary,
-    adaptersByLuid,
-  );
-  assertHardwareGpuUsagesMatch(rawGpuEvidence.usages, summaryGpuEvidence.usages);
-  assertHardwareGpuRouting(
-    summaryGpuEvidence.routing,
-    rawGpuEvidence.routing,
-    'gpuTelemetry.windowsResourceSummary.named_target_process_gpu_usage',
-  );
-  const routing = rawGpuEvidence.routing;
-  assertHardwareGpuRouting(
-    windowsResourceSummary.gpu_routing_checks,
-    routing,
-    'gpuTelemetry.windowsResourceSummary.gpu_routing_checks',
-  );
-  assertHardwareGpuRouting(
-    productionSummary.gpu_routing_checks,
-    routing,
-    'productionSummary.gpu_routing_checks',
-  );
-  assertHardwareGpuRoutingChecks(
-    productionSummary.checks,
-    routing,
-    'productionSummary.checks',
-  );
-}
-
-function hardwareAcceptanceWindow(result) {
-  return {
-    startedAt: Date.parse(result.acceptance.startedAt),
-    completedAt: Date.parse(result.acceptance.completedAt),
-  };
-}
-
-function validateTimestampWithinHardwareAcceptance(value, window, label) {
-  const timestamp = Date.parse(String(value ?? ''));
-  if (
-    !Number.isFinite(timestamp) ||
-    timestamp < window.startedAt ||
-    timestamp > window.completedAt
-  ) {
-    throw new Error(`Hardware evidence timestamp is stale or invalid: ${label}.`);
-  }
-  return timestamp;
-}
-
-function validateGenerationReadiness(snapshot, window) {
-  const selection = snapshot?.provider_selection;
-  validateTimestampWithinHardwareAcceptance(
-    snapshot?.captured_at,
-    window,
-    'productionSummary.generation_ready_at_start.captured_at',
-  );
-  if (
-    snapshot?.ready !== true ||
-    !Array.isArray(snapshot.blockers) ||
-    snapshot.blockers.length !== 0 ||
-    selection?.preference !== 'ollama' ||
-    selection.selected_provider !== 'ollama' ||
-    selection.effective_provider !== 'ollama' ||
-    selection.configured_model !== 'qwen3.5:4b' ||
-    selection.effective_model !== 'qwen3.5:4b' ||
-    selection.fallback_reason !== null
-  ) {
-    throw new Error(
-      'Hardware production summary generation readiness is invalid.',
-    );
-  }
-}
-
-function validateResourceRelease(snapshot, window) {
-  const preClose = validateTimestampWithinHardwareAcceptance(
-    snapshot?.pre_close_captured_at,
-    window,
-    'productionSummary.resources_released_at_end.pre_close_captured_at',
-  );
-  const captured = validateTimestampWithinHardwareAcceptance(
-    snapshot?.captured_at,
-    window,
-    'productionSummary.resources_released_at_end.captured_at',
-  );
-  if (
-    snapshot?.released !== true ||
-    snapshot.pre_close_release_proven !== true ||
-    snapshot.pre_close_stable_empty_snapshots < 2 ||
-    snapshot.stable_empty_snapshots < 2 ||
-    !Array.isArray(snapshot.alive_owned_processes) ||
-    snapshot.alive_owned_processes.length !== 0 ||
-    preClose > captured
-  ) {
-    throw new Error(
-      'Hardware production summary resource release evidence is invalid.',
-    );
-  }
-}
-
-function validateTelemetryArtifactDeclarations(artifacts, label) {
-  for (const [key, expectedFileName] of Object.entries(
-    HARDWARE_GPU_TELEMETRY_FILES,
-  )) {
-    const artifactKey = {
-      windowsResourceSummary: 'windows_summary_json',
-      windowsResourceSampling: 'windows_counters_csv',
-      windowsDxgiAdapters: 'windows_dxgi_adapters_json',
-    }[key];
-    const fileName = String(artifacts?.[artifactKey] ?? '')
-      .replaceAll('\\', '/')
-      .split('/')
-      .at(-1)
-      ?.toLowerCase();
-    if (fileName !== expectedFileName) {
-      throw new Error(`Hardware telemetry declaration is invalid: ${label}.`);
-    }
-  }
-}
-
-function parseStrictCsv(csv, label) {
-  const rows = [];
-  let row = [];
-  let field = '';
-  let quoted = false;
-  const input = String(csv).replace(/^\uFEFF/, '');
-  for (let index = 0; index < input.length; index += 1) {
-    const character = input[index];
-    if (quoted) {
-      if (character === '"') {
-        if (input[index + 1] === '"') {
-          field += '"';
-          index += 1;
-        } else {
-          quoted = false;
-        }
-      } else {
-        field += character;
-      }
-      continue;
-    }
-    if (character === '"') {
-      if (field.length > 0) {
-        throw new Error(`Hardware ${label} CSV has an invalid quote.`);
-      }
-      quoted = true;
-    } else if (character === ',') {
-      row.push(field);
-      field = '';
-    } else if (character === '\r' || character === '\n') {
-      if (character === '\r' && input[index + 1] === '\n') index += 1;
-      row.push(field);
-      field = '';
-      if (row.some((value) => value.length > 0)) rows.push(row);
-      row = [];
-    } else {
-      field += character;
-    }
-  }
-  if (quoted) {
-    throw new Error(`Hardware ${label} CSV has an unterminated quote.`);
-  }
-  row.push(field);
-  if (row.some((value) => value.length > 0)) rows.push(row);
-  if (rows.length < 2) {
-    throw new Error(`Hardware ${label} CSV is incomplete.`);
-  }
-  const width = rows[0].length;
-  if (rows.some((value) => value.length !== width)) {
-    throw new Error(`Hardware ${label} CSV has inconsistent columns.`);
-  }
-  return rows;
-}
-
-function deriveHardwareGpuRoutingFromWindowsCsv(csv, adaptersByLuid, window) {
-  const rows = parseStrictCsv(csv, 'Windows GPU telemetry');
-  const expectedHeader = [
-    'timestamp',
-    'source',
-    'path',
-    'pid',
-    'name',
-    'metric',
-    'value',
-    'unit',
-  ];
-  const header = rows[0].map((value) => value.trim().toLowerCase());
-  if (header.join('\0') !== expectedHeader.join('\0')) {
-    throw new Error('Hardware Windows GPU telemetry CSV header is invalid.');
-  }
-  const records = rows.slice(1).map((values) =>
-    Object.fromEntries(expectedHeader.map((key, index) => [key, values[index]])),
-  );
-  const processNamesByPid = new Map();
-  for (const record of records) {
-    validateTimestampWithinHardwareAcceptance(
-      record.timestamp,
-      window,
-      'gpuTelemetry.windowsResourceSampling.timestamp',
-    );
-    if (record.source.toLowerCase() !== 'windows_process') continue;
-    const pid = Number(record.pid);
-    const name = record.name.trim().toLowerCase();
-    if (!Number.isInteger(pid) || pid <= 0 || !name) {
-      throw new Error('Hardware Windows process telemetry identity is invalid.');
-    }
-    const priorName = processNamesByPid.get(pid);
-    if (priorName && priorName !== name) {
-      throw new Error('Hardware Windows process telemetry PID is ambiguous.');
-    }
-    processNamesByPid.set(pid, name);
-  }
-  const usagesByIdentity = new Map();
-  const processMemoryPattern =
-    /GPU Process Memory\(pid_(\d+)_luid_(0x[0-9a-f]+_0x[0-9a-f]+)_phys_\d+\)\\([^\\]+)$/i;
-  for (const record of records) {
-    if (record.source.toLowerCase() !== 'windows_gpu_counter') continue;
-    const match = record.path.match(processMemoryPattern);
-    if (!match) continue;
-    const pid = Number(match[1]);
-    const luid = match[2].toLowerCase();
-    const name = processNamesByPid.get(pid);
-    if (!name) continue;
-    const adapterKind = adaptersByLuid.get(luid);
-    if (!adapterKind) {
-      throw new Error('Hardware raw GPU telemetry has an unmapped LUID.');
-    }
-    const metric = normalizeHardwareGpuMetric(match[3]);
-    const value = Number(record.value);
-    if (!metric || !Number.isFinite(value) || value < 0) {
-      throw new Error('Hardware raw GPU process-memory telemetry is invalid.');
-    }
-    const key = `${pid}\0${luid}\0${name}`;
-    const usage = usagesByIdentity.get(key) ?? {
-      pid,
-      luid,
-      name,
-      adapterKind,
-      metrics: {},
-    };
-    usage.metrics[metric] = Math.max(usage.metrics[metric] ?? 0, value);
-    usagesByIdentity.set(key, usage);
-  }
-  const usages = [...usagesByIdentity.values()];
-  if (!usages.some((usage) => usage.name === WINDOWSML_OCR_PROCESS)) {
-    throw new Error('Hardware Windows GPU telemetry CSV is incomplete.');
-  }
-  return { usages, routing: hardwareGpuRoutingFromUsages(usages) };
-}
-
-function normalizeHardwareGpuMetric(value) {
-  return {
-    'dedicated usage': 'dedicated_usage',
-    'shared usage': 'shared_usage',
-    'total committed': 'total_committed',
-  }[String(value).trim().toLowerCase()];
-}
-
-function validateHardwareDxgiAdapters(dxgiPayload) {
-  if (
-    dxgiPayload?.status !== 'completed' ||
-    !Array.isArray(dxgiPayload.adapters)
-  ) {
-    throw new Error('Hardware GPU telemetry records are incomplete.');
-  }
-  const adaptersByLuid = new Map();
-  for (const adapter of dxgiPayload.adapters) {
-    const luid = String(adapter?.luid ?? '').toLowerCase();
-    if (
-      !luid ||
-      adaptersByLuid.has(luid) ||
-      typeof adapter?.adapter_kind !== 'string' ||
-      adapter.adapter_kind.trim().length === 0
-    ) {
-      throw new Error('Hardware DXGI adapter identity is invalid.');
-    }
-    adaptersByLuid.set(luid, adapter.adapter_kind);
-  }
-  const requiredKinds = new Set(adaptersByLuid.values());
-  if (!requiredKinds.has('amd_igpu')) {
-    throw new Error('Hardware DXGI telemetry lacks the required AMD iGPU.');
-  }
-  return adaptersByLuid;
-}
-
-function deriveHardwareGpuRoutingFromResourceSummary(
-  resourceSummary,
-  adaptersByLuid,
-) {
-  if (!Array.isArray(resourceSummary.named_target_process_gpu_usage)) {
-    throw new Error('Hardware GPU telemetry records are incomplete.');
-  }
-  validateEmbeddedDxgiAdapters(resourceSummary.dxgi_adapters, adaptersByLuid);
-  const usages = resourceSummary.named_target_process_gpu_usage.map((usage) => {
-    const luid = String(usage?.luid ?? '').toLowerCase();
-    const adapterKind = adaptersByLuid.get(luid);
-    const pid = Number(usage?.pid);
-    if (
-      !adapterKind ||
-      !Number.isInteger(pid) ||
-      pid <= 0 ||
-      typeof usage?.name !== 'string' ||
-      (usage.adapter_kind !== undefined && usage.adapter_kind !== adapterKind)
-    ) {
-      throw new Error('Hardware process GPU telemetry has an unmapped identity.');
-    }
-    return {
-      pid,
-      luid,
-      name: usage.name.toLowerCase(),
-      adapterKind,
-      metrics: Object.fromEntries(
-        ['dedicated_usage', 'shared_usage', 'total_committed']
-          .filter((name) => usage.metrics?.[name]?.max !== undefined)
-          .map((name) => [name, usage.metrics[name].max]),
-      ),
-    };
-  });
-  return { usages, routing: hardwareGpuRoutingFromUsages(usages) };
-}
-
-function hardwareGpuRoutingFromUsages(usages) {
-  const ocrUsage = usages.filter((usage) => usage.name === WINDOWSML_OCR_PROCESS);
-  return {
-    windowsml_ocr_process_observed: ocrUsage.length > 0,
-    ocr_uses_amd_igpu: ocrUsage.some(
-      (usage) =>
-        usage.adapterKind === 'amd_igpu' &&
-        maxHardwareProcessGpuBytes(usage.metrics) > 0,
-    ),
-    gpu_luid_map_usable: usages.length > 0,
-  };
-}
-
-function assertHardwareGpuUsagesMatch(rawUsages, summaryUsages) {
-  const canonical = (usages) =>
-    usages
-      .map((usage) => ({
-        pid: usage.pid,
-        luid: usage.luid,
-        name: usage.name,
-        adapterKind: usage.adapterKind,
-        metrics: Object.fromEntries(
-          Object.entries(usage.metrics)
-            .filter(([, value]) => Number.isFinite(value))
-            .sort(([left], [right]) => left.localeCompare(right)),
-        ),
-      }))
-      .sort((left, right) =>
-        `${left.pid}\0${left.luid}\0${left.name}`.localeCompare(
-          `${right.pid}\0${right.luid}\0${right.name}`,
-        ),
-      );
-  if (JSON.stringify(canonical(rawUsages)) !== JSON.stringify(canonical(summaryUsages))) {
-    throw new Error(
-      'Hardware resource summary detailed GPU usage does not match raw Windows GPU telemetry.',
-    );
-  }
-}
-
-function validateEmbeddedDxgiAdapters(adapters, adaptersByLuid) {
-  if (!Array.isArray(adapters) || adapters.length !== adaptersByLuid.size) {
-    throw new Error('Hardware resource summary DXGI mapping does not match.');
-  }
-  for (const adapter of adapters) {
-    if (
-      adaptersByLuid.get(String(adapter?.luid ?? '').toLowerCase()) !==
-      adapter?.adapter_kind
-    ) {
-      throw new Error('Hardware resource summary DXGI mapping does not match.');
-    }
-  }
-}
-
-function maxHardwareProcessGpuBytes(metrics) {
-  let maximum = 0;
-  for (const name of ['dedicated_usage', 'shared_usage', 'total_committed']) {
-    const value = metrics?.[name]?.max ?? metrics?.[name];
-    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
-      maximum = Math.max(maximum, value);
-    }
-  }
-  return maximum;
-}
-
-function assertHardwareGpuRouting(summary, routing, label) {
-  for (const [key, expected] of Object.entries(routing)) {
-    if (summary?.[key] !== expected) {
-      throw new Error(`Hardware GPU routing evidence mismatch: ${label}.${key}.`);
-    }
-  }
-  for (const required of [
-    'windowsml_ocr_process_observed',
-    'ocr_uses_amd_igpu',
-    'gpu_luid_map_usable',
-  ]) {
-    if (routing[required] !== true) {
-      throw new Error(`Hardware GPU routing evidence failed: ${required}.`);
-    }
-  }
-}
-
-function assertHardwareGpuRoutingChecks(summary, routing, label) {
-  for (const key of [
-    'windowsml_ocr_process_observed',
-    'ocr_uses_amd_igpu',
-  ]) {
-    if (summary?.[key] !== routing[key] || routing[key] !== true) {
-      throw new Error(`Hardware GPU routing evidence mismatch: ${label}.${key}.`);
-    }
-  }
-}
-
-export function validateRecordingProbeContract(probe, result) {
-  const recordingDurationSeconds =
-    (Date.parse(result.recording.completedAt) -
-      Date.parse(result.recording.startedAt)) /
-    1000;
-  if (
-    probe.schemaVersion !== 1 ||
-    probe.acceptanceRunId !== result.acceptance.runId ||
-    probe.recording?.path !== result.recording.path ||
-    probe.recording?.bytes !== result.recording.bytes ||
-    probe.recording?.sha256 !== result.recording.sha256.toLowerCase() ||
-    !/^[0-9a-f]{64}$/i.test(probe.ffprobe?.sha256 ?? '') ||
-    !Array.isArray(probe.formatNames) ||
-    !probe.formatNames.some((name) => ['matroska', 'webm'].includes(name)) ||
-    !Number.isFinite(probe.durationSeconds) ||
-    probe.durationSeconds < 1 ||
-    probe.durationSeconds + 2 < recordingDurationSeconds ||
-    !['vp8', 'vp9', 'av1'].includes(probe.video?.codec) ||
-    !Number.isInteger(probe.video?.width) ||
-    probe.video.width <= 0 ||
-    !Number.isInteger(probe.video?.height) ||
-    probe.video.height <= 0 ||
-    !Number.isInteger(probe.video?.frameCount) ||
-    probe.video.frameCount <= 0
-  ) {
-    throw new Error(
-      'Hardware recording probe did not prove a playable WebM video.',
-    );
-  }
-  return probe;
-}
-
-function resolveEvidencePath(evidenceRoot, relativePath, label) {
-  const path = resolve(evidenceRoot, String(relativePath ?? ''));
-  const realRoot = realpathSync(evidenceRoot);
-  if (
-    !path.startsWith(`${evidenceRoot}${sep}`) ||
-    !existsSync(path) ||
-    !statSync(path).isFile() ||
-    lstatSync(path).isSymbolicLink() ||
-    !realpathSync(path).startsWith(`${realRoot}${sep}`)
-  ) {
-    throw new Error(`Hardware evidence path is invalid: ${label}.`);
-  }
-  return path;
 }
 
 export async function validateCandidateFiles(candidateRoot, candidate) {
@@ -2446,9 +1338,7 @@ function isGeneratedReleaseDocument(releaseRoot, path) {
     relativePath === 'SHA256SUMS' ||
     relativePath === 'metadata/release-metadata.json' ||
     relativePath === 'metadata/license-inventory.json' ||
-    /^metadata\/cert-prep-alpha(?:-[a-z0-9-]+)?\.(?:spdx|cdx)\.json$/.test(
-      relativePath,
-    )
+    /^metadata\/cert-prep-alpha(?:-[a-z0-9-]+)?\.spdx\.json$/.test(relativePath)
   );
 }
 

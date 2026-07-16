@@ -31,13 +31,11 @@ export function buildReleasePlan(args) {
   assertExternalConfirmations({
     publicRepository: args['public-repository-confirmed'],
     protectedReleaseEnvironment: args['release-environment-protected'],
-    hardwareRunner: args['hardware-runner-ready'],
   });
   const workspaceRoot = resolve(args['workspace-root'] ?? '.');
   const sourceVersions = assertWorkspaceVersions(workspaceRoot, plan.version);
   return {
     ...plan,
-    windowsMsiVersion: sourceVersions.windowsMsiVersion,
     sourceVersions,
   };
 }
@@ -51,7 +49,6 @@ function writeOutputs(plan, path) {
     commit_sha: plan.commitSha,
     asset_base_url: plan.assetBaseUrl,
     candidate_artifact: `cert-prep-alpha-candidate-${plan.commitSha}`,
-    release_plan_artifact: `cert-prep-alpha-plan-${plan.commitSha}`,
   };
   appendFileSync(
     path,

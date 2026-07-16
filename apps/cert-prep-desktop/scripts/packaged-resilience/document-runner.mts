@@ -10,6 +10,7 @@ import {
 } from 'node:fs';
 import { basename, join, relative } from 'node:path';
 
+import { DEFAULT_LLM_MODEL } from '../package-qa/constants.mts';
 import {
   cleanupAfterRunWithTimeout,
   forceCrashAndReconnect,
@@ -262,8 +263,6 @@ function createRunState(
     ocrProvider: 'windowsml',
     ocrPageWorkers: 1,
     llmProvider: 'auto',
-    ollamaModel: 'qwen3.5:4b',
-    ollamaFallbackModels: ['qwen3.5:2b'],
     acceptanceIsolation: true,
     candidateDistributionProfile: options.candidateDistributionProfile,
     waitForStreamingComplete: false,
@@ -272,7 +271,6 @@ function createRunState(
     productionSummary: false,
     allowOcrChunkVariance: true,
     verifyStreamingPracticeReady: false,
-    recordVideo: false,
   };
   const metrics: SmokeMetrics = {
     status: 'running',
@@ -283,9 +281,8 @@ function createRunState(
     observations: [],
     errors: [],
     llm_provider: smokeOptions.llmProvider,
-    llm_model: smokeOptions.ollamaModel,
-    llm_configured_model: smokeOptions.ollamaModel,
-    llm_fallback_models: smokeOptions.ollamaFallbackModels,
+    llm_model: DEFAULT_LLM_MODEL,
+    llm_configured_model: DEFAULT_LLM_MODEL,
     generation_readiness_at_start: unavailableGenerationReadinessSnapshot(
       'capture_not_reached',
     ),
@@ -310,7 +307,6 @@ function createRunState(
     app: null,
     appExit: null,
     resourceSampling: null,
-    videoRecording: null,
     browser: null,
     page: null,
     port: options.cdpPort,

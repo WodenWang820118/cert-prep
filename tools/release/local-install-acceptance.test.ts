@@ -109,7 +109,7 @@ test('installs NSIS into an isolated root and writes an exact atomic receipt', a
     assert.deepEqual(result.resilienceEnvironment, {
       CERT_PREP_RESILIENCE_CANDIDATE_ROOT: fixture.candidateRoot,
       CERT_PREP_RELEASE_CANDIDATE_ID: fixture.candidate.candidateId,
-      ALPHA_HARDWARE_HARNESS_SHA256: fixture.harnessSha256,
+      CERT_PREP_ACCEPTANCE_HARNESS_SHA256: fixture.harnessSha256,
       CERT_PREP_RESILIENCE_INSTALLED_EXE_PATH: fixture.installedExePath,
       CERT_PREP_RESILIENCE_INSTALL_RECEIPT_PATH: fixture.receiptPath,
       CERT_PREP_RESILIENCE_ACCEPTANCE_RUN_ID: 'acceptance-install-0001',

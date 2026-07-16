@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
+import { DEFAULT_LLM_MODEL } from '../package-qa/constants.mts';
 import {
   EXPECTED_BASELINE_CHUNKS,
   EXPECTED_BASELINE_PAGES,
@@ -12,7 +13,6 @@ import {
 } from './streaming-capture.mts';
 import { streamingJobCompletionState } from './streaming-evidence.mts';
 import { isRecord, normalizePath } from './text-utils.mts';
-import { videoEvidencePassed } from './video-evidence.mts';
 import type { PublicProcessRecord } from '../process-lifecycle/processes.mts';
 import type {
   AcceptanceIsolationSnapshot,
@@ -23,7 +23,6 @@ import type {
   SmokeRunState,
   StreamingDraftJobAttribution,
   StreamingJobCompletionState,
-  VideoArtifact,
 } from './types.mts';
 
 export interface StreamingBaselineReport {
@@ -37,7 +36,6 @@ export interface StreamingBaselineReport {
     baseline_json: string;
     baseline_markdown: string;
     screenshots: string[];
-    video_recordings?: VideoArtifact[];
     resource_sampling?: ResourceSamplingArtifacts;
   };
   input: {
@@ -53,7 +51,6 @@ export interface StreamingBaselineReport {
     llm_model: string;
     llm_configured_model: string;
     llm_effective_model: string | null;
-    llm_fallback_models: string[];
     llm_fallback_reason: string | null;
     llm_health: LlmHealthSnapshot | null;
     ocr_provider: string;
@@ -118,7 +115,6 @@ interface PackagedStreamingProductionSummary {
   selected_model: string | null;
   configured_model: string | null;
   effective_model: string | null;
-  fallback_models: string[];
   provider_fallback_reason: string | null;
   model_fallback_reason: string | null;
   /** @deprecated Use provider_fallback_reason and model_fallback_reason. */
@@ -139,7 +135,6 @@ interface PackagedStreamingProductionSummary {
     baseline_json: string;
     baseline_markdown: string;
     metrics_json: string;
-    video_recordings?: VideoArtifact[];
     resource_sampling?: ResourceSamplingArtifacts;
   };
   timings_ms: StreamingBaselineReport['timings_ms'];
@@ -255,9 +250,6 @@ export function buildStreamingBaselineReport(
             run.metrics.practice_ready_from_streamed_questions === true,
         }
       : {}),
-    ...(run.options.recordVideo
-      ? { video_recording_completed: videoEvidencePassed(run) }
-      : {}),
   };
   const status = Object.values(checks).every(Boolean) ? 'passed' : 'failed';
   const metricsPath = join(run.options.outDir, 'metrics.json');
@@ -286,9 +278,6 @@ export function buildStreamingBaselineReport(
         relative(run.options.workspaceRoot, baselineMarkdownPath),
       ),
       screenshots: run.metrics.screenshots,
-      ...(run.metrics.video_artifacts?.length
-        ? { video_recordings: run.metrics.video_artifacts }
-        : {}),
       ...(run.metrics.resource_sampling
         ? { resource_sampling: run.metrics.resource_sampling }
         : {}),
@@ -312,12 +301,10 @@ export function buildStreamingBaselineReport(
           )
         : null,
       llm_provider: run.options.llmProvider,
-      llm_model: run.options.ollamaModel,
+      llm_model: DEFAULT_LLM_MODEL,
       llm_configured_model:
-        run.metrics.llm_configured_model ?? run.options.ollamaModel,
+        run.metrics.llm_configured_model ?? DEFAULT_LLM_MODEL,
       llm_effective_model: run.metrics.llm_effective_model ?? null,
-      llm_fallback_models:
-        run.metrics.llm_fallback_models ?? run.options.ollamaFallbackModels,
       llm_fallback_reason: run.metrics.llm_fallback_reason ?? null,
       llm_health: run.metrics.llm_health ?? null,
       ocr_provider: run.options.ocrProvider,
@@ -430,7 +417,7 @@ export function buildProductionSummary(
       effectiveProvider,
       configuredModel,
       effectiveModel,
-      run.options.ollamaModel,
+      DEFAULT_LLM_MODEL,
       report.runtime.llm_provider,
     ),
     final_job_evidence_complete:
@@ -460,8 +447,8 @@ export function buildProductionSummary(
     ocr_chunks_present: acceptedOcrChunkCount(run),
     ollama_provider_exact: effectiveProvider === 'ollama' && exactOllamaJobs,
     ollama_model_exact:
-      configuredModel === run.options.ollamaModel &&
-      effectiveModel === run.options.ollamaModel,
+      configuredModel === DEFAULT_LLM_MODEL &&
+      effectiveModel === DEFAULT_LLM_MODEL,
     provider_no_fallback: providerFallbackReason === null,
     model_no_fallback: modelFallbackReason === null,
     execution_mode_supported:
@@ -475,11 +462,7 @@ export function buildProductionSummary(
       effectiveModel !== null && report.streaming.usable_question_count > 0,
     streaming_practice_ready:
       report.streaming.practice_ready_from_streamed_questions,
-    ...(run.options.recordVideo
-      ? { video_recording_completed: videoEvidencePassed(run) }
-      : {}),
   };
-  Object.assign(checks, providerRoutingChecks(run, gpuRoutingChecks));
   checks.acceptance_fresh_run_isolation = acceptanceIsolationPassed(
     run.metrics.acceptance_isolation_at_launch,
   );
@@ -504,8 +487,6 @@ export function buildProductionSummary(
     configured_provider: configuredProvider,
     configured_model: configuredModel,
     effective_model: effectiveModel,
-    fallback_models:
-      run.metrics.llm_fallback_models ?? report.runtime.llm_fallback_models,
     provider_fallback_reason: providerFallbackReason,
     model_fallback_reason: modelFallbackReason,
     fallback_reason: modelFallbackReason,
@@ -524,9 +505,6 @@ export function buildProductionSummary(
       baseline_json: report.artifacts.baseline_json,
       baseline_markdown: report.artifacts.baseline_markdown,
       metrics_json: report.artifacts.metrics_json,
-      ...(report.artifacts.video_recordings?.length
-        ? { video_recordings: report.artifacts.video_recordings }
-        : {}),
       ...(report.artifacts.resource_sampling
         ? { resource_sampling: report.artifacts.resource_sampling }
         : {}),
@@ -658,26 +636,6 @@ function acceptanceIsolationPassed(
   );
 }
 
-function providerRoutingChecks(
-  run: SmokeRunState,
-  gpuRoutingChecks: GpuRoutingChecks | null,
-): Record<string, boolean> {
-  if (run.options.ocrProvider === 'windowsml') {
-    return {
-      windowsml_ocr_process_observed: routingBoolean(
-        gpuRoutingChecks,
-        'windowsml_ocr_process_observed',
-      ),
-      ocr_uses_amd_igpu: routingBoolean(gpuRoutingChecks, 'ocr_uses_amd_igpu'),
-      gpu_luid_map_usable: routingBoolean(
-        gpuRoutingChecks,
-        'gpu_luid_map_usable',
-      ),
-    };
-  }
-  return {};
-}
-
 function renderStreamingBaselineMarkdown(
   report: StreamingBaselineReport,
 ): string {
@@ -704,7 +662,6 @@ Artifacts:
 - Metrics: ${report.artifacts.metrics_json}
 - Baseline JSON: ${report.artifacts.baseline_json}
 - Screenshots: ${report.artifacts.screenshots.length}
-- Video recordings: ${report.artifacts.video_recordings?.length ?? 0}
 ${renderResourceSamplingMarkdown(report.artifacts.resource_sampling)}
 `;
 }
@@ -757,13 +714,6 @@ function readGpuRoutingChecks(
     ocr_uses_amd_igpu: payload.ocr_uses_amd_igpu === true,
     gpu_luid_map_usable: payload.gpu_luid_map_usable === true,
   };
-}
-
-function routingBoolean(
-  checks: GpuRoutingChecks | null,
-  key: keyof GpuRoutingChecks,
-): boolean {
-  return checks?.[key] === true;
 }
 
 function recordField(
