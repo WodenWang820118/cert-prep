@@ -228,11 +228,11 @@ and process cleanup.
 - `sessionRestartPassed` now requires its own hashed JSON evidence covering one
   answer, first restart, explicit Resume, completion, and a clean second
   restart.
-- The same commit added the real-only
+- At that historical checkpoint, the same commit added the now-retired
   `packaged-streaming-ollama-fallback-windowsml` target with fail-closed
-  declined-terms, unsupported-XDNA2, and old-driver trigger contracts. The
-  validators alone did not close a real provider gate; the exact local
-  candidate execution is recorded below.
+  declined-terms, unsupported-XDNA2, and old-driver trigger contracts. This is
+  past coverage only; neither that target nor an XDNA2 lane is a current product
+  or release requirement.
 - Commit `bfb7ca6` pinned Node 24, pnpm 10.33.2, Python 3.12/uv, and Rust stable,
   and added Windows CI plus the isolated real-backend E2E lane. The exact
   successful hosted code-checkpoint result is recorded in the public repository
@@ -363,9 +363,9 @@ and process cleanup.
   `127.0.0.1:11434`.
 - This closes only the exact local nonpublishable install, resilience,
   forced-provider, combined-verifier, cleanup, and uninstall checkpoint. It
-  does not substitute for hosted MSI/NSIS clean installs, four-PDF B3,
-  protected XDNA2 evidence, a public OCR asset, or Public Alpha release
-  approval.
+  does not substitute for hosted MSI/NSIS clean installs, protected
+  `public-alpha-b3-v1` four-PDF hardware evidence, a public OCR asset, or Public
+  Alpha release approval.
 
 ### Additional Local Release Prerequisites (2026-07-14)
 
@@ -388,7 +388,8 @@ and process cleanup.
   `c76565bd0d2de60e7938f74da89fc8758b8274ad47c4209a92eb2cdaa473438b`.
 - These are committed local prerequisites only. They do not establish an
   anonymous public OCR asset, a frozen exact candidate, hosted MSI/NSIS clean
-  installs, protected AMD/XDNA2 evidence, or Public Alpha readiness.
+  installs, protected `public-alpha-b3-v1` four-PDF hardware evidence from the
+  AMD iGPU/NVIDIA dGPU lane, or Public Alpha readiness.
 
 ### Public Repository And Hosted Quality Checkpoint (2026-07-16)
 
@@ -408,9 +409,10 @@ and process cleanup.
   `Portable quality` and `Windows product quality`. The Windows job executed
   and passed the shared/backend/OCR/Ollama/Angular aggregate, desktop script
   type checking, package QA, and Cargo tests. This closes the hosted
-  cross-runner quality gate only; it is not an anonymous OCR prerelease,
-  checkout-free MSI/NSIS result, protected XDNA2/B3 result, or release
-  approval.
+  cross-runner quality checkpoint for that historical commit only; it does not
+  close the selected exact-release-commit quality/candidate gate and is not an
+  anonymous OCR prerelease, checkout-free MSI/NSIS result, protected
+  `public-alpha-b3-v1` hardware result, or release approval.
 
 ### Hardware Evidence Contract Closeout (2026-07-16)
 
@@ -432,6 +434,9 @@ and process cleanup.
   Python tests plus Ruff, and `cert-prep-desktop:package-qa-test` with 206 tests
   passed, one Windows permission-dependent skip, and script type checking.
   Nx format and `git diff --check` also passed.
+- The current protected hardware contract binds WindowsML OCR to the AMD iGPU
+  and Ollama reasoning to the NVIDIA dGPU. XDNA2, VitisAI, and NPU capability or
+  telemetry are neither protected inputs nor acceptance gates.
 - This closes the contract implementation only. It does not provision the
   protected runner or harness and is not a four-PDF hardware run, clean-install
   result, canonical release run, or Public Alpha readiness claim.
@@ -487,11 +492,13 @@ prerelease URL.
 
 ## Open Risks
 
-- Public alpha publication remains blocked until the protected clean-snapshot
-  AMD/XDNA2 runner, reviewed external harness, PATH-provisioned `ffprobe`,
-  anonymous OCR prerelease asset, checkout-free clean MSI/NSIS lanes, and
-  protected hardware acceptance exist. The release must keep the Ollama-only
-  Alpha contract rather than weakening the gate.
+- Public alpha publication remains blocked until an online protected
+  clean-snapshot Windows x64 runner exposes a supported AMD iGPU for WindowsML
+  OCR and an NVIDIA dGPU for Ollama reasoning. The reviewed external harness,
+  PATH-provisioned `ffprobe`, anonymous OCR prerelease asset, checkout-free
+  clean MSI/NSIS lanes, and protected hardware acceptance must also exist. The
+  release must keep the Ollama-only Alpha contract rather than weakening the
+  gate.
 - The protected hardware gate must prove four PDFs, WindowsML/iGPU OCR, exact
   effective Ollama `qwen3.5:4b` attribution, usable and Full Exam counts above
   zero, Ollama reasoning on the Nvidia dGPU, restart/cancellation cleanup with

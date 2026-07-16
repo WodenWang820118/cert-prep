@@ -98,8 +98,9 @@ bounded local workers.
   Nvidia `gpu:0` on this Windows laptop.
 - Pure CPU OCR must stay visible as fallback evidence, not a silent default for
   the iGPU lane.
-- PaddleOCR NPU, NPU prepass, WindowsML device-policy proof paths, and old
-  iGPU provider surfaces are retired.
+- PaddleOCR NPU/XDNA2 provider, runtime, prepass, and acceptance paths, legacy
+  WindowsML device-policy proof flags, and old iGPU provider surfaces are
+  retired; none is a Public Alpha requirement.
 
 ## WindowsML Package Ownership
 
@@ -301,14 +302,16 @@ selected document` for the selected document after the production streaming
   no-route real-backend project passed 5 tests. The Python 3.12 WindowsML runtime build
   also passed its executable self-test.
 - These results retire the code-level causes behind the 2026-06-26 evidence
-  inconsistency, but they do not close the packaged B3 gate. Closure still
-  requires the exact public candidate SHA on the protected clean-snapshot
-  XDNA2 lane: four PDFs, effective Ollama `qwen3.5:4b`, no provider/model
-  fallback, usable questions above zero, Full Exam count above zero, resource
-  release, restart/cancel cleanup with individually hashed evidence, and a
-  completed-run-bound WebM whose stream/duration/frames pass the protected
-  runner's uniquely resolved `ffprobe`, matched to its reviewed SHA-256 during
-  preflight and rehashed by the verifier.
+  inconsistency, but they do not close the protected `public-alpha-b3-v1`
+  hardware gate. Closure still requires the exact public candidate SHA on a
+  protected clean-snapshot Windows x64 lane where WindowsML OCR is observed on
+  the AMD iGPU and Ollama reasoning is observed on the NVIDIA dGPU: four PDFs,
+  effective Ollama `qwen3.5:4b`, no provider/model fallback, usable questions
+  above zero, Full Exam count above zero, resource release, restart/cancel
+  cleanup with individually hashed evidence, and a completed-run-bound WebM
+  whose stream/duration/frames pass the protected runner's uniquely resolved
+  `ffprobe`, matched to its reviewed SHA-256 during preflight and rehashed by
+  the verifier.
 
 2026-07-14 local cancellation and integration closeout:
 
@@ -411,23 +414,25 @@ selected document` for the selected document after the production streaming
   acceptance checks rejected overrides and fakes and proved model and owned
   process release.
 - These results close the current local nonpublishable resilience and
-  forced-provider checkpoints only. They are not a four-PDF B3 result, hosted
-  CI result, protected XDNA2 result, publishable-candidate result, or release
-  claim.
+  forced-provider checkpoints only. They are not a protected
+  `public-alpha-b3-v1` four-PDF hardware result, hosted CI result,
+  publishable-candidate result, or release claim.
 
 ### Hardware Input And Routing Contract Closeout (2026-07-16)
 
 - Commit `58a156c2b0d703c2170e38c8edbf9fb63681fd2e` makes the Alpha
   routing decision fail closed from raw evidence. Acceptance requires observed
   WindowsML OCR use on the AMD iGPU, OCR Nvidia process memory at or below the
-  64 MiB gate, and Ollama reasoning use on the Nvidia dGPU. Missing AMD/Nvidia
-  adapters, unmapped LUIDs, raw/summary contradictions, reused paths, stale
-  timestamps, digest drift, or candidate/run identity drift are rejected.
-- The exact B3 suite is `public-alpha-b3-v1`: four reviewed logical IDs map to
-  exact PDF filenames, byte counts, and SHA-256 values. Hardware results must
-  repeat those identities and prove positive usable-question and Full Exam
-  counts for every PDF; missing, extra, duplicate, renamed, byte-drifted, or
-  digest-drifted inputs fail before question counts are accepted.
+  64 MiB gate, and Ollama reasoning use on the Nvidia dGPU. XDNA2, VitisAI, and
+  NPU capability or telemetry are not part of this Alpha contract. Missing
+  AMD/Nvidia adapters, unmapped LUIDs, raw/summary contradictions, reused paths,
+  stale timestamps, digest drift, or candidate/run identity drift are rejected.
+- The exact protected hardware suite ID is `public-alpha-b3-v1`: four reviewed
+  logical IDs map to exact PDF filenames, byte counts, and SHA-256 values.
+  Hardware results must repeat those identities and prove positive
+  usable-question and Full Exam counts for every PDF; missing, extra,
+  duplicate, renamed, byte-drifted, or digest-drifted inputs fail before
+  question counts are accepted.
 - Contract verification passed 81 Node release tests, 21 Python release tests,
   Ruff, script type checking, and 206 package-QA tests with one
   Windows-permission skip. This remains implementation evidence, not the
@@ -451,8 +456,9 @@ selected document` for the selected document after the production streaming
   Ollama, and Angular Nx checks, mocked and real-backend browser integration,
   desktop script type checking, package QA, and Cargo tests.
 - This closes cross-runner quality only. It does not close the four-PDF
-  Ollama/XDNA2 B3 gate, create a publishable candidate, or replace protected
-  recorded hardware evidence.
+  protected `public-alpha-b3-v1` hardware gate or the selected
+  exact-release-commit quality/candidate gate, create a publishable candidate,
+  or replace protected recorded hardware evidence.
 
 Resource artifacts for packaged runs:
 
@@ -469,9 +475,8 @@ Resource artifacts for packaged runs:
 
 Do not use or recreate these in current OCR work:
 
-- standalone AMD NPU OCR provider/runtime/package paths
-- WindowsML NPU prepass
-- WindowsML device-policy proof flags
+- standalone AMD NPU/XDNA2 OCR provider, runtime, package, and acceptance paths
+- WindowsML NPU prepass and legacy device-policy proof flags
 - old iGPU provider targets or runtime manifests
 - backend shim/re-export paths for package-owned OCR runtimes
 
@@ -528,9 +533,11 @@ Do not use or recreate these in current OCR work:
 ## Active Backlog
 
 `.agents/TODOS/alpha-launch-readiness.md` remains active until the public OCR
-asset, checkout-free MSI/NSIS clean installs, and protected AMD/XDNA2 recorded
-acceptance gates pass. Local implementation evidence must not be promoted to a
-Public Alpha-ready claim before those external gates close.
+asset, checkout-free MSI/NSIS clean installs, and protected
+`public-alpha-b3-v1` recorded hardware acceptance gate pass. That hardware gate
+must prove WindowsML OCR on the AMD iGPU and Ollama reasoning on the NVIDIA
+dGPU. Local implementation evidence must not be promoted to a Public
+Alpha-ready claim before those external gates close.
 
 Deferred comparator reruns remain user-controlled and should only run after the
 target models are intentionally installed.

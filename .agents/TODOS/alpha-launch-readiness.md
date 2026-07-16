@@ -13,8 +13,10 @@ local/hosted evidence belongs in
 - The Windows product is the Angular application inside the Tauri desktop
   shell, with a bundled Python backend runtime.
 - WindowsML OCR is a separately downloaded, digest-pinned GitHub Release
-  runtime. Ollama is the only Alpha reasoning adapter and remains an explicit
-  external runtime/model dependency.
+  runtime backed by `DmlExecutionProvider + CPUExecutionProvider`; its protected
+  hardware gate requires observed use of a supported AMD iGPU. Ollama is the
+  only Alpha reasoning adapter and remains an explicit external runtime/model
+  dependency.
 - Provider-neutral ports, lazy construction, selection, health, and
   configured/effective attribution remain extension points. Adding another
   provider is not an Alpha task.
@@ -44,10 +46,11 @@ local/hosted evidence belongs in
 
 - [ ] Bring an online clean-snapshot Windows x64 runner into the
       `alpha-hardware` environment with labels `self-hosted`, `Windows`, `X64`,
-      and `cert-prep-alpha-hardware`. The machine must expose the supported AMD
-      WindowsML/XDNA2 OCR lane and an NVIDIA dGPU usable by Ollama reasoning,
-      and it must return to a known clean snapshot with no Cert Prep-owned
-      process, install, app-data, or port residue before each acceptance run.
+      and `cert-prep-alpha-hardware`. The machine must expose a supported AMD
+      iGPU used by the WindowsML OCR runtime and an NVIDIA dGPU usable by Ollama
+      reasoning, and it must return to a known clean snapshot with no Cert
+      Prep-owned process, install, app-data, or port residue before each
+      acceptance run.
 
 - [ ] Provision Ollama and `qwen3.5:4b`, the external hardware harness, and
       exactly one `ffprobe` application on that runner's `PATH`. Provision the
@@ -63,11 +66,6 @@ local/hosted evidence belongs in
       six machine inputs to four without changing the acceptance semantics. Set
       repository variable `ALPHA_HARDWARE_RUNNER_READY=true` only after this
       verification passes.
-
-The current candidate still lacks the full hardware evidence producer,
-Playwright runtime, and packaged-flow/resilience script graph. Replacing the
-external harness with a repo-owned candidate-bound entrypoint is the next CI
-simplification phase, not a completed Alpha gate.
 
 ### 2. Freeze One Canonical Release Run
 
@@ -145,10 +143,11 @@ simplification phase, not a completed Alpha gate.
       SHA-256 verification instructions; never claim production or GA
       readiness.
 
-- [ ] If any post-bootstrap gate fails, verify that
-      `cleanup-incomplete-prerelease` removes only the OCR bootstrap owned by
-      that workflow run and never deletes a finalized or foreign release. Keep
-      all release checkboxes open until a new canonical run passes end to end.
+If any post-bootstrap gate fails, treat that workflow run as failed and verify
+that `cleanup-incomplete-prerelease` removes only the OCR bootstrap owned by that
+run without deleting a finalized or foreign release before retrying. Do not
+carry evidence from the failed run into final closeout; this is a conditional
+recovery rule, not an independent launch checkbox.
 
 ## Final Closeout
 
