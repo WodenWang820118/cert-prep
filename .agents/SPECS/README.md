@@ -8,7 +8,7 @@ long-lived ownership domains, not by temporary implementation slices.
 - `domains/product-ux.md` - product baseline, UI system, workbench screens,
   async parsing UX, practice, review, and user-facing acceptance evidence.
 - `domains/parsing-reasoning.md` - OCR runtime lanes, WindowsML package
-  ownership, streaming reasoning, FastFlowLM policy, runtime-node candidates,
+  ownership, streaming reasoning, provider policy, runtime-node candidates,
   and parsing/reasoning acceptance gates.
 - `domains/runtime-packaging.md` - Tauri packaging, downloadable runtime
   artifacts, runtime health/install UX, package QA, artifact sizes, and process

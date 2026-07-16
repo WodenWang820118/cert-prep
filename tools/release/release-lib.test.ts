@@ -190,7 +190,6 @@ test('external alpha prerequisites are fail-closed', () => {
       assertExternalConfirmations({
         publicRepository: 'true',
         protectedReleaseEnvironment: 'false',
-        fastFlowTerms: 'true',
         hardwareRunner: 'false',
       }),
     /protectedReleaseEnvironment, hardwareRunner/,
@@ -275,7 +274,6 @@ test('metadata validates every source release version', () => {
       'workspace-root': root,
       'public-repository-confirmed': 'true',
       'release-environment-protected': 'true',
-      'fastflow-terms-confirmed': 'true',
       'hardware-runner-ready': 'true',
     });
     assert.deepEqual(plan.sourceVersions, {
@@ -569,7 +567,7 @@ test('no-clobber planner only reuses identical digests', () => {
   );
 });
 
-test('hardware evidence requires exact FastFlow attribution and four PDFs', () => {
+test('hardware evidence requires exact Ollama attribution and four PDFs', () => {
   const plan = deriveReleaseIdentity({
     eventName: 'workflow_dispatch',
     refName: 'main',
@@ -587,8 +585,8 @@ test('hardware evidence requires exact FastFlow attribution and four PDFs', () =
     harnessSha256: 'c'.repeat(64),
     cleanSnapshot: true,
     windowsMlProvider: 'windowsml',
-    configuredProvider: 'fastflowlm',
-    effectiveProvider: 'fastflowlm',
+    configuredProvider: 'ollama',
+    effectiveProvider: 'ollama',
     configuredModel: 'qwen3.5:4b',
     effectiveModel: 'qwen3.5:4b',
     providerFallback: false,

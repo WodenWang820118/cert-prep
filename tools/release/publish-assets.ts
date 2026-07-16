@@ -614,7 +614,7 @@ function writeNotes(plan, publicationState, publicationOwner, candidateId) {
   const body =
     publicationState === 'ocr-bootstrap'
       ? `# Cert Prep ${plan.version}\n\nThis is the OCR bootstrap stage for an unsigned public alpha. Installer assets are intentionally withheld until clean-install and protected hardware acceptance pass.\n\nThe WindowsML OCR asset is public so clean Windows runners can verify anonymous download and SHA-256 integrity.\n\n${marker}\n${stateMarker}\n`
-      : `# Cert Prep ${plan.version}\n\nPublic Windows 11 x64 alpha. This build is **unsigned** and Windows SmartScreen is expected to warn. Verify downloads against \`SHA256SUMS\` before installing.\n\nThis remains an Alpha, not a production/GA release. FastFlowLM is downloaded only from its official channel after explicit terms acceptance and is not redistributed in these assets.\n\n${marker}\n${stateMarker}\n`;
+      : `# Cert Prep ${plan.version}\n\nPublic Windows 11 x64 alpha. This build is **unsigned** and Windows SmartScreen is expected to warn. Verify downloads against \`SHA256SUMS\` before installing.\n\nThis remains an Alpha, not a production/GA release. The supported Alpha reasoning runtime is Ollama.\n\n${marker}\n${stateMarker}\n`;
   writeFileSync(path, body, 'utf8');
   return path;
 }

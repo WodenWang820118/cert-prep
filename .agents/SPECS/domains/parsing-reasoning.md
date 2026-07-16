@@ -14,9 +14,13 @@ telemetry, and artifact-backed QA evidence for packaged desktop flows.
 - OCR runtime process: `cert-prep-ocr-windowsml-runtime.exe`.
 - OCR device goal: WindowsML-loaded AMD iGPU, with CPU fallback kept visible in
   health/evidence when unsupported operators require it.
-- LLM provider policy: `auto`; compatible XDNA2 systems prefer `fastflowlm`,
-  while unsupported hardware, an old driver, or declined FastFlow terms routes
-  onboarding to `ollama`.
+- LLM provider policy: `auto` resolves to the currently supported Ollama
+  implementation. Public Alpha evidence must report configured/effective
+  provider `ollama`.
+- Provider-neutral ports, lazy provider construction, selection metadata,
+  health, and generation attribution remain extension points for future local
+  providers. No retired provider-specific settings, runtime kinds, onboarding,
+  or compatibility shims are retained.
 - LLM model: `qwen3.5:4b`, with `qwen3.5:2b` as the explicit fallback model.
 - Direct CLI test target:
   `pnpm nx run cert-prep-backend:streaming-cli-test`.
@@ -45,8 +49,7 @@ LLM nodes:
 
 | Platform | Provider     | Target model | Status                     | Accelerator                    |
 | -------- | ------------ | ------------ | -------------------------- | ------------------------------ |
-| Windows  | `fastflowlm` | `qwen3.5:4b` | default                    | OpenAI-compatible local server |
-| Windows  | `ollama`     | `qwen3.5:4b` | override                   | local Ollama                   |
+| Windows  | `ollama`     | `qwen3.5:4b` | default                    | local Ollama                   |
 | Windows  | `ollama`     | `qwen3.5:9b` | hardware-gated override    | local Ollama                   |
 | macOS    | `ollama`     | `qwen3.5:4b` | deferred default candidate | Apple Silicon GPU/CPU          |
 | macOS    | `ollama`     | `qwen3.5:9b` | hardware-gated override    | Apple Silicon GPU/CPU          |
@@ -67,11 +70,12 @@ Fallback policy:
 1. The desktop/backend starts OCR only when a file upload requires parsing.
 2. WindowsML OCR runs PaddleOCR on the AMD iGPU lane and emits page/chunk
    progress.
-3. Reasoning waits for OCR completion, then checks the FastFlowLM model health.
+3. Reasoning waits for OCR completion, then checks the selected provider and
+   model health.
 4. If model health is blocked, the run records a visible blocker and does not
    silently install or pull models.
-5. If model health is clear, FastFlowLM generates/editable questions through
-   the streaming draft workflow.
+5. If model health is clear, the selected provider generates editable
+   questions through the streaming draft workflow.
 6. After OCR and reasoning jobs reach terminal states, the packaged smoke must
    close the OCR and reasoning background processes.
 7. New uploads are the trigger to start the OCR and reasoning processes again.
@@ -127,24 +131,15 @@ bounded local workers.
   the `qwen3.5:2b` low-resource fallback. Backend selection is authoritative;
   Angular consumes the provider-selection API and packaged scripts consume
   generated release metadata instead of copying defaults.
-- Auto-selection does not silently hide missing dependencies. Compatible
-  XDNA2 hardware with a missing FastFlow runtime/model remains selected for
-  explicit onboarding. Unsupported hardware, an unsupported driver, or
-  declined upstream terms selects Ollama. A generation failure never switches
-  providers inside the same job; the failed job remains attributed and the UI
-  offers an explicit provider change.
-- App-managed FastFlow installation is pinned to official v0.9.43: 18,577,840
-  bytes, SHA-256
-  `0b0ec2c049222bba8e15f1d4d7093f89f2f25a6beeddd03bdb1fcac69002315e`,
-  signer thumbprint `EBD8F43D1208A9F34CEC082CE94AD98D67BB2FF9`, and a valid timestamped
-  Authenticode signature. Unallowlisted executables and arbitrary PATH/cwd
-  resolution fail closed.
+- Auto-selection resolves to Ollama for the current product. Missing runtime or
+  model dependencies remain explicit onboarding states. A generation failure
+  never switches providers inside the same job; the failed job remains
+  attributed.
 - Existing draft job `provider` and `model` fields mean configured values.
   Persisted `effective_provider`, `effective_model`, and `fallback_reason`
   record what actually generated output. Draft inserts, attribution, and job
   success commit atomically.
-- Post-job provider health is not generation proof because an owned FastFlow
-  server is deliberately released after a job. Production evidence records
+- Post-job provider health is not generation proof. Production evidence records
   readiness at generation start, effective provider/model, fallback reason,
   and resource release separately.
 - `MOCK ITEMS` and practice readiness use one definition: distinct editable
@@ -173,19 +168,11 @@ bounded local workers.
   stops the spinner and exposes an actionable Retry state; stale responses may
   not overwrite a newer cancel/retry operation.
 
-- On compatible XDNA2 Windows systems, FastFlowLM is the preferred reasoning
-  provider and is treated as an OpenAI-compatible local server path. The
-  authoritative `auto` policy routes unsupported hardware, old drivers, or
-  declined FastFlow terms to Ollama onboarding.
-- FastFlowLM is used through its OpenAI-compatible server instead of shelling
-  out per prompt. Server mode matches the streaming job and health-check
-  architecture.
-- Runtime installation remains explicit. Health may detect `flm`, but it must
-  not install FastFlowLM or pull `qwen3.5:4b`.
-- Keep Ollama available as a supported provider for existing setups and tests.
-- FastFlowLM checks available system RAM before selecting the default 4B model;
-  if RAM is below the configured threshold, it tries served fallback
-  `qwen3.5:2b` and records the reason in model health.
+- Ollama is the supported reasoning provider. Runtime installation and model
+  pulls remain explicit and confirmation-gated.
+- Provider implementations compose through the generic reasoning port and
+  capability interfaces. Adding a future provider requires a new adapter and
+  selector registration, not changes to draft persistence or attribution.
 - Reasoning output is optional enrichment and must not auto-download models,
   auto-approve questions, or expose hidden chain-of-thought.
 - UI copy should say `Reasoning model` rather than hardcoding one model
@@ -194,36 +181,22 @@ bounded local workers.
   not be treated as startup defaults.
 - Reasoning comparator work must collect RAM/VRAM residency evidence before
   parameter reduction, scored bakeoff reruns, or default-model changes.
-- Packaged production summaries are provider-aware: Ollama still requires
-  Nvidia dGPU reasoning evidence, while FastFlowLM requires model health,
-  configured/effective model selection, and explicit fallback/blocker metadata.
+- Packaged production summaries remain provider-aware and require model health,
+  configured/effective selection, explicit fallback/blocker metadata, and
+  Ollama reasoning on the Nvidia dGPU while WindowsML OCR uses the AMD iGPU.
 
-## FastFlowLM Interfaces
+## Provider Extension Interfaces
 
-- Backend env:
-  - `CERT_PREP_LLM_PROVIDER=fastflowlm`
-  - `CERT_PREP_FASTFLOWLM_BASE_URL=http://127.0.0.1:52625/v1`
-  - `CERT_PREP_FASTFLOWLM_MODEL=qwen3.5:4b`
-  - `CERT_PREP_FASTFLOWLM_FALLBACK_MODELS=qwen3.5:2b`
-  - `CERT_PREP_FASTFLOWLM_PRIMARY_MIN_AVAILABLE_RAM_BYTES=6442450944`
-- Runtime expectation:
-  - User starts FastFlowLM with `flm serve qwen3.5:4b`.
-  - The backend uses `GET /v1/models` and `POST /v1/chat/completions`.
-- Existing backend API remains unchanged:
+- Stable backend API:
   - `GET /llm/health`
   - `POST /llm/model-downloads`
   - `GET /llm/model-downloads/{job_id}`
-
-FastFlowLM failure modes:
-
-- FastFlowLM not installed: health reports an unavailable runtime.
-- FastFlowLM installed but no server is running: health reports a not-running
-  reason.
-- Server running but `qwen3.5:4b` is not served: health reports
-  `model_missing`.
-- JSON-mode rejection retries once without `response_format`, then still
-  validates grounded JSON before saving questions.
-- Invalid model JSON never creates playable questions.
+- Stable internal seams: reasoning provider protocol, capability protocol,
+  lazy provider factory, generic selection result, health payload, and
+  configured/effective generation attribution.
+- A future provider owns its transport, discovery, installation policy, and
+  tests. It must not add compatibility re-exports for retired implementations.
+- Invalid provider JSON never creates playable questions.
 
 ## Direct Editable Questions
 
@@ -249,11 +222,10 @@ pipeline contract without building or launching the packaged desktop app:
 
 - Streaming reasoning jobs wait until OCR has finished parsing the uploaded
   document.
-- FastFlowLM health/model blockers are recorded before generation, without
+- Provider and model blockers are recorded before generation, without
   auto-installing or pulling models.
-- Low-RAM FastFlowLM fallback selects `qwen3.5:2b` when served and exposes a
-  RAM-specific `fallback_reason`.
-- FastFlowLM OpenAI-compatible draft generation still validates grounded JSON.
+- Ollama model selection exposes any explicit `fallback_reason`.
+- Draft generation validates grounded JSON before persistence.
 - WindowsML/iGPU policy tests keep the retired pre-WindowsML iGPU lane from
   becoming product evidence again.
 
@@ -266,8 +238,11 @@ after the WindowsML desktop package is built:
   through explicit runtime consent.
 - Resource telemetry observes `cert-prep-ocr-windowsml-runtime.exe` and records
   whether OCR used the AMD iGPU and avoided Nvidia dGPU residency.
-- Reasoning provider health reports configured/effective FastFlowLM model,
+- Reasoning provider health reports configured/effective provider and model,
   fallback model list, and blocker/fallback reason.
+- Ollama Alpha evidence reports `reasoning_uses_nvidia_dgpu=true`; CPU or AMD
+  iGPU reasoning is a fail-closed hardware-routing blocker rather than a
+  silent performance fallback.
 - Streaming jobs reach terminal states, usable questions are generated, and Full
   Exam can start from streamed questions.
 - Process cleanup reports graceful close where possible and no residual smoke
@@ -295,9 +270,8 @@ acceptance evidence.
 selected document` for the selected document after the production streaming
   run. Reconcile streaming draft persistence, project/document selection, and
   the practice query path before calling the packaged release gate closed.
-- The run did not prove the configured `qwen3.5:4b` FastFlowLM node:
-  FastFlowLM was unavailable and model-selection checks were false even though
-  the streaming job reached a terminal success state.
+- The run did not prove a supported configured/effective provider and model
+  even though the streaming job reached a terminal success state.
 - Production summaries must carry `selected_model`, `effective_model`, provider
   health, and fallback/blocker attribution whenever generated questions are
   reported.
@@ -323,7 +297,7 @@ selected document` for the selected document after the production streaming
 - These results retire the code-level causes behind the 2026-06-26 evidence
   inconsistency, but they do not close the packaged B3 gate. Closure still
   requires the exact public candidate SHA on the protected clean-snapshot
-  XDNA2 lane: four PDFs, effective FastFlow `qwen3.5:4b`, no provider/model
+  XDNA2 lane: four PDFs, effective Ollama `qwen3.5:4b`, no provider/model
   fallback, usable questions above zero, Full Exam count above zero, resource
   release, restart/cancel cleanup with individually hashed evidence, and a
   completed-run-bound WebM whose stream/duration/frames pass the protected
@@ -443,7 +417,7 @@ selected document` for the selected document after the production streaming
   Ollama, and Angular Nx checks, mocked and real-backend browser integration,
   desktop script type checking, package QA, and Cargo tests.
 - This closes cross-runner quality only. It does not close the four-PDF
-  FastFlow/XDNA2 B3 gate, create a publishable candidate, or replace protected
+  Ollama/XDNA2 B3 gate, create a publishable candidate, or replace protected
   recorded hardware evidence.
 
 Resource artifacts for packaged runs:
@@ -467,33 +441,16 @@ Do not use or recreate these in current OCR work:
 - old iGPU provider targets or runtime manifests
 - backend shim/re-export paths for package-owned OCR runtimes
 
-FastFlowLM reasoning NPU notes are separate from OCR and do not imply any
-PaddleOCR NPU implementation.
+## Provider Boundary
 
-## Provider Boundary Refactor Evidence
-
-2026-06-25 backend LLM provider refactor:
-
-- Shared primary/fallback model state now lives in `model_fallback.py` and is
-  composed by both Ollama and FastFlowLM providers.
-- Shared compact JSON, answer, confidence, fast-first prompt, and error
-  normalization now lives in `response_parsing.py`.
-- FastFlowLM HTTP, owned-server lifecycle, executable resolution, and RAM probes
-  are split into focused backend-domain modules; FastFlowLM no longer imports
-  helpers from `ollama_transport.py`.
-- Streaming and runtime-installation dispatch use provider capabilities for
-  reasoning, fast-first generation, resource release, generation startup, and
-  streaming kwargs instead of concrete provider or provider-name checks.
-- Evidence: the former `tests/test_llm.py` coverage now lives in
-  `tests/test_llm_draft_parsing.py`, `tests/test_llm_provider_settings.py`,
-  `tests/test_fastflowlm_provider.py`, `tests/test_ollama_provider.py`, and
-  `tests/test_model_downloads.py`; run those with
-  `tests/test_documents_streaming.py` and `tests/test_runtime_installations.py`
-  for the provider-boundary slice. `pnpm nx run
-cert-prep-backend:streaming-cli-test` passed 33 selected tests; `pnpm nx run
-cert-prep-backend:test --skip-nx-cache` passed 162 tests; `pnpm nx run
-cert-prep-backend:lint --skip-nx-cache` passed; and `git diff --check`
-  passed with CRLF conversion warnings only.
+- Shared model fallback, response parsing, generation capabilities, lazy
+  construction, health, and attribution remain provider-neutral.
+- Ollama is the only current product adapter. Retired provider transports,
+  installers, terms decisions, runtime kinds, settings, UI paths, desktop
+  acceptance lanes, and tests are intentionally absent.
+- A future provider must implement the existing ports and add explicit selector,
+  health, install policy, and regression coverage without concrete-provider
+  checks in streaming persistence.
 
 ## Multi-PDF Upload And AI-Inferred Practice Evidence
 

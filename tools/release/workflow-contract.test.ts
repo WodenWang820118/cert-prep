@@ -29,11 +29,11 @@ test('release workflow exposes dispatch and alpha tag triggers with confirmation
   for (const input of [
     'confirm_public_repository',
     'confirm_release_environment_protected',
-    'confirm_fastflow_terms',
     'confirm_hardware_runner_ready',
   ]) {
     assert.match(workflow, new RegExp(`${input}:`));
   }
+  assert.doesNotMatch(workflow, /fastflow.terms/i);
 });
 
 test('metadata pins repository identity and canonical release source', () => {
@@ -148,6 +148,8 @@ test('hardware gate is protected, labeled and consumes no checkout', () => {
   assert.match(body, /--ffprobe-path/);
   assert.doesNotMatch(body, /actions\/checkout@/);
   assert.match(body, /verify-hardware-result\.ts/);
+  assert.match(body, /WindowsML and Ollama acceptance/);
+  assert.doesNotMatch(body, /FastFlow acceptance/);
 });
 
 test('final publish is no-clobber, attested and contains both SBOM formats', () => {

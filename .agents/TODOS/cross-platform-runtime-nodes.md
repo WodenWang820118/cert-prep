@@ -7,7 +7,7 @@ Deferred.
 The current product lane is Windows-first:
 
 - OCR: `windowsml` through `packages/cert-prep-ocr-windowsml`.
-- LLM: `fastflowlm` with `qwen3.5:4b`.
+- LLM: `ollama` with `qwen3.5:4b` behind provider-neutral abstractions.
 - Backend smoke: `cert-prep-backend:streaming-cli-test`.
 - Packaged smoke:
   `cert-prep-desktop:packaged-streaming-production-windowsml`.
@@ -18,7 +18,7 @@ expansion, not as active release-blocking work.
 
 ## Keep
 
-- Do not rewrite the proven WindowsML/FastFlowLM lane.
+- Do not rewrite the proven WindowsML/Ollama lane without replacement evidence.
 - Do not revive the retired standalone AMD NPU OCR provider.
 - Do not claim generic "system GPU" support without provider, device, smoke,
   fallback, and resource evidence.
@@ -45,9 +45,9 @@ Resume this TODO only if one of these becomes a real product goal:
 - `packages/cert-prep-ocr-paddle` does not exist yet.
 - PaddleOCR package-boundary details are not decided yet.
 - TensorRT API-boundary details are not decided yet.
-- Tauri launch still defaults to `fastflowlm` and `windowsml`, and provider
-  allowlists are hardcoded.
-- Packaged smoke and Package QA are still WindowsML/FastFlowLM-oriented.
+- Tauri launch defaults to `auto`/Ollama and `windowsml`; provider allowlists
+  remain explicit extension points.
+- Packaged smoke and Package QA are WindowsML/Ollama-oriented.
 
 ## Small Safe Slice
 

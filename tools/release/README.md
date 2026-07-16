@@ -13,13 +13,12 @@ The release workflow is intentionally fail-closed. Before dispatching it, config
 - an online self-hosted Windows x64 runner labeled `cert-prep-alpha-hardware`;
 - `ALPHA_HARDWARE_HARNESS` in the hardware environment, pointing to an absolute, provisioned harness path, plus its reviewed `ALPHA_HARDWARE_HARNESS_SHA256`;
 - an absolute provisioned `ALPHA_FFPROBE_PATH` and reviewed `ALPHA_FFPROBE_SHA256` in the hardware environment;
-- the publisher's recorded FastFlowLM terms/attribution decision.
+- an Ollama installation/model provisioned by the hardware harness.
 
 For tag-triggered releases, set these repository variables to the literal value `true`:
 
 - `ALPHA_PUBLIC_REPOSITORY_CONFIRMED`
 - `ALPHA_RELEASE_ENVIRONMENT_PROTECTED`
-- `ALPHA_FASTFLOW_TERMS_CONFIRMED`
 - `ALPHA_HARDWARE_RUNNER_READY`
 
 The OCR bootstrap release contains a candidate-bound publication owner marker
@@ -36,7 +35,7 @@ The candidate ID covers both publishable release files and the exact release
 harness scripts. The hardware harness executable is separately pinned by SHA-256. It
 receives the downloaded candidate root, candidate ID, version, tag, commit SHA,
 harness SHA-256, and output root. It must echo those identities in
-`hardware-result.json` and create the referenced WebM recording. The verifier requires exactly four PDFs, WindowsML OCR, FastFlowLM
+`hardware-result.json` and create the referenced WebM recording. The verifier requires exactly four PDFs, WindowsML OCR, Ollama
 `qwen3.5:4b` without provider/model fallback, per-PDF usable and Full Exam
 questions, generation readiness/resource release, restart persistence, and zero
 process residue. Cancellation evidence is granular: upload, OCR, draft,
@@ -109,28 +108,7 @@ by both packaged resilience targets. A successful install is intentionally
 preserved for those targets; the harness never uninstalls it. Reruns fail
 closed until the existing Cert Prep installation state is handled explicitly.
 
-To run the real forced-Ollama fallback lane against that same installed local
-candidate, keep the six environment bindings printed by the install harness:
-`CERT_PREP_RESILIENCE_CANDIDATE_ROOT`, `CERT_PREP_RELEASE_CANDIDATE_ID`,
-`ALPHA_HARDWARE_HARNESS_SHA256`, `CERT_PREP_RESILIENCE_INSTALLED_EXE_PATH`,
-`CERT_PREP_RESILIENCE_INSTALL_RECEIPT_PATH`, and
-`CERT_PREP_RESILIENCE_ACCEPTANCE_RUN_ID`. Also set these run-specific values:
-
-```powershell
-$env:CERT_PREP_RESILIENCE_PDF_PATH = '<absolute canonical PDF path>'
-$env:CERT_PREP_RESILIENCE_OUTPUT_ROOT = '<workspace>\tmp\cert-prep-desktop\packaged-streaming-ollama-fallback-local\<new-run>'
-$env:CERT_PREP_RESILIENCE_CDP_PORT = '9691'
-pnpm nx run cert-prep-desktop:local-ollama-fallback-acceptance-nsis --skip-nx-cache
-```
-
-The target launches the receipt-bound installed executable without rebuilding
-it, propagates the verified local OCR profile, and revalidates the candidate,
-receipt, installer, and executable after the run. It atomically emits
-`local-ollama-fallback-evidence.json`, binding the acceptance checks and
-provider/model/resource-release attribution to the candidate and hashed run
-artifacts. Local evidence does not close a public release gate.
-
-After both packaged resilience targets finish with the same six candidate and
+After the packaged resilience targets finish with the same six candidate and
 install bindings, verify their combined local evidence set through Nx:
 
 ```powershell

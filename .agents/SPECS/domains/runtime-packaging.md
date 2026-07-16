@@ -15,6 +15,10 @@ and process cleanup.
   GA or production-ready claim. Release metadata and release notes must use
   `unsigned_public_alpha`, explain the expected SmartScreen warning, and
   publish SHA-256 verification instructions.
+- The public Alpha reasoning runtime is Ollama-only. Provider-neutral contracts
+  remain available for future adapters, but retired provider implementations,
+  runtime kinds, terms workflows, and installer paths are not product
+  capabilities.
 - Source, Cargo, Tauri, manifests, tag, and asset names retain the SemVer
   `0.1.0-alpha.1`. WiX alone receives the deterministic numeric product
   version `0.1.0.1`, because MSI prerelease identifiers must be numeric-only;
@@ -34,11 +38,6 @@ and process cleanup.
   version-addressed HTTPS GitHub Release URL plus byte count and SHA-256. The
   downloader supports bounded retry and HTTP Range resume. URL uniqueness is
   not treated as immutability; digest verification remains fail-closed.
-- FastFlowLM is never bundled, mirrored, or republished by Cert Prep. The app
-  may download the allowlisted v0.9.43 installer only from the official
-  FastFlowLM release, after displaying the upstream terms and collecting
-  explicit consent. Size, SHA-256, WinVerifyTrust status, timestamp, signer
-  identity, and signer thumbprint are all required before execution.
 - Generated runtime manifests belong under an ignored desktop
   `generated-resources` directory. Release-mode package QA rejects `file://`,
   absolute development paths, `latest` URLs, unexpected repository/tag/asset
@@ -323,22 +322,6 @@ and process cleanup.
 - The official `local-resilience-evidence-verify` target accepted all ten
   document, remaining, and session artifacts with the exact candidate, harness,
   acceptance run, receipt, installer, and installed-executable bindings.
-- The same installed candidate refreshed the current-HEAD declined-terms gate
-  under
-  `tmp/cert-prep-desktop/packaged-streaming-ollama-fallback-06db87d-1fb5fa29-2a1c-4aed-94ee-17e118716a2e`.
-  SHA-256 values are
-  `4bfd59567bd5087a0d4ff593c49df083f4c179af812e2f30fef1b4d0e0804bba`
-  for `local-ollama-fallback-evidence.json`,
-  `4b4b540a1a3381cc3c5042174abef5193c2439bd2f58a0cd1404e53eaef02e5d`
-  for `metrics.json`, and
-  `9c614dfd88da2e80be11efdf58190691422c593af255ed9ccdab89656c17125f`
-  for `production-summary.json`. Real Ollama API `0.30.10` persisted
-  declined-terms routing across restart. Job
-  `b69a296c-9aed-45fd-9135-edc0d2c7a665` generated one usable Full Exam
-  question with exact configured/effective
-  `cert-prep-qwen3.5-4b-study-8k` attribution and no model fallback. All 14
-  acceptance checks rejected fake and override paths and proved model and
-  owned-process release.
 - Final NSIS uninstall parsed the actual quoted registry `UninstallString` and
   ran its 79,386-byte uninstaller (SHA-256
   `a54e72705eb33057034d2f05eb6fd0b628b64a800b6b93d2deae577e30a92db5`)
@@ -387,8 +370,7 @@ and process cleanup.
   variables pin `ALPHA_EXPECTED_REPOSITORY=WodenWang820118/cert-prep`,
   `ALPHA_PUBLIC_REPOSITORY_CONFIRMED=true`, and
   `ALPHA_RELEASE_ENVIRONMENT_PROTECTED=true`.
-  `ALPHA_FASTFLOW_TERMS_CONFIRMED` and `ALPHA_HARDWARE_RUNNER_READY` remain
-  intentionally unset.
+  `ALPHA_HARDWARE_RUNNER_READY` remains intentionally unset.
 - Both `alpha-release` and `alpha-hardware` require reviewer
   `WodenWang820118` and restrict deployments to `main` and
   `cert-prep-v*-alpha.*`. `prevent_self_review=false`; this checkpoint does not
@@ -436,15 +418,16 @@ prerelease URL.
 
 ## Open Risks
 
-- Public alpha publication remains blocked until the FastFlow publisher
-  decision, pinned clean-snapshot AMD/XDNA2 runner/harness/ffprobe inputs,
+- Public alpha publication remains blocked until pinned clean-snapshot
+  AMD/XDNA2 runner/harness/ffprobe inputs,
   anonymous OCR prerelease asset, checkout-free clean MSI/NSIS lanes, and
-  protected hardware acceptance exist. Without confirmed FastFlow terms, the
-  release must switch to an Ollama-only Alpha rather than weakening the gate.
+  protected hardware acceptance exist. The release must keep the Ollama-only
+  Alpha contract rather than weakening the gate.
 - The protected hardware gate must prove four PDFs, WindowsML/iGPU OCR, exact
-  effective FastFlow `qwen3.5:4b` attribution, usable and Full Exam counts above
-  zero, restart/cancellation cleanup with per-check evidence, and a playable
-  pinned-`ffprobe`-validated WebM from the same installer SHA.
+  effective Ollama `qwen3.5:4b` attribution, usable and Full Exam counts above
+  zero, Ollama reasoning on the Nvidia dGPU, restart/cancellation cleanup with
+  per-check evidence, and a playable pinned-`ffprobe`-validated WebM from the
+  same installer SHA.
 - The unsigned exception applies only to the public alpha. GA remains blocked
   until the runtime executables, main executable, MSI, and NSIS are all
   Authenticode-signed.

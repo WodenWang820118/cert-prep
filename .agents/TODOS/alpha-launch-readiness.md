@@ -9,12 +9,30 @@ in `.agents/SPECS/domains/runtime-packaging.md` and
 candidate clones, placeholder URLs, and schema-only validators do not count as
 completed Alpha gates.
 
+## Completed Prerequisites
+
+- [x] Make `WodenWang820118/cert-prep` public and bind the Alpha release
+      workflow to that exact repository identity with
+      `ALPHA_EXPECTED_REPOSITORY` and `ALPHA_PUBLIC_REPOSITORY_CONFIRMED=true`.
+
+- [x] Create the protected `alpha-release` and `alpha-hardware` GitHub
+      environments with required reviewers and Alpha tag branch policies.
+
+- [x] Implement and verify the fail-closed public Alpha release tooling and
+      workflow contracts for candidate assembly, clean install, protected
+      hardware acceptance, attestations, no-clobber publication, and cleanup.
+      Verify: `pnpm nx run cert-prep-desktop:release-tool-test --skip-nx-cache`.
+
+- [x] Choose an Ollama-only public Alpha. The Alpha workflow no longer requires
+      retired-provider terms confirmation or provider-specific acceptance
+      evidence; reusable provider abstractions remain for future adapters.
+
 ## Remaining Public Alpha Gates
 
 Only remaining publisher-decision, public-asset, clean-install, and protected
 hardware gates are listed below.
 
-### Protected Inputs And Publisher Decision
+### Protected Hardware Inputs
 
 - [ ] Provision an online clean-snapshot Windows x64 runner labeled
       `cert-prep-alpha-hardware`. In `alpha-hardware`, pin
@@ -23,22 +41,14 @@ hardware gates are listed below.
       variable `ALPHA_HARDWARE_RUNNER_READY=true` only after the paths, digests,
       runner labels, and snapshot reset have been independently verified.
 
-- [ ] Record the publisher's FastFlow free-tier/commercial-use and Powered by
-      FastFlowLM attribution decision, then set the repository variable
-      `ALPHA_FASTFLOW_TERMS_CONFIRMED=true`. If the decision cannot be
-      confirmed, intentionally rebuild and release an Ollama-only Alpha
-      instead.
-
 ### Exact Publishable XDNA2 Acceptance
 
 - [ ] Re-run B3 on the exact publishable XDNA2 candidate. For each of four
-      acceptance PDFs, prove WindowsML/iGPU OCR, configured/effective FastFlow
+      acceptance PDFs, prove WindowsML/iGPU OCR, configured/effective Ollama
       `qwen3.5:4b`, no provider/model fallback, usable questions above zero,
-      and Full Exam question count above zero. Health after owned FastFlow
-      shutdown may be false only when start readiness, job attribution, and
-      resource-release evidence are independently present. The current machine
-      and local nonpublishable candidate cannot close this protected hardware
-      gate.
+      Full Exam question count above zero, Ollama reasoning on the Nvidia dGPU,
+      and post-job model release. The current machine and local nonpublishable
+      candidate cannot close this protected hardware gate.
 
 ### Public Assets And Release Chain
 

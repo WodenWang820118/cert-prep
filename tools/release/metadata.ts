@@ -31,7 +31,6 @@ export function buildReleasePlan(args) {
   assertExternalConfirmations({
     publicRepository: args['public-repository-confirmed'],
     protectedReleaseEnvironment: args['release-environment-protected'],
-    fastFlowTerms: args['fastflow-terms-confirmed'],
     hardwareRunner: args['hardware-runner-ready'],
   });
   const workspaceRoot = resolve(args['workspace-root'] ?? '.');
