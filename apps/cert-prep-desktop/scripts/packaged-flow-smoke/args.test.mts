@@ -3,7 +3,6 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import { parsePackagedFlowSmokeArgs } from './args.mts';
-import type { AcceptanceLane } from './types.mts';
 
 test('packaged flow smoke args validate numeric knobs', () => {
   const parsed = parsePackagedFlowSmokeArgs([
@@ -14,7 +13,7 @@ test('packaged flow smoke args validate numeric knobs', () => {
     '--ocr-page-workers',
     '2',
     '--llm-provider',
-    'fastflowlm',
+    'ollama',
     '--llm-model',
     'qwen3.5:2b',
     '--llm-fallback-models',
@@ -34,7 +33,7 @@ test('packaged flow smoke args validate numeric knobs', () => {
   assert.equal(parsed.cdpPort, 9555);
   assert.equal(parsed.ocrProvider, 'windowsml');
   assert.equal(parsed.ocrPageWorkers, 2);
-  assert.equal(parsed.llmProvider, 'fastflowlm');
+  assert.equal(parsed.llmProvider, 'ollama');
   assert.equal(parsed.ollamaModel, 'qwen3.5:2b');
   assert.deepEqual(parsed.ollamaFallbackModels, ['qwen3.5:4b', 'qwen3.5:0.8b']);
   assert.equal(parsed.streamingDraftPageLimit, 1);
@@ -77,127 +76,12 @@ test('packaged streaming baseline defaults to isolated output and app data', () 
 
   assert.equal(parsed.waitForStreamingComplete, true);
   assert.equal(parsed.verifyStreamingPracticeReady, false);
-  assert.equal(parsed.acceptanceLane, 'none');
   assert.equal(parsed.streamingCompleteTimeoutMs, 1_200_000);
   assert.match(
     parsed.outDir,
     /tmp[\\/]cert-prep-desktop[\\/]packaged-streaming-baseline[\\/]/,
   );
   assert.equal(parsed.appDataDir, `${parsed.outDir}\\app-data`);
-});
-
-test('packaged flow smoke accepts the typed XDNA2 lane', () => {
-  const xdna2 = parsePackagedFlowSmokeArgs(
-    acceptanceLaneArgs('xdna2-fastflow', 'auto'),
-  );
-  assert.equal(xdna2.acceptanceLane, 'xdna2-fastflow');
-  assert.equal(xdna2.llmProvider, 'auto');
-
-  assert.throws(
-    () => parsePackagedFlowSmokeArgs(['--acceptance-lane', 'forced-ollama']),
-    /must be one of: none, xdna2-fastflow/,
-  );
-});
-
-test('packaged flow smoke accepts only physical or persisted Ollama fallback triggers', () => {
-  for (const trigger of [
-    'declined-terms',
-    'unsupported-xdna2',
-    'old-driver',
-  ] as const) {
-    const parsed = parsePackagedFlowSmokeArgs([
-      ...acceptanceLaneArgs('ollama-fallback', 'auto'),
-      '--ollama-fallback-trigger',
-      trigger,
-    ]);
-    assert.equal(parsed.acceptanceLane, 'ollama-fallback');
-    assert.equal(parsed.ollamaFallbackTrigger, trigger);
-  }
-
-  assert.throws(
-    () =>
-      parsePackagedFlowSmokeArgs([
-        ...acceptanceLaneArgs('ollama-fallback', 'auto'),
-        '--ollama-fallback-trigger',
-        'fake-hardware',
-      ]),
-    /must be one of: declined-terms, unsupported-xdna2, old-driver/,
-  );
-  assert.throws(
-    () => parsePackagedFlowSmokeArgs(acceptanceLaneArgs('ollama-fallback', 'auto')),
-    /requires --ollama-fallback-trigger/,
-  );
-  assert.throws(
-    () =>
-      parsePackagedFlowSmokeArgs([
-        '--ollama-fallback-trigger',
-        'declined-terms',
-      ]),
-    /requires --acceptance-lane ollama-fallback/,
-  );
-  assert.throws(
-    () =>
-      parsePackagedFlowSmokeArgs([
-        ...acceptanceLaneArgs('xdna2-fastflow', 'auto'),
-        '--ollama-fallback-trigger',
-        'declined-terms',
-      ]),
-    /forbids --ollama-fallback-trigger/,
-  );
-});
-
-test('XDNA2 acceptance fails fast when its packaged evidence contract drifts', () => {
-  const xdna2 = acceptanceLaneArgs('xdna2-fastflow', 'auto');
-  const cases: Array<{
-    name: string;
-    args: string[];
-    expected: RegExp;
-  }> = [
-    {
-      name: 'production summary',
-      args: xdna2.filter((arg) => arg !== '--production-summary'),
-      expected: /requires --production-summary/,
-    },
-    {
-      name: 'WindowsML OCR',
-      args: replaceArgumentValue(xdna2, '--ocr-provider', 'other'),
-      expected: /requires --ocr-provider windowsml/,
-    },
-    {
-      name: 'practice-ready proof',
-      args: xdna2.filter(
-        (arg) => arg !== '--verify-streaming-practice-ready',
-      ),
-      expected: /requires --verify-streaming-practice-ready/,
-    },
-    {
-      name: 'XDNA2 provider preference',
-      args: replaceArgumentValue(xdna2, '--llm-provider', 'fastflowlm'),
-      expected: /requires --llm-provider auto/,
-    },
-    {
-      name: 'acceptance model',
-      args: replaceArgumentValue(xdna2, '--llm-model', 'qwen3.5:2b'),
-      expected: /requires --llm-model qwen3\.5:4b/,
-    },
-    {
-      name: 'exact fallback list',
-      args: replaceArgumentValue(
-        xdna2,
-        '--llm-fallback-models',
-        'qwen3.5:2b,qwen3.5:0.8b',
-      ),
-      expected: /requires --llm-fallback-models qwen3\.5:2b exactly/,
-    },
-  ];
-
-  for (const scenario of cases) {
-    assert.throws(
-      () => parsePackagedFlowSmokeArgs(scenario.args),
-      scenario.expected,
-      scenario.name,
-    );
-  }
 });
 
 test('packaged streaming production enables completion wait and production output root', () => {
@@ -271,7 +155,7 @@ test('packaged flow smoke can write timestamped output under an explicit root', 
   assert.equal(parsed.appDataDir, `${parsed.outDir}\\app-data`);
 });
 
-test('packaged production targets pin the typed XDNA2 acceptance lane', () => {
+test('packaged production targets pin the Ollama-only Alpha policy', () => {
   const project = JSON.parse(
     readFileSync(new URL('../../project.json', import.meta.url), 'utf8'),
   ) as {
@@ -292,8 +176,7 @@ test('packaged production targets pin the typed XDNA2 acceptance lane', () => {
   ]) {
     const command = project.targets?.[target]?.options?.command ?? '';
     const parsed = parsePackagedFlowSmokeArgs(targetCommandArgs(command));
-    assert.equal(parsed.acceptanceLane, 'xdna2-fastflow');
-    assert.equal(parsed.llmProvider, 'auto');
+    assert.equal(parsed.llmProvider, 'ollama');
     assert.equal(parsed.ollamaModel, 'qwen3.5:4b');
     assert.deepEqual(parsed.ollamaFallbackModels, ['qwen3.5:2b']);
     assert.equal(parsed.productionSummary, true);
@@ -309,56 +192,10 @@ test('packaged production targets pin the typed XDNA2 acceptance lane', () => {
   assert.equal(productionOutputs.every(Boolean), true);
   assert.equal(new Set(productionOutputs).size, productionOutputs.length);
 
-  const fallbackTarget =
-    project.targets?.['packaged-streaming-ollama-fallback-windowsml'];
-  const fallback = parsePackagedFlowSmokeArgs(
-    targetCommandArgs(fallbackTarget?.options?.command ?? ''),
-  );
-  assert.equal(fallback.acceptanceLane, 'ollama-fallback');
-  assert.equal(fallback.ollamaFallbackTrigger, 'declined-terms');
-  assert.equal(fallback.llmProvider, 'auto');
-  assert.equal(fallback.ollamaModel, 'qwen3.5:4b');
-  assert.deepEqual(fallback.ollamaFallbackModels, ['qwen3.5:2b']);
-  assert.equal(fallback.productionSummary, true);
-  assert.equal(fallback.ocrProvider, 'windowsml');
-  assert.equal(fallback.verifyStreamingPracticeReady, true);
-  assert.match(
-    fallbackTarget?.outputs?.[0] ?? '',
-    /packaged-streaming-ollama-fallback$/,
-  );
+  for (const target of Object.values(project.targets ?? {})) {
+    assert.doesNotMatch(target.options?.command ?? '', /--acceptance-lane/);
+  }
 });
-
-function acceptanceLaneArgs(
-  lane: Exclude<AcceptanceLane, 'none'>,
-  llmProvider: 'auto',
-): string[] {
-  return [
-    '--production-summary',
-    '--ocr-provider',
-    'windowsml',
-    '--llm-provider',
-    llmProvider,
-    '--llm-model',
-    'qwen3.5:4b',
-    '--llm-fallback-models',
-    'qwen3.5:2b',
-    '--verify-streaming-practice-ready',
-    '--acceptance-lane',
-    lane,
-  ];
-}
-
-function replaceArgumentValue(
-  args: readonly string[],
-  flag: string,
-  value: string,
-): string[] {
-  const updated = [...args];
-  const index = updated.indexOf(flag);
-  assert.notEqual(index, -1, `${flag} must exist in the test fixture`);
-  updated[index + 1] = value;
-  return updated;
-}
 
 function targetCommandArgs(command: string): string[] {
   const [runtime, script, ...args] = command.trim().split(/\s+/);

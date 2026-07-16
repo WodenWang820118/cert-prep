@@ -16,9 +16,7 @@ const PROJECT_ID = '00000000-0000-4000-8000-000000000001';
 const DOCUMENT_ID = '00000000-0000-4000-8000-000000000002';
 const AUTH_TOKEN = 'alpha.super-secret-token';
 const AUTHORIZATION = `Bearer ${AUTH_TOKEN}`;
-const INSTALLED_PATH = 'C:\\Program Files\\FastFlowLM\\flm.exe';
-const TERMS_URL =
-  'https://raw.githubusercontent.com/FastFlowLM/FastFlowLM/v0.9.43/src/inno/terms.txt';
+const INSTALLED_PATH = 'C:\\Program Files\\Ollama\\ollama.exe';
 
 interface GetCall {
   readonly url: string;
@@ -168,14 +166,13 @@ test('captures generation readiness from the exact project response before uploa
     authorization: AUTHORIZATION,
     projectId: PROJECT_ID,
   });
-  assert.equal(run.trustedFastFlowExecutablePath, INSTALLED_PATH);
   const readiness = run.metrics.generation_readiness_at_start;
   assert.ok(readiness);
   assert.equal(readiness.captured_at, '2026-07-13T01:00:01.000Z');
   assert.equal(readiness.ready, true);
   assert.deepEqual(readiness.blockers, []);
   assert.equal(readiness.provider_selection?.preference, 'auto');
-  assert.equal(readiness.provider_selection?.effective_provider, 'fastflowlm');
+  assert.equal(readiness.provider_selection?.effective_provider, 'ollama');
   assert.equal(readiness.provider_selection?.effective_model, 'qwen3.5:4b');
   assert.equal(
     readiness.provider_selection?.selection_reason,
@@ -190,13 +187,13 @@ test('captures generation readiness from the exact project response before uploa
     })),
     [
       {
-        kind: 'fastflowlm',
+        kind: 'ollama',
         available: true,
-        version: '0.9.43',
+        version: '0.12.0',
         installed_path_verified: true,
       },
       {
-        kind: 'fastflowlm_model',
+        kind: 'ollama_model',
         available: true,
         version: 'qwen3.5:4b',
         installed_path_verified: false,
@@ -223,7 +220,6 @@ test('captures generation readiness from the exact project response before uploa
     API_BASE_URL,
     PROJECT_ID,
     INSTALLED_PATH,
-    TERMS_URL,
     'raw-runtime-detail',
   ]) {
     assert.equal(serializedMetrics.includes(forbidden), false, forbidden);
@@ -258,7 +254,8 @@ test('readiness endpoints fail closed with fixed blockers', async (t) => {
     {
       name: 'provider malformed schema',
       endpoint: 'selection',
-      route: () => apiResponse(200, { ...providerPayload(), terms_url: 7 }),
+      route: () =>
+        apiResponse(200, { ...providerPayload(), selected_provider: 'retired' }),
       blocker: 'provider_selection_schema_invalid',
     },
     {
@@ -313,7 +310,7 @@ test('readiness endpoints fail closed with fixed blockers', async (t) => {
   }
 });
 
-test('auto provider readiness accepts an explicit Ollama fallback lane', async () => {
+test('auto provider readiness accepts the resolved Ollama profile model', async () => {
   const page = readyPage();
   page.routes.set(`${API_BASE_URL}/llm/provider-selection`, () =>
     apiResponse(200, {
@@ -321,13 +318,8 @@ test('auto provider readiness accepts an explicit Ollama fallback lane', async (
       selected_provider: 'ollama',
       effective_provider: 'ollama',
       effective_model: 'cert-prep-qwen3.5-4b-study-8k',
-      selection_reason: 'No compatible XDNA2 hardware was detected.',
-      fallback_reason: 'FastFlowLM hardware is incompatible.',
-      hardware_compatible: false,
-      requires_terms_acceptance: false,
-      terms_accepted: false,
-      terms_version: null,
-      terms_url: null,
+      selection_reason: 'Selected Ollama from the local provider registry.',
+      fallback_reason: null,
       runtime_requirement_kind: 'ollama',
       model_requirement_kind: 'ollama_model',
     }),
@@ -381,11 +373,11 @@ test('auto provider readiness accepts an explicit Ollama fallback lane', async (
   assert.equal(
     run.metrics.generation_readiness_at_start?.provider_selection
       ?.fallback_reason,
-    'provider_fallback_reported',
+    null,
   );
 });
 
-test('provider model, FastFlow terms, and runtime availability drift fail closed', async (t) => {
+test('provider model and runtime availability drift fail closed', async (t) => {
   await t.test('model differs from CLI policy', async () => {
     const page = readyPage();
     page.routes.set(`${API_BASE_URL}/llm/provider-selection`, () =>
@@ -405,20 +397,6 @@ test('provider model, FastFlow terms, and runtime availability drift fail closed
     assert.ok(
       run.metrics.generation_readiness_at_start?.blockers.includes(
         'provider_model_mismatch',
-      ),
-    );
-  });
-
-  await t.test('FastFlow terms version differs from allowlist', async () => {
-    const page = readyPage();
-    page.routes.set(`${API_BASE_URL}/llm/provider-selection`, () =>
-      apiResponse(200, { ...providerPayload(), terms_version: '0.9.42' }),
-    );
-    const run = smokeRun();
-    await capture(run, page);
-    assert.ok(
-      run.metrics.generation_readiness_at_start?.blockers.includes(
-        'fastflowlm_terms_unverified',
       ),
     );
   });
@@ -679,19 +657,14 @@ function readyPage(): FakePage {
 function providerPayload(): Record<string, unknown> {
   return {
     preference: 'auto',
-    selected_provider: 'fastflowlm',
-    effective_provider: 'fastflowlm',
+    selected_provider: 'ollama',
+    effective_provider: 'ollama',
     configured_model: 'qwen3.5:4b',
     effective_model: 'qwen3.5:4b',
-    selection_reason: 'Compatible XDNA2 hardware selected FastFlowLM.',
+    selection_reason: 'Selected Ollama from the local provider registry.',
     fallback_reason: null,
-    hardware_compatible: true,
-    requires_terms_acceptance: true,
-    terms_accepted: true,
-    terms_version: '0.9.43',
-    terms_url: TERMS_URL,
-    runtime_requirement_kind: 'fastflowlm',
-    model_requirement_kind: 'fastflowlm_model',
+    runtime_requirement_kind: 'ollama',
+    model_requirement_kind: 'ollama_model',
   };
 }
 
@@ -699,18 +672,18 @@ function runtimePayload(): { items: Array<Record<string, unknown>> } {
   return {
     items: [
       {
-        kind: 'fastflowlm',
-        label: 'FastFlowLM',
+        kind: 'ollama',
+        label: 'Ollama',
         available: true,
         detail: 'raw-runtime-detail',
         unavailable_reason: null,
-        version: '0.9.43',
+        version: '0.12.0',
         bytes: 18_577_840,
         installed_path: INSTALLED_PATH,
       },
       {
-        kind: 'fastflowlm_model',
-        label: 'FastFlowLM model',
+        kind: 'ollama_model',
+        label: 'Ollama model',
         available: true,
         detail: 'Model is available.',
         unavailable_reason: null,

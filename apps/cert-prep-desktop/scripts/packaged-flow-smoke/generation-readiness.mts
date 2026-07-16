@@ -15,20 +15,15 @@ import type {
 
 const PROJECT_RESPONSE_TIMEOUT_MS = 30_000;
 const READINESS_REQUEST_TIMEOUT_MS = 30_000;
-const FASTFLOWLM_VERSION = '0.9.43';
-const FASTFLOWLM_TERMS_URL =
-  'https://raw.githubusercontent.com/FastFlowLM/FastFlowLM/v0.9.43/src/inno/terms.txt';
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const BEARER_PATTERN = /^Bearer [A-Za-z0-9._~+/=-]+$/;
 const MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
-const PROVIDER_PREFERENCES = new Set(['auto', 'fastflowlm', 'ollama', 'fake']);
-const PROVIDERS = new Set(['fastflowlm', 'ollama', 'fake']);
+const PROVIDER_PREFERENCES = new Set(['auto', 'ollama', 'fake']);
+const PROVIDERS = new Set(['ollama', 'fake']);
 const RUNTIME_KINDS = new Set([
   'ollama',
   'ollama_model',
-  'fastflowlm',
-  'fastflowlm_model',
   'paddle_ocr',
   'windowsml_ocr',
 ]);
@@ -58,7 +53,6 @@ interface EndpointResult {
 
 interface SanitizedRuntimeRequirements {
   readonly requirements: RuntimeRequirementSnapshot[];
-  readonly trustedFastFlowExecutablePath: string | null;
 }
 
 export function unavailableGenerationReadinessSnapshot(
@@ -88,7 +82,6 @@ export async function captureGenerationReadinessAtProjectCreate(
     ),
   };
   run.projectApi = null;
-  run.trustedFastFlowExecutablePath = null;
 
   const listener = listenForProjectResponse(
     page,
@@ -368,8 +361,6 @@ async function generationReadinessFromProjectApi(
     blockers.push('runtime_requirements_schema_invalid');
   }
   const requirements = sanitizedRequirements?.requirements ?? [];
-  run.trustedFastFlowExecutablePath =
-    sanitizedRequirements?.trustedFastFlowExecutablePath ?? null;
   if (providerSelection && sanitizedRequirements) {
     addReadinessBlockers(
       blockers,
@@ -551,8 +542,6 @@ function sanitizeProviderSelection(
     payload.fallback_reason,
     forbiddenValues,
   );
-  const termsVersion = nullableModel(payload.terms_version, forbiddenValues);
-  const termsUrl = nullableTermsUrl(payload.terms_url);
   const runtimeRequirementKind = nullableRuntimeKind(
     payload.runtime_requirement_kind,
   );
@@ -567,19 +556,8 @@ function sanitizeProviderSelection(
     !effectiveModel ||
     !selectionReason ||
     fallbackReason === undefined ||
-    termsVersion === undefined ||
-    termsUrl === undefined ||
     runtimeRequirementKind === undefined ||
-    modelRequirementKind === undefined ||
-    typeof payload.hardware_compatible !== 'boolean' ||
-    typeof payload.requires_terms_acceptance !== 'boolean' ||
-    typeof payload.terms_accepted !== 'boolean'
-  ) {
-    return null;
-  }
-  if (
-    (effectiveProvider === 'fastflowlm' && termsUrl !== FASTFLOWLM_TERMS_URL) ||
-    (effectiveProvider !== 'fastflowlm' && termsUrl !== null)
+    modelRequirementKind === undefined
   ) {
     return null;
   }
@@ -592,10 +570,6 @@ function sanitizeProviderSelection(
     selection_reason: 'provider_selection_reported',
     fallback_reason:
       fallbackReason === null ? null : 'provider_fallback_reported',
-    hardware_compatible: payload.hardware_compatible,
-    requires_terms_acceptance: payload.requires_terms_acceptance,
-    terms_accepted: payload.terms_accepted,
-    terms_version: termsVersion,
     runtime_requirement_kind: runtimeRequirementKind,
     model_requirement_kind: modelRequirementKind,
   };
@@ -612,7 +586,6 @@ function sanitizeRuntimeRequirements(
   const forbiddenValues = authorizationSensitiveValues(authorization);
   const kinds = new Set<string>();
   const requirements: RuntimeRequirementSnapshot[] = [];
-  let trustedFastFlowExecutablePath: string | null = null;
   for (const item of payload.items) {
     if (!isRecord(item)) {
       return null;
@@ -650,16 +623,8 @@ function sanitizeRuntimeRequirements(
       version,
       installed_path_verified: installedPathVerified,
     });
-    if (
-      kind === 'fastflowlm' &&
-      item.available &&
-      installedPathVerified &&
-      installedPath
-    ) {
-      trustedFastFlowExecutablePath = installedPath;
-    }
   }
-  return { requirements, trustedFastFlowExecutablePath };
+  return { requirements };
 }
 
 function addReadinessBlockers(
@@ -678,58 +643,37 @@ function addReadinessBlockers(
   if (selection.configured_model !== expectedModel) {
     blockers.push('provider_model_mismatch');
   }
-  if (
-    selection.effective_provider === 'fastflowlm' &&
-    selection.effective_model !== selection.configured_model
-  ) {
-    blockers.push('provider_selection_mismatch');
-  }
-  if (selection.requires_terms_acceptance && !selection.terms_accepted) {
-    blockers.push('provider_terms_not_accepted');
-  }
-  const expectedRuntimeKind =
-    selection.effective_provider === 'fastflowlm' ? 'fastflowlm' : 'ollama';
-  const expectedModelKind =
-    selection.effective_provider === 'fastflowlm'
-      ? 'fastflowlm_model'
-      : 'ollama_model';
-  if (
-    selection.runtime_requirement_kind !== expectedRuntimeKind ||
-    selection.model_requirement_kind !== expectedModelKind
+  if (selection.effective_provider === 'ollama') {
+    if (
+      selection.runtime_requirement_kind !== 'ollama' ||
+      selection.model_requirement_kind !== 'ollama_model'
+    ) {
+      blockers.push('provider_requirement_kind_mismatch');
+    }
+  } else if (
+    selection.runtime_requirement_kind !== null ||
+    selection.model_requirement_kind !== null
   ) {
     blockers.push('provider_requirement_kind_mismatch');
   }
-  if (selection.effective_provider === 'fastflowlm') {
-    if (selection.hardware_compatible !== true) {
-      blockers.push('fastflowlm_hardware_incompatible');
-    }
-    if (
-      selection.requires_terms_acceptance !== true ||
-      selection.terms_accepted !== true ||
-      selection.terms_version !== FASTFLOWLM_VERSION
-    ) {
-      blockers.push('fastflowlm_terms_unverified');
-    }
-    if (selection.fallback_reason !== null) {
-      blockers.push('fastflowlm_fallback_present');
-    }
+  if (selection.effective_provider === 'ollama') {
+    addRequirementBlockers(
+      blockers,
+      requirements,
+      selection.runtime_requirement_kind,
+      'selected_runtime',
+      true,
+      null,
+    );
+    addRequirementBlockers(
+      blockers,
+      requirements,
+      selection.model_requirement_kind,
+      'selected_model',
+      false,
+      selection.effective_model,
+    );
   }
-  addRequirementBlockers(
-    blockers,
-    requirements,
-    selection.runtime_requirement_kind,
-    'selected_runtime',
-    true,
-    selection.effective_provider === 'fastflowlm' ? FASTFLOWLM_VERSION : null,
-  );
-  addRequirementBlockers(
-    blockers,
-    requirements,
-    selection.model_requirement_kind,
-    'selected_model',
-    false,
-    selection.effective_model,
-  );
 }
 
 function addRequirementBlockers(
@@ -822,13 +766,6 @@ function nullableModel(
     return null;
   }
   return exactModel(value, forbiddenValues) ?? undefined;
-}
-
-function nullableTermsUrl(value: unknown): string | null | undefined {
-  if (value === null || value === undefined) {
-    return null;
-  }
-  return typeof value === 'string' ? value : undefined;
 }
 
 function requiredNullableBoundedString(

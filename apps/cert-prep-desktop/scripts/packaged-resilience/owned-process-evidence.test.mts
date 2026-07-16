@@ -17,7 +17,7 @@ test('proves exact trees from multiple app sessions are absent for two snapshots
     [
       ...baseline,
       processRecord(200, 5, 'cert-prep-desktop.exe', 'run-2', APP_PATH),
-      processRecord(201, 200, 'flm.exe', 'flm-2'),
+      processRecord(201, 200, 'ollama.exe', 'ollama-2'),
     ],
     [...baseline],
     [...baseline],
@@ -40,7 +40,7 @@ test('proves exact trees from multiple app sessions are absent for two snapshots
   assert.equal(proof.residueCount, 0);
 });
 
-test('fails closed when a captured helper or new FastFlow residue survives', async () => {
+test('fails closed when a captured helper or new Ollama residue survives', async () => {
   const baseline = [processRecord(5, 0, 'explorer.exe', 'baseline')];
   const live = [
     ...baseline,
@@ -50,7 +50,7 @@ test('fails closed when a captured helper or new FastFlow residue survives', asy
   const postClose = [
     ...baseline,
     processRecord(301, 4, 'cert-prep-backend.exe', 'backend-3'),
-    processRecord(302, 4, 'flm.exe', 'flm-3'),
+    processRecord(302, 4, 'ollama.exe', 'ollama-3'),
   ];
   const snapshots = [live, postClose, postClose];
   const tracker = new OwnedProcessEvidenceTracker({

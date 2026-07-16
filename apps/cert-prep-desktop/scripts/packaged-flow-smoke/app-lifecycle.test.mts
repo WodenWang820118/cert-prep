@@ -319,7 +319,7 @@ test('forced crash ignores stale parent PID links from processes older than the 
   assert.equal(launchCalls, 1);
 });
 
-test('XDNA2 acceptance strips inherited runtime overrides without mutation', () => {
+test('isolated acceptance strips inherited runtime overrides without mutation', () => {
   const inherited: NodeJS.ProcessEnv = {
     Path: 'C:\\Windows\\System32',
     SystemRoot: 'C:\\Windows',
@@ -330,20 +330,14 @@ test('XDNA2 acceptance strips inherited runtime overrides without mutation', () 
     CERT_PREP_BACKEND_URL: 'http://127.0.0.1:9999',
     cert_prep_backend_token: 'untrusted-token',
     Cert_Prep_Allow_Local_Ocr_Runtime_Url: 'true',
-    cert_prep_fastflowlm_terms_accepted_version: 'untrusted',
     OLLAMA_HOST: 'http://127.0.0.1:11435',
     Ollama_Models: 'C:\\untrusted-models',
-    FastFlowLM_HOME: 'C:\\untrusted-fastflow',
-    FLM_ENDPOINT: 'http://127.0.0.1:52626',
     WebView2_Additional_Browser_Arguments: '--untrusted',
     WEBVIEW2_USER_DATA_FOLDER: 'C:\\untrusted-webview',
   };
   const originalEntries = Object.entries(inherited);
 
-  const sanitized = sanitizeInheritedLaunchEnvironment(
-    inherited,
-    'xdna2-fastflow',
-  );
+  const sanitized = sanitizeInheritedLaunchEnvironment(inherited, true);
   const normalizedSanitized = normalizedEnvironment(sanitized);
   assert.equal(normalizedSanitized.path, 'C:\\Windows\\System32');
   assert.equal(normalizedSanitized.systemroot, 'C:\\Windows');
@@ -351,13 +345,7 @@ test('XDNA2 acceptance strips inherited runtime overrides without mutation', () 
   assert.equal(normalizedSanitized.safe_parent_value, 'preserved');
   assert.equal(normalizedSanitized.omitted_value, undefined);
   assert.equal(normalizedSanitized.no_proxy, undefined);
-  for (const prefix of [
-    'cert_prep_',
-    'ollama_',
-    'fastflowlm_',
-    'flm_',
-    'webview2_',
-  ]) {
+  for (const prefix of ['cert_prep_', 'ollama_', 'webview2_']) {
     assert.equal(
       Object.keys(normalizedSanitized).some((name) => name.startsWith(prefix)),
       false,
@@ -365,15 +353,13 @@ test('XDNA2 acceptance strips inherited runtime overrides without mutation', () 
   }
 
   const environment = buildAppLaunchEnvironment(
-    launchEnvironmentRun('xdna2-fastflow'),
+    launchEnvironmentRun(true),
     inherited,
   );
   const normalized = normalizedEnvironment(environment);
   assert.equal(normalized.cert_prep_backend_url, undefined);
   assert.equal(normalized.cert_prep_backend_token, undefined);
   assert.equal(normalized.ollama_host, undefined);
-  assert.equal(normalized.fastflowlm_home, undefined);
-  assert.equal(normalized.flm_endpoint, undefined);
   assert.equal(normalized.cert_prep_llm_provider, 'auto');
   assert.equal(normalized.cert_prep_ollama_model, 'qwen3.5:4b');
   assert.equal(normalized.no_proxy, 'localhost,127.0.0.1,::1');
@@ -397,24 +383,22 @@ test('XDNA2 acceptance strips inherited runtime overrides without mutation', () 
 });
 
 test('ordinary smoke preserves inherited environment behavior', () => {
-  for (const lane of ['none', undefined] as const) {
-    const inherited = {
-      CERT_PREP_BACKEND_URL: 'http://127.0.0.1:9999',
-    };
-    const environment = buildAppLaunchEnvironment(
-      launchEnvironmentRun(lane),
-      inherited,
-    );
+  const inherited = {
+    CERT_PREP_BACKEND_URL: 'http://127.0.0.1:9999',
+  };
+  const environment = buildAppLaunchEnvironment(
+    launchEnvironmentRun(false),
+    inherited,
+  );
 
-    assert.equal(
-      normalizedEnvironment(environment).cert_prep_backend_url,
-      'http://127.0.0.1:9999',
-    );
-  }
+  assert.equal(
+    normalizedEnvironment(environment).cert_prep_backend_url,
+    'http://127.0.0.1:9999',
+  );
 });
 
 test('acceptance launch requires an explicit isolated app-data directory', () => {
-  const run = launchEnvironmentRun('xdna2-fastflow');
+  const run = launchEnvironmentRun(true);
   delete run.options.appDataDir;
 
   assert.throws(
@@ -423,16 +407,16 @@ test('acceptance launch requires an explicit isolated app-data directory', () =>
   );
 });
 
-test('XDNA2 acceptance atomically creates fresh isolated run directories', () => {
+test('acceptance atomically creates fresh isolated run directories', () => {
   const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-prep-acceptance-'));
   try {
     const outDir = join(
       workspaceRoot,
       'tmp',
       'cert-prep-desktop',
-      'xdna2-run',
+      'acceptance-run',
     );
-    const run = launchEnvironmentRun('xdna2-fastflow');
+    const run = launchEnvironmentRun(true);
     run.options.workspaceRoot = workspaceRoot;
     run.options.outDir = outDir;
     run.options.appDataDir = join(outDir, 'app-data');
@@ -459,12 +443,12 @@ test('XDNA2 acceptance atomically creates fresh isolated run directories', () =>
   }
 });
 
-test('XDNA2 acceptance rolls back staging when app-data changes before commit', () => {
+test('acceptance rolls back staging when app-data changes before commit', () => {
   const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-prep-acceptance-'));
   try {
     const parentDir = join(workspaceRoot, 'tmp', 'cert-prep-desktop');
-    const outDir = join(parentDir, 'xdna2-run');
-    const run = launchEnvironmentRun('xdna2-fastflow');
+    const outDir = join(parentDir, 'acceptance-run');
+    const run = launchEnvironmentRun(true);
     run.options.workspaceRoot = workspaceRoot;
     run.options.outDir = outDir;
     run.options.appDataDir = join(outDir, 'app-data');
@@ -490,16 +474,16 @@ test('XDNA2 acceptance rolls back staging when app-data changes before commit', 
   }
 });
 
-test('XDNA2 acceptance rejects app-data outside the fresh output directory', () => {
+test('acceptance rejects app-data outside the fresh output directory', () => {
   const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-prep-acceptance-'));
   try {
-    const run = launchEnvironmentRun('xdna2-fastflow');
+    const run = launchEnvironmentRun(true);
     run.options.workspaceRoot = workspaceRoot;
     run.options.outDir = join(
       workspaceRoot,
       'tmp',
       'cert-prep-desktop',
-      'xdna2-run',
+      'acceptance-run',
     );
     run.options.appDataDir = join(workspaceRoot, 'preseeded-app-data');
 
@@ -512,7 +496,7 @@ test('XDNA2 acceptance rejects app-data outside the fresh output directory', () 
   }
 });
 
-test('XDNA2 acceptance rejects reparse points in the run path', () => {
+test('acceptance rejects reparse points in the run path', () => {
   const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-prep-acceptance-'));
   try {
     const runRoot = join(workspaceRoot, 'tmp', 'cert-prep-desktop');
@@ -525,9 +509,9 @@ test('XDNA2 acceptance rejects reparse points in the run path', () => {
       linkedRuns,
       process.platform === 'win32' ? 'junction' : 'dir',
     );
-    const run = launchEnvironmentRun('xdna2-fastflow');
+    const run = launchEnvironmentRun(true);
     run.options.workspaceRoot = workspaceRoot;
-    run.options.outDir = join(linkedRuns, 'xdna2-run');
+    run.options.outDir = join(linkedRuns, 'acceptance-run');
     run.options.appDataDir = join(run.options.outDir, 'app-data');
 
     assert.throws(
@@ -544,7 +528,7 @@ test('candidate-bound launch isolates the local OCR URL switch by distribution p
     Cert_Prep_Allow_Local_Ocr_Runtime_Url: 'false',
     CERT_PREP_ALLOW_LOCAL_OCR_RUNTIME_URL: 'false',
   };
-  const publicRun = launchEnvironmentRun('none');
+  const publicRun = launchEnvironmentRun(false);
   publicRun.options.candidateDistributionProfile = 'public_unsigned_alpha';
   const publicEnvironment = buildAppLaunchEnvironment(publicRun, inherited);
   assert.equal(
@@ -553,7 +537,7 @@ test('candidate-bound launch isolates the local OCR URL switch by distribution p
     undefined,
   );
 
-  const localRun = launchEnvironmentRun('none');
+  const localRun = launchEnvironmentRun(false);
   localRun.options.candidateDistributionProfile = 'local_nonpublishable';
   const localEnvironment = buildAppLaunchEnvironment(localRun, inherited);
   assert.equal(
@@ -570,7 +554,7 @@ test('candidate-bound launch isolates the local OCR URL switch by distribution p
 });
 
 test('unbound packaged dev launch preserves only an explicitly inherited local OCR switch', () => {
-  const unboundRun = launchEnvironmentRun('none');
+  const unboundRun = launchEnvironmentRun(false);
   const explicitDevEnvironment = buildAppLaunchEnvironment(unboundRun, {
     CERT_PREP_ALLOW_LOCAL_OCR_RUNTIME_URL: 'true',
   });
@@ -596,7 +580,7 @@ test('Ollama acceptance injects only the typed isolated host and model root afte
     const outDir = join(workspace, 'out');
     const modelsDir = join(outDir, 'isolated-ollama-models');
     mkdirSync(modelsDir, { recursive: true });
-    const run = launchEnvironmentRun('ollama-fallback');
+    const run = launchEnvironmentRun(true);
     run.options.outDir = outDir;
     run.options.appDataDir = join(outDir, 'app-data');
     run.options.llmProvider = 'ollama';
@@ -629,7 +613,7 @@ test('Ollama acceptance rejects non-loopback hosts and model roots outside the r
     const outside = join(workspace, 'outside-models');
     mkdirSync(outDir, { recursive: true });
     mkdirSync(outside);
-    const run = launchEnvironmentRun('ollama-fallback');
+    const run = launchEnvironmentRun(true);
     run.options.outDir = outDir;
     run.options.appDataDir = join(outDir, 'app-data');
     run.options.ollamaHost = 'http://example.com:11591';
@@ -668,12 +652,12 @@ function processRecord(
 }
 
 function launchEnvironmentRun(
-  acceptanceLane: 'none' | 'xdna2-fastflow' | 'ollama-fallback' | undefined,
+  acceptanceIsolation: boolean,
 ): SmokeRunState {
   return {
     port: 9491,
     options: {
-      ...(acceptanceLane ? { acceptanceLane } : {}),
+      acceptanceIsolation,
       appDataDir: 'C:\\qa\\app-data',
       outDir: 'C:\\qa\\out',
       llmProvider: 'auto',

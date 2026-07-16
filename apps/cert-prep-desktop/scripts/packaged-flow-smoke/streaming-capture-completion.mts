@@ -10,7 +10,6 @@ import type {
 } from './types.mts';
 import { screenshot } from './runner-context.mts';
 import { pollStreamingDraftApis } from './streaming-capture-api.mts';
-import { proveOwnedFastFlowReleaseBeforeClose } from './owned-fastflow-process-lifecycle.mts';
 import {
   latestStreamingJobSnapshot,
   latestStreamingQuestionSnapshot,
@@ -53,7 +52,6 @@ export async function waitForStreamingJobsComplete(
         run.metrics.ui_timings_ms.streaming_all_jobs_terminal = elapsedMs;
         run.metrics.streaming_questions.all_jobs_terminal_ms = elapsedMs;
         assertSuccessfulStreamingBaseline(run, latestJob, latestQuestion, latestState);
-        await proveOwnedFastFlowReleaseBeforeClose(run);
         await screenshot(run, 'streaming-baseline-complete');
         return;
       }

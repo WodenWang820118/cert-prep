@@ -36,19 +36,19 @@ test('remaining provider selection accepts only exact raw Ollama 4b scope', asyn
     modelKind: 'ollama_model',
   });
 
-  const fastflow = new ScriptedTransport([
+  const fake = new ScriptedTransport([
     response('/llm/provider-selection', {
-      preference: 'auto',
-      selected_provider: 'fastflowlm',
-      effective_provider: 'fastflowlm',
+      preference: 'fake',
+      selected_provider: 'fake',
+      effective_provider: 'fake',
       configured_model: 'qwen3.5:4b',
       effective_model: 'qwen3.5:4b',
-      runtime_requirement_kind: 'fastflowlm',
-      model_requirement_kind: 'fastflowlm_model',
+      runtime_requirement_kind: 'fake_runtime',
+      model_requirement_kind: 'fake_model',
     }),
   ]);
   await assert.rejects(
-    exactProviderSelection(fastflow),
+    exactProviderSelection(fake),
     /provider selection was not exact/,
   );
 });

@@ -4,18 +4,10 @@ import type {
   ProcessSnapshot,
   PublicProcessRecord,
 } from '../process-lifecycle/processes.mts';
-import type { OwnedFastFlowProcessTracker } from './owned-fastflow-process-lifecycle.mts';
-
-export type AcceptanceLane = 'none' | 'xdna2-fastflow' | 'ollama-fallback';
 
 export type CandidateDistributionProfile =
   | 'public_unsigned_alpha'
   | 'local_nonpublishable';
-
-export type OllamaFallbackTrigger =
-  | 'declined-terms'
-  | 'unsupported-xdna2'
-  | 'old-driver';
 
 export interface SmokeOptions {
   workspaceRoot: string;
@@ -32,9 +24,8 @@ export interface SmokeOptions {
   ollamaHost?: string;
   ollamaModelsDir?: string;
   ollamaProfileEnabled?: boolean;
-  acceptanceLane?: AcceptanceLane;
+  acceptanceIsolation?: boolean;
   candidateDistributionProfile?: CandidateDistributionProfile;
-  ollamaFallbackTrigger?: OllamaFallbackTrigger;
   streamingDraftPageLimit?: number;
   streamingDraftWorkers?: number;
   waitForStreamingComplete: boolean;
@@ -69,7 +60,6 @@ export interface SmokeMetrics {
   model_fallback_reason?: string | null;
   llm_health?: LlmHealthSnapshot;
   generation_readiness_at_start?: GenerationReadinessSnapshot;
-  ollama_fallback_acceptance?: OllamaFallbackAcceptanceEvidence;
   resources_released_at_end?: ResourcesReleasedAtEndSnapshot;
   full_exam_question_count?: number;
   ocr_provider: string;
@@ -180,119 +170,6 @@ export interface LlmHealthSnapshot {
   profile_warnings?: string[];
 }
 
-export interface OllamaFallbackSelectionEvidence {
-  captured_at: string;
-  preference: 'auto';
-  selected_provider: 'fastflowlm' | 'ollama';
-  effective_provider: 'fastflowlm' | 'ollama';
-  configured_model: string;
-  effective_model: string;
-  provider_fallback_reason: string | null;
-  hardware_compatible: boolean;
-  requires_terms_acceptance: boolean;
-  terms_accepted: boolean;
-  terms_version: string | null;
-  runtime_requirement_kind: 'fastflowlm' | 'ollama';
-  model_requirement_kind: 'fastflowlm_model' | 'ollama_model';
-}
-
-export interface OllamaPhysicalInventoryEvidence {
-  schema_version: number;
-  platform: string;
-  platform_version: string;
-  architecture: string;
-  cpu_name: string | null;
-  total_ram_bytes: number | null;
-  available_ram_bytes: number | null;
-  accelerators: Array<{
-    kind: string;
-    name: string;
-    vendor: string | null;
-    driver_version: string | null;
-    device_id: string | null;
-  }>;
-  warnings: string[];
-}
-
-export interface OllamaProfileEvidence {
-  profile_enabled: boolean;
-  profile_id: string | null;
-  support_status: string;
-  selection_reason: string;
-  effective_model: string;
-  base_model: string | null;
-  modelfile_sha256: string | null;
-  fallback_models: string[];
-  inventory: OllamaPhysicalInventoryEvidence | null;
-}
-
-export interface OllamaRuntimeEvidence {
-  requirement_version: string | null;
-  installed_path_verified: true;
-  api_version: string;
-  installed_models: string[];
-  profile: OllamaProfileEvidence;
-}
-
-export interface OllamaResourceReleaseEvidence {
-  captured_at: string;
-  effective_model: string;
-  loaded_models: string[];
-  released: boolean;
-}
-
-export interface OllamaModelOnboardingJobEvidence {
-  id: string;
-  provider: 'ollama';
-  model: string;
-  initial_status: 'queued' | 'running' | 'succeeded';
-  final_status: 'succeeded';
-  observed_statuses: Array<'queued' | 'running' | 'succeeded'>;
-  observed_phases: string[];
-  created_at: string;
-  updated_at: string;
-  commit_started_at: string | null;
-}
-
-export interface OllamaModelOnboardingEvidence {
-  schema_version: 1;
-  endpoint: '/llm/model-downloads';
-  mode: 'reused' | 'installed';
-  started_at: string;
-  completed_at: string;
-  profile_id: string;
-  effective_model: string;
-  base_model: string;
-  modelfile_sha256: string;
-  fallback_models: string[];
-  required_models: string[];
-  installed_models_before: string[];
-  missing_models_before: string[];
-  installed_models_after: string[];
-  profile_selection_stable: true;
-  job: OllamaModelOnboardingJobEvidence | null;
-}
-
-export interface OllamaFallbackAcceptanceEvidence {
-  schema_version: 2;
-  trigger: OllamaFallbackTrigger;
-  trigger_mode: 'persisted_terms_decision' | 'physical_inventory_observation';
-  overrides_used: false;
-  fake_provider_observed: boolean;
-  decision_endpoint: string | null;
-  selection_before: OllamaFallbackSelectionEvidence;
-  selection_after_route: OllamaFallbackSelectionEvidence;
-  selection_after_restart: OllamaFallbackSelectionEvidence;
-  provider_fallback_reason: string;
-  model_fallback_reason: string | null;
-  model_onboarding: OllamaModelOnboardingEvidence;
-  runtime: OllamaRuntimeEvidence;
-  job_attribution: StreamingDraftJobAttribution[];
-  usable_question_count: number;
-  full_exam_question_count: number;
-  resource_release: OllamaResourceReleaseEvidence | null;
-}
-
 export interface LlmProviderSelectionSnapshot {
   preference: string | null;
   selected_provider: string | null;
@@ -301,10 +178,6 @@ export interface LlmProviderSelectionSnapshot {
   effective_model: string | null;
   selection_reason: string | null;
   fallback_reason: string | null;
-  hardware_compatible: boolean | null;
-  requires_terms_acceptance: boolean | null;
-  terms_accepted: boolean | null;
-  terms_version: string | null;
   runtime_requirement_kind: string | null;
   model_requirement_kind: string | null;
 }
@@ -429,8 +302,6 @@ export interface SmokeRunState {
   page: Page | null;
   port: number;
   processBaseline: ProcessSnapshot;
-  ownedFastFlowProcesses: OwnedFastFlowProcessTracker | null;
-  trustedFastFlowExecutablePath: string | null;
   projectApi: ProjectApiRef | null;
   uploadedDocument: UploadedDocumentRef | null;
   streamingDraftParseStartedAt: number | null;

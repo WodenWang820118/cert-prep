@@ -180,7 +180,7 @@ export async function openRuntimeDrawer(run: SmokeRunState): Promise<void> {
   await runtimeDrawerLocator(run).waitFor({ state: 'visible', timeout: 10_000 });
   const elapsed = await waitText(
     run,
-    /Python backend|Developer backend|WindowsML OCR|PaddleOCR|FastFlowLM|Ollama/i,
+    /Python backend|Developer backend|WindowsML OCR|PaddleOCR|Ollama/i,
     10_000,
     'runtime view visible',
   );
@@ -192,7 +192,7 @@ function runtimeDrawerLocator(run: SmokeRunState): Locator {
     .locator('[aria-label="Runtime details"], .p-dialog, [role="dialog"]')
     .filter({
       hasText:
-        /Python backend|Developer backend|WindowsML OCR|PaddleOCR|FastFlowLM|Ollama|Runtime details/i,
+        /Python backend|Developer backend|WindowsML OCR|PaddleOCR|Ollama|Runtime details/i,
     })
     .last();
 }

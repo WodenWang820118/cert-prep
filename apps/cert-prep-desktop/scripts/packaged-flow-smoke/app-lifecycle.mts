@@ -44,11 +44,6 @@ import {
 import { observeStreamingApiResponses } from './streaming-capture.mts';
 import { errorMessage } from './text-utils.mts';
 import {
-  finalizeOwnedFastFlowProcessEvidence,
-  observeOwnedFastFlowProcesses,
-  stopOwnedFastFlowProcessObservation,
-} from './owned-fastflow-process-lifecycle.mts';
-import {
   startAcceptanceVideo,
   stopAcceptanceVideo,
 } from './video-evidence.mts';
@@ -87,8 +82,6 @@ export interface ForcedCrashSummary {
 const ACCEPTANCE_ENV_PREFIXES = [
   'cert_prep_',
   'ollama_',
-  'fastflowlm_',
-  'flm_',
   'webview2_',
 ] as const;
 const ACCEPTANCE_REMOVED_ENV_NAMES = new Set(['no_proxy']);
@@ -157,8 +150,6 @@ export async function closeAppAndCheckResidue(
   label: string,
 ): Promise<CloseSummary> {
   await stopAcceptanceVideo(run);
-  await stopOwnedFastFlowProcessObservation(run);
-  await observeOwnedFastFlowProcesses(run);
   const currentApp = run.app;
   const pid = currentApp?.pid ?? null;
   if (!currentApp || !pid) {
@@ -509,10 +500,10 @@ export function buildAppLaunchEnvironment(
   run: SmokeRunState,
   inherited: NodeJS.ProcessEnv = process.env,
 ): NodeJS.ProcessEnv {
-  const acceptanceLane = run.options.acceptanceLane ?? 'none';
+  const acceptanceIsolation = acceptanceIsolationEnabled(run);
   const baseEnvironment = sanitizeInheritedLaunchEnvironment(
     inherited,
-    acceptanceLane,
+    acceptanceIsolation,
   );
   const candidateDistributionProfile =
     run.options.candidateDistributionProfile;
@@ -528,12 +519,12 @@ export function buildAppLaunchEnvironment(
   const isolatedOllamaEnvironment = buildIsolatedOllamaLaunchEnvironment(run);
   return {
     ...guardedBaseEnvironment,
-    ...(acceptanceLane === 'none'
-      ? {}
-      : {
+    ...(acceptanceIsolation
+      ? {
           NO_PROXY: ACCEPTANCE_LOOPBACK_NO_PROXY,
           WEBVIEW2_USER_DATA_FOLDER: join(appDataDir, 'webview2'),
-        }),
+        }
+      : {}),
     WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${run.port}`,
     CERT_PREP_DESKTOP_DATA_DIR: appDataDir,
     CERT_PREP_BACKEND_LOG_DIR: run.options.outDir,
@@ -548,9 +539,6 @@ export function buildAppLaunchEnvironment(
     CERT_PREP_OLLAMA_FALLBACK_MODELS:
       run.options.ollamaFallbackModels.join(','),
     ...isolatedOllamaEnvironment,
-    CERT_PREP_FASTFLOWLM_MODEL: run.options.ollamaModel,
-    CERT_PREP_FASTFLOWLM_FALLBACK_MODELS:
-      run.options.ollamaFallbackModels.join(','),
     ...(run.options.streamingDraftPageLimit
       ? {
           CERT_PREP_STREAMING_DRAFT_GENERATION_PAGE_LIMIT: String(
@@ -624,12 +612,12 @@ function buildIsolatedOllamaLaunchEnvironment(
 
 export function sanitizeInheritedLaunchEnvironment(
   inherited: Readonly<NodeJS.ProcessEnv>,
-  acceptanceLane: SmokeRunState['options']['acceptanceLane'],
+  acceptanceIsolation = false,
 ): NodeJS.ProcessEnv {
   const entries = Object.entries(inherited).filter(
     (entry): entry is [string, string] => entry[1] !== undefined,
   );
-  if ((acceptanceLane ?? 'none') === 'none') {
+  if (!acceptanceIsolation) {
     return Object.fromEntries(entries);
   }
   return Object.fromEntries(
@@ -652,7 +640,7 @@ export function prepareRunDirectories(
     readonly afterAppDataCreated?: (stagingAppDataDir: string) => void;
   } = {},
 ): void {
-  if ((run.options.acceptanceLane ?? 'none') === 'none') {
+  if (!acceptanceIsolationEnabled(run)) {
     mkdirSync(run.options.outDir, { recursive: true });
     return;
   }
@@ -726,7 +714,7 @@ export function prepareRunDirectories(
 }
 
 function launchAppDataDir(run: SmokeRunState): string {
-  if ((run.options.acceptanceLane ?? 'none') !== 'none') {
+  if (acceptanceIsolationEnabled(run)) {
     return packagedAppDataDir(requiredAcceptanceAppDataDir(run));
   }
   return packagedAppDataDir(run.options.appDataDir);
@@ -738,6 +726,10 @@ function requiredAcceptanceAppDataDir(run: SmokeRunState): string {
     throw new Error('Acceptance lane requires an explicit isolated app-data directory.');
   }
   return appDataDir;
+}
+
+function acceptanceIsolationEnabled(run: SmokeRunState): boolean {
+  return run.options.acceptanceIsolation === true || run.options.productionSummary;
 }
 
 function requireStrictDescendant(
@@ -833,7 +825,6 @@ async function cleanupAfterRun(run: SmokeRunState): Promise<void> {
     }
   }
 
-  await finalizeOwnedFastFlowProcessEvidence(run);
 
   if (run.resourceSampling) {
     await run.resourceSampling.stop().catch((error) => {

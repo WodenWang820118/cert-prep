@@ -36,7 +36,7 @@ interface ProcessIdentity {
 
 /**
  * Tracks each concrete packaged-app process tree across normal restarts, then
- * proves those exact process identities and any new Cert Prep/FastFlow runtime
+ * proves those exact process identities and any new Cert Prep/Ollama runtime
  * processes are absent for two consecutive post-close snapshots.
  */
 export class OwnedProcessEvidenceTracker {
@@ -155,7 +155,7 @@ export class OwnedProcessEvidenceTracker {
 function isCandidateOwnedRuntime(record: ProcessRecord): boolean {
   const name = record.name.trim().toLowerCase();
   return (
-    isCertPrepResidue(record) || name === 'flm.exe' || name === 'ollama.exe'
+    isCertPrepResidue(record) || name === 'ollama.exe'
   );
 }
 
