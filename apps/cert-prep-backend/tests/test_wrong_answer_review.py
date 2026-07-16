@@ -3,6 +3,7 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
+from cert_prep_backend.domains.practice import attempt_repository
 from practice_test_support import _create_manual_question, _create_project, _upload_document
 
 
@@ -62,9 +63,14 @@ def test_wrong_answer_summary_counts_current_cleared_and_repeated_misses(
         }
     ]
 
-def test_wrong_answer_summary_groups_current_cleared_and_repeated_misses(
-    client: TestClient, auth_headers
+def test_wrong_answer_summary_groups_same_timestamp_attempts_by_insert_sequence(
+    client: TestClient, auth_headers, monkeypatch
 ) -> None:
+    monkeypatch.setattr(
+        attempt_repository,
+        "utc_now",
+        lambda: "2026-07-16T00:00:00+00:00",
+    )
     project_id = _create_project(client, auth_headers)
     document_id = _upload_document(client, auth_headers, project_id)
     repeated_question = _create_manual_question(client, auth_headers, project_id, document_id)

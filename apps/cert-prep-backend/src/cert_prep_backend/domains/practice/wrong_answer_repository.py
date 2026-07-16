@@ -106,7 +106,7 @@ def _wrong_answer_rows(connection, project_id: str) -> list[Row]:
                 practice_session_questions.question_id IS NOT NULL
                 OR question_drafts.id IS NOT NULL
             )
-        ORDER BY practice_attempts.created_at DESC
+        ORDER BY practice_attempts.created_at DESC, practice_attempts.rowid DESC
         """,
         (project_id,),
     ).fetchall()
@@ -116,22 +116,29 @@ def _wrong_answer_rows_for_attempt(connection, project_id: str, attempt_id: str)
     return connection.execute(
         """
         WITH target_attempt AS (
-            SELECT question_id, created_at
+            SELECT question_id, created_at, rowid AS attempt_sequence
             FROM practice_attempts
             WHERE project_id = ? AND id = ?
         ),
         ranked_attempts AS (
             SELECT
                 practice_attempts.*,
+                practice_attempts.rowid AS attempt_sequence,
                 ROW_NUMBER() OVER (
                     PARTITION BY practice_attempts.question_id
-                    ORDER BY practice_attempts.created_at DESC, practice_attempts.id DESC
+                    ORDER BY practice_attempts.created_at DESC, practice_attempts.rowid DESC
                 ) AS attempt_rank
             FROM target_attempt
             JOIN practice_attempts
                 ON practice_attempts.project_id = ?
                 AND practice_attempts.question_id = target_attempt.question_id
-                AND practice_attempts.created_at >= target_attempt.created_at
+                AND (
+                    practice_attempts.created_at > target_attempt.created_at
+                    OR (
+                        practice_attempts.created_at = target_attempt.created_at
+                        AND practice_attempts.rowid >= target_attempt.attempt_sequence
+                    )
+                )
         )
         SELECT
             ranked_attempts.id AS attempt_id,
@@ -188,7 +195,7 @@ def _wrong_answer_rows_for_attempt(connection, project_id: str, attempt_id: str)
                 OR question_drafts.id IS NOT NULL
             )
             AND ranked_attempts.attempt_rank = 1
-        ORDER BY ranked_attempts.created_at DESC
+        ORDER BY ranked_attempts.created_at DESC, ranked_attempts.attempt_sequence DESC
         """,
         (project_id, attempt_id, project_id),
     ).fetchall()
