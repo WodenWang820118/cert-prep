@@ -1,9 +1,5 @@
 import { computed, inject, Injectable } from '@angular/core';
-import type {
-  FastFlowTermsConsent,
-  LLMProviderSelectionRead,
-  RuntimeKind,
-} from './contracts/health-runtime.contracts';
+import type { RuntimeKind } from './contracts/health-runtime.contracts';
 import { HealthSnapshotService } from './health-snapshot.service';
 import { HealthStatusStore } from './health-status.store';
 import { RuntimeActionsStore } from './runtime-actions.store';
@@ -31,10 +27,6 @@ export class HealthStore {
   readonly runtimeInstallStarting = this.actions.runtimeInstallStarting;
   readonly runtimeInstallCanceling = this.actions.runtimeInstallCanceling;
   readonly runtimeInstall = this.actions.runtimeInstall;
-  readonly fastFlowTermsAcknowledged =
-    this.actions.fastFlowTermsAcknowledged;
-  readonly fastFlowTermsDecisionPending =
-    this.actions.fastFlowTermsDecisionPending;
 
   readonly isModelMissing = this.status.isModelMissing;
   readonly isConfiguredModelMissing = this.status.isConfiguredModelMissing;
@@ -45,12 +37,10 @@ export class HealthStore {
   readonly canCancelRuntimeInstallation =
     this.actions.canCancelRuntimeInstallation;
   readonly isOllamaMissing = this.status.isOllamaMissing;
-  readonly isFastFlowRuntimeMissing = this.status.isFastFlowRuntimeMissing;
   readonly isLlmRuntimeMissing = this.status.isLlmRuntimeMissing;
   readonly llmProviderLabel = this.status.llmProviderLabel;
   readonly selectedProviderLabel = this.status.selectedProviderLabel;
   readonly effectiveProviderLabel = this.status.effectiveProviderLabel;
-  readonly isFastFlowSelected = this.status.isFastFlowSelected;
   readonly isOcrRuntimeMissing = this.status.isOcrRuntimeMissing;
   readonly ocrPhase = this.status.ocrPhase;
   readonly isOcrHealthLoading = this.status.isOcrHealthLoading;
@@ -68,12 +58,6 @@ export class HealthStore {
       this.isOllamaMissing() &&
       !this.isRuntimeInstallActive(),
   );
-  readonly canInstallFastFlow = computed(
-    () =>
-      this.isFastFlowSelected() &&
-      this.isFastFlowRuntimeMissing() &&
-      !this.isRuntimeInstallActive(),
-  );
   readonly canInstallOcrRuntime = computed(
     () => this.isOcrRuntimeMissing() && !this.isRuntimeInstallActive(),
   );
@@ -81,30 +65,6 @@ export class HealthStore {
     this.actions.runtimeInstallConsentVisible;
   readonly configuredModelName = this.status.configuredModelName;
   readonly effectiveModelName = this.status.effectiveModelName;
-  readonly fastFlowTerms = computed<FastFlowTermsConsent | null>(() => {
-    const selection = this.providerSelection();
-    const version = selection?.terms_version?.trim();
-    const url = selection?.terms_url?.trim();
-    if (!version || !url) {
-      return null;
-    }
-    return { version, url };
-  });
-  readonly fastFlowTermsConsentRequired = computed(() => {
-    const runtimeKind = this.runtimeInstallConsentKind();
-    return (
-      (this.modelDownloadConsentVisible() && this.isFastFlowSelected()) ||
-      runtimeKind === 'fastflowlm' ||
-      runtimeKind === 'fastflowlm_model'
-    );
-  });
-  readonly canConfirmFastFlowTerms = computed(
-    () =>
-      !this.fastFlowTermsConsentRequired() ||
-      (this.fastFlowTerms() !== null &&
-        this.fastFlowTermsAcknowledged() &&
-        !this.fastFlowTermsDecisionPending()),
-  );
 
   async load(): Promise<void> {
     this.status.beginHealthSnapshotLoad();
@@ -164,10 +124,7 @@ export class HealthStore {
   }
 
   openRuntimeInstallConsent(kind: RuntimeKind): void {
-    this.actions.openRuntimeInstallConsent(
-      kind,
-      this.canInstallRuntime(kind),
-    );
+    this.actions.openRuntimeInstallConsent(kind, this.canInstallRuntime(kind));
   }
 
   openOcrRuntimeInstallConsent(): void {
@@ -179,44 +136,6 @@ export class HealthStore {
 
   openOllamaInstallConsent(): void {
     this.openRuntimeInstallConsent('ollama');
-  }
-
-  openFastFlowInstallConsent(): void {
-    this.openRuntimeInstallConsent('fastflowlm');
-  }
-
-  setFastFlowTermsAcknowledged(acknowledged: boolean): void {
-    this.actions.setFastFlowTermsAcknowledged(acknowledged);
-  }
-
-  async declineFastFlowTerms(): Promise<void> {
-    const declined = await this.actions.declineFastFlowTerms(
-      this.runtimeActionContext(),
-    );
-    if (!declined) {
-      return;
-    }
-
-    try {
-      await this.load();
-    } catch {
-      // The persisted selection returned by the decision endpoint remains the
-      // source of truth even if an optional health refresh is unavailable.
-    }
-
-    if (!this.providerAllows('ollama')) {
-      return;
-    }
-    if (this.runtimeRequirementMissing('ollama')) {
-      this.actions.openRuntimeInstallConsent('ollama', true);
-      return;
-    }
-    if (
-      this.runtimeRequirementMissing('ollama_model') ||
-      this.canDownloadModel()
-    ) {
-      this.actions.openModelDownloadConsent(true);
-    }
   }
 
   setRuntimeInstallConsentVisible(visible: boolean): void {
@@ -252,10 +171,6 @@ export class HealthStore {
       canDownloadModel: () => this.canDownloadModel(),
       canInstallRuntime: (kind: RuntimeKind) => this.canInstallRuntime(kind),
       configuredModelName: () => this.configuredModelName(),
-      fastFlowModelSelected: () => this.isFastFlowSelected(),
-      fastFlowTerms: () => this.fastFlowTerms(),
-      applyProviderSelection: (selection: LLMProviderSelectionRead) =>
-        this.status.applyProviderSelection(selection),
       refreshHealthAfterRuntimeChange: () => this.load(),
     };
   }
@@ -269,18 +184,9 @@ export class HealthStore {
       return this.isOllamaMissing();
     }
 
-    if (kind === 'fastflowlm') {
-      return this.canInstallFastFlow();
-    }
-
-    if (kind === 'fastflowlm_model') {
-      return this.isFastFlowSelected() && this.selectedModelRequirementMissing();
-    }
-
     if (this.isOcrRuntimeKind(kind)) {
       return (
-        this.isOcrRuntimeMissing() ||
-        this.runtimeInstallConsentKind() === kind
+        this.isOcrRuntimeMissing() || this.runtimeInstallConsentKind() === kind
       );
     }
 

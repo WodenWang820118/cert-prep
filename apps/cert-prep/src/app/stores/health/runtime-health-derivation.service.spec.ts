@@ -28,95 +28,53 @@ describe('RuntimeHealthDerivationService', () => {
     ).toBe(false);
   });
 
-  it('gates model onboarding while FastFlowLM terms are required', () => {
+  it('derives a missing Ollama runtime from canonical requirements', () => {
     const requirements = [
       {
-        kind: 'fastflowlm',
-        label: 'FastFlowLM',
-        available: true,
-        detail: 'FastFlowLM 0.9.43 is installed.',
-        unavailable_reason: null,
-      },
-      {
-        kind: 'fastflowlm_model',
-        label: 'FastFlowLM model',
+        kind: 'ollama',
+        label: 'Ollama',
         available: false,
-        detail: 'FastFlowLM terms must be accepted.',
-        unavailable_reason: 'fastflowlm_terms_required',
+        detail: 'Ollama is not installed.',
+        unavailable_reason: 'ollama_missing',
       },
     ];
 
-    expect(service.isFastFlowTermsRequired(requirements)).toBe(true);
-    expect(
-      service.isFastFlowMissing(
-        llmHealth({
-          provider: 'fastflowlm',
-          unavailable_reason: 'fastflowlm_not_running',
-        }),
-        requirements,
-      ),
-    ).toBe(false);
-    expect(
-      service.isLlmRuntimeMissing(
-        llmHealth({
-          provider: 'fastflowlm',
-          unavailable_reason: 'fastflowlm_not_running',
-        }),
-        requirements,
-      ),
-    ).toBe(true);
-  });
-
-  it('distinguishes accepted FastFlowLM runtime installation from terms review', () => {
-    const requirements = [
-      {
-        kind: 'fastflowlm',
-        label: 'FastFlowLM',
-        available: false,
-        detail: 'FastFlowLM is not installed.',
-        unavailable_reason: 'fastflowlm_missing',
-      },
-    ];
-
-    expect(service.isFastFlowTermsRequired(requirements)).toBe(false);
-    expect(service.isFastFlowMissing(llmHealth(), requirements)).toBe(true);
-    expect(service.isFastFlowInstallationRequired(requirements)).toBe(true);
-    expect(service.isFastFlowRuntimeAvailable(requirements)).toBe(false);
+    expect(service.isOllamaMissing(llmHealth(), requirements)).toBe(true);
     expect(service.isLlmRuntimeMissing(llmHealth(), requirements)).toBe(true);
   });
 
-  it('uses the model requirement after an installed FastFlowLM runtime is stopped', () => {
-    const health = llmHealth({
-      provider: 'fastflowlm',
-      unavailable_reason: 'fastflowlm_not_running',
-    });
+  it('uses the Ollama model requirement after the runtime is available', () => {
     const requirements = [
       {
-        kind: 'fastflowlm',
-        label: 'FastFlowLM',
+        kind: 'ollama',
+        label: 'Ollama',
         available: true,
-        detail: 'FastFlowLM 0.9.43 is installed.',
+        detail: 'Ollama is installed.',
         unavailable_reason: null,
       },
       {
-        kind: 'fastflowlm_model',
-        label: 'FastFlowLM model',
+        kind: 'ollama_model',
+        label: 'Ollama model',
         available: false,
         detail: 'qwen3.5:4b is not installed.',
         unavailable_reason: 'model_missing',
       },
     ];
+    const health = llmHealth({ unavailable_reason: null });
 
-    expect(service.isFastFlowRuntimeAvailable(requirements)).toBe(true);
     expect(service.isModelMissing(health, requirements)).toBe(true);
     expect(service.isConfiguredModelMissing(health, requirements)).toBe(true);
     expect(service.isLlmRuntimeMissing(health, requirements)).toBe(false);
   });
+
+  it('keeps unknown provider labels provider-neutral', () => {
+    expect(service.providerLabel('ollama')).toBe('Ollama');
+    expect(service.providerLabel('fake')).toBe('Fake LLM');
+    expect(service.providerLabel('future-provider')).toBe('LLM provider');
+  });
 });
 
-function llmHealth(
-  overrides: Partial<LLMHealthRead> = {},
-): LLMHealthRead {
+function llmHealth(overrides: Partial<LLMHealthRead> = {}): LLMHealthRead {
   return {
     provider: 'ollama',
     model: 'qwen3.5:4b',

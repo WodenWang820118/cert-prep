@@ -1,11 +1,8 @@
 import { computed, inject, Injectable, signal } from '@angular/core';
 import type {
   DownloadPhase,
-  FastFlowTermsConsent,
-  LLMProviderSelectionRead,
   ModelDownloadView,
   RuntimeInstallationView,
-  RuntimeInstallationStartRequest,
   RuntimeKind,
 } from './contracts/health-runtime.contracts';
 import { OperationStore } from '../operation.store';
@@ -18,11 +15,6 @@ interface RuntimeActionContext {
   readonly canDownloadModel: () => boolean;
   readonly canInstallRuntime: (kind: RuntimeKind) => boolean;
   readonly configuredModelName: () => string;
-  readonly fastFlowModelSelected: () => boolean;
-  readonly fastFlowTerms: () => FastFlowTermsConsent | null;
-  readonly applyProviderSelection: (
-    selection: LLMProviderSelectionRead,
-  ) => void;
   readonly refreshHealthAfterRuntimeChange: () => Promise<void>;
 }
 
@@ -42,8 +34,6 @@ export class RuntimeActionsStore {
   readonly runtimeInstallStarting = signal(false);
   readonly runtimeInstallCanceling = signal(false);
   readonly runtimeInstall = signal<RuntimeInstallationView | null>(null);
-  readonly fastFlowTermsAcknowledged = signal(false);
-  readonly fastFlowTermsDecisionPending = signal(false);
 
   readonly isModelDownloadActive = computed(() => {
     const phase = this.modelDownload()?.phase;
@@ -92,7 +82,6 @@ export class RuntimeActionsStore {
 
   openModelDownloadConsent(canDownloadModel: boolean): void {
     if (canDownloadModel) {
-      this.fastFlowTermsAcknowledged.set(false);
       this.modelDownloadConsentVisible.set(true);
     }
   }
@@ -112,28 +101,11 @@ export class RuntimeActionsStore {
   cancelModelDownloadConsent(): void {
     if (!this.modelDownloadStarting()) {
       this.modelDownloadConsentVisible.set(false);
-      this.fastFlowTermsAcknowledged.set(false);
-    }
-  }
-
-  setFastFlowTermsAcknowledged(acknowledged: boolean): void {
-    if (!this.fastFlowTermsDecisionPending()) {
-      this.fastFlowTermsAcknowledged.set(acknowledged);
     }
   }
 
   async confirmModelDownload(context: RuntimeActionContext): Promise<void> {
     if (!context.canDownloadModel() || this.modelDownloadStarting()) {
-      return;
-    }
-
-    const fastFlowTerms = context.fastFlowModelSelected()
-      ? context.fastFlowTerms()
-      : null;
-    if (
-      context.fastFlowModelSelected() &&
-      !this.canProceedWithFastFlowTerms(fastFlowTerms)
-    ) {
       return;
     }
 
@@ -145,15 +117,10 @@ export class RuntimeActionsStore {
     );
 
     try {
-      const body = await this.acceptedFastFlowRequest(
-        fastFlowTerms,
-        context,
-      );
-      const response = await client.startModelDownload(body);
+      const response = await client.startModelDownload();
       const status = this.toModelDownloadView(response, 'running', context);
       this.modelDownload.set(status);
       this.modelDownloadConsentVisible.set(false);
-      this.fastFlowTermsAcknowledged.set(false);
       this.continueModelDownload(status, context);
     } catch (error) {
       const message = this.jobView.errorMessage(error);
@@ -169,9 +136,6 @@ export class RuntimeActionsStore {
     canInstallRuntime: boolean,
   ): void {
     if (canInstallRuntime) {
-      if (this.isFastFlowKind(kind)) {
-        this.fastFlowTermsAcknowledged.set(false);
-      }
       this.runtimeInstallConsentKind.set(kind);
     }
   }
@@ -194,7 +158,6 @@ export class RuntimeActionsStore {
   cancelRuntimeInstallConsent(): void {
     if (!this.runtimeInstallStarting()) {
       this.runtimeInstallConsentKind.set(null);
-      this.fastFlowTermsAcknowledged.set(false);
     }
   }
 
@@ -210,35 +173,16 @@ export class RuntimeActionsStore {
       return;
     }
 
-    const fastFlowTerms = this.isFastFlowKind(kind)
-      ? context.fastFlowTerms()
-      : null;
-    if (
-      this.isFastFlowKind(kind) &&
-      !this.canProceedWithFastFlowTerms(fastFlowTerms)
-    ) {
-      return;
-    }
-
     const client = this.runtimeApi.runtimeInstallationClient();
     this.clearRuntimeInstallPollTimer();
     this.runtimeInstallStarting.set(true);
     this.runtimeInstall.set(this.jobView.startingRuntimeInstall(kind));
 
     try {
-      const body = await this.acceptedFastFlowRequest(
-        fastFlowTerms,
-        context,
-      );
-      const response = await client.startRuntimeInstallation(kind, body);
-      const status = this.toRuntimeInstallationView(
-        response,
-        kind,
-        'running',
-      );
+      const response = await client.startRuntimeInstallation(kind);
+      const status = this.toRuntimeInstallationView(response, kind, 'running');
       this.runtimeInstall.set(status);
       this.runtimeInstallConsentKind.set(null);
-      this.fastFlowTermsAcknowledged.set(false);
       this.continueRuntimeInstallation(status, context);
     } catch (error) {
       const message = this.jobView.errorMessage(error);
@@ -293,11 +237,7 @@ export class RuntimeActionsStore {
 
     try {
       const response = await client.getModelDownload(current.jobId);
-      const status = this.toModelDownloadView(
-        response,
-        current.phase,
-        context,
-      );
+      const status = this.toModelDownloadView(response, current.phase, context);
       this.modelDownload.set(status);
       this.continueModelDownload(status, context);
     } catch (error) {
@@ -310,42 +250,6 @@ export class RuntimeActionsStore {
         error: message,
       });
       this.operations.fail(message);
-    }
-  }
-
-  async declineFastFlowTerms(
-    context: RuntimeActionContext,
-  ): Promise<boolean> {
-    const runtimeKind = this.runtimeInstallConsentKind();
-    const fastFlowConsentOpen =
-      (this.modelDownloadConsentVisible() &&
-        context.fastFlowModelSelected()) ||
-      this.isFastFlowKind(runtimeKind);
-    const terms = context.fastFlowTerms();
-    if (
-      !fastFlowConsentOpen ||
-      this.fastFlowTermsDecisionPending()
-    ) {
-      return false;
-    }
-
-    const client = this.runtimeApi.providerSelectionClient();
-    this.fastFlowTermsDecisionPending.set(true);
-    try {
-      const selection = await client.decideFastflowlmTerms({
-        decision: 'declined',
-        terms_version: terms?.version ?? null,
-      });
-      context.applyProviderSelection(selection);
-      this.modelDownloadConsentVisible.set(false);
-      this.runtimeInstallConsentKind.set(null);
-      this.fastFlowTermsAcknowledged.set(false);
-      return true;
-    } catch (error) {
-      this.operations.fail(this.jobView.errorMessage(error));
-      return false;
-    } finally {
-      this.fastFlowTermsDecisionPending.set(false);
     }
   }
 
@@ -495,43 +399,6 @@ export class RuntimeActionsStore {
       clearTimeout(this.runtimeInstallPollTimer);
       this.runtimeInstallPollTimer = null;
     }
-  }
-
-  private canProceedWithFastFlowTerms(
-    terms: FastFlowTermsConsent | null,
-  ): boolean {
-    if (terms === null) {
-      this.operations.fail('FastFlowLM terms metadata is unavailable.');
-      return false;
-    }
-    if (!this.fastFlowTermsAcknowledged()) {
-      this.operations.fail('Review and accept the FastFlowLM terms first.');
-      return false;
-    }
-    return true;
-  }
-
-  private async acceptedFastFlowRequest(
-    terms: FastFlowTermsConsent | null,
-    context: RuntimeActionContext,
-  ): Promise<RuntimeInstallationStartRequest | undefined> {
-    if (terms === null) {
-      return undefined;
-    }
-
-    const client = this.runtimeApi.providerSelectionClient();
-    const selection = await client.decideFastflowlmTerms({
-      decision: 'accepted',
-      terms_version: terms.version,
-    });
-    context.applyProviderSelection(selection);
-    return { fastflowlm_terms_accepted_version: terms.version };
-  }
-
-  private isFastFlowKind(
-    kind: RuntimeKind | null | undefined,
-  ): boolean {
-    return kind === 'fastflowlm' || kind === 'fastflowlm_model';
   }
 
   private toModelDownloadView(

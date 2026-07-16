@@ -64,7 +64,9 @@ describe('ModelHealthComponent status display', () => {
     );
     expect(fixture.nativeElement.textContent).not.toContain('gemma4:12b');
     expect(fixture.nativeElement.textContent).toContain('paddle / cpu');
-    expect(buttonByText(fixture.nativeElement, 'Manage runtime')).not.toBeNull();
+    expect(
+      buttonByText(fixture.nativeElement, 'Manage runtime'),
+    ).not.toBeNull();
     expect(fixture.nativeElement.textContent).not.toContain('Runtime details');
 
     buttonByText(fixture.nativeElement, 'Manage runtime')?.click();
@@ -106,28 +108,28 @@ describe('ModelHealthComponent status display', () => {
     expect(fixture.nativeElement.textContent).not.toContain('Download model');
   });
 
-  it('shows FastFlowLM runtime missing without offering Ollama install', () => {
+  it('shows the selected Ollama runtime as missing before model onboarding', () => {
     const fixture = TestBed.createComponent(ModelHealthComponent);
     const health = TestBed.inject(HealthStore);
     health.systemHealth.set(systemHealth());
     health.llmHealth.set({
-      provider: 'fastflowlm',
+      provider: 'ollama',
       model: 'qwen3.5:4b',
       available: false,
-      detail: 'FastFlowLM is not installed.',
-      unavailable_reason: 'fastflowlm_missing',
-      configured_model: 'qwen3.5:4b',
+      detail: 'Ollama is not installed.',
+      unavailable_reason: 'ollama_missing',
       effective_model: null,
-      fallback_models: ['qwen3.5:2b'],
+      fallback_models: [],
       fallback_reason: null,
     } as LLMHealthRead & { unavailable_reason: string });
     health.ocrHealth.set(ocrHealth());
 
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.textContent).toContain('FastFlowLM missing');
-    expect(fixture.nativeElement.textContent).not.toContain('Install Ollama');
-    expect(fixture.nativeElement.textContent).not.toContain('Download qwen3.5:4b');
+    expect(fixture.nativeElement.textContent).toContain('Ollama missing');
+    expect(fixture.nativeElement.textContent).not.toContain(
+      'Reasoning model missing',
+    );
   });
 
   it('shows OCR checking copy while health is still settling', () => {

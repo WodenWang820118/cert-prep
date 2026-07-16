@@ -84,13 +84,13 @@ describe('OperationStore', () => {
     rejectQuestions({
       error: {
         code: 'provider_unavailable',
-        message: 'FastFlowLM onboarding is required.',
+        message: 'Reasoning provider onboarding is required.',
       },
     });
     await questions;
 
     expect(store.errorCode()).toBe('provider_unavailable');
-    expect(store.error()).toBe('FastFlowLM onboarding is required.');
+    expect(store.error()).toBe('Reasoning provider onboarding is required.');
     expect(store.busy()).toBeNull();
   });
 });

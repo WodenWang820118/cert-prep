@@ -5,13 +5,7 @@ import type {
   CertPrepGeneratedClient,
   CertPrepHttpRequest,
 } from '@cert-prep/api';
-import {
-  defer,
-  firstValueFrom,
-  Observable,
-  switchMap,
-  takeUntil,
-} from 'rxjs';
+import { defer, firstValueFrom, Observable, switchMap, takeUntil } from 'rxjs';
 
 export type {
   ChunkRead,
@@ -21,7 +15,6 @@ export type {
   DraftGenerationJobList,
   DraftGenerationJobRead,
   CertPrepGeneratedClient,
-  FastFlowLMTermsDecision,
   HealthResponse,
   LLMHealthRead,
   LLMProviderSelectionRead,

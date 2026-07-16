@@ -6,11 +6,7 @@ import type {
   RuntimeInstallationRead,
   RuntimeRequirementRead,
 } from '../../../cert-prep-api';
-import type {
-  FastFlowLMTermsDecisionRequest as GeneratedFastFlowLMTermsDecisionRequest,
-  LLMProviderSelectionRead as GeneratedLLMProviderSelectionRead,
-  RuntimeInstallationStartRequest as GeneratedRuntimeInstallationStartRequest,
-} from '@cert-prep/api';
+import type { LLMProviderSelectionRead as GeneratedLLMProviderSelectionRead } from '@cert-prep/api';
 
 /**
  * Runtime job lifecycle normalized for UI state and polling decisions.
@@ -30,25 +26,13 @@ export type DownloadPhase =
 export type RuntimeKind =
   | 'ollama'
   | 'ollama_model'
-  | 'fastflowlm'
-  | 'fastflowlm_model'
   | 'paddle_ocr'
   | 'windowsml_ocr';
 
 /**
- * Backend-owned provider decision and consent request types generated from
- * the shared OpenAPI contract.
+ * Backend-owned provider selection generated from the shared OpenAPI contract.
  */
 export type LLMProviderSelectionRead = GeneratedLLMProviderSelectionRead;
-export type FastFlowTermsDecisionRequest =
-  GeneratedFastFlowLMTermsDecisionRequest;
-export type RuntimeInstallationStartRequest =
-  GeneratedRuntimeInstallationStartRequest;
-
-export interface FastFlowTermsConsent {
-  readonly version: string;
-  readonly url: string;
-}
 
 /**
  * Coarse OCR readiness phase used by the runtime UI and upload gating.
@@ -74,22 +58,17 @@ export interface HealthSnapshot {
 }
 
 /**
- * Provider-selection and FastFlow terms-decision API surface used by health.
+ * Provider-selection API surface used by health.
  */
 export interface LLMProviderSelectionApiClient {
   llmProviderSelection(): Promise<LLMProviderSelectionRead>;
-  decideFastflowlmTerms(
-    body: FastFlowTermsDecisionRequest,
-  ): Promise<LLMProviderSelectionRead>;
 }
 
 /**
  * Minimal model-download API surface used by the Angular health workflow.
  */
 export interface ModelDownloadApiClient {
-  startModelDownload(
-    body?: RuntimeInstallationStartRequest,
-  ): Promise<ModelDownloadRead>;
+  startModelDownload(): Promise<ModelDownloadRead>;
   getModelDownload(jobId: string): Promise<ModelDownloadRead>;
   cancelModelDownload(jobId: string): Promise<ModelDownloadRead>;
 }
@@ -99,10 +78,7 @@ export interface ModelDownloadApiClient {
  */
 export interface RuntimeInstallationApiClient {
   runtimeRequirements(): Promise<{ items: RuntimeRequirementRead[] }>;
-  startRuntimeInstallation(
-    kind: string,
-    body?: RuntimeInstallationStartRequest,
-  ): Promise<RuntimeInstallationRead>;
+  startRuntimeInstallation(kind: string): Promise<RuntimeInstallationRead>;
   getRuntimeInstallation(jobId: string): Promise<RuntimeInstallationRead>;
   cancelRuntimeInstallation(jobId: string): Promise<RuntimeInstallationRead>;
 }

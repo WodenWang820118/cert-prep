@@ -13,7 +13,6 @@ describe('HealthStore runtime installation', () => {
     health: vi.fn(),
     llmHealth: vi.fn(),
     llmProviderSelection: vi.fn(),
-    decideFastflowlmTerms: vi.fn(),
     ocrHealth: vi.fn(),
     runtimeRequirements: vi.fn(),
     startModelDownload: vi.fn(),
@@ -39,10 +38,6 @@ describe('HealthStore runtime installation', () => {
         selected_provider: 'ollama',
         effective_provider: 'ollama',
         selection_reason: 'Auto-selected Ollama for this device.',
-        hardware_compatible: false,
-        requires_terms_acceptance: false,
-        terms_version: null,
-        terms_url: null,
         runtime_requirement_kind: 'ollama',
         model_requirement_kind: 'ollama_model',
       }),
@@ -142,70 +137,6 @@ describe('HealthStore runtime installation', () => {
     );
     expect(store.runtimeInstall()?.kind).toBe('windowsml_ocr');
     expect(store.runtimeInstall()?.label).toBe('WindowsML OCR runtime');
-  });
-
-  it('persists exact FastFlow terms before starting the official runtime installer', async () => {
-    const store = TestBed.inject(HealthStore);
-    const fastFlowSelection = providerSelection();
-    apiClient.llmProviderSelection.mockResolvedValue(fastFlowSelection);
-    apiClient.decideFastflowlmTerms.mockResolvedValue({
-      ...fastFlowSelection,
-      terms_accepted: true,
-    });
-    apiClient.llmHealth.mockResolvedValue(
-      llmHealth({
-        provider: 'fastflowlm',
-        model: 'qwen3.5:4b',
-        configured_model: 'qwen3.5:4b',
-        effective_model: 'qwen3.5:4b',
-        detail: 'FastFlowLM is not installed.',
-        unavailable_reason: 'fastflowlm_missing',
-      }),
-    );
-    apiClient.runtimeRequirements.mockResolvedValue({
-      items: [
-        {
-          kind: 'fastflowlm',
-          label: 'FastFlowLM',
-          available: false,
-          detail: 'FastFlowLM is not installed.',
-          unavailable_reason: 'fastflowlm_missing',
-        },
-      ],
-    });
-    apiClient.startRuntimeInstallation.mockResolvedValue(
-      runtimeInstallation({
-        kind: 'fastflowlm',
-        provider: 'fastflowlm',
-        model: 'qwen3.5:4b',
-        status: 'running',
-        detail: 'Installing FastFlowLM',
-      }),
-    );
-    await store.load();
-
-    store.openFastFlowInstallConsent();
-    await store.confirmRuntimeInstallation();
-
-    expect(apiClient.decideFastflowlmTerms).not.toHaveBeenCalled();
-    expect(apiClient.startRuntimeInstallation).not.toHaveBeenCalled();
-
-    store.setFastFlowTermsAcknowledged(true);
-    await store.confirmRuntimeInstallation();
-
-    expect(apiClient.decideFastflowlmTerms).toHaveBeenCalledWith({
-      decision: 'accepted',
-      terms_version: '0.9.43',
-    });
-    expect(apiClient.startRuntimeInstallation).toHaveBeenCalledWith(
-      'fastflowlm',
-      { fastflowlm_terms_accepted_version: '0.9.43' },
-    );
-    expect(
-      apiClient.decideFastflowlmTerms.mock.invocationCallOrder[0],
-    ).toBeLessThan(
-      apiClient.startRuntimeInstallation.mock.invocationCallOrder[0],
-    );
   });
 
   it('cancels an active runtime installation through the generated API', async () => {

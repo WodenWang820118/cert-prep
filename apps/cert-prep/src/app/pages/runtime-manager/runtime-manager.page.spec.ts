@@ -10,9 +10,7 @@ import {
   systemHealth,
 } from '../../components/model-health/model-health.component.spec-helpers';
 import { RuntimeManagerPage } from './runtime-manager.page';
-import {
-  providerSelection,
-} from '../../stores/health/health.store.spec-helpers';
+import { providerSelection } from '../../stores/health/health.store.spec-helpers';
 
 describe('RuntimeManagerPage', () => {
   let apiClient: {
@@ -95,10 +93,6 @@ describe('RuntimeManagerPage', () => {
           'Auto-selected Ollama: The AMD accelerator driver must be at least 32.0.203.304.',
         fallback_reason:
           'The AMD accelerator driver must be at least 32.0.203.304.',
-        hardware_compatible: false,
-        requires_terms_acceptance: false,
-        terms_version: null,
-        terms_url: null,
         runtime_requirement_kind: 'ollama',
         model_requirement_kind: 'ollama_model',
       }),
@@ -110,33 +104,30 @@ describe('RuntimeManagerPage', () => {
 
     expect(fixture.nativeElement.textContent).toContain('LLM provider policy');
     expect(fixture.nativeElement.textContent).toContain('Auto selection');
-    expect(fixture.nativeElement.textContent).toContain(
-      'Ollama / qwen3.5:4b',
-    );
+    expect(fixture.nativeElement.textContent).toContain('Ollama / qwen3.5:4b');
     expect(fixture.nativeElement.textContent).toContain('Fallback active');
     expect(fixture.nativeElement.textContent).toContain(
       'The AMD accelerator driver must be at least 32.0.203.304.',
     );
   });
 
-  it('offers FastFlow onboarding when auto selection requires its runtime', () => {
+  it('offers Ollama onboarding when the selected provider runtime is missing', () => {
     const health = TestBed.inject(HealthStore);
     health.systemHealth.set(systemHealth());
     health.llmHealth.set({
       ...missingModelHealth(),
-      provider: 'fastflowlm',
-      model: 'qwen3.5:4b',
-      detail: 'FastFlowLM is not installed.',
-      unavailable_reason: 'fastflowlm_missing',
+      provider: 'ollama',
+      detail: 'Ollama is not installed.',
+      unavailable_reason: 'ollama_missing',
     });
     health.providerSelection.set(providerSelection());
     health.runtimeRequirements.set([
       {
-        kind: 'fastflowlm',
-        label: 'FastFlowLM',
+        kind: 'ollama',
+        label: 'Ollama',
         available: false,
-        detail: 'FastFlowLM is not installed.',
-        unavailable_reason: 'fastflowlm_missing',
+        detail: 'Ollama is not installed.',
+        unavailable_reason: 'ollama_missing',
       },
     ]);
     health.ocrHealth.set(ocrHealth());
@@ -144,9 +135,10 @@ describe('RuntimeManagerPage', () => {
     const fixture = TestBed.createComponent(RuntimeManagerPage);
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.textContent).toContain('FastFlowLM');
-    expect(buttonByText(fixture.nativeElement, 'Install FastFlowLM')).not.toBeNull();
-    expect(buttonByText(fixture.nativeElement, 'Install Ollama')).toBeNull();
+    expect(fixture.nativeElement.textContent).toContain('Ollama');
+    expect(
+      buttonByText(fixture.nativeElement, 'Install Ollama'),
+    ).not.toBeNull();
   });
 
   it('renders OCR checking detail while health is loading', () => {
@@ -251,7 +243,9 @@ describe('RuntimeManagerPage', () => {
     fixture.detectChanges();
 
     expect(buttonByText(fixture.nativeElement, 'Cancel model')).not.toBeNull();
-    expect(buttonByText(fixture.nativeElement, 'Cancel install')).not.toBeNull();
+    expect(
+      buttonByText(fixture.nativeElement, 'Cancel install'),
+    ).not.toBeNull();
   });
 
   it('emits close requests from the modal surface', () => {

@@ -2,232 +2,212 @@
   <header class="runtime-modal-header">
     <h2 [id]="titleId">Manage runtime</h2>
     @if (modal) {
-      <button
-        class="runtime-modal-icon-button"
-        type="button"
-        aria-label="Close runtime manager"
-        (click)="close()"
-      >
-        <i class="pi pi-times" aria-hidden="true"></i>
-      </button>
+    <button
+      class="runtime-modal-icon-button"
+      type="button"
+      aria-label="Close runtime manager"
+      (click)="close()"
+    >
+      <i class="pi pi-times" aria-hidden="true"></i>
+    </button>
     }
   </header>
 
   @if (viewModel().providerSelection; as selection) {
-    <section
-      class="provider-selection-summary"
-      aria-label="LLM provider selection"
-      aria-live="polite"
-    >
-      <div class="provider-selection-heading">
-        <div>
-          <p class="provider-selection-eyebrow">LLM provider policy</p>
-          <h3>{{ selection.preferenceLabel }} selection</h3>
-        </div>
-        @if (selection.fallbackActive) {
-          <span class="provider-selection-badge">Fallback active</span>
-        }
+  <section
+    class="provider-selection-summary"
+    aria-label="LLM provider selection"
+    aria-live="polite"
+  >
+    <div class="provider-selection-heading">
+      <div>
+        <p class="provider-selection-eyebrow">LLM provider policy</p>
+        <h3>{{ selection.preferenceLabel }} selection</h3>
       </div>
-      <dl class="provider-selection-grid">
-        <div>
-          <dt>Selected</dt>
-          <dd>{{ selection.selectedLabel }}</dd>
-        </div>
-        <div>
-          <dt>Effective</dt>
-          <dd>{{ selection.effectiveLabel }}</dd>
-        </div>
-      </dl>
-      <p class="provider-selection-reason">{{ selection.selectionReason }}</p>
-      @if (selection.fallbackReason) {
-        <p class="provider-selection-fallback">
-          <strong>Fallback:</strong> {{ selection.fallbackReason }}
-        </p>
+      @if (selection.fallbackActive) {
+      <span class="provider-selection-badge">Fallback active</span>
       }
-    </section>
+    </div>
+    <dl class="provider-selection-grid">
+      <div>
+        <dt>Selected</dt>
+        <dd>{{ selection.selectedLabel }}</dd>
+      </div>
+      <div>
+        <dt>Effective</dt>
+        <dd>{{ selection.effectiveLabel }}</dd>
+      </div>
+    </dl>
+    <p class="provider-selection-reason">{{ selection.selectionReason }}</p>
+    @if (selection.fallbackReason) {
+    <p class="provider-selection-fallback">
+      <strong>Fallback:</strong> {{ selection.fallbackReason }}
+    </p>
+    }
+  </section>
   }
 
   <section class="runtime-grid" aria-label="Runtime details">
     <app-runtime-status-row [section]="viewModel().python">
       <ng-container actions>
         @if (desktopRuntime.canInstallPythonRuntime()) {
-          <p-button
-            label="Install runtime"
-            icon="pi pi-download"
-            severity="warn"
-            [outlined]="true"
-            [disabled]="desktopRuntime.installStarting()"
-            (onClick)="desktopRuntime.openInstallConsent()"
-          />
-        }
-        @if (desktopRuntime.installation()) {
-          <p-button
-            label="Refresh runtime"
-            icon="pi pi-refresh"
-            severity="secondary"
-            [outlined]="true"
-            [disabled]="desktopRuntime.installStarting()"
-            (onClick)="desktopRuntime.refreshInstallation()"
-          />
+        <p-button
+          label="Install runtime"
+          icon="pi pi-download"
+          severity="warn"
+          [outlined]="true"
+          [disabled]="desktopRuntime.installStarting()"
+          (onClick)="desktopRuntime.openInstallConsent()"
+        />
+        } @if (desktopRuntime.installation()) {
+        <p-button
+          label="Refresh runtime"
+          icon="pi pi-refresh"
+          severity="secondary"
+          [outlined]="true"
+          [disabled]="desktopRuntime.installStarting()"
+          (onClick)="desktopRuntime.refreshInstallation()"
+        />
         }
       </ng-container>
       @if (desktopRuntime.installProgress(); as progress) {
-        <p-progressbar progress class="sm:col-span-2" [value]="progress" />
+      <p-progressbar progress class="sm:col-span-2" [value]="progress" />
       }
     </app-runtime-status-row>
 
     <app-runtime-status-row [section]="viewModel().ollama">
       <ng-container actions>
-        @if (desktopRuntime.isBackendReady() && health.canInstallFastFlow()) {
-          <p-button
-            label="Install FastFlowLM"
-            icon="pi pi-download"
-            severity="warn"
-            [outlined]="true"
-            [disabled]="health.runtimeInstallStarting()"
-            (onClick)="health.openFastFlowInstallConsent()"
-          />
-        } @else if (desktopRuntime.isBackendReady() && health.canInstallOllama()) {
-          <p-button
-            label="Install Ollama"
-            icon="pi pi-download"
-            severity="warn"
-            [outlined]="true"
-            [disabled]="health.runtimeInstallStarting()"
-            (onClick)="health.openOllamaInstallConsent()"
-          />
-        }
-        @if (hasLlmRuntimeInstallation()) {
-          <p-button
-            label="Refresh install"
-            icon="pi pi-refresh"
-            severity="secondary"
-            [outlined]="true"
-            [disabled]="health.runtimeInstallStarting()"
-            (onClick)="health.refreshRuntimeInstallation()"
-          />
-        }
-        @if (hasLlmRuntimeInstallation() && health.canCancelRuntimeInstallation()) {
-          <p-button
-            label="Cancel install"
-            icon="pi pi-times"
-            severity="danger"
-            [outlined]="true"
-            [loading]="health.runtimeInstallCanceling()"
-            (onClick)="health.cancelRuntimeInstallation()"
-          />
+        @if (desktopRuntime.isBackendReady() && health.canInstallOllama()) {
+        <p-button
+          label="Install Ollama"
+          icon="pi pi-download"
+          severity="warn"
+          [outlined]="true"
+          [disabled]="health.runtimeInstallStarting()"
+          (onClick)="health.openOllamaInstallConsent()"
+        />
+        } @if (hasLlmRuntimeInstallation()) {
+        <p-button
+          label="Refresh install"
+          icon="pi pi-refresh"
+          severity="secondary"
+          [outlined]="true"
+          [disabled]="health.runtimeInstallStarting()"
+          (onClick)="health.refreshRuntimeInstallation()"
+        />
+        } @if (hasLlmRuntimeInstallation() &&
+        health.canCancelRuntimeInstallation()) {
+        <p-button
+          label="Cancel install"
+          icon="pi pi-times"
+          severity="danger"
+          [outlined]="true"
+          [loading]="health.runtimeInstallCanceling()"
+          (onClick)="health.cancelRuntimeInstallation()"
+        />
         }
       </ng-container>
-      @if (hasLlmRuntimeInstallation()) {
-        @if (health.runtimeInstall(); as install) {
-          <div progress class="grid gap-2 sm:col-span-2" aria-live="polite">
-            <p class="m-0 text-sm text-muted-color">{{ install.message }}</p>
-            @if (install.progress !== null) {
-              <p-progressbar [value]="install.progress" />
-            }
-          </div>
+      @if (hasLlmRuntimeInstallation()) { @if (health.runtimeInstall(); as
+      install) {
+      <div progress class="grid gap-2 sm:col-span-2" aria-live="polite">
+        <p class="m-0 text-sm text-muted-color">{{ install.message }}</p>
+        @if (install.progress !== null) {
+        <p-progressbar [value]="install.progress" />
         }
-      }
+      </div>
+      } }
     </app-runtime-status-row>
 
     <app-runtime-status-row [section]="viewModel().model">
       <ng-container actions>
         @if (desktopRuntime.isBackendReady() && health.canDownloadModel()) {
-          <p-button
-            [label]="modelDownloadActionLabel()"
-            icon="pi pi-download"
-            severity="warn"
-            [outlined]="true"
-            [disabled]="health.modelDownloadStarting()"
-            (onClick)="health.openModelDownloadConsent()"
-          />
-        }
-        @if (health.modelDownload()) {
-          <p-button
-            label="Refresh model"
-            icon="pi pi-refresh"
-            severity="secondary"
-            [outlined]="true"
-            [disabled]="health.modelDownloadStarting()"
-            (onClick)="health.refreshModelDownload()"
-          />
-        }
-        @if (health.canCancelModelDownload()) {
-          <p-button
-            label="Cancel model"
-            icon="pi pi-times"
-            severity="danger"
-            [outlined]="true"
-            [loading]="health.modelDownloadCanceling()"
-            (onClick)="health.cancelModelDownload()"
-          />
+        <p-button
+          [label]="modelDownloadActionLabel()"
+          icon="pi pi-download"
+          severity="warn"
+          [outlined]="true"
+          [disabled]="health.modelDownloadStarting()"
+          (onClick)="health.openModelDownloadConsent()"
+        />
+        } @if (health.modelDownload()) {
+        <p-button
+          label="Refresh model"
+          icon="pi pi-refresh"
+          severity="secondary"
+          [outlined]="true"
+          [disabled]="health.modelDownloadStarting()"
+          (onClick)="health.refreshModelDownload()"
+        />
+        } @if (health.canCancelModelDownload()) {
+        <p-button
+          label="Cancel model"
+          icon="pi pi-times"
+          severity="danger"
+          [outlined]="true"
+          [loading]="health.modelDownloadCanceling()"
+          (onClick)="health.cancelModelDownload()"
+        />
         }
       </ng-container>
       @if (health.modelDownload(); as download) {
-        <div progress class="grid gap-2 sm:col-span-2" aria-live="polite">
-          <p class="m-0 text-sm text-muted-color">{{ download.message }}</p>
-          @if (download.progress !== null) {
-            <p-progressbar [value]="download.progress" />
-          }
-        </div>
+      <div progress class="grid gap-2 sm:col-span-2" aria-live="polite">
+        <p class="m-0 text-sm text-muted-color">{{ download.message }}</p>
+        @if (download.progress !== null) {
+        <p-progressbar [value]="download.progress" />
+        }
+      </div>
       }
     </app-runtime-status-row>
 
     <app-runtime-status-row [section]="viewModel().ocr">
       <ng-container actions>
         @if (desktopRuntime.isBackendReady() && health.canInstallOcrRuntime()) {
-          <p-button
-            label="Install OCR"
-            icon="pi pi-download"
-            severity="warn"
-            [outlined]="true"
-            [disabled]="health.runtimeInstallStarting()"
-            (onClick)="health.openOcrRuntimeInstallConsent()"
-          />
-        }
-        @if (hasOcrRuntimeInstallation()) {
-          <p-button
-            label="Refresh install"
-            icon="pi pi-refresh"
-            severity="secondary"
-            [outlined]="true"
-            [disabled]="health.runtimeInstallStarting()"
-            (onClick)="health.refreshRuntimeInstallation()"
-          />
-        }
-        @if (hasOcrRuntimeInstallation() && health.canCancelRuntimeInstallation()) {
-          <p-button
-            label="Cancel OCR install"
-            icon="pi pi-times"
-            severity="danger"
-            [outlined]="true"
-            [loading]="health.runtimeInstallCanceling()"
-            (onClick)="health.cancelRuntimeInstallation()"
-          />
+        <p-button
+          label="Install OCR"
+          icon="pi pi-download"
+          severity="warn"
+          [outlined]="true"
+          [disabled]="health.runtimeInstallStarting()"
+          (onClick)="health.openOcrRuntimeInstallConsent()"
+        />
+        } @if (hasOcrRuntimeInstallation()) {
+        <p-button
+          label="Refresh install"
+          icon="pi pi-refresh"
+          severity="secondary"
+          [outlined]="true"
+          [disabled]="health.runtimeInstallStarting()"
+          (onClick)="health.refreshRuntimeInstallation()"
+        />
+        } @if (hasOcrRuntimeInstallation() &&
+        health.canCancelRuntimeInstallation()) {
+        <p-button
+          label="Cancel OCR install"
+          icon="pi pi-times"
+          severity="danger"
+          [outlined]="true"
+          [loading]="health.runtimeInstallCanceling()"
+          (onClick)="health.cancelRuntimeInstallation()"
+        />
         }
       </ng-container>
-      @if (hasOcrRuntimeInstallation()) {
-        @if (health.runtimeInstall(); as install) {
-          <div progress class="grid gap-2 sm:col-span-2" aria-live="polite">
-            <p class="m-0 text-sm text-muted-color">{{ install.message }}</p>
-            @if (install.progress !== null) {
-              <p-progressbar [value]="install.progress" />
-            }
-          </div>
+      @if (hasOcrRuntimeInstallation()) { @if (health.runtimeInstall(); as
+      install) {
+      <div progress class="grid gap-2 sm:col-span-2" aria-live="polite">
+        <p class="m-0 text-sm text-muted-color">{{ install.message }}</p>
+        @if (install.progress !== null) {
+        <p-progressbar [value]="install.progress" />
         }
-      }
+      </div>
+      } }
     </app-runtime-status-row>
   </section>
 
   <footer class="runtime-modal-footer">
     @if (modal) {
-      <button
-        class="runtime-modal-cancel"
-        type="button"
-        (click)="close()"
-      >
-        Cancel
-      </button>
+    <button class="runtime-modal-cancel" type="button" (click)="close()">
+      Cancel
+    </button>
     }
     <button
       class="runtime-modal-refresh"

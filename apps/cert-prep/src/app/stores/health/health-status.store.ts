@@ -51,13 +51,6 @@ export class HealthStatusStore {
       this.runtimeRequirements(),
     ),
   );
-  readonly isFastFlowRuntimeMissing = computed(() =>
-    this.runtimeHealth.isFastFlowRuntimeMissing(
-      this.llmHealth(),
-      this.runtimeRequirements(),
-      this.providerSelection(),
-    ),
-  );
   readonly isLlmRuntimeMissing = computed(() =>
     this.runtimeHealth.isLlmRuntimeMissing(
       this.llmHealth(),
@@ -80,12 +73,6 @@ export class HealthStatusStore {
     this.runtimeHealth.providerLabel(
       this.providerSelection()?.effective_provider,
     ),
-  );
-  readonly isFastFlowSelected = computed(
-    () =>
-      this.runtimeHealth.normalizedCode(
-        this.providerSelection()?.selected_provider,
-      ) === 'fastflowlm',
   );
   readonly isOcrRuntimeMissing = computed(() =>
     this.runtimeHealth.isOcrRuntimeMissing(

@@ -11,26 +11,21 @@ export function providerSelection(
 ): LLMProviderSelectionRead {
   return {
     preference: 'auto',
-    selected_provider: 'fastflowlm',
-    effective_provider: 'fastflowlm',
+    selected_provider: 'ollama',
+    effective_provider: 'ollama',
     configured_model: 'qwen3.5:4b',
     effective_model: 'qwen3.5:4b',
-    selection_reason:
-      'Auto-selected FastFlowLM: Windows 11, AMD XDNA2, and the minimum driver were detected.',
+    selection_reason: 'Ollama is the selected local reasoning provider.',
     fallback_reason: null,
-    hardware_compatible: true,
-    requires_terms_acceptance: true,
-    terms_accepted: false,
-    terms_version: '0.9.43',
-    terms_url:
-      'https://raw.githubusercontent.com/FastFlowLM/FastFlowLM/v0.9.43/src/inno/terms.txt',
-    runtime_requirement_kind: 'fastflowlm',
-    model_requirement_kind: 'fastflowlm_model',
+    runtime_requirement_kind: 'ollama',
+    model_requirement_kind: 'ollama_model',
     ...overrides,
   };
 }
 
-export function llmHealth(overrides: Partial<LLMHealthRead> = {}): LLMHealthRead {
+export function llmHealth(
+  overrides: Partial<LLMHealthRead> = {},
+): LLMHealthRead {
   return {
     provider: 'ollama',
     model: 'reasoner:7b',

@@ -12,7 +12,6 @@ describe('HealthStore loading', () => {
     health: vi.fn(),
     llmHealth: vi.fn(),
     llmProviderSelection: vi.fn(),
-    decideFastflowlmTerms: vi.fn(),
     ocrHealth: vi.fn(),
     runtimeRequirements: vi.fn(),
     startModelDownload: vi.fn(),
@@ -61,11 +60,11 @@ describe('HealthStore loading', () => {
     apiClient.runtimeRequirements.mockResolvedValueOnce({
       items: [
         {
-          kind: 'fastflowlm',
-          label: 'FastFlowLM',
+          kind: 'ollama',
+          label: 'Ollama',
           available: false,
-          detail: 'FastFlowLM is not installed.',
-          unavailable_reason: 'fastflowlm_missing',
+          detail: 'Ollama is not installed.',
+          unavailable_reason: 'ollama_missing',
         },
       ],
     });
@@ -73,10 +72,10 @@ describe('HealthStore loading', () => {
     await store.load();
 
     expect(store.providerSelection()?.preference).toBe('auto');
-    expect(store.selectedProviderLabel()).toBe('FastFlowLM');
+    expect(store.selectedProviderLabel()).toBe('Ollama');
     expect(store.configuredModelName()).toBe('qwen3.5:4b');
-    expect(store.isFastFlowRuntimeMissing()).toBe(true);
-    expect(store.canInstallFastFlow()).toBe(true);
+    expect(store.isOllamaMissing()).toBe(true);
+    expect(store.canInstallOllama()).toBe(true);
   });
 
   it('keeps core health when provider selection is temporarily unavailable', async () => {

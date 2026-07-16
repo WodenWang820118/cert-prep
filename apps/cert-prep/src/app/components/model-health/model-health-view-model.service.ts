@@ -53,9 +53,7 @@ export class ModelHealthViewModelService {
     };
   }
 
-  private pythonSection(
-    state: ModelHealthViewState,
-  ): RuntimeStatusSectionView {
+  private pythonSection(state: ModelHealthViewState): RuntimeStatusSectionView {
     return {
       title: 'Python backend',
       statusLabel:
@@ -67,9 +65,7 @@ export class ModelHealthViewModelService {
     };
   }
 
-  private ollamaSection(
-    state: ModelHealthViewState,
-  ): RuntimeStatusSectionView {
+  private ollamaSection(state: ModelHealthViewState): RuntimeStatusSectionView {
     return {
       title: this.llmRuntimeLabel(state),
       statusLabel: this.ollamaStatusLabel(state),
@@ -312,9 +308,9 @@ export class ModelHealthViewModelService {
       ? 'danger'
       : state.modelFallbackActive
         ? 'warn'
-      : state.llmHealth?.available
-        ? 'success'
-        : 'warn';
+        : state.llmHealth?.available
+          ? 'success'
+          : 'warn';
   }
 
   private llmRuntimeLabel(state: ModelHealthViewState): string {
@@ -325,9 +321,6 @@ export class ModelHealthViewModelService {
 
   private providerLabel(providerValue: string | null | undefined): string {
     const provider = providerValue?.trim().toLowerCase();
-    if (provider === 'fastflowlm') {
-      return 'FastFlowLM';
-    }
     if (provider === 'ollama') {
       return 'Ollama';
     }

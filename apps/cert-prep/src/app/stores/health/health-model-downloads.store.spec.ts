@@ -13,7 +13,6 @@ describe('HealthStore model downloads', () => {
     health: vi.fn(),
     llmHealth: vi.fn(),
     llmProviderSelection: vi.fn(),
-    decideFastflowlmTerms: vi.fn(),
     ocrHealth: vi.fn(),
     runtimeRequirements: vi.fn(),
     startModelDownload: vi.fn(),
@@ -39,10 +38,6 @@ describe('HealthStore model downloads', () => {
         selected_provider: 'ollama',
         effective_provider: 'ollama',
         selection_reason: 'Auto-selected Ollama for this device.',
-        hardware_compatible: false,
-        requires_terms_acceptance: false,
-        terms_version: null,
-        terms_url: null,
         runtime_requirement_kind: 'ollama',
         model_requirement_kind: 'ollama_model',
       }),
@@ -75,7 +70,11 @@ describe('HealthStore model downloads', () => {
   it('starts and polls a model download only after confirmation', async () => {
     const store = TestBed.inject(HealthStore);
     apiClient.startModelDownload.mockResolvedValue(
-      modelDownload({ status: 'running', detail: 'downloading', completed: 25 }),
+      modelDownload({
+        status: 'running',
+        detail: 'downloading',
+        completed: 25,
+      }),
     );
     apiClient.getModelDownload.mockResolvedValue(
       modelDownload({
@@ -147,37 +146,30 @@ describe('HealthStore model downloads', () => {
     expect(store.modelDownload()?.phase).toBe('succeeded');
   });
 
-  it('persists exact FastFlow terms before starting the official model pull', async () => {
+  it('starts the selected provider model pull without provider-specific payload', async () => {
     const store = TestBed.inject(HealthStore);
-    const fastFlowSelection = providerSelection();
-    apiClient.llmProviderSelection.mockResolvedValue(fastFlowSelection);
-    apiClient.decideFastflowlmTerms.mockResolvedValue({
-      ...fastFlowSelection,
-      terms_accepted: true,
-    });
     apiClient.llmHealth.mockResolvedValue(
       llmHealth({
-        provider: 'fastflowlm',
         model: 'qwen3.5:4b',
         available: false,
-        detail: 'FastFlowLM model is missing.',
+        detail: 'Ollama model is missing.',
         unavailable_reason: 'model_missing',
         configured_model: 'qwen3.5:4b',
-        effective_model: 'qwen3.5:4b',
+        effective_model: null,
       }),
     );
     apiClient.runtimeRequirements.mockResolvedValue({
       items: [
         {
-          kind: 'fastflowlm',
-          label: 'FastFlowLM',
+          kind: 'ollama',
+          label: 'Ollama',
           available: true,
-          detail: 'FastFlowLM is ready.',
+          detail: 'Ollama is ready.',
           unavailable_reason: null,
         },
         {
-          kind: 'fastflowlm_model',
-          label: 'FastFlowLM model',
+          kind: 'ollama_model',
+          label: 'Ollama model',
           available: false,
           detail: 'qwen3.5:4b is missing.',
           unavailable_reason: 'model_missing',
@@ -186,7 +178,6 @@ describe('HealthStore model downloads', () => {
     });
     apiClient.startModelDownload.mockResolvedValue(
       modelDownload({
-        provider: 'fastflowlm',
         model: 'qwen3.5:4b',
         status: 'running',
       }),
@@ -194,19 +185,10 @@ describe('HealthStore model downloads', () => {
     await store.load();
 
     store.openModelDownloadConsent();
-    store.setFastFlowTermsAcknowledged(true);
     await store.confirmModelDownload();
 
-    expect(apiClient.decideFastflowlmTerms).toHaveBeenCalledWith({
-      decision: 'accepted',
-      terms_version: '0.9.43',
-    });
-    expect(apiClient.startModelDownload).toHaveBeenCalledWith({
-      fastflowlm_terms_accepted_version: '0.9.43',
-    });
-    expect(
-      apiClient.decideFastflowlmTerms.mock.invocationCallOrder[0],
-    ).toBeLessThan(apiClient.startModelDownload.mock.invocationCallOrder[0]);
+    expect(apiClient.startModelDownload).toHaveBeenCalledWith();
+    expect(store.modelDownload()?.model).toBe('qwen3.5:4b');
   });
 
   it('cancels an active model download through the generated API', async () => {

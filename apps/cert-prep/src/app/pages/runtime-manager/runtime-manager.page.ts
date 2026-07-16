@@ -40,7 +40,7 @@ export class RuntimeManagerPage {
 
   protected readonly hasLlmRuntimeInstallation = computed(() => {
     const kind = this.health.runtimeInstall()?.kind;
-    return kind === 'ollama' || kind === 'fastflowlm';
+    return kind === 'ollama';
   });
 
   protected readonly hasOcrRuntimeInstallation = computed(() => {
