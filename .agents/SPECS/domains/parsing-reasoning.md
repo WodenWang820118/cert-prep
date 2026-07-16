@@ -307,7 +307,8 @@ selected document` for the selected document after the production streaming
   fallback, usable questions above zero, Full Exam count above zero, resource
   release, restart/cancel cleanup with individually hashed evidence, and a
   completed-run-bound WebM whose stream/duration/frames pass the protected
-  runner's SHA-pinned `ffprobe`.
+  runner's uniquely resolved `ffprobe`, matched to its reviewed SHA-256 during
+  preflight and rehashed by the verifier.
 
 2026-07-14 local cancellation and integration closeout:
 
@@ -431,6 +432,15 @@ selected document` for the selected document after the production streaming
   Ruff, script type checking, and 206 package-QA tests with one
   Windows-permission skip. This remains implementation evidence, not the
   protected four-PDF AMD/Nvidia acceptance run.
+- The protected hardware workflow now configures the reviewed external harness
+  path/hash, `ALPHA_ACCEPTANCE_PDF_DIR`, and the approved
+  `ALPHA_FFPROBE_SHA256`; it derives the candidate-matched manifest and resolves
+  the single approved `ffprobe` from the runner's `PATH`. This reduces six
+  machine inputs to four without changing PDF, routing, model, resilience, or
+  recording acceptance semantics.
+  The candidate does not yet carry the full producer and Playwright-powered
+  packaged-flow/resilience runtime, so replacing the external harness remains
+  the next CI simplification phase rather than completed hardware evidence.
 
 ### Hosted Cross-Runner Quality (2026-07-16)
 

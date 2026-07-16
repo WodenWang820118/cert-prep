@@ -61,10 +61,18 @@ and process cleanup.
   required by the checkout-free candidate harness. The manifest is forced to
   LF bytes so its protected raw SHA-256 is stable across Windows and Linux
   checkouts.
-- The separately provisioned AMD acceptance harness, `ffprobe`, and exact
-  four-PDF manifest are protected-environment inputs pinned by absolute path
-  and SHA-256. The protected manifest must be colocated with exactly its four
-  declared PDFs and must match the candidate-copied manifest byte for byte.
+- The separately provisioned AMD acceptance harness remains a
+  protected-environment input pinned by absolute path and reviewed SHA-256.
+  It must be directly invocable; the workflow rejects a reparse point, rehashes
+  the file immediately before execution, and fails on a failed PowerShell
+  invocation or nonzero process exit.
+  `ALPHA_ACCEPTANCE_PDF_DIR` supplies one absolute directory whose final entry
+  and manifest are not reparse points. The manifest must be colocated with
+  exactly its four declared PDFs and must match the candidate-copied manifest
+  byte for byte. Exactly one `ffprobe` application must resolve from the
+  protected runner's `PATH`; its digest must match the reviewed
+  `ALPHA_FFPROBE_SHA256`, and the verifier rehashes that same absolute file
+  before use.
 - Public release identity is pinned twice without hardcoding an owner in the
   repository: GitHub provides `${{ github.repository }}`, while the publisher
   configures an independent `ALPHA_EXPECTED_REPOSITORY` repository variable.
@@ -86,9 +94,9 @@ and process cleanup.
 - Hardware acceptance cannot report cancellation/recovery with bare booleans.
   Every required check references its own candidate-bound JSON evidence and
   digest. The recording is time-bound to the completed run and must pass the
-  pinned `ffprobe` gate for container, codec, dimensions, duration, and decoded
-  frame count. Finalization revalidates the declared hardware files and both
-  clean-install report schemas/digests before marking evidence passed.
+  reviewed-SHA-pinned `ffprobe` gate for container, codec, dimensions, duration,
+  and decoded frame count. Finalization revalidates the declared hardware files
+  and both clean-install report schemas/digests before marking evidence passed.
 - Hardware result schema v2 binds the acceptance PDF manifest,
   `production-summary.json`, Windows resource summary/CSV, DXGI adapter map,
   and Nvidia SMI CSV to the candidate ID and acceptance run ID with path, byte
@@ -428,6 +436,25 @@ and process cleanup.
   protected runner or harness and is not a four-PDF hardware run, clean-install
   result, canonical release run, or Public Alpha readiness claim.
 
+### Protected Hardware CI Input Simplification (2026-07-16)
+
+- The protected hardware lane now has four configured machine inputs instead
+  of six: the external harness path, its reviewed SHA-256,
+  `ALPHA_ACCEPTANCE_PDF_DIR`, and the reviewed `ALPHA_FFPROBE_SHA256`. The
+  workflow derives the manifest path, compares its bytes with the candidate
+  copy, and preserves the copy-after-harness ordering required when the
+  producer resets its output root.
+- `ALPHA_FFPROBE_PATH` is retired. A checkout-free preflight requires exactly
+  one non-reparse `ffprobe` application on the protected runner's `PATH`,
+  rejects it unless its digest matches `ALPHA_FFPROBE_SHA256`, and passes its
+  absolute path and approved digest to the candidate verifier for an immediate
+  rehash before decoding the recording.
+- The external harness path and reviewed digest remain mandatory because the
+  candidate currently contains verification code but not the complete
+  producer, Playwright package, or packaged-flow/resilience runtime graph. A
+  repo-owned candidate-bound producer is the next simplification phase; no
+  hardware, release, or TODO gate is closed by this workflow-only reduction.
+
 ## Size And Artifact Evidence
 
 2026-07-11 local candidate evidence:
@@ -460,16 +487,16 @@ prerelease URL.
 
 ## Open Risks
 
-- Public alpha publication remains blocked until pinned clean-snapshot
-  AMD/XDNA2 runner/harness/ffprobe inputs,
+- Public alpha publication remains blocked until the protected clean-snapshot
+  AMD/XDNA2 runner, reviewed external harness, PATH-provisioned `ffprobe`,
   anonymous OCR prerelease asset, checkout-free clean MSI/NSIS lanes, and
   protected hardware acceptance exist. The release must keep the Ollama-only
   Alpha contract rather than weakening the gate.
 - The protected hardware gate must prove four PDFs, WindowsML/iGPU OCR, exact
   effective Ollama `qwen3.5:4b` attribution, usable and Full Exam counts above
   zero, Ollama reasoning on the Nvidia dGPU, restart/cancellation cleanup with
-  per-check evidence, and a playable pinned-`ffprobe`-validated WebM from the
-  same installer SHA.
+  per-check evidence, and a playable reviewed-SHA-pinned-`ffprobe`-validated
+  WebM from the same installer SHA.
 - The unsigned exception applies only to the public alpha. GA remains blocked
   until the runtime executables, main executable, MSI, and NSIS are all
   Authenticode-signed.

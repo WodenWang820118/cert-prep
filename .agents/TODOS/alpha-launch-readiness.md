@@ -50,13 +50,24 @@ local/hosted evidence belongs in
       process, install, app-data, or port residue before each acceptance run.
 
 - [ ] Provision Ollama and `qwen3.5:4b`, the external hardware harness, and
-      `ffprobe` on that runner. Provision the approved four-PDF manifest from
-      commit `58a156c` beside its exact four PDFs. Independently verify all
-      absolute paths and SHA-256 values, then pin `ALPHA_HARDWARE_HARNESS`,
-      `ALPHA_HARDWARE_HARNESS_SHA256`, `ALPHA_FFPROBE_PATH`, and
-      `ALPHA_FFPROBE_SHA256`, plus the PDF-manifest path and digest, in
-      `alpha-hardware`. Set repository variable `ALPHA_HARDWARE_RUNNER_READY=true`
-      only after this verification passes.
+      exactly one `ffprobe` application on that runner's `PATH`. Provision the
+      approved four-PDF manifest from commit `58a156c` beside its exact four
+      PDFs in one absolute non-reparse directory. Independently verify the
+      harness path and SHA-256, then configure only
+      `ALPHA_HARDWARE_HARNESS`, `ALPHA_HARDWARE_HARNESS_SHA256`, and
+      `ALPHA_ACCEPTANCE_PDF_DIR`, plus the independently reviewed
+      `ALPHA_FFPROBE_SHA256`, in `alpha-hardware`. The workflow rejects harness
+      reparse/digest drift immediately before execution, derives and
+      candidate-checks the manifest, resolves `ffprobe` from `PATH`, and rejects
+      any executable whose digest differs from the approved value. This reduces
+      six machine inputs to four without changing the acceptance semantics. Set
+      repository variable `ALPHA_HARDWARE_RUNNER_READY=true` only after this
+      verification passes.
+
+The current candidate still lacks the full hardware evidence producer,
+Playwright runtime, and packaged-flow/resilience script graph. Replacing the
+external harness with a repo-owned candidate-bound entrypoint is the next CI
+simplification phase, not a completed Alpha gate.
 
 ### 2. Freeze One Canonical Release Run
 
@@ -118,8 +129,10 @@ local/hosted evidence belongs in
     partial-data removal, and owned-process release each have their own JSON
     evidence and digest;
   - no Cert Prep-owned process or port residue remains; and
-  - the run-bound Playwright WebM passes the SHA-pinned `ffprobe` checks for
-    container/codec, positive dimensions and duration, and decoded frames.
+  - the run-bound Playwright WebM passes checks from the preflight-resolved
+    protected-runner `ffprobe`, whose digest must match the reviewed SHA-256 and
+    is rehashed by the verifier, for container/codec, positive dimensions and
+    duration, and decoded frames.
 
 ### 7. Finalize, Attest, And Publish Without Bypass
 

@@ -37,6 +37,7 @@ test('release workflow exposes dispatch and alpha tag triggers with confirmation
   ]) {
     assert.match(workflow, new RegExp(`${input}:`));
   }
+  assert.match(workflow, /vars\.ALPHA_HARDWARE_RUNNER_READY/);
   assert.doesNotMatch(workflow, /fastflow.terms/i);
 });
 
@@ -148,26 +149,43 @@ test('clean-install matrix consumes the candidate without a checkout', () => {
 
 test('hardware gate is protected, labeled and consumes no checkout', () => {
   const body = jobBody('hardware-acceptance', 'finalize-release');
-  assert.match(body, /cert-prep-alpha-hardware/);
+  assert.match(
+    body,
+    /runs-on:\s*\[self-hosted, Windows, X64, cert-prep-alpha-hardware\]/,
+  );
   assert.match(body, /environment:\s*alpha-hardware/);
   assert.match(body, /ALPHA_HARDWARE_HARNESS/);
   assert.match(body, /ALPHA_HARDWARE_HARNESS_SHA256/);
   assert.match(body, /Get-FileHash[\s\S]*ALPHA_HARDWARE_HARNESS/);
-  assert.match(body, /--harness-sha256/);
-  assert.match(body, /ALPHA_ACCEPTANCE_PDF_MANIFEST:/);
-  assert.match(body, /ALPHA_ACCEPTANCE_PDF_MANIFEST_SHA256:/);
   assert.match(
     body,
-    /IsPathFullyQualified\(\$env:ALPHA_ACCEPTANCE_PDF_MANIFEST\)/,
+    /Provisioned hardware harness must not be a reparse point/,
+  );
+  assert.match(body, /--harness-sha256/);
+  assert.match(body, /ALPHA_ACCEPTANCE_PDF_DIR:/);
+  assert.match(
+    body,
+    /IsPathFullyQualified\(\$env:ALPHA_ACCEPTANCE_PDF_DIR\)/,
   );
   assert.match(
     body,
-    /Test-Path -LiteralPath \$env:ALPHA_ACCEPTANCE_PDF_MANIFEST -PathType Leaf/,
+    /Test-Path -LiteralPath \$env:ALPHA_ACCEPTANCE_PDF_DIR -PathType Container/,
+  );
+  assert.match(body, /ALPHA_ACCEPTANCE_PDF_DIR must not be a reparse point/);
+  assert.match(
+    body,
+    /Join-Path \$acceptancePdfDirPath 'alpha-acceptance-pdf-manifest\.json'/,
   );
   assert.match(
     body,
     /candidate\/harness\/tools\/release\/alpha-acceptance-pdf-manifest\.json/,
   );
+  assert.match(
+    body,
+    /Provisioned acceptance PDF manifest digest does not match the candidate/,
+  );
+  assert.doesNotMatch(body, /ALPHA_ACCEPTANCE_PDF_MANIFEST(?:_SHA256)?\s*:/);
+  assert.doesNotMatch(body, /\$env:ALPHA_ACCEPTANCE_PDF_MANIFEST/);
   assert.match(
     body,
     /\$evidenceAcceptancePdfManifest = 'hardware-evidence\/alpha-acceptance-pdf-manifest\.json'/,
@@ -176,9 +194,41 @@ test('hardware gate is protected, labeled and consumes no checkout', () => {
     body,
     /Copy-Item[\s\S]*-Destination \$evidenceAcceptancePdfManifest/,
   );
+  const harnessStepStart = body.indexOf(
+    '- name: Run externally provisioned clean-snapshot hardware harness',
+  );
+  const verifierStepStart = body.indexOf(
+    '- name: Validate recorded hardware evidence contract',
+  );
+  assert.notEqual(harnessStepStart, -1);
+  assert.ok(verifierStepStart > harnessStepStart);
+  const harnessStep = body.slice(harnessStepStart, verifierStepStart);
+  assert.match(
+    harnessStep,
+    /Get-FileHash -LiteralPath \$env:HARDWARE_HARNESS_PATH -Algorithm SHA256/,
+  );
+  assert.match(harnessStep, /Hardware harness digest drifted before execution/);
+  assert.match(
+    harnessStep,
+    /Hardware harness became a reparse point before execution/,
+  );
   assert.ok(
-    body.indexOf('Copy-Item -LiteralPath $acceptancePdfManifestPath') >
-      body.indexOf('Hardware harness failed with exit code'),
+    harnessStep.indexOf('$executionHarnessHash =') <
+      harnessStep.indexOf('& $env:HARDWARE_HARNESS_PATH'),
+    'the approved harness must be rehashed immediately before invocation',
+  );
+  assert.match(harnessStep, /\$global:LASTEXITCODE = \$null/);
+  assert.match(harnessStep, /\$harnessSucceeded = \$\?/);
+  assert.match(
+    harnessStep,
+    /\$null -ne \$harnessExitCode -and \$harnessExitCode -ne 0/,
+  );
+  assert.doesNotMatch(harnessStep, /if \(\$LASTEXITCODE -ne 0\)/);
+  assert.ok(
+    body.indexOf(
+      'Copy-Item -LiteralPath $env:ACCEPTANCE_PDF_MANIFEST_PATH',
+    ) >
+      body.indexOf('Hardware harness failed:'),
     'the protected manifest copy must happen after the harness finishes so an output-root reset cannot delete it',
   );
   assert.equal(
@@ -189,9 +239,30 @@ test('hardware gate is protected, labeled and consumes no checkout', () => {
     (body.match(/--acceptance-pdf-manifest-sha256(?=\s)/g) ?? []).length,
     2,
   );
-  assert.match(body, /ALPHA_FFPROBE_PATH/);
-  assert.match(body, /ALPHA_FFPROBE_SHA256/);
+  assert.match(
+    body,
+    /Get-Command -Name ffprobe -CommandType Application -All/,
+  );
+  assert.match(body, /\$ffprobePaths\.Count -ne 1/);
+  assert.match(body, /Resolved ffprobe must not be a reparse point/);
+  assert.match(body, /ALPHA_FFPROBE_SHA256 must pin the approved ffprobe/);
+  assert.match(body, /Get-FileHash -LiteralPath \$ffprobePath -Algorithm SHA256/);
+  assert.match(body, /Resolved ffprobe digest does not match the approved value/);
+  assert.match(body, /steps\.hardware_inputs\.outputs\.ffprobe_path/);
+  assert.match(body, /steps\.hardware_inputs\.outputs\.ffprobe_sha256/);
   assert.match(body, /--ffprobe-path/);
+  assert.match(body, /--ffprobe-sha256/);
+  assert.match(body, /ALPHA_FFPROBE_SHA256:/);
+  assert.doesNotMatch(body, /ALPHA_FFPROBE_PATH/);
+  const configuredMachineInputs = [
+    ...body.matchAll(/vars\.(ALPHA_[A-Z0-9_]+)/g),
+  ].map((match) => match[1]);
+  assert.deepEqual([...new Set(configuredMachineInputs)].sort(), [
+    'ALPHA_ACCEPTANCE_PDF_DIR',
+    'ALPHA_FFPROBE_SHA256',
+    'ALPHA_HARDWARE_HARNESS',
+    'ALPHA_HARDWARE_HARNESS_SHA256',
+  ]);
   assert.doesNotMatch(body, /actions\/checkout@/);
   assert.match(body, /verify-hardware-result\.ts/);
   assert.match(body, /WindowsML and Ollama acceptance/);

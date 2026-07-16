@@ -11,14 +11,22 @@ The release workflow is intentionally fail-closed. Before dispatching it, config
   must be ancestors of that branch; manual and tag invocations for the same
   canonical tag are serialized;
 - an online self-hosted Windows x64 runner labeled `cert-prep-alpha-hardware`;
-- `ALPHA_HARDWARE_HARNESS` in the hardware environment, pointing to an absolute, provisioned harness path, plus its reviewed `ALPHA_HARDWARE_HARNESS_SHA256`;
-- `ALPHA_ACCEPTANCE_PDF_MANIFEST` in the hardware environment, pointing to an
-  absolute provisioned copy of
-  `tools/release/alpha-acceptance-pdf-manifest.json`, plus its reviewed
-  `ALPHA_ACCEPTANCE_PDF_MANIFEST_SHA256`. The manifest must be colocated with
-  exactly the four PDFs it declares: no PDF may be missing, renamed, duplicated,
-  byte-drifted, digest-drifted, or joined by an extra PDF;
-- an absolute provisioned `ALPHA_FFPROBE_PATH` and reviewed `ALPHA_FFPROBE_SHA256` in the hardware environment;
+- `ALPHA_HARDWARE_HARNESS` in the hardware environment, pointing to an
+  absolute, directly invocable provisioned script/executable, plus its reviewed
+  `ALPHA_HARDWARE_HARNESS_SHA256`. The workflow rejects reparse points, rehashes
+  immediately before invocation, and fails on a failed PowerShell invocation
+  or nonzero process exit;
+- `ALPHA_ACCEPTANCE_PDF_DIR` in the hardware environment, pointing to an
+  absolute directory containing
+  `alpha-acceptance-pdf-manifest.json` and exactly the four PDFs it declares.
+  The directory entry itself and the manifest must not be reparse points, and
+  no PDF may be missing, renamed, duplicated, byte-drifted, digest-drifted, or
+  joined by an extra PDF;
+- exactly one `ffprobe` application on the protected runner's `PATH`, plus its
+  independently reviewed `ALPHA_FFPROBE_SHA256` in the hardware environment.
+  The runner baseline owns installation; the workflow derives the absolute
+  non-reparse path and rejects any executable whose digest differs from the
+  approved value;
 - an Ollama installation/model provisioned by the hardware harness.
 
 For tag-triggered releases, set these repository variables to the literal value `true`:
@@ -39,11 +47,12 @@ fails.
 
 The candidate ID covers both publishable release files and the exact release
 harness scripts, including the reviewed acceptance PDF manifest. The hardware
-harness executable and provisioned manifest are separately pinned by SHA-256.
-The workflow requires the protected manifest and candidate manifest copies to
-have the same pinned digest, copies the verified manifest into hardware
-evidence, and passes the original protected manifest path to the harness and
-verifier so they can enumerate its four colocated PDFs. The harness receives
+harness executable remains separately pinned by its reviewed SHA-256. The
+workflow derives the provisioned manifest from `ALPHA_ACCEPTANCE_PDF_DIR`,
+requires it to match the candidate manifest byte for byte, copies it into
+hardware evidence after the harness finishes, and passes its candidate-derived
+digest to the harness and verifier so they can enumerate its four colocated
+PDFs. The harness receives
 the downloaded candidate root, candidate ID, version, tag, commit SHA, harness
 SHA-256, manifest path and SHA-256, and output root. It must echo those
 identities in `hardware-result.json` and create the referenced WebM recording.
@@ -54,10 +63,22 @@ process residue. Cancellation evidence is granular: upload, OCR, draft,
 runtime, model, cancel-vs-complete race, crash recovery, partial-data cleanup,
 and owned-process release must each have its own candidate-bound JSON report,
 byte count, and SHA-256. Acceptance and recording timestamps bind the recording
-to the completed run. The verifier executes the pinned `ffprobe` and requires a
-playable Matroska/WebM container, VP8/VP9/AV1 video stream, positive dimensions,
-duration, and decoded frame count. It writes `recording-probe.json`; the
-finalizer revalidates and publishes only the declared evidence files.
+to the completed run. A preflight requires exactly one protected-runner
+`ffprobe` on `PATH`, checks it against `ALPHA_FFPROBE_SHA256`, and passes the
+resolved path and approved hash to the verifier. The verifier rehashes it and
+requires a playable Matroska/WebM container, VP8/VP9/AV1 video stream, positive
+dimensions, duration, and decoded frame count. It writes
+`recording-probe.json`; the finalizer revalidates and publishes only the
+declared evidence files.
+
+This transition reduces the protected hardware lane from six configured
+machine inputs to four: the external harness path, its reviewed SHA-256, the
+acceptance PDF directory, and the reviewed `ffprobe` SHA-256. The external
+harness remains required because the candidate does not yet contain the full
+hardware evidence producer, Playwright runtime, and packaged-flow/resilience
+script graph. Moving that producer into the candidate is the next
+simplification phase; it must not be treated as complete until equivalent
+contract tests and a protected hardware run pass.
 
 Run the release-tool tests through the workspace task graph:
 

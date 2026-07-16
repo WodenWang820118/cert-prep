@@ -402,13 +402,14 @@ jobs:
           name: ${{ needs.metadata.outputs.candidate_artifact }}
           path: candidate
 
-      - name: Run externally provisioned clean-snapshot hardware harness
+      - name: Resolve protected hardware inputs
+        id: hardware_inputs
         shell: pwsh
         env:
           ALPHA_HARDWARE_HARNESS: ${{ vars.ALPHA_HARDWARE_HARNESS }}
           ALPHA_HARDWARE_HARNESS_SHA256: ${{ vars.ALPHA_HARDWARE_HARNESS_SHA256 }}
-          ALPHA_ACCEPTANCE_PDF_MANIFEST: ${{ vars.ALPHA_ACCEPTANCE_PDF_MANIFEST }}
-          ALPHA_ACCEPTANCE_PDF_MANIFEST_SHA256: ${{ vars.ALPHA_ACCEPTANCE_PDF_MANIFEST_SHA256 }}
+          ALPHA_ACCEPTANCE_PDF_DIR: ${{ vars.ALPHA_ACCEPTANCE_PDF_DIR }}
+          ALPHA_FFPROBE_SHA256: ${{ vars.ALPHA_FFPROBE_SHA256 }}
         run: |
           if (-not $env:ALPHA_HARDWARE_HARNESS -or
               -not [IO.Path]::IsPathFullyQualified($env:ALPHA_HARDWARE_HARNESS) -or
@@ -418,70 +419,143 @@ jobs:
           if ($env:ALPHA_HARDWARE_HARNESS_SHA256 -notmatch '^[0-9a-fA-F]{64}$') {
             throw 'ALPHA_HARDWARE_HARNESS_SHA256 must pin the approved harness.'
           }
-          $harnessHash = (Get-FileHash -LiteralPath $env:ALPHA_HARDWARE_HARNESS -Algorithm SHA256).Hash.ToLowerInvariant()
+          $harnessPath = (Resolve-Path -LiteralPath $env:ALPHA_HARDWARE_HARNESS).Path
+          $harnessItem = Get-Item -LiteralPath $harnessPath -Force
+          if (($harnessItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw 'Provisioned hardware harness must not be a reparse point.'
+          }
+          $harnessHash = (Get-FileHash -LiteralPath $harnessPath -Algorithm SHA256).Hash.ToLowerInvariant()
           if ($harnessHash -ne $env:ALPHA_HARDWARE_HARNESS_SHA256.ToLowerInvariant()) {
             throw 'Provisioned hardware harness digest does not match the approved value.'
           }
-          if (-not $env:ALPHA_ACCEPTANCE_PDF_MANIFEST -or
-              -not [IO.Path]::IsPathFullyQualified($env:ALPHA_ACCEPTANCE_PDF_MANIFEST) -or
-              -not (Test-Path -LiteralPath $env:ALPHA_ACCEPTANCE_PDF_MANIFEST -PathType Leaf)) {
-            throw 'ALPHA_ACCEPTANCE_PDF_MANIFEST must be a provisioned absolute manifest path.'
+          if (-not $env:ALPHA_ACCEPTANCE_PDF_DIR -or
+              -not [IO.Path]::IsPathFullyQualified($env:ALPHA_ACCEPTANCE_PDF_DIR) -or
+              -not (Test-Path -LiteralPath $env:ALPHA_ACCEPTANCE_PDF_DIR -PathType Container)) {
+            throw 'ALPHA_ACCEPTANCE_PDF_DIR must be a provisioned absolute directory.'
           }
-          if ($env:ALPHA_ACCEPTANCE_PDF_MANIFEST_SHA256 -notmatch '^[0-9a-fA-F]{64}$') {
-            throw 'ALPHA_ACCEPTANCE_PDF_MANIFEST_SHA256 must pin the approved manifest.'
+          $acceptancePdfDirItem = Get-Item -LiteralPath $env:ALPHA_ACCEPTANCE_PDF_DIR -Force
+          if (($acceptancePdfDirItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw 'ALPHA_ACCEPTANCE_PDF_DIR must not be a reparse point.'
           }
-          $acceptancePdfManifestPath = (Resolve-Path -LiteralPath $env:ALPHA_ACCEPTANCE_PDF_MANIFEST).Path
+          $acceptancePdfDirPath = (Resolve-Path -LiteralPath $env:ALPHA_ACCEPTANCE_PDF_DIR).Path
+          $acceptancePdfManifestPath = Join-Path $acceptancePdfDirPath 'alpha-acceptance-pdf-manifest.json'
+          if (-not (Test-Path -LiteralPath $acceptancePdfManifestPath -PathType Leaf)) {
+            throw 'ALPHA_ACCEPTANCE_PDF_DIR must contain alpha-acceptance-pdf-manifest.json.'
+          }
+          $acceptancePdfManifestItem = Get-Item -LiteralPath $acceptancePdfManifestPath -Force
+          if (($acceptancePdfManifestItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw 'Provisioned acceptance PDF manifest must not be a reparse point.'
+          }
           $acceptancePdfManifestHash = (Get-FileHash -LiteralPath $acceptancePdfManifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
-          $pinnedAcceptancePdfManifestHash = $env:ALPHA_ACCEPTANCE_PDF_MANIFEST_SHA256.ToLowerInvariant()
-          if ($acceptancePdfManifestHash -ne $pinnedAcceptancePdfManifestHash) {
-            throw 'Provisioned acceptance PDF manifest digest does not match the approved value.'
-          }
           $candidateAcceptancePdfManifest = './candidate/harness/tools/release/alpha-acceptance-pdf-manifest.json'
           if (-not (Test-Path -LiteralPath $candidateAcceptancePdfManifest -PathType Leaf)) {
             throw 'Candidate acceptance PDF manifest is missing.'
           }
-          $candidateAcceptancePdfManifestHash = (Get-FileHash -LiteralPath $candidateAcceptancePdfManifest -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($candidateAcceptancePdfManifestHash -ne $pinnedAcceptancePdfManifestHash) {
-            throw 'Candidate acceptance PDF manifest digest does not match the approved value.'
+          $candidateAcceptancePdfManifestItem = Get-Item -LiteralPath $candidateAcceptancePdfManifest -Force
+          if (($candidateAcceptancePdfManifestItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw 'Candidate acceptance PDF manifest must not be a reparse point.'
           }
+          $candidateAcceptancePdfManifestHash = (Get-FileHash -LiteralPath $candidateAcceptancePdfManifest -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($acceptancePdfManifestHash -ne $candidateAcceptancePdfManifestHash) {
+            throw 'Provisioned acceptance PDF manifest digest does not match the candidate.'
+          }
+          $ffprobePaths = @(
+            Get-Command -Name ffprobe -CommandType Application -All -ErrorAction SilentlyContinue |
+              ForEach-Object { $_.Source } |
+              Where-Object { $_ } |
+              Sort-Object -Unique
+          )
+          if ($ffprobePaths.Count -ne 1) {
+            throw "Protected hardware acceptance requires exactly one ffprobe application on PATH; found $($ffprobePaths.Count)."
+          }
+          $ffprobePath = (Resolve-Path -LiteralPath $ffprobePaths[0]).Path
+          if (-not [IO.Path]::IsPathFullyQualified($ffprobePath) -or
+              -not (Test-Path -LiteralPath $ffprobePath -PathType Leaf)) {
+            throw 'Resolved ffprobe must be an existing absolute file.'
+          }
+          $ffprobeItem = Get-Item -LiteralPath $ffprobePath -Force
+          if (($ffprobeItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw 'Resolved ffprobe must not be a reparse point.'
+          }
+          if ($env:ALPHA_FFPROBE_SHA256 -notmatch '^[0-9a-fA-F]{64}$') {
+            throw 'ALPHA_FFPROBE_SHA256 must pin the approved ffprobe executable.'
+          }
+          $ffprobeHash = (Get-FileHash -LiteralPath $ffprobePath -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($ffprobeHash -ne $env:ALPHA_FFPROBE_SHA256.ToLowerInvariant()) {
+            throw 'Resolved ffprobe digest does not match the approved value.'
+          }
+          "harness_path=$harnessPath" >> $env:GITHUB_OUTPUT
+          "harness_sha256=$harnessHash" >> $env:GITHUB_OUTPUT
+          "manifest_path=$acceptancePdfManifestPath" >> $env:GITHUB_OUTPUT
+          "manifest_sha256=$candidateAcceptancePdfManifestHash" >> $env:GITHUB_OUTPUT
+          "ffprobe_path=$ffprobePath" >> $env:GITHUB_OUTPUT
+          "ffprobe_sha256=$ffprobeHash" >> $env:GITHUB_OUTPUT
+
+      - name: Run externally provisioned clean-snapshot hardware harness
+        shell: pwsh
+        env:
+          HARDWARE_HARNESS_PATH: ${{ steps.hardware_inputs.outputs.harness_path }}
+          HARDWARE_HARNESS_SHA256: ${{ steps.hardware_inputs.outputs.harness_sha256 }}
+          ACCEPTANCE_PDF_MANIFEST_PATH: ${{ steps.hardware_inputs.outputs.manifest_path }}
+          ACCEPTANCE_PDF_MANIFEST_SHA256: ${{ steps.hardware_inputs.outputs.manifest_sha256 }}
+        run: |
           New-Item -ItemType Directory -Force hardware-evidence | Out-Null
-          & $env:ALPHA_HARDWARE_HARNESS `
+          $executionHarnessItem = Get-Item -LiteralPath $env:HARDWARE_HARNESS_PATH -Force
+          if (($executionHarnessItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw 'Hardware harness became a reparse point before execution.'
+          }
+          $executionHarnessHash = (Get-FileHash -LiteralPath $env:HARDWARE_HARNESS_PATH -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($executionHarnessHash -ne $env:HARDWARE_HARNESS_SHA256) {
+            throw 'Hardware harness digest drifted before execution.'
+          }
+          $global:LASTEXITCODE = $null
+          & $env:HARDWARE_HARNESS_PATH `
             --candidate-root (Resolve-Path ./candidate).Path `
             --candidate-id '${{ needs.build-candidate.outputs.candidate_id }}' `
             --version '${{ needs.metadata.outputs.version }}' `
             --tag '${{ needs.metadata.outputs.tag }}' `
             --commit '${{ needs.metadata.outputs.commit_sha }}' `
-            --harness-sha256 $harnessHash `
-            --acceptance-pdf-manifest "$env:ALPHA_ACCEPTANCE_PDF_MANIFEST" `
-            --acceptance-pdf-manifest-sha256 $pinnedAcceptancePdfManifestHash `
+            --harness-sha256 $env:HARDWARE_HARNESS_SHA256 `
+            --acceptance-pdf-manifest $env:ACCEPTANCE_PDF_MANIFEST_PATH `
+            --acceptance-pdf-manifest-sha256 $env:ACCEPTANCE_PDF_MANIFEST_SHA256 `
             --output-root (Resolve-Path ./hardware-evidence).Path
-          if ($LASTEXITCODE -ne 0) { throw "Hardware harness failed with exit code $LASTEXITCODE." }
+          $harnessSucceeded = $?
+          $harnessExitCode = $LASTEXITCODE
+          if (-not $harnessSucceeded -or
+              ($null -ne $harnessExitCode -and $harnessExitCode -ne 0)) {
+            $exitDetail = if ($null -eq $harnessExitCode) {
+              'PowerShell invocation failed'
+            } else {
+              "exit code $harnessExitCode"
+            }
+            throw "Hardware harness failed: $exitDetail."
+          }
           $evidenceAcceptancePdfManifest = 'hardware-evidence/alpha-acceptance-pdf-manifest.json'
-          Copy-Item -LiteralPath $acceptancePdfManifestPath -Destination $evidenceAcceptancePdfManifest -Force
+          Copy-Item -LiteralPath $env:ACCEPTANCE_PDF_MANIFEST_PATH -Destination $evidenceAcceptancePdfManifest -Force
           $evidenceAcceptancePdfManifestHash = (Get-FileHash -LiteralPath $evidenceAcceptancePdfManifest -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($evidenceAcceptancePdfManifestHash -ne $pinnedAcceptancePdfManifestHash) {
+          if ($evidenceAcceptancePdfManifestHash -ne $env:ACCEPTANCE_PDF_MANIFEST_SHA256) {
             throw 'Copied hardware-evidence acceptance PDF manifest digest drifted.'
           }
 
       - name: Validate recorded hardware evidence contract
         shell: pwsh
         env:
-          ALPHA_HARDWARE_HARNESS_SHA256: ${{ vars.ALPHA_HARDWARE_HARNESS_SHA256 }}
-          ALPHA_ACCEPTANCE_PDF_MANIFEST: ${{ vars.ALPHA_ACCEPTANCE_PDF_MANIFEST }}
-          ALPHA_ACCEPTANCE_PDF_MANIFEST_SHA256: ${{ vars.ALPHA_ACCEPTANCE_PDF_MANIFEST_SHA256 }}
-          ALPHA_FFPROBE_PATH: ${{ vars.ALPHA_FFPROBE_PATH }}
-          ALPHA_FFPROBE_SHA256: ${{ vars.ALPHA_FFPROBE_SHA256 }}
+          HARDWARE_HARNESS_SHA256: ${{ steps.hardware_inputs.outputs.harness_sha256 }}
+          ACCEPTANCE_PDF_MANIFEST_PATH: ${{ steps.hardware_inputs.outputs.manifest_path }}
+          ACCEPTANCE_PDF_MANIFEST_SHA256: ${{ steps.hardware_inputs.outputs.manifest_sha256 }}
+          RESOLVED_FFPROBE_PATH: ${{ steps.hardware_inputs.outputs.ffprobe_path }}
+          RESOLVED_FFPROBE_SHA256: ${{ steps.hardware_inputs.outputs.ffprobe_sha256 }}
         run: >-
           node candidate/harness/tools/release/verify-hardware-result.ts
           --result hardware-evidence/hardware-result.json
           --plan candidate/release/metadata/release-plan.json
           --evidence-root hardware-evidence
           --candidate-id '${{ needs.build-candidate.outputs.candidate_id }}'
-          --harness-sha256 "$env:ALPHA_HARDWARE_HARNESS_SHA256"
-          --acceptance-pdf-manifest "$env:ALPHA_ACCEPTANCE_PDF_MANIFEST"
-          --acceptance-pdf-manifest-sha256 "$env:ALPHA_ACCEPTANCE_PDF_MANIFEST_SHA256"
-          --ffprobe-path "$env:ALPHA_FFPROBE_PATH"
-          --ffprobe-sha256 "$env:ALPHA_FFPROBE_SHA256"
+          --harness-sha256 "$env:HARDWARE_HARNESS_SHA256"
+          --acceptance-pdf-manifest "$env:ACCEPTANCE_PDF_MANIFEST_PATH"
+          --acceptance-pdf-manifest-sha256 "$env:ACCEPTANCE_PDF_MANIFEST_SHA256"
+          --ffprobe-path "$env:RESOLVED_FFPROBE_PATH"
+          --ffprobe-sha256 "$env:RESOLVED_FFPROBE_SHA256"
 
       - name: Upload protected hardware evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
