@@ -356,19 +356,16 @@ test('streaming job attribution rejects whitespace-only fallback evidence', () =
 });
 
 test('streaming job completion state separates active, success, and blockers', () => {
-  assert.deepEqual(
-    streamingJobCompletionState({ succeeded: 3 }),
-    {
-      total_count: 3,
-      active_count: 0,
-      terminal_count: 3,
-      succeeded_count: 3,
-      failed_count: 0,
-      skipped_count: 0,
-      all_terminal: true,
-      all_succeeded: true,
-    },
-  );
+  assert.deepEqual(streamingJobCompletionState({ succeeded: 3 }), {
+    total_count: 3,
+    active_count: 0,
+    terminal_count: 3,
+    succeeded_count: 3,
+    failed_count: 0,
+    skipped_count: 0,
+    all_terminal: true,
+    all_succeeded: true,
+  });
 
   assert.deepEqual(
     streamingJobCompletionState({

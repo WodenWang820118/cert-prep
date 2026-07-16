@@ -45,7 +45,9 @@ export async function waitForCdp(
 ): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
-    const version = await fetchJson(`http://127.0.0.1:${run.port}/json/version`);
+    const version = await fetchJson(
+      `http://127.0.0.1:${run.port}/json/version`,
+    );
     if (version) {
       return;
     }
@@ -118,7 +120,9 @@ export async function screenshot(
     `${String(run.metrics.screenshots.length + 1).padStart(2, '0')}-${name}.png`,
   );
   await activePage(run).screenshot({ path: file, fullPage: true });
-  run.metrics.screenshots.push(normalizePath(relative(run.options.workspaceRoot, file)));
+  run.metrics.screenshots.push(
+    normalizePath(relative(run.options.workspaceRoot, file)),
+  );
   log(run, `screenshot ${file.split(/[\\/]/).pop() ?? name}`);
 }
 
@@ -177,7 +181,10 @@ export async function openRuntimeDrawer(run: SmokeRunState): Promise<void> {
     return;
   }
   await clickButtonText(run, 'Manage runtime');
-  await runtimeDrawerLocator(run).waitFor({ state: 'visible', timeout: 10_000 });
+  await runtimeDrawerLocator(run).waitFor({
+    state: 'visible',
+    timeout: 10_000,
+  });
   const elapsed = await waitText(
     run,
     /Python backend|Developer backend|WindowsML OCR|PaddleOCR|Ollama/i,
@@ -253,9 +260,11 @@ export async function closeRuntimeDrawer(run: SmokeRunState): Promise<void> {
     );
     return;
   }
-  const closeButtons = dialog.locator(
-    'button[aria-label="Close runtime manager"]:not([aria-hidden="true"]), button[aria-label="Close"]:not([aria-hidden="true"]), button.p-dialog-header-close:not([aria-hidden="true"])',
-  ).filter({ visible: true });
+  const closeButtons = dialog
+    .locator(
+      'button[aria-label="Close runtime manager"]:not([aria-hidden="true"]), button[aria-label="Close"]:not([aria-hidden="true"]), button.p-dialog-header-close:not([aria-hidden="true"])',
+    )
+    .filter({ visible: true });
   const count = await closeButtons.count();
   if (count > 0) {
     await closeButtons.last().click({ force: true });

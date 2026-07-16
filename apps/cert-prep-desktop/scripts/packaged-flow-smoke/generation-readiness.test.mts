@@ -26,10 +26,7 @@ interface GetCall {
 class FakePage {
   readonly responseListeners = new Set<(response: Response) => void>();
   readonly getCalls: GetCall[] = [];
-  readonly routes = new Map<
-    string,
-    () => APIResponse | Promise<APIResponse>
-  >();
+  readonly routes = new Map<string, () => APIResponse | Promise<APIResponse>>();
 
   readonly request = {
     get: async (url: string, options: Record<string, unknown>) => {
@@ -255,7 +252,10 @@ test('readiness endpoints fail closed with fixed blockers', async (t) => {
       name: 'provider malformed schema',
       endpoint: 'selection',
       route: () =>
-        apiResponse(200, { ...providerPayload(), selected_provider: 'retired' }),
+        apiResponse(200, {
+          ...providerPayload(),
+          selected_provider: 'retired',
+        }),
       blocker: 'provider_selection_schema_invalid',
     },
     {
@@ -300,7 +300,9 @@ test('readiness endpoints fail closed with fixed blockers', async (t) => {
       await capture(run, page);
       assert.equal(run.metrics.generation_readiness_at_start?.ready, false);
       assert.ok(
-        run.metrics.generation_readiness_at_start?.blockers.includes(item.blocker),
+        run.metrics.generation_readiness_at_start?.blockers.includes(
+          item.blocker,
+        ),
       );
       assert.equal(page.responseListeners.size, 0);
       const serialized = JSON.stringify(run.metrics);
@@ -504,7 +506,9 @@ test('strict runtime schema, local path policy, and secret filtering block bad e
         return true;
       });
       assert.ok(
-        run.metrics.generation_readiness_at_start?.blockers.includes(item.blocker),
+        run.metrics.generation_readiness_at_start?.blockers.includes(
+          item.blocker,
+        ),
       );
       if (item.name === 'UNC installed path') {
         assert.equal(verifierCalls, 0);
@@ -518,31 +522,37 @@ test('strict runtime schema, local path policy, and secret filtering block bad e
 test('project listener is installed before action and cleaned on timeout or action failure', async () => {
   const timeoutPage = readyPage();
   const timeoutRun = smokeRun();
-  await captureGenerationReadinessAtProjectCreate(timeoutRun, async () => {
-    assert.equal(timeoutPage.responseListeners.size, 1);
-  }, {
-    page: timeoutPage as unknown as Page,
-    projectResponseTimeoutMs: 1,
-  });
-  assert.deepEqual(
-    timeoutRun.metrics.generation_readiness_at_start?.blockers,
-    ['project_response_timeout'],
+  await captureGenerationReadinessAtProjectCreate(
+    timeoutRun,
+    async () => {
+      assert.equal(timeoutPage.responseListeners.size, 1);
+    },
+    {
+      page: timeoutPage as unknown as Page,
+      projectResponseTimeoutMs: 1,
+    },
   );
+  assert.deepEqual(timeoutRun.metrics.generation_readiness_at_start?.blockers, [
+    'project_response_timeout',
+  ]);
   assert.equal(timeoutPage.responseListeners.size, 0);
 
   const actionPage = readyPage();
   const actionRun = smokeRun();
   await assert.rejects(
-    captureGenerationReadinessAtProjectCreate(actionRun, async () => {
-      assert.equal(actionPage.responseListeners.size, 1);
-      throw new Error(`UI failure ${AUTH_TOKEN}`);
-    }, { page: actionPage as unknown as Page }),
+    captureGenerationReadinessAtProjectCreate(
+      actionRun,
+      async () => {
+        assert.equal(actionPage.responseListeners.size, 1);
+        throw new Error(`UI failure ${AUTH_TOKEN}`);
+      },
+      { page: actionPage as unknown as Page },
+    ),
     /UI failure/,
   );
-  assert.deepEqual(
-    actionRun.metrics.generation_readiness_at_start?.blockers,
-    ['project_create_action_failed'],
-  );
+  assert.deepEqual(actionRun.metrics.generation_readiness_at_start?.blockers, [
+    'project_create_action_failed',
+  ]);
   assert.equal(actionPage.responseListeners.size, 0);
   assert.equal(JSON.stringify(actionRun.metrics).includes(AUTH_TOKEN), false);
 });
@@ -573,10 +583,9 @@ test('project capture ignores external origins and rejects malformed authorizati
     async () => authPage.emit(projectResponse({ authorization: 'Basic bad' })),
     { page: authPage as unknown as Page },
   );
-  assert.deepEqual(
-    authRun.metrics.generation_readiness_at_start?.blockers,
-    ['project_response_schema_invalid'],
-  );
+  assert.deepEqual(authRun.metrics.generation_readiness_at_start?.blockers, [
+    'project_response_schema_invalid',
+  ]);
   assert.equal(authPage.getCalls.length, 0);
   assert.equal(authPage.responseListeners.size, 0);
 });
@@ -588,11 +597,16 @@ test('project and upload capture reject a different origin, auth, or project', a
     projectId: PROJECT_ID,
   };
   const matching = uploadResponse();
-  assert.equal(isProjectDocumentsCollectionResponse(projectApi, matching), true);
+  assert.equal(
+    isProjectDocumentsCollectionResponse(projectApi, matching),
+    true,
+  );
   assert.equal(
     isProjectDocumentsCollectionResponse(
       projectApi,
-      uploadResponse({ url: `http://127.0.0.1:8766/projects/${PROJECT_ID}/documents` }),
+      uploadResponse({
+        url: `http://127.0.0.1:8766/projects/${PROJECT_ID}/documents`,
+      }),
     ),
     false,
   );
@@ -625,7 +639,10 @@ test('project and upload capture reject a different origin, auth, or project', a
   const noContextRun = smokeRun();
   noContextRun.page = null;
   assert.equal(await waitForUploadDocumentResponse(noContextRun), null);
-  assert.match(noContextRun.metrics.observations[0] ?? '', /context was unavailable/);
+  assert.match(
+    noContextRun.metrics.observations[0] ?? '',
+    /context was unavailable/,
+  );
 });
 
 async function capture(
@@ -709,12 +726,14 @@ function apiResponse(
   } as unknown as APIResponse;
 }
 
-function projectResponse(overrides: {
-  url?: string;
-  authorization?: string;
-  status?: number;
-  payload?: unknown;
-} = {}): Response {
+function projectResponse(
+  overrides: {
+    url?: string;
+    authorization?: string;
+    status?: number;
+    payload?: unknown;
+  } = {},
+): Response {
   return response({
     url: overrides.url ?? `${API_BASE_URL}/projects`,
     authorization: overrides.authorization ?? AUTHORIZATION,
@@ -724,13 +743,14 @@ function projectResponse(overrides: {
   });
 }
 
-function uploadResponse(overrides: {
-  url?: string;
-  authorization?: string;
-} = {}): Response {
+function uploadResponse(
+  overrides: {
+    url?: string;
+    authorization?: string;
+  } = {},
+): Response {
   return response({
-    url:
-      overrides.url ?? `${API_BASE_URL}/projects/${PROJECT_ID}/documents`,
+    url: overrides.url ?? `${API_BASE_URL}/projects/${PROJECT_ID}/documents`,
     authorization: overrides.authorization ?? AUTHORIZATION,
     status: 201,
     payload: { id: DOCUMENT_ID, project_id: PROJECT_ID },

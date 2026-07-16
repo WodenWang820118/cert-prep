@@ -67,13 +67,13 @@ test('all third-party actions are pinned to full commit SHAs', () => {
 });
 
 test('release workflow pins setup-uv to the verified v8.3.2 commit', () => {
-  const setupUvUses = workflow.match(/astral-sh\/setup-uv@([0-9a-f]{40})/g) ?? [];
+  const setupUvUses =
+    workflow.match(/astral-sh\/setup-uv@([0-9a-f]{40})/g) ?? [];
   assert.ok(setupUvUses.length > 0);
   assert.ok(
     setupUvUses.every(
       (value) =>
-        value ===
-        'astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990',
+        value === 'astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990',
     ),
   );
 });
@@ -206,10 +206,7 @@ test('a failed post-OCR gate withdraws the incomplete prerelease', () => {
     body,
     /publish-ocr-prerelease\.outputs\.release_owned_by_run == 'true'/,
   );
-  assert.match(
-    body,
-    /publish-alpha\.outputs\.release_finalized != 'true'/,
-  );
+  assert.match(body, /publish-alpha\.outputs\.release_finalized != 'true'/);
   assert.match(body, /publish-alpha\.result != 'success'/);
   assert.match(body, /environment:\s*alpha-release/);
   assert.match(body, /--mode cleanup/);

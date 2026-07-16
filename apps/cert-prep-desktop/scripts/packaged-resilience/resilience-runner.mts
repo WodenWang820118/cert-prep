@@ -118,7 +118,9 @@ export interface RemainingScenarioProofs {
 
 export interface RemainingResilienceRunResult {
   readonly outputRoot: string;
-  readonly evidence: Readonly<Record<RemainingCheck, EvidenceArtifactReference>>;
+  readonly evidence: Readonly<
+    Record<RemainingCheck, EvidenceArtifactReference>
+  >;
   readonly sessionRestart: EvidenceArtifactReference;
 }
 
@@ -129,7 +131,10 @@ export interface UploadTriggeredDraftProof extends Record<string, unknown> {
 }
 
 interface OwnedProcessTrackerPort {
-  captureAppTree(appPid: number, expectedExecutablePath: string): readonly number[];
+  captureAppTree(
+    appPid: number,
+    expectedExecutablePath: string,
+  ): readonly number[];
   proveReleased(
     finalAppPid: number,
     closedAt: string,
@@ -206,10 +211,7 @@ export async function runRemainingResilienceAcceptance(
       host: options.ollamaHost,
       timeoutMs: options.timeoutMs,
     });
-    processTracker.captureAppTree(
-      isolatedOllama.pid,
-      options.ollamaExePath,
-    );
+    processTracker.captureAppTree(isolatedOllama.pid, options.ollamaExePath);
     await dependencies.launchAppAndConnect(run);
     scenarioProofs = await dependencies.executeScenarios(
       run,
@@ -217,10 +219,7 @@ export async function runRemainingResilienceAcceptance(
       processTracker,
       { now: dependencies.now },
     );
-    processTracker.captureAppTree(
-      isolatedOllama.pid,
-      options.ollamaExePath,
-    );
+    processTracker.captureAppTree(isolatedOllama.pid, options.ollamaExePath);
     finalAppPid = requireLiveAppPid(run);
     processTracker.captureAppTree(finalAppPid, options.installedExePath);
     run.metrics.status = 'completed';
@@ -234,9 +233,16 @@ export async function runRemainingResilienceAcceptance(
         dependencies.cleanupAfterRun,
         isolatedOllama,
       );
-      if (primaryError === null && finalAppPid !== null && isolatedOllama !== null) {
+      if (
+        primaryError === null &&
+        finalAppPid !== null &&
+        isolatedOllama !== null
+      ) {
         const closedAt = dependencies.now().toISOString();
-        processProof = await processTracker.proveReleased(finalAppPid, closedAt);
+        processProof = await processTracker.proveReleased(
+          finalAppPid,
+          closedAt,
+        );
         processCompletedAt = orderedTimestamp(
           processStartedAt,
           dependencies.now().toISOString(),
@@ -311,7 +317,10 @@ async function cleanupAppAndOllama(
     throw errors[0];
   }
   if (errors.length > 1) {
-    throw new AggregateError(errors, 'App and isolated Ollama cleanup both failed.');
+    throw new AggregateError(
+      errors,
+      'App and isolated Ollama cleanup both failed.',
+    );
   }
 }
 
@@ -341,7 +350,8 @@ export async function executeRemainingResilienceScenarios(
     const proof = await runCancelableOperationScenario(transport, {
       kind: 'runtime',
       startPath: `/runtime/installations/${WINDOWSML_RUNTIME_KIND}`,
-      operationPath: (operationId) => `/runtime/installations/${encoded(operationId)}`,
+      operationPath: (operationId) =>
+        `/runtime/installations/${encoded(operationId)}`,
       operationKind: WINDOWSML_RUNTIME_KIND,
       provider: WINDOWSML_RUNTIME_PROVIDER,
       model: WINDOWSML_RUNTIME_MODEL,
@@ -351,11 +361,7 @@ export async function executeRemainingResilienceScenarios(
           options.latePublishObservationWindowMs,
           wait,
           () =>
-            exactWindowsMlRequirement(
-              transport,
-              false,
-              run.options.appDataDir,
-            ),
+            exactWindowsMlRequirement(transport, false, run.options.appDataDir),
         ),
     });
     await waitForOperationSuccess(
@@ -385,7 +391,9 @@ export async function executeRemainingResilienceScenarios(
     !uploadedDocument ||
     uploadedDocument.projectId !== projectApi.projectId
   ) {
-    throw new Error('Remaining resilience upload was not bound to the exact project.');
+    throw new Error(
+      'Remaining resilience upload was not bound to the exact project.',
+    );
   }
   const autoDrafts = await drainUploadTriggeredDrafts(
     transport,
@@ -404,7 +412,8 @@ export async function executeRemainingResilienceScenarios(
     const proof = await runCancelableOperationScenario(transport, {
       kind: 'model',
       startPath: '/llm/model-downloads',
-      operationPath: (operationId) => `/llm/model-downloads/${encoded(operationId)}`,
+      operationPath: (operationId) =>
+        `/llm/model-downloads/${encoded(operationId)}`,
       provider: selection.provider,
       model: selection.model,
       timeoutMs: options.timeoutMs,
@@ -519,7 +528,9 @@ export async function executeRemainingResilienceScenarios(
           options.timeoutMs,
         );
         if (restartedProjectApi.authorization === previousAuthorization) {
-          throw new Error(`${label} reused the stale backend authorization token.`);
+          throw new Error(
+            `${label} reused the stale backend authorization token.`,
+          );
         }
         run.projectApi = restartedProjectApi;
         transport = createTransport(run);
@@ -604,7 +615,9 @@ export async function exactWindowsMlRequirement(
     );
   }
   if (!appDataDir) {
-    throw new Error('WindowsML runtime containment requires isolated app data.');
+    throw new Error(
+      'WindowsML runtime containment requires isolated app data.',
+    );
   }
   const canonicalAppData = realpathSync.native(resolve(appDataDir));
   const installedPath = requirement.installed_path;
@@ -614,13 +627,17 @@ export async function exactWindowsMlRequirement(
       typeof installedPath !== 'string' ||
       !isAbsolute(installedPath)
     ) {
-      throw new Error('WindowsML runtime was not a clean missing prerequisite.');
+      throw new Error(
+        'WindowsML runtime was not a clean missing prerequisite.',
+      );
     }
     const resolvedInstallTarget = resolve(installedPath);
     if (lstatSync(resolvedInstallTarget, { throwIfNoEntry: false })) {
       throw new Error('WindowsML missing runtime target already existed.');
     }
-    const canonicalInstallTarget = canonicalMissingTarget(resolvedInstallTarget);
+    const canonicalInstallTarget = canonicalMissingTarget(
+      resolvedInstallTarget,
+    );
     const installTargetRelative = containedRuntimeRelativePath(
       canonicalAppData,
       canonicalInstallTarget,
@@ -654,7 +671,9 @@ export async function exactWindowsMlRequirement(
     'WindowsML installed path was not contained by this acceptance app-data directory.',
   );
   if (requirement.unavailable_reason !== null) {
-    throw new Error('Available WindowsML runtime retained an unavailable reason.');
+    throw new Error(
+      'Available WindowsML runtime retained an unavailable reason.',
+    );
   }
   return {
     kind: WINDOWSML_RUNTIME_KIND,
@@ -677,9 +696,14 @@ export async function exactOllamaTags(
   });
   if (
     response.status !== 200 ||
-    !response.headers.get('content-type')?.toLowerCase().includes('application/json')
+    !response.headers
+      .get('content-type')
+      ?.toLowerCase()
+      .includes('application/json')
   ) {
-    throw new Error(`Isolated Ollama tags returned HTTP ${response.status} or non-JSON.`);
+    throw new Error(
+      `Isolated Ollama tags returned HTTP ${response.status} or non-JSON.`,
+    );
   }
   const body = await response.json().catch(() => null);
   if (
@@ -689,16 +713,16 @@ export async function exactOllamaTags(
   ) {
     throw new Error('Isolated Ollama tags response was invalid.');
   }
-  const modelNames = ((body as Record<string, unknown>).models as unknown[]).map(
-    (raw) => {
-      if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-        throw new Error('Isolated Ollama tags contained an invalid model.');
-      }
-      const model = raw as Record<string, unknown>;
-      const name = model.name ?? model.model;
-      return stringField(name, 'isolated Ollama model name');
-    },
-  );
+  const modelNames = (
+    (body as Record<string, unknown>).models as unknown[]
+  ).map((raw) => {
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+      throw new Error('Isolated Ollama tags contained an invalid model.');
+    }
+    const model = raw as Record<string, unknown>;
+    const name = model.name ?? model.model;
+    return stringField(name, 'isolated Ollama model name');
+  });
   const exactCount = modelNames.filter((name) => name === OLLAMA_MODEL).length;
   if (
     (!expectedInstalled && modelNames.length !== 0) ||
@@ -735,7 +759,9 @@ function exactOllamaOrigin(host: string | undefined): string {
     parsed.username ||
     parsed.password
   ) {
-    throw new Error('Remaining resilience isolated Ollama host was not loopback HTTP.');
+    throw new Error(
+      'Remaining resilience isolated Ollama host was not loopback HTTP.',
+    );
   }
   return parsed.origin;
 }
@@ -757,7 +783,9 @@ export async function exactOllamaHealth(
     typeof health.detail !== 'string' ||
     health.detail.trim().length === 0
   ) {
-    throw new Error('Isolated Ollama health provider/model state was not exact.');
+    throw new Error(
+      'Isolated Ollama health provider/model state was not exact.',
+    );
   }
   if (
     (!expectedAvailable &&
@@ -767,7 +795,9 @@ export async function exactOllamaHealth(
       (health.unavailable_reason !== null ||
         health.effective_model !== OLLAMA_MODEL))
   ) {
-    throw new Error('Isolated Ollama health availability transition was not exact.');
+    throw new Error(
+      'Isolated Ollama health availability transition was not exact.',
+    );
   }
   return {
     provider: 'ollama',
@@ -794,7 +824,9 @@ export async function drainUploadTriggeredDrafts(
       const items = exactDraftJobItems(body, projectId, documentId);
       return (
         items.length > 0 &&
-        items.every((item) => AUTO_DRAFT_TERMINAL_STATUSES.has(String(item.status)))
+        items.every((item) =>
+          AUTO_DRAFT_TERMINAL_STATUSES.has(String(item.status)),
+        )
       );
     },
     { timeoutMs, label: 'upload-triggered automatic draft jobs' },
@@ -806,13 +838,18 @@ export async function drainUploadTriggeredDrafts(
     );
   }
   const drafts = requireJsonObject(
-    await transport.request('GET', `/projects/${encoded(projectId)}/question-drafts`),
+    await transport.request(
+      'GET',
+      `/projects/${encoded(projectId)}/question-drafts`,
+    ),
     [200],
     'drafts before manual generation',
   );
   const usable = exactUsableDrafts(drafts, projectId, documentId);
   if (usable.length !== 0) {
-    throw new Error('Automatic draft jobs published usable questions before manual proof.');
+    throw new Error(
+      'Automatic draft jobs published usable questions before manual proof.',
+    );
   }
   return {
     jobCount: jobs.length,
@@ -858,12 +895,15 @@ export async function waitForExactDocumentDrafts(
   const body = await pollJson(
     transport,
     `/projects/${encoded(projectId)}/question-drafts`,
-    (candidate) => exactUsableDrafts(candidate, projectId, documentId).length >= 2,
+    (candidate) =>
+      exactUsableDrafts(candidate, projectId, documentId).length >= 2,
     { timeoutMs, label: 'manual draft publication' },
   );
   const usable = exactUsableDrafts(body, projectId, documentId);
   if (usable.length < 2) {
-    throw new Error('Manual draft commit did not publish two usable questions.');
+    throw new Error(
+      'Manual draft commit did not publish two usable questions.',
+    );
   }
   return usable.length;
 }
@@ -957,7 +997,10 @@ function exactOperationScope(
   expectedOperationId?: string,
 ): string {
   const operationId = stringField(body.id, `${label} operation id`);
-  if (expectedOperationId !== undefined && operationId !== expectedOperationId) {
+  if (
+    expectedOperationId !== undefined &&
+    operationId !== expectedOperationId
+  ) {
     throw new Error(`${label} operation ID drifted.`);
   }
   for (const [key, expected] of Object.entries(expectedScope)) {
@@ -1017,7 +1060,9 @@ async function captureStableCanceledState(
   capture: () => Promise<Readonly<Record<string, unknown>>>,
 ): Promise<Readonly<Record<string, unknown>>> {
   if (!Number.isInteger(observationWindowMs) || observationWindowMs < 1_000) {
-    throw new Error('Canceled-state observation window must be at least 1000 ms.');
+    throw new Error(
+      'Canceled-state observation window must be at least 1000 ms.',
+    );
   }
   const immediate = await capture();
   await wait(observationWindowMs);
@@ -1025,7 +1070,10 @@ async function captureStableCanceledState(
   return { observationWindowMs, immediate, afterWindow };
 }
 
-function orderedTimestamp(startedAt: string, candidateCompletedAt: string): string {
+function orderedTimestamp(
+  startedAt: string,
+  candidateCompletedAt: string,
+): string {
   const started = Date.parse(startedAt);
   const completed = Date.parse(candidateCompletedAt);
   if (!Number.isFinite(started) || !Number.isFinite(completed)) {
@@ -1082,7 +1130,10 @@ function createRunState(options: RemainingResilienceOptions): SmokeRunState {
     first_chunk_under_gate: false,
     wait_for_streaming_complete: false,
     practice_ready_from_streamed_questions: false,
-    app_data_dir: relative(options.workspaceRoot, smokeOptions.appDataDir ?? ''),
+    app_data_dir: relative(
+      options.workspaceRoot,
+      smokeOptions.appDataDir ?? '',
+    ),
     streaming_questions: {
       job_snapshots: [],
       question_snapshots: [],
@@ -1110,7 +1161,10 @@ function createRunState(options: RemainingResilienceOptions): SmokeRunState {
 }
 
 function createTransport(run: SmokeRunState): JsonTransport {
-  return playwrightJsonTransport(requirePage(run).request, requireProjectApi(run));
+  return playwrightJsonTransport(
+    requirePage(run).request,
+    requireProjectApi(run),
+  );
 }
 
 function requirePage(run: SmokeRunState): NonNullable<SmokeRunState['page']> {
@@ -1122,7 +1176,9 @@ function requirePage(run: SmokeRunState): NonNullable<SmokeRunState['page']> {
 
 function requireProjectApi(run: SmokeRunState): ProjectApiRef {
   if (!run.projectApi) {
-    throw new Error('Remaining resilience project API context was not captured.');
+    throw new Error(
+      'Remaining resilience project API context was not captured.',
+    );
   }
   return run.projectApi;
 }
@@ -1154,11 +1210,16 @@ function assertCleanupCompleted(run: SmokeRunState): void {
     !processCleanup ||
     processCleanup.residue_after_close.length !== 0
   ) {
-    throw new Error('Remaining resilience cleanup did not finish through a clean close.');
+    throw new Error(
+      'Remaining resilience cleanup did not finish through a clean close.',
+    );
   }
 }
 
-function throwCombinedRunErrors(primaryError: unknown, cleanupError: unknown): void {
+function throwCombinedRunErrors(
+  primaryError: unknown,
+  cleanupError: unknown,
+): void {
   if (primaryError !== null && cleanupError !== null) {
     throw new AggregateError(
       [primaryError, cleanupError],
@@ -1283,7 +1344,9 @@ function canonicalMissingTarget(resolvedTarget: string): string {
   while (!ancestorEntry) {
     const parent = dirname(ancestor);
     if (sameCanonicalPath(parent, ancestor)) {
-      throw new Error('WindowsML missing runtime target had no existing ancestor.');
+      throw new Error(
+        'WindowsML missing runtime target had no existing ancestor.',
+      );
     }
     ancestor = parent;
     ancestorEntry = lstatSync(ancestor, { throwIfNoEntry: false });
@@ -1293,7 +1356,9 @@ function canonicalMissingTarget(resolvedTarget: string): string {
   }
   const canonicalAncestor = realpathSync.native(ancestor);
   if (!sameCanonicalPath(ancestor, canonicalAncestor)) {
-    throw new Error('WindowsML missing runtime target ancestor was not canonical.');
+    throw new Error(
+      'WindowsML missing runtime target ancestor was not canonical.',
+    );
   }
   return resolve(canonicalAncestor, relative(ancestor, resolvedTarget));
 }
@@ -1332,7 +1397,9 @@ function publishEvidenceAtomically(
     `.${basename(outputRoot)}.preparing-${dependencies.stagingId()}`,
   );
   if (existsSync(stagingRoot)) {
-    throw new Error('Remaining resilience evidence staging path already exists.');
+    throw new Error(
+      'Remaining resilience evidence staging path already exists.',
+    );
   }
   mkdirSync(stagingRoot);
   try {
@@ -1375,7 +1442,9 @@ function assertExactEvidenceTree(
     actualNames.length !== expectedNames.length ||
     actualNames.some((name, index) => name !== expectedNames[index])
   ) {
-    throw new Error('Remaining resilience staging had incomplete cancellation evidence.');
+    throw new Error(
+      'Remaining resilience staging had incomplete cancellation evidence.',
+    );
   }
   for (const reference of [...Object.values(evidence), sessionRestart]) {
     const path = join(stagingRoot, ...reference.path.split('/'));
@@ -1384,7 +1453,9 @@ function assertExactEvidenceTree(
       statSync(path).size !== reference.bytes ||
       createHash('sha256').update(payload).digest('hex') !== reference.sha256
     ) {
-      throw new Error(`Remaining resilience evidence digest drifted: ${reference.path}.`);
+      throw new Error(
+        `Remaining resilience evidence digest drifted: ${reference.path}.`,
+      );
     }
   }
 }

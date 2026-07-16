@@ -185,7 +185,10 @@ test('forced crash reconnect terminates the app tree without a graceful close re
   assert.equal(run.port, 9592);
   assert.equal(run.projectApi, null);
   assert.equal(run.uploadedDocument, null);
-  assert.match(run.metrics.observations[0] ?? '', /without a graceful close request/);
+  assert.match(
+    run.metrics.observations[0] ?? '',
+    /without a graceful close request/,
+  );
 });
 
 test('forced crash detects a captured child after it is reparented', async () => {
@@ -369,8 +372,7 @@ test('isolated acceptance strips inherited runtime overrides without mutation', 
   );
   assert.equal(
     Object.keys(environment).filter(
-      (name) =>
-        name.toLowerCase() === 'webview2_additional_browser_arguments',
+      (name) => name.toLowerCase() === 'webview2_additional_browser_arguments',
     ).length,
     1,
   );
@@ -541,13 +543,13 @@ test('candidate-bound launch isolates the local OCR URL switch by distribution p
   localRun.options.candidateDistributionProfile = 'local_nonpublishable';
   const localEnvironment = buildAppLaunchEnvironment(localRun, inherited);
   assert.equal(
-    normalizedEnvironment(localEnvironment).cert_prep_allow_local_ocr_runtime_url,
+    normalizedEnvironment(localEnvironment)
+      .cert_prep_allow_local_ocr_runtime_url,
     'true',
   );
   assert.equal(
     Object.keys(localEnvironment).filter(
-      (name) =>
-        name.toLowerCase() === 'cert_prep_allow_local_ocr_runtime_url',
+      (name) => name.toLowerCase() === 'cert_prep_allow_local_ocr_runtime_url',
     ).length,
     1,
   );
@@ -651,9 +653,7 @@ function processRecord(
   };
 }
 
-function launchEnvironmentRun(
-  acceptanceIsolation: boolean,
-): SmokeRunState {
+function launchEnvironmentRun(acceptanceIsolation: boolean): SmokeRunState {
   return {
     port: 9491,
     options: {

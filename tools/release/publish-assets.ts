@@ -72,10 +72,7 @@ export async function publishAssets(args, gh = runGh) {
     false,
     gh,
   );
-  if (
-    mode === 'ocr' &&
-    reservation.publicationState !== 'ocr-bootstrap'
-  ) {
+  if (mode === 'ocr' && reservation.publicationState !== 'ocr-bootstrap') {
     throw new Error('OCR assets cannot be published to a finalized release.');
   }
   const { release, releaseOwner, releaseOwnedByCaller } = reservation;
@@ -218,12 +215,7 @@ async function inspectReleaseReservation(
   } catch (error) {
     if (createdByCaller) {
       try {
-        await cleanupIncompleteRelease(
-          plan,
-          publicationOwner,
-          candidateId,
-          gh,
-        );
+        await cleanupIncompleteRelease(plan, publicationOwner, candidateId, gh);
       } catch (cleanupError) {
         throw new AggregateError(
           [error, cleanupError],
@@ -253,7 +245,9 @@ export async function validatePublishingInputs(args) {
   const candidate = readJson(join(candidateRoot, 'candidate.json'));
   await validateCandidateFiles(candidateRoot, candidate);
   if (candidate.candidateId !== args['candidate-id'].toLowerCase()) {
-    throw new Error('Publishing candidate ID does not match workflow metadata.');
+    throw new Error(
+      'Publishing candidate ID does not match workflow metadata.',
+    );
   }
 
   const embeddedPlanPath = join(
@@ -279,13 +273,14 @@ export async function validatePublishingInputs(args) {
     releaseRoot = resolve(args['release-root']);
     const expectedPlanPath = join(releaseRoot, 'metadata', 'release-plan.json');
     if (planPath !== expectedPlanPath) {
-      throw new Error('Release plan must be embedded in the selected release root.');
+      throw new Error(
+        'Release plan must be embedded in the selected release root.',
+      );
     }
-    if (
-      mode === 'ocr' &&
-      releaseRoot !== join(candidateRoot, 'release')
-    ) {
-      throw new Error('OCR bootstrap must publish the exact candidate release root.');
+    if (mode === 'ocr' && releaseRoot !== join(candidateRoot, 'release')) {
+      throw new Error(
+        'OCR bootstrap must publish the exact candidate release root.',
+      );
     }
   }
 
@@ -302,11 +297,7 @@ export async function validatePublishingInputs(args) {
 }
 
 export async function validateFinalReleaseRoot(releaseRoot, plan, candidate) {
-  const metadataPath = join(
-    releaseRoot,
-    'metadata',
-    'release-metadata.json',
-  );
+  const metadataPath = join(releaseRoot, 'metadata', 'release-metadata.json');
   const metadata = readJson(metadataPath);
   if (metadata.evidence?.candidateId !== candidate.candidateId) {
     throw new Error('Final release metadata does not bind the candidate ID.');
@@ -317,7 +308,9 @@ export async function validateFinalReleaseRoot(releaseRoot, plan, candidate) {
     }
   }
   const evidence = metadata.evidence;
-  const cancellationKeys = Object.keys(evidence.cancellationReports ?? {}).sort();
+  const cancellationKeys = Object.keys(
+    evidence.cancellationReports ?? {},
+  ).sort();
   if (
     evidence.cleanInstall !== 'passed-msi-and-nsis' ||
     !Array.isArray(evidence.cleanInstallReports) ||
@@ -329,12 +322,17 @@ export async function validateFinalReleaseRoot(releaseRoot, plan, candidate) {
     !/^[0-9a-f]{64}$/i.test(evidence.hardwareHarnessSha256 ?? '') ||
     typeof evidence.acceptanceRunId !== 'string' ||
     evidence.acceptanceRunId.trim() === '' ||
-    !isDeepStrictEqual(cancellationKeys, [...HARDWARE_CANCELLATION_CHECKS].sort()) ||
+    !isDeepStrictEqual(
+      cancellationKeys,
+      [...HARDWARE_CANCELLATION_CHECKS].sort(),
+    ) ||
     cancellationKeys.some(
       (key) => !/^[0-9a-f]{64}$/i.test(evidence.cancellationReports[key] ?? ''),
     )
   ) {
-    throw new Error('Final release metadata lacks completed acceptance evidence.');
+    throw new Error(
+      'Final release metadata lacks completed acceptance evidence.',
+    );
   }
 
   if (!Array.isArray(metadata.artifacts) || metadata.artifacts.length === 0) {
@@ -381,7 +379,9 @@ export async function validateFinalReleaseRoot(releaseRoot, plan, candidate) {
       statSync(file).size !== artifact.bytes ||
       (await sha256File(file)) !== artifact.sha256.toLowerCase()
     ) {
-      throw new Error(`Final release artifact does not match metadata: ${path}.`);
+      throw new Error(
+        `Final release artifact does not match metadata: ${path}.`,
+      );
     }
   }
   await validateCandidateReleaseFiles(candidate, actualFiles);
@@ -390,7 +390,8 @@ export async function validateFinalReleaseRoot(releaseRoot, plan, candidate) {
 }
 
 async function validateCandidateReleaseFiles(candidate, actualFiles) {
-  const mutable = /^(?:SHA256SUMS|metadata\/(?:release-metadata|license-inventory|cert-prep-alpha(?:-[a-z0-9-]+)?\.(?:spdx|cdx))\.json)$/;
+  const mutable =
+    /^(?:SHA256SUMS|metadata\/(?:release-metadata|license-inventory|cert-prep-alpha(?:-[a-z0-9-]+)?\.(?:spdx|cdx))\.json)$/;
   for (const identity of candidate.files) {
     const match = String(identity).match(/^release\/([^:]+):([0-9a-f]{64})$/i);
     if (!match || mutable.test(match[1])) continue;
@@ -439,7 +440,9 @@ function listSafeReleaseFiles(root, prefix = '') {
     const path = join(root, entry.name);
     const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
     if (entry.isSymbolicLink() || lstatSync(path).isSymbolicLink()) {
-      throw new Error(`Final release contains a symbolic link: ${relativePath}.`);
+      throw new Error(
+        `Final release contains a symbolic link: ${relativePath}.`,
+      );
     }
     if (entry.isDirectory()) {
       for (const [childPath, child] of listSafeReleaseFiles(
@@ -451,7 +454,9 @@ function listSafeReleaseFiles(root, prefix = '') {
     } else if (entry.isFile()) {
       files.set(relativePath.split(sep).join('/'), path);
     } else {
-      throw new Error(`Final release contains an unsafe entry: ${relativePath}.`);
+      throw new Error(
+        `Final release contains an unsafe entry: ${relativePath}.`,
+      );
     }
   }
   return files;
@@ -464,10 +469,7 @@ export async function cleanupIncompleteRelease(
   gh = runGh,
 ) {
   assertPublishableReleasePlan(plan);
-  const expectedOwner = validatePublicationOwner(
-    publicationOwner,
-    candidateId,
-  );
+  const expectedOwner = validatePublicationOwner(publicationOwner, candidateId);
   const existingTagCommit = await resolveTagCommit(gh, plan, true);
   if (!existingTagCommit) return { deleted: false };
   if (existingTagCommit !== plan.commitSha) {
@@ -620,7 +622,9 @@ function writeNotes(plan, publicationState, publicationOwner, candidateId) {
 }
 
 export function validatePublicationOwner(value, candidateId) {
-  const normalized = String(value ?? '').trim().toLowerCase();
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase();
   const match = normalized.match(
     /^([1-9][0-9]*):([1-9][0-9]*):([0-9a-f]{64})$/,
   );
@@ -689,11 +693,11 @@ async function main() {
       outputs.push(`release_finalized=${String(result.releaseFinalized)}`);
     }
     if (outputs.length > 0) {
-    appendFileSync(
-      process.env.GITHUB_OUTPUT,
+      appendFileSync(
+        process.env.GITHUB_OUTPUT,
         `${outputs.join('\n')}\n`,
-      'utf8',
-    );
+        'utf8',
+      );
     }
   }
   process.stdout.write(`${JSON.stringify(result)}\n`);

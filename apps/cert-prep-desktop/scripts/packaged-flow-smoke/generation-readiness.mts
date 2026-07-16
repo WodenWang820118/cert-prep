@@ -120,8 +120,10 @@ export async function captureGenerationReadinessAtProjectCreate(
         options.installedPathVerifier ?? isExistingRegularFile,
       );
   } catch (error) {
-    if (run.metrics.generation_readiness_at_start?.blockers[0] ===
-      'project_create_action_failed') {
+    if (
+      run.metrics.generation_readiness_at_start?.blockers[0] ===
+      'project_create_action_failed'
+    ) {
       throw error;
     }
     run.metrics.generation_readiness_at_start = failedSnapshot(
@@ -166,7 +168,9 @@ export async function captureProjectApiAfterRestart(
   timeoutMs = PROJECT_RESPONSE_TIMEOUT_MS,
 ): Promise<ProjectApiRef> {
   if (!UUID_PATTERN.test(expectedProjectId)) {
-    throw new Error('Restart project API capture requires an exact project UUID.');
+    throw new Error(
+      'Restart project API capture requires an exact project UUID.',
+    );
   }
   const responsePromise = page.waitForResponse(
     (response) => isAuthenticatedProjectListResponse(response),
@@ -263,10 +267,13 @@ function listenForProjectResponse(
   };
 
   page.on('response', onResponse);
-  timer = setTimeout(() => {
-    cleanup();
-    rejectPromise(new Error('project response timeout'));
-  }, Math.max(1, timeoutMs));
+  timer = setTimeout(
+    () => {
+      cleanup();
+      rejectPromise(new Error('project response timeout'));
+    },
+    Math.max(1, timeoutMs),
+  );
 
   return {
     promise,
@@ -301,7 +308,10 @@ async function generationReadinessFromProjectResponse(
   }
   const projectApi = projectApiRefFromResponse(response, projectJson.payload);
   if (!projectApi) {
-    return failedSnapshot(now().toISOString(), 'project_response_schema_invalid');
+    return failedSnapshot(
+      now().toISOString(),
+      'project_response_schema_invalid',
+    );
   }
   run.projectApi = projectApi;
   return generationReadinessFromProjectApi(
@@ -464,7 +474,10 @@ function isAuthenticatedProjectListResponse(response: Response): boolean {
   );
 }
 
-function canonicalApiBaseUrl(value: string, collectionPath: string): string | null {
+function canonicalApiBaseUrl(
+  value: string,
+  collectionPath: string,
+): string | null {
   const origin = canonicalLoopbackOrigin(value);
   if (!origin) {
     return null;
@@ -530,8 +543,14 @@ function sanitizeProviderSelection(
   }
   const forbiddenValues = authorizationSensitiveValues(authorization);
   const preference = exactEnumString(payload.preference, PROVIDER_PREFERENCES);
-  const selectedProvider = exactEnumString(payload.selected_provider, PROVIDERS);
-  const effectiveProvider = exactEnumString(payload.effective_provider, PROVIDERS);
+  const selectedProvider = exactEnumString(
+    payload.selected_provider,
+    PROVIDERS,
+  );
+  const effectiveProvider = exactEnumString(
+    payload.effective_provider,
+    PROVIDERS,
+  );
   const configuredModel = exactModel(payload.configured_model, forbiddenValues);
   const effectiveModel = exactModel(payload.effective_model, forbiddenValues);
   const selectionReason = boundedNonSensitiveString(
@@ -715,7 +734,10 @@ function failedSnapshot(
   };
 }
 
-function exactEnumString(value: unknown, allowed: ReadonlySet<string>): string | null {
+function exactEnumString(
+  value: unknown,
+  allowed: ReadonlySet<string>,
+): string | null {
   return typeof value === 'string' && allowed.has(value) ? value : null;
 }
 
@@ -745,7 +767,9 @@ function boundedNonSensitiveString(
   forbiddenValues: readonly string[] = [],
 ): string | null {
   const bounded = boundedString(value);
-  return bounded && isNonSensitiveText(bounded, forbiddenValues) ? bounded : null;
+  return bounded && isNonSensitiveText(bounded, forbiddenValues)
+    ? bounded
+    : null;
 }
 
 function nullableBoundedNonSensitiveString(
@@ -777,15 +801,11 @@ function requiredNullableBoundedString(
   return boundedString(value) ?? undefined;
 }
 
-function nullableNonNegativeInteger(
-  value: unknown,
-): number | null | undefined {
+function nullableNonNegativeInteger(value: unknown): number | null | undefined {
   if (value === null || value === undefined) {
     return null;
   }
-  return typeof value === 'number' &&
-    Number.isSafeInteger(value) &&
-    value >= 0
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
     ? value
     : undefined;
 }

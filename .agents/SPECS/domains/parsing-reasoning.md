@@ -47,14 +47,14 @@ OCR nodes:
 
 LLM nodes:
 
-| Platform | Provider     | Target model | Status                     | Accelerator                    |
-| -------- | ------------ | ------------ | -------------------------- | ------------------------------ |
-| Windows  | `ollama`     | `qwen3.5:4b` | default                    | local Ollama                   |
-| Windows  | `ollama`     | `qwen3.5:9b` | hardware-gated override    | local Ollama                   |
-| macOS    | `ollama`     | `qwen3.5:4b` | deferred default candidate | Apple Silicon GPU/CPU          |
-| macOS    | `ollama`     | `qwen3.5:9b` | hardware-gated override    | Apple Silicon GPU/CPU          |
-| Linux    | `ollama`     | `qwen3.5:4b` | deferred default candidate | Nvidia CUDA/CPU                |
-| Linux    | `ollama`     | `qwen3.5:9b` | hardware-gated override    | Nvidia CUDA/CPU                |
+| Platform | Provider | Target model | Status                     | Accelerator           |
+| -------- | -------- | ------------ | -------------------------- | --------------------- |
+| Windows  | `ollama` | `qwen3.5:4b` | default                    | local Ollama          |
+| Windows  | `ollama` | `qwen3.5:9b` | hardware-gated override    | local Ollama          |
+| macOS    | `ollama` | `qwen3.5:4b` | deferred default candidate | Apple Silicon GPU/CPU |
+| macOS    | `ollama` | `qwen3.5:9b` | hardware-gated override    | Apple Silicon GPU/CPU |
+| Linux    | `ollama` | `qwen3.5:4b` | deferred default candidate | Nvidia CUDA/CPU       |
+| Linux    | `ollama` | `qwen3.5:9b` | hardware-gated override    | Nvidia CUDA/CPU       |
 
 Fallback policy:
 

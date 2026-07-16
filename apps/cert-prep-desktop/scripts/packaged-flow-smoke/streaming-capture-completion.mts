@@ -51,7 +51,12 @@ export async function waitForStreamingJobsComplete(
       if (stableTerminalPolls >= STREAMING_COMPLETE_STABLE_POLLS) {
         run.metrics.ui_timings_ms.streaming_all_jobs_terminal = elapsedMs;
         run.metrics.streaming_questions.all_jobs_terminal_ms = elapsedMs;
-        assertSuccessfulStreamingBaseline(run, latestJob, latestQuestion, latestState);
+        assertSuccessfulStreamingBaseline(
+          run,
+          latestJob,
+          latestQuestion,
+          latestState,
+        );
         await screenshot(run, 'streaming-baseline-complete');
         return;
       }
@@ -95,7 +100,9 @@ function assertSuccessfulStreamingBaseline(
     run.metrics.streaming_questions.first_usable_question_visible_ms;
   const parseComplete = run.metrics.ui_timings_ms.parse_complete_visible;
   if (firstUsable === undefined || parseComplete === undefined) {
-    throw new Error('Streaming baseline missed first usable or parse-complete timing.');
+    throw new Error(
+      'Streaming baseline missed first usable or parse-complete timing.',
+    );
   }
   if (firstUsable < parseComplete) {
     throw new Error(

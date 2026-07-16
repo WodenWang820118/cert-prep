@@ -292,13 +292,13 @@ and process cleanup.
     `31054d8a099c158b02deddcb4d0ae2ab67dfc4b03c399f22ed660b26126b3ff2`;
   - `partialDataRemoved.json`:
     `4ca311d6a1344118c6e4561167cfb4502b67956761ffa6efde75249334b3f5e0`.
-  Upload cancellation created no document. OCR operation
-  `ocr-b41f8cca-30dd-4b5d-8df9-01d2d7ce632d` canceled; distinct same-document
-  retry `499434b0-9c72-425c-b0e1-6d6bc1bce49c` completed all 46 pages and
-  chunks through `windowsml_ocr` on `amd_windowsml:0` with no fallback. The
-  race stayed canceled, crash recovery retained the same operation, partial
-  data returned to zero, and no late publication occurred during the
-  two-second observation window.
+    Upload cancellation created no document. OCR operation
+    `ocr-b41f8cca-30dd-4b5d-8df9-01d2d7ce632d` canceled; distinct same-document
+    retry `499434b0-9c72-425c-b0e1-6d6bc1bce49c` completed all 46 pages and
+    chunks through `windowsml_ocr` on `amd_windowsml:0` with no fallback. The
+    race stayed canceled, crash recovery retained the same operation, partial
+    data returned to zero, and no late publication occurred during the
+    two-second observation window.
 - `packaged-remaining-resilience-windowsml` atomically published exactly five
   files under
   `tmp/cert-prep-desktop/packaged-remaining-resilience-06db87d-1fb5fa29-2a1c-4aed-94ee-17e118716a2e`.
@@ -313,12 +313,12 @@ and process cleanup.
     `2a560fd5de0494d4ab71b26ab54226a08c07a330581df1902c8c7be880fec82c`;
   - `session-restart.json`:
     `dc9bd3915d34fccfeeb42e54a2d011f1e689e5fcdddc19db6e5c2cc8bb99e4d9`.
-  The isolated model store began empty. Model and runtime cancel-versus-commit
-  checks passed; a canceled manual draft stayed at zero before a committed
-  manual operation generated two usable questions with effective
-  `ollama`/`qwen3.5:4b` and no fallback. Explicit Resume retained the first
-  answer, the two-question session completed, and a second restart preserved
-  completion. Two stable empty process snapshots proved zero residue.
+    The isolated model store began empty. Model and runtime cancel-versus-commit
+    checks passed; a canceled manual draft stayed at zero before a committed
+    manual operation generated two usable questions with effective
+    `ollama`/`qwen3.5:4b` and no fallback. Explicit Resume retained the first
+    answer, the two-question session completed, and a second restart preserved
+    completion. Two stable empty process snapshots proved zero residue.
 - The official `local-resilience-evidence-verify` target accepted all ten
   document, remaining, and session artifacts with the exact candidate, harness,
   acceptance run, receipt, installer, and installed-executable bindings.

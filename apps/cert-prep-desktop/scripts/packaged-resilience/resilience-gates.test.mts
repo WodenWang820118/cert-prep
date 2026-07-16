@@ -4,10 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
-import type {
-  JsonResponse,
-  JsonTransport,
-} from './api-client.mts';
+import type { JsonResponse, JsonTransport } from './api-client.mts';
 import {
   drainUploadTriggeredDrafts,
   exactOllamaHealth,
@@ -84,10 +81,7 @@ test('WindowsML requirement must transition from missing to a canonical run-loca
 
     const missing = await exactWindowsMlRequirement(transport, false, appData);
     assert.equal(missing.available, false);
-    assert.equal(
-      missing.installTargetPathRelative,
-      'runtimes/windowsml',
-    );
+    assert.equal(missing.installTargetPathRelative, 'runtimes/windowsml');
     mkdirSync(installed);
     const ready = await exactWindowsMlRequirement(transport, true, appData);
     assert.equal(ready.available, true);

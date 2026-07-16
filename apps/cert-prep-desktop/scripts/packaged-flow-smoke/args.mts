@@ -10,7 +10,8 @@ const DEFAULT_BASELINE_OUT_ROOT =
   'tmp/cert-prep-desktop/packaged-streaming-baseline';
 const DEFAULT_PRODUCTION_OUT_ROOT =
   'tmp/cert-prep-desktop/packaged-streaming-production';
-const DEFAULT_PDF_PATH = 'pdfs/\u30101\u30112025\u5e7407\u6708N1 \u771f\u9898.pdf';
+const DEFAULT_PDF_PATH =
+  'pdfs/\u30101\u30112025\u5e7407\u6708N1 \u771f\u9898.pdf';
 const DEFAULT_CDP_PORT = 9491;
 const DEFAULT_OCR_PROVIDER = 'windowsml';
 const DEFAULT_OCR_PAGE_WORKERS = 1;
@@ -116,9 +117,15 @@ export function parsePackagedFlowSmokeArgs(
     } else if (arg === '--llm-fallback-models') {
       parsed.ollamaFallbackModels = stringList(readValue(arg), []);
     } else if (arg === '--streaming-draft-page-limit') {
-      parsed.streamingDraftPageLimit = positiveInteger(Number(readValue(arg)), arg);
+      parsed.streamingDraftPageLimit = positiveInteger(
+        Number(readValue(arg)),
+        arg,
+      );
     } else if (arg === '--streaming-draft-workers') {
-      parsed.streamingDraftWorkers = positiveInteger(Number(readValue(arg)), arg);
+      parsed.streamingDraftWorkers = positiveInteger(
+        Number(readValue(arg)),
+        arg,
+      );
     } else if (arg === '--wait-for-streaming-complete') {
       parsed.waitForStreamingComplete = true;
     } else if (arg === '--streaming-complete-timeout-ms') {
@@ -148,7 +155,10 @@ export function parsePackagedFlowSmokeArgs(
     'ocrPageWorkers',
   );
   parsed.ocrProvider = nonEmptyString(parsed.ocrProvider, 'ocrProvider');
-  parsed.llmProvider = nonEmptyString(parsed.llmProvider, 'llmProvider').toLowerCase();
+  parsed.llmProvider = nonEmptyString(
+    parsed.llmProvider,
+    'llmProvider',
+  ).toLowerCase();
   parsed.ollamaModel = nonEmptyString(parsed.ollamaModel, 'ollamaModel');
   parsed.ollamaFallbackModels = nonEmptyStringList(
     parsed.ollamaFallbackModels,

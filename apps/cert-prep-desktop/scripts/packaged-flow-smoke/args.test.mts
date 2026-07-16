@@ -135,7 +135,10 @@ test('record video can be enabled by flag or environment', () => {
   const previous = process.env.CERT_PREP_PACKAGE_SMOKE_RECORD_VIDEO;
   try {
     process.env.CERT_PREP_PACKAGE_SMOKE_RECORD_VIDEO = '1';
-    assert.equal(parsePackagedFlowSmokeArgs([], 'C:\\workspace').recordVideo, true);
+    assert.equal(
+      parsePackagedFlowSmokeArgs([], 'C:\\workspace').recordVideo,
+      true,
+    );
   } finally {
     if (previous === undefined) {
       delete process.env.CERT_PREP_PACKAGE_SMOKE_RECORD_VIDEO;

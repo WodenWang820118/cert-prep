@@ -179,11 +179,7 @@ export function writeStreamingBaselineArtifacts(
       ? buildProductionSummary(run, report, { finalized })
       : null;
   }
-  if (
-    productionSummary?.status === 'failed' &&
-    finalized &&
-    recordFailure
-  ) {
+  if (productionSummary?.status === 'failed' && finalized && recordFailure) {
     run.metrics.errors.push('Packaged streaming production checks failed.');
     report = buildStreamingBaselineReport(run);
     productionSummary = buildProductionSummary(run, report, { finalized });
@@ -199,7 +195,10 @@ export function writeStreamingBaselineArtifacts(
   };
   if (run.options.productionSummary) {
     productionSummary ??= buildProductionSummary(run, report, { finalized });
-    const productionSummaryPath = join(run.options.outDir, 'production-summary.json');
+    const productionSummaryPath = join(
+      run.options.outDir,
+      'production-summary.json',
+    );
     writeFileSync(
       productionSummaryPath,
       `${JSON.stringify(productionSummary, null, 2)}\n`,
@@ -262,7 +261,10 @@ export function buildStreamingBaselineReport(
   const status = Object.values(checks).every(Boolean) ? 'passed' : 'failed';
   const metricsPath = join(run.options.outDir, 'metrics.json');
   const baselineJsonPath = join(run.options.outDir, 'streaming-baseline.json');
-  const baselineMarkdownPath = join(run.options.outDir, 'streaming-baseline.md');
+  const baselineMarkdownPath = join(
+    run.options.outDir,
+    'streaming-baseline.md',
+  );
 
   return {
     schema_version: 1,
@@ -270,8 +272,12 @@ export function buildStreamingBaselineReport(
     generated_at: new Date().toISOString(),
     git_commit: currentGitCommit(run),
     artifacts: {
-      out_dir: normalizePath(relative(run.options.workspaceRoot, run.options.outDir)),
-      metrics_json: normalizePath(relative(run.options.workspaceRoot, metricsPath)),
+      out_dir: normalizePath(
+        relative(run.options.workspaceRoot, run.options.outDir),
+      ),
+      metrics_json: normalizePath(
+        relative(run.options.workspaceRoot, metricsPath),
+      ),
       baseline_json: normalizePath(
         relative(run.options.workspaceRoot, baselineJsonPath),
       ),
@@ -282,22 +288,30 @@ export function buildStreamingBaselineReport(
       ...(run.metrics.video_artifacts?.length
         ? { video_recordings: run.metrics.video_artifacts }
         : {}),
-      ...(run.metrics.gpu_sampling ? { gpu_sampling: run.metrics.gpu_sampling } : {}),
+      ...(run.metrics.gpu_sampling
+        ? { gpu_sampling: run.metrics.gpu_sampling }
+        : {}),
       ...(run.metrics.resource_sampling
         ? { resource_sampling: run.metrics.resource_sampling }
         : {}),
     },
     input: {
-      pdf_path: normalizePath(relative(run.options.workspaceRoot, run.options.pdfPath)),
+      pdf_path: normalizePath(
+        relative(run.options.workspaceRoot, run.options.pdfPath),
+      ),
       pdf_bytes: statSync(run.options.pdfPath).size,
       pdf_sha256: sha256File(run.options.pdfPath),
       expected_pages: EXPECTED_BASELINE_PAGES,
       expected_chunks: EXPECTED_BASELINE_CHUNKS,
     },
     runtime: {
-      exe_path: normalizePath(relative(run.options.workspaceRoot, run.options.exePath)),
+      exe_path: normalizePath(
+        relative(run.options.workspaceRoot, run.options.exePath),
+      ),
       app_data_dir: run.options.appDataDir
-        ? normalizePath(relative(run.options.workspaceRoot, run.options.appDataDir))
+        ? normalizePath(
+            relative(run.options.workspaceRoot, run.options.appDataDir),
+          )
         : null,
       llm_provider: run.options.llmProvider,
       llm_model: run.options.ollamaModel,
@@ -315,7 +329,8 @@ export function buildStreamingBaselineReport(
       streaming_complete_timeout_ms: run.options.streamingCompleteTimeoutMs,
     },
     timings_ms: {
-      upload_to_processing_visible: timings.upload_to_processing_visible ?? null,
+      upload_to_processing_visible:
+        timings.upload_to_processing_visible ?? null,
       first_chunk_gate_ms: run.metrics.first_chunk_gate_ms,
       first_chunk_visible: timings.first_chunk_visible ?? null,
       streaming_question_status_visible:
@@ -400,7 +415,7 @@ export function buildProductionSummary(
         job.attribution_complete &&
         job.configured_provider === 'ollama' &&
         job.effective_provider === 'ollama',
-  );
+    );
   const resourcesReleased = run.metrics.resources_released_at_end;
   const readinessAtStart = run.metrics.generation_readiness_at_start;
   const checks: PackagedStreamingProductionChecks = {
@@ -432,8 +447,7 @@ export function buildProductionSummary(
       producingJobs.length > 0 &&
       producingJobs.every((job) => job.attribution_complete),
     producing_job_provider_consistent:
-      configuredProvider !== null &&
-      configuredProvider === effectiveProvider,
+      configuredProvider !== null && configuredProvider === effectiveProvider,
     resources_released_at_end: resourcesReleasedPassed(
       resourcesReleased,
       effectiveProvider,
@@ -463,7 +477,10 @@ export function buildProductionSummary(
   checks.acceptance_fresh_run_isolation = acceptanceIsolationPassed(
     run.metrics.acceptance_isolation_at_launch,
   );
-  const productionSummaryPath = join(run.options.outDir, 'production-summary.json');
+  const productionSummaryPath = join(
+    run.options.outDir,
+    'production-summary.json',
+  );
   const checksPassed = Object.values(checks).every(Boolean);
 
   return {
@@ -515,7 +532,9 @@ export function buildProductionSummary(
   };
 }
 
-function uniqueCompleteValue(values: readonly (string | null)[]): string | null {
+function uniqueCompleteValue(
+  values: readonly (string | null)[],
+): string | null {
   if (values.length === 0 || values.some((value) => value === null)) {
     return null;
   }
@@ -568,7 +587,12 @@ function generationReadinessPassed(
     effectiveProvider === 'ollama' &&
     selection.fallback_reason === null &&
     runtimeRequirementAvailable(snapshot, 'ollama', null, true) &&
-    runtimeRequirementAvailable(snapshot, 'ollama_model', configuredModel, false)
+    runtimeRequirementAvailable(
+      snapshot,
+      'ollama_model',
+      configuredModel,
+      false,
+    )
   );
 }
 
@@ -636,7 +660,9 @@ function providerRoutingChecks(
   return {};
 }
 
-function renderStreamingBaselineMarkdown(report: StreamingBaselineReport): string {
+function renderStreamingBaselineMarkdown(
+  report: StreamingBaselineReport,
+): string {
   return `# Packaged Streaming Baseline
 
 - Status: ${report.status}
@@ -677,7 +703,9 @@ function renderModelMarkdown(report: StreamingBaselineReport): string {
   return configured;
 }
 
-function readResourceSummary(run: SmokeRunState): Record<string, unknown> | null {
+function readResourceSummary(
+  run: SmokeRunState,
+): Record<string, unknown> | null {
   const summaryPath = run.metrics.resource_sampling?.windows_summary_json;
   if (!summaryPath) {
     return null;
@@ -689,7 +717,9 @@ function readResourceSummary(run: SmokeRunState): Record<string, unknown> | null
   }
 
   try {
-    const payload = JSON.parse(readFileSync(absolutePath, 'utf8').replace(/^\uFEFF/, ''));
+    const payload = JSON.parse(
+      readFileSync(absolutePath, 'utf8').replace(/^\uFEFF/, ''),
+    );
     return isRecord(payload) ? payload : null;
   } catch {
     return null;

@@ -115,7 +115,9 @@ export function assertCandidateMatchesPlan(candidate, plan) {
     'publishable',
   ]) {
     if (candidate?.[field] !== plan?.[field]) {
-      throw new Error(`Candidate identity does not match release plan: ${field}.`);
+      throw new Error(
+        `Candidate identity does not match release plan: ${field}.`,
+      );
     }
   }
 }
@@ -281,10 +283,7 @@ export function assertReleaseInvocationContext({
   }
 
   if (eventName === 'workflow_dispatch') {
-    if (
-      ref !== `refs/heads/${defaultBranch}` ||
-      refName !== defaultBranch
-    ) {
+    if (ref !== `refs/heads/${defaultBranch}` || refName !== defaultBranch) {
       throw new Error(
         `Manual alpha release must run from default branch ${defaultBranch}.`,
       );
@@ -293,13 +292,13 @@ export function assertReleaseInvocationContext({
   }
   if (eventName === 'push') {
     if (ref !== `refs/tags/${tag}` || refName !== tag) {
-      throw new Error(`Tag alpha release must run from canonical ref refs/tags/${tag}.`);
+      throw new Error(
+        `Tag alpha release must run from canonical ref refs/tags/${tag}.`,
+      );
     }
     return;
   }
-  throw new Error(
-    'alpha releases only support tag push or workflow_dispatch.',
-  );
+  throw new Error('alpha releases only support tag push or workflow_dispatch.');
 }
 
 export function assertWorkspaceVersions(workspaceRoot, expectedVersion) {

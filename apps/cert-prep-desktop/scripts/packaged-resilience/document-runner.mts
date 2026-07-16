@@ -162,11 +162,13 @@ export async function runDocumentCancellationAcceptance(
       projectId: projectApi.projectId,
       pdf,
       timeoutMs: options.timeoutMs,
-      latePublishObservationWindowMs:
-        options.latePublishObservationWindowMs,
+      latePublishObservationWindowMs: options.latePublishObservationWindowMs,
       restartAfterCancel: async (beforeCrash) => {
         const preCrashStatus = beforeCrash.status;
-        if (preCrashStatus !== 'running' && preCrashStatus !== 'cancel_requested') {
+        if (
+          preCrashStatus !== 'running' &&
+          preCrashStatus !== 'cancel_requested'
+        ) {
           throw new Error(
             'OCR crash recovery reached a terminal state before the forced crash.',
           );
@@ -222,7 +224,9 @@ export async function runDocumentCancellationAcceptance(
   }
   assertCleanupCompleted(run);
   if (!uploadProof || !documentProofs || !documentProofs.crashRecovery) {
-    throw new Error('Document cancellation proofs were incomplete after the run.');
+    throw new Error(
+      'Document cancellation proofs were incomplete after the run.',
+    );
   }
 
   const envelopes = buildEvidenceEnvelopes({
@@ -237,11 +241,17 @@ export async function runDocumentCancellationAcceptance(
     documentStartedAt,
     documentCompletedAt,
   });
-  const evidence = publishEvidenceAtomically(options.outputRoot, envelopes, dependencies);
+  const evidence = publishEvidenceAtomically(
+    options.outputRoot,
+    envelopes,
+    dependencies,
+  );
   return { outputRoot: options.outputRoot, evidence };
 }
 
-function createRunState(options: DocumentCancellationRunnerOptions): SmokeRunState {
+function createRunState(
+  options: DocumentCancellationRunnerOptions,
+): SmokeRunState {
   const smokeOptions: SmokeOptions = {
     workspaceRoot: options.workspaceRoot,
     exePath: options.installedExePath,
@@ -284,7 +294,10 @@ function createRunState(options: DocumentCancellationRunnerOptions): SmokeRunSta
     first_chunk_under_gate: false,
     wait_for_streaming_complete: false,
     practice_ready_from_streamed_questions: false,
-    app_data_dir: relative(options.workspaceRoot, smokeOptions.appDataDir ?? ''),
+    app_data_dir: relative(
+      options.workspaceRoot,
+      smokeOptions.appDataDir ?? '',
+    ),
     streaming_questions: {
       job_snapshots: [],
       question_snapshots: [],
@@ -312,10 +325,15 @@ function createRunState(options: DocumentCancellationRunnerOptions): SmokeRunSta
 }
 
 function defaultTransport(run: SmokeRunState): JsonTransport {
-  return playwrightJsonTransport(activePage(run).request, requireProjectApi(run));
+  return playwrightJsonTransport(
+    activePage(run).request,
+    requireProjectApi(run),
+  );
 }
 
-function requireProjectApi(run: SmokeRunState): NonNullable<SmokeRunState['projectApi']> {
+function requireProjectApi(
+  run: SmokeRunState,
+): NonNullable<SmokeRunState['projectApi']> {
   if (!run.projectApi) {
     throw new Error('Packaged project API context was not captured.');
   }
@@ -347,7 +365,9 @@ function assertCleanupCompleted(run: SmokeRunState): void {
     !processCleanup ||
     processCleanup.residue_after_close.length !== 0
   ) {
-    throw new Error('Packaged document-cancellation cleanup did not finish without residue.');
+    throw new Error(
+      'Packaged document-cancellation cleanup did not finish without residue.',
+    );
   }
 }
 
@@ -488,7 +508,8 @@ function documentObservations(
   const projectId = optionalString(proof.projectId);
   const documentId = optionalString(proof.documentId);
   const operationId =
-    optionalString(proof.operationId) ?? optionalString(proof.initialOperationId);
+    optionalString(proof.operationId) ??
+    optionalString(proof.initialOperationId);
   return [
     {
       at: startedAt,
@@ -536,7 +557,9 @@ function publishEvidenceAtomically(
     `.${basename(outputRoot)}.preparing-${dependencies.stagingId()}`,
   );
   if (existsSync(stagingRoot)) {
-    throw new Error('Document cancellation evidence staging path already exists.');
+    throw new Error(
+      'Document cancellation evidence staging path already exists.',
+    );
   }
   mkdirSync(stagingRoot);
   try {
@@ -566,7 +589,9 @@ function assertExactEvidenceTree(
     actualNames.length !== expectedNames.length ||
     actualNames.some((name, index) => name !== expectedNames[index])
   ) {
-    throw new Error('Document cancellation staging contained undeclared evidence files.');
+    throw new Error(
+      'Document cancellation staging contained undeclared evidence files.',
+    );
   }
   for (const check of DOCUMENT_CHECKS) {
     const reference = evidence[check];
@@ -576,7 +601,9 @@ function assertExactEvidenceTree(
       statSync(path).size !== reference.bytes ||
       createHash('sha256').update(payload).digest('hex') !== reference.sha256
     ) {
-      throw new Error(`Document cancellation evidence digest drifted: ${check}.`);
+      throw new Error(
+        `Document cancellation evidence digest drifted: ${check}.`,
+      );
     }
   }
 }

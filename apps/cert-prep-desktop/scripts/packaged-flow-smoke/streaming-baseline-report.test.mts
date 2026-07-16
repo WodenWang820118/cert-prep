@@ -75,7 +75,8 @@ test('Ollama-only production summary fails closed without NVIDIA reasoning evide
 test('production summary rejects a non-Ollama effective provider', () => {
   const fixture = productionFixture();
   try {
-    const job = fixture.run.metrics.streaming_questions.job_snapshots[0]?.jobs[0];
+    const job =
+      fixture.run.metrics.streaming_questions.job_snapshots[0]?.jobs[0];
     assert.ok(job);
     job.configured_provider = 'fake';
     job.effective_provider = 'fake';
@@ -105,8 +106,14 @@ test('production summary keeps provider and model fallback evidence separate', (
     );
 
     assert.equal(summary.status, 'failed');
-    assert.equal(summary.provider_fallback_reason, 'provider registry rerouted');
-    assert.equal(summary.model_fallback_reason, 'lower resource model selected');
+    assert.equal(
+      summary.provider_fallback_reason,
+      'provider registry rerouted',
+    );
+    assert.equal(
+      summary.model_fallback_reason,
+      'lower resource model selected',
+    );
     assert.equal(summary.checks.provider_no_fallback, false);
   } finally {
     fixture.cleanup();
@@ -173,7 +180,9 @@ function productionFixture(): {
   readonly outDir: string;
   cleanup(): void;
 } {
-  const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-prep-production-summary-'));
+  const workspaceRoot = mkdtempSync(
+    join(tmpdir(), 'cert-prep-production-summary-'),
+  );
   const outDir = join(workspaceRoot, 'out');
   const pdfPath = join(workspaceRoot, 'fixture.pdf');
   mkdirSync(outDir);

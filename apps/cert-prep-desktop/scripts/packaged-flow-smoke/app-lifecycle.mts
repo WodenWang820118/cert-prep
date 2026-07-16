@@ -68,7 +68,10 @@ interface CleanupWithTimeoutOptions<T extends object> {
 
 export interface ForcedCrashReconnectHooks {
   readonly terminateProcessTree?: (pid: number) => ProcessTerminationResult;
-  readonly waitForExit?: (child: ChildProcess, timeoutMs: number) => Promise<boolean>;
+  readonly waitForExit?: (
+    child: ChildProcess,
+    timeoutMs: number,
+  ) => Promise<boolean>;
   readonly snapshotProcesses?: () => ProcessRecord[];
   readonly waitAfterTermination?: (milliseconds: number) => Promise<unknown>;
   readonly launch?: (run: SmokeRunState) => Promise<void>;
@@ -79,11 +82,7 @@ export interface ForcedCrashSummary {
   readonly termination: ProcessTerminationResult;
 }
 
-const ACCEPTANCE_ENV_PREFIXES = [
-  'cert_prep_',
-  'ollama_',
-  'webview2_',
-] as const;
+const ACCEPTANCE_ENV_PREFIXES = ['cert_prep_', 'ollama_', 'webview2_'] as const;
 const ACCEPTANCE_REMOVED_ENV_NAMES = new Set(['no_proxy']);
 const LOCAL_OCR_RUNTIME_URL_ENV = 'cert_prep_allow_local_ocr_runtime_url';
 const ACCEPTANCE_LOOPBACK_NO_PROXY = 'localhost,127.0.0.1,::1';
@@ -206,7 +205,9 @@ export async function closeAppAndCheckResidue(
     forced,
     residue: publicResidue,
     gracefulExited:
-      normalCloseRequested && exitedAfterNormalClose && publicResidue.length === 0,
+      normalCloseRequested &&
+      exitedAfterNormalClose &&
+      publicResidue.length === 0,
     fallbackUsed: forced,
     exitCode,
     residualProcesses: publicResidue,
@@ -222,7 +223,9 @@ export async function closeAppAndCheckResidue(
   return summary;
 }
 
-async function closeNewNodeHelpers(run: SmokeRunState): Promise<PublicProcessRecord[]> {
+async function closeNewNodeHelpers(
+  run: SmokeRunState,
+): Promise<PublicProcessRecord[]> {
   const helpers = selectNewWorkspaceNodeHelpers({
     beforeNodePids: run.processBaseline.nodePids,
     after: snapshotWindowsProcesses(),
@@ -239,26 +242,34 @@ async function closeNewNodeHelpers(run: SmokeRunState): Promise<PublicProcessRec
   return helpers.map(publicProcessRecord);
 }
 
-export async function restartAndVerifyPersistence(run: SmokeRunState): Promise<void> {
+export async function restartAndVerifyPersistence(
+  run: SmokeRunState,
+): Promise<void> {
   run.metrics.restart = { attempted: true };
   run.metrics.restart.close = await closeAppAndCheckResidue(run, 'restart');
   await delay(3_000);
 
   run.port += 1;
   await launchAppAndConnect(run);
-  await waitText(run,
+  await waitText(
+    run,
     /Projects|Select or create a project|Parallel Parsing QA/i,
     90_000,
     'restart workspace loaded',
   );
-  if (!/Source PDF|Mock Exam Items|Parallel Parsing QA/.test(await bodyText(run))) {
-    const projectButton = activePage(run).locator('button.project-select-button').first();
+  if (
+    !/Source PDF|Mock Exam Items|Parallel Parsing QA/.test(await bodyText(run))
+  ) {
+    const projectButton = activePage(run)
+      .locator('button.project-select-button')
+      .first();
     if (await projectButton.count()) {
       run.metrics.observations.push(
         'Project was not auto-selected after restart; selected it manually for persistence verification.',
       );
       await projectButton.click();
-      await waitText(run,
+      await waitText(
+        run,
         /Source PDF|Mock Exam Items|Parsing complete/i,
         30_000,
         'project selected after restart',
@@ -267,7 +278,9 @@ export async function restartAndVerifyPersistence(run: SmokeRunState): Promise<v
   }
   await screenshot(run, 'restart-persistence-build-state');
   run.metrics.restart.verified =
-    /Parsing complete|Playable|Mock Exam Items|Source PDF/i.test(await bodyText(run));
+    /Parsing complete|Playable|Mock Exam Items|Source PDF/i.test(
+      await bodyText(run),
+    );
 }
 
 export async function forceCrashAndReconnect(
@@ -283,7 +296,12 @@ export async function forceCrashAndReconnect(
 ): Promise<ForcedCrashSummary> {
   const crashedApp = run.app;
   const appPid = crashedApp?.pid;
-  if (!crashedApp || !appPid || crashedApp.exitCode !== null || crashedApp.killed) {
+  if (
+    !crashedApp ||
+    !appPid ||
+    crashedApp.exitCode !== null ||
+    crashedApp.killed
+  ) {
     throw new Error(`${label} requires a live packaged app process.`);
   }
 
@@ -304,7 +322,9 @@ export async function forceCrashAndReconnect(
     );
   }
   if (!(await waitForExit(crashedApp, 15_000))) {
-    throw new Error(`${label} app process ${appPid} did not exit after forced termination.`);
+    throw new Error(
+      `${label} app process ${appPid} did not exit after forced termination.`,
+    );
   }
 
   await run.browser?.close().catch(ignoreCleanupError);
@@ -360,8 +380,7 @@ function collectLiveProcessTree(
   }
   return tree.filter(
     (record) =>
-      record.pid === rootPid ||
-      hasValidCreationChain(record, byPid, rootPid),
+      record.pid === rootPid || hasValidCreationChain(record, byPid, rootPid),
   );
 }
 
@@ -397,9 +416,7 @@ function hasValidCreationChain(
 
 function processCreationEpochMs(value: string): number | null {
   const trimmed = value.trim();
-  const powershellDate = trimmed.match(
-    /^\/Date\((-?\d+)(?:[+-]\d{4})?\)\/$/,
-  );
+  const powershellDate = trimmed.match(/^\/Date\((-?\d+)(?:[+-]\d{4})?\)\/$/);
   const strictIsoDate =
     /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?(?:Z|[+-]\d{2}:\d{2})$/;
   const epochMs = powershellDate
@@ -417,9 +434,7 @@ function selectCapturedProcessResidue(
   const currentByPid = new Map(current.map((record) => [record.pid, record]));
   return captured.filter((record) => {
     const currentRecord = currentByPid.get(record.pid);
-    return currentRecord
-      ? sameProcessIdentity(record, currentRecord)
-      : false;
+    return currentRecord ? sameProcessIdentity(record, currentRecord) : false;
   });
 }
 
@@ -489,7 +504,8 @@ export async function launchAppAndConnect(run: SmokeRunState): Promise<void> {
         `domcontentloaded wait skipped: ${errorMessage(error)}`,
       );
     });
-  await waitText(run,
+  await waitText(
+    run,
     /Cert Prep|Local workspace|Install the Python backend runtime|Projects/,
     60_000,
     'app shell loaded',
@@ -505,8 +521,7 @@ export function buildAppLaunchEnvironment(
     inherited,
     acceptanceIsolation,
   );
-  const candidateDistributionProfile =
-    run.options.candidateDistributionProfile;
+  const candidateDistributionProfile = run.options.candidateDistributionProfile;
   const guardedBaseEnvironment =
     candidateDistributionProfile === undefined
       ? baseEnvironment
@@ -585,7 +600,9 @@ function buildIsolatedOllamaLaunchEnvironment(
     lstatSync(modelsDir).isSymbolicLink() ||
     !lstatSync(modelsDir).isDirectory()
   ) {
-    throw new Error('Isolated Ollama models directory must be canonical and local.');
+    throw new Error(
+      'Isolated Ollama models directory must be canonical and local.',
+    );
   }
   const canonicalOutDir = realpathSync(resolve(run.options.outDir));
   const canonicalModelsDir = realpathSync(resolve(modelsDir));
@@ -652,11 +669,7 @@ export function prepareRunDirectories(
   const capturedAt = now().toISOString();
 
   requireStrictDescendant(outDir, runRoot, 'Acceptance output directory');
-  requireStrictDescendant(
-    appDataDir,
-    outDir,
-    'Acceptance app-data directory',
-  );
+  requireStrictDescendant(appDataDir, outDir, 'Acceptance app-data directory');
   if (!samePath(dirname(appDataDir), outDir)) {
     throw new Error(
       'Acceptance app-data directory must be a direct child of its fresh output directory.',
@@ -723,13 +736,17 @@ function launchAppDataDir(run: SmokeRunState): string {
 function requiredAcceptanceAppDataDir(run: SmokeRunState): string {
   const appDataDir = run.options.appDataDir?.trim();
   if (!appDataDir) {
-    throw new Error('Acceptance lane requires an explicit isolated app-data directory.');
+    throw new Error(
+      'Acceptance lane requires an explicit isolated app-data directory.',
+    );
   }
   return appDataDir;
 }
 
 function acceptanceIsolationEnabled(run: SmokeRunState): boolean {
-  return run.options.acceptanceIsolation === true || run.options.productionSummary;
+  return (
+    run.options.acceptanceIsolation === true || run.options.productionSummary
+  );
 }
 
 function requireStrictDescendant(
@@ -776,7 +793,9 @@ function assertCanonicalDirectory(path: string): void {
   const stat = lstatSync(path);
   const realPath = realpathSync.native(path);
   if (stat.isSymbolicLink() || !samePath(realPath, resolve(path))) {
-    throw new Error(`Acceptance path must not traverse a reparse point: ${path}`);
+    throw new Error(
+      `Acceptance path must not traverse a reparse point: ${path}`,
+    );
   }
 }
 
@@ -815,16 +834,17 @@ export async function startAcceptanceVideoForSmoke(
 async function cleanupAfterRun(run: SmokeRunState): Promise<void> {
   const cleanupResidue: PublicProcessRecord[] = [];
   if (run.app) {
-    const close = await closeAppAndCheckResidue(run, 'final cleanup').catch((error) => {
-      run.metrics.errors.push(`final close failed: ${errorMessage(error)}`);
-      return null;
-    });
+    const close = await closeAppAndCheckResidue(run, 'final cleanup').catch(
+      (error) => {
+        run.metrics.errors.push(`final close failed: ${errorMessage(error)}`);
+        return null;
+      },
+    );
     if (close) {
       run.metrics.final_close = close;
       cleanupResidue.push(...close.residue);
     }
   }
-
 
   if (run.resourceSampling) {
     await run.resourceSampling.stop().catch((error) => {
@@ -837,7 +857,9 @@ async function cleanupAfterRun(run: SmokeRunState): Promise<void> {
   run.nvidia = null;
 
   const nodeHelpers = await closeNewNodeHelpers(run).catch((error) => {
-    run.metrics.errors.push(`node helper cleanup failed: ${errorMessage(error)}`);
+    run.metrics.errors.push(
+      `node helper cleanup failed: ${errorMessage(error)}`,
+    );
     return [];
   });
   run.metrics.process_cleanup = {
@@ -851,7 +873,9 @@ async function cleanupAfterRun(run: SmokeRunState): Promise<void> {
   };
 }
 
-export async function cleanupAfterRunWithTimeout(run: SmokeRunState): Promise<void> {
+export async function cleanupAfterRunWithTimeout(
+  run: SmokeRunState,
+): Promise<void> {
   await cleanupAfterRunController.cleanupWithTimeout(run);
 }
 

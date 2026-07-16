@@ -20,7 +20,10 @@ import {
   installProcessShutdownCleanup,
   processSnapshot,
 } from '../process-lifecycle/processes.mts';
-import { installOcrRuntimeIfNeeded, installPythonRuntimeIfNeeded } from './runtime-install-flow.mts';
+import {
+  installOcrRuntimeIfNeeded,
+  installPythonRuntimeIfNeeded,
+} from './runtime-install-flow.mts';
 import { startResourceSampling } from './resource-sampling.mts';
 import { log, screenshot } from './runner-context.mts';
 import { writeStreamingBaselineArtifacts } from './streaming-baseline-report.mts';
@@ -111,9 +114,14 @@ function logFinalMetricsSummary(run: SmokeRunState): void {
       {
         status: run.metrics.status,
         error_count: run.metrics.errors.length,
-        out_dir: normalizePath(relative(run.options.workspaceRoot, run.options.outDir)),
+        out_dir: normalizePath(
+          relative(run.options.workspaceRoot, run.options.outDir),
+        ),
         metrics_json: normalizePath(
-          relative(run.options.workspaceRoot, join(run.options.outDir, 'metrics.json')),
+          relative(
+            run.options.workspaceRoot,
+            join(run.options.outDir, 'metrics.json'),
+          ),
         ),
         streaming_baseline: run.metrics.streaming_baseline ?? null,
         production_summary: run.metrics.production_summary ?? null,
@@ -158,7 +166,9 @@ export async function runPackagedFlowSmoke(
     wait_for_streaming_complete: parsedOptions.waitForStreamingComplete,
     practice_ready_from_streamed_questions: false,
     app_data_dir: parsedOptions.appDataDir
-      ? normalizePath(relative(parsedOptions.workspaceRoot, parsedOptions.appDataDir))
+      ? normalizePath(
+          relative(parsedOptions.workspaceRoot, parsedOptions.appDataDir),
+        )
       : undefined,
     streaming_questions: {
       job_snapshots: [],
@@ -208,8 +218,13 @@ export async function runPackagedFlowSmoke(
     await runFlow(run);
   } catch (error) {
     run.metrics.status = 'failed';
-    run.metrics.errors.push(error instanceof Error && error.stack ? error.stack : errorMessage(error));
-    log(run, `FAILED ${error instanceof Error && error.stack ? error.stack : errorMessage(error)}`);
+    run.metrics.errors.push(
+      error instanceof Error && error.stack ? error.stack : errorMessage(error),
+    );
+    log(
+      run,
+      `FAILED ${error instanceof Error && error.stack ? error.stack : errorMessage(error)}`,
+    );
     if (run.page) {
       await screenshot(run, 'failure-state').catch((screenshotError) => {
         run.metrics.observations.push(

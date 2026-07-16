@@ -82,7 +82,9 @@ export class OwnedProcessEvidenceTracker {
     }
     const tree = collectProcessTree(processes, appPid);
     if (tree.length === 0 || tree[0]?.pid !== appPid) {
-      throw new Error('Owned-process evidence could not capture the packaged app tree.');
+      throw new Error(
+        'Owned-process evidence could not capture the packaged app tree.',
+      );
     }
     for (const record of tree) {
       const identity = processIdentity(record);
@@ -101,8 +103,13 @@ export class OwnedProcessEvidenceTracker {
     finalAppPid: number,
     closedAt: string,
   ): Promise<OwnedProcessesReleasedProof> {
-    if (!this.observedAppPids.has(finalAppPid) || !Number.isFinite(Date.parse(closedAt))) {
-      throw new Error('Owned-process release proof is not bound to the final app close.');
+    if (
+      !this.observedAppPids.has(finalAppPid) ||
+      !Number.isFinite(Date.parse(closedAt))
+    ) {
+      throw new Error(
+        'Owned-process release proof is not bound to the final app close.',
+      );
     }
 
     let stableEmptySnapshots = 0;
@@ -141,9 +148,12 @@ export class OwnedProcessEvidenceTracker {
 
     return {
       appPid: finalAppPid,
-      observedAppPids: [...this.observedAppPids].sort((left, right) => left - right),
-      observedOwnedPids: [...new Set([...this.observed.values()].map(({ pid }) => pid))]
-        .sort((left, right) => left - right),
+      observedAppPids: [...this.observedAppPids].sort(
+        (left, right) => left - right,
+      ),
+      observedOwnedPids: [
+        ...new Set([...this.observed.values()].map(({ pid }) => pid)),
+      ].sort((left, right) => left - right),
       finalOwnedPids,
       stableEmptySnapshots,
       residueCount,
@@ -154,9 +164,7 @@ export class OwnedProcessEvidenceTracker {
 
 function isCandidateOwnedRuntime(record: ProcessRecord): boolean {
   const name = record.name.trim().toLowerCase();
-  return (
-    isCertPrepResidue(record) || name === 'ollama.exe'
-  );
+  return isCertPrepResidue(record) || name === 'ollama.exe';
 }
 
 function processIdentity(record: ProcessRecord): ProcessIdentity | null {
