@@ -209,8 +209,9 @@ and process cleanup.
   validators alone did not close a real provider gate; the exact local
   candidate execution is recorded below.
 - Commit `bfb7ca6` pinned Node 24, pnpm 10.33.2, Python 3.12/uv, and Rust stable,
-  and added Windows CI plus the isolated real-backend E2E lane. A hosted run on
-  committed HEAD is still required.
+  and added Windows CI plus the isolated real-backend E2E lane. The exact
+  successful hosted code-checkpoint result is recorded in the public repository
+  checkpoint below.
 - Verification through `bfb7ca6` passed desktop lint with two pre-existing
   warnings, package QA 124 tests, release tooling 30 Node plus 21 Python tests,
   Cargo 23 tests, E2E lint with two pre-existing warnings, and real-backend E2E
@@ -380,6 +381,29 @@ and process cleanup.
   anonymous public OCR asset, a frozen exact candidate, hosted MSI/NSIS clean
   installs, protected AMD/XDNA2 evidence, or Public Alpha readiness.
 
+### Public Repository And Hosted Quality Checkpoint (2026-07-16)
+
+- `WodenWang820118/cert-prep` is public with default branch `main`. Repository
+  variables pin `ALPHA_EXPECTED_REPOSITORY=WodenWang820118/cert-prep`,
+  `ALPHA_PUBLIC_REPOSITORY_CONFIRMED=true`, and
+  `ALPHA_RELEASE_ENVIRONMENT_PROTECTED=true`.
+  `ALPHA_FASTFLOW_TERMS_CONFIRMED` and `ALPHA_HARDWARE_RUNNER_READY` remain
+  intentionally unset.
+- Both `alpha-release` and `alpha-hardware` require reviewer
+  `WodenWang820118` and restrict deployments to `main` and
+  `cert-prep-v*-alpha.*`. `prevent_self_review=false`; this checkpoint does not
+  claim independent review. Active no-bypass rulesets prevent deletion and
+  non-fast-forward changes for the default branch and matching Alpha tags.
+- Hosted CI run
+  [29463901598](https://github.com/WodenWang820118/cert-prep/actions/runs/29463901598)
+  at exact commit `d54341a6174c6dc514260c8f26435752242c63a3` passed both
+  `Portable quality` and `Windows product quality`. The Windows job executed
+  and passed the shared/backend/OCR/Ollama/Angular aggregate, desktop script
+  type checking, package QA, and Cargo tests. This closes the hosted
+  cross-runner quality gate only; it is not an anonymous OCR prerelease,
+  checkout-free MSI/NSIS result, protected XDNA2/B3 result, or release
+  approval.
+
 ## Size And Artifact Evidence
 
 2026-07-11 local candidate evidence:
@@ -412,12 +436,11 @@ prerelease URL.
 
 ## Open Risks
 
-- Public alpha publication remains blocked until a public GitHub repository,
-  protected release environments, anonymous OCR prerelease asset, checkout-free
-  clean MSI/NSIS lanes, and a clean-snapshot AMD/XDNA2 hardware runner exist.
-- The publisher must confirm the FastFlow free-tier/commercial and attribution
-  assumptions in the protected environment. Without that confirmation the
-  release must switch to an Ollama-only alpha rather than weakening the gate.
+- Public alpha publication remains blocked until the FastFlow publisher
+  decision, pinned clean-snapshot AMD/XDNA2 runner/harness/ffprobe inputs,
+  anonymous OCR prerelease asset, checkout-free clean MSI/NSIS lanes, and
+  protected hardware acceptance exist. Without confirmed FastFlow terms, the
+  release must switch to an Ollama-only Alpha rather than weakening the gate.
 - The protected hardware gate must prove four PDFs, WindowsML/iGPU OCR, exact
   effective FastFlow `qwen3.5:4b` attribution, usable and Full Exam counts above
   zero, restart/cancellation cleanup with per-check evidence, and a playable

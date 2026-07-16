@@ -434,6 +434,18 @@ selected document` for the selected document after the production streaming
   CI result, protected XDNA2 result, publishable-candidate result, or release
   claim.
 
+### Hosted Cross-Runner Quality (2026-07-16)
+
+- Hosted CI run
+  [29463901598](https://github.com/WodenWang820118/cert-prep/actions/runs/29463901598)
+  at exact commit `d54341a6174c6dc514260c8f26435752242c63a3` passed the
+  portable and Windows product quality jobs, including shared, backend, OCR,
+  Ollama, and Angular Nx checks, mocked and real-backend browser integration,
+  desktop script type checking, package QA, and Cargo tests.
+- This closes cross-runner quality only. It does not close the four-PDF
+  FastFlow/XDNA2 B3 gate, create a publishable candidate, or replace protected
+  recorded hardware evidence.
+
 Resource artifacts for packaged runs:
 
 - `metrics.json`

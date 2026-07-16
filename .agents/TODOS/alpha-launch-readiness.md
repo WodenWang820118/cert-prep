@@ -3,35 +3,31 @@
 Target: public unsigned Windows 11 x64 alpha `0.1.0-alpha.1`, tag
 `cert-prep-v0.1.0-alpha.1`.
 
-Checkpoint: 2026-07-16. The exact local nonpublishable acceptance checkpoint
-uses product and harness commit
-`06db87d1e19a6e1e2e633730a69ce89f5bfb4678`, candidate ID
-`5ebde8afc5e956a98daf6bdd11e31742d7bcde00c714687236260c1a5c2350a6`,
-and install run
-`local-install-06db87d1e19a-1fb5fa29-2a1c-4aed-94ee-17e118716a2e`.
-Completed implementation and exact-run evidence is recorded in
-`.agents/SPECS/domains/runtime-packaging.md` and
+Completed local, GitHub configuration, and hosted quality evidence is retained
+in `.agents/SPECS/domains/runtime-packaging.md` and
 `.agents/SPECS/domains/parsing-reasoning.md`. Dirty worktree changes, ignored
 candidate clones, placeholder URLs, and schema-only validators do not count as
 completed Alpha gates.
 
-## Closed Local Checkpoint
-
-- [x] Complete the current-HEAD local installed-app resilience, forced-Ollama,
-      combined evidence verification, owned-process cleanup, and real NSIS
-      uninstall gates. The immutable local candidate remains
-      `local_nonpublishable`; this checkpoint is not a public candidate,
-      protected hardware result, hosted clean-install result, or release claim.
-
 ## Remaining Public Alpha Gates
 
-GitHub, hosted, and public-asset work below is intentionally excluded from the
-current local execution scope.
+Only remaining publisher-decision, public-asset, clean-install, and protected
+hardware gates are listed below.
 
-### Hosted Windows CI
+### Protected Inputs And Publisher Decision
 
-- [ ] Obtain a successful hosted Windows CI run from committed HEAD. Local
-      workflow inspection and local Nx results do not satisfy this gate.
+- [ ] Provision an online clean-snapshot Windows x64 runner labeled
+      `cert-prep-alpha-hardware`. In `alpha-hardware`, pin
+      `ALPHA_HARDWARE_HARNESS`, `ALPHA_HARDWARE_HARNESS_SHA256`,
+      `ALPHA_FFPROBE_PATH`, and `ALPHA_FFPROBE_SHA256`. Set the repository
+      variable `ALPHA_HARDWARE_RUNNER_READY=true` only after the paths, digests,
+      runner labels, and snapshot reset have been independently verified.
+
+- [ ] Record the publisher's FastFlow free-tier/commercial-use and Powered by
+      FastFlowLM attribution decision, then set the repository variable
+      `ALPHA_FASTFLOW_TERMS_CONFIRMED=true`. If the decision cannot be
+      confirmed, intentionally rebuild and release an Ollama-only Alpha
+      instead.
 
 ### Exact Publishable XDNA2 Acceptance
 
@@ -44,15 +40,7 @@ current local execution scope.
       and local nonpublishable candidate cannot close this protected hardware
       gate.
 
-### Public Repository And Release Chain
-
-- [ ] Create and configure the public GitHub repository and protected
-      `alpha-release` and `alpha-hardware` environments. Pin the provisioned AMD
-      harness and `ffprobe` absolute paths and digests, configure required
-      reviewers, disable release-asset clobbering, and confirm the FastFlow
-      free-tier, publisher, and attribution terms. If the publisher cannot
-      confirm the terms, intentionally rebuild as Ollama-only instead of
-      weakening the gate.
+### Public Assets And Release Chain
 
 - [ ] Publish the versioned WindowsML OCR ZIP as an anonymously downloadable,
       no-clobber prerelease asset in the real `${{ github.repository }}`. The
