@@ -6,20 +6,6 @@ SBOMs and the license texts required by their bundled dependencies. A release
 remains blocked while a redistributed component has unknown or unapproved
 terms.
 
-## FastFlowLM
-
-FastFlowLM's open-source orchestration and CLI code is MIT-licensed, while its
-NPU binary components use the FastFlowLM Proprietary Binary License Agreement.
-Cert Prep does not bundle, mirror, or redistribute FastFlowLM. The pending
-public-Alpha onboarding must require explicit user consent, download an
-allowlisted installer directly from the official FastFlowLM GitHub Release,
-and verify its pinned digest and Authenticode identity before execution.
-
-FastFlowLM binary terms:
-https://github.com/FastFlowLM/FastFlowLM/blob/v0.9.43/LICENSE_BINARY.txt
-
-Powered by FastFlowLM: https://github.com/FastFlowLM/FastFlowLM
-
 ## Qwen 3.5
 
 Qwen 3.5 models are downloaded by the selected local runtime and are not

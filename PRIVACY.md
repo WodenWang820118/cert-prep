@@ -8,8 +8,8 @@ upload document contents to a Cert Prep server, or send product analytics.
 Network access is used only when the user explicitly installs or updates a
 runtime or model, or downloads a release artifact. Depending on the selected
 runtime, requests may reach GitHub Releases, Ollama distribution/model
-endpoints, FastFlowLM's official GitHub release, or model hosting endpoints
-used by those third-party tools. Those services receive ordinary connection
+endpoints, or model hosting endpoints used by those third-party tools. Those
+services receive ordinary connection
 metadata such as the user's IP address, but Cert Prep does not send PDF text or
 practice answers with those downloads.
 

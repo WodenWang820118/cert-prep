@@ -1,7 +1,7 @@
 # Cert Prep
 
 Local-first Windows certificate-preparation app built with Nx, pnpm, Angular,
-Tauri, Python FastAPI, SQLite, WindowsML, FastFlowLM, and Ollama.
+Tauri, Python FastAPI, SQLite, WindowsML, and Ollama.
 
 ## Alpha Status
 
@@ -36,8 +36,7 @@ pnpm nx run cert-prep-desktop:dev
 ```
 
 For browser-only development, install Ollama and pull the configured model when
-live generation is needed. Packaged Alpha onboarding selects FastFlowLM on
-compatible XDNA2 systems and otherwise guides the user through Ollama:
+live generation is needed. Packaged Alpha onboarding uses Ollama:
 
 ```bash
 ollama pull qwen3.5:4b
