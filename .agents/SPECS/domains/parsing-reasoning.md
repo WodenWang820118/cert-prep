@@ -236,8 +236,14 @@ after the WindowsML desktop package is built:
   available.
 - OCR model/runtime artifacts are present, checksum-verified, and installed only
   through explicit runtime consent.
-- Resource telemetry observes `cert-prep-ocr-windowsml-runtime.exe` and records
-  whether OCR used the AMD iGPU and avoided Nvidia dGPU residency.
+- Resource telemetry observes `cert-prep-ocr-windowsml-runtime.exe`. Public
+  hardware verification derives OCR and reasoning routing directly from raw
+  Windows process/GPU counter rows plus the DXGI LUID map; summary booleans or
+  detailed aggregates cannot override contradictory raw evidence.
+- DXGI generation, Windows CSV rows, production/resource summaries, and Nvidia
+  SMI rows must all be fresh for the same acceptance window. The sampler binds
+  Nvidia's timezone-less timestamps to one explicit UTC offset captured at
+  both start and stop; timezone/DST drift fails closed.
 - Reasoning provider health reports configured/effective provider and model,
   fallback model list, and blocker/fallback reason.
 - Ollama Alpha evidence reports `reasoning_uses_nvidia_dgpu=true`; CPU or AMD
@@ -407,6 +413,24 @@ selected document` for the selected document after the production streaming
   forced-provider checkpoints only. They are not a four-PDF B3 result, hosted
   CI result, protected XDNA2 result, publishable-candidate result, or release
   claim.
+
+### Hardware Input And Routing Contract Closeout (2026-07-16)
+
+- Commit `58a156c2b0d703c2170e38c8edbf9fb63681fd2e` makes the Alpha
+  routing decision fail closed from raw evidence. Acceptance requires observed
+  WindowsML OCR use on the AMD iGPU, OCR Nvidia process memory at or below the
+  64 MiB gate, and Ollama reasoning use on the Nvidia dGPU. Missing AMD/Nvidia
+  adapters, unmapped LUIDs, raw/summary contradictions, reused paths, stale
+  timestamps, digest drift, or candidate/run identity drift are rejected.
+- The exact B3 suite is `public-alpha-b3-v1`: four reviewed logical IDs map to
+  exact PDF filenames, byte counts, and SHA-256 values. Hardware results must
+  repeat those identities and prove positive usable-question and Full Exam
+  counts for every PDF; missing, extra, duplicate, renamed, byte-drifted, or
+  digest-drifted inputs fail before question counts are accepted.
+- Contract verification passed 81 Node release tests, 21 Python release tests,
+  Ruff, script type checking, and 206 package-QA tests with one
+  Windows-permission skip. This remains implementation evidence, not the
+  protected four-PDF AMD/Nvidia acceptance run.
 
 ### Hosted Cross-Runner Quality (2026-07-16)
 

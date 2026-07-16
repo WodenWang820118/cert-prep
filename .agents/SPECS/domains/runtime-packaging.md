@@ -56,8 +56,15 @@ and process cleanup.
   SHA-256 is visible in the OCR-scoped SPDX/CycloneDX documents.
 - Candidate identity covers both publishable release files and the scripts
   that execute clean-install, hardware verification, finalization, and
-  publishing. The separately provisioned AMD acceptance harness and `ffprobe`
-  executable are protected-environment inputs pinned by SHA-256.
+  publishing. It also covers the reviewed
+  `alpha-acceptance-pdf-manifest.json` and the resilience evidence contract
+  required by the checkout-free candidate harness. The manifest is forced to
+  LF bytes so its protected raw SHA-256 is stable across Windows and Linux
+  checkouts.
+- The separately provisioned AMD acceptance harness, `ffprobe`, and exact
+  four-PDF manifest are protected-environment inputs pinned by absolute path
+  and SHA-256. The protected manifest must be colocated with exactly its four
+  declared PDFs and must match the candidate-copied manifest byte for byte.
 - Public release identity is pinned twice without hardcoding an owner in the
   repository: GitHub provides `${{ github.repository }}`, while the publisher
   configures an independent `ALPHA_EXPECTED_REPOSITORY` repository variable.
@@ -82,6 +89,17 @@ and process cleanup.
   pinned `ffprobe` gate for container, codec, dimensions, duration, and decoded
   frame count. Finalization revalidates the declared hardware files and both
   clean-install report schemas/digests before marking evidence passed.
+- Hardware result schema v2 binds the acceptance PDF manifest,
+  `production-summary.json`, Windows resource summary/CSV, DXGI adapter map,
+  and Nvidia SMI CSV to the candidate ID and acceptance run ID with path, byte
+  count, and SHA-256. Canonical paths must be unique, contained, non-linked,
+  digest-matched, and fresh for the acceptance window.
+- The verifier derives GPU routing from raw Windows process/GPU counter rows
+  and the DXGI LUID map, then requires the detailed resource summary and
+  production summary to match that derivation. Nvidia's timezone-less CSV is
+  normalized with the explicit UTC offset captured at sampler start and stop;
+  offset drift or stale rows fail closed. Finalization reruns the same contract
+  and rejects undeclared hardware files.
 
 - The packaged app should use downloadable release/runtime artifacts rather than
   assuming machine-wide Python or hidden global setup.
@@ -385,6 +403,30 @@ and process cleanup.
   cross-runner quality gate only; it is not an anonymous OCR prerelease,
   checkout-free MSI/NSIS result, protected XDNA2/B3 result, or release
   approval.
+
+### Hardware Evidence Contract Closeout (2026-07-16)
+
+- Commit `58a156c2b0d703c2170e38c8edbf9fb63681fd2e` closes the two
+  pre-run hardware contract blockers. The reviewed four-PDF manifest has
+  SHA-256
+  `d4dad0909dfadfb77ea319f17acee7a4152c49c33045ff6df1a2624b028135bd`;
+  all four exact local filenames, byte counts, and PDF digests were independently
+  recomputed and matched.
+- The manifest identity now remains the same through workflow and external
+  harness arguments, hardware result schema v2, verifier, finalizer, release
+  metadata, and candidate identity. Production/GPU artifact references begin
+  in hardware result schema v2; the verifier and finalizer revalidate them and
+  release metadata records their hashes. Candidate-copied
+  `verify-hardware-result.ts` and `assemble.ts` were started from the assembled
+  checkout-free harness and reached their expected argument gates without a
+  workspace import.
+- Verification passed `cert-prep-desktop:release-tool-test` with 81 Node and 21
+  Python tests plus Ruff, and `cert-prep-desktop:package-qa-test` with 206 tests
+  passed, one Windows permission-dependent skip, and script type checking.
+  Nx format and `git diff --check` also passed.
+- This closes the contract implementation only. It does not provision the
+  protected runner or harness and is not a four-PDF hardware run, clean-install
+  result, canonical release run, or Public Alpha readiness claim.
 
 ## Size And Artifact Evidence
 

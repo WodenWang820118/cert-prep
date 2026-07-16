@@ -40,35 +40,7 @@ local/hosted evidence belongs in
 
 ## Active Release Blockers
 
-### 1. Close Hardware Evidence Contract Gaps
-
-- [ ] Make GPU routing first-class, fail-closed hardware evidence instead of
-      trusting summary booleans. Extend `hardware-result.json`,
-      `validateHardwareResult`, `validateHardwareEvidenceFiles`, finalization,
-      and tests so the result references candidate/acceptance-bound
-      `production-summary.json` and GPU telemetry records with path, byte count,
-      and SHA-256. The verifier must load those files and require
-      `provider_policy=ollama-only-alpha`, exact configured/effective
-      `ollama`/`qwen3.5:4b`, no provider/model fallback,
-      `ocr_uses_amd_igpu=true`, `ocr_avoids_nvidia_dgpu=true`,
-      `reasoning_uses_nvidia_dgpu=true`, and resource release. Missing, reused,
-      stale, unhashed, or identity-mismatched evidence must fail.
-
-- [ ] Pin the exact four B3 input PDFs instead of accepting any four distinct
-      names. Define a reviewed manifest containing each logical ID, file name,
-      byte count, and SHA-256; pin the manifest path and digest as protected
-      hardware inputs (for example `ALPHA_ACCEPTANCE_PDF_MANIFEST` and
-      `ALPHA_ACCEPTANCE_PDF_MANIFEST_SHA256`). Pass that identity through the
-      workflow and harness, record the matching values in `hardware-result`,
-      and make the verifier compare the exact set before accepting question
-      counts. Cover missing, extra, duplicate, renamed, byte-drifted, and
-      digest-drifted inputs in `release-tool-test`.
-
-No public release run may start until both contract changes are merged to
-`main` and `pnpm nx run cert-prep-desktop:release-tool-test --skip-nx-cache`
-passes.
-
-### 2. Provision The Protected Hardware Lane
+### 1. Provision The Protected Hardware Lane
 
 - [ ] Bring an online clean-snapshot Windows x64 runner into the
       `alpha-hardware` environment with labels `self-hosted`, `Windows`, `X64`,
@@ -78,15 +50,15 @@ passes.
       process, install, app-data, or port residue before each acceptance run.
 
 - [ ] Provision Ollama and `qwen3.5:4b`, the external hardware harness, and
-      `ffprobe` on that runner. Provision the approved four-PDF manifest after
-      its contract is implemented. Independently verify all absolute paths and
-      SHA-256 values, then pin `ALPHA_HARDWARE_HARNESS`,
+      `ffprobe` on that runner. Provision the approved four-PDF manifest from
+      commit `58a156c` beside its exact four PDFs. Independently verify all
+      absolute paths and SHA-256 values, then pin `ALPHA_HARDWARE_HARNESS`,
       `ALPHA_HARDWARE_HARNESS_SHA256`, `ALPHA_FFPROBE_PATH`, and
       `ALPHA_FFPROBE_SHA256`, plus the PDF-manifest path and digest, in
       `alpha-hardware`. Set repository variable `ALPHA_HARDWARE_RUNNER_READY=true`
       only after this verification passes.
 
-### 3. Freeze One Canonical Release Run
+### 2. Freeze One Canonical Release Run
 
 - [ ] Select the exact release commit already merged to `main`, confirm that
       all workspace/package versions still resolve to `0.1.0-alpha.1`, and
@@ -95,7 +67,7 @@ passes.
       two independent candidates for the same version. Record the workflow run
       URL, commit SHA, tag, and generated candidate ID.
 
-### 4. Pass Exact-Commit Quality And Candidate Assembly
+### 3. Pass Exact-Commit Quality And Candidate Assembly
 
 - [ ] Require `metadata`, `windows-quality`, and `build-candidate` to pass for
       the selected commit. The Windows job must execute the current Nx-owned
@@ -107,7 +79,7 @@ passes.
       any identity/digest drift, development path, `file://` URL, unknown
       license, missing license text, symbolic link, or forbidden binary.
 
-### 5. Publish Candidate-Bound OCR Bootstrap Assets
+### 4. Publish Candidate-Bound OCR Bootstrap Assets
 
 - [ ] Require `publish-ocr-prerelease` to reserve the candidate-bound
       prerelease and upload or byte-for-byte reuse the exact WindowsML OCR ZIP
@@ -116,7 +88,7 @@ passes.
       `build-candidate`. Do not rebuild a second candidate after this upload;
       all downstream jobs must consume the original candidate ID.
 
-### 6. Pass Both Checkout-Free Clean Installs
+### 5. Pass Both Checkout-Free Clean Installs
 
 - [ ] Require both `clean-install` matrix jobs (`msi` and `nsis`) to pass with
       the same candidate ID; each installer must match its candidate-declared
@@ -129,13 +101,13 @@ passes.
       HTTP Range resume remains a separately tested downloader contract; this
       fresh install lane must not claim to exercise an interrupted download.
 
-### 7. Pass Protected Hardware Acceptance
+### 6. Pass Protected Hardware Acceptance
 
 - [ ] Require `hardware-acceptance` to run the pinned harness against the same
       candidate and prove all of the following without weakening the
       Ollama-only contract:
-  - exactly four acceptance PDFs complete through WindowsML OCR on the AMD
-    iGPU lane;
+  - the exact four reviewed manifest-declared acceptance PDFs complete through
+    WindowsML OCR on the AMD iGPU lane;
   - configured/effective provider and model are exactly
     `ollama`/`qwen3.5:4b`, with no provider or model fallback;
   - every PDF produces usable questions and a non-zero Full Exam count;
@@ -149,7 +121,7 @@ passes.
   - the run-bound Playwright WebM passes the SHA-pinned `ffprobe` checks for
     container/codec, positive dimensions and duration, and decoded frames.
 
-### 8. Finalize, Attest, And Publish Without Bypass
+### 7. Finalize, Attest, And Publish Without Bypass
 
 - [ ] Require `finalize-release`, `attest-release`, and `publish-alpha` to pass
       in order. Finalization must revalidate both clean-install reports,
