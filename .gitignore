@@ -37,6 +37,10 @@ apps/**/src-tauri/gen/
 !.vscode/extensions.json
 
 # misc
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.*.example
 /.sass-cache
 /connect.lock
 /coverage
@@ -50,7 +54,7 @@ testem.log
 .DS_Store
 Thumbs.db
 
-.nx/cache
+.nx/
 .nx/workspace-data
 .cursor/rules/nx-rules.mdc
 .github/instructions/nx.instructions.md

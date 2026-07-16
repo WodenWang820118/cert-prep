@@ -35,4 +35,4 @@
 - `agy_mcp` is the Codex MCP server for Antigravity CLI. Use it for second-opinion review, plan critique, adversarial evaluation, or repository-grounded planning; use this general MCP name consistently.
 - If the namespace is not already available in the active tool list, use `tool_search` to lazy-load `agy_mcp` before falling back to any shell command.
 - Prefer `mode=review` for code review and `mode=planning` for implementation planning. Keep it read-only unless the user explicitly authorizes writes.
-- AGY has the global `grill-me` skill installed at `C:\Users\User\.gemini\config\skills\grill-me\SKILL.md`. When the user asks to be grilled or to stress-test a plan, ask `agy_mcp` to use `grill-me` and return user-visible questions or a concise report.
+- AGY has the global `grill-me` skill installed at `~/.gemini/config/skills/grill-me/SKILL.md`. When the user asks to be grilled or to stress-test a plan, ask `agy_mcp` to use `grill-me` and return user-visible questions or a concise report.

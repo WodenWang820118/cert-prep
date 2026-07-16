@@ -4,7 +4,10 @@
     {
       "label": "Run manager and inventory tests",
       "type": "shell",
-      "command": "cd c:/software-dev/cert-prep && pnpm nx run cert-prep-backend:test -- tests/test_runtime_installations.py tests/test_llm.py",
+      "command": "pnpm nx run cert-prep-backend:test -- tests/test_runtime_installations.py tests/test_llm_provider_settings.py",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
       "isBackground": false
     }
   ]
