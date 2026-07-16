@@ -1,99 +1,184 @@
 # Public Alpha Launch Readiness TODO
 
-Target: public unsigned Windows 11 x64 alpha `0.1.0-alpha.1`, tag
+Target: public unsigned Windows 11 x64 alpha `0.1.0-alpha.1`, canonical tag
 `cert-prep-v0.1.0-alpha.1`.
 
-Completed local, GitHub configuration, and hosted quality evidence is retained
-in `.agents/SPECS/domains/runtime-packaging.md` and
-`.agents/SPECS/domains/parsing-reasoning.md`. Dirty worktree changes, ignored
-candidate clones, placeholder URLs, and schema-only validators do not count as
-completed Alpha gates.
+This file tracks active release blockers only. Completed implementation and
+local/hosted evidence belongs in
+`.agents/SPECS/domains/runtime-packaging.md` and
+`.agents/SPECS/domains/parsing-reasoning.md`.
 
-## Completed Prerequisites
+## Current Architecture Boundary
 
-- [x] Make `WodenWang820118/cert-prep` public and bind the Alpha release
-      workflow to that exact repository identity with
-      `ALPHA_EXPECTED_REPOSITORY` and `ALPHA_PUBLIC_REPOSITORY_CONFIRMED=true`.
+- The Windows product is the Angular application inside the Tauri desktop
+  shell, with a bundled Python backend runtime.
+- WindowsML OCR is a separately downloaded, digest-pinned GitHub Release
+  runtime. Ollama is the only Alpha reasoning adapter and remains an explicit
+  external runtime/model dependency.
+- Provider-neutral ports, lazy construction, selection, health, and
+  configured/effective attribution remain extension points. Adding another
+  provider is not an Alpha task.
+- `.github/workflows/release-alpha.yml` is the canonical release orchestrator.
+  Its job dependency chain is:
 
-- [x] Create the protected `alpha-release` and `alpha-hardware` GitHub
-      environments with required reviewers and Alpha tag branch policies.
+  ```text
+  metadata
+    -> windows-quality
+    -> build-candidate
+    -> publish-ocr-prerelease
+    -> clean-install
+    -> hardware-acceptance
+    -> finalize-release
+    -> attest-release
+    -> publish-alpha
+  ```
 
-- [x] Implement and verify the fail-closed public Alpha release tooling and
-      workflow contracts for candidate assembly, clean install, protected
-      hardware acceptance, attestations, no-clobber publication, and cleanup.
-      Verify: `pnpm nx run cert-prep-desktop:release-tool-test --skip-nx-cache`.
+- A local nonpublishable candidate, an older hosted run, or schema-only tests
+  cannot close a public candidate gate. All candidate-bound checks below must
+  refer to one commit SHA, candidate ID, declared artifact digests, and
+  workflow run.
 
-- [x] Choose an Ollama-only public Alpha. The Alpha workflow no longer requires
-      retired-provider terms confirmation or provider-specific acceptance
-      evidence; reusable provider abstractions remain for future adapters.
+## Active Release Blockers
 
-## Remaining Public Alpha Gates
+### 1. Close Hardware Evidence Contract Gaps
 
-Only remaining publisher-decision, public-asset, clean-install, and protected
-hardware gates are listed below.
+- [ ] Make GPU routing first-class, fail-closed hardware evidence instead of
+      trusting summary booleans. Extend `hardware-result.json`,
+      `validateHardwareResult`, `validateHardwareEvidenceFiles`, finalization,
+      and tests so the result references candidate/acceptance-bound
+      `production-summary.json` and GPU telemetry records with path, byte count,
+      and SHA-256. The verifier must load those files and require
+      `provider_policy=ollama-only-alpha`, exact configured/effective
+      `ollama`/`qwen3.5:4b`, no provider/model fallback,
+      `ocr_uses_amd_igpu=true`, `ocr_avoids_nvidia_dgpu=true`,
+      `reasoning_uses_nvidia_dgpu=true`, and resource release. Missing, reused,
+      stale, unhashed, or identity-mismatched evidence must fail.
 
-### Protected Hardware Inputs
+- [ ] Pin the exact four B3 input PDFs instead of accepting any four distinct
+      names. Define a reviewed manifest containing each logical ID, file name,
+      byte count, and SHA-256; pin the manifest path and digest as protected
+      hardware inputs (for example `ALPHA_ACCEPTANCE_PDF_MANIFEST` and
+      `ALPHA_ACCEPTANCE_PDF_MANIFEST_SHA256`). Pass that identity through the
+      workflow and harness, record the matching values in `hardware-result`,
+      and make the verifier compare the exact set before accepting question
+      counts. Cover missing, extra, duplicate, renamed, byte-drifted, and
+      digest-drifted inputs in `release-tool-test`.
 
-- [ ] Provision an online clean-snapshot Windows x64 runner labeled
-      `cert-prep-alpha-hardware`. In `alpha-hardware`, pin
-      `ALPHA_HARDWARE_HARNESS`, `ALPHA_HARDWARE_HARNESS_SHA256`,
-      `ALPHA_FFPROBE_PATH`, and `ALPHA_FFPROBE_SHA256`. Set the repository
-      variable `ALPHA_HARDWARE_RUNNER_READY=true` only after the paths, digests,
-      runner labels, and snapshot reset have been independently verified.
+No public release run may start until both contract changes are merged to
+`main` and `pnpm nx run cert-prep-desktop:release-tool-test --skip-nx-cache`
+passes.
 
-### Exact Publishable XDNA2 Acceptance
+### 2. Provision The Protected Hardware Lane
 
-- [ ] Re-run B3 on the exact publishable XDNA2 candidate. For each of four
-      acceptance PDFs, prove WindowsML/iGPU OCR, configured/effective Ollama
-      `qwen3.5:4b`, no provider/model fallback, usable questions above zero,
-      Full Exam question count above zero, Ollama reasoning on the Nvidia dGPU,
-      and post-job model release. The current machine and local nonpublishable
-      candidate cannot close this protected hardware gate.
+- [ ] Bring an online clean-snapshot Windows x64 runner into the
+      `alpha-hardware` environment with labels `self-hosted`, `Windows`, `X64`,
+      and `cert-prep-alpha-hardware`. The machine must expose the supported AMD
+      WindowsML/XDNA2 OCR lane and an NVIDIA dGPU usable by Ollama reasoning,
+      and it must return to a known clean snapshot with no Cert Prep-owned
+      process, install, app-data, or port residue before each acceptance run.
 
-### Public Assets And Release Chain
+- [ ] Provision Ollama and `qwen3.5:4b`, the external hardware harness, and
+      `ffprobe` on that runner. Provision the approved four-PDF manifest after
+      its contract is implemented. Independently verify all absolute paths and
+      SHA-256 values, then pin `ALPHA_HARDWARE_HARNESS`,
+      `ALPHA_HARDWARE_HARNESS_SHA256`, `ALPHA_FFPROBE_PATH`, and
+      `ALPHA_FFPROBE_SHA256`, plus the PDF-manifest path and digest, in
+      `alpha-hardware`. Set repository variable `ALPHA_HARDWARE_RUNNER_READY=true`
+      only after this verification passes.
 
-- [ ] Publish the versioned WindowsML OCR ZIP as an anonymously downloadable,
-      no-clobber prerelease asset in the real `${{ github.repository }}`. The
-      current `github.com/local/cert-prep` staging URL is test-only and must not
-      appear in a publishable manifest or installer.
+### 3. Freeze One Canonical Release Run
 
-- [ ] Rebuild one exact candidate from the public OCR URL and freeze its
-      candidate ID and SHA. Regenerate and revalidate MSI, NSIS, bundled backend
-      ZIP, OCR ZIP, release metadata, approved license inventory, SPDX and
-      CycloneDX SBOMs, SHA256SUMS, QA reports, and provenance inputs. Reject any
-      digest drift, `file://` URL, development path, unknown license, missing
-      license text, or FastFlow binary inside a Cert Prep artifact.
+- [ ] Select the exact release commit already merged to `main`, confirm that
+      all workspace/package versions still resolve to `0.1.0-alpha.1`, and
+      start one canonical `release-alpha.yml` run for that commit. Use the
+      manual-dispatch confirmations or the canonical tag path, but do not run
+      two independent candidates for the same version. Record the workflow run
+      URL, commit SHA, tag, and generated candidate ID.
 
-- [ ] Run checkout-free hosted clean-install lanes for both MSI and NSIS using
-      that same candidate SHA. From fresh app-data, prove bundled-backend
-      extraction and startup, anonymous OCR download, resume and hash
-      validation, installed-resource QA, migration startup, and complete
-      process cleanup.
+### 4. Pass Exact-Commit Quality And Candidate Assembly
 
-- [ ] Run the protected clean-snapshot AMD/XDNA2 hardware lane with the same
-      installer SHA. It must execute the B3 checks, session restart, all nine
-      cancellation, race, and recovery checks, process-residue audit, and a
-      candidate-bound Playwright WebM. The SHA-pinned `ffprobe` result must show
-      a valid WebM video stream, positive duration and dimensions, and decoded
-      frames.
+- [ ] Require `metadata`, `windows-quality`, and `build-candidate` to pass for
+      the selected commit. The Windows job must execute the current Nx-owned
+      contracts, backend, WindowsML, Ollama, Angular, desktop, mocked browser,
+      and `e2e-real-backend` gates. Candidate assembly must freeze one MSI, one
+      NSIS installer, bundled backend ZIP, remote WindowsML OCR ZIP/manifest,
+      release metadata, approved license inventory/texts, SPDX and CycloneDX
+      SBOMs, `SHA256SUMS`, QA reports, and candidate-bound harness files. Reject
+      any identity/digest drift, development path, `file://` URL, unknown
+      license, missing license text, symbolic link, or forbidden binary.
 
-- [ ] Finalize attestations and publish only after both clean-install reports,
-      protected hardware evidence, SBOM and license allowlist, no-clobber OCR
-      asset, and GitHub environment approvals all pass. Release notes and
-      `release-metadata.json` must say `unsigned_public_alpha`, explain the
-      expected SmartScreen warning, and publish SHA-256 verification steps;
-      never claim production or GA readiness.
+### 5. Publish Candidate-Bound OCR Bootstrap Assets
 
-### Final Closeout
+- [ ] Require `publish-ocr-prerelease` to reserve the candidate-bound
+      prerelease and upload or byte-for-byte reuse the exact WindowsML OCR ZIP
+      and manifest without clobbering assets. Both assets must be anonymously
+      downloadable from the canonical versioned HTTPS URL embedded by
+      `build-candidate`. Do not rebuild a second candidate after this upload;
+      all downstream jobs must consume the original candidate ID.
 
-- [ ] Merge the final public, hosted, and protected-hardware evidence and
-      decisions into the two domain specs, delete this TODO, and mark the
-      release state exactly `Public Alpha ready with unsigned exception` only
-      after every checkbox above is closed.
-      Verify: successful `release-alpha.yml` execution and
-      `pnpm nx run cert-prep-desktop:packaged-streaming-production-recorded-windowsml --skip-nx-cache`
-      against the published candidate SHA.
+### 6. Pass Both Checkout-Free Clean Installs
 
-The unsigned exception applies only to this public Alpha. GA remains blocked
-until the backend and OCR runtime executables, main executable, MSI, and NSIS
-are all Authenticode-signed.
+- [ ] Require both `clean-install` matrix jobs (`msi` and `nsis`) to pass with
+      the same candidate ID; each installer must match its candidate-declared
+      SHA. From fresh app-data and without a repository checkout, each lane
+      must prove installer identity, bundled backend extraction/startup and
+      pinned Python/backend health, installed runtime-manifest integrity, one
+      anonymous OCR download with exact byte/hash verification, and successful
+      application launch. The job must stop its owned processes, remove its
+      temporary app-data, and execute the existing best-effort uninstall path.
+      HTTP Range resume remains a separately tested downloader contract; this
+      fresh install lane must not claim to exercise an interrupted download.
+
+### 7. Pass Protected Hardware Acceptance
+
+- [ ] Require `hardware-acceptance` to run the pinned harness against the same
+      candidate and prove all of the following without weakening the
+      Ollama-only contract:
+  - exactly four acceptance PDFs complete through WindowsML OCR on the AMD
+    iGPU lane;
+  - configured/effective provider and model are exactly
+    `ollama`/`qwen3.5:4b`, with no provider or model fallback;
+  - every PDF produces usable questions and a non-zero Full Exam count;
+  - Ollama reasoning uses the NVIDIA dGPU, reaches generation readiness, and
+    releases the model after the job;
+  - session restart succeeds, and the nine candidate-bound checks for upload,
+    OCR, draft, runtime, model, cancel-versus-complete race, crash recovery,
+    partial-data removal, and owned-process release each have their own JSON
+    evidence and digest;
+  - no Cert Prep-owned process or port residue remains; and
+  - the run-bound Playwright WebM passes the SHA-pinned `ffprobe` checks for
+    container/codec, positive dimensions and duration, and decoded frames.
+
+### 8. Finalize, Attest, And Publish Without Bypass
+
+- [ ] Require `finalize-release`, `attest-release`, and `publish-alpha` to pass
+      in order. Finalization must revalidate both clean-install reports,
+      protected hardware evidence, license/SBOM inputs, checksums, candidate
+      identity, and declared artifacts before GitHub provenance is generated.
+      Publish the release as a prerelease with
+      `channel=unsigned_public_alpha`, the expected SmartScreen warning, and
+      SHA-256 verification instructions; never claim production or GA
+      readiness.
+
+- [ ] If any post-bootstrap gate fails, verify that
+      `cleanup-incomplete-prerelease` removes only the OCR bootstrap owned by
+      that workflow run and never deletes a finalized or foreign release. Keep
+      all release checkboxes open until a new canonical run passes end to end.
+
+## Final Closeout
+
+- [ ] Verify the public tag, prerelease status, anonymous OCR assets, MSI/NSIS
+      assets, checksums, release metadata, SBOMs, licenses, and GitHub
+      provenance against the recorded commit SHA and candidate ID. Merge the
+      final workflow URL and exact public/clean-install/hardware evidence into
+      the two owning domain specs, delete this TODO, and set the release state
+      to exactly `Public Alpha ready with unsigned exception`.
+
+## Explicitly Deferred Beyond Alpha
+
+- Additional provider adapters, provider-specific onboarding, and compatibility
+  shims.
+- macOS/Linux distribution and larger-model default changes.
+- Authenticode signing. The unsigned exception applies only to this Alpha; GA
+  remains blocked until the main executable, backend/OCR runtime executables,
+  MSI, and NSIS are signed.
