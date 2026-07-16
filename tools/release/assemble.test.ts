@@ -41,25 +41,18 @@ async function writeHardwareProductionEvidence(hardware, candidateId) {
     windows_summary_json: 'windows-resource-summary.json',
     windows_counters_csv: 'windows-resource-sampling.csv',
     windows_dxgi_adapters_json: 'windows-dxgi-adapters.json',
-    nvidia_smi_csv: 'nvidia-smi.csv',
   };
   const amdLuid = '0x00000000_0x000136c5';
-  const nvidiaLuid = '0x00000000_0x0001fbc5';
   const softwareLuid = '0x00000000_0x00000001';
   const unknownLuid = '0x00000000_0x00000002';
   const dxgiAdapters = [
     { luid: amdLuid, adapter_kind: 'amd_igpu' },
-    { luid: nvidiaLuid, adapter_kind: 'nvidia_dgpu' },
     { luid: softwareLuid, adapter_kind: 'software' },
     { luid: unknownLuid, adapter_kind: 'unknown' },
   ];
   const routing = {
     windowsml_ocr_process_observed: true,
     ocr_uses_amd_igpu: true,
-    ocr_avoids_nvidia_dgpu: true,
-    ocr_nvidia_process_memory_max_bytes: 1_048_576,
-    ocr_nvidia_process_memory_gate_bytes: 64 * 1024 * 1024,
-    reasoning_uses_nvidia_dgpu: true,
     gpu_luid_map_usable: true,
   };
   writeJson(join(hardware, artifacts.windows_dxgi_adapters_json), {
@@ -69,7 +62,6 @@ async function writeHardwareProductionEvidence(hardware, candidateId) {
   });
   writeJson(join(hardware, artifacts.windows_summary_json), {
     finalized_at: '2026-07-11T01:00:03.000Z',
-    nvidia_smi_timestamp_utc_offset_minutes: 480,
     artifacts,
     dxgi_adapters: dxgiAdapters,
     named_target_process_gpu_usage: [
@@ -80,33 +72,15 @@ async function writeHardwareProductionEvidence(hardware, candidateId) {
         adapter_kind: 'amd_igpu',
         metrics: { shared_usage: { max: 8192 } },
       },
-      {
-        pid: 42,
-        luid: nvidiaLuid,
-        name: 'cert-prep-ocr-windowsml-runtime.exe',
-        adapter_kind: 'nvidia_dgpu',
-        metrics: { dedicated_usage: { max: 1_048_576 } },
-      },
-      {
-        pid: 77,
-        luid: nvidiaLuid,
-        name: 'llama-server.exe',
-        adapter_kind: 'nvidia_dgpu',
-        metrics: { dedicated_usage: { max: 2_147_483_648 } },
-      },
     ],
     gpu_routing_checks: routing,
   });
   writeFileSync(
     join(hardware, artifacts.windows_counters_csv),
-    `timestamp,source,path,pid,name,metric,value,unit\n"2026-07-11T01:00:02.000Z","windows_process","Win32_Process","42","cert-prep-ocr-windowsml-runtime.exe","working_set_bytes","1024","bytes"\n"2026-07-11T01:00:02.500Z","windows_process","Win32_Process","77","llama-server.exe","working_set_bytes","2048","bytes"\n"2026-07-11T01:00:03.000Z","windows_gpu_counter","\\\\MSI\\GPU Process Memory(pid_42_luid_${amdLuid}_phys_0)\\Shared Usage","","","\\\\MSI\\GPU Process Memory(pid_42_luid_${amdLuid}_phys_0)\\Shared Usage","8192","raw"\n"2026-07-11T01:00:03.000Z","windows_gpu_counter","\\\\MSI\\GPU Process Memory(pid_42_luid_${nvidiaLuid}_phys_0)\\Dedicated Usage","","","\\\\MSI\\GPU Process Memory(pid_42_luid_${nvidiaLuid}_phys_0)\\Dedicated Usage","1048576","raw"\n"2026-07-11T01:00:03.000Z","windows_gpu_counter","\\\\MSI\\GPU Process Memory(pid_77_luid_${nvidiaLuid}_phys_0)\\Dedicated Usage","","","\\\\MSI\\GPU Process Memory(pid_77_luid_${nvidiaLuid}_phys_0)\\Dedicated Usage","2147483648","raw"\n`,
-  );
-  writeFileSync(
-    join(hardware, artifacts.nvidia_smi_csv),
-    'timestamp, utilization.gpu [%], memory.used [MiB], memory.total [MiB], power.draw [W]\n2026/07/11 09:00:03.000, 40 %, 2048 MiB, 8192 MiB, 20.00 W\n',
+    `timestamp,source,path,pid,name,metric,value,unit\n"2026-07-11T01:00:02.000Z","windows_process","Win32_Process","42","cert-prep-ocr-windowsml-runtime.exe","working_set_bytes","1024","bytes"\n"2026-07-11T01:00:02.500Z","windows_process","Win32_Process","77","llama-server.exe","working_set_bytes","2048","bytes"\n"2026-07-11T01:00:03.000Z","windows_gpu_counter","\\\\MSI\\GPU Process Memory(pid_42_luid_${amdLuid}_phys_0)\\Shared Usage","","","\\\\MSI\\GPU Process Memory(pid_42_luid_${amdLuid}_phys_0)\\Shared Usage","8192","raw"\n`,
   );
   writeJson(join(hardware, 'production-summary.json'), {
-    schema_version: 5,
+    schema_version: 6,
     status: 'passed',
     generated_at: '2026-07-11T01:00:03.500Z',
     provider_policy: 'ollama-only-alpha',
@@ -120,6 +94,20 @@ async function writeHardwareProductionEvidence(hardware, candidateId) {
     provider_fallback_reason: null,
     model_fallback_reason: null,
     fallback_reason: null,
+    execution_mode: 'cpu',
+    execution_warning: 'Supported acceleration was not confirmed; using CPU.',
+    llm_health: {
+      provider: 'ollama',
+      available: true,
+      model: 'qwen3.5:4b',
+      configured_model: 'qwen3.5:4b',
+      effective_model: 'qwen3.5:4b',
+      fallback_models: [],
+      fallback_reason: null,
+      execution_mode: 'cpu',
+      execution_warning: 'Supported acceleration was not confirmed; using CPU.',
+      detail: 'Ollama and the configured model are available.',
+    },
     generation_ready_at_start: {
       captured_at: '2026-07-11T01:00:01.500Z',
       ready: true,
@@ -160,14 +148,16 @@ async function writeHardwareProductionEvidence(hardware, candidateId) {
     gpu_routing_checks: routing,
     checks: {
       ollama_provider_exact: true,
+      ollama_model_exact: true,
       provider_no_fallback: true,
+      model_no_fallback: true,
+      execution_mode_supported: true,
+      execution_warning_consistent: true,
       generation_ready_at_start: true,
       resources_released_at_end: true,
       full_exam_questions_present: true,
       windowsml_ocr_process_observed: true,
       ocr_uses_amd_igpu: true,
-      ocr_avoids_nvidia_dgpu: true,
-      reasoning_uses_nvidia_dgpu: true,
     },
   });
   const boundArtifact = async (path) => ({
@@ -189,7 +179,6 @@ async function writeHardwareProductionEvidence(hardware, candidateId) {
       windowsDxgiAdapters: await boundArtifact(
         artifacts.windows_dxgi_adapters_json,
       ),
-      nvidiaSmi: await boundArtifact(artifacts.nvidia_smi_csv),
     },
   };
 }
@@ -625,7 +614,7 @@ test('candidate assembly proves hybrid runtime shape and writes release document
       acceptanceRunId: 'acceptance-run-0001',
     };
     writeJson(join(hardware, 'hardware-result.json'), {
-      schemaVersion: 2,
+      schemaVersion: 3,
       version: plan.version,
       tag: plan.tag,
       commitSha: plan.commitSha,
@@ -722,6 +711,19 @@ test('candidate assembly proves hybrid runtime shape and writes release document
       });
     }
     const finalOutput = join(root, 'final');
+    const legacyNvidiaArtifact = join(hardware, 'nvidia-smi.csv');
+    writeFileSync(legacyNvidiaArtifact, 'legacy telemetry');
+    await assert.rejects(
+      () =>
+        finalizeRelease({
+          candidate: output,
+          'clean-evidence': clean,
+          'hardware-evidence': hardware,
+          output: finalOutput,
+        }),
+      /missing or undeclared files/,
+    );
+    rmSync(legacyNvidiaArtifact);
     await finalizeRelease({
       candidate: output,
       'clean-evidence': clean,

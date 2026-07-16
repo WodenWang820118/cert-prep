@@ -7,7 +7,6 @@ export {
   finalizeResourceSamplingArtifacts,
   readDxgiAdapters,
   summarizeGpuByAdapter,
-  summarizeNvidiaSmiCsv,
   summarizeWindowsResourceCsv,
 } from './resource-sampling-summary.mts';
 export type {

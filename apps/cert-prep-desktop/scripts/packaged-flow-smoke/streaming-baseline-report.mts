@@ -38,7 +38,6 @@ export interface StreamingBaselineReport {
     baseline_markdown: string;
     screenshots: string[];
     video_recordings?: VideoArtifact[];
-    gpu_sampling?: string;
     resource_sampling?: ResourceSamplingArtifacts;
   };
   input: {
@@ -95,22 +94,22 @@ export interface StreamingBaselineReport {
 }
 
 interface GpuRoutingChecks {
-  windowsml_ocr_process_observed?: boolean;
-  ocr_uses_amd_igpu?: boolean;
-  ocr_avoids_nvidia_dgpu?: boolean;
-  reasoning_uses_nvidia_dgpu?: boolean;
-  gpu_luid_map_usable?: boolean;
-  [key: string]: unknown;
+  windowsml_ocr_process_observed: boolean;
+  ocr_uses_amd_igpu: boolean;
+  gpu_luid_map_usable: boolean;
 }
 
 interface PackagedStreamingProductionChecks extends Record<string, boolean> {
   ollama_provider_exact: boolean;
+  ollama_model_exact: boolean;
   provider_no_fallback: boolean;
-  reasoning_uses_nvidia_dgpu: boolean;
+  model_no_fallback: boolean;
+  execution_mode_supported: boolean;
+  execution_warning_consistent: boolean;
 }
 
 interface PackagedStreamingProductionSummary {
-  schema_version: 5;
+  schema_version: 6;
   status: 'incomplete' | 'passed' | 'failed';
   generated_at: string;
   provider_policy: 'ollama-only-alpha';
@@ -125,6 +124,8 @@ interface PackagedStreamingProductionSummary {
   /** @deprecated Use provider_fallback_reason and model_fallback_reason. */
   fallback_reason: string | null;
   llm_health: LlmHealthSnapshot | null;
+  execution_mode: 'auto' | 'cpu' | null;
+  execution_warning: string | null;
   llm_provider: string | null;
   provider_preference: string;
   configured_provider: string | null;
@@ -288,9 +289,6 @@ export function buildStreamingBaselineReport(
       ...(run.metrics.video_artifacts?.length
         ? { video_recordings: run.metrics.video_artifacts }
         : {}),
-      ...(run.metrics.gpu_sampling
-        ? { gpu_sampling: run.metrics.gpu_sampling }
-        : {}),
       ...(run.metrics.resource_sampling
         ? { resource_sampling: run.metrics.resource_sampling }
         : {}),
@@ -408,6 +406,8 @@ export function buildProductionSummary(
   const modelFallbackReason =
     fallbackReason ?? run.metrics.model_fallback_reason ?? null;
   const llmHealth = run.metrics.llm_health ?? report.runtime.llm_health;
+  const executionMode = llmHealth?.execution_mode ?? null;
+  const executionWarning = llmHealth?.execution_warning ?? null;
   const exactOllamaJobs =
     succeededJobs.length > 0 &&
     succeededJobs.every(
@@ -459,10 +459,16 @@ export function buildProductionSummary(
       report.ocr_completion.total_pages === EXPECTED_BASELINE_PAGES,
     ocr_chunks_present: acceptedOcrChunkCount(run),
     ollama_provider_exact: effectiveProvider === 'ollama' && exactOllamaJobs,
+    ollama_model_exact:
+      configuredModel === run.options.ollamaModel &&
+      effectiveModel === run.options.ollamaModel,
     provider_no_fallback: providerFallbackReason === null,
-    reasoning_uses_nvidia_dgpu: routingBoolean(
-      gpuRoutingChecks,
-      'reasoning_uses_nvidia_dgpu',
+    model_no_fallback: modelFallbackReason === null,
+    execution_mode_supported:
+      executionMode === 'auto' || executionMode === 'cpu',
+    execution_warning_consistent: executionWarningConsistent(
+      executionMode,
+      executionWarning,
     ),
     streaming_jobs_succeeded: report.streaming.completion_state.all_succeeded,
     selected_model_produced_usable_questions:
@@ -484,7 +490,7 @@ export function buildProductionSummary(
   const checksPassed = Object.values(checks).every(Boolean);
 
   return {
-    schema_version: 5,
+    schema_version: 6,
     status: finalized ? (checksPassed ? 'passed' : 'failed') : 'incomplete',
     generated_at: report.generated_at,
     provider_policy: 'ollama-only-alpha',
@@ -504,6 +510,8 @@ export function buildProductionSummary(
     model_fallback_reason: modelFallbackReason,
     fallback_reason: modelFallbackReason,
     llm_health: llmHealth,
+    execution_mode: executionMode,
+    execution_warning: executionWarning,
     generation_ready_at_start: readinessAtStart ?? null,
     succeeded_jobs: succeededJobs,
     producing_jobs: producingJobs,
@@ -550,6 +558,16 @@ function uniqueFallbackReason(
   }
   const reasons = jobs.map((job) => job.fallback_reason);
   return uniqueCompleteValue(reasons);
+}
+
+function executionWarningConsistent(
+  mode: 'auto' | 'cpu' | null,
+  warning: string | null,
+): boolean {
+  if (mode === 'cpu') {
+    return warning !== null && warning.trim().length > 0;
+  }
+  return mode === 'auto' && warning === null;
 }
 
 function generationReadinessPassed(
@@ -651,9 +669,9 @@ function providerRoutingChecks(
         'windowsml_ocr_process_observed',
       ),
       ocr_uses_amd_igpu: routingBoolean(gpuRoutingChecks, 'ocr_uses_amd_igpu'),
-      ocr_avoids_nvidia_dgpu: routingBoolean(
+      gpu_luid_map_usable: routingBoolean(
         gpuRoutingChecks,
-        'ocr_avoids_nvidia_dgpu',
+        'gpu_luid_map_usable',
       ),
     };
   }
@@ -730,7 +748,15 @@ function readGpuRoutingChecks(
   resourceSummary: Record<string, unknown> | null,
 ): GpuRoutingChecks | null {
   const payload = recordField(resourceSummary, 'gpu_routing_checks');
-  return payload === null ? null : (payload as GpuRoutingChecks);
+  if (payload === null) {
+    return null;
+  }
+  return {
+    windowsml_ocr_process_observed:
+      payload.windowsml_ocr_process_observed === true,
+    ocr_uses_amd_igpu: payload.ocr_uses_amd_igpu === true,
+    gpu_luid_map_usable: payload.gpu_luid_map_usable === true,
+  };
 }
 
 function routingBoolean(
@@ -773,7 +799,7 @@ function renderResourceSamplingMarkdown(
     return '';
   }
   const paths = [
-    artifacts.nvidia_smi_csv,
+    artifacts.windows_dxgi_adapters_json,
     artifacts.windows_counters_csv,
     artifacts.windows_summary_json,
   ].filter((path): path is string => Boolean(path));

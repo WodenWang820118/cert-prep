@@ -24,7 +24,7 @@ test('Ollama-only production summary binds readiness to exact job attribution', 
     const summary = buildProductionSummary(fixture.run, report);
 
     assert.equal(report.status, 'passed');
-    assert.equal(summary.schema_version, 5);
+    assert.equal(summary.schema_version, 6);
     assert.equal(summary.status, 'passed');
     assert.equal(summary.provider_policy, 'ollama-only-alpha');
     assert.equal(summary.provider_preference, 'ollama');
@@ -35,13 +35,87 @@ test('Ollama-only production summary binds readiness to exact job attribution', 
     assert.equal(summary.checks.resources_released_at_end, true);
     assert.equal(summary.checks.acceptance_fresh_run_isolation, true);
     assert.equal(summary.checks.windowsml_ocr_process_observed, true);
-    assert.equal(summary.checks.reasoning_uses_nvidia_dgpu, true);
+    assert.equal(summary.checks.ocr_uses_amd_igpu, true);
+    assert.equal(summary.checks.gpu_luid_map_usable, true);
+    assert.equal(summary.checks.ollama_model_exact, true);
+    assert.equal(summary.checks.model_no_fallback, true);
+    assert.equal(summary.execution_mode, 'auto');
+    assert.equal(summary.execution_warning, null);
+    assert.equal(summary.checks.execution_mode_supported, true);
+    assert.equal(summary.checks.execution_warning_consistent, true);
   } finally {
     fixture.cleanup();
   }
 });
 
-test('Ollama-only production summary fails closed without NVIDIA reasoning evidence', () => {
+test('Ollama-only production summary accepts CPU execution with a warning', () => {
+  const fixture = productionFixture();
+  try {
+    assert.ok(fixture.run.metrics.llm_health);
+    fixture.run.metrics.llm_health.execution_mode = 'cpu';
+    fixture.run.metrics.llm_health.execution_warning =
+      'Acceleration requirements were not met; using CPU.';
+
+    const summary = buildProductionSummary(
+      fixture.run,
+      buildStreamingBaselineReport(fixture.run),
+    );
+
+    assert.equal(summary.status, 'passed');
+    assert.equal(summary.execution_mode, 'cpu');
+    assert.equal(
+      summary.execution_warning,
+      'Acceleration requirements were not met; using CPU.',
+    );
+    assert.equal(summary.checks.execution_warning_consistent, true);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('Ollama-only production summary rejects CPU execution without a warning', () => {
+  const fixture = productionFixture();
+  try {
+    assert.ok(fixture.run.metrics.llm_health);
+    fixture.run.metrics.llm_health.execution_mode = 'cpu';
+    fixture.run.metrics.llm_health.execution_warning = null;
+
+    const summary = buildProductionSummary(
+      fixture.run,
+      buildStreamingBaselineReport(fixture.run),
+    );
+
+    assert.equal(summary.status, 'failed');
+    assert.equal(summary.execution_mode, 'cpu');
+    assert.equal(summary.checks.execution_mode_supported, true);
+    assert.equal(summary.checks.execution_warning_consistent, false);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('Ollama-only production summary rejects auto execution with a warning', () => {
+  const fixture = productionFixture();
+  try {
+    assert.ok(fixture.run.metrics.llm_health);
+    fixture.run.metrics.llm_health.execution_warning =
+      'Unexpected acceleration warning.';
+
+    const summary = buildProductionSummary(
+      fixture.run,
+      buildStreamingBaselineReport(fixture.run),
+    );
+
+    assert.equal(summary.status, 'failed');
+    assert.equal(summary.execution_mode, 'auto');
+    assert.equal(summary.execution_warning, 'Unexpected acceleration warning.');
+    assert.equal(summary.checks.execution_warning_consistent, false);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('Ollama-only production summary keeps the AMD WindowsML gate', () => {
   const fixture = productionFixture();
   try {
     writeFileSync(
@@ -49,9 +123,7 @@ test('Ollama-only production summary fails closed without NVIDIA reasoning evide
       JSON.stringify({
         gpu_routing_checks: {
           windowsml_ocr_process_observed: true,
-          ocr_uses_amd_igpu: true,
-          ocr_avoids_nvidia_dgpu: true,
-          reasoning_uses_nvidia_dgpu: false,
+          ocr_uses_amd_igpu: false,
           gpu_luid_map_usable: true,
         },
       }),
@@ -64,9 +136,7 @@ test('Ollama-only production summary fails closed without NVIDIA reasoning evide
 
     assert.equal(summary.status, 'failed');
     assert.equal(summary.checks.windowsml_ocr_process_observed, true);
-    assert.equal(summary.checks.ocr_uses_amd_igpu, true);
-    assert.equal(summary.checks.ocr_avoids_nvidia_dgpu, true);
-    assert.equal(summary.checks.reasoning_uses_nvidia_dgpu, false);
+    assert.equal(summary.checks.ocr_uses_amd_igpu, false);
   } finally {
     fixture.cleanup();
   }
@@ -115,6 +185,7 @@ test('production summary keeps provider and model fallback evidence separate', (
       'lower resource model selected',
     );
     assert.equal(summary.checks.provider_no_fallback, false);
+    assert.equal(summary.checks.model_no_fallback, false);
   } finally {
     fixture.cleanup();
   }
@@ -193,8 +264,6 @@ function productionFixture(): {
       gpu_routing_checks: {
         windowsml_ocr_process_observed: true,
         ocr_uses_amd_igpu: true,
-        ocr_avoids_nvidia_dgpu: true,
-        reasoning_uses_nvidia_dgpu: true,
         gpu_luid_map_usable: true,
       },
     }),
@@ -240,6 +309,18 @@ function productionFixture(): {
       llm_fallback_models: ['qwen3.5:2b'],
       provider_fallback_reason: null,
       model_fallback_reason: null,
+      llm_health: {
+        provider: 'ollama',
+        available: true,
+        model: 'qwen3.5:4b',
+        configured_model: 'qwen3.5:4b',
+        effective_model: 'qwen3.5:4b',
+        fallback_models: ['qwen3.5:2b'],
+        fallback_reason: null,
+        execution_mode: 'auto',
+        execution_warning: null,
+        detail: 'Ollama and the configured model are available.',
+      },
       generation_readiness_at_start: {
         captured_at: '2026-07-16T00:00:01.000Z',
         ready: true,
@@ -352,7 +433,6 @@ function productionFixture(): {
     },
     app: null,
     appExit: null,
-    nvidia: null,
     resourceSampling: null,
     videoRecording: null,
     browser: null,

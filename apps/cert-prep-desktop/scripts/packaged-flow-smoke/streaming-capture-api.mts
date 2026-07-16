@@ -438,6 +438,11 @@ function sanitizeLlmHealth(payload: unknown): LlmHealthSnapshot | null {
           .filter(Boolean)
       : [],
     fallback_reason: nullableString(payload.fallback_reason),
+    execution_mode:
+      payload.execution_mode === 'auto' || payload.execution_mode === 'cpu'
+        ? payload.execution_mode
+        : null,
+    execution_warning: nullableString(payload.execution_warning),
     detail: nullableString(payload.detail),
     profile_id: nullableString(payload.profile_id),
     base_model: nullableString(payload.base_model),

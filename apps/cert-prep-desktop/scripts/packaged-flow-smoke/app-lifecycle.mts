@@ -854,7 +854,6 @@ async function cleanupAfterRun(run: SmokeRunState): Promise<void> {
     });
   }
   run.resourceSampling = null;
-  run.nvidia = null;
 
   const nodeHelpers = await closeNewNodeHelpers(run).catch((error) => {
     run.metrics.errors.push(

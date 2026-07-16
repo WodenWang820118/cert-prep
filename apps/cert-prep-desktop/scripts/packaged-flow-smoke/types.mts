@@ -90,7 +90,6 @@ export interface SmokeMetrics {
     residue_after_close: PublicProcessRecord[];
   };
   streaming_questions: StreamingQuestionsMetrics;
-  gpu_sampling?: string;
   resource_sampling?: ResourceSamplingArtifacts;
 }
 
@@ -104,8 +103,6 @@ export interface AcceptanceIsolationSnapshot {
 }
 
 export interface ResourceSamplingArtifacts {
-  nvidia_smi_csv?: string;
-  nvidia_smi_stderr_log?: string;
   windows_counters_csv?: string;
   windows_summary_json?: string;
   windows_dxgi_adapters_json?: string;
@@ -162,6 +159,8 @@ export interface LlmHealthSnapshot {
   effective_model: string | null;
   fallback_models: string[];
   fallback_reason: string | null;
+  execution_mode: 'auto' | 'cpu' | null;
+  execution_warning: string | null;
   detail: string | null;
   profile_id?: string | null;
   base_model?: string | null;
@@ -295,7 +294,6 @@ export interface SmokeRunState {
   metrics: SmokeMetrics;
   app: ChildProcess | null;
   appExit: ChildExitState | null;
-  nvidia: ChildProcess | null;
   resourceSampling: ResourceSamplingController | null;
   videoRecording: VideoRecordingState | null;
   browser: Browser | null;

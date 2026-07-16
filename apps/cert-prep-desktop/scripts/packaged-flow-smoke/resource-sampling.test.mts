@@ -9,7 +9,6 @@ import {
   finalizeResourceSamplingArtifacts,
   readDxgiAdapters,
   summarizeGpuByAdapter,
-  summarizeNvidiaSmiCsv,
   summarizeWindowsResourceCsv,
   windowsResourceSamplingScript,
 } from './resource-sampling.mts';
@@ -44,7 +43,6 @@ test('dxgi adapter probe script emits LUID and adapter metadata', () => {
   assert.match(script, /AdapterLuid/);
   assert.match(script, /adapter_index/);
   assert.match(script, /amd_igpu/);
-  assert.match(script, /nvidia_dgpu/);
 });
 
 test('dxgi adapter reader accepts PowerShell UTF-8 BOM JSON', () => {
@@ -64,11 +62,6 @@ test('dxgi adapter reader accepts PowerShell UTF-8 BOM JSON', () => {
                 'AMD Radeon(TM) 880M Graphics',
                 'amd_igpu',
               ),
-              dxgiAdapter(
-                '0x00000000_0x0001fbc5',
-                'NVIDIA GeForce RTX 4060 Laptop GPU',
-                'nvidia_dgpu',
-              ),
             ],
           }),
           'utf8',
@@ -78,9 +71,8 @@ test('dxgi adapter reader accepts PowerShell UTF-8 BOM JSON', () => {
 
     const adapters = readDxgiAdapters(path);
 
-    assert.equal(adapters.length, 2);
+    assert.equal(adapters.length, 1);
     assert.equal(adapters[0].adapter_kind, 'amd_igpu');
-    assert.equal(adapters[1].adapter_kind, 'nvidia_dgpu');
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -107,11 +99,6 @@ test('resource summary finalizer preserves closeout evidence and target process 
                 'AMD Radeon(TM) 880M Graphics',
                 'amd_igpu',
               ),
-              dxgiAdapter(
-                '0x00000000_0x0001fbc5',
-                'NVIDIA GeForce RTX 4060 Laptop GPU',
-                'nvidia_dgpu',
-              ),
             ],
           }),
           'utf8',
@@ -123,27 +110,16 @@ test('resource summary finalizer preserves closeout evidence and target process 
       `timestamp,source,path,pid,name,metric,value,unit
 "2026-06-21T00:00:00Z","windows_process","Win32_Process","42","cert-prep-ocr-runtime.exe","working_set_bytes","1024","bytes"
 "2026-06-21T00:00:00Z","windows_gpu_counter","\\\\MSI\\GPU Adapter Memory(luid_0x00000000_0x000136C5_phys_0)\\Shared Usage","","","\\\\MSI\\GPU Adapter Memory(luid_0x00000000_0x000136C5_phys_0)\\Shared Usage","4096","raw"
-"2026-06-21T00:00:00Z","windows_gpu_counter","\\\\MSI\\GPU Adapter Memory(luid_0x00000000_0x0001FBC5_phys_0)\\Dedicated Usage","","","\\\\MSI\\GPU Adapter Memory(luid_0x00000000_0x0001FBC5_phys_0)\\Dedicated Usage","8192","raw"
-"2026-06-21T00:00:00Z","windows_gpu_counter","\\\\MSI\\GPU Process Memory(pid_42_luid_0x00000000_0x0001FBC5_phys_0)\\Dedicated Usage","","","\\\\MSI\\GPU Process Memory(pid_42_luid_0x00000000_0x0001FBC5_phys_0)\\Dedicated Usage","2048","raw"
+"2026-06-21T00:00:00Z","windows_gpu_counter","\\\\MSI\\GPU Process Memory(pid_42_luid_0x00000000_0x000136C5_phys_0)\\Shared Usage","","","\\\\MSI\\GPU Process Memory(pid_42_luid_0x00000000_0x000136C5_phys_0)\\Shared Usage","2048","raw"
 `,
       'utf8',
     );
-    writeFileSync(
-      join(dir, 'nvidia-smi.csv'),
-      `timestamp, utilization.gpu [%], memory.used [MiB], memory.total [MiB], power.draw [W]
-2026/06/21 17:00:00.000, 44 %, 1936 MiB, 8188 MiB, 18.00 W
-`,
-      'utf8',
-    );
-
     finalizeResourceSamplingArtifacts({
       outDir: dir,
-      workspaceRoot: dir,
       artifacts: {
         windows_dxgi_adapters_json: 'windows-dxgi-adapters.json',
         windows_counters_csv: 'windows-resource-sampling.csv',
         windows_summary_json: 'windows-resource-summary.json',
-        nvidia_smi_csv: 'nvidia-smi.csv',
       },
       observe() {
         assert.fail('finalizer should not report an observation for valid fixtures');
@@ -158,33 +134,35 @@ test('resource summary finalizer preserves closeout evidence and target process 
         error_count: 0,
         results: [],
       },
-      nvidiaSmiTimestampUtcOffsetMinutesAtStart: 480,
-      nvidiaSmiTimestampUtcOffsetMinutesAtStop: 480,
     });
 
     const summary = JSON.parse(
       readFileSync(join(dir, 'windows-resource-summary.json'), 'utf8'),
     ) as {
       sampler_stop: { forced_count: number };
+      artifacts: Record<string, string>;
       gpu_luid_map_status: string;
       dxgi_adapters: unknown[];
       named_target_process_gpu_usage: Array<{
         name: string;
         adapter_kind: string;
-        metrics: { dedicated_usage: { max: number } };
+        metrics: { shared_usage: { max: number } };
       }>;
       gpu_routing_checks: {
         windowsml_ocr_process_observed: boolean;
         ocr_uses_amd_igpu: boolean;
-        ocr_avoids_nvidia_dgpu: boolean;
+        gpu_luid_map_usable: boolean;
       };
-      nvidia_smi_summary: { memory_used_mib: { max: number } };
-      nvidia_smi_timestamp_utc_offset_minutes: number;
     };
 
     assert.equal(summary.sampler_stop.forced_count, 1);
+    assert.deepEqual(summary.artifacts, {
+      windows_dxgi_adapters_json: 'windows-dxgi-adapters.json',
+      windows_counters_csv: 'windows-resource-sampling.csv',
+      windows_summary_json: 'windows-resource-summary.json',
+    });
     assert.equal(summary.gpu_luid_map_status, 'complete');
-    assert.equal(summary.dxgi_adapters.length, 2);
+    assert.equal(summary.dxgi_adapters.length, 1);
     assert.equal(summary.named_target_process_gpu_usage.length, 1);
     assert.equal(
       summary.named_target_process_gpu_usage[0].name,
@@ -192,39 +170,15 @@ test('resource summary finalizer preserves closeout evidence and target process 
     );
     assert.equal(
       summary.named_target_process_gpu_usage[0].adapter_kind,
-      'nvidia_dgpu',
+      'amd_igpu',
     );
     assert.equal(
-      summary.named_target_process_gpu_usage[0].metrics.dedicated_usage.max,
+      summary.named_target_process_gpu_usage[0].metrics.shared_usage.max,
       2048,
     );
     assert.equal(summary.gpu_routing_checks.windowsml_ocr_process_observed, false);
     assert.equal(summary.gpu_routing_checks.ocr_uses_amd_igpu, false);
-    assert.equal(summary.gpu_routing_checks.ocr_avoids_nvidia_dgpu, false);
-    assert.equal(summary.nvidia_smi_summary.memory_used_mib.max, 1936);
-    assert.equal(summary.nvidia_smi_timestamp_utc_offset_minutes, 480);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test('resource summary finalizer rejects timezone offset changes', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'cert-prep-resource-timezone-'));
-  try {
-    assert.throws(
-      () =>
-        finalizeResourceSamplingArtifacts({
-          outDir: dir,
-          workspaceRoot: dir,
-          artifacts: {},
-          observe() {
-            assert.fail('offset validation must fail before observation');
-          },
-          nvidiaSmiTimestampUtcOffsetMinutesAtStart: 480,
-          nvidiaSmiTimestampUtcOffsetMinutesAtStop: 540,
-        }),
-      /timestamp UTC offset changed or is unsupported/,
-    );
+    assert.equal(summary.gpu_routing_checks.gpu_luid_map_usable, true);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -273,21 +227,18 @@ test('adapter-aware summary joins GPU LUID metrics to DXGI adapter kinds', () =>
   const windowsSummary = summarizeWindowsResourceCsv(`timestamp,source,path,pid,name,metric,value,unit
 "2026-06-21T00:00:00Z","windows_process","Win32_Process","42","cert-prep-ocr-runtime.exe","working_set_bytes","1024","bytes"
 "2026-06-21T00:00:00Z","windows_gpu_counter","\\\\MSI\\GPU Adapter Memory(luid_0x00000000_0x000136C5_phys_0)\\Dedicated Usage","","","\\\\MSI\\GPU Adapter Memory(luid_0x00000000_0x000136C5_phys_0)\\Dedicated Usage","256","raw"
-"2026-06-21T00:00:00Z","windows_gpu_counter","\\\\MSI\\GPU Adapter Memory(luid_0x00000000_0x0001FBC5_phys_0)\\Dedicated Usage","","","\\\\MSI\\GPU Adapter Memory(luid_0x00000000_0x0001FBC5_phys_0)\\Dedicated Usage","512","raw"
 "2026-06-21T00:00:00Z","windows_gpu_counter","\\\\MSI\\GPU Engine(pid_42_luid_0x00000000_0x000136C5_phys_0_eng_2_engtype_Compute 0)\\Utilization Percentage","","","\\\\MSI\\GPU Engine(pid_42_luid_0x00000000_0x000136C5_phys_0_eng_2_engtype_Compute 0)\\Utilization Percentage","75.5","raw"
 "2026-06-21T00:00:00Z","windows_gpu_counter","\\\\MSI\\GPU Process Memory(pid_42_luid_0x00000000_0x000136C5_phys_0)\\Shared Usage","","","\\\\MSI\\GPU Process Memory(pid_42_luid_0x00000000_0x000136C5_phys_0)\\Shared Usage","4096","raw"
 `);
 
   const summary = summarizeGpuByAdapter(windowsSummary, [
     dxgiAdapter('0x00000000_0x000136c5', 'AMD Radeon(TM) 880M Graphics', 'amd_igpu'),
-    dxgiAdapter('0x00000000_0x0001fbc5', 'NVIDIA GeForce RTX 4060 Laptop GPU', 'nvidia_dgpu'),
   ]) as {
     gpu_utilization_by_adapter: {
       amd_igpu: { max_compute_percent: number; name: string };
     };
     gpu_memory_by_adapter: {
       amd_igpu: { max_process_shared_usage_bytes: number };
-      nvidia_dgpu: { max_dedicated_usage_bytes: number };
     };
     target_process_gpu_usage: Array<{
       adapter_kind: string;
@@ -302,8 +253,6 @@ test('adapter-aware summary joins GPU LUID metrics to DXGI adapter kinds', () =>
     gpu_routing_checks: {
       windowsml_ocr_process_observed: boolean;
       ocr_uses_amd_igpu: boolean;
-      ocr_avoids_nvidia_dgpu: boolean;
-      reasoning_uses_nvidia_dgpu: boolean;
       gpu_luid_map_usable: boolean;
     };
   };
@@ -320,10 +269,6 @@ test('adapter-aware summary joins GPU LUID metrics to DXGI adapter kinds', () =>
     summary.gpu_memory_by_adapter.amd_igpu.max_process_shared_usage_bytes,
     4096,
   );
-  assert.equal(
-    summary.gpu_memory_by_adapter.nvidia_dgpu.max_dedicated_usage_bytes,
-    512,
-  );
   assert.equal(summary.target_process_gpu_usage[0].adapter_kind, 'amd_igpu');
   assert.equal(
     summary.target_process_gpu_usage[0].adapter_name,
@@ -337,64 +282,30 @@ test('adapter-aware summary joins GPU LUID metrics to DXGI adapter kinds', () =>
   );
   assert.equal(summary.gpu_routing_checks.windowsml_ocr_process_observed, false);
   assert.equal(summary.gpu_routing_checks.ocr_uses_amd_igpu, false);
-  assert.equal(summary.gpu_routing_checks.ocr_avoids_nvidia_dgpu, false);
-  assert.equal(summary.gpu_routing_checks.reasoning_uses_nvidia_dgpu, false);
   assert.equal(summary.gpu_routing_checks.gpu_luid_map_usable, true);
 });
 
-test('adapter-aware summary exposes WindowsML OCR and reasoning GPU routing gates', () => {
+test('adapter-aware summary accepts AMD WindowsML routing with only the required adapter', () => {
   const windowsSummary = summarizeWindowsResourceCsv(`timestamp,source,path,pid,name,metric,value,unit
 "2026-06-21T00:00:00Z","windows_process","Win32_Process","42","cert-prep-ocr-windowsml-runtime.exe","working_set_bytes","1024","bytes"
 "2026-06-21T00:00:00Z","windows_process","Win32_Process","77","llama-server.exe","working_set_bytes","2048","bytes"
 "2026-06-21T00:00:00Z","windows_gpu_counter","\\\\MSI\\GPU Adapter Memory(luid_0x00000000_0x000136C5_phys_0)\\Dedicated Usage","","","\\\\MSI\\GPU Adapter Memory(luid_0x00000000_0x000136C5_phys_0)\\Dedicated Usage","256","raw"
-"2026-06-21T00:00:00Z","windows_gpu_counter","\\\\MSI\\GPU Adapter Memory(luid_0x00000000_0x0001FBC5_phys_0)\\Dedicated Usage","","","\\\\MSI\\GPU Adapter Memory(luid_0x00000000_0x0001FBC5_phys_0)\\Dedicated Usage","512","raw"
-"2026-06-21T00:00:00Z","windows_gpu_counter","\\\\MSI\\GPU Adapter Memory(luid_0x00000000_0x00022E9E_phys_0)\\Shared Usage","","","\\\\MSI\\GPU Adapter Memory(luid_0x00000000_0x00022E9E_phys_0)\\Shared Usage","65536","raw"
 "2026-06-21T00:00:00Z","windows_gpu_counter","\\\\MSI\\GPU Process Memory(pid_42_luid_0x00000000_0x000136C5_phys_0)\\Shared Usage","","","\\\\MSI\\GPU Process Memory(pid_42_luid_0x00000000_0x000136C5_phys_0)\\Shared Usage","8192","raw"
-"2026-06-21T00:00:00Z","windows_gpu_counter","\\\\MSI\\GPU Process Memory(pid_42_luid_0x00000000_0x0001FBC5_phys_0)\\Dedicated Usage","","","\\\\MSI\\GPU Process Memory(pid_42_luid_0x00000000_0x0001FBC5_phys_0)\\Dedicated Usage","1048576","raw"
-"2026-06-21T00:00:00Z","windows_gpu_counter","\\\\MSI\\GPU Process Memory(pid_77_luid_0x00000000_0x0001FBC5_phys_0)\\Dedicated Usage","","","\\\\MSI\\GPU Process Memory(pid_77_luid_0x00000000_0x0001FBC5_phys_0)\\Dedicated Usage","2147483648","raw"
-"2026-06-21T00:00:00Z","windows_gpu_counter","\\\\MSI\\GPU Process Memory(pid_88_luid_0x00000000_0x00022E9E_phys_0)\\Shared Usage","","","\\\\MSI\\GPU Process Memory(pid_88_luid_0x00000000_0x00022E9E_phys_0)\\Shared Usage","65536","raw"
 `);
 
   const summary = summarizeGpuByAdapter(windowsSummary, [
     dxgiAdapter('0x00000000_0x000136c5', 'AMD Radeon(TM) 880M Graphics', 'amd_igpu'),
-    dxgiAdapter('0x00000000_0x0001fbc5', 'NVIDIA GeForce RTX 4060 Laptop GPU', 'nvidia_dgpu'),
   ]) as {
     gpu_routing_checks: {
       windowsml_ocr_process_observed: boolean;
       ocr_uses_amd_igpu: boolean;
-      ocr_avoids_nvidia_dgpu: boolean;
-      ocr_nvidia_process_memory_max_bytes: number;
-      reasoning_uses_nvidia_dgpu: boolean;
       gpu_luid_map_usable: boolean;
     };
   };
 
   assert.equal(summary.gpu_routing_checks.windowsml_ocr_process_observed, true);
   assert.equal(summary.gpu_routing_checks.ocr_uses_amd_igpu, true);
-  assert.equal(summary.gpu_routing_checks.ocr_avoids_nvidia_dgpu, true);
-  assert.equal(
-    summary.gpu_routing_checks.ocr_nvidia_process_memory_max_bytes,
-    1_048_576,
-  );
-  assert.equal(summary.gpu_routing_checks.reasoning_uses_nvidia_dgpu, true);
   assert.equal(summary.gpu_routing_checks.gpu_luid_map_usable, true);
-});
-
-test('nvidia smi summary aggregates utilization, memory, and power peaks', () => {
-  const summary = summarizeNvidiaSmiCsv(`timestamp, utilization.gpu [%], memory.used [MiB], memory.total [MiB], power.draw [W]
-2026/06/21 17:00:00.000, 12 %, 1000 MiB, 8188 MiB, 14.25 W
-2026/06/21 17:00:01.000, 33 %, 2048 MiB, 8188 MiB, 22.50 W
-`) as {
-    sample_count: number;
-    gpu_utilization_percent: { max: number };
-    memory_used_mib: { max: number };
-    power_draw_w: { max: number };
-  };
-
-  assert.equal(summary.sample_count, 2);
-  assert.equal(summary.gpu_utilization_percent.max, 33);
-  assert.equal(summary.memory_used_mib.max, 2048);
-  assert.equal(summary.power_draw_w.max, 22.5);
 });
 
 function dxgiAdapter(luid: string, description: string, adapterKind: string) {

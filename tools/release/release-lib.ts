@@ -48,17 +48,9 @@ const HARDWARE_GPU_TELEMETRY_FILES = {
   windowsResourceSummary: 'windows-resource-summary.json',
   windowsResourceSampling: 'windows-resource-sampling.csv',
   windowsDxgiAdapters: 'windows-dxgi-adapters.json',
-  nvidiaSmi: 'nvidia-smi.csv',
 };
 const HARDWARE_PRODUCTION_SUMMARY_FILE = 'production-summary.json';
 const WINDOWSML_OCR_PROCESS = 'cert-prep-ocr-windowsml-runtime.exe';
-const OLLAMA_REASONING_PROCESSES = new Set([
-  'ollama.exe',
-  'ollama app.exe',
-  'llama-server.exe',
-  'ollama_llama_server.exe',
-]);
-const NVIDIA_OCR_PROCESS_MEMORY_GATE_BYTES = 64 * 1024 * 1024;
 const ACCEPTANCE_PDF_MANIFEST_KEYS = ['pdfs', 'schemaVersion', 'suiteId'];
 const ACCEPTANCE_PDF_IDENTITY_KEYS = [
   'bytes',
@@ -1356,7 +1348,7 @@ export function validateHardwareResult(result, plan, expectedCandidateId) {
     processResidueCount: 0,
   };
   if (
-    result.schemaVersion !== 2 ||
+    result.schemaVersion !== 3 ||
     result.version !== plan.version ||
     result.tag !== plan.tag ||
     result.commitSha !== plan.commitSha ||
@@ -1585,17 +1577,12 @@ export async function validateHardwareEvidenceFiles(result, evidenceRoot) {
     resolvedPaths.get('gpuTelemetry.windowsResourceSampling'),
     'utf8',
   ).replace(/^\uFEFF/, '');
-  const nvidiaSmi = readFileSync(
-    resolvedPaths.get('gpuTelemetry.nvidiaSmi'),
-    'utf8',
-  ).replace(/^\uFEFF/, '');
   validateHardwareProductionEvidence({
     result,
     productionSummary,
     windowsResourceSummary,
     windowsResourceSampling,
     dxgiAdapters,
-    nvidiaSmi,
   });
   return result;
 }
@@ -1673,7 +1660,6 @@ function validateHardwareProductionEvidence({
   windowsResourceSummary,
   windowsResourceSampling,
   dxgiAdapters,
-  nvidiaSmi,
 }) {
   const acceptanceWindow = hardwareAcceptanceWindow(result);
   validateTimestampWithinHardwareAcceptance(
@@ -1692,7 +1678,7 @@ function validateHardwareProductionEvidence({
     'gpuTelemetry.windowsDxgiAdapters.generated_at',
   );
   if (
-    productionSummary.schema_version !== 5 ||
+    productionSummary.schema_version !== 6 ||
     productionSummary.status !== 'passed' ||
     productionSummary.provider_policy !== 'ollama-only-alpha' ||
     productionSummary.provider_preference !== 'ollama' ||
@@ -1712,6 +1698,35 @@ function validateHardwareProductionEvidence({
       'Hardware production summary does not prove the exact Ollama alpha contract.',
     );
   }
+  const executionMode = productionSummary.execution_mode;
+  const executionWarning = productionSummary.execution_warning;
+  if (
+    !(
+      (executionMode === 'auto' && executionWarning === null) ||
+      (executionMode === 'cpu' &&
+        typeof executionWarning === 'string' &&
+        executionWarning.trim().length > 0)
+    )
+  ) {
+    throw new Error(
+      'Hardware production summary execution mode or warning is invalid.',
+    );
+  }
+  const llmHealth = productionSummary.llm_health;
+  if (
+    !llmHealth ||
+    llmHealth.provider !== 'ollama' ||
+    llmHealth.available !== true ||
+    llmHealth.configured_model !== 'qwen3.5:4b' ||
+    llmHealth.effective_model !== 'qwen3.5:4b' ||
+    llmHealth.fallback_reason !== null ||
+    llmHealth.execution_mode !== executionMode ||
+    llmHealth.execution_warning !== executionWarning
+  ) {
+    throw new Error(
+      'Hardware production summary health execution metadata is inconsistent.',
+    );
+  }
   validateGenerationReadiness(
     productionSummary.generation_ready_at_start,
     acceptanceWindow,
@@ -1722,7 +1737,11 @@ function validateHardwareProductionEvidence({
   );
   const requiredChecks = [
     'ollama_provider_exact',
+    'ollama_model_exact',
     'provider_no_fallback',
+    'model_no_fallback',
+    'execution_mode_supported',
+    'execution_warning_consistent',
     'generation_ready_at_start',
     'resources_released_at_end',
     'full_exam_questions_present',
@@ -1760,13 +1779,6 @@ function validateHardwareProductionEvidence({
     windowsResourceSampling,
     adaptersByLuid,
     acceptanceWindow,
-  );
-  validateNvidiaTelemetryCsv(
-    nvidiaSmi,
-    acceptanceWindow,
-    validateNvidiaSmiTimestampUtcOffsetMinutes(
-      windowsResourceSummary.nvidia_smi_timestamp_utc_offset_minutes,
-    ),
   );
   const summaryGpuEvidence = deriveHardwareGpuRoutingFromResourceSummary(
     windowsResourceSummary,
@@ -1873,7 +1885,6 @@ function validateTelemetryArtifactDeclarations(artifacts, label) {
       windowsResourceSummary: 'windows_summary_json',
       windowsResourceSampling: 'windows_counters_csv',
       windowsDxgiAdapters: 'windows_dxgi_adapters_json',
-      nvidiaSmi: 'nvidia_smi_csv',
     }[key];
     const fileName = String(artifacts?.[artifactKey] ?? '')
       .replaceAll('\\', '/')
@@ -2010,10 +2021,7 @@ function deriveHardwareGpuRoutingFromWindowsCsv(csv, adaptersByLuid, window) {
     usagesByIdentity.set(key, usage);
   }
   const usages = [...usagesByIdentity.values()];
-  if (
-    !usages.some((usage) => usage.name === WINDOWSML_OCR_PROCESS) ||
-    !usages.some((usage) => OLLAMA_REASONING_PROCESSES.has(usage.name))
-  ) {
+  if (!usages.some((usage) => usage.name === WINDOWSML_OCR_PROCESS)) {
     throw new Error('Hardware Windows GPU telemetry CSV is incomplete.');
   }
   return { usages, routing: hardwareGpuRoutingFromUsages(usages) };
@@ -2025,78 +2033,6 @@ function normalizeHardwareGpuMetric(value) {
     'shared usage': 'shared_usage',
     'total committed': 'total_committed',
   }[String(value).trim().toLowerCase()];
-}
-
-function validateNvidiaTelemetryCsv(csv, window, utcOffsetMinutes) {
-  const rows = parseStrictCsv(csv, 'Nvidia telemetry');
-  const expectedHeader = [
-    'timestamp',
-    'utilization.gpu [%]',
-    'memory.used [mib]',
-    'memory.total [mib]',
-    'power.draw [w]',
-  ];
-  const header = rows[0].map((value) => value.trim().toLowerCase());
-  if (header.join('\0') !== expectedHeader.join('\0')) {
-    throw new Error('Hardware Nvidia telemetry CSV header is invalid.');
-  }
-  const naiveTimestamps = rows.slice(1).map((row) =>
-    parseNaiveNvidiaTimestamp(row[0]),
-  );
-  if (
-    !naiveTimestamps.every((naiveTimestamp) => {
-      const timestamp = naiveTimestamp - utcOffsetMinutes * 60_000;
-      return timestamp >= window.startedAt && timestamp <= window.completedAt;
-    })
-  ) {
-    throw new Error('Hardware Nvidia telemetry timestamps are stale.');
-  }
-}
-
-function validateNvidiaSmiTimestampUtcOffsetMinutes(value) {
-  if (
-    !Number.isSafeInteger(value) ||
-    value < -14 * 60 ||
-    value > 14 * 60 ||
-    value % 15 !== 0
-  ) {
-    throw new Error(
-      'Hardware Windows resource summary Nvidia timestamp UTC offset is invalid.',
-    );
-  }
-  return value;
-}
-
-function parseNaiveNvidiaTimestamp(value) {
-  const match = String(value).trim().match(
-    /^(\d{4})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2}):(\d{2})(?:\.(\d{3}))?$/,
-  );
-  if (!match) {
-    throw new Error('Hardware Nvidia telemetry timestamp is invalid.');
-  }
-  const parts = match.slice(1, 7).map(Number);
-  const milliseconds = Number(match[7] ?? 0);
-  const timestamp = Date.UTC(
-    parts[0],
-    parts[1] - 1,
-    parts[2],
-    parts[3],
-    parts[4],
-    parts[5],
-    milliseconds,
-  );
-  const date = new Date(timestamp);
-  if (
-    date.getUTCFullYear() !== parts[0] ||
-    date.getUTCMonth() !== parts[1] - 1 ||
-    date.getUTCDate() !== parts[2] ||
-    date.getUTCHours() !== parts[3] ||
-    date.getUTCMinutes() !== parts[4] ||
-    date.getUTCSeconds() !== parts[5]
-  ) {
-    throw new Error('Hardware Nvidia telemetry timestamp is invalid.');
-  }
-  return timestamp;
 }
 
 function validateHardwareDxgiAdapters(dxgiPayload) {
@@ -2120,8 +2056,8 @@ function validateHardwareDxgiAdapters(dxgiPayload) {
     adaptersByLuid.set(luid, adapter.adapter_kind);
   }
   const requiredKinds = new Set(adaptersByLuid.values());
-  if (!requiredKinds.has('amd_igpu') || !requiredKinds.has('nvidia_dgpu')) {
-    throw new Error('Hardware DXGI telemetry lacks required AMD/Nvidia adapters.');
+  if (!requiredKinds.has('amd_igpu')) {
+    throw new Error('Hardware DXGI telemetry lacks the required AMD iGPU.');
   }
   return adaptersByLuid;
 }
@@ -2164,31 +2100,11 @@ function deriveHardwareGpuRoutingFromResourceSummary(
 
 function hardwareGpuRoutingFromUsages(usages) {
   const ocrUsage = usages.filter((usage) => usage.name === WINDOWSML_OCR_PROCESS);
-  const reasoningUsage = usages.filter((usage) =>
-    OLLAMA_REASONING_PROCESSES.has(usage.name),
-  );
-  const ocrNvidiaBytes = Math.max(
-    0,
-    ...ocrUsage
-      .filter((usage) => usage.adapterKind === 'nvidia_dgpu')
-      .map((usage) => maxHardwareProcessGpuBytes(usage.metrics)),
-  );
   return {
     windowsml_ocr_process_observed: ocrUsage.length > 0,
     ocr_uses_amd_igpu: ocrUsage.some(
       (usage) =>
         usage.adapterKind === 'amd_igpu' &&
-        maxHardwareProcessGpuBytes(usage.metrics) > 0,
-    ),
-    ocr_avoids_nvidia_dgpu:
-      ocrUsage.length > 0 &&
-      ocrNvidiaBytes <= NVIDIA_OCR_PROCESS_MEMORY_GATE_BYTES,
-    ocr_nvidia_process_memory_max_bytes: ocrNvidiaBytes,
-    ocr_nvidia_process_memory_gate_bytes:
-      NVIDIA_OCR_PROCESS_MEMORY_GATE_BYTES,
-    reasoning_uses_nvidia_dgpu: reasoningUsage.some(
-      (usage) =>
-        usage.adapterKind === 'nvidia_dgpu' &&
         maxHardwareProcessGpuBytes(usage.metrics) > 0,
     ),
     gpu_luid_map_usable: usages.length > 0,
@@ -2253,9 +2169,8 @@ function assertHardwareGpuRouting(summary, routing, label) {
     }
   }
   for (const required of [
+    'windowsml_ocr_process_observed',
     'ocr_uses_amd_igpu',
-    'ocr_avoids_nvidia_dgpu',
-    'reasoning_uses_nvidia_dgpu',
     'gpu_luid_map_usable',
   ]) {
     if (routing[required] !== true) {
@@ -2268,8 +2183,6 @@ function assertHardwareGpuRoutingChecks(summary, routing, label) {
   for (const key of [
     'windowsml_ocr_process_observed',
     'ocr_uses_amd_igpu',
-    'ocr_avoids_nvidia_dgpu',
-    'reasoning_uses_nvidia_dgpu',
   ]) {
     if (summary?.[key] !== routing[key] || routing[key] !== true) {
       throw new Error(`Hardware GPU routing evidence mismatch: ${label}.${key}.`);

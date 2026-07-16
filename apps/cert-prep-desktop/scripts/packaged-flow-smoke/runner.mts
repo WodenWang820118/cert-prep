@@ -51,7 +51,6 @@ async function runFlow(run: SmokeRunState): Promise<void> {
   });
   if (Object.keys(run.resourceSampling.artifacts).length > 0) {
     run.metrics.resource_sampling = run.resourceSampling.artifacts;
-    run.metrics.gpu_sampling = run.resourceSampling.artifacts.nvidia_smi_csv;
   }
   await launchAppAndConnect(run);
   await installPythonRuntimeIfNeeded(run);
@@ -181,7 +180,6 @@ export async function runPackagedFlowSmoke(
     metrics: initialMetrics,
     app: null,
     appExit: null,
-    nvidia: null,
     resourceSampling: null,
     videoRecording: null,
     browser: null,

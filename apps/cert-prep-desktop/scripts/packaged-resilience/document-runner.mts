@@ -309,7 +309,6 @@ function createRunState(
     metrics,
     app: null,
     appExit: null,
-    nvidia: null,
     resourceSampling: null,
     videoRecording: null,
     browser: null,

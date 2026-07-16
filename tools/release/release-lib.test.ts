@@ -598,7 +598,7 @@ test('hardware evidence requires exact Ollama attribution and four PDFs', () => 
   });
   const pdfManifest = acceptancePdfManifest();
   const evidence = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     version: plan.version,
     tag: plan.tag,
     commitSha: plan.commitSha,
@@ -654,7 +654,6 @@ test('hardware evidence requires exact Ollama attribution and four PDFs', () => 
       windowsResourceSummary: boundArtifact('windows-resource-summary.json'),
       windowsResourceSampling: boundArtifact('windows-resource-sampling.csv'),
       windowsDxgiAdapters: boundArtifact('windows-dxgi-adapters.json'),
-      nvidiaSmi: boundArtifact('nvidia-smi.csv'),
     },
     recording: {
       path: 'recording.webm',
@@ -691,7 +690,7 @@ test('hardware evidence requires exact Ollama attribution and four PDFs', () => 
   assert.throws(
     () =>
       validateHardwareResult(
-        { ...evidence, schemaVersion: 1 },
+        { ...evidence, schemaVersion: 2 },
         plan,
         'e'.repeat(64),
       ),
@@ -719,16 +718,13 @@ test('hardware evidence requires exact Ollama attribution and four PDFs', () => 
           ...evidence,
           gpuTelemetry: {
             ...evidence.gpuTelemetry,
-            nvidiaSmi: {
-              ...evidence.gpuTelemetry.nvidiaSmi,
-              acceptanceRunId: 'acceptance-run-stale',
-            },
+            nvidiaSmi: boundArtifact('nvidia-smi.csv'),
           },
         },
         plan,
         'e'.repeat(64),
       ),
-    /gpuTelemetry\.nvidiaSmi/,
+    /exact required artifacts/,
   );
 });
 

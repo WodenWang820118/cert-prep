@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join } from 'node:path';
 
-import { errorMessage, normalizePath } from './text-utils.mts';
+import { errorMessage } from './text-utils.mts';
 import type { ResourceSamplingArtifacts } from './types.mts';
 import type { ResourceSamplerStopSummary } from './resource-sampling-types.mts';
 import { summarizeGpuByAdapter } from './resource-sampling-gpu-routing.mts';
@@ -12,34 +12,21 @@ import {
   readJsonFile,
   unmappedGpuLuids,
 } from './resource-sampling-json.mts';
-import { summarizeNvidiaSmiCsv } from './resource-sampling-nvidia-summary.mts';
 import { summarizeWindowsResourceCsv } from './resource-sampling-windows-summary.mts';
 
 export function finalizeResourceSamplingArtifacts({
   outDir,
-  workspaceRoot,
   artifacts,
   observe,
   samplerStopSummary = null,
-  nvidiaSmiTimestampUtcOffsetMinutesAtStart,
-  nvidiaSmiTimestampUtcOffsetMinutesAtStop,
 }: {
   readonly outDir: string;
-  readonly workspaceRoot: string;
   readonly artifacts: ResourceSamplingArtifacts;
   readonly observe: (message: string) => void;
   readonly samplerStopSummary?: ResourceSamplerStopSummary | null;
-  readonly nvidiaSmiTimestampUtcOffsetMinutesAtStart: number;
-  readonly nvidiaSmiTimestampUtcOffsetMinutesAtStop: number;
 }): void {
-  const nvidiaSmiTimestampUtcOffsetMinutes =
-    validateNvidiaSmiTimestampUtcOffsetMinutes(
-      nvidiaSmiTimestampUtcOffsetMinutesAtStart,
-      nvidiaSmiTimestampUtcOffsetMinutesAtStop,
-    );
   const summaryPath = join(outDir, 'windows-resource-summary.json');
   const windowsCsvPath = join(outDir, 'windows-resource-sampling.csv');
-  const nvidiaCsvPath = join(outDir, 'nvidia-smi.csv');
   const dxgiAdaptersPath = join(outDir, 'windows-dxgi-adapters.json');
   const initialSummary = readJsonFile(summaryPath);
   const windowsResourceSummary = existsSync(windowsCsvPath)
@@ -54,43 +41,18 @@ export function finalizeResourceSamplingArtifacts({
     ...(isRecord(initialSummary) ? initialSummary : {}),
     finalized_at: new Date().toISOString(),
     adapter_mapping_note:
-      'Windows GPU counters expose adapter LUIDs. DXGI adapter metadata maps those runtime LUIDs to AMD/Nvidia adapter names when available.',
+      'Windows GPU counters expose adapter LUIDs. DXGI adapter metadata maps those runtime LUIDs to generic adapter identities when available.',
     artifacts,
     sampler_stop: samplerStopSummary,
-    nvidia_smi_timestamp_utc_offset_minutes:
-      nvidiaSmiTimestampUtcOffsetMinutes,
     dxgi_adapters: dxgiAdapters,
     gpu_luid_map_status: gpuLuidMapStatus(windowsResourceSummary, dxgiAdapters),
     unmapped_gpu_luids: unmappedGpuLuids(windowsResourceSummary, dxgiAdapters),
     windows_resource_summary: windowsResourceSummary,
     ...(adapterAwareSummary ?? {}),
-    nvidia_smi_summary: existsSync(nvidiaCsvPath)
-      ? summarizeNvidiaSmiCsv(readFileSync(nvidiaCsvPath, 'utf8'), {
-          csvPath: normalizePath(relative(workspaceRoot, nvidiaCsvPath)),
-        })
-      : null,
   };
   try {
     writeFileSync(summaryPath, `${JSON.stringify(summary, null, 2)}\n`, 'utf8');
   } catch (error) {
     observe(`resource summary finalize failed: ${errorMessage(error)}`);
   }
-}
-
-function validateNvidiaSmiTimestampUtcOffsetMinutes(
-  startOffsetMinutes: number,
-  stopOffsetMinutes: number,
-): number {
-  if (
-    !Number.isSafeInteger(startOffsetMinutes) ||
-    startOffsetMinutes < -14 * 60 ||
-    startOffsetMinutes > 14 * 60 ||
-    startOffsetMinutes % 15 !== 0 ||
-    stopOffsetMinutes !== startOffsetMinutes
-  ) {
-    throw new Error(
-      'Nvidia SMI timestamp UTC offset changed or is unsupported for this sampling run.',
-    );
-  }
-  return startOffsetMinutes;
 }

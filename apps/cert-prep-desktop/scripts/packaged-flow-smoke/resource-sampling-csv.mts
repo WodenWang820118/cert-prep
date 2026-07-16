@@ -1,7 +1,6 @@
 import type {
   FinalAggregate,
   MutableAggregate,
-  NvidiaSmiRow,
   ResourceCsvRow,
 } from './resource-sampling-types.mts';
 
@@ -54,27 +53,6 @@ export function resourceCsvRow(row: string[]): ResourceCsvRow | null {
 
 export function isResourceCsvRow(row: ResourceCsvRow | null): row is ResourceCsvRow {
   return row !== null;
-}
-
-export function nvidiaSmiRow(row: string[]): NvidiaSmiRow | null {
-  if (row.length < 5) {
-    return null;
-  }
-  return {
-    utilizationGpuPercent: firstNumber(row[1]),
-    memoryUsedMiB: firstNumber(row[2]),
-    memoryTotalMiB: firstNumber(row[3]),
-    powerDrawW: firstNumber(row[4]),
-  };
-}
-
-export function isNvidiaSmiRow(row: NvidiaSmiRow | null): row is NvidiaSmiRow {
-  return row !== null;
-}
-
-function firstNumber(value: string): number | null {
-  const match = /-?\d+(?:\.\d+)?/.exec(value);
-  return match ? Number(match[0]) : null;
 }
 
 export function newAggregate(): MutableAggregate {

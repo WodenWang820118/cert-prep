@@ -27,7 +27,6 @@ import { verifyHardwareEvidence } from './verify-hardware-result.ts';
 const acceptanceRunId = 'acceptance-run-0001';
 const candidateId = 'e'.repeat(64);
 const amdLuid = '0x00000000_0x000136c5';
-const nvidiaLuid = '0x00000000_0x0001fbc5';
 const softwareLuid = '0x00000000_0x00000001';
 const unknownLuid = '0x00000000_0x00000002';
 
@@ -86,20 +85,14 @@ async function writeProductionEvidence(evidenceRoot) {
     windows_summary_json: 'windows-resource-summary.json',
     windows_counters_csv: 'windows-resource-sampling.csv',
     windows_dxgi_adapters_json: 'windows-dxgi-adapters.json',
-    nvidia_smi_csv: 'nvidia-smi.csv',
   };
   const routing = {
     windowsml_ocr_process_observed: true,
     ocr_uses_amd_igpu: true,
-    ocr_avoids_nvidia_dgpu: true,
-    ocr_nvidia_process_memory_max_bytes: 1_048_576,
-    ocr_nvidia_process_memory_gate_bytes: 64 * 1024 * 1024,
-    reasoning_uses_nvidia_dgpu: true,
     gpu_luid_map_usable: true,
   };
   const dxgiAdapters = [
     { luid: amdLuid, adapter_kind: 'amd_igpu' },
-    { luid: nvidiaLuid, adapter_kind: 'nvidia_dgpu' },
     { luid: softwareLuid, adapter_kind: 'software' },
     { luid: unknownLuid, adapter_kind: 'unknown' },
   ];
@@ -110,7 +103,6 @@ async function writeProductionEvidence(evidenceRoot) {
   });
   writeJson(join(evidenceRoot, artifacts.windows_summary_json), {
     finalized_at: '2026-07-11T01:00:03.000Z',
-    nvidia_smi_timestamp_utc_offset_minutes: 480,
     artifacts,
     dxgi_adapters: dxgiAdapters,
     named_target_process_gpu_usage: [
@@ -121,33 +113,15 @@ async function writeProductionEvidence(evidenceRoot) {
         adapter_kind: 'amd_igpu',
         metrics: { shared_usage: { max: 8192 } },
       },
-      {
-        pid: 42,
-        luid: nvidiaLuid,
-        name: 'cert-prep-ocr-windowsml-runtime.exe',
-        adapter_kind: 'nvidia_dgpu',
-        metrics: { dedicated_usage: { max: 1_048_576 } },
-      },
-      {
-        pid: 77,
-        luid: nvidiaLuid,
-        name: 'llama-server.exe',
-        adapter_kind: 'nvidia_dgpu',
-        metrics: { dedicated_usage: { max: 2_147_483_648 } },
-      },
     ],
     gpu_routing_checks: routing,
   });
   writeFileSync(
     join(evidenceRoot, artifacts.windows_counters_csv),
-    `timestamp,source,path,pid,name,metric,value,unit\n"2026-07-11T01:00:02.000Z","windows_process","Win32_Process","42","cert-prep-ocr-windowsml-runtime.exe","working_set_bytes","1024","bytes"\n"2026-07-11T01:00:02.500Z","windows_process","Win32_Process","77","llama-server.exe","working_set_bytes","2048","bytes"\n"2026-07-11T01:00:03.000Z","windows_gpu_counter","\\\\MSI\\GPU Process Memory(pid_42_luid_${amdLuid}_phys_0)\\Shared Usage","","","\\\\MSI\\GPU Process Memory(pid_42_luid_${amdLuid}_phys_0)\\Shared Usage","8192","raw"\n"2026-07-11T01:00:03.000Z","windows_gpu_counter","\\\\MSI\\GPU Process Memory(pid_42_luid_${nvidiaLuid}_phys_0)\\Dedicated Usage","","","\\\\MSI\\GPU Process Memory(pid_42_luid_${nvidiaLuid}_phys_0)\\Dedicated Usage","1048576","raw"\n"2026-07-11T01:00:03.000Z","windows_gpu_counter","\\\\MSI\\GPU Process Memory(pid_77_luid_${nvidiaLuid}_phys_0)\\Dedicated Usage","","","\\\\MSI\\GPU Process Memory(pid_77_luid_${nvidiaLuid}_phys_0)\\Dedicated Usage","2147483648","raw"\n`,
-  );
-  writeFileSync(
-    join(evidenceRoot, artifacts.nvidia_smi_csv),
-    'timestamp, utilization.gpu [%], memory.used [MiB], memory.total [MiB], power.draw [W]\n2026/07/11 09:00:03.000, 40 %, 2048 MiB, 8192 MiB, 20.00 W\n',
+    `timestamp,source,path,pid,name,metric,value,unit\n"2026-07-11T01:00:02.000Z","windows_process","Win32_Process","42","cert-prep-ocr-windowsml-runtime.exe","working_set_bytes","1024","bytes"\n"2026-07-11T01:00:02.500Z","windows_process","Win32_Process","77","llama-server.exe","working_set_bytes","2048","bytes"\n"2026-07-11T01:00:03.000Z","windows_gpu_counter","\\\\MSI\\GPU Process Memory(pid_42_luid_${amdLuid}_phys_0)\\Shared Usage","","","\\\\MSI\\GPU Process Memory(pid_42_luid_${amdLuid}_phys_0)\\Shared Usage","8192","raw"\n`,
   );
   writeJson(join(evidenceRoot, 'production-summary.json'), {
-    schema_version: 5,
+    schema_version: 6,
     status: 'passed',
     generated_at: '2026-07-11T01:00:03.500Z',
     provider_policy: 'ollama-only-alpha',
@@ -161,6 +135,20 @@ async function writeProductionEvidence(evidenceRoot) {
     provider_fallback_reason: null,
     model_fallback_reason: null,
     fallback_reason: null,
+    execution_mode: 'cpu',
+    execution_warning: 'Supported acceleration was not confirmed; using CPU.',
+    llm_health: {
+      provider: 'ollama',
+      available: true,
+      model: 'qwen3.5:4b',
+      configured_model: 'qwen3.5:4b',
+      effective_model: 'qwen3.5:4b',
+      fallback_models: [],
+      fallback_reason: null,
+      execution_mode: 'cpu',
+      execution_warning: 'Supported acceleration was not confirmed; using CPU.',
+      detail: 'Ollama and the configured model are available.',
+    },
     generation_ready_at_start: {
       captured_at: '2026-07-11T01:00:01.500Z',
       ready: true,
@@ -201,14 +189,16 @@ async function writeProductionEvidence(evidenceRoot) {
     gpu_routing_checks: routing,
     checks: {
       ollama_provider_exact: true,
+      ollama_model_exact: true,
       provider_no_fallback: true,
+      model_no_fallback: true,
+      execution_mode_supported: true,
+      execution_warning_consistent: true,
       generation_ready_at_start: true,
       resources_released_at_end: true,
       full_exam_questions_present: true,
       windowsml_ocr_process_observed: true,
       ocr_uses_amd_igpu: true,
-      ocr_avoids_nvidia_dgpu: true,
-      reasoning_uses_nvidia_dgpu: true,
     },
   });
   const boundArtifact = async (path) => ({
@@ -230,7 +220,6 @@ async function writeProductionEvidence(evidenceRoot) {
       windowsDxgiAdapters: await boundArtifact(
         artifacts.windows_dxgi_adapters_json,
       ),
-      nvidiaSmi: await boundArtifact(artifacts.nvidia_smi_csv),
     },
   };
 }
@@ -269,7 +258,7 @@ async function hardwareResult(
   );
   const productionEvidence = await writeProductionEvidence(evidenceRoot);
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     version: plan.version,
     tag: plan.tag,
     commitSha: plan.commitSha,
@@ -388,6 +377,22 @@ async function createVerifierFixture(root) {
   };
 }
 
+async function rewriteProductionSummary(fixture, mutate) {
+  const result = JSON.parse(readFileSync(fixture.resultPath, 'utf8'));
+  const productionSummaryPath = join(
+    fixture.evidenceRoot,
+    'production-summary.json',
+  );
+  const productionSummary = JSON.parse(
+    readFileSync(productionSummaryPath, 'utf8'),
+  );
+  mutate(productionSummary);
+  writeJson(productionSummaryPath, productionSummary);
+  result.productionSummary.bytes = statSync(productionSummaryPath).size;
+  result.productionSummary.sha256 = await sha256File(productionSummaryPath);
+  writeJson(fixture.resultPath, result);
+}
+
 test('hardware verifier requires a contained digest-matched WebM', async () => {
   const root = mkdtempSync(join(tmpdir(), 'cert-prep-hardware-evidence-'));
   try {
@@ -464,7 +469,7 @@ test('hardware verifier requires a contained digest-matched WebM', async () => {
       /detailed GPU usage does not match raw Windows GPU telemetry/,
     );
 
-    const missingNvidiaResult = await hardwareResult(
+    const missingAmdResult = await hardwareResult(
       plan,
       evidenceRoot,
       recording,
@@ -472,16 +477,16 @@ test('hardware verifier requires a contained digest-matched WebM', async () => {
       acceptancePdfFixture,
     );
     const dxgiPath = join(evidenceRoot, 'windows-dxgi-adapters.json');
-    const missingNvidiaDxgi = JSON.parse(readFileSync(dxgiPath, 'utf8'));
-    missingNvidiaDxgi.adapters = missingNvidiaDxgi.adapters.filter(
-      (adapter) => adapter.adapter_kind !== 'nvidia_dgpu',
+    const missingAmdDxgi = JSON.parse(readFileSync(dxgiPath, 'utf8'));
+    missingAmdDxgi.adapters = missingAmdDxgi.adapters.filter(
+      (adapter) => adapter.adapter_kind !== 'amd_igpu',
     );
-    writeJson(dxgiPath, missingNvidiaDxgi);
-    missingNvidiaResult.gpuTelemetry.windowsDxgiAdapters.bytes =
+    writeJson(dxgiPath, missingAmdDxgi);
+    missingAmdResult.gpuTelemetry.windowsDxgiAdapters.bytes =
       statSync(dxgiPath).size;
-    missingNvidiaResult.gpuTelemetry.windowsDxgiAdapters.sha256 =
+    missingAmdResult.gpuTelemetry.windowsDxgiAdapters.sha256 =
       await sha256File(dxgiPath);
-    writeJson(resultPath, missingNvidiaResult);
+    writeJson(resultPath, missingAmdResult);
     await assert.rejects(
       () =>
         verifyHardwareEvidence(
@@ -491,7 +496,7 @@ test('hardware verifier requires a contained digest-matched WebM', async () => {
           candidateId,
           verificationOptions(acceptancePdfFixture),
         ),
-      /lacks required AMD\/Nvidia adapters/,
+      /lacks the required AMD iGPU/,
     );
 
     const staleDxgiResult = await hardwareResult(
@@ -519,63 +524,6 @@ test('hardware verifier requires a contained digest-matched WebM', async () => {
           verificationOptions(acceptancePdfFixture),
         ),
       /timestamp is stale or invalid: gpuTelemetry\.windowsDxgiAdapters\.generated_at/,
-    );
-
-    const staleNvidiaResult = await hardwareResult(
-      plan,
-      evidenceRoot,
-      recording,
-      await sha256File(recordingPath),
-      acceptancePdfFixture,
-    );
-    const nvidiaPath = join(evidenceRoot, 'nvidia-smi.csv');
-    writeFileSync(
-      nvidiaPath,
-      'timestamp, utilization.gpu [%], memory.used [MiB], memory.total [MiB], power.draw [W]\n2026/07/10 09:00:03.000, 40 %, 2048 MiB, 8192 MiB, 20.00 W\n',
-    );
-    staleNvidiaResult.gpuTelemetry.nvidiaSmi.bytes = statSync(nvidiaPath).size;
-    staleNvidiaResult.gpuTelemetry.nvidiaSmi.sha256 =
-      await sha256File(nvidiaPath);
-    writeJson(resultPath, staleNvidiaResult);
-    await assert.rejects(
-      () =>
-        verifyHardwareEvidence(
-          resultPath,
-          planPath,
-          evidenceRoot,
-          candidateId,
-          verificationOptions(acceptancePdfFixture),
-        ),
-      /Nvidia telemetry timestamps are stale/,
-    );
-
-    const invalidNvidiaOffsetResult = await hardwareResult(
-      plan,
-      evidenceRoot,
-      recording,
-      await sha256File(recordingPath),
-      acceptancePdfFixture,
-    );
-    const invalidNvidiaOffsetSummary = JSON.parse(
-      readFileSync(resourceSummaryPath, 'utf8'),
-    );
-    invalidNvidiaOffsetSummary.nvidia_smi_timestamp_utc_offset_minutes = 481;
-    writeJson(resourceSummaryPath, invalidNvidiaOffsetSummary);
-    invalidNvidiaOffsetResult.gpuTelemetry.windowsResourceSummary.bytes =
-      statSync(resourceSummaryPath).size;
-    invalidNvidiaOffsetResult.gpuTelemetry.windowsResourceSummary.sha256 =
-      await sha256File(resourceSummaryPath);
-    writeJson(resultPath, invalidNvidiaOffsetResult);
-    await assert.rejects(
-      () =>
-        verifyHardwareEvidence(
-          resultPath,
-          planPath,
-          evidenceRoot,
-          candidateId,
-          verificationOptions(acceptancePdfFixture),
-        ),
-      /Nvidia timestamp UTC offset is invalid/,
     );
 
     const staleResult = await hardwareResult(
@@ -724,7 +672,7 @@ test('hardware verifier requires a contained digest-matched WebM', async () => {
   }
 });
 
-test('hardware verifier accepts auxiliary software and unknown adapters', async () => {
+test('hardware verifier accepts CPU reasoning without discrete-GPU telemetry', async () => {
   const root = mkdtempSync(join(tmpdir(), 'cert-prep-gpu-adapters-'));
   try {
     const fixture = await createVerifierFixture(root);
@@ -742,33 +690,123 @@ test('hardware verifier accepts auxiliary software and unknown adapters', async 
   }
 });
 
-test('hardware verifier applies the declared Nvidia timezone offset', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'cert-prep-nvidia-offset-'));
+test('hardware verifier accepts auto execution without a GPU claim', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'cert-prep-auto-execution-'));
   try {
     const fixture = await createVerifierFixture(root);
-    const result = JSON.parse(readFileSync(fixture.resultPath, 'utf8'));
-    result.acceptance.startedAt = '2026-07-11T00:45:00.000Z';
-    result.acceptance.completedAt = '2026-07-11T01:15:00.000Z';
-    result.recording.startedAt = '2026-07-11T00:44:59.000Z';
-    result.recording.completedAt = '2026-07-11T01:15:01.000Z';
-    writeJson(fixture.resultPath, result);
+    await rewriteProductionSummary(fixture, (summary) => {
+      summary.execution_mode = 'auto';
+      summary.execution_warning = null;
+      summary.llm_health.execution_mode = 'auto';
+      summary.llm_health.execution_warning = null;
+    });
     await assert.doesNotReject(() =>
       verifyHardwareEvidence(
         fixture.resultPath,
         fixture.planPath,
         fixture.evidenceRoot,
         candidateId,
-        verificationOptions(fixture.acceptancePdfFixture, {
-          probeRecording: async () => {
-            const probe = await validProbe();
-            probe.probe.format.duration = '1802.000000';
-            return probe;
-          },
-        }),
+        verificationOptions(fixture.acceptancePdfFixture),
       ),
     );
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('hardware verifier rejects inconsistent execution warnings', async (t) => {
+  const scenarios = [
+    { name: 'CPU without warning', mode: 'cpu', warning: null },
+    { name: 'auto with warning', mode: 'auto', warning: 'unexpected warning' },
+    { name: 'unknown mode', mode: 'gpu', warning: null },
+  ];
+  for (const scenario of scenarios) {
+    await t.test(scenario.name, async () => {
+      const root = mkdtempSync(join(tmpdir(), 'cert-prep-execution-warning-'));
+      try {
+        const fixture = await createVerifierFixture(root);
+        await rewriteProductionSummary(fixture, (summary) => {
+          summary.execution_mode = scenario.mode;
+          summary.execution_warning = scenario.warning;
+        });
+        await assert.rejects(
+          () =>
+            verifyHardwareEvidence(
+              fixture.resultPath,
+              fixture.planPath,
+              fixture.evidenceRoot,
+              candidateId,
+              verificationOptions(fixture.acceptancePdfFixture),
+            ),
+          /execution mode or warning is invalid/,
+        );
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
+test('hardware verifier rejects execution metadata that was not captured from health', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'cert-prep-execution-health-'));
+  try {
+    const fixture = await createVerifierFixture(root);
+    await rewriteProductionSummary(fixture, (summary) => {
+      summary.llm_health.execution_warning = 'contradictory health warning';
+    });
+    await assert.rejects(
+      () =>
+        verifyHardwareEvidence(
+          fixture.resultPath,
+          fixture.planPath,
+          fixture.evidenceRoot,
+          candidateId,
+          verificationOptions(fixture.acceptancePdfFixture),
+        ),
+      /health execution metadata is inconsistent/,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('hardware verifier still rejects provider or model fallback', async (t) => {
+  const scenarios = [
+    {
+      name: 'provider fallback',
+      mutate: (summary) => {
+        summary.provider_fallback_reason = 'provider changed';
+      },
+    },
+    {
+      name: 'model fallback',
+      mutate: (summary) => {
+        summary.model_fallback_reason = 'model changed';
+        summary.fallback_reason = 'model changed';
+      },
+    },
+  ];
+  for (const scenario of scenarios) {
+    await t.test(scenario.name, async () => {
+      const root = mkdtempSync(join(tmpdir(), 'cert-prep-fallback-contract-'));
+      try {
+        const fixture = await createVerifierFixture(root);
+        await rewriteProductionSummary(fixture, scenario.mutate);
+        await assert.rejects(
+          () =>
+            verifyHardwareEvidence(
+              fixture.resultPath,
+              fixture.planPath,
+              fixture.evidenceRoot,
+              candidateId,
+              verificationOptions(fixture.acceptancePdfFixture),
+            ),
+          /exact Ollama alpha contract/,
+        );
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
   }
 });
 

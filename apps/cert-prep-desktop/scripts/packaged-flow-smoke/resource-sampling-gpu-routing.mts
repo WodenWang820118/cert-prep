@@ -5,8 +5,6 @@ import type {
 } from './resource-sampling-types.mts';
 import { maxByPrefix } from './resource-sampling-csv.mts';
 
-const NVIDIA_OCR_PROCESS_MEMORY_GATE_BYTES = 64 * 1024 * 1024;
-
 export function summarizeGpuByAdapter(
   windowsSummary: WindowsResourceSummary,
   dxgiAdapters: readonly DxgiAdapter[],
@@ -95,12 +93,6 @@ function gpuRoutingChecksForProcessUsage(
   const windowsmlOcrUsage = processGpuUsage.filter(
     (usage) => usage.name === 'cert-prep-ocr-windowsml-runtime.exe',
   );
-  const reasoningUsage = processGpuUsage.filter(
-    (usage) => isReasoningProcessName(usage.name),
-  );
-  const ocrNvidiaMaxBytes = maxProcessGpuBytes(
-    windowsmlOcrUsage.filter((usage) => usage.adapter_kind === 'nvidia_dgpu'),
-  );
   const windowsmlOcrProcessObserved =
     processNames.has('cert-prep-ocr-windowsml-runtime.exe') ||
     windowsmlOcrUsage.length > 0;
@@ -109,33 +101,15 @@ function gpuRoutingChecksForProcessUsage(
     ocr_uses_amd_igpu: hasAnyProcessGpuUsage(
       windowsmlOcrUsage.filter((usage) => usage.adapter_kind === 'amd_igpu'),
     ),
-    ocr_avoids_nvidia_dgpu:
-      windowsmlOcrProcessObserved &&
-      ocrNvidiaMaxBytes <= NVIDIA_OCR_PROCESS_MEMORY_GATE_BYTES,
-    ocr_nvidia_process_memory_max_bytes: ocrNvidiaMaxBytes,
-    ocr_nvidia_process_memory_gate_bytes: NVIDIA_OCR_PROCESS_MEMORY_GATE_BYTES,
-    reasoning_uses_nvidia_dgpu: hasAnyProcessGpuUsage(
-      reasoningUsage.filter((usage) => usage.adapter_kind === 'nvidia_dgpu'),
-    ),
     gpu_luid_map_usable:
-      hasRequiredAdapterKinds(dxgiAdapters) &&
+      hasRequiredAmdAdapter(dxgiAdapters) &&
       processGpuUsage.length > 0 &&
       processGpuUsage.every((usage) => usage.adapter_kind !== 'unmapped'),
   };
 }
 
-function isReasoningProcessName(name: string | null): boolean {
-  return (
-    name === 'ollama.exe' ||
-    name === 'ollama app.exe' ||
-    name === 'llama-server.exe' ||
-    name === 'ollama_llama_server.exe'
-  );
-}
-
-function hasRequiredAdapterKinds(dxgiAdapters: readonly DxgiAdapter[]): boolean {
-  const kinds = new Set(dxgiAdapters.map((adapter) => adapter.adapter_kind));
-  return kinds.has('amd_igpu') && kinds.has('nvidia_dgpu');
+function hasRequiredAmdAdapter(dxgiAdapters: readonly DxgiAdapter[]): boolean {
+  return dxgiAdapters.some((adapter) => adapter.adapter_kind === 'amd_igpu');
 }
 
 function hasAnyProcessGpuUsage(

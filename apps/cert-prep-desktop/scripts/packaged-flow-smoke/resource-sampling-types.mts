@@ -55,13 +55,6 @@ export interface FinalAggregate {
   avg: number | null;
 }
 
-export interface NvidiaSmiRow {
-  readonly utilizationGpuPercent: number | null;
-  readonly memoryUsedMiB: number | null;
-  readonly memoryTotalMiB: number | null;
-  readonly powerDrawW: number | null;
-}
-
 export interface WindowsResourceSummary {
   sample_count: number;
   row_count: number;

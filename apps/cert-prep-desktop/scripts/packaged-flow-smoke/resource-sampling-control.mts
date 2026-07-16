@@ -1,5 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { appendFileSync, createWriteStream, writeFileSync } from 'node:fs';
+import { appendFileSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 import { resolveWindowsPowerShellExecutable } from '../process-lifecycle/processes.mts';
@@ -41,19 +41,6 @@ export function startResourceSampling({
     };
   }
 
-  const nvidiaSmiTimestampUtcOffsetMinutesAtStart =
-    -new Date().getTimezoneOffset();
-
-  const nvidia = startNvidiaSmiSampling({
-    outDir,
-    workspaceRoot,
-    artifacts,
-    observe,
-  });
-  if (nvidia) {
-    children.push(nvidia);
-  }
-
   const windowsSampler = startWindowsResourceSampling({
     outDir,
     workspaceRoot,
@@ -73,56 +60,12 @@ export function startResourceSampling({
       );
       finalizeResourceSamplingArtifacts({
         outDir,
-        workspaceRoot,
         artifacts,
         observe,
         samplerStopSummary,
-        nvidiaSmiTimestampUtcOffsetMinutesAtStart,
-        nvidiaSmiTimestampUtcOffsetMinutesAtStop:
-          -new Date().getTimezoneOffset(),
       });
     },
   };
-}
-
-function startNvidiaSmiSampling({
-  outDir,
-  workspaceRoot,
-  artifacts,
-  observe,
-}: {
-  readonly outDir: string;
-  readonly workspaceRoot: string;
-  readonly artifacts: ResourceSamplingArtifacts;
-  readonly observe: (message: string) => void;
-}): ChildProcess | null {
-  const csvPath = join(outDir, 'nvidia-smi.csv');
-  const stderrPath = join(outDir, 'nvidia-smi.stderr.log');
-  try {
-    const child = spawn(
-      'nvidia-smi',
-      [
-        '--query-gpu=timestamp,utilization.gpu,memory.used,memory.total,power.draw',
-        '--format=csv',
-        '-l',
-        '1',
-      ],
-      { cwd: workspaceRoot, windowsHide: true },
-    );
-    child.stdout?.pipe(createWriteStream(csvPath));
-    child.stderr?.on('data', (chunk) => appendFileSync(stderrPath, chunk));
-    child.on('error', (error) => {
-      observe(`nvidia-smi unavailable: ${error.message}`);
-    });
-    artifacts.nvidia_smi_csv = normalizePath(relative(workspaceRoot, csvPath));
-    artifacts.nvidia_smi_stderr_log = normalizePath(
-      relative(workspaceRoot, stderrPath),
-    );
-    return child;
-  } catch (error) {
-    observe(`nvidia-smi unavailable: ${errorMessage(error)}`);
-    return null;
-  }
 }
 
 function startWindowsResourceSampling({
