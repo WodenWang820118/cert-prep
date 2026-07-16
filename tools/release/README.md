@@ -1,188 +1,181 @@
 # Public unsigned Alpha release tooling
 
-The release workflow is intentionally fail-closed. Before dispatching it, configure:
+The public Alpha is built from one exact commit and one immutable candidate.
+The source of truth is
+[`.github/workflows/release-alpha.yml`](../../.github/workflows/release-alpha.yml),
+the release tools in this directory, and the Nx targets in
+[`apps/cert-prep-desktop/project.json`](../../apps/cert-prep-desktop/project.json).
 
-- a **public** GitHub repository and repository Actions variables confirming the public-alpha decision;
-- `ALPHA_EXPECTED_REPOSITORY` set to the independently reviewed, exact
-  `OWNER/REPO` identity used for this release;
-- protected `alpha-release` and `alpha-hardware` environments with required reviewers;
-- default-branch protection plus a protected `cert-prep-v*` tag/ruleset; manual
-  dispatches must originate from the default branch, and tag-triggered commits
-  must be ancestors of that branch; manual and tag invocations for the same
-  canonical tag are serialized;
-- an online self-hosted Windows x64 runner labeled `cert-prep-alpha-hardware`;
-- `ALPHA_HARDWARE_HARNESS` in the hardware environment, pointing to an
-  absolute, directly invocable provisioned script/executable, plus its reviewed
-  `ALPHA_HARDWARE_HARNESS_SHA256`. The workflow rejects reparse points, rehashes
-  immediately before invocation, and fails on a failed PowerShell invocation
-  or nonzero process exit;
-- `ALPHA_ACCEPTANCE_PDF_DIR` in the hardware environment, pointing to an
-  absolute directory containing
-  `alpha-acceptance-pdf-manifest.json` and exactly the four PDFs it declares.
-  The directory entry itself and the manifest must not be reparse points, and
-  no PDF may be missing, renamed, duplicated, byte-drifted, digest-drifted, or
-  joined by an extra PDF;
-- exactly one `ffprobe` application on the protected runner's `PATH`, plus its
-  independently reviewed `ALPHA_FFPROBE_SHA256` in the hardware environment.
-  The runner baseline owns installation; the workflow derives the absolute
-  non-reparse path and rejects any executable whose digest differs from the
-  approved value;
-- an Ollama installation/model provisioned by the hardware harness.
+## Required GitHub configuration
 
-For tag-triggered releases, set these repository variables to the literal value `true`:
+Before running the workflow, configure:
+
+- a public GitHub repository;
+- `ALPHA_EXPECTED_REPOSITORY` with the reviewed, exact `OWNER/REPO` identity;
+- an `alpha-release` environment with the intended reviewers;
+- default-branch protection and a protected `cert-prep-v*` tag/ruleset.
+
+For a manual dispatch, provide an Alpha SemVer such as `0.1.0-alpha.1` and
+confirm both the public repository and protected release environment inputs.
+For a `cert-prep-v*-alpha.*` tag trigger, set these repository variables to the
+literal value `true`:
 
 - `ALPHA_PUBLIC_REPOSITORY_CONFIRMED`
 - `ALPHA_RELEASE_ENVIRONMENT_PROTECTED`
-- `ALPHA_HARDWARE_RUNNER_READY`
 
-The OCR bootstrap release contains a candidate-bound publication owner marker
-made from the workflow run ID and attempt. An identical prerelease may be reused
-without clobbering assets, but rollback only runs through the protected
-`alpha-release` environment and only the workflow run that created that
-prerelease may delete it. The workflow reserves the release and records that
-owner before uploading OCR assets, so a failed upload can be withdrawn safely.
-A separate candidate-bound state marker moves from `ocr-bootstrap` to
-`finalized`; cleanup rejects finalized releases even if a later workflow step
-fails.
+The workflow rejects a repository mismatch, a non-public repository, a manual
+dispatch from the wrong source ref, a tag/version mismatch, or a release commit
+that is not an ancestor of the default branch. Runs for the same canonical tag
+are serialized.
 
-The candidate ID covers both publishable release files and the exact release
-harness scripts, including the reviewed acceptance PDF manifest. The hardware
-harness executable remains separately pinned by its reviewed SHA-256. The
-workflow derives the provisioned manifest from `ALPHA_ACCEPTANCE_PDF_DIR`,
-requires it to match the candidate manifest byte for byte, copies it into
-hardware evidence after the harness finishes, and passes its candidate-derived
-digest to the harness and verifier so they can enumerate its four colocated
-PDFs. The harness receives
-the downloaded candidate root, candidate ID, version, tag, commit SHA, harness
-SHA-256, manifest path and SHA-256, and output root. It must echo those
-identities in `hardware-result.json` and create the referenced WebM recording.
-The verifier requires the manifest's exact four PDFs, WindowsML OCR, Ollama
-`qwen3.5:4b` without provider/model fallback, per-PDF usable and Full Exam
-questions, generation readiness/resource release, restart persistence, and zero
-process residue. Cancellation evidence is granular: upload, OCR, draft,
-runtime, model, cancel-vs-complete race, crash recovery, partial-data cleanup,
-and owned-process release must each have its own candidate-bound JSON report,
-byte count, and SHA-256. Acceptance and recording timestamps bind the recording
-to the completed run. A preflight requires exactly one protected-runner
-`ffprobe` on `PATH`, checks it against `ALPHA_FFPROBE_SHA256`, and passes the
-resolved path and approved hash to the verifier. The verifier rehashes it and
-requires a playable Matroska/WebM container, VP8/VP9/AV1 video stream, positive
-dimensions, duration, and decoded frame count. It writes
-`recording-probe.json`; the finalizer revalidates and publishes only the
-declared evidence files.
+All Windows validation uses GitHub-hosted `windows-2025`. Publication and
+failure cleanup use GitHub-hosted `ubuntu-24.04`. No separately provisioned
+runner or machine-specific release input is required.
 
-This transition reduces the protected hardware lane from six configured
-machine inputs to four: the external harness path, its reviewed SHA-256, the
-acceptance PDF directory, and the reviewed `ffprobe` SHA-256. The external
-harness remains required because the candidate does not yet contain the full
-hardware evidence producer, Playwright runtime, and packaged-flow/resilience
-script graph. Moving that producer into the candidate is the next
-simplification phase; it must not be treated as complete until equivalent
-contract tests and a protected hardware run pass.
+## Workflow
 
-Run the release-tool tests through the workspace task graph:
+The workflow has one linear release path plus failure cleanup:
+
+```text
+build-candidate -> clean-install -> publish-alpha
+incomplete prerelease + failed gate -> cleanup-incomplete-prerelease
+```
+
+### `build-candidate`
+
+This job checks out the exact release source once and performs all source and
+package validation before creating an artifact. It:
+
+- validates release identity, repository visibility, tag/version, and commit;
+- runs the Windows-owned lint and test targets through Nx;
+- runs desktop script type-checking, package-QA tests, release-tool tests, and
+  Rust host tests;
+- runs the real-backend browser smoke once;
+- builds and validates one unsigned NSIS installer;
+- inventories Node, backend Python, OCR Python, OCR payload, and Rust
+  dependencies;
+- creates SPDX documents, the license inventory, license texts, notices, and
+  `SHA256SUMS`;
+- uploads one candidate containing both the publishable files and the exact
+  release scripts used by downstream jobs.
+
+The candidate ID is derived from the sorted file identities and SHA-256
+digests. Downstream jobs verify that ID and download this artifact without a
+source checkout or rebuild.
+
+### `clean-install`
+
+This hosted Windows job first reserves the candidate-bound public prerelease.
+It uploads or reuses exactly the version-pinned WindowsML OCR ZIP and manifest;
+an existing asset is reusable only when its SHA-256 digest is identical. Assets
+are never overwritten.
+
+The NSIS installer bundles the backend runtime but not the OCR ZIP. Its installed
+OCR manifest points to the public release URL and pins the expected file name,
+byte count, and SHA-256. The clean-install script then:
+
+1. verifies every downloaded candidate file and the expected commit;
+2. installs the single NSIS package silently;
+3. validates the installed backend and OCR runtime manifests;
+4. downloads the public OCR ZIP and verifies its bytes and SHA-256;
+5. launches the installed app with fresh app data;
+6. requires the owned backend to report matching packaged health and runtime
+   versions;
+7. stops the owned processes and uninstalls the app;
+8. confirms the uninstall registration, installed executable, and installation
+   root are all gone.
+
+Evidence is written only after every step, including uninstall, succeeds. The
+finalizer accepts exactly one `clean-install-nsis.json` report bound to the
+candidate, commit, installer digest, and verified lifecycle fields.
+
+### `publish-alpha`
+
+This job downloads the same candidate and clean-install evidence. It finalizes
+the candidate-bound release metadata and checksum inventory, then uploads all
+assets without replacing a different asset and keeps the release marked as a
+public unsigned prerelease.
+
+After publication, `publish-assets.ts --mode verify-public` downloads every
+declared public file without an authorization header. It requires unique asset
+basenames and verifies the exact byte count and SHA-256 of the NSIS installer,
+WindowsML OCR files, SPDX documents, license inventory and texts, notices,
+release metadata, evidence, and `SHA256SUMS`. The job fails if any declared file
+is missing, extra, private, or changed.
+
+### `cleanup-incomplete-prerelease`
+
+The OCR bootstrap release records a publication owner made from the workflow
+run, attempt, and candidate ID. If a later pre-finalization gate fails, cleanup
+may delete only an incomplete prerelease owned by that same run. It rejects a
+different owner, commit, candidate, or already-finalized release, and it never
+deletes the source tag.
+
+## Release artifact contract
+
+The public release contains:
+
+- one versioned unsigned NSIS setup executable;
+- the bundled backend ZIP and manifest;
+- the remotely published, version-pinned WindowsML OCR ZIP and manifest;
+- combined and artifact-scoped SPDX JSON documents;
+- a dependency license inventory, canonical license texts, project license,
+  privacy notice, changelog, and third-party notices;
+- package-QA and clean-install evidence;
+- candidate-bound release plan and final release metadata;
+- one `SHA256SUMS` entry for every other public file.
+
+Release file basenames must be unique because GitHub release assets are flat.
+The final publisher revalidates candidate immutability, the artifact inventory,
+the checksum manifest, and the sanitized NSIS evidence before upload.
+
+Run the two release contract suites locally through Nx:
 
 ```powershell
+pnpm nx run cert-prep-desktop:package-qa-test
 pnpm nx run cert-prep-desktop:release-tool-test
 ```
 
-The JavaScript release tools are native `.ts` ESM scripts executed directly by
-the repository-pinned Node 24 runtime; no transpiler or compatibility wrapper
-is part of the release harness.
+The workflow uses the repository-pinned Node 24 runtime to execute the native
+`.ts` release scripts directly.
 
-## Local nonpublishable acceptance candidate
+## Local diagnostic candidates
 
-Installed-app and hardware acceptance may be exercised before GitHub release
-infrastructure is available. Build that candidate only from an isolated clean
-worktree at the commit under test:
+Local candidate and resilience targets are diagnostic tools. They are not jobs
+in the public release workflow, do not publish assets, and cannot satisfy or
+replace `clean-install`.
+
+Build a local candidate only from an isolated clean worktree:
 
 ```powershell
 pnpm nx run cert-prep-desktop:local-candidate-windowsml --skip-nx-cache
 ```
 
-The target deliberately uses the development WindowsML resource layout so the
-OCR ZIP remains a canonical local `file:` dependency. Its release plan,
-package-QA report, SBOM namespace, and candidate identity are permanently
-marked `local_nonpublishable`. The publisher, cleanup command, and finalizer
-reject this profile even if it is paired with a separate public-looking plan.
-The command also refuses a dirty checkout, symbolic-link inputs, an OCR URL
-that does not resolve to the declared ZIP, or an existing output path. It
-assembles and validates under a temporary same-volume directory before
-atomically renaming the candidate to `tmp/local-alpha-candidate`.
+The result is permanently marked `local_nonpublishable`, uses a local OCR file
+URL, and is rejected by the public publisher, finalizer, and cleanup modes. The
+builder also rejects a dirty source tree, linked inputs, identity drift, and an
+existing output path.
 
-Keep the isolated worktree and its OCR runtime ZIP in place while running the
-installed-app acceptance lanes. Passing local acceptance does not satisfy or
-close any public candidate, hosted clean-install, or GitHub publication gate.
-
-Before running resilience against the local candidate, verify that Cert Prep
-is not installed or running on the machine. The candidate-pinned harness can
-check its candidate, exact workspace HEAD, registry, process, and install-root
-preconditions without starting the installer:
-
-```powershell
-node tmp/local-alpha-candidate/harness/tools/release/local-install-acceptance.ts `
-  --workspace-root . `
-  --candidate-root tmp/local-alpha-candidate `
-  --output-root tmp/cert-prep-desktop/local-install-acceptance `
-  --dry-run true
-```
-
-Run the real current-user NSIS install acceptance through Nx:
+To diagnose the current-user install path, first ensure Cert Prep is neither
+installed nor running, then execute:
 
 ```powershell
 pnpm nx run cert-prep-desktop:local-install-acceptance-nsis --skip-nx-cache
 ```
 
-The harness installs silently into its new isolated output root, verifies the
-HKCU uninstall registration and installed executable, and atomically writes a
-schema-v1 `install-receipt.json`. Its JSON output provides the exact candidate,
-acceptance-run, harness, executable, and receipt environment bindings required
-by both packaged resilience targets. A successful install is intentionally
-preserved for those targets; the harness never uninstalls it. Reruns fail
-closed until the existing Cert Prep installation state is handled explicitly.
+That target installs the local candidate and emits the candidate/run/install
+bindings required by the optional packaged resilience targets. It intentionally
+leaves the diagnostic installation in place; reruns fail until that local state
+is handled explicitly.
 
-After the packaged resilience targets finish with the same six candidate and
-install bindings, verify their combined local evidence set through Nx:
+The optional diagnostic targets are:
 
 ```powershell
-$env:CERT_PREP_RESILIENCE_DOCUMENT_OUTPUT_ROOT = '<absolute document-cancellation output root>'
-$env:CERT_PREP_RESILIENCE_REMAINING_OUTPUT_ROOT = '<absolute remaining-resilience output root>'
+pnpm nx run cert-prep-desktop:packaged-document-cancellation-windowsml --skip-nx-cache
+pnpm nx run cert-prep-desktop:packaged-remaining-resilience-windowsml --skip-nx-cache
 pnpm nx run cert-prep-desktop:local-resilience-evidence-verify --skip-nx-cache
 ```
 
-The verifier accepts only a `local_nonpublishable` candidate. It rejects an
-incomplete or extra file set, candidate/run/install-receipt drift, and binding
-changes during verification. On success it prints the byte count and SHA-256
-for all nine cancellation files plus `session-restart.json`; it does not write
-a hardware result, recording, release artifact, or other public-gate evidence.
-
-The workflow publishes the OCR ZIP/manifest first as a public mutable prerelease so clean
-runners can download it anonymously. Existing assets are reused only when their SHA-256
-digest matches; assets are never clobbered. Final installers remain withheld until both
-clean-install lanes, protected hardware evidence, SBOM/license gates, and GitHub provenance
-attestation succeed.
-
-Candidate assembly inventories the backend and isolated WindowsML OCR Python
-environments separately, filtered against the actual modules inside each
-PyInstaller executable, and explicitly includes the pinned PyInstaller bootloader
-distribution. A separate collector verifies the OCR ZIP exact entry set and records
-individual hashes for both ONNX models, both model configs, the recognition
-dictionary, and `pipeline.json`. Those payload hashes are included in the scoped
-SPDX and CycloneDX documents. It copies deduplicated dependency license texts under
-`legal/licenses/texts` and blocks when a shipped dependency has neither a
-primary text nor a text-backed fallback for every term in its SPDX expression.
-SPDX expressions are also checked against an explicit reviewed license and
-exception allowlist; merely well-formed unknown identifiers are rejected.
-It emits separate SPDX and CycloneDX documents for the MSI, NSIS, bundled
-backend ZIP, and remote WindowsML OCR ZIP. Each document contains explicit
-artifact-to-component dependency relationships; the combined inventory remains
-available for license review.
-
-The checkout-free clean-install lane starts the installed app with a dedicated
-QA-only environment switch. This exercises the real Rust bundled-runtime
-installer in fresh app-data, then discovers the owned loopback backend process
-and requires matching packaged `/health` before the lane can pass. Normal app
-launch does not set this switch and still requires explicit user action. Final
-assembly parses both MSI and NSIS reports and rechecks candidate identity,
-installer digest, runtime versions, fresh app-data, OCR download, and packaged
-backend health before marking clean install passed.
+They require the exact environment bindings emitted by local install
+acceptance. Their evidence remains local and has no effect on public release
+status.

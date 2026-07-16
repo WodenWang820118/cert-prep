@@ -2,560 +2,265 @@
 
 ## Purpose
 
-This domain owns OCR parsing performance, use-while-parsing UX, editable
-question creation, streaming reasoning jobs, model-health gating, hardware
-telemetry, and artifact-backed QA evidence for packaged desktop flows.
+This domain owns the WindowsML OCR execution policy, OCR-to-question pipeline,
+Ollama reasoning policy, runtime/model health, editable question generation,
+operation recovery, and the backend-to-UI status contract for packaged desktop
+flows.
+
+## Current Source Of Truth
+
+- Commit `1b9d631` owns the current runtime behavior and regression tests:
+  WindowsML prefers DML and falls back once to CPU, while Ollama uses one fixed
+  model/profile and keeps CPU execution separate from provider/model selection.
+- Commit `b5f63f5` owns the simplified Alpha release boundary. Parsing and
+  reasoning do not have a separate accelerator-specific protected release gate.
+- Older local candidate, benchmark, and resilience runs remain diagnostic
+  history. They do not override the current code, tests, or active release TODO.
 
 ## Current Product Lane
 
 - OCR provider: `windowsml`.
-- OCR runtime package: `packages/cert-prep-ocr-windowsml`.
+- OCR implementation owner: `packages/cert-prep-ocr-windowsml`.
 - OCR runtime artifact kind: `windowsml_ocr`.
 - OCR runtime process: `cert-prep-ocr-windowsml-runtime.exe`.
-- OCR device goal: WindowsML-loaded AMD iGPU, with CPU fallback kept visible in
-  health/evidence when unsupported operators require it.
-- LLM provider policy: `auto` resolves to the currently supported Ollama
-  implementation. Public Alpha evidence must report configured/effective
-  provider `ollama`.
-- Windows Ollama execution mode is independent of provider/model fallback. A
-  generic supported acceleration signal keeps Ollama in `auto`; otherwise the
-  backend selects `cpu`, passes `num_gpu=0`, logs a warning, returns the warning
-  from health, and the Angular status surface displays `使用 CPU 中`. No RTX
-  model is named or required by the product or Alpha acceptance contract.
-- Provider-neutral ports, lazy provider construction, selection metadata,
-  health, and generation attribution remain extension points for future local
-  providers. No retired provider-specific settings, runtime kinds, onboarding,
-  or compatibility shims are retained.
-- LLM model: `qwen3.5:4b`, with `qwen3.5:2b` as the explicit fallback model.
-- Direct CLI test target:
-  `pnpm nx run cert-prep-backend:streaming-cli-test`.
-- Packaged smoke target:
-  `pnpm nx run cert-prep-desktop:packaged-streaming-production-windowsml --skip-nx-cache`.
-
-The retired pre-WindowsML iGPU product lane must not be revived as a provider,
-target, package, runtime manifest, or product-ready evidence path.
-
-## Runtime Node Classification
-
-Current and candidate runtime nodes are classified by platform and accelerator.
-Only nodes that satisfy the evidence gates in this spec can be promoted to
-product-ready.
-
-OCR nodes:
-
-| Platform | Node ID     | Status                     | Accelerator                                     | Distribution                                |
-| -------- | ----------- | -------------------------- | ----------------------------------------------- | ------------------------------------------- |
-| Windows  | `windowsml` | default                    | WindowsML-loaded AMD iGPU, CPU fallback visible | zip package extraction to local runtime dir |
-| Windows  | `paddle`    | override/debug             | CUDA dGPU or CPU fallback                       | custom zip package or pip dependency        |
-| macOS    | `paddle`    | deferred default candidate | CPU first, MPS/Metal deferred                   | platform zip package or local virtualenv    |
-| Linux    | `paddle`    | deferred default candidate | CUDA dGPU or CPU fallback, ROCm deferred        | platform zip package or AppImage resource   |
-
-LLM nodes:
-
-| Platform | Provider | Target model | Status                     | Accelerator           |
-| -------- | -------- | ------------ | -------------------------- | --------------------- |
-| Windows  | `ollama` | `qwen3.5:4b` | default                    | Ollama auto or forced CPU with warning |
-| Windows  | `ollama` | `qwen3.5:9b` | hardware-gated override    | Ollama auto or forced CPU with warning |
-| macOS    | `ollama` | `qwen3.5:4b` | deferred default candidate | Apple Silicon GPU/CPU |
-| macOS    | `ollama` | `qwen3.5:9b` | hardware-gated override    | Apple Silicon GPU/CPU |
-| Linux    | `ollama` | `qwen3.5:4b` | deferred default candidate | Nvidia CUDA/CPU       |
-| Linux    | `ollama` | `qwen3.5:9b` | hardware-gated override    | Nvidia CUDA/CPU       |
-
-Fallback policy:
-
-- `qwen3.5:4b` remains the default low-latency editing/study model.
-- `qwen3.5:9b` is a higher-capability explanation candidate, not a silent
+- Preferred OCR execution provider: `DmlExecutionProvider`, with
+  `CPUExecutionProvider` required for explicit recovery.
+- Reasoning provider: `ollama`. The fake provider is a test seam, not a product
   fallback.
-- Ollama OOM or timeout on a `9b` request must surface a visible error instead
-  of automatically falling back to `4b`.
-- Missing local Ollama models can trigger confirmation-gated download jobs.
-- Missing/unconfirmed Windows acceleration is not a missing-model condition.
-  It selects the CPU execution mode, warns about slower generation, and does
-  not populate provider/model `fallback_reason`.
+- Raw reasoning model: `qwen3.5:4b`.
+- Fixed study profile: `qwen3.5-4b-study-8k`, materialized locally as
+  `cert-prep-qwen3.5-4b-study-8k` from `qwen3.5:4b` with `num_ctx=8192`.
+- `auto` provider preference resolves to Ollama. `auto` profile selection
+  resolves to the same fixed study profile on every machine.
+
+The supported product catalog contains no alternate provider, model, or
+profile fallback.
+
+## WindowsML OCR Execution Contract
+
+1. Runtime health first requires the WindowsML ONNX Runtime, PaddleOCR 3.7,
+   bundled model files, and `CPUExecutionProvider`. Missing prerequisites are
+   visible unavailable states; they are not reported as CPU fallback.
+2. When DML is available, the runtime resolves the configured AMD/DXGI adapter
+   and creates the PaddleOCR/ONNX Runtime session with providers ordered as
+   `DmlExecutionProvider`, then `CPUExecutionProvider`.
+3. A missing DML provider or failed AMD/DXGI adapter selection switches the
+   runner to CPU before inference and records a non-empty warning reason.
+4. If DML session/pipeline initialization or prediction fails, the runner
+   discards the DML pipeline, creates a CPU-only pipeline, and retries that
+   operation exactly once.
+5. The one-retry guard is runner-scoped. A failed CPU retry propagates that CPU
+   failure as terminal; it never loops and never returns a false success.
+6. A successful CPU recovery returns `device="cpu"` plus a non-empty
+   `fallback_reason`. The runtime logs the acceleration warning once per
+   provider instance.
+
+The backend worker pool retains an observed CPU recovery from prewarm or real
+page extraction. Subsequent `GET /ocr/health` responses remain consistent with
+that observation instead of reverting to an earlier DML-ready snapshot.
+
+## CPU Status Contract
+
+| Layer | OCR state | Reasoning state |
+| --- | --- | --- |
+| Runtime | `device="cpu"` and a non-empty `fallback_reason` | `execution_mode="cpu"`, a non-empty `execution_warning`, and `num_gpu=0` |
+| Backend health | `available=true`, `selected_device="cpu"`, and the warning in `detail`/`fallback_reason` | Preserves `execution_mode` and `execution_warning`; provider/model `fallback_reason` remains null |
+| Angular | Shows `WindowsML OCR · 使用 CPU 中` as a warning | Shows `Reasoning model: <model> · 使用 CPU 中` as a warning |
+
+The Angular CPU label is shown only for an available runtime. Runtime/model
+unavailability and failed OCR recovery take precedence and remain visible as
+missing, offline, or failed states; stale CPU copy must not mask them.
+
+## Fixed Ollama Model And Profile Contract
+
+- `Settings.ollama_model` accepts only `qwen3.5:4b`.
+- The profile catalog contains only `qwen3.5-4b-study-8k`. Its Modelfile is
+  deterministic, starts from `qwen3.5:4b`, and declares an 8192-token context
+  window.
+- Request-specific smaller context limits used by fast-first streaming are
+  latency bounds inside the same profile. They do not select another profile
+  or model.
+- Low or incomplete machine inventory produces requirement warnings but never
+  changes the selected profile. Removed or unknown profile IDs fail validation.
+- `fallback_profiles` and `fallback_models` are empty. Successful generation
+  uses Ollama and either the fixed local profile alias or the same raw 4B model;
+  `fallback_reason` remains null.
+- An installed unrelated model is never selected when the configured model is
+  missing or fails.
+- Runtime and model installation remain explicit, confirmation-gated actions.
+  Health checks and generation do not silently start a model pull.
+- Missing Ollama, an unreachable Ollama API, or a missing fixed model stays a
+  visible unavailable/missing state. The UI offers model installation only for
+  the actual missing-model condition.
+- A generation exception is recorded as a visible skipped-unavailable or
+  failed/error terminal operation, depending on the owning automatic/manual
+  flow. The same job never switches provider, model, or profile.
+
+## Execution Policy Is Separate From Provider And Model Selection
+
+Ollama execution mode answers where the fixed model may run; it does not choose
+a different provider or model.
+
+- On Windows, a generic confirmed GPU signal keeps `execution_mode="auto"`.
+- If Windows accelerator inventory is missing, failed, or contains no GPU, the
+  backend selects `execution_mode="cpu"`, emits a warning, and sends
+  `num_gpu=0` to Ollama.
+- Both modes keep the same Ollama provider and fixed 4B/8K profile.
+- CPU execution populates `execution_warning`, not provider/model
+  `fallback_reason`.
+- `GET /llm/health` may preserve CPU execution metadata while unavailable, but
+  Angular displays the CPU label only when `available=true`; otherwise it shows
+  the runtime/model error.
+
+For successful generation, configured/effective attribution records Ollama and
+the fixed model/profile identity. The local profile alias is profile
+materialization, not model fallback.
 
 ## Pipeline Contract
 
-1. The desktop/backend starts OCR only when a file upload requires parsing.
-2. WindowsML OCR runs PaddleOCR on the AMD iGPU lane and emits page/chunk
-   progress.
-3. Reasoning waits for OCR completion, then checks the selected provider and
-   model health.
-4. If model health is blocked, the run records a visible blocker and does not
-   silently install or pull models.
-5. If model health is clear, the selected provider generates editable
-   questions through the streaming draft workflow.
-6. After OCR and reasoning jobs reach terminal states, the packaged smoke must
-   close the OCR and reasoning background processes.
-7. New uploads are the trigger to start the OCR and reasoning processes again.
-8. Client-side multi-PDF batches call the same upload endpoint once per file.
-   Each successful document independently triggers OCR and streaming reasoning;
-   failed reasoning remains visible/retryable and must not block OCR, manual
-   editing, practice, or wrong-answer review for successfully uploaded files.
+1. The desktop/backend starts OCR only when an upload requires parsing.
+2. WindowsML emits page/chunk progress and persists the selected device plus any
+   CPU recovery reason.
+3. Reasoning waits for OCR completion, then checks Ollama runtime and fixed-model
+   health.
+4. A blocked health check records a visible terminal state and does not install
+   or pull anything implicitly.
+5. A healthy provider generates grounded editable questions through the
+   streaming draft workflow.
+6. Draft inserts, effective attribution, and job success commit atomically.
+7. Reasoning releases provider resources after terminal work. The owned OCR
+   provider pool may be reused between documents and closes its workers during
+   backend shutdown.
 
-No Kafka or external broker is used for the first local-first streaming
-implementation. The current design uses a SQLite-backed job queue/outbox and
-bounded local workers.
+The local-first queue remains SQLite-backed with bounded local workers. No
+external message broker is required.
 
-## OCR Decisions
+## Attribution And Error Semantics
 
-- `CERT_PREP_OCR_PAGE_WORKERS` defaults to `1`.
-- Worker count `2` is only a measured option if same-build packaged QA improves
-  wall time by at least 20%, keeps counts stable, improves first chunk, and
-  stays under resource gates.
-- Generic Paddle CUDA remains an override/debug path and is expected to favor
-  Nvidia `gpu:0` on this Windows laptop.
-- Pure CPU OCR must stay visible as fallback evidence, not a silent default for
-  the iGPU lane.
-- PaddleOCR NPU/XDNA2 provider, runtime, prepass, and acceptance paths, legacy
-  WindowsML device-policy proof flags, and old iGPU provider surfaces are
-  retired; none is a Public Alpha requirement.
+- Draft job `provider` and `model` fields retain configured intent.
+- `effective_provider`, `effective_model`, and `fallback_reason` record the
+  actual successful generation attribution.
+- Post-job health is readiness evidence, not generation proof.
+- Invalid JSON, ungrounded content, invalid choices, or conflicting answers do
+  not create playable questions.
+- Multi-item reasoning may make at most one supplemental logical pass to fill a
+  short but otherwise valid result. This is a second prompt to the same fixed
+  model, not a model retry or fallback.
+- A `limit=1` fast-first request remains one model call for latency.
+- Reasoning output is optional enrichment. Failure must not block OCR, manual
+  editing, practice, or review of already usable questions.
 
-## WindowsML Package Ownership
+## Recovery And Cancellation
 
-- `packages/cert-prep-ocr-windowsml` owns the reusable WindowsML OCR runtime
-  implementation.
-- Python import root: `cert_prep_ocr_windowsml`.
-- Backend app integrations import package-owned runtime code instead of legacy
-  backend adapter shims.
-- Backend `ocr-windowsml-*` Nx target names remain stable workspace entrypoints,
-  but their commands execute package modules directly with `python -m`.
-- Backend-specific contracts stay in the backend app. The WindowsML package
-  must not import `cert_prep_backend`.
-- The first extracted package is implementation-specific rather than a generic
-  OCR platform framework; future Intel/Windows and Linux combinations should be
-  explicit sibling packages.
-- Editable path dependency must be visible to `uv run` from
-  `apps/cert-prep-backend`.
-- PyInstaller must package the new import root while excluding unrelated
-  backend OCR providers.
-- Old backend WindowsML shim imports are intentionally unsupported.
-- No WindowsML health payload may claim OCR success without WindowsML provider
-  health, selected AMD iGPU evidence, and packaged runtime evidence.
+- Upload/OCR, automatic draft, manual draft, runtime-install, and model-install
+  operations persist their lifecycle state.
+- Long work follows
+  `queued -> running -> cancel_requested -> canceled`; terminal states are
+  irreversible.
+- Non-cancellable commit phases are persisted and reported honestly. A later
+  cancel receives the durable conflict instead of pretending cancellation.
+- OCR cancellation retains the source PDF for Retry, removes partial OCR
+  output, and suppresses automatic draft enqueue.
+- Polling retries transient failures after 1, 2, and 4 seconds. Exhaustion stops
+  indefinite progress and exposes an actionable Retry state.
+- Stale responses cannot overwrite a newer cancel or retry operation.
+- Owned runtime/model/helper processes are terminated by process tree; unrelated
+  processes are not cleanup targets.
 
-## Reasoning Decisions
+## Package And Provider Ownership
 
-### Public Alpha Provider And Evidence Contract (2026-07-11)
+- `packages/cert-prep-ocr-windowsml` owns reusable WindowsML OCR runtime code
+  under the `cert_prep_ocr_windowsml` import root.
+- Backend integrations consume the package directly; legacy backend OCR shims
+  are unsupported.
+- Backend `ocr-windowsml-*` Nx targets remain stable entrypoints and invoke the
+  package modules with `python -m`.
+- The WindowsML package must not import `cert_prep_backend`.
+- PyInstaller packages the WindowsML import root and excludes unrelated OCR
+  providers.
+- The provider-neutral reasoning port, lazy provider factory, selection result,
+  health payload, and generation attribution remain extension seams. A future
+  product provider requires an explicit adapter and policy change; it cannot
+  appear as an implicit fallback.
 
-- One shared runtime policy owns `auto`, the `qwen3.5:4b` primary model, and
-  the `qwen3.5:2b` low-resource fallback. Backend selection is authoritative;
-  Angular consumes the provider-selection API and packaged scripts consume
-  generated release metadata instead of copying defaults.
-- Auto-selection resolves to Ollama for the current product. Missing runtime or
-  model dependencies remain explicit onboarding states. A generation failure
-  never switches providers inside the same job; the failed job remains
-  attributed.
-- Existing draft job `provider` and `model` fields mean configured values.
-  Persisted `effective_provider`, `effective_model`, and `fallback_reason`
-  record what actually generated output. Draft inserts, attribution, and job
-  success commit atomically.
-- Post-job provider health is not generation proof. Production evidence records
-  readiness at generation start, effective provider/model, fallback reason,
-  and resource release separately.
-- LLM health additionally reports `execution_mode` (`auto` or `cpu`) and
-  `execution_warning`. `cpu` is an enforced policy (`num_gpu=0`) and requires a
-  non-empty warning; `auto` makes no claim that a particular GPU was observed.
-  Hardware inventory is only an admission hint for choosing forced CPU, not
-  proof of actual Ollama GPU use.
-- `MOCK ITEMS` and practice readiness use one definition: distinct editable
-  questions in the selected scope with valid choices and an answer. Full Exam
-  and packaged summaries use the same query.
+Stable backend status and onboarding APIs include:
 
-### Public Alpha Recovery And Cancellation Contract (2026-07-11)
+- `GET /ocr/health`
+- `GET /llm/health`
+- `GET /llm/provider-selection`
+- `GET /llm/profiles`
+- `GET /llm/profile-selection`
+- `POST /llm/model-downloads`
+- `GET /llm/model-downloads/{job_id}`
+- `DELETE /llm/model-downloads/{job_id}`
 
-- Migration 15 gives practice sessions `active`, `completed`, and `abandoned`
-  lifecycle semantics, backfills completed sessions from distinct answered
-  questions, and enforces one active session per project. Angular restores the
-  ordered attempts and requires an explicit Resume or two-step Abandon choice.
-- Migration 16 preserves configured draft provider/model and adds effective
-  attribution. Migrations 17 and 18 persist upload/OCR and automatic/manual
-  draft operations. Migration 19 persists runtime/model installation jobs so
-  cancel and crash recovery are not process-memory-only states.
-- Long work uses `queued -> running -> cancel_requested -> canceled`; terminal
-  states are irreversible. The cancel/success race is decided under the owning
-  lock/transaction, and draft inserts plus success commit atomically.
-- Uploads carry `X-Cert-Prep-Operation-Id` so a pre-response AbortController
-  cancellation leaves a server-side tombstone. OCR cancellation preserves the
-  source PDF for Retry while removing partial chunks/metrics and suppressing
-  draft enqueue. Owned runtime/model/helper processes are terminated by process
-  tree; non-cancellable commit phases are reported honestly.
-- Polling retries transient failures after 1, 2, and 4 seconds. Exhaustion
-  stops the spinner and exposes an actionable Retry state; stale responses may
-  not overwrite a newer cancel/retry operation.
+## Editable Questions And Multi-Document Upload
 
-- Ollama is the supported reasoning provider. Runtime installation and model
-  pulls remain explicit and confirmation-gated.
-- Provider implementations compose through the generic reasoning port and
-  capability interfaces. Adding a future provider requires a new adapter and
-  selector registration, not changes to draft persistence or attribution.
-- Reasoning output is optional enrichment and must not auto-download models,
-  auto-approve questions, or expose hidden chain-of-thought.
-- UI copy should say `Reasoning model` rather than hardcoding one model
-  identity.
-- Larger model comparator runs remain user-controlled research gates and should
-  not be treated as startup defaults.
-- Reasoning comparator work must collect RAM/VRAM residency evidence before
-  parameter reduction, scored bakeoff reruns, or default-model changes.
-- Packaged production summaries remain provider-aware and require model health,
-  configured/effective selection, explicit fallback/blocker metadata, explicit
-  execution mode/warning semantics, and WindowsML OCR use on the AMD iGPU.
+- Generated and manual records are immediately editable/playable when they pass
+  the shared playable predicate; the old approval-only flow stays retired.
+- Full Exam, Random Quiz, review, and packaged summaries use the same definition
+  of a playable question: valid stem, distinct visible choices, and an answer.
+- Multi-document import remains a client-side sequential batch over
+  `POST /projects/{project_id}/documents`.
+- Each successful document independently runs OCR and reasoning. Failed files
+  remain visible for retry, successful files stay in the project library, and
+  the latest successful upload becomes active.
+- One document's reasoning failure must not remove other successful documents or
+  their usable questions.
 
-## Provider Extension Interfaces
+## Release Boundary
 
-- Stable backend API:
-  - `GET /llm/health`
-  - `POST /llm/model-downloads`
-  - `GET /llm/model-downloads/{job_id}`
-- Stable internal seams: reasoning provider protocol, capability protocol,
-  lazy provider factory, generic selection result, health payload, and
-  configured/effective generation attribution.
-- A future provider owns its transport, discovery, installation policy, and
-  tests. It must not add compatibility re-exports for retired implementations.
-- Invalid provider JSON never creates playable questions.
-
-## Direct Editable Questions
-
-The approval-gated draft flow is retired. Generated/manual records are playable
-editable questions immediately while preserving compatibility through the same
-storage path where practical.
-
-Closed scope:
-
-- Backend generated/manual questions are playable immediately.
-- Approval endpoint/client/store/button code was removed without compatibility
-  shims.
-- Angular review/editor flows treat records as editable questions.
-- Packaged smoke/baseline records editable-question timing and skips old
-  deterministic approval flow in streaming baseline mode.
-- Approval-only code and stale active copy references were removed or
-  retargeted.
-
-## Evidence Gates
-
-Direct CLI evidence is the fast development gate. It must prove the backend
-pipeline contract without building or launching the packaged desktop app:
-
-- Streaming reasoning jobs wait until OCR has finished parsing the uploaded
-  document.
-- Provider and model blockers are recorded before generation, without
-  auto-installing or pulling models.
-- Ollama model selection exposes any explicit `fallback_reason`.
-- Draft generation validates grounded JSON before persistence.
-- WindowsML/iGPU policy tests keep the retired pre-WindowsML iGPU lane from
-  becoming product evidence again.
-
-Packaged product evidence is the release gate. It must prove these separately
-after the WindowsML desktop package is built:
-
-- OCR provider health reports `windowsml` and a selected AMD iGPU device when
-  available.
-- OCR model/runtime artifacts are present, checksum-verified, and installed only
-  through explicit runtime consent.
-- Resource telemetry observes `cert-prep-ocr-windowsml-runtime.exe`. Public
-  hardware verification derives OCR routing directly from raw Windows
-  process/GPU counter rows plus the DXGI LUID map; summary booleans or detailed
-  aggregates cannot override contradictory raw evidence.
-- DXGI generation, Windows CSV rows, and production/resource summaries must all
-  be fresh for the same acceptance window. NVIDIA SMI is not started, declared,
-  or verified by the Alpha lane.
-- Reasoning provider health reports configured/effective provider and model,
-  fallback model list, blocker/fallback reason, execution mode, and execution
-  warning. Provider/model fallback remains forbidden for Alpha evidence.
-- Ollama Alpha evidence accepts `execution_mode=auto` or `execution_mode=cpu`.
-  CPU mode requires a non-empty warning and visible `使用 CPU 中` frontend state;
-  neither mode requires NVIDIA/RTX telemetry or routing proof.
-- Streaming jobs reach terminal states, usable questions are generated, and Full
-  Exam can start from streamed questions.
-- Process cleanup reports graceful close where possible and no residual smoke
-  processes after final close.
-
-Recorded production evidence is optional for local development unless the
-recorded production target is used; public Alpha hardware acceptance always
-requires a recording. `cert-prep-desktop:packaged-streaming-production-recorded-windowsml`
-adds Playwright WebView2 screencast evidence to the same packaged production
-smoke and writes timestamped output under
-`tmp/cert-prep-desktop/packaged-streaming-production-recorded`. When recording
-is enabled, `metrics.json`, `streaming-baseline.json`, `streaming-baseline.md`,
-and `production-summary.json` must reference at least one completed non-empty
-`.webm` artifact with bytes, SHA-256, capture source, and recording status.
-Browser-only Playwright e2e videos are review aids, not packaged production
-acceptance evidence.
-
-2026-06-26 packaged gap audit status:
-
-- `pnpm nx run cert-prep-desktop:packaged-streaming-production-windowsml`
-  remained blocked as release evidence even though WindowsML OCR completed
-  46/46 pages, produced 46 chunks, one streaming job succeeded, and one usable
-  question was generated.
-- The blocking product gap is that Full Exam still reported `0 questions in
-selected document` for the selected document after the production streaming
-  run. Reconcile streaming draft persistence, project/document selection, and
-  the practice query path before calling the packaged release gate closed.
-- The run did not prove a supported configured/effective provider and model
-  even though the streaming job reached a terminal success state.
-- Production summaries must carry `selected_model`, `effective_model`, provider
-  health, and fallback/blocker attribution whenever generated questions are
-  reported.
-
-2026-07-11 local remediation status:
-
-- The provider-selection API/generated client, exact configured/effective job
-  attribution, transactional question persistence, shared practice-ready
-  query, session recovery, and cancellation state machines are implemented and
-  covered by backend/frontend tests.
-- `cert-prep-e2e:e2e-real-backend` runs without `page.route`, starts an
-  ephemeral backend with deterministic OCR/LLM fakes, and passed the
-  create-answer-restart-Resume-complete-restart flow. Its five browser tests
-  also cover real multipart multi-PDF upload, two transient 503 polling
-  failures followed by recovery, pre-document-ID upload cancellation with a
-  409 tombstone/stale-response guard, and two-step Abandon persisted by the
-  practice API.
-- The full backend suite passed 238 tests; Angular passed 160 tests; desktop
-  Cargo passed 23 tests; package QA tests passed 61 tests; release tooling
-  passed 27 Node plus 21 Python tests; mock Playwright passed 13 tests and the
-  no-route real-backend project passed 5 tests. The Python 3.12 WindowsML runtime build
-  also passed its executable self-test.
-- These results retire the code-level causes behind the 2026-06-26 evidence
-  inconsistency, but they do not close the protected `public-alpha-b3-v1`
-  hardware gate. Closure still requires the exact public candidate SHA on a
-  protected clean-snapshot Windows x64 lane where WindowsML OCR is observed on
-  the AMD iGPU: four PDFs, effective Ollama `qwen3.5:4b`, no provider/model
-  fallback, explicit auto/CPU execution status, usable questions above zero,
-  Full Exam count above zero, resource release, restart/cancel cleanup with
-  individually hashed evidence, and a completed-run-bound WebM whose
-  stream/duration/frames pass the protected runner's uniquely resolved
-  `ffprobe`, matched to its reviewed SHA-256 during preflight and rehashed by
-  the verifier.
-
-2026-07-14 local cancellation and integration closeout:
-
-- Commit `175ea89` completed automatic/manual draft, runtime-install, and
-  model-install GET/DELETE flows, persisted cancellation recovery, atomic
-  cancel-versus-commit behavior, OpenAPI-first schemas, and the regenerated
-  TypeScript client. Angular forwards `AbortSignal`, derives honest
-  `phase/cancellable` state, and rejects stale operation responses.
-- Migration 20 repairs duplicate active document operations before adding the
-  partial unique index. Migration 21 keeps immutable draft attribution through
-  `source_chunk_id`, uses `ON DELETE SET NULL` for removed chunks, and recovers
-  detached jobs. Every migration runs in its own `BEGIN IMMEDIATE` transaction
-  so a failed version rolls back completely and can be retried.
-- Commit `bfb7ca6` added the isolated no-route real-backend Playwright project.
-  Its five local tests cover generation/Full Exam, multi-PDF upload, bounded
-  polling recovery, pre-document-ID cancellation with stale-response rejection,
-  and persisted session Resume/Abandon behavior.
-- Current local verification passed backend lint plus 370 tests with 2 skipped,
-  Angular lint plus 221 tests, API 3 tests and typecheck, contracts 4 tests,
-  and real-backend Playwright 5 tests.
-- Commit `54e3978` added migration 22 and durable nullable
-  `commit_started_at` fields for manual draft and runtime/model installation
-  operations. New operations persist the transition into a non-cancellable
-  commit phase, and a later DELETE returns 409 after a committed success;
-  legacy terminal rows without that evidence keep their compatible response.
-- Commit `79a4b3b` makes packaged cancellation evidence poll that persisted
-  boundary and retain the raw GET plus DELETE-409 responses instead of
-  inferring commit from UI text. Commit `d9fbfcc` also requires both immediate
-  and delayed post-cancel state, with at least a one-second observation window,
-  before a later successful operation may begin.
-- Commit `69c2beb` binds session-restart evidence to the exact project,
-  document, session, question, and attempt scopes. It proves one answer, a
-  forced restart, explicit Resume, completion of every question, a second
-  forced restart, no remaining active session, and retained completed-session
-  identity and attempts.
-- Commit `f110dee` composes these contracts into the remaining packaged runner:
-  missing-model automatic drafts must terminate without usable questions,
-  committed manual generation must produce at least two usable questions for
-  the exact document, and runtime/model cancellation state must remain absent
-  before the successful commit transition. Commit `cc4f3d0` makes the runner
-  stop immediately if a commit probe reaches `failed`, `canceled`, or
-  `succeeded` without the durable commit boundary. Commit `c7efc6f` retains and
-  validates the successful manual terminal payload, including exact project,
-  document, operation, strategy, generated count, effective provider/model,
-  and absence of fallback.
-- Commit `ca5ba1d` also rejects a terminal manual generation that reports
-  success without enough usable drafts. Commit `39874b3` aligns source excerpts
-  only after whitespace normalization while retaining exact grounding.
-  Commit `06db87d` requires a conditional exact item count and at least two
-  distinct visible choices, binds validation to the chunks actually included
-  in each prompt, normalizes marker-stripped answers only when they uniquely
-  match one exact choice, and rejects conflicting answer markers. Multi-item
-  batches may make at most one supplemental logical pass per model attempt;
-  that pass prioritizes unseen chunks and excludes duplicates before consuming
-  the remaining count. `limit=1` keeps the fast-first streaming latency path to
-  one call. Backend verification passed 397 tests with 2 skipped, Ruff, and
-  diff checks.
-
-2026-07-16 exact local candidate results:
-
-- A normal live `qwen3.5:4b` probe against all 46 exact chunks returned two raw
-  items, strictly accepted both, used one chat call, and used no model fallback.
-  A separate supplemental component probe selected unseen pages 4 and 5 but
-  accepted zero because the response supplied an incorrect `citation_page` and
-  conflicting answer formatting. That result proves fail-closed rejection; it
-  is not a successful live supplemental recovery.
-- Structural acceptance does not prove semantic answer correctness. One
-  accepted AI-inferred live item selected `けんせつ` for `検閲`; the expected
-  reading is `けんえき`. This remains a content-quality risk and is not evidence
-  that supplemental recovery succeeded live.
-- Product and harness commit
-  `06db87d1e19a6e1e2e633730a69ce89f5bfb4678`, candidate ID
-  `5ebde8afc5e956a98daf6bdd11e31742d7bcde00c714687236260c1a5c2350a6`,
-  and install run
-  `local-install-06db87d1e19a-1fb5fa29-2a1c-4aed-94ee-17e118716a2e`
-  bind every current local evidence file to the same NSIS install receipt.
-- The document resilience half passed. The N1 input SHA-256
-  `ec5f312d5c97ee91b87ec7fcbf1d33b4f4019fca367df376b48c1f4943a744c8`
-  produced 46 pages and 46 chunks with `windowsml_ocr`, device
-  `amd_windowsml:0`, and no fallback after same-document retry. Initial
-  operation `ocr-b41f8cca-30dd-4b5d-8df9-01d2d7ce632d` canceled and retry
-  `499434b0-9c72-425c-b0e1-6d6bc1bce49c` succeeded. Upload-before-ID,
-  cancel-versus-complete, crash recovery, partial-data removal, retryability,
-  two-second no-late-publication, atomic output, and cleanup all passed.
-- The remaining resilience half also passed against a fresh isolated model
-  store. Its automatic job ended `skipped_missing_model` with zero drafts;
-  manual operation `95d88df9-723b-4ea9-b877-ad4249063ac3` canceled and stayed
-  at zero usable drafts for the observation window. Operation
-  `9412851b-9ac3-498e-a536-29934adfcef7` then crossed the durable commit
-  boundary and succeeded with two usable drafts, effective
-  `ollama`/`qwen3.5:4b`, and no fallback. Runtime and model cancel-versus-commit
-  checks passed, session `a03c0c84-1933-4025-80c5-7a12fe254804` retained one
-  answer across explicit Resume, completed both questions, and remained
-  completed after the second restart.
-- The current-HEAD declined-terms route passed separately. Real Ollama API
-  `0.30.10` persisted `auto -> ollama` across restart and job
-  `b69a296c-9aed-45fd-9135-edc0d2c7a665` generated one usable Full Exam
-  question with complete configured/effective
-  `cert-prep-qwen3.5-4b-study-8k` attribution and no model fallback. All 14
-  acceptance checks rejected overrides and fakes and proved model and owned
-  process release.
-- These results close the current local nonpublishable resilience and
-  forced-provider checkpoints only. They are not a protected
-  `public-alpha-b3-v1` four-PDF hardware result, hosted CI result,
-  publishable-candidate result, or release claim.
-
-### Hardware Input And Routing Contract Closeout (2026-07-16)
-
-- Commit `58a156c2b0d703c2170e38c8edbf9fb63681fd2e` implemented the
-  historical Alpha v2 routing decision from fail-closed raw evidence. It
-  required observed WindowsML OCR use on the AMD iGPU, OCR NVIDIA process
-  memory at or below the 64 MiB gate, and Ollama reasoning use on the NVIDIA
-  dGPU. XDNA2, VitisAI, and
-  NPU capability or telemetry are not part of this Alpha contract. Missing
-  AMD/Nvidia adapters, unmapped LUIDs, raw/summary contradictions, reused paths,
-  stale timestamps, digest drift, or candidate/run identity drift are rejected.
-- The exact protected hardware suite ID is `public-alpha-b3-v1`: four reviewed
-  logical IDs map to exact PDF filenames, byte counts, and SHA-256 values.
-  Hardware results must repeat those identities and prove positive
-  usable-question and Full Exam counts for every PDF; missing, extra,
-  duplicate, renamed, byte-drifted, or digest-drifted inputs fail before
-  question counts are accepted.
-- Contract verification passed 81 Node release tests, 21 Python release tests,
-  Ruff, script type checking, and 206 package-QA tests with one
-  Windows-permission skip. This remains implementation evidence, not the
-  protected four-PDF AMD/Nvidia acceptance run.
-- That v2 NVIDIA requirement is superseded before any canonical public Alpha
-  run by the v3 hardware result/v6 production summary contract: AMD iGPU OCR
-  remains fail-closed, while Ollama auto/CPU execution is explicit and NVIDIA
-  telemetry is absent.
-- The protected hardware workflow now configures the reviewed external harness
-  path/hash, `ALPHA_ACCEPTANCE_PDF_DIR`, and the approved
-  `ALPHA_FFPROBE_SHA256`; it derives the candidate-matched manifest and resolves
-  the single approved `ffprobe` from the runner's `PATH`. This reduces six
-  machine inputs to four without changing PDF, routing, model, resilience, or
-  recording acceptance semantics.
-  The candidate does not yet carry the full producer and Playwright-powered
-  packaged-flow/resilience runtime, so replacing the external harness remains
-  the next CI simplification phase rather than completed hardware evidence.
-
-### Hosted Cross-Runner Quality (2026-07-16)
-
-- Hosted CI run
-  [29463901598](https://github.com/WodenWang820118/cert-prep/actions/runs/29463901598)
-  at exact commit `d54341a6174c6dc514260c8f26435752242c63a3` passed the
-  portable and Windows product quality jobs, including shared, backend, OCR,
-  Ollama, and Angular Nx checks, mocked and real-backend browser integration,
-  desktop script type checking, package QA, and Cargo tests.
-- This closes cross-runner quality only. It does not close the four-PDF
-  protected `public-alpha-b3-v1` hardware gate or the selected
-  exact-release-commit quality/candidate gate, create a publishable candidate,
-  or replace protected recorded hardware evidence.
-
-Resource artifacts for packaged runs:
-
-- `metrics.json`
-- `streaming-baseline.json`
-- `production-summary.json`
-- `*.webm` acceptance recordings when the recorded production target is used
-- `windows-dxgi-adapters.json`
-- `windows-resource-sampling.csv`
-- `windows-resource-summary.json`
+- The Alpha workflow consumes these behaviors through the current Nx-owned unit,
+  integration, real-backend, package-QA, and desktop tests in `build-candidate`.
+- The fresh-install lane verifies the packaged backend and version-pinned public
+  WindowsML runtime, then launches and uninstalls the one NSIS package.
+- Local packaged streaming and resilience targets remain useful diagnostics;
+  they are not a separate public release acceptance lane.
+- Active release work is owned by `.agents/TODOS/alpha-launch-readiness.md` and
+  the runtime-packaging domain. This domain must not recreate a device-specific
+  performance gate.
 
 ## Retired Surfaces
 
-Do not use or recreate these in current OCR work:
+Do not use or recreate:
 
-- standalone AMD NPU/XDNA2 OCR provider, runtime, package, and acceptance paths
-- WindowsML NPU prepass and legacy device-policy proof flags
-- old iGPU provider targets or runtime manifests
-- backend shim/re-export paths for package-owned OCR runtimes
+- standalone NPU/XDNA2 OCR providers, prepasses, runtime manifests, or product
+  acceptance paths;
+- legacy WindowsML device-policy proof flags or backend compatibility shims;
+- alternate product reasoning transports, model lists, profile catalogs, or
+  automatic provider/model switching;
+- approval-only question workflow code;
+- a separate device-specific release evidence workflow.
 
-## Provider Boundary
+## Durable Verification
 
-- Shared model fallback, response parsing, generation capabilities, lazy
-  construction, health, and attribution remain provider-neutral.
-- Ollama is the only current product adapter. Retired provider transports,
-  installers, terms decisions, runtime kinds, settings, UI paths, desktop
-  acceptance lanes, and tests are intentionally absent.
-- A future provider must implement the existing ports and add explicit selector,
-  health, install policy, and regression coverage without concrete-provider
-  checks in streaming persistence.
+Behavior owners and focused regression evidence:
 
-## Multi-PDF Upload And AI-Inferred Practice Evidence
+- WindowsML DML/CPU selection, one CPU retry, warning, and retry-failure stop:
+  `packages/cert-prep-ocr-windowsml/tests/test_runtime.py`.
+- Backend prewarm/extraction CPU observation and health propagation:
+  `apps/cert-prep-backend/tests/test_ocr_external_windowsml_runtime.py`.
+- Fixed profile catalog, deterministic 8K Modelfile, CPU policy, and no profile
+  fallback: `packages/cert-prep-ollama/tests/test_profiles.py`.
+- Fixed model validation, provider selection, unavailable/error behavior, and no
+  generation-time model switch:
+  `apps/cert-prep-backend/tests/test_llm_provider_settings.py` and
+  `apps/cert-prep-backend/tests/test_ollama_provider.py`.
+- Frontend CPU and unavailable-state copy:
+  `apps/cert-prep/src/app/components/model-health/model-health.component.spec.ts`.
 
-2026-07-07 closeout:
+Primary Nx verification commands:
 
-- Multi-PDF source import is complete as a client-side sequential batch over
-  `POST /projects/{project_id}/documents`.
-- Successful files remain available in the project document library; failed
-  files remain visible for retry; the latest successful upload becomes the
-  active document.
-- Upload-triggered streaming draft generation is document-scoped, and
-  generated `ai_inferred` drafts stay editable and playable through the
-  existing Draft Review, Full Exam, and Random Quiz paths when they meet the
-  playable predicate.
-- Verification passed with `pnpm nx run cert-prep:test --skip-nx-cache`,
-  `pnpm nx run cert-prep-backend:test --skip-nx-cache`,
-  `pnpm nx run cert-prep-e2e:e2e-ci--src/example.spec.ts --skip-nx-cache`, and
-  `pnpm nx run cert-prep-e2e:e2e-ci--src/recording.spec.ts --skip-nx-cache`.
-  The monolithic `cert-prep-e2e:e2e` run was attempted first and timed out
-  before emitting useful Playwright results, so the two atomized e2e targets
-  are the recorded acceptance evidence for this closeout.
-
-## Verification
-
-- Orientation:
-  `pnpm nx show projects --json`
-- Fast direct CLI streaming gate:
-  `pnpm nx run cert-prep-backend:streaming-cli-test`
-- WindowsML package:
-  `pnpm nx run cert-prep-ocr-windowsml:lint`
-  `pnpm nx run cert-prep-ocr-windowsml:test`
-- Backend:
-  `pnpm nx run cert-prep-backend:lint`
-  `pnpm nx run cert-prep-backend:test`
-- Desktop scripts:
-  `pnpm nx run cert-prep-desktop:typecheck-scripts`
-  `pnpm nx run cert-prep-desktop:package-qa-test`
-- Packaged product smoke:
+- `pnpm nx run cert-prep-ocr-windowsml:lint`
+- `pnpm nx run cert-prep-ocr-windowsml:test`
+- `pnpm nx run cert-prep-ollama:lint`
+- `pnpm nx run cert-prep-ollama:test`
+- `pnpm nx run cert-prep-backend:lint`
+- `pnpm nx run cert-prep-backend:test`
+- `pnpm nx run cert-prep-backend:streaming-cli-test`
+- `pnpm nx run cert-prep:lint`
+- `pnpm nx run cert-prep:test`
+- `pnpm nx run cert-prep-desktop:typecheck-scripts`
+- `pnpm nx run cert-prep-desktop:package-qa-test`
+- Optional local packaged diagnostic:
   `pnpm nx run cert-prep-desktop:packaged-streaming-production-windowsml --skip-nx-cache`
-
-## Active Backlog
-
-`.agents/TODOS/alpha-launch-readiness.md` remains active until the public OCR
-asset, checkout-free MSI/NSIS clean installs, and protected
-`public-alpha-b3-v1` recorded hardware acceptance gate pass. That hardware gate
-must prove WindowsML OCR on the AMD iGPU, exact Ollama provider/model attribution,
-and valid auto/CPU execution warning semantics. Local implementation evidence
-must not be promoted to a Public Alpha-ready claim before those external gates
-close.
-
-Deferred comparator reruns remain user-controlled and should only run after the
-target models are intentionally installed.
