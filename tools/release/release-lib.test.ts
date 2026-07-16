@@ -26,6 +26,7 @@ import {
   normalizeLicense,
   planAssetUploads,
   sha256File,
+  validateAcceptancePdfManifest,
   validateHardwareResult,
   windowsMsiVersionFor,
   writeReleaseDocuments,
@@ -33,6 +34,19 @@ import {
 import { assertReleaseState } from './publish-assets.ts';
 
 const sha = 'a'.repeat(40);
+
+function acceptancePdfManifest() {
+  return {
+    schemaVersion: 1,
+    suiteId: 'public-alpha-b3-v1',
+    pdfs: Array.from({ length: 4 }, (_, index) => ({
+      logicalId: `pdf-${index + 1}`,
+      fileName: `pdf-${index + 1}.pdf`,
+      bytes: index + 1,
+      sha256: String(index + 1).repeat(64),
+    })),
+  };
+}
 
 test('file hashing closes its Windows handle before resolving', async () => {
   const root = mkdtempSync(join(tmpdir(), 'cert-prep-release-hash-'));
@@ -575,8 +589,16 @@ test('hardware evidence requires exact Ollama attribution and four PDFs', () => 
     repository: 'owner/cert-prep',
     commitSha: sha,
   });
+  const boundArtifact = (path) => ({
+    path,
+    bytes: 100,
+    sha256: '2'.repeat(64),
+    candidateId: 'e'.repeat(64),
+    acceptanceRunId: 'acceptance-run-0001',
+  });
+  const pdfManifest = acceptancePdfManifest();
   const evidence = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     version: plan.version,
     tag: plan.tag,
     commitSha: plan.commitSha,
@@ -613,8 +635,11 @@ test('hardware evidence requires exact Ollama attribution and four PDFs', () => 
       ]),
     ),
     processResidueCount: 0,
-    pdfs: Array.from({ length: 4 }, (_, index) => ({
-      name: `pdf-${index}`,
+    acceptancePdfManifest: boundArtifact(
+      'alpha-acceptance-pdf-manifest.json',
+    ),
+    pdfs: pdfManifest.pdfs.map((pdf) => ({
+      ...pdf,
       usableQuestions: 1,
       fullExamQuestionCount: 1,
     })),
@@ -623,6 +648,13 @@ test('hardware evidence requires exact Ollama attribution and four PDFs', () => 
       startedAt: '2026-07-11T01:00:01.000Z',
       completedAt: '2026-07-11T01:00:04.000Z',
       completed: true,
+    },
+    productionSummary: boundArtifact('production-summary.json'),
+    gpuTelemetry: {
+      windowsResourceSummary: boundArtifact('windows-resource-summary.json'),
+      windowsResourceSampling: boundArtifact('windows-resource-sampling.csv'),
+      windowsDxgiAdapters: boundArtifact('windows-dxgi-adapters.json'),
+      nvidiaSmi: boundArtifact('nvidia-smi.csv'),
     },
     recording: {
       path: 'recording.webm',
@@ -656,6 +688,106 @@ test('hardware evidence requires exact Ollama attribution and four PDFs', () => 
       ),
     /session restart evidence/,
   );
+  assert.throws(
+    () =>
+      validateHardwareResult(
+        { ...evidence, schemaVersion: 1 },
+        plan,
+        'e'.repeat(64),
+      ),
+    /identity does not match/,
+  );
+  assert.throws(
+    () =>
+      validateHardwareResult(
+        {
+          ...evidence,
+          productionSummary: {
+            ...evidence.productionSummary,
+            sha256: '',
+          },
+        },
+        plan,
+        'e'.repeat(64),
+      ),
+    /productionSummary/,
+  );
+  assert.throws(
+    () =>
+      validateHardwareResult(
+        {
+          ...evidence,
+          gpuTelemetry: {
+            ...evidence.gpuTelemetry,
+            nvidiaSmi: {
+              ...evidence.gpuTelemetry.nvidiaSmi,
+              acceptanceRunId: 'acceptance-run-stale',
+            },
+          },
+        },
+        plan,
+        'e'.repeat(64),
+      ),
+    /gpuTelemetry\.nvidiaSmi/,
+  );
+});
+
+test('acceptance PDF manifest requires exact unique reviewed identities', () => {
+  const manifest = acceptancePdfManifest();
+  assert.equal(validateAcceptancePdfManifest(manifest), manifest);
+  for (const rejected of [
+    { ...manifest, schemaVersion: 2 },
+    { ...manifest, suiteId: 'other-suite' },
+    { ...manifest, extra: true },
+    { ...manifest, pdfs: manifest.pdfs.slice(0, 3) },
+    {
+      ...manifest,
+      pdfs: [
+        manifest.pdfs[0],
+        { ...manifest.pdfs[1], logicalId: manifest.pdfs[0].logicalId },
+        ...manifest.pdfs.slice(2),
+      ],
+    },
+    {
+      ...manifest,
+      pdfs: [
+        manifest.pdfs[0],
+        { ...manifest.pdfs[1], fileName: manifest.pdfs[0].fileName },
+        ...manifest.pdfs.slice(2),
+      ],
+    },
+    {
+      ...manifest,
+      pdfs: [
+        manifest.pdfs[0],
+        { ...manifest.pdfs[1], sha256: manifest.pdfs[0].sha256 },
+        ...manifest.pdfs.slice(2),
+      ],
+    },
+    {
+      ...manifest,
+      pdfs: [
+        { ...manifest.pdfs[0], fileName: 'nested/pdf-1.pdf' },
+        ...manifest.pdfs.slice(1),
+      ],
+    },
+    {
+      ...manifest,
+      pdfs: [
+        { ...manifest.pdfs[0], fileName: 'pdf-1.PDF' },
+        ...manifest.pdfs.slice(1),
+      ],
+    },
+    {
+      ...manifest,
+      pdfs: [
+        { ...manifest.pdfs[0], sha256: 'A'.repeat(64) },
+        ...manifest.pdfs.slice(1),
+      ],
+    },
+  ]) {
+    assert.throws(() => validateAcceptancePdfManifest(rejected));
+  }
 });
 
 test('publishable release plans require the exact public distribution pair', () => {

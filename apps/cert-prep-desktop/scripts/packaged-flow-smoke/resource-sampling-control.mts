@@ -41,6 +41,9 @@ export function startResourceSampling({
     };
   }
 
+  const nvidiaSmiTimestampUtcOffsetMinutesAtStart =
+    -new Date().getTimezoneOffset();
+
   const nvidia = startNvidiaSmiSampling({
     outDir,
     workspaceRoot,
@@ -74,6 +77,9 @@ export function startResourceSampling({
         artifacts,
         observe,
         samplerStopSummary,
+        nvidiaSmiTimestampUtcOffsetMinutesAtStart,
+        nvidiaSmiTimestampUtcOffsetMinutesAtStop:
+          -new Date().getTimezoneOffset(),
       });
     },
   };

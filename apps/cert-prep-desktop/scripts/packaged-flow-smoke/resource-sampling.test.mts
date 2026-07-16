@@ -158,6 +158,8 @@ test('resource summary finalizer preserves closeout evidence and target process 
         error_count: 0,
         results: [],
       },
+      nvidiaSmiTimestampUtcOffsetMinutesAtStart: 480,
+      nvidiaSmiTimestampUtcOffsetMinutesAtStop: 480,
     });
 
     const summary = JSON.parse(
@@ -177,6 +179,7 @@ test('resource summary finalizer preserves closeout evidence and target process 
         ocr_avoids_nvidia_dgpu: boolean;
       };
       nvidia_smi_summary: { memory_used_mib: { max: number } };
+      nvidia_smi_timestamp_utc_offset_minutes: number;
     };
 
     assert.equal(summary.sampler_stop.forced_count, 1);
@@ -199,6 +202,29 @@ test('resource summary finalizer preserves closeout evidence and target process 
     assert.equal(summary.gpu_routing_checks.ocr_uses_amd_igpu, false);
     assert.equal(summary.gpu_routing_checks.ocr_avoids_nvidia_dgpu, false);
     assert.equal(summary.nvidia_smi_summary.memory_used_mib.max, 1936);
+    assert.equal(summary.nvidia_smi_timestamp_utc_offset_minutes, 480);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('resource summary finalizer rejects timezone offset changes', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cert-prep-resource-timezone-'));
+  try {
+    assert.throws(
+      () =>
+        finalizeResourceSamplingArtifacts({
+          outDir: dir,
+          workspaceRoot: dir,
+          artifacts: {},
+          observe() {
+            assert.fail('offset validation must fail before observation');
+          },
+          nvidiaSmiTimestampUtcOffsetMinutesAtStart: 480,
+          nvidiaSmiTimestampUtcOffsetMinutesAtStop: 540,
+        }),
+      /timestamp UTC offset changed or is unsupported/,
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "suiteId": "public-alpha-b3-v1",
+  "pdfs": [
+    {
+      "logicalId": "jlpt-n1-2023-12",
+      "fileName": "【1】2023年12月N1 真题.pdf",
+      "bytes": 33902567,
+      "sha256": "0295fb5521581649c52c15d1f36218392e4081edca1cf30ec8d0fca49e84dcaa"
+    },
+    {
+      "logicalId": "jlpt-n1-2024-07",
+      "fileName": "【1】2024年07月N1 真题-版本1.pdf",
+      "bytes": 2779223,
+      "sha256": "2b58b33d6937f0e607ac63ee08c1cc3afe3f321ccccf25a8217d472f5ec1ee7c"
+    },
+    {
+      "logicalId": "jlpt-n1-2024-12",
+      "fileName": "【1】2024年12月日语N1真题-版本1.pdf",
+      "bytes": 9103457,
+      "sha256": "ae9f3b12bb8be426b021c507bab25a458442e79e0cd53e993a053997dc471d52"
+    },
+    {
+      "logicalId": "jlpt-n1-2025-07",
+      "fileName": "【1】2025年07月N1 真题.pdf",
+      "bytes": 7652941,
+      "sha256": "ec5f312d5c97ee91b87ec7fcbf1d33b4f4019fca367df376b48c1f4943a744c8"
+    }
+  ]
+}

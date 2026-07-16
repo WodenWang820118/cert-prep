@@ -1,12 +1,21 @@
 import { spawnSync } from 'node:child_process';
-import { closeSync, existsSync, openSync, readSync, statSync } from 'node:fs';
-import { isAbsolute, join, resolve } from 'node:path';
+import {
+  closeSync,
+  existsSync,
+  lstatSync,
+  openSync,
+  readSync,
+  readdirSync,
+  statSync,
+} from 'node:fs';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import {
   parseArgs,
   readJson,
   sha256File,
+  validateAcceptancePdfManifest,
   validateHardwareEvidenceFiles,
   validateHardwareResult,
   validateRecordingProbeContract,
@@ -18,9 +27,20 @@ export async function verifyHardwareEvidence(
   planPath,
   evidenceRoot,
   expectedCandidateId,
-  { ffprobePath, ffprobeSha256, expectedHarnessSha256, probeRecording } = {},
+  {
+    ffprobePath,
+    ffprobeSha256,
+    expectedHarnessSha256,
+    acceptancePdfManifestPath,
+    acceptancePdfManifestSha256,
+    probeRecording,
+  } = {},
 ) {
   const plan = readJson(planPath);
+  const protectedManifest = await validateProtectedAcceptancePdfInputs(
+    acceptancePdfManifestPath,
+    acceptancePdfManifestSha256,
+  );
   const result = validateHardwareResult(
     readJson(resultPath),
     plan,
@@ -33,6 +53,14 @@ export async function verifyHardwareEvidence(
   ) {
     throw new Error(
       'Hardware result was not produced by the pinned acceptance harness.',
+    );
+  }
+  if (
+    result.acceptancePdfManifest.sha256.toLowerCase() !==
+    protectedManifest.sha256
+  ) {
+    throw new Error(
+      'Hardware result acceptance PDF manifest does not match the protected input.',
     );
   }
   await validateHardwareEvidenceFiles(result, resolvedEvidenceRoot);
@@ -89,6 +117,72 @@ export async function verifyHardwareEvidence(
   validateRecordingProbeContract(probeContract, result);
   writeJson(join(resolvedEvidenceRoot, 'recording-probe.json'), probeContract);
   return result;
+}
+
+async function validateProtectedAcceptancePdfInputs(
+  manifestPath,
+  expectedSha256,
+) {
+  if (
+    !isAbsolute(manifestPath ?? '') ||
+    !existsSync(manifestPath) ||
+    !statSync(manifestPath).isFile() ||
+    lstatSync(manifestPath).isSymbolicLink() ||
+    !/^[0-9a-f]{64}$/i.test(expectedSha256 ?? '')
+  ) {
+    throw new Error(
+      'An absolute non-symlink acceptance PDF manifest and pinned SHA-256 are required.',
+    );
+  }
+  const sha256 = await sha256File(manifestPath);
+  if (sha256 !== expectedSha256.toLowerCase()) {
+    throw new Error(
+      'Protected acceptance PDF manifest digest does not match the approved input.',
+    );
+  }
+  let manifest;
+  try {
+    manifest = validateAcceptancePdfManifest(readJson(manifestPath));
+  } catch (error) {
+    throw new Error(
+      `Protected acceptance PDF manifest is invalid: ${error instanceof Error ? error.message : error}`,
+    );
+  }
+  await validateProtectedAcceptancePdfFiles(manifestPath, manifest);
+  return { manifest, sha256 };
+}
+
+async function validateProtectedAcceptancePdfFiles(manifestPath, manifest) {
+  const root = dirname(manifestPath);
+  const expectedNames = new Set(manifest.pdfs.map((pdf) => pdf.fileName));
+  const actualPdfEntries = readdirSync(root, { withFileTypes: true }).filter(
+    (entry) => entry.name.toLowerCase().endsWith('.pdf'),
+  );
+  if (
+    actualPdfEntries.length !== manifest.pdfs.length ||
+    actualPdfEntries.some((entry) => !expectedNames.has(entry.name))
+  ) {
+    throw new Error(
+      'Protected acceptance PDF directory does not contain the exact reviewed set.',
+    );
+  }
+  for (const pdf of manifest.pdfs) {
+    const path = join(root, pdf.fileName);
+    const entry = actualPdfEntries.find((item) => item.name === pdf.fileName);
+    if (
+      !entry?.isFile() ||
+      !existsSync(path) ||
+      lstatSync(path).isSymbolicLink()
+    ) {
+      throw new Error(`Protected acceptance PDF is missing or unsafe: ${pdf.logicalId}.`);
+    }
+    if (statSync(path).size !== pdf.bytes) {
+      throw new Error(`Protected acceptance PDF byte count drifted: ${pdf.logicalId}.`);
+    }
+    if ((await sha256File(path)) !== pdf.sha256) {
+      throw new Error(`Protected acceptance PDF digest drifted: ${pdf.logicalId}.`);
+    }
+  }
 }
 
 async function runFfprobe(recordingPath, ffprobePath, expectedSha256) {
@@ -157,6 +251,9 @@ async function main() {
       ffprobePath: args['ffprobe-path'],
       ffprobeSha256: args['ffprobe-sha256'],
       expectedHarnessSha256: args['harness-sha256'],
+      acceptancePdfManifestPath: args['acceptance-pdf-manifest'],
+      acceptancePdfManifestSha256:
+        args['acceptance-pdf-manifest-sha256'],
     },
   );
   process.stdout.write('Hardware evidence contract passed.\n');

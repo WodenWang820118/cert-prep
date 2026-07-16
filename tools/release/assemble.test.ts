@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   mkdtempSync,
@@ -33,6 +34,165 @@ import {
   writeJson,
 } from './release-lib.ts';
 import { validatePublishingInputs } from './publish-assets.ts';
+
+async function writeHardwareProductionEvidence(hardware, candidateId) {
+  const acceptanceRunId = 'acceptance-run-0001';
+  const artifacts = {
+    windows_summary_json: 'windows-resource-summary.json',
+    windows_counters_csv: 'windows-resource-sampling.csv',
+    windows_dxgi_adapters_json: 'windows-dxgi-adapters.json',
+    nvidia_smi_csv: 'nvidia-smi.csv',
+  };
+  const amdLuid = '0x00000000_0x000136c5';
+  const nvidiaLuid = '0x00000000_0x0001fbc5';
+  const softwareLuid = '0x00000000_0x00000001';
+  const unknownLuid = '0x00000000_0x00000002';
+  const dxgiAdapters = [
+    { luid: amdLuid, adapter_kind: 'amd_igpu' },
+    { luid: nvidiaLuid, adapter_kind: 'nvidia_dgpu' },
+    { luid: softwareLuid, adapter_kind: 'software' },
+    { luid: unknownLuid, adapter_kind: 'unknown' },
+  ];
+  const routing = {
+    windowsml_ocr_process_observed: true,
+    ocr_uses_amd_igpu: true,
+    ocr_avoids_nvidia_dgpu: true,
+    ocr_nvidia_process_memory_max_bytes: 1_048_576,
+    ocr_nvidia_process_memory_gate_bytes: 64 * 1024 * 1024,
+    reasoning_uses_nvidia_dgpu: true,
+    gpu_luid_map_usable: true,
+  };
+  writeJson(join(hardware, artifacts.windows_dxgi_adapters_json), {
+    status: 'completed',
+    generated_at: '2026-07-11T01:00:01.250Z',
+    adapters: dxgiAdapters,
+  });
+  writeJson(join(hardware, artifacts.windows_summary_json), {
+    finalized_at: '2026-07-11T01:00:03.000Z',
+    nvidia_smi_timestamp_utc_offset_minutes: 480,
+    artifacts,
+    dxgi_adapters: dxgiAdapters,
+    named_target_process_gpu_usage: [
+      {
+        pid: 42,
+        luid: amdLuid,
+        name: 'cert-prep-ocr-windowsml-runtime.exe',
+        adapter_kind: 'amd_igpu',
+        metrics: { shared_usage: { max: 8192 } },
+      },
+      {
+        pid: 42,
+        luid: nvidiaLuid,
+        name: 'cert-prep-ocr-windowsml-runtime.exe',
+        adapter_kind: 'nvidia_dgpu',
+        metrics: { dedicated_usage: { max: 1_048_576 } },
+      },
+      {
+        pid: 77,
+        luid: nvidiaLuid,
+        name: 'llama-server.exe',
+        adapter_kind: 'nvidia_dgpu',
+        metrics: { dedicated_usage: { max: 2_147_483_648 } },
+      },
+    ],
+    gpu_routing_checks: routing,
+  });
+  writeFileSync(
+    join(hardware, artifacts.windows_counters_csv),
+    `timestamp,source,path,pid,name,metric,value,unit\n"2026-07-11T01:00:02.000Z","windows_process","Win32_Process","42","cert-prep-ocr-windowsml-runtime.exe","working_set_bytes","1024","bytes"\n"2026-07-11T01:00:02.500Z","windows_process","Win32_Process","77","llama-server.exe","working_set_bytes","2048","bytes"\n"2026-07-11T01:00:03.000Z","windows_gpu_counter","\\\\MSI\\GPU Process Memory(pid_42_luid_${amdLuid}_phys_0)\\Shared Usage","","","\\\\MSI\\GPU Process Memory(pid_42_luid_${amdLuid}_phys_0)\\Shared Usage","8192","raw"\n"2026-07-11T01:00:03.000Z","windows_gpu_counter","\\\\MSI\\GPU Process Memory(pid_42_luid_${nvidiaLuid}_phys_0)\\Dedicated Usage","","","\\\\MSI\\GPU Process Memory(pid_42_luid_${nvidiaLuid}_phys_0)\\Dedicated Usage","1048576","raw"\n"2026-07-11T01:00:03.000Z","windows_gpu_counter","\\\\MSI\\GPU Process Memory(pid_77_luid_${nvidiaLuid}_phys_0)\\Dedicated Usage","","","\\\\MSI\\GPU Process Memory(pid_77_luid_${nvidiaLuid}_phys_0)\\Dedicated Usage","2147483648","raw"\n`,
+  );
+  writeFileSync(
+    join(hardware, artifacts.nvidia_smi_csv),
+    'timestamp, utilization.gpu [%], memory.used [MiB], memory.total [MiB], power.draw [W]\n2026/07/11 09:00:03.000, 40 %, 2048 MiB, 8192 MiB, 20.00 W\n',
+  );
+  writeJson(join(hardware, 'production-summary.json'), {
+    schema_version: 5,
+    status: 'passed',
+    generated_at: '2026-07-11T01:00:03.500Z',
+    provider_policy: 'ollama-only-alpha',
+    policy_model: 'qwen3.5:4b',
+    selected_model: 'qwen3.5:4b',
+    llm_provider: 'ollama',
+    provider_preference: 'ollama',
+    configured_provider: 'ollama',
+    configured_model: 'qwen3.5:4b',
+    effective_model: 'qwen3.5:4b',
+    provider_fallback_reason: null,
+    model_fallback_reason: null,
+    fallback_reason: null,
+    generation_ready_at_start: {
+      captured_at: '2026-07-11T01:00:01.500Z',
+      ready: true,
+      provider_selection: {
+        preference: 'ollama',
+        selected_provider: 'ollama',
+        effective_provider: 'ollama',
+        configured_model: 'qwen3.5:4b',
+        effective_model: 'qwen3.5:4b',
+        fallback_reason: null,
+      },
+      blockers: [],
+    },
+    resources_released_at_end: {
+      captured_at: '2026-07-11T01:00:03.500Z',
+      released: true,
+      pre_close_captured_at: '2026-07-11T01:00:03.000Z',
+      pre_close_release_proven: true,
+      pre_close_stable_empty_snapshots: 2,
+      stable_empty_snapshots: 2,
+      alive_owned_processes: [],
+    },
+    full_exam_question_count: 8,
+    succeeded_jobs: [
+      {
+        configured_provider: 'ollama',
+        effective_provider: 'ollama',
+        configured_model: 'qwen3.5:4b',
+        effective_model: 'qwen3.5:4b',
+        fallback_reason: null,
+        attribution_complete: true,
+      },
+    ],
+    artifacts: {
+      production_summary_json: 'production-summary.json',
+      resource_sampling: artifacts,
+    },
+    gpu_routing_checks: routing,
+    checks: {
+      ollama_provider_exact: true,
+      provider_no_fallback: true,
+      generation_ready_at_start: true,
+      resources_released_at_end: true,
+      full_exam_questions_present: true,
+      windowsml_ocr_process_observed: true,
+      ocr_uses_amd_igpu: true,
+      ocr_avoids_nvidia_dgpu: true,
+      reasoning_uses_nvidia_dgpu: true,
+    },
+  });
+  const boundArtifact = async (path) => ({
+    path,
+    bytes: statSync(join(hardware, path)).size,
+    sha256: await sha256File(join(hardware, path)),
+    candidateId,
+    acceptanceRunId,
+  });
+  return {
+    productionSummary: await boundArtifact('production-summary.json'),
+    gpuTelemetry: {
+      windowsResourceSummary: await boundArtifact(
+        artifacts.windows_summary_json,
+      ),
+      windowsResourceSampling: await boundArtifact(
+        artifacts.windows_counters_csv,
+      ),
+      windowsDxgiAdapters: await boundArtifact(
+        artifacts.windows_dxgi_adapters_json,
+      ),
+      nvidiaSmi: await boundArtifact(artifacts.nvidia_smi_csv),
+    },
+  };
+}
 
 test('candidate assembly proves hybrid runtime shape and writes release documents', async () => {
   const root = mkdtempSync(join(tmpdir(), 'cert-prep-assemble-'));
@@ -130,6 +290,21 @@ test('candidate assembly proves hybrid runtime shape and writes release document
       writeFileSync(join(workspace, file), `${file}\n`);
     }
     mkdirSync(join(workspace, 'tools', 'release'), { recursive: true });
+    const acceptancePdfManifestBytes = readFileSync(
+      join(import.meta.dirname, 'alpha-acceptance-pdf-manifest.json'),
+    );
+    const acceptancePdfManifest = JSON.parse(
+      acceptancePdfManifestBytes.toString('utf8'),
+    );
+    writeFileSync(
+      join(
+        workspace,
+        'tools',
+        'release',
+        'alpha-acceptance-pdf-manifest.json',
+      ),
+      acceptancePdfManifestBytes,
+    );
     const payloadDeclaration = JSON.parse(
       readFileSync(
         join(import.meta.dirname, 'ocr-runtime-payload-declaration.json'),
@@ -148,6 +323,40 @@ test('candidate assembly proves hybrid runtime shape and writes release document
     writeFileSync(
       join(workspace, 'tools', 'release', 'harness.txt'),
       'harness',
+    );
+    for (const harnessFile of [
+      'assemble.ts',
+      'release-lib.ts',
+      'verify-hardware-result.ts',
+    ]) {
+      writeFileSync(
+        join(workspace, 'tools', 'release', harnessFile),
+        readFileSync(join(import.meta.dirname, harnessFile)),
+      );
+    }
+    const resilienceContractPath = join(
+      workspace,
+      'apps',
+      'cert-prep-desktop',
+      'scripts',
+      'packaged-resilience',
+      'evidence-contract.mts',
+    );
+    mkdirSync(join(resilienceContractPath, '..'), { recursive: true });
+    writeFileSync(
+      resilienceContractPath,
+      readFileSync(
+        join(
+          import.meta.dirname,
+          '..',
+          '..',
+          'apps',
+          'cert-prep-desktop',
+          'scripts',
+          'packaged-resilience',
+          'evidence-contract.mts',
+        ),
+      ),
     );
     writeJson(join(inventory, 'node.json'), {
       MIT: [{ name: 'node-dependency', versions: ['1.0.0'], license: 'MIT' }],
@@ -256,6 +465,33 @@ test('candidate assembly proves hybrid runtime shape and writes release document
       ),
       true,
     );
+    assert.equal(
+      candidateIdentity.files.some((identity) =>
+        identity.startsWith(
+          'harness/apps/cert-prep-desktop/scripts/packaged-resilience/evidence-contract.mts:',
+        ),
+      ),
+      true,
+    );
+    for (const [entrypoint, expectedError] of [
+      [
+        'verify-hardware-result.ts',
+        /A pinned hardware harness SHA-256 is required/,
+      ],
+      ['assemble.ts', /--mode must be candidate or finalize/],
+    ]) {
+      const invocation = spawnSync(
+        process.execPath,
+        [join(output, 'harness', 'tools', 'release', entrypoint)],
+        { encoding: 'utf8', windowsHide: true },
+      );
+      assert.equal(invocation.status, 1, invocation.stderr);
+      assert.match(invocation.stderr, expectedError);
+      assert.doesNotMatch(
+        invocation.stderr,
+        /ERR_MODULE_NOT_FOUND|Cannot find module/,
+      );
+    }
     assert.equal(
       readFileSync(join(output, 'release', 'runtimes', backendName), 'utf8'),
       'backend-runtime',
@@ -372,8 +608,24 @@ test('candidate assembly proves hybrid runtime shape and writes release document
       sessionRestartPath,
       buildValidSessionRestartEvidence({ candidate }),
     );
+    const productionEvidence = await writeHardwareProductionEvidence(
+      hardware,
+      result.candidateId,
+    );
+    const acceptancePdfManifestPath = join(
+      hardware,
+      'alpha-acceptance-pdf-manifest.json',
+    );
+    writeFileSync(acceptancePdfManifestPath, acceptancePdfManifestBytes);
+    const acceptancePdfManifestEvidence = {
+      path: 'alpha-acceptance-pdf-manifest.json',
+      bytes: statSync(acceptancePdfManifestPath).size,
+      sha256: await sha256File(acceptancePdfManifestPath),
+      candidateId: result.candidateId,
+      acceptanceRunId: 'acceptance-run-0001',
+    };
     writeJson(join(hardware, 'hardware-result.json'), {
-      schemaVersion: 1,
+      schemaVersion: 2,
       version: plan.version,
       tag: plan.tag,
       commitSha: plan.commitSha,
@@ -400,8 +652,9 @@ test('candidate assembly proves hybrid runtime shape and writes release document
       },
       cancellation,
       processResidueCount: 0,
-      pdfs: Array.from({ length: 4 }, (_, index) => ({
-        name: `pdf-${index + 1}`,
+      acceptancePdfManifest: acceptancePdfManifestEvidence,
+      pdfs: acceptancePdfManifest.pdfs.map((pdf) => ({
+        ...pdf,
         usableQuestions: 1,
         fullExamQuestionCount: 1,
       })),
@@ -411,6 +664,7 @@ test('candidate assembly proves hybrid runtime shape and writes release document
         completedAt: '2026-07-11T01:00:04.000Z',
         completed: true,
       },
+      ...productionEvidence,
       recording: {
         path: 'acceptance.webm',
         captureSource: 'playwright_screencast',
@@ -484,6 +738,23 @@ test('candidate assembly proves hybrid runtime shape and writes release document
     assert.equal(
       finalMetadata.evidence.hardware,
       'passed-cert-prep-alpha-hardware',
+    );
+    assert.equal(
+      finalMetadata.evidence.productionSummarySha256,
+      productionEvidence.productionSummary.sha256,
+    );
+    assert.equal(
+      finalMetadata.evidence.acceptancePdfManifestSha256,
+      acceptancePdfManifestEvidence.sha256,
+    );
+    assert.deepEqual(
+      finalMetadata.evidence.gpuTelemetryReports,
+      Object.fromEntries(
+        Object.entries(productionEvidence.gpuTelemetry).map(([key, record]) => [
+          key,
+          record.sha256,
+        ]),
+      ),
     );
     const finalReleaseRoot = join(finalOutput, 'release');
     const finalPublishArgs = {

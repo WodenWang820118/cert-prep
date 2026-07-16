@@ -12,6 +12,12 @@ The release workflow is intentionally fail-closed. Before dispatching it, config
   canonical tag are serialized;
 - an online self-hosted Windows x64 runner labeled `cert-prep-alpha-hardware`;
 - `ALPHA_HARDWARE_HARNESS` in the hardware environment, pointing to an absolute, provisioned harness path, plus its reviewed `ALPHA_HARDWARE_HARNESS_SHA256`;
+- `ALPHA_ACCEPTANCE_PDF_MANIFEST` in the hardware environment, pointing to an
+  absolute provisioned copy of
+  `tools/release/alpha-acceptance-pdf-manifest.json`, plus its reviewed
+  `ALPHA_ACCEPTANCE_PDF_MANIFEST_SHA256`. The manifest must be colocated with
+  exactly the four PDFs it declares: no PDF may be missing, renamed, duplicated,
+  byte-drifted, digest-drifted, or joined by an extra PDF;
 - an absolute provisioned `ALPHA_FFPROBE_PATH` and reviewed `ALPHA_FFPROBE_SHA256` in the hardware environment;
 - an Ollama installation/model provisioned by the hardware harness.
 
@@ -32,10 +38,16 @@ A separate candidate-bound state marker moves from `ocr-bootstrap` to
 fails.
 
 The candidate ID covers both publishable release files and the exact release
-harness scripts. The hardware harness executable is separately pinned by SHA-256. It
-receives the downloaded candidate root, candidate ID, version, tag, commit SHA,
-harness SHA-256, and output root. It must echo those identities in
-`hardware-result.json` and create the referenced WebM recording. The verifier requires exactly four PDFs, WindowsML OCR, Ollama
+harness scripts, including the reviewed acceptance PDF manifest. The hardware
+harness executable and provisioned manifest are separately pinned by SHA-256.
+The workflow requires the protected manifest and candidate manifest copies to
+have the same pinned digest, copies the verified manifest into hardware
+evidence, and passes the original protected manifest path to the harness and
+verifier so they can enumerate its four colocated PDFs. The harness receives
+the downloaded candidate root, candidate ID, version, tag, commit SHA, harness
+SHA-256, manifest path and SHA-256, and output root. It must echo those
+identities in `hardware-result.json` and create the referenced WebM recording.
+The verifier requires the manifest's exact four PDFs, WindowsML OCR, Ollama
 `qwen3.5:4b` without provider/model fallback, per-PDF usable and Full Exam
 questions, generation readiness/resource release, restart persistence, and zero
 process residue. Cancellation evidence is granular: upload, OCR, draft,

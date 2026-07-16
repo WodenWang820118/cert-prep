@@ -15,6 +15,7 @@ import { basename, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import {
+  ALPHA_ACCEPTANCE_PDF_MANIFEST_FILE,
   LOCAL_NONPUBLISHABLE_PROFILE,
   PUBLIC_UNSIGNED_ALPHA_PROFILE,
   RELEASE_CHANNEL,
@@ -29,6 +30,7 @@ import {
   readJson,
   relativePosix,
   sha256File,
+  validateAcceptancePdfManifest,
   validateCandidateFiles,
   validateHardwareEvidenceFiles,
   validateHardwareResult,
@@ -148,6 +150,24 @@ export async function assembleCandidate(args) {
     join(workspaceRoot, 'tools', 'release'),
     join(harnessRoot, 'tools', 'release'),
   );
+  copyInto(
+    join(
+      workspaceRoot,
+      'apps',
+      'cert-prep-desktop',
+      'scripts',
+      'packaged-resilience',
+      'evidence-contract.mts',
+    ),
+    join(
+      harnessRoot,
+      'apps',
+      'cert-prep-desktop',
+      'scripts',
+      'packaged-resilience',
+      'evidence-contract.mts',
+    ),
+  );
   rmSync(join(harnessRoot, 'tools', 'release', '__pycache__'), {
     recursive: true,
     force: true,
@@ -252,6 +272,24 @@ export async function finalizeRelease(args) {
   );
   assertPublishableReleasePlan(sourcePlan);
   assertCandidateMatchesPlan(candidate, sourcePlan);
+  const candidateAcceptancePdfManifestPath = join(
+    candidateRoot,
+    'harness',
+    'tools',
+    'release',
+    ALPHA_ACCEPTANCE_PDF_MANIFEST_FILE,
+  );
+  if (
+    !existsSync(candidateAcceptancePdfManifestPath) ||
+    !statSync(candidateAcceptancePdfManifestPath).isFile() ||
+    lstatSync(candidateAcceptancePdfManifestPath).isSymbolicLink()
+  ) {
+    throw new Error('Candidate acceptance PDF manifest is missing or unsafe.');
+  }
+  validateAcceptancePdfManifest(readJson(candidateAcceptancePdfManifestPath));
+  const candidateAcceptancePdfManifestSha256 = await sha256File(
+    candidateAcceptancePdfManifestPath,
+  );
   const outputRoot = resolve(args.output);
   const releaseRoot = join(outputRoot, 'release');
   rmSync(outputRoot, { recursive: true, force: true });
@@ -266,6 +304,14 @@ export async function finalizeRelease(args) {
     plan,
     candidate.candidateId,
   );
+  if (
+    hardwareResult.acceptancePdfManifest.sha256.toLowerCase() !==
+    candidateAcceptancePdfManifestSha256
+  ) {
+    throw new Error(
+      'Hardware acceptance PDF manifest does not match the candidate manifest.',
+    );
+  }
   await validateHardwareEvidenceFiles(hardwareResult, hardwareRoot);
   const recordingPath = resolve(hardwareRoot, hardwareResult.recording.path);
   assertWebmHeader(recordingPath);
@@ -281,6 +327,11 @@ export async function finalizeRelease(args) {
   const expectedHardwareFiles = new Set([
     'hardware-result.json',
     'recording-probe.json',
+    hardwareResult.acceptancePdfManifest.path.replaceAll('\\', '/'),
+    hardwareResult.productionSummary.path.replaceAll('\\', '/'),
+    ...Object.values(hardwareResult.gpuTelemetry).map((record) =>
+      record.path.replaceAll('\\', '/'),
+    ),
     hardwareResult.recording.path.replaceAll('\\', '/'),
     hardwareResult.sessionRestart.path.replaceAll('\\', '/'),
     ...Object.values(hardwareResult.cancellation).map((record) =>
@@ -324,6 +375,15 @@ export async function finalizeRelease(args) {
       recordingSha256: hardwareResult.recording.sha256,
       acceptanceRunId: hardwareResult.acceptance.runId,
       hardwareHarnessSha256: hardwareResult.harnessSha256,
+      acceptancePdfManifestSha256:
+        hardwareResult.acceptancePdfManifest.sha256,
+      productionSummarySha256: hardwareResult.productionSummary.sha256,
+      gpuTelemetryReports: Object.fromEntries(
+        Object.entries(hardwareResult.gpuTelemetry).map(([key, record]) => [
+          key,
+          record.sha256,
+        ]),
+      ),
       cancellationReports: Object.fromEntries(
         Object.entries(hardwareResult.cancellation).map(([key, record]) => [
           key,

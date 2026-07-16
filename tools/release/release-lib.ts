@@ -40,6 +40,38 @@ export const HARDWARE_CANCELLATION_CHECKS = [
   'ownedProcessesReleased',
 ];
 
+export const ALPHA_ACCEPTANCE_PDF_MANIFEST_FILE =
+  'alpha-acceptance-pdf-manifest.json';
+export const ALPHA_ACCEPTANCE_PDF_SUITE_ID = 'public-alpha-b3-v1';
+
+const HARDWARE_GPU_TELEMETRY_FILES = {
+  windowsResourceSummary: 'windows-resource-summary.json',
+  windowsResourceSampling: 'windows-resource-sampling.csv',
+  windowsDxgiAdapters: 'windows-dxgi-adapters.json',
+  nvidiaSmi: 'nvidia-smi.csv',
+};
+const HARDWARE_PRODUCTION_SUMMARY_FILE = 'production-summary.json';
+const WINDOWSML_OCR_PROCESS = 'cert-prep-ocr-windowsml-runtime.exe';
+const OLLAMA_REASONING_PROCESSES = new Set([
+  'ollama.exe',
+  'ollama app.exe',
+  'llama-server.exe',
+  'ollama_llama_server.exe',
+]);
+const NVIDIA_OCR_PROCESS_MEMORY_GATE_BYTES = 64 * 1024 * 1024;
+const ACCEPTANCE_PDF_MANIFEST_KEYS = ['pdfs', 'schemaVersion', 'suiteId'];
+const ACCEPTANCE_PDF_IDENTITY_KEYS = [
+  'bytes',
+  'fileName',
+  'logicalId',
+  'sha256',
+];
+const HARDWARE_PDF_RESULT_KEYS = [
+  ...ACCEPTANCE_PDF_IDENTITY_KEYS,
+  'fullExamQuestionCount',
+  'usableQuestions',
+].sort();
+
 export function assertSupportedDistributionPlan(plan) {
   const version = String(plan?.version ?? '');
   const commitSha = String(plan?.commitSha ?? '').toLowerCase();
@@ -1262,6 +1294,50 @@ export function createCycloneDxDocument(
   };
 }
 
+export function validateAcceptancePdfManifest(manifest) {
+  if (
+    !hasExactObjectKeys(manifest, ACCEPTANCE_PDF_MANIFEST_KEYS) ||
+    manifest.schemaVersion !== 1 ||
+    manifest.suiteId !== ALPHA_ACCEPTANCE_PDF_SUITE_ID ||
+    !Array.isArray(manifest.pdfs) ||
+    manifest.pdfs.length !== 4
+  ) {
+    throw new Error('Acceptance PDF manifest schema is invalid.');
+  }
+  const logicalIds = new Set();
+  const fileNames = new Set();
+  const digests = new Set();
+  for (const pdf of manifest.pdfs) {
+    if (
+      !hasExactObjectKeys(pdf, ACCEPTANCE_PDF_IDENTITY_KEYS) ||
+      typeof pdf.logicalId !== 'string' ||
+      pdf.logicalId.trim() !== pdf.logicalId ||
+      pdf.logicalId.length === 0 ||
+      typeof pdf.fileName !== 'string' ||
+      pdf.fileName.trim() !== pdf.fileName ||
+      pdf.fileName.length === 0 ||
+      pdf.fileName.includes('/') ||
+      pdf.fileName.includes('\\') ||
+      basename(pdf.fileName) !== pdf.fileName ||
+      !pdf.fileName.endsWith('.pdf') ||
+      !Number.isSafeInteger(pdf.bytes) ||
+      pdf.bytes <= 0 ||
+      !/^[0-9a-f]{64}$/.test(pdf.sha256 ?? '') ||
+      logicalIds.has(pdf.logicalId) ||
+      fileNames.has(pdf.fileName) ||
+      digests.has(pdf.sha256)
+    ) {
+      throw new Error(
+        'Acceptance PDF manifest entries must have unique exact identities.',
+      );
+    }
+    logicalIds.add(pdf.logicalId);
+    fileNames.add(pdf.fileName);
+    digests.add(pdf.sha256);
+  }
+  return manifest;
+}
+
 export function validateHardwareResult(result, plan, expectedCandidateId) {
   const requiredChecks = {
     candidateShaVerified: true,
@@ -1280,7 +1356,7 @@ export function validateHardwareResult(result, plan, expectedCandidateId) {
     processResidueCount: 0,
   };
   if (
-    result.schemaVersion !== 1 ||
+    result.schemaVersion !== 2 ||
     result.version !== plan.version ||
     result.tag !== plan.tag ||
     result.commitSha !== plan.commitSha ||
@@ -1301,21 +1377,25 @@ export function validateHardwareResult(result, plan, expectedCandidateId) {
       'Hardware evidence must cover exactly four acceptance PDFs.',
     );
   }
-  const pdfNames = new Set(
-    result.pdfs.map((item) => String(item.name ?? '').trim()),
-  );
-  if (pdfNames.has('') || pdfNames.size !== result.pdfs.length) {
-    throw new Error('Hardware evidence must identify four distinct PDFs.');
+  for (const pdf of result.pdfs) {
+    if (
+      !hasExactObjectKeys(pdf, HARDWARE_PDF_RESULT_KEYS) ||
+      !Number.isSafeInteger(pdf.usableQuestions) ||
+      !Number.isSafeInteger(pdf.fullExamQuestionCount)
+    ) {
+      throw new Error('Hardware acceptance PDF result schema is invalid.');
+    }
   }
-  if (
-    !result.pdfs.every(
-      (item) => item.usableQuestions > 0 && item.fullExamQuestionCount > 0,
-    )
-  ) {
-    throw new Error(
-      'Every hardware acceptance PDF must produce usable and Full Exam questions.',
-    );
-  }
+  validateAcceptancePdfManifest({
+    schemaVersion: 1,
+    suiteId: ALPHA_ACCEPTANCE_PDF_SUITE_ID,
+    pdfs: result.pdfs.map(({ logicalId, fileName, bytes, sha256 }) => ({
+      logicalId,
+      fileName,
+      bytes,
+      sha256,
+    })),
+  });
   for (const [key, expected] of Object.entries(requiredChecks)) {
     if (result[key] !== expected) {
       throw new Error(`Hardware evidence check failed: ${key}.`);
@@ -1367,6 +1447,45 @@ export function validateHardwareResult(result, plan, expectedCandidateId) {
     );
   }
   if (
+    String(result.acceptancePdfManifest?.path ?? '').replaceAll('\\', '/') !==
+    ALPHA_ACCEPTANCE_PDF_MANIFEST_FILE
+  ) {
+    throw new Error(
+      'Hardware acceptance PDF manifest must use the exact evidence path.',
+    );
+  }
+  validateBoundHardwareArtifactReference(
+    result.acceptancePdfManifest,
+    ALPHA_ACCEPTANCE_PDF_MANIFEST_FILE,
+    'acceptancePdfManifest',
+    result,
+  );
+  validateBoundHardwareArtifactReference(
+    result.productionSummary,
+    HARDWARE_PRODUCTION_SUMMARY_FILE,
+    'productionSummary',
+    result,
+  );
+  if (
+    !result.gpuTelemetry ||
+    Object.keys(result.gpuTelemetry).length !==
+      Object.keys(HARDWARE_GPU_TELEMETRY_FILES).length
+  ) {
+    throw new Error(
+      'Hardware GPU telemetry must declare the exact required artifacts.',
+    );
+  }
+  for (const [key, fileName] of Object.entries(
+    HARDWARE_GPU_TELEMETRY_FILES,
+  )) {
+    validateBoundHardwareArtifactReference(
+      result.gpuTelemetry[key],
+      fileName,
+      `gpuTelemetry.${key}`,
+      result,
+    );
+  }
+  if (
     typeof result.recording?.path !== 'string' ||
     !result.recording.path.toLowerCase().endsWith('.webm') ||
     result.recording?.captureSource !== 'playwright_screencast' ||
@@ -1383,6 +1502,12 @@ export function validateHardwareResult(result, plan, expectedCandidateId) {
 export async function validateHardwareEvidenceFiles(result, evidenceRoot) {
   const resolvedEvidenceRoot = resolve(evidenceRoot);
   const records = [
+    ['acceptancePdfManifest', result.acceptancePdfManifest],
+    ['productionSummary', result.productionSummary],
+    ...Object.keys(HARDWARE_GPU_TELEMETRY_FILES).map((key) => [
+      `gpuTelemetry.${key}`,
+      result.gpuTelemetry[key],
+    ]),
     ['recording', result.recording],
     ['sessionRestart', result.sessionRestart],
     ...HARDWARE_CANCELLATION_CHECKS.map((key) => [
@@ -1391,20 +1516,27 @@ export async function validateHardwareEvidenceFiles(result, evidenceRoot) {
     ]),
   ];
   const paths = new Set();
+  const resolvedPaths = new Map();
   for (const [key, record] of records) {
     const path = resolveEvidencePath(resolvedEvidenceRoot, record.path, key);
-    const relativePath = relativePosix(resolvedEvidenceRoot, path);
-    if (paths.has(relativePath)) {
+    const canonicalPath = realpathSync(path);
+    const canonicalKey =
+      process.platform === 'win32'
+        ? canonicalPath.toLowerCase()
+        : canonicalPath;
+    const relativePath = relativePosix(resolvedEvidenceRoot, canonicalPath);
+    if (paths.has(canonicalKey)) {
       throw new Error(`Hardware evidence path is reused: ${relativePath}.`);
     }
-    paths.add(relativePath);
+    paths.add(canonicalKey);
+    resolvedPaths.set(key, path);
     if (statSync(path).size !== record.bytes) {
       throw new Error(`Hardware evidence byte count does not match: ${key}.`);
     }
     if ((await sha256File(path)) !== record.sha256.toLowerCase()) {
       throw new Error(`Hardware evidence digest does not match: ${key}.`);
     }
-    if (key !== 'recording') {
+    if (key === 'sessionRestart' || HARDWARE_CANCELLATION_CHECKS.includes(key)) {
       let detail;
       try {
         detail = readJson(path);
@@ -1430,7 +1562,719 @@ export async function validateHardwareEvidenceFiles(result, evidenceRoot) {
       }
     }
   }
+  const acceptancePdfManifest = validateAcceptancePdfManifest(
+    readHardwareJson(
+      resolvedPaths.get('acceptancePdfManifest'),
+      'acceptancePdfManifest',
+    ),
+  );
+  validateHardwarePdfResults(result.pdfs, acceptancePdfManifest);
+  const productionSummary = readHardwareJson(
+    resolvedPaths.get('productionSummary'),
+    'productionSummary',
+  );
+  const windowsResourceSummary = readHardwareJson(
+    resolvedPaths.get('gpuTelemetry.windowsResourceSummary'),
+    'gpuTelemetry.windowsResourceSummary',
+  );
+  const dxgiAdapters = readHardwareJson(
+    resolvedPaths.get('gpuTelemetry.windowsDxgiAdapters'),
+    'gpuTelemetry.windowsDxgiAdapters',
+  );
+  const windowsResourceSampling = readFileSync(
+    resolvedPaths.get('gpuTelemetry.windowsResourceSampling'),
+    'utf8',
+  ).replace(/^\uFEFF/, '');
+  const nvidiaSmi = readFileSync(
+    resolvedPaths.get('gpuTelemetry.nvidiaSmi'),
+    'utf8',
+  ).replace(/^\uFEFF/, '');
+  validateHardwareProductionEvidence({
+    result,
+    productionSummary,
+    windowsResourceSummary,
+    windowsResourceSampling,
+    dxgiAdapters,
+    nvidiaSmi,
+  });
   return result;
+}
+
+function validateHardwarePdfResults(results, manifest) {
+  const expectedById = new Map(
+    manifest.pdfs.map((pdf) => [pdf.logicalId, pdf]),
+  );
+  for (const result of results) {
+    const expected = expectedById.get(result.logicalId);
+    if (
+      !expected ||
+      result.fileName !== expected.fileName ||
+      result.bytes !== expected.bytes ||
+      result.sha256 !== expected.sha256
+    ) {
+      throw new Error(
+        'Hardware acceptance PDF results do not match the reviewed manifest exact set.',
+      );
+    }
+  }
+  if (
+    !results.every(
+      (item) => item.usableQuestions > 0 && item.fullExamQuestionCount > 0,
+    )
+  ) {
+    throw new Error(
+      'Every hardware acceptance PDF must produce usable and Full Exam questions.',
+    );
+  }
+}
+
+function hasExactObjectKeys(value, expectedKeys) {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    Object.keys(value).sort().join('\0') === [...expectedKeys].sort().join('\0')
+  );
+}
+
+function validateBoundHardwareArtifactReference(
+  record,
+  expectedFileName,
+  label,
+  result,
+) {
+  const normalizedPath = String(record?.path ?? '').replaceAll('\\', '/');
+  if (
+    !normalizedPath ||
+    normalizedPath.split('/').at(-1)?.toLowerCase() !== expectedFileName ||
+    !Number.isInteger(record?.bytes) ||
+    record.bytes <= 0 ||
+    !/^[0-9a-f]{64}$/i.test(record?.sha256 ?? '') ||
+    record.candidateId !== result.candidateId ||
+    record.acceptanceRunId !== result.acceptance?.runId
+  ) {
+    throw new Error(
+      `Hardware evidence artifact reference is invalid or identity-mismatched: ${label}.`,
+    );
+  }
+}
+
+function readHardwareJson(path, label) {
+  try {
+    return readJson(path);
+  } catch {
+    throw new Error(`Hardware evidence artifact is not JSON: ${label}.`);
+  }
+}
+
+function validateHardwareProductionEvidence({
+  result,
+  productionSummary,
+  windowsResourceSummary,
+  windowsResourceSampling,
+  dxgiAdapters,
+  nvidiaSmi,
+}) {
+  const acceptanceWindow = hardwareAcceptanceWindow(result);
+  validateTimestampWithinHardwareAcceptance(
+    productionSummary.generated_at,
+    acceptanceWindow,
+    'productionSummary.generated_at',
+  );
+  validateTimestampWithinHardwareAcceptance(
+    windowsResourceSummary.finalized_at,
+    acceptanceWindow,
+    'gpuTelemetry.windowsResourceSummary.finalized_at',
+  );
+  validateTimestampWithinHardwareAcceptance(
+    dxgiAdapters.generated_at,
+    acceptanceWindow,
+    'gpuTelemetry.windowsDxgiAdapters.generated_at',
+  );
+  if (
+    productionSummary.schema_version !== 5 ||
+    productionSummary.status !== 'passed' ||
+    productionSummary.provider_policy !== 'ollama-only-alpha' ||
+    productionSummary.provider_preference !== 'ollama' ||
+    productionSummary.configured_provider !== 'ollama' ||
+    productionSummary.llm_provider !== 'ollama' ||
+    productionSummary.policy_model !== 'qwen3.5:4b' ||
+    productionSummary.selected_model !== 'qwen3.5:4b' ||
+    productionSummary.configured_model !== 'qwen3.5:4b' ||
+    productionSummary.effective_model !== 'qwen3.5:4b' ||
+    productionSummary.provider_fallback_reason !== null ||
+    productionSummary.model_fallback_reason !== null ||
+    productionSummary.fallback_reason !== null ||
+    !Number.isInteger(productionSummary.full_exam_question_count) ||
+    productionSummary.full_exam_question_count <= 0
+  ) {
+    throw new Error(
+      'Hardware production summary does not prove the exact Ollama alpha contract.',
+    );
+  }
+  validateGenerationReadiness(
+    productionSummary.generation_ready_at_start,
+    acceptanceWindow,
+  );
+  validateResourceRelease(
+    productionSummary.resources_released_at_end,
+    acceptanceWindow,
+  );
+  const requiredChecks = [
+    'ollama_provider_exact',
+    'provider_no_fallback',
+    'generation_ready_at_start',
+    'resources_released_at_end',
+    'full_exam_questions_present',
+  ];
+  if (
+    !requiredChecks.every(
+      (key) => productionSummary.checks?.[key] === true,
+    ) ||
+    !Array.isArray(productionSummary.succeeded_jobs) ||
+    productionSummary.succeeded_jobs.length === 0 ||
+    !productionSummary.succeeded_jobs.every(
+      (job) =>
+        job?.configured_provider === 'ollama' &&
+        job.effective_provider === 'ollama' &&
+        job.configured_model === 'qwen3.5:4b' &&
+        job.effective_model === 'qwen3.5:4b' &&
+        job.fallback_reason === null &&
+        job.attribution_complete === true,
+    )
+  ) {
+    throw new Error(
+      'Hardware production summary attribution or release checks are incomplete.',
+    );
+  }
+  validateTelemetryArtifactDeclarations(
+    productionSummary.artifacts?.resource_sampling,
+    'productionSummary.artifacts.resource_sampling',
+  );
+  validateTelemetryArtifactDeclarations(
+    windowsResourceSummary.artifacts,
+    'gpuTelemetry.windowsResourceSummary.artifacts',
+  );
+  const adaptersByLuid = validateHardwareDxgiAdapters(dxgiAdapters);
+  const rawGpuEvidence = deriveHardwareGpuRoutingFromWindowsCsv(
+    windowsResourceSampling,
+    adaptersByLuid,
+    acceptanceWindow,
+  );
+  validateNvidiaTelemetryCsv(
+    nvidiaSmi,
+    acceptanceWindow,
+    validateNvidiaSmiTimestampUtcOffsetMinutes(
+      windowsResourceSummary.nvidia_smi_timestamp_utc_offset_minutes,
+    ),
+  );
+  const summaryGpuEvidence = deriveHardwareGpuRoutingFromResourceSummary(
+    windowsResourceSummary,
+    adaptersByLuid,
+  );
+  assertHardwareGpuUsagesMatch(rawGpuEvidence.usages, summaryGpuEvidence.usages);
+  assertHardwareGpuRouting(
+    summaryGpuEvidence.routing,
+    rawGpuEvidence.routing,
+    'gpuTelemetry.windowsResourceSummary.named_target_process_gpu_usage',
+  );
+  const routing = rawGpuEvidence.routing;
+  assertHardwareGpuRouting(
+    windowsResourceSummary.gpu_routing_checks,
+    routing,
+    'gpuTelemetry.windowsResourceSummary.gpu_routing_checks',
+  );
+  assertHardwareGpuRouting(
+    productionSummary.gpu_routing_checks,
+    routing,
+    'productionSummary.gpu_routing_checks',
+  );
+  assertHardwareGpuRoutingChecks(
+    productionSummary.checks,
+    routing,
+    'productionSummary.checks',
+  );
+}
+
+function hardwareAcceptanceWindow(result) {
+  return {
+    startedAt: Date.parse(result.acceptance.startedAt),
+    completedAt: Date.parse(result.acceptance.completedAt),
+  };
+}
+
+function validateTimestampWithinHardwareAcceptance(value, window, label) {
+  const timestamp = Date.parse(String(value ?? ''));
+  if (
+    !Number.isFinite(timestamp) ||
+    timestamp < window.startedAt ||
+    timestamp > window.completedAt
+  ) {
+    throw new Error(`Hardware evidence timestamp is stale or invalid: ${label}.`);
+  }
+  return timestamp;
+}
+
+function validateGenerationReadiness(snapshot, window) {
+  const selection = snapshot?.provider_selection;
+  validateTimestampWithinHardwareAcceptance(
+    snapshot?.captured_at,
+    window,
+    'productionSummary.generation_ready_at_start.captured_at',
+  );
+  if (
+    snapshot?.ready !== true ||
+    !Array.isArray(snapshot.blockers) ||
+    snapshot.blockers.length !== 0 ||
+    selection?.preference !== 'ollama' ||
+    selection.selected_provider !== 'ollama' ||
+    selection.effective_provider !== 'ollama' ||
+    selection.configured_model !== 'qwen3.5:4b' ||
+    selection.effective_model !== 'qwen3.5:4b' ||
+    selection.fallback_reason !== null
+  ) {
+    throw new Error(
+      'Hardware production summary generation readiness is invalid.',
+    );
+  }
+}
+
+function validateResourceRelease(snapshot, window) {
+  const preClose = validateTimestampWithinHardwareAcceptance(
+    snapshot?.pre_close_captured_at,
+    window,
+    'productionSummary.resources_released_at_end.pre_close_captured_at',
+  );
+  const captured = validateTimestampWithinHardwareAcceptance(
+    snapshot?.captured_at,
+    window,
+    'productionSummary.resources_released_at_end.captured_at',
+  );
+  if (
+    snapshot?.released !== true ||
+    snapshot.pre_close_release_proven !== true ||
+    snapshot.pre_close_stable_empty_snapshots < 2 ||
+    snapshot.stable_empty_snapshots < 2 ||
+    !Array.isArray(snapshot.alive_owned_processes) ||
+    snapshot.alive_owned_processes.length !== 0 ||
+    preClose > captured
+  ) {
+    throw new Error(
+      'Hardware production summary resource release evidence is invalid.',
+    );
+  }
+}
+
+function validateTelemetryArtifactDeclarations(artifacts, label) {
+  for (const [key, expectedFileName] of Object.entries(
+    HARDWARE_GPU_TELEMETRY_FILES,
+  )) {
+    const artifactKey = {
+      windowsResourceSummary: 'windows_summary_json',
+      windowsResourceSampling: 'windows_counters_csv',
+      windowsDxgiAdapters: 'windows_dxgi_adapters_json',
+      nvidiaSmi: 'nvidia_smi_csv',
+    }[key];
+    const fileName = String(artifacts?.[artifactKey] ?? '')
+      .replaceAll('\\', '/')
+      .split('/')
+      .at(-1)
+      ?.toLowerCase();
+    if (fileName !== expectedFileName) {
+      throw new Error(`Hardware telemetry declaration is invalid: ${label}.`);
+    }
+  }
+}
+
+function parseStrictCsv(csv, label) {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let quoted = false;
+  const input = String(csv).replace(/^\uFEFF/, '');
+  for (let index = 0; index < input.length; index += 1) {
+    const character = input[index];
+    if (quoted) {
+      if (character === '"') {
+        if (input[index + 1] === '"') {
+          field += '"';
+          index += 1;
+        } else {
+          quoted = false;
+        }
+      } else {
+        field += character;
+      }
+      continue;
+    }
+    if (character === '"') {
+      if (field.length > 0) {
+        throw new Error(`Hardware ${label} CSV has an invalid quote.`);
+      }
+      quoted = true;
+    } else if (character === ',') {
+      row.push(field);
+      field = '';
+    } else if (character === '\r' || character === '\n') {
+      if (character === '\r' && input[index + 1] === '\n') index += 1;
+      row.push(field);
+      field = '';
+      if (row.some((value) => value.length > 0)) rows.push(row);
+      row = [];
+    } else {
+      field += character;
+    }
+  }
+  if (quoted) {
+    throw new Error(`Hardware ${label} CSV has an unterminated quote.`);
+  }
+  row.push(field);
+  if (row.some((value) => value.length > 0)) rows.push(row);
+  if (rows.length < 2) {
+    throw new Error(`Hardware ${label} CSV is incomplete.`);
+  }
+  const width = rows[0].length;
+  if (rows.some((value) => value.length !== width)) {
+    throw new Error(`Hardware ${label} CSV has inconsistent columns.`);
+  }
+  return rows;
+}
+
+function deriveHardwareGpuRoutingFromWindowsCsv(csv, adaptersByLuid, window) {
+  const rows = parseStrictCsv(csv, 'Windows GPU telemetry');
+  const expectedHeader = [
+    'timestamp',
+    'source',
+    'path',
+    'pid',
+    'name',
+    'metric',
+    'value',
+    'unit',
+  ];
+  const header = rows[0].map((value) => value.trim().toLowerCase());
+  if (header.join('\0') !== expectedHeader.join('\0')) {
+    throw new Error('Hardware Windows GPU telemetry CSV header is invalid.');
+  }
+  const records = rows.slice(1).map((values) =>
+    Object.fromEntries(expectedHeader.map((key, index) => [key, values[index]])),
+  );
+  const processNamesByPid = new Map();
+  for (const record of records) {
+    validateTimestampWithinHardwareAcceptance(
+      record.timestamp,
+      window,
+      'gpuTelemetry.windowsResourceSampling.timestamp',
+    );
+    if (record.source.toLowerCase() !== 'windows_process') continue;
+    const pid = Number(record.pid);
+    const name = record.name.trim().toLowerCase();
+    if (!Number.isInteger(pid) || pid <= 0 || !name) {
+      throw new Error('Hardware Windows process telemetry identity is invalid.');
+    }
+    const priorName = processNamesByPid.get(pid);
+    if (priorName && priorName !== name) {
+      throw new Error('Hardware Windows process telemetry PID is ambiguous.');
+    }
+    processNamesByPid.set(pid, name);
+  }
+  const usagesByIdentity = new Map();
+  const processMemoryPattern =
+    /GPU Process Memory\(pid_(\d+)_luid_(0x[0-9a-f]+_0x[0-9a-f]+)_phys_\d+\)\\([^\\]+)$/i;
+  for (const record of records) {
+    if (record.source.toLowerCase() !== 'windows_gpu_counter') continue;
+    const match = record.path.match(processMemoryPattern);
+    if (!match) continue;
+    const pid = Number(match[1]);
+    const luid = match[2].toLowerCase();
+    const name = processNamesByPid.get(pid);
+    if (!name) continue;
+    const adapterKind = adaptersByLuid.get(luid);
+    if (!adapterKind) {
+      throw new Error('Hardware raw GPU telemetry has an unmapped LUID.');
+    }
+    const metric = normalizeHardwareGpuMetric(match[3]);
+    const value = Number(record.value);
+    if (!metric || !Number.isFinite(value) || value < 0) {
+      throw new Error('Hardware raw GPU process-memory telemetry is invalid.');
+    }
+    const key = `${pid}\0${luid}\0${name}`;
+    const usage = usagesByIdentity.get(key) ?? {
+      pid,
+      luid,
+      name,
+      adapterKind,
+      metrics: {},
+    };
+    usage.metrics[metric] = Math.max(usage.metrics[metric] ?? 0, value);
+    usagesByIdentity.set(key, usage);
+  }
+  const usages = [...usagesByIdentity.values()];
+  if (
+    !usages.some((usage) => usage.name === WINDOWSML_OCR_PROCESS) ||
+    !usages.some((usage) => OLLAMA_REASONING_PROCESSES.has(usage.name))
+  ) {
+    throw new Error('Hardware Windows GPU telemetry CSV is incomplete.');
+  }
+  return { usages, routing: hardwareGpuRoutingFromUsages(usages) };
+}
+
+function normalizeHardwareGpuMetric(value) {
+  return {
+    'dedicated usage': 'dedicated_usage',
+    'shared usage': 'shared_usage',
+    'total committed': 'total_committed',
+  }[String(value).trim().toLowerCase()];
+}
+
+function validateNvidiaTelemetryCsv(csv, window, utcOffsetMinutes) {
+  const rows = parseStrictCsv(csv, 'Nvidia telemetry');
+  const expectedHeader = [
+    'timestamp',
+    'utilization.gpu [%]',
+    'memory.used [mib]',
+    'memory.total [mib]',
+    'power.draw [w]',
+  ];
+  const header = rows[0].map((value) => value.trim().toLowerCase());
+  if (header.join('\0') !== expectedHeader.join('\0')) {
+    throw new Error('Hardware Nvidia telemetry CSV header is invalid.');
+  }
+  const naiveTimestamps = rows.slice(1).map((row) =>
+    parseNaiveNvidiaTimestamp(row[0]),
+  );
+  if (
+    !naiveTimestamps.every((naiveTimestamp) => {
+      const timestamp = naiveTimestamp - utcOffsetMinutes * 60_000;
+      return timestamp >= window.startedAt && timestamp <= window.completedAt;
+    })
+  ) {
+    throw new Error('Hardware Nvidia telemetry timestamps are stale.');
+  }
+}
+
+function validateNvidiaSmiTimestampUtcOffsetMinutes(value) {
+  if (
+    !Number.isSafeInteger(value) ||
+    value < -14 * 60 ||
+    value > 14 * 60 ||
+    value % 15 !== 0
+  ) {
+    throw new Error(
+      'Hardware Windows resource summary Nvidia timestamp UTC offset is invalid.',
+    );
+  }
+  return value;
+}
+
+function parseNaiveNvidiaTimestamp(value) {
+  const match = String(value).trim().match(
+    /^(\d{4})\/(\d{2})\/(\d{2}) (\d{2}):(\d{2}):(\d{2})(?:\.(\d{3}))?$/,
+  );
+  if (!match) {
+    throw new Error('Hardware Nvidia telemetry timestamp is invalid.');
+  }
+  const parts = match.slice(1, 7).map(Number);
+  const milliseconds = Number(match[7] ?? 0);
+  const timestamp = Date.UTC(
+    parts[0],
+    parts[1] - 1,
+    parts[2],
+    parts[3],
+    parts[4],
+    parts[5],
+    milliseconds,
+  );
+  const date = new Date(timestamp);
+  if (
+    date.getUTCFullYear() !== parts[0] ||
+    date.getUTCMonth() !== parts[1] - 1 ||
+    date.getUTCDate() !== parts[2] ||
+    date.getUTCHours() !== parts[3] ||
+    date.getUTCMinutes() !== parts[4] ||
+    date.getUTCSeconds() !== parts[5]
+  ) {
+    throw new Error('Hardware Nvidia telemetry timestamp is invalid.');
+  }
+  return timestamp;
+}
+
+function validateHardwareDxgiAdapters(dxgiPayload) {
+  if (
+    dxgiPayload?.status !== 'completed' ||
+    !Array.isArray(dxgiPayload.adapters)
+  ) {
+    throw new Error('Hardware GPU telemetry records are incomplete.');
+  }
+  const adaptersByLuid = new Map();
+  for (const adapter of dxgiPayload.adapters) {
+    const luid = String(adapter?.luid ?? '').toLowerCase();
+    if (
+      !luid ||
+      adaptersByLuid.has(luid) ||
+      typeof adapter?.adapter_kind !== 'string' ||
+      adapter.adapter_kind.trim().length === 0
+    ) {
+      throw new Error('Hardware DXGI adapter identity is invalid.');
+    }
+    adaptersByLuid.set(luid, adapter.adapter_kind);
+  }
+  const requiredKinds = new Set(adaptersByLuid.values());
+  if (!requiredKinds.has('amd_igpu') || !requiredKinds.has('nvidia_dgpu')) {
+    throw new Error('Hardware DXGI telemetry lacks required AMD/Nvidia adapters.');
+  }
+  return adaptersByLuid;
+}
+
+function deriveHardwareGpuRoutingFromResourceSummary(
+  resourceSummary,
+  adaptersByLuid,
+) {
+  if (!Array.isArray(resourceSummary.named_target_process_gpu_usage)) {
+    throw new Error('Hardware GPU telemetry records are incomplete.');
+  }
+  validateEmbeddedDxgiAdapters(resourceSummary.dxgi_adapters, adaptersByLuid);
+  const usages = resourceSummary.named_target_process_gpu_usage.map((usage) => {
+    const luid = String(usage?.luid ?? '').toLowerCase();
+    const adapterKind = adaptersByLuid.get(luid);
+    const pid = Number(usage?.pid);
+    if (
+      !adapterKind ||
+      !Number.isInteger(pid) ||
+      pid <= 0 ||
+      typeof usage?.name !== 'string' ||
+      (usage.adapter_kind !== undefined && usage.adapter_kind !== adapterKind)
+    ) {
+      throw new Error('Hardware process GPU telemetry has an unmapped identity.');
+    }
+    return {
+      pid,
+      luid,
+      name: usage.name.toLowerCase(),
+      adapterKind,
+      metrics: Object.fromEntries(
+        ['dedicated_usage', 'shared_usage', 'total_committed']
+          .filter((name) => usage.metrics?.[name]?.max !== undefined)
+          .map((name) => [name, usage.metrics[name].max]),
+      ),
+    };
+  });
+  return { usages, routing: hardwareGpuRoutingFromUsages(usages) };
+}
+
+function hardwareGpuRoutingFromUsages(usages) {
+  const ocrUsage = usages.filter((usage) => usage.name === WINDOWSML_OCR_PROCESS);
+  const reasoningUsage = usages.filter((usage) =>
+    OLLAMA_REASONING_PROCESSES.has(usage.name),
+  );
+  const ocrNvidiaBytes = Math.max(
+    0,
+    ...ocrUsage
+      .filter((usage) => usage.adapterKind === 'nvidia_dgpu')
+      .map((usage) => maxHardwareProcessGpuBytes(usage.metrics)),
+  );
+  return {
+    windowsml_ocr_process_observed: ocrUsage.length > 0,
+    ocr_uses_amd_igpu: ocrUsage.some(
+      (usage) =>
+        usage.adapterKind === 'amd_igpu' &&
+        maxHardwareProcessGpuBytes(usage.metrics) > 0,
+    ),
+    ocr_avoids_nvidia_dgpu:
+      ocrUsage.length > 0 &&
+      ocrNvidiaBytes <= NVIDIA_OCR_PROCESS_MEMORY_GATE_BYTES,
+    ocr_nvidia_process_memory_max_bytes: ocrNvidiaBytes,
+    ocr_nvidia_process_memory_gate_bytes:
+      NVIDIA_OCR_PROCESS_MEMORY_GATE_BYTES,
+    reasoning_uses_nvidia_dgpu: reasoningUsage.some(
+      (usage) =>
+        usage.adapterKind === 'nvidia_dgpu' &&
+        maxHardwareProcessGpuBytes(usage.metrics) > 0,
+    ),
+    gpu_luid_map_usable: usages.length > 0,
+  };
+}
+
+function assertHardwareGpuUsagesMatch(rawUsages, summaryUsages) {
+  const canonical = (usages) =>
+    usages
+      .map((usage) => ({
+        pid: usage.pid,
+        luid: usage.luid,
+        name: usage.name,
+        adapterKind: usage.adapterKind,
+        metrics: Object.fromEntries(
+          Object.entries(usage.metrics)
+            .filter(([, value]) => Number.isFinite(value))
+            .sort(([left], [right]) => left.localeCompare(right)),
+        ),
+      }))
+      .sort((left, right) =>
+        `${left.pid}\0${left.luid}\0${left.name}`.localeCompare(
+          `${right.pid}\0${right.luid}\0${right.name}`,
+        ),
+      );
+  if (JSON.stringify(canonical(rawUsages)) !== JSON.stringify(canonical(summaryUsages))) {
+    throw new Error(
+      'Hardware resource summary detailed GPU usage does not match raw Windows GPU telemetry.',
+    );
+  }
+}
+
+function validateEmbeddedDxgiAdapters(adapters, adaptersByLuid) {
+  if (!Array.isArray(adapters) || adapters.length !== adaptersByLuid.size) {
+    throw new Error('Hardware resource summary DXGI mapping does not match.');
+  }
+  for (const adapter of adapters) {
+    if (
+      adaptersByLuid.get(String(adapter?.luid ?? '').toLowerCase()) !==
+      adapter?.adapter_kind
+    ) {
+      throw new Error('Hardware resource summary DXGI mapping does not match.');
+    }
+  }
+}
+
+function maxHardwareProcessGpuBytes(metrics) {
+  let maximum = 0;
+  for (const name of ['dedicated_usage', 'shared_usage', 'total_committed']) {
+    const value = metrics?.[name]?.max ?? metrics?.[name];
+    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+      maximum = Math.max(maximum, value);
+    }
+  }
+  return maximum;
+}
+
+function assertHardwareGpuRouting(summary, routing, label) {
+  for (const [key, expected] of Object.entries(routing)) {
+    if (summary?.[key] !== expected) {
+      throw new Error(`Hardware GPU routing evidence mismatch: ${label}.${key}.`);
+    }
+  }
+  for (const required of [
+    'ocr_uses_amd_igpu',
+    'ocr_avoids_nvidia_dgpu',
+    'reasoning_uses_nvidia_dgpu',
+    'gpu_luid_map_usable',
+  ]) {
+    if (routing[required] !== true) {
+      throw new Error(`Hardware GPU routing evidence failed: ${required}.`);
+    }
+  }
+}
+
+function assertHardwareGpuRoutingChecks(summary, routing, label) {
+  for (const key of [
+    'windowsml_ocr_process_observed',
+    'ocr_uses_amd_igpu',
+    'ocr_avoids_nvidia_dgpu',
+    'reasoning_uses_nvidia_dgpu',
+  ]) {
+    if (summary?.[key] !== routing[key] || routing[key] !== true) {
+      throw new Error(`Hardware GPU routing evidence mismatch: ${label}.${key}.`);
+    }
+  }
 }
 
 export function validateRecordingProbeContract(probe, result) {

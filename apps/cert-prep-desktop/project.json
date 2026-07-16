@@ -217,7 +217,8 @@
       "inputs": [
         "default",
         "{workspaceRoot}/tools/release/**",
-        "{workspaceRoot}/.github/workflows/release-alpha.yml"
+        "{workspaceRoot}/.github/workflows/release-alpha.yml",
+        "{workspaceRoot}/.gitattributes"
       ],
       "options": {
         "commands": [

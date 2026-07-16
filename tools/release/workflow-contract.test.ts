@@ -8,6 +8,10 @@ const workflowPath = resolve(
   '../../.github/workflows/release-alpha.yml',
 );
 const workflow = readFileSync(workflowPath, 'utf8');
+const gitAttributes = readFileSync(
+  resolve(import.meta.dirname, '../../.gitattributes'),
+  'utf8',
+);
 const cleanInstall = readFileSync(
   resolve(import.meta.dirname, 'clean-install.ps1'),
   'utf8',
@@ -100,6 +104,13 @@ test('release JavaScript commands use Node 24 native TypeScript entrypoints', ()
   }
 });
 
+test('acceptance PDF manifest has checkout-stable LF bytes', () => {
+  assert.match(
+    gitAttributes,
+    /^tools\/release\/alpha-acceptance-pdf-manifest\.json text eol=lf$/m,
+  );
+});
+
 test('Windows quality and candidate builds run through pnpm Nx', () => {
   assert.match(workflow, /pnpm nx run-many -t lint test/);
   assert.match(workflow, /pnpm nx run cert-prep-desktop:typecheck-scripts/);
@@ -143,6 +154,41 @@ test('hardware gate is protected, labeled and consumes no checkout', () => {
   assert.match(body, /ALPHA_HARDWARE_HARNESS_SHA256/);
   assert.match(body, /Get-FileHash[\s\S]*ALPHA_HARDWARE_HARNESS/);
   assert.match(body, /--harness-sha256/);
+  assert.match(body, /ALPHA_ACCEPTANCE_PDF_MANIFEST:/);
+  assert.match(body, /ALPHA_ACCEPTANCE_PDF_MANIFEST_SHA256:/);
+  assert.match(
+    body,
+    /IsPathFullyQualified\(\$env:ALPHA_ACCEPTANCE_PDF_MANIFEST\)/,
+  );
+  assert.match(
+    body,
+    /Test-Path -LiteralPath \$env:ALPHA_ACCEPTANCE_PDF_MANIFEST -PathType Leaf/,
+  );
+  assert.match(
+    body,
+    /candidate\/harness\/tools\/release\/alpha-acceptance-pdf-manifest\.json/,
+  );
+  assert.match(
+    body,
+    /\$evidenceAcceptancePdfManifest = 'hardware-evidence\/alpha-acceptance-pdf-manifest\.json'/,
+  );
+  assert.match(
+    body,
+    /Copy-Item[\s\S]*-Destination \$evidenceAcceptancePdfManifest/,
+  );
+  assert.ok(
+    body.indexOf('Copy-Item -LiteralPath $acceptancePdfManifestPath') >
+      body.indexOf('Hardware harness failed with exit code'),
+    'the protected manifest copy must happen after the harness finishes so an output-root reset cannot delete it',
+  );
+  assert.equal(
+    (body.match(/--acceptance-pdf-manifest(?=\s)/g) ?? []).length,
+    2,
+  );
+  assert.equal(
+    (body.match(/--acceptance-pdf-manifest-sha256(?=\s)/g) ?? []).length,
+    2,
+  );
   assert.match(body, /ALPHA_FFPROBE_PATH/);
   assert.match(body, /ALPHA_FFPROBE_SHA256/);
   assert.match(body, /--ffprobe-path/);

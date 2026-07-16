@@ -21,13 +21,22 @@ export function finalizeResourceSamplingArtifacts({
   artifacts,
   observe,
   samplerStopSummary = null,
+  nvidiaSmiTimestampUtcOffsetMinutesAtStart,
+  nvidiaSmiTimestampUtcOffsetMinutesAtStop,
 }: {
   readonly outDir: string;
   readonly workspaceRoot: string;
   readonly artifacts: ResourceSamplingArtifacts;
   readonly observe: (message: string) => void;
   readonly samplerStopSummary?: ResourceSamplerStopSummary | null;
+  readonly nvidiaSmiTimestampUtcOffsetMinutesAtStart: number;
+  readonly nvidiaSmiTimestampUtcOffsetMinutesAtStop: number;
 }): void {
+  const nvidiaSmiTimestampUtcOffsetMinutes =
+    validateNvidiaSmiTimestampUtcOffsetMinutes(
+      nvidiaSmiTimestampUtcOffsetMinutesAtStart,
+      nvidiaSmiTimestampUtcOffsetMinutesAtStop,
+    );
   const summaryPath = join(outDir, 'windows-resource-summary.json');
   const windowsCsvPath = join(outDir, 'windows-resource-sampling.csv');
   const nvidiaCsvPath = join(outDir, 'nvidia-smi.csv');
@@ -48,6 +57,8 @@ export function finalizeResourceSamplingArtifacts({
       'Windows GPU counters expose adapter LUIDs. DXGI adapter metadata maps those runtime LUIDs to AMD/Nvidia adapter names when available.',
     artifacts,
     sampler_stop: samplerStopSummary,
+    nvidia_smi_timestamp_utc_offset_minutes:
+      nvidiaSmiTimestampUtcOffsetMinutes,
     dxgi_adapters: dxgiAdapters,
     gpu_luid_map_status: gpuLuidMapStatus(windowsResourceSummary, dxgiAdapters),
     unmapped_gpu_luids: unmappedGpuLuids(windowsResourceSummary, dxgiAdapters),
@@ -64,4 +75,22 @@ export function finalizeResourceSamplingArtifacts({
   } catch (error) {
     observe(`resource summary finalize failed: ${errorMessage(error)}`);
   }
+}
+
+function validateNvidiaSmiTimestampUtcOffsetMinutes(
+  startOffsetMinutes: number,
+  stopOffsetMinutes: number,
+): number {
+  if (
+    !Number.isSafeInteger(startOffsetMinutes) ||
+    startOffsetMinutes < -14 * 60 ||
+    startOffsetMinutes > 14 * 60 ||
+    startOffsetMinutes % 15 !== 0 ||
+    stopOffsetMinutes !== startOffsetMinutes
+  ) {
+    throw new Error(
+      'Nvidia SMI timestamp UTC offset changed or is unsupported for this sampling run.',
+    );
+  }
+  return startOffsetMinutes;
 }
