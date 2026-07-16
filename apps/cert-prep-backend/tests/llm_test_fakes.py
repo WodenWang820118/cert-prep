@@ -30,20 +30,11 @@ class FakeProfileInstaller:
         self,
         profile,
         events: list[tuple[object, ...]],
-        *,
-        fallback_profiles=(),
     ) -> None:
         self.profile = profile
         self.model = profile.local_model
-        self.fallback_profiles = tuple(fallback_profiles)
         self._events = events
-        self._events.append(
-            (
-                "init",
-                profile.profile_id,
-                tuple(profile.profile_id for profile in self.fallback_profiles),
-            )
-        )
+        self._events.append(("init", profile.profile_id))
 
     def requirement(self) -> RuntimeRequirementSnapshot:
         return RuntimeRequirementSnapshot(
@@ -59,13 +50,7 @@ class FakeProfileInstaller:
         return None
 
     def install(self, progress) -> RuntimeInstallationStatus:
-        self._events.append(
-            (
-                "install",
-                self.model,
-                tuple(profile.local_model for profile in self.fallback_profiles),
-            )
-        )
+        self._events.append(("install", self.model))
         progress(RuntimeInstallProgress("created profile model", completed=100, total=100))
         return RuntimeInstallationStatus.SUCCEEDED
 

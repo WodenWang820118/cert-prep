@@ -24,9 +24,6 @@
         <p class="provider-selection-eyebrow">LLM provider policy</p>
         <h3>{{ selection.preferenceLabel }} selection</h3>
       </div>
-      @if (selection.fallbackActive) {
-      <span class="provider-selection-badge">Fallback active</span>
-      }
     </div>
     <dl class="provider-selection-grid">
       <div>
@@ -39,11 +36,6 @@
       </div>
     </dl>
     <p class="provider-selection-reason">{{ selection.selectionReason }}</p>
-    @if (selection.fallbackReason) {
-    <p class="provider-selection-fallback">
-      <strong>Fallback:</strong> {{ selection.fallbackReason }}
-    </p>
-    }
   </section>
   }
 

@@ -94,9 +94,12 @@ class ExternalPaddleOCRProvider:
         entrypoint: Path,
         *,
         raise_on_failure: bool = False,
-    ) -> None:
+    ) -> OCRPageResult | None:
         try:
-            self._worker_pool_for(entrypoint, initial_worker_count=1).prewarm_primary_worker()
+            return self._worker_pool_for(
+                entrypoint,
+                initial_worker_count=1,
+            ).prewarm_primary_worker()
         except Exception as exc:
             self._reset_worker_pool()
             if raise_on_failure:
@@ -105,6 +108,7 @@ class ExternalPaddleOCRProvider:
                 raise ProviderUnavailableError(
                     f"PaddleOCR runtime is unhealthy: {exc}"
                 ) from exc
+            return None
 
     def extract_page_text(self, image_png: bytes, page_number: int) -> OCRPageResult:
         entrypoint = self._entrypoint()
@@ -211,7 +215,7 @@ class _OcrWorkerPool:
         self._timeout_seconds = timeout_seconds
         self._lock = threading.Lock()
         self._next_worker_index = 0
-        self._primary_worker_prewarmed = False
+        self._primary_worker_prewarm_result: OCRPageResult | None = None
         self._workers: list[_JsonlOcrWorker] = []
         worker_start_count = (
             self.worker_count
@@ -225,27 +229,43 @@ class _OcrWorkerPool:
             raise
         atexit.register(self.close)
 
-    def prewarm_primary_worker(self) -> None:
+    def prewarm_primary_worker(self) -> OCRPageResult:
         with self._lock:
-            if self._primary_worker_prewarmed:
-                return
+            if self._primary_worker_prewarm_result is not None:
+                return self._primary_worker_prewarm_result
             worker = self._worker_at(0)
 
         image_path = _write_prewarm_png()
         try:
-            worker.extract_page_text(image_path=image_path, page_number=1)
+            payload = worker.extract_page_text(image_path=image_path, page_number=1)
+            result = _ocr_result_from_payload(payload)
         finally:
             image_path.unlink(missing_ok=True)
 
         with self._lock:
-            self._primary_worker_prewarmed = True
+            self._primary_worker_prewarm_result = result
+        return result
 
     def extract_page_text(self, *, image_path: Path, page_number: int) -> OCRPageResult:
         payload = self._next_worker().extract_page_text(
             image_path=image_path,
             page_number=page_number,
         )
-        return _ocr_result_from_payload(payload)
+        result = _ocr_result_from_payload(payload)
+        self._record_cpu_fallback_observation(result)
+        return result
+
+    def _record_cpu_fallback_observation(self, result: OCRPageResult) -> None:
+        if not _is_cpu_fallback_result(result):
+            return
+        with self._lock:
+            current = self._primary_worker_prewarm_result
+            if (
+                current is None
+                or not _is_cpu_fallback_result(current)
+                or (result.fallback_reason and not current.fallback_reason)
+            ):
+                self._primary_worker_prewarm_result = result
 
     def close(self) -> None:
         for worker in self._workers:
@@ -433,6 +453,10 @@ def _ocr_result_from_payload(payload: dict[str, Any]) -> OCRPageResult:
         fallback_reason=_optional_string(payload.get("fallback_reason")),
         duration_ms=int(payload.get("duration_ms") or 0),
     )
+
+
+def _is_cpu_fallback_result(result: OCRPageResult) -> bool:
+    return bool(result.fallback_reason) or (result.device or "").strip().lower() == "cpu"
 
 
 def _write_prewarm_png() -> Path:

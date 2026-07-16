@@ -34,8 +34,6 @@ export interface ProviderSelectionSummaryView {
   readonly selectedLabel: string;
   readonly effectiveLabel: string;
   readonly selectionReason: string;
-  readonly fallbackReason: string | null;
-  readonly fallbackActive: boolean;
 }
 
 /**
@@ -76,5 +74,4 @@ export interface ModelHealthViewState {
   readonly ocrRuntimeMissing: boolean;
   readonly configuredModelName: string;
   readonly effectiveModelName: string;
-  readonly modelFallbackActive: boolean;
 }

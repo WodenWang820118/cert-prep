@@ -39,12 +39,6 @@ export class HealthStatusStore {
       this.providerSelection(),
     ),
   );
-  readonly isModelFallbackActive = computed(() =>
-    this.runtimeHealth.isModelFallbackActive(
-      this.llmHealth(),
-      this.providerSelection(),
-    ),
-  );
   readonly isOllamaMissing = computed(() =>
     this.runtimeHealth.isOllamaMissing(
       this.llmHealth(),

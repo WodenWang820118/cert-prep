@@ -1,12 +1,13 @@
 from dataclasses import replace
 
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
+import pytest
 
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.core.config import Settings
 from cert_prep_backend.domains.mock_exams import ollama_profiles as ollama_profile_module
 from cert_prep_backend.domains.mock_exams import provider as provider_module
-from cert_prep_backend.domains.mock_exams.model_fallback import ModelFallbackEngine
 from cert_prep_backend.domains.mock_exams.ollama_transport import OllamaProvider
 from cert_prep_backend.domains.mock_exams.provider import provider_from_settings
 from cert_prep_contracts.hardware import MachineAcceleratorSnapshot
@@ -18,49 +19,6 @@ from llm_test_fakes import GIB, RecordingDownloadProvider, _profile_inventory
 
 
 AUTH_HEADERS = {"Authorization": "Bearer test-token"}
-
-
-def test_model_fallback_engine_records_runtime_fallback_reason() -> None:
-    engine = ModelFallbackEngine(
-        primary_model="qwen3.5:4b",
-        fallback_models=["qwen3.5:2b"],
-        retry_after_seconds=300,
-    )
-
-    engine.mark_model_unusable("qwen3.5:4b", RuntimeError("transient OOM"))
-    assert engine.available_model_candidates({"qwen3.5:4b", "qwen3.5:2b"}) == (
-        "qwen3.5:2b",
-    )
-
-    engine.record_model_success("qwen3.5:2b")
-
-    assert engine.fallback_reason("qwen3.5:2b") == (
-        "Configured model qwen3.5:4b was unavailable during generation "
-        "(transient OOM); using fallback qwen3.5:2b."
-    )
-
-    engine.record_model_success("qwen3.5:4b")
-
-    assert engine.runtime_unusable_models() == set()
-    assert engine.fallback_reason("qwen3.5:4b") is None
-
-
-def test_model_fallback_engine_captures_provider_neutral_attribution() -> None:
-    engine = ModelFallbackEngine(
-        primary_model="future-model",
-        fallback_models=["future-model-fallback"],
-    )
-    engine.reset_generation_attribution()
-    engine.mark_model_unusable(
-        "future-model", RuntimeError("model requires more memory")
-    )
-    engine.record_model_success("future-model-fallback")
-
-    attribution = engine.generation_attribution("future-provider")
-
-    assert attribution.effective_provider == "future-provider"
-    assert attribution.effective_model == "future-model-fallback"
-    assert "model requires more memory" in attribution.fallback_reason
 
 
 def test_llm_health_does_not_pull_missing_ollama_model(tmp_path) -> None:
@@ -80,25 +38,25 @@ def test_llm_health_does_not_pull_missing_ollama_model(tmp_path) -> None:
     assert provider.pull_calls == 0
 
 
-def test_settings_parse_comma_separated_ollama_fallback_models(tmp_path) -> None:
+def test_settings_ignore_removed_ollama_fallback_models_argument(tmp_path) -> None:
     settings = Settings(
         data_dir=tmp_path,
-        ollama_fallback_models="qwen3.5:2b, gemma4:12b, ",
+        ollama_fallback_models="other-model, gemma4:12b, ",
     )
 
-    assert settings.ollama_fallback_models == ["qwen3.5:2b", "gemma4:12b"]
+    assert not hasattr(settings, "ollama_fallback_models")
 
 
-def test_settings_parse_env_ollama_fallback_models(monkeypatch, tmp_path) -> None:
+def test_settings_ignore_removed_ollama_fallback_models_env(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("CERT_PREP_DATA_DIR", str(tmp_path))
     monkeypatch.setenv(
         "CERT_PREP_OLLAMA_FALLBACK_MODELS",
-        "qwen3.5:2b, gemma4:12b, ",
+        "other-model, gemma4:12b, ",
     )
 
     settings = Settings()
 
-    assert settings.ollama_fallback_models == ["qwen3.5:2b", "gemma4:12b"]
+    assert not hasattr(settings, "ollama_fallback_models")
 
 
 def test_provider_selection_endpoint_reports_configured_and_effective_truth(
@@ -112,7 +70,6 @@ def test_provider_selection_endpoint_reports_configured_and_effective_truth(
                 data_dir=tmp_path,
                 api_token="test-token",
                 llm_provider="ollama",
-                ollama_model="configured-model",
             ),
             llm_provider=provider,
         )
@@ -125,7 +82,7 @@ def test_provider_selection_endpoint_reports_configured_and_effective_truth(
         "preference": "ollama",
         "selected_provider": "ollama",
         "effective_provider": "ollama",
-        "configured_model": "configured-model",
+        "configured_model": "qwen3.5:4b",
         "effective_model": "effective-model",
         "selection_reason": "Selected Ollama from the local provider registry.",
         "fallback_reason": None,
@@ -194,25 +151,32 @@ def test_provider_from_settings_auto_policy_builds_selected_ollama_provider(
 def test_settings_parse_ollama_profile_controls(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("CERT_PREP_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("CERT_PREP_OLLAMA_PROFILE_ENABLED", "false")
-    monkeypatch.setenv("CERT_PREP_OLLAMA_PROFILE_ID", "qwen3.5-2b-study-4k")
+    monkeypatch.setenv("CERT_PREP_OLLAMA_PROFILE_ID", DEFAULT_PROFILE_ID)
     monkeypatch.setenv("CERT_PREP_OLLAMA_PROFILE_INVENTORY_TIMEOUT_SECONDS", "1.5")
 
     settings = Settings()
 
     assert settings.ollama_profile_enabled is False
-    assert settings.ollama_profile_id == "qwen3.5-2b-study-4k"
+    assert settings.ollama_profile_id == DEFAULT_PROFILE_ID
     assert settings.ollama_profile_inventory_timeout_seconds == 1.5
 
 
 def test_settings_normalizes_ollama_profile_id(tmp_path) -> None:
     settings = Settings(
         data_dir=tmp_path,
-        ollama_profile_id="  qwen3.5-2b-study-4k  ",
+        ollama_profile_id=f"  {DEFAULT_PROFILE_ID}  ",
     )
     auto_settings = Settings(data_dir=tmp_path, ollama_profile_id="   ")
 
-    assert settings.ollama_profile_id == "qwen3.5-2b-study-4k"
+    assert settings.ollama_profile_id == DEFAULT_PROFILE_ID
     assert auto_settings.ollama_profile_id == "auto"
+
+
+def test_settings_rejects_removed_model_and_profile(tmp_path) -> None:
+    with pytest.raises(ValidationError):
+        Settings(data_dir=tmp_path, ollama_model="qwen3.5:2b")
+    with pytest.raises(ValidationError):
+        Settings(data_dir=tmp_path, ollama_profile_id="qwen3.5-9b-study-16k")
 
 
 def test_provider_from_settings_uses_selected_ollama_profile(
@@ -233,7 +197,7 @@ def test_provider_from_settings_uses_selected_ollama_profile(
     assert provider.profile_selection is not None
     assert provider.profile_selection.profile_id == DEFAULT_PROFILE_ID
     assert provider.model == "cert-prep-qwen3.5-4b-study-8k"
-    assert provider.fallback_models == ("cert-prep-qwen3.5-2b-study-4k",)
+    assert provider.fallback_models == ()
     assert provider.execution_policy.mode == LLMExecutionMode.CPU
 
 
@@ -263,7 +227,7 @@ def test_provider_from_settings_keeps_generic_gpu_in_auto_mode(
     assert provider.execution_policy.warning is None
 
 
-def test_provider_from_settings_preserves_raw_ollama_model_when_profile_disabled(
+def test_provider_from_settings_keeps_fixed_raw_ollama_model_when_profile_disabled(
     monkeypatch,
     tmp_path,
 ) -> None:
@@ -277,15 +241,13 @@ def test_provider_from_settings_preserves_raw_ollama_model_when_profile_disabled
             data_dir=tmp_path,
             llm_provider="ollama",
             ollama_profile_enabled=False,
-            ollama_model="custom-local:latest",
-            ollama_fallback_models=["fallback-local:latest"],
         )
     )
 
     assert isinstance(provider, OllamaProvider)
     assert provider.profile_selection is None
-    assert provider.model == "custom-local:latest"
-    assert provider.fallback_models == ("fallback-local:latest",)
+    assert provider.model == "qwen3.5:4b"
+    assert provider.fallback_models == ()
     assert provider.execution_policy.mode == LLMExecutionMode.CPU
     assert provider.execution_policy.warning is not None
 

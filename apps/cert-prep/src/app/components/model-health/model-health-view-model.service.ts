@@ -39,17 +39,11 @@ export class ModelHealthViewModelService {
 
     const selectedProvider = this.providerLabel(selection.selected_provider);
     const effectiveProvider = this.providerLabel(selection.effective_provider);
-    const fallbackActive =
-      Boolean(selection.fallback_reason?.trim()) ||
-      selection.selected_provider !== selection.effective_provider ||
-      selection.configured_model !== selection.effective_model;
     return {
       preferenceLabel: this.preferenceLabel(selection.preference),
       selectedLabel: `${selectedProvider} / ${selection.configured_model}`,
       effectiveLabel: `${effectiveProvider} / ${selection.effective_model}`,
       selectionReason: selection.selection_reason,
-      fallbackReason: selection.fallback_reason ?? null,
-      fallbackActive,
     };
   }
 
@@ -119,9 +113,7 @@ export class ModelHealthViewModelService {
     if (this.cpuExecutionActive(state)) {
       return `Reasoning model: ${state.effectiveModelName} · 使用 CPU 中`;
     }
-    return state.modelFallbackActive
-      ? `Reasoning model: ${state.effectiveModelName}`
-      : `Reasoning model: ${state.configuredModelName}`;
+    return `Reasoning model: ${state.configuredModelName}`;
   }
 
   private ocrChipLabel(state: ModelHealthViewState): string {
@@ -152,6 +144,9 @@ export class ModelHealthViewModelService {
     const health = state.ocrHealth;
     if (health === null) {
       return 'OCR waiting';
+    }
+    if (this.ocrCpuFallbackActive(state)) {
+      return 'WindowsML OCR · 使用 CPU 中';
     }
     const device = health.selected_device ?? health.engine;
     return `${health.provider} / ${device}`;
@@ -186,32 +181,13 @@ export class ModelHealthViewModelService {
       return 'Model status unavailable.';
     }
     if (this.cpuExecutionActive(state)) {
-      const warning =
-        state.llmHealth.execution_warning?.trim() || state.llmHealth.detail;
-      return state.modelFallbackActive
-        ? `${warning} ${this.modelFallbackDetail(state)}`
-        : warning;
-    }
-    if (state.modelFallbackActive) {
-      return this.modelFallbackDetail(state);
+      return (
+        state.llmHealth.execution_warning?.trim() || state.llmHealth.detail
+      );
     }
     return state.modelMissing
       ? `${state.llmHealth.model} is missing locally.`
       : state.llmHealth.detail;
-  }
-
-  private modelFallbackDetail(state: ModelHealthViewState): string {
-    if (state.providerSelection?.fallback_reason) {
-      return [
-        `Effective ${this.providerLabel(state.providerSelection.effective_provider)}`,
-        `${state.effectiveModelName}.`,
-        `Fallback: ${state.providerSelection.fallback_reason}`,
-      ].join(' ');
-    }
-    return [
-      `Ready via fallback ${state.effectiveModelName};`,
-      `primary ${state.configuredModelName} is not installed.`,
-    ].join(' ');
   }
 
   private ocrDetail(state: ModelHealthViewState): string {
@@ -236,7 +212,9 @@ export class ModelHealthViewModelService {
         ? `${title} runtime is not installed.`
         : `${title} health check failed.`;
     }
-    return state.ocrHealth.fallback_reason || state.ocrHealth.detail;
+    return this.ocrCpuFallbackActive(state)
+      ? state.ocrHealth.fallback_reason || state.ocrHealth.detail
+      : state.ocrHealth.detail;
   }
 
   private ocrTitle(state: ModelHealthViewState): string {
@@ -269,9 +247,6 @@ export class ModelHealthViewModelService {
     if (this.cpuExecutionActive(state)) {
       return '使用 CPU 中';
     }
-    if (state.modelFallbackActive) {
-      return 'Ready via fallback';
-    }
     return state.llmHealth?.available ? 'Ready' : 'Offline';
   }
 
@@ -293,6 +268,9 @@ export class ModelHealthViewModelService {
     }
     if (state.ocrRuntimeMissing) {
       return 'Missing';
+    }
+    if (this.ocrCpuFallbackActive(state)) {
+      return '使用 CPU 中';
     }
     return state.ocrPhase === 'ready' ? 'Ready' : 'Offline';
   }
@@ -323,7 +301,7 @@ export class ModelHealthViewModelService {
     }
     return state.modelMissing
       ? 'danger'
-      : this.cpuExecutionActive(state) || state.modelFallbackActive
+      : this.cpuExecutionActive(state)
         ? 'warn'
         : state.llmHealth?.available
           ? 'success'
@@ -334,6 +312,15 @@ export class ModelHealthViewModelService {
     return (
       state.llmHealth?.available === true &&
       state.llmHealth.execution_mode === 'cpu'
+    );
+  }
+
+  private ocrCpuFallbackActive(state: ModelHealthViewState): boolean {
+    return (
+      state.ocrHealth?.available === true &&
+      state.ocrHealth.provider === 'windowsml' &&
+      state.ocrHealth.selected_device === 'cpu' &&
+      Boolean(state.ocrHealth.fallback_reason?.trim())
     );
   }
 
@@ -371,8 +358,10 @@ export class ModelHealthViewModelService {
     }
     return state.ocrRuntimeMissing
       ? 'danger'
-      : state.ocrPhase === 'ready'
-        ? 'success'
-        : 'warn';
+      : this.ocrCpuFallbackActive(state)
+        ? 'warn'
+        : state.ocrPhase === 'ready'
+          ? 'success'
+          : 'warn';
   }
 }

@@ -27,7 +27,6 @@ export class ModelHealthViewModelFacade {
       ocrRuntimeMissing: this.health.isOcrRuntimeMissing(),
       configuredModelName: this.health.configuredModelName(),
       effectiveModelName: this.health.effectiveModelName(),
-      modelFallbackActive: this.health.isModelFallbackActive(),
     }),
   );
 }

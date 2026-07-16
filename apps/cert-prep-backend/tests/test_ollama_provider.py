@@ -2,7 +2,10 @@ import json
 import logging
 from pathlib import Path
 
+import pytest
+
 from cert_prep_backend.api.app import create_app
+from cert_prep_backend.api.errors import ProviderUnavailableError
 from cert_prep_backend.core.config import Settings
 from cert_prep_backend.domains.mock_exams import ollama_profiles as ollama_profile_module
 from cert_prep_backend.domains.mock_exams import ollama_transport
@@ -80,29 +83,25 @@ def _reasoning_item(chunk: SourceChunk, number: int) -> dict:
     }
 
 
-def test_ollama_health_uses_installed_fallback_without_pull(monkeypatch) -> None:
-    fake_client = RecordingOllamaClient(models=["qwen3.5:2b"])
+def test_ollama_health_does_not_use_installed_non_primary_model(monkeypatch) -> None:
+    fake_client = RecordingOllamaClient(models=["other-model"])
     monkeypatch.setattr(ollama_transport, "resolve_ollama_executable", lambda: Path("ollama"))
     provider = OllamaProvider(
         host="http://127.0.0.1:11434",
         model="qwen3.5:4b",
         timeout_seconds=1,
-        fallback_models=["qwen3.5:2b"],
     )
     provider._client = fake_client
 
     health = provider.health()
 
-    assert health.available is True
+    assert health.available is False
     assert health.model == "qwen3.5:4b"
     assert health.configured_model == "qwen3.5:4b"
-    assert health.effective_model == "qwen3.5:2b"
-    assert health.fallback_models == ("qwen3.5:2b",)
-    assert (
-        health.fallback_reason
-        == "Configured model qwen3.5:4b is missing; using fallback qwen3.5:2b."
-    )
-    assert health.unavailable_reason is None
+    assert health.effective_model is None
+    assert health.fallback_models == ()
+    assert health.fallback_reason is None
+    assert health.unavailable_reason == "model_missing"
     assert fake_client.chat_calls == []
     assert fake_client.pull_calls == 0
 
@@ -117,7 +116,6 @@ def test_ollama_health_includes_profile_selection_fields(monkeypatch) -> None:
         host="http://127.0.0.1:11434",
         model=selection.selected_profile.local_model,
         timeout_seconds=1,
-        fallback_models=[profile.local_model for profile in selection.fallback_profiles],
         profile_selection=selection,
     )
     provider._client = fake_client
@@ -221,22 +219,6 @@ def test_ollama_health_accepts_implicit_latest_profile_alias(monkeypatch) -> Non
     assert health.effective_model == model
     assert health.unavailable_reason is None
     assert fake_client.pull_calls == 0
-
-
-def test_ollama_runtime_unusable_models_can_recover() -> None:
-    provider = OllamaProvider(
-        host="http://127.0.0.1:11434",
-        model="qwen3.5:4b",
-        timeout_seconds=1,
-        fallback_models=["qwen3.5:2b"],
-    )
-
-    provider._mark_model_unusable("qwen3.5:4b", RuntimeError("transient OOM"))
-    assert "qwen3.5:4b" in provider._runtime_unusable_models()
-
-    provider._record_model_success("qwen3.5:4b")
-
-    assert "qwen3.5:4b" not in provider._runtime_unusable_models()
 
 
 def test_ollama_reasoning_requests_exact_distinct_count_when_source_supports_it() -> None:
@@ -505,43 +487,33 @@ def test_ollama_reasoning_supplements_a_valid_source_classifier_false_negative()
     assert len(fake_client.chat_calls) == 2
 
 
-def test_ollama_reasoning_restarts_both_passes_atomically_on_model_fallback() -> None:
+def test_ollama_reasoning_runtime_failure_does_not_try_another_model() -> None:
     chunks = _reasoning_chunks()
     primary_item = {**_reasoning_item(chunks[0], 1), "rationale": "primary partial"}
-    fallback_items = [
-        {**_reasoning_item(chunks[0], 1), "rationale": "fallback first"},
-        {**_reasoning_item(chunks[1], 2), "rationale": "fallback second"},
-    ]
     fake_client = SequencedOllamaClient(
-        models=["qwen3.5:4b", "qwen3.5:2b"],
+        models=["qwen3.5:4b", "other-model"],
         chat_contents=[
             json.dumps({"items": [primary_item]}),
             RuntimeError("primary model runner crashed"),
-            json.dumps({"items": fallback_items}),
         ],
     )
     provider = OllamaProvider(
         host="http://127.0.0.1:11434",
         model="qwen3.5:4b",
-        fallback_models=["qwen3.5:2b"],
         timeout_seconds=1,
         client=fake_client,
     )
 
-    suggestions = provider.generate_reasoning_drafts(chunks, limit=2)
+    with pytest.raises(ProviderUnavailableError, match="primary model runner crashed"):
+        provider.generate_reasoning_drafts(chunks, limit=2)
 
     assert [call["model"] for call in fake_client.chat_calls] == [
         "qwen3.5:4b",
         "qwen3.5:4b",
-        "qwen3.5:2b",
-    ]
-    assert [suggestion.rationale for suggestion in suggestions] == [
-        "fallback first",
-        "fallback second",
     ]
     attribution = provider.generation_attribution()
-    assert attribution.effective_model == "qwen3.5:2b"
-    assert attribution.fallback_reason is not None
+    assert attribution.effective_model is None
+    assert attribution.fallback_reason is None
 
 def test_ollama_profile_apis_return_200(monkeypatch, tmp_path) -> None:
     inventory = _profile_inventory(total_ram=16 * GIB, free_disk=64 * GIB)
@@ -575,7 +547,7 @@ def test_ollama_profile_apis_return_200(monkeypatch, tmp_path) -> None:
     assert inventory_response.status_code == 200
     assert inventory_response.json()["ram"]["total_bytes"] == 16 * GIB
 
-def test_ollama_profile_selection_api_reports_disabled_raw_model(tmp_path) -> None:
+def test_ollama_profile_selection_api_reports_disabled_fixed_raw_model(tmp_path) -> None:
     client = TestClient(
         create_app(
             settings=Settings(
@@ -583,8 +555,6 @@ def test_ollama_profile_selection_api_reports_disabled_raw_model(tmp_path) -> No
                 api_token="test-token",
                 llm_provider="ollama",
                 ollama_profile_enabled=False,
-                ollama_model="raw-local:latest",
-                ollama_fallback_models=["raw-fallback:latest"],
             ),
             runtime_installation_async_jobs=False,
         )
@@ -594,8 +564,8 @@ def test_ollama_profile_selection_api_reports_disabled_raw_model(tmp_path) -> No
 
     assert response.status_code == 200
     assert response.json()["profile_enabled"] is False
-    assert response.json()["effective_model"] == "raw-local:latest"
-    assert response.json()["fallback_models"] == ["raw-fallback:latest"]
+    assert response.json()["effective_model"] == "qwen3.5:4b"
+    assert response.json()["fallback_models"] == []
 
 def test_ollama_machine_inventory_is_cached_and_refreshable(monkeypatch, tmp_path) -> None:
     inventories = [
@@ -662,26 +632,24 @@ def test_ollama_profile_inventory_is_deferred_until_used(monkeypatch, tmp_path) 
     assert len(calls) == 1
 
 def test_ollama_health_uses_http_api_when_cli_is_not_on_path(monkeypatch) -> None:
-    fake_client = RecordingOllamaClient(models=["qwen3.5:2b"])
+    fake_client = RecordingOllamaClient(models=["qwen3.5:4b"])
     monkeypatch.setattr(ollama_transport, "resolve_ollama_executable", lambda: None)
     provider = OllamaProvider(
         host="http://127.0.0.1:11434",
         model="qwen3.5:4b",
         timeout_seconds=1,
-        fallback_models=["qwen3.5:2b"],
     )
     provider._client = fake_client
 
     health = provider.health()
 
     assert health.available is True
-    assert health.effective_model == "qwen3.5:2b"
-    assert health.fallback_reason is not None
-    assert "using fallback qwen3.5:2b" in health.fallback_reason
+    assert health.effective_model == "qwen3.5:4b"
+    assert health.fallback_reason is None
     assert fake_client.pull_calls == 0
 
 def test_ollama_health_starts_installed_idle_server(monkeypatch) -> None:
-    fake_client = FlakyListOllamaClient(models=["qwen3.5:2b"])
+    fake_client = FlakyListOllamaClient(models=["qwen3.5:4b"])
     start_calls: list[tuple[str, Path | None]] = []
     monkeypatch.setattr(ollama_transport, "resolve_ollama_executable", lambda: Path("ollama"))
     monkeypatch.setattr(
@@ -693,14 +661,13 @@ def test_ollama_health_starts_installed_idle_server(monkeypatch) -> None:
         host="http://127.0.0.1:11434",
         model="qwen3.5:4b",
         timeout_seconds=1,
-        fallback_models=["qwen3.5:2b"],
     )
     provider._client = fake_client
 
     health = provider.health()
 
     assert health.available is True
-    assert health.effective_model == "qwen3.5:2b"
+    assert health.effective_model == "qwen3.5:4b"
     assert start_calls == [("http://127.0.0.1:11434", Path("ollama"))]
     assert fake_client.list_calls == 2
     assert fake_client.pull_calls == 0
@@ -719,7 +686,6 @@ def test_ollama_health_reports_not_running_when_idle_server_start_fails(
         host="http://127.0.0.1:11434",
         model="qwen3.5:4b",
         timeout_seconds=1,
-        fallback_models=["qwen3.5:2b"],
     )
     provider._client = fake_client
 
@@ -816,12 +782,12 @@ def test_ollama_fast_first_draft_forwards_cpu_and_keep_alive_options(
     assert fake_client.chat_calls[0]["options"]["num_gpu"] == 0
     assert fake_client.pull_calls == 0
 
-def test_ollama_fast_first_draft_falls_back_when_primary_runtime_fails(
+def test_ollama_fast_first_draft_reports_primary_runtime_failure_without_fallback(
     monkeypatch,
 ) -> None:
     fake_client = RecordingOllamaClient(
-        models=["qwen3.5:4b", "qwen3.5:2b"],
-        chat_content='{"answer":"2","rationale":"Fallback picked the answer.","confidence":0.72}',
+        models=["qwen3.5:4b", "other-model"],
+        chat_content='{"answer":"2","rationale":"Unused.","confidence":0.72}',
         fail_models={"qwen3.5:4b": RuntimeError("model requires more memory")},
     )
     monkeypatch.setattr(ollama_transport, "resolve_ollama_executable", lambda: Path("ollama"))
@@ -829,7 +795,6 @@ def test_ollama_fast_first_draft_falls_back_when_primary_runtime_fails(
         host="http://127.0.0.1:11434",
         model="qwen3.5:4b",
         timeout_seconds=1,
-        fallback_models=["qwen3.5:2b"],
     )
     provider._client = fake_client
     chunk = SourceChunk(
@@ -849,18 +814,13 @@ def test_ollama_fast_first_draft_falls_back_when_primary_runtime_fails(
         source_excerpt="Question text.",
     )
 
-    suggestion = provider.generate_fast_first_draft(chunk, candidate)
+    with pytest.raises(ProviderUnavailableError, match="model requires more memory"):
+        provider.generate_fast_first_draft(chunk, candidate)
 
-    assert suggestion is not None
-    assert suggestion.answer == "2 second"
-    assert [call["model"] for call in fake_client.chat_calls] == [
-        "qwen3.5:4b",
-        "qwen3.5:2b",
-    ]
+    assert [call["model"] for call in fake_client.chat_calls] == ["qwen3.5:4b"]
     health = provider.health()
-    assert health.effective_model == "qwen3.5:2b"
-    assert health.fallback_reason is not None
-    assert "model requires more memory" in health.fallback_reason
+    assert health.effective_model == "qwen3.5:4b"
+    assert health.fallback_reason is None
     assert fake_client.pull_calls == 0
 
 def test_ollama_fast_first_invalid_json_does_not_mark_model_unusable(

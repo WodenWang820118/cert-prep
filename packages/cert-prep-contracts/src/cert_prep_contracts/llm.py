@@ -9,7 +9,6 @@ from cert_prep_contracts.runtime import RuntimeRequirementKind
 
 
 DEFAULT_LLM_PRIMARY_MODEL = "qwen3.5:4b"
-DEFAULT_LLM_LOW_RESOURCE_MODEL = "qwen3.5:2b"
 
 
 class LLMProviderPreference(StrEnum):
@@ -55,7 +54,6 @@ class LLMRuntimePolicy:
 
     preference: LLMProviderPreference = LLMProviderPreference.AUTO
     primary_model: str = DEFAULT_LLM_PRIMARY_MODEL
-    low_resource_model: str = DEFAULT_LLM_LOW_RESOURCE_MODEL
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,7 +93,6 @@ class ModelPullProgress:
 
 
 __all__ = [
-    "DEFAULT_LLM_LOW_RESOURCE_MODEL",
     "DEFAULT_LLM_PRIMARY_MODEL",
     "DEFAULT_LLM_RUNTIME_POLICY",
     "GenerationAttribution",

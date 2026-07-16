@@ -158,7 +158,6 @@ class RuntimeInstallationManager:
 
                 llm_model_installer = OllamaProfileInstaller(
                     profile_selection.selected_profile,
-                    fallback_profiles=profile_selection.fallback_profiles,
                     host=settings.ollama_host,
                     timeout_seconds=settings.ollama_timeout_seconds,
                     runtime_install_timeout_seconds=settings.runtime_install_timeout_seconds,
@@ -741,7 +740,6 @@ class _LazyOllamaProfileInstaller:
                     )
                 self._installer = OllamaProfileInstaller(
                     profile_selection.selected_profile,
-                    fallback_profiles=profile_selection.fallback_profiles,
                     host=self._settings.ollama_host,
                     timeout_seconds=self._settings.ollama_timeout_seconds,
                     runtime_install_timeout_seconds=(

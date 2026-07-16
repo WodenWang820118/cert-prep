@@ -147,47 +147,7 @@ export class RuntimeHealthDerivationService {
     const requirements = this.isRequirementList(selectionOrRequirements)
       ? selectionOrRequirements
       : [];
-    const selection = this.isRequirementList(selectionOrRequirements)
-      ? null
-      : selectionOrRequirements;
-    return (
-      this.isModelMissing(health, requirements) ||
-      this.isModelFallbackActive(health, selection)
-    );
-  }
-
-  isModelFallbackActive(
-    health: LLMHealthRead | null,
-    selection: LLMProviderSelectionRead | null = null,
-  ): boolean {
-    if (selection !== null) {
-      const configuredModel = this.normalizedModelName(
-        selection.configured_model,
-      );
-      const effectiveModel = this.normalizedModelName(
-        selection.effective_model,
-      );
-      if (
-        configuredModel.length > 0 &&
-        effectiveModel.length > 0 &&
-        configuredModel !== effectiveModel
-      ) {
-        return true;
-      }
-    }
-    if (health === null || health.available !== true) {
-      return false;
-    }
-
-    const configured = this.normalizedModelName(
-      health.configured_model ?? health.model,
-    );
-    const effective = this.normalizedModelName(
-      health.effective_model ?? health.model,
-    );
-    return (
-      configured.length > 0 && effective.length > 0 && configured !== effective
-    );
+    return this.isModelMissing(health, requirements);
   }
 
   normalizedCode(value: unknown): string {
@@ -233,9 +193,5 @@ export class RuntimeHealthDerivationService {
       requirement?.available === false &&
       this.normalizedCode(requirement.unavailable_reason) === 'model_missing'
     );
-  }
-
-  private normalizedModelName(value: unknown): string {
-    return typeof value === 'string' ? value.trim().toLowerCase() : '';
   }
 }

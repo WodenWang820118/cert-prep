@@ -101,7 +101,7 @@ def profile_selection_payload(settings: Settings) -> dict[str, Any]:
                 "using the configured raw model."
             ),
             "fallback_profiles": [],
-            "fallback_models": list(settings.ollama_fallback_models),
+            "fallback_models": [],
             "warnings": [],
             "inventory": None,
             "modelfile_sha256": None,

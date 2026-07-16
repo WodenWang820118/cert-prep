@@ -112,40 +112,6 @@ describe('HealthStore model downloads', () => {
     expect(apiClient.startModelDownload).not.toHaveBeenCalled();
   });
 
-  it('offers primary model download when runtime is using a fallback model', async () => {
-    const store = TestBed.inject(HealthStore);
-    apiClient.llmHealth.mockResolvedValue(
-      llmHealth({
-        available: true,
-        model: 'qwen3.5:4b',
-        detail: 'model available via fallback qwen3.5:2b',
-        unavailable_reason: null,
-        configured_model: 'qwen3.5:4b',
-        effective_model: 'qwen3.5:2b',
-        fallback_models: ['qwen3.5:2b'],
-        fallback_reason:
-          'Configured model qwen3.5:4b is missing; using fallback qwen3.5:2b.',
-      }),
-    );
-    apiClient.startModelDownload.mockResolvedValue(
-      modelDownload({
-        model: 'qwen3.5:4b',
-        status: 'succeeded',
-        detail: 'model download complete',
-        completed: 100,
-      }),
-    );
-
-    await store.load();
-    store.openModelDownloadConsent();
-    await store.confirmModelDownload();
-
-    expect(store.modelDownloadConsentVisible()).toBe(false);
-    expect(apiClient.startModelDownload).toHaveBeenCalledTimes(1);
-    expect(store.modelDownload()?.model).toBe('qwen3.5:4b');
-    expect(store.modelDownload()?.phase).toBe('succeeded');
-  });
-
   it('starts the selected provider model pull without provider-specific payload', async () => {
     const store = TestBed.inject(HealthStore);
     apiClient.llmHealth.mockResolvedValue(

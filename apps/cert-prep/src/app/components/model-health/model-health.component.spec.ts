@@ -4,11 +4,12 @@ import { CERT_PREP_API, LLMHealthRead } from '../../cert-prep-api';
 import { HealthStore } from '../../stores/health/health.store';
 import { RuntimeManagerPage } from '../../pages/runtime-manager/runtime-manager.page';
 import { ModelHealthComponent } from './model-health.component';
+import { ModelHealthViewModelFacade } from './model-health-view-model.facade';
 import {
   availableLlmHealth,
   buttonByText,
   cpuExecutionLlmHealth,
-  fallbackLlmHealth,
+  cpuFallbackOcrHealth,
   missingModelHealth,
   ocrHealth,
   systemHealth,
@@ -77,44 +78,57 @@ describe('ModelHealthComponent status display', () => {
     expect(router.url).toBe('/runtime');
   });
 
-  it('shows effective fallback model and still offers primary model download', () => {
+  it('shows CPU execution for the fixed reasoning model', () => {
     const fixture = TestBed.createComponent(ModelHealthComponent);
     const health = TestBed.inject(HealthStore);
     health.systemHealth.set(systemHealth());
-    health.llmHealth.set(fallbackLlmHealth());
+    health.llmHealth.set(cpuExecutionLlmHealth());
     health.ocrHealth.set(ocrHealth());
 
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).toContain(
-      'Reasoning model: qwen3.5:2b',
+      'Reasoning model: qwen3.5:4b · 使用 CPU 中',
     );
     expect(fixture.nativeElement.textContent).not.toContain(
       'Reasoning model missing',
     );
   });
 
-  it('shows CPU execution while retaining effective fallback model attribution', () => {
+  it('shows WindowsML OCR CPU fallback as a warning state', () => {
     const fixture = TestBed.createComponent(ModelHealthComponent);
     const health = TestBed.inject(HealthStore);
     health.systemHealth.set(systemHealth());
-    health.llmHealth.set(
-      cpuExecutionLlmHealth({
-        effective_model: 'qwen3.5:2b',
-        fallback_models: ['qwen3.5:2b'],
-        fallback_reason:
-          'Configured model qwen3.5:4b is missing; using fallback qwen3.5:2b.',
-      }),
-    );
-    health.ocrHealth.set(ocrHealth());
+    health.llmHealth.set(availableLlmHealth());
+    health.ocrHealth.set(cpuFallbackOcrHealth());
 
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).toContain(
-      'Reasoning model: qwen3.5:2b · 使用 CPU 中',
+      'WindowsML OCR · 使用 CPU 中',
+    );
+  });
+
+  it('keeps an unavailable OCR error visible instead of a stale fallback warning', () => {
+    const fixture = TestBed.createComponent(ModelHealthComponent);
+    const health = TestBed.inject(HealthStore);
+    const viewModels = TestBed.inject(ModelHealthViewModelFacade);
+    health.systemHealth.set(systemHealth());
+    health.llmHealth.set(availableLlmHealth());
+    health.ocrHealth.set({
+      ...cpuFallbackOcrHealth(),
+      available: false,
+      detail: 'WindowsML OCR model artifacts are missing.',
+      unavailable_reason: 'windowsml_model_artifacts_missing',
+    });
+
+    fixture.detectChanges();
+
+    expect(viewModels.viewModel().ocr.detail).toBe(
+      'WindowsML OCR model artifacts are missing.',
     );
     expect(fixture.nativeElement.textContent).not.toContain(
-      'Reasoning model missing',
+      'WindowsML acceleration was not confirmed',
     );
   });
 

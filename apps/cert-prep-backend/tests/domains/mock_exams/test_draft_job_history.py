@@ -43,7 +43,7 @@ def test_detached_terminal_job_keeps_public_attribution_and_is_not_retried(
         project_id="project",
         document_id="document",
         provider="ollama",
-        model="qwen3.5:2b",
+        model="obsolete-model",
     ) == []
     assert draft_jobs.get_job(db, job["id"]) == terminal_before
 

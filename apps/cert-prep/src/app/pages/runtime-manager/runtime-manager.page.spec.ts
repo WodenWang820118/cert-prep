@@ -5,7 +5,7 @@ import {
   availableLlmHealth,
   buttonByText,
   cpuExecutionLlmHealth,
-  fallbackLlmHealth,
+  cpuFallbackOcrHealth,
   missingModelHealth,
   ocrHealth,
   systemHealth,
@@ -62,22 +62,7 @@ describe('RuntimeManagerPage', () => {
     expect(fixture.nativeElement.textContent).toContain('Download reasoner:7b');
   });
 
-  it('renders fallback model detail and primary model download action', () => {
-    const health = TestBed.inject(HealthStore);
-    health.systemHealth.set(systemHealth());
-    health.llmHealth.set(fallbackLlmHealth());
-    health.ocrHealth.set(ocrHealth());
-
-    const fixture = TestBed.createComponent(RuntimeManagerPage);
-    fixture.detectChanges();
-
-    expect(fixture.nativeElement.textContent).toContain(
-      'Ready via fallback qwen3.5:2b; primary qwen3.5:4b is not installed.',
-    );
-    expect(fixture.nativeElement.textContent).toContain('Download qwen3.5:4b');
-  });
-
-  it('renders backend-owned auto selection and explicit fallback attribution', () => {
+  it('renders the backend-owned fixed Ollama selection', () => {
     const health = TestBed.inject(HealthStore);
     health.systemHealth.set(systemHealth());
     health.llmHealth.set({
@@ -91,10 +76,8 @@ describe('RuntimeManagerPage', () => {
       providerSelection({
         selected_provider: 'ollama',
         effective_provider: 'ollama',
-        selection_reason:
-          'Auto-selected Ollama: The AMD accelerator driver must be at least 32.0.203.304.',
-        fallback_reason:
-          'The AMD accelerator driver must be at least 32.0.203.304.',
+        selection_reason: 'Auto-selected Ollama.',
+        fallback_reason: null,
         runtime_requirement_kind: 'ollama',
         model_requirement_kind: 'ollama_model',
       }),
@@ -107,29 +90,20 @@ describe('RuntimeManagerPage', () => {
     expect(fixture.nativeElement.textContent).toContain('LLM provider policy');
     expect(fixture.nativeElement.textContent).toContain('Auto selection');
     expect(fixture.nativeElement.textContent).toContain('Ollama / qwen3.5:4b');
-    expect(fixture.nativeElement.textContent).toContain('Fallback active');
-    expect(fixture.nativeElement.textContent).toContain(
-      'The AMD accelerator driver must be at least 32.0.203.304.',
-    );
+    expect(fixture.nativeElement.textContent).not.toContain('Fallback active');
   });
 
-  it('renders CPU execution as a warning without hiding model fallback detail', () => {
+  it('renders fixed-model CPU execution as a warning', () => {
     const health = TestBed.inject(HealthStore);
     health.systemHealth.set(systemHealth());
-    health.llmHealth.set(
-      cpuExecutionLlmHealth({
-        effective_model: 'qwen3.5:2b',
-        fallback_models: ['qwen3.5:2b'],
-        fallback_reason:
-          'Configured model qwen3.5:4b is missing; using fallback qwen3.5:2b.',
-      }),
-    );
+    health.llmHealth.set(cpuExecutionLlmHealth());
     health.ocrHealth.set(ocrHealth());
 
     const fixture = TestBed.createComponent(RuntimeManagerPage);
     fixture.detectChanges();
 
-    const modelView = TestBed.inject(ModelHealthViewModelFacade).viewModel().model;
+    const modelView = TestBed.inject(ModelHealthViewModelFacade).viewModel()
+      .model;
     expect(modelView).toMatchObject({
       statusLabel: '使用 CPU 中',
       severity: 'warn',
@@ -137,13 +111,28 @@ describe('RuntimeManagerPage', () => {
     expect(modelView.detail).toContain(
       'GPU acceleration conditions were not met; Ollama is using CPU.',
     );
-    expect(modelView.detail).toContain(
-      'Ready via fallback qwen3.5:2b; primary qwen3.5:4b is not installed.',
-    );
     expect(fixture.nativeElement.textContent).toContain('使用 CPU 中');
     expect(fixture.nativeElement.textContent).toContain(
       'GPU acceleration conditions were not met; Ollama is using CPU.',
     );
+  });
+
+  it('renders WindowsML OCR CPU fallback as a warning', () => {
+    const health = TestBed.inject(HealthStore);
+    health.systemHealth.set(systemHealth());
+    health.llmHealth.set(availableLlmHealth());
+    health.ocrHealth.set(cpuFallbackOcrHealth());
+
+    const fixture = TestBed.createComponent(RuntimeManagerPage);
+    fixture.detectChanges();
+
+    const ocrView = TestBed.inject(ModelHealthViewModelFacade).viewModel().ocr;
+    expect(ocrView).toMatchObject({
+      statusLabel: '使用 CPU 中',
+      severity: 'warn',
+    });
+    expect(ocrView.detail).toContain('using CPU OCR');
+    expect(fixture.nativeElement.textContent).toContain('使用 CPU 中');
   });
 
   it('offers Ollama onboarding when the selected provider runtime is missing', () => {

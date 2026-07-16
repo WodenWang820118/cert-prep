@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from cert_prep_contracts.hardware import (
     MachineAcceleratorSnapshot,
     MachineCpuSnapshot,
@@ -15,8 +17,6 @@ from cert_prep_ollama.profile_installer import OllamaProfileInstaller
 from cert_prep_ollama.profiles import (
     DEFAULT_PROFILE_ID,
     GIB,
-    HIGH_CONTEXT_PROFILE_ID,
-    LOW_RESOURCE_PROFILE_ID,
     profile_by_id,
     profile_catalog,
     select_ollama_execution_policy,
@@ -24,14 +24,12 @@ from cert_prep_ollama.profiles import (
 )
 
 
-def test_profile_catalog_keeps_9b_explicit_opt_in_only() -> None:
-    profiles = {profile.profile_id: profile for profile in profile_catalog()}
+def test_profile_catalog_contains_only_fixed_4b_study_profile() -> None:
+    profiles = profile_catalog()
 
-    assert LOW_RESOURCE_PROFILE_ID in profiles
-    assert DEFAULT_PROFILE_ID in profiles
-    assert HIGH_CONTEXT_PROFILE_ID in profiles
-    assert profiles["qwen3.5-9b-study-16k"].explicit_opt_in_required is True
-    assert profiles["qwen3.5-9b-study-16k"].auto_selectable is False
+    assert [profile.profile_id for profile in profiles] == [DEFAULT_PROFILE_ID]
+    assert profiles[0].base_model == "qwen3.5:4b"
+    assert profiles[0].fallback_profile_ids == ()
 
 
 def test_modelfile_rendering_is_deterministic() -> None:
@@ -46,21 +44,24 @@ def test_modelfile_rendering_is_deterministic() -> None:
     assert modelfile_sha256(profile) == modelfile_sha256(profile)
 
 
-def test_auto_selection_uses_2b_for_clearly_low_inventory() -> None:
+def test_auto_selection_keeps_fixed_4b_for_low_inventory() -> None:
     selection = select_ollama_profile(
         _inventory(total_ram=6 * GIB, available_ram=3 * GIB, free_disk=7 * GIB)
     )
 
-    assert selection.profile_id == LOW_RESOURCE_PROFILE_ID
-    assert selection.selected_profile.base_model == "qwen3.5:2b"
+    assert selection.profile_id == DEFAULT_PROFILE_ID
+    assert selection.selected_profile.base_model == "qwen3.5:4b"
+    assert selection.fallback_profiles == ()
+    assert selection.support_status == OllamaProfileSupportStatus.WARNING
 
 
-def test_auto_selection_uses_2b_when_available_ram_is_low() -> None:
+def test_auto_selection_keeps_fixed_4b_when_available_ram_is_low() -> None:
     selection = select_ollama_profile(
         _inventory(total_ram=12 * GIB, available_ram=1 * GIB, free_disk=32 * GIB)
     )
 
-    assert selection.profile_id == LOW_RESOURCE_PROFILE_ID
+    assert selection.profile_id == DEFAULT_PROFILE_ID
+    assert "Available RAM is below" in selection.warnings[0]
 
 
 def test_whitespace_profile_id_falls_back_to_auto() -> None:
@@ -79,7 +80,7 @@ def test_auto_selection_keeps_default_profile_when_inventory_is_incomplete() -> 
 
     assert selection.profile_id == DEFAULT_PROFILE_ID
     assert selection.support_status == OllamaProfileSupportStatus.WARNING
-    assert "incomplete" in selection.reason
+    assert "fixed 4B profile" in selection.reason
 
 
 def test_auto_selection_default_profile_reports_requirement_warnings() -> None:
@@ -92,7 +93,7 @@ def test_auto_selection_default_profile_reports_requirement_warnings() -> None:
     assert "Available RAM is unknown." in selection.warnings
 
 
-def test_auto_selection_can_use_high_context_4b_but_never_9b() -> None:
+def test_auto_selection_never_changes_profile_on_large_machine() -> None:
     selection = select_ollama_profile(
         _inventory(
             total_ram=32 * GIB,
@@ -102,8 +103,9 @@ def test_auto_selection_can_use_high_context_4b_but_never_9b() -> None:
         )
     )
 
-    assert selection.profile_id == HIGH_CONTEXT_PROFILE_ID
+    assert selection.profile_id == DEFAULT_PROFILE_ID
     assert selection.selected_profile.base_model == "qwen3.5:4b"
+    assert selection.fallback_profiles == ()
 
 
 def test_windows_execution_policy_forces_cpu_without_gpu() -> None:
@@ -146,15 +148,12 @@ def test_windows_execution_policy_forces_cpu_when_inventory_failed() -> None:
     assert policy.warning is not None
 
 
-def test_explicit_9b_selection_is_allowed_with_warning_on_small_machine() -> None:
-    selection = select_ollama_profile(
-        _inventory(total_ram=8 * GIB, available_ram=4 * GIB, free_disk=20 * GIB),
-        profile_id="qwen3.5-9b-study-16k",
-    )
-
-    assert selection.profile_id == "qwen3.5-9b-study-16k"
-    assert selection.support_status == OllamaProfileSupportStatus.WARNING
-    assert selection.selected_profile.base_model == "qwen3.5:9b"
+def test_removed_profile_id_is_rejected() -> None:
+    with pytest.raises(ValueError, match="Unknown Ollama profile id"):
+        select_ollama_profile(
+            _inventory(total_ram=8 * GIB, available_ram=4 * GIB, free_disk=20 * GIB),
+            profile_id="qwen3.5-9b-study-16k",
+        )
 
 
 def test_profile_installer_pulls_base_model_and_creates_local_profile() -> None:
@@ -204,7 +203,7 @@ def test_profile_installer_pulls_base_model_and_creates_local_profile() -> None:
         ),
         ("pulling manifest", None, None, "model_download", True),
         ("downloading", 50, 100, "model_download", True),
-        ("Committing Ollama profile models.", 50, 100, "committing", False),
+        ("Committing Ollama profile model.", 50, 100, "committing", False),
         (
             f"Creating profile model {profile.local_model}.",
             50,
@@ -255,43 +254,16 @@ def test_profile_installer_accepts_implicit_latest_profile_alias() -> None:
     assert client.models == [profile.local_model]
 
 
-def test_profile_installer_creates_selected_and_fallback_profiles() -> None:
+def test_profile_installer_exposes_no_fallback_profiles() -> None:
     profile = profile_by_id(DEFAULT_PROFILE_ID)
-    fallback = profile_by_id(LOW_RESOURCE_PROFILE_ID)
     client = FakeOllamaClient()
     installer = OllamaProfileInstaller(
         profile,
-        fallback_profiles=(fallback,),
         client=client,
         ensure_server=False,
     )
 
-    progress = []
-
-    installer.install(progress.append)
-
-    assert client.pull_calls == [(profile.base_model, True), (fallback.base_model, True)]
-    assert [call["model"] for call in client.create_calls] == [
-        profile.local_model,
-        fallback.local_model,
-    ]
-    assert set(client.models) == {profile.local_model, fallback.local_model}
-    commit_index = next(
-        index for index, item in enumerate(progress) if item.phase == "committing"
-    )
-    assert [item.detail for item in progress[:commit_index]] == [
-        f"Pulling base model {profile.base_model}.",
-        "pulling manifest",
-        "downloading",
-        f"Pulling base model {fallback.base_model}.",
-        "pulling manifest",
-        "downloading",
-    ]
-    assert all(item.cancellable is True for item in progress[:commit_index])
-    assert all(
-        item.phase == "committing" and item.cancellable is False
-        for item in progress[commit_index:]
-    )
+    assert installer.fallback_profiles == ()
 
 
 def test_profile_installer_reports_missing_registration() -> None:

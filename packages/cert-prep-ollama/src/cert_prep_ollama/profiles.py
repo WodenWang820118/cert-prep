@@ -18,26 +18,12 @@ from cert_prep_ollama.modelfiles import DEFAULT_CERT_PREP_SYSTEM_PROMPT, modelfi
 GIB = 1024 * 1024 * 1024
 AUTO_PROFILE_ID = "auto"
 DEFAULT_PROFILE_ID = "qwen3.5-4b-study-8k"
-LOW_RESOURCE_PROFILE_ID = "qwen3.5-2b-study-4k"
-HIGH_CONTEXT_PROFILE_ID = "qwen3.5-4b-study-16k"
 WINDOWS_CPU_EXECUTION_WARNING = (
     "Windows accelerator inventory did not confirm a GPU; "
     "Ollama is running in forced CPU mode."
 )
 
 DEFAULT_OLLAMA_PROFILES: tuple[OllamaModelProfile, ...] = (
-    OllamaModelProfile.from_mapping(
-        profile_id=LOW_RESOURCE_PROFILE_ID,
-        display_name="Qwen 3.5 2B Study 4K",
-        base_model="qwen3.5:2b",
-        local_model="cert-prep-qwen3.5-2b-study-4k",
-        context_window=4096,
-        system_prompt=DEFAULT_CERT_PREP_SYSTEM_PROMPT,
-        parameters={"temperature": 0, "num_predict": 2048},
-        min_total_ram_bytes=6 * GIB,
-        min_free_disk_bytes=6 * GIB,
-        description="Small local study profile for low-memory machines.",
-    ),
     OllamaModelProfile.from_mapping(
         profile_id=DEFAULT_PROFILE_ID,
         display_name="Qwen 3.5 4B Study 8K",
@@ -49,40 +35,7 @@ DEFAULT_OLLAMA_PROFILES: tuple[OllamaModelProfile, ...] = (
         min_total_ram_bytes=8 * GIB,
         min_available_ram_bytes=4 * GIB,
         min_free_disk_bytes=8 * GIB,
-        fallback_profile_ids=(LOW_RESOURCE_PROFILE_ID,),
         description="Default local study profile for OCR-to-question workflows.",
-    ),
-    OllamaModelProfile.from_mapping(
-        profile_id=HIGH_CONTEXT_PROFILE_ID,
-        display_name="Qwen 3.5 4B Study 16K",
-        base_model="qwen3.5:4b",
-        local_model="cert-prep-qwen3.5-4b-study-16k",
-        context_window=16384,
-        system_prompt=DEFAULT_CERT_PREP_SYSTEM_PROMPT,
-        parameters={"temperature": 0, "num_predict": 4096},
-        min_total_ram_bytes=16 * GIB,
-        min_available_ram_bytes=6 * GIB,
-        min_vram_bytes=6 * GIB,
-        min_free_disk_bytes=10 * GIB,
-        fallback_profile_ids=(DEFAULT_PROFILE_ID, LOW_RESOURCE_PROFILE_ID),
-        description="Higher-context 4B profile for machines with more RAM or VRAM.",
-    ),
-    OllamaModelProfile.from_mapping(
-        profile_id="qwen3.5-9b-study-16k",
-        display_name="Qwen 3.5 9B Study 16K",
-        base_model="qwen3.5:9b",
-        local_model="cert-prep-qwen3.5-9b-study-16k",
-        context_window=16384,
-        system_prompt=DEFAULT_CERT_PREP_SYSTEM_PROMPT,
-        parameters={"temperature": 0, "num_predict": 4096},
-        min_total_ram_bytes=32 * GIB,
-        min_available_ram_bytes=12 * GIB,
-        min_vram_bytes=12 * GIB,
-        min_free_disk_bytes=14 * GIB,
-        auto_selectable=False,
-        explicit_opt_in_required=True,
-        fallback_profile_ids=(DEFAULT_PROFILE_ID, LOW_RESOURCE_PROFILE_ID),
-        description="Large explicit opt-in profile; never selected automatically.",
     ),
 )
 
@@ -149,9 +102,7 @@ def select_ollama_profile(
         if not requirement_warnings
         else OllamaProfileSupportStatus.WARNING
     )
-    reason = f"Explicit Ollama profile {profile.profile_id} selected."
-    if profile.explicit_opt_in_required:
-        reason = f"{reason} This profile requires explicit opt-in."
+    reason = f"Explicit fixed Ollama profile {profile.profile_id} selected."
     return _selection(
         profile,
         catalog=catalog,
@@ -222,8 +173,8 @@ def _auto_selection(
     inventory: MachineInventorySnapshot | None,
     catalog: Sequence[OllamaModelProfile],
 ) -> OllamaProfileSelection:
+    profile = profile_by_id(DEFAULT_PROFILE_ID, catalog=catalog)
     if inventory is None:
-        profile = profile_by_id(DEFAULT_PROFILE_ID, catalog=catalog)
         return _selection(
             profile,
             catalog=catalog,
@@ -233,53 +184,6 @@ def _auto_selection(
             warnings=("Machine inventory is unavailable; using default 4B profile.",),
         )
 
-    if _inventory_incomplete(inventory):
-        profile = profile_by_id(DEFAULT_PROFILE_ID, catalog=catalog)
-        return _selection(
-            profile,
-            catalog=catalog,
-            inventory=inventory,
-            support_status=OllamaProfileSupportStatus.WARNING,
-            reason="Auto profile kept the default 4B profile because inventory is incomplete.",
-            warnings=(
-                *inventory.warnings,
-                "Machine inventory is incomplete; using default 4B profile.",
-            ),
-        )
-
-    if _clearly_low_resource(inventory):
-        profile = profile_by_id(LOW_RESOURCE_PROFILE_ID, catalog=catalog)
-        warnings = profile_requirement_warnings(profile, inventory)
-        return _selection(
-            profile,
-            catalog=catalog,
-            inventory=inventory,
-            support_status=(
-                OllamaProfileSupportStatus.WARNING
-                if warnings
-                else OllamaProfileSupportStatus.SUPPORTED
-            ),
-            reason="Auto profile selected the smaller 2B profile for low RAM or disk.",
-            warnings=warnings,
-        )
-
-    high_context = profile_by_id(HIGH_CONTEXT_PROFILE_ID, catalog=catalog)
-    if _high_context_supported(high_context, inventory):
-        warnings = profile_requirement_warnings(high_context, inventory)
-        return _selection(
-            high_context,
-            catalog=catalog,
-            inventory=inventory,
-            support_status=(
-                OllamaProfileSupportStatus.WARNING
-                if warnings
-                else OllamaProfileSupportStatus.SUPPORTED
-            ),
-            reason="Auto profile selected the higher-context 4B profile.",
-            warnings=warnings,
-        )
-
-    profile = profile_by_id(DEFAULT_PROFILE_ID, catalog=catalog)
     warnings = profile_requirement_warnings(profile, inventory)
     return _selection(
         profile,
@@ -290,7 +194,7 @@ def _auto_selection(
             if warnings
             else OllamaProfileSupportStatus.SUPPORTED
         ),
-        reason="Auto profile selected the default 4B profile.",
+        reason="Auto profile selected the fixed 4B profile.",
         warnings=warnings,
     )
 
@@ -304,54 +208,16 @@ def _selection(
     reason: str,
     warnings: Iterable[str] = (),
 ) -> OllamaProfileSelection:
-    fallback_profiles = tuple(
-        profile_by_id(fallback_id, catalog=catalog)
-        for fallback_id in profile.fallback_profile_ids
-    )
+    del catalog
     return OllamaProfileSelection(
         profile_id=profile.profile_id,
         selected_profile=profile,
         support_status=support_status,
         reason=reason,
-        fallback_profiles=fallback_profiles,
+        fallback_profiles=(),
         warnings=tuple(dict.fromkeys(warnings)),
         inventory=inventory,
         modelfile_sha256=modelfile_sha256(profile),
-    )
-
-
-def _inventory_incomplete(inventory: MachineInventorySnapshot) -> bool:
-    return inventory.ram.total_bytes is None or inventory.storage.free_bytes is None
-
-
-def _clearly_low_resource(inventory: MachineInventorySnapshot) -> bool:
-    ram_total = inventory.ram.total_bytes
-    ram_available = inventory.ram.available_bytes
-    disk_free = inventory.storage.free_bytes
-    return (
-        (ram_total is not None and ram_total < 8 * GIB)
-        or (ram_available is not None and ram_available < 4 * GIB)
-        or (disk_free is not None and disk_free < 8 * GIB)
-    )
-
-
-def _high_context_supported(
-    profile: OllamaModelProfile,
-    inventory: MachineInventorySnapshot,
-) -> bool:
-    ram_total = inventory.ram.total_bytes
-    ram_available = inventory.ram.available_bytes
-    disk_free = inventory.storage.free_bytes
-    vram = _max_accelerator_memory(inventory)
-    return (
-        ram_total is not None
-        and ram_total >= (profile.min_total_ram_bytes or 0)
-        and ram_available is not None
-        and ram_available >= (profile.min_available_ram_bytes or 0)
-        and disk_free is not None
-        and disk_free >= (profile.min_free_disk_bytes or 0)
-        and vram is not None
-        and vram >= (profile.min_vram_bytes or 0)
     )
 
 

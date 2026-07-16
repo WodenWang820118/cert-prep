@@ -280,7 +280,7 @@ def test_cancel_first_rolls_back_late_publication_and_preserves_draft_history(
         project_id="project",
         document_id="document",
         provider="ollama",
-        model="qwen3.5:2b",
+        model="obsolete-model",
     ) == []
     assert draft_jobs.recover_runnable_jobs(db) == []
     assert draft_jobs.get_job(db, "terminal-job") == public_terminal_before

@@ -62,15 +62,9 @@ def provider_from_settings(settings: Settings):
             if profile_selection is not None
             else settings.ollama_model
         )
-        fallback_models = (
-            tuple(profile.local_model for profile in profile_selection.fallback_profiles)
-            if profile_selection is not None
-            else tuple(settings.ollama_fallback_models)
-        )
         return OllamaProvider(
             host=settings.ollama_host,
             model=model,
-            fallback_models=fallback_models,
             timeout_seconds=settings.ollama_timeout_seconds,
             profile_selection=profile_selection,
             execution_policy=select_ollama_execution_policy(inventory),

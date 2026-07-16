@@ -79,11 +79,7 @@ def test_model_download_installs_selected_ollama_profile(
     monkeypatch.setattr(
         profile_installer_module,
         "OllamaProfileInstaller",
-        lambda profile, **kwargs: FakeProfileInstaller(
-            profile,
-            install_events,
-            fallback_profiles=kwargs.get("fallback_profiles", ()),
-        ),
+        lambda profile, **_kwargs: FakeProfileInstaller(profile, install_events),
     )
     client = TestClient(
         create_app(
@@ -102,12 +98,8 @@ def test_model_download_installs_selected_ollama_profile(
     assert response.json()["model"] == "cert-prep-qwen3.5-4b-study-8k"
     assert response.json()["status"] == "succeeded"
     assert install_events == [
-        ("init", DEFAULT_PROFILE_ID, ("qwen3.5-2b-study-4k",)),
-        (
-            "install",
-            "cert-prep-qwen3.5-4b-study-8k",
-            ("cert-prep-qwen3.5-2b-study-4k",),
-        ),
+        ("init", DEFAULT_PROFILE_ID),
+        ("install", "cert-prep-qwen3.5-4b-study-8k"),
     ]
 
 def test_model_download_starts_only_from_explicit_post(tmp_path) -> None:
@@ -140,9 +132,8 @@ def test_model_download_starts_only_from_explicit_post(tmp_path) -> None:
         "error": None,
     }
 
-def test_model_download_installs_raw_model_when_profile_disabled(tmp_path) -> None:
+def test_model_download_installs_fixed_raw_model_when_profile_disabled(tmp_path) -> None:
     provider = RecordingDownloadProvider(available=False, detail="model not found")
-    provider.model = "raw-local:latest"
     client = TestClient(
         create_app(
             settings=Settings(
@@ -150,7 +141,6 @@ def test_model_download_installs_raw_model_when_profile_disabled(tmp_path) -> No
                 api_token="test-token",
                 llm_provider="ollama",
                 ollama_profile_enabled=False,
-                ollama_model="raw-local:latest",
             ),
             llm_provider=provider,
             runtime_installation_async_jobs=False,
@@ -161,7 +151,7 @@ def test_model_download_installs_raw_model_when_profile_disabled(tmp_path) -> No
 
     assert response.status_code == 202
     assert provider.pull_calls == 1
-    assert response.json()["model"] == "raw-local:latest"
+    assert response.json()["model"] == DEFAULT_OLLAMA_MODEL
     assert response.json()["status"] == "succeeded"
 
 def test_model_download_poll_returns_job_status(tmp_path) -> None:

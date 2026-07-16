@@ -84,7 +84,7 @@ class FailingExamProvider(MockExamProvider):
 
 class FastFirstCompletionExamProvider(MockExamProvider):
     provider = "ollama"
-    model = "qwen3.5:2b"
+    model = "qwen3.5:4b"
 
     def __init__(self) -> None:
         self.fast_first_calls: list[dict] = []

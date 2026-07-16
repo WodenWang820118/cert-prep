@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 from pathlib import Path
 import platform
 import sys
 import tempfile
+from threading import Lock
 from time import perf_counter
 from types import ModuleType
 from typing import Any
@@ -19,7 +21,6 @@ from cert_prep_ocr_windowsml.device import (
 from cert_prep_ocr_windowsml.exceptions import ProviderUnavailableError
 
 
-_UNRESOLVED_DEVICE_ID = object()
 WINDOWSML_IGPU_PROVIDER = "DmlExecutionProvider"
 CPU_PROVIDER = "CPUExecutionProvider"
 PADDLEOCR37_DET_MODEL_NAME = "PP-OCRv6_medium_det"
@@ -32,6 +33,9 @@ PADDLEOCR37_REQUIRED_MODEL_FILES = (
     "rec/ppocr_keys_v1.txt",
     "pipeline.json",
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class WindowsMLRuntimeOCRProvider:
@@ -49,6 +53,8 @@ class WindowsMLRuntimeOCRProvider:
     ) -> None:
         self.model_dir = model_dir
         self.device_id = device_id
+        self._cpu_fallback_warning_logged = False
+        self._cpu_fallback_warning_lock = Lock()
         self._runner = WindowsMLOCRRunner(
             model_dir=model_dir,
             device_id=device_id,
@@ -57,16 +63,10 @@ class WindowsMLRuntimeOCRProvider:
     def health(self) -> OCRHealth:
         providers, version, import_error = _onnxruntime_state()
         paddleocr_version, paddleocr_error = _paddleocr_state()
-        windowsml_available = WINDOWSML_IGPU_PROVIDER in providers
-        selected_device_id, device_error = _resolve_health_device_id(
-            self.device_id,
-            windowsml_available=windowsml_available,
-            import_error=import_error,
-        )
-        selected_device = (
-            windowsml_device_label(selected_device_id)
-            if windowsml_available and device_error is None
-            else None
+        cpu_available = CPU_PROVIDER in providers
+        execution, execution_error = self._health_execution_selection(
+            providers,
+            import_error,
         )
         missing_files = [
             name
@@ -76,10 +76,17 @@ class WindowsMLRuntimeOCRProvider:
         available = (
             import_error is None
             and paddleocr_error is None
-            and windowsml_available
-            and device_error is None
+            and cpu_available
+            and execution_error is None
             and not missing_files
         )
+        fallback_reason = (
+            execution.fallback_reason
+            if available and execution is not None
+            else None
+        )
+        if available:
+            self._warn_cpu_fallback_once(fallback_reason)
         return OCRHealth(
             provider=self.provider,
             engine=self.engine,
@@ -87,29 +94,37 @@ class WindowsMLRuntimeOCRProvider:
             detail=_runtime_detail(
                 import_error,
                 paddleocr_error,
-                windowsml_available,
+                cpu_available,
                 missing_files,
-                device_error,
+                execution,
+                execution_error,
             ),
             python_version=platform.python_version(),
             paddle_version=None,
             paddleocr_version=paddleocr_version or version,
-            selected_device=selected_device,
+            selected_device=(
+                execution.selected_device if execution is not None else None
+            ),
             cuda_available=False,
             gpu_count=0,
             model_cache_dir=str(self.model_dir),
-            fallback_reason=None,
+            fallback_reason=fallback_reason,
             unavailable_reason=_runtime_unavailable_reason(
                 import_error,
                 paddleocr_error,
-                windowsml_available,
+                cpu_available,
                 missing_files,
-                device_error,
+                execution_error,
             ),
         )
 
     def extract_page_text(self, image_png: bytes, page_number: int) -> OCRPageResult:
-        result = self._runner.extract_text(image_png)
+        try:
+            result = self._runner.extract_text(image_png)
+        except Exception:
+            self._warn_cpu_fallback_once(self._runner.fallback_reason)
+            raise
+        self._warn_cpu_fallback_once(result.fallback_reason)
         return OCRPageResult(
             text=result.text,
             extraction_method="windowsml_ocr",
@@ -117,6 +132,28 @@ class WindowsMLRuntimeOCRProvider:
             fallback_reason=result.fallback_reason,
             duration_ms=result.duration_ms,
         )
+
+    def _health_execution_selection(
+        self,
+        providers: list[str],
+        import_error: Exception | None,
+    ) -> tuple[_WindowsMLExecutionSelection | None, ProviderUnavailableError | None]:
+        try:
+            return (
+                self._runner._execution_selection((providers, import_error)),
+                None,
+            )
+        except ProviderUnavailableError as exc:
+            return None, exc
+
+    def _warn_cpu_fallback_once(self, fallback_reason: str | None) -> None:
+        if fallback_reason is None:
+            return
+        with self._cpu_fallback_warning_lock:
+            if self._cpu_fallback_warning_logged:
+                return
+            self._cpu_fallback_warning_logged = True
+            logger.warning("WindowsML OCR acceleration warning: %s", fallback_reason)
 
 
 @dataclass(frozen=True)
@@ -127,6 +164,17 @@ class WindowsMLOCRTextResult:
     recognized_count: int
     device: str = "amd_windowsml"
     fallback_reason: str | None = None
+
+
+@dataclass(frozen=True)
+class _WindowsMLExecutionSelection:
+    selected_device: str
+    fallback_reason: str | None
+    windowsml_device_id: int | None = None
+
+    @property
+    def uses_windowsml(self) -> bool:
+        return self.fallback_reason is None
 
 
 class WindowsMLOCRRunner:
@@ -140,14 +188,15 @@ class WindowsMLOCRRunner:
     ) -> None:
         self.model_dir = model_dir
         self.device_id = device_id
-        self._selected_device_id: int | None | object = _UNRESOLVED_DEVICE_ID
+        self._execution: _WindowsMLExecutionSelection | None = None
+        self._cpu_runtime_retry_attempted = False
         self._paddleocr: Any | None = None
 
     def extract_text(self, image_png: bytes) -> WindowsMLOCRTextResult:
         started = perf_counter()
         image_path = self._write_temp_png(image_png)
         try:
-            results = self._paddleocr_pipeline().predict(str(image_path))
+            results = self._predict_with_cpu_retry(str(image_path))
         finally:
             image_path.unlink(missing_ok=True)
         lines = _extract_paddleocr_texts(results)
@@ -157,8 +206,14 @@ class WindowsMLOCRRunner:
             box_count=_count_paddleocr_boxes(results),
             recognized_count=len(lines),
             device=self._device_label(),
-            fallback_reason=None,
+            fallback_reason=self._execution_selection().fallback_reason,
         )
+
+    @property
+    def fallback_reason(self) -> str | None:
+        if self._execution is None:
+            return None
+        return self._execution.fallback_reason
 
     def _write_temp_png(self, image_png: bytes) -> Path:
         with tempfile.NamedTemporaryFile(
@@ -185,24 +240,123 @@ class WindowsMLOCRRunner:
             )
         return self._paddleocr
 
+    def _predict_with_cpu_retry(self, image_path: str) -> Any:
+        try:
+            pipeline = self._paddleocr_pipeline()
+        except Exception as exc:
+            if not self._switch_to_cpu_after_runtime_failure(
+                exc,
+                stage="pipeline initialization",
+            ):
+                raise
+            return self._paddleocr_pipeline().predict(image_path)
+        try:
+            return pipeline.predict(image_path)
+        except Exception as exc:
+            if not self._switch_to_cpu_after_runtime_failure(
+                exc,
+                stage="prediction",
+            ):
+                raise
+            return self._paddleocr_pipeline().predict(image_path)
+
+    def _switch_to_cpu_after_runtime_failure(
+        self,
+        error: Exception,
+        *,
+        stage: str,
+    ) -> bool:
+        execution = self._execution
+        if (
+            execution is None
+            or not execution.uses_windowsml
+            or self._cpu_runtime_retry_attempted
+        ):
+            return False
+        self._cpu_runtime_retry_attempted = True
+        detail = str(error).strip()
+        cause = f"WindowsML iGPU {stage} failed with {type(error).__name__}"
+        if detail:
+            cause = f"{cause}: {detail}"
+        self._execution = _cpu_execution_selection(cause)
+        self._paddleocr = None
+        return True
+
     def _engine_config(self) -> dict[str, Any]:
+        execution = self._execution_selection()
+        providers = [CPU_PROVIDER]
+        provider_options: list[dict[str, Any]] = [{}]
+        if execution.uses_windowsml:
+            providers = [WINDOWSML_IGPU_PROVIDER, CPU_PROVIDER]
+            provider_options = [
+                {"device_id": execution.windowsml_device_id},
+                {},
+            ]
         return {
-            "providers": [WINDOWSML_IGPU_PROVIDER, CPU_PROVIDER],
-            "provider_options": [{"device_id": self._windowsml_device_id()}, {}],
+            "providers": providers,
+            "provider_options": provider_options,
             "enable_mem_pattern": False,
             "execution_mode": "sequential",
         }
 
-    def _windowsml_device_id(self) -> int | None:
-        if self._selected_device_id is _UNRESOLVED_DEVICE_ID:
-            try:
-                self._selected_device_id = resolve_windowsml_device_id(self.device_id)
-            except WindowsMLDeviceSelectionError as exc:
-                raise ProviderUnavailableError(str(exc)) from exc
-        return self._selected_device_id  # type: ignore[return-value]
+    def _execution_selection(
+        self,
+        runtime_state: tuple[list[str], Exception | None] | None = None,
+    ) -> _WindowsMLExecutionSelection:
+        if self._execution is not None:
+            return self._execution
+        if runtime_state is None:
+            providers, _version, import_error = _onnxruntime_state()
+        else:
+            providers, import_error = runtime_state
+        self._execution = _select_execution(
+            providers,
+            import_error=import_error,
+            requested_device_id=self.device_id,
+        )
+        return self._execution
 
     def _device_label(self) -> str:
-        return windowsml_device_label(self._windowsml_device_id())
+        return self._execution_selection().selected_device
+
+
+def _select_execution(
+    providers: list[str],
+    *,
+    import_error: Exception | None,
+    requested_device_id: int | None,
+) -> _WindowsMLExecutionSelection:
+    if import_error is not None:
+        raise ProviderUnavailableError(
+            f"ONNX Runtime provider discovery failed: {import_error}"
+        ) from import_error
+    if CPU_PROVIDER not in providers:
+        raise ProviderUnavailableError(
+            "WindowsML OCR requires CPUExecutionProvider, but it is unavailable."
+        )
+    if WINDOWSML_IGPU_PROVIDER not in providers:
+        return _cpu_execution_selection("DmlExecutionProvider is unavailable")
+    try:
+        selected_device_id = resolve_windowsml_device_id(requested_device_id)
+    except WindowsMLDeviceSelectionError as exc:
+        return _cpu_execution_selection(
+            f"AMD/DXGI adapter selection failed: {exc}"
+        )
+    return _WindowsMLExecutionSelection(
+        selected_device=windowsml_device_label(selected_device_id),
+        fallback_reason=None,
+        windowsml_device_id=selected_device_id,
+    )
+
+
+def _cpu_execution_selection(cause: str) -> _WindowsMLExecutionSelection:
+    return _WindowsMLExecutionSelection(
+        selected_device="cpu",
+        fallback_reason=(
+            "WindowsML OCR acceleration could not be confirmed "
+            f"because {cause}; using CPU OCR, which may be slower."
+        ),
+    )
 
 
 def _onnxruntime_state() -> tuple[list[str], str | None, Exception | None]:
@@ -267,18 +421,18 @@ def _install_offline_aistudio_stubs() -> None:
 def _runtime_unavailable_reason(
     import_error: Exception | None,
     paddleocr_error: Exception | None,
-    windowsml_available: bool,
+    cpu_available: bool,
     missing_files: list[str],
-    device_error: Exception | None,
+    execution_error: Exception | None,
 ) -> str | None:
     if import_error is not None:
         return "windowsml_runtime_missing"
     if paddleocr_error is not None:
         return "paddleocr37_runtime_missing"
-    if not windowsml_available:
-        return "windowsml_provider_unavailable"
-    if device_error is not None:
-        return "windowsml_device_unavailable"
+    if not cpu_available:
+        return "cpu_provider_unavailable"
+    if execution_error is not None:
+        return "windowsml_runtime_unavailable"
     if missing_files:
         return "windowsml_model_artifacts_missing"
     return None
@@ -287,38 +441,27 @@ def _runtime_unavailable_reason(
 def _runtime_detail(
     import_error: Exception | None,
     paddleocr_error: Exception | None,
-    windowsml_available: bool,
+    cpu_available: bool,
     missing_files: list[str],
-    device_error: Exception | None,
+    execution: _WindowsMLExecutionSelection | None,
+    execution_error: Exception | None,
 ) -> str:
     if import_error is not None:
         return f"WindowsML OCR runtime unavailable: {import_error}"
     if paddleocr_error is not None:
         return f"PaddleOCR 3.7 runtime unavailable: {paddleocr_error}"
-    if not windowsml_available:
-        return "WindowsML OCR runtime is installed but the iGPU provider is unavailable."
-    if device_error is not None:
-        return f"WindowsML OCR adapter selection failed: {device_error}"
+    if not cpu_available:
+        return "WindowsML OCR runtime is installed but CPUExecutionProvider is unavailable."
+    if execution_error is not None:
+        return f"WindowsML OCR runtime unavailable: {execution_error}"
     if missing_files:
         return f"WindowsML OCR model artifacts are missing: {', '.join(missing_files)}."
+    if execution is not None and execution.fallback_reason is not None:
+        return execution.fallback_reason
     return (
         "WindowsML OCR runtime is ready with PaddleOCR 3.7, PP-OCRv6 medium, "
         "WindowsML iGPU selection, and CPU fallback for unsupported operators."
     )
-
-
-def _resolve_health_device_id(
-    device_id: int | None,
-    *,
-    windowsml_available: bool,
-    import_error: Exception | None,
-) -> tuple[int | None, Exception | None]:
-    if import_error is not None or not windowsml_available:
-        return None, None
-    try:
-        return resolve_windowsml_device_id(device_id), None
-    except WindowsMLDeviceSelectionError as exc:
-        return None, exc
 
 
 def _paddleocr_payloads(results: Any) -> list[dict[str, Any]]:

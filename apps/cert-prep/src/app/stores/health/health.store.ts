@@ -30,7 +30,6 @@ export class HealthStore {
 
   readonly isModelMissing = this.status.isModelMissing;
   readonly isConfiguredModelMissing = this.status.isConfiguredModelMissing;
-  readonly isModelFallbackActive = this.status.isModelFallbackActive;
   readonly isModelDownloadActive = this.actions.isModelDownloadActive;
   readonly isRuntimeInstallActive = this.actions.isRuntimeInstallActive;
   readonly canCancelModelDownload = this.actions.canCancelModelDownload;

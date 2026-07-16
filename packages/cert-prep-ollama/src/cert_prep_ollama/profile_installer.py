@@ -36,7 +36,6 @@ class OllamaProfileInstaller:
         self,
         profile: OllamaModelProfile,
         *,
-        fallback_profiles: tuple[OllamaModelProfile, ...] = (),
         host: str = DEFAULT_OLLAMA_HOST,
         timeout_seconds: float = 120.0,
         runtime_install_timeout_seconds: float = 900.0,
@@ -44,8 +43,7 @@ class OllamaProfileInstaller:
         ensure_server: bool = True,
     ) -> None:
         self.profile = profile
-        self.fallback_profiles = fallback_profiles
-        self.profiles = (profile, *fallback_profiles)
+        self.fallback_profiles: tuple[OllamaModelProfile, ...] = ()
         self.model = profile.local_model
         self.host = host
         self._runtime_install_timeout_seconds = runtime_install_timeout_seconds
@@ -66,10 +64,7 @@ class OllamaProfileInstaller:
                 unavailable_reason=exc.code,
                 version=self.model,
             )
-        missing_models = tuple(
-            profile.local_model for profile in self.profiles if profile.local_model not in model_names
-        )
-        available = not missing_models
+        available = self.model in model_names
         return RuntimeRequirementSnapshot(
             kind=self.kind,
             label="Ollama profile models",
@@ -77,7 +72,7 @@ class OllamaProfileInstaller:
             detail=(
                 "profile models available"
                 if available
-                else f"profile model {missing_models[0]} not found"
+                else f"profile model {self.model} not found"
             ),
             unavailable_reason=None if available else "model_missing",
             version=self.model,
@@ -92,7 +87,7 @@ class OllamaProfileInstaller:
         self,
         progress: Callable[[RuntimeInstallProgress], None],
     ) -> RuntimeInstallationStatus:
-        """Pull base models and create selected plus fallback local profiles."""
+        """Pull the fixed base model and create its local study profile."""
 
         self._prepare_server()
         last_completed: int | None = None
@@ -119,58 +114,53 @@ class OllamaProfileInstaller:
                 )
             )
 
-        pulled_base_models: set[str] = set()
-        for profile in self.profiles:
-            if profile.base_model not in pulled_base_models:
-                progress(
-                    RuntimeInstallProgress(
-                        f"Pulling base model {profile.base_model}.",
-                        phase="model_download",
-                        cancellable=True,
-                    )
-                )
-                for update in self._client.pull(profile.base_model, stream=True):
-                    record_install_progress(
-                        pull_progress(update),
-                        phase="model_download",
-                        cancellable=True,
-                    )
-                pulled_base_models.add(profile.base_model)
+        progress(
+            RuntimeInstallProgress(
+                f"Pulling base model {self.profile.base_model}.",
+                phase="model_download",
+                cancellable=True,
+            )
+        )
+        for update in self._client.pull(self.profile.base_model, stream=True):
+            record_install_progress(
+                pull_progress(update),
+                phase="model_download",
+                cancellable=True,
+            )
 
         progress(
             RuntimeInstallProgress(
-                "Committing Ollama profile models.",
+                "Committing Ollama profile model.",
                 completed=last_completed,
                 total=last_total,
                 phase="committing",
                 cancellable=False,
             )
         )
-        for profile in self.profiles:
-            progress(
-                RuntimeInstallProgress(
-                    f"Creating profile model {profile.local_model}.",
-                    completed=last_completed,
-                    total=last_total,
-                    phase="committing",
-                    cancellable=False,
-                )
+        progress(
+            RuntimeInstallProgress(
+                f"Creating profile model {self.model}.",
+                completed=last_completed,
+                total=last_total,
+                phase="committing",
+                cancellable=False,
             )
-            create = getattr(self._client, "create", None)
-            if not callable(create):
-                raise ProviderUnavailableError("Ollama client does not support model creation.")
-            for update in create(
-                model=profile.local_model,
-                from_=profile.base_model,
-                system=profile.system_prompt,
-                parameters=parameters_from_profile(profile),
-                stream=True,
-            ):
-                record_install_progress(
-                    _create_progress(update),
-                    phase="committing",
-                    cancellable=False,
-                )
+        )
+        create = getattr(self._client, "create", None)
+        if not callable(create):
+            raise ProviderUnavailableError("Ollama client does not support model creation.")
+        for update in create(
+            model=self.model,
+            from_=self.profile.base_model,
+            system=self.profile.system_prompt,
+            parameters=parameters_from_profile(self.profile),
+            stream=True,
+        ):
+            record_install_progress(
+                _create_progress(update),
+                phase="committing",
+                cancellable=False,
+            )
 
         progress(
             RuntimeInstallProgress(
@@ -182,12 +172,9 @@ class OllamaProfileInstaller:
             )
         )
         model_names = self._installed_model_names()
-        missing_models = [
-            profile.local_model for profile in self.profiles if profile.local_model not in model_names
-        ]
-        if missing_models:
+        if self.model not in model_names:
             raise ProviderUnavailableError(
-                f"Ollama profile model was not registered: {missing_models[0]}",
+                f"Ollama profile model was not registered: {self.model}",
                 code="model_missing",
             )
         progress(

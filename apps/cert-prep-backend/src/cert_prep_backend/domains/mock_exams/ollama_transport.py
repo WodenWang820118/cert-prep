@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 import logging
+from threading import local
 from typing import Any, TypeVar
 
 from cert_prep_backend.domains.mock_exams.deterministic_parser import (
@@ -9,7 +10,6 @@ from cert_prep_backend.domains.mock_exams.deterministic_parser import (
     is_exam_source_chunk,
     source_text_and_chunks_for_prompt,
 )
-from cert_prep_backend.domains.mock_exams.model_fallback import ModelFallbackEngine
 from cert_prep_backend.domains.mock_exams.models import (
     AnswerKeySource,
     DraftSuggestion,
@@ -28,7 +28,6 @@ from cert_prep_backend.domains.mock_exams.response_parsing import (
     confidence_from_payload,
     fast_first_prompt,
     is_non_fatal_generation_error,
-    is_runtime_model_failure,
     json_object_response_or_unavailable,
     short_error,
 )
@@ -46,8 +45,6 @@ from cert_prep_ollama.server import ensure_ollama_server_running, resolve_ollama
 
 STREAMING_PREWARM_KEEP_ALIVE = "5m"
 STREAMING_RELEASE_KEEP_ALIVE = 0
-# Transient Ollama failures often reflect memory pressure; retry after a quiet window.
-MODEL_RETRY_AFTER_SECONDS = 300.0
 T = TypeVar("T")
 _LOGGER = logging.getLogger(__name__)
 
@@ -62,22 +59,16 @@ class OllamaProvider:
         host: str,
         model: str,
         timeout_seconds: float,
-        fallback_models: Sequence[str] = (),
         profile_selection: OllamaProfileSelection | None = None,
         execution_policy: LLMExecutionPolicy | None = None,
         client: Any | None = None,
     ) -> None:
         self.host = host
         self.model = model
+        self.fallback_models: tuple[str, ...] = ()
         self.profile_selection = profile_selection
         self.execution_policy = execution_policy or LLMExecutionPolicy()
-        self._fallback_engine = ModelFallbackEngine(
-            primary_model=model,
-            fallback_models=fallback_models,
-            retry_after_seconds=MODEL_RETRY_AFTER_SECONDS,
-            error_shortener=short_error,
-        )
-        self.fallback_models = self._fallback_engine.fallback_models
+        self._generation_state = local()
         self._client = client or OllamaClient(host=host, timeout_seconds=timeout_seconds)
         if self.execution_policy.warning is not None:
             _LOGGER.warning("Ollama CPU fallback: %s", self.execution_policy.warning)
@@ -94,10 +85,15 @@ class OllamaProvider:
         return {"keep_alive": STREAMING_RELEASE_KEEP_ALIVE}
 
     def reset_generation_attribution(self) -> None:
-        self._fallback_engine.reset_generation_attribution()
+        self._generation_state.model = None
 
     def generation_attribution(self) -> GenerationAttribution:
-        return self._fallback_engine.generation_attribution(self.provider)
+        model = getattr(self._generation_state, "model", None)
+        return GenerationAttribution(
+            effective_provider=self.provider if model is not None else None,
+            effective_model=model,
+            fallback_reason=None,
+        )
 
     def health(self) -> ProviderHealth:
         """Return Ollama process and configured-model availability."""
@@ -137,7 +133,6 @@ class OllamaProvider:
     def _health_from_model_names(self, model_names: set[str]) -> ProviderHealth:
         effective_model = self._effective_model_from(model_names)
         available = effective_model is not None
-        fallback_reason = self._fallback_reason(effective_model)
         detail = self._health_detail(effective_model)
         return ProviderHealth(
             provider=self.provider,
@@ -148,7 +143,7 @@ class OllamaProvider:
             configured_model=self.model,
             effective_model=effective_model,
             fallback_models=self.fallback_models,
-            fallback_reason=fallback_reason,
+            fallback_reason=None,
             **self._health_metadata_fields(),
         )
 
@@ -209,7 +204,7 @@ class OllamaProvider:
             return []
 
         source, prompt_chunks = source_text_and_chunks_for_prompt(chunks, limit)
-        return self._with_model_fallback(
+        return self._with_primary_model(
             lambda model: self._generate_reasoning_drafts_for_model(
                 model,
                 chunks,
@@ -337,7 +332,7 @@ class OllamaProvider:
         """Ask Ollama to complete one extracted draft with answer/rationale JSON."""
 
         try:
-            payload = self._with_model_fallback(
+            payload = self._with_primary_model(
                 lambda model: json_object_response_or_unavailable(
                     self._client.chat(
                         model=model,
@@ -402,60 +397,37 @@ class OllamaProvider:
         raise ProviderUnavailableError(health.detail)
 
     def _effective_model_from(self, model_names: set[str]) -> str | None:
-        return self._fallback_engine.effective_model_from(model_names)
-
-    def _fallback_reason(self, effective_model: str | None) -> str | None:
-        return self._fallback_engine.fallback_reason(effective_model)
+        return self.model if self.model in model_names else None
 
     def _health_detail(self, effective_model: str | None) -> str:
         if effective_model is None:
             return "model not found"
-        if effective_model == self.model:
-            return "model available"
-        return f"model available via fallback {effective_model}"
+        return "model available"
 
     def _installed_model_names(self) -> set[str]:
         return extract_model_names(self._client.list())
 
-    def _available_model_candidates(self) -> tuple[str, ...]:
+    def _available_primary_model(self) -> str:
         try:
             model_names = self._installed_model_names()
         except Exception as exc:
             raise ProviderUnavailableError(f"Ollama unavailable: {exc}") from exc
 
-        candidates = self._fallback_engine.available_model_candidates(model_names)
-        if candidates:
-            return candidates
+        if self.model in model_names:
+            return self.model
 
         raise ProviderUnavailableError(self._health_detail(None))
 
-    def _with_model_fallback(self, operation: Callable[[str], T]) -> T:
-        errors: list[str] = []
-        for model in self._available_model_candidates():
-            try:
-                result = operation(model)
-            except Exception as exc:
-                errors.append(f"{model}: {short_error(exc)}")
-                if is_runtime_model_failure(exc):
-                    self._mark_model_unusable(model, exc)
-                continue
-
-            self._record_model_success(model)
-            return result
-
-        detail = "Ollama unavailable for configured and fallback models"
-        if errors:
-            detail = f"{detail}: {'; '.join(errors)}"
-        raise ProviderUnavailableError(detail)
-
-    def _mark_model_unusable(self, model: str, exc: Exception) -> None:
-        self._fallback_engine.mark_model_unusable(model, exc)
-
-    def _record_model_success(self, model: str) -> None:
-        self._fallback_engine.record_model_success(model)
-
-    def _runtime_unusable_models(self) -> set[str]:
-        return self._fallback_engine.runtime_unusable_models()
+    def _with_primary_model(self, operation: Callable[[str], T]) -> T:
+        model = self._available_primary_model()
+        try:
+            result = operation(model)
+        except Exception as exc:
+            raise ProviderUnavailableError(
+                f"Ollama unavailable for configured model {model}: {short_error(exc)}"
+            ) from exc
+        self._generation_state.model = model
+        return result
 
 
 def _suggestions_from_reasoning_payload(

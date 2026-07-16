@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 import platform
 import tempfile
@@ -55,7 +56,18 @@ class ExternalWindowsMLOCRProvider:
             payload = self._run_json(entrypoint, [*self._runtime_args(), "--ocr-health"])
             health = _health_from_payload(payload, runtime_dir=runtime_dir)
             if health.available:
-                self._prewarm_primary_worker(entrypoint)
+                prewarm_result = self._prewarm_primary_worker(
+                    entrypoint,
+                    raise_on_failure=True,
+                )
+                fallback_reason = _cpu_fallback_reason(prewarm_result)
+                if prewarm_result is not None and fallback_reason is not None:
+                    health = replace(
+                        health,
+                        selected_device=prewarm_result.device or "cpu",
+                        fallback_reason=fallback_reason,
+                        detail=fallback_reason,
+                    )
             return health
         except Exception as exc:
             return OCRHealth(
@@ -108,9 +120,12 @@ class ExternalWindowsMLOCRProvider:
         entrypoint: Path,
         *,
         raise_on_failure: bool = False,
-    ) -> None:
+    ) -> OCRPageResult | None:
         try:
-            self._worker_pool_for(entrypoint, initial_worker_count=1).prewarm_primary_worker()
+            return self._worker_pool_for(
+                entrypoint,
+                initial_worker_count=1,
+            ).prewarm_primary_worker()
         except Exception as exc:
             self._reset_worker_pool()
             if raise_on_failure:
@@ -119,6 +134,7 @@ class ExternalWindowsMLOCRProvider:
                 raise ProviderUnavailableError(
                     f"WindowsML OCR runtime is unhealthy: {exc}"
                 ) from exc
+            return None
 
     def _entrypoint(self) -> Path | None:
         runtime_dir = self._settings.resolved_windowsml_ocr_runtime_dir
@@ -199,3 +215,16 @@ class ExternalWindowsMLOCRProvider:
             "--windowsml-device-id",
             str(self._settings.ocr_windowsml_device_id),
         ]
+
+
+def _cpu_fallback_reason(result: OCRPageResult | None) -> str | None:
+    if result is None:
+        return None
+    if result.fallback_reason is not None:
+        return result.fallback_reason
+    if (result.device or "").strip().lower() == "cpu":
+        return (
+            "WindowsML OCR acceleration could not be confirmed; "
+            "using CPU OCR, which may be slower."
+        )
+    return None

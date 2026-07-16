@@ -24,21 +24,6 @@ export function availableLlmHealth(): LLMHealthRead {
   };
 }
 
-export function fallbackLlmHealth(): LLMHealthRead {
-  return {
-    provider: 'ollama',
-    model: 'qwen3.5:4b',
-    available: true,
-    detail: 'model available via fallback qwen3.5:2b',
-    unavailable_reason: null,
-    configured_model: 'qwen3.5:4b',
-    effective_model: 'qwen3.5:2b',
-    fallback_models: ['qwen3.5:2b'],
-    fallback_reason:
-      'Configured model qwen3.5:4b is missing; using fallback qwen3.5:2b.',
-  };
-}
-
 export function cpuExecutionLlmHealth(
   overrides: Partial<LLMHealthRead> = {},
 ): LLMHealthRead {
@@ -86,6 +71,18 @@ export function ocrHealth(): OCRHealthRead {
     model_cache_dir: null,
     fallback_reason: null,
     unavailable_reason: null,
+  };
+}
+
+export function cpuFallbackOcrHealth(): OCRHealthRead {
+  return {
+    ...ocrHealth(),
+    provider: 'windowsml',
+    engine: 'paddleocr-3.7-onnxruntime-windowsml',
+    detail: 'WindowsML OCR is ready in CPU fallback mode.',
+    selected_device: 'cpu',
+    fallback_reason:
+      'WindowsML acceleration was not confirmed; using CPU OCR. OCR may be slower.',
   };
 }
 

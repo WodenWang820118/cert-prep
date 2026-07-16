@@ -32,13 +32,13 @@ def test_extract_model_names_accepts_client_objects_and_dicts() -> None:
     response = _ModelList(
         models=[
             _Model("qwen3.5:4b"),
-            {"name": "qwen3.5:2b"},
+            {"name": "other-model"},
             {"model": "gemma4:12b"},
             {"model": None},
         ]
     )
 
-    assert extract_model_names(response) == {"qwen3.5:4b", "qwen3.5:2b", "gemma4:12b"}
+    assert extract_model_names(response) == {"qwen3.5:4b", "other-model", "gemma4:12b"}
     assert extract_model_names({"models": [{"model": "llama3.2:3b"}]}) == {"llama3.2:3b"}
 
 
