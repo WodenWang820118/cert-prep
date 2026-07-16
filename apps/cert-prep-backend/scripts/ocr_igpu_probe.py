@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import platform
 import re
 import subprocess
@@ -244,7 +244,15 @@ def resolve_powershell_executable() -> str:
         return configured
     windows_root = os.environ.get("SystemRoot", "").strip() or os.environ.get("WINDIR", "").strip()
     if windows_root:
-        candidate = Path(windows_root) / "System32" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+        candidate = Path(
+            str(
+                PureWindowsPath(windows_root)
+                / "System32"
+                / "WindowsPowerShell"
+                / "v1.0"
+                / "powershell.exe"
+            )
+        )
         if candidate.is_file():
             return str(candidate)
     return "powershell.exe"

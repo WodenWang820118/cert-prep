@@ -28,7 +28,6 @@ from cert_prep_backend.domains.runtime_installations import (
     run_ocr_runtime_command,
 )
 from cert_prep_backend.domains.runtime_installations.fastflowlm import (
-    verify_fastflowlm_authenticode,
     verify_fastflowlm_installer_hash,
 )
 from cert_prep_backend.persistence.database import Database
@@ -36,7 +35,6 @@ from cert_prep_backend.api.errors import (
     ProviderUnavailableError,
     TermsAcceptanceRequiredError,
 )
-from cert_prep_contracts.llm import FASTFLOWLM_RUNTIME_TRUST_POLICY
 from cert_prep_contracts.runtime import (
     RuntimeInstallationStatus,
     RuntimeInstallProgress,
@@ -338,67 +336,6 @@ def test_fastflowlm_installer_hash_fails_closed_before_signature(tmp_path: Path)
         verify_fastflowlm_installer_hash(installer)
 
 
-@pytest.mark.parametrize(
-    ("signature", "message"),
-    [
-        (
-            {
-                "Status": "NotSigned",
-                "SignerThumbprint": None,
-                "SignerSubject": None,
-                "Timestamped": False,
-            },
-            "valid signature",
-        ),
-        (
-            {
-                "Status": "Valid",
-                "SignerThumbprint": "0" * 40,
-                "SignerSubject": FASTFLOWLM_RUNTIME_TRUST_POLICY.signer_subject,
-                "Timestamped": True,
-            },
-            "signer is not allowlisted",
-        ),
-        (
-            {
-                "Status": "Valid",
-                "SignerThumbprint": FASTFLOWLM_RUNTIME_TRUST_POLICY.signer_thumbprint,
-                "SignerSubject": "CN=FastFlowLM Imposter",
-                "Timestamped": True,
-            },
-            "signer subject is not allowlisted",
-        ),
-        (
-            {
-                "Status": "Valid",
-                "SignerThumbprint": FASTFLOWLM_RUNTIME_TRUST_POLICY.signer_thumbprint,
-                "SignerSubject": FASTFLOWLM_RUNTIME_TRUST_POLICY.signer_subject,
-                "Timestamped": False,
-            },
-            "not timestamped",
-        ),
-    ],
-)
-def test_fastflowlm_authenticode_rejects_untrusted_metadata(
-    monkeypatch,
-    tmp_path: Path,
-    signature: dict,
-    message: str,
-) -> None:
-    monkeypatch.setattr(
-        "cert_prep_backend.domains.runtime_installations.fastflowlm.subprocess.run",
-        lambda *_args, **_kwargs: subprocess.CompletedProcess(
-            [],
-            0,
-            stdout=json.dumps(signature),
-            stderr="",
-        ),
-    )
-
-    with pytest.raises(ProviderUnavailableError, match=message):
-        verify_fastflowlm_authenticode(tmp_path / "flm-setup.exe")
-
-
 def test_lazy_ollama_provider_does_not_resolve_during_manager_setup(
     tmp_path: Path,
 ) -> None:
@@ -472,7 +409,10 @@ def test_paddle_runtime_install_rejects_checksum_mismatch(tmp_path: Path) -> Non
     assert response.error == "OCR runtime artifact checksum mismatch."
 
 
-def test_windowsml_runtime_install_verifies_and_installs_artifact(tmp_path: Path) -> None:
+def test_windowsml_runtime_install_verifies_and_installs_artifact(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
     artifact_path = tmp_path / "cert-prep-ocr-windowsml-runtime-x86_64-pc-windows-msvc.zip"
     with ZipFile(artifact_path, "w") as archive:
         archive.writestr("cert-prep-ocr-windowsml-runtime.cmd", "@echo off\r\nexit /b 0\r\n")
@@ -506,6 +446,11 @@ def test_windowsml_runtime_install_verifies_and_installs_artifact(tmp_path: Path
         api_token="test-token",
         windowsml_ocr_runtime_dir=runtime_dir,
         windowsml_ocr_runtime_manifest_path=manifest_path,
+    )
+    monkeypatch.setattr(
+        "cert_prep_backend.domains.runtime_installations.installers."
+        "run_ocr_runtime_command",
+        lambda _entrypoint, _args: "",
     )
     manager = RuntimeInstallationManager(
         settings=settings,

@@ -18,6 +18,10 @@ describe('CertPrepRuntimeConfig', () => {
     TestBed.configureTestingModule({});
   });
 
+  afterEach(() => {
+    Reflect.deleteProperty(window, '__TAURI_INTERNALS__');
+  });
+
   it('does not provide a static bearer token for browser fallback', async () => {
     const config = await TestBed.inject(
       CertPrepRuntimeConfig,

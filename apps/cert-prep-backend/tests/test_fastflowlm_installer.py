@@ -66,8 +66,8 @@ def test_fastflowlm_runtime_installer_requires_pinned_terms_before_work(
         executable_resolver=lambda: None,
     )
     monkeypatch.setattr(
-        "cert_prep_backend.domains.runtime_installations.fastflowlm.os.name",
-        "nt",
+        "cert_prep_backend.domains.runtime_installations.fastflowlm.os",
+        SimpleNamespace(name="nt"),
     )
     monkeypatch.setattr(
         "cert_prep_backend.domains.runtime_installations.fastflowlm."
@@ -121,8 +121,8 @@ def test_fastflowlm_runtime_installer_verifies_before_execution(
         terms_accepted=lambda: True,
     )
     monkeypatch.setattr(
-        "cert_prep_backend.domains.runtime_installations.fastflowlm.os.name",
-        "nt",
+        "cert_prep_backend.domains.runtime_installations.fastflowlm.os",
+        SimpleNamespace(name="nt"),
     )
     monkeypatch.setattr(
         "cert_prep_backend.domains.runtime_installations.fastflowlm."
@@ -294,6 +294,7 @@ def test_wintrust_state_is_closed_on_success_and_failure(
         cert_get_name=None,
     )
     monkeypatch.setattr(wintrust_module, "_load_wintrust_api", lambda: api)
+    monkeypatch.setattr(wintrust_module, "os", SimpleNamespace(name="nt"))
     monkeypatch.setattr(
         wintrust_module,
         "_signature_from_verified_state",
@@ -385,8 +386,8 @@ def test_installer_timeout_uses_absolute_taskkill_and_waits(
     process = _OwnedProcess()
     commands: list[list[str]] = []
     monkeypatch.setattr(
-        "cert_prep_backend.domains.runtime_installations.fastflowlm.os.name",
-        "nt",
+        "cert_prep_backend.domains.runtime_installations.fastflowlm.os",
+        SimpleNamespace(name="nt"),
     )
     monkeypatch.setattr(
         "cert_prep_backend.domains.runtime_installations.fastflowlm."
@@ -412,8 +413,8 @@ def test_installer_timeout_fails_closed_when_taskkill_fails(
 ) -> None:
     process = _OwnedProcess()
     monkeypatch.setattr(
-        "cert_prep_backend.domains.runtime_installations.fastflowlm.os.name",
-        "nt",
+        "cert_prep_backend.domains.runtime_installations.fastflowlm.os",
+        SimpleNamespace(name="nt"),
     )
     monkeypatch.setattr(
         "cert_prep_backend.domains.runtime_installations.fastflowlm."

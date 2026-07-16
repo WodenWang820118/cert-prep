@@ -24,6 +24,7 @@ describe('App runtime loading', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     localStorage.clear();
+    Reflect.deleteProperty(window, '__TAURI_INTERNALS__');
     apiClient = createApiClient();
 
     await TestBed.configureTestingModule({

@@ -21,6 +21,34 @@ from llm_test_fakes import GIB, RecordingDownloadProvider, _profile_inventory
 AUTH_HEADERS = {"Authorization": "Bearer test-token"}
 
 
+def _compatible_xdna2_inventory():
+    inventory = _profile_inventory(total_ram=32 * GIB, free_disk=64 * GIB)
+    return inventory.__class__(
+        platform="Windows",
+        platform_version="10.0.26100",
+        architecture=inventory.architecture,
+        cpu=MachineCpuSnapshot(
+            architecture="AMD64",
+            name="AMD Ryzen AI 9 H 365",
+            logical_cores=20,
+        ),
+        ram=inventory.ram,
+        storage=inventory.storage,
+        accelerators=(
+            MachineAcceleratorSnapshot(
+                kind="npu",
+                name="NPU Compute Accelerator Device",
+            ),
+            MachineAcceleratorSnapshot(
+                kind="gpu",
+                name="AMD Radeon 880M",
+                vendor="amd",
+                driver_version="32.0.203.304",
+            ),
+        ),
+    )
+
+
 def test_model_fallback_engine_records_runtime_fallback_reason() -> None:
     engine = ModelFallbackEngine(
         primary_model="qwen3.5:4b",
@@ -127,7 +155,15 @@ def test_provider_from_settings_can_select_fastflowlm(monkeypatch, tmp_path) -> 
     assert provider.owned_server_idle_timeout_seconds == 5.0
 
 
-def test_provider_selection_endpoint_reports_configured_and_effective_truth(tmp_path) -> None:
+def test_provider_selection_endpoint_reports_configured_and_effective_truth(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setattr(
+        provider_selection_module,
+        "_cached_machine_inventory",
+        lambda _timeout: _compatible_xdna2_inventory(),
+    )
     provider = RecordingDownloadProvider(available=True, detail="model available")
     provider.provider = "fastflowlm"
     provider.model = "qwen3.5:2b"
@@ -202,8 +238,14 @@ def test_provider_selection_endpoint_resolves_profile_model_before_health(
 
 
 def test_fastflowlm_terms_decision_endpoint_persists_exact_accepted_version(
+    monkeypatch,
     tmp_path,
 ) -> None:
+    monkeypatch.setattr(
+        provider_selection_module,
+        "_cached_machine_inventory",
+        lambda _timeout: _compatible_xdna2_inventory(),
+    )
     settings = Settings(
         data_dir=tmp_path,
         api_token="test-token",

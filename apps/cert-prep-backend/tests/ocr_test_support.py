@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import sys
 
@@ -45,20 +46,28 @@ def external_provider_with_runtime(
     runtime_dir.mkdir()
     log_path = tmp_path / "runtime.log"
     script_path = runtime_dir / "runtime.py"
-    script_path.write_text(
-        runtime_script(
-            log_path=log_path,
-            worker_body=worker_body,
-            oneshot_body=oneshot_body,
-            health_body=health_body,
-        ),
-        encoding="utf-8",
-    )
-    entrypoint = runtime_dir / "runtime.cmd"
-    entrypoint.write_text(
-        f'@echo off\n"{sys.executable}" "%~dp0runtime.py" %*\n',
-        encoding="utf-8",
-    )
+    script = runtime_script(
+        log_path=log_path,
+        worker_body=worker_body,
+        oneshot_body=oneshot_body,
+        health_body=health_body,
+    ).lstrip("\n")
+    if os.name == "nt":
+        script_path.write_text(script, encoding="utf-8", newline="\n")
+        entrypoint = runtime_dir / "runtime.cmd"
+        entrypoint.write_text(
+            f'@echo off\n"{sys.executable}" "%~dp0runtime.py" %*\n',
+            encoding="utf-8",
+            newline="\n",
+        )
+    else:
+        script_path.write_text(
+            f"#!{sys.executable}\n{script}",
+            encoding="utf-8",
+            newline="\n",
+        )
+        script_path.chmod(0o755)
+        entrypoint = script_path
     (runtime_dir / "runtime-manifest.json").write_text(
         json.dumps(
             {

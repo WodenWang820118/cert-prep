@@ -46,7 +46,7 @@
       "executor": "nx:run-commands",
       "options": {
         "cwd": "apps/cert-prep-backend",
-        "command": "uv run python -c \"import sys; print(sys.version); assert sys.version_info[:2] in {(3, 12), (3, 13)}\""
+        "command": "uv run python -c \"import sys; print(sys.version); assert sys.version_info[:2] == (3, 12)\""
       }
     },
     "ocr-setup-cpu": {
