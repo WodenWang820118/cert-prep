@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import test from 'node:test';
@@ -222,6 +224,76 @@ test('OCR bootstrap remains remote, candidate-bound and hash-verified', () => {
     /Public OCR runtime download failed byte\/hash verification/,
   );
 });
+
+test('clean-install canonicalizes candidate identities with ordinal ordering', () => {
+  assert.match(
+    cleanInstall,
+    /\[Array\]::Sort\(\$identities, \[StringComparer\]::Ordinal\)/,
+  );
+  assert.match(
+    cleanInstall,
+    /\$computedCandidateId\s*=\s*Get-CanonicalCandidateId \$candidate\.files/,
+  );
+  assert.doesNotMatch(
+    cleanInstall,
+    /\$candidate\.files\s*\|\s*Sort-Object/,
+  );
+});
+
+test(
+  'clean-install PowerShell hashing matches Node for mixed-case identities',
+  { skip: process.platform !== 'win32' },
+  () => {
+    const identities = [
+      `harness/tools/release/assemble.test.ts:${'a'.repeat(64)}`,
+      `harness/tools/release/README.md:${'b'.repeat(64)}`,
+    ];
+    const expected = createHash('sha256')
+      .update([...identities].sort().join('\n'))
+      .digest('hex');
+    const helperStart = cleanInstall.indexOf('function Get-StringSha256');
+    const helperEnd = cleanInstall.indexOf('function Assert-CandidateFiles');
+    assert.ok(helperStart >= 0 && helperEnd > helperStart);
+    const helpers = cleanInstall.slice(helperStart, helperEnd);
+    const identityLiterals = identities.map((identity) => `'${identity}'`);
+    const script = [
+      helpers,
+      `$identities = [string[]]@(${identityLiterals.join(', ')})`,
+      '[pscustomobject]@{',
+      '  canonical = Get-CanonicalCandidateId $identities',
+      '  legacy = Get-StringSha256 (($identities | Sort-Object) -join [char]10)',
+      '} | ConvertTo-Json -Compress',
+    ].join('\n');
+    const executables = [
+      'pwsh',
+      resolve(
+        process.env.SystemRoot ?? 'C:\\Windows',
+        'System32/WindowsPowerShell/v1.0/powershell.exe',
+      ),
+    ];
+    let invocation;
+    for (const executable of executables) {
+      const result = spawnSync(
+        executable,
+        ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script],
+        {
+          encoding: 'utf8',
+          windowsHide: true,
+        },
+      );
+      if (!result.error) {
+        invocation = result;
+        break;
+      }
+    }
+
+    assert.ok(invocation, 'A Windows PowerShell executable must be available.');
+    assert.equal(invocation.status, 0, invocation.stderr);
+    const result = JSON.parse(invocation.stdout.trim());
+    assert.equal(result.canonical, expected);
+    assert.notEqual(result.legacy, expected);
+  },
+);
 
 test('clean-install proves one fresh NSIS install, launch, health check and uninstall', () => {
   assert.doesNotMatch(cleanInstall, /ValidateSet\('msi'/i);

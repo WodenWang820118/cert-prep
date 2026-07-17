@@ -29,6 +29,12 @@ function Get-StringSha256([string]$Value) {
     }
 }
 
+function Get-CanonicalCandidateId([object[]]$Files) {
+    [string[]]$identities = @($Files)
+    [Array]::Sort($identities, [StringComparer]::Ordinal)
+    return Get-StringSha256 ($identities -join "`n")
+}
+
 function Assert-CandidateFiles([string]$Root, [pscustomobject]$Candidate) {
     foreach ($identity in $Candidate.files) {
         if ($identity -notmatch '^((?:release|harness)/[^:]+):([0-9a-f]{64})$') {
@@ -281,7 +287,7 @@ if (Test-Path -LiteralPath (Join-Path $env:GITHUB_WORKSPACE '.git')) {
     throw 'Clean-install verification must run without a source checkout.'
 }
 Assert-CandidateFiles $candidateRoot $candidate
-$computedCandidateId = Get-StringSha256 (($candidate.files | Sort-Object) -join "`n")
+$computedCandidateId = Get-CanonicalCandidateId $candidate.files
 if ($computedCandidateId -ne $candidate.candidateId) {
     throw 'Candidate ID does not match the verified file identity set.'
 }

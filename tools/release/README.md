@@ -59,9 +59,9 @@ package validation before creating an artifact. It:
 - uploads one candidate containing both the publishable files and the exact
   release scripts used by downstream jobs.
 
-The candidate ID is derived from the sorted file identities and SHA-256
-digests. Downstream jobs verify that ID and download this artifact without a
-source checkout or rebuild.
+The candidate ID is derived from the file identities sorted with ordinal string
+ordering, joined with LF, and hashed with SHA-256. Downstream jobs verify that
+ID and download this artifact without a source checkout or rebuild.
 
 ### `clean-install`
 
