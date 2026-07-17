@@ -33,6 +33,12 @@ export type CompleteQuestionDraftWithExcerpt = CompleteQuestionDraft & {
 
 export type MockWrongAnswerExplanationRead = WrongAnswerExplanationRead;
 
+export interface MockUploadedSourceFile {
+  readonly bytes: Buffer;
+  readonly contentType: string | null;
+  readonly filename: string;
+}
+
 export interface MockCertPrepApi {
   readonly project: ProjectRead;
   readonly secondaryProject: ProjectRead;
@@ -59,6 +65,7 @@ export interface MockCertPrepApi {
   requestLogSince(marker: number): readonly string[];
   seenPaths(): Set<string>;
   uploadedDocuments(projectId?: string): readonly DocumentRead[];
+  uploadedSourceFiles(projectId?: string): readonly MockUploadedSourceFile[];
   wrongAnswerExplanations(
     projectId?: string,
   ): readonly MockWrongAnswerExplanationRead[];
@@ -76,6 +83,7 @@ interface MockProjectState {
   readonly incompleteApprovedDrafts: readonly QuestionDraftRead[];
   readonly fullExamDocument: DocumentRead;
   readonly uploadedDocuments: DocumentRead[];
+  readonly uploadedSourceFiles: MockUploadedSourceFile[];
   readonly sessions: Map<string, PracticeSessionRead>;
   readonly practiceSessionPayloads: PracticeSessionCreate[];
   readonly attempts: PracticeAttemptRead[];
@@ -538,14 +546,23 @@ export async function installMockCertPrepApi(
     }
 
     if (method === 'POST' && path === `/projects/${projectId}/documents`) {
+      const uploadedSourceFile = multipartUploadFile(
+        request.postDataBuffer(),
+        request.headers()['content-type'],
+      );
+      if (uploadedSourceFile === null) {
+        await fulfillJson(route, 400, {
+          code: 'invalid_multipart',
+          message: 'The mocked upload did not contain a valid file part.',
+        });
+        return;
+      }
       const uploadedDocument = nextUploadDocument(
         projectState,
-        multipartUploadFilename(
-          request.postDataBuffer(),
-          request.headers()['content-type'],
-        ),
+        uploadedSourceFile.filename,
       );
       projectState.documentUploaded = true;
+      projectState.uploadedSourceFiles.push(uploadedSourceFile);
       if (
         !projectState.uploadedDocuments.some(
           (document) => document.id === uploadedDocument.id,
@@ -688,6 +705,10 @@ export async function installMockCertPrepApi(
     uploadedDocuments: (projectId) => [
       ...stateFor(projectStates, projectId, lastProjectState).uploadedDocuments,
     ],
+    uploadedSourceFiles: (projectId) => [
+      ...stateFor(projectStates, projectId, lastProjectState)
+        .uploadedSourceFiles,
+    ],
     wrongAnswerExplanations: (projectId) => [
       ...stateFor(projectStates, projectId, lastProjectState)
         .wrongAnswerExplanations,
@@ -715,6 +736,7 @@ function createMockProjectState(args: {
   return {
     ...args,
     uploadedDocuments: [],
+    uploadedSourceFiles: [],
     sessions: new Map<string, PracticeSessionRead>(),
     practiceSessionPayloads: [],
     attempts: [],
@@ -784,17 +806,17 @@ function createAdditionalUploadDocument(
   };
 }
 
-function multipartUploadFilename(
+function multipartUploadFile(
   body: Buffer | null,
   contentType: string | undefined,
-): string | null {
+): MockUploadedSourceFile | null {
   if (body === null) {
     return null;
   }
 
   const boundary = multipartBoundary(contentType);
   if (boundary === null) {
-    return filenameFromMultipartHeaders(body.subarray(0, 4096));
+    return null;
   }
 
   const boundaryBytes = asciiBytes(`--${boundary}`);
@@ -816,16 +838,45 @@ function multipartUploadFilename(
       return null;
     }
 
-    const filename = filenameFromMultipartHeaders(
-      body.subarray(headerStart, headerEnd),
-    );
-    if (filename !== null) {
-      return filename;
+    const partHeaders = body.subarray(headerStart, headerEnd);
+    const filename = filenameFromMultipartHeaders(partHeaders);
+    if (filename !== null && multipartFieldName(partHeaders) === 'file') {
+      const dataStart = headerEnd + 4;
+      const dataEnd = indexOfBytes(
+        body,
+        asciiBytes(`\r\n--${boundary}`),
+        dataStart,
+      );
+      if (dataEnd === -1) {
+        return null;
+      }
+      return {
+        bytes: Buffer.from(body.subarray(dataStart, dataEnd)),
+        contentType: contentTypeFromMultipartHeaders(partHeaders),
+        filename,
+      };
     }
     searchStart = headerEnd + 4;
   }
 
   return null;
+}
+
+function contentTypeFromMultipartHeaders(headers: Uint8Array): string | null {
+  const text = new TextDecoder('utf-8', { fatal: false }).decode(headers);
+  const contentType = text
+    .split(/\r?\n/)
+    .find((line) => /^content-type:/i.test(line));
+  return contentType?.slice(contentType.indexOf(':') + 1).trim() ?? null;
+}
+
+function multipartFieldName(headers: Uint8Array): string | null {
+  const text = new TextDecoder('utf-8', { fatal: false }).decode(headers);
+  const disposition = text
+    .split(/\r?\n/)
+    .find((line) => /^content-disposition:/i.test(line));
+  const [, fieldName] = disposition?.match(/(?:^|;\s*)name="([^"]+)"/i) ?? [];
+  return fieldName ?? null;
 }
 
 function multipartBoundary(contentType: string | undefined): string | null {

@@ -50,6 +50,19 @@ or review flows.
   canceled, and Retry states remain per file; successful uploads are partial
   success when another file fails, and the most recent successful document
   becomes active.
+- Image cropping is optional client-side preprocessing and defaults off. A
+  `Crop images before upload` toggle enables a sequential crop review for each
+  selected PNG, JPEG/JPG, or static WebP while PDFs keep their original bytes
+  and position in the batch. The user can redraw a rectangular crop, enter
+  exact pixel bounds, reset to the full image, apply the crop, or keep the
+  original image. Choosing or uploading another batch stays locked until every
+  image in the pending selection is applied or skipped.
+- Applying a crop creates a supported image file with a visible `-cropped`
+  filename suffix and then uses the existing multipart upload flow. The bytes
+  sent by the client become the persisted source and SHA-256 identity; the app
+  does not retain the uncropped image, crop coordinates, or a re-edit history.
+  No endpoint, DTO, database, OCR-provider, Retry, concurrency, partial-success,
+  or active-document contract changes for this feature.
 - Wrong-answer AI help is a per-card, single grounded explanation. Provider
   failures fall back to deterministic copy and must not block refresh, manual
   review, or clearing by a later correct attempt.
@@ -169,6 +182,12 @@ Page requirements:
   terminal-state evidence while retaining the existing PDF flows. The packaged
   app also uploaded a deterministic 256 x 128 PNG and displayed its 1/1-page
   `no_text_detected` result without process residue.
+- The 2026-07-17 optional-crop closeout verified the default-off toggle,
+  sequential mixed PDF/image review, edge-inclusive pointer and numeric bounds,
+  encoding-time input locks and focus recovery, `-cropped` multipart identity,
+  and output dimensions plus quadrant-sensitive pixels across Chromium,
+  Firefox, and WebKit. A real-browser run also applied and uploaded the cropped
+  PNG without console or server errors.
 
 ## Open Risks
 

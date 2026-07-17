@@ -1,15 +1,24 @@
-import { Component, inject } from '@angular/core';
+import { Component, ElementRef, inject, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ProgressBar } from 'primeng/progressbar';
 import { Tag } from 'primeng/tag';
+import { ToggleSwitch } from 'primeng/toggleswitch';
 import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
 import { OperationStore } from '../../stores/operation.store';
 import { ProjectStore } from '../../stores/project.store';
 import { SourceImportStore } from '../../stores/source-import/source-import.store';
+import { SourceImageCropDialogComponent } from './source-image-crop-dialog.component';
+import { isCroppableImageFile } from './source-image-crop.service';
 
 @Component({
   selector: 'app-source-import-panel',
-  imports: [FormsModule, ProgressBar, Tag],
+  imports: [
+    FormsModule,
+    ProgressBar,
+    SourceImageCropDialogComponent,
+    Tag,
+    ToggleSwitch,
+  ],
   template: `
     <section class="workbench-panel" aria-labelledby="source-heading">
       <header class="workbench-panel-header">
@@ -20,7 +29,9 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
           <h2 id="source-heading">Step 01: Source files</h2>
         </div>
         <label
+          #chooseFilesControl
           class="workbench-secondary-button"
+          tabindex="-1"
           [attr.for]="isUploadBusy() ? null : 'sourceFiles'"
           [attr.aria-disabled]="isUploadBusy()"
         >
@@ -41,6 +52,31 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
           (change)="chooseFiles($event)"
         />
 
+        <div
+          class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-surface-200 bg-surface-50 p-3"
+        >
+          <div class="min-w-0 flex-1">
+            <label
+              id="crop-images-label"
+              class="block cursor-pointer text-sm font-semibold text-color"
+              for="cropImagesBeforeUpload"
+            >
+              Crop images before upload
+            </label>
+            <p class="m-0 mt-1 text-xs leading-5 text-muted-color">
+              Review PNG, JPEG, and WebP images one at a time. PDF files stay
+              unchanged.
+            </p>
+          </div>
+          <p-toggleswitch
+            inputId="cropImagesBeforeUpload"
+            ariaLabelledBy="crop-images-label"
+            [ngModel]="cropImagesBeforeUpload()"
+            [disabled]="isUploadBusy()"
+            (ngModelChange)="setCropImagesBeforeUpload($event)"
+          />
+        </div>
+
         <div class="workbench-file-row">
           <div class="workbench-file-name">
             <i class="pi pi-file" aria-hidden="true"></i>
@@ -50,13 +86,16 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
             {{
               sourceImport.isUploading()
                 ? 'Uploading'
-                : sourceImport.activeDocument()?.status ?? 'Waiting'
+                : (sourceImport.activeDocument()?.status ?? 'Waiting')
             }}
           </span>
         </div>
 
         @if (sourceImport.uploadItems().length > 0) {
-          <div class="grid gap-2" aria-label="Selected source file upload status">
+          <div
+            class="grid gap-2"
+            aria-label="Selected source file upload status"
+          >
             @for (item of sourceImport.uploadItems(); track item.id) {
               <div
                 class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-surface-200 bg-surface-0 p-3"
@@ -89,7 +128,11 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
                   >
                     <i class="pi pi-times" aria-hidden="true"></i>
                     <span>
-                      {{ item.status === 'cancel_requested' ? 'Canceling' : 'Cancel' }}
+                      {{
+                        item.status === 'cancel_requested'
+                          ? 'Canceling'
+                          : 'Cancel'
+                      }}
                     </span>
                   </button>
                 }
@@ -125,11 +168,19 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
           <button
             class="workbench-action-button min-w-32 flex-none"
             type="button"
-            [disabled]="operations.isBusyFor('upload') || !sourceImport.canUpload()"
+            [disabled]="
+              isUploadBusy() ||
+              operations.isBusyFor('upload') ||
+              !sourceImport.canUpload()
+            "
             (click)="uploadDocument()"
           >
             <i
-              [class]="operations.isBusyFor('upload') ? 'pi pi-spin pi-spinner' : 'pi pi-upload'"
+              [class]="
+                operations.isBusyFor('upload')
+                  ? 'pi pi-spin pi-spinner'
+                  : 'pi pi-upload'
+              "
               aria-hidden="true"
             ></i>
             <span>Upload files</span>
@@ -154,26 +205,35 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
         }
 
         @if (sourceImport.activeDocument(); as document) {
-          <section
-            class="grid gap-3"
-            aria-live="polite"
-          >
-            <div class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-surface-200 bg-surface-50 p-3">
+          <section class="grid gap-3" aria-live="polite">
+            <div
+              class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-surface-200 bg-surface-50 p-3"
+            >
               <div class="min-w-0 flex-1">
                 <p class="m-0 truncate text-sm font-semibold text-color">
                   {{ sourceImport.parseStageText() }}
                 </p>
                 <p class="m-0 mt-1 text-xs font-semibold text-muted-color">
-                  {{ sourceImport.progressLabel() }} / {{ document.chunks_count }}
-                  chunks / {{ sourceImport.elapsedTime() }}
+                  {{ sourceImport.progressLabel() }} /
+                  {{ document.chunks_count }} chunks /
+                  {{ sourceImport.elapsedTime() }}
                 </p>
               </div>
               <p-tag
                 [value]="document.status"
-                [severity]="document.status === 'processing' ? 'info' : document.status === 'ready' ? 'success' : 'warn'"
+                [severity]="
+                  document.status === 'processing'
+                    ? 'info'
+                    : document.status === 'ready'
+                      ? 'success'
+                      : 'warn'
+                "
                 [rounded]="true"
               />
-              @if (document.status === 'processing' || document.status === 'cancel_requested') {
+              @if (
+                document.status === 'processing' ||
+                document.status === 'cancel_requested'
+              ) {
                 <button
                   class="workbench-secondary-button"
                   type="button"
@@ -185,7 +245,11 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
                 >
                   <i class="pi pi-times" aria-hidden="true"></i>
                   <span>
-                    {{ document.status === 'cancel_requested' ? 'Canceling' : 'Cancel parsing' }}
+                    {{
+                      document.status === 'cancel_requested'
+                        ? 'Canceling'
+                        : 'Cancel parsing'
+                    }}
                   </span>
                 </button>
               } @else if (
@@ -274,7 +338,10 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
                 {{ document.ocr_device || 'none' }}
               </dd>
             </div>
-            @for (metric of sourceImport.parsingMetrics(document); track metric.label) {
+            @for (
+              metric of sourceImport.parsingMetrics(document);
+              track metric.label
+            ) {
               <div class="workbench-metric">
                 <dt>{{ metric.label }}</dt>
                 <dd>{{ metric.value }}</dd>
@@ -300,18 +367,15 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
               aria-labelledby="extracted-text-heading"
             >
               <div class="workbench-preview-header">
-                <h3
-                  id="extracted-text-heading"
-                >
-                  Extracted Text Preview
-                </h3>
+                <h3 id="extracted-text-heading">Extracted Text Preview</h3>
                 <i class="pi pi-search" aria-hidden="true"></i>
               </div>
               <div class="workbench-preview-list">
                 @for (chunk of sourceImport.previewChunks(); track chunk.id) {
                   <article class="workbench-preview-chunk">
                     <strong>
-                      Page {{ chunk.page_number }} - Chunk {{ chunk.chunk_index + 1 }}
+                      Page {{ chunk.page_number }} - Chunk
+                      {{ chunk.chunk_index + 1 }}
                     </strong>
                     <p class="whitespace-pre-wrap">
                       {{ chunk.text }}
@@ -323,7 +387,8 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
                     class="flex flex-wrap items-center justify-between gap-2 p-3"
                   >
                     <p class="m-0 text-sm text-muted-color">
-                      {{ sourceImport.hiddenChunkCount() }} more chunks available.
+                      {{ sourceImport.hiddenChunkCount() }} more chunks
+                      available.
                     </p>
                     <button
                       class="workbench-secondary-button"
@@ -345,12 +410,22 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
             </p>
           }
         } @else {
-          <p class="m-0 rounded-md border border-dashed border-surface-300 bg-surface-0 p-3 text-sm text-muted-color">
+          <p
+            class="m-0 rounded-md border border-dashed border-surface-300 bg-surface-0 p-3 text-sm text-muted-color"
+          >
             Choose one or more PDF, PNG, JPEG, or WebP files and upload them to
             start extraction.
           </p>
         }
       </div>
+
+      <app-source-image-crop-dialog
+        [sourceFile]="cropSourceFile()"
+        [position]="cropPosition()"
+        [total]="cropTotal()"
+        (cropApplied)="applyCroppedImage($event)"
+        (originalKept)="keepOriginalImage()"
+      />
     </section>
   `,
 })
@@ -359,13 +434,60 @@ export class SourceImportPanelComponent {
   protected readonly operations = inject(OperationStore);
   protected readonly projects = inject(ProjectStore);
   protected readonly sourceImport = inject(SourceImportStore);
+  protected readonly cropImagesBeforeUpload = signal(false);
+  protected readonly cropSourceFile = signal<File | null>(null);
+  protected readonly cropPosition = signal(0);
+  protected readonly cropTotal = signal(0);
+  private readonly chooseFilesControl =
+    viewChild<ElementRef<HTMLLabelElement>>('chooseFilesControl');
+  private readonly cropDialog = viewChild(SourceImageCropDialogComponent);
+  private pendingSelectedFiles: File[] = [];
+  private pendingCropIndexes: number[] = [];
+  private pendingCropCursor = 0;
 
   protected chooseFiles(event: Event): void {
     if (this.isUploadBusy()) {
       return;
     }
     const input = event.target as HTMLInputElement;
-    this.sourceImport.chooseFiles(Array.from(input.files ?? []));
+    const files = Array.from(input.files ?? []);
+    input.value = '';
+    if (
+      !this.cropImagesBeforeUpload() ||
+      !files.some((file) => isCroppableImageFile(file))
+    ) {
+      this.sourceImport.chooseFiles(files);
+      return;
+    }
+
+    this.pendingSelectedFiles = [...files];
+    this.pendingCropIndexes = files.flatMap((file, index) =>
+      isCroppableImageFile(file) ? [index] : [],
+    );
+    this.pendingCropCursor = 0;
+    this.cropTotal.set(this.pendingCropIndexes.length);
+    this.openCurrentCrop();
+  }
+
+  protected setCropImagesBeforeUpload(enabled: boolean): void {
+    if (!this.isUploadBusy()) {
+      this.cropImagesBeforeUpload.set(enabled);
+    }
+  }
+
+  protected applyCroppedImage(file: File): void {
+    const fileIndex = this.pendingCropIndexes[this.pendingCropCursor];
+    if (fileIndex === undefined) {
+      return;
+    }
+    this.pendingSelectedFiles[fileIndex] = file;
+    this.advanceCropReview();
+  }
+
+  protected keepOriginalImage(): void {
+    if (this.pendingCropIndexes[this.pendingCropCursor] !== undefined) {
+      this.advanceCropReview();
+    }
   }
 
   protected async uploadDocument(): Promise<void> {
@@ -402,13 +524,53 @@ export class SourceImportPanelComponent {
     }
 
     return (
-      this.sourceImport.uploadItems().find((item) => item.document?.id === document.id)
-        ?.file ?? null
+      this.sourceImport
+        .uploadItems()
+        .find((item) => item.document?.id === document.id)?.file ?? null
     );
   }
 
   protected isUploadBusy(): boolean {
-    return this.sourceImport.isUploading() || this.operations.isBusyFor('upload');
+    return (
+      this.cropSourceFile() !== null ||
+      this.sourceImport.isUploading() ||
+      this.operations.isBusyFor('upload')
+    );
+  }
+
+  private openCurrentCrop(): void {
+    const fileIndex = this.pendingCropIndexes[this.pendingCropCursor];
+    const file =
+      fileIndex === undefined
+        ? undefined
+        : this.pendingSelectedFiles[fileIndex];
+    if (file === undefined) {
+      this.commitPendingFileSelection();
+      return;
+    }
+
+    this.cropPosition.set(this.pendingCropCursor + 1);
+    this.cropSourceFile.set(file);
+    this.cropDialog()?.focusReviewStatus();
+  }
+
+  private advanceCropReview(): void {
+    this.pendingCropCursor += 1;
+    this.openCurrentCrop();
+  }
+
+  private commitPendingFileSelection(): void {
+    const files = [...this.pendingSelectedFiles];
+    this.cropSourceFile.set(null);
+    this.cropPosition.set(0);
+    this.cropTotal.set(0);
+    this.pendingSelectedFiles = [];
+    this.pendingCropIndexes = [];
+    this.pendingCropCursor = 0;
+    this.sourceImport.chooseFiles(files);
+    queueMicrotask(() => {
+      this.chooseFilesControl()?.nativeElement.focus();
+    });
   }
 
   protected uploadStatusLabel(status: string): string {
@@ -430,7 +592,9 @@ export class SourceImportPanelComponent {
     return 'Failed';
   }
 
-  protected uploadStatusSeverity(status: string): 'success' | 'info' | 'warn' | 'danger' {
+  protected uploadStatusSeverity(
+    status: string,
+  ): 'success' | 'info' | 'warn' | 'danger' {
     if (status === 'uploaded') {
       return 'success';
     }

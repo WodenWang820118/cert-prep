@@ -1,5 +1,9 @@
 import { TestBed } from '@angular/core/testing';
-import { DocumentRead, CERT_PREP_API, OCRHealthRead } from '../../cert-prep-api';
+import {
+  DocumentRead,
+  CERT_PREP_API,
+  OCRHealthRead,
+} from '../../cert-prep-api';
 import { HealthStore } from '../../stores/health/health.store';
 import { OperationStore } from '../../stores/operation.store';
 import { ProjectStore } from '../../stores/project.store';
@@ -74,6 +78,149 @@ describe('SourceImportPanelComponent', () => {
     ).not.toBeNull();
   });
 
+  it('keeps image cropping optional and disabled by default', () => {
+    const fixture = TestBed.createComponent(SourceImportPanelComponent);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    const originalImage = new File(['png'], 'diagram.png', {
+      type: 'image/png',
+    });
+
+    fixture.detectChanges();
+
+    const toggle = fixture.nativeElement.querySelector(
+      '#cropImagesBeforeUpload',
+    ) as HTMLInputElement | null;
+    expect(toggle?.getAttribute('role')).toBe('switch');
+    expect(toggle?.getAttribute('aria-labelledby')).toBe('crop-images-label');
+    expect(toggle?.checked).toBe(false);
+
+    componentActions(fixture.componentInstance).chooseFiles(
+      fileSelectionEvent([originalImage]),
+    );
+
+    expect(sourceImport.selectedFile()).toBe(originalImage);
+    expect(
+      componentActions(fixture.componentInstance).cropSourceFile(),
+    ).toBeNull();
+  });
+
+  it('enables crop review through the switch and locks file actions while it is open', async () => {
+    const fixture = TestBed.createComponent(SourceImportPanelComponent);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    const image = new File(['png'], 'diagram.png', { type: 'image/png' });
+    fixture.detectChanges();
+
+    const toggle = fixture.nativeElement.querySelector(
+      '#cropImagesBeforeUpload',
+    ) as HTMLInputElement;
+    toggle.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(toggle.checked).toBe(true);
+
+    const component = componentActions(fixture.componentInstance);
+    component.chooseFiles(fileSelectionEvent([image]));
+    fixture.detectChanges();
+
+    expect(component.cropSourceFile()).toBe(image);
+    expect(sourceImport.selectedFiles()).toEqual([]);
+    expect(toggle.disabled).toBe(true);
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector<HTMLInputElement>(
+        '#sourceFiles',
+      )?.disabled,
+    ).toBe(true);
+    expect(uploadButton(fixture.nativeElement)?.disabled).toBe(true);
+
+    fixture.detectChanges();
+    cropActionButton(fixture.nativeElement, 'Keep original')?.click();
+    expect(sourceImport.selectedFiles()).toEqual([image]);
+    await Promise.resolve();
+    fixture.detectChanges();
+    expect(document.activeElement).toBe(
+      chooseFilesControl(fixture.nativeElement),
+    );
+  });
+
+  it('focuses the file chooser after the final applied crop is committed', async () => {
+    const fixture = TestBed.createComponent(SourceImportPanelComponent);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    const image = new File(['png'], 'diagram.png', { type: 'image/png' });
+    const croppedImage = new File(['cropped'], 'diagram-cropped.png', {
+      type: 'image/png',
+    });
+    const component = componentActions(fixture.componentInstance);
+    fixture.detectChanges();
+    component.setCropImagesBeforeUpload(true);
+    component.chooseFiles(fileSelectionEvent([image]));
+
+    component.applyCroppedImage(croppedImage);
+    await Promise.resolve();
+    fixture.detectChanges();
+
+    expect(sourceImport.selectedFiles()).toEqual([croppedImage]);
+    expect(document.activeElement).toBe(
+      chooseFilesControl(fixture.nativeElement),
+    );
+  });
+
+  it('reviews selected images in order and keeps PDFs outside the crop queue', async () => {
+    const fixture = TestBed.createComponent(SourceImportPanelComponent);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    const pdf = new File(['%PDF-1.7'], 'guide.pdf', {
+      type: 'application/pdf',
+    });
+    const firstImage = new File(['png'], 'first.png', { type: 'image/png' });
+    const secondImage = new File(['jpeg'], 'second.jpg', {
+      type: 'image/jpeg',
+    });
+    const croppedImage = new File(['cropped'], 'first-cropped.png', {
+      type: 'image/png',
+    });
+    const component = componentActions(fixture.componentInstance);
+    fixture.detectChanges();
+    component.setCropImagesBeforeUpload(true);
+
+    component.chooseFiles(fileSelectionEvent([pdf, firstImage, secondImage]));
+
+    expect(sourceImport.selectedFiles()).toEqual([]);
+    expect(component.cropSourceFile()).toBe(firstImage);
+    expect(component.cropPosition()).toBe(1);
+    expect(component.cropTotal()).toBe(2);
+
+    component.applyCroppedImage(croppedImage);
+    fixture.detectChanges();
+    await Promise.resolve();
+    expect(component.cropSourceFile()).toBe(secondImage);
+    expect(component.cropPosition()).toBe(2);
+    expect(document.activeElement).toBe(
+      fixture.nativeElement.querySelector('[aria-label="Crop review status"]'),
+    );
+
+    component.keepOriginalImage();
+    expect(component.cropSourceFile()).toBeNull();
+    expect(sourceImport.selectedFiles()).toEqual([
+      pdf,
+      croppedImage,
+      secondImage,
+    ]);
+  });
+
+  it('bypasses crop review for PDF-only selections when the toggle is enabled', () => {
+    const fixture = TestBed.createComponent(SourceImportPanelComponent);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    const pdf = new File(['%PDF-1.7'], 'guide.pdf', {
+      type: 'application/pdf',
+    });
+    const component = componentActions(fixture.componentInstance);
+    component.setCropImagesBeforeUpload(true);
+
+    component.chooseFiles(fileSelectionEvent([pdf]));
+
+    expect(component.cropSourceFile()).toBeNull();
+    expect(sourceImport.selectedFiles()).toEqual([pdf]);
+  });
+
   it('renders parsing metrics when the document carries timing fields', () => {
     const fixture = TestBed.createComponent(SourceImportPanelComponent);
     const sourceImport = TestBed.inject(SourceImportStore);
@@ -139,7 +286,10 @@ describe('SourceImportPanelComponent', () => {
   it('renders the project document library and refreshes the selected document', async () => {
     const fixture = TestBed.createComponent(SourceImportPanelComponent);
     const sourceImport = TestBed.inject(SourceImportStore);
-    const firstDocument = documentRead({ id: 'document-1', filename: 'first.pdf' });
+    const firstDocument = documentRead({
+      id: 'document-1',
+      filename: 'first.pdf',
+    });
     const secondDocument = documentRead({
       id: 'document-2',
       filename: 'second.pdf',
@@ -193,7 +343,10 @@ describe('SourceImportPanelComponent', () => {
   it('shows the active uploaded document file size after a batch upload', () => {
     const fixture = TestBed.createComponent(SourceImportPanelComponent);
     const sourceImport = TestBed.inject(SourceImportStore);
-    const firstDocument = documentRead({ id: 'document-small', filename: 'small.pdf' });
+    const firstDocument = documentRead({
+      id: 'document-small',
+      filename: 'small.pdf',
+    });
     const secondDocument = documentRead({
       id: 'document-large',
       filename: 'large.pdf',
@@ -418,9 +571,15 @@ describe('SourceImportPanelComponent', () => {
       documentRead({ status: 'processing', chunks_count: 0 }),
     );
     apiClient.getDocument
-      .mockResolvedValueOnce(documentRead({ status: 'processing', chunks_count: 0 }))
-      .mockResolvedValueOnce(documentRead({ status: 'processing', chunks_count: 1 }))
-      .mockResolvedValueOnce(documentRead({ status: 'processing', chunks_count: 1 }));
+      .mockResolvedValueOnce(
+        documentRead({ status: 'processing', chunks_count: 0 }),
+      )
+      .mockResolvedValueOnce(
+        documentRead({ status: 'processing', chunks_count: 1 }),
+      )
+      .mockResolvedValueOnce(
+        documentRead({ status: 'processing', chunks_count: 1 }),
+      );
     apiClient.listDocumentChunks
       .mockResolvedValueOnce({ items: [] })
       .mockResolvedValue({
@@ -513,6 +672,21 @@ function uploadButton(root: ParentNode): HTMLButtonElement | null {
   );
 }
 
+function cropActionButton(
+  root: ParentNode,
+  label: string,
+): HTMLButtonElement | null {
+  return (
+    Array.from(root.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes(label),
+    ) ?? null
+  );
+}
+
+function chooseFilesControl(root: ParentNode): HTMLLabelElement | null {
+  return root.querySelector<HTMLLabelElement>('label[for="sourceFiles"]');
+}
+
 function documentSelector(root: ParentNode): HTMLSelectElement | null {
   return (
     Array.from(root.querySelectorAll('select')).find((select) =>
@@ -523,10 +697,39 @@ function documentSelector(root: ParentNode): HTMLSelectElement | null {
 
 function batchSizeSelector(root: ParentNode): HTMLSelectElement | null {
   return (
-    Array.from(root.querySelectorAll('label.workbench-field')).find((label) =>
-      label.textContent?.includes('Batch size'),
-    )?.querySelector('select') ?? null
+    Array.from(root.querySelectorAll('label.workbench-field'))
+      .find((label) => label.textContent?.includes('Batch size'))
+      ?.querySelector('select') ?? null
   );
+}
+
+function componentActions(component: SourceImportPanelComponent): {
+  readonly cropPosition: () => number;
+  readonly cropSourceFile: () => File | null;
+  readonly cropTotal: () => number;
+  applyCroppedImage(file: File): void;
+  chooseFiles(event: Event): void;
+  keepOriginalImage(): void;
+  setCropImagesBeforeUpload(enabled: boolean): void;
+} {
+  return component as unknown as {
+    readonly cropPosition: () => number;
+    readonly cropSourceFile: () => File | null;
+    readonly cropTotal: () => number;
+    applyCroppedImage(file: File): void;
+    chooseFiles(event: Event): void;
+    keepOriginalImage(): void;
+    setCropImagesBeforeUpload(enabled: boolean): void;
+  };
+}
+
+function fileSelectionEvent(files: readonly File[]): Event {
+  return {
+    target: {
+      files,
+      value: 'selected-files',
+    },
+  } as unknown as Event;
 }
 
 function metricValue(root: ParentNode, label: string): string | null {
