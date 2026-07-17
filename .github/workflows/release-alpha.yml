@@ -125,10 +125,18 @@ jobs:
             throw "Alpha release requires an actually public GitHub repository; found: $visibility"
           }
 
+      - name: Lint Windows-owned projects
+        run: >-
+          pnpm nx run-many -t lint
+          -p cert-prep-contracts cert-prep-ollama cert-prep-ocr-windowsml
+          cert-prep-backend cert-prep-api cert-prep
+          --parallel=2
+
       - name: Test Windows-owned projects
         run: >-
-          pnpm nx run-many -t lint test
-          --projects=cert-prep-contracts,cert-prep-ollama,cert-prep-ocr-windowsml,cert-prep-backend,cert-prep-api,cert-prep
+          pnpm nx run-many -t test
+          -p cert-prep-contracts cert-prep-ollama cert-prep-ocr-windowsml
+          cert-prep-backend cert-prep-api cert-prep
           --parallel=2
 
       - name: Type-check desktop release scripts

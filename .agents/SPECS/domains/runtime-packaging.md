@@ -121,6 +121,10 @@ The workflow contract is:
   desktop script type checking, release-tool and package-QA contracts, Rust
   tests, and one real-backend functional smoke. They do not attempt GPU
   certification.
+- Workflow lint and test coverage uses separate `nx run-many` invocations with
+  a space-delimited `-p` project selection. Combined target arguments and
+  comma-delimited project arguments are forbidden because Windows PowerShell
+  can otherwise let Nx exit successfully without selecting any tasks.
 - The workflow contains no self-hosted runner label, protected hardware
   environment variables, external hardware harness, acceptance-PDF directory,
   `ffprobe`, screen recording, or hardware-verifier gate.
@@ -245,12 +249,13 @@ must not reappear as active TODOs or release gates without a new decision:
 
 ### Current simplified implementation
 
-At `b5f63f5`, repository checks covered the contracts that enforce this
-simplification:
+The simplified implementation introduced at `b5f63f5` remains covered by the
+current repository checks:
 
 - release workflow contract tests reject self-hosted/hardware, `ffprobe`,
-  recording, MSI, CycloneDX, provenance, and attestation terms;
-- release-tool tests passed 66 Node tests and 21 Python tests, including Ruff;
+  recording, MSI, CycloneDX, provenance, attestation, and zero-task Nx command
+  forms;
+- release-tool tests passed 68 Node tests and 21 Python tests, including Ruff;
 - package-QA tests passed 205 cases with one Windows permission-specific skip;
 - desktop release script type checking passed;
 - frontend model-health coverage passed and asserts the CPU status strings;
@@ -260,6 +265,18 @@ simplification:
 - Ollama coverage passed 53 tests and asserts one `qwen3.5:4b` 8K profile
   with no fallback profiles; and
 - Rust desktop tests passed 20 cases.
+
+### GitHub preflight on 2026-07-17
+
+- `WodenWang820118/cert-prep` is public with `main` as its default branch. The
+  three required `ALPHA_*` repository variables, the `alpha-release` reviewer
+  and main/tag deployment policies, and active branch/tag rulesets are present.
+- The remote repository has no `release-alpha` run, canonical Alpha tag,
+  prerelease, or `alpha-release` deployment yet.
+- CI run `29509601820` passed at `df29f3c`, but its combined Nx lint/test command
+  was later proven to exit successfully with zero selected tasks. It is not
+  release-quality evidence and must be replaced by an exact-HEAD run after the
+  corrected workflow reaches `main`.
 
 ### Historical evidence retained for diagnostic value
 

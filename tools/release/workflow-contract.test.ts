@@ -6,7 +6,11 @@ import test from 'node:test';
 const workflow = readFileSync(
   resolve(import.meta.dirname, '../../.github/workflows/release-alpha.yml'),
   'utf8',
-);
+).replaceAll('\r\n', '\n');
+const ciWorkflow = readFileSync(
+  resolve(import.meta.dirname, '../../.github/workflows/ci.yml'),
+  'utf8',
+).replaceAll('\r\n', '\n');
 const gitAttributes = readFileSync(
   resolve(import.meta.dirname, '../../.gitattributes'),
   'utf8',
@@ -20,21 +24,81 @@ const assemble = readFileSync(
   'utf8',
 );
 
-const jobNames = [
-  ...workflow
-    .slice(workflow.indexOf('\njobs:\n'))
-    .matchAll(/^  ([a-z][a-z0-9-]+):$/gm),
-].map((match) => match[1]);
+const windowsOwnedProjects = [
+  'cert-prep-contracts',
+  'cert-prep-ollama',
+  'cert-prep-ocr-windowsml',
+  'cert-prep-backend',
+  'cert-prep-api',
+  'cert-prep',
+];
+
+const portableProjects = [
+  'cert-prep',
+  'cert-prep-contracts',
+  'cert-prep-ollama',
+  'cert-prep-ocr-windowsml',
+  'cert-prep-backend',
+];
+
+const windowsCiProjects = [
+  'cert-prep-contracts',
+  'cert-prep-ollama',
+  'cert-prep-ocr-windowsml',
+  'cert-prep-backend',
+  'cert-prep',
+];
+
+function workflowJobNames(source) {
+  return [
+    ...source
+      .slice(source.indexOf('\njobs:\n'))
+      .matchAll(/^  ([a-z][a-z0-9-]+):$/gm),
+  ].map((match) => match[1]);
+}
+
+const jobNames = workflowJobNames(workflow);
+
+function workflowJobBody(source, name) {
+  const names = workflowJobNames(source);
+  const index = names.indexOf(name);
+  assert.notEqual(index, -1, `job ${name} must exist`);
+  const start = source.indexOf(`  ${name}:`, source.indexOf('\njobs:\n'));
+  const nextName = names[index + 1];
+  const end = nextName
+    ? source.indexOf(`  ${nextName}:`, start + 1)
+    : source.length;
+  return source.slice(start, end);
+}
 
 function jobBody(name) {
-  const index = jobNames.indexOf(name);
-  assert.notEqual(index, -1, `job ${name} must exist`);
-  const start = workflow.indexOf(`  ${name}:`, workflow.indexOf('\njobs:\n'));
-  const nextName = jobNames[index + 1];
-  const end = nextName
-    ? workflow.indexOf(`  ${nextName}:`, start + 1)
-    : workflow.length;
-  return workflow.slice(start, end);
+  return workflowJobBody(workflow, name);
+}
+
+function assertSeparateNxQualitySteps(
+  body,
+  { stepLabel, projects, parallel, nextStepLabel },
+) {
+  const projectPattern = projects.join('\\s+');
+  const lintStepStart = body.indexOf(`- name: Lint ${stepLabel}`);
+  const testStepStart = body.indexOf(`- name: Test ${stepLabel}`);
+  const nextStepStart = body.indexOf(`- name: ${nextStepLabel}`);
+
+  assert.doesNotMatch(body, /pnpm nx run-many -t lint test/);
+  assert.ok(lintStepStart >= 0 && lintStepStart < testStepStart);
+  assert.ok(testStepStart < nextStepStart);
+  assert.match(
+    body.slice(lintStepStart, testStepStart),
+    new RegExp(
+      `pnpm nx run-many -t lint\\s+-p\\s+${projectPattern}\\s+--parallel=${parallel}`,
+    ),
+  );
+  assert.match(
+    body.slice(testStepStart, nextStepStart),
+    new RegExp(
+      `pnpm nx run-many -t test\\s+-p\\s+${projectPattern}\\s+--parallel=${parallel}`,
+    ),
+  );
 }
 
 test('release workflow keeps only the four phased jobs', () => {
@@ -86,7 +150,6 @@ test('candidate build validates the exact public release source and runs quality
   assert.match(body, /git merge-base --is-ancestor/);
   assert.match(body, /ALPHA_EXPECTED_REPOSITORY/);
   assert.match(body, /gh api "repos\/\$env:GITHUB_REPOSITORY"/);
-  assert.match(body, /pnpm nx run-many -t lint test/);
   assert.match(body, /pnpm nx run cert-prep-desktop:typecheck-scripts/);
   assert.match(body, /pnpm nx run cert-prep-desktop:package-qa-test/);
   assert.match(body, /pnpm nx run cert-prep-desktop:release-tool-test/);
@@ -98,6 +161,30 @@ test('candidate build validates the exact public release source and runs quality
   assert.match(body, /collect-runtime-payloads\.py/);
   assert.match(body, /--mode candidate/);
   assert.match(body, /candidate_id=/);
+});
+
+test('candidate build selects separate lint and test tasks for every Windows-owned project', () => {
+  assertSeparateNxQualitySteps(jobBody('build-candidate'), {
+    stepLabel: 'Windows-owned projects',
+    projects: windowsOwnedProjects,
+    parallel: 2,
+    nextStepLabel: 'Type-check desktop release scripts',
+  });
+});
+
+test('continuous integration selects separate lint and test tasks instead of a zero-task command', () => {
+  assertSeparateNxQualitySteps(workflowJobBody(ciWorkflow, 'portable-quality'), {
+    stepLabel: 'portable projects',
+    projects: portableProjects,
+    parallel: 3,
+    nextStepLabel: 'Build Angular application',
+  });
+  assertSeparateNxQualitySteps(workflowJobBody(ciWorkflow, 'windows-quality'), {
+    stepLabel: 'Windows-owned Python and Angular projects',
+    projects: windowsCiProjects,
+    parallel: 2,
+    nextStepLabel: 'Type-check desktop scripts',
+  });
 });
 
 test('downstream jobs reuse the exact candidate without checkout or rebuild', () => {

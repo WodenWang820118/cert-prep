@@ -52,10 +52,18 @@ jobs:
       - name: Sync backend Python environment
         run: uv sync --project apps/cert-prep-backend --python ${{ env.PYTHON_VERSION }} --frozen
 
-      - name: Lint and test portable projects
+      - name: Lint portable projects
         run: >-
-          pnpm nx run-many -t lint test
-          --projects=cert-prep,cert-prep-contracts,cert-prep-ollama,cert-prep-ocr-windowsml,cert-prep-backend
+          pnpm nx run-many -t lint
+          -p cert-prep cert-prep-contracts cert-prep-ollama
+          cert-prep-ocr-windowsml cert-prep-backend
+          --parallel=3
+
+      - name: Test portable projects
+        run: >-
+          pnpm nx run-many -t test
+          -p cert-prep cert-prep-contracts cert-prep-ollama
+          cert-prep-ocr-windowsml cert-prep-backend
           --parallel=3
 
       - name: Build Angular application
@@ -110,10 +118,18 @@ jobs:
       - name: Sync backend Python environment
         run: uv sync --project apps/cert-prep-backend --python ${{ env.PYTHON_VERSION }} --frozen
 
+      - name: Lint Windows-owned Python and Angular projects
+        run: >-
+          pnpm nx run-many -t lint
+          -p cert-prep-contracts cert-prep-ollama cert-prep-ocr-windowsml
+          cert-prep-backend cert-prep
+          --parallel=2
+
       - name: Test Windows-owned Python and Angular projects
         run: >-
-          pnpm nx run-many -t lint test
-          --projects=cert-prep-contracts,cert-prep-ollama,cert-prep-ocr-windowsml,cert-prep-backend,cert-prep
+          pnpm nx run-many -t test
+          -p cert-prep-contracts cert-prep-ollama cert-prep-ocr-windowsml
+          cert-prep-backend cert-prep
           --parallel=2
 
       - name: Type-check desktop scripts
