@@ -223,6 +223,13 @@ def test_document_operation_routes_and_upload_header_are_documented(tmp_path) ->
         assert _response_schema_name(openapi, path, method, 422) == "ApiErrorRead"
 
     upload = openapi["paths"]["/projects/{project_id}/documents"]["post"]
+    upload_body_ref = upload["requestBody"]["content"]["multipart/form-data"]["schema"][
+        "$ref"
+    ]
+    upload_body = _resolve_ref(openapi, upload_body_ref)
+    assert upload_body["properties"]["file"]["description"] == (
+        "A PDF, PNG, JPEG/JPG, or static WebP source file."
+    )
     header = next(
         parameter
         for parameter in upload["parameters"]

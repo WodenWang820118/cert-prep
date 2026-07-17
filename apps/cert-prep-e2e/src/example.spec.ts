@@ -5,6 +5,7 @@ import {
   expectedSeenPaths,
   installMockCertPrepApi,
 } from './support/mock-api';
+import { minimalPng } from './support/minimal-image';
 import {
   completePracticeQuestions,
   createProject,
@@ -70,41 +71,58 @@ test('uploads multiple PDFs in one batch and starts Full Exam for the selected P
   expect(api.practiceSessionPayloads()).toHaveLength(1);
 });
 
-test('matches binary multipart uploads by filename instead of seeded order', async ({
+test('keeps mixed PDF and image multipart filenames in upload order and the library', async ({
   page,
 }) => {
   const api = await installMockCertPrepApi(page);
   await seedMockApiConfig(page, apiBaseUrl, devToken);
-  const [firstDocument, secondDocument] = api.documents;
-  if (firstDocument === undefined || secondDocument === undefined) {
-    throw new Error('Binary multipart upload matching requires two documents.');
-  }
+  const pdfDocument = api.document;
 
   await page.goto('/');
   await createProject(page, api);
   await expectRuntimeReady(page);
 
+  const imageFilename = 'network-diagram.png';
   const binaryPdf = Buffer.from([
     0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37, 0x0a, 0xff, 0xfe, 0x00,
     0x80,
   ]);
-  await page.getByLabel('PDF file').setInputFiles([
+  await page.locator('input[aria-label="Source files"]').setInputFiles([
     {
-      name: secondDocument.filename,
+      name: pdfDocument.filename,
       mimeType: 'application/pdf',
       buffer: binaryPdf,
     },
     {
-      name: firstDocument.filename,
-      mimeType: 'application/pdf',
-      buffer: binaryPdf,
+      name: imageFilename,
+      mimeType: 'image/png',
+      buffer: minimalPng(),
     },
   ]);
-  await page.getByRole('button', { name: 'Upload PDF' }).click();
+  await expect(page.getByText('2 files selected')).toBeVisible();
+  await page.getByRole('button', { name: 'Upload files' }).click();
 
   await expect
-    .poll(() => api.uploadedDocuments().map((document) => document.id))
-    .toEqual([secondDocument.id, firstDocument.id]);
+    .poll(() => api.uploadedDocuments().map((document) => document.filename))
+    .toEqual([pdfDocument.filename, imageFilename]);
+
+  const uploadList = page.getByLabel('Selected source file upload status');
+  for (const filename of [pdfDocument.filename, imageFilename]) {
+    await expect(
+      uploadList.locator(':scope > div').filter({ hasText: filename }),
+    ).toContainText('Uploaded');
+  }
+
+  const library = page.getByLabel('Project document library');
+  await expect(
+    library.locator('option', { hasText: pdfDocument.filename }),
+  ).toHaveCount(1);
+  await expect(
+    library.locator('option', { hasText: imageFilename }),
+  ).toHaveCount(1);
+  const imageDocument = api.uploadedDocuments()[1];
+  expect(imageDocument?.filename).toBe(imageFilename);
+  await expect(library).toHaveValue(imageDocument?.id ?? 'missing-image-document');
 });
 
 test('retries a wrong answer from Review and clears it after a correct answer', async ({

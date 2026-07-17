@@ -4,10 +4,12 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
+import pytest
 
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.core.config import Settings
-from conftest import minimal_pdf
+from cert_prep_backend.routers import documents as documents_router
+from conftest import minimal_image, minimal_pdf
 from document_test_helpers import _create_project, _wait_for_document_status
 from document_test_ocr_fakes import BlockingOcrProvider
 
@@ -111,12 +113,31 @@ def test_ocr_cancel_cleans_partial_state_and_does_not_enqueue_drafts(
         assert drafts.json()["items"] == []
 
 
-def test_canceled_document_can_retry_from_original_pdf(
+@pytest.mark.parametrize(
+    ("filename", "source_bytes", "content_type"),
+    [
+        ("retry.pdf", minimal_pdf(""), "application/pdf"),
+        ("retry.png", minimal_image("PNG"), "image/png"),
+    ],
+)
+def test_canceled_document_can_retry_from_original_source_file(
     tmp_path: Path,
     auth_headers,
+    monkeypatch,
+    filename: str,
+    source_bytes: bytes,
+    content_type: str,
 ) -> None:
     operation_id = str(uuid4())
     ocr_provider = BlockingOcrProvider()
+    preparation_calls: list[bytes] = []
+    original_prepare_source = documents_router.prepare_source
+
+    def recording_prepare_source(content: bytes, **kwargs):
+        preparation_calls.append(content)
+        return original_prepare_source(content, **kwargs)
+
+    monkeypatch.setattr(documents_router, "prepare_source", recording_prepare_source)
     with TestClient(
         create_app(
             settings=Settings(data_dir=tmp_path, api_token="test-token"),
@@ -131,7 +152,7 @@ def test_canceled_document_can_retry_from_original_pdf(
                 **auth_headers,
                 "X-Cert-Prep-Operation-Id": operation_id,
             },
-            files={"file": ("retry.pdf", minimal_pdf(""), "application/pdf")},
+            files={"file": (filename, source_bytes, content_type)},
         )
         document_id = uploaded.json()["id"]
         assert ocr_provider.started.wait(timeout=2)
@@ -168,3 +189,4 @@ def test_canceled_document_can_retry_from_original_pdf(
 
         assert ready["chunks_count"] == 1
         assert operation.json()["status"] == "succeeded"
+        assert preparation_calls == [source_bytes, source_bytes]

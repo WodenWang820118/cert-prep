@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     database_name: str = "cert-prep.sqlite3"
     api_token: str = ""
     max_upload_bytes: int = 20 * 1024 * 1024
+    max_image_pixels: int = Field(default=50_000_000, ge=1)
     max_pdf_pages: int = 250
     max_page_text_chars: int = 20_000
     max_total_text_chars: int = 500_000

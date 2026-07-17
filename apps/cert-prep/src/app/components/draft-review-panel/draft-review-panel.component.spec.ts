@@ -29,6 +29,17 @@ describe('DraftReviewPanelComponent', () => {
     }).compileComponents();
   });
 
+  it('uses source-file guidance before a document is ready', () => {
+    const fixture = TestBed.createComponent(DraftReviewPanelComponent);
+
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain(
+      'Generate questions when a source file is ready',
+    );
+    expect(fixture.nativeElement.textContent).not.toContain('source PDF');
+  });
+
   it('renders streaming question job progress as a live status', () => {
     const projects = TestBed.inject(ProjectStore);
     const sourceImport = TestBed.inject(SourceImportStore);

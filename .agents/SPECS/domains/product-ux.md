@@ -3,9 +3,9 @@
 ## Purpose
 
 Cert Prep is a local-first Windows/Tauri certification-prep app. The core user
-journey is: create/select a project, upload a PDF, parse it with OCR when
-needed, review editable questions, practice through Full Exam or Random Quiz,
-and clear wrong-answer review state through correct attempts.
+journey is: create/select a project, upload a source document, parse it with OCR
+when needed, review editable questions, practice through Full Exam or Random
+Quiz, and clear wrong-answer review state through correct attempts.
 
 The production acceptance path is deterministic/manual first. AI reasoning is
 optional enrichment and must not block OCR, manual question creation, practice,
@@ -14,8 +14,8 @@ or review flows.
 ## Decisions
 
 - Use a new Cert Prep app family beside the existing starter/sample apps.
-- Projects own source PDFs, parsed chunks, editable question records, practice
-  sessions, and wrong-answer review state.
+- Projects own source documents, parsed chunks, editable question records,
+  practice sessions, and wrong-answer review state.
 - The Angular UI keeps workflow panels for projects, source import, question
   review/editing, practice, and wrong-answer review.
 - Use PrimeNG 21 with Angular 21.
@@ -39,14 +39,17 @@ or review flows.
 - A playable question requires approved status, question text, at least two
   nonempty choices, an answer present in the choices, rationale, and either a
   citation page or source excerpt.
-- Source PDF, Draft Review, and Full Exam share an explicit active document
+- Source files, Draft Review, and Full Exam share an explicit active document
   selection. Draft Review defaults to active-document questions and shows active
   counts against the project total.
-- Source import supports selecting multiple PDFs in one batch while preserving
-  the document library. The client uploads files sequentially, keeps
-  selected/uploaded/failed item states visible, treats successful uploads as
-  partial success when another file fails, and makes the most recent successful
-  document active.
+- Source import accepts PDF, PNG, JPEG/JPG, and static WebP files in the same
+  batch while preserving the document library. The client uses bounded
+  concurrency (default 2, configurable from 1 through 4), filters unsupported
+  MIME/extension hints without discarding valid selections, and leaves content
+  validation authoritative to the backend. Selected, uploaded, failed,
+  canceled, and Retry states remain per file; successful uploads are partial
+  success when another file fails, and the most recent successful document
+  becomes active.
 - Wrong-answer AI help is a per-card, single grounded explanation. Provider
   failures fall back to deterministic copy and must not block refresh, manual
   review, or clearing by a later correct attempt.
@@ -61,7 +64,7 @@ or review flows.
   current and cleared counts, last wrong date, repeated misses, and source page
   clusters. The summary remains project-scoped and distinguishes current wrong
   answers from cleared history.
-- Wrong-answer responses carry `document_id` for per-PDF grouping. Filenames
+- Wrong-answer responses carry `document_id` for per-source grouping. Filenames
   remain client-derived from loaded documents instead of duplicating filename
   metadata on the wrong-answer DTO.
 - `Mark for review` is removed from the practice runner until there is a real
@@ -95,7 +98,7 @@ Shared workbench rules:
 Page requirements:
 
 - Build: show `Cert Prep`, runtime chips in the page header, the workspace
-  banner, and the two-column Source PDF / Mock Exam Items workbench.
+  banner, and the two-column Source files / Mock Exam Items workbench.
 - Full Exam: show a source-document selector, `Start full exam`, compact
   document/question/session metrics, stable choice rows, `Submit answer`, and
   a right-side session details / question navigator rail when useful.
@@ -112,7 +115,7 @@ Page requirements:
 
 - Support multiple-choice questions first.
 - Save local state in SQLite owned by the Python backend.
-- Store original PDFs by SHA-256 under the app data directory.
+- Store original source bytes by SHA-256 under the app data directory.
 - Use OpenAPI as the backend/frontend contract source.
 - Use fake LLM providers for deterministic automated tests.
 - Use selectable-text extraction where available and OCR for image-only
@@ -157,9 +160,15 @@ Page requirements:
   disabled/busy submit states, navigator state, and disabled shell
   placeholders.
 - The 2026-07-07 multi-PDF source-import closeout verified batch selection,
-  sequential per-file uploads, failed-file visibility, active-document handoff,
+  per-file upload results, failed-file visibility, active-document handoff,
   binary multipart filename matching, selected-PDF Full Exam startup, and
   reference `multi-pdf-isolation` recordings.
+- The 2026-07-17 static-image source closeout added exact PDF/PNG/JPEG/WebP
+  selection hints, mixed-batch and partial-failure coverage, generic source-file
+  copy, responsive long-filename handling, and real-backend one-page PNG
+  terminal-state evidence while retaining the existing PDF flows. The packaged
+  app also uploaded a deterministic 256 x 128 PNG and displayed its 1/1-page
+  `no_text_detected` result without process residue.
 
 ## Open Risks
 

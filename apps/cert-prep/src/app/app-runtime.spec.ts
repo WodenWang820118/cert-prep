@@ -125,7 +125,7 @@ describe('App desktop runtime recovery routes', () => {
     expect(compiled.textContent).toContain(
       'Python backend runtime is missing.',
     );
-    expect(compiled.textContent).not.toContain('Source PDF');
+    expect(compiled.textContent).not.toContain('Source files');
   });
 
   it('renders the runtime route and install action when the Python backend runtime is missing', async () => {

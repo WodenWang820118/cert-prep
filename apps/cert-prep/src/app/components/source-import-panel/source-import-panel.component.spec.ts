@@ -47,6 +47,33 @@ describe('SourceImportPanelComponent', () => {
     vi.useRealTimers();
   });
 
+  it('advertises the supported source file formats with accessible upload labels', () => {
+    const fixture = TestBed.createComponent(SourceImportPanelComponent);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    sourceImport.chooseFiles([
+      new File(['%PDF-1.7'], 'guide.pdf', { type: 'application/pdf' }),
+      new File(['png'], 'diagram.png', { type: 'image/png' }),
+    ]);
+
+    fixture.detectChanges();
+
+    const root = fixture.nativeElement as HTMLElement;
+    const input = root.querySelector<HTMLInputElement>(
+      'input[aria-label="Source files"]',
+    );
+    expect(root.textContent).toContain('Step 01: Source files');
+    expect(root.textContent).toContain('Choose files');
+    expect(root.textContent).toContain('Upload files');
+    expect(root.textContent).toContain('2 files selected');
+    expect(input?.multiple).toBe(true);
+    expect(input?.accept).toBe(
+      '.pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/png,image/jpeg,image/webp',
+    );
+    expect(
+      root.querySelector('[aria-label="Selected source file upload status"]'),
+    ).not.toBeNull();
+  });
+
   it('renders parsing metrics when the document carries timing fields', () => {
     const fixture = TestBed.createComponent(SourceImportPanelComponent);
     const sourceImport = TestBed.inject(SourceImportStore);
@@ -230,14 +257,14 @@ describe('SourceImportPanelComponent', () => {
     expect(metricValue(fixture.nativeElement, 'File Size')).toBe('-');
   });
 
-  it('renders selected, uploaded, and failed PDF states from a multiple file input', async () => {
+  it('renders selected, uploaded, and failed source file states from a multiple file input', async () => {
     const fixture = TestBed.createComponent(SourceImportPanelComponent);
     const sourceImport = TestBed.inject(SourceImportStore);
     apiClient.uploadDocument.mockImplementation(
       (_projectId: string, body: FormData) => {
         const file = body.get('file') as File;
         if (file.name === 'failed.pdf') {
-          return Promise.reject({ error: { message: 'Invalid PDF' } });
+          return Promise.reject({ error: { message: 'Invalid source file' } });
         }
         return Promise.resolve(
           documentRead({
@@ -249,17 +276,17 @@ describe('SourceImportPanelComponent', () => {
       },
     );
     sourceImport.chooseFiles([
-      new File(['%PDF-1.7'], 'uploaded.pdf', { type: 'application/pdf' }),
+      new File(['png'], 'uploaded.png', { type: 'image/png' }),
       new File(['not a pdf'], 'failed.pdf', { type: 'application/pdf' }),
     ]);
 
     fixture.detectChanges();
 
     const input = fixture.nativeElement.querySelector(
-      '#sourcePdfFile',
+      '#sourceFiles',
     ) as HTMLInputElement | null;
     expect(input?.multiple).toBe(true);
-    expect(fixture.nativeElement.textContent).toContain('2 PDFs selected');
+    expect(fixture.nativeElement.textContent).toContain('2 files selected');
     expect(fixture.nativeElement.textContent).toContain('Queued');
 
     await sourceImport.uploadDocuments();
@@ -267,13 +294,13 @@ describe('SourceImportPanelComponent', () => {
 
     const text = fixture.nativeElement.textContent;
     expect(uploadButton(fixture.nativeElement)?.textContent).toContain(
-      'Upload PDF',
+      'Upload files',
     );
-    expect(text).toContain('uploaded.pdf');
+    expect(text).toContain('uploaded.png');
     expect(text).toContain('failed.pdf');
     expect(text).toContain('Uploaded');
     expect(text).toContain('Failed');
-    expect(text).toContain('Invalid PDF');
+    expect(text).toContain('Invalid source file');
   });
 
   it('lets the user adjust the upload batch size', async () => {
@@ -315,7 +342,7 @@ describe('SourceImportPanelComponent', () => {
     fixture.detectChanges();
 
     const input = fixture.nativeElement.querySelector(
-      '#sourcePdfFile',
+      '#sourceFiles',
     ) as HTMLInputElement | null;
     const chooser = fixture.nativeElement.querySelector(
       'label.workbench-secondary-button',
@@ -481,7 +508,7 @@ function ocrHealth(): OCRHealthRead {
 function uploadButton(root: ParentNode): HTMLButtonElement | null {
   return (
     Array.from(root.querySelectorAll('button')).find((button) =>
-      button.textContent?.includes('Upload PDF'),
+      button.textContent?.includes('Upload files'),
     ) ?? null
   );
 }

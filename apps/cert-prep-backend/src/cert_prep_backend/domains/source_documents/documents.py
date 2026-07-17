@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from cert_prep_backend.persistence.database import Database, utc_now
 from cert_prep_backend.domains.projects.repository import ensure_project_exists
-from cert_prep_backend.domains.source_documents.models import SourcePdf
+from cert_prep_backend.domains.source_documents.models import SourceFile
 from cert_prep_backend.domains.source_documents.records import document_from_row, document_query
 from cert_prep_backend.domains.source_documents.statuses import SourceDocumentStatus
 from cert_prep_backend.api.errors import NotFoundError
@@ -84,8 +84,8 @@ def get_document(db: Database, project_id: str, document_id: str) -> dict:
     return document_from_row(row)
 
 
-def get_source_pdf(db: Database, project_id: str, document_id: str) -> SourcePdf:
-    """Load the private source-PDF metadata used by retry processing."""
+def get_source_file(db: Database, project_id: str, document_id: str) -> SourceFile:
+    """Load private source-file metadata used by retry processing."""
 
     with db.connect() as connection:
         row = connection.execute(
@@ -98,7 +98,7 @@ def get_source_pdf(db: Database, project_id: str, document_id: str) -> SourcePdf
         ).fetchone()
     if row is None:
         raise NotFoundError("Document not found.")
-    return SourcePdf(
+    return SourceFile(
         filename=str(row["filename"]),
         sha256=str(row["sha256"]),
         storage_path=str(row["storage_path"]),

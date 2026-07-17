@@ -1,7 +1,7 @@
 import type { DocumentRead } from '../../../cert-prep-api';
 
 /**
- * Optional OCR/parser language hint sent with an uploaded source PDF.
+ * Optional OCR/parser language hint sent with an uploaded source file.
  */
 export type LanguageHint =
   | 'auto'

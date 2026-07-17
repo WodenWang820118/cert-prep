@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from cert_prep_backend.core.exceptions import (
     BackendError,
     InvalidPdfError,
+    InvalidSourceError,
     NotFoundError,
     ProviderUnavailableError,
     ValidationError,
@@ -17,6 +18,7 @@ __all__ = [
     "ApiErrorRead",
     "BackendError",
     "InvalidPdfError",
+    "InvalidSourceError",
     "NotFoundError",
     "ProviderUnavailableError",
     "ValidationError",

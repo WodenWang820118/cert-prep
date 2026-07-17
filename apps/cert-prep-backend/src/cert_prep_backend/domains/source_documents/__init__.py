@@ -4,10 +4,10 @@ from .models import (
     PdfExtractionResult,
     SourceDocument,
     SourceDocumentChunk,
-    SourcePdf,
+    SourceFile,
 )
 from .policies import PdfExtractionPolicy, SourceDocumentLifecyclePolicy
-from .ports import PdfTextExtractor, SourceDocumentRepository
+from .ports import SourceDocumentRepository, SourceTextExtractor
 from .statuses import (
     DOCUMENT_STATUS_VALUES,
     PDF_EXTRACTION_METHOD_VALUES,
@@ -23,11 +23,11 @@ __all__ = [
     "PdfExtractionResult",
     "PdfExtractionMethod",
     "PdfExtractionPolicy",
-    "PdfTextExtractor",
+    "SourceTextExtractor",
     "SourceDocument",
     "SourceDocumentChunk",
     "SourceDocumentLifecyclePolicy",
     "SourceDocumentRepository",
     "SourceDocumentStatus",
-    "SourcePdf",
+    "SourceFile",
 ]

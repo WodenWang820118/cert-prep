@@ -3,7 +3,7 @@ from threading import Event
 
 from fastapi.testclient import TestClient
 
-from conftest import minimal_pdf
+from conftest import minimal_image, minimal_pdf
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.core.config import Settings
 from cert_prep_backend.domains.source_documents import pdf_extraction
@@ -48,6 +48,32 @@ def test_image_only_pdf_reports_missing_paddle_runtime(tmp_path: Path, auth_head
     assert response.status_code == 201
     document = response.json()
     assert document["status"] == "ocr_failed"
+    assert document["ocr_fallback_reason"] == "PaddleOCR runtime is not installed."
+
+
+def test_static_image_reports_missing_ocr_runtime_with_existing_status(
+    tmp_path: Path,
+    auth_headers,
+) -> None:
+    client = TestClient(
+        create_app(
+            settings=Settings(data_dir=tmp_path, api_token="test-token"),
+            ocr_provider=MissingPaddleRuntimeProvider(),
+            document_processing_async_jobs=False,
+        )
+    )
+    project_id = _create_project(client, auth_headers)
+
+    response = client.post(
+        f"/projects/{project_id}/documents",
+        headers=auth_headers,
+        files={"file": ("scan.png", minimal_image("PNG"), "image/png")},
+    )
+
+    assert response.status_code == 201
+    document = response.json()
+    assert document["status"] == "ocr_failed"
+    assert document["extraction_method"] == "ocr_failed"
     assert document["ocr_fallback_reason"] == "PaddleOCR runtime is not installed."
 
 

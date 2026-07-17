@@ -135,6 +135,29 @@ materialization, not model fallback.
 The local-first queue remains SQLite-backed with bounded local workers. No
 external message broker is required.
 
+## Source Preparation And Image OCR Contract
+
+- `POST /projects/{project_id}/documents` accepts PDF, PNG, JPEG/JPG, and static
+  WebP. Actual bytes determine the source format; multipart MIME and filename
+  extension are hints only.
+- The existing 20 MB upload limit remains. Images also enforce
+  `CERT_PREP_MAX_IMAGE_PIXELS`, defaulting to 50,000,000 pixels.
+- Image preparation fully decodes on `asyncio.to_thread`. Empty, corrupt,
+  zero-sized, oversized, multi-frame/animated, decompression-bomb, and
+  unsupported sources fail through the existing 422 `validation_error` envelope.
+- BMP, GIF, TIFF, SVG, HEIC/HEIF, animated PNG, and animated WebP are outside
+  the accepted source set.
+- Preparation applies EXIF orientation, composites transparency onto white,
+  converts to RGB, and supplies every OCR provider with normalized PNG bytes.
+- Original bytes, filename, and SHA-256 remain the persistence identity. The
+  private source-file suffix comes from trusted content rather than metadata.
+- A static image bypasses PDF rendering and calls OCR as one page. It reports
+  page 1 of 1, creates the existing page-1 chunk when text exists, and reaches
+  `no_text_detected` when OCR returns no text.
+- Retry re-reads the stored source, verifies its SHA-256, detects the format,
+  and repeats image normalization before OCR. Existing stored `.pdf` records do
+  not require migration.
+
 ## Attribution And Error Semantics
 
 - Draft job `provider` and `model` fields retain configured intent.
@@ -159,7 +182,7 @@ external message broker is required.
   irreversible.
 - Non-cancellable commit phases are persisted and reported honestly. A later
   cancel receives the durable conflict instead of pretending cancellation.
-- OCR cancellation retains the source PDF for Retry, removes partial OCR
+- OCR cancellation retains the source file for Retry, removes partial OCR
   output, and suppresses automatic draft enqueue.
 - Polling retries transient failures after 1, 2, and 4 seconds. Exhaustion stops
   indefinite progress and exposes an actionable Retry state.
@@ -194,14 +217,15 @@ Stable backend status and onboarding APIs include:
 - `GET /llm/model-downloads/{job_id}`
 - `DELETE /llm/model-downloads/{job_id}`
 
-## Editable Questions And Multi-Document Upload
+## Editable Questions And Source-Document Upload
 
 - Generated and manual records are immediately editable/playable when they pass
   the shared playable predicate; the old approval-only flow stays retired.
 - Full Exam, Random Quiz, review, and packaged summaries use the same definition
   of a playable question: valid stem, distinct visible choices, and an answer.
-- Multi-document import remains a client-side sequential batch over
-  `POST /projects/{project_id}/documents`.
+- Multi-document import remains a client-side bounded batch over
+  `POST /projects/{project_id}/documents`, with default concurrency 2 and a
+  supported configuration range of 1 through 4.
 - Each successful document independently runs OCR and reasoning. Failed files
   remain visible for retry, successful files stay in the project library, and
   the latest successful upload becomes active.
@@ -248,6 +272,20 @@ Behavior owners and focused regression evidence:
   `apps/cert-prep-backend/tests/test_ollama_provider.py`.
 - Frontend CPU and unavailable-state copy:
   `apps/cert-prep/src/app/components/model-health/model-health.component.spec.ts`.
+- Source content detection, defensive image decoding, normalization, storage,
+  Retry, page-one OCR/chunks, cancellation, and draft isolation:
+  `apps/cert-prep-backend/tests/test_source_preparation.py` and the document
+  upload/OCR/async/cancellation suites.
+- Mixed source batches and real-backend static PNG behavior:
+  `apps/cert-prep-e2e/src/example.spec.ts` and
+  `apps/cert-prep-e2e/src/real-backend/real-backend.spec.ts`.
+- Packaged WindowsML image acceptance, including deterministic raw SHA-256,
+  `amd_windowsml:0`, page 1 of 1, zero chunks, and process cleanup:
+  `pnpm nx run cert-prep-desktop:packaged-image-upload-smoke --skip-nx-cache`.
+- The release `cert-prep-desktop:package-qa` target also completed and produced
+  its installer/resource report. The report retains the existing
+  `blocked_pending_clean_install` release status until separate installer-content
+  and fresh-install verification run.
 
 Primary Nx verification commands:
 

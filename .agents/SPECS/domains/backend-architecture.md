@@ -49,11 +49,21 @@ SQLite, OCR, runtime installation, question generation, and practice.
 - `WrongAnswerRead` includes nullable `document_id`, and the project-scoped
   wrong-answer summary endpoint is
   `GET /projects/{project_id}/wrong-answers/summary`.
-- Multi-PDF upload remains a client-side batch workflow over the existing
-  single-document boundary. Backend v1 keeps
-  `POST /projects/{project_id}/documents` as the only upload endpoint, and
-  chunks, generated drafts, practice selection, attempts, and wrong-answer
-  review stay scoped by `document_id`.
+- Mixed PDF/static-image upload remains a client-side batch workflow over the
+  existing single-document boundary. Backend v1 keeps
+  `POST /projects/{project_id}/documents` as the only upload endpoint; its
+  multipart field, operation header, status codes, response DTOs, and error
+  envelope remain unchanged. PNG, JPEG/JPG, and static WebP are additive
+  accepted inputs, with no database migration, `DocumentRead.media_type`, or
+  image-specific endpoint/service. Chunks, generated drafts, practice
+  selection, attempts, and wrong-answer review stay scoped by `document_id`.
+- `source_preparation.py` owns trusted content detection and normalized OCR
+  input. Source storage/repository helpers use source-file terminology, retain
+  original bytes and SHA-256, choose private suffixes from detected content,
+  and revalidate stored content on Retry. Legacy `.pdf` paths remain readable.
+- Rolling back this additive input support does not require database or chunk
+  cleanup, but an older backend cannot retry image documents created by the
+  newer version.
 
 ## DDD And SOLID Refactor Policy
 
@@ -117,8 +127,14 @@ Guardrails:
   for current wrong counts, cleared counts, repeated misses, and
   document/page clusters.
 - The 2026-07-07 multi-PDF closeout kept the REST contract stable and verified
-  sequential uploads in one project, document-scoped chunks, upload-triggered
+  per-file uploads in one project, document-scoped chunks, upload-triggered
   streaming draft generation, and per-document `ai_inferred` drafts.
+- The 2026-07-17 static-image source closeout kept the same REST, SQLite, and
+  generated-client wire contracts while adding content-authoritative
+  PDF/PNG/JPEG/WebP preparation. Backend tests covered raw-byte hash/storage,
+  defensive decode, normalization, page-one OCR/chunks, Retry/cancel, and
+  document/draft isolation; OpenAPI regeneration produced no TypeScript wire
+  drift, and WindowsML package tests continued to accept normalized PNG input.
 
 ## Open Risks
 

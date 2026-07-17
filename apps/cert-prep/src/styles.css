@@ -436,6 +436,10 @@
     padding: 1.25rem;
   }
 
+  .workbench-panel-body > * {
+    min-width: 0;
+  }
+
   .workbench-action-button {
     min-height: 2.625rem;
     gap: 0.5rem;
@@ -489,7 +493,9 @@
   .workbench-file-name {
     display: flex;
     align-items: center;
+    flex: 1 1 auto;
     min-width: 0;
+    overflow: hidden;
     gap: 0.75rem;
     color: var(--workbench-text);
     font-weight: 700;
@@ -504,6 +510,7 @@
   .workbench-tag {
     display: inline-flex;
     align-items: center;
+    flex: 0 0 auto;
     width: fit-content;
     border: 1px solid var(--workbench-border);
     border-radius: 5px;

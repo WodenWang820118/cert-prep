@@ -64,7 +64,7 @@ class OllamaOCRProvider:
                     "role": "user",
                     "content": (
                         "Extract all visible Japanese and English text from this JLPT exam "
-                        f"PDF page image. Preserve question numbers, choices, and answer-key "
+                        f"source document image. Preserve question numbers, choices, and answer-key "
                         f"tables if visible. Return only JSON for page {page_number}."
                     ),
                     "images": [image_png],

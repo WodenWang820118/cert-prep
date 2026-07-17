@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from io import BytesIO
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.core.config import Settings
@@ -71,6 +73,17 @@ def minimal_pdf(*page_texts: str) -> bytes:
         f"startxref\n{xref_offset}\n%%EOF\n".encode()
     )
     return bytes(output)
+
+
+def minimal_image(
+    image_format: str = "PNG",
+    *,
+    size: tuple[int, int] = (8, 6),
+    color: tuple[int, int, int] = (20, 40, 60),
+) -> bytes:
+    output = BytesIO()
+    Image.new("RGB", size, color).save(output, format=image_format)
+    return output.getvalue()
 
 
 def _pdf_page_stream(text: str) -> bytes:

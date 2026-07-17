@@ -176,7 +176,9 @@ export class DraftReviewStore {
     const project = this.projects.selectedProject();
     const document = this.sourceImport.activeDocument();
     if (project === null || document === null) {
-      this.operations.fail('Upload a text PDF before generating questions.');
+      this.operations.fail(
+        'Upload a source file with extractable text before generating questions.',
+      );
       return;
     }
 

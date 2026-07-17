@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { CERT_PREP_API } from '../../cert-prep-api';
 import type { ChunkRead, DocumentRead } from '../../cert-prep-api';
+import { OperationStore } from '../operation.store';
 import { ProjectStore } from '../project.store';
 import { SourceImportStore } from './source-import.store';
 
@@ -170,15 +171,49 @@ describe('SourceImportStore polling', () => {
     expect(apiClient.getDocument).toHaveBeenCalledTimes(5);
   });
 
-  it('uploads selected PDFs in two-document batches by default', async () => {
+  it('accepts source files by supported MIME type or filename extension', () => {
+    const store = TestBed.inject(SourceImportStore);
+    const operations = TestBed.inject(OperationStore);
+
+    store.chooseFiles([
+      pdfFile('guide.pdf'),
+      sourceFile('mime-only.bin', 'image/png'),
+      sourceFile('scan.JPG', 'application/octet-stream'),
+      sourceFile('portrait.JPEG', ''),
+      sourceFile('webp-by-mime.bin', 'image/webp'),
+      sourceFile('diagram.WEBP', ''),
+      sourceFile('animated.gif', 'image/gif'),
+      sourceFile('vector.svg', 'image/svg+xml'),
+    ]);
+
+    expect(store.selectedFiles().map((file) => file.name)).toEqual([
+      'guide.pdf',
+      'mime-only.bin',
+      'scan.JPG',
+      'portrait.JPEG',
+      'webp-by-mime.bin',
+      'diagram.WEBP',
+    ]);
+    expect(store.selectedFileLabel()).toBe('6 files selected');
+    expect(operations.error()).toContain('animated.gif');
+    expect(operations.error()).toContain('vector.svg');
+    expect(operations.error()).toContain('PDF, PNG, JPEG, and WebP');
+
+    store.chooseFiles([sourceFile('next.png', 'image/png')]);
+
+    expect(operations.error()).toBeNull();
+    expect(operations.errorCode()).toBeNull();
+  });
+
+  it('uploads selected source files in two-document batches by default', async () => {
     const store = TestBed.inject(SourceImportStore);
     const firstUpload = deferred<DocumentRead>();
     const secondUpload = deferred<DocumentRead>();
     const thirdUpload = deferred<DocumentRead>();
     const uploads = new Map([
       ['first.pdf', firstUpload],
-      ['second.pdf', secondUpload],
-      ['third.pdf', thirdUpload],
+      ['second.png', secondUpload],
+      ['third.webp', thirdUpload],
     ]);
     const startedUploads: string[] = [];
     apiClient.uploadDocument.mockImplementation((_projectId: string, body: FormData) => {
@@ -191,23 +226,23 @@ describe('SourceImportStore polling', () => {
     );
     store.chooseFiles([
       pdfFile('first.pdf'),
-      pdfFile('second.pdf'),
-      pdfFile('third.pdf'),
+      sourceFile('second.png', 'image/png'),
+      sourceFile('third.webp', 'image/webp'),
     ]);
 
     const uploadPromise = store.uploadDocuments();
     await Promise.resolve();
 
-    expect(startedUploads).toEqual(['first.pdf', 'second.pdf']);
+    expect(startedUploads).toEqual(['first.pdf', 'second.png']);
     firstUpload.resolve(documentRead({ id: 'document-1', filename: 'first.pdf' }));
     await flushPromises();
 
-    expect(startedUploads).toEqual(['first.pdf', 'second.pdf']);
-    secondUpload.resolve(documentRead({ id: 'document-2', filename: 'second.pdf' }));
+    expect(startedUploads).toEqual(['first.pdf', 'second.png']);
+    secondUpload.resolve(documentRead({ id: 'document-2', filename: 'second.png' }));
     await flushPromises();
 
-    expect(startedUploads).toEqual(['first.pdf', 'second.pdf', 'third.pdf']);
-    thirdUpload.resolve(documentRead({ id: 'document-3', filename: 'third.pdf' }));
+    expect(startedUploads).toEqual(['first.pdf', 'second.png', 'third.webp']);
+    thirdUpload.resolve(documentRead({ id: 'document-3', filename: 'third.webp' }));
     await uploadPromise;
 
     expect(apiClient.uploadDocument).toHaveBeenCalledTimes(3);
@@ -218,6 +253,9 @@ describe('SourceImportStore polling', () => {
     ]);
     expect(store.activeDocumentId()).toBe('document-3');
     expect(store.uploadedFileCount()).toBe(3);
+    expect(TestBed.inject(OperationStore).status()).toBe(
+      '3 source files uploaded',
+    );
   });
 
   it('uses the configured upload batch size for the whole upload run', async () => {
@@ -323,9 +361,9 @@ describe('SourceImportStore polling', () => {
     ]);
   });
 
-  it('keeps successful uploads when one PDF fails', async () => {
+  it('keeps successful uploads when one source file fails', async () => {
     const store = TestBed.inject(SourceImportStore);
-    const failed = new Error('Invalid PDF');
+    const failed = new Error('Invalid source file');
     apiClient.uploadDocument.mockImplementation(
       (_projectId: string, body: FormData) => {
         const file = body.get('file') as File;
@@ -359,9 +397,12 @@ describe('SourceImportStore polling', () => {
     expect(store.documents()[0]).toEqual(
       expect.objectContaining({ id: 'document-good' }),
     );
+    expect(TestBed.inject(OperationStore).error()).toBe(
+      '1 source file failed to upload.',
+    );
   });
 
-  it('retries failed PDFs without uploading successful items again', async () => {
+  it('retries failed source files without uploading successful items again', async () => {
     const store = TestBed.inject(SourceImportStore);
     const uploadedNames: string[] = [];
     let badUploadAttempts = 0;
@@ -374,7 +415,7 @@ describe('SourceImportStore polling', () => {
         }
         if (file.name === 'bad.pdf' && badUploadAttempts === 1) {
           return Promise.reject({
-            error: { message: 'The PDF could not be parsed.' },
+            error: { message: 'The source file could not be parsed.' },
           });
         }
         return Promise.resolve(
@@ -513,6 +554,10 @@ function chunkRead(overrides: Partial<ChunkRead> = {}): ChunkRead {
 
 function pdfFile(name: string): File {
   return new File(['%PDF-1.7'], name, { type: 'application/pdf' });
+}
+
+function sourceFile(name: string, type: string): File {
+  return new File(['source'], name, { type });
 }
 
 async function flushPromises(times = 4): Promise<void> {

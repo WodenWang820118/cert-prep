@@ -260,7 +260,7 @@ export async function restartAndVerifyPersistence(
     'restart workspace loaded',
   );
   if (
-    !/Source PDF|Mock Exam Items|Parallel Parsing QA/.test(await bodyText(run))
+    !/Source files|Mock Exam Items|Parallel Parsing QA/.test(await bodyText(run))
   ) {
     const projectButton = activePage(run)
       .locator('button.project-select-button')
@@ -272,7 +272,7 @@ export async function restartAndVerifyPersistence(
       await projectButton.click();
       await waitText(
         run,
-        /Source PDF|Mock Exam Items|Parsing complete/i,
+        /Source files|Mock Exam Items|Parsing complete/i,
         30_000,
         'project selected after restart',
       );
@@ -280,7 +280,7 @@ export async function restartAndVerifyPersistence(
   }
   await screenshot(run, 'restart-persistence-build-state');
   run.metrics.restart.verified =
-    /Parsing complete|Playable|Mock Exam Items|Source PDF/i.test(
+    /Parsing complete|Playable|Mock Exam Items|Source files/i.test(
       await bodyText(run),
     );
 }

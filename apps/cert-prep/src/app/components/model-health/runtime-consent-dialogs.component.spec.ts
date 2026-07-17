@@ -193,6 +193,28 @@ describe('RuntimeConsentDialogsComponent', () => {
       expect(health.runtimeInstallConsentVisible()).toBe(false);
     });
   });
+
+  it('describes OCR runtime installation for scanned PDFs and images', async () => {
+    const fixture = TestBed.createComponent(RuntimeConsentDialogsComponent);
+    const health = TestBed.inject(HealthStore);
+    health.ocrHealth.set({
+      ...ocrHealth(),
+      provider: 'windowsml',
+      engine: 'onnxruntime-windowsml',
+      available: false,
+      detail: 'WindowsML OCR runtime is not installed.',
+      selected_device: null,
+      unavailable_reason: 'windowsml_runtime_missing',
+    });
+    health.openOcrRuntimeInstallConsent();
+
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(document.body.textContent).toContain(
+      'Install the WindowsML OCR runtime for scanned PDFs and images?',
+    );
+  });
 });
 
 function missingPythonRuntimeStatus(): DesktopRuntimeStatus {

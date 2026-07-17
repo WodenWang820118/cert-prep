@@ -12,7 +12,11 @@ class ValidationError(BackendError):
     pass
 
 
-class InvalidPdfError(ValidationError):
+class InvalidSourceError(ValidationError):
+    pass
+
+
+class InvalidPdfError(InvalidSourceError):
     pass
 
 

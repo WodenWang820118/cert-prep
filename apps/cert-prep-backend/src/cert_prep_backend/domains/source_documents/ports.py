@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from .models import PdfExtraction, SourceDocument, SourceDocumentChunk, SourcePdf
+from .models import PdfExtraction, SourceDocument, SourceDocumentChunk, SourceFile
 from .statuses import SourceDocumentStatus
 
 
-class PdfTextExtractor(Protocol):
-    """Extracts text and OCR metadata from a source PDF without storing it."""
+class SourceTextExtractor(Protocol):
+    """Extracts text and OCR metadata from a source file without storing it."""
 
-    def extract(self, source_pdf: SourcePdf) -> PdfExtraction:
+    def extract(self, source_file: SourceFile) -> PdfExtraction:
         ...
 
 
@@ -20,7 +20,7 @@ class SourceDocumentRepository(Protocol):
         self,
         *,
         project_id: str,
-        source_pdf: SourcePdf,
+        source_file: SourceFile,
         extraction: PdfExtraction,
     ) -> SourceDocument:
         ...

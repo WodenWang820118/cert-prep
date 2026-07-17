@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { CERT_PREP_API } from '../../cert-prep-api';
+import { OperationStore } from '../operation.store';
 import { DraftReviewStore } from './draft-review.store';
 import { ProjectStore } from '../project.store';
 import { SourceImportStore } from '../source-import/source-import.store';
@@ -48,6 +49,18 @@ describe('DraftReviewStore generation', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it('uses source-file guidance when generation has no active document', async () => {
+    const store = TestBed.inject(DraftReviewStore);
+    const operations = TestBed.inject(OperationStore);
+
+    await store.generateDrafts();
+
+    expect(operations.error()).toBe(
+      'Upload a source file with extractable text before generating questions.',
+    );
+    expect(apiClient.startManualDraftOperation).not.toHaveBeenCalled();
   });
 
   it('sends deterministic strategy when generating deterministic questions', async () => {

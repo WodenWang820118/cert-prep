@@ -5,6 +5,7 @@ import {
   type Page,
   type TestInfo,
 } from '@playwright/test';
+import { minimalPng } from '../support/minimal-image';
 import { minimalPdf } from '../support/minimal-pdf';
 
 const apiBaseUrl = 'http://127.0.0.1:8766';
@@ -18,6 +19,11 @@ interface ProjectRead {
 interface DocumentRead {
   id: string;
   filename: string;
+  status: string;
+  page_count: number;
+  processed_page_count: number;
+  has_text: boolean;
+  chunks_count: number;
 }
 
 interface PracticeSessionRead {
@@ -101,14 +107,14 @@ test('uploads multiple PDFs through the real multipart API', async ({
   const projectName = uniqueProjectName('Real multi PDF', testInfo);
   await createProject(page, projectName);
 
-  await page.getByLabel('PDF file').setInputFiles([
+  await page.locator('input[aria-label="Source files"]').setInputFiles([
     pdfFile('multi-one.pdf', 'The first source describes least privilege.'),
     pdfFile('multi-two.pdf', 'The second source describes defense in depth.'),
   ]);
-  await expect(page.getByText('2 PDFs selected')).toBeVisible();
-  await page.getByRole('button', { name: 'Upload PDF' }).click();
+  await expect(page.getByText('2 files selected')).toBeVisible();
+  await page.getByRole('button', { name: 'Upload files' }).click();
 
-  const uploadList = page.locator('[aria-label="Selected PDF upload status"]');
+  const uploadList = page.getByLabel('Selected source file upload status');
   for (const filename of ['multi-one.pdf', 'multi-two.pdf']) {
     const row = uploadList.locator(':scope > div').filter({ hasText: filename });
     await expect(row).toContainText('Uploaded', { timeout: 30_000 });
@@ -129,6 +135,64 @@ test('uploads multiple PDFs through the real multipart API', async ({
   ]);
 });
 
+test('uploads a static image to the deterministic fake-OCR terminal state', async ({
+  page,
+  request,
+}, testInfo) => {
+  const projectName = uniqueProjectName('Real static image', testInfo);
+  const filename = 'fake-ocr-image.png';
+  await createProject(page, projectName);
+
+  await page
+    .locator('input[aria-label="Source files"]')
+    .setInputFiles(pngFile(filename));
+  await page.getByRole('button', { name: 'Upload files' }).click();
+
+  const uploadRow = page
+    .getByLabel('Selected source file upload status')
+    .locator(':scope > div')
+    .filter({ hasText: filename });
+  await expect(uploadRow).toContainText('Uploaded', { timeout: 30_000 });
+
+  const project = await projectByName(request, projectName);
+  await expect
+    .poll(
+      async () => {
+        const documents = await apiJson<{ items: DocumentRead[] }>(
+          request,
+          `/projects/${project.id}/documents`,
+        );
+        const image = documents.items.find(
+          (document) => document.filename === filename,
+        );
+        return image === undefined
+          ? null
+          : {
+              status: image.status,
+              pageCount: image.page_count,
+              processedPageCount: image.processed_page_count,
+              hasText: image.has_text,
+              chunksCount: image.chunks_count,
+            };
+      },
+      { timeout: 30_000 },
+    )
+    .toEqual({
+      status: 'no_text_detected',
+      pageCount: 1,
+      processedPageCount: 1,
+      hasText: false,
+      chunksCount: 0,
+    });
+
+  await expect(
+    page.getByText('Parsing finished, but no text was detected.'),
+  ).toBeVisible();
+  await expect(
+    page.locator('.workbench-file-name').getByText(filename, { exact: true }),
+  ).toBeVisible();
+});
+
 test('recovers after bounded transient document polling failures', async ({
   page,
   request,
@@ -145,9 +209,11 @@ test('recovers after bounded transient document polling failures', async ({
   await createProject(page, projectName);
 
   await page
-    .getByLabel('PDF file')
-    .setInputFiles(pdfFile('poll-recovery.pdf', 'Availability requires tested recovery.'));
-  await page.getByRole('button', { name: 'Upload PDF' }).click();
+    .locator('input[aria-label="Source files"]')
+    .setInputFiles(
+      pdfFile('poll-recovery.pdf', 'Availability requires tested recovery.'),
+    );
+  await page.getByRole('button', { name: 'Upload files' }).click();
 
   await expect(page.getByText('Parsing complete.')).toBeVisible({
     timeout: 30_000,
@@ -178,11 +244,14 @@ test('cancels an upload before its document id exists and ignores the late respo
   await createProject(page, projectName);
 
   await page
-    .getByLabel('PDF file')
-    .setInputFiles(pdfFile('cancel-before-id.pdf', 'This upload must not commit.'));
-  await page.getByRole('button', { name: 'Upload PDF' }).click();
+    .locator('input[aria-label="Source files"]')
+    .setInputFiles(
+      pdfFile('cancel-before-id.pdf', 'This upload must not commit.'),
+    );
+  await page.getByRole('button', { name: 'Upload files' }).click();
   const uploadRow = page
-    .locator('[aria-label="Selected PDF upload status"] > div')
+    .getByLabel('Selected source file upload status')
+    .locator(':scope > div')
     .filter({ hasText: 'cancel-before-id.pdf' });
   await uploadRow.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(uploadRow).toContainText('Canceled');
@@ -272,7 +341,7 @@ async function uploadAndGenerateQuestions(
   page: Page,
   filename: string,
 ): Promise<void> {
-  await page.getByLabel('PDF file').setInputFiles({
+  await page.locator('input[aria-label="Source files"]').setInputFiles({
     name: filename,
     mimeType: 'application/pdf',
     buffer: minimalPdf(
@@ -280,7 +349,7 @@ async function uploadAndGenerateQuestions(
       'Defense in depth combines independent controls and reduces single points of failure.',
     ),
   });
-  await page.getByRole('button', { name: 'Upload PDF' }).click();
+  await page.getByRole('button', { name: 'Upload files' }).click();
 
   await expect(
     page.locator('.workbench-file-name').getByText(filename),
@@ -302,6 +371,14 @@ function pdfFile(name: string, text: string) {
     name,
     mimeType: 'application/pdf',
     buffer: minimalPdf(text),
+  };
+}
+
+function pngFile(name: string) {
+  return {
+    name,
+    mimeType: 'image/png',
+    buffer: minimalPng(),
   };
 }
 

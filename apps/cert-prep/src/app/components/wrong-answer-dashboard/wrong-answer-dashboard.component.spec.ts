@@ -195,6 +195,9 @@ describe('WrongAnswerDashboardComponent', () => {
     expect(metricValue(element, 'Repeated Misses')).toBe('2');
     expect(metricValue(element, 'Weak Areas')).toBe('3');
     expect(metricValue(element, 'Last Wrong')).toBe('2026-06-23');
+    expect(element.textContent).toContain(
+      'grouped by source document and page',
+    );
     expect(element.textContent).toContain('security.pdf');
     expect(element.textContent).toContain('Page 3');
     expect(element.textContent).toContain('missing-document');

@@ -52,12 +52,14 @@ export async function uploadDocumentAndExpectDraft(
   const document = options.document ?? api.document;
   const draft = options.draft ?? api.draft;
 
-  await page.getByLabel('PDF file').setInputFiles({
+  const sourceFileInput = page.locator('input[aria-label="Source files"]');
+  await sourceFileInput.setInputFiles([]);
+  await sourceFileInput.setInputFiles({
     name: document.filename,
     mimeType: 'application/pdf',
     buffer: Buffer.from('%PDF-1.4\n% mocked text pdf\n'),
   });
-  await page.getByRole('button', { name: 'Upload PDF' }).click();
+  await page.getByRole('button', { name: 'Upload files' }).click();
   await expect(
     page
       .locator('.workbench-file-name')
@@ -218,14 +220,14 @@ export async function runMultiPdfBatchUploadScenario(
   await expectRuntimeReady(page);
 
   const requestMarker = api.markRequestLog();
-  await page.getByLabel('PDF file').setInputFiles(
+  await page.locator('input[aria-label="Source files"]').setInputFiles(
     [firstDocument, secondDocument].map((document) => ({
       name: document.filename,
       mimeType: 'application/pdf',
       buffer: Buffer.from(`%PDF-1.4\n% mocked ${document.id} pdf\n`),
     })),
   );
-  await page.getByRole('button', { name: 'Upload PDF' }).click();
+  await page.getByRole('button', { name: 'Upload files' }).click();
 
   await expectDocumentLibraryOption(page, firstDocument);
   await expectDocumentLibraryOption(page, secondDocument);

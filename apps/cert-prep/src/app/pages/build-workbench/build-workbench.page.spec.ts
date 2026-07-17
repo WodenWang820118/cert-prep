@@ -18,7 +18,7 @@ describe('BuildWorkbenchPage', () => {
     expect(fixture.nativeElement.textContent).toContain('Local Workspace');
     expect(fixture.nativeElement.textContent).toContain('Cert Prep');
     expect(fixture.nativeElement.textContent).toContain('Workspace ready');
-    expect(fixture.nativeElement.textContent).toContain('Source PDF');
+    expect(fixture.nativeElement.textContent).toContain('Source files');
     expect(fixture.nativeElement.textContent).toContain('Mock Exam Items');
   });
 });

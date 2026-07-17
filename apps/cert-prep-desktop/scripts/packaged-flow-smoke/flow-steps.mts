@@ -67,7 +67,7 @@ export async function uploadAndParsePdf(run: SmokeRunState): Promise<void> {
 
   const uploadDocumentResponse = waitForUploadDocumentResponse(run);
   const uploadStart = Date.now();
-  await clickButtonText(run, 'Upload PDF', { timeout: 120_000 });
+  await clickButtonText(run, 'Upload files', { timeout: 120_000 });
   await waitText(run,
     /Parsing started|Parsing continues|0\/\d+ pages|processing/i,
     30_000,

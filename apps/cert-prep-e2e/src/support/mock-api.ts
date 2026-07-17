@@ -748,13 +748,13 @@ function nextUploadDocument(
     (document) => !uploadedIds.has(document.id),
   );
 
-  return (
-    remainingDocument ??
-    createAdditionalUploadDocument(
-      projectState,
-      projectState.document,
-      filename,
-    )
+  if (remainingDocument !== undefined && filename === null) {
+    return remainingDocument;
+  }
+  return createAdditionalUploadDocument(
+    projectState,
+    remainingDocument ?? projectState.document,
+    filename,
   );
 }
 

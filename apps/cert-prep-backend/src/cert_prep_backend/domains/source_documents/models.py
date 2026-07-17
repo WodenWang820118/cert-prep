@@ -12,7 +12,7 @@ ExtractionMethod = PdfExtractionMethodValue
 
 
 @dataclass(frozen=True, slots=True)
-class SourcePdf:
+class SourceFile:
     filename: str
     sha256: str
     storage_path: str

@@ -15,28 +15,28 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
       <header class="workbench-panel-header">
         <div class="workbench-panel-title">
           <span class="workbench-panel-icon" aria-hidden="true">
-            <i class="pi pi-file-pdf"></i>
+            <i class="pi pi-file"></i>
           </span>
-          <h2 id="source-heading">Step 01: Source PDF</h2>
+          <h2 id="source-heading">Step 01: Source files</h2>
         </div>
         <label
           class="workbench-secondary-button"
-          [attr.for]="isUploadBusy() ? null : 'sourcePdfFile'"
+          [attr.for]="isUploadBusy() ? null : 'sourceFiles'"
           [attr.aria-disabled]="isUploadBusy()"
         >
           <i class="pi pi-upload" aria-hidden="true"></i>
-          <span>Choose PDF</span>
+          <span>Choose files</span>
         </label>
       </header>
 
       <div class="workbench-panel-body">
         <input
-          id="sourcePdfFile"
+          id="sourceFiles"
           class="sr-only"
           type="file"
-          accept="application/pdf"
+          [accept]="sourceImport.sourceFileAccept"
           multiple
-          aria-label="PDF file"
+          aria-label="Source files"
           [disabled]="isUploadBusy()"
           (change)="chooseFiles($event)"
         />
@@ -56,12 +56,12 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
         </div>
 
         @if (sourceImport.uploadItems().length > 0) {
-          <div class="grid gap-2" aria-label="Selected PDF upload status">
+          <div class="grid gap-2" aria-label="Selected source file upload status">
             @for (item of sourceImport.uploadItems(); track item.id) {
               <div
                 class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-surface-200 bg-surface-0 p-3"
               >
-                <div class="min-w-0">
+                <div class="min-w-0 flex-1">
                   <p class="m-0 truncate text-sm font-semibold text-color">
                     {{ item.file.name }}
                   </p>
@@ -98,8 +98,8 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
           </div>
         }
 
-        <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_8rem_auto] md:items-end">
-          <label class="workbench-field">
+        <div class="flex flex-wrap items-end gap-3">
+          <label class="workbench-field min-w-32 flex-1">
             <span>Language</span>
             <select
               [ngModel]="sourceImport.languageHint()"
@@ -110,7 +110,7 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
               }
             </select>
           </label>
-          <label class="workbench-field">
+          <label class="workbench-field min-w-32 flex-1">
             <span>Batch size</span>
             <select
               [ngModel]="sourceImport.uploadBatchSize()"
@@ -123,7 +123,7 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
             </select>
           </label>
           <button
-            class="workbench-action-button"
+            class="workbench-action-button min-w-32 flex-none"
             type="button"
             [disabled]="operations.isBusyFor('upload') || !sourceImport.canUpload()"
             (click)="uploadDocument()"
@@ -132,7 +132,7 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
               [class]="operations.isBusyFor('upload') ? 'pi pi-spin pi-spinner' : 'pi pi-upload'"
               aria-hidden="true"
             ></i>
-            <span>Upload PDF</span>
+            <span>Upload files</span>
           </button>
         </div>
 
@@ -159,7 +159,7 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
             aria-live="polite"
           >
             <div class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-surface-200 bg-surface-50 p-3">
-              <div class="min-w-0">
+              <div class="min-w-0 flex-1">
                 <p class="m-0 truncate text-sm font-semibold text-color">
                   {{ sourceImport.parseStageText() }}
                 </p>
@@ -346,7 +346,8 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
           }
         } @else {
           <p class="m-0 rounded-md border border-dashed border-surface-300 bg-surface-0 p-3 text-sm text-muted-color">
-            Choose a PDF and upload it to start extraction.
+            Choose one or more PDF, PNG, JPEG, or WebP files and upload them to
+            start extraction.
           </p>
         }
       </div>

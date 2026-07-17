@@ -7,7 +7,7 @@ import time
 from fastapi.testclient import TestClient
 import pytest
 
-from conftest import minimal_pdf
+from conftest import minimal_image, minimal_pdf
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.core.config import Settings
 from cert_prep_backend.routers import documents as documents_router
@@ -62,6 +62,46 @@ def test_async_upload_returns_processing_then_progresses(tmp_path: Path, auth_he
     assert ready["processed_page_count"] == 1
     assert ready["chunks_count"] == 1
     assert ready["exam_item_count"] == 0
+
+
+def test_async_static_image_upload_returns_processing_then_page_one_progress(
+    tmp_path: Path,
+    auth_headers,
+) -> None:
+    ocr_provider = BlockingOcrProvider()
+    client = TestClient(
+        create_app(
+            settings=Settings(data_dir=tmp_path, api_token="test-token"),
+            ocr_provider=ocr_provider,
+            document_processing_async_jobs=True,
+        )
+    )
+    project_id = _create_project(client, auth_headers)
+
+    response = client.post(
+        f"/projects/{project_id}/documents",
+        headers=auth_headers,
+        files={"file": ("async.png", minimal_image("PNG"), "image/png")},
+    )
+
+    assert response.status_code == 201
+    document = response.json()
+    assert document["page_count"] == 1
+    assert document["status"] == "processing"
+    assert document["processed_page_count"] == 0
+    assert document["chunks_count"] == 0
+    assert ocr_provider.started.wait(timeout=2)
+
+    ocr_provider.release.set()
+    ready = _wait_for_document_status(
+        client,
+        auth_headers,
+        project_id,
+        document["id"],
+        "ready",
+    )
+    assert ready["processed_page_count"] == 1
+    assert ready["chunks_count"] == 1
 
 
 def test_async_upload_prepares_document_ocr_before_starting_processing(

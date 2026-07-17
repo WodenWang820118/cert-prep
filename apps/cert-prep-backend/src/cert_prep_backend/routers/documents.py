@@ -49,14 +49,20 @@ from cert_prep_backend.domains.source_documents.ocr_provider_pool import (
 )
 from cert_prep_backend.domains.source_documents.pdf_extraction import (
     PdfExtractionProgress,
-    extract_pdf_pages,
-    inspect_pdf_page_count,
 )
 from cert_prep_backend.domains.source_documents.schemas import ChunkList, DocumentList, DocumentRead
-from cert_prep_backend.domains.source_documents.storage import sha256_hex, store_pdf
+from cert_prep_backend.domains.source_documents.source_preparation import (
+    PreparedSource,
+    extract_prepared_source,
+    prepare_source,
+)
+from cert_prep_backend.domains.source_documents.storage import (
+    sha256_hex,
+    store_source_file,
+)
 from cert_prep_backend.api.errors import (
     ApiErrorRead,
-    InvalidPdfError,
+    InvalidSourceError,
     NotFoundError,
     ProviderUnavailableError,
     api_error,
@@ -182,7 +188,10 @@ def list_documents(
 async def upload_document(
     request: Request,
     project_id: str,
-    file: UploadFile = File(...),
+    file: UploadFile = File(
+        ...,
+        description="A PDF, PNG, JPEG/JPG, or static WebP source file.",
+    ),
     language_hint: str = Form(default="auto"),
     operation_id_header: OperationIdHeader = None,
     db: Database = Depends(get_database),
@@ -193,7 +202,6 @@ async def upload_document(
         get_streaming_draft_generation_manager
     ),
 ) -> dict:
-    _validate_pdf_upload_metadata(file)
     operation_id = operation_id_header or str(uuid4())
     claimed = False
     try:
@@ -213,9 +221,12 @@ async def upload_document(
             )
         claimed = True
         content = await _read_limited_upload(file, settings.max_upload_bytes)
-        if not content:
-            raise validation_error("PDF is empty.")
-        page_count = inspect_pdf_page_count(content, max_pages=settings.max_pdf_pages)
+        prepared_source = await asyncio.to_thread(
+            prepare_source,
+            content,
+            max_pdf_pages=settings.max_pdf_pages,
+            max_image_pixels=settings.max_image_pixels,
+        )
         try:
             await _prepare_document_ocr_provider_pool(ocr_provider_pool)
         except ProviderUnavailableError as exc:
@@ -236,16 +247,22 @@ async def upload_document(
             operation_id=operation_id,
         )
         sha256 = sha256_hex(content)
-        storage_path = store_pdf(settings, project_id, sha256, content)
+        storage_path = store_source_file(
+            settings,
+            project_id,
+            sha256,
+            content,
+            canonical_suffix=prepared_source.canonical_suffix,
+        )
         document = document_operations.create_and_attach_document(
             db,
             project_id=project_id,
             operation_id=operation_id,
-            filename=file.filename or f"{sha256}.pdf",
+            filename=file.filename or f"{sha256}{prepared_source.canonical_suffix}",
             sha256=sha256,
             language_hint=_normalized_language_hint(language_hint),
             storage_path=str(storage_path),
-            page_count=page_count,
+            page_count=prepared_source.page_count,
         )
 
         if bool(getattr(request.app.state, "document_processing_async_jobs", True)):
@@ -258,7 +275,7 @@ async def upload_document(
                 project_id=project_id,
                 document_id=document["id"],
                 operation_id=operation_id,
-                content=content,
+                source=prepared_source,
             )
             return document
 
@@ -271,7 +288,7 @@ async def upload_document(
             project_id,
             document["id"],
             operation_id,
-            content,
+            prepared_source,
         )
     except HTTPException:
         if claimed:
@@ -282,13 +299,13 @@ async def upload_document(
                 error="Document upload did not pass validation.",
             )
         raise
-    except InvalidPdfError as exc:
+    except InvalidSourceError as exc:
         if claimed:
             document_operations.finish_failed(
                 db,
                 project_id=project_id,
                 operation_id=operation_id,
-                error="PDF validation failed.",
+                error="Source validation failed.",
             )
         raise validation_error(str(exc)) from exc
     except NotFoundError as exc:
@@ -378,18 +395,23 @@ async def retry_document_processing(
 ) -> dict:
     operation_id = operation_id_header or str(uuid4())
     try:
-        source_pdf = source_documents_repository.get_source_pdf(
+        source_file = source_documents_repository.get_source_file(
             db,
             project_id,
             document_id,
         )
-        content = _read_stored_source_pdf(
+        content = _read_stored_source_file(
             settings,
             project_id=project_id,
-            storage_path=source_pdf.storage_path,
-            expected_sha256=source_pdf.sha256,
+            storage_path=source_file.storage_path,
+            expected_sha256=source_file.sha256,
         )
-        inspect_pdf_page_count(content, max_pages=settings.max_pdf_pages)
+        prepared_source = await asyncio.to_thread(
+            prepare_source,
+            content,
+            max_pdf_pages=settings.max_pdf_pages,
+            max_image_pixels=settings.max_image_pixels,
+        )
         await _prepare_document_ocr_provider_pool(ocr_provider_pool)
         operation = document_operations.start_retry_operation(
             db,
@@ -407,7 +429,7 @@ async def retry_document_processing(
                 project_id=project_id,
                 document_id=document_id,
                 operation_id=operation_id,
-                content=content,
+                source=prepared_source,
             )
             return operation
 
@@ -420,7 +442,7 @@ async def retry_document_processing(
             project_id,
             document_id,
             operation_id,
-            content,
+            prepared_source,
         )
         return document_operations.get_operation(
             db,
@@ -429,9 +451,9 @@ async def retry_document_processing(
         )
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
-    except InvalidPdfError as exc:
+    except InvalidSourceError as exc:
         raise _document_source_missing_error(
-            "The stored source PDF is unavailable for retry."
+            "The stored source file is unavailable for retry."
         ) from exc
     except ProviderUnavailableError as exc:
         raise api_error(
@@ -473,7 +495,9 @@ async def _read_limited_upload(file: UploadFile, max_bytes: int) -> bytes:
     while chunk := await file.read(1024 * 1024):
         total_size += len(chunk)
         if total_size > max_bytes:
-            raise validation_error(f"PDF is too large; the limit is {max_bytes} bytes.")
+            raise validation_error(
+                f"Source file is too large; the limit is {max_bytes} bytes."
+            )
         chunks.append(chunk)
     return b"".join(chunks)
 
@@ -485,7 +509,7 @@ async def _prepare_document_ocr_provider_pool(
     await loop.run_in_executor(None, ocr_provider_pool.prepare)
 
 
-def _read_stored_source_pdf(
+def _read_stored_source_file(
     settings: Settings,
     *,
     project_id: str,
@@ -499,21 +523,21 @@ def _read_stored_source_pdf(
         stat = source_path.stat()
     except (OSError, ValueError) as exc:
         raise _document_source_missing_error(
-            "The stored source PDF is unavailable for retry."
+            "The stored source file is unavailable for retry."
         ) from exc
     if not source_path.is_file() or stat.st_size <= 0 or stat.st_size > settings.max_upload_bytes:
         raise _document_source_missing_error(
-            "The stored source PDF is unavailable for retry."
+            "The stored source file is unavailable for retry."
         )
     try:
         content = source_path.read_bytes()
     except OSError as exc:
         raise _document_source_missing_error(
-            "The stored source PDF is unavailable for retry."
+            "The stored source file is unavailable for retry."
         ) from exc
     if sha256_hex(content) != expected_sha256:
         raise _document_source_missing_error(
-            "The stored source PDF failed integrity verification."
+            "The stored source file failed integrity verification."
         )
     return content
 
@@ -528,7 +552,7 @@ def _start_document_processing_worker(
     project_id: str,
     document_id: str,
     operation_id: str,
-    content: bytes,
+    source: PreparedSource,
 ) -> None:
     worker = Thread(
         target=_process_document_upload,
@@ -541,7 +565,7 @@ def _start_document_processing_worker(
             project_id,
             document_id,
             operation_id,
-            content,
+            source,
         ),
         name=f"document-processing-{operation_id[:8]}",
         daemon=True,
@@ -556,15 +580,6 @@ def _start_document_processing_worker(
             error="Document processing worker could not start.",
         )
         raise
-
-
-def _validate_pdf_upload_metadata(file: UploadFile) -> None:
-    content_type = (file.content_type or "").lower()
-    filename = (file.filename or "").lower()
-    if content_type not in {"application/pdf", "application/x-pdf"} and not filename.endswith(
-        ".pdf"
-    ):
-        raise validation_error("Only PDF uploads are supported.")
 
 
 def _auto_generate_exam_items(
@@ -619,7 +634,7 @@ def _process_document_upload(
     project_id: str,
     document_id: str,
     operation_id: str,
-    content: bytes,
+    source: PreparedSource,
 ) -> dict:
     def record_progress(progress: PdfExtractionProgress) -> None:
         source_documents_repository.record_extraction_progress(
@@ -653,9 +668,9 @@ def _process_document_upload(
                 document_id=document_id,
                 operation_id=operation_id,
             )
-            extraction = extract_pdf_pages(
-                content,
-                max_pages=settings.max_pdf_pages,
+            extraction = extract_prepared_source(
+                source,
+                max_pdf_pages=settings.max_pdf_pages,
                 max_page_text_chars=settings.max_page_text_chars,
                 max_total_text_chars=settings.max_total_text_chars,
                 ocr_provider=ocr_provider,
@@ -698,7 +713,7 @@ def _process_document_upload(
             operation_id=operation_id,
         )
         return source_documents_repository.get_document(db, project_id, document_id)
-    except (InvalidPdfError, ProviderUnavailableError) as exc:
+    except (InvalidSourceError, ProviderUnavailableError) as exc:
         document_operations.finish_failed(
             db,
             project_id=project_id,

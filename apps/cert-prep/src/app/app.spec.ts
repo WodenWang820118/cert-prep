@@ -56,7 +56,7 @@ describe('App', () => {
       expect(compiled.textContent).toContain('fake');
     });
 
-    expect(compiled.textContent).toContain('Source PDF');
+    expect(compiled.textContent).toContain('Source files');
     expect(compiled.textContent).toContain('Mock Exam Items');
     expect(compiled.textContent).not.toContain('Wrong Answers');
 
@@ -68,7 +68,7 @@ describe('App', () => {
     expect(compiled.textContent).toContain('Source Document');
     expect(compiled.textContent).toContain('security.pdf');
     expect(compiled.textContent).toContain('Start full exam');
-    expect(compiled.textContent).not.toContain('Source PDF');
+    expect(compiled.textContent).not.toContain('Source files');
 
     await router.navigateByUrl('/random-quiz');
     fixture.detectChanges();
@@ -149,6 +149,9 @@ describe('App', () => {
     expect(dialog?.textContent).toContain('Cert Prep 0.1.0-alpha.1');
     expect(dialog?.textContent).toContain('SmartScreen');
     expect(dialog?.textContent).toContain('SHA-256');
+    expect(dialog?.textContent).toContain(
+      'Source files, generated questions, practice answers',
+    );
     if (dialog === null) {
       throw new Error('Expected the About dialog to be open.');
     }

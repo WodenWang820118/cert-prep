@@ -46,6 +46,16 @@ class MockPaddleOcrProvider:
         )
 
 
+class CapturingOcrProvider(MockPaddleOcrProvider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.image_payloads: list[bytes] = []
+
+    def extract_page_text(self, image_png: bytes, page_number: int) -> OCRPageResult:
+        self.image_payloads.append(image_png)
+        return super().extract_page_text(image_png, page_number)
+
+
 class JlptBlockOcrProvider(MockPaddleOcrProvider):
     def extract_page_text(self, image_png: bytes, page_number: int) -> OCRPageResult:
         assert image_png.startswith(b"\x89PNG")

@@ -1,0 +1,6 @@
+const ONE_PIXEL_PNG_BASE64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+
+export function minimalPng(): Buffer {
+  return Buffer.from(ONE_PIXEL_PNG_BASE64, 'base64');
+}

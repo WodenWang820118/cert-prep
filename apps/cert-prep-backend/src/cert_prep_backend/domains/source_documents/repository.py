@@ -7,7 +7,7 @@ from cert_prep_backend.domains.source_documents.chunks import (
 )
 from cert_prep_backend.domains.source_documents.documents import (
     get_document,
-    get_source_pdf,
+    get_source_file,
     list_documents,
     update_exam_state,
 )
@@ -21,7 +21,7 @@ __all__ = [
     "ensure_document_exists",
     "get_chunk",
     "get_document",
-    "get_source_pdf",
+    "get_source_file",
     "get_source_chunks",
     "list_chunks",
     "list_documents",

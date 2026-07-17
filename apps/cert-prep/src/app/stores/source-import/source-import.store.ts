@@ -17,6 +17,21 @@ const POLL_RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
 const DEFAULT_UPLOAD_BATCH_SIZE = 2;
 const MIN_UPLOAD_BATCH_SIZE = 1;
 const MAX_UPLOAD_BATCH_SIZE = 4;
+const SOURCE_FILE_ACCEPT =
+  '.pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/png,image/jpeg,image/webp';
+const SUPPORTED_SOURCE_MIME_TYPES = new Set([
+  'application/pdf',
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+]);
+const SUPPORTED_SOURCE_FILE_EXTENSIONS = [
+  '.pdf',
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.webp',
+] as const;
 const FINAL_DOCUMENT_STATUSES = new Set([
   'ready',
   'exam_failed',
@@ -50,6 +65,7 @@ export class SourceImportStore {
     'mixed',
   ];
   readonly uploadBatchSizes = [1, 2, 3, 4] as const;
+  readonly sourceFileAccept = SOURCE_FILE_ACCEPT;
   readonly languageHint = signal<LanguageHint>('auto');
   readonly uploadBatchSize = signal(DEFAULT_UPLOAD_BATCH_SIZE);
   readonly uploadItems = signal<SourceUploadItem[]>([]);
@@ -77,12 +93,12 @@ export class SourceImportStore {
   readonly selectedFileLabel = computed(() => {
     const files = this.selectedFiles();
     if (files.length === 0) {
-      return this.activeDocument()?.filename ?? 'No PDF selected';
+      return this.activeDocument()?.filename ?? 'No source file selected';
     }
     if (files.length === 1) {
-      return files[0]?.name ?? 'No PDF selected';
+      return files[0]?.name ?? 'No source file selected';
     }
-    return `${files.length} PDFs selected`;
+    return `${files.length} files selected`;
   });
   readonly documents = this.library.documents;
   readonly activeDocumentId = this.library.activeDocumentId;
@@ -107,7 +123,7 @@ export class SourceImportStore {
   readonly parseStageText = computed(() => {
     const document = this.activeDocument();
     if (document === null) {
-      return 'No source PDF uploaded.';
+      return 'No source file uploaded.';
     }
     if (document.status === 'processing') {
       return document.chunks_count > 0
@@ -118,7 +134,7 @@ export class SourceImportStore {
       return 'Cancel requested; waiting for the active parser checkpoint.';
     }
     if (document.status === 'canceled') {
-      return 'Parsing canceled. The original PDF is retained and can be retried.';
+      return 'Parsing canceled. The original source file is retained and can be retried.';
     }
     if (document.status === 'ready') {
       return 'Parsing complete.';
@@ -156,8 +172,15 @@ export class SourceImportStore {
   }
 
   chooseFiles(files: readonly File[]): void {
+    const supportedFiles = files.filter((file) =>
+      this.isSupportedSourceFile(file),
+    );
+    const rejectedFiles = files.filter(
+      (file) => !this.isSupportedSourceFile(file),
+    );
+
     this.uploadItems.set(
-      files.map((file) => ({
+      supportedFiles.map((file) => ({
         id: `source-upload-${++this.uploadItemCounter}`,
         operationId: this.newOperationId(),
         file,
@@ -169,6 +192,20 @@ export class SourceImportStore {
     this.library.clearActiveDocument();
     this.stopDocumentPolling();
     this.resetDocumentPollingFailure();
+    this.operations.error.set(null);
+    this.operations.errorCode.set(null);
+    if (rejectedFiles.length > 0) {
+      const rejectedNames = rejectedFiles
+        .map((file) => file.name || '(unnamed file)')
+        .join(', ');
+      const skippedLabel =
+        rejectedFiles.length === 1
+          ? 'Unsupported source file was skipped'
+          : 'Unsupported source files were skipped';
+      this.operations.fail(
+        `${skippedLabel}: ${rejectedNames}. Supported formats: PDF, PNG, JPEG, and WebP.`,
+      );
+    }
   }
 
   reset(): void {
@@ -218,7 +255,9 @@ export class SourceImportStore {
       ['queued', 'failed'].includes(item.status),
     );
     if (project === null || uploadItems.length === 0) {
-      this.operations.fail('Choose a project and one or more PDFs before uploading.');
+      this.operations.fail(
+        'Choose a project and one or more source files before uploading.',
+      );
       return [];
     }
     if (this.isUploading() || this.operations.busy() === 'upload') {
@@ -331,15 +370,15 @@ export class SourceImportStore {
     if (uploadedDocuments.length > 0) {
       this.operations.status.set(
         uploadedDocuments.length === 1
-          ? 'PDF uploaded'
-          : `${uploadedDocuments.length} PDFs uploaded`,
+          ? 'Source file uploaded'
+          : `${uploadedDocuments.length} source files uploaded`,
       );
     }
     if (failedCount > 0) {
       this.operations.error.set(
         failedCount === 1
-          ? '1 PDF failed to upload.'
-          : `${failedCount} PDFs failed to upload.`,
+          ? '1 source file failed to upload.'
+          : `${failedCount} source files failed to upload.`,
       );
     }
 
@@ -540,6 +579,18 @@ export class SourceImportStore {
     } finally {
       this.uploadAbortControllers.delete(item.id);
     }
+  }
+
+  private isSupportedSourceFile(file: File): boolean {
+    const mimeType = file.type.trim().toLowerCase();
+    if (SUPPORTED_SOURCE_MIME_TYPES.has(mimeType)) {
+      return true;
+    }
+
+    const filename = file.name.toLowerCase();
+    return SUPPORTED_SOURCE_FILE_EXTENSIONS.some((extension) =>
+      filename.endsWith(extension),
+    );
   }
 
   private markUploadItems(

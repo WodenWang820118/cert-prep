@@ -103,11 +103,11 @@ import { RuntimeJobViewService } from '../../stores/health/runtime-job-view.serv
       <div class="grid gap-3">
         @if (health.runtimeInstallConsentKind() === 'windowsml_ocr') {
           <p class="m-0 text-sm leading-6 text-color">
-            Install the WindowsML OCR runtime for image-only PDFs?
+            Install the WindowsML OCR runtime for scanned PDFs and images?
           </p>
         } @else if (health.runtimeInstallConsentKind() === 'paddle_ocr') {
           <p class="m-0 text-sm leading-6 text-color">
-            Install the PaddleOCR runtime for image-only PDFs?
+            Install the PaddleOCR runtime for scanned PDFs and images?
           </p>
         } @else {
           <p class="m-0 text-sm leading-6 text-color">
