@@ -3,7 +3,9 @@ from __future__ import annotations
 from sqlite3 import Row
 from uuid import uuid4
 
-from cert_prep_backend.persistence.database import Database
+from cert_prep_contracts.transcription import TranscriptSegment
+
+from cert_prep_backend.persistence.database import Database, utc_now
 from cert_prep_backend.domains.exam_content import content_profile_from_value, line_metadata
 from cert_prep_backend.domains.source_documents.models import ExtractedPage
 from cert_prep_backend.domains.source_documents.records import ensure_document_exists
@@ -67,7 +69,249 @@ def chunk_from_row(row: Row) -> dict:
         "extraction_method": row["extraction_method"],
         "content_profile": row["content_profile"],
         "created_at": row["created_at"],
+        "locator_kind": row["locator_kind"],
+        "start_ms": row["start_ms"],
+        "end_ms": row["end_ms"],
+        "source_revision": row["source_revision"],
+        "translated_text": row["translated_text"],
+        "translation_source_revision": row["translation_source_revision"],
+        "translation_stale": (
+            row["locator_kind"] == "time"
+            and row["translation_source_revision"] != row["source_revision"]
+        ),
     }
+
+
+def update_chunk_text(
+    db: Database, project_id: str, document_id: str, chunk_id: str, text: str
+) -> dict:
+    normalized = text.strip()
+    if not normalized:
+        raise ValueError("Japanese transcript text must not be empty.")
+    with db.connect() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        result = connection.execute(
+            """
+            UPDATE document_chunks
+            SET text = ?, source_excerpt = ?, source_revision = source_revision + 1
+            WHERE project_id = ? AND document_id = ? AND id = ? AND locator_kind = 'time'
+            """,
+            (normalized, normalized[:500], project_id, document_id, chunk_id),
+        )
+        if result.rowcount == 0:
+            raise NotFoundError("Audio transcript chunk not found.")
+        connection.execute(
+            """
+            UPDATE documents
+            SET translation_status = 'failed', updated_at = ?
+            WHERE project_id = ? AND id = ? AND source_kind = 'audio'
+            """,
+            (utc_now(), project_id, document_id),
+        )
+    return get_chunk(db, project_id, document_id, chunk_id)
+
+
+def update_chunk_translation(
+    db: Database,
+    project_id: str,
+    document_id: str,
+    chunk_id: str,
+    translated_text: str,
+    *,
+    expected_source_revision: int,
+) -> dict:
+    with db.connect() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        updated = compare_and_set_chunk_translation(
+            connection,
+            project_id=project_id,
+            document_id=document_id,
+            chunk_id=chunk_id,
+            translated_text=translated_text,
+            expected_source_revision=expected_source_revision,
+        )
+        if not updated and not _chunk_exists(
+            connection,
+            project_id=project_id,
+            document_id=document_id,
+            chunk_id=chunk_id,
+        ):
+            raise NotFoundError("Audio transcript chunk not found.")
+    return get_chunk(db, project_id, document_id, chunk_id)
+
+
+def compare_and_set_chunk_translation(
+    connection,
+    *,
+    project_id: str,
+    document_id: str,
+    chunk_id: str,
+    translated_text: str,
+    expected_source_revision: int,
+) -> bool:
+    """Persist a translation only while its Japanese source revision is current."""
+
+    result = connection.execute(
+        """
+        UPDATE document_chunks
+        SET translated_text = ?, translation_source_revision = ?
+        WHERE project_id = ? AND document_id = ? AND id = ?
+            AND locator_kind = 'time' AND source_revision = ?
+        """,
+        (
+            translated_text.strip(),
+            expected_source_revision,
+            project_id,
+            document_id,
+            chunk_id,
+            expected_source_revision,
+        ),
+    )
+    return result.rowcount == 1
+
+
+def translation_is_complete(
+    connection,
+    *,
+    project_id: str,
+    document_id: str,
+) -> bool:
+    row = connection.execute(
+        """
+        SELECT COUNT(*) AS total_count,
+            SUM(
+                CASE
+                    WHEN translated_text IS NULL OR TRIM(translated_text) = ''
+                        OR translation_source_revision IS NULL
+                        OR translation_source_revision != source_revision
+                    THEN 1 ELSE 0
+                END
+            ) AS incomplete_count
+        FROM document_chunks
+        WHERE project_id = ? AND document_id = ? AND locator_kind = 'time'
+        """,
+        (project_id, document_id),
+    ).fetchone()
+    return bool(
+        row is not None
+        and row["total_count"] > 0
+        and row["incomplete_count"] == 0
+    )
+
+
+def reconcile_document_translation_status(
+    db: Database,
+    *,
+    project_id: str,
+    document_id: str,
+) -> str:
+    with db.connect() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        status = (
+            "succeeded"
+            if translation_is_complete(
+                connection,
+                project_id=project_id,
+                document_id=document_id,
+            )
+            else "failed"
+        )
+        updated = connection.execute(
+            """
+            UPDATE documents SET translation_status = ?, updated_at = ?
+            WHERE project_id = ? AND id = ? AND source_kind = 'audio'
+            """,
+            (status, utc_now(), project_id, document_id),
+        )
+        if updated.rowcount != 1:
+            raise NotFoundError("Audio document not found.")
+    return status
+
+
+def _chunk_exists(
+    connection,
+    *,
+    project_id: str,
+    document_id: str,
+    chunk_id: str,
+) -> bool:
+    return (
+        connection.execute(
+            """
+            SELECT 1 FROM document_chunks
+            WHERE project_id = ? AND document_id = ? AND id = ?
+                AND locator_kind = 'time'
+            """,
+            (project_id, document_id, chunk_id),
+        ).fetchone()
+        is not None
+    )
+
+
+def insert_audio_segments(
+    db: Database,
+    *,
+    project_id: str,
+    document_id: str,
+    segments,
+    now: str,
+) -> None:
+    with db.connect() as connection:
+        delete_audio_segments(
+            connection,
+            project_id=project_id,
+            document_id=document_id,
+        )
+        for index, segment in enumerate(segments):
+            insert_audio_segment(
+                connection,
+                project_id=project_id,
+                document_id=document_id,
+                chunk_index=index,
+                segment=segment,
+                now=now,
+            )
+
+
+def delete_audio_segments(connection, *, project_id: str, document_id: str) -> None:
+    connection.execute(
+        "DELETE FROM document_chunks WHERE project_id = ? AND document_id = ?",
+        (project_id, document_id),
+    )
+
+
+def insert_audio_segment(
+    connection,
+    *,
+    project_id: str,
+    document_id: str,
+    chunk_index: int,
+    segment: TranscriptSegment,
+    now: str,
+) -> None:
+    connection.execute(
+        """
+        INSERT INTO document_chunks(
+            id, project_id, document_id, page_number, chunk_index, text, raw_text,
+            line_start, line_end, line_count, source_excerpt, extraction_method,
+            content_profile, created_at, locator_kind, start_ms, end_ms,
+            source_revision
+        ) VALUES (?, ?, ?, 0, ?, ?, ?, 1, 1, 1, ?, 'transcription',
+            'study_material', ?, 'time', ?, ?, 1)
+        """,
+        (
+            str(uuid4()),
+            project_id,
+            document_id,
+            chunk_index,
+            segment.text,
+            segment.text,
+            segment.text[:500],
+            now,
+            segment.start_ms,
+            segment.end_ms,
+        ),
+    )
 
 
 def upsert_page_chunk(

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import logging
 from pathlib import Path as FilePath
 from threading import Thread
 from typing import Annotated
@@ -18,6 +20,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.responses import FileResponse
 
 from cert_prep_contracts.documents import DocumentOperationRead
 
@@ -33,15 +36,20 @@ from cert_prep_backend.api.dependencies import (
     get_database,
     get_document_ocr_provider_pool,
     get_llm_provider,
+    get_runtime_installation_manager,
     get_settings,
     get_streaming_draft_generation_manager,
+    get_transcription_provider,
 )
+from cert_prep_contracts.transcription import TranscriptionProvider
+from cert_prep_contracts.runtime import RuntimeRequirementKind
 from cert_prep_backend.domains.mock_exams import repository as mock_exams_repository
-from cert_prep_backend.domains.mock_exams.models import SourceChunk
+from cert_prep_backend.domains.mock_exams.models import source_chunk_from_record
 from cert_prep_backend.domains.mock_exams.normalization import as_editable_question
 from cert_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
 from cert_prep_backend.domains.mock_exams.streaming import StreamingDraftGenerationManager
 from cert_prep_backend.domains.projects import repository as projects_repository
+from cert_prep_backend.domains.runtime_installations import RuntimeInstallationManager
 from cert_prep_backend.domains.source_documents import operations as document_operations
 from cert_prep_backend.domains.source_documents import repository as source_documents_repository
 from cert_prep_backend.domains.source_documents.ocr_provider_pool import (
@@ -50,7 +58,23 @@ from cert_prep_backend.domains.source_documents.ocr_provider_pool import (
 from cert_prep_backend.domains.source_documents.pdf_extraction import (
     PdfExtractionProgress,
 )
-from cert_prep_backend.domains.source_documents.schemas import ChunkList, DocumentList, DocumentRead
+from cert_prep_backend.domains.source_documents.schemas import (
+    ChunkList,
+    ChunkRead,
+    ChunkUpdate,
+    DocumentList,
+    DocumentRead,
+)
+from cert_prep_backend.domains.source_documents.audio import (
+    BATCH_TRANSLATION_KEEP_ALIVE,
+    OllamaTraditionalChineseTranslator,
+    audio_operation_is_active,
+    complete_audio_operation,
+    set_operation_phase,
+    transcribe_audio,
+    translate_chunk,
+    translate_stale_chunks,
+)
 from cert_prep_backend.domains.source_documents.source_preparation import (
     PreparedSource,
     extract_prepared_source,
@@ -69,6 +93,9 @@ from cert_prep_backend.api.errors import (
     not_found_error,
     validation_error,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 router = APIRouter(prefix="/projects/{project_id}/documents", tags=["documents"])
@@ -106,6 +133,16 @@ OCR_UNAVAILABLE_RESPONSE = {
 VALIDATION_ERROR_RESPONSE = {
     "model": ApiErrorRead,
     "description": "Request validation failed.",
+}
+AUDIO_SOURCE_CONTENT = {
+    "application/octet-stream": {
+        "schema": {"type": "string", "format": "binary"},
+    }
+}
+AUDIO_MEDIA_TYPES = {
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".m4a": "audio/mp4",
 }
 
 
@@ -190,7 +227,7 @@ async def upload_document(
     project_id: str,
     file: UploadFile = File(
         ...,
-        description="A PDF, PNG, JPEG/JPG, or static WebP source file.",
+        description="A PDF, PNG, JPEG/JPG, static WebP, MP3, WAV, or M4A source file.",
     ),
     language_hint: str = Form(default="auto"),
     operation_id_header: OperationIdHeader = None,
@@ -200,6 +237,10 @@ async def upload_document(
     ocr_provider_pool: DocumentOCRProviderPool = Depends(get_document_ocr_provider_pool),
     streaming_questions: StreamingDraftGenerationManager = Depends(
         get_streaming_draft_generation_manager
+    ),
+    transcription_provider: TranscriptionProvider = Depends(get_transcription_provider),
+    runtime_installations: RuntimeInstallationManager = Depends(
+        get_runtime_installation_manager
     ),
 ) -> dict:
     operation_id = operation_id_header or str(uuid4())
@@ -220,15 +261,23 @@ async def upload_document(
                 "Document operation id is already in use."
             )
         claimed = True
-        content = await _read_limited_upload(file, settings.max_upload_bytes)
+        is_audio_name = FilePath(file.filename or "").suffix.lower() in {".mp3", ".wav", ".m4a"}
+        upload_limit = (
+            settings.max_audio_upload_bytes if is_audio_name else settings.max_upload_bytes
+        )
+        content = await _read_limited_upload(file, upload_limit)
         prepared_source = await asyncio.to_thread(
             prepare_source,
             content,
             max_pdf_pages=settings.max_pdf_pages,
             max_image_pixels=settings.max_image_pixels,
+            filename=file.filename,
         )
+        if prepared_source.kind == "audio":
+            _ensure_whisper_models_ready(runtime_installations)
         try:
-            await _prepare_document_ocr_provider_pool(ocr_provider_pool)
+            if prepared_source.kind != "audio":
+                await _prepare_document_ocr_provider_pool(ocr_provider_pool)
         except ProviderUnavailableError as exc:
             document_operations.finish_failed(
                 db,
@@ -263,6 +312,8 @@ async def upload_document(
             language_hint=_normalized_language_hint(language_hint),
             storage_path=str(storage_path),
             page_count=prepared_source.page_count,
+            source_kind="audio" if prepared_source.kind == "audio" else "document",
+            duration_ms=prepared_source.duration_ms,
         )
 
         if bool(getattr(request.app.state, "document_processing_async_jobs", True)):
@@ -276,6 +327,7 @@ async def upload_document(
                 document_id=document["id"],
                 operation_id=operation_id,
                 source=prepared_source,
+                transcription_provider=transcription_provider,
             )
             return document
 
@@ -289,6 +341,7 @@ async def upload_document(
             document["id"],
             operation_id,
             prepared_source,
+            transcription_provider,
         )
     except HTTPException:
         if claimed:
@@ -337,6 +390,61 @@ def get_document(
 ) -> dict:
     try:
         return source_documents_repository.get_document(db, project_id, document_id)
+    except NotFoundError as exc:
+        raise not_found_error(str(exc)) from exc
+
+
+@router.get(
+    "/{document_id}/source",
+    response_class=FileResponse,
+    responses={
+        status.HTTP_200_OK: {
+            "description": "The authenticated canonical audio source.",
+            "content": AUDIO_SOURCE_CONTENT,
+        },
+        status.HTTP_404_NOT_FOUND: NOT_FOUND_RESPONSE,
+        status.HTTP_409_CONFLICT: {
+            "model": ApiErrorRead,
+            "description": "The source is not playable audio or failed integrity validation.",
+        },
+    },
+)
+def get_document_audio_source(
+    project_id: str,
+    document_id: str,
+    db: Database = Depends(get_database),
+    settings: Settings = Depends(get_settings),
+) -> FileResponse:
+    """Serve an authenticated, integrity-checked canonical audio source."""
+
+    try:
+        document = source_documents_repository.get_document(db, project_id, document_id)
+        if document["source_kind"] != "audio":
+            raise _audio_source_unavailable_error(
+                "Only audio documents have a playable source."
+            )
+        source_file = source_documents_repository.get_source_file(
+            db,
+            project_id,
+            document_id,
+        )
+        source_path = _resolve_stored_source_path(
+            settings,
+            project_id=project_id,
+            storage_path=source_file.storage_path,
+        )
+        media_type = AUDIO_MEDIA_TYPES.get(source_path.suffix.lower())
+        if media_type is None or _sha256_file(source_path) != source_file.sha256:
+            raise _audio_source_unavailable_error(
+                "The stored audio source failed integrity verification."
+            )
+        return FileResponse(
+            source_path,
+            media_type=media_type,
+            filename=source_file.filename,
+            content_disposition_type="inline",
+            headers={"Cache-Control": "private, no-store"},
+        )
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
 
@@ -392,6 +500,10 @@ async def retry_document_processing(
     streaming_questions: StreamingDraftGenerationManager = Depends(
         get_streaming_draft_generation_manager
     ),
+    transcription_provider: TranscriptionProvider = Depends(get_transcription_provider),
+    runtime_installations: RuntimeInstallationManager = Depends(
+        get_runtime_installation_manager
+    ),
 ) -> dict:
     operation_id = operation_id_header or str(uuid4())
     try:
@@ -411,8 +523,12 @@ async def retry_document_processing(
             content,
             max_pdf_pages=settings.max_pdf_pages,
             max_image_pixels=settings.max_image_pixels,
+            filename=source_file.filename,
         )
-        await _prepare_document_ocr_provider_pool(ocr_provider_pool)
+        if prepared_source.kind == "audio":
+            _ensure_whisper_models_ready(runtime_installations)
+        else:
+            await _prepare_document_ocr_provider_pool(ocr_provider_pool)
         operation = document_operations.start_retry_operation(
             db,
             project_id=project_id,
@@ -430,6 +546,7 @@ async def retry_document_processing(
                 document_id=document_id,
                 operation_id=operation_id,
                 source=prepared_source,
+                transcription_provider=transcription_provider,
             )
             return operation
 
@@ -443,6 +560,7 @@ async def retry_document_processing(
             document_id,
             operation_id,
             prepared_source,
+            transcription_provider,
         )
         return document_operations.get_operation(
             db,
@@ -489,6 +607,71 @@ def list_document_chunks(
         raise not_found_error(str(exc)) from exc
 
 
+@router.patch("/{document_id}/chunks/{chunk_id}", response_model=ChunkRead)
+def update_document_chunk(
+    project_id: str,
+    document_id: str,
+    chunk_id: str,
+    body: ChunkUpdate,
+    db: Database = Depends(get_database),
+) -> dict:
+    try:
+        return source_documents_repository.update_chunk_text(
+            db, project_id, document_id, chunk_id, body.text
+        )
+    except ValueError as exc:
+        raise validation_error(str(exc)) from exc
+    except NotFoundError as exc:
+        raise not_found_error(str(exc)) from exc
+
+
+@router.post("/{document_id}/chunks/{chunk_id}/translation", response_model=ChunkRead)
+def translate_document_chunk(
+    project_id: str,
+    document_id: str,
+    chunk_id: str,
+    db: Database = Depends(get_database),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    try:
+        return translate_chunk(
+            db,
+            translator=OllamaTraditionalChineseTranslator(settings),
+            project_id=project_id,
+            document_id=document_id,
+            chunk_id=chunk_id,
+        )
+    except NotFoundError as exc:
+        raise not_found_error(str(exc)) from exc
+    except Exception as exc:
+        raise api_error(503, "translation_provider_unavailable", str(exc)) from exc
+
+
+@router.post("/{document_id}/translations", response_model=ChunkList)
+def translate_document_stale_chunks(
+    project_id: str,
+    document_id: str,
+    db: Database = Depends(get_database),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    try:
+        return {
+            "items": translate_stale_chunks(
+                db,
+                translator=OllamaTraditionalChineseTranslator(
+                    settings,
+                    keep_alive=BATCH_TRANSLATION_KEEP_ALIVE,
+                ),
+                project_id=project_id,
+                document_id=document_id,
+            )
+        }
+    except NotFoundError as exc:
+        raise not_found_error(str(exc)) from exc
+    except Exception as exc:
+        raise api_error(503, "translation_provider_unavailable", str(exc)) from exc
+
+
 async def _read_limited_upload(file: UploadFile, max_bytes: int) -> bytes:
     chunks: list[bytes] = []
     total_size = 0
@@ -500,6 +683,31 @@ async def _read_limited_upload(file: UploadFile, max_bytes: int) -> bytes:
             )
         chunks.append(chunk)
     return b"".join(chunks)
+
+
+def _ensure_whisper_models_ready(
+    runtime_installations: RuntimeInstallationManager,
+) -> None:
+    requirement = runtime_installations.requirement(
+        RuntimeRequirementKind.WHISPER_MODELS
+    )
+    if requirement is not None and requirement.available:
+        return
+    raise api_error(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        code="whisper_models_missing",
+        message=(
+            "Whisper speech models must be downloaded with user consent before "
+            "audio upload."
+        ),
+        details={
+            "missing_requirement": (
+                requirement.kind.value
+                if requirement is not None
+                else RuntimeRequirementKind.WHISPER_MODELS.value
+            )
+        },
+    )
 
 
 async def _prepare_document_ocr_provider_pool(
@@ -516,19 +724,11 @@ def _read_stored_source_file(
     storage_path: str,
     expected_sha256: str,
 ) -> bytes:
-    expected_root = (settings.data_dir / "uploads" / project_id).resolve()
-    try:
-        source_path = FilePath(storage_path).resolve(strict=True)
-        source_path.relative_to(expected_root)
-        stat = source_path.stat()
-    except (OSError, ValueError) as exc:
-        raise _document_source_missing_error(
-            "The stored source file is unavailable for retry."
-        ) from exc
-    if not source_path.is_file() or stat.st_size <= 0 or stat.st_size > settings.max_upload_bytes:
-        raise _document_source_missing_error(
-            "The stored source file is unavailable for retry."
-        )
+    source_path = _resolve_stored_source_path(
+        settings,
+        project_id=project_id,
+        storage_path=storage_path,
+    )
     try:
         content = source_path.read_bytes()
     except OSError as exc:
@@ -542,6 +742,46 @@ def _read_stored_source_file(
     return content
 
 
+def _resolve_stored_source_path(
+    settings: Settings,
+    *,
+    project_id: str,
+    storage_path: str,
+) -> FilePath:
+    expected_root = (settings.data_dir / "uploads" / project_id).resolve()
+    try:
+        source_path = FilePath(storage_path).resolve(strict=True)
+        source_path.relative_to(expected_root)
+        stat = source_path.stat()
+    except (OSError, ValueError) as exc:
+        raise _document_source_missing_error(
+            "The stored source file is unavailable."
+        ) from exc
+    source_limit = (
+        settings.max_audio_upload_bytes
+        if source_path.suffix.lower() in AUDIO_MEDIA_TYPES
+        else settings.max_upload_bytes
+    )
+    if not source_path.is_file() or stat.st_size <= 0 or stat.st_size > source_limit:
+        raise _document_source_missing_error(
+            "The stored source file is unavailable."
+        )
+    return source_path
+
+
+def _sha256_file(source_path: FilePath) -> str:
+    digest = hashlib.sha256()
+    try:
+        with source_path.open("rb") as source:
+            while chunk := source.read(1024 * 1024):
+                digest.update(chunk)
+    except OSError as exc:
+        raise _audio_source_unavailable_error(
+            "The stored audio source is unavailable."
+        ) from exc
+    return digest.hexdigest()
+
+
 def _start_document_processing_worker(
     *,
     db: Database,
@@ -553,6 +793,7 @@ def _start_document_processing_worker(
     document_id: str,
     operation_id: str,
     source: PreparedSource,
+    transcription_provider: TranscriptionProvider,
 ) -> None:
     worker = Thread(
         target=_process_document_upload,
@@ -566,6 +807,7 @@ def _start_document_processing_worker(
             document_id,
             operation_id,
             source,
+            transcription_provider,
         ),
         name=f"document-processing-{operation_id[:8]}",
         daemon=True,
@@ -573,6 +815,10 @@ def _start_document_processing_worker(
     try:
         worker.start()
     except Exception:
+        logger.exception(
+            "Document processing failed",
+            extra={"project_id": project_id, "document_id": document_id},
+        )
         document_operations.finish_failed(
             db,
             project_id=project_id,
@@ -591,18 +837,7 @@ def _auto_generate_exam_items(
     limit: int,
 ) -> dict:
     chunks = [
-        SourceChunk(
-            id=chunk["id"],
-            page_number=chunk["page_number"],
-            chunk_index=chunk["chunk_index"],
-            text=chunk["text"],
-            raw_text=chunk["raw_text"],
-            source_excerpt=chunk["source_excerpt"],
-            line_start=chunk["line_start"],
-            line_end=chunk["line_end"],
-            line_count=chunk["line_count"],
-            content_profile=chunk["content_profile"],
-        )
+        source_chunk_from_record(chunk)
         for chunk in source_documents_repository.get_source_chunks(db, project_id, document_id)
     ]
     try:
@@ -635,6 +870,7 @@ def _process_document_upload(
     document_id: str,
     operation_id: str,
     source: PreparedSource,
+    transcription_provider: TranscriptionProvider,
 ) -> dict:
     def record_progress(progress: PdfExtractionProgress) -> None:
         source_documents_repository.record_extraction_progress(
@@ -655,6 +891,68 @@ def _process_document_upload(
         )
 
     try:
+        if source.kind == "audio":
+            set_operation_phase(
+                db,
+                project_id=project_id,
+                document_id=document_id,
+                operation_id=operation_id,
+                phase="transcribing",
+            )
+            transcribe_audio(
+                db,
+                settings=settings,
+                provider=transcription_provider,
+                project_id=project_id,
+                document_id=document_id,
+                operation_id=operation_id,
+                source_bytes=source.raw_bytes,
+                suffix=source.canonical_suffix,
+            )
+            set_operation_phase(
+                db,
+                project_id=project_id,
+                document_id=document_id,
+                operation_id=operation_id,
+                phase="translating",
+            )
+            translation_succeeded = True
+            try:
+                translate_stale_chunks(
+                    db,
+                    translator=OllamaTraditionalChineseTranslator(
+                        settings,
+                        keep_alive=BATCH_TRANSLATION_KEEP_ALIVE,
+                    ),
+                    project_id=project_id,
+                    document_id=document_id,
+                    should_cancel=lambda: not audio_operation_is_active(
+                        db,
+                        project_id=project_id,
+                        document_id=document_id,
+                        operation_id=operation_id,
+                        phase="translating",
+                    ),
+                    operation_id=operation_id,
+                    reconcile_document_status=False,
+                )
+            except DocumentProcessingCanceledError:
+                raise
+            except Exception:
+                translation_succeeded = False
+            complete_audio_operation(
+                db,
+                project_id=project_id,
+                document_id=document_id,
+                operation_id=operation_id,
+                translation_succeeded=translation_succeeded,
+            )
+            document = source_documents_repository.get_document(db, project_id, document_id)
+            if document["chunks_count"] > 0:
+                streaming_questions.enqueue_document(
+                    db, project_id=project_id, document_id=document_id
+                )
+            return source_documents_repository.get_document(db, project_id, document_id)
         _ensure_document_operation_running(
             db,
             project_id=project_id,
@@ -722,6 +1020,10 @@ def _process_document_upload(
         )
         return source_documents_repository.get_document(db, project_id, document_id)
     except Exception:
+        logger.exception(
+            "Document processing failed",
+            extra={"project_id": project_id, "document_id": document_id},
+        )
         document_operations.finish_failed(
             db,
             project_id=project_id,
@@ -824,3 +1126,7 @@ def _operation_state_conflict_error(message: str) -> HTTPException:
 
 def _document_source_missing_error(message: str) -> HTTPException:
     return api_error(status.HTTP_409_CONFLICT, "document_source_missing", message)
+
+
+def _audio_source_unavailable_error(message: str) -> HTTPException:
+    return api_error(status.HTTP_409_CONFLICT, "audio_source_unavailable", message)

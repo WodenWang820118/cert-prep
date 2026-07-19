@@ -19,6 +19,7 @@ def test_status_like_fields_are_documented_as_openapi_enums(tmp_path) -> None:
         "exam_failed",
         "no_text_detected",
         "ocr_failed",
+        "transcription_failed",
     ]
     assert _enum_values(openapi, "DocumentRead", "extraction_method") == [
         "embedded",
@@ -92,6 +93,7 @@ def test_status_like_fields_are_documented_as_openapi_enums(tmp_path) -> None:
         "ollama_model",
         "paddle_ocr",
         "windowsml_ocr",
+        "whisper_models",
     ]
     assert _enum_values(openapi, "DocumentOperationRead", "status") == [
         "queued",
@@ -104,6 +106,8 @@ def test_status_like_fields_are_documented_as_openapi_enums(tmp_path) -> None:
     assert _enum_values(openapi, "DocumentOperationRead", "phase") == [
         "uploading",
         "processing",
+        "transcribing",
+        "translating",
         "canceling",
         "committing",
         "canceled",
@@ -228,7 +232,7 @@ def test_document_operation_routes_and_upload_header_are_documented(tmp_path) ->
     ]
     upload_body = _resolve_ref(openapi, upload_body_ref)
     assert upload_body["properties"]["file"]["description"] == (
-        "A PDF, PNG, JPEG/JPG, or static WebP source file."
+        "A PDF, PNG, JPEG/JPG, static WebP, MP3, WAV, or M4A source file."
     )
     header = next(
         parameter
@@ -243,6 +247,20 @@ def test_document_operation_routes_and_upload_header_are_documented(tmp_path) ->
     assert header_schema["minLength"] == 1
     assert header_schema["maxLength"] == 128
     assert header_schema["pattern"] == "^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$"
+
+    audio_source = openapi["paths"][
+        "/projects/{project_id}/documents/{document_id}/source"
+    ]["get"]
+    binary_schema = audio_source["responses"]["200"]["content"][
+        "application/octet-stream"
+    ]["schema"]
+    assert binary_schema == {"type": "string", "format": "binary"}
+    assert _response_schema_name(
+        openapi,
+        "/projects/{project_id}/documents/{document_id}/source",
+        "get",
+        409,
+    ) == "ApiErrorRead"
 
 
 def test_operation_id_validation_uses_the_documented_error_envelope(tmp_path) -> None:

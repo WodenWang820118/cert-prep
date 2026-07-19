@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from cert_prep_backend.core.config import Settings
+from cert_prep_backend.domains.source_documents import chunks as chunk_repository
 from cert_prep_backend.persistence import database as database_module
 from cert_prep_backend.persistence.database import MIGRATIONS, Database
 
@@ -359,6 +360,89 @@ def test_migration_22_adds_nullable_commit_timestamps_without_rewriting_jobs(
     assert applied == 1
 
 
+def test_audio_migrations_preserve_pdf_defaults_and_install_time_citation_trigger(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(data_dir=tmp_path, api_token="test-token")
+    _create_v22_source_document_fixture(settings.database_path)
+    db = Database(settings)
+
+    db.migrate()
+    db.migrate()
+
+    with db.connect() as connection:
+        pdf_document = connection.execute(
+            "SELECT * FROM documents WHERE id = 'pdf-document'"
+        ).fetchone()
+        pdf_chunk = connection.execute(
+            "SELECT * FROM document_chunks WHERE id = 'pdf-chunk'"
+        ).fetchone()
+        assert pdf_document is not None
+        assert pdf_chunk is not None
+        connection.execute(
+            """
+            INSERT INTO documents(
+                id, project_id, filename, sha256, storage_path, page_count,
+                has_text, status, created_at, updated_at, source_kind,
+                duration_ms, transcription_status, translation_status
+            )
+            VALUES (
+                'audio-document', 'project', 'source.wav', 'audio-sha',
+                'source.wav', 0, 1, 'ready', '2026-07-19', '2026-07-19',
+                'audio', 1000, 'succeeded', 'succeeded'
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO document_chunks(
+                id, project_id, document_id, page_number, chunk_index,
+                text, raw_text, source_excerpt, extraction_method,
+                content_profile, created_at, locator_kind, start_ms, end_ms,
+                source_revision, translated_text, translation_source_revision
+            )
+            VALUES (
+                'audio-chunk', 'project', 'audio-document', 0, 0,
+                '日本語', '日本語', '日本語', 'transcription',
+                'study_material', '2026-07-19', 'time', 100, 900, 1,
+                '繁體中文', 1
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO question_drafts(
+                id, project_id, document_id, chunk_id, question,
+                choices_json, status, citation_page, created_at, updated_at
+            )
+            VALUES (
+                'audio-draft', 'project', 'audio-document', 'audio-chunk',
+                'Question?', '["A", "B"]', 'approved', 0,
+                '2026-07-19', '2026-07-19'
+            )
+            """
+        )
+        audio_draft = connection.execute(
+            "SELECT * FROM question_drafts WHERE id = 'audio-draft'"
+        ).fetchone()
+        applied = connection.execute(
+            "SELECT version FROM schema_migrations WHERE version IN (23, 24) ORDER BY version"
+        ).fetchall()
+
+    assert pdf_document["source_kind"] == "document"
+    assert pdf_document["transcription_status"] == "not_applicable"
+    assert pdf_chunk["locator_kind"] == "page"
+    assert pdf_chunk["source_revision"] == 1
+    assert pdf_chunk["translation_source_revision"] is None
+    assert chunk_repository.chunk_from_row(pdf_chunk)["translation_stale"] is False
+    assert audio_draft is not None
+    assert audio_draft["citation_locator_kind"] == "time"
+    assert audio_draft["citation_start_ms"] == 100
+    assert audio_draft["citation_end_ms"] == 900
+    assert audio_draft["citation_page"] is None
+    assert [row["version"] for row in applied] == [23, 24]
+
+
 def _create_version_14_practice_database(database_path: Path) -> None:
     database_path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(database_path) as connection:
@@ -578,6 +662,60 @@ def _create_v21_commit_transition_fixture(database_path: Path) -> None:
                 'runtime-job', 'ollama_model', 'ollama', 'qwen3.5:4b',
                 'running', 'installing', 1, 'pulling model',
                 '2026-07-13', '2026-07-13'
+            )
+            """
+        )
+
+
+def _create_v22_source_document_fixture(database_path: Path) -> None:
+    database_path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(database_path) as connection:
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute(
+            """
+            CREATE TABLE schema_migrations (
+                version INTEGER PRIMARY KEY,
+                applied_at TEXT NOT NULL
+            )
+            """
+        )
+        for version, sql in MIGRATIONS:
+            if version > 22:
+                break
+            connection.executescript(sql)
+            connection.execute(
+                "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+                (version, f"migration-{version}"),
+            )
+        connection.execute(
+            """
+            INSERT INTO projects(id, name, created_at, updated_at)
+            VALUES ('project', 'Project', '2026-07-18', '2026-07-18')
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO documents(
+                id, project_id, filename, sha256, storage_path, page_count,
+                has_text, status, created_at, updated_at
+            )
+            VALUES (
+                'pdf-document', 'project', 'source.pdf', 'pdf-sha', 'source.pdf',
+                1, 1, 'ready', '2026-07-18', '2026-07-18'
+            )
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO document_chunks(
+                id, project_id, document_id, page_number, chunk_index,
+                text, raw_text, source_excerpt, extraction_method,
+                content_profile, created_at
+            )
+            VALUES (
+                'pdf-chunk', 'project', 'pdf-document', 1, 0,
+                'Normalized PDF text', 'Original PDF text', 'PDF excerpt',
+                'embedded', 'study_material', '2026-07-18'
             )
             """
         )

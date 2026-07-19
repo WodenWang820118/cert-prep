@@ -10,7 +10,7 @@ from cert_prep_backend.api.dependencies import (
 )
 from cert_prep_backend.domains.mock_exams import draft_jobs
 from cert_prep_backend.domains.mock_exams import repository as mock_exams_repository
-from cert_prep_backend.domains.mock_exams.models import SourceChunk
+from cert_prep_backend.domains.mock_exams.models import source_chunk_from_record
 from cert_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
 from cert_prep_backend.domains.mock_exams.provider import generate_drafts_for_strategy
 from cert_prep_backend.domains.mock_exams.schemas import (
@@ -201,19 +201,10 @@ def generate_document_drafts(
 ) -> dict:
     try:
         chunks = [
-            SourceChunk(
-                id=chunk["id"],
-                page_number=chunk["page_number"],
-                chunk_index=chunk["chunk_index"],
-                text=chunk["text"],
-                raw_text=chunk["raw_text"],
-                source_excerpt=chunk["source_excerpt"],
-                line_start=chunk["line_start"],
-                line_end=chunk["line_end"],
-                line_count=chunk["line_count"],
-                content_profile=chunk["content_profile"],
+            source_chunk_from_record(chunk)
+            for chunk in source_documents_repository.get_source_chunks(
+                db, project_id, document_id
             )
-            for chunk in source_documents_repository.get_source_chunks(db, project_id, document_id)
         ]
         if not chunks:
             raise ValidationError("Document has no extracted text chunks.")

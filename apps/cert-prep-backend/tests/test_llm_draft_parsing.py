@@ -5,6 +5,7 @@ from cert_prep_backend.domains.mock_exams.models import (
     DraftGenerationStrategy,
     DraftSuggestion,
     SourceChunk,
+    source_chunk_from_record,
 )
 from cert_prep_backend.domains.mock_exams.provider import (
     MAX_PROMPT_SOURCE_CHARS,
@@ -14,6 +15,26 @@ from cert_prep_backend.domains.mock_exams.provider import (
     _source_text_for_prompt,
     generate_drafts_for_strategy,
 )
+
+
+def test_audio_draft_source_uses_edited_text_while_pdf_keeps_raw_text() -> None:
+    record = {
+        "id": "chunk",
+        "page_number": 0,
+        "chunk_index": 0,
+        "text": "編集後の日本語",
+        "raw_text": "Whisper の最初の日本語",
+        "source_excerpt": "編集後の日本語",
+        "line_start": 1,
+        "line_end": 1,
+        "line_count": 1,
+        "content_profile": "study_material",
+        "locator_kind": "time",
+    }
+
+    assert source_chunk_from_record(record).raw_or_text() == "編集後の日本語"
+    record["locator_kind"] = "page"
+    assert source_chunk_from_record(record).raw_or_text() == "Whisper の最初の日本語"
 
 
 def test_draft_parser_rejects_cover_and_instruction_text_as_exam_items() -> None:

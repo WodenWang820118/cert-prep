@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from fractions import Fraction
 from io import BytesIO
 from pathlib import Path
 
 import pytest
+import av
 from fastapi.testclient import TestClient
 from PIL import Image
 
@@ -83,6 +85,30 @@ def minimal_image(
 ) -> bytes:
     output = BytesIO()
     Image.new("RGB", size, color).save(output, format=image_format)
+    return output.getvalue()
+
+
+def minimal_audio(suffix: str = ".wav") -> bytes:
+    """Create one second of decodable mono silence in a supported container."""
+
+    output = BytesIO()
+    container_format, codec = {
+        ".mp3": ("mp3", "mp3"),
+        ".wav": ("wav", "pcm_s16le"),
+        ".m4a": ("mp4", "aac"),
+    }[suffix]
+    with av.open(output, mode="w", format=container_format) as container:
+        stream = container.add_stream(codec, rate=16_000)
+        stream.layout = "mono"
+        frame = av.AudioFrame(format="s16", layout="mono", samples=16_000)
+        frame.sample_rate = 16_000
+        frame.time_base = Fraction(1, 16_000)
+        frame.pts = 0
+        frame.planes[0].update(bytes(frame.planes[0].buffer_size))
+        for packet in stream.encode(frame):
+            container.mux(packet)
+        for packet in stream.encode(None):
+            container.mux(packet)
     return output.getvalue()
 
 

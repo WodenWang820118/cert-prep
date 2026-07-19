@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 import pytest
 
-from conftest import minimal_image, minimal_pdf
+from conftest import minimal_audio, minimal_image, minimal_pdf
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.core.config import Settings
 from document_test_helpers import _create_project, _wait_for_question_drafts
@@ -612,3 +612,60 @@ def test_pdf_upload_rejects_oversized_file(tmp_path: Path, auth_headers) -> None
 
     assert response.status_code == 422
     assert response.json()["code"] == "validation_error"
+
+
+def test_audio_upload_uses_configured_audio_size_limit(
+    tmp_path: Path,
+    auth_headers,
+) -> None:
+    client = TestClient(
+        create_app(
+            settings=Settings(
+                data_dir=tmp_path,
+                api_token="test-token",
+                max_audio_upload_bytes=8,
+            ),
+            document_processing_async_jobs=False,
+        )
+    )
+    project_id = _create_project(client, auth_headers)
+    wav = minimal_audio(".wav")
+
+    response = client.post(
+        f"/projects/{project_id}/documents",
+        headers=auth_headers,
+        files={"file": ("large.wav", wav, "audio/wav")},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "validation_error"
+    assert "limit is 8 bytes" in response.json()["message"]
+
+
+def test_disguised_pdf_cannot_bypass_audio_signature_validation(
+    tmp_path: Path,
+    auth_headers,
+) -> None:
+    pdf = minimal_pdf("ordinary document limit")
+    client = TestClient(
+        create_app(
+            settings=Settings(
+                data_dir=tmp_path,
+                api_token="test-token",
+                max_upload_bytes=8,
+                max_audio_upload_bytes=len(pdf) + 1,
+            ),
+            document_processing_async_jobs=False,
+        )
+    )
+    project_id = _create_project(client, auth_headers)
+
+    response = client.post(
+        f"/projects/{project_id}/documents",
+        headers=auth_headers,
+        files={"file": ("disguised.mp3", pdf, "audio/mpeg")},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "validation_error"
+    assert "does not match its MP3, WAV, or M4A type" in response.json()["message"]

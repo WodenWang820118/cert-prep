@@ -31,7 +31,10 @@ TERMINAL_STATUSES: Final[frozenset[str]] = frozenset(
     {"canceled", "succeeded", "failed"}
 )
 RETRYABLE_DOCUMENT_STATUSES: Final[frozenset[str]] = frozenset(
-    {"canceled", "ocr_failed", "no_text_detected"}
+    {"canceled", "ocr_failed", "no_text_detected", "transcription_failed"}
+)
+CANCELLABLE_PROCESSING_PHASES: Final[frozenset[str]] = frozenset(
+    {"processing", "transcribing", "translating"}
 )
 
 
@@ -177,6 +180,8 @@ def create_and_attach_document(
     storage_path: str,
     page_count: int,
     document_id: str | None = None,
+    source_kind: str = "document",
+    duration_ms: int | None = None,
 ) -> dict:
     """Insert a document and attach it to the sole operation claimant atomically."""
 
@@ -208,6 +213,8 @@ def create_and_attach_document(
             storage_path=storage_path,
             page_count=page_count,
             now=now,
+            source_kind=source_kind,
+            duration_ms=duration_ms,
         )
         attached = connection.execute(
             """
@@ -340,15 +347,27 @@ def acknowledge_cancellation(
                 "Only a requested cancellation can be acknowledged."
             )
         if operation["document_id"] is not None:
-            _reset_document_derived_state(
-                connection,
-                project_id=project_id,
-                document_id=str(operation["document_id"]),
-                status="canceled",
-                extraction_method="none",
-                fallback_reason=None,
-                now=now,
-            )
+            document_id = str(operation["document_id"])
+            document = document_query(connection, project_id, document_id)
+            if document is None:
+                raise NotFoundError("Document not found.")
+            if document["source_kind"] == "audio":
+                _preserve_canceled_audio_state(
+                    connection,
+                    project_id=project_id,
+                    document_id=document_id,
+                    now=now,
+                )
+            else:
+                _reset_document_derived_state(
+                    connection,
+                    project_id=project_id,
+                    document_id=document_id,
+                    status="canceled",
+                    extraction_method="none",
+                    fallback_reason=None,
+                    now=now,
+                )
         connection.execute(
             """
             UPDATE document_operations
@@ -378,15 +397,35 @@ def finish_failed(
         canceled = operation["status"] == "cancel_requested"
         target_status = "canceled" if canceled else "failed"
         if operation["document_id"] is not None:
-            _reset_document_derived_state(
-                connection,
-                project_id=project_id,
-                document_id=str(operation["document_id"]),
-                status="canceled" if canceled else "ocr_failed",
-                extraction_method="none" if canceled else "ocr_failed",
-                fallback_reason=None if canceled else error,
-                now=now,
-            )
+            document_id = str(operation["document_id"])
+            document = document_query(connection, project_id, document_id)
+            if document is None:
+                raise NotFoundError("Document not found.")
+            if document["source_kind"] == "audio":
+                if canceled:
+                    _preserve_canceled_audio_state(
+                        connection,
+                        project_id=project_id,
+                        document_id=document_id,
+                        now=now,
+                    )
+                else:
+                    _preserve_failed_audio_state(
+                        connection,
+                        project_id=project_id,
+                        document_id=document_id,
+                        now=now,
+                    )
+            else:
+                _reset_document_derived_state(
+                    connection,
+                    project_id=project_id,
+                    document_id=document_id,
+                    status="canceled" if canceled else "ocr_failed",
+                    extraction_method="none" if canceled else "ocr_failed",
+                    fallback_reason=None if canceled else error,
+                    now=now,
+                )
         connection.execute(
             """
             UPDATE document_operations
@@ -460,6 +499,17 @@ def start_retry_operation(
             extraction_method="none",
             fallback_reason=None,
             now=now,
+        )
+        connection.execute(
+            """
+            UPDATE documents
+            SET duration_ms = NULL, transcription_status = 'pending',
+                translation_status = 'pending', configured_transcription_model = NULL,
+                effective_transcription_model = NULL, transcription_device = NULL,
+                transcription_warning = NULL
+            WHERE project_id = ? AND id = ? AND source_kind = 'audio'
+            """,
+            (project_id, document_id),
         )
         connection.execute(
             """
@@ -600,7 +650,7 @@ def _cancel_existing_operation(
         return _required_operation(_operation_query_by_id(connection, operation_id))
     if (
         status == "running"
-        and operation["phase"] == "processing"
+        and operation["phase"] in CANCELLABLE_PROCESSING_PHASES
         and operation["cancellable"]
     ):
         updated = connection.execute(
@@ -609,9 +659,9 @@ def _cancel_existing_operation(
             SET status = 'cancel_requested', phase = 'canceling',
                 cancellable = 0, updated_at = ?
             WHERE id = ? AND project_id = ? AND status = 'running'
-                AND phase = 'processing' AND cancellable = 1
+                AND phase = ? AND cancellable = 1
             """,
-            (now, operation_id, project_id),
+            (now, operation_id, project_id, operation["phase"]),
         )
         if updated.rowcount != 1:
             raise DocumentOperationStateError(
@@ -634,6 +684,121 @@ def _cancel_existing_operation(
     raise DocumentOperationStateError(
         f"Document operation cannot be canceled from {status}/{operation['phase']}."
     )
+
+
+def _preserve_canceled_audio_state(
+    connection: Connection,
+    *,
+    project_id: str,
+    document_id: str,
+    now: str,
+) -> None:
+    connection.execute(
+        """
+        DELETE FROM draft_generation_jobs
+        WHERE project_id = ? AND document_id = ?
+            AND status IN ('pending', 'running', 'cancel_requested')
+        """,
+        (project_id, document_id),
+    )
+    chunks_count = connection.execute(
+        """
+        SELECT COUNT(*) FROM document_chunks
+        WHERE project_id = ? AND document_id = ? AND locator_kind = 'time'
+        """,
+        (project_id, document_id),
+    ).fetchone()[0]
+    updated = connection.execute(
+        """
+        UPDATE documents
+        SET status = ?, has_text = ?, extraction_method = ?,
+            ocr_device = NULL, ocr_fallback_reason = NULL, ocr_duration_ms = 0,
+            processed_page_count = ?, parse_wall_duration_ms = 0,
+            render_duration_ms = 0, ocr_engine_duration_ms = 0,
+            ocr_worker_count = 0, first_chunk_ms = 0, exam_item_count = 0,
+            content_profile = ?, classification_detail = '',
+            transcription_status = CASE
+                WHEN transcription_status = 'succeeded' THEN 'succeeded'
+                ELSE 'canceled'
+            END,
+            translation_status = CASE
+                WHEN translation_status = 'succeeded' THEN 'succeeded'
+                ELSE 'canceled'
+            END,
+            updated_at = ?
+        WHERE project_id = ? AND id = ? AND source_kind = 'audio'
+        """,
+        (
+            "canceled",
+            int(chunks_count > 0),
+            "transcription" if chunks_count > 0 else "none",
+            chunks_count,
+            "study_material" if chunks_count > 0 else "unknown",
+            now,
+            project_id,
+            document_id,
+        ),
+    )
+    if updated.rowcount != 1:
+        raise NotFoundError("Audio document not found.")
+
+
+def _preserve_failed_audio_state(
+    connection: Connection,
+    *,
+    project_id: str,
+    document_id: str,
+    now: str,
+) -> None:
+    """Keep incremental transcript data while making an audio failure retryable."""
+
+    connection.execute(
+        """
+        DELETE FROM draft_generation_jobs
+        WHERE project_id = ? AND document_id = ?
+            AND status IN ('pending', 'running', 'cancel_requested')
+        """,
+        (project_id, document_id),
+    )
+    chunks_count = connection.execute(
+        """
+        SELECT COUNT(*) FROM document_chunks
+        WHERE project_id = ? AND document_id = ? AND locator_kind = 'time'
+        """,
+        (project_id, document_id),
+    ).fetchone()[0]
+    updated = connection.execute(
+        """
+        UPDATE documents
+        SET status = CASE
+                WHEN transcription_status = 'succeeded' THEN 'ready'
+                ELSE 'transcription_failed'
+            END,
+            has_text = ?, extraction_method = ?,
+            ocr_device = NULL, ocr_fallback_reason = NULL, ocr_duration_ms = 0,
+            processed_page_count = ?, parse_wall_duration_ms = 0,
+            render_duration_ms = 0, ocr_engine_duration_ms = 0,
+            ocr_worker_count = 0, first_chunk_ms = 0, exam_item_count = 0,
+            content_profile = ?, classification_detail = '',
+            transcription_status = CASE
+                WHEN transcription_status = 'succeeded' THEN 'succeeded'
+                ELSE 'failed'
+            END,
+            translation_status = 'failed', updated_at = ?
+        WHERE project_id = ? AND id = ? AND source_kind = 'audio'
+        """,
+        (
+            int(chunks_count > 0),
+            "transcription" if chunks_count > 0 else "none",
+            chunks_count,
+            "study_material" if chunks_count > 0 else "unknown",
+            now,
+            project_id,
+            document_id,
+        ),
+    )
+    if updated.rowcount != 1:
+        raise NotFoundError("Audio document not found.")
 
 
 def _required_operation(row: Row | None) -> dict:

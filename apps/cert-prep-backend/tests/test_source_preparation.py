@@ -1,13 +1,255 @@
 from __future__ import annotations
 
 from io import BytesIO
+from types import SimpleNamespace
 
 import pytest
 from PIL import Image, PngImagePlugin
 
+from cert_prep_contracts.transcription import MAX_AUDIO_DURATION_MS
+
 from cert_prep_backend.api.errors import InvalidSourceError
 from cert_prep_backend.domains.source_documents.source_preparation import prepare_source
-from conftest import minimal_image, minimal_pdf
+from conftest import minimal_audio, minimal_image, minimal_pdf
+
+
+@pytest.mark.parametrize(
+    ("filename", "audio_suffix", "canonical_suffix"),
+    [
+        ("lesson.mp3", ".mp3", ".mp3"),
+        ("lesson.wav", ".wav", ".wav"),
+        ("lesson.m4a", ".m4a", ".m4a"),
+    ],
+)
+def test_prepare_source_accepts_supported_audio_by_content(
+    filename: str,
+    audio_suffix: str,
+    canonical_suffix: str,
+) -> None:
+    content = minimal_audio(audio_suffix)
+    prepared = prepare_source(
+        content,
+        max_pdf_pages=10,
+        max_image_pixels=100,
+        filename=filename,
+    )
+
+    assert prepared.raw_bytes == content
+    assert prepared.kind == "audio"
+    assert prepared.canonical_suffix == canonical_suffix
+    assert prepared.page_count == 0
+    assert prepared.ocr_image_png is None
+    assert prepared.duration_ms is not None
+    assert 900 <= prepared.duration_ms <= 1200
+
+
+@pytest.mark.parametrize("filename", ["lesson.mp3", "lesson.wav", "lesson.m4a"])
+def test_prepare_source_rejects_spoofed_audio_content(filename: str) -> None:
+    with pytest.raises(InvalidSourceError, match="does not match"):
+        prepare_source(
+            minimal_pdf("not audio"),
+            max_pdf_pages=10,
+            max_image_pixels=100,
+            filename=filename,
+        )
+
+
+@pytest.mark.parametrize(
+    ("filename", "content"),
+    [
+        ("lesson.mp3", b"ID3\x04\x00\x00" + b"\x00" * 16),
+        (
+            "lesson.wav",
+            b"RIFF" + (32).to_bytes(4, "little") + b"WAVEfmt " + b"\x00" * 24,
+        ),
+        ("lesson.m4a", b"\x00\x00\x00\x18ftypM4A " + b"\x00" * 12),
+    ],
+)
+def test_prepare_source_rejects_signature_only_corrupt_audio(
+    filename: str,
+    content: bytes,
+) -> None:
+    with pytest.raises(InvalidSourceError, match="not a readable"):
+        prepare_source(
+            content,
+            max_pdf_pages=10,
+            max_image_pixels=100,
+            filename=filename,
+        )
+
+
+def test_prepare_source_rejects_audio_over_ninety_minutes(monkeypatch) -> None:
+    content = minimal_audio(".wav")
+
+    class AudioStream:
+        type = "audio"
+        duration = 90 * 60 + 1
+        time_base = 1
+        codec_context = SimpleNamespace(name="pcm_s16le")
+
+    class Container:
+        streams = [AudioStream()]
+        duration = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+    monkeypatch.setattr(
+        "cert_prep_backend.domains.source_documents.source_preparation.av.open",
+        lambda *_args, **_kwargs: Container(),
+    )
+
+    with pytest.raises(InvalidSourceError, match="90 minute limit"):
+        prepare_source(
+            content,
+            max_pdf_pages=10,
+            max_image_pixels=100,
+            filename="lesson.wav",
+        )
+
+
+def _patch_no_pts_audio_frames(monkeypatch, frame_durations_seconds: list[int]) -> None:
+    class AudioStream:
+        type = "audio"
+        duration = None
+        time_base = None
+        codec_context = SimpleNamespace(name="pcm_s16le")
+
+    class Container:
+        streams = [AudioStream()]
+        duration = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def decode(self, _audio_stream):
+            return iter(
+                SimpleNamespace(
+                    pts=None,
+                    time_base=None,
+                    sample_rate=1,
+                    samples=duration_seconds,
+                )
+                for duration_seconds in frame_durations_seconds
+            )
+
+    monkeypatch.setattr(
+        "cert_prep_backend.domains.source_documents.source_preparation.av.open",
+        lambda *_args, **_kwargs: Container(),
+    )
+
+
+def _patch_audio_frames(monkeypatch, frames: list[SimpleNamespace]) -> None:
+    class AudioStream:
+        type = "audio"
+        duration = None
+        time_base = None
+        codec_context = SimpleNamespace(name="pcm_s16le")
+
+    class Container:
+        streams = [AudioStream()]
+        duration = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def decode(self, _audio_stream):
+            return iter(frames)
+
+    monkeypatch.setattr(
+        "cert_prep_backend.domains.source_documents.source_preparation.av.open",
+        lambda *_args, **_kwargs: Container(),
+    )
+
+
+def test_prepare_source_accumulates_no_pts_frame_duration(monkeypatch) -> None:
+    content = minimal_audio(".wav")
+    _patch_no_pts_audio_frames(monkeypatch, [1, 1, 1])
+
+    prepared = prepare_source(
+        content,
+        max_pdf_pages=10,
+        max_image_pixels=100,
+        filename="lesson.wav",
+    )
+
+    assert prepared.duration_ms == 3000
+
+
+def test_prepare_source_counts_leading_no_pts_frames_before_timestamp(monkeypatch) -> None:
+    content = minimal_audio(".wav")
+    _patch_audio_frames(
+        monkeypatch,
+        [
+            SimpleNamespace(pts=None, time_base=None, sample_rate=1, samples=1),
+            SimpleNamespace(pts=0, time_base=1, sample_rate=1, samples=1),
+        ],
+    )
+
+    prepared = prepare_source(
+        content,
+        max_pdf_pages=10,
+        max_image_pixels=100,
+        filename="lesson.wav",
+    )
+
+    assert prepared.duration_ms == 2000
+
+
+def test_prepare_source_counts_no_pts_tail_after_timestamp(monkeypatch) -> None:
+    content = minimal_audio(".wav")
+    _patch_audio_frames(
+        monkeypatch,
+        [
+            SimpleNamespace(pts=10, time_base=1, sample_rate=1, samples=1),
+            SimpleNamespace(pts=None, time_base=None, sample_rate=1, samples=1),
+        ],
+    )
+
+    prepared = prepare_source(
+        content,
+        max_pdf_pages=10,
+        max_image_pixels=100,
+        filename="lesson.wav",
+    )
+
+    assert prepared.duration_ms == 12000
+
+
+def test_prepare_source_accepts_exactly_ninety_minutes_without_pts(monkeypatch) -> None:
+    content = minimal_audio(".wav")
+    _patch_no_pts_audio_frames(monkeypatch, [1800, 1800, 1800])
+
+    prepared = prepare_source(
+        content,
+        max_pdf_pages=10,
+        max_image_pixels=100,
+        filename="lesson.wav",
+    )
+
+    assert prepared.duration_ms == MAX_AUDIO_DURATION_MS
+
+
+def test_prepare_source_rejects_over_ninety_minutes_without_pts(monkeypatch) -> None:
+    content = minimal_audio(".wav")
+    _patch_no_pts_audio_frames(monkeypatch, [1800, 1800, 1801])
+
+    with pytest.raises(InvalidSourceError, match="90 minute limit"):
+        prepare_source(
+            content,
+            max_pdf_pages=10,
+            max_image_pixels=100,
+            filename="lesson.wav",
+        )
 
 
 @pytest.mark.parametrize(

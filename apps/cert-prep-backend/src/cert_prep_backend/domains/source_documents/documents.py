@@ -19,6 +19,8 @@ def insert_processing_document(
     storage_path: str,
     page_count: int,
     now: str,
+    source_kind: str = "document",
+    duration_ms: int | None = None,
 ) -> dict:
     """Insert processing metadata using the caller's transaction."""
 
@@ -30,10 +32,14 @@ def insert_processing_document(
             ocr_duration_ms, processed_page_count, parse_wall_duration_ms,
             render_duration_ms, ocr_engine_duration_ms, ocr_worker_count,
             first_chunk_ms, exam_item_count, language_hint,
-            content_profile, classification_detail, created_at, updated_at
+            content_profile, classification_detail, created_at, updated_at, source_kind,
+            duration_ms,
+            transcription_status, translation_status
         )
         VALUES (?, ?, ?, ?, ?, ?, 0, ?, 'none', NULL, NULL, 0, 0, 0, 0, 0, 0, 0, 0, ?,
-            'unknown', '', ?, ?)
+            'unknown', '', ?, ?, ?, ?,
+            CASE WHEN ? = 'audio' THEN 'pending' ELSE 'not_applicable' END,
+            CASE WHEN ? = 'audio' THEN 'pending' ELSE 'not_applicable' END)
         """,
         (
             document_id,
@@ -46,6 +52,10 @@ def insert_processing_document(
             language_hint,
             now,
             now,
+            source_kind,
+            duration_ms,
+            source_kind,
+            source_kind,
         ),
     )
     row = document_query(connection, project_id, document_id)

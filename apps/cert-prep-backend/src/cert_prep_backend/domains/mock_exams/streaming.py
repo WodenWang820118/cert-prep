@@ -15,6 +15,7 @@ from cert_prep_backend.domains.mock_exams.models import (
     DraftGenerationStrategy,
     DraftSuggestion,
     SourceChunk,
+    source_chunk_from_record,
 )
 from cert_prep_backend.domains.mock_exams.normalization import as_editable_question
 from cert_prep_backend.domains.mock_exams.ports import (
@@ -526,15 +527,4 @@ def _compact_reasoning_chunk(source_chunk: SourceChunk) -> SourceChunk:
 
 
 def _source_chunk_from_record(chunk: dict) -> SourceChunk:
-    return SourceChunk(
-        id=chunk["id"],
-        page_number=chunk["page_number"],
-        chunk_index=chunk["chunk_index"],
-        text=chunk["text"],
-        raw_text=chunk["raw_text"],
-        source_excerpt=chunk["source_excerpt"],
-        line_start=chunk["line_start"],
-        line_end=chunk["line_end"],
-        line_count=chunk["line_count"],
-        content_profile=chunk["content_profile"],
-    )
+    return source_chunk_from_record(chunk)

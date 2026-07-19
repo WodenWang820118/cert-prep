@@ -4,6 +4,8 @@ from cert_prep_backend.domains.source_documents.chunks import (
     get_chunk,
     get_source_chunks,
     list_chunks,
+    update_chunk_text,
+    update_chunk_translation,
 )
 from cert_prep_backend.domains.source_documents.documents import (
     get_document,
@@ -28,4 +30,6 @@ __all__ = [
     "record_extraction_progress",
     "recover_processing_documents",
     "update_exam_state",
+    "update_chunk_text",
+    "update_chunk_translation",
 ]

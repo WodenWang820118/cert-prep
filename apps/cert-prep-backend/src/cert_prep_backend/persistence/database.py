@@ -645,6 +645,51 @@ MIGRATIONS: Final[tuple[tuple[int, str], ...]] = (
             ADD COLUMN commit_started_at TEXT;
         """,
     ),
+    (
+        23,
+        """
+        ALTER TABLE documents ADD COLUMN source_kind TEXT NOT NULL DEFAULT 'document';
+        ALTER TABLE documents ADD COLUMN duration_ms INTEGER;
+        ALTER TABLE documents ADD COLUMN transcription_status TEXT NOT NULL DEFAULT 'not_applicable';
+        ALTER TABLE documents ADD COLUMN translation_status TEXT NOT NULL DEFAULT 'not_applicable';
+        ALTER TABLE documents ADD COLUMN configured_transcription_model TEXT;
+        ALTER TABLE documents ADD COLUMN effective_transcription_model TEXT;
+        ALTER TABLE documents ADD COLUMN transcription_device TEXT;
+        ALTER TABLE documents ADD COLUMN transcription_warning TEXT;
+
+        ALTER TABLE document_chunks ADD COLUMN locator_kind TEXT NOT NULL DEFAULT 'page';
+        ALTER TABLE document_chunks ADD COLUMN start_ms INTEGER;
+        ALTER TABLE document_chunks ADD COLUMN end_ms INTEGER;
+        ALTER TABLE document_chunks ADD COLUMN source_revision INTEGER NOT NULL DEFAULT 1;
+        ALTER TABLE document_chunks ADD COLUMN translated_text TEXT;
+        ALTER TABLE document_chunks ADD COLUMN translation_source_revision INTEGER;
+
+        ALTER TABLE question_drafts ADD COLUMN citation_locator_kind TEXT NOT NULL DEFAULT 'page';
+        ALTER TABLE question_drafts ADD COLUMN citation_start_ms INTEGER;
+        ALTER TABLE question_drafts ADD COLUMN citation_end_ms INTEGER;
+        """,
+    ),
+    (
+        24,
+        """
+        CREATE TRIGGER trg_question_drafts_audio_locator_insert
+        AFTER INSERT ON question_drafts
+        WHEN NEW.chunk_id IS NOT NULL
+        BEGIN
+            UPDATE question_drafts
+            SET citation_locator_kind = COALESCE(
+                    (SELECT locator_kind FROM document_chunks WHERE id = NEW.chunk_id), 'page'),
+                citation_start_ms = (
+                    SELECT start_ms FROM document_chunks WHERE id = NEW.chunk_id),
+                citation_end_ms = (
+                    SELECT end_ms FROM document_chunks WHERE id = NEW.chunk_id),
+                citation_page = CASE
+                    WHEN (SELECT locator_kind FROM document_chunks WHERE id = NEW.chunk_id) = 'time'
+                    THEN NULL ELSE citation_page END
+            WHERE id = NEW.id;
+        END;
+        """,
+    ),
 )
 
 

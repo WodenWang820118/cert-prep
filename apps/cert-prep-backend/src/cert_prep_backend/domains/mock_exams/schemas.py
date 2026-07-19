@@ -72,6 +72,9 @@ class QuestionDraftRead(BaseModel):
     answer_key_source: AnswerKeySourceValue
     rationale: str | None
     citation_page: int | None
+    citation_locator_kind: str = "page"
+    citation_start_ms: int | None = None
+    citation_end_ms: int | None = None
     source_excerpt: str | None
     confidence: float | None
     source_order: int | None

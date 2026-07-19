@@ -57,6 +57,26 @@ class SourceChunk:
         return self.raw_text or self.text
 
 
+def source_chunk_from_record(chunk: dict) -> SourceChunk:
+    """Map persistence data while keeping edited audio text canonical for drafts."""
+
+    current_text = chunk["text"]
+    return SourceChunk(
+        id=chunk["id"],
+        page_number=chunk["page_number"],
+        chunk_index=chunk["chunk_index"],
+        text=current_text,
+        raw_text=(
+            current_text if chunk.get("locator_kind") == "time" else chunk["raw_text"]
+        ),
+        source_excerpt=chunk["source_excerpt"],
+        line_start=chunk["line_start"],
+        line_end=chunk["line_end"],
+        line_count=chunk["line_count"],
+        content_profile=chunk["content_profile"],
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class DraftSuggestion:
     chunk_id: str

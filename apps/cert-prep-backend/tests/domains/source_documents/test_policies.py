@@ -19,6 +19,7 @@ def test_document_status_values_preserve_serialized_order() -> None:
         "exam_failed",
         "no_text_detected",
         "ocr_failed",
+        "transcription_failed",
     )
 
 

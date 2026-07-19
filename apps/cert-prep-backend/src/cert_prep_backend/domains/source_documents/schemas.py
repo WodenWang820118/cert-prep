@@ -34,6 +34,14 @@ class DocumentRead(BaseModel):
     chunks_count: int
     created_at: str
     updated_at: str
+    source_kind: str = "document"
+    duration_ms: int | None = None
+    transcription_status: str = "not_applicable"
+    translation_status: str = "not_applicable"
+    configured_transcription_model: str | None = None
+    effective_transcription_model: str | None = None
+    transcription_device: str | None = None
+    transcription_warning: str | None = None
 
 
 class DocumentList(BaseModel):
@@ -54,6 +62,17 @@ class ChunkRead(BaseModel):
     extraction_method: ExtractionMethod
     content_profile: ContentProfileValue
     created_at: str
+    locator_kind: str = "page"
+    start_ms: int | None = None
+    end_ms: int | None = None
+    source_revision: int = 1
+    translated_text: str | None = None
+    translation_source_revision: int | None = None
+    translation_stale: bool = False
+
+
+class ChunkUpdate(BaseModel):
+    text: str
 
 
 class ChunkList(BaseModel):

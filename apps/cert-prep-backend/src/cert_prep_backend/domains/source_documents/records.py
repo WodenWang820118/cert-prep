@@ -50,6 +50,14 @@ def document_from_row(row: Row) -> dict:
         "chunks_count": row["chunks_count"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
+        "source_kind": row["source_kind"],
+        "duration_ms": row["duration_ms"],
+        "transcription_status": row["transcription_status"],
+        "translation_status": row["translation_status"],
+        "configured_transcription_model": row["configured_transcription_model"],
+        "effective_transcription_model": row["effective_transcription_model"],
+        "transcription_device": row["transcription_device"],
+        "transcription_warning": row["transcription_warning"],
     }
 
 

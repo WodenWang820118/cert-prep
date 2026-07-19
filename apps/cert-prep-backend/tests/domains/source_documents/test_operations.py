@@ -336,6 +336,82 @@ def test_app_startup_recovers_durable_document_operations(
     assert active_count == 0
 
 
+@pytest.mark.parametrize(
+    ("phase", "transcription_status", "expected_document_status"),
+    [
+        ("transcribing", "pending", "transcription_failed"),
+        ("translating", "succeeded", "ready"),
+    ],
+)
+def test_audio_recovery_preserves_incremental_transcript_and_sets_specific_state(
+    tmp_path: Path,
+    phase: str,
+    transcription_status: str,
+    expected_document_status: str,
+) -> None:
+    db = _database(tmp_path)
+    _insert_project(db, "project")
+    _attach_audio(db, operation_id="audio-upload", document_id="audio-document")
+    with db.connect() as connection:
+        connection.execute(
+            """
+            UPDATE document_operations SET phase = ?
+            WHERE id = 'audio-upload'
+            """,
+            (phase,),
+        )
+        connection.execute(
+            """
+            UPDATE documents
+            SET has_text = 1, extraction_method = 'transcription',
+                processed_page_count = 1, content_profile = 'study_material',
+                transcription_status = ?, translation_status = 'pending'
+            WHERE id = 'audio-document'
+            """,
+            (transcription_status,),
+        )
+        connection.execute(
+            """
+            INSERT INTO document_chunks(
+                id, project_id, document_id, page_number, chunk_index,
+                text, raw_text, source_excerpt, extraction_method,
+                content_profile, created_at, locator_kind, start_ms, end_ms,
+                source_revision
+            )
+            VALUES (
+                'audio-chunk', 'project', 'audio-document', 0, 0,
+                '途中までの日本語', '途中までの日本語', '途中までの日本語',
+                'transcription', 'study_material', '2026-07-19', 'time',
+                0, 1000, 1
+            )
+            """
+        )
+
+    assert operations.recover_operations(db) == 1
+    assert operations.recover_operations(db) == 0
+
+    operation = operations.get_operation(
+        db,
+        project_id="project",
+        operation_id="audio-upload",
+    )
+    document = _document_row(db, "audio-document")
+    with db.connect() as connection:
+        chunks_count = connection.execute(
+            "SELECT COUNT(*) FROM document_chunks WHERE document_id = 'audio-document'"
+        ).fetchone()[0]
+
+    assert operation["status"] == "failed"
+    assert document["status"] == expected_document_status
+    assert document["transcription_status"] == (
+        "succeeded" if transcription_status == "succeeded" else "failed"
+    )
+    assert document["translation_status"] == "failed"
+    assert document["has_text"] == 1
+    assert document["extraction_method"] == "transcription"
+    assert chunks_count == 1
+
+
 def test_publication_is_atomic_and_terminal_finalizers_are_read_only(
     tmp_path: Path,
 ) -> None:
@@ -579,6 +655,28 @@ def _attach(db: Database, *, operation_id: str, document_id: str) -> None:
         language_hint="auto",
         storage_path="C:/data/source.pdf",
         page_count=1,
+    )
+
+
+def _attach_audio(db: Database, *, operation_id: str, document_id: str) -> None:
+    claim = operations.claim_operation(
+        db,
+        project_id="project",
+        operation_id=operation_id,
+    )
+    assert claim.acquired is True
+    operations.create_and_attach_document(
+        db,
+        project_id="project",
+        operation_id=operation_id,
+        document_id=document_id,
+        filename="source.wav",
+        sha256="audio-sha",
+        language_hint="ja",
+        storage_path="C:/data/source.wav",
+        page_count=0,
+        source_kind="audio",
+        duration_ms=1000,
     )
 
 
