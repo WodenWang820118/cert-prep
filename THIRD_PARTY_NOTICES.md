@@ -13,6 +13,16 @@ bundled in Cert Prep installers. The Qwen3.5-4B model is provided under the
 Apache License 2.0:
 https://huggingface.co/Qwen/Qwen3.5-4B/blob/main/LICENSE
 
+## Whisper speech models
+
+Whisper speech models are downloaded only after explicit user consent and are
+not bundled in Cert Prep installers. The primary faster-whisper
+`large-v3-turbo` model and the CPU `small` fallback are provided under the MIT
+License:
+
+- https://huggingface.co/dropbox-dash/faster-whisper-large-v3-turbo
+- https://huggingface.co/Systran/faster-whisper-small
+
 ## WindowsML OCR payload
 
 The downloadable OCR runtime contains PP-OCRv6 medium detection and recognition
