@@ -86,6 +86,9 @@ const PARSING_METRIC_DEFINITIONS: readonly ParsingMetricDefinition[] = [
 @Injectable({ providedIn: 'root' })
 export class DocumentParsingMetricsService {
   progressPercent(document: DocumentRead | null): number {
+    if (document?.source_kind === 'audio') {
+      return this.audioProgressPercent(document);
+    }
     if (document === null || document.page_count <= 0) {
       return 0;
     }
@@ -99,6 +102,9 @@ export class DocumentParsingMetricsService {
   progressLabel(document: DocumentRead | null): string {
     if (document === null) {
       return '0/0 pages';
+    }
+    if (document.source_kind === 'audio') {
+      return this.audioProgressLabel(document);
     }
     return `${this.completedPageCount(document)}/${document.page_count} pages`;
   }
@@ -152,6 +158,45 @@ export class DocumentParsingMetricsService {
     }
 
     return Math.max(0, Math.min(pageCount, document.processed_page_count));
+  }
+
+  private audioProgressPercent(document: DocumentRead): number {
+    if (document.status === 'ready') {
+      return 100;
+    }
+    if (document.transcription_status === 'succeeded') {
+      return 75;
+    }
+    if (
+      document.status === 'processing' ||
+      document.status === 'cancel_requested'
+    ) {
+      return 25;
+    }
+    return 0;
+  }
+
+  private audioProgressLabel(document: DocumentRead): string {
+    if (document.status === 'ready') {
+      return document.translation_status === 'failed'
+        ? 'Japanese transcript ready / Traditional Chinese translation failed'
+        : 'Japanese transcript and Traditional Chinese translation ready';
+    }
+    if (document.transcription_status === 'succeeded') {
+      return document.translation_status === 'failed'
+        ? 'Japanese transcript ready / Traditional Chinese translation failed'
+        : 'Japanese transcript ready / translating to Traditional Chinese';
+    }
+    if (document.status === 'cancel_requested') {
+      return 'Canceling audio processing';
+    }
+    if (document.status === 'canceled') {
+      return 'Audio processing canceled';
+    }
+    if (document.status === 'processing') {
+      return 'Transcribing Japanese audio';
+    }
+    return 'Audio processing failed';
   }
 
   private formatElapsed(milliseconds: number): string {

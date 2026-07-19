@@ -109,6 +109,15 @@ import { RuntimeJobViewService } from '../../stores/health/runtime-job-view.serv
           <p class="m-0 text-sm leading-6 text-color">
             Install the PaddleOCR runtime for scanned PDFs and images?
           </p>
+        } @else if (health.runtimeInstallConsentKind() === 'whisper_models') {
+          <p class="m-0 text-sm leading-6 text-color">
+            Download Whisper large-v3-turbo and the CPU small fallback before
+            uploading Japanese audio?
+          </p>
+          <p class="m-0 text-sm leading-6 text-muted-color">
+            These speech models are not included in the installer. The download
+            can take several minutes and remains on this device.
+          </p>
         } @else {
           <p class="m-0 text-sm leading-6 text-color">
             Install Ollama for local AI generation?
@@ -127,7 +136,11 @@ import { RuntimeJobViewService } from '../../stores/health/runtime-job-view.serv
             (onClick)="health.cancelRuntimeInstallConsent()"
           />
           <p-button
-            label="Install"
+            [label]="
+              health.runtimeInstallConsentKind() === 'whisper_models'
+                ? 'Download'
+                : 'Install'
+            "
             icon="pi pi-download"
             severity="warn"
             [loading]="health.runtimeInstallStarting()"

@@ -27,7 +27,8 @@ export type RuntimeKind =
   | 'ollama'
   | 'ollama_model'
   | 'paddle_ocr'
-  | 'windowsml_ocr';
+  | 'windowsml_ocr'
+  | 'whisper_models';
 
 /**
  * Backend-owned provider selection generated from the shared OpenAPI contract.

@@ -16,6 +16,7 @@ const RUNTIME_KIND_LABELS: Record<string, string> = {
   ollama_model: 'Ollama model',
   paddle_ocr: 'PaddleOCR runtime',
   windowsml_ocr: 'WindowsML OCR runtime',
+  whisper_models: 'Whisper speech models',
 };
 
 @Injectable({ providedIn: 'root' })
@@ -328,7 +329,8 @@ export class RuntimeJobViewService {
     return kind === 'ollama' ||
       kind === 'ollama_model' ||
       kind === 'paddle_ocr' ||
-      kind === 'windowsml_ocr'
+      kind === 'windowsml_ocr' ||
+      kind === 'whisper_models'
       ? kind
       : fallbackKind;
   }

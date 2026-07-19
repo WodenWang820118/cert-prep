@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import {
+  ChunkRead,
   DocumentRead,
   CERT_PREP_API,
   OCRHealthRead,
@@ -20,6 +21,14 @@ describe('SourceImportPanelComponent', () => {
     cancelDocumentOperation: vi.fn(),
     cancelDocumentProcessing: vi.fn(),
     retryDocumentProcessing: vi.fn(),
+    updateDocumentChunk: vi.fn(),
+    translateDocumentChunk: vi.fn(),
+    translateDocumentStaleChunks: vi.fn(),
+    getDocumentAudioSource: vi.fn(),
+    runtimeRequirements: vi.fn(),
+    startRuntimeInstallation: vi.fn(),
+    getRuntimeInstallation: vi.fn(),
+    cancelRuntimeInstallation: vi.fn(),
   };
 
   beforeEach(async () => {
@@ -28,6 +37,12 @@ describe('SourceImportPanelComponent', () => {
     apiClient.getDocument.mockResolvedValue(documentRead());
     apiClient.listDocumentChunks.mockResolvedValue({ items: [] });
     apiClient.listQuestionDrafts.mockResolvedValue({ items: [] });
+    apiClient.getDocumentAudioSource.mockResolvedValue(
+      new Blob(['audio'], { type: 'audio/mpeg' }),
+    );
+    apiClient.runtimeRequirements.mockResolvedValue({
+      items: [whisperRequirement(true)],
+    });
 
     await TestBed.configureTestingModule({
       imports: [SourceImportPanelComponent],
@@ -71,7 +86,7 @@ describe('SourceImportPanelComponent', () => {
     expect(root.textContent).toContain('2 files selected');
     expect(input?.multiple).toBe(true);
     expect(input?.accept).toBe(
-      '.pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/png,image/jpeg,image/webp',
+      '.pdf,.png,.jpg,.jpeg,.webp,.mp3,.wav,.m4a,application/pdf,image/png,image/jpeg,image/webp,audio/mpeg,audio/wav,audio/mp4',
     );
     expect(
       root.querySelector('[aria-label="Selected source file upload status"]'),
@@ -281,6 +296,336 @@ describe('SourceImportPanelComponent', () => {
     expect(sourceImport.progressPercent()).toBe(100);
     expect(sourceImport.progressLabel()).toBe('8/8 pages');
     expect(fixture.nativeElement.textContent).toContain('8/8 pages / 8 chunks');
+  });
+
+  it('renders audio progress and ASR attribution without page metrics', () => {
+    const fixture = TestBed.createComponent(SourceImportPanelComponent);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    activateDocument(
+      sourceImport,
+      documentRead({
+        filename: 'n1-listening.mp3',
+        source_kind: 'audio',
+        page_count: 0,
+        processed_page_count: 650,
+        chunks_count: 650,
+        duration_ms: 2_751_312,
+        status: 'ready',
+        extraction_method: 'transcription',
+        transcription_status: 'succeeded',
+        translation_status: 'failed',
+        configured_transcription_model: 'large-v3-turbo',
+        effective_transcription_model: 'small',
+        transcription_device: 'cpu',
+        transcription_warning: 'GPU OOM; used CPU fallback.',
+      }),
+    );
+
+    fixture.detectChanges();
+
+    const root = fixture.nativeElement as HTMLElement;
+    const metricLabels = Array.from(root.querySelectorAll('dt')).map((item) =>
+      item.textContent?.trim(),
+    );
+    expect(sourceImport.progressPercent()).toBe(100);
+    expect(sourceImport.progressLabel()).toBe(
+      'Japanese transcript ready / Traditional Chinese translation failed',
+    );
+    expect(sourceImport.parseStageText()).toBe(
+      'Japanese transcription is ready; Traditional Chinese translation failed and can be retried.',
+    );
+    expect(root.textContent).toContain('45m 51s');
+    expect(root.textContent).toContain('large-v3-turbo');
+    expect(root.textContent).toContain('small');
+    expect(root.textContent).toContain('GPU OOM; used CPU fallback.');
+    expect(metricLabels).toContain('Transcription');
+    expect(metricLabels).toContain('Translation');
+    expect(metricLabels).toContain('Configured ASR Model');
+    expect(metricLabels).toContain('Effective ASR Model');
+    expect(metricLabels).toContain('ASR Device');
+    expect(metricLabels).not.toContain('Pages');
+    expect(metricLabels).not.toContain('Processed');
+    expect(metricLabels).not.toContain('OCR Device');
+  });
+
+  it('shows Whisper preflight and disables upload while model consent is required', () => {
+    const fixture = TestBed.createComponent(SourceImportPanelComponent);
+    const health = TestBed.inject(HealthStore);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    health.runtimeRequirements.set([whisperRequirement(false)]);
+    sourceImport.chooseFile(
+      new File(['audio'], 'lesson.mp3', { type: 'audio/mpeg' }),
+    );
+
+    fixture.detectChanges();
+
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.textContent).toContain('Whisper speech models');
+    expect(root.textContent).toContain(
+      'Download consent is required before audio can be uploaded.',
+    );
+    expect(uploadButton(root)?.disabled).toBe(true);
+
+    health.runtimeRequirements.set([whisperRequirement(true)]);
+    fixture.detectChanges();
+
+    expect(root.textContent).toContain(
+      'large-v3-turbo and the CPU small fallback are ready.',
+    );
+    expect(uploadButton(root)?.disabled).toBe(false);
+  });
+
+  it('loads audio through the authenticated client and plays from a segment timestamp', async () => {
+    const createObjectUrl = vi
+      .spyOn(URL, 'createObjectURL')
+      .mockReturnValue('blob:authenticated-audio');
+    const revokeObjectUrl = vi.spyOn(URL, 'revokeObjectURL');
+    const play = vi
+      .spyOn(HTMLMediaElement.prototype, 'play')
+      .mockResolvedValue(undefined);
+    const fixture = TestBed.createComponent(SourceImportPanelComponent);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    const audioDocument = documentRead({
+      filename: 'n1-listening.mp3',
+      source_kind: 'audio',
+      page_count: 0,
+      chunks_count: 1,
+      duration_ms: 5_000,
+      status: 'ready',
+      extraction_method: 'transcription',
+      transcription_status: 'succeeded',
+      translation_status: 'succeeded',
+    });
+    activateDocument(sourceImport, audioDocument);
+    sourceImport.chunks.set([
+      {
+        id: 'audio-chunk-1',
+        document_id: audioDocument.id,
+        page_number: 0,
+        chunk_index: 0,
+        text: '日本語の音声です。',
+        raw_text: '日本語の音声です。',
+        line_start: null,
+        line_end: null,
+        line_count: 1,
+        source_excerpt: '日本語の音声です。',
+        extraction_method: 'transcription',
+        content_profile: 'unknown',
+        created_at: '2026-07-19T00:00:00Z',
+        locator_kind: 'time',
+        start_ms: 1_250,
+        end_ms: 3_000,
+        translated_text: '這是日文語音。',
+      },
+    ]);
+
+    fixture.detectChanges();
+    await vi.waitFor(() => {
+      expect(apiClient.getDocumentAudioSource).toHaveBeenCalledWith(
+        'project-1',
+        audioDocument.id,
+        { signal: expect.any(AbortSignal) },
+      );
+    });
+    fixture.detectChanges();
+
+    const root = fixture.nativeElement as HTMLElement;
+    const player = root.querySelector<HTMLAudioElement>(
+      'audio[aria-label="Source audio playback"]',
+    );
+    const playButton = Array.from(root.querySelectorAll('button')).find(
+      (button) => button.textContent?.includes('從此片段播放'),
+    );
+    expect(createObjectUrl).toHaveBeenCalledWith(expect.any(Blob));
+    expect(player?.getAttribute('src')).toBe('blob:authenticated-audio');
+    expect(playButton?.getAttribute('aria-label')).toContain('0:01');
+
+    playButton?.click();
+
+    expect(player?.currentTime).toBe(1.25);
+    expect(play).toHaveBeenCalledTimes(1);
+    fixture.destroy();
+    expect(revokeObjectUrl).toHaveBeenCalledWith('blob:authenticated-audio');
+    play.mockRestore();
+    revokeObjectUrl.mockRestore();
+    createObjectUrl.mockRestore();
+  });
+
+  it('aborts in-flight audio loads when switching documents and on destroy', async () => {
+    const requestSignals: AbortSignal[] = [];
+    apiClient.getDocumentAudioSource.mockImplementation(
+      (
+        _projectId: string,
+        _documentId: string,
+        options?: { signal?: AbortSignal },
+      ) => {
+        if (options?.signal !== undefined) {
+          requestSignals.push(options.signal);
+        }
+        return new Promise<Blob>(() => undefined);
+      },
+    );
+    const fixture = TestBed.createComponent(SourceImportPanelComponent);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    const firstDocument = documentRead({
+      id: 'audio-document-1',
+      filename: 'first.mp3',
+      source_kind: 'audio',
+      page_count: 0,
+      chunks_count: 1,
+    });
+    const secondDocument = documentRead({
+      id: 'audio-document-2',
+      filename: 'second.mp3',
+      source_kind: 'audio',
+      page_count: 0,
+      chunks_count: 1,
+    });
+    sourceImport.documents.set([firstDocument, secondDocument]);
+    sourceImport.setActiveDocumentId(firstDocument.id);
+
+    fixture.detectChanges();
+    await vi.waitFor(() => {
+      expect(apiClient.getDocumentAudioSource).toHaveBeenCalledTimes(1);
+    });
+
+    sourceImport.setActiveDocumentId(secondDocument.id);
+    fixture.detectChanges();
+    await vi.waitFor(() => {
+      expect(apiClient.getDocumentAudioSource).toHaveBeenCalledTimes(2);
+    });
+
+    expect(requestSignals[0]?.aborted).toBe(true);
+    expect(requestSignals[1]?.aborted).toBe(false);
+
+    fixture.destroy();
+
+    expect(requestSignals[1]?.aborted).toBe(true);
+  });
+
+  it('retries audio loading for the same document after a transient failure', async () => {
+    const createObjectUrl = vi
+      .spyOn(URL, 'createObjectURL')
+      .mockReturnValue('blob:retried-audio');
+    const revokeObjectUrl = vi.spyOn(URL, 'revokeObjectURL');
+    apiClient.getDocumentAudioSource
+      .mockRejectedValueOnce(new Error('temporary failure'))
+      .mockResolvedValueOnce(new Blob(['audio'], { type: 'audio/mpeg' }));
+    const fixture = TestBed.createComponent(SourceImportPanelComponent);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    activateDocument(
+      sourceImport,
+      documentRead({
+        id: 'retry-audio-document',
+        filename: 'retry.mp3',
+        source_kind: 'audio',
+        page_count: 0,
+        chunks_count: 1,
+      }),
+    );
+    sourceImport.chunks.set([audioChunkRead('retry-audio-document')]);
+
+    fixture.detectChanges();
+    await vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(fixture.nativeElement.textContent).toContain(
+        'The source audio could not be loaded.',
+      );
+    });
+
+    const retryButton = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('button'),
+    ).find((button) => button.textContent?.includes('Retry audio playback'));
+    retryButton?.click();
+
+    await vi.waitFor(() => {
+      expect(apiClient.getDocumentAudioSource).toHaveBeenCalledTimes(2);
+      expect(createObjectUrl).toHaveBeenCalledTimes(1);
+    });
+    fixture.detectChanges();
+
+    const root = fixture.nativeElement as HTMLElement;
+    expect(
+      root.querySelector<HTMLAudioElement>(
+        'audio[aria-label="Source audio playback"]',
+      )?.getAttribute('src'),
+    ).toBe('blob:retried-audio');
+
+    fixture.destroy();
+    expect(revokeObjectUrl).toHaveBeenCalledWith('blob:retried-audio');
+    revokeObjectUrl.mockRestore();
+    createObjectUrl.mockRestore();
+  });
+
+  it('disables every transcript mutation action while one is running', () => {
+    const fixture = TestBed.createComponent(SourceImportPanelComponent);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    const operations = TestBed.inject(OperationStore);
+    const audioDocument = documentRead({
+      filename: 'lesson.mp3',
+      source_kind: 'audio',
+      page_count: 0,
+      chunks_count: 1,
+    });
+    activateDocument(sourceImport, audioDocument);
+    sourceImport.chunks.set([
+      {
+        id: 'audio-chunk-1',
+        document_id: audioDocument.id,
+        page_number: 0,
+        chunk_index: 0,
+        text: '日本語の音声です。',
+        raw_text: '日本語の音声です。',
+        line_start: null,
+        line_end: null,
+        line_count: 1,
+        source_excerpt: '日本語の音声です。',
+        extraction_method: 'transcription',
+        content_profile: 'unknown',
+        created_at: '2026-07-19T00:00:00Z',
+        locator_kind: 'time',
+        start_ms: 0,
+        end_ms: 1_000,
+        translated_text: '日文語音。',
+        translation_stale: true,
+      },
+    ]);
+    operations.busy.set('transcript-translate');
+
+    fixture.detectChanges();
+
+    const buttons = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('button'),
+    );
+    for (const label of ['重翻所有過期片段', '儲存日文', '重新翻譯']) {
+      expect(
+        buttons.find((button) => button.textContent?.includes(label))?.disabled,
+      ).toBe(true);
+    }
+  });
+
+  it('offers audio retry when transcription fails', () => {
+    const fixture = TestBed.createComponent(SourceImportPanelComponent);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    activateDocument(
+      sourceImport,
+      documentRead({
+        filename: 'failed.mp3',
+        source_kind: 'audio',
+        page_count: 0,
+        chunks_count: 0,
+        has_text: false,
+        status: 'transcription_failed',
+        transcription_status: 'failed',
+      }),
+    );
+
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain(
+      'Japanese transcription failed.',
+    );
+    expect(fixture.nativeElement.textContent).toContain('Retry audio processing');
   });
 
   it('renders the project document library and refreshes the selected document', async () => {
@@ -664,6 +1009,19 @@ function ocrHealth(): OCRHealthRead {
   };
 }
 
+function whisperRequirement(available: boolean) {
+  return {
+    kind: 'whisper_models' as const,
+    label: 'Whisper speech models',
+    available,
+    detail: available
+      ? 'Whisper speech models are ready.'
+      : 'Whisper speech models require download.',
+    unavailable_reason: available ? null : 'whisper_models_missing',
+    version: 'large-v3-turbo + small',
+  };
+}
+
 function uploadButton(root: ParentNode): HTMLButtonElement | null {
   return (
     Array.from(root.querySelectorAll('button')).find((button) =>
@@ -745,4 +1103,30 @@ function activateDocument(
 ): void {
   sourceImport.documents.set([document]);
   sourceImport.setActiveDocumentId(document.id);
+}
+
+function audioChunkRead(
+  documentId: string,
+  overrides: Partial<ChunkRead> = {},
+): ChunkRead {
+  return {
+    id: 'audio-chunk-1',
+    document_id: documentId,
+    page_number: 0,
+    chunk_index: 0,
+    text: '日本語の音声です。',
+    raw_text: '日本語の音声です。',
+    line_start: null,
+    line_end: null,
+    line_count: 1,
+    source_excerpt: '日本語の音声です。',
+    extraction_method: 'transcription',
+    content_profile: 'unknown',
+    created_at: '2026-07-19T00:00:00Z',
+    locator_kind: 'time',
+    start_ms: 0,
+    end_ms: 1_000,
+    translated_text: '日文語音。',
+    ...overrides,
+  };
 }

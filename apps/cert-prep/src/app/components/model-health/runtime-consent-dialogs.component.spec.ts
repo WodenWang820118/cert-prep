@@ -215,6 +215,47 @@ describe('RuntimeConsentDialogsComponent', () => {
       'Install the WindowsML OCR runtime for scanned PDFs and images?',
     );
   });
+
+  it('describes both consent-gated Whisper models and starts their download', async () => {
+    const fixture = TestBed.createComponent(RuntimeConsentDialogsComponent);
+    const health = TestBed.inject(HealthStore);
+    health.runtimeRequirements.set([
+      {
+        kind: 'whisper_models',
+        label: 'Whisper speech models',
+        available: false,
+        detail: 'Whisper speech models require download.',
+        unavailable_reason: 'whisper_models_missing',
+        version: 'large-v3-turbo + small',
+      },
+    ]);
+    apiClient.startRuntimeInstallation.mockResolvedValue(
+      runtimeInstallation({
+        kind: 'whisper_models',
+        provider: 'faster-whisper',
+        model: 'large-v3-turbo + small',
+      }),
+    );
+
+    health.openWhisperModelsConsent();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(document.body.textContent).toContain(
+      'Download Whisper large-v3-turbo and the CPU small fallback',
+    );
+    expect(document.body.textContent).toContain(
+      'not included in the installer',
+    );
+
+    buttonByText(document.body, 'Download')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(apiClient.startRuntimeInstallation).toHaveBeenCalledWith(
+      'whisper_models',
+    );
+  });
 });
 
 function missingPythonRuntimeStatus(): DesktopRuntimeStatus {

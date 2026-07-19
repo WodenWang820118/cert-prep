@@ -1,4 +1,12 @@
-import { Component, ElementRef, inject, signal, viewChild } from '@angular/core';
+import {
+  Component,
+  DestroyRef,
+  effect,
+  ElementRef,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ProgressBar } from 'primeng/progressbar';
 import { Tag } from 'primeng/tag';
@@ -7,6 +15,7 @@ import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
 import { OperationStore } from '../../stores/operation.store';
 import { ProjectStore } from '../../stores/project.store';
 import { SourceImportStore } from '../../stores/source-import/source-import.store';
+import { CERT_PREP_API, type ChunkRead } from '../../cert-prep-api';
 import { SourceImageCropDialogComponent } from './source-image-crop-dialog.component';
 import { isCroppableImageFile } from './source-image-crop.service';
 
@@ -90,6 +99,53 @@ import { isCroppableImageFile } from './source-image-crop.service';
             }}
           </span>
         </div>
+
+        @if (sourceImport.hasSelectedAudio()) {
+          <section
+            class="grid gap-2 rounded-md border border-surface-200 bg-surface-50 p-3"
+            aria-label="Whisper model preflight"
+            aria-live="polite"
+          >
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="min-w-0 flex-1">
+                <p class="m-0 text-sm font-semibold text-color">
+                  Whisper speech models
+                </p>
+                <p class="m-0 mt-1 text-xs leading-5 text-muted-color">
+                  @if (sourceImport.whisperModelsReady()) {
+                    large-v3-turbo and the CPU small fallback are ready.
+                  } @else if (sourceImport.whisperModelInstall(); as install) {
+                    {{ install.message }}
+                  } @else if (sourceImport.whisperModelsRequirement()) {
+                    Download consent is required before audio can be uploaded.
+                  } @else {
+                    Checking the local model inventory.
+                  }
+                </p>
+              </div>
+              <p-tag
+                [value]="sourceImport.whisperModelsReady() ? 'Ready' : 'Required'"
+                [severity]="sourceImport.whisperModelsReady() ? 'success' : 'warn'"
+                [rounded]="true"
+              />
+              @if (sourceImport.canCancelWhisperModelDownload()) {
+                <button
+                  class="workbench-secondary-button"
+                  type="button"
+                  (click)="sourceImport.cancelWhisperModelDownload()"
+                >
+                  <i class="pi pi-times" aria-hidden="true"></i>
+                  <span>Cancel model download</span>
+                </button>
+              }
+            </div>
+            @if (sourceImport.whisperModelInstall(); as install) {
+              @if (install.progress !== null) {
+                <p-progressbar [value]="install.progress" />
+              }
+            }
+          </section>
+        }
 
         @if (sourceImport.uploadItems().length > 0) {
           <div
@@ -248,13 +304,16 @@ import { isCroppableImageFile } from './source-image-crop.service';
                     {{
                       document.status === 'cancel_requested'
                         ? 'Canceling'
-                        : 'Cancel parsing'
+                        : document.source_kind === 'audio'
+                          ? 'Cancel audio processing'
+                          : 'Cancel parsing'
                     }}
                   </span>
                 </button>
               } @else if (
                 document.status === 'canceled' ||
                 document.status === 'ocr_failed' ||
+                document.status === 'transcription_failed' ||
                 document.status === 'no_text_detected' ||
                 document.status === 'exam_failed'
               ) {
@@ -265,7 +324,13 @@ import { isCroppableImageFile } from './source-image-crop.service';
                   (click)="sourceImport.retryActiveDocumentProcessing()"
                 >
                   <i class="pi pi-refresh" aria-hidden="true"></i>
-                  <span>Retry parsing</span>
+                  <span>
+                    {{
+                      document.source_kind === 'audio'
+                        ? 'Retry audio processing'
+                        : 'Retry parsing'
+                    }}
+                  </span>
                 </button>
               }
             </div>
@@ -298,10 +363,17 @@ import { isCroppableImageFile } from './source-image-crop.service';
               <dt>File Size</dt>
               <dd>{{ formatFileSize(activeDocumentFile()) }}</dd>
             </div>
-            <div class="workbench-metric">
-              <dt>Pages</dt>
-              <dd>{{ document.page_count }}</dd>
-            </div>
+            @if (document.source_kind === 'audio') {
+              <div class="workbench-metric">
+                <dt>Duration</dt>
+                <dd>{{ formatDuration(document.duration_ms) }}</dd>
+              </div>
+            } @else {
+              <div class="workbench-metric">
+                <dt>Pages</dt>
+                <dd>{{ document.page_count }}</dd>
+              </div>
+            }
             <div class="workbench-metric">
               <dt>Text Chunks</dt>
               <dd>{{ document.chunks_count }}</dd>
@@ -312,12 +384,14 @@ import { isCroppableImageFile } from './source-image-crop.service';
                 {{ document.exam_item_count }}
               </dd>
             </div>
-            <div class="workbench-metric">
-              <dt>Processed</dt>
-              <dd>
-                {{ document.processed_page_count }}
-              </dd>
-            </div>
+            @if (document.source_kind !== 'audio') {
+              <div class="workbench-metric">
+                <dt>Processed</dt>
+                <dd>
+                  {{ document.processed_page_count }}
+                </dd>
+              </div>
+            }
             <div class="workbench-metric">
               <dt>Language</dt>
               <dd>
@@ -332,22 +406,58 @@ import { isCroppableImageFile } from './source-image-crop.service';
               <dt>Extraction</dt>
               <dd>{{ document.extraction_method }}</dd>
             </div>
-            <div class="workbench-metric">
-              <dt>OCR Device</dt>
-              <dd>
-                {{ document.ocr_device || 'none' }}
-              </dd>
-            </div>
-            @for (
-              metric of sourceImport.parsingMetrics(document);
-              track metric.label
-            ) {
+            @if (document.source_kind === 'audio') {
               <div class="workbench-metric">
-                <dt>{{ metric.label }}</dt>
-                <dd>{{ metric.value }}</dd>
+                <dt>Transcription</dt>
+                <dd>{{ document.transcription_status || 'pending' }}</dd>
               </div>
+              <div class="workbench-metric">
+                <dt>Translation</dt>
+                <dd>{{ document.translation_status || 'pending' }}</dd>
+              </div>
+              <div class="workbench-metric">
+                <dt>Configured ASR Model</dt>
+                <dd>{{ document.configured_transcription_model || 'pending' }}</dd>
+              </div>
+              <div class="workbench-metric">
+                <dt>Effective ASR Model</dt>
+                <dd>{{ document.effective_transcription_model || 'pending' }}</dd>
+              </div>
+              <div class="workbench-metric">
+                <dt>ASR Device</dt>
+                <dd>{{ document.transcription_device || 'pending' }}</dd>
+              </div>
+            } @else {
+              <div class="workbench-metric">
+                <dt>OCR Device</dt>
+                <dd>
+                  {{ document.ocr_device || 'none' }}
+                </dd>
+              </div>
+              @for (
+                metric of sourceImport.parsingMetrics(document);
+                track metric.label
+              ) {
+                <div class="workbench-metric">
+                  <dt>{{ metric.label }}</dt>
+                  <dd>{{ metric.value }}</dd>
+                </div>
+              }
             }
-            @if (document.ocr_fallback_reason) {
+            @if (
+              document.source_kind === 'audio' && document.transcription_warning
+            ) {
+              <div
+                class="rounded-md border border-amber-200 bg-amber-50 p-3 xl:col-span-2"
+              >
+                <dt class="text-xs font-bold uppercase text-amber-700">
+                  ASR warning
+                </dt>
+                <dd class="m-0 mt-1 text-sm font-semibold text-amber-900">
+                  {{ document.transcription_warning }}
+                </dd>
+              </div>
+            } @else if (document.ocr_fallback_reason) {
               <div
                 class="rounded-md border border-amber-200 bg-amber-50 p-3 xl:col-span-2"
               >
@@ -368,18 +478,98 @@ import { isCroppableImageFile } from './source-image-crop.service';
             >
               <div class="workbench-preview-header">
                 <h3 id="extracted-text-heading">Extracted Text Preview</h3>
-                <i class="pi pi-search" aria-hidden="true"></i>
+                @if (document.source_kind === 'audio') {
+                  <button
+                    class="workbench-secondary-button"
+                    type="button"
+                    [disabled]="sourceImport.isTranscriptMutationBusy()"
+                    (click)="sourceImport.translateStaleTranscriptChunks()"
+                  >
+                    重翻所有過期片段
+                  </button>
+                } @else {
+                  <i class="pi pi-search" aria-hidden="true"></i>
+                }
               </div>
+              @if (document.source_kind === 'audio') {
+                <div
+                  class="rounded-md border border-surface-200 bg-surface-50 p-3"
+                >
+                  @if (audioSourceLoading()) {
+                    <p class="m-0 text-sm font-semibold text-muted-color">
+                      Loading authenticated source audio…
+                    </p>
+                  } @else if (audioSourceError(); as sourceError) {
+                    <p class="m-0 text-sm font-semibold text-red-700" role="alert">
+                      {{ sourceError }}
+                    </p>
+                    <button
+                      class="workbench-secondary-button mt-2"
+                      type="button"
+                      (click)="retryAudioSource()"
+                    >
+                      <i class="pi pi-refresh" aria-hidden="true"></i>
+                      <span>Retry audio playback</span>
+                    </button>
+                  } @else if (audioSourceUrl()) {
+                    <audio
+                      #audioPlayer
+                      class="w-full"
+                      controls
+                      preload="metadata"
+                      [src]="audioSourceUrl()"
+                      aria-label="Source audio playback"
+                    ></audio>
+                  }
+                </div>
+              }
               <div class="workbench-preview-list">
                 @for (chunk of sourceImport.previewChunks(); track chunk.id) {
                   <article class="workbench-preview-chunk">
                     <strong>
-                      Page {{ chunk.page_number }} - Chunk
-                      {{ chunk.chunk_index + 1 }}
+                      @if (chunk.locator_kind === 'time') {
+                        {{ formatTimestamp(chunk.start_ms) }}–{{ formatTimestamp(chunk.end_ms) }}
+                      } @else {
+                        Page {{ chunk.page_number }} - Chunk {{ chunk.chunk_index + 1 }}
+                      }
                     </strong>
-                    <p class="whitespace-pre-wrap">
-                      {{ chunk.text }}
-                    </p>
+                    @if (chunk.locator_kind === 'time') {
+                      <button
+                        class="workbench-secondary-button mt-2"
+                        type="button"
+                        [disabled]="audioSourceUrl() === null"
+                        [attr.aria-label]="segmentPlaybackLabel(chunk)"
+                        (click)="playTranscriptChunk(chunk)"
+                      >
+                        <i class="pi pi-play" aria-hidden="true"></i>
+                        <span>從此片段播放</span>
+                      </button>
+                      <label class="workbench-field mt-2">
+                        <span>日文原文</span>
+                        <textarea #japaneseText rows="3">{{ chunk.text }}</textarea>
+                      </label>
+                      <div class="mt-2 flex flex-wrap gap-2">
+                        <button class="workbench-secondary-button" type="button"
+                          [disabled]="sourceImport.isTranscriptMutationBusy()"
+                          (click)="sourceImport.updateTranscriptChunk(chunk.id, japaneseText.value)">
+                          儲存日文
+                        </button>
+                        <button class="workbench-secondary-button" type="button"
+                          [disabled]="sourceImport.isTranscriptMutationBusy()"
+                          (click)="sourceImport.translateTranscriptChunk(chunk.id)">
+                          重新翻譯
+                        </button>
+                      </div>
+                      <p class="mt-3 whitespace-pre-wrap">
+                        <strong>繁體中文</strong><br />
+                        {{ chunk.translated_text || '尚未完成翻譯' }}
+                      </p>
+                      @if (chunk.translation_stale) {
+                        <p class="text-sm font-semibold text-amber-700">翻譯已過期</p>
+                      }
+                    } @else {
+                      <p class="whitespace-pre-wrap">{{ chunk.text }}</p>
+                    }
                   </article>
                 }
                 @if (sourceImport.hiddenChunkCount() > 0) {
@@ -413,7 +603,7 @@ import { isCroppableImageFile } from './source-image-crop.service';
           <p
             class="m-0 rounded-md border border-dashed border-surface-300 bg-surface-0 p-3 text-sm text-muted-color"
           >
-            Choose one or more PDF, PNG, JPEG, or WebP files and upload them to
+            Choose PDF, PNG, JPEG, WebP, MP3, WAV, or M4A files and upload them to
             start extraction.
           </p>
         }
@@ -430,6 +620,8 @@ import { isCroppableImageFile } from './source-image-crop.service';
   `,
 })
 export class SourceImportPanelComponent {
+  private readonly api = inject(CERT_PREP_API);
+  private readonly destroyRef = inject(DestroyRef);
   protected readonly drafts = inject(DraftReviewStore);
   protected readonly operations = inject(OperationStore);
   protected readonly projects = inject(ProjectStore);
@@ -438,12 +630,39 @@ export class SourceImportPanelComponent {
   protected readonly cropSourceFile = signal<File | null>(null);
   protected readonly cropPosition = signal(0);
   protected readonly cropTotal = signal(0);
+  protected readonly audioSourceUrl = signal<string | null>(null);
+  protected readonly audioSourceLoading = signal(false);
+  protected readonly audioSourceError = signal<string | null>(null);
   private readonly chooseFilesControl =
     viewChild<ElementRef<HTMLLabelElement>>('chooseFilesControl');
+  private readonly audioPlayer =
+    viewChild<ElementRef<HTMLAudioElement>>('audioPlayer');
   private readonly cropDialog = viewChild(SourceImageCropDialogComponent);
   private pendingSelectedFiles: File[] = [];
   private pendingCropIndexes: number[] = [];
   private pendingCropCursor = 0;
+  private audioSourceObjectUrl: string | null = null;
+  private audioSourceAbortController: AbortController | null = null;
+  private audioSourceLoadId = 0;
+  private requestedAudioSourceKey: string | null = null;
+
+  constructor() {
+    effect(() => {
+      const projectId = this.projects.selectedProject()?.id ?? null;
+      const document = this.sourceImport.activeDocument();
+      void this.loadAudioSource(
+        projectId,
+        document?.source_kind === 'audio' && document.chunks_count > 0
+          ? document.id
+          : null,
+      );
+    });
+    this.destroyRef.onDestroy(() => {
+      this.audioSourceLoadId += 1;
+      this.cancelAudioSourceLoad();
+      this.releaseAudioSourceUrl();
+    });
+  }
 
   protected chooseFiles(event: Event): void {
     if (this.isUploadBusy()) {
@@ -517,6 +736,60 @@ export class SourceImportPanelComponent {
     return `${Math.max(1, Math.round(file.size / 1024))} KB`;
   }
 
+  protected formatTimestamp(value: number | null | undefined): string {
+    const totalSeconds = Math.max(0, Math.floor((value ?? 0) / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  }
+
+  protected segmentPlaybackLabel(chunk: ChunkRead): string {
+    return `從 ${this.formatTimestamp(chunk.start_ms)} 播放來源音訊`;
+  }
+
+  protected playTranscriptChunk(chunk: ChunkRead): void {
+    const player = this.audioPlayer()?.nativeElement;
+    if (
+      player === undefined ||
+      this.audioSourceUrl() === null ||
+      chunk.start_ms === null ||
+      chunk.start_ms === undefined
+    ) {
+      return;
+    }
+    player.currentTime = Math.max(0, chunk.start_ms / 1000);
+    void player.play().catch(() => {
+      // Native controls remain available if autoplay policy blocks play().
+    });
+  }
+
+  protected retryAudioSource(): void {
+    const projectId = this.projects.selectedProject()?.id ?? null;
+    const document = this.sourceImport.activeDocument();
+    if (
+      projectId === null ||
+      document?.source_kind !== 'audio' ||
+      document.chunks_count <= 0
+    ) {
+      return;
+    }
+    this.requestedAudioSourceKey = null;
+    void this.loadAudioSource(projectId, document.id);
+  }
+
+  protected formatDuration(value: number | null | undefined): string {
+    if (value === null || value === undefined) {
+      return 'pending';
+    }
+    const totalSeconds = Math.max(0, Math.round(value / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    if (minutes === 0) {
+      return `${seconds}s`;
+    }
+    return `${minutes}m ${seconds.toString().padStart(2, '0')}s`;
+  }
+
   protected activeDocumentFile(): File | null {
     const document = this.sourceImport.activeDocument();
     if (document === null) {
@@ -552,6 +825,75 @@ export class SourceImportPanelComponent {
     this.cropPosition.set(this.pendingCropCursor + 1);
     this.cropSourceFile.set(file);
     this.cropDialog()?.focusReviewStatus();
+  }
+
+  private async loadAudioSource(
+    projectId: string | null,
+    documentId: string | null,
+  ): Promise<void> {
+    const sourceKey =
+      projectId === null || documentId === null
+        ? null
+        : `${projectId}:${documentId}`;
+    if (sourceKey === this.requestedAudioSourceKey) {
+      return;
+    }
+    this.requestedAudioSourceKey = sourceKey;
+    const loadId = ++this.audioSourceLoadId;
+    this.cancelAudioSourceLoad();
+    this.releaseAudioSourceUrl();
+    this.audioSourceError.set(null);
+    if (projectId === null || documentId === null) {
+      this.audioSourceLoading.set(false);
+      return;
+    }
+
+    this.audioSourceLoading.set(true);
+    const controller = new AbortController();
+    this.audioSourceAbortController = controller;
+    try {
+      const source = await this.api.getDocumentAudioSource(projectId, documentId, {
+        signal: controller.signal,
+      });
+      if (loadId !== this.audioSourceLoadId) {
+        return;
+      }
+      if (typeof URL.createObjectURL !== 'function') {
+        throw new Error('Audio playback is unavailable in this environment.');
+      }
+      const objectUrl = URL.createObjectURL(source);
+      if (loadId !== this.audioSourceLoadId) {
+        URL.revokeObjectURL(objectUrl);
+        return;
+      }
+      this.audioSourceObjectUrl = objectUrl;
+      this.audioSourceUrl.set(objectUrl);
+    } catch {
+      if (loadId === this.audioSourceLoadId && !controller.signal.aborted) {
+        this.requestedAudioSourceKey = null;
+        this.audioSourceError.set('The source audio could not be loaded.');
+      }
+    } finally {
+      if (this.audioSourceAbortController === controller) {
+        this.audioSourceAbortController = null;
+      }
+      if (loadId === this.audioSourceLoadId) {
+        this.audioSourceLoading.set(false);
+      }
+    }
+  }
+
+  private cancelAudioSourceLoad(): void {
+    this.audioSourceAbortController?.abort();
+    this.audioSourceAbortController = null;
+  }
+
+  private releaseAudioSourceUrl(): void {
+    if (this.audioSourceObjectUrl !== null) {
+      URL.revokeObjectURL(this.audioSourceObjectUrl);
+      this.audioSourceObjectUrl = null;
+    }
+    this.audioSourceUrl.set(null);
   }
 
   private advanceCropReview(): void {

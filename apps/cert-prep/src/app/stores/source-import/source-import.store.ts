@@ -18,12 +18,17 @@ const DEFAULT_UPLOAD_BATCH_SIZE = 2;
 const MIN_UPLOAD_BATCH_SIZE = 1;
 const MAX_UPLOAD_BATCH_SIZE = 4;
 const SOURCE_FILE_ACCEPT =
-  '.pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/png,image/jpeg,image/webp';
+  '.pdf,.png,.jpg,.jpeg,.webp,.mp3,.wav,.m4a,application/pdf,image/png,image/jpeg,image/webp,audio/mpeg,audio/wav,audio/mp4';
 const SUPPORTED_SOURCE_MIME_TYPES = new Set([
   'application/pdf',
   'image/png',
   'image/jpeg',
   'image/webp',
+  'audio/mpeg',
+  'audio/wav',
+  'audio/x-wav',
+  'audio/mp4',
+  'audio/x-m4a',
 ]);
 const SUPPORTED_SOURCE_FILE_EXTENSIONS = [
   '.pdf',
@@ -31,14 +36,23 @@ const SUPPORTED_SOURCE_FILE_EXTENSIONS = [
   '.jpg',
   '.jpeg',
   '.webp',
+  '.mp3',
+  '.wav',
+  '.m4a',
 ] as const;
 const FINAL_DOCUMENT_STATUSES = new Set([
   'ready',
   'exam_failed',
   'no_text_detected',
   'ocr_failed',
+  'transcription_failed',
   'canceled',
 ]);
+const TRANSCRIPT_MUTATION_ACTIONS = [
+  'transcript-edit',
+  'transcript-translate',
+  'transcript-translate-all',
+] as const;
 type UploadBatchResult =
   | { item: SourceUploadItem; document: DocumentRead }
   | { item: SourceUploadItem; error: unknown };
@@ -74,6 +88,20 @@ export class SourceImportStore {
     this.uploadItems().map((item) => item.file),
   );
   readonly selectedFile = computed(() => this.selectedFiles()[0] ?? null);
+  readonly hasSelectedAudio = computed(() =>
+    this.uploadItems().some((item) => this.isAudioSourceFile(item.file)),
+  );
+  readonly whisperModelsRequirement = this.health.whisperModelsRequirement;
+  readonly whisperModelsReady = this.health.areWhisperModelsReady;
+  readonly whisperModelInstall = computed(() => {
+    const install = this.health.runtimeInstall();
+    return install?.kind === 'whisper_models' ? install : null;
+  });
+  readonly canCancelWhisperModelDownload = computed(
+    () =>
+      this.whisperModelInstall() !== null &&
+      this.health.canCancelRuntimeInstallation(),
+  );
   readonly isUploading = computed(() =>
     this.uploadItems().some((item) => item.status === 'uploading'),
   );
@@ -89,6 +117,9 @@ export class SourceImportStore {
   );
   readonly failedUploadCount = computed(
     () => this.uploadItems().filter((item) => item.status === 'failed').length,
+  );
+  readonly isTranscriptMutationBusy = computed(() =>
+    this.operations.isBusyFor(TRANSCRIPT_MUTATION_ACTIONS),
   );
   readonly selectedFileLabel = computed(() => {
     const files = this.selectedFiles();
@@ -125,6 +156,28 @@ export class SourceImportStore {
     if (document === null) {
       return 'No source file uploaded.';
     }
+    if (document.source_kind === 'audio') {
+      if (document.status === 'processing') {
+        return document.transcription_status === 'succeeded'
+          ? 'Japanese transcription complete; translating to Traditional Chinese.'
+          : 'Transcribing Japanese audio.';
+      }
+      if (document.status === 'cancel_requested') {
+        return 'Cancel requested; waiting for the audio processing checkpoint.';
+      }
+      if (document.status === 'canceled') {
+        return 'Audio processing canceled. The original source file is retained and can be retried.';
+      }
+      if (document.status === 'transcription_failed') {
+        return 'Japanese transcription failed. The original source file is retained and can be retried.';
+      }
+      if (document.status === 'ready') {
+        return document.translation_status === 'failed'
+          ? 'Japanese transcription is ready; Traditional Chinese translation failed and can be retried.'
+          : 'Japanese transcription and Traditional Chinese translation complete.';
+      }
+      return 'Audio processing needs attention.';
+    }
     if (document.status === 'processing') {
       return document.chunks_count > 0
         ? 'Parsing continues; completed chunks are already available.'
@@ -154,6 +207,7 @@ export class SourceImportStore {
     () =>
       this.projects.selectedProject() !== null &&
       this.pendingUploadCount() > 0 &&
+      (!this.hasPendingAudioUpload() || this.whisperModelsReady()) &&
       !this.health.isOcrHealthLoading() &&
       !this.isUploading(),
   );
@@ -189,6 +243,14 @@ export class SourceImportStore {
         error: null,
       })),
     );
+    if (supportedFiles.some((file) => this.isAudioSourceFile(file))) {
+      void this.preflightWhisperModels();
+    } else if (
+      this.health.runtimeInstallConsentKind() === 'whisper_models' &&
+      !this.health.runtimeInstallStarting()
+    ) {
+      this.health.cancelRuntimeInstallConsent();
+    }
     this.library.clearActiveDocument();
     this.stopDocumentPolling();
     this.resetDocumentPollingFailure();
@@ -203,7 +265,7 @@ export class SourceImportStore {
           ? 'Unsupported source file was skipped'
           : 'Unsupported source files were skipped';
       this.operations.fail(
-        `${skippedLabel}: ${rejectedNames}. Supported formats: PDF, PNG, JPEG, and WebP.`,
+        `${skippedLabel}: ${rejectedNames}. Supported formats: PDF, PNG, JPEG, WebP, MP3, WAV, and M4A.`,
       );
     }
   }
@@ -267,6 +329,9 @@ export class SourceImportStore {
       this.operations.fail(
         'OCR runtime is warming up. Try again when runtime health finishes.',
       );
+      return [];
+    }
+    if (!(await this.preflightWhisperModels())) {
       return [];
     }
 
@@ -537,9 +602,13 @@ export class SourceImportStore {
     if (
       projectId === undefined ||
       document === null ||
-      !['canceled', 'ocr_failed', 'no_text_detected', 'exam_failed'].includes(
-        document.status,
-      )
+      ![
+        'canceled',
+        'ocr_failed',
+        'transcription_failed',
+        'no_text_detected',
+        'exam_failed',
+      ].includes(document.status)
     ) {
       return;
     }
@@ -551,6 +620,109 @@ export class SourceImportStore {
     if (retried !== null) {
       this.resetDocumentPollingFailure();
       await this.refreshUploadedDocument(projectId, document.id);
+    }
+  }
+
+  async updateTranscriptChunk(chunkId: string, text: string): Promise<void> {
+    const projectId = this.projects.selectedProject()?.id;
+    const documentId = this.activeDocumentId();
+    if (
+      projectId === undefined ||
+      documentId === null ||
+      this.isTranscriptMutationBusy()
+    ) {
+      return;
+    }
+    const updated = await this.operations.run(
+      'transcript-edit',
+      'Japanese transcript saved',
+      () => this.api.updateDocumentChunk(projectId, documentId, chunkId, { text }),
+      () => this.isCurrentProjectDocument(projectId, documentId),
+    );
+    if (
+      updated !== null &&
+      this.isCurrentProjectDocument(projectId, documentId)
+    ) {
+      this.library.setChunks(
+        this.chunks().map((chunk) =>
+          chunk.id === chunkId ? updated : chunk,
+        ),
+      );
+      await this.refreshDocumentMetadata(projectId, documentId);
+    }
+  }
+
+  async translateTranscriptChunk(chunkId: string): Promise<void> {
+    const projectId = this.projects.selectedProject()?.id;
+    const documentId = this.activeDocumentId();
+    if (
+      projectId === undefined ||
+      documentId === null ||
+      this.isTranscriptMutationBusy()
+    ) {
+      return;
+    }
+    const translated = await this.operations.run(
+      'transcript-translate',
+      'Traditional Chinese translation updated',
+      () => this.api.translateDocumentChunk(projectId, documentId, chunkId),
+      () => this.isCurrentProjectDocument(projectId, documentId),
+    );
+    if (
+      translated !== null &&
+      this.isCurrentProjectDocument(projectId, documentId)
+    ) {
+      this.library.setChunks(
+        this.chunks().map((chunk) =>
+          chunk.id === chunkId ? translated : chunk,
+        ),
+      );
+      await this.refreshDocumentMetadata(projectId, documentId);
+    }
+  }
+
+  async translateStaleTranscriptChunks(): Promise<void> {
+    const projectId = this.projects.selectedProject()?.id;
+    const documentId = this.activeDocumentId();
+    if (
+      projectId === undefined ||
+      documentId === null ||
+      this.isTranscriptMutationBusy()
+    ) {
+      return;
+    }
+    const translated = await this.operations.run(
+      'transcript-translate-all',
+      'Stale translations updated',
+      () => this.api.translateDocumentStaleChunks(projectId, documentId),
+      () => this.isCurrentProjectDocument(projectId, documentId),
+    );
+    if (
+      translated !== null &&
+      this.isCurrentProjectDocument(projectId, documentId)
+    ) {
+      const byId = new Map(translated.items.map((chunk) => [chunk.id, chunk]));
+      this.library.setChunks(
+        this.chunks().map((chunk) => byId.get(chunk.id) ?? chunk),
+      );
+      await this.refreshDocumentMetadata(projectId, documentId);
+    }
+  }
+
+  private async refreshDocumentMetadata(
+    projectId: string,
+    documentId: string,
+  ): Promise<void> {
+    try {
+      const document = await this.api.getDocument(projectId, documentId);
+      if (!this.isCurrentProjectDocument(projectId, documentId)) {
+        return;
+      }
+      this.library.upsertDocument(document);
+      this.setActiveDocument(document);
+    } catch {
+      // The successful chunk mutation remains visible; normal refresh/polling
+      // reconciles document-level status when the backend is available again.
     }
   }
 
@@ -590,6 +762,73 @@ export class SourceImportStore {
     const filename = file.name.toLowerCase();
     return SUPPORTED_SOURCE_FILE_EXTENSIONS.some((extension) =>
       filename.endsWith(extension),
+    );
+  }
+
+  async cancelWhisperModelDownload(): Promise<void> {
+    await this.health.cancelRuntimeInstallation();
+  }
+
+  private async preflightWhisperModels(): Promise<boolean> {
+    if (!this.hasPendingAudioUpload()) {
+      return true;
+    }
+    if (this.whisperModelsReady()) {
+      return true;
+    }
+    if (this.whisperModelsRequirement() === null) {
+      try {
+        await this.health.refreshRuntimeRequirements();
+      } catch {
+        if (!this.hasPendingAudioUpload()) {
+          return true;
+        }
+        this.operations.fail(
+          'Whisper model status is unavailable. Refresh runtime health before uploading audio.',
+        );
+        return false;
+      }
+    }
+    if (!this.hasPendingAudioUpload()) {
+      return true;
+    }
+    if (this.whisperModelsReady()) {
+      return true;
+    }
+    if (this.health.areWhisperModelsMissing()) {
+      this.health.openWhisperModelsConsent();
+      this.operations.status.set(
+        'Whisper model download consent is required before audio upload.',
+      );
+      return false;
+    }
+    this.operations.fail(
+      'Whisper model status is unavailable. Refresh runtime health before uploading audio.',
+    );
+    return false;
+  }
+
+  private hasPendingAudioUpload(): boolean {
+    return this.uploadItems().some(
+      (item) =>
+        ['queued', 'failed'].includes(item.status) &&
+        this.isAudioSourceFile(item.file),
+    );
+  }
+
+  private isAudioSourceFile(file: File): boolean {
+    const mimeType = file.type.trim().toLowerCase();
+    if (
+      mimeType === 'audio/mpeg' ||
+      mimeType === 'audio/wav' ||
+      mimeType === 'audio/x-wav' ||
+      mimeType === 'audio/mp4' ||
+      mimeType === 'audio/x-m4a'
+    ) {
+      return true;
+    }
+    return ['.mp3', '.wav', '.m4a'].some((extension) =>
+      file.name.toLowerCase().endsWith(extension),
     );
   }
 

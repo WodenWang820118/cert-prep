@@ -16,9 +16,14 @@ export function isExpectedDocumentOperation(
     );
   }
   if (operation.status === 'running') {
+    const cancellablePhase = [
+      'processing',
+      'transcribing',
+      'translating',
+    ].includes(operation.phase);
     return (
       operation.document_id !== null &&
-      ((operation.phase === 'processing' && operation.cancellable) ||
+      ((cancellablePhase && operation.cancellable) ||
         (operation.phase === 'committing' && !operation.cancellable))
     );
   }

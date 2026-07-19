@@ -139,6 +139,45 @@ describe('HealthStore runtime installation', () => {
     expect(store.runtimeInstall()?.label).toBe('WindowsML OCR runtime');
   });
 
+  it('downloads the consent-gated Whisper model bundle through runtime installation', async () => {
+    const store = TestBed.inject(HealthStore);
+    apiClient.runtimeRequirements.mockResolvedValue({
+      items: [
+        {
+          kind: 'whisper_models',
+          label: 'Whisper speech models',
+          available: false,
+          detail: 'Whisper speech models require download.',
+          unavailable_reason: 'whisper_models_missing',
+          version: 'large-v3-turbo + small',
+        },
+      ],
+    });
+    apiClient.startRuntimeInstallation.mockResolvedValue(
+      runtimeInstallation({
+        kind: 'whisper_models',
+        provider: 'faster-whisper',
+        model: 'large-v3-turbo + small',
+        status: 'running',
+        phase: 'model_download',
+        detail: 'Downloading Whisper small.',
+        completed: 25,
+        total: 100,
+      }),
+    );
+    await store.load();
+
+    store.openWhisperModelsConsent();
+    await store.confirmRuntimeInstallation();
+
+    expect(apiClient.startRuntimeInstallation).toHaveBeenCalledWith(
+      'whisper_models',
+    );
+    expect(store.runtimeInstall()?.kind).toBe('whisper_models');
+    expect(store.runtimeInstall()?.label).toBe('Whisper speech models');
+    expect(store.runtimeInstall()?.progress).toBe(25);
+  });
+
   it('cancels an active runtime installation through the generated API', async () => {
     const store = TestBed.inject(HealthStore);
     apiClient.llmHealth.mockResolvedValue(

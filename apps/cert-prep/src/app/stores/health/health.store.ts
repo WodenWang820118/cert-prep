@@ -3,6 +3,7 @@ import type { RuntimeKind } from './contracts/health-runtime.contracts';
 import { HealthSnapshotService } from './health-snapshot.service';
 import { HealthStatusStore } from './health-status.store';
 import { RuntimeActionsStore } from './runtime-actions.store';
+import { RuntimeApiClientsService } from './runtime-api-clients.service';
 import { OperationStore } from '../operation.store';
 
 @Injectable({ providedIn: 'root' })
@@ -11,6 +12,7 @@ export class HealthStore {
   private readonly snapshots = inject(HealthSnapshotService);
   private readonly status = inject(HealthStatusStore);
   private readonly actions = inject(RuntimeActionsStore);
+  private readonly runtimeApi = inject(RuntimeApiClientsService);
 
   readonly llmHealth = this.status.llmHealth;
   readonly systemHealth = this.status.systemHealth;
@@ -59,6 +61,18 @@ export class HealthStore {
   );
   readonly canInstallOcrRuntime = computed(
     () => this.isOcrRuntimeMissing() && !this.isRuntimeInstallActive(),
+  );
+  readonly whisperModelsRequirement = computed(
+    () => this.runtimeRequirement('whisper_models'),
+  );
+  readonly areWhisperModelsReady = computed(
+    () => this.whisperModelsRequirement()?.available === true,
+  );
+  readonly areWhisperModelsMissing = computed(
+    () => this.whisperModelsRequirement()?.available === false,
+  );
+  readonly canInstallWhisperModels = computed(
+    () => this.areWhisperModelsMissing() && !this.isRuntimeInstallActive(),
   );
   readonly runtimeInstallConsentVisible =
     this.actions.runtimeInstallConsentVisible;
@@ -137,6 +151,16 @@ export class HealthStore {
     this.openRuntimeInstallConsent('ollama');
   }
 
+  openWhisperModelsConsent(): void {
+    this.openRuntimeInstallConsent('whisper_models');
+  }
+
+  async refreshRuntimeRequirements(): Promise<void> {
+    const response =
+      await this.runtimeApi.runtimeInstallationClient().runtimeRequirements();
+    this.status.applyHealthSnapshot({ runtimeRequirements: response.items });
+  }
+
   setRuntimeInstallConsentVisible(visible: boolean): void {
     this.actions.setRuntimeInstallConsentVisible(visible);
   }
@@ -189,6 +213,13 @@ export class HealthStore {
       );
     }
 
+    if (kind === 'whisper_models') {
+      return (
+        this.areWhisperModelsMissing() ||
+        this.runtimeInstallConsentKind() === kind
+      );
+    }
+
     return false;
   }
 
@@ -207,6 +238,14 @@ export class HealthStore {
     return this.runtimeRequirements().some(
       (requirement) =>
         requirement.kind === kind && requirement.available === false,
+    );
+  }
+
+  private runtimeRequirement(kind: string) {
+    return (
+      this.runtimeRequirements().find(
+        (requirement) => requirement.kind === kind,
+      ) ?? null
     );
   }
 

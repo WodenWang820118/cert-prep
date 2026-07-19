@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { CERT_PREP_API } from '../../cert-prep-api';
 import type { ChunkRead, DocumentRead } from '../../cert-prep-api';
+import { HealthStore } from '../health/health.store';
 import { OperationStore } from '../operation.store';
 import { ProjectStore } from '../project.store';
 import { SourceImportStore } from './source-import.store';
@@ -14,10 +15,16 @@ describe('SourceImportStore polling', () => {
     cancelDocumentOperation: vi.fn(),
     cancelDocumentProcessing: vi.fn(),
     retryDocumentProcessing: vi.fn(),
+    updateDocumentChunk: vi.fn(),
+    translateDocumentChunk: vi.fn(),
+    translateDocumentStaleChunks: vi.fn(),
     health: vi.fn(),
     llmHealth: vi.fn(),
     ocrHealth: vi.fn(),
     runtimeRequirements: vi.fn(),
+    startRuntimeInstallation: vi.fn(),
+    getRuntimeInstallation: vi.fn(),
+    cancelRuntimeInstallation: vi.fn(),
   };
 
   beforeEach(() => {
@@ -41,6 +48,9 @@ describe('SourceImportStore polling', () => {
     apiClient.retryDocumentProcessing.mockResolvedValue(
       documentOperation('running'),
     );
+    apiClient.runtimeRequirements.mockResolvedValue({
+      items: [whisperRequirement(true)],
+    });
 
     const projects = TestBed.inject(ProjectStore);
     projects.projects.set([
@@ -182,6 +192,9 @@ describe('SourceImportStore polling', () => {
       sourceFile('portrait.JPEG', ''),
       sourceFile('webp-by-mime.bin', 'image/webp'),
       sourceFile('diagram.WEBP', ''),
+      sourceFile('lesson.mp3', 'audio/mpeg'),
+      sourceFile('dialog.WAV', ''),
+      sourceFile('practice.m4a', 'audio/mp4'),
       sourceFile('animated.gif', 'image/gif'),
       sourceFile('vector.svg', 'image/svg+xml'),
     ]);
@@ -193,16 +206,80 @@ describe('SourceImportStore polling', () => {
       'portrait.JPEG',
       'webp-by-mime.bin',
       'diagram.WEBP',
+      'lesson.mp3',
+      'dialog.WAV',
+      'practice.m4a',
     ]);
-    expect(store.selectedFileLabel()).toBe('6 files selected');
+    expect(store.selectedFileLabel()).toBe('9 files selected');
     expect(operations.error()).toContain('animated.gif');
     expect(operations.error()).toContain('vector.svg');
-    expect(operations.error()).toContain('PDF, PNG, JPEG, and WebP');
+    expect(operations.error()).toContain('PDF, PNG, JPEG, WebP, MP3, WAV, and M4A');
 
     store.chooseFiles([sourceFile('next.png', 'image/png')]);
 
     expect(operations.error()).toBeNull();
     expect(operations.errorCode()).toBeNull();
+  });
+
+  it('opens consent and blocks audio upload until both Whisper models are ready', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    const health = TestBed.inject(HealthStore);
+    apiClient.runtimeRequirements.mockResolvedValue({
+      items: [whisperRequirement(false)],
+    });
+
+    store.chooseFile(sourceFile('lesson.mp3', 'audio/mpeg'));
+    await flushPromises();
+
+    expect(health.runtimeInstallConsentKind()).toBe('whisper_models');
+    expect(store.canUpload()).toBe(false);
+
+    const uploaded = await store.uploadDocuments();
+
+    expect(uploaded).toEqual([]);
+    expect(apiClient.uploadDocument).not.toHaveBeenCalled();
+    expect(TestBed.inject(OperationStore).status()).toContain(
+      'consent is required',
+    );
+  });
+
+  it('does not open stale Whisper consent after the selection changes during preflight', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    const health = TestBed.inject(HealthStore);
+    const requirementRequest = deferred<{
+      items: ReturnType<typeof whisperRequirement>[];
+    }>();
+    apiClient.runtimeRequirements.mockReturnValue(requirementRequest.promise);
+
+    store.chooseFile(sourceFile('lesson.mp3', 'audio/mpeg'));
+    expect(apiClient.runtimeRequirements).toHaveBeenCalledTimes(1);
+
+    store.chooseFile(pdfFile('guide.pdf'));
+    requirementRequest.resolve({ items: [whisperRequirement(false)] });
+    await flushPromises();
+
+    expect(store.selectedFile()?.name).toBe('guide.pdf');
+    expect(health.runtimeInstallConsentKind()).toBeNull();
+    expect(TestBed.inject(OperationStore).error()).toBeNull();
+  });
+
+  it('uploads audio after the Whisper model inventory is ready', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    apiClient.uploadDocument.mockResolvedValue(
+      documentRead({
+        id: 'audio-document',
+        filename: 'lesson.mp3',
+        source_kind: 'audio',
+        page_count: 0,
+      }),
+    );
+
+    store.chooseFile(sourceFile('lesson.mp3', 'audio/mpeg'));
+    await flushPromises();
+    const uploaded = await store.uploadDocuments();
+
+    expect(uploaded).toHaveLength(1);
+    expect(apiClient.uploadDocument).toHaveBeenCalledTimes(1);
   });
 
   it('uploads selected source files in two-document batches by default', async () => {
@@ -487,6 +564,171 @@ describe('SourceImportStore polling', () => {
       item.operationId,
     );
   });
+
+  it('serializes transcript mutations to prevent duplicate and overlapping requests', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    const document = documentRead({
+      source_kind: 'audio',
+      page_count: 0,
+      chunks_count: 1,
+    });
+    const chunk = chunkRead({
+      locator_kind: 'time',
+      page_number: 0,
+      start_ms: 0,
+      end_ms: 1_000,
+    });
+    store.documents.set([document]);
+    store.setActiveDocumentId(document.id);
+    store.chunks.set([chunk]);
+
+    const editRequest = deferred<ChunkRead>();
+    apiClient.updateDocumentChunk.mockReturnValue(editRequest.promise);
+    const editRun = store.updateTranscriptChunk(chunk.id, '更新後的日文');
+    const duplicateEdit = store.updateTranscriptChunk(chunk.id, '重複日文');
+    const blockedTranslate = store.translateTranscriptChunk(chunk.id);
+    const blockedBulk = store.translateStaleTranscriptChunks();
+
+    expect(apiClient.updateDocumentChunk).toHaveBeenCalledTimes(1);
+    expect(apiClient.translateDocumentChunk).not.toHaveBeenCalled();
+    expect(apiClient.translateDocumentStaleChunks).not.toHaveBeenCalled();
+    editRequest.resolve({ ...chunk, text: '更新後的日文' });
+    await Promise.all([editRun, duplicateEdit, blockedTranslate, blockedBulk]);
+
+    const translateRequest = deferred<ChunkRead>();
+    apiClient.translateDocumentChunk.mockReturnValue(translateRequest.promise);
+    const translateRun = store.translateTranscriptChunk(chunk.id);
+    const duplicateTranslate = store.translateTranscriptChunk(chunk.id);
+    const blockedEdit = store.updateTranscriptChunk(chunk.id, '再更新');
+    const blockedBulkDuringTranslate = store.translateStaleTranscriptChunks();
+
+    expect(apiClient.translateDocumentChunk).toHaveBeenCalledTimes(1);
+    expect(apiClient.updateDocumentChunk).toHaveBeenCalledTimes(1);
+    expect(apiClient.translateDocumentStaleChunks).not.toHaveBeenCalled();
+    translateRequest.resolve({ ...chunk, translated_text: '繁體中文' });
+    await Promise.all([
+      translateRun,
+      duplicateTranslate,
+      blockedEdit,
+      blockedBulkDuringTranslate,
+    ]);
+
+    const bulkRequest = deferred<{ items: ChunkRead[] }>();
+    apiClient.translateDocumentStaleChunks.mockReturnValue(bulkRequest.promise);
+    const bulkRun = store.translateStaleTranscriptChunks();
+    const duplicateBulk = store.translateStaleTranscriptChunks();
+    const blockedEditDuringBulk = store.updateTranscriptChunk(chunk.id, '又更新');
+    const blockedTranslateDuringBulk = store.translateTranscriptChunk(chunk.id);
+
+    expect(apiClient.translateDocumentStaleChunks).toHaveBeenCalledTimes(1);
+    expect(apiClient.updateDocumentChunk).toHaveBeenCalledTimes(1);
+    expect(apiClient.translateDocumentChunk).toHaveBeenCalledTimes(1);
+    bulkRequest.resolve({ items: [{ ...chunk, translated_text: '批次繁中' }] });
+    await Promise.all([
+      bulkRun,
+      duplicateBulk,
+      blockedEditDuringBulk,
+      blockedTranslateDuringBulk,
+    ]);
+  });
+
+  it('refreshes document translation metadata after transcript mutations', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    const document = documentRead({
+      source_kind: 'audio',
+      page_count: 0,
+      chunks_count: 1,
+      translation_status: 'succeeded',
+    });
+    const chunk = chunkRead({
+      locator_kind: 'time',
+      page_number: 0,
+      start_ms: 0,
+      end_ms: 1_000,
+      source_revision: 1,
+      translated_text: '原翻譯',
+      translation_source_revision: 1,
+      translation_stale: false,
+    });
+    store.documents.set([document]);
+    store.setActiveDocumentId(document.id);
+    store.chunks.set([chunk]);
+
+    const editedChunk = {
+      ...chunk,
+      text: '更新後的日文',
+      source_revision: 2,
+      translation_stale: true,
+    };
+    const failedTranslationDocument = documentRead({
+      ...document,
+      translation_status: 'failed',
+    });
+    apiClient.updateDocumentChunk.mockResolvedValue(editedChunk);
+    apiClient.getDocument.mockResolvedValueOnce(failedTranslationDocument);
+
+    await store.updateTranscriptChunk(chunk.id, editedChunk.text);
+
+    expect(store.chunks()[0]).toEqual(editedChunk);
+    expect(store.activeDocument()?.translation_status).toBe('failed');
+    expect(store.documents()[0]?.translation_status).toBe('failed');
+
+    const translatedChunk = {
+      ...editedChunk,
+      translated_text: '更新後的繁體中文',
+      translation_source_revision: 2,
+      translation_stale: false,
+    };
+    const translatedDocument = documentRead({
+      ...document,
+      translation_status: 'succeeded',
+    });
+    apiClient.translateDocumentChunk.mockResolvedValue(translatedChunk);
+    apiClient.getDocument.mockResolvedValueOnce(translatedDocument);
+
+    await store.translateTranscriptChunk(chunk.id);
+
+    expect(store.chunks()[0]).toEqual(translatedChunk);
+    expect(store.activeDocument()?.translation_status).toBe('succeeded');
+
+    apiClient.translateDocumentStaleChunks.mockResolvedValue({
+      items: [translatedChunk],
+    });
+    apiClient.getDocument.mockResolvedValueOnce(translatedDocument);
+
+    await store.translateStaleTranscriptChunks();
+
+    expect(apiClient.getDocument).toHaveBeenCalledTimes(3);
+    expect(store.documents()[0]?.translation_status).toBe('succeeded');
+  });
+
+  it('stops polling and allows retry after audio transcription fails', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    const failedDocument = documentRead({
+      source_kind: 'audio',
+      page_count: 0,
+      chunks_count: 0,
+      has_text: false,
+      status: 'transcription_failed',
+      transcription_status: 'failed',
+    });
+    store.documents.set([failedDocument]);
+    store.setActiveDocumentId(failedDocument.id);
+    apiClient.getDocument.mockResolvedValue(failedDocument);
+
+    await store.refreshUploadedDocument('project-1', failedDocument.id);
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(apiClient.getDocument).toHaveBeenCalledTimes(1);
+    expect(store.parseStageText()).toContain('transcription failed');
+
+    await store.retryActiveDocumentProcessing();
+
+    expect(apiClient.retryDocumentProcessing).toHaveBeenCalledWith(
+      'project-1',
+      failedDocument.id,
+    );
+  });
 });
 
 function documentOperation(status: string) {
@@ -558,6 +800,19 @@ function pdfFile(name: string): File {
 
 function sourceFile(name: string, type: string): File {
   return new File(['source'], name, { type });
+}
+
+function whisperRequirement(available: boolean) {
+  return {
+    kind: 'whisper_models' as const,
+    label: 'Whisper speech models',
+    available,
+    detail: available
+      ? 'Whisper speech models are ready.'
+      : 'Whisper speech models require download.',
+    unavailable_reason: available ? null : 'whisper_models_missing',
+    version: 'large-v3-turbo + small',
+  };
 }
 
 async function flushPromises(times = 4): Promise<void> {
