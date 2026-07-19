@@ -262,6 +262,28 @@ describe('CertPrepAuthenticatedTransport', () => {
     await expect(responsePromise).resolves.toEqual(healthResponse);
   });
 
+  it('loads authenticated document audio as a Blob without putting the token in the URL', async () => {
+    const sourceBlob = new Blob(['audio'], { type: 'audio/mpeg' });
+    const responsePromise = api.getDocumentAudioSource(
+      'project-1',
+      'document-1',
+    );
+    await Promise.resolve();
+    const request = httpTesting.expectOne(
+      `${baseUrl}/projects/project-1/documents/document-1/source`,
+    );
+
+    expect(request.request.method).toBe('GET');
+    expect(request.request.responseType).toBe('blob');
+    expect(request.request.headers.get('Authorization')).toBe(
+      'Bearer runtime-token',
+    );
+    expect(request.request.url).not.toContain('runtime-token');
+    request.flush(sourceBlob);
+
+    await expect(responsePromise).resolves.toEqual(sourceBlob);
+  });
+
   it('does not set Content-Type for a FormData upload', async () => {
     const body = new FormData();
     body.append('file', new Blob(['pdf']), 'exam.pdf');

@@ -70,7 +70,22 @@ def _schema(*, request_required: bool = True) -> dict:
                     },
                     "responses": {"204": {"description": "No content"}},
                 },
-            }
+            },
+            "/examples/{example_id}/source": {
+                "get": {
+                    "operationId": "get_example_source",
+                    "responses": {
+                        "200": {
+                            "description": "Binary source",
+                            "content": {
+                                "application/octet-stream": {
+                                    "schema": {"type": "string", "format": "binary"}
+                                }
+                            },
+                        }
+                    },
+                }
+            },
         },
     }
 
@@ -123,6 +138,17 @@ def test_generated_client_preserves_required_request_body() -> None:
     output = render_typescript(_schema(request_required=True))
 
     assert "runExample(exampleId: string, body: Components['schemas']['Payload']" in output
+
+
+def test_generated_client_requests_binary_responses_as_blobs() -> None:
+    output = render_typescript(_schema())
+
+    assert "responseType?: 'blob';" in output
+    assert (
+        "getExampleSource(exampleId: string, options?: CertPrepRequestOptions): "
+        "Promise<Blob>" in output
+    )
+    assert "responseType: 'blob' as const" in output
 
 
 def test_tracked_client_is_byte_exact_for_live_openapi(tmp_path: Path) -> None:

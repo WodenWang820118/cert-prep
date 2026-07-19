@@ -131,18 +131,22 @@ export class CertPrepAuthenticatedTransport {
 
   request<TResponse>(request: CertPrepHttpRequest): Promise<TResponse> {
     const response = defer(() => this.runtimeConfig.getBackendConfig()).pipe(
-      switchMap((config) =>
-        this.http.request<TResponse>(
-          request.method,
-          this.url(config.base_url, request.path),
-          {
-            body: request.body,
-            headers: new HttpHeaders(request.headers ?? {})
-              .delete('Authorization')
-              .set('Authorization', `Bearer ${config.token}`),
-          },
-        ),
-      ),
+      switchMap((config) => {
+        const url = this.url(config.base_url, request.path);
+        const options = {
+          body: request.body,
+          headers: new HttpHeaders(request.headers ?? {})
+            .delete('Authorization')
+            .set('Authorization', `Bearer ${config.token}`),
+        };
+        if (request.responseType === 'blob') {
+          return this.http.request(request.method, url, {
+            ...options,
+            responseType: 'blob',
+          }) as unknown as Observable<TResponse>;
+        }
+        return this.http.request<TResponse>(request.method, url, options);
+      }),
     );
 
     return firstValueFrom(

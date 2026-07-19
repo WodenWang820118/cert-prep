@@ -50,6 +50,7 @@ def render_typescript(openapi: dict[str, Any]) -> str:
             "  body?: unknown;",
             "  headers?: Readonly<Record<string, string>>;",
             "  signal?: AbortSignal;",
+            "  responseType?: 'blob';",
             "}",
             "",
             "export interface CertPrepTransport {",
@@ -220,6 +221,8 @@ class ClientOperation:
         ]
         if self.request_type is not None:
             request_parts.append("body")
+        if self.response_type == "Blob":
+            request_parts.append("responseType: 'blob' as const")
         request_parts.extend(
             [
                 "...(options?.headers === undefined ? {} : { headers: options.headers })",
@@ -303,9 +306,15 @@ def response_type(operation: dict[str, Any], schemas: dict[str, Any]) -> str:
         if not status_code.startswith("2"):
             continue
         response = responses[status_code]
-        json_schema = response.get("content", {}).get("application/json", {}).get("schema")
+        content = response.get("content", {})
+        json_schema = content.get("application/json", {}).get("schema")
         if json_schema is not None:
             return render_schema_type(json_schema, schemas)
+        if any(
+            media.get("schema", {}).get("format") == "binary"
+            for media in content.values()
+        ):
+            return "Blob"
         return "void"
     return "unknown"
 
