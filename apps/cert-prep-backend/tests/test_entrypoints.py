@@ -49,6 +49,20 @@ def test_backend_runtime_pyinstaller_command_keeps_uvicorn_app_import() -> None:
     ]
     assert "cert_prep_backend.api.app" in hidden_imports
 
+    collected_binary_packages = [
+        command[index + 1]
+        for index, value in enumerate(command)
+        if value == "--collect-binaries"
+    ]
+    assert "ctranslate2" in collected_binary_packages
+
+    collected_data_packages = [
+        command[index + 1]
+        for index, value in enumerate(command)
+        if value == "--collect-data"
+    ]
+    assert "faster_whisper" in collected_data_packages
+
 
 def test_app_lifespan_closes_closeable_ocr_provider(tmp_path: Path) -> None:
     ocr_provider = CloseableOcrProvider()

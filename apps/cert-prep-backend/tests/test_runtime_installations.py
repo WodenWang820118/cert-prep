@@ -20,6 +20,7 @@ from cert_prep_backend.domains.runtime_installations import (
     WindowsMLOcrRuntimeInstaller,
     PaddleOcrRuntimeInstaller,
     RuntimeInstallationManager,
+    WhisperModelInstaller,
     run_ocr_runtime_command,
 )
 from cert_prep_backend.persistence.database import Database
@@ -31,6 +32,10 @@ from cert_prep_contracts.runtime import (
 )
 from cert_prep_ollama import profile_installer as ollama_profile_installer_module
 from cert_prep_backend.domains.source_documents.ocr import OCRHealth, OCRPageResult
+from cert_prep_transcription_whisper import (
+    WhisperModelDownloadProgress,
+    WhisperModelInventory,
+)
 from llm_test_fakes import GIB, _profile_inventory
 
 
@@ -142,6 +147,32 @@ def test_model_installer_uses_the_ollama_alpha_requirement_kind() -> None:
     assert LLMModelInstaller(
         SimpleNamespace(provider="ollama", model="qwen3.5:4b")
     ).kind == RuntimeRequirementKind.OLLAMA_MODEL
+
+
+def test_whisper_model_installer_owns_both_models_and_forwards_progress(
+    tmp_path: Path,
+) -> None:
+    runtime = FakeWhisperModelRuntime(tmp_path)
+    installer = WhisperModelInstaller(runtime)
+    manager = RuntimeInstallationManager(
+        settings=Settings(data_dir=tmp_path, api_token="test-token"),
+        llm_provider=object(),
+        ocr_provider=FakeOcrProvider(),
+        installers=[installer],
+        async_jobs=False,
+    )
+
+    requirement = manager.requirement(RuntimeRequirementKind.WHISPER_MODELS)
+    completed = manager.start_installation(RuntimeRequirementKind.WHISPER_MODELS)
+
+    assert requirement is not None
+    assert requirement.available is False
+    assert requirement.version == "large-v3-turbo + small"
+    assert requirement.unavailable_reason == "whisper_models_missing"
+    assert completed.status == RuntimeInstallationStatus.SUCCEEDED
+    assert completed.completed == 200
+    assert completed.total == 200
+    assert runtime.download_calls == 1
 
 
 def test_auto_selected_ollama_runtime_requirements_resolve_a_profile(
@@ -428,6 +459,46 @@ class FakeWindowsMLOcrProvider(FakeOcrProvider):
             fallback_reason=None,
             unavailable_reason=None,
         )
+
+
+class FakeWhisperModelRuntime:
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self.ready = False
+        self.download_calls = 0
+
+    def inventory(self) -> WhisperModelInventory:
+        return WhisperModelInventory(
+            available=self.ready,
+            installed_models=("large-v3-turbo", "small") if self.ready else (),
+            missing_models=() if self.ready else ("large-v3-turbo", "small"),
+            installed_paths=(str(self.root),) if self.ready else (),
+            bytes=200 if self.ready else None,
+        )
+
+    def download(self, progress) -> WhisperModelInventory:
+        self.download_calls += 1
+        progress(
+            WhisperModelDownloadProgress(
+                "Downloading Whisper speech models.",
+                completed=100,
+                total=200,
+            )
+        )
+        self.ready = True
+        progress(
+            WhisperModelDownloadProgress(
+                "Verifying Whisper speech models.",
+                completed=200,
+                total=200,
+                phase="verifying",
+                cancellable=False,
+            )
+        )
+        return self.inventory()
+
+    def cancel(self) -> None:
+        return None
 
 
 def _sha256_file(path: Path) -> str:

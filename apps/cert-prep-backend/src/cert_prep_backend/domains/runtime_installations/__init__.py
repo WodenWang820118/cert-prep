@@ -8,6 +8,7 @@ from cert_prep_backend.domains.runtime_installations.archive import (
 from cert_prep_backend.domains.runtime_installations.installers import (
     WindowsMLOcrRuntimeInstaller,
     PaddleOcrRuntimeInstaller,
+    WhisperModelInstaller,
 )
 from cert_prep_backend.domains.runtime_installations.manager import (
     RuntimeInstallationManager,
@@ -28,6 +29,7 @@ __all__ = [
     "OcrRuntimeManifest",
     "WindowsMLOcrRuntimeInstaller",
     "PaddleOcrRuntimeInstaller",
+    "WhisperModelInstaller",
     "RuntimeInstallationManager",
     "RuntimeInstallationSnapshot",
     "RuntimeInstaller",

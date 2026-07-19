@@ -31,6 +31,8 @@ from cert_prep_backend.domains.source_documents.ocr_provider_pool import (
     shared_provider_pool,
 )
 from cert_prep_backend.routers import documents, drafts, llm, ocr, practice, projects, runtime
+from cert_prep_contracts.transcription import TranscriptionProvider
+from cert_prep_transcription_whisper import WhisperTranscriptionProvider
 
 
 class HealthResponse(BaseModel):
@@ -50,6 +52,7 @@ def create_app(
     runtime_installation_async_jobs: bool = True,
     document_processing_async_jobs: bool = True,
     streaming_draft_generation_async_jobs: bool = True,
+    transcription_provider: TranscriptionProvider | None = None,
 ) -> FastAPI:
     app_settings = settings or Settings()
 
@@ -80,6 +83,9 @@ def create_app(
     source_documents_repository.recover_processing_documents(app.state.database)
     app.state.llm_provider = llm_provider or lazy_provider_from_settings(app_settings)
     app.state.ocr_provider = ocr_provider or ocr_provider_from_settings(app_settings)
+    app.state.transcription_provider = (
+        transcription_provider or WhisperTranscriptionProvider(prefer_gpu=True)
+    )
     app.state.document_ocr_provider_pool = _document_ocr_provider_pool(
         settings=app_settings,
         ocr_provider=ocr_provider,
@@ -97,6 +103,7 @@ def create_app(
         settings=app_settings,
         llm_provider=app.state.llm_provider,
         ocr_provider=app.state.ocr_provider,
+        transcription_provider=app.state.transcription_provider,
         db=app.state.database,
         async_jobs=runtime_installation_async_jobs,
     )

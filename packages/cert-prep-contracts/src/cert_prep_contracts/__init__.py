@@ -40,6 +40,13 @@ from cert_prep_contracts.runtime import (
     RuntimeRequirementKind,
     RuntimeRequirementSnapshot,
 )
+from cert_prep_contracts.transcription import (
+    MAX_AUDIO_DURATION_MS,
+    TranscriptSegment,
+    TranscriptionCanceledError,
+    TranscriptionProvider,
+    TranscriptionResult,
+)
 
 __all__ = [
     "DEFAULT_LLM_PRIMARY_MODEL",
@@ -55,6 +62,7 @@ __all__ = [
     "LLMProviderPreference",
     "LLMProviderSelection",
     "LLMRuntimePolicy",
+    "MAX_AUDIO_DURATION_MS",
     "MachineAcceleratorSnapshot",
     "MachineCpuSnapshot",
     "MachineInventorySnapshot",
@@ -74,4 +82,8 @@ __all__ = [
     "RuntimeRequirementSnapshot",
     "SourceDocumentStatus",
     "SourceDocumentStatusValue",
+    "TranscriptSegment",
+    "TranscriptionCanceledError",
+    "TranscriptionProvider",
+    "TranscriptionResult",
 ]

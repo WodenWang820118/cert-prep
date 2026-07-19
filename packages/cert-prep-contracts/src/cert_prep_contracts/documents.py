@@ -17,6 +17,7 @@ class SourceDocumentStatus(StrEnum):
     EXAM_FAILED = "exam_failed"
     NO_TEXT_DETECTED = "no_text_detected"
     OCR_FAILED = "ocr_failed"
+    TRANSCRIPTION_FAILED = "transcription_failed"
 
 
 SourceDocumentStatusValue: TypeAlias = SourceDocumentStatus | str
@@ -41,6 +42,8 @@ class DocumentOperationPhase(StrEnum):
 
     UPLOADING = "uploading"
     PROCESSING = "processing"
+    TRANSCRIBING = "transcribing"
+    TRANSLATING = "translating"
     CANCELING = "canceling"
     COMMITTING = "committing"
     CANCELED = "canceled"

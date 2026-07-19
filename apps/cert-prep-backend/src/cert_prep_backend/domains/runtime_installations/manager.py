@@ -108,6 +108,7 @@ class RuntimeInstallationManager:
         settings: Settings,
         llm_provider: object,
         ocr_provider: OCRProvider,
+        transcription_provider: object | None = None,
         db: Database | None = None,
         async_jobs: bool = True,
         installers: list[RuntimeInstaller] | None = None,
@@ -116,6 +117,7 @@ class RuntimeInstallationManager:
             LLMModelInstaller,
             WindowsMLOcrRuntimeInstaller,
             PaddleOcrRuntimeInstaller,
+            WhisperModelInstaller,
         )
         from cert_prep_backend.domains.source_documents.adapters.external_windowsml import (
             ExternalWindowsMLOCRProvider,
@@ -162,6 +164,10 @@ class RuntimeInstallationManager:
                     timeout_seconds=settings.ollama_timeout_seconds,
                     runtime_install_timeout_seconds=settings.runtime_install_timeout_seconds,
                 )
+        transcription_installers: list[RuntimeInstaller] = []
+        whisper_model_runtime = getattr(transcription_provider, "model_runtime", None)
+        if whisper_model_runtime is not None:
+            transcription_installers.append(WhisperModelInstaller(whisper_model_runtime))
         self._installers = {
             installer.kind: installer
             for installer in (
@@ -185,6 +191,7 @@ class RuntimeInstallationManager:
                             else ExternalWindowsMLOCRProvider(settings)
                         ),
                     ),
+                    *transcription_installers,
                 ]
             )
         }
@@ -213,6 +220,14 @@ class RuntimeInstallationManager:
             for kind in RuntimeRequirementKind
             if kind in self._installers
         ]
+
+    def requirement(
+        self, kind: RuntimeRequirementKind | str
+    ) -> RuntimeRequirementSnapshot | None:
+        """Return one local requirement without starting installation work."""
+
+        installer = self._installers.get(RuntimeRequirementKind(kind))
+        return None if installer is None else installer.requirement()
 
     def start_model_installation(self) -> RuntimeInstallationSnapshot:
         """Start the selected provider's model installation lane."""

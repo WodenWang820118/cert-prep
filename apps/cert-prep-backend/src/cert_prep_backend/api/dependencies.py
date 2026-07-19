@@ -13,6 +13,7 @@ from cert_prep_backend.domains.mock_exams.streaming import StreamingDraftGenerat
 from cert_prep_backend.domains.runtime_installations import RuntimeInstallationManager
 from cert_prep_backend.domains.source_documents.ocr import OCRProvider
 from cert_prep_backend.domains.source_documents.ocr_provider_pool import DocumentOCRProviderPool
+from cert_prep_contracts.transcription import TranscriptionProvider
 
 
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -46,6 +47,10 @@ def get_ocr_provider(request: Request) -> OCRProvider:
 
 def get_document_ocr_provider_pool(request: Request) -> DocumentOCRProviderPool:
     return request.app.state.document_ocr_provider_pool
+
+
+def get_transcription_provider(request: Request) -> TranscriptionProvider:
+    return request.app.state.transcription_provider
 
 
 def require_bearer_auth(

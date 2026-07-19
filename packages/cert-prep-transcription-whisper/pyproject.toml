@@ -1,0 +1,26 @@
+[project]
+name = "cert-prep-transcription-whisper"
+version = "0.1.0-alpha.1"
+description = "Local Japanese speech transcription provider for Cert Prep."
+requires-python = ">=3.12,<3.14"
+dependencies = [
+  "av>=18.0.0,<19.0.0",
+  "cert-prep-contracts",
+  "faster-whisper>=1.2.0,<2.0.0",
+  "huggingface-hub>=1.18.0,<2.0.0",
+  "tqdm>=4.68.0,<5.0.0",
+]
+
+[tool.uv.sources]
+cert-prep-contracts = { path = "../cert-prep-contracts", editable = true }
+
+[dependency-groups]
+dev = ["pytest>=8.3.0,<9.0.0", "ruff>=0.9.0,<1.0.0"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"

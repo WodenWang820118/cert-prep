@@ -30,6 +30,11 @@ from cert_prep_contracts.runtime import (
     RuntimeRequirementSnapshot,
 )
 from cert_prep_contracts.llm import ModelPullProgress
+from cert_prep_transcription_whisper import (
+    REQUIRED_MODELS,
+    WhisperModelDownloadProgress,
+    WhisperModelRuntime,
+)
 
 
 class LLMModelInstaller:
@@ -196,6 +201,65 @@ class LLMModelInstaller:
                 f"{_provider_label(self.provider)} unavailable: {exc}"
             ) from exc
         return RuntimeInstallationStatus.SUCCEEDED
+
+
+class WhisperModelInstaller:
+    """Inventory and consent-gated acquisition for the ASR/fallback model bundle."""
+
+    kind = RuntimeRequirementKind.WHISPER_MODELS
+    provider = "faster-whisper"
+    model = " + ".join(REQUIRED_MODELS)
+
+    def __init__(self, runtime: WhisperModelRuntime) -> None:
+        self._runtime = runtime
+
+    def requirement(self) -> RuntimeRequirementSnapshot:
+        """Return local-only availability for both required Whisper models."""
+
+        inventory = self._runtime.inventory()
+        if inventory.available:
+            detail = "Whisper large-v3-turbo and CPU small fallback are ready."
+        else:
+            missing = ", ".join(inventory.missing_models)
+            detail = f"Whisper speech models require download: {missing}."
+        return RuntimeRequirementSnapshot(
+            kind=self.kind,
+            label="Whisper speech models",
+            available=inventory.available,
+            detail=detail,
+            unavailable_reason=None if inventory.available else "whisper_models_missing",
+            version=self.model,
+            bytes=inventory.bytes if inventory.available else None,
+            installed_path=(
+                inventory.installed_paths[0]
+                if inventory.available and inventory.installed_paths
+                else None
+            ),
+        )
+
+    def install(
+        self, progress: Callable[[RuntimeInstallProgress], None]
+    ) -> RuntimeInstallationStatus:
+        """Download the model bundle through the shared installation job owner."""
+
+        def record(item: WhisperModelDownloadProgress) -> None:
+            progress(
+                RuntimeInstallProgress(
+                    detail=item.detail,
+                    completed=item.completed,
+                    total=item.total,
+                    phase=item.phase,
+                    cancellable=item.cancellable,
+                )
+            )
+
+        self._runtime.download(record)
+        return RuntimeInstallationStatus.SUCCEEDED
+
+    def cancel(self) -> None:
+        """Request cancellation at the runtime's next download checkpoint."""
+
+        self._runtime.cancel()
 
 
 class PaddleOcrRuntimeInstaller:

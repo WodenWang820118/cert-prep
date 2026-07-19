@@ -36,6 +36,14 @@ COMMON_HIDDEN_IMPORTS = [
     "cert_prep_backend.api.app",
 ]
 
+COLLECT_BINARY_PACKAGES = [
+    "ctranslate2",
+]
+
+COLLECT_DATA_PACKAGES = [
+    "faster_whisper",
+]
+
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -67,6 +75,10 @@ def _pyinstaller_command() -> list[str]:
     ]
     for module_name in COMMON_HIDDEN_IMPORTS:
         command.extend(["--hidden-import", module_name])
+    for package_name in COLLECT_BINARY_PACKAGES:
+        command.extend(["--collect-binaries", package_name])
+    for package_name in COLLECT_DATA_PACKAGES:
+        command.extend(["--collect-data", package_name])
     for module_name in LITE_EXCLUDES:
         command.extend(["--exclude-module", module_name])
     return command
