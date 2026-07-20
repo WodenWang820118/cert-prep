@@ -12,6 +12,7 @@ describe('SourceImportStore polling', () => {
     listDocumentChunks: vi.fn(),
     listDocuments: vi.fn(),
     uploadDocument: vi.fn(),
+    getDocumentOperation: vi.fn(),
     cancelDocumentOperation: vi.fn(),
     cancelDocumentProcessing: vi.fn(),
     retryDocumentProcessing: vi.fn(),
@@ -39,8 +40,23 @@ describe('SourceImportStore polling', () => {
         Promise.resolve(documentRead({ id: documentId })),
     );
     apiClient.listDocumentChunks.mockResolvedValue({ items: [] });
-    apiClient.cancelDocumentOperation.mockResolvedValue(
-      documentOperation('canceled'),
+    apiClient.getDocumentOperation.mockImplementation(
+      (projectId: string, operationId: string) =>
+        Promise.resolve(
+          documentOperation('running', {
+            id: operationId,
+            project_id: projectId,
+          }),
+        ),
+    );
+    apiClient.cancelDocumentOperation.mockImplementation(
+      (projectId: string, operationId: string) =>
+        Promise.resolve(
+          documentOperation('canceled', {
+            id: operationId,
+            project_id: projectId,
+          }),
+        ),
     );
     apiClient.cancelDocumentProcessing.mockResolvedValue(
       documentOperation('cancel_requested'),
@@ -67,6 +83,7 @@ describe('SourceImportStore polling', () => {
 
   afterEach(() => {
     TestBed.inject(SourceImportStore).reset();
+    vi.restoreAllMocks();
     vi.useRealTimers();
   });
 
@@ -221,7 +238,7 @@ describe('SourceImportStore polling', () => {
     expect(operations.errorCode()).toBeNull();
   });
 
-  it('opens consent and blocks audio upload until both Whisper models are ready', async () => {
+  it('restores audio upload authorization after Whisper consent is canceled', async () => {
     const store = TestBed.inject(SourceImportStore);
     const health = TestBed.inject(HealthStore);
     apiClient.runtimeRequirements.mockResolvedValue({
@@ -232,15 +249,135 @@ describe('SourceImportStore polling', () => {
     await flushPromises();
 
     expect(health.runtimeInstallConsentKind()).toBe('whisper_models');
-    expect(store.canUpload()).toBe(false);
+    expect(store.canUpload()).toBe(true);
 
     const uploaded = await store.uploadDocuments();
 
     expect(uploaded).toEqual([]);
     expect(apiClient.uploadDocument).not.toHaveBeenCalled();
+    expect(store.canUpload()).toBe(false);
     expect(TestBed.inject(OperationStore).status()).toContain(
       'consent is required',
     );
+
+    health.cancelRuntimeInstallConsent();
+    TestBed.tick();
+    await flushPromises();
+
+    expect(store.canUpload()).toBe(true);
+    health.runtimeRequirements.set([whisperRequirement(true)]);
+    TestBed.tick();
+    await flushPromises();
+
+    expect(apiClient.uploadDocument).not.toHaveBeenCalled();
+  });
+
+  it('restores audio upload authorization when Whisper preflight fails', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    const health = TestBed.inject(HealthStore);
+    apiClient.runtimeRequirements.mockRejectedValue(
+      new TypeError('Runtime requirements unavailable'),
+    );
+
+    store.chooseFile(sourceFile('lesson.mp3', 'audio/mpeg'));
+    await flushPromises();
+    expect(await store.uploadDocuments()).toEqual([]);
+    TestBed.tick();
+    await flushPromises();
+
+    expect(store.canUpload()).toBe(true);
+    expect(apiClient.uploadDocument).not.toHaveBeenCalled();
+
+    health.runtimeRequirements.set([whisperRequirement(true)]);
+    TestBed.tick();
+    await flushPromises();
+
+    expect(apiClient.uploadDocument).not.toHaveBeenCalled();
+  });
+
+  it('restores audio upload authorization when Whisper installation fails', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    const health = TestBed.inject(HealthStore);
+    health.runtimeRequirements.set([whisperRequirement(false)]);
+    store.chooseFile(sourceFile('lesson.mp3', 'audio/mpeg'));
+
+    expect(await store.uploadDocuments()).toEqual([]);
+    expect(store.canUpload()).toBe(false);
+
+    health.runtimeInstall.set({
+      jobId: 'whisper-install-1',
+      kind: 'whisper_models',
+      label: 'Whisper speech models',
+      phase: 'failed',
+      status: 'failed',
+      progress: null,
+      message: 'Whisper model download failed.',
+      error: 'Whisper model download failed.',
+      cancellable: false,
+    });
+    TestBed.tick();
+    await flushPromises();
+
+    expect(store.canUpload()).toBe(true);
+    health.runtimeRequirements.set([whisperRequirement(true)]);
+    TestBed.tick();
+    await flushPromises();
+
+    expect(apiClient.uploadDocument).not.toHaveBeenCalled();
+  });
+
+  it('does not auto-upload selected audio before the user authorizes it', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    const health = TestBed.inject(HealthStore);
+    health.runtimeRequirements.set([whisperRequirement(false)]);
+    apiClient.uploadDocument.mockResolvedValue(
+      documentRead({
+        id: 'audio-document',
+        filename: 'lesson.mp3',
+        source_kind: 'audio',
+        page_count: 0,
+      }),
+    );
+
+    store.chooseFile(sourceFile('lesson.mp3', 'audio/mpeg'));
+    health.runtimeRequirements.set([whisperRequirement(true)]);
+    TestBed.tick();
+    await flushPromises();
+
+    expect(apiClient.uploadDocument).not.toHaveBeenCalled();
+    expect(store.uploadItems()[0]?.status).toBe('queued');
+    expect(store.canUpload()).toBe(true);
+  });
+
+  it('auto-starts an authorized audio upload when Whisper becomes ready', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    const health = TestBed.inject(HealthStore);
+    const audioUpload = deferred<DocumentRead>();
+    health.runtimeRequirements.set([whisperRequirement(false)]);
+    apiClient.uploadDocument.mockReturnValue(audioUpload.promise);
+
+    store.chooseFile(sourceFile('lesson.mp3', 'audio/mpeg'));
+    expect(await store.uploadDocuments()).toEqual([]);
+    expect(apiClient.uploadDocument).not.toHaveBeenCalled();
+
+    health.runtimeRequirements.set([whisperRequirement(true)]);
+    TestBed.tick();
+    await flushPromises();
+
+    expect(apiClient.uploadDocument).toHaveBeenCalledTimes(1);
+    expect(store.uploadItems()[0]?.status).toBe('uploading');
+
+    audioUpload.resolve(
+      documentRead({
+        id: 'audio-document',
+        filename: 'lesson.mp3',
+        source_kind: 'audio',
+        page_count: 0,
+      }),
+    );
+    await flushPromises(12);
+
+    expect(store.uploadItems()[0]?.status).toBe('uploaded');
   });
 
   it('does not open stale Whisper consent after the selection changes during preflight', async () => {
@@ -282,7 +419,7 @@ describe('SourceImportStore polling', () => {
     expect(apiClient.uploadDocument).toHaveBeenCalledTimes(1);
   });
 
-  it('uploads selected source files in two-document batches by default', async () => {
+  it('keeps two upload slots full as each source transport completes', async () => {
     const store = TestBed.inject(SourceImportStore);
     const firstUpload = deferred<DocumentRead>();
     const secondUpload = deferred<DocumentRead>();
@@ -314,7 +451,8 @@ describe('SourceImportStore polling', () => {
     firstUpload.resolve(documentRead({ id: 'document-1', filename: 'first.pdf' }));
     await flushPromises();
 
-    expect(startedUploads).toEqual(['first.pdf', 'second.png']);
+    expect(startedUploads).toEqual(['first.pdf', 'second.png', 'third.webp']);
+    expect(store.uploadItems()[0]?.status).toBe('uploaded');
     secondUpload.resolve(documentRead({ id: 'document-2', filename: 'second.png' }));
     await flushPromises();
 
@@ -333,6 +471,497 @@ describe('SourceImportStore polling', () => {
     expect(TestBed.inject(OperationStore).status()).toBe(
       '3 source files uploaded',
     );
+  });
+
+  it('appends ready files to the active run and waits for the appended transport', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    const firstUpload = deferred<DocumentRead>();
+    const appendedUpload = deferred<DocumentRead>();
+    const startedUploads: string[] = [];
+    apiClient.uploadDocument.mockImplementation(
+      (_projectId: string, body: FormData) => {
+        const file = body.get('file') as File;
+        startedUploads.push(file.name);
+        return file.name === 'first.pdf'
+          ? firstUpload.promise
+          : appendedUpload.promise;
+      },
+    );
+    store.chooseFile(pdfFile('first.pdf'));
+
+    const uploadPromise = store.uploadDocuments();
+    await Promise.resolve();
+    store.chooseFile(pdfFile('appended.pdf'));
+    await Promise.resolve();
+
+    expect(startedUploads).toEqual(['first.pdf', 'appended.pdf']);
+    expect(store.selectedFiles().map((file) => file.name)).toEqual([
+      'first.pdf',
+      'appended.pdf',
+    ]);
+
+    let completed = false;
+    void uploadPromise.then(() => {
+      completed = true;
+    });
+    firstUpload.resolve(
+      documentRead({ id: 'document-first', filename: 'first.pdf' }),
+    );
+    await flushPromises();
+
+    expect(store.uploadItems()[0]?.status).toBe('uploaded');
+    expect(completed).toBe(false);
+
+    appendedUpload.resolve(
+      documentRead({ id: 'document-appended', filename: 'appended.pdf' }),
+    );
+    const uploaded = await uploadPromise;
+
+    expect(uploaded).toHaveLength(2);
+    expect(store.uploadItems().map((item) => item.status)).toEqual([
+      'uploaded',
+      'uploaded',
+    ]);
+  });
+
+  it('releases active-run appended audio authorization when consent is canceled', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    const health = TestBed.inject(HealthStore);
+    const pdfUpload = deferred<DocumentRead>();
+    const uploadedNames: string[] = [];
+    health.runtimeRequirements.set([whisperRequirement(false)]);
+    apiClient.uploadDocument.mockImplementation(
+      (_projectId: string, body: FormData) => {
+        const file = body.get('file') as File;
+        uploadedNames.push(file.name);
+        return file.name === 'busy.pdf'
+          ? pdfUpload.promise
+          : Promise.resolve(
+              documentRead({
+                id: 'document-audio',
+                filename: file.name,
+                source_kind: 'audio',
+                page_count: 0,
+              }),
+            );
+      },
+    );
+    store.chooseFile(pdfFile('busy.pdf'));
+
+    const activeRun = store.uploadDocuments();
+    await Promise.resolve();
+    store.chooseFile(sourceFile('lesson.mp3', 'audio/mpeg'));
+    await flushPromises();
+
+    expect(health.runtimeInstallConsentKind()).toBe('whisper_models');
+    expect(store.uploadItems()[1]?.status).toBe('queued');
+
+    health.cancelRuntimeInstallConsent();
+    TestBed.tick();
+    await flushPromises();
+    pdfUpload.resolve(
+      documentRead({ id: 'document-busy', filename: 'busy.pdf' }),
+    );
+    await activeRun;
+
+    expect(store.canUpload()).toBe(true);
+    health.runtimeRequirements.set([whisperRequirement(true)]);
+    TestBed.tick();
+    await flushPromises();
+
+    expect(uploadedNames).toEqual(['busy.pdf']);
+    expect(store.uploadItems()[1]?.status).toBe('queued');
+  });
+
+  it('uploads a mixed PDF immediately while missing Whisper models keep audio queued', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    const health = TestBed.inject(HealthStore);
+    const pdfUpload = deferred<DocumentRead>();
+    const audioUpload = deferred<DocumentRead>();
+    const uploadedNames: string[] = [];
+    health.runtimeRequirements.set([whisperRequirement(false)]);
+    apiClient.uploadDocument.mockImplementation(
+      (_projectId: string, body: FormData) => {
+        const file = body.get('file') as File;
+        uploadedNames.push(file.name);
+        return file.name.endsWith('.mp3')
+          ? audioUpload.promise
+          : pdfUpload.promise;
+      },
+    );
+    store.chooseFiles([
+      pdfFile('guide.pdf'),
+      sourceFile('lesson.mp3', 'audio/mpeg'),
+    ]);
+
+    const uploadPromise = store.uploadDocuments();
+    await flushPromises();
+
+    expect(uploadedNames).toEqual(['guide.pdf']);
+    expect(store.uploadItems().map((item) => item.status)).toEqual([
+      'uploading',
+      'queued',
+    ]);
+    expect(health.runtimeInstallConsentKind()).toBe('whisper_models');
+
+    health.runtimeRequirements.set([whisperRequirement(true)]);
+    TestBed.tick();
+    await flushPromises();
+
+    expect(uploadedNames).toEqual(['guide.pdf', 'lesson.mp3']);
+    expect(store.uploadItems().map((item) => item.status)).toEqual([
+      'uploading',
+      'uploading',
+    ]);
+
+    pdfUpload.resolve(
+      documentRead({ id: 'document-guide.pdf', filename: 'guide.pdf' }),
+    );
+    audioUpload.resolve(
+      documentRead({
+        id: 'document-lesson.mp3',
+        filename: 'lesson.mp3',
+        source_kind: 'audio',
+        page_count: 0,
+      }),
+    );
+    const uploaded = await uploadPromise;
+
+    expect(uploaded).toHaveLength(2);
+    expect(store.uploadItems().map((item) => item.status)).toEqual([
+      'uploaded',
+      'uploaded',
+    ]);
+  });
+
+  it('reconciles a claimed upload after a 503 transport response', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    let operationId = '';
+    apiClient.uploadDocument.mockImplementation(
+      (
+        _projectId: string,
+        _body: FormData,
+        options: { headers?: Record<string, string> },
+      ) => {
+        operationId = options.headers?.['X-Cert-Prep-Operation-Id'] ?? '';
+        return Promise.reject({
+          status: 503,
+          error: { message: 'The upload response was interrupted.' },
+        });
+      },
+    );
+    apiClient.getDocumentOperation.mockImplementation(
+      (projectId: string, requestedOperationId: string) =>
+        Promise.resolve(
+          documentOperation('succeeded', {
+            id: requestedOperationId,
+            project_id: projectId,
+            document_id: 'document-claimed',
+            phase: 'completed',
+          }),
+        ),
+    );
+    apiClient.getDocument.mockResolvedValue(
+      documentRead({ id: 'document-claimed', filename: 'claimed.pdf' }),
+    );
+    store.chooseFile(pdfFile('claimed.pdf'));
+
+    const documents = await store.uploadDocuments();
+
+    expect(operationId).not.toBe('');
+    expect(apiClient.getDocumentOperation).toHaveBeenCalledWith(
+      'project-1',
+      operationId,
+    );
+    expect(documents).toEqual([
+      expect.objectContaining({ id: 'document-claimed' }),
+    ]);
+    expect(store.uploadItems()[0]).toEqual(
+      expect.objectContaining({
+        status: 'uploaded',
+        document: expect.objectContaining({ id: 'document-claimed' }),
+      }),
+    );
+  });
+
+  it('cancels a queued source locally without creating or canceling an operation', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    const firstUpload = deferred<DocumentRead>();
+    store.setUploadBatchSize(1);
+    apiClient.uploadDocument.mockReturnValue(firstUpload.promise);
+    store.chooseFiles([pdfFile('first.pdf'), pdfFile('queued.pdf')]);
+
+    const uploadPromise = store.uploadDocuments();
+    await Promise.resolve();
+    const queuedItem = store.uploadItems()[1];
+    if (queuedItem === undefined) {
+      throw new Error('Expected a queued upload item.');
+    }
+    await store.cancelUploadItem(queuedItem.id);
+
+    expect(store.uploadItems()[1]?.status).toBe('canceled');
+    expect(apiClient.uploadDocument).toHaveBeenCalledTimes(1);
+    expect(apiClient.cancelDocumentOperation).not.toHaveBeenCalled();
+
+    firstUpload.resolve(
+      documentRead({ id: 'document-first', filename: 'first.pdf' }),
+    );
+    await uploadPromise;
+  });
+
+  it('refills the upload slot after canceling an active transport', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    const secondUpload = deferred<DocumentRead>();
+    const startedUploads: string[] = [];
+    const operationIds = new Map<string, string>();
+    store.setUploadBatchSize(1);
+    apiClient.uploadDocument.mockImplementation(
+      (
+        _projectId: string,
+        body: FormData,
+        options: {
+          headers?: Record<string, string>;
+          signal?: AbortSignal;
+        },
+      ) => {
+        const file = body.get('file') as File;
+        startedUploads.push(file.name);
+        operationIds.set(
+          file.name,
+          options.headers?.['X-Cert-Prep-Operation-Id'] ?? '',
+        );
+        if (file.name === 'active.pdf') {
+          return new Promise<DocumentRead>((_resolve, reject) => {
+            options.signal?.addEventListener(
+              'abort',
+              () => reject(new DOMException('canceled', 'AbortError')),
+              { once: true },
+            );
+          });
+        }
+        return secondUpload.promise;
+      },
+    );
+    store.chooseFiles([pdfFile('active.pdf'), pdfFile('queued.pdf')]);
+
+    const uploadPromise = store.uploadDocuments();
+    await Promise.resolve();
+    const activeItem = store.uploadItems()[0];
+    if (activeItem === undefined) {
+      throw new Error('Expected an active upload item.');
+    }
+    await store.cancelUploadItem(activeItem.id);
+    await flushPromises(8);
+
+    const firstOperationId = operationIds.get('active.pdf');
+    expect(firstOperationId).toBeTruthy();
+    expect(apiClient.cancelDocumentOperation).toHaveBeenCalledWith(
+      'project-1',
+      firstOperationId,
+    );
+    expect(startedUploads).toEqual(['active.pdf', 'queued.pdf']);
+    expect(store.uploadItems().map((item) => item.status)).toEqual([
+      'canceled',
+      'uploading',
+    ]);
+    expect(operationIds.get('queued.pdf')).not.toBe(firstOperationId);
+
+    secondUpload.resolve(
+      documentRead({ id: 'document-queued', filename: 'queued.pdf' }),
+    );
+    await uploadPromise;
+
+    expect(store.uploadItems()[1]?.status).toBe('uploaded');
+  });
+
+  it('appends new files without invalidating a status-unavailable upload attempt', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    const secondUpload = deferred<DocumentRead>();
+    let firstOperationId = '';
+    apiClient.uploadDocument.mockImplementation(
+      (
+        _projectId: string,
+        body: FormData,
+        options: { headers?: Record<string, string> },
+      ) => {
+        const file = body.get('file') as File;
+        if (file.name === 'uncertain.pdf') {
+          firstOperationId =
+            options.headers?.['X-Cert-Prep-Operation-Id'] ?? '';
+          return Promise.reject(new TypeError('Connection interrupted'));
+        }
+        return secondUpload.promise;
+      },
+    );
+    apiClient.getDocumentOperation.mockRejectedValue(
+      new TypeError('Status endpoint unavailable'),
+    );
+    store.chooseFile(pdfFile('uncertain.pdf'));
+
+    const uncertainRun = store.uploadDocuments();
+    await flushPromises();
+    for (const delay of [1_000, 2_000, 4_000]) {
+      await vi.advanceTimersByTimeAsync(delay);
+      await flushPromises();
+    }
+    await uncertainRun;
+
+    const uncertainItem = store.uploadItems()[0];
+    expect(uncertainItem?.status).toBe('status_unavailable');
+    expect(firstOperationId).not.toBe('');
+
+    store.chooseFile(pdfFile('new.pdf'));
+
+    expect(store.selectedFiles().map((file) => file.name)).toEqual([
+      'uncertain.pdf',
+      'new.pdf',
+    ]);
+    expect(store.uploadItems()[0]).toBe(uncertainItem);
+    expect(store.uploadItems()[0]?.status).toBe('status_unavailable');
+    expect(apiClient.uploadDocument).toHaveBeenCalledTimes(2);
+
+    secondUpload.resolve(
+      documentRead({ id: 'document-new', filename: 'new.pdf' }),
+    );
+    await flushPromises(12);
+
+    apiClient.getDocumentOperation.mockImplementation(
+      (projectId: string, requestedOperationId: string) =>
+        Promise.resolve(
+          documentOperation('succeeded', {
+            id: requestedOperationId,
+            project_id: projectId,
+            document_id: 'document-uncertain',
+            phase: 'completed',
+          }),
+        ),
+    );
+    apiClient.getDocument.mockImplementation(
+      (_projectId: string, documentId: string) =>
+        Promise.resolve(documentRead({ id: documentId })),
+    );
+    if (uncertainItem === undefined) {
+      throw new Error('Expected the status-unavailable upload item.');
+    }
+    await store.retryUploadItem(uncertainItem.id);
+
+    expect(apiClient.getDocumentOperation).toHaveBeenLastCalledWith(
+      'project-1',
+      firstOperationId,
+    );
+    expect(store.uploadItems()[0]?.status).toBe('uploaded');
+  });
+
+  it('queues status reconciliation behind the active upload concurrency slot', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    const blockingUpload = deferred<DocumentRead>();
+    let uncertainOperationId = '';
+    let blockingTransportActive = false;
+    let reconciliationOverlappedTransport = false;
+    store.setUploadBatchSize(1);
+    apiClient.uploadDocument.mockImplementation(
+      (
+        _projectId: string,
+        body: FormData,
+        options: { headers?: Record<string, string> },
+      ) => {
+        const file = body.get('file') as File;
+        if (file.name === 'uncertain.pdf') {
+          uncertainOperationId =
+            options.headers?.['X-Cert-Prep-Operation-Id'] ?? '';
+          return Promise.reject(new TypeError('Connection interrupted'));
+        }
+        blockingTransportActive = true;
+        return blockingUpload.promise.finally(() => {
+          blockingTransportActive = false;
+        });
+      },
+    );
+    apiClient.getDocumentOperation.mockImplementation(() => {
+      reconciliationOverlappedTransport ||= blockingTransportActive;
+      return Promise.reject(new TypeError('Status endpoint unavailable'));
+    });
+    store.chooseFile(pdfFile('uncertain.pdf'));
+
+    const uncertainRun = store.uploadDocuments();
+    await flushPromises();
+    for (const delay of [1_000, 2_000, 4_000]) {
+      await vi.advanceTimersByTimeAsync(delay);
+      await flushPromises();
+    }
+    await uncertainRun;
+
+    const uncertainItem = store.uploadItems()[0];
+    if (uncertainItem === undefined) {
+      throw new Error('Expected the status-unavailable upload item.');
+    }
+    expect(uncertainItem.status).toBe('status_unavailable');
+    const reconciliationCallsBeforeRetry =
+      apiClient.getDocumentOperation.mock.calls.length;
+    apiClient.getDocumentOperation.mockImplementation(
+      (projectId: string, requestedOperationId: string) => {
+        reconciliationOverlappedTransport ||= blockingTransportActive;
+        return Promise.resolve(
+          documentOperation('succeeded', {
+            id: requestedOperationId,
+            project_id: projectId,
+            document_id: 'document-uncertain',
+            phase: 'completed',
+          }),
+        );
+      },
+    );
+    store.chooseFile(pdfFile('blocking.pdf'), {
+      append: true,
+      autoUpload: false,
+    });
+
+    const activeRun = store.uploadDocuments();
+    await Promise.resolve();
+    await store.retryUploadItem(uncertainItem.id);
+    await flushPromises();
+
+    expect(blockingTransportActive).toBe(true);
+    expect(apiClient.getDocumentOperation).toHaveBeenCalledTimes(
+      reconciliationCallsBeforeRetry,
+    );
+    expect(store.uploadItems()[0]?.status).toBe('status_unavailable');
+
+    blockingUpload.resolve(
+      documentRead({ id: 'document-blocking', filename: 'blocking.pdf' }),
+    );
+    await activeRun;
+
+    expect(reconciliationOverlappedTransport).toBe(false);
+    expect(apiClient.getDocumentOperation).toHaveBeenLastCalledWith(
+      'project-1',
+      uncertainOperationId,
+    );
+    expect(store.uploadItems().map((item) => item.status)).toEqual([
+      'uploaded',
+      'uploaded',
+    ]);
+  });
+
+  it('ignores a late upload result after the project context resets', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    const upload = deferred<DocumentRead>();
+    apiClient.uploadDocument.mockReturnValue(upload.promise);
+    store.chooseFile(pdfFile('stale.pdf'));
+
+    const uploadPromise = store.uploadDocuments();
+    await Promise.resolve();
+    store.reset();
+
+    expect(await uploadPromise).toEqual([]);
+    upload.resolve(
+      documentRead({ id: 'document-stale', filename: 'stale.pdf' }),
+    );
+    await flushPromises();
+
+    expect(store.uploadItems()).toEqual([]);
+    expect(store.documents()).toEqual([]);
+    expect(store.activeDocument()).toBeNull();
   });
 
   it('uses the configured upload batch size for the whole upload run', async () => {
@@ -440,7 +1069,7 @@ describe('SourceImportStore polling', () => {
 
   it('keeps successful uploads when one source file fails', async () => {
     const store = TestBed.inject(SourceImportStore);
-    const failed = new Error('Invalid source file');
+    const failed = { status: 400, error: { message: 'Invalid source file' } };
     apiClient.uploadDocument.mockImplementation(
       (_projectId: string, body: FormData) => {
         const file = body.get('file') as File;
@@ -479,6 +1108,41 @@ describe('SourceImportStore polling', () => {
     );
   });
 
+  it('opens the OCR runtime prompt when its best-effort health refresh fails', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    const health = TestBed.inject(HealthStore);
+    const healthError = new Error('Runtime health unavailable');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const openPrompt = vi.spyOn(health, 'openOcrRuntimeInstallConsent');
+    vi.spyOn(health, 'load').mockRejectedValue(healthError);
+    apiClient.uploadDocument.mockRejectedValue({
+      status: 503,
+      error: {
+        code: 'windowsml_runtime_missing',
+        message: 'WindowsML runtime is missing.',
+      },
+    });
+    store.chooseFile(pdfFile('runtime-missing.pdf'));
+
+    expect(await store.uploadDocuments()).toEqual([]);
+
+    expect(store.uploadItems()[0]).toEqual(
+      expect.objectContaining({
+        status: 'failed',
+        error: 'WindowsML runtime is missing.',
+      }),
+    );
+    expect(TestBed.inject(OperationStore).error()).toBe(
+      '1 source file failed to upload.',
+    );
+    expect(openPrompt).toHaveBeenCalledOnce();
+    expect(warn).toHaveBeenCalledOnce();
+    expect(warn).toHaveBeenCalledWith(
+      'Unable to refresh runtime health before opening the OCR runtime prompt.',
+      healthError,
+    );
+  });
+
   it('retries failed source files without uploading successful items again', async () => {
     const store = TestBed.inject(SourceImportStore);
     const uploadedNames: string[] = [];
@@ -492,6 +1156,7 @@ describe('SourceImportStore polling', () => {
         }
         if (file.name === 'bad.pdf' && badUploadAttempts === 1) {
           return Promise.reject({
+            status: 400,
             error: { message: 'The source file could not be parsed.' },
           });
         }
@@ -514,7 +1179,13 @@ describe('SourceImportStore polling', () => {
     expect(store.canUpload()).toBe(true);
 
     uploadedNames.length = 0;
-    await store.uploadDocuments();
+    const failedItem = store.uploadItems().find(
+      (item) => item.file.name === 'bad.pdf',
+    );
+    if (failedItem === undefined) {
+      throw new Error('Expected the failed upload item.');
+    }
+    await store.retryUploadItem(failedItem.id);
 
     expect(uploadedNames).toEqual(['bad.pdf']);
     expect(store.uploadItems().map((item) => item.status)).toEqual([
@@ -527,19 +1198,22 @@ describe('SourceImportStore polling', () => {
 
   it('aborts an upload and persists its operation tombstone', async () => {
     const store = TestBed.inject(SourceImportStore);
+    let operationId = '';
     apiClient.uploadDocument.mockImplementation(
       (
         _projectId: string,
         _body: FormData,
-        options: { signal?: AbortSignal },
-      ) =>
-        new Promise<DocumentRead>((_resolve, reject) => {
+        options: { headers?: Record<string, string>; signal?: AbortSignal },
+      ) => {
+        operationId = options.headers?.['X-Cert-Prep-Operation-Id'] ?? '';
+        return new Promise<DocumentRead>((_resolve, reject) => {
           options.signal?.addEventListener(
             'abort',
             () => reject(new DOMException('canceled', 'AbortError')),
             { once: true },
           );
-        }),
+        });
+      },
     );
     store.chooseFile(pdfFile('cancel-me.pdf'));
     const item = store.uploadItems()[0];
@@ -554,14 +1228,14 @@ describe('SourceImportStore polling', () => {
 
     expect(apiClient.cancelDocumentOperation).toHaveBeenCalledWith(
       'project-1',
-      item.operationId,
+      operationId,
     );
     expect(store.uploadItems()[0]?.status).toBe('canceled');
     const requestOptions = apiClient.uploadDocument.mock.calls[0]?.[2] as {
       headers?: Record<string, string>;
     };
     expect(requestOptions.headers?.['X-Cert-Prep-Operation-Id']).toBe(
-      item.operationId,
+      operationId,
     );
   });
 
@@ -702,6 +1376,52 @@ describe('SourceImportStore polling', () => {
     expect(store.documents()[0]?.translation_status).toBe('succeeded');
   });
 
+  it('keeps a successful transcript mutation visible when metadata refresh fails', async () => {
+    const store = TestBed.inject(SourceImportStore);
+    const operations = TestBed.inject(OperationStore);
+    const document = documentRead({
+      source_kind: 'audio',
+      page_count: 0,
+      chunks_count: 1,
+      translation_status: 'succeeded',
+    });
+    const chunk = chunkRead({
+      locator_kind: 'time',
+      page_number: 0,
+      start_ms: 0,
+      end_ms: 1_000,
+      source_revision: 1,
+      translated_text: '原翻譯',
+      translation_source_revision: 1,
+      translation_stale: false,
+    });
+    const editedChunk = {
+      ...chunk,
+      text: '更新後的日文',
+      source_revision: 2,
+      translation_stale: true,
+    };
+    const metadataError = new Error('Document metadata unavailable');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    store.documents.set([document]);
+    store.setActiveDocumentId(document.id);
+    store.chunks.set([chunk]);
+    apiClient.updateDocumentChunk.mockResolvedValue(editedChunk);
+    apiClient.getDocument.mockRejectedValueOnce(metadataError);
+
+    await store.updateTranscriptChunk(chunk.id, editedChunk.text);
+
+    expect(store.chunks()[0]).toEqual(editedChunk);
+    expect(store.activeDocument()).toEqual(document);
+    expect(operations.status()).toBe('Japanese transcript saved');
+    expect(operations.error()).toBeNull();
+    expect(warn).toHaveBeenCalledOnce();
+    expect(warn).toHaveBeenCalledWith(
+      'Unable to refresh document metadata after a transcript mutation.',
+      metadataError,
+    );
+  });
+
   it('stops polling and allows retry after audio transcription fails', async () => {
     const store = TestBed.inject(SourceImportStore);
     const failedDocument = documentRead({
@@ -731,7 +1451,10 @@ describe('SourceImportStore polling', () => {
   });
 });
 
-function documentOperation(status: string) {
+function documentOperation(
+  status: string,
+  overrides: Record<string, unknown> = {},
+) {
   return {
     id: 'operation-1',
     project_id: 'project-1',
@@ -742,6 +1465,7 @@ function documentOperation(status: string) {
     error: null,
     created_at: '2026-07-11T00:00:00Z',
     updated_at: '2026-07-11T00:00:00Z',
+    ...overrides,
   };
 }
 

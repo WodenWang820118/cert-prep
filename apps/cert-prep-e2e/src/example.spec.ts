@@ -131,6 +131,91 @@ test('keeps mixed PDF and image multipart filenames in upload order and the libr
   );
 });
 
+test('keeps a mixed PDF and audio queue interactive and refills the first free slot', async ({
+  page,
+}) => {
+  const api = await installMockCertPrepApi(page, {
+    whisperModelsReady: true,
+  });
+  await seedMockApiConfig(page, apiBaseUrl, devToken);
+
+  const firstPdfFilename = 'queue-first.pdf';
+  const secondPdfFilename = 'queue-second.pdf';
+  const audioFilename = 'queue-listening.mp3';
+  for (const filename of [
+    firstPdfFilename,
+    secondPdfFilename,
+    audioFilename,
+  ]) {
+    api.holdUpload(filename);
+  }
+
+  await page.goto('/');
+  await createProject(page, api);
+  await expectRuntimeReady(page);
+
+  const sourceInput = page.locator('input[aria-label="Source files"]');
+  await page.getByLabel('Concurrent uploads').selectOption('2');
+  await sourceInput.setInputFiles([
+    {
+      name: firstPdfFilename,
+      mimeType: 'application/pdf',
+      buffer: Buffer.from('%PDF-1.7\nfirst queued source', 'binary'),
+    },
+    {
+      name: secondPdfFilename,
+      mimeType: 'application/pdf',
+      buffer: Buffer.from('%PDF-1.7\nsecond queued source', 'binary'),
+    },
+  ]);
+  await page.getByRole('button', { name: 'Upload files' }).click();
+
+  await expect
+    .poll(() => api.startedUploads())
+    .toEqual([firstPdfFilename, secondPdfFilename]);
+  await expect(sourceInput).toBeEnabled();
+
+  await sourceInput.setInputFiles({
+    name: audioFilename,
+    mimeType: 'audio/mpeg',
+    buffer: Buffer.from('ID3\u0004\u0000\u0000mock audio', 'binary'),
+  });
+
+  const uploadList = page.getByLabel('Selected source file upload status');
+  const uploadRow = (filename: string) =>
+    uploadList.locator(':scope > div').filter({ hasText: filename });
+  await expect(page.getByText('3 files selected')).toBeVisible();
+  await expect(uploadRow(audioFilename)).toContainText('Queued');
+  expect(api.startedUploads()).toEqual([
+    firstPdfFilename,
+    secondPdfFilename,
+  ]);
+
+  api.releaseUpload(firstPdfFilename);
+
+  await expect
+    .poll(() => api.startedUploads())
+    .toEqual([firstPdfFilename, secondPdfFilename, audioFilename]);
+  await expect(uploadRow(firstPdfFilename)).toContainText('Uploaded');
+  await expect(uploadRow(secondPdfFilename)).toContainText('Uploading');
+
+  api.releaseUpload(audioFilename);
+  api.releaseUpload(secondPdfFilename);
+
+  for (const filename of [
+    firstPdfFilename,
+    secondPdfFilename,
+    audioFilename,
+  ]) {
+    await expect(uploadRow(filename)).toContainText('Uploaded');
+    await expect(
+      page
+        .getByLabel('Project document library')
+        .locator('option', { hasText: filename }),
+    ).toHaveCount(1);
+  }
+});
+
 test('optionally crops selected images before preserving mixed upload order', async ({
   page,
 }) => {
@@ -199,7 +284,7 @@ test('optionally crops selected images before preserving mixed upload order', as
 
   await expect(dialog).toBeHidden();
   await expect(page.getByText('2 files selected')).toBeVisible();
-  await page.getByLabel('Batch size').selectOption('1');
+  await page.getByLabel('Concurrent uploads').selectOption('1');
   await page.getByRole('button', { name: 'Upload files' }).click();
 
   await expect

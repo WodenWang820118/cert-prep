@@ -41,8 +41,8 @@ import { isCroppableImageFile } from './source-image-crop.service';
           #chooseFilesControl
           class="workbench-secondary-button"
           tabindex="-1"
-          [attr.for]="isUploadBusy() ? null : 'sourceFiles'"
-          [attr.aria-disabled]="isUploadBusy()"
+          [attr.for]="isFileSelectionBlocked() ? null : 'sourceFiles'"
+          [attr.aria-disabled]="isFileSelectionBlocked()"
         >
           <i class="pi pi-upload" aria-hidden="true"></i>
           <span>Choose files</span>
@@ -57,7 +57,7 @@ import { isCroppableImageFile } from './source-image-crop.service';
           [accept]="sourceImport.sourceFileAccept"
           multiple
           aria-label="Source files"
-          [disabled]="isUploadBusy()"
+          [disabled]="isFileSelectionBlocked()"
           (change)="chooseFiles($event)"
         />
 
@@ -192,6 +192,23 @@ import { isCroppableImageFile } from './source-image-crop.service';
                     </span>
                   </button>
                 }
+                @if (sourceImport.canRetryUploadItem(item)) {
+                  <button
+                    class="workbench-secondary-button"
+                    type="button"
+                    [attr.aria-label]="'Retry upload of ' + item.file.name"
+                    (click)="sourceImport.retryUploadItem(item.id)"
+                  >
+                    <i class="pi pi-refresh" aria-hidden="true"></i>
+                    <span>
+                      {{
+                        item.status === 'status_unavailable'
+                          ? 'Retry status'
+                          : 'Retry'
+                      }}
+                    </span>
+                  </button>
+                }
               </div>
             }
           </div>
@@ -210,7 +227,7 @@ import { isCroppableImageFile } from './source-image-crop.service';
             </select>
           </label>
           <label class="workbench-field min-w-32 flex-1">
-            <span>Batch size</span>
+            <span>Concurrent uploads</span>
             <select
               [ngModel]="sourceImport.uploadBatchSize()"
               [disabled]="isUploadBusy()"
@@ -641,6 +658,8 @@ export class SourceImportPanelComponent {
   private pendingSelectedFiles: File[] = [];
   private pendingCropIndexes: number[] = [];
   private pendingCropCursor = 0;
+  private pendingSelectionAppendIntent = false;
+  private pendingSelectionAutoUploadIntent = false;
   private audioSourceObjectUrl: string | null = null;
   private audioSourceAbortController: AbortController | null = null;
   private audioSourceLoadId = 0;
@@ -665,20 +684,27 @@ export class SourceImportPanelComponent {
   }
 
   protected chooseFiles(event: Event): void {
-    if (this.isUploadBusy()) {
+    if (this.isFileSelectionBlocked()) {
       return;
     }
     const input = event.target as HTMLInputElement;
     const files = Array.from(input.files ?? []);
     input.value = '';
+    const appendSelection = this.sourceImport.shouldAppendNewSelection();
+    const selectionOptions = {
+      append: appendSelection,
+      autoUpload: appendSelection,
+    };
     if (
       !this.cropImagesBeforeUpload() ||
       !files.some((file) => isCroppableImageFile(file))
     ) {
-      this.sourceImport.chooseFiles(files);
+      this.sourceImport.chooseFiles(files, selectionOptions);
       return;
     }
 
+    this.pendingSelectionAppendIntent = appendSelection;
+    this.pendingSelectionAutoUploadIntent = appendSelection;
     this.pendingSelectedFiles = [...files];
     this.pendingCropIndexes = files.flatMap((file, index) =>
       isCroppableImageFile(file) ? [index] : [],
@@ -811,6 +837,10 @@ export class SourceImportPanelComponent {
     );
   }
 
+  protected isFileSelectionBlocked(): boolean {
+    return this.cropSourceFile() !== null;
+  }
+
   private openCurrentCrop(): void {
     const fileIndex = this.pendingCropIndexes[this.pendingCropCursor];
     const file =
@@ -903,13 +933,20 @@ export class SourceImportPanelComponent {
 
   private commitPendingFileSelection(): void {
     const files = [...this.pendingSelectedFiles];
+    const appendSelection = this.pendingSelectionAppendIntent;
+    const autoUpload = this.pendingSelectionAutoUploadIntent;
     this.cropSourceFile.set(null);
     this.cropPosition.set(0);
     this.cropTotal.set(0);
     this.pendingSelectedFiles = [];
     this.pendingCropIndexes = [];
     this.pendingCropCursor = 0;
-    this.sourceImport.chooseFiles(files);
+    this.pendingSelectionAppendIntent = false;
+    this.pendingSelectionAutoUploadIntent = false;
+    this.sourceImport.chooseFiles(files, {
+      append: appendSelection,
+      autoUpload,
+    });
     queueMicrotask(() => {
       this.chooseFilesControl()?.nativeElement.focus();
     });
@@ -930,6 +967,9 @@ export class SourceImportPanelComponent {
     }
     if (status === 'canceled') {
       return 'Canceled';
+    }
+    if (status === 'status_unavailable') {
+      return 'Status unavailable';
     }
     return 'Failed';
   }

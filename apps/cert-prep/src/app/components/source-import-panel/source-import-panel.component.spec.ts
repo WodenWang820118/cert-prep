@@ -18,6 +18,7 @@ describe('SourceImportPanelComponent', () => {
     listDocumentChunks: vi.fn(),
     listQuestionDrafts: vi.fn(),
     uploadDocument: vi.fn(),
+    getDocumentOperation: vi.fn(),
     cancelDocumentOperation: vi.fn(),
     cancelDocumentProcessing: vi.fn(),
     retryDocumentProcessing: vi.fn(),
@@ -221,6 +222,63 @@ describe('SourceImportPanelComponent', () => {
     ]);
   });
 
+  it('preserves append and auto-upload intent when a run ends during crop review', async () => {
+    const fixture = TestBed.createComponent(SourceImportPanelComponent);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    const firstUpload = deferred<DocumentRead>();
+    const croppedSelectionUpload = deferred<DocumentRead>();
+    const startedUploads: string[] = [];
+    apiClient.uploadDocument.mockImplementation(
+      (_projectId: string, body: FormData) => {
+        const file = body.get('file') as File;
+        startedUploads.push(file.name);
+        return file.name === 'busy.pdf'
+          ? firstUpload.promise
+          : croppedSelectionUpload.promise;
+      },
+    );
+    const component = componentActions(fixture.componentInstance);
+    component.setCropImagesBeforeUpload(true);
+    sourceImport.chooseFile(
+      new File(['%PDF-1.7'], 'busy.pdf', { type: 'application/pdf' }),
+    );
+
+    const firstRun = sourceImport.uploadDocuments();
+    await Promise.resolve();
+    const appendedImage = new File(['png'], 'diagram.png', {
+      type: 'image/png',
+    });
+    component.chooseFiles(fileSelectionEvent([appendedImage]));
+
+    expect(component.cropSourceFile()).toBe(appendedImage);
+    expect(startedUploads).toEqual(['busy.pdf']);
+
+    firstUpload.resolve(
+      documentRead({ id: 'document-busy', filename: 'busy.pdf' }),
+    );
+    await firstRun;
+    expect(sourceImport.isUploading()).toBe(false);
+
+    component.keepOriginalImage();
+    await flushPromises();
+
+    expect(sourceImport.selectedFiles().map((file) => file.name)).toEqual([
+      'busy.pdf',
+      'diagram.png',
+    ]);
+    expect(startedUploads).toEqual(['busy.pdf', 'diagram.png']);
+
+    croppedSelectionUpload.resolve(
+      documentRead({ id: 'document-diagram', filename: 'diagram.png' }),
+    );
+    await flushPromises(12);
+
+    expect(sourceImport.uploadItems().map((item) => item.status)).toEqual([
+      'uploaded',
+      'uploaded',
+    ]);
+  });
+
   it('bypasses crop review for PDF-only selections when the toggle is enabled', () => {
     const fixture = TestBed.createComponent(SourceImportPanelComponent);
     const sourceImport = TestBed.inject(SourceImportStore);
@@ -348,7 +406,7 @@ describe('SourceImportPanelComponent', () => {
     expect(metricLabels).not.toContain('OCR Device');
   });
 
-  it('shows Whisper preflight and disables upload while model consent is required', () => {
+  it('shows Whisper preflight and keeps upload authorization available before consent', () => {
     const fixture = TestBed.createComponent(SourceImportPanelComponent);
     const health = TestBed.inject(HealthStore);
     const sourceImport = TestBed.inject(SourceImportStore);
@@ -364,7 +422,7 @@ describe('SourceImportPanelComponent', () => {
     expect(root.textContent).toContain(
       'Download consent is required before audio can be uploaded.',
     );
-    expect(uploadButton(root)?.disabled).toBe(true);
+    expect(uploadButton(root)?.disabled).toBe(false);
 
     health.runtimeRequirements.set([whisperRequirement(true)]);
     fixture.detectChanges();
@@ -705,7 +763,6 @@ describe('SourceImportPanelComponent', () => {
     sourceImport.uploadItems.set([
       {
         id: 'source-upload-1',
-        operationId: 'operation-1',
         file: smallFile,
         status: 'uploaded',
         document: firstDocument,
@@ -713,7 +770,6 @@ describe('SourceImportPanelComponent', () => {
       },
       {
         id: 'source-upload-2',
-        operationId: 'operation-2',
         file: largeFile,
         status: 'uploaded',
         document: secondDocument,
@@ -738,7 +794,6 @@ describe('SourceImportPanelComponent', () => {
     sourceImport.uploadItems.set([
       {
         id: 'source-upload-1',
-        operationId: 'operation-1',
         file: new File([new Uint8Array(2 * 1024 * 1024)], 'new-selection.pdf', {
           type: 'application/pdf',
         }),
@@ -762,7 +817,10 @@ describe('SourceImportPanelComponent', () => {
       (_projectId: string, body: FormData) => {
         const file = body.get('file') as File;
         if (file.name === 'failed.pdf') {
-          return Promise.reject({ error: { message: 'Invalid source file' } });
+          return Promise.reject({
+            status: 400,
+            error: { message: 'Invalid source file' },
+          });
         }
         return Promise.resolve(
           documentRead({
@@ -811,7 +869,7 @@ describe('SourceImportPanelComponent', () => {
     const selector = batchSizeSelector(fixture.nativeElement);
     expect(selector).not.toBeNull();
     if (selector === null) {
-      throw new Error('Batch size selector was not rendered.');
+      throw new Error('Concurrent uploads selector was not rendered.');
     }
     expect(selector?.value).toBe('2');
 
@@ -822,7 +880,7 @@ describe('SourceImportPanelComponent', () => {
     expect(sourceImport.uploadBatchSize()).toBe(3);
   });
 
-  it('keeps the file chooser disabled while a batch upload is in flight', async () => {
+  it('keeps the file chooser available and appends files during an upload run', async () => {
     const fixture = TestBed.createComponent(SourceImportPanelComponent);
     const sourceImport = TestBed.inject(SourceImportStore);
     let resolveUpload!: (document: DocumentRead) => void;
@@ -845,8 +903,8 @@ describe('SourceImportPanelComponent', () => {
     const chooser = fixture.nativeElement.querySelector(
       'label.workbench-secondary-button',
     ) as HTMLLabelElement | null;
-    expect(input?.disabled).toBe(true);
-    expect(chooser?.getAttribute('for')).toBeNull();
+    expect(input?.disabled).toBe(false);
+    expect(chooser?.getAttribute('for')).toBe('sourceFiles');
     (
       fixture.componentInstance as unknown as {
         chooseFiles(event: Event): void;
@@ -860,7 +918,12 @@ describe('SourceImportPanelComponent', () => {
         ],
       },
     } as unknown as Event);
-    expect(sourceImport.selectedFile()?.name).toBe('busy.pdf');
+    await Promise.resolve();
+    expect(sourceImport.selectedFiles().map((file) => file.name)).toEqual([
+      'busy.pdf',
+      'replacement.pdf',
+    ]);
+    expect(apiClient.uploadDocument).toHaveBeenCalledTimes(2);
 
     resolveUpload(documentRead({ id: 'document-busy', filename: 'busy.pdf' }));
     await uploadPromise;
@@ -1056,7 +1119,7 @@ function documentSelector(root: ParentNode): HTMLSelectElement | null {
 function batchSizeSelector(root: ParentNode): HTMLSelectElement | null {
   return (
     Array.from(root.querySelectorAll('label.workbench-field'))
-      .find((label) => label.textContent?.includes('Batch size'))
+      .find((label) => label.textContent?.includes('Concurrent uploads'))
       ?.querySelector('select') ?? null
   );
 }
@@ -1129,4 +1192,21 @@ function audioChunkRead(
     translated_text: '日文語音。',
     ...overrides,
   };
+}
+
+async function flushPromises(times = 4): Promise<void> {
+  for (let index = 0; index < times; index += 1) {
+    await Promise.resolve();
+  }
+}
+
+function deferred<T>(): {
+  readonly promise: Promise<T>;
+  readonly resolve: (value: T) => void;
+} {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolver) => {
+    resolve = resolver;
+  });
+  return { promise, resolve };
 }

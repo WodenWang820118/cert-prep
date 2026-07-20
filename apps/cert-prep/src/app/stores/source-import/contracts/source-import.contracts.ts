@@ -30,7 +30,6 @@ export type SourceUploadStatus =
 
 export interface SourceUploadItem {
   readonly id: string;
-  readonly operationId: string;
   readonly file: File;
   readonly status: SourceUploadStatus;
   readonly document: DocumentRead | null;

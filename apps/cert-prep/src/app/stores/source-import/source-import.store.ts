@@ -1,4 +1,4 @@
-import { computed, inject, Injectable, signal } from '@angular/core';
+import { computed, effect, inject, Injectable, signal } from '@angular/core';
 import { ChunkRead, DocumentRead, CERT_PREP_API } from '../../cert-prep-api';
 import type {
   DocumentParsingMetric,
@@ -8,8 +8,13 @@ import type {
 import { DocumentParsingMetricsService } from './document-parsing-metrics.service';
 import { DocumentLibraryStore } from './document-library.store';
 import { HealthStore } from '../health/health.store';
+import type { RuntimeInstallationView } from '../health/contracts/health-runtime.contracts';
 import { OperationStore } from '../operation.store';
 import { ProjectStore } from '../project.store';
+import {
+  SourceUploadLifecycle,
+  type UploadTransportRun,
+} from './source-upload-lifecycle';
 
 const DOCUMENT_POLL_INTERVAL_MS = 1500;
 const FIRST_CHUNK_POLL_INTERVAL_MS = 500;
@@ -53,9 +58,11 @@ const TRANSCRIPT_MUTATION_ACTIONS = [
   'transcript-translate',
   'transcript-translate-all',
 ] as const;
-type UploadBatchResult =
-  | { item: SourceUploadItem; document: DocumentRead }
-  | { item: SourceUploadItem; error: unknown };
+
+export interface SourceFileSelectionOptions {
+  readonly append?: boolean;
+  readonly autoUpload?: boolean;
+}
 
 @Injectable({ providedIn: 'root' })
 export class SourceImportStore {
@@ -67,8 +74,43 @@ export class SourceImportStore {
   private readonly projects = inject(ProjectStore);
   private documentPollTimer: ReturnType<typeof setTimeout> | null = null;
   private documentPollFailureCount = 0;
+  private contextEpoch = 0;
   private uploadItemCounter = 0;
-  private readonly uploadAbortControllers = new Map<string, AbortController>();
+  private readonly pendingAutoUploadItemIds = new Set<string>();
+  private readonly pendingAutoUploadRevision = signal(0);
+  private autoUploadEnqueueScheduled = false;
+  private whisperAuthorizationReconcileScheduled = false;
+  private whisperAuthorizationAwaitingRuntime = false;
+  private whisperConsentObserved = false;
+  private whisperRuntimeInstallAtAuthorization: RuntimeInstallationView | null =
+    null;
+  private readonly uploadLifecycle = new SourceUploadLifecycle({
+    item: (itemId) =>
+      this.uploadItems().find((candidate) => candidate.id === itemId),
+    current: (projectId, contextEpoch) =>
+      this.isCurrentUploadContext(projectId, contextEpoch),
+    patch: (itemId, patch) => this.updateUploadItem(itemId, patch),
+    accept: (document, pollDocument) =>
+      this.acceptLifecycleDocument(document, pollDocument),
+    upload: (projectId, item, operationId, signal) => {
+      const formData = new FormData();
+      formData.append('file', item.file, item.file.name);
+      formData.append('language_hint', this.languageHint());
+      return this.api.uploadDocument(projectId, formData, {
+        headers: { 'X-Cert-Prep-Operation-Id': operationId },
+        signal,
+      });
+    },
+    getDocument: (projectId, documentId) =>
+      this.api.getDocument(projectId, documentId),
+    getOperation: (projectId, operationId) =>
+      this.api.getDocumentOperation(projectId, operationId),
+    cancelOperation: (projectId, operationId) =>
+      this.api.cancelDocumentOperation(projectId, operationId),
+    newOperationId: () => this.newOperationId(),
+    errorMessage: (error) => this.getUploadErrorMessage(error),
+    errorCode: (error) => this.getUploadErrorCode(error),
+  });
 
   readonly languageHints: readonly LanguageHint[] = [
     'auto',
@@ -103,7 +145,9 @@ export class SourceImportStore {
       this.health.canCancelRuntimeInstallation(),
   );
   readonly isUploading = computed(() =>
-    this.uploadItems().some((item) => item.status === 'uploading'),
+    this.uploadItems().some((item) =>
+      ['uploading', 'cancel_requested'].includes(item.status),
+    ),
   );
   readonly pendingUploadCount = computed(
     () =>
@@ -116,7 +160,10 @@ export class SourceImportStore {
       this.uploadItems().filter((item) => item.status === 'uploaded').length,
   );
   readonly failedUploadCount = computed(
-    () => this.uploadItems().filter((item) => item.status === 'failed').length,
+    () =>
+      this.uploadItems().filter((item) =>
+        ['failed', 'status_unavailable'].includes(item.status),
+      ).length,
   );
   readonly isTranscriptMutationBusy = computed(() =>
     this.operations.isBusyFor(TRANSCRIPT_MUTATION_ACTIONS),
@@ -206,9 +253,13 @@ export class SourceImportStore {
   readonly canUpload = computed(
     () =>
       this.projects.selectedProject() !== null &&
-      this.pendingUploadCount() > 0 &&
-      (!this.hasPendingAudioUpload() || this.whisperModelsReady()) &&
-      !this.health.isOcrHealthLoading() &&
+      this.uploadItems().some(
+        (item) =>
+          ['queued', 'failed'].includes(item.status) &&
+          (this.isUploadItemReady(item) ||
+            (this.isAudioSourceFile(item.file) &&
+              !this.isPendingAutoUpload(item.id))),
+      ) &&
       !this.isUploading(),
   );
   readonly canGenerateDrafts = computed(() => {
@@ -221,11 +272,27 @@ export class SourceImportStore {
     );
   });
 
-  chooseFile(file: File | null): void {
-    this.chooseFiles(file === null ? [] : [file]);
+  constructor() {
+    effect(() => {
+      this.whisperModelsReady();
+      this.health.runtimeInstallConsentKind();
+      this.health.runtimeInstall();
+      this.health.healthSnapshotLoading();
+      this.scheduleWhisperAuthorizationReconciliation();
+    });
   }
 
-  chooseFiles(files: readonly File[]): void {
+  chooseFile(
+    file: File | null,
+    options: SourceFileSelectionOptions = {},
+  ): void {
+    this.chooseFiles(file === null ? [] : [file], options);
+  }
+
+  chooseFiles(
+    files: readonly File[],
+    options: SourceFileSelectionOptions = {},
+  ): void {
     const supportedFiles = files.filter((file) =>
       this.isSupportedSourceFile(file),
     );
@@ -233,27 +300,38 @@ export class SourceImportStore {
       (file) => !this.isSupportedSourceFile(file),
     );
 
-    this.uploadItems.set(
-      supportedFiles.map((file) => ({
-        id: `source-upload-${++this.uploadItemCounter}`,
-        operationId: this.newOperationId(),
-        file,
-        status: 'queued',
-        document: null,
-        error: null,
-      })),
-    );
-    if (supportedFiles.some((file) => this.isAudioSourceFile(file))) {
-      void this.preflightWhisperModels();
+    const nextItems: SourceUploadItem[] = supportedFiles.map((file) => ({
+      id: `source-upload-${++this.uploadItemCounter}`,
+      file,
+      status: 'queued',
+      document: null,
+      error: null,
+    }));
+    const appendSelection = options.append ?? this.shouldAppendNewSelection();
+    const autoUpload = options.autoUpload ?? appendSelection;
+    if (appendSelection) {
+      this.uploadItems.update((items) => [...items, ...nextItems]);
+    } else {
+      this.invalidateUploadContext();
+      this.uploadItems.set(nextItems);
+      this.library.clearActiveDocument();
+      this.stopDocumentPolling();
+      this.resetDocumentPollingFailure();
+    }
+    if (autoUpload) {
+      this.rememberPendingAutoUploads(nextItems.map((item) => item.id));
+      this.startReadyAutoUploads();
+    }
+    if (this.hasPendingAudioUpload()) {
+      void (autoUpload
+        ? this.preflightAuthorizedWhisperModels()
+        : this.preflightWhisperModels());
     } else if (
       this.health.runtimeInstallConsentKind() === 'whisper_models' &&
       !this.health.runtimeInstallStarting()
     ) {
       this.health.cancelRuntimeInstallConsent();
     }
-    this.library.clearActiveDocument();
-    this.stopDocumentPolling();
-    this.resetDocumentPollingFailure();
     this.operations.error.set(null);
     this.operations.errorCode.set(null);
     if (rejectedFiles.length > 0) {
@@ -270,14 +348,17 @@ export class SourceImportStore {
     }
   }
 
+  shouldAppendNewSelection(): boolean {
+    return (
+      this.uploadLifecycle.hasActiveRun() ||
+      this.uploadItems().some((item) => item.status === 'status_unavailable')
+    );
+  }
+
   reset(): void {
-    for (const controller of this.uploadAbortControllers.values()) {
-      controller.abort();
-    }
-    this.uploadAbortControllers.clear();
+    this.invalidateUploadContext();
     this.uploadItems.set([]);
     this.library.reset();
-    this.stopDocumentPolling();
     this.resetDocumentPollingFailure();
   }
 
@@ -313,132 +394,116 @@ export class SourceImportStore {
 
   async uploadDocuments(): Promise<DocumentRead[]> {
     const project = this.projects.selectedProject();
-    const uploadItems = this.uploadItems().filter((item) =>
+    let uploadItems = this.uploadItems().filter((item) =>
       ['queued', 'failed'].includes(item.status),
     );
-    if (project === null || uploadItems.length === 0) {
+    if (project === null) {
       this.operations.fail(
         'Choose a project and one or more source files before uploading.',
       );
       return [];
     }
-    if (this.isUploading() || this.operations.busy() === 'upload') {
+    if (uploadItems.length === 0) {
+      if (!this.uploadLifecycle.hasActiveRun()) {
+        this.operations.fail(
+          'Choose a project and one or more source files before uploading.',
+        );
+      }
       return [];
     }
-    if (this.health.isOcrHealthLoading()) {
-      this.operations.fail(
-        'OCR runtime is warming up. Try again when runtime health finishes.',
+    this.rememberPendingAutoUploads(uploadItems.map((item) => item.id));
+    const pendingAudioNeedsModels = uploadItems.some(
+      (item) => this.isAudioSourceFile(item.file) && !this.whisperModelsReady(),
+    );
+    let readyItems = uploadItems.filter((item) => this.isUploadItemReady(item));
+    if (readyItems.length === 0 && pendingAudioNeedsModels) {
+      await this.preflightAuthorizedWhisperModels();
+      uploadItems = this.uploadItems().filter((item) =>
+        ['queued', 'failed'].includes(item.status),
+      );
+      readyItems = uploadItems.filter((item) => this.isUploadItemReady(item));
+    } else if (pendingAudioNeedsModels) {
+      void this.preflightAuthorizedWhisperModels();
+    }
+    if (readyItems.length === 0) {
+      if (
+        uploadItems.some((item) => !this.isAudioSourceFile(item.file)) &&
+        this.health.isOcrHealthLoading()
+      ) {
+        this.operations.fail(
+          'OCR runtime is warming up. Try again when runtime health finishes.',
+        );
+      }
+      return [];
+    }
+
+    for (const item of readyItems) {
+      if (item.status === 'failed') {
+        this.updateUploadItem(item.id, { status: 'queued', error: null });
+      }
+    }
+    const itemIds = readyItems.map((item) => item.id);
+    if (this.uploadLifecycle.hasActiveRun()) {
+      this.forgetPendingAutoUploads(itemIds);
+      this.uploadLifecycle.begin(
+        project.id,
+        this.contextEpoch,
+        itemIds,
+        this.uploadBatchSize(),
       );
       return [];
     }
-    if (!(await this.preflightWhisperModels())) {
+    if (this.operations.isBusyFor('upload')) {
       return [];
     }
+    this.forgetPendingAutoUploads(itemIds);
+    return this.runUploadTransports(project.id, itemIds);
+  }
 
-    const uploadedDocuments: DocumentRead[] = [];
-    let runtimePromptNeeded = false;
-    const uploadBatchSize = this.uploadBatchSize();
+  private async runUploadTransports(
+    projectId: string,
+    itemIds: readonly string[],
+  ): Promise<DocumentRead[]> {
+    const run = this.uploadLifecycle.begin(
+      projectId,
+      this.contextEpoch,
+      itemIds,
+      this.uploadBatchSize(),
+    );
+    return this.finishUploadTransports(projectId, run);
+  }
 
-    this.operations.busy.set('upload');
-    this.operations.error.set(null);
-    this.operations.errorCode.set(null);
-    this.markUploadItems(uploadItems, {
-      status: 'queued',
-      error: null,
-    });
-
-    try {
-      for (let index = 0; index < uploadItems.length; index += uploadBatchSize) {
-        const batch = uploadItems
-          .slice(index, index + uploadBatchSize)
-          .filter((item) =>
-            ['queued', 'failed'].includes(
-              this.uploadItems().find((current) => current.id === item.id)
-                ?.status ?? 'canceled',
-            ),
-          );
-        if (batch.length === 0) {
-          continue;
-        }
-        this.markUploadItems(batch, {
-          status: 'uploading',
-          error: null,
-        });
-
-        const results: UploadBatchResult[] = await Promise.all(
-          batch.map(async (item) => {
-            try {
-              const document = await this.uploadSingleDocument(project.id, item);
-              return { item, document };
-            } catch (error) {
-              return { item, error };
-            }
-          }),
-        );
-
-        for (const result of results) {
-          if ('document' in result) {
-            uploadedDocuments.push(result.document);
-            this.updateUploadItem(result.item.id, {
-              status: 'uploaded',
-              document: result.document,
-              error: null,
-            });
-            this.library.upsertDocument(result.document);
-          } else {
-            const currentStatus = this.uploadItems().find(
-              (item) => item.id === result.item.id,
-            )?.status;
-            if (
-              currentStatus === 'cancel_requested' ||
-              currentStatus === 'canceled' ||
-              this.isAbortError(result.error)
-            ) {
-              this.updateUploadItem(result.item.id, {
-                status: 'canceled',
-                error: null,
-              });
-              continue;
-            }
-            const errorCode = this.getUploadErrorCode(result.error);
-            runtimePromptNeeded ||=
-              errorCode === 'paddle_runtime_missing' ||
-              errorCode === 'windowsml_runtime_missing';
-            this.updateUploadItem(result.item.id, {
-              status: 'failed',
-              error: this.getUploadErrorMessage(result.error),
-            });
-          }
-        }
-      }
-    } finally {
-      if (this.operations.busy() === 'upload') {
-        this.operations.busy.set(null);
-      }
+  private async finishUploadTransports(
+    projectId: string,
+    run: UploadTransportRun,
+  ): Promise<DocumentRead[]> {
+    const result = await this.operations.run(
+      'upload',
+      (documents) => this.uploadOutcomeMessage(run.itemIds, documents),
+      async () => {
+        await run.done;
+        return [...run.documents];
+      },
+      () => this.isCurrentUploadContext(projectId, run.contextEpoch),
+    );
+    if (!this.isCurrentUploadContext(projectId, run.contextEpoch)) {
+      return [];
     }
-
-    if (runtimePromptNeeded) {
+    if (run.runtimePromptNeeded) {
       await this.refreshRuntimeHealth();
-      this.health.openOcrRuntimeInstallConsent();
+      if (this.isCurrentUploadContext(projectId, run.contextEpoch)) {
+        this.health.openOcrRuntimeInstallConsent();
+      }
     }
 
-    const activeDocument =
-      uploadedDocuments.length > 0
-        ? uploadedDocuments[uploadedDocuments.length - 1]
-        : null;
+    const documents = result ?? [];
+    const activeDocument = documents[documents.length - 1] ?? null;
     if (activeDocument !== null) {
       this.setActiveDocument(activeDocument);
-      await this.refreshUploadedDocument(project.id, activeDocument.id);
+      await this.refreshUploadedDocument(projectId, activeDocument.id);
     }
 
     const failedCount = this.failedUploadCount();
-    if (uploadedDocuments.length > 0) {
-      this.operations.status.set(
-        uploadedDocuments.length === 1
-          ? 'Source file uploaded'
-          : `${uploadedDocuments.length} source files uploaded`,
-      );
-    }
     if (failedCount > 0) {
       this.operations.error.set(
         failedCount === 1
@@ -446,8 +511,38 @@ export class SourceImportStore {
           : `${failedCount} source files failed to upload.`,
       );
     }
+    this.startReadyAutoUploads();
+    return documents;
+  }
 
-    return uploadedDocuments;
+  private uploadOutcomeMessage(
+    itemIds: readonly string[],
+    documents: readonly DocumentRead[],
+  ): string {
+    const acceptedCount = documents.length;
+    const incompleteCount = Math.max(0, itemIds.length - acceptedCount);
+    if (acceptedCount > 0) {
+      const accepted =
+        acceptedCount === 1
+          ? '1 source file uploaded'
+          : `${acceptedCount} source files uploaded`;
+      return incompleteCount === 0
+        ? accepted
+        : `${accepted}; ${incompleteCount} did not complete`;
+    }
+    const itemIdSet = new Set(itemIds);
+    const items = this.uploadItems().filter((item) => itemIdSet.has(item.id));
+    if (
+      items.length === itemIds.length &&
+      items.every((item) => item.status === 'canceled')
+    ) {
+      return itemIds.length === 1
+        ? 'Source file upload canceled'
+        : `${itemIds.length} source file uploads canceled`;
+    }
+    return itemIds.length === 1
+      ? 'Source file upload did not complete'
+      : 'No source file uploads completed';
   }
 
   async loadLatestDocument(projectId: string): Promise<void> {
@@ -510,6 +605,7 @@ export class SourceImportStore {
       }
       this.setActiveDocument(nextDocument);
       this.library.setChunks(chunks);
+      this.updateUploadDocumentSnapshot(nextDocument);
       this.resetDocumentPollingFailure();
       if (
         ['processing', 'cancel_requested'].includes(nextDocument.status)
@@ -542,6 +638,13 @@ export class SourceImportStore {
     );
   }
 
+  canRetryUploadItem(item: SourceUploadItem): boolean {
+    return (
+      item.status === 'status_unavailable' ||
+      (item.document === null && ['failed', 'canceled'].includes(item.status))
+    );
+  }
+
   async cancelUploadItem(itemId: string): Promise<void> {
     const projectId = this.projects.selectedProject()?.id;
     const item = this.uploadItems().find((candidate) => candidate.id === itemId);
@@ -553,27 +656,82 @@ export class SourceImportStore {
       return;
     }
 
+    if (['queued', 'uploading', 'cancel_requested'].includes(item.status)) {
+      this.uploadLifecycle.cancel(item.id);
+      return;
+    }
+    const document = item.document;
+    if (document === null) {
+      return;
+    }
+
     this.updateUploadItem(item.id, {
       status: 'cancel_requested',
       error: null,
     });
-    this.uploadAbortControllers.get(item.id)?.abort();
     try {
-      if (item.document?.id !== undefined) {
-        await this.api.cancelDocumentProcessing(projectId, item.document.id);
-      } else {
-        await this.api.cancelDocumentOperation(projectId, item.operationId);
-      }
+      await this.api.cancelDocumentProcessing(projectId, document.id);
       this.updateUploadItem(item.id, { status: 'canceled', error: null });
-      if (item.document?.id !== undefined) {
-        await this.refreshUploadedDocument(projectId, item.document.id);
-      }
+      await this.refreshUploadedDocument(projectId, document.id);
     } catch (error) {
       this.updateUploadItem(item.id, {
         status: 'failed',
         error: this.getUploadErrorMessage(error),
       });
     }
+  }
+
+  async retryUploadItem(itemId: string): Promise<void> {
+    const projectId = this.projects.selectedProject()?.id;
+    const item = this.uploadItems().find((candidate) => candidate.id === itemId);
+    if (
+      projectId === undefined ||
+      item === undefined ||
+      !this.canRetryUploadItem(item)
+    ) {
+      return;
+    }
+    if (item.status === 'status_unavailable') {
+      const resumed = this.uploadLifecycle.resume(item.id);
+      if (resumed?.kind === 'new-run') {
+        await this.finishUploadTransports(projectId, resumed.run);
+      }
+      return;
+    }
+    if (this.isAudioSourceFile(item.file) && !this.whisperModelsReady()) {
+      this.rememberPendingAutoUploads([item.id]);
+      if (!(await this.preflightAuthorizedWhisperModels())) {
+        return;
+      }
+    } else if (
+      !this.isAudioSourceFile(item.file) &&
+      this.health.isOcrHealthLoading()
+    ) {
+      this.operations.fail(
+        'OCR runtime is warming up. Try again when runtime health finishes.',
+      );
+      return;
+    }
+    this.rememberPendingAutoUploads([item.id]);
+    if (!this.updateUploadItem(item.id, { status: 'queued', error: null })) {
+      this.forgetPendingAutoUploads([item.id]);
+      return;
+    }
+    if (this.uploadLifecycle.hasActiveRun()) {
+      this.forgetPendingAutoUploads([item.id]);
+      this.uploadLifecycle.begin(
+        projectId,
+        this.contextEpoch,
+        [item.id],
+        this.uploadBatchSize(),
+      );
+      return;
+    }
+    if (this.operations.isBusyFor('upload')) {
+      return;
+    }
+    this.forgetPendingAutoUploads([item.id]);
+    await this.runUploadTransports(projectId, [item.id]);
   }
 
   async cancelActiveDocumentProcessing(): Promise<void> {
@@ -713,17 +871,24 @@ export class SourceImportStore {
     projectId: string,
     documentId: string,
   ): Promise<void> {
+    let document: DocumentRead;
     try {
-      const document = await this.api.getDocument(projectId, documentId);
-      if (!this.isCurrentProjectDocument(projectId, documentId)) {
-        return;
-      }
-      this.library.upsertDocument(document);
-      this.setActiveDocument(document);
-    } catch {
+      document = await this.api.getDocument(projectId, documentId);
+    } catch (error) {
+      console.warn(
+        'Unable to refresh document metadata after a transcript mutation.',
+        error,
+      );
       // The successful chunk mutation remains visible; normal refresh/polling
       // reconciles document-level status when the backend is available again.
+      return;
     }
+    if (!this.isCurrentProjectDocument(projectId, documentId)) {
+      return;
+    }
+    this.library.upsertDocument(document);
+    this.setActiveDocument(document);
+    this.updateUploadDocumentSnapshot(document);
   }
 
   private async loadDocumentChunks(
@@ -732,25 +897,6 @@ export class SourceImportStore {
   ): Promise<ChunkRead[]> {
     const chunks = await this.api.listDocumentChunks(projectId, documentId);
     return chunks.items;
-  }
-
-  private async uploadSingleDocument(
-    projectId: string,
-    item: SourceUploadItem,
-  ): Promise<DocumentRead> {
-    const formData = new FormData();
-    formData.append('file', item.file, item.file.name);
-    formData.append('language_hint', this.languageHint());
-    const controller = new AbortController();
-    this.uploadAbortControllers.set(item.id, controller);
-    try {
-      return await this.api.uploadDocument(projectId, formData, {
-        headers: { 'X-Cert-Prep-Operation-Id': item.operationId },
-        signal: controller.signal,
-      });
-    } finally {
-      this.uploadAbortControllers.delete(item.id);
-    }
   }
 
   private isSupportedSourceFile(file: File): boolean {
@@ -808,6 +954,14 @@ export class SourceImportStore {
     return false;
   }
 
+  private async preflightAuthorizedWhisperModels(): Promise<boolean> {
+    const ready = await this.preflightWhisperModels();
+    if (!ready) {
+      this.beginWhisperRuntimeAuthorizationWait();
+    }
+    return ready;
+  }
+
   private hasPendingAudioUpload(): boolean {
     return this.uploadItems().some(
       (item) =>
@@ -832,36 +986,244 @@ export class SourceImportStore {
     );
   }
 
-  private markUploadItems(
-    items: readonly SourceUploadItem[],
-    patch: Partial<Omit<SourceUploadItem, 'id' | 'file'>>,
-  ): void {
-    const ids = new Set(items.map((item) => item.id));
-    this.uploadItems.update((currentItems) =>
-      currentItems.map((item) =>
-        ids.has(item.id)
-          ? {
-              ...item,
-              ...patch,
-            }
-          : item,
-      ),
+  private isUploadItemReady(item: SourceUploadItem): boolean {
+    return this.isAudioSourceFile(item.file)
+      ? this.whisperModelsReady()
+      : !this.health.isOcrHealthLoading();
+  }
+
+  private scheduleReadyAutoUploads(): void {
+    if (this.autoUploadEnqueueScheduled) {
+      return;
+    }
+    this.autoUploadEnqueueScheduled = true;
+    queueMicrotask(() => {
+      this.autoUploadEnqueueScheduled = false;
+      this.startReadyAutoUploads();
+    });
+  }
+
+  private beginWhisperRuntimeAuthorizationWait(): void {
+    const hasAuthorizedAudio = this.uploadItems().some(
+      (item) =>
+        this.pendingAutoUploadItemIds.has(item.id) &&
+        ['queued', 'failed'].includes(item.status) &&
+        this.isAudioSourceFile(item.file),
     );
+    if (!hasAuthorizedAudio) {
+      return;
+    }
+    this.whisperAuthorizationAwaitingRuntime = true;
+    this.whisperConsentObserved =
+      this.health.runtimeInstallConsentKind() === 'whisper_models';
+    this.whisperRuntimeInstallAtAuthorization = this.health.runtimeInstall();
+    this.reconcileWhisperRuntimeAuthorization();
+  }
+
+  private scheduleWhisperAuthorizationReconciliation(): void {
+    if (this.whisperAuthorizationReconcileScheduled) {
+      return;
+    }
+    this.whisperAuthorizationReconcileScheduled = true;
+    queueMicrotask(() => {
+      this.whisperAuthorizationReconcileScheduled = false;
+      this.reconcileWhisperRuntimeAuthorization();
+    });
+  }
+
+  private reconcileWhisperRuntimeAuthorization(): void {
+    if (!this.whisperAuthorizationAwaitingRuntime) {
+      return;
+    }
+    const consentOpen =
+      this.health.runtimeInstallConsentKind() === 'whisper_models';
+    const install = this.health.runtimeInstall();
+    const installAdvanced =
+      install !== this.whisperRuntimeInstallAtAuthorization &&
+      install?.kind === 'whisper_models';
+    const installTerminalFailure =
+      installAdvanced &&
+      (install.phase === 'failed' || install.phase === 'canceled');
+    const consentCanceled =
+      this.whisperConsentObserved && !consentOpen && !installAdvanced;
+    if (installTerminalFailure || consentCanceled) {
+      this.releaseWhisperRuntimeAuthorization();
+      return;
+    }
+    if (this.whisperModelsReady()) {
+      this.resetWhisperRuntimeAuthorizationWait();
+      this.scheduleReadyAutoUploads();
+      return;
+    }
+    this.whisperConsentObserved ||= consentOpen;
+    const installActive =
+      install?.kind === 'whisper_models' &&
+      [
+        'starting',
+        'running',
+        'cancel_requested',
+        'waiting_for_user',
+      ].includes(install.phase);
+    const succeededHealthRefreshActive =
+      installAdvanced &&
+      install.phase === 'succeeded' &&
+      this.health.healthSnapshotLoading();
+    if (consentOpen || installActive || succeededHealthRefreshActive) {
+      return;
+    }
+    this.releaseWhisperRuntimeAuthorization();
+  }
+
+  private releaseWhisperRuntimeAuthorization(): void {
+    const itemIds = this.uploadItems()
+      .filter(
+        (item) =>
+          this.pendingAutoUploadItemIds.has(item.id) &&
+          ['queued', 'failed'].includes(item.status) &&
+          this.isAudioSourceFile(item.file),
+      )
+      .map((item) => item.id);
+    this.resetWhisperRuntimeAuthorizationWait();
+    this.forgetPendingAutoUploads(itemIds);
+  }
+
+  private resetWhisperRuntimeAuthorizationWait(): void {
+    this.whisperAuthorizationAwaitingRuntime = false;
+    this.whisperConsentObserved = false;
+    this.whisperRuntimeInstallAtAuthorization = null;
+  }
+
+  private startReadyAutoUploads(): void {
+    const projectId = this.projects.selectedProject()?.id;
+    if (projectId === undefined) {
+      return;
+    }
+    const readyItems = this.uploadItems().filter(
+      (item) =>
+        this.pendingAutoUploadItemIds.has(item.id) &&
+        ['queued', 'failed'].includes(item.status) &&
+        this.isUploadItemReady(item),
+    );
+    if (readyItems.length === 0) {
+      return;
+    }
+    for (const item of readyItems) {
+      if (item.status === 'failed') {
+        this.updateUploadItem(item.id, { status: 'queued', error: null });
+      }
+    }
+    const itemIds = readyItems.map((item) => item.id);
+    if (this.uploadLifecycle.hasActiveRun()) {
+      this.forgetPendingAutoUploads(itemIds);
+      this.uploadLifecycle.begin(
+        projectId,
+        this.contextEpoch,
+        itemIds,
+        this.uploadBatchSize(),
+      );
+      return;
+    }
+    if (this.operations.isBusyFor('upload')) {
+      return;
+    }
+    this.forgetPendingAutoUploads(itemIds);
+    void this.runUploadTransports(projectId, itemIds);
+  }
+
+  private forgetPendingAutoUploads(itemIds: readonly string[]): void {
+    let changed = false;
+    for (const itemId of itemIds) {
+      changed = this.pendingAutoUploadItemIds.delete(itemId) || changed;
+    }
+    if (changed) {
+      this.pendingAutoUploadRevision.update((revision) => revision + 1);
+    }
+  }
+
+  private rememberPendingAutoUploads(itemIds: readonly string[]): void {
+    let changed = false;
+    for (const itemId of itemIds) {
+      if (!this.pendingAutoUploadItemIds.has(itemId)) {
+        this.pendingAutoUploadItemIds.add(itemId);
+        changed = true;
+      }
+    }
+    if (changed) {
+      this.pendingAutoUploadRevision.update((revision) => revision + 1);
+    }
+  }
+
+  private isPendingAutoUpload(itemId: string): boolean {
+    this.pendingAutoUploadRevision();
+    return this.pendingAutoUploadItemIds.has(itemId);
+  }
+
+  private clearPendingAutoUploads(): void {
+    if (this.pendingAutoUploadItemIds.size === 0) {
+      return;
+    }
+    this.pendingAutoUploadItemIds.clear();
+    this.pendingAutoUploadRevision.update((revision) => revision + 1);
   }
 
   private updateUploadItem(
     id: string,
     patch: Partial<Omit<SourceUploadItem, 'id' | 'file'>>,
+  ): boolean {
+    let updated = false;
+    this.uploadItems.update((items) =>
+      items.map((item) => {
+        if (item.id !== id) {
+          return item;
+        }
+        updated = true;
+        return { ...item, ...patch };
+      }),
+    );
+    if (
+      patch.status !== undefined &&
+      ['uploaded', 'failed', 'canceled'].includes(patch.status)
+    ) {
+      this.forgetPendingAutoUploads([id]);
+    }
+    return updated;
+  }
+
+  private acceptLifecycleDocument(
+    document: DocumentRead,
+    pollDocument: boolean,
   ): void {
+    this.library.upsertDocument(document);
+    this.setActiveDocument(document);
+    this.updateUploadDocumentSnapshot(document);
+    if (pollDocument && !FINAL_DOCUMENT_STATUSES.has(document.status)) {
+      this.scheduleDocumentPolling(document.project_id, document.id);
+    }
+  }
+
+  private updateUploadDocumentSnapshot(document: DocumentRead): void {
     this.uploadItems.update((items) =>
       items.map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              ...patch,
-            }
-          : item,
+        item.document?.id === document.id ? { ...item, document } : item,
       ),
+    );
+  }
+
+  private invalidateUploadContext(): void {
+    this.contextEpoch += 1;
+    this.resetWhisperRuntimeAuthorizationWait();
+    this.clearPendingAutoUploads();
+    this.stopDocumentPolling();
+    this.uploadLifecycle.invalidate();
+  }
+
+  private isCurrentUploadContext(
+    projectId: string,
+    contextEpoch: number,
+  ): boolean {
+    return (
+      this.contextEpoch === contextEpoch &&
+      this.projects.selectedProject()?.id === projectId
     );
   }
 
@@ -874,7 +1236,11 @@ export class SourceImportStore {
   private async refreshRuntimeHealth(): Promise<void> {
     try {
       await this.health.load();
-    } catch {
+    } catch (error) {
+      console.warn(
+        'Unable to refresh runtime health before opening the OCR runtime prompt.',
+        error,
+      );
       // Keep the use-time prompt available even if the health refresh failed.
     }
   }
@@ -951,6 +1317,7 @@ export class SourceImportStore {
       this.library.upsertDocument(document);
       this.setActiveDocument(document);
       this.library.setChunks(chunks);
+      this.updateUploadDocumentSnapshot(document);
       this.resetDocumentPollingFailure();
       if (!FINAL_DOCUMENT_STATUSES.has(document.status)) {
         this.scheduleDocumentPolling(projectId, documentId);
@@ -1000,15 +1367,6 @@ export class SourceImportStore {
     return (
       this.projects.selectedProject()?.id === projectId &&
       this.activeDocumentId() === documentId
-    );
-  }
-
-  private isAbortError(error: unknown): boolean {
-    return (
-      typeof error === 'object' &&
-      error !== null &&
-      'name' in error &&
-      (error as { name?: unknown }).name === 'AbortError'
     );
   }
 

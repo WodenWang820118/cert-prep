@@ -15,6 +15,7 @@ type OperationRequestOutcome =
 export interface UploadTransportRun {
   readonly projectId: string;
   readonly contextEpoch: number;
+  readonly itemIds: string[];
   readonly documents: DocumentRead[];
   readonly done: Promise<void>;
   runtimePromptNeeded: boolean;
@@ -47,6 +48,7 @@ export interface SourceUploadLifecycleHooks {
     projectId: string,
     operationId: string,
   ) => Promise<DocumentOperationRead>;
+  readonly newOperationId: () => string;
   readonly errorMessage: (error: unknown) => string;
   readonly errorCode: (error: unknown) => string | null;
 }
@@ -54,6 +56,7 @@ export interface SourceUploadLifecycleHooks {
 interface MutableUploadRun extends UploadTransportRun {
   readonly concurrency: number;
   queuedItemIds: string[];
+  queuedReconciliationItemIds: string[];
   activeCount: number;
   resolveDone: () => void;
 }
@@ -91,7 +94,8 @@ export class SourceUploadLifecycle {
       attempt === undefined ||
       attempt.slotHeld ||
       !this.owns(attempt) ||
-      this.hooks.item(itemId)?.status !== 'status_unavailable'
+      this.hooks.item(itemId)?.status !== 'status_unavailable' ||
+      attempt.run.queuedReconciliationItemIds.includes(itemId)
     ) {
       return null;
     }
@@ -99,6 +103,9 @@ export class SourceUploadLifecycle {
     const currentRun = this.activeRun;
     let result: UploadResumeResult;
     if (currentRun !== null) {
+      if (!currentRun.itemIds.includes(itemId)) {
+        currentRun.itemIds.push(itemId);
+      }
       attempt.run = currentRun;
       result = { kind: 'current-run' };
     } else {
@@ -107,20 +114,16 @@ export class SourceUploadLifecycle {
         attempt.run.contextEpoch,
         attempt.run.concurrency,
       );
+      run.itemIds.push(itemId);
       this.activeRun = run;
       attempt.run = run;
       result = { kind: 'new-run', run };
     }
 
-    attempt.slotHeld = true;
-    attempt.run.activeCount += 1;
     attempt.transportRetryCount = 0;
     this.clearPollTimer(attempt);
-    this.hooks.patch(itemId, {
-      status: attempt.cancelRequested ? 'cancel_requested' : 'uploading',
-      error: null,
-    });
-    this.serialize(attempt, () => this.requestReconciliation(attempt));
+    attempt.run.queuedReconciliationItemIds.push(itemId);
+    this.pump(attempt.run);
     return result;
   }
 
@@ -131,7 +134,17 @@ export class SourceUploadLifecycle {
     concurrency: number,
   ): UploadTransportRun {
     if (this.activeRun !== null) {
-      this.activeRun.queuedItemIds.push(...itemIds);
+      for (const itemId of itemIds) {
+        if (!this.activeRun.itemIds.includes(itemId)) {
+          this.activeRun.itemIds.push(itemId);
+        }
+        if (
+          !this.activeRun.queuedItemIds.includes(itemId) &&
+          !this.attempts.has(itemId)
+        ) {
+          this.activeRun.queuedItemIds.push(itemId);
+        }
+      }
       this.pump(this.activeRun);
       return this.activeRun;
     }
@@ -183,6 +196,7 @@ export class SourceUploadLifecycle {
     this.attempts.clear();
     if (this.activeRun !== null) {
       this.activeRun.queuedItemIds = [];
+      this.activeRun.queuedReconciliationItemIds = [];
       this.activeRun.documents.splice(0);
       this.activeRun.resolveDone();
       this.activeRun = null;
@@ -214,7 +228,9 @@ export class SourceUploadLifecycle {
       projectId,
       contextEpoch,
       concurrency,
+      itemIds: [...itemIds],
       queuedItemIds: [...itemIds],
+      queuedReconciliationItemIds: [],
       activeCount: 0,
       resolveDone,
       done,
@@ -226,6 +242,7 @@ export class SourceUploadLifecycle {
   private pump(run: MutableUploadRun): void {
     if (!this.hooks.current(run.projectId, run.contextEpoch)) {
       run.queuedItemIds = [];
+      run.queuedReconciliationItemIds = [];
       run.resolveDone();
       if (this.activeRun === run) {
         this.activeRun = null;
@@ -233,11 +250,31 @@ export class SourceUploadLifecycle {
       return;
     }
 
-    while (
-      run.activeCount < run.concurrency &&
-      run.queuedItemIds.length > 0
-    ) {
+    while (run.activeCount < run.concurrency) {
+      const reconciliationItemId =
+        run.queuedReconciliationItemIds.shift();
+      if (reconciliationItemId !== undefined) {
+        const reconciliationAttempt = this.attempts.get(
+          reconciliationItemId,
+        );
+        if (
+          reconciliationAttempt === undefined ||
+          reconciliationAttempt.run !== run ||
+          reconciliationAttempt.slotHeld ||
+          !this.owns(reconciliationAttempt) ||
+          this.hooks.item(reconciliationItemId)?.status !==
+            'status_unavailable'
+        ) {
+          continue;
+        }
+        this.startReconciliation(reconciliationAttempt);
+        continue;
+      }
+
       const itemId = run.queuedItemIds.shift();
+      if (itemId === undefined) {
+        break;
+      }
       const item = itemId === undefined ? undefined : this.hooks.item(itemId);
       if (
         item === undefined ||
@@ -249,7 +286,7 @@ export class SourceUploadLifecycle {
 
       const attempt: UploadAttempt = {
         itemId: item.id,
-        operationId: crypto.randomUUID(),
+        operationId: this.hooks.newOperationId(),
         controller: new AbortController(),
         run,
         documentId: null,
@@ -268,6 +305,20 @@ export class SourceUploadLifecycle {
       void this.execute(attempt, item);
     }
     this.finishRun(run);
+  }
+
+  private startReconciliation(attempt: UploadAttempt): void {
+    if (
+      !this.hooks.patch(attempt.itemId, {
+        status: attempt.cancelRequested ? 'cancel_requested' : 'uploading',
+        error: null,
+      })
+    ) {
+      return;
+    }
+    attempt.slotHeld = true;
+    attempt.run.activeCount += 1;
+    this.serialize(attempt, () => this.requestReconciliation(attempt));
   }
 
   private async execute(
@@ -313,15 +364,16 @@ export class SourceUploadLifecycle {
     if (!this.owns(attempt)) {
       return;
     }
+    const errorCode = this.hooks.errorCode(error);
+    const isKnownRuntimeMissing =
+      errorCode === 'paddle_runtime_missing' ||
+      errorCode === 'windowsml_runtime_missing';
     if (
       !attempt.cancelRequested &&
       !isAbortError(error) &&
-      isTerminalHttpFailure(error)
+      (isKnownRuntimeMissing || isAuthoritativeClientFailure(error))
     ) {
-      const errorCode = this.hooks.errorCode(error);
-      attempt.run.runtimePromptNeeded ||=
-        errorCode === 'paddle_runtime_missing' ||
-        errorCode === 'windowsml_runtime_missing';
+      attempt.run.runtimePromptNeeded ||= isKnownRuntimeMissing;
       this.settle(
         attempt,
         'failed',
@@ -484,12 +536,6 @@ export class SourceUploadLifecycle {
       this.settle(attempt, 'canceled', document, null);
       return;
     }
-    if (document.status === 'ocr_failed') {
-      this.observeDocument(attempt, document, false);
-      this.settle(attempt, 'failed', document, 'OCR failed to complete.');
-      return;
-    }
-
     const pollDocument =
       document.status === 'processing' || document.status === 'cancel_requested';
     this.observeDocument(attempt, document, pollDocument);
@@ -649,7 +695,11 @@ export class SourceUploadLifecycle {
   }
 
   private finishRun(run: MutableUploadRun): void {
-    if (run.queuedItemIds.length === 0 && run.activeCount === 0) {
+    if (
+      run.queuedItemIds.length === 0 &&
+      run.queuedReconciliationItemIds.length === 0 &&
+      run.activeCount === 0
+    ) {
       run.resolveDone();
       if (this.activeRun === run) {
         this.activeRun = null;
@@ -681,9 +731,16 @@ function isAbortError(error: unknown): boolean {
   );
 }
 
-function isTerminalHttpFailure(error: unknown): boolean {
+function isAuthoritativeClientFailure(error: unknown): boolean {
   const status = (error as { status?: unknown }).status;
-  return typeof status === 'number' && status >= 400;
+  return (
+    typeof status === 'number' &&
+    status >= 400 &&
+    status < 500 &&
+    status !== 408 &&
+    status !== 425 &&
+    status !== 429
+  );
 }
 
 function captureOperationRequest(

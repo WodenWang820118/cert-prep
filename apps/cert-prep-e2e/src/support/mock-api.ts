@@ -54,6 +54,7 @@ export interface MockCertPrepApi {
   readonly fullExamDocument: DocumentRead;
   attempts(projectId?: string): readonly PracticeAttemptRead[];
   currentSession(projectId?: string): PracticeSessionRead | null;
+  holdUpload(filename: string): void;
   markRequestLog(): number;
   playableDraftsForDocument(
     documentId: string,
@@ -63,7 +64,9 @@ export interface MockCertPrepApi {
   practiceSessionPayloads(projectId?: string): readonly PracticeSessionCreate[];
   requestLog(): readonly string[];
   requestLogSince(marker: number): readonly string[];
+  releaseUpload(filename: string): void;
   seenPaths(): Set<string>;
+  startedUploads(): readonly string[];
   uploadedDocuments(projectId?: string): readonly DocumentRead[];
   uploadedSourceFiles(projectId?: string): readonly MockUploadedSourceFile[];
   wrongAnswerExplanations(
@@ -71,6 +74,15 @@ export interface MockCertPrepApi {
   ): readonly MockWrongAnswerExplanationRead[];
   wrongAnswers(projectId?: string): readonly WrongAnswerRead[];
   wrongAnswerSummary(projectId?: string): WrongAnswerSummaryRead;
+}
+
+export interface MockCertPrepApiOptions {
+  readonly whisperModelsReady?: boolean;
+}
+
+interface MockUploadHold {
+  readonly promise: Promise<void>;
+  readonly release: () => void;
 }
 
 interface MockProjectState {
@@ -98,6 +110,7 @@ interface MockProjectState {
 
 export async function installMockCertPrepApi(
   page: Page,
+  options: MockCertPrepApiOptions = {},
 ): Promise<MockCertPrepApi> {
   const project = {
     id: 'project-1',
@@ -341,6 +354,8 @@ export async function installMockCertPrepApi(
   let lastProjectState = primaryState;
   const seenPaths = new Set<string>();
   const requestLog: string[] = [];
+  const startedUploads: string[] = [];
+  const uploadHolds = new Map<string, MockUploadHold>();
 
   await page.route(`${apiBaseUrl}/**`, async (route) => {
     const request = route.request();
@@ -432,7 +447,20 @@ export async function installMockCertPrepApi(
     }
 
     if (method === 'GET' && path === '/runtime/requirements') {
-      const body = { items: [] } satisfies RuntimeRequirementsRead;
+      const body = {
+        items: options.whisperModelsReady
+          ? [
+              {
+                kind: 'whisper_models' as const,
+                label: 'Whisper speech models',
+                available: true,
+                detail: 'Whisper speech models are ready.',
+                unavailable_reason: null,
+                version: 'large-v3-turbo + small',
+              },
+            ]
+          : [],
+      } satisfies RuntimeRequirementsRead;
       await fulfillJson(route, 200, body);
       return;
     }
@@ -556,6 +584,11 @@ export async function installMockCertPrepApi(
           message: 'The mocked upload did not contain a valid file part.',
         });
         return;
+      }
+      startedUploads.push(uploadedSourceFile.filename);
+      const hold = uploadHolds.get(uploadedSourceFile.filename);
+      if (hold !== undefined) {
+        await hold.promise;
       }
       const uploadedDocument = nextUploadDocument(
         projectState,
@@ -687,6 +720,16 @@ export async function installMockCertPrepApi(
     ],
     currentSession: (projectId) =>
       stateFor(projectStates, projectId, lastProjectState).currentSession,
+    holdUpload: (filename) => {
+      if (uploadHolds.has(filename)) {
+        throw new Error(`Upload ${filename} is already held.`);
+      }
+      let release!: () => void;
+      const promise = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      uploadHolds.set(filename, { promise, release });
+    },
     markRequestLog: () => requestLog.length,
     playableDraftsForDocument: (documentId, projectId) =>
       stateFor(projectStates, projectId, primaryState).playableDrafts.filter(
@@ -701,7 +744,16 @@ export async function installMockCertPrepApi(
     ],
     requestLog: () => [...requestLog],
     requestLogSince: (marker) => requestLog.slice(marker),
+    releaseUpload: (filename) => {
+      const hold = uploadHolds.get(filename);
+      if (hold === undefined) {
+        throw new Error(`Upload ${filename} is not held.`);
+      }
+      uploadHolds.delete(filename);
+      hold.release();
+    },
     seenPaths: () => new Set(seenPaths),
+    startedUploads: () => [...startedUploads],
     uploadedDocuments: (projectId) => [
       ...stateFor(projectStates, projectId, lastProjectState).uploadedDocuments,
     ],
