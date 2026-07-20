@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.core.config import Settings
 from cert_prep_backend.domains.source_documents import operations
-from cert_prep_backend.routers import documents as documents_router
+from cert_prep_backend.domains.source_documents import document_worker_pool
 from conftest import minimal_pdf
 from document_test_helpers import _create_project
 from document_test_ocr_fakes import BlockingOcrProvider, MockPaddleOcrProvider
@@ -310,7 +310,7 @@ def test_worker_start_failure_terminalizes_operation(
         def start(self) -> None:
             raise RuntimeError("thread start failed")
 
-    monkeypatch.setattr(documents_router, "Thread", FailingThread)
+    monkeypatch.setattr(document_worker_pool, "Thread", FailingThread)
     app = create_app(
         settings=Settings(data_dir=tmp_path, api_token="test-token"),
         ocr_provider=MockPaddleOcrProvider(),
@@ -333,4 +333,4 @@ def test_worker_start_failure_terminalizes_operation(
     assert operation["status"] == "failed"
     assert operation["phase"] == "failed"
     assert operation["cancellable"] is False
-    assert operation["error"] == "Document processing worker could not start."
+    assert operation["error"] == "Document worker could not accept processing."

@@ -189,4 +189,4 @@ def test_canceled_document_can_retry_from_original_source_file(
 
         assert ready["chunks_count"] == 1
         assert operation.json()["status"] == "succeeded"
-        assert preparation_calls == [source_bytes, source_bytes]
+        assert preparation_calls == [source_bytes, source_bytes, source_bytes]

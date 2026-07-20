@@ -49,6 +49,17 @@ class PreparedSource:
     duration_ms: int | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class StoredSourceReference:
+    """Lightweight reference held while a validated source waits for processing."""
+
+    storage_path: str
+    sha256: str
+    canonical_suffix: str
+    filename: str
+    kind: SourceKind
+
+
 def prepare_source(
     content: bytes,
     *,

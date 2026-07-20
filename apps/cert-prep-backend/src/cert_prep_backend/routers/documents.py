@@ -3,8 +3,9 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+from collections.abc import Callable
+from functools import partial
 from pathlib import Path as FilePath
-from threading import Thread
 from typing import Annotated
 from uuid import uuid4
 
@@ -33,8 +34,11 @@ from cert_prep_backend.core.exceptions import (
 )
 from cert_prep_backend.persistence.database import Database
 from cert_prep_backend.api.dependencies import (
+    get_audio_document_worker_pool,
+    get_audio_transcription_gate,
     get_database,
     get_document_ocr_provider_pool,
+    get_document_ocr_worker_pool,
     get_llm_provider,
     get_runtime_installation_manager,
     get_settings,
@@ -52,6 +56,13 @@ from cert_prep_backend.domains.projects import repository as projects_repository
 from cert_prep_backend.domains.runtime_installations import RuntimeInstallationManager
 from cert_prep_backend.domains.source_documents import operations as document_operations
 from cert_prep_backend.domains.source_documents import repository as source_documents_repository
+from cert_prep_backend.domains.source_documents.audio_transcription_gate import (
+    AudioTranscriptionGate,
+)
+from cert_prep_backend.domains.source_documents.document_worker_pool import (
+    DocumentWorkerPool,
+    DocumentWorkItem,
+)
 from cert_prep_backend.domains.source_documents.ocr_provider_pool import (
     DocumentOCRProviderPool,
 )
@@ -77,6 +88,7 @@ from cert_prep_backend.domains.source_documents.audio import (
 )
 from cert_prep_backend.domains.source_documents.source_preparation import (
     PreparedSource,
+    StoredSourceReference,
     extract_prepared_source,
     prepare_source,
 )
@@ -183,13 +195,22 @@ def cancel_document_operation(
     project_id: str,
     operation_id: OperationIdPath,
     db: Database = Depends(get_database),
+    audio_workers: DocumentWorkerPool = Depends(get_audio_document_worker_pool),
+    ocr_workers: DocumentWorkerPool = Depends(get_document_ocr_worker_pool),
 ) -> dict:
     try:
-        return document_operations.cancel_operation(
+        operation = document_operations.cancel_operation(
             db,
             project_id=project_id,
             operation_id=operation_id,
         )
+        if _cancel_queued_document_work(audio_workers, ocr_workers, operation_id):
+            return document_operations.get_operation(
+                db,
+                project_id=project_id,
+                operation_id=operation_id,
+            )
+        return operation
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
     except DocumentOperationConflictError as exc:
@@ -239,6 +260,11 @@ async def upload_document(
         get_streaming_draft_generation_manager
     ),
     transcription_provider: TranscriptionProvider = Depends(get_transcription_provider),
+    audio_transcription_gate: AudioTranscriptionGate = Depends(
+        get_audio_transcription_gate
+    ),
+    audio_workers: DocumentWorkerPool = Depends(get_audio_document_worker_pool),
+    ocr_workers: DocumentWorkerPool = Depends(get_document_ocr_worker_pool),
     runtime_installations: RuntimeInstallationManager = Depends(
         get_runtime_installation_manager
     ),
@@ -275,6 +301,9 @@ async def upload_document(
         )
         if prepared_source.kind == "audio":
             _ensure_whisper_models_ready(runtime_installations)
+        async_processing = bool(
+            getattr(request.app.state, "document_processing_async_jobs", True)
+        )
         try:
             if prepared_source.kind != "audio":
                 await _prepare_document_ocr_provider_pool(ocr_provider_pool)
@@ -295,13 +324,17 @@ async def upload_document(
             project_id=project_id,
             operation_id=operation_id,
         )
-        sha256 = sha256_hex(content)
-        storage_path = store_source_file(
+        sha256, storage_path = await asyncio.to_thread(
+            _store_uploaded_source,
             settings,
-            project_id,
-            sha256,
-            content,
+            project_id=project_id,
+            content=content,
             canonical_suffix=prepared_source.canonical_suffix,
+        )
+        _ensure_upload_operation_queued(
+            db,
+            project_id=project_id,
+            operation_id=operation_id,
         )
         document = document_operations.create_and_attach_document(
             db,
@@ -315,9 +348,19 @@ async def upload_document(
             source_kind="audio" if prepared_source.kind == "audio" else "document",
             duration_ms=prepared_source.duration_ms,
         )
-
-        if bool(getattr(request.app.state, "document_processing_async_jobs", True)):
-            _start_document_processing_worker(
+        if async_processing:
+            processing_source = StoredSourceReference(
+                storage_path=str(storage_path),
+                sha256=sha256,
+                canonical_suffix=prepared_source.canonical_suffix,
+                filename=document["filename"],
+                kind=prepared_source.kind,
+            )
+            worker_pool = (
+                audio_workers if processing_source.kind == "audio" else ocr_workers
+            )
+            _submit_document_processing(
+                worker_pool=worker_pool,
                 db=db,
                 settings=settings,
                 llm_provider=llm_provider,
@@ -326,11 +369,25 @@ async def upload_document(
                 project_id=project_id,
                 document_id=document["id"],
                 operation_id=operation_id,
-                source=prepared_source,
+                source=processing_source,
                 transcription_provider=transcription_provider,
+                audio_transcription_gate=audio_transcription_gate,
             )
-            return document
+            return source_documents_repository.get_document(
+                db,
+                project_id,
+                document["id"],
+            )
 
+        synchronous_source: PreparedSource | StoredSourceReference = prepared_source
+        if prepared_source.kind == "audio":
+            synchronous_source = StoredSourceReference(
+                storage_path=str(storage_path),
+                sha256=sha256,
+                canonical_suffix=prepared_source.canonical_suffix,
+                filename=document["filename"],
+                kind="audio",
+            )
         return _process_document_upload(
             db,
             settings,
@@ -340,8 +397,9 @@ async def upload_document(
             project_id,
             document["id"],
             operation_id,
-            prepared_source,
+            synchronous_source,
             transcription_provider,
+            audio_transcription_gate,
         )
     except HTTPException:
         if claimed:
@@ -462,13 +520,26 @@ def cancel_document_processing(
     project_id: str,
     document_id: str,
     db: Database = Depends(get_database),
+    audio_workers: DocumentWorkerPool = Depends(get_audio_document_worker_pool),
+    ocr_workers: DocumentWorkerPool = Depends(get_document_ocr_worker_pool),
 ) -> dict:
     try:
-        return document_operations.cancel_document_processing(
+        operation = document_operations.cancel_document_processing(
             db,
             project_id=project_id,
             document_id=document_id,
         )
+        if _cancel_queued_document_work(
+            audio_workers,
+            ocr_workers,
+            operation["id"],
+        ):
+            return document_operations.get_operation(
+                db,
+                project_id=project_id,
+                operation_id=operation["id"],
+            )
+        return operation
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
     except OperationNotCancellableError as exc:
@@ -501,42 +572,97 @@ async def retry_document_processing(
         get_streaming_draft_generation_manager
     ),
     transcription_provider: TranscriptionProvider = Depends(get_transcription_provider),
+    audio_transcription_gate: AudioTranscriptionGate = Depends(
+        get_audio_transcription_gate
+    ),
+    audio_workers: DocumentWorkerPool = Depends(get_audio_document_worker_pool),
+    ocr_workers: DocumentWorkerPool = Depends(get_document_ocr_worker_pool),
     runtime_installations: RuntimeInstallationManager = Depends(
         get_runtime_installation_manager
     ),
 ) -> dict:
     operation_id = operation_id_header or str(uuid4())
     try:
+        document = source_documents_repository.get_document(
+            db,
+            project_id,
+            document_id,
+        )
         source_file = source_documents_repository.get_source_file(
             db,
             project_id,
             document_id,
         )
-        content = _read_stored_source_file(
+        async_processing = bool(
+            getattr(request.app.state, "document_processing_async_jobs", True)
+        )
+        source_path = await asyncio.to_thread(
+            _verify_stored_source_file,
             settings,
             project_id=project_id,
             storage_path=source_file.storage_path,
             expected_sha256=source_file.sha256,
         )
-        prepared_source = await asyncio.to_thread(
-            prepare_source,
-            content,
-            max_pdf_pages=settings.max_pdf_pages,
-            max_image_pixels=settings.max_image_pixels,
-            filename=source_file.filename,
-        )
-        if prepared_source.kind == "audio":
-            _ensure_whisper_models_ready(runtime_installations)
+        processing_source: PreparedSource | StoredSourceReference
+        if async_processing:
+            canonical_suffix = source_path.suffix.lower()
+            processing_source = StoredSourceReference(
+                storage_path=str(source_path),
+                sha256=source_file.sha256,
+                canonical_suffix=canonical_suffix,
+                filename=source_file.filename,
+                kind=(
+                    "audio"
+                    if document["source_kind"] == "audio"
+                    else "pdf"
+                    if canonical_suffix == ".pdf"
+                    else "image"
+                ),
+            )
+            if processing_source.kind == "audio":
+                _ensure_whisper_models_ready(runtime_installations)
+            else:
+                await _prepare_document_ocr_provider_pool(ocr_provider_pool)
         else:
-            await _prepare_document_ocr_provider_pool(ocr_provider_pool)
-        operation = document_operations.start_retry_operation(
+            content = await asyncio.to_thread(
+                _read_stored_source_file,
+                settings,
+                project_id=project_id,
+                storage_path=source_file.storage_path,
+                expected_sha256=source_file.sha256,
+            )
+            processing_source = await asyncio.to_thread(
+                prepare_source,
+                content,
+                max_pdf_pages=settings.max_pdf_pages,
+                max_image_pixels=settings.max_image_pixels,
+                filename=source_file.filename,
+            )
+            if processing_source.kind == "audio":
+                _ensure_whisper_models_ready(runtime_installations)
+                processing_source = StoredSourceReference(
+                    storage_path=str(source_path),
+                    sha256=source_file.sha256,
+                    canonical_suffix=source_path.suffix.lower(),
+                    filename=source_file.filename,
+                    kind="audio",
+                )
+            else:
+                await _prepare_document_ocr_provider_pool(ocr_provider_pool)
+        document_operations.start_retry_operation(
             db,
             project_id=project_id,
             document_id=document_id,
             operation_id=operation_id,
         )
-        if bool(getattr(request.app.state, "document_processing_async_jobs", True)):
-            _start_document_processing_worker(
+        if async_processing:
+            if not isinstance(processing_source, StoredSourceReference):
+                raise RuntimeError("Async document processing requires a stored source.")
+            worker_pool = (
+                audio_workers if processing_source.kind == "audio" else ocr_workers
+            )
+            submitted_operation = _submit_document_processing(
+                worker_pool=worker_pool,
                 db=db,
                 settings=settings,
                 llm_provider=llm_provider,
@@ -545,10 +671,11 @@ async def retry_document_processing(
                 project_id=project_id,
                 document_id=document_id,
                 operation_id=operation_id,
-                source=prepared_source,
+                source=processing_source,
                 transcription_provider=transcription_provider,
+                audio_transcription_gate=audio_transcription_gate,
             )
-            return operation
+            return submitted_operation
 
         _process_document_upload(
             db,
@@ -559,8 +686,9 @@ async def retry_document_processing(
             project_id,
             document_id,
             operation_id,
-            prepared_source,
+            processing_source,
             transcription_provider,
+            audio_transcription_gate,
         )
         return document_operations.get_operation(
             db,
@@ -742,6 +870,31 @@ def _read_stored_source_file(
     return content
 
 
+def _verify_stored_source_file(
+    settings: Settings,
+    *,
+    project_id: str,
+    storage_path: str,
+    expected_sha256: str,
+) -> FilePath:
+    source_path = _resolve_stored_source_path(
+        settings,
+        project_id=project_id,
+        storage_path=storage_path,
+    )
+    try:
+        valid = _sha256_file(source_path) == expected_sha256
+    except HTTPException as exc:
+        raise _document_source_missing_error(
+            "The stored source file is unavailable for retry."
+        ) from exc
+    if not valid:
+        raise _document_source_missing_error(
+            "The stored source file failed integrity verification."
+        )
+    return source_path
+
+
 def _resolve_stored_source_path(
     settings: Settings,
     *,
@@ -782,8 +935,27 @@ def _sha256_file(source_path: FilePath) -> str:
     return digest.hexdigest()
 
 
-def _start_document_processing_worker(
+def _store_uploaded_source(
+    settings: Settings,
     *,
+    project_id: str,
+    content: bytes,
+    canonical_suffix: str,
+) -> tuple[str, FilePath]:
+    sha256 = sha256_hex(content)
+    storage_path = store_source_file(
+        settings,
+        project_id,
+        sha256,
+        content,
+        canonical_suffix=canonical_suffix,
+    )
+    return sha256, storage_path
+
+
+def _submit_document_processing(
+    *,
+    worker_pool: DocumentWorkerPool,
     db: Database,
     settings: Settings,
     llm_provider: LLMProvider,
@@ -792,12 +964,14 @@ def _start_document_processing_worker(
     project_id: str,
     document_id: str,
     operation_id: str,
-    source: PreparedSource,
+    source: StoredSourceReference,
     transcription_provider: TranscriptionProvider,
-) -> None:
-    worker = Thread(
-        target=_process_document_upload,
-        args=(
+    audio_transcription_gate: AudioTranscriptionGate,
+) -> dict:
+    item = DocumentWorkItem(
+        operation_id=operation_id,
+        run=partial(
+            _process_document_upload,
             db,
             settings,
             llm_provider,
@@ -808,24 +982,87 @@ def _start_document_processing_worker(
             operation_id,
             source,
             transcription_provider,
+            audio_transcription_gate,
+            shutdown_requested=worker_pool.is_closed,
         ),
-        name=f"document-processing-{operation_id[:8]}",
-        daemon=True,
+        cancel_queued=partial(
+            _cancel_queued_audio_operation,
+            db,
+            project_id=project_id,
+            operation_id=operation_id,
+        ),
     )
     try:
-        worker.start()
+        worker_pool.submit(item)
     except Exception:
         logger.exception(
-            "Document processing failed",
+            "Document worker submission failed",
             extra={"project_id": project_id, "document_id": document_id},
         )
         document_operations.finish_failed(
             db,
             project_id=project_id,
             operation_id=operation_id,
-            error="Document processing worker could not start.",
+            error="Document worker could not accept processing.",
         )
         raise
+
+    operation = document_operations.get_operation(
+        db,
+        project_id=project_id,
+        operation_id=operation_id,
+    )
+    if operation["document_id"] == document_id and operation["status"] == "running":
+        return operation
+
+    removed = worker_pool.cancel(operation_id)
+    if not removed and operation["status"] == "cancel_requested":
+        document_operations.acknowledge_cancellation(
+            db,
+            project_id=project_id,
+            operation_id=operation_id,
+        )
+        worker_pool.cancel(operation_id)
+    return document_operations.get_operation(
+        db,
+        project_id=project_id,
+        operation_id=operation_id,
+    )
+
+
+def _cancel_queued_document_work(
+    audio_workers: DocumentWorkerPool,
+    ocr_workers: DocumentWorkerPool,
+    operation_id: str,
+) -> bool:
+    return audio_workers.cancel(operation_id) or ocr_workers.cancel(operation_id)
+
+
+def _cancel_queued_audio_operation(
+    db: Database,
+    *,
+    project_id: str,
+    operation_id: str,
+) -> None:
+    operation = document_operations.get_operation(
+        db,
+        project_id=project_id,
+        operation_id=operation_id,
+    )
+    if operation["status"] in {"canceled", "failed", "succeeded"}:
+        return
+    if operation["status"] != "cancel_requested":
+        operation = document_operations.cancel_operation(
+            db,
+            project_id=project_id,
+            operation_id=operation_id,
+        )
+    if operation["status"] == "cancel_requested":
+        document_operations.acknowledge_cancellation(
+            db,
+            project_id=project_id,
+            operation_id=operation_id,
+        )
 
 
 def _auto_generate_exam_items(
@@ -869,10 +1106,25 @@ def _process_document_upload(
     project_id: str,
     document_id: str,
     operation_id: str,
-    source: PreparedSource,
+    source: PreparedSource | StoredSourceReference,
     transcription_provider: TranscriptionProvider,
+    audio_transcription_gate: AudioTranscriptionGate,
+    *,
+    shutdown_requested: Callable[[], bool] | None = None,
 ) -> dict:
+    should_shutdown = shutdown_requested or (lambda: False)
+
     def record_progress(progress: PdfExtractionProgress) -> None:
+        if should_shutdown():
+            raise DocumentProcessingCanceledError(
+                "Document processing was canceled because the backend is shutting down."
+            )
+        _ensure_document_operation_running(
+            db,
+            project_id=project_id,
+            document_id=document_id,
+            operation_id=operation_id,
+        )
         source_documents_repository.record_extraction_progress(
             db,
             project_id=project_id,
@@ -892,23 +1144,52 @@ def _process_document_upload(
 
     try:
         if source.kind == "audio":
-            set_operation_phase(
-                db,
-                project_id=project_id,
-                document_id=document_id,
-                operation_id=operation_id,
-                phase="transcribing",
-            )
-            transcribe_audio(
-                db,
-                settings=settings,
-                provider=transcription_provider,
-                project_id=project_id,
-                document_id=document_id,
-                operation_id=operation_id,
-                source_bytes=source.raw_bytes,
-                suffix=source.canonical_suffix,
-            )
+            if not isinstance(source, StoredSourceReference):
+                raise InvalidSourceError(
+                    "Audio processing requires a stored canonical source."
+                )
+            with audio_transcription_gate.acquire(
+                should_cancel=lambda: not audio_operation_is_active(
+                    db,
+                    project_id=project_id,
+                    document_id=document_id,
+                    operation_id=operation_id,
+                    phase="processing",
+                )
+            ):
+                source_bytes = _read_stored_source_file(
+                    settings,
+                    project_id=project_id,
+                    storage_path=source.storage_path,
+                    expected_sha256=source.sha256,
+                )
+                if audio_transcription_gate.is_closed():
+                    raise DocumentProcessingCanceledError(
+                        "Audio transcription was canceled because the backend is shutting down."
+                    )
+                set_operation_phase(
+                    db,
+                    project_id=project_id,
+                    document_id=document_id,
+                    operation_id=operation_id,
+                    phase="transcribing",
+                )
+                transcribe_audio(
+                    db,
+                    settings=settings,
+                    provider=transcription_provider,
+                    project_id=project_id,
+                    document_id=document_id,
+                    operation_id=operation_id,
+                    source_bytes=source_bytes,
+                    suffix=source.canonical_suffix,
+                    shutdown_requested=audio_transcription_gate.is_closed,
+                )
+                del source_bytes
+            if audio_transcription_gate.is_closed():
+                raise DocumentProcessingCanceledError(
+                    "Audio translation was canceled because the backend is shutting down."
+                )
             set_operation_phase(
                 db,
                 project_id=project_id,
@@ -926,12 +1207,15 @@ def _process_document_upload(
                     ),
                     project_id=project_id,
                     document_id=document_id,
-                    should_cancel=lambda: not audio_operation_is_active(
-                        db,
-                        project_id=project_id,
-                        document_id=document_id,
-                        operation_id=operation_id,
-                        phase="translating",
+                    should_cancel=lambda: (
+                        audio_transcription_gate.is_closed()
+                        or not audio_operation_is_active(
+                            db,
+                            project_id=project_id,
+                            document_id=document_id,
+                            operation_id=operation_id,
+                            phase="translating",
+                        )
                     ),
                     operation_id=operation_id,
                     reconcile_document_status=False,
@@ -940,6 +1224,10 @@ def _process_document_upload(
                 raise
             except Exception:
                 translation_succeeded = False
+            if audio_transcription_gate.is_closed():
+                raise DocumentProcessingCanceledError(
+                    "Audio completion was canceled because the backend is shutting down."
+                )
             complete_audio_operation(
                 db,
                 project_id=project_id,
@@ -953,12 +1241,54 @@ def _process_document_upload(
                     db, project_id=project_id, document_id=document_id
                 )
             return source_documents_repository.get_document(db, project_id, document_id)
+        if isinstance(source, StoredSourceReference):
+            _ensure_document_operation_running(
+                db,
+                project_id=project_id,
+                document_id=document_id,
+                operation_id=operation_id,
+            )
+            if should_shutdown():
+                raise DocumentProcessingCanceledError(
+                    "Document decoding was canceled because the backend is shutting down."
+                )
+            source_bytes = _read_stored_source_file(
+                settings,
+                project_id=project_id,
+                storage_path=source.storage_path,
+                expected_sha256=source.sha256,
+            )
+            _ensure_document_operation_running(
+                db,
+                project_id=project_id,
+                document_id=document_id,
+                operation_id=operation_id,
+            )
+            if should_shutdown():
+                raise DocumentProcessingCanceledError(
+                    "Document preparation was canceled because the backend is shutting down."
+                )
+            expected_kind = source.kind
+            source = prepare_source(
+                source_bytes,
+                max_pdf_pages=settings.max_pdf_pages,
+                max_image_pixels=settings.max_image_pixels,
+                filename=source.filename,
+            )
+            if source.kind != expected_kind:
+                raise InvalidSourceError(
+                    "Stored document type no longer matches its validated source."
+                )
         _ensure_document_operation_running(
             db,
             project_id=project_id,
             document_id=document_id,
             operation_id=operation_id,
         )
+        if should_shutdown():
+            raise DocumentProcessingCanceledError(
+                "Document OCR was canceled because the backend is shutting down."
+            )
         with ocr_provider_pool.acquire() as ocr_provider:
             _ensure_document_operation_running(
                 db,
@@ -966,6 +1296,10 @@ def _process_document_upload(
                 document_id=document_id,
                 operation_id=operation_id,
             )
+            if should_shutdown():
+                raise DocumentProcessingCanceledError(
+                    "Document OCR was canceled because the backend is shutting down."
+                )
             extraction = extract_prepared_source(
                 source,
                 max_pdf_pages=settings.max_pdf_pages,
@@ -974,6 +1308,10 @@ def _process_document_upload(
                 ocr_provider=ocr_provider,
                 ocr_render_scale=settings.ocr_render_scale,
                 on_page_processed=record_progress,
+            )
+        if should_shutdown():
+            raise DocumentProcessingCanceledError(
+                "Document completion was canceled because the backend is shutting down."
             )
         document = document_operations.publish_success(
             db,
@@ -1005,11 +1343,51 @@ def _process_document_upload(
             )
         return document
     except DocumentProcessingCanceledError:
-        document_operations.acknowledge_cancellation(
-            db,
-            project_id=project_id,
-            operation_id=operation_id,
-        )
+        try:
+            if should_shutdown() or (
+                source.kind == "audio" and audio_transcription_gate.is_closed()
+            ):
+                document_operations.cancel_operation(
+                    db,
+                    project_id=project_id,
+                    operation_id=operation_id,
+                )
+            document_operations.acknowledge_cancellation(
+                db,
+                project_id=project_id,
+                operation_id=operation_id,
+            )
+        except (
+            DocumentOperationStateError,
+            OperationNotCancellableError,
+        ) as cleanup_exc:
+            logger.warning(
+                "Cancellation cleanup could not acknowledge the operation; "
+                "falling back to finish_failed.",
+                extra={
+                    "project_id": project_id,
+                    "document_id": document_id,
+                    "operation_id": operation_id,
+                    "cleanup_error": str(cleanup_exc),
+                },
+            )
+            try:
+                document_operations.finish_failed(
+                    db,
+                    project_id=project_id,
+                    operation_id=operation_id,
+                    error="Document processing was canceled but cleanup failed.",
+                )
+            except Exception:
+                logger.exception(
+                    "Cancellation fallback finish_failed also failed; "
+                    "operation may require restart recovery.",
+                    extra={
+                        "project_id": project_id,
+                        "document_id": document_id,
+                        "operation_id": operation_id,
+                    },
+                )
         return source_documents_repository.get_document(db, project_id, document_id)
     except (InvalidSourceError, ProviderUnavailableError) as exc:
         document_operations.finish_failed(

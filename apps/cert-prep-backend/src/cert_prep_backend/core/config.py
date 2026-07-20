@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     ocr_render_scale: float = 1.0
     ocr_page_workers: int = Field(default=1, ge=1)
     document_ocr_parallelism: int = Field(default=2, ge=1, le=4)
+    audio_transcription_parallelism: int = Field(default=1, ge=1, le=4)
     auto_generate_exam_on_upload: bool = False
     auto_generate_exam_limit: int = 50
     streaming_draft_generation_on_upload: bool = False

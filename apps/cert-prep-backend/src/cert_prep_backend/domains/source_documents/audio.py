@@ -40,16 +40,20 @@ def transcribe_audio(
     operation_id: str,
     source_bytes: bytes,
     suffix: str,
+    shutdown_requested: Callable[[], bool] | None = None,
 ) -> dict:
     next_chunk_index = 0
 
     def operation_canceled() -> bool:
-        return not _audio_operation_is_active(
-            db,
-            project_id=project_id,
-            document_id=document_id,
-            operation_id=operation_id,
-            phase="transcribing",
+        return bool(
+            (shutdown_requested is not None and shutdown_requested())
+            or not _audio_operation_is_active(
+                db,
+                project_id=project_id,
+                document_id=document_id,
+                operation_id=operation_id,
+                phase="transcribing",
+            )
         )
 
     def reset_segments() -> None:

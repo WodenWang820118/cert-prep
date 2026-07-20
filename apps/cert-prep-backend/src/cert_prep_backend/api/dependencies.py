@@ -11,6 +11,12 @@ from cert_prep_backend.persistence.database import Database
 from cert_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
 from cert_prep_backend.domains.mock_exams.streaming import StreamingDraftGenerationManager
 from cert_prep_backend.domains.runtime_installations import RuntimeInstallationManager
+from cert_prep_backend.domains.source_documents.audio_transcription_gate import (
+    AudioTranscriptionGate,
+)
+from cert_prep_backend.domains.source_documents.document_worker_pool import (
+    DocumentWorkerPool,
+)
 from cert_prep_backend.domains.source_documents.ocr import OCRProvider
 from cert_prep_backend.domains.source_documents.ocr_provider_pool import DocumentOCRProviderPool
 from cert_prep_contracts.transcription import TranscriptionProvider
@@ -51,6 +57,18 @@ def get_document_ocr_provider_pool(request: Request) -> DocumentOCRProviderPool:
 
 def get_transcription_provider(request: Request) -> TranscriptionProvider:
     return request.app.state.transcription_provider
+
+
+def get_audio_transcription_gate(request: Request) -> AudioTranscriptionGate:
+    return request.app.state.audio_transcription_gate
+
+
+def get_audio_document_worker_pool(request: Request) -> DocumentWorkerPool:
+    return request.app.state.audio_document_worker_pool
+
+
+def get_document_ocr_worker_pool(request: Request) -> DocumentWorkerPool:
+    return request.app.state.document_ocr_worker_pool
 
 
 def require_bearer_auth(

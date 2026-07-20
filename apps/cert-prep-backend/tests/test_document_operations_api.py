@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from threading import Thread as RealThread
 import time
 
 from fastapi.testclient import TestClient
@@ -10,7 +9,6 @@ from cert_prep_backend.api.app import create_app
 from cert_prep_backend.core.config import Settings
 from cert_prep_backend.core.exceptions import ProviderUnavailableError
 from cert_prep_backend.domains.source_documents import operations as document_operations
-from cert_prep_backend.routers import documents as documents_router
 from conftest import minimal_pdf
 from document_test_helpers import _create_project
 from document_test_ocr_fakes import BlockingOcrProvider, MockPaddleOcrProvider
@@ -203,22 +201,16 @@ def test_running_document_cancel_acknowledges_then_retry_reuses_source_pdf(
     assert ready["chunks_count"] == 1
 
 
-def test_canceled_worker_acknowledges_once_and_exits_without_failure_finalizer(
+def test_canceled_worker_acknowledges_once_without_failure_finalizer(
     tmp_path: Path,
     auth_headers,
     monkeypatch,
 ) -> None:
     ocr_provider = BlockingOcrProvider()
-    workers: list[RealThread] = []
     acknowledged: list[str] = []
     failed: list[str] = []
     original_acknowledge = document_operations.acknowledge_cancellation
     original_finish_failed = document_operations.finish_failed
-
-    def recording_thread(*args, **kwargs) -> RealThread:
-        worker = RealThread(*args, **kwargs)
-        workers.append(worker)
-        return worker
 
     def recording_acknowledge(*args, **kwargs):
         acknowledged.append(str(kwargs["operation_id"]))
@@ -228,7 +220,6 @@ def test_canceled_worker_acknowledges_once_and_exits_without_failure_finalizer(
         failed.append(str(kwargs["operation_id"]))
         return original_finish_failed(*args, **kwargs)
 
-    monkeypatch.setattr(documents_router, "Thread", recording_thread)
     monkeypatch.setattr(
         document_operations,
         "acknowledge_cancellation",
@@ -240,39 +231,45 @@ def test_canceled_worker_acknowledges_once_and_exits_without_failure_finalizer(
         ocr_provider=ocr_provider,
         document_processing_async_jobs=True,
     )
-    client = TestClient(app)
-    project_id = _create_project(client, auth_headers)
+    with TestClient(app) as client:
+        project_id = _create_project(client, auth_headers)
 
-    uploaded = client.post(
-        f"/projects/{project_id}/documents",
-        headers={**auth_headers, OPERATION_HEADER: "ack-worker"},
-        files={"file": ("scan.pdf", minimal_pdf(""), "application/pdf")},
-    )
-    assert uploaded.status_code == 201
-    assert ocr_provider.started.wait(timeout=2)
-    assert len(workers) == 1
+        uploaded = client.post(
+            f"/projects/{project_id}/documents",
+            headers={**auth_headers, OPERATION_HEADER: "ack-worker"},
+            files={"file": ("scan.pdf", minimal_pdf(""), "application/pdf")},
+        )
+        assert uploaded.status_code == 201
+        assert ocr_provider.started.wait(timeout=2)
 
-    requested = client.delete(
-        f"/projects/{project_id}/document-operations/ack-worker",
-        headers=auth_headers,
-    )
-    assert requested.status_code == 202
-    assert requested.json()["status"] == "cancel_requested"
-    ocr_provider.release.set()
+        requested = client.delete(
+            f"/projects/{project_id}/document-operations/ack-worker",
+            headers=auth_headers,
+        )
+        assert requested.status_code == 202
+        assert requested.json()["status"] == "cancel_requested"
+        ocr_provider.release.set()
 
-    terminal = _wait_for_operation(
-        client,
-        auth_headers,
-        project_id,
-        "ack-worker",
-        "canceled",
-    )
-    workers[0].join(timeout=2)
+        terminal = _wait_for_operation(
+            client,
+            auth_headers,
+            project_id,
+            "ack-worker",
+            "canceled",
+        )
+        deadline = time.monotonic() + 2
+        while (
+            app.state.document_ocr_worker_pool.snapshot().running_count > 0
+            and time.monotonic() < deadline
+        ):
+            time.sleep(0.01)
 
-    assert terminal["document_id"] == uploaded.json()["id"]
-    assert acknowledged == ["ack-worker"]
-    assert failed == []
-    assert not workers[0].is_alive()
+        assert terminal["document_id"] == uploaded.json()["id"]
+        assert acknowledged == ["ack-worker"]
+        assert failed == []
+        assert app.state.document_ocr_worker_pool.snapshot().running_count == 0
+
+    assert app.state.document_ocr_worker_pool.snapshot().alive_worker_count == 0
 
 
 def test_retry_missing_source_fails_before_mutating_document(
