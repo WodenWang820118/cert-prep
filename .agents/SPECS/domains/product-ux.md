@@ -42,21 +42,32 @@ or review flows.
 - Source files, Draft Review, and Full Exam share an explicit active document
   selection. Draft Review defaults to active-document questions and shows active
   counts against the project total.
-- Source import accepts PDF, PNG, JPEG/JPG, and static WebP files in the same
-  batch while preserving the document library. The client uses bounded
+- Source import accepts PDF, PNG, JPEG/JPG, static WebP, MP3, WAV, and M4A files
+  in one queue while preserving the document library. The client uses bounded
   concurrency (default 2, configurable from 1 through 4), filters unsupported
   MIME/extension hints without discarding valid selections, and leaves content
-  validation authoritative to the backend. Selected, uploaded, failed,
-  canceled, and Retry states remain per file; successful uploads are partial
-  success when another file fails, and the most recent successful document
-  becomes active.
+  validation authoritative to the backend. Each settled request immediately
+  releases its slot to the next queued file; a slow audio upload or preflight
+  must not create a batch barrier for unrelated PDF/image uploads. Users may
+  append supported files while network uploads are active without replacing
+  existing queued or in-flight items. Selected, queued, uploading, uploaded,
+  failed, canceled, and Retry states remain per file; successful uploads are
+  partial success when another file fails, and the most recent successful
+  document becomes active.
+- The concurrency selector describes simultaneous uploads, not batch size.
+  Ambiguous transport failures retain the original operation id for status
+  reconciliation, and reconciliation consumes an ordinary queue slot. Canceling
+  Whisper consent or a failed/canceled model install releases the pending audio
+  authorization so the user can explicitly retry; later readiness must not
+  silently upload a source after that authorization was withdrawn.
 - Image cropping is optional client-side preprocessing and defaults off. A
   `Crop images before upload` toggle enables a sequential crop review for each
   selected PNG, JPEG/JPG, or static WebP while PDFs keep their original bytes
   and position in the batch. The user can redraw a rectangular crop, enter
   exact pixel bounds, reset to the full image, apply the crop, or keep the
-  original image. Choosing or uploading another batch stays locked until every
-  image in the pending selection is applied or skipped.
+  original image. Choosing or uploading another batch stays locked only while
+  that local crop review is unresolved; this lock does not apply to an active
+  network upload queue after crop review is complete.
 - Applying a crop creates a supported image file with a visible `-cropped`
   filename suffix and then uses the existing multipart upload flow. The bytes
   sent by the client become the persisted source and SHA-256 identity; the app
@@ -188,6 +199,16 @@ Page requirements:
   and output dimensions plus quadrant-sensitive pixels across Chromium,
   Firefox, and WebKit. A real-browser run also applied and uploaded the cropped
   PNG without console or server errors.
+- The 2026-07-19 source-queue closeout verified immediate rolling-slot refill,
+  active-run file append, an enabled chooser during transport, delayed Whisper
+  readiness, withdrawn consent, exact-operation 503/status reconciliation, and
+  cancel-driven slot refill. The final matrix passed 265 Angular tests, all 388
+  backend tests, production build, frontend/backend/E2E lint, and 12 Chromium
+  scenarios including a held two-PDF queue that starts an appended MP3 when the
+  first slot becomes free.
+- The 2026-07-20 final review matrix passed 267 Angular tests, all 393 backend
+  tests, production build, frontend/backend/E2E lint, and 36 mixed PDF/audio
+  queue scenarios across Chromium, Firefox, and WebKit.
 
 ## Open Risks
 

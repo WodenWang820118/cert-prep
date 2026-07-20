@@ -223,9 +223,29 @@ Stable backend status and onboarding APIs include:
   the shared playable predicate; the old approval-only flow stays retired.
 - Full Exam, Random Quiz, review, and packaged summaries use the same definition
   of a playable question: valid stem, distinct visible choices, and an answer.
-- Multi-document import remains a client-side bounded batch over
+- Multi-document import remains a client-side bounded slot queue over
   `POST /projects/{project_id}/documents`, with default concurrency 2 and a
-  supported configuration range of 1 through 4.
+  supported configuration range of 1 through 4. A settled request immediately
+  refills its slot, and files selected during an active run append to that run;
+  there is no `Promise.all` batch barrier between unrelated sources.
+- Accepted asynchronous work is also bounded server-side. PDF/image documents
+  use an app-owned FIFO worker pool sized by `document_ocr_parallelism`, while
+  audio uses its independently sized transcription pool. Queued items retain
+  only canonical path, SHA-256, filename/type metadata, and operation ownership;
+  source bytes and prepared pages are loaded only after a worker slot is held.
+- Cancel removes queued work from either pool and durably acknowledges the
+  existing operation. Submit/cancel races reconcile the same operation id, and
+  shutdown closes both queues before bounded worker joins and provider cleanup.
+  The pool-level cancel method selects queued work only; running work observes
+  durable cancellation cooperatively. A worker always unregisters on exit, so
+  a completed shutdown reports both registered and alive worker counts as zero;
+  a timed-out worker remains registered only until it actually exits.
+  Cancel and close serialize callback ownership; failed shutdown callbacks stay
+  explicitly owned, retry on the second close pass, and surface any unresolved
+  operation ids instead of disappearing from the closed pool.
+- Transcript mutation metadata refresh and the use-time OCR health refresh are
+  best-effort follow-ups. Their failures preserve the primary mutation/upload
+  result and emit a contextual diagnostic warning instead of disappearing.
 - Each successful document independently runs OCR and reasoning. Failed files
   remain visible for retry, successful files stay in the project library, and
   the latest successful upload becomes active.
@@ -279,6 +299,13 @@ Behavior owners and focused regression evidence:
 - Mixed source batches and real-backend static PNG behavior:
   `apps/cert-prep-e2e/src/example.spec.ts` and
   `apps/cert-prep-e2e/src/real-backend/real-backend.spec.ts`.
+- Rolling client slots, live append, consent withdrawal, exact-operation status
+  reconciliation, and browser-level mixed PDF/audio refill are covered by the
+  source-import Angular specs and `apps/cert-prep-e2e/src/example.spec.ts`.
+  Server-side fixed PDF/audio pools, lightweight queued references, queued
+  cancellation, submit/cancel races, and bounded shutdown are covered by
+  `apps/cert-prep-backend/tests/test_audio_transcription_queue.py` and
+  `apps/cert-prep-backend/tests/test_documents_async.py`.
 - Packaged WindowsML image acceptance, including deterministic raw SHA-256,
   `amd_windowsml:0`, page 1 of 1, zero chunks, and process cleanup:
   `pnpm nx run cert-prep-desktop:packaged-image-upload-smoke --skip-nx-cache`.

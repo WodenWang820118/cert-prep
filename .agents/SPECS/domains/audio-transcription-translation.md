@@ -27,6 +27,9 @@ beside it. Japanese remains the canonical source used for draft generation.
 
 - Existing document upload accepts MP3, WAV, and M4A and routes them to the
   transcription provider without initializing OCR.
+- Audio participates in the shared source-import slot queue. Runtime/model
+  consent gates only audio items that require Whisper; unrelated ready PDF or
+  image items continue to use available upload slots.
 - Document reads expose source kind, duration, transcription/translation state,
   and configured/effective Whisper model and device.
 - Chunk reads expose locator kind, start/end milliseconds, translation text,
@@ -47,6 +50,19 @@ beside it. Japanese remains the canonical source used for draft generation.
   size fail validation before processing begins.
 - Cancel stops transcription/translation at the next provider checkpoint,
   removes derived temporary media, and retains the canonical source for retry.
+- Whisper execution is separately resource-bounded from the document upload
+  queue and defaults to one active transcription. An app-owned fixed FIFO
+  worker pool holds only canonical source references while audio waits; a
+  cancellation-aware provider gate also protects synchronous callers. Concurrent
+  PDF OCR uses a separate fixed pool, so it does not create additional Whisper
+  model instances. Cancellation while queued prevents model construction, and
+  every terminal path releases the gate.
+- Upload/retry submit races reconcile the durable operation after enqueue, so a
+  cancel arriving between document attachment and worker submission is removed
+  and acknowledged without starting transcription. Shutdown closes the gate and
+  queue, cancels queued work, and performs a bounded join before provider
+  cleanup. Active native inference remains cooperative and stops at its next
+  provider checkpoint rather than by unsafe thread termination.
 - Completed segments are committed incrementally and remain readable.
 - An uncanceled Whisper failure preserves completed Japanese segments, marks
   the document `transcription_failed`, and keeps the canonical source eligible
@@ -72,6 +88,16 @@ beside it. Japanese remains the canonical source used for draft generation.
 
 ## Acceptance Evidence
 
+- On 2026-07-19, the queue-responsiveness follow-up passed all 388 backend
+  tests, including 26 focused audio/PDF queue, cancel-race, submit-failure, and
+  shutdown cases. Audio and OCR worker counts are fixed by their respective
+  settings, queued payloads are canonical metadata only, and no API/schema
+  regeneration was required.
+- On 2026-07-20, the final review follow-up passed all 393 backend tests and 28
+  focused queue/async tests after adding rolling mixed-source upload coverage,
+  bounded document workers, shutdown cleanup, and immediate release of audio
+  source bytes after transcription. Backend lint and the production Angular
+  build also passed.
 - On 2026-07-19, the automated matrix completed 877 tests: backend 374,
   transcription runtime 14, contracts 5, generated API client 3, Angular 251,
   desktop package QA 210, and Rust 20. Relevant lint, typecheck, OpenAPI
