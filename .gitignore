@@ -77,3 +77,4 @@ __screenshots__/
 /apps/cert-prep-backend/.benchmarks/
 /apps/cert-prep-backend/scripts/.benchmarks/
 /apps/cert-prep-backend/onnxruntime_profile__*.json
+/audio
