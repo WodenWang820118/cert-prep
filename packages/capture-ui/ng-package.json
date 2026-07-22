@@ -1,0 +1,1 @@
+{"$schema":"../../node_modules/ng-packagr/ng-package.schema.json","dest":"../../dist/packages/capture-ui","lib":{"entryFile":"src/index.ts"}}

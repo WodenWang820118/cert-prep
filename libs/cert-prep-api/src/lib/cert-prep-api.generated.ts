@@ -7,6 +7,7 @@ export interface Components {
     AnswerKeySource: string;
     ApiErrorRead: { "code": string; "message": string; "details"?: Record<string, unknown> | null };
     Body_upload_document_projects__project_id__documents_post: { "file": string; "language_hint"?: string };
+    CaptureFailureV1: { "code": string; "message": string; "stage"?: string | null; "retryable"?: boolean };
     ChunkList: { "items": Components['schemas']['ChunkRead'][] };
     ChunkRead: { "id": string; "document_id": string; "page_number": number; "chunk_index": number; "text": string; "raw_text": string; "line_start": number | null; "line_end": number | null; "line_count": number; "source_excerpt": string; "extraction_method": Components['schemas']['PdfExtractionMethod'] | string; "content_profile": Components['schemas']['ContentProfile'] | string; "created_at": string; "locator_kind"?: string; "start_ms"?: number | null; "end_ms"?: number | null; "source_revision"?: number; "translated_text"?: string | null; "translation_source_revision"?: number | null; "translation_stale"?: boolean };
     ChunkUpdate: { "text": string };
@@ -36,7 +37,7 @@ export interface Components {
     MachineStorageRead: { "path": string; "free_bytes"?: number | null; "total_bytes"?: number | null };
     ManualDraftGenerationOperationRead: { "id": string; "project_id": string; "document_id": string; "limit": number; "strategy": Components['schemas']['DraftGenerationStrategy']; "status": Components['schemas']['ManualDraftOperationStatus']; "phase": string; "cancellable": boolean; "provider": string; "model": string; "effective_provider"?: string | null; "effective_model"?: string | null; "fallback_reason"?: string | null; "generated_count": number; "error"?: string | null; "created_at": string; "updated_at": string; "commit_started_at"?: string | null };
     ManualDraftOperationStatus: "queued" | "running" | "cancel_requested" | "canceled" | "succeeded" | "failed";
-    ModelDownloadRead: { "id": string; "provider": string; "model": string; "status": Components['schemas']['RuntimeInstallationStatus']; "phase": string; "cancellable": boolean; "detail": string; "completed": number | null; "total": number | null; "created_at": string; "updated_at": string; "commit_started_at"?: string | null; "error"?: string | null };
+    ModelDownloadRead: { "id": string; "provider": string; "model": string; "status": Components['schemas']['cert_prep_contracts__runtime__RuntimeInstallationStatus']; "phase": string; "cancellable": boolean; "detail": string; "completed": number | null; "total": number | null; "created_at": string; "updated_at": string; "commit_started_at"?: string | null; "error"?: string | null };
     OCRHealthRead: { "provider": string; "engine": string; "available": boolean; "detail": string; "python_version": string; "paddle_version": string | null; "paddleocr_version": string | null; "selected_device": string | null; "cuda_available": boolean; "gpu_count": number; "model_cache_dir": string | null; "fallback_reason": string | null; "unavailable_reason"?: string | null };
     OllamaModelProfileRead: { "profile_id": string; "display_name": string; "description": string; "base_model": string; "local_model": string; "context_window": number; "system_prompt": string; "parameters"?: Record<string, unknown>; "min_total_ram_bytes"?: number | null; "min_available_ram_bytes"?: number | null; "min_free_disk_bytes"?: number | null; "min_vram_bytes"?: number | null; "auto_selectable": boolean; "explicit_opt_in_required": boolean; "fallback_profile_ids"?: string[] };
     OllamaProfileSelectionRead: { "profile_enabled": boolean; "profile_id"?: string | null; "selected_profile"?: Components['schemas']['OllamaModelProfileRead'] | null; "support_status": string; "reason": string; "fallback_profiles"?: Components['schemas']['OllamaModelProfileRead'][]; "fallback_models"?: string[]; "warnings"?: string[]; "inventory"?: Components['schemas']['MachineInventoryRead'] | null; "modelfile_sha256"?: string | null; "effective_model": string; "base_model"?: string | null };
@@ -60,12 +61,17 @@ export interface Components {
     QuestionDraftRead: { "id": string; "project_id": string; "document_id": string | null; "chunk_id": string | null; "question": string; "choices": string[]; "answer": string | null; "answer_key_source": Components['schemas']['AnswerKeySource'] | string; "rationale": string | null; "citation_page": number | null; "citation_locator_kind"?: string; "citation_start_ms"?: number | null; "citation_end_ms"?: number | null; "source_excerpt": string | null; "confidence": number | null; "source_order": number | null; "source_question_number": string | null; "item_kind": Components['schemas']['QuestionItemKind'] | string; "group_key": string | null; "group_prompt": string | null; "status": Components['schemas']['DraftStatus'] | string; "rejection_reason": string | null; "created_at": string; "updated_at": string };
     QuestionDraftUpdate: { "question"?: string | null; "choices"?: string[] | null; "answer"?: string | null; "answer_key_source"?: Components['schemas']['AnswerKeySource'] | string | null; "rationale"?: string | null; "citation_page"?: number | null; "source_excerpt"?: string | null; "confidence"?: number | null; "source_order"?: number | null; "source_question_number"?: string | null; "item_kind"?: Components['schemas']['QuestionItemKind'] | string | null; "group_key"?: string | null; "group_prompt"?: string | null };
     QuestionItemKind: string;
-    RuntimeInstallationRead: { "id": string; "kind": Components['schemas']['RuntimeRequirementKind']; "provider": string; "model": string; "status": Components['schemas']['RuntimeInstallationStatus']; "phase": string; "cancellable": boolean; "detail": string; "completed": number | null; "total": number | null; "created_at": string; "updated_at": string; "commit_started_at"?: string | null; "error"?: string | null };
-    RuntimeInstallationStatus: "queued" | "running" | "cancel_requested" | "canceled" | "waiting_for_user" | "succeeded" | "failed";
+    RuntimeInstallationRead: { "id": string; "kind": Components['schemas']['RuntimeRequirementKind']; "provider": string; "model": string; "status": Components['schemas']['cert_prep_contracts__runtime__RuntimeInstallationStatus']; "phase": string; "cancellable": boolean; "detail": string; "completed": number | null; "total": number | null; "created_at": string; "updated_at": string; "commit_started_at"?: string | null; "error"?: string | null };
+    RuntimeInstallationV1: { "installationId": string; "requirementId": string; "status": Components['schemas']['cert_prep_backend__domains__capture_workbench__contracts__RuntimeInstallationStatus']; "progress": number; "error"?: Components['schemas']['CaptureFailureV1'] | null; "createdAt": string; "updatedAt": string; "completedAt"?: string | null };
+    RuntimeInstallationsV1: { "items": Components['schemas']['RuntimeInstallationV1'][] };
     RuntimeRequirementKind: string;
     RuntimeRequirementRead: { "kind": Components['schemas']['RuntimeRequirementKind']; "label": string; "available": boolean; "detail": string; "unavailable_reason": string | null; "version"?: string | null; "bytes"?: number | null; "installed_path"?: string | null };
+    RuntimeRequirementStatus: string;
+    RuntimeRequirementV1: { "requirementId": string; "kind": string; "displayName": string; "status": Components['schemas']['RuntimeRequirementStatus']; "requiredFor": string[]; "installStrategy": string; "detail"?: string | null };
     RuntimeRequirementsRead: { "items": Components['schemas']['RuntimeRequirementRead'][] };
+    RuntimeRequirementsV1: { "items": Components['schemas']['RuntimeRequirementV1'][] };
     SourceDocumentStatus: string;
+    StartRuntimeInstallationV1: { "requirementId": string; "consent": boolean };
     ValidationError: { "loc": (string | number)[]; "msg": string; "type": string; "input"?: unknown; "ctx"?: Record<string, unknown> };
     WrongAnswerClusterRead: { "document_id": string | null; "citation_page": number | null; "current_wrong_count": number; "cleared_count": number; "last_wrong_at": string | null };
     WrongAnswerExplanationRead: { "attempt_id": string; "explanation": string; "provider": string; "model": string; "grounded_fields": Components['schemas']['WrongAnswerGroundedFields']; "fallback": boolean };
@@ -74,12 +80,15 @@ export interface Components {
     WrongAnswerRead: { "attempt_id": string; "session_id": string; "question_id": string; "question": string; "selected_answer": string; "correct_answer": string | null; "rationale": string | null; "citation_page": number | null; "source_excerpt": string | null; "document_id": string | null; "created_at": string };
     WrongAnswerRepeatedMissRead: { "question_id": string; "question": string; "document_id": string | null; "citation_page": number | null; "source_excerpt": string | null; "miss_count": number; "last_wrong_at": string };
     WrongAnswerSummaryRead: { "current_wrong_count": number; "cleared_count": number; "last_wrong_date": string | null; "repeated_misses": Components['schemas']['WrongAnswerRepeatedMissRead'][]; "clusters": Components['schemas']['WrongAnswerClusterRead'][] };
+    cert_prep_backend__domains__capture_workbench__contracts__RuntimeInstallationStatus: string;
+    cert_prep_contracts__runtime__RuntimeInstallationStatus: string;
   };
 }
 
 export type AnswerKeySource = Components['schemas']['AnswerKeySource'];
 export type ApiErrorRead = Components['schemas']['ApiErrorRead'];
 export type Body_upload_document_projects__project_id__documents_post = Components['schemas']['Body_upload_document_projects__project_id__documents_post'];
+export type CaptureFailureV1 = Components['schemas']['CaptureFailureV1'];
 export type ChunkList = Components['schemas']['ChunkList'];
 export type ChunkRead = Components['schemas']['ChunkRead'];
 export type ChunkUpdate = Components['schemas']['ChunkUpdate'];
@@ -134,11 +143,16 @@ export type QuestionDraftRead = Components['schemas']['QuestionDraftRead'];
 export type QuestionDraftUpdate = Components['schemas']['QuestionDraftUpdate'];
 export type QuestionItemKind = Components['schemas']['QuestionItemKind'];
 export type RuntimeInstallationRead = Components['schemas']['RuntimeInstallationRead'];
-export type RuntimeInstallationStatus = Components['schemas']['RuntimeInstallationStatus'];
+export type RuntimeInstallationV1 = Components['schemas']['RuntimeInstallationV1'];
+export type RuntimeInstallationsV1 = Components['schemas']['RuntimeInstallationsV1'];
 export type RuntimeRequirementKind = Components['schemas']['RuntimeRequirementKind'];
 export type RuntimeRequirementRead = Components['schemas']['RuntimeRequirementRead'];
+export type RuntimeRequirementStatus = Components['schemas']['RuntimeRequirementStatus'];
+export type RuntimeRequirementV1 = Components['schemas']['RuntimeRequirementV1'];
 export type RuntimeRequirementsRead = Components['schemas']['RuntimeRequirementsRead'];
+export type RuntimeRequirementsV1 = Components['schemas']['RuntimeRequirementsV1'];
 export type SourceDocumentStatus = Components['schemas']['SourceDocumentStatus'];
+export type StartRuntimeInstallationV1 = Components['schemas']['StartRuntimeInstallationV1'];
 export type ValidationError = Components['schemas']['ValidationError'];
 export type WrongAnswerClusterRead = Components['schemas']['WrongAnswerClusterRead'];
 export type WrongAnswerExplanationRead = Components['schemas']['WrongAnswerExplanationRead'];
@@ -147,6 +161,8 @@ export type WrongAnswerList = Components['schemas']['WrongAnswerList'];
 export type WrongAnswerRead = Components['schemas']['WrongAnswerRead'];
 export type WrongAnswerRepeatedMissRead = Components['schemas']['WrongAnswerRepeatedMissRead'];
 export type WrongAnswerSummaryRead = Components['schemas']['WrongAnswerSummaryRead'];
+export type cert_prep_backend__domains__capture_workbench__contracts__RuntimeInstallationStatus = Components['schemas']['cert_prep_backend__domains__capture_workbench__contracts__RuntimeInstallationStatus'];
+export type cert_prep_contracts__runtime__RuntimeInstallationStatus = Components['schemas']['cert_prep_contracts__runtime__RuntimeInstallationStatus'];
 
 export type CertPrepHttpMethod = 'DELETE' | 'GET' | 'PATCH' | 'POST';
 
@@ -218,6 +234,11 @@ export interface CertPrepGeneratedClient {
   startRuntimeInstallation(kind: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['RuntimeInstallationRead']>;
   getRuntimeInstallation(jobId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['RuntimeInstallationRead']>;
   cancelRuntimeInstallation(jobId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['RuntimeInstallationRead']>;
+  captureRuntimeRequirements(options?: CertPrepRequestOptions): Promise<Components['schemas']['RuntimeRequirementsV1']>;
+  startCaptureRuntimeInstallation(body: Components['schemas']['StartRuntimeInstallationV1'], options?: CertPrepRequestOptions): Promise<Components['schemas']['RuntimeInstallationV1']>;
+  captureRuntimeInstallations(options?: CertPrepRequestOptions): Promise<Components['schemas']['RuntimeInstallationsV1']>;
+  captureRuntimeInstallation(installationId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['RuntimeInstallationV1']>;
+  cancelCaptureRuntimeInstallation(installationId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['RuntimeInstallationV1']>;
 }
 
 export function createCertPrepGeneratedClient(
@@ -322,5 +343,15 @@ export function createCertPrepGeneratedClient(
       transport.request<Components['schemas']['RuntimeInstallationRead']>({ method: 'GET' as const, path: `/runtime/installations/${encodeURIComponent(jobId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
     cancelRuntimeInstallation: (jobId: string, options?: CertPrepRequestOptions) =>
       transport.request<Components['schemas']['RuntimeInstallationRead']>({ method: 'DELETE' as const, path: `/runtime/installations/${encodeURIComponent(jobId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    captureRuntimeRequirements: (options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['RuntimeRequirementsV1']>({ method: 'GET' as const, path: "/capture-runtime/requirements", ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    startCaptureRuntimeInstallation: (body: Components['schemas']['StartRuntimeInstallationV1'], options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['RuntimeInstallationV1']>({ method: 'POST' as const, path: "/capture-runtime/installations", body, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    captureRuntimeInstallations: (options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['RuntimeInstallationsV1']>({ method: 'GET' as const, path: "/capture-runtime/installations", ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    captureRuntimeInstallation: (installationId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['RuntimeInstallationV1']>({ method: 'GET' as const, path: `/capture-runtime/installations/${encodeURIComponent(installationId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
+    cancelCaptureRuntimeInstallation: (installationId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['RuntimeInstallationV1']>({ method: 'POST' as const, path: `/capture-runtime/installations/${encodeURIComponent(installationId)}/cancel`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) }),
   };
 }

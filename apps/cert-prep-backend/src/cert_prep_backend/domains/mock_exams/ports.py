@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol, TypeVar, runtime_checkable
 
@@ -24,6 +24,7 @@ __all__ = [
     "ResourceReleasingProvider",
     "StartsOnGenerationProvider",
     "StreamingGenerationOptionsProvider",
+    "StructuredJsonGenerationProvider",
     "provider_capability",
 ]
 
@@ -66,6 +67,25 @@ class DraftGenerationProvider(Protocol):
         """Generate up to limit draft suggestions from source chunks."""
         pass
 
+
+@runtime_checkable
+class StructuredJsonGenerationProvider(Protocol):
+    """Provider capability for returning one schema-constrained JSON candidate verbatim."""
+
+    provider: str
+    model: str
+
+    def generate_structured_json(
+        self,
+        *,
+        messages: Sequence[Mapping[str, str]],
+        json_schema: Mapping[str, Any],
+        num_ctx: int = 8192,
+        num_predict: int = 4096,
+        keep_alive: str | float | int | None = "5m",
+    ) -> str:
+        """Return the provider response text without parsing or repairing it."""
+        pass
 
 @runtime_checkable
 class ReasoningDraftProvider(Protocol):

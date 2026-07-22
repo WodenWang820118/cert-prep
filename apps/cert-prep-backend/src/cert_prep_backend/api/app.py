@@ -17,6 +17,18 @@ from cert_prep_backend import __version__
 from cert_prep_backend.api.dependencies import require_bearer_auth
 from cert_prep_backend.core.config import Settings
 from cert_prep_backend.persistence.database import Database
+from cert_prep_backend.domains.capture_workbench.client import CaptureRuntimeClient
+from cert_prep_backend.domains.capture_workbench.contracts import (
+    CAPTURE_DOCUMENT_SCHEMA_VERSION,
+    SUPPORTED_API_VERSION,
+    SUPPORTED_RUNTIME_VERSION,
+)
+from cert_prep_backend.domains.capture_workbench.coordinator import (
+    CertPrepCaptureCoordinator,
+)
+from cert_prep_backend.domains.capture_workbench.structuring import (
+    CertPrepCaptureStructuringAdapter,
+)
 from cert_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
 from cert_prep_backend.domains.mock_exams.provider import lazy_provider_from_settings
 from cert_prep_backend.domains.mock_exams.streaming import StreamingDraftGenerationManager
@@ -37,7 +49,16 @@ from cert_prep_backend.domains.source_documents.ocr_provider_pool import (
     provider_pool_from_settings,
     shared_provider_pool,
 )
-from cert_prep_backend.routers import documents, drafts, llm, ocr, practice, projects, runtime
+from cert_prep_backend.routers import (
+    capture_runtime,
+    documents,
+    drafts,
+    llm,
+    ocr,
+    practice,
+    projects,
+    runtime,
+)
 from cert_prep_contracts.transcription import TranscriptionProvider
 from cert_prep_transcription_whisper import WhisperTranscriptionProvider
 
@@ -64,6 +85,7 @@ def create_app(
     document_processing_async_jobs: bool = True,
     streaming_draft_generation_async_jobs: bool = True,
     transcription_provider: TranscriptionProvider | None = None,
+    capture_runtime_client: CaptureRuntimeClient | None = None,
 ) -> FastAPI:
     app_settings = settings or Settings()
 
@@ -116,6 +138,8 @@ def create_app(
             ocr_provider_close = getattr(app.state.ocr_provider, "close", None)
             if ocr_workers_stopped and callable(ocr_provider_close):
                 ocr_provider_close()
+            if app.state.owns_capture_runtime_client:
+                app.state.capture_runtime_client.close()
 
     app = FastAPI(
         title="Cert Prep Backend",
@@ -128,6 +152,22 @@ def create_app(
     recover_operations(app.state.database)
     source_documents_repository.recover_processing_documents(app.state.database)
     app.state.llm_provider = llm_provider or lazy_provider_from_settings(app_settings)
+    app.state.capture_runtime_client = capture_runtime_client or _capture_runtime_client(
+        app_settings
+    )
+    app.state.owns_capture_runtime_client = (
+        capture_runtime_client is None and app.state.capture_runtime_client is not None
+    )
+    app.state.capture_coordinator = (
+        CertPrepCaptureCoordinator(
+            client=app.state.capture_runtime_client,
+            structurer=CertPrepCaptureStructuringAdapter(app.state.llm_provider),
+            poll_interval_seconds=app_settings.capture_runtime_poll_interval_seconds,
+            timeout_seconds=app_settings.capture_runtime_job_timeout_seconds,
+        )
+        if app.state.capture_runtime_client is not None
+        else None
+    )
     app.state.ocr_provider = ocr_provider or ocr_provider_from_settings(app_settings)
     app.state.transcription_provider = (
         transcription_provider or WhisperTranscriptionProvider(prefer_gpu=True)
@@ -172,6 +212,7 @@ def create_app(
             "Authorization",
             "Content-Type",
             "X-Cert-Prep-Operation-Id",
+            "X-Idempotency-Key",
         ],
     )
 
@@ -232,6 +273,7 @@ def create_app(
     app.include_router(llm.router, dependencies=protected_dependencies)
     app.include_router(ocr.router, dependencies=protected_dependencies)
     app.include_router(runtime.router, dependencies=protected_dependencies)
+    app.include_router(capture_runtime.router, dependencies=protected_dependencies)
 
     return app
 
@@ -247,6 +289,32 @@ def _document_ocr_provider_pool(
     if ocr_provider is not None:
         return shared_provider_pool(ocr_provider)
     return provider_pool_from_settings(settings)
+
+
+def _capture_runtime_client(settings: Settings) -> CaptureRuntimeClient | None:
+    if not settings.capture_runtime_configured:
+        return None
+    expected = {
+        "runtime": (settings.capture_runtime_version, SUPPORTED_RUNTIME_VERSION),
+        "API": (settings.capture_runtime_api_version, SUPPORTED_API_VERSION),
+        "schema": (
+            settings.capture_document_schema_version,
+            CAPTURE_DOCUMENT_SCHEMA_VERSION,
+        ),
+    }
+    mismatches = [
+        f"{label} {actual!r} (expected {wanted!r})"
+        for label, (actual, wanted) in expected.items()
+        if actual != wanted
+    ]
+    if mismatches:
+        raise ValueError("Incompatible staged Capture Runtime: " + "; ".join(mismatches))
+    assert settings.capture_runtime_url is not None
+    assert settings.capture_runtime_token is not None
+    return CaptureRuntimeClient(
+        base_url=settings.capture_runtime_url,
+        bearer_token=settings.capture_runtime_token,
+    )
 
 
 def _error_content(status_code: int, detail: Any) -> dict[str, Any]:

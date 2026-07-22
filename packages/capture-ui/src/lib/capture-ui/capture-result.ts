@@ -1,0 +1,5 @@
+import type { CaptureOutputMode, CaptureResultV1, CaptureSourceKind } from './capture-contracts';
+const EXTENSION_KINDS: Readonly<Record<string, CaptureSourceKind>> = { pdf: 'pdf', png: 'image', jpg: 'image', jpeg: 'image', webp: 'image', mp3: 'audio', wav: 'audio', m4a: 'audio' };
+export function classifyCaptureFile(file: Pick<File, 'name'>): CaptureSourceKind | null { return EXTENSION_KINDS[file.name.split('.').pop()?.toLowerCase() ?? ''] ?? null; }
+export function captureAccept(enabled: readonly CaptureSourceKind[]): string { const values: string[] = []; if (enabled.includes('pdf')) values.push('.pdf,application/pdf'); if (enabled.includes('image')) values.push('.png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp'); if (enabled.includes('audio')) values.push('.mp3,.wav,.m4a,audio/mpeg,audio/wav,audio/mp4'); return values.join(','); }
+export function serializeCaptureResult(result: CaptureResultV1, mode: CaptureOutputMode): string { return mode === 'json' ? JSON.stringify(result, null, 2) : result.text; }

@@ -116,7 +116,12 @@ fn install_python_runtime_inner(
             manifest.kind
         ));
     }
-    if manifest.artifact.url.as_deref().is_some_and(|url| !url.trim().is_empty()) {
+    if manifest
+        .artifact
+        .url
+        .as_deref()
+        .is_some_and(|url| !url.trim().is_empty())
+    {
         return Err("Bundled Python backend runtime manifest must use url: null.".to_string());
     }
     let artifact_name = safe_relative_path(&manifest.artifact.file_name, "artifact file_name")?;
@@ -211,7 +216,9 @@ fn replace_runtime_directory(
         if had_previous {
             let _ = fs::rename(&backup, destination);
         }
-        return Err(format!("failed to atomically install Python backend runtime: {error}"));
+        return Err(format!(
+            "failed to atomically install Python backend runtime: {error}"
+        ));
     }
     if had_previous {
         let _ = fs::remove_dir_all(backup);
@@ -287,7 +294,10 @@ fn now_string() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::manifests::{RuntimeArtifact, RuntimeManifest};
+    use crate::{
+        capture_runtime::CaptureRuntimeConnection,
+        manifests::{RuntimeArtifact, RuntimeManifest},
+    };
     use sha2::{Digest, Sha256};
     use std::{io::Write, sync::Mutex};
     use zip::write::SimpleFileOptions;
@@ -301,7 +311,9 @@ mod tests {
         let artifact_name = "cert-prep-backend-runtime-x86_64-pc-windows-msvc.zip";
         let artifact_path = resource_dir.join(artifact_name);
         write_runtime_zip(&artifact_path, "cert-prep-backend.exe", b"new-runtime");
-        let bytes = fs::metadata(&artifact_path).expect("artifact metadata").len();
+        let bytes = fs::metadata(&artifact_path)
+            .expect("artifact metadata")
+            .len();
         let sha256 = hash_file(&artifact_path);
         let manifest = RuntimeManifest {
             kind: PYTHON_RUNTIME_KIND.into(),
@@ -377,6 +389,13 @@ mod tests {
             backend_manifest_path: Some(manifest_path),
             ocr_manifest_path: None,
             windowsml_ocr_manifest_path: None,
+            capture_runtime: CaptureRuntimeConnection {
+                base_url: "http://127.0.0.1:41001".into(),
+                token: "capture-sidecar-test-token".into(),
+                runtime_version: "0.1.0".into(),
+                api_version: "1.0".into(),
+                capture_document_schema_version: "1".into(),
+            },
             config: Mutex::new(None),
             child: Mutex::new(None),
             job: Mutex::new(None),

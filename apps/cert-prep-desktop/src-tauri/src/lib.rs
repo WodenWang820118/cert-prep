@@ -1,6 +1,8 @@
 mod archives;
 mod backend;
 mod backend_process;
+mod capture_manifest;
+mod capture_runtime;
 mod commands;
 mod constants;
 mod manifests;
@@ -15,7 +17,10 @@ pub use runtime_installation::DesktopRuntimeInstallation;
 
 use backend::resource_path;
 use backend_process::external_backend_env;
-use constants::{BACKEND_RUNTIME_MANIFEST, WINDOWSML_OCR_RUNTIME_MANIFEST};
+use capture_runtime::{bundled_capture_runtime_paths, CaptureRuntimeState};
+use constants::{
+    BACKEND_RUNTIME_MANIFEST, CAPTURE_RUNTIME_MANIFEST, WINDOWSML_OCR_RUNTIME_MANIFEST,
+};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -25,11 +30,20 @@ pub fn run() {
             fs::create_dir_all(&data_dir)
                 .map_err(|error| format!("failed to create app data directory: {error}"))?;
 
+            let (capture_manifest_path, capture_executable_path) =
+                bundled_capture_runtime_paths(resource_path(app, CAPTURE_RUNTIME_MANIFEST))?;
+            let capture_state = CaptureRuntimeState::launch(
+                &capture_manifest_path,
+                &capture_executable_path,
+                &data_dir,
+            )?;
+
             let state = BackendState::new(
                 data_dir,
                 resource_path(app, BACKEND_RUNTIME_MANIFEST),
                 None,
                 resource_path(app, WINDOWSML_OCR_RUNTIME_MANIFEST),
+                capture_state.connection(),
             );
             if let Some(config) = external_backend_env() {
                 state.set_config(config);
@@ -39,6 +53,7 @@ pub fn run() {
                     state.start_installation();
                 }
             }
+            app.manage(capture_state);
             app.manage(state);
             Ok(())
         })
@@ -48,6 +63,9 @@ pub fn run() {
                 tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed
             ) {
                 if let Some(state) = window.try_state::<BackendState>() {
+                    state.terminate_child_process_tree();
+                }
+                if let Some(state) = window.try_state::<CaptureRuntimeState>() {
                     state.terminate_child_process_tree();
                 }
             }

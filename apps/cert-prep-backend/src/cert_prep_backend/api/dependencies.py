@@ -8,6 +8,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from cert_prep_backend.api.errors import api_error
 from cert_prep_backend.core.config import Settings
 from cert_prep_backend.persistence.database import Database
+from cert_prep_backend.domains.capture_workbench.client import CaptureRuntimeClient
 from cert_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
 from cert_prep_backend.domains.mock_exams.streaming import StreamingDraftGenerationManager
 from cert_prep_backend.domains.runtime_installations import RuntimeInstallationManager
@@ -31,6 +32,17 @@ def get_settings(request: Request) -> Settings:
 
 def get_database(request: Request) -> Database:
     return request.app.state.database
+
+
+def get_capture_runtime_client(request: Request) -> CaptureRuntimeClient:
+    client: CaptureRuntimeClient | None = request.app.state.capture_runtime_client
+    if client is None:
+        raise api_error(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            code="capture_runtime_unavailable",
+            message="Capture Runtime is not configured for this process.",
+        )
+    return client
 
 
 def get_llm_provider(request: Request) -> LLMProvider:

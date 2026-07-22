@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 import logging
 from threading import local
 from typing import Any, TypeVar
@@ -188,6 +188,33 @@ class OllamaProvider:
 
         generated = self.generate_reasoning_drafts(chunks, limit - len(extracted))
         return dedupe_suggestions([*extracted, *generated], limit)
+
+    def generate_structured_json(
+        self,
+        *,
+        messages: Sequence[Mapping[str, str]],
+        json_schema: Mapping[str, Any],
+        num_ctx: int = 8192,
+        num_predict: int = 4096,
+        keep_alive: str | float | int | None = STREAMING_PREWARM_KEEP_ALIVE,
+    ) -> str:
+        """Return one schema-constrained response from the existing Ollama provider verbatim."""
+
+        return self._with_primary_model(
+            lambda model: _message_content(
+                self._client.chat(
+                    model=model,
+                    messages=[dict(message) for message in messages],
+                    format=dict(json_schema),
+                    options=self._chat_options(
+                        num_ctx=num_ctx,
+                        num_predict=num_predict,
+                    ),
+                    think=False,
+                    keep_alive=keep_alive,
+                )
+            )
+        )
 
     def generate_reasoning_drafts(
         self,
@@ -448,6 +475,17 @@ def _suggestions_from_reasoning_payload(
             continue
         suggestions.append(suggestion)
     return dedupe_suggestions(suggestions, limit)
+
+
+def _message_content(response: Any) -> str:
+    content = getattr(getattr(response, "message", None), "content", None)
+    if content is None and isinstance(response, dict):
+        message = response.get("message")
+        if isinstance(message, dict):
+            content = message.get("content")
+    if not isinstance(content, str) or not content.strip():
+        raise ValueError("Ollama returned an empty structured JSON candidate")
+    return content
 
 
 def _prioritize_supplemental_chunks(

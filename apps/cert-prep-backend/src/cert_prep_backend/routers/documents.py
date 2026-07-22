@@ -33,6 +33,15 @@ from cert_prep_backend.core.exceptions import (
     OperationNotCancellableError,
 )
 from cert_prep_backend.persistence.database import Database
+from cert_prep_backend.domains.capture_workbench.contracts import CaptureSourceKind
+from cert_prep_backend.domains.capture_workbench.coordinator import (
+    CaptureRuntimeCanceledError,
+    CaptureRuntimeJobError,
+    CertPrepCaptureCoordinator,
+)
+from cert_prep_backend.domains.capture_workbench.persistence import (
+    publish_capture_document,
+)
 from cert_prep_backend.api.dependencies import (
     get_audio_document_worker_pool,
     get_audio_transcription_gate,
@@ -270,6 +279,9 @@ async def upload_document(
     ),
 ) -> dict:
     operation_id = operation_id_header or str(uuid4())
+    capture_coordinator: CertPrepCaptureCoordinator | None = getattr(
+        request.app.state, "capture_coordinator", None
+    )
     claimed = False
     try:
         projects_repository.ensure_project_exists(db, project_id)
@@ -299,13 +311,13 @@ async def upload_document(
             max_image_pixels=settings.max_image_pixels,
             filename=file.filename,
         )
-        if prepared_source.kind == "audio":
+        if prepared_source.kind == "audio" and capture_coordinator is None:
             _ensure_whisper_models_ready(runtime_installations)
         async_processing = bool(
             getattr(request.app.state, "document_processing_async_jobs", True)
         )
         try:
-            if prepared_source.kind != "audio":
+            if prepared_source.kind != "audio" and capture_coordinator is None:
                 await _prepare_document_ocr_provider_pool(ocr_provider_pool)
         except ProviderUnavailableError as exc:
             document_operations.finish_failed(
@@ -372,6 +384,7 @@ async def upload_document(
                 source=processing_source,
                 transcription_provider=transcription_provider,
                 audio_transcription_gate=audio_transcription_gate,
+                capture_coordinator=capture_coordinator,
             )
             return source_documents_repository.get_document(
                 db,
@@ -400,6 +413,7 @@ async def upload_document(
             synchronous_source,
             transcription_provider,
             audio_transcription_gate,
+            capture_coordinator=capture_coordinator,
         )
     except HTTPException:
         if claimed:
@@ -582,6 +596,9 @@ async def retry_document_processing(
     ),
 ) -> dict:
     operation_id = operation_id_header or str(uuid4())
+    capture_coordinator: CertPrepCaptureCoordinator | None = getattr(
+        request.app.state, "capture_coordinator", None
+    )
     try:
         document = source_documents_repository.get_document(
             db,
@@ -619,9 +636,9 @@ async def retry_document_processing(
                     else "image"
                 ),
             )
-            if processing_source.kind == "audio":
+            if processing_source.kind == "audio" and capture_coordinator is None:
                 _ensure_whisper_models_ready(runtime_installations)
-            else:
+            elif processing_source.kind != "audio" and capture_coordinator is None:
                 await _prepare_document_ocr_provider_pool(ocr_provider_pool)
         else:
             content = await asyncio.to_thread(
@@ -638,7 +655,7 @@ async def retry_document_processing(
                 max_image_pixels=settings.max_image_pixels,
                 filename=source_file.filename,
             )
-            if processing_source.kind == "audio":
+            if processing_source.kind == "audio" and capture_coordinator is None:
                 _ensure_whisper_models_ready(runtime_installations)
                 processing_source = StoredSourceReference(
                     storage_path=str(source_path),
@@ -647,8 +664,16 @@ async def retry_document_processing(
                     filename=source_file.filename,
                     kind="audio",
                 )
-            else:
+            elif processing_source.kind != "audio" and capture_coordinator is None:
                 await _prepare_document_ocr_provider_pool(ocr_provider_pool)
+            elif processing_source.kind == "audio":
+                processing_source = StoredSourceReference(
+                    storage_path=str(source_path),
+                    sha256=source_file.sha256,
+                    canonical_suffix=source_path.suffix.lower(),
+                    filename=source_file.filename,
+                    kind="audio",
+                )
         document_operations.start_retry_operation(
             db,
             project_id=project_id,
@@ -674,6 +699,7 @@ async def retry_document_processing(
                 source=processing_source,
                 transcription_provider=transcription_provider,
                 audio_transcription_gate=audio_transcription_gate,
+                capture_coordinator=capture_coordinator,
             )
             return submitted_operation
 
@@ -689,6 +715,7 @@ async def retry_document_processing(
             processing_source,
             transcription_provider,
             audio_transcription_gate,
+            capture_coordinator=capture_coordinator,
         )
         return document_operations.get_operation(
             db,
@@ -967,6 +994,7 @@ def _submit_document_processing(
     source: StoredSourceReference,
     transcription_provider: TranscriptionProvider,
     audio_transcription_gate: AudioTranscriptionGate,
+    capture_coordinator: CertPrepCaptureCoordinator | None,
 ) -> dict:
     item = DocumentWorkItem(
         operation_id=operation_id,
@@ -983,6 +1011,7 @@ def _submit_document_processing(
             source,
             transcription_provider,
             audio_transcription_gate,
+            capture_coordinator=capture_coordinator,
             shutdown_requested=worker_pool.is_closed,
         ),
         cancel_queued=partial(
@@ -1097,6 +1126,127 @@ def _auto_generate_exam_items(
     return _update_document_exam_state(db, project_id, document_id, len(drafts))
 
 
+def _process_capture_workbench_upload(
+    *,
+    db: Database,
+    settings: Settings,
+    llm_provider: LLMProvider,
+    streaming_questions: StreamingDraftGenerationManager,
+    project_id: str,
+    document_id: str,
+    operation_id: str,
+    source: PreparedSource | StoredSourceReference,
+    coordinator: CertPrepCaptureCoordinator,
+    should_shutdown: Callable[[], bool],
+) -> dict:
+    if isinstance(source, StoredSourceReference):
+        source_bytes = _read_stored_source_file(
+            settings,
+            project_id=project_id,
+            storage_path=source.storage_path,
+            expected_sha256=source.sha256,
+        )
+        source_sha256 = source.sha256
+        file_name = source.filename
+        canonical_suffix = source.canonical_suffix
+    else:
+        source_bytes = source.raw_bytes
+        source_sha256 = sha256_hex(source_bytes)
+        file_name = source_documents_repository.get_document(
+            db, project_id, document_id
+        )["filename"]
+        canonical_suffix = source.canonical_suffix
+
+    def should_cancel() -> bool:
+        if should_shutdown():
+            return True
+        try:
+            _ensure_document_operation_running(
+                db,
+                project_id=project_id,
+                document_id=document_id,
+                operation_id=operation_id,
+            )
+        except DocumentProcessingCanceledError:
+            return True
+        return False
+
+    try:
+        capture = coordinator.capture(
+            operation_id=operation_id,
+            file_name=str(file_name),
+            content=source_bytes,
+            media_type=_capture_media_type(canonical_suffix),
+            source_kind=CaptureSourceKind(source.kind),
+            target_language="zh-Hant" if source.kind == "audio" else None,
+            should_cancel=should_cancel,
+        )
+    except CaptureRuntimeCanceledError as error:
+        raise DocumentProcessingCanceledError(str(error)) from error
+    except CaptureRuntimeJobError as error:
+        if error.code == "requirement_unavailable":
+            raise ProviderUnavailableError(
+                "Capture Runtime extraction assets are unavailable. "
+                "Install the required WindowsML or Whisper asset in Runtime setup, then retry."
+            ) from error
+        raise
+    finally:
+        del source_bytes
+
+    document = publish_capture_document(
+        db,
+        project_id=project_id,
+        document_id=document_id,
+        operation_id=operation_id,
+        source_kind=source.kind,
+        expected_sha256=source_sha256,
+        document=capture.document,
+    )
+    try:
+        coordinator.delete(capture.capture_id)
+    except Exception:
+        logger.warning(
+            "Validated Capture Runtime job could not be deleted after publication",
+            extra={
+                "project_id": project_id,
+                "document_id": document_id,
+                "capture_id": capture.capture_id,
+            },
+        )
+
+    if document["chunks_count"] > 0:
+        streaming_questions.enqueue_document(
+            db, project_id=project_id, document_id=document_id
+        )
+        document = source_documents_repository.get_document(db, project_id, document_id)
+    if (
+        settings.auto_generate_exam_on_upload
+        and not settings.streaming_draft_generation_on_upload
+        and document["chunks_count"] > 0
+    ):
+        document = _auto_generate_exam_items(
+            db,
+            provider=llm_provider,
+            project_id=project_id,
+            document_id=document_id,
+            limit=settings.auto_generate_exam_limit,
+        )
+    return document
+
+
+def _capture_media_type(canonical_suffix: str) -> str:
+    return {
+        ".pdf": "application/pdf",
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".webp": "image/webp",
+        ".mp3": "audio/mpeg",
+        ".wav": "audio/wav",
+        ".m4a": "audio/mp4",
+    }.get(canonical_suffix.lower(), "application/octet-stream")
+
+
 def _process_document_upload(
     db: Database,
     settings: Settings,
@@ -1110,6 +1260,7 @@ def _process_document_upload(
     transcription_provider: TranscriptionProvider,
     audio_transcription_gate: AudioTranscriptionGate,
     *,
+    capture_coordinator: CertPrepCaptureCoordinator | None = None,
     shutdown_requested: Callable[[], bool] | None = None,
 ) -> dict:
     should_shutdown = shutdown_requested or (lambda: False)
@@ -1143,6 +1294,19 @@ def _process_document_upload(
         )
 
     try:
+        if capture_coordinator is not None:
+            return _process_capture_workbench_upload(
+                db=db,
+                settings=settings,
+                llm_provider=llm_provider,
+                streaming_questions=streaming_questions,
+                project_id=project_id,
+                document_id=document_id,
+                operation_id=operation_id,
+                source=source,
+                coordinator=capture_coordinator,
+                should_shutdown=should_shutdown,
+            )
         if source.kind == "audio":
             if not isinstance(source, StoredSourceReference):
                 raise InvalidSourceError(

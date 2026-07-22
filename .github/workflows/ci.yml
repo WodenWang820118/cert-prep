@@ -30,7 +30,7 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
         with:
-          version: 10.33.2
+          version: 11.15.1
           run_install: false
 
       - name: Install Node
@@ -90,7 +90,7 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
         with:
-          version: 10.33.2
+          version: 11.15.1
           run_install: false
 
       - name: Install Node

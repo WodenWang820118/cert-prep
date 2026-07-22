@@ -42,6 +42,28 @@ export interface RuntimeManifest {
   };
 }
 
+export interface CaptureRuntimeManifest {
+  readonly manifestVersion: string;
+  readonly runtimeVersion: string;
+  readonly apiVersion: string;
+  readonly captureDocumentSchemaVersion: string;
+  readonly platform: string;
+  readonly arch: string;
+  readonly fileName: string;
+  readonly bytes: number;
+  readonly sha256: string;
+  readonly schemaFileName: string;
+  readonly schemaSha256: string;
+  readonly runtimeRequirements: {
+    readonly 'windowsml-ocr': {
+      readonly artifactUrl: string;
+      readonly artifactFileName: string;
+      readonly bytes: number;
+      readonly sha256: string;
+    };
+  };
+}
+
 export interface PackageQaReport {
   readonly schema_version: 3;
   readonly generated_at: string;
@@ -82,6 +104,11 @@ export interface PackagedResourceContract {
   readonly alpha_release_gate: 'blocked_pending_clean_install';
   readonly backend_bundled: true;
   readonly windowsml_ocr_bundled: false;
+  readonly capture_runtime_bundled: true;
+  readonly capture_runtime_version: '0.1.0';
+  readonly capture_runtime_api_version: '1.0';
+  readonly capture_document_schema_version: '1';
+  readonly capture_structuring_mode: 'host';
   readonly release_urls_only: true;
   readonly version: '0.1.0-alpha.1';
   readonly python_runtime_version: '3.12';

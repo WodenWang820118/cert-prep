@@ -1,15 +1,28 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { afterEach, test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
+import { validateCaptureArtifactBytes } from '../capture-runtime-contract.mts';
+import { CAPTURE_DOCUMENT_SCHEMA_SHA256 } from './constants.mts';
 import { bytesToMb, collectBundleArtifacts } from './files.mts';
 import { validatePackagedResourceContract } from './resource-contract.mts';
 import { createPackageQaReport, validateBundleArtifacts } from './report.mts';
 
 const tempRoots: string[] = [];
+const canonicalSchemaFixturePath = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '../../test-fixtures/capture-document-v1.schema.json',
+);
 
 afterEach(() => {
   while (tempRoots.length > 0) {
@@ -69,6 +82,34 @@ test('bundle gate requires exactly one alpha NSIS installer', () => {
   );
 });
 
+test('package QA shares the bounded Capture executable bytes contract', () => {
+  for (const bytes of [1, 536_870_912]) {
+    assert.equal(
+      validateCaptureArtifactBytes(
+        bytes,
+        'Packaged Capture runtime executable',
+      ),
+      bytes,
+    );
+  }
+  for (const bytes of [
+    0,
+    536_870_913,
+    1.5,
+    '15',
+    Number.MAX_SAFE_INTEGER + 1,
+  ]) {
+    assert.throws(
+      () =>
+        validateCaptureArtifactBytes(
+          bytes,
+          'Packaged Capture runtime executable',
+        ),
+      /bytes must be between 1 and 536870912/,
+    );
+  }
+});
+
 test('packaged resource contract proves hybrid resources and rejects dev references', async () => {
   const workspaceRoot = makeTempWorkspace();
   const resourceRoot = join(workspaceRoot, 'release', 'resources');
@@ -116,6 +157,41 @@ test('packaged resource contract proves hybrid resources and rejects dev referen
       },
     }),
   );
+  const captureName = 'capture-runtime-x86_64-pc-windows-msvc.exe';
+  const captureSchemaName = 'capture-document-v1.schema.json';
+  const captureSchema = canonicalCaptureDocumentSchemaBytes();
+  assert.equal(sha256(captureSchema), CAPTURE_DOCUMENT_SCHEMA_SHA256);
+  writeFileSync(join(resourceRoot, captureName), 'capture-runtime');
+  writeFileSync(join(resourceRoot, captureSchemaName), captureSchema);
+  const captureManifestPath = join(
+    resourceRoot,
+    'capture-runtime-manifest.json',
+  );
+  writeFileSync(
+    captureManifestPath,
+    JSON.stringify({
+      manifestVersion: '1',
+      runtimeVersion: '0.1.0',
+      apiVersion: '1.0',
+      captureDocumentSchemaVersion: '1',
+      platform: 'windows',
+      arch: 'x86_64',
+      fileName: captureName,
+      bytes: Buffer.byteLength('capture-runtime'),
+      sha256: sha256('capture-runtime'),
+      schemaFileName: captureSchemaName,
+      schemaSha256: CAPTURE_DOCUMENT_SCHEMA_SHA256,
+      runtimeRequirements: {
+        'windowsml-ocr': {
+          artifactUrl:
+            'https://github.com/example/capture-workbench/releases/download/v0.1.0/capture-windowsml-ocr-v1.zip',
+          artifactFileName: 'capture-windowsml-ocr-v1.zip',
+          bytes: 123_456,
+          sha256: '2'.repeat(64),
+        },
+      },
+    }),
+  );
   writeFileSync(
     join(resourceRoot, 'release-metadata.json'),
     JSON.stringify({
@@ -145,6 +221,27 @@ test('packaged resource contract proves hybrid resources and rejects dev referen
           file_name: ocrName,
           sha256: sha256('ocr'),
           bytes: Buffer.byteLength('ocr'),
+        },
+        capture_runtime: {
+          distribution: 'explicit_staged_artifact',
+          file_name: captureName,
+          runtime_version: '0.1.0',
+          api_version: '1.0',
+          capture_document_schema_version: '1',
+          sha256: sha256('capture-runtime'),
+          bytes: Buffer.byteLength('capture-runtime'),
+          schema_file_name: captureSchemaName,
+          schema_sha256: CAPTURE_DOCUMENT_SCHEMA_SHA256,
+          structuring_mode: 'host',
+          runtime_requirements: {
+            'windowsml-ocr': {
+              artifactUrl:
+                'https://github.com/example/capture-workbench/releases/download/v0.1.0/capture-windowsml-ocr-v1.zip',
+              artifactFileName: 'capture-windowsml-ocr-v1.zip',
+              bytes: 123_456,
+              sha256: '2'.repeat(64),
+            },
+          },
         },
       },
     }),
@@ -184,11 +281,13 @@ test('packaged resource contract proves hybrid resources and rejects dev referen
 
   assert.equal(contract.backend_bundled, true);
   assert.equal(contract.windowsml_ocr_bundled, false);
+  assert.equal(contract.capture_runtime_bundled, true);
+  assert.equal(contract.capture_structuring_mode, 'host');
   assert.equal(contract.evidence_scope, 'static_tauri_release_resources');
   assert.equal(contract.installer_contents_verified, false);
   assert.equal(contract.fresh_install_verified, false);
   assert.equal(contract.alpha_release_gate, 'blocked_pending_clean_install');
-  assert.equal(contract.resource_files.length, 4);
+  assert.equal(contract.resource_files.length, 7);
   assert.equal(contract.legal_files.length, 4);
   assert.equal(contract.channel, 'unsigned_public_alpha');
   assert.equal(contract.python_runtime_version, '3.12');
@@ -215,6 +314,32 @@ test('packaged resource contract proves hybrid resources and rejects dev referen
     .resource_contract as unknown as Record<string, unknown>;
   assert.equal(publishedContract.distribution_profile, 'public_unsigned_alpha');
   assert.equal(publishedContract.publishable, true);
+
+  const packagedCaptureManifest = JSON.parse(
+    readFileSync(captureManifestPath, 'utf8'),
+  );
+  for (const bytes of [
+    0,
+    536_870_913,
+    1.5,
+    '15',
+    Number.MAX_SAFE_INTEGER + 1,
+  ]) {
+    writeFileSync(
+      captureManifestPath,
+      JSON.stringify({ ...packagedCaptureManifest, bytes }),
+    );
+    assert.throws(
+      () =>
+        validatePackagedResourceContract({
+          resourceRoot,
+          tauriConfig,
+          workspaceRoot,
+        }),
+      /Packaged Capture runtime executable bytes must be between 1 and 536870912/,
+    );
+  }
+  writeFileSync(captureManifestPath, JSON.stringify(packagedCaptureManifest));
 
   writeFileSync(
     ocrManifestPath,
@@ -268,6 +393,37 @@ test('packaged resource contract proves hybrid resources and rejects dev referen
   );
 
   writeFileSync(join(resourceRoot, backendName), 'runtime');
+  writeFileSync(join(resourceRoot, captureSchemaName), '{}');
+  assert.throws(
+    () =>
+      validatePackagedResourceContract({
+        resourceRoot,
+        tauriConfig,
+        workspaceRoot,
+      }),
+    /Capture document schema checksum/,
+  );
+
+  writeFileSync(join(resourceRoot, captureSchemaName), captureSchema);
+  const captureManifest = JSON.parse(
+    readFileSync(captureManifestPath, 'utf8'),
+  );
+  captureManifest.runtimeRequirements['windowsml-ocr'].artifactUrl =
+    'https://example.test/capture-windowsml-ocr-v1.zip?token=secret';
+  writeFileSync(captureManifestPath, JSON.stringify(captureManifest));
+  assert.throws(
+    () =>
+      validatePackagedResourceContract({
+        resourceRoot,
+        tauriConfig,
+        workspaceRoot,
+      }),
+    /artifactUrl is not canonical HTTPS/,
+  );
+
+  captureManifest.runtimeRequirements['windowsml-ocr'].artifactUrl =
+    'https://github.com/example/capture-workbench/releases/download/v0.1.0/capture-windowsml-ocr-v1.zip';
+  writeFileSync(captureManifestPath, JSON.stringify(captureManifest));
   writeFileSync(join(resourceRoot, 'stale-runtime.zip'), 'stale');
   assert.throws(
     () =>
@@ -289,4 +445,10 @@ function makeTempWorkspace(): string {
 
 function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex');
+}
+
+function canonicalCaptureDocumentSchemaBytes(): string {
+  return readFileSync(canonicalSchemaFixturePath, 'utf8')
+    .replaceAll('\r\n', '\n')
+    .replaceAll('\n', '\r\n');
 }

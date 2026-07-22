@@ -32,7 +32,7 @@ permissions:
 env:
   CI: 'true'
   NX_CLOUD_DISTRIBUTED_EXECUTION: 'false'
-  PNPM_VERSION: 10.33.2
+  PNPM_VERSION: 11.15.1
   PYTHON_VERSION: '3.12'
 
 jobs:

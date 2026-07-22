@@ -12,12 +12,13 @@ use tauri::Runtime;
 
 use crate::{
     backend_process::launch_backend_entrypoint,
+    capture_runtime::CaptureRuntimeConnection,
     constants::{BACKEND_RUNTIME_DIR, PYTHON_RUNTIME_KIND, PYTHON_RUNTIME_LABEL},
     manifests::{load_runtime_manifest, RuntimeManifest},
     runtime_installation::{
         completed_installation, install_python_runtime, installation_from_job, RuntimeJob,
     },
-    windows_process::terminate_backend_process_tree,
+    windows_process::terminate_owned_process_tree,
     DesktopRuntimeInstallation,
 };
 
@@ -54,6 +55,7 @@ pub(crate) struct BackendRuntimeInner {
     pub(crate) backend_manifest_path: Option<PathBuf>,
     pub(crate) ocr_manifest_path: Option<PathBuf>,
     pub(crate) windowsml_ocr_manifest_path: Option<PathBuf>,
+    pub(crate) capture_runtime: CaptureRuntimeConnection,
     pub(crate) config: Mutex<Option<BackendConfig>>,
     pub(crate) child: Mutex<Option<Child>>,
     pub(crate) job: Mutex<Option<RuntimeJob>>,
@@ -86,7 +88,7 @@ impl BackendRuntimeInner {
     pub(crate) fn terminate_child_process_tree(&self) {
         if let Ok(mut child) = self.child.lock() {
             if let Some(child) = child.take() {
-                terminate_backend_process_tree(child);
+                terminate_owned_process_tree(child);
             }
         }
     }
@@ -106,6 +108,7 @@ impl BackendState {
         backend_manifest_path: Option<PathBuf>,
         ocr_manifest_path: Option<PathBuf>,
         windowsml_ocr_manifest_path: Option<PathBuf>,
+        capture_runtime: CaptureRuntimeConnection,
     ) -> Self {
         Self {
             inner: Arc::new(BackendRuntimeInner {
@@ -113,6 +116,7 @@ impl BackendState {
                 backend_manifest_path,
                 ocr_manifest_path,
                 windowsml_ocr_manifest_path,
+                capture_runtime,
                 config: Mutex::new(None),
                 child: Mutex::new(None),
                 job: Mutex::new(None),
@@ -358,7 +362,19 @@ mod tests {
     fn missing_runtime_status_is_installable() {
         let data_dir =
             std::env::temp_dir().join(format!("cert-prep-runtime-{}", uuid::Uuid::new_v4()));
-        let state = BackendState::new(data_dir.clone(), None, None, None);
+        let state = BackendState::new(
+            data_dir.clone(),
+            None,
+            None,
+            None,
+            CaptureRuntimeConnection {
+                base_url: "http://127.0.0.1:41001".into(),
+                token: "capture-test-token".into(),
+                runtime_version: "0.1.0".into(),
+                api_version: "1.0".into(),
+                capture_document_schema_version: "1".into(),
+            },
+        );
 
         let status = state.status();
 

@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from sqlite3 import Connection, Row
+from collections.abc import Sequence
 from typing import Final
 from uuid import uuid4
+
+from cert_prep_contracts.transcription import TranscriptSegment
 
 from cert_prep_backend.core.exceptions import (
     DocumentOperationConflictError,
@@ -16,6 +19,7 @@ from cert_prep_backend.domains.projects.repository import ensure_project_exists
 from cert_prep_backend.domains.source_documents.documents import (
     insert_processing_document,
 )
+from cert_prep_backend.domains.source_documents import chunks
 from cert_prep_backend.domains.source_documents.models import PdfExtractionResult
 from cert_prep_backend.domains.source_documents.progress import (
     complete_document_extraction_in_transaction,
@@ -327,6 +331,127 @@ def publish_success(
                 "Document operation success could not be committed."
             )
     return document
+
+
+def publish_capture_audio_success(
+    db: Database,
+    *,
+    project_id: str,
+    operation_id: str,
+    document_id: str,
+    segments: Sequence[tuple[TranscriptSegment, str]],
+    model: str,
+    device: str | None,
+    warning: str | None,
+) -> dict:
+    """Atomically publish validated Capture Runtime transcript and translations."""
+
+    if not segments:
+        raise ValueError("A completed audio capture must contain at least one segment")
+    now = utc_now()
+    with db.connect() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        operation = _required_operation(_operation_query_by_id(connection, operation_id))
+        _assert_operation_project(operation, project_id)
+        if operation["document_id"] != document_id:
+            raise DocumentOperationStateError(
+                "Document operation does not own the publication document."
+            )
+        if operation["status"] == "succeeded":
+            row = document_query(connection, project_id, document_id)
+            if row is None:
+                raise NotFoundError("Document not found.")
+            return document_from_row(row)
+        if operation["status"] in {"cancel_requested", "canceled"}:
+            raise DocumentProcessingCanceledError("Document processing was canceled.")
+        if operation["status"] in TERMINAL_STATUSES:
+            raise DocumentOperationStateError(
+                "Terminal document operation cannot publish capture results."
+            )
+        _begin_commit(
+            connection,
+            project_id=project_id,
+            operation_id=operation_id,
+            document_id=document_id,
+            now=now,
+        )
+
+        chunks.delete_audio_segments(
+            connection,
+            project_id=project_id,
+            document_id=document_id,
+        )
+        for index, (segment, target_text) in enumerate(segments):
+            chunks.insert_audio_segment(
+                connection,
+                project_id=project_id,
+                document_id=document_id,
+                chunk_index=index,
+                segment=segment,
+                now=now,
+            )
+            translated = connection.execute(
+                """
+                UPDATE document_chunks
+                SET translated_text = ?, translation_source_revision = source_revision
+                WHERE project_id = ? AND document_id = ?
+                    AND locator_kind = 'time' AND chunk_index = ?
+                """,
+                (target_text, project_id, document_id, index),
+            )
+            if translated.rowcount != 1:
+                raise DocumentOperationStateError(
+                    "Capture audio translation could not be persisted."
+                )
+
+        duration_ms = max(segment.end_ms for segment, _target in segments)
+        updated = connection.execute(
+            """
+            UPDATE documents
+            SET duration_ms = ?, has_text = 1, status = 'ready',
+                extraction_method = 'transcription', processed_page_count = ?,
+                transcription_status = 'succeeded', translation_status = 'succeeded',
+                configured_transcription_model = ?, effective_transcription_model = ?,
+                transcription_device = ?, transcription_warning = ?,
+                content_profile = 'study_material', classification_detail = '',
+                updated_at = ?
+            WHERE project_id = ? AND id = ? AND status = 'processing'
+            """,
+            (
+                duration_ms,
+                len(segments),
+                model,
+                model,
+                device,
+                warning,
+                now,
+                project_id,
+                document_id,
+            ),
+        )
+        if updated.rowcount != 1:
+            raise DocumentProcessingCanceledError(
+                "Document processing was canceled before capture publication."
+            )
+        completed = connection.execute(
+            """
+            UPDATE document_operations
+            SET status = 'succeeded', phase = 'completed', cancellable = 0,
+                error = NULL, updated_at = ?
+            WHERE id = ? AND project_id = ? AND document_id = ?
+                AND status = 'running' AND phase = 'committing'
+                AND cancellable = 0
+            """,
+            (now, operation_id, project_id, document_id),
+        )
+        if completed.rowcount != 1:
+            raise DocumentOperationStateError(
+                "Capture audio operation success could not be committed."
+            )
+        row = document_query(connection, project_id, document_id)
+    if row is None:
+        raise NotFoundError("Document not found.")
+    return document_from_row(row)
 
 
 def acknowledge_cancellation(

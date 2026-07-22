@@ -10,7 +10,8 @@ use std::{
 
 use crate::{
     backend::{build_backend_config, BackendConfig, BackendRuntimeInner},
-    windows_process::terminate_backend_process_tree,
+    capture_runtime::CaptureRuntimeConnection,
+    windows_process::terminate_owned_process_tree,
 };
 
 const DEFAULT_BACKEND_READY_TIMEOUT_SECS: u64 = 60;
@@ -38,7 +39,7 @@ pub(crate) fn launch_backend_entrypoint(
 
     let mut command = Command::new(entrypoint);
     command.current_dir(entrypoint.parent().unwrap_or_else(|| Path::new(".")));
-    for env in backend_launch_env(&inner.data_dir, port, &token) {
+    for env in backend_launch_env(&inner.data_dir, port, &token, &inner.capture_runtime) {
         command.env(env.name, env.value);
     }
     command
@@ -78,13 +79,13 @@ pub(crate) fn launch_backend_entrypoint(
         .spawn()
         .map_err(|error| format!("failed to launch backend runtime: {error}"))?;
     if let Err(error) = wait_for_backend(port, backend_ready_timeout()) {
-        terminate_backend_process_tree(child);
+        terminate_owned_process_tree(child);
         return Err(error);
     }
 
     if let Ok(mut current_child) = inner.child.lock() {
         if let Some(old_child) = current_child.take() {
-            terminate_backend_process_tree(old_child);
+            terminate_owned_process_tree(old_child);
         }
         *current_child = Some(child);
     }
@@ -97,7 +98,7 @@ pub(crate) fn launch_backend_entrypoint(
     Ok(())
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 struct BackendEnv {
     name: &'static str,
     value: String,
@@ -112,7 +113,12 @@ impl BackendEnv {
     }
 }
 
-fn backend_launch_env(data_dir: &Path, port: u16, token: &str) -> Vec<BackendEnv> {
+fn backend_launch_env(
+    data_dir: &Path,
+    port: u16,
+    token: &str,
+    capture_runtime: &CaptureRuntimeConnection,
+) -> Vec<BackendEnv> {
     vec![
         BackendEnv::new("CERT_PREP_HOST", sidecar_host()),
         BackendEnv::new("CERT_PREP_PORT", port.to_string()),
@@ -130,6 +136,26 @@ fn backend_launch_env(data_dir: &Path, port: u16, token: &str) -> Vec<BackendEnv
             configured_windowsml_device_id(),
         ),
         BackendEnv::new("CERT_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD", "true"),
+        BackendEnv::new(
+            "CERT_PREP_CAPTURE_RUNTIME_URL",
+            capture_runtime.base_url.clone(),
+        ),
+        BackendEnv::new(
+            "CERT_PREP_CAPTURE_RUNTIME_TOKEN",
+            capture_runtime.token.clone(),
+        ),
+        BackendEnv::new(
+            "CERT_PREP_CAPTURE_RUNTIME_VERSION",
+            capture_runtime.runtime_version.clone(),
+        ),
+        BackendEnv::new(
+            "CERT_PREP_CAPTURE_RUNTIME_API_VERSION",
+            capture_runtime.api_version.clone(),
+        ),
+        BackendEnv::new(
+            "CERT_PREP_CAPTURE_DOCUMENT_SCHEMA_VERSION",
+            capture_runtime.capture_document_schema_version.clone(),
+        ),
     ]
 }
 
@@ -239,6 +265,16 @@ mod tests {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
+    fn capture_runtime() -> CaptureRuntimeConnection {
+        CaptureRuntimeConnection {
+            base_url: "http://127.0.0.1:41001".into(),
+            token: "capture-sidecar-test-token".into(),
+            runtime_version: "0.1.0".into(),
+            api_version: "1.0".into(),
+            capture_document_schema_version: "1".into(),
+        }
+    }
+
     #[test]
     fn reserve_loopback_port_returns_bindable_port() {
         let port = reserve_loopback_port().expect("port should be reserved");
@@ -300,7 +336,12 @@ mod tests {
         std::env::remove_var("CERT_PREP_OCR_PROVIDER");
         std::env::remove_var("CERT_PREP_OCR_WINDOWSML_DEVICE_ID");
 
-        let env = backend_launch_env(Path::new("cert-prep-data"), 8123, "test-token");
+        let env = backend_launch_env(
+            Path::new("cert-prep-data"),
+            8123,
+            "test-token",
+            &capture_runtime(),
+        );
 
         assert_eq!(env_value(&env, "CERT_PREP_HOST"), Some("127.0.0.1"));
         assert_eq!(env_value(&env, "CERT_PREP_PORT"), Some("8123"));
@@ -336,6 +377,26 @@ mod tests {
             env_value(&env, "CERT_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD"),
             Some("true")
         );
+        assert_eq!(
+            env_value(&env, "CERT_PREP_CAPTURE_RUNTIME_URL"),
+            Some("http://127.0.0.1:41001")
+        );
+        assert_eq!(
+            env_value(&env, "CERT_PREP_CAPTURE_RUNTIME_TOKEN"),
+            Some("capture-sidecar-test-token")
+        );
+        assert_eq!(
+            env_value(&env, "CERT_PREP_CAPTURE_RUNTIME_VERSION"),
+            Some("0.1.0")
+        );
+        assert_eq!(
+            env_value(&env, "CERT_PREP_CAPTURE_RUNTIME_API_VERSION"),
+            Some("1.0")
+        );
+        assert_eq!(
+            env_value(&env, "CERT_PREP_CAPTURE_DOCUMENT_SCHEMA_VERSION"),
+            Some("1")
+        );
     }
 
     #[test]
@@ -344,7 +405,12 @@ mod tests {
         std::env::set_var("CERT_PREP_OLLAMA_MODEL", " qwen3.5:2b ");
         std::env::set_var("CERT_PREP_LLM_PROVIDER", "ollama");
 
-        let env = backend_launch_env(Path::new("cert-prep-data"), 8123, "test-token");
+        let env = backend_launch_env(
+            Path::new("cert-prep-data"),
+            8123,
+            "test-token",
+            &capture_runtime(),
+        );
 
         assert_eq!(env_value(&env, "CERT_PREP_LLM_PROVIDER"), Some("ollama"));
         assert_eq!(

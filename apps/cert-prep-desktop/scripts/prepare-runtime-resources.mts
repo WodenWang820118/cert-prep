@@ -13,11 +13,29 @@ import {
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
+  type CaptureRuntimeBundleRequirement,
+  validateCaptureArtifactBytes,
+  validateCaptureWindowsmlDescriptor,
+} from './capture-runtime-contract.mts';
+import {
   ALPHA_VERSION,
+  CAPTURE_DOCUMENT_SCHEMA_FILE,
+  CAPTURE_DOCUMENT_SCHEMA_SHA256,
+  CAPTURE_DOCUMENT_SCHEMA_VERSION,
+  CAPTURE_RUNTIME_API_VERSION,
+  CAPTURE_RUNTIME_FILE,
+  CAPTURE_RUNTIME_MANIFEST_VERSION,
+  CAPTURE_RUNTIME_VERSION,
   PYTHON_RUNTIME_VERSION,
 } from './package-qa/constants.mts';
 
 const WINDOWSML_RELEASE_BASE_URL_ENV = 'CERT_PREP_WINDOWSML_OCR_ASSET_BASE_URL';
+const CAPTURE_RUNTIME_MANIFEST_PATH_ENV =
+  'CERT_PREP_CAPTURE_RUNTIME_MANIFEST_PATH';
+const CAPTURE_RUNTIME_ARTIFACT_PATH_ENV =
+  'CERT_PREP_CAPTURE_RUNTIME_ARTIFACT_PATH';
+const CAPTURE_DOCUMENT_SCHEMA_PATH_ENV =
+  'CERT_PREP_CAPTURE_DOCUMENT_SCHEMA_PATH';
 const ALPHA_RELEASE_TAG = `cert-prep-v${ALPHA_VERSION}`;
 
 type RuntimeResourceMode = 'dev' | 'release';
@@ -36,6 +54,23 @@ interface RuntimeManifest {
   };
 }
 
+interface CaptureRuntimeManifest {
+  readonly manifestVersion: string;
+  readonly runtimeVersion: string;
+  readonly apiVersion: string;
+  readonly captureDocumentSchemaVersion: string;
+  readonly platform: string;
+  readonly arch: string;
+  readonly fileName: string;
+  readonly bytes: number;
+  readonly sha256: string;
+  readonly schemaFileName: string;
+  readonly schemaSha256: string;
+  readonly runtimeRequirements: {
+    readonly 'windowsml-ocr': CaptureRuntimeBundleRequirement;
+  };
+}
+
 interface PrepareRuntimeResourcesOptions {
   readonly workspaceRoot: string;
   readonly mode: RuntimeResourceMode;
@@ -43,6 +78,9 @@ interface PrepareRuntimeResourcesOptions {
   readonly backendRuntimeRoot?: string;
   readonly windowsmlRuntimeRoot?: string;
   readonly windowsmlReleaseBaseUrl?: string;
+  readonly captureRuntimeManifestPath?: string;
+  readonly captureRuntimeArtifactPath?: string;
+  readonly captureDocumentSchemaPath?: string;
 }
 
 interface PreparedRuntimeResources {
@@ -50,6 +88,9 @@ interface PreparedRuntimeResources {
   readonly backendManifestPath: string;
   readonly backendArtifactPath: string;
   readonly windowsmlManifestPath: string;
+  readonly captureRuntimeManifestPath: string;
+  readonly captureRuntimeArtifactPath: string;
+  readonly captureDocumentSchemaPath: string;
   readonly releaseMetadataPath: string;
 }
 
@@ -76,6 +117,9 @@ export async function prepareRuntimeResources({
     'apps/cert-prep-backend/dist/ocr-windowsml-runtime',
   ),
   windowsmlReleaseBaseUrl,
+  captureRuntimeManifestPath,
+  captureRuntimeArtifactPath,
+  captureDocumentSchemaPath,
 }: PrepareRuntimeResourcesOptions): Promise<PreparedRuntimeResources> {
   const backendSourceManifest = join(
     backendRuntimeRoot,
@@ -94,6 +138,20 @@ export async function prepareRuntimeResources({
     windowsmlSourceManifest,
     windowsmlRuntimeRoot,
     'windowsml_ocr',
+  );
+  const captureRuntimeManifest = await loadAndVerifyCaptureRuntime(
+    requiredStagedPath(
+      captureRuntimeManifestPath,
+      CAPTURE_RUNTIME_MANIFEST_PATH_ENV,
+    ),
+    requiredStagedPath(
+      captureRuntimeArtifactPath,
+      CAPTURE_RUNTIME_ARTIFACT_PATH_ENV,
+    ),
+    requiredStagedPath(
+      captureDocumentSchemaPath,
+      CAPTURE_DOCUMENT_SCHEMA_PATH_ENV,
+    ),
   );
 
   const backendSourceArtifact = join(
@@ -139,11 +197,43 @@ export async function prepareRuntimeResources({
     ...windowsmlManifest,
     artifact: { ...windowsmlManifest.artifact, url: windowsmlUrl },
   });
+  const stagedCaptureRuntimeArtifactPath = join(
+    outputDir,
+    captureRuntimeManifest.fileName,
+  );
+  copyFileSync(
+    requiredStagedPath(
+      captureRuntimeArtifactPath,
+      CAPTURE_RUNTIME_ARTIFACT_PATH_ENV,
+    ),
+    stagedCaptureRuntimeArtifactPath,
+  );
+  const stagedCaptureDocumentSchemaPath = join(
+    outputDir,
+    captureRuntimeManifest.schemaFileName,
+  );
+  copyFileSync(
+    requiredStagedPath(
+      captureDocumentSchemaPath,
+      CAPTURE_DOCUMENT_SCHEMA_PATH_ENV,
+    ),
+    stagedCaptureDocumentSchemaPath,
+  );
+  const stagedCaptureRuntimeManifestPath = join(
+    outputDir,
+    'capture-runtime-manifest.json',
+  );
+  writeJson(stagedCaptureRuntimeManifestPath, captureRuntimeManifest);
   const releaseMetadataPath = join(outputDir, 'release-metadata.json');
   writeFileSync(
     releaseMetadataPath,
     `${JSON.stringify(
-      releaseMetadata(mode, backendManifest, windowsmlManifest),
+      releaseMetadata(
+        mode,
+        backendManifest,
+        windowsmlManifest,
+        captureRuntimeManifest,
+      ),
       null,
       2,
     )}\n`,
@@ -155,8 +245,164 @@ export async function prepareRuntimeResources({
     backendManifestPath,
     backendArtifactPath,
     windowsmlManifestPath,
+    captureRuntimeManifestPath: stagedCaptureRuntimeManifestPath,
+    captureRuntimeArtifactPath: stagedCaptureRuntimeArtifactPath,
+    captureDocumentSchemaPath: stagedCaptureDocumentSchemaPath,
     releaseMetadataPath,
   };
+}
+
+function requiredStagedPath(
+  value: string | undefined,
+  environmentName: string,
+): string {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    throw new Error(
+      `${environmentName} is required; Capture runtime artifacts must be explicitly staged.`,
+    );
+  }
+  return trimmed;
+}
+
+async function loadAndVerifyCaptureRuntime(
+  manifestPath: string,
+  artifactPath: string,
+  schemaPath: string,
+): Promise<CaptureRuntimeManifest> {
+  if (!existsSync(manifestPath)) {
+    throw new Error(`Capture runtime manifest was not staged: ${manifestPath}`);
+  }
+  if (!existsSync(artifactPath)) {
+    throw new Error(`Capture runtime artifact was not staged: ${artifactPath}`);
+  }
+  if (!existsSync(schemaPath)) {
+    throw new Error(`Capture document schema was not staged: ${schemaPath}`);
+  }
+  const manifest = JSON.parse(
+    readFileSync(manifestPath, 'utf8'),
+  ) as Partial<CaptureRuntimeManifest>;
+  const exactFields: ReadonlyArray<readonly [string, unknown, string]> = [
+    [
+      'manifestVersion',
+      manifest.manifestVersion,
+      CAPTURE_RUNTIME_MANIFEST_VERSION,
+    ],
+    ['runtimeVersion', manifest.runtimeVersion, CAPTURE_RUNTIME_VERSION],
+    ['apiVersion', manifest.apiVersion, CAPTURE_RUNTIME_API_VERSION],
+    [
+      'captureDocumentSchemaVersion',
+      manifest.captureDocumentSchemaVersion,
+      CAPTURE_DOCUMENT_SCHEMA_VERSION,
+    ],
+    ['platform', manifest.platform, 'windows'],
+    ['arch', manifest.arch, 'x86_64'],
+    ['fileName', manifest.fileName, CAPTURE_RUNTIME_FILE],
+    [
+      'schemaSha256',
+      manifest.schemaSha256,
+      CAPTURE_DOCUMENT_SCHEMA_SHA256,
+    ],
+  ];
+  for (const [name, actual, expected] of exactFields) {
+    if (actual !== expected) {
+      throw new Error(
+        `Capture runtime ${name} must be ${expected}, found ${String(actual)}.`,
+      );
+    }
+  }
+  validateCaptureArtifactBytes(
+    manifest.bytes,
+    'Capture runtime executable',
+  );
+  if (
+    typeof manifest.sha256 !== 'string' ||
+    !/^[a-fA-F0-9]{64}$/u.test(manifest.sha256)
+  ) {
+    throw new Error('Capture runtime sha256 must contain 64 hex characters.');
+  }
+  if (
+    basename(artifactPath) !== manifest.fileName ||
+    basename(manifest.fileName ?? '') !== manifest.fileName
+  ) {
+    throw new Error(
+      `Capture runtime artifact must use the pinned ${CAPTURE_RUNTIME_FILE} file name.`,
+    );
+  }
+  validateCaptureWindowsmlDescriptor(
+    manifest.runtimeRequirements?.['windowsml-ocr'],
+    'Capture runtime runtimeRequirements.windowsml-ocr',
+  );
+  if (
+    manifest.schemaFileName !== CAPTURE_DOCUMENT_SCHEMA_FILE ||
+    basename(schemaPath) !== CAPTURE_DOCUMENT_SCHEMA_FILE ||
+    typeof manifest.schemaSha256 !== 'string'
+  ) {
+    throw new Error(
+      `Capture runtime schema provenance must use the pinned ${CAPTURE_DOCUMENT_SCHEMA_FILE} artifact and SHA-256.`,
+    );
+  }
+  const artifact = statSync(artifactPath);
+  if (!artifact.isFile()) {
+    throw new Error('Capture runtime artifact must be a regular file.');
+  }
+  const bytes = artifact.size;
+  if (bytes !== manifest.bytes) {
+    throw new Error(
+      `Capture runtime artifact size mismatch: expected ${manifest.bytes}, found ${bytes}.`,
+    );
+  }
+  const sha256 = await sha256File(artifactPath);
+  if (sha256 !== manifest.sha256.toLowerCase()) {
+    throw new Error('Capture runtime artifact checksum mismatch.');
+  }
+  const schema = statSync(schemaPath);
+  if (!schema.isFile()) {
+    throw new Error('Capture document schema must be a regular file.');
+  }
+  const schemaSha256 = await sha256File(schemaPath);
+  if (schemaSha256 !== CAPTURE_DOCUMENT_SCHEMA_SHA256) {
+    throw new Error('Capture document schema checksum mismatch.');
+  }
+  validateCaptureDocumentSchema(schemaPath);
+  return manifest as CaptureRuntimeManifest;
+}
+
+function validateCaptureDocumentSchema(schemaPath: string): void {
+  let schema: Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(readFileSync(schemaPath, 'utf8')) as unknown;
+    if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
+      throw new Error('schema root must be an object');
+    }
+    schema = parsed as Record<string, unknown>;
+  } catch (error) {
+    throw new Error(
+      `Capture document schema is invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const properties = schema['properties'];
+  const schemaVersion =
+    properties && !Array.isArray(properties) && typeof properties === 'object'
+      ? (properties as Record<string, unknown>)['schemaVersion']
+      : undefined;
+  const schemaVersionConst =
+    schemaVersion &&
+    !Array.isArray(schemaVersion) &&
+    typeof schemaVersion === 'object'
+      ? (schemaVersion as Record<string, unknown>)['const']
+      : undefined;
+  if (
+    schema['$schema'] !== 'https://json-schema.org/draft/2020-12/schema' ||
+    schema['title'] !== 'CaptureDocumentV1' ||
+    schema['type'] !== 'object' ||
+    schema['additionalProperties'] !== false ||
+    schemaVersionConst !== CAPTURE_DOCUMENT_SCHEMA_VERSION
+  ) {
+    throw new Error(
+      'Capture document schema does not declare the pinned CaptureDocumentV1 contract.',
+    );
+  }
 }
 
 async function loadAndVerifyManifest(
@@ -261,10 +507,15 @@ function writeManifest(path: string, manifest: RuntimeManifest): void {
   writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
 }
 
+function writeJson(path: string, value: unknown): void {
+  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
+}
+
 function releaseMetadata(
   mode: RuntimeResourceMode,
   backend: RuntimeManifest,
   windowsml: RuntimeManifest,
+  captureRuntime: CaptureRuntimeManifest,
 ): object {
   const localNonpublishable = mode === 'dev';
   return {
@@ -317,6 +568,20 @@ function releaseMetadata(
         sha256: windowsml.artifact.sha256,
         bytes: windowsml.artifact.bytes,
       },
+      capture_runtime: {
+        distribution: 'explicit_staged_artifact',
+        file_name: captureRuntime.fileName,
+        runtime_version: captureRuntime.runtimeVersion,
+        api_version: captureRuntime.apiVersion,
+        capture_document_schema_version:
+          captureRuntime.captureDocumentSchemaVersion,
+        sha256: captureRuntime.sha256,
+        bytes: captureRuntime.bytes,
+        schema_file_name: captureRuntime.schemaFileName,
+        schema_sha256: captureRuntime.schemaSha256,
+        structuring_mode: 'host',
+        runtime_requirements: captureRuntime.runtimeRequirements,
+      },
     },
     legal_resources: {
       license: 'legal/LICENSE',
@@ -341,11 +606,17 @@ async function sha256File(path: string): Promise<string> {
 interface ParsedArgs {
   readonly mode: RuntimeResourceMode;
   readonly windowsmlReleaseBaseUrl?: string;
+  readonly captureRuntimeManifestPath?: string;
+  readonly captureRuntimeArtifactPath?: string;
+  readonly captureDocumentSchemaPath?: string;
 }
 
 function parseArgs(args: readonly string[]): ParsedArgs {
   let mode: RuntimeResourceMode | undefined;
   let windowsmlReleaseBaseUrl: string | undefined;
+  let captureRuntimeManifestPath: string | undefined;
+  let captureRuntimeArtifactPath: string | undefined;
+  let captureDocumentSchemaPath: string | undefined;
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     const next = (): string => {
@@ -362,12 +633,24 @@ function parseArgs(args: readonly string[]): ParsedArgs {
       mode = value;
     } else if (arg === '--ocr-release-base-url') {
       windowsmlReleaseBaseUrl = next();
+    } else if (arg === '--capture-runtime-manifest') {
+      captureRuntimeManifestPath = next();
+    } else if (arg === '--capture-runtime-artifact') {
+      captureRuntimeArtifactPath = next();
+    } else if (arg === '--capture-document-schema') {
+      captureDocumentSchemaPath = next();
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
   }
   if (!mode) throw new Error('--mode is required.');
-  return { mode, windowsmlReleaseBaseUrl };
+  return {
+    mode,
+    windowsmlReleaseBaseUrl,
+    captureRuntimeManifestPath,
+    captureRuntimeArtifactPath,
+    captureDocumentSchemaPath,
+  };
 }
 
 async function main(): Promise<void> {
@@ -378,10 +661,33 @@ async function main(): Promise<void> {
     workspaceRoot,
     mode: args.mode,
     windowsmlReleaseBaseUrl: args.windowsmlReleaseBaseUrl,
+    captureRuntimeManifestPath: resolveStagedInput(
+      workspaceRoot,
+      args.captureRuntimeManifestPath ??
+        process.env[CAPTURE_RUNTIME_MANIFEST_PATH_ENV],
+    ),
+    captureRuntimeArtifactPath: resolveStagedInput(
+      workspaceRoot,
+      args.captureRuntimeArtifactPath ??
+        process.env[CAPTURE_RUNTIME_ARTIFACT_PATH_ENV],
+    ),
+    captureDocumentSchemaPath: resolveStagedInput(
+      workspaceRoot,
+      args.captureDocumentSchemaPath ??
+        process.env[CAPTURE_DOCUMENT_SCHEMA_PATH_ENV],
+    ),
   });
   console.log(
     `Prepared ${args.mode} runtime resources under ${result.outputDir}`,
   );
+}
+
+function resolveStagedInput(
+  workspaceRoot: string,
+  value: string | undefined,
+): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? resolve(workspaceRoot, trimmed) : undefined;
 }
 
 if (

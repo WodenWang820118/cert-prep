@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from typing import Literal
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from cert_prep_contracts.llm import DEFAULT_LLM_RUNTIME_POLICY
@@ -71,6 +71,13 @@ class Settings(BaseSettings):
     ocr_windowsml_device_id: int = Field(default=-1, ge=-1)
     ocr_runtime_timeout_seconds: float = 300.0
     runtime_install_timeout_seconds: float = 900.0
+    capture_runtime_url: str | None = None
+    capture_runtime_token: str | None = Field(default=None, repr=False)
+    capture_runtime_version: str | None = None
+    capture_runtime_api_version: str | None = None
+    capture_document_schema_version: str | None = None
+    capture_runtime_poll_interval_seconds: float = Field(default=0.1, gt=0, le=5)
+    capture_runtime_job_timeout_seconds: float = Field(default=900, gt=0, le=3600)
 
     @property
     def database_path(self) -> Path:
@@ -82,6 +89,27 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return value.strip() or "auto"
         return value
+
+    @model_validator(mode="after")
+    def validate_capture_runtime_configuration(self):
+        values = (
+            self.capture_runtime_url,
+            self.capture_runtime_token,
+            self.capture_runtime_version,
+            self.capture_runtime_api_version,
+            self.capture_document_schema_version,
+        )
+        configured = [value is not None and bool(value.strip()) for value in values]
+        if any(configured) and not all(configured):
+            raise ValueError(
+                "Capture Runtime URL, token, runtime version, API version, and schema "
+                "version must be configured together."
+            )
+        return self
+
+    @property
+    def capture_runtime_configured(self) -> bool:
+        return self.capture_runtime_url is not None
 
     @property
     def resolved_ocr_runtime_dir(self) -> Path:

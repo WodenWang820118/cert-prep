@@ -78,6 +78,7 @@ class LazyDraftGenerationProvider:
     _LAZY_PROVIDER_EXTENSION_ATTRIBUTES: frozenset[str] = frozenset(
         {
             "generate_reasoning_drafts",
+            "generate_structured_json",
             "generate_fast_first_draft",
             "generation_attribution",
             "prepare_model_onboarding",

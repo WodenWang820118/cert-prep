@@ -1,14 +1,14 @@
 use std::process::{Child, Command, Stdio};
 
-/// Terminates the backend child process and, on Windows, its full spawned process tree.
-pub(crate) fn terminate_backend_process_tree(mut child: Child) {
+/// Terminates exactly one recorded child PID and, on Windows, its spawned process tree.
+pub(crate) fn terminate_owned_process_tree(mut child: Child) {
     if child.try_wait().ok().flatten().is_some() {
         return;
     }
 
     #[cfg(windows)]
     {
-        if taskkill_backend_process_tree(child.id()).is_ok() {
+        if taskkill_owned_process_tree(child.id()).is_ok() {
             let _ = child.wait();
             return;
         }
@@ -19,10 +19,10 @@ pub(crate) fn terminate_backend_process_tree(mut child: Child) {
 }
 
 #[cfg(windows)]
-fn taskkill_backend_process_tree(pid: u32) -> Result<(), String> {
-    let output = taskkill_backend_process_tree_command(pid)
+fn taskkill_owned_process_tree(pid: u32) -> Result<(), String> {
+    let output = taskkill_owned_process_tree_command(pid)
         .output()
-        .map_err(|error| format!("failed to run taskkill for backend process tree: {error}"))?;
+        .map_err(|error| format!("failed to run taskkill for owned process tree: {error}"))?;
     if output.status.success() {
         return Ok(());
     }
@@ -32,7 +32,7 @@ fn taskkill_backend_process_tree(pid: u32) -> Result<(), String> {
 }
 
 #[cfg(any(windows, test))]
-fn taskkill_backend_process_tree_command(pid: u32) -> Command {
+fn taskkill_owned_process_tree_command(pid: u32) -> Command {
     let mut command = Command::new("taskkill");
     command
         .args(taskkill_process_tree_args(pid))
@@ -51,7 +51,7 @@ mod tests {
 
     #[test]
     fn taskkill_command_targets_only_spawned_pid_tree() {
-        let command = taskkill_backend_process_tree_command(4242);
+        let command = taskkill_owned_process_tree_command(4242);
         let args: Vec<String> = command
             .get_args()
             .map(|argument| argument.to_string_lossy().into_owned())

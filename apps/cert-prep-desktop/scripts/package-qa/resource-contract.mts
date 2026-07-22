@@ -2,14 +2,29 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 
 import {
+  validateCaptureArtifactBytes,
+  validateCaptureWindowsmlDescriptor,
+} from '../capture-runtime-contract.mts';
+import {
   collectPackagedResourceArtifacts,
   publicFileRecord,
   sha256File,
 } from './files.mts';
-import type { PackagedResourceContract, RuntimeManifest } from './types.mts';
+import type {
+  CaptureRuntimeManifest,
+  PackagedResourceContract,
+  RuntimeManifest,
+} from './types.mts';
 import {
   ALPHA_VERSION,
   BACKEND_RUNTIME_PREFIX,
+  CAPTURE_DOCUMENT_SCHEMA_FILE,
+  CAPTURE_DOCUMENT_SCHEMA_SHA256,
+  CAPTURE_DOCUMENT_SCHEMA_VERSION,
+  CAPTURE_RUNTIME_API_VERSION,
+  CAPTURE_RUNTIME_FILE,
+  CAPTURE_RUNTIME_MANIFEST_VERSION,
+  CAPTURE_RUNTIME_VERSION,
   DEFAULT_TARGET_TRIPLE,
   PYTHON_RUNTIME_VERSION,
   WINDOWSML_OCR_RUNTIME_PREFIX,
@@ -43,6 +58,10 @@ export function validatePackagedResourceContract({
     resourceRoot,
     'windowsml-ocr-runtime-manifest.json',
   );
+  const captureManifestPath = join(
+    resourceRoot,
+    'capture-runtime-manifest.json',
+  );
   const backendManifest = loadAndValidateManifest(
     backendManifestPath,
     'python_backend',
@@ -53,6 +72,7 @@ export function validatePackagedResourceContract({
     'windowsml_ocr',
     WINDOWSML_OCR_RUNTIME_PREFIX,
   );
+  const captureManifest = loadAndValidateCaptureManifest(captureManifestPath);
   if (
     backendManifest.target !== expectedTargetTriple ||
     windowsmlManifest.target !== expectedTargetTriple
@@ -68,6 +88,9 @@ export function validatePackagedResourceContract({
     'backend-runtime-manifest.json',
     backendManifest.artifact.file_name,
     'windowsml-ocr-runtime-manifest.json',
+    'capture-runtime-manifest.json',
+    captureManifest.fileName,
+    captureManifest.schemaFileName,
     'release-metadata.json',
   ]) {
     if (!names.has(required)) {
@@ -89,10 +112,16 @@ export function validatePackagedResourceContract({
     );
   }
   validateBundledBackendArtifact(resourceRoot, backendManifest);
+  validateBundledCaptureArtifacts(resourceRoot, captureManifest);
   const metadata = loadReleaseMetadata(
     join(resourceRoot, 'release-metadata.json'),
   );
-  validateReleaseMetadata(metadata, backendManifest, windowsmlManifest);
+  validateReleaseMetadata(
+    metadata,
+    backendManifest,
+    windowsmlManifest,
+    captureManifest,
+  );
   const legalFiles = validateLegalResources(
     dirname(resourceRoot),
     workspaceRoot,
@@ -109,6 +138,11 @@ export function validatePackagedResourceContract({
     alpha_release_gate: 'blocked_pending_clean_install',
     backend_bundled: true,
     windowsml_ocr_bundled: false,
+    capture_runtime_bundled: true,
+    capture_runtime_version: CAPTURE_RUNTIME_VERSION,
+    capture_runtime_api_version: CAPTURE_RUNTIME_API_VERSION,
+    capture_document_schema_version: CAPTURE_DOCUMENT_SCHEMA_VERSION,
+    capture_structuring_mode: 'host',
     release_urls_only: true,
     version: ALPHA_VERSION,
     python_runtime_version: PYTHON_RUNTIME_VERSION,
@@ -119,6 +153,42 @@ export function validatePackagedResourceContract({
     resource_files: files.map(publicFileRecord),
     legal_files: legalFiles,
   };
+}
+
+function loadAndValidateCaptureManifest(path: string): CaptureRuntimeManifest {
+  if (!existsSync(path)) {
+    throw new Error('Packaged Capture runtime manifest is missing.');
+  }
+  const manifest = JSON.parse(
+    readFileSync(path, 'utf8'),
+  ) as Partial<CaptureRuntimeManifest>;
+  if (
+    manifest.manifestVersion !== CAPTURE_RUNTIME_MANIFEST_VERSION ||
+    manifest.runtimeVersion !== CAPTURE_RUNTIME_VERSION ||
+    manifest.apiVersion !== CAPTURE_RUNTIME_API_VERSION ||
+    manifest.captureDocumentSchemaVersion !==
+      CAPTURE_DOCUMENT_SCHEMA_VERSION ||
+    manifest.platform !== 'windows' ||
+    manifest.arch !== 'x86_64' ||
+    manifest.fileName !== CAPTURE_RUNTIME_FILE ||
+    basename(manifest.fileName ?? '') !== manifest.fileName ||
+    typeof manifest.sha256 !== 'string' ||
+    !/^[0-9a-f]{64}$/iu.test(manifest.sha256) ||
+    manifest.schemaFileName !== CAPTURE_DOCUMENT_SCHEMA_FILE ||
+    basename(manifest.schemaFileName ?? '') !== manifest.schemaFileName ||
+    manifest.schemaSha256 !== CAPTURE_DOCUMENT_SCHEMA_SHA256
+  ) {
+    throw new Error('Invalid packaged Capture runtime manifest.');
+  }
+  validateCaptureArtifactBytes(
+    manifest.bytes,
+    'Packaged Capture runtime executable',
+  );
+  validateCaptureWindowsmlDescriptor(
+    manifest.runtimeRequirements?.['windowsml-ocr'],
+    'Packaged Capture runtime WindowsML requirement',
+  );
+  return manifest as CaptureRuntimeManifest;
 }
 
 function loadAndValidateManifest(
@@ -212,6 +282,56 @@ function validateBundledBackendArtifact(
   }
 }
 
+function validateBundledCaptureArtifacts(
+  resourceRoot: string,
+  manifest: CaptureRuntimeManifest,
+): void {
+  const executablePath = join(resourceRoot, manifest.fileName);
+  if (!existsSync(executablePath) || !statSync(executablePath).isFile()) {
+    throw new Error('Declared bundled Capture runtime executable is missing.');
+  }
+  if (statSync(executablePath).size !== manifest.bytes) {
+    throw new Error(
+      'Bundled Capture runtime byte count does not match its manifest.',
+    );
+  }
+  if (sha256File(executablePath) !== manifest.sha256.toLowerCase()) {
+    throw new Error(
+      'Bundled Capture runtime checksum does not match its manifest.',
+    );
+  }
+
+  const schemaPath = join(resourceRoot, manifest.schemaFileName);
+  if (!existsSync(schemaPath) || !statSync(schemaPath).isFile()) {
+    throw new Error('Declared bundled Capture document schema is missing.');
+  }
+  if (sha256File(schemaPath) !== CAPTURE_DOCUMENT_SCHEMA_SHA256) {
+    throw new Error(
+      'Bundled Capture document schema checksum does not match the pinned digest.',
+    );
+  }
+  const schema = JSON.parse(readFileSync(schemaPath, 'utf8')) as Record<
+    string,
+    unknown
+  >;
+  const schemaVersion = (
+    (schema['properties'] as Record<string, unknown> | undefined)?.[
+      'schemaVersion'
+    ] as Record<string, unknown> | undefined
+  )?.['const'];
+  if (
+    schema['$schema'] !== 'https://json-schema.org/draft/2020-12/schema' ||
+    schema['title'] !== 'CaptureDocumentV1' ||
+    schema['type'] !== 'object' ||
+    schema['additionalProperties'] !== false ||
+    schemaVersion !== CAPTURE_DOCUMENT_SCHEMA_VERSION
+  ) {
+    throw new Error(
+      'Bundled Capture document schema does not declare the pinned CaptureDocumentV1 contract.',
+    );
+  }
+}
+
 function validateTauriResourceMapping(path: string): void {
   if (!existsSync(path)) {
     throw new Error(`Tauri config was not found: ${path}`);
@@ -279,6 +399,19 @@ interface ReleaseMetadata {
       readonly sha256?: string;
       readonly bytes?: number;
     };
+    readonly capture_runtime?: {
+      readonly distribution?: string;
+      readonly file_name?: string;
+      readonly runtime_version?: string;
+      readonly api_version?: string;
+      readonly capture_document_schema_version?: string;
+      readonly sha256?: string;
+      readonly bytes?: number;
+      readonly schema_file_name?: string;
+      readonly schema_sha256?: string;
+      readonly structuring_mode?: string;
+      readonly runtime_requirements?: CaptureRuntimeManifest['runtimeRequirements'];
+    };
   };
 }
 
@@ -290,6 +423,7 @@ function validateReleaseMetadata(
   metadata: ReleaseMetadata,
   backend: RuntimeManifest,
   windowsml: RuntimeManifest,
+  capture: CaptureRuntimeManifest,
 ): void {
   if (
     metadata.schema_version !== 1 ||
@@ -315,7 +449,10 @@ function validateReleaseMetadata(
   if (
     metadata.runtime_assets?.backend?.distribution !== 'bundled' ||
     metadata.runtime_assets?.windowsml_ocr?.distribution !==
-      'github_release_download'
+      'github_release_download' ||
+    metadata.runtime_assets?.capture_runtime?.distribution !==
+      'explicit_staged_artifact' ||
+    metadata.runtime_assets.capture_runtime.structuring_mode !== 'host'
   ) {
     throw new Error('Release metadata runtime distribution is not public.');
   }
@@ -336,6 +473,33 @@ function validateReleaseMetadata(
         `Release metadata ${name} asset does not match its manifest.`,
       );
     }
+  }
+  const captureMetadata = metadata.runtime_assets?.capture_runtime;
+  const captureRequirement = capture.runtimeRequirements['windowsml-ocr'];
+  const metadataRequirement = validateCaptureWindowsmlDescriptor(
+    captureMetadata?.runtime_requirements?.['windowsml-ocr'],
+    'Release metadata Capture runtime WindowsML requirement',
+  );
+  if (
+    captureMetadata?.file_name !== capture.fileName ||
+    captureMetadata.runtime_version !== capture.runtimeVersion ||
+    captureMetadata.api_version !== capture.apiVersion ||
+    captureMetadata.capture_document_schema_version !==
+      capture.captureDocumentSchemaVersion ||
+    captureMetadata.sha256?.toLowerCase() !== capture.sha256.toLowerCase() ||
+    captureMetadata.bytes !== capture.bytes ||
+    captureMetadata.schema_file_name !== capture.schemaFileName ||
+    captureMetadata.schema_sha256?.toLowerCase() !==
+      capture.schemaSha256.toLowerCase() ||
+    metadataRequirement.artifactUrl !== captureRequirement.artifactUrl ||
+    metadataRequirement.artifactFileName !==
+      captureRequirement.artifactFileName ||
+    metadataRequirement.bytes !== captureRequirement.bytes ||
+    metadataRequirement.sha256 !== captureRequirement.sha256
+  ) {
+    throw new Error(
+      'Release metadata Capture runtime asset does not match its manifest.',
+    );
   }
 }
 
