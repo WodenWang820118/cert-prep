@@ -1,4 +1,4 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, ChangeDetectionStrategy } from '@angular/core';
 import type { WrongAnswerRead } from '../../cert-prep-api';
 import { OperationStore } from '../../stores/operation.store';
 import { ReviewRetryNavigationService } from '../../stores/practice/review-retry-navigation.service';
@@ -10,6 +10,7 @@ import { documentLabel, reviewDateLabel } from '../../utils/review-display';
 @Component({
   selector: 'app-wrong-answer-review',
   templateUrl: './wrong-answer-review.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './wrong-answer-review.component.css',
 })
 export class WrongAnswerReviewComponent {

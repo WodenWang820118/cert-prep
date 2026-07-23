@@ -5,6 +5,7 @@ import {
   Output,
   computed,
   inject,
+  ChangeDetectionStrategy
 } from '@angular/core';
 import { Button } from 'primeng/button';
 import { ProgressBar } from 'primeng/progressbar';
@@ -18,6 +19,7 @@ import { OperationStore } from '../../stores/operation.store';
   selector: 'app-runtime-manager-page',
   imports: [Button, ProgressBar, RuntimeStatusRowComponent],
   templateUrl: './runtime-manager.page.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './runtime-manager.page.css',
 })
 export class RuntimeManagerPage {

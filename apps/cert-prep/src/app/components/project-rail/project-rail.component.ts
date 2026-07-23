@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { InputText } from 'primeng/inputtext';
 import { Textarea } from 'primeng/textarea';
@@ -10,6 +10,7 @@ import { WorkspaceFacade } from '../../stores/workspace.facade';
   selector: 'app-project-rail',
   imports: [FormsModule, InputText, Textarea],
   templateUrl: './project-rail.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './project-rail.component.css',
 })
 export class ProjectRailComponent {

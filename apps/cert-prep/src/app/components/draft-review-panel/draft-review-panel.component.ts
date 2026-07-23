@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, ChangeDetectionStrategy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { InputText } from 'primeng/inputtext';
 import { Tag } from 'primeng/tag';
@@ -10,6 +10,7 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
   selector: 'app-draft-review-panel',
   imports: [FormsModule, InputText, Tag],
   templateUrl: './draft-review-panel.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './draft-review-panel.component.css',
 })
 export class DraftReviewPanelComponent {

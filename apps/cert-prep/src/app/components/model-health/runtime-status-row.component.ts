@@ -1,4 +1,4 @@
-import { Component, Input } from '@angular/core';
+import { Component, Input, ChangeDetectionStrategy } from '@angular/core';
 import { Tag } from 'primeng/tag';
 import type { RuntimeStatusSectionView } from './contracts/model-health.contracts';
 
@@ -27,6 +27,7 @@ import type { RuntimeStatusSectionView } from './contracts/model-health.contract
       <ng-content select="[progress]" />
     </div>
   `,
+  changeDetection: ChangeDetectionStrategy.Eager,
   styles: [
     `
       .runtime-status-row {

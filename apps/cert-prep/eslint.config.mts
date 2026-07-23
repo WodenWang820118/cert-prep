@@ -24,6 +24,9 @@ export default [
           style: 'kebab-case',
         },
       ],
+      // Enabled by the Angular ESLint v22 preset; preserve the Angular v22 migration's
+      // explicit Eager strategy rather than changing existing component behavior.
+      '@angular-eslint/prefer-on-push-component-change-detection': 'off',
     },
   },
   {

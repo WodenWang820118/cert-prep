@@ -1,4 +1,4 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, ChangeDetectionStrategy } from '@angular/core';
 import type {
   WrongAnswerRead,
   WrongAnswerSummaryRead,
@@ -55,6 +55,7 @@ interface AnswerPatternView {
 @Component({
   selector: 'app-wrong-answer-dashboard',
   templateUrl: './wrong-answer-dashboard.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './wrong-answer-dashboard.component.css',
 })
 export class WrongAnswerDashboardComponent {

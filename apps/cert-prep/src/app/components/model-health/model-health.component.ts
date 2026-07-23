@@ -1,4 +1,4 @@
-import { Component, Input, inject } from '@angular/core';
+import { Component, Input, inject, ChangeDetectionStrategy } from '@angular/core';
 import { Router } from '@angular/router';
 import { ModelHealthViewModelFacade } from './model-health-view-model.facade';
 import { RuntimeStatusChipBarComponent } from './runtime-status-chip-bar.component';
@@ -6,6 +6,7 @@ import { RuntimeStatusChipBarComponent } from './runtime-status-chip-bar.compone
 @Component({
   selector: 'app-model-health',
   imports: [RuntimeStatusChipBarComponent],
+  changeDetection: ChangeDetectionStrategy.Eager,
   template: `
     <app-runtime-status-chip-bar
       [chips]="viewModel().chips"

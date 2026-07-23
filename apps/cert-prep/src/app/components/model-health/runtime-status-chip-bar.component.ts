@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Component, EventEmitter, Input, Output, ChangeDetectionStrategy } from '@angular/core';
 import { Button } from 'primeng/button';
 import { Tag } from 'primeng/tag';
 import type { RuntimeStatusChipView } from './contracts/model-health.contracts';
@@ -6,6 +6,7 @@ import type { RuntimeStatusChipView } from './contracts/model-health.contracts';
 @Component({
   selector: 'app-runtime-status-chip-bar',
   imports: [Button, Tag],
+  changeDetection: ChangeDetectionStrategy.Eager,
   template: `
     <div class="runtime-chip-bar">
       <div class="runtime-chip-list">

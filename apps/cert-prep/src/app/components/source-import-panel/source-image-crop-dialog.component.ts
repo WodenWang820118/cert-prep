@@ -8,6 +8,7 @@ import {
   output,
   signal,
   viewChild,
+  ChangeDetectionStrategy
 } from '@angular/core';
 import { Button } from 'primeng/button';
 import { Dialog } from 'primeng/dialog';
@@ -29,6 +30,7 @@ interface ImagePoint {
   selector: 'app-source-image-crop-dialog',
   imports: [Button, Dialog],
   templateUrl: './source-image-crop-dialog.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './source-image-crop-dialog.component.css',
 })
 export class SourceImageCropDialogComponent {

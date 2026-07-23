@@ -1,4 +1,4 @@
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, ChangeDetectionStrategy } from '@angular/core';
 import { Button } from 'primeng/button';
 import { Dialog } from 'primeng/dialog';
 import { DesktopRuntimeStore } from '../../stores/desktop-runtime/desktop-runtime.store';
@@ -8,6 +8,7 @@ import { RuntimeJobViewService } from '../../stores/health/runtime-job-view.serv
 @Component({
   selector: 'app-runtime-consent-dialogs',
   imports: [Button, Dialog],
+  changeDetection: ChangeDetectionStrategy.Eager,
   template: `
     <p-dialog
       header="Install Python backend runtime"

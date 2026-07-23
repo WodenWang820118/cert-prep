@@ -1,5 +1,8 @@
 {
   "extends": "../../../tsconfig.scripts.json",
   "include": ["./**/*.mts"],
-  "exclude": ["../src-tauri/target/**"]
+  "exclude": ["../src-tauri/target/**"],
+  "compilerOptions": {
+    "ignoreDeprecations": "6.0"
+  }
 }

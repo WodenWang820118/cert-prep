@@ -6,6 +6,7 @@ import {
   inject,
   signal,
   viewChild,
+  ChangeDetectionStrategy
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ProgressBar } from 'primeng/progressbar';
@@ -28,6 +29,7 @@ import { isCroppableImageFile } from './source-image-crop.service';
     Tag,
     ToggleSwitch,
   ],
+  changeDetection: ChangeDetectionStrategy.Eager,
   template: `
     <section class="workbench-panel" aria-labelledby="source-heading">
       <header class="workbench-panel-header">

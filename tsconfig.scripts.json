@@ -10,7 +10,10 @@
     "strict": true,
     "types": ["node"],
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "noUncheckedSideEffectImports": false,
+    "esModuleInterop": false,
+    "ignoreDeprecations": "6.0"
   },
   "include": [
     "eslint.config.mts",
@@ -19,10 +22,5 @@
     ".github/skills/monitor-ci/scripts/**/*.mts",
     ".opencode/skills/monitor-ci/scripts/**/*.mts"
   ],
-  "exclude": [
-    "node_modules",
-    "dist",
-    "tmp",
-    "apps/**/src-tauri/target/**"
-  ]
+  "exclude": ["node_modules", "dist", "tmp", "apps/**/src-tauri/target/**"]
 }
