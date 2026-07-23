@@ -7,10 +7,10 @@ describe('DesktopRuntimeStore', () => {
     TestBed.configureTestingModule({});
   });
 
-  it('treats browser development mode as backend-ready', async () => {
+  it('treats browser development mode as backend-ready', () => {
     const store = TestBed.inject(DesktopRuntimeStore);
 
-    await store.load();
+    store.load().subscribe();
 
     expect(store.isDesktop()).toBe(false);
     expect(store.isBackendReady()).toBe(true);

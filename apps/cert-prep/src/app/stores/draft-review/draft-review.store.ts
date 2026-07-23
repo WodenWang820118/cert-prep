@@ -1,4 +1,5 @@
 import { computed, effect, inject, Injectable, signal } from '@angular/core';
+import { from, Subscription, timer } from 'rxjs';
 import {
   CERT_PREP_API,
   type ManualDraftGenerationOperationRead,
@@ -34,7 +35,7 @@ export class DraftReviewStore {
   private readonly sourceImport = inject(SourceImportStore);
   private readonly streamingJobs = inject(DraftStreamingJobsStore);
   private readonly draftsQueryEnabled = signal(false);
-  private manualDraftPollTimer: ReturnType<typeof setTimeout> | null = null;
+  private manualDraftPollTimer: Subscription | null = null;
   private manualDraftPollFailureCount = 0;
 
   readonly questionLimit = signal(3);
@@ -187,9 +188,9 @@ export class DraftReviewStore {
     this.editSession.setEditRationale(draftId, this.drafts(), rationale);
   }
 
-  async generateDrafts(
+  generateDrafts(
     strategy: DraftGenerationStrategy = 'hybrid_reasoning',
-  ): Promise<void> {
+  ): void {
     const project = this.projects.selectedProject();
     const document = this.sourceImport.activeDocument();
     if (project === null || document === null) {
@@ -203,57 +204,59 @@ export class DraftReviewStore {
       return;
     }
 
-    const operation = await this.operations.run(
-      'questions',
-      strategy === 'deterministic_only'
-        ? 'Deterministic question generation queued'
-        : 'Reasoning question generation queued',
-      () =>
-        this.api.startManualDraftOperation(
-          project.id,
-          document.id,
-          this.generatePayload(strategy),
-        ),
-    );
-    if (operation === null) {
-      await this.openMissingAiRuntimePrompt(strategy);
-      return;
-    }
-
-    this.manualDraftOperation.set(operation);
-    this.resetManualDraftPollingFailure();
-    this.continueManualDraftOperation(operation, strategy);
+    this.operations
+      .run(
+        'questions',
+        strategy === 'deterministic_only'
+          ? 'Deterministic question generation queued'
+          : 'Reasoning question generation queued',
+        (signal) =>
+          from(this.api.startManualDraftOperation(
+            project.id,
+            document.id,
+            this.generatePayload(strategy),
+            { signal },
+          )),
+      )
+      .subscribe((operation) => {
+        if (operation === null) {
+          this.openMissingAiRuntimePrompt(strategy);
+          return;
+        }
+        this.manualDraftOperation.set(operation);
+        this.resetManualDraftPollingFailure();
+        this.continueManualDraftOperation(operation, strategy);
+      });
   }
 
-  async cancelManualDraftOperation(): Promise<void> {
+  cancelManualDraftOperation(): void {
     const operation = this.manualDraftOperation();
     if (operation === null || !this.canCancelManualDraftOperation()) {
       return;
     }
     this.manualDraftCanceling.set(true);
-    try {
-      const canceled = await this.api.cancelManualDraftOperation(
+    from(this.api
+      .cancelManualDraftOperation(
         operation.project_id,
         operation.document_id,
         operation.id,
-      );
-      if (!this.isCurrentManualDraftOperation(operation)) {
-        return;
-      }
-      this.manualDraftOperation.set(canceled);
-      this.continueManualDraftOperation(
-        canceled,
-        operation.strategy as DraftGenerationStrategy,
-      );
-    } catch (error) {
-      this.operations.fail(this.errorMessage(error));
-    } finally {
-      this.manualDraftCanceling.set(false);
-    }
+      ))
+      .subscribe({
+        next: (canceled) => {
+          if (!this.isCurrentManualDraftOperation(operation)) return;
+          this.manualDraftOperation.set(canceled);
+          this.continueManualDraftOperation(canceled, operation.strategy as DraftGenerationStrategy);
+          this.manualDraftCanceling.set(false);
+        },
+        error: (error: unknown) => {
+          this.operations.fail(this.errorMessage(error));
+          this.manualDraftCanceling.set(false);
+        },
+      });
   }
 
-  async cancelActiveDraftJobs(): Promise<void> {
-    await this.streamingJobs.cancelActiveDraftJobs();
+  cancelActiveDraftJobs(): void {
+    this.streamingJobs.cancelActiveDraftJobs();
   }
 
   retryManualDraftPolling(): void {
@@ -263,16 +266,16 @@ export class DraftReviewStore {
     }
     this.clearManualDraftPollTimer();
     this.resetManualDraftPollingFailure();
-    void this.refreshManualDraftOperation(
+    this.refreshManualDraftOperation(
       operation,
       operation.strategy as DraftGenerationStrategy,
     );
   }
 
-  private async openMissingAiRuntimePrompt(
+  private openMissingAiRuntimePrompt(
     strategy: DraftGenerationStrategy,
     providerUnavailable = false,
-  ): Promise<void> {
+  ): void {
     if (
       strategy !== 'hybrid_reasoning' ||
       (!providerUnavailable &&
@@ -281,11 +284,7 @@ export class DraftReviewStore {
       return;
     }
 
-    try {
-      await this.health.load();
-    } catch {
-      return;
-    }
+    this.health.load();
 
     if (this.health.canInstallOllama()) {
       this.health.openOllamaInstallConsent();
@@ -297,7 +296,7 @@ export class DraftReviewStore {
     }
   }
 
-  async retryDraftJobs(): Promise<void> {
+  retryDraftJobs(): void {
     const project = this.projects.selectedProject();
     const document = this.sourceImport.activeDocument();
     if (project === null || document === null) {
@@ -305,23 +304,19 @@ export class DraftReviewStore {
       return;
     }
 
-    const jobs = await this.operations.run(
-      'questions',
-      'Question generation retry queued',
-      () => this.api.retryDocumentDraftJobs(project.id, document.id),
-    );
-    if (jobs === null) {
-      return;
-    }
-
-    this.streamingJobs.setDraftJobs(jobs.items);
-    await this.load(project.id);
-    await this.sourceImport.refreshUploadedDocument(project.id, document.id);
-    if (this.streamingJobs.hasActiveDraftJobs(jobs.items)) {
-      this.streamingJobs.ensurePolling(project.id, document.id, async (id) => {
-        this.load(id);
+    this.operations
+      .run('questions', 'Question generation retry queued', (signal) =>
+        from(this.api.retryDocumentDraftJobs(project.id, document.id, { signal })),
+      )
+      .subscribe((jobs) => {
+        if (jobs === null) return;
+        this.streamingJobs.setDraftJobs(jobs.items);
+        this.load(project.id);
+        this.sourceImport.refreshUploadedDocument(project.id, document.id);
+        if (this.streamingJobs.hasActiveDraftJobs(jobs.items)) {
+          this.streamingJobs.ensurePolling(project.id, document.id, (id) => this.load(id));
+        }
       });
-    }
   }
 
   retryDraftPolling(): void {
@@ -331,26 +326,27 @@ export class DraftReviewStore {
       return;
     }
 
-    this.streamingJobs.retryPolling(project.id, document.id, async (projectId) => {
+    this.streamingJobs.retryPolling(project.id, document.id, (projectId) => {
       this.load(projectId);
     });
   }
 
-  async saveDraft(draft: QuestionDraftRead): Promise<QuestionDraftRead | null> {
+  saveDraft(draft: QuestionDraftRead): void {
     const project = this.projects.selectedProject();
     if (project === null) {
       this.operations.fail('Select a project before saving questions.');
-      return null;
+      return;
     }
 
-    const updated = await this.operations.run('saveDraft', 'Question saved', () =>
-      this.api.updateQuestionDraft(project.id, draft.id, this.updatePayload(draft)),
-    );
-    if (updated !== null) {
-      this.upsertDraft(updated);
-      this.cancelEdit(updated);
-    }
-    return updated;
+    this.operations
+      .run('saveDraft', 'Question saved', (signal) =>
+        from(this.api.updateQuestionDraft(project.id, draft.id, this.updatePayload(draft), { signal })),
+      )
+      .subscribe((updated) => {
+        if (updated === null) return;
+        this.upsertDraft(updated);
+        this.cancelEdit(updated);
+      });
   }
 
   private upsertDraft(nextDraft: QuestionDraftRead): void {
@@ -385,7 +381,7 @@ export class DraftReviewStore {
   ): void {
     this.clearManualDraftPollTimer();
     if (operation.status === 'succeeded') {
-      void this.completeManualDraftOperation(operation);
+      this.completeManualDraftOperation(operation);
       return;
     }
     if (operation.status === 'failed') {
@@ -398,66 +394,53 @@ export class DraftReviewStore {
     if (operation.status === 'canceled') {
       return;
     }
-    this.manualDraftPollTimer = setTimeout(() => {
+    this.manualDraftPollTimer = timer(MANUAL_DRAFT_POLL_INTERVAL_MS).subscribe(() => {
       this.manualDraftPollTimer = null;
-      void this.refreshManualDraftOperation(operation, strategy);
-    }, MANUAL_DRAFT_POLL_INTERVAL_MS);
+      this.refreshManualDraftOperation(operation, strategy);
+    });
   }
 
-  private async refreshManualDraftOperation(
+  private refreshManualDraftOperation(
     operation: ManualDraftGenerationOperationRead,
     strategy: DraftGenerationStrategy,
-  ): Promise<void> {
+  ): void {
     if (!this.isCurrentManualDraftOperation(operation)) {
       return;
     }
-    try {
-      const refreshed = await this.api.getManualDraftOperation(
-        operation.project_id,
-        operation.document_id,
-        operation.id,
-      );
-      if (!this.isCurrentManualDraftOperation(operation)) {
-        return;
-      }
-      this.manualDraftOperation.set(refreshed);
-      this.resetManualDraftPollingFailure();
-      this.continueManualDraftOperation(refreshed, strategy);
-    } catch {
-      const delay =
-        MANUAL_DRAFT_POLL_RETRY_DELAYS_MS[this.manualDraftPollFailureCount];
-      if (delay === undefined) {
-        this.clearManualDraftPollTimer();
-        this.manualDraftPollingError.set(
-          'Question generation progress could not be refreshed. Retry the status check or cancel the operation.',
-        );
-        return;
-      }
-      this.manualDraftPollFailureCount += 1;
-      this.manualDraftPollTimer = setTimeout(() => {
-        this.manualDraftPollTimer = null;
-        void this.refreshManualDraftOperation(operation, strategy);
-      }, delay);
-    }
+    from(this.api
+      .getManualDraftOperation(operation.project_id, operation.document_id, operation.id))
+      .subscribe({
+        next: (refreshed) => {
+          if (!this.isCurrentManualDraftOperation(operation)) return;
+          this.manualDraftOperation.set(refreshed);
+          this.resetManualDraftPollingFailure();
+          this.continueManualDraftOperation(refreshed, strategy);
+        },
+        error: () => {
+          const delay = MANUAL_DRAFT_POLL_RETRY_DELAYS_MS[this.manualDraftPollFailureCount];
+          if (delay === undefined) {
+            this.clearManualDraftPollTimer();
+            this.manualDraftPollingError.set('Question generation progress could not be refreshed. Retry the status check or cancel the operation.');
+            return;
+          }
+          this.manualDraftPollFailureCount += 1;
+          this.manualDraftPollTimer = timer(delay).subscribe(() => {
+            this.manualDraftPollTimer = null;
+            this.refreshManualDraftOperation(operation, strategy);
+          });
+        },
+      });
   }
 
-  private async completeManualDraftOperation(
+  private completeManualDraftOperation(
     operation: ManualDraftGenerationOperationRead,
-  ): Promise<void> {
+  ): void {
     if (!this.isCurrentManualDraftOperation(operation)) {
       return;
     }
     this.load(operation.project_id);
-    await Promise.all([
-      this.streamingJobs.loadDraftJobs(
-        operation.project_id,
-        operation.document_id,
-      ),
-      this.sourceImport.refreshUploadedDocument(
-        operation.project_id,
-        operation.document_id,
-      ),
-    ]);
+    this.streamingJobs.loadDraftJobs(operation.project_id, operation.document_id).subscribe();
+    this.sourceImport.refreshUploadedDocument(operation.project_id, operation.document_id);
   }
 
   private isCurrentManualDraftOperation(
@@ -472,7 +455,7 @@ export class DraftReviewStore {
 
   private clearManualDraftPollTimer(): void {
     if (this.manualDraftPollTimer !== null) {
-      clearTimeout(this.manualDraftPollTimer);
+      this.manualDraftPollTimer.unsubscribe();
       this.manualDraftPollTimer = null;
     }
   }

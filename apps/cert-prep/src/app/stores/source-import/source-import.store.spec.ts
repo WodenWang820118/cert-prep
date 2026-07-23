@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { finalize, of, Subject, throwError } from 'rxjs';
 import { CERT_PREP_API } from '../../cert-prep-api';
 import type { ChunkRead, DocumentRead } from '../../cert-prep-api';
 import { HealthStore } from '../health/health.store';
@@ -41,12 +42,12 @@ describe('SourceImportStore polling', () => {
 
     apiClient.getDocument.mockImplementation(
       (_projectId: string, documentId = 'document-1') =>
-        Promise.resolve(documentRead({ id: documentId })),
+        of(documentRead({ id: documentId })),
     );
-    apiClient.listDocumentChunks.mockResolvedValue({ items: [] });
+    apiClient.listDocumentChunks.mockReturnValue(of({ items: [] }));
     apiClient.getDocumentOperation.mockImplementation(
       (projectId: string, operationId: string) =>
-        Promise.resolve(
+        of(
           documentOperation('running', {
             id: operationId,
             project_id: projectId,
@@ -55,22 +56,22 @@ describe('SourceImportStore polling', () => {
     );
     apiClient.cancelDocumentOperation.mockImplementation(
       (projectId: string, operationId: string) =>
-        Promise.resolve(
+        of(
           documentOperation('canceled', {
             id: operationId,
             project_id: projectId,
           }),
         ),
     );
-    apiClient.cancelDocumentProcessing.mockResolvedValue(
+    apiClient.cancelDocumentProcessing.mockReturnValue(of(
       documentOperation('cancel_requested'),
-    );
-    apiClient.retryDocumentProcessing.mockResolvedValue(
+    ));
+    apiClient.retryDocumentProcessing.mockReturnValue(of(
       documentOperation('running'),
-    );
-    apiClient.runtimeRequirements.mockResolvedValue({
+    ));
+    apiClient.runtimeRequirements.mockReturnValue(of({
       items: [whisperRequirement(true)],
-    });
+    }));
 
     const projects = TestBed.inject(ProjectStore);
     projects.projects.set([
@@ -91,56 +92,57 @@ describe('SourceImportStore polling', () => {
     vi.useRealTimers();
   });
 
-  it('polls quickly until the first chunk is visible, then returns to the normal cadence', async () => {
+  it('polls quickly until the first chunk is visible, then returns to the normal cadence', () => {
     const store = TestBed.inject(SourceImportStore);
     apiClient.getDocument
-      .mockResolvedValueOnce(
+      .mockReturnValueOnce(of(
         documentRead({ status: 'processing', chunks_count: 1 }),
-      )
-      .mockResolvedValueOnce(
+      ))
+      .mockReturnValueOnce(of(
         documentRead({ status: 'processing', chunks_count: 1 }),
-      )
-      .mockResolvedValueOnce(
+      ))
+      .mockReturnValueOnce(of(
         documentRead({ status: 'processing', chunks_count: 1 }),
-      );
+      ));
     apiClient.listDocumentChunks
-      .mockResolvedValueOnce({ items: [] })
-      .mockResolvedValueOnce({ items: [chunkRead()] })
-      .mockResolvedValueOnce({ items: [chunkRead()] });
+      .mockReturnValueOnce(of({ items: [] }))
+      .mockReturnValueOnce(of({ items: [chunkRead()] }))
+      .mockReturnValueOnce(of({ items: [chunkRead()] }));
 
-    await store.refreshUploadedDocument('project-1', 'document-1');
+    store.refreshUploadedDocument('project-1', 'document-1');
 
     expect(store.chunks()).toEqual([]);
     expect(apiClient.getDocument).toHaveBeenCalledTimes(1);
 
-    await vi.advanceTimersByTimeAsync(499);
+    vi.advanceTimersByTime(499);
     expect(apiClient.getDocument).toHaveBeenCalledTimes(1);
 
-    await vi.advanceTimersByTimeAsync(1);
+    vi.advanceTimersByTime(1);
     expect(apiClient.getDocument).toHaveBeenCalledTimes(2);
     expect(store.chunks()).toEqual([chunkRead()]);
 
-    await vi.advanceTimersByTimeAsync(1499);
+    vi.advanceTimersByTime(1499);
     expect(apiClient.getDocument).toHaveBeenCalledTimes(2);
 
-    await vi.advanceTimersByTimeAsync(1);
+    vi.advanceTimersByTime(1);
     expect(apiClient.getDocument).toHaveBeenCalledTimes(3);
   });
 
-  it('loads project documents and makes the latest document active explicitly', async () => {
+  it('loads project documents and makes the latest document active explicitly', () => {
     const store = TestBed.inject(SourceImportStore);
     const latestDocument = documentRead({ id: 'document-2', filename: 'latest.pdf' });
-    apiClient.listDocuments.mockResolvedValue({
+    apiClient.listDocuments.mockReturnValue(of({
       items: [latestDocument, documentRead()],
-    });
-    apiClient.getDocument.mockResolvedValue(latestDocument);
-    apiClient.listDocumentChunks.mockResolvedValue({
+    }));
+    apiClient.getDocument.mockReturnValue(of(latestDocument));
+    apiClient.listDocumentChunks.mockReturnValue(of({
       items: [chunkRead({ document_id: latestDocument.id })],
-    });
+    }));
 
-    await store.loadLatestDocument('project-1');
-    await vi.waitFor(() => expect(store.documents()).toEqual([latestDocument, documentRead()]));
-    await vi.waitFor(() => expect(store.chunks()).toEqual([chunkRead({ document_id: latestDocument.id })]));
+    store.loadLatestDocument('project-1');
+    flushReactive();
+    expect(store.documents()).toEqual([latestDocument, documentRead()]);
+    expect(store.chunks()).toEqual([chunkRead({ document_id: latestDocument.id })]);
 
     expect(store.documents()).toEqual([latestDocument, documentRead()]);
     expect(store.activeDocumentId()).toBe(latestDocument.id);
@@ -149,7 +151,7 @@ describe('SourceImportStore polling', () => {
     expect(store.chunks()).toEqual([chunkRead({ document_id: latestDocument.id })]);
   });
 
-  it('selects a project document and refreshes its status and chunks', async () => {
+  it('selects a project document and refreshes its status and chunks', () => {
     const store = TestBed.inject(SourceImportStore);
     const firstDocument = documentRead({ id: 'document-1', filename: 'first.pdf' });
     const secondDocument = documentRead({ id: 'document-2', filename: 'second.pdf' });
@@ -160,21 +162,18 @@ describe('SourceImportStore polling', () => {
     });
     store.documents.set([firstDocument, secondDocument]);
     store.setActiveDocumentId(firstDocument.id);
-    apiClient.getDocument.mockResolvedValue(refreshedSecondDocument);
-    apiClient.listDocumentChunks.mockResolvedValue({
+    apiClient.getDocument.mockReturnValue(of(refreshedSecondDocument));
+    apiClient.listDocumentChunks.mockReturnValue(of({
       items: [chunkRead({ document_id: secondDocument.id })],
-    });
+    }));
 
-    await store.selectDocument(secondDocument.id);
-    await vi.waitFor(() =>
-      expect(apiClient.getDocument).toHaveBeenCalledWith(
-        'project-1',
-        secondDocument.id,
-      ),
+    store.selectDocument(secondDocument.id);
+    flushReactive();
+    expect(apiClient.getDocument).toHaveBeenCalledWith(
+      'project-1',
+      secondDocument.id,
     );
-    await vi.waitFor(() =>
-      expect(store.chunks()[0]?.document_id).toBe(secondDocument.id),
-    );
+    expect(store.chunks()[0]?.document_id).toBe(secondDocument.id);
 
     expect(apiClient.getDocument).toHaveBeenCalledWith(
       'project-1',
@@ -189,25 +188,25 @@ describe('SourceImportStore polling', () => {
     expect(store.chunks()).toEqual([chunkRead({ document_id: secondDocument.id })]);
   });
 
-  it('retries polling with bounded backoff and exposes an actionable error', async () => {
+  it('retries polling with bounded backoff and exposes an actionable error', () => {
     const store = TestBed.inject(SourceImportStore);
-    apiClient.getDocument.mockRejectedValue(new Error('backend offline'));
+    apiClient.getDocument.mockReturnValue(throwError(() => new Error('backend offline')));
 
-    await store.refreshUploadedDocument('project-1', 'document-1');
+    store.refreshUploadedDocument('project-1', 'document-1');
 
     expect(store.pollingError()).toBeNull();
     expect(apiClient.getDocument).toHaveBeenCalledTimes(1);
 
-    await vi.advanceTimersByTimeAsync(1000);
-    await vi.advanceTimersByTimeAsync(2000);
-    await vi.advanceTimersByTimeAsync(4000);
+    vi.advanceTimersByTime(1000);
+    vi.advanceTimersByTime(2000);
+    vi.advanceTimersByTime(4000);
 
     expect(apiClient.getDocument).toHaveBeenCalledTimes(4);
     expect(store.pollingError()).toContain('could not be refreshed');
 
-    apiClient.getDocument.mockResolvedValue(documentRead());
+    apiClient.getDocument.mockReturnValue(of(documentRead()));
     store.retryDocumentPolling();
-    await flushPromises();
+    flushReactive();
 
     expect(store.pollingError()).toBeNull();
     expect(apiClient.getDocument).toHaveBeenCalledTimes(5);
@@ -253,22 +252,21 @@ describe('SourceImportStore polling', () => {
     expect(operations.errorCode()).toBeNull();
   });
 
-  it('restores audio upload authorization after Whisper consent is canceled', async () => {
+  it('restores audio upload authorization after Whisper consent is canceled', () => {
     const store = TestBed.inject(SourceImportStore);
     const health = TestBed.inject(HealthStore);
-    apiClient.runtimeRequirements.mockResolvedValue({
+    apiClient.runtimeRequirements.mockReturnValue(of({
       items: [whisperRequirement(false)],
-    });
+    }));
 
     store.chooseFile(sourceFile('lesson.mp3', 'audio/mpeg'));
-    await flushPromises();
+    flushReactive();
 
     expect(health.runtimeInstallConsentKind()).toBe('whisper_models');
     expect(store.canUpload()).toBe(true);
 
-    const uploaded = await store.uploadDocuments();
+    store.uploadDocuments();
 
-    expect(uploaded).toEqual([]);
     expect(apiClient.uploadDocument).not.toHaveBeenCalled();
     expect(store.canUpload()).toBe(false);
     expect(TestBed.inject(OperationStore).status()).toContain(
@@ -277,46 +275,46 @@ describe('SourceImportStore polling', () => {
 
     health.cancelRuntimeInstallConsent();
     TestBed.tick();
-    await flushPromises();
+    flushReactive();
 
     expect(store.canUpload()).toBe(true);
     health.runtimeRequirements.set([whisperRequirement(true)]);
     TestBed.tick();
-    await flushPromises();
+    flushReactive();
 
     expect(apiClient.uploadDocument).not.toHaveBeenCalled();
   });
 
-  it('restores audio upload authorization when Whisper preflight fails', async () => {
+  it('restores audio upload authorization when Whisper preflight fails', () => {
     const store = TestBed.inject(SourceImportStore);
     const health = TestBed.inject(HealthStore);
-    apiClient.runtimeRequirements.mockRejectedValue(
+    apiClient.runtimeRequirements.mockReturnValue(throwError(() =>
       new TypeError('Runtime requirements unavailable'),
-    );
+    ));
 
     store.chooseFile(sourceFile('lesson.mp3', 'audio/mpeg'));
-    await flushPromises();
-    expect(await store.uploadDocuments()).toEqual([]);
+    flushReactive();
+    store.uploadDocuments();
     TestBed.tick();
-    await flushPromises();
+    flushReactive();
 
     expect(store.canUpload()).toBe(true);
     expect(apiClient.uploadDocument).not.toHaveBeenCalled();
 
     health.runtimeRequirements.set([whisperRequirement(true)]);
     TestBed.tick();
-    await flushPromises();
+    flushReactive();
 
     expect(apiClient.uploadDocument).not.toHaveBeenCalled();
   });
 
-  it('restores audio upload authorization when Whisper installation fails', async () => {
+  it('restores audio upload authorization when Whisper installation fails', () => {
     const store = TestBed.inject(SourceImportStore);
     const health = TestBed.inject(HealthStore);
     health.runtimeRequirements.set([whisperRequirement(false)]);
     store.chooseFile(sourceFile('lesson.mp3', 'audio/mpeg'));
 
-    expect(await store.uploadDocuments()).toEqual([]);
+    store.uploadDocuments();
     expect(store.canUpload()).toBe(false);
 
     health.runtimeInstall.set({
@@ -331,53 +329,53 @@ describe('SourceImportStore polling', () => {
       cancellable: false,
     });
     TestBed.tick();
-    await flushPromises();
+    flushReactive();
 
     expect(store.canUpload()).toBe(true);
     health.runtimeRequirements.set([whisperRequirement(true)]);
     TestBed.tick();
-    await flushPromises();
+    flushReactive();
 
     expect(apiClient.uploadDocument).not.toHaveBeenCalled();
   });
 
-  it('does not auto-upload selected audio before the user authorizes it', async () => {
+  it('does not auto-upload selected audio before the user authorizes it', () => {
     const store = TestBed.inject(SourceImportStore);
     const health = TestBed.inject(HealthStore);
     health.runtimeRequirements.set([whisperRequirement(false)]);
-    apiClient.uploadDocument.mockResolvedValue(
+    apiClient.uploadDocument.mockReturnValue(of(
       documentRead({
         id: 'audio-document',
         filename: 'lesson.mp3',
         source_kind: 'audio',
         page_count: 0,
       }),
-    );
+    ));
 
     store.chooseFile(sourceFile('lesson.mp3', 'audio/mpeg'));
     health.runtimeRequirements.set([whisperRequirement(true)]);
     TestBed.tick();
-    await flushPromises();
+    flushReactive();
 
     expect(apiClient.uploadDocument).not.toHaveBeenCalled();
     expect(store.uploadItems()[0]?.status).toBe('queued');
     expect(store.canUpload()).toBe(true);
   });
 
-  it('auto-starts an authorized audio upload when Whisper becomes ready', async () => {
+  it('auto-starts an authorized audio upload when Whisper becomes ready', () => {
     const store = TestBed.inject(SourceImportStore);
     const health = TestBed.inject(HealthStore);
     const audioUpload = deferred<DocumentRead>();
     health.runtimeRequirements.set([whisperRequirement(false)]);
-    apiClient.uploadDocument.mockReturnValue(audioUpload.promise);
+    apiClient.uploadDocument.mockReturnValue(audioUpload.observable);
 
     store.chooseFile(sourceFile('lesson.mp3', 'audio/mpeg'));
-    expect(await store.uploadDocuments()).toEqual([]);
+    store.uploadDocuments();
     expect(apiClient.uploadDocument).not.toHaveBeenCalled();
 
     health.runtimeRequirements.set([whisperRequirement(true)]);
     TestBed.tick();
-    await flushPromises();
+    flushReactive();
 
     expect(apiClient.uploadDocument).toHaveBeenCalledTimes(1);
     expect(store.uploadItems()[0]?.status).toBe('uploading');
@@ -390,51 +388,50 @@ describe('SourceImportStore polling', () => {
         page_count: 0,
       }),
     );
-    await flushPromises(12);
+    flushReactive();
 
     expect(store.uploadItems()[0]?.status).toBe('uploaded');
   });
 
-  it('does not open stale Whisper consent after the selection changes during preflight', async () => {
+  it('does not open stale Whisper consent after the selection changes during preflight', () => {
     const store = TestBed.inject(SourceImportStore);
     const health = TestBed.inject(HealthStore);
     const requirementRequest = deferred<{
       items: ReturnType<typeof whisperRequirement>[];
     }>();
-    apiClient.runtimeRequirements.mockReturnValue(requirementRequest.promise);
+    apiClient.runtimeRequirements.mockReturnValue(requirementRequest.observable);
 
     store.chooseFile(sourceFile('lesson.mp3', 'audio/mpeg'));
     expect(apiClient.runtimeRequirements).toHaveBeenCalledTimes(1);
 
     store.chooseFile(pdfFile('guide.pdf'));
     requirementRequest.resolve({ items: [whisperRequirement(false)] });
-    await flushPromises();
+    flushReactive();
 
     expect(store.selectedFile()?.name).toBe('guide.pdf');
     expect(health.runtimeInstallConsentKind()).toBeNull();
     expect(TestBed.inject(OperationStore).error()).toBeNull();
   });
 
-  it('uploads audio after the Whisper model inventory is ready', async () => {
+  it('uploads audio after the Whisper model inventory is ready', () => {
     const store = TestBed.inject(SourceImportStore);
-    apiClient.uploadDocument.mockResolvedValue(
+    apiClient.uploadDocument.mockReturnValue(of(
       documentRead({
         id: 'audio-document',
         filename: 'lesson.mp3',
         source_kind: 'audio',
         page_count: 0,
       }),
-    );
+    ));
 
     store.chooseFile(sourceFile('lesson.mp3', 'audio/mpeg'));
-    await flushPromises();
-    const uploaded = await store.uploadDocuments();
+    flushReactive();
+    store.uploadDocuments();
 
-    expect(uploaded).toHaveLength(1);
     expect(apiClient.uploadDocument).toHaveBeenCalledTimes(1);
   });
 
-  it('keeps two upload slots full as each source transport completes', async () => {
+  it('keeps two upload slots full as each source transport completes', () => {
     const store = TestBed.inject(SourceImportStore);
     const firstUpload = deferred<DocumentRead>();
     const secondUpload = deferred<DocumentRead>();
@@ -448,10 +445,10 @@ describe('SourceImportStore polling', () => {
     apiClient.uploadDocument.mockImplementation((_projectId: string, body: FormData) => {
       const file = body.get('file') as File;
       startedUploads.push(file.name);
-      return uploads.get(file.name)?.promise;
+      return uploads.get(file.name)?.observable;
     });
     apiClient.getDocument.mockImplementation((_projectId: string, documentId: string) =>
-      Promise.resolve(documentRead({ id: documentId })),
+      of(documentRead({ id: documentId })),
     );
     store.chooseFiles([
       pdfFile('first.pdf'),
@@ -459,21 +456,21 @@ describe('SourceImportStore polling', () => {
       sourceFile('third.webp', 'image/webp'),
     ]);
 
-    const uploadPromise = store.uploadDocuments();
-    await Promise.resolve();
+    store.uploadDocuments();
+    flushReactive();
 
     expect(startedUploads).toEqual(['first.pdf', 'second.png']);
     firstUpload.resolve(documentRead({ id: 'document-1', filename: 'first.pdf' }));
-    await flushPromises();
+    flushUploadQueue();
 
     expect(startedUploads).toEqual(['first.pdf', 'second.png', 'third.webp']);
     expect(store.uploadItems()[0]?.status).toBe('uploaded');
     secondUpload.resolve(documentRead({ id: 'document-2', filename: 'second.png' }));
-    await flushPromises();
+    flushReactive();
 
     expect(startedUploads).toEqual(['first.pdf', 'second.png', 'third.webp']);
     thirdUpload.resolve(documentRead({ id: 'document-3', filename: 'third.webp' }));
-    await uploadPromise;
+    flushUploadQueue();
 
     expect(apiClient.uploadDocument).toHaveBeenCalledTimes(3);
     expect(store.uploadItems().map((item) => item.status)).toEqual([
@@ -488,7 +485,7 @@ describe('SourceImportStore polling', () => {
     );
   });
 
-  it('appends ready files to the active run and waits for the appended transport', async () => {
+  it('appends ready files to the active run and waits for the appended transport', () => {
     const store = TestBed.inject(SourceImportStore);
     const firstUpload = deferred<DocumentRead>();
     const appendedUpload = deferred<DocumentRead>();
@@ -498,16 +495,16 @@ describe('SourceImportStore polling', () => {
         const file = body.get('file') as File;
         startedUploads.push(file.name);
         return file.name === 'first.pdf'
-          ? firstUpload.promise
-          : appendedUpload.promise;
+          ? firstUpload.observable
+          : appendedUpload.observable;
       },
     );
     store.chooseFile(pdfFile('first.pdf'));
 
-    const uploadPromise = store.uploadDocuments();
-    await Promise.resolve();
+    store.uploadDocuments();
+    flushReactive();
     store.chooseFile(pdfFile('appended.pdf'));
-    await Promise.resolve();
+    flushReactive();
 
     expect(startedUploads).toEqual(['first.pdf', 'appended.pdf']);
     expect(store.selectedFiles().map((file) => file.name)).toEqual([
@@ -515,31 +512,24 @@ describe('SourceImportStore polling', () => {
       'appended.pdf',
     ]);
 
-    let completed = false;
-    void uploadPromise.then(() => {
-      completed = true;
-    });
     firstUpload.resolve(
       documentRead({ id: 'document-first', filename: 'first.pdf' }),
     );
-    await flushPromises();
+    flushReactive();
 
     expect(store.uploadItems()[0]?.status).toBe('uploaded');
-    expect(completed).toBe(false);
 
     appendedUpload.resolve(
       documentRead({ id: 'document-appended', filename: 'appended.pdf' }),
     );
-    const uploaded = await uploadPromise;
-
-    expect(uploaded).toHaveLength(2);
+    flushReactive();
     expect(store.uploadItems().map((item) => item.status)).toEqual([
       'uploaded',
       'uploaded',
     ]);
   });
 
-  it('releases active-run appended audio authorization when consent is canceled', async () => {
+  it('releases active-run appended audio authorization when consent is canceled', () => {
     const store = TestBed.inject(SourceImportStore);
     const health = TestBed.inject(HealthStore);
     const pdfUpload = deferred<DocumentRead>();
@@ -550,8 +540,8 @@ describe('SourceImportStore polling', () => {
         const file = body.get('file') as File;
         uploadedNames.push(file.name);
         return file.name === 'busy.pdf'
-          ? pdfUpload.promise
-          : Promise.resolve(
+          ? pdfUpload.observable
+          : of(
               documentRead({
                 id: 'document-audio',
                 filename: file.name,
@@ -563,32 +553,32 @@ describe('SourceImportStore polling', () => {
     );
     store.chooseFile(pdfFile('busy.pdf'));
 
-    const activeRun = store.uploadDocuments();
-    await Promise.resolve();
+    store.uploadDocuments();
+    flushReactive();
     store.chooseFile(sourceFile('lesson.mp3', 'audio/mpeg'));
-    await flushPromises();
+    flushReactive();
 
     expect(health.runtimeInstallConsentKind()).toBe('whisper_models');
     expect(store.uploadItems()[1]?.status).toBe('queued');
 
     health.cancelRuntimeInstallConsent();
     TestBed.tick();
-    await flushPromises();
+    flushReactive();
     pdfUpload.resolve(
       documentRead({ id: 'document-busy', filename: 'busy.pdf' }),
     );
-    await activeRun;
+    flushReactive();
 
     expect(store.canUpload()).toBe(true);
     health.runtimeRequirements.set([whisperRequirement(true)]);
     TestBed.tick();
-    await flushPromises();
+    flushReactive();
 
     expect(uploadedNames).toEqual(['busy.pdf']);
     expect(store.uploadItems()[1]?.status).toBe('queued');
   });
 
-  it('uploads a mixed PDF immediately while missing Whisper models keep audio queued', async () => {
+  it('uploads a mixed PDF immediately while missing Whisper models keep audio queued', () => {
     const store = TestBed.inject(SourceImportStore);
     const health = TestBed.inject(HealthStore);
     const pdfUpload = deferred<DocumentRead>();
@@ -600,8 +590,8 @@ describe('SourceImportStore polling', () => {
         const file = body.get('file') as File;
         uploadedNames.push(file.name);
         return file.name.endsWith('.mp3')
-          ? audioUpload.promise
-          : pdfUpload.promise;
+          ? audioUpload.observable
+          : pdfUpload.observable;
       },
     );
     store.chooseFiles([
@@ -609,8 +599,8 @@ describe('SourceImportStore polling', () => {
       sourceFile('lesson.mp3', 'audio/mpeg'),
     ]);
 
-    const uploadPromise = store.uploadDocuments();
-    await flushPromises();
+    store.uploadDocuments();
+    flushReactive();
 
     expect(uploadedNames).toEqual(['guide.pdf']);
     expect(store.uploadItems().map((item) => item.status)).toEqual([
@@ -621,7 +611,7 @@ describe('SourceImportStore polling', () => {
 
     health.runtimeRequirements.set([whisperRequirement(true)]);
     TestBed.tick();
-    await flushPromises();
+    flushReactive();
 
     expect(uploadedNames).toEqual(['guide.pdf', 'lesson.mp3']);
     expect(store.uploadItems().map((item) => item.status)).toEqual([
@@ -640,16 +630,14 @@ describe('SourceImportStore polling', () => {
         page_count: 0,
       }),
     );
-    const uploaded = await uploadPromise;
-
-    expect(uploaded).toHaveLength(2);
+    flushReactive();
     expect(store.uploadItems().map((item) => item.status)).toEqual([
       'uploaded',
       'uploaded',
     ]);
   });
 
-  it('reconciles a claimed upload after a 503 transport response', async () => {
+  it('reconciles a claimed upload after a 503 transport response', () => {
     const store = TestBed.inject(SourceImportStore);
     let operationId = '';
     apiClient.uploadDocument.mockImplementation(
@@ -659,15 +647,15 @@ describe('SourceImportStore polling', () => {
         options: { headers?: Record<string, string> },
       ) => {
         operationId = options.headers?.['X-Cert-Prep-Operation-Id'] ?? '';
-        return Promise.reject({
+        return throwError(() => ({
           status: 503,
           error: { message: 'The upload response was interrupted.' },
-        });
+        }));
       },
     );
     apiClient.getDocumentOperation.mockImplementation(
       (projectId: string, requestedOperationId: string) =>
-        Promise.resolve(
+        of(
           documentOperation('succeeded', {
             id: requestedOperationId,
             project_id: projectId,
@@ -676,21 +664,21 @@ describe('SourceImportStore polling', () => {
           }),
         ),
     );
-    apiClient.getDocument.mockResolvedValue(
+    apiClient.getDocument.mockReturnValue(of(
       documentRead({ id: 'document-claimed', filename: 'claimed.pdf' }),
-    );
+    ));
     store.chooseFile(pdfFile('claimed.pdf'));
 
-    const documents = await store.uploadDocuments();
+    store.uploadDocuments();
 
     expect(operationId).not.toBe('');
     expect(apiClient.getDocumentOperation).toHaveBeenCalledWith(
       'project-1',
       operationId,
     );
-    expect(documents).toEqual([
+    expect(store.documents()[0]).toEqual(
       expect.objectContaining({ id: 'document-claimed' }),
-    ]);
+    );
     expect(store.uploadItems()[0]).toEqual(
       expect.objectContaining({
         status: 'uploaded',
@@ -699,20 +687,20 @@ describe('SourceImportStore polling', () => {
     );
   });
 
-  it('cancels a queued source locally without creating or canceling an operation', async () => {
+  it('cancels a queued source locally without creating or canceling an operation', () => {
     const store = TestBed.inject(SourceImportStore);
     const firstUpload = deferred<DocumentRead>();
     store.setUploadBatchSize(1);
-    apiClient.uploadDocument.mockReturnValue(firstUpload.promise);
+    apiClient.uploadDocument.mockReturnValue(firstUpload.observable);
     store.chooseFiles([pdfFile('first.pdf'), pdfFile('queued.pdf')]);
 
-    const uploadPromise = store.uploadDocuments();
-    await Promise.resolve();
+    store.uploadDocuments();
+    flushReactive();
     const queuedItem = store.uploadItems()[1];
     if (queuedItem === undefined) {
       throw new Error('Expected a queued upload item.');
     }
-    await store.cancelUploadItem(queuedItem.id);
+    store.cancelUploadItem(queuedItem.id);
 
     expect(store.uploadItems()[1]?.status).toBe('canceled');
     expect(apiClient.uploadDocument).toHaveBeenCalledTimes(1);
@@ -721,12 +709,12 @@ describe('SourceImportStore polling', () => {
     firstUpload.resolve(
       documentRead({ id: 'document-first', filename: 'first.pdf' }),
     );
-    await uploadPromise;
-  });
+      });
 
-  it('refills the upload slot after canceling an active transport', async () => {
+  it('refills the upload slot after canceling an active transport', () => {
     const store = TestBed.inject(SourceImportStore);
     const secondUpload = deferred<DocumentRead>();
+    const activeUpload = deferred<DocumentRead>();
     const startedUploads: string[] = [];
     const operationIds = new Map<string, string>();
     store.setUploadBatchSize(1);
@@ -746,27 +734,26 @@ describe('SourceImportStore polling', () => {
           options.headers?.['X-Cert-Prep-Operation-Id'] ?? '',
         );
         if (file.name === 'active.pdf') {
-          return new Promise<DocumentRead>((_resolve, reject) => {
-            options.signal?.addEventListener(
-              'abort',
-              () => reject(new DOMException('canceled', 'AbortError')),
-              { once: true },
-            );
-          });
+          options.signal?.addEventListener(
+            'abort',
+            () => activeUpload.reject(new DOMException('canceled', 'AbortError')),
+            { once: true },
+          );
+          return activeUpload.observable;
         }
-        return secondUpload.promise;
+        return secondUpload.observable;
       },
     );
     store.chooseFiles([pdfFile('active.pdf'), pdfFile('queued.pdf')]);
 
-    const uploadPromise = store.uploadDocuments();
-    await Promise.resolve();
+    store.uploadDocuments();
+    flushReactive();
     const activeItem = store.uploadItems()[0];
     if (activeItem === undefined) {
       throw new Error('Expected an active upload item.');
     }
-    await store.cancelUploadItem(activeItem.id);
-    await flushPromises(8);
+    store.cancelUploadItem(activeItem.id);
+    flushUploadQueue();
 
     const firstOperationId = operationIds.get('active.pdf');
     expect(firstOperationId).toBeTruthy();
@@ -784,12 +771,11 @@ describe('SourceImportStore polling', () => {
     secondUpload.resolve(
       documentRead({ id: 'document-queued', filename: 'queued.pdf' }),
     );
-    await uploadPromise;
 
     expect(store.uploadItems()[1]?.status).toBe('uploaded');
   });
 
-  it('appends new files without invalidating a status-unavailable upload attempt', async () => {
+  it('appends new files without invalidating a status-unavailable upload attempt', () => {
     const store = TestBed.inject(SourceImportStore);
     const secondUpload = deferred<DocumentRead>();
     let firstOperationId = '';
@@ -803,29 +789,29 @@ describe('SourceImportStore polling', () => {
         if (file.name === 'uncertain.pdf') {
           firstOperationId =
             options.headers?.['X-Cert-Prep-Operation-Id'] ?? '';
-          return Promise.reject(new TypeError('Connection interrupted'));
+          return throwError(() => new TypeError('Connection interrupted'));
         }
-        return secondUpload.promise;
+        return secondUpload.observable;
       },
     );
-    apiClient.getDocumentOperation.mockRejectedValue(
+    apiClient.getDocumentOperation.mockReturnValue(throwError(() =>
       new TypeError('Status endpoint unavailable'),
-    );
+    ));
     store.chooseFile(pdfFile('uncertain.pdf'));
 
-    const uncertainRun = store.uploadDocuments();
-    await flushPromises();
+    store.uploadDocuments();
+    flushReactive();
     for (const delay of [1_000, 2_000, 4_000]) {
-      await vi.advanceTimersByTimeAsync(delay);
-      await flushPromises();
+      vi.advanceTimersByTime(delay);
+      flushReactive();
     }
-    await uncertainRun;
 
     const uncertainItem = store.uploadItems()[0];
     expect(uncertainItem?.status).toBe('status_unavailable');
     expect(firstOperationId).not.toBe('');
 
     store.chooseFile(pdfFile('new.pdf'));
+    flushReactive();
 
     expect(store.selectedFiles().map((file) => file.name)).toEqual([
       'uncertain.pdf',
@@ -838,11 +824,11 @@ describe('SourceImportStore polling', () => {
     secondUpload.resolve(
       documentRead({ id: 'document-new', filename: 'new.pdf' }),
     );
-    await flushPromises(12);
+    flushReactive();
 
     apiClient.getDocumentOperation.mockImplementation(
       (projectId: string, requestedOperationId: string) =>
-        Promise.resolve(
+        of(
           documentOperation('succeeded', {
             id: requestedOperationId,
             project_id: projectId,
@@ -853,12 +839,12 @@ describe('SourceImportStore polling', () => {
     );
     apiClient.getDocument.mockImplementation(
       (_projectId: string, documentId: string) =>
-        Promise.resolve(documentRead({ id: documentId })),
+        of(documentRead({ id: documentId })),
     );
     if (uncertainItem === undefined) {
       throw new Error('Expected the status-unavailable upload item.');
     }
-    await store.retryUploadItem(uncertainItem.id);
+    store.retryUploadItem(uncertainItem.id);
 
     expect(apiClient.getDocumentOperation).toHaveBeenLastCalledWith(
       'project-1',
@@ -867,7 +853,7 @@ describe('SourceImportStore polling', () => {
     expect(store.uploadItems()[0]?.status).toBe('uploaded');
   });
 
-  it('queues status reconciliation behind the active upload concurrency slot', async () => {
+  it('queues status reconciliation behind the active upload concurrency slot', () => {
     const store = TestBed.inject(SourceImportStore);
     const blockingUpload = deferred<DocumentRead>();
     let uncertainOperationId = '';
@@ -884,27 +870,28 @@ describe('SourceImportStore polling', () => {
         if (file.name === 'uncertain.pdf') {
           uncertainOperationId =
             options.headers?.['X-Cert-Prep-Operation-Id'] ?? '';
-          return Promise.reject(new TypeError('Connection interrupted'));
+          return throwError(() => new TypeError('Connection interrupted'));
         }
         blockingTransportActive = true;
-        return blockingUpload.promise.finally(() => {
-          blockingTransportActive = false;
-        });
+        return blockingUpload.observable.pipe(
+          finalize(() => {
+            blockingTransportActive = false;
+          }),
+        );
       },
     );
     apiClient.getDocumentOperation.mockImplementation(() => {
       reconciliationOverlappedTransport ||= blockingTransportActive;
-      return Promise.reject(new TypeError('Status endpoint unavailable'));
+      return throwError(() => new TypeError('Status endpoint unavailable'));
     });
     store.chooseFile(pdfFile('uncertain.pdf'));
 
-    const uncertainRun = store.uploadDocuments();
-    await flushPromises();
+    store.uploadDocuments();
+    flushReactive();
     for (const delay of [1_000, 2_000, 4_000]) {
-      await vi.advanceTimersByTimeAsync(delay);
-      await flushPromises();
+      vi.advanceTimersByTime(delay);
+      flushReactive();
     }
-    await uncertainRun;
 
     const uncertainItem = store.uploadItems()[0];
     if (uncertainItem === undefined) {
@@ -916,7 +903,7 @@ describe('SourceImportStore polling', () => {
     apiClient.getDocumentOperation.mockImplementation(
       (projectId: string, requestedOperationId: string) => {
         reconciliationOverlappedTransport ||= blockingTransportActive;
-        return Promise.resolve(
+        return of(
           documentOperation('succeeded', {
             id: requestedOperationId,
             project_id: projectId,
@@ -931,10 +918,11 @@ describe('SourceImportStore polling', () => {
       autoUpload: false,
     });
 
-    const activeRun = store.uploadDocuments();
-    await Promise.resolve();
-    await store.retryUploadItem(uncertainItem.id);
-    await flushPromises();
+    store.uploadDocuments();
+    flushReactive();
+    flushReactive();
+    store.retryUploadItem(uncertainItem.id);
+    flushReactive();
 
     expect(blockingTransportActive).toBe(true);
     expect(apiClient.getDocumentOperation).toHaveBeenCalledTimes(
@@ -945,7 +933,7 @@ describe('SourceImportStore polling', () => {
     blockingUpload.resolve(
       documentRead({ id: 'document-blocking', filename: 'blocking.pdf' }),
     );
-    await activeRun;
+    flushUploadQueue();
 
     expect(reconciliationOverlappedTransport).toBe(false);
     expect(apiClient.getDocumentOperation).toHaveBeenLastCalledWith(
@@ -958,28 +946,27 @@ describe('SourceImportStore polling', () => {
     ]);
   });
 
-  it('ignores a late upload result after the project context resets', async () => {
+  it('ignores a late upload result after the project context resets', () => {
     const store = TestBed.inject(SourceImportStore);
     const upload = deferred<DocumentRead>();
-    apiClient.uploadDocument.mockReturnValue(upload.promise);
+    apiClient.uploadDocument.mockReturnValue(upload.observable);
     store.chooseFile(pdfFile('stale.pdf'));
 
-    const uploadPromise = store.uploadDocuments();
-    await Promise.resolve();
+    store.uploadDocuments();
+    flushReactive();
     store.reset();
 
-    expect(await uploadPromise).toEqual([]);
-    upload.resolve(
+        upload.resolve(
       documentRead({ id: 'document-stale', filename: 'stale.pdf' }),
     );
-    await flushPromises();
+    flushReactive();
 
     expect(store.uploadItems()).toEqual([]);
     expect(store.documents()).toEqual([]);
     expect(store.activeDocument()).toBeNull();
   });
 
-  it('uses the configured upload batch size for the whole upload run', async () => {
+  it('uses the configured upload batch size for the whole upload run', () => {
     const store = TestBed.inject(SourceImportStore);
     store.setUploadBatchSize(3);
     const uploads = new Map(
@@ -992,7 +979,7 @@ describe('SourceImportStore polling', () => {
     apiClient.uploadDocument.mockImplementation((_projectId: string, body: FormData) => {
       const file = body.get('file') as File;
       startedUploads.push(file.name);
-      return uploads.get(file.name)?.promise;
+      return uploads.get(file.name)?.observable;
     });
     store.chooseFiles([
       pdfFile('first.pdf'),
@@ -1001,8 +988,8 @@ describe('SourceImportStore polling', () => {
       pdfFile('fourth.pdf'),
     ]);
 
-    const uploadPromise = store.uploadDocuments();
-    await Promise.resolve();
+    store.uploadDocuments();
+    flushReactive();
 
     expect(startedUploads).toEqual(['first.pdf', 'second.pdf', 'third.pdf']);
     store.setUploadBatchSize(1);
@@ -1015,7 +1002,7 @@ describe('SourceImportStore polling', () => {
     uploads.get('third.pdf')?.resolve(
       documentRead({ id: 'document-3', filename: 'third.pdf' }),
     );
-    await flushPromises();
+    flushUploadQueue();
 
     expect(startedUploads).toEqual([
       'first.pdf',
@@ -1026,7 +1013,6 @@ describe('SourceImportStore polling', () => {
     uploads.get('fourth.pdf')?.resolve(
       documentRead({ id: 'document-4', filename: 'fourth.pdf' }),
     );
-    await uploadPromise;
 
     expect(store.activeDocumentId()).toBe('document-4');
   });
@@ -1044,7 +1030,7 @@ describe('SourceImportStore polling', () => {
     expect(store.uploadBatchSize()).toBe(2);
   });
 
-  it('ignores reentrant upload calls while a document batch is in progress', async () => {
+  it('ignores reentrant upload calls while a document batch is in progress', () => {
     const store = TestBed.inject(SourceImportStore);
     const firstUpload = deferred<DocumentRead>();
     const secondUpload = deferred<DocumentRead>();
@@ -1056,24 +1042,21 @@ describe('SourceImportStore polling', () => {
     apiClient.uploadDocument.mockImplementation((_projectId: string, body: FormData) => {
       const file = body.get('file') as File;
       startedUploads.push(file.name);
-      return uploads.get(file.name)?.promise;
+      return uploads.get(file.name)?.observable;
     });
     store.chooseFiles([pdfFile('first.pdf'), pdfFile('second.pdf')]);
 
-    const uploadPromise = store.uploadDocuments();
-    await Promise.resolve();
+    store.uploadDocuments();
+    flushReactive();
 
-    const reentrantResult = await store.uploadDocuments();
-
-    expect(reentrantResult).toEqual([]);
+    store.uploadDocuments();
     expect(startedUploads).toEqual(['first.pdf', 'second.pdf']);
 
     firstUpload.resolve(documentRead({ id: 'document-1', filename: 'first.pdf' }));
-    await flushPromises();
+    flushReactive();
     expect(startedUploads).toEqual(['first.pdf', 'second.pdf']);
 
     secondUpload.resolve(documentRead({ id: 'document-2', filename: 'second.pdf' }));
-    await uploadPromise;
 
     expect(apiClient.uploadDocument).toHaveBeenCalledTimes(2);
     expect(store.uploadItems().map((item) => item.status)).toEqual([
@@ -1082,30 +1065,31 @@ describe('SourceImportStore polling', () => {
     ]);
   });
 
-  it('keeps successful uploads when one source file fails', async () => {
+  it('keeps successful uploads when one source file fails', () => {
     const store = TestBed.inject(SourceImportStore);
     const failed = { status: 400, error: { message: 'Invalid source file' } };
     apiClient.uploadDocument.mockImplementation(
       (_projectId: string, body: FormData) => {
         const file = body.get('file') as File;
         if (file.name === 'bad.pdf') {
-          return Promise.reject(failed);
+          return throwError(() => failed);
         }
-        return Promise.resolve(
+        return of(
           documentRead({ id: 'document-good', filename: file.name }),
         );
       },
     );
-    apiClient.getDocument.mockResolvedValue(
+    apiClient.getDocument.mockReturnValue(of(
       documentRead({ id: 'document-good', filename: 'good.pdf' }),
-    );
+    ));
     store.chooseFiles([pdfFile('bad.pdf'), pdfFile('good.pdf')]);
 
-    const documents = await store.uploadDocuments();
+    store.uploadDocuments();
+    flushReactive();
 
-    expect(documents).toEqual([
+    expect(store.documents()[0]).toEqual(
       expect.objectContaining({ id: 'document-good', filename: 'good.pdf' }),
-    ]);
+    );
     expect(store.uploadItems()).toEqual([
       expect.objectContaining({ file: expect.any(File), status: 'failed' }),
       expect.objectContaining({
@@ -1123,23 +1107,26 @@ describe('SourceImportStore polling', () => {
     );
   });
 
-  it('opens the OCR runtime prompt when its best-effort health refresh fails', async () => {
+  it('opens the OCR runtime prompt when its best-effort health refresh fails', () => {
     const store = TestBed.inject(SourceImportStore);
     const health = TestBed.inject(HealthStore);
     const healthError = new Error('Runtime health unavailable');
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const openPrompt = vi.spyOn(health, 'openOcrRuntimeInstallConsent');
-    vi.spyOn(health, 'load').mockRejectedValue(healthError);
-    apiClient.uploadDocument.mockRejectedValue({
+    vi.spyOn(health, 'load').mockImplementation(() => {
+      throw healthError;
+    });
+    apiClient.uploadDocument.mockReturnValue(throwError(() => ({
       status: 503,
       error: {
         code: 'windowsml_runtime_missing',
         message: 'WindowsML runtime is missing.',
       },
-    });
+    })));
     store.chooseFile(pdfFile('runtime-missing.pdf'));
 
-    expect(await store.uploadDocuments()).toEqual([]);
+    store.uploadDocuments();
+    flushReactive();
 
     expect(store.uploadItems()[0]).toEqual(
       expect.objectContaining({
@@ -1158,7 +1145,7 @@ describe('SourceImportStore polling', () => {
     );
   });
 
-  it('retries failed source files without uploading successful items again', async () => {
+  it('retries failed source files without uploading successful items again', () => {
     const store = TestBed.inject(SourceImportStore);
     const uploadedNames: string[] = [];
     let badUploadAttempts = 0;
@@ -1170,12 +1157,12 @@ describe('SourceImportStore polling', () => {
           badUploadAttempts += 1;
         }
         if (file.name === 'bad.pdf' && badUploadAttempts === 1) {
-          return Promise.reject({
+          return throwError(() => ({
             status: 400,
             error: { message: 'The source file could not be parsed.' },
-          });
+          }));
         }
-        return Promise.resolve(
+        return of(
           documentRead({
             id: `document-${file.name}`,
             filename: file.name,
@@ -1185,7 +1172,8 @@ describe('SourceImportStore polling', () => {
     );
     store.chooseFiles([pdfFile('good.pdf'), pdfFile('bad.pdf')]);
 
-    await store.uploadDocuments();
+    store.uploadDocuments();
+    flushReactive();
 
     expect(store.uploadItems().map((item) => item.status)).toEqual([
       'uploaded',
@@ -1200,7 +1188,8 @@ describe('SourceImportStore polling', () => {
     if (failedItem === undefined) {
       throw new Error('Expected the failed upload item.');
     }
-    await store.retryUploadItem(failedItem.id);
+    store.retryUploadItem(failedItem.id);
+    flushReactive();
 
     expect(uploadedNames).toEqual(['bad.pdf']);
     expect(store.uploadItems().map((item) => item.status)).toEqual([
@@ -1211,8 +1200,9 @@ describe('SourceImportStore polling', () => {
     expect(store.activeDocumentId()).toBe('document-bad.pdf');
   });
 
-  it('aborts an upload and persists its operation tombstone', async () => {
+  it('aborts an upload and persists its operation tombstone', () => {
     const store = TestBed.inject(SourceImportStore);
+    const activeUpload = deferred<DocumentRead>();
     let operationId = '';
     apiClient.uploadDocument.mockImplementation(
       (
@@ -1221,13 +1211,12 @@ describe('SourceImportStore polling', () => {
         options: { headers?: Record<string, string>; signal?: AbortSignal },
       ) => {
         operationId = options.headers?.['X-Cert-Prep-Operation-Id'] ?? '';
-        return new Promise<DocumentRead>((_resolve, reject) => {
-          options.signal?.addEventListener(
-            'abort',
-            () => reject(new DOMException('canceled', 'AbortError')),
-            { once: true },
-          );
-        });
+        options.signal?.addEventListener(
+          'abort',
+          () => activeUpload.reject(new DOMException('canceled', 'AbortError')),
+          { once: true },
+        );
+        return activeUpload.observable;
       },
     );
     store.chooseFile(pdfFile('cancel-me.pdf'));
@@ -1236,10 +1225,9 @@ describe('SourceImportStore polling', () => {
       throw new Error('Expected the selected upload item.');
     }
 
-    const uploadPromise = store.uploadDocuments();
-    await Promise.resolve();
-    await store.cancelUploadItem(item.id);
-    await uploadPromise;
+    store.uploadDocuments();
+    flushReactive();
+    store.cancelUploadItem(item.id);
 
     expect(apiClient.cancelDocumentOperation).toHaveBeenCalledWith(
       'project-1',
@@ -1254,7 +1242,7 @@ describe('SourceImportStore polling', () => {
     );
   });
 
-  it('serializes transcript mutations to prevent duplicate and overlapping requests', async () => {
+  it('serializes transcript mutations to prevent duplicate and overlapping requests', () => {
     const store = TestBed.inject(SourceImportStore);
     const document = documentRead({
       source_kind: 'audio',
@@ -1272,56 +1260,49 @@ describe('SourceImportStore polling', () => {
     store.chunks.set([chunk]);
 
     const editRequest = deferred<ChunkRead>();
-    apiClient.updateDocumentChunk.mockReturnValue(editRequest.promise);
-    const editRun = store.updateTranscriptChunk(chunk.id, '更新後的日文');
-    const duplicateEdit = store.updateTranscriptChunk(chunk.id, '重複日文');
-    const blockedTranslate = store.translateTranscriptChunk(chunk.id);
-    const blockedBulk = store.translateStaleTranscriptChunks();
+    apiClient.updateDocumentChunk.mockReturnValue(editRequest.observable);
+    store.updateTranscriptChunk(chunk.id, 'edited');
+    store.updateTranscriptChunk(chunk.id, 'duplicate');
+    store.translateTranscriptChunk(chunk.id);
+    store.translateStaleTranscriptChunks();
+    flushReactive();
 
     expect(apiClient.updateDocumentChunk).toHaveBeenCalledTimes(1);
     expect(apiClient.translateDocumentChunk).not.toHaveBeenCalled();
     expect(apiClient.translateDocumentStaleChunks).not.toHaveBeenCalled();
-    editRequest.resolve({ ...chunk, text: '更新後的日文' });
-    await Promise.all([editRun, duplicateEdit, blockedTranslate, blockedBulk]);
+    editRequest.resolve({ ...chunk, text: 'edited' });
+    flushReactive();
 
     const translateRequest = deferred<ChunkRead>();
-    apiClient.translateDocumentChunk.mockReturnValue(translateRequest.promise);
-    const translateRun = store.translateTranscriptChunk(chunk.id);
-    const duplicateTranslate = store.translateTranscriptChunk(chunk.id);
-    const blockedEdit = store.updateTranscriptChunk(chunk.id, '再更新');
-    const blockedBulkDuringTranslate = store.translateStaleTranscriptChunks();
+    apiClient.translateDocumentChunk.mockReturnValue(translateRequest.observable);
+    store.translateTranscriptChunk(chunk.id);
+    store.translateTranscriptChunk(chunk.id);
+    store.updateTranscriptChunk(chunk.id, 'blocked');
+    store.translateStaleTranscriptChunks();
+    flushReactive();
 
     expect(apiClient.translateDocumentChunk).toHaveBeenCalledTimes(1);
     expect(apiClient.updateDocumentChunk).toHaveBeenCalledTimes(1);
     expect(apiClient.translateDocumentStaleChunks).not.toHaveBeenCalled();
-    translateRequest.resolve({ ...chunk, translated_text: '繁體中文' });
-    await Promise.all([
-      translateRun,
-      duplicateTranslate,
-      blockedEdit,
-      blockedBulkDuringTranslate,
-    ]);
+    translateRequest.resolve({ ...chunk, translated_text: 'translated' });
+    flushReactive();
 
     const bulkRequest = deferred<{ items: ChunkRead[] }>();
-    apiClient.translateDocumentStaleChunks.mockReturnValue(bulkRequest.promise);
-    const bulkRun = store.translateStaleTranscriptChunks();
-    const duplicateBulk = store.translateStaleTranscriptChunks();
-    const blockedEditDuringBulk = store.updateTranscriptChunk(chunk.id, '又更新');
-    const blockedTranslateDuringBulk = store.translateTranscriptChunk(chunk.id);
+    apiClient.translateDocumentStaleChunks.mockReturnValue(bulkRequest.observable);
+    store.translateStaleTranscriptChunks();
+    store.translateStaleTranscriptChunks();
+    store.updateTranscriptChunk(chunk.id, 'blocked');
+    store.translateTranscriptChunk(chunk.id);
+    flushReactive();
 
     expect(apiClient.translateDocumentStaleChunks).toHaveBeenCalledTimes(1);
     expect(apiClient.updateDocumentChunk).toHaveBeenCalledTimes(1);
     expect(apiClient.translateDocumentChunk).toHaveBeenCalledTimes(1);
-    bulkRequest.resolve({ items: [{ ...chunk, translated_text: '批次繁中' }] });
-    await Promise.all([
-      bulkRun,
-      duplicateBulk,
-      blockedEditDuringBulk,
-      blockedTranslateDuringBulk,
-    ]);
+    bulkRequest.resolve({ items: [{ ...chunk, translated_text: 'translated' }] });
+    flushReactive();
   });
 
-  it('refreshes document translation metadata after transcript mutations', async () => {
+  it('refreshes document translation metadata after transcript mutations', () => {
     const store = TestBed.inject(SourceImportStore);
     const document = documentRead({
       source_kind: 'audio',
@@ -1335,7 +1316,7 @@ describe('SourceImportStore polling', () => {
       start_ms: 0,
       end_ms: 1_000,
       source_revision: 1,
-      translated_text: '原翻譯',
+      translated_text: 'existing',
       translation_source_revision: 1,
       translation_stale: false,
     });
@@ -1353,10 +1334,11 @@ describe('SourceImportStore polling', () => {
       ...document,
       translation_status: 'failed',
     });
-    apiClient.updateDocumentChunk.mockResolvedValue(editedChunk);
-    apiClient.getDocument.mockResolvedValueOnce(failedTranslationDocument);
+    apiClient.updateDocumentChunk.mockReturnValue(of(editedChunk));
+    apiClient.getDocument.mockReturnValueOnce(of(failedTranslationDocument));
 
-    await store.updateTranscriptChunk(chunk.id, editedChunk.text);
+    store.updateTranscriptChunk(chunk.id, editedChunk.text);
+    flushReactive();
 
     expect(store.chunks()[0]).toEqual(editedChunk);
     expect(store.activeDocument()?.translation_status).toBe('failed');
@@ -1372,26 +1354,28 @@ describe('SourceImportStore polling', () => {
       ...document,
       translation_status: 'succeeded',
     });
-    apiClient.translateDocumentChunk.mockResolvedValue(translatedChunk);
-    apiClient.getDocument.mockResolvedValueOnce(translatedDocument);
+    apiClient.translateDocumentChunk.mockReturnValue(of(translatedChunk));
+    apiClient.getDocument.mockReturnValueOnce(of(translatedDocument));
 
-    await store.translateTranscriptChunk(chunk.id);
+    store.translateTranscriptChunk(chunk.id);
+    flushReactive();
 
     expect(store.chunks()[0]).toEqual(translatedChunk);
     expect(store.activeDocument()?.translation_status).toBe('succeeded');
 
-    apiClient.translateDocumentStaleChunks.mockResolvedValue({
+    apiClient.translateDocumentStaleChunks.mockReturnValue(of({
       items: [translatedChunk],
-    });
-    apiClient.getDocument.mockResolvedValueOnce(translatedDocument);
+    }));
+    apiClient.getDocument.mockReturnValueOnce(of(translatedDocument));
 
-    await store.translateStaleTranscriptChunks();
+    store.translateStaleTranscriptChunks();
+    flushReactive();
 
     expect(apiClient.getDocument).toHaveBeenCalledTimes(3);
     expect(store.documents()[0]?.translation_status).toBe('succeeded');
   });
 
-  it('keeps a successful transcript mutation visible when metadata refresh fails', async () => {
+  it('keeps a successful transcript mutation visible when metadata refresh fails', () => {
     const store = TestBed.inject(SourceImportStore);
     const operations = TestBed.inject(OperationStore);
     const document = documentRead({
@@ -1406,7 +1390,7 @@ describe('SourceImportStore polling', () => {
       start_ms: 0,
       end_ms: 1_000,
       source_revision: 1,
-      translated_text: '原翻譯',
+      translated_text: 'existing',
       translation_source_revision: 1,
       translation_stale: false,
     });
@@ -1421,10 +1405,11 @@ describe('SourceImportStore polling', () => {
     store.documents.set([document]);
     store.setActiveDocumentId(document.id);
     store.chunks.set([chunk]);
-    apiClient.updateDocumentChunk.mockResolvedValue(editedChunk);
-    apiClient.getDocument.mockRejectedValueOnce(metadataError);
+    apiClient.updateDocumentChunk.mockReturnValue(of(editedChunk));
+    apiClient.getDocument.mockReturnValueOnce(throwError(() => metadataError));
 
-    await store.updateTranscriptChunk(chunk.id, editedChunk.text);
+    store.updateTranscriptChunk(chunk.id, editedChunk.text);
+    flushReactive();
 
     expect(store.chunks()[0]).toEqual(editedChunk);
     expect(store.activeDocument()).toEqual(document);
@@ -1437,7 +1422,7 @@ describe('SourceImportStore polling', () => {
     );
   });
 
-  it('stops polling and allows retry after audio transcription fails', async () => {
+  it('stops polling and allows retry after audio transcription fails', () => {
     const store = TestBed.inject(SourceImportStore);
     const failedDocument = documentRead({
       source_kind: 'audio',
@@ -1449,19 +1434,22 @@ describe('SourceImportStore polling', () => {
     });
     store.documents.set([failedDocument]);
     store.setActiveDocumentId(failedDocument.id);
-    apiClient.getDocument.mockResolvedValue(failedDocument);
+    apiClient.getDocument.mockReturnValue(of(failedDocument));
 
-    await store.refreshUploadedDocument('project-1', failedDocument.id);
-    await vi.advanceTimersByTimeAsync(5_000);
+    store.refreshUploadedDocument('project-1', failedDocument.id);
+    flushReactive();
+    vi.advanceTimersByTime(5_000);
 
     expect(apiClient.getDocument).toHaveBeenCalledTimes(1);
     expect(store.parseStageText()).toContain('transcription failed');
 
-    await store.retryActiveDocumentProcessing();
+    store.retryActiveDocumentProcessing();
+    flushReactive();
 
     expect(apiClient.retryDocumentProcessing).toHaveBeenCalledWith(
       'project-1',
       failedDocument.id,
+      { signal: expect.any(AbortSignal) },
     );
   });
 });
@@ -1554,22 +1542,31 @@ function whisperRequirement(available: boolean) {
   };
 }
 
-async function flushPromises(times = 4): Promise<void> {
-  for (let index = 0; index < times; index += 1) {
-    await Promise.resolve();
+function flushReactive(): void {
+  for (let index = 0; index < 3; index += 1) {
+    TestBed.tick();
+    TestBed.flushEffects();
+    vi.runAllTicks();
   }
 }
 
+function flushUploadQueue(): void {
+  vi.advanceTimersByTime(0);
+  flushReactive();
+}
+
 function deferred<T>(): {
-  readonly promise: Promise<T>;
+  readonly observable: Subject<T>;
   readonly resolve: (value: T) => void;
   readonly reject: (error: unknown) => void;
 } {
-  let resolve!: (value: T) => void;
-  let reject!: (error: unknown) => void;
-  const promise = new Promise<T>((resolver, rejecter) => {
-    resolve = resolver;
-    reject = rejecter;
-  });
-  return { promise, resolve, reject };
+  const observable = new Subject<T>();
+  return {
+    observable,
+    resolve: (value) => {
+      observable.next(value);
+      observable.complete();
+    },
+    reject: (error) => observable.error(error),
+  };
 }

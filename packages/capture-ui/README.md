@@ -32,5 +32,6 @@ bootstrapApplication(App, {
 - `gx.law-prep`: adapt `law-prep-engine` evidence jobs and polling/SSE status;
   keep its private PaddleOCR service and case/evidence persistence unchanged.
 
-Both adapters must preserve abort semantics and map backend warnings into the
-canonical result instead of exposing project-specific DTOs to the component.
+Both adapters must return an RxJS `Observable<CaptureResultV1>`, preserve abort
+semantics, and map backend warnings into the canonical result instead of
+exposing project-specific DTOs to the component.

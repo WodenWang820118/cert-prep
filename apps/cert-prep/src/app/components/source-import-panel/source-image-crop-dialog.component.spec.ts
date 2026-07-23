@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { of, Subject } from 'rxjs';
 import { SourceImageCropDialogComponent } from './source-image-crop-dialog.component';
 import { SourceImageCropService } from './source-image-crop.service';
 
@@ -8,7 +9,7 @@ describe('SourceImageCropDialogComponent', () => {
   };
   let objectUrlCounter = 0;
 
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.clearAllMocks();
     objectUrlCounter = 0;
     vi.spyOn(URL, 'createObjectURL').mockImplementation(
@@ -16,23 +17,22 @@ describe('SourceImageCropDialogComponent', () => {
     );
     vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
 
-    await TestBed.configureTestingModule({
+    TestBed.configureTestingModule({
       imports: [SourceImageCropDialogComponent],
       providers: [{ provide: SourceImageCropService, useValue: cropService }],
-    }).compileComponents();
+    });
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it('renders a named crop dialog with exact keyboard-operable bounds', async () => {
+  it('renders a named crop dialog with exact keyboard-operable bounds', () => {
     const fixture = createCropFixture(
       new File(['png'], 'capture.png', { type: 'image/png' }),
     );
 
     loadFixtureImage(fixture, 12, 8);
-    await fixture.whenStable();
     fixture.detectChanges();
 
     const root = fixture.nativeElement as HTMLElement;
@@ -59,12 +59,12 @@ describe('SourceImageCropDialogComponent', () => {
     expect(button(root, 'Keep original')?.disabled).toBe(false);
   });
 
-  it('applies a narrowed crop and emits the encoded file', async () => {
+  it('applies a narrowed crop and emits the encoded file', () => {
     const source = new File(['png'], 'capture.png', { type: 'image/png' });
     const cropped = new File(['cropped'], 'capture-cropped.png', {
       type: 'image/png',
     });
-    cropService.crop.mockResolvedValue(cropped);
+    cropService.crop.mockReturnValue(of(cropped));
     const fixture = createCropFixture(source);
     loadFixtureImage(fixture, 12, 8);
     const emitted = vi.fn();
@@ -78,7 +78,8 @@ describe('SourceImageCropDialogComponent', () => {
     fixture.detectChanges();
     expect(button(fixture.nativeElement, 'Apply crop')?.disabled).toBe(false);
 
-    await component.applyCrop();
+    component.applyCrop();
+    TestBed.tick();
 
     expect(cropService.crop).toHaveBeenCalledWith(
       source,
@@ -185,9 +186,10 @@ describe('SourceImageCropDialogComponent', () => {
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:crop-preview-2');
   });
 
-  it('surfaces an encoder failure without terminating the crop review', async () => {
+  it('surfaces an encoder failure without terminating the crop review', () => {
+    vi.spyOn(globalThis, 'queueMicrotask').mockImplementation((callback) => callback());
     const encoder = deferred<File>();
-    cropService.crop.mockReturnValue(encoder.promise);
+    cropService.crop.mockReturnValue(encoder.observable);
     const fixture = createCropFixture(
       new File(['png'], 'capture.png', { type: 'image/png' }),
     );
@@ -198,7 +200,7 @@ describe('SourceImageCropDialogComponent', () => {
     const applyButton = button(fixture.nativeElement, 'Apply crop');
     applyButton?.focus();
 
-    const applyResult = component.applyCrop();
+    component.applyCrop();
     fixture.detectChanges();
     component.startCropSelection(pointerEvent(0, 0, 9));
 
@@ -206,8 +208,7 @@ describe('SourceImageCropDialogComponent', () => {
     expect(applyButton?.disabled).toBe(true);
 
     encoder.reject(new Error('Encoder failed.'));
-    await applyResult;
-    await fixture.whenStable();
+    TestBed.tick();
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).toContain('Encoder failed.');
@@ -248,7 +249,7 @@ function loadFixtureImage(
 }
 
 function componentActions(component: SourceImageCropDialogComponent): {
-  applyCrop(): Promise<void>;
+  applyCrop(): void;
   failImageLoad(): void;
   keepOriginal(): void;
   updateCropField(
@@ -260,7 +261,7 @@ function componentActions(component: SourceImageCropDialogComponent): {
   finishCropSelection(event: PointerEvent): void;
 } {
   return component as unknown as {
-    applyCrop(): Promise<void>;
+    applyCrop(): void;
     failImageLoad(): void;
     keepOriginal(): void;
     updateCropField(
@@ -288,17 +289,19 @@ function pointerEvent(
 }
 
 function deferred<T>(): {
-  readonly promise: Promise<T>;
+  readonly observable: Subject<T>;
   resolve(value: T): void;
   reject(reason: unknown): void;
 } {
-  let resolve!: (value: T) => void;
-  let reject!: (reason: unknown) => void;
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
-  });
-  return { promise, reject, resolve };
+  const observable = new Subject<T>();
+  return {
+    observable,
+    resolve: (value) => {
+      observable.next(value);
+      observable.complete();
+    },
+    reject: (reason) => observable.error(reason),
+  };
 }
 
 function inputValue(root: ParentNode, label: string): string | null {

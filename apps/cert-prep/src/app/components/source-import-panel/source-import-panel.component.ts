@@ -12,6 +12,7 @@ import { FormsModule } from '@angular/forms';
 import { ProgressBar } from 'primeng/progressbar';
 import { Tag } from 'primeng/tag';
 import { ToggleSwitch } from 'primeng/toggleswitch';
+import { catchError, of } from 'rxjs';
 import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
 import { OperationStore } from '../../stores/operation.store';
 import { ProjectStore } from '../../stores/project.store';
@@ -671,7 +672,7 @@ export class SourceImportPanelComponent {
     effect(() => {
       const projectId = this.projects.selectedProject()?.id ?? null;
       const document = this.sourceImport.activeDocument();
-      void this.loadAudioSource(
+      this.loadAudioSource(
         projectId,
         document?.source_kind === 'audio' && document.chunks_count > 0
           ? document.id
@@ -737,20 +738,16 @@ export class SourceImportPanelComponent {
     }
   }
 
-  protected async uploadDocument(): Promise<void> {
-    const documents = await this.sourceImport.uploadDocuments();
+  protected uploadDocument(): void {
+    this.sourceImport.uploadDocuments();
     const project = this.projects.selectedProject();
-    if (documents.length > 0 && project !== null) {
-      await this.drafts.load(project.id);
-    }
+    if (project !== null) this.drafts.load(project.id);
   }
 
-  protected async selectDocument(documentId: string): Promise<void> {
-    await this.sourceImport.selectDocument(documentId);
+  protected selectDocument(documentId: string): void {
+    this.sourceImport.selectDocument(documentId);
     const project = this.projects.selectedProject();
-    if (project !== null) {
-      await this.drafts.load(project.id);
-    }
+    if (project !== null) this.drafts.load(project.id);
   }
 
   protected formatFileSize(file: File | null): string {
@@ -802,7 +799,7 @@ export class SourceImportPanelComponent {
       return;
     }
     this.requestedAudioSourceKey = null;
-    void this.loadAudioSource(projectId, document.id);
+    this.loadAudioSource(projectId, document.id);
   }
 
   protected formatDuration(value: number | null | undefined): string {
@@ -859,10 +856,10 @@ export class SourceImportPanelComponent {
     this.cropDialog()?.focusReviewStatus();
   }
 
-  private async loadAudioSource(
+  private loadAudioSource(
     projectId: string | null,
     documentId: string | null,
-  ): Promise<void> {
+  ): void {
     const sourceKey =
       projectId === null || documentId === null
         ? null
@@ -883,36 +880,28 @@ export class SourceImportPanelComponent {
     this.audioSourceLoading.set(true);
     const controller = new AbortController();
     this.audioSourceAbortController = controller;
-    try {
-      const source = await this.api.getDocumentAudioSource(projectId, documentId, {
-        signal: controller.signal,
-      });
-      if (loadId !== this.audioSourceLoadId) {
-        return;
+    this.api.getDocumentAudioSource(projectId, documentId, {
+      signal: controller.signal,
+    }).pipe(catchError(() => of(null))).subscribe((source) => {
+      if (loadId !== this.audioSourceLoadId) return;
+      if (source === null) {
+        if (!controller.signal.aborted) {
+          this.requestedAudioSourceKey = null;
+          this.audioSourceError.set('The source audio could not be loaded.');
+        }
+      } else if (typeof URL.createObjectURL !== 'function') {
+        this.audioSourceError.set('Audio playback is unavailable in this environment.');
+      } else {
+        const objectUrl = URL.createObjectURL(source);
+        if (loadId !== this.audioSourceLoadId) URL.revokeObjectURL(objectUrl);
+        else {
+          this.audioSourceObjectUrl = objectUrl;
+          this.audioSourceUrl.set(objectUrl);
+        }
       }
-      if (typeof URL.createObjectURL !== 'function') {
-        throw new Error('Audio playback is unavailable in this environment.');
-      }
-      const objectUrl = URL.createObjectURL(source);
-      if (loadId !== this.audioSourceLoadId) {
-        URL.revokeObjectURL(objectUrl);
-        return;
-      }
-      this.audioSourceObjectUrl = objectUrl;
-      this.audioSourceUrl.set(objectUrl);
-    } catch {
-      if (loadId === this.audioSourceLoadId && !controller.signal.aborted) {
-        this.requestedAudioSourceKey = null;
-        this.audioSourceError.set('The source audio could not be loaded.');
-      }
-    } finally {
-      if (this.audioSourceAbortController === controller) {
-        this.audioSourceAbortController = null;
-      }
-      if (loadId === this.audioSourceLoadId) {
-        this.audioSourceLoading.set(false);
-      }
-    }
+      if (this.audioSourceAbortController === controller) this.audioSourceAbortController = null;
+      if (loadId === this.audioSourceLoadId) this.audioSourceLoading.set(false);
+    });
   }
 
   private cancelAudioSourceLoad(): void {

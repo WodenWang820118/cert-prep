@@ -119,7 +119,7 @@ export class App implements OnInit, OnDestroy {
       }
 
       queueMicrotask(() => {
-        void this.loadStartupState();
+        this.loadStartupState();
       });
     });
 
@@ -136,21 +136,14 @@ export class App implements OnInit, OnDestroy {
       }
 
       queueMicrotask(() => {
-        void this.applyStartupProjectSelection();
+        this.applyStartupProjectSelection();
       });
     });
   }
 
   ngOnInit(): void {
-    void this.loadStartupState()
-      .finally(() => {
-        this.hasAttemptedInitialStartupLoad = true;
-      })
-      .catch((error: unknown) => {
-        queueMicrotask(() => {
-          throw error;
-        });
-      });
+    this.loadStartupState();
+    this.hasAttemptedInitialStartupLoad = true;
   }
 
   ngOnDestroy(): void {
@@ -159,7 +152,7 @@ export class App implements OnInit, OnDestroy {
     this.clearRuntimeManagerRestoreFocusTimer();
   }
 
-  private async loadStartupState(): Promise<void> {
+  private loadStartupState(): void {
     if (this.loadingStartupState()) {
       return;
     }
@@ -168,15 +161,12 @@ export class App implements OnInit, OnDestroy {
     if (!this.workspace.hasLoadedBackendState()) {
       this.hasAppliedStartupProjectSelection.set(false);
     }
-    try {
-      await this.workspace.loadStartupState();
-      await this.applyStartupProjectSelection();
-    } finally {
-      this.loadingStartupState.set(false);
-    }
+    this.workspace.loadStartupState();
+    this.applyStartupProjectSelection();
+    this.loadingStartupState.set(false);
   }
 
-  private async applyStartupProjectSelection(): Promise<void> {
+  private applyStartupProjectSelection(): void {
     if (!this.workspace.hasLoadedBackendState()) {
       return;
     }
@@ -201,7 +191,7 @@ export class App implements OnInit, OnDestroy {
         : projects[0].id;
 
     if (this.projects.selectedProjectId() !== targetProjectId) {
-      await this.workspace.selectProject(targetProjectId);
+      this.workspace.selectProject(targetProjectId);
     } else {
       this.operations.status.set('Project loaded');
     }

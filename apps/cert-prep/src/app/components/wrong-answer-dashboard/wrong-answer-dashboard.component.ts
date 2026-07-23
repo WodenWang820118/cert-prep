@@ -179,12 +179,12 @@ export class WrongAnswerDashboardComponent {
       this.repeatedMisses().length > 0,
   );
 
-  protected async refresh(): Promise<void> {
-    await this.review.refresh();
+  protected refresh(): void {
+    this.review.refresh();
   }
 
-  protected async retryAttemptIds(attemptIds: readonly string[]): Promise<void> {
-    await this.retryNavigation.start(attemptIds);
+  protected retryAttemptIds(attemptIds: readonly string[]): void {
+    this.retryNavigation.start(attemptIds).subscribe();
   }
 
   protected retryLabel(attemptIds: readonly string[]): string {

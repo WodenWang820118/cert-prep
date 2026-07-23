@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
+import { of } from 'rxjs';
 import {
   CERT_PREP_API,
   type DocumentRead,
@@ -153,23 +154,23 @@ describe('WrongAnswerDashboardComponent', () => {
     summarizeWrongAnswers: ReturnType<typeof vi.fn>;
   };
 
-  beforeEach(async () => {
+  beforeEach(() => {
     apiClient = {
-      createPracticeSession: vi.fn().mockResolvedValue(reviewSession),
-      getPracticeSession: vi.fn().mockResolvedValue(reviewSession),
-      listQuestionDrafts: vi.fn().mockResolvedValue({ items: [] }),
+      createPracticeSession: vi.fn().mockReturnValue(of(reviewSession)),
+      getPracticeSession: vi.fn().mockReturnValue(of(reviewSession)),
+      listQuestionDrafts: vi.fn().mockReturnValue(of({ items: [] })),
       listWrongAnswers: vi
         .fn()
-        .mockResolvedValue({ items: [wrongAnswer, fallbackDocumentWrongAnswer] }),
-      summarizeWrongAnswers: vi.fn().mockResolvedValue(summary),
+        .mockReturnValue(of({ items: [wrongAnswer, fallbackDocumentWrongAnswer] })),
+      summarizeWrongAnswers: vi.fn().mockReturnValue(of(summary)),
     };
-    await TestBed.configureTestingModule({
+    TestBed.configureTestingModule({
       imports: [WrongAnswerDashboardComponent],
       providers: [
         provideRouter([]),
         { provide: CERT_PREP_API, useValue: apiClient },
       ],
-    }).compileComponents();
+    });
   });
 
   it('renders the empty dashboard state', () => {
@@ -209,7 +210,7 @@ describe('WrongAnswerDashboardComponent', () => {
     expect(element.textContent).toContain('The cited page and excerpt');
   });
 
-  it('starts a cluster retry with only current wrong answers in that source area', async () => {
+  it('starts a cluster retry with only current wrong answers in that source area', () => {
     seedDashboardState();
     const fixture = TestBed.createComponent(WrongAnswerDashboardComponent);
     const router = TestBed.inject(Router);
@@ -224,13 +225,17 @@ describe('WrongAnswerDashboardComponent', () => {
       'security.pdf',
       'Retry 1 question',
     )?.click();
-    await fixture.whenStable();
+    TestBed.tick();
 
-    expect(apiClient.createPracticeSession).toHaveBeenCalledWith(project.id, {
-      mode: 'review_retry',
-      wrong_attempt_ids: [wrongAnswer.attempt_id],
-      question_count: 1,
-    });
+    expect(apiClient.createPracticeSession).toHaveBeenCalledWith(
+      project.id,
+      {
+        mode: 'review_retry',
+        wrong_attempt_ids: [wrongAnswer.attempt_id],
+        question_count: 1,
+      },
+      { signal: expect.any(AbortSignal) },
+    );
     expect(navigateByUrl).toHaveBeenCalledWith('/random-quiz');
   });
 

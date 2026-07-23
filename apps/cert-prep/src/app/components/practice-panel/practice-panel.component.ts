@@ -125,8 +125,8 @@ export class PracticePanelComponent implements OnInit {
     });
   });
 
-  protected async startPracticeSession(): Promise<void> {
-    await this.practice.createPracticeSession(this.sessionMode());
+  protected startPracticeSession(): void {
+    this.practice.createPracticeSession(this.sessionMode());
   }
 
   ngOnInit(): void {

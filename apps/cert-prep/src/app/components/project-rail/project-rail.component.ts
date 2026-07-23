@@ -23,10 +23,7 @@ export class ProjectRailComponent {
     this.createFormOpen.set(true);
   }
 
-  protected async createProject(): Promise<void> {
-    await this.workspace.createProject();
-    if (!this.operations.error()) {
-      this.createFormOpen.set(false);
-    }
+  protected createProject(): void {
+    this.workspace.createProject(() => this.createFormOpen.set(false));
   }
 }

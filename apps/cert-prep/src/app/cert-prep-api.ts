@@ -5,7 +5,19 @@ import type {
   CertPrepGeneratedClient,
   CertPrepHttpRequest,
 } from '@cert-prep/api';
-import { defer, firstValueFrom, Observable, switchMap, takeUntil } from 'rxjs';
+import { CertPrepTauriBridgeService } from './cert-prep-tauri-bridge.service';
+import {
+  catchError,
+  defer,
+  Observable,
+  of,
+  race,
+  ReplaySubject,
+  share,
+  switchMap,
+  tap,
+  throwError,
+} from 'rxjs';
 
 export type {
   ChunkRead,
@@ -60,44 +72,49 @@ export const CERT_PREP_API = new InjectionToken<CertPrepGeneratedClient>(
 
 @Injectable({ providedIn: 'root' })
 export class CertPrepRuntimeConfig {
-  private configPromise: Promise<BackendConfig> | null = null;
+  private readonly tauri = inject(CertPrepTauriBridgeService);
+  private backendConfig$: Observable<BackendConfig> | null = null;
 
-  getBackendConfig(): Promise<BackendConfig> {
-    if (this.configPromise === null) {
-      const configPromise = this.loadBackendConfig();
-      this.configPromise = configPromise;
-      void configPromise.catch(() => {
-        if (this.configPromise === configPromise) {
-          this.configPromise = null;
-        }
-      });
+  getBackendConfig(): Observable<BackendConfig> {
+    if (this.backendConfig$ !== null) {
+      return this.backendConfig$;
     }
 
-    return this.configPromise;
+    const lookup$ = defer(() => this.loadBackendConfig()).pipe(
+      tap({
+        error: () => (this.backendConfig$ = null),
+      }),
+      share({
+        connector: () => new ReplaySubject<BackendConfig>(1),
+        resetOnError: false,
+        resetOnComplete: false,
+        resetOnRefCountZero: false,
+      }),
+    );
+    this.backendConfig$ = lookup$;
+    return lookup$;
   }
 
-  private async loadBackendConfig(): Promise<BackendConfig> {
-    const tauriConfig = await this.loadTauriBackendConfig();
-    return tauriConfig ?? this.loadLocalBackendConfig();
+  private loadBackendConfig(): Observable<BackendConfig> {
+    return this.loadTauriBackendConfig().pipe(
+      switchMap((tauriConfig) =>
+        of(tauriConfig ?? this.loadLocalBackendConfig()),
+      ),
+    );
   }
 
-  private async loadTauriBackendConfig(): Promise<BackendConfig | null> {
-    const windowRef = globalThis as typeof globalThis & {
-      window?: Window & { __TAURI_INTERNALS__?: unknown };
-    };
-    if (
-      typeof windowRef.window === 'undefined' ||
-      !('__TAURI_INTERNALS__' in windowRef.window)
-    ) {
-      return null;
+  private loadTauriBackendConfig(): Observable<BackendConfig | null> {
+    if (!this.tauri.isDesktop()) {
+      return of(null);
     }
 
-    try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      return await invoke<BackendConfig>('backend_config');
-    } catch {
-      throw new Error('Desktop backend configuration is unavailable.');
-    }
+    return this.tauri.invoke<BackendConfig>('backend_config').pipe(
+      catchError(() =>
+        throwError(() =>
+          new Error('Desktop backend configuration is unavailable.'),
+        ),
+      ),
+    );
   }
 
   private loadLocalBackendConfig(): BackendConfig {
@@ -129,7 +146,7 @@ export class CertPrepAuthenticatedTransport {
   private readonly http = inject(HttpClient);
   private readonly runtimeConfig = inject(CertPrepRuntimeConfig);
 
-  request<TResponse>(request: CertPrepHttpRequest): Promise<TResponse> {
+  request<TResponse>(request: CertPrepHttpRequest): Observable<TResponse> {
     const response = defer(() => this.runtimeConfig.getBackendConfig()).pipe(
       switchMap((config) => {
         const url = this.url(config.base_url, request.path);
@@ -149,11 +166,13 @@ export class CertPrepAuthenticatedTransport {
       }),
     );
 
-    return firstValueFrom(
-      request.signal === undefined
-        ? response
-        : response.pipe(takeUntil(this.abortError(request.signal))),
-    );
+    if (request.signal === undefined) {
+      return response;
+    }
+
+    return request.signal.aborted
+      ? this.abortError(request.signal)
+      : race(this.abortError(request.signal), response);
   }
 
   private abortError(signal: AbortSignal): Observable<never> {

@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { of, Subject, throwError } from 'rxjs';
 import { CERT_PREP_API } from '../../cert-prep-api';
 import { DraftReviewStore } from './draft-review.store';
 import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
@@ -43,37 +44,34 @@ describe('DraftReviewStore streaming jobs', () => {
     ]);
     projects.select('project-1');
 
-    apiClient.getDocument.mockResolvedValue(documentRead());
-    apiClient.listDocumentChunks.mockResolvedValue({ items: [] });
-    apiClient.listDocumentDraftJobs.mockResolvedValue({ items: [] });
+    apiClient.getDocument.mockReturnValue(of(documentRead()));
+    apiClient.listDocumentChunks.mockReturnValue(of({ items: [] }));
+    apiClient.listDocumentDraftJobs.mockReturnValue(of({ items: [] }));
   });
 
-  it('refreshes questions while a processing document has completed chunks', async () => {
+  it('refreshes questions while a processing document has completed chunks', () => {
     const store = TestBed.inject(DraftReviewStore);
     const sourceImport = TestBed.inject(SourceImportStore);
     const draft = questionDraft();
-    apiClient.listQuestionDrafts.mockResolvedValue({ items: [draft] });
-    apiClient.listDocumentDraftJobs.mockResolvedValue({
+    apiClient.listQuestionDrafts.mockReturnValue(of({ items: [draft] }));
+    apiClient.listDocumentDraftJobs.mockReturnValue(of({
       items: [
         draftJob({ status: 'running' }),
         draftJob({ id: 'job-2', status: 'succeeded', generated_count: 1 }),
       ],
-    });
+    }));
 
     activateDocument(
       sourceImport,
       documentRead({ status: 'processing', chunks_count: 1 }),
     );
     TestBed.tick();
-    await Promise.resolve();
-    await Promise.resolve();
 
     expect(apiClient.listQuestionDrafts).toHaveBeenCalledWith('project-1');
     expect(apiClient.listDocumentDraftJobs).toHaveBeenCalledWith(
       'project-1',
       'document-1',
     );
-    await vi.waitFor(() => expect(store.drafts()).toEqual([draft]));
     expect(store.drafts()).toEqual([draft]);
     expect(store.draftJobSummary()).toEqual(
       expect.objectContaining({
@@ -86,56 +84,54 @@ describe('DraftReviewStore streaming jobs', () => {
 
     activateDocument(sourceImport, documentRead({ status: 'ready' }));
     TestBed.tick();
-    await Promise.resolve();
   });
 
-  it('keeps streaming question refresh when job status is temporarily unavailable', async () => {
+  it('keeps streaming question refresh when job status is temporarily unavailable', () => {
     const store = TestBed.inject(DraftReviewStore);
     const sourceImport = TestBed.inject(SourceImportStore);
     const draft = questionDraft();
-    apiClient.listQuestionDrafts.mockResolvedValue({ items: [draft] });
-    apiClient.listDocumentDraftJobs.mockRejectedValue(new Error('jobs offline'));
+    apiClient.listQuestionDrafts.mockReturnValue(of({ items: [draft] }));
+    apiClient.listDocumentDraftJobs.mockReturnValue(
+      throwError(() => new Error('jobs offline')),
+    );
 
     activateDocument(
       sourceImport,
       documentRead({ status: 'processing', chunks_count: 1 }),
     );
     TestBed.tick();
-    await Promise.resolve();
-    await Promise.resolve();
 
-    await vi.waitFor(() => expect(store.drafts()).toEqual([draft]));
     expect(store.drafts()).toEqual([draft]);
     expect(store.draftJobs()).toEqual([]);
   });
 
-  it('stops after bounded polling retries and lets the user retry explicitly', async () => {
+  it('stops after bounded polling retries and lets the user retry explicitly', () => {
     vi.useFakeTimers();
     try {
       const store = TestBed.inject(DraftReviewStore);
       const sourceImport = TestBed.inject(SourceImportStore);
-      apiClient.listQuestionDrafts.mockResolvedValue({ items: [] });
-      apiClient.listDocumentDraftJobs.mockRejectedValue(new Error('jobs offline'));
+      apiClient.listQuestionDrafts.mockReturnValue(of({ items: [] }));
+      apiClient.listDocumentDraftJobs.mockReturnValue(
+        throwError(() => new Error('jobs offline')),
+      );
 
       activateDocument(
         sourceImport,
         documentRead({ status: 'processing', chunks_count: 1 }),
       );
       TestBed.tick();
-      await Promise.resolve();
-      await Promise.resolve();
 
-      await vi.advanceTimersByTimeAsync(1000);
-      await vi.advanceTimersByTimeAsync(2000);
-      await vi.advanceTimersByTimeAsync(4000);
+      vi.advanceTimersByTime(1000);
+      vi.advanceTimersByTime(2000);
+      vi.advanceTimersByTime(4000);
+      TestBed.tick();
 
       expect(apiClient.listDocumentDraftJobs).toHaveBeenCalledTimes(4);
       expect(store.pollingError()).toContain('could not be refreshed');
 
-      apiClient.listDocumentDraftJobs.mockResolvedValue({ items: [] });
+      apiClient.listDocumentDraftJobs.mockReturnValue(of({ items: [] }));
       store.retryDraftPolling();
-      await Promise.resolve();
-      await Promise.resolve();
+      TestBed.tick();
 
       expect(store.pollingError()).toBeNull();
       expect(apiClient.listDocumentDraftJobs).toHaveBeenCalledTimes(5);
@@ -144,26 +140,24 @@ describe('DraftReviewStore streaming jobs', () => {
     }
   });
 
-  it('surfaces skipped streaming question jobs when the reasoning model is missing', async () => {
+  it('surfaces skipped streaming question jobs when the reasoning model is missing', () => {
     const store = TestBed.inject(DraftReviewStore);
     const sourceImport = TestBed.inject(SourceImportStore);
-    apiClient.listQuestionDrafts.mockResolvedValue({ items: [] });
-    apiClient.listDocumentDraftJobs.mockResolvedValue({
+    apiClient.listQuestionDrafts.mockReturnValue(of({ items: [] }));
+    apiClient.listDocumentDraftJobs.mockReturnValue(of({
       items: [
         draftJob({
           status: 'skipped_missing_model',
           last_error: 'qwen3.5:4b is not installed',
         }),
       ],
-    });
+    }));
 
     activateDocument(
       sourceImport,
       documentRead({ status: 'processing', chunks_count: 1 }),
     );
     TestBed.tick();
-    await Promise.resolve();
-    await Promise.resolve();
 
     expect(store.draftJobSummary()).toEqual(
       expect.objectContaining({
@@ -174,7 +168,7 @@ describe('DraftReviewStore streaming jobs', () => {
     );
   });
 
-  it('ignores stale draft job responses after the active document changes', async () => {
+  it('ignores stale draft job responses after the active document changes', () => {
     const store = TestBed.inject(DraftReviewStore);
     const sourceImport = TestBed.inject(SourceImportStore);
     const firstDocument = documentRead({
@@ -190,25 +184,23 @@ describe('DraftReviewStore streaming jobs', () => {
     const draftJobs = deferred<{
       items: ReturnType<typeof draftJob>[];
     }>();
-    apiClient.listQuestionDrafts.mockResolvedValue({ items: [] });
-    apiClient.listDocumentDraftJobs.mockReturnValueOnce(draftJobs.promise);
+    apiClient.listQuestionDrafts.mockReturnValue(of({ items: [] }));
+    apiClient.listDocumentDraftJobs.mockReturnValueOnce(draftJobs.observable);
 
     activateDocument(sourceImport, firstDocument, [firstDocument, secondDocument]);
     TestBed.tick();
-    await Promise.resolve();
 
     activateDocument(sourceImport, secondDocument, [firstDocument, secondDocument]);
     TestBed.tick();
     draftJobs.resolve({
       items: [draftJob({ document_id: firstDocument.id, status: 'running' })],
     });
-    await draftJobs.promise;
-    await Promise.resolve();
+    TestBed.tick();
 
     expect(store.draftJobs()).toEqual([]);
   });
 
-  it('retries skipped streaming question jobs for the current document', async () => {
+  it('retries skipped streaming question jobs for the current document', () => {
     const store = TestBed.inject(DraftReviewStore);
     const sourceImport = TestBed.inject(SourceImportStore);
     const draft = questionDraft();
@@ -223,22 +215,23 @@ describe('DraftReviewStore streaming jobs', () => {
     });
     activateDocument(sourceImport, documentRead());
     store.draftJobs.set([skippedJob]);
-    apiClient.retryDocumentDraftJobs.mockResolvedValue({ items: [succeededJob] });
-    apiClient.listQuestionDrafts.mockResolvedValue({ items: [draft] });
+    apiClient.retryDocumentDraftJobs.mockReturnValue(of({ items: [succeededJob] }));
+    apiClient.listQuestionDrafts.mockReturnValue(of({ items: [draft] }));
 
-    await store.retryDraftJobs();
+    store.retryDraftJobs();
+    TestBed.tick();
 
     expect(apiClient.retryDocumentDraftJobs).toHaveBeenCalledWith(
       'project-1',
       'document-1',
+      { signal: expect.any(AbortSignal) },
     );
     expect(store.draftJobs()).toEqual([succeededJob]);
-    await vi.waitFor(() => expect(store.drafts()).toEqual([draft]));
     expect(store.drafts()).toEqual([draft]);
     expect(apiClient.getDocument).toHaveBeenCalledWith('project-1', 'document-1');
   });
 
-  it('cancels every cancellable background generation job for the active document', async () => {
+  it('cancels every cancellable background generation job for the active document', () => {
     const store = TestBed.inject(DraftReviewStore);
     const sourceImport = TestBed.inject(SourceImportStore);
     const runningJob = draftJob({ status: 'running', phase: 'generating' });
@@ -248,9 +241,10 @@ describe('DraftReviewStore streaming jobs', () => {
     });
     activateDocument(sourceImport, documentRead());
     store.draftJobs.set([runningJob]);
-    apiClient.cancelDocumentDraftJob.mockResolvedValue(canceledJob);
+    apiClient.cancelDocumentDraftJob.mockReturnValue(of(canceledJob));
 
-    await store.cancelActiveDraftJobs();
+    store.cancelActiveDraftJobs();
+    TestBed.tick();
 
     expect(apiClient.cancelDocumentDraftJob).toHaveBeenCalledWith(
       'project-1',
@@ -271,12 +265,15 @@ function activateDocument(
 }
 
 function deferred<T>(): {
-  readonly promise: Promise<T>;
+  readonly observable: Subject<T>;
   readonly resolve: (value: T) => void;
 } {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((resolver) => {
-    resolve = resolver;
-  });
-  return { promise, resolve };
+  const observable = new Subject<T>();
+  return {
+    observable,
+    resolve: (value) => {
+      observable.next(value);
+      observable.complete();
+    },
+  };
 }

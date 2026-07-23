@@ -5,27 +5,46 @@ import {
 } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import {
+  Observable,
+  of,
+  Subject,
+  throwError,
+} from 'rxjs';
+import {
   CERT_PREP_API,
   CertPrepRuntimeConfig,
   type CertPrepGeneratedClient,
   type HealthResponse,
 } from './cert-prep-api';
+import { CertPrepTauriBridgeService } from './cert-prep-tauri-bridge.service';
 
 describe('CertPrepRuntimeConfig', () => {
+  const tauriBridge = {
+    isDesktop: vi.fn(),
+    invoke: vi.fn(),
+  };
+
   beforeEach(() => {
     localStorage.clear();
     Reflect.deleteProperty(window, '__TAURI_INTERNALS__');
-    TestBed.configureTestingModule({});
+    vi.clearAllMocks();
+    tauriBridge.isDesktop.mockReturnValue(false);
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: CertPrepTauriBridgeService, useValue: tauriBridge },
+      ],
+    });
   });
 
   afterEach(() => {
     Reflect.deleteProperty(window, '__TAURI_INTERNALS__');
   });
 
-  it('does not provide a static bearer token for browser fallback', async () => {
-    const config = await TestBed.inject(
-      CertPrepRuntimeConfig,
-    ).getBackendConfig();
+  it('does not provide a static bearer token for browser fallback', () => {
+    let config: unknown;
+    TestBed.inject(CertPrepRuntimeConfig)
+      .getBackendConfig()
+      .subscribe((value) => (config = value));
 
     expect(config).toEqual({
       base_url: 'http://127.0.0.1:8765',
@@ -33,13 +52,14 @@ describe('CertPrepRuntimeConfig', () => {
     });
   });
 
-  it('uses explicit local developer connection settings when provided', async () => {
+  it('uses explicit local developer connection settings when provided', () => {
     localStorage.setItem('certPrepApiBaseUrl', 'http://127.0.0.1:9001/');
     localStorage.setItem('certPrepApiToken', 'developer-token');
 
-    const config = await TestBed.inject(
-      CertPrepRuntimeConfig,
-    ).getBackendConfig();
+    let config: unknown;
+    TestBed.inject(CertPrepRuntimeConfig)
+      .getBackendConfig()
+      .subscribe((value) => (config = value));
 
     expect(config).toEqual({
       base_url: 'http://127.0.0.1:9001/',
@@ -47,53 +67,78 @@ describe('CertPrepRuntimeConfig', () => {
     });
   });
 
-  it('does not silently fall back when desktop config is present but unavailable', async () => {
+  it('does not silently fall back when desktop config is present but unavailable', () => {
     Object.defineProperty(window, '__TAURI_INTERNALS__', {
       configurable: true,
       value: {},
     });
+    tauriBridge.isDesktop.mockReturnValue(true);
+    tauriBridge.invoke.mockReturnValue(
+      throwError(() => new Error('Backend is still starting.')),
+    );
 
-    await expect(
-      TestBed.inject(CertPrepRuntimeConfig).getBackendConfig(),
-    ).rejects.toThrow('Desktop backend configuration is unavailable.');
+    let error: unknown;
+    TestBed.inject(CertPrepRuntimeConfig)
+      .getBackendConfig()
+      .subscribe({ error: (reason) => (error = reason) });
+    expect(error).toEqual(
+      expect.objectContaining({
+        message: 'Desktop backend configuration is unavailable.',
+      }),
+    );
   });
 
-  it('retries desktop config after a transient failure and caches the recovery', async () => {
+  it('retries desktop config after a transient failure and caches the recovery', () => {
     localStorage.setItem('certPrepApiBaseUrl', 'http://127.0.0.1:9999/');
     const recoveredConfig = {
       base_url: 'http://127.0.0.1:9001/',
       token: 'runtime-token',
     };
-    const invoke = vi
-      .fn()
-      .mockRejectedValueOnce(new Error('Backend is still starting.'))
-      .mockResolvedValueOnce(recoveredConfig);
+    const invoke = tauriBridge.invoke
+      .mockReturnValueOnce(throwError(() => new Error('Backend is still starting.')))
+      .mockReturnValueOnce(of(recoveredConfig));
     Object.defineProperty(window, '__TAURI_INTERNALS__', {
       configurable: true,
       value: { invoke },
     });
+    tauriBridge.isDesktop.mockReturnValue(true);
     const runtimeConfig = TestBed.inject(CertPrepRuntimeConfig);
 
+    const firstErrors: unknown[] = [];
+    const concurrentErrors: unknown[] = [];
     const firstLookup = runtimeConfig.getBackendConfig();
     const concurrentLookup = runtimeConfig.getBackendConfig();
     expect(concurrentLookup).toBe(firstLookup);
-    await expect(firstLookup).rejects.toThrow(
-      'Desktop backend configuration is unavailable.',
+    firstLookup.subscribe({ error: (error) => firstErrors.push(error) });
+    concurrentLookup.subscribe({ error: (error) => concurrentErrors.push(error) });
+    expect(firstErrors[0]).toEqual(
+      expect.objectContaining({
+        message: 'Desktop backend configuration is unavailable.',
+      }),
     );
-    await expect(concurrentLookup).rejects.toThrow(
-      'Desktop backend configuration is unavailable.',
+    expect(concurrentErrors[0]).toEqual(
+      expect.objectContaining({
+        message: 'Desktop backend configuration is unavailable.',
+      }),
     );
+
+    let recovery: unknown;
     const recoveryLookup = runtimeConfig.getBackendConfig();
     const concurrentRecoveryLookup = runtimeConfig.getBackendConfig();
     expect(concurrentRecoveryLookup).toBe(recoveryLookup);
-    await expect(recoveryLookup).resolves.toEqual(recoveredConfig);
+    recoveryLookup.subscribe((value) => (recovery = value));
+    concurrentRecoveryLookup.subscribe();
+    expect(recovery).toEqual(recoveredConfig);
+
+    let cached: unknown;
     const cachedLookup = runtimeConfig.getBackendConfig();
     expect(cachedLookup).toBe(recoveryLookup);
-    await expect(cachedLookup).resolves.toEqual(recoveredConfig);
+    cachedLookup.subscribe((value) => (cached = value));
+    expect(cached).toEqual(recoveredConfig);
 
     expect(invoke).toHaveBeenCalledTimes(2);
-    expect(invoke).toHaveBeenNthCalledWith(1, 'backend_config', {}, undefined);
-    expect(invoke).toHaveBeenNthCalledWith(2, 'backend_config', {}, undefined);
+    expect(invoke).toHaveBeenNthCalledWith(1, 'backend_config');
+    expect(invoke).toHaveBeenNthCalledWith(2, 'backend_config');
   });
 });
 
@@ -112,11 +157,11 @@ describe('CertPrepAuthenticatedTransport', () => {
   };
   let api: CertPrepGeneratedClient;
   let httpTesting: HttpTestingController;
-  let backendConfigPromise: Promise<typeof backendConfig>;
+  let backendConfig$: Observable<typeof backendConfig>;
   let backendConfigCalls: number;
 
   beforeEach(() => {
-    backendConfigPromise = Promise.resolve(backendConfig);
+    backendConfig$ = of(backendConfig);
     backendConfigCalls = 0;
     TestBed.configureTestingModule({
       providers: [
@@ -127,7 +172,7 @@ describe('CertPrepAuthenticatedTransport', () => {
           useValue: {
             getBackendConfig: () => {
               backendConfigCalls += 1;
-              return backendConfigPromise;
+              return backendConfig$;
             },
           },
         },
@@ -158,7 +203,7 @@ describe('CertPrepAuthenticatedTransport', () => {
     };
   }
 
-  it('preserves caller headers but overrides Authorization case-insensitively', async () => {
+  it('preserves caller headers but overrides Authorization case-insensitively', () => {
     const callerHeaders = {
       Authorization: 'Bearer first-caller-token',
       authorization: 'Bearer caller-token',
@@ -167,10 +212,10 @@ describe('CertPrepAuthenticatedTransport', () => {
       'X-Caller-Header': 'preserved',
     };
     const originalHeaders = { ...callerHeaders };
-    const responsePromise = api.health({
-      headers: callerHeaders,
-    });
-    await Promise.resolve();
+    let response: HealthResponse | undefined;
+    const subscription = api
+      .health({ headers: callerHeaders })
+      .subscribe((value) => (response = value));
 
     const request = httpTesting.expectOne(`${baseUrl}/health`);
     expect(request.request.headers.getAll('Authorization')).toEqual([
@@ -183,75 +228,78 @@ describe('CertPrepAuthenticatedTransport', () => {
     expect(callerHeaders).toEqual(originalHeaders);
 
     request.flush(healthResponse);
-    await expect(responsePromise).resolves.toEqual(healthResponse);
+    expect(response).toEqual(healthResponse);
+    subscription.unsubscribe();
   });
 
-  it('does not send a request for an already-aborted signal', async () => {
+  it('does not send a request for an already-aborted signal', () => {
     const controller = new AbortController();
     const abortReason = new DOMException('Already canceled.', 'AbortError');
     controller.abort(abortReason);
+    let error: unknown;
 
-    await expect(api.health({ signal: controller.signal })).rejects.toBe(
-      abortReason,
-    );
+    api.health({ signal: controller.signal }).subscribe({
+      error: (reason) => (error = reason),
+    });
+
+    expect(error).toBe(abortReason);
     expect(backendConfigCalls).toBe(0);
     httpTesting.expectNone(`${baseUrl}/health`);
   });
 
-  it('aborts during config lookup without a late request or canceling the shared config', async () => {
-    let resolveConfig: (config: typeof backendConfig) => void = () => undefined;
-    backendConfigPromise = new Promise((resolve) => {
-      resolveConfig = resolve;
-    });
+  it('aborts during config lookup without a late request or canceling the shared config', () => {
+    const pendingConfig = new Subject<typeof backendConfig>();
+    backendConfig$ = pendingConfig.asObservable();
     const controller = new AbortController();
     const listeners = trackAbortListener(controller.signal);
     const abortReason = new DOMException('Canceled during config.', 'AbortError');
-    const abortedResponse = api.health({ signal: controller.signal });
+    let abortedError: unknown;
+    api.health({ signal: controller.signal }).subscribe({
+      error: (reason) => (abortedError = reason),
+    });
     expect(backendConfigCalls).toBe(1);
     expect(listeners.added).toHaveBeenCalledWith(
       'abort',
       expect.any(Function),
       { once: true },
     );
-    const rejection = expect(abortedResponse).rejects.toBe(abortReason);
 
     controller.abort(abortReason);
 
-    await rejection;
+    expect(abortedError).toBe(abortReason);
     listeners.expectRemoved();
     httpTesting.expectNone(`${baseUrl}/health`);
 
-    const siblingResponse = api.health();
+    let siblingResponse: HealthResponse | undefined;
+    api.health().subscribe((value) => (siblingResponse = value));
     expect(backendConfigCalls).toBe(2);
-    resolveConfig(backendConfig);
-    await Promise.resolve();
-    await Promise.resolve();
-
+    pendingConfig.next(backendConfig);
     const requests = httpTesting.match(`${baseUrl}/health`);
     expect(requests).toHaveLength(1);
     requests[0].flush(healthResponse);
-    await expect(siblingResponse).resolves.toEqual(healthResponse);
+    expect(siblingResponse).toEqual(healthResponse);
   });
 
-  it('cancels an in-flight HttpClient request and rejects with the abort reason', async () => {
+  it('cancels an in-flight HttpClient request and rejects with the abort reason', () => {
     const controller = new AbortController();
     const listeners = trackAbortListener(controller.signal);
     const abortReason = new DOMException('Canceled by the user.', 'AbortError');
-    const responsePromise = api.health({ signal: controller.signal });
-    await Promise.resolve();
+    let error: unknown;
+    api.health({ signal: controller.signal }).subscribe({
+      error: (reason) => (error = reason),
+    });
     const request = httpTesting.expectOne(`${baseUrl}/health`);
-    const rejection = expect(responsePromise).rejects.toBe(abortReason);
 
     controller.abort(abortReason);
 
-    await rejection;
+    expect(error).toBe(abortReason);
     expect(request.cancelled).toBe(true);
     listeners.expectRemoved();
   });
 
-  it('returns a normal response when no signal is provided', async () => {
-    const responsePromise = api.health();
-    await Promise.resolve();
+  it('returns a normal response when no signal is provided', () => {
+    let response: HealthResponse | undefined;
+    api.health().subscribe((value) => (response = value));
     const request = httpTesting.expectOne({
       method: 'GET',
       url: `${baseUrl}/health`,
@@ -259,16 +307,15 @@ describe('CertPrepAuthenticatedTransport', () => {
 
     request.flush(healthResponse);
 
-    await expect(responsePromise).resolves.toEqual(healthResponse);
+    expect(response).toEqual(healthResponse);
   });
 
-  it('loads authenticated document audio as a Blob without putting the token in the URL', async () => {
+  it('loads authenticated document audio as a Blob without putting the token in the URL', () => {
     const sourceBlob = new Blob(['audio'], { type: 'audio/mpeg' });
-    const responsePromise = api.getDocumentAudioSource(
-      'project-1',
-      'document-1',
+    let response: Blob | undefined;
+    api.getDocumentAudioSource('project-1', 'document-1').subscribe(
+      (value) => (response = value),
     );
-    await Promise.resolve();
     const request = httpTesting.expectOne(
       `${baseUrl}/projects/project-1/documents/document-1/source`,
     );
@@ -281,16 +328,18 @@ describe('CertPrepAuthenticatedTransport', () => {
     expect(request.request.url).not.toContain('runtime-token');
     request.flush(sourceBlob);
 
-    await expect(responsePromise).resolves.toEqual(sourceBlob);
+    expect(response).toEqual(sourceBlob);
   });
 
-  it('does not set Content-Type for a FormData upload', async () => {
+  it('does not set Content-Type for a FormData upload', () => {
     const body = new FormData();
     body.append('file', new Blob(['pdf']), 'exam.pdf');
-    const responsePromise = api.uploadDocument('project-1', body, {
-      headers: { 'X-Cert-Prep-Operation-Id': 'operation-1' },
-    });
-    await Promise.resolve();
+    let response: unknown;
+    api
+      .uploadDocument('project-1', body, {
+        headers: { 'X-Cert-Prep-Operation-Id': 'operation-1' },
+      })
+      .subscribe((value) => (response = value));
     const request = httpTesting.expectOne(
       `${baseUrl}/projects/project-1/documents`,
     );
@@ -298,58 +347,63 @@ describe('CertPrepAuthenticatedTransport', () => {
     expect(request.request.body).toBe(body);
     expect(request.request.headers.has('Content-Type')).toBe(false);
     request.flush(null);
-    await responsePromise;
+    expect(response).toBeNull();
   });
 
-  it('removes the abort listener after a successful response', async () => {
+  it('removes the abort listener after a successful response', () => {
     const controller = new AbortController();
     const listeners = trackAbortListener(controller.signal);
-    const responsePromise = api.health({ signal: controller.signal });
-    await Promise.resolve();
+    let response: HealthResponse | undefined;
+    api.health({ signal: controller.signal }).subscribe(
+      (value) => (response = value),
+    );
     const request = httpTesting.expectOne(`${baseUrl}/health`);
 
     request.flush(healthResponse);
 
-    await expect(responsePromise).resolves.toEqual(healthResponse);
+    expect(response).toEqual(healthResponse);
     listeners.expectRemoved();
   });
 
-  it('preserves an HTTP error and removes the abort listener', async () => {
+  it('preserves an HTTP error and removes the abort listener', () => {
     const controller = new AbortController();
     const listeners = trackAbortListener(controller.signal);
-    const responsePromise = api.health({ signal: controller.signal });
-    await Promise.resolve();
+    let error: unknown;
+    api.health({ signal: controller.signal }).subscribe({
+      error: (reason) => (error = reason),
+    });
     const request = httpTesting.expectOne(`${baseUrl}/health`);
 
     request.flush({ detail: 'failed' }, { status: 500, statusText: 'Failed' });
 
-    const error = await responsePromise.catch((reason: unknown) => reason);
     expect(error).toBeInstanceOf(HttpErrorResponse);
     expect(error).toMatchObject({ status: 500, error: { detail: 'failed' } });
     listeners.expectRemoved();
   });
 
-  it('preserves a config error and removes the abort listener', async () => {
+  it('preserves a config error and removes the abort listener', () => {
     const configError = new Error('Config failed.');
-    backendConfigPromise = Promise.reject(configError);
+    backendConfig$ = throwError(() => configError);
     const controller = new AbortController();
     const listeners = trackAbortListener(controller.signal);
+    let error: unknown;
 
-    await expect(api.health({ signal: controller.signal })).rejects.toBe(
-      configError,
-    );
+    api.health({ signal: controller.signal }).subscribe({
+      error: (reason) => (error = reason),
+    });
 
+    expect(error).toBe(configError);
     httpTesting.expectNone(`${baseUrl}/health`);
     listeners.expectRemoved();
   });
 
-  it('preserves an HTTP error when no signal is provided', async () => {
-    const responsePromise = api.health();
-    await Promise.resolve();
+  it('preserves an HTTP error when no signal is provided', () => {
+    let error: unknown;
+    api.health().subscribe({ error: (reason) => (error = reason) });
     const request = httpTesting.expectOne(`${baseUrl}/health`);
 
     request.flush({ detail: 'failed' }, { status: 503, statusText: 'Failed' });
 
-    await expect(responsePromise).rejects.toMatchObject({ status: 503 });
+    expect(error).toMatchObject({ status: 503 });
   });
 });

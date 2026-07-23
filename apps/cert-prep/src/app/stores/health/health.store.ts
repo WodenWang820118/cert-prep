@@ -1,4 +1,5 @@
 import { computed, effect, inject, Injectable, signal } from '@angular/core';
+import { from } from 'rxjs';
 import { CertPrepHttpResourceClient } from '../../cert-prep-http-resource-client';
 import type { RuntimeKind } from './contracts/health-runtime.contracts';
 import { HealthStatusStore } from './health-status.store';
@@ -135,8 +136,8 @@ export class HealthStore {
     this.actions.cancelModelDownloadConsent();
   }
 
-  async confirmModelDownload(): Promise<void> {
-    await this.actions.confirmModelDownload(this.runtimeActionContext());
+  confirmModelDownload(): void {
+    this.actions.confirmModelDownload(this.runtimeActionContext());
   }
 
   openRuntimeInstallConsent(kind: RuntimeKind): void {
@@ -162,11 +163,14 @@ export class HealthStore {
     this.runtimeRequirementsResource.reload();
   }
 
-  async loadRuntimeRequirementsForUpload(): Promise<void> {
-    const response =
-      await this.runtimeApi.runtimeInstallationClient().runtimeRequirements();
-    this.runtimeRequirementsResource.set(response.items);
-    this.status.applyHealthSnapshot({ runtimeRequirements: response.items });
+  loadRuntimeRequirementsForUpload(): void {
+    from(this.runtimeApi.runtimeInstallationClient().runtimeRequirements()).subscribe({
+      next: (response) => {
+        this.runtimeRequirementsResource.set(response.items);
+        this.status.applyHealthSnapshot({ runtimeRequirements: response.items });
+      },
+      error: () => this.operations.fail('Runtime requirements could not be loaded.'),
+    });
   }
 
   setRuntimeInstallConsentVisible(visible: boolean): void {
@@ -177,24 +181,24 @@ export class HealthStore {
     this.actions.cancelRuntimeInstallConsent();
   }
 
-  async confirmRuntimeInstallation(): Promise<void> {
-    await this.actions.confirmRuntimeInstallation(this.runtimeActionContext());
+  confirmRuntimeInstallation(): void {
+    this.actions.confirmRuntimeInstallation(this.runtimeActionContext());
   }
 
-  async refreshRuntimeInstallation(): Promise<void> {
-    await this.actions.refreshRuntimeInstallation(this.runtimeActionContext());
+  refreshRuntimeInstallation(): void {
+    this.actions.refreshRuntimeInstallation(this.runtimeActionContext());
   }
 
-  async refreshModelDownload(): Promise<void> {
-    await this.actions.refreshModelDownload(this.runtimeActionContext());
+  refreshModelDownload(): void {
+    this.actions.refreshModelDownload(this.runtimeActionContext());
   }
 
-  async cancelModelDownload(): Promise<void> {
-    await this.actions.cancelModelDownload(this.runtimeActionContext());
+  cancelModelDownload(): void {
+    this.actions.cancelModelDownload(this.runtimeActionContext());
   }
 
-  async cancelRuntimeInstallation(): Promise<void> {
-    await this.actions.cancelRuntimeInstallation(this.runtimeActionContext());
+  cancelRuntimeInstallation(): void {
+    this.actions.cancelRuntimeInstallation(this.runtimeActionContext());
   }
 
   private runtimeActionContext() {

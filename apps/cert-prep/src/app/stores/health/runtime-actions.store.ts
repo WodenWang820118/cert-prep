@@ -1,4 +1,5 @@
 import { computed, inject, Injectable, signal } from '@angular/core';
+import { from, Subscription, timer } from 'rxjs';
 import type {
   DownloadPhase,
   ModelDownloadView,
@@ -15,7 +16,7 @@ interface RuntimeActionContext {
   readonly canDownloadModel: () => boolean;
   readonly canInstallRuntime: (kind: RuntimeKind) => boolean;
   readonly configuredModelName: () => string;
-  readonly refreshHealthAfterRuntimeChange: () => void | Promise<void>;
+  readonly refreshHealthAfterRuntimeChange: () => void;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -23,8 +24,8 @@ export class RuntimeActionsStore {
   private readonly operations = inject(OperationStore);
   private readonly runtimeApi = inject(RuntimeApiClientsService);
   private readonly jobView = inject(RuntimeJobViewService);
-  private modelDownloadPollTimer: ReturnType<typeof setTimeout> | null = null;
-  private runtimeInstallPollTimer: ReturnType<typeof setTimeout> | null = null;
+  private modelDownloadPollTimer: Subscription | null = null;
+  private runtimeInstallPollTimer: Subscription | null = null;
 
   readonly modelDownloadConsentVisible = signal(false);
   readonly modelDownloadStarting = signal(false);
@@ -104,7 +105,7 @@ export class RuntimeActionsStore {
     }
   }
 
-  async confirmModelDownload(context: RuntimeActionContext): Promise<void> {
+  confirmModelDownload(context: RuntimeActionContext): void {
     if (!context.canDownloadModel() || this.modelDownloadStarting()) {
       return;
     }
@@ -116,19 +117,21 @@ export class RuntimeActionsStore {
       this.jobView.startingDownload(context.configuredModelName()),
     );
 
-    try {
-      const response = await client.startModelDownload();
-      const status = this.toModelDownloadView(response, 'running', context);
-      this.modelDownload.set(status);
-      this.modelDownloadConsentVisible.set(false);
-      this.continueModelDownload(status, context);
-    } catch (error) {
-      const message = this.jobView.errorMessage(error);
-      this.modelDownload.set(this.failedDownload(message, context));
-      this.operations.fail(message);
-    } finally {
-      this.modelDownloadStarting.set(false);
-    }
+    from(client.startModelDownload()).subscribe({
+      next: (response) => {
+        const status = this.toModelDownloadView(response, 'running', context);
+        this.modelDownload.set(status);
+        this.modelDownloadConsentVisible.set(false);
+        this.continueModelDownload(status, context);
+        this.modelDownloadStarting.set(false);
+      },
+      error: (error: unknown) => {
+        const message = this.jobView.errorMessage(error);
+        this.modelDownload.set(this.failedDownload(message, context));
+        this.operations.fail(message);
+        this.modelDownloadStarting.set(false);
+      },
+    });
   }
 
   openRuntimeInstallConsent(
@@ -161,9 +164,9 @@ export class RuntimeActionsStore {
     }
   }
 
-  async confirmRuntimeInstallation(
+  confirmRuntimeInstallation(
     context: RuntimeActionContext,
-  ): Promise<void> {
+  ): void {
     const kind = this.runtimeInstallConsentKind();
     if (
       kind === null ||
@@ -178,24 +181,26 @@ export class RuntimeActionsStore {
     this.runtimeInstallStarting.set(true);
     this.runtimeInstall.set(this.jobView.startingRuntimeInstall(kind));
 
-    try {
-      const response = await client.startRuntimeInstallation(kind);
-      const status = this.toRuntimeInstallationView(response, kind, 'running');
-      this.runtimeInstall.set(status);
-      this.runtimeInstallConsentKind.set(null);
-      this.continueRuntimeInstallation(status, context);
-    } catch (error) {
-      const message = this.jobView.errorMessage(error);
-      this.runtimeInstall.set(this.failedRuntimeInstall(kind, message));
-      this.operations.fail(message);
-    } finally {
-      this.runtimeInstallStarting.set(false);
-    }
+    from(client.startRuntimeInstallation(kind)).subscribe({
+      next: (response) => {
+        const status = this.toRuntimeInstallationView(response, kind, 'running');
+        this.runtimeInstall.set(status);
+        this.runtimeInstallConsentKind.set(null);
+        this.continueRuntimeInstallation(status, context);
+        this.runtimeInstallStarting.set(false);
+      },
+      error: (error: unknown) => {
+        const message = this.jobView.errorMessage(error);
+        this.runtimeInstall.set(this.failedRuntimeInstall(kind, message));
+        this.operations.fail(message);
+        this.runtimeInstallStarting.set(false);
+      },
+    });
   }
 
-  async refreshRuntimeInstallation(
+  refreshRuntimeInstallation(
     context: RuntimeActionContext,
-  ): Promise<void> {
+  ): void {
     const current = this.runtimeInstall();
     if (current === null || current.jobId === null) {
       return;
@@ -204,29 +209,21 @@ export class RuntimeActionsStore {
     const client = this.runtimeApi.runtimeInstallationClient();
     this.clearRuntimeInstallPollTimer();
 
-    try {
-      const response = await client.getRuntimeInstallation(current.jobId);
-      const status = this.toRuntimeInstallationView(
-        response,
-        current.kind,
-        current.phase,
-      );
-      this.runtimeInstall.set(status);
-      this.continueRuntimeInstallation(status, context);
-    } catch (error) {
-      const message = this.jobView.errorMessage(error);
-      this.runtimeInstall.set({
-        ...current,
-        phase: 'failed',
-        status: 'failed',
-        message,
-        error: message,
-      });
-      this.operations.fail(message);
-    }
+    from(client.getRuntimeInstallation(current.jobId)).subscribe({
+      next: (response) => {
+        const status = this.toRuntimeInstallationView(response, current.kind, current.phase);
+        this.runtimeInstall.set(status);
+        this.continueRuntimeInstallation(status, context);
+      },
+      error: (error: unknown) => {
+        const message = this.jobView.errorMessage(error);
+        this.runtimeInstall.set({ ...current, phase: 'failed', status: 'failed', message, error: message });
+        this.operations.fail(message);
+      },
+    });
   }
 
-  async refreshModelDownload(context: RuntimeActionContext): Promise<void> {
+  refreshModelDownload(context: RuntimeActionContext): void {
     const current = this.modelDownload();
     if (current === null || current.jobId === null) {
       return;
@@ -235,25 +232,21 @@ export class RuntimeActionsStore {
     const client = this.runtimeApi.modelDownloadClient();
     this.clearModelDownloadPollTimer();
 
-    try {
-      const response = await client.getModelDownload(current.jobId);
-      const status = this.toModelDownloadView(response, current.phase, context);
-      this.modelDownload.set(status);
-      this.continueModelDownload(status, context);
-    } catch (error) {
-      const message = this.jobView.errorMessage(error);
-      this.modelDownload.set({
-        ...current,
-        phase: 'failed',
-        status: 'failed',
-        message,
-        error: message,
-      });
-      this.operations.fail(message);
-    }
+    from(client.getModelDownload(current.jobId)).subscribe({
+      next: (response) => {
+        const status = this.toModelDownloadView(response, current.phase, context);
+        this.modelDownload.set(status);
+        this.continueModelDownload(status, context);
+      },
+      error: (error: unknown) => {
+        const message = this.jobView.errorMessage(error);
+        this.modelDownload.set({ ...current, phase: 'failed', status: 'failed', message, error: message });
+        this.operations.fail(message);
+      },
+    });
   }
 
-  async cancelModelDownload(context: RuntimeActionContext): Promise<void> {
+  cancelModelDownload(context: RuntimeActionContext): void {
     const current = this.modelDownload();
     if (
       current === null ||
@@ -266,26 +259,24 @@ export class RuntimeActionsStore {
     const client = this.runtimeApi.modelDownloadClient();
     this.clearModelDownloadPollTimer();
     this.modelDownloadCanceling.set(true);
-    try {
-      const response = await client.cancelModelDownload(current.jobId);
-      const status = this.toModelDownloadView(
-        response,
-        'cancel_requested',
-        context,
-      );
-      this.modelDownload.set(status);
-      this.continueModelDownload(status, context);
-    } catch (error) {
-      this.operations.fail(this.jobView.errorMessage(error));
-      this.continueModelDownload(current, context);
-    } finally {
-      this.modelDownloadCanceling.set(false);
-    }
+    from(client.cancelModelDownload(current.jobId)).subscribe({
+      next: (response) => {
+        const status = this.toModelDownloadView(response, 'cancel_requested', context);
+        this.modelDownload.set(status);
+        this.continueModelDownload(status, context);
+        this.modelDownloadCanceling.set(false);
+      },
+      error: (error: unknown) => {
+        this.operations.fail(this.jobView.errorMessage(error));
+        this.continueModelDownload(current, context);
+        this.modelDownloadCanceling.set(false);
+      },
+    });
   }
 
-  async cancelRuntimeInstallation(
+  cancelRuntimeInstallation(
     context: RuntimeActionContext,
-  ): Promise<void> {
+  ): void {
     const current = this.runtimeInstall();
     if (
       current === null ||
@@ -298,21 +289,19 @@ export class RuntimeActionsStore {
     const client = this.runtimeApi.runtimeInstallationClient();
     this.clearRuntimeInstallPollTimer();
     this.runtimeInstallCanceling.set(true);
-    try {
-      const response = await client.cancelRuntimeInstallation(current.jobId);
-      const status = this.toRuntimeInstallationView(
-        response,
-        current.kind,
-        'cancel_requested',
-      );
-      this.runtimeInstall.set(status);
-      this.continueRuntimeInstallation(status, context);
-    } catch (error) {
-      this.operations.fail(this.jobView.errorMessage(error));
-      this.continueRuntimeInstallation(current, context);
-    } finally {
-      this.runtimeInstallCanceling.set(false);
-    }
+    from(client.cancelRuntimeInstallation(current.jobId)).subscribe({
+      next: (response) => {
+        const status = this.toRuntimeInstallationView(response, current.kind, 'cancel_requested');
+        this.runtimeInstall.set(status);
+        this.continueRuntimeInstallation(status, context);
+        this.runtimeInstallCanceling.set(false);
+      },
+      error: (error: unknown) => {
+        this.operations.fail(this.jobView.errorMessage(error));
+        this.continueRuntimeInstallation(current, context);
+        this.runtimeInstallCanceling.set(false);
+      },
+    });
   }
 
   private continueModelDownload(
@@ -320,7 +309,7 @@ export class RuntimeActionsStore {
     context: RuntimeActionContext,
   ): void {
     if (status.phase === 'succeeded') {
-      void this.refreshHealthAfterRuntimeChange(context);
+      this.refreshHealthAfterRuntimeChange(context);
       return;
     }
 
@@ -341,7 +330,7 @@ export class RuntimeActionsStore {
     context: RuntimeActionContext,
   ): void {
     if (status.phase === 'succeeded') {
-      void this.refreshHealthAfterRuntimeChange(context);
+      this.refreshHealthAfterRuntimeChange(context);
       return;
     }
 
@@ -361,42 +350,38 @@ export class RuntimeActionsStore {
     this.scheduleRuntimeInstallPoll(context);
   }
 
-  private async refreshHealthAfterRuntimeChange(
+  private refreshHealthAfterRuntimeChange(
     context: RuntimeActionContext,
-  ): Promise<void> {
-    try {
-      await context.refreshHealthAfterRuntimeChange();
-    } catch (error) {
-      this.operations.fail(this.jobView.errorMessage(error));
-    }
+  ): void {
+    context.refreshHealthAfterRuntimeChange();
   }
 
   private scheduleModelDownloadPoll(context: RuntimeActionContext): void {
     this.clearModelDownloadPollTimer();
-    this.modelDownloadPollTimer = setTimeout(() => {
+    this.modelDownloadPollTimer = timer(RUNTIME_JOB_POLL_INTERVAL_MS).subscribe(() => {
       this.modelDownloadPollTimer = null;
-      void this.refreshModelDownload(context);
-    }, RUNTIME_JOB_POLL_INTERVAL_MS);
+      this.refreshModelDownload(context);
+    });
   }
 
   private scheduleRuntimeInstallPoll(context: RuntimeActionContext): void {
     this.clearRuntimeInstallPollTimer();
-    this.runtimeInstallPollTimer = setTimeout(() => {
+    this.runtimeInstallPollTimer = timer(RUNTIME_JOB_POLL_INTERVAL_MS).subscribe(() => {
       this.runtimeInstallPollTimer = null;
-      void this.refreshRuntimeInstallation(context);
-    }, RUNTIME_JOB_POLL_INTERVAL_MS);
+      this.refreshRuntimeInstallation(context);
+    });
   }
 
   private clearModelDownloadPollTimer(): void {
     if (this.modelDownloadPollTimer !== null) {
-      clearTimeout(this.modelDownloadPollTimer);
+      this.modelDownloadPollTimer.unsubscribe();
       this.modelDownloadPollTimer = null;
     }
   }
 
   private clearRuntimeInstallPollTimer(): void {
     if (this.runtimeInstallPollTimer !== null) {
-      clearTimeout(this.runtimeInstallPollTimer);
+      this.runtimeInstallPollTimer.unsubscribe();
       this.runtimeInstallPollTimer = null;
     }
   }

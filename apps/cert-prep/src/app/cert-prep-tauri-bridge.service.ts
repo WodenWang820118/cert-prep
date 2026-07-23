@@ -1,14 +1,17 @@
 import { Injectable } from '@angular/core';
 import { defer, from, Observable, switchMap } from 'rxjs';
 
-/**
- * Small boundary around Tauri globals and command invocation so the runtime
- * store can focus on state transitions instead of platform probing.
- */
 @Injectable({ providedIn: 'root' })
-export class DesktopRuntimeBridgeService {
+export class CertPrepTauriBridgeService {
   isDesktop(): boolean {
-    return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+    const windowRef = globalThis as typeof globalThis & {
+      window?: Window & { __TAURI_INTERNALS__?: unknown };
+    };
+
+    return (
+      typeof windowRef.window !== 'undefined' &&
+      '__TAURI_INTERNALS__' in windowRef.window
+    );
   }
 
   invoke<TResult>(

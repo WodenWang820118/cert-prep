@@ -1,4 +1,5 @@
 import { computed, inject, Injectable, signal } from '@angular/core';
+import { catchError, from, map, Observable, of, Subscription, tap, timer } from 'rxjs';
 import type {
   DesktopRuntimeInstallation,
   DesktopRuntimeStatus,
@@ -14,7 +15,7 @@ export class DesktopRuntimeStore {
   private readonly bridge = inject(DesktopRuntimeBridgeService);
   private readonly operations = inject(OperationStore);
   private readonly view = inject(DesktopRuntimeViewService);
-  private installPollTimer: ReturnType<typeof setTimeout> | null = null;
+  private installPollSubscription: Subscription | null = null;
 
   readonly isDesktop = signal(this.bridge.isDesktop());
   readonly status = signal<DesktopRuntimeStatus>(this.view.browserStatus());
@@ -44,16 +45,20 @@ export class DesktopRuntimeStore {
     this.view.progressFrom(this.installation() ?? this.status()),
   );
 
-  async load(): Promise<void> {
+  load(): Observable<DesktopRuntimeStatus | null> {
     if (!this.isDesktop()) {
       this.status.set(this.view.browserStatus());
-      return;
+      return of(this.status());
     }
 
-    const status = await this.bridge.invoke<DesktopRuntimeStatus>(
-      'desktop_runtime_status',
+    return from(this.bridge.invoke<DesktopRuntimeStatus>('desktop_runtime_status')).pipe(
+      tap((status) => this.status.set(status)),
+      map((status) => status),
+      catchError((error: unknown) => {
+        this.operations.fail(this.view.errorMessage(error));
+        return of(null);
+      }),
     );
-    this.status.set(status);
   }
 
   openInstallConsent(): void {
@@ -76,7 +81,7 @@ export class DesktopRuntimeStore {
     }
   }
 
-  async confirmPythonRuntimeInstallation(): Promise<void> {
+  confirmPythonRuntimeInstallation(): void {
     if (!this.canInstallPythonRuntime() || this.installStarting()) {
       return;
     }
@@ -97,50 +102,59 @@ export class DesktopRuntimeStore {
       error: null,
     });
 
-    try {
-      const response = await this.bridge.invoke<DesktopRuntimeInstallation>(
-        'start_python_runtime_installation',
-      );
-      this.installation.set(response);
-      this.installConsentVisible.set(false);
-      this.continueInstallation(response);
-    } catch (error) {
-      const message = this.view.errorMessage(error);
-      this.installation.set(
-        this.view.failedInstallation(message, this.installation()),
-      );
-      this.operations.fail(message);
-    } finally {
-      this.installStarting.set(false);
-    }
+    from(this.bridge
+      .invoke<DesktopRuntimeInstallation>('start_python_runtime_installation'))
+      .pipe(
+        tap((response) => {
+          this.installation.set(response);
+          this.installConsentVisible.set(false);
+          this.continueInstallation(response);
+          this.installStarting.set(false);
+        }),
+        catchError((error: unknown) => {
+          const message = this.view.errorMessage(error);
+          this.installation.set(
+            this.view.failedInstallation(message, this.installation()),
+          );
+          this.operations.fail(message);
+          this.installStarting.set(false);
+          return of(null);
+        }),
+      )
+      .subscribe();
   }
 
-  async refreshInstallation(): Promise<void> {
+  refreshInstallation(): void {
     const current = this.installation();
     if (current === null || current.id.length === 0) {
-      await this.load();
+      this.load().subscribe();
       return;
     }
 
     this.clearInstallPollTimer();
-    try {
-      const response = await this.bridge.invoke<DesktopRuntimeInstallation>(
-        'get_python_runtime_installation',
-        { jobId: current.id },
-      );
-      this.installation.set(response);
-      this.continueInstallation(response);
-    } catch (error) {
-      const message = this.view.errorMessage(error);
-      this.installation.set(this.view.failedInstallation(message, current));
-      this.operations.fail(message);
-    }
+    from(this.bridge
+      .invoke<DesktopRuntimeInstallation>('get_python_runtime_installation', {
+        jobId: current.id,
+      }))
+      .pipe(
+        tap((response) => {
+          this.installation.set(response);
+          this.continueInstallation(response);
+        }),
+        catchError((error: unknown) => {
+          const message = this.view.errorMessage(error);
+          this.installation.set(this.view.failedInstallation(message, current));
+          this.operations.fail(message);
+          return of(null);
+        }),
+      )
+      .subscribe();
   }
 
   private continueInstallation(installation: DesktopRuntimeInstallation): void {
     const phase = this.view.phase(installation.status);
     if (phase === 'succeeded') {
-      void this.load();
+      this.load().subscribe();
       return;
     }
 
@@ -154,16 +168,15 @@ export class DesktopRuntimeStore {
 
   private scheduleInstallPoll(): void {
     this.clearInstallPollTimer();
-    this.installPollTimer = setTimeout(() => {
-      this.installPollTimer = null;
-      void this.refreshInstallation();
-    }, RUNTIME_INSTALL_POLL_INTERVAL_MS);
+    this.installPollSubscription = timer(RUNTIME_INSTALL_POLL_INTERVAL_MS)
+      .pipe(tap(() => (this.installPollSubscription = null)))
+      .subscribe(() => this.refreshInstallation());
   }
 
   private clearInstallPollTimer(): void {
-    if (this.installPollTimer !== null) {
-      clearTimeout(this.installPollTimer);
-      this.installPollTimer = null;
+    if (this.installPollSubscription !== null) {
+      this.installPollSubscription.unsubscribe();
+      this.installPollSubscription = null;
     }
   }
 }

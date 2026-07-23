@@ -1,8 +1,10 @@
 import { effect, inject, Injectable, signal } from '@angular/core';
+import { catchError, from, of } from 'rxjs';
 import {
   CERT_PREP_API,
-  type CertPrepGeneratedClient,
+  type WrongAnswerExplanationRead,
   type WrongAnswerRead,
+  type WrongAnswerSummaryRead,
 } from '../cert-prep-api';
 import { CertPrepHttpResourceClient } from '../cert-prep-http-resource-client';
 import { OperationStore } from './operation.store';
@@ -15,12 +17,6 @@ export interface WrongAnswerExplanationState {
   fallback: boolean;
 }
 
-type WrongAnswerExplanationRead = Awaited<
-  ReturnType<CertPrepGeneratedClient['explainWrongAnswer']>
->;
-type WrongAnswerSummaryRead = Awaited<
-  ReturnType<CertPrepGeneratedClient['summarizeWrongAnswers']>
->;
 const EMPTY_EXPLANATION_STATE: WrongAnswerExplanationState = {
   loading: false,
   result: null,
@@ -102,7 +98,7 @@ export class WrongAnswerReviewStore {
     return this.explanations()[attemptId] ?? EMPTY_EXPLANATION_STATE;
   }
 
-  async discussMistake(wrongAnswer: WrongAnswerRead): Promise<void> {
+  discussMistake(wrongAnswer: WrongAnswerRead): void {
     const project = this.projects.selectedProject();
     if (project === null) {
       this.setFallback(
@@ -119,28 +115,46 @@ export class WrongAnswerReviewStore {
       fallback: false,
     });
 
-    const explanationRequest = this.api.explainWrongAnswer(
-      project.id,
-      wrongAnswer.attempt_id,
-    );
+    let requestError: string | null = null;
+    this.operations
+      .run(
+        'review',
+        'AI explanation ready',
+        (signal) =>
+          from(
+            this.api.explainWrongAnswer(project.id, wrongAnswer.attempt_id, {
+              signal,
+            }),
+          ).pipe(
+            catchError((error: unknown) => {
+              requestError = this.errorMessage(error);
+              this.operations.error.set(requestError);
+              return of(null as unknown as WrongAnswerExplanationRead);
+            }),
+          ),
+        () => true,
+      )
+      .subscribe((response) => {
+        if (response === null) {
+          this.setFallback(
+            wrongAnswer,
+            requestError ?? this.errorMessage(this.operations.error()),
+          );
+          return;
+        }
+        const explanation = this.extractExplanation(response);
+        if (explanation === null) {
+          this.setFallback(wrongAnswer, 'The AI explanation response was empty.');
+          return;
+        }
 
-    try {
-      const response = await explanationRequest;
-      const explanation = this.extractExplanation(response);
-      if (explanation === null) {
-        this.setFallback(wrongAnswer, 'The AI explanation response was empty.');
-        return;
-      }
-
-      this.setExplanation(wrongAnswer.attempt_id, {
-        loading: false,
-        result: explanation,
-        error: null,
-        fallback: response.fallback,
+        this.setExplanation(wrongAnswer.attempt_id, {
+          loading: false,
+          result: explanation,
+          error: null,
+          fallback: response.fallback,
+        });
       });
-    } catch (error) {
-      this.setFallback(wrongAnswer, this.errorMessage(error));
-    }
   }
 
   private extractExplanation(

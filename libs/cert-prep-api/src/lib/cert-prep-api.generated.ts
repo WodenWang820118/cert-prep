@@ -2,6 +2,8 @@
 // Source of truth: FastAPI OpenAPI schema from cert_prep_backend.api.app:create_app().
 // Do not edit by hand.
 
+import type { Observable } from 'rxjs';
+
 export interface Components {
   schemas: {
     AnswerKeySource: string;
@@ -181,64 +183,64 @@ export interface CertPrepHttpRequest {
 }
 
 export interface CertPrepTransport {
-  request<TResponse>(request: CertPrepHttpRequest): Promise<TResponse>;
+  request<TResponse>(request: CertPrepHttpRequest): Observable<TResponse>;
 }
 
 export interface CertPrepGeneratedClient {
-  health(options?: CertPrepRequestOptions): Promise<Components['schemas']['HealthResponse']>;
-  listProjects(options?: CertPrepRequestOptions): Promise<Components['schemas']['ProjectList']>;
-  createProject(body: Components['schemas']['ProjectCreate'], options?: CertPrepRequestOptions): Promise<Components['schemas']['ProjectRead']>;
-  getProject(projectId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['ProjectRead']>;
-  updateProject(projectId: string, body: Components['schemas']['ProjectUpdate'], options?: CertPrepRequestOptions): Promise<Components['schemas']['ProjectRead']>;
-  deleteProject(projectId: string, options?: CertPrepRequestOptions): Promise<void>;
-  listDocuments(projectId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['DocumentList']>;
-  uploadDocument(projectId: string, body: FormData, options?: CertPrepRequestOptions): Promise<Components['schemas']['DocumentRead']>;
-  getDocument(projectId: string, documentId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['DocumentRead']>;
-  getDocumentAudioSource(projectId: string, documentId: string, options?: CertPrepRequestOptions): Promise<Blob>;
-  cancelDocumentProcessing(projectId: string, documentId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['DocumentOperationRead']>;
-  retryDocumentProcessing(projectId: string, documentId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['DocumentOperationRead']>;
-  listDocumentChunks(projectId: string, documentId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['ChunkList']>;
-  updateDocumentChunk(projectId: string, documentId: string, chunkId: string, body: Components['schemas']['ChunkUpdate'], options?: CertPrepRequestOptions): Promise<Components['schemas']['ChunkRead']>;
-  translateDocumentChunk(projectId: string, documentId: string, chunkId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['ChunkRead']>;
-  translateDocumentStaleChunks(projectId: string, documentId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['ChunkList']>;
-  getDocumentOperation(projectId: string, operationId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['DocumentOperationRead']>;
-  cancelDocumentOperation(projectId: string, operationId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['DocumentOperationRead']>;
-  generateDocumentDrafts(projectId: string, documentId: string, body: Components['schemas']['DraftGenerateRequest'], options?: CertPrepRequestOptions): Promise<Components['schemas']['QuestionDraftList']>;
-  listDocumentDraftJobs(projectId: string, documentId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['DraftGenerationJobList']>;
-  retryDocumentDraftJobs(projectId: string, documentId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['DraftGenerationJobList']>;
-  cancelDocumentDraftJob(projectId: string, documentId: string, jobId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['DraftGenerationJobRead']>;
-  startManualDraftOperation(projectId: string, documentId: string, body: Components['schemas']['DraftGenerateRequest'], options?: CertPrepRequestOptions): Promise<Components['schemas']['ManualDraftGenerationOperationRead']>;
-  getManualDraftOperation(projectId: string, documentId: string, operationId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['ManualDraftGenerationOperationRead']>;
-  cancelManualDraftOperation(projectId: string, documentId: string, operationId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['ManualDraftGenerationOperationRead']>;
-  createQuestionDraft(projectId: string, body: Components['schemas']['QuestionDraftCreate'], options?: CertPrepRequestOptions): Promise<Components['schemas']['QuestionDraftRead']>;
-  listQuestionDrafts(projectId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['QuestionDraftList']>;
-  updateQuestionDraft(projectId: string, draftId: string, body: Components['schemas']['QuestionDraftUpdate'], options?: CertPrepRequestOptions): Promise<Components['schemas']['QuestionDraftRead']>;
-  createPracticeSession(projectId: string, body: Components['schemas']['PracticeSessionCreate'], options?: CertPrepRequestOptions): Promise<Components['schemas']['PracticeSessionRead']>;
-  listActivePracticeSessions(projectId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['PracticeSessionList']>;
-  getPracticeSession(projectId: string, sessionId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['PracticeSessionRead']>;
-  abandonPracticeSession(projectId: string, sessionId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['PracticeSessionRead']>;
-  recordPracticeAttempt(projectId: string, sessionId: string, body: Components['schemas']['PracticeAttemptCreate'], options?: CertPrepRequestOptions): Promise<Components['schemas']['PracticeAttemptRead']>;
-  listWrongAnswers(projectId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['WrongAnswerList']>;
-  summarizeWrongAnswers(projectId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['WrongAnswerSummaryRead']>;
-  explainWrongAnswer(projectId: string, attemptId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['WrongAnswerExplanationRead']>;
-  llmHealth(options?: CertPrepRequestOptions): Promise<Components['schemas']['LLMHealthRead']>;
-  llmProviderSelection(options?: CertPrepRequestOptions): Promise<Components['schemas']['LLMProviderSelectionRead']>;
-  llmProfiles(options?: CertPrepRequestOptions): Promise<Components['schemas']['OllamaProfilesRead']>;
-  llmProfileSelection(options?: CertPrepRequestOptions): Promise<Components['schemas']['OllamaProfileSelectionRead']>;
-  startModelDownload(options?: CertPrepRequestOptions): Promise<Components['schemas']['ModelDownloadRead']>;
-  getModelDownload(jobId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['ModelDownloadRead']>;
-  cancelModelDownload(jobId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['ModelDownloadRead']>;
-  ocrHealth(options?: CertPrepRequestOptions): Promise<Components['schemas']['OCRHealthRead']>;
-  runtimeRequirements(options?: CertPrepRequestOptions): Promise<Components['schemas']['RuntimeRequirementsRead']>;
-  machineInventory(options?: CertPrepRequestOptions): Promise<Components['schemas']['MachineInventoryRead']>;
-  startRuntimeInstallation(kind: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['RuntimeInstallationRead']>;
-  getRuntimeInstallation(jobId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['RuntimeInstallationRead']>;
-  cancelRuntimeInstallation(jobId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['RuntimeInstallationRead']>;
-  captureRuntimeRequirements(options?: CertPrepRequestOptions): Promise<Components['schemas']['RuntimeRequirementsV1']>;
-  startCaptureRuntimeInstallation(body: Components['schemas']['StartRuntimeInstallationV1'], options?: CertPrepRequestOptions): Promise<Components['schemas']['RuntimeInstallationV1']>;
-  captureRuntimeInstallations(options?: CertPrepRequestOptions): Promise<Components['schemas']['RuntimeInstallationsV1']>;
-  captureRuntimeInstallation(installationId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['RuntimeInstallationV1']>;
-  cancelCaptureRuntimeInstallation(installationId: string, options?: CertPrepRequestOptions): Promise<Components['schemas']['RuntimeInstallationV1']>;
+  health(options?: CertPrepRequestOptions): Observable<Components['schemas']['HealthResponse']>;
+  listProjects(options?: CertPrepRequestOptions): Observable<Components['schemas']['ProjectList']>;
+  createProject(body: Components['schemas']['ProjectCreate'], options?: CertPrepRequestOptions): Observable<Components['schemas']['ProjectRead']>;
+  getProject(projectId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['ProjectRead']>;
+  updateProject(projectId: string, body: Components['schemas']['ProjectUpdate'], options?: CertPrepRequestOptions): Observable<Components['schemas']['ProjectRead']>;
+  deleteProject(projectId: string, options?: CertPrepRequestOptions): Observable<void>;
+  listDocuments(projectId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['DocumentList']>;
+  uploadDocument(projectId: string, body: FormData, options?: CertPrepRequestOptions): Observable<Components['schemas']['DocumentRead']>;
+  getDocument(projectId: string, documentId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['DocumentRead']>;
+  getDocumentAudioSource(projectId: string, documentId: string, options?: CertPrepRequestOptions): Observable<Blob>;
+  cancelDocumentProcessing(projectId: string, documentId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['DocumentOperationRead']>;
+  retryDocumentProcessing(projectId: string, documentId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['DocumentOperationRead']>;
+  listDocumentChunks(projectId: string, documentId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['ChunkList']>;
+  updateDocumentChunk(projectId: string, documentId: string, chunkId: string, body: Components['schemas']['ChunkUpdate'], options?: CertPrepRequestOptions): Observable<Components['schemas']['ChunkRead']>;
+  translateDocumentChunk(projectId: string, documentId: string, chunkId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['ChunkRead']>;
+  translateDocumentStaleChunks(projectId: string, documentId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['ChunkList']>;
+  getDocumentOperation(projectId: string, operationId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['DocumentOperationRead']>;
+  cancelDocumentOperation(projectId: string, operationId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['DocumentOperationRead']>;
+  generateDocumentDrafts(projectId: string, documentId: string, body: Components['schemas']['DraftGenerateRequest'], options?: CertPrepRequestOptions): Observable<Components['schemas']['QuestionDraftList']>;
+  listDocumentDraftJobs(projectId: string, documentId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['DraftGenerationJobList']>;
+  retryDocumentDraftJobs(projectId: string, documentId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['DraftGenerationJobList']>;
+  cancelDocumentDraftJob(projectId: string, documentId: string, jobId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['DraftGenerationJobRead']>;
+  startManualDraftOperation(projectId: string, documentId: string, body: Components['schemas']['DraftGenerateRequest'], options?: CertPrepRequestOptions): Observable<Components['schemas']['ManualDraftGenerationOperationRead']>;
+  getManualDraftOperation(projectId: string, documentId: string, operationId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['ManualDraftGenerationOperationRead']>;
+  cancelManualDraftOperation(projectId: string, documentId: string, operationId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['ManualDraftGenerationOperationRead']>;
+  createQuestionDraft(projectId: string, body: Components['schemas']['QuestionDraftCreate'], options?: CertPrepRequestOptions): Observable<Components['schemas']['QuestionDraftRead']>;
+  listQuestionDrafts(projectId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['QuestionDraftList']>;
+  updateQuestionDraft(projectId: string, draftId: string, body: Components['schemas']['QuestionDraftUpdate'], options?: CertPrepRequestOptions): Observable<Components['schemas']['QuestionDraftRead']>;
+  createPracticeSession(projectId: string, body: Components['schemas']['PracticeSessionCreate'], options?: CertPrepRequestOptions): Observable<Components['schemas']['PracticeSessionRead']>;
+  listActivePracticeSessions(projectId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['PracticeSessionList']>;
+  getPracticeSession(projectId: string, sessionId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['PracticeSessionRead']>;
+  abandonPracticeSession(projectId: string, sessionId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['PracticeSessionRead']>;
+  recordPracticeAttempt(projectId: string, sessionId: string, body: Components['schemas']['PracticeAttemptCreate'], options?: CertPrepRequestOptions): Observable<Components['schemas']['PracticeAttemptRead']>;
+  listWrongAnswers(projectId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['WrongAnswerList']>;
+  summarizeWrongAnswers(projectId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['WrongAnswerSummaryRead']>;
+  explainWrongAnswer(projectId: string, attemptId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['WrongAnswerExplanationRead']>;
+  llmHealth(options?: CertPrepRequestOptions): Observable<Components['schemas']['LLMHealthRead']>;
+  llmProviderSelection(options?: CertPrepRequestOptions): Observable<Components['schemas']['LLMProviderSelectionRead']>;
+  llmProfiles(options?: CertPrepRequestOptions): Observable<Components['schemas']['OllamaProfilesRead']>;
+  llmProfileSelection(options?: CertPrepRequestOptions): Observable<Components['schemas']['OllamaProfileSelectionRead']>;
+  startModelDownload(options?: CertPrepRequestOptions): Observable<Components['schemas']['ModelDownloadRead']>;
+  getModelDownload(jobId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['ModelDownloadRead']>;
+  cancelModelDownload(jobId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['ModelDownloadRead']>;
+  ocrHealth(options?: CertPrepRequestOptions): Observable<Components['schemas']['OCRHealthRead']>;
+  runtimeRequirements(options?: CertPrepRequestOptions): Observable<Components['schemas']['RuntimeRequirementsRead']>;
+  machineInventory(options?: CertPrepRequestOptions): Observable<Components['schemas']['MachineInventoryRead']>;
+  startRuntimeInstallation(kind: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['RuntimeInstallationRead']>;
+  getRuntimeInstallation(jobId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['RuntimeInstallationRead']>;
+  cancelRuntimeInstallation(jobId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['RuntimeInstallationRead']>;
+  captureRuntimeRequirements(options?: CertPrepRequestOptions): Observable<Components['schemas']['RuntimeRequirementsV1']>;
+  startCaptureRuntimeInstallation(body: Components['schemas']['StartRuntimeInstallationV1'], options?: CertPrepRequestOptions): Observable<Components['schemas']['RuntimeInstallationV1']>;
+  captureRuntimeInstallations(options?: CertPrepRequestOptions): Observable<Components['schemas']['RuntimeInstallationsV1']>;
+  captureRuntimeInstallation(installationId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['RuntimeInstallationV1']>;
+  cancelCaptureRuntimeInstallation(installationId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['RuntimeInstallationV1']>;
 }
 
 export interface CertPrepRequestFactory {

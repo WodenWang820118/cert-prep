@@ -29,16 +29,16 @@ export class WrongAnswerReviewComponent {
       !this.operations.isBusyFor(this.busyActions),
   );
 
-  protected async startReviewQuiz(): Promise<void> {
-    await this.startRetrySession(
+  protected startReviewQuiz(): void {
+    this.startRetrySession(
       this.review.wrongAnswers().map((wrongAnswer) => wrongAnswer.attempt_id),
     );
   }
 
-  protected async retryWrongAnswer(
+  protected retryWrongAnswer(
     wrongAnswer: WrongAnswerRead,
-  ): Promise<void> {
-    await this.startRetrySession([wrongAnswer.attempt_id]);
+  ): void {
+    this.startRetrySession([wrongAnswer.attempt_id]);
   }
 
   protected documentLabel(documentId: string | null): string | null {
@@ -49,9 +49,9 @@ export class WrongAnswerReviewComponent {
     return reviewDateLabel(value);
   }
 
-  private async startRetrySession(
+  private startRetrySession(
     attemptIds: readonly string[],
-  ): Promise<void> {
-    await this.retryNavigation.start(attemptIds);
+  ): void {
+    this.retryNavigation.start(attemptIds).subscribe();
   }
 }

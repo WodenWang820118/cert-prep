@@ -1,4 +1,5 @@
 import { inject, Injectable, signal } from '@angular/core';
+import { defer, from, of } from 'rxjs';
 import { DesktopRuntimeStore } from './desktop-runtime/desktop-runtime.store';
 import { DraftReviewStore } from './draft-review/draft-review.store';
 import { HealthStore } from './health/health.store';
@@ -20,39 +21,42 @@ export class WorkspaceFacade {
   private readonly sourceImport = inject(SourceImportStore);
   readonly hasLoadedBackendState = signal(false);
 
-  async loadStartupState(): Promise<void> {
-    await this.desktopRuntime.load();
-    if (!this.desktopRuntime.isBackendReady()) {
-      this.operations.status.set('Python backend runtime is required.');
-      return;
-    }
+  loadStartupState(): void {
+    from(this.desktopRuntime.load()).subscribe(() => {
+      if (!this.desktopRuntime.isBackendReady()) {
+        this.operations.status.set('Python backend runtime is required.');
+        return;
+      }
 
-    if (this.hasLoadedBackendState()) {
-      return;
-    }
+      if (this.hasLoadedBackendState()) {
+        return;
+      }
 
-    const loaded = await this.operations.run(
-      'startup',
-      'Workspace ready',
-      async () => {
-        await this.projects.load();
-      },
-    );
-    if (loaded === null) {
-      return;
-    }
-    this.hasLoadedBackendState.set(true);
-    this.health.load();
+      this.operations
+        .run('startup', 'Workspace ready', () =>
+          defer(() => {
+            this.projects.load();
+            return of(undefined);
+          }),
+        )
+        .subscribe((loaded) => {
+          if (loaded === null) {
+            return;
+          }
+          this.hasLoadedBackendState.set(true);
+          this.health.load();
+        });
+    });
   }
 
-  async createProject(): Promise<void> {
-    const project = await this.projects.createFromForm();
-    if (project !== null) {
-      await this.selectProject(project.id);
-    }
+  createProject(onCreated?: () => void): void {
+    this.projects.createFromForm((project) => {
+      this.selectProject(project.id);
+      onCreated?.();
+    });
   }
 
-  async selectProject(projectId: string): Promise<void> {
+  selectProject(projectId: string): void {
     this.projects.select(projectId);
     this.sourceImport.reset();
     this.drafts.reset();

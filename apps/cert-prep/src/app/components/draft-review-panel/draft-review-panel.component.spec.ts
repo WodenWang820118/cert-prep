@@ -21,12 +21,12 @@ describe('DraftReviewPanelComponent', () => {
     updateQuestionDraft: vi.fn(),
   };
 
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.clearAllMocks();
-    await TestBed.configureTestingModule({
+    TestBed.configureTestingModule({
       imports: [DraftReviewPanelComponent],
       providers: [{ provide: CERT_PREP_API, useValue: apiClient }],
-    }).compileComponents();
+    });
   });
 
   it('uses source-file guidance before a document is ready', () => {

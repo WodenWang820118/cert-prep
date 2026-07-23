@@ -3,11 +3,11 @@ import { CERT_PREP_API } from '../../cert-prep-api';
 import { ProjectRailComponent } from './project-rail.component';
 
 describe('ProjectRailComponent', () => {
-  beforeEach(async () => {
-    await TestBed.configureTestingModule({
+  beforeEach(() => {
+    TestBed.configureTestingModule({
       imports: [ProjectRailComponent],
       providers: [{ provide: CERT_PREP_API, useValue: {} }],
-    }).compileComponents();
+    });
   });
 
   it('renders the empty project list state', () => {

@@ -1,4 +1,5 @@
 import { computed, effect, inject, Injectable, signal } from '@angular/core';
+import { from } from 'rxjs';
 import { CERT_PREP_API, ProjectRead } from '../cert-prep-api';
 import { CertPrepHttpResourceClient } from '../cert-prep-http-resource-client';
 import { OperationStore } from './operation.store';
@@ -41,32 +42,37 @@ export class ProjectStore {
     this.projectListResource.reload();
   }
 
-  async createFromForm(): Promise<ProjectRead | null> {
+  createFromForm(onCreated?: (project: ProjectRead) => void): void {
     const name = this.projectName().trim();
     if (name.length === 0) {
       this.operations.fail('Project name is required.');
-      return null;
+      return;
     }
 
-    const project = await this.operations.run('project', 'Project created', () =>
-      this.api.createProject({
-        name,
-        description: this.projectDescription().trim(),
-      }),
-    );
-    if (project === null) {
-      return null;
-    }
-
-    const nextProjects = [
-      project,
-      ...this.projects().filter((item) => item.id !== project.id),
-    ];
-    this.projects.set(nextProjects);
-    this.projectListResource.set(nextProjects);
-    this.projectName.set('');
-    this.projectDescription.set('');
-    return project;
+    this.operations
+      .run('project', 'Project created', (signal) =>
+        from(this.api.createProject(
+          {
+            name,
+            description: this.projectDescription().trim(),
+          },
+          { signal },
+        )),
+      )
+      .subscribe((project) => {
+        if (project === null) {
+          return;
+        }
+        const nextProjects = [
+          project,
+          ...this.projects().filter((item) => item.id !== project.id),
+        ];
+        this.projects.set(nextProjects);
+        this.projectListResource.set(nextProjects);
+        this.projectName.set('');
+        this.projectDescription.set('');
+        onCreated?.(project);
+      });
   }
 
   select(projectId: string): void {

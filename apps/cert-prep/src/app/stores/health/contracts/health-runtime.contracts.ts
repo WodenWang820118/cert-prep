@@ -7,6 +7,7 @@ import type {
   RuntimeRequirementRead,
 } from '../../../cert-prep-api';
 import type { LLMProviderSelectionRead as GeneratedLLMProviderSelectionRead } from '@cert-prep/api';
+import type { Observable } from 'rxjs';
 
 /**
  * Runtime job lifecycle normalized for UI state and polling decisions.
@@ -62,26 +63,26 @@ export interface HealthSnapshot {
  * Provider-selection API surface used by health.
  */
 export interface LLMProviderSelectionApiClient {
-  llmProviderSelection(): Promise<LLMProviderSelectionRead>;
+  llmProviderSelection(): Observable<LLMProviderSelectionRead>;
 }
 
 /**
  * Minimal model-download API surface used by the Angular health workflow.
  */
 export interface ModelDownloadApiClient {
-  startModelDownload(): Promise<ModelDownloadRead>;
-  getModelDownload(jobId: string): Promise<ModelDownloadRead>;
-  cancelModelDownload(jobId: string): Promise<ModelDownloadRead>;
+  startModelDownload(): Observable<ModelDownloadRead>;
+  getModelDownload(jobId: string): Observable<ModelDownloadRead>;
+  cancelModelDownload(jobId: string): Observable<ModelDownloadRead>;
 }
 
 /**
  * Minimal runtime-installation API surface used by the Angular health workflow.
  */
 export interface RuntimeInstallationApiClient {
-  runtimeRequirements(): Promise<{ items: RuntimeRequirementRead[] }>;
-  startRuntimeInstallation(kind: string): Promise<RuntimeInstallationRead>;
-  getRuntimeInstallation(jobId: string): Promise<RuntimeInstallationRead>;
-  cancelRuntimeInstallation(jobId: string): Promise<RuntimeInstallationRead>;
+  runtimeRequirements(): Observable<{ items: RuntimeRequirementRead[] }>;
+  startRuntimeInstallation(kind: string): Observable<RuntimeInstallationRead>;
+  getRuntimeInstallation(jobId: string): Observable<RuntimeInstallationRead>;
+  cancelRuntimeInstallation(jobId: string): Observable<RuntimeInstallationRead>;
 }
 
 /**

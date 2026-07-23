@@ -52,7 +52,7 @@ describe('SourceImageCropService', () => {
     expect(croppedImageFilename('', 'image/webp')).toBe('image-cropped.webp');
   });
 
-  it('draws the bounded source region and returns the encoded file', async () => {
+  it('draws the bounded source region and returns the encoded file', () => {
     const drawImage = vi.fn();
     const encodedBlob = new Blob(['encoded'], { type: 'image/jpeg' });
     const canvas = {
@@ -74,21 +74,22 @@ describe('SourceImageCropService', () => {
     } as HTMLImageElement;
     const service = new SourceImageCropService();
 
-    const cropped = await service.crop(
+    let cropped: File | undefined;
+    service.crop(
       new File(['source'], 'photo.jpeg', { type: 'image/jpeg' }),
       image,
       { x: 2, y: 1, width: 6, height: 4 },
-    );
+    ).subscribe((value) => cropped = value);
 
     expect(canvas.width).toBe(6);
     expect(canvas.height).toBe(4);
     expect(drawImage).toHaveBeenCalledWith(image, 2, 1, 6, 4, 0, 0, 6, 4);
-    expect(cropped.name).toBe('photo-cropped.jpg');
-    expect(cropped.type).toBe('image/jpeg');
-    expect(cropped.size).toBe(encodedBlob.size);
+    expect(cropped?.name).toBe('photo-cropped.jpg');
+    expect(cropped?.type).toBe('image/jpeg');
+    expect(cropped?.size).toBe(encodedBlob.size);
   });
 
-  it('rejects when the browser cannot encode the cropped canvas', async () => {
+  it('rejects when the browser cannot encode the cropped canvas', () => {
     const canvas = {
       width: 0,
       height: 0,
@@ -98,12 +99,12 @@ describe('SourceImageCropService', () => {
     vi.spyOn(document, 'createElement').mockReturnValue(canvas);
     const service = new SourceImageCropService();
 
-    await expect(
-      service.crop(
-        new File(['source'], 'capture.png', { type: 'image/png' }),
-        { naturalWidth: 4, naturalHeight: 4 } as HTMLImageElement,
-        { x: 0, y: 0, width: 2, height: 2 },
-      ),
-    ).rejects.toThrow('could not be encoded');
+    let error: unknown;
+    service.crop(
+      new File(['source'], 'capture.png', { type: 'image/png' }),
+      { naturalWidth: 4, naturalHeight: 4 } as HTMLImageElement,
+      { x: 0, y: 0, width: 2, height: 2 },
+    ).subscribe({ error: (reason: unknown) => error = reason });
+    expect(error).toEqual(expect.objectContaining({ message: expect.stringContaining('could not be encoded') }));
   });
 });

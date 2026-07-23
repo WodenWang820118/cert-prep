@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { of } from 'rxjs';
 import { provideRouter, Router } from '@angular/router';
 import { App } from './app';
 import { appRoutes } from './app.routes';
@@ -19,22 +20,22 @@ import { provideCertPrepHttpResourceClientFake } from './testing/cert-prep-http-
 describe('App', () => {
   let apiClient: ReturnType<typeof createApiClient>;
 
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
     apiClient = createApiClient();
 
-    await TestBed.configureTestingModule({
+    TestBed.configureTestingModule({
       imports: [App],
       providers: [
         { provide: CERT_PREP_API, useValue: apiClient },
         provideCertPrepHttpResourceClientFake(apiClient),
         provideRouter(appRoutes),
       ],
-    }).compileComponents();
+    });
   });
 
-  it('renders compact runtime status and route-backed page navigation', async () => {
+  it('renders compact runtime status and route-backed page navigation', () => {
     const fixture = TestBed.createComponent(App);
     const router = TestBed.inject(Router);
     fixture.detectChanges();
@@ -48,52 +49,60 @@ describe('App', () => {
     expect(linkByText(compiled, 'Dashboard')).not.toBeNull();
     expect(linkByText(compiled, 'Review')).not.toBeNull();
 
-    await router.navigateByUrl('/build');
+    router.navigateByUrl('/build');
     fixture.detectChanges();
-    await fixture.whenStable();
-    await vi.waitFor(() => {
-      fixture.detectChanges();
-      expect(compiled.textContent).toContain('Python 3.13.5');
-      expect(compiled.textContent).toContain('Reasoning model: reasoner:7b');
-      expect(compiled.textContent).toContain('fake');
-    });
-
-    expect(compiled.textContent).toContain('Source files');
-    expect(compiled.textContent).toContain('Mock Exam Items');
-    expect(compiled.textContent).not.toContain('Wrong Answers');
-
-    await router.navigateByUrl('/full-exam');
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    expect(compiled.textContent).toContain('Source Document');
-    expect(compiled.textContent).toContain('security.pdf');
-    expect(compiled.textContent).toContain('Start full exam');
-    expect(compiled.textContent).not.toContain('Source files');
-
-    await router.navigateByUrl('/random-quiz');
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    expect(compiled.textContent).toContain('Random Draw');
-    expect(compiled.textContent).toContain('Start random quiz');
-
-    await router.navigateByUrl('/dashboard');
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    expect(compiled.textContent).toContain('Project weakness analysis');
-    expect(compiled.textContent).not.toContain('Wrong Answers');
-
-    await router.navigateByUrl('/review');
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    expect(compiled.textContent).toContain('Wrong Answers');
+    TestBed.tick();
+    return vi
+      .waitFor(() => {
+        fixture.detectChanges();
+        expect(compiled.textContent).toContain('Python 3.13.5');
+        expect(compiled.textContent).toContain('Reasoning model: reasoner:7b');
+        expect(compiled.textContent).toContain('fake');
+        expect(compiled.textContent).toContain('Source files');
+        expect(compiled.textContent).toContain('Mock Exam Items');
+        expect(compiled.textContent).not.toContain('Wrong Answers');
+      })
+      .then(() => {
+        router.navigateByUrl('/full-exam');
+        fixture.detectChanges();
+        TestBed.tick();
+        return vi.waitFor(() => {
+          fixture.detectChanges();
+          expect(compiled.textContent).toContain('Source Document');
+          expect(compiled.textContent).toContain('security.pdf');
+          expect(compiled.textContent).toContain('Start full exam');
+          expect(compiled.textContent).not.toContain('Source files');
+        });
+      })
+      .then(() => {
+        router.navigateByUrl('/random-quiz');
+        fixture.detectChanges();
+        TestBed.tick();
+        return vi.waitFor(() => {
+          fixture.detectChanges();
+          expect(compiled.textContent).toContain('Random Draw');
+          expect(compiled.textContent).toContain('Start random quiz');
+        });
+      })
+      .then(() => {
+        router.navigateByUrl('/dashboard');
+        fixture.detectChanges();
+        TestBed.tick();
+        return vi.waitFor(() => {
+          fixture.detectChanges();
+          expect(compiled.textContent).toContain('Project weakness analysis');
+          expect(compiled.textContent).not.toContain('Wrong Answers');
+        });
+      })
+      .then(() => {
+        router.navigateByUrl('/review');
+        fixture.detectChanges();
+        TestBed.tick();
+        return vi.waitFor(() => {
+          fixture.detectChanges();
+          expect(compiled.textContent).toContain('Wrong Answers');
+        });
+      });
   });
 
   it('does not render routine operation success as a global strip', () => {
@@ -163,30 +172,29 @@ describe('App', () => {
     expect(compiled.querySelector('[role="dialog"]')).toBeNull();
   });
 
-  it('renders the runtime route before a project exists', async () => {
-    apiClient.listProjects.mockResolvedValueOnce({ items: [] });
+  it('renders the runtime route before a project exists', () => {
+    apiClient.listProjects.mockReturnValueOnce(of({ items: [] }));
     const fixture = TestBed.createComponent(App);
     const router = TestBed.inject(Router);
     const compiled = fixture.nativeElement as HTMLElement;
     fixture.detectChanges();
 
-    await router.navigateByUrl('/runtime');
+    router.navigateByUrl('/runtime');
     fixture.detectChanges();
-    await fixture.whenStable();
-
-    await vi.waitFor(() => {
+    TestBed.tick();
+    return vi.waitFor(() => {
       fixture.detectChanges();
       expect(compiled.textContent).toContain('Manage runtime');
       expect(compiled.textContent).toContain('Python backend');
+      expect(
+        compiled.querySelector('[aria-label="Close runtime manager"]'),
+      ).toBeNull();
+      expect(buttonByText(compiled, 'Cancel')).toBeNull();
+      expect(compiled.textContent).not.toContain('Select or create a project.');
     });
-    expect(
-      compiled.querySelector('[aria-label="Close runtime manager"]'),
-    ).toBeNull();
-    expect(buttonByText(compiled, 'Cancel')).toBeNull();
-    expect(compiled.textContent).not.toContain('Select or create a project.');
   });
 
-  it('opens the topbar runtime manager as an accessible modal dialog', async () => {
+  it('opens the topbar runtime manager as an accessible modal dialog', () => {
     const fixture = TestBed.createComponent(App);
     const compiled = fixture.nativeElement as HTMLElement;
     fixture.detectChanges();
@@ -197,31 +205,32 @@ describe('App', () => {
     manageRuntimeButton?.focus();
     manageRuntimeButton?.click();
     fixture.detectChanges();
-    await new Promise((resolve) => setTimeout(resolve));
-
-    const dialog = compiled.querySelector<HTMLElement>('[role="dialog"]');
-    expect(dialog).not.toBeNull();
-    expect(dialog?.getAttribute('aria-modal')).toBe('true');
-    expect(dialog?.getAttribute('aria-labelledby')).toBe(
-      'runtime-manager-modal-title',
-    );
-    expect(compiled.querySelector('#runtime-manager-modal-title')?.textContent)
-      .toContain('Manage runtime');
-    expect(document.activeElement).toBe(
-      dialog?.querySelector('[aria-label="Close runtime manager"]'),
-    );
-    expect(
-      dialog
-        ?.querySelector('.runtime-manager-backdrop')
-        ?.getAttribute('tabindex'),
-    ).toBe('-1');
-
-    dialog?.dispatchEvent(
-      new KeyboardEvent('keydown', { bubbles: true, key: 'Escape' }),
-    );
-    fixture.detectChanges();
-
-    expect(compiled.querySelector('[role="dialog"]')).toBeNull();
+    TestBed.tick();
+    return vi.waitFor(() => {
+      const dialog = compiled.querySelector<HTMLElement>('[role="dialog"]');
+      expect(dialog).not.toBeNull();
+      expect(dialog?.getAttribute('aria-modal')).toBe('true');
+      expect(dialog?.getAttribute('aria-labelledby')).toBe(
+        'runtime-manager-modal-title',
+      );
+      expect(compiled.querySelector('#runtime-manager-modal-title')?.textContent)
+        .toContain('Manage runtime');
+      expect(document.activeElement).toBe(
+        dialog?.querySelector('[aria-label="Close runtime manager"]'),
+      );
+      expect(
+        dialog
+          ?.querySelector('.runtime-manager-backdrop')
+          ?.getAttribute('tabindex'),
+      ).toBe('-1');
+    }).then(() => {
+      const dialog = compiled.querySelector<HTMLElement>('[role="dialog"]');
+      dialog?.dispatchEvent(
+        new KeyboardEvent('keydown', { bubbles: true, key: 'Escape' }),
+      );
+      fixture.detectChanges();
+      expect(compiled.querySelector('[role="dialog"]')).toBeNull();
+    });
   });
 });
 
@@ -241,20 +250,20 @@ function buttonByLabel(root: ParentNode, label: string): HTMLButtonElement | nul
 
 function createApiClient() {
   return {
-    health: vi.fn().mockResolvedValue({
+    health: vi.fn().mockReturnValue(of({
       ...backendHealth(),
-    }),
-    llmHealth: vi.fn().mockResolvedValue(availableLlmHealth()),
-    ocrHealth: vi.fn().mockResolvedValue(availableOcrHealth()),
-    runtimeRequirements: vi.fn().mockResolvedValue({ items: [] }),
+    })),
+    llmHealth: vi.fn().mockReturnValue(of(availableLlmHealth())),
+    ocrHealth: vi.fn().mockReturnValue(of(availableOcrHealth())),
+    runtimeRequirements: vi.fn().mockReturnValue(of({ items: [] })),
     startRuntimeInstallation: vi.fn(),
     getRuntimeInstallation: vi.fn(),
-    listProjects: vi.fn().mockResolvedValue({ items: [appProject] }),
-    listDocuments: vi.fn().mockResolvedValue({ items: [appDocument] }),
-    getDocument: vi.fn().mockResolvedValue(appDocument),
-    listDocumentChunks: vi.fn().mockResolvedValue({ items: [] }),
-    listQuestionDrafts: vi.fn().mockResolvedValue({ items: [editableAppQuestion] }),
-    listWrongAnswers: vi.fn().mockResolvedValue({ items: [] }),
-    summarizeWrongAnswers: vi.fn().mockResolvedValue(emptyWrongAnswerSummary()),
+    listProjects: vi.fn().mockReturnValue(of({ items: [appProject] })),
+    listDocuments: vi.fn().mockReturnValue(of({ items: [appDocument] })),
+    getDocument: vi.fn().mockReturnValue(of(appDocument)),
+    listDocumentChunks: vi.fn().mockReturnValue(of({ items: [] })),
+    listQuestionDrafts: vi.fn().mockReturnValue(of({ items: [editableAppQuestion] })),
+    listWrongAnswers: vi.fn().mockReturnValue(of({ items: [] })),
+    summarizeWrongAnswers: vi.fn().mockReturnValue(of(emptyWrongAnswerSummary())),
   };
 }

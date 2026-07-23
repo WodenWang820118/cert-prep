@@ -8,7 +8,7 @@ import {
   provideHttpClientTesting,
 } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { firstValueFrom } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { CertPrepRuntimeConfig } from './cert-prep-api';
 import { certPrepAuthInterceptor } from './cert-prep-auth.interceptor';
 
@@ -28,7 +28,7 @@ describe('certPrepAuthInterceptor', () => {
         {
           provide: CertPrepRuntimeConfig,
           useValue: {
-            getBackendConfig: vi.fn().mockResolvedValue(backendConfig),
+            getBackendConfig: vi.fn().mockReturnValue(of(backendConfig)),
           },
         },
       ],
@@ -39,16 +39,14 @@ describe('certPrepAuthInterceptor', () => {
 
   afterEach(() => httpTesting.verify({ ignoreCancelled: true }));
 
-  it('joins the configured backend URL and normalizes caller headers', async () => {
-    const responsePromise = firstValueFrom(
-      http.get('/projects', {
+  it('joins the configured backend URL and normalizes caller headers', () => {
+    let response: unknown;
+    http.get('/projects', {
         headers: {
           Authorization: 'Bearer caller-token',
           'X-Cert-Prep-Operation-Id': 'operation-1',
         },
-      }),
-    );
-    await Promise.resolve();
+      }).subscribe((value) => (response = value));
     const request = httpTesting.expectOne('http://127.0.0.1:9001/projects');
 
     expect(request.request.headers.getAll('Authorization')).toEqual([
@@ -59,28 +57,27 @@ describe('certPrepAuthInterceptor', () => {
     );
 
     request.flush({ items: [] });
-    await expect(responsePromise).resolves.toEqual({ items: [] });
+    expect(response).toEqual({ items: [] });
   });
 
-  it('does not rewrite absolute URLs', async () => {
-    const responsePromise = firstValueFrom(
-      http.get('https://example.test/health'),
-    );
+  it('does not rewrite absolute URLs', () => {
+    let response: unknown;
+    http.get('https://example.test/health').subscribe((value) => (response = value));
     const request = httpTesting.expectOne('https://example.test/health');
 
     expect(request.request.headers.has('Authorization')).toBe(false);
     request.flush({ status: 'ok' });
-    await expect(responsePromise).resolves.toEqual({ status: 'ok' });
+    expect(response).toEqual({ status: 'ok' });
   });
 
-  it('surfaces backend config failures without issuing a request', async () => {
+  it('surfaces backend config failures without issuing a request', () => {
     const getBackendConfig = TestBed.inject(CertPrepRuntimeConfig)
       .getBackendConfig as ReturnType<typeof vi.fn>;
-    getBackendConfig.mockRejectedValue(new Error('desktop unavailable'));
+    getBackendConfig.mockReturnValue(throwError(() => new Error('desktop unavailable')));
 
-    const responsePromise = firstValueFrom(http.get('/health'));
-    await Promise.resolve();
-    await expect(responsePromise).rejects.toThrow('desktop unavailable');
+    let error: unknown;
+    http.get('/health').subscribe({ error: (reason) => (error = reason) });
+    expect(error).toEqual(expect.objectContaining({ message: 'desktop unavailable' }));
     httpTesting.expectNone('http://127.0.0.1:9001/health');
   });
 });

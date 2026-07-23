@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { of } from 'rxjs';
 import { CERT_PREP_API } from '../../cert-prep-api';
 import type {
   DesktopRuntimeInstallation,
@@ -37,46 +38,46 @@ describe('RuntimeConsentDialogsComponent', () => {
     invoke: ReturnType<typeof vi.fn>;
   };
 
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.clearAllMocks();
 
     apiClient = {
       getModelDownload: vi.fn(),
       getRuntimeInstallation: vi.fn(),
-      health: vi.fn().mockResolvedValue(systemHealth()),
-      llmHealth: vi.fn().mockResolvedValue(missingModelHealth()),
-      llmProviderSelection: vi.fn().mockResolvedValue(
-        providerSelection({
+      health: vi.fn().mockReturnValue(of(systemHealth())),
+      llmHealth: vi.fn().mockReturnValue(of(missingModelHealth())),
+      llmProviderSelection: vi.fn().mockReturnValue(
+        of(providerSelection({
           selected_provider: 'ollama',
           effective_provider: 'ollama',
           selection_reason: 'Auto-selected Ollama for this device.',
           runtime_requirement_kind: 'ollama',
           model_requirement_kind: 'ollama_model',
-        }),
+        })),
       ),
-      ocrHealth: vi.fn().mockResolvedValue(ocrHealth()),
-      runtimeRequirements: vi.fn().mockResolvedValue({ items: [] }),
-      startModelDownload: vi.fn().mockResolvedValue(
-        modelDownload({
+      ocrHealth: vi.fn().mockReturnValue(of(ocrHealth())),
+      runtimeRequirements: vi.fn().mockReturnValue(of({ items: [] })),
+      startModelDownload: vi.fn().mockReturnValue(
+        of(modelDownload({
           status: 'succeeded',
           detail: 'model download complete',
           completed: 100,
-        }),
+        })),
       ),
-      startRuntimeInstallation: vi.fn().mockResolvedValue(
-        runtimeInstallation({
+      startRuntimeInstallation: vi.fn().mockReturnValue(
+        of(runtimeInstallation({
           status: 'succeeded',
           detail: 'runtime installation complete',
           completed: 100,
-        }),
+        })),
       ),
     };
     desktopRuntimeBridge = {
       isDesktop: vi.fn().mockReturnValue(true),
-      invoke: vi.fn().mockResolvedValue(pythonRuntimeInstallation()),
+      invoke: vi.fn().mockReturnValue(of(pythonRuntimeInstallation())),
     };
 
-    await TestBed.configureTestingModule({
+    TestBed.configureTestingModule({
       imports: [RuntimeConsentDialogsComponent],
       providers: [
         { provide: CERT_PREP_API, useValue: apiClient },
@@ -85,16 +86,16 @@ describe('RuntimeConsentDialogsComponent', () => {
           useValue: desktopRuntimeBridge,
         },
       ],
-    }).compileComponents();
+    });
   });
 
-  it('binds the Python runtime consent dialog and install actions', async () => {
+  it('binds the Python runtime consent dialog and install actions', () => {
     const fixture = TestBed.createComponent(RuntimeConsentDialogsComponent);
     const desktopRuntime = TestBed.inject(DesktopRuntimeStore);
     desktopRuntime.status.set(missingPythonRuntimeStatus());
     desktopRuntime.openInstallConsent();
     fixture.detectChanges();
-    await fixture.whenStable();
+    TestBed.tick();
 
     expect(desktopRuntime.installConsentVisible()).toBe(true);
     expect(document.body.textContent).toContain(
@@ -103,18 +104,18 @@ describe('RuntimeConsentDialogsComponent', () => {
 
     buttonByText(document.body, 'Cancel')?.click();
     fixture.detectChanges();
-    await fixture.whenStable();
+    TestBed.tick();
 
     expect(desktopRuntime.installConsentVisible()).toBe(false);
     expect(desktopRuntimeBridge.invoke).not.toHaveBeenCalled();
 
     desktopRuntime.openInstallConsent();
     fixture.detectChanges();
-    await fixture.whenStable();
+    TestBed.tick();
 
     buttonByText(document.body, 'Install')?.click();
     fixture.detectChanges();
-    await fixture.whenStable();
+    TestBed.tick();
 
     expect(desktopRuntimeBridge.invoke).toHaveBeenCalledWith(
       'start_python_runtime_installation',
@@ -122,13 +123,13 @@ describe('RuntimeConsentDialogsComponent', () => {
     expect(desktopRuntime.installConsentVisible()).toBe(false);
   });
 
-  it('binds the model download consent dialog and download actions', async () => {
+  it('binds the model download consent dialog and download actions', () => {
     const fixture = TestBed.createComponent(RuntimeConsentDialogsComponent);
     const health = TestBed.inject(HealthStore);
     health.llmHealth.set(missingModelHealth());
     health.openModelDownloadConsent();
     fixture.detectChanges();
-    await fixture.whenStable();
+    TestBed.tick();
 
     expect(health.modelDownloadConsentVisible()).toBe(true);
     expect(document.body.textContent).toContain(
@@ -137,26 +138,26 @@ describe('RuntimeConsentDialogsComponent', () => {
 
     buttonByText(document.body, 'Cancel')?.click();
     fixture.detectChanges();
-    await fixture.whenStable();
+    TestBed.tick();
 
     expect(health.modelDownloadConsentVisible()).toBe(false);
     expect(apiClient.startModelDownload).not.toHaveBeenCalled();
 
     health.openModelDownloadConsent();
     fixture.detectChanges();
-    await fixture.whenStable();
+    TestBed.tick();
 
     buttonByText(document.body, 'Download')?.click();
     fixture.detectChanges();
-    await fixture.whenStable();
+    TestBed.tick();
 
-    await vi.waitFor(() => {
+    return vi.waitFor(() => {
       expect(apiClient.startModelDownload).toHaveBeenCalledTimes(1);
       expect(health.modelDownloadConsentVisible()).toBe(false);
     });
   });
 
-  it('binds the runtime install consent dialog and install actions', async () => {
+  it('binds the runtime install consent dialog and install actions', () => {
     const fixture = TestBed.createComponent(RuntimeConsentDialogsComponent);
     const health = TestBed.inject(HealthStore);
     health.llmHealth.set({
@@ -166,7 +167,7 @@ describe('RuntimeConsentDialogsComponent', () => {
     });
     health.openOllamaInstallConsent();
     fixture.detectChanges();
-    await fixture.whenStable();
+    TestBed.tick();
 
     expect(health.runtimeInstallConsentVisible()).toBe(true);
     expect(document.body.textContent).toContain(
@@ -175,26 +176,26 @@ describe('RuntimeConsentDialogsComponent', () => {
 
     buttonByText(document.body, 'Cancel')?.click();
     fixture.detectChanges();
-    await fixture.whenStable();
+    TestBed.tick();
 
     expect(health.runtimeInstallConsentVisible()).toBe(false);
     expect(apiClient.startRuntimeInstallation).not.toHaveBeenCalled();
 
     health.openOllamaInstallConsent();
     fixture.detectChanges();
-    await fixture.whenStable();
+    TestBed.tick();
 
     buttonByText(document.body, 'Install')?.click();
     fixture.detectChanges();
-    await fixture.whenStable();
+    TestBed.tick();
 
-    await vi.waitFor(() => {
+    return vi.waitFor(() => {
       expect(apiClient.startRuntimeInstallation).toHaveBeenCalledWith('ollama');
       expect(health.runtimeInstallConsentVisible()).toBe(false);
     });
   });
 
-  it('describes OCR runtime installation for scanned PDFs and images', async () => {
+  it('describes OCR runtime installation for scanned PDFs and images', () => {
     const fixture = TestBed.createComponent(RuntimeConsentDialogsComponent);
     const health = TestBed.inject(HealthStore);
     health.ocrHealth.set({
@@ -209,14 +210,14 @@ describe('RuntimeConsentDialogsComponent', () => {
     health.openOcrRuntimeInstallConsent();
 
     fixture.detectChanges();
-    await fixture.whenStable();
+    TestBed.tick();
 
     expect(document.body.textContent).toContain(
       'Install the WindowsML OCR runtime for scanned PDFs and images?',
     );
   });
 
-  it('describes both consent-gated Whisper models and starts their download', async () => {
+  it('describes both consent-gated Whisper models and starts their download', () => {
     const fixture = TestBed.createComponent(RuntimeConsentDialogsComponent);
     const health = TestBed.inject(HealthStore);
     health.runtimeRequirements.set([
@@ -229,17 +230,17 @@ describe('RuntimeConsentDialogsComponent', () => {
         version: 'large-v3-turbo + small',
       },
     ]);
-    apiClient.startRuntimeInstallation.mockResolvedValue(
-      runtimeInstallation({
+    apiClient.startRuntimeInstallation.mockReturnValue(
+      of(runtimeInstallation({
         kind: 'whisper_models',
         provider: 'faster-whisper',
         model: 'large-v3-turbo + small',
-      }),
+      })),
     );
 
     health.openWhisperModelsConsent();
     fixture.detectChanges();
-    await fixture.whenStable();
+    TestBed.tick();
 
     expect(document.body.textContent).toContain(
       'Download Whisper large-v3-turbo and the CPU small fallback',
@@ -250,7 +251,7 @@ describe('RuntimeConsentDialogsComponent', () => {
 
     buttonByText(document.body, 'Download')?.click();
     fixture.detectChanges();
-    await fixture.whenStable();
+    TestBed.tick();
 
     expect(apiClient.startRuntimeInstallation).toHaveBeenCalledWith(
       'whisper_models',
@@ -269,7 +270,6 @@ function missingPythonRuntimeStatus(): DesktopRuntimeStatus {
     unavailableReason: 'python_runtime_missing',
   };
 }
-
 function pythonRuntimeInstallation(): DesktopRuntimeInstallation {
   return {
     id: 'python-runtime-1',

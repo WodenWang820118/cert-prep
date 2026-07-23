@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { of } from 'rxjs';
 import {
   DocumentRead,
   CERT_PREP_API,
@@ -55,11 +56,11 @@ describe('PracticeStore session modes', () => {
     attempts: [],
   };
   const apiClient = {
-    createPracticeSession: vi.fn().mockResolvedValue(session),
-    getPracticeSession: vi.fn().mockResolvedValue(session),
-    listQuestionDrafts: vi.fn().mockResolvedValue({ items: questions }),
-    listActivePracticeSessions: vi.fn().mockResolvedValue({ items: [] }),
-    abandonPracticeSession: vi.fn(),
+    createPracticeSession: vi.fn().mockReturnValue(of(session)),
+    getPracticeSession: vi.fn().mockReturnValue(of(session)),
+    listQuestionDrafts: vi.fn().mockReturnValue(of({ items: questions })),
+    listActivePracticeSessions: vi.fn().mockReturnValue(of({ items: [] })),
+    abandonPracticeSession: vi.fn().mockReturnValue(of(session)),
   };
 
   beforeEach(() => {
@@ -79,67 +80,72 @@ describe('PracticeStore session modes', () => {
     TestBed.inject(DraftReviewStore).drafts.set(questions);
   });
 
-  it('sends a full-document payload for the selected parsed document', async () => {
+  it('sends a full-document payload for the selected parsed document', () => {
     const store = TestBed.inject(PracticeStore);
     store.setSelectedDocumentId(documents[1].id);
 
     expect(store.selectedDocumentQuestionCount()).toBe(2);
 
-    await store.createPracticeSession('full_document');
+    store.createPracticeSession('full_document');
+    TestBed.tick();
 
     expect(apiClient.createPracticeSession).toHaveBeenCalledWith(project.id, {
       mode: 'full_document',
       document_id: documents[1].id,
       question_count: 2,
-    });
+    }, { signal: expect.any(AbortSignal) });
     expect(apiClient.getPracticeSession).toHaveBeenCalledWith(
       project.id,
       session.id,
+      { signal: expect.any(AbortSignal) },
     );
   });
 
-  it('defaults full-document sessions to the active document when playable', async () => {
+  it('defaults full-document sessions to the active document when playable', () => {
     const store = TestBed.inject(PracticeStore);
     TestBed.inject(SourceImportStore).setActiveDocumentId(documents[1].id);
 
-    await store.createPracticeSession('full_document');
+    store.createPracticeSession('full_document');
+    TestBed.tick();
 
     expect(apiClient.createPracticeSession).toHaveBeenCalledWith(project.id, {
       mode: 'full_document',
       document_id: documents[1].id,
       question_count: 2,
-    });
+    }, { signal: expect.any(AbortSignal) });
   });
 
-  it('sends a random-draw payload capped to playable question count', async () => {
+  it('sends a random-draw payload capped to playable question count', () => {
     const store = TestBed.inject(PracticeStore);
     store.setSessionQuestionCount(10);
 
     expect(store.questionCount()).toBe(3);
     expect(store.effectiveRandomQuestionCount()).toBe(3);
 
-    await store.createPracticeSession('random_draw');
+    store.createPracticeSession('random_draw');
+    TestBed.tick();
 
     expect(apiClient.createPracticeSession).toHaveBeenCalledWith(project.id, {
       mode: 'random_draw',
       question_count: 3,
-    });
+    }, { signal: expect.any(AbortSignal) });
   });
 
-  it('excludes non-playable drafts from practice availability', async () => {
+  it('excludes non-playable drafts from practice availability', () => {
     const store = TestBed.inject(PracticeStore);
     store.setSelectedDocumentId(documents[1].id);
 
     expect(store.questionCount()).toBe(3);
     expect(store.selectedDocumentQuestionCount()).toBe(2);
 
-    await store.createPracticeSession('full_document');
+    store.createPracticeSession('full_document');
+    TestBed.tick();
 
     expect(apiClient.createPracticeSession).toHaveBeenCalledWith(project.id, {
       mode: 'full_document',
       document_id: documents[1].id,
       question_count: 2,
-    });
+    }, { signal: expect.any(AbortSignal) });
   });
 
   it('does not surface a non-approved in-session draft as active', () => {
@@ -199,22 +205,25 @@ describe('PracticeStore session modes', () => {
     });
   });
 
-  it('creates review retry sessions for wrong attempts', async () => {
+  it('creates review retry sessions for wrong attempts', () => {
     const store = TestBed.inject(PracticeStore);
+    let created = false;
 
-    await expect(store.createReviewRetrySession(['attempt-1'])).resolves.toBe(
-      true,
-    );
+    store.createReviewRetrySession(['attempt-1']).subscribe((result) => {
+      created = result;
+    });
+    TestBed.tick();
+    expect(created).toBe(true);
 
     expect(apiClient.createPracticeSession).toHaveBeenCalledWith(project.id, {
       mode: 'review_retry',
       wrong_attempt_ids: ['attempt-1'],
       question_count: 1,
-    });
+    }, { signal: expect.any(AbortSignal) });
     expect(store.practiceSession()).toEqual(session);
   });
 
-  it('blocks a new random session while review retry is still active', async () => {
+  it('blocks a new random session while review retry is still active', () => {
     const store = TestBed.inject(PracticeStore);
     store.practiceSession.set({
       ...session,
@@ -238,12 +247,13 @@ describe('PracticeStore session modes', () => {
       'Finish the active review retry before starting a new practice session.',
     );
 
-    await store.createPracticeSession('random_draw');
+    store.createPracticeSession('random_draw');
+    TestBed.tick();
 
     expect(apiClient.createPracticeSession).not.toHaveBeenCalled();
   });
 
-  it('requires an explicit resume and rebuilds progress from ordered attempts', async () => {
+  it('requires an explicit resume and rebuilds progress from ordered attempts', () => {
     const store = TestBed.inject(PracticeStore);
     const resumable = {
       id: 'session-resume',
@@ -262,10 +272,10 @@ describe('PracticeStore session modes', () => {
       is_correct: true,
       created_at: '2026-07-11T00:01:00Z',
     };
-    apiClient.listActivePracticeSessions.mockResolvedValue({
+    apiClient.listActivePracticeSessions.mockReturnValue(of({
       items: [resumable],
-    });
-    apiClient.getPracticeSession.mockResolvedValue({
+    }));
+    apiClient.getPracticeSession.mockReturnValue(of({
       ...session,
       id: resumable.id,
       question_ids: ['draft-1', 'draft-2'],
@@ -275,24 +285,28 @@ describe('PracticeStore session modes', () => {
       ],
       question_count: 2,
       attempts: [firstAttempt],
-    });
+    }));
 
-    await store.loadActiveSession(project.id);
-    await vi.waitFor(() => expect(store.resumableSession()).toEqual(resumable));
+    store.loadActiveSession(project.id);
+    TestBed.tick();
 
     expect(store.resumableSession()).toEqual(resumable);
     expect(store.practiceSession()).toBeNull();
     expect(store.canCreatePracticeSession('random_draw')).toBe(false);
 
-    await store.resumeActiveSession();
+    store.resumeActiveSession();
+    TestBed.tick();
+    TestBed.tick();
+    TestBed.flushEffects();
 
+    expect(store.practiceSession()?.id).toBe(resumable.id);
     expect(store.resumableSession()).toBeNull();
     expect(store.answeredQuestionIds()).toEqual(new Set(['draft-1']));
     expect(store.lastAttempt()).toEqual(firstAttempt);
     expect(store.activeQuestion()?.id).toBe('draft-2');
   });
 
-  it('requires two steps before abandoning a resumable session', async () => {
+  it('requires two steps before abandoning a resumable session', () => {
     const store = TestBed.inject(PracticeStore);
     const resumable = {
       id: 'session-abandon',
@@ -303,23 +317,25 @@ describe('PracticeStore session modes', () => {
       created_at: '2026-07-11T00:00:00Z',
     };
     store.resumableSession.set(resumable);
-    apiClient.abandonPracticeSession.mockResolvedValue({
+    apiClient.abandonPracticeSession.mockReturnValue(of({
       ...session,
       id: resumable.id,
       status: 'abandoned',
       abandoned_at: '2026-07-11T00:02:00Z',
-    });
+    }));
 
-    await store.confirmAbandonActiveSession();
+    store.confirmAbandonActiveSession();
     expect(apiClient.abandonPracticeSession).not.toHaveBeenCalled();
 
     store.requestAbandonActiveSession();
     expect(store.abandonConfirmationPending()).toBe(true);
-    await store.confirmAbandonActiveSession();
+    store.confirmAbandonActiveSession();
+    TestBed.tick();
 
     expect(apiClient.abandonPracticeSession).toHaveBeenCalledWith(
       project.id,
       resumable.id,
+      { signal: expect.any(AbortSignal) },
     );
     expect(store.resumableSession()).toBeNull();
   });

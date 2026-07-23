@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { of } from 'rxjs';
 import { CERT_PREP_API } from '../../cert-prep-api';
 import { OperationStore } from '../operation.store';
 import { DraftReviewStore } from './draft-review.store';
@@ -46,20 +47,21 @@ describe('DraftReviewStore generation', () => {
     ]);
     projects.select('project-1');
 
-    apiClient.getDocument.mockResolvedValue(documentRead());
-    apiClient.listDocumentChunks.mockResolvedValue({ items: [] });
-    apiClient.listDocumentDraftJobs.mockResolvedValue({ items: [] });
+    apiClient.getDocument.mockReturnValue(of(documentRead()));
+    apiClient.listDocumentChunks.mockReturnValue(of({ items: [] }));
+    apiClient.listDocumentDraftJobs.mockReturnValue(of({ items: [] }));
   });
 
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  it('uses source-file guidance when generation has no active document', async () => {
+  it('uses source-file guidance when generation has no active document', () => {
     const store = TestBed.inject(DraftReviewStore);
     const operations = TestBed.inject(OperationStore);
 
-    await store.generateDrafts();
+    store.generateDrafts();
+    TestBed.tick();
 
     expect(operations.error()).toBe(
       'Upload a source file with extractable text before generating questions.',
@@ -67,15 +69,15 @@ describe('DraftReviewStore generation', () => {
     expect(apiClient.startManualDraftOperation).not.toHaveBeenCalled();
   });
 
-  it('sends deterministic strategy when generating deterministic questions', async () => {
+  it('sends deterministic strategy when generating deterministic questions', () => {
     const store = TestBed.inject(DraftReviewStore);
     const sourceImport = TestBed.inject(SourceImportStore);
     const draft = questionDraft();
     activateDocument(sourceImport, documentRead());
-    apiClient.startManualDraftOperation.mockResolvedValue(
+    apiClient.startManualDraftOperation.mockReturnValue(of(
       manualDraftOperation({ strategy: 'deterministic_only' }),
-    );
-    apiClient.getManualDraftOperation.mockResolvedValue(
+    ));
+    apiClient.getManualDraftOperation.mockReturnValue(of(
       manualDraftOperation({
         strategy: 'deterministic_only',
         status: 'succeeded',
@@ -83,17 +85,20 @@ describe('DraftReviewStore generation', () => {
         cancellable: false,
         generated_count: 1,
       }),
-    );
-    apiClient.listQuestionDrafts.mockResolvedValue({ items: [draft] });
+    ));
+    apiClient.listQuestionDrafts.mockReturnValue(of({ items: [draft] }));
 
-    await store.generateDrafts('deterministic_only');
+    store.generateDrafts('deterministic_only');
+    TestBed.tick();
 
     expect(apiClient.startManualDraftOperation).toHaveBeenCalledWith(
       'project-1',
       'document-1',
       { limit: 3, strategy: 'deterministic_only' },
+      { signal: expect.any(AbortSignal) },
     );
-    await vi.advanceTimersByTimeAsync(1500);
+    vi.advanceTimersByTime(1500);
+    TestBed.tick();
     expect(apiClient.getManualDraftOperation).toHaveBeenCalledWith(
       'project-1',
       'document-1',
@@ -105,16 +110,16 @@ describe('DraftReviewStore generation', () => {
     );
   });
 
-  it('sends hybrid reasoning strategy when generating questions', async () => {
+  it('sends hybrid reasoning strategy when generating questions', () => {
     const store = TestBed.inject(DraftReviewStore);
     const sourceImport = TestBed.inject(SourceImportStore);
     const draft = questionDraft();
     store.setQuestionLimit(8);
     activateDocument(sourceImport, documentRead());
-    apiClient.startManualDraftOperation.mockResolvedValue(
+    apiClient.startManualDraftOperation.mockReturnValue(of(
       manualDraftOperation({ limit: 8 }),
-    );
-    apiClient.getManualDraftOperation.mockResolvedValue(
+    ));
+    apiClient.getManualDraftOperation.mockReturnValue(of(
       manualDraftOperation({
         limit: 8,
         status: 'succeeded',
@@ -122,46 +127,51 @@ describe('DraftReviewStore generation', () => {
         cancellable: false,
         generated_count: 1,
       }),
-    );
-    apiClient.listQuestionDrafts.mockResolvedValue({ items: [draft] });
+    ));
+    apiClient.listQuestionDrafts.mockReturnValue(of({ items: [draft] }));
 
-    await store.generateDrafts('hybrid_reasoning');
+    store.generateDrafts('hybrid_reasoning');
+    TestBed.tick();
 
     expect(apiClient.startManualDraftOperation).toHaveBeenCalledWith(
       'project-1',
       'document-1',
       { limit: 8, strategy: 'hybrid_reasoning' },
+      { signal: expect.any(AbortSignal) },
     );
-    await vi.advanceTimersByTimeAsync(1500);
+    vi.advanceTimersByTime(1500);
+    TestBed.tick();
     expect(apiClient.listDocumentDraftJobs).toHaveBeenCalledWith(
       'project-1',
       'document-1',
     );
   });
 
-  it('requests cancellation and keeps polling until the manual operation is terminal', async () => {
+  it('requests cancellation and keeps polling until the manual operation is terminal', () => {
     const store = TestBed.inject(DraftReviewStore);
     const sourceImport = TestBed.inject(SourceImportStore);
     activateDocument(sourceImport, documentRead());
-    apiClient.startManualDraftOperation.mockResolvedValue(
+    apiClient.startManualDraftOperation.mockReturnValue(of(
       manualDraftOperation(),
-    );
-    apiClient.cancelManualDraftOperation.mockResolvedValue(
+    ));
+    apiClient.cancelManualDraftOperation.mockReturnValue(of(
       manualDraftOperation({
         status: 'cancel_requested',
         phase: 'canceling',
       }),
-    );
-    apiClient.getManualDraftOperation.mockResolvedValue(
+    ));
+    apiClient.getManualDraftOperation.mockReturnValue(of(
       manualDraftOperation({
         status: 'canceled',
         phase: 'canceled',
         cancellable: false,
       }),
-    );
+    ));
 
-    await store.generateDrafts();
-    await store.cancelManualDraftOperation();
+    store.generateDrafts();
+    TestBed.tick();
+    store.cancelManualDraftOperation();
+    TestBed.tick();
 
     expect(apiClient.cancelManualDraftOperation).toHaveBeenCalledWith(
       'project-1',
@@ -170,7 +180,8 @@ describe('DraftReviewStore generation', () => {
     );
     expect(store.manualDraftOperation()?.status).toBe('cancel_requested');
 
-    await vi.advanceTimersByTimeAsync(1500);
+    vi.advanceTimersByTime(1500);
+    TestBed.tick();
     expect(store.manualDraftOperation()?.status).toBe('canceled');
   });
 });

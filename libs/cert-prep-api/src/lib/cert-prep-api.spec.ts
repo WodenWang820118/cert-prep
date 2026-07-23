@@ -3,25 +3,26 @@ import {
   type CertPrepHttpRequest,
   type CertPrepTransport,
 } from './cert-prep-api.generated';
+import { Observable, of } from 'rxjs';
 
 class RecordingTransport implements CertPrepTransport {
   readonly requests: CertPrepHttpRequest[] = [];
 
-  async request<TResponse>(request: CertPrepHttpRequest): Promise<TResponse> {
+  request<TResponse>(request: CertPrepHttpRequest): Observable<TResponse> {
     this.requests.push(request);
-    return undefined as TResponse;
+    return of(undefined as TResponse);
   }
 }
 
 describe('createCertPrepGeneratedClient', () => {
-  it('sends typed project creation requests through the transport', async () => {
+  it('sends typed project creation requests through the transport', () => {
     const transport = new RecordingTransport();
     const client = createCertPrepGeneratedClient(transport);
 
-    await client.createProject({
+    client.createProject({
       name: 'Security Study',
       description: 'Local cert prep',
-    });
+    }).subscribe();
 
     expect(transport.requests).toEqual([
       {
@@ -35,11 +36,11 @@ describe('createCertPrepGeneratedClient', () => {
     ]);
   });
 
-  it('encodes route parameters before building request paths', async () => {
+  it('encodes route parameters before building request paths', () => {
     const transport = new RecordingTransport();
     const client = createCertPrepGeneratedClient(transport);
 
-    await client.getProject('project/with space');
+    client.getProject('project/with space').subscribe();
 
     expect(transport.requests).toEqual([
       {
@@ -49,15 +50,15 @@ describe('createCertPrepGeneratedClient', () => {
     ]);
   });
 
-  it('forwards operation headers and abort signals without changing route types', async () => {
+  it('forwards operation headers and abort signals without changing route types', () => {
     const transport = new RecordingTransport();
     const client = createCertPrepGeneratedClient(transport);
     const controller = new AbortController();
 
-    await client.getProject('project-id', {
+    client.getProject('project-id', {
       headers: { 'X-Cert-Prep-Operation-Id': 'operation-id' },
       signal: controller.signal,
-    });
+    }).subscribe();
 
     expect(transport.requests).toEqual([
       {

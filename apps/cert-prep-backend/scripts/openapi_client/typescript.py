@@ -25,6 +25,8 @@ def render_typescript(openapi: dict[str, Any]) -> str:
         "// Source of truth: FastAPI OpenAPI schema from cert_prep_backend.api.app:create_app().",
         "// Do not edit by hand.",
         "",
+        "import type { Observable } from 'rxjs';",
+        "",
         "export interface Components {",
         "  schemas: {",
     ]
@@ -54,7 +56,7 @@ def render_typescript(openapi: dict[str, Any]) -> str:
             "}",
             "",
             "export interface CertPrepTransport {",
-            "  request<TResponse>(request: CertPrepHttpRequest): Promise<TResponse>;",
+            "  request<TResponse>(request: CertPrepHttpRequest): Observable<TResponse>;",
             "}",
             "",
             "export interface CertPrepGeneratedClient {",
@@ -233,7 +235,7 @@ class ClientOperation:
         )
 
     def signature(self) -> str:
-        return f"{self.name}({self.arguments()}): Promise<{self.response_type}>"
+        return f"{self.name}({self.arguments()}): Observable<{self.response_type}>"
 
     def request_factory_signature(self) -> str:
         return f"{self.name}({self.arguments()}): CertPrepHttpRequest"

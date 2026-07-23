@@ -1,4 +1,26 @@
-import { Injectable, signal } from '@angular/core';
+import {
+  effect,
+  inject,
+  Injectable,
+  Injector,
+  runInInjectionContext,
+  signal,
+} from '@angular/core';
+import { rxResource } from '@angular/core/rxjs-interop';
+import {
+  catchError,
+  defer,
+  map,
+  Observable,
+  of,
+  ReplaySubject,
+  share,
+  Subscription,
+} from 'rxjs';
+
+type CommandResult<T> =
+  | { readonly kind: 'success'; readonly value: T }
+  | { readonly kind: 'error'; readonly error: unknown };
 
 type BusyAction =
   | 'startup'
@@ -19,6 +41,7 @@ type BusyAction =
 
 @Injectable({ providedIn: 'root' })
 export class OperationStore {
+  private readonly injector = inject(Injector);
   private readonly runEpochs = new Map<BusyAction, number>();
   private readonly activeActionCounts = signal<
     ReadonlyMap<BusyAction, number>
@@ -28,38 +51,140 @@ export class OperationStore {
   readonly error = signal<string | null>(null);
   readonly errorCode = signal<string | null>(null);
 
-  async run<T>(
+  run<T>(
     action: BusyAction,
     successMessage: string | ((result: T) => string),
-    task: () => Promise<T>,
+    task: (signal: AbortSignal) => Observable<T>,
     shouldApply: () => boolean = () => true,
-  ): Promise<T | null> {
-    const epoch = (this.runEpochs.get(action) ?? 0) + 1;
-    this.runEpochs.set(action, epoch);
-    const isCurrent = () =>
-      epoch === this.runEpochs.get(action) && shouldApply();
-    this.beginAction(action);
-    this.error.set(null);
-    this.errorCode.set(null);
-    try {
-      const result = await task();
-      if (isCurrent()) {
-        this.status.set(
-          typeof successMessage === 'function'
-            ? successMessage(result)
-            : successMessage,
+  ): Observable<T | null> {
+    return new Observable<T | null>((subscriber) => {
+      const epoch = (this.runEpochs.get(action) ?? 0) + 1;
+      this.runEpochs.set(action, epoch);
+      const isCurrent = () =>
+        epoch === this.runEpochs.get(action) && shouldApply();
+      this.beginAction(action);
+      this.error.set(null);
+      this.errorCode.set(null);
+
+      let closed = false;
+      let cleaned = false;
+      let taskSubscription: Subscription | undefined;
+      let taskController: AbortController | undefined;
+      const release = (): void => {
+        if (closed) {
+          return;
+        }
+        closed = true;
+        this.endAction(action);
+      };
+      const cleanup = (): void => {
+        if (cleaned) {
+          return;
+        }
+        cleaned = true;
+        if (taskController !== undefined && !taskController.signal.aborted) {
+          taskController.abort(new DOMException('The command was canceled.', 'AbortError'));
+        }
+        taskSubscription?.unsubscribe();
+        resourceEffect.destroy();
+        resource.destroy();
+      };
+      const finish = (): void => {
+        release();
+        cleanup();
+      };
+
+      const resource = runInInjectionContext(this.injector, () => {
+        const started = signal(false);
+        const controller = new AbortController();
+        taskController = controller;
+        const task$ = defer(() => task(controller.signal)).pipe(
+          share({
+            connector: () => new ReplaySubject<T>(1),
+            resetOnError: false,
+            resetOnComplete: false,
+            resetOnRefCountZero: false,
+          }),
         );
-      }
-      return result;
-    } catch (error) {
-      if (isCurrent()) {
-        this.error.set(this.getErrorMessage(error));
-        this.errorCode.set(this.getErrorCode(error));
-      }
-      return null;
-    } finally {
-      this.endAction(action);
-    }
+        const command = rxResource<CommandResult<T> | null, boolean | undefined>({
+          params: () => (started() ? true : undefined),
+          defaultValue: null,
+          stream: ({ abortSignal }) => {
+            abortSignal.addEventListener(
+              'abort',
+              () => {
+                if (!controller.signal.aborted) {
+                  controller.abort(abortSignal.reason);
+                }
+              },
+              { once: true },
+            );
+            return task$.pipe(
+              map((value) => ({ kind: 'success', value }) as const),
+              catchError((error: unknown) =>
+                of({ kind: 'error', error } as const),
+              ),
+            );
+          },
+        });
+        taskSubscription = task$.subscribe({
+          next: (value) => command?.set({ kind: 'success', value }),
+          error: (error: unknown) => command?.set({ kind: 'error', error }),
+        });
+        started.set(true);
+        return command;
+      });
+
+      const resourceEffect = runInInjectionContext(this.injector, () =>
+        effect(() => {
+          if (closed) {
+            return;
+          }
+          const status = resource.status();
+          if (status === 'resolved' || status === 'local') {
+            const snapshot = resource.value();
+            if (snapshot === null) {
+              return;
+            }
+            if (snapshot.kind === 'error') {
+              if (isCurrent()) {
+                this.error.set(this.getErrorMessage(snapshot.error));
+                this.errorCode.set(this.getErrorCode(snapshot.error));
+              }
+              release();
+              subscriber.next(null);
+              subscriber.complete();
+              cleanup();
+              return;
+            }
+            const result = snapshot.value;
+            if (isCurrent()) {
+              this.status.set(
+                typeof successMessage === 'function'
+                  ? successMessage(result)
+                  : successMessage,
+              );
+            }
+            release();
+            subscriber.next(result);
+            subscriber.complete();
+            cleanup();
+          } else if (status === 'error') {
+            const error = resource.error();
+            if (isCurrent()) {
+              this.error.set(this.getErrorMessage(error));
+              this.errorCode.set(this.getErrorCode(error));
+            }
+            release();
+            subscriber.next(null);
+            subscriber.complete();
+            cleanup();
+          }
+        }),
+      );
+
+      return finish;
+    });
   }
 
   fail(message: string): void {

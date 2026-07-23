@@ -1,4 +1,5 @@
 import type { DocumentOperationRead } from '../../cert-prep-api';
+import { Observable, Subscription, catchError, defer, of, tap, timer } from 'rxjs';
 import { isExpectedDocumentOperation } from './document-operation-snapshot';
 
 const RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
@@ -7,11 +8,11 @@ export interface DetachedOperationTombstoneHooks {
   readonly getOperation: (
     projectId: string,
     operationId: string,
-  ) => Promise<DocumentOperationRead>;
+  ) => Observable<DocumentOperationRead>;
   readonly cancelOperation: (
     projectId: string,
     operationId: string,
-  ) => Promise<DocumentOperationRead>;
+  ) => Observable<DocumentOperationRead>;
 }
 
 interface DetachedTombstone {
@@ -19,7 +20,7 @@ interface DetachedTombstone {
   readonly projectId: string;
   readonly operationId: string;
   retryCount: number;
-  timer: ReturnType<typeof setTimeout> | null;
+  timer: Subscription | null;
 }
 
 export class DetachedOperationTombstoneTracker {
@@ -40,35 +41,20 @@ export class DetachedOperationTombstoneTracker {
       timer: null,
     };
     this.tombstones.set(key, tombstone);
-    void this.reconcile(tombstone);
+    this.reconcile(tombstone);
   }
 
-  private async reconcile(tombstone: DetachedTombstone): Promise<void> {
+  private reconcile(tombstone: DetachedTombstone): void {
     if (this.tombstones.get(tombstone.key) !== tombstone) {
       return;
     }
-    try {
-      const operation = await this.hooks.cancelOperation(
-        tombstone.projectId,
-        tombstone.operationId,
-      );
-      if (this.finishWhenDurable(tombstone, operation)) {
-        return;
-      }
-    } catch {
-      try {
-        const operation = await this.hooks.getOperation(
-          tombstone.projectId,
-          tombstone.operationId,
-        );
-        if (this.finishWhenDurable(tombstone, operation)) {
-          return;
-        }
-      } catch {
-        // Keep the exact operation owned until a durable server state is seen.
-      }
-    }
-    this.schedule(tombstone);
+    defer(() => this.hooks.cancelOperation(tombstone.projectId, tombstone.operationId)).pipe(
+      catchError(() => this.hooks.getOperation(tombstone.projectId, tombstone.operationId)),
+      tap((operation) => {
+        if (!this.finishWhenDurable(tombstone, operation)) this.schedule(tombstone);
+      }),
+      catchError(() => { this.schedule(tombstone); return of(null); }),
+    ).subscribe();
   }
 
   private finishWhenDurable(
@@ -88,7 +74,7 @@ export class DetachedOperationTombstoneTracker {
       return false;
     }
     if (tombstone.timer !== null) {
-      clearTimeout(tombstone.timer);
+      tombstone.timer.unsubscribe();
     }
     this.tombstones.delete(tombstone.key);
     return true;
@@ -106,9 +92,9 @@ export class DetachedOperationTombstoneTracker {
         Math.min(tombstone.retryCount, RETRY_DELAYS_MS.length - 1)
       ];
     tombstone.retryCount += 1;
-    tombstone.timer = setTimeout(() => {
+    tombstone.timer = timer(delay).subscribe(() => {
       tombstone.timer = null;
-      void this.reconcile(tombstone);
-    }, delay);
+      this.reconcile(tombstone);
+    });
   }
 }

@@ -22,7 +22,7 @@ describe('Runtime manager actions', () => {
     startRuntimeInstallation: ReturnType<typeof vi.fn>;
   };
 
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.clearAllMocks();
 
     apiClient = {
@@ -36,13 +36,13 @@ describe('Runtime manager actions', () => {
       startRuntimeInstallation: vi.fn(),
     };
 
-    await TestBed.configureTestingModule({
+    TestBed.configureTestingModule({
       imports: [RuntimeActionHostComponent],
       providers: [{ provide: CERT_PREP_API, useValue: apiClient }],
-    }).compileComponents();
+    });
   });
 
-  it('opens consent and cancel does not start the download', async () => {
+  it('opens consent and cancel does not start the download', () => {
     const fixture = TestBed.createComponent(RuntimeActionHostComponent);
     const health = TestBed.inject(HealthStore);
     health.llmHealth.set(missingModelHealth());
@@ -51,7 +51,7 @@ describe('Runtime manager actions', () => {
 
     buttonByText(fixture.nativeElement, 'Download reasoner:7b')?.click();
     fixture.detectChanges();
-    await fixture.whenStable();
+    TestBed.tick();
 
     expect(health.modelDownloadConsentVisible()).toBe(true);
     expect(document.body.textContent).toContain(
@@ -60,13 +60,13 @@ describe('Runtime manager actions', () => {
 
     lastButtonByText(document.body, 'Cancel')?.click();
     fixture.detectChanges();
-    await fixture.whenStable();
+    TestBed.tick();
 
     expect(health.modelDownloadConsentVisible()).toBe(false);
     expect(apiClient.startModelDownload).not.toHaveBeenCalled();
   });
 
-  it('opens Ollama install consent for missing Ollama', async () => {
+  it('opens Ollama install consent for missing Ollama', () => {
     const fixture = TestBed.createComponent(RuntimeActionHostComponent);
     const health = TestBed.inject(HealthStore);
     health.llmHealth.set({
@@ -79,7 +79,7 @@ describe('Runtime manager actions', () => {
 
     buttonByText(fixture.nativeElement, 'Install Ollama')?.click();
     fixture.detectChanges();
-    await fixture.whenStable();
+    TestBed.tick();
 
     expect(health.runtimeInstallConsentVisible()).toBe(true);
     expect(document.body.textContent).toContain(
@@ -88,7 +88,7 @@ describe('Runtime manager actions', () => {
 
     lastButtonByText(document.body, 'Cancel')?.click();
     fixture.detectChanges();
-    await fixture.whenStable();
+    TestBed.tick();
 
     expect(health.runtimeInstallConsentVisible()).toBe(false);
     expect(apiClient.startRuntimeInstallation).not.toHaveBeenCalled();

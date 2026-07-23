@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { of, throwError } from 'rxjs';
 import { provideRouter, Router } from '@angular/router';
 import { App } from './app';
 import { appRoutes } from './app.routes';
@@ -22,48 +23,57 @@ import { provideCertPrepHttpResourceClientFake } from './testing/cert-prep-http-
 describe('App runtime loading', () => {
   let apiClient: ReturnType<typeof createApiClient>;
 
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
     Reflect.deleteProperty(window, '__TAURI_INTERNALS__');
     apiClient = createApiClient();
 
-    await TestBed.configureTestingModule({
+    TestBed.configureTestingModule({
       imports: [App],
       providers: [
         { provide: CERT_PREP_API, useValue: apiClient },
         provideCertPrepHttpResourceClientFake(apiClient),
         provideRouter(appRoutes),
       ],
-    }).compileComponents();
+    });
   });
 
-  it('reloads backend state after runtime startup becomes ready', async () => {
+  it('reloads backend state after runtime startup becomes ready', () => {
     const fixture = TestBed.createComponent(App);
     const operations = TestBed.inject(OperationStore);
     const workspace = TestBed.inject(WorkspaceFacade);
     fixture.detectChanges();
 
-    await vi.waitFor(() => expect(workspace.hasLoadedBackendState()).toBe(true));
-    await vi.waitFor(() => expect(operations.status()).toBe('Project loaded'));
+    TestBed.tick();
+    return vi
+      .waitFor(() => {
+        fixture.detectChanges();
+        expect(workspace.hasLoadedBackendState()).toBe(true);
+        expect(operations.status()).toBe('Project loaded');
+      })
+      .then(() => {
+        vi.clearAllMocks();
+        operations.status.set('Python backend runtime is required.');
+        workspace.hasLoadedBackendState.set(false);
+        fixture.detectChanges();
 
-    vi.clearAllMocks();
-    operations.status.set('Python backend runtime is required.');
-    workspace.hasLoadedBackendState.set(false);
-    fixture.detectChanges();
-
-    await vi.waitFor(() => {
-      fixture.detectChanges();
-      expect(operations.status()).toBe('Project loaded');
-    });
-    expect(operations.status()).not.toBe('Python backend runtime is required.');
-    expect(apiClient.health).toHaveBeenCalledTimes(1);
-    expect(apiClient.runtimeRequirements).toHaveBeenCalledTimes(1);
+        TestBed.tick();
+        return vi.waitFor(() => {
+          fixture.detectChanges();
+          expect(operations.status()).toBe('Project loaded');
+          expect(operations.status()).not.toBe(
+            'Python backend runtime is required.',
+          );
+          expect(apiClient.health).toHaveBeenCalledTimes(1);
+          expect(apiClient.runtimeRequirements).toHaveBeenCalledTimes(1);
+        });
+      });
   });
 
-  it('loads projects even when optional runtime health is temporarily unavailable', async () => {
-    apiClient.runtimeRequirements.mockRejectedValueOnce(
-      new Error('runtime requirements unavailable'),
+  it('loads projects even when optional runtime health is temporarily unavailable', () => {
+    apiClient.runtimeRequirements.mockReturnValueOnce(
+      throwError(() => new Error('runtime requirements unavailable')),
     );
 
     const fixture = TestBed.createComponent(App);
@@ -71,14 +81,16 @@ describe('App runtime loading', () => {
     const operations = TestBed.inject(OperationStore);
     fixture.detectChanges();
 
-    await vi.waitFor(() => {
+    TestBed.tick();
+    return vi.waitFor(() => {
       fixture.detectChanges();
       expect(projects.projects()).toEqual([appProject]);
       expect(projects.selectedProjectId()).toBe(appProject.id);
+      expect(operations.status()).toBe('Project loaded');
+      expect(operations.status()).not.toBe(
+        'Python backend runtime is required.',
+      );
     });
-
-    expect(operations.status()).toBe('Project loaded');
-    expect(operations.status()).not.toBe('Python backend runtime is required.');
   });
 });
 
@@ -89,16 +101,16 @@ describe('App desktop runtime recovery routes', () => {
     invoke: ReturnType<typeof vi.fn>;
   };
 
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
     apiClient = createApiClient();
     desktopRuntimeBridge = {
       isDesktop: vi.fn().mockReturnValue(true),
-      invoke: vi.fn().mockResolvedValue(missingPythonRuntimeStatus()),
+      invoke: vi.fn().mockReturnValue(of(missingPythonRuntimeStatus())),
     };
 
-    await TestBed.configureTestingModule({
+    TestBed.configureTestingModule({
       imports: [App],
       providers: [
         { provide: CERT_PREP_API, useValue: apiClient },
@@ -106,68 +118,66 @@ describe('App desktop runtime recovery routes', () => {
         { provide: DesktopRuntimeBridgeService, useValue: desktopRuntimeBridge },
         provideRouter(appRoutes),
       ],
-    }).compileComponents();
+    });
   });
 
-  it('redirects study routes to runtime management when the Python backend runtime is missing', async () => {
+  it('redirects study routes to runtime management when the Python backend runtime is missing', () => {
     const fixture = TestBed.createComponent(App);
     const router = TestBed.inject(Router);
     const compiled = fixture.nativeElement as HTMLElement;
     fixture.detectChanges();
 
-    await router.navigateByUrl('/build');
+    router.navigateByUrl('/build');
     fixture.detectChanges();
-    await fixture.whenStable();
-
-    await vi.waitFor(() => {
+    TestBed.tick();
+    return vi.waitFor(() => {
       fixture.detectChanges();
       expect(router.url).toBe('/runtime');
       expect(compiled.textContent).toContain('Manage runtime');
       expect(compiled.textContent).toContain('Install runtime');
+      expect(compiled.textContent).toContain(
+        'Python backend runtime is missing.',
+      );
+      expect(compiled.textContent).not.toContain('Source files');
     });
-    expect(compiled.textContent).toContain(
-      'Python backend runtime is missing.',
-    );
-    expect(compiled.textContent).not.toContain('Source files');
   });
 
-  it('renders the runtime route and install action when the Python backend runtime is missing', async () => {
+  it('renders the runtime route and install action when the Python backend runtime is missing', () => {
     const fixture = TestBed.createComponent(App);
     const router = TestBed.inject(Router);
     const compiled = fixture.nativeElement as HTMLElement;
     fixture.detectChanges();
 
-    await router.navigateByUrl('/runtime');
+    router.navigateByUrl('/runtime');
     fixture.detectChanges();
-    await fixture.whenStable();
-
-    await vi.waitFor(() => {
+    TestBed.tick();
+    return vi.waitFor(() => {
       fixture.detectChanges();
       expect(compiled.textContent).toContain('Manage runtime');
       expect(compiled.textContent).toContain('Install runtime');
+      expect(compiled.textContent).toContain(
+        'Python backend runtime is missing.',
+      );
     });
-    expect(compiled.textContent).toContain(
-      'Python backend runtime is missing.',
-    );
   });
 });
 
 function createApiClient() {
   return {
-    health: vi.fn().mockResolvedValue(backendHealth()),
-    llmHealth: vi.fn().mockResolvedValue(availableLlmHealth()),
-    ocrHealth: vi.fn().mockResolvedValue(availableOcrHealth()),
-    runtimeRequirements: vi.fn().mockResolvedValue({ items: [] }),
+    health: vi.fn().mockReturnValue(of(backendHealth())),
+    llmHealth: vi.fn().mockReturnValue(of(availableLlmHealth())),
+    ocrHealth: vi.fn().mockReturnValue(of(availableOcrHealth())),
+    runtimeRequirements: vi.fn().mockReturnValue(of({ items: [] })),
     startRuntimeInstallation: vi.fn(),
     getRuntimeInstallation: vi.fn(),
-    listProjects: vi.fn().mockResolvedValue({ items: [appProject] }),
-    listDocuments: vi.fn().mockResolvedValue({ items: [appDocument] }),
-    getDocument: vi.fn().mockResolvedValue(appDocument),
-    listDocumentChunks: vi.fn().mockResolvedValue({ items: [] }),
-    listQuestionDrafts: vi.fn().mockResolvedValue({ items: [editableAppQuestion] }),
-    listActivePracticeSessions: vi.fn().mockResolvedValue({ items: [] }),
-    listWrongAnswers: vi.fn().mockResolvedValue({ items: [] }),
-    summarizeWrongAnswers: vi.fn().mockResolvedValue(emptyWrongAnswerSummary()),
+    listProjects: vi.fn().mockReturnValue(of({ items: [appProject] })),
+    listDocuments: vi.fn().mockReturnValue(of({ items: [appDocument] })),
+    getDocument: vi.fn().mockReturnValue(of(appDocument)),
+    listDocumentChunks: vi.fn().mockReturnValue(of({ items: [] })),
+    listQuestionDrafts: vi.fn().mockReturnValue(of({ items: [editableAppQuestion] })),
+    listActivePracticeSessions: vi.fn().mockReturnValue(of({ items: [] })),
+    listWrongAnswers: vi.fn().mockReturnValue(of({ items: [] })),
+    summarizeWrongAnswers: vi.fn().mockReturnValue(of(emptyWrongAnswerSummary())),
   };
 }
 

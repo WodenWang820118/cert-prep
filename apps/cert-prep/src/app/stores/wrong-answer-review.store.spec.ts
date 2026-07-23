@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { of, Subject, throwError } from 'rxjs';
 import {
   CERT_PREP_API,
   type ProjectRead,
@@ -83,10 +84,10 @@ describe('WrongAnswerReviewStore', () => {
   beforeEach(() => {
     apiClient = {
       listWrongAnswers: vi.fn(),
-      summarizeWrongAnswers: vi.fn().mockResolvedValue(summary),
+      summarizeWrongAnswers: vi.fn().mockReturnValue(of(summary)),
       explainWrongAnswer: vi
         .fn()
-        .mockRejectedValue(new Error('AI provider unavailable')),
+        .mockReturnValue(throwError(() => new Error('AI provider unavailable'))),
     };
     TestBed.configureTestingModule({
       providers: [
@@ -100,12 +101,12 @@ describe('WrongAnswerReviewStore', () => {
     projects.select(project.id);
   });
 
-  it('loads wrong answers directly for a project', async () => {
-    apiClient.listWrongAnswers.mockResolvedValue({ items: [wrongAnswer] });
+  it('loads wrong answers directly for a project', () => {
+    apiClient.listWrongAnswers.mockReturnValue(of({ items: [wrongAnswer] }));
     const store = TestBed.inject(WrongAnswerReviewStore);
 
-    await store.load(project.id);
-    await vi.waitFor(() => expect(store.wrongAnswers()).toEqual([wrongAnswer]));
+    store.load(project.id);
+    TestBed.tick();
 
     expect(apiClient.listWrongAnswers).toHaveBeenCalledWith(project.id);
     expect(apiClient.summarizeWrongAnswers).toHaveBeenCalledWith(project.id);
@@ -113,13 +114,13 @@ describe('WrongAnswerReviewStore', () => {
     expect(store.summary()).toEqual(summary);
   });
 
-  it('guards refresh until a project is selected', async () => {
+  it('guards refresh until a project is selected', () => {
     const projects = TestBed.inject(ProjectStore);
     projects.selectedProjectId.set(null);
     const operations = TestBed.inject(OperationStore);
     const store = TestBed.inject(WrongAnswerReviewStore);
 
-    await store.refresh();
+    store.refresh();
 
     expect(apiClient.listWrongAnswers).not.toHaveBeenCalled();
     expect(apiClient.summarizeWrongAnswers).not.toHaveBeenCalled();
@@ -128,13 +129,13 @@ describe('WrongAnswerReviewStore', () => {
     );
   });
 
-  it('refreshes review rows through the operation store', async () => {
-    apiClient.listWrongAnswers.mockResolvedValue({ items: [wrongAnswer] });
+  it('refreshes review rows through the operation store', () => {
+    apiClient.listWrongAnswers.mockReturnValue(of({ items: [wrongAnswer] }));
     const operations = TestBed.inject(OperationStore);
     const store = TestBed.inject(WrongAnswerReviewStore);
 
-    await store.refresh();
-    await vi.waitFor(() => expect(store.wrongAnswers()).toEqual([wrongAnswer]));
+    store.refresh();
+    TestBed.tick();
 
     expect(apiClient.listWrongAnswers).toHaveBeenCalledWith(project.id);
     expect(apiClient.summarizeWrongAnswers).toHaveBeenCalledWith(project.id);
@@ -143,23 +144,17 @@ describe('WrongAnswerReviewStore', () => {
     expect(operations.status()).toBe('Review refreshed');
   });
 
-  it('tracks per-attempt loading and AI explanation results', async () => {
-    let resolveExplanation:
-      | ((value: WrongAnswerExplanationRead) => void)
-      | undefined;
-    apiClient.explainWrongAnswer = vi.fn(
-      () =>
-        new Promise<WrongAnswerExplanationRead>((resolve) => {
-          resolveExplanation = resolve;
-        }),
-    );
+  it('tracks per-attempt loading and AI explanation results', () => {
+    const explanation = new Subject<WrongAnswerExplanationRead>();
+    apiClient.explainWrongAnswer = vi.fn(() => explanation.asObservable());
     const store = TestBed.inject(WrongAnswerReviewStore);
 
-    const request = store.discussMistake(wrongAnswer);
+    store.discussMistake(wrongAnswer);
 
     expect(apiClient.explainWrongAnswer).toHaveBeenCalledWith(
       project.id,
       wrongAnswer.attempt_id,
+      { signal: expect.any(AbortSignal) },
     );
     expect(store.explanationFor(wrongAnswer.attempt_id)).toEqual({
       loading: true,
@@ -168,10 +163,9 @@ describe('WrongAnswerReviewStore', () => {
       fallback: false,
     });
 
-    resolveExplanation?.(
-      explanationResponse('AI explanation grounded in the source.', false),
-    );
-    await request;
+    explanation.next(explanationResponse('AI explanation grounded in the source.', false));
+    explanation.complete();
+    TestBed.tick();
 
     expect(store.explanationFor(wrongAnswer.attempt_id)).toEqual({
       loading: false,
@@ -181,13 +175,16 @@ describe('WrongAnswerReviewStore', () => {
     });
   });
 
-  it('preserves backend fallback flags on successful explanations', async () => {
-    apiClient.explainWrongAnswer.mockResolvedValue(
+  it('preserves backend fallback flags on successful explanations', () => {
+    apiClient.explainWrongAnswer.mockReturnValue(
+      of(
       explanationResponse('Backend fallback grounded in the source.', true),
+      ),
     );
     const store = TestBed.inject(WrongAnswerReviewStore);
 
-    await store.discussMistake(wrongAnswer);
+    store.discussMistake(wrongAnswer);
+    TestBed.tick();
 
     expect(store.explanationFor(wrongAnswer.attempt_id)).toEqual({
       loading: false,
@@ -197,10 +194,11 @@ describe('WrongAnswerReviewStore', () => {
     });
   });
 
-  it('uses grounded fallback copy when the AI explanation request is rejected', async () => {
+  it('uses grounded fallback copy when the AI explanation request is rejected', () => {
     const store = TestBed.inject(WrongAnswerReviewStore);
 
-    await store.discussMistake(wrongAnswer);
+    store.discussMistake(wrongAnswer);
+    TestBed.tick();
 
     expect(store.explanationFor(wrongAnswer.attempt_id)).toEqual({
       loading: false,
@@ -211,16 +209,16 @@ describe('WrongAnswerReviewStore', () => {
     });
   });
 
-  it('keeps refresh and clearing available after AI explanation failure', async () => {
+  it('keeps refresh and clearing available after AI explanation failure', () => {
     apiClient.explainWrongAnswer = vi
       .fn()
-      .mockRejectedValue(new Error('AI provider unavailable'));
-    apiClient.listWrongAnswers.mockResolvedValue({ items: [wrongAnswer] });
+      .mockReturnValue(throwError(() => new Error('AI provider unavailable')));
+    apiClient.listWrongAnswers.mockReturnValue(of({ items: [wrongAnswer] }));
     const store = TestBed.inject(WrongAnswerReviewStore);
 
-    await store.discussMistake(wrongAnswer);
-    await store.refresh();
-    await vi.waitFor(() => expect(store.wrongAnswers()).toEqual([wrongAnswer]));
+    store.discussMistake(wrongAnswer);
+    store.refresh();
+    TestBed.tick();
 
     expect(apiClient.listWrongAnswers).toHaveBeenCalledWith(project.id);
     expect(store.wrongAnswers()).toEqual([wrongAnswer]);

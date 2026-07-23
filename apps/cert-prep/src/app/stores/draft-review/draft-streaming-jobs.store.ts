@@ -1,4 +1,5 @@
 import { computed, inject, Injectable, signal } from '@angular/core';
+import { forkJoin, from, map, Observable, Subscription, tap, timer } from 'rxjs';
 import { CERT_PREP_API } from '../../cert-prep-api';
 import type { DocumentRead, DraftGenerationJobRead } from '../../cert-prep-api';
 import type { DraftJobSummary } from './contracts/draft-review.contracts';
@@ -17,7 +18,7 @@ export class DraftStreamingJobsStore {
   private readonly sourceImport = inject(SourceImportStore);
   private draftJobsDocumentKey: string | null = null;
   private streamingDraftPollKey: string | null = null;
-  private streamingDraftPollTimer: ReturnType<typeof setTimeout> | null = null;
+  private streamingDraftPollTimer: Subscription | null = null;
   private streamingDraftPollFailureCount = 0;
 
   readonly draftJobs = signal<DraftGenerationJobRead[]>([]);
@@ -90,7 +91,7 @@ export class DraftStreamingJobsStore {
       this.stopPolling({ clearJobs: true });
       this.streamingDraftPollKey = nextKey;
       this.resetPollingFailure();
-      void this.pollStreamingDrafts(projectId, documentId, loadDrafts);
+      this.pollStreamingDrafts(projectId, documentId, loadDrafts);
       return;
     }
 
@@ -101,7 +102,7 @@ export class DraftStreamingJobsStore {
 
   stopPolling(options: { clearJobs?: boolean } = {}): void {
     if (this.streamingDraftPollTimer !== null) {
-      clearTimeout(this.streamingDraftPollTimer);
+      this.streamingDraftPollTimer.unsubscribe();
       this.streamingDraftPollTimer = null;
     }
     this.streamingDraftPollKey = null;
@@ -112,15 +113,16 @@ export class DraftStreamingJobsStore {
     }
   }
 
-  async loadDraftJobs(projectId: string, documentId: string): Promise<void> {
+  loadDraftJobs(projectId: string, documentId: string): Observable<void> {
     const documentKey = `${projectId}:${documentId}`;
-    const jobs = await this.api.listDocumentDraftJobs(projectId, documentId);
-    if (!this.isCurrentProjectDocument(projectId, documentId)) {
-      return;
-    }
-
-    this.draftJobsDocumentKey = documentKey;
-    this.draftJobs.set(jobs.items);
+    return from(this.api.listDocumentDraftJobs(projectId, documentId)).pipe(
+      tap((jobs) => {
+        if (!this.isCurrentProjectDocument(projectId, documentId)) return;
+        this.draftJobsDocumentKey = documentKey;
+        this.draftJobs.set(jobs.items);
+      }),
+      map(() => undefined),
+    );
   }
 
   retryPolling(
@@ -131,10 +133,10 @@ export class DraftStreamingJobsStore {
     this.stopPolling();
     this.streamingDraftPollKey = `${projectId}:${documentId}`;
     this.resetPollingFailure();
-    void this.pollStreamingDrafts(projectId, documentId, loadDrafts);
+    this.pollStreamingDrafts(projectId, documentId, loadDrafts);
   }
 
-  async cancelActiveDraftJobs(): Promise<void> {
+  cancelActiveDraftJobs(): void {
     const projectId = this.projects.selectedProjectId();
     const documentId = this.sourceImport.activeDocument()?.id ?? null;
     if (projectId === null || documentId === null || this.cancelingDraftJobs()) {
@@ -149,30 +151,24 @@ export class DraftStreamingJobsStore {
     }
 
     this.cancelingDraftJobs.set(true);
-    try {
-      const canceled = await Promise.all(
-        jobs.map((job) =>
-          this.api.cancelDocumentDraftJob(projectId, documentId, job.id),
-        ),
-      );
-      if (!this.isCurrentProjectDocument(projectId, documentId)) {
-        return;
-      }
-      const replacements = new Map(canceled.map((job) => [job.id, job]));
-      this.draftJobs.update((current) =>
-        current.map((job) => replacements.get(job.id) ?? job),
-      );
-      if (this.hasActiveDraftJobs(this.draftJobs())) {
-        this.stopPolling();
-        this.streamingDraftPollKey = `${projectId}:${documentId}`;
-        this.resetPollingFailure();
-        this.schedulePolling(projectId, documentId, async () => undefined);
-      }
-    } catch (error) {
-      this.operations.fail(this.errorMessage(error));
-    } finally {
-      this.cancelingDraftJobs.set(false);
-    }
+    forkJoin(jobs.map((job) => from(this.api.cancelDocumentDraftJob(projectId, documentId, job.id)))).subscribe({
+      next: (canceled) => {
+        if (!this.isCurrentProjectDocument(projectId, documentId)) return;
+        const replacements = new Map(canceled.map((job) => [job.id, job]));
+        this.draftJobs.update((current) => current.map((job) => replacements.get(job.id) ?? job));
+        if (this.hasActiveDraftJobs(this.draftJobs())) {
+          this.stopPolling();
+          this.streamingDraftPollKey = `${projectId}:${documentId}`;
+          this.resetPollingFailure();
+          this.schedulePolling(projectId, documentId, () => undefined);
+        }
+        this.cancelingDraftJobs.set(false);
+      },
+      error: (error: unknown) => {
+        this.operations.fail(this.errorMessage(error));
+        this.cancelingDraftJobs.set(false);
+      },
+    });
   }
 
   hasActiveDraftJobs(jobs: DraftGenerationJobRead[]): boolean {
@@ -187,43 +183,36 @@ export class DraftStreamingJobsStore {
     loadDrafts: (projectId: string) => void,
     delayMs = STREAMING_DRAFT_POLL_INTERVAL_MS,
   ): void {
-    this.streamingDraftPollTimer = setTimeout(() => {
+    this.streamingDraftPollTimer = timer(delayMs).subscribe(() => {
       this.streamingDraftPollTimer = null;
-      void this.pollStreamingDrafts(projectId, documentId, loadDrafts);
-    }, delayMs);
+      this.pollStreamingDrafts(projectId, documentId, loadDrafts);
+    });
   }
 
-  private async pollStreamingDrafts(
+  private pollStreamingDrafts(
     projectId: string,
     documentId: string,
     loadDrafts: (projectId: string) => void,
-  ): Promise<void> {
+  ): void {
     if (this.streamingDraftPollKey !== `${projectId}:${documentId}`) {
       return;
     }
 
-    try {
-      loadDrafts(projectId);
-      await this.loadDraftJobs(projectId, documentId);
-    } catch {
-      this.handlePollingFailure(projectId, documentId, loadDrafts);
-      return;
-    }
-
-    this.resetPollingFailure();
-
-    const document = this.sourceImport.activeDocument();
-    const selectedProjectId = this.projects.selectedProjectId();
-    if (
-      selectedProjectId === projectId &&
-      document?.id === documentId &&
-      (document.status === 'processing' ||
-        this.hasActiveDraftJobs(this.draftJobs()))
-    ) {
-      this.schedulePolling(projectId, documentId, loadDrafts);
-    } else {
-      this.stopPolling();
-    }
+    loadDrafts(projectId);
+    this.loadDraftJobs(projectId, documentId).subscribe({
+      next: () => {
+        this.resetPollingFailure();
+        const document = this.sourceImport.activeDocument();
+        const selectedProjectId = this.projects.selectedProjectId();
+        if (selectedProjectId === projectId && document?.id === documentId &&
+            (document.status === 'processing' || this.hasActiveDraftJobs(this.draftJobs()))) {
+          this.schedulePolling(projectId, documentId, loadDrafts);
+        } else {
+          this.stopPolling();
+        }
+      },
+      error: () => this.handlePollingFailure(projectId, documentId, loadDrafts),
+    });
   }
 
   private handlePollingFailure(

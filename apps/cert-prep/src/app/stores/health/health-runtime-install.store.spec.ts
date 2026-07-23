@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { of } from 'rxjs';
 import { CERT_PREP_API } from '../../cert-prep-api';
 import { HealthStore } from './health.store';
 import {
@@ -26,15 +27,15 @@ describe('HealthStore runtime installation', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
-    apiClient.health.mockResolvedValue({
+    apiClient.health.mockReturnValue(of({
       status: 'ok',
       app: 'cert-prep-backend',
       version: '0.1.0',
       python_version: '3.13.5',
       runtime_mode: 'source',
-    });
-    apiClient.llmHealth.mockResolvedValue(llmHealth({ available: false }));
-    apiClient.llmProviderSelection.mockResolvedValue(
+    }));
+    apiClient.llmHealth.mockReturnValue(of(llmHealth({ available: false })));
+    apiClient.llmProviderSelection.mockReturnValue(of(
       providerSelection({
         selected_provider: 'ollama',
         effective_provider: 'ollama',
@@ -42,12 +43,12 @@ describe('HealthStore runtime installation', () => {
         runtime_requirement_kind: 'ollama',
         model_requirement_kind: 'ollama_model',
       }),
-    );
-    apiClient.ocrHealth.mockResolvedValue({
+    ));
+    apiClient.ocrHealth.mockReturnValue(of({
       ...ocrHealth(),
       fallback_reason: 'cuda_unavailable',
-    });
-    apiClient.runtimeRequirements.mockResolvedValue({ items: [] });
+    }));
+    apiClient.runtimeRequirements.mockReturnValue(of({ items: [] }));
     TestBed.configureTestingModule({
       providers: [
         { provide: CERT_PREP_API, useValue: apiClient },
@@ -60,60 +61,62 @@ describe('HealthStore runtime installation', () => {
     vi.useRealTimers();
   });
 
-  it('starts and polls a runtime installation after confirmation', async () => {
+  it('starts and polls a runtime installation after confirmation', () => {
     const store = TestBed.inject(HealthStore);
-    apiClient.llmHealth.mockResolvedValue(
+    apiClient.llmHealth.mockReturnValue(of(
       llmHealth({
         available: false,
         detail: 'Ollama is not installed.',
         unavailable_reason: 'ollama_missing',
       }),
-    );
-    apiClient.startRuntimeInstallation.mockResolvedValue(
+    ));
+    apiClient.startRuntimeInstallation.mockReturnValue(of(
       runtimeInstallation({
         status: 'running',
         detail: 'Installing Ollama',
         completed: 10,
       }),
-    );
-    apiClient.getRuntimeInstallation.mockResolvedValue(
+    ));
+    apiClient.getRuntimeInstallation.mockReturnValue(of(
       runtimeInstallation({
         status: 'succeeded',
         detail: 'Ollama installation completed',
         completed: 100,
       }),
-    );
+    ));
     store.load();
-    await vi.waitFor(() => expect(store.healthSnapshotLoading()).toBe(false));
+    TestBed.tick();
 
     store.openOllamaInstallConsent();
-    await store.confirmRuntimeInstallation();
+    store.confirmRuntimeInstallation();
+    TestBed.tick();
 
     expect(apiClient.startRuntimeInstallation).toHaveBeenCalledWith('ollama');
     expect(store.runtimeInstallConsentVisible()).toBe(false);
     expect(store.runtimeInstall()?.phase).toBe('running');
     expect(store.runtimeInstall()?.progress).toBe(10);
 
-    apiClient.llmHealth.mockResolvedValue(
+    apiClient.llmHealth.mockReturnValue(of(
       llmHealth({
         available: true,
         detail: 'Ollama is ready.',
         unavailable_reason: null,
       }),
-    );
-    await vi.advanceTimersByTimeAsync(1500);
+    ));
+    vi.advanceTimersByTime(1500);
+    TestBed.tick();
 
     expect(apiClient.getRuntimeInstallation).toHaveBeenCalledWith('runtime-1');
     expect(store.runtimeInstall()?.phase).toBe('succeeded');
     expect(store.runtimeInstall()?.progress).toBe(100);
-    await vi.waitFor(() => expect(store.llmHealth()?.available).toBe(true));
+    expect(store.llmHealth()?.available).toBe(true);
     expect(apiClient.health).toHaveBeenCalledTimes(2);
     expect(apiClient.runtimeRequirements).toHaveBeenCalledTimes(2);
   });
 
-  it('starts WindowsML OCR runtime installation from WindowsML missing health', async () => {
+  it('starts WindowsML OCR runtime installation from WindowsML missing health', () => {
     const store = TestBed.inject(HealthStore);
-    apiClient.ocrHealth.mockResolvedValue({
+    apiClient.ocrHealth.mockReturnValue(of({
       ...ocrHealth(),
       provider: 'windowsml',
       engine: 'onnxruntime-windowsml',
@@ -121,8 +124,8 @@ describe('HealthStore runtime installation', () => {
       detail: 'WindowsML OCR runtime is not installed.',
       selected_device: null,
       unavailable_reason: 'windowsml_runtime_missing',
-    });
-    apiClient.startRuntimeInstallation.mockResolvedValue(
+    }));
+    apiClient.startRuntimeInstallation.mockReturnValue(of(
       runtimeInstallation({
         kind: 'windowsml_ocr',
         provider: 'windowsml',
@@ -131,12 +134,13 @@ describe('HealthStore runtime installation', () => {
         detail: 'Installing WindowsML OCR runtime',
         completed: 10,
       }),
-    );
+    ));
     store.load();
-    await vi.waitFor(() => expect(store.healthSnapshotLoading()).toBe(false));
+    TestBed.tick();
 
     store.openOcrRuntimeInstallConsent();
-    await store.confirmRuntimeInstallation();
+    store.confirmRuntimeInstallation();
+    TestBed.tick();
 
     expect(apiClient.startRuntimeInstallation).toHaveBeenCalledWith(
       'windowsml_ocr',
@@ -145,9 +149,9 @@ describe('HealthStore runtime installation', () => {
     expect(store.runtimeInstall()?.label).toBe('WindowsML OCR runtime');
   });
 
-  it('downloads the consent-gated Whisper model bundle through runtime installation', async () => {
+  it('downloads the consent-gated Whisper model bundle through runtime installation', () => {
     const store = TestBed.inject(HealthStore);
-    apiClient.runtimeRequirements.mockResolvedValue({
+    apiClient.runtimeRequirements.mockReturnValue(of({
       items: [
         {
           kind: 'whisper_models',
@@ -158,8 +162,8 @@ describe('HealthStore runtime installation', () => {
           version: 'large-v3-turbo + small',
         },
       ],
-    });
-    apiClient.startRuntimeInstallation.mockResolvedValue(
+    }));
+    apiClient.startRuntimeInstallation.mockReturnValue(of(
       runtimeInstallation({
         kind: 'whisper_models',
         provider: 'faster-whisper',
@@ -170,12 +174,13 @@ describe('HealthStore runtime installation', () => {
         completed: 25,
         total: 100,
       }),
-    );
+    ));
     store.load();
-    await vi.waitFor(() => expect(store.healthSnapshotLoading()).toBe(false));
+    TestBed.tick();
 
     store.openWhisperModelsConsent();
-    await store.confirmRuntimeInstallation();
+    store.confirmRuntimeInstallation();
+    TestBed.tick();
 
     expect(apiClient.startRuntimeInstallation).toHaveBeenCalledWith(
       'whisper_models',
@@ -185,31 +190,33 @@ describe('HealthStore runtime installation', () => {
     expect(store.runtimeInstall()?.progress).toBe(25);
   });
 
-  it('cancels an active runtime installation through the generated API', async () => {
+  it('cancels an active runtime installation through the generated API', () => {
     const store = TestBed.inject(HealthStore);
-    apiClient.llmHealth.mockResolvedValue(
+    apiClient.llmHealth.mockReturnValue(of(
       llmHealth({
         available: false,
         detail: 'Ollama is not installed.',
         unavailable_reason: 'ollama_missing',
       }),
-    );
-    apiClient.startRuntimeInstallation.mockResolvedValue(
+    ));
+    apiClient.startRuntimeInstallation.mockReturnValue(of(
       runtimeInstallation({ status: 'running', phase: 'installing' }),
-    );
-    apiClient.cancelRuntimeInstallation.mockResolvedValue(
+    ));
+    apiClient.cancelRuntimeInstallation.mockReturnValue(of(
       runtimeInstallation({
         status: 'canceled',
         phase: 'canceled',
         cancellable: false,
       }),
-    );
+    ));
     store.load();
-    await vi.waitFor(() => expect(store.healthSnapshotLoading()).toBe(false));
+    TestBed.tick();
     store.openOllamaInstallConsent();
-    await store.confirmRuntimeInstallation();
+    store.confirmRuntimeInstallation();
+    TestBed.tick();
 
-    await store.cancelRuntimeInstallation();
+    store.cancelRuntimeInstallation();
+    TestBed.tick();
 
     expect(apiClient.cancelRuntimeInstallation).toHaveBeenCalledWith(
       'runtime-1',

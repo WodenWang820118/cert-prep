@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { of, Subject, throwError } from 'rxjs';
 import { CERT_PREP_API, OCRHealthRead } from '../../cert-prep-api';
 import { HealthStore } from './health.store';
 import {
@@ -23,20 +24,20 @@ describe('HealthStore loading', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    apiClient.health.mockResolvedValue({
+    apiClient.health.mockReturnValue(of({
       status: 'ok',
       app: 'cert-prep-backend',
       version: '0.1.0',
       python_version: '3.13.5',
       runtime_mode: 'source',
-    });
-    apiClient.llmHealth.mockResolvedValue(llmHealth({ available: false }));
-    apiClient.llmProviderSelection.mockResolvedValue(providerSelection());
-    apiClient.ocrHealth.mockResolvedValue({
+    }));
+    apiClient.llmHealth.mockReturnValue(of(llmHealth({ available: false })));
+    apiClient.llmProviderSelection.mockReturnValue(of(providerSelection()));
+    apiClient.ocrHealth.mockReturnValue(of({
       ...ocrHealth(),
       fallback_reason: 'cuda_unavailable',
-    });
-    apiClient.runtimeRequirements.mockResolvedValue({ items: [] });
+    }));
+    apiClient.runtimeRequirements.mockReturnValue(of({ items: [] }));
     TestBed.configureTestingModule({
       providers: [
         { provide: CERT_PREP_API, useValue: apiClient },
@@ -45,14 +46,14 @@ describe('HealthStore loading', () => {
     });
   });
 
-  it('keeps direct health results when runtime requirements are unavailable', async () => {
+  it('keeps direct health results when runtime requirements are unavailable', () => {
     const store = TestBed.inject(HealthStore);
-    apiClient.runtimeRequirements.mockRejectedValueOnce(
-      new Error('runtime requirements unavailable'),
+    apiClient.runtimeRequirements.mockReturnValueOnce(
+      throwError(() => new Error('runtime requirements unavailable')),
     );
 
     store.load();
-    await vi.waitFor(() => expect(store.healthSnapshotLoading()).toBe(false));
+    TestBed.tick();
 
     expect(store.systemHealth()?.status).toBe('ok');
     expect(store.ocrHealth()?.available).toBe(true);
@@ -60,9 +61,9 @@ describe('HealthStore loading', () => {
     expect(store.runtimeRequirements()).toEqual([]);
   });
 
-  it('loads backend-owned provider selection and derives the selected runtime truth', async () => {
+  it('loads backend-owned provider selection and derives the selected runtime truth', () => {
     const store = TestBed.inject(HealthStore);
-    apiClient.runtimeRequirements.mockResolvedValueOnce({
+    apiClient.runtimeRequirements.mockReturnValue(of({
       items: [
         {
           kind: 'ollama',
@@ -72,10 +73,10 @@ describe('HealthStore loading', () => {
           unavailable_reason: 'ollama_missing',
         },
       ],
-    });
+    }));
 
     store.load();
-    await vi.waitFor(() => expect(store.healthSnapshotLoading()).toBe(false));
+    TestBed.tick();
 
     expect(store.providerSelection()?.preference).toBe('auto');
     expect(store.selectedProviderLabel()).toBe('Ollama');
@@ -84,26 +85,28 @@ describe('HealthStore loading', () => {
     expect(store.canInstallOllama()).toBe(true);
   });
 
-  it('keeps core health when provider selection is temporarily unavailable', async () => {
+  it('keeps core health when provider selection is temporarily unavailable', () => {
     const store = TestBed.inject(HealthStore);
-    apiClient.llmProviderSelection.mockRejectedValueOnce(
-      new Error('provider selection unavailable'),
+    apiClient.llmProviderSelection.mockReturnValueOnce(
+      throwError(() => new Error('provider selection unavailable')),
     );
 
     store.load();
-    await vi.waitFor(() => expect(store.healthSnapshotLoading()).toBe(false));
+    TestBed.tick();
 
     expect(store.systemHealth()?.status).toBe('ok');
     expect(store.ocrHealth()?.available).toBe(true);
     expect(store.providerSelection()).toBeNull();
   });
 
-  it('keeps available runtime health when optional LLM health fails', async () => {
+  it('keeps available runtime health when optional LLM health fails', () => {
     const store = TestBed.inject(HealthStore);
-    apiClient.llmHealth.mockRejectedValueOnce(new Error('ollama unavailable'));
+    apiClient.llmHealth.mockReturnValueOnce(
+      throwError(() => new Error('ollama unavailable')),
+    );
 
     store.load();
-    await vi.waitFor(() => expect(store.healthSnapshotLoading()).toBe(false));
+    TestBed.tick();
 
     expect(store.systemHealth()?.status).toBe('ok');
     expect(store.ocrHealth()?.available).toBe(true);
@@ -111,24 +114,22 @@ describe('HealthStore loading', () => {
     expect(store.runtimeRequirements()).toEqual([]);
   });
 
-  it('marks OCR health as loading while the snapshot is still settling', async () => {
+  it('marks OCR health as loading while the snapshot is still settling', () => {
     const store = TestBed.inject(HealthStore);
-    let resolveOcrHealth!: (value: OCRHealthRead) => void;
-    apiClient.ocrHealth.mockReturnValueOnce(
-      new Promise<OCRHealthRead>((resolve) => {
-        resolveOcrHealth = resolve;
-      }),
-    );
+    const ocrHealthResult = new Subject<OCRHealthRead>();
+    apiClient.ocrHealth.mockReturnValueOnce(ocrHealthResult);
 
     store.load();
+    TestBed.tick();
 
     expect(store.healthSnapshotLoading()).toBe(true);
     expect(store.isOcrHealthLoading()).toBe(true);
     expect(store.ocrPhase()).toBe('checking');
     expect(store.ocrHealth()).toBeNull();
 
-    resolveOcrHealth(ocrHealth());
-    await vi.waitFor(() => expect(store.healthSnapshotLoading()).toBe(false));
+    ocrHealthResult.next(ocrHealth());
+    ocrHealthResult.complete();
+    TestBed.tick();
 
     expect(store.healthSnapshotLoading()).toBe(false);
     expect(store.isOcrHealthLoading()).toBe(false);
@@ -136,48 +137,49 @@ describe('HealthStore loading', () => {
     expect(store.ocrHealth()?.available).toBe(true);
   });
 
-  it('applies OCR health before slower LLM health settles', async () => {
+  it('applies OCR health before slower LLM health settles', () => {
     const store = TestBed.inject(HealthStore);
-    let resolveLlmHealth!: (value: ReturnType<typeof llmHealth>) => void;
-    apiClient.llmHealth.mockReturnValueOnce(
-      new Promise<ReturnType<typeof llmHealth>>((resolve) => {
-        resolveLlmHealth = resolve;
-      }),
-    );
+    const llmHealthResult = new Subject<ReturnType<typeof llmHealth>>();
+    apiClient.llmHealth.mockReturnValueOnce(llmHealthResult);
 
     store.load();
-    await vi.waitFor(() => expect(store.ocrHealth()).not.toBeNull());
+    TestBed.tick();
 
     expect(store.healthSnapshotLoading()).toBe(true);
     expect(store.ocrHealth()?.available).toBe(true);
     expect(store.isOcrHealthLoading()).toBe(false);
     expect(store.ocrPhase()).toBe('ready');
 
-    resolveLlmHealth(llmHealth({ available: false }));
-    await vi.waitFor(() => expect(store.healthSnapshotLoading()).toBe(false));
+    llmHealthResult.next(llmHealth({ available: false }));
+    llmHealthResult.complete();
+    TestBed.tick();
 
     expect(store.healthSnapshotLoading()).toBe(false);
   });
 
-  it('marks existing OCR health stale when a refresh cannot update OCR', async () => {
+  it('marks existing OCR health stale when a refresh cannot update OCR', () => {
     const store = TestBed.inject(HealthStore);
     store.ocrHealth.set(ocrHealth());
-    apiClient.ocrHealth.mockRejectedValueOnce(new Error('ocr unavailable'));
+    apiClient.ocrHealth.mockReturnValueOnce(
+      throwError(() => new Error('ocr unavailable')),
+    );
 
     store.load();
-    await vi.waitFor(() => expect(store.healthSnapshotLoading()).toBe(false));
+    TestBed.tick();
 
     expect(store.ocrHealth()?.available).toBe(true);
     expect(store.ocrPhase()).toBe('stale');
     expect(store.isOcrHealthLoading()).toBe(false);
   });
 
-  it('marks OCR failed when the first OCR health check fails', async () => {
+  it('marks OCR failed when the first OCR health check fails', () => {
     const store = TestBed.inject(HealthStore);
-    apiClient.ocrHealth.mockRejectedValueOnce(new Error('ocr unavailable'));
+    apiClient.ocrHealth.mockReturnValueOnce(
+      throwError(() => new Error('ocr unavailable')),
+    );
 
     store.load();
-    await vi.waitFor(() => expect(store.healthSnapshotLoading()).toBe(false));
+    TestBed.tick();
 
     expect(store.ocrHealth()).toBeNull();
     expect(store.ocrPhase()).toBe('failed');

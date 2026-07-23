@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { of, throwError } from 'rxjs';
 import {
   appDocument,
   appProject,
@@ -19,17 +20,17 @@ import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-h
 describe('PracticePanelComponent', () => {
   let apiClient: ReturnType<typeof createApiClient>;
 
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.clearAllMocks();
     apiClient = createApiClient();
 
-    await TestBed.configureTestingModule({
+    TestBed.configureTestingModule({
       imports: [PracticePanelComponent],
       providers: [
         { provide: CERT_PREP_API, useValue: apiClient },
         provideCertPrepHttpResourceClientFake(apiClient),
       ],
-    }).compileComponents();
+    });
   });
 
   it('renders the random quiz empty state', () => {
@@ -50,6 +51,9 @@ describe('PracticePanelComponent', () => {
     projects.projects.set([appProject]);
     projects.select(appProject.id);
     drafts.drafts.set([editableAppQuestion]);
+    apiClient.listQuestionDrafts.mockReturnValue(
+      of({ items: [editableAppQuestion] }),
+    );
 
     const fixture = TestBed.createComponent(PracticePanelComponent);
     fixture.componentRef.setInput('sessionMode', 'random_draw');
@@ -59,20 +63,20 @@ describe('PracticePanelComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Question 1 of 1');
   });
 
-  it('loads project documents and drafts before rendering full exam readiness', async () => {
+  it('loads project documents and drafts before rendering full exam readiness', () => {
     const projects = TestBed.inject(ProjectStore);
     projects.projects.set([appProject]);
     projects.select(appProject.id);
-    apiClient.listDocuments.mockResolvedValue({ items: [appDocument] });
-    apiClient.getDocument.mockResolvedValue(appDocument);
-    apiClient.listQuestionDrafts.mockResolvedValue({
-      items: [editableAppQuestion],
-    });
+    apiClient.listDocuments.mockReturnValue(of({ items: [appDocument] }));
+    apiClient.getDocument.mockReturnValue(of(appDocument));
+    apiClient.listQuestionDrafts.mockReturnValue(
+      of({ items: [editableAppQuestion] }),
+    );
 
     const fixture = TestBed.createComponent(PracticePanelComponent);
     fixture.componentRef.setInput('sessionMode', 'full_document');
     fixture.detectChanges();
-    await fixture.whenStable();
+    TestBed.tick();
     fixture.detectChanges();
 
     expect(apiClient.listDocuments).toHaveBeenCalledWith(appProject.id);
@@ -84,13 +88,15 @@ describe('PracticePanelComponent', () => {
     );
   });
 
-  it('reports practice input load failures instead of leaking an unhandled rejection', async () => {
+  it('reports practice input load failures instead of leaking an unhandled rejection', () => {
     const projects = TestBed.inject(ProjectStore);
     const operations = TestBed.inject(OperationStore);
     const unhandledRejection = vi.fn();
     projects.projects.set([appProject]);
     projects.select(appProject.id);
-    apiClient.listQuestionDrafts.mockRejectedValue(new Error('offline'));
+    apiClient.listQuestionDrafts.mockReturnValue(
+      throwError(() => new Error('offline')),
+    );
     window.addEventListener('unhandledrejection', unhandledRejection);
 
     try {
@@ -98,7 +104,7 @@ describe('PracticePanelComponent', () => {
       fixture.componentRef.setInput('sessionMode', 'random_draw');
       fixture.detectChanges();
 
-      await vi.waitFor(() =>
+      vi.waitFor(() =>
         expect(operations.error()).toBe(
           'Practice data could not be loaded. Try refreshing the project.',
         ),
@@ -109,24 +115,24 @@ describe('PracticePanelComponent', () => {
     }
   });
 
-  it('selects an answer in an active practice session', async () => {
+  it('selects an answer in an active practice session', () => {
     const store = arrangeActiveSession([editableAppQuestion]);
-    apiClient.listQuestionDrafts.mockResolvedValue({
-      items: [editableAppQuestion],
-    });
+    apiClient.listQuestionDrafts.mockReturnValue(
+      of({ items: [editableAppQuestion] }),
+    );
     const fixture = TestBed.createComponent(PracticePanelComponent);
     fixture.componentRef.setInput('sessionMode', 'random_draw');
     fixture.detectChanges();
 
     const compiled = fixture.nativeElement as HTMLElement;
-    await vi.waitFor(() =>
+    vi.waitFor(() =>
       expect(compiled.querySelector<HTMLInputElement>('#practice-choice-1')).not.toBeNull(),
     );
     const secondChoice =
       compiled.querySelector<HTMLInputElement>('#practice-choice-1');
     secondChoice?.click();
     fixture.detectChanges();
-    await fixture.whenStable();
+    TestBed.tick();
 
     const selectedChoice =
       compiled.querySelector<HTMLInputElement>('#practice-choice-1');
@@ -169,7 +175,7 @@ describe('PracticePanelComponent', () => {
     );
   });
 
-  it('clears an active answer selection', async () => {
+  it('clears an active answer selection', () => {
     const store = arrangeActiveSession([editableAppQuestion]);
     store.selectAnswer('Least privilege');
 
@@ -182,7 +188,7 @@ describe('PracticePanelComponent', () => {
 
     clearButton?.click();
     fixture.detectChanges();
-    await fixture.whenStable();
+    TestBed.tick();
 
     expect(store.selectedAnswer()).toBe('');
     expect(clearButton?.disabled).toBe(true);
@@ -282,11 +288,20 @@ function arrangeActiveSession(
   const store = TestBed.inject(PracticeStore);
   projects.projects.set([appProject]);
   projects.select(appProject.id);
+  apiClientForCurrentTest().listQuestionDrafts.mockReturnValue(
+    of({ items: [...questions] }),
+  );
   drafts.drafts.set([...questions]);
   store.practiceSession.set(
     practiceSession(questions.map((question) => question.id)),
   );
   return store;
+}
+
+function apiClientForCurrentTest(): ReturnType<typeof createApiClient> {
+  return TestBed.inject(CERT_PREP_API) as unknown as ReturnType<
+    typeof createApiClient
+  >;
 }
 
 function practiceSession(questionIds: readonly string[]): PracticeSessionRead {
@@ -335,10 +350,10 @@ function buttonByText(
 function createApiClient() {
   return {
     recordPracticeAttempt: vi.fn(),
-    listWrongAnswers: vi.fn().mockResolvedValue({ items: [] }),
-    listQuestionDrafts: vi.fn().mockResolvedValue({ items: [] }),
-    listDocuments: vi.fn().mockResolvedValue({ items: [] }),
-    getDocument: vi.fn().mockResolvedValue(appDocument),
-    listDocumentChunks: vi.fn().mockResolvedValue({ items: [] }),
+    listWrongAnswers: vi.fn().mockReturnValue(of({ items: [] })),
+    listQuestionDrafts: vi.fn().mockReturnValue(of({ items: [] })),
+    listDocuments: vi.fn().mockReturnValue(of({ items: [] })),
+    getDocument: vi.fn().mockReturnValue(of(appDocument)),
+    listDocumentChunks: vi.fn().mockReturnValue(of({ items: [] })),
   };
 }

@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { of, Subject } from 'rxjs';
 import { CERT_PREP_API } from '../../cert-prep-api';
 import type { QuestionDraftRead } from '../../cert-prep-api';
 import { DraftReviewStore } from './draft-review.store';
@@ -27,7 +28,7 @@ describe('DraftReviewStore editable questions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     apiClient.listQuestionDrafts.mockReset();
-    apiClient.listQuestionDrafts.mockResolvedValue({ items: [] });
+    apiClient.listQuestionDrafts.mockReturnValue(of({ items: [] }));
     TestBed.configureTestingModule({
       providers: [
         { provide: CERT_PREP_API, useValue: apiClient },
@@ -47,9 +48,9 @@ describe('DraftReviewStore editable questions', () => {
     ]);
     projects.select('project-1');
 
-    apiClient.getDocument.mockResolvedValue(documentRead());
-    apiClient.listDocumentChunks.mockResolvedValue({ items: [] });
-    apiClient.listDocumentDraftJobs.mockResolvedValue({ items: [] });
+    apiClient.getDocument.mockReturnValue(of(documentRead()));
+    apiClient.listDocumentChunks.mockReturnValue(of({ items: [] }));
+    apiClient.listDocumentDraftJobs.mockReturnValue(of({ items: [] }));
   });
 
   it('exposes approved rows as playable editable questions', () => {
@@ -136,7 +137,7 @@ describe('DraftReviewStore editable questions', () => {
     expect(store.activeDocumentPlayableQuestions()).toEqual([secondQuestion]);
   });
 
-  it('ignores stale draft loads after the selected project changes', async () => {
+  it('ignores stale draft loads after the selected project changes', () => {
     const store = TestBed.inject(DraftReviewStore);
     const projects = TestBed.inject(ProjectStore);
     const currentProjectDraft = questionDraft({
@@ -148,18 +149,18 @@ describe('DraftReviewStore editable questions', () => {
       project_id: 'project-1',
     });
     const staleDrafts = deferred<{ items: QuestionDraftRead[] }>();
-    apiClient.listQuestionDrafts.mockReturnValueOnce(staleDrafts.promise);
+    apiClient.listQuestionDrafts.mockReturnValueOnce(staleDrafts.observable);
     store.drafts.set([currentProjectDraft]);
 
-    const load = store.load('project-1');
+    store.load('project-1');
     projects.select('project-2');
     staleDrafts.resolve({ items: [staleProjectDraft] });
-    await load;
+    TestBed.tick();
 
     expect(store.drafts()).toEqual([currentProjectDraft]);
   });
 
-  it('saves edited question text without a promotion request', async () => {
+  it('saves edited question text without a promotion request', () => {
     const store = TestBed.inject(DraftReviewStore);
     const question = questionDraft({
       answer: null,
@@ -172,14 +173,15 @@ describe('DraftReviewStore editable questions', () => {
       answer_key_source: 'manual',
       rationale: 'Manual rationale',
     });
-    apiClient.updateQuestionDraft.mockResolvedValue(saved);
+    apiClient.updateQuestionDraft.mockReturnValue(of(saved));
     store.drafts.set([question]);
     store.startEdit(question);
     store.setEditQuestion(question.id, 'Updated question');
     store.setEditAnswer(question.id, 'B');
     store.setEditRationale(question.id, 'Manual rationale');
 
-    await store.saveDraft(question);
+    store.saveDraft(question);
+    TestBed.tick();
 
     expect(apiClient.updateQuestionDraft).toHaveBeenCalledWith(
       'project-1',
@@ -190,36 +192,38 @@ describe('DraftReviewStore editable questions', () => {
         answer_key_source: 'manual',
         rationale: 'Manual rationale',
       }),
+      { signal: expect.any(AbortSignal) },
     );
     expect(store.drafts()).toEqual([saved]);
     expect(store.isEditing(saved)).toBe(false);
   });
 
-  it('refreshes document metadata after generated questions are returned', async () => {
+  it('refreshes document metadata after generated questions are returned', () => {
     vi.useFakeTimers();
     const store = TestBed.inject(DraftReviewStore);
     const sourceImport = TestBed.inject(SourceImportStore);
     const question = questionDraft();
     const refreshedDocument = documentRead({ exam_item_count: 1 });
     activateDocument(sourceImport, documentRead());
-    apiClient.startManualDraftOperation.mockResolvedValue(
+    apiClient.startManualDraftOperation.mockReturnValue(of(
       manualDraftOperation(),
-    );
-    apiClient.getManualDraftOperation.mockResolvedValue(
+    ));
+    apiClient.getManualDraftOperation.mockReturnValue(of(
       manualDraftOperation({
         status: 'succeeded',
         phase: 'succeeded',
         cancellable: false,
         generated_count: 1,
       }),
-    );
-    apiClient.getDocument.mockResolvedValue(refreshedDocument);
-    apiClient.listQuestionDrafts.mockResolvedValue({ items: [question] });
+    ));
+    apiClient.getDocument.mockReturnValue(of(refreshedDocument));
+    apiClient.listQuestionDrafts.mockReturnValue(of({ items: [question] }));
 
-    await store.generateDrafts('hybrid_reasoning');
-    await vi.advanceTimersByTimeAsync(1500);
+    store.generateDrafts('hybrid_reasoning');
+    TestBed.tick();
+    vi.advanceTimersByTime(1500);
+    TestBed.tick();
 
-    await vi.waitFor(() => expect(store.drafts()).toEqual([question]));
     expect(store.drafts()).toEqual([question]);
     expect(apiClient.listDocumentDraftJobs).toHaveBeenCalledWith(
       'project-1',
@@ -239,12 +243,15 @@ function activateDocument(
 }
 
 function deferred<T>(): {
-  readonly promise: Promise<T>;
+  readonly observable: Subject<T>;
   readonly resolve: (value: T) => void;
 } {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((resolver) => {
-    resolve = resolver;
-  });
-  return { promise, resolve };
+  const observable = new Subject<T>();
+  return {
+    observable,
+    resolve: (value) => {
+      observable.next(value);
+      observable.complete();
+    },
+  };
 }

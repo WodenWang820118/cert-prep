@@ -28,7 +28,7 @@ describe('RuntimeManagerPage', () => {
     startRuntimeInstallation: ReturnType<typeof vi.fn>;
   };
 
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.clearAllMocks();
 
     apiClient = {
@@ -43,13 +43,13 @@ describe('RuntimeManagerPage', () => {
       startRuntimeInstallation: vi.fn(),
     };
 
-    await TestBed.configureTestingModule({
+    TestBed.configureTestingModule({
       imports: [RuntimeManagerPage],
       providers: [
         { provide: CERT_PREP_API, useValue: apiClient },
         provideCertPrepHttpResourceClientFake(apiClient),
       ],
-    }).compileComponents();
+    });
   });
 
   it('renders runtime rows and a model download action', () => {
@@ -187,7 +187,7 @@ describe('RuntimeManagerPage', () => {
     );
   });
 
-  it('renders stale OCR detail while refreshing cached OCR health', async () => {
+  it('renders stale OCR detail while refreshing cached OCR health', () => {
     const health = TestBed.inject(HealthStore);
     health.systemHealth.set(systemHealth());
     health.llmHealth.set(availableLlmHealth());
@@ -196,7 +196,7 @@ describe('RuntimeManagerPage', () => {
     apiClient.ocrHealth.mockRejectedValueOnce(new Error('ocr unavailable'));
 
     health.load();
-    await vi.waitFor(() => expect(health.healthSnapshotLoading()).toBe(false));
+    vi.waitFor(() => expect(health.healthSnapshotLoading()).toBe(false));
 
     const fixture = TestBed.createComponent(RuntimeManagerPage);
     fixture.detectChanges();

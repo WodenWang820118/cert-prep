@@ -30,7 +30,7 @@ describe('ModelHealthComponent status display', () => {
     startRuntimeInstallation: ReturnType<typeof vi.fn>;
   };
 
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.clearAllMocks();
 
     apiClient = {
@@ -45,17 +45,17 @@ describe('ModelHealthComponent status display', () => {
       startRuntimeInstallation: vi.fn(),
     };
 
-    await TestBed.configureTestingModule({
+    TestBed.configureTestingModule({
       imports: [ModelHealthComponent],
       providers: [
         { provide: CERT_PREP_API, useValue: apiClient },
         provideCertPrepHttpResourceClientFake(apiClient),
         provideRouter([{ path: 'runtime', component: RuntimeManagerPage }]),
       ],
-    }).compileComponents();
+    });
   });
 
-  it('renders compact status chips and navigates to the runtime page', async () => {
+  it('renders compact status chips and navigates to the runtime page', () => {
     const fixture = TestBed.createComponent(ModelHealthComponent);
     const router = TestBed.inject(Router);
     const health = TestBed.inject(HealthStore);
@@ -78,9 +78,9 @@ describe('ModelHealthComponent status display', () => {
 
     buttonByText(fixture.nativeElement, 'Manage runtime')?.click();
     fixture.detectChanges();
-    await fixture.whenStable();
+    TestBed.tick();
 
-    expect(router.url).toBe('/runtime');
+    return vi.waitFor(() => expect(router.url).toBe('/runtime'));
   });
 
   it('shows CPU execution for the fixed reasoning model', () => {
@@ -208,7 +208,7 @@ describe('ModelHealthComponent status display', () => {
     expect(fixture.nativeElement.textContent).not.toContain('OCR unknown');
   });
 
-  it('shows stale OCR copy while refreshing a cached OCR status', async () => {
+  it('shows stale OCR copy while refreshing a cached OCR status', () => {
     const fixture = TestBed.createComponent(ModelHealthComponent);
     const health = TestBed.inject(HealthStore);
     health.systemHealth.set(systemHealth());
@@ -218,7 +218,7 @@ describe('ModelHealthComponent status display', () => {
     apiClient.ocrHealth.mockRejectedValueOnce(new Error('ocr unavailable'));
 
     health.load();
-    await vi.waitFor(() => expect(health.healthSnapshotLoading()).toBe(false));
+    vi.waitFor(() => expect(health.healthSnapshotLoading()).toBe(false));
 
     fixture.detectChanges();
 

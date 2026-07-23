@@ -6,6 +6,7 @@ import {
   signal,
   untracked,
 } from '@angular/core';
+import { forkJoin, from, map, Subscription, timer } from 'rxjs';
 import { ChunkRead, DocumentRead, CERT_PREP_API } from '../../cert-prep-api';
 import { CertPrepHttpResourceClient } from '../../cert-prep-http-resource-client';
 import type {
@@ -97,7 +98,7 @@ export class SourceImportStore {
     () =>
       this.documentQueryEnabled() ? this.library.activeDocumentId() : null,
   );
-  private documentPollTimer: ReturnType<typeof setTimeout> | null = null;
+  private documentPollTimer: Subscription | null = null;
   private documentPollFailureCount = 0;
   private contextEpoch = 0;
   private uploadItemCounter = 0;
@@ -121,17 +122,17 @@ export class SourceImportStore {
       const formData = new FormData();
       formData.append('file', item.file, item.file.name);
       formData.append('language_hint', this.languageHint());
-      return this.api.uploadDocument(projectId, formData, {
+      return from(this.api.uploadDocument(projectId, formData, {
         headers: { 'X-Cert-Prep-Operation-Id': operationId },
         signal,
-      });
+      }));
     },
     getDocument: (projectId, documentId) =>
-      this.api.getDocument(projectId, documentId),
+      from(this.api.getDocument(projectId, documentId)),
     getOperation: (projectId, operationId) =>
-      this.api.getDocumentOperation(projectId, operationId),
+      from(this.api.getDocumentOperation(projectId, operationId)),
     cancelOperation: (projectId, operationId) =>
-      this.api.cancelDocumentOperation(projectId, operationId),
+      from(this.api.cancelDocumentOperation(projectId, operationId)),
     newOperationId: () => this.newOperationId(),
     errorMessage: (error) => this.getUploadErrorMessage(error),
     errorCode: (error) => this.getUploadErrorCode(error),
@@ -304,7 +305,7 @@ export class SourceImportStore {
       if (this.isResourceSettled(this.documentsResource.status())) {
         const documents = this.documentsResource.value();
         untracked(() => {
-          this.library.setDocuments(documents);
+          this.library.setDocuments(this.mergeDocumentResourceValue(documents));
           this.setActiveDocument(this.library.chooseActiveFromDocuments());
         });
       }
@@ -439,12 +440,11 @@ export class SourceImportStore {
     return this.metrics.parsingMetrics(document);
   }
 
-  async uploadDocument(): Promise<DocumentRead | null> {
-    const documents = await this.uploadDocuments();
-    return documents.length > 0 ? documents[documents.length - 1] : null;
+  uploadDocument(): void {
+    this.uploadDocuments();
   }
 
-  async uploadDocuments(): Promise<DocumentRead[]> {
+  uploadDocuments(): void {
     const project = this.projects.selectedProject();
     let uploadItems = this.uploadItems().filter((item) =>
       ['queued', 'failed'].includes(item.status),
@@ -453,7 +453,7 @@ export class SourceImportStore {
       this.operations.fail(
         'Choose a project and one or more source files before uploading.',
       );
-      return [];
+      return;
     }
     if (uploadItems.length === 0) {
       if (!this.uploadLifecycle.hasActiveRun()) {
@@ -461,7 +461,7 @@ export class SourceImportStore {
           'Choose a project and one or more source files before uploading.',
         );
       }
-      return [];
+      return;
     }
     this.rememberPendingAutoUploads(uploadItems.map((item) => item.id));
     const pendingAudioNeedsModels = uploadItems.some(
@@ -469,13 +469,13 @@ export class SourceImportStore {
     );
     let readyItems = uploadItems.filter((item) => this.isUploadItemReady(item));
     if (readyItems.length === 0 && pendingAudioNeedsModels) {
-      await this.preflightAuthorizedWhisperModels();
+      this.preflightAuthorizedWhisperModels();
       uploadItems = this.uploadItems().filter((item) =>
         ['queued', 'failed'].includes(item.status),
       );
       readyItems = uploadItems.filter((item) => this.isUploadItemReady(item));
     } else if (pendingAudioNeedsModels) {
-      void this.preflightAuthorizedWhisperModels();
+      this.preflightAuthorizedWhisperModels();
     }
     if (readyItems.length === 0) {
       if (
@@ -486,7 +486,7 @@ export class SourceImportStore {
           'OCR runtime is warming up. Try again when runtime health finishes.',
         );
       }
-      return [];
+      return;
     }
 
     for (const item of readyItems) {
@@ -503,68 +503,59 @@ export class SourceImportStore {
         itemIds,
         this.uploadBatchSize(),
       );
-      return [];
+      return;
     }
-    if (this.operations.isBusyFor('upload')) {
-      return [];
+    if (
+      this.operations.isBusyFor('upload') &&
+      !this.uploadLifecycle.hasActiveRun()
+    ) {
+      this.scheduleReadyAutoUploads();
+      return;
     }
     this.forgetPendingAutoUploads(itemIds);
-    return this.runUploadTransports(project.id, itemIds);
+    this.runUploadTransports(project.id, itemIds);
   }
 
-  private async runUploadTransports(
+  private runUploadTransports(
     projectId: string,
     itemIds: readonly string[],
-  ): Promise<DocumentRead[]> {
+  ): void {
     const run = this.uploadLifecycle.begin(
       projectId,
       this.contextEpoch,
       itemIds,
       this.uploadBatchSize(),
     );
-    return this.finishUploadTransports(projectId, run);
+    this.finishUploadTransports(projectId, run);
   }
 
-  private async finishUploadTransports(
+  private finishUploadTransports(
     projectId: string,
     run: UploadTransportRun,
-  ): Promise<DocumentRead[]> {
-    const result = await this.operations.run(
-      'upload',
-      (documents) => this.uploadOutcomeMessage(run.itemIds, documents),
-      async () => {
-        await run.done;
-        return [...run.documents];
-      },
-      () => this.isCurrentUploadContext(projectId, run.contextEpoch),
-    );
-    if (!this.isCurrentUploadContext(projectId, run.contextEpoch)) {
-      return [];
-    }
-    if (run.runtimePromptNeeded) {
-      await this.refreshRuntimeHealth();
-      if (this.isCurrentUploadContext(projectId, run.contextEpoch)) {
-        this.health.openOcrRuntimeInstallConsent();
-      }
-    }
-
-    const documents = result ?? [];
-    const activeDocument = documents[documents.length - 1] ?? null;
-    if (activeDocument !== null) {
-      this.setActiveDocument(activeDocument);
-      await this.refreshUploadedDocument(projectId, activeDocument.id);
-    }
-
-    const failedCount = this.failedUploadCount();
-    if (failedCount > 0) {
-      this.operations.error.set(
-        failedCount === 1
-          ? '1 source file failed to upload.'
-          : `${failedCount} source files failed to upload.`,
-      );
-    }
-    this.startReadyAutoUploads();
-    return documents;
+  ): void {
+    this.operations
+      .run(
+        'upload',
+        (documents) => this.uploadOutcomeMessage(run.itemIds, documents),
+        () => run.done.pipe(map(() => [...run.documents])),
+        () => this.isCurrentUploadContext(projectId, run.contextEpoch),
+      )
+      .subscribe((result) => {
+        if (!this.isCurrentUploadContext(projectId, run.contextEpoch)) return;
+        if (run.runtimePromptNeeded) {
+          this.refreshRuntimeHealth();
+          if (this.isCurrentUploadContext(projectId, run.contextEpoch)) this.health.openOcrRuntimeInstallConsent();
+        }
+        const documents = result ?? [];
+        const activeDocument = documents[documents.length - 1] ?? null;
+        if (activeDocument !== null) {
+          this.setActiveDocument(activeDocument);
+          this.refreshUploadedDocument(projectId, activeDocument.id);
+        }
+        const failedCount = this.failedUploadCount();
+        if (failedCount > 0) this.operations.error.set(failedCount === 1 ? '1 source file failed to upload.' : `${failedCount} source files failed to upload.`);
+        this.startReadyAutoUploads();
+      });
   }
 
   private uploadOutcomeMessage(
@@ -635,10 +626,10 @@ export class SourceImportStore {
     this.chunksResource.reload();
   }
 
-  async refreshUploadedDocument(
+  refreshUploadedDocument(
     projectId?: string,
     documentId?: string,
-  ): Promise<void> {
+  ): void {
     const project = projectId ?? this.projects.selectedProject()?.id;
     const document =
       documentId ?? this.activeDocumentId() ?? this.activeDocument()?.id;
@@ -649,29 +640,22 @@ export class SourceImportStore {
       this.activeDocumentId.set(documentId);
     }
 
-    try {
-      const [nextDocument, chunks] = await Promise.all([
-        this.api.getDocument(project, document),
-        this.loadDocumentChunks(project, document),
-      ]);
-      this.library.upsertDocument(nextDocument);
-      if (!this.isCurrentProjectDocument(project, document)) {
-        return;
-      }
-      this.setActiveDocument(nextDocument);
-      this.library.setChunks(chunks);
-      this.updateUploadDocumentSnapshot(nextDocument);
-      this.resetDocumentPollingFailure();
-      if (
-        ['processing', 'cancel_requested'].includes(nextDocument.status)
-      ) {
-        this.scheduleDocumentPolling(project, document);
-      } else {
-        this.stopDocumentPolling();
-      }
-    } catch {
-      this.handleDocumentPollingFailure(project, document);
-    }
+    forkJoin({
+      document: from(this.api.getDocument(project, document)),
+      chunks: this.loadDocumentChunks(project, document),
+    }).subscribe({
+      next: ({ document: nextDocument, chunks }) => {
+        this.library.upsertDocument(nextDocument);
+        if (!this.isCurrentProjectDocument(project, document)) return;
+        this.setActiveDocument(nextDocument);
+        this.library.setChunks(chunks);
+        this.updateUploadDocumentSnapshot(nextDocument);
+        this.resetDocumentPollingFailure();
+        if (['processing', 'cancel_requested'].includes(nextDocument.status)) this.scheduleDocumentPolling(project, document);
+        else this.stopDocumentPolling();
+      },
+      error: () => this.handleDocumentPollingFailure(project, document),
+    });
   }
 
   retryDocumentPolling(): void {
@@ -682,7 +666,7 @@ export class SourceImportStore {
     }
 
     this.resetDocumentPollingFailure();
-    void this.refreshUploadedDocument(projectId, documentId);
+    this.refreshUploadedDocument(projectId, documentId);
   }
 
   canCancelUploadItem(item: SourceUploadItem): boolean {
@@ -700,7 +684,7 @@ export class SourceImportStore {
     );
   }
 
-  async cancelUploadItem(itemId: string): Promise<void> {
+  cancelUploadItem(itemId: string): void {
     const projectId = this.projects.selectedProject()?.id;
     const item = this.uploadItems().find((candidate) => candidate.id === itemId);
     if (
@@ -724,19 +708,16 @@ export class SourceImportStore {
       status: 'cancel_requested',
       error: null,
     });
-    try {
-      await this.api.cancelDocumentProcessing(projectId, document.id);
-      this.updateUploadItem(item.id, { status: 'canceled', error: null });
-      await this.refreshUploadedDocument(projectId, document.id);
-    } catch (error) {
-      this.updateUploadItem(item.id, {
-        status: 'failed',
-        error: this.getUploadErrorMessage(error),
-      });
-    }
+    from(this.api.cancelDocumentProcessing(projectId, document.id)).subscribe({
+      next: () => {
+        this.updateUploadItem(item.id, { status: 'canceled', error: null });
+        this.refreshUploadedDocument(projectId, document.id);
+      },
+      error: (error: unknown) => this.updateUploadItem(item.id, { status: 'failed', error: this.getUploadErrorMessage(error) }),
+    });
   }
 
-  async retryUploadItem(itemId: string): Promise<void> {
+  retryUploadItem(itemId: string): void {
     const projectId = this.projects.selectedProject()?.id;
     const item = this.uploadItems().find((candidate) => candidate.id === itemId);
     if (
@@ -749,13 +730,13 @@ export class SourceImportStore {
     if (item.status === 'status_unavailable') {
       const resumed = this.uploadLifecycle.resume(item.id);
       if (resumed?.kind === 'new-run') {
-        await this.finishUploadTransports(projectId, resumed.run);
+        this.finishUploadTransports(projectId, resumed.run);
       }
       return;
     }
     if (this.isAudioSourceFile(item.file) && !this.whisperModelsReady()) {
       this.rememberPendingAutoUploads([item.id]);
-      if (!(await this.preflightAuthorizedWhisperModels())) {
+      if (!this.preflightAuthorizedWhisperModels()) {
         return;
       }
     } else if (
@@ -782,14 +763,18 @@ export class SourceImportStore {
       );
       return;
     }
-    if (this.operations.isBusyFor('upload')) {
+    if (
+      this.operations.isBusyFor('upload') &&
+      !this.uploadLifecycle.hasActiveRun()
+    ) {
+      this.scheduleReadyAutoUploads();
       return;
     }
     this.forgetPendingAutoUploads([item.id]);
-    await this.runUploadTransports(projectId, [item.id]);
+    this.runUploadTransports(projectId, [item.id]);
   }
 
-  async cancelActiveDocumentProcessing(): Promise<void> {
+  cancelActiveDocumentProcessing(): void {
     const projectId = this.projects.selectedProject()?.id;
     const document = this.activeDocument();
     if (
@@ -799,17 +784,16 @@ export class SourceImportStore {
     ) {
       return;
     }
-    const canceled = await this.operations.run(
-      'document-cancel',
-      'Parsing cancellation requested',
-      () => this.api.cancelDocumentProcessing(projectId, document.id),
-    );
-    if (canceled !== null) {
-      await this.refreshUploadedDocument(projectId, document.id);
-    }
+    this.operations
+      .run('document-cancel', 'Parsing cancellation requested', (signal) =>
+        this.api.cancelDocumentProcessing(projectId, document.id, { signal }),
+      )
+      .subscribe((canceled) => {
+        if (canceled !== null) this.refreshUploadedDocument(projectId, document.id);
+      });
   }
 
-  async retryActiveDocumentProcessing(): Promise<void> {
+  retryActiveDocumentProcessing(): void {
     const projectId = this.projects.selectedProject()?.id;
     const document = this.activeDocument();
     if (
@@ -825,18 +809,19 @@ export class SourceImportStore {
     ) {
       return;
     }
-    const retried = await this.operations.run(
-      'document-retry',
-      'Parsing restarted',
-      () => this.api.retryDocumentProcessing(projectId, document.id),
-    );
-    if (retried !== null) {
-      this.resetDocumentPollingFailure();
-      await this.refreshUploadedDocument(projectId, document.id);
-    }
+    this.operations
+      .run('document-retry', 'Parsing restarted', (signal) =>
+        this.api.retryDocumentProcessing(projectId, document.id, { signal }),
+      )
+      .subscribe((retried) => {
+        if (retried !== null) {
+          this.resetDocumentPollingFailure();
+          this.refreshUploadedDocument(projectId, document.id);
+        }
+      });
   }
 
-  async updateTranscriptChunk(chunkId: string, text: string): Promise<void> {
+  updateTranscriptChunk(chunkId: string, text: string): void {
     const projectId = this.projects.selectedProject()?.id;
     const documentId = this.activeDocumentId();
     if (
@@ -846,26 +831,20 @@ export class SourceImportStore {
     ) {
       return;
     }
-    const updated = await this.operations.run(
-      'transcript-edit',
-      'Japanese transcript saved',
-      () => this.api.updateDocumentChunk(projectId, documentId, chunkId, { text }),
-      () => this.isCurrentProjectDocument(projectId, documentId),
-    );
-    if (
-      updated !== null &&
-      this.isCurrentProjectDocument(projectId, documentId)
-    ) {
-      this.library.setChunks(
-        this.chunks().map((chunk) =>
-          chunk.id === chunkId ? updated : chunk,
-        ),
-      );
-      await this.refreshDocumentMetadata(projectId, documentId);
-    }
+    this.operations
+      .run('transcript-edit', 'Japanese transcript saved', (signal) =>
+        this.api.updateDocumentChunk(projectId, documentId, chunkId, { text }, { signal }),
+        () => this.isCurrentProjectDocument(projectId, documentId),
+      )
+      .subscribe((updated) => {
+        if (updated !== null && this.isCurrentProjectDocument(projectId, documentId)) {
+          this.library.setChunks(this.chunks().map((chunk) => chunk.id === chunkId ? updated : chunk));
+          this.refreshDocumentMetadata(projectId, documentId);
+        }
+      });
   }
 
-  async translateTranscriptChunk(chunkId: string): Promise<void> {
+  translateTranscriptChunk(chunkId: string): void {
     const projectId = this.projects.selectedProject()?.id;
     const documentId = this.activeDocumentId();
     if (
@@ -875,26 +854,20 @@ export class SourceImportStore {
     ) {
       return;
     }
-    const translated = await this.operations.run(
-      'transcript-translate',
-      'Traditional Chinese translation updated',
-      () => this.api.translateDocumentChunk(projectId, documentId, chunkId),
-      () => this.isCurrentProjectDocument(projectId, documentId),
-    );
-    if (
-      translated !== null &&
-      this.isCurrentProjectDocument(projectId, documentId)
-    ) {
-      this.library.setChunks(
-        this.chunks().map((chunk) =>
-          chunk.id === chunkId ? translated : chunk,
-        ),
-      );
-      await this.refreshDocumentMetadata(projectId, documentId);
-    }
+    this.operations
+      .run('transcript-translate', 'Traditional Chinese translation updated', (signal) =>
+        this.api.translateDocumentChunk(projectId, documentId, chunkId, { signal }),
+        () => this.isCurrentProjectDocument(projectId, documentId),
+      )
+      .subscribe((translated) => {
+        if (translated !== null && this.isCurrentProjectDocument(projectId, documentId)) {
+          this.library.setChunks(this.chunks().map((chunk) => chunk.id === chunkId ? translated : chunk));
+          this.refreshDocumentMetadata(projectId, documentId);
+        }
+      });
   }
 
-  async translateStaleTranscriptChunks(): Promise<void> {
+  translateStaleTranscriptChunks(): void {
     const projectId = this.projects.selectedProject()?.id;
     const documentId = this.activeDocumentId();
     if (
@@ -904,54 +877,40 @@ export class SourceImportStore {
     ) {
       return;
     }
-    const translated = await this.operations.run(
-      'transcript-translate-all',
-      'Stale translations updated',
-      () => this.api.translateDocumentStaleChunks(projectId, documentId),
-      () => this.isCurrentProjectDocument(projectId, documentId),
-    );
-    if (
-      translated !== null &&
-      this.isCurrentProjectDocument(projectId, documentId)
-    ) {
-      const byId = new Map(translated.items.map((chunk) => [chunk.id, chunk]));
-      this.library.setChunks(
-        this.chunks().map((chunk) => byId.get(chunk.id) ?? chunk),
-      );
-      await this.refreshDocumentMetadata(projectId, documentId);
-    }
+    this.operations
+      .run('transcript-translate-all', 'Stale translations updated', (signal) =>
+        this.api.translateDocumentStaleChunks(projectId, documentId, { signal }),
+        () => this.isCurrentProjectDocument(projectId, documentId),
+      )
+      .subscribe((translated) => {
+        if (translated !== null && this.isCurrentProjectDocument(projectId, documentId)) {
+          const byId = new Map(translated.items.map((chunk) => [chunk.id, chunk]));
+          this.library.setChunks(this.chunks().map((chunk) => byId.get(chunk.id) ?? chunk));
+          this.refreshDocumentMetadata(projectId, documentId);
+        }
+      });
   }
 
-  private async refreshDocumentMetadata(
+  private refreshDocumentMetadata(
     projectId: string,
     documentId: string,
-  ): Promise<void> {
-    let document: DocumentRead;
-    try {
-      document = await this.api.getDocument(projectId, documentId);
-    } catch (error) {
-      console.warn(
-        'Unable to refresh document metadata after a transcript mutation.',
-        error,
-      );
-      // The successful chunk mutation remains visible; normal refresh/polling
-      // reconciles document-level status when the backend is available again.
-      return;
-    }
-    if (!this.isCurrentProjectDocument(projectId, documentId)) {
-      return;
-    }
-    this.library.upsertDocument(document);
-    this.setActiveDocument(document);
-    this.updateUploadDocumentSnapshot(document);
+  ): void {
+    from(this.api.getDocument(projectId, documentId)).subscribe({
+      next: (document) => {
+        if (!this.isCurrentProjectDocument(projectId, documentId)) return;
+        this.library.upsertDocument(document);
+        this.setActiveDocument(document);
+        this.updateUploadDocumentSnapshot(document);
+      },
+      error: (error: unknown) => console.warn('Unable to refresh document metadata after a transcript mutation.', error),
+    });
   }
 
-  private async loadDocumentChunks(
+  private loadDocumentChunks(
     projectId: string,
     documentId: string,
-  ): Promise<ChunkRead[]> {
-    const chunks = await this.api.listDocumentChunks(projectId, documentId);
-    return chunks.items;
+  ): import('rxjs').Observable<ChunkRead[]> {
+    return from(this.api.listDocumentChunks(projectId, documentId)).pipe(map((chunks) => chunks.items));
   }
 
   private isSupportedSourceFile(file: File): boolean {
@@ -966,11 +925,11 @@ export class SourceImportStore {
     );
   }
 
-  async cancelWhisperModelDownload(): Promise<void> {
-    await this.health.cancelRuntimeInstallation();
+  cancelWhisperModelDownload(): void {
+    this.health.cancelRuntimeInstallation();
   }
 
-  private async preflightWhisperModels(): Promise<boolean> {
+  private preflightWhisperModels(): boolean {
     if (!this.hasPendingAudioUpload()) {
       return true;
     }
@@ -978,15 +937,9 @@ export class SourceImportStore {
       return true;
     }
     if (this.whisperModelsRequirement() === null) {
-      try {
-        await this.health.loadRuntimeRequirementsForUpload();
-      } catch {
-        if (!this.hasPendingAudioUpload()) {
-          return true;
-        }
-        this.operations.fail(
-          'Whisper model status is unavailable. Refresh runtime health before uploading audio.',
-        );
+      this.health.loadRuntimeRequirementsForUpload();
+      if (this.whisperModelsRequirement() === null) {
+        this.operations.fail('Whisper model status is unavailable. Refresh runtime health before uploading audio.');
         return false;
       }
     }
@@ -1009,8 +962,8 @@ export class SourceImportStore {
     return false;
   }
 
-  private async preflightAuthorizedWhisperModels(): Promise<boolean> {
-    const ready = await this.preflightWhisperModels();
+  private preflightAuthorizedWhisperModels(): boolean {
+    const ready = this.preflightWhisperModels();
     if (!ready) {
       this.beginWhisperRuntimeAuthorizationWait();
     }
@@ -1051,11 +1004,20 @@ export class SourceImportStore {
     if (this.autoUploadEnqueueScheduled) {
       return;
     }
-    this.autoUploadEnqueueScheduled = true;
-    queueMicrotask(() => {
-      this.autoUploadEnqueueScheduled = false;
-      this.startReadyAutoUploads();
-    });
+    if (
+      this.operations.isBusyFor('upload') &&
+      !this.uploadLifecycle.hasActiveRun()
+    ) {
+      this.autoUploadEnqueueScheduled = true;
+      queueMicrotask(() => {
+        this.autoUploadEnqueueScheduled = false;
+        if (!this.operations.isBusyFor('upload')) {
+          untracked(() => this.startReadyAutoUploads());
+        }
+      });
+      return;
+    }
+    untracked(() => this.startReadyAutoUploads());
   }
 
   private beginWhisperRuntimeAuthorizationWait(): void {
@@ -1080,10 +1042,8 @@ export class SourceImportStore {
       return;
     }
     this.whisperAuthorizationReconcileScheduled = true;
-    queueMicrotask(() => {
-      this.whisperAuthorizationReconcileScheduled = false;
-      this.reconcileWhisperRuntimeAuthorization();
-    });
+    this.whisperAuthorizationReconcileScheduled = false;
+    untracked(() => this.reconcileWhisperRuntimeAuthorization());
   }
 
   private reconcileWhisperRuntimeAuthorization(): void {
@@ -1182,7 +1142,7 @@ export class SourceImportStore {
       return;
     }
     this.forgetPendingAutoUploads(itemIds);
-    void this.runUploadTransports(projectId, itemIds);
+    this.runUploadTransports(projectId, itemIds);
   }
 
   private forgetPendingAutoUploads(itemIds: readonly string[]): void {
@@ -1282,21 +1242,34 @@ export class SourceImportStore {
     );
   }
 
+  private mergeDocumentResourceValue(
+    documents: readonly DocumentRead[],
+  ): DocumentRead[] {
+    const projectId = this.projects.selectedProjectId();
+    const knownDocuments = this.library
+      .documents()
+      .filter((document) => document.project_id === projectId);
+    const resourceDocumentIds = new Set(documents.map((document) => document.id));
+    return [
+      ...knownDocuments.filter((document) => !resourceDocumentIds.has(document.id)),
+      ...documents,
+    ];
+  }
+
   private setActiveDocument(document: DocumentRead | null): void {
     if (this.library.setActiveDocument(document)) {
       this.stopDocumentPolling();
     }
   }
 
-  private async refreshRuntimeHealth(): Promise<void> {
+  private refreshRuntimeHealth(): void {
     try {
-      await this.health.load();
+      this.health.load();
     } catch (error) {
       console.warn(
         'Unable to refresh runtime health before opening the OCR runtime prompt.',
         error,
       );
-      // Keep the use-time prompt available even if the health refresh failed.
     }
   }
 
@@ -1342,10 +1315,10 @@ export class SourceImportStore {
 
   private scheduleDocumentPolling(projectId: string, documentId: string): void {
     this.stopDocumentPolling();
-    this.documentPollTimer = setTimeout(() => {
+    this.documentPollTimer = timer(this.documentPollIntervalMs()).subscribe(() => {
       this.documentPollTimer = null;
-      void this.pollDocument(projectId, documentId);
-    }, this.documentPollIntervalMs());
+      this.pollDocument(projectId, documentId);
+    });
   }
 
   private documentPollIntervalMs(): number {
@@ -1356,30 +1329,26 @@ export class SourceImportStore {
       : DOCUMENT_POLL_INTERVAL_MS;
   }
 
-  private async pollDocument(projectId: string, documentId: string): Promise<void> {
+  private pollDocument(projectId: string, documentId: string): void {
     if (!this.isCurrentProjectDocument(projectId, documentId)) {
       return;
     }
 
-    try {
-      const [document, chunks] = await Promise.all([
-        this.api.getDocument(projectId, documentId),
-        this.loadDocumentChunks(projectId, documentId),
-      ]);
-      if (!this.isCurrentProjectDocument(projectId, documentId)) {
-        return;
-      }
-      this.library.upsertDocument(document);
-      this.setActiveDocument(document);
-      this.library.setChunks(chunks);
-      this.updateUploadDocumentSnapshot(document);
-      this.resetDocumentPollingFailure();
-      if (!FINAL_DOCUMENT_STATUSES.has(document.status)) {
-        this.scheduleDocumentPolling(projectId, documentId);
-      }
-    } catch {
-      this.handleDocumentPollingFailure(projectId, documentId);
-    }
+    forkJoin({
+      document: from(this.api.getDocument(projectId, documentId)),
+      chunks: this.loadDocumentChunks(projectId, documentId),
+    }).subscribe({
+      next: ({ document, chunks }) => {
+        if (!this.isCurrentProjectDocument(projectId, documentId)) return;
+        this.library.upsertDocument(document);
+        this.setActiveDocument(document);
+        this.library.setChunks(chunks);
+        this.updateUploadDocumentSnapshot(document);
+        this.resetDocumentPollingFailure();
+        if (!FINAL_DOCUMENT_STATUSES.has(document.status)) this.scheduleDocumentPolling(projectId, documentId);
+      },
+      error: () => this.handleDocumentPollingFailure(projectId, documentId),
+    });
   }
 
   private handleDocumentPollingFailure(
@@ -1394,10 +1363,10 @@ export class SourceImportStore {
     const delay = POLL_RETRY_DELAYS_MS[this.documentPollFailureCount];
     if (delay !== undefined) {
       this.documentPollFailureCount += 1;
-      this.documentPollTimer = setTimeout(() => {
+      this.documentPollTimer = timer(delay).subscribe(() => {
         this.documentPollTimer = null;
-        void this.pollDocument(projectId, documentId);
-      }, delay);
+        this.pollDocument(projectId, documentId);
+      });
       return;
     }
 
@@ -1413,7 +1382,7 @@ export class SourceImportStore {
 
   private stopDocumentPolling(): void {
     if (this.documentPollTimer !== null) {
-      clearTimeout(this.documentPollTimer);
+      this.documentPollTimer.unsubscribe();
       this.documentPollTimer = null;
     }
   }

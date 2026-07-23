@@ -1,4 +1,5 @@
 import { Injectable } from '@angular/core';
+import { defer, map, Observable } from 'rxjs';
 
 export interface ImageCropRect {
   readonly x: number;
@@ -72,52 +73,26 @@ export function croppedImageFilename(
 
 @Injectable({ providedIn: 'root' })
 export class SourceImageCropService {
-  async crop(
+  crop(
     sourceFile: File,
     sourceImage: HTMLImageElement,
     cropRect: ImageCropRect,
-  ): Promise<File> {
-    const rect = clampImageCropRect(
-      cropRect,
-      sourceImage.naturalWidth,
-      sourceImage.naturalHeight,
-    );
-    if (rect.width === 0 || rect.height === 0) {
-      throw new Error('The image dimensions are unavailable for cropping.');
-    }
-
-    const canvas = document.createElement('canvas');
-    canvas.width = rect.width;
-    canvas.height = rect.height;
-    const context = canvas.getContext('2d');
-    if (context === null) {
-      throw new Error('Image cropping is unavailable in this browser.');
-    }
-    context.drawImage(
-      sourceImage,
-      rect.x,
-      rect.y,
-      rect.width,
-      rect.height,
-      0,
-      0,
-      rect.width,
-      rect.height,
-    );
-
-    const preferredMimeType = preferredCropMimeType(sourceFile);
-    const blob = await canvasBlob(canvas, preferredMimeType);
-    const outputMimeType = CROPPABLE_MIME_TYPES.has(blob.type)
-      ? blob.type
-      : preferredMimeType;
-    return new File(
-      [blob],
-      croppedImageFilename(sourceFile.name, outputMimeType),
-      {
-        type: outputMimeType,
-        lastModified: Date.now(),
-      },
-    );
+  ): Observable<File> {
+    return defer(() => {
+      const rect = clampImageCropRect(cropRect, sourceImage.naturalWidth, sourceImage.naturalHeight);
+      if (rect.width === 0 || rect.height === 0) throw new Error('The image dimensions are unavailable for cropping.');
+      const canvas = document.createElement('canvas');
+      canvas.width = rect.width;
+      canvas.height = rect.height;
+      const context = canvas.getContext('2d');
+      if (context === null) throw new Error('Image cropping is unavailable in this browser.');
+      context.drawImage(sourceImage, rect.x, rect.y, rect.width, rect.height, 0, 0, rect.width, rect.height);
+      const preferredMimeType = preferredCropMimeType(sourceFile);
+      return canvasBlob(canvas, preferredMimeType).pipe(map((blob) => {
+        const outputMimeType = CROPPABLE_MIME_TYPES.has(blob.type) ? blob.type : preferredMimeType;
+        return new File([blob], croppedImageFilename(sourceFile.name, outputMimeType), { type: outputMimeType, lastModified: Date.now() });
+      }));
+    });
   }
 }
 
@@ -139,16 +114,17 @@ function preferredCropMimeType(file: File): string {
 function canvasBlob(
   canvas: HTMLCanvasElement,
   mimeType: string,
-): Promise<Blob> {
-  return new Promise((resolve, reject) => {
+): Observable<Blob> {
+  return new Observable<Blob>((subscriber) => {
     const quality = mimeType === 'image/png' ? undefined : 0.92;
     canvas.toBlob(
       (blob) => {
         if (blob === null) {
-          reject(new Error('The cropped image could not be encoded.'));
+          subscriber.error(new Error('The cropped image could not be encoded.'));
           return;
         }
-        resolve(blob);
+        subscriber.next(blob);
+        subscriber.complete();
       },
       mimeType,
       quality,

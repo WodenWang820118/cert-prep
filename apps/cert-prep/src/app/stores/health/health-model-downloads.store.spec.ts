@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { of } from 'rxjs';
 import { CERT_PREP_API } from '../../cert-prep-api';
 import { HealthStore } from './health.store';
 import {
@@ -26,15 +27,15 @@ describe('HealthStore model downloads', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
-    apiClient.health.mockResolvedValue({
+    apiClient.health.mockReturnValue(of({
       status: 'ok',
       app: 'cert-prep-backend',
       version: '0.1.0',
       python_version: '3.13.5',
       runtime_mode: 'source',
-    });
-    apiClient.llmHealth.mockResolvedValue(llmHealth({ available: false }));
-    apiClient.llmProviderSelection.mockResolvedValue(
+    }));
+    apiClient.llmHealth.mockReturnValue(of(llmHealth({ available: false })));
+    apiClient.llmProviderSelection.mockReturnValue(of(
       providerSelection({
         selected_provider: 'ollama',
         effective_provider: 'ollama',
@@ -42,12 +43,12 @@ describe('HealthStore model downloads', () => {
         runtime_requirement_kind: 'ollama',
         model_requirement_kind: 'ollama_model',
       }),
-    );
-    apiClient.ocrHealth.mockResolvedValue({
+    ));
+    apiClient.ocrHealth.mockReturnValue(of({
       ...ocrHealth(),
       fallback_reason: 'cuda_unavailable',
-    });
-    apiClient.runtimeRequirements.mockResolvedValue({ items: [] });
+    }));
+    apiClient.runtimeRequirements.mockReturnValue(of({ items: [] }));
     TestBed.configureTestingModule({
       providers: [
         { provide: CERT_PREP_API, useValue: apiClient },
@@ -60,10 +61,10 @@ describe('HealthStore model downloads', () => {
     vi.useRealTimers();
   });
 
-  it('does not start a model download when consent is cancelled', async () => {
+  it('does not start a model download when consent is cancelled', () => {
     const store = TestBed.inject(HealthStore);
     store.load();
-    await vi.waitFor(() => expect(store.healthSnapshotLoading()).toBe(false));
+    TestBed.tick();
 
     store.openModelDownloadConsent();
     store.cancelModelDownloadConsent();
@@ -72,56 +73,59 @@ describe('HealthStore model downloads', () => {
     expect(apiClient.startModelDownload).not.toHaveBeenCalled();
   });
 
-  it('starts and polls a model download only after confirmation', async () => {
+  it('starts and polls a model download only after confirmation', () => {
     const store = TestBed.inject(HealthStore);
-    apiClient.startModelDownload.mockResolvedValue(
+    apiClient.startModelDownload.mockReturnValue(of(
       modelDownload({
         status: 'running',
         detail: 'downloading',
         completed: 25,
       }),
-    );
-    apiClient.getModelDownload.mockResolvedValue(
+    ));
+    apiClient.getModelDownload.mockReturnValue(of(
       modelDownload({
         status: 'succeeded',
         detail: 'model download complete',
         completed: 100,
       }),
-    );
+    ));
     store.load();
-    await vi.waitFor(() => expect(store.healthSnapshotLoading()).toBe(false));
+    TestBed.tick();
 
     store.openModelDownloadConsent();
-    await store.confirmModelDownload();
+    store.confirmModelDownload();
+    TestBed.tick();
 
     expect(apiClient.startModelDownload).toHaveBeenCalledTimes(1);
     expect(store.modelDownloadConsentVisible()).toBe(false);
     expect(store.modelDownload()?.phase).toBe('running');
     expect(store.modelDownload()?.progress).toBe(25);
 
-    await vi.advanceTimersByTimeAsync(1500);
+    vi.advanceTimersByTime(1500);
+    TestBed.tick();
 
     expect(apiClient.getModelDownload).toHaveBeenCalledWith('job-1');
     expect(store.modelDownload()?.phase).toBe('succeeded');
     expect(store.modelDownload()?.progress).toBe(100);
   });
 
-  it('does not offer download for an available model', async () => {
+  it('does not offer download for an available model', () => {
     const store = TestBed.inject(HealthStore);
-    apiClient.llmHealth.mockResolvedValue(llmHealth({ available: true }));
+    apiClient.llmHealth.mockReturnValue(of(llmHealth({ available: true })));
 
     store.load();
-    await vi.waitFor(() => expect(store.healthSnapshotLoading()).toBe(false));
+    TestBed.tick();
     store.openModelDownloadConsent();
-    await store.confirmModelDownload();
+    store.confirmModelDownload();
+    TestBed.tick();
 
     expect(store.modelDownloadConsentVisible()).toBe(false);
     expect(apiClient.startModelDownload).not.toHaveBeenCalled();
   });
 
-  it('starts the selected provider model pull without provider-specific payload', async () => {
+  it('starts the selected provider model pull without provider-specific payload', () => {
     const store = TestBed.inject(HealthStore);
-    apiClient.llmHealth.mockResolvedValue(
+    apiClient.llmHealth.mockReturnValue(of(
       llmHealth({
         model: 'qwen3.5:4b',
         available: false,
@@ -130,8 +134,8 @@ describe('HealthStore model downloads', () => {
         configured_model: 'qwen3.5:4b',
         effective_model: null,
       }),
-    );
-    apiClient.runtimeRequirements.mockResolvedValue({
+    ));
+    apiClient.runtimeRequirements.mockReturnValue(of({
       items: [
         {
           kind: 'ollama',
@@ -148,41 +152,44 @@ describe('HealthStore model downloads', () => {
           unavailable_reason: 'model_missing',
         },
       ],
-    });
-    apiClient.startModelDownload.mockResolvedValue(
+    }));
+    apiClient.startModelDownload.mockReturnValue(of(
       modelDownload({
         model: 'qwen3.5:4b',
         status: 'running',
       }),
-    );
+    ));
     store.load();
-    await vi.waitFor(() => expect(store.healthSnapshotLoading()).toBe(false));
+    TestBed.tick();
 
     store.openModelDownloadConsent();
-    await store.confirmModelDownload();
+    store.confirmModelDownload();
+    TestBed.tick();
 
     expect(apiClient.startModelDownload).toHaveBeenCalledWith();
     expect(store.modelDownload()?.model).toBe('qwen3.5:4b');
   });
 
-  it('cancels an active model download through the generated API', async () => {
+  it('cancels an active model download through the generated API', () => {
     const store = TestBed.inject(HealthStore);
-    apiClient.startModelDownload.mockResolvedValue(
+    apiClient.startModelDownload.mockReturnValue(of(
       modelDownload({ status: 'running', phase: 'downloading' }),
-    );
-    apiClient.cancelModelDownload.mockResolvedValue(
+    ));
+    apiClient.cancelModelDownload.mockReturnValue(of(
       modelDownload({
         status: 'canceled',
         phase: 'canceled',
         cancellable: false,
       }),
-    );
+    ));
     store.load();
-    await vi.waitFor(() => expect(store.healthSnapshotLoading()).toBe(false));
+    TestBed.tick();
     store.openModelDownloadConsent();
-    await store.confirmModelDownload();
+    store.confirmModelDownload();
+    TestBed.tick();
 
-    await store.cancelModelDownload();
+    store.cancelModelDownload();
+    TestBed.tick();
 
     expect(apiClient.cancelModelDownload).toHaveBeenCalledWith('job-1');
     expect(store.modelDownload()?.phase).toBe('canceled');

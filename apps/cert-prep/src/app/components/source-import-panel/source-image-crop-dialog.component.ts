@@ -201,7 +201,7 @@ export class SourceImageCropDialogComponent {
     }
   }
 
-  protected async applyCrop(): Promise<void> {
+  protected applyCrop(): void {
     const file = this.sourceFile();
     const image = this.sourceImage;
     if (file === null || image === null || !this.canApplyCrop()) {
@@ -209,23 +209,15 @@ export class SourceImageCropDialogComponent {
     }
     this.encoding.set(true);
     this.encodeError.set(null);
-    try {
-      const croppedFile = await this.cropService.crop(
-        file,
-        image,
-        this.cropRect(),
-      );
-      this.cropApplied.emit(croppedFile);
-    } catch (error) {
-      this.encodeError.set(
-        error instanceof Error
-          ? error.message
-          : 'The cropped image could not be created.',
-      );
-      this.focusReviewStatus();
-    } finally {
-      this.encoding.set(false);
-    }
+    this.cropService.crop(file, image, this.cropRect()).subscribe({
+      next: (croppedFile) => this.cropApplied.emit(croppedFile),
+      error: (error: unknown) => {
+        this.encodeError.set(error instanceof Error ? error.message : 'The cropped image could not be created.');
+        this.focusReviewStatus();
+        this.encoding.set(false);
+      },
+      complete: () => this.encoding.set(false),
+    });
   }
 
   focusReviewStatus(): void {

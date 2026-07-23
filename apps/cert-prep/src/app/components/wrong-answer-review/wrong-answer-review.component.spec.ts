@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
+import { of, throwError } from 'rxjs';
 import {
   CERT_PREP_API,
   type DocumentRead,
@@ -138,23 +139,23 @@ describe('WrongAnswerReviewComponent', () => {
     summarizeWrongAnswers: ReturnType<typeof vi.fn>;
   };
 
-  beforeEach(async () => {
+  beforeEach(() => {
     apiClient = {
-      createPracticeSession: vi.fn().mockResolvedValue(reviewSession),
-      getPracticeSession: vi.fn().mockResolvedValue(reviewSession),
+      createPracticeSession: vi.fn().mockReturnValue(of(reviewSession)),
+      getPracticeSession: vi.fn().mockReturnValue(of(reviewSession)),
       explainWrongAnswer: vi
         .fn()
-        .mockRejectedValue(new Error('AI provider unavailable')),
-      listWrongAnswers: vi.fn().mockResolvedValue({ items: [wrongAnswer] }),
-      summarizeWrongAnswers: vi.fn().mockResolvedValue(summary),
+        .mockReturnValue(throwError(() => new Error('AI provider unavailable'))),
+      listWrongAnswers: vi.fn().mockReturnValue(of({ items: [wrongAnswer] })),
+      summarizeWrongAnswers: vi.fn().mockReturnValue(of(summary)),
     };
-    await TestBed.configureTestingModule({
+    TestBed.configureTestingModule({
       imports: [WrongAnswerReviewComponent],
       providers: [
         provideRouter([]),
         { provide: CERT_PREP_API, useValue: apiClient },
       ],
-    }).compileComponents();
+    });
   });
 
   it('renders the empty review state', () => {
@@ -252,7 +253,7 @@ describe('WrongAnswerReviewComponent', () => {
     expect(buttonByText(element, 'Retry')?.disabled).toBe(true);
   });
 
-  it('starts a review quiz for all current wrong answers', async () => {
+  it('starts a review quiz for all current wrong answers', () => {
     const fixture = TestBed.createComponent(WrongAnswerReviewComponent);
     selectProject();
     TestBed.inject(WrongAnswerReviewStore).wrongAnswers.set([wrongAnswer]);
@@ -263,17 +264,21 @@ describe('WrongAnswerReviewComponent', () => {
     fixture.detectChanges();
 
     buttonByText(fixture.nativeElement, 'Start review quiz')?.click();
-    await fixture.whenStable();
+    TestBed.tick();
 
-    expect(apiClient.createPracticeSession).toHaveBeenCalledWith(project.id, {
-      mode: 'review_retry',
-      wrong_attempt_ids: [wrongAnswer.attempt_id],
-      question_count: 1,
-    });
+    expect(apiClient.createPracticeSession).toHaveBeenCalledWith(
+      project.id,
+      {
+        mode: 'review_retry',
+        wrong_attempt_ids: [wrongAnswer.attempt_id],
+        question_count: 1,
+      },
+      { signal: expect.any(AbortSignal) },
+    );
     expect(navigateByUrl).toHaveBeenCalledWith('/random-quiz');
   });
 
-  it('starts a retry session for one wrong answer card', async () => {
+  it('starts a retry session for one wrong answer card', () => {
     const fixture = TestBed.createComponent(WrongAnswerReviewComponent);
     selectProject();
     TestBed.inject(WrongAnswerReviewStore).wrongAnswers.set([wrongAnswer]);
@@ -282,23 +287,27 @@ describe('WrongAnswerReviewComponent', () => {
     fixture.detectChanges();
 
     buttonByText(fixture.nativeElement, 'Retry')?.click();
-    await fixture.whenStable();
+    TestBed.tick();
 
-    expect(apiClient.createPracticeSession).toHaveBeenCalledWith(project.id, {
-      mode: 'review_retry',
-      wrong_attempt_ids: [wrongAnswer.attempt_id],
-      question_count: 1,
-    });
+    expect(apiClient.createPracticeSession).toHaveBeenCalledWith(
+      project.id,
+      {
+        mode: 'review_retry',
+        wrong_attempt_ids: [wrongAnswer.attempt_id],
+        question_count: 1,
+      },
+      { signal: expect.any(AbortSignal) },
+    );
   });
 
-  it('shows deterministic fallback copy when AI is unavailable', async () => {
+  it('shows deterministic fallback copy when AI is unavailable', () => {
     const fixture = TestBed.createComponent(WrongAnswerReviewComponent);
     selectProject();
     TestBed.inject(WrongAnswerReviewStore).wrongAnswers.set([wrongAnswer]);
     fixture.detectChanges();
 
     clickAiButton(fixture.nativeElement as HTMLElement);
-    await fixture.whenStable();
+    TestBed.tick();
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).toContain(
@@ -312,27 +321,28 @@ describe('WrongAnswerReviewComponent', () => {
     );
   });
 
-  it('shows generated AI explanation results', async () => {
-    apiClient.explainWrongAnswer = vi
-      .fn()
-      .mockResolvedValue(
+  it('shows generated AI explanation results', () => {
+    apiClient.explainWrongAnswer = vi.fn().mockReturnValue(
+      of(
         explanationResponse(
           'AI result grounded in the recorded source excerpt.',
           false,
         ),
-      );
+      ),
+    );
     const fixture = TestBed.createComponent(WrongAnswerReviewComponent);
     selectProject();
     TestBed.inject(WrongAnswerReviewStore).wrongAnswers.set([wrongAnswer]);
     fixture.detectChanges();
 
     clickAiButton(fixture.nativeElement as HTMLElement);
-    await fixture.whenStable();
+    TestBed.tick();
     fixture.detectChanges();
 
     expect(apiClient.explainWrongAnswer).toHaveBeenCalledWith(
       project.id,
       wrongAnswer.attempt_id,
+      { signal: expect.any(AbortSignal) },
     );
     expect(fixture.nativeElement.textContent).toContain('AI explanation');
     expect(fixture.nativeElement.textContent).toContain(
@@ -340,22 +350,22 @@ describe('WrongAnswerReviewComponent', () => {
     );
   });
 
-  it('labels backend fallback explanation results', async () => {
-    apiClient.explainWrongAnswer = vi
-      .fn()
-      .mockResolvedValue(
+  it('labels backend fallback explanation results', () => {
+    apiClient.explainWrongAnswer = vi.fn().mockReturnValue(
+      of(
         explanationResponse(
           'Backend fallback grounded in the recorded source excerpt.',
           true,
         ),
-      );
+      ),
+    );
     const fixture = TestBed.createComponent(WrongAnswerReviewComponent);
     selectProject();
     TestBed.inject(WrongAnswerReviewStore).wrongAnswers.set([wrongAnswer]);
     fixture.detectChanges();
 
     clickAiButton(fixture.nativeElement as HTMLElement);
-    await fixture.whenStable();
+    TestBed.tick();
     fixture.detectChanges();
 
     expect(fixture.nativeElement.textContent).toContain(

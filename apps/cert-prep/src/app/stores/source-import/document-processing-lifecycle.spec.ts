@@ -1,4 +1,5 @@
 import type { DocumentOperationRead, DocumentRead } from '../../cert-prep-api';
+import { of, Subject, throwError } from 'rxjs';
 import {
   DocumentProcessingLifecycle,
   type DocumentProcessingActionView,
@@ -15,7 +16,7 @@ describe('DocumentProcessingLifecycle', () => {
     vi.useRealTimers();
   });
 
-  it('cancels a restart-loaded processing document and follows the operation to canceled', async () => {
+  it('cancels a restart-loaded processing document and follows the operation to canceled', () => {
     const harness = createHarness();
     const cancelRequested = operationRead({
       id: operationId(1),
@@ -24,23 +25,23 @@ describe('DocumentProcessingLifecycle', () => {
       phase: 'canceling',
       cancellable: false,
     });
-    harness.cancelDocument.mockResolvedValue(cancelRequested);
+    harness.cancelDocument.mockReturnValue(of(cancelRequested));
     harness.getDocument
-      .mockResolvedValueOnce(
+      .mockReturnValueOnce(of(
         documentRead({ status: 'cancel_requested', has_text: false }),
-      )
-      .mockResolvedValueOnce(
+      ))
+      .mockReturnValueOnce(of(
         documentRead({ status: 'canceled', has_text: false, chunks_count: 0 }),
-      );
-    harness.getOperation.mockResolvedValue(
+      ));
+    harness.getOperation.mockReturnValue(of(
       operationRead({
         ...cancelRequested,
         status: 'canceled',
         phase: 'canceled',
       }),
-    );
+    ));
 
-    await harness.lifecycle.cancel('project-1', 0, 'document-1');
+    harness.lifecycle.cancel('project-1', 0, 'document-1');
 
     expect(harness.cancelDocument).toHaveBeenCalledWith(
       'project-1',
@@ -50,7 +51,7 @@ describe('DocumentProcessingLifecycle', () => {
       expect.objectContaining({ status: 'cancel_requested' }),
     );
 
-    await vi.advanceTimersByTimeAsync(1000);
+    vi.advanceTimersByTime(1000);
 
     expect(harness.getOperation).toHaveBeenCalledWith(
       'project-1',
@@ -66,16 +67,16 @@ describe('DocumentProcessingLifecycle', () => {
   it.each([
     ['succeeded response', false],
     ['commit conflict', true],
-  ])('preserves publish-wins after a cancel: %s', async (_label, conflict) => {
+  ])('preserves publish-wins after a cancel: %s', (_label, conflict) => {
     const harness = createHarness();
-    harness.getDocument.mockResolvedValue(documentRead({ status: 'ready' }));
+    harness.getDocument.mockReturnValue(of(documentRead({ status: 'ready' })));
     if (conflict) {
-      harness.cancelDocument.mockRejectedValue({
+      harness.cancelDocument.mockReturnValue(throwError(() => ({
         status: 409,
         error: { message: 'The document is already committing.' },
-      });
+      })));
     } else {
-      harness.cancelDocument.mockResolvedValue(
+      harness.cancelDocument.mockReturnValue(of(
         operationRead({
           id: operationId(2),
           document_id: 'document-1',
@@ -83,10 +84,10 @@ describe('DocumentProcessingLifecycle', () => {
           phase: 'completed',
           cancellable: false,
         }),
-      );
+      ));
     }
 
-    await harness.lifecycle.cancel('project-1', 0, 'document-1');
+    harness.lifecycle.cancel('project-1', 0, 'document-1');
 
     expect(harness.accepted).toEqual([
       expect.objectContaining({ id: 'document-1', status: 'ready' }),
@@ -95,22 +96,22 @@ describe('DocumentProcessingLifecycle', () => {
     expect(harness.lifecycle.hasActiveAttempt('document-1')).toBe(false);
   });
 
-  it('keeps watching a committing publish winner until the document is terminal', async () => {
+  it('keeps watching a committing publish winner until the document is terminal', () => {
     const harness = createHarness();
-    harness.cancelDocument.mockRejectedValue({
+    harness.cancelDocument.mockReturnValue(throwError(() => ({
       status: 409,
       error: { message: 'The document is already committing.' },
-    });
+    })));
     harness.getDocument
-      .mockResolvedValueOnce(documentRead({ status: 'processing' }))
-      .mockResolvedValueOnce(documentRead({ status: 'ready' }));
+      .mockReturnValueOnce(of(documentRead({ status: 'processing' })))
+      .mockReturnValueOnce(of(documentRead({ status: 'ready' })));
 
-    await harness.lifecycle.cancel('project-1', 0, 'document-1');
+    harness.lifecycle.cancel('project-1', 0, 'document-1');
 
     expect(harness.views.get('document-1')).toEqual(
       expect.objectContaining({ status: 'running', cancellable: false }),
     );
-    await vi.advanceTimersByTimeAsync(1000);
+    vi.advanceTimersByTime(1000);
 
     expect(harness.getDocument).toHaveBeenCalledTimes(2);
     expect(harness.accepted.map((document) => document.status)).toEqual([
@@ -120,22 +121,24 @@ describe('DocumentProcessingLifecycle', () => {
     expect(harness.views.has('document-1')).toBe(false);
   });
 
-  it('retains one retry operation id through ambiguous POST, 404, and manual resume', async () => {
+  it('retains one retry operation id through ambiguous POST, 404, and manual resume', () => {
     const fixedOperationId = operationId(3);
     vi.spyOn(crypto, 'randomUUID').mockReturnValue(fixedOperationId);
     const harness = createHarness();
-    harness.retryDocument.mockRejectedValue(new Error('response disconnected'));
-    harness.getOperation.mockRejectedValue({ status: 404 });
+    harness.retryDocument.mockReturnValue(
+      throwError(() => new Error('response disconnected')),
+    );
+    harness.getOperation.mockReturnValue(throwError(() => ({ status: 404 })));
 
-    await harness.lifecycle.retry('project-1', 0, 'document-1');
+    harness.lifecycle.retry('project-1', 0, 'document-1');
     expect(harness.getOperation).toHaveBeenCalledTimes(1);
 
-    await vi.advanceTimersByTimeAsync(1000);
-    await vi.advanceTimersByTimeAsync(2000);
+    vi.advanceTimersByTime(1000);
+    vi.advanceTimersByTime(2000);
     expect(harness.views.get('document-1')?.status).not.toBe(
       'status_unavailable',
     );
-    await vi.advanceTimersByTimeAsync(4000);
+    vi.advanceTimersByTime(4000);
 
     expect(harness.getOperation).toHaveBeenCalledTimes(4);
     expect(harness.views.get('document-1')).toEqual(
@@ -145,7 +148,7 @@ describe('DocumentProcessingLifecycle', () => {
       }),
     );
 
-    harness.getOperation.mockResolvedValue(
+    harness.getOperation.mockReturnValue(of(
       operationRead({
         id: fixedOperationId,
         document_id: 'document-1',
@@ -153,9 +156,9 @@ describe('DocumentProcessingLifecycle', () => {
         phase: 'completed',
         cancellable: false,
       }),
-    );
-    harness.getDocument.mockResolvedValue(documentRead({ status: 'ready' }));
-    await harness.lifecycle.resume('document-1');
+    ));
+    harness.getDocument.mockReturnValue(of(documentRead({ status: 'ready' })));
+    harness.lifecycle.resume('document-1');
 
     expect(harness.retryDocument).toHaveBeenCalledTimes(1);
     expect(crypto.randomUUID).toHaveBeenCalledTimes(1);
@@ -172,15 +175,17 @@ describe('DocumentProcessingLifecycle', () => {
     expect(harness.views.has('document-1')).toBe(false);
   });
 
-  it('keeps independent retry budgets for operation and document reads', async () => {
+  it('keeps independent retry budgets for operation and document reads', () => {
     const fixedOperationId = operationId(31);
     vi.spyOn(crypto, 'randomUUID').mockReturnValue(fixedOperationId);
     const harness = createHarness();
-    harness.retryDocument.mockRejectedValue(new Error('POST disconnected'));
+    harness.retryDocument.mockReturnValue(
+      throwError(() => new Error('POST disconnected')),
+    );
     harness.getOperation
-      .mockRejectedValueOnce(new Error('operation unavailable 1'))
-      .mockRejectedValueOnce(new Error('operation unavailable 2'))
-      .mockResolvedValue(
+      .mockReturnValueOnce(throwError(() => new Error('operation unavailable 1')))
+      .mockReturnValueOnce(throwError(() => new Error('operation unavailable 2')))
+      .mockReturnValue(of(
         operationRead({
           id: fixedOperationId,
           document_id: 'document-1',
@@ -188,59 +193,60 @@ describe('DocumentProcessingLifecycle', () => {
           phase: 'completed',
           cancellable: false,
         }),
-      );
-    harness.getDocument.mockRejectedValue(new Error('document unavailable'));
+      ));
+    harness.getDocument.mockReturnValue(
+      throwError(() => new Error('document unavailable')),
+    );
 
-    await harness.lifecycle.retry('project-1', 0, 'document-1');
-    await vi.advanceTimersByTimeAsync(1000);
-    await vi.advanceTimersByTimeAsync(2000);
+    harness.lifecycle.retry('project-1', 0, 'document-1');
+    vi.advanceTimersByTime(1000);
+    vi.advanceTimersByTime(2000);
 
     expect(harness.getOperation).toHaveBeenCalledTimes(3);
     expect(harness.getDocument).toHaveBeenCalledTimes(1);
     expect(harness.views.get('document-1')?.status).toBe('running');
 
-    await vi.advanceTimersByTimeAsync(1000);
-    await vi.advanceTimersByTimeAsync(2000);
+    vi.advanceTimersByTime(1000);
+    vi.advanceTimersByTime(2000);
     expect(harness.getDocument).toHaveBeenCalledTimes(3);
     expect(harness.views.get('document-1')?.status).toBe('running');
 
-    await vi.advanceTimersByTimeAsync(4000);
+    vi.advanceTimersByTime(4000);
     expect(harness.getDocument).toHaveBeenCalledTimes(4);
     expect(harness.views.get('document-1')?.status).toBe(
       'status_unavailable',
     );
   });
 
-  it('issues an exact-operation tombstone before aborting an in-flight retry', async () => {
+  it('issues an exact-operation tombstone before aborting an in-flight retry', () => {
     const fixedOperationId = operationId(4);
     vi.spyOn(crypto, 'randomUUID').mockReturnValue(fixedOperationId);
     const harness = createHarness();
     const events: string[] = [];
     harness.retryDocument.mockImplementation(
-      (_projectId, _documentId, _operationId, signal) =>
-        new Promise<DocumentOperationRead>((_resolve, reject) => {
-          events.push('post-start');
-          signal.addEventListener('abort', () => {
-            events.push('post-abort');
-            reject(new DOMException('Canceled.', 'AbortError'));
-          });
-        }),
+      (_projectId, _documentId, _operationId, signal) => {
+        const request = new Subject<DocumentOperationRead>();
+        events.push('post-start');
+        signal.addEventListener('abort', () => {
+          events.push('post-abort');
+          request.error(new DOMException('Canceled.', 'AbortError'));
+        });
+        return request;
+      },
     );
-    harness.cancelOperation.mockImplementation(async () => {
+    harness.cancelOperation.mockImplementation(() => {
       events.push('delete-start');
-      return operationRead({
+      return of(operationRead({
         id: fixedOperationId,
         document_id: null,
         status: 'canceled',
         phase: 'canceled',
         cancellable: false,
-      });
+      }));
     });
 
-    const retry = harness.lifecycle.retry('project-1', 0, 'document-1');
-    await Promise.resolve();
-    const cancel = harness.lifecycle.cancel('project-1', 0, 'document-1');
-    await Promise.all([retry, cancel]);
+    harness.lifecycle.retry('project-1', 0, 'document-1');
+    harness.lifecycle.cancel('project-1', 0, 'document-1');
 
     expect(events).toEqual(['post-start', 'delete-start', 'post-abort']);
     expect(harness.cancelOperation).toHaveBeenCalledWith(
@@ -251,17 +257,17 @@ describe('DocumentProcessingLifecycle', () => {
     expect(harness.getOperation).not.toHaveBeenCalled();
   });
 
-  it('rejects a foreign document snapshot and reconciles only the expected operation', async () => {
+  it('rejects a foreign document snapshot and reconciles only the expected operation', () => {
     const fixedOperationId = operationId(5);
     vi.spyOn(crypto, 'randomUUID').mockReturnValue(fixedOperationId);
     const harness = createHarness();
-    harness.retryDocument.mockResolvedValue(
+    harness.retryDocument.mockReturnValue(of(
       operationRead({
         id: fixedOperationId,
         document_id: 'foreign-document',
       }),
-    );
-    harness.getOperation.mockResolvedValue(
+    ));
+    harness.getOperation.mockReturnValue(of(
       operationRead({
         id: fixedOperationId,
         document_id: 'document-1',
@@ -269,12 +275,12 @@ describe('DocumentProcessingLifecycle', () => {
         phase: 'completed',
         cancellable: false,
       }),
-    );
-    harness.getDocument.mockResolvedValue(documentRead({ status: 'ready' }));
+    ));
+    harness.getDocument.mockReturnValue(of(documentRead({ status: 'ready' })));
 
-    await harness.lifecycle.retry('project-1', 0, 'document-1');
+    harness.lifecycle.retry('project-1', 0, 'document-1');
     expect(harness.accepted).toEqual([]);
-    await vi.advanceTimersByTimeAsync(1000);
+    vi.advanceTimersByTime(1000);
 
     expect(harness.getOperation).toHaveBeenCalledWith(
       'project-1',
@@ -285,12 +291,12 @@ describe('DocumentProcessingLifecycle', () => {
     ]);
   });
 
-  it('ignores late retry results and removes timers after invalidation', async () => {
+  it('ignores late retry results and removes timers after invalidation', () => {
     const harness = createHarness();
     const response = deferred<DocumentOperationRead>();
-    harness.retryDocument.mockReturnValue(response.promise);
+    harness.retryDocument.mockReturnValue(response.observable);
 
-    const retry = harness.lifecycle.retry('project-1', 0, 'document-1');
+    harness.lifecycle.retry('project-1', 0, 'document-1');
     harness.lifecycle.invalidate();
     response.resolve(
       operationRead({
@@ -298,25 +304,24 @@ describe('DocumentProcessingLifecycle', () => {
         document_id: 'document-1',
       }),
     );
-    await retry;
-    await vi.advanceTimersByTimeAsync(8000);
+    vi.advanceTimersByTime(8000);
 
     expect(harness.views.size).toBe(0);
     expect(harness.accepted).toEqual([]);
     expect(harness.getOperation).not.toHaveBeenCalled();
   });
 
-  it('fails a terminal retry request and reports a missing OCR runtime', async () => {
+  it('fails a terminal retry request and reports a missing OCR runtime', () => {
     const harness = createHarness();
-    harness.retryDocument.mockRejectedValue({
+    harness.retryDocument.mockReturnValue(throwError(() => ({
       status: 503,
       error: {
         code: 'windowsml_runtime_missing',
         message: 'WindowsML runtime is missing.',
       },
-    });
+    })));
 
-    await harness.lifecycle.retry('project-1', 0, 'document-1');
+    harness.lifecycle.retry('project-1', 0, 'document-1');
 
     expect(harness.views.get('document-1')).toEqual({
       kind: 'retry',
@@ -439,12 +444,15 @@ function operationId(
 }
 
 function deferred<T>(): {
-  readonly promise: Promise<T>;
+  readonly observable: Subject<T>;
   readonly resolve: (value: T) => void;
 } {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((resolver) => {
-    resolve = resolver;
-  });
-  return { promise, resolve };
+  const observable = new Subject<T>();
+  return {
+    observable,
+    resolve: (value) => {
+      observable.next(value);
+      observable.complete();
+    },
+  };
 }

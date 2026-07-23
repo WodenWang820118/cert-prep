@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { NEVER, of, Subject, throwError } from 'rxjs';
 import {
   ChunkRead,
   DocumentRead,
@@ -16,7 +17,9 @@ describe('SourceImportPanelComponent', () => {
   const apiClient = {
     generateDocumentDrafts: vi.fn(),
     getDocument: vi.fn(),
+    listDocuments: vi.fn(),
     listDocumentChunks: vi.fn(),
+    listDocumentDraftJobs: vi.fn(),
     listQuestionDrafts: vi.fn(),
     uploadDocument: vi.fn(),
     getDocumentOperation: vi.fn(),
@@ -33,26 +36,28 @@ describe('SourceImportPanelComponent', () => {
     cancelRuntimeInstallation: vi.fn(),
   };
 
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.useRealTimers();
     vi.clearAllMocks();
-    apiClient.getDocument.mockResolvedValue(documentRead());
-    apiClient.listDocumentChunks.mockResolvedValue({ items: [] });
-    apiClient.listQuestionDrafts.mockResolvedValue({ items: [] });
-    apiClient.getDocumentAudioSource.mockResolvedValue(
+    apiClient.getDocument.mockReturnValue(of(documentRead()));
+    apiClient.listDocuments.mockReturnValue(NEVER);
+    apiClient.listDocumentChunks.mockReturnValue(of({ items: [] }));
+    apiClient.listDocumentDraftJobs.mockReturnValue(of({ items: [] }));
+    apiClient.listQuestionDrafts.mockReturnValue(of({ items: [] }));
+    apiClient.getDocumentAudioSource.mockReturnValue(of(
       new Blob(['audio'], { type: 'audio/mpeg' }),
-    );
-    apiClient.runtimeRequirements.mockResolvedValue({
+    ));
+    apiClient.runtimeRequirements.mockReturnValue(of({
       items: [whisperRequirement(true)],
-    });
+    }));
 
-    await TestBed.configureTestingModule({
+    TestBed.configureTestingModule({
       imports: [SourceImportPanelComponent],
       providers: [
         { provide: CERT_PREP_API, useValue: apiClient },
         provideCertPrepHttpResourceClientFake(apiClient),
       ],
-    }).compileComponents();
+    });
 
     const projects = TestBed.inject(ProjectStore);
     projects.projects.set([
@@ -68,6 +73,7 @@ describe('SourceImportPanelComponent', () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.useRealTimers();
   });
 
@@ -124,7 +130,7 @@ describe('SourceImportPanelComponent', () => {
     ).toBeNull();
   });
 
-  it('enables crop review through the switch and locks file actions while it is open', async () => {
+  it('enables crop review through the switch and locks file actions while it is open', () => {
     const fixture = TestBed.createComponent(SourceImportPanelComponent);
     const sourceImport = TestBed.inject(SourceImportStore);
     const image = new File(['png'], 'diagram.png', { type: 'image/png' });
@@ -134,7 +140,7 @@ describe('SourceImportPanelComponent', () => {
       '#cropImagesBeforeUpload',
     ) as HTMLInputElement;
     toggle.click();
-    await fixture.whenStable();
+    TestBed.tick();
     fixture.detectChanges();
     expect(toggle.checked).toBe(true);
 
@@ -155,14 +161,16 @@ describe('SourceImportPanelComponent', () => {
     fixture.detectChanges();
     cropActionButton(fixture.nativeElement, 'Keep original')?.click();
     expect(sourceImport.selectedFiles()).toEqual([image]);
-    await Promise.resolve();
+    TestBed.tick();
     fixture.detectChanges();
-    expect(document.activeElement).toBe(
-      chooseFilesControl(fixture.nativeElement),
+    return vi.waitFor(() =>
+      expect(document.activeElement).toBe(
+        chooseFilesControl(fixture.nativeElement),
+      ),
     );
   });
 
-  it('focuses the file chooser after the final applied crop is committed', async () => {
+  it('focuses the file chooser after the final applied crop is committed', () => {
     const fixture = TestBed.createComponent(SourceImportPanelComponent);
     const sourceImport = TestBed.inject(SourceImportStore);
     const image = new File(['png'], 'diagram.png', { type: 'image/png' });
@@ -175,16 +183,18 @@ describe('SourceImportPanelComponent', () => {
     component.chooseFiles(fileSelectionEvent([image]));
 
     component.applyCroppedImage(croppedImage);
-    await Promise.resolve();
+    TestBed.tick();
     fixture.detectChanges();
 
     expect(sourceImport.selectedFiles()).toEqual([croppedImage]);
-    expect(document.activeElement).toBe(
-      chooseFilesControl(fixture.nativeElement),
+    return vi.waitFor(() =>
+      expect(document.activeElement).toBe(
+        chooseFilesControl(fixture.nativeElement),
+      ),
     );
   });
 
-  it('reviews selected images in order and keeps PDFs outside the crop queue', async () => {
+  it('reviews selected images in order and keeps PDFs outside the crop queue', () => {
     const fixture = TestBed.createComponent(SourceImportPanelComponent);
     const sourceImport = TestBed.inject(SourceImportStore);
     const pdf = new File(['%PDF-1.7'], 'guide.pdf', {
@@ -210,23 +220,30 @@ describe('SourceImportPanelComponent', () => {
 
     component.applyCroppedImage(croppedImage);
     fixture.detectChanges();
-    await Promise.resolve();
-    expect(component.cropSourceFile()).toBe(secondImage);
-    expect(component.cropPosition()).toBe(2);
-    expect(document.activeElement).toBe(
-      fixture.nativeElement.querySelector('[aria-label="Crop review status"]'),
-    );
-
-    component.keepOriginalImage();
-    expect(component.cropSourceFile()).toBeNull();
-    expect(sourceImport.selectedFiles()).toEqual([
-      pdf,
-      croppedImage,
-      secondImage,
-    ]);
+    TestBed.tick();
+    return vi
+      .waitFor(() => {
+        expect(component.cropSourceFile()).toBe(secondImage);
+        expect(component.cropPosition()).toBe(2);
+        expect(document.activeElement).toBe(
+          fixture.nativeElement.querySelector(
+            '[aria-label="Crop review status"]',
+          ),
+        );
+      })
+      .then(() => {
+        component.keepOriginalImage();
+        expect(component.cropSourceFile()).toBeNull();
+        expect(sourceImport.selectedFiles()).toEqual([
+          pdf,
+          croppedImage,
+          secondImage,
+        ]);
+      });
   });
 
-  it('preserves append and auto-upload intent when a run ends during crop review', async () => {
+  it('preserves append and auto-upload intent when a run ends during crop review', () => {
+    vi.useFakeTimers();
     const fixture = TestBed.createComponent(SourceImportPanelComponent);
     const sourceImport = TestBed.inject(SourceImportStore);
     const firstUpload = deferred<DocumentRead>();
@@ -237,8 +254,8 @@ describe('SourceImportPanelComponent', () => {
         const file = body.get('file') as File;
         startedUploads.push(file.name);
         return file.name === 'busy.pdf'
-          ? firstUpload.promise
-          : croppedSelectionUpload.promise;
+          ? firstUpload.observable
+          : croppedSelectionUpload.observable;
       },
     );
     const component = componentActions(fixture.componentInstance);
@@ -247,8 +264,9 @@ describe('SourceImportPanelComponent', () => {
       new File(['%PDF-1.7'], 'busy.pdf', { type: 'application/pdf' }),
     );
 
-    const firstRun = sourceImport.uploadDocuments();
-    await Promise.resolve();
+    sourceImport.uploadDocuments();
+    TestBed.tick();
+    vi.runAllTicks();
     const appendedImage = new File(['png'], 'diagram.png', {
       type: 'image/png',
     });
@@ -260,11 +278,12 @@ describe('SourceImportPanelComponent', () => {
     firstUpload.resolve(
       documentRead({ id: 'document-busy', filename: 'busy.pdf' }),
     );
-    await firstRun;
+    TestBed.tick();
     expect(sourceImport.isUploading()).toBe(false);
 
     component.keepOriginalImage();
-    await flushPromises();
+    flushReactive();
+    vi.runAllTicks();
 
     expect(sourceImport.selectedFiles().map((file) => file.name)).toEqual([
       'busy.pdf',
@@ -275,7 +294,8 @@ describe('SourceImportPanelComponent', () => {
     croppedSelectionUpload.resolve(
       documentRead({ id: 'document-diagram', filename: 'diagram.png' }),
     );
-    await flushPromises(12);
+    flushReactive(12);
+    vi.runAllTicks();
 
     expect(sourceImport.uploadItems().map((item) => item.status)).toEqual([
       'uploaded',
@@ -437,14 +457,14 @@ describe('SourceImportPanelComponent', () => {
     expect(uploadButton(root)?.disabled).toBe(false);
   });
 
-  it('loads audio through the authenticated client and plays from a segment timestamp', async () => {
+  it('loads audio through the authenticated client and plays from a segment timestamp', () => {
     const createObjectUrl = vi
       .spyOn(URL, 'createObjectURL')
       .mockReturnValue('blob:authenticated-audio');
     const revokeObjectUrl = vi.spyOn(URL, 'revokeObjectURL');
     const play = vi
       .spyOn(HTMLMediaElement.prototype, 'play')
-      .mockResolvedValue(undefined);
+      .mockImplementation(() => ({ catch: vi.fn() }) as never);
     const fixture = TestBed.createComponent(SourceImportPanelComponent);
     const sourceImport = TestBed.inject(SourceImportStore);
     const audioDocument = documentRead({
@@ -482,13 +502,13 @@ describe('SourceImportPanelComponent', () => {
     ]);
 
     fixture.detectChanges();
-    await vi.waitFor(() => {
-      expect(apiClient.getDocumentAudioSource).toHaveBeenCalledWith(
-        'project-1',
-        audioDocument.id,
-        { signal: expect.any(AbortSignal) },
-      );
-    });
+    TestBed.tick();
+    fixture.detectChanges();
+    expect(apiClient.getDocumentAudioSource).toHaveBeenCalledWith(
+      'project-1',
+      audioDocument.id,
+      { signal: expect.any(AbortSignal) },
+    );
     fixture.detectChanges();
 
     const root = fixture.nativeElement as HTMLElement;
@@ -513,7 +533,7 @@ describe('SourceImportPanelComponent', () => {
     createObjectUrl.mockRestore();
   });
 
-  it('aborts in-flight audio loads when switching documents and on destroy', async () => {
+  it('aborts in-flight audio loads when switching documents and on destroy', () => {
     const requestSignals: AbortSignal[] = [];
     apiClient.getDocumentAudioSource.mockImplementation(
       (
@@ -524,7 +544,7 @@ describe('SourceImportPanelComponent', () => {
         if (options?.signal !== undefined) {
           requestSignals.push(options.signal);
         }
-        return new Promise<Blob>(() => undefined);
+        return NEVER;
       },
     );
     const fixture = TestBed.createComponent(SourceImportPanelComponent);
@@ -545,17 +565,18 @@ describe('SourceImportPanelComponent', () => {
     });
     sourceImport.documents.set([firstDocument, secondDocument]);
     sourceImport.setActiveDocumentId(firstDocument.id);
+    apiClient.listDocuments.mockReturnValue(of({
+      items: [firstDocument, secondDocument],
+    }));
 
     fixture.detectChanges();
-    await vi.waitFor(() => {
-      expect(apiClient.getDocumentAudioSource).toHaveBeenCalledTimes(1);
-    });
+    TestBed.tick();
+    expect(apiClient.getDocumentAudioSource).toHaveBeenCalledTimes(1);
 
     sourceImport.setActiveDocumentId(secondDocument.id);
     fixture.detectChanges();
-    await vi.waitFor(() => {
-      expect(apiClient.getDocumentAudioSource).toHaveBeenCalledTimes(2);
-    });
+    TestBed.tick();
+    expect(apiClient.getDocumentAudioSource).toHaveBeenCalledTimes(2);
 
     expect(requestSignals[0]?.aborted).toBe(true);
     expect(requestSignals[1]?.aborted).toBe(false);
@@ -565,14 +586,14 @@ describe('SourceImportPanelComponent', () => {
     expect(requestSignals[1]?.aborted).toBe(true);
   });
 
-  it('retries audio loading for the same document after a transient failure', async () => {
+  it('retries audio loading for the same document after a transient failure', () => {
     const createObjectUrl = vi
       .spyOn(URL, 'createObjectURL')
       .mockReturnValue('blob:retried-audio');
     const revokeObjectUrl = vi.spyOn(URL, 'revokeObjectURL');
     apiClient.getDocumentAudioSource
-      .mockRejectedValueOnce(new Error('temporary failure'))
-      .mockResolvedValueOnce(new Blob(['audio'], { type: 'audio/mpeg' }));
+      .mockReturnValueOnce(throwError(() => new Error('temporary failure')))
+      .mockReturnValueOnce(of(new Blob(['audio'], { type: 'audio/mpeg' })));
     const fixture = TestBed.createComponent(SourceImportPanelComponent);
     const sourceImport = TestBed.inject(SourceImportStore);
     activateDocument(
@@ -588,22 +609,20 @@ describe('SourceImportPanelComponent', () => {
     sourceImport.chunks.set([audioChunkRead('retry-audio-document')]);
 
     fixture.detectChanges();
-    await vi.waitFor(() => {
-      fixture.detectChanges();
-      expect(fixture.nativeElement.textContent).toContain(
-        'The source audio could not be loaded.',
-      );
-    });
+    TestBed.tick();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain(
+      'The source audio could not be loaded.',
+    );
 
     const retryButton = Array.from(
       (fixture.nativeElement as HTMLElement).querySelectorAll('button'),
     ).find((button) => button.textContent?.includes('Retry audio playback'));
     retryButton?.click();
 
-    await vi.waitFor(() => {
-      expect(apiClient.getDocumentAudioSource).toHaveBeenCalledTimes(2);
-      expect(createObjectUrl).toHaveBeenCalledTimes(1);
-    });
+    TestBed.tick();
+    expect(apiClient.getDocumentAudioSource).toHaveBeenCalledTimes(2);
+    expect(createObjectUrl).toHaveBeenCalledTimes(1);
     fixture.detectChanges();
 
     const root = fixture.nativeElement as HTMLElement;
@@ -690,7 +709,7 @@ describe('SourceImportPanelComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Retry audio processing');
   });
 
-  it('renders the project document library and refreshes the selected document', async () => {
+  it('renders the project document library and refreshes the selected document', () => {
     const fixture = TestBed.createComponent(SourceImportPanelComponent);
     const sourceImport = TestBed.inject(SourceImportStore);
     const firstDocument = documentRead({
@@ -704,8 +723,8 @@ describe('SourceImportPanelComponent', () => {
     });
     sourceImport.documents.set([firstDocument, secondDocument]);
     sourceImport.setActiveDocumentId(firstDocument.id);
-    apiClient.getDocument.mockResolvedValue(secondDocument);
-    apiClient.listDocumentChunks.mockResolvedValue({
+    apiClient.getDocument.mockReturnValue(of(secondDocument));
+    apiClient.listDocumentChunks.mockReturnValue(of({
       items: [
         {
           id: 'chunk-2',
@@ -723,7 +742,7 @@ describe('SourceImportPanelComponent', () => {
           created_at: '2026-06-18T00:00:01Z',
         },
       ],
-    });
+    }));
 
     fixture.detectChanges();
 
@@ -732,25 +751,22 @@ describe('SourceImportPanelComponent', () => {
     );
     const selector = documentSelector(fixture.nativeElement);
     expect(selector).not.toBeNull();
-    await (
+    (
       fixture.componentInstance as unknown as {
-        selectDocument(documentId: string): Promise<void>;
+        selectDocument(documentId: string): void;
       }
     ).selectDocument(secondDocument.id);
-    await vi.waitFor(() =>
+    TestBed.tick();
+    fixture.detectChanges();
+
+    return vi.waitFor(() => {
       expect(apiClient.getDocument).toHaveBeenCalledWith(
         'project-1',
         secondDocument.id,
-      ),
-    );
-    fixture.detectChanges();
-
-    expect(apiClient.getDocument).toHaveBeenCalledWith(
-      'project-1',
-      secondDocument.id,
-    );
-    expect(sourceImport.activeDocumentId()).toBe(secondDocument.id);
-    expect(sourceImport.chunks()[0]?.document_id).toBe(secondDocument.id);
+      );
+      expect(sourceImport.activeDocumentId()).toBe(secondDocument.id);
+      expect(sourceImport.chunks()[0]?.document_id).toBe(secondDocument.id);
+    });
   });
 
   it('shows the active uploaded document file size after a batch upload', () => {
@@ -820,19 +836,19 @@ describe('SourceImportPanelComponent', () => {
     expect(metricValue(fixture.nativeElement, 'File Size')).toBe('-');
   });
 
-  it('renders selected, uploaded, and failed source file states from a multiple file input', async () => {
+  it('renders selected, uploaded, and failed source file states from a multiple file input', () => {
     const fixture = TestBed.createComponent(SourceImportPanelComponent);
     const sourceImport = TestBed.inject(SourceImportStore);
     apiClient.uploadDocument.mockImplementation(
       (_projectId: string, body: FormData) => {
         const file = body.get('file') as File;
         if (file.name === 'failed.pdf') {
-          return Promise.reject({
+          return throwError(() => ({
             status: 400,
             error: { message: 'Invalid source file' },
-          });
+          }));
         }
-        return Promise.resolve(
+        return of(
           documentRead({
             id: 'document-uploaded',
             filename: file.name,
@@ -855,7 +871,8 @@ describe('SourceImportPanelComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('2 files selected');
     expect(fixture.nativeElement.textContent).toContain('Queued');
 
-    await sourceImport.uploadDocuments();
+    sourceImport.uploadDocuments();
+    TestBed.tick();
     fixture.detectChanges();
 
     const text = fixture.nativeElement.textContent;
@@ -869,19 +886,20 @@ describe('SourceImportPanelComponent', () => {
     expect(text).toContain('Invalid source file');
   });
 
-  it('lets the user adjust the upload batch size', async () => {
+  it('lets the user adjust the upload batch size', () => {
     const fixture = TestBed.createComponent(SourceImportPanelComponent);
     const sourceImport = TestBed.inject(SourceImportStore);
 
     fixture.detectChanges();
-    await fixture.whenStable();
+    TestBed.tick();
+    fixture.detectChanges();
 
     const selector = batchSizeSelector(fixture.nativeElement);
     expect(selector).not.toBeNull();
     if (selector === null) {
       throw new Error('Concurrent uploads selector was not rendered.');
     }
-    expect(selector?.value).toBe('2');
+    expect(sourceImport.uploadBatchSize()).toBe(2);
 
     selector.value = '3';
     selector.dispatchEvent(new Event('change'));
@@ -890,21 +908,17 @@ describe('SourceImportPanelComponent', () => {
     expect(sourceImport.uploadBatchSize()).toBe(3);
   });
 
-  it('keeps the file chooser available and appends files during an upload run', async () => {
+  it('keeps the file chooser available and appends files during an upload run', () => {
     const fixture = TestBed.createComponent(SourceImportPanelComponent);
     const sourceImport = TestBed.inject(SourceImportStore);
-    let resolveUpload!: (document: DocumentRead) => void;
-    apiClient.uploadDocument.mockReturnValue(
-      new Promise<DocumentRead>((resolve) => {
-        resolveUpload = resolve;
-      }),
-    );
+    const uploadResult = new Subject<DocumentRead>();
+    apiClient.uploadDocument.mockReturnValue(uploadResult);
     sourceImport.chooseFiles([
       new File(['%PDF-1.7'], 'busy.pdf', { type: 'application/pdf' }),
     ]);
 
-    const uploadPromise = sourceImport.uploadDocuments();
-    await Promise.resolve();
+    sourceImport.uploadDocuments();
+    TestBed.tick();
     fixture.detectChanges();
 
     const input = fixture.nativeElement.querySelector(
@@ -928,18 +942,19 @@ describe('SourceImportPanelComponent', () => {
         ],
       },
     } as unknown as Event);
-    await Promise.resolve();
+    TestBed.tick();
     expect(sourceImport.selectedFiles().map((file) => file.name)).toEqual([
       'busy.pdf',
       'replacement.pdf',
     ]);
     expect(apiClient.uploadDocument).toHaveBeenCalledTimes(2);
 
-    resolveUpload(documentRead({ id: 'document-busy', filename: 'busy.pdf' }));
-    await uploadPromise;
+    uploadResult.next(documentRead({ id: 'document-busy', filename: 'busy.pdf' }));
+    uploadResult.complete();
+    TestBed.tick();
   });
 
-  it('keeps upload disabled while runtime health is waiting for first OCR status', async () => {
+  it('keeps upload disabled while runtime health is waiting for first OCR status', () => {
     const fixture = TestBed.createComponent(SourceImportPanelComponent);
     const health = TestBed.inject(HealthStore);
     const operations = TestBed.inject(OperationStore);
@@ -955,7 +970,8 @@ describe('SourceImportPanelComponent', () => {
     expect(sourceImport.canUpload()).toBe(false);
     expect(uploadButton(fixture.nativeElement)?.disabled).toBe(true);
 
-    await sourceImport.uploadDocument();
+    sourceImport.uploadDocument();
+    TestBed.tick();
 
     expect(apiClient.uploadDocument).not.toHaveBeenCalled();
     expect(operations.error()).toBe(
@@ -980,7 +996,7 @@ describe('SourceImportPanelComponent', () => {
     expect(uploadButton(fixture.nativeElement)?.disabled).toBe(false);
   });
 
-  it('polls faster only until the first source chunk is visible', async () => {
+  it('polls faster only until the first source chunk is visible', () => {
     vi.useFakeTimers();
     TestBed.createComponent(SourceImportPanelComponent);
     const sourceImport = TestBed.inject(SourceImportStore);
@@ -989,18 +1005,18 @@ describe('SourceImportPanelComponent', () => {
       documentRead({ status: 'processing', chunks_count: 0 }),
     );
     apiClient.getDocument
-      .mockResolvedValueOnce(
+      .mockReturnValueOnce(of(
         documentRead({ status: 'processing', chunks_count: 0 }),
-      )
-      .mockResolvedValueOnce(
+      ))
+      .mockReturnValueOnce(of(
         documentRead({ status: 'processing', chunks_count: 1 }),
-      )
-      .mockResolvedValueOnce(
-        documentRead({ status: 'processing', chunks_count: 1 }),
-      );
+      ))
+      .mockReturnValueOnce(of(
+        documentRead({ status: 'ready', chunks_count: 1 }),
+      ));
     apiClient.listDocumentChunks
-      .mockResolvedValueOnce({ items: [] })
-      .mockResolvedValue({
+      .mockReturnValueOnce(of({ items: [] }))
+      .mockReturnValue(of({
         items: [
           {
             id: 'chunk-1',
@@ -1018,21 +1034,24 @@ describe('SourceImportPanelComponent', () => {
             created_at: '2026-06-18T00:00:01Z',
           },
         ],
-      });
+      }));
 
-    await sourceImport.refreshUploadedDocument('project-1', 'document-1');
+    sourceImport.refreshUploadedDocument('project-1', 'document-1');
+    TestBed.tick();
 
     expect(apiClient.getDocument).toHaveBeenCalledTimes(1);
-    await vi.advanceTimersByTimeAsync(499);
+    vi.advanceTimersByTime(499);
     expect(apiClient.getDocument).toHaveBeenCalledTimes(1);
 
-    await vi.advanceTimersByTimeAsync(1);
+    vi.advanceTimersByTime(1);
+    TestBed.tick();
     expect(apiClient.getDocument).toHaveBeenCalledTimes(2);
 
-    await vi.advanceTimersByTimeAsync(1499);
+    vi.advanceTimersByTime(1499);
     expect(apiClient.getDocument).toHaveBeenCalledTimes(2);
 
-    await vi.advanceTimersByTimeAsync(1);
+    vi.advanceTimersByTime(1);
+    TestBed.tick();
     expect(apiClient.getDocument).toHaveBeenCalledTimes(3);
   });
 });
@@ -1204,19 +1223,22 @@ function audioChunkRead(
   };
 }
 
-async function flushPromises(times = 4): Promise<void> {
+function flushReactive(times = 4): void {
   for (let index = 0; index < times; index += 1) {
-    await Promise.resolve();
+    TestBed.tick();
   }
 }
 
 function deferred<T>(): {
-  readonly promise: Promise<T>;
+  readonly observable: Subject<T>;
   readonly resolve: (value: T) => void;
 } {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((resolver) => {
-    resolve = resolver;
-  });
-  return { promise, resolve };
+  const observable = new Subject<T>();
+  return {
+    observable,
+    resolve: (value) => {
+      observable.next(value);
+      observable.complete();
+    },
+  };
 }

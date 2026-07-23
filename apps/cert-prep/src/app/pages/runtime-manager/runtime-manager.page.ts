@@ -50,12 +50,12 @@ export class RuntimeManagerPage {
     return kind === 'paddle_ocr' || kind === 'windowsml_ocr';
   });
 
-  protected async refreshAll(): Promise<void> {
+  protected refreshAll(): void {
     if (this.desktopRuntime.isBackendReady()) {
-      await this.health.refresh();
+      this.health.refresh();
       return;
     }
-    await this.desktopRuntime.load();
+    this.desktopRuntime.load().subscribe();
   }
 
   protected close(): void {

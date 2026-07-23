@@ -3,11 +3,11 @@ import { CERT_PREP_API } from '../../cert-prep-api';
 import { RandomQuizPage } from './random-quiz.page';
 
 describe('RandomQuizPage', () => {
-  beforeEach(async () => {
-    await TestBed.configureTestingModule({
+  beforeEach(() => {
+    TestBed.configureTestingModule({
       imports: [RandomQuizPage],
       providers: [{ provide: CERT_PREP_API, useValue: {} }],
-    }).compileComponents();
+    });
   });
 
   it('renders the random quiz practice page', () => {
