@@ -1,22 +1,22 @@
 import {
-  ApplicationConfig,
-  provideBrowserGlobalErrorListeners,
-} from '@angular/core';
-import {
+  HTTP_INTERCEPTORS,
   provideHttpClient,
-  withInterceptors,
+  withInterceptorsFromDi,
   withXhr,
 } from '@angular/common/http';
-import { provideRouter } from '@angular/router';
+import type { ApplicationConfig } from '@angular/core';
+import { provideBrowserGlobalErrorListeners } from '@angular/core';
 import Aura from '@primeuix/themes/aura';
 import { providePrimeNG } from 'primeng/config';
-import { appRoutes } from './app.routes';
-import { certPrepAuthInterceptor } from './cert-prep-auth.interceptor';
+import { provideRouter } from '@angular/router';
+import { CertPrepAuthInterceptor } from '../cert-prep-auth.interceptor';
+import { appRoutes } from './app-routes.constants';
 
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
-    provideHttpClient(withXhr(), withInterceptors([certPrepAuthInterceptor])),
+    provideHttpClient(withXhr(), withInterceptorsFromDi()),
+    { provide: HTTP_INTERCEPTORS, useClass: CertPrepAuthInterceptor, multi: true },
     providePrimeNG({
       inputVariant: 'outlined',
       ripple: true,

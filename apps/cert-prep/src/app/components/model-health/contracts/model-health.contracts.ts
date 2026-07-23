@@ -2,7 +2,7 @@ import type {
   HealthResponse,
   LLMHealthRead,
   OCRHealthRead,
-} from '../../../cert-prep-api';
+} from '../../../contracts/api.contracts';
 import type { OcrHealthPhase } from '../../../stores/health/contracts/health-runtime.contracts';
 import type { LLMProviderSelectionRead } from '../../../stores/health/contracts/health-runtime.contracts';
 

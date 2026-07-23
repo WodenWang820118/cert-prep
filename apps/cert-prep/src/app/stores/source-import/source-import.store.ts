@@ -7,12 +7,15 @@ import {
   untracked,
 } from '@angular/core';
 import { forkJoin, from, map, Subscription, timer } from 'rxjs';
-import { ChunkRead, DocumentRead, CERT_PREP_API } from '../../cert-prep-api';
+import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
+import type { ChunkRead, DocumentRead } from '../../contracts/api.contracts';
 import { CertPrepHttpResourceClient } from '../../cert-prep-http-resource-client';
 import type {
   DocumentParsingMetric,
   LanguageHint,
+  SourceFileSelectionOptions,
   SourceUploadItem,
+  UploadTransportRun,
 } from './contracts/source-import.contracts';
 import { DocumentParsingMetricsService } from './document-parsing-metrics.service';
 import { DocumentLibraryStore } from './document-library.store';
@@ -20,58 +23,20 @@ import { HealthStore } from '../health/health.store';
 import type { RuntimeInstallationView } from '../health/contracts/health-runtime.contracts';
 import { OperationStore } from '../operation.store';
 import { ProjectStore } from '../project.store';
+import { SourceUploadLifecycle } from './source-upload-lifecycle';
 import {
-  SourceUploadLifecycle,
-  type UploadTransportRun,
-} from './source-upload-lifecycle';
-
-const DOCUMENT_POLL_INTERVAL_MS = 1500;
-const FIRST_CHUNK_POLL_INTERVAL_MS = 500;
-const POLL_RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
-const DEFAULT_UPLOAD_BATCH_SIZE = 2;
-const MIN_UPLOAD_BATCH_SIZE = 1;
-const MAX_UPLOAD_BATCH_SIZE = 4;
-const SOURCE_FILE_ACCEPT =
-  '.pdf,.png,.jpg,.jpeg,.webp,.mp3,.wav,.m4a,application/pdf,image/png,image/jpeg,image/webp,audio/mpeg,audio/wav,audio/mp4';
-const SUPPORTED_SOURCE_MIME_TYPES = new Set([
-  'application/pdf',
-  'image/png',
-  'image/jpeg',
-  'image/webp',
-  'audio/mpeg',
-  'audio/wav',
-  'audio/x-wav',
-  'audio/mp4',
-  'audio/x-m4a',
-]);
-const SUPPORTED_SOURCE_FILE_EXTENSIONS = [
-  '.pdf',
-  '.png',
-  '.jpg',
-  '.jpeg',
-  '.webp',
-  '.mp3',
-  '.wav',
-  '.m4a',
-] as const;
-const FINAL_DOCUMENT_STATUSES = new Set([
-  'ready',
-  'exam_failed',
-  'no_text_detected',
-  'ocr_failed',
-  'transcription_failed',
-  'canceled',
-]);
-const TRANSCRIPT_MUTATION_ACTIONS = [
-  'transcript-edit',
-  'transcript-translate',
-  'transcript-translate-all',
-] as const;
-
-export interface SourceFileSelectionOptions {
-  readonly append?: boolean;
-  readonly autoUpload?: boolean;
-}
+  DEFAULT_UPLOAD_BATCH_SIZE,
+  DOCUMENT_POLL_INTERVAL_MS,
+  FINAL_DOCUMENT_STATUSES,
+  FIRST_CHUNK_POLL_INTERVAL_MS,
+  MAX_UPLOAD_BATCH_SIZE,
+  MIN_UPLOAD_BATCH_SIZE,
+  POLL_RETRY_DELAYS_MS,
+  SOURCE_FILE_ACCEPT,
+  SUPPORTED_SOURCE_FILE_EXTENSIONS,
+  SUPPORTED_SOURCE_MIME_TYPES,
+  TRANSCRIPT_MUTATION_ACTIONS,
+} from './constants/source-import.constants';
 
 @Injectable({ providedIn: 'root' })
 export class SourceImportStore {
@@ -110,33 +75,37 @@ export class SourceImportStore {
   private whisperConsentObserved = false;
   private whisperRuntimeInstallAtAuthorization: RuntimeInstallationView | null =
     null;
-  private readonly uploadLifecycle = new SourceUploadLifecycle({
-    item: (itemId) =>
-      this.uploadItems().find((candidate) => candidate.id === itemId),
-    current: (projectId, contextEpoch) =>
-      this.isCurrentUploadContext(projectId, contextEpoch),
-    patch: (itemId, patch) => this.updateUploadItem(itemId, patch),
-    accept: (document, pollDocument) =>
-      this.acceptLifecycleDocument(document, pollDocument),
-    upload: (projectId, item, operationId, signal) => {
-      const formData = new FormData();
-      formData.append('file', item.file, item.file.name);
-      formData.append('language_hint', this.languageHint());
-      return from(this.api.uploadDocument(projectId, formData, {
-        headers: { 'X-Cert-Prep-Operation-Id': operationId },
-        signal,
-      }));
-    },
-    getDocument: (projectId, documentId) =>
-      from(this.api.getDocument(projectId, documentId)),
-    getOperation: (projectId, operationId) =>
-      from(this.api.getDocumentOperation(projectId, operationId)),
-    cancelOperation: (projectId, operationId) =>
-      from(this.api.cancelDocumentOperation(projectId, operationId)),
-    newOperationId: () => this.newOperationId(),
-    errorMessage: (error) => this.getUploadErrorMessage(error),
-    errorCode: (error) => this.getUploadErrorCode(error),
-  });
+  private readonly uploadLifecycle = inject(SourceUploadLifecycle);
+
+  private configureUploadLifecycle(): void {
+    this.uploadLifecycle.configure({
+      item: (itemId) =>
+        this.uploadItems().find((candidate) => candidate.id === itemId),
+      current: (projectId, contextEpoch) =>
+        this.isCurrentUploadContext(projectId, contextEpoch),
+      patch: (itemId, patch) => this.updateUploadItem(itemId, patch),
+      accept: (document, pollDocument) =>
+        this.acceptLifecycleDocument(document, pollDocument),
+      upload: (projectId, item, operationId, signal) => {
+        const formData = new FormData();
+        formData.append('file', item.file, item.file.name);
+        formData.append('language_hint', this.languageHint());
+        return from(this.api.uploadDocument(projectId, formData, {
+          headers: { 'X-Cert-Prep-Operation-Id': operationId },
+          signal,
+        }));
+      },
+      getDocument: (projectId, documentId) =>
+        from(this.api.getDocument(projectId, documentId)),
+      getOperation: (projectId, operationId) =>
+        from(this.api.getDocumentOperation(projectId, operationId)),
+      cancelOperation: (projectId, operationId) =>
+        from(this.api.cancelDocumentOperation(projectId, operationId)),
+      newOperationId: () => this.newOperationId(),
+      errorMessage: (error) => this.getUploadErrorMessage(error),
+      errorCode: (error) => this.getUploadErrorCode(error),
+    });
+  }
 
   readonly languageHints: readonly LanguageHint[] = [
     'auto',
@@ -301,6 +270,7 @@ export class SourceImportStore {
   });
 
   constructor() {
+    this.configureUploadLifecycle();
     effect(() => {
       if (this.isResourceSettled(this.documentsResource.status())) {
         const documents = this.documentsResource.value();

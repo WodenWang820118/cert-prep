@@ -1,29 +1,32 @@
 import {
   httpResource,
-  type HttpResourceRef,
   type HttpResourceRequest,
 } from '@angular/common/http';
 import { inject, Injectable, Injector } from '@angular/core';
 import {
   createCertPrepRequestFactory,
-  type ChunkRead,
-  type CertPrepHttpRequest,
-  type DocumentRead,
-  type HealthResponse,
-  type LLMHealthRead,
-  type LLMProviderSelectionRead,
-  type OCRHealthRead,
-  type PracticeSessionSummaryRead,
-  type ProjectRead,
-  type QuestionDraftRead,
-  type RuntimeRequirementRead,
-  type WrongAnswerRead,
-  type WrongAnswerSummaryRead,
 } from '@cert-prep/api';
+import type {
+  ChunkRead,
+  CertPrepHttpRequest,
+  DocumentRead,
+  HealthResponse,
+  LLMHealthRead,
+  LLMProviderSelectionRead,
+  OCRHealthRead,
+  PracticeSessionSummaryRead,
+  ProjectRead,
+  QuestionDraftRead,
+  RuntimeRequirementRead,
+  WrongAnswerRead,
+  WrongAnswerSummaryRead,
+} from './contracts/api.contracts';
 
-export type CertPrepHttpResource<T> = HttpResourceRef<T>;
-export type CertPrepResourceKey = () => string | null | undefined;
-export type CertPrepResourceTrigger = () => boolean;
+import type {
+  CertPrepHttpResource,
+  CertPrepResourceKey,
+  CertPrepResourceTrigger,
+} from './contracts/http-resource.contracts';
 
 @Injectable({ providedIn: 'root' })
 export class CertPrepHttpResourceClient {

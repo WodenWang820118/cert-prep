@@ -1,5 +1,5 @@
 import { inject, Injectable } from '@angular/core';
-import { CERT_PREP_API } from '../../cert-prep-api';
+import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
 import type {
   LLMProviderSelectionApiClient,
   ModelDownloadApiClient,

@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { of } from 'rxjs';
-import { CERT_PREP_API, ProjectRead } from '../cert-prep-api';
+import { CERT_PREP_API } from '../constants/cert-prep-api.constants';
+import type { ProjectRead } from '../contracts/api.contracts';
 import { OperationStore } from './operation.store';
 import { ProjectStore } from './project.store';
 import { provideCertPrepHttpResourceClientFake } from '../testing/cert-prep-http-resource-client.fake';

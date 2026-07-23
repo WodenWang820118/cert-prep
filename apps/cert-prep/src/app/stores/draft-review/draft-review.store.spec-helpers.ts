@@ -3,7 +3,7 @@ import type {
   DraftGenerationJobRead,
   ManualDraftGenerationOperationRead,
   QuestionDraftRead,
-} from '../../cert-prep-api';
+} from '../../contracts/api.contracts';
 
 export function questionDraft(
   overrides: Partial<QuestionDraftRead> = {},

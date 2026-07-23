@@ -2,7 +2,7 @@ import type {
   HealthResponse,
   LLMHealthRead,
   OCRHealthRead,
-} from '../../cert-prep-api';
+} from '../../contracts/api.contracts';
 
 export function systemHealth(): HealthResponse {
   return {

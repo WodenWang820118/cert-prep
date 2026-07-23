@@ -1,4 +1,7 @@
-import type { PracticeSessionCreate } from '../../../cert-prep-api';
+import type {
+  PracticeSessionCreate,
+  PracticeSessionRead,
+} from '../../../contracts/api.contracts';
 
 /**
  * Practice session modes supported by the project question bank.
@@ -16,3 +19,5 @@ export type PracticeSessionPayload = PracticeSessionCreate &
     mode: PracticeSessionMode;
     document_id: string;
   }>;
+
+export type PracticeSessionQuestion = PracticeSessionRead['questions'][number];

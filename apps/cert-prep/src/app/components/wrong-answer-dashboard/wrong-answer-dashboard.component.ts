@@ -1,56 +1,19 @@
 import { Component, computed, inject, ChangeDetectionStrategy } from '@angular/core';
-import type {
-  WrongAnswerRead,
-  WrongAnswerSummaryRead,
-} from '../../cert-prep-api';
+import type { WrongAnswerRead } from '../../contracts/api.contracts';
+import { ReviewDisplayService } from '../../services/review-display.service';
 import { OperationStore } from '../../stores/operation.store';
 import { ReviewRetryNavigationService } from '../../stores/practice/review-retry-navigation.service';
 import { ProjectStore } from '../../stores/project.store';
 import { SourceImportStore } from '../../stores/source-import/source-import.store';
 import { WrongAnswerReviewStore } from '../../stores/wrong-answer-review.store';
-import {
-  pageLabel,
-  requiredDocumentLabel,
-  reviewDateLabel,
-} from '../../utils/review-display';
-
-type WrongAnswerCluster = WrongAnswerSummaryRead['clusters'][number];
-type WrongAnswerRepeatedMiss = WrongAnswerSummaryRead['repeated_misses'][number];
-
-interface DashboardMetric {
-  readonly label: string;
-  readonly value: string;
-  readonly tone: 'attention' | 'progress' | 'neutral';
-}
-
-interface WeakAreaView {
-  readonly key: string;
-  readonly documentLabel: string;
-  readonly pageLabel: string;
-  readonly currentWrongCount: number;
-  readonly clearedCount: number;
-  readonly lastWrongLabel: string;
-  readonly attemptIds: readonly string[];
-}
-
-interface RepeatedMissView {
-  readonly questionId: string;
-  readonly question: string;
-  readonly documentLabel: string;
-  readonly pageLabel: string;
-  readonly sourceExcerpt: string | null;
-  readonly missCount: number;
-  readonly lastWrongLabel: string;
-  readonly attemptIds: readonly string[];
-}
-
-interface AnswerPatternView {
-  readonly key: string;
-  readonly selectedAnswer: string;
-  readonly correctAnswer: string;
-  readonly count: number;
-  readonly samples: readonly string[];
-}
+import type {
+  AnswerPatternView,
+  DashboardMetric,
+  RepeatedMissView,
+  WeakAreaView,
+  WrongAnswerCluster,
+  WrongAnswerRepeatedMiss,
+} from './contracts/wrong-answer-dashboard.contracts';
 
 @Component({
   selector: 'app-wrong-answer-dashboard',
@@ -63,6 +26,7 @@ export class WrongAnswerDashboardComponent {
   protected readonly projects = inject(ProjectStore);
   protected readonly review = inject(WrongAnswerReviewStore);
   protected readonly sourceImport = inject(SourceImportStore);
+  private readonly display = inject(ReviewDisplayService);
   private readonly retryNavigation = inject(ReviewRetryNavigationService);
 
   protected readonly busyActions = ['review', 'session'] as const;
@@ -92,7 +56,7 @@ export class WrongAnswerDashboardComponent {
       },
       {
         label: 'Last Wrong',
-        value: reviewDateLabel(summary?.last_wrong_date ?? null),
+        value: this.display.reviewDateLabel(summary?.last_wrong_date ?? null),
         tone: 'neutral',
       },
     ];
@@ -112,14 +76,14 @@ export class WrongAnswerDashboardComponent {
         );
         return {
           key: this.clusterKey(cluster.document_id, cluster.citation_page),
-          documentLabel: requiredDocumentLabel(
+          documentLabel: this.display.requiredDocumentLabel(
             this.sourceImport.documents(),
             cluster.document_id,
           ),
-          pageLabel: pageLabel(cluster.citation_page),
+          pageLabel: this.display.pageLabel(cluster.citation_page),
           currentWrongCount: cluster.current_wrong_count,
           clearedCount: cluster.cleared_count,
-          lastWrongLabel: reviewDateLabel(cluster.last_wrong_at),
+          lastWrongLabel: this.display.reviewDateLabel(cluster.last_wrong_at),
           attemptIds,
         };
       });
@@ -135,14 +99,14 @@ export class WrongAnswerDashboardComponent {
       .map((miss) => ({
         questionId: miss.question_id,
         question: miss.question,
-        documentLabel: requiredDocumentLabel(
+        documentLabel: this.display.requiredDocumentLabel(
           this.sourceImport.documents(),
           miss.document_id,
         ),
-        pageLabel: pageLabel(miss.citation_page),
+        pageLabel: this.display.pageLabel(miss.citation_page),
         sourceExcerpt: miss.source_excerpt,
         missCount: miss.miss_count,
-        lastWrongLabel: reviewDateLabel(miss.last_wrong_at),
+        lastWrongLabel: this.display.reviewDateLabel(miss.last_wrong_at),
         attemptIds: this.currentWrongAnswersForQuestion(miss).map(
           (wrongAnswer) => wrongAnswer.attempt_id,
         ),

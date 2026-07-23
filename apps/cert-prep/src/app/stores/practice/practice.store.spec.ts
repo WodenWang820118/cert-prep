@@ -1,12 +1,12 @@
 import { TestBed } from '@angular/core/testing';
 import { of } from 'rxjs';
-import {
+import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
+import type {
   DocumentRead,
-  CERT_PREP_API,
   PracticeSessionRead,
   ProjectRead,
   QuestionDraftRead,
-} from '../../cert-prep-api';
+} from '../../contracts/api.contracts';
 import { DraftReviewStore } from '../draft-review/draft-review.store';
 import { PracticeStore } from './practice.store';
 import { ProjectStore } from '../project.store';

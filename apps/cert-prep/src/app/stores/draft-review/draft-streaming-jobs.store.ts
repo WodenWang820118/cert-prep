@@ -1,14 +1,15 @@
 import { computed, inject, Injectable, signal } from '@angular/core';
 import { forkJoin, from, map, Observable, Subscription, tap, timer } from 'rxjs';
-import { CERT_PREP_API } from '../../cert-prep-api';
-import type { DocumentRead, DraftGenerationJobRead } from '../../cert-prep-api';
+import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
+import type { DocumentRead, DraftGenerationJobRead } from '../../contracts/api.contracts';
 import type { DraftJobSummary } from './contracts/draft-review.contracts';
+import {
+  POLL_RETRY_DELAYS_MS,
+  STREAMING_DRAFT_POLL_INTERVAL_MS,
+} from './constants/draft-review.constants';
 import { OperationStore } from '../operation.store';
 import { ProjectStore } from '../project.store';
 import { SourceImportStore } from '../source-import/source-import.store';
-
-const STREAMING_DRAFT_POLL_INTERVAL_MS = 1500;
-const POLL_RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
 
 @Injectable({ providedIn: 'root' })
 export class DraftStreamingJobsStore {

@@ -1,0 +1,5 @@
+export const MANUAL_DRAFT_POLL_INTERVAL_MS = 1500;
+export const MANUAL_DRAFT_POLL_RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
+export const STREAMING_DRAFT_POLL_INTERVAL_MS = 1500;
+export const POLL_RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
+export const PLAYABLE_DRAFT_STATUS = 'approved';

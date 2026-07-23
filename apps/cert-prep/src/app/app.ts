@@ -26,8 +26,7 @@ import { OperationStore } from './stores/operation.store';
 import { ProjectStore } from './stores/project.store';
 import { DesktopRuntimeStore } from './stores/desktop-runtime/desktop-runtime.store';
 import { WorkspaceFacade } from './stores/workspace.facade';
-
-const LAST_PROJECT_STORAGE_KEY = 'certPrepLastProjectId';
+import { LAST_PROJECT_STORAGE_KEY } from './constants/runtime.constants';
 
 @Component({
   imports: [

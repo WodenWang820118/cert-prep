@@ -3,7 +3,7 @@ import type {
   DraftGenerateRequest,
   QuestionDraftRead,
   QuestionDraftUpdate,
-} from '../../cert-prep-api';
+} from '../../contracts/api.contracts';
 import type {
   DraftEdit,
   DraftGenerationStrategy,

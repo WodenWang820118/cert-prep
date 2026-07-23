@@ -1,6 +1,7 @@
 import { computed, effect, inject, Injectable, signal } from '@angular/core';
 import { from } from 'rxjs';
-import { CERT_PREP_API, ProjectRead } from '../cert-prep-api';
+import { CERT_PREP_API } from '../constants/cert-prep-api.constants';
+import type { ProjectRead } from '../contracts/api.contracts';
 import { CertPrepHttpResourceClient } from '../cert-prep-http-resource-client';
 import { OperationStore } from './operation.store';
 

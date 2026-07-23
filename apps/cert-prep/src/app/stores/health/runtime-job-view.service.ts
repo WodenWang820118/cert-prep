@@ -1,5 +1,5 @@
 import { inject, Injectable } from '@angular/core';
-import type { RuntimeRequirementKind } from '../../cert-prep-api';
+import type { RuntimeRequirementKind } from '../../contracts/api.contracts';
 import type {
   DownloadPhase,
   ModelDownloadView,
@@ -10,14 +10,7 @@ import type {
   RuntimeKind,
 } from './contracts/health-runtime.contracts';
 import { RuntimeHealthDerivationService } from './runtime-health-derivation.service';
-
-const RUNTIME_KIND_LABELS: Record<string, string> = {
-  ollama: 'Ollama',
-  ollama_model: 'Ollama model',
-  paddle_ocr: 'PaddleOCR runtime',
-  windowsml_ocr: 'WindowsML OCR runtime',
-  whisper_models: 'Whisper speech models',
-};
+import { RUNTIME_KIND_LABELS } from './constants/health.constants';
 
 @Injectable({ providedIn: 'root' })
 export class RuntimeJobViewService {

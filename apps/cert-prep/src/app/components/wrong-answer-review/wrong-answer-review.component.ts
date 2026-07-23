@@ -1,11 +1,11 @@
 import { Component, computed, inject, ChangeDetectionStrategy } from '@angular/core';
-import type { WrongAnswerRead } from '../../cert-prep-api';
+import type { WrongAnswerRead } from '../../contracts/api.contracts';
+import { ReviewDisplayService } from '../../services/review-display.service';
 import { OperationStore } from '../../stores/operation.store';
 import { ReviewRetryNavigationService } from '../../stores/practice/review-retry-navigation.service';
 import { ProjectStore } from '../../stores/project.store';
 import { SourceImportStore } from '../../stores/source-import/source-import.store';
 import { WrongAnswerReviewStore } from '../../stores/wrong-answer-review.store';
-import { documentLabel, reviewDateLabel } from '../../utils/review-display';
 
 @Component({
   selector: 'app-wrong-answer-review',
@@ -18,6 +18,7 @@ export class WrongAnswerReviewComponent {
   protected readonly projects = inject(ProjectStore);
   protected readonly review = inject(WrongAnswerReviewStore);
   protected readonly sourceImport = inject(SourceImportStore);
+  private readonly display = inject(ReviewDisplayService);
   private readonly retryNavigation = inject(ReviewRetryNavigationService);
 
   protected readonly busyActions = ['review', 'session'] as const;
@@ -42,11 +43,11 @@ export class WrongAnswerReviewComponent {
   }
 
   protected documentLabel(documentId: string | null): string | null {
-    return documentLabel(this.sourceImport.documents(), documentId);
+    return this.display.documentLabel(this.sourceImport.documents(), documentId);
   }
 
   protected lastWrongDateLabel(value: string | null): string {
-    return reviewDateLabel(value);
+    return this.display.reviewDateLabel(value);
   }
 
   private startRetrySession(

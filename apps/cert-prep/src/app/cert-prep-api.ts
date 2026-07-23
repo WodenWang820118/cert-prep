@@ -1,11 +1,9 @@
 import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { inject, Injectable, InjectionToken } from '@angular/core';
-import { createCertPrepGeneratedClient } from '@cert-prep/api';
-import type {
-  CertPrepGeneratedClient,
-  CertPrepHttpRequest,
-} from '@cert-prep/api';
+import { inject, Injectable } from '@angular/core';
 import { CertPrepTauriBridgeService } from './cert-prep-tauri-bridge.service';
+import { DEFAULT_LOCAL_API_BASE_URL } from './constants/runtime.constants';
+import type { CertPrepHttpRequest } from './contracts/api.contracts';
+import type { BackendConfig } from './contracts/backend.contracts';
 import {
   catchError,
   defer,
@@ -18,57 +16,6 @@ import {
   tap,
   throwError,
 } from 'rxjs';
-
-export type {
-  ChunkRead,
-  DocumentOperationRead,
-  DocumentRead,
-  DraftGenerateRequest,
-  DraftGenerationJobList,
-  DraftGenerationJobRead,
-  CertPrepGeneratedClient,
-  HealthResponse,
-  LLMHealthRead,
-  LLMProviderSelectionRead,
-  ManualDraftGenerationOperationRead,
-  ModelDownloadRead,
-  OCRHealthRead,
-  PracticeAttemptCreate,
-  PracticeAttemptRead,
-  PracticeSessionCreate,
-  PracticeSessionRead,
-  PracticeSessionSummaryRead,
-  ProjectCreate,
-  ProjectList,
-  ProjectRead,
-  QuestionDraftList,
-  QuestionDraftRead,
-  QuestionDraftUpdate,
-  RuntimeInstallationRead,
-  RuntimeRequirementKind,
-  RuntimeRequirementRead,
-  RuntimeRequirementsRead,
-  WrongAnswerExplanationRead,
-  WrongAnswerList,
-  WrongAnswerRead,
-  WrongAnswerSummaryRead,
-} from '@cert-prep/api';
-
-const DEFAULT_LOCAL_API_BASE_URL = 'http://127.0.0.1:8765';
-
-export interface BackendConfig {
-  base_url: string;
-  token: string;
-}
-
-export const CERT_PREP_API = new InjectionToken<CertPrepGeneratedClient>(
-  'CERT_PREP_API',
-  {
-    providedIn: 'root',
-    factory: () =>
-      createCertPrepGeneratedClient(inject(CertPrepAuthenticatedTransport)),
-  },
-);
 
 @Injectable({ providedIn: 'root' })
 export class CertPrepRuntimeConfig {

@@ -3,7 +3,7 @@ import type {
   ModelDownloadRead,
   OCRHealthRead,
   RuntimeInstallationRead,
-} from '../../cert-prep-api';
+} from '../../contracts/api.contracts';
 import type { LLMProviderSelectionRead } from './contracts/health-runtime.contracts';
 
 export function providerSelection(

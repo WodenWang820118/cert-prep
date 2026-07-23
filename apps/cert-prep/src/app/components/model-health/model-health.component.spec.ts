@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
-import { CERT_PREP_API, LLMHealthRead } from '../../cert-prep-api';
+import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
+import type { LLMHealthRead } from '../../contracts/api.contracts';
 import { HealthStore } from '../../stores/health/health.store';
 import { RuntimeManagerPage } from '../../pages/runtime-manager/runtime-manager.page';
 import { ModelHealthComponent } from './model-health.component';

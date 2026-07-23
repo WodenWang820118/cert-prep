@@ -17,27 +17,7 @@ import {
   share,
   Subscription,
 } from 'rxjs';
-
-type CommandResult<T> =
-  | { readonly kind: 'success'; readonly value: T }
-  | { readonly kind: 'error'; readonly error: unknown };
-
-type BusyAction =
-  | 'startup'
-  | 'health'
-  | 'project'
-  | 'upload'
-  | 'document-cancel'
-  | 'document-retry'
-  | 'transcript-edit'
-  | 'transcript-translate'
-  | 'transcript-translate-all'
-  | 'questions'
-  | 'saveDraft'
-  | 'session'
-  | 'attempt'
-  | 'review'
-  | 'runtime';
+import type { BusyAction, CommandResult } from './operation/contracts/operation.contracts';
 
 @Injectable({ providedIn: 'root' })
 export class OperationStore {

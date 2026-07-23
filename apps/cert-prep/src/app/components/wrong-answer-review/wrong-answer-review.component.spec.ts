@@ -1,14 +1,14 @@
 import { TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { of, throwError } from 'rxjs';
-import {
-  CERT_PREP_API,
-  type DocumentRead,
-  type PracticeSessionRead,
-  type ProjectRead,
-  type WrongAnswerExplanationRead,
-  type WrongAnswerRead,
-} from '../../cert-prep-api';
+import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
+import type {
+  DocumentRead,
+  PracticeSessionRead,
+  ProjectRead,
+  WrongAnswerExplanationRead,
+  WrongAnswerRead,
+} from '../../contracts/api.contracts';
 import { OperationStore } from '../../stores/operation.store';
 import { ProjectStore } from '../../stores/project.store';
 import { SourceImportStore } from '../../stores/source-import/source-import.store';

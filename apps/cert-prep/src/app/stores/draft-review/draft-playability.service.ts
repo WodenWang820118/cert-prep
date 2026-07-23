@@ -1,7 +1,6 @@
 import { Injectable } from '@angular/core';
-import type { QuestionDraftRead } from '../../cert-prep-api';
-
-const PLAYABLE_DRAFT_STATUS = 'approved';
+import type { QuestionDraftRead } from '../../contracts/api.contracts';
+import { PLAYABLE_DRAFT_STATUS } from './constants/draft-review.constants';
 
 @Injectable({ providedIn: 'root' })
 export class DraftPlayabilityService {

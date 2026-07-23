@@ -1,15 +1,16 @@
 import { computed, effect, inject, Injectable, signal } from '@angular/core';
 import { from, map, Observable, of, switchMap } from 'rxjs';
-import {
-  CERT_PREP_API,
+import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
+import type {
   PracticeAttemptRead,
   PracticeSessionRead,
   PracticeSessionSummaryRead,
-} from '../../cert-prep-api';
+} from '../../contracts/api.contracts';
 import { CertPrepHttpResourceClient } from '../../cert-prep-http-resource-client';
 import type {
   PracticeSessionMode,
   PracticeSessionPayload,
+  PracticeSessionQuestion,
 } from './contracts/practice.contracts';
 import { PracticeSessionPayloadService } from './practice-session-payload.service';
 import { DraftReviewStore } from '../draft-review/draft-review.store';
@@ -17,8 +18,6 @@ import { OperationStore } from '../operation.store';
 import { ProjectStore } from '../project.store';
 import { SourceImportStore } from '../source-import/source-import.store';
 import { WrongAnswerReviewStore } from '../wrong-answer-review.store';
-
-type PracticeSessionQuestion = PracticeSessionRead['questions'][number];
 
 @Injectable({ providedIn: 'root' })
 export class PracticeStore {

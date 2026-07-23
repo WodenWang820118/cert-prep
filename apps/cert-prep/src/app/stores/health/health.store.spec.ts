@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { of, Subject, throwError } from 'rxjs';
-import { CERT_PREP_API, OCRHealthRead } from '../../cert-prep-api';
+import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
+import type { OCRHealthRead } from '../../contracts/api.contracts';
 import { HealthStore } from './health.store';
 import {
   llmHealth,

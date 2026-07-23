@@ -6,18 +6,11 @@ import type {
   RuntimeInstallationView,
   RuntimeKind,
 } from './contracts/health-runtime.contracts';
+import { RUNTIME_JOB_POLL_INTERVAL_MS } from './constants/health.constants';
+import type { RuntimeActionContext } from './contracts/health-runtime.contracts';
 import { OperationStore } from '../operation.store';
 import { RuntimeApiClientsService } from './runtime-api-clients.service';
 import { RuntimeJobViewService } from './runtime-job-view.service';
-
-const RUNTIME_JOB_POLL_INTERVAL_MS = 1500;
-
-interface RuntimeActionContext {
-  readonly canDownloadModel: () => boolean;
-  readonly canInstallRuntime: (kind: RuntimeKind) => boolean;
-  readonly configuredModelName: () => string;
-  readonly refreshHealthAfterRuntimeChange: () => void;
-}
 
 @Injectable({ providedIn: 'root' })
 export class RuntimeActionsStore {

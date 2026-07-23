@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { finalize, of, Subject, throwError } from 'rxjs';
-import { CERT_PREP_API } from '../../cert-prep-api';
-import type { ChunkRead, DocumentRead } from '../../cert-prep-api';
+import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
+import type { ChunkRead, DocumentRead } from '../../contracts/api.contracts';
 import { HealthStore } from '../health/health.store';
 import { OperationStore } from '../operation.store';
 import { ProjectStore } from '../project.store';

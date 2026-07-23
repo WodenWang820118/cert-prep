@@ -1,30 +1,32 @@
-import {
-  clampImageCropRect,
-  croppedImageFilename,
-  isCroppableImageFile,
-  isFullImageCrop,
-  SourceImageCropService,
-} from './source-image-crop.service';
+import { TestBed } from '@angular/core/testing';
+import { SourceImageCropService } from './source-image-crop.service';
 
 describe('SourceImageCropService', () => {
+  let service: SourceImageCropService;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({});
+    service = TestBed.inject(SourceImageCropService);
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
   it('recognizes supported image MIME types and extension hints', () => {
     expect(
-      isCroppableImageFile(
+      service.isCroppableImageFile(
         new File(['png'], 'capture.bin', { type: 'image/png' }),
       ),
     ).toBe(true);
-    expect(isCroppableImageFile(new File(['jpeg'], 'capture.JPEG'))).toBe(true);
+    expect(service.isCroppableImageFile(new File(['jpeg'], 'capture.JPEG'))).toBe(true);
     expect(
-      isCroppableImageFile(
+      service.isCroppableImageFile(
         new File(['gif'], 'capture.gif', { type: 'image/gif' }),
       ),
     ).toBe(false);
     expect(
-      isCroppableImageFile(
+      service.isCroppableImageFile(
         new File(['pdf'], 'guide.pdf', { type: 'application/pdf' }),
       ),
     ).toBe(false);
@@ -32,24 +34,24 @@ describe('SourceImageCropService', () => {
 
   it('clamps crop bounds to positive pixels inside the source image', () => {
     expect(
-      clampImageCropRect({ x: 8, y: -5, width: 99, height: 0 }, 10, 6),
+      service.clampImageCropRect({ x: 8, y: -5, width: 99, height: 0 }, 10, 6),
     ).toEqual({ x: 8, y: 0, width: 2, height: 1 });
-    expect(isFullImageCrop({ x: 0, y: 0, width: 10, height: 6 }, 10, 6)).toBe(
+    expect(service.isFullImageCrop({ x: 0, y: 0, width: 10, height: 6 }, 10, 6)).toBe(
       true,
     );
-    expect(isFullImageCrop({ x: 1, y: 0, width: 9, height: 6 }, 10, 6)).toBe(
+    expect(service.isFullImageCrop({ x: 1, y: 0, width: 9, height: 6 }, 10, 6)).toBe(
       false,
     );
   });
 
   it('adds a visible cropped suffix that matches the encoded type', () => {
-    expect(croppedImageFilename('screen.PNG', 'image/png')).toBe(
+    expect(service.croppedImageFilename('screen.PNG', 'image/png')).toBe(
       'screen-cropped.png',
     );
-    expect(croppedImageFilename('photo.jpeg', 'image/jpeg')).toBe(
+    expect(service.croppedImageFilename('photo.jpeg', 'image/jpeg')).toBe(
       'photo-cropped.jpg',
     );
-    expect(croppedImageFilename('', 'image/webp')).toBe('image-cropped.webp');
+    expect(service.croppedImageFilename('', 'image/webp')).toBe('image-cropped.webp');
   });
 
   it('draws the bounded source region and returns the encoded file', () => {
@@ -72,8 +74,6 @@ describe('SourceImageCropService', () => {
       naturalWidth: 12,
       naturalHeight: 8,
     } as HTMLImageElement;
-    const service = new SourceImageCropService();
-
     let cropped: File | undefined;
     service.crop(
       new File(['source'], 'photo.jpeg', { type: 'image/jpeg' }),
@@ -97,8 +97,6 @@ describe('SourceImageCropService', () => {
       toBlob: vi.fn((callback: BlobCallback) => callback(null)),
     } as unknown as HTMLCanvasElement;
     vi.spyOn(document, 'createElement').mockReturnValue(canvas);
-    const service = new SourceImageCropService();
-
     let error: unknown;
     service.crop(
       new File(['source'], 'capture.png', { type: 'image/png' }),

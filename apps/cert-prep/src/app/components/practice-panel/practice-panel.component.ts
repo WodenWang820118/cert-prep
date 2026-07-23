@@ -14,11 +14,8 @@ import type { PracticeSessionMode } from '../../stores/practice/contracts/practi
 import { PracticeStore } from '../../stores/practice/practice.store';
 import { ProjectStore } from '../../stores/project.store';
 import { SourceImportStore } from '../../stores/source-import/source-import.store';
-
-interface QuestionNavigatorItem {
-  readonly number: number;
-  readonly state: 'answered' | 'current' | 'pending';
-}
+import type { QuestionNavigatorItem } from './contracts/practice-panel.contracts';
+import { ChoiceKeyService } from '../../services/choice-key.service';
 
 @Component({
   selector: 'app-practice-panel',
@@ -33,6 +30,7 @@ export class PracticePanelComponent implements OnInit {
   private readonly drafts = inject(DraftReviewStore);
   private readonly projects = inject(ProjectStore);
   private readonly sourceImport = inject(SourceImportStore);
+  private readonly choiceKeys = inject(ChoiceKeyService);
 
   protected readonly operations = inject(OperationStore);
   protected readonly practice = inject(PracticeStore);
@@ -103,7 +101,7 @@ export class PracticePanelComponent implements OnInit {
   });
 
   protected choiceKey(index: number): string {
-    return choiceKey(index);
+    return this.choiceKeys.key(index);
   }
 
   protected readonly questionNavigatorItems = computed<
@@ -147,15 +145,4 @@ export class PracticePanelComponent implements OnInit {
       this.sourceImport.loadLatestDocument(project.id);
     }
   }
-}
-
-function choiceKey(index: number): string {
-  let value = index + 1;
-  let key = '';
-  while (value > 0) {
-    value -= 1;
-    key = String.fromCharCode(65 + (value % 26)) + key;
-    value = Math.floor(value / 26);
-  }
-  return key;
 }

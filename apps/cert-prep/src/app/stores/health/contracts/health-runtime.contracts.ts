@@ -5,8 +5,8 @@ import type {
   OCRHealthRead,
   RuntimeInstallationRead,
   RuntimeRequirementRead,
-} from '../../../cert-prep-api';
-import type { LLMProviderSelectionRead as GeneratedLLMProviderSelectionRead } from '@cert-prep/api';
+} from '../../../contracts/api.contracts';
+import type { LLMProviderSelectionRead as GeneratedLLMProviderSelectionRead } from '../../../contracts/api.contracts';
 import type { Observable } from 'rxjs';
 
 /**
@@ -83,6 +83,13 @@ export interface RuntimeInstallationApiClient {
   startRuntimeInstallation(kind: string): Observable<RuntimeInstallationRead>;
   getRuntimeInstallation(jobId: string): Observable<RuntimeInstallationRead>;
   cancelRuntimeInstallation(jobId: string): Observable<RuntimeInstallationRead>;
+}
+
+export interface RuntimeActionContext {
+  readonly canDownloadModel: () => boolean;
+  readonly canInstallRuntime: (kind: RuntimeKind) => boolean;
+  readonly configuredModelName: () => string;
+  readonly refreshHealthAfterRuntimeChange: () => void;
 }
 
 /**

@@ -2,8 +2,8 @@ import { TestBed } from '@angular/core/testing';
 import { NEVER, of } from 'rxjs';
 import { provideRouter } from '@angular/router';
 import { App } from './app';
-import { appRoutes } from './app.routes';
-import { CERT_PREP_API } from './cert-prep-api';
+import { appRoutes } from './constants/app-routes.constants';
+import { CERT_PREP_API } from './constants/cert-prep-api.constants';
 import {
   appDocument,
   appProject,

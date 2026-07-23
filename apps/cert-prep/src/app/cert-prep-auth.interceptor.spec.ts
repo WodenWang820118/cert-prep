@@ -1,7 +1,8 @@
 import {
   HttpClient,
+  HTTP_INTERCEPTORS,
   provideHttpClient,
-  withInterceptors,
+  withInterceptorsFromDi,
 } from '@angular/common/http';
 import {
   HttpTestingController,
@@ -10,9 +11,9 @@ import {
 import { TestBed } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
 import { CertPrepRuntimeConfig } from './cert-prep-api';
-import { certPrepAuthInterceptor } from './cert-prep-auth.interceptor';
+import { CertPrepAuthInterceptor } from './cert-prep-auth.interceptor';
 
-describe('certPrepAuthInterceptor', () => {
+describe('CertPrepAuthInterceptor', () => {
   let http: HttpClient;
   let httpTesting: HttpTestingController;
   const backendConfig = {
@@ -23,8 +24,9 @@ describe('certPrepAuthInterceptor', () => {
   beforeEach(() => {
     TestBed.configureTestingModule({
       providers: [
-        provideHttpClient(withInterceptors([certPrepAuthInterceptor])),
+        provideHttpClient(withInterceptorsFromDi()),
         provideHttpClientTesting(),
+        { provide: HTTP_INTERCEPTORS, useClass: CertPrepAuthInterceptor, multi: true },
         {
           provide: CertPrepRuntimeConfig,
           useValue: {

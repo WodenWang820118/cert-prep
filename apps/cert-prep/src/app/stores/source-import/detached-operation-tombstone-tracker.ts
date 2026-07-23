@@ -1,32 +1,22 @@
-import type { DocumentOperationRead } from '../../cert-prep-api';
-import { Observable, Subscription, catchError, defer, of, tap, timer } from 'rxjs';
-import { isExpectedDocumentOperation } from './document-operation-snapshot';
+import { inject, Injectable } from '@angular/core';
+import type { DocumentOperationRead } from '../../contracts/api.contracts';
+import { catchError, defer, of, tap, timer } from 'rxjs';
+import {
+  DetachedOperationTombstoneHooks,
+  DetachedTombstone,
+} from './contracts/source-import.contracts';
+import { RETRY_DELAYS_MS } from './constants/source-import.constants';
+import { DocumentOperationSnapshotService } from './document-operation-snapshot.service';
 
-const RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
-
-export interface DetachedOperationTombstoneHooks {
-  readonly getOperation: (
-    projectId: string,
-    operationId: string,
-  ) => Observable<DocumentOperationRead>;
-  readonly cancelOperation: (
-    projectId: string,
-    operationId: string,
-  ) => Observable<DocumentOperationRead>;
-}
-
-interface DetachedTombstone {
-  readonly key: string;
-  readonly projectId: string;
-  readonly operationId: string;
-  retryCount: number;
-  timer: Subscription | null;
-}
-
+@Injectable({ providedIn: 'root' })
 export class DetachedOperationTombstoneTracker {
+  private readonly snapshot = inject(DocumentOperationSnapshotService);
   private readonly tombstones = new Map<string, DetachedTombstone>();
+  private hooks!: DetachedOperationTombstoneHooks;
 
-  constructor(private readonly hooks: DetachedOperationTombstoneHooks) {}
+  configure(hooks: DetachedOperationTombstoneHooks): void {
+    this.hooks = hooks;
+  }
 
   track(projectId: string, operationId: string): void {
     const key = `${projectId}:${operationId}`;
@@ -62,7 +52,7 @@ export class DetachedOperationTombstoneTracker {
     operation: DocumentOperationRead,
   ): boolean {
     if (
-      !isExpectedDocumentOperation(
+      !this.snapshot.isExpectedDocumentOperation(
         operation,
         tombstone.operationId,
         tombstone.projectId,

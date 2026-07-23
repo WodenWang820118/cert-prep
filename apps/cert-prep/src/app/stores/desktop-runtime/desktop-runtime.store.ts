@@ -7,8 +7,7 @@ import type {
 import { DesktopRuntimeBridgeService } from './desktop-runtime-bridge.service';
 import { DesktopRuntimeViewService } from './desktop-runtime-view.service';
 import { OperationStore } from '../operation.store';
-
-const RUNTIME_INSTALL_POLL_INTERVAL_MS = 1500;
+import { RUNTIME_INSTALL_POLL_INTERVAL_MS } from './constants/desktop-runtime.constants';
 
 @Injectable({ providedIn: 'root' })
 export class DesktopRuntimeStore {

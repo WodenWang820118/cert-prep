@@ -1,11 +1,11 @@
 import { TestBed } from '@angular/core/testing';
 import { NEVER, of, Subject, throwError } from 'rxjs';
-import {
+import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
+import type {
   ChunkRead,
   DocumentRead,
-  CERT_PREP_API,
   OCRHealthRead,
-} from '../../cert-prep-api';
+} from '../../contracts/api.contracts';
 import { HealthStore } from '../../stores/health/health.store';
 import { OperationStore } from '../../stores/operation.store';
 import { ProjectStore } from '../../stores/project.store';

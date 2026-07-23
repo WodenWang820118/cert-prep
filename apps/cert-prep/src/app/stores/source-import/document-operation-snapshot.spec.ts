@@ -1,12 +1,20 @@
-import type { DocumentOperationRead } from '../../cert-prep-api';
-import { isExpectedDocumentOperation } from './document-operation-snapshot';
+import { TestBed } from '@angular/core/testing';
+import type { DocumentOperationRead } from '../../contracts/api.contracts';
+import { DocumentOperationSnapshotService } from './document-operation-snapshot.service';
 
-describe('isExpectedDocumentOperation', () => {
+describe('DocumentOperationSnapshotService', () => {
+  let service: DocumentOperationSnapshotService;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({});
+    service = TestBed.inject(DocumentOperationSnapshotService);
+  });
+
   it.each(['processing', 'transcribing', 'translating'] as const)(
     'accepts the cancellable running %s phase',
     (phase) => {
       expect(
-        isExpectedDocumentOperation(
+        service.isExpectedDocumentOperation(
           operationRead({ phase }),
           'operation-1',
           'project-1',
@@ -19,7 +27,7 @@ describe('isExpectedDocumentOperation', () => {
     'rejects a non-cancellable running %s phase',
     (phase) => {
       expect(
-        isExpectedDocumentOperation(
+        service.isExpectedDocumentOperation(
           operationRead({ phase, cancellable: false }),
           'operation-1',
           'project-1',

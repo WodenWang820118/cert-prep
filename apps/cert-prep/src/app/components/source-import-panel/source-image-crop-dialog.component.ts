@@ -12,19 +12,12 @@ import {
 } from '@angular/core';
 import { Button } from 'primeng/button';
 import { Dialog } from 'primeng/dialog';
-import {
-  clampImageCropRect,
+import type {
+  CropField,
   ImageCropRect,
-  isFullImageCrop,
-  SourceImageCropService,
-} from './source-image-crop.service';
-
-type CropField = keyof ImageCropRect;
-
-interface ImagePoint {
-  readonly x: number;
-  readonly y: number;
-}
+  ImagePoint,
+} from './contracts/source-image-crop.contracts';
+import { SourceImageCropService } from './source-image-crop.service';
 
 @Component({
   selector: 'app-source-image-crop-dialog',
@@ -72,7 +65,7 @@ export class SourceImageCropDialogComponent {
     () =>
       this.imageReady() &&
       !this.encoding() &&
-      !isFullImageCrop(
+      !this.cropService.isFullImageCrop(
         this.cropRect(),
         this.sourceWidth(),
         this.sourceHeight(),
@@ -161,7 +154,7 @@ export class SourceImageCropDialogComponent {
       return;
     }
     this.cropRect.set(
-      clampImageCropRect(
+      this.cropService.clampImageCropRect(
         { ...this.cropRect(), [field]: numericValue },
         this.sourceWidth(),
         this.sourceHeight(),
@@ -243,7 +236,7 @@ export class SourceImageCropDialogComponent {
     this.pointerStartCrop = this.cropRect();
     surface.setPointerCapture?.(event.pointerId);
     this.cropRect.set(
-      clampImageCropRect(
+      this.cropService.clampImageCropRect(
         { x: point.x, y: point.y, width: 1, height: 1 },
         this.sourceWidth(),
         this.sourceHeight(),
@@ -266,7 +259,7 @@ export class SourceImageCropDialogComponent {
       return;
     }
     this.cropRect.set(
-      clampImageCropRect(
+      this.cropService.clampImageCropRect(
         {
           x: Math.min(this.pointerStart.x, point.x),
           y: Math.min(this.pointerStart.y, point.y),

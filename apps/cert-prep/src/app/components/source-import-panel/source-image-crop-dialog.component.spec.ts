@@ -4,8 +4,13 @@ import { SourceImageCropDialogComponent } from './source-image-crop-dialog.compo
 import { SourceImageCropService } from './source-image-crop.service';
 
 describe('SourceImageCropDialogComponent', () => {
+  const cropGeometry = new SourceImageCropService();
   const cropService = {
     crop: vi.fn(),
+    clampImageCropRect: vi.fn((...args: Parameters<SourceImageCropService['clampImageCropRect']>) =>
+      cropGeometry.clampImageCropRect(...args)),
+    isFullImageCrop: vi.fn((...args: Parameters<SourceImageCropService['isFullImageCrop']>) =>
+      cropGeometry.isFullImageCrop(...args)),
   };
   let objectUrlCounter = 0;
 

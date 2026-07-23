@@ -5,11 +5,11 @@ import {
   appProject,
   editableAppQuestion,
 } from '../../app.spec-helpers';
-import {
-  CERT_PREP_API,
-  type PracticeSessionRead,
-  type QuestionDraftRead,
-} from '../../cert-prep-api';
+import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
+import type {
+  PracticeSessionRead,
+  QuestionDraftRead,
+} from '../../contracts/api.contracts';
 import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
 import { OperationStore } from '../../stores/operation.store';
 import { PracticeStore } from '../../stores/practice/practice.store';

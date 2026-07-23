@@ -1,76 +1,38 @@
-import type { DocumentOperationRead, DocumentRead } from '../../cert-prep-api';
-import { EMPTY, from, Observable, of, ReplaySubject, Subject, Subscription, catchError, concatMap, defer, map, switchMap, tap, timer } from 'rxjs';
+import { inject, Injectable } from '@angular/core';
+import type { DocumentOperationRead, DocumentRead } from '../../contracts/api.contracts';
+import { EMPTY, from, Observable, of, ReplaySubject, Subject, catchError, concatMap, defer, map, switchMap, tap, timer } from 'rxjs';
 import type { ObservableInput } from 'rxjs';
-import type { SourceUploadItem } from './contracts/source-import.contracts';
+import type {
+  OperationRequestOutcome,
+  SourceUploadItem,
+  SourceUploadLifecycleHooks,
+  UploadAttempt,
+  UploadResumeResult,
+  UploadTransportRun,
+  MutableUploadRun,
+  TerminalUploadStatus,
+} from './contracts/source-import.contracts';
 import { DetachedOperationTombstoneTracker } from './detached-operation-tombstone-tracker';
-import { isExpectedDocumentOperation } from './document-operation-snapshot';
+import { DocumentOperationSnapshotService } from './document-operation-snapshot.service';
+import {
+  OPERATION_PROGRESS_POLL_MS,
+  TRANSPORT_RETRY_DELAYS_MS,
+} from './constants/source-import.constants';
 
-const TRANSPORT_RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
-const OPERATION_PROGRESS_POLL_MS = 1000;
-
-type UploadPatch = Partial<Omit<SourceUploadItem, 'id' | 'file'>>;
-type TerminalUploadStatus = 'uploaded' | 'failed' | 'canceled';
-type OperationRequestOutcome =
-  | { readonly ok: true; readonly operation: DocumentOperationRead }
-  | { readonly ok: false; readonly error: unknown };
-
-export interface UploadTransportRun {
-  readonly projectId: string;
-  readonly contextEpoch: number;
-  readonly itemIds: string[];
-  readonly documents: DocumentRead[];
-  readonly done: Observable<void>;
-  runtimePromptNeeded: boolean;
-}
-
-export type UploadResumeResult =
-  | { readonly kind: 'current-run' }
-  | { readonly kind: 'new-run'; readonly run: UploadTransportRun };
-
-export interface SourceUploadLifecycleHooks {
-  readonly item: (itemId: string) => SourceUploadItem | undefined;
-  readonly current: (projectId: string, contextEpoch: number) => boolean;
-  readonly patch: (itemId: string, patch: UploadPatch) => boolean;
-  readonly accept: (document: DocumentRead, pollDocument: boolean) => void;
-  readonly upload: (projectId: string, item: SourceUploadItem, operationId: string, signal: AbortSignal) => Observable<DocumentRead>;
-  readonly getDocument: (projectId: string, documentId: string) => Observable<DocumentRead>;
-  readonly getOperation: (projectId: string, operationId: string) => Observable<DocumentOperationRead>;
-  readonly cancelOperation: (projectId: string, operationId: string) => Observable<DocumentOperationRead>;
-  readonly newOperationId: () => string;
-  readonly errorMessage: (error: unknown) => string;
-  readonly errorCode: (error: unknown) => string | null;
-}
-
-interface MutableUploadRun extends UploadTransportRun {
-  readonly concurrency: number;
-  readonly doneSubject: ReplaySubject<void>;
-  queuedItemIds: string[];
-  queuedReconciliationItemIds: string[];
-  activeCount: number;
-}
-
-interface UploadAttempt {
-  readonly itemId: string;
-  readonly operationId: string;
-  readonly controller: AbortController;
-  readonly actions: Subject<() => Observable<void>>;
-  readonly actionSubscription: Subscription;
-  run: MutableUploadRun;
-  documentId: string | null;
-  document: DocumentRead | null;
-  cancelRequested: boolean;
-  slotHeld: boolean;
-  transportRetryCount: number;
-  pollSubscription: Subscription | null;
-}
-
+@Injectable({ providedIn: 'root' })
 export class SourceUploadLifecycle {
+  private readonly detachedTombstones = inject(DetachedOperationTombstoneTracker);
+  private readonly snapshot = inject(DocumentOperationSnapshotService);
   private readonly attempts = new Map<string, UploadAttempt>();
-  private readonly detachedTombstones: DetachedOperationTombstoneTracker;
   private activeRun: MutableUploadRun | null = null;
+  private hooks!: SourceUploadLifecycleHooks;
 
-  constructor(private readonly hooks: SourceUploadLifecycleHooks) {
-    this.detachedTombstones = new DetachedOperationTombstoneTracker(hooks);
+  configure(hooks: SourceUploadLifecycleHooks): void {
+    this.hooks = hooks;
+    this.detachedTombstones.configure({
+      getOperation: hooks.getOperation,
+      cancelOperation: hooks.cancelOperation,
+    });
   }
 
   hasActiveRun(): boolean { return this.activeRun !== null; }
@@ -239,7 +201,7 @@ export class SourceUploadLifecycle {
 
   private reconcileSnapshot(attempt: UploadAttempt, operation: DocumentOperationRead): Observable<void> {
     if (!this.owns(attempt)) return EMPTY;
-    if (!isExpectedDocumentOperation(operation, attempt.operationId, attempt.run.projectId)) {
+    if (!this.snapshot.isExpectedDocumentOperation(operation, attempt.operationId, attempt.run.projectId)) {
       this.scheduleTransportRetry(attempt);
       return of(undefined);
     }

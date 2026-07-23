@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { of, Subject } from 'rxjs';
-import { CERT_PREP_API } from '../../cert-prep-api';
-import type { QuestionDraftRead } from '../../cert-prep-api';
+import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
+import type { QuestionDraftRead } from '../../contracts/api.contracts';
 import { DraftReviewStore } from './draft-review.store';
 import { ProjectStore } from '../project.store';
 import { SourceImportStore } from '../source-import/source-import.store';

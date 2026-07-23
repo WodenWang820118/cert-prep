@@ -1,5 +1,5 @@
 import { inject, Injectable, signal } from '@angular/core';
-import type { QuestionDraftRead } from '../../cert-prep-api';
+import type { QuestionDraftRead } from '../../contracts/api.contracts';
 import type {
   DraftEdit,
   DraftGenerationStrategy,

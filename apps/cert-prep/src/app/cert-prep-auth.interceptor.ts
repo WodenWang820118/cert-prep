@@ -1,40 +1,47 @@
 import {
-  HttpInterceptorFn,
+  HttpEvent,
+  HttpHandler,
+  HttpInterceptor,
   HttpRequest,
 } from '@angular/common/http';
-import { inject } from '@angular/core';
+import { inject, Injectable } from '@angular/core';
+import { Observable } from 'rxjs';
 import { defer, switchMap } from 'rxjs';
 import { CertPrepRuntimeConfig } from './cert-prep-api';
 
-export const certPrepAuthInterceptor: HttpInterceptorFn = (request, next) => {
-  if (isAbsoluteUrl(request.url)) {
-    return next(request);
+@Injectable({ providedIn: 'root' })
+export class CertPrepAuthInterceptor implements HttpInterceptor {
+  private readonly runtimeConfig = inject(CertPrepRuntimeConfig);
+
+  intercept(
+    request: HttpRequest<unknown>,
+    next: HttpHandler,
+  ): Observable<HttpEvent<unknown>> {
+    if (this.isAbsoluteUrl(request.url)) {
+      return next.handle(request);
+    }
+
+    return defer(() => this.runtimeConfig.getBackendConfig()).pipe(
+      switchMap((config) => {
+        const headers = request.headers
+          .delete('Authorization')
+          .set('Authorization', `Bearer ${config.token}`);
+
+        return next.handle(
+          request.clone({
+            url: this.joinUrl(config.base_url, request.url),
+            headers,
+          }),
+        );
+      }),
+    );
   }
 
-  const runtimeConfig = inject(CertPrepRuntimeConfig);
-  return defer(() => runtimeConfig.getBackendConfig()).pipe(
-    switchMap((config) => {
-      const headers = request.headers
-        .delete('Authorization')
-        .set('Authorization', `Bearer ${config.token}`);
+  private isAbsoluteUrl(url: string): boolean {
+    return /^[a-z][a-z\d+.-]*:/i.test(url);
+  }
 
-      return next(
-        request.clone({
-          url: joinUrl(config.base_url, request.url),
-          headers,
-        }),
-      );
-    }),
-  );
-};
-
-function isAbsoluteUrl(url: string): boolean {
-  return /^[a-z][a-z\d+.-]*:/i.test(url);
+  private joinUrl(baseUrl: string, path: string): string {
+    return `${baseUrl.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
+  }
 }
-
-function joinUrl(baseUrl: string, path: string): string {
-  return `${baseUrl.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
-}
-
-// Keep this reference explicit so the interceptor's request shape remains easy to inspect in tests.
-export type CertPrepInterceptedRequest = HttpRequest<unknown>;

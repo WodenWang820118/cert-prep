@@ -1,11 +1,11 @@
 import { TestBed } from '@angular/core/testing';
 import { of, Subject, throwError } from 'rxjs';
-import {
-  CERT_PREP_API,
-  type ProjectRead,
-  type WrongAnswerExplanationRead,
-  type WrongAnswerRead,
-} from '../cert-prep-api';
+import { CERT_PREP_API } from '../constants/cert-prep-api.constants';
+import type {
+  ProjectRead,
+  WrongAnswerExplanationRead,
+  WrongAnswerRead,
+} from '../contracts/api.contracts';
 import { OperationStore } from './operation.store';
 import { ProjectStore } from './project.store';
 import { WrongAnswerReviewStore } from './wrong-answer-review.store';

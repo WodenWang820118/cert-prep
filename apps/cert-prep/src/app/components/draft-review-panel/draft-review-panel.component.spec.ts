@@ -1,11 +1,11 @@
 import { TestBed } from '@angular/core/testing';
-import {
+import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
+import type {
   DocumentRead,
   DraftGenerationJobRead,
-  CERT_PREP_API,
   ProjectRead,
   QuestionDraftRead,
-} from '../../cert-prep-api';
+} from '../../contracts/api.contracts';
 import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
 import { ProjectStore } from '../../stores/project.store';
 import { SourceImportStore } from '../../stores/source-import/source-import.store';

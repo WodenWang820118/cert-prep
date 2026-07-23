@@ -1,10 +1,10 @@
 import { computed, effect, inject, Injectable, signal } from '@angular/core';
 import { from, Subscription, timer } from 'rxjs';
-import {
-  CERT_PREP_API,
-  type ManualDraftGenerationOperationRead,
+import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
+import type {
+  ManualDraftGenerationOperationRead,
   QuestionDraftRead,
-} from '../../cert-prep-api';
+} from '../../contracts/api.contracts';
 import { CertPrepHttpResourceClient } from '../../cert-prep-http-resource-client';
 import type {
   DraftEdit,
@@ -18,9 +18,10 @@ import { HealthStore } from '../health/health.store';
 import { OperationStore } from '../operation.store';
 import { ProjectStore } from '../project.store';
 import { SourceImportStore } from '../source-import/source-import.store';
-
-const MANUAL_DRAFT_POLL_INTERVAL_MS = 1500;
-const MANUAL_DRAFT_POLL_RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
+import {
+  MANUAL_DRAFT_POLL_INTERVAL_MS,
+  MANUAL_DRAFT_POLL_RETRY_DELAYS_MS,
+} from './constants/draft-review.constants';
 
 @Injectable({ providedIn: 'root' })
 export class DraftReviewStore {

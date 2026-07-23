@@ -3,17 +3,15 @@ import type {
   LLMHealthRead,
   OCRHealthRead,
   RuntimeRequirementRead,
-} from '../../cert-prep-api';
+} from '../../contracts/api.contracts';
+import {
+  LLM_RUNTIME_MISSING_REASON_CODES,
+  OCR_RUNTIME_MISSING_REASON_CODES,
+} from './constants/health.constants';
 import type {
   LLMProviderSelectionRead,
   RuntimeKind,
 } from './contracts/health-runtime.contracts';
-
-const OCR_RUNTIME_MISSING_REASON_CODES = new Set([
-  'paddle_runtime_missing',
-  'windowsml_runtime_missing',
-]);
-const LLM_RUNTIME_MISSING_REASON_CODES = new Set(['ollama_missing']);
 
 @Injectable({ providedIn: 'root' })
 export class RuntimeHealthDerivationService {

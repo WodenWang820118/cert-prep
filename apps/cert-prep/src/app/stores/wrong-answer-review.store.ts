@@ -1,28 +1,16 @@
 import { effect, inject, Injectable, signal } from '@angular/core';
 import { catchError, from, of } from 'rxjs';
-import {
-  CERT_PREP_API,
-  type WrongAnswerExplanationRead,
-  type WrongAnswerRead,
-  type WrongAnswerSummaryRead,
-} from '../cert-prep-api';
+import { CERT_PREP_API } from '../constants/cert-prep-api.constants';
+import type {
+  WrongAnswerExplanationRead,
+  WrongAnswerRead,
+  WrongAnswerSummaryRead,
+} from '../contracts/api.contracts';
 import { CertPrepHttpResourceClient } from '../cert-prep-http-resource-client';
 import { OperationStore } from './operation.store';
 import { ProjectStore } from './project.store';
-
-export interface WrongAnswerExplanationState {
-  loading: boolean;
-  result: string | null;
-  error: string | null;
-  fallback: boolean;
-}
-
-const EMPTY_EXPLANATION_STATE: WrongAnswerExplanationState = {
-  loading: false,
-  result: null,
-  error: null,
-  fallback: false,
-};
+import type { WrongAnswerExplanationState } from './wrong-answer-review/contracts/wrong-answer-review.contracts';
+import { EMPTY_EXPLANATION_STATE } from './wrong-answer-review/constants/wrong-answer-review.constants';
 
 @Injectable({ providedIn: 'root' })
 export class WrongAnswerReviewStore {

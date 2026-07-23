@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { CERT_PREP_API } from '../../cert-prep-api';
+import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
 import { FullExamPage } from './full-exam.page';
 
 describe('FullExamPage', () => {

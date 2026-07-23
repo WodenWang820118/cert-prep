@@ -5,6 +5,7 @@ import { Tag } from 'primeng/tag';
 import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
 import { OperationStore } from '../../stores/operation.store';
 import { SourceImportStore } from '../../stores/source-import/source-import.store';
+import { ChoiceKeyService } from '../../services/choice-key.service';
 
 @Component({
   selector: 'app-draft-review-panel',
@@ -17,19 +18,9 @@ export class DraftReviewPanelComponent {
   protected readonly drafts = inject(DraftReviewStore);
   protected readonly operations = inject(OperationStore);
   protected readonly sourceImport = inject(SourceImportStore);
+  private readonly choiceKeys = inject(ChoiceKeyService);
 
   protected choiceKey(index: number): string {
-    return choiceKey(index);
+    return this.choiceKeys.key(index);
   }
-}
-
-function choiceKey(index: number): string {
-  let value = index + 1;
-  let key = '';
-  while (value > 0) {
-    value -= 1;
-    key = String.fromCharCode(65 + (value % 26)) + key;
-    value = Math.floor(value / 26);
-  }
-  return key;
 }

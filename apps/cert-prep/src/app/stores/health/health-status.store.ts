@@ -4,7 +4,7 @@ import {
   LLMHealthRead,
   OCRHealthRead,
   RuntimeRequirementRead,
-} from '../../cert-prep-api';
+} from '../../contracts/api.contracts';
 import type {
   HealthSnapshot,
   LLMProviderSelectionRead,

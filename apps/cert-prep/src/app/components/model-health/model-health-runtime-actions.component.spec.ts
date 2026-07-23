@@ -1,6 +1,6 @@
 import { Component } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { CERT_PREP_API } from '../../cert-prep-api';
+import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
 import { RuntimeManagerPage } from '../../pages/runtime-manager/runtime-manager.page';
 import { HealthStore } from '../../stores/health/health.store';
 import { RuntimeConsentDialogsComponent } from './runtime-consent-dialogs.component';

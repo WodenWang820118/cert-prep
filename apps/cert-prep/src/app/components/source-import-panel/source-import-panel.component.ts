@@ -17,9 +17,10 @@ import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
 import { OperationStore } from '../../stores/operation.store';
 import { ProjectStore } from '../../stores/project.store';
 import { SourceImportStore } from '../../stores/source-import/source-import.store';
-import { CERT_PREP_API, type ChunkRead } from '../../cert-prep-api';
+import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
+import type { ChunkRead } from '../../contracts/api.contracts';
 import { SourceImageCropDialogComponent } from './source-image-crop-dialog.component';
-import { isCroppableImageFile } from './source-image-crop.service';
+import { SourceImageCropService } from './source-image-crop.service';
 
 @Component({
   selector: 'app-source-import-panel',
@@ -641,6 +642,7 @@ import { isCroppableImageFile } from './source-image-crop.service';
 })
 export class SourceImportPanelComponent {
   private readonly api = inject(CERT_PREP_API);
+  private readonly cropService = inject(SourceImageCropService);
   private readonly destroyRef = inject(DestroyRef);
   protected readonly drafts = inject(DraftReviewStore);
   protected readonly operations = inject(OperationStore);
@@ -700,7 +702,7 @@ export class SourceImportPanelComponent {
     };
     if (
       !this.cropImagesBeforeUpload() ||
-      !files.some((file) => isCroppableImageFile(file))
+      !files.some((file) => this.cropService.isCroppableImageFile(file))
     ) {
       this.sourceImport.chooseFiles(files, selectionOptions);
       return;
@@ -710,7 +712,7 @@ export class SourceImportPanelComponent {
     this.pendingSelectionAutoUploadIntent = appendSelection;
     this.pendingSelectedFiles = [...files];
     this.pendingCropIndexes = files.flatMap((file, index) =>
-      isCroppableImageFile(file) ? [index] : [],
+      this.cropService.isCroppableImageFile(file) ? [index] : [],
     );
     this.pendingCropCursor = 0;
     this.cropTotal.set(this.pendingCropIndexes.length);

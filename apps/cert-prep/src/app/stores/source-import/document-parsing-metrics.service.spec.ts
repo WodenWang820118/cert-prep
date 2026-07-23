@@ -1,4 +1,4 @@
-import type { DocumentRead } from '../../cert-prep-api';
+import type { DocumentRead } from '../../contracts/api.contracts';
 import { DocumentParsingMetricsService } from './document-parsing-metrics.service';
 
 describe('DocumentParsingMetricsService', () => {
