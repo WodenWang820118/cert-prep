@@ -1,13 +1,30 @@
-import { computed, inject, Injectable, signal } from '@angular/core';
+import { computed, effect, inject, Injectable, signal } from '@angular/core';
 import { CERT_PREP_API, ProjectRead } from '../cert-prep-api';
+import { CertPrepHttpResourceClient } from '../cert-prep-http-resource-client';
 import { OperationStore } from './operation.store';
 
 @Injectable({ providedIn: 'root' })
 export class ProjectStore {
   private readonly api = inject(CERT_PREP_API);
+  private readonly resources = inject(CertPrepHttpResourceClient);
   private readonly operations = inject(OperationStore);
+  private readonly projectListRequested = signal(false);
 
+  private readonly projectListResource = this.resources.projects(() =>
+    this.projectListRequested(),
+  );
   readonly projects = signal<ProjectRead[]>([]);
+  private readonly projectListSync = effect(() => {
+    const status = this.projectListResource.status();
+    if (status === 'resolved' || status === 'local') {
+      this.projects.set(this.projectListResource.value());
+    }
+  });
+
+  /** Reactive project list query; mutations remain explicit command methods. */
+  readonly projectsResource = this.projectListResource.asReadonly();
+  readonly projectsLoading = this.projectsResource.isLoading;
+  readonly projectsError = this.projectsResource.error;
   readonly selectedProjectId = signal<string | null>(null);
   readonly projectName = signal('');
   readonly projectDescription = signal('');
@@ -16,9 +33,12 @@ export class ProjectStore {
     return this.projects().find((project) => project.id === selectedId) ?? null;
   });
 
-  async load(): Promise<void> {
-    const projects = await this.api.listProjects();
-    this.projects.set(projects.items);
+  load(): void {
+    if (!this.projectListRequested()) {
+      this.projectListRequested.set(true);
+      return;
+    }
+    this.projectListResource.reload();
   }
 
   async createFromForm(): Promise<ProjectRead | null> {
@@ -38,10 +58,12 @@ export class ProjectStore {
       return null;
     }
 
-    this.projects.update((projects) => [
+    const nextProjects = [
       project,
-      ...projects.filter((item) => item.id !== project.id),
-    ]);
+      ...this.projects().filter((item) => item.id !== project.id),
+    ];
+    this.projects.set(nextProjects);
+    this.projectListResource.set(nextProjects);
     this.projectName.set('');
     this.projectDescription.set('');
     return project;

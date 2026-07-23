@@ -14,6 +14,7 @@ import {
   emptyWrongAnswerSummary,
 } from './app.spec-helpers';
 import { OperationStore } from './stores/operation.store';
+import { provideCertPrepHttpResourceClientFake } from './testing/cert-prep-http-resource-client.fake';
 
 describe('App', () => {
   let apiClient: ReturnType<typeof createApiClient>;
@@ -27,6 +28,7 @@ describe('App', () => {
       imports: [App],
       providers: [
         { provide: CERT_PREP_API, useValue: apiClient },
+        provideCertPrepHttpResourceClientFake(apiClient),
         provideRouter(appRoutes),
       ],
     }).compileComponents();

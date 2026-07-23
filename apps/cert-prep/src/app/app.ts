@@ -8,6 +8,7 @@ import {
   effect,
   inject,
   signal,
+  ChangeDetectionStrategy
 } from '@angular/core';
 import {
   NavigationEnd,
@@ -40,6 +41,7 @@ const LAST_PROJECT_STORAGE_KEY = 'certPrepLastProjectId';
   ],
   selector: 'app-root',
   templateUrl: './app.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './app.css',
 })
 export class App implements OnInit, OnDestroy {
@@ -79,8 +81,8 @@ export class App implements OnInit, OnDestroy {
   private readonly workspace = inject(WorkspaceFacade);
   private readonly startupProjectId = this.readLastProjectId();
   private hasAttemptedInitialStartupLoad = false;
-  private hasAppliedStartupProjectSelection = false;
-  private loadingStartupState = false;
+  private readonly hasAppliedStartupProjectSelection = signal(false);
+  private readonly loadingStartupState = signal(false);
   private runtimeManagerRestoreFocus: HTMLElement | null = null;
   private runtimeManagerFocusTimer: ReturnType<typeof setTimeout> | null = null;
   private runtimeManagerRestoreFocusTimer: ReturnType<typeof setTimeout> | null =
@@ -101,7 +103,7 @@ export class App implements OnInit, OnDestroy {
       const backendStateLoaded = this.workspace.hasLoadedBackendState();
 
       if (
-        this.hasAppliedStartupProjectSelection &&
+        this.hasAppliedStartupProjectSelection() &&
         selectedProjectId !== null
       ) {
         this.writeLastProjectId(selectedProjectId);
@@ -111,13 +113,30 @@ export class App implements OnInit, OnDestroy {
         !this.hasAttemptedInitialStartupLoad ||
         !backendReady ||
         backendStateLoaded ||
-        this.loadingStartupState
+        this.loadingStartupState()
       ) {
         return;
       }
 
       queueMicrotask(() => {
         void this.loadStartupState();
+      });
+    });
+
+    effect(() => {
+      const backendStateLoaded = this.workspace.hasLoadedBackendState();
+      const projectStatus = this.projects.projectsResource.status();
+      if (
+        !backendStateLoaded ||
+        this.loadingStartupState() ||
+        this.hasAppliedStartupProjectSelection() ||
+        !['resolved', 'local', 'error'].includes(projectStatus)
+      ) {
+        return;
+      }
+
+      queueMicrotask(() => {
+        void this.applyStartupProjectSelection();
       });
     });
   }
@@ -141,16 +160,19 @@ export class App implements OnInit, OnDestroy {
   }
 
   private async loadStartupState(): Promise<void> {
-    if (this.loadingStartupState) {
+    if (this.loadingStartupState()) {
       return;
     }
 
-    this.loadingStartupState = true;
+    this.loadingStartupState.set(true);
+    if (!this.workspace.hasLoadedBackendState()) {
+      this.hasAppliedStartupProjectSelection.set(false);
+    }
     try {
       await this.workspace.loadStartupState();
       await this.applyStartupProjectSelection();
     } finally {
-      this.loadingStartupState = false;
+      this.loadingStartupState.set(false);
     }
   }
 
@@ -161,7 +183,14 @@ export class App implements OnInit, OnDestroy {
 
     const projects = this.projects.projects();
     if (projects.length === 0) {
-      this.hasAppliedStartupProjectSelection = true;
+      if (
+        ['idle', 'loading', 'reloading'].includes(
+          this.projects.projectsResource.status(),
+        )
+      ) {
+        return;
+      }
+      this.hasAppliedStartupProjectSelection.set(true);
       return;
     }
 
@@ -173,10 +202,12 @@ export class App implements OnInit, OnDestroy {
 
     if (this.projects.selectedProjectId() !== targetProjectId) {
       await this.workspace.selectProject(targetProjectId);
+    } else {
+      this.operations.status.set('Project loaded');
     }
 
     this.writeLastProjectId(targetProjectId);
-    this.hasAppliedStartupProjectSelection = true;
+    this.hasAppliedStartupProjectSelection.set(true);
   }
 
   private readLastProjectId(): string | null {

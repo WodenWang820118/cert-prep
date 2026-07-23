@@ -1,6 +1,6 @@
-import { computed, inject, Injectable } from '@angular/core';
+import { computed, effect, inject, Injectable, signal } from '@angular/core';
+import { CertPrepHttpResourceClient } from '../../cert-prep-http-resource-client';
 import type { RuntimeKind } from './contracts/health-runtime.contracts';
-import { HealthSnapshotService } from './health-snapshot.service';
 import { HealthStatusStore } from './health-status.store';
 import { RuntimeActionsStore } from './runtime-actions.store';
 import { RuntimeApiClientsService } from './runtime-api-clients.service';
@@ -9,10 +9,29 @@ import { OperationStore } from '../operation.store';
 @Injectable({ providedIn: 'root' })
 export class HealthStore {
   private readonly operations = inject(OperationStore);
-  private readonly snapshots = inject(HealthSnapshotService);
+  private readonly resources = inject(CertPrepHttpResourceClient);
   private readonly status = inject(HealthStatusStore);
   private readonly actions = inject(RuntimeActionsStore);
   private readonly runtimeApi = inject(RuntimeApiClientsService);
+  private readonly healthRequested = signal(false);
+  private readonly systemHealthResource = this.resources.health(() =>
+    this.healthRequested(),
+  );
+  private readonly llmHealthResource = this.resources.llmHealth(() =>
+    this.healthRequested(),
+  );
+  private readonly ocrHealthResource = this.resources.ocrHealth(() =>
+    this.healthRequested(),
+  );
+  private readonly providerSelectionResource =
+    this.resources.providerSelection(() => this.healthRequested());
+  private readonly runtimeRequirementsResource =
+    this.resources.runtimeRequirements(() => this.healthRequested());
+  private healthReloadPending = false;
+  private lastOcrResourceStatus: string | null = null;
+  private readonly resourceSync = effect(() => {
+    this.syncHealthResources();
+  });
 
   readonly llmHealth = this.status.llmHealth;
   readonly systemHealth = this.status.systemHealth;
@@ -79,42 +98,26 @@ export class HealthStore {
   readonly configuredModelName = this.status.configuredModelName;
   readonly effectiveModelName = this.status.effectiveModelName;
 
-  async load(): Promise<void> {
+  load(): void {
     this.status.beginHealthSnapshotLoad();
-    try {
-      const snapshot = await this.snapshots.load((partial) =>
-        this.status.applyHealthSnapshot(partial),
-      );
-      this.status.applyHealthSnapshot(snapshot);
-      this.status.recordOcrHealthResult(snapshot);
-    } catch (error) {
-      this.status.recordOcrHealthResult({});
-      throw error;
-    } finally {
-      this.status.endHealthSnapshotLoad();
+    this.healthReloadPending = true;
+    if (!this.healthRequested()) {
+      this.healthRequested.set(true);
+      return;
     }
+    this.reloadHealthResources();
   }
 
-  async refresh(): Promise<void> {
+  refresh(): void {
     this.status.beginHealthSnapshotLoad();
-    try {
-      const health = await this.operations.run(
-        'health',
-        'Runtime health refreshed',
-        async () =>
-          this.snapshots.load((snapshot) =>
-            this.status.applyHealthSnapshot(snapshot),
-          ),
-      );
-      if (health !== null) {
-        this.status.applyHealthSnapshot(health);
-        this.status.recordOcrHealthResult(health);
-      } else {
-        this.status.recordOcrHealthResult({});
-      }
-    } finally {
-      this.status.endHealthSnapshotLoad();
+    this.healthReloadPending = true;
+    if (!this.healthRequested()) {
+      this.healthRequested.set(true);
+      this.operations.status.set('Runtime health refreshed');
+      return;
     }
+    this.reloadHealthResources();
+    this.operations.status.set('Runtime health refreshed');
   }
 
   openModelDownloadConsent(): void {
@@ -155,9 +158,14 @@ export class HealthStore {
     this.openRuntimeInstallConsent('whisper_models');
   }
 
-  async refreshRuntimeRequirements(): Promise<void> {
+  refreshRuntimeRequirements(): void {
+    this.runtimeRequirementsResource.reload();
+  }
+
+  async loadRuntimeRequirementsForUpload(): Promise<void> {
     const response =
       await this.runtimeApi.runtimeInstallationClient().runtimeRequirements();
+    this.runtimeRequirementsResource.set(response.items);
     this.status.applyHealthSnapshot({ runtimeRequirements: response.items });
   }
 
@@ -194,7 +202,7 @@ export class HealthStore {
       canDownloadModel: () => this.canDownloadModel(),
       canInstallRuntime: (kind: RuntimeKind) => this.canInstallRuntime(kind),
       configuredModelName: () => this.configuredModelName(),
-      refreshHealthAfterRuntimeChange: () => this.load(),
+      refreshHealthAfterRuntimeChange: (): void => this.load(),
     };
   }
 
@@ -255,5 +263,76 @@ export class HealthStore {
       selection === null ||
       selection.selected_provider.trim().toLowerCase() === provider
     );
+  }
+
+  private reloadHealthResources(): void {
+    this.systemHealthResource.reload();
+    this.llmHealthResource.reload();
+    this.ocrHealthResource.reload();
+    this.providerSelectionResource.reload();
+    this.runtimeRequirementsResource.reload();
+  }
+
+  private syncHealthResources(): void {
+    if (this.isResolved(this.systemHealthResource.status())) {
+      const health = this.systemHealthResource.value();
+      if (health !== null) {
+        this.status.applyHealthSnapshot({ system: health });
+      }
+    }
+
+    if (this.isResolved(this.llmHealthResource.status())) {
+      const health = this.llmHealthResource.value();
+      if (health !== null) {
+        this.status.applyHealthSnapshot({ llm: health });
+      }
+    }
+
+    const ocrStatus = this.ocrHealthResource.status();
+    if (this.isResolved(ocrStatus)) {
+      const health = this.ocrHealthResource.value();
+      if (health !== null) {
+        this.status.applyHealthSnapshot({ ocr: health });
+      }
+    }
+    if (ocrStatus !== this.lastOcrResourceStatus) {
+      this.lastOcrResourceStatus = ocrStatus;
+      if (ocrStatus === 'error') {
+        this.status.recordOcrHealthResult({});
+      }
+    }
+
+    if (this.isResolved(this.providerSelectionResource.status())) {
+      const selection = this.providerSelectionResource.value();
+      if (selection !== null) {
+        this.status.applyHealthSnapshot({ providerSelection: selection });
+      }
+    }
+
+    if (this.isResolved(this.runtimeRequirementsResource.status())) {
+      this.status.applyHealthSnapshot({
+        runtimeRequirements: this.runtimeRequirementsResource.value(),
+      });
+    }
+
+    const healthResources = [
+      this.systemHealthResource,
+      this.llmHealthResource,
+      this.ocrHealthResource,
+      this.providerSelectionResource,
+      this.runtimeRequirementsResource,
+    ];
+    if (
+      this.healthReloadPending &&
+      healthResources.every((resource) => resource.status() !== 'idle') &&
+      !healthResources.some((resource) => resource.isLoading())
+    ) {
+      this.healthReloadPending = false;
+      this.status.endHealthSnapshotLoad();
+    }
+  }
+
+  private isResolved(status: string): boolean {
+    return status === 'resolved' || status === 'local';
   }
 }

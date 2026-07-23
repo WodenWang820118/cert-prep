@@ -18,12 +18,22 @@ or review flows.
   practice sessions, and wrong-answer review state.
 - The Angular UI keeps workflow panels for projects, source import, question
   review/editing, practice, and wrong-answer review.
-- Use PrimeNG 21 with Angular 21.
+- Use PrimeNG 21 with Angular 22.0.7.
 - Use Tailwind CSS 4 through `@tailwindcss/postcss`.
 - Integrate PrimeNG and Tailwind through `tailwindcss-primeui` CSS imports,
   keeping PrimeNG's CSS layer before Tailwind utilities.
 - Keep standalone Angular components and signal stores. Import PrimeNG modules
   per component instead of centralizing every UI dependency in the root app.
+- Use Angular `httpResource` for stable signal-driven reads. The generated
+  OpenAPI client keeps its Promise contract for commands and compatibility,
+  while a generated typed request factory supplies route-safe requests to the
+  authenticated resource client. Resource keys own project/document scope so
+  changing selection cancels obsolete reads and cannot write stale data into
+  the current workbench.
+- Keep uploads, mutations, Tauri calls, Blob audio, polling, and reconciliation
+  on the existing Promise command boundary. Successful mutations may update a
+  writable resource immediately and reload when server reconciliation is
+  needed; query `load`/`refresh` methods are synchronous reload triggers.
 - Runtime status is compact: header chips plus a Manage runtime drawer, not a
   large first-screen checklist.
 - Runtime status can be healthy while practice is still blocked by missing
@@ -209,6 +219,11 @@ Page requirements:
 - The 2026-07-20 final review matrix passed 267 Angular tests, all 393 backend
   tests, production build, frontend/backend/E2E lint, and 36 mixed PDF/audio
   queue scenarios across Chromium, Firefox, and WebKit.
+- The 2026-07-22 Angular resource migration passed 273 Angular tests, all 432
+  backend tests, frontend lint, production build, and `git diff --check`. The
+  focused resource matrix covers generated route encoding, bearer/header
+  handling, config failure, JSON parsing, resource errors, and stale-query
+  cancellation.
 
 ## Open Risks
 

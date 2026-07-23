@@ -1,4 +1,12 @@
-import { Component, OnInit, computed, inject, input } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  effect,
+  OnInit,
+  computed,
+  inject,
+  input,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
 import { OperationStore } from '../../stores/operation.store';
@@ -16,6 +24,7 @@ interface QuestionNavigatorItem {
   selector: 'app-practice-panel',
   imports: [FormsModule],
   templateUrl: './practice-panel.component.html',
+  changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './practice-panel.component.css',
 })
 export class PracticePanelComponent implements OnInit {
@@ -27,6 +36,13 @@ export class PracticePanelComponent implements OnInit {
 
   protected readonly operations = inject(OperationStore);
   protected readonly practice = inject(PracticeStore);
+  private readonly inputErrorSync = effect(() => {
+    if (this.drafts.draftsError() !== undefined || this.sourceImport.documentsError() !== undefined) {
+      this.operations.fail(
+        'Practice data could not be loaded. Try refreshing the project.',
+      );
+    }
+  });
 
   protected readonly modeTitle = computed(() =>
     this.sessionMode() === 'full_document' ? 'Full Exam' : 'Random Quiz',
@@ -114,26 +130,22 @@ export class PracticePanelComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    void this.loadPracticeInputs().catch(() => {
-      this.operations.fail(
-        'Practice data could not be loaded. Try refreshing the project.',
-      );
-    });
+    this.loadPracticeInputs();
   }
 
-  private async loadPracticeInputs(): Promise<void> {
+  private loadPracticeInputs(): void {
     const project = this.projects.selectedProject();
     if (project === null) {
       return;
     }
 
-    await Promise.all([
-      this.drafts.load(project.id),
+    this.drafts.load(project.id);
+    if (
       this.sessionMode() === 'full_document' &&
       this.sourceImport.documents().length === 0
-        ? this.sourceImport.loadLatestDocument(project.id)
-        : Promise.resolve(),
-    ]);
+    ) {
+      this.sourceImport.loadLatestDocument(project.id);
+    }
   }
 }
 

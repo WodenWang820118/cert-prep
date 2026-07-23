@@ -6,6 +6,7 @@ import {
   ocrHealth,
   providerSelection,
 } from './health.store.spec-helpers';
+import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
 
 describe('HealthStore loading', () => {
   const apiClient = {
@@ -37,7 +38,10 @@ describe('HealthStore loading', () => {
     });
     apiClient.runtimeRequirements.mockResolvedValue({ items: [] });
     TestBed.configureTestingModule({
-      providers: [{ provide: CERT_PREP_API, useValue: apiClient }],
+      providers: [
+        { provide: CERT_PREP_API, useValue: apiClient },
+        provideCertPrepHttpResourceClientFake(apiClient),
+      ],
     });
   });
 
@@ -47,7 +51,8 @@ describe('HealthStore loading', () => {
       new Error('runtime requirements unavailable'),
     );
 
-    await store.load();
+    store.load();
+    await vi.waitFor(() => expect(store.healthSnapshotLoading()).toBe(false));
 
     expect(store.systemHealth()?.status).toBe('ok');
     expect(store.ocrHealth()?.available).toBe(true);
@@ -69,7 +74,8 @@ describe('HealthStore loading', () => {
       ],
     });
 
-    await store.load();
+    store.load();
+    await vi.waitFor(() => expect(store.healthSnapshotLoading()).toBe(false));
 
     expect(store.providerSelection()?.preference).toBe('auto');
     expect(store.selectedProviderLabel()).toBe('Ollama');
@@ -84,7 +90,8 @@ describe('HealthStore loading', () => {
       new Error('provider selection unavailable'),
     );
 
-    await store.load();
+    store.load();
+    await vi.waitFor(() => expect(store.healthSnapshotLoading()).toBe(false));
 
     expect(store.systemHealth()?.status).toBe('ok');
     expect(store.ocrHealth()?.available).toBe(true);
@@ -95,7 +102,8 @@ describe('HealthStore loading', () => {
     const store = TestBed.inject(HealthStore);
     apiClient.llmHealth.mockRejectedValueOnce(new Error('ollama unavailable'));
 
-    await store.load();
+    store.load();
+    await vi.waitFor(() => expect(store.healthSnapshotLoading()).toBe(false));
 
     expect(store.systemHealth()?.status).toBe('ok');
     expect(store.ocrHealth()?.available).toBe(true);
@@ -112,7 +120,7 @@ describe('HealthStore loading', () => {
       }),
     );
 
-    const load = store.load();
+    store.load();
 
     expect(store.healthSnapshotLoading()).toBe(true);
     expect(store.isOcrHealthLoading()).toBe(true);
@@ -120,7 +128,7 @@ describe('HealthStore loading', () => {
     expect(store.ocrHealth()).toBeNull();
 
     resolveOcrHealth(ocrHealth());
-    await load;
+    await vi.waitFor(() => expect(store.healthSnapshotLoading()).toBe(false));
 
     expect(store.healthSnapshotLoading()).toBe(false);
     expect(store.isOcrHealthLoading()).toBe(false);
@@ -137,9 +145,8 @@ describe('HealthStore loading', () => {
       }),
     );
 
-    const load = store.load();
-    await Promise.resolve();
-    await Promise.resolve();
+    store.load();
+    await vi.waitFor(() => expect(store.ocrHealth()).not.toBeNull());
 
     expect(store.healthSnapshotLoading()).toBe(true);
     expect(store.ocrHealth()?.available).toBe(true);
@@ -147,7 +154,7 @@ describe('HealthStore loading', () => {
     expect(store.ocrPhase()).toBe('ready');
 
     resolveLlmHealth(llmHealth({ available: false }));
-    await load;
+    await vi.waitFor(() => expect(store.healthSnapshotLoading()).toBe(false));
 
     expect(store.healthSnapshotLoading()).toBe(false);
   });
@@ -157,7 +164,8 @@ describe('HealthStore loading', () => {
     store.ocrHealth.set(ocrHealth());
     apiClient.ocrHealth.mockRejectedValueOnce(new Error('ocr unavailable'));
 
-    await store.load();
+    store.load();
+    await vi.waitFor(() => expect(store.healthSnapshotLoading()).toBe(false));
 
     expect(store.ocrHealth()?.available).toBe(true);
     expect(store.ocrPhase()).toBe('stale');
@@ -168,7 +176,8 @@ describe('HealthStore loading', () => {
     const store = TestBed.inject(HealthStore);
     apiClient.ocrHealth.mockRejectedValueOnce(new Error('ocr unavailable'));
 
-    await store.load();
+    store.load();
+    await vi.waitFor(() => expect(store.healthSnapshotLoading()).toBe(false));
 
     expect(store.ocrHealth()).toBeNull();
     expect(store.ocrPhase()).toBe('failed');

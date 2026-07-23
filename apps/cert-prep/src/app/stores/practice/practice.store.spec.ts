@@ -10,6 +10,7 @@ import { DraftReviewStore } from '../draft-review/draft-review.store';
 import { PracticeStore } from './practice.store';
 import { ProjectStore } from '../project.store';
 import { SourceImportStore } from '../source-import/source-import.store';
+import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
 
 describe('PracticeStore session modes', () => {
   const project: ProjectRead = {
@@ -64,7 +65,10 @@ describe('PracticeStore session modes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     TestBed.configureTestingModule({
-      providers: [{ provide: CERT_PREP_API, useValue: apiClient }],
+      providers: [
+        { provide: CERT_PREP_API, useValue: apiClient },
+        provideCertPrepHttpResourceClientFake(apiClient),
+      ],
     });
 
     const projects = TestBed.inject(ProjectStore);
@@ -274,6 +278,7 @@ describe('PracticeStore session modes', () => {
     });
 
     await store.loadActiveSession(project.id);
+    await vi.waitFor(() => expect(store.resumableSession()).toEqual(resumable));
 
     expect(store.resumableSession()).toEqual(resumable);
     expect(store.practiceSession()).toBeNull();

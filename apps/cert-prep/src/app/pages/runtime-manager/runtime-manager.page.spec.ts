@@ -13,6 +13,7 @@ import {
 import { ModelHealthViewModelFacade } from '../../components/model-health/model-health-view-model.facade';
 import { RuntimeManagerPage } from './runtime-manager.page';
 import { providerSelection } from '../../stores/health/health.store.spec-helpers';
+import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
 
 describe('RuntimeManagerPage', () => {
   let apiClient: {
@@ -22,6 +23,7 @@ describe('RuntimeManagerPage', () => {
     llmHealth: ReturnType<typeof vi.fn>;
     ocrHealth: ReturnType<typeof vi.fn>;
     runtimeRequirements: ReturnType<typeof vi.fn>;
+    llmProviderSelection: ReturnType<typeof vi.fn>;
     startModelDownload: ReturnType<typeof vi.fn>;
     startRuntimeInstallation: ReturnType<typeof vi.fn>;
   };
@@ -36,13 +38,17 @@ describe('RuntimeManagerPage', () => {
       llmHealth: vi.fn().mockResolvedValue(availableLlmHealth()),
       ocrHealth: vi.fn().mockResolvedValue(ocrHealth()),
       runtimeRequirements: vi.fn().mockResolvedValue({ items: [] }),
+      llmProviderSelection: vi.fn().mockResolvedValue(providerSelection()),
       startModelDownload: vi.fn(),
       startRuntimeInstallation: vi.fn(),
     };
 
     await TestBed.configureTestingModule({
       imports: [RuntimeManagerPage],
-      providers: [{ provide: CERT_PREP_API, useValue: apiClient }],
+      providers: [
+        { provide: CERT_PREP_API, useValue: apiClient },
+        provideCertPrepHttpResourceClientFake(apiClient),
+      ],
     }).compileComponents();
   });
 
@@ -189,7 +195,8 @@ describe('RuntimeManagerPage', () => {
     apiClient.llmHealth.mockResolvedValueOnce(availableLlmHealth());
     apiClient.ocrHealth.mockRejectedValueOnce(new Error('ocr unavailable'));
 
-    await health.load();
+    health.load();
+    await vi.waitFor(() => expect(health.healthSnapshotLoading()).toBe(false));
 
     const fixture = TestBed.createComponent(RuntimeManagerPage);
     fixture.detectChanges();

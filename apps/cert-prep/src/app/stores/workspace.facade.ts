@@ -42,12 +42,7 @@ export class WorkspaceFacade {
       return;
     }
     this.hasLoadedBackendState.set(true);
-
-    const firstProject = this.projects.projects()[0];
-    if (firstProject !== undefined) {
-      await this.selectProject(firstProject.id);
-    }
-    void this.health.load().catch(() => undefined);
+    this.health.load();
   }
 
   async createProject(): Promise<void> {
@@ -64,21 +59,10 @@ export class WorkspaceFacade {
     this.practice.reset();
     this.review.reset();
 
-    const loaded = await this.operations.run(
-      'project',
-      'Project loaded',
-      async () => {
-        await Promise.all([
-          this.sourceImport.loadLatestDocument(projectId),
-          this.drafts.load(projectId),
-          this.review.load(projectId),
-          this.practice.loadActiveSession(projectId),
-        ]);
-      },
-    );
-    if (loaded === null) {
-      this.drafts.reset();
-      this.review.reset();
-    }
+    this.sourceImport.loadLatestDocument(projectId);
+    this.drafts.load(projectId);
+    this.review.load(projectId);
+    this.practice.loadActiveSession(projectId);
+    this.operations.status.set('Project loaded');
   }
 }

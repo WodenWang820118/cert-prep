@@ -14,6 +14,8 @@ import {
   ocrHealth,
   systemHealth,
 } from './model-health.component.spec-helpers';
+import { providerSelection } from '../../stores/health/health.store.spec-helpers';
+import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
 
 describe('ModelHealthComponent status display', () => {
   let apiClient: {
@@ -21,6 +23,7 @@ describe('ModelHealthComponent status display', () => {
     getRuntimeInstallation: ReturnType<typeof vi.fn>;
     health: ReturnType<typeof vi.fn>;
     llmHealth: ReturnType<typeof vi.fn>;
+    llmProviderSelection: ReturnType<typeof vi.fn>;
     ocrHealth: ReturnType<typeof vi.fn>;
     runtimeRequirements: ReturnType<typeof vi.fn>;
     startModelDownload: ReturnType<typeof vi.fn>;
@@ -35,6 +38,7 @@ describe('ModelHealthComponent status display', () => {
       getRuntimeInstallation: vi.fn(),
       health: vi.fn().mockResolvedValue(systemHealth()),
       llmHealth: vi.fn(),
+      llmProviderSelection: vi.fn().mockResolvedValue(providerSelection()),
       ocrHealth: vi.fn(),
       runtimeRequirements: vi.fn().mockResolvedValue({ items: [] }),
       startModelDownload: vi.fn(),
@@ -45,6 +49,7 @@ describe('ModelHealthComponent status display', () => {
       imports: [ModelHealthComponent],
       providers: [
         { provide: CERT_PREP_API, useValue: apiClient },
+        provideCertPrepHttpResourceClientFake(apiClient),
         provideRouter([{ path: 'runtime', component: RuntimeManagerPage }]),
       ],
     }).compileComponents();
@@ -212,7 +217,8 @@ describe('ModelHealthComponent status display', () => {
     apiClient.llmHealth.mockResolvedValueOnce(availableLlmHealth());
     apiClient.ocrHealth.mockRejectedValueOnce(new Error('ocr unavailable'));
 
-    await health.load();
+    health.load();
+    await vi.waitFor(() => expect(health.healthSnapshotLoading()).toBe(false));
 
     fixture.detectChanges();
 

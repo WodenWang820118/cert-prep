@@ -5,6 +5,7 @@ import { HealthStore } from '../health/health.store';
 import { OperationStore } from '../operation.store';
 import { ProjectStore } from '../project.store';
 import { SourceImportStore } from './source-import.store';
+import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
 
 describe('SourceImportStore polling', () => {
   const apiClient = {
@@ -32,7 +33,10 @@ describe('SourceImportStore polling', () => {
     vi.useFakeTimers();
     vi.clearAllMocks();
     TestBed.configureTestingModule({
-      providers: [{ provide: CERT_PREP_API, useValue: apiClient }],
+      providers: [
+        { provide: CERT_PREP_API, useValue: apiClient },
+        provideCertPrepHttpResourceClientFake(apiClient),
+      ],
     });
 
     apiClient.getDocument.mockImplementation(
@@ -135,6 +139,8 @@ describe('SourceImportStore polling', () => {
     });
 
     await store.loadLatestDocument('project-1');
+    await vi.waitFor(() => expect(store.documents()).toEqual([latestDocument, documentRead()]));
+    await vi.waitFor(() => expect(store.chunks()).toEqual([chunkRead({ document_id: latestDocument.id })]));
 
     expect(store.documents()).toEqual([latestDocument, documentRead()]);
     expect(store.activeDocumentId()).toBe(latestDocument.id);
@@ -160,6 +166,15 @@ describe('SourceImportStore polling', () => {
     });
 
     await store.selectDocument(secondDocument.id);
+    await vi.waitFor(() =>
+      expect(apiClient.getDocument).toHaveBeenCalledWith(
+        'project-1',
+        secondDocument.id,
+      ),
+    );
+    await vi.waitFor(() =>
+      expect(store.chunks()[0]?.document_id).toBe(secondDocument.id),
+    );
 
     expect(apiClient.getDocument).toHaveBeenCalledWith(
       'project-1',

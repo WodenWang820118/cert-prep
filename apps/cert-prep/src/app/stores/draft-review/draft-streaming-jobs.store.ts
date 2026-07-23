@@ -47,7 +47,7 @@ export class DraftStreamingJobsStore {
   syncPolling(
     projectId: string | null,
     document: DocumentRead | null,
-    loadDrafts: (projectId: string) => Promise<void>,
+    loadDrafts: (projectId: string) => void,
   ): void {
     const documentKey =
       projectId !== null && document !== null
@@ -83,7 +83,7 @@ export class DraftStreamingJobsStore {
   ensurePolling(
     projectId: string,
     documentId: string,
-    loadDrafts: (projectId: string) => Promise<void>,
+    loadDrafts: (projectId: string) => void,
   ): void {
     const nextKey = `${projectId}:${documentId}`;
     if (this.streamingDraftPollKey !== nextKey) {
@@ -126,7 +126,7 @@ export class DraftStreamingJobsStore {
   retryPolling(
     projectId: string,
     documentId: string,
-    loadDrafts: (projectId: string) => Promise<void>,
+    loadDrafts: (projectId: string) => void,
   ): void {
     this.stopPolling();
     this.streamingDraftPollKey = `${projectId}:${documentId}`;
@@ -184,7 +184,7 @@ export class DraftStreamingJobsStore {
   private schedulePolling(
     projectId: string,
     documentId: string,
-    loadDrafts: (projectId: string) => Promise<void>,
+    loadDrafts: (projectId: string) => void,
     delayMs = STREAMING_DRAFT_POLL_INTERVAL_MS,
   ): void {
     this.streamingDraftPollTimer = setTimeout(() => {
@@ -196,17 +196,15 @@ export class DraftStreamingJobsStore {
   private async pollStreamingDrafts(
     projectId: string,
     documentId: string,
-    loadDrafts: (projectId: string) => Promise<void>,
+    loadDrafts: (projectId: string) => void,
   ): Promise<void> {
     if (this.streamingDraftPollKey !== `${projectId}:${documentId}`) {
       return;
     }
 
     try {
-      await Promise.all([
-        loadDrafts(projectId),
-        this.loadDraftJobs(projectId, documentId),
-      ]);
+      loadDrafts(projectId);
+      await this.loadDraftJobs(projectId, documentId);
     } catch {
       this.handlePollingFailure(projectId, documentId, loadDrafts);
       return;
@@ -231,7 +229,7 @@ export class DraftStreamingJobsStore {
   private handlePollingFailure(
     projectId: string,
     documentId: string,
-    loadDrafts: (projectId: string) => Promise<void>,
+    loadDrafts: (projectId: string) => void,
   ): void {
     if (this.streamingDraftPollKey !== `${projectId}:${documentId}`) {
       return;

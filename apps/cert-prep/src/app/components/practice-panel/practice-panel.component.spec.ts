@@ -14,6 +14,7 @@ import { OperationStore } from '../../stores/operation.store';
 import { PracticeStore } from '../../stores/practice/practice.store';
 import { ProjectStore } from '../../stores/project.store';
 import { PracticePanelComponent } from './practice-panel.component';
+import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
 
 describe('PracticePanelComponent', () => {
   let apiClient: ReturnType<typeof createApiClient>;
@@ -24,7 +25,10 @@ describe('PracticePanelComponent', () => {
 
     await TestBed.configureTestingModule({
       imports: [PracticePanelComponent],
-      providers: [{ provide: CERT_PREP_API, useValue: apiClient }],
+      providers: [
+        { provide: CERT_PREP_API, useValue: apiClient },
+        provideCertPrepHttpResourceClientFake(apiClient),
+      ],
     }).compileComponents();
   });
 
@@ -107,11 +111,17 @@ describe('PracticePanelComponent', () => {
 
   it('selects an answer in an active practice session', async () => {
     const store = arrangeActiveSession([editableAppQuestion]);
+    apiClient.listQuestionDrafts.mockResolvedValue({
+      items: [editableAppQuestion],
+    });
     const fixture = TestBed.createComponent(PracticePanelComponent);
     fixture.componentRef.setInput('sessionMode', 'random_draw');
     fixture.detectChanges();
 
     const compiled = fixture.nativeElement as HTMLElement;
+    await vi.waitFor(() =>
+      expect(compiled.querySelector<HTMLInputElement>('#practice-choice-1')).not.toBeNull(),
+    );
     const secondChoice =
       compiled.querySelector<HTMLInputElement>('#practice-choice-1');
     secondChoice?.click();

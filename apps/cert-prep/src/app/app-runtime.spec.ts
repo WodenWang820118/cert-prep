@@ -17,6 +17,7 @@ import type { DesktopRuntimeStatus } from './stores/desktop-runtime/contracts/de
 import { OperationStore } from './stores/operation.store';
 import { ProjectStore } from './stores/project.store';
 import { WorkspaceFacade } from './stores/workspace.facade';
+import { provideCertPrepHttpResourceClientFake } from './testing/cert-prep-http-resource-client.fake';
 
 describe('App runtime loading', () => {
   let apiClient: ReturnType<typeof createApiClient>;
@@ -31,6 +32,7 @@ describe('App runtime loading', () => {
       imports: [App],
       providers: [
         { provide: CERT_PREP_API, useValue: apiClient },
+        provideCertPrepHttpResourceClientFake(apiClient),
         provideRouter(appRoutes),
       ],
     }).compileComponents();
@@ -100,6 +102,7 @@ describe('App desktop runtime recovery routes', () => {
       imports: [App],
       providers: [
         { provide: CERT_PREP_API, useValue: apiClient },
+        provideCertPrepHttpResourceClientFake(apiClient),
         { provide: DesktopRuntimeBridgeService, useValue: desktopRuntimeBridge },
         provideRouter(appRoutes),
       ],

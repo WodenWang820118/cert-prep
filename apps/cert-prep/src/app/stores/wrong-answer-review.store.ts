@@ -1,9 +1,10 @@
-import { inject, Injectable, signal } from '@angular/core';
+import { effect, inject, Injectable, signal } from '@angular/core';
 import {
   CERT_PREP_API,
   type CertPrepGeneratedClient,
   type WrongAnswerRead,
 } from '../cert-prep-api';
+import { CertPrepHttpResourceClient } from '../cert-prep-http-resource-client';
 import { OperationStore } from './operation.store';
 import { ProjectStore } from './project.store';
 
@@ -20,7 +21,6 @@ type WrongAnswerExplanationRead = Awaited<
 type WrongAnswerSummaryRead = Awaited<
   ReturnType<CertPrepGeneratedClient['summarizeWrongAnswers']>
 >;
-
 const EMPTY_EXPLANATION_STATE: WrongAnswerExplanationState = {
   loading: false,
   result: null,
@@ -33,48 +33,69 @@ export class WrongAnswerReviewStore {
   private readonly api = inject(CERT_PREP_API);
   private readonly operations = inject(OperationStore);
   private readonly projects = inject(ProjectStore);
+  private readonly resources = inject(CertPrepHttpResourceClient);
+  private readonly reviewQueryEnabled = signal(false);
 
+  private readonly wrongAnswersResource = this.resources.wrongAnswers(() =>
+    this.reviewQueryEnabled() ? this.projects.selectedProjectId() : null,
+  );
+  private readonly summaryResource = this.resources.wrongAnswerSummary(() =>
+    this.reviewQueryEnabled() ? this.projects.selectedProjectId() : null,
+  );
   readonly wrongAnswers = signal<WrongAnswerRead[]>([]);
   readonly summary = signal<WrongAnswerSummaryRead | null>(null);
   readonly explanations = signal<Record<string, WrongAnswerExplanationState>>(
     {},
   );
+  private readonly explanationSync = effect(() => {
+    const status = this.wrongAnswersResource.status();
+    if (status === 'resolved' || status === 'local') {
+      const wrongAnswers = this.wrongAnswersResource.value();
+      this.wrongAnswers.set(wrongAnswers);
+      this.pruneExplanations(wrongAnswers);
+    }
 
-  async load(projectId: string): Promise<void> {
-    const [wrongAnswers, summary] = await Promise.all([
-      this.api.listWrongAnswers(projectId),
-      this.api.summarizeWrongAnswers(projectId),
-    ]);
-    this.wrongAnswers.set(wrongAnswers.items);
-    this.summary.set(summary);
-    this.pruneExplanations(wrongAnswers.items);
+    const summaryStatus = this.summaryResource.status();
+    if (summaryStatus === 'resolved' || summaryStatus === 'local') {
+      this.summary.set(this.summaryResource.value());
+    }
+  });
+
+  load(projectId: string): void {
+    if (this.projects.selectedProject()?.id !== projectId) {
+      return;
+    }
+    if (!this.reviewQueryEnabled()) {
+      this.reviewQueryEnabled.set(true);
+      return;
+    }
+    this.wrongAnswersResource.reload();
+    this.summaryResource.reload();
   }
 
   reset(): void {
     this.wrongAnswers.set([]);
     this.summary.set(null);
+    this.wrongAnswersResource.set([]);
+    this.summaryResource.set(null);
     this.explanations.set({});
   }
 
-  async refresh(): Promise<void> {
+  refresh(): void {
     const project = this.projects.selectedProject();
     if (project === null) {
       this.operations.fail('Select a project before refreshing review.');
       return;
     }
 
-    const review = await this.operations.run('review', 'Review refreshed', () =>
-      Promise.all([
-        this.api.listWrongAnswers(project.id),
-        this.api.summarizeWrongAnswers(project.id),
-      ]),
-    );
-    if (review !== null) {
-      const [wrongAnswers, summary] = review;
-      this.wrongAnswers.set(wrongAnswers.items);
-      this.summary.set(summary);
-      this.pruneExplanations(wrongAnswers.items);
+    if (!this.reviewQueryEnabled()) {
+      this.reviewQueryEnabled.set(true);
+      this.operations.status.set('Review refreshed');
+      return;
     }
+    this.wrongAnswersResource.reload();
+    this.summaryResource.reload();
+    this.operations.status.set('Review refreshed');
   }
 
   explanationFor(attemptId: string): WrongAnswerExplanationState {

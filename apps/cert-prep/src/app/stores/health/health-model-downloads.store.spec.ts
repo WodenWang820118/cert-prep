@@ -7,6 +7,7 @@ import {
   ocrHealth,
   providerSelection,
 } from './health.store.spec-helpers';
+import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
 
 describe('HealthStore model downloads', () => {
   const apiClient = {
@@ -48,7 +49,10 @@ describe('HealthStore model downloads', () => {
     });
     apiClient.runtimeRequirements.mockResolvedValue({ items: [] });
     TestBed.configureTestingModule({
-      providers: [{ provide: CERT_PREP_API, useValue: apiClient }],
+      providers: [
+        { provide: CERT_PREP_API, useValue: apiClient },
+        provideCertPrepHttpResourceClientFake(apiClient),
+      ],
     });
   });
 
@@ -58,7 +62,8 @@ describe('HealthStore model downloads', () => {
 
   it('does not start a model download when consent is cancelled', async () => {
     const store = TestBed.inject(HealthStore);
-    await store.load();
+    store.load();
+    await vi.waitFor(() => expect(store.healthSnapshotLoading()).toBe(false));
 
     store.openModelDownloadConsent();
     store.cancelModelDownloadConsent();
@@ -83,7 +88,8 @@ describe('HealthStore model downloads', () => {
         completed: 100,
       }),
     );
-    await store.load();
+    store.load();
+    await vi.waitFor(() => expect(store.healthSnapshotLoading()).toBe(false));
 
     store.openModelDownloadConsent();
     await store.confirmModelDownload();
@@ -104,7 +110,8 @@ describe('HealthStore model downloads', () => {
     const store = TestBed.inject(HealthStore);
     apiClient.llmHealth.mockResolvedValue(llmHealth({ available: true }));
 
-    await store.load();
+    store.load();
+    await vi.waitFor(() => expect(store.healthSnapshotLoading()).toBe(false));
     store.openModelDownloadConsent();
     await store.confirmModelDownload();
 
@@ -148,7 +155,8 @@ describe('HealthStore model downloads', () => {
         status: 'running',
       }),
     );
-    await store.load();
+    store.load();
+    await vi.waitFor(() => expect(store.healthSnapshotLoading()).toBe(false));
 
     store.openModelDownloadConsent();
     await store.confirmModelDownload();
@@ -169,7 +177,8 @@ describe('HealthStore model downloads', () => {
         cancellable: false,
       }),
     );
-    await store.load();
+    store.load();
+    await vi.waitFor(() => expect(store.healthSnapshotLoading()).toBe(false));
     store.openModelDownloadConsent();
     await store.confirmModelDownload();
 

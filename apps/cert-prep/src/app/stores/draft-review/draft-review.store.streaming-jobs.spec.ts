@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { CERT_PREP_API } from '../../cert-prep-api';
 import { DraftReviewStore } from './draft-review.store';
+import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
 import { ProjectStore } from '../project.store';
 import { SourceImportStore } from '../source-import/source-import.store';
 import {
@@ -24,7 +25,10 @@ describe('DraftReviewStore streaming jobs', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     TestBed.configureTestingModule({
-      providers: [{ provide: CERT_PREP_API, useValue: apiClient }],
+      providers: [
+        { provide: CERT_PREP_API, useValue: apiClient },
+        provideCertPrepHttpResourceClientFake(apiClient),
+      ],
     });
 
     const projects = TestBed.inject(ProjectStore);
@@ -69,6 +73,7 @@ describe('DraftReviewStore streaming jobs', () => {
       'project-1',
       'document-1',
     );
+    await vi.waitFor(() => expect(store.drafts()).toEqual([draft]));
     expect(store.drafts()).toEqual([draft]);
     expect(store.draftJobSummary()).toEqual(
       expect.objectContaining({
@@ -99,6 +104,7 @@ describe('DraftReviewStore streaming jobs', () => {
     await Promise.resolve();
     await Promise.resolve();
 
+    await vi.waitFor(() => expect(store.drafts()).toEqual([draft]));
     expect(store.drafts()).toEqual([draft]);
     expect(store.draftJobs()).toEqual([]);
   });
@@ -227,6 +233,7 @@ describe('DraftReviewStore streaming jobs', () => {
       'document-1',
     );
     expect(store.draftJobs()).toEqual([succeededJob]);
+    await vi.waitFor(() => expect(store.drafts()).toEqual([draft]));
     expect(store.drafts()).toEqual([draft]);
     expect(apiClient.getDocument).toHaveBeenCalledWith('project-1', 'document-1');
   });

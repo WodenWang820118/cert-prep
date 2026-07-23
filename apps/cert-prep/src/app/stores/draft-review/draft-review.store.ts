@@ -4,6 +4,7 @@ import {
   type ManualDraftGenerationOperationRead,
   QuestionDraftRead,
 } from '../../cert-prep-api';
+import { CertPrepHttpResourceClient } from '../../cert-prep-http-resource-client';
 import type {
   DraftEdit,
   DraftGenerationStrategy,
@@ -29,13 +30,20 @@ export class DraftReviewStore {
   private readonly operations = inject(OperationStore);
   private readonly playability = inject(DraftPlayabilityService);
   private readonly projects = inject(ProjectStore);
+  private readonly resources = inject(CertPrepHttpResourceClient);
   private readonly sourceImport = inject(SourceImportStore);
   private readonly streamingJobs = inject(DraftStreamingJobsStore);
+  private readonly draftsQueryEnabled = signal(false);
   private manualDraftPollTimer: ReturnType<typeof setTimeout> | null = null;
   private manualDraftPollFailureCount = 0;
 
   readonly questionLimit = signal(3);
+  private readonly draftsResource = this.resources.questionDrafts(() =>
+    this.draftsQueryEnabled() ? this.projects.selectedProjectId() : null,
+  );
   readonly drafts = signal<QuestionDraftRead[]>([]);
+  readonly draftsLoading = this.draftsResource.isLoading;
+  readonly draftsError = this.draftsResource.error;
   readonly draftJobs = this.streamingJobs.draftJobs;
   readonly manualDraftOperation = signal<ManualDraftGenerationOperationRead | null>(
     null,
@@ -80,6 +88,12 @@ export class DraftReviewStore {
       !this.manualDraftCanceling()
     );
   });
+  private readonly draftResourceSync = effect(() => {
+    const draftResourceStatus = this.draftsResource.status();
+    if (draftResourceStatus === 'resolved' || draftResourceStatus === 'local') {
+      this.drafts.set(this.draftsResource.value());
+    }
+  });
 
   constructor() {
     effect(() => {
@@ -94,23 +108,26 @@ export class DraftReviewStore {
         this.manualDraftOperation.set(null);
         this.resetManualDraftPollingFailure();
       }
-      this.streamingJobs.syncPolling(projectId, document, (id) =>
-        this.load(id),
-      );
+      this.streamingJobs.syncPolling(projectId, document, (id) => {
+        this.load(id);
+      });
     });
   }
 
-  async load(projectId: string): Promise<void> {
-    const drafts = await this.api.listQuestionDrafts(projectId);
+  load(projectId: string): void {
     if (this.projects.selectedProjectId() !== projectId) {
       return;
     }
-
-    this.drafts.set(drafts.items);
+    if (!this.draftsQueryEnabled()) {
+      this.draftsQueryEnabled.set(true);
+      return;
+    }
+    this.draftsResource.reload();
   }
 
   reset(): void {
     this.drafts.set([]);
+    this.draftsResource.set([]);
     this.editSession.reset();
     this.streamingJobs.reset();
     this.clearManualDraftPollTimer();
@@ -301,9 +318,9 @@ export class DraftReviewStore {
     await this.load(project.id);
     await this.sourceImport.refreshUploadedDocument(project.id, document.id);
     if (this.streamingJobs.hasActiveDraftJobs(jobs.items)) {
-      this.streamingJobs.ensurePolling(project.id, document.id, (id) =>
-        this.load(id),
-      );
+      this.streamingJobs.ensurePolling(project.id, document.id, async (id) => {
+        this.load(id);
+      });
     }
   }
 
@@ -314,9 +331,9 @@ export class DraftReviewStore {
       return;
     }
 
-    this.streamingJobs.retryPolling(project.id, document.id, (projectId) =>
-      this.load(projectId),
-    );
+    this.streamingJobs.retryPolling(project.id, document.id, async (projectId) => {
+      this.load(projectId);
+    });
   }
 
   async saveDraft(draft: QuestionDraftRead): Promise<QuestionDraftRead | null> {
@@ -337,7 +354,8 @@ export class DraftReviewStore {
   }
 
   private upsertDraft(nextDraft: QuestionDraftRead): void {
-    this.drafts.update((drafts) => {
+    const nextDrafts = (() => {
+      const drafts = this.drafts();
       const existingIndex = drafts.findIndex(
         (draft) => draft.id === nextDraft.id,
       );
@@ -348,7 +366,9 @@ export class DraftReviewStore {
       return drafts.map((draft, index) =>
         index === existingIndex ? nextDraft : draft,
       );
-    });
+    })();
+    this.drafts.set(nextDrafts);
+    this.draftsResource.set(nextDrafts);
   }
 
   private updatePayload(draft: QuestionDraftRead) {
@@ -427,8 +447,8 @@ export class DraftReviewStore {
     if (!this.isCurrentManualDraftOperation(operation)) {
       return;
     }
+    this.load(operation.project_id);
     await Promise.all([
-      this.load(operation.project_id),
       this.streamingJobs.loadDraftJobs(
         operation.project_id,
         operation.document_id,

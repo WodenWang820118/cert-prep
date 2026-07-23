@@ -1,10 +1,11 @@
-import { computed, inject, Injectable, signal } from '@angular/core';
+import { computed, effect, inject, Injectable, signal } from '@angular/core';
 import {
   CERT_PREP_API,
   PracticeAttemptRead,
   PracticeSessionRead,
   PracticeSessionSummaryRead,
 } from '../../cert-prep-api';
+import { CertPrepHttpResourceClient } from '../../cert-prep-http-resource-client';
 import type {
   PracticeSessionMode,
   PracticeSessionPayload,
@@ -24,6 +25,8 @@ export class PracticeStore {
   private readonly drafts = inject(DraftReviewStore);
   private readonly operations = inject(OperationStore);
   private readonly projects = inject(ProjectStore);
+  private readonly resources = inject(CertPrepHttpResourceClient);
+  private readonly activeSessionsQueryEnabled = signal(false);
   private readonly sessionPayloads = inject(PracticeSessionPayloadService);
   private readonly sourceImport = inject(SourceImportStore);
   private readonly wrongAnswers = inject(WrongAnswerReviewStore);
@@ -31,7 +34,19 @@ export class PracticeStore {
   readonly sessionQuestionCount = signal(5);
   readonly selectedDocumentId = signal<string | null>(null);
   readonly practiceSession = signal<PracticeSessionRead | null>(null);
+  private readonly activeSessionsResource =
+    this.resources.activePracticeSessions(() =>
+      this.activeSessionsQueryEnabled()
+        ? this.projects.selectedProjectId()
+        : null,
+    );
   readonly resumableSession = signal<PracticeSessionSummaryRead | null>(null);
+  private readonly activeSessionSync = effect(() => {
+    const status = this.activeSessionsResource.status();
+    if (status === 'resolved' || status === 'local') {
+      this.resumableSession.set(this.activeSessionsResource.value()[0] ?? null);
+    }
+  });
   readonly abandonConfirmationPending = signal(false);
   readonly selectedAnswer = signal('');
   readonly lastAttempt = signal<PracticeAttemptRead | null>(null);
@@ -249,6 +264,7 @@ export class PracticeStore {
 
     this.practiceSession.set(session);
     this.resumableSession.set(null);
+    this.activeSessionsResource.set([]);
     this.abandonConfirmationPending.set(false);
     this.answeredQuestionIds.set(new Set<string>());
     this.selectedAnswer.set('');
@@ -288,6 +304,7 @@ export class PracticeStore {
 
     this.practiceSession.set(session);
     this.resumableSession.set(null);
+    this.activeSessionsResource.set([]);
     this.abandonConfirmationPending.set(false);
     this.answeredQuestionIds.set(new Set<string>());
     this.selectedAnswer.set('');
@@ -295,12 +312,15 @@ export class PracticeStore {
     return true;
   }
 
-  async loadActiveSession(projectId: string): Promise<void> {
-    const sessions = await this.api.listActivePracticeSessions(projectId);
+  loadActiveSession(projectId: string): void {
     if (this.projects.selectedProject()?.id !== projectId) {
       return;
     }
-    this.resumableSession.set(sessions.items[0] ?? null);
+    if (!this.activeSessionsQueryEnabled()) {
+      this.activeSessionsQueryEnabled.set(true);
+      return;
+    }
+    this.activeSessionsResource.reload();
     this.abandonConfirmationPending.set(false);
   }
 
@@ -321,6 +341,7 @@ export class PracticeStore {
 
     this.practiceSession.set(session);
     this.resumableSession.set(null);
+    this.activeSessionsResource.set([]);
     this.abandonConfirmationPending.set(false);
     this.answeredQuestionIds.set(
       new Set(session.attempts.map((attempt) => attempt.question_id)),
@@ -360,6 +381,7 @@ export class PracticeStore {
     if (abandoned === null || this.projects.selectedProject()?.id !== project.id) {
       return;
     }
+    this.activeSessionsResource.set([]);
     this.resumableSession.set(null);
     this.abandonConfirmationPending.set(false);
     this.practiceSession.set(null);

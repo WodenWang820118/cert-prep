@@ -7,6 +7,7 @@ import {
   providerSelection,
   runtimeInstallation,
 } from './health.store.spec-helpers';
+import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
 
 describe('HealthStore runtime installation', () => {
   const apiClient = {
@@ -48,7 +49,10 @@ describe('HealthStore runtime installation', () => {
     });
     apiClient.runtimeRequirements.mockResolvedValue({ items: [] });
     TestBed.configureTestingModule({
-      providers: [{ provide: CERT_PREP_API, useValue: apiClient }],
+      providers: [
+        { provide: CERT_PREP_API, useValue: apiClient },
+        provideCertPrepHttpResourceClientFake(apiClient),
+      ],
     });
   });
 
@@ -79,7 +83,8 @@ describe('HealthStore runtime installation', () => {
         completed: 100,
       }),
     );
-    await store.load();
+    store.load();
+    await vi.waitFor(() => expect(store.healthSnapshotLoading()).toBe(false));
 
     store.openOllamaInstallConsent();
     await store.confirmRuntimeInstallation();
@@ -127,7 +132,8 @@ describe('HealthStore runtime installation', () => {
         completed: 10,
       }),
     );
-    await store.load();
+    store.load();
+    await vi.waitFor(() => expect(store.healthSnapshotLoading()).toBe(false));
 
     store.openOcrRuntimeInstallConsent();
     await store.confirmRuntimeInstallation();
@@ -165,7 +171,8 @@ describe('HealthStore runtime installation', () => {
         total: 100,
       }),
     );
-    await store.load();
+    store.load();
+    await vi.waitFor(() => expect(store.healthSnapshotLoading()).toBe(false));
 
     store.openWhisperModelsConsent();
     await store.confirmRuntimeInstallation();
@@ -197,7 +204,8 @@ describe('HealthStore runtime installation', () => {
         cancellable: false,
       }),
     );
-    await store.load();
+    store.load();
+    await vi.waitFor(() => expect(store.healthSnapshotLoading()).toBe(false));
     store.openOllamaInstallConsent();
     await store.confirmRuntimeInstallation();
 

@@ -9,6 +9,7 @@ import {
   manualDraftOperation,
   questionDraft,
 } from './draft-review.store.spec-helpers';
+import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
 
 describe('DraftReviewStore editable questions', () => {
   const apiClient = {
@@ -25,8 +26,13 @@ describe('DraftReviewStore editable questions', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    apiClient.listQuestionDrafts.mockReset();
+    apiClient.listQuestionDrafts.mockResolvedValue({ items: [] });
     TestBed.configureTestingModule({
-      providers: [{ provide: CERT_PREP_API, useValue: apiClient }],
+      providers: [
+        { provide: CERT_PREP_API, useValue: apiClient },
+        provideCertPrepHttpResourceClientFake(apiClient),
+      ],
     });
 
     const projects = TestBed.inject(ProjectStore);
@@ -213,6 +219,7 @@ describe('DraftReviewStore editable questions', () => {
     await store.generateDrafts('hybrid_reasoning');
     await vi.advanceTimersByTimeAsync(1500);
 
+    await vi.waitFor(() => expect(store.drafts()).toEqual([question]));
     expect(store.drafts()).toEqual([question]);
     expect(apiClient.listDocumentDraftJobs).toHaveBeenCalledWith(
       'project-1',

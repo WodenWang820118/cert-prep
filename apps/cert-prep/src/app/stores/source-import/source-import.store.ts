@@ -1,5 +1,13 @@
-import { computed, effect, inject, Injectable, signal } from '@angular/core';
+import {
+  computed,
+  effect,
+  inject,
+  Injectable,
+  signal,
+  untracked,
+} from '@angular/core';
 import { ChunkRead, DocumentRead, CERT_PREP_API } from '../../cert-prep-api';
+import { CertPrepHttpResourceClient } from '../../cert-prep-http-resource-client';
 import type {
   DocumentParsingMetric,
   LanguageHint,
@@ -72,6 +80,23 @@ export class SourceImportStore {
   private readonly metrics = inject(DocumentParsingMetricsService);
   private readonly operations = inject(OperationStore);
   private readonly projects = inject(ProjectStore);
+  private readonly resources = inject(CertPrepHttpResourceClient);
+  private readonly documentQueryEnabled = signal(false);
+  private readonly documentsResource = this.resources.documents(() =>
+    this.documentQueryEnabled() ? this.projects.selectedProjectId() : null,
+  );
+  private readonly activeDocumentResource = this.resources.document(
+    () =>
+      this.documentQueryEnabled() ? this.projects.selectedProjectId() : null,
+    () =>
+      this.documentQueryEnabled() ? this.library.activeDocumentId() : null,
+  );
+  private readonly chunksResource = this.resources.documentChunks(
+    () =>
+      this.documentQueryEnabled() ? this.projects.selectedProjectId() : null,
+    () =>
+      this.documentQueryEnabled() ? this.library.activeDocumentId() : null,
+  );
   private documentPollTimer: ReturnType<typeof setTimeout> | null = null;
   private documentPollFailureCount = 0;
   private contextEpoch = 0;
@@ -179,6 +204,8 @@ export class SourceImportStore {
     return `${files.length} files selected`;
   });
   readonly documents = this.library.documents;
+  readonly documentsLoading = this.documentsResource.isLoading;
+  readonly documentsError = this.documentsResource.error;
   readonly activeDocumentId = this.library.activeDocumentId;
   readonly uploadedDocument = this.library.uploadedDocument;
   readonly chunks = this.library.chunks;
@@ -273,6 +300,31 @@ export class SourceImportStore {
   });
 
   constructor() {
+    effect(() => {
+      if (this.isResourceSettled(this.documentsResource.status())) {
+        const documents = this.documentsResource.value();
+        untracked(() => {
+          this.library.setDocuments(documents);
+          this.setActiveDocument(this.library.chooseActiveFromDocuments());
+        });
+      }
+
+      if (this.isResourceSettled(this.activeDocumentResource.status())) {
+        const document = this.activeDocumentResource.value();
+        if (document !== null) {
+          untracked(() => {
+            this.library.upsertDocument(document);
+            if (this.activeDocumentId() === document.id) {
+              this.setActiveDocument(document);
+            }
+          });
+        }
+      }
+
+      if (this.isResourceSettled(this.chunksResource.status())) {
+        untracked(() => this.library.setChunks(this.chunksResource.value()));
+      }
+    });
     effect(() => {
       this.whisperModelsReady();
       this.health.runtimeInstallConsentKind();
@@ -545,17 +597,15 @@ export class SourceImportStore {
       : 'No source file uploads completed';
   }
 
-  async loadLatestDocument(projectId: string): Promise<void> {
-    const documents = await this.api.listDocuments(projectId);
-    this.library.setDocuments(documents.items);
-    const activeDocument = this.library.chooseActiveFromDocuments();
-    this.setActiveDocument(activeDocument);
-    if (activeDocument === null) {
-      this.chunks.set([]);
-      this.stopDocumentPolling();
+  loadLatestDocument(projectId: string): void {
+    if (this.projects.selectedProjectId() !== projectId) {
       return;
     }
-    await this.refreshUploadedDocument(projectId, activeDocument.id);
+    if (!this.documentQueryEnabled()) {
+      this.documentQueryEnabled.set(true);
+      return;
+    }
+    this.documentsResource.reload();
   }
 
   setActiveDocumentId(documentId: string | null): void {
@@ -565,7 +615,7 @@ export class SourceImportStore {
     }
   }
 
-  async selectDocument(documentId: string): Promise<void> {
+  selectDocument(documentId: string): void {
     const projectId = this.projects.selectedProject()?.id;
     const previousDocumentId = this.activeDocumentId();
     this.setActiveDocumentId(documentId);
@@ -577,7 +627,12 @@ export class SourceImportStore {
       this.stopDocumentPolling();
     }
 
-    await this.refreshUploadedDocument(projectId, documentId);
+    if (!this.documentQueryEnabled()) {
+      this.documentQueryEnabled.set(true);
+      return;
+    }
+    this.activeDocumentResource.reload();
+    this.chunksResource.reload();
   }
 
   async refreshUploadedDocument(
@@ -924,7 +979,7 @@ export class SourceImportStore {
     }
     if (this.whisperModelsRequirement() === null) {
       try {
-        await this.health.refreshRuntimeRequirements();
+        await this.health.loadRuntimeRequirementsForUpload();
       } catch {
         if (!this.hasPendingAudioUpload()) {
           return true;
@@ -1368,6 +1423,10 @@ export class SourceImportStore {
       this.projects.selectedProject()?.id === projectId &&
       this.activeDocumentId() === documentId
     );
+  }
+
+  private isResourceSettled(status: string): boolean {
+    return status === 'resolved' || status === 'local';
   }
 
   private newOperationId(): string {

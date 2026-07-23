@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { CERT_PREP_API, ProjectRead } from '../cert-prep-api';
 import { OperationStore } from './operation.store';
 import { ProjectStore } from './project.store';
+import { provideCertPrepHttpResourceClientFake } from '../testing/cert-prep-http-resource-client.fake';
 
 describe('ProjectStore', () => {
   const project: ProjectRead = {
@@ -19,7 +20,10 @@ describe('ProjectStore', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     TestBed.configureTestingModule({
-      providers: [{ provide: CERT_PREP_API, useValue: apiClient }],
+      providers: [
+        { provide: CERT_PREP_API, useValue: apiClient },
+        provideCertPrepHttpResourceClientFake(apiClient),
+      ],
     });
   });
 
@@ -27,10 +31,16 @@ describe('ProjectStore', () => {
     apiClient.listProjects.mockResolvedValue({ items: [project] });
     const store = TestBed.inject(ProjectStore);
 
-    await store.load();
+    expect(store.projectsResource.status()).toBe('idle');
+    expect(apiClient.listProjects).not.toHaveBeenCalled();
+
+    store.load();
     store.select(project.id);
+    await vi.waitFor(() => expect(store.projectsResource.status()).toBe('resolved'));
 
     expect(apiClient.listProjects).toHaveBeenCalledTimes(1);
+    expect(store.projectsResource.status()).toBe('resolved');
+    expect(store.projectsLoading()).toBe(false);
     expect(store.projects()).toEqual([project]);
     expect(store.selectedProject()).toEqual(project);
   });

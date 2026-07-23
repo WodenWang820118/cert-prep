@@ -10,6 +10,7 @@ import { OperationStore } from '../../stores/operation.store';
 import { ProjectStore } from '../../stores/project.store';
 import { SourceImportStore } from '../../stores/source-import/source-import.store';
 import { SourceImportPanelComponent } from './source-import-panel.component';
+import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
 
 describe('SourceImportPanelComponent', () => {
   const apiClient = {
@@ -47,7 +48,10 @@ describe('SourceImportPanelComponent', () => {
 
     await TestBed.configureTestingModule({
       imports: [SourceImportPanelComponent],
-      providers: [{ provide: CERT_PREP_API, useValue: apiClient }],
+      providers: [
+        { provide: CERT_PREP_API, useValue: apiClient },
+        provideCertPrepHttpResourceClientFake(apiClient),
+      ],
     }).compileComponents();
 
     const projects = TestBed.inject(ProjectStore);
@@ -733,6 +737,12 @@ describe('SourceImportPanelComponent', () => {
         selectDocument(documentId: string): Promise<void>;
       }
     ).selectDocument(secondDocument.id);
+    await vi.waitFor(() =>
+      expect(apiClient.getDocument).toHaveBeenCalledWith(
+        'project-1',
+        secondDocument.id,
+      ),
+    );
     fixture.detectChanges();
 
     expect(apiClient.getDocument).toHaveBeenCalledWith(

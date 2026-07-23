@@ -66,9 +66,30 @@ def render_typescript(openapi: dict[str, Any]) -> str:
         [
             "}",
             "",
+            "export interface CertPrepRequestFactory {",
+        ]
+    )
+    for operation in operations:
+        lines.append(f"  {operation.request_factory_signature()};")
+    lines.extend(
+        [
+            "}",
+            "",
+            "export function createCertPrepRequestFactory(): CertPrepRequestFactory {",
+            "  return {",
+        ]
+    )
+    for operation in operations:
+        lines.extend(operation.request_factory_lines())
+    lines.extend(
+        [
+            "  };",
+            "}",
+            "",
             "export function createCertPrepGeneratedClient(",
             "  transport: CertPrepTransport,",
             "): CertPrepGeneratedClient {",
+            "  const requests = createCertPrepRequestFactory();",
             "  return {",
         ]
     )
@@ -214,7 +235,23 @@ class ClientOperation:
     def signature(self) -> str:
         return f"{self.name}({self.arguments()}): Promise<{self.response_type}>"
 
+    def request_factory_signature(self) -> str:
+        return f"{self.name}({self.arguments()}): CertPrepHttpRequest"
+
+    def request_factory_lines(self) -> list[str]:
+        return [
+            f"    {self.name}: ({self.arguments()}) => {{",
+            f"      return {{ {', '.join(self.request_parts())} }};",
+            "    },",
+        ]
+
     def factory_lines(self) -> list[str]:
+        return [
+            f"    {self.name}: ({self.arguments()}) =>",
+            f"      transport.request<{self.response_type}>(requests.{self.name}({self.argument_values()})),",
+        ]
+
+    def request_parts(self) -> list[str]:
         request_parts = [
             f"method: '{self.method}' as const",
             f"path: {self.path_expression()}",
@@ -229,10 +266,14 @@ class ClientOperation:
                 "...(options?.signal === undefined ? {} : { signal: options.signal })",
             ]
         )
-        return [
-            f"    {self.name}: ({self.arguments()}) =>",
-            f"      transport.request<{self.response_type}>({{ {', '.join(request_parts)} }}),",
-        ]
+        return request_parts
+
+    def argument_values(self) -> str:
+        values = [to_camel(parameter) for parameter in self.parameters]
+        if self.request_type is not None:
+            values.append("body")
+        values.append("options")
+        return ", ".join(values)
 
     def arguments(self) -> str:
         arguments = [f"{to_camel(parameter)}: string" for parameter in self.parameters]

@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { CERT_PREP_API } from '../../cert-prep-api';
 import { OperationStore } from '../operation.store';
 import { DraftReviewStore } from './draft-review.store';
+import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
 import { ProjectStore } from '../project.store';
 import { SourceImportStore } from '../source-import/source-import.store';
 import {
@@ -27,7 +28,10 @@ describe('DraftReviewStore generation', () => {
     vi.useFakeTimers();
     vi.clearAllMocks();
     TestBed.configureTestingModule({
-      providers: [{ provide: CERT_PREP_API, useValue: apiClient }],
+      providers: [
+        { provide: CERT_PREP_API, useValue: apiClient },
+        provideCertPrepHttpResourceClientFake(apiClient),
+      ],
     });
 
     const projects = TestBed.inject(ProjectStore);

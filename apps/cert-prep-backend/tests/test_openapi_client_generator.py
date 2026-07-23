@@ -94,10 +94,26 @@ def test_generated_client_exposes_request_options_as_the_last_argument() -> None
     output = render_typescript(_schema())
 
     assert "export interface CertPrepRequestOptions {" in output
+    assert "export interface CertPrepRequestFactory {" in output
     assert "headers?: Readonly<Record<string, string>>;" in output
     assert "signal?: AbortSignal;" in output
     assert (
         "getExample(exampleId: string, options?: CertPrepRequestOptions): Promise<void>"
+        in output
+    )
+
+
+def test_generated_request_factory_preserves_route_encoding_and_client_contract() -> None:
+    output = render_typescript(_schema())
+
+    assert (
+        "getExample(exampleId: string, options?: CertPrepRequestOptions): "
+        "CertPrepHttpRequest" in output
+    )
+    assert "createCertPrepRequestFactory(): CertPrepRequestFactory" in output
+    assert "path: `/examples/${encodeURIComponent(exampleId)}`" in output
+    assert (
+        "transport.request<void>(requests.getExample(exampleId, options)),"
         in output
     )
     assert (

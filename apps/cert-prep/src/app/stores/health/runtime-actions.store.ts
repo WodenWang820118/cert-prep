@@ -15,7 +15,7 @@ interface RuntimeActionContext {
   readonly canDownloadModel: () => boolean;
   readonly canInstallRuntime: (kind: RuntimeKind) => boolean;
   readonly configuredModelName: () => string;
-  readonly refreshHealthAfterRuntimeChange: () => Promise<void>;
+  readonly refreshHealthAfterRuntimeChange: () => void | Promise<void>;
 }
 
 @Injectable({ providedIn: 'root' })

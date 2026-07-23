@@ -15,6 +15,7 @@ import {
   secondAppProject,
 } from './app.spec-helpers';
 import { ProjectStore } from './stores/project.store';
+import { provideCertPrepHttpResourceClientFake } from './testing/cert-prep-http-resource-client.fake';
 
 describe('App project selection', () => {
   let apiClient: ReturnType<typeof createApiClient>;
@@ -28,6 +29,7 @@ describe('App project selection', () => {
       imports: [App],
       providers: [
         { provide: CERT_PREP_API, useValue: apiClient },
+        provideCertPrepHttpResourceClientFake(apiClient),
         provideRouter(appRoutes),
       ],
     }).compileComponents();

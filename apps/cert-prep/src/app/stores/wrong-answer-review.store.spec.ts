@@ -8,6 +8,7 @@ import {
 import { OperationStore } from './operation.store';
 import { ProjectStore } from './project.store';
 import { WrongAnswerReviewStore } from './wrong-answer-review.store';
+import { provideCertPrepHttpResourceClientFake } from '../testing/cert-prep-http-resource-client.fake';
 
 describe('WrongAnswerReviewStore', () => {
   const project: ProjectRead = {
@@ -88,7 +89,10 @@ describe('WrongAnswerReviewStore', () => {
         .mockRejectedValue(new Error('AI provider unavailable')),
     };
     TestBed.configureTestingModule({
-      providers: [{ provide: CERT_PREP_API, useValue: apiClient }],
+      providers: [
+        { provide: CERT_PREP_API, useValue: apiClient },
+        provideCertPrepHttpResourceClientFake(apiClient),
+      ],
     });
 
     const projects = TestBed.inject(ProjectStore);
@@ -101,6 +105,7 @@ describe('WrongAnswerReviewStore', () => {
     const store = TestBed.inject(WrongAnswerReviewStore);
 
     await store.load(project.id);
+    await vi.waitFor(() => expect(store.wrongAnswers()).toEqual([wrongAnswer]));
 
     expect(apiClient.listWrongAnswers).toHaveBeenCalledWith(project.id);
     expect(apiClient.summarizeWrongAnswers).toHaveBeenCalledWith(project.id);
@@ -129,6 +134,7 @@ describe('WrongAnswerReviewStore', () => {
     const store = TestBed.inject(WrongAnswerReviewStore);
 
     await store.refresh();
+    await vi.waitFor(() => expect(store.wrongAnswers()).toEqual([wrongAnswer]));
 
     expect(apiClient.listWrongAnswers).toHaveBeenCalledWith(project.id);
     expect(apiClient.summarizeWrongAnswers).toHaveBeenCalledWith(project.id);
@@ -214,6 +220,7 @@ describe('WrongAnswerReviewStore', () => {
 
     await store.discussMistake(wrongAnswer);
     await store.refresh();
+    await vi.waitFor(() => expect(store.wrongAnswers()).toEqual([wrongAnswer]));
 
     expect(apiClient.listWrongAnswers).toHaveBeenCalledWith(project.id);
     expect(store.wrongAnswers()).toEqual([wrongAnswer]);
