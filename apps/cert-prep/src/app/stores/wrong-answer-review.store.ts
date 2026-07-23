@@ -6,7 +6,7 @@ import type {
   WrongAnswerRead,
   WrongAnswerSummaryRead,
 } from '../contracts/api.contracts';
-import { CertPrepHttpResourceClient } from '../cert-prep-http-resource-client';
+import { CertPrepHttpResourceClient } from '../services/cert-prep-http-resource-client.service';
 import { OperationStore } from './operation.store';
 import { ProjectStore } from './project.store';
 import type { WrongAnswerExplanationState } from './wrong-answer-review/contracts/wrong-answer-review.contracts';

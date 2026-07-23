@@ -3,7 +3,7 @@ import type { HttpResourceRef } from '@angular/common/http';
 import type { CertPrepGeneratedClient } from '../contracts/api.contracts';
 import { from, map, Observable, of, Subscription } from 'rxjs';
 import type { ObservableInput } from 'rxjs';
-import { CertPrepHttpResourceClient } from '../cert-prep-http-resource-client';
+import { CertPrepHttpResourceClient } from '../services/cert-prep-http-resource-client.service';
 import type {
   CertPrepHttpResource,
   CertPrepResourceKey,

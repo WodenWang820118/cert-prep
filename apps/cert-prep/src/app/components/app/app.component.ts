@@ -18,15 +18,15 @@ import {
   RouterOutlet,
 } from '@angular/router';
 import { Subscription } from 'rxjs';
-import { RuntimeConsentDialogsComponent } from './components/model-health/runtime-consent-dialogs.component';
-import { ProjectRailComponent } from './components/project-rail/project-rail.component';
-import type { StudyPageOption } from './contracts/app.contracts';
-import { RuntimeManagerPage } from './pages/runtime-manager/runtime-manager.page';
-import { OperationStore } from './stores/operation.store';
-import { ProjectStore } from './stores/project.store';
-import { DesktopRuntimeStore } from './stores/desktop-runtime/desktop-runtime.store';
-import { WorkspaceFacade } from './stores/workspace.facade';
-import { LAST_PROJECT_STORAGE_KEY } from './constants/runtime.constants';
+import { RuntimeConsentDialogsComponent } from '../model-health/runtime-consent-dialogs.component';
+import { ProjectRailComponent } from '../project-rail/project-rail.component';
+import type { StudyPageOption } from '../../contracts/app.contracts';
+import { RuntimeManagerPage } from '../../pages/runtime-manager/runtime-manager.page';
+import { OperationStore } from '../../stores/operation.store';
+import { ProjectStore } from '../../stores/project.store';
+import { DesktopRuntimeStore } from '../../stores/desktop-runtime/desktop-runtime.store';
+import { WorkspaceFacade } from '../../stores/workspace.facade';
+import { LAST_PROJECT_STORAGE_KEY } from '../../constants/runtime.constants';
 
 @Component({
   imports: [
@@ -39,9 +39,9 @@ import { LAST_PROJECT_STORAGE_KEY } from './constants/runtime.constants';
     RouterOutlet,
   ],
   selector: 'app-root',
-  templateUrl: './app.html',
+  templateUrl: './app.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
-  styleUrl: './app.css',
+  styleUrl: './app.component.css',
 })
 export class App implements OnInit, OnDestroy {
   @ViewChild('runtimeManagerDialog')

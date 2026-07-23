@@ -2,7 +2,7 @@ import { computed, effect, inject, Injectable, signal } from '@angular/core';
 import { from } from 'rxjs';
 import { CERT_PREP_API } from '../constants/cert-prep-api.constants';
 import type { ProjectRead } from '../contracts/api.contracts';
-import { CertPrepHttpResourceClient } from '../cert-prep-http-resource-client';
+import { CertPrepHttpResourceClient } from '../services/cert-prep-http-resource-client.service';
 import { OperationStore } from './operation.store';
 
 @Injectable({ providedIn: 'root' })

@@ -10,7 +10,7 @@ import {
 } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
-import { CertPrepRuntimeConfig } from './cert-prep-api';
+import { CertPrepRuntimeConfig } from '../services/cert-prep-api.service';
 import { CertPrepAuthInterceptor } from './cert-prep-auth.interceptor';
 
 describe('CertPrepAuthInterceptor', () => {

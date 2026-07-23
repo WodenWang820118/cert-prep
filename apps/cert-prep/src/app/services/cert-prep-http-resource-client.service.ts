@@ -20,13 +20,13 @@ import type {
   RuntimeRequirementRead,
   WrongAnswerRead,
   WrongAnswerSummaryRead,
-} from './contracts/api.contracts';
+} from '../contracts/api.contracts';
 
 import type {
   CertPrepHttpResource,
   CertPrepResourceKey,
   CertPrepResourceTrigger,
-} from './contracts/http-resource.contracts';
+} from '../contracts/http-resource.contracts';
 
 @Injectable({ providedIn: 'root' })
 export class CertPrepHttpResourceClient {

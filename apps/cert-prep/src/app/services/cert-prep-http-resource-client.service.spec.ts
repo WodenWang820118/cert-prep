@@ -10,9 +10,9 @@ import {
 import { TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
 import { of } from 'rxjs';
-import { CertPrepRuntimeConfig } from './cert-prep-api';
-import { CertPrepAuthInterceptor } from './cert-prep-auth.interceptor';
-import { CertPrepHttpResourceClient } from './cert-prep-http-resource-client';
+import { CertPrepRuntimeConfig } from './cert-prep-api.service';
+import { CertPrepAuthInterceptor } from '../interceptors/cert-prep-auth.interceptor';
+import { CertPrepHttpResourceClient } from './cert-prep-http-resource-client.service';
 
 describe('CertPrepHttpResourceClient', () => {
   let httpTesting: HttpTestingController;

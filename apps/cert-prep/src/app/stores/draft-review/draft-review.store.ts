@@ -5,7 +5,7 @@ import type {
   ManualDraftGenerationOperationRead,
   QuestionDraftRead,
 } from '../../contracts/api.contracts';
-import { CertPrepHttpResourceClient } from '../../cert-prep-http-resource-client';
+import { CertPrepHttpResourceClient } from '../../services/cert-prep-http-resource-client.service';
 import type {
   DraftEdit,
   DraftGenerationStrategy,

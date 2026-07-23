@@ -9,7 +9,7 @@ import {
 import { forkJoin, from, map, Subscription, timer } from 'rxjs';
 import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
 import type { ChunkRead, DocumentRead } from '../../contracts/api.contracts';
-import { CertPrepHttpResourceClient } from '../../cert-prep-http-resource-client';
+import { CertPrepHttpResourceClient } from '../../services/cert-prep-http-resource-client.service';
 import type {
   DocumentParsingMetric,
   LanguageHint,

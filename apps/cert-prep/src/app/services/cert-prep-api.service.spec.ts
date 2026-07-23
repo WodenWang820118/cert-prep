@@ -10,9 +10,9 @@ import {
   Subject,
   throwError,
 } from 'rxjs';
-import { CERT_PREP_API } from './constants/cert-prep-api.constants';
-import { CertPrepRuntimeConfig } from './cert-prep-api';
-import type { CertPrepGeneratedClient, HealthResponse } from './contracts/api.contracts';
+import { CERT_PREP_API } from '../constants/cert-prep-api.constants';
+import { CertPrepRuntimeConfig } from './cert-prep-api.service';
+import type { CertPrepGeneratedClient, HealthResponse } from '../contracts/api.contracts';
 import { CertPrepTauriBridgeService } from './cert-prep-tauri-bridge.service';
 
 describe('CertPrepRuntimeConfig', () => {

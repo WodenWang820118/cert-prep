@@ -1,5 +1,5 @@
 import type { Route } from '@angular/router';
-import { BackendRuntimeReadyGuard } from '../runtime-ready.guard';
+import { BackendRuntimeReadyGuard } from '../guards/runtime-ready.guard';
 
 export const appRoutes: Route[] = [
   { path: '', pathMatch: 'full', redirectTo: 'build' },

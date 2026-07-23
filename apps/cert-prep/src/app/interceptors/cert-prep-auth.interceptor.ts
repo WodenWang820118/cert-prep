@@ -7,7 +7,7 @@ import {
 import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { defer, switchMap } from 'rxjs';
-import { CertPrepRuntimeConfig } from './cert-prep-api';
+import { CertPrepRuntimeConfig } from '../services/cert-prep-api.service';
 
 @Injectable({ providedIn: 'root' })
 export class CertPrepAuthInterceptor implements HttpInterceptor {

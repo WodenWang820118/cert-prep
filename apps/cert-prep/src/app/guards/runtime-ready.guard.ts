@@ -1,7 +1,7 @@
 import { inject, Injectable } from '@angular/core';
 import { CanActivate, Router } from '@angular/router';
 import { map } from 'rxjs';
-import { DesktopRuntimeStore } from './stores/desktop-runtime/desktop-runtime.store';
+import { DesktopRuntimeStore } from '../stores/desktop-runtime/desktop-runtime.store';
 
 @Injectable({ providedIn: 'root' })
 export class BackendRuntimeReadyGuard implements CanActivate {

@@ -1,9 +1,9 @@
 import { TestBed } from '@angular/core/testing';
 import { of } from 'rxjs';
 import { provideRouter, Router } from '@angular/router';
-import { App } from './app';
-import { appRoutes } from './constants/app-routes.constants';
-import { CERT_PREP_API } from './constants/cert-prep-api.constants';
+import { App } from './app.component';
+import { appRoutes } from '../../constants/app-routes.constants';
+import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
 import {
   appDocument,
   appProject,
@@ -13,9 +13,9 @@ import {
   availableOcrHealth,
   backendHealth,
   emptyWrongAnswerSummary,
-} from './app.spec-helpers';
-import { OperationStore } from './stores/operation.store';
-import { provideCertPrepHttpResourceClientFake } from './testing/cert-prep-http-resource-client.fake';
+} from '../../testing/app.spec-helpers';
+import { OperationStore } from '../../stores/operation.store';
+import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
 
 describe('App', () => {
   let apiClient: ReturnType<typeof createApiClient>;

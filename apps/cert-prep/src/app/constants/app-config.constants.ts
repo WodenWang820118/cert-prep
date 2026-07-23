@@ -9,7 +9,7 @@ import { provideBrowserGlobalErrorListeners } from '@angular/core';
 import Aura from '@primeuix/themes/aura';
 import { providePrimeNG } from 'primeng/config';
 import { provideRouter } from '@angular/router';
-import { CertPrepAuthInterceptor } from '../cert-prep-auth.interceptor';
+import { CertPrepAuthInterceptor } from '../interceptors/cert-prep-auth.interceptor';
 import { appRoutes } from './app-routes.constants';
 
 export const appConfig: ApplicationConfig = {

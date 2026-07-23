@@ -6,7 +6,7 @@ import type {
   ProjectRead,
   QuestionDraftRead,
   WrongAnswerSummaryRead,
-} from './contracts/api.contracts';
+} from '../contracts/api.contracts';
 
 export const appProject: ProjectRead = {
   id: 'project-1',

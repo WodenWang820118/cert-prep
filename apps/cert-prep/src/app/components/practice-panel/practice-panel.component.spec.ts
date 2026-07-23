@@ -4,7 +4,7 @@ import {
   appDocument,
   appProject,
   editableAppQuestion,
-} from '../../app.spec-helpers';
+} from '../../testing/app.spec-helpers';
 import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
 import type {
   PracticeSessionRead,

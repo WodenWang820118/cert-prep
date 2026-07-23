@@ -1,6 +1,6 @@
 import { computed, effect, inject, Injectable, signal } from '@angular/core';
 import { from } from 'rxjs';
-import { CertPrepHttpResourceClient } from '../../cert-prep-http-resource-client';
+import { CertPrepHttpResourceClient } from '../../services/cert-prep-http-resource-client.service';
 import type { RuntimeKind } from './contracts/health-runtime.contracts';
 import { HealthStatusStore } from './health-status.store';
 import { RuntimeActionsStore } from './runtime-actions.store';

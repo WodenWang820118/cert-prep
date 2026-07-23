@@ -1,9 +1,9 @@
 import { TestBed } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
 import { provideRouter, Router } from '@angular/router';
-import { App } from './app';
-import { appRoutes } from './constants/app-routes.constants';
-import { CERT_PREP_API } from './constants/cert-prep-api.constants';
+import { App } from './app.component';
+import { appRoutes } from '../../constants/app-routes.constants';
+import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
 import {
   appDocument,
   appProject,
@@ -12,13 +12,13 @@ import {
   availableOcrHealth,
   backendHealth,
   emptyWrongAnswerSummary,
-} from './app.spec-helpers';
-import { DesktopRuntimeBridgeService } from './stores/desktop-runtime/desktop-runtime-bridge.service';
-import type { DesktopRuntimeStatus } from './stores/desktop-runtime/contracts/desktop-runtime.contracts';
-import { OperationStore } from './stores/operation.store';
-import { ProjectStore } from './stores/project.store';
-import { WorkspaceFacade } from './stores/workspace.facade';
-import { provideCertPrepHttpResourceClientFake } from './testing/cert-prep-http-resource-client.fake';
+} from '../../testing/app.spec-helpers';
+import { DesktopRuntimeBridgeService } from '../../stores/desktop-runtime/desktop-runtime-bridge.service';
+import type { DesktopRuntimeStatus } from '../../stores/desktop-runtime/contracts/desktop-runtime.contracts';
+import { OperationStore } from '../../stores/operation.store';
+import { ProjectStore } from '../../stores/project.store';
+import { WorkspaceFacade } from '../../stores/workspace.facade';
+import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
 
 describe('App runtime loading', () => {
   let apiClient: ReturnType<typeof createApiClient>;

@@ -1,9 +1,9 @@
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { CertPrepTauriBridgeService } from './cert-prep-tauri-bridge.service';
-import { DEFAULT_LOCAL_API_BASE_URL } from './constants/runtime.constants';
-import type { CertPrepHttpRequest } from './contracts/api.contracts';
-import type { BackendConfig } from './contracts/backend.contracts';
+import { DEFAULT_LOCAL_API_BASE_URL } from '../constants/runtime.constants';
+import type { CertPrepHttpRequest } from '../contracts/api.contracts';
+import type { BackendConfig } from '../contracts/backend.contracts';
 import {
   catchError,
   defer,
