@@ -209,7 +209,7 @@ describe('ModelHealthComponent status display', () => {
     expect(fixture.nativeElement.textContent).not.toContain('OCR unknown');
   });
 
-  it('shows stale OCR copy while refreshing a cached OCR status', () => {
+  it('shows stale OCR copy while refreshing a cached OCR status', async () => {
     const fixture = TestBed.createComponent(ModelHealthComponent);
     const health = TestBed.inject(HealthStore);
     health.systemHealth.set(systemHealth());
@@ -219,7 +219,9 @@ describe('ModelHealthComponent status display', () => {
     apiClient.ocrHealth.mockRejectedValueOnce(new Error('ocr unavailable'));
 
     health.load();
-    vi.waitFor(() => expect(health.healthSnapshotLoading()).toBe(false));
+    await vi.waitFor(() =>
+      expect(health.healthSnapshotLoading()).toBe(false),
+    );
 
     fixture.detectChanges();
 

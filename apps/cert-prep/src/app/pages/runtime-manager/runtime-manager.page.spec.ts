@@ -187,7 +187,7 @@ describe('RuntimeManagerPage', () => {
     );
   });
 
-  it('renders stale OCR detail while refreshing cached OCR health', () => {
+  it('renders stale OCR detail while refreshing cached OCR health', async () => {
     const health = TestBed.inject(HealthStore);
     health.systemHealth.set(systemHealth());
     health.llmHealth.set(availableLlmHealth());
@@ -196,7 +196,9 @@ describe('RuntimeManagerPage', () => {
     apiClient.ocrHealth.mockRejectedValueOnce(new Error('ocr unavailable'));
 
     health.load();
-    vi.waitFor(() => expect(health.healthSnapshotLoading()).toBe(false));
+    await vi.waitFor(() =>
+      expect(health.healthSnapshotLoading()).toBe(false),
+    );
 
     const fixture = TestBed.createComponent(RuntimeManagerPage);
     fixture.detectChanges();
