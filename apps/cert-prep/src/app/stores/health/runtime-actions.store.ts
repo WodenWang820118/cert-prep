@@ -1,4 +1,4 @@
-import { computed, inject, Injectable, signal } from '@angular/core';
+import { computed, inject, Injectable, OnDestroy, signal } from '@angular/core';
 import { from, Subscription, timer } from 'rxjs';
 import type {
   DownloadPhase,
@@ -13,7 +13,7 @@ import { RuntimeApiClientsService } from './runtime-api-clients.service';
 import { RuntimeJobViewService } from './runtime-job-view.service';
 
 @Injectable({ providedIn: 'root' })
-export class RuntimeActionsStore {
+export class RuntimeActionsStore implements OnDestroy {
   private readonly operations = inject(OperationStore);
   private readonly runtimeApi = inject(RuntimeApiClientsService);
   private readonly jobView = inject(RuntimeJobViewService);
@@ -73,6 +73,11 @@ export class RuntimeActionsStore {
       !this.runtimeInstallCanceling()
     );
   });
+
+  ngOnDestroy(): void {
+    this.clearModelDownloadPollTimer();
+    this.clearRuntimeInstallPollTimer();
+  }
 
   openModelDownloadConsent(canDownloadModel: boolean): void {
     if (canDownloadModel) {
