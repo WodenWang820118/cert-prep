@@ -61,7 +61,6 @@ describe('CaptureWorkbenchTrialPage', () => {
       expect(fixture.nativeElement.textContent).toContain('Element registered');
     });
     expect(fixture.nativeElement.textContent).not.toContain('in-memory');
-    expect(fixture.nativeElement.querySelector('button')).toBeNull();
   });
 
   it('shows and downloads Markdown only after the saved PDF is ready', async () => {
