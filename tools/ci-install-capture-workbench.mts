@@ -12,8 +12,8 @@ const packageName = '@gx/capture-workbench';
 const packageVersion = '0.3.0';
 
 function runPnpm(args: readonly string[], cwd: string): void {
-  const executable = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
-  const result = spawnSync(executable, [...args], {
+  const executable = process.platform === 'win32' ? 'corepack.cmd' : 'corepack';
+  const result = spawnSync(executable, ['pnpm', ...args], {
     cwd,
     shell: process.platform === 'win32',
     stdio: 'inherit',
@@ -22,7 +22,7 @@ function runPnpm(args: readonly string[], cwd: string): void {
   if (result.error) throw result.error;
   if (result.status !== 0) {
     throw new Error(
-      `pnpm ${args.join(' ')} failed with exit code ${result.status ?? 'unknown'}.`,
+      `corepack pnpm ${args.join(' ')} failed with exit code ${result.status ?? 'unknown'}.`,
     );
   }
 }
@@ -59,7 +59,9 @@ const archivePath = join(
   packageArchiveName,
 );
 if (!existsSync(archivePath)) {
-  throw new Error(`Capture Workbench package archive is missing: ${archivePath}.`);
+  throw new Error(
+    `Capture Workbench package archive is missing: ${archivePath}.`,
+  );
 }
 const archiveSpec = `file:${relative(repoRoot, archivePath).replaceAll('\\', '/')}`;
 const rootPackagePath = join(repoRoot, 'package.json');
