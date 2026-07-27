@@ -219,9 +219,7 @@ describe('ModelHealthComponent status display', () => {
     apiClient.ocrHealth.mockRejectedValueOnce(new Error('ocr unavailable'));
 
     health.load();
-    await vi.waitFor(() =>
-      expect(health.healthSnapshotLoading()).toBe(false),
-    );
+    await vi.waitFor(() => expect(health.healthSnapshotLoading()).toBe(false));
 
     fixture.detectChanges();
 

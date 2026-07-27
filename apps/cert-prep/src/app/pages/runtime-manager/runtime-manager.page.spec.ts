@@ -196,9 +196,7 @@ describe('RuntimeManagerPage', () => {
     apiClient.ocrHealth.mockRejectedValueOnce(new Error('ocr unavailable'));
 
     health.load();
-    await vi.waitFor(() =>
-      expect(health.healthSnapshotLoading()).toBe(false),
-    );
+    await vi.waitFor(() => expect(health.healthSnapshotLoading()).toBe(false));
 
     const fixture = TestBed.createComponent(RuntimeManagerPage);
     fixture.detectChanges();
