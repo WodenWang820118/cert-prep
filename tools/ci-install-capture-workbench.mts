@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const captureWorkbenchRoot = resolve(
   process.env.CAPTURE_WORKBENCH_CI_ROOT ??
-    join(repoRoot, '..', 'capture-workbench-ci'),
+    join(repoRoot, 'capture-workbench-ci'),
 );
 const packageName = '@gx/capture-workbench';
 const packageVersion = '0.3.0';
