@@ -29,7 +29,7 @@ import type {
   RuntimeReadyV1,
   RuntimeRequirementV1,
   StartRuntimeInstallationRequest,
-} from '@gx/capture-workbench';
+} from '@gx-capture/capture-workbench';
 import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
 import { ProjectStore } from '../../stores/project.store';
 

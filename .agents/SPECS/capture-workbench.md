@@ -8,8 +8,11 @@ provider inside Cert Prep.
 
 ## Contract
 
-- Install a published, pinned `@wodenwang820118/capture-angular` version; do
-  not use a workspace alias or retain a private UI fork.
+- Install the published, pinned `@gx-capture/capture-workbench` version matching the
+  Capture Runtime release; do not use a workspace alias or retain a private UI
+  fork.
+- Resolve the `@gx-capture` scope through GitHub Packages with a read-only token in CI
+  or an ephemeral local npm user config; never commit registry credentials.
 - Tauri starts both the Cert Prep backend and the matching `capture-runtime`
   sidecar. Only the backend receives the process-scoped sidecar URL and bearer
   token.

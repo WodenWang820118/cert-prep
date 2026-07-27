@@ -1359,7 +1359,7 @@ export class SourceImportStore {
 
   private isCurrentProjectDocument(projectId: string, documentId: string): boolean {
     return (
-      this.projects.selectedProject()?.id === projectId &&
+      this.projects.selectedProjectId() === projectId &&
       this.activeDocumentId() === documentId
     );
   }

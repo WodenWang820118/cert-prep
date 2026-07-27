@@ -3,7 +3,7 @@
 ## Purpose
 
 讓 cert-prep 的 `/capture-workbench-trial` 使用 registry 安裝的
-`@gx/capture-workbench@0.3.0`，透過 cert-prep backend 的既有 Capture Runtime
+`@gx-capture/capture-workbench@0.3.0`，透過 cert-prep backend 的既有 Capture Runtime
 coordinator，對掃描型 PDF 執行 WindowsML OCR、host structuring，並保存成 cert-prep
 source document。
 
@@ -28,7 +28,8 @@ source document。
 
 ## Key Decisions
 
-- package 版本固定為 `@gx/capture-workbench@0.3.0`，使用 Verdaccio registry resolution。
+- package 版本固定為 `@gx-capture/capture-workbench@0.3.0`，正式 consumer 使用 GitHub
+  Packages；Verdaccio 僅保留給 local isolated trial。
 - Capture Runtime credential ownership 維持 backend；Angular 只使用 cert-prep API token。
 - cert-prep backend 既有 `/documents` coordinator 是唯一實際 parse/persist 路徑，避免同一份
   PDF 被 Web Component 與 backend 重複解析。

@@ -14,7 +14,7 @@ import type {
   RuntimeReadyV1,
   RuntimeRequirementV1,
   StartRuntimeInstallationRequest,
-} from '@gx/capture-workbench';
+} from '@gx-capture/capture-workbench';
 
 const DEMO_TIMESTAMP = '2026-01-01T00:00:00.000Z';
 const DEMO_DIGEST = `sha256:${'0'.repeat(64)}`;

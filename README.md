@@ -106,6 +106,27 @@ pnpm nx affected --targets=lint,test,build
 
 ## Local Capture Workbench Registry Trial
 
+The normal dependency is the pinned public release package
+`@gx-capture/capture-workbench@0.3.0` from GitHub Packages. GitHub Actions configures
+the `@gx-capture` registry and read token automatically. For a local install, configure
+an npm user config without committing credentials:
+
+```powershell
+$npmConfig = Join-Path $env:TEMP 'cert-prep-github-packages.npmrc'
+Set-Content -Path $npmConfig -Value "@gx-capture:registry=https://npm.pkg.github.com`n//npm.pkg.github.com/:_authToken=$((gh auth token).Trim())`n"
+$env:NPM_CONFIG_USERCONFIG = $npmConfig
+pnpm install --frozen-lockfile
+Remove-Item Env:NPM_CONFIG_USERCONFIG
+Remove-Item -LiteralPath $npmConfig -Force
+```
+
+The pinned Capture Runtime is downloaded by
+`pnpm nx run cert-prep-desktop:install-capture-runtime`; it defaults to the
+matching GitHub Release and accepts
+`CERT_PREP_CAPTURE_RUNTIME_RELEASE_BASE_URL` only for an explicit local mirror.
+
+The local registry trial below remains an isolated development diagnostic.
+
 The isolated Capture Workbench consumer can be tried through a local
 NPM-compatible registry without changing cert-prep's normal application
 dependencies or lockfile. Start Verdaccio and publish the package from the sibling
@@ -126,7 +147,7 @@ pnpm run trial:capture-workbench
 ```
 
 The trial creates a temporary Vite consumer, runs a normal `pnpm install`
-against `http://127.0.0.1:4873`, imports `@gx/capture-workbench`, registers the
+against `http://127.0.0.1:4873`, imports `@gx-capture/capture-workbench`, registers the
 `capture-workbench` custom element, and runs a production build. The temporary
 consumer is removed after the run. The cert-prep route also uses the installed
 package through its `CaptureClient` adapter and the backend review API; the
@@ -136,7 +157,7 @@ confirmed edits back on confirmation.
 ### Capture Workbench local registry trial
 
 The `capture-workbench-trial` route is an isolated distribution trial for the
-published `@gx/capture-workbench@0.3.0` Web Component. It keeps the existing
+published `@gx-capture/capture-workbench@0.3.0` Web Component. It keeps the existing
 `@cert-prep/capture-ui` package and `/build` source-import flow unchanged.
 
 From a running local Verdaccio registry supplied by the `capture-workbench`
@@ -148,7 +169,7 @@ pnpm nx run cert-prep:serve
 ```
 
 Open `http://localhost:4200/capture-workbench-trial`. The route uses the
-registry-installed `@gx/capture-workbench@0.3.0` package and a cert-prep
+registry-installed `@gx-capture/capture-workbench@0.3.0` package and a cert-prep
 `CaptureClient` backed by the review-gated capture API. Capture Runtime and its
 token remain backend-only; the pending review has no ready document or chunks
 until the user confirms OCR. The install command creates a

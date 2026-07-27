@@ -2,7 +2,7 @@
 
 ## Contract
 
-The cert-prep Capture Workbench route installs `@gx/capture-workbench@0.3.0`
+The cert-prep Capture Workbench route installs `@gx-capture/capture-workbench@0.3.0`
 from the configured npm registry. For PDF/image sources it uploads once to the
 backend review API, receives runtime OCR, and pauses at `awaiting_confirmation`.
 

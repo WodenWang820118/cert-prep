@@ -268,7 +268,7 @@ async function prepareModelBundle(temporaryRoot: string): Promise<{
     ...process.env,
     CAPTURE_WINDOWSML_BUNDLE_SOURCE_DIR: extracted,
     CAPTURE_WINDOWSML_BUNDLE_URL:
-      `https://github.com/gx/capture-workbench/releases/download/v${CAPTURE_RUNTIME_VERSION}/${modelBundleFileName}`,
+      `https://github.com/WodenWang820118/capture-workbench/releases/download/v${CAPTURE_RUNTIME_VERSION}/${modelBundleFileName}`,
   };
   runCommand(
     'uv',
@@ -333,7 +333,7 @@ async function prepareReleaseMirror(
   if (!descriptor) throw new Error('Release manifest is missing WindowsML metadata.');
   descriptor.artifactFileName = modelBundleFileName;
   descriptor.artifactUrl =
-    `https://github.com/gx/capture-workbench/releases/download/v${CAPTURE_RUNTIME_VERSION}/${modelBundleFileName}`;
+    `https://github.com/WodenWang820118/capture-workbench/releases/download/v${CAPTURE_RUNTIME_VERSION}/${modelBundleFileName}`;
   descriptor.bytes = bundleBytes;
   descriptor.sha256 = bundleSha256;
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');

@@ -21,19 +21,14 @@ jobs:
   portable-quality:
     name: Portable quality
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
     steps:
       - name: Check out source
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           fetch-depth: 0
-
-      - name: Check out Capture Workbench package source
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-        with:
-          repository: WodenWang820118/capture-workbench
-          ref: 694432445615614436496a70fa2d7ec4101ee05a
-          path: capture-workbench-ci
-          persist-credentials: false
 
       - name: Install pnpm
         uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
@@ -46,6 +41,8 @@ jobs:
         with:
           node-version-file: .node-version
           cache: pnpm
+          registry-url: https://npm.pkg.github.com
+          scope: '@gx-capture'
 
       - name: Install uv
         uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990
@@ -55,7 +52,9 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install JavaScript dependencies and pinned Capture Workbench package
-        run: node tools/ci-install-capture-workbench.mts
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: pnpm install --frozen-lockfile
 
       - name: Sync backend Python environment
         run: uv sync --project apps/cert-prep-backend --python ${{ env.PYTHON_VERSION }} --frozen
@@ -89,19 +88,14 @@ jobs:
   windows-quality:
     name: Windows product quality
     runs-on: windows-2025
+    permissions:
+      contents: read
+      packages: read
     steps:
       - name: Check out source
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           fetch-depth: 0
-
-      - name: Check out Capture Workbench package source
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-        with:
-          repository: WodenWang820118/capture-workbench
-          ref: 694432445615614436496a70fa2d7ec4101ee05a
-          path: capture-workbench-ci
-          persist-credentials: false
 
       - name: Install pnpm
         uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
@@ -114,6 +108,8 @@ jobs:
         with:
           node-version-file: .node-version
           cache: pnpm
+          registry-url: https://npm.pkg.github.com
+          scope: '@gx-capture'
 
       - name: Install uv
         uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990
@@ -129,7 +125,9 @@ jobs:
           rustup show active-toolchain
 
       - name: Install JavaScript dependencies and pinned Capture Workbench package
-        run: node tools/ci-install-capture-workbench.mts
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: pnpm install --frozen-lockfile
 
       - name: Sync backend Python environment
         run: uv sync --project apps/cert-prep-backend --python ${{ env.PYTHON_VERSION }} --frozen

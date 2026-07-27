@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
 import type { DocumentRead } from '@cert-prep/api';
 import { of } from 'rxjs';
-import type { CaptureCompletedEvent } from '@gx/capture-workbench';
+import type { CaptureCompletedEvent } from '@gx-capture/capture-workbench';
 import { ProjectStore } from '../../stores/project.store';
 import { SourceImportStore } from '../../stores/source-import/source-import.store';
 import { CertPrepCaptureClient } from './cert-prep-capture-client';

@@ -18,7 +18,14 @@
 - [x] Add the local release mirror and actual-sidecar cert-prep host flow smoke.
   Verify: `pnpm nx run cert-prep-desktop:capture-runtime-consumer-smoke --skip-nx-cache`
 
-- [ ] Run full regression and final worktree/process evidence checks. The current
-  backend full test target still has three unrelated OpenAPI generator assertion
-  failures; the desktop/package and backend lint checks passed.
-  Verify: `pnpm nx run cert-prep-desktop:typecheck-scripts --skip-nx-cache; pnpm nx run cert-prep-desktop:cargo-test --skip-nx-cache; pnpm nx run cert-prep-backend:test --skip-nx-cache; git diff --check`
+- [x] Consume the published `@gx-capture/capture-workbench@0.3.0` package from GitHub
+  Packages in CI and download the matching runtime from the public GitHub
+  Release by default. The legacy sibling checkout/local archive installer was
+  removed; local Verdaccio remains an explicit isolated diagnostic only.
+  Verify: `pnpm install --frozen-lockfile` with GitHub Packages auth and
+  `pnpm nx run cert-prep-desktop:install-capture-runtime --skip-nx-cache`
+
+- [x] Run full regression and final worktree/diff checks. Desktop script
+  typecheck, Rust contract tests, and the backend full test target passed; the
+  backend emitted only the existing httpx/Starlette deprecation warning.
+  Verify: `pnpm nx run cert-prep-desktop:typecheck-scripts --skip-nx-cache; pnpm nx run cert-prep-desktop:cargo-test --skip-nx-cache; pnpm nx run cert-prep-backend:test --skip-nx-cache; pnpm nx run cert-prep-desktop:process-residue-audit --skip-nx-cache; git diff --check`
