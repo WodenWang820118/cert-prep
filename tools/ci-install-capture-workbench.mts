@@ -12,8 +12,18 @@ const packageName = '@gx/capture-workbench';
 const packageVersion = '0.3.0';
 
 function runPnpm(args: readonly string[], cwd: string): void {
-  const executable = process.platform === 'win32' ? 'corepack.cmd' : 'corepack';
-  const result = spawnSync(executable, ['pnpm', ...args], {
+  const pnpmExecutable = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
+  const managedPnpm = process.env.PNPM_HOME
+    ? join(process.env.PNPM_HOME, pnpmExecutable)
+    : undefined;
+  const executable =
+    managedPnpm && existsSync(managedPnpm)
+      ? managedPnpm
+      : process.platform === 'win32'
+        ? 'corepack.cmd'
+        : 'corepack';
+  const commandArgs = executable === managedPnpm ? args : ['pnpm', ...args];
+  const result = spawnSync(executable, [...commandArgs], {
     cwd,
     shell: process.platform === 'win32',
     stdio: 'inherit',
@@ -22,7 +32,7 @@ function runPnpm(args: readonly string[], cwd: string): void {
   if (result.error) throw result.error;
   if (result.status !== 0) {
     throw new Error(
-      `corepack pnpm ${args.join(' ')} failed with exit code ${result.status ?? 'unknown'}.`,
+      `pnpm ${args.join(' ')} failed with exit code ${result.status ?? 'unknown'}.`,
     );
   }
 }
