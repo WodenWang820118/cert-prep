@@ -28,6 +28,10 @@ import {
   CAPTURE_RUNTIME_VERSION,
   PYTHON_RUNTIME_VERSION,
 } from './package-qa/constants.mts';
+import {
+  CAPTURE_RUNTIME_ROOT_ENV,
+  defaultCaptureRuntimeRoot,
+} from '../../../tools/install-capture-runtime.mts';
 
 const WINDOWSML_RELEASE_BASE_URL_ENV = 'CERT_PREP_WINDOWSML_OCR_ASSET_BASE_URL';
 const CAPTURE_RUNTIME_MANIFEST_PATH_ENV =
@@ -81,6 +85,7 @@ interface PrepareRuntimeResourcesOptions {
   readonly captureRuntimeManifestPath?: string;
   readonly captureRuntimeArtifactPath?: string;
   readonly captureDocumentSchemaPath?: string;
+  readonly captureRuntimeRoot?: string;
 }
 
 interface PreparedRuntimeResources {
@@ -120,6 +125,7 @@ export async function prepareRuntimeResources({
   captureRuntimeManifestPath,
   captureRuntimeArtifactPath,
   captureDocumentSchemaPath,
+  captureRuntimeRoot,
 }: PrepareRuntimeResourcesOptions): Promise<PreparedRuntimeResources> {
   const backendSourceManifest = join(
     backendRuntimeRoot,
@@ -139,19 +145,17 @@ export async function prepareRuntimeResources({
     windowsmlRuntimeRoot,
     'windowsml_ocr',
   );
+  const captureRuntimeInputs = resolveCaptureRuntimeInputs({
+    workspaceRoot,
+    captureRuntimeRoot,
+    captureRuntimeManifestPath,
+    captureRuntimeArtifactPath,
+    captureDocumentSchemaPath,
+  });
   const captureRuntimeManifest = await loadAndVerifyCaptureRuntime(
-    requiredStagedPath(
-      captureRuntimeManifestPath,
-      CAPTURE_RUNTIME_MANIFEST_PATH_ENV,
-    ),
-    requiredStagedPath(
-      captureRuntimeArtifactPath,
-      CAPTURE_RUNTIME_ARTIFACT_PATH_ENV,
-    ),
-    requiredStagedPath(
-      captureDocumentSchemaPath,
-      CAPTURE_DOCUMENT_SCHEMA_PATH_ENV,
-    ),
+    captureRuntimeInputs.manifestPath,
+    captureRuntimeInputs.artifactPath,
+    captureRuntimeInputs.schemaPath,
   );
 
   const backendSourceArtifact = join(
@@ -259,10 +263,65 @@ function requiredStagedPath(
   const trimmed = value?.trim();
   if (!trimmed) {
     throw new Error(
-      `${environmentName} is required; Capture runtime artifacts must be explicitly staged.`,
+      `${environmentName} is required; run cert-prep-desktop:install-capture-runtime before preparing Tauri resources.`,
     );
   }
   return trimmed;
+}
+
+interface CaptureRuntimeInputs {
+  readonly manifestPath: string;
+  readonly artifactPath: string;
+  readonly schemaPath: string;
+}
+
+function resolveCaptureRuntimeInputs({
+  workspaceRoot,
+  captureRuntimeRoot,
+  captureRuntimeManifestPath,
+  captureRuntimeArtifactPath,
+  captureDocumentSchemaPath,
+}: Pick<
+  PrepareRuntimeResourcesOptions,
+  | 'workspaceRoot'
+  | 'captureRuntimeRoot'
+  | 'captureRuntimeManifestPath'
+  | 'captureRuntimeArtifactPath'
+  | 'captureDocumentSchemaPath'
+>): CaptureRuntimeInputs {
+  const explicitManifest =
+    captureRuntimeManifestPath ?? process.env[CAPTURE_RUNTIME_MANIFEST_PATH_ENV];
+  const explicitArtifact =
+    captureRuntimeArtifactPath ?? process.env[CAPTURE_RUNTIME_ARTIFACT_PATH_ENV];
+  const explicitSchema =
+    captureDocumentSchemaPath ?? process.env[CAPTURE_DOCUMENT_SCHEMA_PATH_ENV];
+  if (explicitManifest || explicitArtifact || explicitSchema) {
+    return {
+      manifestPath: requiredStagedPath(
+        explicitManifest,
+        CAPTURE_RUNTIME_MANIFEST_PATH_ENV,
+      ),
+      artifactPath: requiredStagedPath(
+        explicitArtifact,
+        CAPTURE_RUNTIME_ARTIFACT_PATH_ENV,
+      ),
+      schemaPath: requiredStagedPath(
+        explicitSchema,
+        CAPTURE_DOCUMENT_SCHEMA_PATH_ENV,
+      ),
+    };
+  }
+  const root = resolve(
+    workspaceRoot,
+    captureRuntimeRoot ??
+      process.env[CAPTURE_RUNTIME_ROOT_ENV] ??
+      defaultCaptureRuntimeRoot(workspaceRoot),
+  );
+  return {
+    manifestPath: join(root, 'capture-runtime-manifest.json'),
+    artifactPath: join(root, CAPTURE_RUNTIME_FILE),
+    schemaPath: join(root, CAPTURE_DOCUMENT_SCHEMA_FILE),
+  };
 }
 
 async function loadAndVerifyCaptureRuntime(
@@ -569,7 +628,7 @@ function releaseMetadata(
         bytes: windowsml.artifact.bytes,
       },
       capture_runtime: {
-        distribution: 'explicit_staged_artifact',
+        distribution: 'versioned_release_artifact_staged',
         file_name: captureRuntime.fileName,
         runtime_version: captureRuntime.runtimeVersion,
         api_version: captureRuntime.apiVersion,
@@ -609,6 +668,7 @@ interface ParsedArgs {
   readonly captureRuntimeManifestPath?: string;
   readonly captureRuntimeArtifactPath?: string;
   readonly captureDocumentSchemaPath?: string;
+  readonly captureRuntimeRoot?: string;
 }
 
 function parseArgs(args: readonly string[]): ParsedArgs {
@@ -617,6 +677,7 @@ function parseArgs(args: readonly string[]): ParsedArgs {
   let captureRuntimeManifestPath: string | undefined;
   let captureRuntimeArtifactPath: string | undefined;
   let captureDocumentSchemaPath: string | undefined;
+  let captureRuntimeRoot: string | undefined;
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     const next = (): string => {
@@ -639,6 +700,8 @@ function parseArgs(args: readonly string[]): ParsedArgs {
       captureRuntimeArtifactPath = next();
     } else if (arg === '--capture-document-schema') {
       captureDocumentSchemaPath = next();
+    } else if (arg === '--capture-runtime-root') {
+      captureRuntimeRoot = next();
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
@@ -650,6 +713,7 @@ function parseArgs(args: readonly string[]): ParsedArgs {
     captureRuntimeManifestPath,
     captureRuntimeArtifactPath,
     captureDocumentSchemaPath,
+    captureRuntimeRoot,
   };
 }
 
@@ -675,6 +739,10 @@ async function main(): Promise<void> {
       workspaceRoot,
       args.captureDocumentSchemaPath ??
         process.env[CAPTURE_DOCUMENT_SCHEMA_PATH_ENV],
+    ),
+    captureRuntimeRoot: resolveStagedInput(
+      workspaceRoot,
+      args.captureRuntimeRoot ?? process.env[CAPTURE_RUNTIME_ROOT_ENV],
     ),
   });
   console.log(

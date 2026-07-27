@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 import hashlib
 import json
+import logging
 from math import ceil
 import re
 from time import monotonic
@@ -35,6 +36,12 @@ _CONTEXT_RESERVE_TOKENS = 512
 _OUTPUT_RESERVE_TOKENS = 256
 _ESTIMATED_BYTES_PER_TOKEN = 3
 _MIN_REQUEST_TOKENS = 256
+_LOGGER = logging.getLogger(__name__)
+_IDENTITY_STRUCTURING_ENGINE = CaptureEngineV1(
+    engine="cert-prep-host",
+    model="capture-document-pass-through-v1",
+    digest=f"sha256:{hashlib.sha256(b'capture-document-pass-through-v1').hexdigest()}",
+)
 
 
 class CaptureStructuringCanceledError(RuntimeError):
@@ -99,16 +106,25 @@ class CertPrepCaptureStructuringAdapter:
             deadline=deadline,
             monotonic_clock=monotonic_clock,
         )
+        completed_at = self._clock()
+        if completed_at.tzinfo is None or completed_at.utcoffset() is None:
+            raise ValueError("Capture structuring clock must return a timezone-aware timestamp")
+
+        if target_language is None:
+            return _identity_document(
+                raw,
+                completed_at=completed_at,
+                should_cancel=should_cancel,
+                deadline=deadline,
+                monotonic_clock=monotonic_clock,
+            )
+
         provider = provider_capability(self._provider, StructuredJsonGenerationProvider)
         if provider is None:
             raise ProviderUnavailableError(
                 "The configured Cert Prep provider cannot produce structured JSON."
             )
         engine = _engine_identity(provider)
-        completed_at = self._clock()
-        if completed_at.tzinfo is None or completed_at.utcoffset() is None:
-            raise ValueError("Capture structuring clock must return a timezone-aware timestamp")
-
         blocks: list[CaptureBlockV1] = []
         plans = _plan_batches(
             raw.segments,
@@ -174,6 +190,55 @@ class CertPrepCaptureStructuringAdapter:
             raise CaptureStructuringTimeoutError("Capture structuring exceeded its deadline.")
 
 
+def _identity_document(
+    raw: RawCaptureV1,
+    *,
+    completed_at: datetime,
+    should_cancel: Callable[[], bool],
+    deadline: float | None,
+    monotonic_clock: Callable[[], float],
+) -> dict[str, object]:
+    """Project OCR segments into canonical host blocks without a translation pass.
+
+    A PDF capture with no target language is an OCR parse request, not a
+    translation request. Keeping this projection local avoids sending a large
+    multi-page OCR payload through an unrelated LLM while preserving the same
+    strict CaptureDocumentV1 contract and host-owned commit path.
+    """
+
+    blocks: list[CaptureBlockV1] = []
+    for segment in raw.segments:
+        CertPrepCaptureStructuringAdapter._checkpoint(
+            should_cancel=should_cancel,
+            deadline=deadline,
+            monotonic_clock=monotonic_clock,
+        )
+        blocks.append(
+            CaptureBlockV1(
+                block_id=f"block-{segment.segment_id}",
+                order=segment.order,
+                type="transcript" if segment.locator.kind == "time" else "paragraph",
+                source_segment_id=segment.segment_id,
+                locator=segment.locator,
+                source_text=segment.text,
+                target_text=segment.text,
+            )
+        )
+
+    return CaptureDocumentV1(
+        source=raw.source,
+        raw_segments=raw.segments,
+        blocks=blocks,
+        source_text=raw.source_text,
+        target_text=raw.source_text,
+        extraction_engine=raw.extraction_engine,
+        structuring_engine=_IDENTITY_STRUCTURING_ENGINE,
+        warnings=raw.warnings,
+        created_at=raw.created_at,
+        completed_at=completed_at,
+    ).model_dump(mode="json", by_alias=True)
+
+
 def _plan_batches(
     segments: Sequence[RawCaptureSegmentV1],
     *,
@@ -231,10 +296,15 @@ def _batch_messages(
 ) -> list[dict[str, str]]:
     prompt = {
         "instruction": (
-            "Return exactly one CaptureBlockBatchV1 JSON object with one block for every raw "
-            "segment. Preserve sourceSegmentId, global order, locator, and sourceText exactly. "
-            "Set blockId to 'block-' plus sourceSegmentId so it remains globally unique. When "
-            "targetLanguage is null, copy sourceText to targetText; otherwise translate only "
+            "Return exactly one JSON object whose only top-level key is blocks. The value of "
+            "blocks must contain one block for every raw segment. Each block must have exactly "
+            "blockId, order, type, sourceSegmentId, locator, sourceText, and targetText. The "
+            "type value must be exactly paragraph for a page segment or transcript for a time "
+            "segment. Never use rawSegment as a type value. Never "
+            "use captureBlockBatchV1, rawSegment, globalOrder, targetLanguage, or text as a "
+            "replacement field. Preserve sourceSegmentId, global order, locator, and sourceText "
+            "exactly. Set blockId to 'block-' plus sourceSegmentId so it remains globally unique. "
+            "When targetLanguage is null, copy sourceText to targetText; otherwise translate only "
             "targetText. Do not add, omit, merge, reorder, or split segments. Do not add markdown "
             "or hidden reasoning."
         ),
@@ -270,6 +340,13 @@ def _validated_batch(
         raise ValueError("Capture provider batch must be one JSON object.")
     raw_blocks = decoded.get("blocks")
     if not isinstance(raw_blocks, list) or len(raw_blocks) != len(segments):
+        _LOGGER.error(
+            "Capture provider returned an incomplete batch: segments=%d blocks=%s candidate_keys=%s candidate_bytes=%d",
+            len(segments),
+            len(raw_blocks) if isinstance(raw_blocks, list) else type(raw_blocks).__name__,
+            sorted(decoded.keys()),
+            len(candidate.encode("utf-8")) if isinstance(candidate, str) else -1,
+        )
         raise ValueError("Capture provider batch must cover every supplied segment exactly once.")
 
     for raw_block, segment in zip(raw_blocks, segments, strict=True):

@@ -4,7 +4,8 @@ export type StudyPageId =
   | 'random_quiz'
   | 'runtime'
   | 'dashboard'
-  | 'review';
+  | 'review'
+  | 'capture_workbench_trial';
 
 /**
  * Presentation metadata for one route-backed shell page.

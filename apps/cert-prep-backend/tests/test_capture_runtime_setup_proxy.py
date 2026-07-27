@@ -9,12 +9,16 @@ from fastapi.testclient import TestClient
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.core.config import Settings
 from cert_prep_backend.domains.capture_workbench.contracts import (
+    CaptureSourceKind,
+    RuntimeCapabilitiesV1,
     RuntimeInstallationStatus,
     RuntimeInstallationV1,
     RuntimeInstallationsV1,
+    RuntimeReadyV1,
     RuntimeRequirementStatus,
     RuntimeRequirementV1,
     RuntimeRequirementsV1,
+    StructuringMode,
 )
 
 
@@ -35,6 +39,23 @@ class RecordingSetupClient:
             progress=0.5,
             created_at=NOW,
             updated_at=NOW,
+        )
+
+    def handshake(self) -> RuntimeReadyV1:
+        return RuntimeReadyV1(
+            ready=True,
+            service="capture-runtime",
+            api_version="1.0",
+            runtime_version="0.3.0",
+            capture_document_schema_version="1",
+            capabilities=RuntimeCapabilitiesV1(
+                capture_kinds=list(CaptureSourceKind),
+                structuring_modes=[StructuringMode.HOST],
+                supports_cancellation=True,
+                supports_raw_diagnostics=True,
+                max_upload_bytes=50_000_000,
+            ),
+            message="ready",
         )
 
     def get_requirements(self) -> RuntimeRequirementsV1:
@@ -95,6 +116,29 @@ def test_capture_runtime_setup_requires_configured_backend_client(
 
     assert response.status_code == 503
     assert response.json()["code"] == "capture_runtime_unavailable"
+
+
+def test_capture_runtime_ready_proxy_requires_auth_and_keeps_sidecar_token_backend_only(
+    tmp_path: Path,
+) -> None:
+    setup_client = RecordingSetupClient()
+    settings = Settings(data_dir=tmp_path, api_token=TOKEN, llm_provider="fake")
+    with TestClient(
+        create_app(
+            settings=settings,
+            capture_runtime_client=setup_client,  # type: ignore[arg-type]
+            document_processing_async_jobs=False,
+        )
+    ) as client:
+        assert client.get("/capture-runtime/ready").status_code == 401
+        response = client.get(
+            "/capture-runtime/ready",
+            headers={"Authorization": f"Bearer {TOKEN}"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["runtimeVersion"] == "0.3.0"
+    assert response.json()["capabilities"]["structuringModes"] == ["host"]
 
 
 def test_capture_runtime_setup_proxy_keeps_sidecar_token_backend_only(

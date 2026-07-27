@@ -1,0 +1,131 @@
+:host {
+  display: block;
+}
+
+.capture-trial-page {
+  display: grid;
+  gap: 1rem;
+  padding: clamp(1.25rem, 3vw, 2.5rem);
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.capture-trial-header,
+.capture-trial-result {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.capture-trial-eyebrow {
+  margin: 0 0 0.35rem;
+  color: var(--text-color-secondary);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+h2,
+h3 {
+  margin: 0;
+  color: var(--text-color);
+}
+
+.capture-trial-description {
+  max-width: 48rem;
+  margin: 0.65rem 0 0;
+  color: var(--text-color-secondary);
+}
+
+.capture-trial-badge,
+.capture-trial-status,
+.capture-trial-result {
+  border: 1px solid var(--surface-border);
+  border-radius: 0.75rem;
+  background: var(--surface-card);
+}
+
+.capture-trial-badge {
+  flex: 0 0 auto;
+  padding: 0.5rem 0.75rem;
+  color: var(--text-color-secondary);
+  font-size: 0.8rem;
+  text-transform: capitalize;
+}
+
+.capture-trial-badge[data-state='ready'] {
+  color: var(--green-700);
+}
+
+.capture-trial-status {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.85rem 1rem;
+}
+
+.capture-trial-status i {
+  color: var(--primary-color);
+}
+
+.capture-trial-error {
+  margin: 0;
+  padding: 0.85rem 1rem;
+  border-radius: 0.75rem;
+  color: var(--red-700);
+  background: var(--red-50);
+}
+
+.capture-trial-result {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.capture-trial-result dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.capture-trial-result dl div {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.capture-trial-result dt {
+  color: var(--text-color-secondary);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.capture-trial-result dd {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.capture-trial-download-button {
+  border: 0;
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.85rem;
+  color: var(--primary-color-text);
+  background: var(--primary-color);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.capture-trial-download-button:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+@media (max-width: 640px) {
+  .capture-trial-header {
+    display: grid;
+  }
+}

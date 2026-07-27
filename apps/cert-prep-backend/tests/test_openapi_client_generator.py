@@ -98,7 +98,7 @@ def test_generated_client_exposes_request_options_as_the_last_argument() -> None
     assert "headers?: Readonly<Record<string, string>>;" in output
     assert "signal?: AbortSignal;" in output
     assert (
-        "getExample(exampleId: string, options?: CertPrepRequestOptions): Promise<void>"
+        "getExample(exampleId: string, options?: CertPrepRequestOptions): Observable<void>"
         in output
     )
 
@@ -118,7 +118,7 @@ def test_generated_request_factory_preserves_route_encoding_and_client_contract(
     )
     assert (
         "runExample(exampleId: string, body: Components['schemas']['Payload'], "
-        "options?: CertPrepRequestOptions): Promise<void>"
+        "options?: CertPrepRequestOptions): Observable<void>"
         in output
     )
 
@@ -162,7 +162,7 @@ def test_generated_client_requests_binary_responses_as_blobs() -> None:
     assert "responseType?: 'blob';" in output
     assert (
         "getExampleSource(exampleId: string, options?: CertPrepRequestOptions): "
-        "Promise<Blob>" in output
+        "Observable<Blob>" in output
     )
     assert "responseType: 'blob' as const" in output
 

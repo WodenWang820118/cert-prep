@@ -6,7 +6,12 @@ from dataclasses import dataclass
 
 from cert_prep_contracts.transcription import TranscriptSegment
 
-from cert_prep_backend.domains.capture_workbench.contracts import CaptureDocumentV1
+from cert_prep_backend.domains.capture_workbench.contracts import (
+    CaptureDocumentV1,
+    CaptureReviewV1,
+    RawCaptureV1,
+    reviewed_text_overrides,
+)
 from cert_prep_backend.domains.exam_content import classify_exam_text, line_metadata
 from cert_prep_backend.domains.source_documents.models import (
     ExtractedPage,
@@ -22,28 +27,47 @@ class CaptureAudioSegment:
 
 def capture_document_to_pdf_extraction(
     document: CaptureDocumentV1,
+    *,
+    review: CaptureReviewV1 | None = None,
 ) -> PdfExtractionResult:
+    overrides = (
+        reviewed_text_overrides(
+            RawCaptureV1(
+                schema_version=document.schema_version,
+                diagnostic_only=True,
+                source=document.source,
+                segments=document.raw_segments,
+                source_text=document.source_text,
+                extraction_engine=document.extraction_engine,
+                warnings=document.warnings,
+                created_at=document.created_at,
+            ),
+            review,
+        )
+        if review is not None
+        else {}
+    )
     pages: dict[int, list[tuple[str, str]]] = {}
     for block in document.blocks:
         if block.locator.kind != "page":
             raise ValueError("Document capture contains a non-page locator")
-        pages.setdefault(block.locator.page, []).append(
-            (block.source_text, block.target_text)
-        )
+        reviewed = overrides.get(block.source_segment_id, block.source_text)
+        pages.setdefault(block.locator.page, []).append((block.source_text, reviewed))
     if not pages:
         raise ValueError("Document capture contains no page blocks")
 
     extracted_pages: list[ExtractedPage] = []
     extraction_method = _page_extraction_method(document)
     for page_number in sorted(pages):
-        source_text = "\n".join(source for source, _target in pages[page_number])
+        raw_text = "\n".join(source for source, _reviewed in pages[page_number])
+        source_text = "\n".join(reviewed for _source, reviewed in pages[page_number])
         lines = line_metadata(source_text)
         classification = classify_exam_text(source_text)
         extracted_pages.append(
             ExtractedPage(
                 page_number=page_number,
                 text=source_text,
-                raw_text=source_text,
+                raw_text=raw_text,
                 source_excerpt=source_text[:500],
                 extraction_method=extraction_method,
                 line_start=lines.line_start,

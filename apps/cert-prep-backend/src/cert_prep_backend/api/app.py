@@ -26,6 +26,9 @@ from cert_prep_backend.domains.capture_workbench.contracts import (
 from cert_prep_backend.domains.capture_workbench.coordinator import (
     CertPrepCaptureCoordinator,
 )
+from cert_prep_backend.domains.capture_workbench.review_workflow import (
+    cleanup_active_review_sessions,
+)
 from cert_prep_backend.domains.capture_workbench.structuring import (
     CertPrepCaptureStructuringAdapter,
 )
@@ -51,6 +54,7 @@ from cert_prep_backend.domains.source_documents.ocr_provider_pool import (
 )
 from cert_prep_backend.routers import (
     capture_runtime,
+    capture_workbench,
     documents,
     drafts,
     llm,
@@ -96,6 +100,10 @@ def create_app(
             app.state.document_ocr_worker_pool.start()
             yield
         finally:
+            cleanup_active_review_sessions(
+                app.state.database,
+                coordinator=app.state.capture_coordinator,
+            )
             app.state.audio_transcription_gate.close()
             app.state.audio_document_worker_pool.close(join_timeout_seconds=0)
             app.state.document_ocr_worker_pool.close(join_timeout_seconds=0)
@@ -167,6 +175,10 @@ def create_app(
         )
         if app.state.capture_runtime_client is not None
         else None
+    )
+    cleanup_active_review_sessions(
+        app.state.database,
+        coordinator=app.state.capture_coordinator,
     )
     app.state.ocr_provider = ocr_provider or ocr_provider_from_settings(app_settings)
     app.state.transcription_provider = (
@@ -274,6 +286,7 @@ def create_app(
     app.include_router(ocr.router, dependencies=protected_dependencies)
     app.include_router(runtime.router, dependencies=protected_dependencies)
     app.include_router(capture_runtime.router, dependencies=protected_dependencies)
+    app.include_router(capture_workbench.router, dependencies=protected_dependencies)
 
     return app
 

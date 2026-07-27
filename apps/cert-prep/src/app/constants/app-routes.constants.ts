@@ -4,6 +4,14 @@ import { BackendRuntimeReadyGuard } from '../guards/runtime-ready.guard';
 export const appRoutes: Route[] = [
   { path: '', pathMatch: 'full', redirectTo: 'build' },
   {
+    path: 'capture-workbench-trial',
+    loadComponent: () =>
+      import('../pages/capture-workbench-trial/capture-workbench-trial.page').then(
+        (m) => m.CaptureWorkbenchTrialPage,
+      ),
+    title: 'Capture Workbench PDF OCR - Cert Prep',
+  },
+  {
     path: 'build',
     canActivate: [BackendRuntimeReadyGuard],
     loadComponent: () =>

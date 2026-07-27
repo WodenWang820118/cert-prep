@@ -370,7 +370,7 @@ mod tests {
             CaptureRuntimeConnection {
                 base_url: "http://127.0.0.1:41001".into(),
                 token: "capture-test-token".into(),
-                runtime_version: "0.1.0".into(),
+                runtime_version: "0.3.0".into(),
                 api_version: "1.0".into(),
                 capture_document_schema_version: "1".into(),
             },

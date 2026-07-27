@@ -47,6 +47,7 @@ describe('App', () => {
     expect(linkByText(compiled, 'Full Exam')).not.toBeNull();
     expect(linkByText(compiled, 'Random Quiz')).not.toBeNull();
     expect(linkByText(compiled, 'Dashboard')).not.toBeNull();
+    expect(linkByText(compiled, 'Capture Workbench PDF OCR')).not.toBeNull();
     expect(linkByText(compiled, 'Review')).not.toBeNull();
 
     router.navigateByUrl('/build');
@@ -191,6 +192,37 @@ describe('App', () => {
       ).toBeNull();
       expect(buttonByText(compiled, 'Cancel')).toBeNull();
       expect(compiled.textContent).not.toContain('Select or create a project.');
+    });
+  });
+
+  it('renders the capture workbench trial without backend readiness', () => {
+    const api = createApiClient();
+    api.health.mockReturnValue(of({ ...backendHealth(), status: 'offline' }));
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [App],
+      providers: [
+        { provide: CERT_PREP_API, useValue: api },
+        provideCertPrepHttpResourceClientFake(api),
+        provideRouter(appRoutes),
+      ],
+    });
+
+    const fixture = TestBed.createComponent(App);
+    const router = TestBed.inject(Router);
+    const compiled = fixture.nativeElement as HTMLElement;
+    fixture.detectChanges();
+
+    router.navigateByUrl('/capture-workbench-trial');
+    fixture.detectChanges();
+    TestBed.tick();
+    return vi.waitFor(() => {
+      fixture.detectChanges();
+      expect(compiled.textContent).toContain('Capture Workbench PDF OCR');
+      expect(compiled.querySelector('capture-workbench')).not.toBeNull();
+      expect(compiled.textContent).not.toContain(
+        'Install the Python backend runtime',
+      );
     });
   });
 

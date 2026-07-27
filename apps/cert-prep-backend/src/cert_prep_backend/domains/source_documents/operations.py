@@ -31,14 +31,12 @@ from cert_prep_backend.domains.source_documents.records import (
 from cert_prep_backend.persistence.database import Database, utc_now
 
 
-TERMINAL_STATUSES: Final[frozenset[str]] = frozenset(
-    {"canceled", "succeeded", "failed"}
-)
+TERMINAL_STATUSES: Final[frozenset[str]] = frozenset({"canceled", "succeeded", "failed"})
 RETRYABLE_DOCUMENT_STATUSES: Final[frozenset[str]] = frozenset(
     {"canceled", "ocr_failed", "no_text_detected", "transcription_failed"}
 )
 CANCELLABLE_PROCESSING_PHASES: Final[frozenset[str]] = frozenset(
-    {"processing", "transcribing", "translating"}
+    {"processing", "awaiting_review", "transcribing", "translating"}
 )
 
 
@@ -161,16 +159,12 @@ def cancel_document_processing(
             ).fetchone()
             if canceled is not None:
                 return _operation_from_row(canceled)
-            raise DocumentOperationStateError(
-                "Canceled document has no owning document operation."
-            )
+            raise DocumentOperationStateError("Canceled document has no owning document operation.")
         if document["status"] in {"processing", "cancel_requested"}:
             raise DocumentOperationStateError(
                 "Processing document has no active document operation."
             )
-        raise OperationNotCancellableError(
-            "Document does not have active extraction to cancel."
-        )
+        raise OperationNotCancellableError("Document does not have active extraction to cancel.")
 
 
 def create_and_attach_document(
@@ -236,6 +230,83 @@ def create_and_attach_document(
                 "Document operation could not attach its processing document."
             )
     return document
+
+
+def mark_capture_review_pending(
+    db: Database,
+    *,
+    project_id: str,
+    document_id: str,
+    operation_id: str,
+) -> dict:
+    """Leave an uploaded capture cancellable while the user reviews OCR."""
+
+    now = utc_now()
+    with db.connect() as connection:
+        updated = connection.execute(
+            """
+            UPDATE document_operations
+            SET phase = 'awaiting_review', cancellable = 1, updated_at = ?
+            WHERE id = ? AND project_id = ? AND document_id = ?
+                AND status = 'running' AND phase = 'processing' AND cancellable = 1
+            """,
+            (now, operation_id, project_id, document_id),
+        )
+        if updated.rowcount != 1:
+            raise DocumentOperationStateError("Document operation could not enter capture review.")
+        return _required_operation(_operation_query_by_id(connection, operation_id))
+
+
+def begin_capture_review_commit(
+    db: Database,
+    *,
+    project_id: str,
+    document_id: str,
+    operation_id: str,
+) -> dict:
+    """Atomically claim the pending capture for the confirmation worker."""
+
+    now = utc_now()
+    with db.connect() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        return begin_capture_review_commit_in_connection(
+            connection,
+            project_id=project_id,
+            document_id=document_id,
+            operation_id=operation_id,
+            now=now,
+        )
+
+
+def begin_capture_review_commit_in_connection(
+    connection: Connection,
+    *,
+    project_id: str,
+    document_id: str,
+    operation_id: str,
+    now: str | None = None,
+) -> dict:
+    """Transition review work inside the caller's enclosing transaction."""
+
+    operation = _required_operation(_operation_query_by_id(connection, operation_id))
+    _assert_operation_project(operation, project_id)
+    if operation["status"] in {"cancel_requested", "canceled"}:
+        raise DocumentProcessingCanceledError("Document processing was canceled.")
+    updated = connection.execute(
+        """
+        UPDATE document_operations
+        SET phase = 'processing', cancellable = 1, updated_at = ?
+        WHERE id = ? AND project_id = ? AND document_id = ?
+            AND status = 'running' AND phase = 'awaiting_review'
+            AND cancellable = 1
+        """,
+        (now or utc_now(), operation_id, project_id, document_id),
+    )
+    if updated.rowcount != 1:
+        raise DocumentOperationStateError(
+            "Capture review confirmation is already running or completed."
+        )
+    return _required_operation(_operation_query_by_id(connection, operation_id))
 
 
 def _begin_commit(
@@ -327,9 +398,7 @@ def publish_success(
             (now, operation_id, project_id, document_id),
         )
         if completed.rowcount != 1:
-            raise DocumentOperationStateError(
-                "Document operation success could not be committed."
-            )
+            raise DocumentOperationStateError("Document operation success could not be committed.")
     return document
 
 
@@ -468,9 +537,7 @@ def acknowledge_cancellation(
         if operation["status"] in TERMINAL_STATUSES:
             return operation
         if operation["status"] != "cancel_requested":
-            raise DocumentOperationStateError(
-                "Only a requested cancellation can be acknowledged."
-            )
+            raise DocumentOperationStateError("Only a requested cancellation can be acknowledged.")
         if operation["document_id"] is not None:
             document_id = str(operation["document_id"])
             document = document_query(connection, project_id, document_id)
@@ -592,9 +659,7 @@ def start_retry_operation(
                 raise DocumentProcessingCanceledError(
                     "Document retry was canceled before it started."
                 )
-            raise DocumentOperationConflictError(
-                "Document operation id is already in use."
-            )
+            raise DocumentOperationConflictError("Document operation id is already in use.")
         document = document_query(connection, project_id, document_id)
         if document is None:
             raise NotFoundError("Document not found.")
@@ -613,9 +678,7 @@ def start_retry_operation(
                 "Document already has an active processing operation."
             )
         if document["status"] not in RETRYABLE_DOCUMENT_STATUSES:
-            raise DocumentOperationStateError(
-                "Document is not eligible for extraction retry."
-            )
+            raise DocumentOperationStateError("Document is not eligible for extraction retry.")
         _reset_document_derived_state(
             connection,
             project_id=project_id,
@@ -646,9 +709,7 @@ def start_retry_operation(
             """,
             (next_operation_id, project_id, document_id, now, now),
         )
-        return _required_operation(
-            _operation_query_by_id(connection, next_operation_id)
-        )
+        return _required_operation(_operation_query_by_id(connection, next_operation_id))
 
 
 def recover_operations(db: Database) -> int:
@@ -934,9 +995,7 @@ def _required_operation(row: Row | None) -> dict:
 
 def _assert_operation_project(operation: dict, project_id: str) -> None:
     if operation["project_id"] != project_id:
-        raise DocumentOperationConflictError(
-            "Document operation id is already in use."
-        )
+        raise DocumentOperationConflictError("Document operation id is already in use.")
 
 
 def _operation_from_row(row: Row) -> dict:

@@ -68,6 +68,12 @@ export class App implements OnInit, OnDestroy {
       icon: 'pi pi-chart-bar',
       path: '/dashboard',
     },
+    {
+      id: 'capture_workbench_trial',
+      label: 'Capture Workbench PDF OCR',
+      icon: 'pi pi-box',
+      path: '/capture-workbench-trial',
+    },
     { id: 'review', label: 'Review', icon: 'pi pi-history', path: '/review' },
   ];
   protected readonly desktopRuntime = inject(DesktopRuntimeStore);
@@ -228,8 +234,8 @@ export class App implements OnInit, OnDestroy {
     }
   }
 
-  protected isRuntimeRoute(): boolean {
-    return this.currentPath() === '/runtime';
+  protected isBackendIndependentRoute(): boolean {
+    return ['/runtime', '/capture-workbench-trial'].includes(this.currentPath());
   }
 
   protected openRuntimeManager(): void {

@@ -13,12 +13,11 @@ provider inside Cert Prep.
 - Tauri starts both the Cert Prep backend and the matching `capture-runtime`
   sidecar. Only the backend receives the process-scoped sidecar URL and bearer
   token.
-- Until a published release exists, packaging requires explicit
-  `CERT_PREP_CAPTURE_RUNTIME_MANIFEST_PATH` and
-  `CERT_PREP_CAPTURE_RUNTIME_ARTIFACT_PATH`, plus the matching
-  `CERT_PREP_CAPTURE_DOCUMENT_SCHEMA_PATH` staging input. There is no sibling
-  checkout, workspace alias, or implicit development-path fallback.
-- The staged manifest is pinned to Windows x64 runtime `0.1.0`, API `1.0`, and
+- Packaging explicitly installs the versioned `capture-runtime` release into
+  cert-prep staging before resource preparation. There is no sibling checkout,
+  workspace alias, or implicit development-path fallback. Legacy explicit
+  manifest/artifact/schema path inputs remain available for isolated tests.
+- The staged manifest is pinned to Windows x64 runtime `0.3.0`, API `1.0`, and
   `CaptureDocumentV1` schema `1`; resource preparation and Tauri both verify
   the executable and schema file names, the executable's bounded integer byte
   count (`1..536870912`), SHA-256 provenance, and the canonical schema bytes

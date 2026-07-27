@@ -132,7 +132,7 @@ def _ready_payload(*, schema_version: str = "1") -> dict[str, object]:
         "ready": True,
         "service": "capture-runtime",
         "apiVersion": "1.0",
-        "runtimeVersion": "0.1.0",
+        "runtimeVersion": "0.3.0",
         "captureDocumentSchemaVersion": schema_version,
         "capabilities": {
             "captureKinds": ["pdf", "image", "audio"],
@@ -244,12 +244,26 @@ def test_capture_adapter_strictly_validates_batches_and_assembles_full_document(
     assert call["num_predict"] <= 4_096
 
 
+def test_capture_adapter_projects_ocr_without_llm_when_no_target_language_is_requested() -> None:
+    provider = RecordingStructuredProvider(_valid_batch_candidate)
+    raw = RawCaptureV1.model_validate(_raw_payload())
+    adapter = CertPrepCaptureStructuringAdapter(provider, clock=lambda: NOW)
+
+    candidate = CaptureDocumentV1.model_validate(adapter.structure(raw))
+
+    assert provider.calls == []
+    assert candidate.target_text == raw.source_text
+    assert candidate.blocks[0].type == "paragraph"
+    assert candidate.blocks[0].target_text == candidate.blocks[0].source_text
+    assert candidate.structuring_engine.model == "capture-document-pass-through-v1"
+
+
 def test_capture_adapter_does_not_repair_invalid_provider_json() -> None:
     provider = RecordingStructuredProvider('```json\n{"blocks": []}\n```')
     adapter = CertPrepCaptureStructuringAdapter(provider, clock=lambda: NOW)
 
     with pytest.raises(ValueError, match="valid JSON object"):
-        adapter.structure(RawCaptureV1.model_validate(_raw_payload()))
+        adapter.structure(RawCaptureV1.model_validate(_raw_payload()), target_language="zh-TW")
 
 
 def test_capture_adapter_batches_by_token_budget_and_preserves_global_order() -> None:
@@ -257,7 +271,7 @@ def test_capture_adapter_batches_by_token_budget_and_preserves_global_order() ->
     raw = _raw_with_segments(count=5)
     adapter = CertPrepCaptureStructuringAdapter(provider, clock=lambda: NOW)
 
-    document = CaptureDocumentV1.model_validate(adapter.structure(raw))
+    document = CaptureDocumentV1.model_validate(adapter.structure(raw, target_language="zh-TW"))
 
     assert len(provider.calls) >= 2
     supplied_ids = []
@@ -292,7 +306,10 @@ def test_capture_adapter_rejects_mutated_batch_provenance(mutation: str) -> None
     adapter = CertPrepCaptureStructuringAdapter(provider, clock=lambda: NOW)
 
     with pytest.raises(ValueError, match="batch|changed required field"):
-        adapter.structure(RawCaptureV1.model_validate(_raw_payload()))
+        adapter.structure(
+            RawCaptureV1.model_validate(_raw_payload()),
+            target_language="zh-TW",
+        )
 
 
 def test_capture_adapter_fails_before_generation_when_one_segment_exceeds_budget() -> None:
@@ -301,7 +318,7 @@ def test_capture_adapter_fails_before_generation_when_one_segment_exceeds_budget
     adapter = CertPrepCaptureStructuringAdapter(provider, clock=lambda: NOW)
 
     with pytest.raises(CaptureStructuringBudgetError, match="exceeds the provider token budget"):
-        adapter.structure(raw)
+        adapter.structure(raw, target_language="zh-TW")
 
     assert provider.calls == []
 
@@ -321,6 +338,7 @@ def test_capture_adapter_observes_cancellation_between_provider_batches() -> Non
     with pytest.raises(CaptureStructuringCanceledError):
         adapter.structure(
             _raw_with_segments(count=5),
+            target_language="zh-TW",
             should_cancel=lambda: cancelled,
         )
 
@@ -335,6 +353,7 @@ def test_capture_adapter_observes_deadline_after_an_in_flight_batch_returns() ->
     with pytest.raises(CaptureStructuringTimeoutError):
         adapter.structure(
             RawCaptureV1.model_validate(_raw_payload()),
+            target_language="zh-TW",
             deadline=1.0,
             monotonic_clock=lambda: next(ticks),
         )
@@ -384,7 +403,9 @@ def test_capture_adapter_reuses_existing_ollama_client_and_model() -> None:
     )
     adapter = CertPrepCaptureStructuringAdapter(lazy_provider, clock=lambda: NOW)
 
-    result = CaptureDocumentV1.model_validate(adapter.structure(raw))
+    result = CaptureDocumentV1.model_validate(
+        adapter.structure(raw, target_language="zh-TW")
+    )
 
     assert factory_calls == 1
     assert result.blocks[0].target_text == "Visible target text"
@@ -404,7 +425,10 @@ def test_capture_adapter_has_no_hidden_provider_fallback() -> None:
     adapter = CertPrepCaptureStructuringAdapter(DraftOnlyProvider(), clock=lambda: NOW)
 
     with pytest.raises(ProviderUnavailableError, match="cannot produce structured JSON"):
-        adapter.structure(RawCaptureV1.model_validate(_raw_payload()))
+        adapter.structure(
+            RawCaptureV1.model_validate(_raw_payload()),
+            target_language="zh-TW",
+        )
 
 
 def test_contract_rejects_changed_locator_before_host_consumption() -> None:

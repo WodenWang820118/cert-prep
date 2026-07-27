@@ -171,7 +171,7 @@ test('packaged resource contract proves hybrid resources and rejects dev referen
     captureManifestPath,
     JSON.stringify({
       manifestVersion: '1',
-      runtimeVersion: '0.1.0',
+      runtimeVersion: '0.3.0',
       apiVersion: '1.0',
       captureDocumentSchemaVersion: '1',
       platform: 'windows',
@@ -184,7 +184,7 @@ test('packaged resource contract proves hybrid resources and rejects dev referen
       runtimeRequirements: {
         'windowsml-ocr': {
           artifactUrl:
-            'https://github.com/example/capture-workbench/releases/download/v0.1.0/capture-windowsml-ocr-v1.zip',
+            'https://github.com/example/capture-workbench/releases/download/v0.3.0/capture-windowsml-ocr-v1.zip',
           artifactFileName: 'capture-windowsml-ocr-v1.zip',
           bytes: 123_456,
           sha256: '2'.repeat(64),
@@ -223,9 +223,9 @@ test('packaged resource contract proves hybrid resources and rejects dev referen
           bytes: Buffer.byteLength('ocr'),
         },
         capture_runtime: {
-          distribution: 'explicit_staged_artifact',
+          distribution: 'versioned_release_artifact_staged',
           file_name: captureName,
-          runtime_version: '0.1.0',
+          runtime_version: '0.3.0',
           api_version: '1.0',
           capture_document_schema_version: '1',
           sha256: sha256('capture-runtime'),
@@ -236,7 +236,7 @@ test('packaged resource contract proves hybrid resources and rejects dev referen
           runtime_requirements: {
             'windowsml-ocr': {
               artifactUrl:
-                'https://github.com/example/capture-workbench/releases/download/v0.1.0/capture-windowsml-ocr-v1.zip',
+                'https://github.com/example/capture-workbench/releases/download/v0.3.0/capture-windowsml-ocr-v1.zip',
               artifactFileName: 'capture-windowsml-ocr-v1.zip',
               bytes: 123_456,
               sha256: '2'.repeat(64),
@@ -422,7 +422,7 @@ test('packaged resource contract proves hybrid resources and rejects dev referen
   );
 
   captureManifest.runtimeRequirements['windowsml-ocr'].artifactUrl =
-    'https://github.com/example/capture-workbench/releases/download/v0.1.0/capture-windowsml-ocr-v1.zip';
+    'https://github.com/example/capture-workbench/releases/download/v0.3.0/capture-windowsml-ocr-v1.zip';
   writeFileSync(captureManifestPath, JSON.stringify(captureManifest));
   writeFileSync(join(resourceRoot, 'stale-runtime.zip'), 'stale');
   assert.throws(

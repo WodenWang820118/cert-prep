@@ -20,6 +20,7 @@ from cert_prep_backend.domains.capture_workbench.client import (
     CaptureRuntimeProtocolError,
 )
 from cert_prep_backend.domains.capture_workbench.contracts import (
+    RuntimeReadyV1,
     RuntimeInstallationV1,
     RuntimeInstallationsV1,
     RuntimeRequirementsV1,
@@ -28,6 +29,22 @@ from cert_prep_backend.domains.capture_workbench.contracts import (
 
 
 router = APIRouter(prefix="/capture-runtime", tags=["capture-runtime"])
+
+
+@router.get("/ready", response_model=RuntimeReadyV1)
+def capture_runtime_ready(
+    client: CaptureRuntimeClient = Depends(get_capture_runtime_client),
+) -> RuntimeReadyV1:
+    """Expose sidecar readiness without serializing its process credential."""
+
+    try:
+        return client.handshake()
+    except (
+        CaptureRuntimeCompatibilityError,
+        CaptureRuntimeError,
+        CaptureRuntimeProtocolError,
+    ) as error:
+        _raise_runtime_error(error)
 
 
 @router.get("/requirements", response_model=RuntimeRequirementsV1)

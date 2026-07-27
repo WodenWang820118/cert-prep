@@ -9,6 +9,7 @@ from concurrent.futures import (
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from io import BytesIO
+from threading import Lock
 from time import perf_counter
 from typing import Protocol
 
@@ -22,6 +23,12 @@ from cert_prep_backend.domains.source_documents.models import (
 from cert_prep_backend.domains.exam_content import classify_exam_text, line_metadata
 from cert_prep_backend.domains.source_documents.ocr import OCRPageResult
 from cert_prep_backend.api.errors import InvalidPdfError, ProviderUnavailableError
+
+
+# pypdfium2 can crash the interpreter when documents are rendered concurrently
+# from multiple worker threads. Keep OCR provider calls parallel, but serialize
+# the native PDFium render section.
+_PDFIUM_RENDER_LOCK = Lock()
 
 
 class PageOcrProvider(Protocol):
@@ -434,12 +441,23 @@ def _extract_ocr_page(
 
 def render_pdf_page_png(pdf_bytes: bytes, *, page_index: int, scale: float) -> bytes:
     try:
-        document = pdfium.PdfDocument(BytesIO(pdf_bytes))
-        bitmap = document[page_index].render(scale=scale)
-        image = bitmap.to_pil()
-        output = BytesIO()
-        image.save(output, format="PNG")
-        return output.getvalue()
+        with _PDFIUM_RENDER_LOCK:
+            document = pdfium.PdfDocument(BytesIO(pdf_bytes), autoclose=True)
+            try:
+                page = document[page_index]
+                try:
+                    bitmap = page.render(scale=scale)
+                    try:
+                        image = bitmap.to_pil()
+                        output = BytesIO()
+                        image.save(output, format="PNG")
+                        return output.getvalue()
+                    finally:
+                        bitmap.close()
+                finally:
+                    page.close()
+            finally:
+                document.close()
     except Exception as exc:
         raise InvalidPdfError(f"Could not render page {page_index + 1} for OCR.") from exc
 

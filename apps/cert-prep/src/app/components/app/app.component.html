@@ -84,7 +84,7 @@
     </aside>
 
     <section class="workbench-main" aria-label="Study workspace">
-      @if (isRuntimeRoute()) {
+      @if (isBackendIndependentRoute()) {
         <router-outlet />
       } @else if (!desktopRuntime.isBackendReady()) {
         <section class="empty-workbench-state">

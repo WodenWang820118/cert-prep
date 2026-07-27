@@ -1,5 +1,6 @@
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from threading import Event
+from threading import Event, Lock
 
 from fastapi.testclient import TestClient
 
@@ -365,6 +366,78 @@ def test_ocr_page_workers_preserve_final_order_and_metrics(
             "Worker page 2",
             "Worker page 3",
         ]
+
+
+def test_pdfium_render_is_serialized_across_ocr_workers(monkeypatch) -> None:
+    active_renders = 0
+    maximum_active_renders = 0
+    invocation_count = 0
+    counters_lock = Lock()
+    first_render_started = Event()
+    release_first_render = Event()
+
+    class FakeImage:
+        def save(self, output, *, format: str) -> None:
+            assert format == "PNG"
+            output.write(b"png")
+
+    class FakeBitmap:
+        def to_pil(self) -> FakeImage:
+            return FakeImage()
+
+        def close(self) -> None:
+            pass
+
+    class FakePage:
+        def render(self, *, scale: float) -> FakeBitmap:
+            nonlocal active_renders, maximum_active_renders, invocation_count
+            del scale
+            with counters_lock:
+                invocation_count += 1
+                active_renders += 1
+                maximum_active_renders = max(maximum_active_renders, active_renders)
+                is_first_render = invocation_count == 1
+            try:
+                if is_first_render:
+                    first_render_started.set()
+                    assert release_first_render.wait(timeout=2)
+                return FakeBitmap()
+            finally:
+                with counters_lock:
+                    active_renders -= 1
+
+        def close(self) -> None:
+            pass
+
+    class FakeDocument:
+        def __init__(self, pdf_stream, *, autoclose: bool) -> None:
+            del pdf_stream
+            assert autoclose is True
+
+        def __getitem__(self, page_index: int) -> FakePage:
+            del page_index
+            return FakePage()
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(pdf_extraction.pdfium, "PdfDocument", FakeDocument)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [
+            executor.submit(
+                pdf_extraction.render_pdf_page_png,
+                b"fake-pdf",
+                page_index=page_index,
+                scale=1.0,
+            )
+            for page_index in (0, 1)
+        ]
+        assert first_render_started.wait(timeout=2)
+        release_first_render.set()
+        assert [future.result(timeout=2) for future in futures] == [b"png", b"png"]
+
+    assert maximum_active_renders == 1
 
 
 def test_parallel_ocr_flushes_completed_page_before_all_pages_finish(

@@ -23,8 +23,10 @@ from cert_prep_backend.domains.capture_workbench.contracts import (
     CaptureJobStage,
     CaptureJobStatus,
     CaptureJobV1,
+    CaptureReviewV1,
     CaptureSourceKind,
     RawCaptureV1,
+    reviewed_text_overrides,
 )
 from cert_prep_backend.domains.capture_workbench.structuring import (
     CaptureStructuringCanceledError,
@@ -105,10 +107,37 @@ class CertPrepCaptureCoordinator:
         target_language: str | None,
         should_cancel: Callable[[], bool],
     ) -> CaptureRunResult:
+        job = self.begin_capture(
+            operation_id=operation_id,
+            file_name=file_name,
+            content=content,
+            media_type=media_type,
+            source_kind=source_kind,
+            target_language=target_language,
+            should_cancel=should_cancel,
+        )
+        return self.confirm_capture(
+            operation_id=operation_id,
+            capture_id=job.capture_id,
+            target_language=target_language,
+            review=None,
+            should_cancel=should_cancel,
+        )
+
+    def begin_capture(
+        self,
+        *,
+        operation_id: str,
+        file_name: str,
+        content: bytes,
+        media_type: str,
+        source_kind: CaptureSourceKind,
+        target_language: str | None,
+        should_cancel: Callable[[], bool],
+    ) -> CaptureJobV1:
         self._client.handshake()
         if should_cancel():
             raise CaptureRuntimeCanceledError("Document processing was cancelled.")
-
         job = self._client.create_capture(
             CaptureUpload(file_name=file_name, content=content, media_type=media_type),
             source_kind=source_kind,
@@ -116,8 +145,21 @@ class CertPrepCaptureCoordinator:
             target_language=target_language,
         )
         deadline = self._clock() + self._timeout_seconds
-        job = self._wait_for_structuring(job, deadline=deadline, should_cancel=should_cancel)
-        raw = self._client.get_raw(job.capture_id)
+        return self._wait_for_structuring(job, deadline=deadline, should_cancel=should_cancel)
+
+    def confirm_capture(
+        self,
+        *,
+        operation_id: str,
+        capture_id: str,
+        target_language: str | None,
+        review: CaptureReviewV1 | None,
+        should_cancel: Callable[[], bool],
+    ) -> CaptureRunResult:
+        deadline = self._clock() + self._timeout_seconds
+        raw = self._client.get_raw(capture_id)
+        if review is not None:
+            reviewed_text_overrides(raw, review)
 
         try:
             candidate = self._structurer.structure(
@@ -128,22 +170,22 @@ class CertPrepCaptureCoordinator:
                 monotonic_clock=self._clock,
             )
         except CaptureStructuringCanceledError as error:
-            self._cancel(job.capture_id)
+            self._cancel(capture_id)
             raise CaptureRuntimeCanceledError("Document processing was cancelled.") from error
         except CaptureStructuringTimeoutError as error:
-            self._cancel(job.capture_id)
+            self._cancel(capture_id)
             raise CaptureRuntimeTimeoutError("Capture Runtime job timed out.") from error
         except Exception:
-            self._report_structuring_failure(job.capture_id)
+            self._report_structuring_failure(capture_id)
             raise
 
         if should_cancel():
-            self._cancel(job.capture_id)
+            self._cancel(capture_id)
             raise CaptureRuntimeCanceledError("Document processing was cancelled.")
 
         commit_idempotency_key = _idempotency_key(operation_id, "structure")
         job = self._commit_structure(
-            job.capture_id,
+            capture_id,
             candidate,
             idempotency_key=commit_idempotency_key,
             deadline=deadline,
@@ -151,15 +193,24 @@ class CertPrepCaptureCoordinator:
         )
         job = self._wait_for_completion(job, deadline=deadline, should_cancel=should_cancel)
         return CaptureRunResult(
-            capture_id=job.capture_id,
+            capture_id=capture_id,
             raw=raw,
-            document=self._client.get_result(job.capture_id),
+            document=self._client.get_result(capture_id),
         )
 
     def delete(self, capture_id: str) -> None:
         """Delete a job only after the host has atomically persisted its result."""
 
         self._client.delete_capture(capture_id)
+
+    def get_capture(self, capture_id: str) -> CaptureJobV1:
+        return self._client.get_capture(capture_id)
+
+    def get_raw(self, capture_id: str) -> RawCaptureV1:
+        return self._client.get_raw(capture_id)
+
+    def cancel(self, capture_id: str) -> CaptureJobV1:
+        return self._cancel_and_confirm(capture_id)
 
     def _wait_for_structuring(
         self,

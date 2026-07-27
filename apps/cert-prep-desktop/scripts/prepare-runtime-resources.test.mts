@@ -83,7 +83,7 @@ test('release resources bundle backend and reference OCR through HTTPS only', as
   );
   assert.equal(metadata.signed, false);
   assert.equal(metadata.warnings.production_ready, false);
-  assert.equal(capture.runtimeVersion, '0.1.0');
+  assert.equal(capture.runtimeVersion, '0.3.0');
   assert.equal(capture.apiVersion, '1.0');
   assert.equal(capture.captureDocumentSchemaVersion, '1');
   assert.equal(
@@ -96,7 +96,7 @@ test('release resources bundle backend and reference OCR through HTTPS only', as
   );
   assert.equal(
     metadata.runtime_assets.capture_runtime.distribution,
-    'explicit_staged_artifact',
+    'versioned_release_artifact_staged',
   );
   assert.equal(
     metadata.runtime_assets.capture_runtime.schema_file_name,
@@ -165,7 +165,7 @@ test('capture runtime staging is mandatory and fails closed on provenance drift'
       outputDir: join(fixture.workspaceRoot, 'missing-capture'),
       mode: 'dev',
     }),
-    /CERT_PREP_CAPTURE_RUNTIME_MANIFEST_PATH is required/,
+    /Capture runtime manifest was not staged/,
   );
   await assert.rejects(
     prepareRuntimeResources({
@@ -193,10 +193,10 @@ test('capture runtime staging is mandatory and fails closed on provenance drift'
       outputDir: join(fixture.workspaceRoot, 'wrong-version'),
       mode: 'dev',
     }),
-    /runtimeVersion must be 0\.1\.0/,
+    /runtimeVersion must be 0\.3\.0/,
   );
 
-  manifest.runtimeVersion = '0.1.0';
+  manifest.runtimeVersion = '0.3.0';
   manifest.sha256 = '0'.repeat(64);
   writeFileSync(
     fixture.captureRuntimeManifestPath,
@@ -458,7 +458,7 @@ function createFixture(): {
     captureRuntimeManifestPath,
     JSON.stringify({
       manifestVersion: '1',
-      runtimeVersion: '0.1.0',
+      runtimeVersion: '0.3.0',
       apiVersion: '1.0',
       captureDocumentSchemaVersion: '1',
       platform: 'windows',
@@ -471,7 +471,7 @@ function createFixture(): {
       runtimeRequirements: {
         'windowsml-ocr': {
           artifactUrl:
-            'https://github.com/example/capture-workbench/releases/download/v0.1.0/capture-windowsml-ocr-v1.zip',
+            'https://github.com/example/capture-workbench/releases/download/v0.3.0/capture-windowsml-ocr-v1.zip',
           artifactFileName: 'capture-windowsml-ocr-v1.zip',
           bytes: 123_456,
           sha256: '2'.repeat(64),

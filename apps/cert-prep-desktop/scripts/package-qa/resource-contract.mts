@@ -451,7 +451,7 @@ function validateReleaseMetadata(
     metadata.runtime_assets?.windowsml_ocr?.distribution !==
       'github_release_download' ||
     metadata.runtime_assets?.capture_runtime?.distribution !==
-      'explicit_staged_artifact' ||
+      'versioned_release_artifact_staged' ||
     metadata.runtime_assets.capture_runtime.structuring_mode !== 'host'
   ) {
     throw new Error('Release metadata runtime distribution is not public.');

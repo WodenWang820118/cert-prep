@@ -105,7 +105,7 @@ export interface PackagedResourceContract {
   readonly backend_bundled: true;
   readonly windowsml_ocr_bundled: false;
   readonly capture_runtime_bundled: true;
-  readonly capture_runtime_version: '0.1.0';
+  readonly capture_runtime_version: '0.3.0';
   readonly capture_runtime_api_version: '1.0';
   readonly capture_document_schema_version: '1';
   readonly capture_structuring_mode: 'host';

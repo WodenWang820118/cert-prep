@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
+from threading import Event
+import time
 from pathlib import Path
 from uuid import UUID
 
@@ -44,9 +47,7 @@ class EchoCaptureProvider(MockExamProvider):
             {
                 "blockId": f"block-{segment['segmentId']}",
                 "order": segment["order"],
-                "type": "transcript"
-                if segment["locator"]["kind"] == "time"
-                else "paragraph",
+                "type": "transcript" if segment["locator"]["kind"] == "time" else "paragraph",
                 "sourceSegmentId": segment["segmentId"],
                 "locator": segment["locator"],
                 "sourceText": segment["text"],
@@ -138,7 +139,7 @@ class DeterministicCaptureRuntime:
         return self.result
 
     def get_capture(self, _capture_id: str) -> CaptureJobV1:
-        raise AssertionError("deterministic job should not require polling")
+        return self._job(status="running", stage="awaiting_structuring")
 
     def report_structuring_failure(self, *_args, **_kwargs):
         raise AssertionError("host provider should succeed")
@@ -164,6 +165,29 @@ class DeterministicCaptureRuntime:
                 "updatedAt": NOW.isoformat(),
                 "completedAt": NOW.isoformat() if status == "completed" else None,
             }
+        )
+
+
+class BlockingDeterministicCaptureRuntime(DeterministicCaptureRuntime):
+    def __init__(self) -> None:
+        super().__init__()
+        self.commit_started = Event()
+        self.release_commit = Event()
+
+    def commit_structure(
+        self,
+        capture_id: str,
+        candidate: object,
+        *,
+        idempotency_key: UUID,
+    ) -> CaptureJobV1:
+        self.commit_started.set()
+        if not self.release_commit.wait(timeout=5):
+            raise AssertionError("blocking capture runtime was not released")
+        return super().commit_structure(
+            capture_id,
+            candidate,
+            idempotency_key=idempotency_key,
         )
 
 
@@ -299,3 +323,335 @@ def test_audio_upload_uses_capture_time_provenance_without_cert_whisper(
         assert chunks[0]["translated_text"] == "Audio source text"
 
     assert runtime.deleted == ["capture-pipeline-1"]
+
+
+def test_review_capture_pauses_before_persistence_and_applies_confirmed_overlay(
+    tmp_path: Path,
+) -> None:
+    runtime = DeterministicCaptureRuntime()
+    settings = Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake")
+    with TestClient(
+        create_app(
+            settings=settings,
+            llm_provider=EchoCaptureProvider(),
+            capture_runtime_client=runtime,
+            document_processing_async_jobs=False,
+            streaming_draft_generation_async_jobs=False,
+        )
+    ) as client:
+        headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
+        project_id = _create_project(client, headers)
+        source = minimal_pdf("Review before save.")
+
+        created = client.post(
+            f"/projects/{project_id}/capture-workbench/captures",
+            headers=headers,
+            files={"file": ("review.pdf", source, "application/pdf")},
+        )
+
+        assert created.status_code == 202
+        capture = created.json()
+        capture_id = capture["captureId"]
+        assert capture["status"] == "queued"
+
+        pending_document = client.get(
+            f"/projects/{project_id}/documents/{capture['documentId']}",
+            headers=headers,
+        ).json()
+        assert pending_document["status"] == "processing"
+        assert pending_document["chunks_count"] == 0
+
+        pending = _wait_for_capture_stage(
+            client,
+            project_id=project_id,
+            capture_id=capture_id,
+            headers=headers,
+            stage="awaiting_structuring",
+        )
+        assert pending.status_code == 200
+        assert pending.json()["captureId"] == capture_id
+        assert pending.json()["stage"] == "awaiting_structuring"
+        raw = client.get(
+            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/raw",
+            headers=headers,
+        )
+        assert raw.status_code == 200
+        assert raw.json()["segments"][0]["text"] == "Sidecar extracted source text"
+        assert (
+            client.get(
+                f"/projects/{project_id}/capture-workbench/captures/{capture_id}/result",
+                headers=headers,
+            ).status_code
+            == 409
+        )
+
+        invalid_review = client.post(
+            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/confirm",
+            headers=headers,
+            json={
+                "clientRequestId": "review-confirm-invalid",
+                "review": {
+                    "reviewVersion": 1,
+                    "edits": [{"segmentId": "not-a-runtime-segment", "reviewedText": "x"}],
+                },
+            },
+        )
+        assert invalid_review.status_code == 422
+
+        confirmed = client.post(
+            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/confirm",
+            headers=headers,
+            json={
+                "clientRequestId": "review-confirm-1",
+                "review": {
+                    "reviewVersion": 1,
+                    "edits": [{"segmentId": "page-1", "reviewedText": "Corrected OCR text"}],
+                },
+            },
+        )
+        assert confirmed.status_code == 202
+        assert confirmed.json()["stage"] == "structuring"
+
+        _wait_for_capture_stage(
+            client,
+            project_id=project_id,
+            capture_id=capture_id,
+            headers=headers,
+            stage="completed",
+        )
+        result = client.get(
+            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/result",
+            headers=headers,
+        )
+        assert result.status_code == 200
+        assert result.json()["rawSegments"][0]["text"] == "Sidecar extracted source text"
+        assert result.json()["blocks"][0]["targetText"] == "Corrected OCR text"
+
+        saved = client.get(
+            f"/projects/{project_id}/documents/{capture['documentId']}/chunks",
+            headers=headers,
+        )
+        assert saved.status_code == 200
+        assert saved.json()["items"][0]["raw_text"] == "Sidecar extracted source text"
+        assert saved.json()["items"][0]["text"] == "Corrected OCR text"
+
+        cancel_completed = client.post(
+            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/cancel",
+            headers=headers,
+        )
+        assert cancel_completed.status_code == 200
+        assert cancel_completed.json()["status"] == "completed"
+        assert cancel_completed.json()["stage"] == "completed"
+
+    assert runtime.deleted == ["capture-pipeline-1"]
+
+
+def test_expired_review_is_canceled_and_terminal_cancel_is_idempotent(tmp_path: Path) -> None:
+    runtime = DeterministicCaptureRuntime()
+    settings = Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake")
+    app = create_app(
+        settings=settings,
+        llm_provider=EchoCaptureProvider(),
+        capture_runtime_client=runtime,
+        document_processing_async_jobs=False,
+        streaming_draft_generation_async_jobs=False,
+    )
+    with TestClient(app) as client:
+        headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
+        project_id = _create_project(client, headers)
+        created = client.post(
+            f"/projects/{project_id}/capture-workbench/captures",
+            headers=headers,
+            files={"file": ("expired.pdf", minimal_pdf("Expire this review."), "application/pdf")},
+        )
+        assert created.status_code == 202
+        capture_id = created.json()["captureId"]
+        _wait_for_capture_stage(
+            client,
+            project_id=project_id,
+            capture_id=capture_id,
+            headers=headers,
+            stage="awaiting_structuring",
+        )
+
+        with app.state.database.connect() as connection:
+            connection.execute(
+                "UPDATE capture_review_sessions SET expires_at = ? WHERE id = ?",
+                ("2000-01-01T00:00:00+00:00", capture_id),
+            )
+
+        expired = client.get(
+            f"/projects/{project_id}/capture-workbench/captures/{capture_id}",
+            headers=headers,
+        )
+        assert expired.status_code == 200
+        assert expired.json()["status"] == "cancelled"
+        assert expired.json()["stage"] == "cancelled"
+
+        cancel_again = client.post(
+            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/cancel",
+            headers=headers,
+        )
+        assert cancel_again.status_code == 200
+        assert cancel_again.json()["status"] == "cancelled"
+
+
+def test_confirmation_request_is_atomic_idempotent_and_rejects_divergent_replay(
+    tmp_path: Path,
+) -> None:
+    runtime = BlockingDeterministicCaptureRuntime()
+    settings = Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake")
+    app = create_app(
+        settings=settings,
+        llm_provider=EchoCaptureProvider(),
+        capture_runtime_client=runtime,
+        document_processing_async_jobs=True,
+        streaming_draft_generation_async_jobs=False,
+    )
+    with TestClient(app) as client:
+        headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
+        project_id = _create_project(client, headers)
+        source = minimal_pdf("Confirm exactly once.")
+        created = client.post(
+            f"/projects/{project_id}/capture-workbench/captures",
+            headers=headers,
+            files={"file": ("confirm-once.pdf", source, "application/pdf")},
+        )
+        assert created.status_code == 202
+        capture_id = created.json()["captureId"]
+        _wait_for_capture_stage(
+            client,
+            project_id=project_id,
+            capture_id=capture_id,
+            headers=headers,
+            stage="awaiting_structuring",
+        )
+        review = {
+            "reviewVersion": 1,
+            "edits": [{"segmentId": "page-1", "reviewedText": "Confirmed once"}],
+        }
+        first = client.post(
+            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/confirm",
+            headers=headers,
+            json={"clientRequestId": "confirm-once", "review": review},
+        )
+        assert first.status_code == 202
+        assert runtime.commit_started.wait(timeout=2)
+
+        replay = client.post(
+            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/confirm",
+            headers=headers,
+            json={"clientRequestId": "confirm-once", "review": review},
+        )
+        assert replay.status_code == 202
+        assert replay.json()["stage"] == "structuring"
+
+        divergent = client.post(
+            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/confirm",
+            headers=headers,
+            json={
+                "clientRequestId": "confirm-once",
+                "review": {
+                    "reviewVersion": 1,
+                    "edits": [{"segmentId": "page-1", "reviewedText": "Changed replay"}],
+                },
+            },
+        )
+        assert divergent.status_code == 409
+
+        runtime.release_commit.set()
+        completed = _wait_for_capture_stage(
+            client,
+            project_id=project_id,
+            capture_id=capture_id,
+            headers=headers,
+            stage="completed",
+        )
+        assert completed.status_code == 200
+
+
+def test_failed_capture_upload_finishes_claimed_operation(tmp_path: Path) -> None:
+    runtime = DeterministicCaptureRuntime()
+    settings = Settings(
+        data_dir=tmp_path,
+        api_token=AUTH_TOKEN,
+        llm_provider="fake",
+        max_upload_bytes=32,
+    )
+    app = create_app(
+        settings=settings,
+        llm_provider=EchoCaptureProvider(),
+        capture_runtime_client=runtime,
+        document_processing_async_jobs=False,
+        streaming_draft_generation_async_jobs=False,
+    )
+    operation_id = "oversized-capture"
+    with TestClient(app) as client:
+        headers = {
+            "Authorization": f"Bearer {AUTH_TOKEN}",
+            "X-Cert-Prep-Operation-Id": operation_id,
+        }
+        project_id = _create_project(client, {"Authorization": f"Bearer {AUTH_TOKEN}"})
+        response = client.post(
+            f"/projects/{project_id}/capture-workbench/captures",
+            headers=headers,
+            files={"file": ("too-large.pdf", b"x" * 64, "application/pdf")},
+        )
+        assert response.status_code == 422
+
+        with app.state.database.connect() as connection:
+            operation = connection.execute(
+                "SELECT status, phase, document_id FROM document_operations WHERE id = ?",
+                (operation_id,),
+            ).fetchone()
+        assert operation is not None
+        assert tuple(operation) == ("failed", "failed", None)
+
+
+def test_same_operation_id_cannot_start_two_capture_uploads(tmp_path: Path) -> None:
+    runtime = DeterministicCaptureRuntime()
+    settings = Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake")
+    app = create_app(
+        settings=settings,
+        llm_provider=EchoCaptureProvider(),
+        capture_runtime_client=runtime,
+        document_processing_async_jobs=False,
+        streaming_draft_generation_async_jobs=False,
+    )
+    with TestClient(app) as client:
+        auth_headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
+        project_id = _create_project(client, auth_headers)
+
+        def upload() -> int:
+            response = client.post(
+                f"/projects/{project_id}/capture-workbench/captures",
+                headers={
+                    **auth_headers,
+                    "X-Cert-Prep-Operation-Id": "same-operation",
+                },
+                files={
+                    "file": ("same-operation.pdf", minimal_pdf("One claim."), "application/pdf")
+                },
+            )
+            return response.status_code
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            statuses = sorted(executor.map(lambda _index: upload(), range(2)))
+        assert statuses == [202, 409]
+
+
+def _wait_for_capture_stage(
+    client: TestClient,
+    *,
+    project_id: str,
+    capture_id: str,
+    headers: dict[str, str],
+    stage: str,
+) -> object:
+    endpoint = f"/projects/{project_id}/capture-workbench/captures/{capture_id}"
+    for _ in range(100):
+        response = client.get(endpoint, headers=headers)
+        if response.status_code == 200 and response.json()["stage"] == stage:
+            return response
+        time.sleep(0.01)
+    raise AssertionError(f"Capture did not reach stage {stage!r}; last response={response.text}")

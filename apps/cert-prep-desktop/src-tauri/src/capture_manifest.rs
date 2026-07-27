@@ -343,7 +343,7 @@ mod tests {
             schema_sha256: CAPTURE_DOCUMENT_SCHEMA_SHA256.into(),
             runtime_requirements: CaptureRuntimeRequirements {
                 windowsml_ocr: CaptureRuntimeBundleRequirement {
-                    artifact_url: "https://github.com/example/capture-workbench/releases/download/v0.1.0/capture-windowsml-ocr-v1.zip".into(),
+                    artifact_url: "https://github.com/example/capture-workbench/releases/download/v0.3.0/capture-windowsml-ocr-v1.zip".into(),
                     artifact_file_name: "capture-windowsml-ocr-v1.zip".into(),
                     bytes: 123_456,
                     sha256: "2".repeat(64),

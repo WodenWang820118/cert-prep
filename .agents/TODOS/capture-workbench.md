@@ -4,7 +4,7 @@
 - [ ] Start the capture sidecar from Tauri and pass its URL/token to the backend only.
   Native lifecycle, fail-closed executable/schema staging, authenticated
   host-only handshake, static package QA, and PID-scoped cleanup are
-  implemented; packaged smoke awaits the first real `0.1.0` release artifact.
+  implemented; packaged smoke awaits the first real `0.3.0` release artifact.
 - [x] Add the backend capture coordinator and Cert Prep structuring-provider adapter.
 - [x] Atomically map validated `CaptureDocumentV1` into the existing document pipeline.
 - [x] Proxy Capture Runtime requirements/install/cancel through the authenticated

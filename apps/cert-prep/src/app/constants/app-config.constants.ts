@@ -2,7 +2,6 @@ import {
   HTTP_INTERCEPTORS,
   provideHttpClient,
   withInterceptorsFromDi,
-  withXhr,
 } from '@angular/common/http';
 import type { ApplicationConfig } from '@angular/core';
 import { provideBrowserGlobalErrorListeners } from '@angular/core';
@@ -15,7 +14,7 @@ import { appRoutes } from './app-routes.constants';
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
-    provideHttpClient(withXhr(), withInterceptorsFromDi()),
+    provideHttpClient(withInterceptorsFromDi()),
     { provide: HTTP_INTERCEPTORS, useClass: CertPrepAuthInterceptor, multi: true },
     providePrimeNG({
       inputVariant: 'outlined',

@@ -1,0 +1,105 @@
+<section class="capture-trial-page" aria-labelledby="capture-trial-title">
+  <header class="capture-trial-header">
+    <div>
+      <p class="capture-trial-eyebrow">PDF OCR / saved to project</p>
+      <h2 id="capture-trial-title">Capture Workbench PDF OCR</h2>
+      <p class="capture-trial-description">
+        Select one PDF to run through the installed <code>@gx/capture-workbench</code>
+        workflow and Capture Runtime, then save the OCR document to Cert Prep.
+      </p>
+    </div>
+    <div class="capture-trial-badge" [attr.data-state]="registrationState()">
+      {{ registrationState() === 'ready' ? 'Element registered' : registrationState() }}
+    </div>
+  </header>
+
+  <section class="capture-trial-status" role="status" aria-live="polite">
+    <i class="pi pi-bolt" aria-hidden="true"></i>
+    <span>{{ trialStatus() }}</span>
+  </section>
+
+  @if (registrationError(); as error) {
+  <p class="capture-trial-error" role="alert">{{ error }}</p>
+  }
+
+  <capture-workbench #captureWorkbench></capture-workbench>
+
+  @if (lastCompleted(); as completed) {
+  <section
+    class="capture-trial-result"
+    aria-labelledby="capture-trial-result-title"
+  >
+    <div>
+      <p class="capture-trial-eyebrow">capture-completed</p>
+      <h3 id="capture-trial-result-title">OCR document saved</h3>
+    </div>
+    <dl>
+      <div>
+        <dt>File</dt>
+        <dd>{{ completed.document.source.fileName }}</dd>
+      </div>
+      <div>
+        <dt>Bytes</dt>
+        <dd>{{ completed.document.source.bytes }}</dd>
+      </div>
+      <div>
+        <dt>Schema</dt>
+        <dd>CaptureDocumentV{{ completed.document.schemaVersion }}</dd>
+      </div>
+      <div>
+        <dt>Blocks</dt>
+        <dd>{{ completed.document.blocks.length }}</dd>
+      </div>
+      @if (sourceImport.activeDocument(); as savedDocument) {
+      <div>
+        <dt>Cert Prep status</dt>
+        <dd>{{ savedDocument.status }}</dd>
+      </div>
+      <div>
+        <dt>OCR chunks</dt>
+        <dd>{{ savedDocument.chunks_count }}</dd>
+      </div>
+      <div>
+        <dt>Extraction</dt>
+        <dd>{{ savedDocument.extraction_method }}</dd>
+      </div>
+      @if (savedDocument.status === 'ready' && savedDocument.chunks_count > 0) {
+      <div class="capture-trial-download">
+        <dt>Export</dt>
+        <dd>
+          <button
+            type="button"
+            class="capture-trial-download-button"
+            [disabled]="markdownDownloadState() === 'downloading'"
+            (click)="downloadMarkdown()"
+          >
+            @if (markdownDownloadState() === 'downloading') {
+            Preparing Markdown...
+            } @else {
+            Download Markdown
+            }
+          </button>
+        </dd>
+      </div>
+      }
+      } @else {
+      <div>
+        <dt>Cert Prep status</dt>
+        <dd>Waiting for saved document refresh</dd>
+      </div>
+      <div>
+        <dt>OCR chunks</dt>
+        <dd>—</dd>
+      </div>
+      <div>
+        <dt>Extraction</dt>
+        <dd>—</dd>
+      </div>
+      }
+    </dl>
+    @if (markdownDownloadError(); as error) {
+    <p class="capture-trial-error" role="alert">{{ error }}</p>
+    }
+  </section>
+  }
+</section>

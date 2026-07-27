@@ -107,6 +107,22 @@
         "staticFilePath": "dist/apps/cert-prep/browser",
         "spa": true
       }
+    },
+    "capture-workbench-real-pdf-smoke": {
+      "cache": false,
+      "parallelism": false,
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/capture-workbench-real-pdf-smoke.mts"
+      }
+    },
+    "install:capture-workbench:local": {
+      "cache": false,
+      "parallelism": false,
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/install-local-capture-workbench.mts"
+      }
     }
   }
 }

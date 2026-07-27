@@ -23,7 +23,7 @@ from pydantic.alias_generators import to_camel
 
 CAPTURE_DOCUMENT_SCHEMA_VERSION = "1"
 SUPPORTED_API_VERSION = "1.0"
-SUPPORTED_RUNTIME_VERSION = "0.1.0"
+SUPPORTED_RUNTIME_VERSION = "0.3.0"
 SUPPORTED_API_MAJOR = 1
 SUPPORTED_RUNTIME_MAJOR = 0
 
@@ -83,6 +83,23 @@ class CaptureJobStage(StrEnum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+
+
+class CaptureReviewEditV1(StrictWireModel):
+    segment_id: NonEmptyString
+    reviewed_text: CaptureText
+
+
+class CaptureReviewV1(StrictWireModel):
+    review_version: Literal[1] = 1
+    edits: list[CaptureReviewEditV1] = Field(default_factory=list, max_length=10_000)
+
+    @model_validator(mode="after")
+    def validate_unique_segments(self) -> Self:
+        identifiers = [edit.segment_id for edit in self.edits]
+        if len(identifiers) != len(set(identifiers)):
+            raise ValueError("review edits must contain unique segmentId values")
+        return self
 
 
 class RuntimeInstallationStatus(StrEnum):
@@ -172,6 +189,26 @@ class RawCaptureV1(StrictWireModel):
         if len(identifiers) != len(set(identifiers)):
             raise ValueError("raw segmentId values must be unique")
         return self
+
+
+def reviewed_text_overrides(
+    raw: RawCaptureV1,
+    review: CaptureReviewV1,
+) -> dict[str, str]:
+    """Validate review edits against immutable runtime extraction provenance."""
+
+    segments = {segment.segment_id: segment for segment in raw.segments}
+    overrides: dict[str, str] = {}
+    for edit in review.edits:
+        segment = segments.get(edit.segment_id)
+        if segment is None:
+            raise ValueError(f"review edit references unknown segmentId {edit.segment_id!r}")
+        if not edit.reviewed_text.strip():
+            raise ValueError(f"reviewedText for {edit.segment_id!r} must not be empty")
+        if edit.reviewed_text == segment.text:
+            continue
+        overrides[edit.segment_id] = edit.reviewed_text
+    return overrides
 
 
 class CaptureBlockV1(StrictWireModel):

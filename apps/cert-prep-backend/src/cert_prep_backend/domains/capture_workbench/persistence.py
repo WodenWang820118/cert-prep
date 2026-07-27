@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from cert_prep_backend.domains.capture_workbench.contracts import CaptureDocumentV1
+from cert_prep_backend.domains.capture_workbench.contracts import (
+    CaptureDocumentV1,
+    CaptureReviewV1,
+)
 from cert_prep_backend.domains.capture_workbench.mapping import (
     capture_document_to_audio_segments,
     capture_document_to_pdf_extraction,
@@ -20,6 +23,7 @@ def publish_capture_document(
     source_kind: str,
     expected_sha256: str,
     document: CaptureDocumentV1,
+    review: CaptureReviewV1 | None = None,
 ) -> dict:
     if document.source.sha256 != expected_sha256:
         raise ValueError("Capture Runtime result does not match the stored source digest")
@@ -40,7 +44,7 @@ def publish_capture_document(
             warning=warning,
         )
 
-    extraction = capture_document_to_pdf_extraction(document)
+    extraction = capture_document_to_pdf_extraction(document, review=review)
     return operations.publish_success(
         db,
         project_id=project_id,

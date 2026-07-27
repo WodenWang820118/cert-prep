@@ -18,6 +18,7 @@ from fastapi import (
     HTTPException,
     Path,
     Request,
+    Response,
     UploadFile,
     status,
 )
@@ -64,6 +65,10 @@ from cert_prep_backend.domains.mock_exams.streaming import StreamingDraftGenerat
 from cert_prep_backend.domains.projects import repository as projects_repository
 from cert_prep_backend.domains.runtime_installations import RuntimeInstallationManager
 from cert_prep_backend.domains.source_documents import operations as document_operations
+from cert_prep_backend.domains.source_documents.markdown import (
+    markdown_content_disposition,
+    render_pdf_markdown,
+)
 from cert_prep_backend.domains.source_documents import repository as source_documents_repository
 from cert_prep_backend.domains.source_documents.audio_transcription_gate import (
     AudioTranscriptionGate,
@@ -164,6 +169,11 @@ AUDIO_MEDIA_TYPES = {
     ".mp3": "audio/mpeg",
     ".wav": "audio/wav",
     ".m4a": "audio/mp4",
+}
+MARKDOWN_CONTENT = {
+    "text/markdown": {
+        "schema": {"type": "string", "format": "binary"},
+    }
 }
 
 
@@ -462,6 +472,57 @@ def get_document(
 ) -> dict:
     try:
         return source_documents_repository.get_document(db, project_id, document_id)
+    except NotFoundError as exc:
+        raise not_found_error(str(exc)) from exc
+
+
+@router.get(
+    "/{document_id}/markdown",
+    response_class=Response,
+    responses={
+        status.HTTP_200_OK: {
+            "description": "The authenticated Markdown projection of a ready PDF.",
+            "content": MARKDOWN_CONTENT,
+        },
+        status.HTTP_404_NOT_FOUND: NOT_FOUND_RESPONSE,
+        status.HTTP_409_CONFLICT: {
+            "model": ApiErrorRead,
+            "description": "The PDF is not ready or has no persisted chunks.",
+        },
+    },
+)
+def get_document_markdown(
+    project_id: str,
+    document_id: str,
+    db: Database = Depends(get_database),
+) -> Response:
+    try:
+        document = source_documents_repository.get_document(db, project_id, document_id)
+        if (
+            document["source_kind"] != "document"
+            or FilePath(document["filename"]).suffix.lower() != ".pdf"
+        ):
+            raise _markdown_unavailable_error(
+                "Markdown projection is currently available for PDF documents only."
+            )
+        if document["status"] != "ready":
+            raise _markdown_unavailable_error(
+                "Markdown projection is available after document processing completes."
+            )
+        chunks = source_documents_repository.list_chunks(db, project_id, document_id)
+        if not chunks:
+            raise _markdown_unavailable_error(
+                "Markdown projection requires at least one persisted document chunk."
+            )
+        content = render_pdf_markdown(filename=document["filename"], chunks=chunks)
+        return Response(
+            content=content,
+            media_type="text/markdown",
+            headers={
+                "Cache-Control": "private, no-store",
+                "Content-Disposition": markdown_content_disposition(document["filename"]),
+            },
+        )
     except NotFoundError as exc:
         raise not_found_error(str(exc)) from exc
 
@@ -1672,3 +1733,7 @@ def _document_source_missing_error(message: str) -> HTTPException:
 
 def _audio_source_unavailable_error(message: str) -> HTTPException:
     return api_error(status.HTTP_409_CONFLICT, "audio_source_unavailable", message)
+
+
+def _markdown_unavailable_error(message: str) -> HTTPException:
+    return api_error(status.HTTP_409_CONFLICT, "markdown_unavailable", message)

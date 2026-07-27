@@ -690,6 +690,36 @@ MIGRATIONS: Final[tuple[tuple[int, str], ...]] = (
         END;
         """,
     ),
+    (
+        25,
+        """
+        CREATE TABLE capture_review_sessions (
+            id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+            document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+            operation_id TEXT NOT NULL REFERENCES document_operations(id) ON DELETE CASCADE,
+            runtime_capture_id TEXT,
+            status TEXT NOT NULL,
+            review_revision INTEGER NOT NULL DEFAULT 0,
+            expires_at TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(project_id, document_id),
+            UNIQUE(operation_id)
+        );
+        CREATE INDEX idx_capture_review_sessions_expiry
+            ON capture_review_sessions(status, expires_at);
+        CREATE INDEX idx_capture_review_sessions_runtime
+            ON capture_review_sessions(project_id, runtime_capture_id);
+        """,
+    ),
+    (
+        26,
+        """
+        ALTER TABLE capture_review_sessions ADD COLUMN confirm_request_id TEXT;
+        ALTER TABLE capture_review_sessions ADD COLUMN confirm_review_digest TEXT;
+        """,
+    ),
 )
 
 

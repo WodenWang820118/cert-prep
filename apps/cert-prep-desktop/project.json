@@ -78,6 +78,30 @@
         "command": "node apps/cert-prep-desktop/scripts/prepare-runtime-resources.mts --mode release"
       }
     },
+    "install-capture-runtime": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "outputs": [
+        "{workspaceRoot}/tmp/cert-prep/capture-runtime/0.3.0"
+      ],
+      "options": {
+        "command": "node tools/install-capture-runtime.mts"
+      }
+    },
+    "capture-runtime-consumer-test": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node --test tools/install-capture-runtime.test.mts"
+      }
+    },
+    "capture-runtime-consumer-smoke": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/capture-runtime-consumer-smoke.mts"
+      }
+    },
     "prepare-runtime-resources-dev": {
       "cache": false,
       "executor": "nx:run-commands",

@@ -9,6 +9,7 @@ from cert_prep_backend.api.errors import api_error
 from cert_prep_backend.core.config import Settings
 from cert_prep_backend.persistence.database import Database
 from cert_prep_backend.domains.capture_workbench.client import CaptureRuntimeClient
+from cert_prep_backend.domains.capture_workbench.coordinator import CertPrepCaptureCoordinator
 from cert_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
 from cert_prep_backend.domains.mock_exams.streaming import StreamingDraftGenerationManager
 from cert_prep_backend.domains.runtime_installations import RuntimeInstallationManager
@@ -43,6 +44,17 @@ def get_capture_runtime_client(request: Request) -> CaptureRuntimeClient:
             message="Capture Runtime is not configured for this process.",
         )
     return client
+
+
+def get_capture_coordinator(request: Request) -> CertPrepCaptureCoordinator:
+    coordinator: CertPrepCaptureCoordinator | None = request.app.state.capture_coordinator
+    if coordinator is None:
+        raise api_error(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            code="capture_runtime_unavailable",
+            message="Capture Runtime is not configured for this process.",
+        )
+    return coordinator
 
 
 def get_llm_provider(request: Request) -> LLMProvider:

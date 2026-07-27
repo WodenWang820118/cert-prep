@@ -8,3 +8,5 @@ allowBuilds:
   msgpackr-extract: true
   nx: true
   unrs-resolver: true
+minimumReleaseAgeExclude:
+  - '@gx/capture-workbench@0.3.0'
