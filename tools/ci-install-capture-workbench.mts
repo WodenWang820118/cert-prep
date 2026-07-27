@@ -25,7 +25,7 @@ function runPnpm(args: readonly string[], cwd: string): void {
   const commandArgs = executable === managedPnpm ? args : ['pnpm', ...args];
   const result = spawnSync(executable, [...commandArgs], {
     cwd,
-    shell: process.platform === 'win32',
+    shell: true,
     stdio: 'inherit',
     windowsHide: true,
   });
