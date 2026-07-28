@@ -241,9 +241,30 @@ def test_ollama_reasoning_requests_exact_distinct_count_when_source_supports_it(
     assert [suggestion.source_question_number for suggestion in suggestions] == ["1", "2"]
     assert len(fake_client.chat_calls) == 1
     prompt = fake_client.chat_calls[0]["messages"][1]["content"]
+    assert fake_client.chat_calls[0]["format"] == "json"
     assert "If at least 2 valid items are present, return exactly 2" in prompt
     assert "If fewer valid items are present, return only those items" in prompt
     assert "Never invent, duplicate, or split an item" in prompt
+
+
+def test_ollama_reasoning_retries_invalid_json_once_without_switching_provider() -> None:
+    chunks = _reasoning_chunks()
+    fake_client = SequencedOllamaClient(
+        models=["qwen3.5:4b"],
+        chat_contents=["not-json", json.dumps({"items": [_reasoning_item(chunks[0], 1)]})],
+    )
+    provider = OllamaProvider(
+        host="http://127.0.0.1:11434",
+        model="qwen3.5:4b",
+        timeout_seconds=1,
+        client=fake_client,
+    )
+
+    suggestions = provider.generate_reasoning_drafts(chunks, limit=1)
+
+    assert len(suggestions) == 1
+    assert [call["model"] for call in fake_client.chat_calls] == ["qwen3.5:4b", "qwen3.5:4b"]
+    assert all(call["format"] == "json" for call in fake_client.chat_calls)
 
 
 def test_ollama_reasoning_forces_num_gpu_zero_in_cpu_mode() -> None:

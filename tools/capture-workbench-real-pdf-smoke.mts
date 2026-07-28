@@ -40,6 +40,10 @@ const realPdfPath = resolve(
     join(workspaceRoot, 'apps/cert-prep-backend/.benchmarks/jlpt-n1-page3-qa.pdf'),
 );
 const realPdfFileName = basename(realPdfPath);
+const realPdfLlmProvider = process.env.CERT_PREP_REAL_PDF_LLM_PROVIDER ?? 'fake';
+if (!['fake', 'ollama'].includes(realPdfLlmProvider)) {
+  throw new Error('CERT_PREP_REAL_PDF_LLM_PROVIDER must be fake or ollama.');
+}
 const realPdfReviewTimeoutMs = (() => {
   const rawSeconds = process.env.CERT_PREP_REAL_PDF_REVIEW_TIMEOUT_SECONDS ?? '900';
   const seconds = Number(rawSeconds);
@@ -187,6 +191,24 @@ async function waitForHttp(
     await delay(250);
   }
   throw new Error(`Timed out waiting for ${url}: ${lastError}`);
+}
+
+async function waitForGeneratedQuestion(page: Page, timeoutMs: number): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let lastBody = '';
+  while (Date.now() < deadline) {
+    if ((await page.getByTestId('draft-question-card').count()) > 0) return;
+    lastBody = await page.locator('body').innerText();
+    if (/Manual generation:\s*failed/i.test(lastBody)) {
+      throw new Error(
+        `Build Workbench manual generation failed before rendering a question: ${lastBody.slice(-1_000)}`,
+      );
+    }
+    await delay(Math.min(1_000, Math.max(100, deadline - Date.now())));
+  }
+  throw new Error(
+    `Timed out waiting for Build Workbench to render a generated question: ${lastBody.slice(-1_000)}`,
+  );
 }
 
 async function jsonRequest(
@@ -594,18 +616,25 @@ async function runBrowserFlow(
       throw new Error('Build Workbench kept Generate questions disabled after parsing.');
     }
     await generateQuestions.click();
+    await waitForGeneratedQuestion(page, realPdfReviewTimeoutMs);
     const firstQuestion = page.getByTestId('draft-question-card').first();
-    await firstQuestion.waitFor({ state: 'visible', timeout: realPdfReviewTimeoutMs });
+    await firstQuestion.waitFor({ state: 'visible', timeout: 90_000 });
     await firstQuestion.getByText('Playable', { exact: true }).waitFor({
       state: 'visible',
       timeout: 90_000,
     });
-    await firstQuestion
-      .getByRole('heading', {
-        name: 'Which action best applies the cited exam concept?',
-        exact: true,
-      })
-      .waitFor({ state: 'visible', timeout: 90_000 });
+    const firstQuestionHeading = firstQuestion.getByRole('heading').first();
+    await firstQuestionHeading.waitFor({ state: 'visible', timeout: 90_000 });
+    const firstQuestionText = (await firstQuestionHeading.innerText()).trim();
+    if (firstQuestionText.length < 8) {
+      throw new Error('Build Workbench generated an empty or incomplete question stem.');
+    }
+    if (
+      realPdfLlmProvider === 'fake' &&
+      firstQuestionText !== 'Which action best applies the cited exam concept?'
+    ) {
+      throw new Error(`Unexpected deterministic question stem: ${firstQuestionText}`);
+    }
     const generatedQuestionCount = await page.getByTestId('draft-question-card').count();
     if (generatedQuestionCount < 1) {
       throw new Error('Build Workbench did not render any generated question cards.');
@@ -688,10 +717,10 @@ async function runSmoke(): Promise<void> {
         CERT_PREP_DATA_DIR: backendData,
         CERT_PREP_API_TOKEN: backendToken,
         CERT_PREP_ALLOWED_ORIGINS: JSON.stringify([`http://127.0.0.1:${frontendPort}`]),
-        // This smoke verifies real Capture Runtime extraction and host-owned document
-        // projection. No translation or draft generation is requested, so it
-        // must not require a second local Ollama service.
-        CERT_PREP_LLM_PROVIDER: 'fake',
+        // Capture Runtime owns extraction and the cert-prep host owns document
+        // projection. The provider is configurable so the smoke can prove the
+        // deterministic app path or exercise the installed Ollama profile.
+        CERT_PREP_LLM_PROVIDER: realPdfLlmProvider,
         CERT_PREP_CAPTURE_RUNTIME_URL: `http://127.0.0.1:${runtimePort}`,
         CERT_PREP_CAPTURE_RUNTIME_TOKEN: runtimeToken,
         CERT_PREP_CAPTURE_RUNTIME_VERSION: CAPTURE_RUNTIME_VERSION,

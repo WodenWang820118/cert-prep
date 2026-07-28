@@ -29,6 +29,7 @@ from cert_prep_backend.domains.mock_exams.ollama_profiles import (
     ollama_profile_selection_from_settings,
 )
 from cert_prep_backend.domains.mock_exams.ports import (
+    FastFirstDraftProvider,
     ReasoningDraftProvider,
     provider_capability,
 )
@@ -233,12 +234,36 @@ def generate_drafts_for_strategy(
     if strategy == DraftGenerationStrategy.DETERMINISTIC_ONLY:
         return _playable_suggestions(deterministic, limit)
 
+    generated: list[DraftSuggestion] = []
+    fast_first_provider = provider_capability(provider, FastFirstDraftProvider)
+    if fast_first_provider is not None and deterministic:
+        chunks_by_id = {chunk.id: chunk for chunk in chunks}
+        for candidate in deterministic:
+            source_chunk = chunks_by_id.get(candidate.chunk_id)
+            if source_chunk is None:
+                continue
+            completed = fast_first_provider.generate_fast_first_draft(
+                source_chunk,
+                candidate,
+            )
+            if completed is not None:
+                generated.append(_as_editable_question(completed))
+            if len(generated) >= limit:
+                break
+
     reasoning_provider = provider_capability(provider, ReasoningDraftProvider)
-    if reasoning_provider is not None:
-        generated = reasoning_provider.generate_reasoning_drafts(chunks, limit)
-    else:
-        generated = provider.generate_drafts(chunks, limit)
-    generated = [_as_editable_question(suggestion) for suggestion in generated]
+    remaining = limit - len(generated)
+    if remaining > 0:
+        if reasoning_provider is not None:
+            generated.extend(
+                _as_editable_question(suggestion)
+                for suggestion in reasoning_provider.generate_reasoning_drafts(chunks, remaining)
+            )
+        elif not generated:
+            generated = [
+                _as_editable_question(suggestion)
+                for suggestion in provider.generate_drafts(chunks, limit)
+            ]
     return _dedupe_suggestions(
         [*_playable_suggestions(deterministic, limit), *generated],
         limit,
