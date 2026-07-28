@@ -535,6 +535,17 @@ def _process_document_upload(*, db, settings: Settings, llm_provider: LLMProvide
     except ProviderUnavailableError as exc:
         document_operations.finish_failed(db, project_id=project_id, operation_id=operation_id, error=str(exc))
         raise
+    except CaptureRuntimeJobError as exc:
+        if exc.code != "no_text_detected":
+            raise
+        return document_operations.finish_failed(
+            db,
+            project_id=project_id,
+            operation_id=operation_id,
+            error=str(exc),
+            document_status="no_text_detected",
+            extraction_method="none",
+        )
     except Exception:
         logger.exception("Document processing failed", extra={"project_id": project_id, "document_id": document_id})
         document_operations.finish_failed(db, project_id=project_id, operation_id=operation_id, error="Document processing failed.")
