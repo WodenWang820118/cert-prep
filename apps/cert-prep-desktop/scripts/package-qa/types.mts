@@ -54,14 +54,6 @@ export interface CaptureRuntimeManifest {
   readonly sha256: string;
   readonly schemaFileName: string;
   readonly schemaSha256: string;
-  readonly runtimeRequirements: {
-    readonly 'windowsml-ocr': {
-      readonly artifactUrl: string;
-      readonly artifactFileName: string;
-      readonly bytes: number;
-      readonly sha256: string;
-    };
-  };
 }
 
 export interface PackageQaReport {

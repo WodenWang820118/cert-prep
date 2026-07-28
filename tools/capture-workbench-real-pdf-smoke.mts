@@ -51,7 +51,6 @@ const modelArchiveRoot = join(
   captureWorkbenchRoot,
   'packages/capture-runtime/dist/windowsml',
 );
-const modelBundleFileName = 'capture-windowsml-ocr-windows-x64.zip';
 const modelFiles = [
   'det/inference.onnx',
   'det/inference.yml',
@@ -254,9 +253,6 @@ function runCommand(command: string, args: readonly string[], cwd: string, env: 
 
 async function prepareModelBundle(temporaryRoot: string): Promise<{
   readonly modelDir: string;
-  readonly bundlePath: string;
-  readonly bundleBytes: number;
-  readonly bundleSha256: string;
 }> {
   const archives = (await readdir(modelArchiveRoot)).filter((name) => name.endsWith('.zip'));
   const archive = archives[0];
@@ -270,51 +266,14 @@ async function prepareModelBundle(temporaryRoot: string): Promise<{
   for (const relativePath of modelFiles) {
     await copyFile(join(extracted, relativePath), join(modelDir, relativePath));
   }
-
-  const bundleBuildEnv = {
-    ...process.env,
-    CAPTURE_WINDOWSML_BUNDLE_SOURCE_DIR: extracted,
-    CAPTURE_WINDOWSML_BUNDLE_URL:
-      `https://github.com/WodenWang820118/capture-workbench/releases/download/v${CAPTURE_RUNTIME_VERSION}/${modelBundleFileName}`,
-  };
-  runCommand(
-    'uv',
-    [
-      'run',
-      '--project',
-      join(captureWorkbenchRoot, 'packages/capture-runtime'),
-      'python',
-      join(captureWorkbenchRoot, 'packages/capture-runtime/scripts/build_windowsml_bundle.py'),
-    ],
-    captureWorkbenchRoot,
-    bundleBuildEnv,
-  );
-  const builtBundle = join(
-    captureWorkbenchRoot,
-    'packages/capture-runtime/dist/windowsml',
-    modelBundleFileName,
-  );
-  const bundlePath = join(temporaryRoot, modelBundleFileName);
-  await copyFile(builtBundle, bundlePath);
-  const details = await stat(bundlePath);
-  const bundleSha256 = await sha256File(bundlePath);
-  if (details.size <= 1 || /^0{64}$/u.test(bundleSha256)) {
-    throw new Error('Temporary WindowsML bundle is empty or has a placeholder digest.');
+  const details = await stat(join(modelArchiveRoot, archive));
+  if (details.size <= 1) {
+    throw new Error('WindowsML model archive is empty.');
   }
-  const tamperedPath = join(temporaryRoot, 'tampered-windowsml.zip');
-  await copyFile(bundlePath, tamperedPath);
-  await writeFile(tamperedPath, Buffer.from('tampered'), { flag: 'a' });
-  if ((await sha256File(tamperedPath)) === bundleSha256) {
-    throw new Error('Tampered WindowsML bundle was not rejected by digest verification.');
-  }
-  return { modelDir, bundlePath, bundleBytes: details.size, bundleSha256 };
+  return { modelDir };
 }
 
-async function prepareReleaseMirror(
-  temporaryRoot: string,
-  bundleBytes: number,
-  bundleSha256: string,
-): Promise<ServerHandle> {
+async function prepareReleaseMirror(temporaryRoot: string): Promise<ServerHandle> {
   const mirrorRoot = join(temporaryRoot, 'release-mirror');
   await mkdir(mirrorRoot, { recursive: true });
   for (const name of CAPTURE_RUNTIME_RELEASE_ASSETS) {
@@ -324,9 +283,7 @@ async function prepareReleaseMirror(
     await copyFile(productionExecutable, join(mirrorRoot, CAPTURE_RUNTIME_FILE));
   }
   const manifestPath = join(mirrorRoot, 'capture-runtime-manifest.json');
-  const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as Record<string, unknown> & {
-    runtimeRequirements: { 'windowsml-ocr': Record<string, unknown> };
-  };
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as Record<string, unknown>;
   const executable = await stat(join(mirrorRoot, CAPTURE_RUNTIME_FILE));
   manifest.fileName = CAPTURE_RUNTIME_FILE;
   manifest.bytes = executable.size;
@@ -336,13 +293,6 @@ async function prepareReleaseMirror(
     `${manifest.sha256}  ${CAPTURE_RUNTIME_FILE}\n`,
     'utf8',
   );
-  const descriptor = manifest.runtimeRequirements?.['windowsml-ocr'];
-  if (!descriptor) throw new Error('Release manifest is missing WindowsML metadata.');
-  descriptor.artifactFileName = modelBundleFileName;
-  descriptor.artifactUrl =
-    `https://github.com/WodenWang820118/capture-workbench/releases/download/v${CAPTURE_RUNTIME_VERSION}/${modelBundleFileName}`;
-  descriptor.bytes = bundleBytes;
-  descriptor.sha256 = bundleSha256;
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
   await verifyCaptureRuntimeReleaseDirectory(mirrorRoot);
   return startMirror(mirrorRoot);
@@ -650,9 +600,8 @@ async function runSmoke(): Promise<void> {
   let frontend: ManagedProcess | undefined;
   let browserFailure: unknown;
   try {
-    const { modelDir, bundlePath, bundleBytes, bundleSha256 } =
-      await prepareModelBundle(temporaryRoot);
-    mirror = await prepareReleaseMirror(temporaryRoot, bundleBytes, bundleSha256);
+    const { modelDir } = await prepareModelBundle(temporaryRoot);
+    mirror = await prepareReleaseMirror(temporaryRoot);
     const consumerWorkspace = join(temporaryRoot, 'cert-prep-consumer');
     await mkdir(consumerWorkspace, { recursive: true });
     const installed = await installCaptureRuntime({
@@ -669,7 +618,6 @@ async function runSmoke(): Promise<void> {
     const backendData = join(temporaryRoot, 'backend-data');
     await mkdir(runtimeData, { recursive: true });
     await mkdir(backendData, { recursive: true });
-    const bundleUrl = pathToFileURL(bundlePath).href;
     runtime = startProcess(
       'capture-runtime',
       join(installed.outputRoot, CAPTURE_RUNTIME_FILE),
@@ -687,9 +635,6 @@ async function runSmoke(): Promise<void> {
         CAPTURE_EXTRACTION_PROVIDER: 'runtime',
         CAPTURE_STRUCTURING_PROVIDER: 'host',
         CAPTURE_WINDOWSML_MODEL_DIR: modelDir,
-        CAPTURE_WINDOWSML_BUNDLE_URL: bundleUrl,
-        CAPTURE_WINDOWSML_BUNDLE_BYTES: String(bundleBytes),
-        CAPTURE_WINDOWSML_BUNDLE_SHA256: bundleSha256,
       },
     );
     await waitForRuntime(runtimePort, runtimeToken).catch((error) => {

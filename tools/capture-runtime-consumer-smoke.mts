@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { dirname, join, relative, resolve, sep } from 'node:path';
@@ -45,15 +45,6 @@ async function copyTestRelease(destination: string): Promise<void> {
   for (const name of CAPTURE_RUNTIME_RELEASE_ASSETS) {
     await copyFile(join(releaseRoot, name), join(destination, name));
   }
-  const manifestPath = join(destination, 'capture-runtime-manifest.json');
-  const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as {
-    runtimeRequirements?: { 'windowsml-ocr'?: Record<string, unknown> };
-  };
-  const descriptor = manifest.runtimeRequirements?.['windowsml-ocr'];
-  if (!descriptor) throw new Error('Capture runtime release is missing WindowsML metadata.');
-  descriptor.bytes = 123_456;
-  descriptor.sha256 = '2'.repeat(64);
-  await writeFile(manifestPath, `${JSON.stringify(manifest)}\n`, 'utf8');
 }
 
 async function startMirror(directory: string): Promise<{

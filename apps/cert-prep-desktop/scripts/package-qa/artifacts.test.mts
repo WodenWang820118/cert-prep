@@ -136,14 +136,6 @@ function createResourceFixture(): {
     sha256: sha256('capture-runtime'),
     schemaFileName: schemaName,
     schemaSha256: CAPTURE_DOCUMENT_SCHEMA_SHA256,
-    runtimeRequirements: {
-      'windowsml-ocr': {
-        artifactUrl: 'https://github.com/example/capture-workbench/releases/download/v0.3.0/capture-windowsml-ocr-v1.zip',
-        artifactFileName: 'capture-windowsml-ocr-v1.zip',
-        bytes: 123_456,
-        sha256: '2'.repeat(64),
-      },
-    },
   };
   writeJson(join(resourceRoot, 'capture-runtime-manifest.json'), captureManifest);
   writeJson(join(resourceRoot, 'release-metadata.json'), {
@@ -176,7 +168,6 @@ function createResourceFixture(): {
         schema_file_name: schemaName,
         schema_sha256: CAPTURE_DOCUMENT_SCHEMA_SHA256,
         structuring_mode: 'host',
-        runtime_requirements: captureManifest.runtimeRequirements,
       },
     },
   });

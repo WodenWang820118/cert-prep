@@ -14,9 +14,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
-  type CaptureRuntimeBundleRequirement,
   validateCaptureArtifactBytes,
-  validateCaptureWindowsmlDescriptor,
 } from './capture-runtime-contract.mts';
 import {
   ALPHA_VERSION,
@@ -70,9 +68,6 @@ interface CaptureRuntimeManifest {
   readonly sha256: string;
   readonly schemaFileName: string;
   readonly schemaSha256: string;
-  readonly runtimeRequirements: {
-    readonly 'windowsml-ocr': CaptureRuntimeBundleRequirement;
-  };
 }
 
 interface PrepareRuntimeResourcesOptions {
@@ -101,8 +96,9 @@ interface PreparedRuntimeResources {
  *
  * cert-prep owns only the backend sidecar here. Capture Runtime is staged as
  * its published executable, manifest, and schema; its WindowsML bundle
- * descriptor remains inside the Capture Runtime manifest and is verified
- * without extracting or rebuilding a cert-prep OCR payload.
+ * descriptor and model lifecycle remain inside Capture Runtime and are
+ * verified by the runtime itself without extracting or rebuilding a cert-prep
+ * OCR payload.
  */
 export async function prepareRuntimeResources({
   workspaceRoot,
@@ -334,10 +330,6 @@ async function loadAndVerifyCaptureRuntime(
       `Capture runtime artifact must use the pinned ${CAPTURE_RUNTIME_FILE} file name.`,
     );
   }
-  validateCaptureWindowsmlDescriptor(
-    manifest.runtimeRequirements?.['windowsml-ocr'],
-    'Capture runtime runtimeRequirements.windowsml-ocr',
-  );
   if (
     manifest.schemaFileName !== CAPTURE_DOCUMENT_SCHEMA_FILE ||
     basename(schemaPath) !== CAPTURE_DOCUMENT_SCHEMA_FILE ||
@@ -533,7 +525,6 @@ function releaseMetadata(
         schema_file_name: captureRuntime.schemaFileName,
         schema_sha256: captureRuntime.schemaSha256,
         structuring_mode: 'host',
-        runtime_requirements: captureRuntime.runtimeRequirements,
       },
     },
     legal_resources: {

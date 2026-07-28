@@ -14,7 +14,7 @@ export const CAPTURE_DOCUMENT_SCHEMA_FILE =
   'capture-document-v1.schema.json';
 export const CAPTURE_DOCUMENT_SCHEMA_SHA256 =
   'da8565b0a4611042f62f96202d0f167ba0923d88e12b9be22832f3ee320920c3';
-export const CAPTURE_WINDOWSML_BUNDLE_MAX_BYTES = 512 * 1024 * 1024;
+export const CAPTURE_RUNTIME_MAX_BYTES = 512 * 1024 * 1024;
 export const DEFAULT_OUTPUT =
   'tmp/cert-prep-desktop/package-qa/package-qa.json';
 export const DEFAULT_BUNDLE_ROOT = `apps/cert-prep-desktop/src-tauri/target/${DEFAULT_TARGET_TRIPLE}/release/bundle`;

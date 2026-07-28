@@ -12,4 +12,4 @@ pub(crate) const CAPTURE_DOCUMENT_SCHEMA_VERSION: &str = "1";
 pub(crate) const CAPTURE_DOCUMENT_SCHEMA_FILE: &str = "capture-document-v1.schema.json";
 pub(crate) const CAPTURE_DOCUMENT_SCHEMA_SHA256: &str =
     "da8565b0a4611042f62f96202d0f167ba0923d88e12b9be22832f3ee320920c3";
-pub(crate) const CAPTURE_WINDOWSML_BUNDLE_MAX_BYTES: u64 = 512 * 1024 * 1024;
+pub(crate) const CAPTURE_RUNTIME_MAX_BYTES: u64 = 512 * 1024 * 1024;

@@ -8,8 +8,8 @@ legacy manifest, local provider, or fallback installer.
 
 The release contract pins Capture Runtime API `1.0`, runtime `0.3.0`, and
 `CaptureDocumentV1` schema `1`. Package QA and Tauri validate executable bytes,
-checksum, manifest, schema bytes, and Capture Runtime's own `windowsml-ocr`
-bundle descriptor before launch.
+checksum, manifest, and schema bytes before launch. Capture Runtime owns its
+own WindowsML bundle descriptor and requirement validation.
 
 ## Lifecycle and security
 

@@ -220,15 +220,6 @@ async function createFixture(): Promise<string> {
     sha256: digest,
     schemaFileName: CAPTURE_DOCUMENT_SCHEMA_FILE,
     schemaSha256: CAPTURE_DOCUMENT_SCHEMA_SHA256,
-    runtimeRequirements: {
-      'windowsml-ocr': {
-        artifactFileName: 'capture-windowsml-ocr-windows-x64.zip',
-        artifactUrl:
-          'https://github.com/example/capture-workbench/releases/download/windowsml-v1/capture-windowsml-ocr-windows-x64.zip',
-        bytes: 123_456,
-        sha256: '2'.repeat(64),
-      },
-    },
   };
   await writeFile(join(root, CAPTURE_RUNTIME_FILE), executable);
   await writeFile(join(root, CAPTURE_RUNTIME_CHECKSUM_FILE), `${digest}  ${CAPTURE_RUNTIME_FILE}\n`);

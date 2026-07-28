@@ -96,8 +96,7 @@ impl CaptureRuntimeState {
             format!("Capture runtime data directory could not be created: {error}")
         })?;
 
-        let mut command =
-            capture_runtime_command(&verified.executable_path, &policy, &verified.manifest);
+        let mut command = capture_runtime_command(&verified.executable_path, &policy);
         let mut child = command
             .spawn()
             .map_err(|error| format!("Capture runtime could not be started: {error}"))?;
@@ -193,23 +192,13 @@ impl CaptureLaunchPolicy {
     }
 }
 
-fn capture_runtime_command(
-    executable: &Path,
-    policy: &CaptureLaunchPolicy,
-    manifest: &CaptureRuntimeManifest,
-) -> Command {
-    capture_runtime_command_with_parent_environment(
-        executable,
-        policy,
-        manifest,
-        std::env::vars_os(),
-    )
+fn capture_runtime_command(executable: &Path, policy: &CaptureLaunchPolicy) -> Command {
+    capture_runtime_command_with_parent_environment(executable, policy, std::env::vars_os())
 }
 
 fn capture_runtime_command_with_parent_environment<I>(
     executable: &Path,
     policy: &CaptureLaunchPolicy,
-    manifest: &CaptureRuntimeManifest,
     parent_environment: I,
 ) -> Command
 where
@@ -239,22 +228,6 @@ where
     for (name, value) in policy.environment() {
         command.env(name, value);
     }
-    command.env(
-        "CAPTURE_WINDOWSML_BUNDLE_URL",
-        &manifest.runtime_requirements.windowsml_ocr.artifact_url,
-    );
-    command.env(
-        "CAPTURE_WINDOWSML_BUNDLE_SHA256",
-        &manifest.runtime_requirements.windowsml_ocr.sha256,
-    );
-    command.env(
-        "CAPTURE_WINDOWSML_BUNDLE_BYTES",
-        manifest
-            .runtime_requirements
-            .windowsml_ocr
-            .bytes
-            .to_string(),
-    );
 
     #[cfg(windows)]
     {
@@ -489,7 +462,6 @@ pub(crate) fn bundled_capture_runtime_paths(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::capture_manifest::{CaptureRuntimeBundleRequirement, CaptureRuntimeRequirements};
     use crate::constants::{
         CAPTURE_DOCUMENT_SCHEMA_FILE, CAPTURE_DOCUMENT_SCHEMA_SHA256,
         CAPTURE_DOCUMENT_SCHEMA_VERSION, CAPTURE_RUNTIME_API_VERSION, CAPTURE_RUNTIME_BINARY,
@@ -517,15 +489,6 @@ mod tests {
             sha256: "0".repeat(64),
             schema_file_name: CAPTURE_DOCUMENT_SCHEMA_FILE.into(),
             schema_sha256: CAPTURE_DOCUMENT_SCHEMA_SHA256.into(),
-            runtime_requirements: CaptureRuntimeRequirements {
-                windowsml_ocr: CaptureRuntimeBundleRequirement {
-                    artifact_url: "https://example.test/releases/capture-windowsml-ocr-v1.zip"
-                        .into(),
-                    artifact_file_name: "capture-windowsml-ocr-v1.zip".into(),
-                    bytes: 123_456,
-                    sha256: "2".repeat(64),
-                },
-            },
         }
     }
 
@@ -545,9 +508,7 @@ mod tests {
             41001,
             &"a".repeat(64),
         );
-        let manifest = manifest();
-        let command =
-            capture_runtime_command(Path::new(CAPTURE_RUNTIME_BINARY), &policy, &manifest);
+        let command = capture_runtime_command(Path::new(CAPTURE_RUNTIME_BINARY), &policy);
         let args: Vec<_> = command
             .get_args()
             .map(|arg| arg.to_string_lossy().into_owned())
@@ -569,20 +530,6 @@ mod tests {
         assert_eq!(env_value(&command, "OLLAMA_HOST"), None);
         assert_eq!(env_value(&command, "OLLAMA_MODELS"), None);
         assert_eq!(env_value(&command, "CAPTURE_OLLAMA_HOST"), None);
-        assert_eq!(
-            env_value(&command, "CAPTURE_WINDOWSML_BUNDLE_URL"),
-            Some(Some(
-                "https://example.test/releases/capture-windowsml-ocr-v1.zip".into()
-            ))
-        );
-        assert_eq!(
-            env_value(&command, "CAPTURE_WINDOWSML_BUNDLE_SHA256"),
-            Some(Some("2".repeat(64)))
-        );
-        assert_eq!(
-            env_value(&command, "CAPTURE_WINDOWSML_BUNDLE_BYTES"),
-            Some(Some("123456".into()))
-        );
         assert_eq!(env_value(&command, "CERT_PREP_API_TOKEN"), None);
         assert_eq!(
             env_value(&command, "CAPTURE_MAX_UPLOAD_BYTES"),
@@ -609,9 +556,6 @@ mod tests {
             ("SystemRoot", r"C:\Windows"),
             ("PATH", r"C:\Windows\System32"),
             ("CAPTURE_API_TOKEN", "parent-token-sentinel"),
-            ("CAPTURE_WINDOWSML_BUNDLE_URL", "parent-url-sentinel"),
-            ("CAPTURE_WINDOWSML_BUNDLE_SHA256", "parent-sha-sentinel"),
-            ("CAPTURE_WINDOWSML_BUNDLE_BYTES", "999"),
             ("CERT_PREP_CAPTURE_RUNTIME_TOKEN", "parent-cert-sentinel"),
             ("OLLAMA_HOST", "parent-ollama-sentinel"),
             ("AWS_SECRET_ACCESS_KEY", "parent-cloud-sentinel"),
@@ -622,7 +566,6 @@ mod tests {
         let command = capture_runtime_command_with_parent_environment(
             Path::new(CAPTURE_RUNTIME_BINARY),
             &policy,
-            &manifest(),
             parent_environment,
         );
 
@@ -637,10 +580,6 @@ mod tests {
         assert_eq!(
             env_value(&command, "CAPTURE_API_TOKEN"),
             Some(Some("a".repeat(64)))
-        );
-        assert_eq!(
-            env_value(&command, "CAPTURE_WINDOWSML_BUNDLE_BYTES"),
-            Some(Some("123456".into()))
         );
         for forbidden_name in [
             "CERT_PREP_CAPTURE_RUNTIME_TOKEN",
@@ -658,9 +597,6 @@ mod tests {
             .collect();
         for poisoned_value in [
             "parent-token-sentinel",
-            "parent-url-sentinel",
-            "parent-sha-sentinel",
-            "999",
             "parent-cert-sentinel",
             "parent-ollama-sentinel",
             "parent-cloud-sentinel",

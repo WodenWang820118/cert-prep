@@ -26,15 +26,12 @@ OCR/Whisper implementation.
   against Cert Prep's independent pinned digest before spawning the
   executable, then repeat the
   version/schema check through the authenticated readiness handshake.
-- The same manifest must contain
-  `runtimeRequirements["windowsml-ocr"]` with an HTTPS `artifactUrl`, a plain
-  matching `.zip` `artifactFileName`, bounded `bytes` (`1..536870912`), and a
-  lowercase SHA-256. The URL is canonical HTTPS with no user info, query,
-  fragment, non-default port, path traversal, encoded separators, or ADS path.
-  Tauri clears the inherited environment, restores only an explicit Windows
-  process-bootstrap allowlist, and passes verified
-  `CAPTURE_WINDOWSML_BUNDLE_URL`, `CAPTURE_WINDOWSML_BUNDLE_SHA256`, and
-  `CAPTURE_WINDOWSML_BUNDLE_BYTES` values to the host-only sidecar.
+- Capture Runtime owns its WindowsML descriptor, model asset installation, and
+  requirement validation. Cert Prep does not inspect or forward the descriptor
+  and does not bundle a source-built OCR payload.
+- Tauri clears the inherited environment and restores only an explicit Windows
+  process-bootstrap allowlist before passing the verified host-mode Capture
+  settings to the sidecar.
 - Tauri passes `CERT_PREP_CAPTURE_RUNTIME_URL`,
   `CERT_PREP_CAPTURE_RUNTIME_TOKEN`,
   `CERT_PREP_CAPTURE_RUNTIME_VERSION`,

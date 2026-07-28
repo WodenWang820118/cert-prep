@@ -39,7 +39,6 @@ import { validateBundleArtifacts } from '../../apps/cert-prep-desktop/scripts/pa
 import { initialInstallerSizeGate } from '../../apps/cert-prep-desktop/scripts/package-qa/size-gate.mts';
 import {
   validateCaptureArtifactBytes,
-  validateCaptureWindowsmlDescriptor,
 } from '../../apps/cert-prep-desktop/scripts/capture-runtime-contract.mts';
 import { assembleCandidate } from './assemble.ts';
 import {
@@ -719,10 +718,6 @@ async function validateCaptureRuntimeAsset({ manifest, root }) {
     throw new Error('Invalid local Capture Runtime manifest.');
   }
   validateCaptureArtifactBytes(manifest.bytes, 'Capture Runtime executable');
-  validateCaptureWindowsmlDescriptor(
-    manifest.runtimeRequirements?.['windowsml-ocr'],
-    'Capture Runtime WindowsML requirement',
-  );
   const artifactPath = assertContainedRegularFile(
     root,
     manifest.fileName,

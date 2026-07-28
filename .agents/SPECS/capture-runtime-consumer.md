@@ -11,8 +11,8 @@ or retain a local extraction provider.
 - `CaptureDocumentV1` schema: `1`.
 - Consumer assets: executable, checksum, `capture-runtime-manifest.json`, and
   the schema file.
-- The manifest must contain a valid, non-placeholder `windowsml-ocr` descriptor
-  owned by Capture Runtime.
+- WindowsML descriptors and model requirements are owned and validated by
+  Capture Runtime, not duplicated in the cert-prep release manifest.
 - Requirements/readiness/install/cancel are proxied through the authenticated
   backend; the sidecar token never reaches Angular/WebView.
 

@@ -15,7 +15,6 @@ import { fileURLToPath } from 'node:url';
 
 import {
   validateCaptureArtifactBytes,
-  validateCaptureWindowsmlDescriptor,
 } from './capture-runtime-contract.mts';
 import { CAPTURE_DOCUMENT_SCHEMA_SHA256 } from './package-qa/constants.mts';
 import { prepareRuntimeResources } from './prepare-runtime-resources.mts';
@@ -115,33 +114,6 @@ test('Capture Runtime executable bytes use the shared bounded contract', async (
   }
 });
 
-test('Capture WindowsML descriptor accepts only the shared canonical corpus', () => {
-  const validDescriptor = {
-    artifactUrl: 'https://example.test/releases/windowsml.zip',
-    artifactFileName: 'windowsml.zip',
-    bytes: 123_456,
-    sha256: '2'.repeat(64),
-  };
-  assert.deepEqual(validateCaptureWindowsmlDescriptor(validDescriptor), validDescriptor);
-  for (const artifactUrl of [
-    'http://example.test/releases/windowsml.zip',
-    'https://example.test/releases/windowsml.zip?token=secret',
-    'https://example.test/releases/../windowsml.zip',
-    'https://example.test/releases/other.zip',
-  ]) {
-    assert.throws(
-      () => validateCaptureWindowsmlDescriptor({ ...validDescriptor, artifactUrl }),
-      /artifactUrl is not canonical HTTPS/,
-    );
-  }
-  for (const bytes of [0, 536_870_913, 1.5, Number.NaN]) {
-    assert.throws(
-      () => validateCaptureWindowsmlDescriptor({ ...validDescriptor, bytes }),
-      /bytes must be between 1 and 536870912/,
-    );
-  }
-});
-
 function createFixture(): {
   workspaceRoot: string;
   backendRuntimeRoot: string;
@@ -181,14 +153,6 @@ function createFixture(): {
     sha256: sha256('capture-runtime'),
     schemaFileName: 'capture-document-v1.schema.json',
     schemaSha256: CAPTURE_DOCUMENT_SCHEMA_SHA256,
-    runtimeRequirements: {
-      'windowsml-ocr': {
-        artifactUrl: 'https://github.com/example/capture-workbench/releases/download/v0.3.0/capture-windowsml-ocr-v1.zip',
-        artifactFileName: 'capture-windowsml-ocr-v1.zip',
-        bytes: 123_456,
-        sha256: '2'.repeat(64),
-      },
-    },
   });
   return {
     workspaceRoot,

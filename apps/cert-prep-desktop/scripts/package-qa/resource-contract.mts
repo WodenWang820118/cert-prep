@@ -1,10 +1,7 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 
-import {
-  validateCaptureArtifactBytes,
-  validateCaptureWindowsmlDescriptor,
-} from '../capture-runtime-contract.mts';
+import { validateCaptureArtifactBytes } from '../capture-runtime-contract.mts';
 import {
   collectPackagedResourceArtifacts,
   publicFileRecord,
@@ -167,10 +164,6 @@ function loadAndValidateCaptureManifest(path: string): CaptureRuntimeManifest {
   validateCaptureArtifactBytes(
     manifest.bytes,
     'Packaged Capture runtime executable',
-  );
-  validateCaptureWindowsmlDescriptor(
-    manifest.runtimeRequirements?.['windowsml-ocr'],
-    'Packaged Capture runtime WindowsML requirement',
   );
   return manifest as CaptureRuntimeManifest;
 }
@@ -356,7 +349,6 @@ interface ReleaseMetadata {
       readonly schema_file_name?: string;
       readonly schema_sha256?: string;
       readonly structuring_mode?: string;
-      readonly runtime_requirements?: CaptureRuntimeManifest['runtimeRequirements'];
     };
   };
 }
@@ -412,11 +404,6 @@ function validateReleaseMetadata(
     }
   }
   const captureMetadata = metadata.runtime_assets?.capture_runtime;
-  const captureRequirement = capture.runtimeRequirements['windowsml-ocr'];
-  const metadataRequirement = validateCaptureWindowsmlDescriptor(
-    captureMetadata?.runtime_requirements?.['windowsml-ocr'],
-    'Release metadata Capture runtime WindowsML requirement',
-  );
   if (
     captureMetadata?.file_name !== capture.fileName ||
     captureMetadata.runtime_version !== capture.runtimeVersion ||
@@ -427,12 +414,7 @@ function validateReleaseMetadata(
     captureMetadata.bytes !== capture.bytes ||
     captureMetadata.schema_file_name !== capture.schemaFileName ||
     captureMetadata.schema_sha256?.toLowerCase() !==
-      capture.schemaSha256.toLowerCase() ||
-    metadataRequirement.artifactUrl !== captureRequirement.artifactUrl ||
-    metadataRequirement.artifactFileName !==
-      captureRequirement.artifactFileName ||
-    metadataRequirement.bytes !== captureRequirement.bytes ||
-    metadataRequirement.sha256 !== captureRequirement.sha256
+      capture.schemaSha256.toLowerCase()
   ) {
     throw new Error(
       'Release metadata Capture runtime asset does not match its manifest.',

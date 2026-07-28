@@ -16,9 +16,7 @@ import { Readable } from 'node:stream';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 
 import {
-  type CaptureRuntimeBundleRequirement,
   validateCaptureArtifactBytes,
-  validateCaptureWindowsmlDescriptor,
 } from '../apps/cert-prep-desktop/scripts/capture-runtime-contract.mts';
 import {
   CAPTURE_DOCUMENT_SCHEMA_FILE,
@@ -64,9 +62,6 @@ export interface CaptureRuntimeReleaseManifest {
   readonly sha256: string;
   readonly schemaFileName: string;
   readonly schemaSha256: string;
-  readonly runtimeRequirements: {
-    readonly 'windowsml-ocr': CaptureRuntimeBundleRequirement;
-  };
 }
 
 export interface InstallCaptureRuntimeOptions {
@@ -107,16 +102,6 @@ function assertRequiredString(
   }
 }
 
-function assertNonPlaceholderWindowsml(
-  descriptor: CaptureRuntimeBundleRequirement,
-): void {
-  if (descriptor.bytes === 1 || /^0{64}$/u.test(descriptor.sha256)) {
-    throw new Error(
-      'Capture runtime WindowsML descriptor is a placeholder and cannot be installed.',
-    );
-  }
-}
-
 export function validateCaptureRuntimeReleaseManifest(
   raw: unknown,
   expectedVersion = CAPTURE_RUNTIME_VERSION,
@@ -152,14 +137,6 @@ export function validateCaptureRuntimeReleaseManifest(
   assertRequiredString(raw, 'schemaSha256', CAPTURE_DOCUMENT_SCHEMA_SHA256);
   assertLowercaseSha256(raw.schemaSha256, 'Capture runtime schemaSha256');
 
-  const descriptor = validateCaptureWindowsmlDescriptor(
-    isRecord(raw.runtimeRequirements)
-      ? raw.runtimeRequirements['windowsml-ocr']
-      : undefined,
-    'Capture runtime runtimeRequirements.windowsml-ocr',
-  );
-  assertNonPlaceholderWindowsml(descriptor);
-
   return {
     manifestVersion: raw.manifestVersion as string,
     runtimeVersion: raw.runtimeVersion as string,
@@ -172,9 +149,6 @@ export function validateCaptureRuntimeReleaseManifest(
     sha256: raw.sha256 as string,
     schemaFileName: raw.schemaFileName as string,
     schemaSha256: raw.schemaSha256 as string,
-    runtimeRequirements: {
-      'windowsml-ocr': descriptor,
-    },
   };
 }
 

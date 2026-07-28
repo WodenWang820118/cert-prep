@@ -39,14 +39,6 @@ test('assembled candidates revalidate backend and Capture Runtime assets', async
       sha256: sha256('capture'),
       schemaFileName: 'capture-document-v1.schema.json',
       schemaSha256: '0'.repeat(64),
-      runtimeRequirements: {
-        'windowsml-ocr': {
-          artifactUrl: 'https://example.test/capture-windowsml-ocr.zip',
-          artifactFileName: 'capture-windowsml-ocr.zip',
-          bytes: 1,
-          sha256: '1'.repeat(64),
-        },
-      },
     };
     writeFileSync(join(generated, captureName), 'capture');
     writeFileSync(join(generated, captureManifest.schemaFileName), '{}');

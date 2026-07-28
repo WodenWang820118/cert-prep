@@ -29,7 +29,6 @@ import {
 } from './release-lib.ts';
 import {
   validateCaptureArtifactBytes,
-  validateCaptureWindowsmlDescriptor,
 } from '../../apps/cert-prep-desktop/scripts/capture-runtime-contract.mts';
 
 export async function assembleCandidate(args) {
@@ -338,10 +337,6 @@ async function validateCaptureRuntimeManifest({ manifest, root }) {
     throw new Error('Capture Runtime manifest does not match the published contract.');
   }
   validateCaptureArtifactBytes(manifest.bytes, 'Capture Runtime executable');
-  validateCaptureWindowsmlDescriptor(
-    manifest.runtimeRequirements?.['windowsml-ocr'],
-    'Capture Runtime WindowsML requirement',
-  );
   const artifactPath = join(root, manifest.fileName);
   const schemaPath = join(root, manifest.schemaFileName);
   if (!statSync(artifactPath).isFile() || !statSync(schemaPath).isFile()) {
