@@ -30,10 +30,7 @@ class Settings(BaseSettings):
     max_pdf_pages: int = 250
     max_page_text_chars: int = 20_000
     max_total_text_chars: int = 500_000
-    ocr_render_scale: float = 1.0
-    ocr_page_workers: int = Field(default=1, ge=1)
-    document_ocr_parallelism: int = Field(default=2, ge=1, le=4)
-    audio_transcription_parallelism: int = Field(default=1, ge=1, le=4)
+    document_processing_parallelism: int = Field(default=2, ge=1, le=4)
     auto_generate_exam_on_upload: bool = False
     auto_generate_exam_limit: int = 50
     streaming_draft_generation_on_upload: bool = False
@@ -55,21 +52,11 @@ class Settings(BaseSettings):
     llm_provider: Literal["auto", "fake", "ollama"] = (
         DEFAULT_LLM_RUNTIME_POLICY.preference.value
     )
-    ocr_provider: Literal["fake", "ollama", "paddle", "windowsml"] = "fake"
-    ocr_device: str = "auto"
-    ocr_benchmark: bool = False
     ollama_host: str = "http://127.0.0.1:11434"
     ollama_model: Literal["qwen3.5:4b"] = DEFAULT_OLLAMA_MODEL
     ollama_profile_enabled: bool = True
     ollama_profile_id: Literal["auto", "qwen3.5-4b-study-8k"] = "auto"
     ollama_profile_inventory_timeout_seconds: float = Field(default=5.0, ge=0.1)
-    ocr_runtime_mode: Literal["external", "inprocess"] = "external"
-    ocr_runtime_dir: Path | None = None
-    ocr_runtime_manifest_path: Path | None = None
-    windowsml_ocr_runtime_dir: Path | None = None
-    windowsml_ocr_runtime_manifest_path: Path | None = None
-    ocr_windowsml_device_id: int = Field(default=-1, ge=-1)
-    ocr_runtime_timeout_seconds: float = 300.0
     runtime_install_timeout_seconds: float = 900.0
     capture_runtime_url: str | None = None
     capture_runtime_token: str | None = Field(default=None, repr=False)
@@ -110,13 +97,3 @@ class Settings(BaseSettings):
     @property
     def capture_runtime_configured(self) -> bool:
         return self.capture_runtime_url is not None
-
-    @property
-    def resolved_ocr_runtime_dir(self) -> Path:
-        return (self.ocr_runtime_dir or self.data_dir / "runtimes" / "paddle_ocr").resolve()
-
-    @property
-    def resolved_windowsml_ocr_runtime_dir(self) -> Path:
-        return (
-            self.windowsml_ocr_runtime_dir or self.data_dir / "runtimes" / "windowsml_ocr"
-        ).resolve()

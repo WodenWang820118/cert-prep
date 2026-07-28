@@ -2,9 +2,9 @@
 
 ## Purpose
 
-Consume the independently versioned Capture Workbench artifacts for PDF OCR,
-image OCR, and audio transcription without starting a second semantic Ollama
-provider inside Cert Prep.
+Consume the independently versioned Capture Workbench and Capture Runtime
+artifacts for PDF, image, and audio capture without retaining a Cert Prep-owned
+OCR/Whisper implementation.
 
 ## Contract
 
@@ -16,10 +16,9 @@ provider inside Cert Prep.
 - Tauri starts both the Cert Prep backend and the matching `capture-runtime`
   sidecar. Only the backend receives the process-scoped sidecar URL and bearer
   token.
-- Packaging explicitly installs the versioned `capture-runtime` release into
-  cert-prep staging before resource preparation. There is no sibling checkout,
-  workspace alias, or implicit development-path fallback. Legacy explicit
-  manifest/artifact/schema path inputs remain available for isolated tests.
+- Packaging explicitly stages the versioned `capture-runtime` release before
+  resource preparation. There is no sibling checkout, workspace alias, or
+  implicit development-path fallback.
 - The staged manifest is pinned to Windows x64 runtime `0.3.0`, API `1.0`, and
   `CaptureDocumentV1` schema `1`; resource preparation and Tauri both verify
   the executable and schema file names, the executable's bounded integer byte
@@ -42,9 +41,8 @@ provider inside Cert Prep.
   `CERT_PREP_CAPTURE_RUNTIME_API_VERSION`, and
   `CERT_PREP_CAPTURE_DOCUMENT_SCHEMA_VERSION` only to the backend child
   process. None of these fields are added to the WebView `backend_config`.
-- The backend creates and polls capture jobs, retrieves `RawCaptureV1`, calls
-  the existing Cert Prep Ollama provider through its own
-  `CaptureStructuringProvider` adapter, and submits the candidate back to the
+- The backend creates and polls capture jobs, retrieves `RawCaptureV1`, applies
+  the existing host structuring adapter, and submits the candidate back to the
   sidecar for strict validation.
 - Runtime requirements and installation jobs are proxied through authenticated
   `/capture-runtime/*` backend routes. The browser uses the Cert Prep token;
@@ -83,9 +81,9 @@ provider inside Cert Prep.
   page, and image-pixel ceilings with the existing Cert Prep source limits.
 - Browser code never receives the sidecar bearer token and never invokes the
   reasoning provider directly.
-- After parity, remove Cert Prep capture OCR, capture Whisper, capture runtime
-  installation, inactive Ollama OCR, and the local `capture-ui` prototype. Do
-  not keep a production compatibility shim or dual-provider fallback.
+- Cert Prep capture OCR, capture Whisper, local runtime installation, and the
+  local UI prototype are retired. No production compatibility shim or
+  dual-provider fallback is allowed.
 
 ## Acceptance
 
@@ -95,5 +93,7 @@ provider inside Cert Prep.
   `/raw` is diagnostic-only.
 - Existing documents, crop uploads, retries, cancellation, chunks, study
   generation, semantic explanations, and real-time Q&A pass regression tests.
+- PDF, image, and audio capture fail closed when Capture Runtime is missing,
+  incompatible, or missing a required runtime asset.
 - A process isolation test proves Capture Workbench sidecar resources never
   terminate or mutate the Cert Prep reasoning Ollama process/model store.

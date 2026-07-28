@@ -13,15 +13,9 @@ from cert_prep_backend.domains.capture_workbench.coordinator import CertPrepCapt
 from cert_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
 from cert_prep_backend.domains.mock_exams.streaming import StreamingDraftGenerationManager
 from cert_prep_backend.domains.runtime_installations import RuntimeInstallationManager
-from cert_prep_backend.domains.source_documents.audio_transcription_gate import (
-    AudioTranscriptionGate,
-)
 from cert_prep_backend.domains.source_documents.document_worker_pool import (
     DocumentWorkerPool,
 )
-from cert_prep_backend.domains.source_documents.ocr import OCRProvider
-from cert_prep_backend.domains.source_documents.ocr_provider_pool import DocumentOCRProviderPool
-from cert_prep_contracts.transcription import TranscriptionProvider
 
 
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -71,28 +65,8 @@ def get_streaming_draft_generation_manager(
     return request.app.state.streaming_draft_generation_manager
 
 
-def get_ocr_provider(request: Request) -> OCRProvider:
-    return request.app.state.ocr_provider
-
-
-def get_document_ocr_provider_pool(request: Request) -> DocumentOCRProviderPool:
-    return request.app.state.document_ocr_provider_pool
-
-
-def get_transcription_provider(request: Request) -> TranscriptionProvider:
-    return request.app.state.transcription_provider
-
-
-def get_audio_transcription_gate(request: Request) -> AudioTranscriptionGate:
-    return request.app.state.audio_transcription_gate
-
-
-def get_audio_document_worker_pool(request: Request) -> DocumentWorkerPool:
-    return request.app.state.audio_document_worker_pool
-
-
-def get_document_ocr_worker_pool(request: Request) -> DocumentWorkerPool:
-    return request.app.state.document_ocr_worker_pool
+def get_document_worker_pool(request: Request) -> DocumentWorkerPool:
+    return request.app.state.document_worker_pool
 
 
 def require_bearer_auth(

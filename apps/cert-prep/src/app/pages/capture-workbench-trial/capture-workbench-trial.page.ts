@@ -38,7 +38,7 @@ export class CaptureWorkbenchTrialPage implements AfterViewInit, OnDestroy {
     'registering' | 'ready' | 'error'
   >('registering');
   protected readonly trialStatus = signal(
-    'Choose one PDF to run through Capture Runtime OCR.',
+    'Choose a source to run through Capture Workbench and Capture Runtime.',
   );
   protected readonly lastCompleted = signal<CaptureCompletedEvent | null>(null);
   protected readonly registrationError = signal<string | null>(null);
@@ -84,15 +84,21 @@ export class CaptureWorkbenchTrialPage implements AfterViewInit, OnDestroy {
     }
 
     element.config = {
-      enabledSources: ['pdf'],
+      enabledSources: ['pdf', 'image', 'audio'],
       structuringMode: 'host',
       outputMode: 'json',
       multiple: false,
-      showRuntimeSetup: false,
+      showRuntimeSetup: true,
       hostStructuringOwner: 'client',
       hostManagedHandshake: false,
       reviewBeforeCommit: true,
       reviewEditable: true,
+      labels: {
+        reviewTitle: 'Review capture text',
+        originalText: 'Original capture',
+        reviewedText: 'Reviewed text',
+        confirmReview: 'Confirm capture',
+      },
       width: '100%',
       height: 'min(620px, 70vh)',
       density: 'comfortable',

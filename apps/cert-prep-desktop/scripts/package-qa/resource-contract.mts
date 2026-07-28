@@ -27,7 +27,6 @@ import {
   CAPTURE_RUNTIME_VERSION,
   DEFAULT_TARGET_TRIPLE,
   PYTHON_RUNTIME_VERSION,
-  WINDOWSML_OCR_RUNTIME_PREFIX,
 } from './constants.mts';
 
 interface ValidateResourceContractOptions {
@@ -54,10 +53,6 @@ export function validatePackagedResourceContract({
     resourceRoot,
     'backend-runtime-manifest.json',
   );
-  const windowsmlManifestPath = join(
-    resourceRoot,
-    'windowsml-ocr-runtime-manifest.json',
-  );
   const captureManifestPath = join(
     resourceRoot,
     'capture-runtime-manifest.json',
@@ -67,27 +62,18 @@ export function validatePackagedResourceContract({
     'python_backend',
     BACKEND_RUNTIME_PREFIX,
   );
-  const windowsmlManifest = loadAndValidateManifest(
-    windowsmlManifestPath,
-    'windowsml_ocr',
-    WINDOWSML_OCR_RUNTIME_PREFIX,
-  );
   const captureManifest = loadAndValidateCaptureManifest(captureManifestPath);
-  if (
-    backendManifest.target !== expectedTargetTriple ||
-    windowsmlManifest.target !== expectedTargetTriple
-  ) {
+  if (backendManifest.target !== expectedTargetTriple) {
     throw new Error(
-      `Packaged runtime target must be ${expectedTargetTriple}; found backend=${backendManifest.target}, windowsml=${windowsmlManifest.target}.`,
+      `Packaged runtime target must be ${expectedTargetTriple}; found backend=${backendManifest.target}.`,
     );
   }
-  validateDistributionPolicy(backendManifest, windowsmlManifest);
+  validateDistributionPolicy(backendManifest);
   const files = collectPackagedResourceArtifacts(resourceRoot, workspaceRoot);
   const names = new Set(files.map((file) => basename(file.absolutePath)));
   for (const required of [
     'backend-runtime-manifest.json',
     backendManifest.artifact.file_name,
-    'windowsml-ocr-runtime-manifest.json',
     'capture-runtime-manifest.json',
     captureManifest.fileName,
     captureManifest.schemaFileName,
@@ -97,9 +83,9 @@ export function validatePackagedResourceContract({
       throw new Error(`Packaged runtime resource is missing: ${required}`);
     }
   }
-  if (names.has(windowsmlManifest.artifact.file_name)) {
+  if (names.has('windowsml-ocr-runtime-manifest.json')) {
     throw new Error(
-      `WindowsML OCR runtime must not be bundled: ${windowsmlManifest.artifact.file_name}`,
+      'cert-prep-owned WindowsML OCR runtime manifest must not be bundled.',
     );
   }
   const bundledZipNames = [...names].filter((name) => name.endsWith('.zip'));
@@ -119,7 +105,6 @@ export function validatePackagedResourceContract({
   validateReleaseMetadata(
     metadata,
     backendManifest,
-    windowsmlManifest,
     captureManifest,
   );
   const legalFiles = validateLegalResources(
@@ -137,7 +122,6 @@ export function validatePackagedResourceContract({
     fresh_install_verified: false,
     alpha_release_gate: 'blocked_pending_clean_install',
     backend_bundled: true,
-    windowsml_ocr_bundled: false,
     capture_runtime_bundled: true,
     capture_runtime_version: CAPTURE_RUNTIME_VERSION,
     capture_runtime_api_version: CAPTURE_RUNTIME_API_VERSION,
@@ -224,41 +208,9 @@ function loadAndValidateManifest(
   return manifest as RuntimeManifest;
 }
 
-function validateDistributionPolicy(
-  backendManifest: RuntimeManifest,
-  windowsmlManifest: RuntimeManifest,
-): void {
+function validateDistributionPolicy(backendManifest: RuntimeManifest): void {
   if (backendManifest.artifact.url !== null) {
     throw new Error('Bundled backend manifest must use artifact.url: null.');
-  }
-  const rawUrl = windowsmlManifest.artifact.url;
-  if (typeof rawUrl !== 'string') {
-    throw new Error('WindowsML OCR manifest must use a GitHub Release URL.');
-  }
-  let url: URL;
-  try {
-    url = new URL(rawUrl);
-  } catch {
-    throw new Error(
-      'WindowsML OCR manifest must use a valid GitHub Release URL.',
-    );
-  }
-  const expectedSuffix = `/releases/download/cert-prep-v${ALPHA_VERSION}/${encodeURIComponent(
-    windowsmlManifest.artifact.file_name,
-  )}`;
-  if (
-    url.protocol !== 'https:' ||
-    url.hostname.toLowerCase() !== 'github.com' ||
-    url.username ||
-    url.password ||
-    url.search ||
-    url.hash ||
-    !/^\/[^/]+\/[^/]+\/releases\/download\//.test(url.pathname) ||
-    !url.pathname.endsWith(expectedSuffix)
-  ) {
-    throw new Error(
-      'WindowsML OCR manifest must use the versioned GitHub Release URL.',
-    );
   }
 }
 
@@ -393,12 +345,6 @@ interface ReleaseMetadata {
       readonly sha256?: string;
       readonly bytes?: number;
     };
-    readonly windowsml_ocr?: {
-      readonly distribution?: string;
-      readonly file_name?: string;
-      readonly sha256?: string;
-      readonly bytes?: number;
-    };
     readonly capture_runtime?: {
       readonly distribution?: string;
       readonly file_name?: string;
@@ -422,13 +368,11 @@ function loadReleaseMetadata(path: string): ReleaseMetadata {
 function validateReleaseMetadata(
   metadata: ReleaseMetadata,
   backend: RuntimeManifest,
-  windowsml: RuntimeManifest,
   capture: CaptureRuntimeManifest,
 ): void {
   if (
     metadata.schema_version !== 1 ||
     backend.version !== ALPHA_VERSION ||
-    windowsml.version !== ALPHA_VERSION ||
     metadata.version !== ALPHA_VERSION ||
     metadata.python_runtime_version !== PYTHON_RUNTIME_VERSION ||
     metadata.release_tag !== `cert-prep-v${ALPHA_VERSION}` ||
@@ -448,8 +392,6 @@ function validateReleaseMetadata(
   }
   if (
     metadata.runtime_assets?.backend?.distribution !== 'bundled' ||
-    metadata.runtime_assets?.windowsml_ocr?.distribution !==
-      'github_release_download' ||
     metadata.runtime_assets?.capture_runtime?.distribution !==
       'versioned_release_artifact_staged' ||
     metadata.runtime_assets.capture_runtime.structuring_mode !== 'host'
@@ -458,11 +400,6 @@ function validateReleaseMetadata(
   }
   for (const [name, actual, expected] of [
     ['backend', metadata.runtime_assets?.backend, backend.artifact],
-    [
-      'windowsml_ocr',
-      metadata.runtime_assets?.windowsml_ocr,
-      windowsml.artifact,
-    ],
   ] as const) {
     if (
       actual?.file_name !== expected.file_name ||

@@ -9,7 +9,6 @@ import {
   appProject,
   editableAppQuestion,
   availableLlmHealth,
-  availableOcrHealth,
   backendHealth,
   emptyWrongAnswerSummary,
 } from '../../testing/app.spec-helpers';
@@ -166,7 +165,6 @@ function createApiClient() {
   return {
     health: vi.fn().mockReturnValue(of(backendHealth())),
     llmHealth: vi.fn().mockReturnValue(of(availableLlmHealth())),
-    ocrHealth: vi.fn().mockReturnValue(of(availableOcrHealth())),
     runtimeRequirements: vi.fn().mockReturnValue(of({ items: [] })),
     startRuntimeInstallation: vi.fn(),
     getRuntimeInstallation: vi.fn(),

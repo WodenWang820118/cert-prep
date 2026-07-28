@@ -103,7 +103,6 @@ export interface PackagedResourceContract {
   readonly fresh_install_verified: false;
   readonly alpha_release_gate: 'blocked_pending_clean_install';
   readonly backend_bundled: true;
-  readonly windowsml_ocr_bundled: false;
   readonly capture_runtime_bundled: true;
   readonly capture_runtime_version: '0.3.0';
   readonly capture_runtime_api_version: '1.0';

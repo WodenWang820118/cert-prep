@@ -187,7 +187,7 @@ export async function openRuntimeDrawer(run: SmokeRunState): Promise<void> {
   });
   const elapsed = await waitText(
     run,
-    /Python backend|Developer backend|WindowsML OCR|PaddleOCR|Ollama/i,
+    /Python backend|Developer backend|Ollama/i,
     10_000,
     'runtime view visible',
   );
@@ -199,7 +199,7 @@ function runtimeDrawerLocator(run: SmokeRunState): Locator {
     .locator('[aria-label="Runtime details"], .p-dialog, [role="dialog"]')
     .filter({
       hasText:
-        /Python backend|Developer backend|WindowsML OCR|PaddleOCR|Ollama|Runtime details/i,
+        /Python backend|Developer backend|Ollama|Runtime details/i,
     })
     .last();
 }
@@ -209,7 +209,7 @@ function closeableRuntimeDialogLocator(run: SmokeRunState): Locator {
     .locator('.p-dialog, [role="dialog"]')
     .filter({
       hasText:
-        /Manage runtime|Runtime details|Python backend|WindowsML OCR|PaddleOCR/i,
+        /Manage runtime|Runtime details|Python backend|Ollama/i,
     })
     .last();
 }

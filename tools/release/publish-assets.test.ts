@@ -46,7 +46,7 @@ const publicationOwner = `12345:1:${publicationCandidateId}`;
 
 function releaseBody(
   owner = publicationOwner,
-  state = 'ocr-bootstrap',
+  state = 'reserved',
   candidateId = publicationCandidateId,
 ) {
   return [
@@ -71,7 +71,7 @@ test('publication owner binds one workflow run to one candidate', () => {
   );
   assert.equal(
     releasePublicationState({ body: releaseBody() }, publicationCandidateId),
-    'ocr-bootstrap',
+    'reserved',
   );
   assert.throws(
     () =>
@@ -288,11 +288,11 @@ test('reservation creates one bootstrap release without transferring ownership',
 
     assert.deepEqual(await reserve(firstOwner), {
       releaseOwnedByCaller: true,
-      publicationState: 'ocr-bootstrap',
+      publicationState: 'reserved',
     });
     assert.deepEqual(await reserve(secondOwner), {
       releaseOwnedByCaller: false,
-      publicationState: 'ocr-bootstrap',
+      publicationState: 'reserved',
     });
     assert.equal(createCalls, 1);
     assert.equal(
@@ -301,7 +301,7 @@ test('reservation creates one bootstrap release without transferring ownership',
     );
     assert.equal(
       releasePublicationState(release, candidate.candidateId),
-      'ocr-bootstrap',
+      'reserved',
     );
   } finally {
     rmSync(root, { recursive: true, force: true });
@@ -325,7 +325,7 @@ test('final publication marks the release before cleanup can observe success', a
       isPrerelease: true,
       isImmutable: false,
       assets: [],
-      body: releaseBody(owner, 'ocr-bootstrap', candidate.candidateId),
+      body: releaseBody(owner, 'reserved', candidate.candidateId),
     };
     let deleted = false;
     const gh = (args) => {
@@ -385,50 +385,6 @@ test('final publication marks the release before cleanup can observe success', a
   }
 });
 
-test('final publication rejects retired installers and CycloneDX before GitHub access', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'cert-prep-release-policy-'));
-  try {
-    for (const [index, path, message] of [
-      [
-        0,
-        'installers/Cert_Prep_0.1.0-alpha.1_x64.msi',
-        /only one NSIS setup installer/,
-      ],
-      [1, 'metadata/cert-prep-alpha.cdx.json', /must not contain CycloneDX/],
-      [2, 'extras/alternate-setup.exe', /only one NSIS setup installer/],
-    ]) {
-      const candidateRoot = join(root, `candidate-${index}`);
-      const candidate = await writeMinimalCandidate(candidateRoot, plan);
-      const releaseRoot = await writeFinalReleaseRoot(
-        join(root, `final-release-${index}`),
-        candidate,
-      );
-      await appendDeclaredFinalArtifact(releaseRoot, path, 'retired format');
-      let ghCalls = 0;
-      await assert.rejects(
-        publishAssets(
-          {
-            mode: 'final',
-            'candidate-root': candidateRoot,
-            'candidate-id': candidate.candidateId,
-            'publication-owner': `12345:1:${candidate.candidateId}`,
-            'release-root': releaseRoot,
-            plan: join(releaseRoot, 'metadata', 'release-plan.json'),
-          },
-          () => {
-            ghCalls += 1;
-            throw new Error('GitHub must not be reached');
-          },
-        ),
-        message,
-      );
-      assert.equal(ghCalls, 0);
-    }
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
-
 test('local candidates reject every publication mode before GitHub access', async () => {
   const root = mkdtempSync(join(tmpdir(), 'cert-prep-local-publish-'));
   try {
@@ -452,7 +408,6 @@ test('local candidates reject every publication mode before GitHub access', asyn
     };
     for (const mode of [
       'reserve',
-      'ocr',
       'final',
       'cleanup',
       'verify-public',
@@ -669,11 +624,9 @@ async function writeFinalReleaseRoot(root, candidate) {
   writeJson(planPath, plan);
   const payloads = [
     ['installers/Cert_Prep_0.1.0-alpha.1_x64-setup.exe', 'nsis'],
-    [
-      'runtimes/cert-prep-ocr-windowsml-runtime-0.1.0-alpha.1.zip',
-      'ocr runtime',
-    ],
-    ['runtimes/windowsml-ocr-runtime-manifest.json', '{"runtime":"windowsml"}'],
+    ['runtimes/cert-prep-backend-runtime-0.1.0-alpha.1.zip', 'backend runtime'],
+    ['runtimes/capture-runtime-x86_64-pc-windows-msvc.exe', 'capture runtime'],
+    ['runtimes/capture-runtime-manifest.json', '{"runtimeVersion":"0.3.0"}'],
     ['metadata/license-inventory.json', '{"components":[]}'],
     ['metadata/cert-prep-alpha.spdx.json', '{"spdxVersion":"SPDX-2.3"}'],
     ['legal/THIRD_PARTY_NOTICES.md', '# Notices'],
@@ -709,7 +662,7 @@ async function writeFinalReleaseRoot(root, candidate) {
           packageKind: 'nsis',
           candidateId: candidate.candidateId,
           commitSha: plan.commitSha,
-          publicOcrDownloadVerified: true,
+           captureRuntimeVerified: true,
           appLaunchVerified: true,
           freshAppDataVerified: true,
           backendInstallVerified: true,
@@ -730,22 +683,6 @@ async function writeFinalReleaseRoot(root, candidate) {
   });
   await writeFinalChecksumManifest(root, artifacts);
   return root;
-}
-
-async function appendDeclaredFinalArtifact(root, path, content) {
-  const file = join(root, ...path.split('/'));
-  mkdirSync(join(file, '..'), { recursive: true });
-  writeFileSync(file, content);
-  const metadataPath = join(root, 'metadata', 'release-metadata.json');
-  const metadata = JSON.parse(readFileSync(metadataPath, 'utf8'));
-  metadata.artifacts.push({
-    path,
-    fileName: path.split('/').at(-1),
-    bytes: statSync(file).size,
-    sha256: await sha256File(file),
-  });
-  writeJson(metadataPath, metadata);
-  await writeFinalChecksumManifest(root, metadata.artifacts);
 }
 
 async function writeFinalChecksumManifest(root, artifacts) {

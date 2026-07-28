@@ -29,12 +29,7 @@ def test_pdf_extraction_method_values_preserve_serialized_order() -> None:
         "mixed",
         "none",
         "ocr_failed",
-        "paddle_ocr_cpu",
-        "paddle_ocr_cpu_fallback",
-        "paddle_ocr_gpu",
-        "paddle_ocr_gpu_fallback",
         "windowsml_ocr",
-        "fake_ocr",
     )
 
 
@@ -50,7 +45,7 @@ def test_pdf_extraction_policy_derives_current_statuses_and_method_summaries() -
         page_number=2,
         text="OCR text",
         source_excerpt="OCR text",
-        extraction_method=PdfExtractionMethod.PADDLE_OCR_GPU,
+        extraction_method=PdfExtractionMethod.WINDOWSML_OCR,
     )
 
     assert policy.status_for_pages([embedded_page], ocr_failed=False) == SourceDocumentStatus.READY

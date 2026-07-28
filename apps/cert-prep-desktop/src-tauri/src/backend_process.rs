@@ -48,33 +48,12 @@ pub(crate) fn launch_backend_entrypoint(
         .stderr(configured_log_stdio("backend.stderr.log"));
 
     command.env_remove("CERT_PREP_OLLAMA_FALLBACK_MODELS");
-    forward_env(&mut command, "CERT_PREP_OCR_PAGE_WORKERS");
     forward_env(
         &mut command,
         "CERT_PREP_STREAMING_DRAFT_GENERATION_PAGE_LIMIT",
     );
     forward_env(&mut command, "CERT_PREP_STREAMING_DRAFT_WORKERS");
 
-    if let Some(manifest_path) = inner
-        .ocr_manifest_path
-        .as_ref()
-        .filter(|path| path.is_file())
-    {
-        command.env(
-            "CERT_PREP_OCR_RUNTIME_MANIFEST_PATH",
-            manifest_path.to_string_lossy().to_string(),
-        );
-    }
-    if let Some(manifest_path) = inner
-        .windowsml_ocr_manifest_path
-        .as_ref()
-        .filter(|path| path.is_file())
-    {
-        command.env(
-            "CERT_PREP_WINDOWSML_OCR_RUNTIME_MANIFEST_PATH",
-            manifest_path.to_string_lossy().to_string(),
-        );
-    }
     let child = command
         .spawn()
         .map_err(|error| format!("failed to launch backend runtime: {error}"))?;
@@ -128,13 +107,6 @@ fn backend_launch_env(
         BackendEnv::new("CERT_PREP_OLLAMA_MODEL", FIXED_OLLAMA_MODEL),
         BackendEnv::new("CERT_PREP_OLLAMA_PROFILE_ENABLED", "true"),
         BackendEnv::new("CERT_PREP_OLLAMA_PROFILE_ID", FIXED_OLLAMA_PROFILE_ID),
-        BackendEnv::new("CERT_PREP_OCR_PROVIDER", configured_ocr_provider()),
-        BackendEnv::new("CERT_PREP_OCR_RUNTIME_MODE", "external"),
-        BackendEnv::new("CERT_PREP_OCR_DEVICE", "auto"),
-        BackendEnv::new(
-            "CERT_PREP_OCR_WINDOWSML_DEVICE_ID",
-            configured_windowsml_device_id(),
-        ),
         BackendEnv::new("CERT_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD", "true"),
         BackendEnv::new(
             "CERT_PREP_CAPTURE_RUNTIME_URL",
@@ -190,18 +162,6 @@ fn configured_llm_provider() -> String {
         .map(|value| value.trim().to_ascii_lowercase())
         .filter(|value| matches!(value.as_str(), "auto" | "ollama"))
         .unwrap_or_else(|| "auto".to_string())
-}
-
-fn configured_ocr_provider() -> String {
-    std::env::var("CERT_PREP_OCR_PROVIDER")
-        .ok()
-        .map(|value| value.trim().to_ascii_lowercase())
-        .filter(|value| matches!(value.as_str(), "windowsml" | "paddle"))
-        .unwrap_or_else(|| "windowsml".to_string())
-}
-
-fn configured_windowsml_device_id() -> String {
-    trimmed_env_var("CERT_PREP_OCR_WINDOWSML_DEVICE_ID").unwrap_or_else(|| "-1".to_string())
 }
 
 fn backend_ready_timeout() -> Duration {
@@ -310,31 +270,10 @@ mod tests {
     }
 
     #[test]
-    fn configured_ocr_provider_defaults_to_windowsml_and_allows_explicit_overrides() {
-        let _env = lock_env();
-        std::env::remove_var("CERT_PREP_OCR_PROVIDER");
-
-        assert_eq!(configured_ocr_provider(), "windowsml");
-
-        std::env::set_var("CERT_PREP_OCR_PROVIDER", " paddle ");
-        assert_eq!(configured_ocr_provider(), "paddle");
-
-        std::env::set_var("CERT_PREP_OCR_PROVIDER", " WINDOWSML ");
-        assert_eq!(configured_ocr_provider(), "windowsml");
-
-        std::env::set_var("CERT_PREP_OCR_PROVIDER", "cpu");
-        assert_eq!(configured_ocr_provider(), "windowsml");
-
-        std::env::remove_var("CERT_PREP_OCR_PROVIDER");
-    }
-
-    #[test]
     fn backend_launch_env_collects_auditable_runtime_settings() {
         let _env = lock_env();
         std::env::remove_var("CERT_PREP_OLLAMA_MODEL");
         std::env::remove_var("CERT_PREP_LLM_PROVIDER");
-        std::env::remove_var("CERT_PREP_OCR_PROVIDER");
-        std::env::remove_var("CERT_PREP_OCR_WINDOWSML_DEVICE_ID");
 
         let env = backend_launch_env(
             Path::new("cert-prep-data"),
@@ -351,16 +290,6 @@ mod tests {
             Some("cert-prep-data")
         );
         assert_eq!(env_value(&env, "CERT_PREP_LLM_PROVIDER"), Some("auto"));
-        assert_eq!(env_value(&env, "CERT_PREP_OCR_PROVIDER"), Some("windowsml"));
-        assert_eq!(
-            env_value(&env, "CERT_PREP_OCR_RUNTIME_MODE"),
-            Some("external")
-        );
-        assert_eq!(env_value(&env, "CERT_PREP_OCR_DEVICE"), Some("auto"));
-        assert_eq!(
-            env_value(&env, "CERT_PREP_OCR_WINDOWSML_DEVICE_ID"),
-            Some("-1")
-        );
         assert_eq!(
             env_value(&env, "CERT_PREP_OLLAMA_MODEL"),
             Some(FIXED_OLLAMA_MODEL)

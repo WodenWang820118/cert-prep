@@ -175,7 +175,7 @@ function documentRead(overrides: Partial<DocumentRead> = {}): DocumentRead {
     page_count: 46,
     has_text: true,
     status: 'ready',
-    extraction_method: 'paddle_ocr_gpu',
+    extraction_method: 'windowsml_ocr',
     ocr_device: 'gpu:0',
     ocr_fallback_reason: null,
     ocr_duration_ms: 26513,

@@ -157,8 +157,9 @@ confirmed edits back on confirmation.
 ### Capture Workbench local registry trial
 
 The `capture-workbench-trial` route is an isolated distribution trial for the
-published `@gx-capture/capture-workbench@0.3.0` Web Component. It keeps the existing
-`@cert-prep/capture-ui` package and `/build` source-import flow unchanged.
+published `@gx-capture/capture-workbench@0.3.0` Web Component. The `/build`
+source-import flow remains unchanged; the retired local prototype is no longer
+part of the workspace.
 
 From a running local Verdaccio registry supplied by the `capture-workbench`
 repository, install the package through the registry and launch Cert Prep:

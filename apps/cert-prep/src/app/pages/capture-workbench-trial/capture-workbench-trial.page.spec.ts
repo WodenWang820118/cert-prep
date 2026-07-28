@@ -50,11 +50,11 @@ describe('CaptureWorkbenchTrialPage', () => {
     });
   });
 
-  it('renders the PDF OCR surface with the real client contract', async () => {
+  it('renders the Capture Workbench surface with the real client contract', async () => {
     const fixture = TestBed.createComponent(CaptureWorkbenchTrialPage);
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.textContent).toContain('Capture Workbench PDF OCR');
+    expect(fixture.nativeElement.textContent).toContain('Capture Workbench trial');
     expect(fixture.nativeElement.querySelector('capture-workbench')).not.toBeNull();
     await vi.waitFor(() => {
       fixture.detectChanges();

@@ -2,7 +2,6 @@ import type {
   HealthResponse,
   LLMHealthRead,
   ModelDownloadRead,
-  OCRHealthRead,
   RuntimeInstallationRead,
   RuntimeRequirementRead,
 } from '../../../contracts/api.contracts';
@@ -26,26 +25,12 @@ export type DownloadPhase =
  */
 export type RuntimeKind =
   | 'ollama'
-  | 'ollama_model'
-  | 'paddle_ocr'
-  | 'windowsml_ocr'
-  | 'whisper_models';
+  | 'ollama_model';
 
 /**
  * Backend-owned provider selection generated from the shared OpenAPI contract.
  */
 export type LLMProviderSelectionRead = GeneratedLLMProviderSelectionRead;
-
-/**
- * Coarse OCR readiness phase used by the runtime UI and upload gating.
- */
-export type OcrHealthPhase =
-  | 'waiting'
-  | 'checking'
-  | 'warming'
-  | 'stale'
-  | 'ready'
-  | 'failed';
 
 /**
  * Partial health payload that preserves successful endpoint reads when one
@@ -54,7 +39,6 @@ export type OcrHealthPhase =
 export interface HealthSnapshot {
   readonly system?: HealthResponse;
   readonly llm?: LLMHealthRead;
-  readonly ocr?: OCRHealthRead;
   readonly providerSelection?: LLMProviderSelectionRead;
   readonly runtimeRequirements: RuntimeRequirementRead[];
 }

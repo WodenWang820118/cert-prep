@@ -12,6 +12,7 @@ import {
 } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+
 import {
   type CaptureRuntimeBundleRequirement,
   validateCaptureArtifactBytes,
@@ -33,7 +34,6 @@ import {
   defaultCaptureRuntimeRoot,
 } from '../../../tools/install-capture-runtime.mts';
 
-const WINDOWSML_RELEASE_BASE_URL_ENV = 'CERT_PREP_WINDOWSML_OCR_ASSET_BASE_URL';
 const CAPTURE_RUNTIME_MANIFEST_PATH_ENV =
   'CERT_PREP_CAPTURE_RUNTIME_MANIFEST_PATH';
 const CAPTURE_RUNTIME_ARTIFACT_PATH_ENV =
@@ -80,8 +80,6 @@ interface PrepareRuntimeResourcesOptions {
   readonly mode: RuntimeResourceMode;
   readonly outputDir?: string;
   readonly backendRuntimeRoot?: string;
-  readonly windowsmlRuntimeRoot?: string;
-  readonly windowsmlReleaseBaseUrl?: string;
   readonly captureRuntimeManifestPath?: string;
   readonly captureRuntimeArtifactPath?: string;
   readonly captureDocumentSchemaPath?: string;
@@ -92,7 +90,6 @@ interface PreparedRuntimeResources {
   readonly outputDir: string;
   readonly backendManifestPath: string;
   readonly backendArtifactPath: string;
-  readonly windowsmlManifestPath: string;
   readonly captureRuntimeManifestPath: string;
   readonly captureRuntimeArtifactPath: string;
   readonly captureDocumentSchemaPath: string;
@@ -100,11 +97,12 @@ interface PreparedRuntimeResources {
 }
 
 /**
- * Produces the only resource directory consumed by Tauri.
+ * Produces the resource directory consumed by Tauri.
  *
- * Release mode is fail-closed: the backend is bundled and the OCR URL must be
- * an HTTPS GitHub Release URL. Dev mode is deliberately separate and may use a
- * local file URL for the large OCR artifact.
+ * cert-prep owns only the backend sidecar here. Capture Runtime is staged as
+ * its published executable, manifest, and schema; its WindowsML bundle
+ * descriptor remains inside the Capture Runtime manifest and is verified
+ * without extracting or rebuilding a cert-prep OCR payload.
  */
 export async function prepareRuntimeResources({
   workspaceRoot,
@@ -117,11 +115,6 @@ export async function prepareRuntimeResources({
     workspaceRoot,
     'apps/cert-prep-backend/dist/backend-runtime',
   ),
-  windowsmlRuntimeRoot = join(
-    workspaceRoot,
-    'apps/cert-prep-backend/dist/ocr-windowsml-runtime',
-  ),
-  windowsmlReleaseBaseUrl,
   captureRuntimeManifestPath,
   captureRuntimeArtifactPath,
   captureDocumentSchemaPath,
@@ -131,19 +124,10 @@ export async function prepareRuntimeResources({
     backendRuntimeRoot,
     'backend-runtime-manifest.json',
   );
-  const windowsmlSourceManifest = join(
-    windowsmlRuntimeRoot,
-    'windowsml-ocr-runtime-manifest.json',
-  );
   const backendManifest = await loadAndVerifyManifest(
     backendSourceManifest,
     backendRuntimeRoot,
     'python_backend',
-  );
-  const windowsmlManifest = await loadAndVerifyManifest(
-    windowsmlSourceManifest,
-    windowsmlRuntimeRoot,
-    'windowsml_ocr',
   );
   const captureRuntimeInputs = resolveCaptureRuntimeInputs({
     workspaceRoot,
@@ -162,19 +146,6 @@ export async function prepareRuntimeResources({
     backendRuntimeRoot,
     backendManifest.artifact.file_name,
   );
-  const windowsmlSourceArtifact = join(
-    windowsmlRuntimeRoot,
-    windowsmlManifest.artifact.file_name,
-  );
-  const windowsmlUrl =
-    mode === 'release'
-      ? releaseAssetUrl(
-          windowsmlReleaseBaseUrl ??
-            process.env[WINDOWSML_RELEASE_BASE_URL_ENV],
-          windowsmlManifest.artifact.file_name,
-        )
-      : pathToFileURL(windowsmlSourceArtifact).href;
-
   mkdirSync(outputDir, { recursive: true });
   for (const entry of readdirSync(outputDir, { withFileTypes: true })) {
     if (entry.name !== '.gitkeep') {
@@ -193,21 +164,13 @@ export async function prepareRuntimeResources({
     artifact: { ...backendManifest.artifact, url: null },
   });
 
-  const windowsmlManifestPath = join(
-    outputDir,
-    'windowsml-ocr-runtime-manifest.json',
-  );
-  writeManifest(windowsmlManifestPath, {
-    ...windowsmlManifest,
-    artifact: { ...windowsmlManifest.artifact, url: windowsmlUrl },
-  });
   const stagedCaptureRuntimeArtifactPath = join(
     outputDir,
     captureRuntimeManifest.fileName,
   );
   copyFileSync(
     requiredStagedPath(
-      captureRuntimeArtifactPath,
+      captureRuntimeInputs.artifactPath,
       CAPTURE_RUNTIME_ARTIFACT_PATH_ENV,
     ),
     stagedCaptureRuntimeArtifactPath,
@@ -218,7 +181,7 @@ export async function prepareRuntimeResources({
   );
   copyFileSync(
     requiredStagedPath(
-      captureDocumentSchemaPath,
+      captureRuntimeInputs.schemaPath,
       CAPTURE_DOCUMENT_SCHEMA_PATH_ENV,
     ),
     stagedCaptureDocumentSchemaPath,
@@ -228,27 +191,17 @@ export async function prepareRuntimeResources({
     'capture-runtime-manifest.json',
   );
   writeJson(stagedCaptureRuntimeManifestPath, captureRuntimeManifest);
+
   const releaseMetadataPath = join(outputDir, 'release-metadata.json');
-  writeFileSync(
+  writeJson(
     releaseMetadataPath,
-    `${JSON.stringify(
-      releaseMetadata(
-        mode,
-        backendManifest,
-        windowsmlManifest,
-        captureRuntimeManifest,
-      ),
-      null,
-      2,
-    )}\n`,
-    'utf8',
+    releaseMetadata(mode, backendManifest, captureRuntimeManifest),
   );
 
   return {
     outputDir,
     backendManifestPath,
     backendArtifactPath,
-    windowsmlManifestPath,
     captureRuntimeManifestPath: stagedCaptureRuntimeManifestPath,
     captureRuntimeArtifactPath: stagedCaptureRuntimeArtifactPath,
     captureDocumentSchemaPath: stagedCaptureDocumentSchemaPath,
@@ -357,11 +310,7 @@ async function loadAndVerifyCaptureRuntime(
     ['platform', manifest.platform, 'windows'],
     ['arch', manifest.arch, 'x86_64'],
     ['fileName', manifest.fileName, CAPTURE_RUNTIME_FILE],
-    [
-      'schemaSha256',
-      manifest.schemaSha256,
-      CAPTURE_DOCUMENT_SCHEMA_SHA256,
-    ],
+    ['schemaSha256', manifest.schemaSha256, CAPTURE_DOCUMENT_SCHEMA_SHA256],
   ];
   for (const [name, actual, expected] of exactFields) {
     if (actual !== expected) {
@@ -370,10 +319,7 @@ async function loadAndVerifyCaptureRuntime(
       );
     }
   }
-  validateCaptureArtifactBytes(
-    manifest.bytes,
-    'Capture runtime executable',
-  );
+  validateCaptureArtifactBytes(manifest.bytes, 'Capture runtime executable');
   if (
     typeof manifest.sha256 !== 'string' ||
     !/^[a-fA-F0-9]{64}$/u.test(manifest.sha256)
@@ -405,22 +351,19 @@ async function loadAndVerifyCaptureRuntime(
   if (!artifact.isFile()) {
     throw new Error('Capture runtime artifact must be a regular file.');
   }
-  const bytes = artifact.size;
-  if (bytes !== manifest.bytes) {
+  if (artifact.size !== manifest.bytes) {
     throw new Error(
-      `Capture runtime artifact size mismatch: expected ${manifest.bytes}, found ${bytes}.`,
+      `Capture runtime artifact size mismatch: expected ${manifest.bytes}, found ${artifact.size}.`,
     );
   }
-  const sha256 = await sha256File(artifactPath);
-  if (sha256 !== manifest.sha256.toLowerCase()) {
+  if ((await sha256File(artifactPath)) !== manifest.sha256.toLowerCase()) {
     throw new Error('Capture runtime artifact checksum mismatch.');
   }
   const schema = statSync(schemaPath);
   if (!schema.isFile()) {
     throw new Error('Capture document schema must be a regular file.');
   }
-  const schemaSha256 = await sha256File(schemaPath);
-  if (schemaSha256 !== CAPTURE_DOCUMENT_SCHEMA_SHA256) {
+  if ((await sha256File(schemaPath)) !== CAPTURE_DOCUMENT_SCHEMA_SHA256) {
     throw new Error('Capture document schema checksum mismatch.');
   }
   validateCaptureDocumentSchema(schemaPath);
@@ -485,9 +428,7 @@ async function loadAndVerifyManifest(
     typeof manifest.artifact.sha256 !== 'string' ||
     typeof manifest.artifact.bytes !== 'number'
   ) {
-    throw new Error(
-      `Invalid ${expectedKind} runtime manifest: ${manifestPath}`,
-    );
+    throw new Error(`Invalid ${expectedKind} runtime manifest: ${manifestPath}`);
   }
   if (manifest.version !== ALPHA_VERSION) {
     throw new Error(
@@ -502,11 +443,7 @@ async function loadAndVerifyManifest(
       `${expectedKind} artifact file_name must be a plain ZIP file name.`,
     );
   }
-  const expectedArtifactName = `${
-    expectedKind === 'python_backend'
-      ? 'cert-prep-backend-runtime'
-      : 'cert-prep-ocr-windowsml-runtime'
-  }-${ALPHA_VERSION}-${manifest.target}.zip`;
+  const expectedArtifactName = `cert-prep-backend-runtime-${ALPHA_VERSION}-${manifest.target}.zip`;
   if (manifest.artifact.file_name !== expectedArtifactName) {
     throw new Error(
       `${expectedKind} artifact name must be ${expectedArtifactName}.`,
@@ -522,44 +459,10 @@ async function loadAndVerifyManifest(
       `${expectedKind} artifact size mismatch: expected ${manifest.artifact.bytes}, found ${actualBytes}.`,
     );
   }
-  const actualHash = await sha256File(artifactPath);
-  if (actualHash !== manifest.artifact.sha256.toLowerCase()) {
+  if ((await sha256File(artifactPath)) !== manifest.artifact.sha256.toLowerCase()) {
     throw new Error(`${expectedKind} artifact checksum mismatch.`);
   }
   return manifest as RuntimeManifest;
-}
-
-function releaseAssetUrl(
-  baseUrlValue: string | undefined,
-  fileName: string,
-): string {
-  const value = baseUrlValue?.trim();
-  if (!value) {
-    throw new Error(
-      `${WINDOWSML_RELEASE_BASE_URL_ENV} is required in release mode.`,
-    );
-  }
-  let url: URL;
-  try {
-    url = new URL(value.endsWith('/') ? value : `${value}/`);
-  } catch {
-    throw new Error(`${WINDOWSML_RELEASE_BASE_URL_ENV} must be a valid URL.`);
-  }
-  if (
-    url.protocol !== 'https:' ||
-    url.hostname.toLowerCase() !== 'github.com' ||
-    url.username ||
-    url.password ||
-    url.search ||
-    url.hash ||
-    !/^\/[^/]+\/[^/]+\/releases\/download\/[^/]+\/$/.test(url.pathname) ||
-    !url.pathname.endsWith(`/releases/download/${ALPHA_RELEASE_TAG}/`)
-  ) {
-    throw new Error(
-      `${WINDOWSML_RELEASE_BASE_URL_ENV} must use the ${ALPHA_RELEASE_TAG} GitHub Release URL.`,
-    );
-  }
-  return new URL(encodeURIComponent(fileName), url).href;
 }
 
 function writeManifest(path: string, manifest: RuntimeManifest): void {
@@ -573,7 +476,6 @@ function writeJson(path: string, value: unknown): void {
 function releaseMetadata(
   mode: RuntimeResourceMode,
   backend: RuntimeManifest,
-  windowsml: RuntimeManifest,
   captureRuntime: CaptureRuntimeManifest,
 ): object {
   const localNonpublishable = mode === 'dev';
@@ -609,7 +511,7 @@ function releaseMetadata(
       required: true,
       algorithm: 'SHA-256',
       instruction: localNonpublishable
-        ? 'Compare the local WindowsML OCR ZIP with the SHA-256 value in its bundled manifest.'
+        ? 'Compare the bundled runtime ZIPs with the SHA-256 values in their manifests.'
         : 'Compare Get-FileHash -Algorithm SHA256 output with the SHA256SUMS.txt value published on the same GitHub Release.',
     },
     runtime_assets: {
@@ -618,14 +520,6 @@ function releaseMetadata(
         file_name: backend.artifact.file_name,
         sha256: backend.artifact.sha256,
         bytes: backend.artifact.bytes,
-      },
-      windowsml_ocr: {
-        distribution: localNonpublishable
-          ? 'local_file'
-          : 'github_release_download',
-        file_name: windowsml.artifact.file_name,
-        sha256: windowsml.artifact.sha256,
-        bytes: windowsml.artifact.bytes,
       },
       capture_runtime: {
         distribution: 'versioned_release_artifact_staged',
@@ -662,18 +556,14 @@ async function sha256File(path: string): Promise<string> {
   return hash.digest('hex');
 }
 
-interface ParsedArgs {
+function parseArgs(args: readonly string[]): {
   readonly mode: RuntimeResourceMode;
-  readonly windowsmlReleaseBaseUrl?: string;
   readonly captureRuntimeManifestPath?: string;
   readonly captureRuntimeArtifactPath?: string;
   readonly captureDocumentSchemaPath?: string;
   readonly captureRuntimeRoot?: string;
-}
-
-function parseArgs(args: readonly string[]): ParsedArgs {
+} {
   let mode: RuntimeResourceMode | undefined;
-  let windowsmlReleaseBaseUrl: string | undefined;
   let captureRuntimeManifestPath: string | undefined;
   let captureRuntimeArtifactPath: string | undefined;
   let captureDocumentSchemaPath: string | undefined;
@@ -692,8 +582,6 @@ function parseArgs(args: readonly string[]): ParsedArgs {
         throw new Error('--mode must be dev or release.');
       }
       mode = value;
-    } else if (arg === '--ocr-release-base-url') {
-      windowsmlReleaseBaseUrl = next();
     } else if (arg === '--capture-runtime-manifest') {
       captureRuntimeManifestPath = next();
     } else if (arg === '--capture-runtime-artifact') {
@@ -709,7 +597,6 @@ function parseArgs(args: readonly string[]): ParsedArgs {
   if (!mode) throw new Error('--mode is required.');
   return {
     mode,
-    windowsmlReleaseBaseUrl,
     captureRuntimeManifestPath,
     captureRuntimeArtifactPath,
     captureDocumentSchemaPath,
@@ -724,7 +611,6 @@ async function main(): Promise<void> {
   const result = await prepareRuntimeResources({
     workspaceRoot,
     mode: args.mode,
-    windowsmlReleaseBaseUrl: args.windowsmlReleaseBaseUrl,
     captureRuntimeManifestPath: resolveStagedInput(
       workspaceRoot,
       args.captureRuntimeManifestPath ??

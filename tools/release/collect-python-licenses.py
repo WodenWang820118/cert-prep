@@ -29,10 +29,6 @@ LICENSE_ALIASES = {
     "isc license": "ISC",
     "mit license": "MIT",
     "python software foundation license": "Python-2.0",
-    # pypdfium2 ships these named license texts under dist-info/licenses/LICENSES.
-    "bsd-3-clause, apache-2.0, dependency licenses": (
-        "BSD-3-Clause AND Apache-2.0 AND CC-BY-4.0"
-    ),
     "gplv2-or-later with a special exception which allows to use pyinstaller to build "
     "and distribute non-free programs (including commercial ones)": (
         "GPL-2.0-or-later WITH Bootloader-exception"

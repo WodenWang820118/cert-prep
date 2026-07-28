@@ -135,7 +135,6 @@ test('keeps a mixed PDF and audio queue interactive and refills the first free s
   page,
 }) => {
   const api = await installMockCertPrepApi(page, {
-    whisperModelsReady: true,
   });
   await seedMockApiConfig(page, apiBaseUrl, devToken);
 

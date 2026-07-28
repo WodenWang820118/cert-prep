@@ -157,10 +157,10 @@ test('proves canceled state before starting the non-cancellable commit probe', a
 test('consumes an already completed runtime commit transition before rejecting cancel', async () => {
   const scenario: CancelableOperationScenario = {
     kind: 'runtime',
-    startPath: '/runtime/installations/windowsml_ocr',
+    startPath: '/runtime/installations/ollama',
     operationPath: (operationId) => `/runtime/installations/${operationId}`,
-    operationKind: 'windowsml_ocr',
-    provider: 'windowsml',
+    operationKind: 'ollama',
+    provider: 'ollama',
     model: 'fixture-runtime-model',
     timeoutMs: 1_000,
   };

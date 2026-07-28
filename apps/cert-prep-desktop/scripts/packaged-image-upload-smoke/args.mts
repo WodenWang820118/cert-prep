@@ -8,7 +8,6 @@ export interface PackagedImageUploadSmokeOptions {
   readonly appDataDir: string;
   readonly cdpPort: number;
   readonly timeoutMs: number;
-  readonly ocrProvider: string;
 }
 
 const DEFAULT_TARGET_TRIPLE = 'x86_64-pc-windows-msvc';
@@ -16,7 +15,6 @@ const DEFAULT_OUT_ROOT =
   'tmp/cert-prep-desktop/packaged-image-upload-smoke';
 const DEFAULT_CDP_PORT = 9492;
 const DEFAULT_TIMEOUT_MS = 300_000;
-const DEFAULT_OCR_PROVIDER = 'windowsml';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const defaultWorkspaceRoot = resolve(scriptDir, '../../../..');
@@ -36,7 +34,6 @@ export function parsePackagedImageUploadSmokeArgs(
   );
   let cdpPort = DEFAULT_CDP_PORT;
   let timeoutMs = DEFAULT_TIMEOUT_MS;
-  let ocrProvider = DEFAULT_OCR_PROVIDER;
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
@@ -59,8 +56,6 @@ export function parsePackagedImageUploadSmokeArgs(
       cdpPort = positiveInteger(readValue(), argument);
     } else if (argument === '--timeout-ms') {
       timeoutMs = positiveInteger(readValue(), argument);
-    } else if (argument === '--ocr-provider') {
-      ocrProvider = nonEmptyString(readValue(), argument);
     } else {
       throw new Error(`Unknown argument: ${argument}`);
     }
@@ -73,7 +68,6 @@ export function parsePackagedImageUploadSmokeArgs(
     appDataDir: join(outDir, 'app-data'),
     cdpPort,
     timeoutMs,
-    ocrProvider,
   };
 }
 

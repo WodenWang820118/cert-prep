@@ -102,7 +102,6 @@ test('document runner publishes exactly five candidate-bound files after cleanup
     assert.deepEqual(events, [
       'launch',
       'python-runtime',
-      'ocr-runtime',
       'create-project',
       'upload-scenario',
       'document-scenario',
@@ -213,9 +212,6 @@ function runnerDependencies(
     },
     async installPythonRuntimeIfNeeded() {
       events.push('python-runtime');
-    },
-    async installOcrRuntimeIfNeeded() {
-      events.push('ocr-runtime');
     },
     async createProject(run) {
       events.push('create-project');

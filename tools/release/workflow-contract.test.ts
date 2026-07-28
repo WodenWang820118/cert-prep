@@ -29,7 +29,6 @@ const assemble = readFileSync(
 const windowsOwnedProjects = [
   'cert-prep-contracts',
   'cert-prep-ollama',
-  'cert-prep-ocr-windowsml',
   'cert-prep-backend',
   'cert-prep-api',
   'cert-prep',
@@ -39,14 +38,12 @@ const portableProjects = [
   'cert-prep',
   'cert-prep-contracts',
   'cert-prep-ollama',
-  'cert-prep-ocr-windowsml',
   'cert-prep-backend',
 ];
 
 const windowsCiProjects = [
   'cert-prep-contracts',
   'cert-prep-ollama',
-  'cert-prep-ocr-windowsml',
   'cert-prep-backend',
   'cert-prep',
 ];
@@ -160,7 +157,7 @@ test('candidate build validates the exact public release source and runs quality
   assert.equal((body.match(/e2e-real-backend/g) ?? []).length, 1);
   assert.match(body, /pnpm nx run cert-prep-desktop:package-qa/);
   assert.match(body, /--include-distribution PyInstaller==6\.20\.0/);
-  assert.match(body, /collect-runtime-payloads\.py/);
+  assert.doesNotMatch(body, /collect-runtime-payloads\.py/);
   assert.match(body, /--mode candidate/);
   assert.match(body, /candidate_id=/);
 });
@@ -206,23 +203,17 @@ test('downstream jobs reuse the exact candidate without checkout or rebuild', ()
   assert.match(workflow, /ExpectedCommitSha/);
 });
 
-test('OCR bootstrap remains remote, candidate-bound and hash-verified', () => {
+test('Capture Runtime remains candidate-bound and fail-closed through clean install', () => {
   const body = jobBody('clean-install');
   assert.match(body, /environment:\s*alpha-release/);
-  assert.match(body, /id:\s*reserve_ocr/);
+  assert.match(body, /id:\s*reserve_release/);
   assert.match(body, /--mode reserve/);
-  assert.match(body, /--mode ocr/);
   assert.match(body, /--candidate-root candidate/);
   assert.match(body, /--candidate-id/);
   assert.match(body, /--publication-owner/);
-  assert.match(
-    cleanInstall,
-    /Invoke-WebRequest -Uri \$contract\.ocr\.artifact\.url/,
-  );
-  assert.match(
-    cleanInstall,
-    /Public OCR runtime download failed byte\/hash verification/,
-  );
+  assert.match(cleanInstall, /capture-runtime-manifest\.json/);
+  assert.match(cleanInstall, /captureRuntimeVerified = \$true/);
+  assert.doesNotMatch(cleanInstall, /Invoke-WebRequest/);
 });
 
 test('clean-install canonicalizes candidate identities with ordinal ordering', () => {

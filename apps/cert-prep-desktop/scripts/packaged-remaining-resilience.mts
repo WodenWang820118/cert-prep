@@ -12,7 +12,7 @@ export async function runPackagedRemainingResilienceCli(): Promise<void> {
       {
         status: 'completed',
         lane: 'remaining-resilience-only',
-        complementsTarget: 'packaged-document-cancellation-windowsml',
+        complementsTarget: 'packaged-document-cancellation',
         candidateId: options.candidate.candidateId,
         acceptanceRunId: options.acceptanceRunId,
         packageKind: options.installation.packageKind,

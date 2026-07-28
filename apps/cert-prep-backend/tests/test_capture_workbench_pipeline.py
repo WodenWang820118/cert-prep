@@ -11,7 +11,7 @@ from uuid import UUID
 
 from fastapi.testclient import TestClient
 
-from conftest import AUTH_TOKEN, minimal_audio, minimal_pdf
+from conftest import AUTH_TOKEN, minimal_audio, minimal_image, minimal_pdf
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.core.config import Settings
 from cert_prep_backend.domains.capture_workbench.client import CaptureUpload
@@ -59,6 +59,8 @@ class EchoCaptureProvider(MockExamProvider):
 
 
 class DeterministicCaptureRuntime:
+    expected_source_kind = CaptureSourceKind.PDF
+
     def __init__(self) -> None:
         self.raw: RawCaptureV1 | None = None
         self.result: CaptureDocumentV1 | None = None
@@ -77,7 +79,7 @@ class DeterministicCaptureRuntime:
         idempotency_key: UUID,
         target_language: str | None = None,
     ) -> CaptureJobV1:
-        assert source_kind is CaptureSourceKind.PDF
+        assert source_kind is self.expected_source_kind
         assert target_language is None
         assert isinstance(upload.content, bytes)
         self.created_idempotency_keys.append(idempotency_key)
@@ -191,6 +193,10 @@ class BlockingDeterministicCaptureRuntime(DeterministicCaptureRuntime):
         )
 
 
+class DeterministicImageCaptureRuntime(DeterministicCaptureRuntime):
+    expected_source_kind = CaptureSourceKind.IMAGE
+
+
 class DeterministicAudioCaptureRuntime(DeterministicCaptureRuntime):
     def create_capture(
         self,
@@ -277,6 +283,42 @@ def test_upload_delegates_to_capture_runtime_and_atomically_maps_existing_chunks
 
     assert runtime.deleted == ["capture-pipeline-1"]
     assert runtime.created_idempotency_keys[0] != runtime.commit_idempotency_keys[0]
+
+
+def test_image_upload_uses_the_same_capture_runtime_host_path(tmp_path: Path) -> None:
+    runtime = DeterministicImageCaptureRuntime()
+    settings = Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake")
+    with TestClient(
+        create_app(
+            settings=settings,
+            llm_provider=EchoCaptureProvider(),
+            capture_runtime_client=runtime,
+            document_processing_async_jobs=False,
+            streaming_draft_generation_async_jobs=False,
+        )
+    ) as client:
+        headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
+        project_id = _create_project(client, headers)
+        source = minimal_image()
+
+        response = client.post(
+            f"/projects/{project_id}/documents",
+            headers=headers,
+            files={"file": ("capture.png", source, "image/png")},
+        )
+
+        assert response.status_code == 201
+        document = response.json()
+        assert document["status"] == "ready"
+        assert document["source_kind"] == "document"
+        assert document["extraction_method"] == "windowsml_ocr"
+        chunks = client.get(
+            f"/projects/{project_id}/documents/{document['id']}/chunks",
+            headers=headers,
+        ).json()["items"]
+        assert chunks[0]["text"] == "Sidecar extracted source text"
+
+    assert runtime.deleted == ["capture-pipeline-1"]
 
 
 def test_audio_upload_uses_capture_time_provenance_without_cert_whisper(

@@ -16,8 +16,6 @@ export interface SmokeOptions {
   outDir: string;
   appDataDir?: string;
   cdpPort: number;
-  ocrProvider: string;
-  ocrPageWorkers: number;
   llmProvider: string;
   ollamaHost?: string;
   ollamaModelsDir?: string;
@@ -30,7 +28,7 @@ export interface SmokeOptions {
   streamingCompleteTimeoutMs: number;
   skipGpuSampling: boolean;
   productionSummary: boolean;
-  allowOcrChunkVariance: boolean;
+  allowCaptureChunkVariance: boolean;
   verifyStreamingPracticeReady: boolean;
 }
 
@@ -57,7 +55,6 @@ export interface SmokeMetrics {
   generation_readiness_at_start?: GenerationReadinessSnapshot;
   resources_released_at_end?: ResourcesReleasedAtEndSnapshot;
   full_exam_question_count?: number;
-  ocr_provider: string;
   first_chunk_gate_ms: number;
   first_chunk_under_gate: boolean;
   streaming_draft_page_limit?: number;

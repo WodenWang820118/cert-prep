@@ -3,13 +3,13 @@
 ## Purpose
 
 Cert Prep is a local-first Windows/Tauri certification-prep app. The core user
-journey is: create/select a project, upload a source document, parse it with OCR
-when needed, review editable questions, practice through Full Exam or Random
-Quiz, and clear wrong-answer review state through correct attempts.
+journey is: create/select a project, upload a source document, capture and
+review its extracted text, review editable questions, practice through Full Exam
+or Random Quiz, and clear wrong-answer review state through correct attempts.
 
 The production acceptance path is deterministic/manual first. AI reasoning is
-optional enrichment and must not block OCR, manual question creation, practice,
-or review flows.
+optional enrichment and must not block capture review, manual question creation,
+practice, or review flows after a source has been captured.
 
 ## Decisions
 
@@ -67,9 +67,9 @@ or review flows.
 - The concurrency selector describes simultaneous uploads, not batch size.
   Ambiguous transport failures retain the original operation id for status
   reconciliation, and reconciliation consumes an ordinary queue slot. Canceling
-  Whisper consent or a failed/canceled model install releases the pending audio
-  authorization so the user can explicitly retry; later readiness must not
-  silently upload a source after that authorization was withdrawn.
+  Capture Runtime setup or a failed/canceled capture releases the
+  pending source authorization so the user can explicitly retry; later readiness
+  must not silently upload a source after that authorization was withdrawn.
 - Image cropping is optional client-side preprocessing and defaults off. A
   `Crop images before upload` toggle enables a sequential crop review for each
   selected PNG, JPEG/JPG, or static WebP while PDFs keep their original bytes
@@ -138,8 +138,9 @@ Page requirements:
   a right-side session details / question navigator rail when useful.
 - Random Quiz: reuse Full Exam runner language and density, with random-draw
   question count controls.
-- Manage Runtime: expose Python Backend, LLM Runtime, Reasoning Model, and OCR
-  rows plus refresh, cancel, and close controls. `/runtime` remains a matching
+- Manage Runtime: expose Python Backend, LLM Runtime, and Reasoning Model rows
+  plus refresh, cancel, and close controls. Capture Workbench owns Capture
+  Runtime setup. `/runtime` remains a matching
   unguarded recovery/deep-link route.
 - Review: show recorded count, refresh, question cards, page chips,
   side-by-side answer panels, rationale/source metadata, and compact footer
@@ -162,12 +163,13 @@ Page requirements:
 
 ## Evidence
 
-- Saved parsed exams and runtime UX packaged QA covered Python/PaddleOCR
+- Saved parsed exams and runtime UX packaged QA covered Python and Capture
+  Runtime
   readiness, PDF upload, 46 pages / 46 chunks, manual questions, restart
   persistence, Full Exam, Random Quiz, wrong-answer recording, and review
   clearing.
-- Production PDF upload QA used the real JLPT PDF under `pdfs/` and confirmed
-  the image-only OCR path with `paddle_ocr_gpu` on `gpu:0`.
+- Production PDF upload QA uses Capture Runtime's WindowsML extraction contract;
+  the Cert Prep UI does not select or display a local OCR provider.
 - UX performance QA showed the app stayed usable during parsing and that manual
   editing/practice remained viable even when Ollama/model state was offline.
 - Latest packaged flow smoke evidence is tracked in
@@ -210,8 +212,9 @@ Page requirements:
   Firefox, and WebKit. A real-browser run also applied and uploaded the cropped
   PNG without console or server errors.
 - The 2026-07-19 source-queue closeout verified immediate rolling-slot refill,
-  active-run file append, an enabled chooser during transport, delayed Whisper
-  readiness, withdrawn consent, exact-operation 503/status reconciliation, and
+  active-run file append, an enabled chooser during transport, delayed Capture
+  Runtime readiness, withdrawn setup, exact-operation 503/status reconciliation,
+  and
   cancel-driven slot refill. The final matrix passed 265 Angular tests, all 388
   backend tests, production build, frontend/backend/E2E lint, and 12 Chromium
   scenarios including a held two-PDF queue that starts an appended MP3 when the

@@ -40,9 +40,16 @@ const realPdfPath = resolve(
     join(workspaceRoot, 'apps/cert-prep-backend/.benchmarks/jlpt-n1-page3-qa.pdf'),
 );
 const realPdfFileName = basename(realPdfPath);
+const recordingRequested =
+  process.argv.includes('--record-video') ||
+  process.env.CERT_PREP_RECORD_CAPTURE_VIDEO === 'true';
+const recordingPath = resolve(
+  process.env.CERT_PREP_CAPTURE_VIDEO_PATH ??
+    join(workspaceRoot, 'output', 'capture-workbench-to-cert-prep.webm'),
+);
 const modelArchiveRoot = join(
-  workspaceRoot,
-  'apps/cert-prep-backend/dist/ocr-windowsml-runtime',
+  captureWorkbenchRoot,
+  'packages/capture-runtime/dist/windowsml',
 );
 const modelBundleFileName = 'capture-windowsml-ocr-windows-x64.zip';
 const modelFiles = [
@@ -389,7 +396,7 @@ async function waitForDocument(
   documentId: string,
 ): Promise<{ readonly document: Record<string, unknown>; readonly chunks: readonly Record<string, unknown>[] }> {
   // The backend capture coordinator defaults to a 15-minute deadline. A real
-  // multi-page WindowsML OCR run plus host structuring must be allowed to use
+  // multi-page Capture Runtime run plus host structuring must be allowed to use
   // that same contract; the smoke must not fail early at an unrelated 5-minute
   // browser polling limit.
   const deadline = Date.now() + 900_000;
@@ -424,8 +431,24 @@ async function runBrowserFlow(
   temporaryRoot: string,
 ): Promise<void> {
   const browser: Browser = await chromium.launch({ headless: true });
+  const videoDirectory = dirname(recordingPath);
+  if (recordingRequested) {
+    await mkdir(videoDirectory, { recursive: true });
+    await rm(recordingPath, { force: true });
+  }
+  const context = await browser.newContext(
+    recordingRequested
+      ? {
+          recordVideo: {
+            dir: videoDirectory,
+            size: { width: 1440, height: 1000 },
+          },
+        }
+      : undefined,
+  );
+  const page: Page = await context.newPage();
+  const video = page.video();
   try {
-    const page: Page = await browser.newPage();
     const runtimeRequests: string[] = [];
     const directRuntimeRequests: string[] = [];
     page.on('request', (request) => {
@@ -448,7 +471,7 @@ async function runBrowserFlow(
     await page.goto(`${frontendBaseUrl}/capture-workbench-trial`, {
       waitUntil: 'domcontentloaded',
     });
-    await page.getByRole('heading', { name: 'Capture Workbench PDF OCR' }).waitFor();
+    await page.getByRole('heading', { name: 'Capture Workbench trial' }).waitFor();
     const input = page.locator('capture-workbench input[type="file"]');
     const uploadResponse = new Promise<{
       readonly captureId: string;
@@ -503,37 +526,37 @@ async function runBrowserFlow(
     }
     try {
       await page
-        .getByRole('heading', { name: 'Review OCR text' })
+        .getByRole('heading', { name: 'Review capture text' })
         .waitFor({ timeout: 120_000 });
     } catch (error) {
       const bodyText = await page.locator('body').innerText();
       await page.screenshot({ path: join(temporaryRoot, 'real-pdf-review-timeout.png'), fullPage: true });
       throw new Error(
         `${error instanceof Error ? error.message : String(error)}\n` +
-          `Real PDF review UI did not appear. Body:\n${bodyText}`,
+          `Real PDF Capture review UI did not appear. Body:\n${bodyText}`,
       );
     }
     const firstReviewField = page.locator('capture-workbench .ocr-review textarea').first();
     await firstReviewField.waitFor({ state: 'visible', timeout: 60_000 });
     const originalReviewText = await firstReviewField.inputValue();
     if (originalReviewText.trim().length === 0) {
-      throw new Error('Real PDF OCR review did not expose text for the first page.');
+      throw new Error('Real PDF Capture review did not expose text for the first page.');
     }
     const reviewMarker = '\n\n[reviewed by real PDF smoke]';
     await firstReviewField.fill(`${originalReviewText}${reviewMarker}`);
-    await page.getByRole('button', { name: 'Confirm OCR', exact: true }).click();
+    await page.getByRole('button', { name: 'Confirm capture', exact: true }).click();
     const processed = await waitForDocument(backendBaseUrl, token, projectId, documentId);
     const firstReviewedText = String(processed.chunks[0]?.text ?? '');
     const firstRawText = String(processed.chunks[0]?.raw_text ?? '');
     if (!firstReviewedText.includes('[reviewed by real PDF smoke]')) {
-      throw new Error('Confirmed OCR edit was not persisted in the reviewed chunk text.');
+      throw new Error('Confirmed Capture edit was not persisted in the reviewed chunk text.');
     }
     if (firstRawText !== originalReviewText) {
-      throw new Error('Original OCR text was not retained in raw_text after review confirmation.');
+      throw new Error('Original Capture text was not retained in raw_text after review confirmation.');
     }
     console.log(`Real PDF backend persistence ready: ${processed.chunks.length} chunks.`);
     await page
-      .getByRole('heading', { name: 'OCR document saved' })
+      .getByRole('heading', { name: 'Capture document saved' })
       .waitFor({ timeout: 90_000 });
     try {
       await page.waitForFunction(
@@ -548,12 +571,12 @@ async function runBrowserFlow(
       const bodyText = await page.locator('body').innerText();
       throw new Error(
         `${error instanceof Error ? error.message : String(error)}\n` +
-          `Real PDF page did not show the saved OCR projection:\n${bodyText}`,
+          `Real PDF page did not show the saved Capture projection:\n${bodyText}`,
       );
     }
     const bodyText = await page.locator('body').innerText();
     if (!bodyText.includes('ready') || !bodyText.includes('windowsml_ocr')) {
-      throw new Error(`Real PDF page did not show the saved OCR projection:\n${bodyText}`);
+      throw new Error(`Real PDF page did not show the saved Capture projection:\n${bodyText}`);
     }
     if (bodyText.includes('deterministic') || bodyText.includes('in-memory')) {
       throw new Error('The real PDF page exposed a fake/in-memory implementation label.');
@@ -570,7 +593,7 @@ async function runBrowserFlow(
       page.waitForEvent('download', { timeout: 30_000 }),
       downloadButton.click(),
     ]);
-    const markdownPath = join(temporaryRoot, 'real-pdf-ocr.md');
+    const markdownPath = join(temporaryRoot, 'real-pdf-capture.md');
     await download.saveAs(markdownPath);
     const markdown = await readFile(markdownPath, 'utf8');
     const expectedMarkdownFilename = realPdfFileName.replace(/\.[^.]+$/, '.md');
@@ -592,7 +615,7 @@ async function runBrowserFlow(
       !markdown.includes(firstOcrText.slice(0, Math.min(firstOcrText.length, 80)))
     ) {
       throw new Error(
-        'Downloaded Markdown did not contain the persisted OCR projection: ' +
+        'Downloaded Markdown did not contain the persisted Capture projection: ' +
           JSON.stringify({
             expectedTitle: `# ${realPdfFileName}`,
             firstOcrText: firstOcrText.slice(0, 120),
@@ -604,6 +627,12 @@ async function runBrowserFlow(
     console.log(`Markdown download started: ${download.suggestedFilename()}`);
     await page.screenshot({ path: join(temporaryRoot, 'real-pdf-completed.png'), fullPage: true });
   } finally {
+    await context.close();
+    const generatedVideoPath = await video?.path();
+    if (recordingRequested && generatedVideoPath !== undefined) {
+      await copyFile(generatedVideoPath, recordingPath);
+      console.log(`Browser recording saved: ${recordingPath}`);
+    }
     await browser.close();
   }
 }
@@ -678,7 +707,7 @@ async function runSmoke(): Promise<void> {
         CERT_PREP_DATA_DIR: backendData,
         CERT_PREP_API_TOKEN: backendToken,
         CERT_PREP_ALLOWED_ORIGINS: JSON.stringify([`http://127.0.0.1:${frontendPort}`]),
-        // This smoke verifies real WindowsML OCR and host-owned document
+        // This smoke verifies real Capture Runtime extraction and host-owned document
         // projection. No translation or draft generation is requested, so it
         // must not require a second local Ollama service.
         CERT_PREP_LLM_PROVIDER: 'fake',
@@ -704,8 +733,8 @@ async function runSmoke(): Promise<void> {
 
     frontend = startProcess(
       'cert-prep-frontend',
-      'pnpm',
-      ['nx', 'serve', 'cert-prep', '--host=127.0.0.1', `--port=${frontendPort}`],
+      'corepack',
+      ['pnpm', 'nx', 'serve', 'cert-prep', '--host=127.0.0.1', `--port=${frontendPort}`],
       workspaceRoot,
       process.env,
       { shell: true },
@@ -743,7 +772,7 @@ async function runSmoke(): Promise<void> {
       Number(processed.document.chunks_count) <= 0 ||
       processed.chunks.some((chunk) => String(chunk.text ?? '').trim().length === 0)
     ) {
-      throw new Error(`Real OCR persistence contract failed: ${JSON.stringify(processed)}`);
+      throw new Error(`Real Capture persistence contract failed: ${JSON.stringify(processed)}`);
     }
     const captureJobsRoot = join(runtimeData, 'jobs', 'captures');
     const remainingJobs = await readdir(captureJobsRoot).catch(() => [] as string[]);
@@ -751,7 +780,7 @@ async function runSmoke(): Promise<void> {
       throw new Error(`Capture Runtime job cleanup failed: ${remainingJobs.join(', ')}`);
     }
     console.log(
-      `cert-prep real PDF smoke passed: ${processed.document.filename}, ${processed.chunks.length} OCR chunks, extraction=${processed.document.extraction_method}`,
+      `cert-prep real PDF smoke passed: ${processed.document.filename}, ${processed.chunks.length} Capture chunks, extraction=${processed.document.extraction_method}`,
     );
   } catch (error) {
     console.error(

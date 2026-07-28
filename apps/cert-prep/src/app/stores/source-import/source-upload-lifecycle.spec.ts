@@ -44,7 +44,6 @@ function hooks(current: () => boolean): SourceUploadLifecycleHooks {
     cancelOperation: () => of(operationRead()),
     newOperationId: () => 'operation-1',
     errorMessage: () => 'error',
-    errorCode: () => null,
   };
 }
 

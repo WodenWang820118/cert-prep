@@ -104,53 +104,6 @@ import { SourceImageCropService } from './source-image-crop.service';
           </span>
         </div>
 
-        @if (sourceImport.hasSelectedAudio()) {
-          <section
-            class="grid gap-2 rounded-md border border-surface-200 bg-surface-50 p-3"
-            aria-label="Whisper model preflight"
-            aria-live="polite"
-          >
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <div class="min-w-0 flex-1">
-                <p class="m-0 text-sm font-semibold text-color">
-                  Whisper speech models
-                </p>
-                <p class="m-0 mt-1 text-xs leading-5 text-muted-color">
-                  @if (sourceImport.whisperModelsReady()) {
-                    large-v3-turbo and the CPU small fallback are ready.
-                  } @else if (sourceImport.whisperModelInstall(); as install) {
-                    {{ install.message }}
-                  } @else if (sourceImport.whisperModelsRequirement()) {
-                    Download consent is required before audio can be uploaded.
-                  } @else {
-                    Checking the local model inventory.
-                  }
-                </p>
-              </div>
-              <p-tag
-                [value]="sourceImport.whisperModelsReady() ? 'Ready' : 'Required'"
-                [severity]="sourceImport.whisperModelsReady() ? 'success' : 'warn'"
-                [rounded]="true"
-              />
-              @if (sourceImport.canCancelWhisperModelDownload()) {
-                <button
-                  class="workbench-secondary-button"
-                  type="button"
-                  (click)="sourceImport.cancelWhisperModelDownload()"
-                >
-                  <i class="pi pi-times" aria-hidden="true"></i>
-                  <span>Cancel model download</span>
-                </button>
-              }
-            </div>
-            @if (sourceImport.whisperModelInstall(); as install) {
-              @if (install.progress !== null) {
-                <p-progressbar [value]="install.progress" />
-              }
-            }
-          </section>
-        }
-
         @if (sourceImport.uploadItems().length > 0) {
           <div
             class="grid gap-2"
@@ -450,7 +403,7 @@ import { SourceImageCropService } from './source-image-crop.service';
               </div>
             } @else {
               <div class="workbench-metric">
-                <dt>OCR Device</dt>
+                <dt>Capture Runtime Device</dt>
                 <dd>
                   {{ document.ocr_device || 'none' }}
                 </dd>
@@ -483,7 +436,7 @@ import { SourceImageCropService } from './source-image-crop.service';
                 class="rounded-md border border-amber-200 bg-amber-50 p-3 xl:col-span-2"
               >
                 <dt class="text-xs font-bold uppercase text-amber-700">
-                  OCR fallback
+                  Capture Runtime warning
                 </dt>
                 <dd class="m-0 mt-1 text-sm font-semibold text-amber-900">
                   {{ document.ocr_fallback_reason }}

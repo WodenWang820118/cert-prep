@@ -165,8 +165,7 @@ $intervalMs = ${intervalMs}
 $targetProcessNames = @(
   'cert-prep-desktop.exe',
   'cert-prep-backend.exe',
-  'cert-prep-ocr-runtime.exe',
-  'cert-prep-ocr-windowsml-runtime.exe',
+  'capture-runtime.exe',
   'llama-server.exe',
   'ollama.exe',
   'ollama app.exe',

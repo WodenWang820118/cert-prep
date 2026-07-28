@@ -1,9 +1,7 @@
 import type {
   HealthResponse,
   LLMHealthRead,
-  OCRHealthRead,
 } from '../../../contracts/api.contracts';
-import type { OcrHealthPhase } from '../../../stores/health/contracts/health-runtime.contracts';
 import type { LLMProviderSelectionRead } from '../../../stores/health/contracts/health-runtime.contracts';
 
 /**
@@ -45,7 +43,6 @@ export interface ModelHealthViewModel {
   readonly python: RuntimeStatusSectionView;
   readonly ollama: RuntimeStatusSectionView;
   readonly model: RuntimeStatusSectionView;
-  readonly ocr: RuntimeStatusSectionView;
 }
 
 export interface DesktopRuntimeStatusView {
@@ -67,11 +64,8 @@ export interface ModelHealthViewState {
   readonly systemHealth: HealthResponse | null;
   readonly llmHealth: LLMHealthRead | null;
   readonly providerSelection: LLMProviderSelectionRead | null;
-  readonly ocrHealth: OCRHealthRead | null;
-  readonly ocrPhase: OcrHealthPhase;
   readonly llmRuntimeMissing: boolean;
   readonly modelMissing: boolean;
-  readonly ocrRuntimeMissing: boolean;
   readonly configuredModelName: string;
   readonly effectiveModelName: string;
 }

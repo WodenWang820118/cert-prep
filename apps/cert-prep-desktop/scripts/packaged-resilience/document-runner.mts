@@ -19,10 +19,7 @@ import {
 } from '../packaged-flow-smoke/app-lifecycle.mts';
 import { createProject } from '../packaged-flow-smoke/flow-steps.mts';
 import { captureProjectApiAfterRestart } from '../packaged-flow-smoke/generation-readiness.mts';
-import {
-  installOcrRuntimeIfNeeded,
-  installPythonRuntimeIfNeeded,
-} from '../packaged-flow-smoke/runtime-install-flow.mts';
+import { installPythonRuntimeIfNeeded } from '../packaged-flow-smoke/runtime-install-flow.mts';
 import { activePage } from '../packaged-flow-smoke/runner-context.mts';
 import { unavailableGenerationReadinessSnapshot } from '../packaged-flow-smoke/generation-readiness.mts';
 import type {
@@ -76,7 +73,6 @@ export interface DocumentRunnerDependencies {
   readonly processSnapshot: () => ProcessSnapshot;
   readonly launchAppAndConnect: typeof launchAppAndConnect;
   readonly installPythonRuntimeIfNeeded: typeof installPythonRuntimeIfNeeded;
-  readonly installOcrRuntimeIfNeeded: typeof installOcrRuntimeIfNeeded;
   readonly createProject: typeof createProject;
   readonly createTransport: (run: SmokeRunState) => JsonTransport;
   readonly runUploadScenario: typeof runUploadBeforeDocumentIdCancellation;
@@ -97,7 +93,6 @@ const DEFAULT_DEPENDENCIES: DocumentRunnerDependencies = {
   processSnapshot,
   launchAppAndConnect,
   installPythonRuntimeIfNeeded,
-  installOcrRuntimeIfNeeded,
   createProject,
   createTransport: defaultTransport,
   runUploadScenario: runUploadBeforeDocumentIdCancellation,
@@ -141,7 +136,6 @@ export async function runDocumentCancellationAcceptance(
   try {
     await dependencies.launchAppAndConnect(run);
     await dependencies.installPythonRuntimeIfNeeded(run);
-    await dependencies.installOcrRuntimeIfNeeded(run);
     await dependencies.createProject(run);
     const projectApi = requireProjectApi(run);
     let transport = dependencies.createTransport(run);
@@ -171,11 +165,11 @@ export async function runDocumentCancellationAcceptance(
           preCrashStatus !== 'cancel_requested'
         ) {
           throw new Error(
-            'OCR crash recovery reached a terminal state before the forced crash.',
+            'Capture Runtime crash recovery reached a terminal state before the forced crash.',
           );
         }
         const previousAuthorization = requireProjectApi(run).authorization;
-        await dependencies.forceCrashAndReconnect(run, 'OCR crash recovery');
+        await dependencies.forceCrashAndReconnect(run, 'Capture Runtime crash recovery');
         const restartedProjectApi =
           await dependencies.captureProjectApiAfterRestart(
             activePage(run),
@@ -195,7 +189,7 @@ export async function runDocumentCancellationAcceptance(
     documentCompletedAt = dependencies.now().toISOString();
     requireOrderedWindow(documentStartedAt, documentCompletedAt, 'document');
     if (documentProofs.crashRecovery === null) {
-      throw new Error('OCR crash recovery did not produce restart evidence.');
+      throw new Error('Capture Runtime crash recovery did not produce restart evidence.');
     }
     run.metrics.status = 'completed';
   } catch (error) {
@@ -260,8 +254,6 @@ function createRunState(
     outDir: options.diagnosticsRoot,
     appDataDir: join(options.diagnosticsRoot, 'app-data'),
     cdpPort: options.cdpPort,
-    ocrProvider: 'windowsml',
-    ocrPageWorkers: 1,
     llmProvider: 'auto',
     acceptanceIsolation: true,
     candidateDistributionProfile: options.candidateDistributionProfile,
@@ -269,7 +261,7 @@ function createRunState(
     streamingCompleteTimeoutMs: options.timeoutMs,
     skipGpuSampling: true,
     productionSummary: false,
-    allowOcrChunkVariance: true,
+    allowCaptureChunkVariance: true,
     verifyStreamingPracticeReady: false,
   };
   const metrics: SmokeMetrics = {
@@ -286,7 +278,6 @@ function createRunState(
     generation_readiness_at_start: unavailableGenerationReadinessSnapshot(
       'capture_not_reached',
     ),
-    ocr_provider: smokeOptions.ocrProvider,
     first_chunk_gate_ms: 15_000,
     first_chunk_under_gate: false,
     wait_for_streaming_complete: false,

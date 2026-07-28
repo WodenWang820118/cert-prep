@@ -2,7 +2,6 @@ import type {
   DocumentRead,
   HealthResponse,
   LLMHealthRead,
-  OCRHealthRead,
   ProjectRead,
   QuestionDraftRead,
   WrongAnswerSummaryRead,
@@ -96,24 +95,6 @@ export function availableLlmHealth(): LLMHealthRead {
     model: 'reasoner:7b',
     available: true,
     detail: 'deterministic local fake provider',
-    unavailable_reason: null,
-  };
-}
-
-export function availableOcrHealth(): OCRHealthRead {
-  return {
-    provider: 'fake',
-    engine: 'none',
-    available: true,
-    detail: 'deterministic local fake OCR provider',
-    python_version: '3.13.5',
-    paddle_version: null,
-    paddleocr_version: null,
-    selected_device: null,
-    cuda_available: false,
-    gpu_count: 0,
-    model_cache_dir: null,
-    fallback_reason: null,
     unavailable_reason: null,
   };
 }

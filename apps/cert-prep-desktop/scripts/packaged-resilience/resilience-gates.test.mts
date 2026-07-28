@@ -10,7 +10,7 @@ import {
   exactOllamaHealth,
   exactOllamaTags,
   exactProviderSelection,
-  exactWindowsMlRequirement,
+  exactOllamaRuntimeRequirement,
   waitForExactDocumentDrafts,
 } from './resilience-runner.mts';
 
@@ -50,19 +50,19 @@ test('remaining provider selection accepts only exact raw Ollama 4b scope', asyn
   );
 });
 
-test('WindowsML requirement must transition from missing to a canonical run-local path', async () => {
+test('Ollama requirement must transition from missing to a canonical run-local path', async () => {
   const workspace = mkdtempSync(join(tmpdir(), 'cert-prep-runtime-gate-'));
   try {
     const appData = join(workspace, 'app-data');
-    const installed = join(appData, 'runtimes', 'windowsml');
+    const installed = join(appData, 'runtimes', 'ollama');
     mkdirSync(join(appData, 'runtimes'), { recursive: true });
     const transport = new ScriptedTransport([
       response('/runtime/requirements', {
         items: [
           {
-            kind: 'windowsml_ocr',
+            kind: 'ollama',
             available: false,
-            unavailable_reason: 'windowsml_runtime_missing',
+            unavailable_reason: 'ollama_missing',
             installed_path: installed,
           },
         ],
@@ -70,7 +70,7 @@ test('WindowsML requirement must transition from missing to a canonical run-loca
       response('/runtime/requirements', {
         items: [
           {
-            kind: 'windowsml_ocr',
+            kind: 'ollama',
             available: true,
             unavailable_reason: null,
             installed_path: installed,
@@ -79,28 +79,28 @@ test('WindowsML requirement must transition from missing to a canonical run-loca
       }),
     ]);
 
-    const missing = await exactWindowsMlRequirement(transport, false, appData);
+    const missing = await exactOllamaRuntimeRequirement(transport, false, appData);
     assert.equal(missing.available, false);
-    assert.equal(missing.installTargetPathRelative, 'runtimes/windowsml');
+    assert.equal(missing.installTargetPathRelative, 'runtimes/ollama');
     mkdirSync(installed);
-    const ready = await exactWindowsMlRequirement(transport, true, appData);
+    const ready = await exactOllamaRuntimeRequirement(transport, true, appData);
     assert.equal(ready.available, true);
-    assert.equal(ready.installedPathRelative, 'runtimes/windowsml');
+    assert.equal(ready.installedPathRelative, 'runtimes/ollama');
 
     const staleMissing = new ScriptedTransport([
       response('/runtime/requirements', {
         items: [
           {
-            kind: 'windowsml_ocr',
+            kind: 'ollama',
             available: false,
-            unavailable_reason: 'windowsml_runtime_missing',
+            unavailable_reason: 'ollama_missing',
             installed_path: installed,
           },
         ],
       }),
     ]);
     await assert.rejects(
-      exactWindowsMlRequirement(staleMissing, false, appData),
+      exactOllamaRuntimeRequirement(staleMissing, false, appData),
       /missing runtime target already existed/,
     );
 
@@ -108,16 +108,16 @@ test('WindowsML requirement must transition from missing to a canonical run-loca
       response('/runtime/requirements', {
         items: [
           {
-            kind: 'windowsml_ocr',
+            kind: 'ollama',
             available: false,
-            unavailable_reason: 'windowsml_runtime_missing',
+            unavailable_reason: 'ollama_missing',
             installed_path: join(workspace, 'outside-missing-runtime'),
           },
         ],
       }),
     ]);
     await assert.rejects(
-      exactWindowsMlRequirement(outsideMissing, false, appData),
+      exactOllamaRuntimeRequirement(outsideMissing, false, appData),
       /missing runtime target was not contained/,
     );
 
@@ -125,16 +125,16 @@ test('WindowsML requirement must transition from missing to a canonical run-loca
       response('/runtime/requirements', {
         items: [
           {
-            kind: 'windowsml_ocr',
+            kind: 'ollama',
             available: false,
-            unavailable_reason: 'windowsml_runtime_unhealthy',
+            unavailable_reason: 'ollama_not_running',
             installed_path: join(appData, 'runtimes', 'unhealthy'),
           },
         ],
       }),
     ]);
     await assert.rejects(
-      exactWindowsMlRequirement(unhealthyMissing, false, appData),
+      exactOllamaRuntimeRequirement(unhealthyMissing, false, appData),
       /not a clean missing prerequisite/,
     );
 
@@ -144,7 +144,7 @@ test('WindowsML requirement must transition from missing to a canonical run-loca
       response('/runtime/requirements', {
         items: [
           {
-            kind: 'windowsml_ocr',
+            kind: 'ollama',
             available: true,
             unavailable_reason: null,
             installed_path: outside,
@@ -153,12 +153,12 @@ test('WindowsML requirement must transition from missing to a canonical run-loca
       }),
     ]);
     await assert.rejects(
-      exactWindowsMlRequirement(drift, true, appData),
+      exactOllamaRuntimeRequirement(drift, true, appData),
       /not contained by this acceptance app-data/,
     );
 
     const linkedTarget = join(appData, 'linked-target');
-    const linkedRuntime = join(linkedTarget, 'windowsml');
+    const linkedRuntime = join(linkedTarget, 'ollama');
     const linkedParent = join(appData, 'linked-parent');
     mkdirSync(linkedRuntime, { recursive: true });
     symlinkSync(
@@ -170,32 +170,32 @@ test('WindowsML requirement must transition from missing to a canonical run-loca
       response('/runtime/requirements', {
         items: [
           {
-            kind: 'windowsml_ocr',
+            kind: 'ollama',
             available: false,
-            unavailable_reason: 'windowsml_runtime_missing',
+            unavailable_reason: 'ollama_missing',
             installed_path: join(linkedParent, 'not-installed'),
           },
         ],
       }),
     ]);
     await assert.rejects(
-      exactWindowsMlRequirement(linkedMissing, false, appData),
+      exactOllamaRuntimeRequirement(linkedMissing, false, appData),
       /target ancestor was unsafe/,
     );
     const reparseDrift = new ScriptedTransport([
       response('/runtime/requirements', {
         items: [
           {
-            kind: 'windowsml_ocr',
+            kind: 'ollama',
             available: true,
             unavailable_reason: null,
-            installed_path: join(linkedParent, 'windowsml'),
+            installed_path: join(linkedParent, 'ollama'),
           },
         ],
       }),
     ]);
     await assert.rejects(
-      exactWindowsMlRequirement(reparseDrift, true, appData),
+      exactOllamaRuntimeRequirement(reparseDrift, true, appData),
       /installed path was not canonical/,
     );
   } finally {

@@ -10,7 +10,6 @@ const CAPTURE_LIMIT = 12_000;
 const CERT_PREP_PROCESS_NAMES = new Set([
   'cert-prep-desktop.exe',
   'cert-prep-backend.exe',
-  'cert-prep-ocr-runtime.exe',
 ]);
 const PROTECTED_COMMAND_FRAGMENTS = [
   'nx-mcp',
@@ -298,14 +297,13 @@ export function collectProcessTree(
   return tree;
 }
 
-/** Identifies app/backend/OCR descendants that must not survive app close. */
+/** Identifies app/backend/Capture Runtime descendants that must not survive app close. */
 export function isCertPrepResidue(record: ProcessRecord): boolean {
   const name = record.name.toLowerCase();
   const commandLine = record.commandLine.toLowerCase();
   return (
     CERT_PREP_PROCESS_NAMES.has(name) ||
-    commandLine.includes('--ocr-worker') ||
-    commandLine.includes('cert-prep-ocr-runtime')
+    commandLine.includes('capture-runtime')
   );
 }
 

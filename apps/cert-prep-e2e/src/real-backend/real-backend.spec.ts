@@ -135,7 +135,7 @@ test('uploads multiple PDFs through the real multipart API', async ({
   ]);
 });
 
-test('uploads a static image to the deterministic fake-OCR terminal state', async ({
+test('uploads a static image to the deterministic Capture Runtime terminal state', async ({
   page,
   request,
 }, testInfo) => {

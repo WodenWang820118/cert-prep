@@ -53,8 +53,6 @@ pub struct DesktopRuntimeStatus {
 pub(crate) struct BackendRuntimeInner {
     pub(crate) data_dir: PathBuf,
     pub(crate) backend_manifest_path: Option<PathBuf>,
-    pub(crate) ocr_manifest_path: Option<PathBuf>,
-    pub(crate) windowsml_ocr_manifest_path: Option<PathBuf>,
     pub(crate) capture_runtime: CaptureRuntimeConnection,
     pub(crate) config: Mutex<Option<BackendConfig>>,
     pub(crate) child: Mutex<Option<Child>>,
@@ -106,16 +104,12 @@ impl BackendState {
     pub(crate) fn new(
         data_dir: PathBuf,
         backend_manifest_path: Option<PathBuf>,
-        ocr_manifest_path: Option<PathBuf>,
-        windowsml_ocr_manifest_path: Option<PathBuf>,
         capture_runtime: CaptureRuntimeConnection,
     ) -> Self {
         Self {
             inner: Arc::new(BackendRuntimeInner {
                 data_dir,
                 backend_manifest_path,
-                ocr_manifest_path,
-                windowsml_ocr_manifest_path,
                 capture_runtime,
                 config: Mutex::new(None),
                 child: Mutex::new(None),
@@ -364,8 +358,6 @@ mod tests {
             std::env::temp_dir().join(format!("cert-prep-runtime-{}", uuid::Uuid::new_v4()));
         let state = BackendState::new(
             data_dir.clone(),
-            None,
-            None,
             None,
             CaptureRuntimeConnection {
                 base_url: "http://127.0.0.1:41001".into(),

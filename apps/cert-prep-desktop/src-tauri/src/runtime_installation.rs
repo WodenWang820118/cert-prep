@@ -387,8 +387,6 @@ mod tests {
         BackendRuntimeInner {
             data_dir,
             backend_manifest_path: Some(manifest_path),
-            ocr_manifest_path: None,
-            windowsml_ocr_manifest_path: None,
             capture_runtime: CaptureRuntimeConnection {
                 base_url: "http://127.0.0.1:41001".into(),
                 token: "capture-sidecar-test-token".into(),

@@ -109,10 +109,15 @@ class RecordingSetupClient:
 
 
 def test_capture_runtime_setup_requires_configured_backend_client(
-    client: TestClient,
+    tmp_path: Path,
     auth_headers: dict[str, str],
 ) -> None:
-    response = client.get("/capture-runtime/requirements", headers=auth_headers)
+    settings = Settings(data_dir=tmp_path, api_token=TOKEN, llm_provider="fake")
+    with TestClient(create_app(settings=settings, document_processing_async_jobs=False)) as client:
+        response = client.get(
+            "/capture-runtime/requirements",
+            headers={"Authorization": f"Bearer {TOKEN}"},
+        )
 
     assert response.status_code == 503
     assert response.json()["code"] == "capture_runtime_unavailable"

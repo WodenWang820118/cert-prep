@@ -1,17 +1,15 @@
 # Capture Workbench TODO
 
-- [ ] Pin a published Angular package and matching Windows x64 runtime release.
-- [ ] Start the capture sidecar from Tauri and pass its URL/token to the backend only.
-  Native lifecycle, fail-closed executable/schema staging, authenticated
-  host-only handshake, static package QA, and PID-scoped cleanup are
-  implemented; packaged smoke awaits the first real `0.3.0` release artifact.
-- [x] Add the backend capture coordinator and Cert Prep structuring-provider adapter.
-- [x] Atomically map validated `CaptureDocumentV1` into the existing document pipeline.
-- [x] Proxy Capture Runtime requirements/install/cancel through the authenticated
-  backend without exposing the sidecar token to the WebView.
-- [ ] Stage checksum-pinned WindowsML install assets and prove the clean-install
-  setup flow with the released sidecar.
-- [ ] Replace the upload UI with the published component and a host backend client.
-- [ ] Prove document/crop/retry/cancel/chunk/reasoning regressions and process isolation.
-- [ ] Remove the local prototype and duplicated capture OCR/Whisper/install/provider paths after parity.
-- [ ] Fold this TODO into durable domain specs when cutover is complete.
+The implementation cutover is complete. Durable ownership and failure policy
+are recorded in `SPECS/domains/capture-runtime-integration.md`.
+
+- [x] Use published `@gx-capture/capture-workbench@0.3.0` for the trial UI.
+- [x] Route PDF, image, and audio through Capture Runtime only.
+- [x] Remove the local UI prototype and Cert Prep OCR/Whisper/provider paths.
+- [x] Keep Tauri lifecycle, authenticated proxy, host structuring, review, and
+  document persistence.
+- [x] Remove retired runtime installer, health UI, release payload, and Nx
+  targets.
+- [x] Regenerate the OpenAPI client and add missing-runtime fail-closed tests.
+- [ ] Run the real published PDF/image/audio packaged smoke on Windows x64 when
+  the release assets and fixtures are available.

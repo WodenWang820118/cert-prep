@@ -21,10 +21,7 @@ import {
   installProcessShutdownCleanup,
   processSnapshot,
 } from '../process-lifecycle/processes.mts';
-import {
-  installOcrRuntimeIfNeeded,
-  installPythonRuntimeIfNeeded,
-} from './runtime-install-flow.mts';
+import { installPythonRuntimeIfNeeded } from './runtime-install-flow.mts';
 import { startResourceSampling } from './resource-sampling.mts';
 import { log, screenshot } from './runner-context.mts';
 import { writeStreamingBaselineArtifacts } from './streaming-baseline-report.mts';
@@ -55,7 +52,6 @@ async function runFlow(run: SmokeRunState): Promise<void> {
   }
   await launchAppAndConnect(run);
   await installPythonRuntimeIfNeeded(run);
-  await installOcrRuntimeIfNeeded(run);
   await createProject(run);
   await uploadAndParsePdf(run);
   if (run.options.waitForStreamingComplete) {
@@ -157,7 +153,6 @@ export async function runPackagedFlowSmoke(
     generation_readiness_at_start: unavailableGenerationReadinessSnapshot(
       'capture_not_reached',
     ),
-    ocr_provider: parsedOptions.ocrProvider,
     first_chunk_gate_ms: FIRST_CHUNK_GATE_MS,
     first_chunk_under_gate: false,
     streaming_draft_page_limit: parsedOptions.streamingDraftPageLimit,

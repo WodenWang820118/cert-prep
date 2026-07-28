@@ -234,33 +234,30 @@ function Stop-OwnedPidTree([int]$OwnedPid) {
 function Assert-InstalledRuntimeContract([string]$InstallRoot, [pscustomobject]$Plan) {
     $backendManifestPath = Get-ChildItem -LiteralPath $InstallRoot -Recurse -File `
         -Filter 'backend-runtime-manifest.json' | Select-Object -First 1 -ExpandProperty FullName
-    $ocrManifestPath = Get-ChildItem -LiteralPath $InstallRoot -Recurse -File `
-        -Filter 'windowsml-ocr-runtime-manifest.json' | Select-Object -First 1 -ExpandProperty FullName
-    if (-not $backendManifestPath -or -not $ocrManifestPath) {
+    $captureManifestPath = Get-ChildItem -LiteralPath $InstallRoot -Recurse -File `
+        -Filter 'capture-runtime-manifest.json' | Select-Object -First 1 -ExpandProperty FullName
+    if (-not $backendManifestPath -or -not $captureManifestPath) {
         throw 'Installed runtime manifests were not found.'
     }
     $backend = Get-Content -LiteralPath $backendManifestPath -Raw | ConvertFrom-Json
-    $ocr = Get-Content -LiteralPath $ocrManifestPath -Raw | ConvertFrom-Json
+    $capture = Get-Content -LiteralPath $captureManifestPath -Raw | ConvertFrom-Json
     if ($backend.version -ne $Plan.version -or $backend.artifact.url -ne $null) {
         throw 'Installed backend manifest does not describe the bundled alpha runtime.'
     }
-    if ($ocr.version -ne $Plan.version -or
-        $ocr.artifact.url -ne "$($Plan.assetBaseUrl)/$($ocr.artifact.file_name)") {
-        throw 'Installed OCR manifest does not point to the public versioned release asset.'
+    if ($capture.runtimeVersion -ne '0.3.0' -or
+        $capture.apiVersion -ne '1.0' -or
+        $capture.captureDocumentSchemaVersion -ne '1') {
+        throw 'Installed Capture Runtime manifest does not describe the pinned contract.'
     }
     $backendZip = Join-Path (Split-Path -Parent $backendManifestPath) $backend.artifact.file_name
-    $ocrZip = Join-Path (Split-Path -Parent $ocrManifestPath) $ocr.artifact.file_name
     if (-not (Test-Path -LiteralPath $backendZip -PathType Leaf)) {
         throw 'Bundled backend runtime ZIP is missing after installation.'
-    }
-    if (Test-Path -LiteralPath $ocrZip) {
-        throw 'WindowsML OCR runtime ZIP must not be bundled in the installed app.'
     }
     if ((Get-Item -LiteralPath $backendZip).Length -ne $backend.artifact.bytes -or
         (Get-Sha256 $backendZip) -ne $backend.artifact.sha256) {
         throw 'Bundled backend runtime ZIP failed byte/hash verification.'
     }
-    foreach ($manifestPath in @($backendManifestPath, $ocrManifestPath)) {
+    foreach ($manifestPath in @($backendManifestPath, $captureManifestPath)) {
         $content = (Get-Content -LiteralPath $manifestPath -Raw).ToLowerInvariant()
         if ($content.Contains('file://') -or $content.Contains('c:\software-dev')) {
             throw "Installed manifest contains a development reference: $manifestPath"
@@ -268,8 +265,8 @@ function Assert-InstalledRuntimeContract([string]$InstallRoot, [pscustomobject]$
     }
     return [pscustomobject]@{
         backendManifestPath = $backendManifestPath
-        ocrManifestPath = $ocrManifestPath
-        ocr = $ocr
+        captureManifestPath = $captureManifestPath
+        capture = $capture
     }
 }
 
@@ -307,7 +304,6 @@ $backendEvidence = $null
 $contract = $null
 $result = $null
 $uninstallVerified = $false
-$ocrDownload = Join-Path $env:RUNNER_TEMP "nsis-$($plan.version)-ocr.zip"
 $freshAppData = Join-Path $env:RUNNER_TEMP `
     "cert-prep-clean-nsis-$([Guid]::NewGuid().ToString('N'))"
 try {
@@ -325,12 +321,6 @@ try {
     $executable = Find-InstalledExecutable $(if ($newEntries.Count) { $newEntries } else { $afterEntries })
     $installRoot = $executable.Directory.FullName
     $contract = Assert-InstalledRuntimeContract $installRoot $plan
-
-    Invoke-WebRequest -Uri $contract.ocr.artifact.url -OutFile $ocrDownload -UseBasicParsing
-    if ((Get-Item -LiteralPath $ocrDownload).Length -ne $contract.ocr.artifact.bytes -or
-        (Get-Sha256 $ocrDownload) -ne $contract.ocr.artifact.sha256) {
-        throw 'Public OCR runtime download failed byte/hash verification.'
-    }
 
     New-Item -ItemType Directory -Path $freshAppData | Out-Null
     if (@(Get-ChildItem -LiteralPath $freshAppData -Force).Count -ne 0) {
@@ -366,8 +356,7 @@ try {
         installer = $installer.Name
         installerSha256 = Get-Sha256 $installer.FullName
         backendBundled = $true
-        ocrBundled = $false
-        publicOcrDownloadVerified = $true
+        captureRuntimeVerified = $true
         appLaunchVerified = $true
         freshAppDataVerified = $true
         backendInstallVerified = $true
@@ -384,7 +373,6 @@ try {
     if ($backendEvidence -and $backendEvidence.pid) {
         Stop-OwnedPidTree ([int]$backendEvidence.pid)
     }
-    Remove-Item -LiteralPath $ocrDownload -Force -ErrorAction SilentlyContinue
     if (Test-Path -LiteralPath $freshAppData -PathType Container) {
         $resolvedFreshData = (Resolve-Path -LiteralPath $freshAppData).Path
         $runnerTemp = [IO.Path]::GetFullPath($env:RUNNER_TEMP)

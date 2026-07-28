@@ -12,8 +12,6 @@ const DEFAULT_PRODUCTION_OUT_ROOT =
 const DEFAULT_PDF_PATH =
   'pdfs/\u30101\u30112025\u5e7407\u6708N1 \u771f\u9898.pdf';
 const DEFAULT_CDP_PORT = 9491;
-const DEFAULT_OCR_PROVIDER = 'windowsml';
-const DEFAULT_OCR_PAGE_WORKERS = 1;
 const DEFAULT_LLM_PROVIDER = 'auto';
 const DEFAULT_STREAMING_COMPLETE_TIMEOUT_MS = 1_200_000;
 
@@ -39,13 +37,6 @@ export function parsePackagedFlowSmokeArgs(
     pdfPath: resolve(workspaceRoot, DEFAULT_PDF_PATH),
     outDir: resolve(workspaceRoot, DEFAULT_OUT_ROOT, timestamp),
     cdpPort: DEFAULT_CDP_PORT,
-    ocrProvider:
-      process.env.CERT_PREP_PACKAGE_SMOKE_OCR_PROVIDER?.trim() ||
-      DEFAULT_OCR_PROVIDER,
-    ocrPageWorkers: Number(
-      process.env.CERT_PREP_PACKAGE_SMOKE_OCR_PAGE_WORKERS ??
-        DEFAULT_OCR_PAGE_WORKERS,
-    ),
     llmProvider:
       process.env.CERT_PREP_PACKAGE_SMOKE_LLM_PROVIDER?.trim() ||
       DEFAULT_LLM_PROVIDER,
@@ -65,7 +56,7 @@ export function parsePackagedFlowSmokeArgs(
       ) ?? DEFAULT_STREAMING_COMPLETE_TIMEOUT_MS,
     skipGpuSampling: false,
     productionSummary: false,
-    allowOcrChunkVariance: false,
+    allowCaptureChunkVariance: false,
     verifyStreamingPracticeReady: false,
   };
 
@@ -96,10 +87,6 @@ export function parsePackagedFlowSmokeArgs(
       parsed.appDataDir = resolve(workspaceRoot, readValue(arg));
     } else if (arg === '--cdp-port') {
       parsed.cdpPort = positiveInteger(Number(readValue(arg)), arg);
-    } else if (arg === '--ocr-provider') {
-      parsed.ocrProvider = nonEmptyString(readValue(arg), arg);
-    } else if (arg === '--ocr-page-workers') {
-      parsed.ocrPageWorkers = positiveInteger(Number(readValue(arg)), arg);
     } else if (arg === '--llm-provider') {
       parsed.llmProvider = nonEmptyString(readValue(arg), arg).toLowerCase();
     } else if (arg === '--streaming-draft-page-limit') {
@@ -124,8 +111,8 @@ export function parsePackagedFlowSmokeArgs(
     } else if (arg === '--production-summary') {
       parsed.productionSummary = true;
       parsed.waitForStreamingComplete = true;
-    } else if (arg === '--allow-ocr-chunk-variance') {
-      parsed.allowOcrChunkVariance = true;
+    } else if (arg === '--allow-capture-chunk-variance') {
+      parsed.allowCaptureChunkVariance = true;
     } else if (arg === '--verify-streaming-practice-ready') {
       parsed.verifyStreamingPracticeReady = true;
       parsed.waitForStreamingComplete = true;
@@ -134,11 +121,6 @@ export function parsePackagedFlowSmokeArgs(
     }
   }
 
-  parsed.ocrPageWorkers = positiveInteger(
-    parsed.ocrPageWorkers,
-    'ocrPageWorkers',
-  );
-  parsed.ocrProvider = nonEmptyString(parsed.ocrProvider, 'ocrProvider');
   parsed.llmProvider = nonEmptyString(
     parsed.llmProvider,
     'llmProvider',

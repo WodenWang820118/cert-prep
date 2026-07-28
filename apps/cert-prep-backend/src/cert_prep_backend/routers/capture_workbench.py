@@ -16,7 +16,7 @@ from pydantic.alias_generators import to_camel
 from cert_prep_backend.api.dependencies import (
     get_database,
     get_capture_coordinator,
-    get_document_ocr_worker_pool,
+    get_document_worker_pool,
     get_settings,
     get_streaming_draft_generation_manager,
 )
@@ -99,7 +99,7 @@ async def create_capture(
     operation_id_header: OperationIdHeader = None,
     db: Database = Depends(get_database),
     settings: Settings = Depends(get_settings),
-    workers: DocumentWorkerPool = Depends(get_document_ocr_worker_pool),
+    workers: DocumentWorkerPool = Depends(get_document_worker_pool),
 ) -> CaptureReviewJobRead:
     coordinator = get_capture_coordinator(request)
     cleanup_expired_review_sessions(db, coordinator=coordinator)
@@ -304,7 +304,7 @@ def confirm_capture(
     confirm_request: CaptureReviewConfirmRequest,
     db: Database = Depends(get_database),
     settings: Settings = Depends(get_settings),
-    workers: DocumentWorkerPool = Depends(get_document_ocr_worker_pool),
+    workers: DocumentWorkerPool = Depends(get_document_worker_pool),
     streaming_questions=Depends(get_streaming_draft_generation_manager),
 ) -> CaptureReviewJobRead:
     coordinator = get_capture_coordinator(request)

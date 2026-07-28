@@ -126,14 +126,10 @@ test('desktop project exposes a packaged static-image acceptance target', () => 
   };
   const target = project.targets?.['packaged-image-upload-smoke'];
 
-  assert.deepEqual(target?.dependsOn, ['build-windowsml-dev']);
+  assert.deepEqual(target?.dependsOn, ['build-capture-dev']);
   assert.equal(
     target?.options?.command,
     'node apps/cert-prep-desktop/scripts/packaged-image-upload-smoke.mts',
-  );
-  assert.equal(
-    target?.options?.env?.CERT_PREP_ALLOW_LOCAL_OCR_RUNTIME_URL,
-    'true',
   );
 });
 

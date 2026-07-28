@@ -33,7 +33,6 @@ from cert_prep_contracts.llm_profiles import (
     OllamaProfileSelection,
     OllamaProfileSupportStatus,
 )
-from cert_prep_contracts.ocr import OCRHealth, OCRPageResult, OCRProvider
 from cert_prep_contracts.runtime import (
     RuntimeInstallationStatus,
     RuntimeInstallProgress,
@@ -43,9 +42,6 @@ from cert_prep_contracts.runtime import (
 from cert_prep_contracts.transcription import (
     MAX_AUDIO_DURATION_MS,
     TranscriptSegment,
-    TranscriptionCanceledError,
-    TranscriptionProvider,
-    TranscriptionResult,
 )
 
 __all__ = [
@@ -69,9 +65,6 @@ __all__ = [
     "MachineRamSnapshot",
     "MachineStorageSnapshot",
     "ModelPullProgress",
-    "OCRHealth",
-    "OCRPageResult",
-    "OCRProvider",
     "OllamaModelProfile",
     "OllamaParameterValue",
     "OllamaProfileSelection",
@@ -83,7 +76,4 @@ __all__ = [
     "SourceDocumentStatus",
     "SourceDocumentStatusValue",
     "TranscriptSegment",
-    "TranscriptionCanceledError",
-    "TranscriptionProvider",
-    "TranscriptionResult",
 ]

@@ -17,10 +17,7 @@ import {
   screenshot,
   waitText,
 } from '../packaged-flow-smoke/runner-context.mts';
-import {
-  installOcrRuntimeIfNeeded,
-  installPythonRuntimeIfNeeded,
-} from '../packaged-flow-smoke/runtime-install-flow.mts';
+import { installPythonRuntimeIfNeeded } from '../packaged-flow-smoke/runtime-install-flow.mts';
 import { waitForUploadDocumentResponse } from '../packaged-flow-smoke/streaming-capture-api.mts';
 import { errorMessage, isRecord } from '../packaged-flow-smoke/text-utils.mts';
 import type {
@@ -85,7 +82,6 @@ export async function runPackagedImageUploadSmoke(
     log(run, `artifact dir ${options.outDir}`);
     await launchAppAndConnect(run);
     await installPythonRuntimeIfNeeded(run);
-    await installOcrRuntimeIfNeeded(run);
     await createProject(run);
     document = await uploadAndVerifyStaticImage(run, imagePath, options.timeoutMs);
     run.metrics.status = 'completed';
@@ -236,8 +232,6 @@ function createRunState(
     outDir: options.outDir,
     appDataDir: options.appDataDir,
     cdpPort: options.cdpPort,
-    ocrProvider: options.ocrProvider,
-    ocrPageWorkers: 1,
     llmProvider: 'auto',
     acceptanceIsolation: true,
     candidateDistributionProfile: 'local_nonpublishable',
@@ -245,7 +239,7 @@ function createRunState(
     streamingCompleteTimeoutMs: options.timeoutMs,
     skipGpuSampling: true,
     productionSummary: false,
-    allowOcrChunkVariance: true,
+    allowCaptureChunkVariance: true,
     verifyStreamingPracticeReady: false,
   };
   const metrics: SmokeMetrics = {
@@ -262,7 +256,6 @@ function createRunState(
     generation_readiness_at_start: unavailableGenerationReadinessSnapshot(
       'capture_not_reached',
     ),
-    ocr_provider: smokeOptions.ocrProvider,
     first_chunk_gate_ms: 15_000,
     first_chunk_under_gate: false,
     wait_for_streaming_complete: false,

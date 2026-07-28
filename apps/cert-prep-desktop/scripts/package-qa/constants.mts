@@ -23,7 +23,6 @@ export const DEFAULT_TAURI_CONFIG =
   'apps/cert-prep-desktop/src-tauri/tauri.conf.json';
 export const DEFAULT_LLM_MODEL = 'qwen3.5:4b';
 export const BACKEND_RUNTIME_PREFIX = `cert-prep-backend-runtime-${ALPHA_VERSION}-`;
-export const WINDOWSML_OCR_RUNTIME_PREFIX = `cert-prep-ocr-windowsml-runtime-${ALPHA_VERSION}-`;
 export const INITIAL_INSTALLER_WARNING_MB = 150;
 export const INITIAL_INSTALLER_ERROR_MB = 250;
 

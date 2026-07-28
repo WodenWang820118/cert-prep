@@ -81,7 +81,6 @@ export interface ForcedCrashSummary {
 
 const ACCEPTANCE_ENV_PREFIXES = ['cert_prep_', 'ollama_', 'webview2_'] as const;
 const ACCEPTANCE_REMOVED_ENV_NAMES = new Set(['no_proxy']);
-const LOCAL_OCR_RUNTIME_URL_ENV = 'cert_prep_allow_local_ocr_runtime_url';
 const RETIRED_MODEL_ENV_NAMES = new Set([
   'cert_prep_ollama_model',
   'cert_prep_ollama_fallback_models',
@@ -522,17 +521,13 @@ export function buildAppLaunchEnvironment(
     inherited,
     acceptanceIsolation,
   );
-  const candidateDistributionProfile = run.options.candidateDistributionProfile;
   const guardedBaseEnvironment = Object.fromEntries(
     Object.entries(baseEnvironment).filter(([name]) => {
       const normalizedName = name.toLowerCase();
       if (RETIRED_MODEL_ENV_NAMES.has(normalizedName)) {
         return false;
       }
-      return (
-        candidateDistributionProfile === undefined ||
-        normalizedName !== LOCAL_OCR_RUNTIME_URL_ENV
-      );
+      return true;
     }),
   );
   const appDataDir = launchAppDataDir(run);
@@ -550,11 +545,6 @@ export function buildAppLaunchEnvironment(
     CERT_PREP_BACKEND_LOG_DIR: run.options.outDir,
     CERT_PREP_BACKEND_READY_TIMEOUT_SECS: '90',
     CERT_PREP_LLM_PROVIDER: run.options.llmProvider,
-    CERT_PREP_OCR_PROVIDER: run.options.ocrProvider,
-    CERT_PREP_OCR_PAGE_WORKERS: String(run.options.ocrPageWorkers),
-    ...(candidateDistributionProfile === 'local_nonpublishable'
-      ? { CERT_PREP_ALLOW_LOCAL_OCR_RUNTIME_URL: 'true' }
-      : {}),
     CERT_PREP_OLLAMA_MODEL: DEFAULT_LLM_MODEL,
     ...isolatedOllamaEnvironment,
     ...(run.options.streamingDraftPageLimit

@@ -26,8 +26,6 @@ def test_missing_api_token_fails_closed(tmp_path: Path) -> None:
         "code": "unauthorized",
         "message": "API token is not configured.",
     }
-
-
 def test_cors_allows_configured_dev_origin(tmp_path: Path) -> None:
     client = TestClient(create_app(settings=Settings(data_dir=tmp_path, api_token="secret")))
 
@@ -73,27 +71,4 @@ def test_llm_health_uses_fake_provider_without_network(client: TestClient, auth_
         "modelfile_sha256": None,
         "profile_reason": None,
         "profile_warnings": [],
-    }
-
-
-def test_ocr_health_uses_fake_provider_without_native_dependencies(
-    client: TestClient, auth_headers
-) -> None:
-    response = client.get("/ocr/health", headers=auth_headers)
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "provider": "fake",
-        "engine": "none",
-        "available": True,
-        "detail": "deterministic local fake OCR provider",
-        "python_version": response.json()["python_version"],
-        "paddle_version": None,
-        "paddleocr_version": None,
-        "selected_device": None,
-        "cuda_available": False,
-        "gpu_count": 0,
-        "model_cache_dir": None,
-        "fallback_reason": None,
-        "unavailable_reason": None,
     }

@@ -70,7 +70,7 @@ export class App implements OnInit, OnDestroy {
     },
     {
       id: 'capture_workbench_trial',
-      label: 'Capture Workbench PDF OCR',
+      label: 'Capture Workbench',
       icon: 'pi pi-box',
       path: '/capture-workbench-trial',
     },

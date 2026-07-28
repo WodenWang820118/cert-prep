@@ -66,8 +66,7 @@ Use the narrowest relevant subset for the slice:
 - `pnpm nx run cert-prep:build`
 - `pnpm nx run cert-prep-backend:lint`
 - `pnpm nx run cert-prep-backend:test`
-- `pnpm nx run cert-prep-ocr-windowsml:lint`
-- `pnpm nx run cert-prep-ocr-windowsml:test`
+- `pnpm nx run cert-prep-desktop:release-tool-test`
 - `pnpm nx run cert-prep-desktop:typecheck-scripts`
 - `pnpm nx run cert-prep-desktop:package-qa-test`
 - `pnpm nx run cert-prep-desktop:cargo-test`

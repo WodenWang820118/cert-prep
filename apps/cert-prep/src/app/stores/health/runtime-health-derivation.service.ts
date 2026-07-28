@@ -1,12 +1,10 @@
 import { Injectable } from '@angular/core';
 import type {
   LLMHealthRead,
-  OCRHealthRead,
   RuntimeRequirementRead,
 } from '../../contracts/api.contracts';
 import {
   LLM_RUNTIME_MISSING_REASON_CODES,
-  OCR_RUNTIME_MISSING_REASON_CODES,
 } from './constants/health.constants';
 import type {
   LLMProviderSelectionRead,
@@ -70,42 +68,6 @@ export class RuntimeHealthDerivationService {
     return 'LLM provider';
   }
 
-  isOcrRuntimeMissing(
-    health: OCRHealthRead | null,
-    requirements: readonly RuntimeRequirementRead[],
-  ): boolean {
-    const kind = this.ocrRuntimeKind(health, requirements);
-    return (
-      OCR_RUNTIME_MISSING_REASON_CODES.has(this.unavailableReason(health)) ||
-      OCR_RUNTIME_MISSING_REASON_CODES.has(
-        this.runtimeUnavailableReason(requirements, kind),
-      )
-    );
-  }
-
-  ocrRuntimeKind(
-    health: OCRHealthRead | null,
-    requirements: readonly RuntimeRequirementRead[],
-  ): Extract<RuntimeKind, 'paddle_ocr' | 'windowsml_ocr'> {
-    const healthProvider = this.normalizedCode(health?.provider);
-    const healthReason = this.unavailableReason(health);
-    if (
-      healthProvider === 'windowsml' ||
-      healthReason.startsWith('windowsml_')
-    ) {
-      return 'windowsml_ocr';
-    }
-    if (
-      requirements.some(
-        (item) =>
-          item.kind === 'windowsml_ocr' &&
-          this.normalizedCode(item.unavailable_reason).startsWith('windowsml_'),
-      )
-    ) {
-      return 'windowsml_ocr';
-    }
-    return 'paddle_ocr';
-  }
 
   configuredModelName(
     health: LLMHealthRead | null,
@@ -157,7 +119,7 @@ export class RuntimeHealthDerivationService {
       : '';
   }
 
-  private unavailableReason(health: LLMHealthRead | OCRHealthRead | null) {
+  private unavailableReason(health: LLMHealthRead | null) {
     return this.normalizedCode(health?.unavailable_reason);
   }
 

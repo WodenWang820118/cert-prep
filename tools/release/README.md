@@ -148,13 +148,13 @@ replace `clean-install`.
 Build a local candidate only from an isolated clean worktree:
 
 ```powershell
-pnpm nx run cert-prep-desktop:local-candidate-windowsml --skip-nx-cache
+pnpm nx run cert-prep-desktop:local-candidate --skip-nx-cache
 ```
 
-The result is permanently marked `local_nonpublishable`, uses a local OCR file
-URL, and is rejected by the public publisher, finalizer, and cleanup modes. The
-builder also rejects a dirty source tree, linked inputs, identity drift, and an
-existing output path.
+The result is permanently marked `local_nonpublishable`, uses a local Capture
+Runtime file URL, and is rejected by the public publisher, finalizer, and
+cleanup modes. The builder also rejects a dirty source tree, linked inputs,
+identity drift, and an existing output path.
 
 To diagnose the current-user install path, first ensure Cert Prep is neither
 installed nor running, then execute:
@@ -171,8 +171,8 @@ is handled explicitly.
 The optional diagnostic targets are:
 
 ```powershell
-pnpm nx run cert-prep-desktop:packaged-document-cancellation-windowsml --skip-nx-cache
-pnpm nx run cert-prep-desktop:packaged-remaining-resilience-windowsml --skip-nx-cache
+pnpm nx run cert-prep-desktop:packaged-document-cancellation --skip-nx-cache
+pnpm nx run cert-prep-desktop:packaged-remaining-resilience --skip-nx-cache
 pnpm nx run cert-prep-desktop:local-resilience-evidence-verify --skip-nx-cache
 ```
 

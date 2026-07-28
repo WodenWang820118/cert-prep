@@ -67,7 +67,6 @@ export interface UploadTransportRun {
   readonly itemIds: string[];
   readonly documents: DocumentRead[];
   readonly done: Observable<void>;
-  runtimePromptNeeded: boolean;
 }
 
 export type UploadResumeResult =
@@ -99,7 +98,6 @@ export interface SourceUploadLifecycleHooks {
   ) => Observable<DocumentOperationRead>;
   readonly newOperationId: () => string;
   readonly errorMessage: (error: unknown) => string;
-  readonly errorCode: (error: unknown) => string | null;
 }
 
 export interface MutableUploadRun extends UploadTransportRun {

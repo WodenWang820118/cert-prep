@@ -8,10 +8,6 @@ test('packaged flow smoke args validate numeric knobs', () => {
   const parsed = parsePackagedFlowSmokeArgs([
     '--cdp-port',
     '9555',
-    '--ocr-provider',
-    'windowsml',
-    '--ocr-page-workers',
-    '2',
     '--llm-provider',
     'ollama',
     '--streaming-draft-page-limit',
@@ -27,8 +23,6 @@ test('packaged flow smoke args validate numeric knobs', () => {
   ]);
 
   assert.equal(parsed.cdpPort, 9555);
-  assert.equal(parsed.ocrProvider, 'windowsml');
-  assert.equal(parsed.ocrPageWorkers, 2);
   assert.equal(parsed.llmProvider, 'ollama');
   assert.equal(parsed.streamingDraftPageLimit, 1);
   assert.equal(parsed.streamingDraftWorkers, 2);
@@ -37,16 +31,8 @@ test('packaged flow smoke args validate numeric knobs', () => {
   assert.equal(parsed.verifyStreamingPracticeReady, true);
   assert.match(parsed.appDataDir ?? '', /tmp[\\/]baseline-app-data$/);
   assert.throws(
-    () => parsePackagedFlowSmokeArgs(['--ocr-page-workers', '0']),
-    /positive integer/,
-  );
-  assert.throws(
     () => parsePackagedFlowSmokeArgs(['--streaming-draft-page-limit', '0']),
     /positive integer/,
-  );
-  assert.throws(
-    () => parsePackagedFlowSmokeArgs(['--ocr-provider', ' ']),
-    /must not be empty/,
   );
   assert.throws(
     () => parsePackagedFlowSmokeArgs(['--streaming-complete-timeout-ms', '0']),
@@ -76,12 +62,12 @@ test('packaged streaming baseline defaults to isolated output and app data', () 
 
 test('packaged streaming production enables completion wait and production output root', () => {
   const parsed = parsePackagedFlowSmokeArgs(
-    ['--production-summary', '--allow-ocr-chunk-variance'],
+    ['--production-summary', '--allow-capture-chunk-variance'],
     'C:\\workspace',
   );
 
   assert.equal(parsed.productionSummary, true);
-  assert.equal(parsed.allowOcrChunkVariance, true);
+  assert.equal(parsed.allowCaptureChunkVariance, true);
   assert.equal(parsed.waitForStreamingComplete, true);
   assert.equal(parsed.verifyStreamingPracticeReady, false);
   assert.equal(parsed.llmProvider, 'auto');
@@ -131,7 +117,7 @@ test('packaged flow smoke can write timestamped output under an explicit root', 
   assert.equal(parsed.appDataDir, `${parsed.outDir}\\app-data`);
 });
 
-test('packaged production targets pin the Ollama-only Alpha policy', () => {
+test('packaged targets use Capture Runtime without retired provider flags', () => {
   const project = JSON.parse(
     readFileSync(new URL('../../project.json', import.meta.url), 'utf8'),
   ) as {
@@ -140,38 +126,8 @@ test('packaged production targets pin the Ollama-only Alpha policy', () => {
       { outputs?: string[]; options?: { command?: string } }
     >;
   };
-  assert.equal(project.targets?.['packaged-streaming-baseline'], undefined);
-  const baselineCommand =
-    project.targets?.['packaged-streaming-baseline-windowsml']?.options
-      ?.command ?? '';
-  assert.match(baselineCommand, /--ocr-provider windowsml(?:\s|$)/);
-
-  const productionTarget =
-    project.targets?.['packaged-streaming-production-windowsml'];
-  const command = productionTarget?.options?.command ?? '';
-  const parsed = parsePackagedFlowSmokeArgs(targetCommandArgs(command));
-  assert.equal(parsed.llmProvider, 'ollama');
-  assert.equal(parsed.productionSummary, true);
-  assert.equal(parsed.ocrProvider, 'windowsml');
-  assert.equal(parsed.verifyStreamingPracticeReady, true);
-  assert.doesNotMatch(command, /(?:fallback|record-video|llm-model)/);
-  assert.equal(
-    project.targets?.['packaged-streaming-production-recorded-windowsml'],
-    undefined,
-  );
-  assert.equal(Boolean(productionTarget?.outputs?.[0]), true);
-
   for (const target of Object.values(project.targets ?? {})) {
     assert.doesNotMatch(target.options?.command ?? '', /--acceptance-lane/);
+    assert.doesNotMatch(target.options?.command ?? '', /--capture-provider|--capture-page-workers/i);
   }
 });
-
-function targetCommandArgs(command: string): string[] {
-  const [runtime, script, ...args] = command.trim().split(/\s+/);
-  assert.equal(runtime, 'node');
-  assert.equal(
-    script,
-    'apps/cert-prep-desktop/scripts/packaged-flow-smoke.mts',
-  );
-  return args;
-}

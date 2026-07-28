@@ -231,17 +231,17 @@ function validProof(
   }
   if (check === 'runtime') {
     const unavailableRequirement = {
-      kind: 'windowsml_ocr',
+      kind: 'ollama',
       available: false,
-      unavailableReason: 'windowsml_runtime_missing',
-      installTargetPathRelative: 'runtimes/windowsml-ocr',
+      unavailableReason: 'ollama_missing',
+      installTargetPathRelative: 'runtimes/ollama',
     };
     return {
       ...cancellationProof(
         {
-          kind: 'windowsml_ocr',
-          provider: 'windowsml',
-          model: 'pp-ocrv6-medium-windowsml',
+          kind: 'ollama',
+          provider: 'ollama',
+          model: 'qwen3.5:4b',
         },
         operationId,
         operation(operationId, 'cancel_requested', 'canceling', false),
@@ -255,9 +255,9 @@ function validProof(
         afterWindow: unavailableRequirement,
       },
       requirementAfter: {
-        kind: 'windowsml_ocr',
+        kind: 'ollama',
         available: true,
-        installedPathRelative: 'runtimes/windowsml-ocr',
+        installedPathRelative: 'runtimes/ollama',
       },
     };
   }

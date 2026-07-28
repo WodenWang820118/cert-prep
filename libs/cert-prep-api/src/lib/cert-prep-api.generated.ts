@@ -52,7 +52,6 @@ export interface Components {
     ManualDraftGenerationOperationRead: { "id": string; "project_id": string; "document_id": string; "limit": number; "strategy": Components['schemas']['DraftGenerationStrategy']; "status": Components['schemas']['ManualDraftOperationStatus']; "phase": string; "cancellable": boolean; "provider": string; "model": string; "effective_provider"?: string | null; "effective_model"?: string | null; "fallback_reason"?: string | null; "generated_count": number; "error"?: string | null; "created_at": string; "updated_at": string; "commit_started_at"?: string | null };
     ManualDraftOperationStatus: "queued" | "running" | "cancel_requested" | "canceled" | "succeeded" | "failed";
     ModelDownloadRead: { "id": string; "provider": string; "model": string; "status": Components['schemas']['cert_prep_contracts__runtime__RuntimeInstallationStatus']; "phase": string; "cancellable": boolean; "detail": string; "completed": number | null; "total": number | null; "created_at": string; "updated_at": string; "commit_started_at"?: string | null; "error"?: string | null };
-    OCRHealthRead: { "provider": string; "engine": string; "available": boolean; "detail": string; "python_version": string; "paddle_version": string | null; "paddleocr_version": string | null; "selected_device": string | null; "cuda_available": boolean; "gpu_count": number; "model_cache_dir": string | null; "fallback_reason": string | null; "unavailable_reason"?: string | null };
     OllamaModelProfileRead: { "profile_id": string; "display_name": string; "description": string; "base_model": string; "local_model": string; "context_window": number; "system_prompt": string; "parameters"?: Record<string, unknown>; "min_total_ram_bytes"?: number | null; "min_available_ram_bytes"?: number | null; "min_free_disk_bytes"?: number | null; "min_vram_bytes"?: number | null; "auto_selectable": boolean; "explicit_opt_in_required": boolean; "fallback_profile_ids"?: string[] };
     OllamaProfileSelectionRead: { "profile_enabled": boolean; "profile_id"?: string | null; "selected_profile"?: Components['schemas']['OllamaModelProfileRead'] | null; "support_status": string; "reason": string; "fallback_profiles"?: Components['schemas']['OllamaModelProfileRead'][]; "fallback_models"?: string[]; "warnings"?: string[]; "inventory"?: Components['schemas']['MachineInventoryRead'] | null; "modelfile_sha256"?: string | null; "effective_model": string; "base_model"?: string | null };
     OllamaProfilesRead: { "items": Components['schemas']['OllamaModelProfileRead'][] };
@@ -151,7 +150,6 @@ export type MachineStorageRead = Components['schemas']['MachineStorageRead'];
 export type ManualDraftGenerationOperationRead = Components['schemas']['ManualDraftGenerationOperationRead'];
 export type ManualDraftOperationStatus = Components['schemas']['ManualDraftOperationStatus'];
 export type ModelDownloadRead = Components['schemas']['ModelDownloadRead'];
-export type OCRHealthRead = Components['schemas']['OCRHealthRead'];
 export type OllamaModelProfileRead = Components['schemas']['OllamaModelProfileRead'];
 export type OllamaProfileSelectionRead = Components['schemas']['OllamaProfileSelectionRead'];
 export type OllamaProfilesRead = Components['schemas']['OllamaProfilesRead'];
@@ -267,7 +265,6 @@ export interface CertPrepGeneratedClient {
   startModelDownload(options?: CertPrepRequestOptions): Observable<Components['schemas']['ModelDownloadRead']>;
   getModelDownload(jobId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['ModelDownloadRead']>;
   cancelModelDownload(jobId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['ModelDownloadRead']>;
-  ocrHealth(options?: CertPrepRequestOptions): Observable<Components['schemas']['OCRHealthRead']>;
   runtimeRequirements(options?: CertPrepRequestOptions): Observable<Components['schemas']['RuntimeRequirementsRead']>;
   machineInventory(options?: CertPrepRequestOptions): Observable<Components['schemas']['MachineInventoryRead']>;
   startRuntimeInstallation(kind: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['RuntimeInstallationRead']>;
@@ -332,7 +329,6 @@ export interface CertPrepRequestFactory {
   startModelDownload(options?: CertPrepRequestOptions): CertPrepHttpRequest;
   getModelDownload(jobId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
   cancelModelDownload(jobId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
-  ocrHealth(options?: CertPrepRequestOptions): CertPrepHttpRequest;
   runtimeRequirements(options?: CertPrepRequestOptions): CertPrepHttpRequest;
   machineInventory(options?: CertPrepRequestOptions): CertPrepHttpRequest;
   startRuntimeInstallation(kind: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
@@ -486,9 +482,6 @@ export function createCertPrepRequestFactory(): CertPrepRequestFactory {
     cancelModelDownload: (jobId: string, options?: CertPrepRequestOptions) => {
       return { method: 'DELETE' as const, path: `/llm/model-downloads/${encodeURIComponent(jobId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
-    ocrHealth: (options?: CertPrepRequestOptions) => {
-      return { method: 'GET' as const, path: "/ocr/health", ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
-    },
     runtimeRequirements: (options?: CertPrepRequestOptions) => {
       return { method: 'GET' as const, path: "/runtime/requirements", ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
@@ -636,8 +629,6 @@ export function createCertPrepGeneratedClient(
       transport.request<Components['schemas']['ModelDownloadRead']>(requests.getModelDownload(jobId, options)),
     cancelModelDownload: (jobId: string, options?: CertPrepRequestOptions) =>
       transport.request<Components['schemas']['ModelDownloadRead']>(requests.cancelModelDownload(jobId, options)),
-    ocrHealth: (options?: CertPrepRequestOptions) =>
-      transport.request<Components['schemas']['OCRHealthRead']>(requests.ocrHealth(options)),
     runtimeRequirements: (options?: CertPrepRequestOptions) =>
       transport.request<Components['schemas']['RuntimeRequirementsRead']>(requests.runtimeRequirements(options)),
     machineInventory: (options?: CertPrepRequestOptions) =>

@@ -113,7 +113,7 @@ export class SourceUploadLifecycle {
 
   private createRun(projectId: string, contextEpoch: number, concurrency: number, itemIds: readonly string[] = []): MutableUploadRun {
     const doneSubject = new ReplaySubject<void>(1);
-    return { projectId, contextEpoch, concurrency, itemIds: [...itemIds], queuedItemIds: [...itemIds], queuedReconciliationItemIds: [], activeCount: 0, doneSubject, done: doneSubject.asObservable(), documents: [], runtimePromptNeeded: false };
+    return { projectId, contextEpoch, concurrency, itemIds: [...itemIds], queuedItemIds: [...itemIds], queuedReconciliationItemIds: [], activeCount: 0, doneSubject, done: doneSubject.asObservable(), documents: [] };
   }
 
   private pump(run: MutableUploadRun): void {
@@ -174,10 +174,7 @@ export class SourceUploadLifecycle {
 
   private reconcileTransportError(attempt: UploadAttempt, error: unknown): Observable<void> {
     if (!this.owns(attempt)) return EMPTY;
-    const errorCode = this.hooks.errorCode(error);
-    const knownRuntimeMissing = errorCode === 'paddle_runtime_missing' || errorCode === 'windowsml_runtime_missing';
-    if (!attempt.cancelRequested && !isAbortError(error) && (knownRuntimeMissing || isAuthoritativeClientFailure(error))) {
-      attempt.run.runtimePromptNeeded ||= knownRuntimeMissing;
+    if (!attempt.cancelRequested && !isAbortError(error) && isAuthoritativeClientFailure(error)) {
       this.settle(attempt, 'failed', attempt.document, this.hooks.errorMessage(error));
       return of(undefined);
     }

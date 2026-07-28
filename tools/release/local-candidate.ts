@@ -21,7 +21,7 @@ import {
   resolve,
   sep,
 } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pathToFileURL } from 'node:url';
 
 import {
   ALPHA_VERSION,
@@ -37,6 +37,10 @@ import {
 } from '../../apps/cert-prep-desktop/scripts/package-qa/files.mts';
 import { validateBundleArtifacts } from '../../apps/cert-prep-desktop/scripts/package-qa/report.mts';
 import { initialInstallerSizeGate } from '../../apps/cert-prep-desktop/scripts/package-qa/size-gate.mts';
+import {
+  validateCaptureArtifactBytes,
+  validateCaptureWindowsmlDescriptor,
+} from '../../apps/cert-prep-desktop/scripts/capture-runtime-contract.mts';
 import { assembleCandidate } from './assemble.ts';
 import {
   LOCAL_NONPUBLISHABLE_PROFILE,
@@ -50,15 +54,12 @@ import {
 
 const DEFAULT_GENERATED_RESOURCES =
   'apps/cert-prep-desktop/src-tauri/generated-resources';
-const DEFAULT_OCR_RUNTIME_ROOT =
-  'apps/cert-prep-backend/dist/ocr-windowsml-runtime';
 const DEFAULT_OUTPUT_ROOT = 'tmp/local-alpha-candidate';
 
 export async function inspectLocalCandidateBuild({
   workspaceRoot,
   bundleRoot,
   generatedResources,
-  ocrRuntimeRoot,
   packagedResourceRoot,
   commitSha,
   now = new Date(),
@@ -68,7 +69,6 @@ export async function inspectLocalCandidateBuild({
   for (const [label, root] of [
     ['bundle', bundleRoot],
     ['generated resources', generatedResources],
-    ['OCR runtime', ocrRuntimeRoot],
     ['packaged resources', packagedResourceRoot],
   ]) {
     assertDirectoryWithoutSymlinks(root, label);
@@ -88,22 +88,14 @@ export async function inspectLocalCandidateBuild({
     kind: 'python_backend',
     expectedUrl: null,
   });
-  const ocrManifest = readJson(
-    join(generatedResources, 'windowsml-ocr-runtime-manifest.json'),
+  const captureManifest = readJson(
+    join(generatedResources, 'capture-runtime-manifest.json'),
   );
-  const ocrArtifact = await validateRuntimeArtifact({
-    manifest: ocrManifest,
-    root: ocrRuntimeRoot,
-    kind: 'windowsml_ocr',
-    requireLocalFileUrl: true,
+  const captureArtifact = await validateCaptureRuntimeAsset({
+    manifest: captureManifest,
+    root: generatedResources,
   });
-  validateMetadataRuntime(releaseMetadata, backendManifest, ocrManifest);
-
-  if (existsSync(join(generatedResources, ocrManifest.artifact.file_name))) {
-    throw new Error(
-      'The local WindowsML OCR ZIP must remain outside packaged resources.',
-    );
-  }
+  validateMetadataRuntime(releaseMetadata, backendManifest, captureManifest);
 
   const bundleArtifacts = collectBundleArtifacts(bundleRoot, workspaceRoot);
   validateBundleArtifacts(bundleArtifacts, bundleRoot);
@@ -124,18 +116,10 @@ export async function inspectLocalCandidateBuild({
     generatedResources,
     packagedResourceRoot,
     resourceFiles,
-    backendManifest,
-    ocrManifest,
+    captureManifest,
   });
 
-  const assetUrl = new URL(ocrManifest.artifact.url);
-  const assetSuffix = `/${encodeURIComponent(ocrManifest.artifact.file_name)}`;
-  if (!assetUrl.href.endsWith(assetSuffix)) {
-    throw new Error(
-      'WindowsML OCR runtime URL has an unexpected artifact name.',
-    );
-  }
-  const assetBaseUrl = assetUrl.href.slice(0, -assetSuffix.length);
+  const assetBaseUrl = pathToFileURL(generatedResources).href;
   const plan = {
     schemaVersion: 1,
     channel: LOCAL_NONPUBLISHABLE_PROFILE,
@@ -180,9 +164,8 @@ export async function inspectLocalCandidateBuild({
         fresh_install_verified: false,
         alpha_release_gate: 'blocked_pending_local_clean_install',
         backend_bundled: true,
-        windowsml_ocr_bundled: false,
+        capture_runtime_bundled: true,
         release_urls_only: false,
-        local_file_ocr_only: true,
         distribution_profile: LOCAL_NONPUBLISHABLE_PROFILE,
         publishable: false,
         version: ALPHA_VERSION,
@@ -198,10 +181,9 @@ export async function inspectLocalCandidateBuild({
             bytes: backendArtifact.bytes,
             sha256: backendArtifact.sha256,
           },
-          windowsml_ocr: {
-            bytes: ocrArtifact.bytes,
-            sha256: ocrArtifact.sha256,
-            url: ocrManifest.artifact.url,
+          capture_runtime: {
+            bytes: captureArtifact.bytes,
+            sha256: captureArtifact.sha256,
           },
         },
       },
@@ -251,7 +233,6 @@ export async function createLocalCandidate(args, run = runCommand) {
     workspaceRoot,
     DEFAULT_GENERATED_RESOURCES,
   );
-  const ocrRuntimeRoot = resolve(workspaceRoot, DEFAULT_OCR_RUNTIME_ROOT);
   const packagedResourceRoot = resolve(
     workspaceRoot,
     DEFAULT_PACKAGED_RESOURCE_ROOT,
@@ -260,7 +241,6 @@ export async function createLocalCandidate(args, run = runCommand) {
     workspaceRoot,
     bundleRoot,
     generatedResources,
-    ocrRuntimeRoot,
     packagedResourceRoot,
     commitSha,
   });
@@ -282,7 +262,6 @@ export async function createLocalCandidate(args, run = runCommand) {
     const inventory = collectInventories({
       workspaceRoot,
       generatedResources,
-      ocrRuntimeRoot,
       inventoryRoot,
       run,
     });
@@ -300,12 +279,9 @@ export async function createLocalCandidate(args, run = runCommand) {
       plan: planPath,
       'bundle-root': bundleRoot,
       'generated-resources': generatedResources,
-      'ocr-runtime-root': ocrRuntimeRoot,
       'package-qa': packageQaPath,
       'node-licenses': inventory.nodeLicenses,
       'python-licenses': inventory.pythonLicenses,
-      'ocr-python-licenses': inventory.ocrPythonLicenses,
-      'ocr-runtime-payloads': inventory.ocrRuntimePayloads,
       'cargo-metadata': inventory.cargoMetadata,
       output: stagedCandidateRoot,
     });
@@ -314,7 +290,6 @@ export async function createLocalCandidate(args, run = runCommand) {
     await validateAssembledRuntimes(
       stagedCandidateRoot,
       generatedResources,
-      ocrRuntimeRoot,
       packageQa.package.resource_contract.runtime_binding,
     );
     if (
@@ -332,7 +307,6 @@ export async function createLocalCandidate(args, run = runCommand) {
     await validateAssembledRuntimes(
       publicationRoot,
       generatedResources,
-      ocrRuntimeRoot,
       packageQa.package.resource_contract.runtime_binding,
     );
     const handoff = await prepareCandidateAtomicHandoff(
@@ -634,15 +608,11 @@ export async function publishCandidateAtomically(
 
 function collectInventories({
   workspaceRoot,
-  generatedResources,
-  ocrRuntimeRoot,
   inventoryRoot,
   run,
 }) {
   const nodeLicenses = join(inventoryRoot, 'node-licenses.json');
   const pythonLicenses = join(inventoryRoot, 'python-licenses.json');
-  const ocrPythonLicenses = join(inventoryRoot, 'ocr-python-licenses.json');
-  const ocrRuntimePayloads = join(inventoryRoot, 'ocr-runtime-payloads.json');
   const cargoMetadata = join(inventoryRoot, 'cargo-metadata.json');
   const nodeOutput = run('pnpm', ['licenses', 'list', '--prod', '--json'], {
     cwd: workspaceRoot,
@@ -669,48 +639,6 @@ function collectInventories({
     ],
     { cwd: workspaceRoot },
   );
-  run(
-    'uv',
-    [
-      'run',
-      '--isolated',
-      '--project',
-      'apps/cert-prep-backend',
-      '--python',
-      PYTHON_RUNTIME_VERSION,
-      '--extra',
-      'ocr-windowsml',
-      'python',
-      'tools/release/collect-python-licenses.py',
-      '--pyinstaller-executable',
-      'apps/cert-prep-backend/dist/cert-prep-ocr-windowsml-runtime.exe',
-      '--include-distribution',
-      'PyInstaller==6.20.0',
-      '--output',
-      ocrPythonLicenses,
-    ],
-    { cwd: workspaceRoot },
-  );
-  run(
-    'uv',
-    [
-      'run',
-      '--isolated',
-      '--project',
-      'apps/cert-prep-backend',
-      '--python',
-      PYTHON_RUNTIME_VERSION,
-      'python',
-      'tools/release/collect-runtime-payloads.py',
-      '--runtime-manifest',
-      join(generatedResources, 'windowsml-ocr-runtime-manifest.json'),
-      '--runtime-root',
-      ocrRuntimeRoot,
-      '--output',
-      ocrRuntimePayloads,
-    ],
-    { cwd: workspaceRoot },
-  );
   const cargoOutput = run(
     'cargo',
     [
@@ -724,14 +652,12 @@ function collectInventories({
     { cwd: workspaceRoot, capture: true },
   );
   writeParsedJson(cargoMetadata, cargoOutput, 'Cargo metadata');
-  for (const path of [pythonLicenses, ocrPythonLicenses, ocrRuntimePayloads]) {
+  for (const path of [pythonLicenses]) {
     readJson(path);
   }
   return {
     nodeLicenses,
     pythonLicenses,
-    ocrPythonLicenses,
-    ocrRuntimePayloads,
     cargoMetadata,
   };
 }
@@ -739,41 +665,31 @@ function collectInventories({
 async function validateRuntimeArtifact({
   manifest,
   root,
-  kind,
   expectedUrl,
-  requireLocalFileUrl = false,
 }) {
   const artifact = manifest?.artifact;
-  const expectedPrefix =
-    kind === 'python_backend'
-      ? 'cert-prep-backend-runtime'
-      : 'cert-prep-ocr-windowsml-runtime';
-  const expectedEntrypoint =
-    kind === 'python_backend'
-      ? 'cert-prep-backend.exe'
-      : 'cert-prep-ocr-windowsml-runtime.exe';
   if (
     manifest?.schema_version !== 1 ||
-    manifest?.kind !== kind ||
+    manifest?.kind !== 'python_backend' ||
     manifest?.version !== ALPHA_VERSION ||
     manifest?.target !== DEFAULT_TARGET_TRIPLE ||
-    manifest?.entrypoint !== expectedEntrypoint ||
+    manifest?.entrypoint !== 'cert-prep-backend.exe' ||
     !artifact ||
     typeof artifact.file_name !== 'string' ||
     basename(artifact.file_name) !== artifact.file_name ||
     artifact.file_name !==
-      `${expectedPrefix}-${ALPHA_VERSION}-${DEFAULT_TARGET_TRIPLE}.zip` ||
+      `cert-prep-backend-runtime-${ALPHA_VERSION}-${DEFAULT_TARGET_TRIPLE}.zip` ||
     typeof artifact.sha256 !== 'string' ||
     !/^[0-9a-f]{64}$/i.test(artifact.sha256) ||
     !Number.isSafeInteger(artifact.bytes) ||
     artifact.bytes < 1
   ) {
-    throw new Error(`Invalid local ${kind} runtime manifest.`);
+    throw new Error('Invalid local backend runtime manifest.');
   }
   const artifactPath = assertContainedRegularFile(
     root,
     artifact.file_name,
-    `${kind} artifact`,
+    'backend runtime artifact',
   );
   const actualBytes = statSync(artifactPath).size;
   const actualHash = await sha256File(artifactPath);
@@ -781,26 +697,57 @@ async function validateRuntimeArtifact({
     actualBytes !== artifact.bytes ||
     actualHash !== artifact.sha256.toLowerCase()
   ) {
-    throw new Error(`${kind} runtime artifact does not match its manifest.`);
+    throw new Error('Backend runtime artifact does not match its manifest.');
   }
-  if (requireLocalFileUrl) {
-    assertExactLocalFileUrl(artifact.url, artifactPath);
-  } else if (artifact.url !== expectedUrl) {
-    throw new Error(`${kind} runtime artifact URL is invalid.`);
+  if (artifact.url !== expectedUrl) {
+    throw new Error('Backend runtime artifact URL is invalid.');
   }
   return { bytes: actualBytes, sha256: actualHash, path: artifactPath };
+}
+
+async function validateCaptureRuntimeAsset({ manifest, root }) {
+  if (
+    manifest?.manifestVersion !== '1' ||
+    manifest?.runtimeVersion !== '0.3.0' ||
+    manifest?.apiVersion !== '1.0' ||
+    manifest?.captureDocumentSchemaVersion !== '1' ||
+    manifest?.platform !== 'windows' ||
+    manifest?.arch !== 'x86_64' ||
+    manifest?.fileName !== 'capture-runtime-x86_64-pc-windows-msvc.exe' ||
+    manifest?.schemaFileName !== 'capture-document-v1.schema.json'
+  ) {
+    throw new Error('Invalid local Capture Runtime manifest.');
+  }
+  validateCaptureArtifactBytes(manifest.bytes, 'Capture Runtime executable');
+  validateCaptureWindowsmlDescriptor(
+    manifest.runtimeRequirements?.['windowsml-ocr'],
+    'Capture Runtime WindowsML requirement',
+  );
+  const artifactPath = assertContainedRegularFile(
+    root,
+    manifest.fileName,
+    'Capture Runtime executable',
+  );
+  const actualHash = await sha256File(artifactPath);
+  if (
+    statSync(artifactPath).size !== manifest.bytes ||
+    actualHash !== String(manifest.sha256).toLowerCase()
+  ) {
+    throw new Error('Capture Runtime executable does not match its manifest.');
+  }
+  assertContainedRegularFile(root, manifest.schemaFileName, 'Capture document schema');
+  return { bytes: statSync(artifactPath).size, sha256: actualHash, path: artifactPath };
 }
 
 export async function validateAssembledRuntimes(
   candidateRoot,
   generatedResources,
-  ocrRuntimeRoot,
   expectedBindings,
 ) {
   const runtimeRoot = join(candidateRoot, 'release', 'runtimes');
-  for (const [manifestFile, kind, bindingName] of [
-    ['backend-runtime-manifest.json', 'python_backend', 'backend'],
-    ['windowsml-ocr-runtime-manifest.json', 'windowsml_ocr', 'windowsml_ocr'],
+  for (const [manifestFile, bindingName] of [
+    ['backend-runtime-manifest.json', 'backend'],
+    ['capture-runtime-manifest.json', 'capture_runtime'],
   ]) {
     const sourceManifestPath = join(generatedResources, manifestFile);
     const candidateManifestPath = join(runtimeRoot, manifestFile);
@@ -811,26 +758,20 @@ export async function validateAssembledRuntimes(
       throw new Error(`Assembled runtime manifest changed: ${manifestFile}.`);
     }
     const manifest = readJson(candidateManifestPath);
-    const artifact = await validateRuntimeArtifact({
-      manifest,
-      root: runtimeRoot,
-      kind,
-      expectedUrl: manifest.artifact.url,
-    });
+    const artifact =
+      bindingName === 'backend'
+        ? await validateRuntimeArtifact({
+            manifest,
+            root: runtimeRoot,
+            expectedUrl: manifest.artifact.url,
+          })
+        : await validateCaptureRuntimeAsset({ manifest, root: runtimeRoot });
     const binding = expectedBindings[bindingName];
     if (
       artifact.bytes !== binding.bytes ||
       artifact.sha256 !== binding.sha256
     ) {
-      throw new Error(`Assembled runtime does not match local QA: ${kind}.`);
-    }
-    if (kind === 'windowsml_ocr') {
-      await validateRuntimeArtifact({
-        manifest,
-        root: ocrRuntimeRoot,
-        kind,
-        requireLocalFileUrl: true,
-      });
+      throw new Error(`Assembled runtime does not match local QA: ${bindingName}.`);
     }
   }
 }
@@ -841,7 +782,7 @@ async function validatePackagedResourceCopies({
   packagedResourceRoot,
   resourceFiles,
   backendManifest,
-  ocrManifest,
+  captureManifest,
 }) {
   const basenames = resourceFiles.map((file) => basename(file.absolutePath));
   const normalizedBasenames = basenames.map((name) => name.toLowerCase());
@@ -852,7 +793,9 @@ async function validatePackagedResourceCopies({
   const required = [
     'backend-runtime-manifest.json',
     backendManifest.artifact.file_name,
-    'windowsml-ocr-runtime-manifest.json',
+    'capture-runtime-manifest.json',
+    captureManifest.fileName,
+    captureManifest.schemaFileName,
     'release-metadata.json',
   ];
   for (const name of required) {
@@ -872,9 +815,6 @@ async function validatePackagedResourceCopies({
     if ((await sha256File(source)) !== (await sha256File(packaged))) {
       throw new Error(`Packaged local runtime resource changed: ${name}.`);
     }
-  }
-  if (names.has(ocrManifest.artifact.file_name.toLowerCase())) {
-    throw new Error('The packaged app must not contain the WindowsML OCR ZIP.');
   }
   const zipNames = normalizedBasenames.filter((name) => name.endsWith('.zip'));
   if (
@@ -940,7 +880,8 @@ function validateLocalReleaseMetadata(metadata) {
     metadata?.sha256_verification?.required !== true ||
     metadata?.sha256_verification?.algorithm !== 'SHA-256' ||
     metadata?.runtime_assets?.backend?.distribution !== 'bundled' ||
-    metadata?.runtime_assets?.windowsml_ocr?.distribution !== 'local_file'
+    metadata?.runtime_assets?.capture_runtime?.distribution !==
+      'versioned_release_artifact_staged'
   ) {
     throw new Error(
       'Runtime resources do not declare a local dev distribution.',
@@ -948,13 +889,17 @@ function validateLocalReleaseMetadata(metadata) {
   }
 }
 
-function validateMetadataRuntime(metadata, backendManifest, ocrManifest) {
+function validateMetadataRuntime(metadata, backendManifest, captureManifest) {
   for (const [name, actual, expected] of [
     ['backend', metadata.runtime_assets?.backend, backendManifest.artifact],
     [
-      'windowsml_ocr',
-      metadata.runtime_assets?.windowsml_ocr,
-      ocrManifest.artifact,
+      'capture_runtime',
+      metadata.runtime_assets?.capture_runtime,
+      {
+        file_name: captureManifest.fileName,
+        sha256: captureManifest.sha256,
+        bytes: captureManifest.bytes,
+      },
     ],
   ]) {
     if (
@@ -964,44 +909,6 @@ function validateMetadataRuntime(metadata, backendManifest, ocrManifest) {
     ) {
       throw new Error(`Local release metadata ${name} asset is inconsistent.`);
     }
-  }
-}
-
-function assertExactLocalFileUrl(rawUrl, expectedPath) {
-  if (typeof rawUrl !== 'string') {
-    throw new Error('WindowsML OCR runtime must use a local file URL.');
-  }
-  let url;
-  try {
-    url = new URL(rawUrl);
-  } catch {
-    throw new Error('WindowsML OCR runtime file URL is invalid.');
-  }
-  if (
-    url.protocol !== 'file:' ||
-    url.hostname ||
-    url.username ||
-    url.password ||
-    url.search ||
-    url.hash
-  ) {
-    throw new Error(
-      'WindowsML OCR runtime must use a local non-network file URL.',
-    );
-  }
-  let resolvedUrlPath;
-  try {
-    resolvedUrlPath = realpathSync(fileURLToPath(url));
-  } catch {
-    throw new Error('WindowsML OCR runtime file URL does not resolve.');
-  }
-  if (
-    normalizeComparablePath(resolvedUrlPath) !==
-    normalizeComparablePath(expectedPath)
-  ) {
-    throw new Error(
-      'WindowsML OCR runtime file URL does not bind the declared artifact.',
-    );
   }
 }
 
@@ -1126,11 +1033,6 @@ function assertCommitSha(value) {
       'Local candidate requires an exact 40-character commit SHA.',
     );
   }
-}
-
-function normalizeComparablePath(path) {
-  const normalized = resolve(path);
-  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
 }
 
 function relativePosix(root, path) {

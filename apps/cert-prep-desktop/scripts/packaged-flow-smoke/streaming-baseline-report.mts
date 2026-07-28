@@ -53,8 +53,6 @@ export interface StreamingBaselineReport {
     llm_effective_model: string | null;
     llm_fallback_reason: string | null;
     llm_health: LlmHealthSnapshot | null;
-    ocr_provider: string;
-    ocr_page_workers: number;
     streaming_draft_page_limit: number | null;
     streaming_draft_workers: number | null;
     streaming_complete_timeout_ms: number;
@@ -91,8 +89,8 @@ export interface StreamingBaselineReport {
 }
 
 interface GpuRoutingChecks {
-  windowsml_ocr_process_observed: boolean;
-  ocr_uses_amd_igpu: boolean;
+  capture_runtime_process_observed: boolean;
+  capture_runtime_uses_amd_igpu: boolean;
   gpu_luid_map_usable: boolean;
 }
 
@@ -233,7 +231,7 @@ export function buildStreamingBaselineReport(
     ocr_completed_46_pages:
       run.metrics.ocr_completion?.pages_processed === EXPECTED_BASELINE_PAGES &&
       run.metrics.ocr_completion?.total_pages === EXPECTED_BASELINE_PAGES,
-    ...(run.options.allowOcrChunkVariance
+    ...(run.options.allowCaptureChunkVariance
       ? { ocr_chunks_present: chunksAccepted }
       : { ocr_completed_46_chunks: chunksAccepted }),
     first_chunk_under_gate: run.metrics.first_chunk_under_gate,
@@ -307,8 +305,6 @@ export function buildStreamingBaselineReport(
       llm_effective_model: run.metrics.llm_effective_model ?? null,
       llm_fallback_reason: run.metrics.llm_fallback_reason ?? null,
       llm_health: run.metrics.llm_health ?? null,
-      ocr_provider: run.options.ocrProvider,
-      ocr_page_workers: run.options.ocrPageWorkers,
       streaming_draft_page_limit: run.options.streamingDraftPageLimit ?? null,
       streaming_draft_workers: run.options.streamingDraftWorkers ?? null,
       streaming_complete_timeout_ms: run.options.streamingCompleteTimeoutMs,
@@ -709,9 +705,9 @@ function readGpuRoutingChecks(
     return null;
   }
   return {
-    windowsml_ocr_process_observed:
-      payload.windowsml_ocr_process_observed === true,
-    ocr_uses_amd_igpu: payload.ocr_uses_amd_igpu === true,
+    capture_runtime_process_observed:
+      payload.capture_runtime_process_observed === true,
+    capture_runtime_uses_amd_igpu: payload.capture_runtime_uses_amd_igpu === true,
     gpu_luid_map_usable: payload.gpu_luid_map_usable === true,
   };
 }
@@ -730,7 +726,7 @@ function acceptedOcrChunkCount(run: SmokeRunState): boolean {
     return true;
   }
   return (
-    run.options.allowOcrChunkVariance &&
+    run.options.allowCaptureChunkVariance &&
     chunks !== null &&
     chunks !== undefined &&
     chunks > 0 &&

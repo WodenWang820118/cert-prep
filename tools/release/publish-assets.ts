@@ -29,7 +29,7 @@ import {
 const PUBLICATION_OWNER_MARKER =
   /<!-- cert-prep-publication-owner:([1-9][0-9]*:[1-9][0-9]*:[0-9a-f]{64}) -->/gi;
 const PUBLICATION_STATE_MARKER =
-  /<!-- cert-prep-publication-state:(ocr-bootstrap|finalized):([0-9a-f]{64}) -->/gi;
+  /<!-- cert-prep-publication-state:(reserved|finalized):([0-9a-f]{64}) -->/gi;
 
 export async function publishAssets(
   args,
@@ -40,6 +40,9 @@ export async function publishAssets(
     await validatePublishingInputs(args);
   if (mode === 'verify-public') {
     return verifyPublicReleaseAssets(plan, releaseRoot, fetchImpl);
+  }
+  if (mode === 'final') {
+    assertFinalAssetPolicy([...listSafeReleaseFiles(releaseRoot).keys()]);
   }
   const publicationOwner = validatePublicationOwner(
     args['publication-owner'],
@@ -61,7 +64,7 @@ export async function publishAssets(
       true,
       gh,
     );
-    if (reservation.publicationState !== 'ocr-bootstrap') {
+    if (reservation.publicationState !== 'reserved') {
       throw new Error(
         'The candidate release is already finalized and cannot be reserved again.',
       );
@@ -79,9 +82,6 @@ export async function publishAssets(
     false,
     gh,
   );
-  if (mode === 'ocr' && reservation.publicationState !== 'ocr-bootstrap') {
-    throw new Error('OCR assets cannot be published to a finalized release.');
-  }
   const { release, releaseOwner, releaseOwnedByCaller } = reservation;
 
   const desiredPaths = selectAssets(releaseRoot, mode);
@@ -177,12 +177,12 @@ async function inspectReleaseReservation(
   if (!release) {
     if (!allowCreate) {
       throw new Error(
-        'Asset publication requires a reserved OCR bootstrap prerelease.',
+        'Asset publication requires a reserved prerelease.',
       );
     }
     const notesPath = writeNotes(
       plan,
-      'ocr-bootstrap',
+      'reserved',
       publicationOwner,
       candidateId,
     );
@@ -236,9 +236,9 @@ async function inspectReleaseReservation(
 
 export async function validatePublishingInputs(args) {
   const mode = args.mode;
-  if (!['reserve', 'ocr', 'final', 'cleanup', 'verify-public'].includes(mode)) {
+  if (!['reserve', 'final', 'cleanup', 'verify-public'].includes(mode)) {
     throw new Error(
-      '--mode must be reserve, ocr, final, cleanup, or verify-public.',
+      '--mode must be reserve, final, cleanup, or verify-public.',
     );
   }
   if (
@@ -286,11 +286,6 @@ export async function validatePublishingInputs(args) {
         'Release plan must be embedded in the selected release root.',
       );
     }
-    if (mode === 'ocr' && releaseRoot !== join(candidateRoot, 'release')) {
-      throw new Error(
-        'OCR bootstrap must publish the exact candidate release root.',
-      );
-    }
   }
 
   const plan = readJson(planPath);
@@ -332,7 +327,7 @@ export async function validateFinalReleaseRoot(releaseRoot, plan, candidate) {
     cleanInstallReport?.packageKind !== 'nsis' ||
     cleanInstallReport?.candidateId !== candidate.candidateId ||
     cleanInstallReport?.commitSha !== plan.commitSha ||
-    cleanInstallReport?.publicOcrDownloadVerified !== true ||
+    cleanInstallReport?.captureRuntimeVerified !== true ||
     cleanInstallReport?.appLaunchVerified !== true ||
     cleanInstallReport?.freshAppDataVerified !== true ||
     cleanInstallReport?.backendInstallVerified !== true ||
@@ -345,11 +340,11 @@ export async function validateFinalReleaseRoot(releaseRoot, plan, candidate) {
       'backendHealthVerified',
       'backendInstallVerified',
       'candidateId',
+      'captureRuntimeVerified',
       'commitSha',
       'freshAppDataVerified',
       'installerSha256',
       'packageKind',
-      'publicOcrDownloadVerified',
       'reportSha256',
       'uninstallVerified',
     ])
@@ -463,13 +458,16 @@ export async function verifyPublicReleaseAssets(
   const requiredCoverage = [
     ['NSIS installer', (path) => /^installers\/.*setup\.exe$/i.test(path)],
     [
-      'WindowsML OCR runtime',
-      (path) =>
-        /^runtimes\/cert-prep-ocr-windowsml-runtime-.*\.zip$/i.test(path),
+      'bundled backend runtime',
+      (path) => /^runtimes\/cert-prep-backend-runtime-.*\.zip$/i.test(path),
     ],
     [
-      'WindowsML OCR manifest',
-      (path) => /^runtimes\/windowsml-ocr-runtime-manifest\.json$/i.test(path),
+      'Capture Runtime executable',
+      (path) => /^runtimes\/capture-runtime-.*\.exe$/i.test(path),
+    ],
+    [
+      'Capture Runtime manifest',
+      (path) => path === 'runtimes/capture-runtime-manifest.json',
     ],
     ['SPDX SBOM', (path) => /^metadata\/.*\.spdx\.json$/i.test(path)],
     ['license inventory', (path) => path === 'metadata/license-inventory.json'],
@@ -514,7 +512,7 @@ export async function verifyPublicReleaseAssets(
 
 function assertFinalAssetPolicy(paths) {
   const installerPaths = paths.filter((path) => /^installers\//i.test(path));
-  const installablePaths = paths.filter((path) =>
+  const installablePaths = installerPaths.filter((path) =>
     /\.(?:exe|msi|msix|msixbundle|appx|appxbundle)$/i.test(path),
   );
   if (
@@ -711,7 +709,7 @@ export async function cleanupIncompleteRelease(
       'Incomplete prerelease belongs to a different workflow run and will not be deleted.',
     );
   }
-  if (releasePublicationState(release, candidateId) !== 'ocr-bootstrap') {
+  if (releasePublicationState(release, candidateId) !== 'reserved') {
     throw new Error('A finalized public alpha release will not be deleted.');
   }
   if (!Number.isInteger(release.databaseId) || release.databaseId <= 0) {
@@ -737,7 +735,7 @@ export function assertReleaseState(release, plan) {
   }
   if (release.isImmutable === true) {
     throw new Error(
-      'The OCR bootstrap release is immutable; installers cannot be added without clobbering policy.',
+      'The reserved release is immutable; installers cannot be added without clobbering policy.',
     );
   }
 }
@@ -790,17 +788,7 @@ async function resolveTagCommit(gh, plan, allowMissing) {
 function selectAssets(releaseRoot, mode) {
   const files = listFiles(releaseRoot);
   if (mode === 'final') return files;
-  const selected = files.filter((path) =>
-    /(?:cert-prep-ocr-windowsml-runtime-.*\.zip|windowsml-ocr-runtime-manifest\.json)$/i.test(
-      basename(path),
-    ),
-  );
-  if (selected.length !== 2) {
-    throw new Error(
-      `OCR bootstrap requires exactly two assets, found ${selected.length}.`,
-    );
-  }
-  return selected;
+  throw new Error('Only final publication uploads release assets.');
 }
 
 async function hydrateMissingDigests(gh, existingAssets, desired, plan) {
@@ -841,8 +829,8 @@ function writeNotes(plan, publicationState, publicationOwner, candidateId) {
   const marker = `<!-- cert-prep-publication-owner:${publicationOwner} -->`;
   const stateMarker = `<!-- cert-prep-publication-state:${publicationState}:${candidateId} -->`;
   const body =
-    publicationState === 'ocr-bootstrap'
-      ? `# Cert Prep ${plan.version}\n\nThis is the OCR bootstrap stage for an unsigned public alpha. The NSIS installer is withheld until a fresh install, launch, backend-health, and uninstall smoke passes.\n\nThe WindowsML OCR asset is public so a clean Windows runner can verify anonymous download and SHA-256 integrity.\n\n${marker}\n${stateMarker}\n`
+    publicationState === 'reserved'
+      ? `# Cert Prep ${plan.version}\n\nReserved candidate for clean-install verification. The unsigned public alpha is published only after the packaged backend and Capture Runtime smoke passes.\n\n${marker}\n${stateMarker}\n`
       : `# Cert Prep ${plan.version}\n\nPublic Windows 11 x64 alpha. This NSIS build is **unsigned** and Windows SmartScreen is expected to warn. Verify downloads against \`SHA256SUMS\` before installing.\n\nThis remains an Alpha, not a production/GA release. The supported Alpha reasoning runtime is Ollama; incompatible acceleration falls back to CPU with an in-app warning.\n\n${marker}\n${stateMarker}\n`;
   writeFileSync(path, body, 'utf8');
   return path;
