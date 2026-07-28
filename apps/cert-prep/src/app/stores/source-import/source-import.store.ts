@@ -377,7 +377,7 @@ export class SourceImportStore {
 
   uploadDocuments(): void {
     const project = this.projects.selectedProject();
-    let uploadItems = this.uploadItems().filter((item) =>
+    const uploadItems = this.uploadItems().filter((item) =>
       ['queued', 'failed'].includes(item.status),
     );
     if (project === null) {

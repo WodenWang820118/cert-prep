@@ -10,7 +10,7 @@ from cert_prep_backend.core.exceptions import (
     DocumentOperationStateError,
     DocumentProcessingCanceledError,
 )
-from cert_prep_backend.persistence.database import Database, utc_now
+from cert_prep_backend.persistence.database import Database
 from cert_prep_backend.domains.source_documents import chunks
 
 

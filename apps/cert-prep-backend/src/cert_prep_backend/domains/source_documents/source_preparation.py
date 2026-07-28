@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections import deque
 from dataclasses import dataclass
 from io import BytesIO
 from itertools import chain
@@ -8,7 +7,7 @@ from pathlib import Path
 from typing import Literal
 
 import av
-from PIL import Image, ImageOps, UnidentifiedImageError
+from PIL import Image, UnidentifiedImageError
 from pypdf import PdfReader
 
 from cert_prep_contracts.transcription import MAX_AUDIO_DURATION_MS
