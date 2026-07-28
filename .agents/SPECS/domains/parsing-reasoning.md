@@ -16,6 +16,11 @@ readiness after a validated CaptureDocument has been persisted.
   not a provider or model fallback.
 - Generated questions remain editable and require source evidence before they
   become playable.
+- Parsed blocks are completed independently: grounded completions are persisted
+  as playable questions, while blocks that cannot be completed are retained as
+  operation-level `needs_review` annotations with their source order, question
+  number, page, excerpt, and reason. A partial completion must not be replaced
+  by a broad prompt or another provider.
 - Reasoning failure does not corrupt or remove a successfully persisted source
   document or its raw capture provenance.
 

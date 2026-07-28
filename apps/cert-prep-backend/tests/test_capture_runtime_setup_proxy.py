@@ -11,6 +11,7 @@ from cert_prep_backend.core.config import Settings
 from cert_prep_backend.domains.capture_workbench.contracts import (
     CaptureSourceKind,
     RuntimeCapabilitiesV1,
+    RuntimeArtifactDescriptorV1,
     RuntimeInstallationStatus,
     RuntimeInstallationV1,
     RuntimeInstallationsV1,
@@ -68,6 +69,12 @@ class RecordingSetupClient:
                     status=RuntimeRequirementStatus.INSTALLABLE,
                     required_for=["pdf", "image"],
                     install_strategy="checksum-pinned-bundle",
+                    artifact=RuntimeArtifactDescriptorV1(
+                        artifact_url="https://github.com/example/capture-windowsml.zip",
+                        artifact_file_name="capture-windowsml-ocr-windows-x64.zip",
+                        bytes=138_837_175,
+                        sha256="a88c9a3097771d07bd1d940db6acdcbb5336e7c6c85406f5c22655ed6930704a",
+                    ),
                 ),
                 RuntimeRequirementV1(
                     requirement_id="whisper-primary",
@@ -168,6 +175,9 @@ def test_capture_runtime_setup_proxy_keeps_sidecar_token_backend_only(
             "windowsml-ocr",
             "whisper-primary",
         ]
+        assert requirements[0]["artifact"]["artifactFileName"] == (
+            "capture-windowsml-ocr-windows-x64.zip"
+        )
 
         started = client.post(
             "/capture-runtime/installations",

@@ -14,27 +14,18 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { createServer, type Server } from 'node:http';
+import { createServer } from 'node:http';
 import { chromium, type Browser, type Page } from 'playwright';
 
 import {
   CAPTURE_RUNTIME_FILE,
-  CAPTURE_RUNTIME_RELEASE_ASSETS,
   CAPTURE_RUNTIME_VERSION,
+  DEFAULT_CAPTURE_RUNTIME_RELEASE_BASE_URL,
   defaultCaptureRuntimeRoot,
   installCaptureRuntime,
-  verifyCaptureRuntimeReleaseDirectory,
 } from './install-capture-runtime.mts';
 
 const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const captureWorkbenchRoot = resolve(
-  process.env.CAPTURE_WORKBENCH_ROOT ?? join(workspaceRoot, '..', 'capture-workbench'),
-);
-const releaseRoot = join(captureWorkbenchRoot, 'packages/capture-runtime/dist/release');
-const productionExecutable = join(
-  captureWorkbenchRoot,
-  'packages/capture-runtime/dist/executable/capture-runtime.exe',
-);
 const realPdfPath = resolve(
   process.env.CERT_PREP_REAL_PDF_PATH ??
     join(workspaceRoot, 'apps/cert-prep-backend/.benchmarks/jlpt-n1-page3-qa.pdf'),
@@ -52,6 +43,17 @@ const realPdfReviewTimeoutMs = (() => {
   }
   return seconds * 1_000;
 })();
+const realPdfExpectedQuestionCount = (() => {
+  const raw = process.env.CERT_PREP_REAL_PDF_EXPECTED_QUESTION_COUNT;
+  if (raw === undefined) return undefined;
+  const count = Number(raw);
+  if (!Number.isInteger(count) || count < 1 || count > 50) {
+    throw new Error(
+      'CERT_PREP_REAL_PDF_EXPECTED_QUESTION_COUNT must be an integer from 1 to 50.',
+    );
+  }
+  return count;
+})();
 const recordingRequested =
   process.argv.includes('--record-video') ||
   process.env.CERT_PREP_RECORD_CAPTURE_VIDEO === 'true';
@@ -59,11 +61,7 @@ const recordingPath = resolve(
   process.env.CERT_PREP_CAPTURE_VIDEO_PATH ??
     join(workspaceRoot, 'output', 'capture-workbench-to-cert-prep.webm'),
 );
-const modelArchiveRoot = join(
-  captureWorkbenchRoot,
-  'packages/capture-runtime/dist/windowsml',
-);
-const modelFiles = [
+const windowsMlRequiredModelFiles = [
   'det/inference.onnx',
   'det/inference.yml',
   'rec/inference.onnx',
@@ -71,12 +69,12 @@ const modelFiles = [
   'rec/ppocr_keys_v1.txt',
   'pipeline.json',
 ] as const;
-
-type ServerHandle = {
-  readonly server: Server;
-  readonly baseUrl: string;
-};
-
+const windowsMlBundleFileName = 'capture-windowsml-ocr-windows-x64.zip';
+const windowsMlBundleUrl =
+  `${DEFAULT_CAPTURE_RUNTIME_RELEASE_BASE_URL}/${windowsMlBundleFileName}`;
+const windowsMlBundleBytes = 138_837_175;
+const windowsMlBundleSha256 =
+  'a88c9a3097771d07bd1d940db6acdcbb5336e7c6c85406f5c22655ed6930704a';
 type ManagedProcess = {
   readonly child: ChildProcess;
   readonly name: string;
@@ -108,6 +106,25 @@ function sha256File(path: string): Promise<string> {
     stream.on('error', reject);
     stream.on('end', () => resolvePromise(hash.digest('hex')));
   });
+}
+
+function runCommand(
+  command: string,
+  args: readonly string[],
+  cwd: string,
+): { readonly stdout: string; readonly stderr: string } {
+  const result = spawnSync(command, args, {
+    cwd,
+    windowsHide: true,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  if (result.status !== 0) {
+    throw new Error(
+      `${command} ${args.join(' ')} failed with ${result.status}: ${result.stdout ?? ''}\n${result.stderr ?? ''}`,
+    );
+  }
+  return { stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
 }
 
 function processOutput(child: ChildProcess): () => string {
@@ -193,15 +210,44 @@ async function waitForHttp(
   throw new Error(`Timed out waiting for ${url}: ${lastError}`);
 }
 
-async function waitForGeneratedQuestion(page: Page, timeoutMs: number): Promise<void> {
+async function waitForGeneratedQuestion(
+  page: Page,
+  timeoutMs: number,
+  operationUrl: string,
+  token: string,
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   let lastBody = '';
   while (Date.now() < deadline) {
     if ((await page.getByTestId('draft-question-card').count()) > 0) return;
+    try {
+      const operation = await jsonRequest(operationUrl, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (operation.status === 'succeeded') return;
+      if (operation.status === 'failed') {
+        throw new Error(`Build Workbench manual generation failed: ${JSON.stringify(operation)}`);
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('Build Workbench manual generation failed:')) {
+        throw error;
+      }
+    }
     lastBody = await page.locator('body').innerText();
     if (/Manual generation:\s*failed/i.test(lastBody)) {
+      let operationDetail = 'unavailable';
+      try {
+        operationDetail = JSON.stringify(
+          await jsonRequest(operationUrl, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+        );
+      } catch (error) {
+        operationDetail = error instanceof Error ? error.message : String(error);
+      }
       throw new Error(
-        `Build Workbench manual generation failed before rendering a question: ${lastBody.slice(-1_000)}`,
+        `Build Workbench manual generation failed before rendering a question. ` +
+          `Operation: ${operationDetail}\n${lastBody.slice(-1_000)}`,
       );
     }
     await delay(Math.min(1_000, Math.max(100, deadline - Date.now())));
@@ -209,6 +255,36 @@ async function waitForGeneratedQuestion(page: Page, timeoutMs: number): Promise<
   throw new Error(
     `Timed out waiting for Build Workbench to render a generated question: ${lastBody.slice(-1_000)}`,
   );
+}
+
+async function waitForCompletedManualOperation(
+  operationUrl: string,
+  token: string,
+  timeoutMs: number,
+): Promise<Record<string, unknown>> {
+  const deadline = Date.now() + timeoutMs;
+  let lastOperation = 'no response';
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(operationUrl, {
+        headers: { Authorization: `Bearer ${token}`, Connection: 'close' },
+      });
+      const body = await response.text();
+      const operation = JSON.parse(body) as Record<string, unknown>;
+      lastOperation = body;
+      if (response.ok && operation.status === 'succeeded') return operation;
+      if (operation.status === 'failed') {
+        throw new Error(`Manual draft operation failed: ${body}`);
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('Manual draft operation failed:')) {
+        throw error;
+      }
+      lastOperation = error instanceof Error ? error.message : String(error);
+    }
+    await delay(Math.min(1_000, Math.max(100, deadline - Date.now())));
+  }
+  throw new Error(`Timed out waiting for manual draft operation completion: ${lastOperation}`);
 }
 
 async function jsonRequest(
@@ -224,108 +300,6 @@ async function jsonRequest(
     throw new Error(`${init.method ?? 'GET'} ${url} failed with ${response.status}: ${JSON.stringify(body)}`);
   }
   return body;
-}
-
-async function startMirror(directory: string): Promise<ServerHandle> {
-  const server = createServer((request, response) => {
-    const pathname = request.url
-      ? new URL(request.url, 'http://127.0.0.1').pathname
-      : '';
-    const expectedPrefix = `/v${CAPTURE_RUNTIME_VERSION}/`;
-    const name = pathname.startsWith(expectedPrefix)
-      ? pathname.slice(expectedPrefix.length)
-      : '';
-    if (
-      request.method !== 'GET' ||
-      !CAPTURE_RUNTIME_RELEASE_ASSETS.includes(name as (typeof CAPTURE_RUNTIME_RELEASE_ASSETS)[number])
-    ) {
-      response.writeHead(404).end();
-      return;
-    }
-    const stream = createReadStream(join(directory, name));
-    stream.once('error', () => response.destroy());
-    response.writeHead(200, { Connection: 'close' });
-    stream.pipe(response);
-  });
-  await new Promise<void>((resolvePromise, reject) => {
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => resolvePromise());
-  });
-  const address = server.address();
-  if (!address || typeof address === 'string') throw new Error('Release mirror did not expose a port.');
-  return {
-    server,
-    baseUrl: `http://127.0.0.1:${address.port}/v${CAPTURE_RUNTIME_VERSION}`,
-  };
-}
-
-async function closeMirror(mirror: ServerHandle | undefined): Promise<void> {
-  if (!mirror) return;
-  mirror.server.closeIdleConnections();
-  mirror.server.closeAllConnections();
-  await new Promise<void>((resolvePromise) => mirror.server.close(() => resolvePromise()));
-}
-
-function runCommand(command: string, args: readonly string[], cwd: string, env: NodeJS.ProcessEnv): void {
-  const result = spawnSync(command, args, {
-    cwd,
-    env,
-    windowsHide: true,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  if (result.status !== 0) {
-    throw new Error(
-      `${command} ${args.join(' ')} failed with ${result.status}: ${result.stdout ?? ''}\n${result.stderr ?? ''}`,
-    );
-  }
-}
-
-async function prepareModelBundle(temporaryRoot: string): Promise<{
-  readonly modelDir: string;
-}> {
-  const archives = (await readdir(modelArchiveRoot)).filter((name) => name.endsWith('.zip'));
-  const archive = archives[0];
-  if (!archive) throw new Error(`No WindowsML model archive found under ${modelArchiveRoot}.`);
-  const extracted = join(temporaryRoot, 'model-source');
-  const modelDir = join(temporaryRoot, 'models');
-  await mkdir(extracted, { recursive: true });
-  await mkdir(join(modelDir, 'det'), { recursive: true });
-  await mkdir(join(modelDir, 'rec'), { recursive: true });
-  runCommand('tar', ['-xf', join(modelArchiveRoot, archive), '-C', extracted], workspaceRoot, process.env);
-  for (const relativePath of modelFiles) {
-    await copyFile(join(extracted, relativePath), join(modelDir, relativePath));
-  }
-  const details = await stat(join(modelArchiveRoot, archive));
-  if (details.size <= 1) {
-    throw new Error('WindowsML model archive is empty.');
-  }
-  return { modelDir };
-}
-
-async function prepareReleaseMirror(temporaryRoot: string): Promise<ServerHandle> {
-  const mirrorRoot = join(temporaryRoot, 'release-mirror');
-  await mkdir(mirrorRoot, { recursive: true });
-  for (const name of CAPTURE_RUNTIME_RELEASE_ASSETS) {
-    await copyFile(join(releaseRoot, name), join(mirrorRoot, name));
-  }
-  if (await stat(productionExecutable).then(() => true, () => false)) {
-    await copyFile(productionExecutable, join(mirrorRoot, CAPTURE_RUNTIME_FILE));
-  }
-  const manifestPath = join(mirrorRoot, 'capture-runtime-manifest.json');
-  const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as Record<string, unknown>;
-  const executable = await stat(join(mirrorRoot, CAPTURE_RUNTIME_FILE));
-  manifest.fileName = CAPTURE_RUNTIME_FILE;
-  manifest.bytes = executable.size;
-  manifest.sha256 = await sha256File(join(mirrorRoot, CAPTURE_RUNTIME_FILE));
-  await writeFile(
-    join(mirrorRoot, `${CAPTURE_RUNTIME_FILE}.sha256`),
-    `${manifest.sha256}  ${CAPTURE_RUNTIME_FILE}\n`,
-    'utf8',
-  );
-  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
-  await verifyCaptureRuntimeReleaseDirectory(mirrorRoot);
-  return startMirror(mirrorRoot);
 }
 
 async function waitForRuntime(
@@ -369,6 +343,104 @@ async function waitForRuntime(
   throw new Error(`Authenticated runtime readiness failed: ${lastStatus}`);
 }
 
+async function prepareGitHubWindowsMlBundle(
+  temporaryRoot: string,
+  manifestPath: string,
+): Promise<string> {
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as Record<string, unknown>;
+  const runtimeRequirements = manifest.runtimeRequirements;
+  const windowsMlRequirement =
+    typeof runtimeRequirements === 'object' && runtimeRequirements !== null
+      ? (runtimeRequirements as Record<string, unknown>)['windowsml-ocr']
+      : undefined;
+  const artifact =
+    typeof windowsMlRequirement === 'object' && windowsMlRequirement !== null
+      ? (windowsMlRequirement as Record<string, unknown>)
+      : undefined;
+  if (
+    artifact?.artifactUrl !== windowsMlBundleUrl ||
+    artifact.artifactFileName !== windowsMlBundleFileName ||
+    artifact.bytes !== windowsMlBundleBytes ||
+    artifact.sha256 !== windowsMlBundleSha256
+  ) {
+    throw new Error(
+      `Capture Runtime manifest did not expose the pinned WindowsML GitHub artifact: ${JSON.stringify(artifact)}`,
+    );
+  }
+  const archivePath = join(temporaryRoot, windowsMlBundleFileName);
+  const configuredBundlePath = process.env.CERT_PREP_REAL_PDF_WINDOWSML_BUNDLE_PATH?.trim();
+  if (configuredBundlePath) {
+    await copyFile(resolve(configuredBundlePath), archivePath);
+    console.log(`Using pre-downloaded WindowsML bundle asset ${resolve(configuredBundlePath)}.`);
+  } else {
+    const response = await fetch(windowsMlBundleUrl, {
+      redirect: 'follow',
+      headers: { Connection: 'close' },
+    });
+    if (!response.ok) {
+      throw new Error(`WindowsML GitHub artifact download failed with HTTP ${response.status}.`);
+    }
+    await writeFile(archivePath, new Uint8Array(await response.arrayBuffer()), { flag: 'wx' });
+  }
+  const archiveDetails = await stat(archivePath);
+  if (archiveDetails.size !== windowsMlBundleBytes || (await sha256File(archivePath)) !== windowsMlBundleSha256) {
+    throw new Error('WindowsML GitHub artifact bytes or SHA-256 did not match the Capture Runtime manifest.');
+  }
+  const expectedEntries = [...windowsMlRequiredModelFiles].sort();
+  const listed = runCommand('tar', ['-tf', archivePath], workspaceRoot).stdout
+    .split(/\r?\n/u)
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .sort();
+  if (JSON.stringify(listed) !== JSON.stringify(expectedEntries)) {
+    throw new Error(`WindowsML GitHub artifact entries were not the exact allowlist: ${JSON.stringify(listed)}`);
+  }
+  const extractedRoot = join(temporaryRoot, 'windowsml-github-extracted');
+  const modelDir = join(temporaryRoot, 'windowsml-github-models');
+  await mkdir(extractedRoot, { recursive: true });
+  await mkdir(modelDir, { recursive: true });
+  runCommand('tar', ['-xf', archivePath, '-C', extractedRoot], workspaceRoot);
+  for (const relativePath of windowsMlRequiredModelFiles) {
+    const source = join(extractedRoot, relativePath);
+    const sourceDetails = await stat(source);
+    if (!sourceDetails.isFile()) throw new Error(`WindowsML artifact entry is not a file: ${relativePath}`);
+    const destination = join(modelDir, relativePath);
+    await mkdir(dirname(destination), { recursive: true });
+    await copyFile(source, destination);
+  }
+  await rm(archivePath, { force: true });
+  await rm(extractedRoot, { recursive: true, force: true });
+  const verifiedSource = configuredBundlePath
+    ? `pre-downloaded asset ${resolve(configuredBundlePath)}`
+    : windowsMlBundleUrl;
+  console.log(
+    `Verified WindowsML OCR bundle ${verifiedSource} against the Capture Runtime manifest.`,
+  );
+  return modelDir;
+}
+
+async function assertWindowsMlRequirementReady(
+  backendBaseUrl: string,
+  token: string,
+): Promise<void> {
+  const requirements = await jsonRequest(`${backendBaseUrl}/capture-runtime/requirements`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const item = (Array.isArray(requirements.items) ? requirements.items : []).find(
+    (candidate) =>
+      typeof candidate === 'object' &&
+      candidate !== null &&
+      String((candidate as Record<string, unknown>).requirementId) === 'windowsml-ocr',
+  ) as Record<string, unknown> | undefined;
+  if (!item) {
+    throw new Error(`Capture Runtime did not expose the WindowsML OCR requirement: ${JSON.stringify(requirements)}`);
+  }
+  if (item.status !== 'ready') {
+    throw new Error(`Capture Runtime WindowsML OCR requirement is not ready after GitHub bundle staging: ${JSON.stringify(item)}`);
+  }
+  console.log('Downloaded Capture Runtime reports WindowsML OCR ready through the cert-prep proxy.');
+}
+
 async function waitForDocument(
   backendBaseUrl: string,
   token: string,
@@ -400,6 +472,42 @@ async function waitForDocument(
     await delay(1_000);
   }
   throw new Error(`Timed out waiting for document ${documentId}; last status ${lastStatus}.`);
+}
+
+async function waitForCaptureReview(
+  page: Page,
+  backendBaseUrl: string,
+  token: string,
+  projectId: string,
+  documentId: string,
+  timeoutMs: number,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let lastStatus = 'unknown';
+  let lastBody = '';
+  while (Date.now() < deadline) {
+    if ((await page.getByRole('heading', { name: 'Review capture text' }).count()) > 0) {
+      return;
+    }
+    const document = await jsonRequest(
+      `${backendBaseUrl}/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    lastStatus = String(document.status);
+    if (['ocr_failed', 'no_text_detected', 'canceled'].includes(lastStatus)) {
+      lastBody = await page.locator('body').innerText();
+      throw new Error(
+        `Real PDF document processing failed before Capture review: ${JSON.stringify(document)}\n` +
+          `Capture Workbench body:\n${lastBody.slice(-1_000)}`,
+      );
+    }
+    lastBody = await page.locator('body').innerText();
+    await delay(Math.min(1_000, Math.max(100, deadline - Date.now())));
+  }
+  throw new Error(
+    `Timed out waiting for Capture review UI; last document status ${lastStatus}.\n` +
+      `Capture Workbench body:\n${lastBody.slice(-1_000)}`,
+  );
 }
 
 async function runBrowserFlow(
@@ -505,16 +613,17 @@ async function runBrowserFlow(
       );
     }
     try {
-      await page
-        .getByRole('heading', { name: 'Review capture text' })
-        .waitFor({ timeout: realPdfReviewTimeoutMs });
-    } catch (error) {
-      const bodyText = await page.locator('body').innerText();
-      await page.screenshot({ path: join(temporaryRoot, 'real-pdf-review-timeout.png'), fullPage: true });
-      throw new Error(
-        `${error instanceof Error ? error.message : String(error)}\n` +
-          `Real PDF Capture review UI did not appear. Body:\n${bodyText}`,
+      await waitForCaptureReview(
+        page,
+        backendBaseUrl,
+        token,
+        projectId,
+        documentId,
+        realPdfReviewTimeoutMs,
       );
+    } catch (error) {
+      await page.screenshot({ path: join(temporaryRoot, 'real-pdf-review-timeout.png'), fullPage: true });
+      throw error;
     }
     const firstReviewField = page.locator('capture-workbench .ocr-review textarea').first();
     await firstReviewField.waitFor({ state: 'visible', timeout: 60_000 });
@@ -615,8 +724,40 @@ async function runBrowserFlow(
     if (!(await generateQuestions.isEnabled())) {
       throw new Error('Build Workbench kept Generate questions disabled after parsing.');
     }
+    if (realPdfExpectedQuestionCount !== undefined) {
+      const questionLimit = page.locator('input[name="questionLimit"]');
+      await questionLimit.fill(String(realPdfExpectedQuestionCount));
+      await questionLimit.press('Tab');
+      await page.waitForFunction(
+        (expected) =>
+          Number((document.querySelector('input[name="questionLimit"]') as HTMLInputElement | null)?.value) ===
+          expected,
+        realPdfExpectedQuestionCount,
+        { timeout: 5_000 },
+      );
+    }
+    const operationResponsePromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        response.url().includes(`/documents/${documentId}/draft-operations`),
+      { timeout: 30_000 },
+    );
     await generateQuestions.click();
-    await waitForGeneratedQuestion(page, realPdfReviewTimeoutMs);
+    const operationResponse = await operationResponsePromise;
+    const operation = (await operationResponse.json()) as Record<string, unknown>;
+    const operationId = String(operation.id ?? '');
+    if (!operationResponse.ok || !operationId) {
+      throw new Error(`Manual draft operation did not start: ${JSON.stringify(operation)}`);
+    }
+    const operationUrl =
+      `${backendBaseUrl}/projects/${encodeURIComponent(projectId)}/documents/` +
+      `${encodeURIComponent(documentId)}/draft-operations/${encodeURIComponent(operationId)}`;
+    await waitForGeneratedQuestion(page, realPdfReviewTimeoutMs, operationUrl, token);
+    const completedOperation = await waitForCompletedManualOperation(
+      operationUrl,
+      token,
+      realPdfReviewTimeoutMs,
+    );
     const firstQuestion = page.getByTestId('draft-question-card').first();
     await firstQuestion.waitFor({ state: 'visible', timeout: 90_000 });
     await firstQuestion.getByText('Playable', { exact: true }).waitFor({
@@ -639,7 +780,95 @@ async function runBrowserFlow(
     if (generatedQuestionCount < 1) {
       throw new Error('Build Workbench did not render any generated question cards.');
     }
-    console.log(`Build Workbench generated ${generatedQuestionCount} playable question(s).`);
+    if (
+      realPdfExpectedQuestionCount !== undefined &&
+      generatedQuestionCount > realPdfExpectedQuestionCount
+    ) {
+      throw new Error(
+        `Build Workbench generated ${generatedQuestionCount} question(s), more than ` +
+          `${realPdfExpectedQuestionCount} parsed question block(s).`,
+      );
+    }
+    if (realPdfExpectedQuestionCount !== undefined) {
+      const draftList = await jsonRequest(
+        `${backendBaseUrl}/projects/${encodeURIComponent(projectId)}/question-drafts`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      const allDrafts = Array.isArray(draftList.items)
+        ? (draftList.items as Record<string, unknown>[])
+        : [];
+      const documentDrafts = allDrafts.filter(
+        (draft) => String(draft.document_id ?? '') === documentId,
+      );
+      const chunksById = new Map(
+        processed.chunks.map((chunk) => [String(chunk.id ?? ''), chunk]),
+      );
+      const sourceOrders = new Set<number>();
+      const invalidDrafts = documentDrafts.filter((draft) => {
+        const chunk = chunksById.get(String(draft.chunk_id ?? ''));
+        const source = chunk
+          ? `${String(chunk.raw_text ?? '')}\n${String(chunk.text ?? '')}`
+          : '';
+        const sourceOrder = Number(draft.source_order);
+        if (Number.isInteger(sourceOrder)) sourceOrders.add(sourceOrder);
+        return (
+          String(draft.answer ?? '').trim().length === 0 ||
+          !Array.isArray(draft.choices) ||
+          draft.choices.length < 4 ||
+          String(draft.rationale ?? '').trim().length === 0 ||
+          !Number.isInteger(Number(draft.citation_page)) ||
+          String(draft.source_question_number ?? '').trim().length === 0 ||
+          !Number.isInteger(sourceOrder) ||
+          source.length === 0 ||
+          !source.includes(String(draft.source_excerpt ?? ''))
+        );
+      });
+      const unavailableBlocks = Array.isArray(completedOperation.unavailable_blocks)
+        ? (completedOperation.unavailable_blocks as Record<string, unknown>[])
+        : [];
+      const invalidUnavailableBlocks = unavailableBlocks.filter((block) => {
+        const sourceOrder = Number(block.source_order);
+        if (Number.isInteger(sourceOrder)) sourceOrders.add(sourceOrder);
+        return (
+          block.status !== 'needs_review' ||
+          String(block.chunk_id ?? '').trim().length === 0 ||
+          !Number.isInteger(Number(block.citation_page)) ||
+          String(block.source_question_number ?? '').trim().length === 0 ||
+          !Number.isInteger(sourceOrder) ||
+          String(block.source_excerpt ?? '').trim().length === 0 ||
+          String(block.reason ?? '').trim().length === 0
+        );
+      });
+      const playableCount = documentDrafts.length;
+      const unavailableCount = unavailableBlocks.length;
+      if (
+        playableCount < 1 ||
+        playableCount + unavailableCount !== realPdfExpectedQuestionCount ||
+        sourceOrders.size !== realPdfExpectedQuestionCount ||
+        invalidDrafts.length > 0 ||
+        invalidUnavailableBlocks.length > 0 ||
+        Number(completedOperation.generated_count) !== playableCount
+      ) {
+        throw new Error(
+          'Parsed question persistence proof failed: ' +
+            JSON.stringify({
+              expected: realPdfExpectedQuestionCount,
+              playable: playableCount,
+              unavailable: unavailableCount,
+              uniqueSourceOrders: sourceOrders.size,
+              invalidDrafts: invalidDrafts.length,
+              invalidUnavailableBlocks: invalidUnavailableBlocks.length,
+              operationGeneratedCount: completedOperation.generated_count,
+            }),
+        );
+      }
+      console.log(
+        `Build Workbench generated and persisted ${playableCount} playable question(s); ` +
+          `${unavailableCount} parsed block(s) marked needs_review.`,
+      );
+    } else {
+      console.log(`Build Workbench generated ${generatedQuestionCount} playable question(s).`);
+    }
     await page.screenshot({ path: join(temporaryRoot, 'real-pdf-completed.png'), fullPage: true });
   } finally {
     await context.close();
@@ -659,21 +888,26 @@ async function runSmoke(): Promise<void> {
   const pdfDetails = await stat(realPdfPath);
   if (pdfDetails.size <= 0) throw new Error(`Real PDF fixture is empty: ${realPdfPath}`);
   const temporaryRoot = await mkdtemp(join(tmpdir(), 'cert-prep-capture-workbench-real-pdf-'));
-  let mirror: ServerHandle | undefined;
   let runtime: ManagedProcess | undefined;
   let backend: ManagedProcess | undefined;
   let frontend: ManagedProcess | undefined;
   let browserFailure: unknown;
   try {
-    const { modelDir } = await prepareModelBundle(temporaryRoot);
-    mirror = await prepareReleaseMirror(temporaryRoot);
+    console.log(
+      `Downloading capture-runtime@${CAPTURE_RUNTIME_VERSION} from ${DEFAULT_CAPTURE_RUNTIME_RELEASE_BASE_URL}.`,
+    );
     const consumerWorkspace = join(temporaryRoot, 'cert-prep-consumer');
     await mkdir(consumerWorkspace, { recursive: true });
     const installed = await installCaptureRuntime({
       workspaceRoot: consumerWorkspace,
-      baseUrl: mirror.baseUrl,
+      baseUrl: DEFAULT_CAPTURE_RUNTIME_RELEASE_BASE_URL,
       outputRoot: defaultCaptureRuntimeRoot(consumerWorkspace),
     });
+    console.log(`Using downloaded sidecar ${join(installed.outputRoot, CAPTURE_RUNTIME_FILE)}.`);
+    const modelDir = await prepareGitHubWindowsMlBundle(
+      temporaryRoot,
+      join(installed.outputRoot, 'capture-runtime-manifest.json'),
+    );
     const runtimePort = await findFreePort();
     const backendPort = await findFreePort();
     const frontendPort = await findFreePort();
@@ -733,6 +967,7 @@ async function runSmoke(): Promise<void> {
     await waitForHttp(`${backendBaseUrl}/health`, undefined, 90_000).catch((error) => {
       throw new Error(`${error instanceof Error ? error.message : String(error)}\n${backend.output()}`);
     });
+    await assertWindowsMlRequirementReady(backendBaseUrl, backendToken);
     const project = await jsonRequest(`${backendBaseUrl}/projects`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${backendToken}`, 'Content-Type': 'application/json' },
@@ -803,7 +1038,6 @@ async function runSmoke(): Promise<void> {
     await stopProcess(frontend);
     await stopProcess(backend);
     await stopProcess(runtime);
-    await closeMirror(mirror);
     const relativeRoot = temporaryRoot
       .replace(resolve(tmpdir()), '')
       .replace(/^[/\\]+/u, '');

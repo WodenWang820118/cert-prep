@@ -111,6 +111,7 @@ export function manualDraftOperation(
     effective_model: null,
     fallback_reason: null,
     generated_count: 0,
+    unavailable_blocks: [],
     error: null,
     created_at: '2026-07-11T00:00:00Z',
     updated_at: '2026-07-11T00:00:00Z',

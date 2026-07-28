@@ -847,7 +847,10 @@ def test_ollama_fast_first_draft_reports_primary_runtime_failure_without_fallbac
 def test_ollama_fast_first_invalid_json_does_not_mark_model_unusable(
     monkeypatch,
 ) -> None:
-    fake_client = RecordingOllamaClient(models=["qwen3.5:4b"], chat_content="not-json")
+    fake_client = SequencedOllamaClient(
+        models=["qwen3.5:4b"],
+        chat_contents=["not-json", "not-json", "not-json", "not-json"],
+    )
     monkeypatch.setattr(ollama_transport, "resolve_ollama_executable", lambda: Path("ollama"))
     provider = OllamaProvider(
         host="http://127.0.0.1:11434",
@@ -880,3 +883,45 @@ def test_ollama_fast_first_invalid_json_does_not_mark_model_unusable(
     assert health.effective_model == "qwen3.5:4b"
     assert health.fallback_reason is None
     assert fake_client.pull_calls == 0
+
+
+def test_ollama_fast_first_retries_invalid_json_with_the_same_model(
+    monkeypatch,
+) -> None:
+    fake_client = SequencedOllamaClient(
+        models=["qwen3.5:4b"],
+        chat_contents=[
+            "not-json",
+            '{"answer":"2","rationale":"The second choice matches.","confidence":0.7}',
+        ],
+    )
+    monkeypatch.setattr(ollama_transport, "resolve_ollama_executable", lambda: Path("ollama"))
+    provider = OllamaProvider(
+        host="http://127.0.0.1:11434",
+        model="qwen3.5:4b",
+        timeout_seconds=1,
+    )
+    provider._client = fake_client
+    chunk = SourceChunk(
+        id="chunk-2",
+        page_number=2,
+        text="Question text. 1 first 2 second 3 third 4 fourth",
+        source_excerpt="Question text.",
+    )
+    candidate = DraftSuggestion(
+        chunk_id=chunk.id,
+        question="Question text.",
+        choices=["1 first", "2 second", "3 third", "4 fourth"],
+        answer="",
+        answer_key_source="manual",
+        rationale="",
+        citation_page=2,
+        source_excerpt="Question text.",
+    )
+
+    suggestion = provider.generate_fast_first_draft(chunk, candidate)
+
+    assert suggestion is not None
+    assert suggestion.answer == "2 second"
+    assert len(fake_client.chat_calls) == 2
+    assert [call["model"] for call in fake_client.chat_calls] == ["qwen3.5:4b", "qwen3.5:4b"]

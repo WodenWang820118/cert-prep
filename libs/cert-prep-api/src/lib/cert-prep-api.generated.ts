@@ -49,7 +49,7 @@ export interface Components {
     MachineInventoryRead: { "platform": string; "platform_version": string; "architecture": string; "cpu": Components['schemas']['MachineCpuRead']; "ram": Components['schemas']['MachineRamRead']; "storage": Components['schemas']['MachineStorageRead']; "accelerators"?: Components['schemas']['MachineAcceleratorRead'][]; "warnings"?: string[]; "schema_version"?: number };
     MachineRamRead: { "total_bytes"?: number | null; "available_bytes"?: number | null };
     MachineStorageRead: { "path": string; "free_bytes"?: number | null; "total_bytes"?: number | null };
-    ManualDraftGenerationOperationRead: { "id": string; "project_id": string; "document_id": string; "limit": number; "strategy": Components['schemas']['DraftGenerationStrategy']; "status": Components['schemas']['ManualDraftOperationStatus']; "phase": string; "cancellable": boolean; "provider": string; "model": string; "effective_provider"?: string | null; "effective_model"?: string | null; "fallback_reason"?: string | null; "generated_count": number; "error"?: string | null; "created_at": string; "updated_at": string; "commit_started_at"?: string | null };
+    ManualDraftGenerationOperationRead: { "id": string; "project_id": string; "document_id": string; "limit": number; "strategy": Components['schemas']['DraftGenerationStrategy']; "status": Components['schemas']['ManualDraftOperationStatus']; "phase": string; "cancellable": boolean; "provider": string; "model": string; "effective_provider"?: string | null; "effective_model"?: string | null; "fallback_reason"?: string | null; "generated_count": number; "unavailable_blocks"?: Components['schemas']['UnavailableDraftBlockRead'][]; "error"?: string | null; "created_at": string; "updated_at": string; "commit_started_at"?: string | null };
     ManualDraftOperationStatus: "queued" | "running" | "cancel_requested" | "canceled" | "succeeded" | "failed";
     ModelDownloadRead: { "id": string; "provider": string; "model": string; "status": Components['schemas']['cert_prep_contracts__runtime__RuntimeInstallationStatus']; "phase": string; "cancellable": boolean; "detail": string; "completed": number | null; "total": number | null; "created_at": string; "updated_at": string; "commit_started_at"?: string | null; "error"?: string | null };
     OllamaModelProfileRead: { "profile_id": string; "display_name": string; "description": string; "base_model": string; "local_model": string; "context_window": number; "system_prompt": string; "parameters"?: Record<string, unknown>; "min_total_ram_bytes"?: number | null; "min_available_ram_bytes"?: number | null; "min_free_disk_bytes"?: number | null; "min_vram_bytes"?: number | null; "auto_selectable": boolean; "explicit_opt_in_required": boolean; "fallback_profile_ids"?: string[] };
@@ -76,6 +76,7 @@ export interface Components {
     QuestionDraftUpdate: { "question"?: string | null; "choices"?: string[] | null; "answer"?: string | null; "answer_key_source"?: Components['schemas']['AnswerKeySource'] | string | null; "rationale"?: string | null; "citation_page"?: number | null; "source_excerpt"?: string | null; "confidence"?: number | null; "source_order"?: number | null; "source_question_number"?: string | null; "item_kind"?: Components['schemas']['QuestionItemKind'] | string | null; "group_key"?: string | null; "group_prompt"?: string | null };
     QuestionItemKind: string;
     RawCaptureSegmentV1: { "segmentId": string; "order": number; "locator": Components['schemas']['PageLocatorV1'] | Components['schemas']['TimeLocatorV1']; "text": string };
+    RuntimeArtifactDescriptorV1: { "artifactUrl": string; "artifactFileName": string; "bytes": number; "sha256": string };
     RuntimeCapabilitiesV1: { "captureKinds": Components['schemas']['CaptureSourceKind'][]; "structuringModes": Components['schemas']['StructuringMode'][]; "supportsCancellation": boolean; "supportsRawDiagnostics": boolean; "maxUploadBytes": number };
     RuntimeInstallationRead: { "id": string; "kind": Components['schemas']['RuntimeRequirementKind']; "provider": string; "model": string; "status": Components['schemas']['cert_prep_contracts__runtime__RuntimeInstallationStatus']; "phase": string; "cancellable": boolean; "detail": string; "completed": number | null; "total": number | null; "created_at": string; "updated_at": string; "commit_started_at"?: string | null; "error"?: string | null };
     RuntimeInstallationV1: { "installationId": string; "requirementId": string; "status": Components['schemas']['cert_prep_backend__domains__capture_workbench__contracts__RuntimeInstallationStatus']; "progress": number; "error"?: Components['schemas']['CaptureFailureV1'] | null; "createdAt": string; "updatedAt": string; "completedAt"?: string | null };
@@ -84,13 +85,14 @@ export interface Components {
     RuntimeRequirementKind: string;
     RuntimeRequirementRead: { "kind": Components['schemas']['RuntimeRequirementKind']; "label": string; "available": boolean; "detail": string; "unavailable_reason": string | null; "version"?: string | null; "bytes"?: number | null; "installed_path"?: string | null };
     RuntimeRequirementStatus: string;
-    RuntimeRequirementV1: { "requirementId": string; "kind": string; "displayName": string; "status": Components['schemas']['RuntimeRequirementStatus']; "requiredFor": string[]; "installStrategy": string; "detail"?: string | null };
+    RuntimeRequirementV1: { "requirementId": string; "kind": string; "displayName": string; "status": Components['schemas']['RuntimeRequirementStatus']; "requiredFor": string[]; "installStrategy": string; "detail"?: string | null; "artifact"?: Components['schemas']['RuntimeArtifactDescriptorV1'] | null };
     RuntimeRequirementsRead: { "items": Components['schemas']['RuntimeRequirementRead'][] };
     RuntimeRequirementsV1: { "items": Components['schemas']['RuntimeRequirementV1'][] };
     SourceDocumentStatus: string;
     StartRuntimeInstallationV1: { "requirementId": string; "consent": boolean };
     StructuringMode: string;
     TimeLocatorV1: { "kind"?: string; "startMs": number; "endMs": number };
+    UnavailableDraftBlockRead: { "status"?: string; "chunk_id": string; "citation_page": number; "source_excerpt": string; "source_order"?: number | null; "source_question_number"?: string | null; "reason": string };
     ValidationError: { "loc": (string | number)[]; "msg": string; "type": string; "input"?: unknown; "ctx"?: Record<string, unknown> };
     WrongAnswerClusterRead: { "document_id": string | null; "citation_page": number | null; "current_wrong_count": number; "cleared_count": number; "last_wrong_at": string | null };
     WrongAnswerExplanationRead: { "attempt_id": string; "explanation": string; "provider": string; "model": string; "grounded_fields": Components['schemas']['WrongAnswerGroundedFields']; "fallback": boolean };
@@ -174,6 +176,7 @@ export type QuestionDraftRead = Components['schemas']['QuestionDraftRead'];
 export type QuestionDraftUpdate = Components['schemas']['QuestionDraftUpdate'];
 export type QuestionItemKind = Components['schemas']['QuestionItemKind'];
 export type RawCaptureSegmentV1 = Components['schemas']['RawCaptureSegmentV1'];
+export type RuntimeArtifactDescriptorV1 = Components['schemas']['RuntimeArtifactDescriptorV1'];
 export type RuntimeCapabilitiesV1 = Components['schemas']['RuntimeCapabilitiesV1'];
 export type RuntimeInstallationRead = Components['schemas']['RuntimeInstallationRead'];
 export type RuntimeInstallationV1 = Components['schemas']['RuntimeInstallationV1'];
@@ -189,6 +192,7 @@ export type SourceDocumentStatus = Components['schemas']['SourceDocumentStatus']
 export type StartRuntimeInstallationV1 = Components['schemas']['StartRuntimeInstallationV1'];
 export type StructuringMode = Components['schemas']['StructuringMode'];
 export type TimeLocatorV1 = Components['schemas']['TimeLocatorV1'];
+export type UnavailableDraftBlockRead = Components['schemas']['UnavailableDraftBlockRead'];
 export type ValidationError = Components['schemas']['ValidationError'];
 export type WrongAnswerClusterRead = Components['schemas']['WrongAnswerClusterRead'];
 export type WrongAnswerExplanationRead = Components['schemas']['WrongAnswerExplanationRead'];

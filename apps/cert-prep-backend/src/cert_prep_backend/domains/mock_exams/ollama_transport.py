@@ -26,6 +26,7 @@ from cert_prep_backend.domains.mock_exams.response_parsing import (
     answer_from_payload,
     confidence_from_payload,
     fast_first_prompt,
+    fast_first_retry_prompt,
     is_non_fatal_generation_error,
     json_object_response_or_unavailable,
     short_error,
@@ -46,7 +47,7 @@ STREAMING_PREWARM_KEEP_ALIVE = "5m"
 STREAMING_RELEASE_KEEP_ALIVE = 0
 T = TypeVar("T")
 _LOGGER = logging.getLogger(__name__)
-_REASONING_JSON_ATTEMPTS = 2
+_REASONING_JSON_ATTEMPTS = 4
 
 
 class OllamaProvider:
@@ -360,7 +361,7 @@ class OllamaProvider:
             except ProviderUnavailableError as exc:
                 if "invalid JSON" not in str(exc) or attempt + 1 >= _REASONING_JSON_ATTEMPTS:
                     raise
-                _LOGGER.warning("Ollama reasoning response was not JSON; retrying once.")
+                _LOGGER.warning("Ollama reasoning response was not JSON; retrying.")
         raise AssertionError("unreachable")
 
     def generate_fast_first_draft(
@@ -368,39 +369,59 @@ class OllamaProvider:
         source_chunk: SourceChunk,
         candidate: DraftSuggestion,
         *,
-        num_ctx: int = 1024,
-        num_predict: int = 128,
+        num_ctx: int = 4096,
+        num_predict: int = 512,
         keep_alive: str | float | int | None = STREAMING_PREWARM_KEEP_ALIVE,
     ) -> DraftSuggestion | None:
         """Ask Ollama to complete one extracted draft with answer/rationale JSON."""
 
         try:
-            payload = self._with_primary_model(
-                lambda model: json_object_response_or_unavailable(
-                    self._client.chat(
-                        model=model,
-                        messages=[
-                            {
-                                "role": "user",
-                                "content": fast_first_prompt(candidate),
-                            }
-                        ],
-                        format="json",
-                        options=self._chat_options(
-                            num_ctx=num_ctx,
-                            num_predict=num_predict,
-                        ),
-                        think=False,
-                        keep_alive=keep_alive,
-                    ),
-                    provider_label="Ollama",
-                )
-            )
+            payload = None
+            answer = None
+            for attempt in range(_REASONING_JSON_ATTEMPTS):
+                try:
+                    payload = self._with_primary_model(
+                        lambda model: json_object_response_or_unavailable(
+                            self._client.chat(
+                                model=model,
+                                messages=[
+                                    {
+                                        "role": "user",
+                                        "content": (
+                                            fast_first_prompt(candidate)
+                                            if attempt == 0
+                                            else fast_first_retry_prompt(candidate)
+                                        ),
+                                    }
+                                ],
+                                format="json",
+                                options=self._chat_options(
+                                    num_ctx=num_ctx,
+                                    num_predict=num_predict,
+                                ),
+                                think=False,
+                                keep_alive=keep_alive,
+                            ),
+                            provider_label="Ollama",
+                        )
+                    )
+                    answer = answer_from_payload(payload.get("answer"), candidate.choices)
+                    if answer is not None:
+                        break
+                    if attempt + 1 < _REASONING_JSON_ATTEMPTS:
+                        _LOGGER.warning(
+                            "Ollama fast-first answer did not match visible choices; retrying."
+                        )
+                except ProviderUnavailableError as exc:
+                    if "invalid JSON" not in str(exc) or attempt + 1 >= _REASONING_JSON_ATTEMPTS:
+                        raise
+                    _LOGGER.warning("Ollama fast-first response was not JSON; retrying.")
+            if payload is None or answer is None:
+                raise ProviderUnavailableError("Ollama returned an unreadable response.")
         except ProviderUnavailableError as exc:
             if is_non_fatal_generation_error(exc):
                 return None
             raise
-        answer = answer_from_payload(payload.get("answer"), candidate.choices)
         if answer is None:
             return None
 

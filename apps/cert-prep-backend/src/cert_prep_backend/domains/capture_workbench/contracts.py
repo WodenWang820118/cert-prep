@@ -332,6 +332,13 @@ CaptureRequirementId = Literal[
 ]
 
 
+class RuntimeArtifactDescriptorV1(StrictWireModel):
+    artifact_url: NonEmptyString
+    artifact_file_name: NonEmptyString
+    bytes: int = Field(ge=1, le=536_870_912)
+    sha256: Sha256Hex
+
+
 class RuntimeRequirementV1(StrictWireModel):
     requirement_id: CaptureRequirementId
     kind: NonEmptyString
@@ -340,6 +347,7 @@ class RuntimeRequirementV1(StrictWireModel):
     required_for: list[str]
     install_strategy: NonEmptyString
     detail: str | None = None
+    artifact: RuntimeArtifactDescriptorV1 | None = None
 
 
 class RuntimeRequirementsV1(StrictWireModel):
@@ -405,6 +413,7 @@ __all__ = [
     "RuntimeInstallationV1",
     "RuntimeInstallationsV1",
     "RuntimeReadyV1",
+    "RuntimeArtifactDescriptorV1",
     "RuntimeRequirementStatus",
     "RuntimeRequirementV1",
     "RuntimeRequirementsV1",

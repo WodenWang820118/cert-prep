@@ -29,7 +29,10 @@ from cert_prep_backend.domains.mock_exams.ports import (
     provider_capability,
 )
 from cert_prep_contracts.llm import GenerationAttribution
-from cert_prep_backend.domains.mock_exams.provider import generate_drafts_for_strategy
+from cert_prep_backend.domains.mock_exams.provider import (
+    generate_drafts_for_strategy,
+    generate_drafts_with_annotations_for_strategy,
+)
 from cert_prep_backend.domains.mock_exams.response_parsing import (
     is_non_fatal_generation_error,
 )
@@ -345,12 +348,13 @@ class StreamingDraftGenerationManager:
             if not chunks:
                 raise ValueError("Document has no extracted text chunks.")
             _reset_generation_attribution(self._provider)
-            suggestions = generate_drafts_for_strategy(
+            generation = generate_drafts_with_annotations_for_strategy(
                 self._provider,
                 chunks,
                 operation["limit"],
                 DraftGenerationStrategy(operation["strategy"]),
             )
+            suggestions = generation.suggestions
             attribution = _generation_attribution(
                 self._provider,
                 generated=bool(suggestions),
@@ -365,6 +369,7 @@ class StreamingDraftGenerationManager:
                 effective_provider=attribution.effective_provider,
                 effective_model=attribution.effective_model,
                 fallback_reason=attribution.fallback_reason,
+                unavailable_blocks=generation.unavailable_blocks,
             )
         except draft_jobs.DraftJobCanceledError:
             manual_operations.mark_canceled(db, operation_id)

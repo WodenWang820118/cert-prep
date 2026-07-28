@@ -11,9 +11,11 @@ from cert_prep_backend.domains.mock_exams.deterministic_parser import (
 )
 from cert_prep_backend.domains.mock_exams.fake_provider import FakeLLMProvider
 from cert_prep_backend.domains.mock_exams.models import (
+    DraftGenerationResult,
     DraftGenerationStrategy,
     DraftSuggestion,
     SourceChunk,
+    UnavailableDraftBlock,
 )
 from cert_prep_backend.domains.mock_exams.normalization import (
     as_editable_question as _as_editable_question,
@@ -44,6 +46,10 @@ from cert_prep_backend.domains.mock_exams.reasoning_parser import (
     EXAM_ITEMS_SCHEMA,
     draft_suggestion_from_item as _draft_suggestion_from_item,
     json_response as _json_response,
+)
+from cert_prep_backend.api.errors import ProviderUnavailableError
+from cert_prep_backend.domains.mock_exams.response_parsing import (
+    is_non_fatal_generation_error,
 )
 
 
@@ -230,26 +236,75 @@ def generate_drafts_for_strategy(
 ) -> list[DraftSuggestion]:
     """Generate immediately playable question suggestions for a document."""
 
+    return generate_drafts_with_annotations_for_strategy(
+        provider,
+        chunks,
+        limit,
+        strategy,
+    ).suggestions
+
+
+def generate_drafts_with_annotations_for_strategy(
+    provider,
+    chunks: Sequence[SourceChunk],
+    limit: int,
+    strategy: DraftGenerationStrategy,
+) -> DraftGenerationResult:
+    """Generate playable questions while retaining parsed blocks needing review.
+
+    A non-fatal completion failure is scoped to the parsed block that caused it.
+    Runtime/provider failures that are not safe to continue still propagate so
+    the host remains fail-closed and never substitutes another provider.
+    """
+
     deterministic = _extract_jlpt_question_blocks(chunks, limit)
     if strategy == DraftGenerationStrategy.DETERMINISTIC_ONLY:
-        return _playable_suggestions(deterministic, limit)
+        playable = _playable_suggestions(deterministic, limit)
+        playable_ids = {id(suggestion) for suggestion in playable}
+        return DraftGenerationResult(
+            suggestions=playable,
+            unavailable_blocks=[
+                _unavailable_block(candidate, "Parsed block has no completed answer.")
+                for candidate in deterministic
+                if id(candidate) not in playable_ids
+            ],
+        )
 
     generated: list[DraftSuggestion] = []
+    unavailable_blocks: list[UnavailableDraftBlock] = []
     fast_first_provider = provider_capability(provider, FastFirstDraftProvider)
     if fast_first_provider is not None and deterministic:
         chunks_by_id = {chunk.id: chunk for chunk in chunks}
         for candidate in deterministic:
             source_chunk = chunks_by_id.get(candidate.chunk_id)
             if source_chunk is None:
+                unavailable_blocks.append(
+                    _unavailable_block(candidate, "Parsed block source chunk is unavailable.")
+                )
                 continue
-            completed = fast_first_provider.generate_fast_first_draft(
-                source_chunk,
-                candidate,
-            )
+            try:
+                completed = fast_first_provider.generate_fast_first_draft(
+                    source_chunk,
+                    candidate,
+                )
+            except ProviderUnavailableError as exc:
+                if not is_non_fatal_generation_error(exc):
+                    raise
+                completed = None
+                failure_reason = str(exc)
+            else:
+                failure_reason = "Capture Runtime question completion returned no playable answer."
             if completed is not None:
-                generated.append(_as_editable_question(completed))
-            if len(generated) >= limit:
-                break
+                editable = _as_editable_question(completed)
+                if _playable_suggestions([editable], 1):
+                    generated.append(editable)
+                    continue
+                failure_reason = "Capture Runtime question completion returned an incomplete answer."
+            unavailable_blocks.append(_unavailable_block(candidate, failure_reason))
+        return DraftGenerationResult(
+            suggestions=_dedupe_suggestions(generated, limit),
+            unavailable_blocks=unavailable_blocks,
+        )
 
     reasoning_provider = provider_capability(provider, ReasoningDraftProvider)
     remaining = limit - len(generated)
@@ -264,9 +319,23 @@ def generate_drafts_for_strategy(
                 _as_editable_question(suggestion)
                 for suggestion in provider.generate_drafts(chunks, limit)
             ]
-    return _dedupe_suggestions(
-        [*_playable_suggestions(deterministic, limit), *generated],
-        limit,
+    return DraftGenerationResult(
+        suggestions=_dedupe_suggestions(
+            [*_playable_suggestions(deterministic, limit), *generated],
+            limit,
+        ),
+        unavailable_blocks=unavailable_blocks,
+    )
+
+
+def _unavailable_block(candidate: DraftSuggestion, reason: str) -> UnavailableDraftBlock:
+    return UnavailableDraftBlock(
+        chunk_id=candidate.chunk_id,
+        citation_page=candidate.citation_page,
+        source_excerpt=candidate.source_excerpt,
+        source_order=candidate.source_order,
+        source_question_number=candidate.source_question_number,
+        reason=reason or "Capture Runtime could not complete this parsed block.",
     )
 
 

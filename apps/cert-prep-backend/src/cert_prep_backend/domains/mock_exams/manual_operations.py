@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
+import json
 import sqlite3
 from sqlite3 import Row
 from uuid import uuid4
@@ -295,11 +296,22 @@ def operation_from_row(row: Row) -> dict:
         "effective_model": row["effective_model"],
         "fallback_reason": row["fallback_reason"],
         "generated_count": row["generated_count"],
+        "unavailable_blocks": _unavailable_blocks_from_row(row),
         "error": row["error"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
         "commit_started_at": row["commit_started_at"],
     }
+
+
+def _unavailable_blocks_from_row(row: Row) -> list[dict]:
+    if "unavailable_blocks_json" not in row.keys():
+        return []
+    try:
+        value = json.loads(row["unavailable_blocks_json"] or "[]")
+    except (TypeError, ValueError):
+        return []
+    return value if isinstance(value, list) else []
 
 
 def _transition(

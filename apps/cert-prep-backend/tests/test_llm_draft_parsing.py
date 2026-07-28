@@ -14,6 +14,7 @@ from cert_prep_backend.domains.mock_exams.provider import (
     _json_response,
     _source_text_for_prompt,
     generate_drafts_for_strategy,
+    generate_drafts_with_annotations_for_strategy,
 )
 
 
@@ -368,6 +369,44 @@ def test_hybrid_generation_completes_visible_jlpt_items_with_fast_first_provider
     assert suggestions[0].question == "余暇の楽しみ方は いろいろある。"
     assert suggestions[0].answer == "1 ようか"
     assert suggestions[0].rationale
+
+
+def test_hybrid_generation_marks_a_parsed_item_for_review_when_it_cannot_be_completed() -> None:
+    class IncompleteFastFirstProvider:
+        provider = "capture-runtime-question-completion"
+        model = "qwen3.5:4b"
+
+        def generate_fast_first_draft(self, _source_chunk, _candidate, **_kwargs):
+            return None
+
+        def generate_reasoning_drafts(self, _chunks, _limit, **_kwargs):
+            raise AssertionError("parsed items must not be replaced by a broad reasoning prompt")
+
+    chunk = SourceChunk(
+        id="page-2",
+        page_number=2,
+        text=(
+            "Mondai 1 Choose the correct reading. 1 Which word is correct? "
+            "1 seikai 2 gotou 3 betsu 4 hoka"
+        ),
+        source_excerpt="Mondai 1 Choose the correct reading.",
+    )
+
+    result = generate_drafts_with_annotations_for_strategy(
+        IncompleteFastFirstProvider(),
+        [chunk],
+        2,
+        DraftGenerationStrategy.HYBRID_REASONING,
+    )
+
+    assert result.suggestions == []
+    assert len(result.unavailable_blocks) == 1
+    assert result.unavailable_blocks[0].status == "needs_review"
+    assert result.unavailable_blocks[0].source_question_number == "1"
+    assert result.unavailable_blocks[0].citation_page == 2
+    assert result.unavailable_blocks[0].source_excerpt
+    assert "Which word is correct?" in result.unavailable_blocks[0].source_excerpt
+    assert "no playable answer" in result.unavailable_blocks[0].reason
 
 def test_ollama_prompt_source_skips_notice_pages_and_stays_bounded() -> None:
     notice = SourceChunk(

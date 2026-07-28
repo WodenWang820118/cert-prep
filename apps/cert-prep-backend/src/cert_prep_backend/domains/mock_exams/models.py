@@ -126,6 +126,36 @@ class DraftSuggestion:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class UnavailableDraftBlock:
+    """A parsed source block that was retained but could not become playable."""
+
+    chunk_id: str
+    citation_page: int
+    source_excerpt: str
+    source_order: int | None
+    source_question_number: str | None
+    reason: str
+    status: str = "needs_review"
+
+    def to_serialized(self) -> dict[str, object]:
+        return {
+            "chunk_id": self.chunk_id,
+            "citation_page": self.citation_page,
+            "source_excerpt": self.source_excerpt,
+            "source_order": self.source_order,
+            "source_question_number": self.source_question_number,
+            "reason": self.reason,
+            "status": self.status,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class DraftGenerationResult:
+    suggestions: list[DraftSuggestion]
+    unavailable_blocks: list[UnavailableDraftBlock]
+
+
 def answer_key_source_from_value(
     value: AnswerKeySource | str | None,
     *,
