@@ -40,6 +40,14 @@ const realPdfPath = resolve(
     join(workspaceRoot, 'apps/cert-prep-backend/.benchmarks/jlpt-n1-page3-qa.pdf'),
 );
 const realPdfFileName = basename(realPdfPath);
+const realPdfReviewTimeoutMs = (() => {
+  const rawSeconds = process.env.CERT_PREP_REAL_PDF_REVIEW_TIMEOUT_SECONDS ?? '900';
+  const seconds = Number(rawSeconds);
+  if (!Number.isInteger(seconds) || seconds < 1) {
+    throw new Error('CERT_PREP_REAL_PDF_REVIEW_TIMEOUT_SECONDS must be a positive integer.');
+  }
+  return seconds * 1_000;
+})();
 const recordingRequested =
   process.argv.includes('--record-video') ||
   process.env.CERT_PREP_RECORD_CAPTURE_VIDEO === 'true';
@@ -477,7 +485,7 @@ async function runBrowserFlow(
     try {
       await page
         .getByRole('heading', { name: 'Review capture text' })
-        .waitFor({ timeout: 120_000 });
+        .waitFor({ timeout: realPdfReviewTimeoutMs });
     } catch (error) {
       const bodyText = await page.locator('body').innerText();
       await page.screenshot({ path: join(temporaryRoot, 'real-pdf-review-timeout.png'), fullPage: true });
@@ -575,6 +583,34 @@ async function runBrowserFlow(
       );
     }
     console.log(`Markdown download started: ${download.suggestedFilename()}`);
+    await page.getByRole('link', { name: 'Build', exact: true }).click();
+    await page.getByRole('heading', { name: 'Cert Prep' }).waitFor({ timeout: 90_000 });
+    const generateQuestions = page.getByRole('button', {
+      name: 'Generate questions',
+      exact: true,
+    });
+    await generateQuestions.waitFor({ state: 'visible', timeout: 90_000 });
+    if (!(await generateQuestions.isEnabled())) {
+      throw new Error('Build Workbench kept Generate questions disabled after parsing.');
+    }
+    await generateQuestions.click();
+    const firstQuestion = page.getByTestId('draft-question-card').first();
+    await firstQuestion.waitFor({ state: 'visible', timeout: realPdfReviewTimeoutMs });
+    await firstQuestion.getByText('Playable', { exact: true }).waitFor({
+      state: 'visible',
+      timeout: 90_000,
+    });
+    await firstQuestion
+      .getByRole('heading', {
+        name: 'Which action best applies the cited exam concept?',
+        exact: true,
+      })
+      .waitFor({ state: 'visible', timeout: 90_000 });
+    const generatedQuestionCount = await page.getByTestId('draft-question-card').count();
+    if (generatedQuestionCount < 1) {
+      throw new Error('Build Workbench did not render any generated question cards.');
+    }
+    console.log(`Build Workbench generated ${generatedQuestionCount} playable question(s).`);
     await page.screenshot({ path: join(temporaryRoot, 'real-pdf-completed.png'), fullPage: true });
   } finally {
     await context.close();
