@@ -137,6 +137,35 @@ describe('CertPrepRuntimeConfig', () => {
     expect(invoke).toHaveBeenNthCalledWith(1, 'backend_config');
     expect(invoke).toHaveBeenNthCalledWith(2, 'backend_config');
   });
+
+  it('forgets a replayed desktop config so a restarted backend is queried again', () => {
+    tauriBridge.isDesktop.mockReturnValue(true);
+    tauriBridge.invoke
+      .mockReturnValueOnce(
+        of({ base_url: 'http://127.0.0.1:9001', token: 'first-token' }),
+      )
+      .mockReturnValueOnce(
+        of({ base_url: 'http://127.0.0.1:9002', token: 'rotated-token' }),
+      );
+    const runtimeConfig = TestBed.inject(CertPrepRuntimeConfig);
+    let first: unknown;
+    runtimeConfig.getBackendConfig().subscribe((value) => (first = value));
+    runtimeConfig.invalidateBackendConfig();
+    let refreshed: unknown;
+    runtimeConfig.getBackendConfig().subscribe((value) => (refreshed = value));
+
+    expect(first).toEqual({
+      base_url: 'http://127.0.0.1:9001',
+      token: 'first-token',
+    });
+    expect(refreshed).toEqual({
+      base_url: 'http://127.0.0.1:9002',
+      token: 'rotated-token',
+    });
+    expect(tauriBridge.invoke).toHaveBeenCalledTimes(2);
+    expect(tauriBridge.invoke).toHaveBeenNthCalledWith(1, 'backend_config');
+    expect(tauriBridge.invoke).toHaveBeenNthCalledWith(2, 'backend_config');
+  });
 });
 
 describe('CertPrepAuthenticatedTransport', () => {

@@ -9,7 +9,7 @@ mod manifests;
 mod runtime_installation;
 mod windows_process;
 
-use std::{fs, path::PathBuf};
+use std::{fs, path::PathBuf, thread};
 use tauri::Manager;
 
 pub use backend::{build_backend_config, BackendConfig, BackendState, DesktopRuntimeStatus};
@@ -17,10 +17,7 @@ pub use runtime_installation::DesktopRuntimeInstallation;
 
 use backend::resource_path;
 use backend_process::external_backend_env;
-use capture_runtime::{bundled_capture_runtime_paths, CaptureRuntimeState};
-use constants::{
-    BACKEND_RUNTIME_MANIFEST, CAPTURE_RUNTIME_MANIFEST,
-};
+use constants::{BACKEND_RUNTIME_MANIFEST, CAPTURE_RUNTIME_MANIFEST};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -30,28 +27,27 @@ pub fn run() {
             fs::create_dir_all(&data_dir)
                 .map_err(|error| format!("failed to create app data directory: {error}"))?;
 
-            let (capture_manifest_path, capture_executable_path) =
-                bundled_capture_runtime_paths(resource_path(app, CAPTURE_RUNTIME_MANIFEST))?;
-            let capture_state = CaptureRuntimeState::launch(
-                &capture_manifest_path,
-                &capture_executable_path,
-                &data_dir,
-            )?;
-
             let state = BackendState::new(
                 data_dir,
                 resource_path(app, BACKEND_RUNTIME_MANIFEST),
-                capture_state.connection(),
+                resource_path(app, CAPTURE_RUNTIME_MANIFEST),
             );
             if let Some(config) = external_backend_env() {
-                state.set_config(config);
+                state.set_external_config(config);
             } else {
-                let launch_result = state.try_launch_installed_backend();
-                if launch_result.is_err() && package_qa_auto_install_enabled() {
-                    state.start_installation();
-                }
+                // Never hold Tauri setup (and therefore the first WebView
+                // paint) on a packaged Python backend readiness probe. A
+                // previously installed backend may take tens of seconds to
+                // become ready; the shell must remain visible so the user can
+                // inspect runtime state or explicitly install/start it.
+                let startup_state = state.clone();
+                thread::spawn(move || {
+                    let launch_result = startup_state.try_launch_installed_backend();
+                    if launch_result.is_err() && package_qa_auto_install_enabled() {
+                        startup_state.start_installation();
+                    }
+                });
             }
-            app.manage(capture_state);
             app.manage(state);
             Ok(())
         })
@@ -63,16 +59,17 @@ pub fn run() {
                 if let Some(state) = window.try_state::<BackendState>() {
                     state.terminate_child_process_tree();
                 }
-                if let Some(state) = window.try_state::<CaptureRuntimeState>() {
-                    state.terminate_child_process_tree();
-                }
             }
         })
         .invoke_handler(tauri::generate_handler![
             commands::backend_config,
             commands::desktop_runtime_status,
             commands::start_python_runtime_installation,
-            commands::get_python_runtime_installation
+            commands::get_python_runtime_installation,
+            commands::capture_runtime_status,
+            commands::install_capture_runtime,
+            commands::start_capture_runtime,
+            commands::get_capture_runtime_installation
         ])
         .run(tauri::generate_context!())
         .expect("failed to run cert prep desktop app");

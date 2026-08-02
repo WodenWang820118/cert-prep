@@ -3,7 +3,7 @@ use std::{
     net::{TcpListener, TcpStream},
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    sync::Arc,
+    sync::{atomic::Ordering, Arc},
     thread,
     time::{Duration, Instant},
 };
@@ -21,13 +21,25 @@ const FIXED_OLLAMA_PROFILE_ID: &str = "auto";
 pub(crate) fn launch_backend_entrypoint(
     inner: &Arc<BackendRuntimeInner>,
     entrypoint: &Path,
+    capture_runtime: Option<&CaptureRuntimeConnection>,
+    replace_existing: bool,
 ) -> Result<(), String> {
+    // Startup probing, post-install launch, and Capture Runtime activation can
+    // all request an owned backend. Serialize the full readiness-and-swap
+    // transaction so a slower stale candidate can never replace a newer one.
+    let _launch = inner
+        .backend_launch
+        .lock()
+        .map_err(|_| "Backend launch state is unavailable.".to_string())?;
+    if inner.closing.load(Ordering::SeqCst) {
+        return Err("Cert Prep is closing; backend runtime was not launched.".into());
+    }
     if inner
         .config
         .lock()
-        .ok()
-        .and_then(|config| config.clone())
+        .map_err(|_| "Backend configuration state is unavailable.".to_string())?
         .is_some()
+        && !replace_existing
     {
         return Ok(());
     }
@@ -39,7 +51,7 @@ pub(crate) fn launch_backend_entrypoint(
 
     let mut command = Command::new(entrypoint);
     command.current_dir(entrypoint.parent().unwrap_or_else(|| Path::new(".")));
-    for env in backend_launch_env(&inner.data_dir, port, &token, &inner.capture_runtime) {
+    for env in backend_launch_env(&inner.data_dir, port, &token, capture_runtime) {
         command.env(env.name, env.value);
     }
     command
@@ -57,22 +69,45 @@ pub(crate) fn launch_backend_entrypoint(
     let child = command
         .spawn()
         .map_err(|error| format!("failed to launch backend runtime: {error}"))?;
-    if let Err(error) = wait_for_backend(port, backend_ready_timeout()) {
+    if let Err(error) = wait_for_backend(port, backend_ready_timeout(), Some(&inner.closing)) {
         terminate_owned_process_tree(child);
         return Err(error);
     }
 
-    if let Ok(mut current_child) = inner.child.lock() {
-        if let Some(old_child) = current_child.take() {
-            terminate_owned_process_tree(old_child);
-        }
-        *current_child = Some(child);
+    if inner.closing.load(Ordering::SeqCst) {
+        terminate_owned_process_tree(child);
+        return Err("Cert Prep is closing; backend runtime was not launched.".into());
     }
-    if let Ok(mut config) = inner.config.lock() {
-        *config = Some(build_backend_config(
-            format!("http://127.0.0.1:{port}"),
-            token,
-        ));
+    let mut config = match inner.config.lock() {
+        Ok(config) => config,
+        Err(_) => {
+            terminate_owned_process_tree(child);
+            return Err("Backend configuration state is unavailable.".into());
+        }
+    };
+    let mut current_child = match inner.child.lock() {
+        Ok(child_state) => child_state,
+        Err(_) => {
+            drop(config);
+            terminate_owned_process_tree(child);
+            return Err("Backend process state is unavailable.".into());
+        }
+    };
+    if inner.closing.load(Ordering::SeqCst) {
+        drop(current_child);
+        drop(config);
+        terminate_owned_process_tree(child);
+        return Err("Cert Prep is closing; backend runtime was not launched.".into());
+    }
+    let old_child = current_child.replace(child);
+    *config = Some(build_backend_config(
+        format!("http://127.0.0.1:{port}"),
+        token,
+    ));
+    drop(current_child);
+    drop(config);
+    if let Some(old_child) = old_child {
+        terminate_owned_process_tree(old_child);
     }
     Ok(())
 }
@@ -96,9 +131,9 @@ fn backend_launch_env(
     data_dir: &Path,
     port: u16,
     token: &str,
-    capture_runtime: &CaptureRuntimeConnection,
+    capture_runtime: Option<&CaptureRuntimeConnection>,
 ) -> Vec<BackendEnv> {
-    vec![
+    let mut environment = vec![
         BackendEnv::new("CERT_PREP_HOST", sidecar_host()),
         BackendEnv::new("CERT_PREP_PORT", port.to_string()),
         BackendEnv::new("CERT_PREP_API_TOKEN", token),
@@ -108,27 +143,32 @@ fn backend_launch_env(
         BackendEnv::new("CERT_PREP_OLLAMA_PROFILE_ENABLED", "true"),
         BackendEnv::new("CERT_PREP_OLLAMA_PROFILE_ID", FIXED_OLLAMA_PROFILE_ID),
         BackendEnv::new("CERT_PREP_STREAMING_DRAFT_GENERATION_ON_UPLOAD", "true"),
-        BackendEnv::new(
-            "CERT_PREP_CAPTURE_RUNTIME_URL",
-            capture_runtime.base_url.clone(),
-        ),
-        BackendEnv::new(
-            "CERT_PREP_CAPTURE_RUNTIME_TOKEN",
-            capture_runtime.token.clone(),
-        ),
-        BackendEnv::new(
-            "CERT_PREP_CAPTURE_RUNTIME_VERSION",
-            capture_runtime.runtime_version.clone(),
-        ),
-        BackendEnv::new(
-            "CERT_PREP_CAPTURE_RUNTIME_API_VERSION",
-            capture_runtime.api_version.clone(),
-        ),
-        BackendEnv::new(
-            "CERT_PREP_CAPTURE_DOCUMENT_SCHEMA_VERSION",
-            capture_runtime.capture_document_schema_version.clone(),
-        ),
-    ]
+    ];
+    if let Some(capture_runtime) = capture_runtime {
+        environment.extend([
+            BackendEnv::new(
+                "CERT_PREP_CAPTURE_RUNTIME_URL",
+                capture_runtime.base_url.clone(),
+            ),
+            BackendEnv::new(
+                "CERT_PREP_CAPTURE_RUNTIME_TOKEN",
+                capture_runtime.token.clone(),
+            ),
+            BackendEnv::new(
+                "CERT_PREP_CAPTURE_RUNTIME_VERSION",
+                capture_runtime.runtime_version.clone(),
+            ),
+            BackendEnv::new(
+                "CERT_PREP_CAPTURE_RUNTIME_API_VERSION",
+                capture_runtime.api_version.clone(),
+            ),
+            BackendEnv::new(
+                "CERT_PREP_CAPTURE_DOCUMENT_SCHEMA_VERSION",
+                capture_runtime.capture_document_schema_version.clone(),
+            ),
+        ]);
+    }
+    environment
 }
 
 fn reserve_loopback_port() -> Result<u16, String> {
@@ -139,9 +179,18 @@ fn reserve_loopback_port() -> Result<u16, String> {
         .map_err(|error| format!("failed to read backend port: {error}"))
 }
 
-fn wait_for_backend(port: u16, timeout: Duration) -> Result<(), String> {
+fn wait_for_backend(
+    port: u16,
+    timeout: Duration,
+    cancelled: Option<&std::sync::atomic::AtomicBool>,
+) -> Result<(), String> {
     let started_at = Instant::now();
     while started_at.elapsed() < timeout {
+        if cancelled.is_some_and(|cancelled| cancelled.load(Ordering::SeqCst)) {
+            return Err(
+                "Cert Prep is closing; backend runtime readiness wait was cancelled.".into(),
+            );
+        }
         if TcpStream::connect(("127.0.0.1", port)).is_ok() {
             return Ok(());
         }
@@ -215,7 +264,7 @@ pub(crate) fn external_backend_env() -> Option<BackendConfig> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, MutexGuard};
+    use std::sync::{mpsc, Condvar, Mutex, MutexGuard};
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
@@ -229,7 +278,7 @@ mod tests {
         CaptureRuntimeConnection {
             base_url: "http://127.0.0.1:41001".into(),
             token: "capture-sidecar-test-token".into(),
-            runtime_version: "0.3.0".into(),
+            runtime_version: "0.3.8".into(),
             api_version: "1.0".into(),
             capture_document_schema_version: "1".into(),
         }
@@ -240,6 +289,53 @@ mod tests {
         let port = reserve_loopback_port().expect("port should be reserved");
 
         assert!(port > 0);
+    }
+
+    #[test]
+    fn backend_launch_waits_for_the_current_launch_transaction() {
+        let root = std::env::temp_dir().join(format!(
+            "cert-prep-backend-launch-lock-{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir_all(&root).expect("temp root");
+        let inner = Arc::new(BackendRuntimeInner {
+            data_dir: root.clone(),
+            backend_manifest_path: None,
+            capture_runtime_manifest_path: None,
+            capture_runtime: Mutex::new(None),
+            backend_launch: Mutex::new(()),
+            config: Mutex::new(None),
+            child: Mutex::new(None),
+            job: Mutex::new(None),
+            capture_job: Mutex::new(None),
+            capture_start_active: Mutex::new(false),
+            capture_start_complete: Condvar::new(),
+            external_backend: Mutex::new(false),
+            closing: std::sync::atomic::AtomicBool::new(false),
+        });
+        let current_launch = inner.backend_launch.lock().expect("launch lock");
+        let launch_inner = Arc::clone(&inner);
+        let missing_entrypoint = root.join("missing-backend.exe");
+        let (result_tx, result_rx) = mpsc::channel();
+        let launch_thread = thread::spawn(move || {
+            let result = launch_backend_entrypoint(&launch_inner, &missing_entrypoint, None, false);
+            result_tx.send(result).expect("launch result");
+        });
+
+        assert!(matches!(
+            result_rx.recv_timeout(Duration::from_millis(100)),
+            Err(mpsc::RecvTimeoutError::Timeout)
+        ));
+
+        drop(current_launch);
+        let error = result_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("serialized launch should resume")
+            .expect_err("missing backend must fail");
+        launch_thread.join().expect("launch thread");
+
+        assert!(error.contains("failed to launch backend runtime"));
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]
@@ -279,7 +375,7 @@ mod tests {
             Path::new("cert-prep-data"),
             8123,
             "test-token",
-            &capture_runtime(),
+            Some(&capture_runtime()),
         );
 
         assert_eq!(env_value(&env, "CERT_PREP_HOST"), Some("127.0.0.1"));
@@ -316,7 +412,7 @@ mod tests {
         );
         assert_eq!(
             env_value(&env, "CERT_PREP_CAPTURE_RUNTIME_VERSION"),
-            Some("0.3.0")
+            Some("0.3.8")
         );
         assert_eq!(
             env_value(&env, "CERT_PREP_CAPTURE_RUNTIME_API_VERSION"),
@@ -338,7 +434,7 @@ mod tests {
             Path::new("cert-prep-data"),
             8123,
             "test-token",
-            &capture_runtime(),
+            Some(&capture_runtime()),
         );
 
         assert_eq!(env_value(&env, "CERT_PREP_LLM_PROVIDER"), Some("ollama"));
@@ -349,6 +445,21 @@ mod tests {
 
         std::env::remove_var("CERT_PREP_OLLAMA_MODEL");
         std::env::remove_var("CERT_PREP_LLM_PROVIDER");
+    }
+
+    #[test]
+    fn backend_launch_env_omits_capture_credentials_until_capture_runtime_starts() {
+        let env = backend_launch_env(Path::new("cert-prep-data"), 8123, "test-token", None);
+
+        for name in [
+            "CERT_PREP_CAPTURE_RUNTIME_URL",
+            "CERT_PREP_CAPTURE_RUNTIME_TOKEN",
+            "CERT_PREP_CAPTURE_RUNTIME_VERSION",
+            "CERT_PREP_CAPTURE_RUNTIME_API_VERSION",
+            "CERT_PREP_CAPTURE_DOCUMENT_SCHEMA_VERSION",
+        ] {
+            assert_eq!(env_value(&env, name), None, "{name} must be absent");
+        }
     }
 
     #[test]

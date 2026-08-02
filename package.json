@@ -35,7 +35,7 @@
     "@primeuix/themes": "^2.0.3",
     "@tailwindcss/postcss": "^4.3.0",
     "@tauri-apps/api": "^2.11.0",
-    "@gx-capture/capture-workbench": "0.3.0",
+    "@gx-capture/capture-workbench": "0.3.8",
     "postcss": "^8.5.15",
     "primeicons": "^7.0.0",
     "primeng": "^21.1.9",

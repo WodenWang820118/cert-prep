@@ -2,7 +2,7 @@ import { appendFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
-import type { Locator, Page } from 'playwright';
+import { chromium, type Locator, type Page } from 'playwright';
 
 import { errorMessage, normalizePath } from './text-utils.mts';
 import type { SmokeRunState } from './types.mts';
@@ -51,9 +51,47 @@ export async function waitForCdp(
     if (version) {
       return;
     }
-    await delay(500);
+    // WebView2 publishes the browser endpoint before its first page navigates.
+    // Poll tightly so the caller can attach during that short window; waiting
+    // hundreds of milliseconds can make Playwright's CDP handshake race the
+    // navigation and hang on a blank page.
+    await delay(25);
   }
   throw new Error(`Timed out waiting for WebView2 CDP on port ${run.port}`);
+}
+
+/**
+ * Attach during WebView2's short pre-navigation window. A plain
+ * wait-then-connect sequence can observe the endpoint only after the page
+ * navigation has started; WebView2 then leaves Playwright's browser-level CDP
+ * handshake pending indefinitely. Retrying the attach from the first healthy
+ * endpoint avoids that race while retaining a bounded timeout.
+ */
+export async function connectOverCdpEarly(
+  run: SmokeRunState,
+  timeoutMs = 90_000,
+): Promise<Awaited<ReturnType<typeof chromium.connectOverCDP>>> {
+  const deadline = Date.now() + timeoutMs;
+  let lastError: unknown = null;
+  while (Date.now() < deadline) {
+    const version = await fetchJson(
+      `http://127.0.0.1:${run.port}/json/version`,
+    );
+    if (version) {
+      try {
+        return await chromium.connectOverCDP(
+          `http://127.0.0.1:${run.port}`,
+          { timeout: 1_000 },
+        );
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    await delay(25);
+  }
+  throw new Error(
+    `Timed out attaching to WebView2 CDP on port ${run.port}: ${errorMessage(lastError)}`,
+  );
 }
 
 export async function bodyText(run: SmokeRunState): Promise<string> {

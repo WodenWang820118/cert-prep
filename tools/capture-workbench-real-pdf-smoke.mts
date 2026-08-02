@@ -1,5 +1,4 @@
-import { createHash, randomUUID } from 'node:crypto';
-import { createReadStream } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import {
   copyFile,
   mkdir,
@@ -17,6 +16,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createServer } from 'node:http';
 import { chromium, type Browser, type Page } from 'playwright';
 
+import { minimalPdf } from '../apps/cert-prep-e2e/src/support/minimal-pdf.ts';
+
 import {
   CAPTURE_RUNTIME_FILE,
   CAPTURE_RUNTIME_VERSION,
@@ -26,11 +27,9 @@ import {
 } from './install-capture-runtime.mts';
 
 const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const realPdfPath = resolve(
-  process.env.CERT_PREP_REAL_PDF_PATH ??
-    join(workspaceRoot, 'apps/cert-prep-backend/.benchmarks/jlpt-n1-page3-qa.pdf'),
-);
-const realPdfFileName = basename(realPdfPath);
+const configuredRealPdfPath = process.env.CERT_PREP_REAL_PDF_PATH?.trim();
+let realPdfPath = '';
+let realPdfFileName = '';
 const realPdfLlmProvider = process.env.CERT_PREP_REAL_PDF_LLM_PROVIDER ?? 'fake';
 if (!['fake', 'ollama'].includes(realPdfLlmProvider)) {
   throw new Error('CERT_PREP_REAL_PDF_LLM_PROVIDER must be fake or ollama.');
@@ -61,20 +60,12 @@ const recordingPath = resolve(
   process.env.CERT_PREP_CAPTURE_VIDEO_PATH ??
     join(workspaceRoot, 'output', 'capture-workbench-to-cert-prep.webm'),
 );
-const windowsMlRequiredModelFiles = [
-  'det/inference.onnx',
-  'det/inference.yml',
-  'rec/inference.onnx',
-  'rec/inference.yml',
-  'rec/ppocr_keys_v1.txt',
-  'pipeline.json',
+const coreOnlyRequirementDetail =
+  'No downloadable model is published for this runtime release.';
+const coreOnlyRequirements = [
+  ['windowsml-ocr', 'unavailable', coreOnlyRequirementDetail],
+  ['whisper-primary', 'unavailable', coreOnlyRequirementDetail],
 ] as const;
-const windowsMlBundleFileName = 'capture-windowsml-ocr-windows-x64.zip';
-const windowsMlBundleUrl =
-  `${DEFAULT_CAPTURE_RUNTIME_RELEASE_BASE_URL}/${windowsMlBundleFileName}`;
-const windowsMlBundleBytes = 138_837_175;
-const windowsMlBundleSha256 =
-  'a88c9a3097771d07bd1d940db6acdcbb5336e7c6c85406f5c22655ed6930704a';
 type ManagedProcess = {
   readonly child: ChildProcess;
   readonly name: string;
@@ -96,35 +87,6 @@ async function findFreePort(): Promise<number> {
   await new Promise<void>((resolvePromise) => server.close(() => resolvePromise()));
   if (!port) throw new Error('Could not reserve a loopback port.');
   return port;
-}
-
-function sha256File(path: string): Promise<string> {
-  const hash = createHash('sha256');
-  return new Promise((resolvePromise, reject) => {
-    const stream = createReadStream(path);
-    stream.on('data', (chunk) => hash.update(chunk));
-    stream.on('error', reject);
-    stream.on('end', () => resolvePromise(hash.digest('hex')));
-  });
-}
-
-function runCommand(
-  command: string,
-  args: readonly string[],
-  cwd: string,
-): { readonly stdout: string; readonly stderr: string } {
-  const result = spawnSync(command, args, {
-    cwd,
-    windowsHide: true,
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  if (result.status !== 0) {
-    throw new Error(
-      `${command} ${args.join(' ')} failed with ${result.status}: ${result.stdout ?? ''}\n${result.stderr ?? ''}`,
-    );
-  }
-  return { stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
 }
 
 function processOutput(child: ChildProcess): () => string {
@@ -321,12 +283,16 @@ async function waitForRuntime(
       });
       if (authenticated.ok) {
         const ready = (await authenticated.json()) as Record<string, unknown>;
-        const capabilities = ready.capabilities as { structuringModes?: unknown } | undefined;
+        const capabilities = ready.capabilities as {
+          captureKinds?: unknown;
+          structuringModes?: unknown;
+        } | undefined;
         if (
           ready.service === 'capture-runtime' &&
           ready.runtimeVersion === CAPTURE_RUNTIME_VERSION &&
           ready.apiVersion === '1.0' &&
           ready.captureDocumentSchemaVersion === '1' &&
+          JSON.stringify(capabilities?.captureKinds) === '["pdf","image","audio"]' &&
           JSON.stringify(capabilities?.structuringModes) === '["host"]'
         ) {
           return;
@@ -343,102 +309,25 @@ async function waitForRuntime(
   throw new Error(`Authenticated runtime readiness failed: ${lastStatus}`);
 }
 
-async function prepareGitHubWindowsMlBundle(
-  temporaryRoot: string,
-  manifestPath: string,
-): Promise<string> {
-  const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as Record<string, unknown>;
-  const runtimeRequirements = manifest.runtimeRequirements;
-  const windowsMlRequirement =
-    typeof runtimeRequirements === 'object' && runtimeRequirements !== null
-      ? (runtimeRequirements as Record<string, unknown>)['windowsml-ocr']
-      : undefined;
-  const artifact =
-    typeof windowsMlRequirement === 'object' && windowsMlRequirement !== null
-      ? (windowsMlRequirement as Record<string, unknown>)
-      : undefined;
-  if (
-    artifact?.artifactUrl !== windowsMlBundleUrl ||
-    artifact.artifactFileName !== windowsMlBundleFileName ||
-    artifact.bytes !== windowsMlBundleBytes ||
-    artifact.sha256 !== windowsMlBundleSha256
-  ) {
-    throw new Error(
-      `Capture Runtime manifest did not expose the pinned WindowsML GitHub artifact: ${JSON.stringify(artifact)}`,
-    );
-  }
-  const archivePath = join(temporaryRoot, windowsMlBundleFileName);
-  const configuredBundlePath = process.env.CERT_PREP_REAL_PDF_WINDOWSML_BUNDLE_PATH?.trim();
-  if (configuredBundlePath) {
-    await copyFile(resolve(configuredBundlePath), archivePath);
-    console.log(`Using pre-downloaded WindowsML bundle asset ${resolve(configuredBundlePath)}.`);
-  } else {
-    const response = await fetch(windowsMlBundleUrl, {
-      redirect: 'follow',
-      headers: { Connection: 'close' },
-    });
-    if (!response.ok) {
-      throw new Error(`WindowsML GitHub artifact download failed with HTTP ${response.status}.`);
-    }
-    await writeFile(archivePath, new Uint8Array(await response.arrayBuffer()), { flag: 'wx' });
-  }
-  const archiveDetails = await stat(archivePath);
-  if (archiveDetails.size !== windowsMlBundleBytes || (await sha256File(archivePath)) !== windowsMlBundleSha256) {
-    throw new Error('WindowsML GitHub artifact bytes or SHA-256 did not match the Capture Runtime manifest.');
-  }
-  const expectedEntries = [...windowsMlRequiredModelFiles].sort();
-  const listed = runCommand('tar', ['-tf', archivePath], workspaceRoot).stdout
-    .split(/\r?\n/u)
-    .map((entry) => entry.trim())
-    .filter(Boolean)
-    .sort();
-  if (JSON.stringify(listed) !== JSON.stringify(expectedEntries)) {
-    throw new Error(`WindowsML GitHub artifact entries were not the exact allowlist: ${JSON.stringify(listed)}`);
-  }
-  const extractedRoot = join(temporaryRoot, 'windowsml-github-extracted');
-  const modelDir = join(temporaryRoot, 'windowsml-github-models');
-  await mkdir(extractedRoot, { recursive: true });
-  await mkdir(modelDir, { recursive: true });
-  runCommand('tar', ['-xf', archivePath, '-C', extractedRoot], workspaceRoot);
-  for (const relativePath of windowsMlRequiredModelFiles) {
-    const source = join(extractedRoot, relativePath);
-    const sourceDetails = await stat(source);
-    if (!sourceDetails.isFile()) throw new Error(`WindowsML artifact entry is not a file: ${relativePath}`);
-    const destination = join(modelDir, relativePath);
-    await mkdir(dirname(destination), { recursive: true });
-    await copyFile(source, destination);
-  }
-  await rm(archivePath, { force: true });
-  await rm(extractedRoot, { recursive: true, force: true });
-  const verifiedSource = configuredBundlePath
-    ? `pre-downloaded asset ${resolve(configuredBundlePath)}`
-    : windowsMlBundleUrl;
-  console.log(
-    `Verified WindowsML OCR bundle ${verifiedSource} against the Capture Runtime manifest.`,
-  );
-  return modelDir;
-}
-
-async function assertWindowsMlRequirementReady(
+async function assertCoreOnlyRequirements(
   backendBaseUrl: string,
   token: string,
 ): Promise<void> {
   const requirements = await jsonRequest(`${backendBaseUrl}/capture-runtime/requirements`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  const item = (Array.isArray(requirements.items) ? requirements.items : []).find(
-    (candidate) =>
-      typeof candidate === 'object' &&
-      candidate !== null &&
-      String((candidate as Record<string, unknown>).requirementId) === 'windowsml-ocr',
-  ) as Record<string, unknown> | undefined;
-  if (!item) {
-    throw new Error(`Capture Runtime did not expose the WindowsML OCR requirement: ${JSON.stringify(requirements)}`);
+  const observed = (Array.isArray(requirements.items) ? requirements.items : []).map(
+    (candidate) => {
+      const item = candidate as Record<string, unknown>;
+      return [item.requirementId, item.status, item.detail];
+    },
+  );
+  if (JSON.stringify(observed) !== JSON.stringify(coreOnlyRequirements)) {
+    throw new Error(
+      `Capture Runtime did not expose the published core-only requirements: ${JSON.stringify(requirements)}`,
+    );
   }
-  if (item.status !== 'ready') {
-    throw new Error(`Capture Runtime WindowsML OCR requirement is not ready after GitHub bundle staging: ${JSON.stringify(item)}`);
-  }
-  console.log('Downloaded Capture Runtime reports WindowsML OCR ready through the cert-prep proxy.');
+  console.log('Downloaded Capture Runtime reports the published core-only requirements through the cert-prep proxy.');
 }
 
 async function waitForDocument(
@@ -560,7 +449,14 @@ async function runBrowserFlow(
       waitUntil: 'domcontentloaded',
     });
     await page.getByRole('heading', { name: 'Capture Workbench trial' }).waitFor();
+    await page
+      .locator('.capture-trial-description')
+      .getByText('Runtime Setup downloads the matching dependency', { exact: false })
+      .waitFor();
     const input = page.locator('capture-workbench input[type="file"]');
+    if (!(await input.isEnabled())) {
+      throw new Error('The embedded-text PDF upload control was disabled.');
+    }
     const uploadResponse = new Promise<{
       readonly captureId: string;
       readonly documentId: string;
@@ -625,6 +521,19 @@ async function runBrowserFlow(
       await page.screenshot({ path: join(temporaryRoot, 'real-pdf-review-timeout.png'), fullPage: true });
       throw error;
     }
+    const rawCapture = await jsonRequest(
+      `${backendBaseUrl}/projects/${encodeURIComponent(projectId)}/capture-workbench/captures/${encodeURIComponent(capture.captureId)}/raw`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    const extractionEngine = rawCapture.extractionEngine as Record<string, unknown> | undefined;
+    if (
+      extractionEngine?.engine !== 'pdf-embedded-text' ||
+      extractionEngine.device !== 'cpu'
+    ) {
+      throw new Error(
+        `Published Capture Runtime did not perform embedded-text PDF extraction: ${JSON.stringify(rawCapture)}`,
+      );
+    }
     const firstReviewField = page.locator('capture-workbench .ocr-review textarea').first();
     await firstReviewField.waitFor({ state: 'visible', timeout: 60_000 });
     const originalReviewText = await firstReviewField.inputValue();
@@ -651,7 +560,7 @@ async function runBrowserFlow(
       await page.waitForFunction(
         () => {
           const text = document.body.innerText;
-          return text.includes('ready') && text.includes('windowsml_ocr');
+          return text.includes('ready') && text.includes('embedded');
         },
         undefined,
         { timeout: 90_000 },
@@ -664,7 +573,7 @@ async function runBrowserFlow(
       );
     }
     const bodyText = await page.locator('body').innerText();
-    if (!bodyText.includes('ready') || !bodyText.includes('windowsml_ocr')) {
+    if (!bodyText.includes('ready') || !bodyText.includes('embedded')) {
       throw new Error(`Real PDF page did not show the saved Capture projection:\n${bodyText}`);
     }
     if (bodyText.includes('deterministic') || bodyText.includes('in-memory')) {
@@ -692,7 +601,7 @@ async function runBrowserFlow(
           `(expected ${expectedMarkdownFilename}).`,
       );
     }
-    const firstOcrText = String(processed.chunks[0]?.text ?? '').trim();
+    const firstCapturedText = String(processed.chunks[0]?.text ?? '').trim();
     const lastPageNumber = Math.max(
       ...processed.chunks.map((chunk) => Number(chunk.page_number ?? 0)),
     );
@@ -700,14 +609,14 @@ async function runBrowserFlow(
       !markdown.includes(`# ${realPdfFileName}`) ||
       !markdown.includes('## Page 1') ||
       !markdown.includes(`## Page ${lastPageNumber}`) ||
-      firstOcrText.length === 0 ||
-      !markdown.includes(firstOcrText.slice(0, Math.min(firstOcrText.length, 80)))
+      firstCapturedText.length === 0 ||
+      !markdown.includes(firstCapturedText.slice(0, Math.min(firstCapturedText.length, 80)))
     ) {
       throw new Error(
         'Downloaded Markdown did not contain the persisted Capture projection: ' +
           JSON.stringify({
             expectedTitle: `# ${realPdfFileName}`,
-            firstOcrText: firstOcrText.slice(0, 120),
+            firstCapturedText: firstCapturedText.slice(0, 120),
             markdown: markdown.slice(0, 600),
             hasReviewMarker: markdown.includes('[reviewed by real PDF smoke]'),
           }),
@@ -885,14 +794,29 @@ async function runSmoke(): Promise<void> {
   if (process.platform !== 'win32' || process.arch !== 'x64') {
     throw new Error('Real capture-workbench PDF smoke requires Windows x64.');
   }
-  const pdfDetails = await stat(realPdfPath);
-  if (pdfDetails.size <= 0) throw new Error(`Real PDF fixture is empty: ${realPdfPath}`);
   const temporaryRoot = await mkdtemp(join(tmpdir(), 'cert-prep-capture-workbench-real-pdf-'));
   let runtime: ManagedProcess | undefined;
   let backend: ManagedProcess | undefined;
   let frontend: ManagedProcess | undefined;
   let browserFailure: unknown;
   try {
+    realPdfPath = configuredRealPdfPath
+      ? resolve(configuredRealPdfPath)
+      : join(temporaryRoot, 'embedded-text-capture-smoke.pdf');
+    if (!configuredRealPdfPath) {
+      await writeFile(
+        realPdfPath,
+        minimalPdf(
+          'Capture Workbench embedded-text PDF smoke fixture.',
+          'This PDF contains selectable text for published runtime extraction.',
+        ),
+        { flag: 'wx' },
+      );
+      console.log(`Generated embedded-text PDF fixture: ${realPdfPath}`);
+    }
+    realPdfFileName = basename(realPdfPath);
+    const pdfDetails = await stat(realPdfPath);
+    if (pdfDetails.size <= 0) throw new Error(`Real PDF fixture is empty: ${realPdfPath}`);
     console.log(
       `Downloading capture-runtime@${CAPTURE_RUNTIME_VERSION} from ${DEFAULT_CAPTURE_RUNTIME_RELEASE_BASE_URL}.`,
     );
@@ -904,10 +828,6 @@ async function runSmoke(): Promise<void> {
       outputRoot: defaultCaptureRuntimeRoot(consumerWorkspace),
     });
     console.log(`Using downloaded sidecar ${join(installed.outputRoot, CAPTURE_RUNTIME_FILE)}.`);
-    const modelDir = await prepareGitHubWindowsMlBundle(
-      temporaryRoot,
-      join(installed.outputRoot, 'capture-runtime-manifest.json'),
-    );
     const runtimePort = await findFreePort();
     const backendPort = await findFreePort();
     const frontendPort = await findFreePort();
@@ -933,7 +853,6 @@ async function runSmoke(): Promise<void> {
         CAPTURE_APP_DATA_DIR: runtimeData,
         CAPTURE_EXTRACTION_PROVIDER: 'runtime',
         CAPTURE_STRUCTURING_PROVIDER: 'host',
-        CAPTURE_WINDOWSML_MODEL_DIR: modelDir,
       },
     );
     await waitForRuntime(runtimePort, runtimeToken).catch((error) => {
@@ -967,11 +886,11 @@ async function runSmoke(): Promise<void> {
     await waitForHttp(`${backendBaseUrl}/health`, undefined, 90_000).catch((error) => {
       throw new Error(`${error instanceof Error ? error.message : String(error)}\n${backend.output()}`);
     });
-    await assertWindowsMlRequirementReady(backendBaseUrl, backendToken);
+    await assertCoreOnlyRequirements(backendBaseUrl, backendToken);
     const project = await jsonRequest(`${backendBaseUrl}/projects`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${backendToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: `Real PDF smoke ${randomUUID()}`, description: 'Temporary real Capture Workbench OCR smoke.' }),
+      body: JSON.stringify({ name: `Real PDF smoke ${randomUUID()}`, description: 'Temporary embedded-text Capture Workbench PDF smoke.' }),
     });
     const projectId = String(project.id);
     if (!projectId || projectId === 'undefined') throw new Error('Backend did not return a project id.');
@@ -1013,7 +932,7 @@ async function runSmoke(): Promise<void> {
     if (
       processed.document.status !== 'ready' ||
       processed.document.has_text !== true ||
-      processed.document.extraction_method !== 'windowsml_ocr' ||
+      processed.document.extraction_method !== 'embedded' ||
       Number(processed.document.chunks_count) <= 0 ||
       processed.chunks.some((chunk) => String(chunk.text ?? '').trim().length === 0)
     ) {

@@ -35,6 +35,9 @@ pub struct DesktopRuntimeInstallation {
 #[derive(Debug, Clone)]
 pub(crate) struct RuntimeJob {
     pub(crate) id: String,
+    pub(crate) kind: String,
+    pub(crate) provider: String,
+    pub(crate) model: String,
     pub(crate) status: String,
     pub(crate) detail: String,
     pub(crate) completed: Option<u64>,
@@ -45,11 +48,30 @@ pub(crate) struct RuntimeJob {
 }
 
 impl RuntimeJob {
-    pub(crate) fn queued() -> Self {
+    pub(crate) fn queued_python_backend() -> Self {
         Self {
             id: uuid::Uuid::new_v4().to_string(),
+            kind: PYTHON_RUNTIME_KIND.into(),
+            provider: "pyinstaller".into(),
+            model: "cert-prep-backend".into(),
             status: "queued".into(),
             detail: "Python backend runtime installation queued.".into(),
+            completed: None,
+            total: None,
+            created_at: now_string(),
+            updated_at: now_string(),
+            error: None,
+        }
+    }
+
+    pub(crate) fn queued_capture_runtime() -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            kind: "capture_runtime".into(),
+            provider: "bundled-release".into(),
+            model: "capture-runtime@0.3.8".into(),
+            status: "queued".into(),
+            detail: "Capture Runtime installation queued.".into(),
             completed: None,
             total: None,
             created_at: now_string(),
@@ -80,7 +102,7 @@ pub(crate) fn install_python_runtime(inner: Arc<BackendRuntimeInner>, job_id: St
             None,
             None,
         );
-        launch_backend_entrypoint(&inner, &entrypoint)
+        launch_backend_entrypoint(&inner, &entrypoint, None, false)
     });
 
     match result {
@@ -226,7 +248,7 @@ fn replace_runtime_directory(
     Ok(())
 }
 
-fn update_job(
+pub(crate) fn update_job(
     inner: &BackendRuntimeInner,
     job_id: &str,
     status: &str,
@@ -254,9 +276,9 @@ fn update_job(
 pub(crate) fn installation_from_job(job: RuntimeJob) -> DesktopRuntimeInstallation {
     DesktopRuntimeInstallation {
         id: job.id,
-        kind: PYTHON_RUNTIME_KIND.into(),
-        provider: "pyinstaller".into(),
-        model: "cert-prep-backend".into(),
+        kind: job.kind,
+        provider: job.provider,
+        model: job.model,
         status: job.status,
         detail: job.detail,
         completed: job.completed,
@@ -294,12 +316,12 @@ fn now_string() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        capture_runtime::CaptureRuntimeConnection,
-        manifests::{RuntimeArtifact, RuntimeManifest},
-    };
+    use crate::manifests::{RuntimeArtifact, RuntimeManifest};
     use sha2::{Digest, Sha256};
-    use std::{io::Write, sync::Mutex};
+    use std::{
+        io::Write,
+        sync::{Condvar, Mutex},
+    };
     use zip::write::SimpleFileOptions;
 
     #[test]
@@ -387,16 +409,17 @@ mod tests {
         BackendRuntimeInner {
             data_dir,
             backend_manifest_path: Some(manifest_path),
-            capture_runtime: CaptureRuntimeConnection {
-                base_url: "http://127.0.0.1:41001".into(),
-                token: "capture-sidecar-test-token".into(),
-                runtime_version: "0.1.0".into(),
-                api_version: "1.0".into(),
-                capture_document_schema_version: "1".into(),
-            },
+            capture_runtime_manifest_path: None,
+            capture_runtime: Mutex::new(None),
+            backend_launch: Mutex::new(()),
             config: Mutex::new(None),
             child: Mutex::new(None),
             job: Mutex::new(None),
+            capture_job: Mutex::new(None),
+            capture_start_active: Mutex::new(false),
+            capture_start_complete: Condvar::new(),
+            external_backend: Mutex::new(false),
+            closing: std::sync::atomic::AtomicBool::new(false),
         }
     }
 

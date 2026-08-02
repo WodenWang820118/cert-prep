@@ -35,7 +35,7 @@ describe('CertPrepCaptureClient', () => {
           ready: true,
           service: 'capture-runtime',
           apiVersion: '1.0',
-          runtimeVersion: '0.3.0',
+          runtimeVersion: '0.3.8',
           captureDocumentSchemaVersion: '1',
           capabilities: {
             captureKinds: ['pdf'],
@@ -182,7 +182,7 @@ describe('CertPrepCaptureClient', () => {
 
     expect(ready).toMatchObject({
       service: 'capture-runtime',
-      runtimeVersion: '0.3.0',
+      runtimeVersion: '0.3.8',
       capabilities: { captureKinds: ['pdf'], structuringModes: ['host'] },
     });
     expect(api.captureRuntimeReady).toHaveBeenCalledWith({
@@ -191,6 +191,176 @@ describe('CertPrepCaptureClient', () => {
     expect(JSON.stringify(api.captureRuntimeReady.mock.calls)).not.toContain(
       'Authorization',
     );
+  });
+
+  it('passes core-only unavailable requirements through to the published component', async () => {
+    const detail = 'No downloadable model is published for this runtime release.';
+    api.captureRuntimeRequirements.mockReturnValueOnce(
+      of({
+        items: [
+          {
+            requirementId: 'windowsml-ocr',
+            kind: 'ocr',
+            displayName: 'WindowsML OCR',
+            status: 'unavailable',
+            requiredFor: ['pdf', 'image'],
+            installStrategy: 'unavailable',
+            detail,
+            artifact: null,
+          },
+          {
+            requirementId: 'whisper-primary',
+            kind: 'speech-to-text',
+            displayName: 'Whisper',
+            status: 'unavailable',
+            requiredFor: ['audio'],
+            installStrategy: 'unavailable',
+            detail,
+            artifact: null,
+          },
+        ],
+      }),
+    );
+
+    await expect(firstValueFrom(client.getRequirements())).resolves.toEqual([
+      expect.objectContaining({
+        requirementId: 'windowsml-ocr',
+        status: 'unavailable',
+        detail,
+      }),
+      expect.objectContaining({
+        requirementId: 'whisper-primary',
+        status: 'unavailable',
+        detail,
+      }),
+    ]);
+    expect(api.captureRuntimeRequirements).toHaveBeenCalledWith({
+      signal: undefined,
+    });
+  });
+
+  it('dispatches an embedded-text PDF through the backend despite unavailable OCR and Whisper requirements', async () => {
+    const detail = 'No downloadable model is published for this runtime release.';
+    api.captureRuntimeRequirements.mockReturnValueOnce(
+      of({
+        items: [
+          unavailableRequirement('windowsml-ocr', ['pdf', 'image'], detail),
+          unavailableRequirement('whisper-primary', ['audio'], detail),
+        ],
+      }),
+    );
+    const signalController = new AbortController();
+
+    await expect(
+      firstValueFrom(
+        client.createCapture({
+          clientRequestId: 'embedded-text-pdf',
+          file: new File(['embedded text'], 'embedded-text.pdf', {
+            type: 'application/pdf',
+          }),
+          sourceKind: 'pdf',
+          structuringMode: 'host',
+          signal: signalController.signal,
+        }),
+      ),
+    ).resolves.toMatchObject({ captureId: job.captureId });
+
+    expect(api.captureRuntimeReady).toHaveBeenCalledWith({
+      signal: signalController.signal,
+    });
+    expect(api.captureRuntimeRequirements).toHaveBeenCalledWith({
+      signal: signalController.signal,
+    });
+    expect(api.createCapture).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an image before create when WindowsML is unavailable', async () => {
+    api.captureRuntimeReady.mockReturnValueOnce(of(readyResponse({})));
+    api.captureRuntimeRequirements.mockReturnValueOnce(
+      of({
+        items: [
+          unavailableRequirement('windowsml-ocr', ['pdf', 'image']),
+          readyRequirement('whisper-primary', ['audio']),
+        ],
+      }),
+    );
+
+    await expect(
+      firstValueFrom(
+        client.createCapture({
+          clientRequestId: 'blocked-image',
+          file: new File(['png'], 'blocked.png', { type: 'image/png' }),
+          sourceKind: 'image',
+          structuringMode: 'host',
+        }),
+      ),
+    ).rejects.toThrow('WindowsML OCR is unavailable');
+
+    expect(api.createCapture).not.toHaveBeenCalled();
+  });
+
+  it('rejects audio before create when Whisper is unavailable', async () => {
+    api.captureRuntimeReady.mockReturnValueOnce(of(readyResponse({})));
+    api.captureRuntimeRequirements.mockReturnValueOnce(
+      of({
+        items: [
+          readyRequirement('windowsml-ocr', ['pdf', 'image']),
+          unavailableRequirement('whisper-primary', ['audio']),
+        ],
+      }),
+    );
+
+    await expect(
+      firstValueFrom(
+        client.createCapture({
+          clientRequestId: 'blocked-audio',
+          file: new File(['audio'], 'blocked.mp3', { type: 'audio/mpeg' }),
+          sourceKind: 'audio',
+          structuringMode: 'host',
+        }),
+      ),
+    ).rejects.toThrow('Whisper transcription is unavailable');
+
+    expect(api.createCapture).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['not ready', { ready: false }, 'not ready'],
+    ['wrong service', { service: 'other-runtime' }, 'non-Capture Runtime service'],
+    [
+      'unsupported runtime major',
+      { runtimeVersion: '1.0.0' },
+      'incompatible with client runtime major',
+    ],
+    ['unsupported API major', { apiVersion: '2.0' }, 'Capture API 2.0 is incompatible'],
+    ['wrong schema', { captureDocumentSchemaVersion: '2' }, 'schema'],
+    [
+      'missing host structuring',
+      { capabilities: { ...readyCapabilities(), structuringModes: ['runtime'] } },
+      'host structuring',
+    ],
+    [
+      'missing PDF capability',
+      { capabilities: { ...readyCapabilities(), captureKinds: ['image'] } },
+      'does not support PDF capture',
+    ],
+  ])('rejects $0 before create', async (_label, override, expectedError) => {
+    api.captureRuntimeReady.mockReturnValueOnce(of(readyResponse(override)));
+
+    await expect(
+      firstValueFrom(
+        client.createCapture({
+          clientRequestId: `incompatible-${_label}`,
+          file: new File(['pdf'], 'embedded-text.pdf', {
+            type: 'application/pdf',
+          }),
+          sourceKind: 'pdf',
+          structuringMode: 'host',
+        }),
+      ),
+    ).rejects.toThrow(expectedError);
+
+    expect(api.createCapture).not.toHaveBeenCalled();
   });
 
   it('downloads Markdown through cert-prep without exposing sidecar credentials', async () => {
@@ -324,7 +494,7 @@ function makeRaw() {
     sourceText: 'Recognized OCR text',
     extractionEngine: {
       engine: 'windowsml_ocr',
-      model: 'capture-runtime@0.3.0',
+      model: 'capture-runtime@0.3.8',
       digest: `sha256:${'a'.repeat(64)}`,
       device: 'WindowsML',
     },
@@ -361,5 +531,63 @@ function makeResult() {
     warnings: [],
     createdAt: '2026-07-23T10:00:00.000Z',
     completedAt: '2026-07-23T10:00:02.000Z',
+  };
+}
+
+function readyCapabilities() {
+  return {
+    captureKinds: ['pdf', 'image', 'audio'],
+    structuringModes: ['host'],
+    supportsCancellation: true,
+    supportsRawDiagnostics: true,
+    maxUploadBytes: 50_000_000,
+  };
+}
+
+function readyResponse(override: Record<string, unknown>) {
+  const base = {
+    ready: true,
+    service: 'capture-runtime',
+    apiVersion: '1.0',
+    runtimeVersion: '0.3.8',
+    captureDocumentSchemaVersion: '1',
+    capabilities: readyCapabilities(),
+  };
+  return {
+    ...base,
+    ...override,
+    capabilities: {
+      ...base.capabilities,
+      ...(override['capabilities'] as Record<string, unknown> | undefined),
+    },
+  };
+}
+
+function unavailableRequirement(
+  requirementId: 'windowsml-ocr' | 'whisper-primary',
+  requiredFor: readonly string[],
+  detail = 'No downloadable model is published for this runtime release.',
+) {
+  return {
+    requirementId,
+    kind: requirementId === 'windowsml-ocr' ? 'ocr' : 'speech-to-text',
+    displayName:
+      requirementId === 'windowsml-ocr' ? 'WindowsML OCR' : 'Whisper transcription',
+    status: 'unavailable',
+    requiredFor,
+    installStrategy: 'runtime-catalog',
+    detail,
+    artifact: null,
+  };
+}
+
+function readyRequirement(
+  requirementId: 'windowsml-ocr' | 'whisper-primary',
+  requiredFor: readonly string[],
+) {
+  return {
+    ...unavailableRequirement(requirementId, requiredFor),
+    status: 'ready',
+    detail: null,
   };
 }

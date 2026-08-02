@@ -38,6 +38,7 @@ from cert_prep_backend.domains.capture_workbench.contracts import (
 from cert_prep_backend.domains.capture_workbench import review_sessions
 from cert_prep_backend.domains.capture_workbench.coordinator import (
     CaptureRuntimeCanceledError,
+    CaptureRuntimeJobError,
     CertPrepCaptureCoordinator,
 )
 from cert_prep_backend.domains.capture_workbench.review_workflow import (
@@ -487,6 +488,7 @@ def _run_begin(
 ) -> None:
     document = source_documents_repository.get_document(db, project_id, document_id)
     source_file = source_documents_repository.get_source_file(db, project_id, document_id)
+    source_kind = _source_kind(document["filename"])
     try:
         begin_review_capture(
             db,
@@ -498,23 +500,54 @@ def _run_begin(
             file_name=document["filename"],
             content=Path(source_file.storage_path).read_bytes(),
             media_type=_media_type(document["filename"]),
-            source_kind=_source_kind(document["filename"]),
+            source_kind=source_kind,
             should_cancel=lambda: (
                 shutdown_requested() or not _operation_active(db, project_id, operation_id)
             ),
         )
     except CaptureRuntimeCanceledError:
         _finish_canceled(db, project_id, operation_id, session_id)
-    except Exception:
-        review_sessions.finish(
-            db, project_id=project_id, session_id=session_id, status=review_sessions.FAILED
-        )
-        operations.finish_failed(
+    except CaptureRuntimeJobError as error:
+        _finish_begin_failure(
             db,
             project_id=project_id,
             operation_id=operation_id,
+            session_id=session_id,
+            error=(
+                "This PDF requires WindowsML OCR, which is unavailable in the installed "
+                "Capture Runtime."
+                if source_kind is CaptureSourceKind.PDF
+                and error.code == "requirement_unavailable"
+                else "Capture Runtime extraction failed."
+            ),
+        )
+    except Exception:
+        _finish_begin_failure(
+            db,
+            project_id=project_id,
+            operation_id=operation_id,
+            session_id=session_id,
             error="Capture Runtime extraction failed.",
         )
+
+
+def _finish_begin_failure(
+    db: Database,
+    *,
+    project_id: str,
+    operation_id: str,
+    session_id: str,
+    error: str,
+) -> None:
+    review_sessions.finish(
+        db, project_id=project_id, session_id=session_id, status=review_sessions.FAILED
+    )
+    operations.finish_failed(
+        db,
+        project_id=project_id,
+        operation_id=operation_id,
+        error=error,
+    )
 
 
 def _run_confirm(
@@ -701,7 +734,7 @@ def _document_projection(
     digest = f"sha256:{document['sha256']}"
     extraction = CaptureEngineV1(
         engine=document["extraction_method"] or "windowsml-ocr",
-        model="capture-runtime@0.3.0",
+        model="capture-runtime@0.3.8",
         digest=digest,
         device=document["ocr_device"],
     )

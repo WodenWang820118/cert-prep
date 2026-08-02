@@ -47,7 +47,7 @@ class RecordingSetupClient:
             ready=True,
             service="capture-runtime",
             api_version="1.0",
-            runtime_version="0.3.0",
+            runtime_version="0.3.8",
             capture_document_schema_version="1",
             capabilities=RuntimeCapabilitiesV1(
                 capture_kinds=list(CaptureSourceKind),
@@ -115,6 +115,35 @@ class RecordingSetupClient:
         )
 
 
+class CoreOnlySetupClient(RecordingSetupClient):
+    """Published v0.3.8 requirement response; no local model is available."""
+
+    def get_requirements(self) -> RuntimeRequirementsV1:
+        detail = "No downloadable model is published for this runtime release."
+        return RuntimeRequirementsV1(
+            items=[
+                RuntimeRequirementV1(
+                    requirement_id="windowsml-ocr",
+                    kind="ocr",
+                    display_name="WindowsML OCR",
+                    status=RuntimeRequirementStatus.UNAVAILABLE,
+                    required_for=["pdf", "image"],
+                    install_strategy="unavailable",
+                    detail=detail,
+                ),
+                RuntimeRequirementV1(
+                    requirement_id="whisper-primary",
+                    kind="speech-to-text",
+                    display_name="Whisper",
+                    status=RuntimeRequirementStatus.UNAVAILABLE,
+                    required_for=["audio"],
+                    install_strategy="unavailable",
+                    detail=detail,
+                ),
+            ]
+        )
+
+
 def test_capture_runtime_setup_requires_configured_backend_client(
     tmp_path: Path,
     auth_headers: dict[str, str],
@@ -149,7 +178,7 @@ def test_capture_runtime_ready_proxy_requires_auth_and_keeps_sidecar_token_backe
         )
 
     assert response.status_code == 200
-    assert response.json()["runtimeVersion"] == "0.3.0"
+    assert response.json()["runtimeVersion"] == "0.3.8"
     assert response.json()["capabilities"]["structuringModes"] == ["host"]
 
 
@@ -202,3 +231,37 @@ def test_capture_runtime_setup_proxy_keeps_sidecar_token_backend_only(
         )
         assert cancelled.json()["status"] == "cancelled"
         assert setup_client.cancelled == [str(INSTALLATION_ID)]
+
+
+def test_capture_runtime_setup_proxy_preserves_core_only_unavailable_requirements(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(data_dir=tmp_path, api_token=TOKEN, llm_provider="fake")
+    with TestClient(
+        create_app(
+            settings=settings,
+            capture_runtime_client=CoreOnlySetupClient(),  # type: ignore[arg-type]
+            document_processing_async_jobs=False,
+        )
+    ) as client:
+        response = client.get(
+            "/capture-runtime/requirements",
+            headers={"Authorization": f"Bearer {TOKEN}"},
+        )
+
+    assert response.status_code == 200
+    assert [
+        (item["requirementId"], item["status"], item["detail"])
+        for item in response.json()["items"]
+    ] == [
+        (
+            "windowsml-ocr",
+            "unavailable",
+            "No downloadable model is published for this runtime release.",
+        ),
+        (
+            "whisper-primary",
+            "unavailable",
+            "No downloadable model is published for this runtime release.",
+        ),
+    ]

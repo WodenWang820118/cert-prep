@@ -1,8 +1,10 @@
 # Cert Prep Capture Workbench integration
 
 `/capture-workbench-trial` is the Cert Prep entry point for the published
-`@gx-capture/capture-workbench@0.3.0` component. It supports PDF, image, and
-audio sources and delegates extraction to the published Capture Runtime.
+`@gx-capture/capture-workbench@0.3.8` component. It retains the PDF, image,
+and audio source contract, but v0.3.8's published runtime is core-only: no OCR
+or STT engine bundle is downloadable, so real capture is disabled through its
+unavailable requirements.
 
 Cert Prep keeps the authenticated backend client, host structuring, review
 confirmation, durable document/chunk persistence, Markdown export, and
@@ -14,7 +16,8 @@ runtime fails closed. After confirmation, raw Japanese/OCR/transcript content
 is retained in `document_chunks.raw_text`; reviewed or Traditional Chinese text
 is retained in `document_chunks.text`.
 
-The real smoke must use the published runtime release directory and verify
-authenticated readiness, review confirmation, raw provenance, completed chunks,
-Markdown export, and cleanup. It must not use the deleted Cert Prep OCR/Whisper
-packages or a fake fallback path.
+The published-byte smoke verifies authenticated readiness, the exact
+unavailable WindowsML/Whisper requirements, and cleanup. A fake provider may
+exercise only the existing backend host protocol. The real PDF/image/audio
+smoke, review confirmation, provenance, chunks, and Markdown export stay
+pending until an engine-bearing runtime release exists.

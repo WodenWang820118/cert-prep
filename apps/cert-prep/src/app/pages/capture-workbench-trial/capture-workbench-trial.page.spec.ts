@@ -1,10 +1,13 @@
 import { TestBed } from '@angular/core/testing';
-import { signal } from '@angular/core';
+import { computed, signal } from '@angular/core';
 import type { DocumentRead } from '@cert-prep/api';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import type { CaptureCompletedEvent } from '@gx-capture/capture-workbench';
 import { ProjectStore } from '../../stores/project.store';
 import { SourceImportStore } from '../../stores/source-import/source-import.store';
+import { DesktopRuntimeStore } from '../../stores/desktop-runtime/desktop-runtime.store';
+import { DesktopRuntimeBridgeService } from '../../stores/desktop-runtime/desktop-runtime-bridge.service';
+import { CertPrepRuntimeConfig } from '../../services/cert-prep-api.service';
 import { CertPrepCaptureClient } from './cert-prep-capture-client';
 import { CaptureWorkbenchTrialPage } from './capture-workbench-trial.page';
 
@@ -60,7 +63,125 @@ describe('CaptureWorkbenchTrialPage', () => {
       fixture.detectChanges();
       expect(fixture.nativeElement.textContent).toContain('Element registered');
     });
+    expect(
+      fixture.nativeElement.querySelector('capture-workbench').config,
+    ).toMatchObject({
+      enabledSources: ['pdf'],
+      structuringMode: 'host',
+      hostStructuringOwner: 'client',
+      hostManagedHandshake: true,
+      showRuntimeSetup: false,
+    });
+    expect(fixture.nativeElement.textContent).toContain(
+      'Scanned PDFs, images, and audio remain unavailable',
+    );
     expect(fixture.nativeElement.textContent).not.toContain('in-memory');
+  });
+
+  it('waits for the custom element view before configuring a defined component', async () => {
+    const ready = signal(false);
+    TestBed.overrideProvider(DesktopRuntimeStore, {
+      useValue: {
+        isDesktop: signal(true),
+        captureRuntimeStatus: signal(captureRuntimeStatus('running')),
+        isCaptureRuntimeReady: ready,
+        canInstallCaptureRuntime: signal(false),
+        canStartCaptureRuntime: signal(false),
+        isCaptureRuntimeInstallActive: signal(false),
+        loadCaptureRuntime: vi
+          .fn()
+          .mockReturnValue(of(captureRuntimeStatus('running'))),
+      },
+    });
+    const fixture = TestBed.createComponent(CaptureWorkbenchTrialPage);
+    const page = fixture.componentInstance as unknown as {
+      registerCaptureWorkbench(): void;
+      registrationState(): string;
+    };
+
+    page.registerCaptureWorkbench();
+    await fixture.whenStable();
+    expect(page.registrationState()).toBe('registering');
+
+    ready.set(true);
+    fixture.detectChanges();
+
+    expect(page.registrationState()).toBe('ready');
+    expect(
+      fixture.nativeElement.querySelector('capture-workbench').config,
+    ).toMatchObject({ enabledSources: ['pdf'], showRuntimeSetup: false });
+  });
+
+  it('waits for an explicit Capture Runtime install before configuring the desktop capture client', () => {
+    const captureRuntimeStatus = signal({
+      kind: 'capture_runtime',
+      label: 'Capture Runtime',
+      available: false,
+      running: false,
+      status: 'missing',
+      detail: 'Capture Runtime is not installed.',
+      unavailableReason: 'capture_runtime_missing',
+      version: null,
+      installedPath: null,
+      baseUrl: null,
+      token: null,
+      jobId: null,
+      completed: null,
+      total: null,
+      error: null,
+    });
+    const installCaptureRuntime = vi.fn();
+    TestBed.overrideProvider(DesktopRuntimeStore, {
+      useValue: {
+        isDesktop: signal(true),
+        captureRuntimeStatus,
+        isCaptureRuntimeReady: computed(() => false),
+        canInstallCaptureRuntime: computed(() => true),
+        canStartCaptureRuntime: computed(() => false),
+        captureRuntimeInstallStarting: signal(false),
+        isCaptureRuntimeInstallActive: signal(false),
+        loadCaptureRuntime: vi.fn().mockReturnValue(of(captureRuntimeStatus())),
+        installCaptureRuntime,
+      },
+    });
+    const fixture = TestBed.createComponent(CaptureWorkbenchTrialPage);
+
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain(
+      'Capture Runtime is not installed.',
+    );
+    const root = fixture.nativeElement as HTMLElement;
+    const install = Array.from(
+      root.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((button) => button.textContent?.includes('Install Capture Runtime'));
+    expect(install).toBeDefined();
+    expect(root.querySelector('capture-workbench')).toBeNull();
+    install?.click();
+    expect(installCaptureRuntime).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not mount or configure Capture Workbench while desktop status is pending', () => {
+    const pendingStatus = new Subject();
+    const invoke = vi.fn().mockReturnValue(pendingStatus);
+    TestBed.overrideProvider(DesktopRuntimeBridgeService, {
+      useValue: {
+        isDesktop: () => true,
+        invoke,
+      },
+    });
+    TestBed.overrideProvider(CertPrepRuntimeConfig, {
+      useValue: { invalidateBackendConfig: vi.fn() },
+    });
+    const fixture = TestBed.createComponent(CaptureWorkbenchTrialPage);
+
+    fixture.detectChanges();
+
+    const root = fixture.nativeElement as HTMLElement;
+    expect(invoke).toHaveBeenCalledWith('capture_runtime_status');
+    expect(root.textContent).toContain('Checking Capture Runtime availability.');
+    expect(root.querySelector('capture-workbench')).toBeNull();
+    expect(root.querySelector('button')).toBeNull();
   });
 
   it('shows and downloads Markdown only after the saved PDF is ready', async () => {
@@ -137,3 +258,24 @@ describe('CaptureWorkbenchTrialPage', () => {
     expect(loadLatestDocument).toHaveBeenCalledWith('project-1');
   });
 });
+
+function captureRuntimeStatus(status: 'missing' | 'running') {
+  const running = status === 'running';
+  return {
+    kind: 'capture_runtime',
+    label: 'Capture Runtime',
+    available: running,
+    running,
+    status,
+    detail: `Capture Runtime is ${status}.`,
+    unavailableReason: running ? null : 'capture_runtime_missing',
+    version: '0.3.8',
+    installedPath: null,
+    baseUrl: null,
+    token: null,
+    jobId: null,
+    completed: null,
+    total: null,
+    error: null,
+  };
+}

@@ -96,7 +96,7 @@ export interface PackagedResourceContract {
   readonly alpha_release_gate: 'blocked_pending_clean_install';
   readonly backend_bundled: true;
   readonly capture_runtime_bundled: true;
-  readonly capture_runtime_version: '0.3.0';
+  readonly capture_runtime_version: '0.3.8';
   readonly capture_runtime_api_version: '1.0';
   readonly capture_document_schema_version: '1';
   readonly capture_structuring_mode: 'host';

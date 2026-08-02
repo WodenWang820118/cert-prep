@@ -324,7 +324,7 @@ async function validateCleanInstallEvidence(
 async function validateCaptureRuntimeManifest({ manifest, root }) {
   if (
     manifest?.manifestVersion !== '1' ||
-    manifest?.runtimeVersion !== '0.3.0' ||
+    manifest?.runtimeVersion !== '0.3.8' ||
     manifest?.apiVersion !== '1.0' ||
     manifest?.captureDocumentSchemaVersion !== '1' ||
     manifest?.platform !== 'windows' ||

@@ -8,7 +8,7 @@ const registry = (
   process.env.CAPTURE_WORKBENCH_LOCAL_REGISTRY ?? 'http://127.0.0.1:4873'
 ).replace(/\/$/, '');
 const packageName = '@gx-capture/capture-workbench';
-const packageVersion = '0.3.0';
+const packageVersion = '0.3.8';
 const captureWorkbenchRoot = resolve(
   process.env.CAPTURE_WORKBENCH_REPO ??
     join(repoRoot, '..', 'capture-workbench'),

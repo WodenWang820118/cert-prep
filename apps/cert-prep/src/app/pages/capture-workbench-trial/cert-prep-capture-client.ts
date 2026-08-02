@@ -7,11 +7,14 @@ import type {
 } from '@cert-prep/api';
 import {
   defer,
+  forkJoin,
   map,
   of,
+  switchMap,
   throwError,
   type Observable,
 } from 'rxjs';
+import { assertCaptureRuntimeCompatible } from '@gx-capture/capture-workbench';
 import type {
   CaptureClient,
   ConfirmCaptureRequest,
@@ -117,14 +120,21 @@ export class CertPrepCaptureClient implements CaptureClient {
 
   createCapture(request: CreateCaptureRequest): Observable<CaptureJobV1> {
     const projectId = this.requireProjectId();
-    return defer(() => {
-      const formData = new FormData();
-      formData.append('file', request.file, request.file.name);
-      return this.api.createCapture(projectId, formData, {
-        headers: { 'X-Cert-Prep-Operation-Id': request.clientRequestId },
-        signal: request.signal,
-      });
-    }).pipe(
+    return defer(() =>
+      forkJoin({
+        ready: this.getReady(request.signal),
+        requirements: this.getRequirements(request.signal),
+      }),
+    ).pipe(
+      switchMap(({ ready, requirements }) => {
+        assertCaptureAdmission(ready, requirements, request.sourceKind);
+        const formData = new FormData();
+        formData.append('file', request.file, request.file.name);
+        return this.api.createCapture(projectId, formData, {
+          headers: { 'X-Cert-Prep-Operation-Id': request.clientRequestId },
+          signal: request.signal,
+        });
+      }),
       map((job) => {
         const sourceKind = request.sourceKind;
         const source = job.source;
@@ -409,4 +419,43 @@ function isFailureStage(
     value === 'runtime' ||
     value === 'input'
   );
+}
+
+function assertCaptureAdmission(
+  ready: RuntimeReadyV1,
+  requirements: readonly RuntimeRequirementV1[],
+  sourceKind: CaptureSourceKind,
+): void {
+  if (!ready.ready) {
+    throw new Error('Capture Runtime is not ready.');
+  }
+  assertCaptureRuntimeCompatible(ready, 0, 'host');
+  if (!ready.capabilities.captureKinds.includes(sourceKind)) {
+    throw new Error(
+      `Capture Runtime does not support ${sourceKind.toUpperCase()} capture.`,
+    );
+  }
+  if (sourceKind === 'image') {
+    assertRequirementReady(requirements, 'windowsml-ocr', 'WindowsML OCR');
+  }
+  if (sourceKind === 'audio') {
+    assertRequirementReady(
+      requirements,
+      'whisper-primary',
+      'Whisper transcription',
+    );
+  }
+}
+
+function assertRequirementReady(
+  requirements: readonly RuntimeRequirementV1[],
+  requirementId: RuntimeRequirementV1['requirementId'],
+  displayName: string,
+): void {
+  const requirement = requirements.find(
+    (candidate) => candidate.requirementId === requirementId,
+  );
+  if (requirement?.status === 'ready') return;
+  const detail = requirement?.detail ?? 'The runtime requirement is unavailable.';
+  throw new Error(`${displayName} is unavailable. ${detail}`);
 }

@@ -3,13 +3,15 @@
 ## Current contract
 
 Tauri packages the backend runtime and the published Capture Runtime
-`0.3.0` Windows x64 assets. Cert Prep does not package an OCR/Whisper payload,
+`0.3.8` Windows x64 assets. Cert Prep does not package an OCR/Whisper payload,
 legacy manifest, local provider, or fallback installer.
 
-The release contract pins Capture Runtime API `1.0`, runtime `0.3.0`, and
+The release contract pins Capture Runtime API `1.0`, runtime `0.3.8`, and
 `CaptureDocumentV1` schema `1`. Package QA and Tauri validate executable bytes,
-checksum, manifest, and schema bytes before launch. Capture Runtime owns its
-own WindowsML bundle descriptor and requirement validation.
+checksum, manifest, and schema bytes before launch. Capture Runtime owns
+requirement validation. v0.3.8 is core-only: it reports WindowsML OCR and
+Whisper as unavailable because no downloadable model is published for this
+runtime release.
 
 ## Lifecycle and security
 
@@ -25,5 +27,6 @@ own WindowsML bundle descriptor and requirement validation.
 
 The release candidate must pass backend/frontend/desktop Nx checks, package QA,
 release-tool tests, clean-install contract tests, resource staging checks, and
-real PDF/image/audio consumer smoke when the published assets are available.
-No source-only build or fake provider is consumer evidence.
+published-byte handshake/requirements checks. The real PDF/image/audio consumer
+smoke remains pending for an engine-bearing release; fake extraction is only
+backend host-protocol evidence.

@@ -47,7 +47,7 @@ export default defineConfig({
         CERT_PREP_STREAMING_DRAFT_WORKERS: '1',
         CERT_PREP_CAPTURE_RUNTIME_URL: `http://127.0.0.1:${captureRuntimePort}`,
         CERT_PREP_CAPTURE_RUNTIME_TOKEN: captureRuntimeToken,
-        CERT_PREP_CAPTURE_RUNTIME_VERSION: '0.3.0',
+        CERT_PREP_CAPTURE_RUNTIME_VERSION: '0.3.8',
         CERT_PREP_CAPTURE_RUNTIME_API_VERSION: '1.0',
         CERT_PREP_CAPTURE_DOCUMENT_SCHEMA_VERSION: '1',
         PYTHONPATH: join(workspaceRoot, 'apps', 'cert-prep-backend', 'src'),

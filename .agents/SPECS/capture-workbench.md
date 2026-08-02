@@ -13,22 +13,30 @@ OCR/Whisper implementation.
   fork.
 - Resolve the `@gx-capture` scope through GitHub Packages with a read-only token in CI
   or an ephemeral local npm user config; never commit registry credentials.
-- Tauri starts both the Cert Prep backend and the matching `capture-runtime`
-  sidecar. Only the backend receives the process-scoped sidecar URL and bearer
-  token.
+- Tauri may start the installed Cert Prep backend after first paint. It installs
+  and starts the matching `capture-runtime` sidecar only after separate explicit
+  user actions. Only the backend receives the process-scoped sidecar URL and
+  bearer token.
 - Packaging explicitly stages the versioned `capture-runtime` release before
   resource preparation. There is no sibling checkout, workspace alias, or
   implicit development-path fallback.
-- The staged manifest is pinned to Windows x64 runtime `0.3.0`, API `1.0`, and
+- The staged manifest is pinned to Windows x64 runtime `0.3.8`, API `1.0`, and
   `CaptureDocumentV1` schema `1`; resource preparation and Tauri both verify
   the executable and schema file names, the executable's bounded integer byte
   count (`1..536870912`), SHA-256 provenance, and the canonical schema bytes
   against Cert Prep's independent pinned digest before spawning the
   executable, then repeat the
   version/schema check through the authenticated readiness handshake.
-- Capture Runtime owns its WindowsML descriptor, model asset installation, and
-  requirement validation. Cert Prep does not inspect or forward the descriptor
-  and does not bundle a source-built OCR payload.
+- Capture Runtime owns model asset installation and requirement validation.
+  v0.3.8's empty catalog reports the WindowsML OCR and Whisper requirements as
+  unavailable. Cert Prep is the host adapter for this core-only release: it
+  configures `hostManagedHandshake: true` with `showRuntimeSetup: false`,
+  exposes only the PDF source control, and performs the
+  compatibility/capability plus source-aware requirement policy through its
+  authenticated backend. v0.3.8 still shows image/audio and OCR-dependent PDF
+  as unavailable; a successor model-enabled release installs OCR then Whisper
+  sequentially after consent. Cert Prep does not bundle a source-built
+  OCR/STT payload.
 - Tauri clears the inherited environment and restores only an explicit Windows
   process-bootstrap allowlist before passing the verified host-mode Capture
   settings to the sidecar.
@@ -51,15 +59,20 @@ OCR/Whisper implementation.
 - The component continues to expose width, height, density, colors, labels,
   enabled sources, progress, cancel, JSON output, and text projection.
 - The component is configured with `structuringMode: 'host'` and
-  `hostStructuringOwner: 'client'`; it polls the Cert Prep client while the
-  backend invokes the existing provider. No raw payload or provider seam is
-  required in the WebView.
+  `hostStructuringOwner: 'client'`, `hostManagedHandshake: true`, and
+  `showRuntimeSetup: false`, with `enabledSources: ['pdf']`;
+  it polls the Cert Prep client while the backend invokes the existing provider
+  and enforces the capture admission contract. No raw payload or provider seam
+  is required in the WebView.
 
 ## Boundaries
 
 - Capture Workbench owns source sniffing, PDF rendering, image normalization,
-  WindowsML OCR, Whisper STT, capture runtime requirements, capture job state,
-  and canonical validation.
+  capture runtime requirements, capture job state, and canonical validation.
+  Its v0.3.8 release is core-only and has no downloadable WindowsML OCR or
+  Whisper engine bundle. An all-pages embedded-text PDF remains a real
+  no-model sidecar path with `pdf-embedded-text` provenance; image, audio, and
+  a PDF page requiring OCR remain unavailable and must fail closed.
 - Cert Prep retains its reasoning Ollama process, study profile, question
   generation, semantic explanation, and real-time Q&A.
 - Cert Prep must not launch the Workbench isolated Ollama in host mode. The
@@ -74,8 +87,14 @@ OCR/Whisper implementation.
   image names.
 - Host-only readiness advertises only `structuringModes: ["host"]`; its setup
   contract exposes only WindowsML and Whisper requirements and rejects Ollama
-  runtime/model installation requests. Tauri aligns the sidecar upload, PDF
-  page, and image-pixel ceilings with the existing Cert Prep source limits.
+  runtime/model installation requests. The Cert Prep adapter checks the
+  sidecar's runtime/API/schema/host capability before each job and calls no
+  create API when it is incompatible. It admits image only with ready WindowsML
+  and audio only with ready Whisper; every PDF is delegated to the runtime
+  without browser scanned-PDF classification, so an OCR-dependent PDF's
+  terminal sidecar failure must be clear to the user. Tauri aligns the sidecar
+  upload, PDF page, and image-pixel ceilings with the existing Cert Prep source
+  limits.
 - Browser code never receives the sidecar bearer token and never invokes the
   reasoning provider directly.
 - Cert Prep capture OCR, capture Whisper, local runtime installation, and the
@@ -90,7 +109,12 @@ OCR/Whisper implementation.
   `/raw` is diagnostic-only.
 - Existing documents, crop uploads, retries, cancellation, chunks, study
   generation, semantic explanations, and real-time Q&A pass regression tests.
-- PDF, image, and audio capture fail closed when Capture Runtime is missing,
-  incompatible, or missing a required runtime asset.
+- A true all-pages embedded-text PDF completes through the published v0.3.8
+  sidecar, review, host persistence, and export with `pdf-embedded-text`
+  provenance; it is not OCR evidence.
+- Image, audio, and any OCR-dependent PDF fail closed with an explicit
+  unavailable-model error when v0.3.8 lacks the required runtime asset. The
+  browser never receives the sidecar token and Cert Prep provides no OCR/STT
+  fallback.
 - A process isolation test proves Capture Workbench sidecar resources never
   terminate or mutate the Cert Prep reasoning Ollama process/model store.

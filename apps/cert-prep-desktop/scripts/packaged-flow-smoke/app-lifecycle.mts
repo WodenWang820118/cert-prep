@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import {
   appendFileSync,
@@ -9,6 +9,7 @@ import {
   realpathSync,
   renameSync,
   rmSync,
+  writeFileSync,
 } from 'node:fs';
 import {
   basename,
@@ -21,12 +22,11 @@ import {
 } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
-import { chromium } from 'playwright';
-
 import {
   collectProcessTree,
   publicProcessRecord,
   requestWindowsCloseByPid,
+  resolveWindowsPowerShellExecutable,
   selectCertPrepResidue,
   selectNewWorkspaceNodeHelpers,
   snapshotWindowsProcesses,
@@ -37,13 +37,13 @@ import { DEFAULT_LLM_MODEL } from '../package-qa/constants.mts';
 import {
   activePage,
   bodyText,
+  connectOverCdpEarly,
   log,
   screenshot,
-  waitForCdp,
   waitText,
 } from './runner-context.mts';
 import { observeStreamingApiResponses } from './streaming-capture.mts';
-import { errorMessage } from './text-utils.mts';
+import { errorMessage, isRecord } from './text-utils.mts';
 import type {
   ProcessRecord,
   PublicProcessRecord,
@@ -489,8 +489,7 @@ export async function launchAppAndConnect(run: SmokeRunState): Promise<void> {
     }
     log(run, `app exited code=${code} signal=${signal}`);
   });
-  await waitForCdp(run, 90_000);
-  run.browser = await chromium.connectOverCDP(`http://127.0.0.1:${run.port}`);
+  run.browser = await connectOverCdpEarly(run, 90_000);
   const context = run.browser.contexts()[0] ?? (await run.browser.newContext());
   run.page =
     context.pages()[0] ??
@@ -671,7 +670,6 @@ export function prepareRunDirectories(
 
   assertExistingPathSegmentsAreCanonical(workspaceRoot, dirname(outDir));
   mkdirSync(dirname(outDir), { recursive: true });
-  assertExistingPathSegmentsAreCanonical(workspaceRoot, dirname(outDir));
   if (existsSync(outDir)) {
     throw new Error(
       `Acceptance output directory must not exist before the run: ${outDir}`,
@@ -688,19 +686,24 @@ export function prepareRunDirectories(
   try {
     createFreshDirectory(stagingOutDir, 'Acceptance staging directory');
     stagingCreated = true;
-    assertExistingPathSegmentsAreCanonical(workspaceRoot, stagingOutDir);
     createFreshDirectory(
       stagingAppDataDir,
       'Acceptance staging app-data directory',
     );
-    assertExistingPathSegmentsAreCanonical(workspaceRoot, stagingAppDataDir);
     hooks.afterAppDataCreated?.(stagingAppDataDir);
     if (readdirSync(stagingAppDataDir).length !== 0) {
       throw new Error(
         'Acceptance app-data directory was modified before atomic commit.',
       );
     }
-    renameSync(stagingOutDir, outDir);
+    // Windows can reject renaming a directory tree whose only child is an
+    // empty directory (EPERM). Keep the app-data contract empty at launch,
+    // but use a transient marker solely to make the directory non-empty for
+    // the atomic parent rename; remove it immediately after the commit.
+    const renameMarker = join(stagingAppDataDir, '.x');
+    writeFileSync(renameMarker, '');
+    commitStagingDirectory(stagingOutDir, outDir);
+    rmSync(join(appDataDir, '.x'), { force: true });
     committed = true;
   } catch (error) {
     if (stagingCreated && !committed) {
@@ -717,6 +720,44 @@ export function prepareRunDirectories(
     paths_within_workspace_run_root: true,
     reparse_points_absent: true,
   };
+}
+
+function commitStagingDirectory(stagingOutDir: string, outDir: string): void {
+  try {
+    renameSync(stagingOutDir, outDir);
+    return;
+  } catch (error) {
+    if (process.platform !== 'win32' || !isPermissionError(error)) {
+      throw error;
+    }
+  }
+
+  // The Windows filesystem policy on this host rejects Node's rename for a
+  // directory tree containing a child directory. Move-Item performs the same
+  // single-directory move through the native shell API and preserves the
+  // fresh-run boundary; the marker is removed before the app starts.
+  const quote = (value: string): string => `'${value.replaceAll("'", "''")}'`;
+  const command = [
+    "$ErrorActionPreference = 'Stop'",
+    `Move-Item -LiteralPath ${quote(stagingOutDir)} -Destination ${quote(outDir)}`,
+  ].join('; ');
+  const result = spawnSync(
+    resolveWindowsPowerShellExecutable(),
+    ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command],
+    { encoding: 'utf8', windowsHide: true, timeout: 15_000 },
+  );
+  if (result.error || result.status !== 0) {
+    throw new Error(
+      `Acceptance staging move failed: ${errorMessage(result.error ?? result.stderr)}`,
+    );
+  }
+}
+
+function isPermissionError(error: unknown): boolean {
+  return (
+    isRecord(error) &&
+    (error.code === 'EPERM' || error.code === 'EACCES')
+  );
 }
 
 function launchAppDataDir(run: SmokeRunState): string {

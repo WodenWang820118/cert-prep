@@ -170,6 +170,43 @@ class DeterministicCaptureRuntime:
         )
 
 
+class RequirementUnavailablePdfCaptureRuntime(DeterministicCaptureRuntime):
+    def create_capture(
+        self,
+        upload: CaptureUpload,
+        *,
+        source_kind: CaptureSourceKind,
+        idempotency_key: UUID,
+        target_language: str | None = None,
+    ) -> CaptureJobV1:
+        super().create_capture(
+            upload,
+            source_kind=source_kind,
+            idempotency_key=idempotency_key,
+            target_language=target_language,
+        )
+        assert self.raw is not None
+        return CaptureJobV1.model_validate(
+            {
+                "captureId": "capture-requirement-unavailable",
+                "status": "failed",
+                "stage": "failed",
+                "structuringMode": "host",
+                "progress": 1,
+                "source": self.raw.source.model_dump(mode="json", by_alias=True),
+                "error": {
+                    "code": "requirement_unavailable",
+                    "message": "A required extractor is unavailable.",
+                    "stage": "extracting",
+                    "retryable": False,
+                },
+                "createdAt": NOW.isoformat(),
+                "updatedAt": NOW.isoformat(),
+                "completedAt": NOW.isoformat(),
+            }
+        )
+
+
 class BlockingDeterministicCaptureRuntime(DeterministicCaptureRuntime):
     def __init__(self) -> None:
         super().__init__()
@@ -486,6 +523,51 @@ def test_review_capture_pauses_before_persistence_and_applies_confirmed_overlay(
         assert cancel_completed.json()["stage"] == "completed"
 
     assert runtime.deleted == ["capture-pipeline-1"]
+
+
+def test_pdf_capture_requirement_unavailable_reports_ocr_required_failure(
+    tmp_path: Path,
+) -> None:
+    runtime = RequirementUnavailablePdfCaptureRuntime()
+    settings = Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake")
+    app = create_app(
+        settings=settings,
+        llm_provider=EchoCaptureProvider(),
+        capture_runtime_client=runtime,
+        document_processing_async_jobs=False,
+        streaming_draft_generation_async_jobs=False,
+    )
+    operation_id = "requirement-unavailable-pdf"
+    with TestClient(app) as client:
+        headers = {
+            "Authorization": f"Bearer {AUTH_TOKEN}",
+            "X-Cert-Prep-Operation-Id": operation_id,
+        }
+        project_id = _create_project(client, {"Authorization": f"Bearer {AUTH_TOKEN}"})
+        response = client.post(
+            f"/projects/{project_id}/capture-workbench/captures",
+            headers=headers,
+            files={"file": ("scanned.pdf", minimal_pdf("Scanned source."), "application/pdf")},
+        )
+        assert response.status_code == 202
+
+        operation = None
+        for _ in range(100):
+            with app.state.database.connect() as connection:
+                operation = connection.execute(
+                    "SELECT status, phase, error FROM document_operations WHERE id = ?",
+                    (operation_id,),
+                ).fetchone()
+            if operation is not None and operation[0] == "failed":
+                break
+            time.sleep(0.01)
+
+    assert operation is not None
+    assert tuple(operation) == (
+        "failed",
+        "failed",
+        "This PDF requires WindowsML OCR, which is unavailable in the installed Capture Runtime.",
+    )
 
 
 def test_expired_review_is_canceled_and_terminal_cancel_is_idempotent(tmp_path: Path) -> None:

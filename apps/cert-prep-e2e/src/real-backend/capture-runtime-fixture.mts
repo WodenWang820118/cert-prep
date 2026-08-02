@@ -9,7 +9,7 @@ const host = '127.0.0.1';
 const port = Number(process.env['CERT_PREP_E2E_CAPTURE_RUNTIME_PORT'] ?? 8767);
 const token = process.env['CERT_PREP_E2E_CAPTURE_RUNTIME_TOKEN'] ?? 'real-e2e-capture-runtime-token';
 const apiVersion = '1.0';
-const runtimeVersion = '0.3.0';
+const runtimeVersion = '0.3.8';
 const schemaVersion = '1';
 const digest = `sha256:${'a'.repeat(64)}`;
 
@@ -315,7 +315,7 @@ function rawCapture(
         sourceKind === 'audio'
           ? 'capture-runtime-whisper'
           : 'capture-runtime-windowsml',
-      model: 'capture-runtime@0.3.0',
+      model: 'capture-runtime@0.3.8',
       digest,
       device: 'test',
     },

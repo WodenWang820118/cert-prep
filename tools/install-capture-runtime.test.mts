@@ -17,6 +17,7 @@ import {
   CAPTURE_RUNTIME_CHECKSUM_FILE,
   CAPTURE_RUNTIME_FILE,
   CAPTURE_RUNTIME_RELEASE_ASSETS,
+  DEFAULT_CAPTURE_RUNTIME_RELEASE_BASE_URL,
   installCaptureRuntime,
   validateCaptureRuntimeReleaseBaseUrl,
   verifyCaptureRuntimeReleaseDirectory,
@@ -28,8 +29,8 @@ import {
 } from '../apps/cert-prep-desktop/scripts/package-qa/constants.mts';
 
 const schemaPath = join(
-  process.env.CAPTURE_WORKBENCH_ROOT ?? join(process.cwd(), '..', 'capture-workbench'),
-  'packages/capture-runtime/dist/release/capture-document-v1.schema.json',
+  process.cwd(),
+  'apps/cert-prep-desktop/test-fixtures/capture-document-v1.schema.json',
 );
 const temporaryRoots: string[] = [];
 const servers: Server[] = [];
@@ -41,6 +42,25 @@ afterEach(async () => {
   for (const root of temporaryRoots.splice(0)) {
     await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
+});
+
+test('pins the canonical gx-capture v0.3.8 release URL', () => {
+  const expected =
+    'https://github.com/gx-capture/capture-workbench/releases/download/v0.3.8';
+  assert.equal(DEFAULT_CAPTURE_RUNTIME_RELEASE_BASE_URL, expected);
+  assert.equal(validateCaptureRuntimeReleaseBaseUrl(expected), expected);
+});
+
+test('pins the published CaptureDocumentV1 schema bytes', async () => {
+  const schema = await readFile(schemaPath);
+  assert.equal(
+    createHash('sha256').update(schema).digest('hex'),
+    CAPTURE_DOCUMENT_SCHEMA_SHA256,
+  );
+  assert.equal(
+    JSON.parse(schema.toString('utf8')).$id,
+    'https://github.com/gx-capture/capture-workbench/schema/capture-document-v1.schema.json',
+  );
 });
 
 test('installs a valid release and reuses identical staging', async () => {
@@ -159,7 +179,7 @@ test('rejects executable, schema, manifest, checksum, and platform drift', async
 
 test('rejects HTTP redirects instead of following them', async () => {
   const server = createServer((_request, response) => {
-    response.writeHead(302, { Location: 'http://127.0.0.1:1/v0.3.0' }).end();
+    response.writeHead(302, { Location: 'http://127.0.0.1:1/v0.3.8' }).end();
   });
   servers.push(server);
   await new Promise<void>((resolvePromise, reject) => {
@@ -183,17 +203,17 @@ test('rejects HTTP redirects instead of following them', async () => {
 test('accepts only versioned secure release base URLs', () => {
   assert.equal(
     validateCaptureRuntimeReleaseBaseUrl(
-      'http://127.0.0.1:4873/v0.3.0',
+      'http://127.0.0.1:4873/v0.3.8',
     ),
-    'http://127.0.0.1:4873/v0.3.0',
+    'http://127.0.0.1:4873/v0.3.8',
   );
   for (const value of [
-    'http://localhost:4873/v0.3.0',
-    'http://192.168.1.10:4873/v0.3.0',
-    'https://user:secret@example.test/v0.3.0',
+    'http://localhost:4873/v0.3.8',
+    'http://192.168.1.10:4873/v0.3.8',
+    'https://user:secret@example.test/v0.3.8',
     'https://example.test/v0.2.0',
-    'https://example.test/v0.3.0?token=secret',
-    'https://example.test/v0.3.0/%2e%2e',
+    'https://example.test/v0.3.8?token=secret',
+    'https://example.test/v0.3.8/%2e%2e',
   ]) {
     assert.throws(
       () => validateCaptureRuntimeReleaseBaseUrl(value),

@@ -44,10 +44,11 @@ ollama pull qwen3.5:4b
 
 ## Capture Runtime release sidecar
 
-`capture-runtime@0.3.0` is installed as a Windows x64 release sidecar, not as
-an npm or Python dependency. Set `CERT_PREP_CAPTURE_RUNTIME_RELEASE_BASE_URL`
-to a versioned HTTPS release URL, or to a loopback HTTP mirror for local
-testing, then run:
+`capture-runtime@0.3.8` is installed as a Windows x64 release sidecar, not as
+an npm or Python dependency. By default, the installer uses the canonical
+`https://github.com/gx-capture/capture-workbench/releases/download/v0.3.8`
+release. `CERT_PREP_CAPTURE_RUNTIME_RELEASE_BASE_URL` is only for an explicit
+versioned HTTPS release URL or loopback HTTP mirror during local testing.
 
 ```powershell
 pnpm nx run cert-prep-desktop:install-capture-runtime
@@ -56,7 +57,7 @@ pnpm nx run cert-prep-desktop:dev
 
 The installer downloads only the executable, checksum, manifest, and schema;
 verifies their version, platform, bytes, and SHA-256 contract; and stages them
-under `tmp/cert-prep/capture-runtime/0.3.0`. Desktop preparation consumes that
+under `tmp/cert-prep/capture-runtime/0.3.8`. Desktop preparation consumes that
 staging directory without network access. To exercise the complete local
 release-consumer path, including the downloaded sidecar and cert-prep host
 structuring coordinator, run:
@@ -65,9 +66,15 @@ structuring coordinator, run:
 pnpm nx run cert-prep-desktop:capture-runtime-consumer-smoke
 ```
 
-The deterministic smoke uses fake extraction and host structuring. A real
-release must replace the placeholder WindowsML descriptor with the actual
-artifact URL, byte count, and SHA-256 before production preflight.
+v0.3.8 is core-only: it publishes no OCR or STT engine bundles. The sidecar
+reports `windowsml-ocr` and `whisper-primary` as unavailable. Cert Prep uses
+`hostManagedHandshake: true`, hides runtime setup, and exposes only PDF input.
+All-pages embedded-text PDFs use the real `pdf-embedded-text` CPU extractor;
+scanned PDFs, images, and audio remain unavailable. The consumer smoke proves
+the published sidecar's authenticated readiness and requirements, while the
+packaged product smoke proves the embedded-text PDF path. Neither is OCR/STT
+evidence; positive OCR/image/audio verification requires an engine-bearing
+release.
 
 ## Verification
 
@@ -107,17 +114,23 @@ pnpm nx affected --targets=lint,test,build
 ## Local Capture Workbench Registry Trial
 
 The normal dependency is the pinned public release package
-`@gx-capture/capture-workbench@0.3.0` from GitHub Packages. GitHub Actions configures
+`@gx-capture/capture-workbench@0.3.8` from GitHub Packages. GitHub Actions configures
 the `@gx-capture` registry and read token automatically. For a local install, configure
 an npm user config without committing credentials:
 
 ```powershell
 $npmConfig = Join-Path $env:TEMP 'cert-prep-github-packages.npmrc'
-Set-Content -Path $npmConfig -Value "@gx-capture:registry=https://npm.pkg.github.com`n//npm.pkg.github.com/:_authToken=$((gh auth token).Trim())`n"
-$env:NPM_CONFIG_USERCONFIG = $npmConfig
-pnpm install --frozen-lockfile
-Remove-Item Env:NPM_CONFIG_USERCONFIG
-Remove-Item -LiteralPath $npmConfig -Force
+$token = (gh auth token).Trim()
+try {
+  Set-Content -LiteralPath $npmConfig -Value "@gx-capture:registry=https://npm.pkg.github.com`n//npm.pkg.github.com/:_authToken=`${NODE_AUTH_TOKEN}`n"
+  $env:NODE_AUTH_TOKEN = $token
+  $env:NPM_CONFIG_USERCONFIG = $npmConfig
+  pnpm install --frozen-lockfile
+} finally {
+  Remove-Item Env:NODE_AUTH_TOKEN -ErrorAction SilentlyContinue
+  Remove-Item Env:NPM_CONFIG_USERCONFIG -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath $npmConfig -Force -ErrorAction SilentlyContinue
+}
 ```
 
 The pinned Capture Runtime is downloaded by
@@ -150,14 +163,14 @@ The trial creates a temporary Vite consumer, runs a normal `pnpm install`
 against `http://127.0.0.1:4873`, imports `@gx-capture/capture-workbench`, registers the
 `capture-workbench` custom element, and runs a production build. The temporary
 consumer is removed after the run. The cert-prep route also uses the installed
-package through its `CaptureClient` adapter and the backend review API; the
-browser uploads a source once, reviews OCR, and sends only the capture id and
-confirmed edits back on confirmation.
+package through its `CaptureClient` adapter and the backend review API. With
+the core-only v0.3.8 sidecar, the route accepts embedded-text PDFs and does not
+offer image/audio capture or claim OCR support.
 
 ### Capture Workbench local registry trial
 
 The `capture-workbench-trial` route is an isolated distribution trial for the
-published `@gx-capture/capture-workbench@0.3.0` Web Component. The `/build`
+published `@gx-capture/capture-workbench@0.3.8` Web Component. The `/build`
 source-import flow remains unchanged; the retired local prototype is no longer
 part of the workspace.
 
@@ -170,9 +183,10 @@ pnpm nx run cert-prep:serve
 ```
 
 Open `http://localhost:4200/capture-workbench-trial`. The route uses the
-registry-installed `@gx-capture/capture-workbench@0.3.0` package and a cert-prep
+registry-installed `@gx-capture/capture-workbench@0.3.8` package and a cert-prep
 `CaptureClient` backed by the review-gated capture API. Capture Runtime and its
-token remain backend-only; the pending review has no ready document or chunks
-until the user confirms OCR. The install command creates a
+token remain backend-only. With the v0.3.8 core-only sidecar, the route accepts
+embedded-text PDFs only; scanned PDFs, images, and audio require a future
+engine-bearing release. The install command creates a
 temporary root `.npmrc` pointing at `http://127.0.0.1:4873` and removes it when
 pnpm finishes. It does not install the package from a `file:.tgz` dependency.

@@ -85,7 +85,7 @@ class TestCaptureRuntimeClient:
                 "sourceText": source_text,
                 "extractionEngine": {
                     "engine": "capture-runtime-whisper" if is_audio else "capture-runtime-windowsml",
-                    "model": "capture-runtime@0.3.0",
+                    "model": "capture-runtime@0.3.8",
                     "digest": f"sha256:{'a' * 64}",
                     "device": "test",
                 },

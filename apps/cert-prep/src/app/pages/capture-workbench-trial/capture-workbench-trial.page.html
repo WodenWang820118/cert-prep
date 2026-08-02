@@ -4,8 +4,11 @@
       <p class="capture-trial-eyebrow">Capture Workbench / saved to project</p>
       <h2 id="capture-trial-title">Capture Workbench trial</h2>
       <p class="capture-trial-description">
-        Select one PDF to run through the installed <code>@gx-capture/capture-workbench</code>
-        workflow and Capture Runtime, then save the structured document to Cert Prep.
+        Cert Prep installs and starts the Capture Runtime 0.3.8 core only after
+        explicit user actions. This release processes embedded-text PDFs through
+        <code>@gx-capture/capture-workbench</code> and saves the reviewed result to
+        Cert Prep. Scanned PDFs, images, and audio remain unavailable because this
+        release does not publish the required OCR or transcription engines.
       </p>
     </div>
     <div class="capture-trial-badge" [attr.data-state]="registrationState()">
@@ -22,7 +25,33 @@
   <p class="capture-trial-error" role="alert">{{ error }}</p>
   }
 
+  @if (!desktopRuntime.isCaptureRuntimeReady()) {
+  <section class="capture-trial-runtime-unavailable" aria-live="polite">
+    <h3>Capture Runtime is unavailable</h3>
+    <p>{{ desktopRuntime.captureRuntimeStatus().detail }}</p>
+    @if (desktopRuntime.canInstallCaptureRuntime()) {
+    <button
+      type="button"
+      class="capture-trial-download-button"
+      [disabled]="desktopRuntime.isCaptureRuntimeInstallActive()"
+      (click)="installCaptureRuntime()"
+    >
+      Install Capture Runtime
+    </button>
+    } @else if (desktopRuntime.canStartCaptureRuntime()) {
+    <button
+      type="button"
+      class="capture-trial-download-button"
+      [disabled]="desktopRuntime.isCaptureRuntimeInstallActive()"
+      (click)="startCaptureRuntime()"
+    >
+      Start Capture Runtime
+    </button>
+    }
+  </section>
+  } @else {
   <capture-workbench #captureWorkbench></capture-workbench>
+  }
 
   @if (lastCompleted(); as completed) {
   <section
@@ -89,11 +118,11 @@
       </div>
       <div>
         <dt>Document chunks</dt>
-        <dd>—</dd>
+        <dd>--</dd>
       </div>
       <div>
         <dt>Extraction</dt>
-        <dd>—</dd>
+        <dd>--</dd>
       </div>
       }
     </dl>

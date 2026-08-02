@@ -23,7 +23,7 @@ const READY: RuntimeReadyV1 = {
   ready: true,
   service: 'capture-runtime',
   apiVersion: '1.0',
-  runtimeVersion: 'trial-0.3.0',
+  runtimeVersion: 'trial-0.3.8',
   captureDocumentSchemaVersion: '1',
   capabilities: {
     captureKinds: ['pdf', 'image', 'audio'],

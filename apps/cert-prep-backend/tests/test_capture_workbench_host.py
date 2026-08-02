@@ -132,7 +132,7 @@ def _ready_payload(*, schema_version: str = "1") -> dict[str, object]:
         "ready": True,
         "service": "capture-runtime",
         "apiVersion": "1.0",
-        "runtimeVersion": "0.3.0",
+        "runtimeVersion": "0.3.8",
         "captureDocumentSchemaVersion": schema_version,
         "capabilities": {
             "captureKinds": ["pdf", "image", "audio"],

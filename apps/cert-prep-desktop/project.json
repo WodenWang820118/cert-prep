@@ -80,7 +80,7 @@
       "cache": false,
       "executor": "nx:run-commands",
       "outputs": [
-        "{workspaceRoot}/tmp/cert-prep/capture-runtime/0.3.0"
+        "{workspaceRoot}/tmp/cert-prep/capture-runtime/0.3.8"
       ],
       "options": {
         "command": "node tools/install-capture-runtime.mts"
@@ -200,13 +200,41 @@
         "command": "pnpm exec tsc -p tsconfig.scripts.json"
       }
     },
+    "packaged-capture-workbench-smoke": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node apps/cert-prep-desktop/scripts/packaged-capture-workbench-smoke.mts"
+      }
+    },
+    "desktop-startup-probe-test": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node --test apps/cert-prep-desktop/scripts/desktop-startup-probe.test.mts"
+      }
+    },
+    "desktop-startup-probe-pe-test": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node --test apps/cert-prep-desktop/scripts/desktop-startup-probe-built.test.mts"
+      }
+    },
+    "desktop-startup-probe": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node apps/cert-prep-desktop/scripts/desktop-startup-probe.mts"
+      }
+    },
     "package-qa-test": {
       "cache": true,
       "executor": "nx:run-commands",
       "dependsOn": ["typecheck-scripts"],
       "inputs": ["default"],
       "options": {
-        "command": "node --import ./apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.mts --test apps/cert-prep-desktop/scripts/prepare-runtime-resources.test.mts apps/cert-prep-desktop/scripts/package-qa/artifacts.test.mts apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.test.mts apps/cert-prep-desktop/scripts/process-lifecycle/processes.test.mts apps/cert-prep-desktop/scripts/process-residue-audit.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/args.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/document-cancellation.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/document-runner.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/evidence-contract.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/local-evidence-verifier.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/ollama-isolation.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/operation-cancellation.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/owned-process-evidence.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/remaining-options.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/resilience-gates.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/resilience-runner.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/session-restart.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/app-lifecycle.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/args.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/generation-readiness.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/ocr-completion.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/resource-sampling.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/runtime-install-flow.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/streaming-baseline-report.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/streaming-evidence.test.mts apps/cert-prep-desktop/scripts/packaged-image-upload-smoke/smoke.test.mts"
+        "command": "node --import ./apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.mts --test apps/cert-prep-desktop/scripts/prepare-runtime-resources.test.mts apps/cert-prep-desktop/scripts/package-qa/artifacts.test.mts apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.test.mts apps/cert-prep-desktop/scripts/process-lifecycle/processes.test.mts apps/cert-prep-desktop/scripts/process-residue-audit.test.mts apps/cert-prep-desktop/scripts/desktop-startup-probe.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/args.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/document-cancellation.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/document-runner.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/evidence-contract.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/local-evidence-verifier.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/ollama-isolation.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/operation-cancellation.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/owned-process-evidence.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/remaining-options.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/resilience-gates.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/resilience-runner.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/session-restart.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/app-lifecycle.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/args.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/generation-readiness.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/ocr-completion.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/resource-sampling.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/runtime-install-flow.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/streaming-baseline-report.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/streaming-evidence.test.mts apps/cert-prep-desktop/scripts/packaged-image-upload-smoke/smoke.test.mts apps/cert-prep-desktop/scripts/packaged-capture-workbench-smoke/smoke.test.mts"
       }
     },
     "release-tool-test": {
