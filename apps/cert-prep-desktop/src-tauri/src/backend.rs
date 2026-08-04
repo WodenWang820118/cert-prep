@@ -1,6 +1,5 @@
 use std::{
     path::PathBuf,
-    process::Child,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Condvar, Mutex,
@@ -9,6 +8,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use capture_sidecar_launcher::OwnedSidecarProcess;
 use serde::Serialize;
 use tauri::path::BaseDirectory;
 use tauri::Manager;
@@ -21,14 +21,13 @@ use crate::{
         CaptureRuntimeState,
     },
     constants::{
-        BACKEND_RUNTIME_DIR, CAPTURE_RUNTIME_MODEL, CAPTURE_RUNTIME_VERSION,
-        PYTHON_RUNTIME_KIND, PYTHON_RUNTIME_LABEL,
+        BACKEND_RUNTIME_DIR, CAPTURE_RUNTIME_MODEL, CAPTURE_RUNTIME_VERSION, PYTHON_RUNTIME_KIND,
+        PYTHON_RUNTIME_LABEL,
     },
     manifests::{load_runtime_manifest, RuntimeManifest},
     runtime_installation::{
         completed_installation, install_python_runtime, installation_from_job, RuntimeJob,
     },
-    windows_process::terminate_owned_process_tree,
     DesktopRuntimeInstallation,
 };
 
@@ -74,7 +73,7 @@ pub(crate) struct BackendRuntimeInner {
     pub(crate) capture_runtime: Mutex<Option<CaptureRuntimeState>>,
     pub(crate) backend_launch: Mutex<()>,
     pub(crate) config: Mutex<Option<BackendConfig>>,
-    pub(crate) child: Mutex<Option<Child>>,
+    pub(crate) child: Mutex<Option<OwnedSidecarProcess>>,
     pub(crate) job: Mutex<Option<RuntimeJob>>,
     pub(crate) capture_job: Mutex<Option<RuntimeJob>>,
     pub(crate) capture_start_active: Mutex<bool>,
@@ -114,7 +113,7 @@ impl BackendRuntimeInner {
     pub(crate) fn terminate_child_process_tree(&self) {
         if let Ok(mut child) = self.child.lock() {
             if let Some(child) = child.take() {
-                terminate_owned_process_tree(child);
+                let _ = child.terminate();
             }
         }
     }

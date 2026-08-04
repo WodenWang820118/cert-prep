@@ -262,6 +262,14 @@
       "options": {
         "command": "cargo test --manifest-path apps/cert-prep-desktop/src-tauri/Cargo.toml"
       }
+    },
+    "cargo-check": {
+      "cache": true,
+      "executor": "nx:run-commands",
+      "inputs": ["default"],
+      "options": {
+        "command": "cargo check --manifest-path apps/cert-prep-desktop/src-tauri/Cargo.toml"
+      }
     }
   }
 }

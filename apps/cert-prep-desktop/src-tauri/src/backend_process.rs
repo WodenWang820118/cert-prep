@@ -1,6 +1,6 @@
 use std::{
     fs::{self, OpenOptions},
-    net::{TcpListener, TcpStream},
+    net::TcpStream,
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::{atomic::Ordering, Arc},
@@ -8,10 +8,11 @@ use std::{
     time::{Duration, Instant},
 };
 
+use capture_sidecar_launcher::{reserve_loopback_port, OwnedSidecarProcess};
+
 use crate::{
     backend::{build_backend_config, BackendConfig, BackendRuntimeInner},
     capture_runtime::CaptureRuntimeConnection,
-    windows_process::terminate_owned_process_tree,
 };
 
 const DEFAULT_BACKEND_READY_TIMEOUT_SECS: u64 = 60;
@@ -66,22 +67,21 @@ pub(crate) fn launch_backend_entrypoint(
     );
     forward_env(&mut command, "CERT_PREP_STREAMING_DRAFT_WORKERS");
 
-    let child = command
-        .spawn()
+    let child = OwnedSidecarProcess::spawn(&mut command)
         .map_err(|error| format!("failed to launch backend runtime: {error}"))?;
     if let Err(error) = wait_for_backend(port, backend_ready_timeout(), Some(&inner.closing)) {
-        terminate_owned_process_tree(child);
+        let _ = child.terminate();
         return Err(error);
     }
 
     if inner.closing.load(Ordering::SeqCst) {
-        terminate_owned_process_tree(child);
+        let _ = child.terminate();
         return Err("Cert Prep is closing; backend runtime was not launched.".into());
     }
     let mut config = match inner.config.lock() {
         Ok(config) => config,
         Err(_) => {
-            terminate_owned_process_tree(child);
+            let _ = child.terminate();
             return Err("Backend configuration state is unavailable.".into());
         }
     };
@@ -89,14 +89,14 @@ pub(crate) fn launch_backend_entrypoint(
         Ok(child_state) => child_state,
         Err(_) => {
             drop(config);
-            terminate_owned_process_tree(child);
+            let _ = child.terminate();
             return Err("Backend process state is unavailable.".into());
         }
     };
     if inner.closing.load(Ordering::SeqCst) {
         drop(current_child);
         drop(config);
-        terminate_owned_process_tree(child);
+        let _ = child.terminate();
         return Err("Cert Prep is closing; backend runtime was not launched.".into());
     }
     let old_child = current_child.replace(child);
@@ -107,7 +107,7 @@ pub(crate) fn launch_backend_entrypoint(
     drop(current_child);
     drop(config);
     if let Some(old_child) = old_child {
-        terminate_owned_process_tree(old_child);
+        let _ = old_child.terminate();
     }
     Ok(())
 }
@@ -169,14 +169,6 @@ fn backend_launch_env(
         ]);
     }
     environment
-}
-
-fn reserve_loopback_port() -> Result<u16, String> {
-    TcpListener::bind(("127.0.0.1", 0))
-        .map_err(|error| format!("failed to reserve backend port: {error}"))?
-        .local_addr()
-        .map(|address| address.port())
-        .map_err(|error| format!("failed to read backend port: {error}"))
 }
 
 fn wait_for_backend(
@@ -285,7 +277,7 @@ mod tests {
     }
 
     #[test]
-    fn reserve_loopback_port_returns_bindable_port() {
+    fn shared_loopback_port_reservation_returns_bindable_port() {
         let port = reserve_loopback_port().expect("port should be reserved");
 
         assert!(port > 0);

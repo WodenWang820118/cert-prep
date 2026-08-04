@@ -1,49 +1,21 @@
-use std::{
-    fs,
-    io::Read,
-    path::{Path, PathBuf},
-};
+use std::{fs, io::Read, path::Path};
 
-use serde::{Deserialize, Serialize};
+use capture_sidecar_launcher::{
+    load_manifest, validate_manifest_contract, verify_sidecar, ManifestExpectations,
+    SidecarManifest, VerifiedSidecar,
+};
 use sha2::{Digest, Sha256};
 
 use crate::constants::{
     CAPTURE_DOCUMENT_SCHEMA_FILE, CAPTURE_DOCUMENT_SCHEMA_SHA256, CAPTURE_DOCUMENT_SCHEMA_VERSION,
-    CAPTURE_RUNTIME_API_VERSION, CAPTURE_RUNTIME_BINARY, CAPTURE_RUNTIME_MANIFEST_VERSION,
-    CAPTURE_RUNTIME_MAX_BYTES, CAPTURE_RUNTIME_VERSION,
+    CAPTURE_RUNTIME_API_VERSION, CAPTURE_RUNTIME_BINARY, CAPTURE_RUNTIME_VERSION,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct CaptureRuntimeManifest {
-    pub manifest_version: String,
-    pub runtime_version: String,
-    pub api_version: String,
-    pub capture_document_schema_version: String,
-    pub platform: String,
-    pub arch: String,
-    pub file_name: String,
-    pub bytes: u64,
-    pub sha256: String,
-    pub schema_file_name: String,
-    pub schema_sha256: String,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct VerifiedCaptureRuntime {
-    pub manifest: CaptureRuntimeManifest,
-    pub executable_path: PathBuf,
-}
+pub(crate) type CaptureRuntimeManifest = SidecarManifest;
+pub(crate) type VerifiedCaptureRuntime = VerifiedSidecar;
 
 pub(crate) fn load_capture_runtime_manifest(path: &Path) -> Result<CaptureRuntimeManifest, String> {
-    let content = fs::read_to_string(path).map_err(|error| {
-        format!(
-            "Capture runtime manifest is unavailable at {}: {error}",
-            path.display()
-        )
-    })?;
-    serde_json::from_str(&content)
-        .map_err(|error| format!("Capture runtime manifest is invalid JSON: {error}"))
+    load_manifest(path)
 }
 
 pub(crate) fn verify_capture_runtime(
@@ -52,121 +24,38 @@ pub(crate) fn verify_capture_runtime(
 ) -> Result<VerifiedCaptureRuntime, String> {
     let manifest = load_capture_runtime_manifest(manifest_path)?;
     validate_capture_manifest_contract(&manifest)?;
-    verify_capture_artifact(executable_path, &manifest)?;
+    let verified = verify_sidecar(
+        manifest_path,
+        executable_path,
+        &capture_manifest_expectations(),
+    )?;
     let resource_dir = manifest_path
         .parent()
         .ok_or_else(|| "Capture runtime manifest has no resource directory.".to_string())?;
     verify_capture_schema(&resource_dir.join(&manifest.schema_file_name))?;
-    Ok(VerifiedCaptureRuntime {
-        manifest,
-        executable_path: executable_path.to_path_buf(),
-    })
+    Ok(verified)
 }
 
 pub(crate) fn validate_capture_manifest_contract(
     manifest: &CaptureRuntimeManifest,
 ) -> Result<(), String> {
-    expect_field(
-        "manifestVersion",
-        &manifest.manifest_version,
-        CAPTURE_RUNTIME_MANIFEST_VERSION,
-    )?;
-    expect_field(
-        "runtimeVersion",
-        &manifest.runtime_version,
-        CAPTURE_RUNTIME_VERSION,
-    )?;
-    expect_field(
-        "apiVersion",
-        &manifest.api_version,
-        CAPTURE_RUNTIME_API_VERSION,
-    )?;
-    expect_field(
-        "captureDocumentSchemaVersion",
-        &manifest.capture_document_schema_version,
-        CAPTURE_DOCUMENT_SCHEMA_VERSION,
-    )?;
-    expect_field("platform", &manifest.platform, "windows")?;
-    expect_field("arch", &manifest.arch, "x86_64")?;
-    expect_field("fileName", &manifest.file_name, CAPTURE_RUNTIME_BINARY)?;
-
-    if !safe_file_name(&manifest.file_name) {
-        return Err("Capture runtime manifest fileName must be a plain file name.".into());
-    }
-    if !(1..=CAPTURE_RUNTIME_MAX_BYTES).contains(&manifest.bytes) {
-        return Err("Capture runtime executable bytes must be between 1 and 536870912.".into());
-    }
-    validate_sha256("sha256", &manifest.sha256)?;
-
-    expect_field(
-        "schemaFileName",
-        &manifest.schema_file_name,
-        CAPTURE_DOCUMENT_SCHEMA_FILE,
-    )?;
-    if !safe_file_name(&manifest.schema_file_name) {
-        return Err("Capture runtime manifest schemaFileName must be a plain file name.".into());
-    }
-    expect_field(
-        "schemaSha256",
-        &manifest.schema_sha256,
-        CAPTURE_DOCUMENT_SCHEMA_SHA256,
-    )?;
-    Ok(())
-}
-
-fn expect_field(name: &str, actual: &str, expected: &str) -> Result<(), String> {
-    if actual == expected {
-        Ok(())
-    } else {
-        Err(format!(
-            "Capture runtime {name} is incompatible: expected {expected}, found {actual}."
-        ))
-    }
-}
-
-fn safe_file_name(value: &str) -> bool {
-    !value.is_empty()
-        && value != "."
-        && value != ".."
-        && !value.contains(['/', '\\', ':'])
-        && Path::new(value)
-            .file_name()
-            .is_some_and(|name| name == value)
-}
-
-fn validate_sha256(name: &str, value: &str) -> Result<(), String> {
-    if value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        Ok(())
-    } else {
-        Err(format!(
-            "Capture runtime manifest {name} must contain 64 hexadecimal characters."
-        ))
-    }
-}
-
-fn verify_capture_artifact(path: &Path, manifest: &CaptureRuntimeManifest) -> Result<(), String> {
-    let metadata = fs::metadata(path).map_err(|error| {
-        format!(
-            "Capture runtime executable is unavailable at {}: {error}",
-            path.display()
-        )
-    })?;
-    if !metadata.is_file() {
-        return Err("Capture runtime executable is not a regular file.".into());
-    }
-    if metadata.len() != manifest.bytes {
-        return Err(format!(
-            "Capture runtime byte count mismatch: expected {}, found {}.",
-            manifest.bytes,
-            metadata.len()
-        ));
-    }
-
-    let digest = sha256_file(path)?;
-    if !digest.eq_ignore_ascii_case(&manifest.sha256) {
-        return Err("Capture runtime SHA-256 mismatch.".into());
+    validate_manifest_contract(manifest, &capture_manifest_expectations())?;
+    if manifest.schema_sha256 != CAPTURE_DOCUMENT_SCHEMA_SHA256 {
+        return Err(
+            "Capture runtime manifest schemaSha256 is incompatible with the pinned schema.".into(),
+        );
     }
     Ok(())
+}
+
+fn capture_manifest_expectations() -> ManifestExpectations {
+    ManifestExpectations {
+        runtime_version: CAPTURE_RUNTIME_VERSION.into(),
+        api_version: CAPTURE_RUNTIME_API_VERSION.into(),
+        capture_document_schema_version: CAPTURE_DOCUMENT_SCHEMA_VERSION.into(),
+        file_name: CAPTURE_RUNTIME_BINARY.into(),
+        schema_file_name: CAPTURE_DOCUMENT_SCHEMA_FILE.into(),
+    }
 }
 
 fn verify_capture_schema(path: &Path) -> Result<(), String> {
@@ -241,7 +130,7 @@ mod tests {
 
     fn valid_manifest(bytes: u64, sha256: &str) -> CaptureRuntimeManifest {
         CaptureRuntimeManifest {
-            manifest_version: CAPTURE_RUNTIME_MANIFEST_VERSION.into(),
+            manifest_version: "1".into(),
             runtime_version: CAPTURE_RUNTIME_VERSION.into(),
             api_version: CAPTURE_RUNTIME_API_VERSION.into(),
             capture_document_schema_version: CAPTURE_DOCUMENT_SCHEMA_VERSION.into(),
@@ -290,11 +179,11 @@ mod tests {
 
     #[test]
     fn executable_bytes_accept_only_the_shared_inclusive_bounds() {
-        for bytes in [1, CAPTURE_RUNTIME_MAX_BYTES] {
+        for bytes in [1, 512 * 1024 * 1024] {
             let manifest = valid_manifest(bytes, &"0".repeat(64));
             validate_capture_manifest_contract(&manifest).expect("inclusive executable bytes");
         }
-        for bytes in [0, CAPTURE_RUNTIME_MAX_BYTES + 1] {
+        for bytes in [0, 512 * 1024 * 1024 + 1] {
             let manifest = valid_manifest(bytes, &"0".repeat(64));
             let error = validate_capture_manifest_contract(&manifest)
                 .expect_err("out-of-range executable bytes");

@@ -7,7 +7,6 @@ mod commands;
 mod constants;
 mod manifests;
 mod runtime_installation;
-mod windows_process;
 
 use std::{fs, path::PathBuf, thread};
 use tauri::Manager;
@@ -108,5 +107,63 @@ mod tests {
         assert!(package_qa_auto_install_value(" true "));
         assert!(!package_qa_auto_install_value("1"));
         assert!(!package_qa_auto_install_value("false"));
+    }
+}
+
+#[cfg(test)]
+mod shared_sidecar_contract_tests {
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+        sync::mpsc,
+        thread,
+    };
+
+    use capture_sidecar_launcher::{probe_ready_once, ProbeResult, SidecarManifest};
+
+    fn manifest() -> SidecarManifest {
+        SidecarManifest {
+            manifest_version: "1".into(),
+            runtime_version: "0.3.9".into(),
+            api_version: "1.0".into(),
+            capture_document_schema_version: "1".into(),
+            platform: "windows".into(),
+            arch: "x86_64".into(),
+            file_name: "capture-runtime-x86_64-pc-windows-msvc.exe".into(),
+            bytes: 1,
+            sha256: "0".repeat(64),
+            schema_file_name: "capture-document-v1.schema.json".into(),
+            schema_sha256: "0".repeat(64),
+        }
+    }
+
+    #[test]
+    fn shared_authenticated_readiness_contract_is_consumer_green() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("listener");
+        let port = listener.local_addr().expect("address").port();
+        let (sender, receiver) = mpsc::channel();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept");
+            let mut request = [0_u8; 4096];
+            let count = stream.read(&mut request).expect("request");
+            sender
+                .send(request[..count].to_vec())
+                .expect("request bytes");
+            let body = r#"{"ready":true,"runtimeVersion":"0.3.9","apiVersion":"1.0","captureDocumentSchemaVersion":"1","capabilities":{}}"#;
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .expect("response");
+        });
+
+        let result =
+            probe_ready_once(port, "cert-prep-test-token", &manifest()).expect("readiness probe");
+        assert!(matches!(result, ProbeResult::Ready(_)));
+        let request = String::from_utf8(receiver.recv().expect("request")).expect("utf8");
+        assert!(request.contains("Authorization: Bearer cert-prep-test-token"));
+        server.join().expect("server");
     }
 }
