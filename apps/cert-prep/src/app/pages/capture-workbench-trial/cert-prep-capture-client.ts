@@ -434,11 +434,7 @@ function assertCaptureAdmission(
     throw new Error('Capture Runtime is not ready.');
   }
   assertCaptureRuntimeCompatible(ready, CAPTURE_RUNTIME_MAJOR, 'host');
-  if (ready.runtimeVersion !== CAPTURE_RUNTIME_VERSION) {
-    throw new Error(
-      `Capture Runtime ${ready.runtimeVersion} is incompatible with Cert Prep runtime ${CAPTURE_RUNTIME_VERSION}.`,
-    );
-  }
+  assertCaptureRuntimeMinorCompatible(ready.runtimeVersion);
   if (!ready.capabilities.captureKinds.includes(sourceKind)) {
     throw new Error(
       `Capture Runtime does not support ${sourceKind.toUpperCase()} capture.`,
@@ -454,6 +450,23 @@ function assertCaptureAdmission(
       'Whisper transcription',
     );
   }
+}
+
+function assertCaptureRuntimeMinorCompatible(runtimeVersion: string): void {
+  const expectedMinor = parseRuntimeMinor(CAPTURE_RUNTIME_VERSION);
+  if (parseRuntimeMinor(runtimeVersion) !== expectedMinor) {
+    throw new Error(
+      `Capture runtime ${runtimeVersion} is incompatible with client runtime minor ${expectedMinor} while the client is on 0.x.`,
+    );
+  }
+}
+
+function parseRuntimeMinor(version: string): number {
+  const minor = Number.parseInt(
+    version.trim().replace(/^v/i, '').split('.')[1] ?? '',
+    10,
+  );
+  return Number.isFinite(minor) ? minor : -1;
 }
 
 function assertRequirementReady(

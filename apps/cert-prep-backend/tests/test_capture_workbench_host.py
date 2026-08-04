@@ -548,7 +548,7 @@ def test_sidecar_client_rejects_incompatible_schema() -> None:
 
 def test_sidecar_client_rejects_incompatible_runtime_release() -> None:
     payload = _ready_payload()
-    payload["runtimeVersion"] = "0.3.8"
+    payload["runtimeVersion"] = "0.2.8"
     transport = httpx.MockTransport(
         lambda _request: httpx.Response(200, json=payload)
     )
@@ -560,9 +560,24 @@ def test_sidecar_client_rejects_incompatible_runtime_release() -> None:
 
     with pytest.raises(
         CaptureRuntimeCompatibilityError,
-        match="runtime version 0.3.8 is incompatible with 0.3.9",
+        match="runtime minor 0.2.8 is incompatible with 0.3.x",
     ):
         client.handshake()
+
+
+def test_sidecar_client_accepts_patch_update_within_supported_runtime_minor() -> None:
+    payload = _ready_payload()
+    payload["runtimeVersion"] = "0.3.8"
+    transport = httpx.MockTransport(
+        lambda _request: httpx.Response(200, json=payload)
+    )
+    client = CaptureRuntimeClient(
+        base_url="http://127.0.0.1:43123",
+        bearer_token=TOKEN,
+        client=httpx.Client(transport=transport),
+    )
+
+    client.handshake()
 
 
 class RecordingCaptureRuntime:

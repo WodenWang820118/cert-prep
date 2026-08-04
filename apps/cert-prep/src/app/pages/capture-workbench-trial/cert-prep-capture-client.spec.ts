@@ -333,9 +333,9 @@ describe('CertPrepCaptureClient', () => {
       'incompatible with client runtime major',
     ],
     [
-      'unsupported runtime release',
-      { runtimeVersion: '0.3.8' },
-      'incompatible with Cert Prep runtime 0.3.9',
+      'unsupported runtime minor',
+      { runtimeVersion: '0.2.8' },
+      'incompatible with client runtime minor 3',
     ],
     ['unsupported API major', { apiVersion: '2.0' }, 'Capture API 2.0 is incompatible'],
     ['wrong schema', { captureDocumentSchemaVersion: '2' }, 'schema'],

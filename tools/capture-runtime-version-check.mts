@@ -59,7 +59,7 @@ export function assertCaptureRuntimeConsumerVersions(
   requireMatch(
     workspaceRoot,
     'apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/client.py',
-    /ready\.runtime_version != SUPPORTED_RUNTIME_VERSION/,
+    /_minor\(ready\.runtime_version, label="runtime"\) != SUPPORTED_RUNTIME_MINOR/,
   );
   requireMatch(
     workspaceRoot,
@@ -95,10 +95,5 @@ export function assertCaptureRuntimeConsumerVersions(
     workspaceRoot,
     'apps/cert-prep/src/app/pages/capture-workbench-trial/cert-prep-capture-client.ts',
     /assertCaptureRuntimeCompatible\(ready, CAPTURE_RUNTIME_MAJOR, 'host'\)/,
-  );
-  requireMatch(
-    workspaceRoot,
-    'apps/cert-prep/src/app/pages/capture-workbench-trial/cert-prep-capture-client.ts',
-    /ready\.runtimeVersion !== CAPTURE_RUNTIME_VERSION/,
   );
 }

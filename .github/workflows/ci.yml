@@ -152,5 +152,8 @@ jobs:
       - name: Test package QA
         run: pnpm nx run cert-prep-desktop:package-qa-test
 
+      - name: Verify Capture Runtime consumer declarations
+        run: pnpm nx run cert-prep-desktop:capture-runtime-consumer-test
+
       - name: Test Tauri host
         run: pnpm nx run cert-prep-desktop:cargo-test
