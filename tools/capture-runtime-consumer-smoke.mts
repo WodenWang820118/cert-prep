@@ -15,15 +15,13 @@ import {
   installCaptureRuntime,
   verifyCaptureRuntimeReleaseDirectory,
 } from './install-capture-runtime.mts';
+import { CAPTURE_RUNTIME_RELEASE_BASE_URL } from './capture-runtime-version.mts';
 
 const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const PUBLISHED_RELEASE_BASE_URL =
-  'https://github.com/gx-capture/capture-workbench/releases/download/v0.3.8';
-const CORE_ONLY_DETAIL =
-  'No downloadable model is published for this runtime release.';
-const CORE_ONLY_REQUIREMENTS = Object.freeze([
-  { requirementId: 'windowsml-ocr', status: 'unavailable', detail: CORE_ONLY_DETAIL },
-  { requirementId: 'whisper-primary', status: 'unavailable', detail: CORE_ONLY_DETAIL },
+const PUBLISHED_RELEASE_BASE_URL = CAPTURE_RUNTIME_RELEASE_BASE_URL;
+const EXPECTED_REQUIREMENT_IDS = Object.freeze([
+  'windowsml-ocr',
+  'whisper-primary',
 ]);
 const FORBIDDEN_RELEASE_OVERRIDES = Object.freeze([
   'CAPTURE_WORKBENCH_ROOT',
@@ -221,7 +219,22 @@ async function waitForPublishedRuntimeContract(
           detail: record.detail,
         };
       });
-      if (JSON.stringify(compactRequirements) !== JSON.stringify(CORE_ONLY_REQUIREMENTS)) {
+      const requirementIds = compactRequirements.map((item) =>
+        typeof item === 'object' && item !== null
+          ? (item as { requirementId?: unknown }).requirementId
+          : undefined,
+      );
+      if (
+        JSON.stringify(requirementIds) !== JSON.stringify(EXPECTED_REQUIREMENT_IDS) ||
+        compactRequirements.some(
+          (item) =>
+            typeof item !== 'object' ||
+            item === null ||
+            !['ready', 'installable', 'installing', 'unavailable'].includes(
+              String((item as { status?: unknown }).status),
+            ),
+        )
+      ) {
         throw new Error(
           `Downloaded capture-runtime requirements contract mismatch: ${JSON.stringify(compactRequirements)}.`,
         );
@@ -318,7 +331,7 @@ async function runSmoke(): Promise<void> {
     }
     const token = `cert-prep-capture-runtime-smoke-${randomUUID()}`;
     runtimePort = await findFreePort();
-    const runtimeData = join(temporaryRoot, 'runtime-data-core-only');
+    const runtimeData = join(temporaryRoot, 'runtime-data-published-release');
     await mkdir(runtimeData, { recursive: true });
     runtime = startRuntime(
       installed.outputRoot,
@@ -343,7 +356,7 @@ async function runSmoke(): Promise<void> {
     await waitForPublishedRuntimeContract(runtime, runtimePort, token);
     await runBackendConsumer(runtimePort, token);
     console.log(
-      `cert-prep published capture-runtime@${CAPTURE_RUNTIME_VERSION} core-only handshake passed; fake extraction host protocol passed (not OCR/STT evidence).`,
+      `cert-prep published capture-runtime@${CAPTURE_RUNTIME_VERSION} handshake passed; fake extraction host protocol passed (not OCR/STT evidence).`,
     );
   } finally {
     if (runtime && runtimePort) await stopRuntime(runtime, runtimePort);

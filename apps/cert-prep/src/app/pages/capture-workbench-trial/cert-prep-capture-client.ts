@@ -1,4 +1,5 @@
 import { inject, Injectable } from '@angular/core';
+import { CAPTURE_RUNTIME_VERSION } from '@cert-prep/capture-runtime-version';
 import type {
   CaptureReviewJobRead as ApiCaptureReviewJobRead,
   RuntimeInstallationV1 as ApiRuntimeInstallationV1,
@@ -14,7 +15,10 @@ import {
   throwError,
   type Observable,
 } from 'rxjs';
-import { assertCaptureRuntimeCompatible } from '@gx-capture/capture-workbench';
+import {
+  assertCaptureRuntimeCompatible,
+  CAPTURE_RUNTIME_MAJOR,
+} from '@gx-capture/capture-workbench';
 import type {
   CaptureClient,
   ConfirmCaptureRequest,
@@ -429,7 +433,12 @@ function assertCaptureAdmission(
   if (!ready.ready) {
     throw new Error('Capture Runtime is not ready.');
   }
-  assertCaptureRuntimeCompatible(ready, 0, 'host');
+  assertCaptureRuntimeCompatible(ready, CAPTURE_RUNTIME_MAJOR, 'host');
+  if (ready.runtimeVersion !== CAPTURE_RUNTIME_VERSION) {
+    throw new Error(
+      `Capture Runtime ${ready.runtimeVersion} is incompatible with Cert Prep runtime ${CAPTURE_RUNTIME_VERSION}.`,
+    );
+  }
   if (!ready.capabilities.captureKinds.includes(sourceKind)) {
     throw new Error(
       `Capture Runtime does not support ${sourceKind.toUpperCase()} capture.`,

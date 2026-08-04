@@ -1,4 +1,5 @@
 import { Injectable } from '@angular/core';
+import { CAPTURE_RUNTIME_VERSION } from '@cert-prep/capture-runtime-version';
 import { of, throwError, type Observable } from 'rxjs';
 import type {
   CaptureClient,
@@ -23,7 +24,7 @@ const READY: RuntimeReadyV1 = {
   ready: true,
   service: 'capture-runtime',
   apiVersion: '1.0',
-  runtimeVersion: 'trial-0.3.8',
+  runtimeVersion: `trial-${CAPTURE_RUNTIME_VERSION}`,
   captureDocumentSchemaVersion: '1',
   capabilities: {
     captureKinds: ['pdf', 'image', 'audio'],

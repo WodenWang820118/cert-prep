@@ -16,6 +16,7 @@ from cert_prep_backend.domains.capture_workbench.contracts import (
     CAPTURE_DOCUMENT_SCHEMA_VERSION,
     SUPPORTED_API_MAJOR,
     SUPPORTED_RUNTIME_MAJOR,
+    SUPPORTED_RUNTIME_VERSION,
     CaptureDocumentV1,
     CaptureJobV1,
     CaptureRequirementId,
@@ -334,6 +335,11 @@ def _assert_compatible(ready: RuntimeReadyV1) -> None:
         failures.append(f"API major {ready.api_version} is unsupported")
     if _major(ready.runtime_version, label="runtime") != SUPPORTED_RUNTIME_MAJOR:
         failures.append(f"runtime major {ready.runtime_version} is unsupported")
+    elif ready.runtime_version != SUPPORTED_RUNTIME_VERSION:
+        failures.append(
+            f"runtime version {ready.runtime_version} is incompatible with "
+            f"{SUPPORTED_RUNTIME_VERSION}"
+        )
     if ready.capture_document_schema_version != CAPTURE_DOCUMENT_SCHEMA_VERSION:
         failures.append(
             "CaptureDocument schema "

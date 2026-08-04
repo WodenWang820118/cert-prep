@@ -626,7 +626,7 @@ async function writeFinalReleaseRoot(root, candidate) {
     ['installers/Cert_Prep_0.1.0-alpha.1_x64-setup.exe', 'nsis'],
     ['runtimes/cert-prep-backend-runtime-0.1.0-alpha.1.zip', 'backend runtime'],
     ['runtimes/capture-runtime-x86_64-pc-windows-msvc.exe', 'capture runtime'],
-    ['runtimes/capture-runtime-manifest.json', '{"runtimeVersion":"0.3.8"}'],
+    ['runtimes/capture-runtime-manifest.json', '{"runtimeVersion":"0.3.9"}'],
     ['metadata/license-inventory.json', '{"components":[]}'],
     ['metadata/cert-prep-alpha.spdx.json', '{"spdxVersion":"SPDX-2.3"}'],
     ['legal/THIRD_PARTY_NOTICES.md', '# Notices'],

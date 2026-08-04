@@ -28,6 +28,7 @@ import {
   DEFAULT_BUNDLE_ROOT,
   DEFAULT_PACKAGED_RESOURCE_ROOT,
   DEFAULT_TARGET_TRIPLE,
+  CAPTURE_RUNTIME_VERSION,
   PYTHON_RUNTIME_VERSION,
 } from '../../apps/cert-prep-desktop/scripts/package-qa/constants.mts';
 import {
@@ -707,7 +708,7 @@ async function validateRuntimeArtifact({
 async function validateCaptureRuntimeAsset({ manifest, root }) {
   if (
     manifest?.manifestVersion !== '1' ||
-    manifest?.runtimeVersion !== '0.3.8' ||
+    manifest?.runtimeVersion !== CAPTURE_RUNTIME_VERSION ||
     manifest?.apiVersion !== '1.0' ||
     manifest?.captureDocumentSchemaVersion !== '1' ||
     manifest?.platform !== 'windows' ||

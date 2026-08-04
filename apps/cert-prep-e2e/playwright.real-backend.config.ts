@@ -2,6 +2,7 @@ import { mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { defineConfig, devices } from '@playwright/test';
 import { workspaceRoot } from '@nx/devkit';
+import { CAPTURE_RUNTIME_VERSION } from '../../tools/capture-runtime-version.mts';
 
 const frontendUrl = 'http://localhost:4200';
 const captureRuntimePort = Number(
@@ -47,7 +48,7 @@ export default defineConfig({
         CERT_PREP_STREAMING_DRAFT_WORKERS: '1',
         CERT_PREP_CAPTURE_RUNTIME_URL: `http://127.0.0.1:${captureRuntimePort}`,
         CERT_PREP_CAPTURE_RUNTIME_TOKEN: captureRuntimeToken,
-        CERT_PREP_CAPTURE_RUNTIME_VERSION: '0.3.8',
+        CERT_PREP_CAPTURE_RUNTIME_VERSION: CAPTURE_RUNTIME_VERSION,
         CERT_PREP_CAPTURE_RUNTIME_API_VERSION: '1.0',
         CERT_PREP_CAPTURE_DOCUMENT_SCHEMA_VERSION: '1',
         PYTHONPATH: join(workspaceRoot, 'apps', 'cert-prep-backend', 'src'),

@@ -80,7 +80,7 @@
       "cache": false,
       "executor": "nx:run-commands",
       "outputs": [
-        "{workspaceRoot}/tmp/cert-prep/capture-runtime/0.3.8"
+        "{workspaceRoot}/tmp/cert-prep/capture-runtime/0.3.9"
       ],
       "options": {
         "command": "node tools/install-capture-runtime.mts"
@@ -90,7 +90,7 @@
       "cache": false,
       "executor": "nx:run-commands",
       "options": {
-        "command": "node --test tools/install-capture-runtime.test.mts"
+        "command": "node --test tools/capture-runtime-version.test.mts tools/install-capture-runtime.test.mts"
       }
     },
     "capture-runtime-consumer-smoke": {

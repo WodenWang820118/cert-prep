@@ -30,6 +30,7 @@ import {
 import {
   validateCaptureArtifactBytes,
 } from '../../apps/cert-prep-desktop/scripts/capture-runtime-contract.mts';
+import { CAPTURE_RUNTIME_VERSION } from '../capture-runtime-version.mts';
 
 export async function assembleCandidate(args) {
   const workspaceRoot = resolve(args['workspace-root']);
@@ -324,7 +325,7 @@ async function validateCleanInstallEvidence(
 async function validateCaptureRuntimeManifest({ manifest, root }) {
   if (
     manifest?.manifestVersion !== '1' ||
-    manifest?.runtimeVersion !== '0.3.8' ||
+    manifest?.runtimeVersion !== CAPTURE_RUNTIME_VERSION ||
     manifest?.apiVersion !== '1.0' ||
     manifest?.captureDocumentSchemaVersion !== '1' ||
     manifest?.platform !== 'windows' ||

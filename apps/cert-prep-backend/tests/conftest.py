@@ -22,6 +22,8 @@ from cert_prep_backend.domains.capture_workbench.contracts import (
     CaptureJobV1,
     CaptureSourceKind,
     RawCaptureV1,
+    RuntimeReadyV1,
+    RuntimeRequirementsV1,
 )
 
 
@@ -54,8 +56,11 @@ class TestCaptureRuntimeClient:
         self._raw: RawCaptureV1 | None = None
         self._result: CaptureDocumentV1 | None = None
 
-    def handshake(self) -> None:
-        return None
+    def handshake(self) -> RuntimeReadyV1:
+        return _test_runtime_ready()
+
+    def get_requirements(self) -> RuntimeRequirementsV1:
+        return _test_runtime_requirements("ready")
 
     def create_capture(self, upload: CaptureUpload, *, source_kind: CaptureSourceKind, idempotency_key: UUID, target_language: str | None = None) -> CaptureJobV1:
         is_audio = source_kind is CaptureSourceKind.AUDIO
@@ -85,7 +90,7 @@ class TestCaptureRuntimeClient:
                 "sourceText": source_text,
                 "extractionEngine": {
                     "engine": "capture-runtime-whisper" if is_audio else "capture-runtime-windowsml",
-                    "model": "capture-runtime@0.3.8",
+                    "model": "capture-runtime@0.3.9",
                     "digest": f"sha256:{'a' * 64}",
                     "device": "test",
                 },
@@ -134,6 +139,51 @@ class TestCaptureRuntimeClient:
             "updatedAt": now,
             "completedAt": now if status in {"completed", "cancelled"} else None,
         })
+
+
+def _test_runtime_ready() -> RuntimeReadyV1:
+    return RuntimeReadyV1.model_validate(
+        {
+            "ready": True,
+            "service": "capture-runtime",
+            "apiVersion": "1.0",
+            "runtimeVersion": "0.3.9",
+            "captureDocumentSchemaVersion": "1",
+            "capabilities": {
+                "captureKinds": ["pdf", "image", "audio"],
+                "structuringModes": ["runtime", "host"],
+                "supportsCancellation": True,
+                "supportsRawDiagnostics": True,
+                "maxUploadBytes": 50 * 1024 * 1024,
+            },
+            "message": None,
+        }
+    )
+
+
+def _test_runtime_requirements(status: str) -> RuntimeRequirementsV1:
+    return RuntimeRequirementsV1.model_validate(
+        {
+            "items": [
+                {
+                    "requirementId": "windowsml-ocr",
+                    "kind": "ocr",
+                    "displayName": "WindowsML OCR",
+                    "status": status,
+                    "requiredFor": ["pdf", "image"],
+                    "installStrategy": "test",
+                },
+                {
+                    "requirementId": "whisper-primary",
+                    "kind": "speech-to-text",
+                    "displayName": "Whisper",
+                    "status": status,
+                    "requiredFor": ["audio"],
+                    "installStrategy": "test",
+                },
+            ]
+        }
+    )
 
 
 def minimal_pdf(*page_texts: str) -> bytes:

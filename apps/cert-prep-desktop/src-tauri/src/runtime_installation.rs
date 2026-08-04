@@ -11,7 +11,9 @@ use crate::{
     archives::extract_zip,
     backend::BackendRuntimeInner,
     backend_process::launch_backend_entrypoint,
-    constants::{BACKEND_RUNTIME_DIR, PYTHON_RUNTIME_KIND},
+    constants::{
+        BACKEND_RUNTIME_DIR, CAPTURE_RUNTIME_MODEL, PYTHON_RUNTIME_KIND,
+    },
     manifests::{load_runtime_manifest, verify_artifact, write_installed_manifest},
 };
 
@@ -69,7 +71,7 @@ impl RuntimeJob {
             id: uuid::Uuid::new_v4().to_string(),
             kind: "capture_runtime".into(),
             provider: "bundled-release".into(),
-            model: "capture-runtime@0.3.8".into(),
+            model: CAPTURE_RUNTIME_MODEL.into(),
             status: "queued".into(),
             detail: "Capture Runtime installation queued.".into(),
             completed: None,

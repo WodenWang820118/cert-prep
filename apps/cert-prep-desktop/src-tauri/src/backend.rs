@@ -20,7 +20,10 @@ use crate::{
         install_bundled_capture_runtime, installed_capture_runtime_paths, CaptureRuntimeConnection,
         CaptureRuntimeState,
     },
-    constants::{BACKEND_RUNTIME_DIR, PYTHON_RUNTIME_KIND, PYTHON_RUNTIME_LABEL},
+    constants::{
+        BACKEND_RUNTIME_DIR, CAPTURE_RUNTIME_MODEL, CAPTURE_RUNTIME_VERSION,
+        PYTHON_RUNTIME_KIND, PYTHON_RUNTIME_LABEL,
+    },
     manifests::{load_runtime_manifest, RuntimeManifest},
     runtime_installation::{
         completed_installation, install_python_runtime, installation_from_job, RuntimeJob,
@@ -620,7 +623,7 @@ fn capture_runtime_status(
         status: status.into(),
         detail: detail.into(),
         unavailable_reason,
-        version: Some("0.3.8".into()),
+        version: Some(CAPTURE_RUNTIME_VERSION.into()),
         installed_path: None,
         // The Capture Runtime endpoint and bearer token are intentionally
         // absent from the desktop/WebView status transport.
@@ -639,7 +642,7 @@ fn completed_capture_installation(detail: &str) -> DesktopRuntimeInstallation {
         id: uuid::Uuid::new_v4().to_string(),
         kind: "capture_runtime".into(),
         provider: "bundled-release".into(),
-        model: "capture-runtime@0.3.8".into(),
+        model: CAPTURE_RUNTIME_MODEL.into(),
         status: "succeeded".into(),
         detail: detail.into(),
         completed: None,

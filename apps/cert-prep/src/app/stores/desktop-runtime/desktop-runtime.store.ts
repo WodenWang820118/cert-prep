@@ -279,7 +279,7 @@ export class DesktopRuntimeStore {
       id: '',
       kind: 'capture_runtime',
       provider: 'bundled-release',
-      model: 'capture-runtime@0.3.8',
+      model: this.view.captureRuntimeModel(this.captureRuntimeStatus()),
       status: 'running',
       detail,
       completed: null,

@@ -10,8 +10,16 @@ from pathlib import Path
 from uuid import UUID
 
 from fastapi.testclient import TestClient
+import pytest
 
-from conftest import AUTH_TOKEN, minimal_audio, minimal_image, minimal_pdf
+from conftest import (
+    AUTH_TOKEN,
+    _test_runtime_ready,
+    _test_runtime_requirements,
+    minimal_audio,
+    minimal_image,
+    minimal_pdf,
+)
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.core.config import Settings
 from cert_prep_backend.domains.capture_workbench.client import CaptureUpload
@@ -19,7 +27,10 @@ from cert_prep_backend.domains.capture_workbench.contracts import (
     CaptureDocumentV1,
     CaptureJobV1,
     CaptureSourceKind,
+    LEGACY_CORE_ONLY_RUNTIME_VERSION,
     RawCaptureV1,
+    RuntimeReadyV1,
+    RuntimeRequirementsV1,
 )
 from document_test_helpers import _create_project
 from document_test_llm_fakes import MockExamProvider
@@ -61,15 +72,21 @@ class EchoCaptureProvider(MockExamProvider):
 class DeterministicCaptureRuntime:
     expected_source_kind = CaptureSourceKind.PDF
 
-    def __init__(self) -> None:
+    def __init__(self, *, runtime_version: str = "0.3.9") -> None:
+        self.runtime_version = runtime_version
         self.raw: RawCaptureV1 | None = None
         self.result: CaptureDocumentV1 | None = None
         self.deleted: list[str] = []
         self.created_idempotency_keys: list[UUID] = []
         self.commit_idempotency_keys: list[UUID] = []
 
-    def handshake(self) -> None:
-        return None
+    def handshake(self) -> RuntimeReadyV1:
+        return _test_runtime_ready().model_copy(
+            update={"runtime_version": self.runtime_version}
+        )
+
+    def get_requirements(self) -> RuntimeRequirementsV1:
+        return _test_runtime_requirements("ready")
 
     def create_capture(
         self,
@@ -170,7 +187,24 @@ class DeterministicCaptureRuntime:
         )
 
 
-class RequirementUnavailablePdfCaptureRuntime(DeterministicCaptureRuntime):
+class CoreOnlyPdfExtractionFailedRuntime(DeterministicCaptureRuntime):
+    def __init__(self) -> None:
+        super().__init__(runtime_version=LEGACY_CORE_ONLY_RUNTIME_VERSION)
+        self.requirement_reads = 0
+
+    def get_requirements(self) -> RuntimeRequirementsV1:
+        self.requirement_reads += 1
+        requirements = _test_runtime_requirements("unavailable")
+        detail = "No downloadable model is published for this runtime release."
+        return requirements.model_copy(
+            update={
+                "items": [
+                    item.model_copy(update={"detail": detail})
+                    for item in requirements.items
+                ]
+            }
+        )
+
     def create_capture(
         self,
         upload: CaptureUpload,
@@ -188,17 +222,17 @@ class RequirementUnavailablePdfCaptureRuntime(DeterministicCaptureRuntime):
         assert self.raw is not None
         return CaptureJobV1.model_validate(
             {
-                "captureId": "capture-requirement-unavailable",
+                "captureId": "capture-core-only-extraction-failed",
                 "status": "failed",
                 "stage": "failed",
                 "structuringMode": "host",
                 "progress": 1,
                 "source": self.raw.source.model_dump(mode="json", by_alias=True),
                 "error": {
-                    "code": "requirement_unavailable",
-                    "message": "A required extractor is unavailable.",
-                    "stage": "extracting",
-                    "retryable": False,
+                    "code": "extraction_failed",
+                    "message": "Source extraction failed.",
+                    "stage": "extraction",
+                    "retryable": True,
                 },
                 "createdAt": NOW.isoformat(),
                 "updatedAt": NOW.isoformat(),
@@ -277,6 +311,30 @@ class DeterministicAudioCaptureRuntime(DeterministicCaptureRuntime):
             }
         )
         return self._job(status="running", stage="awaiting_structuring")
+
+
+class CoreOnlyCaptureRuntime(DeterministicCaptureRuntime):
+    def __init__(self) -> None:
+        super().__init__(runtime_version=LEGACY_CORE_ONLY_RUNTIME_VERSION)
+        self.create_attempts = 0
+        self.requirement_reads = 0
+
+    def get_requirements(self) -> RuntimeRequirementsV1:
+        self.requirement_reads += 1
+        requirements = _test_runtime_requirements("unavailable")
+        detail = "No downloadable model is published for this runtime release."
+        return requirements.model_copy(
+            update={
+                "items": [
+                    item.model_copy(update={"detail": detail})
+                    for item in requirements.items
+                ]
+            }
+        )
+
+    def create_capture(self, *args, **kwargs) -> CaptureJobV1:
+        self.create_attempts += 1
+        return super().create_capture(*args, **kwargs)
 
 
 def test_upload_delegates_to_capture_runtime_and_atomically_maps_existing_chunks(
@@ -404,6 +462,203 @@ def test_audio_upload_uses_capture_time_provenance_without_cert_whisper(
     assert runtime.deleted == ["capture-pipeline-1"]
 
 
+@pytest.mark.parametrize(
+    (
+        "filename",
+        "media_type",
+        "expected_document_status",
+        "expected_message",
+    ),
+    [
+        (
+            "capture.png",
+            "image/png",
+            "ocr_failed",
+            "WindowsML OCR is unavailable. No downloadable model is published for this runtime release.",
+        ),
+        (
+            "capture.wav",
+            "audio/wav",
+            "transcription_failed",
+            "Whisper transcription is unavailable. No downloadable model is published for this runtime release.",
+        ),
+    ],
+)
+def test_core_only_image_and_audio_fail_before_sidecar_dispatch(
+    tmp_path: Path,
+    filename: str,
+    media_type: str,
+    expected_document_status: str,
+    expected_message: str,
+) -> None:
+    runtime = CoreOnlyCaptureRuntime()
+    settings = Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake")
+    operation_id = f"core-only-{filename.rsplit('.', 1)[-1]}"
+    source = minimal_audio(".wav") if filename.endswith(".wav") else minimal_image()
+    with TestClient(
+        create_app(
+            settings=settings,
+            llm_provider=EchoCaptureProvider(),
+            capture_runtime_client=runtime,
+            document_processing_async_jobs=False,
+            streaming_draft_generation_async_jobs=False,
+        )
+    ) as client:
+        headers = {
+            "Authorization": f"Bearer {AUTH_TOKEN}",
+            "X-Cert-Prep-Operation-Id": operation_id,
+        }
+        project_id = _create_project(
+            client, {"Authorization": f"Bearer {AUTH_TOKEN}"}
+        )
+
+        response = client.post(
+            f"/projects/{project_id}/documents",
+            headers=headers,
+            files={"file": (filename, source, media_type)},
+        )
+
+        assert response.status_code == 503
+        assert response.json() == {
+            "code": "capture_runtime_unavailable",
+            "message": expected_message,
+        }
+        operation = client.get(
+            f"/projects/{project_id}/document-operations/{operation_id}",
+            headers={"Authorization": f"Bearer {AUTH_TOKEN}"},
+        ).json()
+        assert operation["status"] == "failed"
+        assert operation["error"] == expected_message
+        documents = client.get(
+            f"/projects/{project_id}/documents",
+            headers={"Authorization": f"Bearer {AUTH_TOKEN}"},
+        ).json()["items"]
+        assert len(documents) == 1
+        assert documents[0]["status"] == expected_document_status
+        assert documents[0]["chunks_count"] == 0
+
+    assert runtime.requirement_reads == 1
+    assert runtime.create_attempts == 0
+    assert runtime.deleted == []
+
+
+def test_core_only_ocr_dependent_pdf_dispatches_then_reports_explicit_failure(
+    tmp_path: Path,
+) -> None:
+    runtime = CoreOnlyPdfExtractionFailedRuntime()
+    settings = Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake")
+    operation_id = "core-only-ocr-pdf"
+    expected_message = (
+        "This PDF requires WindowsML OCR, which is unavailable in the installed "
+        "Capture Runtime."
+    )
+    with TestClient(
+        create_app(
+            settings=settings,
+            llm_provider=EchoCaptureProvider(),
+            capture_runtime_client=runtime,
+            document_processing_async_jobs=False,
+            streaming_draft_generation_async_jobs=False,
+        )
+    ) as client:
+        auth_headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
+        project_id = _create_project(client, auth_headers)
+        response = client.post(
+            f"/projects/{project_id}/documents",
+            headers={
+                **auth_headers,
+                "X-Cert-Prep-Operation-Id": operation_id,
+            },
+            files={
+                "file": (
+                    "scanned.pdf",
+                    minimal_pdf("Runtime classifies OCR dependency."),
+                    "application/pdf",
+                )
+            },
+        )
+
+        assert response.status_code == 503
+        assert response.json() == {
+            "code": "capture_runtime_unavailable",
+            "message": expected_message,
+        }
+        operation = client.get(
+            f"/projects/{project_id}/document-operations/{operation_id}",
+            headers=auth_headers,
+        ).json()
+        assert operation["status"] == "failed"
+        assert operation["error"] == expected_message
+        documents = client.get(
+            f"/projects/{project_id}/documents", headers=auth_headers
+        ).json()["items"]
+        assert documents[0]["status"] == "ocr_failed"
+        assert documents[0]["chunks_count"] == 0
+
+    assert runtime.created_idempotency_keys
+    assert runtime.requirement_reads == 1
+
+
+def test_async_core_only_pdf_failure_reaches_durable_terminal_state(
+    tmp_path: Path,
+) -> None:
+    runtime = CoreOnlyPdfExtractionFailedRuntime()
+    settings = Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake")
+    operation_id = "async-core-only-ocr-pdf"
+    expected_message = (
+        "This PDF requires WindowsML OCR, which is unavailable in the installed "
+        "Capture Runtime."
+    )
+    with TestClient(
+        create_app(
+            settings=settings,
+            llm_provider=EchoCaptureProvider(),
+            capture_runtime_client=runtime,
+            document_processing_async_jobs=True,
+            streaming_draft_generation_async_jobs=False,
+        )
+    ) as client:
+        auth_headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
+        project_id = _create_project(client, auth_headers)
+        response = client.post(
+            f"/projects/{project_id}/documents",
+            headers={
+                **auth_headers,
+                "X-Cert-Prep-Operation-Id": operation_id,
+            },
+            files={
+                "file": (
+                    "scanned.pdf",
+                    minimal_pdf("Runtime classifies OCR dependency."),
+                    "application/pdf",
+                )
+            },
+        )
+
+        assert response.status_code == 201
+        operation = None
+        for _ in range(100):
+            operation = client.get(
+                f"/projects/{project_id}/document-operations/{operation_id}",
+                headers=auth_headers,
+            ).json()
+            if operation["status"] == "failed":
+                break
+            time.sleep(0.01)
+        assert operation is not None
+        assert operation["status"] == "failed"
+        assert operation["error"] == expected_message
+        document = client.get(
+            f"/projects/{project_id}/documents/{response.json()['id']}",
+            headers=auth_headers,
+        ).json()
+        assert document["status"] == "ocr_failed"
+        assert document["chunks_count"] == 0
+
+    assert runtime.created_idempotency_keys
+    assert runtime.requirement_reads == 1
+
+
 def test_review_capture_pauses_before_persistence_and_applies_confirmed_overlay(
     tmp_path: Path,
 ) -> None:
@@ -528,7 +783,7 @@ def test_review_capture_pauses_before_persistence_and_applies_confirmed_overlay(
 def test_pdf_capture_requirement_unavailable_reports_ocr_required_failure(
     tmp_path: Path,
 ) -> None:
-    runtime = RequirementUnavailablePdfCaptureRuntime()
+    runtime = CoreOnlyPdfExtractionFailedRuntime()
     settings = Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake")
     app = create_app(
         settings=settings,
@@ -568,6 +823,7 @@ def test_pdf_capture_requirement_unavailable_reports_ocr_required_failure(
         "failed",
         "This PDF requires WindowsML OCR, which is unavailable in the installed Capture Runtime.",
     )
+    assert runtime.requirement_reads == 1
 
 
 def test_expired_review_is_canceled_and_terminal_cancel_is_idempotent(tmp_path: Path) -> None:

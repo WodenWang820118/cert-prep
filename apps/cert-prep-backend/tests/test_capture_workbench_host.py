@@ -22,11 +22,15 @@ from cert_prep_backend.domains.capture_workbench.contracts import (
     CaptureJobV1,
     CaptureSourceKind,
     RawCaptureV1,
+    RuntimeReadyV1,
+    RuntimeRequirementStatus,
+    RuntimeRequirementsV1,
 )
 from cert_prep_backend.domains.capture_workbench.coordinator import (
     CaptureRunResult,
     CaptureRuntimeCanceledError,
     CaptureRuntimeJobError,
+    CaptureRuntimeRequirementUnavailableError,
     CaptureRuntimeStateUnknownError,
     CaptureRuntimeTimeoutError,
     CertPrepCaptureCoordinator,
@@ -132,7 +136,7 @@ def _ready_payload(*, schema_version: str = "1") -> dict[str, object]:
         "ready": True,
         "service": "capture-runtime",
         "apiVersion": "1.0",
-        "runtimeVersion": "0.3.8",
+        "runtimeVersion": "0.3.9",
         "captureDocumentSchemaVersion": schema_version,
         "capabilities": {
             "captureKinds": ["pdf", "image", "audio"],
@@ -542,12 +546,73 @@ def test_sidecar_client_rejects_incompatible_schema() -> None:
         client.handshake()
 
 
+def test_sidecar_client_rejects_incompatible_runtime_release() -> None:
+    payload = _ready_payload()
+    payload["runtimeVersion"] = "0.3.8"
+    transport = httpx.MockTransport(
+        lambda _request: httpx.Response(200, json=payload)
+    )
+    client = CaptureRuntimeClient(
+        base_url="http://127.0.0.1:43123",
+        bearer_token=TOKEN,
+        client=httpx.Client(transport=transport),
+    )
+
+    with pytest.raises(
+        CaptureRuntimeCompatibilityError,
+        match="runtime version 0.3.8 is incompatible with 0.3.9",
+    ):
+        client.handshake()
+
+
 class RecordingCaptureRuntime:
-    def __init__(self, *, initial_job: dict[str, object] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        initial_job: dict[str, object] | None = None,
+        capture_kinds: list[str] | None = None,
+        requirement_status: RuntimeRequirementStatus = RuntimeRequirementStatus.READY,
+        runtime_version: str = "0.3.9",
+    ) -> None:
         self.initial_job = CaptureJobV1.model_validate(initial_job or _job_payload())
         self.raw = RawCaptureV1.model_validate(_raw_payload())
         self.document = CaptureDocumentV1.model_validate(_document_payload())
+        ready = _ready_payload()
+        ready["runtimeVersion"] = runtime_version
+        ready["capabilities"]["captureKinds"] = capture_kinds or ["pdf", "image", "audio"]
+        self.ready = RuntimeReadyV1.model_validate(ready)
+        detail = (
+            None
+            if requirement_status is RuntimeRequirementStatus.READY
+            else "No downloadable model is published for this runtime release."
+        )
+        self.requirements = RuntimeRequirementsV1.model_validate(
+            {
+                "items": [
+                    {
+                        "requirementId": "windowsml-ocr",
+                        "kind": "ocr",
+                        "displayName": "WindowsML OCR",
+                        "status": requirement_status.value,
+                        "requiredFor": ["pdf", "image"],
+                        "installStrategy": "unavailable",
+                        "detail": detail,
+                    },
+                    {
+                        "requirementId": "whisper-primary",
+                        "kind": "speech-to-text",
+                        "displayName": "Whisper",
+                        "status": requirement_status.value,
+                        "requiredFor": ["audio"],
+                        "installStrategy": "unavailable",
+                        "detail": detail,
+                    },
+                ]
+            }
+        )
         self.handshakes = 0
+        self.requirement_reads = 0
+        self.creates = 0
         self.commits: list[tuple[str, object, UUID]] = []
         self.cancellations: list[str] = []
         self.failures: list[tuple[str, str, str]] = []
@@ -555,8 +620,14 @@ class RecordingCaptureRuntime:
 
     def handshake(self):
         self.handshakes += 1
+        return self.ready
+
+    def get_requirements(self):
+        self.requirement_reads += 1
+        return self.requirements
 
     def create_capture(self, _upload, *, source_kind, idempotency_key, target_language=None):
+        self.creates += 1
         self.create_args = (source_kind, idempotency_key, target_language)
         return self.initial_job
 
@@ -703,6 +774,115 @@ def test_capture_coordinator_uses_host_provider_then_fetches_validated_result() 
     assert runtime.deleted == []
     coordinator.delete(result.capture_id)
     assert runtime.deleted == ["capture-1"]
+
+
+@pytest.mark.parametrize(
+    ("source_kind", "file_name", "media_type", "expected_message"),
+    [
+        (
+            CaptureSourceKind.IMAGE,
+            "sample.png",
+            "image/png",
+            "WindowsML OCR is unavailable. No downloadable model is published for this runtime release.",
+        ),
+        (
+            CaptureSourceKind.AUDIO,
+            "sample.wav",
+            "audio/wav",
+            "Whisper transcription is unavailable. No downloadable model is published for this runtime release.",
+        ),
+    ],
+)
+def test_capture_coordinator_rejects_nonready_source_requirement_before_dispatch(
+    source_kind: CaptureSourceKind,
+    file_name: str,
+    media_type: str,
+    expected_message: str,
+) -> None:
+    runtime = RecordingCaptureRuntime(
+        requirement_status=RuntimeRequirementStatus.UNAVAILABLE
+    )
+    coordinator = CertPrepCaptureCoordinator(
+        client=runtime,
+        structurer=StaticStructurer(_document_payload()),
+    )
+
+    with pytest.raises(
+        CaptureRuntimeRequirementUnavailableError,
+        match=expected_message.replace(".", r"\."),
+    ) as raised:
+        coordinator.begin_capture(
+            operation_id=f"blocked-{source_kind.value}",
+            file_name=file_name,
+            content=b"source bytes",
+            media_type=media_type,
+            source_kind=source_kind,
+            target_language="zh-Hant" if source_kind is CaptureSourceKind.AUDIO else None,
+            should_cancel=lambda: False,
+        )
+
+    assert raised.value.source_kind is source_kind
+    assert runtime.handshakes == 1
+    assert runtime.requirement_reads == 1
+    assert runtime.creates == 0
+
+
+def test_capture_coordinator_rejects_unsupported_source_kind_before_requirement_lookup() -> None:
+    runtime = RecordingCaptureRuntime(capture_kinds=["pdf"])
+    coordinator = CertPrepCaptureCoordinator(
+        client=runtime,
+        structurer=StaticStructurer(_document_payload()),
+    )
+
+    with pytest.raises(
+        CaptureRuntimeCompatibilityError,
+        match="does not support IMAGE capture",
+    ):
+        coordinator.begin_capture(
+            operation_id="unsupported-image",
+            file_name="sample.png",
+            content=b"source bytes",
+            media_type="image/png",
+            source_kind=CaptureSourceKind.IMAGE,
+            target_language=None,
+            should_cancel=lambda: False,
+        )
+
+    assert runtime.handshakes == 1
+    assert runtime.requirement_reads == 0
+    assert runtime.creates == 0
+
+
+def test_future_runtime_generic_pdf_extraction_failure_is_not_reclassified() -> None:
+    failed = _job_payload(status="failed", stage="failed")
+    failed["error"] = {
+        "code": "extraction_failed",
+        "message": "Source extraction failed.",
+        "stage": "extraction",
+        "retryable": True,
+    }
+    runtime = RecordingCaptureRuntime(
+        initial_job=failed,
+        requirement_status=RuntimeRequirementStatus.UNAVAILABLE,
+        runtime_version="0.3.9",
+    )
+    coordinator = CertPrepCaptureCoordinator(
+        client=runtime,
+        structurer=StaticStructurer(_document_payload()),
+    )
+
+    with pytest.raises(CaptureRuntimeJobError, match="Source extraction failed"):
+        coordinator.begin_capture(
+            operation_id="future-runtime-extraction-failure",
+            file_name="sample.pdf",
+            content=b"PDF bytes",
+            media_type="application/pdf",
+            source_kind=CaptureSourceKind.PDF,
+            target_language=None,
+            should_cancel=lambda: False,
+        )
+
+    assert runtime.requirement_reads == 0
 
 
 def test_capture_coordinator_reconciles_lost_commit_response() -> None:

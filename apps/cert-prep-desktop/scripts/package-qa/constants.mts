@@ -1,12 +1,15 @@
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  CAPTURE_DOCUMENT_SCHEMA_VERSION,
+  CAPTURE_RUNTIME_API_VERSION,
+  CAPTURE_RUNTIME_PACKAGE_NAME,
+  CAPTURE_RUNTIME_VERSION,
+} from '../../../../tools/capture-runtime-version.mts';
 
 export const DEFAULT_TARGET_TRIPLE = 'x86_64-pc-windows-msvc';
 export const ALPHA_VERSION = '0.1.0-alpha.1';
 export const PYTHON_RUNTIME_VERSION = '3.12';
-export const CAPTURE_RUNTIME_VERSION = '0.3.8';
-export const CAPTURE_RUNTIME_API_VERSION = '1.0';
-export const CAPTURE_DOCUMENT_SCHEMA_VERSION = '1';
 export const CAPTURE_RUNTIME_MANIFEST_VERSION = '1';
 export const CAPTURE_RUNTIME_FILE =
   'capture-runtime-x86_64-pc-windows-msvc.exe';
@@ -25,6 +28,13 @@ export const DEFAULT_LLM_MODEL = 'qwen3.5:4b';
 export const BACKEND_RUNTIME_PREFIX = `cert-prep-backend-runtime-${ALPHA_VERSION}-`;
 export const INITIAL_INSTALLER_WARNING_MB = 150;
 export const INITIAL_INSTALLER_ERROR_MB = 250;
+
+export { CAPTURE_RUNTIME_PACKAGE_NAME };
+export {
+  CAPTURE_DOCUMENT_SCHEMA_VERSION,
+  CAPTURE_RUNTIME_API_VERSION,
+  CAPTURE_RUNTIME_VERSION,
+};
 
 const moduleDir = dirname(fileURLToPath(import.meta.url));
 

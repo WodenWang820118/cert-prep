@@ -23,6 +23,7 @@ from cert_prep_backend.api.dependencies import (
 from cert_prep_backend.core.config import Settings
 from cert_prep_backend.core.exceptions import BackendError, NotFoundError
 from cert_prep_backend.domains.capture_workbench.contracts import (
+    SUPPORTED_RUNTIME_VERSION,
     CaptureBlockV1,
     CaptureDocumentV1,
     CaptureEngineV1,
@@ -39,7 +40,9 @@ from cert_prep_backend.domains.capture_workbench import review_sessions
 from cert_prep_backend.domains.capture_workbench.coordinator import (
     CaptureRuntimeCanceledError,
     CaptureRuntimeJobError,
+    CaptureRuntimeRequirementUnavailableError,
     CertPrepCaptureCoordinator,
+    PDF_OCR_UNAVAILABLE_MESSAGE,
 )
 from cert_prep_backend.domains.capture_workbench.review_workflow import (
     begin_review_capture,
@@ -507,6 +510,18 @@ def _run_begin(
         )
     except CaptureRuntimeCanceledError:
         _finish_canceled(db, project_id, operation_id, session_id)
+    except CaptureRuntimeRequirementUnavailableError as error:
+        _finish_begin_failure(
+            db,
+            project_id=project_id,
+            operation_id=operation_id,
+            session_id=session_id,
+            error=(
+                PDF_OCR_UNAVAILABLE_MESSAGE
+                if source_kind is CaptureSourceKind.PDF
+                else str(error)
+            ),
+        )
     except CaptureRuntimeJobError as error:
         _finish_begin_failure(
             db,
@@ -514,8 +529,7 @@ def _run_begin(
             operation_id=operation_id,
             session_id=session_id,
             error=(
-                "This PDF requires WindowsML OCR, which is unavailable in the installed "
-                "Capture Runtime."
+                PDF_OCR_UNAVAILABLE_MESSAGE
                 if source_kind is CaptureSourceKind.PDF
                 and error.code == "requirement_unavailable"
                 else "Capture Runtime extraction failed."
@@ -734,7 +748,7 @@ def _document_projection(
     digest = f"sha256:{document['sha256']}"
     extraction = CaptureEngineV1(
         engine=document["extraction_method"] or "windowsml-ocr",
-        model="capture-runtime@0.3.8",
+        model=f"capture-runtime@{SUPPORTED_RUNTIME_VERSION}",
         digest=digest,
         device=document["ocr_device"],
     )

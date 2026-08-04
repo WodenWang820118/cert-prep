@@ -39,7 +39,7 @@ export class DesktopRuntimeViewService {
       status: 'running',
       detail: 'Using the configured local development Capture Runtime.',
       unavailableReason: null,
-      version: '0.3.8',
+      version: null,
       installedPath: null,
       baseUrl: null,
       token: null,
@@ -59,7 +59,7 @@ export class DesktopRuntimeViewService {
       status: 'checking',
       detail: 'Checking Capture Runtime availability.',
       unavailableReason: 'capture_runtime_checking',
-      version: '0.3.8',
+      version: null,
       installedPath: null,
       baseUrl: null,
       token: null,
@@ -97,7 +97,7 @@ export class DesktopRuntimeViewService {
       id: current?.id ?? '',
       kind: 'capture_runtime',
       provider: 'bundled-release',
-      model: 'capture-runtime@0.3.8',
+      model: current?.model ?? 'capture-runtime',
       status: 'failed',
       detail: message,
       completed: current?.completed ?? null,
@@ -106,6 +106,13 @@ export class DesktopRuntimeViewService {
       updatedAt: current?.updatedAt ?? '',
       error: message,
     };
+  }
+
+  captureRuntimeModel(status: DesktopRuntimeStatus | null): string {
+    const version = status?.version?.trim();
+    return version === undefined || version.length === 0
+      ? 'capture-runtime'
+      : `capture-runtime@${version}`;
   }
 
   progressFrom(

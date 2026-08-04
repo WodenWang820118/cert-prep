@@ -2,13 +2,17 @@ import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  CAPTURE_RUNTIME_PACKAGE_NAME,
+  CAPTURE_RUNTIME_VERSION,
+} from './capture-runtime-version.mts';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const registry = (
   process.env.CAPTURE_WORKBENCH_LOCAL_REGISTRY ?? 'http://127.0.0.1:4873'
 ).replace(/\/$/, '');
-const packageName = '@gx-capture/capture-workbench';
-const packageVersion = '0.3.8';
+const packageName = CAPTURE_RUNTIME_PACKAGE_NAME;
+const packageVersion = CAPTURE_RUNTIME_VERSION;
 const captureWorkbenchRoot = resolve(
   process.env.CAPTURE_WORKBENCH_REPO ??
     join(repoRoot, '..', 'capture-workbench'),

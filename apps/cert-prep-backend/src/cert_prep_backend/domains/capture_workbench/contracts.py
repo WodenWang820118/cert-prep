@@ -23,9 +23,10 @@ from pydantic.alias_generators import to_camel
 
 CAPTURE_DOCUMENT_SCHEMA_VERSION = "1"
 SUPPORTED_API_VERSION = "1.0"
-SUPPORTED_RUNTIME_VERSION = "0.3.8"
+SUPPORTED_RUNTIME_VERSION = "0.3.9"
 SUPPORTED_API_MAJOR = 1
 SUPPORTED_RUNTIME_MAJOR = 0
+LEGACY_CORE_ONLY_RUNTIME_VERSION = "0.3.8"
 
 NonEmptyString = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 CaptureText = Annotated[
@@ -390,6 +391,7 @@ class ErrorEnvelopeV1(StrictWireModel):
 
 __all__ = [
     "CAPTURE_DOCUMENT_SCHEMA_VERSION",
+    "LEGACY_CORE_ONLY_RUNTIME_VERSION",
     "SUPPORTED_API_VERSION",
     "SUPPORTED_RUNTIME_VERSION",
     "SUPPORTED_API_MAJOR",

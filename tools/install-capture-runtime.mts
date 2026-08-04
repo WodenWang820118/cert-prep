@@ -19,13 +19,16 @@ import {
   validateCaptureArtifactBytes,
 } from '../apps/cert-prep-desktop/scripts/capture-runtime-contract.mts';
 import {
+  CAPTURE_RUNTIME_RELEASE_BASE_URL,
+  CAPTURE_RUNTIME_VERSION,
+} from './capture-runtime-version.mts';
+import {
   CAPTURE_DOCUMENT_SCHEMA_FILE,
   CAPTURE_DOCUMENT_SCHEMA_SHA256,
   CAPTURE_DOCUMENT_SCHEMA_VERSION,
   CAPTURE_RUNTIME_API_VERSION,
   CAPTURE_RUNTIME_FILE,
   CAPTURE_RUNTIME_MANIFEST_VERSION,
-  CAPTURE_RUNTIME_VERSION,
 } from '../apps/cert-prep-desktop/scripts/package-qa/constants.mts';
 
 export { CAPTURE_RUNTIME_FILE, CAPTURE_RUNTIME_VERSION };
@@ -33,7 +36,7 @@ export { CAPTURE_RUNTIME_FILE, CAPTURE_RUNTIME_VERSION };
 export const CAPTURE_RUNTIME_RELEASE_BASE_URL_ENV =
   'CERT_PREP_CAPTURE_RUNTIME_RELEASE_BASE_URL';
 export const DEFAULT_CAPTURE_RUNTIME_RELEASE_BASE_URL =
-  `https://github.com/gx-capture/capture-workbench/releases/download/v${CAPTURE_RUNTIME_VERSION}`;
+  CAPTURE_RUNTIME_RELEASE_BASE_URL;
 export const CAPTURE_RUNTIME_ROOT_ENV = 'CERT_PREP_CAPTURE_RUNTIME_ROOT';
 export const CAPTURE_RUNTIME_CHECKSUM_FILE =
   `${CAPTURE_RUNTIME_FILE}.sha256`;

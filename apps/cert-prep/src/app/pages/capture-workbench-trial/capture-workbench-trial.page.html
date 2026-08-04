@@ -4,11 +4,10 @@
       <p class="capture-trial-eyebrow">Capture Workbench / saved to project</p>
       <h2 id="capture-trial-title">Capture Workbench trial</h2>
       <p class="capture-trial-description">
-        Cert Prep installs and starts the Capture Runtime 0.3.8 core only after
-        explicit user actions. This release processes embedded-text PDFs through
-        <code>@gx-capture/capture-workbench</code> and saves the reviewed result to
-        Cert Prep. Scanned PDFs, images, and audio remain unavailable because this
-        release does not publish the required OCR or transcription engines.
+        Cert Prep installs and starts Capture Runtime only after
+        explicit user actions. PDF, image, and audio sources are processed by
+        <code>@gx-capture/capture-workbench</code> after their OCR and Whisper
+        dependencies are separately consented in Capture Runtime.
       </p>
     </div>
     <div class="capture-trial-badge" [attr.data-state]="registrationState()">
