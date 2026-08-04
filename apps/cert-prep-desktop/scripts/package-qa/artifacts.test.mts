@@ -126,7 +126,7 @@ function createResourceFixture(): {
   writeFileSync(join(resourceRoot, schemaName), captureSchema);
   const captureManifest = {
     manifestVersion: '1',
-    runtimeVersion: '0.3.8',
+    runtimeVersion: '0.3.9',
     apiVersion: '1.0',
     captureDocumentSchemaVersion: '1',
     platform: 'windows',
@@ -160,7 +160,7 @@ function createResourceFixture(): {
       capture_runtime: {
         distribution: 'versioned_release_artifact_staged',
         file_name: captureName,
-        runtime_version: '0.3.8',
+        runtime_version: '0.3.9',
         api_version: '1.0',
         capture_document_schema_version: '1',
         sha256: sha256('capture-runtime'),

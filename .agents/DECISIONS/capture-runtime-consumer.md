@@ -1,5 +1,59 @@
 # Capture Runtime Release Consumer Decisions
 
+## 2026-08-04
+
+- Adopt the canonical engine-bearing `capture-runtime@0.3.9` release for the
+  Cert Prep consumer. The host and smoke contracts must expose all three
+  source kinds (`pdf`, `image`, and `audio`) and the two published engine
+  requirements (`windowsml-ocr` and `whisper-primary`); requirement status is
+  one of the published lifecycle states, not an invented `installing` value.
+- Keep engine installation behind explicit consent. A fresh 0.3.9 runtime may
+  report `installable` or another non-ready status until its asset is installed;
+  image/audio admission remains backend-owned and requires the corresponding
+  requirement to be `ready`.
+- The packaged and real-PDF smoke contracts now validate the 0.3.9 source
+  surface and engine-bearing requirement IDs. Their negative cases accept the
+  release-specific dependency detail for image/audio and preserve the generic
+  `Source extraction failed.` result for scanned or mixed PDFs when no OCR
+  asset has been installed. The legacy 0.3.8 OCR reclassification remains a
+  historical regression case only.
+- Keep the real WindowsML/Whisper positive capture as a separate active gate:
+  the published 0.3.9 assets prove availability, but Cert Prep has not yet
+  recorded an end-to-end installed-engine image/audio capture.
+
+## 2026-08-02
+
+- Enforce source admission in the backend coordinator as well as the published
+  Web Component client. The coordinator verifies the requested capture kind
+  after the handshake, then requires `windowsml-ocr: ready` for image and
+  `whisper-primary: ready` for audio before it calls the sidecar create API.
+  PDF remains deliberately ungated so the runtime can distinguish all-pages
+  embedded text from scanned or mixed content.
+- Represent a non-ready image/audio dependency with a dedicated typed host
+  exception rather than manufacturing a failed `CaptureJobV1`. This preserves
+  the distinction between "no sidecar job was admitted" and "a dispatched PDF
+  job failed during extraction."
+- Use the same user-visible dependency errors for the Trial client and the
+  `/documents` product path: `WindowsML OCR is unavailable. ...` and
+  `Whisper transcription is unavailable. ...`. The v0.3.8 requirement detail
+  is preserved, but bearer tokens, runtime URLs, and raw sidecar payloads are
+  never included.
+- Prove the no-dispatch invariant with a backend contract fake that records
+  `create_capture` calls. The installed product smoke proves only observable
+  behavior: PDF-only host UI, explicit dependency failures, OCR-dependent PDF
+  terminal failure, no durable fake output, sanitized evidence, and clean
+  process/listener shutdown.
+- Treat v0.3.8's PDF `extraction_failed` as OCR dependency unavailability only
+  after a fresh requirements read finds exactly one non-ready
+  `windowsml-ocr` requirement. This reflects the published runtime's observed
+  core-only behavior for both scanned and mixed PDFs without globally
+  reclassifying malformed PDF failures or weakening future engine-bearing
+  releases.
+- Every terminal `CaptureRuntimeJobError` must also terminalize the durable
+  document operation. The async worker may log and contain the exception, but
+  it must never leave the operation in `running/processing` after the sidecar
+  has already failed.
+
 ## 2026-07-23
 
 - Use release artifacts rather than a source checkout, npm package, or Python

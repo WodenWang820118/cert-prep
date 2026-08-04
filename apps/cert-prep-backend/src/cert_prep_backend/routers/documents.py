@@ -42,7 +42,9 @@ from cert_prep_backend.domains.capture_workbench.contracts import CaptureSourceK
 from cert_prep_backend.domains.capture_workbench.coordinator import (
     CaptureRuntimeCanceledError,
     CaptureRuntimeJobError,
+    CaptureRuntimeRequirementUnavailableError,
     CertPrepCaptureCoordinator,
+    PDF_OCR_UNAVAILABLE_MESSAGE,
 )
 from cert_prep_backend.domains.capture_workbench.persistence import publish_capture_document
 from cert_prep_backend.domains.mock_exams import repository as mock_exams_repository
@@ -536,16 +538,22 @@ def _process_document_upload(*, db, settings: Settings, llm_provider: LLMProvide
         document_operations.finish_failed(db, project_id=project_id, operation_id=operation_id, error=str(exc))
         raise
     except CaptureRuntimeJobError as exc:
-        if exc.code != "no_text_detected":
-            raise
-        return document_operations.finish_failed(
+        if exc.code == "no_text_detected":
+            return document_operations.finish_failed(
+                db,
+                project_id=project_id,
+                operation_id=operation_id,
+                error=str(exc),
+                document_status="no_text_detected",
+                extraction_method="none",
+            )
+        document_operations.finish_failed(
             db,
             project_id=project_id,
             operation_id=operation_id,
             error=str(exc),
-            document_status="no_text_detected",
-            extraction_method="none",
         )
+        raise
     except Exception:
         logger.exception("Document processing failed", extra={"project_id": project_id, "document_id": document_id})
         document_operations.finish_failed(db, project_id=project_id, operation_id=operation_id, error="Document processing failed.")
@@ -575,9 +583,19 @@ def _process_capture_workbench_upload(*, db, settings: Settings, llm_provider: L
         capture = coordinator.capture(operation_id=operation_id, file_name=str(file_name), content=source_bytes, media_type=_capture_media_type(canonical_suffix), source_kind=CaptureSourceKind(source.kind), target_language="zh-Hant" if source.kind == "audio" else None, should_cancel=should_cancel)
     except CaptureRuntimeCanceledError as error:
         raise DocumentProcessingCanceledError(str(error)) from error
+    except CaptureRuntimeRequirementUnavailableError as error:
+        message = (
+            PDF_OCR_UNAVAILABLE_MESSAGE if source.kind == "pdf" else str(error)
+        )
+        raise ProviderUnavailableError(message) from error
     except CaptureRuntimeJobError as error:
         if error.code == "requirement_unavailable":
-            raise ProviderUnavailableError("Capture Runtime extraction requirements are unavailable. Open Capture Workbench runtime setup, install the required assets, and retry.") from error
+            message = (
+                PDF_OCR_UNAVAILABLE_MESSAGE
+                if source.kind == "pdf"
+                else "Capture Runtime extraction requirements are unavailable."
+            )
+            raise ProviderUnavailableError(message) from error
         raise
     finally:
         del source_bytes

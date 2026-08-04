@@ -4,7 +4,16 @@ import { test } from 'node:test';
 
 import { parsePackagedCaptureWorkbenchSmokeArgs } from './args.mts';
 import { redactCaptureEvidence } from './evidence.mts';
-import { CAPTURE_WORKBENCH_READY_STATUS_PATTERN } from './runner.mts';
+import {
+  assertGracefulCloseSummary,
+  CAPTURE_WORKBENCH_READY_STATUS_PATTERN,
+} from './runner.mts';
+import {
+  imageOnlyPdf,
+  minimalPng,
+  minimalWav,
+  mixedTextAndImagePdf,
+} from './negative-data-contract.mts';
 import {
   assertLazyCaptureRuntimeJourney,
   type LazyCaptureRuntimeJourney,
@@ -73,6 +82,45 @@ test('waits for the current host-managed Capture Workbench ready status', () => 
     CAPTURE_WORKBENCH_READY_STATUS_PATTERN,
   );
   assert.doesNotMatch(captureTrialPageSource, /Image and audio capture are unavailable/);
+});
+
+test('rejects a forced app termination as packaged acceptance evidence', () => {
+  assert.throws(
+    () =>
+      assertGracefulCloseSummary({
+        label: 'capture-final-close',
+        app_pid: 42,
+        normal_close_requested: true,
+        exited_after_normal_close: false,
+        forced: true,
+        residue: [],
+        gracefulExited: false,
+        fallbackUsed: true,
+        exitCode: null,
+        residualProcesses: [],
+      }),
+    /normal graceful-close path/u,
+  );
+});
+
+test('builds real negative media fixtures without embedding fallback text', () => {
+  const png = minimalPng();
+  const wav = minimalWav();
+  const scanned = imageOnlyPdf();
+  const mixed = mixedTextAndImagePdf();
+
+  assert.deepEqual(png.subarray(0, 8), Buffer.from('89504e470d0a1a0a', 'hex'));
+  assert.equal(wav.subarray(0, 4).toString('ascii'), 'RIFF');
+  assert.equal(wav.subarray(8, 12).toString('ascii'), 'WAVE');
+  assert.equal(wav.readUInt16LE(20), 1);
+  assert.equal(scanned.subarray(0, 8).toString('ascii'), '%PDF-1.4');
+  assert.equal(scanned.includes(Buffer.from('/Subtype /Image')), true);
+  assert.equal(scanned.includes(Buffer.from(' Tj')), false);
+  assert.equal(mixed.includes(Buffer.from('/Count 2')), true);
+  assert.equal(mixed.includes(Buffer.from('Embedded text page')), true);
+  assert.equal(mixed.includes(Buffer.from('/Subtype /Image')), true);
+  assert.equal(scanned.subarray(-6).toString('ascii'), '%%EOF\n');
+  assert.equal(mixed.subarray(-6).toString('ascii'), '%%EOF\n');
 });
 
 test('redacts auth, tokens, URLs, and raw text from Capture evidence', () => {

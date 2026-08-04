@@ -30,6 +30,7 @@ import {
 } from '../packaged-flow-smoke/runner-context.mts';
 import { errorMessage, isRecord } from '../packaged-flow-smoke/text-utils.mts';
 import type {
+  CloseSummary,
   ProjectApiRef,
   SmokeMetrics,
   SmokeOptions,
@@ -61,6 +62,11 @@ import {
   snapshotWindowsListeningPorts,
   type OwnedRuntimePhaseEvidence,
 } from './runtime-process-evidence.mts';
+import {
+  assertPublishedCaptureSurface,
+  runPublishedRuntimeNegativeDataCases,
+  type PublishedRuntimeNegativeCaseEvidence,
+} from './negative-data-contract.mts';
 
 const FIXTURE = 'packaged-capture-embedded-text.pdf';
 const REVIEW_MARKER = '[packaged review]';
@@ -94,12 +100,19 @@ export async function runPackagedCaptureWorkbenchSmoke(
   run.processBaseline = processSnapshot();
   let failure: unknown;
   try {
-    const { journey, capture } = await runLazyCaptureJourney(run, fixturePath);
+    const { journey, capture, negativeCases } = await runLazyCaptureJourney(
+      run,
+      fixturePath,
+    );
     assertLazyCaptureRuntimeJourney(journey);
     writeFileSync(
       join(options.outDir, 'capture-workbench-metadata.json'),
       `${JSON.stringify(
-        redactCaptureEvidence({ journey, capture: capture.safeMetadata }),
+        redactCaptureEvidence({
+          journey,
+          capture: capture.safeMetadata,
+          negativeCases,
+        }),
         null,
         2,
       )}\n`,
@@ -149,6 +162,7 @@ async function runLazyCaptureJourney(
 ): Promise<{
   readonly journey: LazyCaptureRuntimeJourney;
   readonly capture: CaptureResult;
+  readonly negativeCases: PublishedRuntimeNegativeCaseEvidence[];
 }> {
   await launchAppAndConnect(run);
   const firstPage = activePage(run);
@@ -236,14 +250,22 @@ async function runLazyCaptureJourney(
     priorBackendAccessRejected: true,
   });
   const capture = await runCaptureDocumentFlow(run, fixturePath);
+  const negativeCases = await runPublishedRuntimeNegativeDataCases(
+    firstPage,
+    firstRotation.api,
+  );
+  log(run, 'Published 0.3.9 negative data contract passed');
   firstSecurity.assertClean();
   await screenshot(run, 'capture-workbench-completed');
 
   const firstCloseCaptured = firstRotation.owned;
   firstSecurity.dispose();
-  await closeAppAndCheckResidue(run, 'capture-persistence-restart');
+  const firstCloseSummary = await closeAppAndCheckResidue(
+    run,
+    'capture-persistence-restart',
+  );
   await waitForCapturedRuntimeClear(firstCloseCaptured);
-  const firstClose = closedPhase();
+  const firstClose = closedPhase(firstCloseSummary);
 
   run.port += 1;
   await launchAppAndConnect(run);
@@ -309,9 +331,12 @@ async function runLazyCaptureJourney(
 
   const finalCloseCaptured = secondRotation.owned;
   relaunchSecurity.dispose();
-  await closeAppAndCheckResidue(run, 'capture-final-close');
+  const finalCloseSummary = await closeAppAndCheckResidue(
+    run,
+    'capture-final-close',
+  );
   await waitForCapturedRuntimeClear(finalCloseCaptured);
-  const finalClose = closedPhase();
+  const finalClose = closedPhase(finalCloseSummary);
 
   return {
     journey: {
@@ -325,6 +350,7 @@ async function runLazyCaptureJourney(
       finalClose,
     },
     capture,
+    negativeCases,
   };
 }
 
@@ -377,6 +403,7 @@ async function runCaptureDocumentFlow(
     30_000,
     'Capture Workbench host ready',
   );
+  await assertPublishedCaptureSurface(page);
   const input = page.locator('capture-workbench input[type="file"]');
   await input.waitFor({ state: 'attached', timeout: 30_000 });
   if (!(await input.isEnabled())) {
@@ -720,7 +747,8 @@ function phase(
   };
 }
 
-function closedPhase(): LazyRuntimePhaseSnapshot {
+function closedPhase(summary: CloseSummary): LazyRuntimePhaseSnapshot {
+  assertGracefulCloseSummary(summary);
   return {
     captureStatus: 'closed',
     backendReady: false,
@@ -729,6 +757,20 @@ function closedPhase(): LazyRuntimePhaseSnapshot {
     captureProcesses: [],
     captureListenerPorts: [],
   };
+}
+
+export function assertGracefulCloseSummary(summary: CloseSummary): void {
+  if (
+    !summary.normal_close_requested ||
+    !summary.exited_after_normal_close ||
+    !summary.gracefulExited ||
+    summary.forced ||
+    summary.fallbackUsed
+  ) {
+    throw new Error(
+      `${summary.label} did not complete through the normal graceful-close path.`,
+    );
+  }
 }
 
 function requiredProjectApi(run: SmokeRunState): ProjectApiRef {

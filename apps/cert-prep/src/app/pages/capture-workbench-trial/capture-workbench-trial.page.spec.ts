@@ -66,14 +66,14 @@ describe('CaptureWorkbenchTrialPage', () => {
     expect(
       fixture.nativeElement.querySelector('capture-workbench').config,
     ).toMatchObject({
-      enabledSources: ['pdf'],
+      enabledSources: ['pdf', 'image', 'audio'],
       structuringMode: 'host',
       hostStructuringOwner: 'client',
       hostManagedHandshake: true,
       showRuntimeSetup: false,
     });
     expect(fixture.nativeElement.textContent).toContain(
-      'Scanned PDFs, images, and audio remain unavailable',
+      'PDF, image, and audio sources are processed',
     );
     expect(fixture.nativeElement.textContent).not.toContain('in-memory');
   });
@@ -109,7 +109,10 @@ describe('CaptureWorkbenchTrialPage', () => {
     expect(page.registrationState()).toBe('ready');
     expect(
       fixture.nativeElement.querySelector('capture-workbench').config,
-    ).toMatchObject({ enabledSources: ['pdf'], showRuntimeSetup: false });
+    ).toMatchObject({
+      enabledSources: ['pdf', 'image', 'audio'],
+      showRuntimeSetup: false,
+    });
   });
 
   it('waits for an explicit Capture Runtime install before configuring the desktop capture client', () => {
@@ -269,7 +272,7 @@ function captureRuntimeStatus(status: 'missing' | 'running') {
     status,
     detail: `Capture Runtime is ${status}.`,
     unavailableReason: running ? null : 'capture_runtime_missing',
-    version: '0.3.8',
+    version: '0.3.9',
     installedPath: null,
     baseUrl: null,
     token: null,

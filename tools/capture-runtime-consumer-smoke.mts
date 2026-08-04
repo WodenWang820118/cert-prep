@@ -230,7 +230,13 @@ async function waitForPublishedRuntimeContract(
           (item) =>
             typeof item !== 'object' ||
             item === null ||
-            !['ready', 'installable', 'installing', 'unavailable'].includes(
+            ![
+              'ready',
+              'missing',
+              'installable',
+              'manual_action_required',
+              'unavailable',
+            ].includes(
               String((item as { status?: unknown }).status),
             ),
         )
