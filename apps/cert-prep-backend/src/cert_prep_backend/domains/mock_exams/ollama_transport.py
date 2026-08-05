@@ -19,7 +19,6 @@ from cert_prep_backend.domains.mock_exams.normalization import dedupe_suggestion
 from cert_prep_backend.domains.mock_exams.ollama_client import OllamaClient
 from cert_prep_backend.domains.mock_exams.ports import ProviderHealth
 from cert_prep_backend.domains.mock_exams.reasoning_parser import (
-    EXAM_ITEMS_SCHEMA,
     draft_suggestion_from_item,
     json_response,
 )
@@ -27,6 +26,7 @@ from cert_prep_backend.domains.mock_exams.response_parsing import (
     answer_from_payload,
     confidence_from_payload,
     fast_first_prompt,
+    fast_first_retry_prompt,
     is_non_fatal_generation_error,
     json_object_response_or_unavailable,
     short_error,
@@ -47,6 +47,7 @@ STREAMING_PREWARM_KEEP_ALIVE = "5m"
 STREAMING_RELEASE_KEEP_ALIVE = 0
 T = TypeVar("T")
 _LOGGER = logging.getLogger(__name__)
+_REASONING_JSON_ATTEMPTS = 4
 
 
 class OllamaProvider:
@@ -317,58 +318,37 @@ class OllamaProvider:
         num_predict: int,
         keep_alive: str | float | int | None,
     ) -> dict[str, Any]:
-        return json_response(
-            self._client.chat(
-                model=model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "You convert OCR text from an uploaded JLPT exam into practice-ready "
-                            "mock exam questions. Preserve actual exam questions and choices. "
-                            "Ignore cover pages, title pages, notes, version notices, copyright "
-                            "notices, and general instructions; do not invent questions from them. "
-                            "Only output real multiple-choice exam items with a question stem and "
-                            "visible choices. If an explicit answer key is present, use it. If it "
-                            "is absent, infer the correct answer and mark answer_key_source as "
-                            "ai_inferred. Do not include chain-of-thought, hidden reasoning, or "
-                            "analysis. Only include a concise user-facing rationale."
-                        ),
-                    },
-                    {"role": "user", "content": user_prompt},
-                ],
-                format=EXAM_ITEMS_SCHEMA,
-                options=self._chat_options(
-                    num_ctx=num_ctx,
-                    num_predict=num_predict,
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You convert OCR text from an uploaded JLPT exam into practice-ready "
+                    "mock exam questions. Preserve actual exam questions and choices. "
+                    "Ignore cover pages, title pages, notes, version notices, copyright "
+                    "notices, and general instructions; do not invent questions from them. "
+                    "Only output real multiple-choice exam items with a question stem and "
+                    "visible choices. If an explicit answer key is present, use it. If it "
+                    "is absent, infer the correct answer and mark answer_key_source as "
+                    "ai_inferred. Do not include chain-of-thought, hidden reasoning, or "
+                    "analysis. Only include a concise user-facing rationale. Return one "
+                    "JSON object with an items array; never use Markdown or prose outside "
+                    "that JSON object."
                 ),
-                think=False,
-                keep_alive=keep_alive,
-            )
-        )
-
-    def generate_fast_first_draft(
-        self,
-        source_chunk: SourceChunk,
-        candidate: DraftSuggestion,
-        *,
-        num_ctx: int = 1024,
-        num_predict: int = 128,
-        keep_alive: str | float | int | None = STREAMING_PREWARM_KEEP_ALIVE,
-    ) -> DraftSuggestion | None:
-        """Ask Ollama to complete one extracted draft with answer/rationale JSON."""
-
-        try:
-            payload = self._with_primary_model(
-                lambda model: json_object_response_or_unavailable(
+            },
+            {"role": "user", "content": user_prompt},
+        ]
+        for attempt in range(_REASONING_JSON_ATTEMPTS):
+            try:
+                return json_response(
                     self._client.chat(
                         model=model,
-                        messages=[
-                            {
-                                "role": "user",
-                                "content": fast_first_prompt(candidate),
-                            }
-                        ],
+                        messages=messages,
+                        # The installed Qwen study profile reliably honors Ollama's
+                        # JSON mode, while the larger schema parameter can make the
+                        # same model emit Markdown. The response parser below still
+                        # performs the complete field, type, and source-grounding
+                        # validation, so accepting JSON mode does not relax the host
+                        # contract or introduce a provider fallback.
                         format="json",
                         options=self._chat_options(
                             num_ctx=num_ctx,
@@ -376,15 +356,72 @@ class OllamaProvider:
                         ),
                         think=False,
                         keep_alive=keep_alive,
-                    ),
-                    provider_label="Ollama",
+                    )
                 )
-            )
+            except ProviderUnavailableError as exc:
+                if "invalid JSON" not in str(exc) or attempt + 1 >= _REASONING_JSON_ATTEMPTS:
+                    raise
+                _LOGGER.warning("Ollama reasoning response was not JSON; retrying.")
+        raise AssertionError("unreachable")
+
+    def generate_fast_first_draft(
+        self,
+        source_chunk: SourceChunk,
+        candidate: DraftSuggestion,
+        *,
+        num_ctx: int = 4096,
+        num_predict: int = 512,
+        keep_alive: str | float | int | None = STREAMING_PREWARM_KEEP_ALIVE,
+    ) -> DraftSuggestion | None:
+        """Ask Ollama to complete one extracted draft with answer/rationale JSON."""
+
+        try:
+            payload = None
+            answer = None
+            for attempt in range(_REASONING_JSON_ATTEMPTS):
+                try:
+                    payload = self._with_primary_model(
+                        lambda model: json_object_response_or_unavailable(
+                            self._client.chat(
+                                model=model,
+                                messages=[
+                                    {
+                                        "role": "user",
+                                        "content": (
+                                            fast_first_prompt(candidate)
+                                            if attempt == 0
+                                            else fast_first_retry_prompt(candidate)
+                                        ),
+                                    }
+                                ],
+                                format="json",
+                                options=self._chat_options(
+                                    num_ctx=num_ctx,
+                                    num_predict=num_predict,
+                                ),
+                                think=False,
+                                keep_alive=keep_alive,
+                            ),
+                            provider_label="Ollama",
+                        )
+                    )
+                    answer = answer_from_payload(payload.get("answer"), candidate.choices)
+                    if answer is not None:
+                        break
+                    if attempt + 1 < _REASONING_JSON_ATTEMPTS:
+                        _LOGGER.warning(
+                            "Ollama fast-first answer did not match visible choices; retrying."
+                        )
+                except ProviderUnavailableError as exc:
+                    if "invalid JSON" not in str(exc) or attempt + 1 >= _REASONING_JSON_ATTEMPTS:
+                        raise
+                    _LOGGER.warning("Ollama fast-first response was not JSON; retrying.")
+            if payload is None or answer is None:
+                raise ProviderUnavailableError("Ollama returned an unreadable response.")
         except ProviderUnavailableError as exc:
             if is_non_fatal_generation_error(exc):
                 return None
             raise
-        answer = answer_from_payload(payload.get("answer"), candidate.choices)
         if answer is None:
             return None
 

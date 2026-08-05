@@ -319,11 +319,7 @@ export class RuntimeJobViewService {
     const kind = this.derivation.normalizedCode(
       this.readString(record, 'kind') ?? fallbackKind,
     );
-    return kind === 'ollama' ||
-      kind === 'ollama_model' ||
-      kind === 'paddle_ocr' ||
-      kind === 'windowsml_ocr' ||
-      kind === 'whisper_models'
+    return kind === 'ollama' || kind === 'ollama_model'
       ? kind
       : fallbackKind;
   }

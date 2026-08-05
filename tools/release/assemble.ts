@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto';
 import {
   mkdirSync,
   readFileSync,
-  readdirSync,
   rmSync,
   statSync,
 } from 'node:fs';
@@ -28,6 +27,10 @@ import {
   writeJson,
   writeReleaseDocuments,
 } from './release-lib.ts';
+import {
+  validateCaptureArtifactBytes,
+} from '../../apps/cert-prep-desktop/scripts/capture-runtime-contract.mts';
+import { CAPTURE_RUNTIME_VERSION } from '../capture-runtime-version.mts';
 
 export async function assembleCandidate(args) {
   const workspaceRoot = resolve(args['workspace-root']);
@@ -41,7 +44,6 @@ export async function assembleCandidate(args) {
 
   const bundleRoot = resolve(args['bundle-root']);
   const generatedResources = resolve(args['generated-resources']);
-  const ocrRuntimeRoot = resolve(args['ocr-runtime-root']);
   const packageQaPath = resolve(args['package-qa']);
   const packageQa = readJson(packageQaPath);
   validatePackageQa(packageQa, plan);
@@ -61,12 +63,12 @@ export async function assembleCandidate(args) {
     generatedResources,
     'backend-runtime-manifest.json',
   );
-  const ocrManifestPath = join(
-    generatedResources,
-    'windowsml-ocr-runtime-manifest.json',
-  );
   const backendManifest = readJson(backendManifestPath);
-  const ocrManifest = readJson(ocrManifestPath);
+  const captureManifestPath = join(
+    generatedResources,
+    'capture-runtime-manifest.json',
+  );
+  const captureManifest = readJson(captureManifestPath);
   await validateRuntimeManifest({
     manifest: backendManifest,
     root: generatedResources,
@@ -74,26 +76,13 @@ export async function assembleCandidate(args) {
     kind: 'python_backend',
     expectedUrl: null,
   });
-  await validateRuntimeManifest({
-    manifest: ocrManifest,
-    root: ocrRuntimeRoot,
-    plan,
-    kind: 'windowsml_ocr',
-    expectedUrl: `${plan.assetBaseUrl}/${encodeURIComponent(ocrManifest.artifact.file_name)}`,
+  await validateCaptureRuntimeManifest({
+    manifest: captureManifest,
+    root: generatedResources,
   });
   rejectFastFlowBinaryInArchive(
     join(generatedResources, backendManifest.artifact.file_name),
   );
-  rejectFastFlowBinaryInArchive(
-    join(ocrRuntimeRoot, ocrManifest.artifact.file_name),
-  );
-  if (
-    readdirSync(generatedResources).includes(ocrManifest.artifact.file_name)
-  ) {
-    throw new Error(
-      'WindowsML OCR ZIP must not be bundled in generated resources.',
-    );
-  }
 
   copyInto(nsis, join(releaseRoot, 'installers', basename(nsis)));
   copyInto(
@@ -104,14 +93,16 @@ export async function assembleCandidate(args) {
     join(generatedResources, backendManifest.artifact.file_name),
     join(releaseRoot, 'runtimes', backendManifest.artifact.file_name),
   );
-  copyInto(
-    ocrManifestPath,
-    join(releaseRoot, 'runtimes', basename(ocrManifestPath)),
-  );
-  copyInto(
-    join(ocrRuntimeRoot, ocrManifest.artifact.file_name),
-    join(releaseRoot, 'runtimes', ocrManifest.artifact.file_name),
-  );
+  for (const name of [
+    basename(captureManifestPath),
+    captureManifest.fileName,
+    captureManifest.schemaFileName,
+  ]) {
+    copyInto(
+      join(generatedResources, name),
+      join(releaseRoot, 'runtimes', name),
+    );
+  }
   copyInto(packageQaPath, join(releaseRoot, 'evidence', 'package-qa.json'));
   for (const legalFile of [
     'LICENSE',
@@ -139,29 +130,16 @@ export async function assembleCandidate(args) {
 
   const nodeLicenses = readJson(resolve(args['node-licenses']));
   const backendPythonLicenses = readJson(resolve(args['python-licenses']));
-  const ocrPythonLicenses = readJson(resolve(args['ocr-python-licenses']));
-  const ocrRuntimePayloads = readJson(resolve(args['ocr-runtime-payloads']));
-  await validateOcrRuntimePayloads(
-    ocrRuntimePayloads,
-    ocrManifestPath,
-    ocrManifest,
-    workspaceRoot,
-  );
   const cargoMetadata = readJson(resolve(args['cargo-metadata']));
   const nodeComponents = collectLicensedComponents({ nodeLicenses });
   const backendComponents = collectLicensedComponents({
     pythonLicenses: backendPythonLicenses,
   });
-  const ocrComponents = collectLicensedComponents({
-    pythonLicenses: ocrPythonLicenses,
-    genericComponents: ocrRuntimePayloads.components,
-  });
   const cargoComponents = collectLicensedComponents({ cargoMetadata });
   const components = collectLicensedComponents({
     nodeLicenses,
-    pythonLicenses: [...backendPythonLicenses, ...ocrPythonLicenses],
+    pythonLicenses: backendPythonLicenses,
     cargoMetadata,
-    genericComponents: ocrRuntimePayloads.components,
   });
   const installerComponentPurls = componentPurls([
     ...nodeComponents,
@@ -180,9 +158,9 @@ export async function assembleCandidate(args) {
       componentPurls: componentPurls(backendComponents),
     },
     {
-      id: 'windowsml-ocr-runtime',
-      artifactPath: `runtimes/${ocrManifest.artifact.file_name}`,
-      componentPurls: componentPurls(ocrComponents),
+      id: 'capture-runtime',
+      artifactPath: `runtimes/${captureManifest.fileName}`,
+      componentPurls: [],
     },
   ];
   await writeReleaseDocuments({
@@ -298,7 +276,7 @@ async function validateCleanInstallEvidence(
     );
     const requiredTrue = [
       'backendBundled',
-      'publicOcrDownloadVerified',
+      'captureRuntimeVerified',
       'appLaunchVerified',
       'freshAppDataVerified',
       'backendInstallVerified',
@@ -314,7 +292,6 @@ async function validateCleanInstallEvidence(
       evidence.candidateId !== candidate.candidateId ||
       evidence.installer !== basename(installer) ||
       evidence.installerSha256 !== (await sha256File(installer)) ||
-      evidence.ocrBundled !== false ||
       requiredTrue.some((key) => evidence[key] !== true) ||
       evidence.backendVersion !== plan.version ||
       evidence.backendRuntimeMode !== 'packaged' ||
@@ -332,7 +309,7 @@ async function validateCleanInstallEvidence(
       packageKind: kind,
       candidateId: evidence.candidateId,
       commitSha: evidence.commitSha,
-      publicOcrDownloadVerified: evidence.publicOcrDownloadVerified,
+      captureRuntimeVerified: evidence.captureRuntimeVerified,
       appLaunchVerified: evidence.appLaunchVerified,
       freshAppDataVerified: evidence.freshAppDataVerified,
       backendInstallVerified: evidence.backendInstallVerified,
@@ -345,64 +322,32 @@ async function validateCleanInstallEvidence(
   return validated;
 }
 
-async function validateOcrRuntimePayloads(
-  inventory,
-  manifestPath,
-  manifest,
-  workspaceRoot,
-) {
-  const declaration = readJson(
-    join(
-      workspaceRoot,
-      'tools',
-      'release',
-      'ocr-runtime-payload-declaration.json',
-    ),
-  );
-  const expectedPaths = declaration.payloadEntries;
-  const entries = inventory.entries;
-  const component = inventory.components?.[0];
-  const entrypoint = inventory.entrypoint;
-  const expectedSourceArtifacts = declaration.sourceArtifacts.map((source) => {
-    const publicSource = { ...source };
-    delete publicSource.payloadEntries;
-    return publicSource;
-  });
+async function validateCaptureRuntimeManifest({ manifest, root }) {
   if (
-    inventory.schemaVersion !== 1 ||
-    inventory.artifact?.kind !== manifest.kind ||
-    inventory.artifact?.fileName !== manifest.artifact.file_name ||
-    inventory.artifact?.bytes !== manifest.artifact.bytes ||
-    inventory.artifact?.sha256 !== manifest.artifact.sha256.toLowerCase() ||
-    inventory.artifact?.manifestSha256 !== (await sha256File(manifestPath)) ||
-    !Array.isArray(entries) ||
-    entries.length !== expectedPaths.length ||
-    entries.some(
-      (entry, index) =>
-        entry.path !== expectedPaths[index] ||
-        !Number.isInteger(entry.bytes) ||
-        entry.bytes <= 0 ||
-        !/^[0-9a-f]{64}$/i.test(entry.sha256 ?? ''),
-    ) ||
-    entrypoint?.path !== declaration.entrypoint ||
-    !Number.isInteger(entrypoint?.bytes) ||
-    entrypoint.bytes <= 0 ||
-    !/^[0-9a-f]{64}$/i.test(entrypoint?.sha256 ?? '') ||
-    inventory.components?.length !== 1 ||
-    component?.ecosystem !== 'generic' ||
-    component?.license !== 'Apache-2.0' ||
-    component?.purl !== declaration.component.purl ||
-    JSON.stringify(component.files) !== JSON.stringify(entries) ||
-    JSON.stringify(component.sourceRepositories) !==
-      JSON.stringify(declaration.component.sourceRepositories) ||
-    JSON.stringify(component.licenseEvidence) !==
-      JSON.stringify(declaration.component.licenseEvidence) ||
-    JSON.stringify(component.sourceArtifacts) !==
-      JSON.stringify(expectedSourceArtifacts)
+    manifest?.manifestVersion !== '1' ||
+    manifest?.runtimeVersion !== CAPTURE_RUNTIME_VERSION ||
+    manifest?.apiVersion !== '1.0' ||
+    manifest?.captureDocumentSchemaVersion !== '1' ||
+    manifest?.platform !== 'windows' ||
+    manifest?.arch !== 'x86_64' ||
+    manifest?.fileName !== 'capture-runtime-x86_64-pc-windows-msvc.exe' ||
+    manifest?.schemaFileName !== 'capture-document-v1.schema.json' ||
+    typeof manifest?.sha256 !== 'string' ||
+    !/^[0-9a-f]{64}$/i.test(manifest.sha256)
   ) {
-    throw new Error(
-      'OCR runtime payload inventory does not match the declared ZIP contents.',
-    );
+    throw new Error('Capture Runtime manifest does not match the published contract.');
+  }
+  validateCaptureArtifactBytes(manifest.bytes, 'Capture Runtime executable');
+  const artifactPath = join(root, manifest.fileName);
+  const schemaPath = join(root, manifest.schemaFileName);
+  if (!statSync(artifactPath).isFile() || !statSync(schemaPath).isFile()) {
+    throw new Error('Capture Runtime executable or schema is missing.');
+  }
+  if (
+    statSync(artifactPath).size !== manifest.bytes ||
+    (await sha256File(artifactPath)) !== manifest.sha256.toLowerCase()
+  ) {
+    throw new Error('Capture Runtime executable does not match its manifest.');
   }
 }
 
@@ -448,9 +393,8 @@ export function validatePackageQa(report, plan) {
       report.schema_version !== 3 ||
       report.target?.rust_triple !== TARGET_TRIPLE ||
       contract?.backend_bundled !== true ||
-      contract?.windowsml_ocr_bundled !== false ||
+      contract?.capture_runtime_bundled !== true ||
       contract?.release_urls_only !== false ||
-      contract?.local_file_ocr_only !== true ||
       contract?.distribution_profile !== LOCAL_NONPUBLISHABLE_PROFILE ||
       contract?.publishable !== false ||
       contract?.version !== plan.version ||
@@ -468,7 +412,7 @@ export function validatePackageQa(report, plan) {
     report.schema_version !== 3 ||
     report.target?.rust_triple !== TARGET_TRIPLE ||
     contract?.backend_bundled !== true ||
-    contract?.windowsml_ocr_bundled !== false ||
+    contract?.capture_runtime_bundled !== true ||
     contract?.release_urls_only !== true ||
     contract?.distribution_profile !== PUBLIC_UNSIGNED_ALPHA_PROFILE ||
     contract?.publishable !== true ||

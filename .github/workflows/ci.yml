@@ -21,19 +21,37 @@ jobs:
   portable-quality:
     name: Portable quality
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
     steps:
       - name: Check out source
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           fetch-depth: 0
 
-      - name: Check out Capture Workbench package source
+      - name: Check out pre-publication Capture Workbench bridge
+        if: vars.CAPTURE_PUBLISHED_0_3_10 != 'true'
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
-          repository: WodenWang820118/capture-workbench
-          ref: 694432445615614436496a70fa2d7ec4101ee05a
-          path: capture-workbench-ci
-          persist-credentials: false
+          repository: gx-capture/capture-workbench
+          ref: agent/modular-reuse-contracts
+          path: capture-workbench
+          sparse-checkout: |
+            packages/capture-contracts
+            packages/capture-structuring-python
+            packages/capture-sidecar-launcher
+
+      - name: Link pre-publication Capture Workbench bridge (Unix)
+        if: vars.CAPTURE_PUBLISHED_0_3_10 != 'true' && runner.os != 'Windows'
+        run: ln -s "$GITHUB_WORKSPACE/capture-workbench" "$GITHUB_WORKSPACE/../capture-workbench"
+
+      - name: Link pre-publication Capture Workbench bridge (Windows)
+        if: vars.CAPTURE_PUBLISHED_0_3_10 != 'true' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $target = Join-Path (Split-Path -Parent $env:GITHUB_WORKSPACE) 'capture-workbench'
+          New-Item -ItemType Junction -Path $target -Target (Join-Path $env:GITHUB_WORKSPACE 'capture-workbench') | Out-Null
 
       - name: Install pnpm
         uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
@@ -46,6 +64,8 @@ jobs:
         with:
           node-version-file: .node-version
           cache: pnpm
+          registry-url: https://npm.pkg.github.com
+          scope: '@gx-capture'
 
       - name: Install uv
         uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990
@@ -55,7 +75,9 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: Install JavaScript dependencies and pinned Capture Workbench package
-        run: node tools/ci-install-capture-workbench.mts
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: pnpm install --frozen-lockfile
 
       - name: Sync backend Python environment
         run: uv sync --project apps/cert-prep-backend --python ${{ env.PYTHON_VERSION }} --frozen
@@ -64,14 +86,14 @@ jobs:
         run: >-
           pnpm nx run-many -t lint
           -p cert-prep cert-prep-contracts cert-prep-ollama
-          cert-prep-ocr-windowsml cert-prep-backend
+          cert-prep-backend
           --parallel=3
 
       - name: Test portable projects
         run: >-
           pnpm nx run-many -t test
           -p cert-prep cert-prep-contracts cert-prep-ollama
-          cert-prep-ocr-windowsml cert-prep-backend
+          cert-prep-backend
           --parallel=3
 
       - name: Build Angular application
@@ -89,19 +111,37 @@ jobs:
   windows-quality:
     name: Windows product quality
     runs-on: windows-2025
+    permissions:
+      contents: read
+      packages: read
     steps:
       - name: Check out source
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           fetch-depth: 0
 
-      - name: Check out Capture Workbench package source
+      - name: Check out pre-publication Capture Workbench bridge
+        if: vars.CAPTURE_PUBLISHED_0_3_10 != 'true'
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
-          repository: WodenWang820118/capture-workbench
-          ref: 694432445615614436496a70fa2d7ec4101ee05a
-          path: capture-workbench-ci
-          persist-credentials: false
+          repository: gx-capture/capture-workbench
+          ref: agent/modular-reuse-contracts
+          path: capture-workbench
+          sparse-checkout: |
+            packages/capture-contracts
+            packages/capture-structuring-python
+            packages/capture-sidecar-launcher
+
+      - name: Link pre-publication Capture Workbench bridge (Unix)
+        if: vars.CAPTURE_PUBLISHED_0_3_10 != 'true' && runner.os != 'Windows'
+        run: ln -s "$GITHUB_WORKSPACE/capture-workbench" "$GITHUB_WORKSPACE/../capture-workbench"
+
+      - name: Link pre-publication Capture Workbench bridge (Windows)
+        if: vars.CAPTURE_PUBLISHED_0_3_10 != 'true' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $target = Join-Path (Split-Path -Parent $env:GITHUB_WORKSPACE) 'capture-workbench'
+          New-Item -ItemType Junction -Path $target -Target (Join-Path $env:GITHUB_WORKSPACE 'capture-workbench') | Out-Null
 
       - name: Install pnpm
         uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
@@ -114,6 +154,8 @@ jobs:
         with:
           node-version-file: .node-version
           cache: pnpm
+          registry-url: https://npm.pkg.github.com
+          scope: '@gx-capture'
 
       - name: Install uv
         uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990
@@ -129,7 +171,9 @@ jobs:
           rustup show active-toolchain
 
       - name: Install JavaScript dependencies and pinned Capture Workbench package
-        run: node tools/ci-install-capture-workbench.mts
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: pnpm install --frozen-lockfile
 
       - name: Sync backend Python environment
         run: uv sync --project apps/cert-prep-backend --python ${{ env.PYTHON_VERSION }} --frozen
@@ -137,14 +181,14 @@ jobs:
       - name: Lint Windows-owned Python and Angular projects
         run: >-
           pnpm nx run-many -t lint
-          -p cert-prep-contracts cert-prep-ollama cert-prep-ocr-windowsml
+          -p cert-prep-contracts cert-prep-ollama
           cert-prep-backend cert-prep
           --parallel=2
 
       - name: Test Windows-owned Python and Angular projects
         run: >-
           pnpm nx run-many -t test
-          -p cert-prep-contracts cert-prep-ollama cert-prep-ocr-windowsml
+          -p cert-prep-contracts cert-prep-ollama
           cert-prep-backend cert-prep
           --parallel=2
 
@@ -153,6 +197,22 @@ jobs:
 
       - name: Test package QA
         run: pnpm nx run cert-prep-desktop:package-qa-test
+
+      - name: Verify Capture Runtime consumer declarations
+        run: pnpm nx run cert-prep-desktop:capture-runtime-consumer-test
+
+      - name: Verify published Capture registry installation
+        if: vars.CAPTURE_PUBLISHED_0_3_10 == 'true'
+        env:
+          CAPTURE_REQUIRE_PUBLISHED_CAPTURE_ARTIFACTS: '1'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          pnpm nx run cert-prep-desktop:capture-runtime-consumer-test --skip-nx-cache
+          uv run --isolated --no-project `
+            --with 'capture-contracts==0.3.10' `
+            --with 'capture-structuring==0.3.10' `
+            -- python -c "import capture_contracts, capture_structuring; assert capture_contracts.CAPTURE_RUNTIME_VERSION == '0.3.10'; assert capture_structuring.__package__ == 'capture_structuring'"
 
       - name: Test Tauri host
         run: pnpm nx run cert-prep-desktop:cargo-test

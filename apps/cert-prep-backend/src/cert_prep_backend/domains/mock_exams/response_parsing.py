@@ -21,6 +21,17 @@ def fast_first_prompt(candidate: DraftSuggestion) -> str:
     )
 
 
+def fast_first_retry_prompt(candidate: DraftSuggestion) -> str:
+    choices = "\n".join(str(choice) for choice in candidate.choices)
+    return (
+        "Return one JSON object only with answer, rationale, and confidence. "
+        "Do not write Markdown, analysis, or prose. Answer must be one of the four visible choices.\n"
+        f"Question: {candidate.question[:800]}\n"
+        f"Choices:\n{choices}\n"
+        "Choose the best visible answer."
+    )
+
+
 def json_object_response(response: Any) -> dict[str, Any]:
     content = getattr(getattr(response, "message", None), "content", None)
     if content is None and isinstance(response, dict):

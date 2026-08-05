@@ -2,15 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
-
 from cert_prep_contracts.runtime import (
     RuntimeInstallationStatus,
     RuntimeRequirementKind,
 )
 
 __all__ = [
-    "OcrRuntimeManifest",
     "RuntimeInstallationSnapshot",
     "utcnow",
 ]
@@ -34,22 +31,6 @@ class RuntimeInstallationSnapshot:
     updated_at: str
     commit_started_at: str | None = None
     error: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class OcrRuntimeManifest:
-    """Manifest metadata for a packaged OCR runtime artifact."""
-
-    kind: RuntimeRequirementKind
-    version: str
-    target: str
-    file_name: str
-    sha256: str
-    bytes: int
-    entrypoint: str
-    url: str | None = None
-    base_dir: Path | None = None
-
 
 def utcnow() -> datetime:
     """Return the timezone-aware timestamp used by runtime installation snapshots."""

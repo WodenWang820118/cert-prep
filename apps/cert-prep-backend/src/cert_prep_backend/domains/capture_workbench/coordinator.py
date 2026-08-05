@@ -16,18 +16,23 @@ import httpx
 
 from cert_prep_backend.domains.capture_workbench.client import (
     CaptureRuntimeClient,
+    CaptureRuntimeCompatibilityError,
     CaptureUpload,
 )
-from cert_prep_backend.domains.capture_workbench.contracts import (
+from capture_contracts import (
     CaptureDocumentV1,
     CaptureJobStage,
     CaptureJobStatus,
     CaptureJobV1,
+    CaptureRequirementId,
     CaptureReviewV1,
     CaptureSourceKind,
     RawCaptureV1,
-    reviewed_text_overrides,
+    RuntimeRequirementV1,
+    RuntimeRequirementStatus,
 )
+from cert_prep_backend.domains.capture_workbench.review import reviewed_text_overrides
+from cert_prep_backend.domains.capture_workbench.runtime_policy import LEGACY_CORE_ONLY_RUNTIME_VERSION
 from cert_prep_backend.domains.capture_workbench.structuring import (
     CaptureStructuringCanceledError,
     CaptureStructuringTimeoutError,
@@ -36,6 +41,20 @@ from cert_prep_backend.domains.capture_workbench.structuring import (
 
 
 _IDEMPOTENCY_NAMESPACE = UUID("518ad006-a998-4b4b-b0fb-9be26b4447ac")
+PDF_OCR_UNAVAILABLE_MESSAGE = (
+    "This PDF requires WindowsML OCR, which is unavailable in the installed "
+    "Capture Runtime."
+)
+_SOURCE_REQUIREMENTS: dict[
+    CaptureSourceKind, tuple[CaptureRequirementId, str]
+] = {
+    CaptureSourceKind.IMAGE: ("windowsml-ocr", "WindowsML OCR"),
+    CaptureSourceKind.AUDIO: ("whisper-primary", "Whisper transcription"),
+}
+_PDF_OCR_REQUIREMENT: tuple[CaptureRequirementId, str] = (
+    "windowsml-ocr",
+    "WindowsML OCR",
+)
 
 
 class CaptureRuntimeJobError(RuntimeError):
@@ -51,6 +70,29 @@ class CaptureRuntimeJobError(RuntimeError):
 
 class CaptureRuntimeCanceledError(RuntimeError):
     """The host operation was cancelled while Capture Runtime was active."""
+
+
+class CaptureRuntimeRequirementUnavailableError(RuntimeError):
+    """A source dependency is not ready, so no sidecar job was admitted."""
+
+    def __init__(
+        self,
+        *,
+        source_kind: CaptureSourceKind,
+        requirement_id: CaptureRequirementId,
+        display_name: str,
+        status: RuntimeRequirementStatus | None,
+        detail: str | None,
+    ) -> None:
+        requirement_detail = (
+            detail.strip()
+            if detail is not None and detail.strip()
+            else "The runtime requirement is unavailable."
+        )
+        super().__init__(f"{display_name} is unavailable. {requirement_detail}")
+        self.source_kind = source_kind
+        self.requirement_id = requirement_id
+        self.status = status
 
 
 class CaptureRuntimeTimeoutError(RuntimeError):
@@ -135,7 +177,12 @@ class CertPrepCaptureCoordinator:
         target_language: str | None,
         should_cancel: Callable[[], bool],
     ) -> CaptureJobV1:
-        self._client.handshake()
+        ready = self._client.handshake()
+        if source_kind not in ready.capabilities.capture_kinds:
+            raise CaptureRuntimeCompatibilityError(
+                f"Capture Runtime does not support {source_kind.value.upper()} capture."
+            )
+        self._assert_source_requirement_ready(source_kind)
         if should_cancel():
             raise CaptureRuntimeCanceledError("Document processing was cancelled.")
         job = self._client.create_capture(
@@ -145,7 +192,82 @@ class CertPrepCaptureCoordinator:
             target_language=target_language,
         )
         deadline = self._clock() + self._timeout_seconds
-        return self._wait_for_structuring(job, deadline=deadline, should_cancel=should_cancel)
+        try:
+            return self._wait_for_structuring(
+                job, deadline=deadline, should_cancel=should_cancel
+            )
+        except CaptureRuntimeJobError as error:
+            self._raise_if_pdf_ocr_is_unavailable(
+                source_kind,
+                error,
+                runtime_version=ready.runtime_version,
+            )
+            raise
+
+    def _assert_source_requirement_ready(
+        self, source_kind: CaptureSourceKind
+    ) -> None:
+        policy = _SOURCE_REQUIREMENTS.get(source_kind)
+        if policy is None:
+            return
+        requirement_id, display_name = policy
+        requirement = self._runtime_requirement(requirement_id)
+        if (
+            requirement is not None
+            and requirement.status is RuntimeRequirementStatus.READY
+        ):
+            return
+        raise CaptureRuntimeRequirementUnavailableError(
+            source_kind=source_kind,
+            requirement_id=requirement_id,
+            display_name=display_name,
+            status=requirement.status if requirement is not None else None,
+            detail=requirement.detail if requirement is not None else None,
+        )
+
+    def _raise_if_pdf_ocr_is_unavailable(
+        self,
+        source_kind: CaptureSourceKind,
+        error: CaptureRuntimeJobError,
+        *,
+        runtime_version: str,
+    ) -> None:
+        if source_kind is not CaptureSourceKind.PDF:
+            return
+        if (
+            error.code == "extraction_failed"
+            and runtime_version != LEGACY_CORE_ONLY_RUNTIME_VERSION
+        ):
+            return
+        if error.code not in {"extraction_failed", "requirement_unavailable"}:
+            return
+        requirement_id, display_name = _PDF_OCR_REQUIREMENT
+        try:
+            requirement = self._runtime_requirement(requirement_id)
+        except Exception:
+            return
+        if (
+            requirement is None
+            or requirement.status is RuntimeRequirementStatus.READY
+        ):
+            return
+        raise CaptureRuntimeRequirementUnavailableError(
+            source_kind=source_kind,
+            requirement_id=requirement_id,
+            display_name=display_name,
+            status=requirement.status,
+            detail=requirement.detail,
+        ) from error
+
+    def _runtime_requirement(
+        self, requirement_id: CaptureRequirementId
+    ) -> RuntimeRequirementV1 | None:
+        matches = [
+            item
+            for item in self._client.get_requirements().items
+            if item.requirement_id == requirement_id
+        ]
+        return matches[0] if len(matches) == 1 else None
 
     def confirm_capture(
         self,
@@ -397,7 +519,9 @@ __all__ = [
     "CaptureRunResult",
     "CaptureRuntimeCanceledError",
     "CaptureRuntimeJobError",
+    "CaptureRuntimeRequirementUnavailableError",
     "CaptureRuntimeStateUnknownError",
     "CaptureRuntimeTimeoutError",
     "CertPrepCaptureCoordinator",
+    "PDF_OCR_UNAVAILABLE_MESSAGE",
 ]

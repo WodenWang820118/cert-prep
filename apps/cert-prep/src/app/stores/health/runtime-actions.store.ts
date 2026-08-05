@@ -141,15 +141,6 @@ export class RuntimeActionsStore implements OnDestroy {
     }
   }
 
-  openOcrRuntimeInstallConsent(
-    kind: RuntimeKind,
-    runtimeInstallActive: boolean,
-  ): void {
-    if (!runtimeInstallActive) {
-      this.runtimeInstallConsentKind.set(kind);
-    }
-  }
-
   setRuntimeInstallConsentVisible(visible: boolean): void {
     if (!visible) {
       this.cancelRuntimeInstallConsent();

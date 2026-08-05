@@ -88,10 +88,10 @@ const REMAINING_CHECKS = [
   'model',
   'ownedProcessesReleased',
 ] as const satisfies readonly ResilienceCheck[];
-const WINDOWSML_RUNTIME_KIND = 'windowsml_ocr';
-const WINDOWSML_RUNTIME_PROVIDER = 'windowsml';
-const WINDOWSML_RUNTIME_MODEL = 'pp-ocrv6-medium-windowsml';
-const WINDOWSML_RUNTIME_MISSING_REASON = 'windowsml_runtime_missing';
+const OLLAMA_RUNTIME_KIND = 'ollama';
+const OLLAMA_RUNTIME_PROVIDER = 'ollama';
+const OLLAMA_RUNTIME_MODEL = 'qwen3.5:4b';
+const OLLAMA_RUNTIME_MISSING_REASON = 'ollama_missing';
 const OLLAMA_MODEL = DEFAULT_LLM_MODEL;
 const AUTO_DRAFT_TERMINAL_STATUSES = new Set([
   'succeeded',
@@ -343,26 +343,26 @@ export async function executeRemainingResilienceScenarios(
   const selection = await exactProviderSelection(transport);
 
   const runtime = await captureTimedProof(now, async () => {
-    const requirementBefore = await exactWindowsMlRequirement(
+    const requirementBefore = await exactOllamaRuntimeRequirement(
       transport,
       false,
       run.options.appDataDir,
     );
     const proof = await runCancelableOperationScenario(transport, {
       kind: 'runtime',
-      startPath: `/runtime/installations/${WINDOWSML_RUNTIME_KIND}`,
+      startPath: `/runtime/installations/${OLLAMA_RUNTIME_KIND}`,
       operationPath: (operationId) =>
         `/runtime/installations/${encoded(operationId)}`,
-      operationKind: WINDOWSML_RUNTIME_KIND,
-      provider: WINDOWSML_RUNTIME_PROVIDER,
-      model: WINDOWSML_RUNTIME_MODEL,
+      operationKind: OLLAMA_RUNTIME_KIND,
+      provider: OLLAMA_RUNTIME_PROVIDER,
+      model: OLLAMA_RUNTIME_MODEL,
       timeoutMs: options.timeoutMs,
       afterCanceled: async () =>
         captureStableCanceledState(
           options.latePublishObservationWindowMs,
           wait,
           () =>
-            exactWindowsMlRequirement(transport, false, run.options.appDataDir),
+            exactOllamaRuntimeRequirement(transport, false, run.options.appDataDir),
         ),
     });
     await waitForOperationSuccess(
@@ -370,14 +370,14 @@ export async function executeRemainingResilienceScenarios(
       operationIdFromCommitProof(proof, 'runtime'),
       (operationId) => `/runtime/installations/${encoded(operationId)}`,
       {
-        kind: WINDOWSML_RUNTIME_KIND,
-        provider: WINDOWSML_RUNTIME_PROVIDER,
-        model: WINDOWSML_RUNTIME_MODEL,
+        kind: OLLAMA_RUNTIME_KIND,
+        provider: OLLAMA_RUNTIME_PROVIDER,
+        model: OLLAMA_RUNTIME_MODEL,
       },
       options.timeoutMs,
       'runtime',
     );
-    const requirementAfter = await exactWindowsMlRequirement(
+    const requirementAfter = await exactOllamaRuntimeRequirement(
       transport,
       true,
       run.options.appDataDir,
@@ -587,7 +587,7 @@ export async function exactProviderSelection(
   };
 }
 
-export async function exactWindowsMlRequirement(
+export async function exactOllamaRuntimeRequirement(
   transport: JsonTransport,
   expectedAvailable: boolean,
   appDataDir: string | undefined,
@@ -595,46 +595,46 @@ export async function exactWindowsMlRequirement(
   const body = requireJsonObject(
     await transport.request('GET', '/runtime/requirements'),
     [200],
-    'WindowsML runtime requirement',
+    'Ollama runtime requirement',
   );
   if (!Array.isArray(body.items)) {
-    throw new Error('WindowsML runtime requirements response was invalid.');
+    throw new Error('Ollama runtime requirements response was invalid.');
   }
   const matches = body.items.filter(
     (item) =>
       typeof item === 'object' &&
       item !== null &&
-      (item as Record<string, unknown>).kind === WINDOWSML_RUNTIME_KIND,
+      (item as Record<string, unknown>).kind === OLLAMA_RUNTIME_KIND,
   );
   if (matches.length !== 1) {
-    throw new Error('WindowsML runtime requirement was missing or duplicated.');
+    throw new Error('Ollama runtime requirement was missing or duplicated.');
   }
   const requirement = matches[0] as Record<string, unknown>;
   if (requirement.available !== expectedAvailable) {
     throw new Error(
-      `WindowsML runtime availability was ${String(requirement.available)}; expected ${String(expectedAvailable)}.`,
+      `Ollama runtime availability was ${String(requirement.available)}; expected ${String(expectedAvailable)}.`,
     );
   }
   if (!appDataDir) {
     throw new Error(
-      'WindowsML runtime containment requires isolated app data.',
+      'Ollama runtime containment requires isolated app data.',
     );
   }
   const canonicalAppData = realpathSync.native(resolve(appDataDir));
   const installedPath = requirement.installed_path;
   if (!expectedAvailable) {
     if (
-      requirement.unavailable_reason !== WINDOWSML_RUNTIME_MISSING_REASON ||
+      requirement.unavailable_reason !== OLLAMA_RUNTIME_MISSING_REASON ||
       typeof installedPath !== 'string' ||
       !isAbsolute(installedPath)
     ) {
       throw new Error(
-        'WindowsML runtime was not a clean missing prerequisite.',
+        'Ollama runtime was not a clean missing prerequisite.',
       );
     }
     const resolvedInstallTarget = resolve(installedPath);
     if (lstatSync(resolvedInstallTarget, { throwIfNoEntry: false })) {
-      throw new Error('WindowsML missing runtime target already existed.');
+      throw new Error('Ollama missing runtime target already existed.');
     }
     const canonicalInstallTarget = canonicalMissingTarget(
       resolvedInstallTarget,
@@ -642,10 +642,10 @@ export async function exactWindowsMlRequirement(
     const installTargetRelative = containedRuntimeRelativePath(
       canonicalAppData,
       canonicalInstallTarget,
-      'WindowsML missing runtime target was not contained by this acceptance app-data directory.',
+      'Ollama missing runtime target was not contained by this acceptance app-data directory.',
     );
     return {
-      kind: WINDOWSML_RUNTIME_KIND,
+      kind: OLLAMA_RUNTIME_KIND,
       available: false,
       unavailableReason: requirement.unavailable_reason,
       installTargetPathRelative: installTargetRelative,
@@ -659,25 +659,25 @@ export async function exactWindowsMlRequirement(
     !lstatSync(installedPath).isDirectory() ||
     lstatSync(installedPath).isSymbolicLink()
   ) {
-    throw new Error('WindowsML installed path was missing or unsafe.');
+    throw new Error('Ollama installed path was missing or unsafe.');
   }
   const resolvedInstalledPath = resolve(installedPath);
   const canonicalInstalledPath = realpathSync.native(resolvedInstalledPath);
   if (!sameCanonicalPath(resolvedInstalledPath, canonicalInstalledPath)) {
-    throw new Error('WindowsML installed path was not canonical.');
+    throw new Error('Ollama installed path was not canonical.');
   }
   const installedRelative = containedRuntimeRelativePath(
     canonicalAppData,
     canonicalInstalledPath,
-    'WindowsML installed path was not contained by this acceptance app-data directory.',
+    'Ollama installed path was not contained by this acceptance app-data directory.',
   );
   if (requirement.unavailable_reason !== null) {
     throw new Error(
-      'Available WindowsML runtime retained an unavailable reason.',
+      'Available Ollama runtime retained an unavailable reason.',
     );
   }
   return {
-    kind: WINDOWSML_RUNTIME_KIND,
+    kind: OLLAMA_RUNTIME_KIND,
     available: true,
     installedPathRelative: installedRelative.replaceAll('\\', '/'),
   };
@@ -1091,8 +1091,6 @@ function createRunState(options: RemainingResilienceOptions): SmokeRunState {
     outDir: options.diagnosticsRoot,
     appDataDir: join(options.diagnosticsRoot, 'app-data'),
     cdpPort: options.cdpPort,
-    ocrProvider: 'windowsml',
-    ocrPageWorkers: 1,
     llmProvider: 'ollama',
     ollamaHost: `http://${options.ollamaHost}`,
     ollamaModelsDir: options.ollamaModelsRoot,
@@ -1105,7 +1103,7 @@ function createRunState(options: RemainingResilienceOptions): SmokeRunState {
     streamingDraftWorkers: 1,
     skipGpuSampling: true,
     productionSummary: false,
-    allowOcrChunkVariance: true,
+    allowCaptureChunkVariance: true,
     verifyStreamingPracticeReady: false,
   };
   const metrics: SmokeMetrics = {
@@ -1122,7 +1120,6 @@ function createRunState(options: RemainingResilienceOptions): SmokeRunState {
     generation_readiness_at_start: unavailableGenerationReadinessSnapshot(
       'capture_not_reached',
     ),
-    ocr_provider: smokeOptions.ocrProvider,
     first_chunk_gate_ms: 15_000,
     first_chunk_under_gate: false,
     wait_for_streaming_complete: false,
@@ -1340,19 +1337,19 @@ function canonicalMissingTarget(resolvedTarget: string): string {
     const parent = dirname(ancestor);
     if (sameCanonicalPath(parent, ancestor)) {
       throw new Error(
-        'WindowsML missing runtime target had no existing ancestor.',
+        'Ollama missing runtime target had no existing ancestor.',
       );
     }
     ancestor = parent;
     ancestorEntry = lstatSync(ancestor, { throwIfNoEntry: false });
   }
   if (!ancestorEntry.isDirectory() || ancestorEntry.isSymbolicLink()) {
-    throw new Error('WindowsML missing runtime target ancestor was unsafe.');
+    throw new Error('Ollama missing runtime target ancestor was unsafe.');
   }
   const canonicalAncestor = realpathSync.native(ancestor);
   if (!sameCanonicalPath(ancestor, canonicalAncestor)) {
     throw new Error(
-      'WindowsML missing runtime target ancestor was not canonical.',
+      'Ollama missing runtime target ancestor was not canonical.',
     );
   }
   return resolve(canonicalAncestor, relative(ancestor, resolvedTarget));

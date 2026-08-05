@@ -6,8 +6,9 @@ import pytest
 
 from conftest import minimal_pdf
 from cert_prep_backend.domains.mock_exams import draft_jobs
+from cert_prep_backend.domains.mock_exams import manual_operations
 from cert_prep_backend.domains.mock_exams import repository as drafts_repository
-from cert_prep_backend.domains.mock_exams.models import DraftSuggestion
+from cert_prep_backend.domains.mock_exams.models import DraftSuggestion, UnavailableDraftBlock
 
 
 def test_draft_insert_and_success_attribution_commit_together(client, auth_headers) -> None:
@@ -91,6 +92,66 @@ def test_draft_insert_rolls_back_when_success_attribution_cannot_commit(
     persisted = draft_jobs.get_job(client.app.state.database, job["id"])
     assert persisted["status"] == "running"
     assert persisted["phase"] == "committing"
+
+
+def test_manual_operation_persists_unavailable_parsed_blocks_without_playable_rows(
+    client,
+    auth_headers,
+) -> None:
+    project_id, document_id, chunk = _source_chunk(client, auth_headers)
+    operation = manual_operations.create_operation(
+        client.app.state.database,
+        project_id=project_id,
+        document_id=document_id,
+        limit=1,
+        strategy="hybrid_reasoning",
+        provider="capture-runtime-question-completion",
+        model="qwen3.5:4b",
+    )
+    manual_operations.mark_running(client.app.state.database, operation["id"])
+    manual_operations.begin_commit(client.app.state.database, operation["id"])
+
+    drafts_repository.append_generated_drafts_and_complete_manual_operation(
+        client.app.state.database,
+        operation_id=operation["id"],
+        project_id=project_id,
+        document_id=document_id,
+        suggestions=[],
+        effective_provider=None,
+        effective_model=None,
+        fallback_reason=None,
+        unavailable_blocks=[
+            UnavailableDraftBlock(
+                chunk_id=chunk["id"],
+                citation_page=chunk["page_number"],
+                source_excerpt="JLPT question 1",
+                source_order=10001,
+                source_question_number="1",
+                reason="Capture Runtime question completion returned no playable answer.",
+            )
+        ],
+    )
+
+    completed = manual_operations.get_operation(
+        client.app.state.database,
+        project_id=project_id,
+        document_id=document_id,
+        operation_id=operation["id"],
+    )
+    assert completed["status"] == "succeeded"
+    assert completed["generated_count"] == 0
+    assert completed["unavailable_blocks"] == [
+        {
+            "status": "needs_review",
+            "chunk_id": chunk["id"],
+            "citation_page": chunk["page_number"],
+            "source_excerpt": "JLPT question 1",
+            "source_order": 10001,
+            "source_question_number": "1",
+            "reason": "Capture Runtime question completion returned no playable answer.",
+        }
+    ]
+    assert drafts_repository.list_drafts(client.app.state.database, project_id) == []
 
 
 def _source_chunk(client, auth_headers) -> tuple[str, str, dict]:

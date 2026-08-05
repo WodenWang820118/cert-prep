@@ -15,7 +15,6 @@ import { fileURLToPath } from 'node:url';
 
 import {
   validateCaptureArtifactBytes,
-  validateCaptureWindowsmlDescriptor,
 } from './capture-runtime-contract.mts';
 import { CAPTURE_DOCUMENT_SCHEMA_SHA256 } from './package-qa/constants.mts';
 import { prepareRuntimeResources } from './prepare-runtime-resources.mts';
@@ -29,380 +28,88 @@ const canonicalSchemaFixturePath = join(
 afterEach(() => {
   while (tempRoots.length > 0) {
     const tempRoot = tempRoots.pop();
-    if (tempRoot) {
-      rmSync(tempRoot, { recursive: true, force: true });
-    }
+    if (tempRoot) rmSync(tempRoot, { recursive: true, force: true });
   }
 });
 
-test('release resources bundle backend and reference OCR through HTTPS only', async () => {
+test('resources bundle the backend and published Capture Runtime contract only', async () => {
   const fixture = createFixture();
   const outputDir = join(fixture.workspaceRoot, 'generated-resources');
-
-  await prepareRuntimeResources({
-    ...fixture,
-    outputDir,
-    mode: 'release',
-    windowsmlReleaseBaseUrl:
-      'https://github.com/example/cert-prep/releases/download/cert-prep-v0.1.0-alpha.1',
-  });
+  await prepareRuntimeResources({ ...fixture, outputDir, mode: 'release' });
 
   const backend = readJson(join(outputDir, 'backend-runtime-manifest.json'));
-  const ocr = readJson(join(outputDir, 'windowsml-ocr-runtime-manifest.json'));
   const metadata = readJson(join(outputDir, 'release-metadata.json'));
-  const capture = readJson(
-    join(outputDir, 'capture-runtime-manifest.json'),
-  );
+  const capture = readJson(join(outputDir, 'capture-runtime-manifest.json'));
   assert.equal(backend.artifact.url, null);
-  assert.equal(
-    readFileSync(join(outputDir, backend.artifact.file_name), 'utf8'),
-    'backend',
-  );
-  assert.equal(
-    ocr.artifact.url,
-    'https://github.com/example/cert-prep/releases/download/cert-prep-v0.1.0-alpha.1/cert-prep-ocr-windowsml-runtime-0.1.0-alpha.1-x86_64-pc-windows-msvc.zip',
-  );
-  assert.equal(
-    existsSync(
-      join(
-        outputDir,
-        'cert-prep-ocr-windowsml-runtime-0.1.0-alpha.1-x86_64-pc-windows-msvc.zip',
-      ),
-    ),
-    false,
-  );
-  assert.equal(metadata.version, '0.1.0-alpha.1');
-  assert.equal('windows_msi_version' in metadata, false);
-  assert.equal(metadata.python_runtime_version, '3.12');
-  assert.equal(metadata.channel, 'unsigned_public_alpha');
-  assert.equal(metadata.distribution_profile, 'public_unsigned_alpha');
-  assert.equal(metadata.publishable, true);
-  assert.equal(
-    metadata.runtime_assets.windowsml_ocr.distribution,
-    'github_release_download',
-  );
-  assert.equal(metadata.signed, false);
-  assert.equal(metadata.warnings.production_ready, false);
-  assert.equal(capture.runtimeVersion, '0.3.0');
+  assert.equal(metadata.runtime_assets.backend.distribution, 'bundled');
+  assert.equal(metadata.runtime_assets.capture_runtime.structuring_mode, 'host');
+  assert.equal(capture.runtimeVersion, '0.3.10');
   assert.equal(capture.apiVersion, '1.0');
   assert.equal(capture.captureDocumentSchemaVersion, '1');
-  assert.equal(
-    readFileSync(join(outputDir, capture.fileName), 'utf8'),
-    'capture-runtime',
-  );
-  assert.deepEqual(
-    readJson(join(outputDir, capture.schemaFileName)),
-    canonicalCaptureDocumentSchema(),
-  );
-  assert.equal(
-    metadata.runtime_assets.capture_runtime.distribution,
-    'versioned_release_artifact_staged',
-  );
-  assert.equal(
-    metadata.runtime_assets.capture_runtime.schema_file_name,
-    'capture-document-v1.schema.json',
-  );
-  assert.equal(
-    metadata.runtime_assets.capture_runtime.structuring_mode,
-    'host',
-  );
-  assert.deepEqual(
-    metadata.runtime_assets.capture_runtime.runtime_requirements,
-    capture.runtimeRequirements,
-  );
+  assert.equal(existsSync(join(outputDir, 'windowsml-ocr-runtime-manifest.json')), false);
+  assert.deepEqual(readJson(join(outputDir, capture.schemaFileName)), canonicalCaptureDocumentSchema());
 });
 
-test('release resources reject file and non-release URLs', async () => {
-  const fixture = createFixture();
-  await assert.rejects(
-    prepareRuntimeResources({
-      ...fixture,
-      outputDir: join(fixture.workspaceRoot, 'generated-resources'),
-      mode: 'release',
-      windowsmlReleaseBaseUrl: 'file:///C:/runtime',
-    }),
-    /must use the cert-prep-v0\.1\.0-alpha\.1 GitHub Release URL/,
-  );
-  await assert.rejects(
-    prepareRuntimeResources({
-      ...fixture,
-      outputDir: join(fixture.workspaceRoot, 'generated-resources'),
-      mode: 'release',
-      windowsmlReleaseBaseUrl:
-        'https://github.com/example/cert-prep/releases/download/cert-prep-v0.1.0-alpha.2',
-    }),
-    /must use the cert-prep-v0\.1\.0-alpha\.1 GitHub Release URL/,
-  );
-});
-
-test('dev resources use an explicit local OCR file URL', async () => {
+test('dev resources remain local and non-publishable without cert-prep OCR assets', async () => {
   const fixture = createFixture();
   const outputDir = join(fixture.workspaceRoot, 'generated-resources');
   await prepareRuntimeResources({ ...fixture, outputDir, mode: 'dev' });
-
-  const ocr = readJson(join(outputDir, 'windowsml-ocr-runtime-manifest.json'));
   const metadata = readJson(join(outputDir, 'release-metadata.json'));
-  assert.match(ocr.artifact.url, /^file:\/\//);
   assert.equal(metadata.release_tag, 'cert-prep-local-v0.1.0-alpha.1');
   assert.equal(metadata.channel, 'local_nonpublishable');
-  assert.equal(metadata.distribution_profile, 'local_nonpublishable');
   assert.equal(metadata.publishable, false);
-  assert.equal(metadata.distribution_mode, 'dev');
-  assert.equal(
-    metadata.runtime_assets.windowsml_ocr.distribution,
-    'local_file',
-  );
-  assert.match(metadata.warnings.smartscreen, /cannot be published/);
+  assert.equal('windowsml_ocr' in metadata.runtime_assets, false);
 });
 
-test('capture runtime staging is mandatory and fails closed on provenance drift', async () => {
+test('Capture Runtime staging fails closed on missing or changed provenance', async () => {
   const fixture = createFixture();
   await assert.rejects(
     prepareRuntimeResources({
       workspaceRoot: fixture.workspaceRoot,
       backendRuntimeRoot: fixture.backendRuntimeRoot,
-      windowsmlRuntimeRoot: fixture.windowsmlRuntimeRoot,
       outputDir: join(fixture.workspaceRoot, 'missing-capture'),
       mode: 'dev',
     }),
     /Capture runtime manifest was not staged/,
   );
-  await assert.rejects(
-    prepareRuntimeResources({
-      workspaceRoot: fixture.workspaceRoot,
-      backendRuntimeRoot: fixture.backendRuntimeRoot,
-      windowsmlRuntimeRoot: fixture.windowsmlRuntimeRoot,
-      captureRuntimeManifestPath: fixture.captureRuntimeManifestPath,
-      captureRuntimeArtifactPath: fixture.captureRuntimeArtifactPath,
-      outputDir: join(fixture.workspaceRoot, 'missing-schema'),
-      mode: 'dev',
-    }),
-    /CERT_PREP_CAPTURE_DOCUMENT_SCHEMA_PATH is required/,
-  );
 
   const manifest = readJson(fixture.captureRuntimeManifestPath);
   manifest.runtimeVersion = '0.2.0';
-  writeFileSync(
-    fixture.captureRuntimeManifestPath,
-    JSON.stringify(manifest),
-    'utf8',
-  );
+  writeJson(fixture.captureRuntimeManifestPath, manifest);
   await assert.rejects(
-    prepareRuntimeResources({
-      ...fixture,
-      outputDir: join(fixture.workspaceRoot, 'wrong-version'),
-      mode: 'dev',
-    }),
-    /runtimeVersion must be 0\.3\.0/,
+    prepareRuntimeResources({ ...fixture, outputDir: join(fixture.workspaceRoot, 'wrong-version'), mode: 'dev' }),
+    /runtimeVersion must be 0\.3\.10/,
   );
 
-  manifest.runtimeVersion = '0.3.0';
+  manifest.runtimeVersion = '0.3.10';
   manifest.sha256 = '0'.repeat(64);
-  writeFileSync(
-    fixture.captureRuntimeManifestPath,
-    JSON.stringify(manifest),
-    'utf8',
-  );
+  writeJson(fixture.captureRuntimeManifestPath, manifest);
   await assert.rejects(
-    prepareRuntimeResources({
-      ...fixture,
-      outputDir: join(fixture.workspaceRoot, 'wrong-digest'),
-      mode: 'dev',
-    }),
+    prepareRuntimeResources({ ...fixture, outputDir: join(fixture.workspaceRoot, 'wrong-digest'), mode: 'dev' }),
     /checksum mismatch/,
   );
 
-  manifest.sha256 = createHash('sha256')
-    .update('capture-runtime')
-    .digest('hex');
+  manifest.sha256 = sha256('capture-runtime');
   manifest.schemaSha256 = '0'.repeat(64);
-  writeFileSync(
-    fixture.captureRuntimeManifestPath,
-    JSON.stringify(manifest),
-    'utf8',
-  );
+  writeJson(fixture.captureRuntimeManifestPath, manifest);
   await assert.rejects(
-    prepareRuntimeResources({
-      ...fixture,
-      outputDir: join(fixture.workspaceRoot, 'wrong-schema-digest'),
-      mode: 'dev',
-    }),
+    prepareRuntimeResources({ ...fixture, outputDir: join(fixture.workspaceRoot, 'wrong-schema-digest'), mode: 'dev' }),
     /schemaSha256 must be/,
   );
 });
 
-test('capture runtime executable bytes use the shared bounded integer contract', async () => {
+test('Capture Runtime executable bytes use the shared bounded contract', async () => {
   for (const bytes of [1, 536_870_912]) {
-    assert.equal(
-      validateCaptureArtifactBytes(bytes, 'Capture runtime executable'),
-      bytes,
-    );
+    assert.equal(validateCaptureArtifactBytes(bytes, 'Capture runtime executable'), bytes);
   }
-
-  for (const bytes of [
-    0,
-    536_870_913,
-    1.5,
-    '15',
-    Number.MAX_SAFE_INTEGER + 1,
-  ]) {
+  for (const bytes of [0, 536_870_913, 1.5, '15', Number.MAX_SAFE_INTEGER + 1]) {
     const fixture = createFixture();
     const manifest = readJson(fixture.captureRuntimeManifestPath);
     manifest.bytes = bytes;
-    writeFileSync(
-      fixture.captureRuntimeManifestPath,
-      JSON.stringify(manifest),
-      'utf8',
-    );
+    writeJson(fixture.captureRuntimeManifestPath, manifest);
     await assert.rejects(
-      prepareRuntimeResources({
-        ...fixture,
-        outputDir: join(fixture.workspaceRoot, `invalid-runtime-bytes-${String(bytes)}`),
-        mode: 'dev',
-      }),
+      prepareRuntimeResources({ ...fixture, outputDir: join(fixture.workspaceRoot, `invalid-${String(bytes)}`), mode: 'dev' }),
       /Capture runtime executable bytes must be between 1 and 536870912/,
-    );
-  }
-});
-
-test('capture schema trust anchor rejects self-signed truncation and critical-field mutation', async () => {
-  const fixture = createFixture();
-  const manifest = readJson(fixture.captureRuntimeManifestPath);
-  const truncatedSchema = canonicalCaptureDocumentSchemaBytes().slice(0, -2);
-  writeFileSync(fixture.captureDocumentSchemaPath, truncatedSchema, 'utf8');
-  manifest.schemaSha256 = createHash('sha256')
-    .update(truncatedSchema)
-    .digest('hex');
-  writeFileSync(
-    fixture.captureRuntimeManifestPath,
-    JSON.stringify(manifest),
-    'utf8',
-  );
-  await assert.rejects(
-    prepareRuntimeResources({
-      ...fixture,
-      outputDir: join(fixture.workspaceRoot, 'self-signed-truncated-schema'),
-      mode: 'dev',
-    }),
-    /schemaSha256 must be/,
-  );
-
-  const changedSchema = canonicalCaptureDocumentSchema();
-  changedSchema.additionalProperties = true;
-  const changedSchemaBytes = `${JSON.stringify(changedSchema, null, 2)}\r\n`;
-  writeFileSync(fixture.captureDocumentSchemaPath, changedSchemaBytes, 'utf8');
-  manifest.schemaSha256 = createHash('sha256')
-    .update(changedSchemaBytes)
-    .digest('hex');
-  writeFileSync(
-    fixture.captureRuntimeManifestPath,
-    JSON.stringify(manifest),
-    'utf8',
-  );
-  await assert.rejects(
-    prepareRuntimeResources({
-      ...fixture,
-      outputDir: join(fixture.workspaceRoot, 'self-signed-mutated-schema'),
-      mode: 'dev',
-    }),
-    /schemaSha256 must be/,
-  );
-});
-
-test('capture WindowsML descriptor accepts only the shared canonical corpus', () => {
-  const validDescriptor = {
-    artifactUrl: 'https://example.test/releases/windowsml.zip',
-    artifactFileName: 'windowsml.zip',
-    bytes: 123_456,
-    sha256: '2'.repeat(64),
-  };
-  assert.deepEqual(
-    validateCaptureWindowsmlDescriptor(validDescriptor),
-    validDescriptor,
-  );
-  assert.doesNotThrow(() =>
-    validateCaptureWindowsmlDescriptor({
-      ...validDescriptor,
-      artifactUrl: 'https://example.test:443/releases/windowsml.zip',
-    }),
-  );
-  for (const bytes of [1, 536_870_912]) {
-    assert.doesNotThrow(() =>
-      validateCaptureWindowsmlDescriptor({ ...validDescriptor, bytes }),
-    );
-  }
-
-  const invalidUrls = [
-    'http://example.test/releases/windowsml.zip',
-    'HTTPS://example.test/releases/windowsml.zip',
-    'https:///releases/windowsml.zip',
-    'https://@example.test/releases/windowsml.zip',
-    'https://user@example.test/releases/windowsml.zip',
-    'https://user:secret@example.test/releases/windowsml.zip',
-    'https://example.test:8443/releases/windowsml.zip',
-    'https://example.test/releases/windowsml.zip?token=secret',
-    'https://example.test/releases/windowsml.zip#fragment',
-    'https://example.test/releases/../windowsml.zip',
-    'https://example.test/releases/./windowsml.zip',
-    'https://example.test/releases/%2e%2e/windowsml.zip',
-    'https://example.test/releases/%252e%252e/windowsml.zip',
-    'https://example.test/releases/%2f/windowsml.zip',
-    'https://example.test/releases/%5c/windowsml.zip',
-    'https://example.test\\releases/windowsml.zip',
-    'https://example.test/releases\\windowsml.zip',
-    'https://example.test/releases/file.txt:windowsml.zip',
-    'https://example.test/releases/other.zip',
-    'https://exa\nmple.test/releases/windowsml.zip',
-  ];
-  for (const artifactUrl of invalidUrls) {
-    assert.throws(
-      () =>
-        validateCaptureWindowsmlDescriptor({
-          ...validDescriptor,
-          artifactUrl,
-        }),
-      /artifactUrl is not canonical HTTPS/,
-      artifactUrl,
-    );
-  }
-
-  for (const bytes of [0, 536_870_913, 1.5, Number.NaN]) {
-    assert.throws(
-      () =>
-        validateCaptureWindowsmlDescriptor({ ...validDescriptor, bytes }),
-      /bytes must be between 1 and 536870912/,
-    );
-  }
-  assert.throws(
-    () =>
-      validateCaptureWindowsmlDescriptor({
-        ...validDescriptor,
-        sha256: 'A'.repeat(64),
-      }),
-    /64 lowercase hex characters/,
-  );
-  assert.throws(
-    () =>
-      validateCaptureWindowsmlDescriptor({
-        ...validDescriptor,
-        extra: 'not-part-of-v1',
-      }),
-    /must contain exactly/,
-  );
-  for (const artifactFileName of [
-    '../windowsml.zip',
-    'folder/windowsml.zip',
-    'windowsml.zip:stream',
-    'windows ml.zip',
-    'windowsml.exe',
-  ]) {
-    assert.throws(
-      () =>
-        validateCaptureWindowsmlDescriptor({
-          ...validDescriptor,
-          artifactFileName,
-        }),
-      /plain \.zip name/,
     );
   }
 });
@@ -410,7 +117,6 @@ test('capture WindowsML descriptor accepts only the shared canonical corpus', ()
 function createFixture(): {
   workspaceRoot: string;
   backendRuntimeRoot: string;
-  windowsmlRuntimeRoot: string;
   captureRuntimeManifestPath: string;
   captureRuntimeArtifactPath: string;
   captureDocumentSchemaPath: string;
@@ -418,72 +124,39 @@ function createFixture(): {
   const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-prep-resources-'));
   tempRoots.push(workspaceRoot);
   const backendRuntimeRoot = join(workspaceRoot, 'backend');
-  const windowsmlRuntimeRoot = join(workspaceRoot, 'windowsml');
   mkdirSync(backendRuntimeRoot, { recursive: true });
-  mkdirSync(windowsmlRuntimeRoot, { recursive: true });
-  writeRuntime(
-    backendRuntimeRoot,
-    'backend-runtime-manifest.json',
-    'python_backend',
-    'cert-prep-backend-runtime-0.1.0-alpha.1-x86_64-pc-windows-msvc.zip',
-    'backend',
-  );
-  writeRuntime(
-    windowsmlRuntimeRoot,
-    'windowsml-ocr-runtime-manifest.json',
-    'windowsml_ocr',
-    'cert-prep-ocr-windowsml-runtime-0.1.0-alpha.1-x86_64-pc-windows-msvc.zip',
-    'ocr',
-  );
-  const captureRuntimeArtifactPath = join(
-    workspaceRoot,
-    'capture-runtime-x86_64-pc-windows-msvc.exe',
-  );
-  const captureRuntimeManifestPath = join(
-    workspaceRoot,
-    'capture-runtime-manifest.json',
-  );
-  const captureDocumentSchemaPath = join(
-    workspaceRoot,
-    'capture-document-v1.schema.json',
-  );
+  const backendName = 'cert-prep-backend-runtime-0.1.0-alpha.1-x86_64-pc-windows-msvc.zip';
+  writeFileSync(join(backendRuntimeRoot, backendName), 'backend');
+  writeJson(join(backendRuntimeRoot, 'backend-runtime-manifest.json'), {
+    kind: 'python_backend',
+    version: '0.1.0-alpha.1',
+    target: 'x86_64-pc-windows-msvc',
+    entrypoint: 'backend.exe',
+    artifact: { file_name: backendName, sha256: sha256('backend'), bytes: 7, url: null },
+  });
+
+  const captureRuntimeArtifactPath = join(workspaceRoot, 'capture-runtime-x86_64-pc-windows-msvc.exe');
+  const captureRuntimeManifestPath = join(workspaceRoot, 'capture-runtime-manifest.json');
+  const captureDocumentSchemaPath = join(workspaceRoot, 'capture-document-v1.schema.json');
   const captureSchema = canonicalCaptureDocumentSchemaBytes();
-  assert.equal(
-    createHash('sha256').update(captureSchema).digest('hex'),
-    CAPTURE_DOCUMENT_SCHEMA_SHA256,
-  );
-  writeFileSync(captureRuntimeArtifactPath, 'capture-runtime', 'utf8');
-  writeFileSync(captureDocumentSchemaPath, captureSchema, 'utf8');
-  writeFileSync(
-    captureRuntimeManifestPath,
-    JSON.stringify({
-      manifestVersion: '1',
-      runtimeVersion: '0.3.0',
-      apiVersion: '1.0',
-      captureDocumentSchemaVersion: '1',
-      platform: 'windows',
-      arch: 'x86_64',
-      fileName: 'capture-runtime-x86_64-pc-windows-msvc.exe',
-      bytes: Buffer.byteLength('capture-runtime'),
-      sha256: createHash('sha256').update('capture-runtime').digest('hex'),
-      schemaFileName: 'capture-document-v1.schema.json',
-      schemaSha256: CAPTURE_DOCUMENT_SCHEMA_SHA256,
-      runtimeRequirements: {
-        'windowsml-ocr': {
-          artifactUrl:
-            'https://github.com/example/capture-workbench/releases/download/v0.3.0/capture-windowsml-ocr-v1.zip',
-          artifactFileName: 'capture-windowsml-ocr-v1.zip',
-          bytes: 123_456,
-          sha256: '2'.repeat(64),
-        },
-      },
-    }),
-    'utf8',
-  );
+  writeFileSync(captureRuntimeArtifactPath, 'capture-runtime');
+  writeFileSync(captureDocumentSchemaPath, captureSchema);
+  writeJson(captureRuntimeManifestPath, {
+    manifestVersion: '1',
+    runtimeVersion: '0.3.10',
+    apiVersion: '1.0',
+    captureDocumentSchemaVersion: '1',
+    platform: 'windows',
+    arch: 'x86_64',
+    fileName: 'capture-runtime-x86_64-pc-windows-msvc.exe',
+    bytes: Buffer.byteLength('capture-runtime'),
+    sha256: sha256('capture-runtime'),
+    schemaFileName: 'capture-document-v1.schema.json',
+    schemaSha256: CAPTURE_DOCUMENT_SCHEMA_SHA256,
+  });
   return {
     workspaceRoot,
     backendRuntimeRoot,
-    windowsmlRuntimeRoot,
     captureRuntimeManifestPath,
     captureRuntimeArtifactPath,
     captureDocumentSchemaPath,
@@ -500,32 +173,14 @@ function canonicalCaptureDocumentSchema(): Record<string, unknown> {
   return JSON.parse(canonicalCaptureDocumentSchemaBytes());
 }
 
-function writeRuntime(
-  root: string,
-  manifestName: string,
-  kind: string,
-  fileName: string,
-  content: string,
-): void {
-  writeFileSync(join(root, fileName), content);
-  writeFileSync(
-    join(root, manifestName),
-    JSON.stringify({
-      schema_version: 1,
-      kind,
-      version: '0.1.0-alpha.1',
-      target: 'x86_64-pc-windows-msvc',
-      entrypoint: kind === 'python_backend' ? 'backend.exe' : 'ocr.exe',
-      artifact: {
-        file_name: fileName,
-        sha256: createHash('sha256').update(content).digest('hex'),
-        bytes: Buffer.byteLength(content),
-        url: null,
-      },
-    }),
-  );
+function sha256(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
 }
 
-function readJson(path: string) {
+function writeJson(path: string, value: unknown): void {
+  writeFileSync(path, JSON.stringify(value));
+}
+
+function readJson(path: string): any {
   return JSON.parse(readFileSync(path, 'utf8'));
 }

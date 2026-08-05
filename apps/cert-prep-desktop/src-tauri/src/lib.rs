@@ -7,9 +7,8 @@ mod commands;
 mod constants;
 mod manifests;
 mod runtime_installation;
-mod windows_process;
 
-use std::{fs, path::PathBuf};
+use std::{fs, path::PathBuf, thread};
 use tauri::Manager;
 
 pub use backend::{build_backend_config, BackendConfig, BackendState, DesktopRuntimeStatus};
@@ -17,10 +16,7 @@ pub use runtime_installation::DesktopRuntimeInstallation;
 
 use backend::resource_path;
 use backend_process::external_backend_env;
-use capture_runtime::{bundled_capture_runtime_paths, CaptureRuntimeState};
-use constants::{
-    BACKEND_RUNTIME_MANIFEST, CAPTURE_RUNTIME_MANIFEST, WINDOWSML_OCR_RUNTIME_MANIFEST,
-};
+use constants::{BACKEND_RUNTIME_MANIFEST, CAPTURE_RUNTIME_MANIFEST};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -30,30 +26,27 @@ pub fn run() {
             fs::create_dir_all(&data_dir)
                 .map_err(|error| format!("failed to create app data directory: {error}"))?;
 
-            let (capture_manifest_path, capture_executable_path) =
-                bundled_capture_runtime_paths(resource_path(app, CAPTURE_RUNTIME_MANIFEST))?;
-            let capture_state = CaptureRuntimeState::launch(
-                &capture_manifest_path,
-                &capture_executable_path,
-                &data_dir,
-            )?;
-
             let state = BackendState::new(
                 data_dir,
                 resource_path(app, BACKEND_RUNTIME_MANIFEST),
-                None,
-                resource_path(app, WINDOWSML_OCR_RUNTIME_MANIFEST),
-                capture_state.connection(),
+                resource_path(app, CAPTURE_RUNTIME_MANIFEST),
             );
             if let Some(config) = external_backend_env() {
-                state.set_config(config);
+                state.set_external_config(config);
             } else {
-                let launch_result = state.try_launch_installed_backend();
-                if launch_result.is_err() && package_qa_auto_install_enabled() {
-                    state.start_installation();
-                }
+                // Never hold Tauri setup (and therefore the first WebView
+                // paint) on a packaged Python backend readiness probe. A
+                // previously installed backend may take tens of seconds to
+                // become ready; the shell must remain visible so the user can
+                // inspect runtime state or explicitly install/start it.
+                let startup_state = state.clone();
+                thread::spawn(move || {
+                    let launch_result = startup_state.try_launch_installed_backend();
+                    if launch_result.is_err() && package_qa_auto_install_enabled() {
+                        startup_state.start_installation();
+                    }
+                });
             }
-            app.manage(capture_state);
             app.manage(state);
             Ok(())
         })
@@ -65,16 +58,17 @@ pub fn run() {
                 if let Some(state) = window.try_state::<BackendState>() {
                     state.terminate_child_process_tree();
                 }
-                if let Some(state) = window.try_state::<CaptureRuntimeState>() {
-                    state.terminate_child_process_tree();
-                }
             }
         })
         .invoke_handler(tauri::generate_handler![
             commands::backend_config,
             commands::desktop_runtime_status,
             commands::start_python_runtime_installation,
-            commands::get_python_runtime_installation
+            commands::get_python_runtime_installation,
+            commands::capture_runtime_status,
+            commands::install_capture_runtime,
+            commands::start_capture_runtime,
+            commands::get_capture_runtime_installation
         ])
         .run(tauri::generate_context!())
         .expect("failed to run cert prep desktop app");
@@ -113,5 +107,63 @@ mod tests {
         assert!(package_qa_auto_install_value(" true "));
         assert!(!package_qa_auto_install_value("1"));
         assert!(!package_qa_auto_install_value("false"));
+    }
+}
+
+#[cfg(test)]
+mod shared_sidecar_contract_tests {
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+        sync::mpsc,
+        thread,
+    };
+
+    use capture_sidecar_launcher::{probe_ready_once, ProbeResult, SidecarManifest};
+
+    fn manifest() -> SidecarManifest {
+        SidecarManifest {
+            manifest_version: "1".into(),
+            runtime_version: "0.3.10".into(),
+            api_version: "1.0".into(),
+            capture_document_schema_version: "1".into(),
+            platform: "windows".into(),
+            arch: "x86_64".into(),
+            file_name: "capture-runtime-x86_64-pc-windows-msvc.exe".into(),
+            bytes: 1,
+            sha256: "0".repeat(64),
+            schema_file_name: "capture-document-v1.schema.json".into(),
+            schema_sha256: "0".repeat(64),
+        }
+    }
+
+    #[test]
+    fn shared_authenticated_readiness_contract_is_consumer_green() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("listener");
+        let port = listener.local_addr().expect("address").port();
+        let (sender, receiver) = mpsc::channel();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept");
+            let mut request = [0_u8; 4096];
+            let count = stream.read(&mut request).expect("request");
+            sender
+                .send(request[..count].to_vec())
+                .expect("request bytes");
+            let body = r#"{"ready":true,"runtimeVersion":"0.3.10","apiVersion":"1.0","captureDocumentSchemaVersion":"1","capabilities":{}}"#;
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            )
+            .expect("response");
+        });
+
+        let result =
+            probe_ready_once(port, "cert-prep-test-token", &manifest()).expect("readiness probe");
+        assert!(matches!(result, ProbeResult::Ready(_)));
+        let request = String::from_utf8(receiver.recv().expect("request")).expect("utf8");
+        assert!(request.contains("Authorization: Bearer cert-prep-test-token"));
+        server.join().expect("server");
     }
 }

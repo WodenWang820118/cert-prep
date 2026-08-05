@@ -16,10 +16,12 @@ import { Readable } from 'node:stream';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 
 import {
-  type CaptureRuntimeBundleRequirement,
   validateCaptureArtifactBytes,
-  validateCaptureWindowsmlDescriptor,
 } from '../apps/cert-prep-desktop/scripts/capture-runtime-contract.mts';
+import {
+  CAPTURE_RUNTIME_RELEASE_BASE_URL,
+  CAPTURE_RUNTIME_VERSION,
+} from './capture-runtime-version.mts';
 import {
   CAPTURE_DOCUMENT_SCHEMA_FILE,
   CAPTURE_DOCUMENT_SCHEMA_SHA256,
@@ -27,13 +29,14 @@ import {
   CAPTURE_RUNTIME_API_VERSION,
   CAPTURE_RUNTIME_FILE,
   CAPTURE_RUNTIME_MANIFEST_VERSION,
-  CAPTURE_RUNTIME_VERSION,
 } from '../apps/cert-prep-desktop/scripts/package-qa/constants.mts';
 
 export { CAPTURE_RUNTIME_FILE, CAPTURE_RUNTIME_VERSION };
 
 export const CAPTURE_RUNTIME_RELEASE_BASE_URL_ENV =
   'CERT_PREP_CAPTURE_RUNTIME_RELEASE_BASE_URL';
+export const DEFAULT_CAPTURE_RUNTIME_RELEASE_BASE_URL =
+  CAPTURE_RUNTIME_RELEASE_BASE_URL;
 export const CAPTURE_RUNTIME_ROOT_ENV = 'CERT_PREP_CAPTURE_RUNTIME_ROOT';
 export const CAPTURE_RUNTIME_CHECKSUM_FILE =
   `${CAPTURE_RUNTIME_FILE}.sha256`;
@@ -45,6 +48,10 @@ export const CAPTURE_RUNTIME_RELEASE_ASSETS = Object.freeze([
 ]);
 
 const LOWERCASE_SHA256 = /^[0-9a-f]{64}$/u;
+const GITHUB_RELEASE_ASSET_HOSTS = new Set([
+  'release-assets.githubusercontent.com',
+  'objects.githubusercontent.com',
+]);
 
 export interface CaptureRuntimeReleaseManifest {
   readonly manifestVersion: string;
@@ -58,9 +65,6 @@ export interface CaptureRuntimeReleaseManifest {
   readonly sha256: string;
   readonly schemaFileName: string;
   readonly schemaSha256: string;
-  readonly runtimeRequirements: {
-    readonly 'windowsml-ocr': CaptureRuntimeBundleRequirement;
-  };
 }
 
 export interface InstallCaptureRuntimeOptions {
@@ -101,16 +105,6 @@ function assertRequiredString(
   }
 }
 
-function assertNonPlaceholderWindowsml(
-  descriptor: CaptureRuntimeBundleRequirement,
-): void {
-  if (descriptor.bytes === 1 || /^0{64}$/u.test(descriptor.sha256)) {
-    throw new Error(
-      'Capture runtime WindowsML descriptor is a placeholder and cannot be installed.',
-    );
-  }
-}
-
 export function validateCaptureRuntimeReleaseManifest(
   raw: unknown,
   expectedVersion = CAPTURE_RUNTIME_VERSION,
@@ -146,14 +140,6 @@ export function validateCaptureRuntimeReleaseManifest(
   assertRequiredString(raw, 'schemaSha256', CAPTURE_DOCUMENT_SCHEMA_SHA256);
   assertLowercaseSha256(raw.schemaSha256, 'Capture runtime schemaSha256');
 
-  const descriptor = validateCaptureWindowsmlDescriptor(
-    isRecord(raw.runtimeRequirements)
-      ? raw.runtimeRequirements['windowsml-ocr']
-      : undefined,
-    'Capture runtime runtimeRequirements.windowsml-ocr',
-  );
-  assertNonPlaceholderWindowsml(descriptor);
-
   return {
     manifestVersion: raw.manifestVersion as string,
     runtimeVersion: raw.runtimeVersion as string,
@@ -166,9 +152,6 @@ export function validateCaptureRuntimeReleaseManifest(
     sha256: raw.sha256 as string,
     schemaFileName: raw.schemaFileName as string,
     schemaSha256: raw.schemaSha256 as string,
-    runtimeRequirements: {
-      'windowsml-ocr': descriptor,
-    },
   };
 }
 
@@ -281,10 +264,36 @@ export async function verifyCaptureRuntimeReleaseDirectory(
 }
 
 async function downloadAsset(baseUrl: string, name: string, destination: string): Promise<void> {
-  const response = await fetch(`${baseUrl}/${name}`, {
-    redirect: 'error',
+  const sourceUrl = `${baseUrl}/${name}`;
+  let response = await fetch(sourceUrl, {
+    redirect: 'manual',
     headers: { Connection: 'close' },
   });
+  if (response.status >= 300 && response.status < 400) {
+    const location = response.headers.get('location');
+    let redirectedUrl: URL;
+    try {
+      redirectedUrl = new URL(location ?? '', sourceUrl);
+    } catch {
+      throw new Error(`Capture runtime artifact ${name} returned an invalid redirect.`);
+    }
+    const source = new URL(sourceUrl);
+    if (
+      source.protocol !== 'https:' ||
+      source.hostname !== 'github.com' ||
+      redirectedUrl.protocol !== 'https:' ||
+      redirectedUrl.username ||
+      redirectedUrl.password ||
+      redirectedUrl.port ||
+      !GITHUB_RELEASE_ASSET_HOSTS.has(redirectedUrl.hostname)
+    ) {
+      throw new Error(`Capture runtime artifact ${name} returned an untrusted redirect.`);
+    }
+    response = await fetch(redirectedUrl, {
+      redirect: 'error',
+      headers: { Connection: 'close' },
+    });
+  }
   if (!response.ok || !response.body) {
     throw new Error(`Capture runtime artifact ${name} download failed with HTTP ${response.status}.`);
   }
@@ -296,7 +305,9 @@ async function downloadAsset(baseUrl: string, name: string, destination: string)
 
 export async function installCaptureRuntime({
   workspaceRoot,
-  baseUrl = process.env[CAPTURE_RUNTIME_RELEASE_BASE_URL_ENV],
+  baseUrl =
+    process.env[CAPTURE_RUNTIME_RELEASE_BASE_URL_ENV] ??
+    DEFAULT_CAPTURE_RUNTIME_RELEASE_BASE_URL,
   outputRoot = process.env[CAPTURE_RUNTIME_ROOT_ENV] ||
     defaultCaptureRuntimeRoot(workspaceRoot),
 }: InstallCaptureRuntimeOptions): Promise<{

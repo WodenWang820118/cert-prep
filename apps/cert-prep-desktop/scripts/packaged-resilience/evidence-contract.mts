@@ -111,10 +111,10 @@ const RUN_ID_PATTERN = /^[A-Za-z0-9._-]{8,128}$/;
 const VERSION_PATTERN = /^\d+\.\d+\.\d+-alpha\.\d+$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/i;
 const COMMIT_SHA_PATTERN = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/i;
-const WINDOWSML_RUNTIME_KIND = 'windowsml_ocr';
-const WINDOWSML_RUNTIME_PROVIDER = 'windowsml';
-const WINDOWSML_RUNTIME_MODEL = 'pp-ocrv6-medium-windowsml';
-const WINDOWSML_RUNTIME_MISSING_REASON = 'windowsml_runtime_missing';
+const OLLAMA_RUNTIME_KIND = 'ollama';
+const OLLAMA_RUNTIME_PROVIDER = 'ollama';
+const OLLAMA_RUNTIME_MODEL = 'qwen3.5:4b';
+const OLLAMA_RUNTIME_MISSING_REASON = 'ollama_missing';
 const OLLAMA_PROVIDER = 'ollama';
 const OLLAMA_MODEL = 'qwen3.5:4b';
 
@@ -508,13 +508,13 @@ function validateScopedCancellationProof(
       : undefined;
   const kind =
     check === 'runtime'
-      ? exactString(proof.kind, WINDOWSML_RUNTIME_KIND, check, 'kind')
+      ? exactString(proof.kind, OLLAMA_RUNTIME_KIND, check, 'kind')
       : undefined;
   const provider =
     check === 'runtime'
       ? exactString(
           proof.provider,
-          WINDOWSML_RUNTIME_PROVIDER,
+          OLLAMA_RUNTIME_PROVIDER,
           check,
           'provider',
         )
@@ -523,7 +523,7 @@ function validateScopedCancellationProof(
         : undefined;
   const model =
     check === 'runtime'
-      ? exactString(proof.model, WINDOWSML_RUNTIME_MODEL, check, 'model')
+      ? exactString(proof.model, OLLAMA_RUNTIME_MODEL, check, 'model')
       : check === 'draft' || check === 'model'
         ? exactString(proof.model, OLLAMA_MODEL, check, 'model')
         : undefined;
@@ -714,7 +714,7 @@ function validateRuntimeTransition(
     'runtime requirementAfter',
   );
   if (
-    requirementAfter.kind !== WINDOWSML_RUNTIME_KIND ||
+    requirementAfter.kind !== OLLAMA_RUNTIME_KIND ||
     requirementAfter.available !== true
   ) {
     fail('runtime', 'runtime installation transition is incomplete');
@@ -742,17 +742,17 @@ function validateUnavailableRuntimeRequirement(
 ): string {
   const requirement = record(raw, `runtime ${field}`);
   if (
-    requirement.kind !== WINDOWSML_RUNTIME_KIND ||
+    requirement.kind !== OLLAMA_RUNTIME_KIND ||
     requirement.available !== false
   ) {
     fail(
       'runtime',
-      `${field} must be an unavailable WindowsML OCR requirement`,
+      `${field} must be an unavailable Ollama OCR requirement`,
     );
   }
   exactString(
     requirement.unavailableReason,
-    WINDOWSML_RUNTIME_MISSING_REASON,
+    OLLAMA_RUNTIME_MISSING_REASON,
     'runtime',
     `${field}.unavailableReason`,
   );

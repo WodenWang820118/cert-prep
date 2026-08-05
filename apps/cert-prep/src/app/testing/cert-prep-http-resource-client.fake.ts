@@ -39,7 +39,6 @@ export function createCertPrepHttpResourceClientFake(api: FakeApi): CertPrepHttp
     projects: (trigger: CertPrepResourceTrigger | undefined) => fakeResource(gated(trigger), [], () => invoke('listProjects').pipe(mapItems(items))),
     health: (trigger: CertPrepResourceTrigger | undefined) => fakeResource(gated(trigger), null, () => invoke('health')),
     llmHealth: (trigger: CertPrepResourceTrigger | undefined) => fakeResource(gated(trigger), null, () => invoke('llmHealth')),
-    ocrHealth: (trigger: CertPrepResourceTrigger | undefined) => fakeResource(gated(trigger), null, () => invoke('ocrHealth')),
     providerSelection: (trigger: CertPrepResourceTrigger | undefined) => fakeResource(gated(trigger), null, () => invoke('llmProviderSelection')),
     runtimeRequirements: (trigger: CertPrepResourceTrigger | undefined) => fakeResource(gated(trigger), [], () => invoke('runtimeRequirements').pipe(mapItems(items))),
     documents: (projectId: CertPrepResourceKey) => fakeResource(key(projectId), [], (id) => invoke('listDocuments', id).pipe(mapItems(items))),

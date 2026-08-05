@@ -118,6 +118,16 @@ class DraftGenerationJobList(BaseModel):
     items: list[DraftGenerationJobRead]
 
 
+class UnavailableDraftBlockRead(BaseModel):
+    status: str = "needs_review"
+    chunk_id: str
+    citation_page: int
+    source_excerpt: str
+    source_order: int | None = None
+    source_question_number: str | None = None
+    reason: str
+
+
 class ManualDraftGenerationOperationRead(BaseModel):
     id: str
     project_id: str
@@ -133,6 +143,7 @@ class ManualDraftGenerationOperationRead(BaseModel):
     effective_model: str | None = None
     fallback_reason: str | None = None
     generated_count: int
+    unavailable_blocks: list[UnavailableDraftBlockRead] = Field(default_factory=list)
     error: str | None = None
     created_at: str
     updated_at: str

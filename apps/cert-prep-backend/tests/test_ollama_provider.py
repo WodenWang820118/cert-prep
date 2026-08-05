@@ -241,9 +241,30 @@ def test_ollama_reasoning_requests_exact_distinct_count_when_source_supports_it(
     assert [suggestion.source_question_number for suggestion in suggestions] == ["1", "2"]
     assert len(fake_client.chat_calls) == 1
     prompt = fake_client.chat_calls[0]["messages"][1]["content"]
+    assert fake_client.chat_calls[0]["format"] == "json"
     assert "If at least 2 valid items are present, return exactly 2" in prompt
     assert "If fewer valid items are present, return only those items" in prompt
     assert "Never invent, duplicate, or split an item" in prompt
+
+
+def test_ollama_reasoning_retries_invalid_json_once_without_switching_provider() -> None:
+    chunks = _reasoning_chunks()
+    fake_client = SequencedOllamaClient(
+        models=["qwen3.5:4b"],
+        chat_contents=["not-json", json.dumps({"items": [_reasoning_item(chunks[0], 1)]})],
+    )
+    provider = OllamaProvider(
+        host="http://127.0.0.1:11434",
+        model="qwen3.5:4b",
+        timeout_seconds=1,
+        client=fake_client,
+    )
+
+    suggestions = provider.generate_reasoning_drafts(chunks, limit=1)
+
+    assert len(suggestions) == 1
+    assert [call["model"] for call in fake_client.chat_calls] == ["qwen3.5:4b", "qwen3.5:4b"]
+    assert all(call["format"] == "json" for call in fake_client.chat_calls)
 
 
 def test_ollama_reasoning_forces_num_gpu_zero_in_cpu_mode() -> None:
@@ -826,7 +847,10 @@ def test_ollama_fast_first_draft_reports_primary_runtime_failure_without_fallbac
 def test_ollama_fast_first_invalid_json_does_not_mark_model_unusable(
     monkeypatch,
 ) -> None:
-    fake_client = RecordingOllamaClient(models=["qwen3.5:4b"], chat_content="not-json")
+    fake_client = SequencedOllamaClient(
+        models=["qwen3.5:4b"],
+        chat_contents=["not-json", "not-json", "not-json", "not-json"],
+    )
     monkeypatch.setattr(ollama_transport, "resolve_ollama_executable", lambda: Path("ollama"))
     provider = OllamaProvider(
         host="http://127.0.0.1:11434",
@@ -859,3 +883,45 @@ def test_ollama_fast_first_invalid_json_does_not_mark_model_unusable(
     assert health.effective_model == "qwen3.5:4b"
     assert health.fallback_reason is None
     assert fake_client.pull_calls == 0
+
+
+def test_ollama_fast_first_retries_invalid_json_with_the_same_model(
+    monkeypatch,
+) -> None:
+    fake_client = SequencedOllamaClient(
+        models=["qwen3.5:4b"],
+        chat_contents=[
+            "not-json",
+            '{"answer":"2","rationale":"The second choice matches.","confidence":0.7}',
+        ],
+    )
+    monkeypatch.setattr(ollama_transport, "resolve_ollama_executable", lambda: Path("ollama"))
+    provider = OllamaProvider(
+        host="http://127.0.0.1:11434",
+        model="qwen3.5:4b",
+        timeout_seconds=1,
+    )
+    provider._client = fake_client
+    chunk = SourceChunk(
+        id="chunk-2",
+        page_number=2,
+        text="Question text. 1 first 2 second 3 third 4 fourth",
+        source_excerpt="Question text.",
+    )
+    candidate = DraftSuggestion(
+        chunk_id=chunk.id,
+        question="Question text.",
+        choices=["1 first", "2 second", "3 third", "4 fourth"],
+        answer="",
+        answer_key_source="manual",
+        rationale="",
+        citation_page=2,
+        source_excerpt="Question text.",
+    )
+
+    suggestion = provider.generate_fast_first_draft(chunk, candidate)
+
+    assert suggestion is not None
+    assert suggestion.answer == "2 second"
+    assert len(fake_client.chat_calls) == 2
+    assert [call["model"] for call in fake_client.chat_calls] == ["qwen3.5:4b", "qwen3.5:4b"]

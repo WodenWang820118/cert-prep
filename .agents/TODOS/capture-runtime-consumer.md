@@ -1,24 +1,18 @@
 # Capture Runtime Release Consumer TODO
 
-- [x] Implement the explicit release installer and Nx target.
-  Verify: `pnpm nx run cert-prep-desktop:install-capture-runtime --skip-nx-cache`
+- [x] Replace the backend capture contract hand mirror with generated
+      `capture_contracts` imports and add fail-closed raw/document mappers.
+      Verify: backend tests, Angular tests, lint, and import scan pass.
 
-- [x] Resolve the installed staging root from `prepare-runtime-resources` without
-  introducing build-time network access.
-  Verify: `pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`
+- [x] After producer publication, remove Python/Cargo path sources, regenerate
+      `uv.lock`/Cargo.lock from PyPI/crates.io, and run the strict consumer
+      consistency target in clean CI.
+      Verify: local strict gate, PyPI probe, backend tests, and Cargo tests pass;
+      no capture package path source remains and all resolved versions are
+      `0.3.10`. The clean consumer CI check remains an external merge gate.
 
-- [x] Synchronize runtime version `0.3.0` across desktop, backend, fixtures, and
-  durable capture-workbench documentation.
-  Verify: `rg -n "capture-runtime|CAPTURE_RUNTIME|0\\.1\\.0" apps/cert-prep-desktop apps/cert-prep-backend .agents/SPECS/capture-workbench.md`
-
-- [x] Add installer contract tests for valid, tampered, mismatched, and unsafe
-  release inputs.
-  Verify: `pnpm nx run cert-prep-desktop:capture-runtime-consumer-test --skip-nx-cache`
-
-- [x] Add the local release mirror and actual-sidecar cert-prep host flow smoke.
-  Verify: `pnpm nx run cert-prep-desktop:capture-runtime-consumer-smoke --skip-nx-cache`
-
-- [ ] Run full regression and final worktree/process evidence checks. The current
-  backend full test target still has three unrelated OpenAPI generator assertion
-  failures; the desktop/package and backend lint checks passed.
-  Verify: `pnpm nx run cert-prep-desktop:typecheck-scripts --skip-nx-cache; pnpm nx run cert-prep-desktop:cargo-test --skip-nx-cache; pnpm nx run cert-prep-backend:test --skip-nx-cache; git diff --check`
+- [ ] Run real WindowsML/Whisper positive capture against the published
+  engine-bearing `capture-runtime@0.3.10` release after explicit consent; keep
+  that evidence separate from the embedded-text product E2E.
+  Verify: run an exact-release smoke that installs the required assets and
+  records successful image/audio extraction with runtime provenance.

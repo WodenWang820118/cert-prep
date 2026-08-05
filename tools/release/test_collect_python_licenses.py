@@ -109,18 +109,6 @@ class DeclaredLicenseTests(unittest.TestCase):
         distribution = FakeDistribution({"Name": "cert-prep-contracts"})
         self.assertEqual(MODULE.declared_license(distribution), "MIT")
 
-    def test_maps_pypdfium2_bundled_license_set(self) -> None:
-        distribution = FakeDistribution(
-            {
-                "Name": "pypdfium2",
-                "License": "BSD-3-Clause, Apache-2.0, dependency licenses",
-            }
-        )
-        self.assertEqual(
-            MODULE.declared_license(distribution),
-            "BSD-3-Clause AND Apache-2.0 AND CC-BY-4.0",
-        )
-
     def test_maps_pyinstaller_bootloader_exception(self) -> None:
         distribution = FakeDistribution(
             {

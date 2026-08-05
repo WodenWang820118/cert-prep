@@ -1,4 +1,5 @@
 import { inject, Injectable } from '@angular/core';
+import { CAPTURE_RUNTIME_VERSION } from '@cert-prep/capture-runtime-version';
 import type {
   CaptureReviewJobRead as ApiCaptureReviewJobRead,
   RuntimeInstallationV1 as ApiRuntimeInstallationV1,
@@ -7,14 +8,22 @@ import type {
 } from '@cert-prep/api';
 import {
   defer,
+  forkJoin,
   map,
   of,
+  switchMap,
   throwError,
   type Observable,
 } from 'rxjs';
+import {
+  assertCaptureRuntimeCompatible,
+  CAPTURE_RUNTIME_MAJOR,
+} from '@gx-capture/capture-workbench';
 import type {
   CaptureClient,
+  CaptureBlockV1,
   ConfirmCaptureRequest,
+  CaptureEngineV1,
   CaptureDocumentV1,
   CaptureFailureV1,
   CaptureJobV1,
@@ -24,12 +33,13 @@ import type {
   CommitStructuredResultRequest,
   CreateCaptureRequest,
   RawCaptureV1,
+  RawCaptureSegmentV1,
   ReportStructuringFailureRequest,
   RuntimeInstallationV1,
   RuntimeReadyV1,
   RuntimeRequirementV1,
   StartRuntimeInstallationRequest,
-} from '@gx/capture-workbench';
+} from '@gx-capture/capture-workbench';
 import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
 import { ProjectStore } from '../../stores/project.store';
 
@@ -117,14 +127,21 @@ export class CertPrepCaptureClient implements CaptureClient {
 
   createCapture(request: CreateCaptureRequest): Observable<CaptureJobV1> {
     const projectId = this.requireProjectId();
-    return defer(() => {
-      const formData = new FormData();
-      formData.append('file', request.file, request.file.name);
-      return this.api.createCapture(projectId, formData, {
-        headers: { 'X-Cert-Prep-Operation-Id': request.clientRequestId },
-        signal: request.signal,
-      });
-    }).pipe(
+    return defer(() =>
+      forkJoin({
+        ready: this.getReady(request.signal),
+        requirements: this.getRequirements(request.signal),
+      }),
+    ).pipe(
+      switchMap(({ ready, requirements }) => {
+        assertCaptureAdmission(ready, requirements, request.sourceKind);
+        const formData = new FormData();
+        formData.append('file', request.file, request.file.name);
+        return this.api.createCapture(projectId, formData, {
+          headers: { 'X-Cert-Prep-Operation-Id': request.clientRequestId },
+          signal: request.signal,
+        });
+      }),
       map((job) => {
         const sourceKind = request.sourceKind;
         const source = job.source;
@@ -173,10 +190,14 @@ export class CertPrepCaptureClient implements CaptureClient {
           clientRequestId: request.clientRequestId,
           review: {
             reviewVersion: request.review.reviewVersion,
-            edits: request.review.edits.map((edit) => ({
-              segmentId: edit.segmentId,
-              reviewedText: edit.reviewedText,
-            })),
+            ...(request.review.edits === undefined
+              ? {}
+              : {
+                  edits: request.review.edits.map((edit) => ({
+                    segmentId: edit.segmentId,
+                    reviewedText: edit.reviewedText,
+                  })),
+                }),
           },
         },
         { signal },
@@ -188,14 +209,14 @@ export class CertPrepCaptureClient implements CaptureClient {
     const record = this.requireCapture(id);
     return this.api
       .getRaw(record.projectId, id, { signal })
-      .pipe(map((raw) => raw as unknown as RawCaptureV1));
+      .pipe(map(mapRawCapture));
   }
 
   getResult(id: string, signal?: AbortSignal): Observable<CaptureDocumentV1> {
     const record = this.requireCapture(id);
     return this.api
       .getResult(record.projectId, id, { signal })
-      .pipe(map((document) => document as unknown as CaptureDocumentV1));
+      .pipe(map(mapCaptureDocument));
   }
 
   commitStructuredResult(
@@ -278,6 +299,14 @@ function mapReady(response: ApiRuntimeReadyV1): RuntimeReadyV1 {
   if (response.service !== 'capture-runtime') {
     throw new Error('Cert Prep backend returned a non-Capture Runtime service.');
   }
+  if (
+    response.capabilities.supportsCancellation !== true ||
+    response.capabilities.supportsRawDiagnostics !== true
+  ) {
+    throw new Error(
+      'Cert Prep backend returned runtime capabilities outside the Capture contract.',
+    );
+  }
   return {
     ready: response.ready,
     service: 'capture-runtime',
@@ -289,8 +318,8 @@ function mapReady(response: ApiRuntimeReadyV1): RuntimeReadyV1 {
       structuringModes: response.capabilities.structuringModes.filter(
         isStructuringMode,
       ),
-      supportsCancellation: response.capabilities.supportsCancellation,
-      supportsRawDiagnostics: response.capabilities.supportsRawDiagnostics,
+      supportsCancellation: true,
+      supportsRawDiagnostics: true,
       maxUploadBytes: response.capabilities.maxUploadBytes,
     },
     message: response.message,
@@ -336,6 +365,202 @@ function mapFailure(
     stage: isFailureStage(failure.stage) ? failure.stage : null,
     retryable: failure.retryable ?? false,
   };
+}
+
+class CaptureClientProtocolError extends Error {
+  constructor(message: string) {
+    super(`Capture API returned an invalid contract: ${message}`);
+    this.name = 'CaptureClientProtocolError';
+  }
+}
+
+type UnknownRecord = Record<string, unknown>;
+
+function mapRawCapture(value: unknown): RawCaptureV1 {
+  const raw = record(value, 'raw capture');
+  return {
+    schemaVersion: literal(raw, 'schemaVersion', '1'),
+    diagnosticOnly: literal(raw, 'diagnosticOnly', true),
+    source: mapSource(raw['source']),
+    segments: nonEmptyArray(raw['segments'], 'segments').map(mapRawSegment),
+    sourceText: text(raw['sourceText'], 'sourceText'),
+    extractionEngine: mapEngine(raw['extractionEngine'], 'extractionEngine'),
+    warnings: warnings(raw['warnings']),
+    createdAt: timestamp(raw['createdAt'], 'createdAt'),
+  };
+}
+
+function mapCaptureDocument(value: unknown): CaptureDocumentV1 {
+  const document = record(value, 'capture document');
+  return {
+    schemaVersion: literal(document, 'schemaVersion', '1'),
+    source: mapSource(document['source']),
+    rawSegments: nonEmptyArray(document['rawSegments'], 'rawSegments').map(mapRawSegment),
+    blocks: nonEmptyArray(document['blocks'], 'blocks').map(mapBlock),
+    sourceText: text(document['sourceText'], 'sourceText'),
+    targetText: text(document['targetText'], 'targetText'),
+    extractionEngine: mapEngine(document['extractionEngine'], 'extractionEngine'),
+    structuringEngine: mapEngine(document['structuringEngine'], 'structuringEngine'),
+    warnings: warnings(document['warnings']),
+    createdAt: timestamp(document['createdAt'], 'createdAt'),
+    completedAt: timestamp(document['completedAt'], 'completedAt'),
+  };
+}
+
+function mapSource(value: unknown): CaptureDocumentV1['source'] {
+  const source = record(value, 'source');
+  const bytes = integer(source['bytes'], 'source.bytes');
+  if (bytes < 1) fail('source.bytes must be positive');
+  return {
+    sha256: pattern(source['sha256'], 'source.sha256', /^[0-9a-f]{64}$/),
+    fileName: text(source['fileName'], 'source.fileName'),
+    mediaType: text(source['mediaType'], 'source.mediaType'),
+    bytes,
+  };
+}
+
+function mapRawSegment(value: unknown): RawCaptureSegmentV1 {
+  const segment = record(value, 'raw segment');
+  return {
+    segmentId: text(segment['segmentId'], 'segmentId'),
+    order: nonNegativeInteger(segment['order'], 'segment.order'),
+    locator: mapLocator(segment['locator']),
+    text: text(segment['text'], 'segment.text'),
+  };
+}
+
+function mapBlock(value: unknown): CaptureBlockV1 {
+  const block = record(value, 'capture block');
+  const blockType = text(block['type'], 'block.type');
+  if (
+    ![
+      'heading',
+      'paragraph',
+      'list-item',
+      'table',
+      'quote',
+      'transcript',
+    ].includes(blockType)
+  ) {
+    fail(`block.type is unsupported: ${blockType}`);
+  }
+  return {
+    blockId: text(block['blockId'], 'block.blockId'),
+    order: nonNegativeInteger(block['order'], 'block.order'),
+    type: blockType as CaptureBlockV1['type'],
+    sourceSegmentId: text(block['sourceSegmentId'], 'block.sourceSegmentId'),
+    locator: mapLocator(block['locator']),
+    sourceText: text(block['sourceText'], 'block.sourceText'),
+    targetText: text(block['targetText'], 'block.targetText'),
+  };
+}
+
+function mapLocator(value: unknown): RawCaptureV1['segments'][number]['locator'] {
+  const locator = record(value, 'locator');
+  const kind = locator['kind'];
+  if (kind === 'page') {
+    const page = integer(locator['page'], 'locator.page');
+    if (page < 1) fail('locator.page must be positive');
+    const boundingBox = locator['boundingBox'];
+    if (boundingBox == null) return { kind, page, boundingBox: null };
+    if (
+      !Array.isArray(boundingBox) ||
+      boundingBox.length !== 4 ||
+      boundingBox.some((item) => typeof item !== 'number' || !Number.isFinite(item))
+    ) {
+      fail('locator.boundingBox must contain exactly four finite numbers');
+    }
+    return { kind, page, boundingBox: boundingBox as [number, number, number, number] };
+  }
+  if (kind === 'time') {
+    const startMs = nonNegativeInteger(locator['startMs'], 'locator.startMs');
+    const endMs = integer(locator['endMs'], 'locator.endMs');
+    if (endMs <= startMs) fail('locator.endMs must be greater than startMs');
+    return { kind, startMs, endMs };
+  }
+  fail(`locator.kind is unsupported: ${String(kind)}`);
+}
+
+function mapEngine(value: unknown, label: string): CaptureEngineV1 {
+  const engine = record(value, label);
+  const digest = pattern(engine['digest'], `${label}.digest`, /^sha256:[0-9a-f]{64}$/);
+  return {
+    engine: text(engine['engine'], `${label}.engine`),
+    model: text(engine['model'], `${label}.model`),
+    digest,
+    device:
+      engine['device'] == null
+        ? null
+        : text(engine['device'], `${label}.device`),
+  };
+}
+
+function warnings(value: unknown): string[] {
+  if (value == null) return [];
+  return nonEmptyArray(value, 'warnings', true).map((item, index) =>
+    text(item, `warnings[${index}]`),
+  );
+}
+
+function record(value: unknown, label: string): UnknownRecord {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+    fail(`${label} must be an object`);
+  }
+  return value as UnknownRecord;
+}
+
+function nonEmptyArray(
+  value: unknown,
+  label: string,
+  allowEmpty = false,
+): unknown[] {
+  if (!Array.isArray(value) || (!allowEmpty && value.length === 0)) {
+    fail(`${label} must be a non-empty array`);
+  }
+  return value;
+}
+
+function text(value: unknown, label: string): string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    fail(`${label} must be a non-empty string`);
+  }
+  return value;
+}
+
+function integer(value: unknown, label: string): number {
+  if (typeof value !== 'number' || !Number.isInteger(value)) {
+    fail(`${label} must be an integer`);
+  }
+  return value;
+}
+
+function nonNegativeInteger(value: unknown, label: string): number {
+  const result = integer(value, label);
+  if (result < 0) fail(`${label} must not be negative`);
+  return result;
+}
+
+function timestamp(value: unknown, label: string): string {
+  const result = text(value, label);
+  if (!/[zZ]|[+-]\d{2}:?\d{2}$/.test(result) || Number.isNaN(Date.parse(result))) {
+    fail(`${label} must be an ISO timestamp with a timezone`);
+  }
+  return result;
+}
+
+function pattern(value: unknown, label: string, expression: RegExp): string {
+  const result = text(value, label);
+  if (!expression.test(result)) fail(`${label} has an invalid format`);
+  return result;
+}
+
+function literal<T>(recordValue: UnknownRecord, key: string, expected: T): T {
+  if (recordValue[key] !== expected) fail(`${key} must be ${String(expected)}`);
+  return expected;
+}
+
+function fail(message: string): never {
+  throw new CaptureClientProtocolError(message);
 }
 
 function mapCaptureJob(
@@ -409,4 +634,61 @@ function isFailureStage(
     value === 'runtime' ||
     value === 'input'
   );
+}
+
+function assertCaptureAdmission(
+  ready: RuntimeReadyV1,
+  requirements: readonly RuntimeRequirementV1[],
+  sourceKind: CaptureSourceKind,
+): void {
+  if (!ready.ready) {
+    throw new Error('Capture Runtime is not ready.');
+  }
+  assertCaptureRuntimeCompatible(ready, CAPTURE_RUNTIME_MAJOR, 'host');
+  assertCaptureRuntimeMinorCompatible(ready.runtimeVersion);
+  if (!ready.capabilities.captureKinds.includes(sourceKind)) {
+    throw new Error(
+      `Capture Runtime does not support ${sourceKind.toUpperCase()} capture.`,
+    );
+  }
+  if (sourceKind === 'image') {
+    assertRequirementReady(requirements, 'windowsml-ocr', 'WindowsML OCR');
+  }
+  if (sourceKind === 'audio') {
+    assertRequirementReady(
+      requirements,
+      'whisper-primary',
+      'Whisper transcription',
+    );
+  }
+}
+
+function assertCaptureRuntimeMinorCompatible(runtimeVersion: string): void {
+  const expectedMinor = parseRuntimeMinor(CAPTURE_RUNTIME_VERSION);
+  if (parseRuntimeMinor(runtimeVersion) !== expectedMinor) {
+    throw new Error(
+      `Capture runtime ${runtimeVersion} is incompatible with client runtime minor ${expectedMinor} while the client is on 0.x.`,
+    );
+  }
+}
+
+function parseRuntimeMinor(version: string): number {
+  const minor = Number.parseInt(
+    version.trim().replace(/^v/i, '').split('.')[1] ?? '',
+    10,
+  );
+  return Number.isFinite(minor) ? minor : -1;
+}
+
+function assertRequirementReady(
+  requirements: readonly RuntimeRequirementV1[],
+  requirementId: RuntimeRequirementV1['requirementId'],
+  displayName: string,
+): void {
+  const requirement = requirements.find(
+    (candidate) => candidate.requirementId === requirementId,
+  );
+  if (requirement?.status === 'ready') return;
+  const detail = requirement?.detail ?? 'The runtime requirement is unavailable.';
+  throw new Error(`${displayName} is unavailable. ${detail}`);
 }

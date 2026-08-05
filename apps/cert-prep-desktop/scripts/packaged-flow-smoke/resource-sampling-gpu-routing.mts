@@ -90,16 +90,15 @@ function gpuRoutingChecksForProcessUsage(
   }>,
   processNames: ReadonlySet<string>,
 ): Record<string, boolean | number> {
-  const windowsmlOcrUsage = processGpuUsage.filter(
-    (usage) => usage.name === 'cert-prep-ocr-windowsml-runtime.exe',
+  const captureRuntimeUsage = processGpuUsage.filter(
+    (usage) => usage.name === 'capture-runtime.exe',
   );
-  const windowsmlOcrProcessObserved =
-    processNames.has('cert-prep-ocr-windowsml-runtime.exe') ||
-    windowsmlOcrUsage.length > 0;
+  const captureRuntimeProcessObserved =
+    processNames.has('capture-runtime.exe') || captureRuntimeUsage.length > 0;
   return {
-    windowsml_ocr_process_observed: windowsmlOcrProcessObserved,
-    ocr_uses_amd_igpu: hasAnyProcessGpuUsage(
-      windowsmlOcrUsage.filter((usage) => usage.adapter_kind === 'amd_igpu'),
+    capture_runtime_process_observed: captureRuntimeProcessObserved,
+    capture_runtime_uses_amd_igpu: hasAnyProcessGpuUsage(
+      captureRuntimeUsage.filter((usage) => usage.adapter_kind === 'amd_igpu'),
     ),
     gpu_luid_map_usable:
       hasRequiredAmdAdapter(dxgiAdapters) &&

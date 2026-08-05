@@ -26,12 +26,7 @@ def test_status_like_fields_are_documented_as_openapi_enums(tmp_path) -> None:
         "mixed",
         "none",
         "ocr_failed",
-        "paddle_ocr_cpu",
-        "paddle_ocr_cpu_fallback",
-        "paddle_ocr_gpu",
-        "paddle_ocr_gpu_fallback",
         "windowsml_ocr",
-        "fake_ocr",
     ]
     assert _enum_values(openapi, "DocumentRead", "content_profile") == [
         "unknown",
@@ -91,9 +86,6 @@ def test_status_like_fields_are_documented_as_openapi_enums(tmp_path) -> None:
     assert _enum_values(openapi, "RuntimeRequirementRead", "kind") == [
         "ollama",
         "ollama_model",
-        "paddle_ocr",
-        "windowsml_ocr",
-        "whisper_models",
     ]
     assert _enum_values(openapi, "DocumentOperationRead", "status") == [
         "queued",

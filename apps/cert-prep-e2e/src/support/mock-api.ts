@@ -4,7 +4,6 @@ import type {
   HealthResponse,
   LLMHealthRead,
   LLMProviderSelectionRead,
-  OCRHealthRead,
   PracticeAttemptCreate,
   PracticeAttemptRead,
   PracticeSessionCreate,
@@ -77,7 +76,6 @@ export interface MockCertPrepApi {
 }
 
 export interface MockCertPrepApiOptions {
-  readonly whisperModelsReady?: boolean;
 }
 
 interface MockUploadHold {
@@ -427,39 +425,9 @@ export async function installMockCertPrepApi(
       return;
     }
 
-    if (method === 'GET' && path === '/ocr/health') {
-      const body = {
-        provider: 'paddle',
-        engine: 'paddleocr',
-        available: true,
-        detail: 'PaddleOCR imports available',
-        python_version: '3.13.5',
-        paddle_version: '3.3.0',
-        paddleocr_version: '3.3.0',
-        selected_device: 'gpu:0',
-        cuda_available: true,
-        gpu_count: 1,
-        model_cache_dir: null,
-        fallback_reason: null,
-      } satisfies OCRHealthRead;
-      await fulfillJson(route, 200, body);
-      return;
-    }
-
     if (method === 'GET' && path === '/runtime/requirements') {
       const body = {
-        items: options.whisperModelsReady
-          ? [
-              {
-                kind: 'whisper_models' as const,
-                label: 'Whisper speech models',
-                available: true,
-                detail: 'Whisper speech models are ready.',
-                unavailable_reason: null,
-                version: 'large-v3-turbo + small',
-              },
-            ]
-          : [],
+        items: [],
       } satisfies RuntimeRequirementsRead;
       await fulfillJson(route, 200, body);
       return;
@@ -1065,7 +1033,6 @@ export function expectedSeenPaths(api: MockCertPrepApi): Set<string> {
     'GET /health',
     'GET /llm/health',
     'GET /llm/provider-selection',
-    'GET /ocr/health',
     'GET /runtime/requirements',
     'GET /projects',
     'POST /projects',
@@ -1100,8 +1067,8 @@ function documentRead(
     page_count: 2,
     has_text: true,
     status: 'ready',
-    extraction_method: 'paddle_ocr_gpu',
-    ocr_device: 'gpu:0',
+    extraction_method: 'windowsml_ocr',
+    ocr_device: 'windowsml',
     ocr_fallback_reason: null,
     ocr_duration_ms: 384,
     processed_page_count: 1,

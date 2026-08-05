@@ -1,66 +1,21 @@
-use std::{
-    fs,
-    io::Read,
-    path::{Path, PathBuf},
-};
+use std::{fs, io::Read, path::Path};
 
-use serde::{Deserialize, Serialize};
+use capture_sidecar_launcher::{
+    load_manifest, validate_manifest_contract, verify_sidecar, ManifestExpectations,
+    SidecarManifest, VerifiedSidecar,
+};
 use sha2::{Digest, Sha256};
-use url::Url;
 
 use crate::constants::{
     CAPTURE_DOCUMENT_SCHEMA_FILE, CAPTURE_DOCUMENT_SCHEMA_SHA256, CAPTURE_DOCUMENT_SCHEMA_VERSION,
-    CAPTURE_RUNTIME_API_VERSION, CAPTURE_RUNTIME_BINARY, CAPTURE_RUNTIME_MANIFEST_VERSION,
-    CAPTURE_RUNTIME_VERSION, CAPTURE_WINDOWSML_BUNDLE_MAX_BYTES,
+    CAPTURE_RUNTIME_API_VERSION, CAPTURE_RUNTIME_BINARY, CAPTURE_RUNTIME_VERSION,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct CaptureRuntimeManifest {
-    pub manifest_version: String,
-    pub runtime_version: String,
-    pub api_version: String,
-    pub capture_document_schema_version: String,
-    pub platform: String,
-    pub arch: String,
-    pub file_name: String,
-    pub bytes: u64,
-    pub sha256: String,
-    pub schema_file_name: String,
-    pub schema_sha256: String,
-    pub runtime_requirements: CaptureRuntimeRequirements,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-pub(crate) struct CaptureRuntimeRequirements {
-    #[serde(rename = "windowsml-ocr")]
-    pub windowsml_ocr: CaptureRuntimeBundleRequirement,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct CaptureRuntimeBundleRequirement {
-    pub artifact_url: String,
-    pub artifact_file_name: String,
-    pub bytes: u64,
-    pub sha256: String,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct VerifiedCaptureRuntime {
-    pub manifest: CaptureRuntimeManifest,
-    pub executable_path: PathBuf,
-}
+pub(crate) type CaptureRuntimeManifest = SidecarManifest;
+pub(crate) type VerifiedCaptureRuntime = VerifiedSidecar;
 
 pub(crate) fn load_capture_runtime_manifest(path: &Path) -> Result<CaptureRuntimeManifest, String> {
-    let content = fs::read_to_string(path).map_err(|error| {
-        format!(
-            "Capture runtime manifest is unavailable at {}: {error}",
-            path.display()
-        )
-    })?;
-    serde_json::from_str(&content)
-        .map_err(|error| format!("Capture runtime manifest is invalid JSON: {error}"))
+    load_manifest(path)
 }
 
 pub(crate) fn verify_capture_runtime(
@@ -69,193 +24,38 @@ pub(crate) fn verify_capture_runtime(
 ) -> Result<VerifiedCaptureRuntime, String> {
     let manifest = load_capture_runtime_manifest(manifest_path)?;
     validate_capture_manifest_contract(&manifest)?;
-    verify_capture_artifact(executable_path, &manifest)?;
+    let verified = verify_sidecar(
+        manifest_path,
+        executable_path,
+        &capture_manifest_expectations(),
+    )?;
     let resource_dir = manifest_path
         .parent()
         .ok_or_else(|| "Capture runtime manifest has no resource directory.".to_string())?;
     verify_capture_schema(&resource_dir.join(&manifest.schema_file_name))?;
-    Ok(VerifiedCaptureRuntime {
-        manifest,
-        executable_path: executable_path.to_path_buf(),
-    })
+    Ok(verified)
 }
 
 pub(crate) fn validate_capture_manifest_contract(
     manifest: &CaptureRuntimeManifest,
 ) -> Result<(), String> {
-    expect_field(
-        "manifestVersion",
-        &manifest.manifest_version,
-        CAPTURE_RUNTIME_MANIFEST_VERSION,
-    )?;
-    expect_field(
-        "runtimeVersion",
-        &manifest.runtime_version,
-        CAPTURE_RUNTIME_VERSION,
-    )?;
-    expect_field(
-        "apiVersion",
-        &manifest.api_version,
-        CAPTURE_RUNTIME_API_VERSION,
-    )?;
-    expect_field(
-        "captureDocumentSchemaVersion",
-        &manifest.capture_document_schema_version,
-        CAPTURE_DOCUMENT_SCHEMA_VERSION,
-    )?;
-    expect_field("platform", &manifest.platform, "windows")?;
-    expect_field("arch", &manifest.arch, "x86_64")?;
-    expect_field("fileName", &manifest.file_name, CAPTURE_RUNTIME_BINARY)?;
-
-    if !safe_file_name(&manifest.file_name) {
-        return Err("Capture runtime manifest fileName must be a plain file name.".into());
-    }
-    if !(1..=CAPTURE_WINDOWSML_BUNDLE_MAX_BYTES).contains(&manifest.bytes) {
-        return Err("Capture runtime executable bytes must be between 1 and 536870912.".into());
-    }
-    validate_sha256("sha256", &manifest.sha256)?;
-
-    expect_field(
-        "schemaFileName",
-        &manifest.schema_file_name,
-        CAPTURE_DOCUMENT_SCHEMA_FILE,
-    )?;
-    if !safe_file_name(&manifest.schema_file_name) {
-        return Err("Capture runtime manifest schemaFileName must be a plain file name.".into());
-    }
-    expect_field(
-        "schemaSha256",
-        &manifest.schema_sha256,
-        CAPTURE_DOCUMENT_SCHEMA_SHA256,
-    )?;
-    validate_windowsml_requirement(&manifest.runtime_requirements.windowsml_ocr)?;
-    Ok(())
-}
-
-fn validate_windowsml_requirement(
-    requirement: &CaptureRuntimeBundleRequirement,
-) -> Result<(), String> {
-    if !safe_zip_file_name(&requirement.artifact_file_name) {
+    validate_manifest_contract(manifest, &capture_manifest_expectations())?;
+    if manifest.schema_sha256 != CAPTURE_DOCUMENT_SCHEMA_SHA256 {
         return Err(
-            "Capture runtime WindowsML artifactFileName must be a plain .zip file name.".into(),
+            "Capture runtime manifest schemaSha256 is incompatible with the pinned schema.".into(),
         );
     }
-    if !(1..=CAPTURE_WINDOWSML_BUNDLE_MAX_BYTES).contains(&requirement.bytes) {
-        return Err("Capture runtime WindowsML bytes must be between 1 and 536870912.".into());
-    }
-    if requirement.sha256.len() != 64
-        || !requirement
-            .sha256
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-    {
-        return Err(
-            "Capture runtime WindowsML sha256 must contain 64 lowercase hex characters.".into(),
-        );
-    }
-    let raw_url = requirement.artifact_url.as_str();
-    let Some(remainder) = raw_url.strip_prefix("https://") else {
-        return Err("Capture runtime WindowsML artifactUrl is not canonical HTTPS.".into());
-    };
-    let Some((authority, path)) = remainder.split_once('/') else {
-        return Err("Capture runtime WindowsML artifactUrl is not canonical HTTPS.".into());
-    };
-    let parsed = Url::parse(raw_url)
-        .map_err(|_| "Capture runtime WindowsML artifactUrl is not canonical HTTPS.".to_string())?;
-    let has_dot_segment = path.split('/').any(|segment| {
-        let trimmed = segment.trim_end_matches(' ');
-        trimmed == "." || trimmed == ".."
-    });
-    let parsed_final_segment = parsed.path_segments().and_then(|segments| segments.last());
-    if raw_url.trim() != raw_url
-        || raw_url
-            .chars()
-            .any(|character| character.is_whitespace() || character.is_control())
-        || parsed.scheme() != "https"
-        || parsed.host_str().is_none_or(str::is_empty)
-        || !parsed.username().is_empty()
-        || parsed.password().is_some()
-        || parsed.query().is_some()
-        || parsed.fragment().is_some()
-        || parsed.port().is_some_and(|port| port != 443)
-        || authority.is_empty()
-        || authority.contains('@')
-        || authority.contains('\\')
-        || authority.ends_with(':')
-        || path.contains('\\')
-        || path.contains(':')
-        || raw_url.contains('%')
-        || has_dot_segment
-        || path.rsplit('/').next() != Some(requirement.artifact_file_name.as_str())
-        || parsed_final_segment != Some(requirement.artifact_file_name.as_str())
-    {
-        return Err("Capture runtime WindowsML artifactUrl is not canonical HTTPS.".into());
-    }
     Ok(())
 }
 
-fn safe_zip_file_name(value: &str) -> bool {
-    value.len() > ".zip".len()
-        && value.ends_with(".zip")
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
-        && safe_file_name(value)
-}
-
-fn expect_field(name: &str, actual: &str, expected: &str) -> Result<(), String> {
-    if actual == expected {
-        Ok(())
-    } else {
-        Err(format!(
-            "Capture runtime {name} is incompatible: expected {expected}, found {actual}."
-        ))
+fn capture_manifest_expectations() -> ManifestExpectations {
+    ManifestExpectations {
+        runtime_version: CAPTURE_RUNTIME_VERSION.into(),
+        api_version: CAPTURE_RUNTIME_API_VERSION.into(),
+        capture_document_schema_version: CAPTURE_DOCUMENT_SCHEMA_VERSION.into(),
+        file_name: CAPTURE_RUNTIME_BINARY.into(),
+        schema_file_name: CAPTURE_DOCUMENT_SCHEMA_FILE.into(),
     }
-}
-
-fn safe_file_name(value: &str) -> bool {
-    !value.is_empty()
-        && value != "."
-        && value != ".."
-        && !value.contains(['/', '\\', ':'])
-        && Path::new(value)
-            .file_name()
-            .is_some_and(|name| name == value)
-}
-
-fn validate_sha256(name: &str, value: &str) -> Result<(), String> {
-    if value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        Ok(())
-    } else {
-        Err(format!(
-            "Capture runtime manifest {name} must contain 64 hexadecimal characters."
-        ))
-    }
-}
-
-fn verify_capture_artifact(path: &Path, manifest: &CaptureRuntimeManifest) -> Result<(), String> {
-    let metadata = fs::metadata(path).map_err(|error| {
-        format!(
-            "Capture runtime executable is unavailable at {}: {error}",
-            path.display()
-        )
-    })?;
-    if !metadata.is_file() {
-        return Err("Capture runtime executable is not a regular file.".into());
-    }
-    if metadata.len() != manifest.bytes {
-        return Err(format!(
-            "Capture runtime byte count mismatch: expected {}, found {}.",
-            manifest.bytes,
-            metadata.len()
-        ));
-    }
-
-    let digest = sha256_file(path)?;
-    if !digest.eq_ignore_ascii_case(&manifest.sha256) {
-        return Err("Capture runtime SHA-256 mismatch.".into());
-    }
-    Ok(())
 }
 
 fn verify_capture_schema(path: &Path) -> Result<(), String> {
@@ -330,7 +130,7 @@ mod tests {
 
     fn valid_manifest(bytes: u64, sha256: &str) -> CaptureRuntimeManifest {
         CaptureRuntimeManifest {
-            manifest_version: CAPTURE_RUNTIME_MANIFEST_VERSION.into(),
+            manifest_version: "1".into(),
             runtime_version: CAPTURE_RUNTIME_VERSION.into(),
             api_version: CAPTURE_RUNTIME_API_VERSION.into(),
             capture_document_schema_version: CAPTURE_DOCUMENT_SCHEMA_VERSION.into(),
@@ -341,14 +141,6 @@ mod tests {
             sha256: sha256.into(),
             schema_file_name: CAPTURE_DOCUMENT_SCHEMA_FILE.into(),
             schema_sha256: CAPTURE_DOCUMENT_SCHEMA_SHA256.into(),
-            runtime_requirements: CaptureRuntimeRequirements {
-                windowsml_ocr: CaptureRuntimeBundleRequirement {
-                    artifact_url: "https://github.com/example/capture-workbench/releases/download/v0.3.0/capture-windowsml-ocr-v1.zip".into(),
-                    artifact_file_name: "capture-windowsml-ocr-v1.zip".into(),
-                    bytes: 123_456,
-                    sha256: "2".repeat(64),
-                },
-            },
         }
     }
 
@@ -387,11 +179,11 @@ mod tests {
 
     #[test]
     fn executable_bytes_accept_only_the_shared_inclusive_bounds() {
-        for bytes in [1, CAPTURE_WINDOWSML_BUNDLE_MAX_BYTES] {
+        for bytes in [1, 512 * 1024 * 1024] {
             let manifest = valid_manifest(bytes, &"0".repeat(64));
             validate_capture_manifest_contract(&manifest).expect("inclusive executable bytes");
         }
-        for bytes in [0, CAPTURE_WINDOWSML_BUNDLE_MAX_BYTES + 1] {
+        for bytes in [0, 512 * 1024 * 1024 + 1] {
             let manifest = valid_manifest(bytes, &"0".repeat(64));
             let error = validate_capture_manifest_contract(&manifest)
                 .expect_err("out-of-range executable bytes");
@@ -430,89 +222,6 @@ mod tests {
             .contains("schemaSha256"));
 
         manifest.schema_sha256 = CAPTURE_DOCUMENT_SCHEMA_SHA256.into();
-        manifest.runtime_requirements.windowsml_ocr.artifact_url =
-            "https://user@example.test/windowsml.zip?token=secret".into();
-        assert!(validate_capture_manifest_contract(&manifest)
-            .expect_err("unsafe WindowsML URL")
-            .contains("not canonical HTTPS"));
-
-        manifest.runtime_requirements.windowsml_ocr.artifact_url =
-            "https://example.test/windowsml.zip".into();
-        manifest
-            .runtime_requirements
-            .windowsml_ocr
-            .artifact_file_name = "windowsml.zip".into();
-        manifest.runtime_requirements.windowsml_ocr.sha256 = "A".repeat(64);
-        assert!(validate_capture_manifest_contract(&manifest)
-            .expect_err("uppercase digest")
-            .contains("lowercase hex"));
-
-        manifest.runtime_requirements.windowsml_ocr.sha256 = "2".repeat(64);
-        manifest.runtime_requirements.windowsml_ocr.bytes = 0;
-        assert!(validate_capture_manifest_contract(&manifest)
-            .expect_err("zero bytes")
-            .contains("bytes must be between"));
-        manifest.runtime_requirements.windowsml_ocr.bytes = CAPTURE_WINDOWSML_BUNDLE_MAX_BYTES + 1;
-        assert!(validate_capture_manifest_contract(&manifest)
-            .expect_err("oversize bytes")
-            .contains("bytes must be between"));
-    }
-
-    #[test]
-    fn windowsml_descriptor_accepts_only_the_shared_canonical_url_corpus() {
-        let valid = valid_manifest(1, &"0".repeat(64));
-        validate_capture_manifest_contract(&valid).expect("canonical descriptor");
-
-        for bytes in [1, CAPTURE_WINDOWSML_BUNDLE_MAX_BYTES] {
-            let mut boundary = valid.clone();
-            boundary.runtime_requirements.windowsml_ocr.bytes = bytes;
-            validate_capture_manifest_contract(&boundary).expect("inclusive byte boundary");
-        }
-
-        let mut explicit_default_port = valid.clone();
-        explicit_default_port
-            .runtime_requirements
-            .windowsml_ocr
-            .artifact_url = "https://github.com:443/releases/capture-windowsml-ocr-v1.zip".into();
-        validate_capture_manifest_contract(&explicit_default_port)
-            .expect("explicit default HTTPS port");
-
-        let invalid_urls = [
-            "http://example.test/releases/capture-windowsml-ocr-v1.zip",
-            "HTTPS://example.test/releases/capture-windowsml-ocr-v1.zip",
-            "https:///releases/capture-windowsml-ocr-v1.zip",
-            "https://@example.test/releases/capture-windowsml-ocr-v1.zip",
-            "https://user@example.test/releases/capture-windowsml-ocr-v1.zip",
-            "https://user:secret@example.test/releases/capture-windowsml-ocr-v1.zip",
-            "https://example.test:8443/releases/capture-windowsml-ocr-v1.zip",
-            "https://example.test/releases/capture-windowsml-ocr-v1.zip?token=secret",
-            "https://example.test/releases/capture-windowsml-ocr-v1.zip#fragment",
-            "https://example.test/releases/../capture-windowsml-ocr-v1.zip",
-            "https://example.test/releases/./capture-windowsml-ocr-v1.zip",
-            "https://example.test/releases/%2e%2e/capture-windowsml-ocr-v1.zip",
-            "https://example.test/releases/%252e%252e/capture-windowsml-ocr-v1.zip",
-            "https://example.test/releases/%2f/capture-windowsml-ocr-v1.zip",
-            "https://example.test/releases/%5c/capture-windowsml-ocr-v1.zip",
-            "https://example.test\\releases/capture-windowsml-ocr-v1.zip",
-            "https://example.test/releases\\capture-windowsml-ocr-v1.zip",
-            "https://example.test/releases/file.txt:capture-windowsml-ocr-v1.zip",
-            "https://example.test/releases/other.zip",
-            "https://exa\nmple.test/releases/capture-windowsml-ocr-v1.zip",
-        ];
-        for artifact_url in invalid_urls {
-            let mut manifest = valid.clone();
-            manifest.runtime_requirements.windowsml_ocr.artifact_url = artifact_url.into();
-            let error = validate_capture_manifest_contract(&manifest)
-                .expect_err("adversarial URL must fail closed");
-            assert!(error.contains("not canonical HTTPS"), "{artifact_url}");
-        }
-
-        let mut descriptor =
-            serde_json::to_value(&valid.runtime_requirements.windowsml_ocr).expect("descriptor");
-        descriptor["extra"] = serde_json::Value::String("not-part-of-v1".into());
-        let error = serde_json::from_value::<CaptureRuntimeBundleRequirement>(descriptor)
-            .expect_err("unknown descriptor field");
-        assert!(error.to_string().contains("unknown field"));
     }
 
     #[test]

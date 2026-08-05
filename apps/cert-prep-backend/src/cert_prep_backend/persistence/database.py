@@ -720,6 +720,13 @@ MIGRATIONS: Final[tuple[tuple[int, str], ...]] = (
         ALTER TABLE capture_review_sessions ADD COLUMN confirm_review_digest TEXT;
         """,
     ),
+    (
+        27,
+        """
+        ALTER TABLE manual_draft_generation_operations
+            ADD COLUMN unavailable_blocks_json TEXT NOT NULL DEFAULT '[]';
+        """,
+    ),
 )
 
 

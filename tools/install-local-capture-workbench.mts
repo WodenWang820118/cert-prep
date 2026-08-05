@@ -2,13 +2,17 @@ import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  CAPTURE_RUNTIME_PACKAGE_NAME,
+  CAPTURE_RUNTIME_VERSION,
+} from './capture-runtime-version.mts';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const registry = (
   process.env.CAPTURE_WORKBENCH_LOCAL_REGISTRY ?? 'http://127.0.0.1:4873'
 ).replace(/\/$/, '');
-const packageName = '@gx/capture-workbench';
-const packageVersion = '0.3.0';
+const packageName = CAPTURE_RUNTIME_PACKAGE_NAME;
+const packageVersion = CAPTURE_RUNTIME_VERSION;
 const captureWorkbenchRoot = resolve(
   process.env.CAPTURE_WORKBENCH_REPO ??
     join(repoRoot, '..', 'capture-workbench'),
@@ -95,7 +99,7 @@ async function waitForRegistry(): Promise<void> {
 
 async function packageIsPublished(): Promise<boolean> {
   try {
-    const response = await fetch(`${registry}/@gx%2fcapture-workbench`, {
+    const response = await fetch(`${registry}/@gx-capture%2fcapture-workbench`, {
       signal: AbortSignal.timeout(1_500),
     });
     if (response.status === 404) return false;
@@ -128,7 +132,7 @@ async function ensureLocalPackage(): Promise<void> {
 }
 
 async function assertPublishedPackage(): Promise<void> {
-  const response = await fetch(`${registry}/@gx%2fcapture-workbench`);
+  const response = await fetch(`${registry}/@gx-capture%2fcapture-workbench`);
   if (!response.ok) {
     throw new Error(
       `${packageName}@${packageVersion} is unavailable from ${registry} (HTTP ${response.status}).`,
@@ -164,7 +168,7 @@ async function main(): Promise<void> {
     await runPnpm(['install', '--no-frozen-lockfile']);
     const installedManifestPath = join(
       repoRoot,
-      'node_modules/@gx/capture-workbench/package.json',
+      'node_modules/@gx-capture/capture-workbench/package.json',
     );
     if (!existsSync(installedManifestPath)) {
       throw new Error(

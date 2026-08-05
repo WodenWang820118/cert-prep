@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import json
 from sqlite3 import Row
+from collections.abc import Sequence
 from uuid import uuid4
 
 from cert_prep_backend.persistence.database import Database, utc_now
-from cert_prep_backend.domains.mock_exams.models import DraftSuggestion
+from cert_prep_backend.domains.mock_exams.models import DraftSuggestion, UnavailableDraftBlock
 from cert_prep_backend.domains.mock_exams.draft_jobs import DraftJobCanceledError
 from cert_prep_backend.domains.mock_exams.schemas import QuestionDraftCreate, QuestionDraftUpdate
 from cert_prep_backend.domains.source_documents import repository as documents_repository
@@ -240,6 +241,7 @@ def append_generated_drafts_and_complete_manual_operation(
     effective_provider: str | None,
     effective_model: str | None,
     fallback_reason: str | None,
+    unavailable_blocks: Sequence[UnavailableDraftBlock] = (),
 ) -> list[dict]:
     """Atomically publish manual drafts and the operation's final attribution."""
 
@@ -273,6 +275,7 @@ def append_generated_drafts_and_complete_manual_operation(
             SET status = 'succeeded', phase = 'completed', cancellable = 0,
                 generated_count = ?, error = NULL,
                 effective_provider = ?, effective_model = ?, fallback_reason = ?,
+                unavailable_blocks_json = ?,
                 updated_at = ?
             WHERE id = ? AND project_id = ? AND document_id = ?
               AND status = 'running' AND phase = 'committing' AND cancellable = 0
@@ -282,6 +285,10 @@ def append_generated_drafts_and_complete_manual_operation(
                 effective_provider,
                 effective_model,
                 fallback_reason,
+                json.dumps(
+                    [block.to_serialized() for block in unavailable_blocks],
+                    ensure_ascii=False,
+                ),
                 now,
                 operation_id,
                 project_id,

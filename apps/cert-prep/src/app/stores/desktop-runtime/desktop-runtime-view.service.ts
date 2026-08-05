@@ -30,6 +30,46 @@ export class DesktopRuntimeViewService {
     };
   }
 
+  browserCaptureRuntimeStatus(): DesktopRuntimeStatus {
+    return {
+      kind: 'capture_runtime',
+      label: 'Capture Runtime',
+      available: true,
+      running: true,
+      status: 'running',
+      detail: 'Using the configured local development Capture Runtime.',
+      unavailableReason: null,
+      version: null,
+      installedPath: null,
+      baseUrl: null,
+      token: null,
+      jobId: null,
+      completed: null,
+      total: null,
+      error: null,
+    };
+  }
+
+  pendingCaptureRuntimeStatus(): DesktopRuntimeStatus {
+    return {
+      kind: 'capture_runtime',
+      label: 'Capture Runtime',
+      available: false,
+      running: false,
+      status: 'checking',
+      detail: 'Checking Capture Runtime availability.',
+      unavailableReason: 'capture_runtime_checking',
+      version: null,
+      installedPath: null,
+      baseUrl: null,
+      token: null,
+      jobId: null,
+      completed: null,
+      total: null,
+      error: null,
+    };
+  }
+
   failedInstallation(
     message: string,
     current: DesktopRuntimeInstallation | null,
@@ -47,6 +87,32 @@ export class DesktopRuntimeViewService {
       updatedAt: current?.updatedAt ?? '',
       error: message,
     };
+  }
+
+  failedCaptureRuntimeInstallation(
+    message: string,
+    current: DesktopRuntimeInstallation | null,
+  ): DesktopRuntimeInstallation {
+    return {
+      id: current?.id ?? '',
+      kind: 'capture_runtime',
+      provider: 'bundled-release',
+      model: current?.model ?? 'capture-runtime',
+      status: 'failed',
+      detail: message,
+      completed: current?.completed ?? null,
+      total: current?.total ?? null,
+      createdAt: current?.createdAt ?? '',
+      updatedAt: current?.updatedAt ?? '',
+      error: message,
+    };
+  }
+
+  captureRuntimeModel(status: DesktopRuntimeStatus | null): string {
+    const version = status?.version?.trim();
+    return version === undefined || version.length === 0
+      ? 'capture-runtime'
+      : `capture-runtime@${version}`;
   }
 
   progressFrom(
@@ -86,7 +152,7 @@ export class DesktopRuntimeViewService {
     if (normalized === 'queued') {
       return 'queued';
     }
-    if (normalized === 'running') {
+    if (normalized === 'running' || normalized === 'starting') {
       return 'running';
     }
     if (normalized === 'installed') {
@@ -102,6 +168,6 @@ export class DesktopRuntimeViewService {
     const maybe = error as { message?: unknown };
     return typeof maybe.message === 'string' && maybe.message.length > 0
       ? maybe.message
-      : 'Python backend runtime installation did not complete.';
+      : 'Runtime operation did not complete.';
   }
 }

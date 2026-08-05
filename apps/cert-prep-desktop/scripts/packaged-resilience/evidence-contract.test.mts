@@ -492,14 +492,14 @@ test('draft/runtime/model cancellation requires a stable canceled state and exac
             ...runtimeProof,
             requirementBefore: {
               ...requirementBefore,
-              unavailableReason: 'windowsml_runtime_unhealthy',
+              unavailableReason: 'ollama_not_running',
             },
           },
         },
         'runtime',
         context,
       ),
-    /must equal windowsml_runtime_missing/,
+    /must equal ollama_missing/,
   );
 
   const canceledState = runtimeProof.canceledState as Record<string, unknown>;
@@ -515,7 +515,7 @@ test('draft/runtime/model cancellation requires a stable canceled state and exac
               ...canceledState,
               immediate: {
                 ...immediate,
-                installTargetPathRelative: 'runtimes/other-windowsml',
+                installTargetPathRelative: 'runtimes/other-ollama',
               },
             },
           },
@@ -534,9 +534,9 @@ test('draft/runtime/model cancellation requires a stable canceled state and exac
           proof: {
             ...runtimeProof,
             requirementAfter: {
-              kind: 'windowsml_ocr',
+              kind: 'ollama',
               available: true,
-              installedPathRelative: 'runtimes/other-windowsml',
+              installedPathRelative: 'runtimes/other-ollama',
             },
           },
         },
@@ -554,7 +554,7 @@ test('draft/runtime/model cancellation requires a stable canceled state and exac
           proof: {
             ...runtimeProof,
             requirementAfter: {
-              kind: 'windowsml_ocr',
+              kind: 'ollama',
               available: true,
               installedPathRelative: '../foreign-runtime',
             },
@@ -896,17 +896,17 @@ function validProof(check: ResilienceCheck): Record<string, unknown> {
       };
     case 'runtime': {
       const unavailableRequirement = {
-        kind: 'windowsml_ocr',
+        kind: 'ollama',
         available: false,
-        unavailableReason: 'windowsml_runtime_missing',
-        installTargetPathRelative: 'runtimes/windowsml-ocr',
+        unavailableReason: 'ollama_missing',
+        installTargetPathRelative: 'runtimes/ollama',
       };
       return {
         ...scopedCancellation(
           {
-            kind: 'windowsml_ocr',
-            provider: 'windowsml',
-            model: 'pp-ocrv6-medium-windowsml',
+            kind: 'ollama',
+            provider: 'ollama',
+            model: 'qwen3.5:4b',
           },
           operationId,
           operation(operationId, 'cancel_requested', 'canceling', false),
@@ -919,9 +919,9 @@ function validProof(check: ResilienceCheck): Record<string, unknown> {
           afterWindow: unavailableRequirement,
         },
         requirementAfter: {
-          kind: 'windowsml_ocr',
+          kind: 'ollama',
           available: true,
-          installedPathRelative: 'runtimes/windowsml-ocr',
+          installedPathRelative: 'runtimes/ollama',
         },
       };
     }

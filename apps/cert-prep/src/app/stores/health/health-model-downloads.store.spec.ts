@@ -5,7 +5,6 @@ import { HealthStore } from './health.store';
 import {
   llmHealth,
   modelDownload,
-  ocrHealth,
   providerSelection,
 } from './health.store.spec-helpers';
 import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
@@ -15,7 +14,6 @@ describe('HealthStore model downloads', () => {
     health: vi.fn(),
     llmHealth: vi.fn(),
     llmProviderSelection: vi.fn(),
-    ocrHealth: vi.fn(),
     runtimeRequirements: vi.fn(),
     startModelDownload: vi.fn(),
     getModelDownload: vi.fn(),
@@ -44,10 +42,6 @@ describe('HealthStore model downloads', () => {
         model_requirement_kind: 'ollama_model',
       }),
     ));
-    apiClient.ocrHealth.mockReturnValue(of({
-      ...ocrHealth(),
-      fallback_reason: 'cuda_unavailable',
-    }));
     apiClient.runtimeRequirements.mockReturnValue(of({ items: [] }));
     TestBed.configureTestingModule({
       providers: [

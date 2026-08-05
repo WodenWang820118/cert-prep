@@ -22,6 +22,14 @@
           <span class="text-sm text-muted-color">
             {{ operation.phase }} / {{ operation.generated_count }} questions
           </span>
+          @if (operation.unavailable_blocks?.length) {
+            <span
+              class="text-sm font-semibold text-orange-700"
+              data-testid="manual-generation-needs-review"
+            >
+              {{ operation.unavailable_blocks.length }} parsed block(s) need review
+            </span>
+          }
           @if (drafts.canCancelManualDraftOperation()) {
             <button
               class="workbench-secondary-button"
@@ -41,6 +49,25 @@
             </span>
           }
         </div>
+        @if (operation.unavailable_blocks?.length) {
+          <div
+            class="mt-2 rounded-md border border-orange-200 bg-orange-50 p-3 text-sm text-orange-950"
+            data-testid="manual-generation-unavailable-blocks"
+          >
+            <strong>Parsed blocks kept for review</strong>
+            <ul class="mt-1 list-disc pl-5">
+              @for (block of operation.unavailable_blocks; track block.chunk_id + '-' + block.source_order) {
+                <li>
+                  Page {{ block.citation_page }}
+                  @if (block.source_question_number) {
+                    / Question {{ block.source_question_number }}
+                  }
+                  — {{ block.reason }}
+                </li>
+              }
+            </ul>
+          </div>
+        }
       }
       @if (drafts.manualDraftPollingError(); as pollingError) {
         <div

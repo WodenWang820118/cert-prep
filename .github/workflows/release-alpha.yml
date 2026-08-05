@@ -50,6 +50,25 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check out pre-publication Capture Workbench bridge
+        if: vars.CAPTURE_PUBLISHED_0_3_9 != 'true'
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          repository: gx-capture/capture-workbench
+          ref: agent/modular-reuse-contracts
+          path: capture-workbench
+          sparse-checkout: |
+            packages/capture-contracts
+            packages/capture-structuring-python
+            packages/capture-sidecar-launcher
+
+      - name: Link pre-publication Capture Workbench bridge (Windows)
+        if: vars.CAPTURE_PUBLISHED_0_3_9 != 'true'
+        shell: pwsh
+        run: |
+          $target = Join-Path (Split-Path -Parent $env:GITHUB_WORKSPACE) 'capture-workbench'
+          New-Item -ItemType Junction -Path $target -Target (Join-Path $env:GITHUB_WORKSPACE 'capture-workbench') | Out-Null
+
       - name: Install pnpm
         uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
         with:
@@ -128,14 +147,14 @@ jobs:
       - name: Lint Windows-owned projects
         run: >-
           pnpm nx run-many -t lint
-          -p cert-prep-contracts cert-prep-ollama cert-prep-ocr-windowsml
+          -p cert-prep-contracts cert-prep-ollama
           cert-prep-backend cert-prep-api cert-prep
           --parallel=2
 
       - name: Test Windows-owned projects
         run: >-
           pnpm nx run-many -t test
-          -p cert-prep-contracts cert-prep-ollama cert-prep-ocr-windowsml
+          -p cert-prep-contracts cert-prep-ollama
           cert-prep-backend cert-prep-api cert-prep
           --parallel=2
 
@@ -158,8 +177,6 @@ jobs:
         run: pnpm nx run cert-prep-e2e:e2e-real-backend
 
       - name: Build and verify the NSIS installer through Nx
-        env:
-          CERT_PREP_WINDOWSML_OCR_ASSET_BASE_URL: ${{ steps.metadata.outputs.asset_base_url }}
         run: pnpm nx run cert-prep-desktop:package-qa
 
       - name: Collect fail-closed dependency inventories
@@ -174,16 +191,6 @@ jobs:
             --pyinstaller-executable apps/cert-prep-backend/dist/cert-prep-backend.exe `
             --include-distribution PyInstaller==6.20.0 `
             --output tmp/release-alpha/inventory/python-licenses.json
-          uv run --isolated --project apps/cert-prep-backend --python $env:PYTHON_VERSION `
-            --extra ocr-windowsml python tools/release/collect-python-licenses.py `
-            --pyinstaller-executable apps/cert-prep-backend/dist/cert-prep-ocr-windowsml-runtime.exe `
-            --include-distribution PyInstaller==6.20.0 `
-            --output tmp/release-alpha/inventory/ocr-python-licenses.json
-          uv run --isolated --project apps/cert-prep-backend --python $env:PYTHON_VERSION `
-            python tools/release/collect-runtime-payloads.py `
-            --runtime-manifest apps/cert-prep-desktop/src-tauri/generated-resources/windowsml-ocr-runtime-manifest.json `
-            --runtime-root apps/cert-prep-backend/dist/ocr-windowsml-runtime `
-            --output tmp/release-alpha/inventory/ocr-runtime-payloads.json
           cargo metadata --format-version 1 --locked `
             --manifest-path apps/cert-prep-desktop/src-tauri/Cargo.toml |
             Set-Content -LiteralPath tmp/release-alpha/inventory/cargo-metadata.json -Encoding utf8NoBOM
@@ -196,12 +203,9 @@ jobs:
           --plan tmp/release-alpha/metadata/release-plan.json
           --bundle-root apps/cert-prep-desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle
           --generated-resources apps/cert-prep-desktop/src-tauri/generated-resources
-          --ocr-runtime-root apps/cert-prep-backend/dist/ocr-windowsml-runtime
           --package-qa tmp/cert-prep-desktop/package-qa/package-qa.json
           --node-licenses tmp/release-alpha/inventory/node-licenses.json
           --python-licenses tmp/release-alpha/inventory/python-licenses.json
-          --ocr-python-licenses tmp/release-alpha/inventory/ocr-python-licenses.json
-          --ocr-runtime-payloads tmp/release-alpha/inventory/ocr-runtime-payloads.json
           --cargo-metadata tmp/release-alpha/inventory/cargo-metadata.json
           --output tmp/release-alpha/candidate
 
@@ -223,14 +227,14 @@ jobs:
           compression-level: 0
 
   clean-install:
-    name: Publish OCR bootstrap and verify a fresh NSIS install
+    name: Reserve candidate and verify a fresh NSIS install
     needs: build-candidate
     runs-on: windows-2025
     environment: alpha-release
     permissions:
       contents: write
     outputs:
-      release_owned_by_run: ${{ steps.reserve_ocr.outputs.release_owned_by_run }}
+      release_owned_by_run: ${{ steps.reserve_release.outputs.releaseOwnedByCaller }}
     steps:
       - name: Install Node without checkout
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
@@ -243,8 +247,8 @@ jobs:
           name: ${{ needs.build-candidate.outputs.candidate_artifact }}
           path: candidate
 
-      - name: Reserve or verify the candidate-bound OCR prerelease
-        id: reserve_ocr
+      - name: Reserve or verify the candidate-bound prerelease
+        id: reserve_release
         env:
           GH_TOKEN: ${{ github.token }}
         run: >-
@@ -255,19 +259,7 @@ jobs:
           --publication-owner '${{ github.run_id }}:${{ github.run_attempt }}:${{ needs.build-candidate.outputs.candidate_id }}'
           --plan candidate/release/metadata/release-plan.json
 
-      - name: Publish or verify the version-pinned OCR assets
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: >-
-          node candidate/harness/tools/release/publish-assets.ts
-          --mode ocr
-          --candidate-root candidate
-          --candidate-id '${{ needs.build-candidate.outputs.candidate_id }}'
-          --publication-owner '${{ github.run_id }}:${{ github.run_attempt }}:${{ needs.build-candidate.outputs.candidate_id }}'
-          --release-root candidate/release
-          --plan candidate/release/metadata/release-plan.json
-
-      - name: Install, verify public OCR hash, launch, and uninstall NSIS
+      - name: Install, verify Capture Runtime resources, launch, and uninstall NSIS
         shell: pwsh
         run: >-
           ./candidate/harness/tools/release/clean-install.ps1
@@ -354,7 +346,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   cleanup-incomplete-prerelease:
-    name: Withdraw an incomplete OCR prerelease after failure
+    name: Withdraw an incomplete prerelease after failure
     needs: [build-candidate, clean-install, publish-alpha]
     if: >-
       ${{ always() &&

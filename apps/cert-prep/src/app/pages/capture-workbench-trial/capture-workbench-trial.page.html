@@ -1,11 +1,13 @@
 <section class="capture-trial-page" aria-labelledby="capture-trial-title">
   <header class="capture-trial-header">
     <div>
-      <p class="capture-trial-eyebrow">PDF OCR / saved to project</p>
-      <h2 id="capture-trial-title">Capture Workbench PDF OCR</h2>
+      <p class="capture-trial-eyebrow">Capture Workbench / saved to project</p>
+      <h2 id="capture-trial-title">Capture Workbench trial</h2>
       <p class="capture-trial-description">
-        Select one PDF to run through the installed <code>@gx/capture-workbench</code>
-        workflow and Capture Runtime, then save the OCR document to Cert Prep.
+        Cert Prep installs and starts Capture Runtime only after
+        explicit user actions. PDF, image, and audio sources are processed by
+        <code>@gx-capture/capture-workbench</code> after their OCR and Whisper
+        dependencies are separately consented in Capture Runtime.
       </p>
     </div>
     <div class="capture-trial-badge" [attr.data-state]="registrationState()">
@@ -22,7 +24,33 @@
   <p class="capture-trial-error" role="alert">{{ error }}</p>
   }
 
+  @if (!desktopRuntime.isCaptureRuntimeReady()) {
+  <section class="capture-trial-runtime-unavailable" aria-live="polite">
+    <h3>Capture Runtime is unavailable</h3>
+    <p>{{ desktopRuntime.captureRuntimeStatus().detail }}</p>
+    @if (desktopRuntime.canInstallCaptureRuntime()) {
+    <button
+      type="button"
+      class="capture-trial-download-button"
+      [disabled]="desktopRuntime.isCaptureRuntimeInstallActive()"
+      (click)="installCaptureRuntime()"
+    >
+      Install Capture Runtime
+    </button>
+    } @else if (desktopRuntime.canStartCaptureRuntime()) {
+    <button
+      type="button"
+      class="capture-trial-download-button"
+      [disabled]="desktopRuntime.isCaptureRuntimeInstallActive()"
+      (click)="startCaptureRuntime()"
+    >
+      Start Capture Runtime
+    </button>
+    }
+  </section>
+  } @else {
   <capture-workbench #captureWorkbench></capture-workbench>
+  }
 
   @if (lastCompleted(); as completed) {
   <section
@@ -31,7 +59,7 @@
   >
     <div>
       <p class="capture-trial-eyebrow">capture-completed</p>
-      <h3 id="capture-trial-result-title">OCR document saved</h3>
+      <h3 id="capture-trial-result-title">Capture document saved</h3>
     </div>
     <dl>
       <div>
@@ -56,7 +84,7 @@
         <dd>{{ savedDocument.status }}</dd>
       </div>
       <div>
-        <dt>OCR chunks</dt>
+        <dt>Document chunks</dt>
         <dd>{{ savedDocument.chunks_count }}</dd>
       </div>
       <div>
@@ -88,12 +116,12 @@
         <dd>Waiting for saved document refresh</dd>
       </div>
       <div>
-        <dt>OCR chunks</dt>
-        <dd>—</dd>
+        <dt>Document chunks</dt>
+        <dd>--</dd>
       </div>
       <div>
         <dt>Extraction</dt>
-        <dd>—</dd>
+        <dd>--</dd>
       </div>
       }
     </dl>

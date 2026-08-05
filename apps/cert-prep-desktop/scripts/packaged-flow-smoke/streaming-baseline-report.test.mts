@@ -35,8 +35,8 @@ test('Ollama-only production summary binds readiness to exact job attribution', 
     assert.equal(summary.checks.resources_released_at_end, true);
     assert.equal(summary.checks.acceptance_fresh_run_isolation, true);
     assert.deepEqual(summary.gpu_routing_checks, {
-      windowsml_ocr_process_observed: true,
-      ocr_uses_amd_igpu: true,
+      capture_runtime_process_observed: true,
+      capture_runtime_uses_amd_igpu: true,
       gpu_luid_map_usable: true,
     });
     assert.equal(summary.checks.ollama_model_exact, true);
@@ -124,8 +124,8 @@ test('Ollama-only production summary keeps GPU routing as non-blocking diagnosti
       join(fixture.outDir, 'windows-resource-summary.json'),
       JSON.stringify({
         gpu_routing_checks: {
-          windowsml_ocr_process_observed: true,
-          ocr_uses_amd_igpu: false,
+          capture_runtime_process_observed: true,
+          capture_runtime_uses_amd_igpu: false,
           gpu_luid_map_usable: true,
         },
       }),
@@ -138,11 +138,11 @@ test('Ollama-only production summary keeps GPU routing as non-blocking diagnosti
 
     assert.equal(summary.status, 'passed');
     assert.deepEqual(summary.gpu_routing_checks, {
-      windowsml_ocr_process_observed: true,
-      ocr_uses_amd_igpu: false,
+      capture_runtime_process_observed: true,
+      capture_runtime_uses_amd_igpu: false,
       gpu_luid_map_usable: true,
     });
-    assert.equal('ocr_uses_amd_igpu' in summary.checks, false);
+    assert.equal('capture_runtime_uses_amd_igpu' in summary.checks, false);
   } finally {
     fixture.cleanup();
   }
@@ -268,8 +268,8 @@ function productionFixture(): {
     join(outDir, 'windows-resource-summary.json'),
     JSON.stringify({
       gpu_routing_checks: {
-        windowsml_ocr_process_observed: true,
-        ocr_uses_amd_igpu: true,
+        capture_runtime_process_observed: true,
+        capture_runtime_uses_amd_igpu: true,
         gpu_luid_map_usable: true,
       },
     }),
@@ -283,15 +283,13 @@ function productionFixture(): {
       pdfPath,
       appDataDir: join(outDir, 'app-data'),
       cdpPort: 9222,
-      ocrProvider: 'windowsml',
-      ocrPageWorkers: 1,
       llmProvider: 'ollama',
       acceptanceIsolation: true,
       waitForStreamingComplete: true,
       streamingCompleteTimeoutMs: 300_000,
       skipGpuSampling: false,
       productionSummary: true,
-      allowOcrChunkVariance: true,
+      allowCaptureChunkVariance: true,
       verifyStreamingPracticeReady: true,
     },
     metrics: {
@@ -371,7 +369,6 @@ function productionFixture(): {
         reparse_points_absent: true,
       },
       full_exam_question_count: 8,
-      ocr_provider: 'windowsml',
       first_chunk_gate_ms: 15_000,
       first_chunk_under_gate: true,
       ocr_completion: {

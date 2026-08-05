@@ -4,7 +4,8 @@
 
 This domain owns backend module boundaries, persistence contracts, generated
 client ownership, and behavior-preserving refactor decisions across FastAPI,
-SQLite, OCR, runtime installation, question generation, and practice.
+SQLite, Capture Runtime integration, runtime installation, question generation,
+and practice.
 
 ## Decisions
 
@@ -20,8 +21,8 @@ SQLite, OCR, runtime installation, question generation, and practice.
   OpenAPI documents known values without rejecting legacy/custom strings.
 - SQLite remains backend-owned; Angular must not read or write local files
   directly.
-- OCR workers must not write directly to the shared SQLite database. The backend
-  processing thread owns idempotent chunk/progress persistence.
+- Capture Runtime workers never write directly to SQLite. The backend processing
+  thread owns idempotent chunk/progress persistence after host validation.
 - Generated/AI questions must stay editable and user-governed. Older
   approval-only promotion behavior is retired.
 - Runtime installation remains exposed through the
@@ -57,8 +58,8 @@ SQLite, OCR, runtime installation, question generation, and practice.
   accepted inputs, with no database migration, `DocumentRead.media_type`, or
   image-specific endpoint/service. Chunks, generated drafts, practice
   selection, attempts, and wrong-answer review stay scoped by `document_id`.
-- `source_preparation.py` owns trusted content detection and normalized OCR
-  input. Source storage/repository helpers use source-file terminology, retain
+- `source_preparation.py` owns trusted content detection and normalized input
+  validation; extraction belongs to Capture Runtime. Source storage/repository helpers use source-file terminology, retain
   original bytes and SHA-256, choose private suffixes from detected content,
   and revalidate stored content on Retry. Legacy `.pdf` paths remain readable.
 - Rolling back this additive input support does not require database or chunk
@@ -85,7 +86,7 @@ Deferred:
 - SQLite schema redesign.
 - Frontend UX changes bundled into backend refactors.
 - TypeScript generated-client literal-union support.
-- Live LLM/OCR smoke checks as required automated gates.
+- Cross-platform Capture Runtime nodes beyond the published Windows x64 contract.
 
 Guardrails:
 
@@ -144,5 +145,5 @@ Guardrails:
 - Source excerpts must remain grounded in normalized raw chunk text.
 - UTF-8 handling remains important for PDF names, OCR text, SQLite evidence,
   Markdown reports, subprocess stderr, and PowerShell JSON reads.
-- Keep stdout protocols for OCR workers clean; third-party logs belong on
-  stderr.
+- Keep the Capture Runtime sidecar protocol and authenticated error envelope
+  clean; third-party logs belong on stderr.

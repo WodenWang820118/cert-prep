@@ -42,6 +42,14 @@ export class CertPrepRuntimeConfig {
     return lookup$;
   }
 
+  /**
+   * Tauri rotates the owned backend URL/token when optional Capture Runtime is
+   * started. Forget the replayed value before the next authenticated request.
+   */
+  invalidateBackendConfig(): void {
+    this.backendConfig$ = null;
+  }
+
   private loadBackendConfig(): Observable<BackendConfig> {
     return this.loadTauriBackendConfig().pipe(
       switchMap((tauriConfig) =>

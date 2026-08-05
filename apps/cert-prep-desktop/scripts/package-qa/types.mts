@@ -1,3 +1,5 @@
+import { CAPTURE_RUNTIME_VERSION } from '../../../../tools/capture-runtime-version.mts';
+
 export interface PackageQaOptions {
   readonly workspaceRoot?: string;
   readonly bundleRoot?: string;
@@ -54,14 +56,6 @@ export interface CaptureRuntimeManifest {
   readonly sha256: string;
   readonly schemaFileName: string;
   readonly schemaSha256: string;
-  readonly runtimeRequirements: {
-    readonly 'windowsml-ocr': {
-      readonly artifactUrl: string;
-      readonly artifactFileName: string;
-      readonly bytes: number;
-      readonly sha256: string;
-    };
-  };
 }
 
 export interface PackageQaReport {
@@ -103,9 +97,8 @@ export interface PackagedResourceContract {
   readonly fresh_install_verified: false;
   readonly alpha_release_gate: 'blocked_pending_clean_install';
   readonly backend_bundled: true;
-  readonly windowsml_ocr_bundled: false;
   readonly capture_runtime_bundled: true;
-  readonly capture_runtime_version: '0.3.0';
+  readonly capture_runtime_version: typeof CAPTURE_RUNTIME_VERSION;
   readonly capture_runtime_api_version: '1.0';
   readonly capture_document_schema_version: '1';
   readonly capture_structuring_mode: 'host';

@@ -23,8 +23,6 @@ export async function seedMockApiConfig(
 export async function expectRuntimeReady(page: Page): Promise<void> {
   await expect(page.locator('h1', { hasText: 'Cert Prep' })).toBeVisible();
   await expect(page.getByText('qwen3.5:4b')).toBeVisible();
-  await expect(page.getByText('fake')).toBeVisible();
-  await expect(page.getByText('paddle / gpu:0')).toBeVisible();
 }
 
 export async function createProject(
@@ -65,8 +63,8 @@ export async function uploadDocumentAndExpectDraft(
       .locator('.workbench-file-name')
       .getByText(document.filename, { exact: true }),
   ).toBeVisible();
-  await expect(page.getByText('paddle_ocr_gpu')).toBeVisible();
-  await expect(page.getByText('gpu:0').last()).toBeVisible();
+  await expect(page.getByText('windowsml_ocr')).toBeVisible();
+  await expect(page.getByText('windowsml').last()).toBeVisible();
   await expect(page.getByText(draft.question)).toBeVisible();
   await expect(page.getByText(draft.source_excerpt)).toBeVisible();
   await expect(

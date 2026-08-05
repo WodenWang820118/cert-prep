@@ -1,9 +1,8 @@
-import { Component, computed, inject, ChangeDetectionStrategy } from '@angular/core';
+import { Component, inject, ChangeDetectionStrategy } from '@angular/core';
 import { Button } from 'primeng/button';
 import { Dialog } from 'primeng/dialog';
 import { DesktopRuntimeStore } from '../../stores/desktop-runtime/desktop-runtime.store';
 import { HealthStore } from '../../stores/health/health.store';
-import { RuntimeJobViewService } from '../../stores/health/runtime-job-view.service';
 
 @Component({
   selector: 'app-runtime-consent-dialogs',
@@ -90,7 +89,7 @@ import { RuntimeJobViewService } from '../../stores/health/runtime-job-view.serv
     </p-dialog>
 
     <p-dialog
-      [header]="'Install ' + runtimeInstallConsentLabel()"
+      header="Install Ollama"
       [visible]="health.runtimeInstallConsentVisible()"
       [modal]="true"
       [closable]="!health.runtimeInstallStarting()"
@@ -102,32 +101,13 @@ import { RuntimeJobViewService } from '../../stores/health/runtime-job-view.serv
       (visibleChange)="health.setRuntimeInstallConsentVisible($event)"
     >
       <div class="grid gap-3">
-        @if (health.runtimeInstallConsentKind() === 'windowsml_ocr') {
-          <p class="m-0 text-sm leading-6 text-color">
-            Install the WindowsML OCR runtime for scanned PDFs and images?
-          </p>
-        } @else if (health.runtimeInstallConsentKind() === 'paddle_ocr') {
-          <p class="m-0 text-sm leading-6 text-color">
-            Install the PaddleOCR runtime for scanned PDFs and images?
-          </p>
-        } @else if (health.runtimeInstallConsentKind() === 'whisper_models') {
-          <p class="m-0 text-sm leading-6 text-color">
-            Download Whisper large-v3-turbo and the CPU small fallback before
-            uploading Japanese audio?
-          </p>
-          <p class="m-0 text-sm leading-6 text-muted-color">
-            These speech models are not included in the installer. The download
-            can take several minutes and remains on this device.
-          </p>
-        } @else {
-          <p class="m-0 text-sm leading-6 text-color">
-            Install Ollama for local AI generation?
-          </p>
-          <p class="m-0 text-sm leading-6 text-muted-color">
-            This starts the official Windows installer. Return here and refresh
-            the status if Windows asks for confirmation.
-          </p>
-        }
+        <p class="m-0 text-sm leading-6 text-color">
+          Install Ollama for local AI generation?
+        </p>
+        <p class="m-0 text-sm leading-6 text-muted-color">
+          This starts the official Windows installer. Return here and refresh
+          the status if Windows asks for confirmation.
+        </p>
         <div class="flex flex-wrap justify-end gap-2 pt-2">
           <p-button
             label="Cancel"
@@ -137,11 +117,7 @@ import { RuntimeJobViewService } from '../../stores/health/runtime-job-view.serv
             (onClick)="health.cancelRuntimeInstallConsent()"
           />
           <p-button
-            [label]="
-              health.runtimeInstallConsentKind() === 'whisper_models'
-                ? 'Download'
-                : 'Install'
-            "
+            label="Install"
             icon="pi pi-download"
             severity="warn"
             [loading]="health.runtimeInstallStarting()"
@@ -155,9 +131,4 @@ import { RuntimeJobViewService } from '../../stores/health/runtime-job-view.serv
 export class RuntimeConsentDialogsComponent {
   protected readonly desktopRuntime = inject(DesktopRuntimeStore);
   protected readonly health = inject(HealthStore);
-  private readonly runtimeJobs = inject(RuntimeJobViewService);
-
-  protected readonly runtimeInstallConsentLabel = computed(() =>
-    this.runtimeJobs.runtimeLabel(this.health.runtimeInstallConsentKind()),
-  );
 }

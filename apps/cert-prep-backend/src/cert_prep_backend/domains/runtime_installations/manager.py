@@ -16,7 +16,6 @@ from cert_prep_backend.domains.runtime_installations.models import (
     RuntimeInstallationSnapshot,
     utcnow,
 )
-from cert_prep_backend.domains.source_documents.ocr import OCRProvider
 from cert_prep_backend.persistence.database import Database
 from cert_prep_backend.api.errors import ProviderUnavailableError
 from cert_prep_backend.core.exceptions import OperationNotCancellableError
@@ -107,25 +106,14 @@ class RuntimeInstallationManager:
         *,
         settings: Settings,
         llm_provider: object,
-        ocr_provider: OCRProvider,
-        transcription_provider: object | None = None,
         db: Database | None = None,
         async_jobs: bool = True,
         installers: list[RuntimeInstaller] | None = None,
     ) -> None:
         from cert_prep_backend.domains.runtime_installations.installers import (
             LLMModelInstaller,
-            WindowsMLOcrRuntimeInstaller,
-            PaddleOcrRuntimeInstaller,
-            WhisperModelInstaller,
-        )
-        from cert_prep_backend.domains.source_documents.adapters.external_windowsml import (
-            ExternalWindowsMLOCRProvider,
         )
         from cert_prep_ollama.installers import OllamaRuntimeInstaller
-        from cert_prep_backend.domains.source_documents.adapters.external_paddle import (
-            ExternalPaddleOCRProvider,
-        )
 
         self._settings = settings
         self._db = db
@@ -164,10 +152,6 @@ class RuntimeInstallationManager:
                     timeout_seconds=settings.ollama_timeout_seconds,
                     runtime_install_timeout_seconds=settings.runtime_install_timeout_seconds,
                 )
-        transcription_installers: list[RuntimeInstaller] = []
-        whisper_model_runtime = getattr(transcription_provider, "model_runtime", None)
-        if whisper_model_runtime is not None:
-            transcription_installers.append(WhisperModelInstaller(whisper_model_runtime))
         self._installers = {
             installer.kind: installer
             for installer in (
@@ -175,23 +159,6 @@ class RuntimeInstallationManager:
                 or [
                     *llm_runtime_installers,
                     llm_model_installer,
-                    PaddleOcrRuntimeInstaller(
-                        settings,
-                        (
-                            ocr_provider
-                            if getattr(ocr_provider, "provider", None) == "paddle"
-                            else ExternalPaddleOCRProvider(settings)
-                        ),
-                    ),
-                    WindowsMLOcrRuntimeInstaller(
-                        settings,
-                        (
-                            ocr_provider
-                            if getattr(ocr_provider, "provider", None) == "windowsml"
-                            else ExternalWindowsMLOCRProvider(settings)
-                        ),
-                    ),
-                    *transcription_installers,
                 ]
             )
         }

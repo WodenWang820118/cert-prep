@@ -9,4 +9,5 @@ allowBuilds:
   nx: true
   unrs-resolver: true
 minimumReleaseAgeExclude:
-  - '@gx/capture-workbench@0.3.0'
+  - '@gx-capture/capture-workbench@0.3.10'
+  - '@gx-capture/capture-contracts@0.3.10'

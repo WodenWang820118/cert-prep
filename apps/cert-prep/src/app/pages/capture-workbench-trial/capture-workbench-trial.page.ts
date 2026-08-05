@@ -7,6 +7,7 @@ import {
   inject,
   OnDestroy,
   ViewChild,
+  effect,
   signal,
 } from '@angular/core';
 import {
@@ -14,11 +15,12 @@ import {
   defineCaptureWorkbenchElement,
   type CaptureCompletedEvent,
   type CaptureWorkbenchElement,
-} from '@gx/capture-workbench';
+} from '@gx-capture/capture-workbench';
 import { Subscription } from 'rxjs';
 import { ProjectStore } from '../../stores/project.store';
 import { SourceImportStore } from '../../stores/source-import/source-import.store';
 import { CertPrepCaptureClient } from './cert-prep-capture-client';
+import { DesktopRuntimeStore } from '../../stores/desktop-runtime/desktop-runtime.store';
 
 @Component({
   selector: 'app-capture-workbench-trial-page',
@@ -28,17 +30,26 @@ import { CertPrepCaptureClient } from './cert-prep-capture-client';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class CaptureWorkbenchTrialPage implements AfterViewInit, OnDestroy {
-  @ViewChild('captureWorkbench')
   private captureWorkbench?: ElementRef<CaptureWorkbenchElement>;
+  private captureWorkbenchDefined = false;
+
+  @ViewChild('captureWorkbench')
+  private set captureWorkbenchView(
+    element: ElementRef<CaptureWorkbenchElement> | undefined,
+  ) {
+    this.captureWorkbench = element;
+    this.configureElementWhenReady();
+  }
 
   protected readonly client = inject(CertPrepCaptureClient);
   private readonly projects = inject(ProjectStore);
   protected readonly sourceImport = inject(SourceImportStore);
   protected readonly registrationState = signal<
-    'registering' | 'ready' | 'error'
-  >('registering');
+    'runtime_unavailable' | 'registering' | 'ready' | 'error'
+  >('runtime_unavailable');
+  protected readonly desktopRuntime = inject(DesktopRuntimeStore);
   protected readonly trialStatus = signal(
-    'Choose one PDF to run through Capture Runtime OCR.',
+    'Choose a source to run through Capture Workbench and Capture Runtime.',
   );
   protected readonly lastCompleted = signal<CaptureCompletedEvent | null>(null);
   protected readonly registrationError = signal<string | null>(null);
@@ -48,10 +59,44 @@ export class CaptureWorkbenchTrialPage implements AfterViewInit, OnDestroy {
   protected readonly markdownDownloadError = signal<string | null>(null);
   private readonly registration = new Subscription();
 
+  constructor() {
+    effect(() => {
+      if (
+        this.desktopRuntime.isCaptureRuntimeReady() &&
+        this.registrationState() === 'runtime_unavailable'
+      ) {
+        queueMicrotask(() => this.registerCaptureWorkbench());
+      }
+    });
+  }
+
   ngAfterViewInit(): void {
+    this.desktopRuntime.loadCaptureRuntime().subscribe((status) => {
+      if (!status?.running) {
+        this.trialStatus.set(status?.detail ?? 'Capture Runtime is unavailable.');
+      }
+    });
+  }
+
+  protected installCaptureRuntime(): void {
+    this.desktopRuntime.installCaptureRuntime();
+  }
+
+  protected startCaptureRuntime(): void {
+    this.desktopRuntime.startCaptureRuntime();
+  }
+
+  private registerCaptureWorkbench(): void {
+    if (this.registrationState() !== 'runtime_unavailable') {
+      return;
+    }
+    this.registrationState.set('registering');
     this.registration.add(
       defineCaptureWorkbenchElement().subscribe({
-        next: () => this.configureElement(),
+        next: () => {
+          this.captureWorkbenchDefined = true;
+          this.configureElementWhenReady();
+        },
         error: (error: unknown) => {
           this.registrationState.set('error');
           this.registrationError.set(
@@ -73,26 +118,34 @@ export class CaptureWorkbenchTrialPage implements AfterViewInit, OnDestroy {
     this.registration.unsubscribe();
   }
 
-  private configureElement(): void {
+  private configureElementWhenReady(): void {
+    if (
+      !this.captureWorkbenchDefined ||
+      this.registrationState() !== 'registering'
+    ) {
+      return;
+    }
     const element = this.captureWorkbench?.nativeElement;
     if (!element) {
-      this.registrationState.set('error');
-      this.registrationError.set(
-        'The Capture Workbench element is unavailable.',
-      );
       return;
     }
 
     element.config = {
-      enabledSources: ['pdf'],
+      enabledSources: ['pdf', 'image', 'audio'],
       structuringMode: 'host',
       outputMode: 'json',
       multiple: false,
       showRuntimeSetup: false,
       hostStructuringOwner: 'client',
-      hostManagedHandshake: false,
+      hostManagedHandshake: true,
       reviewBeforeCommit: true,
       reviewEditable: true,
+      labels: {
+        reviewTitle: 'Review capture text',
+        originalText: 'Original capture',
+        reviewedText: 'Reviewed text',
+        confirmReview: 'Confirm capture',
+      },
       width: '100%',
       height: 'min(620px, 70vh)',
       density: 'comfortable',
@@ -103,7 +156,9 @@ export class CaptureWorkbenchTrialPage implements AfterViewInit, OnDestroy {
       this.onCompleted,
     );
     this.registrationState.set('ready');
-    this.trialStatus.set('Capture Workbench is ready. Select a PDF.');
+    this.trialStatus.set(
+      'Capture Workbench is ready. Capture Runtime can process PDF, image, and audio sources after their explicit OCR and Whisper consent steps.',
+    );
   }
 
   private readonly onCompleted = (event: Event): void => {

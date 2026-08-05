@@ -9,7 +9,7 @@ export const appRoutes: Route[] = [
       import('../pages/capture-workbench-trial/capture-workbench-trial.page').then(
         (m) => m.CaptureWorkbenchTrialPage,
       ),
-    title: 'Capture Workbench PDF OCR - Cert Prep',
+    title: 'Capture Workbench - Cert Prep',
   },
   {
     path: 'build',

@@ -31,6 +31,30 @@ domains stay focused on product behavior.
   `pnpm nx affected` over direct tool invocations.
 - Do not guess unfamiliar Nx flags; check help or docs first.
 
+## Agent And Tool Routing
+
+- Use the user-global `antigravity-worker` role for bounded, read-only review,
+  planning, and repository research. Its output is advisory; the root Codex
+  agent supervises the task and owns repository writes, verification, and final
+  decisions.
+- Keep `agy_mcp` as the direct, interactive Antigravity tool-call lane. It and
+  the CLI worker are independent routes, not fallback implementations for one
+  another.
+- Only the root agent may dispatch `antigravity-worker`. The worker and its AGY
+  subprocess must not recursively invoke `antigravity-worker`, `agy-worker`, or
+  `agy_mcp`.
+- The global installation owns the CLI adapter, global agent definition,
+  task/result schemas, and installation paths. This repository may name the
+  public role and command but must not duplicate those assets or hard-code
+  user-global paths.
+- Route requests to be grilled or to stress-test a plan through
+  `antigravity-worker` by default with an explicit adversarial objective and a
+  user-visible question/report contract. The CLI worker disables skill
+  expansion; reserve `agy_mcp` for explicitly direct MCP interactions.
+- `AGENTS.md` is the operational instruction source. `CLAUDE.md` is a pointer
+  bridge to it, while the existing Gemini instruction bridge continues to point
+  at `AGENTS.md`.
+
 ## Refactor Slicing Policy
 
 Broad refactors must be sliced by verification boundary instead of performed as
@@ -66,8 +90,7 @@ Use the narrowest relevant subset for the slice:
 - `pnpm nx run cert-prep:build`
 - `pnpm nx run cert-prep-backend:lint`
 - `pnpm nx run cert-prep-backend:test`
-- `pnpm nx run cert-prep-ocr-windowsml:lint`
-- `pnpm nx run cert-prep-ocr-windowsml:test`
+- `pnpm nx run cert-prep-desktop:release-tool-test`
 - `pnpm nx run cert-prep-desktop:typecheck-scripts`
 - `pnpm nx run cert-prep-desktop:package-qa-test`
 - `pnpm nx run cert-prep-desktop:cargo-test`
@@ -89,7 +112,5 @@ Use the narrowest relevant subset for the slice:
 - `DEFAULT_OLLAMA_MODEL` needs a cross-language contract decision because it is
   reflected in backend config, desktop runtime defaults, frontend/e2e fixtures,
   and packaged smoke commands.
-- `AGENTS.md` and `CLAUDE.md` dedupe touches cross-agent governance. Keep both
-  intact until the preferred instruction strategy is explicit.
 - `libs/` creation should wait until at least one shared contract has two
   production consumers or an e2e fixture needs the same typed surface.

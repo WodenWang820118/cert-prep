@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-from conftest import minimal_pdf
+from conftest import TestCaptureRuntimeClient, minimal_pdf
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.core.config import DEFAULT_OLLAMA_MODEL, Settings
 from cert_prep_backend.domains.mock_exams.models import (
@@ -21,6 +21,7 @@ def test_generation_defaults_to_deterministic_only_without_provider_call(
     client = TestClient(
         create_app(
             settings=Settings(data_dir=tmp_path, api_token="test-token"),
+            capture_runtime_client=TestCaptureRuntimeClient(),
             llm_provider=provider,
             document_processing_async_jobs=False,
         )
@@ -48,6 +49,7 @@ def test_hybrid_reasoning_provider_output_is_saved_as_playable_question(
     client = TestClient(
         create_app(
             settings=Settings(data_dir=tmp_path, api_token="test-token"),
+            capture_runtime_client=TestCaptureRuntimeClient(),
             llm_provider=provider,
             document_processing_async_jobs=False,
         )
@@ -280,6 +282,7 @@ def test_explicit_generation_returns_provider_unavailable_error_envelope(
     client = TestClient(
         create_app(
             settings=Settings(data_dir=tmp_path, api_token="test-token"),
+            capture_runtime_client=TestCaptureRuntimeClient(),
             llm_provider=UnavailableExamProvider(),
             document_processing_async_jobs=False,
         )

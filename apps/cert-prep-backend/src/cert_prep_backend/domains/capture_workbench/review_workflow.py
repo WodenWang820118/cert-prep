@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import hashlib
 import json
 
-from cert_prep_backend.domains.capture_workbench.contracts import (
+from capture_contracts import (
     CaptureReviewV1,
     CaptureSourceKind,
 )

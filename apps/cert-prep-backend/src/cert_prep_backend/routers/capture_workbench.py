@@ -16,13 +16,13 @@ from pydantic.alias_generators import to_camel
 from cert_prep_backend.api.dependencies import (
     get_database,
     get_capture_coordinator,
-    get_document_ocr_worker_pool,
+    get_document_worker_pool,
     get_settings,
     get_streaming_draft_generation_manager,
 )
 from cert_prep_backend.core.config import Settings
 from cert_prep_backend.core.exceptions import BackendError, NotFoundError
-from cert_prep_backend.domains.capture_workbench.contracts import (
+from capture_contracts import (
     CaptureBlockV1,
     CaptureDocumentV1,
     CaptureEngineV1,
@@ -33,12 +33,16 @@ from cert_prep_backend.domains.capture_workbench.contracts import (
     CaptureSourceKind,
     RawCaptureSegmentV1,
     StructuringMode,
-    reviewed_text_overrides,
 )
+from cert_prep_backend.domains.capture_workbench.review import reviewed_text_overrides
+from cert_prep_backend.domains.capture_workbench.runtime_policy import SUPPORTED_RUNTIME_VERSION
 from cert_prep_backend.domains.capture_workbench import review_sessions
 from cert_prep_backend.domains.capture_workbench.coordinator import (
     CaptureRuntimeCanceledError,
+    CaptureRuntimeJobError,
+    CaptureRuntimeRequirementUnavailableError,
     CertPrepCaptureCoordinator,
+    PDF_OCR_UNAVAILABLE_MESSAGE,
 )
 from cert_prep_backend.domains.capture_workbench.review_workflow import (
     begin_review_capture,
@@ -99,7 +103,7 @@ async def create_capture(
     operation_id_header: OperationIdHeader = None,
     db: Database = Depends(get_database),
     settings: Settings = Depends(get_settings),
-    workers: DocumentWorkerPool = Depends(get_document_ocr_worker_pool),
+    workers: DocumentWorkerPool = Depends(get_document_worker_pool),
 ) -> CaptureReviewJobRead:
     coordinator = get_capture_coordinator(request)
     cleanup_expired_review_sessions(db, coordinator=coordinator)
@@ -304,7 +308,7 @@ def confirm_capture(
     confirm_request: CaptureReviewConfirmRequest,
     db: Database = Depends(get_database),
     settings: Settings = Depends(get_settings),
-    workers: DocumentWorkerPool = Depends(get_document_ocr_worker_pool),
+    workers: DocumentWorkerPool = Depends(get_document_worker_pool),
     streaming_questions=Depends(get_streaming_draft_generation_manager),
 ) -> CaptureReviewJobRead:
     coordinator = get_capture_coordinator(request)
@@ -487,6 +491,7 @@ def _run_begin(
 ) -> None:
     document = source_documents_repository.get_document(db, project_id, document_id)
     source_file = source_documents_repository.get_source_file(db, project_id, document_id)
+    source_kind = _source_kind(document["filename"])
     try:
         begin_review_capture(
             db,
@@ -498,23 +503,65 @@ def _run_begin(
             file_name=document["filename"],
             content=Path(source_file.storage_path).read_bytes(),
             media_type=_media_type(document["filename"]),
-            source_kind=_source_kind(document["filename"]),
+            source_kind=source_kind,
             should_cancel=lambda: (
                 shutdown_requested() or not _operation_active(db, project_id, operation_id)
             ),
         )
     except CaptureRuntimeCanceledError:
         _finish_canceled(db, project_id, operation_id, session_id)
-    except Exception:
-        review_sessions.finish(
-            db, project_id=project_id, session_id=session_id, status=review_sessions.FAILED
-        )
-        operations.finish_failed(
+    except CaptureRuntimeRequirementUnavailableError as error:
+        _finish_begin_failure(
             db,
             project_id=project_id,
             operation_id=operation_id,
+            session_id=session_id,
+            error=(
+                PDF_OCR_UNAVAILABLE_MESSAGE
+                if source_kind is CaptureSourceKind.PDF
+                else str(error)
+            ),
+        )
+    except CaptureRuntimeJobError as error:
+        _finish_begin_failure(
+            db,
+            project_id=project_id,
+            operation_id=operation_id,
+            session_id=session_id,
+            error=(
+                PDF_OCR_UNAVAILABLE_MESSAGE
+                if source_kind is CaptureSourceKind.PDF
+                and error.code == "requirement_unavailable"
+                else "Capture Runtime extraction failed."
+            ),
+        )
+    except Exception:
+        _finish_begin_failure(
+            db,
+            project_id=project_id,
+            operation_id=operation_id,
+            session_id=session_id,
             error="Capture Runtime extraction failed.",
         )
+
+
+def _finish_begin_failure(
+    db: Database,
+    *,
+    project_id: str,
+    operation_id: str,
+    session_id: str,
+    error: str,
+) -> None:
+    review_sessions.finish(
+        db, project_id=project_id, session_id=session_id, status=review_sessions.FAILED
+    )
+    operations.finish_failed(
+        db,
+        project_id=project_id,
+        operation_id=operation_id,
+        error=error,
+    )
 
 
 def _run_confirm(
@@ -701,7 +748,7 @@ def _document_projection(
     digest = f"sha256:{document['sha256']}"
     extraction = CaptureEngineV1(
         engine=document["extraction_method"] or "windowsml-ocr",
-        model="capture-runtime@0.3.0",
+        model=f"capture-runtime@{SUPPORTED_RUNTIME_VERSION}",
         digest=digest,
         device=document["ocr_device"],
     )

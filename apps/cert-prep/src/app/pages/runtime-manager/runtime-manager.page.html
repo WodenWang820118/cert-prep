@@ -151,48 +151,6 @@
       }
     </app-runtime-status-row>
 
-    <app-runtime-status-row [section]="viewModel().ocr">
-      <ng-container actions>
-        @if (desktopRuntime.isBackendReady() && health.canInstallOcrRuntime()) {
-        <p-button
-          label="Install OCR"
-          icon="pi pi-download"
-          severity="warn"
-          [outlined]="true"
-          [disabled]="health.runtimeInstallStarting()"
-          (onClick)="health.openOcrRuntimeInstallConsent()"
-        />
-        } @if (hasOcrRuntimeInstallation()) {
-        <p-button
-          label="Refresh install"
-          icon="pi pi-refresh"
-          severity="secondary"
-          [outlined]="true"
-          [disabled]="health.runtimeInstallStarting()"
-          (onClick)="health.refreshRuntimeInstallation()"
-        />
-        } @if (hasOcrRuntimeInstallation() &&
-        health.canCancelRuntimeInstallation()) {
-        <p-button
-          label="Cancel OCR install"
-          icon="pi pi-times"
-          severity="danger"
-          [outlined]="true"
-          [loading]="health.runtimeInstallCanceling()"
-          (onClick)="health.cancelRuntimeInstallation()"
-        />
-        }
-      </ng-container>
-      @if (hasOcrRuntimeInstallation()) { @if (health.runtimeInstall(); as
-      install) {
-      <div progress class="grid gap-2 sm:col-span-2" aria-live="polite">
-        <p class="m-0 text-sm text-muted-color">{{ install.message }}</p>
-        @if (install.progress !== null) {
-        <p-progressbar [value]="install.progress" />
-        }
-      </div>
-      } }
-    </app-runtime-status-row>
   </section>
 
   <footer class="runtime-modal-footer">

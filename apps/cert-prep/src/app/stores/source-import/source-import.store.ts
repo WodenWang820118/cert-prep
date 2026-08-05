@@ -19,8 +19,6 @@ import type {
 } from './contracts/source-import.contracts';
 import { DocumentParsingMetricsService } from './document-parsing-metrics.service';
 import { DocumentLibraryStore } from './document-library.store';
-import { HealthStore } from '../health/health.store';
-import type { RuntimeInstallationView } from '../health/contracts/health-runtime.contracts';
 import { OperationStore } from '../operation.store';
 import { ProjectStore } from '../project.store';
 import { SourceUploadLifecycle } from './source-upload-lifecycle';
@@ -42,7 +40,6 @@ import {
 export class SourceImportStore {
   private readonly api = inject(CERT_PREP_API);
   private readonly library = inject(DocumentLibraryStore);
-  private readonly health = inject(HealthStore);
   private readonly metrics = inject(DocumentParsingMetricsService);
   private readonly operations = inject(OperationStore);
   private readonly projects = inject(ProjectStore);
@@ -70,11 +67,6 @@ export class SourceImportStore {
   private readonly pendingAutoUploadItemIds = new Set<string>();
   private readonly pendingAutoUploadRevision = signal(0);
   private autoUploadEnqueueScheduled = false;
-  private whisperAuthorizationReconcileScheduled = false;
-  private whisperAuthorizationAwaitingRuntime = false;
-  private whisperConsentObserved = false;
-  private whisperRuntimeInstallAtAuthorization: RuntimeInstallationView | null =
-    null;
   private readonly uploadLifecycle = inject(SourceUploadLifecycle);
 
   private configureUploadLifecycle(): void {
@@ -103,7 +95,6 @@ export class SourceImportStore {
         from(this.api.cancelDocumentOperation(projectId, operationId)),
       newOperationId: () => this.newOperationId(),
       errorMessage: (error) => this.getUploadErrorMessage(error),
-      errorCode: (error) => this.getUploadErrorCode(error),
     });
   }
 
@@ -127,17 +118,6 @@ export class SourceImportStore {
   readonly selectedFile = computed(() => this.selectedFiles()[0] ?? null);
   readonly hasSelectedAudio = computed(() =>
     this.uploadItems().some((item) => this.isAudioSourceFile(item.file)),
-  );
-  readonly whisperModelsRequirement = this.health.whisperModelsRequirement;
-  readonly whisperModelsReady = this.health.areWhisperModelsReady;
-  readonly whisperModelInstall = computed(() => {
-    const install = this.health.runtimeInstall();
-    return install?.kind === 'whisper_models' ? install : null;
-  });
-  readonly canCancelWhisperModelDownload = computed(
-    () =>
-      this.whisperModelInstall() !== null &&
-      this.health.canCancelRuntimeInstallation(),
   );
   readonly isUploading = computed(() =>
     this.uploadItems().some((item) =>
@@ -253,9 +233,7 @@ export class SourceImportStore {
       this.uploadItems().some(
         (item) =>
           ['queued', 'failed'].includes(item.status) &&
-          (this.isUploadItemReady(item) ||
-            (this.isAudioSourceFile(item.file) &&
-              !this.isPendingAutoUpload(item.id))),
+          this.isUploadItemReady(item),
       ) &&
       !this.isUploading(),
   );
@@ -295,13 +273,6 @@ export class SourceImportStore {
       if (this.isResourceSettled(this.chunksResource.status())) {
         untracked(() => this.library.setChunks(this.chunksResource.value()));
       }
-    });
-    effect(() => {
-      this.whisperModelsReady();
-      this.health.runtimeInstallConsentKind();
-      this.health.runtimeInstall();
-      this.health.healthSnapshotLoading();
-      this.scheduleWhisperAuthorizationReconciliation();
     });
   }
 
@@ -344,16 +315,6 @@ export class SourceImportStore {
     if (autoUpload) {
       this.rememberPendingAutoUploads(nextItems.map((item) => item.id));
       this.startReadyAutoUploads();
-    }
-    if (this.hasPendingAudioUpload()) {
-      void (autoUpload
-        ? this.preflightAuthorizedWhisperModels()
-        : this.preflightWhisperModels());
-    } else if (
-      this.health.runtimeInstallConsentKind() === 'whisper_models' &&
-      !this.health.runtimeInstallStarting()
-    ) {
-      this.health.cancelRuntimeInstallConsent();
     }
     this.operations.error.set(null);
     this.operations.errorCode.set(null);
@@ -416,7 +377,7 @@ export class SourceImportStore {
 
   uploadDocuments(): void {
     const project = this.projects.selectedProject();
-    let uploadItems = this.uploadItems().filter((item) =>
+    const uploadItems = this.uploadItems().filter((item) =>
       ['queued', 'failed'].includes(item.status),
     );
     if (project === null) {
@@ -434,28 +395,8 @@ export class SourceImportStore {
       return;
     }
     this.rememberPendingAutoUploads(uploadItems.map((item) => item.id));
-    const pendingAudioNeedsModels = uploadItems.some(
-      (item) => this.isAudioSourceFile(item.file) && !this.whisperModelsReady(),
-    );
-    let readyItems = uploadItems.filter((item) => this.isUploadItemReady(item));
-    if (readyItems.length === 0 && pendingAudioNeedsModels) {
-      this.preflightAuthorizedWhisperModels();
-      uploadItems = this.uploadItems().filter((item) =>
-        ['queued', 'failed'].includes(item.status),
-      );
-      readyItems = uploadItems.filter((item) => this.isUploadItemReady(item));
-    } else if (pendingAudioNeedsModels) {
-      this.preflightAuthorizedWhisperModels();
-    }
+    const readyItems = uploadItems.filter((item) => this.isUploadItemReady(item));
     if (readyItems.length === 0) {
-      if (
-        uploadItems.some((item) => !this.isAudioSourceFile(item.file)) &&
-        this.health.isOcrHealthLoading()
-      ) {
-        this.operations.fail(
-          'OCR runtime is warming up. Try again when runtime health finishes.',
-        );
-      }
       return;
     }
 
@@ -512,10 +453,6 @@ export class SourceImportStore {
       )
       .subscribe((result) => {
         if (!this.isCurrentUploadContext(projectId, run.contextEpoch)) return;
-        if (run.runtimePromptNeeded) {
-          this.refreshRuntimeHealth();
-          if (this.isCurrentUploadContext(projectId, run.contextEpoch)) this.health.openOcrRuntimeInstallConsent();
-        }
         const documents = result ?? [];
         const activeDocument = documents[documents.length - 1] ?? null;
         if (activeDocument !== null) {
@@ -704,20 +641,6 @@ export class SourceImportStore {
       }
       return;
     }
-    if (this.isAudioSourceFile(item.file) && !this.whisperModelsReady()) {
-      this.rememberPendingAutoUploads([item.id]);
-      if (!this.preflightAuthorizedWhisperModels()) {
-        return;
-      }
-    } else if (
-      !this.isAudioSourceFile(item.file) &&
-      this.health.isOcrHealthLoading()
-    ) {
-      this.operations.fail(
-        'OCR runtime is warming up. Try again when runtime health finishes.',
-      );
-      return;
-    }
     this.rememberPendingAutoUploads([item.id]);
     if (!this.updateUploadItem(item.id, { status: 'queued', error: null })) {
       this.forgetPendingAutoUploads([item.id]);
@@ -895,59 +818,6 @@ export class SourceImportStore {
     );
   }
 
-  cancelWhisperModelDownload(): void {
-    this.health.cancelRuntimeInstallation();
-  }
-
-  private preflightWhisperModels(): boolean {
-    if (!this.hasPendingAudioUpload()) {
-      return true;
-    }
-    if (this.whisperModelsReady()) {
-      return true;
-    }
-    if (this.whisperModelsRequirement() === null) {
-      this.health.loadRuntimeRequirementsForUpload();
-      if (this.whisperModelsRequirement() === null) {
-        this.operations.fail('Whisper model status is unavailable. Refresh runtime health before uploading audio.');
-        return false;
-      }
-    }
-    if (!this.hasPendingAudioUpload()) {
-      return true;
-    }
-    if (this.whisperModelsReady()) {
-      return true;
-    }
-    if (this.health.areWhisperModelsMissing()) {
-      this.health.openWhisperModelsConsent();
-      this.operations.status.set(
-        'Whisper model download consent is required before audio upload.',
-      );
-      return false;
-    }
-    this.operations.fail(
-      'Whisper model status is unavailable. Refresh runtime health before uploading audio.',
-    );
-    return false;
-  }
-
-  private preflightAuthorizedWhisperModels(): boolean {
-    const ready = this.preflightWhisperModels();
-    if (!ready) {
-      this.beginWhisperRuntimeAuthorizationWait();
-    }
-    return ready;
-  }
-
-  private hasPendingAudioUpload(): boolean {
-    return this.uploadItems().some(
-      (item) =>
-        ['queued', 'failed'].includes(item.status) &&
-        this.isAudioSourceFile(item.file),
-    );
-  }
-
   private isAudioSourceFile(file: File): boolean {
     const mimeType = file.type.trim().toLowerCase();
     if (
@@ -965,9 +835,7 @@ export class SourceImportStore {
   }
 
   private isUploadItemReady(item: SourceUploadItem): boolean {
-    return this.isAudioSourceFile(item.file)
-      ? this.whisperModelsReady()
-      : !this.health.isOcrHealthLoading();
+    return item.status === 'queued' || item.status === 'failed';
   }
 
   private scheduleReadyAutoUploads(): void {
@@ -988,94 +856,6 @@ export class SourceImportStore {
       return;
     }
     untracked(() => this.startReadyAutoUploads());
-  }
-
-  private beginWhisperRuntimeAuthorizationWait(): void {
-    const hasAuthorizedAudio = this.uploadItems().some(
-      (item) =>
-        this.pendingAutoUploadItemIds.has(item.id) &&
-        ['queued', 'failed'].includes(item.status) &&
-        this.isAudioSourceFile(item.file),
-    );
-    if (!hasAuthorizedAudio) {
-      return;
-    }
-    this.whisperAuthorizationAwaitingRuntime = true;
-    this.whisperConsentObserved =
-      this.health.runtimeInstallConsentKind() === 'whisper_models';
-    this.whisperRuntimeInstallAtAuthorization = this.health.runtimeInstall();
-    this.reconcileWhisperRuntimeAuthorization();
-  }
-
-  private scheduleWhisperAuthorizationReconciliation(): void {
-    if (this.whisperAuthorizationReconcileScheduled) {
-      return;
-    }
-    this.whisperAuthorizationReconcileScheduled = true;
-    this.whisperAuthorizationReconcileScheduled = false;
-    untracked(() => this.reconcileWhisperRuntimeAuthorization());
-  }
-
-  private reconcileWhisperRuntimeAuthorization(): void {
-    if (!this.whisperAuthorizationAwaitingRuntime) {
-      return;
-    }
-    const consentOpen =
-      this.health.runtimeInstallConsentKind() === 'whisper_models';
-    const install = this.health.runtimeInstall();
-    const installAdvanced =
-      install !== this.whisperRuntimeInstallAtAuthorization &&
-      install?.kind === 'whisper_models';
-    const installTerminalFailure =
-      installAdvanced &&
-      (install.phase === 'failed' || install.phase === 'canceled');
-    const consentCanceled =
-      this.whisperConsentObserved && !consentOpen && !installAdvanced;
-    if (installTerminalFailure || consentCanceled) {
-      this.releaseWhisperRuntimeAuthorization();
-      return;
-    }
-    if (this.whisperModelsReady()) {
-      this.resetWhisperRuntimeAuthorizationWait();
-      this.scheduleReadyAutoUploads();
-      return;
-    }
-    this.whisperConsentObserved ||= consentOpen;
-    const installActive =
-      install?.kind === 'whisper_models' &&
-      [
-        'starting',
-        'running',
-        'cancel_requested',
-        'waiting_for_user',
-      ].includes(install.phase);
-    const succeededHealthRefreshActive =
-      installAdvanced &&
-      install.phase === 'succeeded' &&
-      this.health.healthSnapshotLoading();
-    if (consentOpen || installActive || succeededHealthRefreshActive) {
-      return;
-    }
-    this.releaseWhisperRuntimeAuthorization();
-  }
-
-  private releaseWhisperRuntimeAuthorization(): void {
-    const itemIds = this.uploadItems()
-      .filter(
-        (item) =>
-          this.pendingAutoUploadItemIds.has(item.id) &&
-          ['queued', 'failed'].includes(item.status) &&
-          this.isAudioSourceFile(item.file),
-      )
-      .map((item) => item.id);
-    this.resetWhisperRuntimeAuthorizationWait();
-    this.forgetPendingAutoUploads(itemIds);
-  }
-
-  private resetWhisperRuntimeAuthorizationWait(): void {
-    this.whisperAuthorizationAwaitingRuntime = false;
-    this.whisperConsentObserved = false;
-    this.whisperRuntimeInstallAtAuthorization = null;
   }
 
   private startReadyAutoUploads(): void {
@@ -1196,7 +976,6 @@ export class SourceImportStore {
 
   private invalidateUploadContext(): void {
     this.contextEpoch += 1;
-    this.resetWhisperRuntimeAuthorizationWait();
     this.clearPendingAutoUploads();
     this.stopDocumentPolling();
     this.uploadLifecycle.invalidate();
@@ -1232,17 +1011,6 @@ export class SourceImportStore {
     }
   }
 
-  private refreshRuntimeHealth(): void {
-    try {
-      this.health.load();
-    } catch (error) {
-      console.warn(
-        'Unable to refresh runtime health before opening the OCR runtime prompt.',
-        error,
-      );
-    }
-  }
-
   private getUploadErrorMessage(error: unknown): string {
     const httpError = error as { error?: unknown; message?: unknown };
     if (this.hasMessage(httpError.error)) {
@@ -1267,20 +1035,6 @@ export class SourceImportStore {
       'message' in value &&
       typeof (value as { message?: unknown }).message === 'string'
     );
-  }
-
-  private getUploadErrorCode(error: unknown): string | null {
-    const httpError = error as { error?: unknown };
-    if (
-      typeof httpError.error === 'object' &&
-      httpError.error !== null &&
-      'code' in httpError.error &&
-      typeof (httpError.error as { code?: unknown }).code === 'string'
-    ) {
-      return (httpError.error as { code: string }).code;
-    }
-
-    return null;
   }
 
   private scheduleDocumentPolling(projectId: string, documentId: string): void {
@@ -1359,7 +1113,7 @@ export class SourceImportStore {
 
   private isCurrentProjectDocument(projectId: string, documentId: string): boolean {
     return (
-      this.projects.selectedProject()?.id === projectId &&
+      this.projects.selectedProjectId() === projectId &&
       this.activeDocumentId() === documentId
     );
   }

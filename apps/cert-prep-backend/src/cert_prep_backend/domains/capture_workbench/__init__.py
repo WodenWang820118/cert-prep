@@ -7,13 +7,13 @@ from cert_prep_backend.domains.capture_workbench.client import (
     CaptureRuntimeProtocolError,
     CaptureUpload,
 )
-from cert_prep_backend.domains.capture_workbench.contracts import (
+from capture_contracts import (
     CaptureDocumentV1,
     CaptureJobV1,
     CaptureSourceKind,
     RawCaptureV1,
-    RuntimeReadyV1,
 )
+from cert_prep_backend.domains.capture_workbench.host_models import RuntimeReadyV1
 from cert_prep_backend.domains.capture_workbench.structuring import (
     CertPrepCaptureStructuringAdapter,
 )

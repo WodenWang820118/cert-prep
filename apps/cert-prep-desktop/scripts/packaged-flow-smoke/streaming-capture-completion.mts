@@ -129,7 +129,7 @@ function ocrChunksAccepted(run: SmokeRunState): boolean {
     return true;
   }
   return (
-    run.options.allowOcrChunkVariance &&
+    run.options.allowCaptureChunkVariance &&
     chunks !== null &&
     chunks !== undefined &&
     chunks > 0 &&

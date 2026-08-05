@@ -125,6 +125,42 @@ describe('DraftReviewPanelComponent', () => {
     expect(text).toContain('No supported answer.');
   });
 
+  it('renders parsed blocks that need review separately from playable questions', () => {
+    const projects = TestBed.inject(ProjectStore);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    const drafts = TestBed.inject(DraftReviewStore);
+    projects.projects.set([projectRead()]);
+    projects.select('project-1');
+    activateDocument(sourceImport, documentRead());
+    drafts.manualDraftOperation.set(
+      manualDraftOperation({
+        status: 'succeeded',
+        phase: 'completed',
+        generated_count: 1,
+        unavailable_blocks: [
+          {
+            status: 'needs_review',
+            chunk_id: 'chunk-2',
+            citation_page: 8,
+            source_excerpt: 'Question source',
+            source_order: 20002,
+            source_question_number: '2',
+            reason: 'Capture Runtime returned no playable answer.',
+          },
+        ],
+      }),
+    );
+
+    const fixture = TestBed.createComponent(DraftReviewPanelComponent);
+    fixture.detectChanges();
+
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('1 parsed block(s) need review');
+    expect(text).toContain('Page 8');
+    expect(text).toContain('Question 2');
+    expect(text).toContain('Capture Runtime returned no playable answer.');
+  });
+
   it('defaults the visible draft list to the active document', () => {
     const projects = TestBed.inject(ProjectStore);
     const sourceImport = TestBed.inject(SourceImportStore);
@@ -175,7 +211,7 @@ function documentRead(overrides: Partial<DocumentRead> = {}): DocumentRead {
     page_count: 46,
     has_text: true,
     status: 'ready',
-    extraction_method: 'paddle_ocr_gpu',
+    extraction_method: 'windowsml_ocr',
     ocr_device: 'gpu:0',
     ocr_fallback_reason: null,
     ocr_duration_ms: 26513,

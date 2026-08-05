@@ -57,7 +57,7 @@ test('process tree residue detection stays scoped to launched app descendants', 
   const processes = [
     processRecord(10, 1, 'cert-prep-desktop.exe', 'cert-prep-desktop.exe'),
     processRecord(11, 10, 'cert-prep-backend.exe', 'cert-prep-backend.exe'),
-    processRecord(12, 11, 'cert-prep-ocr-runtime.exe', 'cert-prep-ocr-runtime.exe --ocr-worker'),
+    processRecord(12, 11, 'capture-runtime.exe', 'capture-runtime.exe --serve'),
     processRecord(13, 11, 'conhost.exe', 'conhost.exe'),
     processRecord(20, 1, 'cert-prep-backend.exe', 'unrelated backend'),
   ];

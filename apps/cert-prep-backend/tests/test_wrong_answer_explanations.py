@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.core.config import Settings
-from conftest import AUTH_TOKEN
+from conftest import AUTH_TOKEN, TestCaptureRuntimeClient
 from practice_test_support import (
     UnavailableExplanationProvider,
     _create_manual_question,
@@ -208,6 +208,7 @@ def test_wrong_answer_explanation_falls_back_when_provider_unavailable(
     with TestClient(
         create_app(
             settings=settings,
+            capture_runtime_client=TestCaptureRuntimeClient(),
             llm_provider=UnavailableExplanationProvider(),
             document_processing_async_jobs=False,
         )

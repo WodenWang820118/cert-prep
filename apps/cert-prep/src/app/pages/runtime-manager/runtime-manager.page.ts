@@ -45,11 +45,6 @@ export class RuntimeManagerPage {
     return kind === 'ollama';
   });
 
-  protected readonly hasOcrRuntimeInstallation = computed(() => {
-    const kind = this.health.runtimeInstall()?.kind;
-    return kind === 'paddle_ocr' || kind === 'windowsml_ocr';
-  });
-
   protected refreshAll(): void {
     if (this.desktopRuntime.isBackendReady()) {
       this.health.refresh();

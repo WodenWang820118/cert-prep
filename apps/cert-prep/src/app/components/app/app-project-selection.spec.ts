@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { NEVER, of } from 'rxjs';
+import { of } from 'rxjs';
 import { provideRouter } from '@angular/router';
 import { App } from './app.component';
 import { appRoutes } from '../../constants/app-routes.constants';
@@ -9,7 +9,6 @@ import {
   appProject,
   editableAppQuestion,
   availableLlmHealth,
-  availableOcrHealth,
   backendHealth,
   emptyWrongAnswerSummary,
   secondAppDocument,
@@ -86,7 +85,6 @@ describe('App project selection', () => {
   });
 
   it('selects the first project while optional runtime health is still loading', () => {
-    apiClient.ocrHealth.mockReturnValue(NEVER);
 
     const fixture = TestBed.createComponent(App);
     const projects = TestBed.inject(ProjectStore);
@@ -106,7 +104,6 @@ function createApiClient() {
   return {
     health: vi.fn().mockReturnValue(of(backendHealth())),
     llmHealth: vi.fn().mockReturnValue(of(availableLlmHealth())),
-    ocrHealth: vi.fn().mockReturnValue(of(availableOcrHealth())),
     runtimeRequirements: vi.fn().mockReturnValue(of({ items: [] })),
     startRuntimeInstallation: vi.fn(),
     getRuntimeInstallation: vi.fn(),

@@ -578,6 +578,8 @@ def finish_failed(
     project_id: str,
     operation_id: str,
     error: str,
+    document_status: str | None = None,
+    extraction_method: str | None = None,
 ) -> dict:
     now = utc_now()
     with db.connect() as connection:
@@ -613,9 +615,14 @@ def finish_failed(
                     connection,
                     project_id=project_id,
                     document_id=document_id,
-                    status="canceled" if canceled else "ocr_failed",
-                    extraction_method="none" if canceled else "ocr_failed",
+                    status="canceled" if canceled else document_status or "ocr_failed",
+                    extraction_method="none" if canceled else extraction_method or "ocr_failed",
                     fallback_reason=None if canceled else error,
+                    processed_page_count=(
+                        int(document["page_count"] or 0)
+                        if not canceled and document_status == "no_text_detected"
+                        else 0
+                    ),
                     now=now,
                 )
         connection.execute(
@@ -765,6 +772,7 @@ def _reset_document_derived_state(
     status: str,
     extraction_method: str,
     fallback_reason: str | None,
+    processed_page_count: int = 0,
     now: str,
 ) -> None:
     connection.execute(
@@ -784,7 +792,7 @@ def _reset_document_derived_state(
         UPDATE documents
         SET status = ?, has_text = 0, extraction_method = ?,
             ocr_device = NULL, ocr_fallback_reason = ?, ocr_duration_ms = 0,
-            processed_page_count = 0, parse_wall_duration_ms = 0,
+            processed_page_count = ?, parse_wall_duration_ms = 0,
             render_duration_ms = 0, ocr_engine_duration_ms = 0,
             ocr_worker_count = 0, first_chunk_ms = 0, exam_item_count = 0,
             content_profile = 'unknown', classification_detail = '',
@@ -795,6 +803,7 @@ def _reset_document_derived_state(
             status,
             extraction_method,
             fallback_reason,
+            processed_page_count,
             now,
             project_id,
             document_id,

@@ -13,7 +13,10 @@
     "skipDefaultLibCheck": true,
     "baseUrl": ".",
     "paths": {
-      "@cert-prep/api": ["./libs/cert-prep-api/src/index.ts"]
+      "@cert-prep/api": ["./libs/cert-prep-api/src/index.ts"],
+      "@cert-prep/capture-runtime-version": [
+        "./tools/capture-runtime-version.mts"
+      ]
     },
     "strict": false,
     "noUncheckedSideEffectImports": false,

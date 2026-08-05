@@ -12,7 +12,6 @@ export type {
   LLMProviderSelectionRead,
   ManualDraftGenerationOperationRead,
   ModelDownloadRead,
-  OCRHealthRead,
   PracticeAttemptCreate,
   PracticeAttemptRead,
   PracticeSessionCreate,

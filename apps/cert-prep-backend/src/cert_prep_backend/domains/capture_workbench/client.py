@@ -12,10 +12,8 @@ from uuid import UUID
 import httpx
 from pydantic import ValidationError
 
-from cert_prep_backend.domains.capture_workbench.contracts import (
+from capture_contracts import (
     CAPTURE_DOCUMENT_SCHEMA_VERSION,
-    SUPPORTED_API_MAJOR,
-    SUPPORTED_RUNTIME_MAJOR,
     CaptureDocumentV1,
     CaptureJobV1,
     CaptureRequirementId,
@@ -24,14 +22,19 @@ from cert_prep_backend.domains.capture_workbench.contracts import (
     RawCaptureV1,
     RuntimeInstallationV1,
     RuntimeInstallationsV1,
-    RuntimeReadyV1,
     RuntimeRequirementsV1,
     StructuringMode,
+)
+from cert_prep_backend.domains.capture_workbench.host_models import RuntimeReadyV1
+from cert_prep_backend.domains.capture_workbench.runtime_policy import (
+    SUPPORTED_API_MAJOR,
+    SUPPORTED_RUNTIME_MAJOR,
+    SUPPORTED_RUNTIME_MINOR,
 )
 
 
 _VERSION = re.compile(
-    r"^(?P<major>0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*))?(?:[-+].*)?$"
+    r"^(?P<major>0|[1-9][0-9]*)\.(?P<minor>0|[1-9][0-9]*)(?:\.(?:0|[1-9][0-9]*))?(?:[-+].*)?$"
 )
 
 
@@ -326,6 +329,13 @@ def _major(version: str, *, label: str) -> int:
     return int(match.group("major"))
 
 
+def _minor(version: str, *, label: str) -> int:
+    match = _VERSION.fullmatch(version)
+    if match is None:
+        raise CaptureRuntimeCompatibilityError(f"{label} version is not semantic: {version!r}")
+    return int(match.group("minor"))
+
+
 def _assert_compatible(ready: RuntimeReadyV1) -> None:
     failures: list[str] = []
     if not ready.ready:
@@ -334,6 +344,11 @@ def _assert_compatible(ready: RuntimeReadyV1) -> None:
         failures.append(f"API major {ready.api_version} is unsupported")
     if _major(ready.runtime_version, label="runtime") != SUPPORTED_RUNTIME_MAJOR:
         failures.append(f"runtime major {ready.runtime_version} is unsupported")
+    elif _minor(ready.runtime_version, label="runtime") != SUPPORTED_RUNTIME_MINOR:
+        failures.append(
+            f"runtime minor {ready.runtime_version} is incompatible with "
+            f"0.{SUPPORTED_RUNTIME_MINOR}.x"
+        )
     if ready.capture_document_schema_version != CAPTURE_DOCUMENT_SCHEMA_VERSION:
         failures.append(
             "CaptureDocument schema "

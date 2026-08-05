@@ -25,8 +25,6 @@ const PROVIDERS = new Set(['ollama', 'fake']);
 const RUNTIME_KINDS = new Set([
   'ollama',
   'ollama_model',
-  'paddle_ocr',
-  'windowsml_ocr',
 ]);
 
 type ReadinessPage = Pick<Page, 'on' | 'off' | 'request'>;

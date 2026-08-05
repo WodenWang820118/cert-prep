@@ -2,7 +2,7 @@ import logging
 import platform
 import sqlite3
 import sys
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -18,7 +18,7 @@ from cert_prep_backend.api.dependencies import require_bearer_auth
 from cert_prep_backend.core.config import Settings
 from cert_prep_backend.persistence.database import Database
 from cert_prep_backend.domains.capture_workbench.client import CaptureRuntimeClient
-from cert_prep_backend.domains.capture_workbench.contracts import (
+from cert_prep_backend.domains.capture_workbench.runtime_policy import (
     CAPTURE_DOCUMENT_SCHEMA_VERSION,
     SUPPORTED_API_VERSION,
     SUPPORTED_RUNTIME_VERSION,
@@ -37,34 +37,20 @@ from cert_prep_backend.domains.mock_exams.provider import lazy_provider_from_set
 from cert_prep_backend.domains.mock_exams.streaming import StreamingDraftGenerationManager
 from cert_prep_backend.domains.runtime_installations import RuntimeInstallationManager
 from cert_prep_backend.domains.source_documents import repository as source_documents_repository
-from cert_prep_backend.domains.source_documents.audio_transcription_gate import (
-    AudioTranscriptionGate,
-)
 from cert_prep_backend.domains.source_documents.document_worker_pool import (
     DocumentWorkerPool,
 )
 from cert_prep_backend.domains.source_documents.operations import recover_operations
-from cert_prep_backend.domains.source_documents.ocr import OCRProvider, ocr_provider_from_settings
-from cert_prep_backend.domains.source_documents.ocr_provider_pool import (
-    DocumentOCRProviderPool,
-    OCRProviderFactory,
-    factory_provider_pool,
-    provider_pool_from_settings,
-    shared_provider_pool,
-)
 from cert_prep_backend.routers import (
     capture_runtime,
     capture_workbench,
     documents,
     drafts,
     llm,
-    ocr,
     practice,
     projects,
     runtime,
 )
-from cert_prep_contracts.transcription import TranscriptionProvider
-from cert_prep_transcription_whisper import WhisperTranscriptionProvider
 
 
 class HealthResponse(BaseModel):
@@ -82,13 +68,10 @@ logger = logging.getLogger(__name__)
 def create_app(
     settings: Settings | None = None,
     llm_provider: LLMProvider | None = None,
-    ocr_provider: OCRProvider | None = None,
-    document_ocr_provider_factory: OCRProviderFactory | None = None,
     runtime_installation_manager: RuntimeInstallationManager | None = None,
     runtime_installation_async_jobs: bool = True,
     document_processing_async_jobs: bool = True,
     streaming_draft_generation_async_jobs: bool = True,
-    transcription_provider: TranscriptionProvider | None = None,
     capture_runtime_client: CaptureRuntimeClient | None = None,
 ) -> FastAPI:
     app_settings = settings or Settings()
@@ -96,56 +79,29 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         try:
-            app.state.audio_document_worker_pool.start()
-            app.state.document_ocr_worker_pool.start()
+            app.state.document_worker_pool.start()
             yield
         finally:
             cleanup_active_review_sessions(
                 app.state.database,
                 coordinator=app.state.capture_coordinator,
             )
-            app.state.audio_transcription_gate.close()
-            app.state.audio_document_worker_pool.close(join_timeout_seconds=0)
-            app.state.document_ocr_worker_pool.close(join_timeout_seconds=0)
-            audio_close_result = app.state.audio_document_worker_pool.close(
+            app.state.document_worker_pool.close(join_timeout_seconds=0)
+            close_result = app.state.document_worker_pool.close(
                 join_timeout_seconds=DOCUMENT_WORKER_JOIN_TIMEOUT_SECONDS
             )
-            ocr_close_result = app.state.document_ocr_worker_pool.close(
-                join_timeout_seconds=DOCUMENT_WORKER_JOIN_TIMEOUT_SECONDS
-            )
-            for worker_kind, close_result in (
-                ("audio", audio_close_result),
-                ("ocr", ocr_close_result),
-            ):
-                if close_result.unresolved_operation_ids:
-                    logger.error(
-                        "Document worker shutdown retained unresolved cancellations: "
-                        "worker_kind=%s operation_ids=%s",
-                        worker_kind,
-                        ",".join(close_result.unresolved_operation_ids),
-                        extra={
-                            "worker_kind": worker_kind,
-                            "operation_ids": close_result.unresolved_operation_ids,
-                        },
-                    )
-            ocr_workers_stopped = (
-                app.state.document_ocr_worker_pool.snapshot().alive_worker_count == 0
-            )
+            if close_result.unresolved_operation_ids:
+                logger.error(
+                    "Document worker shutdown retained unresolved cancellations: "
+                    "operation_ids=%s",
+                    ",".join(close_result.unresolved_operation_ids),
+                    extra={"operation_ids": close_result.unresolved_operation_ids},
+                )
             app.state.runtime_installation_manager.close()
             app.state.streaming_draft_generation_manager.close()
-            if ocr_workers_stopped:
-                app.state.document_ocr_provider_pool.close()
-            else:
-                logger.warning(
-                    "OCR document workers exceeded the shutdown join timeout; "
-                    "provider shutdown is deferred to avoid closing an active lease."
-                )
             llm_provider_close = getattr(app.state.llm_provider, "close", None)
             if callable(llm_provider_close):
                 llm_provider_close()
-            ocr_provider_close = getattr(app.state.ocr_provider, "close", None)
-            if ocr_workers_stopped and callable(ocr_provider_close):
-                ocr_provider_close()
             if app.state.owns_capture_runtime_client:
                 app.state.capture_runtime_client.close()
 
@@ -180,25 +136,9 @@ def create_app(
         app.state.database,
         coordinator=app.state.capture_coordinator,
     )
-    app.state.ocr_provider = ocr_provider or ocr_provider_from_settings(app_settings)
-    app.state.transcription_provider = (
-        transcription_provider or WhisperTranscriptionProvider(prefer_gpu=True)
-    )
-    app.state.audio_transcription_gate = AudioTranscriptionGate(
-        app_settings.audio_transcription_parallelism
-    )
-    app.state.audio_document_worker_pool = DocumentWorkerPool(
-        app_settings.audio_transcription_parallelism,
-        worker_name_prefix="audio-document-worker",
-    )
-    app.state.document_ocr_worker_pool = DocumentWorkerPool(
-        app_settings.document_ocr_parallelism,
-        worker_name_prefix="ocr-document-worker",
-    )
-    app.state.document_ocr_provider_pool = _document_ocr_provider_pool(
-        settings=app_settings,
-        ocr_provider=ocr_provider,
-        provider_factory=document_ocr_provider_factory,
+    app.state.document_worker_pool = DocumentWorkerPool(
+        app_settings.document_processing_parallelism,
+        worker_name_prefix="capture-document-worker",
     )
     app.state.document_processing_async_jobs = document_processing_async_jobs
     app.state.runtime_installation_async_jobs = runtime_installation_async_jobs
@@ -211,8 +151,6 @@ def create_app(
     app.state.runtime_installation_manager = runtime_installation_manager or RuntimeInstallationManager(
         settings=app_settings,
         llm_provider=app.state.llm_provider,
-        ocr_provider=app.state.ocr_provider,
-        transcription_provider=app.state.transcription_provider,
         db=app.state.database,
         async_jobs=runtime_installation_async_jobs,
     )
@@ -283,25 +221,11 @@ def create_app(
     app.include_router(drafts.drafts_router, dependencies=protected_dependencies)
     app.include_router(practice.router, dependencies=protected_dependencies)
     app.include_router(llm.router, dependencies=protected_dependencies)
-    app.include_router(ocr.router, dependencies=protected_dependencies)
     app.include_router(runtime.router, dependencies=protected_dependencies)
     app.include_router(capture_runtime.router, dependencies=protected_dependencies)
     app.include_router(capture_workbench.router, dependencies=protected_dependencies)
 
     return app
-
-
-def _document_ocr_provider_pool(
-    *,
-    settings: Settings,
-    ocr_provider: OCRProvider | None,
-    provider_factory: Callable[[], OCRProvider] | None,
-) -> DocumentOCRProviderPool:
-    if provider_factory is not None:
-        return factory_provider_pool(settings, provider_factory)
-    if ocr_provider is not None:
-        return shared_provider_pool(ocr_provider)
-    return provider_pool_from_settings(settings)
 
 
 def _capture_runtime_client(settings: Settings) -> CaptureRuntimeClient | None:

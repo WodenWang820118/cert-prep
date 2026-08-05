@@ -91,6 +91,7 @@ def test_saved_exam_runtime_metadata_columns_are_migrated(tmp_path: Path) -> Non
         "effective_model",
         "fallback_reason",
         "generated_count",
+        "unavailable_blocks_json",
         "error",
         "commit_started_at",
     } <= set(manual_draft_operation_columns)

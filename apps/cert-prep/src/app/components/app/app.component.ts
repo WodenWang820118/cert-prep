@@ -8,7 +8,7 @@ import {
   effect,
   inject,
   signal,
-  ChangeDetectionStrategy
+  ChangeDetectionStrategy,
 } from '@angular/core';
 import {
   NavigationEnd,
@@ -27,6 +27,10 @@ import { ProjectStore } from '../../stores/project.store';
 import { DesktopRuntimeStore } from '../../stores/desktop-runtime/desktop-runtime.store';
 import { WorkspaceFacade } from '../../stores/workspace.facade';
 import { LAST_PROJECT_STORAGE_KEY } from '../../constants/runtime.constants';
+
+// Cover the native 60-second readiness window with a small scheduling margin,
+// then stop polling an installed backend that cannot become ready.
+const BACKEND_READINESS_POLL_LIMIT = 130;
 
 @Component({
   imports: [
@@ -70,7 +74,7 @@ export class App implements OnInit, OnDestroy {
     },
     {
       id: 'capture_workbench_trial',
-      label: 'Capture Workbench PDF OCR',
+      label: 'Capture Workbench',
       icon: 'pi pi-box',
       path: '/capture-workbench-trial',
     },
@@ -86,8 +90,11 @@ export class App implements OnInit, OnDestroy {
   private readonly workspace = inject(WorkspaceFacade);
   private readonly startupProjectId = this.readLastProjectId();
   private hasAttemptedInitialStartupLoad = false;
+  private lastObservedBackendReady: boolean | null = null;
   private readonly hasAppliedStartupProjectSelection = signal(false);
   private readonly loadingStartupState = signal(false);
+  private backendReadinessPollAttempts = 0;
+  private backendReadinessPollTimer: ReturnType<typeof setTimeout> | null = null;
   private runtimeManagerRestoreFocus: HTMLElement | null = null;
   private runtimeManagerFocusTimer: ReturnType<typeof setTimeout> | null = null;
   private runtimeManagerRestoreFocusTimer: ReturnType<typeof setTimeout> | null =
@@ -106,6 +113,9 @@ export class App implements OnInit, OnDestroy {
       const selectedProjectId = this.projects.selectedProjectId();
       const backendReady = this.desktopRuntime.isBackendReady();
       const backendStateLoaded = this.workspace.hasLoadedBackendState();
+      const backendBecameReady =
+        this.lastObservedBackendReady === false && backendReady;
+      this.lastObservedBackendReady = backendReady;
 
       if (
         this.hasAppliedStartupProjectSelection() &&
@@ -116,6 +126,7 @@ export class App implements OnInit, OnDestroy {
 
       if (
         !this.hasAttemptedInitialStartupLoad ||
+        (this.desktopRuntime.isDesktop() && !backendBecameReady) ||
         !backendReady ||
         backendStateLoaded ||
         this.loadingStartupState()
@@ -149,12 +160,14 @@ export class App implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.loadStartupState();
     this.hasAttemptedInitialStartupLoad = true;
+    this.scheduleBackendReadinessPoll();
   }
 
   ngOnDestroy(): void {
     this.routerEventsSubscription.unsubscribe();
     this.clearRuntimeManagerFocusTimer();
     this.clearRuntimeManagerRestoreFocusTimer();
+    this.clearBackendReadinessPollTimer();
   }
 
   private loadStartupState(): void {
@@ -169,6 +182,51 @@ export class App implements OnInit, OnDestroy {
     this.workspace.loadStartupState();
     this.applyStartupProjectSelection();
     this.loadingStartupState.set(false);
+  }
+
+  /**
+   * The native shell starts an already-installed backend off the UI thread so
+   * the first paint remains responsive. Poll only the installed/starting
+   * states until that handoff is visible to Angular, then the readiness effect
+   * loads the workspace once.
+   */
+  private scheduleBackendReadinessPoll(): void {
+    if (
+      this.backendReadinessPollTimer !== null ||
+      !this.desktopRuntime.isDesktop() ||
+      this.workspace.hasLoadedBackendState() ||
+      this.backendReadinessPollAttempts >= BACKEND_READINESS_POLL_LIMIT
+    ) {
+      return;
+    }
+
+    this.backendReadinessPollTimer = setTimeout(() => {
+      this.backendReadinessPollTimer = null;
+      if (
+        this.workspace.hasLoadedBackendState() ||
+        this.desktopRuntime.isBackendReady()
+      ) {
+        return;
+      }
+
+      const status = this.desktopRuntime.status();
+      const retry =
+        status.available ||
+        this.desktopRuntime.isInstallActive() ||
+        status.status === 'starting';
+      if (retry) {
+        this.backendReadinessPollAttempts += 1;
+        this.desktopRuntime.load().subscribe();
+        this.scheduleBackendReadinessPoll();
+      }
+    }, 500);
+  }
+
+  private clearBackendReadinessPollTimer(): void {
+    if (this.backendReadinessPollTimer !== null) {
+      clearTimeout(this.backendReadinessPollTimer);
+      this.backendReadinessPollTimer = null;
+    }
   }
 
   private applyStartupProjectSelection(): void {

@@ -650,7 +650,7 @@ async function writeCandidate(
     repository: 'local/nonpublishable',
     commitSha,
     target: 'x86_64-pc-windows-msvc',
-    assetBaseUrl: pathToFileURL(join(root, 'local-ocr-runtime')).href,
+    assetBaseUrl: pathToFileURL(join(root, 'local-capture-runtime')).href,
     signed: false,
     distributionProfile: LOCAL_NONPUBLISHABLE_PROFILE,
     publishable: false,

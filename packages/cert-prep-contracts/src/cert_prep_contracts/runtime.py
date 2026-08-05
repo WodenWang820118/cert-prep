@@ -11,9 +11,6 @@ class RuntimeRequirementKind(StrEnum):
 
     OLLAMA = "ollama"
     OLLAMA_MODEL = "ollama_model"
-    PADDLE_OCR = "paddle_ocr"
-    WINDOWSML_OCR = "windowsml_ocr"
-    WHISPER_MODELS = "whisper_models"
 
 
 class RuntimeInstallationStatus(StrEnum):

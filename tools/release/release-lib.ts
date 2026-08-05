@@ -295,7 +295,6 @@ export function assertWorkspaceVersions(workspaceRoot, expectedVersion) {
   const pythonProjects = [
     ['backendProjectVersion', 'apps/cert-prep-backend/pyproject.toml'],
     ['contractsProjectVersion', 'packages/cert-prep-contracts/pyproject.toml'],
-    ['ocrProjectVersion', 'packages/cert-prep-ocr-windowsml/pyproject.toml'],
     ['ollamaProjectVersion', 'packages/cert-prep-ollama/pyproject.toml'],
   ];
   const pythonVersions = Object.fromEntries(
@@ -376,10 +375,7 @@ export function assertWorkspaceVersions(workspaceRoot, expectedVersion) {
       'Package QA version constants do not match the release identity.',
     );
   }
-  for (const targetName of [
-    'build-backend-runtime',
-    'build-ocr-runtime-windowsml',
-  ]) {
+  for (const targetName of ['build-backend-runtime']) {
     const command =
       backendProject.targets?.[targetName]?.options?.command ?? '';
     if (
@@ -985,18 +981,10 @@ function validateArtifactDependencies(
   if (!Array.isArray(artifactDependencies)) {
     throw new Error('Artifact dependency mapping must be an array.');
   }
-  const requiredIds = new Set([
-    'nsis',
-    'backend-runtime',
-    'windowsml-ocr-runtime',
-  ]);
+  const requiredIds = new Set(['nsis', 'backend-runtime']);
   const artifactPatterns = new Map([
     ['nsis', /^installers\/.*setup\.exe$/i],
     ['backend-runtime', /^runtimes\/cert-prep-backend-runtime-.*\.zip$/i],
-    [
-      'windowsml-ocr-runtime',
-      /^runtimes\/cert-prep-ocr-windowsml-runtime-.*\.zip$/i,
-    ],
   ]);
   const artifactPaths = new Set(artifacts.map((artifact) => artifact.path));
   const componentPurls = new Set(components.map((component) => component.purl));
@@ -1036,7 +1024,7 @@ function validateArtifactDependencies(
     [...requiredIds].some((id) => !ids.has(id))
   ) {
     throw new Error(
-      'Artifact dependency mapping must cover NSIS, backend, and OCR artifacts.',
+      'Artifact dependency mapping must cover NSIS, backend, and Capture Runtime artifacts.',
     );
   }
   return normalized.sort((left, right) => left.id.localeCompare(right.id));

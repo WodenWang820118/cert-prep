@@ -10,7 +10,6 @@ import {
   buttonByText,
   editableAppQuestion,
   availableLlmHealth,
-  availableOcrHealth,
   backendHealth,
   emptyWrongAnswerSummary,
 } from '../../testing/app.spec-helpers';
@@ -47,7 +46,7 @@ describe('App', () => {
     expect(linkByText(compiled, 'Full Exam')).not.toBeNull();
     expect(linkByText(compiled, 'Random Quiz')).not.toBeNull();
     expect(linkByText(compiled, 'Dashboard')).not.toBeNull();
-    expect(linkByText(compiled, 'Capture Workbench PDF OCR')).not.toBeNull();
+    expect(linkByText(compiled, 'Capture Workbench')).not.toBeNull();
     expect(linkByText(compiled, 'Review')).not.toBeNull();
 
     router.navigateByUrl('/build');
@@ -58,7 +57,6 @@ describe('App', () => {
         fixture.detectChanges();
         expect(compiled.textContent).toContain('Python 3.13.5');
         expect(compiled.textContent).toContain('Reasoning model: reasoner:7b');
-        expect(compiled.textContent).toContain('fake');
         expect(compiled.textContent).toContain('Source files');
         expect(compiled.textContent).toContain('Mock Exam Items');
         expect(compiled.textContent).not.toContain('Wrong Answers');
@@ -218,7 +216,7 @@ describe('App', () => {
     TestBed.tick();
     return vi.waitFor(() => {
       fixture.detectChanges();
-      expect(compiled.textContent).toContain('Capture Workbench PDF OCR');
+      expect(compiled.textContent).toContain('Capture Workbench trial');
       expect(compiled.querySelector('capture-workbench')).not.toBeNull();
       expect(compiled.textContent).not.toContain(
         'Install the Python backend runtime',
@@ -286,7 +284,6 @@ function createApiClient() {
       ...backendHealth(),
     })),
     llmHealth: vi.fn().mockReturnValue(of(availableLlmHealth())),
-    ocrHealth: vi.fn().mockReturnValue(of(availableOcrHealth())),
     runtimeRequirements: vi.fn().mockReturnValue(of({ items: [] })),
     startRuntimeInstallation: vi.fn(),
     getRuntimeInstallation: vi.fn(),

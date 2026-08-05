@@ -19,30 +19,15 @@ DIST_DIR = BACKEND_ROOT / "dist"
 BUILD_DIR = BACKEND_ROOT / "build"
 EXE_PATH = DIST_DIR / "cert-prep-backend.exe"
 RUNTIME_OUTPUT_DIR = DIST_DIR / "backend-runtime"
-LITE_EXCLUDES = [
-    "cv2",
-    "modelscope",
-    "paddle",
-    "paddleocr",
-    "paddlex",
-    "pandas",
-    "shapely",
-    "cert_prep_backend.domains.source_documents.adapters.diagnostics",
-    "cert_prep_backend.domains.source_documents.adapters.paddle",
-    "cert_prep_backend.domains.source_documents.adapters.paddle_runtime",
-]
+LITE_EXCLUDES: list[str] = []
 
 COMMON_HIDDEN_IMPORTS = [
     "cert_prep_backend.api.app",
 ]
 
-COLLECT_BINARY_PACKAGES = [
-    "ctranslate2",
-]
+COLLECT_BINARY_PACKAGES: list[str] = []
 
-COLLECT_DATA_PACKAGES = [
-    "faster_whisper",
-]
+COLLECT_DATA_PACKAGES: list[str] = []
 
 
 def main() -> None:

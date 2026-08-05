@@ -13,7 +13,6 @@ import type {
   HealthResponse,
   LLMHealthRead,
   LLMProviderSelectionRead,
-  OCRHealthRead,
   PracticeSessionSummaryRead,
   ProjectRead,
   QuestionDraftRead,
@@ -59,16 +58,6 @@ export class CertPrepHttpResourceClient {
       () => this.gatedRequest(trigger, () => this.requests.llmHealth()),
       null,
       'llm-health',
-    );
-  }
-
-  ocrHealth(
-    trigger?: CertPrepResourceTrigger,
-  ): CertPrepHttpResource<OCRHealthRead | null> {
-    return this.requestResource(
-      () => this.gatedRequest(trigger, () => this.requests.ocrHealth()),
-      null,
-      'ocr-health',
     );
   }
 

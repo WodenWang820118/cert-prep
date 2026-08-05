@@ -204,7 +204,6 @@ test('metadata validates every source release version', () => {
     for (const path of [
       'apps/cert-prep-backend',
       'packages/cert-prep-contracts',
-      'packages/cert-prep-ocr-windowsml',
       'packages/cert-prep-ollama',
     ]) {
       mkdirSync(join(root, path), { recursive: true });
@@ -234,7 +233,7 @@ test('metadata validates every source release version', () => {
       join(root, 'apps/cert-prep-backend/project.json'),
       JSON.stringify({
         targets: Object.fromEntries(
-          ['build-backend-runtime', 'build-ocr-runtime-windowsml'].map(
+          ['build-backend-runtime'].map(
             (name) => [
               name,
               {
@@ -267,7 +266,6 @@ test('metadata validates every source release version', () => {
       tauriBundleTargets: ['nsis'],
       backendProjectVersion: '0.1.0-alpha.1',
       contractsProjectVersion: '0.1.0-alpha.1',
-      ocrProjectVersion: '0.1.0-alpha.1',
       ollamaProjectVersion: '0.1.0-alpha.1',
       backendRuntimeVersion: '0.1.0-alpha.1',
       pythonRuntimeVersion: '3.12',
@@ -531,11 +529,11 @@ test('pinned SPDX canonical text covers a missing LGPL text', async () => {
 
 test('no-clobber planner only reuses identical digests', () => {
   const desired = [
-    { name: 'ocr.zip', path: 'ocr.zip', sha256: '1'.repeat(64) },
+    { name: 'capture-runtime.exe', path: 'capture-runtime.exe', sha256: '1'.repeat(64) },
   ];
   assert.deepEqual(
     planAssetUploads(
-      [{ name: 'ocr.zip', digest: `sha256:${'1'.repeat(64)}` }],
+      [{ name: 'capture-runtime.exe', digest: `sha256:${'1'.repeat(64)}` }],
       desired,
     ),
     { upload: [], reuse: desired },
@@ -543,7 +541,7 @@ test('no-clobber planner only reuses identical digests', () => {
   assert.throws(
     () =>
       planAssetUploads(
-        [{ name: 'ocr.zip', digest: `sha256:${'2'.repeat(64)}` }],
+        [{ name: 'capture-runtime.exe', digest: `sha256:${'2'.repeat(64)}` }],
         desired,
       ),
     /different digest/,

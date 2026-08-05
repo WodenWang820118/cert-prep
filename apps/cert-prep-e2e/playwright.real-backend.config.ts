@@ -2,8 +2,13 @@ import { mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { defineConfig, devices } from '@playwright/test';
 import { workspaceRoot } from '@nx/devkit';
+import { CAPTURE_RUNTIME_VERSION } from '../../tools/capture-runtime-version.mts';
 
 const frontendUrl = 'http://localhost:4200';
+const captureRuntimePort = Number(
+  process.env['CERT_PREP_E2E_CAPTURE_RUNTIME_PORT'] ?? '8767',
+);
+const captureRuntimeToken = 'real-e2e-capture-runtime-token';
 const dataDir = join(
   workspaceRoot,
   'tmp',
@@ -40,10 +45,12 @@ export default defineConfig({
         CERT_PREP_API_TOKEN: 'real-e2e-token',
         CERT_PREP_DATA_DIR: dataDir,
         CERT_PREP_LLM_PROVIDER: 'fake',
-        CERT_PREP_OCR_PROVIDER: 'fake',
-        CERT_PREP_OCR_RUNTIME_MODE: 'inprocess',
-        CERT_PREP_DOCUMENT_OCR_PARALLELISM: '1',
         CERT_PREP_STREAMING_DRAFT_WORKERS: '1',
+        CERT_PREP_CAPTURE_RUNTIME_URL: `http://127.0.0.1:${captureRuntimePort}`,
+        CERT_PREP_CAPTURE_RUNTIME_TOKEN: captureRuntimeToken,
+        CERT_PREP_CAPTURE_RUNTIME_VERSION: CAPTURE_RUNTIME_VERSION,
+        CERT_PREP_CAPTURE_RUNTIME_API_VERSION: '1.0',
+        CERT_PREP_CAPTURE_DOCUMENT_SCHEMA_VERSION: '1',
         PYTHONPATH: join(workspaceRoot, 'apps', 'cert-prep-backend', 'src'),
       },
     },
@@ -57,6 +64,18 @@ export default defineConfig({
         ...process.env,
         CERT_PREP_E2E_BACKEND_URL: 'http://127.0.0.1:8765',
         CERT_PREP_E2E_PROXY_PORT: '8766',
+      },
+    },
+    {
+      command: 'node src/real-backend/capture-runtime-fixture.mts',
+      url: `http://127.0.0.1:${captureRuntimePort}/__e2e/health`,
+      cwd: join(workspaceRoot, 'apps', 'cert-prep-e2e'),
+      reuseExistingServer: false,
+      timeout: 30_000,
+      env: {
+        ...process.env,
+        CERT_PREP_E2E_CAPTURE_RUNTIME_PORT: String(captureRuntimePort),
+        CERT_PREP_E2E_CAPTURE_RUNTIME_TOKEN: captureRuntimeToken,
       },
     },
   ],

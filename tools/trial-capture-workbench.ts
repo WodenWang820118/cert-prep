@@ -108,9 +108,9 @@ function createFixture(): void {
           '@angular/common': '22.0.7',
           '@angular/compiler': '22.0.7',
           '@angular/core': '22.0.7',
-          '@angular/elements': '22.0.7',
+          '@angular/forms': '22.0.7',
           '@angular/platform-browser': '22.0.7',
-          '@gx/capture-workbench': packageSpec,
+          '@gx-capture/capture-workbench': packageSpec,
           rxjs: '7.8.2',
           tslib: '2.8.1',
         },
@@ -124,14 +124,14 @@ function createFixture(): void {
     'pnpm-workspace.yaml',
     `engineStrict: true\nallowBuilds:\n  '@parcel/watcher': true\n  '@swc/core': true\n  esbuild: true\n  lmdb: true\n  msgpackr-extract: true\n`,
   );
-  write('.npmrc', `registry=${registry}\n@gx:registry=${registry}\n`);
+  write('.npmrc', `registry=${registry}\n@gx-capture:registry=${registry}\n`);
   write(
     'index.html',
     `<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>cert-prep Capture Workbench registry trial</title></head><body><capture-workbench></capture-workbench><script type="module" src="/src/main.ts"></script></body></html>\n`,
   );
   write(
     'src/main.ts',
-    `import { CAPTURE_WORKBENCH_CUSTOM_EVENTS, defineCaptureWorkbenchElement, type CaptureWorkbenchElement } from '@gx/capture-workbench';\n\ndefineCaptureWorkbenchElement().subscribe({\n  next: () => {\n    const capture = document.querySelector('capture-workbench') as CaptureWorkbenchElement | null;\n    if (!capture) throw new Error('Capture Workbench element was not mounted.');\n    capture.config = { outputMode: 'text', showRuntimeSetup: false };\n    capture.client = null;\n    capture.addEventListener(CAPTURE_WORKBENCH_CUSTOM_EVENTS.completed, (event) => console.log('capture-completed', event));\n  },\n  error: (error) => console.error('Element registration failed:', error),\n});\n`,
+    `import { CAPTURE_WORKBENCH_CUSTOM_EVENTS, defineCaptureWorkbenchElement, type CaptureWorkbenchElement } from '@gx-capture/capture-workbench';\n\ndefineCaptureWorkbenchElement().subscribe({\n  next: () => {\n    const capture = document.querySelector('capture-workbench') as CaptureWorkbenchElement | null;\n    if (!capture) throw new Error('Capture Workbench element was not mounted.');\n    capture.config = { outputMode: 'text', showRuntimeSetup: false };\n    capture.client = null;\n    capture.addEventListener(CAPTURE_WORKBENCH_CUSTOM_EVENTS.completed, (event) => console.log('capture-completed', event));\n  },\n  error: (error) => console.error('Element registration failed:', error),\n});\n`,
   );
   write(
     'vite.config.ts',
@@ -144,16 +144,16 @@ async function main(): Promise<void> {
   await runPnpm(['install', '--no-frozen-lockfile']);
   const installedManifestPath = join(
     fixtureRoot,
-    'node_modules/@gx/capture-workbench/package.json',
+    'node_modules/@gx-capture/capture-workbench/package.json',
   );
   if (!existsSync(installedManifestPath))
     throw new Error(
-      'The local registry install did not produce node_modules/@gx/capture-workbench.',
+      'The local registry install did not produce node_modules/@gx-capture/capture-workbench.',
     );
   const installedManifest = JSON.parse(
     readFileSync(installedManifestPath, 'utf8'),
   ) as { name?: string; version?: string };
-  if (installedManifest.name !== '@gx/capture-workbench')
+  if (installedManifest.name !== '@gx-capture/capture-workbench')
     throw new Error('The installed package has an unexpected package name.');
   await runPnpm(['exec', 'vite', 'build']);
   if (!existsSync(join(fixtureRoot, 'dist/index.html')))
