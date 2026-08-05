@@ -60,6 +60,7 @@ jobs:
           sparse-checkout: |
             packages/capture-contracts
             packages/capture-structuring-python
+            packages/capture-sidecar-launcher
 
       - name: Link pre-publication Capture Workbench bridge (Windows)
         if: vars.CAPTURE_PUBLISHED_0_3_9 != 'true'

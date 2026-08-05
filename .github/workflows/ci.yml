@@ -40,6 +40,7 @@ jobs:
           sparse-checkout: |
             packages/capture-contracts
             packages/capture-structuring-python
+            packages/capture-sidecar-launcher
 
       - name: Link pre-publication Capture Workbench bridge (Unix)
         if: vars.CAPTURE_PUBLISHED_0_3_9 != 'true' && runner.os != 'Windows'
@@ -129,6 +130,7 @@ jobs:
           sparse-checkout: |
             packages/capture-contracts
             packages/capture-structuring-python
+            packages/capture-sidecar-launcher
 
       - name: Link pre-publication Capture Workbench bridge (Unix)
         if: vars.CAPTURE_PUBLISHED_0_3_9 != 'true' && runner.os != 'Windows'

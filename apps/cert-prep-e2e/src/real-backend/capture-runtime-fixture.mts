@@ -62,7 +62,26 @@ const server = createServer(async (request, response) => {
       request.method === 'GET' &&
       url.pathname === '/v1/runtime/requirements'
     ) {
-      writeJson(response, 200, { items: [] });
+      writeJson(response, 200, {
+        items: [
+          {
+            requirementId: 'windowsml-ocr',
+            kind: 'ocr',
+            displayName: 'WindowsML OCR',
+            status: 'ready',
+            requiredFor: ['pdf', 'image'],
+            installStrategy: 'test',
+          },
+          {
+            requirementId: 'whisper-primary',
+            kind: 'speech-to-text',
+            displayName: 'Whisper',
+            status: 'ready',
+            requiredFor: ['audio'],
+            installStrategy: 'test',
+          },
+        ],
+      });
       return;
     }
     if (request.method === 'POST' && url.pathname === '/v1/captures') {
