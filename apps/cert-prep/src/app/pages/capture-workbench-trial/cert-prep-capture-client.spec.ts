@@ -2,6 +2,11 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import type { CertPrepGeneratedClient } from '@cert-prep/api';
 import { firstValueFrom, of, throwError } from 'rxjs';
+import type {
+  CaptureLocatorV1,
+  RawCaptureSegmentV1,
+  RawCaptureV1,
+} from '@gx-capture/capture-workbench';
 import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
 import { ProjectStore } from '../../stores/project.store';
 import { CertPrepCaptureClient } from './cert-prep-capture-client';
@@ -417,6 +422,62 @@ describe('CertPrepCaptureClient', () => {
     });
   });
 
+  it('maps time locators and page bounding boxes without trusting API casts', async () => {
+    const rawWithTimeLocator = makeRaw();
+    rawWithTimeLocator.segments[0].locator = {
+      kind: 'time',
+      startMs: 10,
+      endMs: 20,
+    };
+    api.getRaw.mockReturnValueOnce(of(rawWithTimeLocator));
+
+    await expect(firstValueFrom(client.getRaw('capture-1'))).resolves.toMatchObject({
+      segments: [{ locator: { kind: 'time', startMs: 10, endMs: 20 } }],
+    });
+
+    const rawWithBoundingBox = makeRaw();
+    rawWithBoundingBox.segments[0].locator = {
+      kind: 'page',
+      page: 1,
+      boundingBox: [0, 1, 100, 200],
+    };
+    api.getRaw.mockReturnValueOnce(of(rawWithBoundingBox));
+
+    await expect(firstValueFrom(client.getRaw('capture-1'))).resolves.toMatchObject({
+      segments: [{ locator: { kind: 'page', boundingBox: [0, 1, 100, 200] } }],
+    });
+  });
+
+  it.each([
+    ['raw schema version', () => ({ ...makeRaw(), schemaVersion: '2' })],
+    [
+      'unknown locator kind',
+      () => ({
+        ...makeRaw(),
+        segments: [{ ...makeRaw().segments[0], locator: { kind: 'line', page: 1 } }],
+      }),
+    ],
+    [
+      'invalid document block type',
+      () => ({
+        ...makeResult(),
+        blocks: [{ ...makeResult().blocks[0], type: 'unknown' }],
+      }),
+    ],
+  ])('rejects %s at the API boundary', async (_label, payload) => {
+    if (_label === 'invalid document block type') {
+      api.getResult.mockReturnValueOnce(of(payload()));
+      await expect(firstValueFrom(client.getResult('capture-1'))).rejects.toThrow(
+        'invalid contract',
+      );
+      return;
+    }
+    api.getRaw.mockReturnValueOnce(of(payload()));
+    await expect(firstValueFrom(client.getRaw('capture-1'))).rejects.toThrow(
+      'invalid contract',
+    );
+  });
+
   it('cancels processing through cert-prep and fails closed for browser-owned structuring', async () => {
     await firstValueFrom(
       client.createCapture({
@@ -483,7 +544,13 @@ function makeJob() {
   };
 }
 
-function makeRaw() {
+type MutableRawCaptureFixture = Omit<RawCaptureV1, 'segments'> & {
+  segments: Array<
+    Omit<RawCaptureSegmentV1, 'locator'> & { locator: CaptureLocatorV1 }
+  >;
+};
+
+function makeRaw(): MutableRawCaptureFixture {
   return {
     schemaVersion: '1',
     diagnosticOnly: true,

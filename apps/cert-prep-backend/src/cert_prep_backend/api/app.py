@@ -18,7 +18,7 @@ from cert_prep_backend.api.dependencies import require_bearer_auth
 from cert_prep_backend.core.config import Settings
 from cert_prep_backend.persistence.database import Database
 from cert_prep_backend.domains.capture_workbench.client import CaptureRuntimeClient
-from cert_prep_backend.domains.capture_workbench.contracts import (
+from cert_prep_backend.domains.capture_workbench.runtime_policy import (
     CAPTURE_DOCUMENT_SCHEMA_VERSION,
     SUPPORTED_API_VERSION,
     SUPPORTED_RUNTIME_VERSION,

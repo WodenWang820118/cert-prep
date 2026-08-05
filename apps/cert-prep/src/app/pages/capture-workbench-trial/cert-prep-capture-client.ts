@@ -21,7 +21,9 @@ import {
 } from '@gx-capture/capture-workbench';
 import type {
   CaptureClient,
+  CaptureBlockV1,
   ConfirmCaptureRequest,
+  CaptureEngineV1,
   CaptureDocumentV1,
   CaptureFailureV1,
   CaptureJobV1,
@@ -31,6 +33,7 @@ import type {
   CommitStructuredResultRequest,
   CreateCaptureRequest,
   RawCaptureV1,
+  RawCaptureSegmentV1,
   ReportStructuringFailureRequest,
   RuntimeInstallationV1,
   RuntimeReadyV1,
@@ -202,14 +205,14 @@ export class CertPrepCaptureClient implements CaptureClient {
     const record = this.requireCapture(id);
     return this.api
       .getRaw(record.projectId, id, { signal })
-      .pipe(map((raw) => raw as unknown as RawCaptureV1));
+      .pipe(map(mapRawCapture));
   }
 
   getResult(id: string, signal?: AbortSignal): Observable<CaptureDocumentV1> {
     const record = this.requireCapture(id);
     return this.api
       .getResult(record.projectId, id, { signal })
-      .pipe(map((document) => document as unknown as CaptureDocumentV1));
+      .pipe(map(mapCaptureDocument));
   }
 
   commitStructuredResult(
@@ -303,8 +306,10 @@ function mapReady(response: ApiRuntimeReadyV1): RuntimeReadyV1 {
       structuringModes: response.capabilities.structuringModes.filter(
         isStructuringMode,
       ),
-      supportsCancellation: response.capabilities.supportsCancellation,
-      supportsRawDiagnostics: response.capabilities.supportsRawDiagnostics,
+      supportsCancellation:
+        response.capabilities.supportsCancellation ?? false,
+      supportsRawDiagnostics:
+        response.capabilities.supportsRawDiagnostics ?? false,
       maxUploadBytes: response.capabilities.maxUploadBytes,
     },
     message: response.message,
@@ -350,6 +355,202 @@ function mapFailure(
     stage: isFailureStage(failure.stage) ? failure.stage : null,
     retryable: failure.retryable ?? false,
   };
+}
+
+class CaptureClientProtocolError extends Error {
+  constructor(message: string) {
+    super(`Capture API returned an invalid contract: ${message}`);
+    this.name = 'CaptureClientProtocolError';
+  }
+}
+
+type UnknownRecord = Record<string, unknown>;
+
+function mapRawCapture(value: unknown): RawCaptureV1 {
+  const raw = record(value, 'raw capture');
+  return {
+    schemaVersion: literal(raw, 'schemaVersion', '1'),
+    diagnosticOnly: literal(raw, 'diagnosticOnly', true),
+    source: mapSource(raw['source']),
+    segments: nonEmptyArray(raw['segments'], 'segments').map(mapRawSegment),
+    sourceText: text(raw['sourceText'], 'sourceText'),
+    extractionEngine: mapEngine(raw['extractionEngine'], 'extractionEngine'),
+    warnings: warnings(raw['warnings']),
+    createdAt: timestamp(raw['createdAt'], 'createdAt'),
+  };
+}
+
+function mapCaptureDocument(value: unknown): CaptureDocumentV1 {
+  const document = record(value, 'capture document');
+  return {
+    schemaVersion: literal(document, 'schemaVersion', '1'),
+    source: mapSource(document['source']),
+    rawSegments: nonEmptyArray(document['rawSegments'], 'rawSegments').map(mapRawSegment),
+    blocks: nonEmptyArray(document['blocks'], 'blocks').map(mapBlock),
+    sourceText: text(document['sourceText'], 'sourceText'),
+    targetText: text(document['targetText'], 'targetText'),
+    extractionEngine: mapEngine(document['extractionEngine'], 'extractionEngine'),
+    structuringEngine: mapEngine(document['structuringEngine'], 'structuringEngine'),
+    warnings: warnings(document['warnings']),
+    createdAt: timestamp(document['createdAt'], 'createdAt'),
+    completedAt: timestamp(document['completedAt'], 'completedAt'),
+  };
+}
+
+function mapSource(value: unknown): CaptureDocumentV1['source'] {
+  const source = record(value, 'source');
+  const bytes = integer(source['bytes'], 'source.bytes');
+  if (bytes < 1) fail('source.bytes must be positive');
+  return {
+    sha256: pattern(source['sha256'], 'source.sha256', /^[0-9a-f]{64}$/),
+    fileName: text(source['fileName'], 'source.fileName'),
+    mediaType: text(source['mediaType'], 'source.mediaType'),
+    bytes,
+  };
+}
+
+function mapRawSegment(value: unknown): RawCaptureSegmentV1 {
+  const segment = record(value, 'raw segment');
+  return {
+    segmentId: text(segment['segmentId'], 'segmentId'),
+    order: nonNegativeInteger(segment['order'], 'segment.order'),
+    locator: mapLocator(segment['locator']),
+    text: text(segment['text'], 'segment.text'),
+  };
+}
+
+function mapBlock(value: unknown): CaptureBlockV1 {
+  const block = record(value, 'capture block');
+  const blockType = text(block['type'], 'block.type');
+  if (
+    ![
+      'heading',
+      'paragraph',
+      'list-item',
+      'table',
+      'quote',
+      'transcript',
+    ].includes(blockType)
+  ) {
+    fail(`block.type is unsupported: ${blockType}`);
+  }
+  return {
+    blockId: text(block['blockId'], 'block.blockId'),
+    order: nonNegativeInteger(block['order'], 'block.order'),
+    type: blockType as CaptureBlockV1['type'],
+    sourceSegmentId: text(block['sourceSegmentId'], 'block.sourceSegmentId'),
+    locator: mapLocator(block['locator']),
+    sourceText: text(block['sourceText'], 'block.sourceText'),
+    targetText: text(block['targetText'], 'block.targetText'),
+  };
+}
+
+function mapLocator(value: unknown): RawCaptureV1['segments'][number]['locator'] {
+  const locator = record(value, 'locator');
+  const kind = locator['kind'];
+  if (kind === 'page') {
+    const page = integer(locator['page'], 'locator.page');
+    if (page < 1) fail('locator.page must be positive');
+    const boundingBox = locator['boundingBox'];
+    if (boundingBox == null) return { kind, page, boundingBox: null };
+    if (
+      !Array.isArray(boundingBox) ||
+      boundingBox.length !== 4 ||
+      boundingBox.some((item) => typeof item !== 'number' || !Number.isFinite(item))
+    ) {
+      fail('locator.boundingBox must contain exactly four finite numbers');
+    }
+    return { kind, page, boundingBox: boundingBox as [number, number, number, number] };
+  }
+  if (kind === 'time') {
+    const startMs = nonNegativeInteger(locator['startMs'], 'locator.startMs');
+    const endMs = integer(locator['endMs'], 'locator.endMs');
+    if (endMs <= startMs) fail('locator.endMs must be greater than startMs');
+    return { kind, startMs, endMs };
+  }
+  fail(`locator.kind is unsupported: ${String(kind)}`);
+}
+
+function mapEngine(value: unknown, label: string): CaptureEngineV1 {
+  const engine = record(value, label);
+  const digest = pattern(engine['digest'], `${label}.digest`, /^sha256:[0-9a-f]{64}$/);
+  return {
+    engine: text(engine['engine'], `${label}.engine`),
+    model: text(engine['model'], `${label}.model`),
+    digest,
+    device:
+      engine['device'] == null
+        ? null
+        : text(engine['device'], `${label}.device`),
+  };
+}
+
+function warnings(value: unknown): string[] {
+  if (value == null) return [];
+  return nonEmptyArray(value, 'warnings', true).map((item, index) =>
+    text(item, `warnings[${index}]`),
+  );
+}
+
+function record(value: unknown, label: string): UnknownRecord {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+    fail(`${label} must be an object`);
+  }
+  return value as UnknownRecord;
+}
+
+function nonEmptyArray(
+  value: unknown,
+  label: string,
+  allowEmpty = false,
+): unknown[] {
+  if (!Array.isArray(value) || (!allowEmpty && value.length === 0)) {
+    fail(`${label} must be a non-empty array`);
+  }
+  return value;
+}
+
+function text(value: unknown, label: string): string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    fail(`${label} must be a non-empty string`);
+  }
+  return value;
+}
+
+function integer(value: unknown, label: string): number {
+  if (typeof value !== 'number' || !Number.isInteger(value)) {
+    fail(`${label} must be an integer`);
+  }
+  return value;
+}
+
+function nonNegativeInteger(value: unknown, label: string): number {
+  const result = integer(value, label);
+  if (result < 0) fail(`${label} must not be negative`);
+  return result;
+}
+
+function timestamp(value: unknown, label: string): string {
+  const result = text(value, label);
+  if (!/[zZ]|[+-]\d{2}:?\d{2}$/.test(result) || Number.isNaN(Date.parse(result))) {
+    fail(`${label} must be an ISO timestamp with a timezone`);
+  }
+  return result;
+}
+
+function pattern(value: unknown, label: string, expression: RegExp): string {
+  const result = text(value, label);
+  if (!expression.test(result)) fail(`${label} has an invalid format`);
+  return result;
+}
+
+function literal<T>(recordValue: UnknownRecord, key: string, expected: T): T {
+  if (recordValue[key] !== expected) fail(`${key} must be ${String(expected)}`);
+  return expected;
+}
+
+function fail(message: string): never {
+  throw new CaptureClientProtocolError(message);
 }
 
 function mapCaptureJob(

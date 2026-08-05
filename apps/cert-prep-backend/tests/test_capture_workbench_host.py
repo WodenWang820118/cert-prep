@@ -17,15 +17,15 @@ from cert_prep_backend.domains.capture_workbench.client import (
     CaptureRuntimeError,
     CaptureUpload,
 )
-from cert_prep_backend.domains.capture_workbench.contracts import (
+from capture_contracts import (
     CaptureDocumentV1,
     CaptureJobV1,
     CaptureSourceKind,
     RawCaptureV1,
-    RuntimeReadyV1,
     RuntimeRequirementStatus,
     RuntimeRequirementsV1,
 )
+from cert_prep_backend.domains.capture_workbench.host_models import RuntimeReadyV1
 from cert_prep_backend.domains.capture_workbench.coordinator import (
     CaptureRunResult,
     CaptureRuntimeCanceledError,
@@ -209,12 +209,8 @@ def _valid_batch_candidate(call: dict[str, object]) -> str:
     for segment in prompt["rawSegments"]:
         blocks.append(
             {
-                "blockId": f"block-{segment['segmentId']}",
-                "order": segment["order"],
                 "type": "transcript" if segment["locator"]["kind"] == "time" else "paragraph",
                 "sourceSegmentId": segment["segmentId"],
-                "locator": segment["locator"],
-                "sourceText": segment["text"],
                 "targetText": f"Target: {segment['text']}",
             }
         )
@@ -236,6 +232,7 @@ def test_capture_adapter_strictly_validates_batches_and_assembles_full_document(
     call = provider.calls[0]
     schema = call["json_schema"]
     assert isinstance(schema, dict)
+    assert schema["title"] == "CaptureBlockBatchV1"
     assert set(schema["properties"]) == {"blocks"}
     messages = call["messages"]
     assert isinstance(messages, list)
@@ -266,14 +263,19 @@ def test_capture_adapter_does_not_repair_invalid_provider_json() -> None:
     provider = RecordingStructuredProvider('```json\n{"blocks": []}\n```')
     adapter = CertPrepCaptureStructuringAdapter(provider, clock=lambda: NOW)
 
-    with pytest.raises(ValueError, match="valid JSON object"):
+    with pytest.raises(ValueError, match="not valid JSON|valid JSON object"):
         adapter.structure(RawCaptureV1.model_validate(_raw_payload()), target_language="zh-TW")
 
 
 def test_capture_adapter_batches_by_token_budget_and_preserves_global_order() -> None:
     provider = RecordingStructuredProvider(_valid_batch_candidate)
     raw = _raw_with_segments(count=5)
-    adapter = CertPrepCaptureStructuringAdapter(provider, clock=lambda: NOW)
+    adapter = CertPrepCaptureStructuringAdapter(
+        provider,
+        clock=lambda: NOW,
+        num_ctx=4_096,
+        num_predict=1_024,
+    )
 
     document = CaptureDocumentV1.model_validate(adapter.structure(raw, target_language="zh-TW"))
 
@@ -284,32 +286,30 @@ def test_capture_adapter_batches_by_token_budget_and_preserves_global_order() ->
         assert isinstance(messages, list)
         prompt = json.loads(messages[1]["content"])
         supplied_ids.extend(segment["segmentId"] for segment in prompt["rawSegments"])
-        assert call["num_ctx"] <= 8_192
-        assert call["num_predict"] <= 4_096
+        assert call["num_ctx"] <= 4_096
+        assert call["num_predict"] <= 1_024
     assert supplied_ids == [segment.segment_id for segment in raw.segments]
     assert [block.order for block in document.blocks] == list(range(5))
     assert [block.source_segment_id for block in document.blocks] == supplied_ids
 
 
-@pytest.mark.parametrize("mutation", ["count", "order", "locator", "sourceText"])
+@pytest.mark.parametrize("mutation", ["count", "sourceSegmentId", "forbidden"])
 def test_capture_adapter_rejects_mutated_batch_provenance(mutation: str) -> None:
     def invalid_candidate(call: dict[str, object]) -> str:
         payload = json.loads(_valid_batch_candidate(call))
         blocks = payload["blocks"]
         if mutation == "count":
             blocks.pop()
-        elif mutation == "order":
-            blocks[0]["order"] += 1
-        elif mutation == "locator":
-            blocks[0]["locator"]["page"] += 1
+        elif mutation == "sourceSegmentId":
+            blocks[0]["sourceSegmentId"] = "forged-segment"
         else:
-            blocks[0]["sourceText"] += " changed"
+            blocks[0]["sourceText"] = "forbidden echo"
         return json.dumps(payload)
 
     provider = RecordingStructuredProvider(invalid_candidate)
     adapter = CertPrepCaptureStructuringAdapter(provider, clock=lambda: NOW)
 
-    with pytest.raises(ValueError, match="batch|changed required field"):
+    with pytest.raises(ValueError, match="batch|semantic|sourceSegmentId"):
         adapter.structure(
             RawCaptureV1.model_validate(_raw_payload()),
             target_language="zh-TW",
@@ -337,7 +337,12 @@ def test_capture_adapter_observes_cancellation_between_provider_batches() -> Non
         return candidate
 
     provider = RecordingStructuredProvider(candidate_then_cancel)
-    adapter = CertPrepCaptureStructuringAdapter(provider, clock=lambda: NOW)
+    adapter = CertPrepCaptureStructuringAdapter(
+        provider,
+        clock=lambda: NOW,
+        num_ctx=4_096,
+        num_predict=1_024,
+    )
 
     with pytest.raises(CaptureStructuringCanceledError):
         adapter.structure(
@@ -372,12 +377,8 @@ def test_capture_adapter_reuses_existing_ollama_client_and_model() -> None:
         {
             "blocks": [
                 {
-                    "blockId": f"block-{segment['segmentId']}",
-                    "order": segment["order"],
-                    "type": "paragraph",
                     "sourceSegmentId": segment["segmentId"],
-                    "locator": segment["locator"],
-                    "sourceText": segment["text"],
+                    "type": "paragraph",
                     "targetText": "Visible target text",
                 }
             ]
@@ -418,7 +419,7 @@ def test_capture_adapter_reuses_existing_ollama_client_and_model() -> None:
     call = ollama_client.chat_calls[0]
     assert call["model"] == "cert-prep-qwen"
     assert call["think"] is False
-    assert call["format"]["title"] == "_CaptureBlockBatchV1"
+    assert call["format"]["title"] == "CaptureBlockBatchV1"
 
 
 def test_capture_adapter_has_no_hidden_provider_fallback() -> None:

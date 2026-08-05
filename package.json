@@ -16,7 +16,8 @@
     "test:streaming:cli": "pnpm nx run cert-prep-backend:streaming-cli-test",
     "trial:capture-workbench": "node tools/trial-capture-workbench.ts",
     "capture-workbench-real-pdf-smoke": "node tools/capture-workbench-real-pdf-smoke.mts",
-    "install:capture-workbench:local": "node tools/install-local-capture-workbench.mts"
+    "install:capture-workbench:local": "node tools/install-local-capture-workbench.mts",
+    "verify:modular-reuse:local": "pnpm nx run cert-prep-desktop:capture-runtime-consumer-test"
   },
   "private": true,
   "engines": {

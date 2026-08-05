@@ -8,19 +8,19 @@ from fastapi.testclient import TestClient
 
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.core.config import Settings
-from cert_prep_backend.domains.capture_workbench.contracts import (
+from capture_contracts import (
     CaptureSourceKind,
     RuntimeCapabilitiesV1,
     RuntimeArtifactDescriptorV1,
     RuntimeInstallationStatus,
     RuntimeInstallationV1,
     RuntimeInstallationsV1,
-    RuntimeReadyV1,
     RuntimeRequirementStatus,
     RuntimeRequirementV1,
     RuntimeRequirementsV1,
     StructuringMode,
 )
+from cert_prep_backend.domains.capture_workbench.host_models import RuntimeReadyV1
 
 
 TOKEN = "cert-browser-token"

@@ -6,12 +6,12 @@ from dataclasses import dataclass
 
 from cert_prep_contracts.transcription import TranscriptSegment
 
-from cert_prep_backend.domains.capture_workbench.contracts import (
+from capture_contracts import (
     CaptureDocumentV1,
     CaptureReviewV1,
     RawCaptureV1,
-    reviewed_text_overrides,
 )
+from cert_prep_backend.domains.capture_workbench.review import reviewed_text_overrides
 from cert_prep_backend.domains.exam_content import classify_exam_text, line_metadata
 from cert_prep_backend.domains.source_documents.models import (
     ExtractedPage,

@@ -17,14 +17,14 @@ from PIL import Image
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.core.config import Settings
 from cert_prep_backend.domains.capture_workbench.client import CaptureUpload
-from cert_prep_backend.domains.capture_workbench.contracts import (
+from capture_contracts import (
     CaptureDocumentV1,
     CaptureJobV1,
     CaptureSourceKind,
     RawCaptureV1,
-    RuntimeReadyV1,
     RuntimeRequirementsV1,
 )
+from cert_prep_backend.domains.capture_workbench.host_models import RuntimeReadyV1
 
 
 AUTH_TOKEN = "test-token"

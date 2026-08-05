@@ -97,3 +97,14 @@
   positive PDF/image/audio proof remains pending for an engine-bearing release.
 - Preserve all pre-existing dirty Angular package, lockfile, UI trial, and CI
   changes in cert-prep.
+
+## 2026-08-05 modular package boundary
+
+- Generated Python contracts are the consumer API; do not restore a
+  compatibility re-export for the deleted hand mirror.
+- Keep local package sources only as a temporary pre-publication bridge. The
+  strict release checker is the permanent guard that prevents a path-based
+  artifact from being mistaken for registry provenance.
+- Mappers fail closed at the raw/result seam. Unknown kinds, invalid locator
+  geometry, schema/version drift, and malformed timestamps are protocol
+  errors rather than lossy domain objects.

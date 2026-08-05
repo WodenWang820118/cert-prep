@@ -90,3 +90,24 @@ PDF reached review, persistence, Markdown export, and relaunch with
 `pdf-embedded-text` provenance; image, audio, scanned PDF, and mixed PDF each
 reached a durable failed operation, produced zero chunks, and returned no
 Markdown. Both app closes left zero owned processes and listener ports.
+
+## Modular package consumer boundary
+
+Cert Prep now imports generated wire DTOs from `capture_contracts`; the former
+`capture_workbench/contracts.py` hand mirror is deleted. Raw capture and
+document responses cross the Angular client boundary through fail-closed
+mappers that reject schema drift, unknown discriminators, invalid locators,
+and illegal bounding boxes before domain use. The deterministic client spec
+was removed because it was only a local spec fixture.
+
+The package declarations remain version-ranged at `0.3.9`, but their lockfiles
+still use local sources until public PyPI and crates.io publication is proven.
+The permanent consumer consistency target must reject those sources in strict
+release CI and verify npm, PyPI, Cargo, runtime declarations, and lockfiles all
+resolve the same release. This is an active release gate, not completed
+registry provenance.
+
+When a GitHub runner is unavailable, `pnpm verify:modular-reuse:local` runs the
+consumer consistency test locally. After publication, set the repository
+variable `CAPTURE_PUBLISHED_0_3_9=true` so the CI job also runs strict source
+and clean PyPI install checks.

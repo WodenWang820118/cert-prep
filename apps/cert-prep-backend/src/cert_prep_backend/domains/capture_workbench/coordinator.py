@@ -19,8 +19,7 @@ from cert_prep_backend.domains.capture_workbench.client import (
     CaptureRuntimeCompatibilityError,
     CaptureUpload,
 )
-from cert_prep_backend.domains.capture_workbench.contracts import (
-    LEGACY_CORE_ONLY_RUNTIME_VERSION,
+from capture_contracts import (
     CaptureDocumentV1,
     CaptureJobStage,
     CaptureJobStatus,
@@ -31,8 +30,9 @@ from cert_prep_backend.domains.capture_workbench.contracts import (
     RawCaptureV1,
     RuntimeRequirementV1,
     RuntimeRequirementStatus,
-    reviewed_text_overrides,
 )
+from cert_prep_backend.domains.capture_workbench.review import reviewed_text_overrides
+from cert_prep_backend.domains.capture_workbench.runtime_policy import LEGACY_CORE_ONLY_RUNTIME_VERSION
 from cert_prep_backend.domains.capture_workbench.structuring import (
     CaptureStructuringCanceledError,
     CaptureStructuringTimeoutError,

@@ -23,15 +23,15 @@ from conftest import (
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.core.config import Settings
 from cert_prep_backend.domains.capture_workbench.client import CaptureUpload
-from cert_prep_backend.domains.capture_workbench.contracts import (
+from capture_contracts import (
     CaptureDocumentV1,
     CaptureJobV1,
     CaptureSourceKind,
-    LEGACY_CORE_ONLY_RUNTIME_VERSION,
     RawCaptureV1,
-    RuntimeReadyV1,
     RuntimeRequirementsV1,
 )
+from cert_prep_backend.domains.capture_workbench.host_models import RuntimeReadyV1
+from cert_prep_backend.domains.capture_workbench.runtime_policy import LEGACY_CORE_ONLY_RUNTIME_VERSION
 from document_test_helpers import _create_project
 from document_test_llm_fakes import MockExamProvider
 
@@ -51,17 +51,13 @@ class EchoCaptureProvider(MockExamProvider):
         num_ctx,
         num_predict,
     ) -> str:
-        assert json_schema["title"] == "_CaptureBlockBatchV1"
+        assert json_schema["title"] == "CaptureBlockBatchV1"
         assert num_ctx > num_predict > 0
         prompt = json.loads(messages[1]["content"])
         blocks = [
             {
-                "blockId": f"block-{segment['segmentId']}",
-                "order": segment["order"],
                 "type": "transcript" if segment["locator"]["kind"] == "time" else "paragraph",
                 "sourceSegmentId": segment["segmentId"],
-                "locator": segment["locator"],
-                "sourceText": segment["text"],
                 "targetText": segment["text"],
             }
             for segment in prompt["rawSegments"]

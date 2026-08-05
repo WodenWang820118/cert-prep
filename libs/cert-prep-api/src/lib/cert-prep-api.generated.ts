@@ -77,9 +77,9 @@ export interface Components {
     QuestionItemKind: string;
     RawCaptureSegmentV1: { "segmentId": string; "order": number; "locator": Components['schemas']['PageLocatorV1'] | Components['schemas']['TimeLocatorV1']; "text": string };
     RuntimeArtifactDescriptorV1: { "artifactUrl": string; "artifactFileName": string; "bytes": number; "sha256": string };
-    RuntimeCapabilitiesV1: { "captureKinds": Components['schemas']['CaptureSourceKind'][]; "structuringModes": Components['schemas']['StructuringMode'][]; "supportsCancellation": boolean; "supportsRawDiagnostics": boolean; "maxUploadBytes": number };
+    RuntimeCapabilitiesV1: { "captureKinds": Components['schemas']['CaptureSourceKind'][]; "structuringModes": Components['schemas']['StructuringMode'][]; "supportsCancellation"?: boolean; "supportsRawDiagnostics"?: boolean; "maxUploadBytes": number };
     RuntimeInstallationRead: { "id": string; "kind": Components['schemas']['RuntimeRequirementKind']; "provider": string; "model": string; "status": Components['schemas']['cert_prep_contracts__runtime__RuntimeInstallationStatus']; "phase": string; "cancellable": boolean; "detail": string; "completed": number | null; "total": number | null; "created_at": string; "updated_at": string; "commit_started_at"?: string | null; "error"?: string | null };
-    RuntimeInstallationV1: { "installationId": string; "requirementId": string; "status": Components['schemas']['cert_prep_backend__domains__capture_workbench__contracts__RuntimeInstallationStatus']; "progress": number; "error"?: Components['schemas']['CaptureFailureV1'] | null; "createdAt": string; "updatedAt": string; "completedAt"?: string | null };
+    RuntimeInstallationV1: { "installationId": string; "requirementId": string; "status": Components['schemas']['capture_contracts__generated_models__RuntimeInstallationStatus']; "progress": number; "error"?: Components['schemas']['CaptureFailureV1'] | null; "createdAt": string; "updatedAt": string; "completedAt"?: string | null };
     RuntimeInstallationsV1: { "items": Components['schemas']['RuntimeInstallationV1'][] };
     RuntimeReadyV1: { "ready": boolean; "service": string; "apiVersion": string; "runtimeVersion": string; "captureDocumentSchemaVersion": string; "capabilities": Components['schemas']['RuntimeCapabilitiesV1']; "message"?: string | null };
     RuntimeRequirementKind: string;
@@ -101,7 +101,7 @@ export interface Components {
     WrongAnswerRead: { "attempt_id": string; "session_id": string; "question_id": string; "question": string; "selected_answer": string; "correct_answer": string | null; "rationale": string | null; "citation_page": number | null; "source_excerpt": string | null; "document_id": string | null; "created_at": string };
     WrongAnswerRepeatedMissRead: { "question_id": string; "question": string; "document_id": string | null; "citation_page": number | null; "source_excerpt": string | null; "miss_count": number; "last_wrong_at": string };
     WrongAnswerSummaryRead: { "current_wrong_count": number; "cleared_count": number; "last_wrong_date": string | null; "repeated_misses": Components['schemas']['WrongAnswerRepeatedMissRead'][]; "clusters": Components['schemas']['WrongAnswerClusterRead'][] };
-    cert_prep_backend__domains__capture_workbench__contracts__RuntimeInstallationStatus: string;
+    capture_contracts__generated_models__RuntimeInstallationStatus: string;
     cert_prep_contracts__runtime__RuntimeInstallationStatus: string;
   };
 }
@@ -201,7 +201,7 @@ export type WrongAnswerList = Components['schemas']['WrongAnswerList'];
 export type WrongAnswerRead = Components['schemas']['WrongAnswerRead'];
 export type WrongAnswerRepeatedMissRead = Components['schemas']['WrongAnswerRepeatedMissRead'];
 export type WrongAnswerSummaryRead = Components['schemas']['WrongAnswerSummaryRead'];
-export type cert_prep_backend__domains__capture_workbench__contracts__RuntimeInstallationStatus = Components['schemas']['cert_prep_backend__domains__capture_workbench__contracts__RuntimeInstallationStatus'];
+export type capture_contracts__generated_models__RuntimeInstallationStatus = Components['schemas']['capture_contracts__generated_models__RuntimeInstallationStatus'];
 export type cert_prep_contracts__runtime__RuntimeInstallationStatus = Components['schemas']['cert_prep_contracts__runtime__RuntimeInstallationStatus'];
 
 export type CertPrepHttpMethod = 'DELETE' | 'GET' | 'PATCH' | 'POST';

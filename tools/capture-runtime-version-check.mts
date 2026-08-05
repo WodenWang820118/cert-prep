@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import {
@@ -20,6 +20,37 @@ function requireMatch(
     throw new Error(
       `${relativePath} does not declare the Capture Runtime ${CAPTURE_RUNTIME_VERSION} contract.`,
     );
+  }
+}
+
+function requireNotExists(workspaceRoot: string, relativePath: string): void {
+  if (existsSync(join(workspaceRoot, relativePath))) {
+    throw new Error(`${relativePath} must not exist after the generated contract cutover.`);
+  }
+}
+
+function requirePublishedCaptureArtifacts(workspaceRoot: string): void {
+  if (process.env.CAPTURE_REQUIRE_PUBLISHED_CAPTURE_ARTIFACTS !== '1') {
+    return;
+  }
+
+  const pyproject = read(workspaceRoot, 'apps/cert-prep-backend/pyproject.toml');
+  if (/capture-(?:contracts|structuring)\s*=\s*\{[^}]*path\s*=/u.test(pyproject)) {
+    throw new Error('cert-prep backend capture Python dependencies must come from PyPI.');
+  }
+  const uvLock = read(workspaceRoot, 'apps/cert-prep-backend/uv.lock');
+  if (/capture-(?:contracts|structuring)[\s\S]{0,240}directory\s*=/u.test(uvLock)) {
+    throw new Error('cert-prep uv.lock must resolve capture packages from PyPI, not a directory source.');
+  }
+
+  const cargoToml = read(workspaceRoot, 'apps/cert-prep-desktop/src-tauri/Cargo.toml');
+  if (/capture-sidecar-launcher\s*=\s*\{[^}]*path\s*=/u.test(cargoToml)) {
+    throw new Error('cert-prep desktop launcher must come from crates.io.');
+  }
+  const cargoLock = read(workspaceRoot, 'apps/cert-prep-desktop/src-tauri/Cargo.lock');
+  const launcherBlock = cargoLock.match(/\[\[package\]\][\s\S]*?name = "capture-sidecar-launcher"[\s\S]*?(?=\n\[\[package\]\]|$)/u)?.[0] ?? '';
+  if (!launcherBlock.includes(`version = "${CAPTURE_RUNTIME_VERSION}"`) || !launcherBlock.includes('source = "registry+https://github.com/rust-lang/crates.io-index"')) {
+    throw new Error('cert-prep Cargo.lock must resolve capture-sidecar-launcher from crates.io at the pinned version.');
   }
 }
 
@@ -53,8 +84,22 @@ export function assertCaptureRuntimeConsumerVersions(
 
   requireMatch(
     workspaceRoot,
+    'apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/runtime_policy.py',
+    /SUPPORTED_RUNTIME_VERSION = CAPTURE_RUNTIME_VERSION/u,
+  );
+  requireNotExists(
+    workspaceRoot,
     'apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/contracts.py',
-    new RegExp(`SUPPORTED_RUNTIME_VERSION = ["']${CAPTURE_RUNTIME_VERSION}["']`),
+  );
+  requireMatch(
+    workspaceRoot,
+    'apps/cert-prep-backend/pyproject.toml',
+    /capture-contracts>=0\.3\.9,<0\.4\.0[\s\S]*capture-structuring>=0\.3\.9,<0\.4\.0/u,
+  );
+  requireMatch(
+    workspaceRoot,
+    'apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/mapping.py',
+    /from capture_contracts import/u,
   );
   requireMatch(
     workspaceRoot,
@@ -96,4 +141,12 @@ export function assertCaptureRuntimeConsumerVersions(
     'apps/cert-prep/src/app/pages/capture-workbench-trial/cert-prep-capture-client.ts',
     /assertCaptureRuntimeCompatible\(ready, CAPTURE_RUNTIME_MAJOR, 'host'\)/,
   );
+  requireMatch(
+    workspaceRoot,
+    'apps/cert-prep-desktop/src-tauri/Cargo.toml',
+    new RegExp(
+      `capture-sidecar-launcher[\\s\\S]*version\\s*=\\s*["']${CAPTURE_RUNTIME_VERSION.replaceAll('.', '\\.') }["']`,
+    ),
+  );
+  requirePublishedCaptureArtifacts(workspaceRoot);
 }

@@ -16,8 +16,8 @@ long-lived ownership domains, not by temporary implementation slices.
   OpenAPI/generated-client ownership, DDD/SOLID refactor policy, and schema
   risks.
 - `domains/workspace-governance.md` - workspace naming, package manager and Nx
-  conventions, broad refactor slicing, documentation closeout rules, and
-  cross-agent governance notes.
+  conventions, broad refactor slicing, documentation closeout rules,
+  agent/tool routing, and cross-agent governance notes.
 
 ## Active Backlog
 

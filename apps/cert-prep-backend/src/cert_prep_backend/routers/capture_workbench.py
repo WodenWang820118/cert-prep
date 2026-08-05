@@ -22,8 +22,7 @@ from cert_prep_backend.api.dependencies import (
 )
 from cert_prep_backend.core.config import Settings
 from cert_prep_backend.core.exceptions import BackendError, NotFoundError
-from cert_prep_backend.domains.capture_workbench.contracts import (
-    SUPPORTED_RUNTIME_VERSION,
+from capture_contracts import (
     CaptureBlockV1,
     CaptureDocumentV1,
     CaptureEngineV1,
@@ -34,8 +33,9 @@ from cert_prep_backend.domains.capture_workbench.contracts import (
     CaptureSourceKind,
     RawCaptureSegmentV1,
     StructuringMode,
-    reviewed_text_overrides,
 )
+from cert_prep_backend.domains.capture_workbench.review import reviewed_text_overrides
+from cert_prep_backend.domains.capture_workbench.runtime_policy import SUPPORTED_RUNTIME_VERSION
 from cert_prep_backend.domains.capture_workbench import review_sessions
 from cert_prep_backend.domains.capture_workbench.coordinator import (
     CaptureRuntimeCanceledError,

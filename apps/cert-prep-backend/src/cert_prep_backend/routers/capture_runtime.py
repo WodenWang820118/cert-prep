@@ -19,13 +19,13 @@ from cert_prep_backend.domains.capture_workbench.client import (
     CaptureRuntimeError,
     CaptureRuntimeProtocolError,
 )
-from cert_prep_backend.domains.capture_workbench.contracts import (
-    RuntimeReadyV1,
+from capture_contracts import (
     RuntimeInstallationV1,
     RuntimeInstallationsV1,
     RuntimeRequirementsV1,
     StartRuntimeInstallationV1,
 )
+from cert_prep_backend.domains.capture_workbench.host_models import RuntimeReadyV1
 
 
 router = APIRouter(prefix="/capture-runtime", tags=["capture-runtime"])

@@ -12,11 +12,8 @@ from uuid import UUID
 import httpx
 from pydantic import ValidationError
 
-from cert_prep_backend.domains.capture_workbench.contracts import (
+from capture_contracts import (
     CAPTURE_DOCUMENT_SCHEMA_VERSION,
-    SUPPORTED_API_MAJOR,
-    SUPPORTED_RUNTIME_MAJOR,
-    SUPPORTED_RUNTIME_MINOR,
     CaptureDocumentV1,
     CaptureJobV1,
     CaptureRequirementId,
@@ -25,9 +22,14 @@ from cert_prep_backend.domains.capture_workbench.contracts import (
     RawCaptureV1,
     RuntimeInstallationV1,
     RuntimeInstallationsV1,
-    RuntimeReadyV1,
     RuntimeRequirementsV1,
     StructuringMode,
+)
+from cert_prep_backend.domains.capture_workbench.host_models import RuntimeReadyV1
+from cert_prep_backend.domains.capture_workbench.runtime_policy import (
+    SUPPORTED_API_MAJOR,
+    SUPPORTED_RUNTIME_MAJOR,
+    SUPPORTED_RUNTIME_MINOR,
 )
 
 

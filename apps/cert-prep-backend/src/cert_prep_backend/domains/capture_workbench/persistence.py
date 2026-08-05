@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from cert_prep_backend.domains.capture_workbench.contracts import (
+from capture_contracts import (
     CaptureDocumentV1,
     CaptureReviewV1,
 )
