@@ -6,8 +6,8 @@ readme = "README.md"
 requires-python = ">=3.12,<3.14"
 dependencies = [
   "av>=18.0.0,<19.0.0",
-  "capture-contracts>=0.3.9,<0.4.0",
-  "capture-structuring>=0.3.9,<0.4.0",
+  "capture-contracts>=0.3.10,<0.4.0",
+  "capture-structuring>=0.3.10,<0.4.0",
   "cert-prep-contracts",
   "cert-prep-ollama",
   "fastapi>=0.124.0,<1.0.0",
@@ -21,8 +21,6 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-capture-contracts = { path = "../../../capture-workbench/packages/capture-contracts/python" }
-capture-structuring = { path = "../../../capture-workbench/packages/capture-structuring-python" }
 cert-prep-contracts = { path = "../../packages/cert-prep-contracts", editable = true }
 cert-prep-ollama = { path = "../../packages/cert-prep-ollama", editable = true }
 

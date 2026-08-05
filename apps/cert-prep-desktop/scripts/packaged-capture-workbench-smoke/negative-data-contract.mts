@@ -41,7 +41,7 @@ export async function assertPublishedCaptureSurface(page: Page): Promise<void> {
     !Array.isArray(enabledSources) ||
     JSON.stringify(enabledSources) !== JSON.stringify(['pdf', 'image', 'audio'])
   ) {
-    throw new Error('0.3.9 host did not expose PDF, image, and audio capture.');
+    throw new Error('0.3.10 host did not expose PDF, image, and audio capture.');
   }
   const copy = await page.locator('main').innerText();
   for (const statement of [
@@ -49,7 +49,7 @@ export async function assertPublishedCaptureSurface(page: Page): Promise<void> {
     'explicit OCR and Whisper consent',
   ]) {
     if (!copy.includes(statement)) {
-      throw new Error(`0.3.9 host copy omitted: ${statement}`);
+      throw new Error(`0.3.10 host copy omitted: ${statement}`);
     }
   }
   if (
@@ -220,11 +220,11 @@ async function waitForFailedOperation(
     );
     if (operation.status === 'failed') return operation;
     if (['succeeded', 'canceled'].includes(stringValue(operation.status))) {
-      throw new Error(`0.3.9 negative operation reached ${String(operation.status)}.`);
+      throw new Error(`0.3.10 negative operation reached ${String(operation.status)}.`);
     }
     await delay(250);
   }
-  throw new Error(`0.3.9 negative operation ${operationId} did not fail in time.`);
+  throw new Error(`0.3.10 negative operation ${operationId} did not fail in time.`);
 }
 
 async function getJson(
@@ -237,7 +237,7 @@ async function getJson(
   });
   const payload: unknown = await response.json();
   if (!response.ok() || !isRecord(payload)) {
-    throw new Error('Packaged 0.3.9 negative-data API returned an invalid response.');
+    throw new Error('Packaged 0.3.10 negative-data API returned an invalid response.');
   }
   return payload;
 }

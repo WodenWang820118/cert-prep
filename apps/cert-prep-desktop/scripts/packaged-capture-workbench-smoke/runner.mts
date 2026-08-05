@@ -254,7 +254,7 @@ async function runLazyCaptureJourney(
     firstPage,
     firstRotation.api,
   );
-  log(run, 'Published 0.3.9 negative data contract passed');
+  log(run, 'Published 0.3.10 negative data contract passed');
   firstSecurity.assertClean();
   await screenshot(run, 'capture-workbench-completed');
 

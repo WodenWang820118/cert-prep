@@ -43,7 +43,7 @@ test('resources bundle the backend and published Capture Runtime contract only',
   assert.equal(backend.artifact.url, null);
   assert.equal(metadata.runtime_assets.backend.distribution, 'bundled');
   assert.equal(metadata.runtime_assets.capture_runtime.structuring_mode, 'host');
-  assert.equal(capture.runtimeVersion, '0.3.9');
+  assert.equal(capture.runtimeVersion, '0.3.10');
   assert.equal(capture.apiVersion, '1.0');
   assert.equal(capture.captureDocumentSchemaVersion, '1');
   assert.equal(existsSync(join(outputDir, 'windowsml-ocr-runtime-manifest.json')), false);
@@ -81,7 +81,7 @@ test('Capture Runtime staging fails closed on missing or changed provenance', as
     /runtimeVersion must be 0\.3\.9/,
   );
 
-  manifest.runtimeVersion = '0.3.9';
+  manifest.runtimeVersion = '0.3.10';
   manifest.sha256 = '0'.repeat(64);
   writeJson(fixture.captureRuntimeManifestPath, manifest);
   await assert.rejects(
@@ -143,7 +143,7 @@ function createFixture(): {
   writeFileSync(captureDocumentSchemaPath, captureSchema);
   writeJson(captureRuntimeManifestPath, {
     manifestVersion: '1',
-    runtimeVersion: '0.3.9',
+    runtimeVersion: '0.3.10',
     apiVersion: '1.0',
     captureDocumentSchemaVersion: '1',
     platform: 'windows',

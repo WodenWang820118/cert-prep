@@ -29,7 +29,7 @@ test('assembled candidates revalidate backend and Capture Runtime assets', async
     const captureName = 'capture-runtime-x86_64-pc-windows-msvc.exe';
     const captureManifest = {
       manifestVersion: '1',
-      runtimeVersion: '0.3.9',
+      runtimeVersion: '0.3.10',
       apiVersion: '1.0',
       captureDocumentSchemaVersion: '1',
       platform: 'windows',

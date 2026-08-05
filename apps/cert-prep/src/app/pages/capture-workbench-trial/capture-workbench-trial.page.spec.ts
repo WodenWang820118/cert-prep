@@ -272,7 +272,7 @@ function captureRuntimeStatus(status: 'missing' | 'running') {
     status,
     detail: `Capture Runtime is ${status}.`,
     unavailableReason: running ? null : 'capture_runtime_missing',
-    version: '0.3.9',
+  version: '0.3.10',
     installedPath: null,
     baseUrl: null,
     token: null,

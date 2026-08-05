@@ -40,7 +40,7 @@ describe('CertPrepCaptureClient', () => {
           ready: true,
           service: 'capture-runtime',
           apiVersion: '1.0',
-          runtimeVersion: '0.3.9',
+          runtimeVersion: '0.3.10',
           captureDocumentSchemaVersion: '1',
           capabilities: {
             captureKinds: ['pdf'],
@@ -187,7 +187,7 @@ describe('CertPrepCaptureClient', () => {
 
     expect(ready).toMatchObject({
       service: 'capture-runtime',
-      runtimeVersion: '0.3.9',
+      runtimeVersion: '0.3.10',
       capabilities: { captureKinds: ['pdf'], structuringModes: ['host'] },
     });
     expect(api.captureRuntimeReady).toHaveBeenCalledWith({
@@ -566,7 +566,7 @@ function makeRaw(): MutableRawCaptureFixture {
     sourceText: 'Recognized OCR text',
     extractionEngine: {
       engine: 'windowsml_ocr',
-      model: 'capture-runtime@0.3.9',
+      model: 'capture-runtime@0.3.10',
       digest: `sha256:${'a'.repeat(64)}`,
       device: 'WindowsML',
     },
@@ -621,7 +621,7 @@ function readyResponse(override: Record<string, unknown>) {
     ready: true,
     service: 'capture-runtime',
     apiVersion: '1.0',
-    runtimeVersion: '0.3.9',
+    runtimeVersion: '0.3.10',
     captureDocumentSchemaVersion: '1',
     capabilities: readyCapabilities(),
   };

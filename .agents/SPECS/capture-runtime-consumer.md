@@ -1,25 +1,25 @@
 # Capture Runtime release consumer spec
 
-`cert-prep` consumes `capture-runtime@0.3.9` as a published Windows x64
+`cert-prep` consumes `capture-runtime@0.3.10` as a published Windows x64
 executable. It does not import the runtime as Python, link a workspace package,
 or retain a local extraction provider.
 
 ## Contract
 
 - Runtime API: `1.0`.
-- Runtime version: `0.3.9` from the canonical
+- Runtime version: `0.3.10` from the canonical
   `gx-capture/capture-workbench` GitHub Release.
 - `CaptureDocumentV1` schema: `1`.
 - Consumer assets: executable, checksum, `capture-runtime-manifest.json`, and
   the schema file.
-- Published-byte evidence pins the downloaded v0.3.9 executable to the
+- Published-byte evidence pins the downloaded v0.3.10 executable to the
   SHA-256 recorded by its release manifest and requires the staged
   manifest/checksum to agree before launch. The earlier v0.3.8 hash remains
   historical evidence only.
 - The published schema bytes have SHA-256
   `2721093496a9f09044d5737cce70d2356d5f71757b1cd23a960e1d003ea014f2` and
   retain the canonical `gx-capture` schema identifier.
-- v0.3.9 publishes the engine-bearing catalog for `windowsml-ocr` and
+- v0.3.10 publishes the engine-bearing catalog for `windowsml-ocr` and
   `whisper-primary`. Its production extractor still supports a PDF whose every
   page has embedded text, without invoking a model, and must report
   `pdf-embedded-text` provenance. Scanned PDFs/images require ready OCR and
@@ -32,7 +32,7 @@ or retain a local extraction provider.
   The host UI gates OCR/STT-dependent sources on runtime readiness while the backend adapter performs
   the compatibility and requirement checks immediately before creating each
   sidecar job.
-- On v0.3.9 the UI exposes image/audio controls only when the corresponding
+- On v0.3.10 the UI exposes image/audio controls only when the corresponding
   runtime requirement is ready and never claims OCR-dependent PDF support
   without ready OCR. The runtime installs `windowsml-ocr` first and
   `whisper-primary` second after explicit consent; no capture starts until each
@@ -100,8 +100,8 @@ mappers that reject schema drift, unknown discriminators, invalid locators,
 and illegal bounding boxes before domain use. The deterministic client spec
 was removed because it was only a local spec fixture.
 
-The package declarations remain version-ranged at `0.3.9`, but their lockfiles
-still use local sources until public PyPI and crates.io publication is proven.
+The package declarations remain version-ranged at `0.3.10`, and their lockfiles
+now resolve from PyPI/crates.io after the published artifact probes passed.
 The permanent consumer consistency target must reject those sources in strict
 release CI and verify npm, PyPI, Cargo, runtime declarations, and lockfiles all
 resolve the same release. This is an active release gate, not completed
@@ -109,5 +109,5 @@ registry provenance.
 
 When a GitHub runner is unavailable, `pnpm verify:modular-reuse:local` runs the
 consumer consistency test locally. After publication, set the repository
-variable `CAPTURE_PUBLISHED_0_3_9=true` so the CI job also runs strict source
+variable `CAPTURE_PUBLISHED_0_3_10=true` so the CI job also runs strict source
 and clean PyPI install checks.

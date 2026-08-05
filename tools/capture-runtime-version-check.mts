@@ -94,7 +94,7 @@ export function assertCaptureRuntimeConsumerVersions(
   requireMatch(
     workspaceRoot,
     'apps/cert-prep-backend/pyproject.toml',
-    /capture-contracts>=0\.3\.9,<0\.4\.0[\s\S]*capture-structuring>=0\.3\.9,<0\.4\.0/u,
+    /capture-contracts>=0\.3\.10,<0\.4\.0[\s\S]*capture-structuring>=0\.3\.10,<0\.4\.0/u,
   );
   requireMatch(
     workspaceRoot,
@@ -145,7 +145,7 @@ export function assertCaptureRuntimeConsumerVersions(
     workspaceRoot,
     'apps/cert-prep-desktop/src-tauri/Cargo.toml',
     new RegExp(
-      `capture-sidecar-launcher[\\s\\S]*version\\s*=\\s*["']${CAPTURE_RUNTIME_VERSION.replaceAll('.', '\\.') }["']`,
+      `capture-sidecar-launcher\\s*=\\s*(?:["']${CAPTURE_RUNTIME_VERSION.replaceAll('.', '\\.') }["']|\\{[\\s\\S]*?version\\s*=\\s*["']${CAPTURE_RUNTIME_VERSION.replaceAll('.', '\\.') }["'])`,
     ),
   );
   requirePublishedCaptureArtifacts(workspaceRoot);

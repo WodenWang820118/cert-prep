@@ -7,7 +7,7 @@
  */
 export const CAPTURE_RUNTIME_PACKAGE_NAME =
   '@gx-capture/capture-workbench' as const;
-export const CAPTURE_RUNTIME_VERSION = '0.3.9' as const;
+export const CAPTURE_RUNTIME_VERSION = '0.3.10' as const;
 export const CAPTURE_RUNTIME_MAJOR = 0 as const;
 export const CAPTURE_RUNTIME_API_VERSION = '1.0' as const;
 export const CAPTURE_DOCUMENT_SCHEMA_VERSION = '1' as const;

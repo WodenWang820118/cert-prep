@@ -362,11 +362,11 @@ async function assertPublishedEngineRequirements(
     )
   ) {
     throw new Error(
-      `Capture Runtime did not expose the published 0.3.9 engine requirements: ${JSON.stringify(requirements)}`,
+      `Capture Runtime did not expose the published 0.3.10 engine requirements: ${JSON.stringify(requirements)}`,
     );
   }
   console.log(
-    'Downloaded Capture Runtime reports the published 0.3.9 engine requirements through the cert-prep proxy.',
+    'Downloaded Capture Runtime reports the published 0.3.10 engine requirements through the cert-prep proxy.',
   );
 }
 
@@ -522,7 +522,7 @@ async function runBrowserFlow(
       !trialDescriptionText.includes('explicit OCR and Whisper consent')
     ) {
       throw new Error(
-        `Capture trial description does not expose the 0.3.9 source policy: ${trialDescriptionText}`,
+        `Capture trial description does not expose the 0.3.10 source policy: ${trialDescriptionText}`,
       );
     }
     const input = page.locator('capture-workbench input[type="file"]');
