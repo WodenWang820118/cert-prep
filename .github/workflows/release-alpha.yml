@@ -56,10 +56,17 @@ jobs:
         with:
           repository: gx-capture/capture-workbench
           ref: agent/modular-reuse-contracts
-          path: ../capture-workbench
+          path: capture-workbench
           sparse-checkout: |
             packages/capture-contracts
             packages/capture-structuring-python
+
+      - name: Link pre-publication Capture Workbench bridge (Windows)
+        if: vars.CAPTURE_PUBLISHED_0_3_9 != 'true'
+        shell: pwsh
+        run: |
+          $target = Join-Path (Split-Path -Parent $env:GITHUB_WORKSPACE) 'capture-workbench'
+          New-Item -ItemType Junction -Path $target -Target (Join-Path $env:GITHUB_WORKSPACE 'capture-workbench') | Out-Null
 
       - name: Install pnpm
         uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
