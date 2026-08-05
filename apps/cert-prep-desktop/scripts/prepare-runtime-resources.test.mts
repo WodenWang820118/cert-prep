@@ -78,7 +78,7 @@ test('Capture Runtime staging fails closed on missing or changed provenance', as
   writeJson(fixture.captureRuntimeManifestPath, manifest);
   await assert.rejects(
     prepareRuntimeResources({ ...fixture, outputDir: join(fixture.workspaceRoot, 'wrong-version'), mode: 'dev' }),
-    /runtimeVersion must be 0\.3\.9/,
+    /runtimeVersion must be 0\.3\.10/,
   );
 
   manifest.runtimeVersion = '0.3.10';
