@@ -190,10 +190,14 @@ export class CertPrepCaptureClient implements CaptureClient {
           clientRequestId: request.clientRequestId,
           review: {
             reviewVersion: request.review.reviewVersion,
-            edits: request.review.edits.map((edit) => ({
-              segmentId: edit.segmentId,
-              reviewedText: edit.reviewedText,
-            })),
+            ...(request.review.edits === undefined
+              ? {}
+              : {
+                  edits: request.review.edits.map((edit) => ({
+                    segmentId: edit.segmentId,
+                    reviewedText: edit.reviewedText,
+                  })),
+                }),
           },
         },
         { signal },
@@ -295,6 +299,14 @@ function mapReady(response: ApiRuntimeReadyV1): RuntimeReadyV1 {
   if (response.service !== 'capture-runtime') {
     throw new Error('Cert Prep backend returned a non-Capture Runtime service.');
   }
+  if (
+    response.capabilities.supportsCancellation !== true ||
+    response.capabilities.supportsRawDiagnostics !== true
+  ) {
+    throw new Error(
+      'Cert Prep backend returned runtime capabilities outside the Capture contract.',
+    );
+  }
   return {
     ready: response.ready,
     service: 'capture-runtime',
@@ -306,10 +318,8 @@ function mapReady(response: ApiRuntimeReadyV1): RuntimeReadyV1 {
       structuringModes: response.capabilities.structuringModes.filter(
         isStructuringMode,
       ),
-      supportsCancellation:
-        response.capabilities.supportsCancellation ?? false,
-      supportsRawDiagnostics:
-        response.capabilities.supportsRawDiagnostics ?? false,
+      supportsCancellation: true,
+      supportsRawDiagnostics: true,
       maxUploadBytes: response.capabilities.maxUploadBytes,
     },
     message: response.message,

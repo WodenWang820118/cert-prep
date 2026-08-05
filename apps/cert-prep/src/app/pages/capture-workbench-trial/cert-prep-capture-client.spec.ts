@@ -198,6 +198,20 @@ describe('CertPrepCaptureClient', () => {
     );
   });
 
+  it('fails closed when runtime capabilities violate the published contract', async () => {
+    api.captureRuntimeReady.mockReturnValueOnce(
+      of(
+        readyResponse({
+          capabilities: { supportsCancellation: false },
+        }),
+      ),
+    );
+
+    await expect(firstValueFrom(client.getReady())).rejects.toThrow(
+      'capabilities outside the Capture contract',
+    );
+  });
+
   it('passes core-only unavailable requirements through to the published component', async () => {
     const detail = 'No downloadable model is published for this runtime release.';
     api.captureRuntimeRequirements.mockReturnValueOnce(
