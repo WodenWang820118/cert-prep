@@ -30,6 +30,17 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check out pre-publication Capture Workbench bridge
+        if: vars.CAPTURE_PUBLISHED_0_3_9 != 'true'
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          repository: gx-capture/capture-workbench
+          ref: agent/modular-reuse-contracts
+          path: ../capture-workbench
+          sparse-checkout: |
+            packages/capture-contracts
+            packages/capture-structuring-python
+
       - name: Install pnpm
         uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
         with:
@@ -96,6 +107,17 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           fetch-depth: 0
+
+      - name: Check out pre-publication Capture Workbench bridge
+        if: vars.CAPTURE_PUBLISHED_0_3_9 != 'true'
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          repository: gx-capture/capture-workbench
+          ref: agent/modular-reuse-contracts
+          path: ../capture-workbench
+          sparse-checkout: |
+            packages/capture-contracts
+            packages/capture-structuring-python
 
       - name: Install pnpm
         uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
