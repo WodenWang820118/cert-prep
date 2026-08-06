@@ -126,11 +126,21 @@ async function install(mode: InstallMode): Promise<void> {
         `${JSON.stringify(stablePackageJson, null, 2)}\n`,
         'utf8',
       );
-      await writeFile(lockfilePath, originalLockfile);
+      try {
+        originalNodeModulesLockfile = await readFile(nodeModulesLockfilePath);
+        await unlink(nodeModulesLockfilePath);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+      try {
+        await unlink(lockfilePath);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
       process.stdout.write(
         `Resolving pre-publication CI dependencies with ${workbenchPackageName}@${mode.stableVersion}; candidate gates install immutable candidate bytes separately.\n`,
       );
-      await runPnpm(['install', '--no-frozen-lockfile', '--ignore-scripts']);
+      await runPnpm(['install', '--lockfile=false', '--ignore-scripts']);
       return;
     }
 
