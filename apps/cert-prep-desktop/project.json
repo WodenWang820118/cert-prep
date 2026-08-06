@@ -93,6 +93,13 @@
         "command": "node --test tools/capture-runtime-version.test.mts tools/install-capture-runtime.test.mts"
       }
     },
+    "capture-candidate-gate-test": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node --test tools/capture-candidate-gate.test.mts"
+      }
+    },
     "capture-runtime-consumer-smoke": {
       "cache": false,
       "executor": "nx:run-commands",
