@@ -76,14 +76,6 @@ async function runPnpm(args: readonly string[]): Promise<void> {
   });
 }
 
-async function gitShow(path: string): Promise<string> {
-  const { stdout } = await execFileAsync('git', ['show', `origin/main:${path}`], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-  });
-  return stdout;
-}
-
 function packageArchive(
   packageDirectory: string,
   packageName: string,
@@ -112,6 +104,41 @@ function setWorkbenchDependency(
   (dependencies as Record<string, unknown>)[workbenchPackageName] = value;
 }
 
+async function findStableLockfile(stableVersion: string): Promise<string> {
+  const { stdout: commits } = await execFileAsync(
+    'git',
+    ['log', '--all', '--format=%H', '--', 'package.json'],
+    { cwd: repoRoot, encoding: 'utf8' },
+  );
+  for (const commit of commits.split(/\r?\n/u).map((value) => value.trim())) {
+    if (!commit) continue;
+    try {
+      const { stdout: manifestSource } = await execFileAsync(
+        'git',
+        ['show', `${commit}:package.json`],
+        { cwd: repoRoot, encoding: 'utf8' },
+      );
+      const manifest = JSON.parse(manifestSource) as {
+        dependencies?: Record<string, unknown>;
+      };
+      if (manifest.dependencies?.[workbenchPackageName] !== stableVersion) {
+        continue;
+      }
+      const { stdout: lockfile } = await execFileAsync(
+        'git',
+        ['show', `${commit}:pnpm-lock.yaml`],
+        { cwd: repoRoot, encoding: 'utf8' },
+      );
+      return lockfile;
+    } catch {
+      // Continue until the last commit with the requested stable declaration.
+    }
+  }
+  throw new Error(
+    `Could not find a historical package/lock snapshot for ${workbenchPackageName}@${stableVersion}.`,
+  );
+}
+
 async function install(mode: InstallMode): Promise<void> {
   const originalPackageJson = await readFile(packageJsonPath);
   const originalLockfile = await readFile(lockfilePath);
@@ -136,7 +163,13 @@ async function install(mode: InstallMode): Promise<void> {
         `${JSON.stringify(stablePackageJson, null, 2)}\n`,
         'utf8',
       );
-      await writeFile(lockfilePath, await gitShow('pnpm-lock.yaml'));
+      try {
+        originalNodeModulesLockfile = await readFile(nodeModulesLockfilePath);
+        await unlink(nodeModulesLockfilePath);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+      await writeFile(lockfilePath, await findStableLockfile(mode.stableVersion));
       process.stdout.write(
         `Installing pre-publication CI dependencies with ${workbenchPackageName}@${mode.stableVersion}; candidate gates install immutable candidate bytes separately.\n`,
       );
