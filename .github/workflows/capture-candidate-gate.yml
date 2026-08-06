@@ -56,10 +56,6 @@ jobs:
           node-version: 24
           cache: pnpm
 
-      - name: Install consumer dependencies
-        shell: pwsh
-        run: pnpm install --frozen-lockfile
-
       - name: Download and verify the exact producer candidate
         shell: pwsh
         env:
@@ -76,6 +72,32 @@ jobs:
             --dir $candidate
           node tools/capture-candidate-gate.mts `
             --candidate $candidate `
+            --candidate-id '${{ inputs.candidate_id }}' `
+            --candidate-manifest-sha256 '${{ inputs.candidate_manifest_sha256 }}' `
+            --source-commit '${{ inputs.source_commit }}' `
+            --release-version '${{ inputs.release_version }}' `
+            --workflow-run-id $env:GITHUB_RUN_ID `
+            --output (Join-Path $env:RUNNER_TEMP 'candidate-preflight.json') `
+            --skip-checks
+
+      - name: Install the exact candidate packages
+        shell: pwsh
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          node tools/install-capture-workbench-dependencies.mts `
+            --candidate-package-dir (Join-Path $env:RUNNER_TEMP 'capture-candidate/package')
+
+      - name: Run the consumer-owned candidate checks
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          node tools/capture-candidate-gate.mts `
+            --candidate (Join-Path $env:RUNNER_TEMP 'capture-candidate') `
             --candidate-id '${{ inputs.candidate_id }}' `
             --candidate-manifest-sha256 '${{ inputs.candidate_manifest_sha256 }}' `
             --source-commit '${{ inputs.source_commit }}' `

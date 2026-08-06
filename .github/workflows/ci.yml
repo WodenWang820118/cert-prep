@@ -77,7 +77,8 @@ jobs:
       - name: Install JavaScript dependencies and pinned Capture Workbench package
         env:
           NODE_AUTH_TOKEN: ${{ github.token }}
-        run: pnpm install --frozen-lockfile
+          CAPTURE_PUBLISHED_0_3_11: ${{ vars.CAPTURE_PUBLISHED_0_3_11 }}
+        run: node tools/install-capture-workbench-dependencies.mts --prepublication-stable-version 0.3.10
 
       - name: Sync backend Python environment
         run: uv sync --project apps/cert-prep-backend --python ${{ env.PYTHON_VERSION }} --frozen
@@ -173,7 +174,8 @@ jobs:
       - name: Install JavaScript dependencies and pinned Capture Workbench package
         env:
           NODE_AUTH_TOKEN: ${{ github.token }}
-        run: pnpm install --frozen-lockfile
+          CAPTURE_PUBLISHED_0_3_11: ${{ vars.CAPTURE_PUBLISHED_0_3_11 }}
+        run: node tools/install-capture-workbench-dependencies.mts --prepublication-stable-version 0.3.10
 
       - name: Sync backend Python environment
         run: uv sync --project apps/cert-prep-backend --python ${{ env.PYTHON_VERSION }} --frozen
