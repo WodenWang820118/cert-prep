@@ -172,6 +172,9 @@ jobs:
           rustup toolchain install stable --profile minimal --component clippy,rustfmt
           rustup show active-toolchain
 
+      - name: Verify source Capture Runtime consumer declarations
+        run: node --test tools/capture-runtime-version.test.mts
+
       - name: Install JavaScript dependencies and pinned Capture Workbench package
         env:
           NODE_AUTH_TOKEN: ${{ github.token }}
@@ -202,8 +205,8 @@ jobs:
       - name: Test package QA
         run: pnpm nx run cert-prep-desktop:package-qa-test
 
-      - name: Verify Capture Runtime consumer declarations
-        run: pnpm nx run cert-prep-desktop:capture-runtime-consumer-test
+      - name: Verify Capture Runtime installer behavior
+        run: node --test tools/install-capture-runtime.test.mts
 
       - name: Verify published Capture registry installation
         if: vars.CAPTURE_PUBLISHED_0_3_11 == 'true'
