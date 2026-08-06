@@ -89,7 +89,7 @@ test('Capture Runtime staging fails closed on missing or changed provenance', as
       outputDir: join(fixture.workspaceRoot, 'wrong-version'),
       mode: 'dev',
     }),
-    /runtimeVersion must be 0\.3\.10/,
+    /runtimeVersion must be 0\.3\.11/,
   );
 
   manifest.runtimeVersion = '0.3.11';
