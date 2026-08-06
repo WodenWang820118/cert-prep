@@ -1,10 +1,8 @@
-import { execFile, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { readFile, unlink, writeFile } from 'node:fs/promises';
-import { promisify } from 'node:util';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const execFileAsync = promisify(execFile);
 const repoRoot = resolve(import.meta.dirname, '..');
 const packageJsonPath = join(repoRoot, 'package.json');
 const lockfilePath = join(repoRoot, 'pnpm-lock.yaml');
@@ -76,14 +74,6 @@ async function runPnpm(args: readonly string[]): Promise<void> {
   });
 }
 
-async function gitShow(path: string): Promise<string> {
-  const { stdout } = await execFileAsync('git', ['show', `origin/main:${path}`], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-  });
-  return stdout;
-}
-
 function packageArchive(
   packageDirectory: string,
   packageName: string,
@@ -136,11 +126,11 @@ async function install(mode: InstallMode): Promise<void> {
         `${JSON.stringify(stablePackageJson, null, 2)}\n`,
         'utf8',
       );
-      await writeFile(lockfilePath, await gitShow('pnpm-lock.yaml'));
+      await writeFile(lockfilePath, originalLockfile);
       process.stdout.write(
-        `Installing pre-publication CI dependencies with ${workbenchPackageName}@${mode.stableVersion}; candidate gates install immutable candidate bytes separately.\n`,
+        `Resolving pre-publication CI dependencies with ${workbenchPackageName}@${mode.stableVersion}; candidate gates install immutable candidate bytes separately.\n`,
       );
-      await runPnpm(['install', '--frozen-lockfile']);
+      await runPnpm(['install', '--no-frozen-lockfile', '--ignore-scripts']);
       return;
     }
 
