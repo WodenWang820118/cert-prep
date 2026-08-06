@@ -68,7 +68,7 @@ class EchoCaptureProvider(MockExamProvider):
 class DeterministicCaptureRuntime:
     expected_source_kind = CaptureSourceKind.PDF
 
-    def __init__(self, *, runtime_version: str = "0.3.10") -> None:
+    def __init__(self, *, runtime_version: str = "0.3.11") -> None:
         self.runtime_version = runtime_version
         self.raw: RawCaptureV1 | None = None
         self.result: CaptureDocumentV1 | None = None

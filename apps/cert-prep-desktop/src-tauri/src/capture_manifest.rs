@@ -1,8 +1,8 @@
 use std::{fs, io::Read, path::Path};
 
 use capture_sidecar_launcher::{
-    load_manifest, validate_manifest_contract, verify_sidecar, ManifestExpectations,
-    SidecarManifest, VerifiedSidecar,
+    load_manifest, validate_manifest_contract, ManifestExpectations, SidecarManifest,
+    VerifiedSidecar,
 };
 use sha2::{Digest, Sha256};
 
@@ -24,16 +24,15 @@ pub(crate) fn verify_capture_runtime(
 ) -> Result<VerifiedCaptureRuntime, String> {
     let manifest = load_capture_runtime_manifest(manifest_path)?;
     validate_capture_manifest_contract(&manifest)?;
-    let verified = verify_sidecar(
-        manifest_path,
-        executable_path,
-        &capture_manifest_expectations(),
-    )?;
+    verify_capture_artifact(executable_path, &manifest)?;
     let resource_dir = manifest_path
         .parent()
         .ok_or_else(|| "Capture runtime manifest has no resource directory.".to_string())?;
     verify_capture_schema(&resource_dir.join(&manifest.schema_file_name))?;
-    Ok(verified)
+    Ok(VerifiedSidecar {
+        manifest,
+        executable_path: executable_path.to_path_buf(),
+    })
 }
 
 pub(crate) fn validate_capture_manifest_contract(
@@ -97,11 +96,41 @@ fn verify_capture_schema(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+fn verify_capture_artifact(path: &Path, manifest: &CaptureRuntimeManifest) -> Result<(), String> {
+    // Keep the cert consumer on the published launcher 0.3.10 compatibility
+    // pin, but do not delegate this hash to its stack-backed verifier. The
+    // install worker uses the platform default thread stack.
+    let metadata = fs::metadata(path).map_err(|error| {
+        format!(
+            "Capture runtime executable is unavailable at {}: {error}",
+            path.display()
+        )
+    })?;
+    if !metadata.is_file() {
+        return Err("Capture runtime executable is not a regular file.".into());
+    }
+    if metadata.len() != manifest.bytes {
+        return Err(format!(
+            "Capture runtime byte count mismatch: expected {}, found {}.",
+            manifest.bytes,
+            metadata.len()
+        ));
+    }
+    if sha256_file(path)?.eq_ignore_ascii_case(&manifest.sha256) {
+        Ok(())
+    } else {
+        Err("Capture runtime SHA-256 mismatch.".into())
+    }
+}
+
 fn sha256_file(path: &Path) -> Result<String, String> {
     let mut file = fs::File::open(path)
         .map_err(|error| format!("Capture runtime executable cannot be opened: {error}"))?;
     let mut hasher = Sha256::new();
-    let mut buffer = [0_u8; 1024 * 1024];
+    // This verifier runs on the default-stack Tauri installation worker. Keep
+    // the 1 MiB hashing buffer on the heap so a production-sized runtime
+    // cannot exhaust that worker stack during artifact verification.
+    let mut buffer = vec![0_u8; 1024 * 1024];
     loop {
         let count = file
             .read(&mut buffer)
@@ -174,6 +203,32 @@ mod tests {
 
         assert_eq!(verified.manifest, manifest);
         assert_eq!(verified.executable_path, executable);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn large_artifact_verification_is_safe_on_a_default_sized_worker_stack() {
+        let root = std::env::temp_dir().join(format!(
+            "cert-prep-capture-large-artifact-{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir_all(&root).expect("temp root");
+        let executable = root.join(CAPTURE_RUNTIME_BINARY);
+        let executable_bytes = vec![0xA5; 2 * 1024 * 1024];
+        fs::write(&executable, &executable_bytes).expect("runtime");
+        let manifest = valid_manifest(
+            executable_bytes.len() as u64,
+            &format!("{:x}", Sha256::digest(&executable_bytes)),
+        );
+        let worker = std::thread::Builder::new()
+            .stack_size(256 * 1024)
+            .spawn(move || verify_capture_artifact(&executable, &manifest))
+            .expect("worker");
+
+        worker
+            .join()
+            .expect("worker must not overflow its stack")
+            .expect("large artifact must verify");
         let _ = fs::remove_dir_all(root);
     }
 

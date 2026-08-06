@@ -3,6 +3,7 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  CAPTURE_CONTRACTS_PACKAGE_NAME,
   CAPTURE_RUNTIME_PACKAGE_NAME,
   CAPTURE_RUNTIME_VERSION,
 } from './capture-runtime-version.mts';
@@ -12,6 +13,7 @@ const registry = (
   process.env.CAPTURE_WORKBENCH_LOCAL_REGISTRY ?? 'http://127.0.0.1:4873'
 ).replace(/\/$/, '');
 const packageName = CAPTURE_RUNTIME_PACKAGE_NAME;
+const contractsPackageName = CAPTURE_CONTRACTS_PACKAGE_NAME;
 const packageVersion = CAPTURE_RUNTIME_VERSION;
 const captureWorkbenchRoot = resolve(
   process.env.CAPTURE_WORKBENCH_REPO ??
@@ -97,9 +99,13 @@ async function waitForRegistry(): Promise<void> {
   throw new Error(`Local registry did not become reachable at ${registry}.`);
 }
 
-async function packageIsPublished(): Promise<boolean> {
+function packageMetadataUrl(name: string): string {
+  return `${registry}/${name.replace('/', '%2f')}`;
+}
+
+async function packageIsPublished(name: string): Promise<boolean> {
   try {
-    const response = await fetch(`${registry}/@gx-capture%2fcapture-workbench`, {
+    const response = await fetch(packageMetadataUrl(name), {
       signal: AbortSignal.timeout(1_500),
     });
     if (response.status === 404) return false;
@@ -112,9 +118,7 @@ async function packageIsPublished(): Promise<boolean> {
       name?: string;
       versions?: Record<string, unknown>;
     };
-    return (
-      metadata.name === packageName && !!metadata.versions?.[packageVersion]
-    );
+    return metadata.name === name && !!metadata.versions?.[packageVersion];
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') return false;
     throw error;
@@ -126,32 +130,36 @@ async function ensureLocalPackage(): Promise<void> {
     startRegistry();
     await waitForRegistry();
   }
-  if (!(await packageIsPublished())) {
+  if (
+    !(await packageIsPublished(packageName)) ||
+    !(await packageIsPublished(contractsPackageName))
+  ) {
     await runPnpm(['run', 'local-registry:publish'], captureWorkbenchRoot);
   }
 }
 
-async function assertPublishedPackage(): Promise<void> {
-  const response = await fetch(`${registry}/@gx-capture%2fcapture-workbench`);
+async function assertPublishedPackage(name: string): Promise<void> {
+  const response = await fetch(packageMetadataUrl(name));
   if (!response.ok) {
     throw new Error(
-      `${packageName}@${packageVersion} is unavailable from ${registry} (HTTP ${response.status}).`,
+      `${name}@${packageVersion} is unavailable from ${registry} (HTTP ${response.status}).`,
     );
   }
   const metadata = (await response.json()) as {
     name?: string;
     versions?: Record<string, unknown>;
   };
-  if (metadata.name !== packageName || !metadata.versions?.[packageVersion]) {
+  if (metadata.name !== name || !metadata.versions?.[packageVersion]) {
     throw new Error(
-      `${packageName}@${packageVersion} is unavailable from ${registry}.`,
+      `${name}@${packageVersion} is unavailable from ${registry}.`,
     );
   }
 }
 
 async function main(): Promise<void> {
   await ensureLocalPackage();
-  await assertPublishedPackage();
+  await assertPublishedPackage(packageName);
+  await assertPublishedPackage(contractsPackageName);
   const userConfigPath = join(repoRoot, '.npmrc');
   if (existsSync(userConfigPath)) {
     throw new Error(
@@ -166,25 +174,27 @@ async function main(): Promise<void> {
 
   try {
     await runPnpm(['install', '--no-frozen-lockfile']);
-    const installedManifestPath = join(
-      repoRoot,
-      'node_modules/@gx-capture/capture-workbench/package.json',
-    );
-    if (!existsSync(installedManifestPath)) {
-      throw new Error(
-        `pnpm install completed but ${packageName} was not linked into node_modules.`,
+    for (const name of [packageName, contractsPackageName]) {
+      const installedManifestPath = join(
+        repoRoot,
+        `node_modules/${name}/package.json`,
       );
-    }
-    const installedManifest = JSON.parse(
-      readFileSync(installedManifestPath, 'utf8'),
-    ) as { name?: string; version?: string };
-    if (
-      installedManifest.name !== packageName ||
-      installedManifest.version !== packageVersion
-    ) {
-      throw new Error(
-        `Unexpected installed package: ${installedManifest.name}@${installedManifest.version}.`,
-      );
+      if (!existsSync(installedManifestPath)) {
+        throw new Error(
+          `pnpm install completed but ${name} was not linked into node_modules.`,
+        );
+      }
+      const installedManifest = JSON.parse(
+        readFileSync(installedManifestPath, 'utf8'),
+      ) as { name?: string; version?: string };
+      if (
+        installedManifest.name !== name ||
+        installedManifest.version !== packageVersion
+      ) {
+        throw new Error(
+          `Unexpected installed package: ${installedManifest.name}@${installedManifest.version}.`,
+        );
+      }
     }
     process.stdout.write(
       `Installed ${packageName}@${packageVersion} from ${registry}.\n`,

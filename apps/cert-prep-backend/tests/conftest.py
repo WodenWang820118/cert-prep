@@ -90,7 +90,7 @@ class TestCaptureRuntimeClient:
                 "sourceText": source_text,
                 "extractionEngine": {
                     "engine": "capture-runtime-whisper" if is_audio else "capture-runtime-windowsml",
-                    "model": "capture-runtime@0.3.10",
+                    "model": "capture-runtime@0.3.11",
                     "digest": f"sha256:{'a' * 64}",
                     "device": "test",
                 },
@@ -147,7 +147,7 @@ def _test_runtime_ready() -> RuntimeReadyV1:
             "ready": True,
             "service": "capture-runtime",
             "apiVersion": "1.0",
-            "runtimeVersion": "0.3.10",
+            "runtimeVersion": "0.3.11",
             "captureDocumentSchemaVersion": "1",
             "capabilities": {
                 "captureKinds": ["pdf", "image", "audio"],

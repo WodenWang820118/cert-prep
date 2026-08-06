@@ -136,7 +136,7 @@ def _ready_payload(*, schema_version: str = "1") -> dict[str, object]:
         "ready": True,
         "service": "capture-runtime",
         "apiVersion": "1.0",
-        "runtimeVersion": "0.3.10",
+        "runtimeVersion": "0.3.11",
         "captureDocumentSchemaVersion": schema_version,
         "capabilities": {
             "captureKinds": ["pdf", "image", "audio"],
@@ -588,7 +588,7 @@ class RecordingCaptureRuntime:
         initial_job: dict[str, object] | None = None,
         capture_kinds: list[str] | None = None,
         requirement_status: RuntimeRequirementStatus = RuntimeRequirementStatus.READY,
-        runtime_version: str = "0.3.10",
+        runtime_version: str = "0.3.11",
     ) -> None:
         self.initial_job = CaptureJobV1.model_validate(initial_job or _job_payload())
         self.raw = RawCaptureV1.model_validate(_raw_payload())
@@ -880,7 +880,7 @@ def test_future_runtime_generic_pdf_extraction_failure_is_not_reclassified() -> 
     runtime = RecordingCaptureRuntime(
         initial_job=failed,
         requirement_status=RuntimeRequirementStatus.UNAVAILABLE,
-        runtime_version="0.3.10",
+        runtime_version="0.3.11",
     )
     coordinator = CertPrepCaptureCoordinator(
         client=runtime,

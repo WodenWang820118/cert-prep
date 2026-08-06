@@ -40,7 +40,7 @@ describe('CertPrepCaptureClient', () => {
           ready: true,
           service: 'capture-runtime',
           apiVersion: '1.0',
-          runtimeVersion: '0.3.10',
+          runtimeVersion: '0.3.11',
           captureDocumentSchemaVersion: '1',
           capabilities: {
             captureKinds: ['pdf'],
@@ -183,11 +183,13 @@ describe('CertPrepCaptureClient', () => {
 
   it('maps readiness and forwards the browser abort signal to the backend proxy', async () => {
     const signalController = new AbortController();
-    const ready = await firstValueFrom(client.getReady(signalController.signal));
+    const ready = await firstValueFrom(
+      client.getReady(signalController.signal),
+    );
 
     expect(ready).toMatchObject({
       service: 'capture-runtime',
-      runtimeVersion: '0.3.10',
+      runtimeVersion: '0.3.11',
       capabilities: { captureKinds: ['pdf'], structuringModes: ['host'] },
     });
     expect(api.captureRuntimeReady).toHaveBeenCalledWith({
@@ -213,7 +215,8 @@ describe('CertPrepCaptureClient', () => {
   });
 
   it('passes core-only unavailable requirements through to the published component', async () => {
-    const detail = 'No downloadable model is published for this runtime release.';
+    const detail =
+      'No downloadable model is published for this runtime release.';
     api.captureRuntimeRequirements.mockReturnValueOnce(
       of({
         items: [
@@ -259,7 +262,8 @@ describe('CertPrepCaptureClient', () => {
   });
 
   it('dispatches an embedded-text PDF through the backend despite unavailable OCR and Whisper requirements', async () => {
-    const detail = 'No downloadable model is published for this runtime release.';
+    const detail =
+      'No downloadable model is published for this runtime release.';
     api.captureRuntimeRequirements.mockReturnValueOnce(
       of({
         items: [
@@ -345,7 +349,11 @@ describe('CertPrepCaptureClient', () => {
 
   it.each([
     ['not ready', { ready: false }, 'not ready'],
-    ['wrong service', { service: 'other-runtime' }, 'non-Capture Runtime service'],
+    [
+      'wrong service',
+      { service: 'other-runtime' },
+      'non-Capture Runtime service',
+    ],
     [
       'unsupported runtime major',
       { runtimeVersion: '1.0.0' },
@@ -356,11 +364,17 @@ describe('CertPrepCaptureClient', () => {
       { runtimeVersion: '0.2.8' },
       'incompatible with client runtime minor 3',
     ],
-    ['unsupported API major', { apiVersion: '2.0' }, 'Capture API 2.0 is incompatible'],
+    [
+      'unsupported API major',
+      { apiVersion: '2.0' },
+      'Capture API 2.0 is incompatible',
+    ],
     ['wrong schema', { captureDocumentSchemaVersion: '2' }, 'schema'],
     [
       'missing host structuring',
-      { capabilities: { ...readyCapabilities(), structuringModes: ['runtime'] } },
+      {
+        capabilities: { ...readyCapabilities(), structuringModes: ['runtime'] },
+      },
       'host structuring',
     ],
     [
@@ -445,7 +459,9 @@ describe('CertPrepCaptureClient', () => {
     };
     api.getRaw.mockReturnValueOnce(of(rawWithTimeLocator));
 
-    await expect(firstValueFrom(client.getRaw('capture-1'))).resolves.toMatchObject({
+    await expect(
+      firstValueFrom(client.getRaw('capture-1')),
+    ).resolves.toMatchObject({
       segments: [{ locator: { kind: 'time', startMs: 10, endMs: 20 } }],
     });
 
@@ -457,7 +473,9 @@ describe('CertPrepCaptureClient', () => {
     };
     api.getRaw.mockReturnValueOnce(of(rawWithBoundingBox));
 
-    await expect(firstValueFrom(client.getRaw('capture-1'))).resolves.toMatchObject({
+    await expect(
+      firstValueFrom(client.getRaw('capture-1')),
+    ).resolves.toMatchObject({
       segments: [{ locator: { kind: 'page', boundingBox: [0, 1, 100, 200] } }],
     });
   });
@@ -468,7 +486,9 @@ describe('CertPrepCaptureClient', () => {
       'unknown locator kind',
       () => ({
         ...makeRaw(),
-        segments: [{ ...makeRaw().segments[0], locator: { kind: 'line', page: 1 } }],
+        segments: [
+          { ...makeRaw().segments[0], locator: { kind: 'line', page: 1 } },
+        ],
       }),
     ],
     [
@@ -481,9 +501,9 @@ describe('CertPrepCaptureClient', () => {
   ])('rejects %s at the API boundary', async (_label, payload) => {
     if (_label === 'invalid document block type') {
       api.getResult.mockReturnValueOnce(of(payload()));
-      await expect(firstValueFrom(client.getResult('capture-1'))).rejects.toThrow(
-        'invalid contract',
-      );
+      await expect(
+        firstValueFrom(client.getResult('capture-1')),
+      ).rejects.toThrow('invalid contract');
       return;
     }
     api.getRaw.mockReturnValueOnce(of(payload()));
@@ -531,9 +551,9 @@ describe('CertPrepCaptureClient', () => {
       }),
     );
 
-    await expect(firstValueFrom(client.getCapture(job.captureId))).rejects.toThrow(
-      'backend unavailable',
-    );
+    await expect(
+      firstValueFrom(client.getCapture(job.captureId)),
+    ).rejects.toThrow('backend unavailable');
   });
 });
 
@@ -580,7 +600,7 @@ function makeRaw(): MutableRawCaptureFixture {
     sourceText: 'Recognized OCR text',
     extractionEngine: {
       engine: 'windowsml_ocr',
-      model: 'capture-runtime@0.3.10',
+      model: 'capture-runtime@0.3.11',
       digest: `sha256:${'a'.repeat(64)}`,
       device: 'WindowsML',
     },
@@ -635,7 +655,7 @@ function readyResponse(override: Record<string, unknown>) {
     ready: true,
     service: 'capture-runtime',
     apiVersion: '1.0',
-    runtimeVersion: '0.3.10',
+    runtimeVersion: '0.3.11',
     captureDocumentSchemaVersion: '1',
     capabilities: readyCapabilities(),
   };
@@ -658,7 +678,9 @@ function unavailableRequirement(
     requirementId,
     kind: requirementId === 'windowsml-ocr' ? 'ocr' : 'speech-to-text',
     displayName:
-      requirementId === 'windowsml-ocr' ? 'WindowsML OCR' : 'Whisper transcription',
+      requirementId === 'windowsml-ocr'
+        ? 'WindowsML OCR'
+        : 'Whisper transcription',
     status: 'unavailable',
     requiredFor,
     installStrategy: 'runtime-catalog',

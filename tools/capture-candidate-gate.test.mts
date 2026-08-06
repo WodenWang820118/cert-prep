@@ -18,7 +18,7 @@ test('candidate gate parses the producer dispatch contract', () => {
     '--source-commit',
     commit,
     '--release-version',
-    '0.3.10',
+    '0.3.11',
     '--workflow-run-id',
     '42',
     '--output',
@@ -27,7 +27,7 @@ test('candidate gate parses the producer dispatch contract', () => {
   ]);
   assert.equal(parsed.workflowRunId, 42);
   assert.equal(parsed.skipChecks, true);
-  assert.equal(parsed.releaseVersion, '0.3.10');
+  assert.equal(parsed.releaseVersion, '0.3.11');
 });
 
 test('candidate gate emits the canonical independent result envelope', () => {

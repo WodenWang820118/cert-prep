@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import {
   CAPTURE_RUNTIME_RELEASE_BASE_URL_ENV,
+  CAPTURE_RUNTIME_RELEASE_DIRECTORY_ENV,
   CAPTURE_RUNTIME_ROOT_ENV,
   CAPTURE_RUNTIME_FILE,
   CAPTURE_RUNTIME_VERSION,
@@ -29,8 +30,15 @@ const FORBIDDEN_RELEASE_OVERRIDES = Object.freeze([
   CAPTURE_RUNTIME_ROOT_ENV,
 ]);
 
+function localReleaseDirectory(): string | undefined {
+  const value = process.env[CAPTURE_RUNTIME_RELEASE_DIRECTORY_ENV]?.trim();
+  return value || undefined;
+}
+
 function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds));
+  return new Promise((resolvePromise) =>
+    setTimeout(resolvePromise, milliseconds),
+  );
 }
 
 async function findFreePort(): Promise<number> {
@@ -40,8 +48,11 @@ async function findFreePort(): Promise<number> {
     server.listen(0, '127.0.0.1', () => resolvePromise());
   });
   const address = server.address();
-  const port = typeof address === 'object' && address !== null ? address.port : undefined;
-  await new Promise<void>((resolvePromise) => server.close(() => resolvePromise()));
+  const port =
+    typeof address === 'object' && address !== null ? address.port : undefined;
+  await new Promise<void>((resolvePromise) =>
+    server.close(() => resolvePromise()),
+  );
   if (!port) throw new Error('Could not reserve a loopback port.');
   return port;
 }
@@ -104,7 +115,9 @@ async function stopRuntime(child: ChildProcess, port: number): Promise<void> {
   for (const pid of pids) killProcessTree(pid);
   await delay(500);
   if (listeningProcessIds(port).length > 0) {
-    throw new Error(`Downloaded capture-runtime listener remained on port ${port}.`);
+    throw new Error(
+      `Downloaded capture-runtime listener remained on port ${port}.`,
+    );
   }
 }
 
@@ -152,14 +165,21 @@ async function waitForPublishedRuntimeContract(
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
     if (runtime.exitCode !== null || runtime.signalCode !== null) {
-      throw new Error(`Downloaded capture-runtime exited before readiness: ${runtimeError}`);
+      throw new Error(
+        `Downloaded capture-runtime exited before readiness: ${runtimeError}`,
+      );
     }
     try {
       const baseUrl = `http://127.0.0.1:${port}`;
-      const [unauthenticatedReady, unauthenticatedRequirements] = await Promise.all([
-        fetch(`${baseUrl}/v1/health/ready`, { headers: { Connection: 'close' } }),
-        fetch(`${baseUrl}/v1/runtime/requirements`, { headers: { Connection: 'close' } }),
-      ]);
+      const [unauthenticatedReady, unauthenticatedRequirements] =
+        await Promise.all([
+          fetch(`${baseUrl}/v1/health/ready`, {
+            headers: { Connection: 'close' },
+          }),
+          fetch(`${baseUrl}/v1/runtime/requirements`, {
+            headers: { Connection: 'close' },
+          }),
+        ]);
       if (unauthenticatedReady.status !== 401) {
         throw new Error(
           `Readiness endpoint accepted an unauthenticated request: ${unauthenticatedReady.status}`,
@@ -202,13 +222,17 @@ async function waitForPublishedRuntimeContract(
         health.captureDocumentSchemaVersion !== '1' ||
         JSON.stringify(health.capabilities?.structuringModes) !== '["host"]'
       ) {
-        throw new Error('Downloaded capture-runtime readiness contract mismatch.');
+        throw new Error(
+          'Downloaded capture-runtime readiness contract mismatch.',
+        );
       }
       const requirements = (await requirementsResponse.json()) as {
         items?: unknown;
       };
       if (!Array.isArray(requirements.items)) {
-        throw new Error('Downloaded capture-runtime requirements response is invalid.');
+        throw new Error(
+          'Downloaded capture-runtime requirements response is invalid.',
+        );
       }
       const compactRequirements = requirements.items.map((item) => {
         if (typeof item !== 'object' || item === null) return item;
@@ -225,7 +249,8 @@ async function waitForPublishedRuntimeContract(
           : undefined,
       );
       if (
-        JSON.stringify(requirementIds) !== JSON.stringify(EXPECTED_REQUIREMENT_IDS) ||
+        JSON.stringify(requirementIds) !==
+          JSON.stringify(EXPECTED_REQUIREMENT_IDS) ||
         compactRequirements.some(
           (item) =>
             typeof item !== 'object' ||
@@ -236,9 +261,7 @@ async function waitForPublishedRuntimeContract(
               'installable',
               'manual_action_required',
               'unavailable',
-            ].includes(
-              String((item as { status?: unknown }).status),
-            ),
+            ].includes(String((item as { status?: unknown }).status)),
         )
       ) {
         throw new Error(
@@ -261,10 +284,7 @@ async function waitForPublishedRuntimeContract(
   throw new Error(`capture-runtime did not become ready: ${runtimeError}`);
 }
 
-async function runBackendConsumer(
-  port: number,
-  token: string,
-): Promise<void> {
+async function runBackendConsumer(port: number, token: string): Promise<void> {
   const child = spawn(
     'uv',
     [
@@ -306,7 +326,9 @@ async function runBackendConsumer(
       });
     });
     if (exitCode !== 0) {
-      throw new Error(`cert-prep host flow failed with exit code ${exitCode}: ${stderr}`);
+      throw new Error(
+        `cert-prep host flow failed with exit code ${exitCode}: ${stderr}`,
+      );
     }
   } catch (error) {
     if (child.pid && child.exitCode === null && child.signalCode === null) {
@@ -320,8 +342,16 @@ async function runSmoke(): Promise<void> {
   if (process.platform !== 'win32') {
     throw new Error('capture-runtime consumer smoke requires Windows x64.');
   }
-  assertPublishedReleaseInputs();
-  const temporaryRoot = await mkdtemp(join(tmpdir(), 'cert-prep-capture-runtime-consumer-'));
+  const releaseDirectory = localReleaseDirectory();
+  if (!releaseDirectory) assertPublishedReleaseInputs();
+  else if (Object.hasOwn(process.env, CAPTURE_RUNTIME_RELEASE_BASE_URL_ENV)) {
+    throw new Error(
+      `Local release smoke refuses ${CAPTURE_RUNTIME_RELEASE_BASE_URL_ENV}; use only ${CAPTURE_RUNTIME_RELEASE_DIRECTORY_ENV}.`,
+    );
+  }
+  const temporaryRoot = await mkdtemp(
+    join(tmpdir(), 'cert-prep-capture-runtime-consumer-'),
+  );
   let runtime: ChildProcess | undefined;
   let runtimePort: number | undefined;
   try {
@@ -330,8 +360,11 @@ async function runSmoke(): Promise<void> {
 
     const installed = await installCaptureRuntime({
       workspaceRoot: consumerWorkspace,
+      releaseDirectory,
     });
-    const manifest = await verifyCaptureRuntimeReleaseDirectory(installed.outputRoot);
+    const manifest = await verifyCaptureRuntimeReleaseDirectory(
+      installed.outputRoot,
+    );
     if (manifest.runtimeVersion !== CAPTURE_RUNTIME_VERSION) {
       throw new Error('Downloaded capture-runtime manifest version mismatch.');
     }
@@ -362,7 +395,7 @@ async function runSmoke(): Promise<void> {
     await waitForPublishedRuntimeContract(runtime, runtimePort, token);
     await runBackendConsumer(runtimePort, token);
     console.log(
-      `cert-prep published capture-runtime@${CAPTURE_RUNTIME_VERSION} handshake passed; fake extraction host protocol passed (not OCR/STT evidence).`,
+      `cert-prep ${releaseDirectory ? 'local' : 'published'} capture-runtime@${CAPTURE_RUNTIME_VERSION} handshake passed; fake extraction host protocol passed (not OCR/STT evidence).`,
     );
   } finally {
     if (runtime && runtimePort) await stopRuntime(runtime, runtimePort);
@@ -372,7 +405,9 @@ async function runSmoke(): Promise<void> {
       relativeRoot === '..' ||
       relativeRoot.startsWith(`..${sep}`)
     ) {
-      throw new Error(`Refusing to remove unexpected smoke path: ${temporaryRoot}`);
+      throw new Error(
+        `Refusing to remove unexpected smoke path: ${temporaryRoot}`,
+      );
     }
     await rm(temporaryRoot, {
       recursive: true,

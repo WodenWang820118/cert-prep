@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { test } from 'node:test';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -14,7 +20,8 @@ test('assembled candidates revalidate backend and Capture Runtime assets', async
     const runtime = join(root, 'candidate', 'release', 'runtimes');
     mkdirSync(generated, { recursive: true });
     mkdirSync(runtime, { recursive: true });
-    const backendName = 'cert-prep-backend-runtime-0.1.0-alpha.1-x86_64-pc-windows-msvc.zip';
+    const backendName =
+      'cert-prep-backend-runtime-0.1.0-alpha.1-x86_64-pc-windows-msvc.zip';
     writeFileSync(join(generated, backendName), 'backend');
     const backendManifest = {
       schema_version: 1,
@@ -22,14 +29,22 @@ test('assembled candidates revalidate backend and Capture Runtime assets', async
       version: '0.1.0-alpha.1',
       target: 'x86_64-pc-windows-msvc',
       entrypoint: 'cert-prep-backend.exe',
-      artifact: { file_name: backendName, sha256: sha256('backend'), bytes: 7, url: null },
+      artifact: {
+        file_name: backendName,
+        sha256: sha256('backend'),
+        bytes: 7,
+        url: null,
+      },
     };
-    writeJson(join(generated, 'backend-runtime-manifest.json'), backendManifest);
+    writeJson(
+      join(generated, 'backend-runtime-manifest.json'),
+      backendManifest,
+    );
 
     const captureName = 'capture-runtime-x86_64-pc-windows-msvc.exe';
     const captureManifest = {
       manifestVersion: '1',
-      runtimeVersion: '0.3.10',
+      runtimeVersion: '0.3.11',
       apiVersion: '1.0',
       captureDocumentSchemaVersion: '1',
       platform: 'windows',
@@ -42,7 +57,10 @@ test('assembled candidates revalidate backend and Capture Runtime assets', async
     };
     writeFileSync(join(generated, captureName), 'capture');
     writeFileSync(join(generated, captureManifest.schemaFileName), '{}');
-    writeJson(join(generated, 'capture-runtime-manifest.json'), captureManifest);
+    writeJson(
+      join(generated, 'capture-runtime-manifest.json'),
+      captureManifest,
+    );
     for (const name of [
       backendName,
       'backend-runtime-manifest.json',
@@ -54,14 +72,10 @@ test('assembled candidates revalidate backend and Capture Runtime assets', async
       writeFileSync(join(runtime, name), requireBytes(source));
     }
 
-    await validateAssembledRuntimes(
-      join(root, 'candidate'),
-      generated,
-      {
-        backend: { bytes: 7, sha256: sha256('backend') },
-        capture_runtime: { bytes: 7, sha256: sha256('capture') },
-      },
-    );
+    await validateAssembledRuntimes(join(root, 'candidate'), generated, {
+      backend: { bytes: 7, sha256: sha256('backend') },
+      capture_runtime: { bytes: 7, sha256: sha256('capture') },
+    });
     assert.ok(true);
   } finally {
     rmSync(root, { recursive: true, force: true });

@@ -41,7 +41,9 @@ export async function assertPublishedCaptureSurface(page: Page): Promise<void> {
     !Array.isArray(enabledSources) ||
     JSON.stringify(enabledSources) !== JSON.stringify(['pdf', 'image', 'audio'])
   ) {
-    throw new Error('0.3.10 host did not expose PDF, image, and audio capture.');
+    throw new Error(
+      '0.3.11 host did not expose PDF, image, and audio capture.',
+    );
   }
   const copy = await page.locator('main').innerText();
   for (const statement of [
@@ -49,7 +51,7 @@ export async function assertPublishedCaptureSurface(page: Page): Promise<void> {
     'explicit OCR and Whisper consent',
   ]) {
     if (!copy.includes(statement)) {
-      throw new Error(`0.3.10 host copy omitted: ${statement}`);
+      throw new Error(`0.3.11 host copy omitted: ${statement}`);
     }
   }
   if (
@@ -57,7 +59,9 @@ export async function assertPublishedCaptureSurface(page: Page): Promise<void> {
       .getByRole('button', { name: /Install (WindowsML|Whisper)/i })
       .count()) !== 0
   ) {
-    throw new Error('Host exposed Capture Runtime setup controls it does not own.');
+    throw new Error(
+      'Host exposed Capture Runtime setup controls it does not own.',
+    );
   }
 }
 
@@ -154,7 +158,9 @@ async function runNegativeCase(
       ? definition.expectedError.test(stringValue(operation.error))
       : operation.error === definition.expectedError;
   if (!matchesExpectedError) {
-    throw new Error(`${definition.case} exposed an unexpected dependency error.`);
+    throw new Error(
+      `${definition.case} exposed an unexpected dependency error.`,
+    );
   }
   const document = await getJson(
     page,
@@ -167,7 +173,9 @@ async function runNegativeCase(
     document.status !== definition.expectedDocumentStatus ||
     document.chunks_count !== 0
   ) {
-    throw new Error(`${definition.case} produced a ready or non-empty document.`);
+    throw new Error(
+      `${definition.case} produced a ready or non-empty document.`,
+    );
   }
   const chunks = await getJson(
     page,
@@ -220,11 +228,15 @@ async function waitForFailedOperation(
     );
     if (operation.status === 'failed') return operation;
     if (['succeeded', 'canceled'].includes(stringValue(operation.status))) {
-      throw new Error(`0.3.10 negative operation reached ${String(operation.status)}.`);
+      throw new Error(
+        `0.3.11 negative operation reached ${String(operation.status)}.`,
+      );
     }
     await delay(250);
   }
-  throw new Error(`0.3.10 negative operation ${operationId} did not fail in time.`);
+  throw new Error(
+    `0.3.11 negative operation ${operationId} did not fail in time.`,
+  );
 }
 
 async function getJson(
@@ -237,7 +249,9 @@ async function getJson(
   });
   const payload: unknown = await response.json();
   if (!response.ok() || !isRecord(payload)) {
-    throw new Error('Packaged 0.3.10 negative-data API returned an invalid response.');
+    throw new Error(
+      'Packaged 0.3.11 negative-data API returned an invalid response.',
+    );
   }
   return payload;
 }
@@ -312,6 +326,8 @@ function pdfFromObjects(objects: readonly string[]): Buffer {
   body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets
     .slice(1)
     .map((offset) => `${String(offset).padStart(10, '0')} 00000 n \n`)
-    .join('')}trailer << /Root 1 0 R /Size ${objects.length + 1} >>\nstartxref\n${xref}\n%%EOF\n`;
+    .join(
+      '',
+    )}trailer << /Root 1 0 R /Size ${objects.length + 1} >>\nstartxref\n${xref}\n%%EOF\n`;
   return Buffer.from(body);
 }

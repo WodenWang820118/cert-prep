@@ -3,15 +3,20 @@
 ## Current contract
 
 Tauri packages the backend runtime and the published Capture Runtime
-`0.3.8` Windows x64 assets. Cert Prep does not package an OCR/Whisper payload,
+`0.3.11` Windows x64 assets. Cert Prep does not own an OCR/Whisper provider,
 legacy manifest, local provider, or fallback installer.
 
-The release contract pins Capture Runtime API `1.0`, runtime `0.3.8`, and
+The release contract pins Capture Runtime API `1.0`, runtime `0.3.11`, and
 `CaptureDocumentV1` schema `1`. Package QA and Tauri validate executable bytes,
 checksum, manifest, and schema bytes before launch. Capture Runtime owns
-requirement validation. v0.3.8 is core-only: it reports WindowsML OCR and
-Whisper as unavailable because no downloadable model is published for this
-runtime release.
+requirement validation and publishes the engine catalog consumed by the host
+readiness checks.
+
+For local production qualification only, the installer may stage the canonical
+assets from `CERT_PREP_CAPTURE_RUNTIME_RELEASE_DIRECTORY`. The path is not a
+replacement for registry/release lockfile provenance or published-byte
+evidence; the independent `cert-prep-desktop` Tauri bundle remains the consumer
+artifact.
 
 ## Lifecycle and security
 

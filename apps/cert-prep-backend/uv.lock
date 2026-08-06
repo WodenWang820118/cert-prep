@@ -82,28 +82,38 @@ wheels = [
 
 [[package]]
 name = "capture-contracts"
-version = "0.3.10"
-source = { registry = "https://pypi.org/simple" }
+version = "0.3.11"
+source = { directory = "../../../capture-workbench/packages/capture-contracts/python" }
 dependencies = [
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ae/00/afe97898d9dc7ed36af968464eb081b2b71c7fda265f6a686615394797f2/capture_contracts-0.3.10.tar.gz", hash = "sha256:253fc17a02595165f25c7ff1b0501e8cd971e74d76417da7cdbd96e3356c864f", size = 20846, upload-time = "2026-08-05T09:16:54.802Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/53/fa/102bcdcb681572d51709fa27f161c98e717dbd1616dc1b4fea57ad6b9efa/capture_contracts-0.3.10-py3-none-any.whl", hash = "sha256:120d5aeb0e619b387986efbfc5975f68433301f4712cc25c2c58e2a480a5212b", size = 24763, upload-time = "2026-08-05T09:16:53.759Z" },
-]
+
+[package.metadata]
+requires-dist = [{ name = "pydantic", specifier = ">=2.13.4,<3.0.0" }]
 
 [[package]]
 name = "capture-structuring"
-version = "0.3.10"
-source = { registry = "https://pypi.org/simple" }
+version = "0.3.11"
+source = { directory = "../../../capture-workbench/packages/capture-structuring-python" }
 dependencies = [
     { name = "capture-contracts" },
     { name = "jsonschema" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ac/6d/4d110a049506e47858704a30a9a0958ad4cbce7c10845be56a0d0cc365b5/capture_structuring-0.3.10.tar.gz", hash = "sha256:e28c1255c38357d7ba9f163556c9ca1b368405e645d99b46bbbaad90c37cdf2a", size = 39922, upload-time = "2026-08-05T09:16:51.95Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/56/45/02bcc788772d60e6752477f468be0def3c6b7522d3f4deb0e6c0125328cb/capture_structuring-0.3.10-py3-none-any.whl", hash = "sha256:49f5817819e928af1f2421f778c40f713768171e425f9d95840ac8ba2116909c", size = 10794, upload-time = "2026-08-05T09:16:50.726Z" },
+
+[package.metadata]
+requires-dist = [
+    { name = "capture-contracts", directory = "../../../capture-workbench/packages/capture-contracts/python" },
+    { name = "jsonschema", specifier = ">=4.25.0,<5.0.0" },
+    { name = "pydantic", specifier = ">=2.12.0,<3.0.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "mypy", specifier = ">=1.14.0,<2.0.0" },
+    { name = "pytest", specifier = ">=8.3.0,<9.0.0" },
+    { name = "ruff", specifier = ">=0.9.0,<1.0.0" },
+    { name = "types-jsonschema", specifier = ">=4.25.0,<5.0.0" },
 ]
 
 [[package]]
@@ -137,8 +147,8 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "av", specifier = ">=18.0.0,<19.0.0" },
-    { name = "capture-contracts", specifier = ">=0.3.10,<0.4.0" },
-    { name = "capture-structuring", specifier = ">=0.3.10,<0.4.0" },
+    { name = "capture-contracts", directory = "../../../capture-workbench/packages/capture-contracts/python" },
+    { name = "capture-structuring", directory = "../../../capture-workbench/packages/capture-structuring-python" },
     { name = "cert-prep-contracts", editable = "../../packages/cert-prep-contracts" },
     { name = "cert-prep-ollama", editable = "../../packages/cert-prep-ollama" },
     { name = "fastapi", specifier = ">=0.124.0,<1.0.0" },

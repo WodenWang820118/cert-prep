@@ -406,12 +406,7 @@ test('local candidates reject every publication mode before GitHub access', asyn
       ghCalls += 1;
       throw new Error('GitHub must not be reached');
     };
-    for (const mode of [
-      'reserve',
-      'final',
-      'cleanup',
-      'verify-public',
-    ]) {
+    for (const mode of ['reserve', 'final', 'cleanup', 'verify-public']) {
       await assert.rejects(
         () =>
           publishAssets(
@@ -626,7 +621,7 @@ async function writeFinalReleaseRoot(root, candidate) {
     ['installers/Cert_Prep_0.1.0-alpha.1_x64-setup.exe', 'nsis'],
     ['runtimes/cert-prep-backend-runtime-0.1.0-alpha.1.zip', 'backend runtime'],
     ['runtimes/capture-runtime-x86_64-pc-windows-msvc.exe', 'capture runtime'],
-    ['runtimes/capture-runtime-manifest.json', '{"runtimeVersion":"0.3.10"}'],
+    ['runtimes/capture-runtime-manifest.json', '{"runtimeVersion":"0.3.11"}'],
     ['metadata/license-inventory.json', '{"components":[]}'],
     ['metadata/cert-prep-alpha.spdx.json', '{"spdxVersion":"SPDX-2.3"}'],
     ['legal/THIRD_PARTY_NOTICES.md', '# Notices'],
@@ -662,7 +657,7 @@ async function writeFinalReleaseRoot(root, candidate) {
           packageKind: 'nsis',
           candidateId: candidate.candidateId,
           commitSha: plan.commitSha,
-           captureRuntimeVerified: true,
+          captureRuntimeVerified: true,
           appLaunchVerified: true,
           freshAppDataVerified: true,
           backendInstallVerified: true,

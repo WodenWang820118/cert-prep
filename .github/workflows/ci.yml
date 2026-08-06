@@ -210,9 +210,9 @@ jobs:
           $ErrorActionPreference = 'Stop'
           pnpm nx run cert-prep-desktop:capture-runtime-consumer-test --skip-nx-cache
           uv run --isolated --no-project `
-            --with 'capture-contracts==0.3.10' `
-            --with 'capture-structuring==0.3.10' `
-            -- python -c "import capture_contracts, capture_structuring; assert capture_contracts.CAPTURE_RUNTIME_VERSION == '0.3.10'; assert capture_structuring.__package__ == 'capture_structuring'"
+            --with 'capture-contracts==0.3.11' `
+            --with 'capture-structuring==0.3.11' `
+            -- python -c "import capture_contracts, capture_structuring; assert capture_contracts.CAPTURE_RUNTIME_VERSION == '0.3.11'; assert capture_structuring.__package__ == 'capture_structuring'"
 
       - name: Test Tauri host
         run: pnpm nx run cert-prep-desktop:cargo-test

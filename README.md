@@ -44,11 +44,15 @@ ollama pull qwen3.5:4b
 
 ## Capture Runtime release sidecar
 
-`capture-runtime@0.3.10` is installed as a Windows x64 release sidecar, not as
+`capture-runtime@0.3.11` is installed as a Windows x64 release sidecar, not as
 an npm or Python dependency. By default, the installer uses the canonical
-`https://github.com/gx-capture/capture-workbench/releases/download/v0.3.10`
+`https://github.com/gx-capture/capture-workbench/releases/download/v0.3.11`
 release. `CERT_PREP_CAPTURE_RUNTIME_RELEASE_BASE_URL` is only for an explicit
-versioned HTTPS release URL or loopback HTTP mirror during local testing.
+versioned HTTPS release URL or loopback HTTP mirror during local testing. For a
+local Capture Workbench candidate, set
+`CERT_PREP_CAPTURE_RUNTIME_RELEASE_DIRECTORY` to its release artifact directory;
+the installer copies and verifies only the canonical consumer assets, without
+changing the default public URL.
 
 ```powershell
 pnpm nx run cert-prep-desktop:install-capture-runtime
@@ -57,7 +61,7 @@ pnpm nx run cert-prep-desktop:dev
 
 The installer downloads only the executable, checksum, manifest, and schema;
 verifies their version, platform, bytes, and SHA-256 contract; and stages them
-under `tmp/cert-prep/capture-runtime/0.3.10`. Desktop preparation consumes that
+under `tmp/cert-prep/capture-runtime/0.3.11`. Desktop preparation consumes that
 staging directory without network access. To exercise the complete local
 release-consumer path, including the downloaded sidecar and cert-prep host
 structuring coordinator, run:
@@ -66,7 +70,21 @@ structuring coordinator, run:
 pnpm nx run cert-prep-desktop:capture-runtime-consumer-smoke
 ```
 
-v0.3.10 is the engine-bearing release contract. Cert Prep uses
+The same smoke can consume a local candidate without using the Capture
+Workbench desktop app as evidence:
+
+```powershell
+$env:CERT_PREP_CAPTURE_RUNTIME_RELEASE_DIRECTORY =
+  'C:\software-dev\capture-workbench\packages\capture-runtime\dist\release'
+pnpm nx run cert-prep-desktop:capture-runtime-consumer-smoke
+Remove-Item Env:CERT_PREP_CAPTURE_RUNTIME_RELEASE_DIRECTORY
+```
+
+For the independent Cert Prep Tauri app, install that local artifact first,
+then build `cert-prep-desktop:build-capture`; its own generated resources and
+NSIS bundle are the consumer under test.
+
+v0.3.11 is the engine-bearing release contract. Cert Prep uses
 `hostManagedHandshake: true` and keeps runtime setup in the host. Embedded-text
 PDFs can run through the `pdf-embedded-text` CPU extractor; scanned PDFs and
 images require a ready `windowsml-ocr` requirement, and audio requires a ready
@@ -112,7 +130,7 @@ pnpm nx affected --targets=lint,test,build
 ## Local Capture Workbench Registry Trial
 
 The normal dependency is the pinned public release package
-`@gx-capture/capture-workbench@0.3.10` from GitHub Packages. GitHub Actions configures
+`@gx-capture/capture-workbench@0.3.11` from GitHub Packages. GitHub Actions configures
 the `@gx-capture` registry and read token automatically. For a local install, configure
 an npm user config without committing credentials:
 
@@ -162,13 +180,13 @@ against `http://127.0.0.1:4873`, imports `@gx-capture/capture-workbench`, regist
 `capture-workbench` custom element, and runs a production build. The temporary
 consumer is removed after the run. The cert-prep route also uses the installed
 package through its `CaptureClient` adapter and the backend review API. With
-the v0.3.10 sidecar, the route accepts embedded-text PDFs and exposes image and
+the v0.3.11 sidecar, the route accepts embedded-text PDFs and exposes image and
 audio only when their runtime requirements are ready.
 
 ### Capture Workbench local registry trial
 
 The `capture-workbench-trial` route is an isolated distribution trial for the
-published `@gx-capture/capture-workbench@0.3.10` Web Component. The `/build`
+published `@gx-capture/capture-workbench@0.3.11` Web Component. The `/build`
 source-import flow remains unchanged; the retired local prototype is no longer
 part of the workspace.
 
@@ -181,9 +199,9 @@ pnpm nx run cert-prep:serve
 ```
 
 Open `http://localhost:4200/capture-workbench-trial`. The route uses the
-registry-installed `@gx-capture/capture-workbench@0.3.10` package and a cert-prep
+registry-installed `@gx-capture/capture-workbench@0.3.11` package and a cert-prep
 `CaptureClient` backed by the review-gated capture API. Capture Runtime and its
-token remain backend-only. With the v0.3.10 engine-bearing sidecar, the route
+token remain backend-only. With the v0.3.11 engine-bearing sidecar, the route
 accepts embedded-text PDFs directly; scanned PDFs, images, and audio require
 their corresponding runtime requirement to be ready. The install command creates a
 temporary root `.npmrc` pointing at `http://127.0.0.1:4873` and removes it when

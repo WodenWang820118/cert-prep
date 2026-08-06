@@ -350,7 +350,9 @@ async function assertPublishedEngineRequirements(
     },
   );
   const observed = Array.isArray(requirements.items)
-    ? requirements.items.map((candidate) => candidate as Record<string, unknown>)
+    ? requirements.items.map(
+        (candidate) => candidate as Record<string, unknown>,
+      )
     : [];
   const observedIds = observed.map((item) => item.requirementId);
   if (
@@ -362,11 +364,11 @@ async function assertPublishedEngineRequirements(
     )
   ) {
     throw new Error(
-      `Capture Runtime did not expose the published 0.3.10 engine requirements: ${JSON.stringify(requirements)}`,
+      `Capture Runtime did not expose the published 0.3.11 engine requirements: ${JSON.stringify(requirements)}`,
     );
   }
   console.log(
-    'Downloaded Capture Runtime reports the published 0.3.10 engine requirements through the cert-prep proxy.',
+    'Downloaded Capture Runtime reports the published 0.3.11 engine requirements through the cert-prep proxy.',
   );
 }
 
@@ -522,7 +524,7 @@ async function runBrowserFlow(
       !trialDescriptionText.includes('explicit OCR and Whisper consent')
     ) {
       throw new Error(
-        `Capture trial description does not expose the 0.3.10 source policy: ${trialDescriptionText}`,
+        `Capture trial description does not expose the 0.3.11 source policy: ${trialDescriptionText}`,
       );
     }
     const input = page.locator('capture-workbench input[type="file"]');
@@ -616,8 +618,7 @@ async function runBrowserFlow(
       { headers: { Authorization: `Bearer ${token}` } },
     );
     const extractionEngine = rawCapture.extractionEngine as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
     if (
       extractionEngine?.engine !== 'pdf-embedded-text' ||
       extractionEngine.device !== 'cpu'
