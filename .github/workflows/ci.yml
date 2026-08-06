@@ -35,7 +35,7 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           repository: gx-capture/capture-workbench
-          ref: agent/modular-reuse-contracts
+          ref: bd17b3c2ee1cdcc4be6dcdaaa5eab2bbbbf4a671
           path: capture-workbench
           sparse-checkout: |
             packages/capture-contracts
