@@ -85,6 +85,7 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ inputs.release_version }}
+          CAPTURE_PRESERVE_INSTALL_FILES: 'true'
         run: |
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true

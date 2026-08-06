@@ -117,6 +117,8 @@ async function install(mode: InstallMode): Promise<void> {
   const originalLockfile = await readFile(lockfilePath);
   const originalWorkspaceFile = await readFile(workspaceFilePath);
   let originalNodeModulesLockfile: Buffer | null = null;
+  const preserveInstallFiles =
+    process.env.CAPTURE_PRESERVE_INSTALL_FILES === 'true';
   try {
     const packageJson = JSON.parse(originalPackageJson.toString('utf8')) as Record<
       string,
@@ -191,11 +193,13 @@ async function install(mode: InstallMode): Promise<void> {
       '--ignore-scripts',
     ]);
   } finally {
-    await writeFile(packageJsonPath, originalPackageJson);
-    await writeFile(lockfilePath, originalLockfile);
-    await writeFile(workspaceFilePath, originalWorkspaceFile);
-    if (originalNodeModulesLockfile !== null) {
-      await writeFile(nodeModulesLockfilePath, originalNodeModulesLockfile);
+    if (!preserveInstallFiles) {
+      await writeFile(packageJsonPath, originalPackageJson);
+      await writeFile(lockfilePath, originalLockfile);
+      await writeFile(workspaceFilePath, originalWorkspaceFile);
+      if (originalNodeModulesLockfile !== null) {
+        await writeFile(nodeModulesLockfilePath, originalNodeModulesLockfile);
+      }
     }
   }
 }

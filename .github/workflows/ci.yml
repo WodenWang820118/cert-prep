@@ -78,6 +78,7 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ github.token }}
           CAPTURE_PUBLISHED_0_3_11: ${{ vars.CAPTURE_PUBLISHED_0_3_11 }}
+          CAPTURE_PRESERVE_INSTALL_FILES: 'true'
         run: node tools/install-capture-workbench-dependencies.mts --prepublication-stable-version 0.3.10
 
       - name: Sync backend Python environment
@@ -175,6 +176,7 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ github.token }}
           CAPTURE_PUBLISHED_0_3_11: ${{ vars.CAPTURE_PUBLISHED_0_3_11 }}
+          CAPTURE_PRESERVE_INSTALL_FILES: 'true'
         run: node tools/install-capture-workbench-dependencies.mts --prepublication-stable-version 0.3.10
 
       - name: Sync backend Python environment
