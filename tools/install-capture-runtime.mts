@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
 import {
+  copyFile,
   mkdir,
   mkdtemp,
   readFile,
@@ -15,9 +16,7 @@ import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
 import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 
-import {
-  validateCaptureArtifactBytes,
-} from '../apps/cert-prep-desktop/scripts/capture-runtime-contract.mts';
+import { validateCaptureArtifactBytes } from '../apps/cert-prep-desktop/scripts/capture-runtime-contract.mts';
 import {
   CAPTURE_RUNTIME_RELEASE_BASE_URL,
   CAPTURE_RUNTIME_VERSION,
@@ -35,11 +34,12 @@ export { CAPTURE_RUNTIME_FILE, CAPTURE_RUNTIME_VERSION };
 
 export const CAPTURE_RUNTIME_RELEASE_BASE_URL_ENV =
   'CERT_PREP_CAPTURE_RUNTIME_RELEASE_BASE_URL';
+export const CAPTURE_RUNTIME_RELEASE_DIRECTORY_ENV =
+  'CERT_PREP_CAPTURE_RUNTIME_RELEASE_DIRECTORY';
 export const DEFAULT_CAPTURE_RUNTIME_RELEASE_BASE_URL =
   CAPTURE_RUNTIME_RELEASE_BASE_URL;
 export const CAPTURE_RUNTIME_ROOT_ENV = 'CERT_PREP_CAPTURE_RUNTIME_ROOT';
-export const CAPTURE_RUNTIME_CHECKSUM_FILE =
-  `${CAPTURE_RUNTIME_FILE}.sha256`;
+export const CAPTURE_RUNTIME_CHECKSUM_FILE = `${CAPTURE_RUNTIME_FILE}.sha256`;
 export const CAPTURE_RUNTIME_RELEASE_ASSETS = Object.freeze([
   CAPTURE_RUNTIME_FILE,
   CAPTURE_RUNTIME_CHECKSUM_FILE,
@@ -70,6 +70,7 @@ export interface CaptureRuntimeReleaseManifest {
 export interface InstallCaptureRuntimeOptions {
   readonly workspaceRoot: string;
   readonly baseUrl?: string;
+  readonly releaseDirectory?: string;
   readonly outputRoot?: string;
 }
 
@@ -87,7 +88,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function assertLowercaseSha256(value: unknown, label: string): asserts value is string {
+function assertLowercaseSha256(
+  value: unknown,
+  label: string,
+): asserts value is string {
   if (typeof value !== 'string' || !LOWERCASE_SHA256.test(value)) {
     throw new Error(`${label} must be 64 lowercase SHA-256 characters.`);
   }
@@ -112,7 +116,11 @@ export function validateCaptureRuntimeReleaseManifest(
   if (!isRecord(raw)) {
     throw new Error('Capture runtime release manifest must be an object.');
   }
-  assertRequiredString(raw, 'manifestVersion', CAPTURE_RUNTIME_MANIFEST_VERSION);
+  assertRequiredString(
+    raw,
+    'manifestVersion',
+    CAPTURE_RUNTIME_MANIFEST_VERSION,
+  );
   assertRequiredString(raw, 'runtimeVersion', expectedVersion);
   assertRequiredString(raw, 'apiVersion', CAPTURE_RUNTIME_API_VERSION);
   assertRequiredString(
@@ -125,7 +133,11 @@ export function validateCaptureRuntimeReleaseManifest(
   assertRequiredString(raw, 'fileName', CAPTURE_RUNTIME_FILE);
   assertRequiredString(raw, 'schemaFileName', CAPTURE_DOCUMENT_SCHEMA_FILE);
 
-  if (typeof raw.fileName !== 'string' || raw.fileName.includes('/') || raw.fileName.includes('\\')) {
+  if (
+    typeof raw.fileName !== 'string' ||
+    raw.fileName.includes('/') ||
+    raw.fileName.includes('\\')
+  ) {
     throw new Error('Capture runtime fileName must be a plain file name.');
   }
   if (
@@ -133,7 +145,9 @@ export function validateCaptureRuntimeReleaseManifest(
     raw.schemaFileName.includes('/') ||
     raw.schemaFileName.includes('\\')
   ) {
-    throw new Error('Capture runtime schemaFileName must be a plain file name.');
+    throw new Error(
+      'Capture runtime schemaFileName must be a plain file name.',
+    );
   }
   validateCaptureArtifactBytes(raw.bytes, 'Capture runtime executable');
   assertLowercaseSha256(raw.sha256, 'Capture runtime sha256');
@@ -225,11 +239,15 @@ export async function verifyCaptureRuntimeReleaseDirectory(
     names.some((name, index) => name !== expectedNames[index]) ||
     entries.some((entry) => !entry.isFile())
   ) {
-    throw new Error('Capture runtime release contains non-canonical artifacts.');
+    throw new Error(
+      'Capture runtime release contains non-canonical artifacts.',
+    );
   }
 
   const manifest = validateCaptureRuntimeReleaseManifest(
-    JSON.parse(await readFile(join(directory, 'capture-runtime-manifest.json'), 'utf8')),
+    JSON.parse(
+      await readFile(join(directory, 'capture-runtime-manifest.json'), 'utf8'),
+    ),
     expectedVersion,
   );
   const executablePath = join(directory, manifest.fileName);
@@ -251,19 +269,27 @@ export async function verifyCaptureRuntimeReleaseDirectory(
   if ((await sha256File(schemaPath)) !== CAPTURE_DOCUMENT_SCHEMA_SHA256) {
     throw new Error('Capture document schema checksum mismatch.');
   }
-  const checksum = (await readFile(join(directory, CAPTURE_RUNTIME_CHECKSUM_FILE), 'utf8')).trim();
+  const checksum = (
+    await readFile(join(directory, CAPTURE_RUNTIME_CHECKSUM_FILE), 'utf8')
+  ).trim();
   const checksumMatch = checksum.match(/^([0-9a-f]{64})\s+(.+)$/u);
   if (
     !checksumMatch ||
     checksumMatch[1] !== manifest.sha256 ||
     checksumMatch[2] !== manifest.fileName
   ) {
-    throw new Error('Capture runtime checksum file does not match the manifest.');
+    throw new Error(
+      'Capture runtime checksum file does not match the manifest.',
+    );
   }
   return manifest;
 }
 
-async function downloadAsset(baseUrl: string, name: string, destination: string): Promise<void> {
+async function downloadAsset(
+  baseUrl: string,
+  name: string,
+  destination: string,
+): Promise<void> {
   const sourceUrl = `${baseUrl}/${name}`;
   let response = await fetch(sourceUrl, {
     redirect: 'manual',
@@ -275,7 +301,9 @@ async function downloadAsset(baseUrl: string, name: string, destination: string)
     try {
       redirectedUrl = new URL(location ?? '', sourceUrl);
     } catch {
-      throw new Error(`Capture runtime artifact ${name} returned an invalid redirect.`);
+      throw new Error(
+        `Capture runtime artifact ${name} returned an invalid redirect.`,
+      );
     }
     const source = new URL(sourceUrl);
     if (
@@ -287,7 +315,9 @@ async function downloadAsset(baseUrl: string, name: string, destination: string)
       redirectedUrl.port ||
       !GITHUB_RELEASE_ASSET_HOSTS.has(redirectedUrl.hostname)
     ) {
-      throw new Error(`Capture runtime artifact ${name} returned an untrusted redirect.`);
+      throw new Error(
+        `Capture runtime artifact ${name} returned an untrusted redirect.`,
+      );
     }
     response = await fetch(redirectedUrl, {
       redirect: 'error',
@@ -295,7 +325,9 @@ async function downloadAsset(baseUrl: string, name: string, destination: string)
     });
   }
   if (!response.ok || !response.body) {
-    throw new Error(`Capture runtime artifact ${name} download failed with HTTP ${response.status}.`);
+    throw new Error(
+      `Capture runtime artifact ${name} download failed with HTTP ${response.status}.`,
+    );
   }
   await pipeline(
     Readable.fromWeb(response.body as unknown as NodeReadableStream),
@@ -303,29 +335,43 @@ async function downloadAsset(baseUrl: string, name: string, destination: string)
   );
 }
 
+async function copyReleaseAsset(
+  sourceDirectory: string,
+  name: string,
+  destination: string,
+): Promise<void> {
+  await copyFile(join(sourceDirectory, name), destination);
+}
+
 export async function installCaptureRuntime({
   workspaceRoot,
-  baseUrl =
-    process.env[CAPTURE_RUNTIME_RELEASE_BASE_URL_ENV] ??
+  baseUrl = process.env[CAPTURE_RUNTIME_RELEASE_BASE_URL_ENV] ??
     DEFAULT_CAPTURE_RUNTIME_RELEASE_BASE_URL,
+  releaseDirectory = process.env[CAPTURE_RUNTIME_RELEASE_DIRECTORY_ENV],
   outputRoot = process.env[CAPTURE_RUNTIME_ROOT_ENV] ||
     defaultCaptureRuntimeRoot(workspaceRoot),
 }: InstallCaptureRuntimeOptions): Promise<{
   readonly outputRoot: string;
   readonly manifest: CaptureRuntimeReleaseManifest;
 }> {
-  if (!baseUrl) {
+  if (!baseUrl && !releaseDirectory) {
     throw new Error(
-      `${CAPTURE_RUNTIME_RELEASE_BASE_URL_ENV} is required; install the versioned release before preparing Tauri resources.`,
+      `${CAPTURE_RUNTIME_RELEASE_BASE_URL_ENV} or ${CAPTURE_RUNTIME_RELEASE_DIRECTORY_ENV} is required; install the versioned release before preparing Tauri resources.`,
     );
   }
-  const validatedBaseUrl = validateCaptureRuntimeReleaseBaseUrl(baseUrl);
+  const validatedBaseUrl = releaseDirectory
+    ? undefined
+    : validateCaptureRuntimeReleaseBaseUrl(baseUrl as string);
+  const resolvedReleaseDirectory = releaseDirectory
+    ? resolve(workspaceRoot, releaseDirectory)
+    : undefined;
   const resolvedOutputRoot = resolve(workspaceRoot, outputRoot);
   const parent = dirname(resolvedOutputRoot);
   await mkdir(parent, { recursive: true });
 
   try {
-    const existing = await verifyCaptureRuntimeReleaseDirectory(resolvedOutputRoot);
+    const existing =
+      await verifyCaptureRuntimeReleaseDirectory(resolvedOutputRoot);
     return { outputRoot: resolvedOutputRoot, manifest: existing };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
@@ -336,17 +382,32 @@ export async function installCaptureRuntime({
     }
   }
 
-  const temporaryRoot = await mkdtemp(join(parent, `.capture-runtime-${CAPTURE_RUNTIME_VERSION}-`));
+  const temporaryRoot = await mkdtemp(
+    join(parent, `.capture-runtime-${CAPTURE_RUNTIME_VERSION}-`),
+  );
   try {
     for (const name of CAPTURE_RUNTIME_RELEASE_ASSETS) {
-      await downloadAsset(validatedBaseUrl, name, join(temporaryRoot, name));
+      if (resolvedReleaseDirectory) {
+        await copyReleaseAsset(
+          resolvedReleaseDirectory,
+          name,
+          join(temporaryRoot, name),
+        );
+      } else {
+        await downloadAsset(
+          validatedBaseUrl as string,
+          name,
+          join(temporaryRoot, name),
+        );
+      }
     }
     const manifest = await verifyCaptureRuntimeReleaseDirectory(temporaryRoot);
     try {
       await rename(temporaryRoot, resolvedOutputRoot);
     } catch (error) {
       try {
-        const raced = await verifyCaptureRuntimeReleaseDirectory(resolvedOutputRoot);
+        const raced =
+          await verifyCaptureRuntimeReleaseDirectory(resolvedOutputRoot);
         return { outputRoot: resolvedOutputRoot, manifest: raced };
       } catch {
         throw new Error(
@@ -357,17 +418,24 @@ export async function installCaptureRuntime({
     }
     return { outputRoot: resolvedOutputRoot, manifest };
   } finally {
-    await rm(temporaryRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    await rm(temporaryRoot, {
+      recursive: true,
+      force: true,
+      maxRetries: 10,
+      retryDelay: 100,
+    });
   }
 }
 
 interface ParsedArgs {
   readonly baseUrl?: string;
+  readonly releaseDirectory?: string;
   readonly outputRoot?: string;
 }
 
 function parseArgs(args: readonly string[]): ParsedArgs {
   let baseUrl: string | undefined;
+  let releaseDirectory: string | undefined;
   let outputRoot: string | undefined;
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
@@ -378,10 +446,11 @@ function parseArgs(args: readonly string[]): ParsedArgs {
       return value;
     };
     if (argument === '--base-url') baseUrl = next();
+    else if (argument === '--release-directory') releaseDirectory = next();
     else if (argument === '--output-root') outputRoot = next();
     else throw new Error(`Unknown argument: ${argument}`);
   }
-  return { baseUrl, outputRoot };
+  return { baseUrl, releaseDirectory, outputRoot };
 }
 
 async function main(): Promise<void> {
@@ -391,6 +460,7 @@ async function main(): Promise<void> {
   const result = await installCaptureRuntime({
     workspaceRoot,
     baseUrl: args.baseUrl,
+    releaseDirectory: args.releaseDirectory,
     outputRoot: args.outputRoot,
   });
   console.log(

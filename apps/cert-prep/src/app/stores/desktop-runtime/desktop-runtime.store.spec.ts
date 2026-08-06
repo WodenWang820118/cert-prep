@@ -157,7 +157,9 @@ describe('DesktopRuntimeStore', () => {
     expect(store.isCaptureRuntimeInstallActive()).toBe(true);
     expect(store.canStartCaptureRuntime()).toBe(false);
     expect(
-      invoke.mock.calls.filter(([command]) => command === 'start_capture_runtime'),
+      invoke.mock.calls.filter(
+        ([command]) => command === 'start_capture_runtime',
+      ),
     ).toHaveLength(1);
   });
 
@@ -196,7 +198,7 @@ function captureRuntimeStatus(
     status,
     detail: `Capture Runtime is ${status}.`,
     unavailableReason: running ? null : `capture_runtime_${status}`,
-    version: '0.3.10',
+    version: '0.3.11',
     installedPath: null,
     baseUrl: null,
     token: null,
@@ -215,7 +217,7 @@ function captureRuntimeInstallation(
     id,
     kind: 'capture_runtime',
     provider: 'bundled-release',
-    model: 'capture-runtime@0.3.10',
+    model: 'capture-runtime@0.3.11',
     status,
     detail: `Capture Runtime ${status}.`,
     completed: null,

@@ -1,5 +1,25 @@
 # Capture Runtime Release Consumer Decisions
 
+## 2026-08-06 local 0.3.11 consumer qualification
+
+- Move the cert-prep runtime and generated package expectations to `0.3.11`.
+  Keep the currently published `capture-sidecar-launcher` crate at `0.3.10`
+  as a separate compatibility pin until a `0.3.11` crate is actually
+  published; the consistency checker must not equate launcher and runtime
+  versions.
+- Accept an explicit local release directory through
+  `CERT_PREP_CAPTURE_RUNTIME_RELEASE_DIRECTORY` for candidate staging and the
+  handshake smoke. It copies only the canonical runtime assets, does not
+  create a public URL, and does not count as published-release evidence.
+- Consumer evidence must come from cert-prep's own `cert-prep-desktop` Tauri
+  app and its bundle. The Capture Workbench app is a producer/reference and is
+  not a cert-prep consumer test surface.
+- The producer release directory now identifies `0.3.11` with executable SHA-256
+  `2209fcd363da36cca74c58603c023aec703a15b69f8ecfbce277d664056a9a61` and the
+  canonical schema SHA-256. The available local npm pack files still identify
+  `0.3.10`, so no complete 0.3.11 package-consumer result is claimed until
+  cert-prep refreshes its lockfiles from real registries.
+
 ## 2026-08-04
 
 - Adopt the canonical engine-bearing `capture-runtime@0.3.9` release for the

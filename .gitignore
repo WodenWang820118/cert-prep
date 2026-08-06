@@ -78,3 +78,6 @@ __screenshots__/
 /apps/cert-prep-backend/scripts/.benchmarks/
 /apps/cert-prep-backend/onnxruntime_profile__*.json
 /audio
+
+# Capture Workbench OCR and audio fixtures are local-only consumer smoke inputs.
+/test-fixtures/capture-model/

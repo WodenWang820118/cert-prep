@@ -27,7 +27,11 @@ COMMON_HIDDEN_IMPORTS = [
 
 COLLECT_BINARY_PACKAGES: list[str] = []
 
-COLLECT_DATA_PACKAGES: list[str] = []
+# ``capture_contracts`` loads its generated manifest and JSON schemas through
+# ``importlib.resources`` at import time. PyInstaller collects the Python
+# modules automatically, but package data must be declared explicitly or the
+# packaged backend exits before it can expose its readiness endpoint.
+COLLECT_DATA_PACKAGES: list[str] = ["capture_contracts"]
 
 
 def main() -> None:

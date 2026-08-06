@@ -1,0 +1,115 @@
+name: Capture Candidate Gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      producer_repository:
+        description: 'Producer repository containing the candidate artifact'
+        required: true
+        type: string
+      producer_run_id:
+        description: 'Successful producer release-candidate workflow run'
+        required: true
+        type: string
+      candidate_id:
+        description: 'Expected immutable candidate ID'
+        required: true
+        type: string
+      candidate_manifest_sha256:
+        description: 'SHA-256 of candidate-manifest.json'
+        required: true
+        type: string
+      source_commit:
+        description: 'Producer source commit bound to the candidate'
+        required: true
+        type: string
+      release_version:
+        description: 'Candidate release version without v prefix'
+        required: true
+        type: string
+      contract_classification:
+        description: 'Producer-derived contract impact classification'
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  gate:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - name: Check out the consumer commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Install pnpm and Node.js
+        uses: pnpm/action-setup@b0f76dfb45f55f8421693e4803ac7bb65143bd34 # v6
+        with:
+          version: 11.15.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Download and verify the exact producer candidate
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.CAPTURE_CONSUMER_GATE_TOKEN }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          if ([string]::IsNullOrWhiteSpace($env:GH_TOKEN)) { throw 'CAPTURE_CONSUMER_GATE_TOKEN is required.' }
+          $candidate = Join-Path $env:RUNNER_TEMP 'capture-candidate'
+          New-Item -ItemType Directory -Force -Path $candidate | Out-Null
+          gh run download '${{ inputs.producer_run_id }}' `
+            --repo '${{ inputs.producer_repository }}' `
+            --name 'capture-candidate-${{ inputs.release_version }}-${{ inputs.producer_run_id }}' `
+            --dir $candidate
+          node tools/capture-candidate-gate.mts `
+            --candidate $candidate `
+            --candidate-id '${{ inputs.candidate_id }}' `
+            --candidate-manifest-sha256 '${{ inputs.candidate_manifest_sha256 }}' `
+            --source-commit '${{ inputs.source_commit }}' `
+            --release-version '${{ inputs.release_version }}' `
+            --workflow-run-id $env:GITHUB_RUN_ID `
+            --output (Join-Path $env:RUNNER_TEMP 'candidate-preflight.json') `
+            --skip-checks
+
+      - name: Install the exact candidate packages
+        shell: pwsh
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+          CAPTURE_PRESERVE_INSTALL_FILES: 'true'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          node tools/install-capture-workbench-dependencies.mts `
+            --candidate-package-dir (Join-Path $env:RUNNER_TEMP 'capture-candidate/package')
+
+      - name: Run the consumer-owned candidate checks
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          node tools/capture-candidate-gate.mts `
+            --candidate (Join-Path $env:RUNNER_TEMP 'capture-candidate') `
+            --candidate-id '${{ inputs.candidate_id }}' `
+            --candidate-manifest-sha256 '${{ inputs.candidate_manifest_sha256 }}' `
+            --source-commit '${{ inputs.source_commit }}' `
+            --release-version '${{ inputs.release_version }}' `
+            --workflow-run-id $env:GITHUB_RUN_ID `
+            --output (Join-Path $env:RUNNER_TEMP 'consumer-gate-result-v1.json')
+
+      - name: Upload independent consumer gate result
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: consumer-gate-result-v1
+          path: ${{ runner.temp }}/consumer-gate-result-v1.json
+          if-no-files-found: error
+          retention-days: 14

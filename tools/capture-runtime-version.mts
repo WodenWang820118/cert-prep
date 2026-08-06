@@ -7,7 +7,9 @@
  */
 export const CAPTURE_RUNTIME_PACKAGE_NAME =
   '@gx-capture/capture-workbench' as const;
-export const CAPTURE_RUNTIME_VERSION = '0.3.10' as const;
+export const CAPTURE_CONTRACTS_PACKAGE_NAME =
+  '@gx-capture/capture-contracts' as const;
+export const CAPTURE_RUNTIME_VERSION = '0.3.11' as const;
 export const CAPTURE_RUNTIME_MAJOR = 0 as const;
 export const CAPTURE_RUNTIME_API_VERSION = '1.0' as const;
 export const CAPTURE_DOCUMENT_SCHEMA_VERSION = '1' as const;
@@ -15,6 +17,13 @@ export const CAPTURE_RUNTIME_RELEASE_BASE_URL =
   `https://github.com/gx-capture/capture-workbench/releases/download/v${CAPTURE_RUNTIME_VERSION}` as const;
 export const CAPTURE_RUNTIME_MODEL =
   `capture-runtime@${CAPTURE_RUNTIME_VERSION}` as const;
+
+/**
+ * The published launcher remains protocol-compatible with the 0.3.11
+ * runtime. Keep its dependency version separate until the 0.3.11 crate is
+ * published.
+ */
+export const CAPTURE_SIDECAR_LAUNCHER_VERSION = '0.3.10' as const;
 
 /** Immutable core-only release retained for compatibility-specific handling. */
 export const LEGACY_CORE_ONLY_RUNTIME_VERSION = '0.3.8' as const;

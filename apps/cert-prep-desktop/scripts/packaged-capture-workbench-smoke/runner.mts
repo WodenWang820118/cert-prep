@@ -1,8 +1,4 @@
-import {
-  existsSync,
-  readFileSync,
-  writeFileSync,
-} from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -70,7 +66,8 @@ import {
 
 const FIXTURE = 'packaged-capture-embedded-text.pdf';
 const REVIEW_MARKER = '[packaged review]';
-export const CAPTURE_WORKBENCH_READY_STATUS_PATTERN = /Capture Workbench is ready\./;
+export const CAPTURE_WORKBENCH_READY_STATUS_PATTERN =
+  /Capture Workbench is ready\./;
 
 interface CaptureResult {
   readonly captureId: string;
@@ -201,19 +198,18 @@ async function runLazyCaptureJourney(
     'Capture Runtime missing',
   );
   if ((await firstPage.locator('capture-workbench').count()) !== 0) {
-    throw new Error('Capture client was constructed before Capture Runtime Start.');
+    throw new Error(
+      'Capture client was constructed before Capture Runtime Start.',
+    );
   }
   const backendReadyOwned = await waitForOwnedRuntimePhase(
     run,
     isOwnedBackendOnly,
     'backend ready while Capture Runtime is missing',
   );
-  const backendReadyCaptureMissing = phase(
-    'missing',
-    true,
-    backendReadyOwned,
-    { pythonBackendConsentCompleted: true },
-  );
+  const backendReadyCaptureMissing = phase('missing', true, backendReadyOwned, {
+    pythonBackendConsentCompleted: true,
+  });
   await screenshot(run, 'capture-runtime-missing');
 
   await firstPage
@@ -254,7 +250,7 @@ async function runLazyCaptureJourney(
     firstPage,
     firstRotation.api,
   );
-  log(run, 'Published 0.3.10 negative data contract passed');
+  log(run, 'Published 0.3.11 negative data contract passed');
   firstSecurity.assertClean();
   await screenshot(run, 'capture-workbench-completed');
 
@@ -288,7 +284,9 @@ async function runLazyCaptureJourney(
     'relaunch installed-stopped',
   );
   if ((await relaunchedPage.locator('capture-workbench').count()) !== 0) {
-    throw new Error('Relaunch auto-constructed Capture Workbench before Start.');
+    throw new Error(
+      'Relaunch auto-constructed Capture Workbench before Start.',
+    );
   }
   const relaunchedStoppedOwned = await waitForOwnedRuntimePhase(
     run,
@@ -307,12 +305,10 @@ async function runLazyCaptureJourney(
     relaunchSecurity,
     relaunchedApi,
   );
-  await verifyPersistedDocument(
-    run,
-    capture.documentId,
-    secondRotation.api,
-  );
-  await relaunchedPage.getByRole('link', { name: 'Build', exact: true }).click();
+  await verifyPersistedDocument(run, capture.documentId, secondRotation.api);
+  await relaunchedPage
+    .getByRole('link', { name: 'Build', exact: true })
+    .click();
   await waitText(run, /Step 01: Source files/, 60_000, 'Build source files');
   await waitText(
     run,
@@ -374,10 +370,14 @@ async function startCaptureRuntimeAndRotateBackend(
     nextApi.apiBaseUrl !== priorApi.apiBaseUrl &&
     nextApi.authorization !== priorApi.authorization;
   if (!configurationChanged) {
-    throw new Error('Capture Runtime Start did not rotate backend connection data.');
+    throw new Error(
+      'Capture Runtime Start did not rotate backend connection data.',
+    );
   }
   if (!(await priorBackendAccessRejected(page, priorApi))) {
-    throw new Error('Prior backend access remained valid after Capture Runtime Start.');
+    throw new Error(
+      'Prior backend access remained valid after Capture Runtime Start.',
+    );
   }
   run.projectApi = nextApi;
   security.completeTransition(nextApi);
@@ -452,9 +452,17 @@ async function runCaptureDocumentFlow(
   if (!rawResponse.ok() || !isRecord(rawPayload)) {
     throw new Error('Capture raw result was unavailable.');
   }
-  const extraction = requiredRecord(rawPayload.extractionEngine, 'extraction engine');
-  if (extraction.engine !== 'pdf-embedded-text' || extraction.device !== 'cpu') {
-    throw new Error('Raw Capture provenance was not embedded-text CPU extraction.');
+  const extraction = requiredRecord(
+    rawPayload.extractionEngine,
+    'extraction engine',
+  );
+  if (
+    extraction.engine !== 'pdf-embedded-text' ||
+    extraction.device !== 'cpu'
+  ) {
+    throw new Error(
+      'Raw Capture provenance was not embedded-text CPU extraction.',
+    );
   }
 
   const field = page.locator('capture-workbench .ocr-review textarea').first();
@@ -481,7 +489,9 @@ async function runCaptureDocumentFlow(
     typeof documentPayload.chunks_count !== 'number' ||
     documentPayload.chunks_count < 1
   ) {
-    throw new Error('Capture document was not durably ready with embedded extraction.');
+    throw new Error(
+      'Capture document was not durably ready with embedded extraction.',
+    );
   }
 
   const [download] = await Promise.all([
@@ -498,7 +508,9 @@ async function runCaptureDocumentFlow(
   const sourceSha256 = stringValue(source.sha256);
   const sourceFileName = stringValue(source.fileName);
   if (!/^[0-9a-f]{64}$/i.test(sourceSha256) || sourceFileName !== FIXTURE) {
-    throw new Error('Capture raw source identity did not match the uploaded fixture.');
+    throw new Error(
+      'Capture raw source identity did not match the uploaded fixture.',
+    );
   }
   return {
     captureId,
@@ -556,7 +568,12 @@ async function openCaptureWorkbench(run: SmokeRunState): Promise<void> {
 }
 
 async function waitForCaptureWorkbenchReady(run: SmokeRunState): Promise<void> {
-  await waitText(run, /Element registered/i, 120_000, 'Capture Workbench registered');
+  await waitText(
+    run,
+    /Element registered/i,
+    120_000,
+    'Capture Workbench registered',
+  );
   await activePage(run)
     .locator('capture-workbench input[type="file"]')
     .waitFor({ state: 'attached', timeout: 30_000 });
@@ -591,9 +608,10 @@ function createBrowserSecurityTracker(
 ): BrowserSecurityTracker {
   const appOrigin = new URL(page.url()).origin;
   let currentApi = initialApi;
-  let transition:
-    | { readonly priorApi: ProjectApiRef; requests: BrowserRequestSnapshot[] }
-    | null = null;
+  let transition: {
+    readonly priorApi: ProjectApiRef;
+    requests: BrowserRequestSnapshot[];
+  } | null = null;
   const violations: BrowserRequestViolation[] = [];
   const listener = (request: Request): void => {
     const headers = request.headers();
@@ -615,13 +633,17 @@ function createBrowserSecurityTracker(
   return {
     beginTransition(): void {
       if (transition !== null) {
-        throw new Error('Browser security generation transition is already active.');
+        throw new Error(
+          'Browser security generation transition is already active.',
+        );
       }
       transition = { priorApi: currentApi, requests: [] };
     },
     completeTransition(nextApi: ProjectApiRef): void {
       if (transition === null) {
-        throw new Error('Browser security generation transition was not active.');
+        throw new Error(
+          'Browser security generation transition was not active.',
+        );
       }
       const captured = transition;
       transition = null;
@@ -644,7 +666,9 @@ function createBrowserSecurityTracker(
     },
     assertClean(): void {
       if (transition !== null) {
-        throw new Error('Browser security generation transition did not complete.');
+        throw new Error(
+          'Browser security generation transition did not complete.',
+        );
       }
       if (violations.length > 0) {
         throw new Error(
@@ -780,7 +804,10 @@ function requiredProjectApi(run: SmokeRunState): ProjectApiRef {
   return run.projectApi;
 }
 
-function requiredRecord(value: unknown, label: string): Record<string, unknown> {
+function requiredRecord(
+  value: unknown,
+  label: string,
+): Record<string, unknown> {
   if (!isRecord(value)) {
     throw new Error(`Capture ${label} was malformed.`);
   }
@@ -885,6 +912,8 @@ function embeddedTextPdf(text: string): Buffer {
   body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets
     .slice(1)
     .map((offset) => `${String(offset).padStart(10, '0')} 00000 n \n`)
-    .join('')}trailer << /Root 1 0 R /Size ${objects.length + 1} >>\nstartxref\n${xref}\n%%EOF\n`;
+    .join(
+      '',
+    )}trailer << /Root 1 0 R /Size ${objects.length + 1} >>\nstartxref\n${xref}\n%%EOF\n`;
   return Buffer.from(body);
 }

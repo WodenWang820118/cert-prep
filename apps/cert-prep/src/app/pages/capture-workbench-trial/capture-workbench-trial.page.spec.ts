@@ -47,7 +47,7 @@ describe('CaptureWorkbenchTrialPage', () => {
             activeDocument,
             refreshUploadedDocument,
             loadLatestDocument,
-        },
+          },
         },
       ],
     });
@@ -57,8 +57,12 @@ describe('CaptureWorkbenchTrialPage', () => {
     const fixture = TestBed.createComponent(CaptureWorkbenchTrialPage);
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.textContent).toContain('Capture Workbench trial');
-    expect(fixture.nativeElement.querySelector('capture-workbench')).not.toBeNull();
+    expect(fixture.nativeElement.textContent).toContain(
+      'Capture Workbench trial',
+    );
+    expect(
+      fixture.nativeElement.querySelector('capture-workbench'),
+    ).not.toBeNull();
     await vi.waitFor(() => {
       fixture.detectChanges();
       expect(fixture.nativeElement.textContent).toContain('Element registered');
@@ -182,7 +186,9 @@ describe('CaptureWorkbenchTrialPage', () => {
 
     const root = fixture.nativeElement as HTMLElement;
     expect(invoke).toHaveBeenCalledWith('capture_runtime_status');
-    expect(root.textContent).toContain('Checking Capture Runtime availability.');
+    expect(root.textContent).toContain(
+      'Checking Capture Runtime availability.',
+    );
     expect(root.querySelector('capture-workbench')).toBeNull();
     expect(root.querySelector('button')).toBeNull();
   });
@@ -272,7 +278,7 @@ function captureRuntimeStatus(status: 'missing' | 'running') {
     status,
     detail: `Capture Runtime is ${status}.`,
     unavailableReason: running ? null : 'capture_runtime_missing',
-  version: '0.3.10',
+    version: '0.3.11',
     installedPath: null,
     baseUrl: null,
     token: null,

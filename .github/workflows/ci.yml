@@ -31,11 +31,11 @@ jobs:
           fetch-depth: 0
 
       - name: Check out pre-publication Capture Workbench bridge
-        if: vars.CAPTURE_PUBLISHED_0_3_10 != 'true'
+        if: vars.CAPTURE_PUBLISHED_0_3_11 != 'true'
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           repository: gx-capture/capture-workbench
-          ref: agent/modular-reuse-contracts
+          ref: bd17b3c2ee1cdcc4be6dcdaaa5eab2bbbbf4a671
           path: capture-workbench
           sparse-checkout: |
             packages/capture-contracts
@@ -43,11 +43,11 @@ jobs:
             packages/capture-sidecar-launcher
 
       - name: Link pre-publication Capture Workbench bridge (Unix)
-        if: vars.CAPTURE_PUBLISHED_0_3_10 != 'true' && runner.os != 'Windows'
+        if: vars.CAPTURE_PUBLISHED_0_3_11 != 'true' && runner.os != 'Windows'
         run: ln -s "$GITHUB_WORKSPACE/capture-workbench" "$GITHUB_WORKSPACE/../capture-workbench"
 
       - name: Link pre-publication Capture Workbench bridge (Windows)
-        if: vars.CAPTURE_PUBLISHED_0_3_10 != 'true' && runner.os == 'Windows'
+        if: vars.CAPTURE_PUBLISHED_0_3_11 != 'true' && runner.os == 'Windows'
         shell: pwsh
         run: |
           $target = Join-Path (Split-Path -Parent $env:GITHUB_WORKSPACE) 'capture-workbench'
@@ -77,7 +77,9 @@ jobs:
       - name: Install JavaScript dependencies and pinned Capture Workbench package
         env:
           NODE_AUTH_TOKEN: ${{ github.token }}
-        run: pnpm install --frozen-lockfile
+          CAPTURE_PUBLISHED_0_3_11: ${{ vars.CAPTURE_PUBLISHED_0_3_11 }}
+          CAPTURE_PRESERVE_INSTALL_FILES: 'true'
+        run: node tools/install-capture-workbench-dependencies.mts --prepublication-stable-version 0.3.10
 
       - name: Sync backend Python environment
         run: uv sync --project apps/cert-prep-backend --python ${{ env.PYTHON_VERSION }} --frozen
@@ -121,7 +123,7 @@ jobs:
           fetch-depth: 0
 
       - name: Check out pre-publication Capture Workbench bridge
-        if: vars.CAPTURE_PUBLISHED_0_3_10 != 'true'
+        if: vars.CAPTURE_PUBLISHED_0_3_11 != 'true'
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           repository: gx-capture/capture-workbench
@@ -133,11 +135,11 @@ jobs:
             packages/capture-sidecar-launcher
 
       - name: Link pre-publication Capture Workbench bridge (Unix)
-        if: vars.CAPTURE_PUBLISHED_0_3_10 != 'true' && runner.os != 'Windows'
+        if: vars.CAPTURE_PUBLISHED_0_3_11 != 'true' && runner.os != 'Windows'
         run: ln -s "$GITHUB_WORKSPACE/capture-workbench" "$GITHUB_WORKSPACE/../capture-workbench"
 
       - name: Link pre-publication Capture Workbench bridge (Windows)
-        if: vars.CAPTURE_PUBLISHED_0_3_10 != 'true' && runner.os == 'Windows'
+        if: vars.CAPTURE_PUBLISHED_0_3_11 != 'true' && runner.os == 'Windows'
         shell: pwsh
         run: |
           $target = Join-Path (Split-Path -Parent $env:GITHUB_WORKSPACE) 'capture-workbench'
@@ -170,10 +172,15 @@ jobs:
           rustup toolchain install stable --profile minimal --component clippy,rustfmt
           rustup show active-toolchain
 
+      - name: Verify source Capture Runtime consumer declarations
+        run: node --test tools/capture-runtime-version.test.mts
+
       - name: Install JavaScript dependencies and pinned Capture Workbench package
         env:
           NODE_AUTH_TOKEN: ${{ github.token }}
-        run: pnpm install --frozen-lockfile
+          CAPTURE_PUBLISHED_0_3_11: ${{ vars.CAPTURE_PUBLISHED_0_3_11 }}
+          CAPTURE_PRESERVE_INSTALL_FILES: 'true'
+        run: node tools/install-capture-workbench-dependencies.mts --prepublication-stable-version 0.3.10
 
       - name: Sync backend Python environment
         run: uv sync --project apps/cert-prep-backend --python ${{ env.PYTHON_VERSION }} --frozen
@@ -198,11 +205,11 @@ jobs:
       - name: Test package QA
         run: pnpm nx run cert-prep-desktop:package-qa-test
 
-      - name: Verify Capture Runtime consumer declarations
-        run: pnpm nx run cert-prep-desktop:capture-runtime-consumer-test
+      - name: Verify Capture Runtime installer behavior
+        run: node --test tools/install-capture-runtime.test.mts
 
       - name: Verify published Capture registry installation
-        if: vars.CAPTURE_PUBLISHED_0_3_10 == 'true'
+        if: vars.CAPTURE_PUBLISHED_0_3_11 == 'true'
         env:
           CAPTURE_REQUIRE_PUBLISHED_CAPTURE_ARTIFACTS: '1'
         shell: pwsh
@@ -210,9 +217,9 @@ jobs:
           $ErrorActionPreference = 'Stop'
           pnpm nx run cert-prep-desktop:capture-runtime-consumer-test --skip-nx-cache
           uv run --isolated --no-project `
-            --with 'capture-contracts==0.3.10' `
-            --with 'capture-structuring==0.3.10' `
-            -- python -c "import capture_contracts, capture_structuring; assert capture_contracts.CAPTURE_RUNTIME_VERSION == '0.3.10'; assert capture_structuring.__package__ == 'capture_structuring'"
+            --with 'capture-contracts==0.3.11' `
+            --with 'capture-structuring==0.3.11' `
+            -- python -c "import capture_contracts, capture_structuring; assert capture_contracts.CAPTURE_RUNTIME_VERSION == '0.3.11'; assert capture_structuring.__package__ == 'capture_structuring'"
 
       - name: Test Tauri host
         run: pnpm nx run cert-prep-desktop:cargo-test
