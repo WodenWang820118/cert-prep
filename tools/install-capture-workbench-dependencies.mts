@@ -1,8 +1,10 @@
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { readFile, unlink, writeFile } from 'node:fs/promises';
+import { promisify } from 'node:util';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+const execFileAsync = promisify(execFile);
 const repoRoot = resolve(import.meta.dirname, '..');
 const packageJsonPath = join(repoRoot, 'package.json');
 const lockfilePath = join(repoRoot, 'pnpm-lock.yaml');
@@ -102,6 +104,41 @@ function setWorkbenchDependency(
   (dependencies as Record<string, unknown>)[workbenchPackageName] = value;
 }
 
+async function findStableLockfile(stableVersion: string): Promise<string> {
+  const { stdout: commits } = await execFileAsync(
+    'git',
+    ['log', '--all', '--format=%H', '--', 'package.json'],
+    { cwd: repoRoot, encoding: 'utf8' },
+  );
+  for (const commit of commits.split(/\r?\n/u).map((value) => value.trim())) {
+    if (!commit) continue;
+    try {
+      const { stdout: manifestSource } = await execFileAsync(
+        'git',
+        ['show', `${commit}:package.json`],
+        { cwd: repoRoot, encoding: 'utf8' },
+      );
+      const manifest = JSON.parse(manifestSource) as {
+        dependencies?: Record<string, unknown>;
+      };
+      if (manifest.dependencies?.[workbenchPackageName] !== stableVersion) {
+        continue;
+      }
+      const { stdout: lockfile } = await execFileAsync(
+        'git',
+        ['show', `${commit}:pnpm-lock.yaml`],
+        { cwd: repoRoot, encoding: 'utf8' },
+      );
+      return lockfile;
+    } catch {
+      // Continue until the last commit with the requested stable declaration.
+    }
+  }
+  throw new Error(
+    `Could not find a historical package/lock snapshot for ${workbenchPackageName}@${stableVersion}.`,
+  );
+}
+
 async function install(mode: InstallMode): Promise<void> {
   const originalPackageJson = await readFile(packageJsonPath);
   const originalLockfile = await readFile(lockfilePath);
@@ -132,15 +169,11 @@ async function install(mode: InstallMode): Promise<void> {
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
       }
-      try {
-        await unlink(lockfilePath);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-      }
+      await writeFile(lockfilePath, await findStableLockfile(mode.stableVersion));
       process.stdout.write(
-        `Resolving pre-publication CI dependencies with ${workbenchPackageName}@${mode.stableVersion}; candidate gates install immutable candidate bytes separately.\n`,
+        `Installing pre-publication CI dependencies with ${workbenchPackageName}@${mode.stableVersion}; candidate gates install immutable candidate bytes separately.\n`,
       );
-      await runPnpm(['install', '--lockfile=false', '--ignore-scripts']);
+      await runPnpm(['install', '--frozen-lockfile']);
       return;
     }
 
