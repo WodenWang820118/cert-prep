@@ -10,6 +10,7 @@ import httpx
 import pytest
 
 from capture_contracts import (
+    CAPTURE_RUNTIME_VERSION,
     CaptureEventV2,
     CaptureOperationV2,
     RuntimeRequirementsV1,
@@ -370,7 +371,7 @@ class _ReconnectingRuntimeClient:
                 "ready": True,
                 "service": "capture-runtime",
                 "apiVersion": "1.0",
-                "runtimeVersion": "0.3.11",
+                "runtimeVersion": CAPTURE_RUNTIME_VERSION,
                 "captureDocumentSchemaVersion": "1",
                 "capabilities": {
                     "captureKinds": ["pdf", "image", "audio"],
@@ -537,7 +538,7 @@ def _streaming_result() -> dict[str, object]:
     }
     extraction_engine = {
         "engine": "windowsml-ocr",
-        "model": "capture-runtime@0.3.11",
+        "model": f"capture-runtime@{CAPTURE_RUNTIME_VERSION}",
         "digest": f"sha256:{'a' * 64}",
         "device": "WindowsML",
     }

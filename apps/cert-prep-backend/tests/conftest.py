@@ -20,6 +20,7 @@ from cert_prep_backend.domains.capture_workbench.client import (
     CaptureUpload,
 )
 from capture_contracts import (
+    CAPTURE_RUNTIME_VERSION,
     CaptureDocumentV1,
     CaptureOperationV2,
     CaptureSourceKind,
@@ -101,7 +102,7 @@ class TestCaptureRuntimeClient:
                 "sourceText": source_text,
                 "extractionEngine": {
                     "engine": "capture-runtime-whisper" if is_audio else "capture-runtime-windowsml",
-                    "model": "capture-runtime@0.3.11",
+                    "model": f"capture-runtime@{CAPTURE_RUNTIME_VERSION}",
                     "digest": f"sha256:{'a' * 64}",
                     "device": "test",
                 },
@@ -196,7 +197,7 @@ def _test_runtime_ready() -> RuntimeReadyV1:
             "ready": True,
             "service": "capture-runtime",
             "apiVersion": "1.0",
-            "runtimeVersion": "0.3.11",
+            "runtimeVersion": CAPTURE_RUNTIME_VERSION,
             "captureDocumentSchemaVersion": "1",
             "capabilities": {
                 "captureKinds": ["pdf", "image", "audio"],

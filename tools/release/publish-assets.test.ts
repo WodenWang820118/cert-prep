@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
 
+import { CAPTURE_RUNTIME_VERSION } from '../capture-runtime-version.mts';
 import {
   cleanupIncompleteRelease,
   publishAssets,
@@ -621,7 +622,10 @@ async function writeFinalReleaseRoot(root, candidate) {
     ['installers/Cert_Prep_0.1.0-alpha.1_x64-setup.exe', 'nsis'],
     ['runtimes/cert-prep-backend-runtime-0.1.0-alpha.1.zip', 'backend runtime'],
     ['runtimes/capture-runtime-x86_64-pc-windows-msvc.exe', 'capture runtime'],
-    ['runtimes/capture-runtime-manifest.json', '{"runtimeVersion":"0.3.11"}'],
+    [
+      'runtimes/capture-runtime-manifest.json',
+      JSON.stringify({ runtimeVersion: CAPTURE_RUNTIME_VERSION }),
+    ],
     ['metadata/license-inventory.json', '{"components":[]}'],
     ['metadata/cert-prep-alpha.spdx.json', '{"spdxVersion":"SPDX-2.3"}'],
     ['legal/THIRD_PARTY_NOTICES.md', '# Notices'],

@@ -13,6 +13,7 @@ import { dirname, join } from 'node:path';
 import { afterEach, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { CAPTURE_RUNTIME_VERSION } from '../../../tools/capture-runtime-version.mts';
 import { validateCaptureArtifactBytes } from './capture-runtime-contract.mts';
 import { CAPTURE_DOCUMENT_SCHEMA_SHA256 } from './package-qa/constants.mts';
 import { prepareRuntimeResources } from './prepare-runtime-resources.mts';
@@ -44,7 +45,7 @@ test('resources bundle the backend and published Capture Runtime contract only',
     metadata.runtime_assets.capture_runtime.structuring_mode,
     'host',
   );
-  assert.equal(capture.runtimeVersion, '0.3.11');
+  assert.equal(capture.runtimeVersion, CAPTURE_RUNTIME_VERSION);
   assert.equal(capture.apiVersion, '1.0');
   assert.equal(capture.captureDocumentSchemaVersion, '1');
   assert.equal(
@@ -89,10 +90,12 @@ test('Capture Runtime staging fails closed on missing or changed provenance', as
       outputDir: join(fixture.workspaceRoot, 'wrong-version'),
       mode: 'dev',
     }),
-    /runtimeVersion must be 0\.3\.11/,
+    new RegExp(
+      `runtimeVersion must be ${CAPTURE_RUNTIME_VERSION.replaceAll('.', '\\.')}`,
+    ),
   );
 
-  manifest.runtimeVersion = '0.3.11';
+  manifest.runtimeVersion = CAPTURE_RUNTIME_VERSION;
   manifest.sha256 = '0'.repeat(64);
   writeJson(fixture.captureRuntimeManifestPath, manifest);
   await assert.rejects(
@@ -190,7 +193,7 @@ function createFixture(): {
   writeFileSync(captureDocumentSchemaPath, captureSchema);
   writeJson(captureRuntimeManifestPath, {
     manifestVersion: '1',
-    runtimeVersion: '0.3.11',
+    runtimeVersion: CAPTURE_RUNTIME_VERSION,
     apiVersion: '1.0',
     captureDocumentSchemaVersion: '1',
     platform: 'windows',

@@ -19,6 +19,7 @@ from cert_prep_backend.domains.capture_workbench.client import (
     CaptureUpload,
 )
 from capture_contracts import (
+    CAPTURE_RUNTIME_VERSION,
     CaptureDocumentV1,
     CaptureOperationV2,
     CaptureSourceKind,
@@ -141,7 +142,7 @@ def _ready_payload(*, schema_version: str = "1") -> dict[str, object]:
         "ready": True,
         "service": "capture-runtime",
         "apiVersion": "1.0",
-        "runtimeVersion": "0.3.11",
+        "runtimeVersion": CAPTURE_RUNTIME_VERSION,
         "captureDocumentSchemaVersion": schema_version,
         "capabilities": {
             "captureKinds": ["pdf", "image", "audio"],
@@ -553,7 +554,7 @@ class RecordingCaptureRuntime:
         initial_operation: dict[str, object] | None = None,
         capture_kinds: list[str] | None = None,
         requirement_status: RuntimeRequirementStatus = RuntimeRequirementStatus.READY,
-        runtime_version: str = "0.3.11",
+        runtime_version: str = CAPTURE_RUNTIME_VERSION,
     ) -> None:
         self.initial_operation = CaptureOperationV2.model_validate(
             initial_operation or _operation_payload()
@@ -904,7 +905,7 @@ def test_future_runtime_generic_pdf_extraction_failure_is_not_reclassified() -> 
     runtime = RecordingCaptureRuntime(
         initial_operation=failed,
         requirement_status=RuntimeRequirementStatus.UNAVAILABLE,
-        runtime_version="0.3.11",
+        runtime_version=CAPTURE_RUNTIME_VERSION,
     )
     coordinator = CertPrepCaptureCoordinator(
         client=runtime,

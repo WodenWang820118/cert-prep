@@ -4,6 +4,8 @@ import { promisify } from 'node:util';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import { CAPTURE_RUNTIME_VERSION } from './capture-runtime-version.mts';
+
 const execFileAsync = promisify(execFile);
 const repoRoot = resolve(import.meta.dirname, '..');
 const packageJsonPath = join(repoRoot, 'package.json');
@@ -17,6 +19,8 @@ const nodeModulesLockfilePath = join(
 );
 const workbenchPackageName = '@gx-capture/capture-workbench';
 const contractsPackageName = '@gx-capture/capture-contracts';
+const capturePublishedVariable =
+  `CAPTURE_PUBLISHED_${CAPTURE_RUNTIME_VERSION.replaceAll('.', '_')}`;
 
 type InstallMode =
   | { readonly kind: 'prepublication'; readonly stableVersion: string }
@@ -152,7 +156,7 @@ async function install(mode: InstallMode): Promise<void> {
       unknown
     >;
     if (mode.kind === 'prepublication') {
-      if (process.env.CAPTURE_PUBLISHED_0_3_11 === 'true') {
+      if (process.env[capturePublishedVariable] === 'true') {
         await runPnpm(['install', '--frozen-lockfile']);
         return;
       }
@@ -188,12 +192,12 @@ async function install(mode: InstallMode): Promise<void> {
     const workbenchArchive = packageArchive(
       mode.packageDirectory,
       workbenchPackageName,
-      process.env.RELEASE_VERSION ?? '0.3.11',
+      process.env.RELEASE_VERSION ?? CAPTURE_RUNTIME_VERSION,
     );
     const contractsArchive = packageArchive(
       mode.packageDirectory,
       contractsPackageName,
-      process.env.RELEASE_VERSION ?? '0.3.11',
+      process.env.RELEASE_VERSION ?? CAPTURE_RUNTIME_VERSION,
     );
     const candidatePackageJson = { ...packageJson };
     const workbenchOverride = workbenchArchive.replaceAll('\\', '/');

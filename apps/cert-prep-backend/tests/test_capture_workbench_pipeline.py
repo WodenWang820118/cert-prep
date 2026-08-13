@@ -32,6 +32,7 @@ from cert_prep_backend.domains.capture_workbench.client import (
 )
 from cert_prep_backend.domains.capture_workbench import review_workflow
 from capture_contracts import (
+    CAPTURE_RUNTIME_VERSION,
     CaptureDocumentV1,
     CaptureEventV2,
     CaptureOperationV2,
@@ -116,7 +117,7 @@ class EchoCaptureProvider(MockExamProvider):
 class DeterministicCaptureRuntime:
     expected_source_kind = CaptureSourceKind.PDF
 
-    def __init__(self, *, runtime_version: str = "0.3.11") -> None:
+    def __init__(self, *, runtime_version: str = CAPTURE_RUNTIME_VERSION) -> None:
         self.runtime_version = runtime_version
         self.raw: RawCaptureV1 | None = None
         self.result: CaptureDocumentV1 | None = None

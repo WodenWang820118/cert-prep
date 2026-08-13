@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { CAPTURE_RUNTIME_VERSION } from './capture-runtime-version.mts';
 import { createResult, parseArguments } from './capture-candidate-gate.mts';
 
 const candidateId = 'a'.repeat(64);
@@ -18,7 +19,7 @@ test('candidate gate parses the producer dispatch contract', () => {
     '--source-commit',
     commit,
     '--release-version',
-    '0.3.11',
+    CAPTURE_RUNTIME_VERSION,
     '--workflow-run-id',
     '42',
     '--output',
@@ -27,7 +28,7 @@ test('candidate gate parses the producer dispatch contract', () => {
   ]);
   assert.equal(parsed.workflowRunId, 42);
   assert.equal(parsed.skipChecks, true);
-  assert.equal(parsed.releaseVersion, '0.3.11');
+  assert.equal(parsed.releaseVersion, CAPTURE_RUNTIME_VERSION);
 });
 
 test('candidate gate emits the canonical independent result envelope', () => {

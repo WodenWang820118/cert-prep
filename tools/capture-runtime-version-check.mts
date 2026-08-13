@@ -129,7 +129,7 @@ export function assertCaptureRuntimeConsumerVersions(
     process.env.CAPTURE_REQUIRE_PUBLISHED_CAPTURE_ARTIFACTS === '1'
   ) {
     throw new Error(
-      'pnpm-lock.yaml must resolve the published Capture Workbench 0.3.11 packages when published artifacts are required.',
+      `pnpm-lock.yaml must resolve the published Capture Workbench ${CAPTURE_RUNTIME_VERSION} packages when published artifacts are required.`,
     );
   }
 
@@ -146,10 +146,15 @@ export function assertCaptureRuntimeConsumerVersions(
     workspaceRoot,
     'apps/cert-prep-backend/pyproject.toml',
   );
+  const escapedRuntimeVersion = CAPTURE_RUNTIME_VERSION.replaceAll(
+    '.',
+    '\\.',
+  );
   const hasPublishedPythonResolution =
-    /capture-contracts>=0\.3\.11,<0\.4\.0[\s\S]*capture-structuring>=0\.3\.11,<0\.4\.0/u.test(
-      pyproject,
-    );
+    new RegExp(
+      `capture-contracts>=${escapedRuntimeVersion},<0\\.4\\.0[\\s\\S]*capture-structuring>=${escapedRuntimeVersion},<0\\.4\\.0`,
+      'u',
+    ).test(pyproject);
   const hasLocalPythonResolution =
     /capture-contracts\s*=\s*\{[^}]*path\s*=\s*"\.\.\/\.\.\/\.\.\/capture-workbench\/packages\/capture-contracts\/python"/u.test(
       pyproject,
@@ -162,7 +167,7 @@ export function assertCaptureRuntimeConsumerVersions(
     !hasLocalPythonResolution
   ) {
     throw new Error(
-      'cert-prep backend must resolve Capture Python packages from the published 0.3.11 release or the explicit local sibling source bridge.',
+      `cert-prep backend must resolve Capture Python packages from the published ${CAPTURE_RUNTIME_VERSION} release or the explicit local sibling source bridge.`,
     );
   }
   requireMatch(

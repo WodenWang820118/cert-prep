@@ -1532,10 +1532,10 @@ packages:
     engines: {node: ^20.17.0 || >=22.9.0}
 
   '@gx-capture/capture-contracts@0.3.11':
-    resolution: {integrity: sha512-2ssaveiyN5NYeCWMhuDBV7wy+QUSUz4yGOR1dKVgTTgCtLDAz78VI4wnKnfK42z5LO1FLLfqDufJajKAdnfLJQ==, tarball: https://npm.pkg.github.com/download/@gx-capture/capture-contracts/0.3.11/b0bfce30405ae85ebe3e952506d5a366b4a0f592}
+    resolution: {integrity: sha512-QIBvnzk5RZBhp8aWPmjGr6KVGqyGHWMXnFafu+yLg9Nn7+YEfK/IDl4LR2feAOVZChvKRMCNUc78DgJMeMjB0A==, tarball: https://npm.pkg.github.com/download/@gx-capture/capture-contracts/0.3.11/0a9d55a73c963e207c8f3dbc51a24deb1b8490f7}
 
   '@gx-capture/capture-workbench@0.3.11':
-    resolution: {integrity: sha512-CNd/YVQjE5NCFY/wlaCqe08s3lcDXstU/DRZJ7zlWikQpKcmycmJwILVDlabvg3p1cKOt+z4rJwW2MK0aPAokg==, tarball: https://npm.pkg.github.com/download/@gx-capture/capture-workbench/0.3.11/522cd313ff299eb01ab036fcab7928ad59c98836}
+    resolution: {integrity: sha512-K8qw/WkpmUsuYFq2rP1P+QD/t9SXioBjXL8dgSk64HrM3/iKv/9D8ulSrOCz9e3qaUAxi4TFQOuvG4+eIyYuEg==, tarball: https://npm.pkg.github.com/download/@gx-capture/capture-workbench/0.3.11/de56d4c8c0df36624c53ec4d72d069bc9a268046}
     peerDependencies:
       '@angular/core': ^22.0.0
       '@angular/forms': ^22.0.0

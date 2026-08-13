@@ -2,6 +2,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 import type { Page } from 'playwright';
 
+import { CAPTURE_RUNTIME_VERSION } from '../../../../tools/capture-runtime-version.mts';
 import type { ProjectApiRef } from '../packaged-flow-smoke/types.mts';
 import { isRecord } from '../packaged-flow-smoke/text-utils.mts';
 
@@ -42,7 +43,7 @@ export async function assertPublishedCaptureSurface(page: Page): Promise<void> {
     JSON.stringify(enabledSources) !== JSON.stringify(['pdf', 'image', 'audio'])
   ) {
     throw new Error(
-      '0.3.11 host did not expose PDF, image, and audio capture.',
+      `${CAPTURE_RUNTIME_VERSION} host did not expose PDF, image, and audio capture.`,
     );
   }
   const copy = await page.locator('main').innerText();
@@ -51,7 +52,7 @@ export async function assertPublishedCaptureSurface(page: Page): Promise<void> {
     'explicit OCR and Whisper consent',
   ]) {
     if (!copy.includes(statement)) {
-      throw new Error(`0.3.11 host copy omitted: ${statement}`);
+      throw new Error(`${CAPTURE_RUNTIME_VERSION} host copy omitted: ${statement}`);
     }
   }
   if (
@@ -229,13 +230,13 @@ async function waitForFailedOperation(
     if (operation.status === 'failed') return operation;
     if (['succeeded', 'canceled'].includes(stringValue(operation.status))) {
       throw new Error(
-        `0.3.11 negative operation reached ${String(operation.status)}.`,
+        `${CAPTURE_RUNTIME_VERSION} negative operation reached ${String(operation.status)}.`,
       );
     }
     await delay(250);
   }
   throw new Error(
-    `0.3.11 negative operation ${operationId} did not fail in time.`,
+    `${CAPTURE_RUNTIME_VERSION} negative operation ${operationId} did not fail in time.`,
   );
 }
 
@@ -250,7 +251,7 @@ async function getJson(
   const payload: unknown = await response.json();
   if (!response.ok() || !isRecord(payload)) {
     throw new Error(
-      'Packaged 0.3.11 negative-data API returned an invalid response.',
+      `Packaged ${CAPTURE_RUNTIME_VERSION} negative-data API returned an invalid response.`,
     );
   }
   return payload;
