@@ -1,6 +1,7 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import type { CertPrepGeneratedClient } from '@cert-prep/api';
+import { CAPTURE_RUNTIME_VERSION } from '@cert-prep/capture-runtime-version';
 import { firstValueFrom, lastValueFrom, of, throwError, toArray } from 'rxjs';
 import type {
   CaptureDocumentV1,
@@ -388,7 +389,7 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
     const controller = new AbortController();
     await expect(firstValueFrom(client.getReady(controller.signal))).resolves.toMatchObject({
       service: 'capture-runtime',
-      runtimeVersion: '0.3.11',
+      runtimeVersion: CAPTURE_RUNTIME_VERSION,
       capabilities: { captureKinds: ['pdf', 'image', 'audio'] },
     });
     expect(api.captureRuntimeReady).toHaveBeenCalledWith({
@@ -574,7 +575,7 @@ function makeRaw() {
     sourceText: 'Recognized OCR text',
     extractionEngine: {
       engine: 'windowsml_ocr',
-      model: 'capture-runtime@0.3.11',
+      model: `capture-runtime@${CAPTURE_RUNTIME_VERSION}`,
       digest: `sha256:${'a'.repeat(64)}`,
       device: 'WindowsML',
     },
@@ -654,7 +655,7 @@ function readyResponse(override: Record<string, unknown>) {
     ready: true,
     service: 'capture-runtime',
     apiVersion: '1.0',
-    runtimeVersion: '0.3.11',
+    runtimeVersion: CAPTURE_RUNTIME_VERSION,
     captureDocumentSchemaVersion: '1',
     capabilities: readyCapabilities(),
   };

@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { computed, signal } from '@angular/core';
 import type { DocumentRead } from '@cert-prep/api';
+import { CAPTURE_RUNTIME_VERSION } from '@cert-prep/capture-runtime-version';
 import { of, Subject } from 'rxjs';
 import type { CaptureCompletedEvent } from '@gx-capture/capture-workbench';
 import { ProjectStore } from '../../stores/project.store';
@@ -282,7 +283,7 @@ function captureRuntimeStatus(status: 'missing' | 'running') {
     status,
     detail: `Capture Runtime is ${status}.`,
     unavailableReason: running ? null : 'capture_runtime_missing',
-    version: '0.3.11',
+    version: CAPTURE_RUNTIME_VERSION,
     installedPath: null,
     baseUrl: null,
     token: null,
