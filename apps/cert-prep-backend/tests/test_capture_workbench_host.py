@@ -15,12 +15,14 @@ from cert_prep_backend.domains.capture_workbench.client import (
     CaptureRuntimeClient,
     CaptureRuntimeCompatibilityError,
     CaptureRuntimeError,
+    CaptureStreamingResult,
     CaptureUpload,
 )
 from capture_contracts import (
     CaptureDocumentV1,
-    CaptureJobV1,
+    CaptureOperationV2,
     CaptureSourceKind,
+    PartialCaptureV2,
     RawCaptureV1,
     RuntimeRequirementStatus,
     RuntimeRequirementsV1,
@@ -58,7 +60,7 @@ IDEMPOTENCY_KEY = UUID("8f86cc35-770e-4df1-a9eb-72f7383d8fba")
 def _lost_response(message: str) -> httpx.ReadError:
     return httpx.ReadError(
         message,
-        request=httpx.Request("POST", "http://127.0.0.1:43123/v1/captures"),
+        request=httpx.Request("POST", "http://127.0.0.1:43123/v2/captures"),
     )
 
 
@@ -108,27 +110,30 @@ def _raw_with_segments(*, count: int, text_chars: int = 1_200) -> RawCaptureV1:
     return RawCaptureV1.model_validate(payload)
 
 
-def _job_payload(
+def _operation_payload(
     *,
-    status: str = "running",
-    stage: str = "awaiting_structuring",
+    status: str = "awaiting_structuring",
 ) -> dict[str, object]:
+    terminal = status in {"completed", "failed", "cancelled"}
     return {
+        "protocolVersion": "2",
         "captureId": "capture-1",
+        "ingestionId": "ingestion-1",
+        "kind": "pdf",
         "status": status,
-        "stage": stage,
-        "structuringMode": "host",
-        "progress": 0.7 if status == "running" else 1,
+        "progress": 1 if terminal else 0.7,
+        "partialRevision": 1,
+        "lastEventSequence": 1,
         "source": _raw_payload()["source"],
         "error": None,
         "createdAt": NOW.isoformat(),
         "updatedAt": NOW.isoformat(),
-        "completedAt": NOW.isoformat() if status in {"completed", "failed", "cancelled"} else None,
+        "completedAt": NOW.isoformat() if terminal else None,
     }
 
 
-def _job(*, status: str = "running", stage: str = "awaiting_structuring") -> CaptureJobV1:
-    return CaptureJobV1.model_validate(_job_payload(status=status, stage=stage))
+def _operation(*, status: str = "awaiting_structuring") -> CaptureOperationV2:
+    return CaptureOperationV2.model_validate(_operation_payload(status=status))
 
 
 def _ready_payload(*, schema_version: str = "1") -> dict[str, object]:
@@ -444,51 +449,11 @@ def test_contract_rejects_changed_locator_before_host_consumption() -> None:
         CaptureDocumentV1.model_validate(payload)
 
 
-def test_sidecar_client_handshake_upload_and_raw_keep_token_backend_only() -> None:
-    requests: list[httpx.Request] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        requests.append(request)
-        if request.url.path == "/v1/health/ready":
-            return httpx.Response(200, json=_ready_payload())
-        if request.method == "POST" and request.url.path == "/v1/captures":
-            body = request.content
-            assert b'name="sourceKind"' in body
-            assert b"\r\n\r\npdf\r\n" in body
-            assert b'name="structuringMode"' in body
-            assert b"\r\n\r\nhost\r\n" in body
-            assert b"PDF bytes" in body
-            return httpx.Response(202, json=_job_payload())
-        if request.url.path == "/v1/captures/capture-1/raw":
-            return httpx.Response(200, json=_raw_payload())
-        raise AssertionError(f"unexpected request: {request.method} {request.url}")
-
-    transport_client = httpx.Client(transport=httpx.MockTransport(handler))
-    client = CaptureRuntimeClient(
-        base_url="http://127.0.0.1:43123",
-        bearer_token=TOKEN,
-        client=transport_client,
-    )
-
-    assert client.handshake().capabilities.structuring_modes[-1].value == "host"
-    created = client.create_capture(
-        CaptureUpload("sample.pdf", b"PDF bytes", "application/pdf"),
-        source_kind=CaptureSourceKind.PDF,
-        idempotency_key=IDEMPOTENCY_KEY,
-    )
-    assert created.stage.value == "awaiting_structuring"
-    assert client.get_raw(created.capture_id).diagnostic_only is True
-
-    assert all(request.headers["authorization"] == f"Bearer {TOKEN}" for request in requests)
-    assert all(TOKEN not in str(request.url) for request in requests)
-    assert TOKEN not in repr(client)
-
-
 def test_sidecar_client_submits_invalid_candidate_verbatim_for_canonical_failure() -> None:
     candidate = "{not-json"
 
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/v1/captures/capture-1/structure"
+        assert request.url.path == "/v2/captures/capture-1/structure/commit"
         assert request.content == candidate.encode()
         assert request.headers["x-idempotency-key"] == str(IDEMPOTENCY_KEY)
         return httpx.Response(
@@ -585,12 +550,14 @@ class RecordingCaptureRuntime:
     def __init__(
         self,
         *,
-        initial_job: dict[str, object] | None = None,
+        initial_operation: dict[str, object] | None = None,
         capture_kinds: list[str] | None = None,
         requirement_status: RuntimeRequirementStatus = RuntimeRequirementStatus.READY,
         runtime_version: str = "0.3.11",
     ) -> None:
-        self.initial_job = CaptureJobV1.model_validate(initial_job or _job_payload())
+        self.initial_operation = CaptureOperationV2.model_validate(
+            initial_operation or _operation_payload()
+        )
         self.raw = RawCaptureV1.model_validate(_raw_payload())
         self.document = CaptureDocumentV1.model_validate(_document_payload())
         ready = _ready_payload()
@@ -642,31 +609,77 @@ class RecordingCaptureRuntime:
         self.requirement_reads += 1
         return self.requirements
 
-    def create_capture(self, _upload, *, source_kind, idempotency_key, target_language=None):
+    def start_capture(
+        self,
+        _upload: CaptureUpload,
+        *,
+        source_kind: CaptureSourceKind,
+        client_request_id: str,
+        target_language: str | None = None,
+    ) -> CaptureOperationV2:
         self.creates += 1
-        self.create_args = (source_kind, idempotency_key, target_language)
-        return self.initial_job
+        self.create_args = (source_kind, client_request_id, target_language)
+        return self.initial_operation
 
-    def get_capture(self, _capture_id):
-        return CaptureJobV1.model_validate(_job_payload(status="completed", stage="completed"))
+    def get_capture(self, _capture_id: str) -> CaptureOperationV2:
+        return _operation(status="completed")
+
+    def get_partial(self, capture_id: str) -> PartialCaptureV2:
+        return PartialCaptureV2.model_validate(
+            {
+                "protocolVersion": "2",
+                "captureId": capture_id,
+                "source": self.raw.source.model_dump(mode="json", by_alias=True),
+                "revision": 1,
+                "coveredUntilMs": 0,
+                "segments": [
+                    segment.model_dump(mode="json", by_alias=True)
+                    for segment in self.raw.segments
+                ],
+                "sourceText": self.raw.source_text,
+                "extractionEngine": self.raw.extraction_engine.model_dump(
+                    mode="json", by_alias=True
+                ),
+                "updatedAt": self.raw.created_at,
+            }
+        )
 
     def get_raw(self, _capture_id):
         return self.raw
 
     def commit_structure(self, capture_id, candidate, *, idempotency_key):
         self.commits.append((capture_id, candidate, idempotency_key))
-        return CaptureJobV1.model_validate(_job_payload(status="completed", stage="completed"))
+        return _operation(status="completed")
 
     def get_result(self, _capture_id):
-        return self.document
+        return CaptureStreamingResult(
+            operation=_operation(status="completed"),
+            raw=self.raw,
+            result=self.document,
+        )
 
-    def report_structuring_failure(self, capture_id, *, code, message):
+    def report_structuring_failure(
+        self,
+        capture_id,
+        *,
+        code,
+        message,
+        idempotency_key,
+    ):
+        del idempotency_key
         self.failures.append((capture_id, code, message))
-        return CaptureJobV1.model_validate(_job_payload(status="failed", stage="failed"))
+        failed = _operation_payload(status="failed")
+        failed["error"] = {
+            "code": code,
+            "message": message,
+            "stage": "structuring",
+            "retryable": False,
+        }
+        return CaptureOperationV2.model_validate(failed)
 
     def cancel_capture(self, capture_id):
         self.cancellations.append(capture_id)
-        return CaptureJobV1.model_validate(_job_payload(status="cancelled", stage="cancelled"))
+        return _operation(status="cancelled")
 
     def delete_capture(self, capture_id):
         self.deleted.append(capture_id)
@@ -676,10 +689,10 @@ class ReconciliationCaptureRuntime(RecordingCaptureRuntime):
     def __init__(
         self,
         *,
-        commits: list[CaptureJobV1 | Exception] | None = None,
-        failures: list[CaptureJobV1 | Exception] | None = None,
-        cancellations: list[CaptureJobV1 | Exception] | None = None,
-        reads: list[CaptureJobV1 | Exception] | None = None,
+        commits: list[CaptureOperationV2 | Exception] | None = None,
+        failures: list[CaptureOperationV2 | Exception] | None = None,
+        cancellations: list[CaptureOperationV2 | Exception] | None = None,
+        reads: list[CaptureOperationV2 | Exception] | None = None,
     ) -> None:
         super().__init__()
         self.commit_outcomes = list(commits or [])
@@ -689,7 +702,9 @@ class ReconciliationCaptureRuntime(RecordingCaptureRuntime):
         self.capture_reads = 0
 
     @staticmethod
-    def _outcome(outcomes: list[CaptureJobV1 | Exception]) -> CaptureJobV1:
+    def _outcome(
+        outcomes: list[CaptureOperationV2 | Exception],
+    ) -> CaptureOperationV2:
         outcome = outcomes.pop(0)
         if isinstance(outcome, Exception):
             raise outcome
@@ -711,12 +726,20 @@ class ReconciliationCaptureRuntime(RecordingCaptureRuntime):
         self.commits.append((capture_id, candidate, idempotency_key))
         return self._outcome(self.commit_outcomes)
 
-    def report_structuring_failure(self, capture_id, *, code, message):
+    def report_structuring_failure(
+        self,
+        capture_id,
+        *,
+        code,
+        message,
+        idempotency_key,
+    ):
         if not self.failure_outcomes:
             return super().report_structuring_failure(
                 capture_id,
                 code=code,
                 message=message,
+                idempotency_key=idempotency_key,
             )
         self.failures.append((capture_id, code, message))
         return self._outcome(self.failure_outcomes)
@@ -769,7 +792,7 @@ def test_capture_coordinator_uses_host_provider_then_fetches_validated_result() 
     coordinator = CertPrepCaptureCoordinator(
         client=runtime,
         structurer=structurer,
-        poll_interval_seconds=0.01,
+        reconciliation_interval_seconds=0.01,
     )
 
     result = coordinator.capture(
@@ -786,7 +809,8 @@ def test_capture_coordinator_uses_host_provider_then_fetches_validated_result() 
     assert result.document == runtime.document
     assert result.raw.diagnostic_only is True
     assert len(runtime.commits) == 1
-    assert runtime.create_args[1] != runtime.commits[0][2]
+    assert runtime.create_args[1] == "cert-operation-1"
+    assert runtime.commits[0][2] != runtime.create_args[1]
     assert runtime.deleted == []
     coordinator.delete(result.capture_id)
     assert runtime.deleted == ["capture-1"]
@@ -870,7 +894,7 @@ def test_capture_coordinator_rejects_unsupported_source_kind_before_requirement_
 
 
 def test_future_runtime_generic_pdf_extraction_failure_is_not_reclassified() -> None:
-    failed = _job_payload(status="failed", stage="failed")
+    failed = _operation_payload(status="failed")
     failed["error"] = {
         "code": "extraction_failed",
         "message": "Source extraction failed.",
@@ -878,7 +902,7 @@ def test_future_runtime_generic_pdf_extraction_failure_is_not_reclassified() -> 
         "retryable": True,
     }
     runtime = RecordingCaptureRuntime(
-        initial_job=failed,
+        initial_operation=failed,
         requirement_status=RuntimeRequirementStatus.UNAVAILABLE,
         runtime_version="0.3.11",
     )
@@ -904,7 +928,7 @@ def test_future_runtime_generic_pdf_extraction_failure_is_not_reclassified() -> 
 def test_capture_coordinator_reconciles_lost_commit_response() -> None:
     runtime = ReconciliationCaptureRuntime(
         commits=[_lost_response("commit response was lost")],
-        reads=[_job(status="completed", stage="completed")],
+        reads=[_operation(status="completed")],
     )
     coordinator = CertPrepCaptureCoordinator(
         client=runtime,
@@ -923,9 +947,9 @@ def test_capture_coordinator_retries_commit_with_the_same_key_only_while_awaitin
     runtime = ReconciliationCaptureRuntime(
         commits=[
             _lost_response("first commit response was lost"),
-            _job(status="completed", stage="completed"),
+            _operation(status="completed"),
         ],
-        reads=[_job()],
+        reads=[_operation()],
     )
     coordinator = CertPrepCaptureCoordinator(
         client=runtime,
@@ -942,20 +966,19 @@ def test_capture_coordinator_retries_commit_with_the_same_key_only_while_awaitin
 
 
 @pytest.mark.parametrize(
-    ("status", "stage", "expected_error"),
+    ("status", "expected_error"),
     [
-        ("failed", "failed", CaptureRuntimeJobError),
-        ("cancelled", "cancelled", CaptureRuntimeCanceledError),
+        ("failed", CaptureRuntimeJobError),
+        ("cancelled", CaptureRuntimeCanceledError),
     ],
 )
 def test_capture_coordinator_accepts_confirmed_terminal_commit_reconciliation(
     status: str,
-    stage: str,
     expected_error: type[Exception],
 ) -> None:
     runtime = ReconciliationCaptureRuntime(
         commits=[_lost_response("commit response was lost")],
-        reads=[_job(status=status, stage=stage)],
+        reads=[_operation(status=status)],
     )
     coordinator = CertPrepCaptureCoordinator(
         client=runtime,
@@ -995,7 +1018,7 @@ def test_capture_coordinator_reports_host_failure_without_deleting_raw() -> None
 def test_capture_coordinator_reconciles_lost_failure_report_response() -> None:
     runtime = ReconciliationCaptureRuntime(
         failures=[_lost_response("failure-report response was lost")],
-        reads=[_job(status="failed", stage="failed")],
+        reads=[_operation(status="failed")],
     )
     coordinator = CertPrepCaptureCoordinator(
         client=runtime,
@@ -1014,10 +1037,10 @@ def test_capture_coordinator_reconciles_lost_failure_report_response() -> None:
 def test_capture_coordinator_cancels_and_confirms_when_failure_report_stays_awaiting() -> None:
     runtime = ReconciliationCaptureRuntime(
         failures=[_lost_response("failure-report response was lost")],
-        cancellations=[_job(status="cancelled", stage="cancelled")],
+        cancellations=[_operation(status="cancelled")],
         reads=[
-            _job(),
-            _job(status="cancelled", stage="cancelled"),
+            _operation(),
+            _operation(status="cancelled"),
         ],
     )
     coordinator = CertPrepCaptureCoordinator(
@@ -1037,7 +1060,7 @@ def test_capture_coordinator_raises_when_failure_terminal_state_remains_unknown(
     runtime = ReconciliationCaptureRuntime(
         failures=[_lost_response("failure-report response was lost")],
         cancellations=[_lost_response("cancel response was lost")],
-        reads=[_job(), _job()],
+        reads=[_operation(), _operation()],
     )
     coordinator = CertPrepCaptureCoordinator(
         client=runtime,
@@ -1058,7 +1081,7 @@ def test_capture_coordinator_raises_when_failure_terminal_state_remains_unknown(
 
 def test_capture_coordinator_propagates_host_cancellation_to_sidecar() -> None:
     runtime = RecordingCaptureRuntime(
-        initial_job=_job_payload(status="running", stage="extracting")
+        initial_operation=_operation_payload(status="extracting")
     )
     checks = iter([False, True])
     coordinator = CertPrepCaptureCoordinator(
@@ -1119,7 +1142,8 @@ def test_capture_document_maps_page_and_time_provenance_without_restructuring() 
 
     assert extraction.page_count == 1
     assert extraction.pages[0].page_number == 1
-    assert extraction.pages[0].text == "Visible source text"
+    assert extraction.pages[0].raw_text == "Visible source text"
+    assert extraction.pages[0].text == "Visible target text"
     assert extraction.extraction_method == "windowsml_ocr"
 
     audio = _document_payload()

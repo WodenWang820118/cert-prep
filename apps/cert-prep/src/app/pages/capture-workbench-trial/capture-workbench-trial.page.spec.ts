@@ -72,10 +72,14 @@ describe('CaptureWorkbenchTrialPage', () => {
     ).toMatchObject({
       enabledSources: ['pdf', 'image', 'audio'],
       structuringMode: 'host',
-      hostStructuringOwner: 'client',
+      hostStructuringOwner: 'component',
       hostManagedHandshake: true,
       showRuntimeSetup: false,
     });
+    expect(
+      fixture.nativeElement.querySelector('capture-workbench')
+        .structuringProvider,
+    ).toBe(captureClient);
     expect(fixture.nativeElement.textContent).toContain(
       'PDF, image, and audio sources are processed',
     );

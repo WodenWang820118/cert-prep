@@ -30,10 +30,13 @@ practice, or review flows after a source has been captured.
   authenticated resource client. Resource keys own project/document scope so
   changing selection cancels obsolete reads and cannot write stale data into
   the current workbench.
-- Keep uploads, mutations, Tauri calls, Blob audio, polling, and reconciliation
-  on the existing Promise command boundary. Successful mutations may update a
-  writable resource immediately and reload when server reconciliation is
-  needed; query `load`/`refresh` methods are synchronous reload triggers.
+- Keep non-capture uploads, mutations, Tauri calls, Blob audio, and
+  reconciliation on the existing Promise command boundary. The Capture
+  Workbench v2 client is the exception: its public lifecycle and progress APIs
+  remain RxJS Observables, including cancellation on unsubscribe. Successful
+  mutations may update a writable resource immediately and reload when server
+  reconciliation is needed; query `load`/`refresh` methods are synchronous
+  reload triggers.
 - Runtime status is compact: header chips plus a Manage runtime drawer, not a
   large first-screen checklist.
 - Runtime status can be healthy while practice is still blocked by missing
@@ -41,8 +44,9 @@ practice, or review flows after a source has been captured.
   practice-blocking reason when streamed questions exist but are not selectable.
 - Source import uses `language_hint`; `auto` remains the default, while QA uses
   `ja` for the JLPT production PDF.
-- Polling is the current async parsing transport. SSE/WebSocket remains a
-  future option only if polling becomes visibly expensive or laggy.
+- Capture Workbench progress uses authenticated replayable SSE with
+  `Last-Event-ID`; normal capture progress never polls. Bounded polling remains
+  limited to unrelated host-owned readiness and reconciliation workflows.
 - Manual answer/rationale entry is a production fallback, not a debug-only path.
 - Full Exam and Random Quiz consume playable editable questions. Older
   approval-gated draft language is superseded.

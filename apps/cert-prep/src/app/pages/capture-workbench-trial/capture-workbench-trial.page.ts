@@ -136,7 +136,7 @@ export class CaptureWorkbenchTrialPage implements AfterViewInit, OnDestroy {
       outputMode: 'json',
       multiple: false,
       showRuntimeSetup: false,
-      hostStructuringOwner: 'client',
+      hostStructuringOwner: 'component',
       hostManagedHandshake: true,
       reviewBeforeCommit: true,
       reviewEditable: true,
@@ -151,6 +151,7 @@ export class CaptureWorkbenchTrialPage implements AfterViewInit, OnDestroy {
       density: 'comfortable',
     };
     element.client = this.client;
+    element.structuringProvider = this.client;
     element.addEventListener(
       CAPTURE_WORKBENCH_CUSTOM_EVENTS.completed,
       this.onCompleted,

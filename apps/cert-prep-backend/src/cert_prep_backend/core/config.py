@@ -63,7 +63,11 @@ class Settings(BaseSettings):
     capture_runtime_version: str | None = None
     capture_runtime_api_version: str | None = None
     capture_document_schema_version: str | None = None
-    capture_runtime_poll_interval_seconds: float = Field(default=0.1, gt=0, le=5)
+    capture_runtime_reconciliation_interval_seconds: float = Field(
+        default=0.1,
+        gt=0,
+        le=5,
+    )
     capture_runtime_job_timeout_seconds: float = Field(default=900, gt=0, le=3600)
 
     @property

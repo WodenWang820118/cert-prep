@@ -1,5 +1,20 @@
 # Capture Runtime Release Consumer Decisions
 
+## 2026-08-13 streaming v2 cutover
+
+- Replace the capture public seam in one breaking cutover: v2 ingestion,
+  capture start, replayable SSE, partial/result reads, host structure
+  commit/failure, cancel, and delete. Do not retain legacy capture DTOs, routes,
+  polling, or dual-transport compatibility.
+- Treat SSE as an authenticated fail-closed protocol. Validate media type,
+  UTF-8, required `id`/`event`/`data` framing, canonical capture and sequence
+  identity, event-name agreement, monotonic ordering, bounded input, and
+  terminal close. Resume only with `Last-Event-ID`.
+- A disconnected Python listener or Angular unsubscribe closes the listener but
+  does not cancel the runtime capture. Explicit cancellation remains separate.
+- Keep the browser on the Cert Prep authenticated proxy and RxJS Observables;
+  the process-scoped Capture Runtime URL/token remain backend-only.
+
 ## 2026-08-06 local 0.3.11 consumer qualification
 
 - Move the cert-prep runtime and generated package expectations to `0.3.11`.
@@ -46,20 +61,20 @@
 - Enforce source admission in the backend coordinator as well as the published
   Web Component client. The coordinator verifies the requested capture kind
   after the handshake, then requires `windowsml-ocr: ready` for image and
-  `whisper-primary: ready` for audio before it calls the sidecar create API.
+  `whisper-primary: ready` for audio before it opens a sidecar ingestion.
   PDF remains deliberately ungated so the runtime can distinguish all-pages
   embedded text from scanned or mixed content.
 - Represent a non-ready image/audio dependency with a dedicated typed host
-  exception rather than manufacturing a failed `CaptureJobV1`. This preserves
-  the distinction between "no sidecar job was admitted" and "a dispatched PDF
-  job failed during extraction."
+  exception rather than manufacturing a failed runtime capture. This preserves
+  the distinction between "no capture was admitted" and "a dispatched PDF
+  capture failed during extraction."
 - Use the same user-visible dependency errors for the Trial client and the
   `/documents` product path: `WindowsML OCR is unavailable. ...` and
   `Whisper transcription is unavailable. ...`. The v0.3.8 requirement detail
   is preserved, but bearer tokens, runtime URLs, and raw sidecar payloads are
   never included.
 - Prove the no-dispatch invariant with a backend contract fake that records
-  `create_capture` calls. The installed product smoke proves only observable
+  ingestion/capture starts. The installed product smoke proves only observable
   behavior: PDF-only host UI, explicit dependency failures, OCR-dependent PDF
   terminal failure, no durable fake output, sanitized evidence, and clean
   process/listener shutdown.
@@ -93,7 +108,7 @@
   `hostManagedHandshake: true` and `showRuntimeSetup: false` rather than allow
   the published component's all-source requirements gate to disable every
   capture. The adapter, not the browser, owns the readiness/compatibility/
-  capability decision before it creates a sidecar job. Incompatible runtime,
+  capability decision before it opens a sidecar ingestion. Incompatible runtime,
   API, schema, or host-structuring handshakes block every source and must not
   call the sidecar create API.
 - The v0.3.8 product surface is intentionally narrow: admit only PDF input and

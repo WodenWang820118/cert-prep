@@ -9,8 +9,10 @@ from cert_prep_backend.domains.capture_workbench.client import (
 )
 from capture_contracts import (
     CaptureDocumentV1,
-    CaptureJobV1,
+    CaptureEventV2,
+    CaptureOperationV2,
     CaptureSourceKind,
+    PartialCaptureV2,
     RawCaptureV1,
 )
 from cert_prep_backend.domains.capture_workbench.host_models import RuntimeReadyV1
@@ -20,13 +22,15 @@ from cert_prep_backend.domains.capture_workbench.structuring import (
 
 __all__ = [
     "CaptureDocumentV1",
-    "CaptureJobV1",
+    "CaptureEventV2",
+    "CaptureOperationV2",
     "CaptureRuntimeClient",
     "CaptureRuntimeCompatibilityError",
     "CaptureRuntimeError",
     "CaptureRuntimeProtocolError",
     "CaptureSourceKind",
     "CaptureUpload",
+    "PartialCaptureV2",
     "CertPrepCaptureStructuringAdapter",
     "RawCaptureV1",
     "RuntimeReadyV1",

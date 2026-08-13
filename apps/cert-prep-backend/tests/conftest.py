@@ -6,7 +6,6 @@ from io import BytesIO
 from pathlib import Path
 from datetime import UTC, datetime
 import hashlib
-from uuid import UUID
 
 import pytest
 import av
@@ -16,11 +15,15 @@ from PIL import Image
 
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.core.config import Settings
-from cert_prep_backend.domains.capture_workbench.client import CaptureUpload
+from cert_prep_backend.domains.capture_workbench.client import (
+    CaptureStreamingResult,
+    CaptureUpload,
+)
 from capture_contracts import (
     CaptureDocumentV1,
-    CaptureJobV1,
+    CaptureOperationV2,
     CaptureSourceKind,
+    PartialCaptureV2,
     RawCaptureV1,
     RuntimeRequirementsV1,
 )
@@ -62,7 +65,15 @@ class TestCaptureRuntimeClient:
     def get_requirements(self) -> RuntimeRequirementsV1:
         return _test_runtime_requirements("ready")
 
-    def create_capture(self, upload: CaptureUpload, *, source_kind: CaptureSourceKind, idempotency_key: UUID, target_language: str | None = None) -> CaptureJobV1:
+    def start_capture(
+        self,
+        upload: CaptureUpload,
+        *,
+        source_kind: CaptureSourceKind,
+        client_request_id: str,
+        target_language: str | None = None,
+    ) -> CaptureOperationV2:
+        del client_request_id, target_language
         is_audio = source_kind is CaptureSourceKind.AUDIO
         source_pages = _fake_source_pages(upload.content, source_kind)
         source_text = "\n".join(source_pages)
@@ -98,41 +109,79 @@ class TestCaptureRuntimeClient:
                 "createdAt": now,
             }
         )
-        return self._job(status="running", stage="awaiting_structuring")
+        return self._operation(status="awaiting_structuring")
+
+    def get_partial(self, capture_id: str) -> PartialCaptureV2:
+        assert self._raw is not None
+        return PartialCaptureV2.model_validate(
+            {
+                "protocolVersion": "2",
+                "captureId": capture_id,
+                "source": self._raw.source.model_dump(mode="json", by_alias=True),
+                "revision": 1,
+                "coveredUntilMs": 0,
+                "segments": [
+                    segment.model_dump(mode="json", by_alias=True)
+                    for segment in self._raw.segments
+                ],
+                "sourceText": self._raw.source_text,
+                "extractionEngine": self._raw.extraction_engine.model_dump(
+                    mode="json", by_alias=True
+                ),
+                "updatedAt": self._raw.created_at,
+            }
+        )
 
     def get_raw(self, _capture_id: str) -> RawCaptureV1:
         assert self._raw is not None
         return self._raw
 
-    def commit_structure(self, _capture_id: str, candidate: object, *, idempotency_key: UUID) -> CaptureJobV1:
+    def commit_structure(
+        self,
+        _capture_id: str,
+        candidate: object,
+        *,
+        idempotency_key: object,
+    ) -> CaptureOperationV2:
+        del idempotency_key
         self._result = CaptureDocumentV1.model_validate_json(candidate) if isinstance(candidate, str) else CaptureDocumentV1.model_validate(candidate)
-        return self._job(status="completed", stage="completed")
+        return self._operation(status="completed")
 
-    def get_result(self, _capture_id: str) -> CaptureDocumentV1:
+    def get_result(self, _capture_id: str) -> CaptureStreamingResult:
+        assert self._raw is not None
         assert self._result is not None
-        return self._result
+        return CaptureStreamingResult(
+            operation=self._operation(status="completed"),
+            raw=self._raw,
+            result=self._result,
+        )
 
-    def get_capture(self, _capture_id: str) -> CaptureJobV1:
-        return self._job(status="running", stage="awaiting_structuring")
+    def get_capture(self, _capture_id: str) -> CaptureOperationV2:
+        return self._operation(
+            status="completed" if self._result is not None else "awaiting_structuring"
+        )
 
     def report_structuring_failure(self, *_args, **_kwargs) -> None:
         return None
 
-    def cancel_capture(self, *_args, **_kwargs) -> CaptureJobV1:
-        return self._job(status="cancelled", stage="cancelled")
+    def cancel_capture(self, *_args, **_kwargs) -> CaptureOperationV2:
+        return self._operation(status="cancelled")
 
     def delete_capture(self, _capture_id: str) -> None:
         return None
 
-    def _job(self, *, status: str, stage: str) -> CaptureJobV1:
+    def _operation(self, *, status: str) -> CaptureOperationV2:
         assert self._raw is not None
         now = datetime.now(UTC).isoformat()
-        return CaptureJobV1.model_validate({
+        return CaptureOperationV2.model_validate({
+            "protocolVersion": "2",
             "captureId": "test-capture",
+            "ingestionId": "test-ingestion",
+            "kind": "audio" if self._raw.segments[0].locator.kind == "time" else "pdf",
             "status": status,
-            "stage": stage,
-            "structuringMode": "host",
-            "progress": 1 if status == "completed" else 0.5,
+            "progress": 1 if status in {"completed", "cancelled"} else 0.5,
+            "partialRevision": 1,
+            "lastEventSequence": 1,
             "source": self._raw.source.model_dump(mode="json", by_alias=True),
             "error": None,
             "createdAt": now,
