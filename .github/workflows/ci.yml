@@ -35,7 +35,7 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           repository: gx-capture/capture-workbench
-          ref: 52ba384
+          ref: f2b2bccd9c8c80437d543b45a279331ed9a1dcaf
           path: capture-workbench
           sparse-checkout: |
             packages/capture-contracts
@@ -127,7 +127,7 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           repository: gx-capture/capture-workbench
-          ref: 52ba384
+          ref: f2b2bccd9c8c80437d543b45a279331ed9a1dcaf
           path: capture-workbench
           sparse-checkout: |
             packages/capture-contracts
