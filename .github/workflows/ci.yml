@@ -30,29 +30,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check out pre-publication Capture Workbench bridge
-        if: vars.CAPTURE_PUBLISHED_0_3_12 != 'true'
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-        with:
-          repository: gx-capture/capture-workbench
-          ref: f2b2bccd9c8c80437d543b45a279331ed9a1dcaf
-          path: capture-workbench
-          sparse-checkout: |
-            packages/capture-contracts
-            packages/capture-structuring-python
-            packages/capture-sidecar-launcher
-
-      - name: Link pre-publication Capture Workbench bridge (Unix)
-        if: vars.CAPTURE_PUBLISHED_0_3_12 != 'true' && runner.os != 'Windows'
-        run: ln -s "$GITHUB_WORKSPACE/capture-workbench-ui" "$GITHUB_WORKSPACE/../capture-workbench-ui"
-
-      - name: Link pre-publication Capture Workbench bridge (Windows)
-        if: vars.CAPTURE_PUBLISHED_0_3_12 != 'true' && runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $target = Join-Path (Split-Path -Parent $env:GITHUB_WORKSPACE) 'capture-workbench'
-          New-Item -ItemType Junction -Path $target -Target (Join-Path $env:GITHUB_WORKSPACE 'capture-workbench') | Out-Null
-
       - name: Install pnpm
         uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
         with:
@@ -76,10 +53,9 @@ jobs:
 
       - name: Install JavaScript dependencies and pinned Capture Workbench package
         env:
-          NODE_AUTH_TOKEN: ${{ github.token }}
-          CAPTURE_PUBLISHED_0_3_12: ${{ vars.CAPTURE_PUBLISHED_0_3_12 }}
-          CAPTURE_PRESERVE_INSTALL_FILES: 'true'
-        run: node tools/install-capture-workbench-dependencies.mts --prepublication-stable-version 0.3.10
+          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc.example
+        run: pnpm install --frozen-lockfile
 
       - name: Sync backend Python environment
         run: uv sync --project apps/cert-prep-backend --python ${{ env.PYTHON_VERSION }} --frozen
@@ -122,29 +98,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check out pre-publication Capture Workbench bridge
-        if: vars.CAPTURE_PUBLISHED_0_3_12 != 'true'
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-        with:
-          repository: gx-capture/capture-workbench
-          ref: f2b2bccd9c8c80437d543b45a279331ed9a1dcaf
-          path: capture-workbench
-          sparse-checkout: |
-            packages/capture-contracts
-            packages/capture-structuring-python
-            packages/capture-sidecar-launcher
-
-      - name: Link pre-publication Capture Workbench bridge (Unix)
-        if: vars.CAPTURE_PUBLISHED_0_3_12 != 'true' && runner.os != 'Windows'
-        run: ln -s "$GITHUB_WORKSPACE/capture-workbench-ui" "$GITHUB_WORKSPACE/../capture-workbench-ui"
-
-      - name: Link pre-publication Capture Workbench bridge (Windows)
-        if: vars.CAPTURE_PUBLISHED_0_3_12 != 'true' && runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $target = Join-Path (Split-Path -Parent $env:GITHUB_WORKSPACE) 'capture-workbench'
-          New-Item -ItemType Junction -Path $target -Target (Join-Path $env:GITHUB_WORKSPACE 'capture-workbench') | Out-Null
-
       - name: Install pnpm
         uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
         with:
@@ -177,10 +130,9 @@ jobs:
 
       - name: Install JavaScript dependencies and pinned Capture Workbench package
         env:
-          NODE_AUTH_TOKEN: ${{ github.token }}
-          CAPTURE_PUBLISHED_0_3_12: ${{ vars.CAPTURE_PUBLISHED_0_3_12 }}
-          CAPTURE_PRESERVE_INSTALL_FILES: 'true'
-        run: node tools/install-capture-workbench-dependencies.mts --prepublication-stable-version 0.3.10
+          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc.example
+        run: pnpm install --frozen-lockfile
 
       - name: Sync backend Python environment
         run: uv sync --project apps/cert-prep-backend --python ${{ env.PYTHON_VERSION }} --frozen
