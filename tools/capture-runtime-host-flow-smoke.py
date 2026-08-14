@@ -56,7 +56,7 @@ def main() -> None:
         coordinator = CertPrepCaptureCoordinator(
             client=client,
             structurer=CertPrepCaptureStructuringAdapter(EchoStructuredProvider()),
-            poll_interval_seconds=0.05,
+            reconciliation_interval_seconds=0.05,
             timeout_seconds=30,
         )
         source = b"%PDF-1.4\nCAPTURE_TEXT:cert-prep capture-runtime host flow smoke"
