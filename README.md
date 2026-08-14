@@ -130,7 +130,7 @@ pnpm nx affected --targets=lint,test,build
 ## Local Capture Workbench Registry Trial
 
 The normal dependency is the pinned public release package
-`@gx-capture/capture-workbench@0.3.12` from GitHub Packages. GitHub Actions configures
+`@gx-capture/capture-workbench-ui@0.3.12` from GitHub Packages. GitHub Actions configures
 the `@gx-capture` registry and read token automatically. For a local install, configure
 an npm user config without committing credentials:
 
@@ -176,7 +176,7 @@ pnpm run trial:capture-workbench
 ```
 
 The trial creates a temporary Vite consumer, runs a normal `pnpm install`
-against `http://127.0.0.1:4873`, imports `@gx-capture/capture-workbench`, registers the
+against `http://127.0.0.1:4873`, imports `@gx-capture/capture-workbench-ui`, registers the
 `capture-workbench` custom element, and runs a production build. The temporary
 consumer is removed after the run. The cert-prep route also uses the installed
 package through its `CaptureClient` adapter and the backend review API. With
@@ -186,7 +186,7 @@ audio only when their runtime requirements are ready.
 ### Capture Workbench local registry trial
 
 The `capture-workbench-trial` route is an isolated distribution trial for the
-published `@gx-capture/capture-workbench@0.3.12` Web Component. The `/build`
+published `@gx-capture/capture-workbench-ui@0.3.12` Web Component. The `/build`
 source-import flow remains unchanged; the retired local prototype is no longer
 part of the workspace.
 
@@ -199,7 +199,7 @@ pnpm nx run cert-prep:serve
 ```
 
 Open `http://localhost:4200/capture-workbench-trial`. The route uses the
-registry-installed `@gx-capture/capture-workbench@0.3.12` package and a cert-prep
+registry-installed `@gx-capture/capture-workbench-ui@0.3.12` package and a cert-prep
 `CaptureClient` backed by the review-gated capture API. Capture Runtime and its
 token remain backend-only. With the v0.3.12 engine-bearing sidecar, the route
 accepts embedded-text PDFs directly; scanned PDFs, images, and audio require

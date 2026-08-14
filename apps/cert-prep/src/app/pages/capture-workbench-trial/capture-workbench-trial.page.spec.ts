@@ -3,7 +3,7 @@ import { computed, signal } from '@angular/core';
 import type { DocumentRead } from '@cert-prep/api';
 import { CAPTURE_RUNTIME_VERSION } from '@cert-prep/capture-runtime-version';
 import { of, Subject } from 'rxjs';
-import type { CaptureCompletedEvent } from '@gx-capture/capture-workbench';
+import type { CaptureCompletedEvent } from '@gx-capture/capture-workbench-ui';
 import { ProjectStore } from '../../stores/project.store';
 import { SourceImportStore } from '../../stores/source-import/source-import.store';
 import { DesktopRuntimeStore } from '../../stores/desktop-runtime/desktop-runtime.store';

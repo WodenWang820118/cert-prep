@@ -17,7 +17,7 @@ import {
 import {
   assertCaptureRuntimeCompatible,
   CAPTURE_RUNTIME_MAJOR,
-} from '@gx-capture/capture-workbench';
+} from '@gx-capture/capture-workbench-ui';
 import type {
   CaptureBlockV1,
   CaptureClient,
@@ -42,7 +42,7 @@ import type {
   RuntimeRequirementV1,
   StartRuntimeInstallationRequest,
   StartStreamingCaptureRequest,
-} from '@gx-capture/capture-workbench';
+} from '@gx-capture/capture-workbench-ui';
 import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
 import { CertPrepRuntimeConfig } from '../../services/cert-prep-api.service';
 import { ProjectStore } from '../../stores/project.store';

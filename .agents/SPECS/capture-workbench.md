@@ -8,7 +8,7 @@ OCR/Whisper implementation.
 
 ## Contract
 
-- Install the published, pinned `@gx-capture/capture-workbench` version matching the
+- Install the published, pinned `@gx-capture/capture-workbench-ui` version matching the
   Capture Runtime release; do not use a workspace alias or retain a private UI
   fork.
 - Resolve the `@gx-capture` scope through GitHub Packages with a read-only token in CI

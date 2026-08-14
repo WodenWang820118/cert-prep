@@ -17,7 +17,7 @@ const nodeModulesLockfilePath = join(
   '.pnpm',
   'lock.yaml',
 );
-const workbenchPackageName = '@gx-capture/capture-workbench';
+const workbenchPackageName = '@gx-capture/capture-workbench-ui';
 const contractsPackageName = '@gx-capture/capture-contracts';
 const capturePublishedVariable =
   `CAPTURE_PUBLISHED_${CAPTURE_RUNTIME_VERSION.replaceAll('.', '_')}`;

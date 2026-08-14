@@ -32,7 +32,7 @@ importers:
       '@angular/router':
         specifier: 22.0.7
         version: 22.0.7(@angular/common@22.0.7(@angular/core@22.0.7(@angular/compiler@22.0.7)(rxjs@7.8.2)(zone.js@0.16.2))(rxjs@7.8.2))(@angular/core@22.0.7(@angular/compiler@22.0.7)(rxjs@7.8.2)(zone.js@0.16.2))(@angular/platform-browser@22.0.7(@angular/common@22.0.7(@angular/core@22.0.7(@angular/compiler@22.0.7)(rxjs@7.8.2)(zone.js@0.16.2))(rxjs@7.8.2))(@angular/core@22.0.7(@angular/compiler@22.0.7)(rxjs@7.8.2)(zone.js@0.16.2)))(rxjs@7.8.2)
-      '@gx-capture/capture-workbench':
+      '@gx-capture/capture-workbench-ui':
         specifier: 0.3.12
         version: 0.3.12(@angular/core@22.0.7(@angular/compiler@22.0.7)(rxjs@7.8.2)(zone.js@0.16.2))(@angular/forms@22.0.7(@angular/common@22.0.7(@angular/core@22.0.7(@angular/compiler@22.0.7)(rxjs@7.8.2)(zone.js@0.16.2))(rxjs@7.8.2))(@angular/core@22.0.7(@angular/compiler@22.0.7)(rxjs@7.8.2)(zone.js@0.16.2))(@angular/platform-browser@22.0.7(@angular/common@22.0.7(@angular/core@22.0.7(@angular/compiler@22.0.7)(rxjs@7.8.2)(zone.js@0.16.2))(rxjs@7.8.2))(@angular/core@22.0.7(@angular/compiler@22.0.7)(rxjs@7.8.2)(zone.js@0.16.2)))(rxjs@7.8.2))(@angular/platform-browser@22.0.7(@angular/common@22.0.7(@angular/core@22.0.7(@angular/compiler@22.0.7)(rxjs@7.8.2)(zone.js@0.16.2))(rxjs@7.8.2))(@angular/core@22.0.7(@angular/compiler@22.0.7)(rxjs@7.8.2)(zone.js@0.16.2)))(rxjs@7.8.2)
       '@primeuix/themes':
@@ -1534,8 +1534,8 @@ packages:
   '@gx-capture/capture-contracts@0.3.12':
     resolution: {integrity: sha512-vYEf7kooctO9QzhqDV/gGlDdxv74zGe++BwpBDiHnny4CC/RccbINnTwS0VntCmbzwV2WqL82Ps4yvfQMQ8Aaw==, tarball: https://npm.pkg.github.com/download/@gx-capture/capture-contracts/0.3.12/4b24bd32bc0935f2d1383da15d37e112836a7e46}
 
-  '@gx-capture/capture-workbench@0.3.12':
-    resolution: {integrity: sha512-1MnSr0ovWXsLF7JgPV7uVGmSLjOlRns9bk5ddJH0y8ADAE1jgY4Xh0VgJRuAARFXiy5ht+Fiu2LlDBKvagBGSQ==, tarball: https://npm.pkg.github.com/download/@gx-capture/capture-workbench/0.3.12/ba07732630742b3cb29f6b8b5a53209a18b7bab4}
+  '@gx-capture/capture-workbench-ui@0.3.12':
+    resolution: {integrity: sha512-fe5m4aIVu/n8CNWU6PBjQLWAHyrZqPmkZHvP2BlCnUF8rnlL5/TnT9qCWI1CQz95GRlrS6PUUcj2icrCUSIKHA==, tarball: https://npm.pkg.github.com/download/@gx-capture/capture-workbench-ui/0.3.12/d32aeb79da9bab1c2777c5a03a15278651a72940}
     peerDependencies:
       '@angular/core': ^22.0.0
       '@angular/forms': ^22.0.0
@@ -10256,7 +10256,7 @@ snapshots:
 
   '@gx-capture/capture-contracts@0.3.12': {}
 
-  '@gx-capture/capture-workbench@0.3.12(@angular/core@22.0.7(@angular/compiler@22.0.7)(rxjs@7.8.2)(zone.js@0.16.2))(@angular/forms@22.0.7(@angular/common@22.0.7(@angular/core@22.0.7(@angular/compiler@22.0.7)(rxjs@7.8.2)(zone.js@0.16.2))(rxjs@7.8.2))(@angular/core@22.0.7(@angular/compiler@22.0.7)(rxjs@7.8.2)(zone.js@0.16.2))(@angular/platform-browser@22.0.7(@angular/common@22.0.7(@angular/core@22.0.7(@angular/compiler@22.0.7)(rxjs@7.8.2)(zone.js@0.16.2))(rxjs@7.8.2))(@angular/core@22.0.7(@angular/compiler@22.0.7)(rxjs@7.8.2)(zone.js@0.16.2)))(rxjs@7.8.2))(@angular/platform-browser@22.0.7(@angular/common@22.0.7(@angular/core@22.0.7(@angular/compiler@22.0.7)(rxjs@7.8.2)(zone.js@0.16.2))(rxjs@7.8.2))(@angular/core@22.0.7(@angular/compiler@22.0.7)(rxjs@7.8.2)(zone.js@0.16.2)))(rxjs@7.8.2)':
+  '@gx-capture/capture-workbench-ui@0.3.12(@angular/core@22.0.7(@angular/compiler@22.0.7)(rxjs@7.8.2)(zone.js@0.16.2))(@angular/forms@22.0.7(@angular/common@22.0.7(@angular/core@22.0.7(@angular/compiler@22.0.7)(rxjs@7.8.2)(zone.js@0.16.2))(rxjs@7.8.2))(@angular/core@22.0.7(@angular/compiler@22.0.7)(rxjs@7.8.2)(zone.js@0.16.2))(@angular/platform-browser@22.0.7(@angular/common@22.0.7(@angular/core@22.0.7(@angular/compiler@22.0.7)(rxjs@7.8.2)(zone.js@0.16.2))(rxjs@7.8.2))(@angular/core@22.0.7(@angular/compiler@22.0.7)(rxjs@7.8.2)(zone.js@0.16.2)))(rxjs@7.8.2))(@angular/platform-browser@22.0.7(@angular/common@22.0.7(@angular/core@22.0.7(@angular/compiler@22.0.7)(rxjs@7.8.2)(zone.js@0.16.2))(rxjs@7.8.2))(@angular/core@22.0.7(@angular/compiler@22.0.7)(rxjs@7.8.2)(zone.js@0.16.2)))(rxjs@7.8.2)':
     dependencies:
       '@angular/compiler': 22.0.7
       '@angular/core': 22.0.7(@angular/compiler@22.0.7)(rxjs@7.8.2)(zone.js@0.16.2)

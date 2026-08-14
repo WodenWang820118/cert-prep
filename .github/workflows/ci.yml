@@ -44,7 +44,7 @@ jobs:
 
       - name: Link pre-publication Capture Workbench bridge (Unix)
         if: vars.CAPTURE_PUBLISHED_0_3_12 != 'true' && runner.os != 'Windows'
-        run: ln -s "$GITHUB_WORKSPACE/capture-workbench" "$GITHUB_WORKSPACE/../capture-workbench"
+        run: ln -s "$GITHUB_WORKSPACE/capture-workbench-ui" "$GITHUB_WORKSPACE/../capture-workbench-ui"
 
       - name: Link pre-publication Capture Workbench bridge (Windows)
         if: vars.CAPTURE_PUBLISHED_0_3_12 != 'true' && runner.os == 'Windows'
@@ -136,7 +136,7 @@ jobs:
 
       - name: Link pre-publication Capture Workbench bridge (Unix)
         if: vars.CAPTURE_PUBLISHED_0_3_12 != 'true' && runner.os != 'Windows'
-        run: ln -s "$GITHUB_WORKSPACE/capture-workbench" "$GITHUB_WORKSPACE/../capture-workbench"
+        run: ln -s "$GITHUB_WORKSPACE/capture-workbench-ui" "$GITHUB_WORKSPACE/../capture-workbench-ui"
 
       - name: Link pre-publication Capture Workbench bridge (Windows)
         if: vars.CAPTURE_PUBLISHED_0_3_12 != 'true' && runner.os == 'Windows'

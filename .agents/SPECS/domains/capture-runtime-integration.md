@@ -4,7 +4,7 @@
 
 Cert Prep consumes the published `capture-runtime@0.3.11` Windows x64 executable,
 manifest, checksum, and `CaptureDocumentV1` schema `1`. It also consumes the
-published `@gx-capture/capture-workbench@0.3.11` Web Component and generated
+published `@gx-capture/capture-workbench-ui@0.3.11` Web Component and generated
 `@gx-capture/capture-contracts@0.3.11` package for source import,
 runtime setup, review, cancellation, retry, and completion UI.
 

@@ -13,7 +13,7 @@ import {
 import type {
   CaptureEventV2,
   RawCaptureSegmentV1,
-} from '@gx-capture/capture-workbench';
+} from '@gx-capture/capture-workbench-ui';
 
 interface SseEventFrame {
   readonly id: string;

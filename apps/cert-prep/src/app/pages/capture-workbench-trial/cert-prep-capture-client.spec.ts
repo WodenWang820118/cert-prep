@@ -6,7 +6,7 @@ import { firstValueFrom, lastValueFrom, of, throwError, toArray } from 'rxjs';
 import type {
   CaptureDocumentV1,
   CaptureStructuringRequest,
-} from '@gx-capture/capture-workbench';
+} from '@gx-capture/capture-workbench-ui';
 import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
 import { CertPrepRuntimeConfig } from '../../services/cert-prep-api.service';
 import { ProjectStore } from '../../stores/project.store';

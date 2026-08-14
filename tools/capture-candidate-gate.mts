@@ -183,7 +183,7 @@ export async function verifyCandidate(
     !packageNames.some(
       (name) =>
         name.startsWith(
-          `gx-capture-capture-workbench-${input.releaseVersion}`,
+          `gx-capture-capture-workbench-ui-${input.releaseVersion}`,
         ) && name.endsWith('.tgz'),
     )
   ) {

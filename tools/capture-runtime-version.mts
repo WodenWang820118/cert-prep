@@ -6,7 +6,7 @@
  * value before a package or runtime can be consumed.
  */
 export const CAPTURE_RUNTIME_PACKAGE_NAME =
-  '@gx-capture/capture-workbench' as const;
+  '@gx-capture/capture-workbench-ui' as const;
 export const CAPTURE_CONTRACTS_PACKAGE_NAME =
   '@gx-capture/capture-contracts' as const;
 export const CAPTURE_RUNTIME_VERSION = '0.3.12' as const;

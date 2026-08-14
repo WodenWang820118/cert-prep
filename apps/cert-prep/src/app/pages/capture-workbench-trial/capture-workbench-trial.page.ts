@@ -15,7 +15,7 @@ import {
   defineCaptureWorkbenchElement,
   type CaptureCompletedEvent,
   type CaptureWorkbenchElement,
-} from '@gx-capture/capture-workbench';
+} from '@gx-capture/capture-workbench-ui';
 import { Subscription } from 'rxjs';
 import { ProjectStore } from '../../stores/project.store';
 import { SourceImportStore } from '../../stores/source-import/source-import.store';
