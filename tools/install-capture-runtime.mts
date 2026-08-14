@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { createReadStream, createWriteStream } from 'node:fs';
+import { createReadStream } from 'node:fs';
 import {
   copyFile,
   mkdir,
@@ -9,12 +9,10 @@ import {
   rename,
   rm,
   stat,
+  writeFile,
 } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { pipeline } from 'node:stream/promises';
-import { Readable } from 'node:stream';
-import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 
 import { validateCaptureArtifactBytes } from '../apps/cert-prep-desktop/scripts/capture-runtime-contract.mts';
 import {
@@ -329,10 +327,9 @@ async function downloadAsset(
       `Capture runtime artifact ${name} download failed with HTTP ${response.status}.`,
     );
   }
-  await pipeline(
-    Readable.fromWeb(response.body as unknown as NodeReadableStream),
-    createWriteStream(destination, { flags: 'wx' }),
-  );
+  await writeFile(destination, new Uint8Array(await response.arrayBuffer()), {
+    flag: 'wx',
+  });
 }
 
 async function copyReleaseAsset(
