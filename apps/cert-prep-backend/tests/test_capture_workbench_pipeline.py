@@ -1367,12 +1367,19 @@ def test_host_events_wait_for_durable_commit_before_emitting_terminal(
             response_future = executor.submit(read_events)
             assert runtime.terminal_event_offered.wait(timeout=2)
             try:
-                during_commit = client.get(
-                    f"/projects/{project_id}/capture-workbench/captures/{capture_id}",
-                    headers=headers,
-                )
-                assert during_commit.json()["status"] == "structuring"
-                assert during_commit.json()["lastEventSequence"] == 2
+                deadline = time.monotonic() + 2
+                during_commit = None
+                while time.monotonic() < deadline:
+                    candidate_snapshot = client.get(
+                        f"/projects/{project_id}/capture-workbench/captures/{capture_id}",
+                        headers=headers,
+                    )
+                    assert candidate_snapshot.json()["status"] == "structuring"
+                    if candidate_snapshot.json()["lastEventSequence"] == 2:
+                        during_commit = candidate_snapshot
+                        break
+                    time.sleep(0.01)
+                assert during_commit is not None
                 assert during_commit.json()["ingestionId"] == document_id
                 assert not response_finished.wait(timeout=1.2)
             finally:
