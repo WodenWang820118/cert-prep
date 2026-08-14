@@ -1340,6 +1340,7 @@ def test_host_events_wait_for_durable_commit_before_emitting_terminal(
                 "review": {"reviewVersion": 1, "edits": []},
             },
         )
+        assert structured.status_code == 200, structured.text
         committed = client.post(
             f"/projects/{project_id}/capture-workbench/captures/{capture_id}/structure/commit",
             headers=headers,
@@ -1348,7 +1349,7 @@ def test_host_events_wait_for_durable_commit_before_emitting_terminal(
                 "candidate": structured.json(),
             },
         )
-        assert committed.status_code == 202
+        assert committed.status_code == 202, committed.text
         assert publish_started.wait(timeout=2)
 
         events_url = (
