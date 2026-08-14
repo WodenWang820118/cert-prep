@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   expect,
   test,
@@ -10,6 +11,10 @@ import { minimalPdf } from '../support/minimal-pdf';
 
 const apiBaseUrl = 'http://127.0.0.1:8766';
 const apiHeaders = { Authorization: 'Bearer real-e2e-token' };
+const captureRuntimeBaseUrl = 'http://127.0.0.1:8767';
+const captureRuntimeHeaders = {
+  Authorization: 'Bearer real-e2e-capture-runtime-token',
+};
 
 interface ProjectRead {
   id: string;
@@ -62,6 +67,213 @@ test.beforeEach(async ({ page, request }) => {
     localStorage.setItem('certPrepApiBaseUrl', baseUrl);
     localStorage.setItem('certPrepApiToken', 'real-e2e-token');
   }, apiBaseUrl);
+});
+
+test('enforces the fixture v2 ingestion, live replay SSE, and host commit contract', async ({
+  request,
+}) => {
+  const unauthorized = await request.get(
+    `${captureRuntimeBaseUrl}/v2/health/ready`,
+  );
+  expect(unauthorized.status()).toBe(401);
+
+  const readiness = await request.get(
+    `${captureRuntimeBaseUrl}/v2/health/ready`,
+    { headers: captureRuntimeHeaders },
+  );
+  expect(readiness.ok()).toBe(true);
+  await expect(readiness.json()).resolves.toMatchObject({
+    protocolVersion: '2',
+    maxChunkBytes: 1024 * 1024,
+  });
+
+  const sourceBytes = Buffer.from('deterministic v2 fixture PDF bytes');
+  const sourceSha256 = createHash('sha256').update(sourceBytes).digest('hex');
+  const clientRequestId = `fixture-contract-${Date.now()}`;
+  const open = await request.post(`${captureRuntimeBaseUrl}/v2/ingestions`, {
+    headers: captureRuntimeHeaders,
+    data: {
+      protocolVersion: '2',
+      kind: 'pdf',
+      mode: 'file',
+      clientRequestId,
+      fileName: 'fixture-v2.pdf',
+      mediaType: 'application/pdf',
+      totalBytes: sourceBytes.length,
+      sourceSha256,
+    },
+  });
+  expect(open.status()).toBe(201);
+  const ingestion = (await open.json()) as {
+    ingestionId: string;
+    nextChunkIndex: number;
+    nextOffset: number;
+  };
+  expect(ingestion).toMatchObject({ nextChunkIndex: 0, nextOffset: 0 });
+
+  const chunkHeaders = {
+    ...captureRuntimeHeaders,
+    'Content-Type': 'application/octet-stream',
+    'Content-Range': `bytes 0-${sourceBytes.length - 1}/${sourceBytes.length}`,
+    Digest: `sha-256=${sourceSha256}`,
+    'X-Idempotency-Key': `${clientRequestId}-chunk-0`,
+  };
+  const chunk = await request.put(
+    `${captureRuntimeBaseUrl}/v2/ingestions/${ingestion.ingestionId}/chunks/0`,
+    { headers: chunkHeaders, data: sourceBytes },
+  );
+  expect(chunk.ok()).toBe(true);
+  await expect(chunk.json()).resolves.toMatchObject({
+    receivedBytes: sourceBytes.length,
+    contiguousBytes: sourceBytes.length,
+    nextChunkIndex: 1,
+    nextOffset: sourceBytes.length,
+  });
+  const replayedChunk = await request.put(
+    `${captureRuntimeBaseUrl}/v2/ingestions/${ingestion.ingestionId}/chunks/0`,
+    { headers: chunkHeaders, data: sourceBytes },
+  );
+  expect(replayedChunk.ok()).toBe(true);
+  await expect(replayedChunk.json()).resolves.toMatchObject({
+    receivedBytes: sourceBytes.length,
+    nextChunkIndex: 1,
+  });
+
+  const finalized = await request.post(
+    `${captureRuntimeBaseUrl}/v2/ingestions/${ingestion.ingestionId}/finalize`,
+    {
+      headers: captureRuntimeHeaders,
+      data: {
+        protocolVersion: '2',
+        totalBytes: sourceBytes.length,
+        sha256: sourceSha256,
+      },
+    },
+  );
+  expect(finalized.ok()).toBe(true);
+  await expect(finalized.json()).resolves.toMatchObject({
+    status: 'ready',
+    finalizedSha256: sourceSha256,
+  });
+
+  const started = await request.post(`${captureRuntimeBaseUrl}/v2/captures`, {
+    headers: captureRuntimeHeaders,
+    data: {
+      protocolVersion: '2',
+      clientRequestId,
+      ingestionId: ingestion.ingestionId,
+      structuringMode: 'host',
+      startPolicy: 'eager',
+    },
+  });
+  expect(started.status()).toBe(202);
+  const operation = (await started.json()) as {
+    captureId: string;
+    createdAt: string;
+    status: string;
+  };
+  expect(operation.status).toBe('extracting');
+
+  const liveController = new AbortController();
+  const liveResponse = await fetch(
+    `${captureRuntimeBaseUrl}/v2/captures/${operation.captureId}/events`,
+    {
+      headers: {
+        ...captureRuntimeHeaders,
+        Accept: 'text/event-stream',
+        'Last-Event-ID': '0',
+      },
+      signal: liveController.signal,
+    },
+  );
+  expect(liveResponse.status).toBe(200);
+  expect(liveResponse.headers.get('content-type')).toContain(
+    'text/event-stream',
+  );
+  const reader = liveResponse.body?.getReader();
+  expect(reader).toBeDefined();
+  const liveFrames = await readThroughEvent(
+    reader as ReadableStreamDefaultReader<Uint8Array>,
+    'event: checkpoint',
+  );
+  liveController.abort();
+  await reader?.cancel().catch(() => undefined);
+  expect(liveFrames).not.toContain('id: 0\n');
+  expect(liveFrames).toContain('id: 1\nevent: segment');
+  expect(liveFrames).toContain('id: 2\nevent: checkpoint');
+
+  const disconnectedSnapshot = await request.get(
+    `${captureRuntimeBaseUrl}/v2/captures/${operation.captureId}`,
+    { headers: captureRuntimeHeaders },
+  );
+  await expect(disconnectedSnapshot.json()).resolves.toMatchObject({
+    status: 'awaiting_structuring',
+    lastEventSequence: 2,
+  });
+
+  const partialResponse = await request.get(
+    `${captureRuntimeBaseUrl}/v2/captures/${operation.captureId}/partial`,
+    { headers: captureRuntimeHeaders },
+  );
+  expect(partialResponse.ok()).toBe(true);
+  const partial = (await partialResponse.json()) as {
+    source: Record<string, unknown>;
+    segments: Array<Record<string, unknown>>;
+    sourceText: string;
+    extractionEngine: Record<string, unknown>;
+    updatedAt: string;
+  };
+  const candidate = fixtureCandidate(
+    partial,
+    operation.createdAt,
+    sourceSha256,
+  );
+  const committed = await request.post(
+    `${captureRuntimeBaseUrl}/v2/captures/${operation.captureId}/structure/commit`,
+    {
+      headers: {
+        ...captureRuntimeHeaders,
+        'X-Idempotency-Key': `${clientRequestId}-commit`,
+      },
+      data: candidate,
+    },
+  );
+  expect(committed.ok()).toBe(true);
+  await expect(committed.json()).resolves.toMatchObject({
+    status: 'completed',
+    lastEventSequence: 3,
+  });
+
+  const terminalReplay = await request.get(
+    `${captureRuntimeBaseUrl}/v2/captures/${operation.captureId}/events`,
+    {
+      headers: {
+        ...captureRuntimeHeaders,
+        Accept: 'text/event-stream',
+        'Last-Event-ID': '2',
+      },
+    },
+  );
+  expect(terminalReplay.ok()).toBe(true);
+  const terminalFrames = await terminalReplay.text();
+  expect(terminalFrames).toContain('id: 3\nevent: completed');
+  expect(terminalFrames).not.toContain('id: 2\n');
+
+  const result = await request.get(
+    `${captureRuntimeBaseUrl}/v2/captures/${operation.captureId}/result`,
+    { headers: captureRuntimeHeaders },
+  );
+  await expect(result.json()).resolves.toMatchObject({
+    operation: { status: 'completed' },
+    raw: { diagnosticOnly: true, sourceText: partial.sourceText },
+    result: { schemaVersion: '1', source: partial.source },
+  });
+  const deleted = await request.delete(
+    `${captureRuntimeBaseUrl}/v2/captures/${operation.captureId}`,
+    { headers: captureRuntimeHeaders },
+  );
+  expect(deleted.status()).toBe(204);
+  expect(await deleted.body()).toHaveLength(0);
 });
 
 test('uses the real backend for upload, generation, and Full Exam', async ({
@@ -384,6 +596,60 @@ function pngFile(name: string) {
 
 function uniqueProjectName(label: string, testInfo: TestInfo): string {
   return `${label} ${testInfo.retry}`;
+}
+
+async function readThroughEvent(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  eventMarker: string,
+): Promise<string> {
+  const decoder = new TextDecoder();
+  let frames = '';
+  while (!frames.includes(eventMarker)) {
+    const next = await reader.read();
+    if (next.done) break;
+    frames += decoder.decode(next.value, { stream: true });
+  }
+  return frames;
+}
+
+function fixtureCandidate(
+  partial: {
+    source: Record<string, unknown>;
+    segments: Array<Record<string, unknown>>;
+    sourceText: string;
+    extractionEngine: Record<string, unknown>;
+    updatedAt: string;
+  },
+  createdAt: string,
+  sourceSha256: string,
+): Record<string, unknown> {
+  const blocks = partial.segments.map((segment, index) => ({
+    blockId: `fixture-block-${index}`,
+    order: index,
+    type: 'paragraph',
+    sourceSegmentId: segment['segmentId'],
+    locator: segment['locator'],
+    sourceText: segment['text'],
+    targetText: segment['text'],
+  }));
+  return {
+    schemaVersion: '1',
+    source: partial.source,
+    rawSegments: partial.segments,
+    blocks,
+    sourceText: partial.sourceText,
+    targetText: blocks.map((block) => block.targetText).join('\n'),
+    extractionEngine: partial.extractionEngine,
+    structuringEngine: {
+      engine: 'cert-prep-e2e-host',
+      model: 'deterministic',
+      digest: `sha256:${sourceSha256}`,
+      device: null,
+    },
+    warnings: [],
+    createdAt,
+    completedAt: partial.updatedAt,
+  };
 }
 
 async function projectByName(

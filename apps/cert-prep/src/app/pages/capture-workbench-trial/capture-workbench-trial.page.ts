@@ -15,7 +15,7 @@ import {
   defineCaptureWorkbenchElement,
   type CaptureCompletedEvent,
   type CaptureWorkbenchElement,
-} from '@gx-capture/capture-workbench';
+} from '@gx-capture/capture-workbench-ui';
 import { Subscription } from 'rxjs';
 import { ProjectStore } from '../../stores/project.store';
 import { SourceImportStore } from '../../stores/source-import/source-import.store';
@@ -136,7 +136,7 @@ export class CaptureWorkbenchTrialPage implements AfterViewInit, OnDestroy {
       outputMode: 'json',
       multiple: false,
       showRuntimeSetup: false,
-      hostStructuringOwner: 'client',
+      hostStructuringOwner: 'component',
       hostManagedHandshake: true,
       reviewBeforeCommit: true,
       reviewEditable: true,
@@ -151,6 +151,7 @@ export class CaptureWorkbenchTrialPage implements AfterViewInit, OnDestroy {
       density: 'comfortable',
     };
     element.client = this.client;
+    element.structuringProvider = this.client;
     element.addEventListener(
       CAPTURE_WORKBENCH_CUSTOM_EVENTS.completed,
       this.onCompleted,

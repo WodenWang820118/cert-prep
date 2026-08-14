@@ -82,7 +82,7 @@ wheels = [
 
 [[package]]
 name = "capture-contracts"
-version = "0.3.11"
+version = "0.3.12"
 source = { directory = "../../../capture-workbench/packages/capture-contracts/python" }
 dependencies = [
     { name = "pydantic" },
@@ -93,7 +93,7 @@ requires-dist = [{ name = "pydantic", specifier = ">=2.13.4,<3.0.0" }]
 
 [[package]]
 name = "capture-structuring"
-version = "0.3.11"
+version = "0.3.12"
 source = { directory = "../../../capture-workbench/packages/capture-structuring-python" }
 dependencies = [
     { name = "capture-contracts" },

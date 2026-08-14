@@ -39,6 +39,9 @@ jobs:
   build-candidate:
     name: Validate and build one Windows alpha candidate
     runs-on: windows-2025
+    permissions:
+      contents: read
+      packages: read
     outputs:
       tag: ${{ steps.metadata.outputs.tag }}
       commit_sha: ${{ steps.metadata.outputs.commit_sha }}
@@ -49,25 +52,6 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           fetch-depth: 0
-
-      - name: Check out pre-publication Capture Workbench bridge
-        if: vars.CAPTURE_PUBLISHED_0_3_9 != 'true'
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-        with:
-          repository: gx-capture/capture-workbench
-          ref: agent/modular-reuse-contracts
-          path: capture-workbench
-          sparse-checkout: |
-            packages/capture-contracts
-            packages/capture-structuring-python
-            packages/capture-sidecar-launcher
-
-      - name: Link pre-publication Capture Workbench bridge (Windows)
-        if: vars.CAPTURE_PUBLISHED_0_3_9 != 'true'
-        shell: pwsh
-        run: |
-          $target = Join-Path (Split-Path -Parent $env:GITHUB_WORKSPACE) 'capture-workbench'
-          New-Item -ItemType Junction -Path $target -Target (Join-Path $env:GITHUB_WORKSPACE 'capture-workbench') | Out-Null
 
       - name: Install pnpm
         uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
@@ -80,6 +64,8 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+          registry-url: https://npm.pkg.github.com
+          scope: '@gx-capture'
 
       - name: Install uv
         uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990
@@ -92,11 +78,24 @@ jobs:
         shell: pwsh
         run: rustup toolchain install stable --profile minimal --component clippy,rustfmt
 
+      - name: Verify published Capture Workbench consumer declarations
+        env:
+          CAPTURE_REQUIRE_PUBLISHED_CAPTURE_ARTIFACTS: '1'
+        run: node --test tools/capture-runtime-version.test.mts
+
       - name: Install dependencies
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
         run: pnpm install --frozen-lockfile
 
       - name: Sync backend Python environment
         run: uv sync --project apps/cert-prep-backend --frozen --python ${{ env.PYTHON_VERSION }}
+
+      - name: Stage the published Capture Runtime release
+        run: pnpm nx run cert-prep-desktop:install-capture-runtime --skip-nx-cache
+
+      - name: Run the Capture Runtime consumer smoke
+        run: pnpm nx run cert-prep-desktop:capture-runtime-consumer-smoke --skip-nx-cache
 
       - name: Validate release identity
         id: metadata

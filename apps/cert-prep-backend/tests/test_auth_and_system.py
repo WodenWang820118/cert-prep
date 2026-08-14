@@ -34,12 +34,15 @@ def test_cors_allows_configured_dev_origin(tmp_path: Path) -> None:
         headers={
             "Origin": "http://localhost:4200",
             "Access-Control-Request-Method": "GET",
-            "Access-Control-Request-Headers": "Authorization",
+            "Access-Control-Request-Headers": "Authorization, Last-Event-ID",
         },
     )
 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "http://localhost:4200"
+    allowed_headers = response.headers["access-control-allow-headers"].casefold()
+    assert "authorization" in allowed_headers
+    assert "last-event-id" in allowed_headers
 
 
 def test_default_data_dir_is_absolute_and_app_specific(monkeypatch) -> None:

@@ -27,11 +27,11 @@ or retain a local extraction provider.
 - Requirements/readiness/install/cancel are proxied through the authenticated
   backend; the sidecar token never reaches Angular/WebView.
 - Cert Prep configures the published component with `structuringMode: 'host'`,
-  `hostStructuringOwner: 'client'`, `hostManagedHandshake: true`, and
+  `hostStructuringOwner: 'component'`, `hostManagedHandshake: true`, and
   `showRuntimeSetup: false`, with `enabledSources: ['pdf', 'image', 'audio']`.
   The host UI gates OCR/STT-dependent sources on runtime readiness while the backend adapter performs
-  the compatibility and requirement checks immediately before creating each
-  sidecar job.
+  the compatibility and requirement checks immediately before opening each
+  sidecar ingestion.
 - On v0.3.11 the UI exposes image/audio controls only when the corresponding
   runtime requirement is ready and never claims OCR-dependent PDF support
   without ready OCR. The runtime installs `windowsml-ocr` first and
@@ -39,7 +39,7 @@ or retain a local extraction provider.
   selected dependency is ready. The host adapter verifies the sidecar is ready,
   has the expected service identity, exact runtime release/API major, schema, host
   structuring mode, and requested capture-kind capability. An incompatible
-  handshake blocks every source and does not invoke the sidecar create API. It
+  handshake blocks every source and does not open a sidecar ingestion. It
   then applies a source-aware requirement policy: image is admitted only while
   `windowsml-ocr` is `ready`, audio only while `whisper-primary` is `ready`,
   and otherwise each is rejected before dispatch. Every PDF is dispatched to
@@ -55,7 +55,18 @@ or retain a local extraction provider.
   the same product messages across the Trial client and `/documents` path:
   `WindowsML OCR is unavailable. <detail>` and
   `Whisper transcription is unavailable. <detail>`. They are host-side
-  failures before a capture ID exists, not fabricated failed sidecar jobs.
+  failures before a capture ID exists, not fabricated failed runtime captures.
+- Source bytes cross the v2 ingestion lifecycle only: open with a source digest,
+  upload ordered checksum-bounded chunks with `Content-Range`, `Digest`, and
+  stable idempotency keys, finalize, then start the capture. Uncertain open/start
+  responses recover through the matching by-client-request lookup.
+- Normal capture progress is authenticated replayable SSE from
+  `/v2/captures/{id}/events`, not polling. The consumer validates content type,
+  UTF-8, framing, capture/sequence identity, event names, monotonic ordering,
+  and bounded input before exposing events. Reconnect uses `Last-Event-ID`;
+  listener disconnect never cancels the runtime capture. Snapshot, partial,
+  raw, and result reads support reconciliation and review, followed by host
+  structure commit/failure, cancel, and delete.
 
 ## Failure policy
 
@@ -78,7 +89,7 @@ text; it proves UI selection, backend-to-sidecar capture, review confirmation,
 host persistence, and Markdown export with `pdf-embedded-text` provenance.
 Its negative cases prove image, audio, and any OCR-dependent PDF fail closed
 with no browser sidecar token and no OCR/STT claim. They also prove an
-incompatible handshake creates no sidecar job, and that the host-owned UI
+incompatible handshake opens no sidecar ingestion, and that the host-owned UI
 states image/audio are unavailable while their requirements are not ready. Fake
 extraction may exercise only the backend host protocol. The opt-in
 model-enabled smoke proves the core-first install order plus real PDF OCR and

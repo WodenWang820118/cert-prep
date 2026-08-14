@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { of, Subject } from 'rxjs';
+import { CAPTURE_RUNTIME_VERSION } from '@cert-prep/capture-runtime-version';
 import type {
   DesktopRuntimeInstallation,
   DesktopRuntimeStatus,
@@ -198,7 +199,7 @@ function captureRuntimeStatus(
     status,
     detail: `Capture Runtime is ${status}.`,
     unavailableReason: running ? null : `capture_runtime_${status}`,
-    version: '0.3.11',
+    version: CAPTURE_RUNTIME_VERSION,
     installedPath: null,
     baseUrl: null,
     token: null,
@@ -217,7 +218,7 @@ function captureRuntimeInstallation(
     id,
     kind: 'capture_runtime',
     provider: 'bundled-release',
-    model: 'capture-runtime@0.3.11',
+    model: `capture-runtime@${CAPTURE_RUNTIME_VERSION}`,
     status,
     detail: `Capture Runtime ${status}.`,
     completed: null,

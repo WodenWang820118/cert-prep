@@ -51,7 +51,7 @@ def capture_document_to_pdf_extraction(
     for block in document.blocks:
         if block.locator.kind != "page":
             raise ValueError("Document capture contains a non-page locator")
-        reviewed = overrides.get(block.source_segment_id, block.source_text)
+        reviewed = overrides.get(block.source_segment_id, block.target_text)
         pages.setdefault(block.locator.page, []).append((block.source_text, reviewed))
     if not pages:
         raise ValueError("Document capture contains no page blocks")

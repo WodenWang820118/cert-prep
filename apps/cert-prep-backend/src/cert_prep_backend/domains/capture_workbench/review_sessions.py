@@ -83,6 +83,33 @@ def set_runtime_capture_id(
         )
 
 
+def observe_event_sequence(
+    db: Database,
+    *,
+    project_id: str,
+    session_id: str,
+    sequence: int,
+) -> dict:
+    if not isinstance(sequence, int) or isinstance(sequence, bool) or sequence < 0:
+        raise ValueError("Capture event sequence must be a non-negative integer.")
+    with db.connect() as connection:
+        updated = connection.execute(
+            """
+            UPDATE capture_review_sessions
+            SET last_event_sequence = MAX(last_event_sequence, ?)
+            WHERE project_id = ? AND id = ?
+            """,
+            (sequence, project_id, session_id),
+        )
+        if updated.rowcount != 1:
+            raise NotFoundError("Capture review session not found.")
+        return _row(
+            connection.execute(
+                "SELECT * FROM capture_review_sessions WHERE id = ?", (session_id,)
+            ).fetchone()
+        )
+
+
 def begin_confirm(
     db: Database,
     *,
@@ -162,17 +189,74 @@ def begin_confirm_in_connection(
     ), True
 
 
-def finish(db: Database, *, project_id: str, session_id: str, status: str) -> dict:
+def finish(
+    db: Database,
+    *,
+    project_id: str,
+    session_id: str,
+    status: str,
+    terminal_sequence: int | None = None,
+) -> dict:
     if status not in {COMPLETED, CANCELED, FAILED}:
         raise ValueError(f"Unsupported capture review terminal status: {status}")
+    if terminal_sequence is not None and (
+        not isinstance(terminal_sequence, int)
+        or isinstance(terminal_sequence, bool)
+        or terminal_sequence < 1
+    ):
+        raise ValueError("Terminal capture event sequence must be a positive integer.")
     with db.connect() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        current = connection.execute(
+            "SELECT * FROM capture_review_sessions WHERE project_id = ? AND id = ?",
+            (project_id, session_id),
+        ).fetchone()
+        if current is None:
+            raise NotFoundError("Capture review session not found.")
+        if current["status"] in {COMPLETED, CANCELED, FAILED}:
+            if (
+                terminal_sequence is not None
+                and terminal_sequence > int(current["last_event_sequence"])
+            ):
+                connection.execute(
+                    """
+                    UPDATE capture_review_sessions
+                    SET last_event_sequence = ?
+                    WHERE project_id = ? AND id = ?
+                    """,
+                    (terminal_sequence, project_id, session_id),
+                )
+                current = connection.execute(
+                    """
+                    SELECT * FROM capture_review_sessions
+                    WHERE project_id = ? AND id = ?
+                    """,
+                    (project_id, session_id),
+                ).fetchone()
+            return _row(current)
+        if current["status"] not in ACTIVE:
+            raise RuntimeError("Capture review session could not reach its terminal state.")
+        current_sequence = int(current["last_event_sequence"])
+        final_sequence = (
+            current_sequence + 1
+            if terminal_sequence is None
+            else max(current_sequence, terminal_sequence)
+        )
         updated = connection.execute(
             """
             UPDATE capture_review_sessions
-            SET status = ?, updated_at = ?
+            SET status = ?, last_event_sequence = ?, updated_at = ?
             WHERE project_id = ? AND id = ? AND status IN (?, ?)
             """,
-            (status, utc_now(), project_id, session_id, PENDING, CONFIRMING),
+            (
+                status,
+                final_sequence,
+                utc_now(),
+                project_id,
+                session_id,
+                PENDING,
+                CONFIRMING,
+            ),
         )
         row = connection.execute(
             "SELECT * FROM capture_review_sessions WHERE project_id = ? AND id = ?",
@@ -226,5 +310,6 @@ __all__ = [
     "expired",
     "finish",
     "get",
+    "observe_event_sequence",
     "set_runtime_capture_id",
 ]

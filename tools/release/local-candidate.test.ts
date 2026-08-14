@@ -11,6 +11,7 @@ import { test } from 'node:test';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
+import { CAPTURE_RUNTIME_VERSION } from '../capture-runtime-version.mts';
 import { validateAssembledRuntimes } from './local-candidate.ts';
 
 test('assembled candidates revalidate backend and Capture Runtime assets', async () => {
@@ -44,7 +45,7 @@ test('assembled candidates revalidate backend and Capture Runtime assets', async
     const captureName = 'capture-runtime-x86_64-pc-windows-msvc.exe';
     const captureManifest = {
       manifestVersion: '1',
-      runtimeVersion: '0.3.11',
+      runtimeVersion: CAPTURE_RUNTIME_VERSION,
       apiVersion: '1.0',
       captureDocumentSchemaVersion: '1',
       platform: 'windows',

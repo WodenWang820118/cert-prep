@@ -8,11 +8,12 @@ import hashlib
 import json
 
 from capture_contracts import (
-    CaptureReviewV1,
+    CaptureDocumentV1,
     CaptureSourceKind,
 )
 from cert_prep_backend.domains.capture_workbench.coordinator import (
     CaptureRuntimeCanceledError,
+    CaptureRuntimeJobError,
     CertPrepCaptureCoordinator,
 )
 from cert_prep_backend.domains.capture_workbench.persistence import (
@@ -25,14 +26,14 @@ from cert_prep_backend.persistence.database import Database
 
 
 @dataclass(frozen=True, slots=True)
-class ReviewConfirmationClaim:
+class CaptureCommitClaim:
     session: dict
     acquired: bool
 
 
-def review_digest(review: CaptureReviewV1) -> str:
+def candidate_digest(candidate: CaptureDocumentV1) -> str:
     canonical = json.dumps(
-        review.model_dump(mode="json", by_alias=True),
+        candidate.model_dump(mode="json", by_alias=True),
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
@@ -40,16 +41,16 @@ def review_digest(review: CaptureReviewV1) -> str:
     return hashlib.sha256(canonical).hexdigest()
 
 
-def begin_review_confirmation(
+def begin_capture_commit(
     db: Database,
     *,
     project_id: str,
     document_id: str,
     operation_id: str,
     session_id: str,
-    review: CaptureReviewV1,
+    candidate: CaptureDocumentV1,
     client_request_id: str,
-) -> ReviewConfirmationClaim:
+) -> CaptureCommitClaim:
     """Claim the review session and operation in one SQLite transaction."""
 
     with db.connect() as connection:
@@ -58,9 +59,9 @@ def begin_review_confirmation(
             connection,
             project_id=project_id,
             session_id=session_id,
-            review_revision=review.review_version,
+            review_revision=1,
             client_request_id=client_request_id,
-            review_digest=review_digest(review),
+            review_digest=candidate_digest(candidate),
         )
         if acquired:
             operations.begin_capture_review_commit_in_connection(
@@ -69,7 +70,7 @@ def begin_review_confirmation(
                 document_id=document_id,
                 operation_id=operation_id,
             )
-        return ReviewConfirmationClaim(session=session, acquired=acquired)
+        return CaptureCommitClaim(session=session, acquired=acquired)
 
 
 def begin_review_capture(
@@ -85,8 +86,19 @@ def begin_review_capture(
     media_type: str,
     source_kind: CaptureSourceKind,
     should_cancel: Callable[[], bool],
+    on_runtime_started: Callable[[str], None] | None = None,
 ) -> dict:
-    job = coordinator.begin_capture(
+    def persist_runtime_id(operation) -> None:
+        review_sessions.set_runtime_capture_id(
+            db,
+            project_id=project_id,
+            session_id=session_id,
+            runtime_capture_id=operation.capture_id,
+        )
+        if on_runtime_started is not None:
+            on_runtime_started(operation.capture_id)
+
+    operation = coordinator.begin_capture(
         operation_id=operation_id,
         file_name=file_name,
         content=content,
@@ -94,13 +106,14 @@ def begin_review_capture(
         source_kind=source_kind,
         target_language=None,
         should_cancel=should_cancel,
+        on_started=persist_runtime_id,
     )
     try:
-        review_sessions.set_runtime_capture_id(
+        review_sessions.observe_event_sequence(
             db,
             project_id=project_id,
             session_id=session_id,
-            runtime_capture_id=job.capture_id,
+            sequence=operation.last_event_sequence,
         )
         operations.mark_capture_review_pending(
             db,
@@ -109,12 +122,12 @@ def begin_review_capture(
             operation_id=operation_id,
         )
     except Exception:
-        coordinator.cancel(job.capture_id)
+        coordinator.cancel(operation.capture_id)
         raise
     return source_documents_repository.get_document(db, project_id, document_id)
 
 
-def confirm_review_capture(
+def commit_review_capture(
     db: Database,
     *,
     coordinator: CertPrepCaptureCoordinator,
@@ -122,21 +135,22 @@ def confirm_review_capture(
     document_id: str,
     operation_id: str,
     session_id: str,
-    review: CaptureReviewV1,
+    candidate: CaptureDocumentV1,
     should_cancel: Callable[[], bool],
 ) -> dict:
     session = review_sessions.get(db, project_id=project_id, session_id=session_id)
     runtime_capture_id = session.get("runtime_capture_id")
     if not isinstance(runtime_capture_id, str) or not runtime_capture_id:
         raise RuntimeError("Capture Runtime has not reached the review state.")
+    terminal_sequence: int | None = None
     try:
-        capture = coordinator.confirm_capture(
+        capture = coordinator.commit_capture(
             operation_id=operation_id,
             capture_id=runtime_capture_id,
-            target_language=None,
-            review=review,
+            candidate=candidate,
             should_cancel=should_cancel,
         )
+        terminal_sequence = capture.last_event_sequence
         source = source_documents_repository.get_document(db, project_id, document_id)
         document = publish_capture_document(
             db,
@@ -146,20 +160,14 @@ def confirm_review_capture(
             source_kind=source["source_kind"],
             expected_sha256=source["sha256"],
             document=capture.document,
-            review=review,
         )
         review_sessions.finish(
             db,
             project_id=project_id,
             session_id=session_id,
             status=review_sessions.COMPLETED,
+            terminal_sequence=capture.last_event_sequence,
         )
-        try:
-            coordinator.delete(runtime_capture_id)
-        except Exception:
-            # Publication is already durable; the runtime retention policy is
-            # the fallback cleanup path for an ambiguous delete response.
-            pass
         return document
     except CaptureRuntimeCanceledError:
         review_sessions.finish(
@@ -169,13 +177,16 @@ def confirm_review_capture(
             status=review_sessions.CANCELED,
         )
         raise
-    except Exception:
+    except Exception as error:
+        if isinstance(error, CaptureRuntimeJobError):
+            terminal_sequence = error.last_event_sequence
         try:
             review_sessions.finish(
                 db,
                 project_id=project_id,
                 session_id=session_id,
                 status=review_sessions.FAILED,
+                terminal_sequence=terminal_sequence,
             )
         finally:
             operations.finish_failed(
@@ -226,9 +237,11 @@ def _cleanup_review_sessions(
     cleaned: list[str] = []
     for session in sessions:
         runtime_capture_id = session.get("runtime_capture_id")
+        terminal_sequence: int | None = None
         if coordinator is not None and runtime_capture_id:
             try:
-                coordinator.cancel(runtime_capture_id)
+                operation = coordinator.cancel(runtime_capture_id)
+                terminal_sequence = operation.last_event_sequence
             except Exception:
                 # The runtime may already be gone; the durable host state still
                 # must not remain reviewable after process recovery.
@@ -260,6 +273,7 @@ def _cleanup_review_sessions(
                 project_id=session["project_id"],
                 session_id=session["id"],
                 status=review_sessions.CANCELED,
+                terminal_sequence=terminal_sequence,
             )
         except Exception:
             pass
@@ -268,11 +282,11 @@ def _cleanup_review_sessions(
 
 
 __all__ = [
-    "ReviewConfirmationClaim",
+    "CaptureCommitClaim",
+    "begin_capture_commit",
     "begin_review_capture",
-    "begin_review_confirmation",
+    "candidate_digest",
     "cleanup_active_review_sessions",
     "cleanup_expired_review_sessions",
-    "confirm_review_capture",
-    "review_digest",
+    "commit_review_capture",
 ]

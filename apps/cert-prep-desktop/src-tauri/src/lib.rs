@@ -119,12 +119,13 @@ mod shared_sidecar_contract_tests {
         thread,
     };
 
+    use crate::constants::CAPTURE_RUNTIME_VERSION;
     use capture_sidecar_launcher::{probe_ready_once, ProbeResult, SidecarManifest};
 
     fn manifest() -> SidecarManifest {
         SidecarManifest {
             manifest_version: "1".into(),
-            runtime_version: "0.3.11".into(),
+            runtime_version: CAPTURE_RUNTIME_VERSION.into(),
             api_version: "1.0".into(),
             capture_document_schema_version: "1".into(),
             platform: "windows".into(),
@@ -149,7 +150,10 @@ mod shared_sidecar_contract_tests {
             sender
                 .send(request[..count].to_vec())
                 .expect("request bytes");
-            let body = r#"{"ready":true,"runtimeVersion":"0.3.11","apiVersion":"1.0","captureDocumentSchemaVersion":"1","capabilities":{}}"#;
+            let body = format!(
+                r#"{{"ready":true,"runtimeVersion":"{}","apiVersion":"1.0","captureDocumentSchemaVersion":"1","capabilities":{{}}}}"#,
+                CAPTURE_RUNTIME_VERSION
+            );
             write!(
                 stream,
                 "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",

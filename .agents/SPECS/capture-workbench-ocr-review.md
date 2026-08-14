@@ -1,16 +1,15 @@
 # Capture Workbench review handoff
 
-The Cert Prep route consumes the published Workbench package. When a runtime
-release has the required engine assets, PDF/image sources upload once to the
-backend review API, receive the Capture Runtime result, and pause at
-`awaiting_confirmation`. v0.3.8 is core-only, so its unavailable requirements
-keep capture disabled before that flow can start.
+The Cert Prep route consumes the published Workbench package. When the runtime
+has the required engine assets, PDF/image sources pass through the backend-owned
+v2 ingestion and capture lifecycle, stream progress over replayable SSE, and
+pause at `awaiting_confirmation` with a validated partial capture.
 
 The browser can edit only existing segment text. Confirmation sends the capture
 id, client request id, and review contract; it never sends the PDF or raw text
 again. The backend validates provenance, owns host structuring and persistence,
-and emits the completed `CaptureDocumentV1` through the Workbench completion
-event.
+commits the completed `CaptureDocumentV1` to the runtime, and emits it through
+the Workbench completion event.
 
 Before confirmation the source document remains processing and has no usable
 ready chunks. After confirmation, `document_chunks.raw_text` contains the

@@ -12,6 +12,7 @@ import { dirname, join } from 'node:path';
 import { afterEach, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
+import { CAPTURE_RUNTIME_VERSION } from '../../../../tools/capture-runtime-version.mts';
 import { validateCaptureArtifactBytes } from '../capture-runtime-contract.mts';
 import { CAPTURE_DOCUMENT_SCHEMA_SHA256 } from './constants.mts';
 import { bytesToMb, collectBundleArtifacts } from './files.mts';
@@ -161,7 +162,7 @@ function createResourceFixture(): {
   writeFileSync(join(resourceRoot, schemaName), captureSchema);
   const captureManifest = {
     manifestVersion: '1',
-    runtimeVersion: '0.3.11',
+    runtimeVersion: CAPTURE_RUNTIME_VERSION,
     apiVersion: '1.0',
     captureDocumentSchemaVersion: '1',
     platform: 'windows',
@@ -201,7 +202,7 @@ function createResourceFixture(): {
       capture_runtime: {
         distribution: 'versioned_release_artifact_staged',
         file_name: captureName,
-        runtime_version: '0.3.11',
+        runtime_version: CAPTURE_RUNTIME_VERSION,
         api_version: '1.0',
         capture_document_schema_version: '1',
         sha256: sha256('capture-runtime'),

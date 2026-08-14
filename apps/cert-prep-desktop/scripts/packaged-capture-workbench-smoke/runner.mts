@@ -5,6 +5,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 
 import type { Page, Request } from 'playwright';
 
+import { CAPTURE_RUNTIME_VERSION } from '../../../../tools/capture-runtime-version.mts';
 import { DEFAULT_LLM_MODEL } from '../package-qa/constants.mts';
 import {
   cleanupAfterRunWithTimeout,
@@ -250,7 +251,7 @@ async function runLazyCaptureJourney(
     firstPage,
     firstRotation.api,
   );
-  log(run, 'Published 0.3.11 negative data contract passed');
+  log(run, `Published ${CAPTURE_RUNTIME_VERSION} negative data contract passed`);
   firstSecurity.assertClean();
   await screenshot(run, 'capture-workbench-completed');
 

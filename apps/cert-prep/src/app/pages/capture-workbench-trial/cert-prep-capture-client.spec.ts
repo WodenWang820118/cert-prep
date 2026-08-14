@@ -1,64 +1,61 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import type { CertPrepGeneratedClient } from '@cert-prep/api';
-import { firstValueFrom, of, throwError } from 'rxjs';
+import { CAPTURE_RUNTIME_VERSION } from '@cert-prep/capture-runtime-version';
+import { firstValueFrom, lastValueFrom, of, throwError, toArray } from 'rxjs';
 import type {
-  CaptureLocatorV1,
-  RawCaptureSegmentV1,
-  RawCaptureV1,
-} from '@gx-capture/capture-workbench';
+  CaptureDocumentV1,
+  CaptureStructuringRequest,
+} from '@gx-capture/capture-workbench-ui';
 import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
+import { CertPrepRuntimeConfig } from '../../services/cert-prep-api.service';
 import { ProjectStore } from '../../stores/project.store';
 import { CertPrepCaptureClient } from './cert-prep-capture-client';
 
 const TEST_PROJECT_ID = 'project-1';
+const TEST_BACKEND_TOKEN = 'backend-token';
 
-type ApiMocks = {
-  captureRuntimeReady: ReturnType<typeof vi.fn>;
-  captureRuntimeRequirements: ReturnType<typeof vi.fn>;
-  getDocumentMarkdown: ReturnType<typeof vi.fn>;
-  createCapture: ReturnType<typeof vi.fn>;
-  getCapture: ReturnType<typeof vi.fn>;
-  getRaw: ReturnType<typeof vi.fn>;
-  confirmCapture: ReturnType<typeof vi.fn>;
-  cancelCapture: ReturnType<typeof vi.fn>;
-  getResult: ReturnType<typeof vi.fn>;
-};
+type ApiMocks = Record<
+  | 'captureRuntimeReady'
+  | 'captureRuntimeRequirements'
+  | 'getDocumentMarkdown'
+  | 'createCapture'
+  | 'getCapture'
+  | 'deleteCapture'
+  | 'getPartial'
+  | 'structureCapture'
+  | 'commitCapture'
+  | 'reportStructuringFailure'
+  | 'cancelCapture'
+  | 'getResult',
+  ReturnType<typeof vi.fn>
+>;
 
-describe('CertPrepCaptureClient', () => {
-  const job = makeJob();
-  const raw = makeRaw();
-  const result = makeResult();
+describe('CertPrepCaptureClient streaming v2 seam', () => {
   const selectedProjectId = signal<string | null>(TEST_PROJECT_ID);
   let api: ApiMocks;
   let client: CertPrepCaptureClient;
 
   beforeEach(() => {
     api = {
-      captureRuntimeReady: vi.fn().mockReturnValue(
-        of({
-          ready: true,
-          service: 'capture-runtime',
-          apiVersion: '1.0',
-          runtimeVersion: '0.3.11',
-          captureDocumentSchemaVersion: '1',
-          capabilities: {
-            captureKinds: ['pdf'],
-            structuringModes: ['host'],
-            supportsCancellation: true,
-            supportsRawDiagnostics: true,
-            maxUploadBytes: 50_000_000,
-          },
-        }),
-      ),
+      captureRuntimeReady: vi.fn().mockReturnValue(of(readyResponse({}))),
       captureRuntimeRequirements: vi.fn().mockReturnValue(of({ items: [] })),
       getDocumentMarkdown: vi.fn().mockReturnValue(of(new Blob(['# scan']))),
-      createCapture: vi.fn().mockReturnValue(of(job)),
-      getCapture: vi.fn().mockReturnValue(of(job)),
-      getRaw: vi.fn().mockReturnValue(of(raw)),
-      confirmCapture: vi.fn().mockReturnValue(of(job)),
-      cancelCapture: vi.fn().mockReturnValue(of(job)),
-      getResult: vi.fn().mockReturnValue(of(result)),
+      createCapture: vi.fn().mockReturnValue(of(makeOperation())),
+      getCapture: vi.fn().mockReturnValue(of(makeOperation())),
+      deleteCapture: vi.fn().mockReturnValue(of(undefined)),
+      getPartial: vi.fn().mockReturnValue(of(makePartial())),
+      structureCapture: vi.fn().mockReturnValue(of(makeDocument())),
+      commitCapture: vi
+        .fn()
+        .mockReturnValue(of(makeOperation({ status: 'structuring' }))),
+      reportStructuringFailure: vi
+        .fn()
+        .mockReturnValue(of(makeOperation({ status: 'failed' }))),
+      cancelCapture: vi
+        .fn()
+        .mockReturnValue(of(makeOperation({ status: 'cancelled' }))),
+      getResult: vi.fn().mockReturnValue(of(makeCompositeResult())),
     };
     TestBed.configureTestingModule({
       providers: [
@@ -68,31 +65,50 @@ describe('CertPrepCaptureClient', () => {
           useValue: api as unknown as CertPrepGeneratedClient,
         },
         { provide: ProjectStore, useValue: { selectedProjectId } },
+        {
+          provide: CertPrepRuntimeConfig,
+          useValue: {
+            getBackendConfig: vi.fn().mockReturnValue(
+              of({
+                base_url: 'http://127.0.0.1:8765/',
+                token: TEST_BACKEND_TOKEN,
+              }),
+            ),
+          },
+        },
       ],
     });
     client = TestBed.inject(CertPrepCaptureClient);
   });
 
-  it('uploads once through the review capture API without sidecar credentials', async () => {
-    const signalController = new AbortController();
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('starts a v2 operation through the backend without exposing sidecar credentials', async () => {
+    const controller = new AbortController();
     const file = new File(['pdf'], 'scan.pdf', { type: 'application/pdf' });
 
-    const mappedJob = await firstValueFrom(
-      client.createCapture({
-        clientRequestId: 'request-1',
-        file,
-        sourceKind: 'pdf',
-        structuringMode: 'host',
-        signal: signalController.signal,
-      }),
-    );
+    const request$ = client.startStreamingCapture({
+      clientRequestId: 'request-1',
+      file,
+      sourceKind: 'pdf',
+      structuringMode: 'host',
+      signal: controller.signal,
+    });
+    expect(typeof request$.subscribe).toBe('function');
+    expect(request$).not.toBeInstanceOf(Promise);
 
+    await expect(firstValueFrom(request$)).resolves.toMatchObject({
+      protocolVersion: '2',
+      captureId: 'capture-1',
+      ingestionId: 'ingestion-1',
+      status: 'awaiting_structuring',
+    });
     expect(api.createCapture).toHaveBeenCalledWith(
       TEST_PROJECT_ID,
       expect.any(FormData),
       {
         headers: { 'X-Cert-Prep-Operation-Id': 'request-1' },
-        signal: signalController.signal,
+        signal: controller.signal,
       },
     );
     const body = api.createCapture.mock.calls[0]?.[1] as FormData;
@@ -100,234 +116,292 @@ describe('CertPrepCaptureClient', () => {
     expect(JSON.stringify(api.createCapture.mock.calls)).not.toContain(
       'Authorization',
     );
-    expect(mappedJob).toMatchObject({
-      captureId: job.captureId,
-      status: 'running',
-      stage: 'awaiting_structuring',
-      structuringMode: 'host',
-    });
   });
 
-  it('confirms only the capture id and reviewed text overlay', async () => {
-    await firstValueFrom(
-      client.createCapture({
-        clientRequestId: 'request-2',
-        file: new File(['pdf'], 'scan.pdf', { type: 'application/pdf' }),
-        sourceKind: 'pdf',
-        structuringMode: 'host',
-      }),
+  it('opens a cold authenticated replay stream for every subscription', async () => {
+    await seedCapture();
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(sseFrame(4, 'checkpoint'), {
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
+        }),
+      ),
     );
+    vi.stubGlobal('fetch', fetchMock);
 
-    await firstValueFrom(
-      client.confirmCapture(
-        job.captureId,
-        {
-          clientRequestId: 'confirm-2',
-          review: {
-            reviewVersion: 1,
-            edits: [{ segmentId: 'segment-1', reviewedText: 'corrected' }],
-          },
-        },
-        new AbortController().signal,
+    const stream$ = client.captureEvents('capture-1', { lastEventId: 3 });
+    await expect(lastValueFrom(stream$)).resolves.toMatchObject({
+      captureId: 'capture-1',
+      sequence: 4,
+      eventType: 'checkpoint',
+    });
+    await expect(lastValueFrom(stream$)).resolves.toMatchObject({ sequence: 4 });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = new Headers(init.headers);
+    expect(url).toBe(
+      'http://127.0.0.1:8765/projects/project-1/capture-workbench/captures/capture-1/events',
+    );
+    expect(url).not.toContain(TEST_BACKEND_TOKEN);
+    expect(headers.get('Authorization')).toBe(`Bearer ${TEST_BACKEND_TOKEN}`);
+    expect(headers.get('Last-Event-ID')).toBe('3');
+    expect(init.credentials).toBe('omit');
+  });
+
+  it('ignores standalone SSE heartbeats and other no-data blocks', async () => {
+    await seedCapture();
+    const body = [
+      ': keep-alive\n\n',
+      'id: ignored\nevent: heartbeat\nretry: 1000\n\n',
+      sseFrame(4, 'checkpoint'),
+    ].join('');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(body, {
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream' },
+        }),
       ),
     );
 
-    expect(api.confirmCapture).toHaveBeenCalledWith(
+    const events = await firstValueFrom(
+      client.captureEvents('capture-1').pipe(toArray()),
+    );
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      captureId: 'capture-1',
+      sequence: 4,
+      eventType: 'checkpoint',
+    });
+  });
+
+  it('aborts the stream fetch on unsubscribe without cancelling the capture', async () => {
+    await seedCapture();
+    let requestSignal: AbortSignal | undefined;
+    const fetchMock = vi.fn().mockImplementation((_url, init: RequestInit) => {
+      requestSignal = init.signal ?? undefined;
+      return new Promise<Response>(() => undefined);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const subscription = client.captureEvents('capture-1').subscribe();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    expect(requestSignal?.aborted).toBe(false);
+
+    subscription.unsubscribe();
+
+    expect(requestSignal?.aborted).toBe(true);
+    expect(api.cancelCapture).not.toHaveBeenCalled();
+  });
+
+  it('fails closed on malformed SSE framing with a sanitized error', async () => {
+    await seedCapture();
+    const malformed = `id: 4\ndata: ${JSON.stringify({
+      secret: TEST_BACKEND_TOKEN,
+    })}\n\n`;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(malformed, {
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream' },
+        }),
+      ),
+    );
+
+    const error = await lastValueFrom(client.captureEvents('capture-1')).catch(
+      (failure: unknown) => failure,
+    );
+
+    expect(error).toBeInstanceOf(Error);
+    expect(String(error)).toContain('event stream is invalid');
+    expect(String(error)).not.toContain(TEST_BACKEND_TOKEN);
+  });
+
+  it('treats a colonless SSE data field as dispatchable malformed data', async () => {
+    await seedCapture();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response('id: 4\nevent: checkpoint\ndata\n\n', {
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream' },
+        }),
+      ),
+    );
+
+    const error = await lastValueFrom(client.captureEvents('capture-1')).catch(
+      (failure: unknown) => failure,
+    );
+
+    expect(error).toBeInstanceOf(Error);
+    expect(String(error)).toContain('event stream is invalid');
+  });
+
+  it('delegates reviewed host structuring to the backend as an Observable', async () => {
+    await seedCapture();
+    const progress = vi.fn();
+    const controller = new AbortController();
+    const structureRequest: CaptureStructuringRequest = {
+      raw: makeRaw(),
+      review: {
+        reviewVersion: 1,
+        edits: [{ segmentId: 'segment-1', reviewedText: 'Corrected text' }],
+      },
+      documentContract: {
+        schemaVersion: '1',
+        schemaSha256: 'schema-digest',
+        jsonSchema: {},
+      },
+      signal: controller.signal,
+      reportProgress: progress,
+    };
+
+    const structure$ = client.structure(structureRequest);
+    expect(typeof structure$.subscribe).toBe('function');
+    await expect(firstValueFrom(structure$)).resolves.toMatchObject({
+      schemaVersion: '1',
+      blocks: [{ targetText: 'Recognized OCR text' }],
+    });
+
+    expect(api.structureCapture).toHaveBeenCalledWith(
       TEST_PROJECT_ID,
-      job.captureId,
+      'capture-1',
       {
-        clientRequestId: 'confirm-2',
+        clientRequestId: 'capture-1-structure',
         review: {
           reviewVersion: 1,
-          edits: [{ segmentId: 'segment-1', reviewedText: 'corrected' }],
+          edits: [
+            { segmentId: 'segment-1', reviewedText: 'Corrected text' },
+          ],
         },
       },
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      { signal: controller.signal },
     );
-    expect(JSON.stringify(api.confirmCapture.mock.calls)).not.toContain(
-      'Authorization',
+    expect(JSON.stringify(api.structureCapture.mock.calls)).not.toContain(
+      'schema-digest',
     );
+    expect(progress).toHaveBeenCalledWith(1);
   });
 
-  it('keeps the durable document mapping after the UI task is deleted', async () => {
-    await firstValueFrom(
-      client.createCapture({
-        clientRequestId: 'request-delete',
-        file: new File(['pdf'], 'scan.pdf', { type: 'application/pdf' }),
-        sourceKind: 'pdf',
-        structuringMode: 'host',
-      }),
-    );
+  it('commits the component candidate using the caller idempotency key', async () => {
+    await seedCapture();
+    const candidate = makeDocument();
 
-    await firstValueFrom(client.deleteCapture(job.captureId));
-
-    expect(client.documentIdForSourceSha256(job.source.sha256)).toBe(
-      job.documentId,
-    );
-  });
-
-  it('hands off the latest single-PDF document when browser and backend digests differ', async () => {
-    await firstValueFrom(
-      client.createCapture({
-        clientRequestId: 'request-digest-fallback',
-        file: new File(['pdf'], 'scan.pdf', { type: 'application/pdf' }),
-        sourceKind: 'pdf',
-        structuringMode: 'host',
-      }),
-    );
-
-    expect(client.documentIdForSourceSha256('b'.repeat(64))).toBe(
-      job.documentId,
-    );
-  });
-
-  it('maps readiness and forwards the browser abort signal to the backend proxy', async () => {
-    const signalController = new AbortController();
-    const ready = await firstValueFrom(
-      client.getReady(signalController.signal),
-    );
-
-    expect(ready).toMatchObject({
-      service: 'capture-runtime',
-      runtimeVersion: '0.3.11',
-      capabilities: { captureKinds: ['pdf'], structuringModes: ['host'] },
+    const commit$ = client.commitStreamingStructuredResult('capture-1', {
+      clientRequestId: 'commit-1',
+      candidate,
     });
-    expect(api.captureRuntimeReady).toHaveBeenCalledWith({
-      signal: signalController.signal,
+    expect(typeof commit$.subscribe).toBe('function');
+    await expect(firstValueFrom(commit$)).resolves.toMatchObject({
+      protocolVersion: '2',
+      status: 'structuring',
     });
-    expect(JSON.stringify(api.captureRuntimeReady.mock.calls)).not.toContain(
-      'Authorization',
+    expect(api.commitCapture).toHaveBeenCalledWith(
+      TEST_PROJECT_ID,
+      'capture-1',
+      { clientRequestId: 'commit-1', candidate },
+      { signal: undefined },
     );
   });
 
-  it('fails closed when runtime capabilities violate the published contract', async () => {
-    api.captureRuntimeReady.mockReturnValueOnce(
-      of(
-        readyResponse({
-          capabilities: { supportsCancellation: false },
-        }),
-      ),
-    );
-
-    await expect(firstValueFrom(client.getReady())).rejects.toThrow(
-      'capabilities outside the Capture contract',
-    );
-  });
-
-  it('passes core-only unavailable requirements through to the published component', async () => {
-    const detail =
-      'No downloadable model is published for this runtime release.';
-    api.captureRuntimeRequirements.mockReturnValueOnce(
-      of({
-        items: [
-          {
-            requirementId: 'windowsml-ocr',
-            kind: 'ocr',
-            displayName: 'WindowsML OCR',
-            status: 'unavailable',
-            requiredFor: ['pdf', 'image'],
-            installStrategy: 'unavailable',
-            detail,
-            artifact: null,
-          },
-          {
-            requirementId: 'whisper-primary',
-            kind: 'speech-to-text',
-            displayName: 'Whisper',
-            status: 'unavailable',
-            requiredFor: ['audio'],
-            installStrategy: 'unavailable',
-            detail,
-            artifact: null,
-          },
-        ],
-      }),
-    );
-
-    await expect(firstValueFrom(client.getRequirements())).resolves.toEqual([
-      expect.objectContaining({
-        requirementId: 'windowsml-ocr',
-        status: 'unavailable',
-        detail,
-      }),
-      expect.objectContaining({
-        requirementId: 'whisper-primary',
-        status: 'unavailable',
-        detail,
-      }),
-    ]);
-    expect(api.captureRuntimeRequirements).toHaveBeenCalledWith({
-      signal: undefined,
-    });
-  });
-
-  it('dispatches an embedded-text PDF through the backend despite unavailable OCR and Whisper requirements', async () => {
-    const detail =
-      'No downloadable model is published for this runtime release.';
-    api.captureRuntimeRequirements.mockReturnValueOnce(
-      of({
-        items: [
-          unavailableRequirement('windowsml-ocr', ['pdf', 'image'], detail),
-          unavailableRequirement('whisper-primary', ['audio'], detail),
-        ],
-      }),
-    );
-    const signalController = new AbortController();
+  it('maps partial and composite result projections at the v2 boundary', async () => {
+    await seedCapture();
 
     await expect(
-      firstValueFrom(
-        client.createCapture({
-          clientRequestId: 'embedded-text-pdf',
-          file: new File(['embedded text'], 'embedded-text.pdf', {
-            type: 'application/pdf',
-          }),
-          sourceKind: 'pdf',
-          structuringMode: 'host',
-          signal: signalController.signal,
-        }),
-      ),
-    ).resolves.toMatchObject({ captureId: job.captureId });
-
-    expect(api.captureRuntimeReady).toHaveBeenCalledWith({
-      signal: signalController.signal,
+      firstValueFrom(client.getStreamingPartial('capture-1')),
+    ).resolves.toMatchObject({
+      protocolVersion: '2',
+      captureId: 'capture-1',
+      revision: 1,
+      segments: [{ text: 'Recognized OCR text' }],
     });
-    expect(api.captureRuntimeRequirements).toHaveBeenCalledWith({
-      signal: signalController.signal,
+    await expect(
+      firstValueFrom(client.getStreamingResult('capture-1')),
+    ).resolves.toMatchObject({
+      operation: { protocolVersion: '2', status: 'completed' },
+      raw: { diagnosticOnly: true },
+      result: { schemaVersion: '1' },
     });
-    expect(api.createCapture).toHaveBeenCalledTimes(1);
   });
 
-  it('rejects an image before create when WindowsML is unavailable', async () => {
-    api.captureRuntimeReady.mockReturnValueOnce(of(readyResponse({})));
+  it('rejects composite results whose full source identities diverge', async () => {
+    await seedCapture();
+    const composite = makeCompositeResult();
+    const mismatched = {
+      ...composite,
+      result: {
+        ...composite.result,
+        source: {
+          ...composite.result.source,
+          fileName: 'different.pdf',
+        },
+      },
+    };
+    api.getResult.mockReturnValueOnce(of(mismatched));
+
+    await expect(
+      firstValueFrom(client.getStreamingResult('capture-1')),
+    ).rejects.toThrow('result source does not match the capture operation');
+  });
+
+  it('forwards cancellation, failure reporting, and deletion through the backend', async () => {
+    await seedCapture();
+
+    await firstValueFrom(client.cancelStreamingCapture('capture-1'));
+    await firstValueFrom(
+      client.reportStreamingStructuringFailure('capture-1', {
+        clientRequestId: 'failure-1',
+        code: 'host_structuring_failed',
+        message: 'Host structuring failed.',
+      }),
+    );
+    await firstValueFrom(client.deleteStreamingCapture('capture-1'));
+
+    expect(api.cancelCapture).toHaveBeenCalledWith(
+      TEST_PROJECT_ID,
+      'capture-1',
+      { signal: undefined },
+    );
+    expect(api.reportStructuringFailure).toHaveBeenCalledWith(
+      TEST_PROJECT_ID,
+      'capture-1',
+      {
+        clientRequestId: 'failure-1',
+        code: 'host_structuring_failed',
+        message: 'Host structuring failed.',
+      },
+      { signal: undefined },
+    );
+    expect(api.deleteCapture).toHaveBeenCalledWith(
+      TEST_PROJECT_ID,
+      'capture-1',
+      { signal: undefined },
+    );
+    expect(client.documentIdForSourceSha256('a'.repeat(64))).toBe('document-1');
+  });
+
+  it('maps readiness and preserves the browser abort signal', async () => {
+    const controller = new AbortController();
+    await expect(firstValueFrom(client.getReady(controller.signal))).resolves.toMatchObject({
+      service: 'capture-runtime',
+      runtimeVersion: CAPTURE_RUNTIME_VERSION,
+      capabilities: { captureKinds: ['pdf', 'image', 'audio'] },
+    });
+    expect(api.captureRuntimeReady).toHaveBeenCalledWith({
+      signal: controller.signal,
+    });
+  });
+
+  it('allows embedded-text PDF admission without an OCR installation', async () => {
     api.captureRuntimeRequirements.mockReturnValueOnce(
       of({
         items: [
           unavailableRequirement('windowsml-ocr', ['pdf', 'image']),
-          readyRequirement('whisper-primary', ['audio']),
-        ],
-      }),
-    );
-
-    await expect(
-      firstValueFrom(
-        client.createCapture({
-          clientRequestId: 'blocked-image',
-          file: new File(['png'], 'blocked.png', { type: 'image/png' }),
-          sourceKind: 'image',
-          structuringMode: 'host',
-        }),
-      ),
-    ).rejects.toThrow('WindowsML OCR is unavailable');
-
-    expect(api.createCapture).not.toHaveBeenCalled();
-  });
-
-  it('rejects audio before create when Whisper is unavailable', async () => {
-    api.captureRuntimeReady.mockReturnValueOnce(of(readyResponse({})));
-    api.captureRuntimeRequirements.mockReturnValueOnce(
-      of({
-        items: [
-          readyRequirement('windowsml-ocr', ['pdf', 'image']),
           unavailableRequirement('whisper-primary', ['audio']),
         ],
       }),
@@ -335,272 +409,173 @@ describe('CertPrepCaptureClient', () => {
 
     await expect(
       firstValueFrom(
-        client.createCapture({
-          clientRequestId: 'blocked-audio',
-          file: new File(['audio'], 'blocked.mp3', { type: 'audio/mpeg' }),
-          sourceKind: 'audio',
-          structuringMode: 'host',
-        }),
-      ),
-    ).rejects.toThrow('Whisper transcription is unavailable');
-
-    expect(api.createCapture).not.toHaveBeenCalled();
-  });
-
-  it.each([
-    ['not ready', { ready: false }, 'not ready'],
-    [
-      'wrong service',
-      { service: 'other-runtime' },
-      'non-Capture Runtime service',
-    ],
-    [
-      'unsupported runtime major',
-      { runtimeVersion: '1.0.0' },
-      'incompatible with client runtime major',
-    ],
-    [
-      'unsupported runtime minor',
-      { runtimeVersion: '0.2.8' },
-      'incompatible with client runtime minor 3',
-    ],
-    [
-      'unsupported API major',
-      { apiVersion: '2.0' },
-      'Capture API 2.0 is incompatible',
-    ],
-    ['wrong schema', { captureDocumentSchemaVersion: '2' }, 'schema'],
-    [
-      'missing host structuring',
-      {
-        capabilities: { ...readyCapabilities(), structuringModes: ['runtime'] },
-      },
-      'host structuring',
-    ],
-    [
-      'missing PDF capability',
-      { capabilities: { ...readyCapabilities(), captureKinds: ['image'] } },
-      'does not support PDF capture',
-    ],
-  ])('rejects $0 before create', async (_label, override, expectedError) => {
-    api.captureRuntimeReady.mockReturnValueOnce(of(readyResponse(override)));
-
-    await expect(
-      firstValueFrom(
-        client.createCapture({
-          clientRequestId: `incompatible-${_label}`,
-          file: new File(['pdf'], 'embedded-text.pdf', {
+        client.startStreamingCapture({
+          clientRequestId: 'embedded-pdf',
+          file: new File(['embedded'], 'scan.pdf', {
             type: 'application/pdf',
           }),
           sourceKind: 'pdf',
           structuringMode: 'host',
         }),
       ),
-    ).rejects.toThrow(expectedError);
-
-    expect(api.createCapture).not.toHaveBeenCalled();
-  });
-
-  it('downloads Markdown through cert-prep without exposing sidecar credentials', async () => {
-    const signalController = new AbortController();
-    const markdown = await firstValueFrom(
-      client.getDocumentMarkdown(
-        TEST_PROJECT_ID,
-        job.documentId,
-        signalController.signal,
-      ),
-    );
-
-    expect(markdown).toBeInstanceOf(Blob);
-    expect(api.getDocumentMarkdown).toHaveBeenCalledWith(
-      TEST_PROJECT_ID,
-      job.documentId,
-      { signal: signalController.signal },
-    );
-    expect(JSON.stringify(api.getDocumentMarkdown.mock.calls)).not.toContain(
-      'Authorization',
-    );
-  });
-
-  it('maps backend raw and committed CaptureDocumentV1 projections', async () => {
-    await firstValueFrom(
-      client.createCapture({
-        clientRequestId: 'request-3',
-        file: new File(['pdf'], 'scan.pdf', { type: 'application/pdf' }),
-        sourceKind: 'pdf',
-        structuringMode: 'host',
-      }),
-    );
-
-    const rawProjection = await firstValueFrom(client.getRaw(job.captureId));
-    const resultProjection = await firstValueFrom(
-      client.getResult(job.captureId),
-    );
-
-    expect(rawProjection).toMatchObject({
-      diagnosticOnly: true,
-      sourceText: 'Recognized OCR text',
-      segments: [{ text: 'Recognized OCR text' }],
-    });
-    expect(resultProjection).toMatchObject({
-      sourceText: 'Recognized OCR text',
-      targetText: 'Recognized OCR text',
-      structuringEngine: { engine: 'cert-prep-host-structuring' },
-      blocks: [{ type: 'paragraph', targetText: 'Recognized OCR text' }],
-    });
-  });
-
-  it('maps time locators and page bounding boxes without trusting API casts', async () => {
-    const rawWithTimeLocator = makeRaw();
-    rawWithTimeLocator.segments[0].locator = {
-      kind: 'time',
-      startMs: 10,
-      endMs: 20,
-    };
-    api.getRaw.mockReturnValueOnce(of(rawWithTimeLocator));
-
-    await expect(
-      firstValueFrom(client.getRaw('capture-1')),
-    ).resolves.toMatchObject({
-      segments: [{ locator: { kind: 'time', startMs: 10, endMs: 20 } }],
-    });
-
-    const rawWithBoundingBox = makeRaw();
-    rawWithBoundingBox.segments[0].locator = {
-      kind: 'page',
-      page: 1,
-      boundingBox: [0, 1, 100, 200],
-    };
-    api.getRaw.mockReturnValueOnce(of(rawWithBoundingBox));
-
-    await expect(
-      firstValueFrom(client.getRaw('capture-1')),
-    ).resolves.toMatchObject({
-      segments: [{ locator: { kind: 'page', boundingBox: [0, 1, 100, 200] } }],
-    });
+    ).resolves.toMatchObject({ captureId: 'capture-1' });
   });
 
   it.each([
-    ['raw schema version', () => ({ ...makeRaw(), schemaVersion: '2' })],
     [
-      'unknown locator kind',
-      () => ({
-        ...makeRaw(),
-        segments: [
-          { ...makeRaw().segments[0], locator: { kind: 'line', page: 1 } },
-        ],
-      }),
+      'image',
+      'windowsml-ocr',
+      'WindowsML OCR is unavailable',
+      new File(['image'], 'scan.png', { type: 'image/png' }),
     ],
     [
-      'invalid document block type',
-      () => ({
-        ...makeResult(),
-        blocks: [{ ...makeResult().blocks[0], type: 'unknown' }],
-      }),
+      'audio',
+      'whisper-primary',
+      'Whisper transcription is unavailable',
+      new File(['audio'], 'lecture.mp3', { type: 'audio/mpeg' }),
     ],
-  ])('rejects %s at the API boundary', async (_label, payload) => {
-    if (_label === 'invalid document block type') {
-      api.getResult.mockReturnValueOnce(of(payload()));
+  ] as const)(
+    'rejects %s before upload when its runtime requirement is unavailable',
+    async (sourceKind, requirementId, expectedError, file) => {
+      api.captureRuntimeRequirements.mockReturnValueOnce(
+        of({
+          items: [
+            requirementId === 'windowsml-ocr'
+              ? unavailableRequirement('windowsml-ocr', ['pdf', 'image'])
+              : readyRequirement('windowsml-ocr', ['pdf', 'image']),
+            requirementId === 'whisper-primary'
+              ? unavailableRequirement('whisper-primary', ['audio'])
+              : readyRequirement('whisper-primary', ['audio']),
+          ],
+        }),
+      );
+
       await expect(
-        firstValueFrom(client.getResult('capture-1')),
-      ).rejects.toThrow('invalid contract');
-      return;
-    }
-    api.getRaw.mockReturnValueOnce(of(payload()));
-    await expect(firstValueFrom(client.getRaw('capture-1'))).rejects.toThrow(
-      'invalid contract',
-    );
-  });
+        firstValueFrom(
+          client.startStreamingCapture({
+            clientRequestId: `blocked-${sourceKind}`,
+            file,
+            sourceKind,
+            structuringMode: 'host',
+          }),
+        ),
+      ).rejects.toThrow(expectedError);
+      expect(api.createCapture).not.toHaveBeenCalled();
+    },
+  );
 
-  it('cancels processing through cert-prep and fails closed for browser-owned structuring', async () => {
-    await firstValueFrom(
-      client.createCapture({
-        clientRequestId: 'request-4',
-        file: new File(['pdf'], 'scan.pdf', { type: 'application/pdf' }),
-        sourceKind: 'pdf',
-        structuringMode: 'host',
-      }),
+  it('fails closed before upload when the runtime handshake is incompatible', async () => {
+    api.captureRuntimeReady.mockReturnValueOnce(
+      of(readyResponse({ runtimeVersion: '0.2.8' })),
     );
 
-    await firstValueFrom(client.cancelCapture(job.captureId));
-    expect(api.cancelCapture).toHaveBeenCalledWith(
-      TEST_PROJECT_ID,
-      job.captureId,
-      { signal: undefined },
-    );
     await expect(
       firstValueFrom(
-        client.commitStructuredResult(job.captureId, {
-          clientRequestId: 'request-4',
-          candidate: {} as never,
+        client.startStreamingCapture({
+          clientRequestId: 'wrong-runtime',
+          file: new File(['pdf'], 'scan.pdf', { type: 'application/pdf' }),
+          sourceKind: 'pdf',
+          structuringMode: 'host',
         }),
       ),
-    ).rejects.toThrow('owned by the cert-prep backend coordinator');
+    ).rejects.toThrow('incompatible with client runtime minor 3');
+    expect(api.createCapture).not.toHaveBeenCalled();
   });
 
-  it('surfaces backend status failures without converting them into fake success', async () => {
+  it('surfaces backend failures without manufacturing a success operation', async () => {
+    await seedCapture();
     api.getCapture.mockReturnValueOnce(
       throwError(() => new Error('backend unavailable')),
     );
+
+    await expect(
+      firstValueFrom(client.getStreamingCapture('capture-1')),
+    ).rejects.toThrow('backend unavailable');
+  });
+
+  async function seedCapture(): Promise<void> {
     await firstValueFrom(
-      client.createCapture({
-        clientRequestId: 'request-5',
+      client.startStreamingCapture({
+        clientRequestId: 'seed-capture',
         file: new File(['pdf'], 'scan.pdf', { type: 'application/pdf' }),
         sourceKind: 'pdf',
         structuringMode: 'host',
       }),
     );
-
-    await expect(
-      firstValueFrom(client.getCapture(job.captureId)),
-    ).rejects.toThrow('backend unavailable');
-  });
+  }
 });
 
-function makeJob() {
+function makeOperation(
+  override: { readonly status?: string; readonly lastEventSequence?: number } = {},
+) {
+  const status = override.status ?? 'awaiting_structuring';
+  const terminal = ['completed', 'failed', 'cancelled'].includes(status);
   return {
+    protocolVersion: '2',
     captureId: 'capture-1',
-    documentId: 'document-1',
-    status: 'running',
-    stage: 'awaiting_structuring',
-    structuringMode: 'host',
-    progress: 0.7,
-    source: {
-      sha256: 'a'.repeat(64),
-      fileName: 'scan.pdf',
-      mediaType: 'application/pdf',
-      bytes: 3,
-    },
-    error: null,
+    ingestionId: 'ingestion-1',
+    kind: 'pdf',
+    status,
+    progress: terminal ? 1 : 0.7,
+    partialRevision: 1,
+    lastEventSequence: override.lastEventSequence ?? 3,
+    source: makeSource(),
+    error:
+      status === 'failed'
+        ? {
+            code: 'host_structuring_failed',
+            message: 'Host structuring failed.',
+            stage: 'structuring',
+            retryable: false,
+          }
+        : null,
     createdAt: '2026-07-23T10:00:00.000Z',
     updatedAt: '2026-07-23T10:00:01.000Z',
-    completedAt: null,
+    completedAt: terminal ? '2026-07-23T10:00:02.000Z' : null,
+    documentId: 'document-1',
   };
 }
 
-type MutableRawCaptureFixture = Omit<RawCaptureV1, 'segments'> & {
-  segments: Array<
-    Omit<RawCaptureSegmentV1, 'locator'> & { locator: CaptureLocatorV1 }
-  >;
-};
-
-function makeRaw(): MutableRawCaptureFixture {
+function makeSource() {
   return {
-    schemaVersion: '1',
-    diagnosticOnly: true,
-    source: makeJob().source,
+    sha256: 'a'.repeat(64),
+    fileName: 'scan.pdf',
+    mediaType: 'application/pdf',
+    bytes: 3,
+  };
+}
+
+function makePartial() {
+  return {
+    protocolVersion: '2',
+    captureId: 'capture-1',
+    source: makeSource(),
+    revision: 1,
+    coveredUntilMs: 0,
+    segments: makeRaw().segments,
+    sourceText: 'Recognized OCR text',
+    extractionEngine: makeRaw().extractionEngine,
+    updatedAt: '2026-07-23T10:00:01.000Z',
+  };
+}
+
+function makeRaw() {
+  return {
+    schemaVersion: '1' as const,
+    diagnosticOnly: true as const,
+    source: makeSource(),
     segments: [
       {
         segmentId: 'segment-1',
         order: 0,
-        locator: { kind: 'page', page: 1 },
+        locator: { kind: 'page' as const, page: 1 },
         text: 'Recognized OCR text',
       },
     ],
     sourceText: 'Recognized OCR text',
     extractionEngine: {
       engine: 'windowsml_ocr',
-      model: 'capture-runtime@0.3.11',
+      model: `capture-runtime@${CAPTURE_RUNTIME_VERSION}`,
       digest: `sha256:${'a'.repeat(64)}`,
       device: 'WindowsML',
     },
@@ -609,10 +584,10 @@ function makeRaw(): MutableRawCaptureFixture {
   };
 }
 
-function makeResult() {
+function makeDocument(): CaptureDocumentV1 {
   return {
     schemaVersion: '1',
-    source: makeJob().source,
+    source: makeSource(),
     rawSegments: makeRaw().segments,
     blocks: [
       {
@@ -640,6 +615,31 @@ function makeResult() {
   };
 }
 
+function makeCompositeResult() {
+  return {
+    operation: makeOperation({ status: 'completed' }),
+    raw: makeRaw(),
+    result: makeDocument(),
+  };
+}
+
+function sseFrame(sequence: number, eventType: string): string {
+  const event = {
+    protocolVersion: '2',
+    eventId: `capture-1/${sequence}`,
+    sequence,
+    captureId: 'capture-1',
+    kind: 'pdf',
+    eventType,
+    stage: 'extracting',
+    progress: 0.5,
+    partialRevision: 1,
+    coveredUntilMs: 0,
+    createdAt: '2026-07-23T10:00:01.000Z',
+  };
+  return `id: ${sequence}\nevent: ${eventType}\ndata: ${JSON.stringify(event)}\n\n`;
+}
+
 function readyCapabilities() {
   return {
     captureKinds: ['pdf', 'image', 'audio'],
@@ -655,7 +655,7 @@ function readyResponse(override: Record<string, unknown>) {
     ready: true,
     service: 'capture-runtime',
     apiVersion: '1.0',
-    runtimeVersion: '0.3.11',
+    runtimeVersion: CAPTURE_RUNTIME_VERSION,
     captureDocumentSchemaVersion: '1',
     capabilities: readyCapabilities(),
   };
@@ -672,7 +672,6 @@ function readyResponse(override: Record<string, unknown>) {
 function unavailableRequirement(
   requirementId: 'windowsml-ocr' | 'whisper-primary',
   requiredFor: readonly string[],
-  detail = 'No downloadable model is published for this runtime release.',
 ) {
   return {
     requirementId,
@@ -684,7 +683,7 @@ function unavailableRequirement(
     status: 'unavailable',
     requiredFor,
     installStrategy: 'runtime-catalog',
-    detail,
+    detail: 'No downloadable model is published for this runtime release.',
     artifact: null,
   };
 }

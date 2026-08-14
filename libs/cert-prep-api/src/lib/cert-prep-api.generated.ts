@@ -14,14 +14,16 @@ export interface Components {
     CaptureDocumentV1: { "schemaVersion"?: string; "source": Components['schemas']['CaptureSourceV1']; "rawSegments": Components['schemas']['RawCaptureSegmentV1'][]; "blocks": Components['schemas']['CaptureBlockV1'][]; "sourceText": string; "targetText": string; "extractionEngine": Components['schemas']['CaptureEngineV1']; "structuringEngine": Components['schemas']['CaptureEngineV1']; "warnings"?: string[]; "createdAt": string; "completedAt": string };
     CaptureEngineV1: { "engine": string; "model": string; "digest": string; "device"?: string | null };
     CaptureFailureV1: { "code": string; "message": string; "stage"?: string | null; "retryable"?: boolean };
-    CaptureJobStage: string;
-    CaptureJobStatus: string;
-    CaptureReviewConfirmRequest: { "clientRequestId": string; "review": Components['schemas']['CaptureReviewV1'] };
+    CaptureFailureV2: { "code": string; "message": string; "stage"?: string | null; "retryable"?: boolean };
     CaptureReviewEditV1: { "segmentId": string; "reviewedText": string };
-    CaptureReviewJobRead: { "captureId": string; "status": Components['schemas']['CaptureJobStatus']; "stage": Components['schemas']['CaptureJobStage']; "structuringMode": Components['schemas']['StructuringMode']; "progress": number; "source"?: Components['schemas']['CaptureSourceV1'] | null; "error"?: Components['schemas']['CaptureFailureV1'] | null; "createdAt": string; "updatedAt": string; "completedAt"?: string | null; "documentId": string };
+    CaptureReviewOperationRead: { "protocolVersion"?: string; "captureId": string; "ingestionId": string; "kind"?: Components['schemas']['CaptureSourceKind']; "status": Components['schemas']['StreamingCaptureStatus']; "progress"?: number | null; "partialRevision": number; "lastEventSequence": number; "source"?: Components['schemas']['CaptureSourceV1'] | null; "error"?: Components['schemas']['CaptureFailureV2'] | null; "createdAt": string; "updatedAt": string; "completedAt"?: string | null; "documentId": string };
+    CaptureReviewStructureRequest: { "clientRequestId": string; "review": Components['schemas']['CaptureReviewV1'] };
     CaptureReviewV1: { "reviewVersion"?: number; "edits"?: Components['schemas']['CaptureReviewEditV1'][] };
     CaptureSourceKind: string;
     CaptureSourceV1: { "sha256": string; "fileName": string; "mediaType": string; "bytes": number };
+    CaptureStreamingCommitRequest: { "clientRequestId": string; "candidate": Components['schemas']['CaptureDocumentV1'] };
+    CaptureStreamingFailureRequest: { "clientRequestId"?: string | null; "code": string; "message": string };
+    CaptureStreamingResultRead: { "operation": Components['schemas']['CaptureReviewOperationRead']; "raw": Components['schemas']['RawCaptureV1']; "result": Components['schemas']['CaptureDocumentV1'] };
     ChunkList: { "items": Components['schemas']['ChunkRead'][] };
     ChunkRead: { "id": string; "document_id": string; "page_number": number; "chunk_index": number; "text": string; "raw_text": string; "line_start": number | null; "line_end": number | null; "line_count": number; "source_excerpt": string; "extraction_method": Components['schemas']['PdfExtractionMethod'] | string; "content_profile": Components['schemas']['ContentProfile'] | string; "created_at": string; "locator_kind"?: string; "start_ms"?: number | null; "end_ms"?: number | null; "source_revision"?: number; "translated_text"?: string | null; "translation_source_revision"?: number | null; "translation_stale"?: boolean };
     ChunkUpdate: { "text": string };
@@ -56,6 +58,7 @@ export interface Components {
     OllamaProfileSelectionRead: { "profile_enabled": boolean; "profile_id"?: string | null; "selected_profile"?: Components['schemas']['OllamaModelProfileRead'] | null; "support_status": string; "reason": string; "fallback_profiles"?: Components['schemas']['OllamaModelProfileRead'][]; "fallback_models"?: string[]; "warnings"?: string[]; "inventory"?: Components['schemas']['MachineInventoryRead'] | null; "modelfile_sha256"?: string | null; "effective_model": string; "base_model"?: string | null };
     OllamaProfilesRead: { "items": Components['schemas']['OllamaModelProfileRead'][] };
     PageLocatorV1: { "kind"?: string; "page": number; "boundingBox"?: unknown[] | null };
+    PartialCaptureV2: { "protocolVersion"?: string; "captureId": string; "source": Components['schemas']['CaptureSourceV1']; "revision": number; "coveredUntilMs": number; "segments"?: Components['schemas']['RawCaptureSegmentV1'][]; "sourceText"?: string; "extractionEngine"?: Components['schemas']['CaptureEngineV1'] | null; "updatedAt": string };
     PdfExtractionMethod: string;
     PracticeAttemptCreate: { "question_id": string; "selected_answer": string };
     PracticeAttemptRead: { "id": string; "session_id": string; "project_id": string; "question_id": string; "selected_answer": string; "is_correct": boolean; "created_at": string };
@@ -76,6 +79,7 @@ export interface Components {
     QuestionDraftUpdate: { "question"?: string | null; "choices"?: string[] | null; "answer"?: string | null; "answer_key_source"?: Components['schemas']['AnswerKeySource'] | string | null; "rationale"?: string | null; "citation_page"?: number | null; "source_excerpt"?: string | null; "confidence"?: number | null; "source_order"?: number | null; "source_question_number"?: string | null; "item_kind"?: Components['schemas']['QuestionItemKind'] | string | null; "group_key"?: string | null; "group_prompt"?: string | null };
     QuestionItemKind: string;
     RawCaptureSegmentV1: { "segmentId": string; "order": number; "locator": Components['schemas']['PageLocatorV1'] | Components['schemas']['TimeLocatorV1']; "text": string };
+    RawCaptureV1: { "schemaVersion"?: string; "diagnosticOnly"?: boolean; "source": Components['schemas']['CaptureSourceV1']; "segments": Components['schemas']['RawCaptureSegmentV1'][]; "sourceText": string; "extractionEngine": Components['schemas']['CaptureEngineV1']; "warnings"?: string[]; "createdAt": string };
     RuntimeArtifactDescriptorV1: { "artifactUrl": string; "artifactFileName": string; "bytes": number; "sha256": string };
     RuntimeCapabilitiesV1: { "captureKinds": Components['schemas']['CaptureSourceKind'][]; "structuringModes": Components['schemas']['StructuringMode'][]; "supportsCancellation"?: boolean; "supportsRawDiagnostics"?: boolean; "maxUploadBytes": number };
     RuntimeInstallationRead: { "id": string; "kind": Components['schemas']['RuntimeRequirementKind']; "provider": string; "model": string; "status": Components['schemas']['cert_prep_contracts__runtime__RuntimeInstallationStatus']; "phase": string; "cancellable": boolean; "detail": string; "completed": number | null; "total": number | null; "created_at": string; "updated_at": string; "commit_started_at"?: string | null; "error"?: string | null };
@@ -90,6 +94,7 @@ export interface Components {
     RuntimeRequirementsV1: { "items": Components['schemas']['RuntimeRequirementV1'][] };
     SourceDocumentStatus: string;
     StartRuntimeInstallationV1: { "requirementId": string; "consent": boolean };
+    StreamingCaptureStatus: string;
     StructuringMode: string;
     TimeLocatorV1: { "kind"?: string; "startMs": number; "endMs": number };
     UnavailableDraftBlockRead: { "status"?: string; "chunk_id": string; "citation_page": number; "source_excerpt": string; "source_order"?: number | null; "source_question_number"?: string | null; "reason": string };
@@ -114,14 +119,16 @@ export type CaptureBlockV1 = Components['schemas']['CaptureBlockV1'];
 export type CaptureDocumentV1 = Components['schemas']['CaptureDocumentV1'];
 export type CaptureEngineV1 = Components['schemas']['CaptureEngineV1'];
 export type CaptureFailureV1 = Components['schemas']['CaptureFailureV1'];
-export type CaptureJobStage = Components['schemas']['CaptureJobStage'];
-export type CaptureJobStatus = Components['schemas']['CaptureJobStatus'];
-export type CaptureReviewConfirmRequest = Components['schemas']['CaptureReviewConfirmRequest'];
+export type CaptureFailureV2 = Components['schemas']['CaptureFailureV2'];
 export type CaptureReviewEditV1 = Components['schemas']['CaptureReviewEditV1'];
-export type CaptureReviewJobRead = Components['schemas']['CaptureReviewJobRead'];
+export type CaptureReviewOperationRead = Components['schemas']['CaptureReviewOperationRead'];
+export type CaptureReviewStructureRequest = Components['schemas']['CaptureReviewStructureRequest'];
 export type CaptureReviewV1 = Components['schemas']['CaptureReviewV1'];
 export type CaptureSourceKind = Components['schemas']['CaptureSourceKind'];
 export type CaptureSourceV1 = Components['schemas']['CaptureSourceV1'];
+export type CaptureStreamingCommitRequest = Components['schemas']['CaptureStreamingCommitRequest'];
+export type CaptureStreamingFailureRequest = Components['schemas']['CaptureStreamingFailureRequest'];
+export type CaptureStreamingResultRead = Components['schemas']['CaptureStreamingResultRead'];
 export type ChunkList = Components['schemas']['ChunkList'];
 export type ChunkRead = Components['schemas']['ChunkRead'];
 export type ChunkUpdate = Components['schemas']['ChunkUpdate'];
@@ -156,6 +163,7 @@ export type OllamaModelProfileRead = Components['schemas']['OllamaModelProfileRe
 export type OllamaProfileSelectionRead = Components['schemas']['OllamaProfileSelectionRead'];
 export type OllamaProfilesRead = Components['schemas']['OllamaProfilesRead'];
 export type PageLocatorV1 = Components['schemas']['PageLocatorV1'];
+export type PartialCaptureV2 = Components['schemas']['PartialCaptureV2'];
 export type PdfExtractionMethod = Components['schemas']['PdfExtractionMethod'];
 export type PracticeAttemptCreate = Components['schemas']['PracticeAttemptCreate'];
 export type PracticeAttemptRead = Components['schemas']['PracticeAttemptRead'];
@@ -176,6 +184,7 @@ export type QuestionDraftRead = Components['schemas']['QuestionDraftRead'];
 export type QuestionDraftUpdate = Components['schemas']['QuestionDraftUpdate'];
 export type QuestionItemKind = Components['schemas']['QuestionItemKind'];
 export type RawCaptureSegmentV1 = Components['schemas']['RawCaptureSegmentV1'];
+export type RawCaptureV1 = Components['schemas']['RawCaptureV1'];
 export type RuntimeArtifactDescriptorV1 = Components['schemas']['RuntimeArtifactDescriptorV1'];
 export type RuntimeCapabilitiesV1 = Components['schemas']['RuntimeCapabilitiesV1'];
 export type RuntimeInstallationRead = Components['schemas']['RuntimeInstallationRead'];
@@ -190,6 +199,7 @@ export type RuntimeRequirementsRead = Components['schemas']['RuntimeRequirements
 export type RuntimeRequirementsV1 = Components['schemas']['RuntimeRequirementsV1'];
 export type SourceDocumentStatus = Components['schemas']['SourceDocumentStatus'];
 export type StartRuntimeInstallationV1 = Components['schemas']['StartRuntimeInstallationV1'];
+export type StreamingCaptureStatus = Components['schemas']['StreamingCaptureStatus'];
 export type StructuringMode = Components['schemas']['StructuringMode'];
 export type TimeLocatorV1 = Components['schemas']['TimeLocatorV1'];
 export type UnavailableDraftBlockRead = Components['schemas']['UnavailableDraftBlockRead'];
@@ -280,12 +290,16 @@ export interface CertPrepGeneratedClient {
   captureRuntimeInstallations(options?: CertPrepRequestOptions): Observable<Components['schemas']['RuntimeInstallationsV1']>;
   captureRuntimeInstallation(installationId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['RuntimeInstallationV1']>;
   cancelCaptureRuntimeInstallation(installationId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['RuntimeInstallationV1']>;
-  createCapture(projectId: string, body: FormData, options?: CertPrepRequestOptions): Observable<Components['schemas']['CaptureReviewJobRead']>;
-  getCapture(projectId: string, captureId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['CaptureReviewJobRead']>;
-  getRaw(projectId: string, captureId: string, options?: CertPrepRequestOptions): Observable<Record<string, unknown>>;
-  confirmCapture(projectId: string, captureId: string, body: Components['schemas']['CaptureReviewConfirmRequest'], options?: CertPrepRequestOptions): Observable<Components['schemas']['CaptureReviewJobRead']>;
-  cancelCapture(projectId: string, captureId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['CaptureReviewJobRead']>;
-  getResult(projectId: string, captureId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['CaptureDocumentV1']>;
+  createCapture(projectId: string, body: FormData, options?: CertPrepRequestOptions): Observable<Components['schemas']['CaptureReviewOperationRead']>;
+  getCapture(projectId: string, captureId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['CaptureReviewOperationRead']>;
+  deleteCapture(projectId: string, captureId: string, options?: CertPrepRequestOptions): Observable<void>;
+  captureEvents(projectId: string, captureId: string, options?: CertPrepRequestOptions): Observable<unknown>;
+  getPartial(projectId: string, captureId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['PartialCaptureV2']>;
+  structureCapture(projectId: string, captureId: string, body: Components['schemas']['CaptureReviewStructureRequest'], options?: CertPrepRequestOptions): Observable<Components['schemas']['CaptureDocumentV1']>;
+  commitCapture(projectId: string, captureId: string, body: Components['schemas']['CaptureStreamingCommitRequest'], options?: CertPrepRequestOptions): Observable<Components['schemas']['CaptureReviewOperationRead']>;
+  reportStructuringFailure(projectId: string, captureId: string, body: Components['schemas']['CaptureStreamingFailureRequest'], options?: CertPrepRequestOptions): Observable<Components['schemas']['CaptureReviewOperationRead']>;
+  cancelCapture(projectId: string, captureId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['CaptureReviewOperationRead']>;
+  getResult(projectId: string, captureId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['CaptureStreamingResultRead']>;
 }
 
 export interface CertPrepRequestFactory {
@@ -346,8 +360,12 @@ export interface CertPrepRequestFactory {
   cancelCaptureRuntimeInstallation(installationId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
   createCapture(projectId: string, body: FormData, options?: CertPrepRequestOptions): CertPrepHttpRequest;
   getCapture(projectId: string, captureId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
-  getRaw(projectId: string, captureId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
-  confirmCapture(projectId: string, captureId: string, body: Components['schemas']['CaptureReviewConfirmRequest'], options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  deleteCapture(projectId: string, captureId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  captureEvents(projectId: string, captureId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  getPartial(projectId: string, captureId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  structureCapture(projectId: string, captureId: string, body: Components['schemas']['CaptureReviewStructureRequest'], options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  commitCapture(projectId: string, captureId: string, body: Components['schemas']['CaptureStreamingCommitRequest'], options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  reportStructuringFailure(projectId: string, captureId: string, body: Components['schemas']['CaptureStreamingFailureRequest'], options?: CertPrepRequestOptions): CertPrepHttpRequest;
   cancelCapture(projectId: string, captureId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
   getResult(projectId: string, captureId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
 }
@@ -525,11 +543,23 @@ export function createCertPrepRequestFactory(): CertPrepRequestFactory {
     getCapture: (projectId: string, captureId: string, options?: CertPrepRequestOptions) => {
       return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/capture-workbench/captures/${encodeURIComponent(captureId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
-    getRaw: (projectId: string, captureId: string, options?: CertPrepRequestOptions) => {
-      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/capture-workbench/captures/${encodeURIComponent(captureId)}/raw`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    deleteCapture: (projectId: string, captureId: string, options?: CertPrepRequestOptions) => {
+      return { method: 'DELETE' as const, path: `/projects/${encodeURIComponent(projectId)}/capture-workbench/captures/${encodeURIComponent(captureId)}`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
-    confirmCapture: (projectId: string, captureId: string, body: Components['schemas']['CaptureReviewConfirmRequest'], options?: CertPrepRequestOptions) => {
-      return { method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/capture-workbench/captures/${encodeURIComponent(captureId)}/confirm`, body, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    captureEvents: (projectId: string, captureId: string, options?: CertPrepRequestOptions) => {
+      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/capture-workbench/captures/${encodeURIComponent(captureId)}/events`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    },
+    getPartial: (projectId: string, captureId: string, options?: CertPrepRequestOptions) => {
+      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/capture-workbench/captures/${encodeURIComponent(captureId)}/partial`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    },
+    structureCapture: (projectId: string, captureId: string, body: Components['schemas']['CaptureReviewStructureRequest'], options?: CertPrepRequestOptions) => {
+      return { method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/capture-workbench/captures/${encodeURIComponent(captureId)}/structure`, body, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    },
+    commitCapture: (projectId: string, captureId: string, body: Components['schemas']['CaptureStreamingCommitRequest'], options?: CertPrepRequestOptions) => {
+      return { method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/capture-workbench/captures/${encodeURIComponent(captureId)}/structure/commit`, body, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    },
+    reportStructuringFailure: (projectId: string, captureId: string, body: Components['schemas']['CaptureStreamingFailureRequest'], options?: CertPrepRequestOptions) => {
+      return { method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/capture-workbench/captures/${encodeURIComponent(captureId)}/structure/failure`, body, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
     cancelCapture: (projectId: string, captureId: string, options?: CertPrepRequestOptions) => {
       return { method: 'POST' as const, path: `/projects/${encodeURIComponent(projectId)}/capture-workbench/captures/${encodeURIComponent(captureId)}/cancel`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
@@ -656,16 +686,24 @@ export function createCertPrepGeneratedClient(
     cancelCaptureRuntimeInstallation: (installationId: string, options?: CertPrepRequestOptions) =>
       transport.request<Components['schemas']['RuntimeInstallationV1']>(requests.cancelCaptureRuntimeInstallation(installationId, options)),
     createCapture: (projectId: string, body: FormData, options?: CertPrepRequestOptions) =>
-      transport.request<Components['schemas']['CaptureReviewJobRead']>(requests.createCapture(projectId, body, options)),
+      transport.request<Components['schemas']['CaptureReviewOperationRead']>(requests.createCapture(projectId, body, options)),
     getCapture: (projectId: string, captureId: string, options?: CertPrepRequestOptions) =>
-      transport.request<Components['schemas']['CaptureReviewJobRead']>(requests.getCapture(projectId, captureId, options)),
-    getRaw: (projectId: string, captureId: string, options?: CertPrepRequestOptions) =>
-      transport.request<Record<string, unknown>>(requests.getRaw(projectId, captureId, options)),
-    confirmCapture: (projectId: string, captureId: string, body: Components['schemas']['CaptureReviewConfirmRequest'], options?: CertPrepRequestOptions) =>
-      transport.request<Components['schemas']['CaptureReviewJobRead']>(requests.confirmCapture(projectId, captureId, body, options)),
+      transport.request<Components['schemas']['CaptureReviewOperationRead']>(requests.getCapture(projectId, captureId, options)),
+    deleteCapture: (projectId: string, captureId: string, options?: CertPrepRequestOptions) =>
+      transport.request<void>(requests.deleteCapture(projectId, captureId, options)),
+    captureEvents: (projectId: string, captureId: string, options?: CertPrepRequestOptions) =>
+      transport.request<unknown>(requests.captureEvents(projectId, captureId, options)),
+    getPartial: (projectId: string, captureId: string, options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['PartialCaptureV2']>(requests.getPartial(projectId, captureId, options)),
+    structureCapture: (projectId: string, captureId: string, body: Components['schemas']['CaptureReviewStructureRequest'], options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['CaptureDocumentV1']>(requests.structureCapture(projectId, captureId, body, options)),
+    commitCapture: (projectId: string, captureId: string, body: Components['schemas']['CaptureStreamingCommitRequest'], options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['CaptureReviewOperationRead']>(requests.commitCapture(projectId, captureId, body, options)),
+    reportStructuringFailure: (projectId: string, captureId: string, body: Components['schemas']['CaptureStreamingFailureRequest'], options?: CertPrepRequestOptions) =>
+      transport.request<Components['schemas']['CaptureReviewOperationRead']>(requests.reportStructuringFailure(projectId, captureId, body, options)),
     cancelCapture: (projectId: string, captureId: string, options?: CertPrepRequestOptions) =>
-      transport.request<Components['schemas']['CaptureReviewJobRead']>(requests.cancelCapture(projectId, captureId, options)),
+      transport.request<Components['schemas']['CaptureReviewOperationRead']>(requests.cancelCapture(projectId, captureId, options)),
     getResult: (projectId: string, captureId: string, options?: CertPrepRequestOptions) =>
-      transport.request<Components['schemas']['CaptureDocumentV1']>(requests.getResult(projectId, captureId, options)),
+      transport.request<Components['schemas']['CaptureStreamingResultRead']>(requests.getResult(projectId, captureId, options)),
   };
 }

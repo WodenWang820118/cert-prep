@@ -727,6 +727,14 @@ MIGRATIONS: Final[tuple[tuple[int, str], ...]] = (
             ADD COLUMN unavailable_blocks_json TEXT NOT NULL DEFAULT '[]';
         """,
     ),
+    (
+        28,
+        """
+        ALTER TABLE capture_review_sessions
+            ADD COLUMN last_event_sequence INTEGER NOT NULL DEFAULT 0
+            CHECK(last_event_sequence >= 0);
+        """,
+    ),
 )
 
 

@@ -31,6 +31,7 @@ def test_saved_exam_runtime_metadata_columns_are_migrated(tmp_path: Path) -> Non
             connection,
             "runtime_installation_jobs",
         )
+        capture_review_columns = _columns(connection, "capture_review_sessions")
 
     assert document_columns["content_profile"] == "'unknown'"
     assert "classification_detail" in document_columns
@@ -136,6 +137,7 @@ def test_saved_exam_runtime_metadata_columns_are_migrated(tmp_path: Path) -> Non
         "updated_at",
         "commit_started_at",
     } <= set(runtime_installation_columns)
+    assert capture_review_columns["last_event_sequence"] == "0"
 
 
 def test_failed_migration_rolls_back_schema_and_reopens_cleanly(

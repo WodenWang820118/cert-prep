@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.core.config import Settings
 from capture_contracts import (
+    CAPTURE_RUNTIME_VERSION,
     CaptureSourceKind,
     RuntimeCapabilitiesV1,
     RuntimeArtifactDescriptorV1,
@@ -47,7 +48,7 @@ class RecordingSetupClient:
             ready=True,
             service="capture-runtime",
             api_version="1.0",
-            runtime_version="0.3.11",
+            runtime_version=CAPTURE_RUNTIME_VERSION,
             capture_document_schema_version="1",
             capabilities=RuntimeCapabilitiesV1(
                 capture_kinds=list(CaptureSourceKind),
@@ -178,7 +179,7 @@ def test_capture_runtime_ready_proxy_requires_auth_and_keeps_sidecar_token_backe
         )
 
     assert response.status_code == 200
-    assert response.json()["runtimeVersion"] == "0.3.11"
+    assert response.json()["runtimeVersion"] == CAPTURE_RUNTIME_VERSION
     assert response.json()["capabilities"]["structuringModes"] == ["host"]
 
 

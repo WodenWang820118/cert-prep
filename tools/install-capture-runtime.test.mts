@@ -45,9 +45,9 @@ afterEach(async () => {
   }
 });
 
-test('pins the canonical gx-capture v0.3.11 release URL', () => {
+test(`pins the canonical gx-capture v${CAPTURE_RUNTIME_VERSION} release URL`, () => {
   const expected =
-    'https://github.com/gx-capture/capture-workbench/releases/download/v0.3.11';
+    `https://github.com/gx-capture/capture-workbench/releases/download/v${CAPTURE_RUNTIME_VERSION}`;
   assert.equal(DEFAULT_CAPTURE_RUNTIME_RELEASE_BASE_URL, expected);
   assert.equal(validateCaptureRuntimeReleaseBaseUrl(expected), expected);
 });
@@ -266,8 +266,10 @@ test('rejects HTTP redirects instead of following them', async () => {
 
 test('accepts only versioned secure release base URLs', () => {
   assert.equal(
-    validateCaptureRuntimeReleaseBaseUrl('http://127.0.0.1:4873/v0.3.11'),
-    'http://127.0.0.1:4873/v0.3.11',
+    validateCaptureRuntimeReleaseBaseUrl(
+      `http://127.0.0.1:4873/v${CAPTURE_RUNTIME_VERSION}`,
+    ),
+    `http://127.0.0.1:4873/v${CAPTURE_RUNTIME_VERSION}`,
   );
   for (const value of [
     'http://localhost:4873/v0.3.8',

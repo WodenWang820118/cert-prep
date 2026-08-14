@@ -256,6 +256,7 @@ pub(crate) fn external_backend_env() -> Option<BackendConfig> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::constants::CAPTURE_RUNTIME_VERSION;
     use std::sync::{mpsc, Condvar, Mutex, MutexGuard};
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
@@ -270,7 +271,7 @@ mod tests {
         CaptureRuntimeConnection {
             base_url: "http://127.0.0.1:41001".into(),
             token: "capture-sidecar-test-token".into(),
-            runtime_version: "0.3.11".into(),
+            runtime_version: CAPTURE_RUNTIME_VERSION.into(),
             api_version: "1.0".into(),
             capture_document_schema_version: "1".into(),
         }
@@ -404,7 +405,7 @@ mod tests {
         );
         assert_eq!(
             env_value(&env, "CERT_PREP_CAPTURE_RUNTIME_VERSION"),
-            Some("0.3.11")
+            Some(CAPTURE_RUNTIME_VERSION)
         );
         assert_eq!(
             env_value(&env, "CERT_PREP_CAPTURE_RUNTIME_API_VERSION"),

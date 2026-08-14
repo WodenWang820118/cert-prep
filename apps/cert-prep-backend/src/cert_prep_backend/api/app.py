@@ -126,7 +126,9 @@ def create_app(
         CertPrepCaptureCoordinator(
             client=app.state.capture_runtime_client,
             structurer=CertPrepCaptureStructuringAdapter(app.state.llm_provider),
-            poll_interval_seconds=app_settings.capture_runtime_poll_interval_seconds,
+            reconciliation_interval_seconds=(
+                app_settings.capture_runtime_reconciliation_interval_seconds
+            ),
             timeout_seconds=app_settings.capture_runtime_job_timeout_seconds,
         )
         if app.state.capture_runtime_client is not None
@@ -161,6 +163,7 @@ def create_app(
         allow_headers=[
             "Authorization",
             "Content-Type",
+            "Last-Event-ID",
             "X-Cert-Prep-Operation-Id",
             "X-Idempotency-Key",
         ],

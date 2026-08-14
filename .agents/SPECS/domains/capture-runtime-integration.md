@@ -4,7 +4,7 @@
 
 Cert Prep consumes the published `capture-runtime@0.3.11` Windows x64 executable,
 manifest, checksum, and `CaptureDocumentV1` schema `1`. It also consumes the
-published `@gx-capture/capture-workbench@0.3.11` Web Component and generated
+published `@gx-capture/capture-workbench-ui@0.3.11` Web Component and generated
 `@gx-capture/capture-contracts@0.3.11` package for source import,
 runtime setup, review, cancellation, retry, and completion UI.
 
@@ -18,11 +18,30 @@ provider fallback path.
 - PDF, image, and audio uploads use
   `CertPrepCaptureCoordinator -> CaptureRuntimeClient`.
 - The backend checks the pinned readiness contract before creating a capture.
+- Source transfer and capture execution use only the v2 ingestion/capture
+  lifecycle. The backend opens and finalizes checksum-bound ordered ingestions,
+  starts captures with idempotent uncertain-create recovery, and consumes
+  authenticated replayable SSE with `Last-Event-ID`. It does not poll for
+  normal progress; snapshot reads are limited to initial/reconnect
+  reconciliation.
 - Missing runtime assets, incompatible readiness, missing requirements, runtime
   errors, timeout, cancellation, and schema/provenance drift fail closed with a
   machine-readable unavailable or requirement error.
 - The browser receives only the Cert Prep API token. The Capture Runtime URL and
   process-scoped token remain Tauri/backend-only.
+- The published Angular client remains RxJS Observable-based. Unsubscribe aborts
+  only its backend SSE listener and never sends runtime cancellation; explicit
+  cancel remains a separate authenticated action.
+- The authenticated host proxy exposes terminal snapshots/events only after the
+  durable review session reaches its terminal state. A runtime terminal observed
+  while the host session is active advances the durable event cursor but is held
+  behind comment heartbeats and bounded session reloads; host terminal replay then
+  uses that monotonic cursor. Host `captureId` and `ingestionId` remain the review
+  session id and durable document id across runtime-backed snapshots and results.
+  The in-process event registry is only a bounded condition/revision wake-up
+  signal: it retains no per-session identity or terminal state, and every wait
+  reloads the durable review session so concurrent and late listeners recover
+  from the database.
 - Capture Runtime owns requirement truth. For engine-bearing v0.3.11, Cert Prep
   hides the component runtime-setup surface while exposing authenticated
   requirements/install/cancel proxy routes without exposing the sidecar token.

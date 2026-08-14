@@ -1,6 +1,6 @@
 {
   "extends": "../../../../tsconfig.scripts.json",
-  "include": ["./backend-proxy.mts"],
+  "include": ["./backend-proxy.mts", "./capture-runtime-fixture.mts"],
   "compilerOptions": {
     "ignoreDeprecations": "6.0"
   }

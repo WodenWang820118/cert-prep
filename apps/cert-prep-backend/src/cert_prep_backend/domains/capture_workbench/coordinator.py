@@ -1,38 +1,41 @@
-"""Host-mode orchestration for one Capture Runtime job.
-
-The runtime owns extraction and final validation. Cert Prep contributes only its
-existing structured-JSON provider and receives a result after the sidecar has
-accepted the complete CaptureDocumentV1 candidate.
-"""
+"""Host-mode orchestration for Capture Runtime v2 streaming operations."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
+import json
 from time import monotonic, sleep
 from uuid import UUID, uuid5
 
 import httpx
+from pydantic import ValidationError
 
-from cert_prep_backend.domains.capture_workbench.client import (
-    CaptureRuntimeClient,
-    CaptureRuntimeCompatibilityError,
-    CaptureUpload,
-)
 from capture_contracts import (
     CaptureDocumentV1,
-    CaptureJobStage,
-    CaptureJobStatus,
-    CaptureJobV1,
+    CaptureEventV2,
+    CaptureOperationV2,
     CaptureRequirementId,
     CaptureReviewV1,
     CaptureSourceKind,
+    PartialCaptureV2,
     RawCaptureV1,
-    RuntimeRequirementV1,
     RuntimeRequirementStatus,
+    RuntimeRequirementV1,
+    StreamingCaptureStatus,
+    StreamingEventType,
+)
+from cert_prep_backend.domains.capture_workbench.client import (
+    CaptureRuntimeClient,
+    CaptureRuntimeCompatibilityError,
+    CaptureRuntimeProtocolError,
+    CaptureStreamingResult,
+    CaptureUpload,
 )
 from cert_prep_backend.domains.capture_workbench.review import reviewed_text_overrides
-from cert_prep_backend.domains.capture_workbench.runtime_policy import LEGACY_CORE_ONLY_RUNTIME_VERSION
+from cert_prep_backend.domains.capture_workbench.runtime_policy import (
+    LEGACY_CORE_ONLY_RUNTIME_VERSION,
+)
 from cert_prep_backend.domains.capture_workbench.structuring import (
     CaptureStructuringCanceledError,
     CaptureStructuringTimeoutError,
@@ -41,12 +44,14 @@ from cert_prep_backend.domains.capture_workbench.structuring import (
 
 
 _IDEMPOTENCY_NAMESPACE = UUID("518ad006-a998-4b4b-b0fb-9be26b4447ac")
+_MAX_EVENT_RECONNECTS = 32
 PDF_OCR_UNAVAILABLE_MESSAGE = (
     "This PDF requires WindowsML OCR, which is unavailable in the installed "
     "Capture Runtime."
 )
 _SOURCE_REQUIREMENTS: dict[
-    CaptureSourceKind, tuple[CaptureRequirementId, str]
+    CaptureSourceKind,
+    tuple[CaptureRequirementId, str],
 ] = {
     CaptureSourceKind.IMAGE: ("windowsml-ocr", "WindowsML OCR"),
     CaptureSourceKind.AUDIO: ("whisper-primary", "Whisper transcription"),
@@ -55,17 +60,36 @@ _PDF_OCR_REQUIREMENT: tuple[CaptureRequirementId, str] = (
     "windowsml-ocr",
     "WindowsML OCR",
 )
+_TERMINAL_STATUSES = {
+    StreamingCaptureStatus.COMPLETED,
+    StreamingCaptureStatus.FAILED,
+    StreamingCaptureStatus.CANCELLED,
+}
+_TERMINAL_EVENTS = {
+    StreamingEventType.COMPLETED,
+    StreamingEventType.FAILED,
+    StreamingEventType.CANCELLED,
+}
 
 
 class CaptureRuntimeJobError(RuntimeError):
     """The sidecar reached a terminal non-success state."""
 
-    def __init__(self, job: CaptureJobV1) -> None:
-        message = job.error.message if job.error is not None else "Capture Runtime job failed."
+    def __init__(self, operation: CaptureOperationV2) -> None:
+        message = (
+            operation.error.message
+            if operation.error is not None
+            else "Capture Runtime operation failed."
+        )
         super().__init__(message)
-        self.capture_id = job.capture_id
-        self.code = job.error.code if job.error is not None else "capture_failed"
-        self.stage = job.error.stage if job.error is not None else job.stage.value
+        self.capture_id = operation.capture_id
+        self.last_event_sequence = operation.last_event_sequence
+        self.code = operation.error.code if operation.error is not None else "capture_failed"
+        self.stage = (
+            operation.error.stage
+            if operation.error is not None and operation.error.stage is not None
+            else operation.status.value
+        )
 
 
 class CaptureRuntimeCanceledError(RuntimeError):
@@ -73,7 +97,7 @@ class CaptureRuntimeCanceledError(RuntimeError):
 
 
 class CaptureRuntimeRequirementUnavailableError(RuntimeError):
-    """A source dependency is not ready, so no sidecar job was admitted."""
+    """A source dependency is not ready, so no sidecar operation was admitted."""
 
     def __init__(
         self,
@@ -100,7 +124,7 @@ class CaptureRuntimeTimeoutError(RuntimeError):
 
 
 class CaptureRuntimeStateUnknownError(RuntimeError):
-    """The host could not confirm the sidecar's state after an ambiguous request."""
+    """The host could not confirm the sidecar state after an ambiguous request."""
 
     def __init__(self, capture_id: str, message: str) -> None:
         super().__init__(message)
@@ -110,30 +134,31 @@ class CaptureRuntimeStateUnknownError(RuntimeError):
 @dataclass(frozen=True, slots=True)
 class CaptureRunResult:
     capture_id: str
+    last_event_sequence: int
     raw: RawCaptureV1
     document: CaptureDocumentV1
 
 
 class CertPrepCaptureCoordinator:
-    """Drive extraction, host structuring, and runtime validation synchronously."""
+    """Drive extraction via replayable SSE and host structuring synchronously."""
 
     def __init__(
         self,
         *,
         client: CaptureRuntimeClient,
         structurer: CertPrepCaptureStructuringAdapter,
-        poll_interval_seconds: float = 0.1,
+        reconciliation_interval_seconds: float = 0.1,
         timeout_seconds: float = 900,
         clock: Callable[[], float] = monotonic,
         sleeper: Callable[[float], None] = sleep,
     ) -> None:
-        if poll_interval_seconds <= 0:
-            raise ValueError("Capture Runtime poll interval must be positive")
+        if reconciliation_interval_seconds <= 0:
+            raise ValueError("Capture Runtime reconciliation interval must be positive")
         if timeout_seconds <= 0:
             raise ValueError("Capture Runtime timeout must be positive")
         self._client = client
         self._structurer = structurer
-        self._poll_interval_seconds = poll_interval_seconds
+        self._reconciliation_interval_seconds = reconciliation_interval_seconds
         self._timeout_seconds = timeout_seconds
         self._clock = clock
         self._sleeper = sleeper
@@ -145,11 +170,11 @@ class CertPrepCaptureCoordinator:
         file_name: str,
         content: bytes,
         media_type: str,
-        source_kind: CaptureSourceKind,
+        source_kind: CaptureSourceKind | str,
         target_language: str | None,
         should_cancel: Callable[[], bool],
     ) -> CaptureRunResult:
-        job = self.begin_capture(
+        operation = self.begin_capture(
             operation_id=operation_id,
             file_name=file_name,
             content=content,
@@ -160,7 +185,7 @@ class CertPrepCaptureCoordinator:
         )
         return self.confirm_capture(
             operation_id=operation_id,
-            capture_id=job.capture_id,
+            capture_id=operation.capture_id,
             target_language=target_language,
             review=None,
             should_cancel=should_cancel,
@@ -173,49 +198,215 @@ class CertPrepCaptureCoordinator:
         file_name: str,
         content: bytes,
         media_type: str,
-        source_kind: CaptureSourceKind,
+        source_kind: CaptureSourceKind | str,
         target_language: str | None,
         should_cancel: Callable[[], bool],
-    ) -> CaptureJobV1:
+        on_started: Callable[[CaptureOperationV2], None] | None = None,
+    ) -> CaptureOperationV2:
+        kind = CaptureSourceKind(source_kind)
         ready = self._client.handshake()
-        if source_kind not in ready.capabilities.capture_kinds:
+        if kind not in ready.capabilities.capture_kinds:
             raise CaptureRuntimeCompatibilityError(
-                f"Capture Runtime does not support {source_kind.value.upper()} capture."
+                f"Capture Runtime does not support {kind.value.upper()} capture."
             )
-        self._assert_source_requirement_ready(source_kind)
+        self._assert_source_requirement_ready(kind)
         if should_cancel():
             raise CaptureRuntimeCanceledError("Document processing was cancelled.")
-        job = self._client.create_capture(
+        operation = self._client.start_capture(
             CaptureUpload(file_name=file_name, content=content, media_type=media_type),
-            source_kind=source_kind,
-            idempotency_key=_idempotency_key(operation_id, "capture"),
+            source_kind=kind,
+            client_request_id=operation_id,
             target_language=target_language,
         )
+        if on_started is not None:
+            on_started(operation)
         deadline = self._clock() + self._timeout_seconds
         try:
             return self._wait_for_structuring(
-                job, deadline=deadline, should_cancel=should_cancel
+                operation,
+                deadline=deadline,
+                should_cancel=should_cancel,
             )
         except CaptureRuntimeJobError as error:
             self._raise_if_pdf_ocr_is_unavailable(
-                source_kind,
+                kind,
                 error,
                 runtime_version=ready.runtime_version,
             )
             raise
 
-    def _assert_source_requirement_ready(
-        self, source_kind: CaptureSourceKind
-    ) -> None:
+    def structure_capture(
+        self,
+        *,
+        operation_id: str,
+        capture_id: str,
+        target_language: str | None,
+        review: CaptureReviewV1 | None,
+        should_cancel: Callable[[], bool],
+    ) -> CaptureDocumentV1:
+        deadline = self._clock() + self._timeout_seconds
+        raw = self._client.get_raw(capture_id)
+        if review is not None:
+            reviewed_text_overrides(raw, review)
+        try:
+            candidate = self._structurer.structure(
+                raw,
+                target_language=target_language,
+                should_cancel=should_cancel,
+                deadline=deadline,
+                monotonic_clock=self._clock,
+            )
+            document = _capture_document(candidate)
+            if review is None:
+                return document
+            overrides = reviewed_text_overrides(raw, review)
+            if not overrides:
+                return document
+            payload = document.model_dump(mode="json", by_alias=True)
+            blocks = payload["blocks"]
+            if not isinstance(blocks, list):
+                raise CaptureRuntimeProtocolError(
+                    "Host structuring candidate has an invalid block projection"
+                )
+            for block in blocks:
+                if not isinstance(block, dict):
+                    raise CaptureRuntimeProtocolError(
+                        "Host structuring candidate has an invalid block projection"
+                    )
+                source_segment_id = block.get("sourceSegmentId")
+                if isinstance(source_segment_id, str) and source_segment_id in overrides:
+                    block["targetText"] = overrides[source_segment_id]
+            payload["targetText"] = "\n".join(
+                str(block["targetText"])
+                for block in blocks
+                if isinstance(block, dict)
+            )
+            return CaptureDocumentV1.model_validate(payload)
+        except CaptureStructuringCanceledError as error:
+            self._cancel(capture_id)
+            raise CaptureRuntimeCanceledError("Document processing was cancelled.") from error
+        except CaptureStructuringTimeoutError as error:
+            self._cancel(capture_id)
+            raise CaptureRuntimeTimeoutError("Capture Runtime operation timed out.") from error
+        except Exception:
+            raise
+
+    def commit_capture(
+        self,
+        *,
+        operation_id: str,
+        capture_id: str,
+        candidate: CaptureDocumentV1 | str | bytes | Mapping[str, object],
+        should_cancel: Callable[[], bool],
+    ) -> CaptureRunResult:
+        deadline = self._clock() + self._timeout_seconds
+        document = _capture_document(candidate)
+        if should_cancel():
+            self._cancel(capture_id)
+            raise CaptureRuntimeCanceledError("Document processing was cancelled.")
+        operation = self._commit_structure(
+            capture_id,
+            document.model_dump(mode="json", by_alias=True),
+            idempotency_key=_idempotency_key(operation_id, "structure"),
+            deadline=deadline,
+            should_cancel=should_cancel,
+        )
+        self._wait_for_completion(
+            operation,
+            deadline=deadline,
+            should_cancel=should_cancel,
+        )
+        result = self._client.get_result(capture_id)
+        if result.operation.status is not StreamingCaptureStatus.COMPLETED:
+            raise CaptureRuntimeProtocolError(
+                "Capture Runtime result is not attached to a completed operation"
+            )
+        return CaptureRunResult(
+            capture_id=capture_id,
+            last_event_sequence=result.operation.last_event_sequence,
+            raw=result.raw,
+            document=result.result,
+        )
+
+    def confirm_capture(
+        self,
+        *,
+        operation_id: str,
+        capture_id: str,
+        target_language: str | None,
+        review: CaptureReviewV1 | None,
+        should_cancel: Callable[[], bool],
+    ) -> CaptureRunResult:
+        try:
+            candidate = self.structure_capture(
+                operation_id=operation_id,
+                capture_id=capture_id,
+                target_language=target_language,
+                review=review,
+                should_cancel=should_cancel,
+            )
+        except (CaptureRuntimeCanceledError, CaptureRuntimeTimeoutError):
+            raise
+        except Exception:
+            self._report_structuring_failure(capture_id, operation_id=operation_id)
+            raise
+        return self.commit_capture(
+            operation_id=operation_id,
+            capture_id=capture_id,
+            candidate=candidate,
+            should_cancel=should_cancel,
+        )
+
+    def delete(self, capture_id: str) -> None:
+        """Delete an ephemeral operation after durable host persistence."""
+
+        self._client.delete_capture(capture_id)
+
+    def get_capture(self, capture_id: str) -> CaptureOperationV2:
+        return self._client.get_capture(capture_id)
+
+    def capture_events(
+        self,
+        capture_id: str,
+        *,
+        last_event_id: str | int | None = None,
+    ) -> Iterator[CaptureEventV2]:
+        return self._client.capture_events(capture_id, last_event_id=last_event_id)
+
+    def get_partial(self, capture_id: str) -> PartialCaptureV2:
+        return self._client.get_partial(capture_id)
+
+    def get_raw(self, capture_id: str) -> RawCaptureV1:
+        return self._client.get_raw(capture_id)
+
+    def get_result(self, capture_id: str) -> CaptureStreamingResult:
+        return self._client.get_result(capture_id)
+
+    def cancel(self, capture_id: str) -> CaptureOperationV2:
+        return self._cancel_and_confirm(capture_id)
+
+    def report_structuring_failure(
+        self,
+        capture_id: str,
+        *,
+        operation_id: str,
+        code: str = "host_provider_failed",
+        message: str = "Cert Prep's configured structuring provider failed.",
+    ) -> CaptureOperationV2:
+        return self._report_structuring_failure(
+            capture_id,
+            operation_id=operation_id,
+            code=code,
+            message=message,
+        )
+
+    def _assert_source_requirement_ready(self, source_kind: CaptureSourceKind) -> None:
         policy = _SOURCE_REQUIREMENTS.get(source_kind)
         if policy is None:
             return
         requirement_id, display_name = policy
         requirement = self._runtime_requirement(requirement_id)
-        if (
-            requirement is not None
-            and requirement.status is RuntimeRequirementStatus.READY
-        ):
+        if requirement is not None and requirement.status is RuntimeRequirementStatus.READY:
             return
         raise CaptureRuntimeRequirementUnavailableError(
             source_kind=source_kind,
@@ -234,10 +425,7 @@ class CertPrepCaptureCoordinator:
     ) -> None:
         if source_kind is not CaptureSourceKind.PDF:
             return
-        if (
-            error.code == "extraction_failed"
-            and runtime_version != LEGACY_CORE_ONLY_RUNTIME_VERSION
-        ):
+        if error.code == "extraction_failed" and runtime_version != LEGACY_CORE_ONLY_RUNTIME_VERSION:
             return
         if error.code not in {"extraction_failed", "requirement_unavailable"}:
             return
@@ -246,10 +434,7 @@ class CertPrepCaptureCoordinator:
             requirement = self._runtime_requirement(requirement_id)
         except Exception:
             return
-        if (
-            requirement is None
-            or requirement.status is RuntimeRequirementStatus.READY
-        ):
+        if requirement is None or requirement.status is RuntimeRequirementStatus.READY:
             return
         raise CaptureRuntimeRequirementUnavailableError(
             source_kind=source_kind,
@@ -260,7 +445,8 @@ class CertPrepCaptureCoordinator:
         ) from error
 
     def _runtime_requirement(
-        self, requirement_id: CaptureRequirementId
+        self,
+        requirement_id: CaptureRequirementId,
     ) -> RuntimeRequirementV1 | None:
         matches = [
             item
@@ -269,131 +455,148 @@ class CertPrepCaptureCoordinator:
         ]
         return matches[0] if len(matches) == 1 else None
 
-    def confirm_capture(
+    def _wait_for_structuring(
         self,
+        operation: CaptureOperationV2,
         *,
-        operation_id: str,
-        capture_id: str,
-        target_language: str | None,
-        review: CaptureReviewV1 | None,
+        deadline: float,
         should_cancel: Callable[[], bool],
-    ) -> CaptureRunResult:
-        deadline = self._clock() + self._timeout_seconds
-        raw = self._client.get_raw(capture_id)
-        if review is not None:
-            reviewed_text_overrides(raw, review)
-
-        try:
-            candidate = self._structurer.structure(
-                raw,
-                target_language=target_language,
-                should_cancel=should_cancel,
-                deadline=deadline,
-                monotonic_clock=self._clock,
-            )
-        except CaptureStructuringCanceledError as error:
-            self._cancel(capture_id)
-            raise CaptureRuntimeCanceledError("Document processing was cancelled.") from error
-        except CaptureStructuringTimeoutError as error:
-            self._cancel(capture_id)
-            raise CaptureRuntimeTimeoutError("Capture Runtime job timed out.") from error
-        except Exception:
-            self._report_structuring_failure(capture_id)
-            raise
-
-        if should_cancel():
-            self._cancel(capture_id)
-            raise CaptureRuntimeCanceledError("Document processing was cancelled.")
-
-        commit_idempotency_key = _idempotency_key(operation_id, "structure")
-        job = self._commit_structure(
-            capture_id,
-            candidate,
-            idempotency_key=commit_idempotency_key,
+    ) -> CaptureOperationV2:
+        operation = self._wait_for_status(
+            operation,
+            stop_statuses={
+                StreamingCaptureStatus.AWAITING_STRUCTURING,
+                *_TERMINAL_STATUSES,
+            },
             deadline=deadline,
             should_cancel=should_cancel,
         )
-        job = self._wait_for_completion(job, deadline=deadline, should_cancel=should_cancel)
-        return CaptureRunResult(
-            capture_id=capture_id,
-            raw=raw,
-            document=self._client.get_result(capture_id),
-        )
-
-    def delete(self, capture_id: str) -> None:
-        """Delete a job only after the host has atomically persisted its result."""
-
-        self._client.delete_capture(capture_id)
-
-    def get_capture(self, capture_id: str) -> CaptureJobV1:
-        return self._client.get_capture(capture_id)
-
-    def get_raw(self, capture_id: str) -> RawCaptureV1:
-        return self._client.get_raw(capture_id)
-
-    def cancel(self, capture_id: str) -> CaptureJobV1:
-        return self._cancel_and_confirm(capture_id)
-
-    def _wait_for_structuring(
-        self,
-        job: CaptureJobV1,
-        *,
-        deadline: float,
-        should_cancel: Callable[[], bool],
-    ) -> CaptureJobV1:
-        while job.stage not in {
-            CaptureJobStage.AWAITING_STRUCTURING,
-            CaptureJobStage.COMPLETED,
-            CaptureJobStage.FAILED,
-            CaptureJobStage.CANCELLED,
-        }:
-            job = self._next(job, deadline=deadline, should_cancel=should_cancel)
-        if job.stage is CaptureJobStage.COMPLETED:
-            raise CaptureRuntimeJobError(job)
-        self._raise_for_terminal(job)
-        return job
+        if operation.status is StreamingCaptureStatus.COMPLETED:
+            raise CaptureRuntimeJobError(operation)
+        self._raise_for_terminal(operation)
+        return operation
 
     def _wait_for_completion(
         self,
-        job: CaptureJobV1,
+        operation: CaptureOperationV2,
         *,
         deadline: float,
         should_cancel: Callable[[], bool],
-    ) -> CaptureJobV1:
-        while job.status not in {
-            CaptureJobStatus.COMPLETED,
-            CaptureJobStatus.FAILED,
-            CaptureJobStatus.CANCELLED,
-        }:
-            job = self._next(job, deadline=deadline, should_cancel=should_cancel)
-        self._raise_for_terminal(job)
-        return job
+    ) -> CaptureOperationV2:
+        operation = self._wait_for_status(
+            operation,
+            stop_statuses=_TERMINAL_STATUSES,
+            deadline=deadline,
+            should_cancel=should_cancel,
+        )
+        self._raise_for_terminal(operation)
+        if operation.status is not StreamingCaptureStatus.COMPLETED:
+            raise CaptureRuntimeStateUnknownError(
+                operation.capture_id,
+                "Capture Runtime did not confirm a completed operation.",
+            )
+        return operation
 
-    def _next(
+    def _wait_for_status(
         self,
-        job: CaptureJobV1,
+        operation: CaptureOperationV2,
+        *,
+        stop_statuses: set[StreamingCaptureStatus],
+        deadline: float,
+        should_cancel: Callable[[], bool],
+    ) -> CaptureOperationV2:
+        reconnects = 0
+        current = operation
+        while current.status not in stop_statuses:
+            self._checkpoint(
+                current.capture_id,
+                deadline=deadline,
+                should_cancel=should_cancel,
+            )
+            last_sequence = current.last_event_sequence
+            try:
+                for event in self._client.capture_events(
+                    current.capture_id,
+                    last_event_id=last_sequence,
+                    on_activity=lambda: self._checkpoint(
+                        current.capture_id,
+                        deadline=deadline,
+                        should_cancel=should_cancel,
+                    ),
+                ):
+                    last_sequence = event.sequence
+                    if (
+                        event.event_type is StreamingEventType.RESYNC_REQUIRED
+                        or event.event_type in _TERMINAL_EVENTS
+                        or event.stage == StreamingCaptureStatus.AWAITING_STRUCTURING.value
+                    ):
+                        break
+            except httpx.TransportError:
+                # A listener disconnect is recovered from the durable event log;
+                # it never implies runtime job cancellation.
+                pass
+            current = self._snapshot_after_stream(
+                current.capture_id,
+                observed_sequence=last_sequence,
+            )
+            if current.status in stop_statuses:
+                return current
+            reconnects += 1
+            if reconnects > _MAX_EVENT_RECONNECTS:
+                raise CaptureRuntimeStateUnknownError(
+                    current.capture_id,
+                    "Capture Runtime event replay exceeded the reconnect limit.",
+                )
+            self._checkpoint(
+                current.capture_id,
+                deadline=deadline,
+                should_cancel=should_cancel,
+            )
+            self._sleeper(self._reconciliation_interval_seconds)
+        return current
+
+    def _snapshot_after_stream(
+        self,
+        capture_id: str,
+        *,
+        observed_sequence: int,
+    ) -> CaptureOperationV2:
+        try:
+            snapshot = self._client.get_capture(capture_id)
+        except Exception as error:
+            raise CaptureRuntimeStateUnknownError(
+                capture_id,
+                "Capture Runtime event stream ended and its snapshot was unavailable.",
+            ) from error
+        if snapshot.last_event_sequence < observed_sequence:
+            raise CaptureRuntimeProtocolError(
+                "Capture Runtime snapshot regressed behind the observed event sequence"
+            )
+        return snapshot
+
+    def _checkpoint(
+        self,
+        capture_id: str,
         *,
         deadline: float,
         should_cancel: Callable[[], bool],
-    ) -> CaptureJobV1:
+    ) -> None:
         if should_cancel():
-            self._cancel(job.capture_id)
+            self._cancel(capture_id)
             raise CaptureRuntimeCanceledError("Document processing was cancelled.")
         if self._clock() >= deadline:
-            self._cancel(job.capture_id)
-            raise CaptureRuntimeTimeoutError("Capture Runtime job timed out.")
-        self._sleeper(self._poll_interval_seconds)
-        return self._client.get_capture(job.capture_id)
+            self._cancel(capture_id)
+            raise CaptureRuntimeTimeoutError("Capture Runtime operation timed out.")
 
     def _commit_structure(
         self,
         capture_id: str,
-        candidate: str | bytes | dict[str, object],
+        candidate: Mapping[str, object],
         *,
         idempotency_key: UUID,
         deadline: float,
         should_cancel: Callable[[], bool],
-    ) -> CaptureJobV1:
+    ) -> CaptureOperationV2:
         while True:
             try:
                 return self._client.commit_structure(
@@ -402,44 +605,48 @@ class CertPrepCaptureCoordinator:
                     idempotency_key=idempotency_key,
                 )
             except httpx.TransportError as error:
-                job = self._get_capture_for_reconciliation(
+                operation = self._get_capture_for_reconciliation(
                     capture_id,
                     action="a structured-result commit response was lost",
                 )
-                if self._is_terminal(job):
-                    return job
-                if not self._is_awaiting_structuring(job):
+                if self._is_terminal(operation):
+                    return operation
+                if not self._is_awaiting_structuring(operation):
                     raise CaptureRuntimeStateUnknownError(
                         capture_id,
                         "Capture Runtime structured-result commit outcome could not be "
-                        "confirmed from the current job state.",
+                        "confirmed from the current operation state.",
                     ) from error
-                if should_cancel():
-                    self._cancel(capture_id)
-                    raise CaptureRuntimeCanceledError(
-                        "Document processing was cancelled."
-                    ) from error
-                if self._clock() >= deadline:
-                    self._cancel(capture_id)
-                    raise CaptureRuntimeTimeoutError("Capture Runtime job timed out.") from error
-                self._sleeper(self._poll_interval_seconds)
+                self._checkpoint(
+                    capture_id,
+                    deadline=deadline,
+                    should_cancel=should_cancel,
+                )
+                self._sleeper(self._reconciliation_interval_seconds)
 
-    def _report_structuring_failure(self, capture_id: str) -> CaptureJobV1:
+    def _report_structuring_failure(
+        self,
+        capture_id: str,
+        *,
+        operation_id: str,
+        code: str = "host_provider_failed",
+        message: str = "Cert Prep's configured structuring provider failed.",
+    ) -> CaptureOperationV2:
         try:
-            job = self._client.report_structuring_failure(
+            operation = self._client.report_structuring_failure(
                 capture_id,
-                code="host_provider_failed",
-                message="Cert Prep's configured structuring provider failed.",
+                code=code,
+                message=message,
+                idempotency_key=_idempotency_key(operation_id, "structure-failure"),
             )
         except Exception:
-            job = self._get_capture_for_reconciliation(
+            operation = self._get_capture_for_reconciliation(
                 capture_id,
                 action="a host-provider failure report was not confirmed",
             )
-
-        if self._is_terminal(job):
-            return job
-        if self._is_awaiting_structuring(job):
+        if self._is_terminal(operation):
+            return operation
+        if self._is_awaiting_structuring(operation):
             return self._cancel_and_confirm(capture_id)
         raise CaptureRuntimeStateUnknownError(
             capture_id,
@@ -449,14 +656,13 @@ class CertPrepCaptureCoordinator:
     def _cancel(self, capture_id: str) -> None:
         self._cancel_and_confirm(capture_id)
 
-    def _cancel_and_confirm(self, capture_id: str) -> CaptureJobV1:
-        cancelled: CaptureJobV1 | None = None
+    def _cancel_and_confirm(self, capture_id: str) -> CaptureOperationV2:
+        cancelled: CaptureOperationV2 | None = None
         cancel_error: Exception | None = None
         try:
             cancelled = self._client.cancel_capture(capture_id)
         except Exception as error:
             cancel_error = error
-
         try:
             confirmed = self._client.get_capture(capture_id)
         except Exception as error:
@@ -466,7 +672,6 @@ class CertPrepCaptureCoordinator:
                 capture_id,
                 "Capture Runtime cancellation response and terminal state could not be confirmed.",
             ) from error
-
         if self._is_terminal(confirmed):
             return confirmed
         raise CaptureRuntimeStateUnknownError(
@@ -479,36 +684,44 @@ class CertPrepCaptureCoordinator:
         capture_id: str,
         *,
         action: str,
-    ) -> CaptureJobV1:
+    ) -> CaptureOperationV2:
         try:
             return self._client.get_capture(capture_id)
         except Exception as error:
             raise CaptureRuntimeStateUnknownError(
                 capture_id,
-                f"Capture Runtime {action}; the current job state could not be confirmed.",
+                f"Capture Runtime {action}; the current operation state could not be confirmed.",
             ) from error
 
     @staticmethod
-    def _is_terminal(job: CaptureJobV1) -> bool:
-        return job.status in {
-            CaptureJobStatus.COMPLETED,
-            CaptureJobStatus.FAILED,
-            CaptureJobStatus.CANCELLED,
-        }
+    def _is_terminal(operation: CaptureOperationV2) -> bool:
+        return operation.status in _TERMINAL_STATUSES
 
     @staticmethod
-    def _is_awaiting_structuring(job: CaptureJobV1) -> bool:
-        return (
-            job.status is CaptureJobStatus.RUNNING
-            and job.stage is CaptureJobStage.AWAITING_STRUCTURING
-        )
+    def _is_awaiting_structuring(operation: CaptureOperationV2) -> bool:
+        return operation.status is StreamingCaptureStatus.AWAITING_STRUCTURING
 
     @staticmethod
-    def _raise_for_terminal(job: CaptureJobV1) -> None:
-        if job.status is CaptureJobStatus.CANCELLED:
-            raise CaptureRuntimeCanceledError("Capture Runtime job was cancelled.")
-        if job.status is CaptureJobStatus.FAILED:
-            raise CaptureRuntimeJobError(job)
+    def _raise_for_terminal(operation: CaptureOperationV2) -> None:
+        if operation.status is StreamingCaptureStatus.CANCELLED:
+            raise CaptureRuntimeCanceledError("Capture Runtime operation was cancelled.")
+        if operation.status is StreamingCaptureStatus.FAILED:
+            raise CaptureRuntimeJobError(operation)
+
+
+def _capture_document(
+    candidate: CaptureDocumentV1 | str | bytes | Mapping[str, object],
+) -> CaptureDocumentV1:
+    try:
+        if isinstance(candidate, CaptureDocumentV1):
+            return candidate
+        if isinstance(candidate, Mapping):
+            return CaptureDocumentV1.model_validate(dict(candidate))
+        return CaptureDocumentV1.model_validate_json(candidate)
+    except (ValidationError, ValueError, json.JSONDecodeError) as error:
+        raise CaptureRuntimeProtocolError(
+            "Host structuring candidate does not satisfy CaptureDocumentV1"
+        ) from error
 
 
 def _idempotency_key(operation_id: str, stage: str) -> UUID:
