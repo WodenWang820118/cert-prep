@@ -24,7 +24,7 @@ import {
 
 const schemaPath = join(
   process.cwd(),
-  'apps/cert-prep-desktop/test-fixtures/capture-document.schema.json',
+  'apps/cert-prep-desktop/test-fixtures/capture-document-v2.schema.json',
 );
 const temporaryRoots: string[] = [];
 const servers: Server[] = [];

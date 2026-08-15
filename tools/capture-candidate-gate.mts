@@ -172,11 +172,6 @@ export async function verifyCandidate(
   const schemaBytes = await readFile(
     join(runtime, runtimeManifest.schemaFileName),
   );
-  if (runtimeManifest.schemaFileName !== 'capture-document-v2.schema.json') {
-    throw new Error(
-      `Capture runtime schemaFileName must be capture-document-v2.schema.json, found ${runtimeManifest.schemaFileName}.`,
-    );
-  }
   if (sha256(schemaBytes) !== runtimeManifest.schemaSha256) {
     throw new Error(
       'Candidate runtime schema digest does not match its manifest.',

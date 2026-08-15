@@ -148,7 +148,7 @@ mod tests {
     use super::*;
 
     const CANONICAL_SCHEMA_LF: &str =
-        include_str!("../../test-fixtures/capture-document.schema.json");
+        include_str!("../../test-fixtures/capture-document-v2.schema.json");
 
     fn canonical_schema_bytes() -> Vec<u8> {
         CANONICAL_SCHEMA_LF
@@ -265,7 +265,7 @@ mod tests {
         assert!(validate_capture_manifest_contract(&manifest).is_err());
 
         manifest.file_name = CAPTURE_RUNTIME_BINARY.into();
-        manifest.schema_file_name = "../capture-document.schema.json".into();
+        manifest.schema_file_name = "../capture-document-v2.schema.json".into();
         assert!(validate_capture_manifest_contract(&manifest)
             .expect_err("schema path")
             .contains("schemaFileName"));

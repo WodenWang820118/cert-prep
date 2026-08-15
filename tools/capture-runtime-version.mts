@@ -13,6 +13,7 @@ export const CAPTURE_RUNTIME_VERSION = '0.4.0' as const;
 export const CAPTURE_RUNTIME_MAJOR = 0 as const;
 export const CAPTURE_RUNTIME_API_VERSION = '2.0' as const;
 export const CAPTURE_DOCUMENT_SCHEMA_VERSION = '2' as const;
+export const CAPTURE_DOCUMENT_SCHEMA_FILE = 'capture-document-v2.schema.json' as const;
 export const CAPTURE_RUNTIME_RELEASE_BASE_URL =
   `https://github.com/gx-capture/capture-workbench/releases/download/v${CAPTURE_RUNTIME_VERSION}` as const;
 export const CAPTURE_RUNTIME_MODEL =

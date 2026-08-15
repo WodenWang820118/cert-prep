@@ -331,7 +331,7 @@ async function validateCaptureRuntimeManifest({ manifest, root }) {
     manifest?.platform !== 'windows' ||
     manifest?.arch !== 'x86_64' ||
     manifest?.fileName !== 'capture-runtime-x86_64-pc-windows-msvc.exe' ||
-    manifest?.schemaFileName !== 'capture-document.schema.json' ||
+    manifest?.schemaFileName !== 'capture-document-v2.schema.json' ||
     typeof manifest?.sha256 !== 'string' ||
     !/^[0-9a-f]{64}$/i.test(manifest.sha256)
   ) {

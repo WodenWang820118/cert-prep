@@ -366,7 +366,7 @@ mod tests {
     }
 
     fn canonical_schema_bytes() -> Vec<u8> {
-        include_str!("../../test-fixtures/capture-document.schema.json")
+        include_str!("../../test-fixtures/capture-document-v2.schema.json")
             .replace("\r\n", "\n")
             .replace('\n', "\r\n")
             .into_bytes()

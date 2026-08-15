@@ -22,7 +22,7 @@ import { createPackageQaReport, validateBundleArtifacts } from './report.mts';
 const tempRoots: string[] = [];
 const canonicalSchemaFixturePath = join(
   dirname(fileURLToPath(import.meta.url)),
-  '../../test-fixtures/capture-document.schema.json',
+  '../../test-fixtures/capture-document-v2.schema.json',
 );
 
 afterEach(() => {
@@ -143,7 +143,7 @@ function createResourceFixture(): {
   const backendName =
     'cert-prep-backend-runtime-0.1.0-alpha.1-x86_64-pc-windows-msvc.zip';
   const captureName = 'capture-runtime-x86_64-pc-windows-msvc.exe';
-  const schemaName = 'capture-document.schema.json';
+  const schemaName = 'capture-document-v2.schema.json';
   const captureSchema = canonicalCaptureDocumentSchemaBytes();
   writeFileSync(join(resourceRoot, backendName), 'runtime');
   writeJson(join(resourceRoot, 'backend-runtime-manifest.json'), {
