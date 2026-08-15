@@ -266,13 +266,13 @@ function validateBundledCaptureArtifacts(
   )?.['const'];
   if (
     schema['$schema'] !== 'https://json-schema.org/draft/2020-12/schema' ||
-    schema['title'] !== 'CaptureDocumentV1' ||
+    schema['title'] !== 'CaptureDocument' ||
     schema['type'] !== 'object' ||
     schema['additionalProperties'] !== false ||
     schemaVersion !== CAPTURE_DOCUMENT_SCHEMA_VERSION
   ) {
     throw new Error(
-      'Bundled Capture document schema does not declare the pinned CaptureDocumentV1 contract.',
+      'Bundled Capture document schema does not declare the pinned CaptureDocument contract.',
     );
   }
 }

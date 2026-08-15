@@ -14,4 +14,4 @@ def test_pyinstaller_command_collects_capture_contract_package_data() -> None:
     command = _pyinstaller_command()
 
     collect_data_index = command.index("--collect-data")
-    assert command[collect_data_index + 1] == "capture_contracts"
+    assert command[collect_data_index + 1] == "capture_runtime_client"

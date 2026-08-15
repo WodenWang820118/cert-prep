@@ -83,6 +83,17 @@ test('enforces the fixture v2 ingestion, live replay SSE, and host commit contra
   );
   expect(readiness.ok()).toBe(true);
   await expect(readiness.json()).resolves.toMatchObject({
+    apiVersion: '2.0',
+    runtimeVersion: '0.4.0',
+    captureDocumentSchemaVersion: '2',
+    contractSetVersion: '2',
+  });
+  const streamingReadiness = await request.get(
+    `${captureRuntimeBaseUrl}/v2/streaming/health/ready`,
+    { headers: captureRuntimeHeaders },
+  );
+  expect(streamingReadiness.ok()).toBe(true);
+  await expect(streamingReadiness.json()).resolves.toMatchObject({
     protocolVersion: '2',
     maxChunkBytes: 1024 * 1024,
   });
@@ -266,7 +277,7 @@ test('enforces the fixture v2 ingestion, live replay SSE, and host commit contra
   await expect(result.json()).resolves.toMatchObject({
     operation: { status: 'completed' },
     raw: { diagnosticOnly: true, sourceText: partial.sourceText },
-    result: { schemaVersion: '1', source: partial.source },
+    result: { schemaVersion: '2', source: partial.source },
   });
   const deleted = await request.delete(
     `${captureRuntimeBaseUrl}/v2/captures/${operation.captureId}`,
@@ -633,7 +644,7 @@ function fixtureCandidate(
     targetText: segment['text'],
   }));
   return {
-    schemaVersion: '1',
+    schemaVersion: '2',
     source: partial.source,
     rawSegments: partial.segments,
     blocks,

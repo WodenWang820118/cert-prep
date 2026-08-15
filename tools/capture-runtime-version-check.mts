@@ -2,8 +2,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 import {
-  CAPTURE_CONTRACTS_PACKAGE_NAME,
   CAPTURE_SIDECAR_LAUNCHER_VERSION,
+  CAPTURE_RUNTIME_CLIENT_PACKAGE_NAME,
   CAPTURE_RUNTIME_PACKAGE_NAME,
   CAPTURE_RUNTIME_VERSION,
 } from './capture-runtime-version.mts';
@@ -43,7 +43,9 @@ function requirePublishedCaptureArtifacts(workspaceRoot: string): void {
     'apps/cert-prep-backend/pyproject.toml',
   );
   if (
-    /capture-(?:contracts|structuring)\s*=\s*\{[^}]*path\s*=/u.test(pyproject)
+    /capture-(?:runtime-client|structuring)\s*=\s*\{[^}]*path\s*=/u.test(
+      pyproject,
+    )
   ) {
     throw new Error(
       'cert-prep backend capture Python dependencies must come from PyPI.',
@@ -51,7 +53,9 @@ function requirePublishedCaptureArtifacts(workspaceRoot: string): void {
   }
   const uvLock = read(workspaceRoot, 'apps/cert-prep-backend/uv.lock');
   if (
-    /capture-(?:contracts|structuring)[\s\S]{0,240}directory\s*=/u.test(uvLock)
+    /capture-(?:runtime-client|structuring)[\s\S]{0,240}directory\s*=/u.test(
+      uvLock,
+    )
   ) {
     throw new Error(
       'cert-prep uv.lock must resolve capture packages from PyPI, not a directory source.',
@@ -113,17 +117,19 @@ export function assertCaptureRuntimeConsumerVersions(
     workspaceRoot,
     'pnpm-workspace.yaml',
     new RegExp(
-      `${CAPTURE_CONTRACTS_PACKAGE_NAME.replace('/', '\\/')}@${CAPTURE_RUNTIME_VERSION}`,
+      `${CAPTURE_RUNTIME_CLIENT_PACKAGE_NAME.replace('/', '\\/')}@${CAPTURE_RUNTIME_VERSION}`,
     ),
   );
   const pnpmLock = read(workspaceRoot, 'pnpm-lock.yaml');
-  const hasPublishedNpmResolution =
-    new RegExp(
-      `specifier: ${CAPTURE_RUNTIME_VERSION}[\\s\\S]*${CAPTURE_RUNTIME_PACKAGE_NAME.replace('/', '\\/')}@${CAPTURE_RUNTIME_VERSION}[\\s\\S]*capture-workbench\\/${CAPTURE_RUNTIME_VERSION}\\/`,
-    ).test(pnpmLock) &&
-    new RegExp(
-      `${CAPTURE_CONTRACTS_PACKAGE_NAME.replace('/', '\\/')}@${CAPTURE_RUNTIME_VERSION}[\\s\\S]*capture-contracts\\/${CAPTURE_RUNTIME_VERSION}\\/`,
-    ).test(pnpmLock);
+  const retiredContractsMarker = ['capture', 'contracts'].join('-');
+  if (pnpmLock.includes(retiredContractsMarker)) {
+    throw new Error(
+      'pnpm-lock.yaml must not resolve the retired public contracts package.',
+    );
+  }
+  const hasPublishedNpmResolution = new RegExp(
+    `specifier: ${CAPTURE_RUNTIME_VERSION}[\\s\\S]*${CAPTURE_RUNTIME_PACKAGE_NAME.replace('/', '\\/')}@${CAPTURE_RUNTIME_VERSION}[\\s\\S]*capture-workbench\\/${CAPTURE_RUNTIME_VERSION}\\/`,
+  ).test(pnpmLock);
   if (
     !hasPublishedNpmResolution &&
     process.env.CAPTURE_REQUIRE_PUBLISHED_CAPTURE_ARTIFACTS === '1'
@@ -150,13 +156,12 @@ export function assertCaptureRuntimeConsumerVersions(
     '.',
     '\\.',
   );
-  const hasPublishedPythonResolution =
-    new RegExp(
-      `capture-contracts>=${escapedRuntimeVersion},<0\\.4\\.0[\\s\\S]*capture-structuring>=${escapedRuntimeVersion},<0\\.4\\.0`,
-      'u',
-    ).test(pyproject);
+  const hasPublishedPythonResolution = new RegExp(
+    `capture-runtime-client>=${escapedRuntimeVersion},<0\\.4\\.0[\\s\\S]*capture-structuring>=${escapedRuntimeVersion},<0\\.4\\.0`,
+    'u',
+  ).test(pyproject);
   const hasLocalPythonResolution =
-    /capture-contracts\s*=\s*\{[^}]*path\s*=\s*"\.\.\/\.\.\/\.\.\/capture-workbench\/packages\/capture-contracts\/python"/u.test(
+    /capture-runtime-client\s*=\s*\{[^}]*path\s*=\s*"\.\.\/\.\.\/\.\.\/capture-workbench\/packages\/capture-runtime-client-python"/u.test(
       pyproject,
     ) &&
     /capture-structuring\s*=\s*\{[^}]*path\s*=\s*"\.\.\/\.\.\/\.\.\/capture-workbench\/packages\/capture-structuring-python"/u.test(
@@ -174,18 +179,18 @@ export function assertCaptureRuntimeConsumerVersions(
     workspaceRoot,
     'apps/cert-prep-backend/uv.lock',
     new RegExp(
-      `name = "capture-contracts"[\\s\\S]*?version = "${CAPTURE_RUNTIME_VERSION}"[\\s\\S]*?name = "capture-structuring"[\\s\\S]*?version = "${CAPTURE_RUNTIME_VERSION}"`,
+      `name = "capture-runtime-client"[\\s\\S]*?version = "${CAPTURE_RUNTIME_VERSION}"[\\s\\S]*?name = "capture-structuring"[\\s\\S]*?version = "${CAPTURE_RUNTIME_VERSION}"`,
     ),
   );
   requireMatch(
     workspaceRoot,
     'apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/mapping.py',
-    /from capture_contracts import/u,
+    /from capture_runtime_client import/u,
   );
   requireMatch(
     workspaceRoot,
     'apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/client.py',
-    /_minor\(ready\.runtime_version, label="runtime"\) != SUPPORTED_RUNTIME_MINOR/,
+    /SdkCaptureRuntimeClient/,
   );
   requireMatch(
     workspaceRoot,

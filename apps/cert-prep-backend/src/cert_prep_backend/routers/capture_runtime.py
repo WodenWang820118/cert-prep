@@ -6,10 +6,12 @@ token remains inside the backend client and is never serialized to the WebView.
 
 from __future__ import annotations
 
-from typing import Annotated, NoReturn
+from typing import Annotated, Literal, NoReturn
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, status
+from pydantic import BaseModel, ConfigDict
+from pydantic.alias_generators import to_camel
 
 from cert_prep_backend.api.dependencies import get_capture_runtime_client
 from cert_prep_backend.api.errors import api_error
@@ -19,22 +21,35 @@ from cert_prep_backend.domains.capture_workbench.client import (
     CaptureRuntimeError,
     CaptureRuntimeProtocolError,
 )
-from capture_contracts import (
-    RuntimeInstallationV1,
-    RuntimeInstallationsV1,
-    RuntimeRequirementsV1,
-    StartRuntimeInstallationV1,
+from capture_runtime_client import (
+    CaptureRequirementId,
+    RuntimeInstallation,
+    RuntimeInstallations,
+    RuntimeRequirements,
 )
-from cert_prep_backend.domains.capture_workbench.host_models import RuntimeReadyV1
+from cert_prep_backend.domains.capture_workbench.host_models import RuntimeReady
 
 
 router = APIRouter(prefix="/capture-runtime", tags=["capture-runtime"])
 
 
-@router.get("/ready", response_model=RuntimeReadyV1)
+class StartRuntimeInstallationRequest(BaseModel):
+    """Host API request; generated wire models remain private to the SDK."""
+
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        extra="forbid",
+    )
+
+    requirement_id: CaptureRequirementId
+    consent: Literal[True]
+
+
+@router.get("/ready", response_model=RuntimeReady)
 def capture_runtime_ready(
     client: CaptureRuntimeClient = Depends(get_capture_runtime_client),
-) -> RuntimeReadyV1:
+) -> RuntimeReady:
     """Expose sidecar readiness without serializing its process credential."""
 
     try:
@@ -47,10 +62,10 @@ def capture_runtime_ready(
         _raise_runtime_error(error)
 
 
-@router.get("/requirements", response_model=RuntimeRequirementsV1)
+@router.get("/requirements", response_model=RuntimeRequirements)
 def capture_runtime_requirements(
     client: CaptureRuntimeClient = Depends(get_capture_runtime_client),
-) -> RuntimeRequirementsV1:
+) -> RuntimeRequirements:
     try:
         return client.get_requirements()
     except (
@@ -63,14 +78,14 @@ def capture_runtime_requirements(
 
 @router.post(
     "/installations",
-    response_model=RuntimeInstallationV1,
+    response_model=RuntimeInstallation,
     status_code=status.HTTP_202_ACCEPTED,
 )
 def start_capture_runtime_installation(
-    payload: StartRuntimeInstallationV1,
+    payload: StartRuntimeInstallationRequest,
     idempotency_key: Annotated[UUID, Header(alias="X-Idempotency-Key")],
     client: CaptureRuntimeClient = Depends(get_capture_runtime_client),
-) -> RuntimeInstallationV1:
+) -> RuntimeInstallation:
     try:
         return client.start_installation(
             payload.requirement_id,
@@ -84,10 +99,10 @@ def start_capture_runtime_installation(
         _raise_runtime_error(error)
 
 
-@router.get("/installations", response_model=RuntimeInstallationsV1)
+@router.get("/installations", response_model=RuntimeInstallations)
 def capture_runtime_installations(
     client: CaptureRuntimeClient = Depends(get_capture_runtime_client),
-) -> RuntimeInstallationsV1:
+) -> RuntimeInstallations:
     try:
         return client.list_installations()
     except (
@@ -98,11 +113,11 @@ def capture_runtime_installations(
         _raise_runtime_error(error)
 
 
-@router.get("/installations/{installation_id}", response_model=RuntimeInstallationV1)
+@router.get("/installations/{installation_id}", response_model=RuntimeInstallation)
 def capture_runtime_installation(
     installation_id: UUID,
     client: CaptureRuntimeClient = Depends(get_capture_runtime_client),
-) -> RuntimeInstallationV1:
+) -> RuntimeInstallation:
     try:
         return client.get_installation(str(installation_id))
     except (
@@ -115,12 +130,12 @@ def capture_runtime_installation(
 
 @router.post(
     "/installations/{installation_id}/cancel",
-    response_model=RuntimeInstallationV1,
+    response_model=RuntimeInstallation,
 )
 def cancel_capture_runtime_installation(
     installation_id: UUID,
     client: CaptureRuntimeClient = Depends(get_capture_runtime_client),
-) -> RuntimeInstallationV1:
+) -> RuntimeInstallation:
     try:
         return client.cancel_installation(str(installation_id))
     except (

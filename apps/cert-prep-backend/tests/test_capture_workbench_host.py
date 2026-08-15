@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime
+import hashlib
+from importlib.resources import files
 import json
 from types import SimpleNamespace
 from uuid import UUID
@@ -18,17 +20,17 @@ from cert_prep_backend.domains.capture_workbench.client import (
     CaptureStreamingResult,
     CaptureUpload,
 )
-from capture_contracts import (
+from capture_runtime_client import (
     CAPTURE_RUNTIME_VERSION,
-    CaptureDocumentV1,
-    CaptureOperationV2,
+    CaptureDocument,
+    CaptureOperation,
     CaptureSourceKind,
-    PartialCaptureV2,
-    RawCaptureV1,
+    PartialCapture,
+    RawCapture,
     RuntimeRequirementStatus,
-    RuntimeRequirementsV1,
+    RuntimeRequirements,
 )
-from cert_prep_backend.domains.capture_workbench.host_models import RuntimeReadyV1
+from cert_prep_backend.domains.capture_workbench.host_models import RuntimeReady
 from cert_prep_backend.domains.capture_workbench.coordinator import (
     CaptureRunResult,
     CaptureRuntimeCanceledError,
@@ -67,7 +69,7 @@ def _lost_response(message: str) -> httpx.ReadError:
 
 def _raw_payload() -> dict[str, object]:
     return {
-        "schemaVersion": "1",
+        "schemaVersion": "2",
         "diagnosticOnly": True,
         "source": {
             "sha256": "a" * 64,
@@ -95,7 +97,7 @@ def _raw_payload() -> dict[str, object]:
     }
 
 
-def _raw_with_segments(*, count: int, text_chars: int = 1_200) -> RawCaptureV1:
+def _raw_with_segments(*, count: int, text_chars: int = 1_200) -> RawCapture:
     payload = _raw_payload()
     segments = [
         {
@@ -108,7 +110,7 @@ def _raw_with_segments(*, count: int, text_chars: int = 1_200) -> RawCaptureV1:
     ]
     payload["segments"] = segments
     payload["sourceText"] = "\n".join(str(segment["text"]) for segment in segments)
-    return RawCaptureV1.model_validate(payload)
+    return RawCapture.model_validate(payload)
 
 
 def _operation_payload(
@@ -133,15 +135,15 @@ def _operation_payload(
     }
 
 
-def _operation(*, status: str = "awaiting_structuring") -> CaptureOperationV2:
-    return CaptureOperationV2.model_validate(_operation_payload(status=status))
+def _operation(*, status: str = "awaiting_structuring") -> CaptureOperation:
+    return CaptureOperation.model_validate(_operation_payload(status=status))
 
 
-def _ready_payload(*, schema_version: str = "1") -> dict[str, object]:
+def _ready_payload(*, schema_version: str = "2") -> dict[str, object]:
     return {
         "ready": True,
         "service": "capture-runtime",
-        "apiVersion": "1.0",
+        "apiVersion": "2.0",
         "runtimeVersion": CAPTURE_RUNTIME_VERSION,
         "captureDocumentSchemaVersion": schema_version,
         "capabilities": {
@@ -155,12 +157,62 @@ def _ready_payload(*, schema_version: str = "1") -> dict[str, object]:
     }
 
 
+def _negotiated_handler(
+    handler: Callable[[httpx.Request], httpx.Response],
+) -> Callable[[httpx.Request], httpx.Response]:
+    packaged = files("capture_runtime_client.private.assets")
+    bundle = packaged.joinpath("contract-set.json").read_bytes()
+    digest = hashlib.sha256(bundle).hexdigest()
+    href = f"/meta/v2/contracts/sha256/{digest}"
+
+    def wrapped(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v2/health/ready":
+            return httpx.Response(200, json=_ready_payload(), request=request)
+        if request.url.path == "/meta/v2/contracts":
+            return httpx.Response(
+                200,
+                json={
+                    "catalogVersion": "2",
+                    "runtimeVersion": CAPTURE_RUNTIME_VERSION,
+                    "contractSetVersion": "2",
+                    "surfaces": [{"id": "v2"}],
+                    "sha256": digest,
+                    "href": href,
+                },
+                request=request,
+            )
+        if request.url.path == href:
+            return httpx.Response(
+                200,
+                content=bundle,
+                headers={"X-Contract-SHA256": digest, "ETag": f'"{digest}"'},
+                request=request,
+            )
+        if request.url.path == "/v2/streaming/health/ready":
+            return httpx.Response(
+                200,
+                json={
+                    "protocolVersion": "2",
+                    "captureKinds": ["pdf", "image", "audio"],
+                    "supportsProgressiveAudio": True,
+                    "maxChunkBytes": 1_048_576,
+                    "checkpointIntervalMs": 500,
+                    "heartbeatIntervalMs": 1_000,
+                    "stallTimeoutMs": 30_000,
+                },
+                request=request,
+            )
+        return handler(request)
+
+    return wrapped
+
+
 def _document_payload() -> dict[str, object]:
     raw = _raw_payload()
     segment = raw["segments"][0]
     assert isinstance(segment, dict)
     return {
-        "schemaVersion": "1",
+        "schemaVersion": "2",
         "source": raw["source"],
         "rawSegments": raw["segments"],
         "blocks": [
@@ -225,10 +277,10 @@ def _valid_batch_candidate(call: dict[str, object]) -> str:
 
 def test_capture_adapter_strictly_validates_batches_and_assembles_full_document() -> None:
     provider = RecordingStructuredProvider(_valid_batch_candidate)
-    raw = RawCaptureV1.model_validate(_raw_payload())
+    raw = RawCapture.model_validate(_raw_payload())
     adapter = CertPrepCaptureStructuringAdapter(provider, clock=lambda: NOW)
 
-    candidate = CaptureDocumentV1.model_validate(adapter.structure(raw, target_language="zh-TW"))
+    candidate = CaptureDocument.model_validate(adapter.structure(raw, target_language="zh-TW"))
 
     assert candidate.raw_segments == raw.segments
     assert candidate.source_text == raw.source_text
@@ -238,7 +290,7 @@ def test_capture_adapter_strictly_validates_batches_and_assembles_full_document(
     call = provider.calls[0]
     schema = call["json_schema"]
     assert isinstance(schema, dict)
-    assert schema["title"] == "CaptureBlockBatchV1"
+    assert schema["title"] == "CaptureBlockBatch"
     assert set(schema["properties"]) == {"blocks"}
     messages = call["messages"]
     assert isinstance(messages, list)
@@ -253,10 +305,10 @@ def test_capture_adapter_strictly_validates_batches_and_assembles_full_document(
 
 def test_capture_adapter_projects_ocr_without_llm_when_no_target_language_is_requested() -> None:
     provider = RecordingStructuredProvider(_valid_batch_candidate)
-    raw = RawCaptureV1.model_validate(_raw_payload())
+    raw = RawCapture.model_validate(_raw_payload())
     adapter = CertPrepCaptureStructuringAdapter(provider, clock=lambda: NOW)
 
-    candidate = CaptureDocumentV1.model_validate(adapter.structure(raw))
+    candidate = CaptureDocument.model_validate(adapter.structure(raw))
 
     assert provider.calls == []
     assert candidate.target_text == raw.source_text
@@ -270,7 +322,7 @@ def test_capture_adapter_does_not_repair_invalid_provider_json() -> None:
     adapter = CertPrepCaptureStructuringAdapter(provider, clock=lambda: NOW)
 
     with pytest.raises(ValueError, match="not valid JSON|valid JSON object"):
-        adapter.structure(RawCaptureV1.model_validate(_raw_payload()), target_language="zh-TW")
+        adapter.structure(RawCapture.model_validate(_raw_payload()), target_language="zh-TW")
 
 
 def test_capture_adapter_batches_by_token_budget_and_preserves_global_order() -> None:
@@ -283,7 +335,7 @@ def test_capture_adapter_batches_by_token_budget_and_preserves_global_order() ->
         num_predict=1_024,
     )
 
-    document = CaptureDocumentV1.model_validate(adapter.structure(raw, target_language="zh-TW"))
+    document = CaptureDocument.model_validate(adapter.structure(raw, target_language="zh-TW"))
 
     assert len(provider.calls) >= 2
     supplied_ids = []
@@ -317,7 +369,7 @@ def test_capture_adapter_rejects_mutated_batch_provenance(mutation: str) -> None
 
     with pytest.raises(ValueError, match="batch|semantic|sourceSegmentId"):
         adapter.structure(
-            RawCaptureV1.model_validate(_raw_payload()),
+            RawCapture.model_validate(_raw_payload()),
             target_language="zh-TW",
         )
 
@@ -367,7 +419,7 @@ def test_capture_adapter_observes_deadline_after_an_in_flight_batch_returns() ->
 
     with pytest.raises(CaptureStructuringTimeoutError):
         adapter.structure(
-            RawCaptureV1.model_validate(_raw_payload()),
+            RawCapture.model_validate(_raw_payload()),
             target_language="zh-TW",
             deadline=1.0,
             monotonic_clock=lambda: next(ticks),
@@ -377,7 +429,7 @@ def test_capture_adapter_observes_deadline_after_an_in_flight_batch_returns() ->
 
 
 def test_capture_adapter_reuses_existing_ollama_client_and_model() -> None:
-    raw = RawCaptureV1.model_validate(_raw_payload())
+    raw = RawCapture.model_validate(_raw_payload())
     segment = raw.segments[0].model_dump(mode="json", by_alias=True)
     candidate = json.dumps(
         {
@@ -414,7 +466,7 @@ def test_capture_adapter_reuses_existing_ollama_client_and_model() -> None:
     )
     adapter = CertPrepCaptureStructuringAdapter(lazy_provider, clock=lambda: NOW)
 
-    result = CaptureDocumentV1.model_validate(
+    result = CaptureDocument.model_validate(
         adapter.structure(raw, target_language="zh-TW")
     )
 
@@ -425,7 +477,7 @@ def test_capture_adapter_reuses_existing_ollama_client_and_model() -> None:
     call = ollama_client.chat_calls[0]
     assert call["model"] == "cert-prep-qwen"
     assert call["think"] is False
-    assert call["format"]["title"] == "CaptureBlockBatchV1"
+    assert call["format"]["title"] == "CaptureBlockBatch"
 
 
 def test_capture_adapter_has_no_hidden_provider_fallback() -> None:
@@ -437,7 +489,7 @@ def test_capture_adapter_has_no_hidden_provider_fallback() -> None:
 
     with pytest.raises(ProviderUnavailableError, match="cannot produce structured JSON"):
         adapter.structure(
-            RawCaptureV1.model_validate(_raw_payload()),
+            RawCapture.model_validate(_raw_payload()),
             target_language="zh-TW",
         )
 
@@ -447,7 +499,7 @@ def test_contract_rejects_changed_locator_before_host_consumption() -> None:
     payload["blocks"][0]["locator"] = {"kind": "page", "page": 99}
 
     with pytest.raises(ValidationError, match="locator must equal"):
-        CaptureDocumentV1.model_validate(payload)
+        CaptureDocument.model_validate(payload)
 
 
 def test_sidecar_client_submits_invalid_candidate_verbatim_for_canonical_failure() -> None:
@@ -470,7 +522,7 @@ def test_sidecar_client_submits_invalid_candidate_verbatim_for_canonical_failure
     client = CaptureRuntimeClient(
         base_url="http://127.0.0.1:43123",
         bearer_token=TOKEN,
-        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        client=httpx.Client(transport=httpx.MockTransport(_negotiated_handler(handler))),
     )
 
     with pytest.raises(CaptureRuntimeError) as raised:
@@ -495,13 +547,14 @@ def test_sidecar_client_submits_invalid_candidate_verbatim_for_canonical_failure
     ],
 )
 def test_sidecar_client_rejects_noncanonical_or_credentialed_urls(base_url: str) -> None:
-    with pytest.raises(ValueError, match="127.0.0.1"):
+    with pytest.raises(CaptureRuntimeError) as raised:
         CaptureRuntimeClient(base_url=base_url, bearer_token=TOKEN)
+    assert raised.value.code == "unsafe_base_url"
 
 
 def test_sidecar_client_rejects_incompatible_schema() -> None:
     transport = httpx.MockTransport(
-        lambda _request: httpx.Response(200, json=_ready_payload(schema_version="2"))
+        lambda _request: httpx.Response(200, json=_ready_payload(schema_version="3"))
     )
     client = CaptureRuntimeClient(
         base_url="http://127.0.0.1:43123",
@@ -509,7 +562,7 @@ def test_sidecar_client_rejects_incompatible_schema() -> None:
         client=httpx.Client(transport=transport),
     )
 
-    with pytest.raises(CaptureRuntimeCompatibilityError, match="schema 2"):
+    with pytest.raises(CaptureRuntimeCompatibilityError, match="schema version"):
         client.handshake()
 
 
@@ -527,12 +580,12 @@ def test_sidecar_client_rejects_incompatible_runtime_release() -> None:
 
     with pytest.raises(
         CaptureRuntimeCompatibilityError,
-        match="runtime minor 0.2.8 is incompatible with 0.3.x",
+        match="runtime version 0.2.8 is incompatible with 0.4.0",
     ):
         client.handshake()
 
 
-def test_sidecar_client_accepts_patch_update_within_supported_runtime_minor() -> None:
+def test_sidecar_client_requires_the_coordinated_runtime_release() -> None:
     payload = _ready_payload()
     payload["runtimeVersion"] = "0.3.8"
     transport = httpx.MockTransport(
@@ -544,7 +597,8 @@ def test_sidecar_client_accepts_patch_update_within_supported_runtime_minor() ->
         client=httpx.Client(transport=transport),
     )
 
-    client.handshake()
+    with pytest.raises(CaptureRuntimeCompatibilityError, match="incompatible with 0.4.0"):
+        client.handshake()
 
 
 class RecordingCaptureRuntime:
@@ -556,21 +610,21 @@ class RecordingCaptureRuntime:
         requirement_status: RuntimeRequirementStatus = RuntimeRequirementStatus.READY,
         runtime_version: str = CAPTURE_RUNTIME_VERSION,
     ) -> None:
-        self.initial_operation = CaptureOperationV2.model_validate(
+        self.initial_operation = CaptureOperation.model_validate(
             initial_operation or _operation_payload()
         )
-        self.raw = RawCaptureV1.model_validate(_raw_payload())
-        self.document = CaptureDocumentV1.model_validate(_document_payload())
+        self.raw = RawCapture.model_validate(_raw_payload())
+        self.document = CaptureDocument.model_validate(_document_payload())
         ready = _ready_payload()
         ready["runtimeVersion"] = runtime_version
         ready["capabilities"]["captureKinds"] = capture_kinds or ["pdf", "image", "audio"]
-        self.ready = RuntimeReadyV1.model_validate(ready)
+        self.ready = RuntimeReady.model_validate(ready)
         detail = (
             None
             if requirement_status is RuntimeRequirementStatus.READY
             else "No downloadable model is published for this runtime release."
         )
-        self.requirements = RuntimeRequirementsV1.model_validate(
+        self.requirements = RuntimeRequirements.model_validate(
             {
                 "items": [
                     {
@@ -617,16 +671,16 @@ class RecordingCaptureRuntime:
         source_kind: CaptureSourceKind,
         client_request_id: str,
         target_language: str | None = None,
-    ) -> CaptureOperationV2:
+    ) -> CaptureOperation:
         self.creates += 1
         self.create_args = (source_kind, client_request_id, target_language)
         return self.initial_operation
 
-    def get_capture(self, _capture_id: str) -> CaptureOperationV2:
+    def get_capture(self, _capture_id: str) -> CaptureOperation:
         return _operation(status="completed")
 
-    def get_partial(self, capture_id: str) -> PartialCaptureV2:
-        return PartialCaptureV2.model_validate(
+    def get_partial(self, capture_id: str) -> PartialCapture:
+        return PartialCapture.model_validate(
             {
                 "protocolVersion": "2",
                 "captureId": capture_id,
@@ -676,7 +730,7 @@ class RecordingCaptureRuntime:
             "stage": "structuring",
             "retryable": False,
         }
-        return CaptureOperationV2.model_validate(failed)
+        return CaptureOperation.model_validate(failed)
 
     def cancel_capture(self, capture_id):
         self.cancellations.append(capture_id)
@@ -690,10 +744,10 @@ class ReconciliationCaptureRuntime(RecordingCaptureRuntime):
     def __init__(
         self,
         *,
-        commits: list[CaptureOperationV2 | Exception] | None = None,
-        failures: list[CaptureOperationV2 | Exception] | None = None,
-        cancellations: list[CaptureOperationV2 | Exception] | None = None,
-        reads: list[CaptureOperationV2 | Exception] | None = None,
+        commits: list[CaptureOperation | Exception] | None = None,
+        failures: list[CaptureOperation | Exception] | None = None,
+        cancellations: list[CaptureOperation | Exception] | None = None,
+        reads: list[CaptureOperation | Exception] | None = None,
     ) -> None:
         super().__init__()
         self.commit_outcomes = list(commits or [])
@@ -704,8 +758,8 @@ class ReconciliationCaptureRuntime(RecordingCaptureRuntime):
 
     @staticmethod
     def _outcome(
-        outcomes: list[CaptureOperationV2 | Exception],
-    ) -> CaptureOperationV2:
+        outcomes: list[CaptureOperation | Exception],
+    ) -> CaptureOperation:
         outcome = outcomes.pop(0)
         if isinstance(outcome, Exception):
             raise outcome
@@ -755,11 +809,11 @@ class ReconciliationCaptureRuntime(RecordingCaptureRuntime):
 class StaticStructurer:
     def __init__(self, candidate: object) -> None:
         self.candidate = candidate
-        self.calls: list[tuple[RawCaptureV1, str | None]] = []
+        self.calls: list[tuple[RawCapture, str | None]] = []
 
     def structure(
         self,
-        raw: RawCaptureV1,
+        raw: RawCapture,
         *,
         target_language: str | None = None,
         **_control,
@@ -1138,7 +1192,7 @@ def test_capture_coordinator_maps_structuring_control_to_sidecar_cancel(
 
 
 def test_capture_document_maps_page_and_time_provenance_without_restructuring() -> None:
-    document = CaptureDocumentV1.model_validate(_document_payload())
+    document = CaptureDocument.model_validate(_document_payload())
     extraction = capture_document_to_pdf_extraction(document)
 
     assert extraction.page_count == 1
@@ -1156,7 +1210,7 @@ def test_capture_document_maps_page_and_time_provenance_without_restructuring() 
         "endMs": 950,
     }
     audio["blocks"][0]["locator"] = audio["rawSegments"][0]["locator"]
-    segments = capture_document_to_audio_segments(CaptureDocumentV1.model_validate(audio))
+    segments = capture_document_to_audio_segments(CaptureDocument.model_validate(audio))
 
     assert segments[0].transcript.start_ms == 125
     assert segments[0].transcript.end_ms == 950

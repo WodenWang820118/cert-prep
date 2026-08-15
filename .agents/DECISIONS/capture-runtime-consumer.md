@@ -96,9 +96,9 @@
 - Keep installation explicit. `prepare-runtime-resources` and Tauri build only
   consume an already verified staging directory.
 - Pin cert-prep to the canonical `gx-capture/capture-workbench` release
-  `capture-runtime@0.3.8`; API `1.0` and schema `1` remain unchanged. Pin the
-  published `CaptureDocumentV1` schema digest
-  `2721093496a9f09044d5737cce70d2356d5f71757b1cd23a960e1d003ea014f2` at each
+  `capture-runtime@0.4.0`; API `2.0` and schema `2` are the hard-cut contract. Pin the
+  published `CaptureDocument` schema digest
+  `850afd212d049c25da41d3867ba5477451a6a2c6c7e41f116fe60f26b6a35335` at each
   independent TypeScript/Rust verification boundary.
 - v0.3.8 is a core-only release. Its runtime converts the empty catalog into
   `windowsml-ocr` and `whisper-primary` requirements with `unavailable` status;

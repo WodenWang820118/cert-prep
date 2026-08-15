@@ -216,7 +216,7 @@ describe('CaptureWorkbenchTrialPage', () => {
       taskId: 'task-1',
       document: {
         source: { fileName: 'scan.pdf', bytes: 4 },
-        schemaVersion: '1',
+        schemaVersion: '2',
         blocks: [],
       },
     } as unknown as CaptureCompletedEvent);

@@ -28,18 +28,17 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 
-from capture_contracts import (
-    CaptureBlockV1,
-    CaptureDocumentV1,
-    CaptureEngineV1,
-    CaptureEventV2,
-    CaptureFailureV2,
-    CaptureOperationV2,
-    CaptureReviewV1,
+from capture_runtime_client import (
+    CaptureBlock,
+    CaptureDocument,
+    CaptureEngine,
+    CaptureEvent,
+    CaptureFailure,
+    CaptureOperation,
     CaptureSourceKind,
-    PartialCaptureV2,
-    RawCaptureSegmentV1,
-    RawCaptureV1,
+    PartialCapture,
+    RawCaptureSegment,
+    RawCapture,
     StreamingCaptureStatus,
     StreamingEventType,
 )
@@ -54,6 +53,7 @@ from cert_prep_backend.api.errors import api_error, not_found_error
 from cert_prep_backend.core.config import Settings
 from cert_prep_backend.core.exceptions import BackendError, NotFoundError
 from cert_prep_backend.domains.capture_workbench import review_sessions
+from cert_prep_backend.domains.capture_workbench.host_models import CaptureReview
 from cert_prep_backend.domains.capture_workbench.client import (
     CaptureRuntimeError,
     CaptureRuntimeProtocolError,
@@ -118,12 +118,12 @@ class _ApiModel(BaseModel):
 
 class CaptureReviewStructureRequest(_ApiModel):
     client_request_id: str = Field(min_length=1, max_length=128)
-    review: CaptureReviewV1
+    review: CaptureReview
 
 
 class CaptureStreamingCommitRequest(_ApiModel):
     client_request_id: str = Field(min_length=1, max_length=128)
-    candidate: CaptureDocumentV1
+    candidate: CaptureDocument
 
 
 class CaptureStreamingFailureRequest(_ApiModel):
@@ -132,7 +132,7 @@ class CaptureStreamingFailureRequest(_ApiModel):
     message: str = Field(min_length=1, max_length=500)
 
 
-class CaptureReviewOperationRead(CaptureOperationV2):
+class CaptureReviewOperationRead(CaptureOperation):
     """Host capture operation plus its durable Cert Prep document identity."""
 
     document_id: str
@@ -140,8 +140,8 @@ class CaptureReviewOperationRead(CaptureOperationV2):
 
 class CaptureStreamingResultRead(_ApiModel):
     operation: CaptureReviewOperationRead
-    raw: RawCaptureV1
-    result: CaptureDocumentV1
+    raw: RawCapture
+    result: CaptureDocument
 
 
 class CaptureRuntimeEventRegistry:
@@ -417,13 +417,13 @@ def capture_events(
     )
 
 
-@router.get("/{capture_id}/partial", response_model=PartialCaptureV2)
+@router.get("/{capture_id}/partial", response_model=PartialCapture)
 def get_partial(
     request: Request,
     project_id: str,
     capture_id: str,
     db: Database = Depends(get_database),
-) -> PartialCaptureV2:
+) -> PartialCapture:
     coordinator = get_capture_coordinator(request)
     cleanup_expired_review_sessions(db, coordinator=coordinator)
     session = _session_or_404(db, project_id, capture_id)
@@ -434,7 +434,7 @@ def get_partial(
         raise HTTPException(status_code=409, detail="OCR extraction has not reached review state.")
     try:
         partial = coordinator.get_partial(runtime_id)
-        return PartialCaptureV2.model_validate(
+        return PartialCapture.model_validate(
             {
                 **partial.model_dump(mode="json", by_alias=True),
                 "captureId": capture_id,
@@ -447,14 +447,38 @@ def get_partial(
         ) from error
 
 
-@router.post("/{capture_id}/structure", response_model=CaptureDocumentV1)
+@router.get("/{capture_id}/raw", response_model=RawCapture)
+def get_raw(
+    request: Request,
+    project_id: str,
+    capture_id: str,
+    db: Database = Depends(get_database),
+) -> RawCapture:
+    coordinator = get_capture_coordinator(request)
+    cleanup_expired_review_sessions(db, coordinator=coordinator)
+    session = _session_or_404(db, project_id, capture_id)
+    if session["status"] != review_sessions.PENDING:
+        raise HTTPException(status_code=409, detail="OCR review is no longer available.")
+    runtime_id = session.get("runtime_capture_id")
+    if not runtime_id:
+        raise HTTPException(status_code=409, detail="OCR extraction has not reached review state.")
+    try:
+        return coordinator.get_raw(runtime_id)
+    except Exception as error:
+        raise HTTPException(
+            status_code=502,
+            detail="Capture Runtime raw extraction unavailable.",
+        ) from error
+
+
+@router.post("/{capture_id}/structure", response_model=CaptureDocument)
 def structure_capture(
     request: Request,
     project_id: str,
     capture_id: str,
     structure_request: CaptureReviewStructureRequest,
     db: Database = Depends(get_database),
-) -> CaptureDocumentV1:
+) -> CaptureDocument:
     coordinator = get_capture_coordinator(request)
     cleanup_expired_review_sessions(db, coordinator=coordinator)
     session = _session_or_404(db, project_id, capture_id)
@@ -650,7 +674,7 @@ def cancel_capture(
     if session["status"] not in review_sessions.ACTIVE:
         return get_capture(request, project_id, capture_id, db)
     try:
-        runtime_operation: CaptureOperationV2 | None = None
+        runtime_operation: CaptureOperation | None = None
         operations.cancel_operation(
             db,
             project_id=project_id,
@@ -725,6 +749,12 @@ def get_result(
             except Exception:
                 pass
             return response
+        except CaptureRuntimeProtocolError as error:
+            raise api_error(
+                status.HTTP_502_BAD_GATEWAY,
+                "capture_runtime_protocol_error",
+                "Capture Runtime result violated the v2 contract.",
+            ) from error
         except CaptureRuntimeError as error:
             if error.status_code != 404:
                 raise api_error(
@@ -732,12 +762,6 @@ def get_result(
                     "capture_runtime_result_unavailable",
                     "Capture Runtime result unavailable.",
                 ) from error
-        except CaptureRuntimeProtocolError as error:
-            raise api_error(
-                status.HTTP_502_BAD_GATEWAY,
-                "capture_runtime_protocol_error",
-                "Capture Runtime result violated the v2 contract.",
-            ) from error
         except Exception as error:
             raise api_error(
                 status.HTTP_502_BAD_GATEWAY,
@@ -882,7 +906,7 @@ def _run_commit(
     document_id: str,
     operation_id: str,
     session_id: str,
-    candidate: CaptureDocumentV1,
+    candidate: CaptureDocument,
     streaming_questions,
     shutdown_requested,
     registry: CaptureRuntimeEventRegistry,
@@ -1073,7 +1097,7 @@ def _host_event_stream(
                         yield _encode_sse_event(terminal)
                     return
                 yield _encode_sse_event(
-                    CaptureEventV2.model_validate(
+                    CaptureEvent.model_validate(
                         {
                             **event.model_dump(mode="json", by_alias=True),
                             "captureId": capture_id,
@@ -1108,7 +1132,7 @@ def _terminal_host_event(
     document: dict,
     *,
     source_kind: CaptureSourceKind,
-) -> CaptureEventV2:
+) -> CaptureEvent:
     status_value = session["status"]
     event_type = {
         review_sessions.COMPLETED: StreamingEventType.COMPLETED,
@@ -1116,7 +1140,7 @@ def _terminal_host_event(
         review_sessions.FAILED: StreamingEventType.FAILED,
     }[status_value]
     failure = (
-        CaptureFailureV2(
+        CaptureFailure(
             code="host_capture_failed",
             message="Cert Prep capture processing failed.",
             stage="host",
@@ -1126,7 +1150,7 @@ def _terminal_host_event(
         else None
     )
     sequence = max(1, int(session.get("last_event_sequence", 0)))
-    return CaptureEventV2(
+    return CaptureEvent(
         event_id=f"{capture_id}/{sequence}",
         sequence=sequence,
         capture_id=capture_id,
@@ -1139,7 +1163,7 @@ def _terminal_host_event(
     )
 
 
-def _encode_sse_event(event: CaptureEventV2) -> str:
+def _encode_sse_event(event: CaptureEvent) -> str:
     data = json.dumps(
         event.model_dump(mode="json", by_alias=True),
         ensure_ascii=False,
@@ -1229,7 +1253,7 @@ def _operation_from_document(
         StreamingCaptureStatus.CANCELLED,
     }
     failure = (
-        CaptureFailureV2(
+        CaptureFailure(
             code="host_capture_failed",
             message="Cert Prep capture processing failed.",
             stage="host",
@@ -1265,7 +1289,7 @@ def _operation_from_document(
 
 
 def _host_operation(
-    operation: CaptureOperationV2,
+    operation: CaptureOperation,
     *,
     capture_id: str,
     document_id: str,
@@ -1285,9 +1309,9 @@ def _document_projection(
     project_id: str,
     document: dict,
     chunks: list[dict],
-) -> CaptureDocumentV1:
+) -> CaptureDocument:
     segments = [
-        RawCaptureSegmentV1(
+        RawCaptureSegment(
             segment_id=chunk["id"],
             order=index,
             locator={"kind": "page", "page": max(1, chunk["page_number"])},
@@ -1296,7 +1320,7 @@ def _document_projection(
         for index, chunk in enumerate(chunks)
     ]
     blocks = [
-        CaptureBlockV1(
+        CaptureBlock(
             block_id=f"cert-prep-block-{segment.segment_id}",
             order=index,
             type="paragraph",
@@ -1314,19 +1338,19 @@ def _document_projection(
         "bytes": max(1, _document_bytes(db, project_id, document["id"])),
     }
     digest = f"sha256:{document['sha256']}"
-    extraction = CaptureEngineV1(
+    extraction = CaptureEngine(
         engine=document["extraction_method"] or "windowsml-ocr",
         model=f"capture-runtime@{SUPPORTED_RUNTIME_VERSION}",
         digest=digest,
         device=document["ocr_device"],
     )
-    structuring = CaptureEngineV1(
+    structuring = CaptureEngine(
         engine="cert-prep-host-structuring",
         model="cert-prep-backend",
         digest=digest,
         device=None,
     )
-    return CaptureDocumentV1(
+    return CaptureDocument(
         source=source,
         raw_segments=segments,
         blocks=blocks,
@@ -1344,8 +1368,8 @@ def _document_projection(
     )
 
 
-def _raw_projection(document: CaptureDocumentV1) -> RawCaptureV1:
-    return RawCaptureV1(
+def _raw_projection(document: CaptureDocument) -> RawCapture:
+    return RawCapture(
         schema_version=document.schema_version,
         diagnostic_only=True,
         source=document.source,

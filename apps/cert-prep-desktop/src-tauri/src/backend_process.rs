@@ -272,8 +272,8 @@ mod tests {
             base_url: "http://127.0.0.1:41001".into(),
             token: "capture-sidecar-test-token".into(),
             runtime_version: CAPTURE_RUNTIME_VERSION.into(),
-            api_version: "1.0".into(),
-            capture_document_schema_version: "1".into(),
+            api_version: "2.0".into(),
+            capture_document_schema_version: "2".into(),
         }
     }
 
@@ -409,11 +409,11 @@ mod tests {
         );
         assert_eq!(
             env_value(&env, "CERT_PREP_CAPTURE_RUNTIME_API_VERSION"),
-            Some("1.0")
+            Some("2.0")
         );
         assert_eq!(
             env_value(&env, "CERT_PREP_CAPTURE_DOCUMENT_SCHEMA_VERSION"),
-            Some("1")
+            Some("2")
         );
     }
 

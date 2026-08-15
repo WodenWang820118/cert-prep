@@ -20,9 +20,9 @@ from capture_structuring import (
 )
 
 from cert_prep_backend.api.errors import ProviderUnavailableError
-from capture_contracts import (
-    CaptureEngineV1,
-    RawCaptureV1,
+from capture_runtime_client import (
+    CaptureEngine,
+    RawCapture,
 )
 from cert_prep_backend.domains.mock_exams.ports import (
     StructuredJsonGenerationProvider,
@@ -35,7 +35,7 @@ _DEFAULT_NUM_CTX = 8_192
 _DEFAULT_NUM_PREDICT = 4_096
 _CONTEXT_RESERVE_TOKENS = 512
 _OUTPUT_RESERVE_TOKENS = 256
-_IDENTITY_STRUCTURING_ENGINE = CaptureEngineV1(
+_IDENTITY_STRUCTURING_ENGINE = CaptureEngine(
     engine="cert-prep-host",
     model="capture-document-pass-through-v1",
     digest=f"sha256:{hashlib.sha256(b'capture-document-pass-through-v1').hexdigest()}",
@@ -76,7 +76,7 @@ class CertPrepCaptureStructuringAdapter:
 
     def structure(
         self,
-        raw: RawCaptureV1,
+        raw: RawCapture,
         *,
         target_language: str | None = None,
         should_cancel: Callable[[], bool] = lambda: False,
@@ -170,7 +170,7 @@ class CertPrepCaptureStructuringAdapter:
 
     def _identity_document(
         self,
-        raw: RawCaptureV1,
+        raw: RawCapture,
         *,
         completed_at: datetime,
         should_cancel: Callable[[], bool],
@@ -234,7 +234,7 @@ def _provider_messages(prompt: Mapping[str, object]) -> list[dict[str, str]]:
     ]
 
 
-def _engine_identity(provider: StructuredJsonGenerationProvider) -> CaptureEngineV1:
+def _engine_identity(provider: StructuredJsonGenerationProvider) -> CaptureEngine:
     """Derive the trusted Cert Prep engine identity from the selected provider."""
 
     digest = None
@@ -245,7 +245,7 @@ def _engine_identity(provider: StructuredJsonGenerationProvider) -> CaptureEngin
     if digest is None:
         identity = f"{provider.provider}:{provider.model}:structured-json-v1"
         digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()
-    return CaptureEngineV1(
+    return CaptureEngine(
         engine=provider.provider,
         model=provider.model,
         digest=f"sha256:{digest}",

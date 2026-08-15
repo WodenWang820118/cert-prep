@@ -34,10 +34,10 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           repository: gx-capture/capture-workbench
-          ref: f2b2bccd9c8c80437d543b45a279331ed9a1dcaf
+          ref: 206de39b0b85bda1dfd1f17679610c1a740f4911
           path: capture-workbench
           sparse-checkout: |
-            packages/capture-contracts
+            packages/capture-runtime-client-python
             packages/capture-structuring-python
 
       - name: Link Capture Workbench Python bridge (Unix)
@@ -79,7 +79,12 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Sync backend Python environment
-        run: uv sync --project apps/cert-prep-backend --python ${{ env.PYTHON_VERSION }} --frozen
+        run: >-
+          uv sync --project apps/cert-prep-backend
+          --python ${{ env.PYTHON_VERSION }}
+          --frozen
+          --reinstall-package capture-runtime-client
+          --reinstall-package capture-structuring
 
       - name: Lint portable projects
         run: >-
@@ -123,10 +128,10 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           repository: gx-capture/capture-workbench
-          ref: f2b2bccd9c8c80437d543b45a279331ed9a1dcaf
+          ref: 206de39b0b85bda1dfd1f17679610c1a740f4911
           path: capture-workbench
           sparse-checkout: |
-            packages/capture-contracts
+            packages/capture-runtime-client-python
             packages/capture-structuring-python
 
       - name: Link Capture Workbench Python bridge (Unix)
@@ -177,7 +182,12 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Sync backend Python environment
-        run: uv sync --project apps/cert-prep-backend --python ${{ env.PYTHON_VERSION }} --frozen
+        run: >-
+          uv sync --project apps/cert-prep-backend
+          --python ${{ env.PYTHON_VERSION }}
+          --frozen
+          --reinstall-package capture-runtime-client
+          --reinstall-package capture-structuring
 
       - name: Lint Windows-owned Python and Angular projects
         run: >-
@@ -200,16 +210,19 @@ jobs:
         run: pnpm nx run cert-prep-desktop:package-qa-test
 
       - name: Stage the published Capture Runtime release
+        if: vars.CAPTURE_PUBLISHED_0_4_0 == 'true'
         run: pnpm nx run cert-prep-desktop:install-capture-runtime --skip-nx-cache
 
       - name: Verify Capture Runtime installer behavior
+        if: vars.CAPTURE_PUBLISHED_0_4_0 == 'true'
         run: node --test tools/install-capture-runtime.test.mts
 
       - name: Run the Capture Runtime consumer smoke
+        if: vars.CAPTURE_PUBLISHED_0_4_0 == 'true'
         run: pnpm nx run cert-prep-desktop:capture-runtime-consumer-smoke --skip-nx-cache
 
       - name: Verify published Capture registry installation
-        if: vars.CAPTURE_PUBLISHED_0_3_12 == 'true'
+        if: vars.CAPTURE_PUBLISHED_0_4_0 == 'true'
         env:
           CAPTURE_REQUIRE_PUBLISHED_CAPTURE_ARTIFACTS: '1'
         shell: pwsh
@@ -217,9 +230,9 @@ jobs:
           $ErrorActionPreference = 'Stop'
           pnpm nx run cert-prep-desktop:capture-runtime-consumer-test --skip-nx-cache
           uv run --isolated --no-project `
-            --with 'capture-contracts==0.3.12' `
-            --with 'capture-structuring==0.3.12' `
-            -- python -c "import capture_contracts, capture_structuring; assert capture_contracts.CAPTURE_RUNTIME_VERSION == '0.3.12'; assert capture_structuring.__package__ == 'capture_structuring'"
+            --with 'capture-runtime-client==0.4.0' `
+            --with 'capture-structuring==0.4.0' `
+            -- python -c "import capture_runtime_client, capture_structuring; assert capture_runtime_client.CAPTURE_RUNTIME_VERSION == '0.4.0'; assert capture_structuring.__package__ == 'capture_structuring'"
 
       - name: Test Tauri host
         run: pnpm nx run cert-prep-desktop:cargo-test

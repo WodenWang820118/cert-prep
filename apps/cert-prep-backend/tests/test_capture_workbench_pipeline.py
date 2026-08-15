@@ -31,17 +31,17 @@ from cert_prep_backend.domains.capture_workbench.client import (
     CaptureUpload,
 )
 from cert_prep_backend.domains.capture_workbench import review_workflow
-from capture_contracts import (
+from capture_runtime_client import (
     CAPTURE_RUNTIME_VERSION,
-    CaptureDocumentV1,
-    CaptureEventV2,
-    CaptureOperationV2,
+    CaptureDocument,
+    CaptureEvent,
+    CaptureOperation,
     CaptureSourceKind,
-    PartialCaptureV2,
-    RawCaptureV1,
-    RuntimeRequirementsV1,
+    PartialCapture,
+    RawCapture,
+    RuntimeRequirements,
 )
-from cert_prep_backend.domains.capture_workbench.host_models import RuntimeReadyV1
+from cert_prep_backend.domains.capture_workbench.host_models import RuntimeReady
 from cert_prep_backend.domains.capture_workbench.runtime_policy import LEGACY_CORE_ONLY_RUNTIME_VERSION
 from cert_prep_backend.routers.capture_workbench import CaptureRuntimeEventRegistry
 from document_test_helpers import _create_project
@@ -100,7 +100,7 @@ class EchoCaptureProvider(MockExamProvider):
         num_ctx,
         num_predict,
     ) -> str:
-        assert json_schema["title"] == "CaptureBlockBatchV1"
+        assert json_schema["title"] == "CaptureBlockBatch"
         assert num_ctx > num_predict > 0
         prompt = json.loads(messages[1]["content"])
         blocks = [
@@ -119,18 +119,18 @@ class DeterministicCaptureRuntime:
 
     def __init__(self, *, runtime_version: str = CAPTURE_RUNTIME_VERSION) -> None:
         self.runtime_version = runtime_version
-        self.raw: RawCaptureV1 | None = None
-        self.result: CaptureDocumentV1 | None = None
+        self.raw: RawCapture | None = None
+        self.result: CaptureDocument | None = None
         self.deleted: list[str] = []
         self.created_request_ids: list[str] = []
         self.commit_idempotency_keys: list[UUID] = []
 
-    def handshake(self) -> RuntimeReadyV1:
+    def handshake(self) -> RuntimeReady:
         return _test_runtime_ready().model_copy(
             update={"runtime_version": self.runtime_version}
         )
 
-    def get_requirements(self) -> RuntimeRequirementsV1:
+    def get_requirements(self) -> RuntimeRequirements:
         return _test_runtime_requirements("ready")
 
     def start_capture(
@@ -140,14 +140,14 @@ class DeterministicCaptureRuntime:
         source_kind: CaptureSourceKind,
         client_request_id: str,
         target_language: str | None = None,
-    ) -> CaptureOperationV2:
+    ) -> CaptureOperation:
         assert source_kind is self.expected_source_kind
         assert target_language is None
         assert isinstance(upload.content, bytes)
         self.created_request_ids.append(client_request_id)
-        self.raw = RawCaptureV1.model_validate(
+        self.raw = RawCapture.model_validate(
             {
-                "schemaVersion": "1",
+                "schemaVersion": "2",
                 "diagnosticOnly": True,
                 "source": {
                     "sha256": hashlib.sha256(upload.content).hexdigest(),
@@ -176,9 +176,9 @@ class DeterministicCaptureRuntime:
         )
         return self._operation(status="awaiting_structuring")
 
-    def get_partial(self, capture_id: str) -> PartialCaptureV2:
+    def get_partial(self, capture_id: str) -> PartialCapture:
         assert self.raw is not None
-        return PartialCaptureV2.model_validate(
+        return PartialCapture.model_validate(
             {
                 "protocolVersion": "2",
                 "captureId": capture_id,
@@ -197,7 +197,7 @@ class DeterministicCaptureRuntime:
             }
         )
 
-    def get_raw(self, _capture_id: str) -> RawCaptureV1:
+    def get_raw(self, _capture_id: str) -> RawCapture:
         assert self.raw is not None
         return self.raw
 
@@ -207,12 +207,12 @@ class DeterministicCaptureRuntime:
         candidate: object,
         *,
         idempotency_key: UUID,
-    ) -> CaptureOperationV2:
+    ) -> CaptureOperation:
         self.commit_idempotency_keys.append(idempotency_key)
         self.result = (
-            CaptureDocumentV1.model_validate_json(candidate)
+            CaptureDocument.model_validate_json(candidate)
             if isinstance(candidate, str)
-            else CaptureDocumentV1.model_validate(candidate)
+            else CaptureDocument.model_validate(candidate)
         )
         assert self.raw is not None
         assert self.result.source == self.raw.source
@@ -228,7 +228,7 @@ class DeterministicCaptureRuntime:
             result=self.result,
         )
 
-    def get_capture(self, _capture_id: str) -> CaptureOperationV2:
+    def get_capture(self, _capture_id: str) -> CaptureOperation:
         return self._operation(
             status="completed" if self.result is not None else "awaiting_structuring"
         )
@@ -242,7 +242,7 @@ class DeterministicCaptureRuntime:
     def delete_capture(self, capture_id: str) -> None:
         self.deleted.append(capture_id)
 
-    def _operation(self, *, status: str) -> CaptureOperationV2:
+    def _operation(self, *, status: str) -> CaptureOperation:
         assert self.raw is not None
         terminal = status in {"completed", "failed", "cancelled"}
         error = (
@@ -255,7 +255,7 @@ class DeterministicCaptureRuntime:
             if status == "failed"
             else None
         )
-        return CaptureOperationV2.model_validate(
+        return CaptureOperation.model_validate(
             {
                 "protocolVersion": "2",
                 "captureId": "capture-pipeline-1",
@@ -279,7 +279,7 @@ class CoreOnlyPdfExtractionFailedRuntime(DeterministicCaptureRuntime):
         super().__init__(runtime_version=LEGACY_CORE_ONLY_RUNTIME_VERSION)
         self.requirement_reads = 0
 
-    def get_requirements(self) -> RuntimeRequirementsV1:
+    def get_requirements(self) -> RuntimeRequirements:
         self.requirement_reads += 1
         requirements = _test_runtime_requirements("unavailable")
         detail = "No downloadable model is published for this runtime release."
@@ -299,7 +299,7 @@ class CoreOnlyPdfExtractionFailedRuntime(DeterministicCaptureRuntime):
         source_kind: CaptureSourceKind,
         client_request_id: str,
         target_language: str | None = None,
-    ) -> CaptureOperationV2:
+    ) -> CaptureOperation:
         super().start_capture(
             upload,
             source_kind=source_kind,
@@ -308,7 +308,7 @@ class CoreOnlyPdfExtractionFailedRuntime(DeterministicCaptureRuntime):
         )
         assert self.raw is not None
         failed = self._operation(status="failed")
-        return CaptureOperationV2.model_validate(
+        return CaptureOperation.model_validate(
             {
                 **failed.model_dump(mode="json", by_alias=True),
                 "captureId": "capture-core-only-extraction-failed",
@@ -329,14 +329,14 @@ class PendingTerminalRaceCaptureRuntime(DeterministicCaptureRuntime):
         source_kind: CaptureSourceKind,
         client_request_id: str,
         target_language: str | None = None,
-    ) -> CaptureOperationV2:
+    ) -> CaptureOperation:
         admitted = super().start_capture(
             upload,
             source_kind=source_kind,
             client_request_id=client_request_id,
             target_language=target_language,
         )
-        return CaptureOperationV2.model_validate(
+        return CaptureOperation.model_validate(
             {
                 **admitted.model_dump(mode="json", by_alias=True),
                 "status": "extracting",
@@ -359,7 +359,7 @@ class PendingTerminalRaceCaptureRuntime(DeterministicCaptureRuntime):
         if on_activity is not None:
             on_activity()
         failed = self.get_capture(capture_id)
-        yield CaptureEventV2.model_validate(
+        yield CaptureEvent.model_validate(
             {
                 "protocolVersion": "2",
                 "eventId": f"{capture_id}/1",
@@ -376,7 +376,7 @@ class PendingTerminalRaceCaptureRuntime(DeterministicCaptureRuntime):
             }
         )
 
-    def get_capture(self, _capture_id: str) -> CaptureOperationV2:
+    def get_capture(self, _capture_id: str) -> CaptureOperation:
         return self._operation(status="failed")
 
 
@@ -392,7 +392,7 @@ class BlockingDeterministicCaptureRuntime(DeterministicCaptureRuntime):
         candidate: object,
         *,
         idempotency_key: UUID,
-    ) -> CaptureOperationV2:
+    ) -> CaptureOperation:
         self.commit_started.set()
         if not self.release_commit.wait(timeout=5):
             raise AssertionError("blocking capture runtime was not released")
@@ -431,14 +431,14 @@ class DeterministicAudioCaptureRuntime(DeterministicCaptureRuntime):
         source_kind: CaptureSourceKind,
         client_request_id: str,
         target_language: str | None = None,
-    ) -> CaptureOperationV2:
+    ) -> CaptureOperation:
         assert source_kind is CaptureSourceKind.AUDIO
         assert target_language == "zh-Hant"
         assert isinstance(upload.content, bytes)
         self.created_request_ids.append(client_request_id)
-        self.raw = RawCaptureV1.model_validate(
+        self.raw = RawCapture.model_validate(
             {
-                "schemaVersion": "1",
+                "schemaVersion": "2",
                 "diagnosticOnly": True,
                 "source": {
                     "sha256": hashlib.sha256(upload.content).hexdigest(),
@@ -474,7 +474,7 @@ class CoreOnlyCaptureRuntime(DeterministicCaptureRuntime):
         self.create_attempts = 0
         self.requirement_reads = 0
 
-    def get_requirements(self) -> RuntimeRequirementsV1:
+    def get_requirements(self) -> RuntimeRequirements:
         self.requirement_reads += 1
         requirements = _test_runtime_requirements("unavailable")
         detail = "No downloadable model is published for this runtime release."
@@ -487,7 +487,7 @@ class CoreOnlyCaptureRuntime(DeterministicCaptureRuntime):
             }
         )
 
-    def start_capture(self, *args, **kwargs) -> CaptureOperationV2:
+    def start_capture(self, *args, **kwargs) -> CaptureOperation:
         self.create_attempts += 1
         return super().start_capture(*args, **kwargs)
 
@@ -508,7 +508,7 @@ class ReplayableEventCaptureRuntime(DeterministicCaptureRuntime):
         self.event_cursors.append(last_event_id)
         if on_activity is not None:
             on_activity()
-        yield CaptureEventV2.model_validate(
+        yield CaptureEvent.model_validate(
             {
                 "protocolVersion": "2",
                 "eventId": f"{capture_id}/2",
@@ -524,7 +524,7 @@ class ReplayableEventCaptureRuntime(DeterministicCaptureRuntime):
             }
         )
 
-    def cancel_capture(self, capture_id: str) -> CaptureOperationV2:
+    def cancel_capture(self, capture_id: str) -> CaptureOperation:
         self.cancel_calls += 1
         return super().cancel_capture(capture_id)
 
@@ -535,9 +535,9 @@ class DurableTerminalReplayCaptureRuntime(DeterministicCaptureRuntime):
         self.event_cursors: list[str | int | None] = []
         self.cancel_calls = 0
 
-    def _operation(self, *, status: str) -> CaptureOperationV2:
+    def _operation(self, *, status: str) -> CaptureOperation:
         operation = super()._operation(status=status)
-        return CaptureOperationV2.model_validate(
+        return CaptureOperation.model_validate(
             {
                 **operation.model_dump(mode="json", by_alias=True),
                 "lastEventSequence": 6 if status == "completed" else 5,
@@ -565,7 +565,7 @@ class DurableTerminalReplayCaptureRuntime(DeterministicCaptureRuntime):
         if cursor >= sequence:
             return
         event_type = "completed" if self.result is not None else "checkpoint"
-        yield CaptureEventV2.model_validate(
+        yield CaptureEvent.model_validate(
             {
                 "protocolVersion": "2",
                 "eventId": f"{capture_id}/{sequence}",
@@ -590,7 +590,7 @@ class DurableTerminalReplayCaptureRuntime(DeterministicCaptureRuntime):
             )
         return super().get_result(capture_id)
 
-    def cancel_capture(self, capture_id: str) -> CaptureOperationV2:
+    def cancel_capture(self, capture_id: str) -> CaptureOperation:
         self.cancel_calls += 1
         return super().cancel_capture(capture_id)
 
@@ -601,9 +601,9 @@ class CommitRaceEventCaptureRuntime(DeterministicCaptureRuntime):
         self.terminal_event_offered = Event()
         self.event_cursors: list[str | int | None] = []
 
-    def _operation(self, *, status: str) -> CaptureOperationV2:
+    def _operation(self, *, status: str) -> CaptureOperation:
         operation = super()._operation(status=status)
-        return CaptureOperationV2.model_validate(
+        return CaptureOperation.model_validate(
             {
                 **operation.model_dump(mode="json", by_alias=True),
                 "lastEventSequence": 2 if status == "completed" else 1,
@@ -626,7 +626,7 @@ class CommitRaceEventCaptureRuntime(DeterministicCaptureRuntime):
         if cursor >= 2:
             return
         self.terminal_event_offered.set()
-        yield CaptureEventV2.model_validate(
+        yield CaptureEvent.model_validate(
             {
                 "protocolVersion": "2",
                 "eventId": f"{capture_id}/2",
@@ -847,7 +847,7 @@ def test_review_result_fails_closed_when_runtime_replay_violates_contract(
             headers=headers,
             json={
                 "clientRequestId": "invalid-result-structure",
-                "review": {"reviewVersion": 1, "edits": []},
+                "review": {"reviewVersion": 2, "edits": []},
             },
         )
         committed = client.post(
@@ -1191,6 +1191,13 @@ def test_review_capture_pauses_before_persistence_and_applies_confirmed_overlay(
         assert partial.status_code == 200
         assert partial.json()["captureId"] == capture_id
         assert partial.json()["segments"][0]["text"] == "Sidecar extracted source text"
+        raw = client.get(
+            f"/projects/{project_id}/capture-workbench/captures/{capture_id}/raw",
+            headers=headers,
+        )
+        assert raw.status_code == 200
+        assert raw.json()["source"]["sha256"] == capture["source"]["sha256"]
+        assert raw.json()["segments"][0]["text"] == "Sidecar extracted source text"
         assert (
             client.get(
                 f"/projects/{project_id}/capture-workbench/captures/{capture_id}/result",
@@ -1205,7 +1212,7 @@ def test_review_capture_pauses_before_persistence_and_applies_confirmed_overlay(
             json={
                 "clientRequestId": "review-confirm-invalid",
                 "review": {
-                    "reviewVersion": 1,
+                    "reviewVersion": 2,
                     "edits": [{"segmentId": "not-a-runtime-segment", "reviewedText": "x"}],
                 },
             },
@@ -1218,7 +1225,7 @@ def test_review_capture_pauses_before_persistence_and_applies_confirmed_overlay(
             json={
                 "clientRequestId": "review-confirm-1",
                 "review": {
-                    "reviewVersion": 1,
+                    "reviewVersion": 2,
                     "edits": [{"segmentId": "page-1", "reviewedText": "Corrected OCR text"}],
                 },
             },
@@ -1337,7 +1344,7 @@ def test_host_events_wait_for_durable_commit_before_emitting_terminal(
             headers=headers,
             json={
                 "clientRequestId": "race-structure",
-                "review": {"reviewVersion": 1, "edits": []},
+                "review": {"reviewVersion": 2, "edits": []},
             },
         )
         assert structured.status_code == 200, structured.text
@@ -1564,7 +1571,7 @@ def test_terminal_event_replays_monotonically_after_result_deletes_runtime(
             headers=headers,
             json={
                 "clientRequestId": "terminal-structure",
-                "review": {"reviewVersion": 1, "edits": []},
+                "review": {"reviewVersion": 2, "edits": []},
             },
         )
         assert structured.status_code == 200
@@ -1752,7 +1759,7 @@ def test_confirmation_request_is_atomic_idempotent_and_rejects_divergent_replay(
             status_value="awaiting_structuring",
         )
         review = {
-            "reviewVersion": 1,
+            "reviewVersion": 2,
             "edits": [{"segmentId": "page-1", "reviewedText": "Confirmed once"}],
         }
         structured = client.post(

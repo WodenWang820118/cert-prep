@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import {
   createServer,
   type IncomingMessage,
@@ -19,9 +20,42 @@ const defaultPort = Number(
 const defaultToken =
   process.env['CERT_PREP_E2E_CAPTURE_RUNTIME_TOKEN'] ??
   'real-e2e-capture-runtime-token';
-const apiVersion = '1.0';
+const apiVersion = '2.0';
 const runtimeVersion = CAPTURE_RUNTIME_VERSION;
-const schemaVersion = '1';
+const schemaVersion = '2';
+const captureDocumentSchemaSha256 =
+  '850afd212d049c25da41d3867ba5477451a6a2c6c7e41f116fe60f26b6a35335';
+const backendVenv = resolve(process.cwd(), '..', 'cert-prep-backend', '.venv');
+const sitePackagesRoots = [resolve(backendVenv, 'Lib', 'site-packages')];
+const linuxLib = resolve(backendVenv, 'lib');
+if (existsSync(linuxLib)) {
+  for (const entry of readdirSync(linuxLib, { withFileTypes: true })) {
+    if (entry.isDirectory() && entry.name.startsWith('python')) {
+      sitePackagesRoots.push(resolve(linuxLib, entry.name, 'site-packages'));
+    }
+  }
+}
+const contractBundlePath = sitePackagesRoots
+  .map((sitePackages) =>
+    resolve(
+      sitePackages,
+      'capture_runtime_client',
+      'private',
+      'assets',
+      'contract-set.json',
+    ),
+  )
+  .find((candidate) => existsSync(candidate));
+if (!contractBundlePath) {
+  throw new Error(
+    `Capture Runtime contract asset was not found under ${backendVenv}. ` +
+      `Checked: ${sitePackagesRoots.join(', ')}`,
+  );
+}
+const contractBundleBytes = readFileSync(contractBundlePath);
+const contractSetSha256 = createHash('sha256')
+  .update(contractBundleBytes)
+  .digest('hex');
 const engineDigest = `sha256:${'a'.repeat(64)}`;
 const maxChunkBytes = 1024 * 1024;
 const terminalStatuses = new Set(['completed', 'failed', 'cancelled']);
@@ -153,17 +187,37 @@ export function startCaptureRuntimeFixture(
         );
         return;
       }
-      if (request.method === 'GET' && url.pathname === '/v1/health/ready') {
+      if (request.method === 'GET' && url.pathname === '/v2/health/ready') {
         writeJson(response, 200, readiness());
         return;
       }
-      if (request.method === 'GET' && url.pathname === '/v2/health/ready') {
+      if (request.method === 'GET' && url.pathname === '/meta/v2/contracts') {
+        writeJson(response, 200, contractIndex());
+        return;
+      }
+      if (
+        request.method === 'GET' &&
+        url.pathname === `/meta/v2/contracts/sha256/${contractSetSha256}`
+      ) {
+        response.writeHead(200, {
+          'Content-Type': 'application/json',
+          'Content-Length': contractBundleBytes.byteLength,
+          ETag: contractSetSha256,
+          'X-Contract-Sha256': contractSetSha256,
+        });
+        response.end(contractBundleBytes);
+        return;
+      }
+      if (
+        request.method === 'GET' &&
+        url.pathname === '/v2/streaming/health/ready'
+      ) {
         writeJson(response, 200, streamingReadiness());
         return;
       }
       if (
         request.method === 'GET' &&
-        url.pathname === '/v1/runtime/requirements'
+        url.pathname === '/v2/runtime/requirements'
       ) {
         writeJson(response, 200, runtimeRequirements());
         return;
@@ -265,7 +319,7 @@ export function startCaptureRuntimeFixture(
         return;
       }
       const captureRoute =
-        /^\/v2\/captures\/([^/]+)(?:\/(events|partial|result|cancel|structure(?:\/commit|\/failure)?))?$/u.exec(
+        /^\/v2\/captures\/([^/]+)(?:\/(events|partial|raw|result|cancel|structure(?:\/commit|\/failure)?))?$/u.exec(
           url.pathname,
         );
       if (captureRoute === null) {
@@ -307,6 +361,19 @@ export function startCaptureRuntimeFixture(
           return;
         }
         writeJson(response, 200, capture.partial);
+        return;
+      }
+      if (request.method === 'GET' && action === 'raw') {
+        if (capture.partial === null) {
+          writeProblem(
+            response,
+            409,
+            'raw_unavailable',
+            'Raw capture diagnostics are not available yet.',
+          );
+          return;
+        }
+        writeJson(response, 200, rawCapture(capture));
         return;
       }
       if (request.method === 'GET' && action === 'result') {
@@ -783,7 +850,7 @@ async function commitStructure(
   const candidate = parseJsonObject(bytes);
   const source = object(candidate['source']);
   if (
-    candidate['schemaVersion'] !== '1' ||
+    candidate['schemaVersion'] !== '2' ||
     source['sha256'] !== capture.source.sha256 ||
     !Array.isArray(candidate['rawSegments']) ||
     !Array.isArray(candidate['blocks'])
@@ -1019,6 +1086,8 @@ function readiness(): Record<string, unknown> {
     apiVersion,
     runtimeVersion,
     captureDocumentSchemaVersion: schemaVersion,
+    captureDocumentSchemaSha256,
+    contractSetVersion: '2',
     capabilities: {
       captureKinds: ['pdf', 'image', 'audio'],
       structuringModes: ['host'],
@@ -1026,6 +1095,17 @@ function readiness(): Record<string, unknown> {
       supportsRawDiagnostics: true,
       maxUploadBytes: 50_000_000,
     },
+  };
+}
+
+function contractIndex(): Record<string, unknown> {
+  return {
+    catalogVersion: '2',
+    runtimeVersion,
+    contractSetVersion: '2',
+    surfaces: [{ id: 'v2', title: 'Capture Runtime v2' }],
+    sha256: contractSetSha256,
+    href: `/meta/v2/contracts/sha256/${contractSetSha256}`,
   };
 }
 

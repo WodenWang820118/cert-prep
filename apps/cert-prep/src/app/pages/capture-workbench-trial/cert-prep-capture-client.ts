@@ -1,10 +1,10 @@
 import { inject, Injectable } from '@angular/core';
 import { CAPTURE_RUNTIME_VERSION } from '@cert-prep/capture-runtime-version';
 import type {
-  CaptureDocumentV1 as ApiCaptureDocumentV1,
-  RuntimeInstallationV1 as ApiRuntimeInstallationV1,
-  RuntimeReadyV1 as ApiRuntimeReadyV1,
-  RuntimeRequirementV1 as ApiRuntimeRequirementV1,
+  CaptureDocument as ApiCaptureDocument,
+  RuntimeInstallation as ApiRuntimeInstallation,
+  RuntimeReady as ApiRuntimeReady,
+  RuntimeRequirementV2 as ApiRuntimeRequirement,
 } from '@cert-prep/api';
 import {
   defer,
@@ -19,27 +19,28 @@ import {
   CAPTURE_RUNTIME_MAJOR,
 } from '@gx-capture/capture-workbench-ui';
 import type {
-  CaptureBlockV1,
+  CaptureBlock,
   CaptureClient,
-  CaptureDocumentV1,
-  CaptureEngineV1,
+  CaptureDocument,
+  CaptureEngine,
   CaptureEventStreamOptions,
-  CaptureEventV2,
-  CaptureFailureV1,
-  CaptureOperationV2,
-  CaptureReviewEditV1,
+  CaptureEvent,
+  CaptureFailure,
+  CaptureOperation,
+  CaptureReviewEdit,
   CaptureSourceKind,
   CaptureStreamingResult,
   CaptureStructuringProvider,
   CaptureStructuringRequest,
   CommitStreamingStructuredResultRequest,
-  PartialCaptureV2,
-  RawCaptureSegmentV1,
-  RawCaptureV1,
+  PartialCapture,
+  RawCaptureSegment,
+  RawCapture,
   ReportStreamingStructuringFailureRequest,
-  RuntimeInstallationV1,
-  RuntimeReadyV1,
-  RuntimeRequirementV1,
+  RuntimeInstallation,
+  RuntimeReady,
+  RuntimeRequirement,
+  StructuringMode,
   StartRuntimeInstallationRequest,
   StartStreamingCaptureRequest,
 } from '@gx-capture/capture-workbench-ui';
@@ -72,7 +73,7 @@ export class CertPrepCaptureClient
   private readonly completedDocuments = new Map<string, string>();
   private latestDocumentId: string | null = null;
 
-  getReady(signal?: AbortSignal): Observable<RuntimeReadyV1> {
+  getReady(signal?: AbortSignal): Observable<RuntimeReady> {
     return this.api.captureRuntimeReady({ signal }).pipe(map(mapReady));
   }
 
@@ -86,7 +87,7 @@ export class CertPrepCaptureClient
 
   getRequirements(
     signal?: AbortSignal,
-  ): Observable<readonly RuntimeRequirementV1[]> {
+  ): Observable<readonly RuntimeRequirement[]> {
     return this.api.captureRuntimeRequirements({ signal }).pipe(
       map((response) => response.items.map(mapRequirement)),
     );
@@ -95,7 +96,7 @@ export class CertPrepCaptureClient
   startInstallation(
     request: StartRuntimeInstallationRequest,
     signal?: AbortSignal,
-  ): Observable<RuntimeInstallationV1> {
+  ): Observable<RuntimeInstallation> {
     return this.api
       .startCaptureRuntimeInstallation(
         { requirementId: request.requirementId, consent: request.consent },
@@ -109,7 +110,7 @@ export class CertPrepCaptureClient
 
   listInstallations(
     signal?: AbortSignal,
-  ): Observable<readonly RuntimeInstallationV1[]> {
+  ): Observable<readonly RuntimeInstallation[]> {
     return this.api
       .captureRuntimeInstallations({ signal })
       .pipe(map((response) => response.items.map(mapInstallation)));
@@ -118,7 +119,7 @@ export class CertPrepCaptureClient
   getInstallation(
     id: string,
     signal?: AbortSignal,
-  ): Observable<RuntimeInstallationV1> {
+  ): Observable<RuntimeInstallation> {
     return this.api
       .captureRuntimeInstallation(id, { signal })
       .pipe(map(mapInstallation));
@@ -127,7 +128,7 @@ export class CertPrepCaptureClient
   cancelInstallation(
     id: string,
     signal?: AbortSignal,
-  ): Observable<RuntimeInstallationV1> {
+  ): Observable<RuntimeInstallation> {
     return this.api
       .cancelCaptureRuntimeInstallation(id, { signal })
       .pipe(map(mapInstallation));
@@ -136,7 +137,7 @@ export class CertPrepCaptureClient
   captureEvents(
     id: string,
     options: CaptureEventStreamOptions = {},
-  ): Observable<CaptureEventV2> {
+  ): Observable<CaptureEvent> {
     const captureId = opaqueCaptureId(id);
     return defer(() => {
       const record = this.requireCapture(captureId);
@@ -165,7 +166,7 @@ export class CertPrepCaptureClient
 
   startStreamingCapture(
     request: StartStreamingCaptureRequest,
-  ): Observable<CaptureOperationV2> {
+  ): Observable<CaptureOperation> {
     const projectId = this.requireProjectId();
     return defer(() =>
       forkJoin({
@@ -195,7 +196,7 @@ export class CertPrepCaptureClient
   getStreamingCapture(
     id: string,
     signal?: AbortSignal,
-  ): Observable<CaptureOperationV2> {
+  ): Observable<CaptureOperation> {
     const captureId = opaqueCaptureId(id);
     const record = this.requireCapture(captureId);
     return this.api
@@ -210,7 +211,7 @@ export class CertPrepCaptureClient
   cancelStreamingCapture(
     id: string,
     signal?: AbortSignal,
-  ): Observable<CaptureOperationV2> {
+  ): Observable<CaptureOperation> {
     const captureId = opaqueCaptureId(id);
     const record = this.requireCapture(captureId);
     return this.api
@@ -225,12 +226,23 @@ export class CertPrepCaptureClient
   getStreamingPartial(
     id: string,
     signal?: AbortSignal,
-  ): Observable<PartialCaptureV2> {
+  ): Observable<PartialCapture> {
     const captureId = opaqueCaptureId(id);
     const record = this.requireCapture(captureId);
     return this.api
       .getPartial(record.projectId, captureId, { signal })
       .pipe(map((response) => mapPartialCapture(response, captureId)));
+  }
+
+  getStreamingRaw(
+    id: string,
+    signal?: AbortSignal,
+  ): Observable<RawCapture> {
+    const captureId = opaqueCaptureId(id);
+    const record = this.requireCapture(captureId);
+    return this.api
+      .getRaw(record.projectId, captureId, { signal })
+      .pipe(map(mapRawCapture));
   }
 
   getStreamingResult(
@@ -265,7 +277,7 @@ export class CertPrepCaptureClient
     id: string,
     request: CommitStreamingStructuredResultRequest,
     signal?: AbortSignal,
-  ): Observable<CaptureOperationV2> {
+  ): Observable<CaptureOperation> {
     const captureId = opaqueCaptureId(id);
     const record = this.requireCapture(captureId);
     return this.api
@@ -289,7 +301,7 @@ export class CertPrepCaptureClient
     id: string,
     request: ReportStreamingStructuringFailureRequest,
     signal?: AbortSignal,
-  ): Observable<CaptureOperationV2> {
+  ): Observable<CaptureOperation> {
     const captureId = opaqueCaptureId(id);
     const record = this.requireCapture(captureId);
     return this.api
@@ -323,10 +335,10 @@ export class CertPrepCaptureClient
     );
   }
 
-  structure(request: CaptureStructuringRequest): Observable<CaptureDocumentV1> {
+  structure(request: CaptureStructuringRequest): Observable<CaptureDocument> {
     return defer(() => {
       const capture = this.captureForSource(request.raw.source.sha256);
-      const review = request.review ?? { reviewVersion: 1 as const, edits: [] };
+      const review = request.review ?? { reviewVersion: 2 as const, edits: [] };
       return this.api
         .structureCapture(
           capture.record.projectId,
@@ -335,7 +347,7 @@ export class CertPrepCaptureClient
             clientRequestId: capture.record.structuringRequestId,
             review: {
               reviewVersion: review.reviewVersion,
-              edits: (review.edits ?? []).map((edit: CaptureReviewEditV1) => ({
+              edits: (review.edits ?? []).map((edit: CaptureReviewEdit) => ({
                 segmentId: edit.segmentId,
                 reviewedText: edit.reviewedText,
               })),
@@ -364,7 +376,7 @@ export class CertPrepCaptureClient
     projectId: string,
     expectedCaptureId?: string,
     fallbackDocumentId?: string,
-  ): CaptureOperationV2 {
+  ): CaptureOperation {
     const decoded = mapCaptureOperation(response, expectedCaptureId);
     const responseRecord = record(response, 'capture operation');
     const documentId =
@@ -421,13 +433,25 @@ export class CertPrepCaptureClient
   }
 }
 
-function mapReady(response: ApiRuntimeReadyV1): RuntimeReadyV1 {
+function mapReady(response: ApiRuntimeReady): RuntimeReady {
   if (response.service !== 'capture-runtime') {
     throw new Error('Cert Prep backend returned a non-Capture Runtime service.');
   }
+  const capabilities = record(response.capabilities, 'capabilities');
+  const captureKinds = array(capabilities['captureKinds'], 'capabilities.captureKinds')
+    .filter((value): value is CaptureSourceKind =>
+      typeof value === 'string' && isSourceKind(value),
+    );
+  const structuringModes = array(
+    capabilities['structuringModes'],
+    'capabilities.structuringModes',
+  ).filter(
+    (value): value is StructuringMode =>
+      typeof value === 'string' && isStructuringMode(value),
+  );
   if (
-    response.capabilities.supportsCancellation !== true ||
-    response.capabilities.supportsRawDiagnostics !== true
+    capabilities['supportsCancellation'] !== true ||
+    capabilities['supportsRawDiagnostics'] !== true
   ) {
     throw new Error(
       'Cert Prep backend returned runtime capabilities outside the Capture contract.',
@@ -440,27 +464,31 @@ function mapReady(response: ApiRuntimeReadyV1): RuntimeReadyV1 {
     runtimeVersion: response.runtimeVersion,
     captureDocumentSchemaVersion: response.captureDocumentSchemaVersion,
     capabilities: {
-      captureKinds: response.capabilities.captureKinds.filter(isSourceKind),
-      structuringModes: response.capabilities.structuringModes.filter(
-        isStructuringMode,
-      ),
+      captureKinds,
+      structuringModes,
       supportsCancellation: true,
       supportsRawDiagnostics: true,
-      maxUploadBytes: response.capabilities.maxUploadBytes,
+      maxUploadBytes:
+        capabilities['maxUploadBytes'] === undefined
+          ? undefined
+          : integer(capabilities['maxUploadBytes'], 'capabilities.maxUploadBytes'),
     },
+    captureDocumentSchemaSha256: response.captureDocumentSchemaSha256 ?? undefined,
+    schemaSha256: response.schemaSha256 ?? undefined,
+    contractSetVersion: response.contractSetVersion,
     message: response.message,
   };
 }
 
 function mapRequirement(
-  requirement: ApiRuntimeRequirementV1,
-): RuntimeRequirementV1 {
+  requirement: ApiRuntimeRequirement,
+): RuntimeRequirement {
   return {
     requirementId:
-      requirement.requirementId as RuntimeRequirementV1['requirementId'],
+      requirement.requirementId as RuntimeRequirement['requirementId'],
     kind: requirement.kind,
     displayName: requirement.displayName,
-    status: requirement.status as RuntimeRequirementV1['status'],
+    status: requirement.status as RuntimeRequirement['status'],
     requiredFor: requirement.requiredFor,
     installStrategy: requirement.installStrategy,
     detail: requirement.detail,
@@ -468,13 +496,13 @@ function mapRequirement(
 }
 
 function mapInstallation(
-  installation: ApiRuntimeInstallationV1,
-): RuntimeInstallationV1 {
+  installation: ApiRuntimeInstallation,
+): RuntimeInstallation {
   return {
     installationId: installation.installationId,
     requirementId:
-      installation.requirementId as RuntimeInstallationV1['requirementId'],
-    status: installation.status as RuntimeInstallationV1['status'],
+      installation.requirementId as RuntimeInstallation['requirementId'],
+    status: installation.status as RuntimeInstallation['status'],
     progress: installation.progress,
     error: installation.error == null ? null : mapFailure(installation.error),
     createdAt: installation.createdAt,
@@ -484,8 +512,8 @@ function mapInstallation(
 }
 
 function mapFailure(
-  failure: NonNullable<ApiRuntimeInstallationV1['error']>,
-): CaptureFailureV1 {
+  failure: NonNullable<ApiRuntimeInstallation['error']>,
+): CaptureFailure {
   return {
     code: failure.code,
     message: failure.message,
@@ -503,10 +531,10 @@ class CaptureClientProtocolError extends Error {
 
 type UnknownRecord = Record<string, unknown>;
 
-function mapCaptureDocument(value: unknown): CaptureDocumentV1 {
+function mapCaptureDocument(value: unknown): CaptureDocument {
   const document = record(value, 'capture document');
   return {
-    schemaVersion: literal(document, 'schemaVersion', '1'),
+    schemaVersion: literal(document, 'schemaVersion', '2'),
     source: mapSource(document['source']),
     rawSegments: nonEmptyArray(document['rawSegments'], 'rawSegments').map(
       mapRawSegment,
@@ -531,7 +559,7 @@ function mapCaptureDocument(value: unknown): CaptureDocumentV1 {
 function mapCaptureOperation(
   value: unknown,
   expectedCaptureId?: string,
-): CaptureOperationV2 {
+): CaptureOperation {
   const operation = record(value, 'capture operation');
   if (operation['protocolVersion'] !== '2') {
     fail('protocolVersion must be 2');
@@ -606,7 +634,7 @@ function mapCaptureOperation(
     captureId,
     ingestionId,
     kind,
-    status: status as CaptureOperationV2['status'],
+    status: status as CaptureOperation['status'],
     progress: progress as number | null | undefined,
     partialRevision,
     lastEventSequence,
@@ -621,7 +649,7 @@ function mapCaptureOperation(
 function mapPartialCapture(
   value: unknown,
   expectedCaptureId: string,
-): PartialCaptureV2 {
+): PartialCapture {
   const partial = record(value, 'partial capture');
   if (partial['protocolVersion'] !== '2') {
     fail('partial protocolVersion must be 2');
@@ -689,7 +717,7 @@ function mapCaptureStreamingResult(
   return { operation, raw, result };
 }
 
-function mapRawCapture(value: unknown): RawCaptureV1 {
+function mapRawCapture(value: unknown): RawCapture {
   const raw = record(value, 'raw capture');
   const segments = nonEmptyArray(raw['segments'], 'segments').map(mapRawSegment);
   segments.forEach((segment, index) => {
@@ -700,7 +728,7 @@ function mapRawCapture(value: unknown): RawCaptureV1 {
     fail('raw sourceText does not match its segments');
   }
   return {
-    schemaVersion: literal(raw, 'schemaVersion', '1'),
+    schemaVersion: literal(raw, 'schemaVersion', '2'),
     diagnosticOnly: literal(raw, 'diagnosticOnly', true),
     source: mapSource(raw['source']),
     segments,
@@ -711,7 +739,7 @@ function mapRawCapture(value: unknown): RawCaptureV1 {
   };
 }
 
-function mapCaptureFailure(value: unknown): NonNullable<CaptureOperationV2['error']> {
+function mapCaptureFailure(value: unknown): NonNullable<CaptureOperation['error']> {
   const failure = record(value, 'capture error');
   const code = pattern(failure['code'], 'error.code', /^[a-z][a-z0-9_]{1,63}$/u);
   const message = text(failure['message'], 'error.message');
@@ -727,7 +755,7 @@ function mapCaptureFailure(value: unknown): NonNullable<CaptureOperationV2['erro
   return { code, message, stage, retryable: retryable ?? false };
 }
 
-function mapSource(value: unknown): CaptureDocumentV1['source'] {
+function mapSource(value: unknown): CaptureDocument['source'] {
   const source = record(value, 'source');
   const bytes = integer(source['bytes'], 'source.bytes');
   if (bytes < 1) fail('source.bytes must be positive');
@@ -740,8 +768,8 @@ function mapSource(value: unknown): CaptureDocumentV1['source'] {
 }
 
 function sameCaptureSource(
-  left: CaptureDocumentV1['source'],
-  right: CaptureDocumentV1['source'],
+  left: CaptureDocument['source'],
+  right: CaptureDocument['source'],
 ): boolean {
   return (
     left.sha256 === right.sha256 &&
@@ -751,7 +779,7 @@ function sameCaptureSource(
   );
 }
 
-function mapRawSegment(value: unknown): RawCaptureSegmentV1 {
+function mapRawSegment(value: unknown): RawCaptureSegment {
   const segment = record(value, 'raw segment');
   return {
     segmentId: text(segment['segmentId'], 'segmentId'),
@@ -761,7 +789,7 @@ function mapRawSegment(value: unknown): RawCaptureSegmentV1 {
   };
 }
 
-function mapBlock(value: unknown): CaptureBlockV1 {
+function mapBlock(value: unknown): CaptureBlock {
   const block = record(value, 'capture block');
   const blockType = text(block['type'], 'block.type');
   if (
@@ -779,7 +807,7 @@ function mapBlock(value: unknown): CaptureBlockV1 {
   return {
     blockId: text(block['blockId'], 'block.blockId'),
     order: nonNegativeInteger(block['order'], 'block.order'),
-    type: blockType as CaptureBlockV1['type'],
+    type: blockType as CaptureBlock['type'],
     sourceSegmentId: text(block['sourceSegmentId'], 'block.sourceSegmentId'),
     locator: mapLocator(block['locator']),
     sourceText: text(block['sourceText'], 'block.sourceText'),
@@ -787,7 +815,7 @@ function mapBlock(value: unknown): CaptureBlockV1 {
   };
 }
 
-function mapLocator(value: unknown): RawCaptureV1['segments'][number]['locator'] {
+function mapLocator(value: unknown): RawCapture['segments'][number]['locator'] {
   const locator = record(value, 'locator');
   const kind = locator['kind'];
   if (kind === 'page') {
@@ -819,7 +847,7 @@ function mapLocator(value: unknown): RawCaptureV1['segments'][number]['locator']
   fail(`locator.kind is unsupported: ${String(kind)}`);
 }
 
-function mapEngine(value: unknown, label: string): CaptureEngineV1 {
+function mapEngine(value: unknown, label: string): CaptureEngine {
   const engine = record(value, label);
   return {
     engine: text(engine['engine'], `${label}.engine`),
@@ -910,8 +938,8 @@ function fail(message: string): never {
 }
 
 function exactCaptureOperation(
-  operation: CaptureOperationV2,
-): CaptureOperationV2 {
+  operation: CaptureOperation,
+): CaptureOperation {
   return {
     protocolVersion: '2',
     captureId: operation.captureId,
@@ -930,16 +958,16 @@ function exactCaptureOperation(
 }
 
 function toApiCaptureDocument(
-  document: CaptureDocumentV1,
-): ApiCaptureDocumentV1 {
+  document: CaptureDocument,
+): ApiCaptureDocument {
   return {
     schemaVersion: document.schemaVersion,
     source: { ...document.source },
-    rawSegments: document.rawSegments.map((segment: RawCaptureSegmentV1) => ({
+    rawSegments: document.rawSegments.map((segment: RawCaptureSegment) => ({
       ...segment,
       locator: toApiLocator(segment.locator),
     })),
-    blocks: document.blocks.map((block: CaptureBlockV1) => ({
+    blocks: document.blocks.map((block: CaptureBlock) => ({
       ...block,
       locator: toApiLocator(block.locator),
     })),
@@ -954,8 +982,8 @@ function toApiCaptureDocument(
 }
 
 function toApiLocator(
-  locator: RawCaptureSegmentV1['locator'],
-): ApiCaptureDocumentV1['rawSegments'][number]['locator'] {
+  locator: RawCaptureSegment['locator'],
+): ApiCaptureDocument['rawSegments'][number]['locator'] {
   if (locator.kind === 'time') {
     return {
       kind: 'time',
@@ -999,19 +1027,24 @@ function isSourceKind(value: string): value is CaptureSourceKind {
 
 function isStructuringMode(
   value: string,
-): value is RuntimeReadyV1['capabilities']['structuringModes'][number] {
+): value is StructuringMode {
   return value === 'runtime' || value === 'host';
 }
 
 function assertCaptureAdmission(
-  ready: RuntimeReadyV1,
-  requirements: readonly RuntimeRequirementV1[],
+  ready: RuntimeReady,
+  requirements: readonly RuntimeRequirement[],
   sourceKind: CaptureSourceKind,
 ): void {
   if (!ready['ready']) throw new Error('Capture Runtime is not ready.');
   assertCaptureRuntimeCompatible(ready, CAPTURE_RUNTIME_MAJOR, 'host');
   assertCaptureRuntimeMinorCompatible(ready.runtimeVersion);
-  if (!ready['capabilities'].captureKinds.includes(sourceKind)) {
+  const capabilities = record(ready['capabilities'], 'capabilities');
+  const captureKinds = array(
+    capabilities['captureKinds'],
+    'capabilities.captureKinds',
+  );
+  if (!captureKinds.includes(sourceKind)) {
     throw new Error(
       `Capture Runtime does not support ${sourceKind.toUpperCase()} capture.`,
     );
@@ -1046,8 +1079,8 @@ function parseRuntimeMinor(version: string): number {
 }
 
 function assertRequirementReady(
-  requirements: readonly RuntimeRequirementV1[],
-  requirementId: RuntimeRequirementV1['requirementId'],
+  requirements: readonly RuntimeRequirement[],
+  requirementId: RuntimeRequirement['requirementId'],
   displayName: string,
 ): void {
   const requirement = requirements.find(

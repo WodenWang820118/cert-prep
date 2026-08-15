@@ -126,14 +126,14 @@ mod shared_sidecar_contract_tests {
         SidecarManifest {
             manifest_version: "1".into(),
             runtime_version: CAPTURE_RUNTIME_VERSION.into(),
-            api_version: "1.0".into(),
-            capture_document_schema_version: "1".into(),
+            api_version: "2.0".into(),
+            capture_document_schema_version: "2".into(),
             platform: "windows".into(),
             arch: "x86_64".into(),
             file_name: "capture-runtime-x86_64-pc-windows-msvc.exe".into(),
             bytes: 1,
             sha256: "0".repeat(64),
-            schema_file_name: "capture-document-v1.schema.json".into(),
+            schema_file_name: "capture-document.schema.json".into(),
             schema_sha256: "0".repeat(64),
         }
     }
@@ -151,7 +151,7 @@ mod shared_sidecar_contract_tests {
                 .send(request[..count].to_vec())
                 .expect("request bytes");
             let body = format!(
-                r#"{{"ready":true,"runtimeVersion":"{}","apiVersion":"1.0","captureDocumentSchemaVersion":"1","capabilities":{{}}}}"#,
+                r#"{{"ready":true,"runtimeVersion":"{}","apiVersion":"2.0","captureDocumentSchemaVersion":"2","capabilities":{{}}}}"#,
                 CAPTURE_RUNTIME_VERSION
             );
             write!(

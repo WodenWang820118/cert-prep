@@ -9,4 +9,4 @@ structuring and CaptureDocument commit without exposing sidecar credentials.
 
 The original OCR is retained in `raw_text`; reviewed text is an overlay in
 `text`. This avoids a second file upload and preserves provenance without
-changing CaptureDocumentV1 or the sidecar API.
+changing the v2 CaptureDocument contract or the sidecar API.

@@ -173,10 +173,10 @@ async function waitForPublishedRuntimeContract(
       const baseUrl = `http://127.0.0.1:${port}`;
       const [unauthenticatedReady, unauthenticatedRequirements] =
         await Promise.all([
-          fetch(`${baseUrl}/v1/health/ready`, {
+          fetch(`${baseUrl}/v2/health/ready`, {
             headers: { Connection: 'close' },
           }),
-          fetch(`${baseUrl}/v1/runtime/requirements`, {
+          fetch(`${baseUrl}/v2/runtime/requirements`, {
             headers: { Connection: 'close' },
           }),
         ]);
@@ -195,11 +195,11 @@ async function waitForPublishedRuntimeContract(
         Connection: 'close',
       };
       const [readyResponse, requirementsResponse] = await Promise.all([
-        fetch(`${baseUrl}/v1/health/ready`, {
+        fetch(`${baseUrl}/v2/health/ready`, {
           headers,
           signal: AbortSignal.timeout(1_000),
         }),
-        fetch(`${baseUrl}/v1/runtime/requirements`, {
+        fetch(`${baseUrl}/v2/runtime/requirements`, {
           headers,
           signal: AbortSignal.timeout(1_000),
         }),
@@ -218,8 +218,8 @@ async function waitForPublishedRuntimeContract(
       if (
         health.service !== 'capture-runtime' ||
         health.runtimeVersion !== CAPTURE_RUNTIME_VERSION ||
-        health.apiVersion !== '1.0' ||
-        health.captureDocumentSchemaVersion !== '1' ||
+        health.apiVersion !== '2.0' ||
+        health.captureDocumentSchemaVersion !== '2' ||
         JSON.stringify(health.capabilities?.structuringModes) !== '["host"]'
       ) {
         throw new Error(

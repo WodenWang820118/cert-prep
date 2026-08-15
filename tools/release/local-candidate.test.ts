@@ -46,14 +46,14 @@ test('assembled candidates revalidate backend and Capture Runtime assets', async
     const captureManifest = {
       manifestVersion: '1',
       runtimeVersion: CAPTURE_RUNTIME_VERSION,
-      apiVersion: '1.0',
-      captureDocumentSchemaVersion: '1',
+      apiVersion: '2.0',
+      captureDocumentSchemaVersion: '2',
       platform: 'windows',
       arch: 'x86_64',
       fileName: captureName,
       bytes: 7,
       sha256: sha256('capture'),
-      schemaFileName: 'capture-document-v1.schema.json',
+      schemaFileName: 'capture-document.schema.json',
       schemaSha256: '0'.repeat(64),
     };
     writeFileSync(join(generated, captureName), 'capture');

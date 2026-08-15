@@ -1,11 +1,13 @@
-"""Cert Prep review behavior layered on generated Capture contracts."""
+"""Cert Prep review behavior layered on published Capture Runtime v2 DTOs."""
 
-from capture_contracts import CaptureReviewV1, RawCaptureV1
+from capture_runtime_client import RawCapture
+
+from cert_prep_backend.domains.capture_workbench.host_models import CaptureReview
 
 
 def reviewed_text_overrides(
-    raw: RawCaptureV1,
-    review: CaptureReviewV1,
+    raw: RawCapture,
+    review: CaptureReview,
 ) -> dict[str, str]:
     """Validate review edits against immutable runtime extraction provenance."""
 
@@ -23,4 +25,4 @@ def reviewed_text_overrides(
     return overrides
 
 
-__all__ = ["CaptureReviewV1", "reviewed_text_overrides"]
+__all__ = ["CaptureReview", "reviewed_text_overrides"]
