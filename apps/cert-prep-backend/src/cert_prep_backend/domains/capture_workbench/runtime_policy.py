@@ -1,6 +1,6 @@
 """Cert Prep host compatibility policy for the published Capture contracts."""
 
-from capture_contracts import (
+from capture_runtime_client import (
     CAPTURE_API_VERSION,
     CAPTURE_DOCUMENT_SCHEMA_VERSION as CONTRACT_SCHEMA_VERSION,
     CAPTURE_RUNTIME_VERSION,

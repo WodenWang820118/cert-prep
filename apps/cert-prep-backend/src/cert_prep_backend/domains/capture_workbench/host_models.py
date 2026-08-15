@@ -1,21 +1,33 @@
-"""Host boundary adapters for intentionally broad runtime handshakes."""
+"""Host-owned DTOs layered over the published Capture Runtime v2 SDK."""
 
 from typing import Literal
 
-from capture_contracts import (
-    NonEmptyString,
-    RuntimeCapabilitiesV1,
-    RuntimeReadyV1 as GeneratedRuntimeReadyV1,
-)
+from pydantic import BaseModel, ConfigDict, Field
+from pydantic.alias_generators import to_camel
+
+from capture_runtime_client import RuntimeReady
 
 
-class RuntimeReadyV1(GeneratedRuntimeReadyV1):
-    """Accept arbitrary semantic versions so compatibility errors stay actionable."""
+class _HostModel(BaseModel):
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+        extra="forbid",
+    )
 
-    service: Literal["capture-runtime"]
-    api_version: NonEmptyString
-    runtime_version: NonEmptyString
-    capture_document_schema_version: NonEmptyString
+
+class CaptureReviewEdit(_HostModel):
+    """One user-confirmed replacement for an immutable runtime segment."""
+
+    segment_id: str = Field(min_length=1, max_length=128)
+    reviewed_text: str = Field(min_length=1, max_length=1_000_000)
 
 
-__all__ = ["RuntimeCapabilitiesV1", "RuntimeReadyV1"]
+class CaptureReview(_HostModel):
+    """Cert Prep's product review envelope for a v2 capture candidate."""
+
+    review_version: Literal[2] = 2
+    edits: list[CaptureReviewEdit] = Field(default_factory=list)
+
+
+__all__ = ["CaptureReview", "CaptureReviewEdit", "RuntimeReady"]

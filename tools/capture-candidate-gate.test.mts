@@ -42,7 +42,7 @@ test('candidate gate emits the canonical independent result envelope', () => {
     checks: [{ name: 'candidate-identity', status: 'passed' }],
   });
   assert.deepEqual(result, {
-    schemaVersion: '1',
+    schemaVersion: '2',
     consumerRepository: 'WodenWang820118/cert-prep',
     consumerCommit: commit,
     workflowPath: '.github/workflows/capture-candidate-gate.yml',

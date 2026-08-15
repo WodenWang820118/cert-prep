@@ -296,11 +296,11 @@ async function waitForRuntime(
   token: string,
 ): Promise<void> {
   await waitForHttp(
-    `http://127.0.0.1:${runtimePort}/v1/health/ready`,
+    `http://127.0.0.1:${runtimePort}/v2/health/ready`,
     (response) => response.status === 401,
     30_000,
   );
-  const url = `http://127.0.0.1:${runtimePort}/v1/health/ready`;
+  const url = `http://127.0.0.1:${runtimePort}/v2/health/ready`;
   const deadline = Date.now() + 60_000;
   let lastStatus = 'no response';
   while (Date.now() < deadline) {
@@ -319,8 +319,8 @@ async function waitForRuntime(
         if (
           ready.service === 'capture-runtime' &&
           ready.runtimeVersion === CAPTURE_RUNTIME_VERSION &&
-          ready.apiVersion === '1.0' &&
-          ready.captureDocumentSchemaVersion === '1' &&
+          ready.apiVersion === '2.0' &&
+          ready.captureDocumentSchemaVersion === '2' &&
           JSON.stringify(capabilities?.captureKinds) ===
             '["pdf","image","audio"]' &&
           JSON.stringify(capabilities?.structuringModes) === '["host"]'
@@ -1057,8 +1057,8 @@ async function runSmoke(): Promise<void> {
         CERT_PREP_CAPTURE_RUNTIME_URL: `http://127.0.0.1:${runtimePort}`,
         CERT_PREP_CAPTURE_RUNTIME_TOKEN: runtimeToken,
         CERT_PREP_CAPTURE_RUNTIME_VERSION: CAPTURE_RUNTIME_VERSION,
-        CERT_PREP_CAPTURE_RUNTIME_API_VERSION: '1.0',
-        CERT_PREP_CAPTURE_DOCUMENT_SCHEMA_VERSION: '1',
+        CERT_PREP_CAPTURE_RUNTIME_API_VERSION: '2.0',
+        CERT_PREP_CAPTURE_DOCUMENT_SCHEMA_VERSION: '2',
         CERT_PREP_CAPTURE_RUNTIME_POLL_INTERVAL_SECONDS: '0.2',
         CERT_PREP_CAPTURE_RUNTIME_JOB_TIMEOUT_SECONDS: '900',
       },

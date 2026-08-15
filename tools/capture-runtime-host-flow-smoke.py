@@ -7,7 +7,7 @@ import os
 from uuid import uuid4
 
 from cert_prep_backend.domains.capture_workbench.client import CaptureRuntimeClient
-from capture_contracts import CaptureSourceKind
+from capture_runtime_client import CaptureSourceKind
 from cert_prep_backend.domains.capture_workbench.coordinator import CertPrepCaptureCoordinator
 from cert_prep_backend.domains.capture_workbench.structuring import (
     CertPrepCaptureStructuringAdapter,

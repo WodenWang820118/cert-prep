@@ -22,7 +22,7 @@ import { createPackageQaReport, validateBundleArtifacts } from './report.mts';
 const tempRoots: string[] = [];
 const canonicalSchemaFixturePath = join(
   dirname(fileURLToPath(import.meta.url)),
-  '../../test-fixtures/capture-document-v1.schema.json',
+  '../../test-fixtures/capture-document.schema.json',
 );
 
 afterEach(() => {
@@ -143,7 +143,7 @@ function createResourceFixture(): {
   const backendName =
     'cert-prep-backend-runtime-0.1.0-alpha.1-x86_64-pc-windows-msvc.zip';
   const captureName = 'capture-runtime-x86_64-pc-windows-msvc.exe';
-  const schemaName = 'capture-document-v1.schema.json';
+  const schemaName = 'capture-document.schema.json';
   const captureSchema = canonicalCaptureDocumentSchemaBytes();
   writeFileSync(join(resourceRoot, backendName), 'runtime');
   writeJson(join(resourceRoot, 'backend-runtime-manifest.json'), {
@@ -163,8 +163,8 @@ function createResourceFixture(): {
   const captureManifest = {
     manifestVersion: '1',
     runtimeVersion: CAPTURE_RUNTIME_VERSION,
-    apiVersion: '1.0',
-    captureDocumentSchemaVersion: '1',
+    apiVersion: '2.0',
+    captureDocumentSchemaVersion: '2',
     platform: 'windows',
     arch: 'x86_64',
     fileName: captureName,
@@ -203,8 +203,8 @@ function createResourceFixture(): {
         distribution: 'versioned_release_artifact_staged',
         file_name: captureName,
         runtime_version: CAPTURE_RUNTIME_VERSION,
-        api_version: '1.0',
-        capture_document_schema_version: '1',
+        api_version: '2.0',
+        capture_document_schema_version: '2',
         sha256: sha256('capture-runtime'),
         bytes: Buffer.byteLength('capture-runtime'),
         schema_file_name: schemaName,

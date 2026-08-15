@@ -37,7 +37,7 @@ jobs:
           ref: f2b2bccd9c8c80437d543b45a279331ed9a1dcaf
           path: capture-workbench
           sparse-checkout: |
-            packages/capture-contracts
+            packages/capture-runtime-client-python
             packages/capture-structuring-python
 
       - name: Link Capture Workbench Python bridge (Unix)
@@ -126,7 +126,7 @@ jobs:
           ref: f2b2bccd9c8c80437d543b45a279331ed9a1dcaf
           path: capture-workbench
           sparse-checkout: |
-            packages/capture-contracts
+            packages/capture-runtime-client-python
             packages/capture-structuring-python
 
       - name: Link Capture Workbench Python bridge (Unix)
@@ -217,9 +217,9 @@ jobs:
           $ErrorActionPreference = 'Stop'
           pnpm nx run cert-prep-desktop:capture-runtime-consumer-test --skip-nx-cache
           uv run --isolated --no-project `
-            --with 'capture-contracts==0.3.12' `
-            --with 'capture-structuring==0.3.12' `
-            -- python -c "import capture_contracts, capture_structuring; assert capture_contracts.CAPTURE_RUNTIME_VERSION == '0.3.12'; assert capture_structuring.__package__ == 'capture_structuring'"
+            --with 'capture-runtime-client==0.4.0' `
+            --with 'capture-structuring==0.4.0' `
+            -- python -c "import capture_runtime_client, capture_structuring; assert capture_runtime_client.CAPTURE_RUNTIME_VERSION == '0.4.0'; assert capture_structuring.__package__ == 'capture_structuring'"
 
       - name: Test Tauri host
         run: pnpm nx run cert-prep-desktop:cargo-test

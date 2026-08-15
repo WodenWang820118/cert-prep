@@ -24,7 +24,7 @@ import {
 
 const schemaPath = join(
   process.cwd(),
-  'apps/cert-prep-desktop/test-fixtures/capture-document-v1.schema.json',
+  'apps/cert-prep-desktop/test-fixtures/capture-document.schema.json',
 );
 const temporaryRoots: string[] = [];
 const servers: Server[] = [];
@@ -52,7 +52,7 @@ test(`pins the canonical gx-capture v${CAPTURE_RUNTIME_VERSION} release URL`, ()
   assert.equal(validateCaptureRuntimeReleaseBaseUrl(expected), expected);
 });
 
-test('pins the published CaptureDocumentV1 schema bytes', async () => {
+test('pins the published CaptureDocument schema bytes', async () => {
   const schema = await readFile(schemaPath);
   assert.equal(
     createHash('sha256').update(schema).digest('hex'),
@@ -60,7 +60,7 @@ test('pins the published CaptureDocumentV1 schema bytes', async () => {
   );
   assert.equal(
     JSON.parse(schema.toString('utf8')).$id,
-    'https://github.com/gx-capture/capture-workbench/schema/capture-document-v1.schema.json',
+    'https://github.com/gx-capture/capture-workbench/schema/capture-document-v2.schema.json',
   );
 });
 
@@ -297,8 +297,8 @@ async function createFixture(): Promise<string> {
   const manifest = {
     manifestVersion: '1',
     runtimeVersion: CAPTURE_RUNTIME_VERSION,
-    apiVersion: '1.0',
-    captureDocumentSchemaVersion: '1',
+    apiVersion: '2.0',
+    captureDocumentSchemaVersion: '2',
     platform: 'windows',
     arch: 'x86_64',
     fileName: CAPTURE_RUNTIME_FILE,

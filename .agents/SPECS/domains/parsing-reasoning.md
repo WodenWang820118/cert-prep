@@ -28,7 +28,7 @@ readiness after a validated CaptureDocument has been persisted.
 
 The documents pipeline validates the uploaded envelope locally, then routes PDF,
 image, and audio to `CertPrepCaptureCoordinator` and `CaptureRuntimeClient`.
-Only the sidecar-validated `CaptureDocumentV1` enters host structuring and
+Only the sidecar-validated v2 `CaptureDocument` enters host structuring and
 SQLite persistence. See `capture-runtime-integration.md` for the capture
 contract and fail-closed policy.
 

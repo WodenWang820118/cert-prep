@@ -3,17 +3,18 @@ from __future__ import annotations
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 import hashlib
+from importlib.resources import files
 import json
 from uuid import UUID
 
 import httpx
 import pytest
 
-from capture_contracts import (
+from capture_runtime_client import (
     CAPTURE_RUNTIME_VERSION,
-    CaptureEventV2,
-    CaptureOperationV2,
-    RuntimeRequirementsV1,
+    CaptureEvent,
+    CaptureOperation,
+    RuntimeRequirements,
     StreamingCaptureStatus,
 )
 from cert_prep_backend.domains.capture_workbench.client import (
@@ -24,7 +25,7 @@ from cert_prep_backend.domains.capture_workbench.client import (
 from cert_prep_backend.domains.capture_workbench.coordinator import (
     CertPrepCaptureCoordinator,
 )
-from cert_prep_backend.domains.capture_workbench.host_models import RuntimeReadyV1
+from cert_prep_backend.domains.capture_workbench.host_models import RuntimeReady
 
 
 TOKEN = "capture-sidecar-process-token-that-stays-in-backend"
@@ -40,14 +41,14 @@ def test_v2_capture_lifecycle_is_checksum_bounded_ordered_and_authenticated() ->
         requests.append(request)
         assert request.headers["Authorization"] == f"Bearer {TOKEN}"
         assert TOKEN not in str(request.url)
-        if request.method == "GET" and request.url.path == "/v2/health/ready":
+        if request.method == "GET" and request.url.path == "/v2/streaming/health/ready":
             return _json_response(request, _streaming_capabilities(max_chunk_bytes=8))
         if request.method == "POST" and request.url.path == "/v2/ingestions":
             assert json.loads(request.content) == {
                 "protocolVersion": "2",
                 "kind": "pdf",
                 "mode": "file",
-                "clientRequestId": "request-1",
+                "clientRequestId": "request-1-ingestion",
                 "fileName": "sample.pdf",
                 "mediaType": "application/pdf",
                 "totalBytes": len(SOURCE),
@@ -92,17 +93,19 @@ def test_v2_capture_lifecycle_is_checksum_bounded_ordered_and_authenticated() ->
                 ),
             )
         if request.method == "POST" and request.url.path == "/v2/captures":
+            assert request.headers["X-Idempotency-Key"] == "request-1"
             assert json.loads(request.content) == {
                 "protocolVersion": "2",
                 "clientRequestId": "request-1",
                 "ingestionId": "ingestion-1",
                 "structuringMode": "host",
+                "targetLanguage": None,
                 "startPolicy": "eager",
             }
             return _json_response(request, _operation(), status=202)
         raise AssertionError(f"Unexpected request: {request.method} {request.url.path}")
 
-    client = _client(handler)
+    client = _client(handler, max_chunk_bytes=8)
 
     operation = client.start_capture(
         CaptureUpload("sample.pdf", SOURCE, "application/pdf"),
@@ -113,7 +116,6 @@ def test_v2_capture_lifecycle_is_checksum_bounded_ordered_and_authenticated() ->
     assert operation.capture_id == "capture-1"
     assert operation.status is StreamingCaptureStatus.EXTRACTING
     assert [request.method for request in requests] == [
-        "GET",
         "POST",
         "PUT",
         "PUT",
@@ -123,19 +125,20 @@ def test_v2_capture_lifecycle_is_checksum_bounded_ordered_and_authenticated() ->
     ]
 
 
-def test_v2_uncertain_open_and_capture_create_recover_by_client_request() -> None:
+def test_v2_uncertain_open_and_capture_create_retry_the_canonical_idempotent_routes() -> None:
     opens = 0
     starts = 0
 
     def handler(request: httpx.Request) -> httpx.Response:
         nonlocal opens, starts
-        if request.url.path == "/v2/health/ready":
+        if request.url.path == "/v2/streaming/health/ready":
             return _json_response(request, _streaming_capabilities(max_chunk_bytes=64))
         if request.method == "POST" and request.url.path == "/v2/ingestions":
             opens += 1
-            raise httpx.ReadError("open response lost", request=request)
-        if request.url.path == "/v2/ingestions/by-client-request/request-recovery":
-            return _json_response(request, _ingestion(received=0, next_chunk=0))
+            assert request.headers["X-Idempotency-Key"] == "request-recovery-ingestion"
+            if opens == 1:
+                raise httpx.ReadError("open response lost", request=request)
+            return _json_response(request, _ingestion(received=0, next_chunk=0), status=201)
         if request.method == "PUT":
             return _json_response(
                 request,
@@ -153,20 +156,21 @@ def test_v2_uncertain_open_and_capture_create_recover_by_client_request() -> Non
             )
         if request.method == "POST" and request.url.path == "/v2/captures":
             starts += 1
-            raise httpx.ReadError("capture response lost", request=request)
-        if request.url.path == "/v2/captures/by-client-request/request-recovery":
+            assert request.headers["X-Idempotency-Key"] == "request-recovery"
+            if starts == 1:
+                raise httpx.ReadError("capture response lost", request=request)
             return _json_response(request, _operation())
         raise AssertionError(f"Unexpected request: {request.method} {request.url.path}")
 
-    operation = _client(handler).start_capture(
+    operation = _client(handler, max_chunk_bytes=64).start_capture(
         CaptureUpload("sample.pdf", SOURCE, "application/pdf"),
         source_kind="pdf",
         client_request_id="request-recovery",
     )
 
     assert operation.capture_id == "capture-1"
-    assert opens == 1
-    assert starts == 1
+    assert opens == 2
+    assert starts == 2
 
 
 def test_v2_sse_requires_auth_replays_after_cursor_and_closes_on_terminal() -> None:
@@ -337,7 +341,7 @@ def test_v2_operation_responses_require_the_requested_capture_identity(
         elif operation_name == "commit":
             client.commit_structure(
                 "capture-1",
-                {"schemaVersion": "1"},
+                {"schemaVersion": "2"},
                 idempotency_key=UUID(int=1),
             )
         elif operation_name == "failure":
@@ -365,14 +369,14 @@ class _ReconnectingRuntimeClient:
         self.snapshot_calls = 0
         self.cancel_calls = 0
 
-    def handshake(self) -> RuntimeReadyV1:
-        return RuntimeReadyV1.model_validate(
+    def handshake(self) -> RuntimeReady:
+        return RuntimeReady.model_validate(
             {
                 "ready": True,
                 "service": "capture-runtime",
-                "apiVersion": "1.0",
+                "apiVersion": "2.0",
                 "runtimeVersion": CAPTURE_RUNTIME_VERSION,
-                "captureDocumentSchemaVersion": "1",
+                "captureDocumentSchemaVersion": "2",
                 "capabilities": {
                     "captureKinds": ["pdf", "image", "audio"],
                     "structuringModes": ["host"],
@@ -383,11 +387,11 @@ class _ReconnectingRuntimeClient:
             }
         )
 
-    def get_requirements(self) -> RuntimeRequirementsV1:
-        return RuntimeRequirementsV1(items=[])
+    def get_requirements(self) -> RuntimeRequirements:
+        return RuntimeRequirements(items=[])
 
-    def start_capture(self, *_args, **_kwargs) -> CaptureOperationV2:
-        return CaptureOperationV2.model_validate(_operation())
+    def start_capture(self, *_args, **_kwargs) -> CaptureOperation:
+        return CaptureOperation.model_validate(_operation())
 
     def capture_events(
         self,
@@ -395,16 +399,16 @@ class _ReconnectingRuntimeClient:
         *,
         last_event_id: int | str | None,
         on_activity=None,
-    ) -> Iterator[CaptureEventV2]:
+    ) -> Iterator[CaptureEvent]:
         self.event_cursors.append(last_event_id)
         if on_activity is not None:
             on_activity()
         if len(self.event_cursors) == 1:
-            yield CaptureEventV2.model_validate(
+            yield CaptureEvent.model_validate(
                 _event(sequence=1, event_type="checkpoint", stage="extracting")
             )
             return
-        yield CaptureEventV2.model_validate(
+        yield CaptureEvent.model_validate(
             _event(
                 sequence=2,
                 event_type="checkpoint",
@@ -412,25 +416,76 @@ class _ReconnectingRuntimeClient:
             )
         )
 
-    def get_capture(self, _capture_id: str) -> CaptureOperationV2:
+    def get_capture(self, _capture_id: str) -> CaptureOperation:
         self.snapshot_calls += 1
         status = "extracting" if self.snapshot_calls == 1 else "awaiting_structuring"
         payload = _operation()
         payload["status"] = status
         payload["lastEventSequence"] = self.snapshot_calls
         payload["progress"] = 0.5 if status == "extracting" else 0.75
-        return CaptureOperationV2.model_validate(payload)
+        return CaptureOperation.model_validate(payload)
 
-    def cancel_capture(self, _capture_id: str) -> CaptureOperationV2:
+    def cancel_capture(self, _capture_id: str) -> CaptureOperation:
         self.cancel_calls += 1
         raise AssertionError("A disconnected event listener must not cancel the runtime job")
 
 
-def _client(handler) -> CaptureRuntimeClient:
+def _client(handler, *, max_chunk_bytes: int = 1_048_576) -> CaptureRuntimeClient:
+    packaged = files("capture_runtime_client.private.assets")
+    bundle = packaged.joinpath("contract-set.json").read_bytes()
+    digest = hashlib.sha256(bundle).hexdigest()
+    href = f"/meta/v2/contracts/sha256/{digest}"
+
+    def negotiated_handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v2/health/ready":
+            return _json_response(
+                request,
+                {
+                    "ready": True,
+                    "service": "capture-runtime",
+                    "apiVersion": "2.0",
+                    "runtimeVersion": CAPTURE_RUNTIME_VERSION,
+                    "captureDocumentSchemaVersion": "2",
+                    "contractSetVersion": "2",
+                    "capabilities": {
+                        "captureKinds": ["pdf", "image", "audio"],
+                        "structuringModes": ["host", "runtime"],
+                        "supportsCancellation": True,
+                        "supportsRawDiagnostics": True,
+                        "maxUploadBytes": 50_000_000,
+                    },
+                },
+            )
+        if request.url.path == "/meta/v2/contracts":
+            return _json_response(
+                request,
+                {
+                    "catalogVersion": "2",
+                    "runtimeVersion": CAPTURE_RUNTIME_VERSION,
+                    "contractSetVersion": "2",
+                    "surfaces": [{"id": "v2"}],
+                    "sha256": digest,
+                    "href": href,
+                },
+            )
+        if request.url.path == href:
+            return httpx.Response(
+                200,
+                content=bundle,
+                headers={"X-Contract-SHA256": digest, "ETag": f'"{digest}"'},
+                request=request,
+            )
+        if request.url.path == "/v2/streaming/health/ready":
+            return _json_response(
+                request,
+                _streaming_capabilities(max_chunk_bytes=max_chunk_bytes),
+            )
+        return handler(request)
+
     return CaptureRuntimeClient(
         base_url="http://127.0.0.1:43123",
         bearer_token=TOKEN,
-        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        client=httpx.Client(transport=httpx.MockTransport(negotiated_handler)),
     )
 
 
@@ -543,7 +598,7 @@ def _streaming_result() -> dict[str, object]:
         "device": "WindowsML",
     }
     raw = {
-        "schemaVersion": "1",
+        "schemaVersion": "2",
         "diagnosticOnly": True,
         "source": dict(source),
         "segments": [dict(segment)],
@@ -553,7 +608,7 @@ def _streaming_result() -> dict[str, object]:
         "createdAt": NOW.isoformat(),
     }
     result = {
-        "schemaVersion": "1",
+        "schemaVersion": "2",
         "source": dict(source),
         "rawSegments": [dict(segment)],
         "blocks": [

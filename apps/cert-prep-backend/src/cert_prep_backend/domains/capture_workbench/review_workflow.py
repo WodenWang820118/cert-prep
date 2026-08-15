@@ -7,8 +7,8 @@ from dataclasses import dataclass
 import hashlib
 import json
 
-from capture_contracts import (
-    CaptureDocumentV1,
+from capture_runtime_client import (
+    CaptureDocument,
     CaptureSourceKind,
 )
 from cert_prep_backend.domains.capture_workbench.coordinator import (
@@ -31,7 +31,7 @@ class CaptureCommitClaim:
     acquired: bool
 
 
-def candidate_digest(candidate: CaptureDocumentV1) -> str:
+def candidate_digest(candidate: CaptureDocument) -> str:
     canonical = json.dumps(
         candidate.model_dump(mode="json", by_alias=True),
         ensure_ascii=False,
@@ -48,7 +48,7 @@ def begin_capture_commit(
     document_id: str,
     operation_id: str,
     session_id: str,
-    candidate: CaptureDocumentV1,
+    candidate: CaptureDocument,
     client_request_id: str,
 ) -> CaptureCommitClaim:
     """Claim the review session and operation in one SQLite transaction."""
@@ -135,7 +135,7 @@ def commit_review_capture(
     document_id: str,
     operation_id: str,
     session_id: str,
-    candidate: CaptureDocumentV1,
+    candidate: CaptureDocument,
     should_cancel: Callable[[], bool],
 ) -> dict:
     session = review_sessions.get(db, project_id=project_id, session_id=session_id)

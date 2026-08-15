@@ -38,7 +38,7 @@ from cert_prep_backend.core.exceptions import (
     DocumentProcessingCanceledError,
     OperationNotCancellableError,
 )
-from capture_contracts import CaptureSourceKind
+from capture_runtime_client import CaptureSourceKind
 from cert_prep_backend.domains.capture_workbench.coordinator import (
     CaptureRuntimeCanceledError,
     CaptureRuntimeJobError,

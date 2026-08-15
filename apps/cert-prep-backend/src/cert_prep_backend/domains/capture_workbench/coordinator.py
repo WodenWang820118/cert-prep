@@ -11,17 +11,16 @@ from uuid import UUID, uuid5
 import httpx
 from pydantic import ValidationError
 
-from capture_contracts import (
-    CaptureDocumentV1,
-    CaptureEventV2,
-    CaptureOperationV2,
+from capture_runtime_client import (
+    CaptureDocument,
+    CaptureEvent,
+    CaptureOperation,
     CaptureRequirementId,
-    CaptureReviewV1,
     CaptureSourceKind,
-    PartialCaptureV2,
-    RawCaptureV1,
+    PartialCapture,
+    RawCapture,
     RuntimeRequirementStatus,
-    RuntimeRequirementV1,
+    RuntimeRequirement,
     StreamingCaptureStatus,
     StreamingEventType,
 )
@@ -33,6 +32,7 @@ from cert_prep_backend.domains.capture_workbench.client import (
     CaptureUpload,
 )
 from cert_prep_backend.domains.capture_workbench.review import reviewed_text_overrides
+from cert_prep_backend.domains.capture_workbench.host_models import CaptureReview
 from cert_prep_backend.domains.capture_workbench.runtime_policy import (
     LEGACY_CORE_ONLY_RUNTIME_VERSION,
 )
@@ -75,7 +75,7 @@ _TERMINAL_EVENTS = {
 class CaptureRuntimeJobError(RuntimeError):
     """The sidecar reached a terminal non-success state."""
 
-    def __init__(self, operation: CaptureOperationV2) -> None:
+    def __init__(self, operation: CaptureOperation) -> None:
         message = (
             operation.error.message
             if operation.error is not None
@@ -135,8 +135,8 @@ class CaptureRuntimeStateUnknownError(RuntimeError):
 class CaptureRunResult:
     capture_id: str
     last_event_sequence: int
-    raw: RawCaptureV1
-    document: CaptureDocumentV1
+    raw: RawCapture
+    document: CaptureDocument
 
 
 class CertPrepCaptureCoordinator:
@@ -201,11 +201,12 @@ class CertPrepCaptureCoordinator:
         source_kind: CaptureSourceKind | str,
         target_language: str | None,
         should_cancel: Callable[[], bool],
-        on_started: Callable[[CaptureOperationV2], None] | None = None,
-    ) -> CaptureOperationV2:
+        on_started: Callable[[CaptureOperation], None] | None = None,
+    ) -> CaptureOperation:
         kind = CaptureSourceKind(source_kind)
         ready = self._client.handshake()
-        if kind not in ready.capabilities.capture_kinds:
+        capture_kinds = ready.capabilities.get("captureKinds", [])
+        if not isinstance(capture_kinds, list) or kind.value not in capture_kinds:
             raise CaptureRuntimeCompatibilityError(
                 f"Capture Runtime does not support {kind.value.upper()} capture."
             )
@@ -241,9 +242,9 @@ class CertPrepCaptureCoordinator:
         operation_id: str,
         capture_id: str,
         target_language: str | None,
-        review: CaptureReviewV1 | None,
+        review: CaptureReview | None,
         should_cancel: Callable[[], bool],
-    ) -> CaptureDocumentV1:
+    ) -> CaptureDocument:
         deadline = self._clock() + self._timeout_seconds
         raw = self._client.get_raw(capture_id)
         if review is not None:
@@ -281,7 +282,7 @@ class CertPrepCaptureCoordinator:
                 for block in blocks
                 if isinstance(block, dict)
             )
-            return CaptureDocumentV1.model_validate(payload)
+            return CaptureDocument.model_validate(payload)
         except CaptureStructuringCanceledError as error:
             self._cancel(capture_id)
             raise CaptureRuntimeCanceledError("Document processing was cancelled.") from error
@@ -296,7 +297,7 @@ class CertPrepCaptureCoordinator:
         *,
         operation_id: str,
         capture_id: str,
-        candidate: CaptureDocumentV1 | str | bytes | Mapping[str, object],
+        candidate: CaptureDocument | str | bytes | Mapping[str, object],
         should_cancel: Callable[[], bool],
     ) -> CaptureRunResult:
         deadline = self._clock() + self._timeout_seconds
@@ -334,7 +335,7 @@ class CertPrepCaptureCoordinator:
         operation_id: str,
         capture_id: str,
         target_language: str | None,
-        review: CaptureReviewV1 | None,
+        review: CaptureReview | None,
         should_cancel: Callable[[], bool],
     ) -> CaptureRunResult:
         try:
@@ -362,7 +363,7 @@ class CertPrepCaptureCoordinator:
 
         self._client.delete_capture(capture_id)
 
-    def get_capture(self, capture_id: str) -> CaptureOperationV2:
+    def get_capture(self, capture_id: str) -> CaptureOperation:
         return self._client.get_capture(capture_id)
 
     def capture_events(
@@ -370,19 +371,19 @@ class CertPrepCaptureCoordinator:
         capture_id: str,
         *,
         last_event_id: str | int | None = None,
-    ) -> Iterator[CaptureEventV2]:
+    ) -> Iterator[CaptureEvent]:
         return self._client.capture_events(capture_id, last_event_id=last_event_id)
 
-    def get_partial(self, capture_id: str) -> PartialCaptureV2:
+    def get_partial(self, capture_id: str) -> PartialCapture:
         return self._client.get_partial(capture_id)
 
-    def get_raw(self, capture_id: str) -> RawCaptureV1:
+    def get_raw(self, capture_id: str) -> RawCapture:
         return self._client.get_raw(capture_id)
 
     def get_result(self, capture_id: str) -> CaptureStreamingResult:
         return self._client.get_result(capture_id)
 
-    def cancel(self, capture_id: str) -> CaptureOperationV2:
+    def cancel(self, capture_id: str) -> CaptureOperation:
         return self._cancel_and_confirm(capture_id)
 
     def report_structuring_failure(
@@ -392,7 +393,7 @@ class CertPrepCaptureCoordinator:
         operation_id: str,
         code: str = "host_provider_failed",
         message: str = "Cert Prep's configured structuring provider failed.",
-    ) -> CaptureOperationV2:
+    ) -> CaptureOperation:
         return self._report_structuring_failure(
             capture_id,
             operation_id=operation_id,
@@ -447,7 +448,7 @@ class CertPrepCaptureCoordinator:
     def _runtime_requirement(
         self,
         requirement_id: CaptureRequirementId,
-    ) -> RuntimeRequirementV1 | None:
+    ) -> RuntimeRequirement | None:
         matches = [
             item
             for item in self._client.get_requirements().items
@@ -457,11 +458,11 @@ class CertPrepCaptureCoordinator:
 
     def _wait_for_structuring(
         self,
-        operation: CaptureOperationV2,
+        operation: CaptureOperation,
         *,
         deadline: float,
         should_cancel: Callable[[], bool],
-    ) -> CaptureOperationV2:
+    ) -> CaptureOperation:
         operation = self._wait_for_status(
             operation,
             stop_statuses={
@@ -478,11 +479,11 @@ class CertPrepCaptureCoordinator:
 
     def _wait_for_completion(
         self,
-        operation: CaptureOperationV2,
+        operation: CaptureOperation,
         *,
         deadline: float,
         should_cancel: Callable[[], bool],
-    ) -> CaptureOperationV2:
+    ) -> CaptureOperation:
         operation = self._wait_for_status(
             operation,
             stop_statuses=_TERMINAL_STATUSES,
@@ -499,12 +500,12 @@ class CertPrepCaptureCoordinator:
 
     def _wait_for_status(
         self,
-        operation: CaptureOperationV2,
+        operation: CaptureOperation,
         *,
         stop_statuses: set[StreamingCaptureStatus],
         deadline: float,
         should_cancel: Callable[[], bool],
-    ) -> CaptureOperationV2:
+    ) -> CaptureOperation:
         reconnects = 0
         current = operation
         while current.status not in stop_statuses:
@@ -560,7 +561,7 @@ class CertPrepCaptureCoordinator:
         capture_id: str,
         *,
         observed_sequence: int,
-    ) -> CaptureOperationV2:
+    ) -> CaptureOperation:
         try:
             snapshot = self._client.get_capture(capture_id)
         except Exception as error:
@@ -596,7 +597,7 @@ class CertPrepCaptureCoordinator:
         idempotency_key: UUID,
         deadline: float,
         should_cancel: Callable[[], bool],
-    ) -> CaptureOperationV2:
+    ) -> CaptureOperation:
         while True:
             try:
                 return self._client.commit_structure(
@@ -631,7 +632,7 @@ class CertPrepCaptureCoordinator:
         operation_id: str,
         code: str = "host_provider_failed",
         message: str = "Cert Prep's configured structuring provider failed.",
-    ) -> CaptureOperationV2:
+    ) -> CaptureOperation:
         try:
             operation = self._client.report_structuring_failure(
                 capture_id,
@@ -656,8 +657,8 @@ class CertPrepCaptureCoordinator:
     def _cancel(self, capture_id: str) -> None:
         self._cancel_and_confirm(capture_id)
 
-    def _cancel_and_confirm(self, capture_id: str) -> CaptureOperationV2:
-        cancelled: CaptureOperationV2 | None = None
+    def _cancel_and_confirm(self, capture_id: str) -> CaptureOperation:
+        cancelled: CaptureOperation | None = None
         cancel_error: Exception | None = None
         try:
             cancelled = self._client.cancel_capture(capture_id)
@@ -684,7 +685,7 @@ class CertPrepCaptureCoordinator:
         capture_id: str,
         *,
         action: str,
-    ) -> CaptureOperationV2:
+    ) -> CaptureOperation:
         try:
             return self._client.get_capture(capture_id)
         except Exception as error:
@@ -694,15 +695,15 @@ class CertPrepCaptureCoordinator:
             ) from error
 
     @staticmethod
-    def _is_terminal(operation: CaptureOperationV2) -> bool:
+    def _is_terminal(operation: CaptureOperation) -> bool:
         return operation.status in _TERMINAL_STATUSES
 
     @staticmethod
-    def _is_awaiting_structuring(operation: CaptureOperationV2) -> bool:
+    def _is_awaiting_structuring(operation: CaptureOperation) -> bool:
         return operation.status is StreamingCaptureStatus.AWAITING_STRUCTURING
 
     @staticmethod
-    def _raise_for_terminal(operation: CaptureOperationV2) -> None:
+    def _raise_for_terminal(operation: CaptureOperation) -> None:
         if operation.status is StreamingCaptureStatus.CANCELLED:
             raise CaptureRuntimeCanceledError("Capture Runtime operation was cancelled.")
         if operation.status is StreamingCaptureStatus.FAILED:
@@ -710,17 +711,17 @@ class CertPrepCaptureCoordinator:
 
 
 def _capture_document(
-    candidate: CaptureDocumentV1 | str | bytes | Mapping[str, object],
-) -> CaptureDocumentV1:
+    candidate: CaptureDocument | str | bytes | Mapping[str, object],
+) -> CaptureDocument:
     try:
-        if isinstance(candidate, CaptureDocumentV1):
+        if isinstance(candidate, CaptureDocument):
             return candidate
         if isinstance(candidate, Mapping):
-            return CaptureDocumentV1.model_validate(dict(candidate))
-        return CaptureDocumentV1.model_validate_json(candidate)
+            return CaptureDocument.model_validate(dict(candidate))
+        return CaptureDocument.model_validate_json(candidate)
     except (ValidationError, ValueError, json.JSONDecodeError) as error:
         raise CaptureRuntimeProtocolError(
-            "Host structuring candidate does not satisfy CaptureDocumentV1"
+            "Host structuring candidate does not satisfy CaptureDocument"
         ) from error
 
 

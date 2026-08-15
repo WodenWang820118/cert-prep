@@ -1,11 +1,9 @@
-"""Atomic Cert Prep persistence of sidecar-validated CaptureDocumentV1 data."""
+"""Atomic Cert Prep persistence of sidecar-validated CaptureDocument data."""
 
 from __future__ import annotations
 
-from capture_contracts import (
-    CaptureDocumentV1,
-    CaptureReviewV1,
-)
+from capture_runtime_client import CaptureDocument
+from cert_prep_backend.domains.capture_workbench.host_models import CaptureReview
 from cert_prep_backend.domains.capture_workbench.mapping import (
     capture_document_to_audio_segments,
     capture_document_to_pdf_extraction,
@@ -22,8 +20,8 @@ def publish_capture_document(
     operation_id: str,
     source_kind: str,
     expected_sha256: str,
-    document: CaptureDocumentV1,
-    review: CaptureReviewV1 | None = None,
+    document: CaptureDocument,
+    review: CaptureReview | None = None,
 ) -> dict:
     if document.source.sha256 != expected_sha256:
         raise ValueError("Capture Runtime result does not match the stored source digest")

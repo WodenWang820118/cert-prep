@@ -4,7 +4,7 @@ import type { CertPrepGeneratedClient } from '@cert-prep/api';
 import { CAPTURE_RUNTIME_VERSION } from '@cert-prep/capture-runtime-version';
 import { firstValueFrom, lastValueFrom, of, throwError, toArray } from 'rxjs';
 import type {
-  CaptureDocumentV1,
+  CaptureDocument,
   CaptureStructuringRequest,
 } from '@gx-capture/capture-workbench-ui';
 import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
@@ -23,6 +23,7 @@ type ApiMocks = Record<
   | 'getCapture'
   | 'deleteCapture'
   | 'getPartial'
+  | 'getRaw'
   | 'structureCapture'
   | 'commitCapture'
   | 'reportStructuringFailure'
@@ -45,6 +46,7 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
       getCapture: vi.fn().mockReturnValue(of(makeOperation())),
       deleteCapture: vi.fn().mockReturnValue(of(undefined)),
       getPartial: vi.fn().mockReturnValue(of(makePartial())),
+      getRaw: vi.fn().mockReturnValue(of(makeRaw())),
       structureCapture: vi.fn().mockReturnValue(of(makeDocument())),
       commitCapture: vi
         .fn()
@@ -249,11 +251,11 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
     const structureRequest: CaptureStructuringRequest = {
       raw: makeRaw(),
       review: {
-        reviewVersion: 1,
+        reviewVersion: 2,
         edits: [{ segmentId: 'segment-1', reviewedText: 'Corrected text' }],
       },
       documentContract: {
-        schemaVersion: '1',
+        schemaVersion: '2',
         schemaSha256: 'schema-digest',
         jsonSchema: {},
       },
@@ -264,7 +266,7 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
     const structure$ = client.structure(structureRequest);
     expect(typeof structure$.subscribe).toBe('function');
     await expect(firstValueFrom(structure$)).resolves.toMatchObject({
-      schemaVersion: '1',
+      schemaVersion: '2',
       blocks: [{ targetText: 'Recognized OCR text' }],
     });
 
@@ -274,7 +276,7 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
       {
         clientRequestId: 'capture-1-structure',
         review: {
-          reviewVersion: 1,
+          reviewVersion: 2,
           edits: [
             { segmentId: 'segment-1', reviewedText: 'Corrected text' },
           ],
@@ -312,20 +314,27 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
   it('maps partial and composite result projections at the v2 boundary', async () => {
     await seedCapture();
 
-    await expect(
-      firstValueFrom(client.getStreamingPartial('capture-1')),
-    ).resolves.toMatchObject({
+      await expect(
+        firstValueFrom(client.getStreamingPartial('capture-1')),
+      ).resolves.toMatchObject({
       protocolVersion: '2',
       captureId: 'capture-1',
       revision: 1,
-      segments: [{ text: 'Recognized OCR text' }],
-    });
+        segments: [{ text: 'Recognized OCR text' }],
+      });
+      await expect(
+        firstValueFrom(client.getStreamingRaw('capture-1')),
+      ).resolves.toMatchObject({
+        schemaVersion: '2',
+        source: { sha256: 'a'.repeat(64) },
+        segments: [{ text: 'Recognized OCR text' }],
+      });
     await expect(
       firstValueFrom(client.getStreamingResult('capture-1')),
     ).resolves.toMatchObject({
       operation: { protocolVersion: '2', status: 'completed' },
       raw: { diagnosticOnly: true },
-      result: { schemaVersion: '1' },
+      result: { schemaVersion: '2' },
     });
   });
 
@@ -478,7 +487,7 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
           structuringMode: 'host',
         }),
       ),
-    ).rejects.toThrow('incompatible with client runtime minor 3');
+    ).rejects.toThrow('incompatible with client runtime minor 4');
     expect(api.createCapture).not.toHaveBeenCalled();
   });
 
@@ -561,7 +570,7 @@ function makePartial() {
 
 function makeRaw() {
   return {
-    schemaVersion: '1' as const,
+    schemaVersion: '2' as const,
     diagnosticOnly: true as const,
     source: makeSource(),
     segments: [
@@ -584,9 +593,9 @@ function makeRaw() {
   };
 }
 
-function makeDocument(): CaptureDocumentV1 {
+function makeDocument(): CaptureDocument {
   return {
-    schemaVersion: '1',
+    schemaVersion: '2',
     source: makeSource(),
     rawSegments: makeRaw().segments,
     blocks: [
@@ -654,9 +663,9 @@ function readyResponse(override: Record<string, unknown>) {
   const base = {
     ready: true,
     service: 'capture-runtime',
-    apiVersion: '1.0',
+    apiVersion: '2.0',
     runtimeVersion: CAPTURE_RUNTIME_VERSION,
-    captureDocumentSchemaVersion: '1',
+    captureDocumentSchemaVersion: '2',
     capabilities: readyCapabilities(),
   };
   return {

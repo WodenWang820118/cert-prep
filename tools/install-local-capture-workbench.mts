@@ -3,7 +3,7 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  CAPTURE_CONTRACTS_PACKAGE_NAME,
+  CAPTURE_RUNTIME_CLIENT_PACKAGE_NAME,
   CAPTURE_RUNTIME_PACKAGE_NAME,
   CAPTURE_RUNTIME_VERSION,
 } from './capture-runtime-version.mts';
@@ -13,7 +13,7 @@ const registry = (
   process.env.CAPTURE_WORKBENCH_LOCAL_REGISTRY ?? 'http://127.0.0.1:4873'
 ).replace(/\/$/, '');
 const packageName = CAPTURE_RUNTIME_PACKAGE_NAME;
-const contractsPackageName = CAPTURE_CONTRACTS_PACKAGE_NAME;
+const runtimeClientPackageName = CAPTURE_RUNTIME_CLIENT_PACKAGE_NAME;
 const packageVersion = CAPTURE_RUNTIME_VERSION;
 const captureWorkbenchRoot = resolve(
   process.env.CAPTURE_WORKBENCH_REPO ??
@@ -132,7 +132,7 @@ async function ensureLocalPackage(): Promise<void> {
   }
   if (
     !(await packageIsPublished(packageName)) ||
-    !(await packageIsPublished(contractsPackageName))
+    !(await packageIsPublished(runtimeClientPackageName))
   ) {
     await runPnpm(['run', 'local-registry:publish'], captureWorkbenchRoot);
   }
@@ -159,7 +159,7 @@ async function assertPublishedPackage(name: string): Promise<void> {
 async function main(): Promise<void> {
   await ensureLocalPackage();
   await assertPublishedPackage(packageName);
-  await assertPublishedPackage(contractsPackageName);
+  await assertPublishedPackage(runtimeClientPackageName);
   const userConfigPath = join(repoRoot, '.npmrc');
   if (existsSync(userConfigPath)) {
     throw new Error(
@@ -174,7 +174,7 @@ async function main(): Promise<void> {
 
   try {
     await runPnpm(['install', '--no-frozen-lockfile']);
-    for (const name of [packageName, contractsPackageName]) {
+    for (const name of [packageName]) {
       const installedManifestPath = join(
         repoRoot,
         `node_modules/${name}/package.json`,

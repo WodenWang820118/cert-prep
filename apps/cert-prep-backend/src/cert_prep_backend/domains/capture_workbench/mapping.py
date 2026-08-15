@@ -1,4 +1,4 @@
-"""Deterministic adapters from CaptureDocumentV1 into Cert Prep persistence inputs."""
+"""Deterministic adapters from CaptureDocument into Cert Prep persistence inputs."""
 
 from __future__ import annotations
 
@@ -6,11 +6,11 @@ from dataclasses import dataclass
 
 from cert_prep_contracts.transcription import TranscriptSegment
 
-from capture_contracts import (
-    CaptureDocumentV1,
-    CaptureReviewV1,
-    RawCaptureV1,
+from capture_runtime_client import (
+    CaptureDocument,
+    RawCapture,
 )
+from cert_prep_backend.domains.capture_workbench.host_models import CaptureReview
 from cert_prep_backend.domains.capture_workbench.review import reviewed_text_overrides
 from cert_prep_backend.domains.exam_content import classify_exam_text, line_metadata
 from cert_prep_backend.domains.source_documents.models import (
@@ -26,13 +26,13 @@ class CaptureAudioSegment:
 
 
 def capture_document_to_pdf_extraction(
-    document: CaptureDocumentV1,
+    document: CaptureDocument,
     *,
-    review: CaptureReviewV1 | None = None,
+    review: CaptureReview | None = None,
 ) -> PdfExtractionResult:
     overrides = (
         reviewed_text_overrides(
-            RawCaptureV1(
+            RawCapture(
                 schema_version=document.schema_version,
                 diagnostic_only=True,
                 source=document.source,
@@ -91,7 +91,7 @@ def capture_document_to_pdf_extraction(
 
 
 def capture_document_to_audio_segments(
-    document: CaptureDocumentV1,
+    document: CaptureDocument,
 ) -> tuple[CaptureAudioSegment, ...]:
     segments: list[CaptureAudioSegment] = []
     for block in document.blocks:
@@ -112,7 +112,7 @@ def capture_document_to_audio_segments(
     return tuple(segments)
 
 
-def _page_extraction_method(document: CaptureDocumentV1) -> str:
+def _page_extraction_method(document: CaptureDocument) -> str:
     identity = (
         f"{document.extraction_engine.engine} {document.extraction_engine.model}"
     ).lower()

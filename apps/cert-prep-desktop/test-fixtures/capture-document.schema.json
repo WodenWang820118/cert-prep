@@ -1,6 +1,6 @@
 {
   "$defs": {
-    "CaptureBlockV1": {
+    "CaptureBlock": {
       "additionalProperties": false,
       "properties": {
         "blockId": {
@@ -11,17 +11,17 @@
         "locator": {
           "discriminator": {
             "mapping": {
-              "page": "#/$defs/PageLocatorV1",
-              "time": "#/$defs/TimeLocatorV1"
+              "page": "#/$defs/PageLocator",
+              "time": "#/$defs/TimeLocator"
             },
             "propertyName": "kind"
           },
           "oneOf": [
             {
-              "$ref": "#/$defs/PageLocatorV1"
+              "$ref": "#/$defs/PageLocator"
             },
             {
-              "$ref": "#/$defs/TimeLocatorV1"
+              "$ref": "#/$defs/TimeLocator"
             }
           ],
           "title": "Locator"
@@ -70,10 +70,10 @@
         "sourceText",
         "targetText"
       ],
-      "title": "CaptureBlockV1",
+      "title": "CaptureBlock",
       "type": "object"
     },
-    "CaptureEngineV1": {
+    "CaptureEngine": {
       "additionalProperties": false,
       "properties": {
         "device": {
@@ -110,10 +110,10 @@
         "model",
         "digest"
       ],
-      "title": "CaptureEngineV1",
+      "title": "CaptureEngine",
       "type": "object"
     },
-    "CaptureSourceV1": {
+    "CaptureSource": {
       "additionalProperties": false,
       "properties": {
         "bytes": {
@@ -144,10 +144,10 @@
         "mediaType",
         "bytes"
       ],
-      "title": "CaptureSourceV1",
+      "title": "CaptureSource",
       "type": "object"
     },
-    "PageLocatorV1": {
+    "PageLocator": {
       "additionalProperties": false,
       "properties": {
         "boundingBox": {
@@ -193,26 +193,26 @@
       "required": [
         "page"
       ],
-      "title": "PageLocatorV1",
+      "title": "PageLocator",
       "type": "object"
     },
-    "RawCaptureSegmentV1": {
+    "RawCaptureSegment": {
       "additionalProperties": false,
       "properties": {
         "locator": {
           "discriminator": {
             "mapping": {
-              "page": "#/$defs/PageLocatorV1",
-              "time": "#/$defs/TimeLocatorV1"
+              "page": "#/$defs/PageLocator",
+              "time": "#/$defs/TimeLocator"
             },
             "propertyName": "kind"
           },
           "oneOf": [
             {
-              "$ref": "#/$defs/PageLocatorV1"
+              "$ref": "#/$defs/PageLocator"
             },
             {
-              "$ref": "#/$defs/TimeLocatorV1"
+              "$ref": "#/$defs/TimeLocator"
             }
           ],
           "title": "Locator"
@@ -240,10 +240,10 @@
         "locator",
         "text"
       ],
-      "title": "RawCaptureSegmentV1",
+      "title": "RawCaptureSegment",
       "type": "object"
     },
-    "TimeLocatorV1": {
+    "TimeLocator": {
       "additionalProperties": false,
       "properties": {
         "endMs": {
@@ -267,17 +267,17 @@
         "startMs",
         "endMs"
       ],
-      "title": "TimeLocatorV1",
+      "title": "TimeLocator",
       "type": "object"
     }
   },
-  "$id": "https://github.com/gx-capture/capture-workbench/schema/capture-document-v1.schema.json",
+  "$id": "https://github.com/gx-capture/capture-workbench/schema/capture-document-v2.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
     "blocks": {
       "items": {
-        "$ref": "#/$defs/CaptureBlockV1"
+        "$ref": "#/$defs/CaptureBlock"
       },
       "maxItems": 10000,
       "minItems": 1,
@@ -295,11 +295,11 @@
       "type": "string"
     },
     "extractionEngine": {
-      "$ref": "#/$defs/CaptureEngineV1"
+      "$ref": "#/$defs/CaptureEngine"
     },
     "rawSegments": {
       "items": {
-        "$ref": "#/$defs/RawCaptureSegmentV1"
+        "$ref": "#/$defs/RawCaptureSegment"
       },
       "maxItems": 10000,
       "minItems": 1,
@@ -307,13 +307,13 @@
       "type": "array"
     },
     "schemaVersion": {
-      "const": "1",
-      "default": "1",
+      "const": "2",
+      "default": "2",
       "title": "Schemaversion",
       "type": "string"
     },
     "source": {
-      "$ref": "#/$defs/CaptureSourceV1"
+      "$ref": "#/$defs/CaptureSource"
     },
     "sourceText": {
       "maxLength": 8000000,
@@ -322,7 +322,7 @@
       "type": "string"
     },
     "structuringEngine": {
-      "$ref": "#/$defs/CaptureEngineV1"
+      "$ref": "#/$defs/CaptureEngine"
     },
     "targetText": {
       "maxLength": 8000000,
@@ -351,6 +351,6 @@
     "createdAt",
     "completedAt"
   ],
-  "title": "CaptureDocumentV1",
+  "title": "CaptureDocument",
   "type": "object"
 }

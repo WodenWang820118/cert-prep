@@ -2,10 +2,10 @@
 
 ## Current ownership
 
-Cert Prep consumes the published `capture-runtime@0.3.11` Windows x64 executable,
-manifest, checksum, and `CaptureDocumentV1` schema `1`. It also consumes the
-published `@gx-capture/capture-workbench-ui@0.3.11` Web Component and generated
-`@gx-capture/capture-contracts@0.3.11` package for source import,
+Cert Prep consumes the published `capture-runtime@0.4.0` Windows x64 executable,
+manifest, checksum, and `CaptureDocument` schema `2`. It also consumes the
+published `@gx-capture/capture-workbench-ui@0.4.0` Web Component and generated
+`@gx-capture/capture-runtime-client@0.4.0` package for source import,
 runtime setup, review, cancellation, retry, and completion UI.
 
 Cert Prep owns only the authenticated proxy, Tauri sidecar lifecycle, host
@@ -42,14 +42,14 @@ provider fallback path.
   signal: it retains no per-session identity or terminal state, and every wait
   reloads the durable review session so concurrent and late listeners recover
   from the database.
-- Capture Runtime owns requirement truth. For engine-bearing v0.3.11, Cert Prep
+- Capture Runtime owns requirement truth. For engine-bearing v0.4.0, Cert Prep
   hides the component runtime-setup surface while exposing authenticated
   requirements/install/cancel proxy routes without exposing the sidecar token.
   Image and audio remain gated on the corresponding ready requirements.
 
 ## Persistence boundary
 
-After review confirmation, the host maps the validated `CaptureDocumentV1` into
+After review confirmation, the host maps the validated v2 `CaptureDocument` into
 the existing document/chunk model. `document_chunks.raw_text` retains the
 Japanese/OCR/transcript source, while `document_chunks.text` stores the
 reviewed or Traditional Chinese text. Existing extraction and transcription
@@ -59,7 +59,7 @@ only from Capture Runtime.
 ## Desktop and release boundary
 
 Tauri stages and verifies only the backend runtime and Capture Runtime assets.
-v0.3.11 publishes the engine-bearing catalog and verifies the runtime manifest,
+v0.4.0 publishes the engine-bearing catalog and verifies the runtime manifest,
 checksum, schema, and executable bytes before launch. It injects
 the sidecar URL/token only into the backend child, records both process trees,
 and performs PID-scoped cleanup. Cert Prep's retired OCR manifest, executable,

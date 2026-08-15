@@ -21,7 +21,7 @@ import { prepareRuntimeResources } from './prepare-runtime-resources.mts';
 const tempRoots: string[] = [];
 const canonicalSchemaFixturePath = join(
   dirname(fileURLToPath(import.meta.url)),
-  '../test-fixtures/capture-document-v1.schema.json',
+  '../test-fixtures/capture-document.schema.json',
 );
 
 afterEach(() => {
@@ -46,8 +46,8 @@ test('resources bundle the backend and published Capture Runtime contract only',
     'host',
   );
   assert.equal(capture.runtimeVersion, CAPTURE_RUNTIME_VERSION);
-  assert.equal(capture.apiVersion, '1.0');
-  assert.equal(capture.captureDocumentSchemaVersion, '1');
+  assert.equal(capture.apiVersion, '2.0');
+  assert.equal(capture.captureDocumentSchemaVersion, '2');
   assert.equal(
     existsSync(join(outputDir, 'windowsml-ocr-runtime-manifest.json')),
     false,
@@ -186,7 +186,7 @@ function createFixture(): {
   );
   const captureDocumentSchemaPath = join(
     workspaceRoot,
-    'capture-document-v1.schema.json',
+    'capture-document.schema.json',
   );
   const captureSchema = canonicalCaptureDocumentSchemaBytes();
   writeFileSync(captureRuntimeArtifactPath, 'capture-runtime');
@@ -194,14 +194,14 @@ function createFixture(): {
   writeJson(captureRuntimeManifestPath, {
     manifestVersion: '1',
     runtimeVersion: CAPTURE_RUNTIME_VERSION,
-    apiVersion: '1.0',
-    captureDocumentSchemaVersion: '1',
+    apiVersion: '2.0',
+    captureDocumentSchemaVersion: '2',
     platform: 'windows',
     arch: 'x86_64',
     fileName: 'capture-runtime-x86_64-pc-windows-msvc.exe',
     bytes: Buffer.byteLength('capture-runtime'),
     sha256: sha256('capture-runtime'),
-    schemaFileName: 'capture-document-v1.schema.json',
+    schemaFileName: 'capture-document.schema.json',
     schemaSha256: CAPTURE_DOCUMENT_SCHEMA_SHA256,
   });
   return {

@@ -8,20 +8,19 @@ from fastapi.testclient import TestClient
 
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.core.config import Settings
-from capture_contracts import (
+from capture_runtime_client import (
     CAPTURE_RUNTIME_VERSION,
     CaptureSourceKind,
-    RuntimeCapabilitiesV1,
-    RuntimeArtifactDescriptorV1,
+    RuntimeArtifactDescriptor,
     RuntimeInstallationStatus,
-    RuntimeInstallationV1,
-    RuntimeInstallationsV1,
+    RuntimeInstallation,
+    RuntimeInstallations,
     RuntimeRequirementStatus,
-    RuntimeRequirementV1,
-    RuntimeRequirementsV1,
+    RuntimeRequirement,
+    RuntimeRequirements,
     StructuringMode,
 )
-from cert_prep_backend.domains.capture_workbench.host_models import RuntimeReadyV1
+from cert_prep_backend.domains.capture_workbench.host_models import RuntimeReady
 
 
 TOKEN = "cert-browser-token"
@@ -34,7 +33,7 @@ class RecordingSetupClient:
     def __init__(self) -> None:
         self.idempotency_keys: list[UUID] = []
         self.cancelled: list[str] = []
-        self.installation = RuntimeInstallationV1(
+        self.installation = RuntimeInstallation(
             installation_id=str(INSTALLATION_ID),
             requirement_id="windowsml-ocr",
             status=RuntimeInstallationStatus.RUNNING,
@@ -43,41 +42,41 @@ class RecordingSetupClient:
             updated_at=NOW,
         )
 
-    def handshake(self) -> RuntimeReadyV1:
-        return RuntimeReadyV1(
+    def handshake(self) -> RuntimeReady:
+        return RuntimeReady(
             ready=True,
             service="capture-runtime",
-            api_version="1.0",
+            api_version="2.0",
             runtime_version=CAPTURE_RUNTIME_VERSION,
-            capture_document_schema_version="1",
-            capabilities=RuntimeCapabilitiesV1(
-                capture_kinds=list(CaptureSourceKind),
-                structuring_modes=[StructuringMode.HOST],
-                supports_cancellation=True,
-                supports_raw_diagnostics=True,
-                max_upload_bytes=50_000_000,
-            ),
+            capture_document_schema_version="2",
+            capabilities={
+                "captureKinds": [kind.value for kind in CaptureSourceKind],
+                "structuringModes": [StructuringMode.HOST.value],
+                "supportsCancellation": True,
+                "supportsRawDiagnostics": True,
+                "maxUploadBytes": 50_000_000,
+            },
             message="ready",
         )
 
-    def get_requirements(self) -> RuntimeRequirementsV1:
-        return RuntimeRequirementsV1(
+    def get_requirements(self) -> RuntimeRequirements:
+        return RuntimeRequirements(
             items=[
-                RuntimeRequirementV1(
+                RuntimeRequirement(
                     requirement_id="windowsml-ocr",
                     kind="ocr",
                     display_name="WindowsML OCR",
                     status=RuntimeRequirementStatus.INSTALLABLE,
                     required_for=["pdf", "image"],
                     install_strategy="checksum-pinned-bundle",
-                    artifact=RuntimeArtifactDescriptorV1(
+                    artifact=RuntimeArtifactDescriptor(
                         artifact_url="https://github.com/example/capture-windowsml.zip",
                         artifact_file_name="capture-windowsml-ocr-windows-x64.zip",
                         bytes=138_837_175,
                         sha256="a88c9a3097771d07bd1d940db6acdcbb5336e7c6c85406f5c22655ed6930704a",
                     ),
                 ),
-                RuntimeRequirementV1(
+                RuntimeRequirement(
                     requirement_id="whisper-primary",
                     kind="speech-to-text",
                     display_name="Whisper",
@@ -93,19 +92,19 @@ class RecordingSetupClient:
         requirement_id: str,
         *,
         idempotency_key: UUID,
-    ) -> RuntimeInstallationV1:
+    ) -> RuntimeInstallation:
         assert requirement_id == "windowsml-ocr"
         self.idempotency_keys.append(idempotency_key)
         return self.installation
 
-    def list_installations(self) -> RuntimeInstallationsV1:
-        return RuntimeInstallationsV1(items=[self.installation])
+    def list_installations(self) -> RuntimeInstallations:
+        return RuntimeInstallations(items=[self.installation])
 
-    def get_installation(self, installation_id: str) -> RuntimeInstallationV1:
+    def get_installation(self, installation_id: str) -> RuntimeInstallation:
         assert installation_id == str(INSTALLATION_ID)
         return self.installation
 
-    def cancel_installation(self, installation_id: str) -> RuntimeInstallationV1:
+    def cancel_installation(self, installation_id: str) -> RuntimeInstallation:
         self.cancelled.append(installation_id)
         return self.installation.model_copy(
             update={
@@ -119,11 +118,11 @@ class RecordingSetupClient:
 class CoreOnlySetupClient(RecordingSetupClient):
     """Published v0.3.8 requirement response; no local model is available."""
 
-    def get_requirements(self) -> RuntimeRequirementsV1:
+    def get_requirements(self) -> RuntimeRequirements:
         detail = "No downloadable model is published for this runtime release."
-        return RuntimeRequirementsV1(
+        return RuntimeRequirements(
             items=[
-                RuntimeRequirementV1(
+                RuntimeRequirement(
                     requirement_id="windowsml-ocr",
                     kind="ocr",
                     display_name="WindowsML OCR",
@@ -132,7 +131,7 @@ class CoreOnlySetupClient(RecordingSetupClient):
                     install_strategy="unavailable",
                     detail=detail,
                 ),
-                RuntimeRequirementV1(
+                RuntimeRequirement(
                     requirement_id="whisper-primary",
                     kind="speech-to-text",
                     display_name="Whisper",

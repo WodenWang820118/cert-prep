@@ -18,7 +18,7 @@ const nodeModulesLockfilePath = join(
   'lock.yaml',
 );
 const workbenchPackageName = '@gx-capture/capture-workbench-ui';
-const contractsPackageName = '@gx-capture/capture-contracts';
+const runtimeClientPackageName = '@gx-capture/capture-runtime-client';
 const capturePublishedVariable =
   `CAPTURE_PUBLISHED_${CAPTURE_RUNTIME_VERSION.replaceAll('.', '_')}`;
 
@@ -194,9 +194,9 @@ async function install(mode: InstallMode): Promise<void> {
       workbenchPackageName,
       process.env.RELEASE_VERSION ?? CAPTURE_RUNTIME_VERSION,
     );
-    const contractsArchive = packageArchive(
+    const runtimeClientArchive = packageArchive(
       mode.packageDirectory,
-      contractsPackageName,
+      runtimeClientPackageName,
       process.env.RELEASE_VERSION ?? CAPTURE_RUNTIME_VERSION,
     );
     const candidatePackageJson = { ...packageJson };
@@ -207,10 +207,10 @@ async function install(mode: InstallMode): Promise<void> {
       `${JSON.stringify(candidatePackageJson, null, 2)}\n`,
       'utf8',
     );
-    const contractsOverride = contractsArchive.replaceAll('\\', '/');
+    const runtimeClientOverride = runtimeClientArchive.replaceAll('\\', '/');
     await writeFile(
       workspaceFilePath,
-      `${originalWorkspaceFile.toString('utf8').trimEnd()}\noverrides:\n  '${contractsPackageName}': file:${contractsOverride}\n`,
+      `${originalWorkspaceFile.toString('utf8').trimEnd()}\noverrides:\n  '${runtimeClientPackageName}': file:${runtimeClientOverride}\n`,
       'utf8',
     );
     await unlink(lockfilePath);
@@ -221,7 +221,7 @@ async function install(mode: InstallMode): Promise<void> {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }
     process.stdout.write(
-      `Installing ${workbenchPackageName} and ${contractsPackageName} from the immutable candidate archives.\n`,
+      `Installing ${workbenchPackageName} and ${runtimeClientPackageName} from the immutable candidate archives.\n`,
     );
     await runPnpm([
       'install',

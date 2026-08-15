@@ -1,25 +1,25 @@
 # Capture Runtime release consumer spec
 
-`cert-prep` consumes `capture-runtime@0.3.11` as a published Windows x64
+`cert-prep` consumes `capture-runtime@0.4.0` as a published Windows x64
 executable. It does not import the runtime as Python, link a workspace package,
 or retain a local extraction provider.
 
 ## Contract
 
-- Runtime API: `1.0`.
-- Runtime version: `0.3.11` from the canonical
+- Runtime API: `2.0`.
+- Runtime version: `0.4.0` from the canonical
   `gx-capture/capture-workbench` GitHub Release.
-- `CaptureDocumentV1` schema: `1`.
+- `CaptureDocument` schema: `2`.
 - Consumer assets: executable, checksum, `capture-runtime-manifest.json`, and
   the schema file.
-- Published-byte evidence pins the downloaded v0.3.11 executable to the
+- Published-byte evidence pins the downloaded v0.4.0 executable to the
   SHA-256 recorded by its release manifest and requires the staged
   manifest/checksum to agree before launch. The earlier v0.3.8 hash remains
   historical evidence only.
 - The published schema bytes have SHA-256
-  `2721093496a9f09044d5737cce70d2356d5f71757b1cd23a960e1d003ea014f2` and
+  `850afd212d049c25da41d3867ba5477451a6a2c6c7e41f116fe60f26b6a35335` and
   retain the canonical `gx-capture` schema identifier.
-- v0.3.11 publishes the engine-bearing catalog for `windowsml-ocr` and
+- v0.4.0 publishes the engine-bearing catalog for `windowsml-ocr` and
   `whisper-primary`. Its production extractor still supports a PDF whose every
   page has embedded text, without invoking a model, and must report
   `pdf-embedded-text` provenance. Scanned PDFs/images require ready OCR and
@@ -32,7 +32,7 @@ or retain a local extraction provider.
   The host UI gates OCR/STT-dependent sources on runtime readiness while the backend adapter performs
   the compatibility and requirement checks immediately before opening each
   sidecar ingestion.
-- On v0.3.11 the UI exposes image/audio controls only when the corresponding
+- On v0.4.0 the UI exposes image/audio controls only when the corresponding
   runtime requirement is ready and never claims OCR-dependent PDF support
   without ready OCR. The runtime installs `windowsml-ocr` first and
   `whisper-primary` second after explicit consent; no capture starts until each
@@ -84,7 +84,7 @@ The installer contract, package QA, Tauri contract tests, backend coordinator
 tests, and the published-byte consumer smoke must prove staging, authenticated
 readiness/requirements, host-protocol compatibility, cleanup, and rejection of
 tampered or missing runtime assets. The product E2E must use the published
-v0.3.11 executable and a real, non-fake PDF whose every page contains embedded
+v0.4.0 executable and a real, non-fake PDF whose every page contains embedded
 text; it proves UI selection, backend-to-sidecar capture, review confirmation,
 host persistence, and Markdown export with `pdf-embedded-text` provenance.
 Its negative cases prove image, audio, and any OCR-dependent PDF fail closed
@@ -104,18 +104,18 @@ Markdown. Both app closes left zero owned processes and listener ports.
 
 ## Modular package consumer boundary
 
-Cert Prep now imports generated wire DTOs from `capture_contracts`; the former
+Cert Prep now imports generated wire DTOs from `capture_runtime_client`; the former
 `capture_workbench/contracts.py` hand mirror is deleted. Raw capture and
 document responses cross the Angular client boundary through fail-closed
 mappers that reject schema drift, unknown discriminators, invalid locators,
 and illegal bounding boxes before domain use. The deterministic client spec
 was removed because it was only a local spec fixture.
 
-The package declarations remain version-ranged at `0.3.11`. Once the producer
+The package declarations remain version-ranged at `0.4.0`. Once the producer
 publishes the matching npm/PyPI/Cargo artifacts, the lockfiles must resolve
 from those registries; the permanent consumer consistency target rejects local
 path sources in strict release CI and verifies npm, PyPI, Cargo, runtime
-declarations, and lockfiles all resolve the same release. The 0.3.11 lockfile
+declarations, and lockfiles all resolve the same release. The 0.4.0 lockfile
 refresh and published-byte proof remain active release gates until those
 artifacts exist.
 
@@ -128,5 +128,5 @@ bundle is built by `cert-prep-desktop`'s own Tauri app.
 
 When a GitHub runner is unavailable, `pnpm verify:modular-reuse:local` runs the
 consumer consistency test locally. After publication, set the repository
-variable `CAPTURE_PUBLISHED_0_3_11=true` so the CI job also runs strict source
+variable `CAPTURE_PUBLISHED_0_4_0=true` so the CI job also runs strict source
 and clean PyPI install checks.

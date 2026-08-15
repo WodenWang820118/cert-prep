@@ -19,16 +19,16 @@ from cert_prep_backend.domains.capture_workbench.client import (
     CaptureStreamingResult,
     CaptureUpload,
 )
-from capture_contracts import (
+from capture_runtime_client import (
     CAPTURE_RUNTIME_VERSION,
-    CaptureDocumentV1,
-    CaptureOperationV2,
+    CaptureDocument,
+    CaptureOperation,
     CaptureSourceKind,
-    PartialCaptureV2,
-    RawCaptureV1,
-    RuntimeRequirementsV1,
+    PartialCapture,
+    RawCapture,
+    RuntimeRequirements,
 )
-from cert_prep_backend.domains.capture_workbench.host_models import RuntimeReadyV1
+from cert_prep_backend.domains.capture_workbench.host_models import RuntimeReady
 
 
 AUTH_TOKEN = "test-token"
@@ -57,13 +57,13 @@ class TestCaptureRuntimeClient:
     """Deterministic test-side stand-in for the published Capture Runtime HTTP client."""
 
     def __init__(self) -> None:
-        self._raw: RawCaptureV1 | None = None
-        self._result: CaptureDocumentV1 | None = None
+        self._raw: RawCapture | None = None
+        self._result: CaptureDocument | None = None
 
-    def handshake(self) -> RuntimeReadyV1:
+    def handshake(self) -> RuntimeReady:
         return _test_runtime_ready()
 
-    def get_requirements(self) -> RuntimeRequirementsV1:
+    def get_requirements(self) -> RuntimeRequirements:
         return _test_runtime_requirements("ready")
 
     def start_capture(
@@ -73,7 +73,7 @@ class TestCaptureRuntimeClient:
         source_kind: CaptureSourceKind,
         client_request_id: str,
         target_language: str | None = None,
-    ) -> CaptureOperationV2:
+    ) -> CaptureOperation:
         del client_request_id, target_language
         is_audio = source_kind is CaptureSourceKind.AUDIO
         source_pages = _fake_source_pages(upload.content, source_kind)
@@ -88,9 +88,9 @@ class TestCaptureRuntimeClient:
             for index, page_text in enumerate(source_pages, start=1)
         ]
         now = datetime.now(UTC).isoformat()
-        self._raw = RawCaptureV1.model_validate(
+        self._raw = RawCapture.model_validate(
             {
-                "schemaVersion": "1",
+                "schemaVersion": "2",
                 "diagnosticOnly": True,
                 "source": {
                     "sha256": hashlib.sha256(upload.content).hexdigest(),
@@ -112,9 +112,9 @@ class TestCaptureRuntimeClient:
         )
         return self._operation(status="awaiting_structuring")
 
-    def get_partial(self, capture_id: str) -> PartialCaptureV2:
+    def get_partial(self, capture_id: str) -> PartialCapture:
         assert self._raw is not None
-        return PartialCaptureV2.model_validate(
+        return PartialCapture.model_validate(
             {
                 "protocolVersion": "2",
                 "captureId": capture_id,
@@ -133,7 +133,7 @@ class TestCaptureRuntimeClient:
             }
         )
 
-    def get_raw(self, _capture_id: str) -> RawCaptureV1:
+    def get_raw(self, _capture_id: str) -> RawCapture:
         assert self._raw is not None
         return self._raw
 
@@ -143,9 +143,9 @@ class TestCaptureRuntimeClient:
         candidate: object,
         *,
         idempotency_key: object,
-    ) -> CaptureOperationV2:
+    ) -> CaptureOperation:
         del idempotency_key
-        self._result = CaptureDocumentV1.model_validate_json(candidate) if isinstance(candidate, str) else CaptureDocumentV1.model_validate(candidate)
+        self._result = CaptureDocument.model_validate_json(candidate) if isinstance(candidate, str) else CaptureDocument.model_validate(candidate)
         return self._operation(status="completed")
 
     def get_result(self, _capture_id: str) -> CaptureStreamingResult:
@@ -157,7 +157,7 @@ class TestCaptureRuntimeClient:
             result=self._result,
         )
 
-    def get_capture(self, _capture_id: str) -> CaptureOperationV2:
+    def get_capture(self, _capture_id: str) -> CaptureOperation:
         return self._operation(
             status="completed" if self._result is not None else "awaiting_structuring"
         )
@@ -165,16 +165,16 @@ class TestCaptureRuntimeClient:
     def report_structuring_failure(self, *_args, **_kwargs) -> None:
         return None
 
-    def cancel_capture(self, *_args, **_kwargs) -> CaptureOperationV2:
+    def cancel_capture(self, *_args, **_kwargs) -> CaptureOperation:
         return self._operation(status="cancelled")
 
     def delete_capture(self, _capture_id: str) -> None:
         return None
 
-    def _operation(self, *, status: str) -> CaptureOperationV2:
+    def _operation(self, *, status: str) -> CaptureOperation:
         assert self._raw is not None
         now = datetime.now(UTC).isoformat()
-        return CaptureOperationV2.model_validate({
+        return CaptureOperation.model_validate({
             "protocolVersion": "2",
             "captureId": "test-capture",
             "ingestionId": "test-ingestion",
@@ -191,14 +191,14 @@ class TestCaptureRuntimeClient:
         })
 
 
-def _test_runtime_ready() -> RuntimeReadyV1:
-    return RuntimeReadyV1.model_validate(
+def _test_runtime_ready() -> RuntimeReady:
+    return RuntimeReady.model_validate(
         {
             "ready": True,
             "service": "capture-runtime",
-            "apiVersion": "1.0",
+            "apiVersion": "2.0",
             "runtimeVersion": CAPTURE_RUNTIME_VERSION,
-            "captureDocumentSchemaVersion": "1",
+            "captureDocumentSchemaVersion": "2",
             "capabilities": {
                 "captureKinds": ["pdf", "image", "audio"],
                 "structuringModes": ["runtime", "host"],
@@ -211,8 +211,8 @@ def _test_runtime_ready() -> RuntimeReadyV1:
     )
 
 
-def _test_runtime_requirements(status: str) -> RuntimeRequirementsV1:
-    return RuntimeRequirementsV1.model_validate(
+def _test_runtime_requirements(status: str) -> RuntimeRequirements:
+    return RuntimeRequirements.model_validate(
         {
             "items": [
                 {

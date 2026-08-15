@@ -7,31 +7,37 @@ from cert_prep_backend.domains.capture_workbench.client import (
     CaptureRuntimeProtocolError,
     CaptureUpload,
 )
-from capture_contracts import (
-    CaptureDocumentV1,
-    CaptureEventV2,
-    CaptureOperationV2,
+from capture_runtime_client import (
+    CaptureDocument,
+    CaptureEvent,
+    CaptureOperation,
     CaptureSourceKind,
-    PartialCaptureV2,
-    RawCaptureV1,
+    PartialCapture,
+    RawCapture,
 )
-from cert_prep_backend.domains.capture_workbench.host_models import RuntimeReadyV1
+from cert_prep_backend.domains.capture_workbench.host_models import (
+    CaptureReview,
+    CaptureReviewEdit,
+    RuntimeReady,
+)
 from cert_prep_backend.domains.capture_workbench.structuring import (
     CertPrepCaptureStructuringAdapter,
 )
 
 __all__ = [
-    "CaptureDocumentV1",
-    "CaptureEventV2",
-    "CaptureOperationV2",
+    "CaptureDocument",
+    "CaptureReview",
+    "CaptureReviewEdit",
+    "CaptureEvent",
+    "CaptureOperation",
     "CaptureRuntimeClient",
     "CaptureRuntimeCompatibilityError",
     "CaptureRuntimeError",
     "CaptureRuntimeProtocolError",
     "CaptureSourceKind",
     "CaptureUpload",
-    "PartialCaptureV2",
+    "PartialCapture",
     "CertPrepCaptureStructuringAdapter",
-    "RawCaptureV1",
-    "RuntimeReadyV1",
+    "RawCapture",
+    "RuntimeReady",
 ]

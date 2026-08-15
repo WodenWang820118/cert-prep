@@ -99,8 +99,8 @@ export interface PackagedResourceContract {
   readonly backend_bundled: true;
   readonly capture_runtime_bundled: true;
   readonly capture_runtime_version: typeof CAPTURE_RUNTIME_VERSION;
-  readonly capture_runtime_api_version: '1.0';
-  readonly capture_document_schema_version: '1';
+  readonly capture_runtime_api_version: '2.0';
+  readonly capture_document_schema_version: '2';
   readonly capture_structuring_mode: 'host';
   readonly release_urls_only: true;
   readonly version: '0.1.0-alpha.1';

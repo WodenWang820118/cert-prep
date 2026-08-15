@@ -11,8 +11,8 @@ import {
   type Observable,
 } from 'rxjs';
 import type {
-  CaptureEventV2,
-  RawCaptureSegmentV1,
+  CaptureEvent,
+  RawCaptureSegment,
 } from '@gx-capture/capture-workbench-ui';
 
 interface SseEventFrame {
@@ -48,7 +48,7 @@ export function certPrepCaptureEventStream(
   fetchImplementation: typeof globalThis.fetch,
   input: RequestInfo | URL,
   init: CertPrepCaptureEventStreamInit,
-): Observable<CaptureEventV2> {
+): Observable<CaptureEvent> {
   return defer(() => {
     const controller = new AbortController();
     const externalSignal = init.signal ?? null;
@@ -88,7 +88,7 @@ function eventStreamFromResponse(
   response: Response,
   expectedCaptureId: string,
   initialSequence: number | undefined,
-): Observable<CaptureEventV2> {
+): Observable<CaptureEvent> {
   const contentType = (response.headers.get('content-type') ?? '').toLowerCase();
   if (!contentType.startsWith('text/event-stream') || !response.body) {
     return throwError(() => invalidEventStream());
@@ -104,7 +104,7 @@ function eventStreamFromBody(
   body: ReadableStream<Uint8Array>,
   expectedCaptureId: string,
   initialSequence: number | undefined,
-): Observable<CaptureEventV2> {
+): Observable<CaptureEvent> {
   return defer(() => {
     const reader = body.getReader();
     const decoder = new TextDecoder('utf-8', { fatal: true });
@@ -117,7 +117,7 @@ function eventStreamFromBody(
         throw invalidEventStream();
       }
     };
-    const decode = (frame: SseEventFrame): CaptureEventV2 => {
+    const decode = (frame: SseEventFrame): CaptureEvent => {
       const event = decodeCaptureEventFrame(frame, expectedCaptureId);
       if (previousSequence !== undefined && event.sequence <= previousSequence) {
         throw invalidEventStream();
@@ -251,7 +251,7 @@ function parseSseBlock(lines: readonly string[]): SseEventFrame | undefined {
   }
   if (data.length === 0) {
     // Comments, retry hints, and metadata-only blocks keep the transport alive
-    // but do not dispatch a CaptureEventV2.
+    // but do not dispatch a CaptureEvent.
     return undefined;
   }
   if (
@@ -269,7 +269,7 @@ function parseSseBlock(lines: readonly string[]): SseEventFrame | undefined {
 function decodeCaptureEventFrame(
   frame: SseEventFrame,
   expectedCaptureId: string,
-): CaptureEventV2 {
+): CaptureEvent {
   let parsed: unknown;
   try {
     parsed = JSON.parse(frame.data);
@@ -286,7 +286,7 @@ function decodeCaptureEventFrame(
 function normalizeCaptureEvent(
   value: unknown,
   expectedCaptureId: string,
-): CaptureEventV2 {
+): CaptureEvent {
   if (!isRecord(value)) throw invalidEventStream();
   const allowedFields = new Set([
     'protocolVersion',
@@ -358,10 +358,10 @@ function normalizeCaptureEvent(
   } else if (failure !== undefined && failure !== null) {
     throw invalidEventStream();
   }
-  return value as unknown as CaptureEventV2;
+  return value as unknown as CaptureEvent;
 }
 
-function validateSegment(value: unknown): asserts value is RawCaptureSegmentV1 {
+function validateSegment(value: unknown): asserts value is RawCaptureSegment {
   if (!isRecord(value)) throw invalidEventStream();
   if (
     Object.keys(value).some(

@@ -20,15 +20,15 @@ OCR/Whisper implementation.
 - Packaging explicitly stages the versioned `capture-runtime` release before
   resource preparation. There is no sibling checkout, workspace alias, or
   implicit development-path fallback.
-- The staged manifest is pinned to Windows x64 runtime `0.3.11`, API `1.0`, and
-  `CaptureDocumentV1` schema `1`; resource preparation and Tauri both verify
+- The staged manifest is pinned to Windows x64 runtime `0.4.0`, API `2.0`, and
+  `CaptureDocument` schema `2`; resource preparation and Tauri both verify
   the executable and schema file names, the executable's bounded integer byte
   count (`1..536870912`), SHA-256 provenance, and the canonical schema bytes
   against Cert Prep's independent pinned digest before spawning the
   executable, then repeat the
   version/schema check through the authenticated readiness handshake.
 - Capture Runtime owns model asset installation and requirement validation.
-  The v0.3.11 engine-bearing catalog exposes WindowsML OCR and Whisper
+  The v0.4.0 engine-bearing catalog exposes WindowsML OCR and Whisper
   requirements. Cert Prep configures `hostManagedHandshake: true` with
   `showRuntimeSetup: false`, exposes PDF, image, and audio, and applies the
   compatibility/capability plus source-aware requirement policy through its
@@ -57,7 +57,7 @@ OCR/Whisper implementation.
 - Runtime requirements and installation jobs are proxied through authenticated
   `/capture-runtime/*` backend routes. The browser uses the Cert Prep token;
   the Capture Runtime token remains process-only.
-- Only a sidecar-validated `CaptureDocumentV1` may become a completed document.
+- Only a sidecar-validated `CaptureDocument` schema `2` may become a completed document.
   Raw extraction is diagnostic-only and never triggers UI completion.
 - The existing document upload URL, SQLite rows, durable operation reads, chunks,
   crop behavior, and historical documents remain stable.
@@ -75,7 +75,7 @@ OCR/Whisper implementation.
 
 - Capture Workbench owns source sniffing, PDF rendering, image normalization,
   capture runtime requirements, capture operation state, and canonical
-  validation. Its v0.3.11 release is engine-bearing. An all-pages embedded-text
+  validation. Its v0.4.0 release is engine-bearing. An all-pages embedded-text
   PDF remains a real no-model sidecar path with `pdf-embedded-text` provenance;
   image, audio, and a PDF page requiring OCR require their explicitly installed
   runtime assets and fail closed while those requirements are not ready.
@@ -115,11 +115,11 @@ OCR/Whisper implementation.
   `/raw` is diagnostic-only.
 - Existing documents, crop uploads, retries, cancellation, chunks, study
   generation, semantic explanations, and real-time Q&A pass regression tests.
-- A true all-pages embedded-text PDF completes through the published v0.3.11
+- A true all-pages embedded-text PDF completes through the published v0.4.0
   sidecar, review, host persistence, and export with `pdf-embedded-text`
   provenance; it is not OCR evidence.
 - Image, audio, and any OCR-dependent PDF fail closed with an explicit
-  unavailable-model error until v0.3.11 reports the required runtime asset
+  unavailable-model error until v0.4.0 reports the required runtime asset
   ready. The browser never receives the sidecar token and Cert Prep provides no
   OCR/STT fallback.
 - A process isolation test proves Capture Workbench sidecar resources never

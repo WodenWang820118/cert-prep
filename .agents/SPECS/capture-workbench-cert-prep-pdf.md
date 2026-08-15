@@ -1,7 +1,7 @@
 # Cert Prep Capture Workbench integration
 
 `/capture-workbench-trial` is the Cert Prep entry point for the published
-`@gx-capture/capture-workbench-ui@0.3.11` component. It retains the PDF, image,
+`@gx-capture/capture-workbench-ui@0.4.0` component. It retains the PDF, image,
 and audio source contract and gates OCR/STT-dependent sources on the
 engine-bearing runtime's authenticated requirement state.
 

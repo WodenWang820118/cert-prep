@@ -77,7 +77,7 @@ fn verify_capture_schema(path: &Path) -> Result<(), String> {
         .map_err(|error| format!("Capture document schema is invalid JSON: {error}"))?;
     if schema.get("$schema").and_then(serde_json::Value::as_str)
         != Some("https://json-schema.org/draft/2020-12/schema")
-        || schema.get("title").and_then(serde_json::Value::as_str) != Some("CaptureDocumentV1")
+        || schema.get("title").and_then(serde_json::Value::as_str) != Some("CaptureDocument")
         || schema.get("type").and_then(serde_json::Value::as_str) != Some("object")
         || schema
             .get("additionalProperties")
@@ -89,7 +89,7 @@ fn verify_capture_schema(path: &Path) -> Result<(), String> {
             != Some(CAPTURE_DOCUMENT_SCHEMA_VERSION)
     {
         return Err(
-            "Capture document schema does not declare the pinned CaptureDocumentV1 contract."
+            "Capture document schema does not declare the pinned CaptureDocument contract."
                 .into(),
         );
     }
@@ -148,7 +148,7 @@ mod tests {
     use super::*;
 
     const CANONICAL_SCHEMA_LF: &str =
-        include_str!("../../test-fixtures/capture-document-v1.schema.json");
+        include_str!("../../test-fixtures/capture-document.schema.json");
 
     fn canonical_schema_bytes() -> Vec<u8> {
         CANONICAL_SCHEMA_LF
@@ -255,7 +255,7 @@ mod tests {
             .contains("runtimeVersion"));
 
         manifest.runtime_version = CAPTURE_RUNTIME_VERSION.into();
-        manifest.capture_document_schema_version = "2".into();
+        manifest.capture_document_schema_version = "99".into();
         assert!(validate_capture_manifest_contract(&manifest)
             .expect_err("schema")
             .contains("captureDocumentSchemaVersion"));
@@ -265,7 +265,7 @@ mod tests {
         assert!(validate_capture_manifest_contract(&manifest).is_err());
 
         manifest.file_name = CAPTURE_RUNTIME_BINARY.into();
-        manifest.schema_file_name = "../capture-document-v1.schema.json".into();
+        manifest.schema_file_name = "../capture-document.schema.json".into();
         assert!(validate_capture_manifest_contract(&manifest)
             .expect_err("schema path")
             .contains("schemaFileName"));
