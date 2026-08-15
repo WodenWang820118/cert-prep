@@ -34,7 +34,7 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           repository: gx-capture/capture-workbench
-          ref: f2b2bccd9c8c80437d543b45a279331ed9a1dcaf
+          ref: 206de39b0b85bda1dfd1f17679610c1a740f4911
           path: capture-workbench
           sparse-checkout: |
             packages/capture-runtime-client-python
@@ -123,7 +123,7 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           repository: gx-capture/capture-workbench
-          ref: f2b2bccd9c8c80437d543b45a279331ed9a1dcaf
+          ref: 206de39b0b85bda1dfd1f17679610c1a740f4911
           path: capture-workbench
           sparse-checkout: |
             packages/capture-runtime-client-python
