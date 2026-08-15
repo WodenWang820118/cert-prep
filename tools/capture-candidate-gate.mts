@@ -107,6 +107,45 @@ async function requireRegularFile(path: string, label: string): Promise<void> {
   if (!details.isFile()) throw new Error(`${label} must be a regular file.`);
 }
 
+async function assertInstalledCandidatePackages(
+  expectedVersion: string,
+): Promise<void> {
+  const workspaceRoot = resolve(import.meta.dirname, '..');
+  for (const packageName of [
+    '@gx-capture/capture-workbench-ui',
+    '@gx-capture/capture-runtime-client',
+  ]) {
+    const packageManifest = JSON.parse(
+      await readFile(
+        join(workspaceRoot, 'node_modules', ...packageName.split('/'), 'package.json'),
+        'utf8',
+      ),
+    ) as { version?: unknown };
+    if (packageManifest.version !== expectedVersion) {
+      throw new Error(
+        `${packageName} candidate install must be ${expectedVersion}, found ${String(packageManifest.version)}.`,
+      );
+    }
+  }
+}
+
+async function assertConsumerVersionContract(
+  expectedVersion: string,
+): Promise<void> {
+  const workspaceRoot = resolve(import.meta.dirname, '..');
+  const packageJson = JSON.parse(
+    await readFile(join(workspaceRoot, 'package.json'), 'utf8'),
+  ) as { dependencies?: Record<string, unknown> };
+  const workbenchDependency = packageJson.dependencies?.[
+    '@gx-capture/capture-workbench-ui'
+  ];
+  if (typeof workbenchDependency === 'string' && workbenchDependency.startsWith('file:')) {
+    await assertInstalledCandidatePackages(expectedVersion);
+    return;
+  }
+  assertCaptureRuntimeConsumerVersions();
+}
+
 export async function verifyCandidate(
   input: Pick<
     CaptureCandidateGateArguments,
@@ -261,7 +300,7 @@ async function main(): Promise<void> {
   const input = parseArguments(process.argv.slice(2));
   const startedAt = new Date().toISOString();
   const candidate = await verifyCandidate(input);
-  assertCaptureRuntimeConsumerVersions();
+  await assertConsumerVersionContract(input.releaseVersion);
   const checks: { name: string; status: 'passed' }[] = [
     { name: 'candidate-identity', status: 'passed' },
     { name: 'candidate-runtime-assets', status: 'passed' },
