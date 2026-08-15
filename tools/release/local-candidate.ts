@@ -714,7 +714,7 @@ async function validateCaptureRuntimeAsset({ manifest, root }) {
     manifest?.platform !== 'windows' ||
     manifest?.arch !== 'x86_64' ||
     manifest?.fileName !== 'capture-runtime-x86_64-pc-windows-msvc.exe' ||
-    manifest?.schemaFileName !== 'capture-document.schema.json'
+    manifest?.schemaFileName !== 'capture-document-v2.schema.json'
   ) {
     throw new Error('Invalid local Capture Runtime manifest.');
   }

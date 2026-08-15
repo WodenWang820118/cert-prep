@@ -133,7 +133,7 @@ mod shared_sidecar_contract_tests {
             file_name: "capture-runtime-x86_64-pc-windows-msvc.exe".into(),
             bytes: 1,
             sha256: "0".repeat(64),
-            schema_file_name: "capture-document.schema.json".into(),
+            schema_file_name: "capture-document-v2.schema.json".into(),
             schema_sha256: "0".repeat(64),
         }
     }

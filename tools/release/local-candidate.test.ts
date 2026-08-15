@@ -53,7 +53,7 @@ test('assembled candidates revalidate backend and Capture Runtime assets', async
       fileName: captureName,
       bytes: 7,
       sha256: sha256('capture'),
-      schemaFileName: 'capture-document.schema.json',
+      schemaFileName: 'capture-document-v2.schema.json',
       schemaSha256: '0'.repeat(64),
     };
     writeFileSync(join(generated, captureName), 'capture');
