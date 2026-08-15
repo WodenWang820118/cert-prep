@@ -1391,54 +1391,22 @@ def _operation_active(db: Database, project_id: str, operation_id: str) -> bool:
             )["status"]
             == "running"
         )
-        if _cursor_before(last_event_id, event.sequence):
-            yield _encode_sse_event(event)
+    except Exception:
+        return False
 
 
-def _terminal_host_event(
-    capture_id: str,
-    session: dict,
-    document: dict,
-    *,
-    source_kind: CaptureSourceKind,
-) -> CaptureEventV2:
-    status_value = session["status"]
-    event_type = {
-        review_sessions.COMPLETED: StreamingEventType.COMPLETED,
-        review_sessions.CANCELED: StreamingEventType.CANCELLED,
-        review_sessions.FAILED: StreamingEventType.FAILED,
-    }[status_value]
-    failure = (
-        CaptureFailureV2(
-            code="host_capture_failed",
-            message="Cert Prep capture processing failed.",
-            stage="host",
-            retryable=False,
-        )
-        if event_type is StreamingEventType.FAILED
-        else None
-    )
-    sequence = max(1, int(session.get("last_event_sequence", 0)))
-    return CaptureEventV2(
-        event_id=f"{capture_id}/{sequence}",
-        sequence=sequence,
-        capture_id=capture_id,
-        kind=source_kind,
-        event_type=event_type,
-        stage=event_type.value,
-        progress=1,
-        error=failure,
-        created_at=document["updated_at"],
-    )
+def _session_or_404(db: Database, project_id: str, capture_id: str) -> dict:
+    try:
+        return review_sessions.get(db, project_id=project_id, session_id=capture_id)
+    except NotFoundError as error:
+        raise not_found_error(str(error)) from error
 
 
-def _encode_sse_event(event: CaptureEventV2) -> str:
-    data = json.dumps(
-        event.model_dump(mode="json", by_alias=True),
-        ensure_ascii=False,
-        separators=(",", ":"),
-    )
-    return f"id: {event.sequence}\nevent: {event.event_type.value}\ndata: {data}\n\n"
+def _document_or_404(db: Database, project_id: str, document_id: str) -> dict:
+    try:
+        return source_documents_repository.get_document(db, project_id, document_id)
+    except NotFoundError as error:
+        raise not_found_error(str(error)) from error
 
 
 def _document_bytes(db: Database, project_id: str, document_id: str) -> int:

@@ -209,7 +209,7 @@ jobs:
         run: pnpm nx run cert-prep-desktop:capture-runtime-consumer-smoke --skip-nx-cache
 
       - name: Verify published Capture registry installation
-        if: vars.CAPTURE_PUBLISHED_0_3_12 == 'true'
+        if: vars.CAPTURE_PUBLISHED_0_4_0 == 'true'
         env:
           CAPTURE_REQUIRE_PUBLISHED_CAPTURE_ARTIFACTS: '1'
         shell: pwsh
