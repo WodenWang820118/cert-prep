@@ -28,7 +28,7 @@ export type CaptureCandidateGateArguments = {
 };
 
 export type CaptureCandidateGateResult = {
-  readonly schemaVersion: '2';
+  readonly schemaVersion: '1';
   readonly consumerRepository: typeof CONSUMER_REPOSITORY;
   readonly consumerCommit: string;
   readonly workflowPath: typeof WORKFLOW_PATH;
@@ -303,7 +303,7 @@ export function createResult(input: {
   }[];
 }): CaptureCandidateGateResult {
   return {
-    schemaVersion: '2',
+    schemaVersion: '1',
     consumerRepository: CONSUMER_REPOSITORY,
     consumerCommit: input.consumerCommit,
     workflowPath: WORKFLOW_PATH,
