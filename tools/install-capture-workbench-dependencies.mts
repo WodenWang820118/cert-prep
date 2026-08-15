@@ -202,12 +202,18 @@ async function install(mode: InstallMode): Promise<void> {
     const candidatePackageJson = { ...packageJson };
     const workbenchOverride = workbenchArchive.replaceAll('\\', '/');
     setWorkbenchDependency(candidatePackageJson, `file:${workbenchOverride}`);
+    const candidateDependencies = candidatePackageJson.dependencies;
+    if (!candidateDependencies || typeof candidateDependencies !== 'object') {
+      throw new Error('package.json dependencies are missing.');
+    }
+    const runtimeClientOverride = runtimeClientArchive.replaceAll('\\', '/');
+    (candidateDependencies as Record<string, unknown>)[runtimeClientPackageName] =
+      `file:${runtimeClientOverride}`;
     await writeFile(
       packageJsonPath,
       `${JSON.stringify(candidatePackageJson, null, 2)}\n`,
       'utf8',
     );
-    const runtimeClientOverride = runtimeClientArchive.replaceAll('\\', '/');
     await writeFile(
       workspaceFilePath,
       `${originalWorkspaceFile.toString('utf8').trimEnd()}\noverrides:\n  '${runtimeClientPackageName}': file:${runtimeClientOverride}\n`,
