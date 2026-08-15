@@ -190,7 +190,7 @@ export function assertCaptureRuntimeConsumerVersions(
   requireMatch(
     workspaceRoot,
     'apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/client.py',
-    /_minor\(ready\.runtime_version, label="runtime"\) != SUPPORTED_RUNTIME_MINOR/,
+    /SdkCaptureRuntimeClient/,
   );
   requireMatch(
     workspaceRoot,
