@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import {
   createServer,
   type IncomingMessage,
@@ -25,20 +25,34 @@ const runtimeVersion = CAPTURE_RUNTIME_VERSION;
 const schemaVersion = '2';
 const captureDocumentSchemaSha256 =
   '850afd212d049c25da41d3867ba5477451a6a2c6c7e41f116fe60f26b6a35335';
-const contractBundleBytes = readFileSync(
-  resolve(
-    process.cwd(),
-    '..',
-    'cert-prep-backend',
-    '.venv',
-    'Lib',
-    'site-packages',
-    'capture_runtime_client',
-    'private',
-    'assets',
-    'contract-set.json',
-  ),
-);
+const backendVenv = resolve(process.cwd(), '..', 'cert-prep-backend', '.venv');
+const sitePackagesRoots = [resolve(backendVenv, 'Lib', 'site-packages')];
+const linuxLib = resolve(backendVenv, 'lib');
+if (existsSync(linuxLib)) {
+  for (const entry of readdirSync(linuxLib, { withFileTypes: true })) {
+    if (entry.isDirectory() && entry.name.startsWith('python')) {
+      sitePackagesRoots.push(resolve(linuxLib, entry.name, 'site-packages'));
+    }
+  }
+}
+const contractBundlePath = sitePackagesRoots
+  .map((sitePackages) =>
+    resolve(
+      sitePackages,
+      'capture_runtime_client',
+      'private',
+      'assets',
+      'contract-set.json',
+    ),
+  )
+  .find((candidate) => existsSync(candidate));
+if (!contractBundlePath) {
+  throw new Error(
+    `Capture Runtime contract asset was not found under ${backendVenv}. ` +
+      `Checked: ${sitePackagesRoots.join(', ')}`,
+  );
+}
+const contractBundleBytes = readFileSync(contractBundlePath);
 const contractSetSha256 = createHash('sha256')
   .update(contractBundleBytes)
   .digest('hex');
