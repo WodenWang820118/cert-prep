@@ -115,12 +115,33 @@ async function assertInstalledCandidatePackages(
     '@gx-capture/capture-workbench-ui',
     '@gx-capture/capture-runtime-client',
   ]) {
-    const packageManifest = JSON.parse(
-      await readFile(
-        join(workspaceRoot, 'node_modules', ...packageName.split('/'), 'package.json'),
-        'utf8',
+    const packageSegments = packageName.split('/');
+    const manifestCandidates = [
+      join(workspaceRoot, 'node_modules', ...packageSegments, 'package.json'),
+      join(
+        workspaceRoot,
+        'node_modules',
+        '@gx-capture',
+        'capture-workbench-ui',
+        'node_modules',
+        ...packageSegments,
+        'package.json',
       ),
-    ) as { version?: unknown };
+    ];
+    let packageManifest: { version?: unknown } | undefined;
+    for (const manifestPath of manifestCandidates) {
+      try {
+        packageManifest = JSON.parse(
+          await readFile(manifestPath, 'utf8'),
+        ) as { version?: unknown };
+        break;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+    }
+    if (!packageManifest) {
+      throw new Error(`${packageName} candidate install manifest is missing.`);
+    }
     if (packageManifest.version !== expectedVersion) {
       throw new Error(
         `${packageName} candidate install must be ${expectedVersion}, found ${String(packageManifest.version)}.`,
