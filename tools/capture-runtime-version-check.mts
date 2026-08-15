@@ -33,6 +33,31 @@ function requireNotExists(workspaceRoot: string, relativePath: string): void {
   }
 }
 
+function assertCandidateInstallVersions(workspaceRoot: string): void {
+  for (const packageName of [
+    CAPTURE_RUNTIME_PACKAGE_NAME,
+    CAPTURE_RUNTIME_CLIENT_PACKAGE_NAME,
+  ]) {
+    const manifestPath = join(
+      workspaceRoot,
+      'node_modules',
+      ...packageName.split('/'),
+      'package.json',
+    );
+    if (!existsSync(manifestPath)) {
+      throw new Error(`${packageName} candidate install manifest is missing.`);
+    }
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+      version?: unknown;
+    };
+    if (manifest.version !== CAPTURE_RUNTIME_VERSION) {
+      throw new Error(
+        `${packageName} candidate install must be ${CAPTURE_RUNTIME_VERSION}.`,
+      );
+    }
+  }
+}
+
 function requirePublishedCaptureArtifacts(workspaceRoot: string): void {
   if (process.env.CAPTURE_REQUIRE_PUBLISHED_CAPTURE_ARTIFACTS !== '1') {
     return;
@@ -94,6 +119,10 @@ function requirePublishedCaptureArtifacts(workspaceRoot: string): void {
 export function assertCaptureRuntimeConsumerVersions(
   workspaceRoot = resolve('.'),
 ): void {
+  if (process.env.CAPTURE_CANDIDATE_INSTALL === '1') {
+    assertCandidateInstallVersions(workspaceRoot);
+    return;
+  }
   const packageManifest = JSON.parse(read(workspaceRoot, 'package.json')) as {
     dependencies?: Record<string, unknown>;
   };
