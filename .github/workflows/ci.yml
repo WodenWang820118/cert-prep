@@ -79,7 +79,12 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Sync backend Python environment
-        run: uv sync --project apps/cert-prep-backend --python ${{ env.PYTHON_VERSION }} --frozen
+        run: >-
+          uv sync --project apps/cert-prep-backend
+          --python ${{ env.PYTHON_VERSION }}
+          --frozen
+          --reinstall-package capture-runtime-client
+          --reinstall-package capture-structuring
 
       - name: Lint portable projects
         run: >-
@@ -177,7 +182,12 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Sync backend Python environment
-        run: uv sync --project apps/cert-prep-backend --python ${{ env.PYTHON_VERSION }} --frozen
+        run: >-
+          uv sync --project apps/cert-prep-backend
+          --python ${{ env.PYTHON_VERSION }}
+          --frozen
+          --reinstall-package capture-runtime-client
+          --reinstall-package capture-structuring
 
       - name: Lint Windows-owned Python and Angular projects
         run: >-
@@ -200,12 +210,15 @@ jobs:
         run: pnpm nx run cert-prep-desktop:package-qa-test
 
       - name: Stage the published Capture Runtime release
+        if: vars.CAPTURE_PUBLISHED_0_4_0 == 'true'
         run: pnpm nx run cert-prep-desktop:install-capture-runtime --skip-nx-cache
 
       - name: Verify Capture Runtime installer behavior
+        if: vars.CAPTURE_PUBLISHED_0_4_0 == 'true'
         run: node --test tools/install-capture-runtime.test.mts
 
       - name: Run the Capture Runtime consumer smoke
+        if: vars.CAPTURE_PUBLISHED_0_4_0 == 'true'
         run: pnpm nx run cert-prep-desktop:capture-runtime-consumer-smoke --skip-nx-cache
 
       - name: Verify published Capture registry installation
