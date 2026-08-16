@@ -37,7 +37,7 @@ jobs:
           # The consumer bridge is pinned to the producer commit that owns the
           # pull-session DTOs used by this migration. Keep this exact rather
           # than silently resolving the stale published 0.4.0 SDK.
-          ref: 0e66e361581d749a7d0d6d044ea8bfd36f04262a
+          ref: 364aa021621f495b7a43cb2f999539c1b3404013
           path: capture-workbench
           sparse-checkout: |
             packages/capture-runtime-client-python
@@ -76,9 +76,10 @@ jobs:
 
       - name: Install JavaScript dependencies and pinned Capture Workbench package
         env:
-          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc.example
-        run: pnpm install --frozen-lockfile
+          NODE_AUTH_TOKEN: ${{ github.token }}
+          CAPTURE_PUBLISHED_0_4_1: ${{ vars.CAPTURE_PUBLISHED_0_4_1 }}
+          CAPTURE_PRESERVE_INSTALL_FILES: 'true'
+        run: node tools/install-capture-workbench-dependencies.mts --prepublication-stable-version 0.4.0
 
       - name: Sync backend Python environment
         run: >-
@@ -130,7 +131,7 @@ jobs:
         with:
           repository: gx-capture/capture-workbench
           # Keep Windows and portable CI on the same exact producer source.
-          ref: 0e66e361581d749a7d0d6d044ea8bfd36f04262a
+          ref: 364aa021621f495b7a43cb2f999539c1b3404013
           path: capture-workbench
           sparse-checkout: |
             packages/capture-runtime-client-python
@@ -178,9 +179,10 @@ jobs:
 
       - name: Install JavaScript dependencies and pinned Capture Workbench package
         env:
-          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc.example
-        run: pnpm install --frozen-lockfile
+          NODE_AUTH_TOKEN: ${{ github.token }}
+          CAPTURE_PUBLISHED_0_4_1: ${{ vars.CAPTURE_PUBLISHED_0_4_1 }}
+          CAPTURE_PRESERVE_INSTALL_FILES: 'true'
+        run: node tools/install-capture-workbench-dependencies.mts --prepublication-stable-version 0.4.0
 
       - name: Sync backend Python environment
         run: >-
@@ -210,19 +212,19 @@ jobs:
         run: pnpm nx run cert-prep-desktop:package-qa-test
 
       - name: Stage the published Capture Runtime release
-        if: vars.CAPTURE_PUBLISHED_0_4_0 == 'true'
+        if: vars.CAPTURE_PUBLISHED_0_4_1 == 'true'
         run: pnpm nx run cert-prep-desktop:install-capture-runtime --skip-nx-cache
 
       - name: Verify Capture Runtime installer behavior
-        if: vars.CAPTURE_PUBLISHED_0_4_0 == 'true'
+        if: vars.CAPTURE_PUBLISHED_0_4_1 == 'true'
         run: node --test tools/install-capture-runtime.test.mts
 
       - name: Run the Capture Runtime consumer smoke
-        if: vars.CAPTURE_PUBLISHED_0_4_0 == 'true'
+        if: vars.CAPTURE_PUBLISHED_0_4_1 == 'true'
         run: pnpm nx run cert-prep-desktop:capture-runtime-consumer-smoke --skip-nx-cache
 
       - name: Verify published Capture registry installation
-        if: vars.CAPTURE_PUBLISHED_0_4_0 == 'true'
+        if: vars.CAPTURE_PUBLISHED_0_4_1 == 'true'
         env:
           CAPTURE_REQUIRE_PUBLISHED_CAPTURE_ARTIFACTS: '1'
         shell: pwsh
@@ -230,8 +232,8 @@ jobs:
           $ErrorActionPreference = 'Stop'
           pnpm nx run cert-prep-desktop:capture-runtime-consumer-test --skip-nx-cache
           uv run --isolated --no-project `
-            --with 'capture-runtime-client==0.4.0' `
-            -- python -c "import capture_runtime_client; assert capture_runtime_client.CAPTURE_RUNTIME_VERSION == '0.4.0'"
+            --with 'capture-runtime-client==0.4.1' `
+            -- python -c "import capture_runtime_client; assert capture_runtime_client.CAPTURE_RUNTIME_VERSION == '0.4.1'"
 
       - name: Test Tauri host
         run: pnpm nx run cert-prep-desktop:cargo-test

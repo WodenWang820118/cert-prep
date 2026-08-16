@@ -9,7 +9,7 @@ export const CAPTURE_RUNTIME_PACKAGE_NAME =
   '@gx-capture/capture-workbench-ui' as const;
 export const CAPTURE_RUNTIME_CLIENT_PACKAGE_NAME =
   '@gx-capture/capture-runtime-client' as const;
-export const CAPTURE_RUNTIME_VERSION = '0.4.0' as const;
+export const CAPTURE_RUNTIME_VERSION = '0.4.1' as const;
 export const CAPTURE_RUNTIME_MAJOR = 0 as const;
 export const CAPTURE_RUNTIME_API_VERSION = '2.0' as const;
 export const CAPTURE_DOCUMENT_SCHEMA_VERSION = '2' as const;
@@ -20,7 +20,7 @@ export const CAPTURE_RUNTIME_MODEL =
   `capture-runtime@${CAPTURE_RUNTIME_VERSION}` as const;
 
 /**
- * Keep the published launcher dependency version separate from the 0.4.0
+ * Keep the published launcher dependency version separate from the 0.4.1
  * runtime until the producer publishes a matching compatible crate.
  */
 export const CAPTURE_SIDECAR_LAUNCHER_VERSION = '0.3.10' as const;

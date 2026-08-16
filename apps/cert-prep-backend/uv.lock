@@ -73,7 +73,7 @@ wheels = [
 
 [[package]]
 name = "capture-runtime-client"
-version = "0.4.0"
+version = "0.4.1"
 source = { directory = "../../../capture-workbench/packages/capture-runtime-client-python" }
 dependencies = [
     { name = "httpx" },

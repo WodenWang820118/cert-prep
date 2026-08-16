@@ -244,7 +244,7 @@ function Assert-InstalledRuntimeContract([string]$InstallRoot, [pscustomobject]$
     if ($backend.version -ne $Plan.version -or $backend.artifact.url -ne $null) {
         throw 'Installed backend manifest does not describe the bundled alpha runtime.'
     }
-    if ($capture.runtimeVersion -ne '0.4.0' -or
+    if ($capture.runtimeVersion -ne '0.4.1' -or
         $capture.apiVersion -ne '2.0' -or
         $capture.captureDocumentSchemaVersion -ne '2') {
         throw 'Installed Capture Runtime manifest does not describe the pinned contract.'
