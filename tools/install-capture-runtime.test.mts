@@ -174,7 +174,7 @@ test('rejects executable, schema, manifest, checksum, and platform drift', async
       'manifest version',
       async (target) => {
         const manifest = await readManifest(target);
-        manifest.runtimeVersion = '0.4.1';
+        manifest.runtimeVersion = '0.4.2';
         await writeFile(
           join(target, 'capture-runtime-manifest.json'),
           JSON.stringify(manifest),
