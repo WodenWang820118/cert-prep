@@ -68,9 +68,7 @@ function requirePublishedCaptureArtifacts(workspaceRoot: string): void {
     'apps/cert-prep-backend/pyproject.toml',
   );
   if (
-    /capture-(?:runtime-client|structuring)\s*=\s*\{[^}]*path\s*=/u.test(
-      pyproject,
-    )
+    /capture-runtime-client\s*=\s*\{[^}]*path\s*=/u.test(pyproject)
   ) {
     throw new Error(
       'cert-prep backend capture Python dependencies must come from PyPI.',
@@ -78,9 +76,7 @@ function requirePublishedCaptureArtifacts(workspaceRoot: string): void {
   }
   const uvLock = read(workspaceRoot, 'apps/cert-prep-backend/uv.lock');
   if (
-    /capture-(?:runtime-client|structuring)[\s\S]{0,240}directory\s*=/u.test(
-      uvLock,
-    )
+    /capture-runtime-client[\s\S]{0,240}directory\s*=/u.test(uvLock)
   ) {
     throw new Error(
       'cert-prep uv.lock must resolve capture packages from PyPI, not a directory source.',
@@ -186,14 +182,11 @@ export function assertCaptureRuntimeConsumerVersions(
     '\\.',
   );
   const hasPublishedPythonResolution = new RegExp(
-    `capture-runtime-client>=${escapedRuntimeVersion},<0\\.4\\.0[\\s\\S]*capture-structuring>=${escapedRuntimeVersion},<0\\.4\\.0`,
+    `capture-runtime-client>=${escapedRuntimeVersion},<0\\.5\\.0`,
     'u',
   ).test(pyproject);
   const hasLocalPythonResolution =
     /capture-runtime-client\s*=\s*\{[^}]*path\s*=\s*"\.\.\/\.\.\/\.\.\/capture-workbench\/packages\/capture-runtime-client-python"/u.test(
-      pyproject,
-    ) &&
-    /capture-structuring\s*=\s*\{[^}]*path\s*=\s*"\.\.\/\.\.\/\.\.\/capture-workbench\/packages\/capture-structuring-python"/u.test(
       pyproject,
     );
   if (
@@ -208,7 +201,7 @@ export function assertCaptureRuntimeConsumerVersions(
     workspaceRoot,
     'apps/cert-prep-backend/uv.lock',
     new RegExp(
-      `name = "capture-runtime-client"[\\s\\S]*?version = "${CAPTURE_RUNTIME_VERSION}"[\\s\\S]*?name = "capture-structuring"[\\s\\S]*?version = "${CAPTURE_RUNTIME_VERSION}"`,
+      `name = "capture-runtime-client"[\\s\\S]*?version = "${CAPTURE_RUNTIME_VERSION}"`,
     ),
   );
   requireMatch(

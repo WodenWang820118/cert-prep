@@ -34,11 +34,13 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           repository: gx-capture/capture-workbench
-          ref: 206de39b0b85bda1dfd1f17679610c1a740f4911
+          # The consumer bridge is pinned to the producer commit that owns the
+          # pull-session DTOs used by this migration. Keep this exact rather
+          # than silently resolving the stale published 0.4.0 SDK.
+          ref: 0e66e361581d749a7d0d6d044ea8bfd36f04262a
           path: capture-workbench
           sparse-checkout: |
             packages/capture-runtime-client-python
-            packages/capture-structuring-python
 
       - name: Link Capture Workbench Python bridge (Unix)
         if: runner.os != 'Windows'
@@ -84,7 +86,6 @@ jobs:
           --python ${{ env.PYTHON_VERSION }}
           --frozen
           --reinstall-package capture-runtime-client
-          --reinstall-package capture-structuring
 
       - name: Lint portable projects
         run: >-
@@ -128,11 +129,11 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           repository: gx-capture/capture-workbench
-          ref: 206de39b0b85bda1dfd1f17679610c1a740f4911
+          # Keep Windows and portable CI on the same exact producer source.
+          ref: 0e66e361581d749a7d0d6d044ea8bfd36f04262a
           path: capture-workbench
           sparse-checkout: |
             packages/capture-runtime-client-python
-            packages/capture-structuring-python
 
       - name: Link Capture Workbench Python bridge (Unix)
         if: runner.os != 'Windows'
@@ -187,7 +188,6 @@ jobs:
           --python ${{ env.PYTHON_VERSION }}
           --frozen
           --reinstall-package capture-runtime-client
-          --reinstall-package capture-structuring
 
       - name: Lint Windows-owned Python and Angular projects
         run: >-
@@ -231,8 +231,7 @@ jobs:
           pnpm nx run cert-prep-desktop:capture-runtime-consumer-test --skip-nx-cache
           uv run --isolated --no-project `
             --with 'capture-runtime-client==0.4.0' `
-            --with 'capture-structuring==0.4.0' `
-            -- python -c "import capture_runtime_client, capture_structuring; assert capture_runtime_client.CAPTURE_RUNTIME_VERSION == '0.4.0'; assert capture_structuring.__package__ == 'capture_structuring'"
+            -- python -c "import capture_runtime_client; assert capture_runtime_client.CAPTURE_RUNTIME_VERSION == '0.4.0'"
 
       - name: Test Tauri host
         run: pnpm nx run cert-prep-desktop:cargo-test

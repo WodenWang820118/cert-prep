@@ -250,13 +250,23 @@ class CertPrepCaptureCoordinator:
         if review is not None:
             reviewed_text_overrides(raw, review)
         try:
-            candidate = self._structurer.structure(
-                raw,
-                target_language=target_language,
-                should_cancel=should_cancel,
-                deadline=deadline,
-                monotonic_clock=self._clock,
-            )
+            structure_kwargs: dict[str, object] = {
+                "target_language": target_language,
+                "should_cancel": should_cancel,
+                "deadline": deadline,
+                "monotonic_clock": self._clock,
+            }
+            if isinstance(self._structurer, CertPrepCaptureStructuringAdapter):
+                structure_kwargs.update(
+                    {
+                        "capture_id": capture_id,
+                        "operation_id": operation_id,
+                        "review_overrides": (
+                            reviewed_text_overrides(raw, review) if review is not None else None
+                        ),
+                    }
+                )
+            candidate = self._structurer.structure(raw, **structure_kwargs)
             document = _capture_document(candidate)
             if review is None:
                 return document
@@ -305,6 +315,22 @@ class CertPrepCaptureCoordinator:
         if should_cancel():
             self._cancel(capture_id)
             raise CaptureRuntimeCanceledError("Document processing was cancelled.")
+        if self._supports_pull_sessions():
+            operation = self._client.get_capture(capture_id)
+            if operation.status is StreamingCaptureStatus.COMPLETED:
+                # Pull-session submission has already caused the runtime to
+                # validate, reconstruct, and complete the base document.  A
+                # Cert Prep review may then change only targetText for local
+                # persistence; never bypass the runtime's raw/provenance
+                # boundary when accepting that overlay.
+                result = self._client.get_result(capture_id)
+                _assert_review_overlay(document, result.result)
+                return CaptureRunResult(
+                    capture_id=capture_id,
+                    last_event_sequence=result.operation.last_event_sequence,
+                    raw=result.raw,
+                    document=document,
+                )
         operation = self._commit_structure(
             capture_id,
             document.model_dump(mode="json", by_alias=True),
@@ -327,6 +353,18 @@ class CertPrepCaptureCoordinator:
             last_event_sequence=result.operation.last_event_sequence,
             raw=result.raw,
             document=result.result,
+        )
+
+    def _supports_pull_sessions(self) -> bool:
+        return all(
+            callable(getattr(self._client, method, None))
+            for method in (
+                "open_structuring_session",
+                "pull_structuring_batch",
+                "submit_structuring_batch",
+                "get_capture",
+                "get_result",
+            )
         )
 
     def confirm_capture(
@@ -645,6 +683,11 @@ class CertPrepCaptureCoordinator:
                 capture_id,
                 action="a host-provider failure report was not confirmed",
             )
+        if operation is None:
+            operation = self._get_capture_for_reconciliation(
+                capture_id,
+                action="a host-provider failure report returned no operation",
+            )
         if self._is_terminal(operation):
             return operation
         if self._is_awaiting_structuring(operation):
@@ -723,6 +766,42 @@ def _capture_document(
         raise CaptureRuntimeProtocolError(
             "Host structuring candidate does not satisfy CaptureDocument"
         ) from error
+
+
+def _assert_review_overlay(candidate: CaptureDocument, runtime_document: CaptureDocument) -> None:
+    """Allow only host review text changes after a completed pull session."""
+
+    candidate_payload = candidate.model_dump(mode="json", by_alias=True)
+    runtime_payload = runtime_document.model_dump(mode="json", by_alias=True)
+    candidate_blocks = candidate_payload.get("blocks")
+    runtime_blocks = runtime_payload.get("blocks")
+    if not isinstance(candidate_blocks, list) or not isinstance(runtime_blocks, list):
+        raise CaptureRuntimeProtocolError("Capture Runtime result has an invalid block projection")
+    if len(candidate_blocks) != len(runtime_blocks):
+        raise CaptureRuntimeProtocolError("Capture review changed the runtime block count")
+    for candidate_block, runtime_block in zip(candidate_blocks, runtime_blocks, strict=True):
+        if not isinstance(candidate_block, dict) or not isinstance(runtime_block, dict):
+            raise CaptureRuntimeProtocolError("Capture review changed the runtime block shape")
+        candidate_without_text = {
+            key: value for key, value in candidate_block.items() if key != "targetText"
+        }
+        runtime_without_text = {
+            key: value for key, value in runtime_block.items() if key != "targetText"
+        }
+        if candidate_without_text != runtime_without_text:
+            raise CaptureRuntimeProtocolError(
+                "Capture review changed runtime provenance or semantic block identity"
+            )
+    candidate_payload.pop("blocks", None)
+    runtime_payload.pop("blocks", None)
+    # The document-level targetText is a derived projection of block text and
+    # may change with a host review overlay just like each block targetText.
+    candidate_payload.pop("targetText", None)
+    runtime_payload.pop("targetText", None)
+    if candidate_payload != runtime_payload:
+        raise CaptureRuntimeProtocolError(
+            "Capture review changed runtime source or document provenance"
+        )
 
 
 def _idempotency_key(operation_id: str, stage: str) -> UUID:

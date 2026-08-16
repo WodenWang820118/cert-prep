@@ -60,6 +60,17 @@ const engineDigest = `sha256:${'a'.repeat(64)}`;
 const maxChunkBytes = 1024 * 1024;
 const terminalStatuses = new Set(['completed', 'failed', 'cancelled']);
 const terminalEvents = new Set(['completed', 'failed', 'cancelled']);
+const structuringSchemaDialect = 'https://json-schema.org/draft/2020-12/schema';
+const structuringNumCtx = 8_192;
+const structuringNumPredict = 4_096;
+const semanticBlockTypes = new Set([
+  'heading',
+  'paragraph',
+  'list-item',
+  'table',
+  'quote',
+  'transcript',
+]);
 
 type SourceKind = 'pdf' | 'image' | 'audio';
 type CaptureStatus =
@@ -129,6 +140,61 @@ interface IdempotentPayload {
   readonly digest: string;
 }
 
+interface SemanticBlock {
+  readonly sourceSegmentId: string;
+  readonly type: string;
+  readonly targetText?: string;
+}
+
+interface StructuringProvider {
+  readonly engine: string;
+  readonly model: string;
+  readonly digest: string;
+  readonly device: string | null;
+}
+
+interface StructuringProviderCapability {
+  readonly provider: StructuringProvider;
+  readonly capability: string;
+  readonly schemaDialect: string;
+}
+
+interface StructuringBatchRecord {
+  readonly sessionId: string;
+  readonly captureId: string;
+  readonly batchIndex: number;
+  readonly batchCount: number;
+  readonly sourceSegmentIds: string[];
+  readonly providerPrompt: Record<string, unknown>;
+  readonly providerSchema: Record<string, unknown>;
+  readonly numCtx: number;
+  readonly numPredict: number;
+  readonly batchDigest: string;
+  status: 'ready' | 'accepted';
+  submission: IdempotentPayload | null;
+  blocks: SemanticBlock[] | null;
+}
+
+interface StructuringSessionRecord {
+  readonly sessionId: string;
+  readonly captureId: string;
+  readonly rawSourceSha256: string;
+  readonly contractSetSha256: string;
+  readonly targetLanguage: string | null;
+  readonly providerCapability: StructuringProviderCapability;
+  readonly schemaDialect: string;
+  readonly batchCount: number;
+  nextBatchIndex: number;
+  readonly sessionDigest: string;
+  status: 'open' | 'completed' | 'failed' | 'cancelled';
+  readonly createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+  readonly clientRequestId: string;
+  readonly requestDigest: string;
+  readonly batches: StructuringBatchRecord[];
+}
+
 interface CaptureRecord {
   readonly id: string;
   readonly clientRequestId: string;
@@ -149,6 +215,7 @@ interface CaptureRecord {
   extractionTimer: ReturnType<typeof setTimeout> | null;
   commit: IdempotentPayload | null;
   failure: IdempotentPayload | null;
+  structuringSession: StructuringSessionRecord | null;
 }
 
 export interface CaptureRuntimeFixtureOptions {
@@ -317,6 +384,53 @@ export function startCaptureRuntimeFixture(
         }
         writeJson(response, 200, captureOperation(capture));
         return;
+      }
+      const structuringSessionBatchRoute =
+        /^\/v2\/captures\/([^/]+)\/structure\/session\/batches\/([0-9]+)$/u.exec(
+          url.pathname,
+        );
+      if (structuringSessionBatchRoute !== null) {
+        const capture = captures.get(structuringSessionBatchRoute[1]);
+        if (capture === undefined) {
+          writeProblem(
+            response,
+            404,
+            'capture_not_found',
+            'Streaming capture was not found.',
+          );
+          return;
+        }
+        const batchIndex = Number(structuringSessionBatchRoute[2]);
+        if (request.method === 'GET') {
+          getStructuringBatch(response, capture, batchIndex);
+          return;
+        }
+        if (request.method === 'PUT') {
+          await submitStructuringBatch(request, response, capture, batchIndex);
+          return;
+        }
+      }
+      const structuringSessionRoute =
+        /^\/v2\/captures\/([^/]+)\/structure\/session$/u.exec(url.pathname);
+      if (structuringSessionRoute !== null) {
+        const capture = captures.get(structuringSessionRoute[1]);
+        if (capture === undefined) {
+          writeProblem(
+            response,
+            404,
+            'capture_not_found',
+            'Streaming capture was not found.',
+          );
+          return;
+        }
+        if (request.method === 'GET') {
+          getStructuringSession(response, capture);
+          return;
+        }
+        if (request.method === 'POST') {
+          await openStructuringSession(request, response, capture);
+          return;
+        }
       }
       const captureRoute =
         /^\/v2\/captures\/([^/]+)(?:\/(events|partial|raw|result|cancel|structure(?:\/commit|\/failure)?))?$/u.exec(
@@ -701,6 +815,7 @@ async function startCapture(
     extractionTimer: null,
     commit: null,
     failure: null,
+    structuringSession: null,
   };
   captures.set(capture.id, capture);
   byRequest.set(clientRequestId, capture.id);
@@ -768,6 +883,360 @@ function finishExtraction(capture: CaptureRecord): void {
     partialRevision: 1,
     coveredUntilMs: capture.kind === 'audio' ? 2_000 : 0,
   });
+}
+
+interface ParsedStructuringOpenRequest {
+  readonly clientRequestId: string;
+  readonly requestDigest: string;
+  readonly targetLanguage: string | null;
+  readonly providerCapability: StructuringProviderCapability;
+  readonly schemaDialect: string;
+}
+
+function parseStructuringOpenRequest(
+  body: Readonly<Record<string, unknown>>,
+  captureId: string,
+): ParsedStructuringOpenRequest {
+  if (body['protocolVersion'] !== '2' || body['captureId'] !== captureId) {
+    throw new Error('Structuring session metadata is invalid.');
+  }
+  const clientRequestId = requiredString(body, 'clientRequestId');
+  const schemaDialect = requiredString(body, 'schemaDialect');
+  if (schemaDialect !== structuringSchemaDialect) {
+    throw new Error('Structuring schema dialect is unsupported.');
+  }
+  const capability = object(body['providerCapability']);
+  const providerValue = object(capability['provider']);
+  if (capability['schemaDialect'] !== schemaDialect) {
+    throw new Error('Provider schema dialect does not match the session.');
+  }
+  const provider: StructuringProvider = {
+    engine: requiredString(providerValue, 'engine'),
+    model: requiredString(providerValue, 'model'),
+    digest: requiredString(providerValue, 'digest'),
+    device:
+      providerValue['device'] === null || providerValue['device'] === undefined
+        ? null
+        : requiredString(providerValue, 'device'),
+  };
+  return {
+    clientRequestId,
+    requestDigest: hashCanonical(body),
+    targetLanguage:
+      body['targetLanguage'] === null || body['targetLanguage'] === undefined
+        ? null
+        : requiredString(body, 'targetLanguage'),
+    providerCapability: {
+      provider,
+      capability: requiredString(capability, 'capability'),
+      schemaDialect,
+    },
+    schemaDialect,
+  };
+}
+
+function structuringPrompt(
+  rawSegments: readonly Record<string, unknown>[],
+  targetLanguage: string | null,
+): Record<string, unknown> {
+  return { rawSegments, targetLanguage };
+}
+
+function structuringSchema(
+  targetLanguage: string | null,
+  segmentCount: number,
+): Record<string, unknown> {
+  return {
+    $schema: structuringSchemaDialect,
+    title: 'CaptureSemanticBlockBatch',
+    type: 'object',
+    additionalProperties: false,
+    required: ['blocks'],
+    properties: {
+      blocks: {
+        type: 'array',
+        minItems: Math.max(1, segmentCount),
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['sourceSegmentId', 'type'],
+          properties: {
+            sourceSegmentId: { type: 'string' },
+            type: { enum: [...semanticBlockTypes] },
+            ...(targetLanguage === null ? {} : { targetText: { type: 'string' } }),
+          },
+        },
+      },
+    },
+  };
+}
+
+async function openStructuringSession(
+  request: IncomingMessage,
+  response: ServerResponse,
+  capture: CaptureRecord,
+): Promise<void> {
+  const key = header(request, 'x-idempotency-key');
+  let parsed: ParsedStructuringOpenRequest;
+  try {
+    parsed = parseStructuringOpenRequest(parseJsonObject(await readBody(request)), capture.id);
+  } catch (error) {
+    writeProblem(response, 422, 'validation_error', errorMessage(error));
+    return;
+  }
+  if (key === '' || key !== parsed.clientRequestId) {
+    writeProblem(
+      response,
+      422,
+      'invalid_idempotency_key',
+      'Session clientRequestId must match X-Idempotency-Key.',
+    );
+    return;
+  }
+  if (capture.structuringSession !== null) {
+    if (
+      capture.structuringSession.clientRequestId !== parsed.clientRequestId ||
+      capture.structuringSession.requestDigest !== parsed.requestDigest
+    ) {
+      writeProblem(response, 409, 'idempotency_conflict', 'Structuring session request id was already used with different metadata.');
+      return;
+    }
+    writeJson(response, 201, sessionView(capture.structuringSession));
+    return;
+  }
+  if (capture.status !== 'awaiting_structuring' || capture.partial === null) {
+    writeProblem(response, 409, 'invalid_capture_state', 'Capture is not awaiting host structuring.');
+    return;
+  }
+  const sourceSegments = capture.partial['segments'];
+  if (!Array.isArray(sourceSegments) || sourceSegments.length === 0) {
+    writeProblem(response, 409, 'raw_unavailable', 'Raw capture segments are not available.');
+    return;
+  }
+  const rawSegments = sourceSegments.map((segment) => object(segment));
+  const sourceSegmentIds = rawSegments.map((segment) => requiredString(segment, 'segmentId'));
+  const now = new Date().toISOString();
+  const sessionId = randomUUID();
+  const batchWithoutDigest = {
+    protocolVersion: '2' as const,
+    sessionId,
+    captureId: capture.id,
+    batchIndex: 0,
+    batchCount: 1,
+    sourceSegmentIds,
+    providerPrompt: structuringPrompt(rawSegments, parsed.targetLanguage),
+    providerSchema: structuringSchema(parsed.targetLanguage, sourceSegmentIds.length),
+    numCtx: structuringNumCtx,
+    numPredict: structuringNumPredict,
+  };
+  const batch: StructuringBatchRecord = {
+    ...batchWithoutDigest,
+    batchDigest: hashCanonical(batchWithoutDigest),
+    status: 'ready',
+    submission: null,
+    blocks: null,
+  };
+  const sessionWithoutDigest = {
+    protocolVersion: '2' as const,
+    sessionId,
+    captureId: capture.id,
+    rawSourceSha256: capture.source.sha256,
+    contractSetSha256,
+    targetLanguage: parsed.targetLanguage,
+    providerCapability: parsed.providerCapability,
+    schemaDialect: parsed.schemaDialect,
+    batchCount: 1,
+    nextBatchIndex: 0,
+    status: 'open' as const,
+    createdAt: now,
+    updatedAt: now,
+    completedAt: null,
+  };
+  capture.structuringSession = {
+    ...sessionWithoutDigest,
+    sessionDigest: hashCanonical(sessionWithoutDigest),
+    status: 'open',
+    completedAt: null,
+    clientRequestId: parsed.clientRequestId,
+    requestDigest: parsed.requestDigest,
+    batches: [batch],
+  };
+  writeJson(response, 201, sessionView(capture.structuringSession));
+}
+
+function getStructuringSession(response: ServerResponse, capture: CaptureRecord): void {
+  if (capture.structuringSession === null) {
+    writeProblem(response, 404, 'structuring_session_not_found', 'Structuring session was not found.');
+    return;
+  }
+  writeJson(response, 200, sessionView(capture.structuringSession));
+}
+
+function getStructuringBatch(response: ServerResponse, capture: CaptureRecord, batchIndex: number): void {
+  const session = capture.structuringSession;
+  if (session === null) {
+    writeProblem(response, 404, 'structuring_session_not_found', 'Structuring session was not found.');
+    return;
+  }
+  const batch = session.batches[batchIndex];
+  if (batch === undefined) {
+    writeProblem(response, 404, 'structuring_batch_not_found', 'Structuring batch was not found.');
+    return;
+  }
+  writeJson(response, 200, batchView(batch));
+}
+
+async function submitStructuringBatch(
+  request: IncomingMessage,
+  response: ServerResponse,
+  capture: CaptureRecord,
+  batchIndex: number,
+): Promise<void> {
+  const session = capture.structuringSession;
+  if (session === null) {
+    writeProblem(response, 404, 'structuring_session_not_found', 'Structuring session was not found.');
+    return;
+  }
+  const batch = session.batches[batchIndex];
+  if (batch === undefined) {
+    writeProblem(response, 404, 'structuring_batch_not_found', 'Structuring batch was not found.');
+    return;
+  }
+  const key = header(request, 'x-idempotency-key');
+  const bytes = await readBody(request);
+  const payloadDigest = digestText(bytes.toString('utf8'));
+  if (key === '') {
+    writeProblem(response, 422, 'invalid_idempotency_key', 'Batch idempotency key is required.');
+    return;
+  }
+  if (batch.submission !== null) {
+    if (batch.submission.key !== key || batch.submission.digest !== payloadDigest) {
+      writeProblem(response, 409, 'idempotency_conflict', 'Structuring batch retry does not match.');
+      return;
+    }
+    writeJson(response, 200, sessionView(session));
+    return;
+  }
+  if (session.status !== 'open' || session.nextBatchIndex !== batchIndex) {
+    writeProblem(response, 409, 'structuring_batch_sequence_conflict', 'Structuring batch is not the next accepted batch.');
+    return;
+  }
+  const body = object(JSON.parse(bytes.toString('utf8')) as unknown);
+  if (body['protocolVersion'] !== '2' || body['batchDigest'] !== batch.batchDigest || !Array.isArray(body['blocks'])) {
+    writeProblem(response, 409, 'structuring_batch_digest_conflict', 'Structuring batch digest or shape is invalid.');
+    return;
+  }
+  const allowedIds = new Set(batch.sourceSegmentIds);
+  const blocks: SemanticBlock[] = [];
+  for (const value of body['blocks']) {
+    const candidate = object(value);
+    const sourceSegmentId = requiredString(candidate, 'sourceSegmentId');
+    const type = requiredString(candidate, 'type');
+    if (!allowedIds.has(sourceSegmentId) || !semanticBlockTypes.has(type)) {
+      writeProblem(response, 422, 'structuring_semantic_block_invalid', 'Structuring semantic block is invalid.');
+      return;
+    }
+    const targetText = candidate['targetText'];
+    if (targetText !== undefined && targetText !== null && typeof targetText !== 'string') {
+      writeProblem(response, 422, 'structuring_semantic_block_invalid', 'Structuring targetText is invalid.');
+      return;
+    }
+    blocks.push({
+      sourceSegmentId,
+      type,
+      ...(typeof targetText === 'string' ? { targetText } : {}),
+    });
+  }
+  if (blocks.length === 0) {
+    writeProblem(response, 422, 'structuring_semantic_block_invalid', 'At least one semantic block is required.');
+    return;
+  }
+  batch.submission = { key, digest: payloadDigest };
+  batch.blocks = blocks;
+  batch.status = 'accepted';
+  session.nextBatchIndex = 1;
+  session.status = 'completed';
+  session.updatedAt = new Date().toISOString();
+  session.completedAt = session.updatedAt;
+  completeCaptureFromSession(capture, blocks, session.updatedAt);
+  writeJson(response, 200, sessionView(session));
+}
+
+function completeCaptureFromSession(capture: CaptureRecord, blocks: readonly SemanticBlock[], completedAt: string): void {
+  const raw = rawCapture(capture);
+  const rawSegments = raw['segments'];
+  if (!Array.isArray(rawSegments)) throw new Error('Raw segments are unavailable.');
+  const byId = new Map(blocks.map((block) => [block.sourceSegmentId, block]));
+  const documentBlocks = rawSegments.map((value, order) => {
+    const segment = object(value);
+    const segmentId = requiredString(segment, 'segmentId');
+    const block = byId.get(segmentId);
+    const text = requiredString(segment, 'text');
+    return {
+      blockId: `block-${segmentId}`,
+      order,
+      type: block?.type ?? 'paragraph',
+      sourceSegmentId: segmentId,
+      locator: segment['locator'],
+      sourceText: text,
+      targetText: block?.targetText ?? text,
+    };
+  });
+  capture.document = {
+    schemaVersion: '2',
+    source: capture.source,
+    rawSegments,
+    blocks: documentBlocks,
+    sourceText: String(raw['sourceText'] ?? ''),
+    targetText: documentBlocks.map((block) => block.targetText).join('\n'),
+    extractionEngine: raw['extractionEngine'],
+    structuringEngine: { engine: 'capture-runtime-fixture', model: 'pull-session-fixture', digest: engineDigest },
+    warnings: [],
+    createdAt: raw['createdAt'],
+    completedAt,
+  };
+  capture.status = 'completed';
+  capture.progress = 1;
+  capture.updatedAt = completedAt;
+  capture.completedAt = completedAt;
+  appendEvent(capture, { eventType: 'completed', stage: 'completed', progress: 1, partialRevision: capture.partialRevision });
+}
+
+function sessionView(session: StructuringSessionRecord): Record<string, unknown> {
+  return {
+    protocolVersion: '2',
+    sessionId: session.sessionId,
+    captureId: session.captureId,
+    rawSourceSha256: session.rawSourceSha256,
+    contractSetSha256: session.contractSetSha256,
+    targetLanguage: session.targetLanguage,
+    providerCapability: session.providerCapability,
+    schemaDialect: session.schemaDialect,
+    batchCount: session.batchCount,
+    nextBatchIndex: session.nextBatchIndex,
+    sessionDigest: session.sessionDigest,
+    status: session.status,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    completedAt: session.completedAt,
+  };
+}
+
+function batchView(batch: StructuringBatchRecord): Record<string, unknown> {
+  return {
+    protocolVersion: '2',
+    sessionId: batch.sessionId,
+    captureId: batch.captureId,
+    batchIndex: batch.batchIndex,
+    batchCount: batch.batchCount,
+    sourceSegmentIds: batch.sourceSegmentIds,
+    providerPrompt: batch.providerPrompt,
+    providerSchema: batch.providerSchema,
+    numCtx: batch.numCtx,
+    numPredict: batch.numPredict,
+    batchDigest: batch.batchDigest,
+    status: batch.status,
+  };
 }
 
 function streamEvents(
@@ -1146,6 +1615,59 @@ function runtimeRequirements(): Record<string, unknown> {
 
 function eventFrame(event: CaptureEvent): string {
   return `id: ${event.sequence}\nevent: ${event.eventType}\ndata: ${JSON.stringify(event)}\n\n`;
+}
+
+function assertExactKeys(
+  value: Readonly<Record<string, unknown>>,
+  required: readonly string[],
+  optional: readonly string[] = [],
+): void {
+  const allowed = new Set([...required, ...optional]);
+  for (const key of Object.keys(value)) {
+    if (!allowed.has(key)) {
+      throw new Error(`Unexpected field ${key}.`);
+    }
+  }
+  for (const key of required) {
+    if (!(key in value)) {
+      throw new Error(`${key} is required.`);
+    }
+  }
+}
+
+function hashCanonical(value: unknown): string {
+  return createHash('sha256').update(canonicalJson(value)).digest('hex');
+}
+
+function digestText(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== 'object') {
+    const encoded = JSON.stringify(value);
+    if (encoded === undefined) throw new Error('Value is not JSON serializable.');
+    return encoded;
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalJson(item)).join(',')}]`;
+  }
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
+    .join(',')}}`;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function requiredStringValue(value: unknown, field: string): string {
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(`${field} is required.`);
+  }
+  return value;
 }
 
 function sourceKind(value: unknown): SourceKind {
