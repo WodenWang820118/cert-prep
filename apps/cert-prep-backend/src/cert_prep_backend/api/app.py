@@ -125,7 +125,10 @@ def create_app(
     app.state.capture_coordinator = (
         CertPrepCaptureCoordinator(
             client=app.state.capture_runtime_client,
-            structurer=CertPrepCaptureStructuringAdapter(app.state.llm_provider),
+            structurer=CertPrepCaptureStructuringAdapter(
+                app.state.llm_provider,
+                app.state.capture_runtime_client,
+            ),
             reconciliation_interval_seconds=(
                 app_settings.capture_runtime_reconciliation_interval_seconds
             ),

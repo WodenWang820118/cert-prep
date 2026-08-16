@@ -27,8 +27,13 @@ from capture_runtime_client import (
     CaptureSourceKind,
     PartialCapture,
     RawCapture,
+    StructuringBatch,
+    StructuringBatchStatus,
+    StructuringSession,
+    StructuringSessionStatus,
     RuntimeRequirementStatus,
     RuntimeRequirements,
+    CaptureStreamingResult as RuntimeStreamingResult,
 )
 from cert_prep_backend.domains.capture_workbench.host_models import RuntimeReady
 from cert_prep_backend.domains.capture_workbench.coordinator import (
@@ -45,7 +50,6 @@ from cert_prep_backend.domains.capture_workbench.mapping import (
     capture_document_to_pdf_extraction,
 )
 from cert_prep_backend.domains.capture_workbench.structuring import (
-    CaptureStructuringBudgetError,
     CaptureStructuringCanceledError,
     CaptureStructuringTimeoutError,
     CertPrepCaptureStructuringAdapter,
@@ -259,6 +263,192 @@ class RecordingStructuredProvider:
         return self.candidate
 
 
+class PullSessionRuntime:
+    """Typed pull-session stand-in used by adapter regression tests.
+
+    The stand-in deliberately reconstructs the document from submitted
+    semantic blocks, mirroring the authenticated runtime boundary instead of
+    importing or emulating the retired standalone package.
+    """
+
+    def __init__(self, raw: RawCapture) -> None:
+        self.raw = raw
+        self.open_calls: list[dict[str, object]] = []
+        self.pull_calls: list[int] = []
+        self.submit_calls: list[dict[str, object]] = []
+        self._request = None
+        self._session: StructuringSession | None = None
+        self._document: CaptureDocument | None = None
+
+    def open_structuring_session(
+        self,
+        capture_id: str,
+        request,
+        *,
+        idempotency_key: str,
+    ) -> StructuringSession:
+        self.open_calls.append(
+            {
+                "capture_id": capture_id,
+                "request": request,
+                "idempotency_key": idempotency_key,
+            }
+        )
+        self._request = request
+        now = NOW
+        self._session = StructuringSession.model_validate(
+            {
+                "sessionId": "session-1",
+                "captureId": capture_id,
+                "rawSourceSha256": self.raw.source.sha256,
+                "contractSetSha256": "c" * 64,
+                "targetLanguage": request.target_language,
+                "providerCapability": request.provider_capability.model_dump(
+                    mode="json", by_alias=True
+                ),
+                "schemaDialect": request.schema_dialect,
+                "batchCount": len(self.raw.segments),
+                "nextBatchIndex": 0,
+                "sessionDigest": "d" * 64,
+                "status": StructuringSessionStatus.OPEN,
+                "createdAt": now,
+                "updatedAt": now,
+            }
+        )
+        return self._session
+
+    def pull_structuring_batch(self, capture_id: str, batch_index: int) -> StructuringBatch:
+        assert self._session is not None
+        self.pull_calls.append(batch_index)
+        segment = self.raw.segments[batch_index]
+        return StructuringBatch.model_validate(
+            {
+                "sessionId": self._session.session_id,
+                "captureId": capture_id,
+                "batchIndex": batch_index,
+                "batchCount": self._session.batch_count,
+                "sourceSegmentIds": [segment.segment_id],
+                "providerPrompt": {
+                    "targetLanguage": self._request.target_language if self._request else None,
+                    "rawSegments": [segment.model_dump(mode="json", by_alias=True)],
+                },
+                "providerSchema": {
+                    "title": "CaptureBlockBatch",
+                    "type": "object",
+                    "properties": {
+                        "blocks": {"type": "array", "items": {"type": "object"}}
+                    },
+                    "required": ["blocks"],
+                    "additionalProperties": False,
+                },
+                "numCtx": 8_192,
+                "numPredict": 4_096,
+                "batchDigest": f"{batch_index + 1:064x}",
+                "status": StructuringBatchStatus.READY,
+            }
+        )
+
+    def submit_structuring_batch(
+        self,
+        capture_id: str,
+        batch_index: int,
+        submission,
+        *,
+        idempotency_key: str,
+    ) -> StructuringSession:
+        assert self._session is not None
+        assert batch_index == self._session.next_batch_index
+        self.submit_calls.append(
+            {
+                "capture_id": capture_id,
+                "batch_index": batch_index,
+                "submission": submission,
+                "idempotency_key": idempotency_key,
+            }
+        )
+        next_index = batch_index + 1
+        status = (
+            StructuringSessionStatus.COMPLETED
+            if next_index == self._session.batch_count
+            else StructuringSessionStatus.OPEN
+        )
+        self._session = self._session.model_copy(
+            update={
+                "next_batch_index": next_index,
+                "status": status,
+                "updated_at": NOW,
+                "completed_at": NOW if status is StructuringSessionStatus.COMPLETED else None,
+            }
+        )
+        if status is StructuringSessionStatus.COMPLETED:
+            self._document = self._reconstruct_document()
+        return self._session
+
+    def get_result(self, capture_id: str) -> RuntimeStreamingResult:
+        assert self._session is not None
+        assert self._document is not None
+        operation = CaptureOperation.model_validate(
+            {
+                **_operation_payload(status="completed"),
+                "captureId": capture_id,
+                "source": self.raw.source.model_dump(mode="json", by_alias=True),
+            }
+        )
+        return RuntimeStreamingResult(operation=operation, raw=self.raw, result=self._document)
+
+    def get_capture(self, capture_id: str) -> CaptureOperation:
+        return self.get_result(capture_id).operation
+
+    def commit_structure(self, *_args, **_kwargs):
+        raise AssertionError("pull-session commit must not post a legacy full document")
+
+    def _reconstruct_document(self) -> CaptureDocument:
+        assert self._session is not None
+        submitted = [
+            block
+            for call in self.submit_calls
+            for block in call["submission"].blocks
+        ]
+        by_segment = {block.source_segment_id: block for block in submitted}
+        blocks = []
+        for segment in self.raw.segments:
+            semantic = by_segment[segment.segment_id]
+            blocks.append(
+                {
+                    "blockId": f"runtime-block-{segment.segment_id}",
+                    "order": segment.order,
+                    "type": semantic.type,
+                    "sourceSegmentId": segment.segment_id,
+                    "locator": segment.locator.model_dump(mode="json", by_alias=True),
+                    "sourceText": segment.text,
+                    "targetText": semantic.target_text or segment.text,
+                }
+            )
+        target_text = "\n".join(str(block["targetText"]) for block in blocks)
+        return CaptureDocument.model_validate(
+            {
+                "schemaVersion": self.raw.schema_version,
+                "source": self.raw.source.model_dump(mode="json", by_alias=True),
+                "rawSegments": [
+                    segment.model_dump(mode="json", by_alias=True)
+                    for segment in self.raw.segments
+                ],
+                "blocks": blocks,
+                "sourceText": self.raw.source_text,
+                "targetText": target_text,
+                "extractionEngine": self.raw.extraction_engine.model_dump(
+                    mode="json", by_alias=True
+                ),
+                "structuringEngine": self._session.provider_capability.provider.model_dump(
+                    mode="json", by_alias=True
+                ),
+                "warnings": self.raw.warnings,
+                "createdAt": self.raw.created_at,
+                "completedAt": NOW,
+            }
+        )
+
+
 def _valid_batch_candidate(call: dict[str, object]) -> str:
     messages = call["messages"]
     assert isinstance(messages, list)
@@ -278,9 +468,17 @@ def _valid_batch_candidate(call: dict[str, object]) -> str:
 def test_capture_adapter_strictly_validates_batches_and_assembles_full_document() -> None:
     provider = RecordingStructuredProvider(_valid_batch_candidate)
     raw = RawCapture.model_validate(_raw_payload())
-    adapter = CertPrepCaptureStructuringAdapter(provider, clock=lambda: NOW)
+    runtime = PullSessionRuntime(raw)
+    adapter = CertPrepCaptureStructuringAdapter(provider, runtime, clock=lambda: NOW)
 
-    candidate = CaptureDocument.model_validate(adapter.structure(raw, target_language="zh-TW"))
+    candidate = CaptureDocument.model_validate(
+        adapter.structure(
+            raw,
+            capture_id="capture-1",
+            operation_id="operation-1",
+            target_language="zh-TW",
+        )
+    )
 
     assert candidate.raw_segments == raw.segments
     assert candidate.source_text == raw.source_text
@@ -301,6 +499,8 @@ def test_capture_adapter_strictly_validates_batches_and_assembles_full_document(
     ]
     assert call["num_ctx"] <= 8_192
     assert call["num_predict"] <= 4_096
+    assert runtime.pull_calls == [0]
+    assert len(runtime.submit_calls) == 1
 
 
 def test_capture_adapter_projects_ocr_without_llm_when_no_target_language_is_requested() -> None:
@@ -319,23 +519,40 @@ def test_capture_adapter_projects_ocr_without_llm_when_no_target_language_is_req
 
 def test_capture_adapter_does_not_repair_invalid_provider_json() -> None:
     provider = RecordingStructuredProvider('```json\n{"blocks": []}\n```')
-    adapter = CertPrepCaptureStructuringAdapter(provider, clock=lambda: NOW)
+    raw = RawCapture.model_validate(_raw_payload())
+    adapter = CertPrepCaptureStructuringAdapter(
+        provider, PullSessionRuntime(raw), clock=lambda: NOW
+    )
 
     with pytest.raises(ValueError, match="not valid JSON|valid JSON object"):
-        adapter.structure(RawCapture.model_validate(_raw_payload()), target_language="zh-TW")
+        adapter.structure(
+            raw,
+            capture_id="capture-1",
+            operation_id="operation-1",
+            target_language="zh-TW",
+        )
 
 
 def test_capture_adapter_batches_by_token_budget_and_preserves_global_order() -> None:
     provider = RecordingStructuredProvider(_valid_batch_candidate)
     raw = _raw_with_segments(count=5)
+    runtime = PullSessionRuntime(raw)
     adapter = CertPrepCaptureStructuringAdapter(
         provider,
+        runtime,
         clock=lambda: NOW,
         num_ctx=4_096,
         num_predict=1_024,
     )
 
-    document = CaptureDocument.model_validate(adapter.structure(raw, target_language="zh-TW"))
+    document = CaptureDocument.model_validate(
+        adapter.structure(
+            raw,
+            capture_id="capture-1",
+            operation_id="operation-1",
+            target_language="zh-TW",
+        )
+    )
 
     assert len(provider.calls) >= 2
     supplied_ids = []
@@ -349,6 +566,7 @@ def test_capture_adapter_batches_by_token_budget_and_preserves_global_order() ->
     assert supplied_ids == [segment.segment_id for segment in raw.segments]
     assert [block.order for block in document.blocks] == list(range(5))
     assert [block.source_segment_id for block in document.blocks] == supplied_ids
+    assert runtime.pull_calls == list(range(5))
 
 
 @pytest.mark.parametrize("mutation", ["count", "sourceSegmentId", "forbidden"])
@@ -365,24 +583,41 @@ def test_capture_adapter_rejects_mutated_batch_provenance(mutation: str) -> None
         return json.dumps(payload)
 
     provider = RecordingStructuredProvider(invalid_candidate)
-    adapter = CertPrepCaptureStructuringAdapter(provider, clock=lambda: NOW)
+    raw = RawCapture.model_validate(_raw_payload())
+    adapter = CertPrepCaptureStructuringAdapter(
+        provider, PullSessionRuntime(raw), clock=lambda: NOW
+    )
 
-    with pytest.raises(ValueError, match="batch|semantic|sourceSegmentId"):
+    with pytest.raises(ValueError):
         adapter.structure(
-            RawCapture.model_validate(_raw_payload()),
+            raw,
+            capture_id="capture-1",
+            operation_id="operation-1",
             target_language="zh-TW",
         )
 
 
-def test_capture_adapter_fails_before_generation_when_one_segment_exceeds_budget() -> None:
+def test_capture_adapter_uses_runtime_batch_budget_without_replanning() -> None:
     provider = RecordingStructuredProvider(_valid_batch_candidate)
     raw = _raw_with_segments(count=1, text_chars=20_000)
-    adapter = CertPrepCaptureStructuringAdapter(provider, clock=lambda: NOW)
+    runtime = PullSessionRuntime(raw)
+    adapter = CertPrepCaptureStructuringAdapter(
+        provider,
+        runtime,
+        clock=lambda: NOW,
+        num_ctx=1_024,
+        num_predict=512,
+    )
 
-    with pytest.raises(CaptureStructuringBudgetError, match="exceeds the provider token budget"):
-        adapter.structure(raw, target_language="zh-TW")
+    adapter.structure(
+        raw,
+        capture_id="capture-1",
+        operation_id="operation-1",
+        target_language="zh-TW",
+    )
 
-    assert provider.calls == []
+    assert provider.calls[0]["num_ctx"] == 1_024
+    assert provider.calls[0]["num_predict"] == 512
 
 
 def test_capture_adapter_observes_cancellation_between_provider_batches() -> None:
@@ -395,8 +630,10 @@ def test_capture_adapter_observes_cancellation_between_provider_batches() -> Non
         return candidate
 
     provider = RecordingStructuredProvider(candidate_then_cancel)
+    raw = _raw_with_segments(count=5)
     adapter = CertPrepCaptureStructuringAdapter(
         provider,
+        PullSessionRuntime(raw),
         clock=lambda: NOW,
         num_ctx=4_096,
         num_predict=1_024,
@@ -404,7 +641,9 @@ def test_capture_adapter_observes_cancellation_between_provider_batches() -> Non
 
     with pytest.raises(CaptureStructuringCanceledError):
         adapter.structure(
-            _raw_with_segments(count=5),
+            raw,
+            capture_id="capture-1",
+            operation_id="operation-1",
             target_language="zh-TW",
             should_cancel=lambda: cancelled,
         )
@@ -414,12 +653,17 @@ def test_capture_adapter_observes_cancellation_between_provider_batches() -> Non
 
 def test_capture_adapter_observes_deadline_after_an_in_flight_batch_returns() -> None:
     provider = RecordingStructuredProvider(_valid_batch_candidate)
+    raw = RawCapture.model_validate(_raw_payload())
     ticks = iter([0.0, 0.0, 2.0])
-    adapter = CertPrepCaptureStructuringAdapter(provider, clock=lambda: NOW)
+    adapter = CertPrepCaptureStructuringAdapter(
+        provider, PullSessionRuntime(raw), clock=lambda: NOW
+    )
 
     with pytest.raises(CaptureStructuringTimeoutError):
         adapter.structure(
-            RawCapture.model_validate(_raw_payload()),
+            raw,
+            capture_id="capture-1",
+            operation_id="operation-1",
             target_language="zh-TW",
             deadline=1.0,
             monotonic_clock=lambda: next(ticks),
@@ -464,10 +708,17 @@ def test_capture_adapter_reuses_existing_ollama_client_and_model() -> None:
         provider="ollama",
         model="cert-prep-qwen",
     )
-    adapter = CertPrepCaptureStructuringAdapter(lazy_provider, clock=lambda: NOW)
+    adapter = CertPrepCaptureStructuringAdapter(
+        lazy_provider, PullSessionRuntime(raw), clock=lambda: NOW
+    )
 
     result = CaptureDocument.model_validate(
-        adapter.structure(raw, target_language="zh-TW")
+        adapter.structure(
+            raw,
+            capture_id="capture-1",
+            operation_id="operation-1",
+            target_language="zh-TW",
+        )
     )
 
     assert factory_calls == 1
@@ -485,13 +736,51 @@ def test_capture_adapter_has_no_hidden_provider_fallback() -> None:
         provider = "fake"
         model = "fake-model"
 
-    adapter = CertPrepCaptureStructuringAdapter(DraftOnlyProvider(), clock=lambda: NOW)
+    raw = RawCapture.model_validate(_raw_payload())
+    adapter = CertPrepCaptureStructuringAdapter(
+        DraftOnlyProvider(), PullSessionRuntime(raw), clock=lambda: NOW
+    )
 
     with pytest.raises(ProviderUnavailableError, match="cannot produce structured JSON"):
         adapter.structure(
-            RawCapture.model_validate(_raw_payload()),
+            raw,
+            capture_id="capture-1",
+            operation_id="operation-1",
             target_language="zh-TW",
         )
+
+
+def test_coordinator_accepts_only_review_overlay_after_pull_session_completion() -> None:
+    raw = RawCapture.model_validate(_raw_payload())
+    provider = RecordingStructuredProvider(_valid_batch_candidate)
+    runtime = PullSessionRuntime(raw)
+    adapter = CertPrepCaptureStructuringAdapter(provider, runtime, clock=lambda: NOW)
+    base_document = adapter.structure(
+        raw,
+        capture_id="capture-1",
+        operation_id="operation-1",
+        target_language="zh-TW",
+    )
+    candidate_payload = base_document.model_dump(mode="json", by_alias=True)
+    candidate_payload["blocks"][0]["targetText"] = "Reviewed target text"
+    candidate_payload["targetText"] = "Reviewed target text"
+    candidate = CaptureDocument.model_validate(candidate_payload)
+
+    coordinator = CertPrepCaptureCoordinator(
+        client=runtime,
+        structurer=adapter,
+        clock=lambda: 0.0,
+        sleeper=lambda _seconds: None,
+    )
+    result = coordinator.commit_capture(
+        operation_id="operation-1",
+        capture_id="capture-1",
+        candidate=candidate,
+        should_cancel=lambda: False,
+    )
+
+    assert result.document.blocks[0].target_text == "Reviewed target text"
+    assert result.document.target_text == "Reviewed target text"
 
 
 def test_contract_rejects_changed_locator_before_host_consumption() -> None:

@@ -38,7 +38,6 @@ jobs:
           path: capture-workbench
           sparse-checkout: |
             packages/capture-runtime-client-python
-            packages/capture-structuring-python
 
       - name: Link Capture Workbench Python bridge (Unix)
         if: runner.os != 'Windows'
@@ -84,7 +83,6 @@ jobs:
           --python ${{ env.PYTHON_VERSION }}
           --frozen
           --reinstall-package capture-runtime-client
-          --reinstall-package capture-structuring
 
       - name: Lint portable projects
         run: >-
@@ -132,7 +130,6 @@ jobs:
           path: capture-workbench
           sparse-checkout: |
             packages/capture-runtime-client-python
-            packages/capture-structuring-python
 
       - name: Link Capture Workbench Python bridge (Unix)
         if: runner.os != 'Windows'
@@ -187,7 +184,6 @@ jobs:
           --python ${{ env.PYTHON_VERSION }}
           --frozen
           --reinstall-package capture-runtime-client
-          --reinstall-package capture-structuring
 
       - name: Lint Windows-owned Python and Angular projects
         run: >-
@@ -231,8 +227,7 @@ jobs:
           pnpm nx run cert-prep-desktop:capture-runtime-consumer-test --skip-nx-cache
           uv run --isolated --no-project `
             --with 'capture-runtime-client==0.4.0' `
-            --with 'capture-structuring==0.4.0' `
-            -- python -c "import capture_runtime_client, capture_structuring; assert capture_runtime_client.CAPTURE_RUNTIME_VERSION == '0.4.0'; assert capture_structuring.__package__ == 'capture_structuring'"
+            -- python -c "import capture_runtime_client; assert capture_runtime_client.CAPTURE_RUNTIME_VERSION == '0.4.0'"
 
       - name: Test Tauri host
         run: pnpm nx run cert-prep-desktop:cargo-test

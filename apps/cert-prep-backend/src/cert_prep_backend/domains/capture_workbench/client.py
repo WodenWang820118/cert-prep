@@ -28,13 +28,17 @@ from capture_runtime_client import (
     CaptureUpload as SdkCaptureUpload,
     HttpRuntimeTransport,
     PartialCapture,
+    OpenStructuringSession,
     RawCapture,
     RuntimeInstallation,
     RuntimeInstallations,
     RuntimeReady,
     RuntimeRequirements,
     RuntimeStreamingCapabilities,
+    StructuringBatch,
+    StructuringSession,
     StructuringMode,
+    SubmitStructuringBatch,
 )
 
 
@@ -187,6 +191,42 @@ class CaptureRuntimeClient:
 
     def get_result(self, capture_id: str) -> CaptureStreamingResult:
         return self._sdk.get_result(capture_id)
+
+    def open_structuring_session(
+        self,
+        capture_id: str,
+        request: OpenStructuringSession | Mapping[str, object],
+        *,
+        idempotency_key: UUID | str | None = None,
+    ) -> StructuringSession:
+        """Open or replay an authenticated typed pull-structuring session."""
+
+        return self._sdk.open_structuring_session(
+            capture_id,
+            request,
+            idempotency_key=idempotency_key,
+        )
+
+    def get_structuring_session(self, capture_id: str) -> StructuringSession:
+        return self._sdk.get_structuring_session(capture_id)
+
+    def pull_structuring_batch(self, capture_id: str, batch_index: int) -> StructuringBatch:
+        return self._sdk.pull_structuring_batch(capture_id, batch_index)
+
+    def submit_structuring_batch(
+        self,
+        capture_id: str,
+        batch_index: int,
+        submission: SubmitStructuringBatch | Mapping[str, object],
+        *,
+        idempotency_key: UUID | str,
+    ) -> StructuringSession:
+        return self._sdk.submit_structuring_batch(
+            capture_id,
+            batch_index,
+            submission,
+            idempotency_key=idempotency_key,
+        )
 
     def commit_structure(
         self,

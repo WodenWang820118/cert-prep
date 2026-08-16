@@ -1,4 +1,10 @@
-"""Cert Prep's provider adapter for the Capture Workbench structuring SDK."""
+"""Cert Prep's authenticated adapter for Capture Runtime pull sessions.
+
+The runtime owns batching, prompt/schema projection, semantic validation, and
+provenance reconstruction.  Cert Prep only supplies its configured structured
+JSON provider with the typed prompt returned by the authenticated runtime
+client, then submits minimal semantic blocks back through that same client.
+"""
 
 from __future__ import annotations
 
@@ -8,21 +14,24 @@ import hashlib
 import json
 import re
 from time import monotonic
+from uuid import UUID, uuid5
 
-from capture_structuring import (
-    StructuringValidationError,
-    assemble_structuring_document,
-    build_structuring_batch_prompt,
-    plan_structuring_batches,
-    structuring_batch_generation_options,
-    structuring_batch_schema,
-    validate_structuring_batch,
+from capture_runtime_client import (
+    CaptureDocument,
+    CaptureEngine,
+    OpenStructuringSession,
+    RawCapture,
+    StructuringBatch,
+    StructuringProviderCapability,
+    StructuringSemanticBlock,
+    StructuringSessionStatus,
+    SubmitStructuringBatch,
 )
 
 from cert_prep_backend.api.errors import ProviderUnavailableError
-from capture_runtime_client import (
-    CaptureEngine,
-    RawCapture,
+from cert_prep_backend.domains.capture_workbench.client import (
+    CaptureRuntimeClient,
+    CaptureRuntimeProtocolError,
 )
 from cert_prep_backend.domains.mock_exams.ports import (
     StructuredJsonGenerationProvider,
@@ -31,10 +40,9 @@ from cert_prep_backend.domains.mock_exams.ports import (
 
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
-_DEFAULT_NUM_CTX = 8_192
-_DEFAULT_NUM_PREDICT = 4_096
-_CONTEXT_RESERVE_TOKENS = 512
-_OUTPUT_RESERVE_TOKENS = 256
+_SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema"
+_PROVIDER_CAPABILITY = "capture-runtime-host-structuring-v2"
+_IDEMPOTENCY_NAMESPACE = UUID("b76c9346-c90d-4705-889f-c7a0ae4bf0f2")
 _IDENTITY_STRUCTURING_ENGINE = CaptureEngine(
     engine="cert-prep-host",
     model="capture-document-pass-through-v1",
@@ -51,25 +59,29 @@ class CaptureStructuringTimeoutError(TimeoutError):
 
 
 class CaptureStructuringBudgetError(ValueError):
-    """One raw segment cannot fit the configured provider request budget."""
+    """The runtime could not plan one or more provider batches."""
 
 
 class CertPrepCaptureStructuringAdapter:
-    """Adapt Cert Prep's reasoning provider to the shared host SDK."""
+    """Run Cert Prep's provider through an authenticated typed pull session."""
 
     def __init__(
         self,
         provider: object,
+        runtime_client: CaptureRuntimeClient | None = None,
         *,
         clock: Callable[[], datetime] | None = None,
-        num_ctx: int = _DEFAULT_NUM_CTX,
-        num_predict: int = _DEFAULT_NUM_PREDICT,
+        num_ctx: int = 8_192,
+        num_predict: int = 4_096,
     ) -> None:
-        if num_predict <= _OUTPUT_RESERVE_TOKENS:
-            raise ValueError("Capture structuring output budget is too small")
-        if num_ctx <= num_predict + _CONTEXT_RESERVE_TOKENS:
-            raise ValueError("Capture structuring context budget is too small")
+        # These values remain part of the host-facing construction seam for
+        # callers that configure provider budgets.  Pull-session planning is
+        # intentionally performed by Capture Runtime, so the adapter never
+        # recreates or second-guesses its batch planner.
+        if num_ctx <= 0 or num_predict <= 0:
+            raise ValueError("Capture structuring provider budgets must be positive")
         self._provider = provider
+        self._runtime_client = runtime_client
         self._clock = clock or (lambda: datetime.now(UTC))
         self._num_ctx = num_ctx
         self._num_predict = num_predict
@@ -78,137 +90,158 @@ class CertPrepCaptureStructuringAdapter:
         self,
         raw: RawCapture,
         *,
+        capture_id: str | None = None,
+        operation_id: str | None = None,
         target_language: str | None = None,
+        review_overrides: Mapping[str, str] | None = None,
         should_cancel: Callable[[], bool] = lambda: False,
         deadline: float | None = None,
         monotonic_clock: Callable[[], float] = monotonic,
-    ) -> dict[str, object]:
-        """Run host structuring through the shared SDK and provider registry."""
+    ) -> CaptureDocument:
+        """Generate and submit every runtime-planned semantic batch.
 
-        self._checkpoint(
-            should_cancel=should_cancel,
-            deadline=deadline,
-            monotonic_clock=monotonic_clock,
+        Only ``providerPrompt`` and ``providerSchema`` cross into the host
+        provider.  Provider output is decoded into strict typed semantic DTOs;
+        raw segments, locators, source text, and engine provenance never come
+        from the provider.
+        """
+
+        provider = (
+            provider_capability(self._provider, StructuredJsonGenerationProvider)
+            if target_language is not None
+            else None
         )
-        completed_at = self._clock()
-        if completed_at.tzinfo is None or completed_at.utcoffset() is None:
-            raise ValueError("Capture structuring clock must return a timezone-aware timestamp")
-
-        if target_language is None:
-            return self._identity_document(
-                raw,
-                completed_at=completed_at,
-                should_cancel=should_cancel,
-                deadline=deadline,
-                monotonic_clock=monotonic_clock,
-            )
-
-        provider = provider_capability(self._provider, StructuredJsonGenerationProvider)
-        if provider is None:
+        if target_language is not None and provider is None:
             raise ProviderUnavailableError(
                 "The configured Cert Prep provider cannot produce structured JSON."
             )
-        engine = _engine_identity(provider)
-        schema = structuring_batch_schema(target_language=target_language)
-        raw_segments = [segment.model_dump(mode="json", by_alias=True) for segment in raw.segments]
-        try:
-            plans = plan_structuring_batches(
-                raw_segments,
-                target_language=target_language,
-                num_ctx=self._num_ctx,
-                num_predict=self._num_predict,
-                schema=schema,
-            )
-        except StructuringValidationError as error:
-            if "budget" in str(error).lower():
-                raise CaptureStructuringBudgetError(str(error)) from error
-            raise
+        if self._runtime_client is None or not _supports_pull_sessions(self._runtime_client):
+            if target_language is not None:
+                raise CaptureRuntimeProtocolError(
+                    "Capture Runtime pull structuring is required for translated output."
+                )
+            self._checkpoint(should_cancel, deadline, monotonic_clock)
+            return _local_identity_bridge(raw, completed_at=self._clock())
+        self._checkpoint(should_cancel, deadline, monotonic_clock)
 
-        blocks: list[dict[str, object]] = []
-        order_offset = 0
-        for plan in plans:
-            self._checkpoint(
-                should_cancel=should_cancel,
-                deadline=deadline,
-                monotonic_clock=monotonic_clock,
-            )
-            prompt = build_structuring_batch_prompt(
-                plan.segments,
-                target_language=target_language,
-            )
-            batch_num_ctx, batch_num_predict = structuring_batch_generation_options(
-                plan,
-                max_num_ctx=self._num_ctx,
-                max_num_predict=self._num_predict,
-            )
-            candidate = provider.generate_structured_json(
-                messages=_provider_messages(prompt),
-                json_schema=schema,
-                num_ctx=batch_num_ctx,
-                num_predict=batch_num_predict,
-            )
-            self._checkpoint(
-                should_cancel=should_cancel,
-                deadline=deadline,
-                monotonic_clock=monotonic_clock,
-            )
-            batch_blocks = validate_structuring_batch(
-                candidate,
-                plan.segments,
-                target_language=target_language,
-                order_offset=order_offset,
-            )
-            blocks.extend(batch_blocks)
-            order_offset += len(batch_blocks)
-
-        return assemble_structuring_document(
-            raw,
-            blocks,
-            engine_identity=engine,
-            completed_at=completed_at,
+        engine = _engine_identity(provider) if provider is not None else _IDENTITY_STRUCTURING_ENGINE
+        request = OpenStructuringSession(
+            capture_id=capture_id or "local-capture",
+            target_language=target_language,
+            provider_capability=StructuringProviderCapability(
+                provider=engine,
+                capability=_PROVIDER_CAPABILITY,
+                schema_dialect=_SCHEMA_DIALECT,
+            ),
+            schema_dialect=_SCHEMA_DIALECT,
+            client_request_id=operation_id or "local-operation",
         )
+        if capture_id is None or operation_id is None:
+            raise ValueError("Capture Runtime pull structuring requires capture and operation IDs")
+        session = self._runtime_client.open_structuring_session(
+            capture_id,
+            request,
+            idempotency_key=operation_id,
+        )
+        if session.capture_id != capture_id:
+            raise ValueError("Capture Runtime structuring session identity does not match capture")
 
-    def _identity_document(
+        segments_by_id = {segment.segment_id: segment for segment in raw.segments}
+        overrides = dict(review_overrides or {})
+        next_batch = session.next_batch_index
+        while next_batch < session.batch_count:
+            self._checkpoint(should_cancel, deadline, monotonic_clock)
+            batch = self._runtime_client.pull_structuring_batch(capture_id, next_batch)
+            if batch.capture_id != capture_id or batch.batch_index != next_batch:
+                raise ValueError("Capture Runtime returned a mismatched structuring batch")
+            semantic = self._semantic_submission(
+                batch,
+                provider,
+                segments_by_id=segments_by_id,
+                target_language=target_language,
+                review_overrides=overrides,
+            )
+            self._checkpoint(should_cancel, deadline, monotonic_clock)
+            session = self._runtime_client.submit_structuring_batch(
+                capture_id,
+                next_batch,
+                semantic,
+                idempotency_key=_batch_idempotency_key(operation_id, next_batch),
+            )
+            next_batch = session.next_batch_index
+            if session.status in {
+                StructuringSessionStatus.FAILED,
+                StructuringSessionStatus.CANCELLED,
+            }:
+                raise ValueError("Capture Runtime structuring session did not complete")
+
+        result = self._runtime_client.get_result(capture_id)
+        if result.operation.status.value != "completed":
+            raise ValueError("Capture Runtime did not attach a completed structuring result")
+        return result.result
+
+    def _semantic_submission(
         self,
-        raw: RawCapture,
+        batch: StructuringBatch,
+        provider: StructuredJsonGenerationProvider | None,
         *,
-        completed_at: datetime,
-        should_cancel: Callable[[], bool],
-        deadline: float | None,
-        monotonic_clock: Callable[[], float],
-    ) -> dict[str, object]:
-        """Project OCR segments through the SDK without an unnecessary LLM call."""
-
-        blocks: list[dict[str, object]] = []
-        for segment in raw.segments:
-            self._checkpoint(
-                should_cancel=should_cancel,
-                deadline=deadline,
-                monotonic_clock=monotonic_clock,
-            )
-            blocks.append(
+        segments_by_id: Mapping[str, object],
+        target_language: str | None,
+        review_overrides: Mapping[str, str],
+    ) -> SubmitStructuringBatch:
+        if provider is None:
+            blocks_value: list[object] = [
                 {
-                    "blockId": f"block-{segment.segment_id}",
-                    "order": segment.order,
-                    "type": "transcript"
-                    if segment.locator.kind == "time"
-                    else "paragraph",
-                    "sourceSegmentId": segment.segment_id,
-                    "locator": segment.locator.model_dump(mode="json", by_alias=True),
-                    "sourceText": segment.text,
-                    "targetText": segment.text,
+                    "sourceSegmentId": segment_id,
+                    "type": (
+                        "transcript"
+                        if getattr(getattr(segments_by_id[segment_id], "locator", None), "kind", None)
+                        == "time"
+                        else "paragraph"
+                    ),
                 }
+                for segment_id in batch.source_segment_ids
+            ]
+        else:
+            candidate = provider.generate_structured_json(
+                messages=_provider_messages(batch.provider_prompt),
+                json_schema=batch.provider_schema,
+                num_ctx=min(self._num_ctx, batch.num_ctx),
+                num_predict=min(self._num_predict, batch.num_predict),
             )
-        return assemble_structuring_document(
-            raw,
-            blocks,
-            engine_identity=_IDENTITY_STRUCTURING_ENGINE,
-            completed_at=completed_at,
-        )
+            decoded = _decode_provider_candidate(candidate)
+            blocks_value = decoded.get("blocks")
+            if not isinstance(blocks_value, list):
+                raise ValueError("Capture structuring provider output must contain a blocks array")
+
+        semantic_blocks: list[StructuringSemanticBlock] = []
+        for block in blocks_value:
+            if not isinstance(block, Mapping):
+                raise ValueError("Capture structuring provider blocks must be objects")
+            payload = dict(block)
+            segment_id = payload.get("sourceSegmentId")
+            if not isinstance(segment_id, str) or segment_id not in segments_by_id:
+                raise ValueError("Capture structuring provider returned an unknown sourceSegmentId")
+            # The runtime enforces target-language semantics.  Review text is
+            # an explicit host presentation overlay and is only attached when
+            # the typed translated surface accepts targetText.
+            if target_language is not None and segment_id in review_overrides:
+                payload["targetText"] = review_overrides[segment_id]
+            semantic_blocks.append(StructuringSemanticBlock.model_validate(payload, strict=True))
+
+        try:
+            return SubmitStructuringBatch(
+                batch_digest=batch.batch_digest,
+                blocks=semantic_blocks,
+            )
+        except Exception as error:
+            message = str(error)
+            if "budget" in message.lower():
+                raise CaptureStructuringBudgetError(message) from error
+            raise
 
     @staticmethod
     def _checkpoint(
-        *,
         should_cancel: Callable[[], bool],
         deadline: float | None,
         monotonic_clock: Callable[[], float],
@@ -219,9 +252,81 @@ class CertPrepCaptureStructuringAdapter:
             raise CaptureStructuringTimeoutError("Capture structuring exceeded its deadline.")
 
 
-def _provider_messages(prompt: Mapping[str, object]) -> list[dict[str, str]]:
-    """Translate the SDK prompt envelope into Cert Prep's chat-provider shape."""
+def _decode_provider_candidate(candidate: object) -> dict[str, object]:
+    if isinstance(candidate, bytes):
+        try:
+            value = json.loads(candidate.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise ValueError("Capture structuring provider output is not valid JSON") from error
+    elif isinstance(candidate, str):
+        try:
+            value = json.loads(candidate)
+        except json.JSONDecodeError as error:
+            raise ValueError("Capture structuring provider output is not valid JSON") from error
+    elif isinstance(candidate, Mapping):
+        value = dict(candidate)
+    else:
+        raise ValueError("Capture structuring provider output must be a JSON object")
+    if not isinstance(value, dict):
+        raise ValueError("Capture structuring provider output must be a JSON object")
+    return {str(key): value for key, value in value.items()}
 
+
+def _supports_pull_sessions(client: object) -> bool:
+    return all(
+        callable(getattr(client, method, None))
+        for method in (
+            "open_structuring_session",
+            "pull_structuring_batch",
+            "submit_structuring_batch",
+            "get_result",
+        )
+    )
+
+
+def _local_identity_bridge(raw: RawCapture, *, completed_at: datetime) -> CaptureDocument:
+    """Small offline/test bridge for pre-pull-session stand-ins.
+
+    Production clients are always the typed SDK adapter above.  This bridge is
+    intentionally limited to the deterministic identity projection so older
+    isolated backend fixtures that do not expose pull-session methods continue
+    to exercise raw/provenance persistence without importing the retired SDK.
+    """
+
+    blocks = [
+        {
+            "blockId": f"block-{segment.segment_id}",
+            "order": segment.order,
+            "type": "transcript" if segment.locator.kind == "time" else "paragraph",
+            "sourceSegmentId": segment.segment_id,
+            "locator": segment.locator.model_dump(mode="json", by_alias=True),
+            "sourceText": segment.text,
+            "targetText": segment.text,
+        }
+        for segment in raw.segments
+    ]
+    return CaptureDocument.model_validate(
+        {
+            "schemaVersion": raw.schema_version,
+            "source": raw.source.model_dump(mode="json", by_alias=True),
+            "rawSegments": [
+                segment.model_dump(mode="json", by_alias=True) for segment in raw.segments
+            ],
+            "blocks": blocks,
+            "sourceText": raw.source_text,
+            "targetText": raw.source_text,
+            "extractionEngine": raw.extraction_engine.model_dump(mode="json", by_alias=True),
+            "structuringEngine": _IDENTITY_STRUCTURING_ENGINE.model_dump(
+                mode="json", by_alias=True
+            ),
+            "warnings": raw.warnings,
+            "createdAt": raw.created_at,
+            "completedAt": completed_at,
+        }
+    )
+
+
+def _provider_messages(prompt: Mapping[str, object]) -> list[dict[str, str]]:
     return [
         {
             "role": "system",
@@ -235,8 +340,6 @@ def _provider_messages(prompt: Mapping[str, object]) -> list[dict[str, str]]:
 
 
 def _engine_identity(provider: StructuredJsonGenerationProvider) -> CaptureEngine:
-    """Derive the trusted Cert Prep engine identity from the selected provider."""
-
     digest = None
     selection = getattr(provider, "profile_selection", None)
     candidate_digest = getattr(selection, "modelfile_sha256", None)
@@ -250,6 +353,10 @@ def _engine_identity(provider: StructuredJsonGenerationProvider) -> CaptureEngin
         model=provider.model,
         digest=f"sha256:{digest}",
     )
+
+
+def _batch_idempotency_key(operation_id: str, batch_index: int) -> str:
+    return str(uuid5(_IDEMPOTENCY_NAMESPACE, f"{operation_id}:structuring-batch:{batch_index}"))
 
 
 __all__ = [

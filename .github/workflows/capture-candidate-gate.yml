@@ -55,7 +55,6 @@ jobs:
           path: capture-workbench
           sparse-checkout: |
             packages/capture-runtime-client-python
-            packages/capture-structuring-python
           persist-credentials: false
 
       - name: Link the producer Python bridge
