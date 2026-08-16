@@ -869,7 +869,7 @@ def test_sidecar_client_rejects_incompatible_runtime_release() -> None:
 
     with pytest.raises(
         CaptureRuntimeCompatibilityError,
-        match="runtime version 0.2.8 is incompatible with 0.4.0",
+        match="runtime version 0.2.8 is incompatible with 0.4.1",
     ):
         client.handshake()
 
@@ -886,7 +886,7 @@ def test_sidecar_client_requires_the_coordinated_runtime_release() -> None:
         client=httpx.Client(transport=transport),
     )
 
-    with pytest.raises(CaptureRuntimeCompatibilityError, match="incompatible with 0.4.0"):
+    with pytest.raises(CaptureRuntimeCompatibilityError, match="incompatible with 0.4.1"):
         client.handshake()
 
 

@@ -76,9 +76,10 @@ jobs:
 
       - name: Install JavaScript dependencies and pinned Capture Workbench package
         env:
-          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc.example
-        run: pnpm install --frozen-lockfile
+          NODE_AUTH_TOKEN: ${{ github.token }}
+          CAPTURE_PUBLISHED_0_4_1: ${{ vars.CAPTURE_PUBLISHED_0_4_1 }}
+          CAPTURE_PRESERVE_INSTALL_FILES: 'true'
+        run: node tools/install-capture-workbench-dependencies.mts --prepublication-stable-version 0.4.0
 
       - name: Sync backend Python environment
         run: >-
@@ -178,9 +179,10 @@ jobs:
 
       - name: Install JavaScript dependencies and pinned Capture Workbench package
         env:
-          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_CONFIG_USERCONFIG: ${{ github.workspace }}/.npmrc.example
-        run: pnpm install --frozen-lockfile
+          NODE_AUTH_TOKEN: ${{ github.token }}
+          CAPTURE_PUBLISHED_0_4_1: ${{ vars.CAPTURE_PUBLISHED_0_4_1 }}
+          CAPTURE_PRESERVE_INSTALL_FILES: 'true'
+        run: node tools/install-capture-workbench-dependencies.mts --prepublication-stable-version 0.4.0
 
       - name: Sync backend Python environment
         run: >-
@@ -210,19 +212,19 @@ jobs:
         run: pnpm nx run cert-prep-desktop:package-qa-test
 
       - name: Stage the published Capture Runtime release
-        if: vars.CAPTURE_PUBLISHED_0_4_0 == 'true'
+        if: vars.CAPTURE_PUBLISHED_0_4_1 == 'true'
         run: pnpm nx run cert-prep-desktop:install-capture-runtime --skip-nx-cache
 
       - name: Verify Capture Runtime installer behavior
-        if: vars.CAPTURE_PUBLISHED_0_4_0 == 'true'
+        if: vars.CAPTURE_PUBLISHED_0_4_1 == 'true'
         run: node --test tools/install-capture-runtime.test.mts
 
       - name: Run the Capture Runtime consumer smoke
-        if: vars.CAPTURE_PUBLISHED_0_4_0 == 'true'
+        if: vars.CAPTURE_PUBLISHED_0_4_1 == 'true'
         run: pnpm nx run cert-prep-desktop:capture-runtime-consumer-smoke --skip-nx-cache
 
       - name: Verify published Capture registry installation
-        if: vars.CAPTURE_PUBLISHED_0_4_0 == 'true'
+        if: vars.CAPTURE_PUBLISHED_0_4_1 == 'true'
         env:
           CAPTURE_REQUIRE_PUBLISHED_CAPTURE_ARTIFACTS: '1'
         shell: pwsh
@@ -230,8 +232,8 @@ jobs:
           $ErrorActionPreference = 'Stop'
           pnpm nx run cert-prep-desktop:capture-runtime-consumer-test --skip-nx-cache
           uv run --isolated --no-project `
-            --with 'capture-runtime-client==0.4.0' `
-            -- python -c "import capture_runtime_client; assert capture_runtime_client.CAPTURE_RUNTIME_VERSION == '0.4.0'"
+            --with 'capture-runtime-client==0.4.1' `
+            -- python -c "import capture_runtime_client; assert capture_runtime_client.CAPTURE_RUNTIME_VERSION == '0.4.1'"
 
       - name: Test Tauri host
         run: pnpm nx run cert-prep-desktop:cargo-test

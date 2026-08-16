@@ -84,7 +84,7 @@ test('enforces the fixture v2 ingestion, live replay SSE, and host commit contra
   expect(readiness.ok()).toBe(true);
   await expect(readiness.json()).resolves.toMatchObject({
     apiVersion: '2.0',
-    runtimeVersion: '0.4.0',
+    runtimeVersion: '0.4.1',
     captureDocumentSchemaVersion: '2',
     contractSetVersion: '2',
   });
