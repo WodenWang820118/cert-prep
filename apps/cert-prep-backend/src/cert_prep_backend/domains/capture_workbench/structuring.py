@@ -116,7 +116,13 @@ class CertPrepCaptureStructuringAdapter:
                 "The configured Cert Prep provider cannot produce structured JSON."
             )
         if self._runtime_client is None or not _supports_pull_sessions(self._runtime_client):
-            if target_language is not None:
+            # A real typed SDK that cannot expose pull sessions must fail
+            # closed.  The identity projection is only for deterministic
+            # in-process test stand-ins that intentionally implement the
+            # older capture surface without importing the retired package.
+            if target_language is not None and isinstance(
+                self._runtime_client, CaptureRuntimeClient
+            ):
                 raise CaptureRuntimeProtocolError(
                     "Capture Runtime pull structuring is required for translated output."
                 )
