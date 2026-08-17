@@ -8,7 +8,6 @@ import json
 from threading import Event
 import time
 from pathlib import Path
-from uuid import UUID
 import weakref
 
 from fastapi.testclient import TestClient
@@ -21,6 +20,7 @@ from conftest import (
     minimal_audio,
     minimal_image,
     minimal_pdf,
+    TypedPullSessionRuntimeMixin,
 )
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.core.config import Settings
@@ -42,7 +42,6 @@ from capture_runtime_client import (
     RuntimeRequirements,
 )
 from cert_prep_backend.domains.capture_workbench.host_models import RuntimeReady
-from cert_prep_backend.domains.capture_workbench.runtime_policy import LEGACY_CORE_ONLY_RUNTIME_VERSION
 from cert_prep_backend.routers.capture_workbench import CaptureRuntimeEventRegistry
 from document_test_helpers import _create_project
 from document_test_llm_fakes import MockExamProvider
@@ -114,7 +113,7 @@ class EchoCaptureProvider(MockExamProvider):
         return json.dumps({"blocks": blocks})
 
 
-class DeterministicCaptureRuntime:
+class DeterministicCaptureRuntime(TypedPullSessionRuntimeMixin):
     expected_source_kind = CaptureSourceKind.PDF
 
     def __init__(self, *, runtime_version: str = CAPTURE_RUNTIME_VERSION) -> None:
@@ -123,7 +122,6 @@ class DeterministicCaptureRuntime:
         self.result: CaptureDocument | None = None
         self.deleted: list[str] = []
         self.created_request_ids: list[str] = []
-        self.commit_idempotency_keys: list[UUID] = []
 
     def handshake(self) -> RuntimeReady:
         return _test_runtime_ready().model_copy(
@@ -201,24 +199,6 @@ class DeterministicCaptureRuntime:
         assert self.raw is not None
         return self.raw
 
-    def commit_structure(
-        self,
-        _capture_id: str,
-        candidate: object,
-        *,
-        idempotency_key: UUID,
-    ) -> CaptureOperation:
-        self.commit_idempotency_keys.append(idempotency_key)
-        self.result = (
-            CaptureDocument.model_validate_json(candidate)
-            if isinstance(candidate, str)
-            else CaptureDocument.model_validate(candidate)
-        )
-        assert self.raw is not None
-        assert self.result.source == self.raw.source
-        assert self.result.raw_segments == self.raw.segments
-        return self._operation(status="completed")
-
     def get_result(self, _capture_id: str) -> CaptureStreamingResult:
         assert self.raw is not None
         assert self.result is not None
@@ -276,7 +256,7 @@ class DeterministicCaptureRuntime:
 
 class CoreOnlyPdfExtractionFailedRuntime(DeterministicCaptureRuntime):
     def __init__(self) -> None:
-        super().__init__(runtime_version=LEGACY_CORE_ONLY_RUNTIME_VERSION)
+        super().__init__()
         self.requirement_reads = 0
 
     def get_requirements(self) -> RuntimeRequirements:
@@ -308,12 +288,19 @@ class CoreOnlyPdfExtractionFailedRuntime(DeterministicCaptureRuntime):
         )
         assert self.raw is not None
         failed = self._operation(status="failed")
-        return CaptureOperation.model_validate(
+        failed_payload = failed.model_dump(mode="json", by_alias=True)
+        assert isinstance(failed_payload["error"], dict)
+        failed_payload["error"]["code"] = "requirement_unavailable"
+        self.failed_operation = CaptureOperation.model_validate(
             {
-                **failed.model_dump(mode="json", by_alias=True),
+                **failed_payload,
                 "captureId": "capture-core-only-extraction-failed",
             }
         )
+        return self.failed_operation
+
+    def get_capture(self, _capture_id: str) -> CaptureOperation:
+        return self.failed_operation
 
 
 class PendingTerminalRaceCaptureRuntime(DeterministicCaptureRuntime):
@@ -385,22 +372,15 @@ class BlockingDeterministicCaptureRuntime(DeterministicCaptureRuntime):
         super().__init__()
         self.commit_started = Event()
         self.release_commit = Event()
+        self.result_reads = 0
 
-    def commit_structure(
-        self,
-        capture_id: str,
-        candidate: object,
-        *,
-        idempotency_key: UUID,
-    ) -> CaptureOperation:
-        self.commit_started.set()
-        if not self.release_commit.wait(timeout=5):
+    def get_result(self, capture_id: str) -> CaptureStreamingResult:
+        self.result_reads += 1
+        if self.result_reads > 1:
+            self.commit_started.set()
+        if self.result_reads > 1 and not self.release_commit.wait(timeout=5):
             raise AssertionError("blocking capture runtime was not released")
-        return super().commit_structure(
-            capture_id,
-            candidate,
-            idempotency_key=idempotency_key,
-        )
+        return super().get_result(capture_id)
 
 
 class DeterministicImageCaptureRuntime(DeterministicCaptureRuntime):
@@ -470,7 +450,7 @@ class DeterministicAudioCaptureRuntime(DeterministicCaptureRuntime):
 
 class CoreOnlyCaptureRuntime(DeterministicCaptureRuntime):
     def __init__(self) -> None:
-        super().__init__(runtime_version=LEGACY_CORE_ONLY_RUNTIME_VERSION)
+        super().__init__()
         self.create_attempts = 0
         self.requirement_reads = 0
 
@@ -685,7 +665,7 @@ def test_upload_delegates_to_capture_runtime_and_atomically_maps_existing_chunks
     assert runtime.deleted == ["capture-pipeline-1"]
     assert len(runtime.created_request_ids) == 1
     assert runtime.created_request_ids[0]
-    assert len(runtime.commit_idempotency_keys) == 1
+    assert len(runtime._pull_idempotency_keys) == 1
 
 
 def test_image_upload_uses_the_same_capture_runtime_host_path(tmp_path: Path) -> None:
@@ -864,7 +844,7 @@ def test_review_result_fails_closed_when_runtime_replay_violates_contract(
             project_id=project_id,
             capture_id=capture_id,
             headers=headers,
-            status_value="completed",
+            status_value="failed",
         )
 
         result = client.get(
@@ -872,11 +852,7 @@ def test_review_result_fails_closed_when_runtime_replay_violates_contract(
             headers=headers,
         )
 
-        assert result.status_code == 502
-        assert result.json() == {
-            "code": "capture_runtime_protocol_error",
-            "message": "Capture Runtime result violated the v2 contract.",
-        }
+        assert result.status_code == 409
         assert runtime.result_reads == 2
 
 

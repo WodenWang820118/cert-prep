@@ -1,25 +1,27 @@
 # Capture Runtime release consumer spec
 
-`cert-prep` consumes `capture-runtime@0.4.0` as a published Windows x64
+`cert-prep` consumes `capture-runtime@0.4.1` as a published Windows x64
 executable. It does not import the runtime as Python, link a workspace package,
 or retain a local extraction provider.
 
 ## Contract
 
 - Runtime API: `2.0`.
-- Runtime version: `0.4.0` from the canonical
+- Runtime version: `0.4.1` from the canonical
   `gx-capture/capture-workbench` GitHub Release.
+- Contract-set version: `2`.
+- Contract-set SHA-256: `b28366f022533192c063056bbf64cacfd09390815c65408066369dd61094e278`.
 - `CaptureDocument` schema: `2`.
 - Consumer assets: executable, checksum, `capture-runtime-manifest.json`, and
   the schema file.
-- Published-byte evidence pins the downloaded v0.4.0 executable to the
+- Published-byte evidence pins the downloaded v0.4.1 executable to the
   SHA-256 recorded by its release manifest and requires the staged
   manifest/checksum to agree before launch. The earlier v0.3.8 hash remains
   historical evidence only.
 - The published schema bytes have SHA-256
   `850afd212d049c25da41d3867ba5477451a6a2c6c7e41f116fe60f26b6a35335` and
   retain the canonical `gx-capture` schema identifier.
-- v0.4.0 publishes the engine-bearing catalog for `windowsml-ocr` and
+- v0.4.1 publishes the engine-bearing catalog for `windowsml-ocr` and
   `whisper-primary`. Its production extractor still supports a PDF whose every
   page has embedded text, without invoking a model, and must report
   `pdf-embedded-text` provenance. Scanned PDFs/images require ready OCR and
@@ -32,7 +34,7 @@ or retain a local extraction provider.
   The host UI gates OCR/STT-dependent sources on runtime readiness while the backend adapter performs
   the compatibility and requirement checks immediately before opening each
   sidecar ingestion.
-- On v0.4.0 the UI exposes image/audio controls only when the corresponding
+- On v0.4.1 the UI exposes image/audio controls only when the corresponding
   runtime requirement is ready and never claims OCR-dependent PDF support
   without ready OCR. The runtime installs `windowsml-ocr` first and
   `whisper-primary` second after explicit consent; no capture starts until each
@@ -45,12 +47,11 @@ or retain a local extraction provider.
   and otherwise each is rejected before dispatch. Every PDF is dispatched to
   the runtime without browser scanned-PDF classification; an OCR-dependent PDF
   is terminally failed with a clear unavailable-model error if extraction finds
-  a page without embedded text. Because the legacy v0.3.8 sidecar reported
-  this unavailable-engine path as `extraction_failed`, the coordinator re-reads
-  the runtime requirements after that PDF terminal state and maps it to the
-  typed OCR dependency error only when the single `windowsml-ocr` requirement
-  is explicitly non-ready. A missing, duplicate, or ready requirement preserves
-  the original sidecar error rather than guessing.
+  a page without embedded text. The coordinator maps only the typed
+  `requirement_unavailable` result to the OCR dependency error when the single
+  `windowsml-ocr` requirement is explicitly non-ready. A missing, duplicate,
+  ready, or generic extraction error preserves the original sidecar error
+  rather than guessing.
 - Image/audio admission failures preserve the runtime requirement detail and use
   the same product messages across the Trial client and `/documents` path:
   `WindowsML OCR is unavailable. <detail>` and
@@ -65,18 +66,21 @@ or retain a local extraction provider.
   UTF-8, framing, capture/sequence identity, event names, monotonic ordering,
   and bounded input before exposing events. Reconnect uses `Last-Event-ID`;
   listener disconnect never cancels the runtime capture. Snapshot, partial,
-  raw, and result reads support reconciliation and review, followed by host
-  structure commit/failure, cancel, and delete.
+  raw, and result reads support reconciliation and review, followed by typed
+  pull-session structuring/failure, cancel, and delete. The runtime validates
+  and reconstructs the final base document; Cert Prep applies only its local
+  review overlay and domain mapping.
 
 ## Failure policy
 
 Missing or malformed assets, checksum/byte drift, incompatible handshake,
 unsupported capture kind, unavailable requirements, sidecar failure, timeout,
 and cancellation are terminal/unavailable states. A scanned or mixed PDF must
-not be silently treated as embedded text: when the runtime reaches its unavailable
-WindowsML path, Cert Prep maps the terminal sidecar error to the clear
-OCR-unavailable product state. Cert Prep never falls back to an OCR or Whisper
-provider of its own.
+not be silently treated as embedded text: when the runtime returns the typed
+`requirement_unavailable` WindowsML result, Cert Prep maps it to the clear
+OCR-unavailable product state. Other runtime failures remain their original
+typed error. Cert Prep never falls back to an OCR or Whisper provider of its
+own.
 
 ## Evidence
 
@@ -84,7 +88,7 @@ The installer contract, package QA, Tauri contract tests, backend coordinator
 tests, and the published-byte consumer smoke must prove staging, authenticated
 readiness/requirements, host-protocol compatibility, cleanup, and rejection of
 tampered or missing runtime assets. The product E2E must use the published
-v0.4.0 executable and a real, non-fake PDF whose every page contains embedded
+v0.4.1 executable and a real, non-fake PDF whose every page contains embedded
 text; it proves UI selection, backend-to-sidecar capture, review confirmation,
 host persistence, and Markdown export with `pdf-embedded-text` provenance.
 Its negative cases prove image, audio, and any OCR-dependent PDF fail closed
@@ -111,13 +115,11 @@ mappers that reject schema drift, unknown discriminators, invalid locators,
 and illegal bounding boxes before domain use. The deterministic client spec
 was removed because it was only a local spec fixture.
 
-The package declarations remain version-ranged at `0.4.0`. Once the producer
-publishes the matching npm/PyPI/Cargo artifacts, the lockfiles must resolve
-from those registries; the permanent consumer consistency target rejects local
-path sources in strict release CI and verifies npm, PyPI, Cargo, runtime
-declarations, and lockfiles all resolve the same release. The 0.4.0 lockfile
-refresh and published-byte proof remain active release gates until those
-artifacts exist.
+The package declarations and lockfiles resolve the matching `0.4.1` npm,
+PyPI, and Cargo artifacts. The permanent consumer consistency target rejects
+local path sources in strict release CI and verifies npm, PyPI, Cargo, runtime
+declarations, and lockfiles all resolve the same release. The 0.4.1 published-
+byte proof and engine-bearing real smoke remain active release gates.
 
 For a local producer candidate, `CERT_PREP_CAPTURE_RUNTIME_RELEASE_DIRECTORY`
 lets the installer and consumer handshake smoke stage the canonical executable,
@@ -127,6 +129,6 @@ URL, does not satisfy published-byte evidence, and the independent consumer
 bundle is built by `cert-prep-desktop`'s own Tauri app.
 
 When a GitHub runner is unavailable, `pnpm verify:modular-reuse:local` runs the
-consumer consistency test locally. After publication, set the repository
-variable `CAPTURE_PUBLISHED_0_4_0=true` so the CI job also runs strict source
+consumer consistency test locally. Set the repository variable
+`CAPTURE_PUBLISHED_0_4_1=true` so the CI job also runs strict source
 and clean PyPI install checks.

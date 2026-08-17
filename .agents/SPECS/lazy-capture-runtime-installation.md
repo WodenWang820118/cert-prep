@@ -27,7 +27,7 @@ Capture Runtime from Capture Workbench when they want to debug or use capture.
 
 ## Non-goals
 
-- Changing capture-workbench `0.3.8`, adding a runtime download, side-loading
+- Changing capture-workbench `0.4.1`, adding a runtime download, side-loading
   WindowsML/Whisper assets, browser-side sidecar access, fake extraction, or
   persisting a sidecar token.
 
@@ -43,8 +43,10 @@ Capture Runtime from Capture Workbench when they want to debug or use capture.
   rollback-capable owned-backend restart.
 - The capture page tells a desktop user Capture Runtime is unavailable and
   presents a clear action; it does not construct a usable capture client first.
-- Existing v0.3.8 embedded-text PDF flow still requires `pdf-embedded-text` on
-  CPU. OCR/STT/image/audio/scanned-PDF support remains fail-closed.
+- The current 0.4.1 embedded-text PDF flow still requires `pdf-embedded-text`
+  on CPU. OCR/STT/image/audio/scanned-PDF support remains fail-closed until
+  the engine-bearing real-smoke gate is complete; the earlier v0.3.8 result is
+  retained as historical evidence only.
 
 ## Test plan
 

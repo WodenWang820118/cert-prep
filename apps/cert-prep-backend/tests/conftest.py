@@ -22,11 +22,16 @@ from cert_prep_backend.domains.capture_workbench.client import (
 from capture_runtime_client import (
     CAPTURE_RUNTIME_VERSION,
     CaptureDocument,
+    CaptureEvent,
     CaptureOperation,
     CaptureSourceKind,
     PartialCapture,
     RawCapture,
     RuntimeRequirements,
+    StructuringBatch,
+    StructuringBatchStatus,
+    StructuringSession,
+    StructuringSessionStatus,
 )
 from cert_prep_backend.domains.capture_workbench.host_models import RuntimeReady
 
@@ -52,7 +57,194 @@ def client(tmp_path: Path) -> Iterator[TestClient]:
         yield test_client
 
 
-class TestCaptureRuntimeClient:
+class TypedPullSessionRuntimeMixin:
+    """Provide the typed runtime boundary used by host integration fakes."""
+
+    def _pull_raw_capture(self) -> RawCapture:
+        raw = getattr(self, "_raw", None) or getattr(self, "raw", None)
+        assert isinstance(raw, RawCapture)
+        return raw
+
+    def _pull_result_capture(self) -> CaptureDocument | None:
+        return getattr(self, "_result", None) or getattr(self, "result", None)
+
+    def _set_pull_result(self, result: CaptureDocument) -> None:
+        if hasattr(self, "_raw"):
+            self._result = result
+        else:
+            self.result = result
+
+    def open_structuring_session(
+        self,
+        capture_id: str,
+        request: object,
+        *,
+        idempotency_key: str,
+    ) -> StructuringSession:
+        del idempotency_key
+        raw = self._pull_raw_capture()
+        self._pull_request = request
+        self._pull_submissions: list[object] = []
+        self._pull_idempotency_keys: list[str] = []
+        self._pull_session = StructuringSession.model_validate(
+            {
+                "sessionId": f"session-{capture_id}",
+                "captureId": capture_id,
+                "rawSourceSha256": raw.source.sha256,
+                "contractSetSha256": "c" * 64,
+                "targetLanguage": getattr(request, "target_language", None),
+                "providerCapability": request.provider_capability.model_dump(
+                    mode="json", by_alias=True
+                ),
+                "schemaDialect": request.schema_dialect,
+                "batchCount": len(raw.segments),
+                "nextBatchIndex": 0,
+                "sessionDigest": "d" * 64,
+                "status": StructuringSessionStatus.OPEN,
+                "createdAt": raw.created_at,
+                "updatedAt": raw.created_at,
+            }
+        )
+        return self._pull_session
+
+    def pull_structuring_batch(self, capture_id: str, batch_index: int) -> StructuringBatch:
+        raw = self._pull_raw_capture()
+        session = self._pull_session
+        segment = raw.segments[batch_index]
+        return StructuringBatch.model_validate(
+            {
+                "sessionId": session.session_id,
+                "captureId": capture_id,
+                "batchIndex": batch_index,
+                "batchCount": session.batch_count,
+                "sourceSegmentIds": [segment.segment_id],
+                "providerPrompt": {
+                    "targetLanguage": getattr(self._pull_request, "target_language", None),
+                    "rawSegments": [segment.model_dump(mode="json", by_alias=True)],
+                },
+                "providerSchema": {
+                    "title": "CaptureBlockBatch",
+                    "type": "object",
+                    "properties": {"blocks": {"type": "array", "items": {"type": "object"}}},
+                    "required": ["blocks"],
+                    "additionalProperties": False,
+                },
+                "numCtx": 8_192,
+                "numPredict": 4_096,
+                "batchDigest": f"{batch_index + 1:064x}",
+                "status": StructuringBatchStatus.READY,
+            }
+        )
+
+    def submit_structuring_batch(
+        self,
+        capture_id: str,
+        batch_index: int,
+        submission: object,
+        *,
+        idempotency_key: str,
+    ) -> StructuringSession:
+        session = self._pull_session
+        assert session.capture_id == capture_id
+        assert session.next_batch_index == batch_index
+        self._pull_idempotency_keys.append(idempotency_key)
+        self._pull_submissions.append(submission)
+        next_index = batch_index + 1
+        status = (
+            StructuringSessionStatus.COMPLETED
+            if next_index == session.batch_count
+            else StructuringSessionStatus.OPEN
+        )
+        self._pull_session = session.model_copy(
+            update={
+                "next_batch_index": next_index,
+                "status": status,
+                "updated_at": session.updated_at,
+                "completed_at": session.updated_at if status is StructuringSessionStatus.COMPLETED else None,
+            }
+        )
+        if status is StructuringSessionStatus.COMPLETED:
+            self._set_pull_result(self._reconstruct_pull_document())
+        return self._pull_session
+
+    def capture_events(
+        self,
+        capture_id: str,
+        *,
+        last_event_id: str | int | None = None,
+        on_activity=None,
+    ):
+        del last_event_id
+        if on_activity is not None:
+            on_activity()
+        operation = self.get_capture(capture_id)
+        event_type = (
+            operation.status.value
+            if operation.status.value in {"completed", "failed", "cancelled"}
+            else "checkpoint"
+        )
+        yield CaptureEvent.model_validate(
+            {
+                "protocolVersion": "2",
+                "eventId": f"{capture_id}/{operation.last_event_sequence}",
+                "sequence": operation.last_event_sequence,
+                "captureId": capture_id,
+                "kind": operation.kind.value,
+                "eventType": event_type,
+                "stage": operation.status.value,
+                "progress": operation.progress,
+                "partialRevision": operation.partial_revision,
+                "error": operation.error.model_dump(mode="json", by_alias=True)
+                if operation.error is not None
+                else None,
+                "createdAt": operation.updated_at,
+            }
+        )
+
+    def _reconstruct_pull_document(self) -> CaptureDocument:
+        raw = self._pull_raw_capture()
+        submitted = [block for submission in self._pull_submissions for block in submission.blocks]
+        by_segment = {block.source_segment_id: block for block in submitted}
+        blocks = []
+        for segment in raw.segments:
+            semantic = by_segment[segment.segment_id]
+            block_type = getattr(semantic.type, "value", semantic.type)
+            blocks.append(
+                {
+                    "blockId": f"runtime-block-{segment.segment_id}",
+                    "order": segment.order,
+                    "type": block_type,
+                    "sourceSegmentId": segment.segment_id,
+                    "locator": segment.locator.model_dump(mode="json", by_alias=True),
+                    "sourceText": segment.text,
+                    "targetText": semantic.target_text or segment.text,
+                }
+            )
+        target_text = "\n".join(str(block["targetText"]) for block in blocks)
+        return CaptureDocument.model_validate(
+            {
+                "schemaVersion": raw.schema_version,
+                "source": raw.source.model_dump(mode="json", by_alias=True),
+                "rawSegments": [
+                    segment.model_dump(mode="json", by_alias=True) for segment in raw.segments
+                ],
+                "blocks": blocks,
+                "sourceText": raw.source_text,
+                "targetText": target_text,
+                "extractionEngine": raw.extraction_engine.model_dump(mode="json", by_alias=True),
+                "structuringEngine": {
+                    "engine": "cert-prep-typed-pull-test",
+                    "model": "typed-pull-session-test",
+                    "digest": "sha256:" + "f" * 64,
+                },
+                "warnings": raw.warnings,
+                "createdAt": raw.created_at,
+                "completedAt": raw.created_at,
+            }
+        )
+
+
+class TestCaptureRuntimeClient(TypedPullSessionRuntimeMixin):
     __test__ = False
     """Deterministic test-side stand-in for the published Capture Runtime HTTP client."""
 
@@ -136,17 +328,6 @@ class TestCaptureRuntimeClient:
     def get_raw(self, _capture_id: str) -> RawCapture:
         assert self._raw is not None
         return self._raw
-
-    def commit_structure(
-        self,
-        _capture_id: str,
-        candidate: object,
-        *,
-        idempotency_key: object,
-    ) -> CaptureOperation:
-        del idempotency_key
-        self._result = CaptureDocument.model_validate_json(candidate) if isinstance(candidate, str) else CaptureDocument.model_validate(candidate)
-        return self._operation(status="completed")
 
     def get_result(self, _capture_id: str) -> CaptureStreamingResult:
         assert self._raw is not None

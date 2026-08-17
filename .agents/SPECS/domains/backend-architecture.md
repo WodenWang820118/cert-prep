@@ -13,6 +13,10 @@ and practice.
 - Shared platform modules can stay in place when they serve multiple domains.
 - Public DTOs are owned by their backend domain. OpenAPI client generation must
   be rerun after route/schema changes.
+- The pinned Capture Runtime SDK is the sole wire authority for Capture Runtime
+  discovery, transport, retries, SSE decoding, wire DTOs, v2 ingestion/capture,
+  and typed pull sessions. Cert Prep adapters may add product-facing
+  validation, but must not duplicate runtime wire behavior.
 - Endpoint paths and JSON field names stay stable unless a spec explicitly
   authorizes a contract change.
 - Status-like fields may receive OpenAPI enum polish while preserving existing
@@ -23,6 +27,10 @@ and practice.
   directly.
 - Capture Runtime workers never write directly to SQLite. The backend processing
   thread owns idempotent chunk/progress persistence after host validation.
+- Capture Runtime mapping, review, and persistence are consumer-local: Cert Prep
+  owns the `CaptureDocument` mapping, review overrides, and SQLite writes after
+  host confirmation. Typed pull-session batching, prompt/schema projection,
+  semantic validation, and provenance reconstruction remain runtime-owned.
 - Generated/AI questions must stay editable and user-governed. Older
   approval-only promotion behavior is retired.
 - Runtime installation remains exposed through the

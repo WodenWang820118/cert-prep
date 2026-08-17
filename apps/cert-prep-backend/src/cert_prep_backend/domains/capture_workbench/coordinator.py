@@ -17,6 +17,7 @@ from capture_runtime_client import (
     CaptureOperation,
     CaptureRequirementId,
     CaptureSourceKind,
+    CaptureTransportError,
     PartialCapture,
     RawCapture,
     RuntimeRequirementStatus,
@@ -33,9 +34,6 @@ from cert_prep_backend.domains.capture_workbench.client import (
 )
 from cert_prep_backend.domains.capture_workbench.review import reviewed_text_overrides
 from cert_prep_backend.domains.capture_workbench.host_models import CaptureReview
-from cert_prep_backend.domains.capture_workbench.runtime_policy import (
-    LEGACY_CORE_ONLY_RUNTIME_VERSION,
-)
 from cert_prep_backend.domains.capture_workbench.structuring import (
     CaptureStructuringCanceledError,
     CaptureStructuringTimeoutError,
@@ -44,7 +42,6 @@ from cert_prep_backend.domains.capture_workbench.structuring import (
 
 
 _IDEMPOTENCY_NAMESPACE = UUID("518ad006-a998-4b4b-b0fb-9be26b4447ac")
-_MAX_EVENT_RECONNECTS = 32
 PDF_OCR_UNAVAILABLE_MESSAGE = (
     "This PDF requires WindowsML OCR, which is unavailable in the installed "
     "Capture Runtime."
@@ -232,7 +229,6 @@ class CertPrepCaptureCoordinator:
             self._raise_if_pdf_ocr_is_unavailable(
                 kind,
                 error,
-                runtime_version=ready.runtime_version,
             )
             raise
 
@@ -310,61 +306,25 @@ class CertPrepCaptureCoordinator:
         candidate: CaptureDocument | str | bytes | Mapping[str, object],
         should_cancel: Callable[[], bool],
     ) -> CaptureRunResult:
-        deadline = self._clock() + self._timeout_seconds
         document = _capture_document(candidate)
         if should_cancel():
             self._cancel(capture_id)
             raise CaptureRuntimeCanceledError("Document processing was cancelled.")
-        if self._supports_pull_sessions():
-            operation = self._client.get_capture(capture_id)
-            if operation.status is StreamingCaptureStatus.COMPLETED:
-                # Pull-session submission has already caused the runtime to
-                # validate, reconstruct, and complete the base document.  A
-                # Cert Prep review may then change only targetText for local
-                # persistence; never bypass the runtime's raw/provenance
-                # boundary when accepting that overlay.
-                result = self._client.get_result(capture_id)
-                _assert_review_overlay(document, result.result)
-                return CaptureRunResult(
-                    capture_id=capture_id,
-                    last_event_sequence=result.operation.last_event_sequence,
-                    raw=result.raw,
-                    document=document,
-                )
-        operation = self._commit_structure(
-            capture_id,
-            document.model_dump(mode="json", by_alias=True),
-            idempotency_key=_idempotency_key(operation_id, "structure"),
-            deadline=deadline,
-            should_cancel=should_cancel,
-        )
-        self._wait_for_completion(
-            operation,
-            deadline=deadline,
-            should_cancel=should_cancel,
-        )
         result = self._client.get_result(capture_id)
         if result.operation.status is not StreamingCaptureStatus.COMPLETED:
             raise CaptureRuntimeProtocolError(
                 "Capture Runtime result is not attached to a completed operation"
             )
+        # Pull-session submission has already caused the runtime to validate,
+        # reconstruct, and complete the base document.  A Cert Prep review may
+        # then change only targetText for local persistence; never bypass the
+        # runtime's raw/provenance boundary when accepting that overlay.
+        _assert_review_overlay(document, result.result)
         return CaptureRunResult(
             capture_id=capture_id,
             last_event_sequence=result.operation.last_event_sequence,
             raw=result.raw,
-            document=result.result,
-        )
-
-    def _supports_pull_sessions(self) -> bool:
-        return all(
-            callable(getattr(self._client, method, None))
-            for method in (
-                "open_structuring_session",
-                "pull_structuring_batch",
-                "submit_structuring_batch",
-                "get_capture",
-                "get_result",
-            )
+            document=document,
         )
 
     def confirm_capture(
@@ -459,14 +419,10 @@ class CertPrepCaptureCoordinator:
         self,
         source_kind: CaptureSourceKind,
         error: CaptureRuntimeJobError,
-        *,
-        runtime_version: str,
     ) -> None:
         if source_kind is not CaptureSourceKind.PDF:
             return
-        if error.code == "extraction_failed" and runtime_version != LEGACY_CORE_ONLY_RUNTIME_VERSION:
-            return
-        if error.code not in {"extraction_failed", "requirement_unavailable"}:
+        if error.code != "requirement_unavailable":
             return
         requirement_id, display_name = _PDF_OCR_REQUIREMENT
         try:
@@ -515,27 +471,6 @@ class CertPrepCaptureCoordinator:
         self._raise_for_terminal(operation)
         return operation
 
-    def _wait_for_completion(
-        self,
-        operation: CaptureOperation,
-        *,
-        deadline: float,
-        should_cancel: Callable[[], bool],
-    ) -> CaptureOperation:
-        operation = self._wait_for_status(
-            operation,
-            stop_statuses=_TERMINAL_STATUSES,
-            deadline=deadline,
-            should_cancel=should_cancel,
-        )
-        self._raise_for_terminal(operation)
-        if operation.status is not StreamingCaptureStatus.COMPLETED:
-            raise CaptureRuntimeStateUnknownError(
-                operation.capture_id,
-                "Capture Runtime did not confirm a completed operation.",
-            )
-        return operation
-
     def _wait_for_status(
         self,
         operation: CaptureOperation,
@@ -544,55 +479,48 @@ class CertPrepCaptureCoordinator:
         deadline: float,
         should_cancel: Callable[[], bool],
     ) -> CaptureOperation:
-        reconnects = 0
-        current = operation
-        while current.status not in stop_statuses:
-            self._checkpoint(
-                current.capture_id,
-                deadline=deadline,
-                should_cancel=should_cancel,
-            )
-            last_sequence = current.last_event_sequence
-            try:
-                for event in self._client.capture_events(
-                    current.capture_id,
-                    last_event_id=last_sequence,
-                    on_activity=lambda: self._checkpoint(
-                        current.capture_id,
-                        deadline=deadline,
-                        should_cancel=should_cancel,
-                    ),
+        if operation.status in stop_statuses:
+            self._raise_for_terminal(operation)
+            return operation
+        self._checkpoint(
+            operation.capture_id,
+            deadline=deadline,
+            should_cancel=should_cancel,
+        )
+        last_sequence = operation.last_event_sequence
+        stream_error: Exception | None = None
+        try:
+            for event in self._client.capture_events(
+                operation.capture_id,
+                last_event_id=last_sequence,
+                on_activity=lambda: self._checkpoint(
+                    operation.capture_id,
+                    deadline=deadline,
+                    should_cancel=should_cancel,
+                ),
+            ):
+                last_sequence = event.sequence
+                if (
+                    event.event_type is StreamingEventType.RESYNC_REQUIRED
+                    or event.event_type in _TERMINAL_EVENTS
+                    or event.stage == StreamingCaptureStatus.AWAITING_STRUCTURING.value
                 ):
-                    last_sequence = event.sequence
-                    if (
-                        event.event_type is StreamingEventType.RESYNC_REQUIRED
-                        or event.event_type in _TERMINAL_EVENTS
-                        or event.stage == StreamingCaptureStatus.AWAITING_STRUCTURING.value
-                    ):
-                        break
-            except httpx.TransportError:
-                # A listener disconnect is recovered from the durable event log;
-                # it never implies runtime job cancellation.
-                pass
-            current = self._snapshot_after_stream(
-                current.capture_id,
-                observed_sequence=last_sequence,
-            )
-            if current.status in stop_statuses:
-                return current
-            reconnects += 1
-            if reconnects > _MAX_EVENT_RECONNECTS:
-                raise CaptureRuntimeStateUnknownError(
-                    current.capture_id,
-                    "Capture Runtime event replay exceeded the reconnect limit.",
-                )
-            self._checkpoint(
-                current.capture_id,
-                deadline=deadline,
-                should_cancel=should_cancel,
-            )
-            self._sleeper(self._reconciliation_interval_seconds)
-        return current
+                    break
+        except (httpx.TransportError, CaptureTransportError) as error:
+            # The SDK owns transport reconnects.  If it exhausts those
+            # attempts, reconcile the durable runtime state once before
+            # reporting an unknown application state.
+            stream_error = error
+        current = self._snapshot_after_stream(
+            operation.capture_id,
+            observed_sequence=last_sequence,
+        )
+        if current.status in stop_statuses:
+            return current
+        raise CaptureRuntimeStateUnknownError(
+            current.capture_id,
+            "Capture Runtime event stream ended before the requested state was confirmed.",
+        ) from stream_error
 
     def _snapshot_after_stream(
         self,
@@ -626,42 +554,6 @@ class CertPrepCaptureCoordinator:
         if self._clock() >= deadline:
             self._cancel(capture_id)
             raise CaptureRuntimeTimeoutError("Capture Runtime operation timed out.")
-
-    def _commit_structure(
-        self,
-        capture_id: str,
-        candidate: Mapping[str, object],
-        *,
-        idempotency_key: UUID,
-        deadline: float,
-        should_cancel: Callable[[], bool],
-    ) -> CaptureOperation:
-        while True:
-            try:
-                return self._client.commit_structure(
-                    capture_id,
-                    candidate,
-                    idempotency_key=idempotency_key,
-                )
-            except httpx.TransportError as error:
-                operation = self._get_capture_for_reconciliation(
-                    capture_id,
-                    action="a structured-result commit response was lost",
-                )
-                if self._is_terminal(operation):
-                    return operation
-                if not self._is_awaiting_structuring(operation):
-                    raise CaptureRuntimeStateUnknownError(
-                        capture_id,
-                        "Capture Runtime structured-result commit outcome could not be "
-                        "confirmed from the current operation state.",
-                    ) from error
-                self._checkpoint(
-                    capture_id,
-                    deadline=deadline,
-                    should_cancel=should_cancel,
-                )
-                self._sleeper(self._reconciliation_interval_seconds)
 
     def _report_structuring_failure(
         self,

@@ -23,6 +23,7 @@ from cert_prep_backend.domains.capture_workbench.client import (
     CaptureUpload,
 )
 from cert_prep_backend.domains.capture_workbench.coordinator import (
+    CaptureRuntimeStateUnknownError,
     CertPrepCaptureCoordinator,
 )
 from cert_prep_backend.domains.capture_workbench.host_models import RuntimeReady
@@ -202,6 +203,38 @@ def test_v2_sse_requires_auth_replays_after_cursor_and_closes_on_terminal() -> N
     ]
 
 
+def test_v2_sse_reconnects_through_the_sdk_with_the_last_event_id() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if len(requests) == 1:
+            assert "Last-Event-ID" not in request.headers
+            body = (
+                "id: 1\n"
+                "event: checkpoint\n"
+                f"data: {json.dumps(_event(sequence=1, event_type='checkpoint', stage='extracting'))}\n\n"
+            ).encode()
+        else:
+            assert request.headers["Last-Event-ID"] == "1"
+            body = (
+                "id: 2\n"
+                "event: completed\n"
+                f"data: {json.dumps(_event(sequence=2, event_type='completed', stage='completed'))}\n\n"
+            ).encode()
+        return httpx.Response(
+            200,
+            headers={"Content-Type": "text/event-stream"},
+            stream=_ChunkStream([body]),
+            request=request,
+        )
+
+    events = list(_client(handler).capture_events("capture-1"))
+
+    assert [event.sequence for event in events] == [1, 2]
+    assert len(requests) == 2
+
+
 def test_v2_sse_ignores_standalone_heartbeats_as_transport_activity() -> None:
     event = _event(sequence=1, event_type="checkpoint", stage="extracting")
     chunks = [
@@ -226,6 +259,7 @@ def test_v2_sse_ignores_standalone_heartbeats_as_transport_activity() -> None:
     events = list(
         _client(handler).capture_events(
             "capture-1",
+            max_reconnects=0,
             on_activity=lambda: activity.append(None),
         )
     )
@@ -236,7 +270,7 @@ def test_v2_sse_ignores_standalone_heartbeats_as_transport_activity() -> None:
     assert len(activity) == len(chunks)
 
 
-def test_coordinator_replays_sse_after_disconnect_without_polling_or_cancelling() -> None:
+def test_coordinator_reconciles_once_after_the_sdk_stream_ends() -> None:
     runtime = _ReconnectingRuntimeClient()
     started: list[str] = []
     coordinator = CertPrepCaptureCoordinator(
@@ -246,20 +280,20 @@ def test_coordinator_replays_sse_after_disconnect_without_polling_or_cancelling(
         timeout_seconds=30,
     )
 
-    operation = coordinator.begin_capture(
-        operation_id="operation-1",
-        file_name="sample.pdf",
-        content=SOURCE,
-        media_type="application/pdf",
-        source_kind="pdf",
-        target_language=None,
-        should_cancel=lambda: False,
-        on_started=lambda value: started.append(value.capture_id),
-    )
+    with pytest.raises(CaptureRuntimeStateUnknownError, match="stream ended"):
+        coordinator.begin_capture(
+            operation_id="operation-1",
+            file_name="sample.pdf",
+            content=SOURCE,
+            media_type="application/pdf",
+            source_kind="pdf",
+            target_language=None,
+            should_cancel=lambda: False,
+            on_started=lambda value: started.append(value.capture_id),
+        )
 
-    assert operation.status is StreamingCaptureStatus.AWAITING_STRUCTURING
-    assert runtime.event_cursors == [0, 1]
-    assert runtime.snapshot_calls == 2
+    assert runtime.event_cursors == [0]
+    assert runtime.snapshot_calls == 1
     assert runtime.cancel_calls == 0
     assert started == ["capture-1"]
 
@@ -321,10 +355,7 @@ def test_v2_result_requires_one_exact_source_identity(
         _client(handler).get_result("capture-1")
 
 
-@pytest.mark.parametrize(
-    "operation_name",
-    ["snapshot", "commit", "failure", "cancel"],
-)
+@pytest.mark.parametrize("operation_name", ["snapshot", "failure", "cancel"])
 def test_v2_operation_responses_require_the_requested_capture_identity(
     operation_name: str,
 ) -> None:
@@ -338,12 +369,6 @@ def test_v2_operation_responses_require_the_requested_capture_identity(
     with pytest.raises(CaptureRuntimeProtocolError, match="capture identity"):
         if operation_name == "snapshot":
             client.get_capture("capture-1")
-        elif operation_name == "commit":
-            client.commit_structure(
-                "capture-1",
-                {"schemaVersion": "2"},
-                idempotency_key=UUID(int=1),
-            )
         elif operation_name == "failure":
             client.report_structuring_failure(
                 "capture-1",

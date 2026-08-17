@@ -16,7 +16,6 @@ from uuid import UUID
 import httpx
 
 from capture_runtime_client import (
-    CaptureDocument,
     CaptureEvent,
     CaptureOperation,
     CaptureRuntimeClient as SdkCaptureRuntimeClient,
@@ -174,13 +173,18 @@ class CaptureRuntimeClient:
         capture_id: str,
         *,
         last_event_id: str | int | None = None,
+        max_reconnects: int | None = None,
         on_activity: Callable[[], None] | None = None,
     ) -> Iterator[CaptureEvent]:
+        kwargs: dict[str, object] = {
+            "last_event_id": last_event_id,
+            "on_activity": on_activity,
+        }
+        if max_reconnects is not None:
+            kwargs["max_reconnects"] = max_reconnects
         return self._sdk.capture_events(
             capture_id,
-            last_event_id=last_event_id,
-            max_reconnects=0,
-            on_activity=on_activity,
+            **kwargs,
         )
 
     def get_partial(self, capture_id: str) -> PartialCapture:
@@ -225,19 +229,6 @@ class CaptureRuntimeClient:
             capture_id,
             batch_index,
             submission,
-            idempotency_key=idempotency_key,
-        )
-
-    def commit_structure(
-        self,
-        capture_id: str,
-        candidate: str | bytes | Mapping[str, object] | CaptureDocument,
-        *,
-        idempotency_key: UUID | str,
-    ) -> CaptureOperation:
-        return self._sdk.commit_structure(
-            capture_id,
-            candidate,
             idempotency_key=idempotency_key,
         )
 

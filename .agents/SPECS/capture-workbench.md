@@ -20,15 +20,19 @@ OCR/Whisper implementation.
 - Packaging explicitly stages the versioned `capture-runtime` release before
   resource preparation. There is no sibling checkout, workspace alias, or
   implicit development-path fallback.
-- The staged manifest is pinned to Windows x64 runtime `0.4.0`, API `2.0`, and
+- The staged manifest is pinned to Windows x64 runtime `0.4.1`, API `2.0`, and
   `CaptureDocument` schema `2`; resource preparation and Tauri both verify
   the executable and schema file names, the executable's bounded integer byte
   count (`1..536870912`), SHA-256 provenance, and the canonical schema bytes
   against Cert Prep's independent pinned digest before spawning the
-  executable, then repeat the
+  executable. The runtime compatibility identity is contract-set version `2`
+  with SHA-256
+  `b28366f022533192c063056bbf64cacfd09390815c65408066369dd61094e278`; the
+  Tauri schema/hash check is packaged-artifact integrity only, not a second
+  wire compatibility authority. Readiness then repeats the
   version/schema check through the authenticated readiness handshake.
 - Capture Runtime owns model asset installation and requirement validation.
-  The v0.4.0 engine-bearing catalog exposes WindowsML OCR and Whisper
+  The v0.4.1 engine-bearing catalog exposes WindowsML OCR and Whisper
   requirements. Cert Prep configures `hostManagedHandshake: true` with
   `showRuntimeSetup: false`, exposes PDF, image, and audio, and applies the
   compatibility/capability plus source-aware requirement policy through its
@@ -45,10 +49,13 @@ OCR/Whisper implementation.
   process. None of these fields are added to the WebView `backend_config`.
 - The backend uses the Capture Runtime v2 lifecycle: open an ingestion, upload
   checksum-bounded ordered chunks, finalize, start a capture, and consume the
-  authenticated replayable event stream. It reads partial/raw/result state,
-  applies the existing host structuring adapter, and commits either the
-  validated candidate or a sanitized host failure before cleanup. Ambiguous
-  ingestion/capture creates recover by client request id.
+  authenticated replayable event stream. The Python SDK owns wire DTOs, SSE
+  decoding, `Last-Event-ID` resume, and transport reconnect. It reads
+  partial/raw/result state, uses the typed pull-session structuring adapter,
+  and commits either the runtime-reconstructed result with a local review
+  overlay or a sanitized host failure before cleanup. Ambiguous
+  ingestion/capture creates recover by client request id; no full-document
+  commit fallback remains.
 - Runtime progress is delivered only through authenticated SSE at
   `/v2/captures/{id}/events`. Reconnects send `Last-Event-ID`; a listener
   disconnect or Angular unsubscribe closes only that listener and never
@@ -75,7 +82,7 @@ OCR/Whisper implementation.
 
 - Capture Workbench owns source sniffing, PDF rendering, image normalization,
   capture runtime requirements, capture operation state, and canonical
-  validation. Its v0.4.0 release is engine-bearing. An all-pages embedded-text
+  validation. Its v0.4.1 release is engine-bearing. An all-pages embedded-text
   PDF remains a real no-model sidecar path with `pdf-embedded-text` provenance;
   image, audio, and a PDF page requiring OCR require their explicitly installed
   runtime assets and fail closed while those requirements are not ready.
@@ -115,11 +122,11 @@ OCR/Whisper implementation.
   `/raw` is diagnostic-only.
 - Existing documents, crop uploads, retries, cancellation, chunks, study
   generation, semantic explanations, and real-time Q&A pass regression tests.
-- A true all-pages embedded-text PDF completes through the published v0.4.0
+- A true all-pages embedded-text PDF completes through the published v0.4.1
   sidecar, review, host persistence, and export with `pdf-embedded-text`
   provenance; it is not OCR evidence.
 - Image, audio, and any OCR-dependent PDF fail closed with an explicit
-  unavailable-model error until v0.4.0 reports the required runtime asset
+  unavailable-model error until v0.4.1 reports the required runtime asset
   ready. The browser never receives the sidecar token and Cert Prep provides no
   OCR/STT fallback.
 - A process isolation test proves Capture Workbench sidecar resources never

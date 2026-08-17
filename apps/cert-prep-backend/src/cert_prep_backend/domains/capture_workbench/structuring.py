@@ -106,6 +106,14 @@ class CertPrepCaptureStructuringAdapter:
         from the provider.
         """
 
+        if self._runtime_client is None:
+            raise CaptureRuntimeProtocolError(
+                "Capture Runtime pull structuring requires a runtime client."
+            )
+        if capture_id is None or operation_id is None:
+            raise CaptureRuntimeProtocolError(
+                "Capture Runtime pull structuring requires capture and operation IDs."
+            )
         provider = (
             provider_capability(self._provider, StructuredJsonGenerationProvider)
             if target_language is not None
@@ -115,24 +123,11 @@ class CertPrepCaptureStructuringAdapter:
             raise ProviderUnavailableError(
                 "The configured Cert Prep provider cannot produce structured JSON."
             )
-        if self._runtime_client is None or not _supports_pull_sessions(self._runtime_client):
-            # A real typed SDK that cannot expose pull sessions must fail
-            # closed.  The identity projection is only for deterministic
-            # in-process test stand-ins that intentionally implement the
-            # older capture surface without importing the retired package.
-            if target_language is not None and isinstance(
-                self._runtime_client, CaptureRuntimeClient
-            ):
-                raise CaptureRuntimeProtocolError(
-                    "Capture Runtime pull structuring is required for translated output."
-                )
-            self._checkpoint(should_cancel, deadline, monotonic_clock)
-            return _local_identity_bridge(raw, completed_at=self._clock())
         self._checkpoint(should_cancel, deadline, monotonic_clock)
 
         engine = _engine_identity(provider) if provider is not None else _IDENTITY_STRUCTURING_ENGINE
         request = OpenStructuringSession(
-            capture_id=capture_id or "local-capture",
+            capture_id=capture_id,
             target_language=target_language,
             provider_capability=StructuringProviderCapability(
                 provider=engine,
@@ -140,10 +135,8 @@ class CertPrepCaptureStructuringAdapter:
                 schema_dialect=_SCHEMA_DIALECT,
             ),
             schema_dialect=_SCHEMA_DIALECT,
-            client_request_id=operation_id or "local-operation",
+            client_request_id=operation_id,
         )
-        if capture_id is None or operation_id is None:
-            raise ValueError("Capture Runtime pull structuring requires capture and operation IDs")
         session = self._runtime_client.open_structuring_session(
             capture_id,
             request,
@@ -276,60 +269,6 @@ def _decode_provider_candidate(candidate: object) -> dict[str, object]:
     if not isinstance(value, dict):
         raise ValueError("Capture structuring provider output must be a JSON object")
     return {str(key): value for key, value in value.items()}
-
-
-def _supports_pull_sessions(client: object) -> bool:
-    return all(
-        callable(getattr(client, method, None))
-        for method in (
-            "open_structuring_session",
-            "pull_structuring_batch",
-            "submit_structuring_batch",
-            "get_result",
-        )
-    )
-
-
-def _local_identity_bridge(raw: RawCapture, *, completed_at: datetime) -> CaptureDocument:
-    """Small offline/test bridge for pre-pull-session stand-ins.
-
-    Production clients are always the typed SDK adapter above.  This bridge is
-    intentionally limited to the deterministic identity projection so older
-    isolated backend fixtures that do not expose pull-session methods continue
-    to exercise raw/provenance persistence without importing the retired SDK.
-    """
-
-    blocks = [
-        {
-            "blockId": f"block-{segment.segment_id}",
-            "order": segment.order,
-            "type": "transcript" if segment.locator.kind == "time" else "paragraph",
-            "sourceSegmentId": segment.segment_id,
-            "locator": segment.locator.model_dump(mode="json", by_alias=True),
-            "sourceText": segment.text,
-            "targetText": segment.text,
-        }
-        for segment in raw.segments
-    ]
-    return CaptureDocument.model_validate(
-        {
-            "schemaVersion": raw.schema_version,
-            "source": raw.source.model_dump(mode="json", by_alias=True),
-            "rawSegments": [
-                segment.model_dump(mode="json", by_alias=True) for segment in raw.segments
-            ],
-            "blocks": blocks,
-            "sourceText": raw.source_text,
-            "targetText": raw.source_text,
-            "extractionEngine": raw.extraction_engine.model_dump(mode="json", by_alias=True),
-            "structuringEngine": _IDENTITY_STRUCTURING_ENGINE.model_dump(
-                mode="json", by_alias=True
-            ),
-            "warnings": raw.warnings,
-            "createdAt": raw.created_at,
-            "completedAt": completed_at,
-        }
-    )
 
 
 def _provider_messages(prompt: Mapping[str, object]) -> list[dict[str, str]]:
