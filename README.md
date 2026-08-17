@@ -1,155 +1,190 @@
 # Cert Prep
 
-Local-first Windows certificate-preparation app built with Nx, pnpm, Angular,
-Tauri, Python FastAPI, SQLite, WindowsML, and Ollama.
+Cert Prep is a local-first certification study application for Windows. It
+turns source material into editable study content and practice sessions while
+keeping application data and local processing under the user's control.
 
-## Alpha Status
+The main user journey is:
 
-The source tree is preparing `0.1.0-alpha.1` for a Windows 11 x64 public
-alpha. No release is available until the clean-install and protected AMD
-hardware acceptance gates pass. The alpha installers will be intentionally
-unsigned (`unsigned_public_alpha`), so Windows SmartScreen warnings are
-expected. Published installers must be verified against the release's
-`SHA256SUMS` file before they are run.
+1. Create or select a study project.
+2. Import PDF, image, or audio source files.
+3. Review the captured text and source evidence.
+4. Edit and approve multiple-choice question drafts.
+5. Practice with Full Exam or Random Quiz sessions.
+6. Review wrong answers and retry weak areas.
 
-This is not a production or GA readiness claim. Authenticode signing of the
-application, bundled runtime, MSI, and NSIS installer remains a GA blocker.
+## Architecture
 
-## Projects
+The repository is an Nx workspace containing the Angular application, Python
+backend, Windows desktop host, shared contracts, and test tooling.
 
-- `cert-prep` - Angular standalone-component UI for project setup, PDF import, draft approval, practice, and wrong-answer review.
-- `cert-prep-e2e` - Playwright mock UI regression and real-backend contract coverage.
-- `cert-prep-backend` - FastAPI backend for persistence, file handling, PDF extraction, draft/question workflows, and local LLM providers.
-- `cert-prep-desktop` - Tauri v2 desktop wrapper that installs and launches the bundled, digest-verified backend runtime.
+```text
+Angular UI
+    |  authenticated Cert Prep API
+    v
+FastAPI backend  ---->  SQLite and local source files
+    |\
+    | +------------->  Capture Runtime sidecar for source extraction
+    +--------------->  Ollama for optional local language-model features
 
-## Quick Start
+Tauri desktop host owns the backend and sidecar lifecycle and packages them
+with the Angular UI.
+```
+
+The backend owns persistence and file I/O. The Angular application does not
+read SQLite or the local filesystem directly. Capture Runtime owns extraction
+and its wire protocol; Cert Prep owns the authenticated host proxy, review
+workflow, document mapping, and study features. Ollama is optional enrichment,
+not a prerequisite for manual review or deterministic tests.
+
+## Repository map
+
+| Path | Responsibility |
+| --- | --- |
+| [`apps/cert-prep`](apps/cert-prep) | Angular standalone-component UI, workbench screens, signal stores, API services, and runtime status views. |
+| [`apps/cert-prep-backend`](apps/cert-prep-backend) | FastAPI sidecar, SQLite persistence, source-document handling, question generation, practice, wrong-answer review, and runtime integration. |
+| [`apps/cert-prep-desktop`](apps/cert-prep-desktop) | Tauri 2 Windows host, backend process management, sidecar installation/verification, packaging, and desktop smoke/QA scripts. |
+| [`apps/cert-prep-e2e`](apps/cert-prep-e2e) | Playwright mock-UI tests and real-backend browser tests. |
+| [`libs/cert-prep-api`](libs/cert-prep-api) | Generated TypeScript client and typed request helpers derived from the backend OpenAPI contract. |
+| [`packages/cert-prep-contracts`](packages/cert-prep-contracts) | Shared Python value types and provider protocols. |
+| [`packages/cert-prep-ollama`](packages/cert-prep-ollama) | Ollama discovery, lifecycle, model, profile, and installer utilities shared by the backend and related packages. |
+| [`design`](design) | Workbench design references and screen prototypes. |
+| [`tools`](tools) | OpenAPI generation helpers, Capture Runtime consumer tooling, packaging checks, and release tooling. |
+| [`.agents/SPECS`](.agents/SPECS) | Durable product and architecture specifications. Active temporary work belongs in `.agents/TODOS`. |
+
+## Development prerequisites
+
+The workspace uses:
+
+- Windows for the Tauri desktop and packaged sidecar workflows.
+- Node.js 24 and pnpm 11 for the Nx/Angular workspace.
+- Python 3.12 with `uv` for the backend and Python packages.
+- Stable Rust with the MSVC Windows toolchain for Tauri.
+
+Install JavaScript dependencies from the repository root:
 
 ```bash
 pnpm install
+```
+
+The workspace consumes private `@gx-capture` packages from GitHub Packages.
+For local installs, use [`.npmrc.example`](.npmrc.example) as a user-level npm
+configuration and provide `GITHUB_PACKAGES_TOKEN`; keep credentials outside the
+repository.
+
+The backend declares the local Python packages as editable sources. Sync its
+environment when working on Python code:
+
+```bash
+uv sync --project apps/cert-prep-backend
+```
+
+## Run locally
+
+Run the browser UI and backend independently when working on web/API features:
+
+```bash
 pnpm nx run cert-prep:serve
+pnpm nx run cert-prep-backend:serve
 ```
 
-For the desktop shell:
+Run the desktop application when testing Tauri integration, process ownership,
+runtime setup, or packaged behavior:
 
 ```bash
 pnpm nx run cert-prep-desktop:dev
 ```
 
-For browser-only development, install Ollama and pull the configured model when
-live generation is needed. Packaged Alpha onboarding uses Ollama:
-
-```bash
-ollama pull qwen3.5:4b
-```
-
-## Capture Runtime release sidecar
-
-`capture-runtime@0.4.1` is installed as a Windows x64 release sidecar, not as
-an npm or Python dependency. By default, the installer uses the canonical
-`https://github.com/gx-capture/capture-workbench/releases/download/v0.4.1`
-release. `CERT_PREP_CAPTURE_RUNTIME_RELEASE_BASE_URL` is only for an explicit
-versioned HTTPS release URL or loopback HTTP mirror during local testing. For a
-local Capture Workbench candidate, set
-`CERT_PREP_CAPTURE_RUNTIME_RELEASE_DIRECTORY` to its release artifact directory;
-the installer copies and verifies only the canonical consumer assets, without
-changing the default public URL.
-
-```powershell
-pnpm nx run cert-prep-desktop:install-capture-runtime
-pnpm nx run cert-prep-desktop:dev
-```
-
-The installer downloads only the executable, checksum, manifest, and schema;
-verifies their version, platform, bytes, and SHA-256 contract; and stages them
-under `tmp/cert-prep/capture-runtime/0.4.1`. Desktop preparation consumes that
-staging directory without network access. To exercise the complete local
-release-consumer path, including the downloaded sidecar and cert-prep host
-structuring coordinator, run:
-
-```powershell
-pnpm nx run cert-prep-desktop:capture-runtime-consumer-smoke
-```
-
-The same smoke can consume a local candidate without using the Capture
-Workbench desktop app as evidence:
-
-```powershell
-$env:CERT_PREP_CAPTURE_RUNTIME_RELEASE_DIRECTORY =
-  'C:\software-dev\capture-workbench\packages\capture-runtime\dist\release'
-pnpm nx run cert-prep-desktop:capture-runtime-consumer-smoke
-Remove-Item Env:CERT_PREP_CAPTURE_RUNTIME_RELEASE_DIRECTORY
-```
-
-For the independent Cert Prep Tauri app, install that local artifact first,
-then build `cert-prep-desktop:build-capture`; its own generated resources and
-NSIS bundle are the consumer under test.
-
-v0.4.1 is the engine-bearing release contract. Cert Prep uses
-`hostManagedHandshake: true` and keeps runtime setup in the host. Embedded-text
-PDFs can run through the `pdf-embedded-text` CPU extractor; scanned PDFs and
-images require a ready `windowsml-ocr` requirement, and audio requires a ready
-`whisper-primary` requirement after explicit consent. The consumer smoke proves
-the published sidecar's authenticated readiness, requirement identifiers, and
-host protocol. It is not by itself positive OCR/STT evidence.
+Live local-model features use Ollama. The application can still be developed
+and tested with deterministic fake providers when Ollama is unavailable.
 
 ## Verification
+
+Nx is the task entry point for this workspace. Use the target defined by each
+project rather than invoking the underlying test runner directly.
+
+### Application and backend
 
 ```bash
 pnpm nx run cert-prep:lint
 pnpm nx run cert-prep:test
 pnpm nx run cert-prep:build
-pnpm nx run cert-prep-e2e:e2e
-pnpm nx run cert-prep-e2e:e2e-real-backend
 pnpm nx run cert-prep-backend:lint
 pnpm nx run cert-prep-backend:test
+pnpm nx run cert-prep-api:lint
+pnpm nx run cert-prep-api:vite:test
+```
+
+### Shared packages and browser flows
+
+```bash
+pnpm nx run cert-prep-contracts:lint
+pnpm nx run cert-prep-contracts:test
+pnpm nx run cert-prep-ollama:lint
+pnpm nx run cert-prep-ollama:test
+pnpm nx run cert-prep-e2e:e2e
+pnpm nx run cert-prep-e2e:e2e-real-backend
+```
+
+### Desktop and packaging
+
+```bash
 pnpm nx run cert-prep-desktop:lint
+pnpm nx run cert-prep-desktop:typecheck-scripts
 pnpm nx run cert-prep-desktop:cargo-test
 pnpm nx run cert-prep-desktop:package-qa-test
 pnpm nx run cert-prep-desktop:release-tool-test
 ```
 
-## Backend Notes
+Build the Tauri application with the desktop project targets:
 
-The backend owns all persistence and file I/O. It stores data under `CERT_PREP_DATA_DIR` when provided, or a local app-data directory in desktop mode. Angular communicates through the generated API client and never writes directly to SQLite or disk.
+```bash
+pnpm nx run cert-prep-desktop:build
+pnpm nx run cert-prep-desktop:build-capture
+```
 
-Deterministic tests use fake AI providers. Live Ollama checks are optional smoke tests and should not be required for CI.
+## Contracts and generated code
 
-Privacy, licensing, and redistribution details are documented in
-[PRIVACY.md](PRIVACY.md), [LICENSE](LICENSE), and
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+The backend REST/OpenAPI document is the contract between Python and Angular.
+After changing backend routes or response models, regenerate the TypeScript
+client and run its checks:
 
-## Useful Nx Commands
+```bash
+pnpm nx run cert-prep-backend:generate-openapi-client
+pnpm nx run cert-prep-api:lint
+pnpm nx run cert-prep-api:vite:test
+```
+
+The generated client is written to
+[`libs/cert-prep-api/src/lib/cert-prep-api.generated.ts`](libs/cert-prep-api/src/lib/cert-prep-api.generated.ts).
+Capture Runtime integration uses the pinned typed client and its authenticated
+host boundary; Cert Prep should not duplicate the sidecar wire protocol in
+Angular or in backend adapters.
+
+## Data and privacy
+
+The backend stores projects, source metadata, parsed chunks, question drafts,
+practice sessions, and wrong-answer history in SQLite. Original source files
+are retained under the application data directory and can be redirected with
+`CERT_PREP_DATA_DIR`.
+
+See [`PRIVACY.md`](PRIVACY.md) for data-handling details. License and
+redistribution information is in [`LICENSE`](LICENSE) and
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md); release-specific workflow
+documentation is kept with the tooling in [`tools/release`](tools/release).
+
+## Nx workspace commands
+
+Use these commands to inspect the workspace before selecting a target:
 
 ```bash
 pnpm nx show projects --json
+pnpm nx show project cert-prep --json
 pnpm nx graph
-pnpm nx run-many --targets=lint,test,build
 pnpm nx affected --targets=lint,test,build
 ```
 
-## Capture Workbench and Capture Runtime
-
-The normal dependency is the pinned public release package
-`@gx-capture/capture-workbench-ui@0.4.1` from GitHub Packages. GitHub Actions configures
-the `@gx-capture` registry and read token automatically. For a local install, configure
-an npm user config without committing credentials:
-
-```powershell
-$npmConfig = Join-Path $env:TEMP 'cert-prep-github-packages.npmrc'
-$token = (gh auth token).Trim()
-try {
-  Set-Content -LiteralPath $npmConfig -Value "@gx-capture:registry=https://npm.pkg.github.com`n//npm.pkg.github.com/:_authToken=`${NODE_AUTH_TOKEN}`n"
-  $env:NODE_AUTH_TOKEN = $token
-  $env:NPM_CONFIG_USERCONFIG = $npmConfig
-  pnpm install --frozen-lockfile
-} finally {
-  Remove-Item Env:NODE_AUTH_TOKEN -ErrorAction SilentlyContinue
-  Remove-Item Env:NPM_CONFIG_USERCONFIG -ErrorAction SilentlyContinue
-  Remove-Item -LiteralPath $npmConfig -Force -ErrorAction SilentlyContinue
-}
-```
-
-The pinned Capture Runtime is downloaded by
-`pnpm nx run cert-prep-desktop:install-capture-runtime`; it defaults to the
-matching GitHub Release and accepts
-`CERT_PREP_CAPTURE_RUNTIME_RELEASE_BASE_URL` only for an explicit local mirror.
+The root [`AGENTS.md`](AGENTS.md) contains workspace operating rules. Product
+and architecture decisions belong in the domain specifications under
+[`.agents/SPECS`](.agents/SPECS), while this README remains a stable guide to
+what the repository contains and how its main surfaces fit together.
