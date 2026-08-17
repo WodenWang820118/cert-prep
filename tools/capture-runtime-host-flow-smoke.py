@@ -55,7 +55,7 @@ def main() -> None:
     try:
         coordinator = CertPrepCaptureCoordinator(
             client=client,
-            structurer=CertPrepCaptureStructuringAdapter(EchoStructuredProvider()),
+            structurer=CertPrepCaptureStructuringAdapter(EchoStructuredProvider(), client),
             reconciliation_interval_seconds=0.05,
             timeout_seconds=30,
         )
