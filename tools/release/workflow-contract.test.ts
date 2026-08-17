@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -48,6 +48,43 @@ const windowsCiProjects = [
   'cert-prep',
 ];
 
+const windowsOwnedTestProjects = windowsOwnedProjects.filter(
+  (project) => project !== 'cert-prep-api',
+);
+
+const workspaceRoot = resolve(import.meta.dirname, '../..');
+const nxTargetsByProject = new Map<string, Set<string>>();
+
+function nxTargets(project: string): Set<string> {
+  const cached = nxTargetsByProject.get(project);
+  if (cached) {
+    return cached;
+  }
+
+  const args = ['nx', 'show', 'project', project, '--json'];
+  const output =
+    process.platform === 'win32'
+      ? execFileSync(
+          process.env.ComSpec ?? 'cmd.exe',
+          ['/d', '/s', '/c', `pnpm ${args.join(' ')}`],
+          { cwd: workspaceRoot, encoding: 'utf8' },
+        )
+      : execFileSync('pnpm', args, {
+          cwd: workspaceRoot,
+          encoding: 'utf8',
+        });
+  const targets = new Set(Object.keys(JSON.parse(output).targets ?? {}));
+  nxTargetsByProject.set(project, targets);
+  return targets;
+}
+
+function assertNxTargetExists(project: string, target: string): void {
+  assert.ok(
+    nxTargets(project).has(target),
+    `Nx target ${project}:${target} must exist`,
+  );
+}
+
 function workflowJobNames(source) {
   return [
     ...source
@@ -76,9 +113,10 @@ function jobBody(name) {
 
 function assertSeparateNxQualitySteps(
   body,
-  { stepLabel, projects, parallel, nextStepLabel },
+  { stepLabel, projects, testProjects = projects, parallel, nextStepLabel },
 ) {
-  const projectPattern = projects.join('\\s+');
+  const lintProjectPattern = projects.join('\\s+');
+  const testProjectPattern = testProjects.join('\\s+');
   const lintStepStart = body.indexOf(`- name: Lint ${stepLabel}`);
   const testStepStart = body.indexOf(`- name: Test ${stepLabel}`);
   const nextStepStart = body.indexOf(`- name: ${nextStepLabel}`);
@@ -89,13 +127,13 @@ function assertSeparateNxQualitySteps(
   assert.match(
     body.slice(lintStepStart, testStepStart),
     new RegExp(
-      `pnpm nx run-many -t lint\\s+-p\\s+${projectPattern}\\s+--parallel=${parallel}`,
+      `pnpm nx run-many -t lint\\s+-p\\s+${lintProjectPattern}\\s+--parallel=${parallel}`,
     ),
   );
   assert.match(
     body.slice(testStepStart, nextStepStart),
     new RegExp(
-      `pnpm nx run-many -t test\\s+-p\\s+${projectPattern}\\s+--parallel=${parallel}`,
+      `pnpm nx run-many -t test\\s+-p\\s+${testProjectPattern}\\s+--parallel=${parallel}`,
     ),
   );
 }
@@ -166,9 +204,23 @@ test('candidate build selects separate lint and test tasks for every Windows-own
   assertSeparateNxQualitySteps(jobBody('build-candidate'), {
     stepLabel: 'Windows-owned projects',
     projects: windowsOwnedProjects,
+    testProjects: windowsOwnedTestProjects,
     parallel: 2,
     nextStepLabel: 'Type-check desktop release scripts',
   });
+});
+
+test('release workflow quality targets exist in the resolved Nx projects', () => {
+  for (const project of windowsOwnedProjects) {
+    assertNxTargetExists(project, 'lint');
+  }
+  for (const project of windowsOwnedProjects.filter(
+    (project) => project !== 'cert-prep-api',
+  )) {
+    assertNxTargetExists(project, 'test');
+  }
+  assertNxTargetExists('cert-prep-api', 'vite:test');
+  assert.match(workflow, /pnpm nx run cert-prep-api:vite:test/);
 });
 
 test('continuous integration selects separate lint and test tasks instead of a zero-task command', () => {

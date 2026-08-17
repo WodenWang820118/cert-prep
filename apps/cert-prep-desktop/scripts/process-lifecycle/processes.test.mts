@@ -145,7 +145,7 @@ test('audit classification maps workspace runtimes and unknowns to safe actions'
         205,
         1,
         'node.exe',
-        'node "C:\\software-dev\\cert-prep\\node_modules\\.bin\\\\..\\nx\\dist\\bin\\nx.js" "run" "cert-prep-desktop:process-residue-audit"',
+        'node "C:\\software-dev\\cert-prep\\node_modules\\.bin\\\\..\\nx\\dist\\bin\\nx.js" "run" "cert-prep-desktop:package-qa-test"',
       ),
       classification: 'workspace_tooling_review',
       recommendedAction: 'review_only',

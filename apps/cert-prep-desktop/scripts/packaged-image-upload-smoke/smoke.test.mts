@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 import { parsePackagedImageUploadSmokeArgs } from './args.mts';
@@ -106,30 +105,6 @@ test('packaged image CLI keeps fresh app data beside timestamped evidence', () =
   assert.throws(
     () => parsePackagedImageUploadSmokeArgs(['--timeout-ms', '0']),
     /positive integer/,
-  );
-});
-
-test('desktop project exposes a packaged static-image acceptance target', () => {
-  const project = JSON.parse(
-    readFileSync(new URL('../../project.json', import.meta.url), 'utf8'),
-  ) as {
-    targets?: Record<
-      string,
-      {
-        dependsOn?: string[];
-        options?: {
-          command?: string;
-          env?: Record<string, string>;
-        };
-      }
-    >;
-  };
-  const target = project.targets?.['packaged-image-upload-smoke'];
-
-  assert.deepEqual(target?.dependsOn, ['build-capture-dev']);
-  assert.equal(
-    target?.options?.command,
-    'node apps/cert-prep-desktop/scripts/packaged-image-upload-smoke.mts',
   );
 });
 

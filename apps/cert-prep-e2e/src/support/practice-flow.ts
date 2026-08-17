@@ -162,21 +162,6 @@ export async function runPracticeCompleteScenario(
   );
 }
 
-export async function runWrongAnswerAiScenario(
-  page: Page,
-  api: MockCertPrepApi,
-): Promise<void> {
-  await createWorkspaceWithUploadedDocument(page, api);
-  await startRandomQuiz(page, api);
-  await completePracticeQuestions(
-    page,
-    api,
-    api.playableDrafts,
-    wrongChoiceForDraft,
-  );
-  await expectWrongAnswerReview(page, api, api.playableDrafts);
-}
-
 export async function runMultiPdfIsolationScenario(
   page: Page,
   api: MockCertPrepApi,

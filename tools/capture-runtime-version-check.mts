@@ -238,11 +238,6 @@ export function assertCaptureRuntimeConsumerVersions(
   );
   requireMatch(
     workspaceRoot,
-    'tools/install-local-capture-workbench.mts',
-    /CAPTURE_RUNTIME_PACKAGE_NAME[\s\S]*CAPTURE_RUNTIME_VERSION/,
-  );
-  requireMatch(
-    workspaceRoot,
     'apps/cert-prep/src/app/pages/capture-workbench-trial/cert-prep-capture-client.ts',
     /assertCaptureRuntimeCompatible\(ready, CAPTURE_RUNTIME_MAJOR, 'host'\)/,
   );

@@ -128,7 +128,7 @@ This path is deliberately local-only: it does not alter the canonical public
 URL, does not satisfy published-byte evidence, and the independent consumer
 bundle is built by `cert-prep-desktop`'s own Tauri app.
 
-When a GitHub runner is unavailable, `pnpm verify:modular-reuse:local` runs the
-consumer consistency test locally. Set the repository variable
+When a GitHub runner is unavailable, `pnpm nx run cert-prep-desktop:capture-runtime-consumer-test`
+runs the consumer consistency test locally. Set the repository variable
 `CAPTURE_PUBLISHED_0_4_1=true` so the CI job also runs strict source
 and clean PyPI install checks.

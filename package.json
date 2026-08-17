@@ -12,12 +12,7 @@
     "build:backend": "pnpm nx run cert-prep-backend:build-backend-runtime",
     "build:tauri": "pnpm nx run cert-prep-desktop:build",
     "build:tauri:win": "pnpm nx run cert-prep-desktop:build-capture",
-    "package:qa": "pnpm nx run cert-prep-desktop:package-qa",
-    "test:streaming:cli": "pnpm nx run cert-prep-backend:streaming-cli-test",
-    "trial:capture-workbench": "node tools/trial-capture-workbench.ts",
-    "capture-workbench-real-pdf-smoke": "node tools/capture-workbench-real-pdf-smoke.mts",
-    "install:capture-workbench:local": "node tools/install-local-capture-workbench.mts",
-    "verify:modular-reuse:local": "pnpm nx run cert-prep-desktop:capture-runtime-consumer-test"
+    "package:qa": "pnpm nx run cert-prep-desktop:package-qa"
   },
   "private": true,
   "engines": {

@@ -127,7 +127,7 @@ pnpm nx run-many --targets=lint,test,build
 pnpm nx affected --targets=lint,test,build
 ```
 
-## Local Capture Workbench Registry Trial
+## Capture Workbench and Capture Runtime
 
 The normal dependency is the pinned public release package
 `@gx-capture/capture-workbench-ui@0.4.1` from GitHub Packages. GitHub Actions configures
@@ -153,56 +153,3 @@ The pinned Capture Runtime is downloaded by
 `pnpm nx run cert-prep-desktop:install-capture-runtime`; it defaults to the
 matching GitHub Release and accepts
 `CERT_PREP_CAPTURE_RUNTIME_RELEASE_BASE_URL` only for an explicit local mirror.
-
-The local registry trial below remains an isolated development diagnostic.
-
-The isolated Capture Workbench consumer can be tried through a local
-NPM-compatible registry without changing cert-prep's normal application
-dependencies or lockfile. Start Verdaccio and publish the package from the sibling
-`capture-workbench` checkout first:
-
-```powershell
-# C:\software-dev\capture-workbench
-corepack pnpm run local-registry:start
-
-# In a second terminal, still in capture-workbench
-corepack pnpm run local-registry:publish
-```
-
-Then run the isolated consumer from cert-prep:
-
-```powershell
-pnpm run trial:capture-workbench
-```
-
-The trial creates a temporary Vite consumer, runs a normal `pnpm install`
-against `http://127.0.0.1:4873`, imports `@gx-capture/capture-workbench-ui`, registers the
-`capture-workbench` custom element, and runs a production build. The temporary
-consumer is removed after the run. The cert-prep route also uses the installed
-package through its `CaptureClient` adapter and the backend review API. With
-the v0.4.1 sidecar, the route accepts embedded-text PDFs and exposes image and
-audio only when their runtime requirements are ready.
-
-### Capture Workbench local registry trial
-
-The `capture-workbench-trial` route is an isolated distribution trial for the
-published `@gx-capture/capture-workbench-ui@0.4.1` Web Component. The `/build`
-source-import flow remains unchanged; the retired local prototype is no longer
-part of the workspace.
-
-From a running local Verdaccio registry supplied by the `capture-workbench`
-repository, install the package through the registry and launch Cert Prep:
-
-```powershell
-pnpm run install:capture-workbench:local
-pnpm nx run cert-prep:serve
-```
-
-Open `http://localhost:4200/capture-workbench-trial`. The route uses the
-registry-installed `@gx-capture/capture-workbench-ui@0.4.1` package and a cert-prep
-`CaptureClient` backed by the review-gated capture API. Capture Runtime and its
-token remain backend-only. With the v0.4.1 engine-bearing sidecar, the route
-accepts embedded-text PDFs directly; scanned PDFs, images, and audio require
-their corresponding runtime requirement to be ready. The install command creates a
-temporary root `.npmrc` pointing at `http://127.0.0.1:4873` and removes it when
-pnpm finishes. It does not install the package from a `file:.tgz` dependency.

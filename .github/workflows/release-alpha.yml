@@ -152,8 +152,11 @@ jobs:
         run: >-
           pnpm nx run-many -t test
           -p cert-prep-contracts cert-prep-ollama
-          cert-prep-backend cert-prep-api cert-prep
+          cert-prep-backend cert-prep
           --parallel=2
+
+      - name: Test generated API client
+        run: pnpm nx run cert-prep-api:vite:test
 
       - name: Type-check desktop release scripts
         run: pnpm nx run cert-prep-desktop:typecheck-scripts

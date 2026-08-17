@@ -108,8 +108,7 @@ Before a fix is accepted, run the relevant targeted tests plus:
 
 ```powershell
 pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache
-pnpm nx run cert-prep-desktop:local-candidate --skip-nx-cache
-pnpm nx run cert-prep-desktop:local-install-acceptance-nsis --skip-nx-cache
+pnpm nx run cert-prep-desktop:package-qa --skip-nx-cache
 ```
 
 The startup-containment gate is satisfied by the PE test and same-build

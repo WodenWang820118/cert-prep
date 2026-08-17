@@ -23,23 +23,6 @@
       "inputs": ["default"],
       "options": { "cwd": "apps/cert-prep-backend", "command": "uv run ruff check ." }
     },
-    "python-version-check": {
-      "cache": false,
-      "executor": "nx:run-commands",
-      "options": { "cwd": "apps/cert-prep-backend", "command": "uv run python -c \"import sys; print(sys.version); assert sys.version_info[:2] == (3, 12)\"" }
-    },
-    "reasoning-bakeoff": {
-      "cache": false,
-      "executor": "nx:run-commands",
-      "outputs": ["{projectRoot}/.benchmarks"],
-      "options": { "cwd": "apps/cert-prep-backend", "command": "uv run python scripts/reasoning_bakeoff.py" }
-    },
-    "reasoning-memory": {
-      "cache": false,
-      "executor": "nx:run-commands",
-      "outputs": ["{projectRoot}/.benchmarks"],
-      "options": { "cwd": "apps/cert-prep-backend", "command": "uv run python scripts/reasoning_memory.py" }
-    },
     "build-backend-runtime": {
       "cache": true,
       "parallelism": false,
