@@ -79,8 +79,6 @@ jobs:
         run: rustup toolchain install stable --profile minimal --component clippy,rustfmt
 
       - name: Verify published Capture Workbench consumer declarations
-        env:
-          CAPTURE_REQUIRE_PUBLISHED_CAPTURE_ARTIFACTS: '1'
         run: node --test tools/capture-runtime-version.test.mts
 
       - name: Install dependencies

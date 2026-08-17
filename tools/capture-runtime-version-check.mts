@@ -59,24 +59,26 @@ function assertCandidateInstallVersions(workspaceRoot: string): void {
 }
 
 function requirePublishedCaptureArtifacts(workspaceRoot: string): void {
-  if (process.env.CAPTURE_REQUIRE_PUBLISHED_CAPTURE_ARTIFACTS !== '1') {
-    return;
-  }
-
+  const escapedRuntimeVersion = CAPTURE_RUNTIME_VERSION.replaceAll('.', '\\.');
   const pyproject = read(
     workspaceRoot,
     'apps/cert-prep-backend/pyproject.toml',
   );
-  if (
-    /capture-runtime-client\s*=\s*\{[^}]*path\s*=/u.test(pyproject)
-  ) {
+  if (!new RegExp(`capture-runtime-client==${escapedRuntimeVersion}`, 'u').test(pyproject)) {
     throw new Error(
-      'cert-prep backend capture Python dependencies must come from PyPI.',
+      `cert-prep backend must pin capture-runtime-client ${CAPTURE_RUNTIME_VERSION} from PyPI.`,
     );
   }
   const uvLock = read(workspaceRoot, 'apps/cert-prep-backend/uv.lock');
+  const capturePackageBlock =
+    /\[\[package\]\][\s\S]*?name = "capture-runtime-client"[\s\S]*?(?=\n\[\[package\]\]|$)/u.exec(
+      uvLock,
+    )?.[0] ?? '';
   if (
-    /capture-runtime-client[\s\S]{0,240}directory\s*=/u.test(uvLock)
+    !capturePackageBlock.includes(`version = "${CAPTURE_RUNTIME_VERSION}"`) ||
+    !capturePackageBlock.includes(
+      'source = { registry = "https://pypi.org/simple" }',
+    )
   ) {
     throw new Error(
       'cert-prep uv.lock must resolve capture packages from PyPI, not a directory source.',
@@ -152,15 +154,17 @@ export function assertCaptureRuntimeConsumerVersions(
       'pnpm-lock.yaml must not resolve the retired public contracts package.',
     );
   }
-  const hasPublishedNpmResolution = new RegExp(
-    `specifier: ${CAPTURE_RUNTIME_VERSION}[\\s\\S]*${CAPTURE_RUNTIME_PACKAGE_NAME.replace('/', '\\/')}@${CAPTURE_RUNTIME_VERSION}[\\s\\S]*capture-workbench\\/${CAPTURE_RUNTIME_VERSION}\\/`,
-  ).test(pnpmLock);
-  if (
-    !hasPublishedNpmResolution &&
-    process.env.CAPTURE_REQUIRE_PUBLISHED_CAPTURE_ARTIFACTS === '1'
-  ) {
+  const hasPublishedNpmResolution = [
+    CAPTURE_RUNTIME_PACKAGE_NAME,
+    CAPTURE_RUNTIME_CLIENT_PACKAGE_NAME,
+  ].every((packageName) =>
+    pnpmLock.includes(
+      `tarball: https://npm.pkg.github.com/download/${packageName}/${CAPTURE_RUNTIME_VERSION}/`,
+    ),
+  );
+  if (!hasPublishedNpmResolution) {
     throw new Error(
-      `pnpm-lock.yaml must resolve the published Capture Workbench ${CAPTURE_RUNTIME_VERSION} packages when published artifacts are required.`,
+      `pnpm-lock.yaml must resolve the published Capture Workbench ${CAPTURE_RUNTIME_VERSION} packages.`,
     );
   }
 
@@ -182,19 +186,12 @@ export function assertCaptureRuntimeConsumerVersions(
     '\\.',
   );
   const hasPublishedPythonResolution = new RegExp(
-    `capture-runtime-client>=${escapedRuntimeVersion},<0\\.5\\.0`,
+    `capture-runtime-client==${escapedRuntimeVersion}`,
     'u',
   ).test(pyproject);
-  const hasLocalPythonResolution =
-    /capture-runtime-client\s*=\s*\{[^}]*path\s*=\s*"\.\.\/\.\.\/\.\.\/capture-workbench\/packages\/capture-runtime-client-python"/u.test(
-      pyproject,
-    );
-  if (
-    !hasPublishedPythonResolution &&
-    !hasLocalPythonResolution
-  ) {
+  if (!hasPublishedPythonResolution) {
     throw new Error(
-      `cert-prep backend must resolve Capture Python packages from the published ${CAPTURE_RUNTIME_VERSION} release or the explicit local sibling source bridge.`,
+      `cert-prep backend must resolve Capture Python packages from the published ${CAPTURE_RUNTIME_VERSION} release.`,
     );
   }
   requireMatch(

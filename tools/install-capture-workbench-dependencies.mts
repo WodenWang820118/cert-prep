@@ -1,12 +1,10 @@
-import { execFile, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { readFile, unlink, writeFile } from 'node:fs/promises';
-import { promisify } from 'node:util';
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
+import { basename, isAbsolute, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { CAPTURE_RUNTIME_VERSION } from './capture-runtime-version.mts';
 
-const execFileAsync = promisify(execFile);
 const repoRoot = resolve(import.meta.dirname, '..');
 const packageJsonPath = join(repoRoot, 'package.json');
 const lockfilePath = join(repoRoot, 'pnpm-lock.yaml');
@@ -19,11 +17,8 @@ const nodeModulesLockfilePath = join(
 );
 const workbenchPackageName = '@gx-capture/capture-workbench-ui';
 const runtimeClientPackageName = '@gx-capture/capture-runtime-client';
-const capturePublishedVariable =
-  `CAPTURE_PUBLISHED_${CAPTURE_RUNTIME_VERSION.replaceAll('.', '_')}`;
-
 type InstallMode =
-  | { readonly kind: 'prepublication'; readonly stableVersion: string }
+  | { readonly kind: 'published' }
   | { readonly kind: 'candidate'; readonly packageDirectory: string };
 
 function argumentValue(args: readonly string[], name: string): string | null {
@@ -37,19 +32,8 @@ function argumentValue(args: readonly string[], name: string): string | null {
 }
 
 function parseMode(args: readonly string[]): InstallMode {
-  const stableVersion = argumentValue(args, '--prepublication-stable-version');
   const packageDirectory = argumentValue(args, '--candidate-package-dir');
-  if ((stableVersion === null) === (packageDirectory === null)) {
-    throw new Error(
-      'Specify exactly one of --prepublication-stable-version or --candidate-package-dir.',
-    );
-  }
-  if (stableVersion !== null) {
-    if (!/^\d+\.\d+\.\d+$/u.test(stableVersion)) {
-      throw new Error('The pre-publication stable version must be SemVer.');
-    }
-    return { kind: 'prepublication', stableVersion };
-  }
+  if (packageDirectory === null) return { kind: 'published' };
   return {
     kind: 'candidate',
     packageDirectory: resolve(repoRoot, packageDirectory!),
@@ -108,41 +92,6 @@ function setWorkbenchDependency(
   (dependencies as Record<string, unknown>)[workbenchPackageName] = value;
 }
 
-async function findStableLockfile(stableVersion: string): Promise<string> {
-  const { stdout: commits } = await execFileAsync(
-    'git',
-    ['log', '--all', '--format=%H', '--', 'package.json'],
-    { cwd: repoRoot, encoding: 'utf8' },
-  );
-  for (const commit of commits.split(/\r?\n/u).map((value) => value.trim())) {
-    if (!commit) continue;
-    try {
-      const { stdout: manifestSource } = await execFileAsync(
-        'git',
-        ['show', `${commit}:package.json`],
-        { cwd: repoRoot, encoding: 'utf8' },
-      );
-      const manifest = JSON.parse(manifestSource) as {
-        dependencies?: Record<string, unknown>;
-      };
-      if (manifest.dependencies?.[workbenchPackageName] !== stableVersion) {
-        continue;
-      }
-      const { stdout: lockfile } = await execFileAsync(
-        'git',
-        ['show', `${commit}:pnpm-lock.yaml`],
-        { cwd: repoRoot, encoding: 'utf8' },
-      );
-      return lockfile;
-    } catch {
-      // Continue until the last commit with the requested stable declaration.
-    }
-  }
-  throw new Error(
-    `Could not find a historical package/lock snapshot for ${workbenchPackageName}@${stableVersion}.`,
-  );
-}
-
 async function install(mode: InstallMode): Promise<void> {
   const originalPackageJson = await readFile(packageJsonPath);
   const originalLockfile = await readFile(lockfilePath);
@@ -155,27 +104,9 @@ async function install(mode: InstallMode): Promise<void> {
       string,
       unknown
     >;
-    if (mode.kind === 'prepublication') {
-      if (process.env[capturePublishedVariable] === 'true') {
-        await runPnpm(['install', '--frozen-lockfile']);
-        return;
-      }
-      const stablePackageJson = { ...packageJson };
-      setWorkbenchDependency(stablePackageJson, mode.stableVersion);
-      await writeFile(
-        packageJsonPath,
-        `${JSON.stringify(stablePackageJson, null, 2)}\n`,
-        'utf8',
-      );
-      try {
-        originalNodeModulesLockfile = await readFile(nodeModulesLockfilePath);
-        await unlink(nodeModulesLockfilePath);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-      }
-      await writeFile(lockfilePath, await findStableLockfile(mode.stableVersion));
+    if (mode.kind === 'published') {
       process.stdout.write(
-        `Installing pre-publication CI dependencies with ${workbenchPackageName}@${mode.stableVersion}; candidate gates install immutable candidate bytes separately.\n`,
+        `Installing published ${workbenchPackageName}@${CAPTURE_RUNTIME_VERSION} and ${runtimeClientPackageName}@${CAPTURE_RUNTIME_VERSION}.\n`,
       );
       await runPnpm(['install', '--frozen-lockfile']);
       return;

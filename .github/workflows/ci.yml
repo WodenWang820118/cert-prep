@@ -30,29 +30,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check out Capture Workbench Python bridge
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-        with:
-          repository: gx-capture/capture-workbench
-          # The consumer bridge is pinned to the producer commit that owns the
-          # pull-session DTOs used by this migration. Keep this exact rather
-          # than silently resolving the stale published 0.4.0 SDK.
-          ref: 65c2e036c4a49c1bc5d0245a31adbfc356e19dc1
-          path: capture-workbench
-          sparse-checkout: |
-            packages/capture-runtime-client-python
-
-      - name: Link Capture Workbench Python bridge (Unix)
-        if: runner.os != 'Windows'
-        run: ln -s "$GITHUB_WORKSPACE/capture-workbench" "$GITHUB_WORKSPACE/../capture-workbench"
-
-      - name: Link Capture Workbench Python bridge (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $target = Join-Path (Split-Path -Parent $env:GITHUB_WORKSPACE) 'capture-workbench'
-          New-Item -ItemType Junction -Path $target -Target (Join-Path $env:GITHUB_WORKSPACE 'capture-workbench') | Out-Null
-
       - name: Install pnpm
         uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
         with:
@@ -74,12 +51,10 @@ jobs:
           enable-cache: true
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install JavaScript dependencies and pinned Capture Workbench package
+      - name: Install published Capture Workbench packages
         env:
           NODE_AUTH_TOKEN: ${{ github.token }}
-          CAPTURE_PUBLISHED_0_4_1: ${{ vars.CAPTURE_PUBLISHED_0_4_1 }}
-          CAPTURE_PRESERVE_INSTALL_FILES: 'true'
-        run: node tools/install-capture-workbench-dependencies.mts --prepublication-stable-version 0.4.0
+        run: pnpm install --frozen-lockfile
 
       - name: Sync backend Python environment
         run: >-
@@ -126,27 +101,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check out Capture Workbench Python bridge
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
-        with:
-          repository: gx-capture/capture-workbench
-          # Keep Windows and portable CI on the same exact producer source.
-          ref: 65c2e036c4a49c1bc5d0245a31adbfc356e19dc1
-          path: capture-workbench
-          sparse-checkout: |
-            packages/capture-runtime-client-python
-
-      - name: Link Capture Workbench Python bridge (Unix)
-        if: runner.os != 'Windows'
-        run: ln -s "$GITHUB_WORKSPACE/capture-workbench" "$GITHUB_WORKSPACE/../capture-workbench"
-
-      - name: Link Capture Workbench Python bridge (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $target = Join-Path (Split-Path -Parent $env:GITHUB_WORKSPACE) 'capture-workbench'
-          New-Item -ItemType Junction -Path $target -Target (Join-Path $env:GITHUB_WORKSPACE 'capture-workbench') | Out-Null
-
       - name: Install pnpm
         uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
         with:
@@ -177,12 +131,10 @@ jobs:
       - name: Verify source Capture Runtime consumer declarations
         run: node --test tools/capture-runtime-version.test.mts
 
-      - name: Install JavaScript dependencies and pinned Capture Workbench package
+      - name: Install published Capture Workbench packages
         env:
           NODE_AUTH_TOKEN: ${{ github.token }}
-          CAPTURE_PUBLISHED_0_4_1: ${{ vars.CAPTURE_PUBLISHED_0_4_1 }}
-          CAPTURE_PRESERVE_INSTALL_FILES: 'true'
-        run: node tools/install-capture-workbench-dependencies.mts --prepublication-stable-version 0.4.0
+        run: pnpm install --frozen-lockfile
 
       - name: Sync backend Python environment
         run: >-
@@ -212,21 +164,15 @@ jobs:
         run: pnpm nx run cert-prep-desktop:package-qa-test
 
       - name: Stage the published Capture Runtime release
-        if: vars.CAPTURE_PUBLISHED_0_4_1 == 'true'
         run: pnpm nx run cert-prep-desktop:install-capture-runtime --skip-nx-cache
 
       - name: Verify Capture Runtime installer behavior
-        if: vars.CAPTURE_PUBLISHED_0_4_1 == 'true'
         run: node --test tools/install-capture-runtime.test.mts
 
       - name: Run the Capture Runtime consumer smoke
-        if: vars.CAPTURE_PUBLISHED_0_4_1 == 'true'
         run: pnpm nx run cert-prep-desktop:capture-runtime-consumer-smoke --skip-nx-cache
 
       - name: Verify published Capture registry installation
-        if: vars.CAPTURE_PUBLISHED_0_4_1 == 'true'
-        env:
-          CAPTURE_REQUIRE_PUBLISHED_CAPTURE_ARTIFACTS: '1'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'

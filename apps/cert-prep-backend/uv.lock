@@ -74,23 +74,14 @@ wheels = [
 [[package]]
 name = "capture-runtime-client"
 version = "0.4.1"
-source = { directory = "../../../capture-workbench/packages/capture-runtime-client-python" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "httpx", specifier = ">=0.27.0,<1.0.0" },
-    { name = "pydantic", specifier = ">=2.13.4,<3.0.0" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "mypy", specifier = ">=1.14.0,<2.0.0" },
-    { name = "pytest", specifier = ">=8.3.0,<9.0.0" },
-    { name = "ruff", specifier = ">=0.9.0,<1.0.0" },
+sdist = { url = "https://files.pythonhosted.org/packages/1d/e3/4afefb44518aeb941001313393916ccbfae34dc1b04ff6f52af8c6c743b7/capture_runtime_client-0.4.1.tar.gz", hash = "sha256:1b3c54a3cc2b1a2059803615e362908a60eb0d7e63ba34601bd88400cbb9098a", size = 66306, upload-time = "2026-08-16T15:16:42.448Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a9/af/99ae08c7a1c4dff85c563f64f147bb3b263efa6b9959162e8e9ac2e179e9/capture_runtime_client-0.4.1-py3-none-any.whl", hash = "sha256:874e34adaaa8ffb35baef0c8ea821601c82ce00d2c42403f121ace244ead93b4", size = 65276, upload-time = "2026-08-16T15:16:41.172Z" },
 ]
 
 [[package]]
@@ -123,7 +114,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "av", specifier = ">=18.0.0,<19.0.0" },
-    { name = "capture-runtime-client", directory = "../../../capture-workbench/packages/capture-runtime-client-python" },
+    { name = "capture-runtime-client", specifier = "==0.4.1" },
     { name = "cert-prep-contracts", editable = "../../packages/cert-prep-contracts" },
     { name = "cert-prep-ollama", editable = "../../packages/cert-prep-ollama" },
     { name = "fastapi", specifier = ">=0.124.0,<1.0.0" },

@@ -19,11 +19,7 @@ export const CAPTURE_RUNTIME_RELEASE_BASE_URL =
 export const CAPTURE_RUNTIME_MODEL =
   `capture-runtime@${CAPTURE_RUNTIME_VERSION}` as const;
 
-/**
- * Keep the published launcher dependency version separate from the 0.4.1
- * runtime until the producer publishes a matching compatible crate.
- */
-export const CAPTURE_SIDECAR_LAUNCHER_VERSION = '0.3.10' as const;
+export const CAPTURE_SIDECAR_LAUNCHER_VERSION = '0.4.1' as const;
 
 /** Immutable core-only release retained for compatibility-specific handling. */
 export const LEGACY_CORE_ONLY_RUNTIME_VERSION = '0.3.8' as const;
