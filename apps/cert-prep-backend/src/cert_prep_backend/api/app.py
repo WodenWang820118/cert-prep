@@ -17,6 +17,7 @@ from cert_prep_backend import __version__
 from cert_prep_backend.api.dependencies import require_bearer_auth
 from cert_prep_backend.core.config import Settings
 from cert_prep_backend.persistence.database import Database
+from cert_prep_backend.persistence.change_notifications import DatabaseChangeNotifier
 from cert_prep_backend.domains.capture_workbench.client import CaptureRuntimeClient
 from cert_prep_backend.domains.capture_workbench.runtime_policy import (
     CAPTURE_DOCUMENT_SCHEMA_VERSION,
@@ -47,6 +48,7 @@ from cert_prep_backend.routers import (
     documents,
     drafts,
     llm,
+    operation_events,
     practice,
     projects,
     runtime,
@@ -112,7 +114,11 @@ def create_app(
         lifespan=lifespan,
     )
     app.state.settings = app_settings
-    app.state.database = Database(app_settings)
+    app.state.database_change_notifier = DatabaseChangeNotifier()
+    app.state.database = Database(
+        app_settings,
+        change_notifier=app.state.database_change_notifier,
+    )
     recover_operations(app.state.database)
     source_documents_repository.recover_processing_documents(app.state.database)
     app.state.llm_provider = llm_provider or lazy_provider_from_settings(app_settings)
@@ -230,6 +236,7 @@ def create_app(
     app.include_router(runtime.router, dependencies=protected_dependencies)
     app.include_router(capture_runtime.router, dependencies=protected_dependencies)
     app.include_router(capture_workbench.router, dependencies=protected_dependencies)
+    app.include_router(operation_events.router, dependencies=protected_dependencies)
 
     return app
 

@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
+import { CertPrepSseClient } from '../../services/cert-prep-sse-client.service';
 import { OperationStore } from '../operation.store';
 import { DraftReviewStore } from './draft-review.store';
 import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
@@ -24,13 +25,17 @@ describe('DraftReviewStore generation', () => {
     retryDocumentDraftJobs: vi.fn(),
     updateQuestionDraft: vi.fn(),
   };
+  let manualStream: Subject<ReturnType<typeof manualDraftOperation>>;
+  const sseClient = { streamJson: vi.fn() };
 
   beforeEach(() => {
-    vi.useFakeTimers();
     vi.clearAllMocks();
+    manualStream = new Subject();
+    sseClient.streamJson.mockReturnValue(manualStream.asObservable());
     TestBed.configureTestingModule({
       providers: [
         { provide: CERT_PREP_API, useValue: apiClient },
+        { provide: CertPrepSseClient, useValue: sseClient },
         provideCertPrepHttpResourceClientFake(apiClient),
       ],
     });
@@ -50,10 +55,6 @@ describe('DraftReviewStore generation', () => {
     apiClient.getDocument.mockReturnValue(of(documentRead()));
     apiClient.listDocumentChunks.mockReturnValue(of({ items: [] }));
     apiClient.listDocumentDraftJobs.mockReturnValue(of({ items: [] }));
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
   });
 
   it('uses source-file guidance when generation has no active document', () => {
@@ -77,15 +78,6 @@ describe('DraftReviewStore generation', () => {
     apiClient.startManualDraftOperation.mockReturnValue(of(
       manualDraftOperation({ strategy: 'deterministic_only' }),
     ));
-    apiClient.getManualDraftOperation.mockReturnValue(of(
-      manualDraftOperation({
-        strategy: 'deterministic_only',
-        status: 'succeeded',
-        phase: 'succeeded',
-        cancellable: false,
-        generated_count: 1,
-      }),
-    ));
     apiClient.listQuestionDrafts.mockReturnValue(of({ items: [draft] }));
 
     store.generateDrafts('deterministic_only');
@@ -97,13 +89,14 @@ describe('DraftReviewStore generation', () => {
       { limit: 3, strategy: 'deterministic_only' },
       { signal: expect.any(AbortSignal) },
     );
-    vi.advanceTimersByTime(1500);
+    manualStream.next(manualDraftOperation({
+      strategy: 'deterministic_only',
+      status: 'succeeded',
+      phase: 'succeeded',
+      cancellable: false,
+      generated_count: 1,
+    }));
     TestBed.tick();
-    expect(apiClient.getManualDraftOperation).toHaveBeenCalledWith(
-      'project-1',
-      'document-1',
-      'manual-operation-1',
-    );
     expect(apiClient.listDocumentDraftJobs).toHaveBeenCalledWith(
       'project-1',
       'document-1',
@@ -119,15 +112,6 @@ describe('DraftReviewStore generation', () => {
     apiClient.startManualDraftOperation.mockReturnValue(of(
       manualDraftOperation({ limit: 8 }),
     ));
-    apiClient.getManualDraftOperation.mockReturnValue(of(
-      manualDraftOperation({
-        limit: 8,
-        status: 'succeeded',
-        phase: 'succeeded',
-        cancellable: false,
-        generated_count: 1,
-      }),
-    ));
     apiClient.listQuestionDrafts.mockReturnValue(of({ items: [draft] }));
 
     store.generateDrafts('hybrid_reasoning');
@@ -139,7 +123,13 @@ describe('DraftReviewStore generation', () => {
       { limit: 8, strategy: 'hybrid_reasoning' },
       { signal: expect.any(AbortSignal) },
     );
-    vi.advanceTimersByTime(1500);
+    manualStream.next(manualDraftOperation({
+      limit: 8,
+      status: 'succeeded',
+      phase: 'succeeded',
+      cancellable: false,
+      generated_count: 1,
+    }));
     TestBed.tick();
     expect(apiClient.listDocumentDraftJobs).toHaveBeenCalledWith(
       'project-1',
@@ -147,7 +137,7 @@ describe('DraftReviewStore generation', () => {
     );
   });
 
-  it('requests cancellation and keeps polling until the manual operation is terminal', () => {
+  it('requests cancellation and applies the terminal manual operation event', () => {
     const store = TestBed.inject(DraftReviewStore);
     const sourceImport = TestBed.inject(SourceImportStore);
     activateDocument(sourceImport, documentRead());
@@ -158,13 +148,6 @@ describe('DraftReviewStore generation', () => {
       manualDraftOperation({
         status: 'cancel_requested',
         phase: 'canceling',
-      }),
-    ));
-    apiClient.getManualDraftOperation.mockReturnValue(of(
-      manualDraftOperation({
-        status: 'canceled',
-        phase: 'canceled',
-        cancellable: false,
       }),
     ));
 
@@ -180,7 +163,11 @@ describe('DraftReviewStore generation', () => {
     );
     expect(store.manualDraftOperation()?.status).toBe('cancel_requested');
 
-    vi.advanceTimersByTime(1500);
+    manualStream.next(manualDraftOperation({
+      status: 'canceled',
+      phase: 'canceled',
+      cancellable: false,
+    }));
     TestBed.tick();
     expect(store.manualDraftOperation()?.status).toBe('canceled');
   });

@@ -2,6 +2,7 @@ import type {
   DocumentOperationRead,
   DocumentRead,
 } from '../../../contracts/api.contracts';
+import type { DocumentOperationEvent } from '../../../contracts/operation-events.contracts';
 import type { Observable, Subscription } from 'rxjs';
 
 /**
@@ -77,7 +78,7 @@ export interface SourceUploadLifecycleHooks {
   readonly item: (itemId: string) => SourceUploadItem | undefined;
   readonly current: (projectId: string, contextEpoch: number) => boolean;
   readonly patch: (itemId: string, patch: UploadPatch) => boolean;
-  readonly accept: (document: DocumentRead, pollDocument: boolean) => void;
+  readonly accept: (document: DocumentRead, operationId: string) => void;
   readonly upload: (
     projectId: string,
     item: SourceUploadItem,
@@ -92,6 +93,10 @@ export interface SourceUploadLifecycleHooks {
     projectId: string,
     operationId: string,
   ) => Observable<DocumentOperationRead>;
+  readonly streamOperation: (
+    projectId: string,
+    operationId: string,
+  ) => Observable<DocumentOperationEvent>;
   readonly cancelOperation: (
     projectId: string,
     operationId: string,
@@ -114,13 +119,12 @@ export interface UploadAttempt {
   readonly controller: AbortController;
   readonly actions: import('rxjs').Subject<() => Observable<void>>;
   readonly actionSubscription: Subscription;
+  cancellationSubscription: Subscription | null;
   run: MutableUploadRun;
   documentId: string | null;
   document: DocumentRead | null;
   cancelRequested: boolean;
   slotHeld: boolean;
-  transportRetryCount: number;
-  pollSubscription: Subscription | null;
 }
 
 export interface DetachedOperationTombstoneHooks {
@@ -132,12 +136,15 @@ export interface DetachedOperationTombstoneHooks {
     projectId: string,
     operationId: string,
   ) => Observable<DocumentOperationRead>;
+  readonly streamOperation: (
+    projectId: string,
+    operationId: string,
+  ) => Observable<DocumentOperationEvent>;
 }
 
 export interface DetachedTombstone {
   readonly key: string;
   readonly projectId: string;
   readonly operationId: string;
-  retryCount: number;
-  timer: Subscription | null;
+  subscription: Subscription | null;
 }

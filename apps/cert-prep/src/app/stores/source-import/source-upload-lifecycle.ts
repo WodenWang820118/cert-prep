@@ -1,6 +1,6 @@
 import { inject, Injectable } from '@angular/core';
 import type { DocumentOperationRead, DocumentRead } from '../../contracts/api.contracts';
-import { EMPTY, from, Observable, of, ReplaySubject, Subject, catchError, concatMap, defer, map, switchMap, tap, timer } from 'rxjs';
+import { EMPTY, from, Observable, of, ReplaySubject, Subject, catchError, concatMap, defer, map, switchMap, takeWhile, tap } from 'rxjs';
 import type { ObservableInput } from 'rxjs';
 import type {
   OperationRequestOutcome,
@@ -12,12 +12,9 @@ import type {
   MutableUploadRun,
   TerminalUploadStatus,
 } from './contracts/source-import.contracts';
+import type { DocumentOperationEvent } from '../../contracts/operation-events.contracts';
 import { DetachedOperationTombstoneTracker } from './detached-operation-tombstone-tracker';
 import { DocumentOperationSnapshotService } from './document-operation-snapshot.service';
-import {
-  OPERATION_PROGRESS_POLL_MS,
-  TRANSPORT_RETRY_DELAYS_MS,
-} from './constants/source-import.constants';
 
 @Injectable({ providedIn: 'root' })
 export class SourceUploadLifecycle {
@@ -32,6 +29,7 @@ export class SourceUploadLifecycle {
     this.detachedTombstones.configure({
       getOperation: hooks.getOperation,
       cancelOperation: hooks.cancelOperation,
+      streamOperation: hooks.streamOperation,
     });
   }
 
@@ -53,8 +51,6 @@ export class SourceUploadLifecycle {
       attempt.run = run;
       result = { kind: 'new-run', run };
     }
-    attempt.transportRetryCount = 0;
-    this.clearPollTimer(attempt);
     attempt.run.queuedReconciliationItemIds.push(itemId);
     this.pump(attempt.run);
     return result;
@@ -84,12 +80,19 @@ export class SourceUploadLifecycle {
     const attempt = this.attempts.get(itemId);
     if (attempt === undefined || attempt.cancelRequested || !this.owns(attempt)) return;
     attempt.cancelRequested = true;
-    attempt.transportRetryCount = 0;
-    this.clearPollTimer(attempt);
     this.hooks.patch(itemId, { status: 'cancel_requested', error: null });
     const cancellation = captureOperationRequest(this.hooks.cancelOperation(attempt.run.projectId, attempt.operationId));
     attempt.controller.abort(new DOMException('The upload was canceled.', 'AbortError'));
-    this.enqueue(attempt, () => this.reconcileCaptured(attempt, 'delete', cancellation));
+    attempt.cancellationSubscription = this.reconcileCaptured(
+      attempt,
+      'delete',
+      cancellation,
+    ).subscribe({
+      error: () => this.pauseForTransportError(attempt),
+      complete: () => {
+        attempt.cancellationSubscription = null;
+      },
+    });
   }
 
   invalidate(): void {
@@ -103,9 +106,10 @@ export class SourceUploadLifecycle {
       this.activeRun = null;
     }
     for (const attempt of attempts) {
-      this.clearPollTimer(attempt);
       attempt.actions.complete();
       attempt.actionSubscription.unsubscribe();
+      attempt.cancellationSubscription?.unsubscribe();
+      attempt.cancellationSubscription = null;
       this.detachedTombstones.track(attempt.run.projectId, attempt.operationId);
       attempt.controller.abort(new DOMException('The upload context changed.', 'AbortError'));
     }
@@ -138,7 +142,7 @@ export class SourceUploadLifecycle {
       if (item === undefined || item.status !== 'queued' || item.document !== null) continue;
       const actions = new Subject<() => Observable<void>>();
       const actionSubscription = actions.pipe(concatMap((action) => defer(action).pipe(catchError(() => EMPTY)))).subscribe();
-      const attempt: UploadAttempt = { itemId: item.id, operationId: this.hooks.newOperationId(), controller: new AbortController(), actions, actionSubscription, run, documentId: null, document: null, cancelRequested: false, slotHeld: true, transportRetryCount: 0, pollSubscription: null };
+      const attempt: UploadAttempt = { itemId: item.id, operationId: this.hooks.newOperationId(), controller: new AbortController(), actions, actionSubscription, cancellationSubscription: null, run, documentId: null, document: null, cancelRequested: false, slotHeld: true };
       if (!this.hooks.patch(item.id, { status: 'uploading', error: null })) { actionSubscription.unsubscribe(); actions.complete(); continue; }
       run.activeCount += 1;
       this.attempts.set(item.id, attempt);
@@ -164,7 +168,7 @@ export class SourceUploadLifecycle {
   private acceptUpload(attempt: UploadAttempt, document: DocumentRead): Observable<void> {
     if (!this.owns(attempt)) return EMPTY;
     if (attempt.cancelRequested) {
-      this.observeDocument(attempt, document, false);
+      this.observeDocument(attempt, document);
       this.hooks.patch(attempt.itemId, { status: 'cancel_requested', document, error: null });
       return of(undefined);
     }
@@ -192,31 +196,86 @@ export class SourceUploadLifecycle {
       if (outcome.ok) return this.reconcileSnapshot(attempt, outcome.operation);
       return requestKind === 'delete'
         ? this.reconcile(attempt, 'get', this.hooks.getOperation(attempt.run.projectId, attempt.operationId))
-        : defer(() => { this.scheduleTransportRetry(attempt); return of(undefined); });
+        : defer(() => { this.pauseForTransportError(attempt); return of(undefined); });
     }));
   }
 
   private reconcileSnapshot(attempt: UploadAttempt, operation: DocumentOperationRead): Observable<void> {
     if (!this.owns(attempt)) return EMPTY;
     if (!this.snapshot.isExpectedDocumentOperation(operation, attempt.operationId, attempt.run.projectId)) {
-      this.scheduleTransportRetry(attempt);
+      this.pauseForTransportError(attempt);
       return of(undefined);
     }
     if (operation.document_id !== null) attempt.documentId = operation.document_id;
     return this.loadOperationDocument(attempt, operation).pipe(switchMap((document) => {
       if (document === undefined || !this.owns(attempt)) return EMPTY;
-      attempt.transportRetryCount = 0;
       if (operation.status === 'canceled') { this.settle(attempt, 'canceled', document, null); return of(undefined); }
       if (operation.status === 'failed') { this.settle(attempt, 'failed', document, operation.error ?? 'The document operation failed.'); return of(undefined); }
       if (operation.status === 'succeeded') { if (document !== null) this.handoffDocument(attempt, document); return of(undefined); }
       if (operation.status === 'cancel_requested') attempt.cancelRequested = true;
       if (attempt.cancelRequested) {
         this.hooks.patch(attempt.itemId, { status: 'cancel_requested', document, error: null });
-        this.scheduleProgressPoll(attempt, operation.status !== 'cancel_requested' && operation.cancellable ? 'delete' : 'get');
-      } else if (document !== null) this.handoffDocument(attempt, document);
-      else this.scheduleProgressPoll(attempt);
+        return this.streamOperation(attempt);
+      }
+      if (document !== null) this.handoffDocument(attempt, document);
+      else return this.streamOperation(attempt);
       return of(undefined);
     }));
+  }
+
+  private streamOperation(attempt: UploadAttempt): Observable<void> {
+    if (!this.owns(attempt)) return EMPTY;
+    return this.hooks
+      .streamOperation(attempt.run.projectId, attempt.operationId)
+      .pipe(
+        tap((event) => this.applyOperationEvent(attempt, event)),
+        takeWhile(() => this.owns(attempt), true),
+        map(() => undefined),
+        catchError(() => {
+          this.pauseForTransportError(attempt);
+          return of(undefined);
+        }),
+      );
+  }
+
+  private applyOperationEvent(
+    attempt: UploadAttempt,
+    event: DocumentOperationEvent,
+  ): void {
+    const { operation, document } = event;
+    if (
+      !this.snapshot.isExpectedDocumentOperation(
+        operation,
+        attempt.operationId,
+        attempt.run.projectId,
+      )
+    ) {
+      throw new Error('Unexpected document operation event.');
+    }
+    if (document !== null) {
+      this.observeDocument(attempt, document);
+    }
+    if (operation.status === 'canceled') {
+      this.settle(attempt, 'canceled', document, null);
+    } else if (operation.status === 'failed') {
+      this.settle(
+        attempt,
+        'failed',
+        document,
+        operation.error ?? 'The document operation failed.',
+      );
+    } else if (operation.status === 'succeeded' && document !== null) {
+      this.handoffDocument(attempt, document);
+    } else if (operation.status === 'cancel_requested') {
+      attempt.cancelRequested = true;
+      this.hooks.patch(attempt.itemId, {
+        status: 'cancel_requested',
+        document,
+        error: null,
+      });
+    } else if (document !== null) {
+      this.handoffDocument(attempt, document);
+    }
   }
 
   private loadOperationDocument(attempt: UploadAttempt, operation: DocumentOperationRead): Observable<DocumentRead | null | undefined> {
@@ -224,58 +283,36 @@ export class SourceUploadLifecycle {
     if (documentId === null) return of(attempt.document);
     attempt.documentId = documentId;
     return from(this.hooks.getDocument(attempt.run.projectId, documentId)).pipe(
-      tap((document) => this.observeDocument(attempt, document, false)),
+      tap((document) => this.observeDocument(attempt, document)),
       map((document) => document as DocumentRead | null),
-      catchError(() => { this.scheduleTransportRetry(attempt); return of(undefined); }),
+      catchError(() => { this.pauseForTransportError(attempt); return of(undefined); }),
     );
   }
 
   private handoffDocument(attempt: UploadAttempt, document: DocumentRead): void {
-    if (document.status === 'canceled') { this.observeDocument(attempt, document, false); this.settle(attempt, 'canceled', document, null); return; }
-    const pollDocument = document.status === 'processing' || document.status === 'cancel_requested';
-    this.observeDocument(attempt, document, pollDocument);
+    if (document.status === 'canceled') { this.observeDocument(attempt, document); this.settle(attempt, 'canceled', document, null); return; }
+    this.observeDocument(attempt, document);
     const existingIndex = attempt.run.documents.findIndex((item) => item.id === document.id);
     if (existingIndex === -1) attempt.run.documents.push(document); else attempt.run.documents[existingIndex] = document;
     this.settle(attempt, 'uploaded', document, null);
   }
 
-  private observeDocument(attempt: UploadAttempt, document: DocumentRead, pollDocument: boolean): void {
+  private observeDocument(attempt: UploadAttempt, document: DocumentRead): void {
     if (!this.owns(attempt)) return;
     attempt.documentId = document.id;
     attempt.document = document;
-    this.hooks.accept(document, pollDocument);
+    this.hooks.accept(document, attempt.operationId);
   }
 
   private settle(attempt: UploadAttempt, status: TerminalUploadStatus, document: DocumentRead | null, error: string | null): void {
     if (!this.owns(attempt)) return;
     this.hooks.patch(attempt.itemId, { status, document, error });
-    this.clearPollTimer(attempt);
     this.attempts.delete(attempt.itemId);
     attempt.actions.complete();
     attempt.actionSubscription.unsubscribe();
+    attempt.cancellationSubscription?.unsubscribe();
+    attempt.cancellationSubscription = null;
     this.releaseSlot(attempt);
-  }
-
-  private scheduleTransportRetry(attempt: UploadAttempt): void {
-    if (!this.owns(attempt) || attempt.pollSubscription !== null) return;
-    if (attempt.transportRetryCount >= TRANSPORT_RETRY_DELAYS_MS.length) { this.pauseForTransportError(attempt); return; }
-    const delay = TRANSPORT_RETRY_DELAYS_MS[attempt.transportRetryCount++];
-    attempt.pollSubscription = timer(delay).subscribe(() => {
-      attempt.pollSubscription = null;
-      if (this.owns(attempt)) this.enqueue(attempt, () => this.requestReconciliation(attempt));
-    });
-  }
-
-  private scheduleProgressPoll(attempt: UploadAttempt, requestKind: 'get' | 'delete' = 'get'): void {
-    if (!this.owns(attempt) || attempt.pollSubscription !== null) return;
-    attempt.transportRetryCount = 0;
-    attempt.pollSubscription = timer(OPERATION_PROGRESS_POLL_MS).subscribe(() => {
-      attempt.pollSubscription = null;
-      if (!this.owns(attempt)) return;
-      this.enqueue(attempt, () => requestKind === 'delete'
-        ? this.reconcile(attempt, 'delete', this.hooks.cancelOperation(attempt.run.projectId, attempt.operationId))
-        : this.reconcile(attempt, 'get', this.hooks.getOperation(attempt.run.projectId, attempt.operationId)));
-    });
   }
 
   private requestReconciliation(attempt: UploadAttempt): Observable<void> {
@@ -287,7 +324,6 @@ export class SourceUploadLifecycle {
 
   private pauseForTransportError(attempt: UploadAttempt): void {
     if (!this.owns(attempt)) return;
-    this.clearPollTimer(attempt);
     this.hooks.patch(attempt.itemId, { status: 'status_unavailable', document: attempt.document, error: attempt.cancelRequested ? 'Cancellation status is unavailable. Retry status check.' : 'Upload status is unavailable. Retry status check.' });
     this.releaseSlot(attempt);
   }
@@ -300,7 +336,7 @@ export class SourceUploadLifecycle {
     if (!attempt.slotHeld) return;
     attempt.slotHeld = false;
     attempt.run.activeCount = Math.max(0, attempt.run.activeCount - 1);
-    timer(0).subscribe(() => this.pump(attempt.run));
+    queueMicrotask(() => this.pump(attempt.run));
   }
 
   private removeQueuedItem(itemId: string): void {
@@ -318,11 +354,6 @@ export class SourceUploadLifecycle {
 
   private completeRun(run: MutableUploadRun): void {
     if (!run.doneSubject.closed) { run.doneSubject.next(); run.doneSubject.complete(); }
-  }
-
-  private clearPollTimer(attempt: UploadAttempt): void {
-    attempt.pollSubscription?.unsubscribe();
-    attempt.pollSubscription = null;
   }
 
   private owns(attempt: UploadAttempt): boolean {

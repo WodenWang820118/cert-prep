@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Final
 
 from cert_prep_backend.core.config import Settings
+from cert_prep_backend.persistence.change_notifications import DatabaseChangeNotifier
 
 
 # Migration strategy: keep these local SQLite migrations append-only for now so
@@ -739,8 +740,14 @@ MIGRATIONS: Final[tuple[tuple[int, str], ...]] = (
 
 
 class Database:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        change_notifier: DatabaseChangeNotifier | None = None,
+    ) -> None:
         self.path = settings.database_path
+        self.change_notifier = change_notifier
         self._lock = threading.Lock()
         self._migrated = False
 
@@ -750,9 +757,15 @@ class Database:
         connection = sqlite3.connect(self.path, timeout=30.0)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
+        initial_changes = connection.total_changes
         try:
             yield connection
             connection.commit()
+            if (
+                self.change_notifier is not None
+                and connection.total_changes != initial_changes
+            ):
+                self.change_notifier.publish()
         except Exception:
             connection.rollback()
             raise

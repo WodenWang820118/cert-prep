@@ -69,18 +69,18 @@
           </div>
         }
       }
-      @if (drafts.manualDraftPollingError(); as pollingError) {
+      @if (drafts.manualDraftStreamError(); as streamError) {
         <div
           class="mt-2 flex flex-wrap items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 p-3"
           role="alert"
         >
           <span class="text-sm font-semibold text-red-900">
-            {{ pollingError }}
+            {{ streamError }}
           </span>
           <button
             class="workbench-secondary-button"
             type="button"
-            (click)="drafts.retryManualDraftPolling()"
+            (click)="drafts.retryManualDraftStream()"
           >
             <i class="pi pi-refresh" aria-hidden="true"></i>
             <span>Retry manual progress</span>
@@ -127,18 +127,18 @@
           }
         </div>
       }
-      @if (drafts.pollingError(); as pollingError) {
+      @if (drafts.streamError(); as streamError) {
         <div
           class="mt-2 flex flex-wrap items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 p-3"
           role="alert"
         >
           <span class="text-sm font-semibold text-red-900">
-            {{ pollingError }}
+            {{ streamError }}
           </span>
           <button
             class="workbench-secondary-button"
             type="button"
-            (click)="drafts.retryDraftPolling()"
+            (click)="drafts.retryDraftStream()"
           >
             <i class="pi pi-refresh" aria-hidden="true"></i>
             <span>Retry progress</span>

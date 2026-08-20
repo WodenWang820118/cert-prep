@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { of, Subject, throwError } from 'rxjs';
 import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
+import { CertPrepSseClient } from '../../services/cert-prep-sse-client.service';
 import { DraftReviewStore } from './draft-review.store';
 import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
 import { ProjectStore } from '../project.store';
@@ -22,12 +23,17 @@ describe('DraftReviewStore streaming jobs', () => {
     retryDocumentDraftJobs: vi.fn(),
     updateQuestionDraft: vi.fn(),
   };
+  let draftJobsStream: Subject<{ items: ReturnType<typeof draftJob>[] }>;
+  const sseClient = { streamJson: vi.fn() };
 
   beforeEach(() => {
     vi.clearAllMocks();
+    draftJobsStream = new Subject();
+    sseClient.streamJson.mockReturnValue(draftJobsStream.asObservable());
     TestBed.configureTestingModule({
       providers: [
         { provide: CERT_PREP_API, useValue: apiClient },
+        { provide: CertPrepSseClient, useValue: sseClient },
         provideCertPrepHttpResourceClientFake(apiClient),
       ],
     });
@@ -105,39 +111,29 @@ describe('DraftReviewStore streaming jobs', () => {
     expect(store.draftJobs()).toEqual([]);
   });
 
-  it('stops after bounded polling retries and lets the user retry explicitly', () => {
-    vi.useFakeTimers();
-    try {
-      const store = TestBed.inject(DraftReviewStore);
-      const sourceImport = TestBed.inject(SourceImportStore);
-      apiClient.listQuestionDrafts.mockReturnValue(of({ items: [] }));
-      apiClient.listDocumentDraftJobs.mockReturnValue(
-        throwError(() => new Error('jobs offline')),
-      );
+  it('surfaces an event-stream error and reconnects only on explicit retry', () => {
+    const store = TestBed.inject(DraftReviewStore);
+    const sourceImport = TestBed.inject(SourceImportStore);
+    apiClient.listQuestionDrafts.mockReturnValue(of({ items: [] }));
+    apiClient.listDocumentDraftJobs.mockReturnValue(of({ items: [] }));
 
-      activateDocument(
-        sourceImport,
-        documentRead({ status: 'processing', chunks_count: 1 }),
-      );
-      TestBed.tick();
+    activateDocument(
+      sourceImport,
+      documentRead({ status: 'processing', chunks_count: 1 }),
+    );
+    TestBed.tick();
+    draftJobsStream.error(new Error('jobs offline'));
+    TestBed.tick();
 
-      vi.advanceTimersByTime(1000);
-      vi.advanceTimersByTime(2000);
-      vi.advanceTimersByTime(4000);
-      TestBed.tick();
+    expect(store.streamError()).toContain('could not be refreshed');
 
-      expect(apiClient.listDocumentDraftJobs).toHaveBeenCalledTimes(4);
-      expect(store.pollingError()).toContain('could not be refreshed');
+    const retryStream = new Subject<{ items: ReturnType<typeof draftJob>[] }>();
+    sseClient.streamJson.mockReturnValueOnce(retryStream.asObservable());
+    store.retryDraftStream();
+    TestBed.tick();
 
-      apiClient.listDocumentDraftJobs.mockReturnValue(of({ items: [] }));
-      store.retryDraftPolling();
-      TestBed.tick();
-
-      expect(store.pollingError()).toBeNull();
-      expect(apiClient.listDocumentDraftJobs).toHaveBeenCalledTimes(5);
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(store.streamError()).toBeNull();
+    expect(sseClient.streamJson).toHaveBeenCalledTimes(2);
   });
 
   it('surfaces skipped streaming question jobs when the reasoning model is missing', () => {

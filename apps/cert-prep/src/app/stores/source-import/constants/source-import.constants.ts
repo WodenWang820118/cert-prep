@@ -1,9 +1,3 @@
-export const DOCUMENT_POLL_INTERVAL_MS = 1500;
-export const FIRST_CHUNK_POLL_INTERVAL_MS = 500;
-export const POLL_RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
-export const TRANSPORT_RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
-export const OPERATION_PROGRESS_POLL_MS = 1000;
-export const RETRY_DELAYS_MS = [1000, 2000, 4000] as const;
 
 export const DEFAULT_UPLOAD_BATCH_SIZE = 2;
 export const MIN_UPLOAD_BATCH_SIZE = 1;

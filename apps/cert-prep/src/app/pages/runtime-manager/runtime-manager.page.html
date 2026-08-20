@@ -103,6 +103,11 @@
       install) {
       <div progress class="grid gap-2 sm:col-span-2" aria-live="polite">
         <p class="m-0 text-sm text-muted-color">{{ install.message }}</p>
+        @if (health.runtimeInstallStreamError(); as streamError) {
+        <p class="m-0 text-sm text-red-500" role="status" aria-live="polite">
+          {{ streamError }}
+        </p>
+        }
         @if (install.progress !== null) {
         <p-progressbar [value]="install.progress" />
         }
@@ -144,6 +149,11 @@
       @if (health.modelDownload(); as download) {
       <div progress class="grid gap-2 sm:col-span-2" aria-live="polite">
         <p class="m-0 text-sm text-muted-color">{{ download.message }}</p>
+        @if (health.modelDownloadStreamError(); as streamError) {
+        <p class="m-0 text-sm text-red-500" role="status" aria-live="polite">
+          {{ streamError }}
+        </p>
+        }
         @if (download.progress !== null) {
         <p-progressbar [value]="download.progress" />
         }

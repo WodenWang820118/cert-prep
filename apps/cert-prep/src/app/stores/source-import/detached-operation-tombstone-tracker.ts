@@ -1,11 +1,11 @@
 import { inject, Injectable } from '@angular/core';
 import type { DocumentOperationRead } from '../../contracts/api.contracts';
-import { catchError, defer, of, tap, timer } from 'rxjs';
+import type { DocumentOperationEvent } from '../../contracts/operation-events.contracts';
+import { catchError, defer, of, switchMap, takeWhile, tap } from 'rxjs';
 import {
   DetachedOperationTombstoneHooks,
   DetachedTombstone,
 } from './contracts/source-import.contracts';
-import { RETRY_DELAYS_MS } from './constants/source-import.constants';
 import { DocumentOperationSnapshotService } from './document-operation-snapshot.service';
 
 @Injectable({ providedIn: 'root' })
@@ -20,31 +20,48 @@ export class DetachedOperationTombstoneTracker {
 
   track(projectId: string, operationId: string): void {
     const key = `${projectId}:${operationId}`;
-    if (this.tombstones.has(key)) {
-      return;
-    }
+    if (this.tombstones.has(key)) return;
     const tombstone: DetachedTombstone = {
       key,
       projectId,
       operationId,
-      retryCount: 0,
-      timer: null,
+      subscription: null,
     };
     this.tombstones.set(key, tombstone);
     this.reconcile(tombstone);
   }
 
   private reconcile(tombstone: DetachedTombstone): void {
-    if (this.tombstones.get(tombstone.key) !== tombstone) {
-      return;
-    }
-    defer(() => this.hooks.cancelOperation(tombstone.projectId, tombstone.operationId)).pipe(
-      catchError(() => this.hooks.getOperation(tombstone.projectId, tombstone.operationId)),
-      tap((operation) => {
-        if (!this.finishWhenDurable(tombstone, operation)) this.schedule(tombstone);
-      }),
-      catchError(() => { this.schedule(tombstone); return of(null); }),
-    ).subscribe();
+    if (this.tombstones.get(tombstone.key) !== tombstone) return;
+    const subscription = defer(() =>
+      this.hooks.cancelOperation(tombstone.projectId, tombstone.operationId),
+    )
+      .pipe(
+        catchError(() =>
+          this.hooks.getOperation(tombstone.projectId, tombstone.operationId),
+        ),
+        switchMap((operation) =>
+          this.finishWhenDurable(tombstone, operation)
+            ? of(operation)
+            : this.hooks.streamOperation(
+                tombstone.projectId,
+                tombstone.operationId,
+              ),
+        ),
+        tap((value) => {
+          const operation = isDocumentOperationEvent(value)
+            ? value.operation
+            : value;
+          this.finishWhenDurable(tombstone, operation);
+        }),
+        takeWhile(() => this.tombstones.has(tombstone.key)),
+        catchError(() => {
+          this.tombstones.delete(tombstone.key);
+          return of(null);
+        }),
+      )
+      .subscribe();
+    tombstone.subscription = subscription;
   }
 
   private finishWhenDurable(
@@ -63,28 +80,15 @@ export class DetachedOperationTombstoneTracker {
     ) {
       return false;
     }
-    if (tombstone.timer !== null) {
-      tombstone.timer.unsubscribe();
-    }
     this.tombstones.delete(tombstone.key);
+    tombstone.subscription?.unsubscribe();
+    tombstone.subscription = null;
     return true;
   }
+}
 
-  private schedule(tombstone: DetachedTombstone): void {
-    if (
-      this.tombstones.get(tombstone.key) !== tombstone ||
-      tombstone.timer !== null
-    ) {
-      return;
-    }
-    const delay =
-      RETRY_DELAYS_MS[
-        Math.min(tombstone.retryCount, RETRY_DELAYS_MS.length - 1)
-      ];
-    tombstone.retryCount += 1;
-    tombstone.timer = timer(delay).subscribe(() => {
-      tombstone.timer = null;
-      this.reconcile(tombstone);
-    });
-  }
+function isDocumentOperationEvent(
+  value: DocumentOperationRead | DocumentOperationEvent,
+): value is DocumentOperationEvent {
+  return 'operation' in value;
 }

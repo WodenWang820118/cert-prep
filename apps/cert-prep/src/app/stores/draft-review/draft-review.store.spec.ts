@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { of, Subject } from 'rxjs';
 import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
+import { CertPrepSseClient } from '../../services/cert-prep-sse-client.service';
 import type { QuestionDraftRead } from '../../contracts/api.contracts';
 import { DraftReviewStore } from './draft-review.store';
 import { ProjectStore } from '../project.store';
@@ -24,14 +25,19 @@ describe('DraftReviewStore editable questions', () => {
     retryDocumentDraftJobs: vi.fn(),
     updateQuestionDraft: vi.fn(),
   };
+  let manualStream: Subject<ReturnType<typeof manualDraftOperation>>;
+  const sseClient = { streamJson: vi.fn() };
 
   beforeEach(() => {
     vi.clearAllMocks();
+    manualStream = new Subject();
+    sseClient.streamJson.mockReturnValue(manualStream.asObservable());
     apiClient.listQuestionDrafts.mockReset();
     apiClient.listQuestionDrafts.mockReturnValue(of({ items: [] }));
     TestBed.configureTestingModule({
       providers: [
         { provide: CERT_PREP_API, useValue: apiClient },
+        { provide: CertPrepSseClient, useValue: sseClient },
         provideCertPrepHttpResourceClientFake(apiClient),
       ],
     });
@@ -199,7 +205,6 @@ describe('DraftReviewStore editable questions', () => {
   });
 
   it('refreshes document metadata after generated questions are returned', () => {
-    vi.useFakeTimers();
     const store = TestBed.inject(DraftReviewStore);
     const sourceImport = TestBed.inject(SourceImportStore);
     const question = questionDraft();
@@ -208,20 +213,17 @@ describe('DraftReviewStore editable questions', () => {
     apiClient.startManualDraftOperation.mockReturnValue(of(
       manualDraftOperation(),
     ));
-    apiClient.getManualDraftOperation.mockReturnValue(of(
-      manualDraftOperation({
-        status: 'succeeded',
-        phase: 'succeeded',
-        cancellable: false,
-        generated_count: 1,
-      }),
-    ));
     apiClient.getDocument.mockReturnValue(of(refreshedDocument));
     apiClient.listQuestionDrafts.mockReturnValue(of({ items: [question] }));
 
     store.generateDrafts('hybrid_reasoning');
     TestBed.tick();
-    vi.advanceTimersByTime(1500);
+    manualStream.next(manualDraftOperation({
+      status: 'succeeded',
+      phase: 'succeeded',
+      cancellable: false,
+      generated_count: 1,
+    }));
     TestBed.tick();
 
     expect(store.drafts()).toEqual([question]);
@@ -230,7 +232,6 @@ describe('DraftReviewStore editable questions', () => {
       'document-1',
     );
     expect(sourceImport.documents()).toEqual([refreshedDocument]);
-    vi.useRealTimers();
   });
 });
 

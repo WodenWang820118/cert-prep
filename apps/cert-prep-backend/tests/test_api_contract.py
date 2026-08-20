@@ -180,6 +180,18 @@ def test_document_operation_routes_and_upload_header_are_documented(tmp_path) ->
         "post",
         202,
     ) == "DocumentOperationRead"
+
+    for path in (
+        "/projects/{project_id}/document-operations/{operation_id}/events",
+        "/projects/{project_id}/documents/{document_id}/document-operation/events",
+        "/projects/{project_id}/documents/{document_id}/draft-jobs/events",
+        "/projects/{project_id}/documents/{document_id}/draft-operations/{operation_id}/events",
+        "/runtime/installations/{job_id}/events",
+        "/llm/model-downloads/{job_id}/events",
+    ):
+        assert "text/event-stream" in openapi["paths"][path]["get"]["responses"][
+            "200"
+        ]["content"]
     assert _response_schema_name(
         openapi,
         "/projects/{project_id}/document-operations/{operation_id}",

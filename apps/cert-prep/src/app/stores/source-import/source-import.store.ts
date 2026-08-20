@@ -6,10 +6,13 @@ import {
   signal,
   untracked,
 } from '@angular/core';
-import { forkJoin, from, map, Subscription, timer } from 'rxjs';
+import { forkJoin, from, map, Subscription } from 'rxjs';
 import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
 import type { ChunkRead, DocumentRead } from '../../contracts/api.contracts';
+import { isDocumentOperationEventTerminal } from '../../contracts/operation-events.contracts';
+import type { DocumentOperationEvent } from '../../contracts/operation-events.contracts';
 import { CertPrepHttpResourceClient } from '../../services/cert-prep-http-resource-client.service';
+import { CertPrepSseClient } from '../../services/cert-prep-sse-client.service';
 import type {
   DocumentParsingMetric,
   LanguageHint,
@@ -24,12 +27,9 @@ import { ProjectStore } from '../project.store';
 import { SourceUploadLifecycle } from './source-upload-lifecycle';
 import {
   DEFAULT_UPLOAD_BATCH_SIZE,
-  DOCUMENT_POLL_INTERVAL_MS,
   FINAL_DOCUMENT_STATUSES,
-  FIRST_CHUNK_POLL_INTERVAL_MS,
   MAX_UPLOAD_BATCH_SIZE,
   MIN_UPLOAD_BATCH_SIZE,
-  POLL_RETRY_DELAYS_MS,
   SOURCE_FILE_ACCEPT,
   SUPPORTED_SOURCE_FILE_EXTENSIONS,
   SUPPORTED_SOURCE_MIME_TYPES,
@@ -44,6 +44,7 @@ export class SourceImportStore {
   private readonly operations = inject(OperationStore);
   private readonly projects = inject(ProjectStore);
   private readonly resources = inject(CertPrepHttpResourceClient);
+  private readonly sse = inject(CertPrepSseClient);
   private readonly documentQueryEnabled = signal(false);
   private readonly documentsResource = this.resources.documents(() =>
     this.documentQueryEnabled() ? this.projects.selectedProjectId() : null,
@@ -60,8 +61,12 @@ export class SourceImportStore {
     () =>
       this.documentQueryEnabled() ? this.library.activeDocumentId() : null,
   );
-  private documentPollTimer: Subscription | null = null;
-  private documentPollFailureCount = 0;
+  private documentStreamSubscription: Subscription | null = null;
+  private documentStreamKey: string | null = null;
+  private documentStreamOperationId: string | null = null;
+  private documentStreamTerminalSeen = false;
+  private documentChunksSubscription: Subscription | null = null;
+  private documentChunksRequestRevision = 0;
   private contextEpoch = 0;
   private uploadItemCounter = 0;
   private readonly pendingAutoUploadItemIds = new Set<string>();
@@ -76,8 +81,8 @@ export class SourceImportStore {
       current: (projectId, contextEpoch) =>
         this.isCurrentUploadContext(projectId, contextEpoch),
       patch: (itemId, patch) => this.updateUploadItem(itemId, patch),
-      accept: (document, pollDocument) =>
-        this.acceptLifecycleDocument(document, pollDocument),
+      accept: (document, operationId) =>
+        this.acceptLifecycleDocument(document, operationId),
       upload: (projectId, item, operationId, signal) => {
         const formData = new FormData();
         formData.append('file', item.file, item.file.name);
@@ -91,6 +96,8 @@ export class SourceImportStore {
         from(this.api.getDocument(projectId, documentId)),
       getOperation: (projectId, operationId) =>
         from(this.api.getDocumentOperation(projectId, operationId)),
+      streamOperation: (projectId, operationId) =>
+        this.streamDocumentOperation(projectId, '', operationId),
       cancelOperation: (projectId, operationId) =>
         from(this.api.cancelDocumentOperation(projectId, operationId)),
       newOperationId: () => this.newOperationId(),
@@ -111,7 +118,7 @@ export class SourceImportStore {
   readonly languageHint = signal<LanguageHint>('auto');
   readonly uploadBatchSize = signal(DEFAULT_UPLOAD_BATCH_SIZE);
   readonly uploadItems = signal<SourceUploadItem[]>([]);
-  readonly pollingError = signal<string | null>(null);
+  readonly streamError = signal<string | null>(null);
   readonly selectedFiles = computed(() =>
     this.uploadItems().map((item) => item.file),
   );
@@ -265,6 +272,12 @@ export class SourceImportStore {
             this.library.upsertDocument(document);
             if (this.activeDocumentId() === document.id) {
               this.setActiveDocument(document);
+              if (
+                ['processing', 'cancel_requested'].includes(document.status) &&
+                this.documentStreamSubscription === null
+              ) {
+                this.startDocumentStream(document.project_id, document.id, null);
+              }
             }
           });
         }
@@ -309,8 +322,8 @@ export class SourceImportStore {
       this.invalidateUploadContext();
       this.uploadItems.set(nextItems);
       this.library.clearActiveDocument();
-      this.stopDocumentPolling();
-      this.resetDocumentPollingFailure();
+      this.stopDocumentStream();
+      this.resetDocumentStreamError();
     }
     if (autoUpload) {
       this.rememberPendingAutoUploads(nextItems.map((item) => item.id));
@@ -343,7 +356,7 @@ export class SourceImportStore {
     this.invalidateUploadContext();
     this.uploadItems.set([]);
     this.library.reset();
-    this.resetDocumentPollingFailure();
+    this.resetDocumentStreamError();
   }
 
   setLanguageHint(value: string): void {
@@ -508,8 +521,8 @@ export class SourceImportStore {
 
   setActiveDocumentId(documentId: string | null): void {
     if (this.library.setActiveDocumentId(documentId)) {
-      this.stopDocumentPolling();
-      this.resetDocumentPollingFailure();
+      this.stopDocumentStream();
+      this.resetDocumentStreamError();
     }
   }
 
@@ -522,7 +535,7 @@ export class SourceImportStore {
     }
     if (previousDocumentId !== documentId) {
       this.library.clearChunks();
-      this.stopDocumentPolling();
+      this.stopDocumentStream();
     }
 
     if (!this.documentQueryEnabled()) {
@@ -557,23 +570,35 @@ export class SourceImportStore {
         this.setActiveDocument(nextDocument);
         this.library.setChunks(chunks);
         this.updateUploadDocumentSnapshot(nextDocument);
-        this.resetDocumentPollingFailure();
-        if (['processing', 'cancel_requested'].includes(nextDocument.status)) this.scheduleDocumentPolling(project, document);
-        else this.stopDocumentPolling();
+        this.resetDocumentStreamError();
+        if (
+          ['processing', 'cancel_requested'].includes(nextDocument.status) &&
+          this.documentStreamSubscription === null
+        ) {
+          const operationId =
+            this.documentStreamKey === `${project}:${document}`
+              ? this.documentStreamOperationId
+              : null;
+          this.startDocumentStream(project, document, operationId);
+        }
       },
-      error: () => this.handleDocumentPollingFailure(project, document),
+      error: () => this.streamError.set('Document progress could not be refreshed. Retry the event stream.'),
     });
   }
 
-  retryDocumentPolling(): void {
+  retryDocumentStream(): void {
     const projectId = this.projects.selectedProject()?.id;
     const documentId = this.activeDocumentId();
     if (projectId === undefined || documentId === null) {
       return;
     }
 
-    this.resetDocumentPollingFailure();
-    this.refreshUploadedDocument(projectId, documentId);
+    this.resetDocumentStreamError();
+    if (this.documentStreamOperationId !== null) {
+      this.startDocumentStream(projectId, documentId, this.documentStreamOperationId);
+    } else {
+      this.refreshUploadedDocument(projectId, documentId);
+    }
   }
 
   canCancelUploadItem(item: SourceUploadItem): boolean {
@@ -616,9 +641,8 @@ export class SourceImportStore {
       error: null,
     });
     from(this.api.cancelDocumentProcessing(projectId, document.id)).subscribe({
-      next: () => {
-        this.updateUploadItem(item.id, { status: 'canceled', error: null });
-        this.refreshUploadedDocument(projectId, document.id);
+      next: (operation) => {
+        this.startDocumentStream(projectId, document.id, operation.id);
       },
       error: (error: unknown) => this.updateUploadItem(item.id, { status: 'failed', error: this.getUploadErrorMessage(error) }),
     });
@@ -682,7 +706,9 @@ export class SourceImportStore {
         this.api.cancelDocumentProcessing(projectId, document.id, { signal }),
       )
       .subscribe((canceled) => {
-        if (canceled !== null) this.refreshUploadedDocument(projectId, document.id);
+        if (canceled !== null) {
+          this.startDocumentStream(projectId, document.id, canceled.id);
+        }
       });
   }
 
@@ -708,8 +734,8 @@ export class SourceImportStore {
       )
       .subscribe((retried) => {
         if (retried !== null) {
-          this.resetDocumentPollingFailure();
-          this.refreshUploadedDocument(projectId, document.id);
+          this.resetDocumentStreamError();
+          this.startDocumentStream(projectId, document.id, retried.id);
         }
       });
   }
@@ -804,6 +830,44 @@ export class SourceImportStore {
     documentId: string,
   ): import('rxjs').Observable<ChunkRead[]> {
     return from(this.api.listDocumentChunks(projectId, documentId)).pipe(map((chunks) => chunks.items));
+  }
+
+  private refreshDocumentChunksFromEvent(
+    projectId: string,
+    documentId: string,
+  ): void {
+    const requestRevision = ++this.documentChunksRequestRevision;
+    this.documentChunksSubscription?.unsubscribe();
+    this.documentChunksSubscription = this.loadDocumentChunks(
+      projectId,
+      documentId,
+    ).subscribe({
+      next: (chunks) => {
+        if (
+          requestRevision !== this.documentChunksRequestRevision ||
+          !this.isCurrentProjectDocument(projectId, documentId)
+        ) {
+          return;
+        }
+        this.library.setChunks(chunks);
+        this.resetDocumentStreamError();
+      },
+      error: () => {
+        if (
+          requestRevision === this.documentChunksRequestRevision &&
+          this.isCurrentProjectDocument(projectId, documentId)
+        ) {
+          this.streamError.set(
+            'Document chunks could not be refreshed from the event. Retry the event stream.',
+          );
+        }
+      },
+      complete: () => {
+        if (requestRevision === this.documentChunksRequestRevision) {
+          this.documentChunksSubscription = null;
+        }
+      },
+    });
   }
 
   private isSupportedSourceFile(file: File): boolean {
@@ -956,13 +1020,13 @@ export class SourceImportStore {
 
   private acceptLifecycleDocument(
     document: DocumentRead,
-    pollDocument: boolean,
+    operationId: string,
   ): void {
     this.library.upsertDocument(document);
     this.setActiveDocument(document);
     this.updateUploadDocumentSnapshot(document);
-    if (pollDocument && !FINAL_DOCUMENT_STATUSES.has(document.status)) {
-      this.scheduleDocumentPolling(document.project_id, document.id);
+    if (!FINAL_DOCUMENT_STATUSES.has(document.status)) {
+      this.startDocumentStream(document.project_id, document.id, operationId);
     }
   }
 
@@ -977,7 +1041,7 @@ export class SourceImportStore {
   private invalidateUploadContext(): void {
     this.contextEpoch += 1;
     this.clearPendingAutoUploads();
-    this.stopDocumentPolling();
+    this.stopDocumentStream();
     this.uploadLifecycle.invalidate();
   }
 
@@ -1007,7 +1071,7 @@ export class SourceImportStore {
 
   private setActiveDocument(document: DocumentRead | null): void {
     if (this.library.setActiveDocument(document)) {
-      this.stopDocumentPolling();
+      this.stopDocumentStream();
     }
   }
 
@@ -1037,78 +1101,92 @@ export class SourceImportStore {
     );
   }
 
-  private scheduleDocumentPolling(projectId: string, documentId: string): void {
-    this.stopDocumentPolling();
-    this.documentPollTimer = timer(this.documentPollIntervalMs()).subscribe(() => {
-      this.documentPollTimer = null;
-      this.pollDocument(projectId, documentId);
-    });
-  }
-
-  private documentPollIntervalMs(): number {
-    const document = this.activeDocument();
-    return document?.status === 'processing' &&
-      this.chunks().length === 0
-      ? FIRST_CHUNK_POLL_INTERVAL_MS
-      : DOCUMENT_POLL_INTERVAL_MS;
-  }
-
-  private pollDocument(projectId: string, documentId: string): void {
-    if (!this.isCurrentProjectDocument(projectId, documentId)) {
-      return;
-    }
-
-    forkJoin({
-      document: from(this.api.getDocument(projectId, documentId)),
-      chunks: this.loadDocumentChunks(projectId, documentId),
-    }).subscribe({
-      next: ({ document, chunks }) => {
-        if (!this.isCurrentProjectDocument(projectId, documentId)) return;
-        this.library.upsertDocument(document);
-        this.setActiveDocument(document);
-        this.library.setChunks(chunks);
-        this.updateUploadDocumentSnapshot(document);
-        this.resetDocumentPollingFailure();
-        if (!FINAL_DOCUMENT_STATUSES.has(document.status)) this.scheduleDocumentPolling(projectId, documentId);
-      },
-      error: () => this.handleDocumentPollingFailure(projectId, documentId),
-    });
-  }
-
-  private handleDocumentPollingFailure(
+  private startDocumentStream(
     projectId: string,
     documentId: string,
+    operationId: string | null,
   ): void {
-    this.stopDocumentPolling();
-    if (!this.isCurrentProjectDocument(projectId, documentId)) {
+    const key = `${projectId}:${documentId}`;
+    if (this.documentStreamKey === key && this.documentStreamSubscription !== null) {
       return;
     }
+    this.stopDocumentStream();
+    this.documentStreamKey = key;
+    this.documentStreamOperationId = operationId;
+    this.documentStreamTerminalSeen = false;
+    this.resetDocumentStreamError();
+    this.documentStreamSubscription = this.streamDocumentOperation(
+      projectId,
+      documentId,
+      operationId,
+    ).subscribe({
+      next: (event) => {
+        this.documentStreamTerminalSeen ||= isDocumentOperationEventTerminal(event);
+        this.applyDocumentOperationEvent(projectId, documentId, event);
+      },
+      error: () => {
+        if (this.documentStreamKey === key) {
+          this.documentStreamSubscription = null;
+          this.streamError.set('Document progress could not be refreshed. Retry the event stream.');
+        }
+      },
+      complete: () => {
+        if (this.documentStreamKey !== key) return;
+        this.documentStreamSubscription = null;
+        if (!this.documentStreamTerminalSeen) {
+          this.streamError.set('Document progress could not be refreshed. Retry the event stream.');
+        }
+      },
+    });
+  }
 
-    const delay = POLL_RETRY_DELAYS_MS[this.documentPollFailureCount];
-    if (delay !== undefined) {
-      this.documentPollFailureCount += 1;
-      this.documentPollTimer = timer(delay).subscribe(() => {
-        this.documentPollTimer = null;
-        this.pollDocument(projectId, documentId);
-      });
-      return;
-    }
-
-    this.pollingError.set(
-      'Parsing progress could not be refreshed. The local job may still be running.',
+  private streamDocumentOperation(
+    projectId: string,
+    documentId: string,
+    operationId: string | null,
+  ): import('rxjs').Observable<DocumentOperationEvent> {
+    const path =
+      operationId === null
+        ? `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/document-operation/events`
+        : `/projects/${encodeURIComponent(projectId)}/document-operations/${encodeURIComponent(operationId)}/events`;
+    return this.sse.streamJson<DocumentOperationEvent>(
+      path,
+      'document-operation',
+      { isTerminal: isDocumentOperationEventTerminal },
     );
   }
 
-  private resetDocumentPollingFailure(): void {
-    this.documentPollFailureCount = 0;
-    this.pollingError.set(null);
+  private applyDocumentOperationEvent(
+    projectId: string,
+    documentId: string,
+    event: DocumentOperationEvent,
+  ): void {
+    if (!this.isCurrentProjectDocument(projectId, documentId)) return;
+    this.documentStreamOperationId = event.operation.id;
+    const document = event.document;
+    if (document === null) return;
+    this.library.upsertDocument(document);
+    this.setActiveDocument(document);
+    this.updateUploadDocumentSnapshot(document);
+    this.refreshDocumentChunksFromEvent(projectId, document.id);
   }
 
-  private stopDocumentPolling(): void {
-    if (this.documentPollTimer !== null) {
-      this.documentPollTimer.unsubscribe();
-      this.documentPollTimer = null;
-    }
+  private resetDocumentStreamError(): void {
+    this.streamError.set(null);
+  }
+
+  private stopDocumentStream(): void {
+    this.documentStreamSubscription?.unsubscribe();
+    this.documentStreamSubscription = null;
+    this.cancelDocumentChunksRefresh();
+    this.documentStreamKey = null;
+    this.documentStreamOperationId = null;
+  }
+
+  private cancelDocumentChunksRefresh(): void {
+    this.documentChunksRequestRevision += 1;
+    this.documentChunksSubscription?.unsubscribe();
+    this.documentChunksSubscription = null;
   }
 
   private isCurrentProjectDocument(projectId: string, documentId: string): boolean {

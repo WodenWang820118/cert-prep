@@ -1,12 +1,11 @@
 import { computed, inject, Injectable, OnDestroy, signal } from '@angular/core';
-import { from, Subscription, timer } from 'rxjs';
+import { from, Subscription } from 'rxjs';
 import type {
   DownloadPhase,
   ModelDownloadView,
   RuntimeInstallationView,
   RuntimeKind,
 } from './contracts/health-runtime.contracts';
-import { RUNTIME_JOB_POLL_INTERVAL_MS } from './constants/health.constants';
 import type { RuntimeActionContext } from './contracts/health-runtime.contracts';
 import { OperationStore } from '../operation.store';
 import { RuntimeApiClientsService } from './runtime-api-clients.service';
@@ -17,17 +16,19 @@ export class RuntimeActionsStore implements OnDestroy {
   private readonly operations = inject(OperationStore);
   private readonly runtimeApi = inject(RuntimeApiClientsService);
   private readonly jobView = inject(RuntimeJobViewService);
-  private modelDownloadPollTimer: Subscription | null = null;
-  private runtimeInstallPollTimer: Subscription | null = null;
+  private modelDownloadStreamSubscription: Subscription | null = null;
+  private runtimeInstallStreamSubscription: Subscription | null = null;
 
   readonly modelDownloadConsentVisible = signal(false);
   readonly modelDownloadStarting = signal(false);
   readonly modelDownloadCanceling = signal(false);
   readonly modelDownload = signal<ModelDownloadView | null>(null);
+  readonly modelDownloadStreamError = signal<string | null>(null);
   readonly runtimeInstallConsentKind = signal<RuntimeKind | null>(null);
   readonly runtimeInstallStarting = signal(false);
   readonly runtimeInstallCanceling = signal(false);
   readonly runtimeInstall = signal<RuntimeInstallationView | null>(null);
+  readonly runtimeInstallStreamError = signal<string | null>(null);
 
   readonly isModelDownloadActive = computed(() => {
     const phase = this.modelDownload()?.phase;
@@ -75,8 +76,8 @@ export class RuntimeActionsStore implements OnDestroy {
   });
 
   ngOnDestroy(): void {
-    this.clearModelDownloadPollTimer();
-    this.clearRuntimeInstallPollTimer();
+    this.clearModelDownloadStream();
+    this.clearRuntimeInstallStream();
   }
 
   openModelDownloadConsent(canDownloadModel: boolean): void {
@@ -109,7 +110,8 @@ export class RuntimeActionsStore implements OnDestroy {
     }
 
     const client = this.runtimeApi.modelDownloadClient();
-    this.clearModelDownloadPollTimer();
+    this.clearModelDownloadStream();
+    this.modelDownloadStreamError.set(null);
     this.modelDownloadStarting.set(true);
     this.modelDownload.set(
       this.jobView.startingDownload(context.configuredModelName()),
@@ -166,7 +168,8 @@ export class RuntimeActionsStore implements OnDestroy {
     }
 
     const client = this.runtimeApi.runtimeInstallationClient();
-    this.clearRuntimeInstallPollTimer();
+    this.clearRuntimeInstallStream();
+    this.runtimeInstallStreamError.set(null);
     this.runtimeInstallStarting.set(true);
     this.runtimeInstall.set(this.jobView.startingRuntimeInstall(kind));
 
@@ -196,7 +199,8 @@ export class RuntimeActionsStore implements OnDestroy {
     }
 
     const client = this.runtimeApi.runtimeInstallationClient();
-    this.clearRuntimeInstallPollTimer();
+    this.clearRuntimeInstallStream();
+    this.runtimeInstallStreamError.set(null);
 
     from(client.getRuntimeInstallation(current.jobId)).subscribe({
       next: (response) => {
@@ -204,10 +208,10 @@ export class RuntimeActionsStore implements OnDestroy {
         this.runtimeInstall.set(status);
         this.continueRuntimeInstallation(status, context);
       },
-      error: (error: unknown) => {
-        const message = this.jobView.errorMessage(error);
-        this.runtimeInstall.set({ ...current, phase: 'failed', status: 'failed', message, error: message });
-        this.operations.fail(message);
+      error: () => {
+        this.runtimeInstallStreamError.set(
+          'Runtime installation status could not be refreshed. Retry refresh to reconnect.',
+        );
       },
     });
   }
@@ -219,7 +223,8 @@ export class RuntimeActionsStore implements OnDestroy {
     }
 
     const client = this.runtimeApi.modelDownloadClient();
-    this.clearModelDownloadPollTimer();
+    this.clearModelDownloadStream();
+    this.modelDownloadStreamError.set(null);
 
     from(client.getModelDownload(current.jobId)).subscribe({
       next: (response) => {
@@ -227,10 +232,10 @@ export class RuntimeActionsStore implements OnDestroy {
         this.modelDownload.set(status);
         this.continueModelDownload(status, context);
       },
-      error: (error: unknown) => {
-        const message = this.jobView.errorMessage(error);
-        this.modelDownload.set({ ...current, phase: 'failed', status: 'failed', message, error: message });
-        this.operations.fail(message);
+      error: () => {
+        this.modelDownloadStreamError.set(
+          'Model download status could not be refreshed. Retry refresh to reconnect.',
+        );
       },
     });
   }
@@ -246,7 +251,8 @@ export class RuntimeActionsStore implements OnDestroy {
     }
 
     const client = this.runtimeApi.modelDownloadClient();
-    this.clearModelDownloadPollTimer();
+    this.clearModelDownloadStream();
+    this.modelDownloadStreamError.set(null);
     this.modelDownloadCanceling.set(true);
     from(client.cancelModelDownload(current.jobId)).subscribe({
       next: (response) => {
@@ -276,7 +282,8 @@ export class RuntimeActionsStore implements OnDestroy {
     }
 
     const client = this.runtimeApi.runtimeInstallationClient();
-    this.clearRuntimeInstallPollTimer();
+    this.clearRuntimeInstallStream();
+    this.runtimeInstallStreamError.set(null);
     this.runtimeInstallCanceling.set(true);
     from(client.cancelRuntimeInstallation(current.jobId)).subscribe({
       next: (response) => {
@@ -311,7 +318,7 @@ export class RuntimeActionsStore implements OnDestroy {
       return;
     }
 
-    this.scheduleModelDownloadPoll(context);
+    this.startModelDownloadStream(status, context);
   }
 
   private continueRuntimeInstallation(
@@ -336,7 +343,7 @@ export class RuntimeActionsStore implements OnDestroy {
       return;
     }
 
-    this.scheduleRuntimeInstallPoll(context);
+    this.startRuntimeInstallStream(status, context);
   }
 
   private refreshHealthAfterRuntimeChange(
@@ -345,34 +352,86 @@ export class RuntimeActionsStore implements OnDestroy {
     context.refreshHealthAfterRuntimeChange();
   }
 
-  private scheduleModelDownloadPoll(context: RuntimeActionContext): void {
-    this.clearModelDownloadPollTimer();
-    this.modelDownloadPollTimer = timer(RUNTIME_JOB_POLL_INTERVAL_MS).subscribe(() => {
-      this.modelDownloadPollTimer = null;
-      this.refreshModelDownload(context);
-    });
+  private startModelDownloadStream(
+    status: ModelDownloadView,
+    context: RuntimeActionContext,
+  ): void {
+    if (status.jobId === null) return;
+    this.clearModelDownloadStream();
+    this.modelDownloadStreamError.set(null);
+    this.modelDownloadStreamSubscription = this.runtimeApi
+      .modelDownloadClient()
+      .streamModelDownload(status.jobId)
+      .subscribe({
+        next: (response) => {
+          const next = this.toModelDownloadView(response, status.phase, context);
+          this.modelDownload.set(next);
+          if (next.phase === 'succeeded') {
+            this.clearModelDownloadStream();
+            this.refreshHealthAfterRuntimeChange(context);
+          } else if (next.phase === 'failed') {
+            this.clearModelDownloadStream();
+            this.operations.fail(next.error ?? next.message);
+          } else if (next.phase === 'canceled') {
+            this.clearModelDownloadStream();
+          }
+        },
+        error: () => {
+          this.modelDownloadStreamSubscription = null;
+          this.modelDownloadStreamError.set(
+            'Model download progress stream disconnected. Retry refresh to reconnect.',
+          );
+        },
+        complete: () => {
+          this.modelDownloadStreamSubscription = null;
+        },
+      });
   }
 
-  private scheduleRuntimeInstallPoll(context: RuntimeActionContext): void {
-    this.clearRuntimeInstallPollTimer();
-    this.runtimeInstallPollTimer = timer(RUNTIME_JOB_POLL_INTERVAL_MS).subscribe(() => {
-      this.runtimeInstallPollTimer = null;
-      this.refreshRuntimeInstallation(context);
-    });
+  private startRuntimeInstallStream(
+    status: RuntimeInstallationView,
+    context: RuntimeActionContext,
+  ): void {
+    if (status.jobId === null) return;
+    this.clearRuntimeInstallStream();
+    this.runtimeInstallStreamError.set(null);
+    this.runtimeInstallStreamSubscription = this.runtimeApi
+      .runtimeInstallationClient()
+      .streamRuntimeInstallation(status.jobId)
+      .subscribe({
+        next: (response) => {
+          const next = this.toRuntimeInstallationView(response, status.kind, status.phase);
+          this.runtimeInstall.set(next);
+          if (next.phase === 'succeeded') {
+            this.clearRuntimeInstallStream();
+            this.refreshHealthAfterRuntimeChange(context);
+          } else if (next.phase === 'failed') {
+            this.clearRuntimeInstallStream();
+            this.operations.fail(next.error ?? next.message);
+          } else if (next.phase === 'canceled') {
+            this.clearRuntimeInstallStream();
+          }
+        },
+        error: () => {
+          this.runtimeInstallStreamSubscription = null;
+          this.runtimeInstallStreamError.set(
+            'Runtime installation progress stream disconnected. Retry refresh to reconnect.',
+          );
+        },
+        complete: () => {
+          this.runtimeInstallStreamSubscription = null;
+        },
+      });
   }
 
-  private clearModelDownloadPollTimer(): void {
-    if (this.modelDownloadPollTimer !== null) {
-      this.modelDownloadPollTimer.unsubscribe();
-      this.modelDownloadPollTimer = null;
-    }
+  private clearModelDownloadStream(): void {
+    this.modelDownloadStreamSubscription?.unsubscribe();
+    this.modelDownloadStreamSubscription = null;
   }
 
-  private clearRuntimeInstallPollTimer(): void {
-    if (this.runtimeInstallPollTimer !== null) {
-      this.runtimeInstallPollTimer.unsubscribe();
-      this.runtimeInstallPollTimer = null;
-    }
+  private clearRuntimeInstallStream(): void {
+    this.runtimeInstallStreamSubscription?.unsubscribe();
+    this.runtimeInstallStreamSubscription = null;
   }
 
   private toModelDownloadView(

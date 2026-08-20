@@ -764,6 +764,26 @@ def get_operation(
     return _operation_from_row(row)
 
 
+def get_active_operation_for_document(
+    db: Database,
+    *,
+    project_id: str,
+    document_id: str,
+) -> dict | None:
+    with db.connect() as connection:
+        row = connection.execute(
+            """
+            SELECT * FROM document_operations
+            WHERE project_id = ? AND document_id = ?
+              AND status IN ('queued', 'running', 'cancel_requested')
+            ORDER BY updated_at DESC, id DESC
+            LIMIT 1
+            """,
+            (project_id, document_id),
+        ).fetchone()
+    return None if row is None else _operation_from_row(row)
+
+
 def _reset_document_derived_state(
     connection: Connection,
     *,

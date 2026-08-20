@@ -31,10 +31,12 @@ export class HealthStore {
   readonly modelDownloadStarting = this.actions.modelDownloadStarting;
   readonly modelDownloadCanceling = this.actions.modelDownloadCanceling;
   readonly modelDownload = this.actions.modelDownload;
+  readonly modelDownloadStreamError = this.actions.modelDownloadStreamError;
   readonly runtimeInstallConsentKind = this.actions.runtimeInstallConsentKind;
   readonly runtimeInstallStarting = this.actions.runtimeInstallStarting;
   readonly runtimeInstallCanceling = this.actions.runtimeInstallCanceling;
   readonly runtimeInstall = this.actions.runtimeInstall;
+  readonly runtimeInstallStreamError = this.actions.runtimeInstallStreamError;
   readonly isModelMissing = this.status.isModelMissing;
   readonly isConfiguredModelMissing = this.status.isConfiguredModelMissing;
   readonly isModelDownloadActive = this.actions.isModelDownloadActive;

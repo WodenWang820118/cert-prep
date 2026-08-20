@@ -1,7 +1,11 @@
 import { TestBed } from '@angular/core/testing';
-import { of } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
+import { CertPrepSseClient } from '../../services/cert-prep-sse-client.service';
 import { HealthStore } from './health.store';
+import type { RuntimeActionContext } from './contracts/health-runtime.contracts';
+import { RuntimeActionsStore } from './runtime-actions.store';
+import { OperationStore } from '../operation.store';
 import {
   llmHealth,
   modelDownload,
@@ -21,10 +25,13 @@ describe('HealthStore model downloads', () => {
     startRuntimeInstallation: vi.fn(),
     getRuntimeInstallation: vi.fn(),
   };
+  let modelStream: Subject<ReturnType<typeof modelDownload>>;
+  const sseClient = { streamJson: vi.fn() };
 
   beforeEach(() => {
-    vi.useFakeTimers();
     vi.clearAllMocks();
+    modelStream = new Subject();
+    sseClient.streamJson.mockReturnValue(modelStream.asObservable());
     apiClient.health.mockReturnValue(of({
       status: 'ok',
       app: 'cert-prep-backend',
@@ -46,13 +53,10 @@ describe('HealthStore model downloads', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: CERT_PREP_API, useValue: apiClient },
+        { provide: CertPrepSseClient, useValue: sseClient },
         provideCertPrepHttpResourceClientFake(apiClient),
       ],
     });
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
   });
 
   it('does not start a model download when consent is cancelled', () => {
@@ -67,20 +71,13 @@ describe('HealthStore model downloads', () => {
     expect(apiClient.startModelDownload).not.toHaveBeenCalled();
   });
 
-  it('starts and polls a model download only after confirmation', () => {
+  it('starts and streams a model download only after confirmation', () => {
     const store = TestBed.inject(HealthStore);
     apiClient.startModelDownload.mockReturnValue(of(
       modelDownload({
         status: 'running',
         detail: 'downloading',
         completed: 25,
-      }),
-    ));
-    apiClient.getModelDownload.mockReturnValue(of(
-      modelDownload({
-        status: 'succeeded',
-        detail: 'model download complete',
-        completed: 100,
       }),
     ));
     store.load();
@@ -95,12 +92,175 @@ describe('HealthStore model downloads', () => {
     expect(store.modelDownload()?.phase).toBe('running');
     expect(store.modelDownload()?.progress).toBe(25);
 
-    vi.advanceTimersByTime(1500);
+    modelStream.next(modelDownload({
+      status: 'succeeded',
+      detail: 'model download complete',
+      completed: 100,
+      phase: 'succeeded',
+      cancellable: false,
+    }));
     TestBed.tick();
 
-    expect(apiClient.getModelDownload).toHaveBeenCalledWith('job-1');
     expect(store.modelDownload()?.phase).toBe('succeeded');
     expect(store.modelDownload()?.progress).toBe(100);
+  });
+
+  it('preserves the durable model state when its progress stream errors and refresh reconnects it', () => {
+    const actions = TestBed.inject(RuntimeActionsStore);
+    const operations = TestBed.inject(OperationStore);
+    const context = runtimeActionContext();
+    apiClient.startModelDownload.mockReturnValue(of(
+      modelDownload({ status: 'running', phase: 'running', detail: 'downloading' }),
+    ));
+
+    actions.confirmModelDownload(context);
+    TestBed.tick();
+    const durableState = actions.modelDownload();
+
+    modelStream.error(new Error('SSE disconnected'));
+    TestBed.tick();
+
+    expect(actions.modelDownload()).toBe(durableState);
+    expect(actions.modelDownload()?.status).toBe('running');
+    expect(actions.modelDownload()?.phase).toBe('running');
+    expect(actions.modelDownloadStreamError()).toBe(
+      'Model download progress stream disconnected. Retry refresh to reconnect.',
+    );
+    expect(operations.error()).toBeNull();
+
+    const retryStream = new Subject<ReturnType<typeof modelDownload>>();
+    apiClient.getModelDownload.mockReturnValue(of(
+      modelDownload({ status: 'running', phase: 'running', detail: 'still downloading' }),
+    ));
+    sseClient.streamJson.mockReturnValueOnce(retryStream.asObservable());
+    actions.refreshModelDownload(context);
+    TestBed.tick();
+
+    expect(actions.modelDownloadStreamError()).toBeNull();
+    expect(sseClient.streamJson).toHaveBeenCalledTimes(2);
+  });
+
+  it('preserves the durable runtime state when its progress stream errors and refresh reconnects it', () => {
+    const actions = TestBed.inject(RuntimeActionsStore);
+    const operations = TestBed.inject(OperationStore);
+    const context = runtimeActionContext();
+    const runtimeStream = new Subject<Record<string, unknown>>();
+    const retryStream = new Subject<Record<string, unknown>>();
+    sseClient.streamJson.mockReturnValue(runtimeStream.asObservable());
+    apiClient.startRuntimeInstallation.mockReturnValue(of(runtimeInstallation()));
+
+    actions.openRuntimeInstallConsent('ollama', true);
+    actions.confirmRuntimeInstallation(context);
+    TestBed.tick();
+    const durableState = actions.runtimeInstall();
+
+    runtimeStream.error(new Error('SSE disconnected'));
+    TestBed.tick();
+
+    expect(actions.runtimeInstall()).toBe(durableState);
+    expect(actions.runtimeInstall()?.status).toBe('running');
+    expect(actions.runtimeInstall()?.phase).toBe('running');
+    expect(actions.runtimeInstallStreamError()).toBe(
+      'Runtime installation progress stream disconnected. Retry refresh to reconnect.',
+    );
+    expect(operations.error()).toBeNull();
+
+    apiClient.getRuntimeInstallation.mockReturnValue(of(runtimeInstallation()));
+    sseClient.streamJson.mockReturnValueOnce(retryStream.asObservable());
+    actions.refreshRuntimeInstallation(context);
+    TestBed.tick();
+
+    expect(actions.runtimeInstallStreamError()).toBeNull();
+    expect(sseClient.streamJson).toHaveBeenCalledTimes(2);
+  });
+
+  it('preserves the durable model state when refresh GET errors and refresh can recover', () => {
+    const actions = TestBed.inject(RuntimeActionsStore);
+    const operations = TestBed.inject(OperationStore);
+    const context = runtimeActionContext();
+    apiClient.startModelDownload.mockReturnValue(of(
+      modelDownload({ status: 'running', phase: 'running', detail: 'downloading' }),
+    ));
+
+    actions.confirmModelDownload(context);
+    TestBed.tick();
+    const durableState = actions.modelDownload();
+    apiClient.getModelDownload.mockReturnValue(
+      throwError(() => new Error('GET disconnected')),
+    );
+
+    actions.refreshModelDownload(context);
+    TestBed.tick();
+
+    expect(actions.modelDownload()).toBe(durableState);
+    expect(actions.modelDownload()?.status).toBe('running');
+    expect(actions.modelDownload()?.phase).toBe('running');
+    expect(actions.modelDownloadStreamError()).toBe(
+      'Model download status could not be refreshed. Retry refresh to reconnect.',
+    );
+    expect(operations.error()).toBeNull();
+
+    const retryStream = new Subject<ReturnType<typeof modelDownload>>();
+    apiClient.getModelDownload.mockReturnValue(of(
+      modelDownload({ status: 'running', phase: 'running' }),
+    ));
+    sseClient.streamJson.mockReturnValueOnce(retryStream.asObservable());
+    actions.refreshModelDownload(context);
+    TestBed.tick();
+
+    expect(actions.modelDownloadStreamError()).toBeNull();
+    expect(sseClient.streamJson).toHaveBeenCalledTimes(2);
+  });
+
+  it('preserves the durable runtime state when refresh GET errors and refresh can recover', () => {
+    const actions = TestBed.inject(RuntimeActionsStore);
+    const operations = TestBed.inject(OperationStore);
+    const context = runtimeActionContext();
+    const runtimeStream = new Subject<Record<string, unknown>>();
+    const retryStream = new Subject<Record<string, unknown>>();
+    sseClient.streamJson.mockReturnValue(runtimeStream.asObservable());
+    apiClient.startRuntimeInstallation.mockReturnValue(of(runtimeInstallation()));
+
+    actions.openRuntimeInstallConsent('ollama', true);
+    actions.confirmRuntimeInstallation(context);
+    TestBed.tick();
+    const durableState = actions.runtimeInstall();
+    apiClient.getRuntimeInstallation.mockReturnValue(
+      throwError(() => new Error('GET disconnected')),
+    );
+
+    actions.refreshRuntimeInstallation(context);
+    TestBed.tick();
+
+    expect(actions.runtimeInstall()).toBe(durableState);
+    expect(actions.runtimeInstall()?.status).toBe('running');
+    expect(actions.runtimeInstall()?.phase).toBe('running');
+    expect(actions.runtimeInstallStreamError()).toBe(
+      'Runtime installation status could not be refreshed. Retry refresh to reconnect.',
+    );
+    expect(operations.error()).toBeNull();
+
+    apiClient.getRuntimeInstallation.mockReturnValue(of(runtimeInstallation()));
+    sseClient.streamJson.mockReturnValueOnce(retryStream.asObservable());
+    actions.refreshRuntimeInstallation(context);
+    TestBed.tick();
+
+    expect(actions.runtimeInstallStreamError()).toBeNull();
+    expect(sseClient.streamJson).toHaveBeenCalledTimes(2);
+  });
+
+  it('exposes runtime transport errors through the HealthStore façade', () => {
+    const health = TestBed.inject(HealthStore);
+    const actions = TestBed.inject(RuntimeActionsStore);
+
+    expect(health.modelDownloadStreamError).toBe(actions.modelDownloadStreamError);
+    expect(health.runtimeInstallStreamError).toBe(actions.runtimeInstallStreamError);
+
+    actions.modelDownloadStreamError.set('model stream disconnected');
+    actions.runtimeInstallStreamError.set('runtime stream disconnected');
+
+    expect(health.modelDownloadStreamError()).toBe('model stream disconnected');
+    expect(health.runtimeInstallStreamError()).toBe('runtime stream disconnected');
   });
 
   it('does not offer download for an available model', () => {
@@ -190,3 +350,32 @@ describe('HealthStore model downloads', () => {
     expect(store.canCancelModelDownload()).toBe(false);
   });
 });
+
+function runtimeActionContext(): RuntimeActionContext {
+  return {
+    canDownloadModel: () => true,
+    canInstallRuntime: () => true,
+    configuredModelName: () => 'qwen3.5:4b',
+    refreshHealthAfterRuntimeChange: vi.fn(),
+  };
+}
+
+function runtimeInstallation(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    id: 'runtime-job-1',
+    kind: 'ollama',
+    provider: 'ollama',
+    model: 'qwen3.5:4b',
+    status: 'running',
+    phase: 'running',
+    cancellable: true,
+    detail: 'Installing Ollama...',
+    completed: 25,
+    total: 100,
+    created_at: '2026-08-20T00:00:00Z',
+    updated_at: '2026-08-20T00:00:01Z',
+    ...overrides,
+  };
+}

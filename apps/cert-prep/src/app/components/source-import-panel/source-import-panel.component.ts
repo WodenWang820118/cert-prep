@@ -312,18 +312,18 @@ import { SourceImageCropService } from './source-image-crop.service';
               [value]="sourceImport.progressPercent()"
               [showValue]="false"
             />
-            @if (sourceImport.pollingError(); as pollingError) {
+            @if (sourceImport.streamError(); as streamError) {
               <div
                 class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 p-3"
                 role="alert"
               >
                 <span class="text-sm font-semibold text-red-900">
-                  {{ pollingError }}
+                  {{ streamError }}
                 </span>
                 <button
                   class="workbench-secondary-button"
                   type="button"
-                  (click)="sourceImport.retryDocumentPolling()"
+                  (click)="sourceImport.retryDocumentStream()"
                 >
                   <i class="pi pi-refresh" aria-hidden="true"></i>
                   <span>Retry progress</span>

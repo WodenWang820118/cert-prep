@@ -297,6 +297,12 @@ export interface CertPrepGeneratedClient {
   reportStructuringFailure(projectId: string, captureId: string, body: Components['schemas']['CaptureStreamingFailureRequest'], options?: CertPrepRequestOptions): Observable<Components['schemas']['CaptureReviewOperationRead']>;
   cancelCapture(projectId: string, captureId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['CaptureReviewOperationRead']>;
   getResult(projectId: string, captureId: string, options?: CertPrepRequestOptions): Observable<Components['schemas']['CaptureStreamingResultRead']>;
+  documentOperationEvents(projectId: string, operationId: string, options?: CertPrepRequestOptions): Observable<unknown>;
+  currentDocumentOperationEvents(projectId: string, documentId: string, options?: CertPrepRequestOptions): Observable<unknown>;
+  draftJobsEvents(projectId: string, documentId: string, options?: CertPrepRequestOptions): Observable<unknown>;
+  draftOperationEvents(projectId: string, documentId: string, operationId: string, options?: CertPrepRequestOptions): Observable<unknown>;
+  runtimeInstallationEvents(jobId: string, options?: CertPrepRequestOptions): Observable<unknown>;
+  modelDownloadEvents(jobId: string, options?: CertPrepRequestOptions): Observable<unknown>;
 }
 
 export interface CertPrepRequestFactory {
@@ -366,6 +372,12 @@ export interface CertPrepRequestFactory {
   reportStructuringFailure(projectId: string, captureId: string, body: Components['schemas']['CaptureStreamingFailureRequest'], options?: CertPrepRequestOptions): CertPrepHttpRequest;
   cancelCapture(projectId: string, captureId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
   getResult(projectId: string, captureId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  documentOperationEvents(projectId: string, operationId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  currentDocumentOperationEvents(projectId: string, documentId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  draftJobsEvents(projectId: string, documentId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  draftOperationEvents(projectId: string, documentId: string, operationId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  runtimeInstallationEvents(jobId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
+  modelDownloadEvents(jobId: string, options?: CertPrepRequestOptions): CertPrepHttpRequest;
 }
 
 export function createCertPrepRequestFactory(): CertPrepRequestFactory {
@@ -568,6 +580,24 @@ export function createCertPrepRequestFactory(): CertPrepRequestFactory {
     getResult: (projectId: string, captureId: string, options?: CertPrepRequestOptions) => {
       return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/capture-workbench/captures/${encodeURIComponent(captureId)}/result`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
     },
+    documentOperationEvents: (projectId: string, operationId: string, options?: CertPrepRequestOptions) => {
+      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/document-operations/${encodeURIComponent(operationId)}/events`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    },
+    currentDocumentOperationEvents: (projectId: string, documentId: string, options?: CertPrepRequestOptions) => {
+      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/document-operation/events`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    },
+    draftJobsEvents: (projectId: string, documentId: string, options?: CertPrepRequestOptions) => {
+      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/draft-jobs/events`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    },
+    draftOperationEvents: (projectId: string, documentId: string, operationId: string, options?: CertPrepRequestOptions) => {
+      return { method: 'GET' as const, path: `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/draft-operations/${encodeURIComponent(operationId)}/events`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    },
+    runtimeInstallationEvents: (jobId: string, options?: CertPrepRequestOptions) => {
+      return { method: 'GET' as const, path: `/runtime/installations/${encodeURIComponent(jobId)}/events`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    },
+    modelDownloadEvents: (jobId: string, options?: CertPrepRequestOptions) => {
+      return { method: 'GET' as const, path: `/llm/model-downloads/${encodeURIComponent(jobId)}/events`, ...(options?.headers === undefined ? {} : { headers: options.headers }), ...(options?.signal === undefined ? {} : { signal: options.signal }) };
+    },
   };
 }
 
@@ -708,5 +738,17 @@ export function createCertPrepGeneratedClient(
       transport.request<Components['schemas']['CaptureReviewOperationRead']>(requests.cancelCapture(projectId, captureId, options)),
     getResult: (projectId: string, captureId: string, options?: CertPrepRequestOptions) =>
       transport.request<Components['schemas']['CaptureStreamingResultRead']>(requests.getResult(projectId, captureId, options)),
+    documentOperationEvents: (projectId: string, operationId: string, options?: CertPrepRequestOptions) =>
+      transport.request<unknown>(requests.documentOperationEvents(projectId, operationId, options)),
+    currentDocumentOperationEvents: (projectId: string, documentId: string, options?: CertPrepRequestOptions) =>
+      transport.request<unknown>(requests.currentDocumentOperationEvents(projectId, documentId, options)),
+    draftJobsEvents: (projectId: string, documentId: string, options?: CertPrepRequestOptions) =>
+      transport.request<unknown>(requests.draftJobsEvents(projectId, documentId, options)),
+    draftOperationEvents: (projectId: string, documentId: string, operationId: string, options?: CertPrepRequestOptions) =>
+      transport.request<unknown>(requests.draftOperationEvents(projectId, documentId, operationId, options)),
+    runtimeInstallationEvents: (jobId: string, options?: CertPrepRequestOptions) =>
+      transport.request<unknown>(requests.runtimeInstallationEvents(jobId, options)),
+    modelDownloadEvents: (jobId: string, options?: CertPrepRequestOptions) =>
+      transport.request<unknown>(requests.modelDownloadEvents(jobId, options)),
   };
 }

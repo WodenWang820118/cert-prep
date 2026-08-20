@@ -1,11 +1,14 @@
 import { computed, effect, inject, Injectable, signal } from '@angular/core';
-import { from, Subscription, timer } from 'rxjs';
+import { from, Subscription } from 'rxjs';
 import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
 import type {
   ManualDraftGenerationOperationRead,
   QuestionDraftRead,
 } from '../../contracts/api.contracts';
+import { isDraftOperationEventTerminal } from '../../contracts/operation-events.contracts';
+import type { DraftOperationEvent } from '../../contracts/operation-events.contracts';
 import { CertPrepHttpResourceClient } from '../../services/cert-prep-http-resource-client.service';
+import { CertPrepSseClient } from '../../services/cert-prep-sse-client.service';
 import type {
   DraftEdit,
   DraftGenerationStrategy,
@@ -18,10 +21,6 @@ import { HealthStore } from '../health/health.store';
 import { OperationStore } from '../operation.store';
 import { ProjectStore } from '../project.store';
 import { SourceImportStore } from '../source-import/source-import.store';
-import {
-  MANUAL_DRAFT_POLL_INTERVAL_MS,
-  MANUAL_DRAFT_POLL_RETRY_DELAYS_MS,
-} from './constants/draft-review.constants';
 
 @Injectable({ providedIn: 'root' })
 export class DraftReviewStore {
@@ -33,11 +32,12 @@ export class DraftReviewStore {
   private readonly playability = inject(DraftPlayabilityService);
   private readonly projects = inject(ProjectStore);
   private readonly resources = inject(CertPrepHttpResourceClient);
+  private readonly sse = inject(CertPrepSseClient);
   private readonly sourceImport = inject(SourceImportStore);
   private readonly streamingJobs = inject(DraftStreamingJobsStore);
   private readonly draftsQueryEnabled = signal(false);
-  private manualDraftPollTimer: Subscription | null = null;
-  private manualDraftPollFailureCount = 0;
+  private manualDraftStreamSubscription: Subscription | null = null;
+  private manualDraftStreamTerminalSeen = false;
 
   readonly questionLimit = signal(3);
   private readonly draftsResource = this.resources.questionDrafts(() =>
@@ -51,7 +51,7 @@ export class DraftReviewStore {
     null,
   );
   readonly manualDraftCanceling = signal(false);
-  readonly manualDraftPollingError = signal<string | null>(null);
+  readonly manualDraftStreamError = signal<string | null>(null);
   readonly editingDraftId = this.editSession.editingDraftId;
   readonly draftEdits = this.editSession.draftEdits;
   readonly playableQuestions = computed(() =>
@@ -71,7 +71,7 @@ export class DraftReviewStore {
   readonly canCancelActiveDraftJobs =
     this.streamingJobs.canCancelActiveDraftJobs;
   readonly cancelingDraftJobs = this.streamingJobs.cancelingDraftJobs;
-  readonly pollingError = this.streamingJobs.pollingError;
+  readonly streamError = this.streamingJobs.streamError;
   readonly isManualDraftOperationActive = computed(() => {
     const status = this.manualDraftOperation()?.status;
     return ['queued', 'running', 'cancel_requested'].includes(status ?? '');
@@ -79,7 +79,7 @@ export class DraftReviewStore {
   readonly isManualDraftProgressActive = computed(
     () =>
       this.isManualDraftOperationActive() &&
-      this.manualDraftPollingError() === null,
+       this.manualDraftStreamError() === null,
   );
   readonly canCancelManualDraftOperation = computed(() => {
     const operation = this.manualDraftOperation();
@@ -106,11 +106,11 @@ export class DraftReviewStore {
         operation !== null &&
         (operation.project_id !== projectId || operation.document_id !== document?.id)
       ) {
-        this.clearManualDraftPollTimer();
-        this.manualDraftOperation.set(null);
-        this.resetManualDraftPollingFailure();
-      }
-      this.streamingJobs.syncPolling(projectId, document, (id) => {
+         this.clearManualDraftStream();
+         this.manualDraftOperation.set(null);
+         this.resetManualDraftStreamError();
+       }
+       this.streamingJobs.syncStreaming(projectId, document, (id) => {
         this.load(id);
       });
     });
@@ -132,9 +132,9 @@ export class DraftReviewStore {
     this.draftsResource.set([]);
     this.editSession.reset();
     this.streamingJobs.reset();
-    this.clearManualDraftPollTimer();
+    this.clearManualDraftStream();
     this.manualDraftOperation.set(null);
-    this.resetManualDraftPollingFailure();
+    this.resetManualDraftStreamError();
   }
 
   setQuestionLimit(value: string | number): void {
@@ -225,8 +225,8 @@ export class DraftReviewStore {
           return;
         }
         this.manualDraftOperation.set(operation);
-        this.resetManualDraftPollingFailure();
-        this.continueManualDraftOperation(operation, strategy);
+         this.resetManualDraftStreamError();
+         this.continueManualDraftOperation(operation, strategy);
       });
   }
 
@@ -260,17 +260,14 @@ export class DraftReviewStore {
     this.streamingJobs.cancelActiveDraftJobs();
   }
 
-  retryManualDraftPolling(): void {
+  retryManualDraftStream(): void {
     const operation = this.manualDraftOperation();
     if (operation === null || !this.isManualDraftOperationActive()) {
       return;
     }
-    this.clearManualDraftPollTimer();
-    this.resetManualDraftPollingFailure();
-    this.refreshManualDraftOperation(
-      operation,
-      operation.strategy as DraftGenerationStrategy,
-    );
+    this.clearManualDraftStream();
+    this.resetManualDraftStreamError();
+    this.startManualDraftStream(operation, operation.strategy as DraftGenerationStrategy);
   }
 
   private openMissingAiRuntimePrompt(
@@ -315,19 +312,19 @@ export class DraftReviewStore {
         this.load(project.id);
         this.sourceImport.refreshUploadedDocument(project.id, document.id);
         if (this.streamingJobs.hasActiveDraftJobs(jobs.items)) {
-          this.streamingJobs.ensurePolling(project.id, document.id, (id) => this.load(id));
+          this.streamingJobs.ensureStreaming(project.id, document.id, (id) => this.load(id));
         }
       });
   }
 
-  retryDraftPolling(): void {
+  retryDraftStream(): void {
     const project = this.projects.selectedProject();
     const document = this.sourceImport.activeDocument();
     if (project === null || document === null) {
       return;
     }
 
-    this.streamingJobs.retryPolling(project.id, document.id, (projectId) => {
+    this.streamingJobs.retryStreaming(project.id, document.id, (projectId) => {
       this.load(projectId);
     });
   }
@@ -380,7 +377,6 @@ export class DraftReviewStore {
     operation: ManualDraftGenerationOperationRead,
     strategy: DraftGenerationStrategy,
   ): void {
-    this.clearManualDraftPollTimer();
     if (operation.status === 'succeeded') {
       this.completeManualDraftOperation(operation);
       return;
@@ -395,40 +391,54 @@ export class DraftReviewStore {
     if (operation.status === 'canceled') {
       return;
     }
-    this.manualDraftPollTimer = timer(MANUAL_DRAFT_POLL_INTERVAL_MS).subscribe(() => {
-      this.manualDraftPollTimer = null;
-      this.refreshManualDraftOperation(operation, strategy);
-    });
+    this.startManualDraftStream(operation, strategy);
   }
 
-  private refreshManualDraftOperation(
+  private startManualDraftStream(
     operation: ManualDraftGenerationOperationRead,
     strategy: DraftGenerationStrategy,
   ): void {
     if (!this.isCurrentManualDraftOperation(operation)) {
       return;
     }
-    from(this.api
-      .getManualDraftOperation(operation.project_id, operation.document_id, operation.id))
+    this.clearManualDraftStream();
+    this.manualDraftStreamSubscription = this.sse
+      .streamJson<DraftOperationEvent>(
+        `/projects/${encodeURIComponent(operation.project_id)}/documents/${encodeURIComponent(operation.document_id)}/draft-operations/${encodeURIComponent(operation.id)}/events`,
+        'draft-operation',
+        { isTerminal: isDraftOperationEventTerminal },
+      )
       .subscribe({
-        next: (refreshed) => {
+        next: (event) => {
           if (!this.isCurrentManualDraftOperation(operation)) return;
-          this.manualDraftOperation.set(refreshed);
-          this.resetManualDraftPollingFailure();
-          this.continueManualDraftOperation(refreshed, strategy);
+          this.manualDraftOperation.set(event);
+          this.manualDraftStreamTerminalSeen ||= isDraftOperationEventTerminal(event);
+          this.resetManualDraftStreamError();
+          if (event.status === 'succeeded') {
+            this.clearManualDraftStream();
+            this.completeManualDraftOperation(event);
+          } else if (event.status === 'failed') {
+            this.clearManualDraftStream();
+            this.operations.fail(event.error ?? 'Question generation did not complete.');
+            void this.openMissingAiRuntimePrompt(strategy, true);
+          } else if (event.status === 'canceled') {
+            this.clearManualDraftStream();
+          }
         },
         error: () => {
-          const delay = MANUAL_DRAFT_POLL_RETRY_DELAYS_MS[this.manualDraftPollFailureCount];
-          if (delay === undefined) {
-            this.clearManualDraftPollTimer();
-            this.manualDraftPollingError.set('Question generation progress could not be refreshed. Retry the status check or cancel the operation.');
-            return;
+          this.manualDraftStreamSubscription = null;
+          this.manualDraftStreamError.set(
+            'Question generation progress could not be refreshed. Retry the event stream or cancel the operation.',
+          );
+        },
+        complete: () => {
+          if (this.manualDraftStreamSubscription === null) return;
+          this.manualDraftStreamSubscription = null;
+          if (!this.manualDraftStreamTerminalSeen) {
+            this.manualDraftStreamError.set(
+              'Question generation progress could not be refreshed. Retry the event stream or cancel the operation.',
+            );
           }
-          this.manualDraftPollFailureCount += 1;
-          this.manualDraftPollTimer = timer(delay).subscribe(() => {
-            this.manualDraftPollTimer = null;
-            this.refreshManualDraftOperation(operation, strategy);
-          });
         },
       });
   }
@@ -454,16 +464,14 @@ export class DraftReviewStore {
     );
   }
 
-  private clearManualDraftPollTimer(): void {
-    if (this.manualDraftPollTimer !== null) {
-      this.manualDraftPollTimer.unsubscribe();
-      this.manualDraftPollTimer = null;
-    }
+  private clearManualDraftStream(): void {
+    this.manualDraftStreamSubscription?.unsubscribe();
+    this.manualDraftStreamSubscription = null;
+    this.manualDraftStreamTerminalSeen = false;
   }
 
-  private resetManualDraftPollingFailure(): void {
-    this.manualDraftPollFailureCount = 0;
-    this.manualDraftPollingError.set(null);
+  private resetManualDraftStreamError(): void {
+    this.manualDraftStreamError.set(null);
   }
 
   private errorMessage(error: unknown): string {

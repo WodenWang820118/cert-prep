@@ -1,12 +1,11 @@
 import { computed, inject, Injectable, signal } from '@angular/core';
-import { forkJoin, from, map, Observable, Subscription, tap, timer } from 'rxjs';
+import { forkJoin, from, map, Observable, Subscription, tap } from 'rxjs';
 import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
 import type { DocumentRead, DraftGenerationJobRead } from '../../contracts/api.contracts';
+import { isDraftJobsEventTerminal } from '../../contracts/operation-events.contracts';
+import type { DraftJobsEvent } from '../../contracts/operation-events.contracts';
+import { CertPrepSseClient } from '../../services/cert-prep-sse-client.service';
 import type { DraftJobSummary } from './contracts/draft-review.contracts';
-import {
-  POLL_RETRY_DELAYS_MS,
-  STREAMING_DRAFT_POLL_INTERVAL_MS,
-} from './constants/draft-review.constants';
 import { OperationStore } from '../operation.store';
 import { ProjectStore } from '../project.store';
 import { SourceImportStore } from '../source-import/source-import.store';
@@ -17,13 +16,15 @@ export class DraftStreamingJobsStore {
   private readonly operations = inject(OperationStore);
   private readonly projects = inject(ProjectStore);
   private readonly sourceImport = inject(SourceImportStore);
+  private readonly sse = inject(CertPrepSseClient);
   private draftJobsDocumentKey: string | null = null;
-  private streamingDraftPollKey: string | null = null;
-  private streamingDraftPollTimer: Subscription | null = null;
-  private streamingDraftPollFailureCount = 0;
+  private streamingKey: string | null = null;
+  private streamingSubscription: Subscription | null = null;
+  private settledKey: string | null = null;
+  private streamTerminalSeen = false;
 
   readonly draftJobs = signal<DraftGenerationJobRead[]>([]);
-  readonly pollingError = signal<string | null>(null);
+  readonly streamError = signal<string | null>(null);
   readonly cancelingDraftJobs = signal(false);
   readonly draftJobSummary = computed(() =>
     this.summarizeDraftJobs(this.draftJobs()),
@@ -42,11 +43,11 @@ export class DraftStreamingJobsStore {
   reset(): void {
     this.draftJobs.set([]);
     this.draftJobsDocumentKey = null;
-    this.stopPolling();
-    this.resetPollingFailure();
+    this.stopStreaming();
+    this.resetStreamError();
   }
 
-  syncPolling(
+  syncStreaming(
     projectId: string | null,
     document: DocumentRead | null,
     loadDrafts: (projectId: string) => void,
@@ -57,24 +58,24 @@ export class DraftStreamingJobsStore {
         : null;
     const hasActiveJobs =
       documentKey !== null &&
-      this.streamingDraftPollKey === documentKey &&
+      this.streamingKey === documentKey &&
       this.hasActiveDraftJobs(this.draftJobs());
-    const shouldPoll =
+    const shouldStream =
       documentKey !== null &&
       ((document?.status === 'processing' && document.chunks_count > 0) ||
         hasActiveJobs);
 
-    if (shouldPoll && document !== null && projectId !== null) {
-      this.ensurePolling(projectId, document.id, loadDrafts);
+    if (shouldStream && document !== null && projectId !== null) {
+      this.ensureStreaming(projectId, document.id, loadDrafts);
     } else if (documentKey === null) {
-      this.stopPolling({ clearJobs: true });
+      this.stopStreaming({ clearJobs: true });
     } else if (
       this.draftJobsDocumentKey !== null &&
       this.draftJobsDocumentKey !== documentKey
     ) {
-      this.stopPolling({ clearJobs: true });
-    } else {
-      this.stopPolling();
+      this.stopStreaming({ clearJobs: true });
+    } else if (!hasActiveJobs) {
+      this.stopStreaming();
     }
   }
 
@@ -82,35 +83,40 @@ export class DraftStreamingJobsStore {
     this.draftJobs.set(jobs);
   }
 
-  ensurePolling(
+  ensureStreaming(
     projectId: string,
     documentId: string,
     loadDrafts: (projectId: string) => void,
   ): void {
     const nextKey = `${projectId}:${documentId}`;
-    if (this.streamingDraftPollKey !== nextKey) {
-      this.stopPolling({ clearJobs: true });
-      this.streamingDraftPollKey = nextKey;
-      this.resetPollingFailure();
-      this.pollStreamingDrafts(projectId, documentId, loadDrafts);
+    if (
+      this.streamingKey === nextKey &&
+      (this.streamingSubscription !== null || this.settledKey === nextKey)
+    ) {
       return;
     }
-
-    if (this.streamingDraftPollTimer === null) {
-      this.schedulePolling(projectId, documentId, loadDrafts);
-    }
+    this.stopStreaming();
+    this.streamingKey = nextKey;
+    this.settledKey = null;
+    this.streamTerminalSeen = false;
+    this.resetStreamError();
+    loadDrafts(projectId);
+    this.loadDraftJobs(projectId, documentId).subscribe({
+      next: () => this.startStreaming(projectId, documentId, loadDrafts),
+      error: () => this.handleStreamError(nextKey),
+    });
   }
 
-  stopPolling(options: { clearJobs?: boolean } = {}): void {
-    if (this.streamingDraftPollTimer !== null) {
-      this.streamingDraftPollTimer.unsubscribe();
-      this.streamingDraftPollTimer = null;
-    }
-    this.streamingDraftPollKey = null;
+  stopStreaming(options: { clearJobs?: boolean } = {}): void {
+    this.streamingSubscription?.unsubscribe();
+    this.streamingSubscription = null;
+    this.streamingKey = null;
+    this.settledKey = null;
+    this.streamTerminalSeen = false;
     if (options.clearJobs) {
       this.draftJobs.set([]);
       this.draftJobsDocumentKey = null;
-      this.resetPollingFailure();
+      this.resetStreamError();
     }
   }
 
@@ -126,15 +132,18 @@ export class DraftStreamingJobsStore {
     );
   }
 
-  retryPolling(
+  retryStreaming(
     projectId: string,
     documentId: string,
     loadDrafts: (projectId: string) => void,
   ): void {
-    this.stopPolling();
-    this.streamingDraftPollKey = `${projectId}:${documentId}`;
-    this.resetPollingFailure();
-    this.pollStreamingDrafts(projectId, documentId, loadDrafts);
+    this.stopStreaming();
+    const key = `${projectId}:${documentId}`;
+    this.streamingKey = key;
+    this.settledKey = null;
+    this.resetStreamError();
+    loadDrafts(projectId);
+    this.startStreaming(projectId, documentId, loadDrafts);
   }
 
   cancelActiveDraftJobs(): void {
@@ -147,21 +156,22 @@ export class DraftStreamingJobsStore {
       (job) =>
         job.cancellable && ['pending', 'running'].includes(job.status),
     );
-    if (jobs.length === 0) {
-      return;
-    }
+    if (jobs.length === 0) return;
 
     this.cancelingDraftJobs.set(true);
-    forkJoin(jobs.map((job) => from(this.api.cancelDocumentDraftJob(projectId, documentId, job.id)))).subscribe({
+    forkJoin(
+      jobs.map((job) =>
+        from(this.api.cancelDocumentDraftJob(projectId, documentId, job.id)),
+      ),
+    ).subscribe({
       next: (canceled) => {
         if (!this.isCurrentProjectDocument(projectId, documentId)) return;
         const replacements = new Map(canceled.map((job) => [job.id, job]));
-        this.draftJobs.update((current) => current.map((job) => replacements.get(job.id) ?? job));
+        this.draftJobs.update((current) =>
+          current.map((job) => replacements.get(job.id) ?? job),
+        );
         if (this.hasActiveDraftJobs(this.draftJobs())) {
-          this.stopPolling();
-          this.streamingDraftPollKey = `${projectId}:${documentId}`;
-          this.resetPollingFailure();
-          this.schedulePolling(projectId, documentId, () => undefined);
+          this.retryStreaming(projectId, documentId, () => undefined);
         }
         this.cancelingDraftJobs.set(false);
       },
@@ -178,69 +188,51 @@ export class DraftStreamingJobsStore {
     );
   }
 
-  private schedulePolling(
+  private startStreaming(
     projectId: string,
     documentId: string,
     loadDrafts: (projectId: string) => void,
-    delayMs = STREAMING_DRAFT_POLL_INTERVAL_MS,
   ): void {
-    this.streamingDraftPollTimer = timer(delayMs).subscribe(() => {
-      this.streamingDraftPollTimer = null;
-      this.pollStreamingDrafts(projectId, documentId, loadDrafts);
-    });
+    const key = `${projectId}:${documentId}`;
+    if (this.streamingKey !== key || this.streamingSubscription !== null) return;
+    this.streamingSubscription = this.sse
+      .streamJson<DraftJobsEvent>(
+        `/projects/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/draft-jobs/events`,
+        'draft-jobs',
+        { isTerminal: isDraftJobsEventTerminal },
+      )
+      .subscribe({
+        next: (event) => {
+          if (!this.isCurrentProjectDocument(projectId, documentId)) return;
+          this.draftJobsDocumentKey = key;
+          this.draftJobs.set(event.items);
+          this.streamTerminalSeen ||= isDraftJobsEventTerminal(event);
+          loadDrafts(projectId);
+        },
+        error: () => this.handleStreamError(key),
+        complete: () => {
+          if (this.streamingKey === key) {
+            this.streamingSubscription = null;
+            if (this.streamTerminalSeen) {
+              this.settledKey = key;
+            } else {
+              this.handleStreamError(key);
+            }
+          }
+        },
+      });
   }
 
-  private pollStreamingDrafts(
-    projectId: string,
-    documentId: string,
-    loadDrafts: (projectId: string) => void,
-  ): void {
-    if (this.streamingDraftPollKey !== `${projectId}:${documentId}`) {
-      return;
-    }
-
-    loadDrafts(projectId);
-    this.loadDraftJobs(projectId, documentId).subscribe({
-      next: () => {
-        this.resetPollingFailure();
-        const document = this.sourceImport.activeDocument();
-        const selectedProjectId = this.projects.selectedProjectId();
-        if (selectedProjectId === projectId && document?.id === documentId &&
-            (document.status === 'processing' || this.hasActiveDraftJobs(this.draftJobs()))) {
-          this.schedulePolling(projectId, documentId, loadDrafts);
-        } else {
-          this.stopPolling();
-        }
-      },
-      error: () => this.handlePollingFailure(projectId, documentId, loadDrafts),
-    });
-  }
-
-  private handlePollingFailure(
-    projectId: string,
-    documentId: string,
-    loadDrafts: (projectId: string) => void,
-  ): void {
-    if (this.streamingDraftPollKey !== `${projectId}:${documentId}`) {
-      return;
-    }
-
-    const delay = POLL_RETRY_DELAYS_MS[this.streamingDraftPollFailureCount];
-    if (delay !== undefined) {
-      this.streamingDraftPollFailureCount += 1;
-      this.schedulePolling(projectId, documentId, loadDrafts, delay);
-      return;
-    }
-
-    this.stopPolling();
-    this.pollingError.set(
-      'Question generation progress could not be refreshed. The local job may still be running.',
+  private handleStreamError(key: string): void {
+    if (this.streamingKey !== key) return;
+    this.streamingSubscription = null;
+    this.streamError.set(
+      'Question generation progress could not be refreshed. Retry the event stream.',
     );
   }
 
-  private resetPollingFailure(): void {
-    this.streamingDraftPollFailureCount = 0;
-    this.pollingError.set(null);
+  private resetStreamError(): void {
+    this.streamError.set(null);
   }
 
   private isCurrentProjectDocument(projectId: string, documentId: string): boolean {
@@ -268,91 +260,26 @@ export class DraftStreamingJobsStore {
     );
 
     if (total === 0) {
-      return {
-        total,
-        active,
-        succeeded,
-        skipped,
-        failed,
-        generatedCount,
-        label: 'No question jobs',
-        detail: 'Waiting for parsed pages.',
-        severity: 'secondary',
-      };
+      return { total, active, succeeded, skipped, failed, generatedCount, label: 'No question jobs', detail: 'Waiting for parsed pages.', severity: 'secondary' };
     }
     if (active > 0) {
-      return {
-        total,
-        active,
-        succeeded,
-        skipped,
-        failed,
-        generatedCount,
-        label: `Generating ${active}/${total}`,
-        detail: `${generatedCount} questions ready so far.`,
-        severity: 'info',
-      };
+      return { total, active, succeeded, skipped, failed, generatedCount, label: `Generating ${active}/${total}`, detail: `${generatedCount} questions ready so far.`, severity: 'info' };
     }
     if (failed > 0) {
-      return {
-        total,
-        active,
-        succeeded,
-        skipped,
-        failed,
-        generatedCount,
-        label: 'Question generation needs attention',
-        detail: `${failed} job${failed === 1 ? '' : 's'} failed.`,
-        severity: 'danger',
-      };
+      return { total, active, succeeded, skipped, failed, generatedCount, label: 'Question generation needs attention', detail: `${failed} job${failed === 1 ? '' : 's'} failed.`, severity: 'danger' };
     }
     if (skipped > 0 && succeeded === 0) {
-      const missingModel = jobs.some(
-        (job) => job.status === 'skipped_missing_model',
-      );
-      return {
-        total,
-        active,
-        succeeded,
-        skipped,
-        failed,
-        generatedCount,
-        label: missingModel ? 'Model missing' : 'Reasoning unavailable',
-        detail: `${skipped} job${skipped === 1 ? '' : 's'} skipped.`,
-        severity: 'warn',
-      };
+      const missingModel = jobs.some((job) => job.status === 'skipped_missing_model');
+      return { total, active, succeeded, skipped, failed, generatedCount, label: missingModel ? 'Model missing' : 'Reasoning unavailable', detail: `${skipped} job${skipped === 1 ? '' : 's'} skipped.`, severity: 'warn' };
     }
     if (succeeded > 0) {
-      return {
-        total,
-        active,
-        succeeded,
-        skipped,
-        failed,
-        generatedCount,
-        label: `${generatedCount} questions ready`,
-        detail: `${succeeded}/${total} jobs completed.`,
-        severity: skipped > 0 ? 'warn' : 'success',
-      };
+      return { total, active, succeeded, skipped, failed, generatedCount, label: `${generatedCount} questions ready`, detail: `${succeeded}/${total} jobs completed.`, severity: skipped > 0 ? 'warn' : 'success' };
     }
-
-    return {
-      total,
-      active,
-      succeeded,
-      skipped,
-      failed,
-      generatedCount,
-      label: 'Question jobs settled',
-      detail: `${total} jobs completed without questions.`,
-      severity: 'secondary',
-    };
+    return { total, active, succeeded, skipped, failed, generatedCount, label: 'Question jobs settled', detail: `${total} jobs completed without questions.`, severity: 'secondary' };
   }
 
   private errorMessage(error: unknown): string {
-    if (error instanceof Error && error.message.trim().length > 0) {
-      return error.message;
-    }
+    if (error instanceof Error && error.message.trim().length > 0) return error.message;
     return 'Question generation could not be canceled.';
   }
 }

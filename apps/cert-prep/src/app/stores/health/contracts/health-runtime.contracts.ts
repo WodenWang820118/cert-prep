@@ -7,9 +7,13 @@ import type {
 } from '../../../contracts/api.contracts';
 import type { LLMProviderSelectionRead as GeneratedLLMProviderSelectionRead } from '../../../contracts/api.contracts';
 import type { Observable } from 'rxjs';
+import type {
+  ModelDownloadEvent,
+  RuntimeInstallationEvent,
+} from '../../../contracts/operation-events.contracts';
 
 /**
- * Runtime job lifecycle normalized for UI state and polling decisions.
+ * Runtime job lifecycle normalized for UI state and event-stream decisions.
  */
 export type DownloadPhase =
   | 'starting'
@@ -57,6 +61,7 @@ export interface ModelDownloadApiClient {
   startModelDownload(): Observable<ModelDownloadRead>;
   getModelDownload(jobId: string): Observable<ModelDownloadRead>;
   cancelModelDownload(jobId: string): Observable<ModelDownloadRead>;
+  streamModelDownload(jobId: string): Observable<ModelDownloadEvent>;
 }
 
 /**
@@ -67,6 +72,7 @@ export interface RuntimeInstallationApiClient {
   startRuntimeInstallation(kind: string): Observable<RuntimeInstallationRead>;
   getRuntimeInstallation(jobId: string): Observable<RuntimeInstallationRead>;
   cancelRuntimeInstallation(jobId: string): Observable<RuntimeInstallationRead>;
+  streamRuntimeInstallation(jobId: string): Observable<RuntimeInstallationEvent>;
 }
 
 export interface RuntimeActionContext {
