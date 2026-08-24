@@ -9,9 +9,12 @@ import {
   PACKAGED_STATIC_IMAGE_SHA256,
   PACKAGED_STATIC_IMAGE_WIDTH,
   packagedStaticImage,
+  requireExpectedOcrImageDocument,
   requireExpectedTerminalImageDocument,
+  waitForExpectedOcrImageDocument,
   waitForExpectedTerminalImageDocument,
 } from './image-contract.mts';
+import { packagedImageFailureEvidence } from './runner.mts';
 
 test('packaged image fixture is a deterministic static 256x128 PNG', () => {
   const image = packagedStaticImage();
@@ -81,6 +84,52 @@ test('terminal image polling waits through processing and validates evidence', a
   assert.equal(document.processed_page_count, 1);
 });
 
+test('OCR image evidence requires a ready document with provenance and chunks', () => {
+  const document = ocrDocument();
+
+  assert.deepEqual(
+    requireExpectedOcrImageDocument(document, {
+      filename: 'ocr_test_image.jpeg',
+      sha256: 'a'.repeat(64),
+    }),
+    document,
+  );
+  assert.throws(
+    () =>
+      requireExpectedOcrImageDocument(
+        { ...document, chunks_count: 0 },
+        { filename: 'ocr_test_image.jpeg', sha256: 'a'.repeat(64) },
+      ),
+    /at least one text chunk/,
+  );
+  assert.throws(
+    () =>
+      requireExpectedOcrImageDocument(
+        { ...document, extraction_method: 'embedded' },
+        { filename: 'ocr_test_image.jpeg', sha256: 'a'.repeat(64) },
+      ),
+    /extraction_method expected windowsml_ocr/,
+  );
+});
+
+test('OCR image polling waits through processing and validates the supplied fixture', async () => {
+  const responses: unknown[] = [{ status: 'processing' }, ocrDocument()];
+  let reads = 0;
+
+  const document = await waitForExpectedOcrImageDocument(
+    async () => responses[reads++] ?? responses.at(-1),
+    {
+      timeoutMs: 1_000,
+      delay: async () => undefined,
+      expectation: { filename: 'ocr_test_image.jpeg', sha256: 'a'.repeat(64) },
+    },
+  );
+
+  assert.equal(reads, 2);
+  assert.equal(document.status, 'ready');
+  assert.equal(document.chunks_count, 3);
+});
+
 test('packaged image CLI keeps fresh app data beside timestamped evidence', () => {
   const parsed = parsePackagedImageUploadSmokeArgs(
     [
@@ -102,9 +151,38 @@ test('packaged image CLI keeps fresh app data beside timestamped evidence', () =
   assert.equal(parsed.appDataDir, `${parsed.outDir}\\app-data`);
   assert.equal(parsed.cdpPort, 9556);
   assert.equal(parsed.timeoutMs, 1234);
+  assert.equal(parsed.llmProvider, 'auto');
   assert.throws(
     () => parsePackagedImageUploadSmokeArgs(['--timeout-ms', '0']),
     /positive integer/,
+  );
+});
+
+test('failed image evidence preserves observed cleanup independently of the parse error', () => {
+  const cleanup = {
+    app: true,
+    sidecar: true,
+    cdpPort: true,
+    temporaryAppData: true,
+  } as const;
+  assert.deepEqual(
+    packagedImageFailureEvidence({
+      error: new Error('OCR parse failed'),
+      screenshots: ['failure.png'],
+      observations: [],
+      errors: ['OCR parse failed'],
+      cleanup,
+      cleanupVerified: true,
+    }),
+    {
+      status: 'failed',
+      error: 'OCR parse failed',
+      screenshots: ['failure.png'],
+      observations: [],
+      errors: ['OCR parse failed'],
+      cleanup,
+      cleanupVerified: true,
+    },
   );
 });
 
@@ -121,6 +199,24 @@ function terminalDocument(): Record<string, unknown> {
     chunks_count: 0,
     extraction_method: 'none',
     ocr_device: 'cpu',
+    ocr_fallback_reason: null,
+  };
+}
+
+function ocrDocument(): Record<string, unknown> {
+  return {
+    id: 'document-ocr-1',
+    project_id: 'project-1',
+    filename: 'ocr_test_image.jpeg',
+    sha256: 'a'.repeat(64),
+    source_kind: 'document',
+    status: 'ready',
+    page_count: 1,
+    processed_page_count: 1,
+    has_text: true,
+    chunks_count: 3,
+    extraction_method: 'windowsml_ocr',
+    ocr_device: 'windowsml-dml',
     ocr_fallback_reason: null,
   };
 }

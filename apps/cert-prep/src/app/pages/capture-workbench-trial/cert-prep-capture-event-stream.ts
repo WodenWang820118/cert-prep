@@ -37,7 +37,10 @@ const STREAMING_EVENT_TYPES = new Set([
   'failed',
   'cancelled',
 ]);
-const MAX_SSE_LINE_BYTES = 64 * 1024;
+// Cert Prep may batch all pages from a multi-page PDF into one segment event.
+// Keep the per-line bound aligned with the existing bounded frame/payload
+// limits so a valid batched event is not rejected before JSON validation.
+const MAX_SSE_LINE_BYTES = 8 * 1024 * 1024;
 const MAX_SSE_FRAME_LINES = 1024;
 const MAX_SSE_FRAME_BYTES = 8 * 1024 * 1024;
 const MAX_SSE_PAYLOAD_BYTES = 8 * 1024 * 1024;
@@ -53,7 +56,8 @@ export function certPrepCaptureEventStream(
     const controller = new AbortController();
     const externalSignal = init.signal ?? null;
     const abort = (): void => controller.abort();
-    if (externalSignal?.aborted) return throwError(() => abortError(externalSignal));
+    if (externalSignal?.aborted)
+      return throwError(() => abortError(externalSignal));
     externalSignal?.addEventListener('abort', abort, { once: true });
     const headers = new Headers(init.headers);
     if (init.lastEventId !== undefined) {
@@ -89,15 +93,13 @@ function eventStreamFromResponse(
   expectedCaptureId: string,
   initialSequence: number | undefined,
 ): Observable<CaptureEvent> {
-  const contentType = (response.headers.get('content-type') ?? '').toLowerCase();
+  const contentType = (
+    response.headers.get('content-type') ?? ''
+  ).toLowerCase();
   if (!contentType.startsWith('text/event-stream') || !response.body) {
     return throwError(() => invalidEventStream());
   }
-  return eventStreamFromBody(
-    response.body,
-    expectedCaptureId,
-    initialSequence,
-  );
+  return eventStreamFromBody(response.body, expectedCaptureId, initialSequence);
 }
 
 function eventStreamFromBody(
@@ -119,7 +121,10 @@ function eventStreamFromBody(
     };
     const decode = (frame: SseEventFrame): CaptureEvent => {
       const event = decodeCaptureEventFrame(frame, expectedCaptureId);
-      if (previousSequence !== undefined && event.sequence <= previousSequence) {
+      if (
+        previousSequence !== undefined &&
+        event.sequence <= previousSequence
+      ) {
         throw invalidEventStream();
       }
       previousSequence = event.sequence;
@@ -348,7 +353,10 @@ function normalizeCaptureEvent(
   ) {
     throw invalidEventStream();
   }
-  if (eventType === 'segment' && (!Array.isArray(segments) || segments.length === 0)) {
+  if (
+    eventType === 'segment' &&
+    (!Array.isArray(segments) || segments.length === 0)
+  ) {
     throw invalidEventStream();
   }
   if (Array.isArray(segments)) segments.forEach(validateSegment);
@@ -387,7 +395,9 @@ function validateSegment(value: unknown): asserts value is RawCaptureSegment {
         box !== null &&
         (!Array.isArray(box) ||
           box.length !== 4 ||
-          box.some((item) => typeof item !== 'number' || !Number.isFinite(item))))
+          box.some(
+            (item) => typeof item !== 'number' || !Number.isFinite(item),
+          )))
     ) {
       throw invalidEventStream();
     }
@@ -419,13 +429,16 @@ function validateFailure(value: unknown): void {
     (value['stage'] !== undefined &&
       value['stage'] !== null &&
       !nonEmptyString(value['stage'])) ||
-    (value['retryable'] !== undefined && typeof value['retryable'] !== 'boolean')
+    (value['retryable'] !== undefined &&
+      typeof value['retryable'] !== 'boolean')
   ) {
     throw invalidEventStream();
   }
 }
 
-function parseEventCursor(value: string | number | undefined): number | undefined {
+function parseEventCursor(
+  value: string | number | undefined,
+): number | undefined {
   if (value === undefined) return undefined;
   const text = String(value);
   if (!/^-?\d+$/u.test(text)) throw invalidEventCursor();
@@ -436,12 +449,15 @@ function parseEventCursor(value: string | number | undefined): number | undefine
 
 function validRfc3339Timestamp(value: unknown): value is string {
   if (typeof value !== 'string') return false;
-  const match = /^(?<date>\d{4}-\d{2}-\d{2})T(?<clock>\d{2}:\d{2}:\d{2}(?:\.\d+)?)(?<zone>Z|[+-]\d{2}:\d{2})$/u.exec(
-    value,
-  );
+  const match =
+    /^(?<date>\d{4}-\d{2}-\d{2})T(?<clock>\d{2}:\d{2}:\d{2}(?:\.\d+)?)(?<zone>Z|[+-]\d{2}:\d{2})$/u.exec(
+      value,
+    );
   if (!match?.groups) return false;
   const [year, month, day] = match.groups['date'].split('-').map(Number);
-  const [hours, minutes, seconds] = match.groups['clock'].split(':').map(Number);
+  const [hours, minutes, seconds] = match.groups['clock']
+    .split(':')
+    .map(Number);
   if (
     month < 1 ||
     month > 12 ||
@@ -493,7 +509,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function abortError(signal: AbortSignal): unknown {
-  return signal.reason ?? new DOMException('The operation was aborted.', 'AbortError');
+  return (
+    signal.reason ??
+    new DOMException('The operation was aborted.', 'AbortError')
+  );
 }
 
 function invalidEventStream(): Error {

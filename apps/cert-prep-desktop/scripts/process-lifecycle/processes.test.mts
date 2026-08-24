@@ -15,6 +15,7 @@ import {
   resolveWindowsPowerShellExecutable,
   selectCertPrepResidue,
   selectNewWorkspaceNodeHelpers,
+  waitForLoopbackPortClosed,
 } from './processes.mts';
 
 test('process snapshot parsing normalizes single and array PowerShell JSON output', () => {
@@ -71,6 +72,39 @@ test('process tree residue detection stays scoped to launched app descendants', 
     [10, 11, 12],
   );
   assert.equal(isCertPrepResidue(processes[3]), false);
+});
+
+test('waitForLoopbackPortClosed treats inconclusive probes as open until timeout', async () => {
+  let currentTime = 0;
+
+  assert.equal(
+    await waitForLoopbackPortClosed(9_999, {
+      timeoutMs: 500,
+      pollIntervalMs: 100,
+      now: () => currentTime,
+      delay: async (durationMs) => {
+        currentTime += durationMs;
+      },
+      probe: async () => false,
+    }),
+    false,
+  );
+});
+
+test('waitForLoopbackPortClosed succeeds after a closed-port probe', async () => {
+  let probeCount = 0;
+
+  assert.equal(
+    await waitForLoopbackPortClosed(9_999, {
+      delay: async () => undefined,
+      probe: async () => {
+        probeCount += 1;
+        return probeCount === 2;
+      },
+    }),
+    true,
+  );
+  assert.equal(probeCount, 2);
 });
 
 test('new node helper cleanup excludes baseline and protected service processes', () => {

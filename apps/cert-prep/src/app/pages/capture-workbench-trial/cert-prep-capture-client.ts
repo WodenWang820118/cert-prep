@@ -346,7 +346,12 @@ export class CertPrepCaptureClient
           {
             clientRequestId: capture.record.structuringRequestId,
             review: {
-              reviewVersion: review.reviewVersion,
+              // The published workbench currently emits reviewVersion 1.
+              // Cert Prep's backend host envelope is v2; the review edit
+              // semantics are unchanged, so translate at this adapter
+              // boundary instead of leaking the UI protocol version to the
+              // backend contract.
+              reviewVersion: 2,
               edits: (review.edits ?? []).map((edit: CaptureReviewEdit) => ({
                 segmentId: edit.segmentId,
                 reviewedText: edit.reviewedText,

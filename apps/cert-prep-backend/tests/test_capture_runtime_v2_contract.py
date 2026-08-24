@@ -24,6 +24,7 @@ from cert_prep_backend.domains.capture_workbench.client import (
 )
 from cert_prep_backend.domains.capture_workbench.coordinator import (
     CaptureRuntimeStateUnknownError,
+    CaptureRuntimeTimeoutError,
     CertPrepCaptureCoordinator,
 )
 from cert_prep_backend.domains.capture_workbench.host_models import RuntimeReady
@@ -298,6 +299,58 @@ def test_coordinator_reconciles_once_after_the_sdk_stream_ends() -> None:
     assert started == ["capture-1"]
 
 
+def test_coordinator_polls_durable_status_after_sse_utf8_framing_failure() -> None:
+    runtime = _MalformedEventRuntimeClient()
+    coordinator = CertPrepCaptureCoordinator(
+        client=runtime,
+        structurer=object(),
+        reconciliation_interval_seconds=0.01,
+        timeout_seconds=30,
+    )
+
+    operation = coordinator.begin_capture(
+        operation_id="operation-utf8-framing",
+        file_name="sample.pdf",
+        content=SOURCE,
+        media_type="application/pdf",
+        source_kind="pdf",
+        target_language=None,
+        should_cancel=lambda: False,
+    )
+
+    assert operation.status is StreamingCaptureStatus.AWAITING_STRUCTURING
+    assert runtime.event_cursors == [0]
+    assert runtime.snapshot_calls == 1
+
+
+def test_coordinator_protocol_fallback_rechecks_deadline_before_sleeping() -> None:
+    runtime = _DeadlineCrossingMalformedRuntimeClient()
+    clock_values = iter([0.0, 0.0, 0.0, 0.5, 1.1, 1.1])
+    sleeps: list[float] = []
+    coordinator = CertPrepCaptureCoordinator(
+        client=runtime,
+        structurer=object(),
+        reconciliation_interval_seconds=0.1,
+        timeout_seconds=1,
+        clock=lambda: next(clock_values),
+        sleeper=sleeps.append,
+    )
+
+    with pytest.raises(CaptureRuntimeTimeoutError, match="timed out"):
+        coordinator.begin_capture(
+            operation_id="operation-deadline-race",
+            file_name="sample.pdf",
+            content=SOURCE,
+            media_type="application/pdf",
+            source_kind="pdf",
+            target_language=None,
+            should_cancel=lambda: False,
+        )
+
+    assert sleeps == []
+    assert runtime.cancel_calls == 1
+
+
 @pytest.mark.parametrize(
     ("content_type", "body"),
     [
@@ -453,6 +506,55 @@ class _ReconnectingRuntimeClient:
     def cancel_capture(self, _capture_id: str) -> CaptureOperation:
         self.cancel_calls += 1
         raise AssertionError("A disconnected event listener must not cancel the runtime job")
+
+
+class _MalformedEventRuntimeClient(_ReconnectingRuntimeClient):
+    def capture_events(
+        self,
+        _capture_id: str,
+        *,
+        last_event_id: int | str | None,
+        on_activity=None,
+    ) -> Iterator[CaptureEvent]:
+        self.event_cursors.append(last_event_id)
+        if on_activity is not None:
+            on_activity()
+        try:
+            bytes([0xFF]).decode("utf-8")
+        except UnicodeDecodeError as error:
+            raise CaptureRuntimeProtocolError(
+                "Capture Runtime returned an invalid event stream."
+            ) from error
+        raise AssertionError("Expected the UTF-8 framing probe to fail.")
+
+    def get_capture(self, _capture_id: str) -> CaptureOperation:
+        self.snapshot_calls += 1
+        payload = _operation()
+        payload["status"] = "awaiting_structuring"
+        payload["lastEventSequence"] = max(1, self.snapshot_calls)
+        payload["progress"] = 0.75
+        return CaptureOperation.model_validate(payload)
+
+
+class _DeadlineCrossingMalformedRuntimeClient(_MalformedEventRuntimeClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.cancelled = False
+
+    def get_capture(self, _capture_id: str) -> CaptureOperation:
+        self.snapshot_calls += 1
+        payload = _operation()
+        payload["status"] = "cancelled" if self.cancelled else "extracting"
+        if self.cancelled:
+            payload["completedAt"] = NOW.isoformat()
+        payload["lastEventSequence"] = max(1, self.snapshot_calls)
+        payload["progress"] = 0.5
+        return CaptureOperation.model_validate(payload)
+
+    def cancel_capture(self, _capture_id: str) -> CaptureOperation:
+        self.cancel_calls += 1
+        self.cancelled = True
+        return self.get_capture(_capture_id)
 
 
 def _client(handler, *, max_chunk_bytes: int = 1_048_576) -> CaptureRuntimeClient:

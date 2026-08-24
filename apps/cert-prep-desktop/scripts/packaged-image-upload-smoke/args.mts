@@ -8,6 +8,13 @@ export interface PackagedImageUploadSmokeOptions {
   readonly appDataDir: string;
   readonly cdpPort: number;
   readonly timeoutMs: number;
+  readonly acceptanceIsolation?: boolean;
+  readonly captureRuntimeWorkerMirrorUrl?: string;
+  readonly acceptanceArtifactRoot?: string;
+  readonly imagePath?: string;
+  readonly expectedTextIncludes?: readonly string[];
+  readonly languageHint?: string;
+  readonly llmProvider?: string;
 }
 
 const DEFAULT_TARGET_TRIPLE = 'x86_64-pc-windows-msvc';
@@ -34,6 +41,8 @@ export function parsePackagedImageUploadSmokeArgs(
   );
   let cdpPort = DEFAULT_CDP_PORT;
   let timeoutMs = DEFAULT_TIMEOUT_MS;
+  let imagePath: string | undefined;
+  let llmProvider = 'auto';
 
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
@@ -48,6 +57,8 @@ export function parsePackagedImageUploadSmokeArgs(
 
     if (argument === '--exe') {
       exePath = resolve(workspaceRoot, readValue());
+    } else if (argument === '--image') {
+      imagePath = resolve(workspaceRoot, readValue());
     } else if (argument === '--out-dir') {
       outDir = resolve(workspaceRoot, readValue());
     } else if (argument === '--out-root') {
@@ -56,6 +67,8 @@ export function parsePackagedImageUploadSmokeArgs(
       cdpPort = positiveInteger(readValue(), argument);
     } else if (argument === '--timeout-ms') {
       timeoutMs = positiveInteger(readValue(), argument);
+    } else if (argument === '--llm-provider') {
+      llmProvider = nonEmptyString(readValue(), argument).toLowerCase();
     } else {
       throw new Error(`Unknown argument: ${argument}`);
     }
@@ -68,6 +81,8 @@ export function parsePackagedImageUploadSmokeArgs(
     appDataDir: join(outDir, 'app-data'),
     cdpPort,
     timeoutMs,
+    imagePath,
+    llmProvider,
   };
 }
 

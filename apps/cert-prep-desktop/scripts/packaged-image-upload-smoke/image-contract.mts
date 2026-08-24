@@ -35,14 +35,20 @@ export interface PackagedImageDocumentEvidence {
   readonly project_id: string;
   readonly filename: string;
   readonly sha256: string;
-  readonly status: 'no_text_detected';
+  readonly status: 'no_text_detected' | 'ready';
   readonly page_count: 1;
   readonly processed_page_count: 1;
-  readonly has_text: false;
-  readonly chunks_count: 0;
-  readonly extraction_method: 'none';
+  readonly has_text: boolean;
+  readonly chunks_count: number;
+  readonly extraction_method: string;
   readonly ocr_device: string;
   readonly ocr_fallback_reason: string | null;
+  readonly source_kind?: string;
+}
+
+export interface PackagedOcrImageExpectation {
+  readonly filename: string;
+  readonly sha256: string;
 }
 
 export function packagedStaticImage(): Buffer {
@@ -103,6 +109,60 @@ export function requireExpectedTerminalImageDocument(
   return payload as unknown as PackagedImageDocumentEvidence;
 }
 
+export function requireExpectedOcrImageDocument(
+  payload: unknown,
+  expectation: PackagedOcrImageExpectation,
+): PackagedImageDocumentEvidence {
+  if (!isRecord(payload)) {
+    throw new Error('Packaged OCR image document response was not a JSON object.');
+  }
+  const fields: Readonly<Record<string, unknown>> = {
+    filename: expectation.filename,
+    sha256: expectation.sha256,
+    status: 'ready',
+    page_count: 1,
+    processed_page_count: 1,
+    has_text: true,
+    extraction_method: 'windowsml_ocr',
+  };
+  for (const [field, value] of Object.entries(fields)) {
+    if (payload[field] !== value) {
+      throw new Error(
+        `Packaged OCR image document ${field} expected ${String(value)} but received ${String(payload[field])}.`,
+      );
+    }
+  }
+  if (typeof payload.chunks_count !== 'number' || payload.chunks_count < 1) {
+    throw new Error('Packaged OCR image document must contain at least one text chunk.');
+  }
+  if (typeof payload.id !== 'string' || payload.id.length === 0) {
+    throw new Error('Packaged OCR image document id was missing.');
+  }
+  if (typeof payload.project_id !== 'string' || payload.project_id.length === 0) {
+    throw new Error('Packaged OCR image document project_id was missing.');
+  }
+  if (payload.source_kind !== 'document') {
+    throw new Error(
+      `Packaged OCR image document source_kind expected document but received ${String(payload.source_kind)}.`,
+    );
+  }
+  if (
+    typeof payload.ocr_device !== 'string' ||
+    payload.ocr_device.trim().length === 0
+  ) {
+    throw new Error(
+      'Packaged OCR image document did not report the OCR device that processed the JPEG.',
+    );
+  }
+  if (
+    payload.ocr_fallback_reason !== null &&
+    typeof payload.ocr_fallback_reason !== 'string'
+  ) {
+    throw new Error('Packaged OCR image document ocr_fallback_reason was invalid.');
+  }
+  return payload as unknown as PackagedImageDocumentEvidence;
+}
+
 export async function waitForExpectedTerminalImageDocument(
   readDocument: () => Promise<unknown>,
   {
@@ -127,6 +187,43 @@ export async function waitForExpectedTerminalImageDocument(
   const status = isRecord(latest) ? String(latest.status ?? 'missing') : 'invalid';
   throw new Error(
     `Timed out waiting for packaged image document terminal state; latest status=${status}.`,
+  );
+}
+
+export async function waitForExpectedOcrImageDocument(
+  readDocument: () => Promise<unknown>,
+  {
+    timeoutMs,
+    pollIntervalMs = 500,
+    delay = defaultDelay,
+    expectation,
+  }: {
+    readonly timeoutMs: number;
+    readonly pollIntervalMs?: number;
+    readonly delay?: (durationMs: number) => Promise<void>;
+    readonly expectation: PackagedOcrImageExpectation;
+  },
+): Promise<PackagedImageDocumentEvidence> {
+  const deadline = Date.now() + timeoutMs;
+  let latest: unknown = null;
+  do {
+    latest = await readDocument();
+    if (isRecord(latest) && latest.status === 'ready') {
+      return requireExpectedOcrImageDocument(latest, expectation);
+    }
+    if (
+      isRecord(latest) &&
+      ['ocr_failed', 'canceled', 'exam_failed'].includes(String(latest.status))
+    ) {
+      throw new Error(
+        `Packaged OCR image document ended as ${String(latest.status)}.`,
+      );
+    }
+    await delay(pollIntervalMs);
+  } while (Date.now() < deadline);
+  const status = isRecord(latest) ? String(latest.status ?? 'missing') : 'invalid';
+  throw new Error(
+    `Timed out waiting for packaged OCR image document terminal state; latest status=${status}.`,
   );
 }
 

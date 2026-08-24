@@ -5,13 +5,70 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { chromium, type Locator, type Page } from 'playwright';
 
 import { errorMessage, normalizePath } from './text-utils.mts';
+import { redact } from '../acceptance-artifacts.mts';
 import type { SmokeRunState } from './types.mts';
+
+export const ACCEPTANCE_PRIVATE_SCREENSHOT_SELECTORS = [
+  '.project-name',
+  '.project-title',
+  '[aria-label="Selected source file upload status"]',
+  // Mask the bounded scroll container, not individual chunks: OCR strings
+  // without wrapping opportunities can render outside a child bounding box.
+  '.workbench-preview-list',
+  '.analysis-text',
+  '.review-block pre',
+  'textarea[data-testid="raw-extracted-text"]',
+  'textarea[data-testid="corrected-text"]',
+  // Generated strings can overflow individual title/choice/rationale boxes;
+  // mask the complete card so screenshots never retain partial content.
+  '[data-testid="draft-question-card"]',
+  '.practice-select-field select',
+  '.practice-question-card',
+  '.wrong-answer-card',
+  '[data-testid="capture-result"]',
+  // The native Capture Workbench module owns its internal markup and can
+  // change selectors independently. Mask its whole host plus Cert Prep's
+  // adjacent status/result containers so filenames and OCR text cannot leak
+  // through a stale child selector.
+  'capture-workbench',
+  '.capture-trial-status',
+  '.capture-trial-result',
+] as const;
+
+const ACCEPTANCE_REDACTION_ONLY_SELECTORS = [
+  '.workbench-file-name',
+  '.workbench-field select',
+] as const;
+
+export const ACCEPTANCE_REDACTION_STYLE = `
+  ${[...ACCEPTANCE_PRIVATE_SCREENSHOT_SELECTORS, ...ACCEPTANCE_REDACTION_ONLY_SELECTORS].join(',\n  ')},
+  ${[...ACCEPTANCE_PRIVATE_SCREENSHOT_SELECTORS, ...ACCEPTANCE_REDACTION_ONLY_SELECTORS].map((selector) => `${selector} *`).join(',\n  ')} {
+    color: transparent !important;
+    text-shadow: none !important;
+    caret-color: transparent !important;
+  }
+`;
+
+export function acceptancePrivacyMasks(page: Page): Locator[] {
+  return [
+    ...ACCEPTANCE_PRIVATE_SCREENSHOT_SELECTORS.map((selector) =>
+      page.locator(selector),
+    ),
+    page
+      .locator('.workbench-file-name')
+      .filter({ hasNotText: 'No source file selected' }),
+    page
+      .locator('.workbench-field')
+      .filter({ hasText: 'Project document library' })
+      .locator('select'),
+  ];
+}
 
 export function log(run: SmokeRunState, message: string): void {
   console.log(`[qa] ${message}`);
   appendFileSync(
     join(run.options.outDir, 'run.log'),
-    `${new Date().toISOString()} ${message}\n`,
+    `${new Date().toISOString()} ${redact(message)}\n`,
   );
 }
 
@@ -79,10 +136,9 @@ export async function connectOverCdpEarly(
     );
     if (version) {
       try {
-        return await chromium.connectOverCDP(
-          `http://127.0.0.1:${run.port}`,
-          { timeout: 1_000 },
-        );
+        return await chromium.connectOverCDP(`http://127.0.0.1:${run.port}`, {
+          timeout: 1_000,
+        });
       } catch (error) {
         lastError = error;
       }
@@ -131,6 +187,35 @@ export async function waitText(
   );
 }
 
+export async function waitLocatorText(
+  locator: Locator,
+  pattern: RegExp,
+  timeoutMs: number,
+  label: string,
+): Promise<number> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const text = await locator.innerText();
+      if (pattern.test(text)) return Date.now() - start;
+    } catch (error) {
+      if (!errorMessage(error).includes('Execution context was destroyed')) {
+        throw error;
+      }
+    }
+    await delay(500);
+  }
+  let text = '';
+  try {
+    text = await locator.innerText();
+  } catch {
+    // Keep the timeout error deterministic when the page is navigating.
+  }
+  throw new Error(
+    `Timed out waiting for ${label}. Pattern=${pattern}. Text=${text.slice(0, 1400)}`,
+  );
+}
+
 export function metricText(value: unknown): string {
   return Array.from(String(value ?? ''))
     .map((character) => {
@@ -157,11 +242,129 @@ export async function screenshot(
     run.options.outDir,
     `${String(run.metrics.screenshots.length + 1).padStart(2, '0')}-${name}.png`,
   );
-  await activePage(run).screenshot({ path: file, fullPage: true });
+  const page = activePage(run);
+  await page.screenshot({
+    path: file,
+    fullPage: true,
+    ...(run.options.acceptanceArtifactRoot
+      ? { mask: acceptancePrivacyMasks(page), maskColor: '#000000' }
+      : {}),
+  });
   run.metrics.screenshots.push(
     normalizePath(relative(run.options.workspaceRoot, file)),
   );
+  await run.options.acceptanceVisualCheckpoint?.(page, name);
   log(run, `screenshot ${file.split(/[\\/]/).pop() ?? name}`);
+}
+
+export async function startAcceptanceCapture(
+  run: SmokeRunState,
+): Promise<void> {
+  if (!run.options.acceptanceArtifactRoot || run.acceptanceCaptureActive) {
+    return;
+  }
+  const context = run.browser?.contexts()[0];
+  const page = run.page;
+  if (!context || !page) {
+    throw new Error(
+      'Acceptance capture requires a connected packaged-app page.',
+    );
+  }
+  run.acceptanceVideoPaths ??= [];
+  run.acceptanceTracePaths ??= [];
+  run.acceptanceTraceOwned = false;
+  run.acceptanceConsoleErrors ??= [];
+  run.acceptancePageErrors ??= [];
+  run.acceptanceCaptureSequence = (run.acceptanceCaptureSequence ?? 0) + 1;
+  const sequence = String(run.acceptanceCaptureSequence).padStart(2, '0');
+  const tracePath = join(
+    run.options.acceptanceArtifactRoot,
+    `trace-${sequence}.zip`,
+  );
+  // Traces retain DOM snapshots and can contain raw OCR/evidence text. The
+  // acceptance contract publishes redacted screenshots and structured reports
+  // instead of a trace archive.
+  void tracePath;
+  if (run.options.acceptanceRecordVideo) {
+    await page.addInitScript((content) => {
+      const install = (): void => {
+        if (!document.documentElement || document.querySelector('[data-cert-prep-acceptance-redaction]')) {
+          return;
+        }
+        const style = document.createElement('style');
+        style.setAttribute('data-cert-prep-acceptance-redaction', 'true');
+        style.textContent = content;
+        document.documentElement.append(style);
+      };
+      install();
+      new MutationObserver(install).observe(document, { childList: true, subtree: true });
+    }, ACCEPTANCE_REDACTION_STYLE);
+    let styleInstalled = false;
+    for (let attempt = 0; attempt < 6 && !styleInstalled; attempt += 1) {
+      try {
+        await page.addStyleTag({ content: ACCEPTANCE_REDACTION_STYLE });
+        styleInstalled = true;
+      } catch (error) {
+        if (
+          !errorMessage(error).includes('Execution context was destroyed') ||
+          attempt === 5
+        ) {
+          throw error;
+        }
+        await delay(250);
+        await page
+          .waitForLoadState('domcontentloaded', { timeout: 5_000 })
+          .catch(() => undefined);
+      }
+    }
+  }
+  page.on('console', (message) => {
+    if (message.type() === 'error')
+      run.acceptanceConsoleErrors?.push(message.text());
+  });
+  page.on('pageerror', (error) =>
+    run.acceptancePageErrors?.push(error.message),
+  );
+  if (run.options.acceptanceRecordVideo) {
+    const videoPath = join(
+      run.options.acceptanceArtifactRoot,
+      `cert-prep-golden-journey-${sequence}.webm`,
+    );
+    run.acceptanceVideoPaths.push(videoPath);
+    await page.screencast.start({
+      path: videoPath,
+      size: { width: 1440, height: 900 },
+    });
+  }
+  run.acceptanceCaptureActive = true;
+}
+
+export async function stopAcceptanceCapture(run: SmokeRunState): Promise<void> {
+  if (!run.acceptanceCaptureActive) return;
+  const context = run.browser?.contexts()[0];
+  const page = run.page;
+  run.acceptanceCaptureActive = false;
+  if (page && run.options.acceptanceRecordVideo) {
+    await page.screencast.stop().catch((error: unknown) => {
+      run.metrics.errors.push(
+        `acceptance video stop failed: ${errorMessage(error)}`,
+      );
+    });
+  }
+  if (context && run.acceptanceTracePaths?.length) {
+    const tracePath =
+      run.acceptanceTracePaths[run.acceptanceTracePaths.length - 1];
+    if (run.acceptanceTraceOwned) {
+      await context.tracing
+        .stop({ path: tracePath })
+        .catch((error: unknown) => {
+          run.metrics.errors.push(
+            `acceptance trace stop failed: ${errorMessage(error)}`,
+          );
+        });
+      run.acceptanceTraceOwned = false;
+    }
+  }
 }
 
 export async function clickButtonText(
@@ -236,8 +439,7 @@ function runtimeDrawerLocator(run: SmokeRunState): Locator {
   return activePage(run)
     .locator('[aria-label="Runtime details"], .p-dialog, [role="dialog"]')
     .filter({
-      hasText:
-        /Python backend|Developer backend|Ollama|Runtime details/i,
+      hasText: /Python backend|Developer backend|Ollama|Runtime details/i,
     })
     .last();
 }
@@ -246,8 +448,7 @@ function closeableRuntimeDialogLocator(run: SmokeRunState): Locator {
   return activePage(run)
     .locator('.p-dialog, [role="dialog"]')
     .filter({
-      hasText:
-        /Manage runtime|Runtime details|Python backend|Ollama/i,
+      hasText: /Manage runtime|Runtime details|Python backend|Ollama/i,
     })
     .last();
 }

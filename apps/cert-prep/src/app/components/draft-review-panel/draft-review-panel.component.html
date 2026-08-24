@@ -193,7 +193,7 @@
             >
               {{ drafts.draftStatusLabel(draft) }}
             </span>
-            <span>ID: {{ draft.id }}</span>
+            <span data-testid="draft-question-id">ID: {{ draft.id }}</span>
             @if (draft.citation_page) {
               <span>Page {{ draft.citation_page }}</span>
             }

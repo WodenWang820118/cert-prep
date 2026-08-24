@@ -201,8 +201,17 @@ fn configured_llm_provider() -> String {
     std::env::var("CERT_PREP_LLM_PROVIDER")
         .ok()
         .map(|value| value.trim().to_ascii_lowercase())
-        .filter(|value| matches!(value.as_str(), "auto" | "ollama"))
+        .filter(|value| {
+            matches!(value.as_str(), "auto" | "ollama")
+                || (value == "fake" && acceptance_isolation_enabled())
+        })
         .unwrap_or_else(|| "auto".to_string())
+}
+
+fn acceptance_isolation_enabled() -> bool {
+    std::env::var("CERT_PREP_ACCEPTANCE_ISOLATION")
+        .ok()
+        .is_some_and(|value| value.trim() == "1")
 }
 
 fn backend_ready_timeout() -> Duration {
@@ -340,11 +349,19 @@ mod tests {
     fn configured_llm_provider_defaults_to_auto_and_allows_explicit_providers() {
         let _env = lock_env();
         std::env::remove_var("CERT_PREP_LLM_PROVIDER");
+        std::env::remove_var("CERT_PREP_ACCEPTANCE_ISOLATION");
 
         assert_eq!(configured_llm_provider(), "auto");
 
         std::env::set_var("CERT_PREP_LLM_PROVIDER", " ollama ");
         assert_eq!(configured_llm_provider(), "ollama");
+
+        std::env::set_var("CERT_PREP_LLM_PROVIDER", " fake ");
+        assert_eq!(configured_llm_provider(), "auto");
+
+        std::env::set_var("CERT_PREP_ACCEPTANCE_ISOLATION", "1");
+        assert_eq!(configured_llm_provider(), "fake");
+        std::env::remove_var("CERT_PREP_ACCEPTANCE_ISOLATION");
 
         std::env::set_var("CERT_PREP_LLM_PROVIDER", " AUTO ");
         assert_eq!(configured_llm_provider(), "auto");
@@ -356,6 +373,7 @@ mod tests {
         assert_eq!(configured_llm_provider(), "auto");
 
         std::env::remove_var("CERT_PREP_LLM_PROVIDER");
+        std::env::remove_var("CERT_PREP_ACCEPTANCE_ISOLATION");
     }
 
     #[test]

@@ -138,7 +138,9 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
       sequence: 4,
       eventType: 'checkpoint',
     });
-    await expect(lastValueFrom(stream$)).resolves.toMatchObject({ sequence: 4 });
+    await expect(lastValueFrom(stream$)).resolves.toMatchObject({
+      sequence: 4,
+    });
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
@@ -150,6 +152,38 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
     expect(headers.get('Authorization')).toBe(`Bearer ${TEST_BACKEND_TOKEN}`);
     expect(headers.get('Last-Event-ID')).toBe('3');
     expect(init.credentials).toBe('omit');
+  });
+
+  it('accepts a bounded batched multi-page segment event', async () => {
+    await seedCapture();
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        sseFrame(4, 'segment', {
+          segments: [
+            {
+              segmentId: 'segment-large',
+              order: 0,
+              locator: { kind: 'page', page: 1 },
+              text: 'x'.repeat(70 * 1024),
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream; charset=utf-8' },
+        },
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      firstValueFrom(client.captureEvents('capture-1', { lastEventId: 3 })),
+    ).resolves.toMatchObject({
+      captureId: 'capture-1',
+      sequence: 4,
+      eventType: 'segment',
+      segments: [{ segmentId: 'segment-large' }],
+    });
   });
 
   it('ignores standalone SSE heartbeats and other no-data blocks', async () => {
@@ -277,9 +311,7 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
         clientRequestId: 'capture-1-structure',
         review: {
           reviewVersion: 2,
-          edits: [
-            { segmentId: 'segment-1', reviewedText: 'Corrected text' },
-          ],
+          edits: [{ segmentId: 'segment-1', reviewedText: 'Corrected text' }],
         },
       },
       { signal: controller.signal },
@@ -288,6 +320,41 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
       'schema-digest',
     );
     expect(progress).toHaveBeenCalledWith(1);
+  });
+
+  it('translates the published workbench review envelope to the host v2 contract', async () => {
+    await seedCapture();
+    const progress = vi.fn();
+    const controller = new AbortController();
+    const request: CaptureStructuringRequest = {
+      raw: makeRaw(),
+      review: {
+        reviewVersion: 1,
+        edits: [],
+      },
+      documentContract: {
+        schemaVersion: '2',
+        schemaSha256: 'schema-digest',
+        jsonSchema: {},
+      },
+      signal: controller.signal,
+      reportProgress: progress,
+    };
+
+    await firstValueFrom(client.structure(request));
+
+    expect(api.structureCapture).toHaveBeenCalledWith(
+      TEST_PROJECT_ID,
+      'capture-1',
+      {
+        clientRequestId: 'capture-1-structure',
+        review: {
+          reviewVersion: 2,
+          edits: [],
+        },
+      },
+      { signal: controller.signal },
+    );
   });
 
   it('commits the component candidate using the caller idempotency key', async () => {
@@ -314,21 +381,21 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
   it('maps partial and composite result projections at the v2 boundary', async () => {
     await seedCapture();
 
-      await expect(
-        firstValueFrom(client.getStreamingPartial('capture-1')),
-      ).resolves.toMatchObject({
+    await expect(
+      firstValueFrom(client.getStreamingPartial('capture-1')),
+    ).resolves.toMatchObject({
       protocolVersion: '2',
       captureId: 'capture-1',
       revision: 1,
-        segments: [{ text: 'Recognized OCR text' }],
-      });
-      await expect(
-        firstValueFrom(client.getStreamingRaw('capture-1')),
-      ).resolves.toMatchObject({
-        schemaVersion: '2',
-        source: { sha256: 'a'.repeat(64) },
-        segments: [{ text: 'Recognized OCR text' }],
-      });
+      segments: [{ text: 'Recognized OCR text' }],
+    });
+    await expect(
+      firstValueFrom(client.getStreamingRaw('capture-1')),
+    ).resolves.toMatchObject({
+      schemaVersion: '2',
+      source: { sha256: 'a'.repeat(64) },
+      segments: [{ text: 'Recognized OCR text' }],
+    });
     await expect(
       firstValueFrom(client.getStreamingResult('capture-1')),
     ).resolves.toMatchObject({
@@ -396,7 +463,9 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
 
   it('maps readiness and preserves the browser abort signal', async () => {
     const controller = new AbortController();
-    await expect(firstValueFrom(client.getReady(controller.signal))).resolves.toMatchObject({
+    await expect(
+      firstValueFrom(client.getReady(controller.signal)),
+    ).resolves.toMatchObject({
       service: 'capture-runtime',
       runtimeVersion: CAPTURE_RUNTIME_VERSION,
       capabilities: { captureKinds: ['pdf', 'image', 'audio'] },
@@ -515,7 +584,10 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
 });
 
 function makeOperation(
-  override: { readonly status?: string; readonly lastEventSequence?: number } = {},
+  override: {
+    readonly status?: string;
+    readonly lastEventSequence?: number;
+  } = {},
 ) {
   const status = override.status ?? 'awaiting_structuring';
   const terminal = ['completed', 'failed', 'cancelled'].includes(status);
@@ -632,7 +704,11 @@ function makeCompositeResult() {
   };
 }
 
-function sseFrame(sequence: number, eventType: string): string {
+function sseFrame(
+  sequence: number,
+  eventType: string,
+  payload: Record<string, unknown> = {},
+): string {
   const event = {
     protocolVersion: '2',
     eventId: `capture-1/${sequence}`,
@@ -645,6 +721,7 @@ function sseFrame(sequence: number, eventType: string): string {
     partialRevision: 1,
     coveredUntilMs: 0,
     createdAt: '2026-07-23T10:00:01.000Z',
+    ...payload,
   };
   return `id: ${sequence}\nevent: ${eventType}\ndata: ${JSON.stringify(event)}\n\n`;
 }

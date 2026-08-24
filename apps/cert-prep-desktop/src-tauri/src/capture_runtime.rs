@@ -27,6 +27,9 @@ const DEFAULT_RETENTION_HOURS: &str = "24";
 const CERT_MAX_AUDIO_UPLOAD_BYTES: &str = "104857600";
 const CERT_MAX_PDF_PAGES: &str = "250";
 const CERT_MAX_IMAGE_PIXELS: &str = "50000000";
+const ACCEPTANCE_ISOLATION_ENV: &str = "CERT_PREP_ACCEPTANCE_ISOLATION";
+const ACCEPTANCE_WORKER_MIRROR_URL_ENV: &str =
+    "CERT_PREP_CAPTURE_RUNTIME_WORKER_MIRROR_URL";
 const CAPTURE_CHILD_ENV_ALLOWLIST: &[&str] = &[
     "SystemRoot",
     "WINDIR",
@@ -287,7 +290,7 @@ impl CaptureLaunchPolicy {
     }
 
     fn environment(&self) -> Vec<(&'static str, String)> {
-        vec![
+        let mut environment = vec![
             ("CAPTURE_HOST", LOOPBACK_HOST.into()),
             ("CAPTURE_PORT", self.port.to_string()),
             ("CAPTURE_API_TOKEN", self.token.clone()),
@@ -310,8 +313,21 @@ impl CaptureLaunchPolicy {
             ),
             ("CAPTURE_MAX_PDF_PAGES", CERT_MAX_PDF_PAGES.into()),
             ("CAPTURE_MAX_IMAGE_PIXELS", CERT_MAX_IMAGE_PIXELS.into()),
-        ]
+        ];
+        if acceptance_worker_mirror_enabled() {
+            if let Ok(url) = std::env::var(ACCEPTANCE_WORKER_MIRROR_URL_ENV) {
+                environment.push(("CAPTURE_SMOKE_WORKER_MIRROR_OPT_IN", "1".into()));
+                environment.push(("CAPTURE_SMOKE_WORKER_MIRROR_URL", url));
+            }
+        }
+        environment
     }
+}
+
+fn acceptance_worker_mirror_enabled() -> bool {
+    std::env::var(ACCEPTANCE_ISOLATION_ENV)
+        .ok()
+        .is_some_and(|value| value.trim() == "1")
 }
 
 fn capture_ready_timeout() -> Duration {

@@ -1,6 +1,7 @@
-import { existsSync, writeFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { existsSync, rmSync, writeFileSync } from 'node:fs';
+import { join, relative, resolve } from 'node:path';
 
+import { removeAcceptanceAppDataDirectory } from '../acceptance-app-data.mts';
 import { parsePackagedFlowSmokeArgs } from './args.mts';
 import { DEFAULT_LLM_MODEL } from '../package-qa/constants.mts';
 import {
@@ -15,11 +16,14 @@ import {
   runFullExamWrongAnswer,
   runRandomQuizCorrectClear,
   uploadAndParsePdf,
+  verifyMarkdownExport,
   verifyStreamingPracticeReady,
 } from './flow-steps.mts';
+import { ensureCaptureRuntimeReady } from './runtime-install-flow.mts';
 import {
   installProcessShutdownCleanup,
   processSnapshot,
+  waitForLoopbackPortClosed,
 } from '../process-lifecycle/processes.mts';
 import { installPythonRuntimeIfNeeded } from './runtime-install-flow.mts';
 import { startResourceSampling } from './resource-sampling.mts';
@@ -29,6 +33,10 @@ import { refreshFirstChunkGateMetrics } from './streaming-capture.mts';
 import { FIRST_CHUNK_GATE_MS } from './streaming-evidence.mts';
 import { errorMessage, normalizePath } from './text-utils.mts';
 import { unavailableGenerationReadinessSnapshot } from './generation-readiness.mts';
+import {
+  assertWebmArtifact,
+  writeAcceptanceManifest,
+} from '../acceptance-artifacts.mts';
 import type { SmokeMetrics, SmokeOptions, SmokeRunState } from './types.mts';
 
 async function runFlow(run: SmokeRunState): Promise<void> {
@@ -53,6 +61,9 @@ async function runFlow(run: SmokeRunState): Promise<void> {
   await launchAppAndConnect(run);
   await installPythonRuntimeIfNeeded(run);
   await createProject(run);
+  if (run.options.acceptanceIsolation) {
+    await ensureCaptureRuntimeReady(run);
+  }
   await uploadAndParsePdf(run);
   if (run.options.waitForStreamingComplete) {
     if (run.options.verifyStreamingPracticeReady) {
@@ -64,8 +75,19 @@ async function runFlow(run: SmokeRunState): Promise<void> {
   }
   await createAndEditQuestion(run);
   await runFullExamWrongAnswer(run);
-  await runRandomQuizCorrectClear(run);
+  if (!run.options.acceptanceVerifyMarkdownExport) {
+    await runRandomQuizCorrectClear(run);
+  } else {
+    // The Capture Workbench review/export must complete before the app is
+    // relaunched; persistence is checked by restartAndVerifyPersistence below.
+    await verifyMarkdownExport(run);
+  }
   await restartAndVerifyPersistence(run);
+  if (run.metrics.restart?.verified !== true) {
+    throw new Error(
+      'Cert Prep review/project persistence was not verified after restart.',
+    );
+  }
   run.metrics.status = 'completed';
   log(run, 'flow completed');
 }
@@ -142,7 +164,9 @@ export async function runPackagedFlowSmoke(
   const initialMetrics: SmokeMetrics = {
     status: 'running',
     started_at: new Date().toISOString(),
-    out_dir: parsedOptions.outDir,
+    out_dir: normalizePath(
+      relative(parsedOptions.workspaceRoot, parsedOptions.outDir),
+    ),
     screenshots: [],
     ui_timings_ms: {},
     observations: [],
@@ -185,6 +209,13 @@ export async function runPackagedFlowSmoke(
     streamingDraftParseStartedAt: null,
     streamingDraftCaptureOpen: false,
     streamingApiPollErrorCaptured: false,
+    acceptanceVideoPaths: [],
+    acceptanceTracePaths: [],
+    acceptanceTraceOwned: false,
+    acceptanceConsoleErrors: [],
+    acceptancePageErrors: [],
+    acceptanceCaptureSequence: 0,
+    acceptanceCaptureActive: false,
   };
   prepareRunDirectories(run);
   const removeShutdownCleanup = installProcessShutdownCleanup({
@@ -202,6 +233,7 @@ export async function runPackagedFlowSmoke(
         finalized: true,
         recordBaselineFailure: true,
       });
+      await finalizeAcceptanceArtifacts(run);
       logFinalMetricsSummary(run);
     },
   });
@@ -237,6 +269,7 @@ export async function runPackagedFlowSmoke(
         finalized: true,
         recordBaselineFailure: true,
       });
+      await finalizeAcceptanceArtifacts(run);
       logFinalMetricsSummary(run);
     } finally {
       removeShutdownCleanup();
@@ -244,4 +277,111 @@ export async function runPackagedFlowSmoke(
   }
 
   return run.metrics;
+}
+
+async function finalizeAcceptanceArtifacts(run: SmokeRunState): Promise<void> {
+  const artifactRoot = run.options.acceptanceArtifactRoot;
+  if (!artifactRoot) return;
+
+  for (const videoPath of run.acceptanceVideoPaths ?? []) {
+    try {
+      await assertWebmArtifact(videoPath);
+    } catch (error) {
+      run.metrics.errors.push(
+        `acceptance video validation failed: ${errorMessage(error)}`,
+      );
+    }
+  }
+
+  const reportPath = join(artifactRoot, 'acceptance-report.html');
+  const reportErrors = run.metrics.errors
+    .map((error) => escapeHtml(error))
+    .join('<br>');
+  writeFileSync(
+    reportPath,
+    `<!doctype html><meta charset="utf-8"><title>Cert Prep acceptance</title><h1>Cert Prep acceptance</h1><p>Status: ${run.metrics.status}</p><p>Errors:</p><pre>${reportErrors || 'none'}</pre>`,
+    'utf8',
+  );
+
+  const workspaceRoot = resolve(run.options.workspaceRoot);
+  const appDataDir = run.options.appDataDir
+    ? resolve(run.options.appDataDir)
+    : undefined;
+  let temporaryAppData = true;
+  if (appDataDir) {
+    if (resolve(appDataDir).startsWith(`${resolve(artifactRoot)}\\`)) {
+      rmSync(appDataDir, { recursive: true, force: true });
+      temporaryAppData = !existsSync(appDataDir);
+    } else {
+      try {
+        removeAcceptanceAppDataDirectory(workspaceRoot, appDataDir);
+        temporaryAppData = !existsSync(appDataDir);
+      } catch {
+        temporaryAppData = false;
+      }
+    }
+  }
+  const artifactInputs = [
+    ...(run.metrics.screenshots ?? []).map((path) => ({
+      path: resolve(workspaceRoot, path),
+      kind: 'screenshot',
+    })),
+    ...(run.acceptanceVideoPaths ?? []).map((path) => ({
+      path,
+      kind: 'video',
+    })),
+    ...(run.acceptanceTracePaths ?? []).map((path) => ({
+      path,
+      kind: 'trace',
+    })),
+    { path: join(run.options.outDir, 'metrics.json'), kind: 'report' },
+    { path: reportPath, kind: 'report' },
+  ].filter((artifact) => existsSync(artifact.path));
+  const finalClose = run.metrics.final_close;
+  const cdpPortClosed =
+    finalClose !== undefined && (await waitForLoopbackPortClosed(run.port));
+  const cleanup = {
+    app:
+      finalClose?.exited_after_normal_close === true &&
+      finalClose.residualProcesses.length === 0,
+    sidecar:
+      finalClose?.residualProcesses.length === 0 &&
+      run.metrics.process_cleanup !== undefined &&
+      run.metrics.process_cleanup.residue_after_close.length === 0,
+    cdpPort: cdpPortClosed,
+    temporaryAppData,
+  };
+  if (!Object.values(cleanup).every(Boolean)) {
+    run.metrics.errors.push('Acceptance cleanup proof was incomplete.');
+  }
+
+  await writeAcceptanceManifest(artifactRoot, {
+    project: 'cert-prep',
+    runId: process.env.E2E_ACCEPTANCE_RUN_ID ?? 'unknown',
+    status:
+      run.metrics.status === 'completed' && run.metrics.errors.length === 0
+        ? 'completed'
+        : 'failed',
+    recordVideo: run.options.acceptanceRecordVideo === true,
+    artifacts: artifactInputs,
+    errors: run.metrics.errors,
+    consoleErrors: run.acceptanceConsoleErrors ?? [],
+    pageErrors: run.acceptancePageErrors ?? [],
+    cleanup,
+    fixture: run.options.acceptanceFixture,
+  });
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(
+    /[&<>"']/gu,
+    (character) =>
+      ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+      })[character] ?? character,
+  );
 }

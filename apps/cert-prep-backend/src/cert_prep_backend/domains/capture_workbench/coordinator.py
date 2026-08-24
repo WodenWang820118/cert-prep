@@ -511,6 +511,22 @@ class CertPrepCaptureCoordinator:
             # attempts, reconcile the durable runtime state once before
             # reporting an unknown application state.
             stream_error = error
+        except CaptureRuntimeProtocolError as error:
+            # capture-runtime-client 0.4.1 decodes each HTTP chunk as a
+            # complete UTF-8 string. A multi-byte character split across
+            # chunks can therefore make an otherwise valid SSE stream look
+            # malformed. The runtime's snapshot endpoint remains the durable
+            # source of truth, so keep this operation alive and poll it until
+            # the requested state is confirmed or the normal deadline wins.
+            if not isinstance(error.__cause__, UnicodeDecodeError):
+                raise
+            return self._poll_after_stream_protocol_error(
+                operation.capture_id,
+                observed_sequence=last_sequence,
+                stop_statuses=stop_statuses,
+                deadline=deadline,
+                should_cancel=should_cancel,
+            )
         current = self._snapshot_after_stream(
             operation.capture_id,
             observed_sequence=last_sequence,
@@ -521,6 +537,37 @@ class CertPrepCaptureCoordinator:
             current.capture_id,
             "Capture Runtime event stream ended before the requested state was confirmed.",
         ) from stream_error
+
+    def _poll_after_stream_protocol_error(
+        self,
+        capture_id: str,
+        *,
+        observed_sequence: int,
+        stop_statuses: set[StreamingCaptureStatus],
+        deadline: float,
+        should_cancel: Callable[[], bool],
+    ) -> CaptureOperation:
+        while True:
+            current = self._snapshot_after_stream(
+                capture_id,
+                observed_sequence=observed_sequence,
+            )
+            if current.status in stop_statuses:
+                return current
+            self._checkpoint(
+                capture_id,
+                deadline=deadline,
+                should_cancel=should_cancel,
+            )
+            remaining = deadline - self._clock()
+            if remaining <= 0:
+                self._checkpoint(
+                    capture_id,
+                    deadline=deadline,
+                    should_cancel=should_cancel,
+                )
+                continue
+            self._sleeper(min(self._reconciliation_interval_seconds, remaining))
 
     def _snapshot_after_stream(
         self,

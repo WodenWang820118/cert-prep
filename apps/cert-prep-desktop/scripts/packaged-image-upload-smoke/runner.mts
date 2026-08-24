@@ -1,6 +1,14 @@
-import { existsSync, writeFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { createHash } from 'node:crypto';
+import {
+  existsSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 
+import { removeAcceptanceAppDataDirectory } from '../acceptance-app-data.mts';
 import { DEFAULT_LLM_MODEL } from '../package-qa/constants.mts';
 import {
   cleanupAfterRunWithTimeout,
@@ -17,7 +25,10 @@ import {
   screenshot,
   waitText,
 } from '../packaged-flow-smoke/runner-context.mts';
-import { installPythonRuntimeIfNeeded } from '../packaged-flow-smoke/runtime-install-flow.mts';
+import {
+  ensureCaptureRuntimeReady,
+  installPythonRuntimeIfNeeded,
+} from '../packaged-flow-smoke/runtime-install-flow.mts';
 import { waitForUploadDocumentResponse } from '../packaged-flow-smoke/streaming-capture-api.mts';
 import { errorMessage, isRecord } from '../packaged-flow-smoke/text-utils.mts';
 import type {
@@ -29,28 +40,87 @@ import type {
 import {
   installProcessShutdownCleanup,
   processSnapshot,
+  waitForLoopbackPortClosed,
 } from '../process-lifecycle/processes.mts';
 import type { PackagedImageUploadSmokeOptions } from './args.mts';
 import {
   PACKAGED_STATIC_IMAGE_FILENAME,
   PACKAGED_STATIC_IMAGE_HEIGHT,
-  PACKAGED_STATIC_IMAGE_SHA256,
   PACKAGED_STATIC_IMAGE_WIDTH,
   packagedStaticImage,
   type PackagedImageDocumentEvidence,
+  waitForExpectedOcrImageDocument,
   waitForExpectedTerminalImageDocument,
 } from './image-contract.mts';
 
 export interface PackagedImageUploadSmokeEvidence {
   readonly status: 'completed';
+  readonly cleanupVerified: true;
+  readonly cleanup: {
+    readonly app: true;
+    readonly sidecar: true;
+    readonly cdpPort: true;
+    readonly temporaryAppData: true;
+  };
   readonly fixture: {
     readonly filename: string;
     readonly sha256: string;
-    readonly width: number;
-    readonly height: number;
+    readonly width?: number;
+    readonly height?: number;
+    readonly expectedTextIncludes?: readonly string[];
   };
   readonly document: PackagedImageDocumentEvidence;
+  readonly textAnchorsMatched?: readonly string[];
+  readonly textAnchorsMissing?: readonly string[];
   readonly screenshots: readonly string[];
+}
+
+export interface PackagedImageCleanupEvidence {
+  readonly app: boolean;
+  readonly sidecar: boolean;
+  readonly cdpPort: boolean;
+  readonly temporaryAppData: boolean;
+}
+
+export class PackagedImageUploadSmokeError extends Error {
+  readonly cleanup: PackagedImageCleanupEvidence;
+  readonly cleanupVerified: boolean;
+
+  constructor(
+    message: string,
+    cleanup: PackagedImageCleanupEvidence,
+    cleanupVerified: boolean,
+    cause: unknown,
+  ) {
+    super(message, { cause });
+    this.name = 'PackagedImageUploadSmokeError';
+    this.cleanup = cleanup;
+    this.cleanupVerified = cleanupVerified;
+  }
+}
+
+export function packagedImageFailureEvidence(input: {
+  readonly error: unknown;
+  readonly screenshots: readonly string[];
+  readonly observations: readonly string[];
+  readonly errors: readonly string[];
+  readonly cleanup: PackagedImageCleanupEvidence;
+  readonly cleanupVerified: boolean;
+}): Record<string, unknown> {
+  return {
+    status: 'failed',
+    error: errorMessage(input.error),
+    screenshots: input.screenshots,
+    observations: input.observations,
+    errors: input.errors,
+    cleanup: input.cleanup,
+    cleanupVerified: input.cleanupVerified,
+  };
+}
+
+interface ImageTextAnchorEvidence {
+  readonly matched: readonly string[];
+  readonly missing: readonly string[];
 }
 
 export async function runPackagedImageUploadSmoke(
@@ -59,10 +129,21 @@ export async function runPackagedImageUploadSmoke(
   if (!existsSync(options.exePath)) {
     throw new Error(`Missing packaged exe: ${options.exePath}`);
   }
-  const run = createRunState(options);
+  const imagePath = options.imagePath
+    ? options.imagePath
+    : join(options.outDir, PACKAGED_STATIC_IMAGE_FILENAME);
+  if (options.imagePath) {
+    if (!existsSync(imagePath) || statSync(imagePath).size === 0) {
+      throw new Error(`Missing or empty image fixture: ${imagePath}`);
+    }
+  } else {
+    writeFileSync(imagePath, packagedStaticImage());
+  }
+  const imageBytes = readFileSync(imagePath);
+  const fixtureName = basename(imagePath);
+  const fixtureSha256 = createHash('sha256').update(imageBytes).digest('hex');
+  const run = createRunState(options, imagePath);
   prepareRunDirectories(run);
-  const imagePath = join(options.outDir, PACKAGED_STATIC_IMAGE_FILENAME);
-  writeFileSync(imagePath, packagedStaticImage());
   run.processBaseline = processSnapshot();
 
   const removeShutdownCleanup = installProcessShutdownCleanup({
@@ -76,14 +157,28 @@ export async function runPackagedImageUploadSmoke(
   });
 
   let document: PackagedImageDocumentEvidence | null = null;
+  let textAnchorEvidence: ImageTextAnchorEvidence | undefined;
   let primaryError: unknown = null;
   let cleanupError: unknown = null;
+  let launchAttempted = false;
   try {
     log(run, `artifact dir ${options.outDir}`);
+    launchAttempted = true;
     await launchAppAndConnect(run);
     await installPythonRuntimeIfNeeded(run);
     await createProject(run);
-    document = await uploadAndVerifyStaticImage(run, imagePath, options.timeoutMs);
+    if (options.acceptanceIsolation) {
+      await ensureCaptureRuntimeReady(run);
+    }
+    const imageResult = await uploadAndVerifyImage(
+      run,
+      imagePath,
+      options.timeoutMs,
+      options.expectedTextIncludes,
+      options.languageHint ?? 'auto',
+    );
+    document = imageResult.document;
+    textAnchorEvidence = imageResult.textAnchors;
     run.metrics.status = 'completed';
   } catch (error) {
     primaryError = error;
@@ -95,6 +190,7 @@ export async function runPackagedImageUploadSmoke(
   } finally {
     try {
       await cleanupAfterRunWithTimeout(run);
+      removeTemporaryAppData(options);
     } catch (error) {
       cleanupError = error;
       run.metrics.errors.push(`cleanup failed: ${errorMessage(error)}`);
@@ -103,40 +199,85 @@ export async function runPackagedImageUploadSmoke(
     }
   }
 
-  if (primaryError !== null && cleanupError !== null) {
-    writeFailureEvidence(run, primaryError);
-    throw new AggregateError(
-      [primaryError, cleanupError],
-      'Packaged image upload and cleanup both failed.',
+  const observedCleanup = await collectCleanupEvidence(
+    run,
+    options,
+    launchAttempted,
+  );
+  const cleanupVerified =
+    run.app === null &&
+    run.browser === null &&
+    Object.values(observedCleanup).every(Boolean);
+  if (!cleanupVerified && cleanupError === null) {
+    cleanupError = new Error(
+      'Packaged image upload cleanup did not finish without residue.',
     );
   }
-  if (primaryError !== null) {
-    writeFailureEvidence(run, primaryError);
-    throw primaryError;
+  if (!document && primaryError === null) {
+    primaryError = new Error(
+      'Packaged image upload did not produce document evidence.',
+    );
   }
-  if (cleanupError !== null) {
-    writeFailureEvidence(run, cleanupError);
-    throw cleanupError;
+  if (primaryError !== null || cleanupError !== null) {
+    const cause =
+      primaryError !== null && cleanupError !== null
+        ? new AggregateError(
+            [primaryError, cleanupError],
+            'Packaged image upload and cleanup both failed.',
+          )
+        : (primaryError ?? cleanupError);
+    const message =
+      primaryError !== null && cleanupError !== null
+        ? 'Packaged image upload and cleanup both failed.'
+        : errorMessage(cause);
+    writeFailureEvidence(
+      run,
+      cause,
+      observedCleanup,
+      cleanupVerified,
+    );
+    throw new PackagedImageUploadSmokeError(
+      message,
+      observedCleanup,
+      cleanupVerified,
+      cause,
+    );
   }
-  if (!document) {
-    throw new Error('Packaged image upload did not produce document evidence.');
-  }
-  try {
-    assertCleanupCompleted(run);
-  } catch (error) {
-    writeFailureEvidence(run, error);
-    throw error;
+
+  const cleanup: PackagedImageUploadSmokeEvidence['cleanup'] = {
+    app: true,
+    sidecar: true,
+    cdpPort: true,
+    temporaryAppData: true,
+  };
+  if (document === null) {
+    throw new Error('Packaged image upload document evidence was unexpectedly absent.');
   }
 
   const evidence: PackagedImageUploadSmokeEvidence = {
     status: 'completed',
+    cleanupVerified: true,
+    cleanup,
     fixture: {
-      filename: PACKAGED_STATIC_IMAGE_FILENAME,
-      sha256: PACKAGED_STATIC_IMAGE_SHA256,
-      width: PACKAGED_STATIC_IMAGE_WIDTH,
-      height: PACKAGED_STATIC_IMAGE_HEIGHT,
+      filename: fixtureName,
+      sha256: fixtureSha256,
+      ...(fixtureName === PACKAGED_STATIC_IMAGE_FILENAME
+        ? {
+            width: PACKAGED_STATIC_IMAGE_WIDTH,
+            height: PACKAGED_STATIC_IMAGE_HEIGHT,
+          }
+        : {}),
+      ...(options.expectedTextIncludes
+        ? { expectedTextIncludes: options.expectedTextIncludes }
+        : {}),
     },
     document,
+    ...(textAnchorEvidence
+      ? {
+          textAnchorsMatched: textAnchorEvidence.matched,
+          textAnchorsMissing: textAnchorEvidence.missing,
+        }
+      : {}),
     screenshots: run.metrics.screenshots,
   };
   writeFileSync(
@@ -146,20 +287,30 @@ export async function runPackagedImageUploadSmoke(
   return evidence;
 }
 
-async function uploadAndVerifyStaticImage(
+async function uploadAndVerifyImage(
   run: SmokeRunState,
   imagePath: string,
   timeoutMs: number,
-): Promise<PackagedImageDocumentEvidence> {
+  expectedTextIncludes: readonly string[] | undefined,
+  languageHint: string,
+): Promise<{
+  readonly document: PackagedImageDocumentEvidence;
+  readonly textAnchors?: ImageTextAnchorEvidence;
+}> {
   const page = activePage(run);
   const input = page.getByLabel('Source files', { exact: true });
   await input.waitFor({ state: 'attached', timeout: 30_000 });
+  await page
+    .locator('label')
+    .filter({ hasText: 'Language' })
+    .locator('select')
+    .selectOption(languageHint);
   await input.setInputFiles(imagePath);
   await waitText(
     run,
-    new RegExp(escapeRegExp(PACKAGED_STATIC_IMAGE_FILENAME)),
+    new RegExp(escapeRegExp(basename(imagePath))),
     10_000,
-    'deterministic PNG selected',
+    'image selected',
   );
   await screenshot(run, 'static-image-selected');
 
@@ -171,10 +322,20 @@ async function uploadAndVerifyStaticImage(
   }
   run.uploadedDocument = uploadedDocument;
 
-  const document = await waitForExpectedTerminalImageDocument(
-    () => readDocument(run, uploadedDocument),
-    { timeoutMs },
-  );
+  const readUploadedDocument = () => readDocument(run, uploadedDocument);
+  const document = expectedTextIncludes?.length
+    ? await waitForExpectedOcrImageDocumentWithOneRetry(
+        run,
+        readUploadedDocument,
+        {
+          timeoutMs,
+          expectation: { filename: basename(imagePath), sha256: sha256File(imagePath) },
+        },
+      )
+    : await waitForExpectedTerminalImageDocument(
+        readUploadedDocument,
+        { timeoutMs },
+      );
   if (
     document.id !== uploadedDocument.documentId ||
     document.project_id !== uploadedDocument.projectId
@@ -183,18 +344,67 @@ async function uploadAndVerifyStaticImage(
       'Packaged image terminal evidence did not match the captured upload document.',
     );
   }
-  await waitText(
-    run,
-    /Parsing finished, but no text was detected\./i,
-    30_000,
-    'one-page image terminal state visible',
-  );
-  await screenshot(run, 'static-image-terminal');
+  let textAnchors: ImageTextAnchorEvidence | undefined;
+  if (expectedTextIncludes?.length) {
+    const chunks = await readDocumentChunks(run, uploadedDocument);
+    textAnchors = inspectExpectedTextAnchors(chunks, expectedTextIncludes);
+    await waitText(run, /ready/i, 30_000, 'one-page image OCR terminal state visible');
+    await screenshot(run, 'ocr-image-terminal');
+  } else {
+    await waitText(
+      run,
+      /Parsing finished, but no text was detected\./i,
+      30_000,
+      'one-page image terminal state visible',
+    );
+    await screenshot(run, 'static-image-terminal');
+  }
   log(
     run,
-    `static PNG completed status=${document.status} pages=${document.processed_page_count}/${document.page_count} chunks=${document.chunks_count}`,
+    `image completed status=${document.status} pages=${document.processed_page_count}/${document.page_count} chunks=${document.chunks_count}`,
   );
-  return document;
+  return { document, textAnchors };
+}
+
+async function waitForExpectedOcrImageDocumentWithOneRetry(
+  run: SmokeRunState,
+  readDocument: () => Promise<unknown>,
+  options: {
+    readonly timeoutMs: number;
+    readonly expectation: { readonly filename: string; readonly sha256: string };
+  },
+): Promise<PackagedImageDocumentEvidence> {
+  try {
+    return await waitForExpectedOcrImageDocument(readDocument, options);
+  } catch (error) {
+    if (!(error instanceof Error) || !/ended as ocr_failed\./u.test(error.message)) {
+      throw error;
+    }
+
+    const retry = activePage(run)
+      .getByRole('button', { name: /Retry parsing/i })
+      .first();
+    await retry.waitFor({ state: 'visible', timeout: 10_000 });
+    run.metrics.observations.push(
+      'JPEG OCR reached ocr_failed during the packaged image journey; retrying the product retry-parsing action once.',
+    );
+    await retry.click({ timeout: 30_000 });
+    await waitForImageDocumentToLeaveFailure(readDocument, 30_000);
+    return await waitForExpectedOcrImageDocument(readDocument, options);
+  }
+}
+
+async function waitForImageDocumentToLeaveFailure(
+  readDocument: () => Promise<unknown>,
+  timeoutMs: number,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const latest = await readDocument();
+    if (isRecord(latest) && latest.status !== 'ocr_failed') return;
+    await new Promise<void>((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error('JPEG OCR retry did not leave the initial ocr_failed state.');
 }
 
 async function readDocument(
@@ -224,16 +434,19 @@ async function readDocument(
 
 function createRunState(
   options: PackagedImageUploadSmokeOptions,
+  imagePath: string,
 ): SmokeRunState {
   const smokeOptions: SmokeOptions = {
     workspaceRoot: options.workspaceRoot,
     exePath: options.exePath,
-    pdfPath: join(options.outDir, PACKAGED_STATIC_IMAGE_FILENAME),
+    pdfPath: imagePath,
     outDir: options.outDir,
     appDataDir: options.appDataDir,
     cdpPort: options.cdpPort,
-    llmProvider: 'auto',
+    llmProvider: options.llmProvider ?? 'auto',
     acceptanceIsolation: true,
+    captureRuntimeWorkerMirrorUrl: options.captureRuntimeWorkerMirrorUrl,
+    acceptanceArtifactRoot: options.acceptanceArtifactRoot,
     candidateDistributionProfile: 'local_nonpublishable',
     waitForStreamingComplete: false,
     streamingCompleteTimeoutMs: options.timeoutMs,
@@ -285,36 +498,124 @@ function createRunState(
   };
 }
 
-function assertCleanupCompleted(run: SmokeRunState): void {
-  const finalClose = run.metrics.final_close;
-  const processCleanup = run.metrics.process_cleanup;
-  if (
-    run.metrics.errors.length > 0 ||
-    run.app !== null ||
-    run.browser !== null ||
-    !finalClose ||
-    finalClose.residue.length !== 0 ||
-    finalClose.residualProcesses.length !== 0 ||
-    !processCleanup ||
-    processCleanup.residue_after_close.length !== 0
-  ) {
+function sha256File(path: string): string {
+  return createHash('sha256').update(readFileSync(path)).digest('hex');
+}
+
+async function readDocumentChunks(
+  run: SmokeRunState,
+  uploadedDocument: UploadedDocumentRef,
+): Promise<readonly Record<string, unknown>[]> {
+  const response = await activePage(run).request.get(
+    `${uploadedDocument.apiBaseUrl}/projects/${encodeURIComponent(uploadedDocument.projectId)}/documents/${encodeURIComponent(uploadedDocument.documentId)}/chunks`,
+    {
+      headers: uploadedDocument.authorization
+        ? { Authorization: uploadedDocument.authorization }
+        : undefined,
+      timeout: 10_000,
+    },
+  );
+  if (!response.ok()) {
+    throw new Error(`Packaged image chunks request returned HTTP ${response.status()}.`);
+  }
+  const payload: unknown = await response.json().catch(() => null);
+  if (!isRecord(payload) || !Array.isArray(payload.items)) {
+    throw new Error('Packaged image chunks response was not a valid item list.');
+  }
+  return payload.items.filter(
+    (item): item is Record<string, unknown> => isRecord(item),
+  );
+}
+
+function inspectExpectedTextAnchors(
+  chunks: readonly Record<string, unknown>[],
+  expectedTextIncludes: readonly string[],
+): ImageTextAnchorEvidence {
+  const text = chunks
+    .map((chunk) => chunk.raw_text)
+    .filter((value): value is string => typeof value === 'string')
+    .join('\n');
+  if (!text.trim()) {
+    throw new Error('OCR result did not expose non-empty raw_text chunks.');
+  }
+  const normalizedText = normalizeOcrText(text);
+  const matched: string[] = [];
+  const missing: string[] = [];
+  for (const anchor of expectedTextIncludes) {
+    const normalizedAnchor = normalizeOcrText(anchor);
+    if (normalizedAnchor && normalizedText.includes(normalizedAnchor)) matched.push(anchor);
+    else missing.push(anchor);
+  }
+  return { matched, missing };
+}
+
+function removeTemporaryAppData(options: PackagedImageUploadSmokeOptions): void {
+  const outDir = resolve(options.outDir);
+  const appDataDir = resolve(options.appDataDir);
+  const relativeAppData = relative(outDir, appDataDir);
+  if (relativeAppData && !relativeAppData.startsWith('..') && !isAbsolute(relativeAppData)) {
+    rmSync(appDataDir, { recursive: true, force: true });
+  } else {
+    removeAcceptanceAppDataDirectory(options.workspaceRoot, appDataDir);
+  }
+  if (existsSync(appDataDir)) {
     throw new Error(
-      `Packaged image upload cleanup did not finish without residue: ${run.metrics.errors.join(' | ')}`,
+      `Packaged image cleanup could not remove temporary app-data: ${appDataDir}.`,
     );
   }
 }
 
-function writeFailureEvidence(run: SmokeRunState, error: unknown): void {
+function normalizeOcrText(value: string): string {
+  return value
+    .normalize('NFKC')
+    .toLocaleLowerCase('en-US')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+    .replace(/\s+/gu, ' ');
+}
+
+async function collectCleanupEvidence(
+  run: SmokeRunState,
+  options: PackagedImageUploadSmokeOptions,
+  launchAttempted: boolean,
+): Promise<PackagedImageCleanupEvidence> {
+  const finalClose = run.metrics.final_close;
+  const processCleanup = run.metrics.process_cleanup;
+  return {
+    app:
+      run.app === null &&
+      run.browser === null &&
+      (!launchAttempted ||
+        (finalClose !== undefined &&
+          finalClose.exited_after_normal_close === true &&
+          finalClose.residue.length === 0 &&
+          finalClose.residualProcesses.length === 0)),
+    sidecar:
+      !launchAttempted ||
+      (processCleanup !== undefined &&
+        processCleanup.residue_after_close.length === 0),
+    cdpPort: await waitForLoopbackPortClosed(options.cdpPort),
+    temporaryAppData: !existsSync(options.appDataDir),
+  };
+}
+
+function writeFailureEvidence(
+  run: SmokeRunState,
+  error: unknown,
+  cleanup: PackagedImageCleanupEvidence,
+  cleanupVerified: boolean,
+): void {
   writeFileSync(
     join(run.options.outDir, 'image-upload-evidence.json'),
     `${JSON.stringify(
-      {
-        status: 'failed',
-        error: errorMessage(error),
+      packagedImageFailureEvidence({
+        error,
         screenshots: run.metrics.screenshots,
         observations: run.metrics.observations,
-        cleanup_errors: run.metrics.errors,
-      },
+        errors: run.metrics.errors,
+        cleanup,
+        cleanupVerified,
+      }),
       null,
       2,
     )}\n`,

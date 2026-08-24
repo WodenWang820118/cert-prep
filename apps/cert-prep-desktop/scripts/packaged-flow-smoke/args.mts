@@ -22,6 +22,7 @@ const defaultWorkspaceRoot = resolve(scriptDir, '../../../..');
 export function parsePackagedFlowSmokeArgs(
   args: readonly string[],
   workspaceRoot = defaultWorkspaceRoot,
+  environment: Readonly<NodeJS.ProcessEnv> = process.env,
 ): SmokeOptions {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   let outDirExplicit = false;
@@ -38,20 +39,20 @@ export function parsePackagedFlowSmokeArgs(
     outDir: resolve(workspaceRoot, DEFAULT_OUT_ROOT, timestamp),
     cdpPort: DEFAULT_CDP_PORT,
     llmProvider:
-      process.env.CERT_PREP_PACKAGE_SMOKE_LLM_PROVIDER?.trim() ||
+      environment.CERT_PREP_PACKAGE_SMOKE_LLM_PROVIDER?.trim() ||
       DEFAULT_LLM_PROVIDER,
     streamingDraftPageLimit: optionalPositiveInteger(
-      process.env.CERT_PREP_PACKAGE_SMOKE_STREAMING_DRAFT_PAGE_LIMIT,
+      environment.CERT_PREP_PACKAGE_SMOKE_STREAMING_DRAFT_PAGE_LIMIT,
       'CERT_PREP_PACKAGE_SMOKE_STREAMING_DRAFT_PAGE_LIMIT',
     ),
     streamingDraftWorkers: optionalPositiveInteger(
-      process.env.CERT_PREP_PACKAGE_SMOKE_STREAMING_DRAFT_WORKERS,
+      environment.CERT_PREP_PACKAGE_SMOKE_STREAMING_DRAFT_WORKERS,
       'CERT_PREP_PACKAGE_SMOKE_STREAMING_DRAFT_WORKERS',
     ),
     waitForStreamingComplete: false,
     streamingCompleteTimeoutMs:
       optionalPositiveInteger(
-        process.env.CERT_PREP_PACKAGE_SMOKE_STREAMING_COMPLETE_TIMEOUT_MS,
+        environment.CERT_PREP_PACKAGE_SMOKE_STREAMING_COMPLETE_TIMEOUT_MS,
         'CERT_PREP_PACKAGE_SMOKE_STREAMING_COMPLETE_TIMEOUT_MS',
       ) ?? DEFAULT_STREAMING_COMPLETE_TIMEOUT_MS,
     skipGpuSampling: false,

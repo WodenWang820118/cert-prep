@@ -1,6 +1,17 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { pythonRuntimeReadyPattern } from './runtime-install-flow.mts';
+import {
+  captureRuntimeInstallationCompleted,
+  pythonRuntimeReadyPattern,
+  pythonRuntimeStartupState,
+} from './runtime-install-flow.mts';
+
+test('Capture Runtime installation accepts its completed terminal status', () => {
+  assert.equal(captureRuntimeInstallationCompleted('completed'), true);
+  assert.equal(captureRuntimeInstallationCompleted('succeeded'), true);
+  assert.equal(captureRuntimeInstallationCompleted('running'), false);
+  assert.equal(captureRuntimeInstallationCompleted(null), false);
+});
 
 test('python runtime readiness requires a backend-ready detail', () => {
   for (const text of [
@@ -30,5 +41,21 @@ test('python runtime readiness requires a backend-ready detail', () => {
       'Python backend\r\n  Python backend runtime is ready.  \r\nOllama',
     ),
     true,
+  );
+});
+
+test('python runtime startup state waits through the initial shell race', () => {
+  assert.equal(pythonRuntimeStartupState('Cert Prep\nProjects'), 'pending');
+  assert.equal(
+    pythonRuntimeStartupState(
+      'Python backend runtime is not installed.\nInstall runtime',
+    ),
+    'installable',
+  );
+  assert.equal(
+    pythonRuntimeStartupState(
+      'Python backend runtime is ready.\nInstall runtime',
+    ),
+    'ready',
   );
 });

@@ -627,7 +627,8 @@ function acceptanceIsolationPassed(
     snapshot?.out_dir_created_by_runner === true &&
     snapshot.app_data_dir_created_by_runner === true &&
     snapshot.app_data_dir_empty_at_launch === true &&
-    snapshot.paths_within_workspace_run_root === true &&
+    (snapshot.paths_within_workspace_run_root === true ||
+      snapshot.app_data_dir_within_controlled_root === true) &&
     snapshot.reparse_points_absent === true
   );
 }

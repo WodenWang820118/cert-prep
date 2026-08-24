@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -114,6 +120,11 @@ test('resource summary finalizer preserves closeout evidence and target process 
 `,
       'utf8',
     );
+    writeFileSync(
+      join(dir, 'windows-resource-sampling.ps1'),
+      '# temporary sampler helper',
+      'utf8',
+    );
     finalizeResourceSamplingArtifacts({
       outDir: dir,
       artifacts: {
@@ -141,6 +152,7 @@ test('resource summary finalizer preserves closeout evidence and target process 
     ) as {
       sampler_stop: { forced_count: number };
       artifacts: Record<string, string>;
+      raw_sampling_artifacts_removed_after_finalize: boolean;
       gpu_luid_map_status: string;
       dxgi_adapters: unknown[];
       named_target_process_gpu_usage: Array<{
@@ -161,6 +173,7 @@ test('resource summary finalizer preserves closeout evidence and target process 
       windows_counters_csv: 'windows-resource-sampling.csv',
       windows_summary_json: 'windows-resource-summary.json',
     });
+    assert.equal(summary.raw_sampling_artifacts_removed_after_finalize, true);
     assert.equal(summary.gpu_luid_map_status, 'complete');
     assert.equal(summary.dxgi_adapters.length, 1);
     assert.equal(summary.named_target_process_gpu_usage.length, 1);
@@ -179,6 +192,8 @@ test('resource summary finalizer preserves closeout evidence and target process 
     assert.equal(summary.gpu_routing_checks.capture_runtime_process_observed, true);
     assert.equal(summary.gpu_routing_checks.capture_runtime_uses_amd_igpu, true);
     assert.equal(summary.gpu_routing_checks.gpu_luid_map_usable, true);
+    assert.equal(existsSync(join(dir, 'windows-resource-sampling.csv')), false);
+    assert.equal(existsSync(join(dir, 'windows-resource-sampling.ps1')), false);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

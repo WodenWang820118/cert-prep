@@ -40,10 +40,17 @@ import {
   connectOverCdpEarly,
   log,
   screenshot,
+  startAcceptanceCapture,
+  stopAcceptanceCapture,
   waitText,
 } from './runner-context.mts';
 import { observeStreamingApiResponses } from './streaming-capture.mts';
 import { errorMessage, isRecord } from './text-utils.mts';
+import { ensureCaptureRuntimeReady } from './runtime-install-flow.mts';
+import {
+  acceptanceAppDataRoot,
+  assertAcceptanceAppDataDirectory,
+} from '../acceptance-app-data.mts';
 import type {
   ProcessRecord,
   PublicProcessRecord,
@@ -167,6 +174,18 @@ export async function closeAppAndCheckResidue(
     };
   }
 
+  let ownedBeforeClose: ProcessRecord[] = [];
+  let ownedBeforeCloseError: unknown = null;
+  try {
+    ownedBeforeClose = collectLiveProcessTree(snapshotWindowsProcesses(), pid);
+  } catch (error) {
+    ownedBeforeCloseError = error;
+    run.metrics.observations.push(
+      `${label} pre-close process snapshot failed: ${errorMessage(error)}`,
+    );
+  }
+
+  await stopAcceptanceCapture(run);
   const normalCloseRequested = requestWindowsCloseByPid(pid);
   const exitedAfterNormalClose = await waitForChildExit(currentApp, 8_000);
   const exitCode = run.appExit?.code ?? currentApp.exitCode ?? null;
@@ -187,17 +206,21 @@ export async function closeAppAndCheckResidue(
   run.app = null;
   run.appExit = null;
 
-  let residue = selectCertPrepResidue(snapshotWindowsProcesses(), pid);
-  if (residue.length > 0) {
+  let afterClose = snapshotWindowsProcesses();
+  let residue = selectCertPrepResidue(afterClose, pid);
+  let capturedOwnedResidue = selectCapturedProcessResidue(ownedBeforeClose, afterClose);
+  if (residue.length > 0 || capturedOwnedResidue.length > 0) {
     forced = true;
-    for (const record of residue) {
+    for (const record of uniqueProcessRecords([...capturedOwnedResidue, ...residue])) {
       terminateProcessTreeByPid(record.pid);
     }
     await delay(1_000);
-    residue = selectCertPrepResidue(snapshotWindowsProcesses(), pid);
+    afterClose = snapshotWindowsProcesses();
+    residue = selectCertPrepResidue(afterClose, pid);
+    capturedOwnedResidue = selectCapturedProcessResidue(ownedBeforeClose, afterClose);
   }
 
-  const publicResidue = residue.map(publicProcessRecord);
+  const publicResidue = uniqueProcessRecords([...capturedOwnedResidue, ...residue]).map(publicProcessRecord);
   const summary: CloseSummary = {
     label,
     app_pid: pid,
@@ -219,6 +242,11 @@ export async function closeAppAndCheckResidue(
       `${label} left process residue: ${summary.residue
         .map((record) => `${record.name}#${record.pid}`)
         .join(', ')}`,
+    );
+  }
+  if (ownedBeforeCloseError !== null) {
+    throw new Error(
+      `${label} could not capture the owned process tree before close: ${errorMessage(ownedBeforeCloseError)}`,
     );
   }
   return summary;
@@ -258,30 +286,103 @@ export async function restartAndVerifyPersistence(
     90_000,
     'restart workspace loaded',
   );
-  if (
-    !/Source files|Mock Exam Items|Parallel Parsing QA/.test(await bodyText(run))
-  ) {
-    const projectButton = activePage(run)
-      .locator('button.project-select-button')
-      .first();
-    if (await projectButton.count()) {
-      run.metrics.observations.push(
-        'Project was not auto-selected after restart; selected it manually for persistence verification.',
-      );
-      await projectButton.click();
-      await waitText(
-        run,
-        /Source files|Mock Exam Items|Parsing complete/i,
-        30_000,
-        'project selected after restart',
-      );
-    }
+  const persistedProject = activePage(run)
+    .locator('button.project-list-item')
+    .filter({ hasText: /Parallel Parsing QA/i })
+    .first();
+  await persistedProject.waitFor({ state: 'visible', timeout: 90_000 });
+  let projectPersisted = /Source files|Mock Exam Items|Parsing complete/i.test(
+    await bodyText(run),
+  );
+  if (!projectPersisted) {
+    run.metrics.observations.push(
+      'Project was not auto-selected after restart; selected it manually for persistence verification.',
+    );
+    await persistedProject.click();
+    const buildLink = activePage(run).getByRole('link', {
+      name: 'Build',
+      exact: true,
+    });
+    await buildLink.waitFor({ state: 'visible', timeout: 30_000 });
+    await buildLink.click({ timeout: 30_000 });
+    await waitText(
+      run,
+      /Source files|Mock Exam Items|Parsing complete/i,
+      90_000,
+      'project selected after restart',
+    );
+    projectPersisted = true;
   }
   await screenshot(run, 'restart-persistence-build-state');
-  run.metrics.restart.verified =
-    /Parsing complete|Playable|Mock Exam Items|Source files/i.test(
-      await bodyText(run),
+  let reviewPersisted = true;
+  if (run.options.acceptanceVerifyMarkdownExport) {
+    const reviewLink = activePage(run).getByRole('link', {
+      name: 'Review',
+      exact: true,
+    });
+    await reviewLink.waitFor({ state: 'visible', timeout: 30_000 });
+    await reviewLink.click({ timeout: 30_000 });
+    await waitText(
+      run,
+      /Wrong Answers|1 recorded|Selected:/i,
+      30_000,
+      'persisted wrong-answer review',
     );
+    await screenshot(run, 'restart-persistence-review');
+    reviewPersisted = /Wrong Answers|1 recorded|Selected:/i.test(await bodyText(run));
+    await ensureCaptureRuntimeReady(run);
+    const captureWorkbenchLink = activePage(run).getByRole('link', {
+      name: 'Capture Workbench',
+      exact: true,
+    });
+    await captureWorkbenchLink.waitFor({ state: 'visible', timeout: 30_000 });
+    await captureWorkbenchLink.click({ timeout: 30_000 });
+    await waitText(
+      run,
+      /Element registered|Capture Workbench is ready/i,
+      30_000,
+      'persisted Capture Workbench runtime',
+    );
+    await waitForPersistedCaptureDocument(run);
+    run.metrics.observations.push(
+      'Restart persistence verified through the durable Capture Workbench document and chunks API.',
+    );
+    await screenshot(run, 'restart-persistence-capture');
+  }
+  run.metrics.restart.verified = projectPersisted && reviewPersisted;
+}
+
+async function waitForPersistedCaptureDocument(run: SmokeRunState): Promise<void> {
+  const projectApi = run.projectApi;
+  const document = run.uploadedDocument;
+  if (!projectApi || !document) {
+    throw new Error(
+      'Capture Workbench persistence verification requires the original project and document API references.',
+    );
+  }
+
+  const endpoint = `${projectApi.apiBaseUrl}/projects/${encodeURIComponent(projectApi.projectId)}/documents/${encodeURIComponent(document.documentId)}`;
+  const deadline = Date.now() + 30_000;
+  let lastDetail = 'document persistence response was not ready';
+  while (Date.now() < deadline) {
+    const response = await fetch(endpoint, {
+      headers: { Authorization: projectApi.authorization },
+    });
+    if (response.ok) {
+      const payload: unknown = await response.json();
+      if (isRecord(payload)) {
+        const status = typeof payload.status === 'string' ? payload.status : null;
+        const hasText = payload.has_text === true;
+        const chunks = typeof payload.chunks_count === 'number' ? payload.chunks_count : 0;
+        if (status === 'ready' && hasText && chunks > 0) return;
+        lastDetail = `status=${status ?? 'unknown'}, has_text=${String(hasText)}, chunks=${chunks}`;
+      }
+    } else {
+      lastDetail = `HTTP ${response.status}`;
+    }
+    await delay(500);
+  }
+  throw new Error(`Timed out waiting for persisted Capture Workbench document: ${lastDetail}`);
 }
 
 export async function forceCrashAndReconnect(
@@ -495,7 +596,7 @@ export async function launchAppAndConnect(run: SmokeRunState): Promise<void> {
     context.pages()[0] ??
     (await context.waitForEvent('page', { timeout: 30_000 }));
   observeStreamingApiResponses(run, run.page);
-  await run.page.setViewportSize({ width: 1440, height: 1000 });
+  await run.page.setViewportSize({ width: 1440, height: 900 });
   await run.page
     .waitForLoadState('domcontentloaded', { timeout: 30_000 })
     .catch((error) => {
@@ -503,6 +604,7 @@ export async function launchAppAndConnect(run: SmokeRunState): Promise<void> {
         `domcontentloaded wait skipped: ${errorMessage(error)}`,
       );
     });
+  await startAcceptanceCapture(run);
   await waitText(
     run,
     /Cert Prep|Local workspace|Install the Python backend runtime|Projects/,
@@ -537,6 +639,13 @@ export function buildAppLaunchEnvironment(
       ? {
           NO_PROXY: ACCEPTANCE_LOOPBACK_NO_PROXY,
           WEBVIEW2_USER_DATA_FOLDER: join(appDataDir, 'webview2'),
+          CERT_PREP_ACCEPTANCE_ISOLATION: '1',
+          ...(run.options.captureRuntimeWorkerMirrorUrl
+            ? {
+                CERT_PREP_CAPTURE_RUNTIME_WORKER_MIRROR_URL:
+                  run.options.captureRuntimeWorkerMirrorUrl,
+              }
+            : {}),
         }
       : {}),
     WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${run.port}`,
@@ -655,24 +764,73 @@ export function prepareRunDirectories(
   }
 
   const workspaceRoot = resolve(run.options.workspaceRoot);
-  const runRoot = resolve(workspaceRoot, 'tmp', 'cert-prep-desktop');
+  const runRoot = resolve(
+    workspaceRoot,
+    run.options.acceptanceArtifactRoot ? 'output/playwright' : 'tmp/cert-prep-desktop',
+  );
   const outDir = resolve(run.options.outDir);
   const appDataDir = resolve(requiredAcceptanceAppDataDir(run));
   const capturedAt = now().toISOString();
 
   requireStrictDescendant(outDir, runRoot, 'Acceptance output directory');
-  requireStrictDescendant(appDataDir, outDir, 'Acceptance app-data directory');
-  if (!samePath(dirname(appDataDir), outDir)) {
-    throw new Error(
-      'Acceptance app-data directory must be a direct child of its fresh output directory.',
-    );
-  }
-
   assertExistingPathSegmentsAreCanonical(workspaceRoot, dirname(outDir));
   mkdirSync(dirname(outDir), { recursive: true });
   if (existsSync(outDir)) {
     throw new Error(
       `Acceptance output directory must not exist before the run: ${outDir}`,
+    );
+  }
+
+  const shortAcceptanceAppData = isShortAcceptanceAppData(
+    workspaceRoot,
+    appDataDir,
+  );
+  if (shortAcceptanceAppData) {
+    if (readdirSync(appDataDir).length !== 0) {
+      throw new Error(
+        'Acceptance short app-data directory must be empty before launch.',
+      );
+    }
+    const stagingOutDir = join(
+      dirname(outDir),
+      `.${basename(outDir)}.preparing-${randomUUID()}`,
+    );
+    let stagingCreated = false;
+    let committed = false;
+    try {
+      createFreshDirectory(stagingOutDir, 'Acceptance staging directory');
+      stagingCreated = true;
+      hooks.afterAppDataCreated?.(appDataDir);
+      if (readdirSync(appDataDir).length !== 0) {
+        throw new Error(
+          'Acceptance app-data directory was modified before atomic commit.',
+        );
+      }
+      commitStagingDirectory(stagingOutDir, outDir);
+      committed = true;
+    } catch (error) {
+      if (stagingCreated && !committed) {
+        rmSync(stagingOutDir, { recursive: true, force: true });
+      }
+      throw error;
+    }
+
+    run.metrics.acceptance_isolation_at_launch = {
+      captured_at: capturedAt,
+      out_dir_created_by_runner: true,
+      app_data_dir_created_by_runner: true,
+      app_data_dir_empty_at_launch: true,
+      paths_within_workspace_run_root: false,
+      app_data_dir_within_controlled_root: true,
+      reparse_points_absent: true,
+    };
+    return;
+  }
+
+  requireStrictDescendant(appDataDir, outDir, 'Acceptance app-data directory');
+  if (!samePath(dirname(appDataDir), outDir)) {
+    throw new Error(
+      'Acceptance app-data directory must be a direct child of its fresh output directory.',
     );
   }
 
@@ -775,6 +933,16 @@ function requiredAcceptanceAppDataDir(run: SmokeRunState): string {
     );
   }
   return appDataDir;
+}
+
+function isShortAcceptanceAppData(
+  workspaceRoot: string,
+  appDataDir: string,
+): boolean {
+  const expectedRoot = acceptanceAppDataRoot(workspaceRoot);
+  if (resolve(dirname(appDataDir)) !== expectedRoot) return false;
+  assertAcceptanceAppDataDirectory(workspaceRoot, appDataDir);
+  return true;
 }
 
 function acceptanceIsolationEnabled(run: SmokeRunState): boolean {

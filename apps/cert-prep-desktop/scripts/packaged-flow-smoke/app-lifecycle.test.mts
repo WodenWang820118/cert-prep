@@ -22,6 +22,10 @@ import {
   prepareRunDirectories,
   sanitizeInheritedLaunchEnvironment,
 } from './app-lifecycle.mts';
+import {
+  createAcceptanceAppDataDirectory,
+  removeAcceptanceAppDataDirectory,
+} from '../acceptance-app-data.mts';
 import { selectCertPrepResidue } from '../process-lifecycle/processes.mts';
 import type { ProcessRecord } from '../process-lifecycle/processes.mts';
 import type { SmokeRunState } from './types.mts';
@@ -432,6 +436,46 @@ test('acceptance atomically creates fresh isolated run directories', () => {
       /output directory must not exist before the run/,
     );
   } finally {
+    rmSync(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test('acceptance supports a controlled short app-data lease', () => {
+  const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-prep-acceptance-'));
+  let appDataDir: string | undefined;
+  try {
+    const outDir = join(
+      workspaceRoot,
+      'tmp',
+      'cert-prep-desktop',
+      'acceptance-short-run',
+    );
+    appDataDir = createAcceptanceAppDataDirectory(
+      workspaceRoot,
+      'run-1234567890',
+      'image',
+    );
+    const run = launchEnvironmentRun(true);
+    run.options.workspaceRoot = workspaceRoot;
+    run.options.outDir = outDir;
+    run.options.appDataDir = appDataDir;
+
+    prepareRunDirectories(run, () => new Date('2026-07-13T00:00:00.000Z'));
+
+    assert.equal(existsSync(outDir), true);
+    assert.equal(existsSync(appDataDir), true);
+    assert.deepEqual(readdirSync(appDataDir), []);
+    assert.deepEqual(run.metrics.acceptance_isolation_at_launch, {
+      captured_at: '2026-07-13T00:00:00.000Z',
+      out_dir_created_by_runner: true,
+      app_data_dir_created_by_runner: true,
+      app_data_dir_empty_at_launch: true,
+      paths_within_workspace_run_root: false,
+      app_data_dir_within_controlled_root: true,
+      reparse_points_absent: true,
+    });
+  } finally {
+    if (appDataDir) removeAcceptanceAppDataDirectory(workspaceRoot, appDataDir);
     rmSync(workspaceRoot, { recursive: true, force: true });
   }
 });

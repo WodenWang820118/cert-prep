@@ -1,5 +1,6 @@
 import { statSync } from 'node:fs';
 import { win32 } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 
 import type { APIResponse, Page, Response } from 'playwright';
 
@@ -22,10 +23,7 @@ const BEARER_PATTERN = /^Bearer [A-Za-z0-9._~+/=-]+$/;
 const MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/;
 const PROVIDER_PREFERENCES = new Set(['auto', 'ollama', 'fake']);
 const PROVIDERS = new Set(['ollama', 'fake']);
-const RUNTIME_KINDS = new Set([
-  'ollama',
-  'ollama_model',
-]);
+const RUNTIME_KINDS = new Set(['ollama', 'ollama_model']);
 
 type ReadinessPage = Pick<Page, 'on' | 'off' | 'request'>;
 type RestartProjectApiPage = Pick<Page, 'reload' | 'waitForResponse'>;
@@ -171,30 +169,76 @@ export async function captureProjectApiAfterRestart(
       'Restart project API capture requires an exact project UUID.',
     );
   }
-  const responsePromise = page.waitForResponse(
-    (response) => isAuthenticatedProjectListResponse(response),
-    { timeout: timeoutMs },
-  );
-  await page.reload({ waitUntil: 'domcontentloaded', timeout: timeoutMs });
-  const response = await responsePromise;
-  if (response.status() !== 200) {
-    throw new Error(`Restart project list returned HTTP ${response.status()}.`);
+  const deadline = Date.now() + timeoutMs;
+  let lastError = 'Restart project list response was not valid JSON.';
+
+  while (Date.now() < deadline) {
+    const responsePromise = page
+      .waitForResponse(
+        (response) => isAuthenticatedProjectListResponse(response),
+        { timeout: Math.min(30_000, Math.max(1, deadline - Date.now())) },
+      )
+      .catch(() => null);
+
+    try {
+      await page.reload({
+        waitUntil: 'domcontentloaded',
+        timeout: Math.min(30_000, Math.max(1, deadline - Date.now())),
+      });
+    } catch (error) {
+      lastError =
+        error instanceof Error ? error.message : 'Restart page reload failed.';
+    }
+
+    const response = await responsePromise;
+    if (!response || response.status() !== 200) {
+      if (response) {
+        lastError = `Restart project list returned HTTP ${response.status()}.`;
+      }
+      await delay(250);
+      continue;
+    }
+
+    const payload = await readResponsePayload(response);
+    if (!isRecord(payload) || !Array.isArray(payload.items)) {
+      await delay(250);
+      continue;
+    }
+    const matchedProject = payload.items.find(
+      (item) => isRecord(item) && item.id === expectedProjectId,
+    );
+    if (!matchedProject) {
+      lastError = 'Restart project list did not contain the exact project.';
+      await delay(250);
+      continue;
+    }
+    const projectApi = projectApiRefFromResponse(response, matchedProject);
+    if (!projectApi || projectApi.projectId !== expectedProjectId) {
+      lastError = 'Restart project API context was not safely captured.';
+      await delay(250);
+      continue;
+    }
+    return projectApi;
   }
-  const payload = await response.json().catch(() => null);
-  if (!isRecord(payload) || !Array.isArray(payload.items)) {
-    throw new Error('Restart project list response was not valid JSON.');
+
+  throw new Error(lastError);
+}
+
+async function readResponsePayload(response: Response): Promise<unknown> {
+  const candidate = response as Response & {
+    text?: () => Promise<string>;
+    json?: () => Promise<unknown>;
+  };
+  if (typeof candidate.text === 'function') {
+    return candidate
+      .text()
+      .then((body) => JSON.parse(body) as unknown)
+      .catch(() => null);
   }
-  const matchedProject = payload.items.find(
-    (item) => isRecord(item) && item.id === expectedProjectId,
-  );
-  if (!matchedProject) {
-    throw new Error('Restart project list did not contain the exact project.');
+  if (typeof candidate.json === 'function') {
+    return candidate.json().catch(() => null);
   }
-  const projectApi = projectApiRefFromResponse(response, matchedProject);
-  if (!projectApi || projectApi.projectId !== expectedProjectId) {
-    throw new Error('Restart project API context was not safely captured.');
-  }
-  return projectApi;
+  return null;
 }
 
 export function projectApiRefMatchesResponse(

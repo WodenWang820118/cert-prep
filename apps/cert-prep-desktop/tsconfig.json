@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.scripts.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": false,
+    "allowImportingTsExtensions": true,
+    "esModuleInterop": true,
+    "verbatimModuleSyntax": false,
+    "ignoreDeprecations": "6.0"
+  },
+  "include": ["playwright.acceptance.config.ts"],
+  "exclude": ["node_modules", "dist", "tmp", "src-tauri/target"]
+}

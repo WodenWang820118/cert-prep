@@ -21,6 +21,7 @@ export interface SmokeOptions {
   ollamaModelsDir?: string;
   ollamaProfileEnabled?: boolean;
   acceptanceIsolation?: boolean;
+  captureRuntimeWorkerMirrorUrl?: string;
   candidateDistributionProfile?: CandidateDistributionProfile;
   streamingDraftPageLimit?: number;
   streamingDraftWorkers?: number;
@@ -30,6 +31,11 @@ export interface SmokeOptions {
   productionSummary: boolean;
   allowCaptureChunkVariance: boolean;
   verifyStreamingPracticeReady: boolean;
+  acceptanceArtifactRoot?: string;
+  acceptanceRecordVideo?: boolean;
+  acceptanceVisualCheckpoint?: (page: Page, name: string) => Promise<void>;
+  acceptanceFixture?: { name: string; sha256: string };
+  acceptanceVerifyMarkdownExport?: boolean;
 }
 
 export interface SmokeMetrics {
@@ -91,6 +97,7 @@ export interface AcceptanceIsolationSnapshot {
   readonly app_data_dir_created_by_runner: boolean;
   readonly app_data_dir_empty_at_launch: boolean;
   readonly paths_within_workspace_run_root: boolean;
+  readonly app_data_dir_within_controlled_root?: boolean;
   readonly reparse_points_absent: boolean;
 }
 
@@ -278,4 +285,11 @@ export interface SmokeRunState {
   streamingDraftParseStartedAt: number | null;
   streamingDraftCaptureOpen: boolean;
   streamingApiPollErrorCaptured: boolean;
+  acceptanceVideoPaths?: string[];
+  acceptanceTracePaths?: string[];
+  acceptanceTraceOwned?: boolean;
+  acceptanceConsoleErrors?: string[];
+  acceptancePageErrors?: string[];
+  acceptanceCaptureSequence?: number;
+  acceptanceCaptureActive?: boolean;
 }

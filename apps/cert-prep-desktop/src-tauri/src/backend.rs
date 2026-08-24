@@ -701,7 +701,16 @@ fn install_capture_runtime(inner: Arc<BackendRuntimeInner>, job_id: String) {
             "Capture Runtime is installed and stopped. Start it when you are ready.",
             None,
         ),
-        Err(error) => update_capture_job(&inner, &job_id, "failed", &error, Some(error.clone())),
+        Err(error) => {
+            eprintln!("Capture Runtime installation failed: {error}");
+            update_capture_job(
+                &inner,
+                &job_id,
+                "failed",
+                &error,
+                Some(error.clone()),
+            );
+        }
     }
 }
 

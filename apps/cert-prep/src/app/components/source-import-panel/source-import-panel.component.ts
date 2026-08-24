@@ -6,7 +6,7 @@ import {
   inject,
   signal,
   viewChild,
-  ChangeDetectionStrategy
+  ChangeDetectionStrategy,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ProgressBar } from 'primeng/progressbar';
@@ -243,10 +243,15 @@ import { SourceImageCropService } from './source-image-crop.service';
                 <p class="m-0 truncate text-sm font-semibold text-color">
                   {{ sourceImport.parseStageText() }}
                 </p>
-                <p class="m-0 mt-1 text-xs font-semibold text-muted-color">
+                <p
+                  class="m-0 mt-1 text-xs font-semibold text-muted-color"
+                  data-testid="document-progress-metrics"
+                >
                   {{ sourceImport.progressLabel() }} /
                   {{ document.chunks_count }} chunks /
-                  {{ sourceImport.elapsedTime() }}
+                  <span data-testid="document-elapsed-time">
+                    {{ sourceImport.elapsedTime() }}
+                  </span>
                 </p>
               </div>
               <p-tag
@@ -311,6 +316,7 @@ import { SourceImageCropService } from './source-image-crop.service';
             <p-progressbar
               [value]="sourceImport.progressPercent()"
               [showValue]="false"
+              data-testid="document-progress-bar"
             />
             @if (sourceImport.streamError(); as streamError) {
               <div
@@ -391,11 +397,15 @@ import { SourceImageCropService } from './source-image-crop.service';
               </div>
               <div class="workbench-metric">
                 <dt>Configured ASR Model</dt>
-                <dd>{{ document.configured_transcription_model || 'pending' }}</dd>
+                <dd>
+                  {{ document.configured_transcription_model || 'pending' }}
+                </dd>
               </div>
               <div class="workbench-metric">
                 <dt>Effective ASR Model</dt>
-                <dd>{{ document.effective_transcription_model || 'pending' }}</dd>
+                <dd>
+                  {{ document.effective_transcription_model || 'pending' }}
+                </dd>
               </div>
               <div class="workbench-metric">
                 <dt>ASR Device</dt>
@@ -474,7 +484,10 @@ import { SourceImageCropService } from './source-image-crop.service';
                       Loading authenticated source audio…
                     </p>
                   } @else if (audioSourceError(); as sourceError) {
-                    <p class="m-0 text-sm font-semibold text-red-700" role="alert">
+                    <p
+                      class="m-0 text-sm font-semibold text-red-700"
+                      role="alert"
+                    >
                       {{ sourceError }}
                     </p>
                     <button
@@ -502,9 +515,12 @@ import { SourceImageCropService } from './source-image-crop.service';
                   <article class="workbench-preview-chunk">
                     <strong>
                       @if (chunk.locator_kind === 'time') {
-                        {{ formatTimestamp(chunk.start_ms) }}–{{ formatTimestamp(chunk.end_ms) }}
+                        {{ formatTimestamp(chunk.start_ms) }}–{{
+                          formatTimestamp(chunk.end_ms)
+                        }}
                       } @else {
-                        Page {{ chunk.page_number }} - Chunk {{ chunk.chunk_index + 1 }}
+                        Page {{ chunk.page_number }} - Chunk
+                        {{ chunk.chunk_index + 1 }}
                       }
                     </strong>
                     @if (chunk.locator_kind === 'time') {
@@ -520,17 +536,32 @@ import { SourceImageCropService } from './source-image-crop.service';
                       </button>
                       <label class="workbench-field mt-2">
                         <span>日文原文</span>
-                        <textarea #japaneseText rows="3">{{ chunk.text }}</textarea>
+                        <textarea #japaneseText rows="3">{{
+                          chunk.text
+                        }}</textarea>
                       </label>
                       <div class="mt-2 flex flex-wrap gap-2">
-                        <button class="workbench-secondary-button" type="button"
+                        <button
+                          class="workbench-secondary-button"
+                          type="button"
                           [disabled]="sourceImport.isTranscriptMutationBusy()"
-                          (click)="sourceImport.updateTranscriptChunk(chunk.id, japaneseText.value)">
+                          (click)="
+                            sourceImport.updateTranscriptChunk(
+                              chunk.id,
+                              japaneseText.value
+                            )
+                          "
+                        >
                           儲存日文
                         </button>
-                        <button class="workbench-secondary-button" type="button"
+                        <button
+                          class="workbench-secondary-button"
+                          type="button"
                           [disabled]="sourceImport.isTranscriptMutationBusy()"
-                          (click)="sourceImport.translateTranscriptChunk(chunk.id)">
+                          (click)="
+                            sourceImport.translateTranscriptChunk(chunk.id)
+                          "
+                        >
                           重新翻譯
                         </button>
                       </div>
@@ -539,7 +570,9 @@ import { SourceImageCropService } from './source-image-crop.service';
                         {{ chunk.translated_text || '尚未完成翻譯' }}
                       </p>
                       @if (chunk.translation_stale) {
-                        <p class="text-sm font-semibold text-amber-700">翻譯已過期</p>
+                        <p class="text-sm font-semibold text-amber-700">
+                          翻譯已過期
+                        </p>
                       }
                     } @else {
                       <p class="whitespace-pre-wrap">{{ chunk.text }}</p>
@@ -577,8 +610,8 @@ import { SourceImageCropService } from './source-image-crop.service';
           <p
             class="m-0 rounded-md border border-dashed border-surface-300 bg-surface-0 p-3 text-sm text-muted-color"
           >
-            Choose PDF, PNG, JPEG, WebP, MP3, WAV, or M4A files and upload them to
-            start extraction.
+            Choose PDF, PNG, JPEG, WebP, MP3, WAV, or M4A files and upload them
+            to start extraction.
           </p>
         }
       </div>
@@ -835,28 +868,35 @@ export class SourceImportPanelComponent {
     this.audioSourceLoading.set(true);
     const controller = new AbortController();
     this.audioSourceAbortController = controller;
-    this.api.getDocumentAudioSource(projectId, documentId, {
-      signal: controller.signal,
-    }).pipe(catchError(() => of(null))).subscribe((source) => {
-      if (loadId !== this.audioSourceLoadId) return;
-      if (source === null) {
-        if (!controller.signal.aborted) {
-          this.requestedAudioSourceKey = null;
-          this.audioSourceError.set('The source audio could not be loaded.');
+    this.api
+      .getDocumentAudioSource(projectId, documentId, {
+        signal: controller.signal,
+      })
+      .pipe(catchError(() => of(null)))
+      .subscribe((source) => {
+        if (loadId !== this.audioSourceLoadId) return;
+        if (source === null) {
+          if (!controller.signal.aborted) {
+            this.requestedAudioSourceKey = null;
+            this.audioSourceError.set('The source audio could not be loaded.');
+          }
+        } else if (typeof URL.createObjectURL !== 'function') {
+          this.audioSourceError.set(
+            'Audio playback is unavailable in this environment.',
+          );
+        } else {
+          const objectUrl = URL.createObjectURL(source);
+          if (loadId !== this.audioSourceLoadId) URL.revokeObjectURL(objectUrl);
+          else {
+            this.audioSourceObjectUrl = objectUrl;
+            this.audioSourceUrl.set(objectUrl);
+          }
         }
-      } else if (typeof URL.createObjectURL !== 'function') {
-        this.audioSourceError.set('Audio playback is unavailable in this environment.');
-      } else {
-        const objectUrl = URL.createObjectURL(source);
-        if (loadId !== this.audioSourceLoadId) URL.revokeObjectURL(objectUrl);
-        else {
-          this.audioSourceObjectUrl = objectUrl;
-          this.audioSourceUrl.set(objectUrl);
-        }
-      }
-      if (this.audioSourceAbortController === controller) this.audioSourceAbortController = null;
-      if (loadId === this.audioSourceLoadId) this.audioSourceLoading.set(false);
-    });
+        if (this.audioSourceAbortController === controller)
+          this.audioSourceAbortController = null;
+        if (loadId === this.audioSourceLoadId)
+          this.audioSourceLoading.set(false);
+      });
   }
 
   private cancelAudioSourceLoad(): void {

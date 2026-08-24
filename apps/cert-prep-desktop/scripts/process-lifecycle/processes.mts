@@ -1,5 +1,6 @@
 import { execFile, spawnSync, type ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { createConnection } from 'node:net';
 import { join } from 'node:path';
 
 const PROCESS_SNAPSHOT_MAX_BUFFER = 64 * 1024 * 1024;
@@ -52,6 +53,64 @@ export interface PublicProcessRecord {
   parentPid: number;
   name: string;
   commandLine: string;
+}
+
+export interface WaitForLoopbackPortClosedOptions {
+  readonly timeoutMs?: number;
+  readonly pollIntervalMs?: number;
+  readonly now?: () => number;
+  readonly delay?: (durationMs: number) => Promise<unknown>;
+  readonly probe?: (port: number) => Promise<boolean>;
+}
+
+export async function waitForLoopbackPortClosed(
+  port: number,
+  {
+    timeoutMs = 15_000,
+    pollIntervalMs = 250,
+    now = Date.now,
+    delay = (durationMs) =>
+      new Promise((resolve) => setTimeout(resolve, durationMs)),
+    probe = probeLoopbackPortClosed,
+  }: WaitForLoopbackPortClosedOptions = {},
+): Promise<boolean> {
+  const deadline = now() + timeoutMs;
+
+  while (now() < deadline) {
+    if (await probe(port)) {
+      return true;
+    }
+
+    const remainingMs = deadline - now();
+    if (remainingMs <= 0) {
+      break;
+    }
+    await delay(Math.min(pollIntervalMs, remainingMs));
+  }
+
+  return false;
+}
+
+async function probeLoopbackPortClosed(port: number): Promise<boolean> {
+  return await new Promise((resolveClosed) => {
+    const socket = createConnection({ host: '127.0.0.1', port });
+    let settled = false;
+
+    const finish = (closed: boolean) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      socket.destroy();
+      resolveClosed(closed);
+    };
+
+    socket.once('connect', () => finish(false));
+    socket.once('error', (error: NodeJS.ErrnoException) =>
+      finish(error.code === 'ECONNREFUSED'),
+    );
+    socket.setTimeout(250, () => finish(false));
+  });
 }
 
 export interface ProcessSnapshot {
@@ -218,7 +277,7 @@ function windowsProcessSnapshotArguments(): string[] {
     '-ExecutionPolicy',
     'Bypass',
     '-Command',
-    "$ErrorActionPreference = 'Stop'; Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,ExecutablePath,CommandLine,CreationDate,WorkingSetSize | ConvertTo-Json -Compress",
+    "$utf8 = New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding = $utf8; $OutputEncoding = $utf8; $ErrorActionPreference = 'Stop'; Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,Name,ExecutablePath,CommandLine,CreationDate,WorkingSetSize | ConvertTo-Json -Compress",
   ];
 }
 
