@@ -254,7 +254,7 @@ class DeterministicCaptureRuntime(TypedPullSessionRuntimeMixin):
         )
 
 
-class CoreOnlyPdfExtractionFailedRuntime(DeterministicCaptureRuntime):
+class UnavailablePdfOcrRuntime(DeterministicCaptureRuntime):
     def __init__(self) -> None:
         super().__init__()
         self.requirement_reads = 0
@@ -280,27 +280,7 @@ class CoreOnlyPdfExtractionFailedRuntime(DeterministicCaptureRuntime):
         client_request_id: str,
         target_language: str | None = None,
     ) -> CaptureOperation:
-        super().start_capture(
-            upload,
-            source_kind=source_kind,
-            client_request_id=client_request_id,
-            target_language=target_language,
-        )
-        assert self.raw is not None
-        failed = self._operation(status="failed")
-        failed_payload = failed.model_dump(mode="json", by_alias=True)
-        assert isinstance(failed_payload["error"], dict)
-        failed_payload["error"]["code"] = "requirement_unavailable"
-        self.failed_operation = CaptureOperation.model_validate(
-            {
-                **failed_payload,
-                "captureId": "capture-core-only-extraction-failed",
-            }
-        )
-        return self.failed_operation
-
-    def get_capture(self, _capture_id: str) -> CaptureOperation:
-        return self.failed_operation
+        raise AssertionError("PDF capture must not dispatch without ready OCR")
 
 
 class PendingTerminalRaceCaptureRuntime(DeterministicCaptureRuntime):
@@ -865,6 +845,12 @@ def test_review_result_fails_closed_when_runtime_replay_violates_contract(
     ),
     [
         (
+            "capture.pdf",
+            "application/pdf",
+            "ocr_failed",
+            "This PDF requires WindowsML OCR, which is unavailable in the installed Capture Runtime.",
+        ),
+        (
             "capture.png",
             "image/png",
             "ocr_failed",
@@ -878,7 +864,7 @@ def test_review_result_fails_closed_when_runtime_replay_violates_contract(
         ),
     ],
 )
-def test_core_only_image_and_audio_fail_before_sidecar_dispatch(
+def test_core_only_ocr_and_audio_sources_fail_before_sidecar_dispatch(
     tmp_path: Path,
     filename: str,
     media_type: str,
@@ -888,7 +874,12 @@ def test_core_only_image_and_audio_fail_before_sidecar_dispatch(
     runtime = CoreOnlyCaptureRuntime()
     settings = Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake")
     operation_id = f"core-only-{filename.rsplit('.', 1)[-1]}"
-    source = minimal_audio(".wav") if filename.endswith(".wav") else minimal_image()
+    if filename.endswith(".wav"):
+        source = minimal_audio(".wav")
+    elif filename.endswith(".pdf"):
+        source = minimal_pdf("OCR is required for every PDF page.")
+    else:
+        source = minimal_image()
     with TestClient(
         create_app(
             settings=settings,
@@ -934,123 +925,6 @@ def test_core_only_image_and_audio_fail_before_sidecar_dispatch(
     assert runtime.requirement_reads == 1
     assert runtime.create_attempts == 0
     assert runtime.deleted == []
-
-
-def test_core_only_ocr_dependent_pdf_dispatches_then_reports_explicit_failure(
-    tmp_path: Path,
-) -> None:
-    runtime = CoreOnlyPdfExtractionFailedRuntime()
-    settings = Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake")
-    operation_id = "core-only-ocr-pdf"
-    expected_message = (
-        "This PDF requires WindowsML OCR, which is unavailable in the installed "
-        "Capture Runtime."
-    )
-    with TestClient(
-        create_app(
-            settings=settings,
-            llm_provider=EchoCaptureProvider(),
-            capture_runtime_client=runtime,
-            document_processing_async_jobs=False,
-            streaming_draft_generation_async_jobs=False,
-        )
-    ) as client:
-        auth_headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
-        project_id = _create_project(client, auth_headers)
-        response = client.post(
-            f"/projects/{project_id}/documents",
-            headers={
-                **auth_headers,
-                "X-Cert-Prep-Operation-Id": operation_id,
-            },
-            files={
-                "file": (
-                    "scanned.pdf",
-                    minimal_pdf("Runtime classifies OCR dependency."),
-                    "application/pdf",
-                )
-            },
-        )
-
-        assert response.status_code == 503
-        assert response.json() == {
-            "code": "capture_runtime_unavailable",
-            "message": expected_message,
-        }
-        operation = client.get(
-            f"/projects/{project_id}/document-operations/{operation_id}",
-            headers=auth_headers,
-        ).json()
-        assert operation["status"] == "failed"
-        assert operation["error"] == expected_message
-        documents = client.get(
-            f"/projects/{project_id}/documents", headers=auth_headers
-        ).json()["items"]
-        assert documents[0]["status"] == "ocr_failed"
-        assert documents[0]["chunks_count"] == 0
-
-    assert runtime.created_request_ids
-    assert runtime.requirement_reads == 1
-
-
-def test_async_core_only_pdf_failure_reaches_durable_terminal_state(
-    tmp_path: Path,
-) -> None:
-    runtime = CoreOnlyPdfExtractionFailedRuntime()
-    settings = Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake")
-    operation_id = "async-core-only-ocr-pdf"
-    expected_message = (
-        "This PDF requires WindowsML OCR, which is unavailable in the installed "
-        "Capture Runtime."
-    )
-    with TestClient(
-        create_app(
-            settings=settings,
-            llm_provider=EchoCaptureProvider(),
-            capture_runtime_client=runtime,
-            document_processing_async_jobs=True,
-            streaming_draft_generation_async_jobs=False,
-        )
-    ) as client:
-        auth_headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
-        project_id = _create_project(client, auth_headers)
-        response = client.post(
-            f"/projects/{project_id}/documents",
-            headers={
-                **auth_headers,
-                "X-Cert-Prep-Operation-Id": operation_id,
-            },
-            files={
-                "file": (
-                    "scanned.pdf",
-                    minimal_pdf("Runtime classifies OCR dependency."),
-                    "application/pdf",
-                )
-            },
-        )
-
-        assert response.status_code == 201
-        operation = None
-        for _ in range(100):
-            operation = client.get(
-                f"/projects/{project_id}/document-operations/{operation_id}",
-                headers=auth_headers,
-            ).json()
-            if operation["status"] == "failed":
-                break
-            time.sleep(0.01)
-        assert operation is not None
-        assert operation["status"] == "failed"
-        assert operation["error"] == expected_message
-        document = client.get(
-            f"/projects/{project_id}/documents/{response.json()['id']}",
-            headers=auth_headers,
-        ).json()
-        assert document["status"] == "ocr_failed"
-        assert document["chunks_count"] == 0
-
-    assert runtime.created_request_ids
-    assert runtime.requirement_reads == 1
 
 
 def test_pending_host_snapshot_does_not_expose_runtime_terminal_state(
@@ -1612,7 +1486,7 @@ def test_terminal_event_replays_monotonically_after_result_deletes_runtime(
 def test_pdf_capture_requirement_unavailable_reports_ocr_required_failure(
     tmp_path: Path,
 ) -> None:
-    runtime = CoreOnlyPdfExtractionFailedRuntime()
+    runtime = UnavailablePdfOcrRuntime()
     settings = Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake")
     app = create_app(
         settings=settings,
@@ -1653,6 +1527,7 @@ def test_pdf_capture_requirement_unavailable_reports_ocr_required_failure(
         "This PDF requires WindowsML OCR, which is unavailable in the installed Capture Runtime.",
     )
     assert runtime.requirement_reads == 1
+    assert runtime.created_request_ids == []
 
 
 def test_expired_review_is_canceled_and_terminal_cancel_is_idempotent(tmp_path: Path) -> None:

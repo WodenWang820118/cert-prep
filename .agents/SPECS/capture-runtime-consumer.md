@@ -21,11 +21,11 @@ or retain a local extraction provider.
 - The published schema bytes have SHA-256
   `850afd212d049c25da41d3867ba5477451a6a2c6c7e41f116fe60f26b6a35335` and
   retain the canonical `gx-capture` schema identifier.
-- v0.4.1 publishes the engine-bearing catalog for `windowsml-ocr` and
-  `whisper-primary`. Its production extractor still supports a PDF whose every
-  page has embedded text, without invoking a model, and must report
-  `pdf-embedded-text` provenance. Scanned PDFs/images require ready OCR and
-  audio requires ready Whisper after explicit consent.
+- The OCR-only local successor candidate requires `windowsml-ocr` for every
+  PDF and image; every PDF page is rendered and recognized by PaddleOCR.
+  Embedded text is never accepted as extraction output. Audio requires ready
+  Whisper after explicit consent. This local candidate is not evidence that
+  the immutable published v0.4.1 bytes changed.
 - Requirements/readiness/install/cancel are proxied through the authenticated
   backend; the sidecar token never reaches Angular/WebView.
 - Cert Prep configures the published component with `structuringMode: 'host'`,
@@ -42,16 +42,11 @@ or retain a local extraction provider.
   has the expected service identity, exact runtime release/API major, schema, host
   structuring mode, and requested capture-kind capability. An incompatible
   handshake blocks every source and does not open a sidecar ingestion. It
-  then applies a source-aware requirement policy: image is admitted only while
-  `windowsml-ocr` is `ready`, audio only while `whisper-primary` is `ready`,
-  and otherwise each is rejected before dispatch. Every PDF is dispatched to
-  the runtime without browser scanned-PDF classification; an OCR-dependent PDF
-  is terminally failed with a clear unavailable-model error if extraction finds
-  a page without embedded text. The coordinator maps only the typed
-  `requirement_unavailable` result to the OCR dependency error when the single
-  `windowsml-ocr` requirement is explicitly non-ready. A missing, duplicate,
-  ready, or generic extraction error preserves the original sidecar error
-  rather than guessing.
+  then applies a source-aware requirement policy: PDF and image are admitted
+  only while `windowsml-ocr` is `ready`, audio only while `whisper-primary` is
+  `ready`, and otherwise each is rejected before dispatch. A generic extraction
+  error after a ready OCR preflight preserves the original sidecar error rather
+  than being reclassified.
 - Image/audio admission failures preserve the runtime requirement detail and use
   the same product messages across the Trial client and `/documents` path:
   `WindowsML OCR is unavailable. <detail>` and
@@ -75,30 +70,28 @@ or retain a local extraction provider.
 
 Missing or malformed assets, checksum/byte drift, incompatible handshake,
 unsupported capture kind, unavailable requirements, sidecar failure, timeout,
-and cancellation are terminal/unavailable states. A scanned or mixed PDF must
-not be silently treated as embedded text: when the runtime returns the typed
-`requirement_unavailable` WindowsML result, Cert Prep maps it to the clear
-OCR-unavailable product state. Other runtime failures remain their original
-typed error. Cert Prep never falls back to an OCR or Whisper provider of its
-own.
+and cancellation are terminal/unavailable states. Any PDF with non-ready OCR
+is rejected before sidecar ingestion with the clear OCR-unavailable product
+state. Other runtime failures remain their original typed error. Cert Prep
+never falls back to an OCR or Whisper provider of its own.
 
 ## Evidence
 
 The installer contract, package QA, Tauri contract tests, backend coordinator
 tests, and the published-byte consumer smoke must prove staging, authenticated
 readiness/requirements, host-protocol compatibility, cleanup, and rejection of
-tampered or missing runtime assets. The product E2E must use the published
-v0.4.1 executable and a real, non-fake PDF whose every page contains embedded
-text; it proves UI selection, backend-to-sidecar capture, review confirmation,
-host persistence, and Markdown export with `pdf-embedded-text` provenance.
-Its negative cases prove image, audio, and any OCR-dependent PDF fail closed
-with no browser sidecar token and no OCR/STT claim. They also prove an
+tampered or missing runtime assets. The product E2E must use the local candidate
+executable and a real, non-fake PDF through real PaddleOCR; it proves UI
+selection, backend-to-sidecar capture, review confirmation, host persistence,
+and Markdown export with `windowsml-ocr` provenance. Its negative cases prove
+PDF, image, and audio fail closed when their requirements are not ready, with
+no browser sidecar token and no false OCR/STT claim. They also prove an
 incompatible handshake opens no sidecar ingestion, and that the host-owned UI
 states image/audio are unavailable while their requirements are not ready. Fake
 extraction may exercise only the backend host protocol. The opt-in
 model-enabled smoke proves the core-first install order plus real PDF OCR and
 audio time-locator extraction once an approved engine catalog is published.
-The backend contract test owns the exact no-dispatch assertion for image/audio;
+The backend contract test owns the exact no-dispatch assertion for PDF/image/audio;
 the installed product smoke does not infer internal sidecar state from a public
 error response. The 2026-08-02 fresh-installed v0.3.8 run proved an embedded
 PDF reached review, persistence, Markdown export, and relaunch with

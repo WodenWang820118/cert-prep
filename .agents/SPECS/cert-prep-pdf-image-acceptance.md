@@ -2,8 +2,8 @@
 
 ## Purpose
 
-Extend the packaged Cert Prep acceptance gate so it proves both the existing
-embedded-text PDF journey and a real image OCR journey against the same fresh
+Extend the packaged Cert Prep acceptance gate so it proves both a real PDF
+PaddleOCR journey and a real image OCR journey against the same fresh
 installed desktop executable and Capture Runtime installation.
 
 ## Inputs
@@ -12,7 +12,8 @@ installed desktop executable and Capture Runtime installation.
   `cert-prep-desktop.exe`. The gate records the executable identity and verifies
   the adjacent installed Capture Runtime resources; freshness is established
   by the installation workflow, not inferred from the path.
-- `CERT_PREP_ACCEPTANCE_PDF`: non-empty PDF fixture with embedded text.
+- `CERT_PREP_ACCEPTANCE_PDF`: non-empty real PDF fixture with semantic OCR
+  expectations.
 - `CERT_PREP_ACCEPTANCE_IMAGE`: non-empty image fixture containing readable
   text. When omitted, use the sibling Capture Workbench fixture
   `C:\software-dev\capture-workbench\test-fixtures\ocr_test_image.jpeg`.
@@ -29,9 +30,9 @@ installed desktop executable and Capture Runtime installation.
 
 ## Key Decisions
 
-- Keep the existing PDF acceptance journey unchanged: review persistence,
-  Markdown export, restart persistence, screenshots, and cleanup remain part of
-  the PDF proof.
+- Keep review persistence, Markdown export, restart persistence, screenshots,
+  and cleanup as part of the PDF proof while requiring `windowsml-ocr`
+  provenance.
 - Run image parsing through the existing packaged app lifecycle, but use a
   source-specific semantic contract instead of PDF-only practice/export steps.
 - Require image OCR to reach `ready` with one processed page, text chunks,

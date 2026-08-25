@@ -1270,7 +1270,7 @@ def test_future_runtime_generic_pdf_extraction_failure_is_not_reclassified() -> 
     }
     runtime = RecordingCaptureRuntime(
         initial_operation=failed,
-        requirement_status=RuntimeRequirementStatus.UNAVAILABLE,
+        requirement_status=RuntimeRequirementStatus.READY,
         runtime_version=CAPTURE_RUNTIME_VERSION,
     )
     coordinator = CertPrepCaptureCoordinator(
@@ -1289,7 +1289,7 @@ def test_future_runtime_generic_pdf_extraction_failure_is_not_reclassified() -> 
             should_cancel=lambda: False,
         )
 
-    assert runtime.requirement_reads == 0
+    assert runtime.requirement_reads == 1
 
 
 def test_capture_coordinator_reports_host_failure_without_deleting_raw() -> None:

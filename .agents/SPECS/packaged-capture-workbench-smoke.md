@@ -2,8 +2,8 @@
 
 ## Purpose
 
-Prove a fresh NSIS-installed Cert Prep Desktop executable can complete the
-published Capture Workbench embedded-text PDF flow and persist it across an
+Prove a fresh NSIS-installed Cert Prep Desktop executable can install the OCR
+requirement, complete the Capture Workbench PaddleOCR PDF flow, and persist it across an
 app restart without exposing Capture Runtime credentials or leaving owned
 processes behind.
 
@@ -35,11 +35,11 @@ processes behind.
   a process/listener or restart the backend. A separate `Start Capture Runtime`
   action starts the owned sidecar, restarts the owned backend with fresh
   configuration, and makes prior backend authorization unusable.
-- The running desktop shows the embedded-only copy and an enabled picker, then
-  accepts a generated valid embedded-text PDF.
+- The harness explicitly installs `windowsml-ocr`; only then is the PDF picker
+  enabled and a generated rendered-text PDF accepted.
 - The UI review edit, confirmation, durable ready document, and Markdown
   download succeed. A same-browser authenticated request proves raw engine
-  `pdf-embedded-text` and device `cpu` without persisting credentials.
+  `windowsml-ocr` and a recognized OCR device without persisting credentials.
 - Normal close leaves owned processes and captured listener ports at zero.
   Relaunching with the same app-data reports installed-but-stopped and no
   Capture Runtime process/listener until a second explicit Start, after which
@@ -49,5 +49,5 @@ processes behind.
 
 ## Non-goals
 
-- OCR/STT installation, fake extraction, product source changes, installer
-  changes, or deletion of evidence artifacts.
+- STT installation, fake extraction, product source changes, installer changes,
+  or deletion of evidence artifacts.

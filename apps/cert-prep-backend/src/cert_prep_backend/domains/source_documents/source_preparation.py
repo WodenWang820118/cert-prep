@@ -8,7 +8,7 @@ from typing import Literal
 
 import av
 from PIL import Image, UnidentifiedImageError
-from pypdf import PdfReader
+import pypdfium2 as pdfium
 
 from cert_prep_contracts.transcription import MAX_AUDIO_DURATION_MS
 from cert_prep_backend.api.errors import InvalidSourceError
@@ -47,11 +47,15 @@ def prepare_source(content: bytes, *, max_pdf_pages: int, max_image_pixels: int,
     if _has_supported_image_signature(content):
         return _prepare_image(content, max_image_pixels=max_image_pixels)
     if _has_pdf_header(content):
+        document = None
         try:
-            reader = PdfReader(BytesIO(content), strict=False)
-            page_count = len(reader.pages)
+            document = pdfium.PdfDocument(content)
+            page_count = len(document)
         except Exception as exc:
             raise InvalidSourceError("Uploaded PDF is not readable.") from exc
+        finally:
+            if document is not None:
+                document.close()
         if page_count < 1:
             raise InvalidSourceError("Uploaded PDF does not contain any pages.")
         if page_count > max_pdf_pages:

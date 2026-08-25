@@ -14,7 +14,7 @@ import {
   CAPTURE_RUNTIME_VERSION,
 } from '../../../../tools/capture-runtime-version.mts';
 import {
-  PDF_TEXT_EXTRACTION_SCRIPT,
+  PDF_PAGE_INSPECTION_SCRIPT,
   REAL_PDF_MAGIC,
 } from './constants/capture-runtime-fixture.constants.mts';
 
@@ -1559,59 +1559,47 @@ function captureSegments(
 
 function extractRealPdfSegments(sourceBytes: Buffer): readonly Record<string, unknown>[] {
   const python = process.env['CERT_PREP_E2E_PYTHON'] ?? 'python';
-  const result = spawnSync(python, ['-c', PDF_TEXT_EXTRACTION_SCRIPT], {
+  const result = spawnSync(python, ['-c', PDF_PAGE_INSPECTION_SCRIPT], {
     input: sourceBytes,
     encoding: 'utf8',
     maxBuffer: 16 * 1024 * 1024,
     windowsHide: true,
   });
   if (result.error !== undefined) {
-    throw new Error(`Real PDF extraction could not start: ${result.error.message}`);
+    throw new Error(`PDF page inspection could not start: ${result.error.message}`);
   }
   if (result.status !== 0) {
     throw new Error(
-      `Real PDF extraction failed: ${(result.stderr ?? '').trim() || 'unknown error'}`,
+      `PDF page inspection failed: ${(result.stderr ?? '').trim() || 'unknown error'}`,
     );
   }
 
-  let pages: unknown;
+  let inspection: unknown;
   try {
-    pages = JSON.parse(result.stdout) as unknown;
+    inspection = JSON.parse(result.stdout) as unknown;
   } catch (error) {
     throw new Error(
-      `Real PDF extraction returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
+      `PDF page inspection returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
-  if (!Array.isArray(pages)) {
-    throw new Error('Real PDF extraction returned an invalid page list.');
+  if (
+    inspection === null ||
+    typeof inspection !== 'object' ||
+    Array.isArray(inspection) ||
+    !Number.isSafeInteger((inspection as Record<string, unknown>)['pageCount']) ||
+    Number((inspection as Record<string, unknown>)['pageCount']) < 1
+  ) {
+    throw new Error('PDF page inspection returned an invalid page count.');
   }
-
-  const segments: Record<string, unknown>[] = [];
-  for (const page of pages) {
-    if (page === null || typeof page !== 'object' || Array.isArray(page)) {
-      continue;
-    }
-    const record = page as Record<string, unknown>;
-    const pageNumber = record['page'];
-    const text = record['text'];
-    if (
-      !Number.isSafeInteger(pageNumber) ||
-      typeof text !== 'string' ||
-      text.trim() === ''
-    ) {
-      continue;
-    }
-    segments.push({
-      segmentId: `segment-${segments.length + 1}`,
-      order: segments.length,
-      locator: { kind: 'page', page: pageNumber },
-      text,
-    });
-  }
-  if (segments.length === 0) {
-    throw new Error('Real PDF extraction returned no text-bearing pages.');
-  }
-  return segments;
+  const pageCount = Number(
+    (inspection as Record<string, unknown>)['pageCount'],
+  );
+  return Array.from({ length: pageCount }, (_item, index) => ({
+    segmentId: `segment-${index + 1}`,
+    order: index,
+    locator: { kind: 'page', page: index + 1 },
+    text: `Deterministic fake-runtime page ${index + 1}.`,
+  }));
 }
 
 function extractionEngine(kind: SourceKind): Record<string, unknown> {

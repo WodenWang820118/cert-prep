@@ -9,9 +9,9 @@ import hashlib
 
 import pytest
 import av
-from pypdf import PdfReader
 from fastapi.testclient import TestClient
 from PIL import Image
+import pypdfium2 as pdfium
 
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.core.config import Settings
@@ -465,8 +465,14 @@ def minimal_pdf(*page_texts: str) -> bytes:
 
 def _fake_source_pages(content: bytes, source_kind: CaptureSourceKind) -> list[str]:
     if source_kind is CaptureSourceKind.PDF:
-        reader = PdfReader(BytesIO(content))
-        return [(page.extract_text() or "").strip() for page in reader.pages]
+        document = pdfium.PdfDocument(content)
+        try:
+            return [
+                document[index].get_textpage().get_text_range().strip()
+                for index in range(len(document))
+            ]
+        finally:
+            document.close()
     if source_kind is CaptureSourceKind.AUDIO:
         return ["Captured source text"]
     return ["Captured source text"]

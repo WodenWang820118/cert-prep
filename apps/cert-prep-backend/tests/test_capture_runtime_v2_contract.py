@@ -10,6 +10,7 @@ from uuid import UUID
 import httpx
 import pytest
 
+from conftest import _test_runtime_requirements
 from capture_runtime_client import (
     CAPTURE_RUNTIME_VERSION,
     CaptureEvent,
@@ -466,7 +467,7 @@ class _ReconnectingRuntimeClient:
         )
 
     def get_requirements(self) -> RuntimeRequirements:
-        return RuntimeRequirements(items=[])
+        return _test_runtime_requirements("ready")
 
     def start_capture(self, *_args, **_kwargs) -> CaptureOperation:
         return CaptureOperation.model_validate(_operation())

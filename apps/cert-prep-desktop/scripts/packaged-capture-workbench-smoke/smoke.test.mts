@@ -129,7 +129,7 @@ test('redacts auth, tokens, URLs, and raw text from Capture evidence', () => {
     authorization: 'Bearer should-never-persist',
     raw: {
       sourceText: 'private source text',
-      extractionEngine: { engine: 'pdf-embedded-text', device: 'cpu' },
+      extractionEngine: { engine: 'windowsml-ocr', device: 'windowsml-dml' },
       source: { sha256: 'a'.repeat(64), fileName: 'fixture.pdf' },
     },
     responseHeaders: { authorization: 'Bearer also-secret', xRequestId: 'safe' },
@@ -152,7 +152,7 @@ test('redacts auth, tokens, URLs, and raw text from Capture evidence', () => {
   assert.deepEqual(redacted, {
     raw: {
       source: { sha256: 'a'.repeat(64), fileName: 'fixture.pdf' },
-      extractionEngine: { engine: 'pdf-embedded-text', device: 'cpu' },
+      extractionEngine: { engine: 'windowsml-ocr', device: 'windowsml-dml' },
     },
     responseHeaders: { xRequestId: 'safe' },
     errors: [

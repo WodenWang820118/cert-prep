@@ -1049,7 +1049,7 @@ function assertCaptureAdmission(
       `Capture Runtime does not support ${sourceKind.toUpperCase()} capture.`,
     );
   }
-  if (sourceKind === 'image') {
+  if (sourceKind === 'pdf' || sourceKind === 'image') {
     assertRequirementReady(requirements, 'windowsml-ocr', 'WindowsML OCR');
   }
   if (sourceKind === 'audio') {

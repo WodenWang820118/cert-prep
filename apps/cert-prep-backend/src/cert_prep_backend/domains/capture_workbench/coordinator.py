@@ -50,13 +50,10 @@ _SOURCE_REQUIREMENTS: dict[
     CaptureSourceKind,
     tuple[CaptureRequirementId, str],
 ] = {
+    CaptureSourceKind.PDF: ("windowsml-ocr", "WindowsML OCR"),
     CaptureSourceKind.IMAGE: ("windowsml-ocr", "WindowsML OCR"),
     CaptureSourceKind.AUDIO: ("whisper-primary", "Whisper transcription"),
 }
-_PDF_OCR_REQUIREMENT: tuple[CaptureRequirementId, str] = (
-    "windowsml-ocr",
-    "WindowsML OCR",
-)
 _TERMINAL_STATUSES = {
     StreamingCaptureStatus.COMPLETED,
     StreamingCaptureStatus.FAILED,
@@ -219,18 +216,11 @@ class CertPrepCaptureCoordinator:
         if on_started is not None:
             on_started(operation)
         deadline = self._clock() + self._timeout_seconds
-        try:
-            return self._wait_for_structuring(
-                operation,
-                deadline=deadline,
-                should_cancel=should_cancel,
-            )
-        except CaptureRuntimeJobError as error:
-            self._raise_if_pdf_ocr_is_unavailable(
-                kind,
-                error,
-            )
-            raise
+        return self._wait_for_structuring(
+            operation,
+            deadline=deadline,
+            should_cancel=should_cancel,
+        )
 
     def structure_capture(
         self,
@@ -414,30 +404,6 @@ class CertPrepCaptureCoordinator:
             status=requirement.status if requirement is not None else None,
             detail=requirement.detail if requirement is not None else None,
         )
-
-    def _raise_if_pdf_ocr_is_unavailable(
-        self,
-        source_kind: CaptureSourceKind,
-        error: CaptureRuntimeJobError,
-    ) -> None:
-        if source_kind is not CaptureSourceKind.PDF:
-            return
-        if error.code != "requirement_unavailable":
-            return
-        requirement_id, display_name = _PDF_OCR_REQUIREMENT
-        try:
-            requirement = self._runtime_requirement(requirement_id)
-        except Exception:
-            return
-        if requirement is None or requirement.status is RuntimeRequirementStatus.READY:
-            return
-        raise CaptureRuntimeRequirementUnavailableError(
-            source_kind=source_kind,
-            requirement_id=requirement_id,
-            display_name=display_name,
-            status=requirement.status,
-            detail=requirement.detail,
-        ) from error
 
     def _runtime_requirement(
         self,

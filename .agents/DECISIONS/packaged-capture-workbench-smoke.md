@@ -1,5 +1,13 @@
 # Packaged Capture Workbench Smoke Decision
 
+## 2026-08-25
+
+- The embedded-text fast path is superseded. The harness now installs
+  `windowsml-ocr`, submits a rendered-text PDF, and requires
+  `windowsml-ocr` provenance from the real sidecar.
+- Unit/package-QA tests validate harness contracts only. Real OCR proof remains
+  in an explicit real-runtime E2E/acceptance target.
+
 ## 2026-08-02
 
 - Reuse the packaged-flow lifecycle and process-residue primitives instead of

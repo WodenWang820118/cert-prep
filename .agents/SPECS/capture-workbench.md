@@ -82,10 +82,10 @@ OCR/Whisper implementation.
 
 - Capture Workbench owns source sniffing, PDF rendering, image normalization,
   capture runtime requirements, capture operation state, and canonical
-  validation. Its v0.4.1 release is engine-bearing. An all-pages embedded-text
-  PDF remains a real no-model sidecar path with `pdf-embedded-text` provenance;
-  image, audio, and a PDF page requiring OCR require their explicitly installed
-  runtime assets and fail closed while those requirements are not ready.
+  validation. The OCR-only local runtime candidate renders and recognizes every
+  PDF page through PaddleOCR; PDF and image require ready WindowsML assets and
+  audio requires ready Whisper, failing closed while those requirements are
+  not ready.
 - Cert Prep retains its reasoning Ollama process, study profile, question
   generation, semantic explanation, and real-time Q&A.
 - Cert Prep must not launch the Workbench isolated Ollama in host mode. The
@@ -102,10 +102,8 @@ OCR/Whisper implementation.
   contract exposes only WindowsML and Whisper requirements and rejects Ollama
   runtime/model installation requests. The Cert Prep adapter checks the
   sidecar's runtime/API/schema/host capability before each ingestion and opens
-  no ingestion when it is incompatible. It admits image only with ready WindowsML
-  and audio only with ready Whisper; every PDF is delegated to the runtime
-  without browser scanned-PDF classification, so an OCR-dependent PDF's
-  terminal sidecar failure must be clear to the user. Tauri aligns the sidecar
+  no ingestion when it is incompatible. It admits PDF and image only with ready
+  WindowsML and audio only with ready Whisper. Tauri aligns the sidecar
   upload, PDF page, and image-pixel ceilings with the existing Cert Prep source
   limits.
 - Browser code never receives the sidecar bearer token and never invokes the
@@ -122,11 +120,10 @@ OCR/Whisper implementation.
   `/raw` is diagnostic-only.
 - Existing documents, crop uploads, retries, cancellation, chunks, study
   generation, semantic explanations, and real-time Q&A pass regression tests.
-- A true all-pages embedded-text PDF completes through the published v0.4.1
-  sidecar, review, host persistence, and export with `pdf-embedded-text`
-  provenance; it is not OCR evidence.
-- Image, audio, and any OCR-dependent PDF fail closed with an explicit
-  unavailable-model error until v0.4.1 reports the required runtime asset
+- A real PDF completes through the local candidate sidecar, PaddleOCR, review,
+  host persistence, and export with `windowsml-ocr` provenance.
+- PDF, image, and audio fail closed with an explicit unavailable-model error
+  until the runtime reports the required runtime asset
   ready. The browser never receives the sidecar token and Cert Prep provides no
   OCR/STT fallback.
 - A process isolation test proves Capture Workbench sidecar resources never

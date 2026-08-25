@@ -143,7 +143,7 @@ export async function ensureCaptureRuntimeReady(
   );
 }
 
-async function ensureCaptureRuntimeRequirement(
+export async function ensureCaptureRuntimeRequirement(
   run: SmokeRunState,
   requirementId: 'windowsml-ocr',
 ): Promise<void> {

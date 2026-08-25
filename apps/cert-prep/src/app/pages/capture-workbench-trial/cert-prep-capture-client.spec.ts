@@ -40,7 +40,14 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
   beforeEach(() => {
     api = {
       captureRuntimeReady: vi.fn().mockReturnValue(of(readyResponse({}))),
-      captureRuntimeRequirements: vi.fn().mockReturnValue(of({ items: [] })),
+      captureRuntimeRequirements: vi.fn().mockReturnValue(
+        of({
+          items: [
+            readyRequirement('windowsml-ocr', ['pdf', 'image']),
+            readyRequirement('whisper-primary', ['audio']),
+          ],
+        }),
+      ),
       getDocumentMarkdown: vi.fn().mockReturnValue(of(new Blob(['# scan']))),
       createCapture: vi.fn().mockReturnValue(of(makeOperation())),
       getCapture: vi.fn().mockReturnValue(of(makeOperation())),
@@ -475,31 +482,13 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
     });
   });
 
-  it('allows embedded-text PDF admission without an OCR installation', async () => {
-    api.captureRuntimeRequirements.mockReturnValueOnce(
-      of({
-        items: [
-          unavailableRequirement('windowsml-ocr', ['pdf', 'image']),
-          unavailableRequirement('whisper-primary', ['audio']),
-        ],
-      }),
-    );
-
-    await expect(
-      firstValueFrom(
-        client.startStreamingCapture({
-          clientRequestId: 'embedded-pdf',
-          file: new File(['embedded'], 'scan.pdf', {
-            type: 'application/pdf',
-          }),
-          sourceKind: 'pdf',
-          structuringMode: 'host',
-        }),
-      ),
-    ).resolves.toMatchObject({ captureId: 'capture-1' });
-  });
-
   it.each([
+    [
+      'pdf',
+      'windowsml-ocr',
+      'WindowsML OCR is unavailable',
+      new File(['pdf'], 'scan.pdf', { type: 'application/pdf' }),
+    ],
     [
       'image',
       'windowsml-ocr',

@@ -18,7 +18,10 @@ import {
   captureProjectApiAfterRestart,
   unavailableGenerationReadinessSnapshot,
 } from '../packaged-flow-smoke/generation-readiness.mts';
-import { installPythonRuntimeIfNeeded } from '../packaged-flow-smoke/runtime-install-flow.mts';
+import {
+  ensureCaptureRuntimeRequirement,
+  installPythonRuntimeIfNeeded,
+} from '../packaged-flow-smoke/runtime-install-flow.mts';
 import {
   activePage,
   log,
@@ -65,7 +68,7 @@ import {
   type PublishedRuntimeNegativeCaseEvidence,
 } from './negative-data-contract.mts';
 
-const FIXTURE = 'packaged-capture-embedded-text.pdf';
+const FIXTURE = 'packaged-capture-paddleocr.pdf';
 const REVIEW_MARKER = '[packaged review]';
 export const CAPTURE_WORKBENCH_READY_STATUS_PATTERN =
   /Capture Workbench is ready\./;
@@ -93,7 +96,7 @@ export async function runPackagedCaptureWorkbenchSmoke(
   const fixturePath = join(options.outDir, FIXTURE);
   writeFileSync(
     fixturePath,
-    embeddedTextPdf('Packaged Capture Workbench embedded-text fixture.'),
+    renderedTextPdf('Packaged Capture Workbench PaddleOCR fixture.'),
   );
   run.processBaseline = processSnapshot();
   let failure: unknown;
@@ -246,6 +249,7 @@ async function runLazyCaptureJourney(
     backendConfigurationChanged: true,
     priorBackendAccessRejected: true,
   });
+  await ensureCaptureRuntimeRequirement(run, 'windowsml-ocr');
   const capture = await runCaptureDocumentFlow(run, fixturePath);
   const negativeCases = await runPublishedRuntimeNegativeDataCases(
     firstPage,
@@ -408,7 +412,7 @@ async function runCaptureDocumentFlow(
   const input = page.locator('capture-workbench input[type="file"]');
   await input.waitFor({ state: 'attached', timeout: 30_000 });
   if (!(await input.isEnabled())) {
-    throw new Error('Embedded-text picker was disabled.');
+    throw new Error('PDF picker remained disabled after PaddleOCR installation.');
   }
   const captureResponse = page.waitForResponse(
     (response) => {
@@ -458,11 +462,11 @@ async function runCaptureDocumentFlow(
     'extraction engine',
   );
   if (
-    extraction.engine !== 'pdf-embedded-text' ||
-    extraction.device !== 'cpu'
+    extraction.engine !== 'windowsml-ocr' ||
+    !['windowsml-dml', 'cpu'].includes(String(extraction.device))
   ) {
     throw new Error(
-      'Raw Capture provenance was not embedded-text CPU extraction.',
+      'Raw Capture provenance was not PaddleOCR extraction.',
     );
   }
 
@@ -890,7 +894,7 @@ function createRun(
   };
 }
 
-function embeddedTextPdf(text: string): Buffer {
+function renderedTextPdf(text: string): Buffer {
   const escaped = text
     .replaceAll('\\', '\\\\')
     .replaceAll('(', '\\(')
