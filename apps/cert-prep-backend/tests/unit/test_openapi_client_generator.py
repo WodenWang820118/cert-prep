@@ -7,9 +7,9 @@ from cert_prep_backend.api.app import create_app
 from cert_prep_backend.core.config import Settings
 
 
-SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
+SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "scripts"
 TRACKED_CLIENT = (
-    Path(__file__).resolve().parents[3]
+    Path(__file__).resolve().parents[4]
     / "libs"
     / "cert-prep-api"
     / "src"

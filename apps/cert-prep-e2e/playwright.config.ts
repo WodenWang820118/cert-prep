@@ -15,10 +15,10 @@ const baseURL = process.env['BASE_URL'] || 'http://localhost:4200';
  * See https://playwright.dev/docs/test-configuration.
  */
 export default defineConfig({
-  ...nxE2EPreset(__filename, { testDir: './src' }),
+  ...nxE2EPreset(__filename, { testDir: './src/e2e/local-package' }),
   // The real-backend suite owns a separate server topology and config. Keep the
   // default target limited to the fast, route-mocked browser regression suite.
-  testIgnore: ['real-backend/**'],
+  testIgnore: ['**/real-backend/**'],
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
     baseURL,

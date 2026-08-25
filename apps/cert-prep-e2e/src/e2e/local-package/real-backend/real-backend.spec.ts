@@ -9,7 +9,7 @@ import {
   type TestInfo,
 } from '@playwright/test';
 import { workspaceRoot } from '@nx/devkit';
-import { minimalPng } from '../support/minimal-image';
+import { minimalPng } from '../../support/minimal-image';
 
 const apiBaseUrl = 'http://127.0.0.1:8766';
 const apiHeaders = { Authorization: 'Bearer real-e2e-token' };

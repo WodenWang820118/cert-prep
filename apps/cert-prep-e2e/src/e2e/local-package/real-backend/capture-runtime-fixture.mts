@@ -12,7 +12,7 @@ import { pathToFileURL } from 'node:url';
 import {
   CAPTURE_RUNTIME_MODEL,
   CAPTURE_RUNTIME_VERSION,
-} from '../../../../tools/capture-runtime-version.mts';
+} from '../../../../../../tools/capture-runtime-version.mts';
 import {
   PDF_PAGE_INSPECTION_SCRIPT,
   REAL_PDF_MAGIC,

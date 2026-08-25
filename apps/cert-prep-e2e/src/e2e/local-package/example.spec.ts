@@ -6,8 +6,8 @@ import {
   devToken,
   expectedSeenPaths,
   installMockCertPrepApi,
-} from './support/mock-api';
-import { minimalPng } from './support/minimal-image';
+} from '../support/mock-api';
+import { minimalPng } from '../support/minimal-image';
 import {
   completePracticeQuestions,
   createProject,
@@ -26,7 +26,7 @@ import {
   startRandomQuiz,
   uploadDocumentAndExpectDraft,
   wrongChoiceForDraft,
-} from './support/practice-flow';
+} from '../support/practice-flow';
 
 test('completes Random Quiz for every playable mocked draft and records wrong answers', async ({
   page,
@@ -267,7 +267,7 @@ test('optionally crops selected images before preserving mixed upload order', as
   await createProject(page, api);
   await expectWorkspaceReady(page);
 
-  await page.getByText('Optional settings', { exact: true }).click();
+  await page.getByText('Advanced settings', { exact: true }).click();
   const cropToggle = page.getByRole('switch', {
     name: 'Crop images before upload',
   });

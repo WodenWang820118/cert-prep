@@ -35,7 +35,7 @@ rmSync(dataDir, { recursive: true, force: true });
 mkdirSync(dataDir, { recursive: true });
 
 export default defineConfig({
-  testDir: './src/real-backend',
+  testDir: './src/e2e/local-package/real-backend',
   outputDir: '../../dist/.playwright/apps/cert-prep-e2e/real-backend-output',
   workers: 1,
   retries: process.env['CI'] ? 1 : 0,
@@ -70,7 +70,7 @@ export default defineConfig({
       },
     },
     {
-      command: 'node src/real-backend/backend-proxy.mts',
+      command: 'node src/e2e/local-package/real-backend/backend-proxy.mts',
       url: 'http://127.0.0.1:8766/__e2e/health',
       cwd: join(workspaceRoot, 'apps', 'cert-prep-e2e'),
       reuseExistingServer: false,
@@ -82,7 +82,7 @@ export default defineConfig({
       },
     },
     {
-      command: 'node src/real-backend/capture-runtime-fixture.mts',
+      command: 'node src/e2e/local-package/real-backend/capture-runtime-fixture.mts',
       url: `http://127.0.0.1:${captureRuntimePort}/__e2e/health`,
       cwd: join(workspaceRoot, 'apps', 'cert-prep-e2e'),
       reuseExistingServer: false,

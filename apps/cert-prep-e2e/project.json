@@ -12,13 +12,13 @@
       "inputs": [
         "default",
         "{workspaceRoot}/tsconfig.scripts.json",
-        "{projectRoot}/src/real-backend/tsconfig.json"
+        "{projectRoot}/src/e2e/local-package/real-backend/tsconfig.json"
       ],
       "options": {
-        "command": "pnpm exec tsc -p apps/cert-prep-e2e/src/real-backend/tsconfig.json"
+        "command": "pnpm exec tsc -p apps/cert-prep-e2e/src/e2e/local-package/real-backend/tsconfig.json"
       }
     },
-    "e2e": {
+    "e2e-local-package": {
       "executor": "nx:run-commands",
       "dependsOn": [],
       "options": {
@@ -39,7 +39,7 @@
         "{workspaceRoot}/dist/.playwright/apps/cert-prep-e2e/playwright-report"
       ]
     },
-    "e2e-real-backend": {
+    "e2e-real-backend-local-package": {
       "executor": "nx:run-commands",
       "dependsOn": ["typecheck-scripts"],
       "options": {
@@ -59,6 +59,11 @@
         "{workspaceRoot}/dist/.playwright/apps/cert-prep-e2e/real-backend-output",
         "{workspaceRoot}/dist/.playwright/apps/cert-prep-e2e/playwright-report"
       ]
+    },
+    "e2e": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["e2e-local-package"],
+      "options": { "command": "node -e \"process.stdout.write('cert-prep-e2e local-package suite completed\\n')\"" }
     }
   }
 }

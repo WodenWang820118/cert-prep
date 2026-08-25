@@ -10,12 +10,29 @@
       "executor": "nx:run-commands",
       "options": { "cwd": "apps/cert-prep-backend", "command": "uv run uvicorn --app-dir src cert_prep_backend.api.app:create_app --factory --host 127.0.0.1 --port 8765" }
     },
+    "test-unit": {
+      "cache": true,
+      "executor": "nx:run-commands",
+      "metadata": { "description": "Hermetic backend tests collected only from tests/unit." },
+      "inputs": ["default"],
+      "outputs": ["{workspaceRoot}/coverage/apps/cert-prep-backend"],
+      "options": { "cwd": "apps/cert-prep-backend", "command": "uv run pytest tests/unit" }
+    },
+    "test-integration": {
+      "cache": true,
+      "executor": "nx:run-commands",
+      "metadata": { "description": "Backend API, persistence, runtime, and provider integration tests collected only from tests/integration." },
+      "inputs": ["default"],
+      "outputs": ["{workspaceRoot}/coverage/apps/cert-prep-backend"],
+      "options": { "cwd": "apps/cert-prep-backend", "command": "uv run pytest tests/integration" }
+    },
     "test": {
       "cache": true,
       "executor": "nx:run-commands",
+      "dependsOn": ["test-unit", "test-integration"],
+      "metadata": { "description": "Compatibility aggregate for the separately collected unit and integration targets." },
       "inputs": ["default"],
-      "outputs": ["{workspaceRoot}/coverage/apps/cert-prep-backend"],
-      "options": { "cwd": "apps/cert-prep-backend", "command": "uv run pytest" }
+      "options": { "command": "node -e \"process.stdout.write('cert-prep-backend unit and integration targets completed\\n')\"" }
     },
     "lint": {
       "cache": true,
