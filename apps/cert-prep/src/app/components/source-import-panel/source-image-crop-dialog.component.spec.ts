@@ -73,7 +73,7 @@ describe('SourceImageCropDialogComponent', () => {
     const fixture = createCropFixture(source);
     loadFixtureImage(fixture, 12, 8);
     const emitted = vi.fn();
-    fixture.componentInstance.cropApplied.subscribe(emitted);
+    fixture.componentInstance.action.subscribe(emitted);
     const component = componentActions(fixture.componentInstance);
 
     component.updateCropField('x', 2);
@@ -91,7 +91,7 @@ describe('SourceImageCropDialogComponent', () => {
       expect.any(HTMLImageElement),
       { x: 2, y: 1, width: 6, height: 4 },
     );
-    expect(emitted).toHaveBeenCalledWith(cropped);
+    expect(emitted).toHaveBeenCalledWith({ type: 'crop-applied', file: cropped });
   });
 
   it('includes the bottom-right image edges in a full-surface pointer drag', () => {
@@ -161,7 +161,7 @@ describe('SourceImageCropDialogComponent', () => {
       new File(['broken'], 'capture.png', { type: 'image/png' }),
     );
     const kept = vi.fn();
-    fixture.componentInstance.originalKept.subscribe(kept);
+    fixture.componentInstance.action.subscribe(kept);
     const component = componentActions(fixture.componentInstance);
 
     component.failImageLoad();
@@ -171,7 +171,7 @@ describe('SourceImageCropDialogComponent', () => {
       'could not be previewed',
     );
     component.keepOriginal();
-    expect(kept).toHaveBeenCalledTimes(1);
+    expect(kept).toHaveBeenCalledWith({ type: 'keep-original-image' });
   });
 
   it('revokes every preview URL when the source changes or is destroyed', () => {

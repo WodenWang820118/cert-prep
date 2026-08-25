@@ -20,9 +20,8 @@ export async function seedMockApiConfig(
   );
 }
 
-export async function expectRuntimeReady(page: Page): Promise<void> {
+export async function expectWorkspaceReady(page: Page): Promise<void> {
   await expect(page.locator('h1', { hasText: 'Cert Prep' })).toBeVisible();
-  await expect(page.getByText('qwen3.5:4b')).toBeVisible();
 }
 
 export async function createProject(
@@ -63,15 +62,20 @@ export async function uploadDocumentAndExpectDraft(
       .locator('.workbench-file-name')
       .getByText(document.filename, { exact: true }),
   ).toBeVisible();
-  await expect(page.getByText('windowsml_ocr')).toBeVisible();
-  await expect(page.getByText('windowsml').last()).toBeVisible();
-  await expect(page.getByText(draft.question)).toBeVisible();
-  await expect(page.getByText(draft.source_excerpt)).toBeVisible();
+  await expect(
+    page.getByRole('heading', { name: 'Ready to review' }),
+  ).toBeVisible();
+  await expect(page.getByText(draft.question)).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(page.getByText(draft.source_excerpt)).toBeVisible({
+    timeout: 15_000,
+  });
   await expect(
     page
       .getByTestId('draft-question-card')
       .filter({ hasText: draft.question })
-      .getByText('Playable', { exact: true }),
+      .getByText('Ready for practice', { exact: true }),
   ).toBeVisible();
 }
 
@@ -87,7 +91,7 @@ export async function createWorkspaceWithUploadedDocument(
   const project = options.project ?? api.project;
   await page.goto('/');
   await createProject(page, api, project);
-  await expectRuntimeReady(page);
+  await expectWorkspaceReady(page);
   await uploadDocumentAndExpectDraft(page, api, options);
 }
 
@@ -140,7 +144,7 @@ export async function selectActiveDocument(
   document: DocumentRead,
 ): Promise<void> {
   await page.getByRole('link', { name: 'Build' }).click();
-  await page.getByLabel('Project document library').selectOption(document.id);
+  await page.getByLabel('Project source library').selectOption(document.id);
   await expect(
     page
       .locator('.workbench-file-name')
@@ -200,7 +204,7 @@ export async function runMultiPdfBatchUploadScenario(
 
   await page.goto('/');
   await createProject(page, api);
-  await expectRuntimeReady(page);
+  await expectWorkspaceReady(page);
 
   const requestMarker = api.markRequestLog();
   await page.locator('input[aria-label="Source files"]').setInputFiles(
@@ -265,7 +269,7 @@ async function expectDocumentLibraryOption(
 ): Promise<void> {
   await expect(
     page
-      .getByLabel('Project document library')
+      .getByLabel('Project source library')
       .locator('option', { hasText: document.filename }),
   ).toHaveCount(1);
 }
@@ -274,7 +278,7 @@ async function selectDocumentFromLibrary(
   page: Page,
   document: DocumentRead,
 ): Promise<void> {
-  const documentLibrary = page.getByLabel('Project document library');
+  const documentLibrary = page.getByLabel('Project source library');
   await documentLibrary.selectOption(document.id);
   await expect(documentLibrary).toHaveValue(document.id);
 }
@@ -286,8 +290,9 @@ async function expectAiInferredPlayableDraft(
   const card = page.getByTestId('draft-question-card').filter({
     hasText: draft.question,
   });
-  await expect(card.getByText('Playable', { exact: true })).toBeVisible();
-  await expect(card.getByText('ai_inferred', { exact: true })).toBeVisible();
+  await expect(
+    card.getByText('Ready for practice', { exact: true }),
+  ).toBeVisible();
 }
 
 export async function expectRandomQuizAvailableCount(
@@ -643,7 +648,7 @@ async function expectWrongAnswerExplanation(
 }
 
 async function openReviewPage(page: Page): Promise<void> {
-  await page.getByRole('link', { name: 'Review' }).click();
+  await page.getByRole('link', { name: 'Wrong Answers' }).click();
   await expect(page).toHaveURL(/\/review$/);
   await expect(
     page.getByRole('heading', { name: 'Wrong Answers', exact: true }),

@@ -126,6 +126,17 @@ pnpm nx run cert-prep-e2e:e2e
 pnpm nx run cert-prep-e2e:e2e-real-backend
 ```
 
+The real-backend browser suite is fail-closed: it requires an actual PDF and
+an Ollama provider, and it asserts a question from that PDF. Set
+`CERT_PREP_E2E_REAL_PDF` (or `CERT_PREP_ACCEPTANCE_PDF`),
+`CERT_PREP_E2E_REAL_EXPECTED_QUESTION`, and
+`CERT_PREP_E2E_LLM_PROVIDER=ollama` before running it. The route-mocked suite
+is the only suite allowed to use placeholder data and writes its explicitly
+mocked screenshots under `output/playwright/cert-prep/e2e-route-mocked-cycle`.
+Real-document screenshots are written under
+`output/playwright/cert-prep/e2e-real-document-cycle` only after the uploaded
+PDF source assertion succeeds.
+
 ### Desktop and packaging
 
 ```bash

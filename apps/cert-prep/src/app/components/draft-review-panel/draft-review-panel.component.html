@@ -5,159 +5,28 @@
         <span class="workbench-panel-icon" aria-hidden="true">
           <i class="pi pi-sparkles"></i>
         </span>
-        <h2 id="drafts-heading">Step 02: Mock Exam Items</h2>
+        <h2 id="drafts-heading">Step 02: Exam Questions</h2>
       </div>
       <p class="workbench-panel-subtitle">
-        {{ drafts.activeDocumentPlayableQuestions().length }} active playable /
-        {{ drafts.activeDocumentDrafts().length }} active /
-        {{ drafts.drafts().length }} project total.
+        Review questions from the uploaded document, edit anything that needs
+        attention, then practice.
       </p>
-      @if (drafts.manualDraftOperation(); as operation) {
-        <div class="mt-2 flex flex-wrap items-center gap-2" aria-live="polite">
-          <p-tag
-            [value]="'Manual generation: ' + operation.status"
-            [severity]="operation.status === 'succeeded' ? 'success' : operation.status === 'failed' ? 'danger' : operation.status === 'canceled' ? 'warn' : 'info'"
-            [rounded]="true"
-          />
-          <span class="text-sm text-muted-color">
-            {{ operation.phase }} / {{ operation.generated_count }} questions
-          </span>
-          @if (operation.unavailable_blocks?.length) {
-            <span
-              class="text-sm font-semibold text-orange-700"
-              data-testid="manual-generation-needs-review"
-            >
-              {{ operation.unavailable_blocks.length }} parsed block(s) need review
-            </span>
-          }
-          @if (drafts.canCancelManualDraftOperation()) {
-            <button
-              class="workbench-secondary-button"
-              type="button"
-              [disabled]="drafts.manualDraftCanceling()"
-              (click)="drafts.cancelManualDraftOperation()"
-            >
-              <i
-                [class]="drafts.manualDraftCanceling() ? 'pi pi-spin pi-spinner' : 'pi pi-times'"
-                aria-hidden="true"
-              ></i>
-              <span>Cancel manual generation</span>
-            </button>
-          } @else if (drafts.isManualDraftOperationActive()) {
-            <span class="text-xs font-semibold text-muted-color">
-              Final commit is not cancellable.
-            </span>
-          }
-        </div>
-        @if (operation.unavailable_blocks?.length) {
-          <div
-            class="mt-2 rounded-md border border-orange-200 bg-orange-50 p-3 text-sm text-orange-950"
-            data-testid="manual-generation-unavailable-blocks"
-          >
-            <strong>Parsed blocks kept for review</strong>
-            <ul class="mt-1 list-disc pl-5">
-              @for (block of operation.unavailable_blocks; track block.chunk_id + '-' + block.source_order) {
-                <li>
-                  Page {{ block.citation_page }}
-                  @if (block.source_question_number) {
-                    / Question {{ block.source_question_number }}
-                  }
-                  — {{ block.reason }}
-                </li>
-              }
-            </ul>
-          </div>
-        }
-      }
-      @if (drafts.manualDraftStreamError(); as streamError) {
-        <div
-          class="mt-2 flex flex-wrap items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 p-3"
-          role="alert"
+
+      <app-draft-generation-status
+        [model]="generationStatus()"
+        (action)="handleGenerationAction($event)"
+      />
+
+      @if (saveResult(); as result) {
+        <p
+          class="mt-2 rounded-md border border-green-200 bg-green-50 p-3 text-sm font-semibold text-green-900"
+          aria-live="polite"
+          data-testid="draft-save-result"
         >
-          <span class="text-sm font-semibold text-red-900">
-            {{ streamError }}
-          </span>
-          <button
-            class="workbench-secondary-button"
-            type="button"
-            (click)="drafts.retryManualDraftStream()"
-          >
-            <i class="pi pi-refresh" aria-hidden="true"></i>
-            <span>Retry manual progress</span>
-          </button>
-        </div>
-      }
-      @if (drafts.draftJobSummary().total > 0 || sourceImport.isParsing()) {
-        <div class="mt-2 flex flex-wrap items-center gap-2" aria-live="polite">
-          <p-tag
-            [value]="drafts.draftJobSummary().label"
-            [severity]="drafts.draftJobSummary().severity"
-            [rounded]="true"
-          />
-          <span class="text-sm text-muted-color">
-            {{ drafts.draftJobSummary().detail }}
-          </span>
-          @if (drafts.canRetryDraftJobs()) {
-            <button
-              class="workbench-secondary-button"
-              type="button"
-              [disabled]="operations.isBusyFor('questions')"
-              (click)="drafts.retryDraftJobs()"
-            >
-              <i
-                [class]="operations.isBusyFor('questions') ? 'pi pi-spin pi-spinner' : 'pi pi-refresh'"
-                aria-hidden="true"
-              ></i>
-              <span>Retry generation</span>
-            </button>
-          }
-          @if (drafts.canCancelActiveDraftJobs()) {
-            <button
-              class="workbench-secondary-button"
-              type="button"
-              [disabled]="drafts.cancelingDraftJobs()"
-              (click)="drafts.cancelActiveDraftJobs()"
-            >
-              <i
-                [class]="drafts.cancelingDraftJobs() ? 'pi pi-spin pi-spinner' : 'pi pi-times'"
-                aria-hidden="true"
-              ></i>
-              <span>Cancel background generation</span>
-            </button>
-          }
-        </div>
-      }
-      @if (drafts.streamError(); as streamError) {
-        <div
-          class="mt-2 flex flex-wrap items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 p-3"
-          role="alert"
-        >
-          <span class="text-sm font-semibold text-red-900">
-            {{ streamError }}
-          </span>
-          <button
-            class="workbench-secondary-button"
-            type="button"
-            (click)="drafts.retryDraftStream()"
-          >
-            <i class="pi pi-refresh" aria-hidden="true"></i>
-            <span>Retry progress</span>
-          </button>
-        </div>
+          {{ result }}
+        </p>
       }
     </div>
-    <button
-      class="workbench-action-button"
-      type="button"
-      [disabled]="operations.isBusyFor('questions') || drafts.isManualDraftOperationActive() || !sourceImport.canGenerateDrafts()"
-      (click)="drafts.generateDrafts('hybrid_reasoning')"
-    >
-      <i
-        [class]="operations.isBusyFor('questions') || drafts.isManualDraftProgressActive() ? 'pi pi-spin pi-spinner' : 'pi pi-sparkles'"
-        aria-hidden="true"
-      ></i>
-      <span>Generate questions</span>
-    </button>
   </header>
 
   <div class="workbench-panel-body">
@@ -175,203 +44,47 @@
         />
       </label>
       <span class="text-sm text-muted-color">
-        Generated drafts stay editable before practice modes use them.
+        Only questions tied to a source item can be used for practice.
       </span>
     </div>
 
     <div class="workbench-question-list">
-      @for (draft of drafts.activeDocumentDrafts(); track draft.id) {
-        <article
-          class="workbench-question-card"
-          data-testid="draft-question-card"
-          [attr.data-draft-id]="draft.id"
-        >
-          <div class="workbench-question-meta">
-            <span
-              class="workbench-tag"
-              [class.is-primary]="drafts.isPlayableDraft(draft)"
-            >
-              {{ drafts.draftStatusLabel(draft) }}
-            </span>
-            <span data-testid="draft-question-id">ID: {{ draft.id }}</span>
-            @if (draft.citation_page) {
-              <span>Page {{ draft.citation_page }}</span>
-            }
-            <span>{{ draft.answer_key_source }}</span>
-            @if (!drafts.isPlayableDraft(draft) && draft.rejection_reason) {
-              <span>{{ draft.rejection_reason }}</span>
-            }
-          </div>
-
-          @if (drafts.isEditing(draft)) {
-            <div class="workbench-edit-form">
-              <label class="workbench-field">
-                <span>Question</span>
-                <input
-                  pInputText
-                  [name]="'question-' + draft.id"
-                  [ngModel]="drafts.draftEdit(draft).question"
-                  (ngModelChange)="drafts.setEditQuestion(draft.id, $event)"
-                />
-              </label>
-
-              <fieldset class="m-0 grid gap-2 border-0 p-0">
-                <legend class="pb-1 text-sm font-bold text-muted-color">
-                  Choices
-                </legend>
-                @for (choice of drafts.draftEdit(draft).choices; track $index) {
-                  <div
-                    class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2"
-                  >
-                    <input
-                      pInputText
-                      [name]="'choice-' + draft.id + '-' + $index"
-                      [ngModel]="choice"
-                      (ngModelChange)="drafts.setEditChoice(draft.id, $index, $event)"
-                    />
-                    <button
-                      class="workbench-secondary-button"
-                      type="button"
-                      aria-label="Remove choice"
-                      [disabled]="drafts.draftEdit(draft).choices.length <= 2"
-                      (click)="drafts.removeEditChoice(draft.id, $index)"
-                    >
-                      <i class="pi pi-times" aria-hidden="true"></i>
-                    </button>
-                  </div>
-                }
-                <button
-                  class="workbench-secondary-button"
-                  type="button"
-                  (click)="drafts.addEditChoice(draft.id)"
-                >
-                  <i class="pi pi-plus" aria-hidden="true"></i>
-                  <span>Add choice</span>
-                </button>
-              </fieldset>
-
-              <label class="workbench-field">
-                <span>Answer</span>
-                <select
-                  [ngModel]="drafts.draftEdit(draft).answer"
-                  (ngModelChange)="drafts.setEditAnswer(draft.id, $event)"
-                >
-                  <option value="">Select answer</option>
-                  @for (choice of drafts.draftEdit(draft).choices; track $index) {
-                    <option [value]="choice">{{ choice || 'Choice ' + ($index + 1) }}</option>
-                  }
-                </select>
-              </label>
-
-              <label class="workbench-field">
-                <span>Rationale</span>
-                <textarea
-                  [name]="'rationale-' + draft.id"
-                  [ngModel]="drafts.draftEdit(draft).rationale"
-                  (ngModelChange)="drafts.setEditRationale(draft.id, $event)"
-                ></textarea>
-              </label>
-            </div>
-          } @else {
-            <h3>{{ draft.question }}</h3>
-            <ol class="workbench-choice-list" aria-label="Choices">
-              @for (choice of draft.choices; track $index) {
-                <li
-                  class="workbench-choice"
-                  [class.is-answer]="choice === draft.answer"
-                >
-                  <span class="workbench-choice-key">
-                    {{ choiceKey($index) }}
-                  </span>
-                  <span>{{ choice }}</span>
-                  @if (choice === draft.answer) {
-                    <i class="pi pi-check" aria-hidden="true"></i>
-                  }
-                </li>
-              }
-            </ol>
-            @if (draft.rationale) {
-              <div class="workbench-rationale">
-                <strong>Rationale</strong>
-                <p>{{ draft.rationale }}</p>
-              </div>
-            }
-          }
-
-          <div class="workbench-rationale">
-            <strong>Source</strong>
-            @if (draft.source_excerpt) {
-              <p>{{ draft.source_excerpt }}</p>
-            } @else {
-              <p>No source excerpt.</p>
-            }
-          </div>
-
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <span class="text-sm text-muted-color">
-              Page {{ draft.citation_page ?? 'n/a' }} /
-              Chunk {{ draft.chunk_id ?? 'n/a' }}
-            </span>
-            <span class="workbench-tag">
-              {{
-                drafts.isEditing(draft)
-                  ? drafts.draftEdit(draft).answer || 'Draft'
-                  : draft.answer
-                    ? 'Editable'
-                    : 'Draft'
-              }}
-            </span>
-          </div>
-
-          <div class="flex flex-wrap justify-end gap-2">
-            @if (drafts.isEditing(draft)) {
-              <button
-                class="workbench-secondary-button"
-                type="button"
-                [disabled]="operations.isBusyFor('saveDraft')"
-                (click)="drafts.cancelEdit(draft)"
-              >
-                Cancel
-              </button>
-              <button
-                class="workbench-action-button"
-                type="button"
-                [disabled]="operations.isBusyFor('saveDraft')"
-                (click)="drafts.saveDraft(draft)"
-              >
-                <i
-                  [class]="operations.isBusyFor('saveDraft') ? 'pi pi-spin pi-spinner' : 'pi pi-save'"
-                  aria-hidden="true"
-                ></i>
-                <span>Save</span>
-              </button>
-            } @else {
-              <button
-                class="workbench-secondary-button"
-                type="button"
-                [disabled]="operations.isBusyFor('saveDraft')"
-                (click)="drafts.startEdit(draft)"
-              >
-                <i class="pi pi-pencil" aria-hidden="true"></i>
-                <span>Edit</span>
-              </button>
-            }
-          </div>
-        </article>
+      @for (card of questionCards(); track card.id) {
+        <app-draft-question-editor-card
+          [model]="card"
+          (action)="handleQuestionAction(card, $event)"
+        />
       } @empty {
         <article class="workbench-question-card">
-          <span class="workbench-tag">Draft</span>
-          <h3>No mock exam items for the active document.</h3>
-          <button
-            class="workbench-link-button"
-            type="button"
-            [disabled]="!sourceImport.canGenerateDrafts()"
-            (click)="drafts.generateDrafts('hybrid_reasoning')"
-          >
-            Generate questions when a source file is ready
-          </button>
+          <span class="workbench-tag">Questions</span>
+          <h3>No questions are ready yet.</h3>
+          <p>
+            Add a source file with text, then generate questions when the source
+            is ready.
+          </p>
         </article>
       }
     </div>
+
+    @if (hasPlayableQuestions()) {
+      <aside
+        class="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-blue-200 bg-blue-50 p-4"
+        data-testid="draft-practice-next-step"
+      >
+        <div>
+          <strong class="block text-blue-950">Next step: Practice</strong>
+          <span class="text-sm text-blue-900">
+            Your questions are ready for a random quiz.
+          </span>
+        </div>
+        <a
+          class="workbench-action-button"
+          data-testid="draft-practice-link"
+          routerLink="/random-quiz"
+        >
+          Practice questions
+        </a>
+      </aside>
+    }
   </div>
 </section>

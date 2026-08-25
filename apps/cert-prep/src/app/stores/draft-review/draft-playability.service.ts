@@ -14,7 +14,8 @@ export class DraftPlayabilityService {
       answer.length > 0 &&
       choices.includes(answer) &&
       this.hasText(draft.rationale) &&
-      this.hasEvidence(draft)
+      this.hasEvidence(draft) &&
+      this.hasSourceQuestionIdentity(draft)
     );
   }
 
@@ -38,5 +39,9 @@ export class DraftPlayabilityService {
 
   private hasEvidence(draft: QuestionDraftRead): boolean {
     return draft.citation_page !== null || this.hasText(draft.source_excerpt);
+  }
+
+  private hasSourceQuestionIdentity(draft: QuestionDraftRead): boolean {
+    return this.hasText(draft.source_question_number);
   }
 }

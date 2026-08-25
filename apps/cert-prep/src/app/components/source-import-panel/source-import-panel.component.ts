@@ -1,635 +1,70 @@
 import {
+  ChangeDetectionStrategy,
   Component,
-  DestroyRef,
+  computed,
   effect,
-  ElementRef,
   inject,
   signal,
   viewChild,
-  ChangeDetectionStrategy,
 } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { ProgressBar } from 'primeng/progressbar';
-import { Tag } from 'primeng/tag';
-import { ToggleSwitch } from 'primeng/toggleswitch';
-import { catchError, of } from 'rxjs';
 import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
 import { OperationStore } from '../../stores/operation.store';
 import { ProjectStore } from '../../stores/project.store';
 import { SourceImportStore } from '../../stores/source-import/source-import.store';
-import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
-import type { ChunkRead } from '../../contracts/api.contracts';
 import { SourceImageCropDialogComponent } from './source-image-crop-dialog.component';
 import { SourceImageCropService } from './source-image-crop.service';
+import { SourceAudioPreviewService } from './source-audio-preview.service';
+import { SourceDocumentStatusComponent } from './source-document-status.component';
+import { SourceEvidencePreviewComponent } from './source-evidence-preview.component';
+import type {
+  SourceDocumentStatusViewModel,
+  SourceEvidenceViewModel,
+  SourceImportAction,
+  SourceUploadQueueViewModel,
+} from './source-import-panel.contracts';
+import { SourceUploadQueueComponent } from './source-upload-queue.component';
 
 @Component({
   selector: 'app-source-import-panel',
   imports: [
-    FormsModule,
-    ProgressBar,
+    SourceDocumentStatusComponent,
+    SourceEvidencePreviewComponent,
     SourceImageCropDialogComponent,
-    Tag,
-    ToggleSwitch,
+    SourceUploadQueueComponent,
   ],
+  providers: [SourceAudioPreviewService],
   changeDetection: ChangeDetectionStrategy.Eager,
   template: `
-    <section class="workbench-panel" aria-labelledby="source-heading">
-      <header class="workbench-panel-header">
-        <div class="workbench-panel-title">
-          <span class="workbench-panel-icon" aria-hidden="true">
-            <i class="pi pi-file"></i>
-          </span>
-          <h2 id="source-heading">Step 01: Source files</h2>
-        </div>
-        <label
-          #chooseFilesControl
-          class="workbench-secondary-button"
-          tabindex="-1"
-          [attr.for]="isFileSelectionBlocked() ? null : 'sourceFiles'"
-          [attr.aria-disabled]="isFileSelectionBlocked()"
-        >
-          <i class="pi pi-upload" aria-hidden="true"></i>
-          <span>Choose files</span>
-        </label>
-      </header>
-
-      <div class="workbench-panel-body">
-        <input
-          id="sourceFiles"
-          class="sr-only"
-          type="file"
-          [accept]="sourceImport.sourceFileAccept"
-          multiple
-          aria-label="Source files"
-          [disabled]="isFileSelectionBlocked()"
-          (change)="chooseFiles($event)"
-        />
-
-        <div
-          class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-surface-200 bg-surface-50 p-3"
-        >
-          <div class="min-w-0 flex-1">
-            <label
-              id="crop-images-label"
-              class="block cursor-pointer text-sm font-semibold text-color"
-              for="cropImagesBeforeUpload"
-            >
-              Crop images before upload
-            </label>
-            <p class="m-0 mt-1 text-xs leading-5 text-muted-color">
-              Review PNG, JPEG, and WebP images one at a time. PDF files stay
-              unchanged.
-            </p>
-          </div>
-          <p-toggleswitch
-            inputId="cropImagesBeforeUpload"
-            ariaLabelledBy="crop-images-label"
-            [ngModel]="cropImagesBeforeUpload()"
-            [disabled]="isUploadBusy()"
-            (ngModelChange)="setCropImagesBeforeUpload($event)"
-          />
-        </div>
-
-        <div class="workbench-file-row">
-          <div class="workbench-file-name">
-            <i class="pi pi-file" aria-hidden="true"></i>
-            <span>{{ sourceImport.selectedFileLabel() }}</span>
-          </div>
-          <span class="workbench-tag">
-            {{
-              sourceImport.isUploading()
-                ? 'Uploading'
-                : (sourceImport.activeDocument()?.status ?? 'Waiting')
-            }}
-          </span>
-        </div>
-
-        @if (sourceImport.uploadItems().length > 0) {
-          <div
-            class="grid gap-2"
-            aria-label="Selected source file upload status"
-          >
-            @for (item of sourceImport.uploadItems(); track item.id) {
-              <div
-                class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-surface-200 bg-surface-0 p-3"
-              >
-                <div class="min-w-0 flex-1">
-                  <p class="m-0 truncate text-sm font-semibold text-color">
-                    {{ item.file.name }}
-                  </p>
-                  <p class="m-0 mt-1 text-xs font-semibold text-muted-color">
-                    {{ formatFileSize(item.file) }}
-                    @if (item.document) {
-                      / {{ item.document.chunks_count }} chunks
-                    }
-                    @if (item.error) {
-                      / {{ item.error }}
-                    }
-                  </p>
-                </div>
-                <p-tag
-                  [value]="uploadStatusLabel(item.status)"
-                  [severity]="uploadStatusSeverity(item.status)"
-                  [rounded]="true"
-                />
-                @if (sourceImport.canCancelUploadItem(item)) {
-                  <button
-                    class="workbench-secondary-button"
-                    type="button"
-                    [disabled]="item.status === 'cancel_requested'"
-                    (click)="sourceImport.cancelUploadItem(item.id)"
-                  >
-                    <i class="pi pi-times" aria-hidden="true"></i>
-                    <span>
-                      {{
-                        item.status === 'cancel_requested'
-                          ? 'Canceling'
-                          : 'Cancel'
-                      }}
-                    </span>
-                  </button>
-                }
-                @if (sourceImport.canRetryUploadItem(item)) {
-                  <button
-                    class="workbench-secondary-button"
-                    type="button"
-                    [attr.aria-label]="'Retry upload of ' + item.file.name"
-                    (click)="sourceImport.retryUploadItem(item.id)"
-                  >
-                    <i class="pi pi-refresh" aria-hidden="true"></i>
-                    <span>
-                      {{
-                        item.status === 'status_unavailable'
-                          ? 'Retry status'
-                          : 'Retry'
-                      }}
-                    </span>
-                  </button>
-                }
-              </div>
-            }
-          </div>
-        }
-
-        <div class="flex flex-wrap items-end gap-3">
-          <label class="workbench-field min-w-32 flex-1">
-            <span>Language</span>
-            <select
-              [ngModel]="sourceImport.languageHint()"
-              (ngModelChange)="sourceImport.setLanguageHint($event)"
-            >
-              @for (language of sourceImport.languageHints; track language) {
-                <option [value]="language">{{ language }}</option>
-              }
-            </select>
-          </label>
-          <label class="workbench-field min-w-32 flex-1">
-            <span>Concurrent uploads</span>
-            <select
-              [ngModel]="sourceImport.uploadBatchSize()"
-              [disabled]="isUploadBusy()"
-              (ngModelChange)="sourceImport.setUploadBatchSize($event)"
-            >
-              @for (size of sourceImport.uploadBatchSizes; track size) {
-                <option [value]="size">{{ size }}</option>
-              }
-            </select>
-          </label>
-          <button
-            class="workbench-action-button min-w-32 flex-none"
-            type="button"
-            [disabled]="
-              isUploadBusy() ||
-              operations.isBusyFor('upload') ||
-              !sourceImport.canUpload()
-            "
-            (click)="uploadDocument()"
-          >
-            <i
-              [class]="
-                operations.isBusyFor('upload')
-                  ? 'pi pi-spin pi-spinner'
-                  : 'pi pi-upload'
-              "
-              aria-hidden="true"
-            ></i>
-            <span>Upload files</span>
-          </button>
-        </div>
-
-        @if (sourceImport.documents().length > 0) {
-          <label class="workbench-field">
-            <span>Project document library</span>
-            <select
-              [ngModel]="sourceImport.activeDocumentSelectValue()"
-              (ngModelChange)="selectDocument($event)"
-            >
-              @for (document of sourceImport.documents(); track document.id) {
-                <option [value]="document.id">
-                  {{ document.filename }} - {{ document.status }} -
-                  {{ document.chunks_count }} chunks
-                </option>
-              }
-            </select>
-          </label>
-        }
-
-        @if (sourceImport.activeDocument(); as document) {
-          <section class="grid gap-3" aria-live="polite">
-            <div
-              class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-surface-200 bg-surface-50 p-3"
-            >
-              <div class="min-w-0 flex-1">
-                <p class="m-0 truncate text-sm font-semibold text-color">
-                  {{ sourceImport.parseStageText() }}
-                </p>
-                <p
-                  class="m-0 mt-1 text-xs font-semibold text-muted-color"
-                  data-testid="document-progress-metrics"
-                >
-                  {{ sourceImport.progressLabel() }} /
-                  {{ document.chunks_count }} chunks /
-                  <span data-testid="document-elapsed-time">
-                    {{ sourceImport.elapsedTime() }}
-                  </span>
-                </p>
-              </div>
-              <p-tag
-                [value]="document.status"
-                [severity]="
-                  document.status === 'processing'
-                    ? 'info'
-                    : document.status === 'ready'
-                      ? 'success'
-                      : 'warn'
-                "
-                [rounded]="true"
-              />
-              @if (
-                document.status === 'processing' ||
-                document.status === 'cancel_requested'
-              ) {
-                <button
-                  class="workbench-secondary-button"
-                  type="button"
-                  [disabled]="
-                    document.status === 'cancel_requested' ||
-                    operations.isBusyFor('document-cancel')
-                  "
-                  (click)="sourceImport.cancelActiveDocumentProcessing()"
-                >
-                  <i class="pi pi-times" aria-hidden="true"></i>
-                  <span>
-                    {{
-                      document.status === 'cancel_requested'
-                        ? 'Canceling'
-                        : document.source_kind === 'audio'
-                          ? 'Cancel audio processing'
-                          : 'Cancel parsing'
-                    }}
-                  </span>
-                </button>
-              } @else if (
-                document.status === 'canceled' ||
-                document.status === 'ocr_failed' ||
-                document.status === 'transcription_failed' ||
-                document.status === 'no_text_detected' ||
-                document.status === 'exam_failed'
-              ) {
-                <button
-                  class="workbench-secondary-button"
-                  type="button"
-                  [disabled]="operations.isBusyFor('document-retry')"
-                  (click)="sourceImport.retryActiveDocumentProcessing()"
-                >
-                  <i class="pi pi-refresh" aria-hidden="true"></i>
-                  <span>
-                    {{
-                      document.source_kind === 'audio'
-                        ? 'Retry audio processing'
-                        : 'Retry parsing'
-                    }}
-                  </span>
-                </button>
-              }
-            </div>
-            <p-progressbar
-              [value]="sourceImport.progressPercent()"
-              [showValue]="false"
-              data-testid="document-progress-bar"
-            />
-            @if (sourceImport.streamError(); as streamError) {
-              <div
-                class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 p-3"
-                role="alert"
-              >
-                <span class="text-sm font-semibold text-red-900">
-                  {{ streamError }}
-                </span>
-                <button
-                  class="workbench-secondary-button"
-                  type="button"
-                  (click)="sourceImport.retryDocumentStream()"
-                >
-                  <i class="pi pi-refresh" aria-hidden="true"></i>
-                  <span>Retry progress</span>
-                </button>
-              </div>
-            }
-          </section>
-
-          <dl class="workbench-metrics">
-            <div class="workbench-metric">
-              <dt>File Size</dt>
-              <dd>{{ formatFileSize(activeDocumentFile()) }}</dd>
-            </div>
-            @if (document.source_kind === 'audio') {
-              <div class="workbench-metric">
-                <dt>Duration</dt>
-                <dd>{{ formatDuration(document.duration_ms) }}</dd>
-              </div>
-            } @else {
-              <div class="workbench-metric">
-                <dt>Pages</dt>
-                <dd>{{ document.page_count }}</dd>
-              </div>
-            }
-            <div class="workbench-metric">
-              <dt>Text Chunks</dt>
-              <dd>{{ document.chunks_count }}</dd>
-            </div>
-            <div class="workbench-metric">
-              <dt>Mock Items</dt>
-              <dd>
-                {{ document.exam_item_count }}
-              </dd>
-            </div>
-            @if (document.source_kind !== 'audio') {
-              <div class="workbench-metric">
-                <dt>Processed</dt>
-                <dd>
-                  {{ document.processed_page_count }}
-                </dd>
-              </div>
-            }
-            <div class="workbench-metric">
-              <dt>Language</dt>
-              <dd>
-                {{ document.language_hint }}
-              </dd>
-            </div>
-            <div class="workbench-metric">
-              <dt>Status</dt>
-              <dd>{{ document.status }}</dd>
-            </div>
-            <div class="workbench-metric">
-              <dt>Extraction</dt>
-              <dd>{{ document.extraction_method }}</dd>
-            </div>
-            @if (document.source_kind === 'audio') {
-              <div class="workbench-metric">
-                <dt>Transcription</dt>
-                <dd>{{ document.transcription_status || 'pending' }}</dd>
-              </div>
-              <div class="workbench-metric">
-                <dt>Translation</dt>
-                <dd>{{ document.translation_status || 'pending' }}</dd>
-              </div>
-              <div class="workbench-metric">
-                <dt>Configured ASR Model</dt>
-                <dd>
-                  {{ document.configured_transcription_model || 'pending' }}
-                </dd>
-              </div>
-              <div class="workbench-metric">
-                <dt>Effective ASR Model</dt>
-                <dd>
-                  {{ document.effective_transcription_model || 'pending' }}
-                </dd>
-              </div>
-              <div class="workbench-metric">
-                <dt>ASR Device</dt>
-                <dd>{{ document.transcription_device || 'pending' }}</dd>
-              </div>
-            } @else {
-              <div class="workbench-metric">
-                <dt>Capture Runtime Device</dt>
-                <dd>
-                  {{ document.ocr_device || 'none' }}
-                </dd>
-              </div>
-              @for (
-                metric of sourceImport.parsingMetrics(document);
-                track metric.label
-              ) {
-                <div class="workbench-metric">
-                  <dt>{{ metric.label }}</dt>
-                  <dd>{{ metric.value }}</dd>
-                </div>
-              }
-            }
-            @if (
-              document.source_kind === 'audio' && document.transcription_warning
-            ) {
-              <div
-                class="rounded-md border border-amber-200 bg-amber-50 p-3 xl:col-span-2"
-              >
-                <dt class="text-xs font-bold uppercase text-amber-700">
-                  ASR warning
-                </dt>
-                <dd class="m-0 mt-1 text-sm font-semibold text-amber-900">
-                  {{ document.transcription_warning }}
-                </dd>
-              </div>
-            } @else if (document.ocr_fallback_reason) {
-              <div
-                class="rounded-md border border-amber-200 bg-amber-50 p-3 xl:col-span-2"
-              >
-                <dt class="text-xs font-bold uppercase text-amber-700">
-                  Capture Runtime warning
-                </dt>
-                <dd class="m-0 mt-1 text-sm font-semibold text-amber-900">
-                  {{ document.ocr_fallback_reason }}
-                </dd>
-              </div>
-            }
-          </dl>
-
-          @if (sourceImport.previewChunks().length > 0) {
-            <section
-              class="workbench-preview"
-              aria-labelledby="extracted-text-heading"
-            >
-              <div class="workbench-preview-header">
-                <h3 id="extracted-text-heading">Extracted Text Preview</h3>
-                @if (document.source_kind === 'audio') {
-                  <button
-                    class="workbench-secondary-button"
-                    type="button"
-                    [disabled]="sourceImport.isTranscriptMutationBusy()"
-                    (click)="sourceImport.translateStaleTranscriptChunks()"
-                  >
-                    重翻所有過期片段
-                  </button>
-                } @else {
-                  <i class="pi pi-search" aria-hidden="true"></i>
-                }
-              </div>
-              @if (document.source_kind === 'audio') {
-                <div
-                  class="rounded-md border border-surface-200 bg-surface-50 p-3"
-                >
-                  @if (audioSourceLoading()) {
-                    <p class="m-0 text-sm font-semibold text-muted-color">
-                      Loading authenticated source audio…
-                    </p>
-                  } @else if (audioSourceError(); as sourceError) {
-                    <p
-                      class="m-0 text-sm font-semibold text-red-700"
-                      role="alert"
-                    >
-                      {{ sourceError }}
-                    </p>
-                    <button
-                      class="workbench-secondary-button mt-2"
-                      type="button"
-                      (click)="retryAudioSource()"
-                    >
-                      <i class="pi pi-refresh" aria-hidden="true"></i>
-                      <span>Retry audio playback</span>
-                    </button>
-                  } @else if (audioSourceUrl()) {
-                    <audio
-                      #audioPlayer
-                      class="w-full"
-                      controls
-                      preload="metadata"
-                      [src]="audioSourceUrl()"
-                      aria-label="Source audio playback"
-                    ></audio>
-                  }
-                </div>
-              }
-              <div class="workbench-preview-list">
-                @for (chunk of sourceImport.previewChunks(); track chunk.id) {
-                  <article class="workbench-preview-chunk">
-                    <strong>
-                      @if (chunk.locator_kind === 'time') {
-                        {{ formatTimestamp(chunk.start_ms) }}–{{
-                          formatTimestamp(chunk.end_ms)
-                        }}
-                      } @else {
-                        Page {{ chunk.page_number }} - Chunk
-                        {{ chunk.chunk_index + 1 }}
-                      }
-                    </strong>
-                    @if (chunk.locator_kind === 'time') {
-                      <button
-                        class="workbench-secondary-button mt-2"
-                        type="button"
-                        [disabled]="audioSourceUrl() === null"
-                        [attr.aria-label]="segmentPlaybackLabel(chunk)"
-                        (click)="playTranscriptChunk(chunk)"
-                      >
-                        <i class="pi pi-play" aria-hidden="true"></i>
-                        <span>從此片段播放</span>
-                      </button>
-                      <label class="workbench-field mt-2">
-                        <span>日文原文</span>
-                        <textarea #japaneseText rows="3">{{
-                          chunk.text
-                        }}</textarea>
-                      </label>
-                      <div class="mt-2 flex flex-wrap gap-2">
-                        <button
-                          class="workbench-secondary-button"
-                          type="button"
-                          [disabled]="sourceImport.isTranscriptMutationBusy()"
-                          (click)="
-                            sourceImport.updateTranscriptChunk(
-                              chunk.id,
-                              japaneseText.value
-                            )
-                          "
-                        >
-                          儲存日文
-                        </button>
-                        <button
-                          class="workbench-secondary-button"
-                          type="button"
-                          [disabled]="sourceImport.isTranscriptMutationBusy()"
-                          (click)="
-                            sourceImport.translateTranscriptChunk(chunk.id)
-                          "
-                        >
-                          重新翻譯
-                        </button>
-                      </div>
-                      <p class="mt-3 whitespace-pre-wrap">
-                        <strong>繁體中文</strong><br />
-                        {{ chunk.translated_text || '尚未完成翻譯' }}
-                      </p>
-                      @if (chunk.translation_stale) {
-                        <p class="text-sm font-semibold text-amber-700">
-                          翻譯已過期
-                        </p>
-                      }
-                    } @else {
-                      <p class="whitespace-pre-wrap">{{ chunk.text }}</p>
-                    }
-                  </article>
-                }
-                @if (sourceImport.hiddenChunkCount() > 0) {
-                  <div
-                    class="flex flex-wrap items-center justify-between gap-2 p-3"
-                  >
-                    <p class="m-0 text-sm text-muted-color">
-                      {{ sourceImport.hiddenChunkCount() }} more chunks
-                      available.
-                    </p>
-                    <button
-                      class="workbench-secondary-button"
-                      type="button"
-                      (click)="sourceImport.showMoreChunks()"
-                    >
-                      <i class="pi pi-chevron-down" aria-hidden="true"></i>
-                      <span>Show more</span>
-                    </button>
-                  </div>
-                }
-              </div>
-            </section>
-          } @else if (sourceImport.isParsing()) {
-            <p
-              class="m-0 rounded-md border border-dashed border-surface-300 bg-surface-0 p-3 text-sm text-muted-color"
-            >
-              Waiting for the first extracted chunk.
-            </p>
-          }
-        } @else {
-          <p
-            class="m-0 rounded-md border border-dashed border-surface-300 bg-surface-0 p-3 text-sm text-muted-color"
-          >
-            Choose PDF, PNG, JPEG, WebP, MP3, WAV, or M4A files and upload them
-            to start extraction.
-          </p>
-        }
-      </div>
-
-      <app-source-image-crop-dialog
-        [sourceFile]="cropSourceFile()"
-        [position]="cropPosition()"
-        [total]="cropTotal()"
-        (cropApplied)="applyCroppedImage($event)"
-        (originalKept)="keepOriginalImage()"
+    <section class="workbench-panel" aria-label="Source import">
+      <app-source-upload-queue
+        [model]="uploadQueueModel()"
+        (action)="handleAction($event)"
       />
+      <div class="workbench-panel-body">
+        <app-source-document-status
+          [model]="documentStatusModel()"
+          (action)="handleAction($event)"
+        />
+        <app-source-evidence-preview
+          [model]="evidenceModel()"
+          (action)="handleAction($event)"
+        />
+        <app-source-image-crop-dialog
+          [sourceFile]="cropSourceFile()"
+          [position]="cropPosition()"
+          [total]="cropTotal()"
+          (action)="handleAction($event)"
+        />
+      </div>
     </section>
   `,
 })
 export class SourceImportPanelComponent {
-  private readonly api = inject(CERT_PREP_API);
   private readonly cropService = inject(SourceImageCropService);
-  private readonly destroyRef = inject(DestroyRef);
+  private readonly audioPreview = inject(SourceAudioPreviewService);
+  private readonly uploadQueue = viewChild(SourceUploadQueueComponent);
+  private readonly cropDialog = viewChild(SourceImageCropDialogComponent);
+
   protected readonly drafts = inject(DraftReviewStore);
   protected readonly operations = inject(OperationStore);
   protected readonly projects = inject(ProjectStore);
@@ -638,49 +73,129 @@ export class SourceImportPanelComponent {
   protected readonly cropSourceFile = signal<File | null>(null);
   protected readonly cropPosition = signal(0);
   protected readonly cropTotal = signal(0);
-  protected readonly audioSourceUrl = signal<string | null>(null);
-  protected readonly audioSourceLoading = signal(false);
-  protected readonly audioSourceError = signal<string | null>(null);
-  private readonly chooseFilesControl =
-    viewChild<ElementRef<HTMLLabelElement>>('chooseFilesControl');
-  private readonly audioPlayer =
-    viewChild<ElementRef<HTMLAudioElement>>('audioPlayer');
-  private readonly cropDialog = viewChild(SourceImageCropDialogComponent);
+
+  protected readonly uploadQueueModel = computed<SourceUploadQueueViewModel>(
+    () => ({
+      accept: this.sourceImport.sourceFileAccept,
+      items: this.sourceImport.uploadItems(),
+      selectedFileLabel: this.sourceImport.selectedFileLabel(),
+      canUpload: this.sourceImport.canUpload(),
+      uploadBusy: this.isUploadBusy(),
+      fileSelectionBlocked: this.cropSourceFile() !== null,
+      cropImagesBeforeUpload: this.cropImagesBeforeUpload(),
+      languageHint: this.sourceImport.languageHint(),
+      languageHints: this.sourceImport.languageHints,
+      operationError: this.operations.error(),
+    }),
+  );
+
+  protected readonly documentStatusModel =
+    computed<SourceDocumentStatusViewModel>(() => ({
+      documents: this.sourceImport.documents(),
+      activeDocumentId: this.sourceImport.activeDocumentId(),
+      document: this.sourceImport.activeDocument(),
+      streamError: this.sourceImport.streamError(),
+      cancelBusy: this.operations.isBusyFor('document-cancel'),
+      retryBusy: this.operations.isBusyFor('document-retry'),
+    }));
+
+  protected readonly evidenceModel = computed<SourceEvidenceViewModel>(() => ({
+    document: this.sourceImport.activeDocument(),
+    chunks: this.sourceImport.previewChunks(),
+    hiddenChunkCount: this.sourceImport.hiddenChunkCount(),
+    audio: this.audioPreview.state(),
+    transcriptMutationBusy: this.sourceImport.isTranscriptMutationBusy(),
+  }));
+
   private pendingSelectedFiles: File[] = [];
   private pendingCropIndexes: number[] = [];
   private pendingCropCursor = 0;
   private pendingSelectionAppendIntent = false;
   private pendingSelectionAutoUploadIntent = false;
-  private audioSourceObjectUrl: string | null = null;
-  private audioSourceAbortController: AbortController | null = null;
-  private audioSourceLoadId = 0;
-  private requestedAudioSourceKey: string | null = null;
 
   constructor() {
     effect(() => {
       const projectId = this.projects.selectedProject()?.id ?? null;
       const document = this.sourceImport.activeDocument();
-      this.loadAudioSource(
+      this.audioPreview.load(
         projectId,
         document?.source_kind === 'audio' && document.chunks_count > 0
           ? document.id
           : null,
       );
     });
-    this.destroyRef.onDestroy(() => {
-      this.audioSourceLoadId += 1;
-      this.cancelAudioSourceLoad();
-      this.releaseAudioSourceUrl();
+    effect(() => {
+      const projectId = this.projects.selectedProject()?.id ?? null;
+      const documentId = this.sourceImport.activeDocumentId();
+      if (projectId !== null && documentId !== null) {
+        // An upload can finish after the initial draft query was enabled. Reload
+        // when the source becomes active so the first empty response is not
+        // mistaken for a project with no drafts.
+        this.drafts.load(projectId);
+      }
     });
   }
 
-  protected chooseFiles(event: Event): void {
-    if (this.isFileSelectionBlocked()) {
+  protected handleAction(action: SourceImportAction): void {
+    switch (action.type) {
+      case 'choose-files':
+        this.chooseFiles(action.files);
+        return;
+      case 'set-language':
+        this.sourceImport.setLanguageHint(action.value);
+        return;
+      case 'set-crop-images':
+        this.setCropImagesBeforeUpload(action.enabled);
+        return;
+      case 'upload':
+        this.uploadDocument();
+        return;
+      case 'cancel-upload':
+        this.sourceImport.cancelUploadItem(action.itemId);
+        return;
+      case 'retry-upload':
+        this.sourceImport.retryUploadItem(action.itemId);
+        return;
+      case 'select-document':
+        this.selectDocument(action.documentId);
+        return;
+      case 'cancel-processing':
+        this.sourceImport.cancelActiveDocumentProcessing();
+        return;
+      case 'retry-processing':
+        this.sourceImport.retryActiveDocumentProcessing();
+        return;
+      case 'retry-progress':
+        this.sourceImport.retryDocumentStream();
+        return;
+      case 'retry-audio':
+        this.audioPreview.retry();
+        return;
+      case 'update-transcript':
+        this.sourceImport.updateTranscriptChunk(action.chunkId, action.text);
+        return;
+      case 'translate-transcript':
+        this.sourceImport.translateTranscriptChunk(action.chunkId);
+        return;
+      case 'translate-stale-transcript':
+        this.sourceImport.translateStaleTranscriptChunks();
+        return;
+      case 'show-more-evidence':
+        this.sourceImport.showMoreChunks();
+        return;
+      case 'crop-applied':
+        this.applyCroppedImage(action.file);
+        return;
+      case 'keep-original-image':
+        this.keepOriginalImage();
+        return;
+    }
+  }
+
+  private chooseFiles(files: readonly File[]): void {
+    if (this.cropSourceFile() !== null) {
       return;
     }
-    const input = event.target as HTMLInputElement;
-    const files = Array.from(input.files ?? []);
-    input.value = '';
     const appendSelection = this.sourceImport.shouldAppendNewSelection();
     const selectionOptions = {
       append: appendSelection,
@@ -705,13 +220,13 @@ export class SourceImportPanelComponent {
     this.openCurrentCrop();
   }
 
-  protected setCropImagesBeforeUpload(enabled: boolean): void {
+  private setCropImagesBeforeUpload(enabled: boolean): void {
     if (!this.isUploadBusy()) {
       this.cropImagesBeforeUpload.set(enabled);
     }
   }
 
-  protected applyCroppedImage(file: File): void {
+  private applyCroppedImage(file: File): void {
     const fileIndex = this.pendingCropIndexes[this.pendingCropCursor];
     if (fileIndex === undefined) {
       return;
@@ -720,103 +235,29 @@ export class SourceImportPanelComponent {
     this.advanceCropReview();
   }
 
-  protected keepOriginalImage(): void {
+  private keepOriginalImage(): void {
     if (this.pendingCropIndexes[this.pendingCropCursor] !== undefined) {
       this.advanceCropReview();
     }
   }
 
-  protected uploadDocument(): void {
+  private uploadDocument(): void {
     this.sourceImport.uploadDocuments();
     const project = this.projects.selectedProject();
-    if (project !== null) this.drafts.load(project.id);
+    if (project !== null) {
+      this.drafts.load(project.id);
+    }
   }
 
-  protected selectDocument(documentId: string): void {
+  private selectDocument(documentId: string): void {
     this.sourceImport.selectDocument(documentId);
     const project = this.projects.selectedProject();
-    if (project !== null) this.drafts.load(project.id);
-  }
-
-  protected formatFileSize(file: File | null): string {
-    if (file === null) {
-      return '-';
+    if (project !== null) {
+      this.drafts.load(project.id);
     }
-    const megaBytes = file.size / (1024 * 1024);
-    if (megaBytes >= 1) {
-      return `${megaBytes.toFixed(1)} MB`;
-    }
-    return `${Math.max(1, Math.round(file.size / 1024))} KB`;
   }
 
-  protected formatTimestamp(value: number | null | undefined): string {
-    const totalSeconds = Math.max(0, Math.floor((value ?? 0) / 1000));
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  }
-
-  protected segmentPlaybackLabel(chunk: ChunkRead): string {
-    return `從 ${this.formatTimestamp(chunk.start_ms)} 播放來源音訊`;
-  }
-
-  protected playTranscriptChunk(chunk: ChunkRead): void {
-    const player = this.audioPlayer()?.nativeElement;
-    if (
-      player === undefined ||
-      this.audioSourceUrl() === null ||
-      chunk.start_ms === null ||
-      chunk.start_ms === undefined
-    ) {
-      return;
-    }
-    player.currentTime = Math.max(0, chunk.start_ms / 1000);
-    void player.play().catch(() => {
-      // Native controls remain available if autoplay policy blocks play().
-    });
-  }
-
-  protected retryAudioSource(): void {
-    const projectId = this.projects.selectedProject()?.id ?? null;
-    const document = this.sourceImport.activeDocument();
-    if (
-      projectId === null ||
-      document?.source_kind !== 'audio' ||
-      document.chunks_count <= 0
-    ) {
-      return;
-    }
-    this.requestedAudioSourceKey = null;
-    this.loadAudioSource(projectId, document.id);
-  }
-
-  protected formatDuration(value: number | null | undefined): string {
-    if (value === null || value === undefined) {
-      return 'pending';
-    }
-    const totalSeconds = Math.max(0, Math.round(value / 1000));
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    if (minutes === 0) {
-      return `${seconds}s`;
-    }
-    return `${minutes}m ${seconds.toString().padStart(2, '0')}s`;
-  }
-
-  protected activeDocumentFile(): File | null {
-    const document = this.sourceImport.activeDocument();
-    if (document === null) {
-      return this.sourceImport.selectedFile();
-    }
-
-    return (
-      this.sourceImport
-        .uploadItems()
-        .find((item) => item.document?.id === document.id)?.file ?? null
-    );
-  }
-
-  protected isUploadBusy(): boolean {
+  private isUploadBusy(): boolean {
     return (
       this.cropSourceFile() !== null ||
       this.sourceImport.isUploading() ||
@@ -824,16 +265,10 @@ export class SourceImportPanelComponent {
     );
   }
 
-  protected isFileSelectionBlocked(): boolean {
-    return this.cropSourceFile() !== null;
-  }
-
   private openCurrentCrop(): void {
     const fileIndex = this.pendingCropIndexes[this.pendingCropCursor];
     const file =
-      fileIndex === undefined
-        ? undefined
-        : this.pendingSelectedFiles[fileIndex];
+      fileIndex === undefined ? undefined : this.pendingSelectedFiles[fileIndex];
     if (file === undefined) {
       this.commitPendingFileSelection();
       return;
@@ -842,74 +277,6 @@ export class SourceImportPanelComponent {
     this.cropPosition.set(this.pendingCropCursor + 1);
     this.cropSourceFile.set(file);
     this.cropDialog()?.focusReviewStatus();
-  }
-
-  private loadAudioSource(
-    projectId: string | null,
-    documentId: string | null,
-  ): void {
-    const sourceKey =
-      projectId === null || documentId === null
-        ? null
-        : `${projectId}:${documentId}`;
-    if (sourceKey === this.requestedAudioSourceKey) {
-      return;
-    }
-    this.requestedAudioSourceKey = sourceKey;
-    const loadId = ++this.audioSourceLoadId;
-    this.cancelAudioSourceLoad();
-    this.releaseAudioSourceUrl();
-    this.audioSourceError.set(null);
-    if (projectId === null || documentId === null) {
-      this.audioSourceLoading.set(false);
-      return;
-    }
-
-    this.audioSourceLoading.set(true);
-    const controller = new AbortController();
-    this.audioSourceAbortController = controller;
-    this.api
-      .getDocumentAudioSource(projectId, documentId, {
-        signal: controller.signal,
-      })
-      .pipe(catchError(() => of(null)))
-      .subscribe((source) => {
-        if (loadId !== this.audioSourceLoadId) return;
-        if (source === null) {
-          if (!controller.signal.aborted) {
-            this.requestedAudioSourceKey = null;
-            this.audioSourceError.set('The source audio could not be loaded.');
-          }
-        } else if (typeof URL.createObjectURL !== 'function') {
-          this.audioSourceError.set(
-            'Audio playback is unavailable in this environment.',
-          );
-        } else {
-          const objectUrl = URL.createObjectURL(source);
-          if (loadId !== this.audioSourceLoadId) URL.revokeObjectURL(objectUrl);
-          else {
-            this.audioSourceObjectUrl = objectUrl;
-            this.audioSourceUrl.set(objectUrl);
-          }
-        }
-        if (this.audioSourceAbortController === controller)
-          this.audioSourceAbortController = null;
-        if (loadId === this.audioSourceLoadId)
-          this.audioSourceLoading.set(false);
-      });
-  }
-
-  private cancelAudioSourceLoad(): void {
-    this.audioSourceAbortController?.abort();
-    this.audioSourceAbortController = null;
-  }
-
-  private releaseAudioSourceUrl(): void {
-    if (this.audioSourceObjectUrl !== null) {
-      URL.revokeObjectURL(this.audioSourceObjectUrl);
-      this.audioSourceObjectUrl = null;
-    }
-    this.audioSourceUrl.set(null);
   }
 
   private advanceCropReview(): void {
@@ -933,48 +300,6 @@ export class SourceImportPanelComponent {
       append: appendSelection,
       autoUpload,
     });
-    queueMicrotask(() => {
-      this.chooseFilesControl()?.nativeElement.focus();
-    });
-  }
-
-  protected uploadStatusLabel(status: string): string {
-    if (status === 'queued') {
-      return 'Queued';
-    }
-    if (status === 'uploading') {
-      return 'Uploading';
-    }
-    if (status === 'uploaded') {
-      return 'Uploaded';
-    }
-    if (status === 'cancel_requested') {
-      return 'Canceling';
-    }
-    if (status === 'canceled') {
-      return 'Canceled';
-    }
-    if (status === 'status_unavailable') {
-      return 'Status unavailable';
-    }
-    return 'Failed';
-  }
-
-  protected uploadStatusSeverity(
-    status: string,
-  ): 'success' | 'info' | 'warn' | 'danger' {
-    if (status === 'uploaded') {
-      return 'success';
-    }
-    if (status === 'uploading') {
-      return 'info';
-    }
-    if (status === 'failed') {
-      return 'danger';
-    }
-    if (status === 'canceled' || status === 'cancel_requested') {
-      return 'warn';
-    }
-    return 'warn';
+    queueMicrotask(() => this.uploadQueue()?.focusChooseFiles());
   }
 }

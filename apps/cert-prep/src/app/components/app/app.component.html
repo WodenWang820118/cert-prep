@@ -67,18 +67,32 @@
 
       <nav class="workbench-nav" aria-label="Study pages">
         <p class="workbench-section-label">Study Mode</p>
-        @for (page of studyPages; track page.id) {
-          <a
-            #activePage="routerLinkActive"
-            class="workbench-nav-link"
-            [routerLink]="page.path"
-            routerLinkActive="is-active"
-            [routerLinkActiveOptions]="{ exact: true }"
-            [attr.aria-current]="activePage.isActive ? 'page' : null"
+        @for (group of studyNavigationGroups; track group.id) {
+          <div
+            class="workbench-nav-group"
+            role="group"
+            [attr.aria-labelledby]="'study-nav-group-' + group.id"
           >
-            <i [class]="page.icon" aria-hidden="true"></i>
-            <span>{{ page.label }}</span>
-          </a>
+            <p
+              class="workbench-section-label"
+              [id]="'study-nav-group-' + group.id"
+            >
+              {{ group.label }}
+            </p>
+            @for (page of group.pages; track page.id) {
+              <a
+                #activePage="routerLinkActive"
+                class="workbench-nav-link"
+                [routerLink]="page.path"
+                routerLinkActive="is-active"
+                [routerLinkActiveOptions]="{ exact: true }"
+                [attr.aria-current]="activePage.isActive ? 'page' : null"
+              >
+                <i [class]="page.icon" aria-hidden="true"></i>
+                <span>{{ page.label }}</span>
+              </a>
+            }
+          </div>
         }
       </nav>
     </aside>

@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import { mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
   expect,
   test,
@@ -6,8 +8,8 @@ import {
   type Page,
   type TestInfo,
 } from '@playwright/test';
+import { workspaceRoot } from '@nx/devkit';
 import { minimalPng } from '../support/minimal-image';
-import { minimalPdf } from '../support/minimal-pdf';
 
 const apiBaseUrl = 'http://127.0.0.1:8766';
 const apiHeaders = { Authorization: 'Bearer real-e2e-token' };
@@ -15,6 +17,13 @@ const captureRuntimeBaseUrl = 'http://127.0.0.1:8767';
 const captureRuntimeHeaders = {
   Authorization: 'Bearer real-e2e-capture-runtime-token',
 };
+
+interface RealPdfFixture {
+  readonly bytes: Buffer;
+  readonly expectedQuestion: string;
+}
+
+let cachedRealPdfFixture: RealPdfFixture | undefined;
 
 interface ProjectRead {
   id: string;
@@ -24,6 +33,7 @@ interface ProjectRead {
 interface DocumentRead {
   id: string;
   filename: string;
+  language_hint: string;
   status: string;
   page_count: number;
   processed_page_count: number;
@@ -49,7 +59,7 @@ interface HarnessStats {
   rules: HarnessRuleStats[];
 }
 
-test.describe.configure({ timeout: 60_000 });
+test.describe.configure({ timeout: 180_000 });
 
 test.beforeEach(async ({ page, request }) => {
   await expect
@@ -289,33 +299,59 @@ test('enforces the fixture v2 ingestion, live replay SSE, and host commit contra
 
 test('uses the real backend for upload, generation, and Full Exam', async ({
   page,
+  request,
 }, testInfo) => {
   const projectName = uniqueProjectName('Real backend acceptance', testInfo);
+  const fixture = requireRealPdfFixture();
   await createProject(page, projectName);
-  await uploadAndGenerateQuestions(page, 'real-backend.pdf');
+  const screenshotDirectory = resolve(
+    workspaceRoot,
+    'output/playwright/cert-prep/e2e-real-document-cycle',
+    testInfo.project.name,
+  );
+  mkdirSync(screenshotDirectory, { recursive: true });
+  await uploadAndGenerateQuestions(page, 'real-backend.pdf', fixture);
+  await assertQuestionAppearsInUploadedDocument(
+    request,
+    projectName,
+    'real-backend.pdf',
+    fixture.expectedQuestion,
+  );
+  await page.screenshot({
+    path: resolve(screenshotDirectory, '01-real-document-question.png'),
+    fullPage: true,
+  });
 
   await page.getByRole('link', { name: 'Full Exam' }).click();
   await expect(page.getByRole('heading', { name: 'Full Exam' })).toBeVisible();
-  await expect(
-    page.getByText(/[1-9]\d* questions in selected document/),
-  ).toBeVisible();
+  const questionSummary = page.getByText(
+    /^[1-9]\d* questions in selected document$/,
+  );
+  await expect(questionSummary).toBeVisible();
+  const questionCount = Number(
+    (await questionSummary.textContent())?.match(/[1-9]\d*/)?.[0] ?? 0,
+  );
+  expect(questionCount).toBeGreaterThanOrEqual(2);
   await page.getByRole('button', { name: 'Start full exam' }).click();
-  await expect(page.getByText('Question 1 of 2')).toBeVisible();
-
+  await expect(page.getByText(`Question 1 of ${questionCount}`)).toBeVisible();
   await page.getByRole('radio').first().check();
   await page.getByRole('button', { name: 'Submit answer' }).click();
-  await expect(page.getByText('Question 2 of 2')).toBeVisible();
+  await expect(page.getByText(`Question 2 of ${questionCount}`)).toBeVisible();
+  await expect(page.getByText(fixture.expectedQuestion)).toBeVisible();
+  await expect(page.locator('.practice-question-text')).toContainText(
+    /[\u3040-\u30ff\u3400-\u9fff]/u,
+  );
+  await page.screenshot({
+    path: resolve(screenshotDirectory, '02-practice-session.png'),
+    fullPage: true,
+  });
 
-  await page.reload();
-  await expect(
-    page.getByRole('heading', { name: 'Continue your unfinished practice?' }),
-  ).toBeVisible({ timeout: 30_000 });
-  await page.getByRole('button', { name: 'Resume session' }).click();
-  await expect(page.getByText('Question 2 of 2')).toBeVisible();
-
-  await page.getByRole('radio').first().check();
-  await page.getByRole('button', { name: 'Submit answer' }).click();
+  await completeRealPracticeAfterFirstAnswer(page, questionCount);
   await expect(page.getByText('Practice set complete.')).toBeVisible();
+  await page.screenshot({
+    path: resolve(screenshotDirectory, '03-real-document-practice-complete.png'),
+    fullPage: true,
+  });
 
   await page.reload();
   await expect(
@@ -331,8 +367,8 @@ test('uploads multiple PDFs through the real multipart API', async ({
   await createProject(page, projectName);
 
   await page.locator('input[aria-label="Source files"]').setInputFiles([
-    pdfFile('multi-one.pdf', 'The first source describes least privilege.'),
-    pdfFile('multi-two.pdf', 'The second source describes defense in depth.'),
+    pdfFile('multi-one.pdf'),
+    pdfFile('multi-two.pdf'),
   ]);
   await expect(page.getByText('2 files selected')).toBeVisible();
   await page.getByRole('button', { name: 'Upload files' }).click();
@@ -342,7 +378,7 @@ test('uploads multiple PDFs through the real multipart API', async ({
     const row = uploadList.locator(':scope > div').filter({ hasText: filename });
     await expect(row).toContainText('Uploaded', { timeout: 30_000 });
   }
-  const library = page.getByLabel('Project document library');
+  const library = page.getByLabel('Project source library');
   await expect(library.locator('option')).toHaveCount(2);
   await expect(library).toContainText('multi-one.pdf');
   await expect(library).toContainText('multi-two.pdf');
@@ -434,7 +470,7 @@ test('recovers after bounded transient document polling failures', async ({
   await page
     .locator('input[aria-label="Source files"]')
     .setInputFiles(
-      pdfFile('poll-recovery.pdf', 'Availability requires tested recovery.'),
+      pdfFile('poll-recovery.pdf'),
     );
   await page.getByRole('button', { name: 'Upload files' }).click();
 
@@ -469,7 +505,7 @@ test('cancels an upload before its document id exists and ignores the late respo
   await page
     .locator('input[aria-label="Source files"]')
     .setInputFiles(
-      pdfFile('cancel-before-id.pdf', 'This upload must not commit.'),
+      pdfFile('cancel-before-id.pdf'),
     );
   await page.getByRole('button', { name: 'Upload files' }).click();
   const uploadRow = page
@@ -510,10 +546,19 @@ test('abandons a resumable session through the real practice API', async ({
   await createProject(page, projectName);
   await uploadAndGenerateQuestions(page, 'abandon-session.pdf');
   await page.getByRole('link', { name: 'Full Exam' }).click();
+  const questionSummary = page.getByText(
+    /^[1-9]\d* questions in selected document$/,
+  );
+  await expect(questionSummary).toBeVisible();
+  const questionCount = Number(
+    (await questionSummary.textContent())?.match(/[1-9]\d*/)?.[0] ?? 0,
+  );
+  expect(questionCount).toBeGreaterThanOrEqual(2);
   await page.getByRole('button', { name: 'Start full exam' }).click();
+  await expect(page.getByText(`Question 1 of ${questionCount}`)).toBeVisible();
   await page.getByRole('radio').first().check();
   await page.getByRole('button', { name: 'Submit answer' }).click();
-  await expect(page.getByText('Question 2 of 2')).toBeVisible();
+  await expect(page.getByText(`Question 2 of ${questionCount}`)).toBeVisible();
 
   await page.reload();
   await expect(
@@ -563,14 +608,15 @@ async function createProject(page: Page, projectName: string): Promise<void> {
 async function uploadAndGenerateQuestions(
   page: Page,
   filename: string,
+  fixture = requireRealPdfFixture(),
 ): Promise<void> {
+  const languageHint = page.getByLabel('Source language');
+  await languageHint.selectOption('ja');
+  await expect(languageHint).toHaveValue('ja');
   await page.locator('input[aria-label="Source files"]').setInputFiles({
     name: filename,
     mimeType: 'application/pdf',
-    buffer: minimalPdf(
-      'Least privilege limits cloud permissions and reduces credential exposure.',
-      'Defense in depth combines independent controls and reduces single points of failure.',
-    ),
+    buffer: fixture.bytes,
   });
   await page.getByRole('button', { name: 'Upload files' }).click();
 
@@ -582,19 +628,170 @@ async function uploadAndGenerateQuestions(
     exact: true,
   });
   await expect(generateQuestions).toBeEnabled({ timeout: 30_000 });
-  await generateQuestions.click();
-  await expect(page.getByTestId('draft-question-card').first()).toContainText(
-    'Playable',
-    { timeout: 30_000 },
+  const generationResponsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      new URL(response.url()).pathname.endsWith('/draft-operations'),
   );
+  await generateQuestions.click();
+  const generationResponse = await generationResponsePromise;
+  expect(generationResponse.ok()).toBe(true);
+  const generation = (await generationResponse.json()) as {
+    readonly provider: string;
+    readonly model: string;
+    readonly strategy: string;
+  };
+  expect(generation.provider).toBe('ollama');
+  expect(generation.model.toLowerCase()).toContain('qwen');
+  expect(generation.strategy).toBe('hybrid_reasoning');
+  const sourceQuestionCard = page
+    .getByTestId('draft-question-card')
+    .filter({ hasText: fixture.expectedQuestion });
+  await expect(sourceQuestionCard).toHaveCount(1, { timeout: 120_000 });
+  await expect(sourceQuestionCard).toContainText('Ready for practice');
+  await expect(sourceQuestionCard).toContainText(/[\u3040-\u30ff\u3400-\u9fff]/u);
 }
 
-function pdfFile(name: string, text: string) {
+async function completeRealPracticeAfterFirstAnswer(
+  page: Page,
+  questionCount: number,
+): Promise<void> {
+  if (questionCount <= 1) {
+    return;
+  }
+
+  await expect(page.getByText(`Question 2 of ${questionCount}`)).toBeVisible();
+  await page.reload();
+  await expect(
+    page.getByRole('heading', { name: 'Continue your unfinished practice?' }),
+  ).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: 'Resume session' }).click();
+  await expect(page.getByText(`Question 2 of ${questionCount}`)).toBeVisible();
+
+  for (
+    let questionNumber = 2;
+    questionNumber <= questionCount;
+    questionNumber += 1
+  ) {
+    await page.getByRole('radio').first().check();
+    await page.getByRole('button', { name: 'Submit answer' }).click();
+    if (questionNumber < questionCount) {
+      await expect(
+        page.getByText(`Question ${questionNumber + 1} of ${questionCount}`),
+      ).toBeVisible();
+    }
+  }
+}
+
+async function assertQuestionAppearsInUploadedDocument(
+  request: APIRequestContext,
+  projectName: string,
+  filename: string,
+  expectedQuestion: string,
+): Promise<void> {
+  const project = await projectByName(request, projectName);
+  const documents = await apiJson<{ items: DocumentRead[] }>(
+    request,
+    `/projects/${project.id}/documents`,
+  );
+  const document = documents.items.find(
+    (candidate) => candidate.filename === filename,
+  );
+  expect(document, `${filename} should be stored in the project`).toBeDefined();
+  expect(document?.language_hint).toBe('ja');
+  const chunks = await apiJson<{
+    items: Array<{ text: string; raw_text: string; source_excerpt: string }>;
+  }>(request, `/projects/${project.id}/documents/${document?.id}/chunks`);
+  const extractedSource = chunks.items
+    .flatMap((chunk) => [chunk.raw_text, chunk.text, chunk.source_excerpt])
+    .map(normalizeWhitespace)
+    .join('\n');
+  expect(extractedSource).toContain(normalizeWhitespace(expectedQuestion));
+}
+
+function pdfFile(name: string) {
+  const fixture = requireRealPdfFixture();
   return {
     name,
     mimeType: 'application/pdf',
-    buffer: minimalPdf(text),
+    buffer: fixture.bytes,
   };
+}
+
+function normalizeWhitespace(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function requireRealPdfFixture(): RealPdfFixture {
+  if (cachedRealPdfFixture !== undefined) {
+    return cachedRealPdfFixture;
+  }
+
+  const configuredPath =
+    process.env['CERT_PREP_E2E_REAL_PDF']?.trim() ||
+    process.env['CERT_PREP_ACCEPTANCE_PDF']?.trim();
+  if (!configuredPath) {
+    throw new Error(
+      'Real-backend PDF E2E requires CERT_PREP_E2E_REAL_PDF or CERT_PREP_ACCEPTANCE_PDF.',
+    );
+  }
+  const configuredInput = resolve(workspaceRoot, configuredPath);
+  const path = resolveRealPdfInput(configuredInput);
+  const size = statSync(path, { throwIfNoEntry: false })?.size ?? 0;
+  if (size <= 0) {
+    throw new Error(`Real-backend PDF E2E input is missing or empty: ${path}`);
+  }
+  const expectedQuestion =
+    process.env['CERT_PREP_E2E_REAL_EXPECTED_QUESTION']?.trim() ||
+    decodeExpectedQuestion(
+      process.env['CERT_PREP_E2E_REAL_EXPECTED_QUESTION_BASE64']?.trim(),
+    );
+  if (!expectedQuestion) {
+    throw new Error(
+      'Real-backend PDF E2E requires CERT_PREP_E2E_REAL_EXPECTED_QUESTION to prove the rendered question came from the uploaded document.',
+    );
+  }
+
+  cachedRealPdfFixture = {
+    bytes: readFileSync(path),
+    expectedQuestion: expectedQuestion.normalize('NFKC'),
+  };
+  return cachedRealPdfFixture;
+}
+
+function resolveRealPdfInput(configuredInput: string): string {
+  const configuredStat = statSync(configuredInput, {
+    throwIfNoEntry: false,
+  });
+  if (configuredStat?.isFile()) {
+    return configuredInput;
+  }
+  if (!configuredStat?.isDirectory()) {
+    return configuredInput;
+  }
+
+  const candidates = readdirSync(configuredInput)
+    .filter((name) => /\.pdf$/iu.test(name) && /n1/iu.test(name))
+    .sort((left, right) => left.localeCompare(right, 'en'));
+  const candidate =
+    candidates.find((name) => /2024.*07.*n1/iu.test(name)) ?? candidates[0];
+  if (candidate === undefined) {
+    throw new Error(
+      `Real-backend PDF E2E directory has no N1 PDF input: ${configuredInput}`,
+    );
+  }
+  return resolve(configuredInput, candidate);
+}
+
+function decodeExpectedQuestion(value: string | undefined): string {
+  if (!value) {
+    return '';
+  }
+  try {
+    return Buffer.from(value, 'base64').toString('utf8').trim();
+  } catch {
+    return '';
+  }
 }
 
 function pngFile(name: string) {

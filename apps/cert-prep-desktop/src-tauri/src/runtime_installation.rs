@@ -308,6 +308,14 @@ pub(crate) fn completed_installation(detail: &str) -> DesktopRuntimeInstallation
     }
 }
 
+pub(crate) fn failed_installation(detail: &str) -> DesktopRuntimeInstallation {
+    DesktopRuntimeInstallation {
+        error: Some(detail.into()),
+        status: "failed".into(),
+        ..completed_installation(detail)
+    }
+}
+
 fn now_string() -> String {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

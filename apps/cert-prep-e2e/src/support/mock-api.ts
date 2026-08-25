@@ -75,8 +75,7 @@ export interface MockCertPrepApi {
   wrongAnswerSummary(projectId?: string): WrongAnswerSummaryRead;
 }
 
-export interface MockCertPrepApiOptions {
-}
+export type MockCertPrepApiOptions = Record<string, never>;
 
 interface MockUploadHold {
   readonly promise: Promise<void>;
@@ -110,6 +109,7 @@ export async function installMockCertPrepApi(
   page: Page,
   options: MockCertPrepApiOptions = {},
 ): Promise<MockCertPrepApi> {
+  void options;
   const project = {
     id: 'project-1',
     name: 'JLPT_N1',

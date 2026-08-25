@@ -2,6 +2,8 @@ import { mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { defineConfig, devices } from '@playwright/test';
 import { workspaceRoot } from '@nx/devkit';
+// The real-backend harness intentionally consumes the workspace runtime contract.
+// eslint-disable-next-line @nx/enforce-module-boundaries
 import {
   CAPTURE_DOCUMENT_SCHEMA_VERSION,
   CAPTURE_RUNTIME_API_VERSION,
@@ -9,6 +11,14 @@ import {
 } from '../../tools/capture-runtime-version.mts';
 
 const frontendUrl = 'http://localhost:4200';
+const e2eLlmProvider = (
+  process.env['CERT_PREP_E2E_LLM_PROVIDER'] ?? 'ollama'
+).trim().toLowerCase();
+if (e2eLlmProvider !== 'ollama') {
+  throw new Error(
+    'Real-backend E2E requires CERT_PREP_E2E_LLM_PROVIDER=ollama; fake and auto providers are not accepted.',
+  );
+}
 const captureRuntimePort = Number(
   process.env['CERT_PREP_E2E_CAPTURE_RUNTIME_PORT'] ?? '8767',
 );
@@ -48,7 +58,7 @@ export default defineConfig({
         ...process.env,
         CERT_PREP_API_TOKEN: 'real-e2e-token',
         CERT_PREP_DATA_DIR: dataDir,
-        CERT_PREP_LLM_PROVIDER: 'fake',
+        CERT_PREP_LLM_PROVIDER: e2eLlmProvider,
         CERT_PREP_STREAMING_DRAFT_WORKERS: '1',
         CERT_PREP_CAPTURE_RUNTIME_URL: `http://127.0.0.1:${captureRuntimePort}`,
         CERT_PREP_CAPTURE_RUNTIME_TOKEN: captureRuntimeToken,

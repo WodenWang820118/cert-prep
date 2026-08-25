@@ -16,3 +16,9 @@ export interface StudyPageOption {
   readonly icon: string;
   readonly path: string;
 }
+
+export interface StudyNavigationGroup {
+  readonly id: 'build' | 'practice' | 'review';
+  readonly label: string;
+  readonly pages: readonly StudyPageOption[];
+}

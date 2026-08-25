@@ -11,30 +11,24 @@ import {
   Observable,
   throwError,
 } from 'rxjs';
+import {
+  MAX_FRAME_BYTES,
+  MAX_FRAME_LINES,
+  MAX_LINE_BYTES,
+  MAX_PAYLOAD_BYTES,
+} from '../constants/sse.constants';
+import type {
+  CertPrepSseJsonStreamInit,
+  CertPrepSseStreamOptions,
+  SseFrame,
+} from '../contracts/sse.contracts';
 import { CertPrepRuntimeConfig } from './cert-prep-api.service';
 
-export interface CertPrepSseJsonEvent<T> {
-  readonly id: string;
-  readonly event: string;
-  readonly data: T;
-}
-
-interface SseFrame {
-  readonly id: string;
-  readonly event: string;
-  readonly data: string;
-}
-
-export interface CertPrepSseStreamOptions<T> {
-  readonly lastEventId?: string | number;
-  readonly signal?: AbortSignal;
-  readonly isTerminal: (value: T) => boolean;
-}
-
-const MAX_LINE_BYTES = 8 * 1024 * 1024;
-const MAX_FRAME_LINES = 1024;
-const MAX_FRAME_BYTES = 8 * 1024 * 1024;
-const MAX_PAYLOAD_BYTES = 8 * 1024 * 1024;
+export type {
+  CertPrepSseJsonEvent,
+  CertPrepSseJsonStreamInit,
+  CertPrepSseStreamOptions,
+} from '../contracts/sse.contracts';
 
 @Injectable({ providedIn: 'root' })
 export class CertPrepSseClient {
@@ -63,12 +57,6 @@ export class CertPrepSseClient {
       ),
     );
   }
-}
-
-export interface CertPrepSseJsonStreamInit<T> extends RequestInit {
-  readonly eventName: string;
-  readonly lastEventId?: string | number;
-  readonly isTerminal: (value: T) => boolean;
 }
 
 export function certPrepSseJsonStream<T>(

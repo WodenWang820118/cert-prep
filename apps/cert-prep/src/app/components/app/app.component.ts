@@ -20,17 +20,14 @@ import {
 import { Subscription } from 'rxjs';
 import { RuntimeConsentDialogsComponent } from '../model-health/runtime-consent-dialogs.component';
 import { ProjectRailComponent } from '../project-rail/project-rail.component';
-import type { StudyPageOption } from '../../contracts/app.contracts';
+import { BACKEND_READINESS_POLL_LIMIT } from '../../constants/app.constants';
+import type { StudyNavigationGroup } from '../../contracts/app.contracts';
 import { RuntimeManagerPage } from '../../pages/runtime-manager/runtime-manager.page';
 import { OperationStore } from '../../stores/operation.store';
 import { ProjectStore } from '../../stores/project.store';
 import { DesktopRuntimeStore } from '../../stores/desktop-runtime/desktop-runtime.store';
 import { WorkspaceFacade } from '../../stores/workspace.facade';
 import { LAST_PROJECT_STORAGE_KEY } from '../../constants/runtime.constants';
-
-// Cover the native 60-second readiness window with a small scheduling margin,
-// then stop polling an installed backend that cannot become ready.
-const BACKEND_READINESS_POLL_LIMIT = 130;
 
 @Component({
   imports: [
@@ -52,33 +49,56 @@ export class App implements OnInit, OnDestroy {
   private runtimeManagerDialog?: ElementRef<HTMLElement>;
 
   protected readonly title = 'Cert Prep';
-  protected readonly studyPages: readonly StudyPageOption[] = [
-    { id: 'build', label: 'Build', icon: 'pi pi-wrench', path: '/build' },
+  protected readonly studyNavigationGroups: readonly StudyNavigationGroup[] = [
     {
-      id: 'full_exam',
-      label: 'Full Exam',
-      icon: 'pi pi-file-check',
-      path: '/full-exam',
+      id: 'build',
+      label: 'Build',
+      pages: [
+        { id: 'build', label: 'Build', icon: 'pi pi-wrench', path: '/build' },
+        {
+          id: 'capture_workbench_trial',
+          label: 'Capture Workbench',
+          icon: 'pi pi-box',
+          path: '/capture-workbench-trial',
+        },
+      ],
     },
     {
-      id: 'random_quiz',
-      label: 'Random Quiz',
-      icon: 'pi pi-sync',
-      path: '/random-quiz',
+      id: 'practice',
+      label: 'Practice',
+      pages: [
+        {
+          id: 'full_exam',
+          label: 'Full Exam',
+          icon: 'pi pi-file-check',
+          path: '/full-exam',
+        },
+        {
+          id: 'random_quiz',
+          label: 'Random Quiz',
+          icon: 'pi pi-sync',
+          path: '/random-quiz',
+        },
+      ],
     },
     {
-      id: 'dashboard',
-      label: 'Dashboard',
-      icon: 'pi pi-chart-bar',
-      path: '/dashboard',
+      id: 'review',
+      label: 'Review',
+      pages: [
+        {
+          id: 'dashboard',
+          label: 'Dashboard',
+          icon: 'pi pi-chart-bar',
+          path: '/dashboard',
+        },
+        {
+          id: 'review',
+          label: 'Wrong Answers',
+          icon: 'pi pi-history',
+          path: '/review',
+        },
+      ],
     },
-    {
-      id: 'capture_workbench_trial',
-      label: 'Capture Workbench',
-      icon: 'pi pi-box',
-      path: '/capture-workbench-trial',
-    },
-    { id: 'review', label: 'Review', icon: 'pi pi-history', path: '/review' },
   ];
   protected readonly desktopRuntime = inject(DesktopRuntimeStore);
   protected readonly operations = inject(OperationStore);

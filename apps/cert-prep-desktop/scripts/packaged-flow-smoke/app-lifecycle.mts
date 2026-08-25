@@ -291,7 +291,7 @@ export async function restartAndVerifyPersistence(
     .filter({ hasText: /Parallel Parsing QA/i })
     .first();
   await persistedProject.waitFor({ state: 'visible', timeout: 90_000 });
-  let projectPersisted = /Source files|Mock Exam Items|Parsing complete/i.test(
+  let projectPersisted = /Source files|Exam Questions|Parsing complete/i.test(
     await bodyText(run),
   );
   if (!projectPersisted) {
@@ -307,7 +307,7 @@ export async function restartAndVerifyPersistence(
     await buildLink.click({ timeout: 30_000 });
     await waitText(
       run,
-      /Source files|Mock Exam Items|Parsing complete/i,
+      /Source files|Exam Questions|Parsing complete/i,
       90_000,
       'project selected after restart',
     );

@@ -34,20 +34,39 @@ describe('App', () => {
     });
   });
 
-  it('renders compact runtime status and route-backed page navigation', () => {
+  it('renders grouped human task navigation with route-backed page links', () => {
     const fixture = TestBed.createComponent(App);
     const router = TestBed.inject(Router);
     fixture.detectChanges();
 
     const compiled = fixture.nativeElement as HTMLElement;
+    const studyNav = compiled.querySelector<HTMLElement>(
+      'nav[aria-label="Study pages"]',
+    );
     expect(compiled.querySelector('h1')?.textContent).toContain('Cert Prep');
     expect(compiled.textContent).toContain('Create project');
-    expect(linkByText(compiled, 'Build')).not.toBeNull();
-    expect(linkByText(compiled, 'Full Exam')).not.toBeNull();
-    expect(linkByText(compiled, 'Random Quiz')).not.toBeNull();
-    expect(linkByText(compiled, 'Dashboard')).not.toBeNull();
-    expect(linkByText(compiled, 'Capture Workbench')).not.toBeNull();
-    expect(linkByText(compiled, 'Review')).not.toBeNull();
+    expect(
+      Array.from(
+        studyNav?.querySelectorAll<HTMLElement>('[role="group"]') ?? [],
+      ).map((group) =>
+        group.querySelector('.workbench-section-label')?.textContent?.trim(),
+      ),
+    ).toEqual(['Build', 'Practice', 'Review']);
+    expect(
+      Array.from(
+        studyNav?.querySelectorAll<HTMLElement>('[role="group"]') ?? [],
+      ).map((group) =>
+        Array.from(group.querySelectorAll('a')).map((link) =>
+          link.textContent?.trim(),
+        ),
+      ),
+    ).toEqual([
+      ['Build', 'Capture Workbench'],
+      ['Full Exam', 'Random Quiz'],
+      ['Dashboard', 'Wrong Answers'],
+    ]);
+    expect(studyNav?.querySelector('a[href="/runtime"]')).toBeNull();
+    expect(linkByText(compiled, 'Wrong Answers')).not.toBeNull();
 
     router.navigateByUrl('/build');
     fixture.detectChanges();
@@ -55,11 +74,19 @@ describe('App', () => {
     return vi
       .waitFor(() => {
         fixture.detectChanges();
-        expect(compiled.textContent).toContain('Python 3.13.5');
-        expect(compiled.textContent).toContain('Reasoning model: reasoner:7b');
+        expect(compiled.textContent).not.toContain('Python 3.13.5');
+        expect(compiled.textContent).not.toContain('Reasoning model: reasoner:7b');
+        expect(
+          compiled.querySelector('[aria-label="Runtime status"]'),
+        ).toBeNull();
         expect(compiled.textContent).toContain('Source files');
-        expect(compiled.textContent).toContain('Mock Exam Items');
-        expect(compiled.textContent).not.toContain('Wrong Answers');
+        expect(compiled.textContent).toContain('Exam Questions');
+        expect(
+          compiled.querySelector('.workbench-main')?.textContent,
+        ).not.toContain('Wrong Answers');
+        expect(linkByText(compiled, 'Build')?.getAttribute('aria-current')).toBe(
+          'page',
+        );
       })
       .then(() => {
         router.navigateByUrl('/full-exam');
@@ -90,7 +117,9 @@ describe('App', () => {
         return vi.waitFor(() => {
           fixture.detectChanges();
           expect(compiled.textContent).toContain('Project weakness analysis');
-          expect(compiled.textContent).not.toContain('Wrong Answers');
+          expect(
+            compiled.querySelector('.workbench-main')?.textContent,
+          ).not.toContain('Wrong Answers');
         });
       })
       .then(() => {
@@ -183,6 +212,7 @@ describe('App', () => {
     TestBed.tick();
     return vi.waitFor(() => {
       fixture.detectChanges();
+      expect(router.url).toBe('/runtime');
       expect(compiled.textContent).toContain('Manage runtime');
       expect(compiled.textContent).toContain('Python backend');
       expect(
@@ -216,6 +246,7 @@ describe('App', () => {
     TestBed.tick();
     return vi.waitFor(() => {
       fixture.detectChanges();
+      expect(router.url).toBe('/capture-workbench-trial');
       expect(compiled.textContent).toContain('Capture Workbench trial');
       expect(compiled.querySelector('capture-workbench')).not.toBeNull();
       expect(compiled.textContent).not.toContain(
@@ -226,8 +257,10 @@ describe('App', () => {
 
   it('opens the topbar runtime manager as an accessible modal dialog', () => {
     const fixture = TestBed.createComponent(App);
+    const router = TestBed.inject(Router);
     const compiled = fixture.nativeElement as HTMLElement;
     fixture.detectChanges();
+    const initialUrl = router.url;
 
     const manageRuntimeButton = buttonByText(compiled, 'Manage runtime');
     expect(manageRuntimeButton).not.toBeNull();
@@ -245,6 +278,7 @@ describe('App', () => {
       );
       expect(compiled.querySelector('#runtime-manager-modal-title')?.textContent)
         .toContain('Manage runtime');
+      expect(router.url).toBe(initialUrl);
       expect(document.activeElement).toBe(
         dialog?.querySelector('[aria-label="Close runtime manager"]'),
       );

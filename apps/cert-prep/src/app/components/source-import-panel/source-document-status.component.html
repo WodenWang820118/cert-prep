@@ -1,0 +1,66 @@
+@if (model().documents.length > 0) {
+  <label class="workbench-field">
+    <span>Project source library</span>
+    <select
+      [value]="model().activeDocumentId ?? ''"
+      (change)="selectDocument($any($event.target).value)"
+    >
+      @for (document of model().documents; track document.id) {
+        <option [value]="document.id">{{ document.filename }}</option>
+      }
+    </select>
+  </label>
+}
+
+<section class="grid gap-3" aria-live="polite" aria-labelledby="source-status-heading">
+  <div class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-surface-200 bg-surface-50 p-3">
+    <div class="min-w-0 flex-1">
+      <h3 id="source-status-heading" class="m-0 truncate text-sm font-semibold text-color">
+        {{ documentStatusLabel() }}
+      </h3>
+      <p class="m-0 mt-1 text-sm text-muted-color">{{ statusGuidance() }}</p>
+    </div>
+    <p-tag
+      [value]="documentStatusLabel()"
+      [severity]="documentStatusSeverity()"
+      [rounded]="true"
+    />
+    @if (canCancelProcessing()) {
+      <button
+        class="workbench-secondary-button"
+        type="button"
+        [disabled]="model().cancelBusy || model().document?.status === 'cancel_requested'"
+        (click)="cancelProcessing()"
+      >
+        <i class="pi pi-times" aria-hidden="true"></i>
+        <span>{{ model().document?.status === 'cancel_requested' ? 'Canceling' : 'Cancel' }}</span>
+      </button>
+    } @else if (canRetryProcessing()) {
+      <button
+        class="workbench-secondary-button"
+        type="button"
+        [disabled]="model().retryBusy"
+        (click)="retryProcessing()"
+      >
+        <i class="pi pi-refresh" aria-hidden="true"></i>
+        <span>Retry source processing</span>
+      </button>
+    }
+  </div>
+
+  @if (sourceWarning(); as warning) {
+    <p class="m-0 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900" role="status">
+      {{ warning }}
+    </p>
+  }
+
+  @if (model().streamError) {
+    <div class="flex flex-wrap items-center justify-between gap-3 rounded-md border border-red-200 bg-red-50 p-3" role="alert">
+      <span class="text-sm font-semibold text-red-900">We could not update the source status.</span>
+      <button class="workbench-secondary-button" type="button" (click)="retryProgress()">
+        <i class="pi pi-refresh" aria-hidden="true"></i>
+        <span>Retry source status</span>
+      </button>
+    </div>
+  }
+</section>

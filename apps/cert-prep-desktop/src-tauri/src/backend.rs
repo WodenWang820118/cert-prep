@@ -26,7 +26,8 @@ use crate::{
     },
     manifests::{load_runtime_manifest, RuntimeManifest},
     runtime_installation::{
-        completed_installation, install_python_runtime, installation_from_job, RuntimeJob,
+        completed_installation, failed_installation, install_python_runtime, installation_from_job,
+        RuntimeJob,
     },
     DesktopRuntimeInstallation,
 };
@@ -569,6 +570,14 @@ impl BackendState {
     }
 
     pub(crate) fn start_installation(&self) -> DesktopRuntimeInstallation {
+        // The startup probe may finish after the window has begun closing. Do
+        // not create a late worker that could outlive the desktop shell and
+        // race the process cleanup path.
+        if self.inner.closing.load(Ordering::SeqCst) {
+            return failed_installation(
+                "Cert Prep is closing; Python backend runtime was not installed.",
+            );
+        }
         if self.backend_config().is_some() {
             return completed_installation("Python backend runtime is already running.");
         }
@@ -938,6 +947,28 @@ mod tests {
         );
         assert_eq!(failed.base_url, None);
         assert_eq!(failed.token, None);
+
+        let _ = fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn closing_state_rejects_python_runtime_installation_without_creating_a_worker() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "cert-prep-closing-installation-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let state = BackendState::new(data_dir.clone(), None, None);
+
+        state.terminate_child_process_tree();
+
+        let installation = state.start_installation();
+
+        assert_eq!(installation.status, "failed");
+        assert_eq!(
+            installation.error.as_deref(),
+            Some("Cert Prep is closing; Python backend runtime was not installed.")
+        );
+        assert!(state.active_job().is_none());
 
         let _ = fs::remove_dir_all(data_dir);
     }

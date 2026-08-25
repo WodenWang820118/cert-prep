@@ -1,0 +1,162 @@
+<article class="workbench-question-card" data-testid="draft-question-card">
+  <div class="workbench-question-meta">
+    <span
+      class="workbench-tag"
+      [class.is-primary]="model().statusLabel === 'Ready for practice'"
+    >
+      {{ model().statusLabel }}
+    </span>
+    @if (model().citationPage !== null) {
+      <span>Page {{ model().citationPage }}</span>
+    }
+  </div>
+
+  @if (model().isEditing) {
+    @if (model().edit; as edit) {
+      <div class="workbench-edit-form">
+        <label class="workbench-field">
+          <span>Question</span>
+          <input
+            pInputText
+            [name]="model().fieldPrefix + '-question'"
+            [value]="edit.question"
+            (input)="emit({ type: 'set-question', value: valueFrom($event) })"
+          />
+        </label>
+
+        <fieldset class="m-0 grid gap-2 border-0 p-0">
+          <legend class="pb-1 text-sm font-bold text-muted-color">
+            Choices
+          </legend>
+          @for (choice of edit.choices; track $index) {
+            <div class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+              <input
+                pInputText
+                [name]="model().fieldPrefix + '-choice-' + $index"
+                [value]="choice"
+                (input)="
+                  emit({
+                    type: 'set-choice',
+                    index: $index,
+                    value: valueFrom($event),
+                  })
+                "
+              />
+              <button
+                class="workbench-secondary-button"
+                type="button"
+                [attr.aria-label]="'Remove choice ' + ($index + 1)"
+                [disabled]="edit.choices.length <= 2"
+                (click)="emit({ type: 'remove-choice', index: $index })"
+              >
+                <i class="pi pi-times" aria-hidden="true"></i>
+              </button>
+            </div>
+          }
+          <button
+            class="workbench-secondary-button"
+            type="button"
+            (click)="emit({ type: 'add-choice' })"
+          >
+            <i class="pi pi-plus" aria-hidden="true"></i>
+            <span>Add choice</span>
+          </button>
+        </fieldset>
+
+        <label class="workbench-field">
+          <span>Answer</span>
+          <select
+            [name]="model().fieldPrefix + '-answer'"
+            [value]="edit.answer"
+            (change)="emit({ type: 'set-answer', value: valueFrom($event) })"
+          >
+            <option value="">Select answer</option>
+            @for (choice of edit.choices; track $index) {
+              <option [value]="choice">
+                {{ choice || 'Choice ' + ($index + 1) }}
+              </option>
+            }
+          </select>
+        </label>
+
+        <label class="workbench-field">
+          <span>Rationale</span>
+          <textarea
+            [name]="model().fieldPrefix + '-rationale'"
+            [value]="edit.rationale"
+            (input)="emit({ type: 'set-rationale', value: valueFrom($event) })"
+          ></textarea>
+        </label>
+      </div>
+    }
+  } @else {
+    <h3>{{ model().question }}</h3>
+    <ol class="workbench-choice-list" aria-label="Choices">
+      @for (choice of model().choices; track $index) {
+        <li
+          class="workbench-choice"
+          [class.is-answer]="choice === model().answer"
+        >
+          <span class="workbench-choice-key">{{ choiceKey($index) }}</span>
+          <span>{{ choice }}</span>
+          @if (choice === model().answer) {
+            <i class="pi pi-check" aria-hidden="true"></i>
+          }
+        </li>
+      }
+    </ol>
+    @if (model().rationale) {
+      <div class="workbench-rationale">
+        <strong>Rationale</strong>
+        <p>{{ model().rationale }}</p>
+      </div>
+    }
+    <div class="workbench-rationale">
+      <strong>Answer</strong>
+      <p>{{ model().answer || 'No answer selected.' }}</p>
+    </div>
+  }
+
+  <div class="workbench-rationale">
+    <strong>Source evidence</strong>
+    @if (model().sourceExcerpt) {
+      <p>{{ model().sourceExcerpt }}</p>
+    } @else {
+      <p>No source excerpt is available.</p>
+    }
+  </div>
+
+  <div class="flex flex-wrap justify-end gap-2">
+    @if (model().isEditing) {
+      <button
+        class="workbench-secondary-button"
+        type="button"
+        [disabled]="model().saveBusy"
+        (click)="emit({ type: 'cancel-edit' })"
+      >
+        Cancel
+      </button>
+      <button
+        class="workbench-action-button"
+        type="button"
+        [disabled]="model().saveBusy"
+        (click)="emit({ type: 'save' })"
+      >
+        <i
+          [class]="model().saveBusy ? 'pi pi-spin pi-spinner' : 'pi pi-save'"
+          aria-hidden="true"
+        ></i>
+        <span>Save</span>
+      </button>
+    } @else {
+      <button
+        class="workbench-secondary-button"
+        type="button"
+        (click)="emit({ type: 'start-edit' })"
+      >
+        <i class="pi pi-pencil" aria-hidden="true"></i>
+        <span>Edit</span>
+      </button>
+    }
+  </div>
+</article>

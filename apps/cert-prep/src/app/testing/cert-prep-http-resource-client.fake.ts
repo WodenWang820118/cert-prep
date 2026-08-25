@@ -9,8 +9,7 @@ import type {
   CertPrepResourceKey,
   CertPrepResourceTrigger,
 } from '../contracts/http-resource.contracts';
-
-type FakeApi = object;
+import type { FakeApi } from './contracts/testing.contracts';
 
 export function provideCertPrepHttpResourceClientFake(api: FakeApi) {
   return { provide: CertPrepHttpResourceClient, useFactory: () => createCertPrepHttpResourceClientFake(api) };

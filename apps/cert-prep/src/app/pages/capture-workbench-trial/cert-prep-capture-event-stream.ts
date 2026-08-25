@@ -14,37 +14,20 @@ import type {
   CaptureEvent,
   RawCaptureSegment,
 } from '@gx-capture/capture-workbench-ui';
+import {
+  MAX_SSE_FRAME_BYTES,
+  MAX_SSE_FRAME_LINES,
+  MAX_SSE_LINE_BYTES,
+  MAX_SSE_PAYLOAD_BYTES,
+  MAX_SSE_SEGMENTS,
+  STREAMING_EVENT_TYPES,
+} from './constants/capture-workbench-trial.constants';
+import type {
+  CertPrepCaptureEventStreamInit,
+  SseEventFrame,
+} from './contracts/capture-workbench-trial.contracts';
 
-interface SseEventFrame {
-  readonly id: string;
-  readonly event: string;
-  readonly data: string;
-}
-
-export interface CertPrepCaptureEventStreamInit extends RequestInit {
-  readonly lastEventId?: string | number;
-  readonly expectedCaptureId: string;
-}
-
-const STREAMING_EVENT_TYPES = new Set([
-  'accepted',
-  'input_checkpoint',
-  'heartbeat',
-  'segment',
-  'checkpoint',
-  'resync_required',
-  'completed',
-  'failed',
-  'cancelled',
-]);
-// Cert Prep may batch all pages from a multi-page PDF into one segment event.
-// Keep the per-line bound aligned with the existing bounded frame/payload
-// limits so a valid batched event is not rejected before JSON validation.
-const MAX_SSE_LINE_BYTES = 8 * 1024 * 1024;
-const MAX_SSE_FRAME_LINES = 1024;
-const MAX_SSE_FRAME_BYTES = 8 * 1024 * 1024;
-const MAX_SSE_PAYLOAD_BYTES = 8 * 1024 * 1024;
-const MAX_SSE_SEGMENTS = 10_000;
+export type { CertPrepCaptureEventStreamInit } from './contracts/capture-workbench-trial.contracts';
 
 /** Cold authenticated SSE: every subscription fetches; teardown aborts fetch. */
 export function certPrepCaptureEventStream(

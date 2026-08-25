@@ -18,6 +18,7 @@ import type {
   ImagePoint,
 } from './contracts/source-image-crop.contracts';
 import { SourceImageCropService } from './source-image-crop.service';
+import type { SourceImportAction } from './source-import-panel.contracts';
 
 @Component({
   selector: 'app-source-image-crop-dialog',
@@ -30,8 +31,7 @@ export class SourceImageCropDialogComponent {
   readonly sourceFile = input<File | null>(null);
   readonly position = input(0);
   readonly total = input(0);
-  readonly cropApplied = output<File>();
-  readonly originalKept = output<void>();
+  readonly action = output<SourceImportAction>();
 
   private readonly cropService = inject(SourceImageCropService);
   private readonly cropSurface =
@@ -190,7 +190,7 @@ export class SourceImageCropDialogComponent {
 
   protected keepOriginal(): void {
     if (!this.encoding() && this.sourceFile() !== null) {
-      this.originalKept.emit();
+      this.action.emit({ type: 'keep-original-image' });
     }
   }
 
@@ -203,7 +203,8 @@ export class SourceImageCropDialogComponent {
     this.encoding.set(true);
     this.encodeError.set(null);
     this.cropService.crop(file, image, this.cropRect()).subscribe({
-      next: (croppedFile) => this.cropApplied.emit(croppedFile),
+      next: (croppedFile) =>
+        this.action.emit({ type: 'crop-applied', file: croppedFile }),
       error: (error: unknown) => {
         this.encodeError.set(error instanceof Error ? error.message : 'The cropped image could not be created.');
         this.focusReviewStatus();

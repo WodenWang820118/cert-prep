@@ -100,6 +100,8 @@ describe('DraftReviewStore editable questions', () => {
       { overrides: { rationale: '   ' } },
       { overrides: { citation_page: null, source_excerpt: null } },
       { overrides: { citation_page: null, source_excerpt: '   ' } },
+      { overrides: { source_question_number: null } },
+      { overrides: { source_question_number: '   ' } },
     ];
     const incompleteDrafts = incompleteCases.map((testCase, index) =>
       questionDraft({

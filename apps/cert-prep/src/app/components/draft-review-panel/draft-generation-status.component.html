@@ -1,0 +1,81 @@
+<section
+  class="mt-2 rounded-md border border-slate-200 bg-slate-50 p-3"
+  aria-live="polite"
+  data-testid="draft-generation-status"
+>
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <p class="text-sm font-semibold text-slate-900">{{ model().message }}</p>
+    <div class="flex flex-wrap gap-2">
+      @if (model().canGenerate) {
+        <button
+          class="workbench-action-button"
+          type="button"
+          data-testid="draft-generate"
+          [disabled]="model().generateBusy"
+          (click)="emit({ type: 'generate' })"
+        >
+          <i
+            [class]="
+              model().generateBusy ? 'pi pi-spin pi-spinner' : 'pi pi-sparkles'
+            "
+            aria-hidden="true"
+          ></i>
+          <span>Generate questions</span>
+        </button>
+      }
+      @if (model().canRetry) {
+        <button
+          class="workbench-secondary-button"
+          type="button"
+          data-testid="draft-retry"
+          [disabled]="model().retryBusy"
+          (click)="emit({ type: 'retry' })"
+        >
+          <i
+            [class]="
+              model().retryBusy ? 'pi pi-spin pi-spinner' : 'pi pi-refresh'
+            "
+            aria-hidden="true"
+          ></i>
+          <span>Retry</span>
+        </button>
+      }
+      @if (model().canCancel) {
+        <button
+          class="workbench-secondary-button"
+          type="button"
+          data-testid="draft-cancel"
+          [disabled]="model().cancelBusy"
+          (click)="emit({ type: 'cancel' })"
+        >
+          <i
+            [class]="
+              model().cancelBusy ? 'pi pi-spin pi-spinner' : 'pi pi-times'
+            "
+            aria-hidden="true"
+          ></i>
+          <span>Cancel</span>
+        </button>
+      }
+    </div>
+  </div>
+
+  @if (model().reviewEvidence.length > 0) {
+    <div
+      class="mt-3 rounded-md border border-orange-200 bg-orange-50 p-3 text-sm text-orange-950"
+      data-testid="draft-review-evidence"
+    >
+      <strong>Some source items need review</strong>
+      @for (evidence of model().reviewEvidence; track $index) {
+        <div class="mt-2">
+          @if (evidence.citationPage !== null) {
+            <span class="font-semibold">Page {{ evidence.citationPage }}</span>
+          }
+          @if (evidence.sourceExcerpt) {
+            <p>{{ evidence.sourceExcerpt }}</p>
+          }
+        </div>
+      }
+    </div>
+  }
+</section>

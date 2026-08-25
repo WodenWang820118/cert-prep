@@ -69,7 +69,7 @@ test('real Cert Prep packaged PDF and JPEG acceptance journeys pass', async () =
           if (name === 'mid-parse-ui-still-usable') {
             await expect(page.locator('main')).toBeVisible();
             await expect(page.getByText('Step 01: Source files')).toBeVisible();
-            await expect(page.getByText('Step 02: Mock Exam Items')).toBeVisible();
+            await expect(page.getByText('Step 02: Exam Questions')).toBeVisible();
             return;
           }
           // Source and generated-content checkpoints remain masked run

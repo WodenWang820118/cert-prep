@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import {
@@ -12,6 +13,10 @@ import {
   CAPTURE_RUNTIME_MODEL,
   CAPTURE_RUNTIME_VERSION,
 } from '../../../../tools/capture-runtime-version.mts';
+import {
+  PDF_TEXT_EXTRACTION_SCRIPT,
+  REAL_PDF_MAGIC,
+} from './constants/capture-runtime-fixture.constants.mts';
 
 const defaultHost = '127.0.0.1';
 const defaultPort = Number(
@@ -824,11 +829,17 @@ async function startCapture(
     stage: 'extracting',
     progress: 0.1,
   });
-  capture.extractionTimer = setTimeout(() => finishExtraction(capture), 25);
+  capture.extractionTimer = setTimeout(
+    () => finishExtraction(capture, ingestions.get(capture.ingestionId)),
+    25,
+  );
   writeJson(response, 202, captureOperation(capture));
 }
 
-function finishExtraction(capture: CaptureRecord): void {
+function finishExtraction(
+  capture: CaptureRecord,
+  ingestion: IngestionRecord | undefined,
+): void {
   capture.extractionTimer = null;
   if (capture.status !== 'extracting') return;
   if (capture.kind === 'image') {
@@ -851,7 +862,7 @@ function finishExtraction(capture: CaptureRecord): void {
     });
     return;
   }
-  const segments = captureSegments(capture.kind);
+  const segments = captureSegments(capture.kind, ingestion?.bytes);
   const now = new Date().toISOString();
   capture.status = 'awaiting_structuring';
   capture.progress = 0.75;
@@ -1509,7 +1520,10 @@ function rawCapture(capture: CaptureRecord): Record<string, unknown> {
   };
 }
 
-function captureSegments(kind: SourceKind): readonly Record<string, unknown>[] {
+function captureSegments(
+  kind: SourceKind,
+  sourceBytes?: Buffer,
+): readonly Record<string, unknown>[] {
   if (kind === 'audio') {
     return [
       {
@@ -1519,6 +1533,13 @@ function captureSegments(kind: SourceKind): readonly Record<string, unknown>[] {
         text: 'Least privilege limits cloud permissions and reduces credential exposure.',
       },
     ];
+  }
+  if (
+    sourceBytes !== undefined &&
+    sourceBytes.subarray(0, REAL_PDF_MAGIC.length).toString('ascii') ===
+      REAL_PDF_MAGIC
+  ) {
+    return extractRealPdfSegments(sourceBytes);
   }
   return [
     {
@@ -1534,6 +1555,63 @@ function captureSegments(kind: SourceKind): readonly Record<string, unknown>[] {
       text: 'Defense in depth combines independent controls and reduces single points of failure.',
     },
   ];
+}
+
+function extractRealPdfSegments(sourceBytes: Buffer): readonly Record<string, unknown>[] {
+  const python = process.env['CERT_PREP_E2E_PYTHON'] ?? 'python';
+  const result = spawnSync(python, ['-c', PDF_TEXT_EXTRACTION_SCRIPT], {
+    input: sourceBytes,
+    encoding: 'utf8',
+    maxBuffer: 16 * 1024 * 1024,
+    windowsHide: true,
+  });
+  if (result.error !== undefined) {
+    throw new Error(`Real PDF extraction could not start: ${result.error.message}`);
+  }
+  if (result.status !== 0) {
+    throw new Error(
+      `Real PDF extraction failed: ${(result.stderr ?? '').trim() || 'unknown error'}`,
+    );
+  }
+
+  let pages: unknown;
+  try {
+    pages = JSON.parse(result.stdout) as unknown;
+  } catch (error) {
+    throw new Error(
+      `Real PDF extraction returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (!Array.isArray(pages)) {
+    throw new Error('Real PDF extraction returned an invalid page list.');
+  }
+
+  const segments: Record<string, unknown>[] = [];
+  for (const page of pages) {
+    if (page === null || typeof page !== 'object' || Array.isArray(page)) {
+      continue;
+    }
+    const record = page as Record<string, unknown>;
+    const pageNumber = record['page'];
+    const text = record['text'];
+    if (
+      !Number.isSafeInteger(pageNumber) ||
+      typeof text !== 'string' ||
+      text.trim() === ''
+    ) {
+      continue;
+    }
+    segments.push({
+      segmentId: `segment-${segments.length + 1}`,
+      order: segments.length,
+      locator: { kind: 'page', page: pageNumber },
+      text,
+    });
+  }
+  if (segments.length === 0) {
+    throw new Error('Real PDF extraction returned no text-bearing pages.');
+  }
+  return segments;
 }
 
 function extractionEngine(kind: SourceKind): Record<string, unknown> {

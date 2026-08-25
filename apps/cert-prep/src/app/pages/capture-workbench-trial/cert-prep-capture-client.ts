@@ -48,13 +48,10 @@ import { CERT_PREP_API } from '../../constants/cert-prep-api.constants';
 import { CertPrepRuntimeConfig } from '../../services/cert-prep-api.service';
 import { ProjectStore } from '../../stores/project.store';
 import { certPrepCaptureEventStream } from './cert-prep-capture-event-stream';
-
-interface CaptureRecord {
-  readonly projectId: string;
-  readonly documentId: string;
-  readonly sourceSha256: string;
-  readonly structuringRequestId: string;
-}
+import type {
+  CaptureRecord,
+  UnknownRecord,
+} from './contracts/capture-workbench-trial.contracts';
 
 /**
  * Adapts Cert Prep's durable document pipeline to the published streaming v2
@@ -533,8 +530,6 @@ class CaptureClientProtocolError extends Error {
     this.name = 'CaptureClientProtocolError';
   }
 }
-
-type UnknownRecord = Record<string, unknown>;
 
 function mapCaptureDocument(value: unknown): CaptureDocument {
   const document = record(value, 'capture document');

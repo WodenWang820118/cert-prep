@@ -115,7 +115,10 @@ export class SourceImportStore {
   ];
   readonly uploadBatchSizes = [1, 2, 3, 4] as const;
   readonly sourceFileAccept = SOURCE_FILE_ACCEPT;
-  readonly languageHint = signal<LanguageHint>('auto');
+  // Cert Prep is a Japanese study workflow. Keep Japanese as the safe default
+  // so the first upload already carries the language needed by OCR/parsing;
+  // users can still opt into auto-detection or another supported hint.
+  readonly languageHint = signal<LanguageHint>('ja');
   readonly uploadBatchSize = signal(DEFAULT_UPLOAD_BATCH_SIZE);
   readonly uploadItems = signal<SourceUploadItem[]>([]);
   readonly streamError = signal<string | null>(null);

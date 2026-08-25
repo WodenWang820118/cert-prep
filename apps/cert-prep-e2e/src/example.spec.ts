@@ -1,3 +1,5 @@
+import { mkdir } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import {
   apiBaseUrl,
@@ -12,7 +14,7 @@ import {
   createWorkspaceWithUploadedDocument,
   expectFullExamDocumentOptions,
   expectRandomQuizAvailableCount,
-  expectRuntimeReady,
+  expectWorkspaceReady,
   expectWrongAnswerDashboard,
   expectWrongAnswerReview,
   runMultiPdfBatchUploadScenario,
@@ -51,6 +53,46 @@ test('completes Random Quiz for every playable mocked draft and records wrong an
   expect(api.seenPaths()).toEqual(expectedSeenPaths(api));
 });
 
+test('captures the route-mocked practice journey for UI regression only', async ({
+  page,
+}, testInfo) => {
+  const api = await installMockCertPrepApi(page);
+  await seedMockApiConfig(page, apiBaseUrl, devToken);
+  const screenshotDirectory = resolve(
+    process.cwd(),
+    '../../output/playwright/cert-prep/e2e-route-mocked-cycle',
+    testInfo.project.name,
+  );
+  await mkdir(screenshotDirectory, { recursive: true });
+
+  await createWorkspaceWithUploadedDocument(page, api);
+  expect(api.uploadedDocuments().map((document) => document.filename)).toContain(
+    api.document.filename,
+  );
+  await page.screenshot({
+    path: resolve(screenshotDirectory, '01-uploaded-pdf-ready.png'),
+    fullPage: true,
+  });
+
+  await startRandomQuiz(page, api, 1);
+  await page.screenshot({
+    path: resolve(screenshotDirectory, '02-mocked-practice-session.png'),
+    fullPage: true,
+  });
+
+  await completePracticeQuestions(
+    page,
+    api,
+    [api.draft],
+    wrongChoiceForDraft,
+  );
+  await expectWrongAnswerReview(page, api, [api.draft]);
+  await page.screenshot({
+    path: resolve(screenshotDirectory, '03-wrong-answer-review.png'),
+    fullPage: true,
+  });
+});
+
 test('keeps Full Exam sessions isolated to the selected PDF document', async ({
   page,
 }) => {
@@ -81,7 +123,7 @@ test('keeps mixed PDF and image multipart filenames in upload order and the libr
 
   await page.goto('/');
   await createProject(page, api);
-  await expectRuntimeReady(page);
+  await expectWorkspaceReady(page);
 
   const imageFilename = 'network-diagram.png';
   const binaryPdf = Buffer.from([
@@ -114,7 +156,7 @@ test('keeps mixed PDF and image multipart filenames in upload order and the libr
     ).toContainText('Uploaded');
   }
 
-  const library = page.getByLabel('Project document library');
+  const library = page.getByLabel('Project source library');
   await expect(
     library.locator('option', { hasText: pdfDocument.filename }),
   ).toHaveCount(1);
@@ -151,10 +193,9 @@ test('keeps a mixed PDF and audio queue interactive and refills the first free s
 
   await page.goto('/');
   await createProject(page, api);
-  await expectRuntimeReady(page);
+  await expectWorkspaceReady(page);
 
   const sourceInput = page.locator('input[aria-label="Source files"]');
-  await page.getByLabel('Concurrent uploads').selectOption('2');
   await sourceInput.setInputFiles([
     {
       name: firstPdfFilename,
@@ -184,7 +225,7 @@ test('keeps a mixed PDF and audio queue interactive and refills the first free s
   const uploadRow = (filename: string) =>
     uploadList.locator(':scope > div').filter({ hasText: filename });
   await expect(page.getByText('3 files selected')).toBeVisible();
-  await expect(uploadRow(audioFilename)).toContainText('Queued');
+  await expect(uploadRow(audioFilename)).toContainText('Waiting to upload');
   expect(api.startedUploads()).toEqual([
     firstPdfFilename,
     secondPdfFilename,
@@ -209,7 +250,7 @@ test('keeps a mixed PDF and audio queue interactive and refills the first free s
     await expect(uploadRow(filename)).toContainText('Uploaded');
     await expect(
       page
-        .getByLabel('Project document library')
+        .getByLabel('Project source library')
         .locator('option', { hasText: filename }),
     ).toHaveCount(1);
   }
@@ -224,8 +265,9 @@ test('optionally crops selected images before preserving mixed upload order', as
 
   await page.goto('/');
   await createProject(page, api);
-  await expectRuntimeReady(page);
+  await expectWorkspaceReady(page);
 
+  await page.getByText('Optional settings', { exact: true }).click();
   const cropToggle = page.getByRole('switch', {
     name: 'Crop images before upload',
   });
@@ -283,7 +325,6 @@ test('optionally crops selected images before preserving mixed upload order', as
 
   await expect(dialog).toBeHidden();
   await expect(page.getByText('2 files selected')).toBeVisible();
-  await page.getByLabel('Concurrent uploads').selectOption('1');
   await page.getByRole('button', { name: 'Upload files' }).click();
 
   await expect
@@ -417,7 +458,7 @@ test('clears document draft practice and review state when switching projects', 
   await page.getByRole('link', { name: 'Random Quiz' }).click();
   await startRandomQuiz(page, api, 1);
   await completePracticeQuestions(page, api, [api.draft], wrongChoiceForDraft);
-  await page.getByRole('link', { name: 'Review' }).click();
+  await page.getByRole('link', { name: 'Wrong Answers' }).click();
   await expect(page.getByText(api.draft.question)).toBeVisible();
 
   const requestMarker = api.markRequestLog();
