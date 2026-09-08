@@ -174,7 +174,7 @@ jobs:
         run: pnpm exec playwright install chromium
 
       - name: Run one end-to-end functional smoke
-        run: pnpm nx run cert-prep-e2e:e2e-real-backend
+        run: pnpm nx run cert-prep-e2e:e2e-real-backend-local-package
 
       - name: Build and verify the NSIS installer through Nx
         run: pnpm nx run cert-prep-desktop:package-qa

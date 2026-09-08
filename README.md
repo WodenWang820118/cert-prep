@@ -123,7 +123,7 @@ corepack pnpm nx run cert-prep-contracts:test
 corepack pnpm nx run cert-prep-ollama:lint
 corepack pnpm nx run cert-prep-ollama:test
 corepack pnpm nx run cert-prep-e2e:e2e
-corepack pnpm nx run cert-prep-e2e:e2e-real-backend
+corepack pnpm nx run cert-prep-e2e:e2e-real-backend-local-package
 ```
 
 The real-backend browser suite is fail-closed: it requires an actual PDF and

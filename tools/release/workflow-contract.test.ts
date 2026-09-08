@@ -289,8 +289,8 @@ test('candidate build validates the exact public release source and runs quality
   assert.match(body, /pnpm nx run cert-prep-desktop:package-qa-test/);
   assert.match(body, /pnpm nx run cert-prep-desktop:release-tool-test/);
   assert.match(body, /pnpm nx run cert-prep-desktop:cargo-test/);
-  assert.match(body, /pnpm nx run cert-prep-e2e:e2e-real-backend/);
-  assert.equal((body.match(/e2e-real-backend/g) ?? []).length, 1);
+  assert.match(body, /pnpm nx run cert-prep-e2e:e2e-real-backend-local-package/);
+  assert.equal((body.match(/e2e-real-backend-local-package/g) ?? []).length, 1);
   assert.match(body, /pnpm nx run cert-prep-desktop:package-qa/);
   assert.match(body, /--include-distribution PyInstaller==6\.20\.0/);
   assert.doesNotMatch(body, /collect-runtime-payloads\.py/);
