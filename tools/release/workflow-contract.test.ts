@@ -298,6 +298,20 @@ test('candidate build validates the exact public release source and runs quality
   assert.match(body, /candidate_id=/);
 });
 
+test('ordinary CI does not run the provisioned-only real-backend suite', () => {
+  const portableQuality = workflowJobBody(ciWorkflow, 'portable-quality');
+  assert.doesNotMatch(
+    portableQuality,
+    /pnpm nx run cert-prep-e2e:e2e-real-backend-local-package/,
+  );
+  assert.equal(
+    (ciWorkflow.match(
+      /pnpm nx run cert-prep-e2e:e2e-real-backend-local-package/g,
+    ) ?? []).length,
+    0,
+  );
+});
+
 test('candidate build selects separate lint and test tasks for every Windows-owned project', () => {
   assertSeparateNxQualitySteps(jobBody('build-candidate'), {
     stepLabel: 'Windows-owned projects',
