@@ -1,5 +1,13 @@
 # Lazy Capture Runtime Installation Decision
 
+## 2026-08-25 OCR-only consumer boundary
+
+- Installation remains a lifecycle concern only. The target 0.4.2 runtime is
+  the sole PDF/image extractor and rasterizes every page for PaddleOCR.
+- Embedded/mixed extraction and LLM route selection are not installation or
+  consumer behavior. Cert Prep persists `windowsml_ocr` for new captures and
+  only reads legacy embedded/mixed records.
+
 ## 2026-08-02
 
 - The Cert Prep desktop shell and Python backend start without a Capture

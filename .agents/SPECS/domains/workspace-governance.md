@@ -19,7 +19,7 @@ domains stay focused on product behavior.
   project names.
 - New evidence and ignored output folders should use `tmp/cert-prep-desktop`;
   old ignored local evidence does not need migration.
-- Use `pnpm@10.33.2`; do not mix npm and pnpm after migration.
+- Use exact `pnpm@12.0.0`; do not mix npm and pnpm after migration.
 
 ## Nx And Verification Rules
 

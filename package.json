@@ -2,22 +2,22 @@
   "name": "@cert-prep/source",
   "version": "0.0.0",
   "license": "MIT",
-  "packageManager": "pnpm@11.15.1",
+  "packageManager": "pnpm@12.0.0",
   "scripts": {
-    "dev": "pnpm nx run-many --target=serve --projects=cert-prep,cert-prep-backend --parallel=2",
-    "dev:frontend": "pnpm nx run cert-prep:serve",
-    "dev:backend": "pnpm nx run cert-prep-backend:serve",
-    "dev:tauri": "pnpm nx run cert-prep-desktop:dev",
-    "build:frontend": "pnpm nx run cert-prep:build",
-    "build:backend": "pnpm nx run cert-prep-backend:build-backend-runtime",
-    "build:tauri": "pnpm nx run cert-prep-desktop:build",
-    "build:tauri:win": "pnpm nx run cert-prep-desktop:build-capture",
-    "package:qa": "pnpm nx run cert-prep-desktop:package-qa"
+    "dev": "corepack pnpm nx run-many --target=serve --projects=cert-prep,cert-prep-backend --parallel=2",
+    "dev:frontend": "corepack pnpm nx run cert-prep:serve",
+    "dev:backend": "corepack pnpm nx run cert-prep-backend:serve",
+    "dev:tauri": "corepack pnpm nx run cert-prep-desktop:dev",
+    "build:frontend": "corepack pnpm nx run cert-prep:build",
+    "build:backend": "corepack pnpm nx run cert-prep-backend:build-backend-runtime",
+    "build:tauri": "corepack pnpm nx run cert-prep-desktop:build",
+    "build:tauri:win": "corepack pnpm nx run cert-prep-desktop:build-capture",
+    "package:qa": "corepack pnpm nx run cert-prep-desktop:package-qa"
   },
   "private": true,
   "engines": {
     "node": ">=24.0.0",
-    "pnpm": ">=11.0.0"
+    "pnpm": "12.0.0"
   },
   "dependencies": {
     "@angular-devkit/build-angular": "22.0.7",

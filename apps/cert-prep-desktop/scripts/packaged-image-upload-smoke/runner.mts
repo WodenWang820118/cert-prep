@@ -17,6 +17,7 @@ import {
 } from '../packaged-flow-smoke/app-lifecycle.mts';
 import { createProject } from '../packaged-flow-smoke/flow-steps.mts';
 import { unavailableGenerationReadinessSnapshot } from '../packaged-flow-smoke/generation-readiness.mts';
+import { buildPhase1AcceptanceEvidence } from '../phase1-acceptance-evidence.mts';
 import {
   activePage,
   clickButtonText,
@@ -31,6 +32,24 @@ import {
 } from '../packaged-flow-smoke/runtime-install-flow.mts';
 import { waitForUploadDocumentResponse } from '../packaged-flow-smoke/streaming-capture-api.mts';
 import { errorMessage, isRecord } from '../packaged-flow-smoke/text-utils.mts';
+import {
+  evaluateOcrTruth,
+  type OcrActualPage,
+  type OcrTruthEvaluation,
+} from '../ocr-truth-contract.mts';
+import {
+  createOcrExecutionEvidenceRoot,
+  readAndValidateOcrExecutionProof,
+  type OcrExecutionProofSummary,
+} from '../ocr-execution-proof.mts';
+import {
+  serializePrivacySafeOcrSemanticEvidence,
+  type PrivacySafeOcrSemanticEvidence,
+} from '../ocr-semantic-evidence.mts';
+import {
+  buildOcrPageRecordEvidence,
+  type OcrPageRecordEvidence,
+} from '../ocr-page-record-evidence.mts';
 import type {
   SmokeMetrics,
   SmokeOptions,
@@ -67,11 +86,13 @@ export interface PackagedImageUploadSmokeEvidence {
     readonly sha256: string;
     readonly width?: number;
     readonly height?: number;
-    readonly expectedTextIncludes?: readonly string[];
   };
   readonly document: PackagedImageDocumentEvidence;
-  readonly textAnchorsMatched?: readonly string[];
-  readonly textAnchorsMissing?: readonly string[];
+  readonly ocrTruth?: OcrTruthEvaluation;
+  readonly ocrSemanticEvidence?: PrivacySafeOcrSemanticEvidence;
+  readonly ocrExecutionProof?: OcrExecutionProofSummary;
+  readonly pageRecords?: OcrPageRecordEvidence;
+  readonly acceptanceEvidence?: Record<string, unknown>;
   readonly screenshots: readonly string[];
 }
 
@@ -144,6 +165,12 @@ export async function runPackagedImageUploadSmoke(
   const fixtureSha256 = createHash('sha256').update(imageBytes).digest('hex');
   const run = createRunState(options, imagePath);
   prepareRunDirectories(run);
+  if (options.acceptanceRuntimeIdentity && !options.ocrExecutionProofExpected) {
+    throw new Error('Phase 1 image acceptance requires exact OCR execution proof identity.');
+  }
+  if (options.ocrExecutionProofExpected) {
+    run.options.ocrExecutionEvidenceRoot = await createOcrExecutionEvidenceRoot(options.outDir);
+  }
   run.processBaseline = processSnapshot();
 
   const removeShutdownCleanup = installProcessShutdownCleanup({
@@ -157,7 +184,10 @@ export async function runPackagedImageUploadSmoke(
   });
 
   let document: PackagedImageDocumentEvidence | null = null;
-  let textAnchorEvidence: ImageTextAnchorEvidence | undefined;
+  let ocrTruth: OcrTruthEvaluation | undefined;
+  let ocrSemanticEvidence: PrivacySafeOcrSemanticEvidence | undefined;
+  let ocrExecutionProof: OcrExecutionProofSummary | undefined;
+  let pageRecords: OcrPageRecordEvidence | undefined;
   let primaryError: unknown = null;
   let cleanupError: unknown = null;
   let launchAttempted = false;
@@ -176,9 +206,25 @@ export async function runPackagedImageUploadSmoke(
       options.timeoutMs,
       options.expectedTextIncludes,
       options.languageHint ?? 'auto',
+      options.ocrTruth,
     );
     document = imageResult.document;
-    textAnchorEvidence = imageResult.textAnchors;
+    ocrTruth = imageResult.ocrTruth;
+    pageRecords = imageResult.pageRecords;
+    if (ocrTruth && options.ocrTruth && imageResult.actualPages) {
+      ocrSemanticEvidence = serializePrivacySafeOcrSemanticEvidence({
+        truth: options.ocrTruth,
+        evaluation: ocrTruth,
+        actualPages: imageResult.actualPages,
+      });
+      run.metrics.ocr_semantic_evidence = ocrSemanticEvidence;
+    }
+    if (options.ocrExecutionProofExpected) {
+      ocrExecutionProof = await readAndValidateOcrExecutionProof(
+        run.options.ocrExecutionEvidenceRoot ?? '',
+        options.ocrExecutionProofExpected,
+      );
+    }
     run.metrics.status = 'completed';
   } catch (error) {
     primaryError = error;
@@ -254,6 +300,42 @@ export async function runPackagedImageUploadSmoke(
     throw new Error('Packaged image upload document evidence was unexpectedly absent.');
   }
 
+  const acceptanceEvidence = options.acceptanceRuntimeIdentity
+    ? buildPhase1AcceptanceEvidence({
+        identity: options.acceptanceRuntimeIdentity,
+        fixture: {
+          name: fixtureName,
+          sha256: fixtureSha256,
+          truth: options.ocrTruth ?? (() => {
+            throw new Error('Phase 1 image acceptance requires an OCR truth manifest.');
+          })(),
+        },
+        preflight: run.metrics.ocr_preflight ?? (() => {
+          throw new Error('Phase 1 image acceptance missed the OCR preflight.');
+        })(),
+        runtimeAttestation: run.metrics.runtime_attestation,
+        pageRecords: pageRecords ?? (() => {
+          throw new Error('Phase 1 image acceptance missed page-record evidence.');
+        })(),
+        ocrTruth: ocrTruth ?? (() => {
+          throw new Error('Phase 1 image acceptance missed OCR truth evaluation.');
+        })(),
+        ocrSemanticEvidence: ocrSemanticEvidence ?? (() => {
+          throw new Error('Phase 1 image acceptance missed privacy-safe OCR semantic evidence.');
+        })(),
+        ocrExecutionProof: ocrExecutionProof ?? (() => {
+          throw new Error('Phase 1 image acceptance missed the OCR execution proof.');
+        })(),
+        cleanup: {
+          app: cleanup.app,
+          sidecar: cleanup.sidecar,
+          cdpPort: cleanup.cdpPort,
+          temporaryAppData: cleanup.temporaryAppData,
+        },
+        cleanupObservation: run.metrics.final_close?.ownedCleanupObservation,
+      })
+    : undefined;
+
   const evidence: PackagedImageUploadSmokeEvidence = {
     status: 'completed',
     cleanupVerified: true,
@@ -267,24 +349,28 @@ export async function runPackagedImageUploadSmoke(
             height: PACKAGED_STATIC_IMAGE_HEIGHT,
           }
         : {}),
-      ...(options.expectedTextIncludes
-        ? { expectedTextIncludes: options.expectedTextIncludes }
-        : {}),
     },
     document,
-    ...(textAnchorEvidence
-      ? {
-          textAnchorsMatched: textAnchorEvidence.matched,
-          textAnchorsMissing: textAnchorEvidence.missing,
-        }
-      : {}),
+    ...(ocrTruth ? { ocrTruth } : {}),
+    ...(ocrSemanticEvidence ? { ocrSemanticEvidence } : {}),
+    ...(ocrExecutionProof ? { ocrExecutionProof } : {}),
+    ...(pageRecords ? { pageRecords } : {}),
+    ...(acceptanceEvidence ? { acceptanceEvidence: { ...acceptanceEvidence, ocrDevice: document.ocr_device } } : {}),
     screenshots: run.metrics.screenshots,
   };
   writeFileSync(
     join(options.outDir, 'image-upload-evidence.json'),
-    `${JSON.stringify(evidence, null, 2)}\n`,
+    `${JSON.stringify(privacySafeImageEvidence(evidence), null, 2)}\n`,
   );
   return evidence;
+}
+
+function privacySafeImageEvidence(
+  evidence: PackagedImageUploadSmokeEvidence,
+): Record<string, unknown> {
+  const safeEvidence = { ...evidence };
+  delete safeEvidence.ocrTruth;
+  return safeEvidence;
 }
 
 async function uploadAndVerifyImage(
@@ -293,9 +379,13 @@ async function uploadAndVerifyImage(
   timeoutMs: number,
   expectedTextIncludes: readonly string[] | undefined,
   languageHint: string,
+  ocrTruth: PackagedImageUploadSmokeOptions['ocrTruth'],
 ): Promise<{
   readonly document: PackagedImageDocumentEvidence;
   readonly textAnchors?: ImageTextAnchorEvidence;
+  readonly ocrTruth?: OcrTruthEvaluation;
+  readonly pageRecords?: OcrPageRecordEvidence;
+  readonly actualPages?: readonly OcrActualPage[];
 }> {
   const page = activePage(run);
   const input = page.getByLabel('Source files', { exact: true });
@@ -344,10 +434,38 @@ async function uploadAndVerifyImage(
       'Packaged image terminal evidence did not match the captured upload document.',
     );
   }
+  if (run.options.acceptanceRuntimeIdentity && document.ocr_device !== 'windowsml-dml') throw new Error(`Local OCR acceptance requires persisted windowsml-dml device, found ${document.ocr_device}.`);
   let textAnchors: ImageTextAnchorEvidence | undefined;
+  let truthEvaluation: OcrTruthEvaluation | undefined;
+  let actualPages: readonly OcrActualPage[] | undefined;
+  let pageRecords: OcrPageRecordEvidence | undefined;
   if (expectedTextIncludes?.length) {
     const chunks = await readDocumentChunks(run, uploadedDocument);
+    if (run.options.acceptanceRuntimeIdentity) {
+      pageRecords = buildOcrPageRecordEvidence({
+        runId: process.env.E2E_ACCEPTANCE_RUN_ID ?? 'unknown',
+        expectedDocumentId: uploadedDocument.documentId,
+        expectedProjectId: uploadedDocument.projectId,
+        document: document as unknown as Record<string, unknown>,
+        chunks,
+        expectedPageNumbers: ocrTruth?.pages.map((page) => page.pageNumber) ?? [1],
+        appDataEmptyAtLaunch:
+          run.metrics.acceptance_isolation_at_launch?.app_data_dir_empty_at_launch ===
+          true,
+        runtimeAttestation: run.metrics.runtime_attestation,
+      });
+      run.metrics.ocr_page_records = pageRecords;
+      writeFileSync(
+        join(run.options.outDir, 'ocr-page-record-evidence.json'),
+        `${JSON.stringify(pageRecords, null, 2)}\n`,
+        'utf8',
+      );
+    }
     textAnchors = inspectExpectedTextAnchors(chunks, expectedTextIncludes);
+    if (ocrTruth) {
+      actualPages = actualOcrPages(chunks);
+      truthEvaluation = evaluateOcrTruth(ocrTruth, actualPages);
+    }
     await waitText(run, /ready/i, 30_000, 'one-page image OCR terminal state visible');
     await screenshot(run, 'ocr-image-terminal');
   } else {
@@ -363,7 +481,13 @@ async function uploadAndVerifyImage(
     run,
     `image completed status=${document.status} pages=${document.processed_page_count}/${document.page_count} chunks=${document.chunks_count}`,
   );
-  return { document, textAnchors };
+  return {
+    document,
+    textAnchors,
+    ocrTruth: truthEvaluation,
+    pageRecords,
+    actualPages,
+  };
 }
 
 async function waitForExpectedOcrImageDocumentWithOneRetry(
@@ -447,6 +571,8 @@ function createRunState(
     acceptanceIsolation: true,
     captureRuntimeWorkerMirrorUrl: options.captureRuntimeWorkerMirrorUrl,
     acceptanceArtifactRoot: options.acceptanceArtifactRoot,
+    acceptanceRuntimeIdentity: options.acceptanceRuntimeIdentity,
+    ocrExecutionProofExpected: options.ocrExecutionProofExpected,
     candidateDistributionProfile: 'local_nonpublishable',
     waitForStreamingComplete: false,
     streamingCompleteTimeoutMs: options.timeoutMs,
@@ -547,6 +673,33 @@ function inspectExpectedTextAnchors(
     else missing.push(anchor);
   }
   return { matched, missing };
+}
+
+function actualOcrPages(
+  chunks: readonly Record<string, unknown>[],
+): readonly { pageNumber: number; text: string }[] {
+  const pages = new Map<number, string[]>();
+  for (const chunk of chunks) {
+    const pageNumber = chunk.page_number;
+    if (typeof pageNumber !== 'number' || !Number.isInteger(pageNumber) || pageNumber < 1) {
+      throw new Error('OCR result chunks did not expose a valid page_number.');
+    }
+    const text =
+      typeof chunk.raw_text === 'string'
+        ? chunk.raw_text
+        : typeof chunk.text === 'string'
+          ? chunk.text
+          : '';
+    if (!text.trim()) {
+      throw new Error(`OCR result page ${pageNumber} exposed no raw text.`);
+    }
+    const page = pages.get(pageNumber) ?? [];
+    page.push(text);
+    pages.set(pageNumber, page);
+  }
+  return [...pages.entries()]
+    .sort(([left], [right]) => left - right)
+    .map(([pageNumber, texts]) => ({ pageNumber, text: texts.join('\n') }));
 }
 
 function removeTemporaryAppData(options: PackagedImageUploadSmokeOptions): void {

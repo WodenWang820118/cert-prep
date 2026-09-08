@@ -132,8 +132,8 @@ the checksum manifest, and the sanitized NSIS evidence before upload.
 Run the two release contract suites locally through Nx:
 
 ```powershell
-pnpm nx run cert-prep-desktop:package-qa-test
-pnpm nx run cert-prep-desktop:release-tool-test
+corepack pnpm nx run cert-prep-desktop:package-qa-test
+corepack pnpm nx run cert-prep-desktop:release-tool-test
 ```
 
 The workflow uses the repository-pinned Node 24 runtime to execute the native

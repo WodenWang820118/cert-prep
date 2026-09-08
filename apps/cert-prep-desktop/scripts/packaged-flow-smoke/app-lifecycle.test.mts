@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { once } from 'node:events';
 import {
   existsSync,
   mkdirSync,
@@ -11,12 +12,13 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { setImmediate } from 'node:timers/promises';
+import { setImmediate, setTimeout as delay } from 'node:timers/promises';
 import { test } from 'node:test';
-import type { ChildProcess } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 
 import {
   buildAppLaunchEnvironment,
+  closeAppAndCheckResidue,
   createCleanupWithTimeoutController,
   forceCrashAndReconnect,
   prepareRunDirectories,
@@ -93,6 +95,108 @@ test('concurrent cleanup timeout callers reuse one actual cleanup', async () => 
 
   assert.equal(cleanupCalls, 1);
   assert.equal(controller.isFinished(target), true);
+});
+
+test('listener snapshot failure still closes the exact child and preserves the baseline', async () => {
+  const baseline = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1_000)'], {
+    stdio: 'ignore',
+    windowsHide: true,
+  });
+  const app = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1_000)'], {
+    stdio: 'ignore',
+    windowsHide: true,
+  });
+  assert.ok(baseline.pid);
+  assert.ok(app.pid);
+  const baselinePid = baseline.pid;
+  const appPid = app.pid;
+  const baselineRecord = processRecord(
+    baselinePid,
+    1,
+    'baseline-external.exe',
+    '20260831090000.000000+000',
+  );
+  const appRecord = processRecord(
+    appPid,
+    1,
+    'cert-prep-desktop.exe',
+    '20260831090001.000000+000',
+  );
+  const order: string[] = [];
+  let listenerSnapshotCalls = 0;
+  let terminateRequested = false;
+  const run = {
+    app,
+    appExit: { exited: false, code: null, signal: null },
+    browser: null,
+    page: null,
+    metrics: { errors: [], observations: [] },
+  } as unknown as SmokeRunState;
+
+  try {
+    const summary = await closeAppAndCheckResidue(run, 'listener failure', {
+      snapshotProcesses: () =>
+        app.exitCode === null && app.signalCode === null
+          ? [baselineRecord, appRecord]
+          : [baselineRecord],
+      snapshotListeners: () => {
+        listenerSnapshotCalls += 1;
+        throw new Error('injected listener snapshot failure');
+      },
+      stopCapture: async () => {
+        order.push('stop-capture');
+      },
+      requestWindowClose: (pid) => {
+        assert.equal(pid, appPid);
+        order.push('window-close');
+        return false;
+      },
+      waitForExit: async (child) => {
+        order.push('wait-for-exit');
+        if (!terminateRequested) return false;
+        if (child.exitCode === null && child.signalCode === null) {
+          await once(child, 'exit');
+        }
+        return true;
+      },
+      terminateProcessTree: (pid) => {
+        assert.equal(pid, appPid);
+        order.push('terminate-exact-child');
+        terminateRequested = true;
+        app.kill();
+        return {
+          attempted: true,
+          method: 'signal_process',
+          exitCode: null,
+          error: null,
+        };
+      },
+    });
+
+    assert.deepEqual(order, [
+      'stop-capture',
+      'window-close',
+      'wait-for-exit',
+      'terminate-exact-child',
+      'wait-for-exit',
+    ]);
+    assert.equal(listenerSnapshotCalls, 1);
+    assert.notEqual(app.signalCode, null);
+    assert.doesNotThrow(() => process.kill(baselinePid, 0));
+    assert.deepEqual(summary.ownedCleanupObservation, {
+      evidenceUnavailable: {
+        source: 'windows_listener_snapshot',
+        stage: 'before_close',
+      },
+    });
+    assert.match(
+      run.metrics.observations.join('\n'),
+      /pre-close listener snapshot failed/u,
+    );
+  } finally {
+    await stopTestChild(app);
+    await stopTestChild(baseline);
+  }
 });
 
 test('forced crash reconnect terminates the app tree without a graceful close request', async () => {
@@ -394,6 +498,80 @@ test('ordinary smoke preserves unrelated environment and pins the fixed model', 
   );
 });
 
+test('isolated acceptance forwards only the explicit 0.4.2 local probe marker', () => {
+  const environment = buildAppLaunchEnvironment(
+    launchEnvironmentRun(true),
+    {
+      CERT_PREP_CAPTURE_RUNTIME_PROBE: ' 1 ',
+      CERT_PREP_CAPTURE_RUNTIME_EXPECTED_VERSION: ' 0.4.2 ',
+      CERT_PREP_CAPTURE_RUNTIME_LOCAL_MODEL_ROOT:
+        ' C:\\qa\\capture-runtime-models ',
+      CERT_PREP_BACKEND_URL: 'http://127.0.0.1:9999',
+      cert_prep_untrusted_override: 'must-not-pass',
+    },
+  );
+
+  const normalized = normalizedEnvironment(environment);
+  assert.equal(normalized.cert_prep_capture_runtime_probe, '1');
+  assert.equal(
+    normalized.cert_prep_capture_runtime_expected_version,
+    '0.4.2',
+  );
+  assert.equal(
+    normalized.cert_prep_capture_runtime_local_model_root,
+    'C:\\qa\\capture-runtime-models',
+  );
+  assert.equal(normalized.cert_prep_backend_url, undefined);
+  assert.equal(normalized.cert_prep_untrusted_override, undefined);
+});
+
+test('Phase 1 acceptance identity forces the 0.4.2 local probe marker', () => {
+  const run = launchEnvironmentRun(true);
+  run.options.acceptanceRuntimeIdentity = {
+    runtimeArtifactSha256: 'a'.repeat(64),
+    contractSetSha256: 'b'.repeat(64),
+    workerArchiveSha256: 'c'.repeat(64),
+    workerExecutableSha256: 'd'.repeat(64),
+    preflightMode: 'gpu-dml',
+  };
+
+  const environment = buildAppLaunchEnvironment(run, {});
+  const normalized = normalizedEnvironment(environment);
+
+  assert.equal(normalized.cert_prep_capture_runtime_probe, '1');
+  assert.equal(
+    normalized.cert_prep_capture_runtime_expected_version,
+    '0.4.2',
+  );
+});
+
+test('Phase 1 JPEG acceptance forwards only the exact OCR execution proof opt-in', () => {
+  const run = launchEnvironmentRun(true);
+  run.options.ocrExecutionEvidenceRoot = 'C:\\qa\\proof-root';
+  run.options.ocrExecutionProofExpected = {
+    sourceSha256: '1'.repeat(64),
+    runtimeSha256: '2'.repeat(64),
+    workerExecutableSha256: '3'.repeat(64),
+    modelSha256: '4'.repeat(64),
+    profileId: 'capture-workbench-ocr-profile',
+    profileSpecSha256: '5'.repeat(64),
+    contractSetSha256: '6'.repeat(64),
+    expectedAdapterClass: 'dedicated',
+    expectedAdapterDescriptionIncludes: 'RTX 4060',
+  };
+
+  const normalized = normalizedEnvironment(
+    buildAppLaunchEnvironment(run, {
+      CAPTURE_OCR_EXECUTION_EVIDENCE_OPT_IN: '1',
+      CAPTURE_OCR_EXECUTION_EVIDENCE_ROOT: 'C:\\untrusted',
+      CAPTURE_OCR_EXECUTION_RUNTIME_SHA256: 'f'.repeat(64),
+    }),
+  );
+  assert.equal(normalized.capture_ocr_execution_evidence_opt_in, '1');
+  assert.equal(normalized.capture_ocr_execution_evidence_root, 'C:\\qa\\proof-root');
+  assert.equal(normalized.capture_ocr_execution_runtime_sha256, '2'.repeat(64));
+});
+
 test('acceptance launch requires an explicit isolated app-data directory', () => {
   const run = launchEnvironmentRun(true);
   delete run.options.appDataDir;
@@ -639,6 +817,13 @@ function processRecord(
     commandLine: `"C:\\Program Files\\Cert Prep\\${name}"`,
     workingSetBytes: null,
   };
+}
+
+async function stopTestChild(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  const exited = once(child, 'exit');
+  child.kill();
+  await Promise.race([exited, delay(2_000)]);
 }
 
 function launchEnvironmentRun(acceptanceIsolation: boolean): SmokeRunState {

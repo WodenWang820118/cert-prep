@@ -14,6 +14,7 @@ import {
   minimalWav,
   mixedTextAndImagePdf,
 } from './negative-data-contract.mts';
+import { assertRasterPdfFixture } from './fixture-contract.mts';
 import {
   assertLazyCaptureRuntimeJourney,
   type LazyCaptureRuntimeJourney,
@@ -42,11 +43,14 @@ test('requires a supplied exe and fresh isolated output paths', () => {
       'tmp/cert-prep-desktop/capture-e2e/run-1/app-data',
       '--cdp-port',
       '9557',
+      '--pdf',
+      'fixtures/scanned.pdf',
     ],
     'C:\\workspace',
   );
 
   assert.equal(parsed.cdpPort, 9557);
+  assert.match(parsed.pdfPath, /fixtures[\\/]scanned\.pdf$/);
   assert.match(parsed.exePath, /fresh-install[\\/]cert-prep-desktop\.exe$/);
   assert.match(parsed.appDataDir, /capture-e2e[\\/]run-1[\\/]app-data$/);
   assert.throws(
@@ -61,9 +65,25 @@ test('requires a supplied exe and fresh isolated output paths', () => {
         '--out-dir',
         'tmp/run',
         '--app-data-dir',
+        'tmp/run/app-data',
+        '--cdp-port',
+        '9557',
+      ]),
+    /--pdf is required/,
+  );
+  assert.throws(
+    () =>
+      parsePackagedCaptureWorkbenchSmokeArgs([
+        '--exe',
+        'app.exe',
+        '--out-dir',
+        'tmp/run',
+        '--app-data-dir',
         'tmp/other-data',
         '--cdp-port',
         '9557',
+        '--pdf',
+        'fixtures/scanned.pdf',
       ]),
     /direct child of --out-dir/,
   );
@@ -122,6 +142,16 @@ test('builds real negative media fixtures without embedding fallback text', () =
   assert.equal(scanned.subarray(-6).toString('ascii'), '%%EOF\n');
   assert.equal(mixed.subarray(-6).toString('ascii'), '%%EOF\n');
 });
+
+test('accepts raster PDFs regardless of embedded-text metadata at the input seam', () => {
+  assert.doesNotThrow(() => assertRasterPdfFixture(scannedFixture()));
+  const mixed = mixedTextAndImagePdf();
+  assert.doesNotThrow(() => assertRasterPdfFixture(mixed));
+});
+
+function scannedFixture(): Buffer {
+  return imageOnlyPdf();
+}
 
 test('redacts auth, tokens, URLs, and raw text from Capture evidence', () => {
   const redacted = redactCaptureEvidence({

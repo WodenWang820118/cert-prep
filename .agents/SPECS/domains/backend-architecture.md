@@ -13,6 +13,10 @@ and practice.
 - Shared platform modules can stay in place when they serve multiple domains.
 - Public DTOs are owned by their backend domain. OpenAPI client generation must
   be rerun after route/schema changes.
+- Primitive JSON Schema `const` values emitted by public DTOs remain literal
+  types in the generated TypeScript client. This is required for named
+  discriminated unions such as `CaptureOcrProvenanceRead` to narrow exhaustively;
+  generated output is never edited by hand.
 - The pinned Capture Runtime SDK is the sole wire authority for Capture Runtime
   discovery, transport, retries, SSE decoding, wire DTOs, v2 ingestion/capture,
   and typed pull sessions. Cert Prep adapters may add product-facing
@@ -93,7 +97,9 @@ Deferred:
 - ORM adoption.
 - SQLite schema redesign.
 - Frontend UX changes bundled into backend refactors.
-- TypeScript generated-client literal-union support.
+- Broad TypeScript generated-client inline-enum polish. Primitive `const`
+  preservation required by an explicitly approved discriminated contract is
+  not part of this deferral.
 - Cross-platform Capture Runtime nodes beyond the published Windows x64 contract.
 
 Guardrails:

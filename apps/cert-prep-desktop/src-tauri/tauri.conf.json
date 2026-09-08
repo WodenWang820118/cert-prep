@@ -4,9 +4,9 @@
   "version": "0.1.0-alpha.1",
   "identifier": "dev.certprep.cert-prep",
   "build": {
-    "beforeDevCommand": "pnpm nx serve cert-prep",
+    "beforeDevCommand": "corepack pnpm nx serve cert-prep",
     "devUrl": "http://localhost:4200",
-    "beforeBuildCommand": "pnpm nx build cert-prep",
+    "beforeBuildCommand": "corepack pnpm nx build cert-prep",
     "frontendDist": "../../../dist/apps/cert-prep/browser"
   },
   "app": {

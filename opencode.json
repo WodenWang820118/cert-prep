@@ -2,7 +2,7 @@
   "mcp": {
     "nx-mcp": {
       "type": "local",
-      "command": ["pnpm", "nx", "mcp"],
+      "command": ["corepack", "pnpm", "nx", "mcp"],
       "enabled": true
     }
   }

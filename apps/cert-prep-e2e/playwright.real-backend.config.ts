@@ -49,7 +49,7 @@ export default defineConfig({
   webServer: [
     {
       command:
-        'pnpm nx run-many --target=serve --projects=cert-prep,cert-prep-backend --parallel=2',
+        'corepack pnpm nx run-many --target=serve --projects=cert-prep,cert-prep-backend --parallel=2',
       url: frontendUrl,
       cwd: workspaceRoot,
       reuseExistingServer: false,

@@ -3,6 +3,7 @@ import { writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
 import { removeAcceptanceAppDataDirectory } from './acceptance-app-data.mts';
+import { sanitizeAcceptanceFixtureMetadata } from './acceptance-artifacts.mts';
 import { createAcceptanceSmokeOptions } from './acceptance-real-options.mts';
 import {
   PackagedImageUploadSmokeError,
@@ -11,6 +12,7 @@ import {
 } from './packaged-image-upload-smoke/runner.mts';
 import { runPackagedFlowSmoke } from './packaged-flow-smoke/runner.mts';
 import { acceptancePrivacyMasks } from './packaged-flow-smoke/runner-context.mts';
+import type { Phase1FinalEvidence } from './phase1-final-identity.mts';
 
 const VISUAL_BASELINE_NAMES = new Set([
   'runtime-python-missing',
@@ -23,10 +25,12 @@ test('real Cert Prep packaged PDF and JPEG acceptance journeys pass', async () =
   const {
     run,
     options,
+    pdfOnly,
     imageOptions,
     fixtures,
     installedArtifact,
     runtimeProvenance,
+    phase1Final,
     captureRuntimeMirror,
     appDataDirectories,
   } =
@@ -39,22 +43,33 @@ test('real Cert Prep packaged PDF and JPEG acceptance journeys pass', async () =
   let imageFailureCleanup: PackagedImageCleanupEvidence | undefined;
   let imageFailureCleanupVerified = false;
   try {
-    // Run the one-page JPEG journey before the long PDF/restart journey. Each
-    // journey still has its own app-data directory and CDP port; keeping the
-    // image cold start first avoids overlapping a fresh WindowsML worker with
-    // native OCR teardown from the previous packaged app.
-    try {
-      imageEvidence = await runPackagedImageUploadSmoke(imageOptions);
-      expect(imageEvidence.status).toBe('completed');
-      expect(imageEvidence.document.status).toBe('ready');
-      expect(imageEvidence.document.chunks_count).toBeGreaterThan(0);
-    } catch (error) {
-      imageFailure = error instanceof Error ? error.message : String(error);
-      if (error instanceof PackagedImageUploadSmokeError) {
-        imageFailureCleanup = error.cleanup;
-        imageFailureCleanupVerified = error.cleanupVerified;
+    if (!pdfOnly) {
+      // Run the one-page JPEG journey before the long PDF/restart journey. Each
+      // journey still has its own app-data directory and CDP port; keeping the
+      // image cold start first avoids overlapping a fresh WindowsML worker with
+      // native OCR teardown from the previous packaged app.
+      if (!imageOptions || !fixtures.image) {
+        throw new Error('JPEG acceptance options were unexpectedly absent.');
       }
-      throw error;
+      try {
+        imageEvidence = await runPackagedImageUploadSmoke(imageOptions);
+        expect(imageEvidence.status).toBe('completed');
+        expect(imageEvidence.document.status).toBe('ready');
+        expect(imageEvidence.document.chunks_count).toBeGreaterThan(0);
+        expect(imageEvidence.ocrTruth?.status).toBe('passed');
+        if (phase1Final) {
+          expect(imageEvidence.acceptanceEvidence).toMatchObject(
+            phase1JourneyExpectation(phase1Final, fixtures.image.sha256),
+          );
+        }
+      } catch (error) {
+        imageFailure = error instanceof Error ? error.message : String(error);
+        if (error instanceof PackagedImageUploadSmokeError) {
+          imageFailureCleanup = error.cleanup;
+          imageFailureCleanupVerified = error.cleanupVerified;
+        }
+        throw error;
+      }
     }
 
     try {
@@ -99,7 +114,29 @@ test('real Cert Prep packaged PDF and JPEG acceptance journeys pass', async () =
       });
       expect(pdfMetrics.status).toBe('completed');
       expect(pdfMetrics.errors).toEqual([]);
-      expect(pdfMetrics.restart?.verified).toBe(true);
+      if (!options.acceptanceOcrOnly) {
+        expect(pdfMetrics.restart?.verified).toBe(true);
+      }
+      expect(pdfMetrics.ocr_truth?.status).toBe('passed');
+      if (phase1Final) {
+        expect(pdfMetrics.ocr_preflight).toMatchObject({
+          mode: 'gpu-dml',
+          contract_sha256: phase1Final.identity.contractSetSha256,
+          worker_sha256: phase1Final.identity.ocrWorkerExecutableSha256,
+          ui_gpu_before_import: true,
+          source_import_enabled: true,
+        });
+        expect(pdfMetrics.ocr_completion).toMatchObject({
+          pages_processed: 1,
+          total_pages: 46,
+          chunks: 1,
+          expected_pages: 1,
+          expected_chunks: 1,
+        });
+        expect(pdfMetrics.acceptance_evidence).toMatchObject(
+          phase1JourneyExpectation(phase1Final, fixtures.pdf.sha256, true),
+        );
+      }
     } catch (error) {
       pdfFailure = error instanceof Error ? error.message : String(error);
       throw error;
@@ -134,31 +171,49 @@ test('real Cert Prep packaged PDF and JPEG acceptance journeys pass', async () =
     await writeFile(
       join(run.artifactRoot, 'acceptance-sources.json'),
       `${JSON.stringify(
-        {
+        sanitizeAcceptanceFixtureMetadata({
           schemaVersion: 1,
+          runId: run.runId,
           status: failure ? 'failed' : 'completed',
           pdf: {
-            fixture: fixtures.pdf,
+            fixture: {
+              name: fixtures.pdf.name,
+              sha256: fixtures.pdf.sha256,
+            },
             status: pdfMetrics?.status ?? 'failed',
+            truth: pdfMetrics?.ocr_semantic_evidence,
+            evidence: pdfMetrics?.acceptance_evidence,
             errors:
               pdfMetrics?.errors ??
               [pdfFailure ?? (imageFailure ? 'PDF journey did not run.' : failure ?? 'PDF journey did not run.')],
             restartVerified: pdfMetrics?.restart?.verified === true,
           },
-          image: {
-            fixture: fixtures.image,
-            status: imageEvidence?.status ?? 'failed',
-            cleanupVerified:
-              imageEvidence?.cleanupVerified === true || imageFailureCleanupVerified,
-            cleanup: imageEvidence?.cleanup ?? imageFailureCleanup,
-            error: imageFailure,
-          },
+          ...(pdfOnly
+            ? {}
+            : {
+                image: {
+                  fixture: {
+                    name: fixtures.image!.name,
+                    sha256: fixtures.image!.sha256,
+                  },
+                  status: imageEvidence?.status ?? 'failed',
+                  truth: imageEvidence?.ocrSemanticEvidence,
+                  cleanupVerified:
+                    imageEvidence?.cleanupVerified === true || imageFailureCleanupVerified,
+                  cleanup: imageEvidence?.cleanup ?? imageFailureCleanup,
+                  error: imageFailure,
+                  evidence: imageEvidence?.acceptanceEvidence,
+                },
+              }),
           runtime: {
             installed: installedArtifact,
             candidate: runtimeProvenance,
+            phase1Final: phase1Final
+              ? phase1AggregateSummary(phase1Final)
+              : undefined,
           },
           cleanupErrors: cleanupFailures,
-        },
+        }),
         null,
         2,
       )}\n`,
@@ -166,3 +221,53 @@ test('real Cert Prep packaged PDF and JPEG acceptance journeys pass', async () =
     );
   }
 });
+
+function phase1JourneyExpectation(
+  phase1Final: Phase1FinalEvidence,
+  sourceSha256: string,
+  pdf = false,
+): Record<string, unknown> {
+  return {
+    sourceSha256,
+    importedSourceSha256: sourceSha256,
+    runtimeArtifactSha256: phase1Final.identity.runtimeArtifactSha256,
+    contractSetSha256: phase1Final.identity.contractSetSha256,
+    workerArchiveSha256: phase1Final.identity.ocrWorkerArchiveSha256,
+    workerExecutableSha256: phase1Final.identity.ocrWorkerExecutableSha256,
+    authenticatedRuntimePreflight: 'gpu-dml',
+    uiGpuBeforeImport: true,
+    sourceImportEnabled: true,
+    expectedAnchorCount: 1,
+    matchedAnchorCount: 1,
+    ...(pdf
+      ? {
+          pageScope: {
+            sourcePageCount: 46,
+            requestedPageNumbers: [1],
+            processedPageNumbers: [1],
+            uiRawPageNumbers: [1],
+            uiStructuredPageNumbers: [1],
+          },
+        }
+      : {}),
+  };
+}
+
+function phase1AggregateSummary(
+  phase1Final: Phase1FinalEvidence,
+): Record<string, unknown> {
+  return {
+    manifestSha256: phase1Final.manifestSha256,
+    sourceHead: phase1Final.sourceHead,
+    identity: phase1Final.identity,
+    jpeg: {
+      runId: phase1Final.jpeg.runId,
+      acceptanceManifestSha256: phase1Final.jpeg.acceptanceManifestSha256,
+    },
+    pdfPage1: {
+      runId: phase1Final.pdfPage1.runId,
+      acceptanceManifestSha256: phase1Final.pdfPage1.acceptanceManifestSha256,
+      pageScope: phase1Final.pdfPage1.pageScope,
+    },
+  };
+}

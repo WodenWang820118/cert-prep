@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import test from 'node:test';
 
 const workflow = readFileSync(
@@ -11,6 +11,24 @@ const workflow = readFileSync(
 ).replaceAll('\r\n', '\n');
 const ciWorkflow = readFileSync(
   resolve(import.meta.dirname, '../../.github/workflows/ci.yml'),
+  'utf8',
+).replaceAll('\r\n', '\n');
+const captureCandidateWorkflow = readFileSync(
+  resolve(
+    import.meta.dirname,
+    '../../.github/workflows/capture-candidate-gate.yml',
+  ),
+  'utf8',
+).replaceAll('\r\n', '\n');
+const packageJson = JSON.parse(
+  readFileSync(resolve(import.meta.dirname, '../../package.json'), 'utf8'),
+);
+const lockfile = readFileSync(
+  resolve(import.meta.dirname, '../../pnpm-lock.yaml'),
+  'utf8',
+);
+const npmrcExample = readFileSync(
+  resolve(import.meta.dirname, '../../.npmrc.example'),
   'utf8',
 ).replaceAll('\r\n', '\n');
 const gitAttributes = readFileSync(
@@ -25,6 +43,7 @@ const assemble = readFileSync(
   resolve(import.meta.dirname, 'assemble.ts'),
   'utf8',
 );
+const expectedPnpmVersion = '12.0.0';
 
 const windowsOwnedProjects = [
   'cert-prep-contracts',
@@ -53,6 +72,10 @@ const windowsOwnedTestProjects = windowsOwnedProjects.filter(
 );
 
 const workspaceRoot = resolve(import.meta.dirname, '../..');
+const corepackPath = resolve(
+  dirname(process.execPath),
+  'node_modules/corepack/dist/corepack.js',
+);
 const nxTargetsByProject = new Map<string, Set<string>>();
 
 function nxTargets(project: string): Set<string> {
@@ -62,17 +85,14 @@ function nxTargets(project: string): Set<string> {
   }
 
   const args = ['nx', 'show', 'project', project, '--json'];
-  const output =
-    process.platform === 'win32'
-      ? execFileSync(
-          process.env.ComSpec ?? 'cmd.exe',
-          ['/d', '/s', '/c', `pnpm ${args.join(' ')}`],
-          { cwd: workspaceRoot, encoding: 'utf8' },
-        )
-      : execFileSync('pnpm', args, {
-          cwd: workspaceRoot,
-          encoding: 'utf8',
-        });
+  const output = execFileSync(
+    process.execPath,
+    [corepackPath, 'pnpm', ...args],
+    {
+      cwd: workspaceRoot,
+      encoding: 'utf8',
+    },
+  );
   const targets = new Set(Object.keys(JSON.parse(output).targets ?? {}));
   nxTargetsByProject.set(project, targets);
   return targets;
@@ -179,6 +199,84 @@ test('all third-party actions are pinned and every Node setup uses Node 24', () 
   );
 });
 
+test('all package-manager entrypoints pin exact pnpm 12.0.0', () => {
+  assert.equal(packageJson.packageManager, `pnpm@${expectedPnpmVersion}`);
+  assert.equal(packageJson.engines?.pnpm, expectedPnpmVersion);
+  assert.match(
+    lockfile,
+    new RegExp(
+      `packageManagerDependencies:\\s+pnpm:\\s+specifier: ${expectedPnpmVersion}\\s+version: ${expectedPnpmVersion}`,
+    ),
+  );
+
+  for (const source of [ciWorkflow, captureCandidateWorkflow]) {
+    assert.equal(
+      (source.match(/uses:\s*pnpm\/action-setup@/g) ?? []).length,
+      (
+        source.match(new RegExp(`version:\\s*${expectedPnpmVersion}`, 'g')) ??
+        []
+      ).length,
+    );
+    assert.doesNotMatch(source, /version:\s*(?:latest|next(?:-[^\s]+)?)/);
+  }
+  assert.match(
+    workflow,
+    new RegExp(`PNPM_VERSION:\\s*${expectedPnpmVersion}`),
+  );
+  assert.match(workflow, /version:\s*\$\{\{ env\.PNPM_VERSION \}\}/);
+
+  for (const [name, command] of Object.entries(packageJson.scripts ?? {})) {
+    assert.match(
+      command,
+      /^corepack pnpm /,
+      `package script ${name} must invoke the pinned Corepack package manager`,
+    );
+  }
+});
+
+test('ordinary frozen installs retain registry auth and policy validation', () => {
+  for (const [label, source] of [
+    ['continuous integration', ciWorkflow],
+    ['alpha release', workflow],
+  ] as const) {
+    const installCount =
+      source.match(/run:\s*pnpm install --frozen-lockfile/g)?.length ?? 0;
+    assert.ok(installCount > 0, `${label} must run a frozen install`);
+    assert.equal(
+      source.match(/NODE_AUTH_TOKEN:\s*\$\{\{\s*github\.token\s*\}\}/g)
+        ?.length ?? 0,
+      installCount,
+      `${label} frozen installs must receive the GitHub token`,
+    );
+    assert.equal(
+      source.match(/registry-url:\s*https:\/\/npm\.pkg\.github\.com/g)
+        ?.length ?? 0,
+      installCount,
+      `${label} must configure the GitHub Packages registry`,
+    );
+    assert.equal(
+      source.match(/scope:\s*'@gx-capture'/g)?.length ?? 0,
+      installCount,
+      `${label} must scope Capture packages to GitHub Packages`,
+    );
+    assert.match(source, /packages:\s*read/);
+    assert.doesNotMatch(
+      source,
+      /pnpm install[^\n]*(?:--trust-lockfile|--offline|--no-frozen-lockfile)/,
+    );
+  }
+
+  assert.match(
+    npmrcExample,
+    /^@gx-capture:registry=https:\/\/npm\.pkg\.github\.com$/m,
+  );
+  assert.match(
+    npmrcExample,
+    /^\/\/npm\.pkg\.github\.com\/:_authToken=\$\{GITHUB_PACKAGES_TOKEN\}$/m,
+  );
+  assert.doesNotMatch(npmrcExample, /GITHUB_PACKAGES_TOKEN=(?!\$\{)/);
+});
+
 test('candidate build validates the exact public release source and runs quality through Nx', () => {
   const body = jobBody('build-candidate');
   assert.match(body, /actions\/checkout@/);
@@ -191,13 +289,27 @@ test('candidate build validates the exact public release source and runs quality
   assert.match(body, /pnpm nx run cert-prep-desktop:package-qa-test/);
   assert.match(body, /pnpm nx run cert-prep-desktop:release-tool-test/);
   assert.match(body, /pnpm nx run cert-prep-desktop:cargo-test/);
-  assert.match(body, /pnpm nx run cert-prep-e2e:e2e-real-backend/);
-  assert.equal((body.match(/e2e-real-backend/g) ?? []).length, 1);
+  assert.match(body, /pnpm nx run cert-prep-e2e:e2e-real-backend-local-package/);
+  assert.equal((body.match(/e2e-real-backend-local-package/g) ?? []).length, 1);
   assert.match(body, /pnpm nx run cert-prep-desktop:package-qa/);
   assert.match(body, /--include-distribution PyInstaller==6\.20\.0/);
   assert.doesNotMatch(body, /collect-runtime-payloads\.py/);
   assert.match(body, /--mode candidate/);
   assert.match(body, /candidate_id=/);
+});
+
+test('ordinary CI does not run the provisioned-only real-backend suite', () => {
+  const portableQuality = workflowJobBody(ciWorkflow, 'portable-quality');
+  assert.doesNotMatch(
+    portableQuality,
+    /pnpm nx run cert-prep-e2e:e2e-real-backend-local-package/,
+  );
+  assert.equal(
+    (ciWorkflow.match(
+      /pnpm nx run cert-prep-e2e:e2e-real-backend-local-package/g,
+    ) ?? []).length,
+    0,
+  );
 });
 
 test('candidate build selects separate lint and test tasks for every Windows-owned project', () => {

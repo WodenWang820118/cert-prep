@@ -475,11 +475,67 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
     ).resolves.toMatchObject({
       service: 'capture-runtime',
       runtimeVersion: CAPTURE_RUNTIME_VERSION,
+      ocrCompute: { runtimeVersion: CAPTURE_RUNTIME_VERSION },
       capabilities: { captureKinds: ['pdf', 'image', 'audio'] },
     });
     expect(api.captureRuntimeReady).toHaveBeenCalledWith({
       signal: controller.signal,
     });
+  });
+
+  it.each([
+    ['dedicated', 'gpu-dml', null, false, null],
+    ['integrated', 'gpu-dml', null, false, null],
+    ['integrated', 'cpu-fallback', 'no_compatible_gpu', true, 'ocr_cpu_fallback'],
+    ['unknown', 'cpu-fallback', 'dml_provider_unavailable', true, 'ocr_cpu_fallback'],
+  ] as const)(
+    'maps the runtime-owned %s %s OCR compute decision',
+    async (adapterClass, mode, reasonCode, userNoticeRequired, noticeCode) => {
+      api.captureRuntimeReady.mockReturnValueOnce(
+        of(
+          readyResponse({
+            ocrCompute: {
+              ...readyOcrCompute(),
+              adapterClass,
+              mode,
+              reasonCode,
+              userNoticeRequired,
+              noticeCode,
+            },
+          }),
+        ),
+      );
+
+      await expect(firstValueFrom(client.getReady())).resolves.toMatchObject({
+        ocrCompute: {
+          adapterClass,
+          mode,
+          reasonCode,
+          userNoticeRequired,
+          noticeCode,
+        },
+      });
+    },
+  );
+
+  it('rejects a malformed GPU-DML preflight instead of creating a CPU fallback state', async () => {
+    api.captureRuntimeReady.mockReturnValueOnce(
+      of(
+        readyResponse({
+          ocrCompute: {
+            ...readyOcrCompute(),
+            mode: 'gpu-dml',
+            reasonCode: 'no_compatible_gpu',
+            userNoticeRequired: true,
+            noticeCode: 'ocr_cpu_fallback',
+          },
+        }),
+      ),
+    );
+
+    await expect(firstValueFrom(client.getReady())).rejects.toThrow(
+      'gpu-dml cannot carry a fallback reason or notice',
+    );
   });
 
   it.each([
@@ -725,14 +781,36 @@ function readyCapabilities() {
   };
 }
 
+function readyOcrCompute() {
+  return {
+    apiVersion: '2.0',
+    schemaVersion: '1',
+    service: 'capture-runtime',
+    runtimeVersion: CAPTURE_RUNTIME_VERSION,
+    contractSetVersion: '2',
+    contractSha256: 'a'.repeat(64),
+    workerSha256: 'b'.repeat(64),
+    mode: 'gpu-dml',
+    adapterClass: 'dedicated',
+    reasonCode: null,
+    userNoticeRequired: false,
+    noticeCode: null,
+  } as const;
+}
+
 function readyResponse(override: Record<string, unknown>) {
+  const runtimeVersion =
+    typeof override['runtimeVersion'] === 'string'
+      ? override['runtimeVersion']
+      : CAPTURE_RUNTIME_VERSION;
   const base = {
     ready: true,
     service: 'capture-runtime',
     apiVersion: '2.0',
-    runtimeVersion: CAPTURE_RUNTIME_VERSION,
+    runtimeVersion,
     captureDocumentSchemaVersion: '2',
     capabilities: readyCapabilities(),
+    ocrCompute: { ...readyOcrCompute(), runtimeVersion },
   };
   return {
     ...base,

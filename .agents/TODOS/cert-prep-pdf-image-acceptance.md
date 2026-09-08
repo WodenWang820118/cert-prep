@@ -22,8 +22,18 @@
 
 - [x] Fix the backend reconciliation deadline race and remove the unreachable
       OCR render-scale override.
-  Verify: backend contract tests and `cert-prep-desktop:cargo-test`
+      Verify: backend contract tests and `cert-prep-desktop:cargo-test`
 
-- [x] Run the installed-artifact gate with supplied installed executable, PDF,
-      image, and downloaded runtime inputs.
-  Verify: `pnpm nx run cert-prep-desktop:acceptance-real --skip-nx-cache`
+- [ ] Run the installed-artifact gate with the supplied installed executable,
+      raster PDF, JPEG, both truth manifests, and downloaded runtime inputs in
+      the producer-assigned sequential model slot. The previous proof does not
+      cover the OCR-only truth/CER contract.
+      Verify: `pnpm nx run cert-prep-desktop:acceptance-real --skip-nx-cache`
+
+- [ ] Execute the real model-enabled Cert Prep journey only in the producer
+      orchestrator's sequential slot. Before handing the slot to Law, record
+      zero backend/capture/Paddle/model descendants, zero listener ports, and
+      released runtime resources. Unit/package QA remains parallel-safe only
+      when no real model is loaded.
+      Verify: the completed acceptance manifest contains the cleanup proof and
+      orchestrator handoff is refused when any owned PID/listener remains.

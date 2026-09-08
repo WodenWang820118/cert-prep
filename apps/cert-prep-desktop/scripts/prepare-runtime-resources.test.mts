@@ -58,6 +58,51 @@ test('resources bundle the backend and published Capture Runtime contract only',
   );
 });
 
+test('preserves the validated Capture Runtime manifest bytes when staging resources', async () => {
+  const fixture = createFixture();
+  const outputDir = join(fixture.workspaceRoot, 'generated-resources');
+  const original = readFileSync(fixture.captureRuntimeManifestPath);
+  writeFileSync(
+    fixture.captureRuntimeManifestPath,
+    Buffer.from(original.toString().replace(/\r?\n/gu, '\r\n')),
+  );
+
+  await prepareRuntimeResources({ ...fixture, outputDir, mode: 'release' });
+
+  assert.deepEqual(
+    readFileSync(join(outputDir, 'capture-runtime-manifest.json')),
+    readFileSync(fixture.captureRuntimeManifestPath),
+  );
+});
+
+test('explicit local probe accepts the immutable 0.4.2 candidate without changing pins', async () => {
+  const fixture = createFixture();
+  const outputDir = join(fixture.workspaceRoot, 'generated-resources');
+  const manifest = readJson(fixture.captureRuntimeManifestPath);
+  manifest.runtimeVersion = '0.4.2';
+  writeJson(fixture.captureRuntimeManifestPath, manifest);
+  const previousProbe = process.env.CERT_PREP_CAPTURE_RUNTIME_PROBE;
+  const previousVersion = process.env.CERT_PREP_CAPTURE_RUNTIME_EXPECTED_VERSION;
+  process.env.CERT_PREP_CAPTURE_RUNTIME_PROBE = '1';
+  process.env.CERT_PREP_CAPTURE_RUNTIME_EXPECTED_VERSION = '0.4.2';
+  try {
+    await prepareRuntimeResources({ ...fixture, outputDir, mode: 'dev' });
+  } finally {
+    if (previousProbe === undefined) delete process.env.CERT_PREP_CAPTURE_RUNTIME_PROBE;
+    else process.env.CERT_PREP_CAPTURE_RUNTIME_PROBE = previousProbe;
+    if (previousVersion === undefined) {
+      delete process.env.CERT_PREP_CAPTURE_RUNTIME_EXPECTED_VERSION;
+    } else {
+      process.env.CERT_PREP_CAPTURE_RUNTIME_EXPECTED_VERSION = previousVersion;
+    }
+  }
+  const capture = readJson(join(outputDir, 'capture-runtime-manifest.json'));
+  const metadata = readJson(join(outputDir, 'release-metadata.json'));
+  assert.equal(capture.runtimeVersion, '0.4.2');
+  assert.equal(metadata.channel, 'local_nonpublishable');
+  assert.equal(metadata.publishable, false);
+});
+
 test('dev resources remain local and non-publishable without cert-prep OCR assets', async () => {
   const fixture = createFixture();
   const outputDir = join(fixture.workspaceRoot, 'generated-resources');

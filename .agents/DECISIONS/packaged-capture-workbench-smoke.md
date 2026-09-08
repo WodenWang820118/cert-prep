@@ -3,8 +3,12 @@
 ## 2026-08-25
 
 - The embedded-text fast path is superseded. The harness now installs
-  `windowsml-ocr`, submits a rendered-text PDF, and requires
-  `windowsml-ocr` provenance from the real sidecar.
+  `windowsml-ocr`, submits a caller-supplied raster/scanned PDF, and requires
+  `windowsml-ocr` provenance from the real sidecar for every page. It rejects
+  embedded text operators and never generates a born-digital PDF fixture.
+- The harness accepts no sibling-checkout fallback. A missing truth fixture is
+  an intentional gate failure, not permission to substitute a local or fake
+  source.
 - Unit/package-QA tests validate harness contracts only. Real OCR proof remains
   in an explicit real-runtime E2E/acceptance target.
 
@@ -15,10 +19,9 @@
 - The harness accepts only a caller-supplied installed executable and requires
   previously absent output and app-data directories. It never builds, installs,
   or launches a loose development binary.
-- The generated PDF is valid embedded text. `CERT_PREP_LLM_PROVIDER=fake` is
-  permitted only for deterministic host structuring; fake extraction settings
-  are rejected and the raw Capture document must prove `pdf-embedded-text` on
-  CPU.
+- `CERT_PREP_LLM_PROVIDER=fake` is permitted only for deterministic host
+  structuring; fake extraction settings are rejected and the raw Capture
+  document must prove canonical PaddleOCR provenance on every page.
 - Fresh app-data must preserve the product's visible runtime sequence. The
   harness does not set `CERT_PREP_PACKAGE_QA_AUTO_INSTALL_BUNDLED_BACKEND`: it
   first proves the shell and `/runtime` work with no owned backend or Capture
