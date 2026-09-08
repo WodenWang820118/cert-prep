@@ -20,8 +20,10 @@ OCR/Whisper implementation.
 - Packaging explicitly stages the versioned `capture-runtime` release before
   resource preparation. There is no sibling checkout, workspace alias, or
   implicit development-path fallback.
-- The staged manifest is pinned to Windows x64 runtime `0.4.1`, API `2.0`, and
-  `CaptureDocument` schema `2`; resource preparation and Tauri both verify
+- The current staged manifest remains pinned to Windows x64 runtime `0.4.1`,
+  API `2.0`, and `CaptureDocument` schema `2` until the producer publishes
+  0.4.2. The target cutover uses schema `3` with a typed page/segment OCR
+  projection; resource preparation and Tauri both verify
   the executable and schema file names, the executable's bounded integer byte
   count (`1..536870912`), SHA-256 provenance, and the canonical schema bytes
   against Cert Prep's independent pinned digest before spawning the
@@ -64,7 +66,9 @@ OCR/Whisper implementation.
 - Runtime requirements and installation jobs are proxied through authenticated
   `/capture-runtime/*` backend routes. The browser uses the Cert Prep token;
   the Capture Runtime token remains process-only.
-- Only a sidecar-validated `CaptureDocument` schema `2` may become a completed document.
+- Only a sidecar-validated target `CaptureDocument` schema `3` may become a
+  completed 0.4.2 document. New PDF/image pages persist `windowsml_ocr` only;
+  legacy embedded/mixed rows are read-only.
   Raw extraction is diagnostic-only and never triggers UI completion.
 - The existing document upload URL, SQLite rows, durable operation reads, chunks,
   crop behavior, and historical documents remain stable.

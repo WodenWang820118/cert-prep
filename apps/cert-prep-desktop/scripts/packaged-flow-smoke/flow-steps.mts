@@ -34,6 +34,9 @@ import { FIRST_CHUNK_GATE_MS } from './streaming-evidence.mts';
 import { captureGenerationReadinessAtProjectCreate } from './generation-readiness.mts';
 import type { SmokeRunState } from './types.mts';
 
+export const PDF_PARSE_TERMINAL_TEXT_PATTERN =
+  /Parsing complete\.|Ready to review|\d+\/\d+ pages|ready\s*Page|OCR failed|Parsing failed|WindowsML OCR is unavailable/i;
+
 export async function createProject(run: SmokeRunState): Promise<void> {
   await closeRuntimeDrawer(run);
   // The acceptance app-data directory is isolated per run, so a stable name
@@ -125,7 +128,7 @@ export async function uploadAndParsePdf(run: SmokeRunState): Promise<void> {
 
     const parseCompletePromise = waitText(
       run,
-      /Parsing complete\.|46\/46 pages|ready\s*Page|OCR failed|Parsing failed|WindowsML OCR is unavailable/i,
+      PDF_PARSE_TERMINAL_TEXT_PATTERN,
       300_000,
       'parsing complete',
     ).then(() => {
@@ -183,8 +186,14 @@ function recordOcrCompletionFromText(run: SmokeRunState, text: string): void {
     pages_processed: pagesMatch ? Number(pagesMatch[1]) : null,
     total_pages: pagesMatch ? Number(pagesMatch[2]) : null,
     chunks: chunksMatch ? Number(chunksMatch[1]) : null,
-    expected_pages: EXPECTED_BASELINE_PAGES,
-    expected_chunks: EXPECTED_BASELINE_CHUNKS,
+    expected_pages:
+      run.options.acceptancePdfPageScope === 'page-1'
+        ? 1
+        : EXPECTED_BASELINE_PAGES,
+    expected_chunks:
+      run.options.acceptancePdfPageScope === 'page-1'
+        ? 1
+        : EXPECTED_BASELINE_CHUNKS,
   };
 }
 

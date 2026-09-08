@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { signal } from '@angular/core';
 import { of } from 'rxjs';
 import { provideRouter, Router } from '@angular/router';
 import { App } from './app.component';
@@ -15,6 +16,7 @@ import {
 } from '../../testing/app.spec-helpers';
 import { OperationStore } from '../../stores/operation.store';
 import { provideCertPrepHttpResourceClientFake } from '../../testing/cert-prep-http-resource-client.fake';
+import { CaptureRuntimePreflightStore } from '../../stores/capture-runtime/capture-runtime-preflight.store';
 
 describe('App', () => {
   let apiClient: ReturnType<typeof createApiClient>;
@@ -233,6 +235,10 @@ describe('App', () => {
         { provide: CERT_PREP_API, useValue: api },
         provideCertPrepHttpResourceClientFake(api),
         provideRouter(appRoutes),
+        {
+          provide: CaptureRuntimePreflightStore,
+          useValue: fakeCaptureRuntimePreflightStore(),
+        },
       ],
     });
 
@@ -328,5 +334,18 @@ function createApiClient() {
     listQuestionDrafts: vi.fn().mockReturnValue(of({ items: [editableAppQuestion] })),
     listWrongAnswers: vi.fn().mockReturnValue(of({ items: [] })),
     summarizeWrongAnswers: vi.fn().mockReturnValue(of(emptyWrongAnswerSummary())),
+  };
+}
+
+function fakeCaptureRuntimePreflightStore() {
+  return {
+    status: signal('ready'),
+    canImport: signal(true),
+    isLoading: signal(false),
+    error: signal<string | null>(null),
+    gpuAccelerationMessage: signal('OCR acceleration enabled (DirectML).'),
+    cpuFallbackNotice: signal<string | null>(null),
+    retry: vi.fn(),
+    load: vi.fn().mockReturnValue(of(null)),
   };
 }

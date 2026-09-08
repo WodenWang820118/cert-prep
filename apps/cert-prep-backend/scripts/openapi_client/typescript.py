@@ -129,6 +129,11 @@ def render_component_schema_type(name: str, schemas: dict[str, Any]) -> str:
 
 
 def render_schema_type(schema: dict[str, Any], schemas: dict[str, Any]) -> str:
+    if "const" in schema:
+        const_value = schema["const"]
+        if const_value is None or isinstance(const_value, (str, bool, int, float)):
+            return json.dumps(const_value)
+
     if "$ref" in schema:
         return ref_name(schema["$ref"])
 

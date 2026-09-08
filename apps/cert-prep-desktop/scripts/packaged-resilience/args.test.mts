@@ -7,6 +7,7 @@ import {
   readdirSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { join, relative } from 'node:path';
@@ -17,6 +18,7 @@ import { pathToFileURL } from 'node:url';
 import {
   loadDocumentCancellationOptions,
   loadInstalledCandidateBinding,
+  loadInstalledExecutionBinding,
 } from './args.mts';
 
 test('document cancellation options verify the exact candidate and required files', async () => {
@@ -87,6 +89,74 @@ test('installed candidate binding can be revalidated after runner output exists'
   }
 });
 
+test('execution binding treats a malformed candidate commit as informational while release binding rejects it', async () => {
+  const fixture = fixtureWorkspace({
+    candidateOverrides: { commitSha: 'local-working-tree' },
+  });
+  try {
+    const executionBinding = await loadInstalledExecutionBinding(
+      fixture.environment,
+      fixture.workspaceRoot,
+    );
+
+    assert.deepEqual(executionBinding.candidate, {
+      candidateId: fixture.candidateId,
+      harnessSha256: 'b'.repeat(64),
+    });
+    await assert.rejects(
+      loadInstalledCandidateBinding(fixture.environment, fixture.workspaceRoot),
+      /Verified candidate identity fields are invalid/,
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test('execution binding ignores release-plan commit policy while release binding remains strict', async (t) => {
+  await t.test('candidate and release-plan commits differ', async () => {
+    const fixture = fixtureWorkspace({
+      candidateOverrides: { commitSha: 'c'.repeat(40) },
+    });
+    try {
+      await loadInstalledExecutionBinding(
+        fixture.environment,
+        fixture.workspaceRoot,
+      );
+      await assert.rejects(
+        loadInstalledCandidateBinding(
+          fixture.environment,
+          fixture.workspaceRoot,
+        ),
+        /Candidate identity does not match release plan: commitSha/,
+      );
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  await t.test('release-plan commit is malformed', async () => {
+    const fixture = fixtureWorkspace({
+      planOverrides: { commitSha: 'local-working-tree' },
+      candidateOverrides: { commitSha: 'a'.repeat(40) },
+    });
+    try {
+      await loadInstalledExecutionBinding(
+        fixture.environment,
+        fixture.workspaceRoot,
+      );
+      await assert.rejects(
+        loadInstalledCandidateBinding(
+          fixture.environment,
+          fixture.workspaceRoot,
+        ),
+        /exact supported distribution profile/,
+      );
+    } finally {
+      fixture.cleanup();
+    }
+  });
+});
+
 test('document cancellation options reject hybrid and malformed distribution identities', async (t) => {
   await t.test('candidate profile does not match its public plan', async () => {
     const fixture = fixtureWorkspace({
@@ -96,6 +166,10 @@ test('document cancellation options reject hybrid and malformed distribution ide
       },
     });
     try {
+      await loadInstalledExecutionBinding(
+        fixture.environment,
+        fixture.workspaceRoot,
+      );
       await assert.rejects(
         loadDocumentCancellationOptions(
           fixture.environment,
@@ -133,6 +207,10 @@ test('document cancellation options reject hybrid and malformed distribution ide
         planOverrides: { assetBaseUrl: 'https://example.invalid/releases' },
       });
       try {
+        await loadInstalledExecutionBinding(
+          fixture.environment,
+          fixture.workspaceRoot,
+        );
         await assert.rejects(
           loadDocumentCancellationOptions(
             fixture.environment,
@@ -159,6 +237,10 @@ test('document cancellation options reject hybrid and malformed distribution ide
         },
       });
       try {
+        await loadInstalledExecutionBinding(
+          fixture.environment,
+          fixture.workspaceRoot,
+        );
         await assert.rejects(
           loadDocumentCancellationOptions(
             fixture.environment,
@@ -270,7 +352,90 @@ test('document cancellation options reject a non-PDF payload', async () => {
   }
 });
 
-test('document cancellation options reject install-receipt candidate and binary drift', async (t) => {
+test('execution binding rejects candidate tree and recomputed-ID drift', async (t) => {
+  await t.test('declared candidate bytes change', async () => {
+    const fixture = fixtureWorkspace();
+    try {
+      writeFileSync(fixture.harnessPath, 'drifted harness payload\n');
+      await assert.rejects(
+        loadInstalledExecutionBinding(
+          fixture.environment,
+          fixture.workspaceRoot,
+        ),
+        /Candidate file identity does not match/,
+      );
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  await t.test('candidate tree contains an undeclared file', async () => {
+    const fixture = fixtureWorkspace();
+    try {
+      writeFileSync(join(fixture.harnessRoot, 'undeclared.txt'), 'undeclared');
+      await assert.rejects(
+        loadInstalledExecutionBinding(
+          fixture.environment,
+          fixture.workspaceRoot,
+        ),
+        /does not exactly cover release and harness files/,
+      );
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  await t.test('candidate tree contains a symbolic link', async () => {
+    const fixture = fixtureWorkspace();
+    try {
+      symlinkSync(
+        join(fixture.candidateRoot, 'release', 'metadata'),
+        join(fixture.harnessRoot, 'metadata-link'),
+        'junction',
+      );
+      await assert.rejects(
+        loadInstalledExecutionBinding(
+          fixture.environment,
+          fixture.workspaceRoot,
+        ),
+        /Candidate tree contains a symbolic link/,
+      );
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  await t.test(
+    'candidate ID does not match the physical file identities',
+    async () => {
+      const fixture = fixtureWorkspace();
+      try {
+        const candidatePath = join(fixture.candidateRoot, 'candidate.json');
+        const candidate = JSON.parse(
+          readFileSync(candidatePath, 'utf8'),
+        ) as Record<string, unknown>;
+        const mismatchedCandidateId = 'f'.repeat(64);
+        writeJson(candidatePath, {
+          ...candidate,
+          candidateId: mismatchedCandidateId,
+        });
+        fixture.environment.CERT_PREP_RELEASE_CANDIDATE_ID =
+          mismatchedCandidateId;
+        await assert.rejects(
+          loadInstalledExecutionBinding(
+            fixture.environment,
+            fixture.workspaceRoot,
+          ),
+          /Candidate ID does not match the verified file identities/,
+        );
+      } finally {
+        fixture.cleanup();
+      }
+    },
+  );
+});
+
+test('execution binding rejects install-receipt candidate and binary drift', async (t) => {
   const fixture = fixtureWorkspace();
   try {
     await t.test('candidate binding drift', async () => {
@@ -282,7 +447,7 @@ test('document cancellation options reject install-receipt candidate and binary 
         candidateId: 'f'.repeat(64),
       });
       await assert.rejects(
-        loadDocumentCancellationOptions(
+        loadInstalledExecutionBinding(
           fixture.environment,
           fixture.workspaceRoot,
         ),
@@ -293,11 +458,86 @@ test('document cancellation options reject install-receipt candidate and binary 
     fixture.cleanup();
   }
 
+  for (const [label, override] of [
+    ['acceptance run', { acceptanceRunId: 'acceptance-run-0002' }],
+    ['harness digest', { harnessSha256: 'c'.repeat(64) }],
+  ] as const) {
+    const lineageDrift = fixtureWorkspace();
+    try {
+      const receipt = JSON.parse(
+        readFileSync(lineageDrift.receiptPath, 'utf8'),
+      ) as Record<string, unknown>;
+      writeJson(lineageDrift.receiptPath, { ...receipt, ...override });
+      await assert.rejects(
+        loadInstalledExecutionBinding(
+          lineageDrift.environment,
+          lineageDrift.workspaceRoot,
+        ),
+        /not bound to the exact candidate, acceptance run, and pinned harness/,
+        label,
+      );
+    } finally {
+      lineageDrift.cleanup();
+    }
+  }
+
+  const installerReceiptDrift = fixtureWorkspace();
+  try {
+    const receipt = JSON.parse(
+      readFileSync(installerReceiptDrift.receiptPath, 'utf8'),
+    ) as Record<string, unknown>;
+    const installer = receipt.installer as Record<string, unknown>;
+    writeJson(installerReceiptDrift.receiptPath, {
+      ...receipt,
+      installer: { ...installer, sha256: 'f'.repeat(64) },
+    });
+    await assert.rejects(
+      loadInstalledExecutionBinding(
+        installerReceiptDrift.environment,
+        installerReceiptDrift.workspaceRoot,
+      ),
+      /installer does not match candidate\.json and the physical installer/,
+    );
+  } finally {
+    installerReceiptDrift.cleanup();
+  }
+
+  for (const [label, override] of [
+    ['name', { name: 'Other.exe' }],
+    ['bytes', { bytes: 1 }],
+    ['SHA', { sha256: 'f'.repeat(64) }],
+  ] as const) {
+    const executableReceiptDrift = fixtureWorkspace();
+    try {
+      const receipt = JSON.parse(
+        readFileSync(executableReceiptDrift.receiptPath, 'utf8'),
+      ) as Record<string, unknown>;
+      const installedExecutable = receipt.installedExecutable as Record<
+        string,
+        unknown
+      >;
+      writeJson(executableReceiptDrift.receiptPath, {
+        ...receipt,
+        installedExecutable: { ...installedExecutable, ...override },
+      });
+      await assert.rejects(
+        loadInstalledExecutionBinding(
+          executableReceiptDrift.environment,
+          executableReceiptDrift.workspaceRoot,
+        ),
+        /executable identity does not match/,
+        label,
+      );
+    } finally {
+      executableReceiptDrift.cleanup();
+    }
+  }
+
   const executableDrift = fixtureWorkspace();
   try {
     writeFileSync(executableDrift.installedExePath, 'modified executable');
     await assert.rejects(
-      loadDocumentCancellationOptions(
+      loadInstalledExecutionBinding(
         executableDrift.environment,
         executableDrift.workspaceRoot,
       ),
@@ -311,7 +551,7 @@ test('document cancellation options reject install-receipt candidate and binary 
   try {
     writeFileSync(installerDrift.installerPath, 'modified installer');
     await assert.rejects(
-      loadDocumentCancellationOptions(
+      loadInstalledExecutionBinding(
         installerDrift.environment,
         installerDrift.workspaceRoot,
       ),
@@ -334,7 +574,7 @@ test('document cancellation options reject install-receipt candidate and binary 
       ) as Record<string, unknown>;
       writeJson(invalidReceipt.receiptPath, { ...receipt, ...override });
       await assert.rejects(
-        loadDocumentCancellationOptions(
+        loadInstalledExecutionBinding(
           invalidReceipt.environment,
           invalidReceipt.workspaceRoot,
         ),
@@ -349,6 +589,9 @@ test('document cancellation options reject install-receipt candidate and binary 
 
 interface FixtureWorkspace {
   readonly workspaceRoot: string;
+  readonly candidateRoot: string;
+  readonly harnessRoot: string;
+  readonly harnessPath: string;
   readonly outputRoot: string;
   readonly pdfPath: string;
   readonly installedExePath: string;
@@ -413,7 +656,8 @@ function fixtureWorkspace({
     'Cert Prep_0.1.0-alpha.1_x64-setup.exe',
   );
   writeFileSync(installerPath, 'candidate installer payload');
-  writeFileSync(join(harnessRoot, 'harness.txt'), 'pinned harness payload\n');
+  const harnessPath = join(harnessRoot, 'harness.txt');
+  writeFileSync(harnessPath, 'pinned harness payload\n');
   const identities = [
     ...candidateFiles(join(candidateRoot, 'release'), 'release'),
     ...candidateFiles(harnessRoot, 'harness'),
@@ -469,6 +713,9 @@ function fixtureWorkspace({
 
   return {
     workspaceRoot,
+    candidateRoot,
+    harnessRoot,
+    harnessPath,
     outputRoot,
     pdfPath,
     installedExePath,

@@ -38,6 +38,9 @@ const CAPTURE_RUNTIME_ARTIFACT_PATH_ENV =
   'CERT_PREP_CAPTURE_RUNTIME_ARTIFACT_PATH';
 const CAPTURE_DOCUMENT_SCHEMA_PATH_ENV =
   'CERT_PREP_CAPTURE_DOCUMENT_SCHEMA_PATH';
+const CAPTURE_RUNTIME_PROBE_ENV = 'CERT_PREP_CAPTURE_RUNTIME_PROBE';
+const CAPTURE_RUNTIME_PROBE_VERSION_ENV =
+  'CERT_PREP_CAPTURE_RUNTIME_EXPECTED_VERSION';
 const ALPHA_RELEASE_TAG = `cert-prep-v${ALPHA_VERSION}`;
 
 type RuntimeResourceMode = 'dev' | 'release';
@@ -137,6 +140,9 @@ export async function prepareRuntimeResources({
     captureRuntimeInputs.artifactPath,
     captureRuntimeInputs.schemaPath,
   );
+  const captureRuntimeManifestBytes = readFileSync(
+    captureRuntimeInputs.manifestPath,
+  );
 
   const backendSourceArtifact = join(
     backendRuntimeRoot,
@@ -186,7 +192,7 @@ export async function prepareRuntimeResources({
     outputDir,
     'capture-runtime-manifest.json',
   );
-  writeJson(stagedCaptureRuntimeManifestPath, captureRuntimeManifest);
+  writeFileSync(stagedCaptureRuntimeManifestPath, captureRuntimeManifestBytes);
 
   const releaseMetadataPath = join(outputDir, 'release-metadata.json');
   writeJson(
@@ -290,13 +296,14 @@ async function loadAndVerifyCaptureRuntime(
   const manifest = JSON.parse(
     readFileSync(manifestPath, 'utf8'),
   ) as Partial<CaptureRuntimeManifest>;
+  const expectedRuntimeVersion = captureRuntimeExpectedVersion();
   const exactFields: ReadonlyArray<readonly [string, unknown, string]> = [
     [
       'manifestVersion',
       manifest.manifestVersion,
       CAPTURE_RUNTIME_MANIFEST_VERSION,
     ],
-    ['runtimeVersion', manifest.runtimeVersion, CAPTURE_RUNTIME_VERSION],
+    ['runtimeVersion', manifest.runtimeVersion, expectedRuntimeVersion],
     ['apiVersion', manifest.apiVersion, CAPTURE_RUNTIME_API_VERSION],
     [
       'captureDocumentSchemaVersion',
@@ -360,6 +367,16 @@ async function loadAndVerifyCaptureRuntime(
   }
   validateCaptureDocumentSchema(schemaPath);
   return manifest as CaptureRuntimeManifest;
+}
+
+function captureRuntimeExpectedVersion(): string {
+  const probeEnabled = process.env[CAPTURE_RUNTIME_PROBE_ENV]?.trim();
+  if (probeEnabled === '1') {
+    const candidateVersion =
+      process.env[CAPTURE_RUNTIME_PROBE_VERSION_ENV]?.trim();
+    if (candidateVersion === '0.4.2') return candidateVersion;
+  }
+  return CAPTURE_RUNTIME_VERSION;
 }
 
 function validateCaptureDocumentSchema(schemaPath: string): void {

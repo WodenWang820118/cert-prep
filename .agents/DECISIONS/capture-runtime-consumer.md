@@ -1,5 +1,55 @@
 # Capture Runtime Release Consumer Decisions
 
+## 2026-08-28 Phase 2 native supervision and compute ownership
+
+- Treat the fresh installed JPEG/PDF page-one `gpu-dml` result as the completed
+  Phase 1 checkpoint. Phase 2 may improve lifecycle and performance only on top
+  of that OCR-only path; no embedded, mixed, local Paddle, or host-selected OCR
+  fallback may return.
+- Replace the scattered native process fields and close paths with one deep
+  `DesktopRuntimeSupervisor` module backed by the published
+  `OwnedRuntimeSession` interface. Give every candidate attempt its own owned
+  session, keep the active session live until the complete candidate stack is
+  ready, and terminate-and-prove only the candidate on failure. On successful
+  swap, retire and prove the previous active session. Do not expose raw Job or
+  process handles to callers.
+- Keep transactional asset installation and stale install cleanup in a
+  separate deep `RuntimeAssetInstaller` module. Preserve durable runtime/model
+  assets and caches; reconcile only UUID-shaped app-owned staging/backup
+  directories and attested app-owned PID, listener, and run-scoped residue.
+- Assign the Python backend and Capture Runtime roots before they execute user
+  code so their app-started Ollama/model/worker descendants inherit ownership.
+  Never kill by executable name, and never terminate an Ollama or other
+  baseline process that existed before the Cert Prep session.
+- Keep adapter discovery and selection in Capture Runtime. The required order
+  is usable dedicated GPU, then usable integrated GPU, then explicit
+  user-visible CPU fallback. Cert Prep validates and presents the authenticated
+  decision but never reimplements it. DirectML initialization or inference
+  failure after GPU selection is fail-closed.
+- Fix the Phase 2 TDD surfaces at the native owned-session interface, the
+  public backend capture/projection interface, and the freshly installed app
+  journey. Use real helper processes for Windows ownership semantics and real
+  private PDF/JPEG inputs for semantic OCR; model-enabled runs remain
+  sequential.
+- Measure model-ready time, per-page latency, process memory, and GPU memory by
+  adapter before selecting an optimization. Package QA, a fake process tree,
+  or a successful exit cannot replace semantic OCR and terminate-and-prove
+  evidence.
+
+## 2026-08-25 OCR-only 0.4.2 cutover
+
+- Every PDF page and image is rasterized and recognized by the canonical
+  Capture Runtime PaddleOCR path. Cert Prep does not inspect embedded text,
+  arbitrate extraction methods, or ask an LLM to select a route.
+- The 0.4.2 consumer requires the producer's schema-3 page/segment-bound typed
+  OCR projection. Each new persisted page and document aggregate is
+  `windowsml_ocr`; `embedded` and `mixed` values are legacy read-only data and
+  are rejected at the new capture seam.
+- The currently installed 0.4.1 SDK/runtime remains the fixed point until the
+  producer publishes matching 0.4.2 executable, SDKs, launcher, manifest, and
+  schema bytes. No local sibling fallback or invented lock resolution closes
+  this blocker.
+
 ## 2026-08-13 streaming v2 cutover
 
 - Replace the capture public seam in one breaking cutover: v2 ingestion,

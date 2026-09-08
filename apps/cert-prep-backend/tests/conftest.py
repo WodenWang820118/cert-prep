@@ -6,6 +6,7 @@ from io import BytesIO
 from pathlib import Path
 from datetime import UTC, datetime
 import hashlib
+from types import SimpleNamespace
 
 import pytest
 import av
@@ -73,6 +74,9 @@ class TypedPullSessionRuntimeMixin:
             self._result = result
         else:
             self.result = result
+
+    def get_ocr(self, capture_id: str) -> object:
+        return _test_ocr_projection(self._pull_raw_capture(), capture_id)
 
     def open_structuring_session(
         self,
@@ -372,6 +376,61 @@ class TestCaptureRuntimeClient(TypedPullSessionRuntimeMixin):
         })
 
 
+def _test_ocr_projection(raw: RawCapture, capture_id: str) -> object:
+    """Build a small projection-shaped fake without requiring the 0.4.2 SDK.
+
+    Cert Prep keeps the published 0.4.1 pin until 0.4.2 is public. These
+    hermetic host fakes therefore use the public attribute seam rather than
+    importing candidate-only DTOs; the installed acceptance uses the real
+    generated projection from the 0.4.2 SDK.
+    """
+
+    page_numbers = sorted(
+        {
+            segment.locator.page
+            for segment in raw.segments
+            if segment.locator.kind == "page"
+        }
+    )
+    pages = [
+        SimpleNamespace(
+            page=page_number,
+            status=SimpleNamespace(value="recognized"),
+            text="\n".join(
+                segment.text
+                for segment in raw.segments
+                if segment.locator.kind == "page"
+                and segment.locator.page == page_number
+            ),
+            provenance=SimpleNamespace(
+                status=SimpleNamespace(value="resolved"),
+                engine="windowsml-ocr",
+                model="capture-ocr-test",
+                model_digest="sha256:" + "b" * 64,
+                device=raw.extraction_engine.device or "test-device",
+                profile_id="capture-ocr-test-profile",
+                profile_spec_sha256="c" * 64,
+            ),
+        )
+        for page_number in page_numbers
+    ]
+    provenance = pages[0].provenance if pages else SimpleNamespace()
+    return SimpleNamespace(
+        api_version="2.0",
+        schema_version="3",
+        capture_id=capture_id,
+        status=SimpleNamespace(value="completed"),
+        source=raw.source,
+        pages=pages,
+        page_count=len(pages),
+        runtime_version="0.4.2",
+        contract_sha256="d" * 64,
+        provenance=provenance,
+        warnings=[],
+        failure=None,
+    )
+
+
 def _test_runtime_ready() -> RuntimeReady:
     return RuntimeReady.model_validate(
         {
@@ -386,6 +445,19 @@ def _test_runtime_ready() -> RuntimeReady:
                 "supportsCancellation": True,
                 "supportsRawDiagnostics": True,
                 "maxUploadBytes": 50 * 1024 * 1024,
+            },
+            "ocrCompute": {
+                "apiVersion": "2.0",
+                "schemaVersion": "1",
+                "service": "capture-runtime",
+                "runtimeVersion": CAPTURE_RUNTIME_VERSION,
+                "contractSetVersion": "2",
+                "contractSha256": "a" * 64,
+                "mode": "gpu-dml",
+                "adapterClass": "dedicated",
+                "reasonCode": None,
+                "userNoticeRequired": False,
+                "noticeCode": None,
             },
             "message": None,
         }

@@ -113,7 +113,8 @@ impl Drop for BackendRuntimeInner {
 impl BackendRuntimeInner {
     pub(crate) fn terminate_child_process_tree(&self) {
         if let Ok(mut child) = self.child.lock() {
-            if let Some(child) = child.take() {
+            #[allow(unused_mut)]
+            if let Some(mut child) = child.take() {
                 let _ = child.terminate();
             }
         }
@@ -742,7 +743,8 @@ fn start_capture_runtime(inner: Arc<BackendRuntimeInner>, job_id: String) {
             &inner.data_dir,
             Some(&inner.closing),
         )?;
-        restart_owned_backend_with_capture_runtime(&inner, capture_runtime)
+        restart_owned_backend_with_capture_runtime(&inner, capture_runtime)?;
+        Ok::<(), String>(())
     })();
     match result {
         Ok(()) => update_capture_job(

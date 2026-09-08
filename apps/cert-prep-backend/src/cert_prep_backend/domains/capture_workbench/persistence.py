@@ -22,6 +22,7 @@ def publish_capture_document(
     expected_sha256: str,
     document: CaptureDocument,
     review: CaptureReview | None = None,
+    ocr_projection: object | None = None,
 ) -> dict:
     if document.source.sha256 != expected_sha256:
         raise ValueError("Capture Runtime result does not match the stored source digest")
@@ -42,7 +43,15 @@ def publish_capture_document(
             warning=warning,
         )
 
-    extraction = capture_document_to_pdf_extraction(document, review=review)
+    if ocr_projection is None:
+        raise ValueError(
+            "Capture Runtime OCR projection is required for new PDF/image imports."
+        )
+    extraction = capture_document_to_pdf_extraction(
+        document,
+        review=review,
+        ocr_projection=ocr_projection,
+    )
     return operations.publish_success(
         db,
         project_id=project_id,

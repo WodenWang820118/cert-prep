@@ -29,6 +29,7 @@ def capture_document_to_pdf_extraction(
     document: CaptureDocument,
     *,
     review: CaptureReview | None = None,
+    ocr_projection: object | None = None,
 ) -> PdfExtractionResult:
     overrides = (
         reviewed_text_overrides(
@@ -56,10 +57,23 @@ def capture_document_to_pdf_extraction(
     if not pages:
         raise ValueError("Document capture contains no page blocks")
 
+    projection_pages = {
+        getattr(page, "page"): page
+        for page in (
+            getattr(ocr_projection, "pages", [])
+            if ocr_projection is not None
+            else []
+        )
+    }
     extracted_pages: list[ExtractedPage] = []
-    extraction_method = _page_extraction_method(document)
+    extraction_method = _ocr_only_extraction_method(document)
     for page_number in sorted(pages):
+        projection_page = projection_pages.get(page_number)
+        if ocr_projection is not None and projection_page is None:
+            raise ValueError("Capture OCR projection is missing a persisted page")
         raw_text = "\n".join(source for source, _reviewed in pages[page_number])
+        if projection_page is not None:
+            raw_text = str(getattr(projection_page, "text", ""))
         source_text = "\n".join(reviewed for _source, reviewed in pages[page_number])
         lines = line_metadata(source_text)
         classification = classify_exam_text(source_text)
@@ -77,16 +91,36 @@ def capture_document_to_pdf_extraction(
             )
         )
 
-    warnings = "; ".join(document.warnings) or None
+    projection_warnings = (
+        [str(value) for value in getattr(ocr_projection, "warnings", [])]
+        if ocr_projection is not None
+        else []
+    )
+    warnings = "; ".join((*document.warnings, *projection_warnings)) or None
+    projection_provenance = (
+        getattr(ocr_projection, "provenance", None)
+        if ocr_projection is not None
+        else None
+    )
+    ocr_device = (
+        getattr(projection_provenance, "device", None)
+        if projection_provenance is not None
+        else document.extraction_engine.device
+    )
+    page_count = (
+        int(getattr(ocr_projection, "page_count"))
+        if ocr_projection is not None
+        else max(pages)
+    )
     return PdfExtractionResult(
-        page_count=max(pages),
+        page_count=page_count,
         pages=tuple(extracted_pages),
         status="ready",
         extraction_method=extraction_method,
-        ocr_device=document.extraction_engine.device,
+        ocr_device=ocr_device,
         ocr_fallback_reason=warnings,
         ocr_duration_ms=0,
-        processed_page_count=len(pages),
+        processed_page_count=page_count if ocr_projection is not None else len(pages),
     )
 
 
@@ -112,12 +146,19 @@ def capture_document_to_audio_segments(
     return tuple(segments)
 
 
-def _page_extraction_method(document: CaptureDocument) -> str:
+def _ocr_only_extraction_method(document: CaptureDocument) -> str:
+    engine = document.extraction_engine.engine.lower()
     identity = (
         f"{document.extraction_engine.engine} {document.extraction_engine.model}"
     ).lower()
-    if "embedded" in identity and "ocr" not in identity:
-        return "embedded"
+    if "embedded" in identity or "mixed" in identity:
+        raise ValueError(
+            "Capture document extraction provenance violates the OCR-only contract."
+        )
+    if not any(marker in engine for marker in ("ocr", "windowsml", "paddle")):
+        raise ValueError(
+            "Capture document extraction provenance is not canonical OCR-only."
+        )
     return "windowsml_ocr"
 
 

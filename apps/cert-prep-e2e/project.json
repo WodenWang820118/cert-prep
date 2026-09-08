@@ -15,7 +15,7 @@
         "{projectRoot}/src/e2e/local-package/real-backend/tsconfig.json"
       ],
       "options": {
-        "command": "pnpm exec tsc -p apps/cert-prep-e2e/src/e2e/local-package/real-backend/tsconfig.json"
+        "command": "corepack pnpm exec tsc -p apps/cert-prep-e2e/src/e2e/local-package/real-backend/tsconfig.json"
       }
     },
     "e2e-local-package": {

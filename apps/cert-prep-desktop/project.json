@@ -19,7 +19,7 @@
       "executor": "nx:run-commands",
       "dependsOn": ["prepare-runtime-resources-dev"],
       "options": {
-        "command": "pnpm exec tauri dev --config apps/cert-prep-desktop/src-tauri/tauri.conf.json"
+        "command": "corepack pnpm exec tauri dev --config apps/cert-prep-desktop/src-tauri/tauri.conf.json"
       }
     },
     "build": {
@@ -27,7 +27,7 @@
       "dependsOn": ["cert-prep:build", "prepare-runtime-resources"],
       "outputs": ["{projectRoot}/src-tauri/target"],
       "options": {
-        "command": "pnpm exec tauri build --config apps/cert-prep-desktop/src-tauri/tauri.conf.json"
+        "command": "corepack pnpm exec tauri build --config apps/cert-prep-desktop/src-tauri/tauri.conf.json"
       }
     },
     "build-capture": {
@@ -35,7 +35,7 @@
       "dependsOn": ["cert-prep:build", "prepare-runtime-resources"],
       "outputs": ["{projectRoot}/src-tauri/target"],
       "options": {
-        "command": "pnpm exec tauri build --target x86_64-pc-windows-msvc --ci --config apps/cert-prep-desktop/src-tauri/tauri.conf.json"
+        "command": "corepack pnpm exec tauri build --target x86_64-pc-windows-msvc --ci --config apps/cert-prep-desktop/src-tauri/tauri.conf.json"
       }
     },
     "build-capture-dev": {
@@ -43,7 +43,7 @@
       "dependsOn": ["cert-prep:build", "prepare-runtime-resources-dev"],
       "outputs": ["{projectRoot}/src-tauri/target"],
       "options": {
-        "command": "pnpm exec tauri build --target x86_64-pc-windows-msvc --ci --config apps/cert-prep-desktop/src-tauri/tauri.conf.json"
+        "command": "corepack pnpm exec tauri build --target x86_64-pc-windows-msvc --ci --config apps/cert-prep-desktop/src-tauri/tauri.conf.json"
       }
     },
     "prepare-runtime-resources": {
@@ -75,6 +75,49 @@
       "executor": "nx:run-commands",
       "options": {
         "command": "node --test tools/capture-candidate-gate.test.mts"
+      }
+    },
+    "capture-fresh-projection-typecheck": {
+      "cache": true,
+      "executor": "nx:run-commands",
+      "inputs": [
+        "{workspaceRoot}/tools/capture-fresh-projection.mts",
+        "{workspaceRoot}/tools/capture-fresh-projection.test.mts",
+        "{workspaceRoot}/tools/capture-fresh-projection-artifact.mts",
+        "{workspaceRoot}/tools/capture-fresh-projection-artifact.test.mts",
+        "{workspaceRoot}/tools/capture-projection-process.mts",
+        "{workspaceRoot}/tools/capture-projection-process.test.mts",
+        "{workspaceRoot}/tools/capture-candidate-gate.mts"
+      ],
+      "options": {
+        "command": "corepack pnpm exec tsc --noEmit --target ES2022 --module NodeNext --moduleResolution NodeNext --allowImportingTsExtensions --types node --skipLibCheck --strict false tools/capture-fresh-projection.mts tools/capture-fresh-projection.test.mts tools/capture-fresh-projection-artifact.mts tools/capture-fresh-projection-artifact.test.mts tools/capture-projection-process.mts tools/capture-projection-process.test.mts"
+      }
+    },
+    "capture-fresh-projection-lint": {
+      "cache": true,
+      "executor": "nx:run-commands",
+      "inputs": [
+        "{workspaceRoot}/tools/capture-fresh-projection.mts",
+        "{workspaceRoot}/tools/capture-fresh-projection.test.mts",
+        "{workspaceRoot}/tools/capture-fresh-projection-artifact.mts",
+        "{workspaceRoot}/tools/capture-fresh-projection-artifact.test.mts",
+        "{workspaceRoot}/tools/capture-projection-process.mts",
+        "{workspaceRoot}/tools/capture-projection-process.test.mts",
+        "{workspaceRoot}/eslint.config.mts"
+      ],
+      "options": {
+        "command": "corepack pnpm exec eslint tools/capture-fresh-projection.mts tools/capture-fresh-projection.test.mts tools/capture-fresh-projection-artifact.mts tools/capture-fresh-projection-artifact.test.mts tools/capture-projection-process.mts tools/capture-projection-process.test.mts --max-warnings=0"
+      }
+    },
+    "capture-fresh-projection-test": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "dependsOn": [
+        "capture-fresh-projection-typecheck",
+        "capture-fresh-projection-lint"
+      ],
+      "options": {
+        "command": "node --test tools/capture-fresh-projection.test.mts tools/capture-fresh-projection-artifact.test.mts tools/capture-projection-process.test.mts"
       }
     },
     "capture-runtime-consumer-smoke": {
@@ -113,8 +156,8 @@
       ],
       "options": {
         "commands": [
-          "pnpm exec tsc -p tsconfig.scripts.json",
-          "pnpm exec tsc -p apps/cert-prep-desktop/tsconfig.json"
+          "corepack pnpm exec tsc -p tsconfig.scripts.json",
+          "corepack pnpm exec tsc -p apps/cert-prep-desktop/tsconfig.json"
         ],
         "parallel": false
       }
@@ -125,7 +168,7 @@
       "dependsOn": ["typecheck-scripts"],
       "inputs": ["default"],
       "options": {
-        "command": "node --import ./apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.mts --test apps/cert-prep-desktop/scripts/prepare-runtime-resources.test.mts apps/cert-prep-desktop/scripts/acceptance-real-options.test.mts apps/cert-prep-desktop/scripts/acceptance-app-data.test.mts apps/cert-prep-desktop/scripts/acceptance-artifacts.test.mts apps/cert-prep-desktop/scripts/package-qa/artifacts.test.mts apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.test.mts apps/cert-prep-desktop/scripts/process-lifecycle/processes.test.mts apps/cert-prep-desktop/scripts/process-residue-audit.test.mts apps/cert-prep-desktop/scripts/desktop-startup-probe.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/args.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/document-cancellation.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/document-runner.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/evidence-contract.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/local-evidence-verifier.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/ollama-isolation.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/operation-cancellation.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/owned-process-evidence.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/remaining-options.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/resilience-gates.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/resilience-runner.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/session-restart.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/app-lifecycle.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/args.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/generation-readiness.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/ocr-completion.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/resource-sampling.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/runner-context.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/runtime-install-flow.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/streaming-baseline-report.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/streaming-evidence.test.mts apps/cert-prep-desktop/scripts/packaged-image-upload-smoke/smoke.test.mts apps/cert-prep-desktop/scripts/packaged-capture-workbench-smoke/smoke.test.mts"
+        "command": "node --import ./apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.mts --test apps/cert-prep-desktop/scripts/prepare-runtime-resources.test.mts apps/cert-prep-desktop/scripts/acceptance-real-options.test.mts apps/cert-prep-desktop/scripts/capture-runtime-python-wheel.test.mts apps/cert-prep-desktop/scripts/acceptance-app-data.test.mts apps/cert-prep-desktop/scripts/acceptance-artifacts.test.mts apps/cert-prep-desktop/scripts/package-qa/artifacts.test.mts apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.test.mts apps/cert-prep-desktop/scripts/process-lifecycle/processes.test.mts apps/cert-prep-desktop/scripts/process-residue-audit.test.mts apps/cert-prep-desktop/scripts/desktop-startup-probe.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/args.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/document-cancellation.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/document-runner.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/evidence-contract.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/local-evidence-verifier.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/ollama-isolation.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/operation-cancellation.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/owned-process-evidence.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/remaining-options.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/resilience-gates.test.mts apps/cert-prep-desktop/scripts/packaged-resilience/resilience-runner.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/app-lifecycle.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/args.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/generation-readiness.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/ocr-completion.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/resource-sampling.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/runtime-install-flow.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/streaming-baseline-report.test.mts apps/cert-prep-desktop/scripts/packaged-flow-smoke/streaming-evidence.test.mts apps/cert-prep-desktop/scripts/packaged-image-upload-smoke/smoke.test.mts apps/cert-prep-desktop/scripts/packaged-capture-workbench-smoke/smoke.test.mts"
       }
     },
     "acceptance-real": {
@@ -150,6 +193,20 @@
       "outputs": ["{workspaceRoot}/output/playwright/cert-prep"],
       "options": {
         "command": "node apps/cert-prep-desktop/scripts/acceptance-real.mts --recorded"
+      }
+    },
+    "phase1-evidence-test": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "dependsOn": ["typecheck-scripts"],
+      "inputs": [
+        "{workspaceRoot}/apps/cert-prep-desktop/scripts/ocr-execution-proof.mts",
+        "{workspaceRoot}/apps/cert-prep-desktop/scripts/ocr-execution-proof.test.mts",
+        "{workspaceRoot}/apps/cert-prep-desktop/scripts/ocr-semantic-evidence.mts",
+        "{workspaceRoot}/apps/cert-prep-desktop/scripts/ocr-semantic-evidence.test.mts"
+      ],
+      "options": {
+        "command": "node --import ./apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.mts --test apps/cert-prep-desktop/scripts/ocr-execution-proof.test.mts apps/cert-prep-desktop/scripts/ocr-semantic-evidence.test.mts"
       }
     },
     "release-tool-test": {

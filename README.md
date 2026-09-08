@@ -57,14 +57,14 @@ not a prerequisite for manual review or deterministic tests.
 The workspace uses:
 
 - Windows for the Tauri desktop and packaged sidecar workflows.
-- Node.js 24 and pnpm 11 for the Nx/Angular workspace.
+- Node.js 24 with Corepack and pnpm 12.0.0 for the Nx/Angular workspace.
 - Python 3.12 with `uv` for the backend and Python packages.
 - Stable Rust with the MSVC Windows toolchain for Tauri.
 
 Install JavaScript dependencies from the repository root:
 
 ```bash
-pnpm install
+corepack pnpm install
 ```
 
 The workspace consumes private `@gx-capture` packages from GitHub Packages.
@@ -84,15 +84,15 @@ uv sync --project apps/cert-prep-backend
 Run the browser UI and backend independently when working on web/API features:
 
 ```bash
-pnpm nx run cert-prep:serve
-pnpm nx run cert-prep-backend:serve
+corepack pnpm nx run cert-prep:serve
+corepack pnpm nx run cert-prep-backend:serve
 ```
 
 Run the desktop application when testing Tauri integration, process ownership,
 runtime setup, or packaged behavior:
 
 ```bash
-pnpm nx run cert-prep-desktop:dev
+corepack pnpm nx run cert-prep-desktop:dev
 ```
 
 Live local-model features use Ollama. The application can still be developed
@@ -106,24 +106,24 @@ project rather than invoking the underlying test runner directly.
 ### Application and backend
 
 ```bash
-pnpm nx run cert-prep:lint
-pnpm nx run cert-prep:test
-pnpm nx run cert-prep:build
-pnpm nx run cert-prep-backend:lint
-pnpm nx run cert-prep-backend:test
-pnpm nx run cert-prep-api:lint
-pnpm nx run cert-prep-api:vite:test
+corepack pnpm nx run cert-prep:lint
+corepack pnpm nx run cert-prep:test
+corepack pnpm nx run cert-prep:build
+corepack pnpm nx run cert-prep-backend:lint
+corepack pnpm nx run cert-prep-backend:test
+corepack pnpm nx run cert-prep-api:lint
+corepack pnpm nx run cert-prep-api:vite:test
 ```
 
 ### Shared packages and browser flows
 
 ```bash
-pnpm nx run cert-prep-contracts:lint
-pnpm nx run cert-prep-contracts:test
-pnpm nx run cert-prep-ollama:lint
-pnpm nx run cert-prep-ollama:test
-pnpm nx run cert-prep-e2e:e2e
-pnpm nx run cert-prep-e2e:e2e-real-backend
+corepack pnpm nx run cert-prep-contracts:lint
+corepack pnpm nx run cert-prep-contracts:test
+corepack pnpm nx run cert-prep-ollama:lint
+corepack pnpm nx run cert-prep-ollama:test
+corepack pnpm nx run cert-prep-e2e:e2e
+corepack pnpm nx run cert-prep-e2e:e2e-real-backend
 ```
 
 The real-backend browser suite is fail-closed: it requires an actual PDF and
@@ -140,18 +140,18 @@ PDF source assertion succeeds.
 ### Desktop and packaging
 
 ```bash
-pnpm nx run cert-prep-desktop:lint
-pnpm nx run cert-prep-desktop:typecheck-scripts
-pnpm nx run cert-prep-desktop:cargo-test
-pnpm nx run cert-prep-desktop:package-qa-test
-pnpm nx run cert-prep-desktop:release-tool-test
+corepack pnpm nx run cert-prep-desktop:lint
+corepack pnpm nx run cert-prep-desktop:typecheck-scripts
+corepack pnpm nx run cert-prep-desktop:cargo-test
+corepack pnpm nx run cert-prep-desktop:package-qa-test
+corepack pnpm nx run cert-prep-desktop:release-tool-test
 ```
 
 Build the Tauri application with the desktop project targets:
 
 ```bash
-pnpm nx run cert-prep-desktop:build
-pnpm nx run cert-prep-desktop:build-capture
+corepack pnpm nx run cert-prep-desktop:build
+corepack pnpm nx run cert-prep-desktop:build-capture
 ```
 
 ## Contracts and generated code
@@ -161,9 +161,9 @@ After changing backend routes or response models, regenerate the TypeScript
 client and run its checks:
 
 ```bash
-pnpm nx run cert-prep-backend:generate-openapi-client
-pnpm nx run cert-prep-api:lint
-pnpm nx run cert-prep-api:vite:test
+corepack pnpm nx run cert-prep-backend:generate-openapi-client
+corepack pnpm nx run cert-prep-api:lint
+corepack pnpm nx run cert-prep-api:vite:test
 ```
 
 The generated client is written to
@@ -189,10 +189,10 @@ documentation is kept with the tooling in [`tools/release`](tools/release).
 Use these commands to inspect the workspace before selecting a target:
 
 ```bash
-pnpm nx show projects --json
-pnpm nx show project cert-prep --json
-pnpm nx graph
-pnpm nx affected --targets=lint,test,build
+corepack pnpm nx show projects --json
+corepack pnpm nx show project cert-prep --json
+corepack pnpm nx graph
+corepack pnpm nx affected --targets=lint,test,build
 ```
 
 The root [`AGENTS.md`](AGENTS.md) contains workspace operating rules. Product
