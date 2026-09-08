@@ -84,7 +84,7 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Test mocked browser regression
-        run: pnpm nx run cert-prep-e2e:e2e --args="--project=chromium --workers=2"
+        run: pnpm nx run cert-prep-e2e:e2e-local-package --args="--project=chromium --workers=2"
 
       - name: Test the browser against the real backend
         run: pnpm nx run cert-prep-e2e:e2e-real-backend
