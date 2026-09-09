@@ -54,6 +54,18 @@ The Python backend's `RuntimeInstallationManager`/`RuntimeInstaller` in
 continue to own provider/model installation jobs only; they do not write the
 desktop pointer or receipt.
 
+The acceptance seam imports the producer-generated
+`ProducerAcceptanceContractV1` at contract version `"1"` and the exact D3/D6-
+bound `contractSha256` from the producer ledger. Cert does not define or extend
+`ProducerChildScopeV1`, `ProducerChildInvocationV1`,
+`ConsumerSemanticResultV1`, or `AcceptanceChildWireV1`; the producer's
+canonical Phase 2 specification is the sole schema and validation authority.
+Every local pointer observation is the closed union
+`absent | present{generation,sha256}` in the receipt, intent, logical CAS,
+reread, and crash matrix. First install uses pointer observation `absent` with
+content identity `prior = null`; an unexpected present pointer is a conflict/
+`InstallAmbiguous`.
+
 Every item below is an independently reviewable slice. Each item names exact
 owned paths/symbols, the red proof to write first, prerequisites, a stop
 condition, a complete discovered Nx verification floor, rollback, and the
@@ -311,8 +323,12 @@ manager or undiscovered target is a discovery-stop, never a green claim.
      producer session journal and producer D8 stable pointer. The receipt must
      expose separate nullable `candidateReconcileRef` and `priorReconcileRef`
      slots and retain only the `proofSha256` returned by the addressed producer
-     reconcile result; it must not invent an independent proof-reference field.
-     Persist the candidate ref before activation. For `prior = null`, the prior
+     reconcile result; it must not invent a `ProofRef` type or independent
+     proof-reference field. R3 persistence uses the producer
+     `ReconcileRefSink::persist(reconcile_ref, generation) -> ActivationPermit`
+     contract; the exact ref/generation and
+     `ActivationPermit{refDigest,generation,receiptDigest}` receipt are flushed
+     before activation. Persist the candidate ref before activation. For `prior = null`, the prior
      ref is null and first install advances directly from `NewActiveCommitted`
      to `RetiredProved` with `retirement.status = not_applicable`, without a
      degraded or permanently blocked state. The producer proof seam is
@@ -355,28 +371,34 @@ manager or undiscovered target is a discovery-stop, never a green claim.
      manifest, byte count, content hash, and session; otherwise it is
      `InstallAmbiguous`.
    - Ordering proof (write first): verify the immutable candidate/root; persist
-     the candidate `ReconcileRef`; flush `CandidateReady`; flush `commitIntent`
-     with the expected prior pointer; lock and logically CAS/atomically replace
-     and flush the pointer, then reread it; flush irreversible
-     `NewActiveCommitted`. For `prior = null`, flush `RetiredProved` directly
-     with `retirement.status = not_applicable` and no degraded/block-next-
-     promotion flag. Otherwise persist `PriorRetiredDraining` before cleanup;
-     call the producer proof seam with `priorReconcileRef` (never the candidate
-     ref), retain only returned `proofSha256`, flush `RetiredProved`; and only
-     then optionally delete the exact prior root. If candidate cleanup
-    fails before commit, retry `candidateReconcileRef` independently while the
-    prior active remains untouched. If prior retirement fails after commit,
-    retry `priorReconcileRef` independently while the new active remains
+    the candidate `ReconcileRef` through the producer `ReconcileRefSink`, flush
+    the returned `ActivationPermit{refDigest,generation,receiptDigest}`
+    receipt before activation; flush `CandidateReady`; flush `commitIntent`
+    with the expected prior and intended candidate pointer observations from
+    the closed union `absent | present{generation,sha256}`; lock and logically
+    CAS/atomically replace and flush the pointer, then reread it; flush
+    irreversible `NewActiveCommitted` only after an exact reread. First
+    install (`prior = null`, prior observation `absent`) uses
+    compare-and-create-if-absent; an unexpected present observation is a
+    conflict/`InstallAmbiguous`. Flush `RetiredProved` directly with
+    `retirement.status = not_applicable` and no degraded/block-next-promotion
+    flag. Otherwise persist `PriorRetiredDraining` before cleanup; call the
+    producer proof seam with `priorReconcileRef` (never the candidate ref),
+    retain only returned `proofSha256`, flush `RetiredProved`; and only then
+    optionally delete the exact prior root. If candidate cleanup fails before
+    commit, retry `candidateReconcileRef` independently while the prior active
+    remains untouched. If prior retirement fails after commit, retry
+    `priorReconcileRef` independently while the new active remains
     selected/degraded. There is no rollback after pointer commit.
   - Crash/startup reconciliation proof (write first):
 
-    | Receipt and observed pointer | Required result |
+    | Receipt and observed pointer (`absent | present{generation,sha256}`) | Required result |
     | --- | --- |
     | pre-`CandidateReady`, or candidate verification failed | Preserve active; clean only an exact recorded candidate/temp ref. |
-    | `CandidateReady`/no intent plus prior pointer | Pre-commit; do not commit; preserve active and invoke only `RuntimeSessionJournal::reconcile(candidateReconcileRef)` for exact candidate refs. Complete absence/listener/staging proof may terminalize; present, reused, unqueryable, or ambiguous observations remain `reconcile-required` and touch nothing. |
-    | `commitIntent` plus prior pointer | No commit; preserve active; never treat intent as permission to replace. |
-     | `commitIntent` plus intended candidate pointer | Advance to `NewActiveCommitted`; if `prior = null`, advance directly to `RetiredProved` with `retirement.status = not_applicable`; otherwise persist `PriorRetiredDraining`. Never restore prior. |
-    | unexpected pointer or generation/hash conflict | `InstallAmbiguous`, degraded and blocked; retain refs/errors; no rollback/deletion. |
+    | `CandidateReady`/no intent plus an observed pointer exactly matching the recorded prior observation | Pre-commit; do not commit; preserve active and invoke only `RuntimeSessionJournal::reconcile(candidateReconcileRef)` for exact candidate refs. Complete absence/listener/staging proof may terminalize; present, reused, unqueryable, or ambiguous observations remain `reconcile-required` and touch nothing. |
+    | `commitIntent` plus an observed pointer exactly matching the expected prior `PointerObservation` | No commit; preserve active; never treat intent as permission to replace. |
+    | `commitIntent` plus an observed pointer exactly matching the intended candidate `present{generation,sha256}` | Advance to `NewActiveCommitted`; if `prior = null`, advance directly to `RetiredProved` with `retirement.status = not_applicable`; otherwise persist `PriorRetiredDraining`. Never restore prior. |
+    | unexpected pointer observation or generation/hash conflict | `InstallAmbiguous`, degraded and blocked; retain refs/errors; on first install any unexpected `present{generation,sha256}` is a compare-and-create-if-absent conflict; no rollback/deletion. |
      | `NewActiveCommitted` with `prior = null` | Keep new active selected and advance directly to `RetiredProved` with `retirement.status = not_applicable`; keep degraded/block-next-promotion false and do not invent predecessor proof. |
      | post-commit state with a prior active | Keep new active selected/degraded and block the next promotion; invoke only `RuntimeSessionJournal::reconcile(priorReconcileRef)` for prior retirement proof. |
      | missing durable candidate/prior reconcile ref | Keep the applicable cleanup path independently recoverable; for prior retirement remain blocked and do not claim `RetiredProved` or delete prior. |
@@ -421,17 +443,20 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     candidate/prior `ReconcileRef` and returned `proofSha256` handling, and
     pre/post-commit evidence.
 
-- [ ] **Slice 4.5: migrate the schema-1 acceptance manifest to a consumer
-      semantic result and producer handoff.** Keep the current
+- [ ] **Slice 4.5: migrate the schema-1 acceptance manifest to the producer's
+      semantic result and handoff.** Keep the current
       `acceptance-manifest.json` readable as a legacy local diagnostic. New Cert
-      D4/D7 runs consume the producer's read-only invocation from the mutable
-      producer scope at `CAPTURE_ACCEPTANCE_SCOPE_PATH` and write exactly one
-      `ConsumerSemanticResultV1` at the distinct
-      `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`. The producer validates the
-      result, proves cleanup, and later writes immutable `AcceptanceChildWireV1`
-      at `CAPTURE_ACCEPTANCE_WIRE_PATH`. Cert never overwrites/returns the
-      producer scope, receives/writes the wire path, emits `evidence.aggregate`,
-      creates an aggregate/D8 record, or mutates the stable pointer.
+      D4/D7 runs import producer `ProducerAcceptanceContractV1` version `"1"`
+      and the exact D3/D6-bound `contractSha256`, consume only the frozen,
+      read-only invocation from `CAPTURE_ACCEPTANCE_INVOCATION_PATH`, verify
+      its canonical digest, and atomically create-new exactly one complete
+      producer-schema `ConsumerSemanticResultV1` at the distinct
+      `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`. The producer owns the mutable
+      scope at `CAPTURE_ACCEPTANCE_SCOPE_PATH`, validates the result, proves
+      cleanup, and later writes immutable `AcceptanceChildWireV1` at
+      `CAPTURE_ACCEPTANCE_WIRE_PATH`. Cert never consumes/overwrites/returns/writes
+      the scope, receives/writes the wire path, emits `evidence.aggregate`, creates
+      an aggregate/D8 record, or mutates the stable pointer.
   - Owned paths/symbols: `apps/cert-prep-desktop/scripts/acceptance-artifacts.mts`
     (`writeAcceptanceManifest`) is the preserved schema-1 compatibility
     writer, covered by `apps/cert-prep-desktop/scripts/acceptance-artifacts.test.mts`;
@@ -461,39 +486,43 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     `ProducerChildScopeV1`, `ProducerChildInvocationV1`,
     `ConsumerSemanticResultV1`, `AcceptanceChildWireV1`, and their path
     variables are producer contract symbols, not Cert implementations.
-  - Semantic-result requirements: preserve the producer schema/version,
-    consumer/child identity, and parent gate/tier binding. The read-only
-    invocation binds D4 to the D3 candidate ledger or D7 to the D6
-    publication/download ledger; an invocation/tier/ledger mismatch fails
-    closed. `fixtureResults[]` is mandatory and has separate ordered entries for
-    the Cert private JPEG and scanned PDF page 1. Each entry carries the actual
-    normalized-output digest (`actualNormalizedOutputSha256`), CER, anchor
-    omissions, outcome, and projection digest (`projectionSha256`), plus only
-    bounded fixture/media identity digests. A privacy block proves raw OCR,
-    raw truth, raw media, tokens, paths, and native IDs are absent. The result
-    contains no cleanup flags, process identities, or local paths; producer
-    cleanup, `invocationSha256`, full D3/D6 ledger binding, and canonical wire
+  - Semantic-result requirements: import the exact producer schema/version and
+    hash, consumer/child identity, and parent gate/tier binding; do not add or
+    redefine local fields. The frozen/read-only invocation binds D4 to the D3
+    candidate ledger or D7 to the D6 publication/download ledger; its canonical
+    digest and contract version/hash must match or the run fails closed.
+    Producer `fixtureAssignments[]` is mandatory and ordered. Cert maps both
+    private JPEG and scanned PDF page-1 assignments to ordered
+    `fixtureResults[]` with exactly equal cardinality/order and assignment
+    identity/media/page/oracle/truth/anchor/threshold/artifact fields; the
+    child supplies only the canonical measurements. `ConsumerSemanticResultV1`
+    has no Cert-local privacy or cleanup fields. Raw OCR, raw truth, raw media,
+    tokens, paths, and native IDs remain outside the result; producer cleanup,
+    privacy, full D3/D6 ledger binding, invocation digest, and canonical wire
     digest are added only to the later producer wire.
   - Prerequisite: Slice 1 version inventory, Slices 2-3 exact projection and
     generated-contract pass-through gates, Slice 4 candidate/active receipt
     contract, current owner discovery, and the producer scope/invocation/result/
     wire contract are green or available. Do not create or stage a candidate in
     this contract migration slice. Schema-1 manifests remain compatibility
-    inputs until the producer scope/result/wire protocol is green and the legacy
-    output is deleted; `CAPTURE_ACCEPTANCE_SCOPE_PATH` must be supplied and
-    bound to the exact read-only invocation rather than defaulted or inferred.
+    inputs until the producer scope/invocation/result/wire protocol is green and
+    the legacy output is deleted; `CAPTURE_ACCEPTANCE_INVOCATION_PATH` must be
+    supplied as frozen/read-only input, its canonical digest must match the
+    producer contract/ledger, and it must never be defaulted or inferred from
+    `CAPTURE_ACCEPTANCE_SCOPE_PATH`.
   - Red proof (write first): the migration must fail closed when the old schema-1
-    shape is emitted for a new run, the producer scope is missing/escaped,
-    overwritten, returned, or treated as output, the semantic-result path is
-    missing/escaped, a second/partial result is written, either required
-    fixture result is missing, the invocation/tier/D3-or-D6 binding is absent,
-    the actual normalized digest/projection digest/CER/anchor omission/outcome
-    is absent, or raw OCR/truth/token/path/process data appears. Full private
-    normalized reference text plus critical anchors is mandatory: a
-    garbage-around-anchors output must not receive CER 0. RED must reject any
-    `anchorOnly` expectation or `parseOcrAnchorExpectation` formal path, while
-    synthetic anchor-only fixtures remain unit-only. A writer that emits a new
-    `direct_pdf`, `embedded`, or `mixed` value, or that emits
+    shape is emitted for a new run, the producer scope is consumed or
+    missing/escaped, the immutable invocation is missing/writable/replaced or
+    its canonical digest/contract hash mismatches, the semantic-result path is
+    missing/escaped/pre-existing, a second/partial result is written, either
+    required fixture result is missing or reordered, the invocation/tier/D3-or-
+    D6 binding is absent, the actual normalized digest/projection digest/CER/
+    anchor omission/outcome is absent, or raw OCR/truth/token/path/process data
+    appears. Full private normalized reference text plus critical anchors is
+    mandatory: a garbage-around-anchors output must not receive CER 0. RED must
+    reject any `anchorOnly` expectation or `parseOcrAnchorExpectation` formal
+    path, while synthetic anchor-only fixtures remain unit-only. A writer that
+    emits a new `direct_pdf`, `embedded`, or `mixed` value, or that emits
     `evidence.aggregate`, any aggregate/D8 field, child wire, cleanup proof, or
     stable-pointer action is also a failing red proof.
     Proposed focused regression names in
@@ -517,9 +546,10 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     rediscover its metadata first; do not invoke an invented target. These
     checks are contract/evidence checks, not installed OCR or publication proof.
   - Stop condition: a new run still writes schema-1 aggregate evidence,
-    overwrites/returns producer scope, writes a child wire or cleanup proof,
-    lacks a complete semantic result, scope/result or child identity is not
-    exact, anchor-only formal acceptance remains, candidate/prior refs are
+    consumes/overwrites/returns/writes producer scope, writes a child wire or
+    cleanup proof, lacks a complete semantic result, or has a non-exact
+    invocation/result or child identity, anchor-only formal acceptance remains,
+    candidate/prior refs are
     conflated, generated API view is hand-edited/deleted,
     `windowsml-ocr` is not mapped exactly to `windowsml_ocr`, or Cert waits for
     LAW/aggregates/mutates D8. Stop before D4/D7 staging or handoff.
@@ -529,8 +559,9 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     publication, and do not alter runtime assets, receipts, stable-pointer
     state, or durable source rows.
   - Commit boundary: `feat(phase2): emit cert semantic result`; record the
-    schema/scope/result identity, red/green names, privacy fields, and the
-    producer handoff SHA when it is later emitted.
+    exact producer contract version/hash, invocation/result identity, red/green
+    names, and the producer handoff SHA when its wire is later emitted. Do not
+    add Cert-local privacy or cleanup fields.
 
 - [ ] **Slice 5: candidate/active supervision adapter.** Expose only semantic
       readiness and terminal cleanup through a **proposed**
@@ -690,11 +721,14 @@ manager or undiscovered target is a discovery-stop, never a green claim.
       cleanup/model-memory release, PDF page 1, restart persistence,
       review/export, and cleanup. Require producer `windowsml-ocr` provenance,
       Cert `windowsml_ocr`, JPEG CER <= 3%, PDF page-1 CER <= 1%, and zero
-      missing critical anchors. Cert consumes the producer's read-only D4
-      invocation from mutable `CAPTURE_ACCEPTANCE_SCOPE_PATH` and writes only
-      one `ConsumerSemanticResultV1` at
-      `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`; the producer validates it,
-      proves cleanup, and later writes `AcceptanceChildWireV1` at
+      missing critical anchors. Cert imports the exact producer
+      `ProducerAcceptanceContractV1` version `"1"` and D3-bound
+      `contractSha256`, consumes only the frozen/read-only D4 invocation from
+      `CAPTURE_ACCEPTANCE_INVOCATION_PATH`, verifies its canonical digest, and
+      atomically create-new exactly one producer-schema
+      `ConsumerSemanticResultV1` at `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`;
+      the producer owns mutable `CAPTURE_ACCEPTANCE_SCOPE_PATH`, validates the
+      result, proves cleanup, and later writes `AcceptanceChildWireV1` at
       `CAPTURE_ACCEPTANCE_WIRE_PATH`. Cert never writes the scope/wire, waits
       for LAW, aggregates ledgers, or moves/mutates the producer stable pointer.
   - Owned paths/symbols: **proposed**
@@ -733,22 +767,26 @@ manager or undiscovered target is a discovery-stop, never a green claim.
       executable, protocol fake, candidate with mismatched worker/contract,
       CER over threshold, missing anchor, garbage around otherwise present
       anchors, missing full private normalized reference, missing/false scoped
-      lifecycle flag, or incomplete cleanup must fail before a passing D4
-      semantic result or producer wire. Prove D4 evidence is labeled
-      pre-publication, Cert writes only its one semantic result, the producer
-      writes the child wire only after cleanup, and no producer stable pointer
-      or aggregate ledger is changed. `anchorOnly` and
-      `parseOcrAnchorExpectation` are prohibited in the formal path; synthetic
-      anchor-only fixtures are unit-only.
+      lifecycle flag, writable/replaced invocation, canonical-digest/contract
+      mismatch, reordered or incomplete fixture results, or incomplete cleanup
+      must fail before a passing D4 semantic result or producer wire. Prove D4
+      evidence is labeled pre-publication, Cert writes only one exact
+      producer-schema semantic result matching ordered `fixtureAssignments[]`,
+      the producer writes the child wire only after cleanup, and no producer
+      stable pointer or aggregate ledger is changed. `anchorOnly` and
+      `parseOcrAnchorExpectation` are deleted/prohibited in the formal path;
+      full private normalized truth plus critical anchors is mandatory and
+      synthetic anchor-only fixtures are unit-only.
   - Verification: `corepack pnpm nx run cert-prep-desktop:capture-candidate-gate-test --skip-nx-cache`;
      `corepack pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`;
      `corepack pnpm nx run cert-prep-desktop:acceptance-real --skip-nx-cache`.
-   - Stop condition: candidate identity is incomplete, the semantic result is
-      partial, scope/result binding is wrong, result contains raw text/token/
-      path/process data, D4 is reported as published acceptance, anchor-only
-      formal evaluation remains, Cert writes a wire/cleanup proof, waits for
-      LAW, or writes an aggregate/stable-pointer mutation. Preserve the failed
-      result and do not start LAW from a stopped Cert lane.
+  - Stop condition: candidate identity is incomplete, the semantic result is
+      partial, invocation/result binding or canonical digest is wrong, result
+      contains raw text/token/path/process data, D4 is reported as published
+      acceptance, formal full-truth evaluation still accepts anchor-only input,
+      Cert writes a wire/cleanup proof, waits for LAW, or writes an
+      aggregate/stable-pointer mutation. Preserve the failed result and do not
+      start LAW from a stopped Cert lane.
   - Rollback: apply Slice 4 transaction semantics. Before the local active
      commit, discard only isolated candidate staging and keep active untouched.
      After commit, do not restore the old active or producer stable pointer;
@@ -757,17 +795,21 @@ manager or undiscovered target is a discovery-stop, never a green claim.
      independently. Preserve the consumer semantic result and failure
      evidence; the producer emits no child wire until validation/cleanup pass.
    - Commit boundary: `test(phase2): accept immutable cert candidate`;
-      record candidate hashes, Cert D4 semantic-result SHA, transaction state,
-      and the producer cleanup/wire handoff only when producer-emitted.
+      record candidate hashes, exact producer contract version/hash, Cert D4
+      semantic-result SHA, transaction state, and the producer cleanup/wire
+      handoff only when producer-emitted.
 
 - [ ] **Slice 9: D7 published download-back acceptance and producer handoff.**
       After D5 publishes the exact D3 bytes and D6 verifies download-back
       hashes, rerun the same Cert journey from downloaded bytes only. D7 is
-      formal published acceptance. Cert consumes the producer's read-only D7
-      invocation from mutable `CAPTURE_ACCEPTANCE_SCOPE_PATH` and writes only
-      one `ConsumerSemanticResultV1` at
-      `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`, bound to D6. The producer
-      validates/cleans up and later writes `AcceptanceChildWireV1` at
+      formal published acceptance. Cert imports the exact producer
+      `ProducerAcceptanceContractV1` version `"1"` and D6-bound
+      `contractSha256`, consumes only the frozen/read-only D7 invocation from
+      `CAPTURE_ACCEPTANCE_INVOCATION_PATH`, verifies its canonical digest, and
+      atomically create-new exactly one producer-schema
+      `ConsumerSemanticResultV1` at `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`,
+      bound to D6. The producer owns mutable `CAPTURE_ACCEPTANCE_SCOPE_PATH`,
+      validates/cleans up, and later writes `AcceptanceChildWireV1` at
       `CAPTURE_ACCEPTANCE_WIRE_PATH`, then directs the handoff to LAW. Cert
       does not write the scope/wire, wait for LAW, aggregate consumer ledgers,
       or move/mutate/rollback the producer's stable pointer; the producer alone
@@ -810,14 +852,17 @@ manager or undiscovered target is a discovery-stop, never a green claim.
    - Red proof (write first): local candidate, mutable URL, URL/port-only match,
        stale 0.4.1 lock, mixed dependency, old executable, download-back byte
        mismatch, missing scoped JPEG/PDF fixture result, false lifecycle flag,
-       garbage around anchors, missing full private normalized reference, or
-       missing/substituted candidate/prior reconcile ref must fail. Prove the
-       run writes only Cert's D7 `ConsumerSemanticResultV1`; the producer emits
-       its child wire only after validation/cleanup and directs it to LAW after
-       green. Cert never writes the scope/wire, waits for LAW, or writes an
-       aggregate ledger/stable-pointer mutation. Formal D7 rejects
-       `anchorOnly`/`parseOcrAnchorExpectation`; synthetic anchor-only fixtures
-       are unit-only.
+       writable/replaced invocation, canonical-digest/contract mismatch,
+       reordered fixture result, garbage around anchors, missing full private
+       normalized reference, or missing/substituted candidate/prior reconcile
+       ref must fail. Prove the run writes only Cert's exact producer-schema D7
+       `ConsumerSemanticResultV1`, matching ordered `fixtureAssignments[]`; the
+       producer emits its child wire only after validation/cleanup and directs
+       it to LAW after green. Cert never writes the scope/wire, waits for LAW,
+       or writes an aggregate ledger/stable-pointer mutation. Formal D7
+       deletes/rejects `anchorOnly`/`parseOcrAnchorExpectation`; full private
+       normalized truth plus critical anchors is mandatory and synthetic
+       anchor-only fixtures are unit-only.
   - Verification: `corepack pnpm nx run cert-prep-desktop:release-tool-test --skip-nx-cache`;
      `corepack pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`;
      `corepack pnpm nx run cert-prep-desktop:acceptance-real --skip-nx-cache`.
@@ -827,7 +872,7 @@ manager or undiscovered target is a discovery-stop, never a green claim.
      producer to validate and turn into its child wire.
    - Stop condition: any artifact/lock/manifest/hash mismatch, local provenance,
       CER/anchor/cleanup failure, missing/partial Cert semantic result, invalid
-      scope/result binding, attempted Cert child-wire or cleanup write,
+      invocation/result binding or canonical digest, attempted Cert child-wire or cleanup write,
       attempted aggregate ledger, stable-pointer mutation, or wait for LAW is
       terminal. Do not hand off a failed result or claim a producer wire exists.
   - Rollback: apply Slice 4 transaction semantics for Cert's local install.
@@ -858,26 +903,34 @@ manager or undiscovered target is a discovery-stop, never a green claim.
   Cert Prep, then GX Law Prep. Each owner proves cleanup before handoff.
 - Phase 1 is complete at `local-probe` only; it is not published or installed
   formal acceptance. Cert D4 is pre-publication candidate acceptance that
-  consumes the producer's read-only invocation from mutable
-  `CAPTURE_ACCEPTANCE_SCOPE_PATH` and writes only one
-  `ConsumerSemanticResultV1` at `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`.
-  Cert D7 repeats this from D6 download-back bytes and writes the same semantic
-  result type at that distinct path. The producer alone validates cleanup and
+  imports the exact producer `ProducerAcceptanceContractV1` version `"1"` and
+  D3-bound `contractSha256`, consumes only the frozen/read-only invocation at
+  `CAPTURE_ACCEPTANCE_INVOCATION_PATH`, verifies its canonical digest, and
+  atomically create-new one exact producer-schema `ConsumerSemanticResultV1`
+  at `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`. Cert D7 repeats this from D6
+  download-back bytes with a fresh invocation and the same exact result type at
+  that distinct path. The producer owns mutable
+  `CAPTURE_ACCEPTANCE_SCOPE_PATH`, validates the result, proves cleanup, and
   later writes `AcceptanceChildWireV1` at `CAPTURE_ACCEPTANCE_WIRE_PATH`,
   aggregates child wires, and moves its stable pointer. Cert never writes the
   scope/wire, waits for LAW, aggregates ledgers, or owns D8. Each result's
-  `fixtureResults[]` contains the private JPEG and scanned PDF page-1 observed
-  normalized digest, CER, anchor omissions, outcome, and projection digest,
-  bound to invocation/tier and D4/D3 or D7/D6; cleanup/process/path/raw text
-  stay out of the result. Full private normalized reference plus critical
-  anchors is mandatory; formal D4/D7 prohibits `anchorOnly` and
+  ordered `fixtureResults[]` matches ordered `fixtureAssignments[]` one-for-one
+  for the private JPEG and scanned PDF page 1, preserving assignment identity
+  and only canonical measurements; no Cert-local privacy/cleanup fields are
+  allowed. Full private normalized reference plus critical anchors is
+  mandatory; formal D4/D7 deletes/prohibits `anchorOnly` and
   `parseOcrAnchorExpectation`, and a garbage-around-anchors result must not
   receive CER 0. Synthetic anchor-only fixtures are unit-only.
 - Promotion is `CandidateReady -> NewActiveCommitted -> RetiredProved` for
   first install (`prior = null`) and
   `CandidateReady -> NewActiveCommitted -> PriorRetiredDraining ->
-  RetiredProved` for later promotions. Persist the candidate
-  `ReconcileRef` before activation. First install uses
+  RetiredProved` for later promotions. Pointer observations use the closed
+  union `absent | present{generation,sha256}` in the receipt, intent, logical
+  CAS, reread, and crash matrix. Persist the candidate `ReconcileRef` through
+  producer `ReconcileRefSink` and its
+  `ActivationPermit{refDigest,generation,receiptDigest}` before activation;
+  candidate/prior refs are distinct and no `ProofRef` exists. First install
+  uses compare-and-create-if-absent with prior observation `absent`,
   `retirement.status = not_applicable`, keeps degraded/block-next-promotion
   false, and requires no predecessor proof. For a later promotion, the new
   active remains selected/degraded and the next promotion is blocked until

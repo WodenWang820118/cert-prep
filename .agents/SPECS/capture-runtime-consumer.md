@@ -56,6 +56,13 @@ The producer policy is referenced by its portable repository-relative name,
 `capture-workbench/.agents/SPECS/capture-runtime-042-p2-hardening.md`; it is
 not a Cert Prep file and is not copied into this specification.
 
+The acceptance seam imports the producer-generated `ProducerAcceptanceContractV1`
+at contract version `"1"` and the exact D3/D6-bound `contractSha256` supplied by
+the producer ledger. `ProducerChildScopeV1`, `ProducerChildInvocationV1`,
+`ConsumerSemanticResultV1`, and `AcceptanceChildWireV1` are producer-owned
+records: Cert defines no local fields, extensions, validators, or competing
+wire for them. The producer specification is the sole schema authority.
+
 ## Responsibility and seam
 
 | Concern | Owner | Cert Prep consumer rule |
@@ -129,15 +136,22 @@ release stable pointer and D8 ledger aggregation remain outside Cert authority.
 `RuntimePromotionReceiptV1` must be sufficient to reconcile a crash without
 reading a private path or secret. Its path-free fields are:
 
+Every pointer observation uses the closed union
+`absent | present{generation,sha256}`. This union is used in the receipt's
+active/prior observations, `commitIntent`, logical CAS expected/observed values,
+the locked post-replace reread, and the startup crash matrix. `prior = null`
+below means that no prior `ContentIdentityV1` exists; its pointer observation is
+`absent`. Null, omitted, or free-form pointer observations are invalid.
+
 | Field | Required contents and invariant |
 | --- | --- |
 | `schemaVersion`, `promotionId`, `state`, `revision` | `1`; a non-secret logical promotion id; one of `CandidateReady`, `NewActiveCommitted`, `PriorRetiredDraining`, `RetiredProved`, or `InstallAmbiguous`; and a monotonically increasing durable revision. |
 | `candidate`, `prior` | `ContentIdentityV1` for the candidate and prior active (prior may be `null` on first install). Each identity contains `contentIdSha256`, `rootSha256`, `manifestSha256`, `schemaSha256`, `coreSha256`, `workerSha256`, `catalogSha256`, `contractSha256`, `lockSha256`, and verified `byteCount`; optional artifact fields are `null`, never omitted as an invitation to guess. |
-| `activePointer`, `priorPointer` | Logical pointer `generation` and `sha256` for the selected and prior values; pointer hashes are over canonical pointer bytes, not a path. |
-| `cas` | `expectedRevision`, `expectedPointerGeneration`, `expectedPointerSha256`, `observedRevision`, `observedPointerGeneration`, `observedPointerSha256`, and a bounded result (`matched`, `replaced`, `conflict`, or `ambiguous`). A conflict never silently retries against a different prior. |
-| `commitIntent` | `null` before intent, otherwise the expected prior pointer generation/hash, candidate pointer generation/hash, and expected revision. It is flushed before any pointer replacement. |
+| `activePointer`, `priorPointer` | `PointerObservation` values in the closed union `absent | present{generation,sha256}` for the selected and prior values; hashes are over canonical pointer bytes, not a path. |
+| `cas` | `expectedRevision`, `expectedPointer: PointerObservation`, `observedRevision`, `observedPointer: PointerObservation`, and a bounded result (`matched`, `replaced`, `conflict`, or `ambiguous`). A conflict never silently retries against a different prior. |
+| `commitIntent` | `null` before intent, otherwise the expected prior `PointerObservation`, intended candidate `PointerObservation`, and expected revision. It is flushed before any pointer replacement. |
 | `degraded`, `blockNextPromotion` | Durable booleans. Post-commit prior-retirement uncertainty sets both true; they clear only after producer proof reaches `RetiredProved`. A first install with `prior = null` keeps both false and does not enter a permanent degraded/blocked state. |
-| `candidateReconcileRef`, `priorReconcileRef` | Separate nullable, opaque, retryable producer-owned `ReconcileRef` values for candidate cleanup and prior retirement. They are not bearer tokens, raw session journals, PIDs, URLs, paths, or local/native handles. `candidateReconcileRef` is persisted before activation; `priorReconcileRef` is `null` when `prior = null`, and neither ref may be invented, borrowed, or substituted. Each ref may retain only a `proofSha256` returned by its producer reconcile result; no independent proof-reference field or locally authored proof identity is allowed. |
+| `candidateReconcileRef`, `priorReconcileRef` | Separate nullable, opaque, retryable producer-owned `ReconcileRef` values for candidate cleanup and prior retirement. They are not bearer tokens, raw session journals, PIDs, URLs, paths, local/native handles, or `ProofRef` values. `candidateReconcileRef` is persisted through the producer `ReconcileRefSink::persist(ref,generation) -> ActivationPermit{refDigest,generation,receiptDigest}` before activation; `priorReconcileRef` is `null` when `prior = null`, and neither ref may be invented, borrowed, or substituted. Each ref may retain only a `proofSha256` returned by its producer reconcile result; no independent proof-reference field or locally authored proof identity is allowed. |
 | `retirement` | `attempts`, bounded `status` (`not_applicable`, `not_started`, `draining`, `proof_pending`, `proved`, `failed`, or `blocked`), and the latest attempt revision. Proof status is never inferred from a process exit. For first install, `prior = null` sets `status = not_applicable`; after candidate/session conditions, `NewActiveCommitted` advances directly to `RetiredProved`. |
 | `cleanupRefs` | Exact logical references for candidate root, prior root, temporary staging, backup, and cache entries, each with kind, content id/hash, byte count, and cleanup status. A cleanup adapter may delete only a reference whose identity still matches. |
 | `sanitizedError` | Optional stable error `code` and safe public `message`; raw diagnostics, paths, tokens, PIDs, command lines, host names, and OCR/truth text are forbidden. |
@@ -166,6 +180,18 @@ active without invoking prior retirement. Prior post-commit retirement has its
 own retry/reconcile path and can never be satisfied by candidate proof. The
 receipt must retain both paths independently across a crash.
 
+The producer R3 seam is the receipt-persistence contract for activation:
+`OwnedRuntimeSession::open(plan, &dyn ReconcileRefSink)` and
+`prepare(role, spec)` produce an opaque `ReconcileRef` and exact `generation`;
+`ReconcileRefSink::persist(reconcile_ref, generation) -> ActivationPermit` then
+flushes the receipt before returning
+`ActivationPermit{refDigest,generation,receiptDigest}`. Activation requires all
+three permit values to match the prepared producer ref, generation, and durable
+receipt. A missing, stale, forged, or mismatched permit fails closed before any
+resource is acquired. Candidate and prior sessions use distinct nullable refs;
+there is no `ProofRef` type or slot. Cert retains only each addressed
+producer-reconcile result's returned `proofSha256`.
+
 The record is a durable local receipt, not an OpenAPI/generated view. It must
 be written atomically (private temporary file, flush, atomic replace, and
 parent-directory flush as supported by the platform) before the next
@@ -181,18 +207,23 @@ promise:
    manifest/schema/core/worker/catalog/contract identity. Candidate assembly
    writes only its isolated root; the verified active root is untouched.
 2. `RuntimePromotionStore` flushes a `CandidateReady` receipt. The receipt
-   includes candidate/prior identities, the currently observed pointer, and the
-   distinct nullable candidate/prior `ReconcileRef` slots; the candidate ref is
-   durable before activation and no pointer change has occurred. A first install
-   records `prior = null` and `priorReconcileRef = null`.
-3. The store flushes `commitIntent` with the expected prior pointer generation
-   and hash plus the intended candidate pointer generation and hash.
-4. Under the store lock, the implementation performs a logical CAS against
-   the expected revision and prior pointer, atomically replaces and flushes the
-   local active pointer, and rereads it while still holding the lock. A conflict or
-   unexpected reread is `InstallAmbiguous`; it is never a reason to choose a
-   different candidate.
-5. Only after the reread matches does the store flush the irreversible
+   includes candidate/prior identities, the currently observed
+   `PointerObservation` (`absent | present{generation,sha256}`), and the
+   distinct nullable candidate/prior `ReconcileRef` slots; the candidate ref and
+   its producer activation permit are durable before activation and no pointer
+   change has occurred. A first install records `prior = null`,
+   `priorReconcileRef = null`, and pointer observation `absent`.
+3. The store flushes `commitIntent` with the expected prior
+   `PointerObservation` and intended candidate `PointerObservation` (candidate
+   is `present{generation,sha256}`), plus the expected revision.
+4. Under the store lock, the implementation performs a logical CAS against the
+   expected revision and prior pointer observation, atomically replaces and
+   flushes the local active pointer, and rereads it while still holding the lock.
+   First install uses compare-and-create-if-absent; an unexpected present
+   observation is a conflict. Any conflict or unexpected reread is
+   `InstallAmbiguous`; it is never a reason to choose a different candidate.
+5. Only after the reread is the exact intended `present{generation,sha256}`
+   observation does the store flush the irreversible
    `NewActiveCommitted` receipt. There is no rollback operation after this
    pointer commit; the new active remains selected.
 6. If a prior active exists, the store flushes `PriorRetiredDraining` with
@@ -219,10 +250,10 @@ the app must not infer a state from directory names or process names:
 | Durable receipt / observed pointer at startup | Required reconciliation |
 | --- | --- |
 | No `CandidateReady` or candidate verification failed | Preserve the active root/pointer/session. Delete only an exact, verified candidate/temp reference if one is recorded; otherwise leave it for explicit recovery. |
-| `CandidateReady` (or no intent) and the prior pointer still matches | Treat the operation as pre-commit. Do not commit. Preserve active; invoke only `RuntimeSessionJournal::reconcile(candidateReconcileRef)` for exact candidate cleanup. Complete absence/listener/staging proof may terminalize the candidate ref; present, reused, unqueryable, or ambiguous observations remain `reconcile-required` and do not touch the prior slot. |
-| `commitIntent` exists and the prior pointer still matches | The crash happened before commit. Do not commit or reinterpret the intent as permission to replace; preserve active and reconcile only the recorded candidate refs. |
-| `commitIntent` exists and the candidate pointer matches its intended generation/hash | The pointer replacement committed before its receipt. Advance durably to `NewActiveCommitted`, then persist `PriorRetiredDraining` before any cleanup. Never restore the prior pointer. |
-| Pointer matches neither the recorded prior nor candidate identity, or receipt and pointer generations conflict | Persist/report `InstallAmbiguous`, keep the selected bytes untouched, set degraded/block-next-promotion, retain all exact refs and sanitized error, and require explicit recovery. No rollback or broad deletion. |
+| `CandidateReady` (or no intent) and the observed pointer exactly matches the recorded prior `PointerObservation` | Treat the operation as pre-commit. Do not commit. Preserve active; invoke only `RuntimeSessionJournal::reconcile(candidateReconcileRef)` for exact candidate cleanup. Complete absence/listener/staging proof may terminalize the candidate ref; present, reused, unqueryable, or ambiguous observations remain `reconcile-required` and do not touch the prior slot. |
+| `commitIntent` exists and the observed pointer exactly matches the expected prior `PointerObservation` | The crash happened before commit. Do not commit or reinterpret the intent as permission to replace; preserve active and reconcile only the recorded candidate refs. |
+| `commitIntent` exists and the observed pointer exactly matches its intended candidate `present{generation,sha256}` observation | The pointer replacement committed before its receipt. Advance durably to `NewActiveCommitted`, then persist `PriorRetiredDraining` before any cleanup. Never restore the prior pointer. |
+| The observed pointer is neither the recorded prior nor intended candidate `PointerObservation`, or receipt/pointer observations conflict | Persist/report `InstallAmbiguous`, keep the selected bytes untouched, set degraded/block-next-promotion, retain all exact refs and sanitized error, and require explicit recovery. On first install, any unexpected `present{generation,sha256}` is a compare-and-create-if-absent conflict. No rollback or broad deletion. |
 | `NewActiveCommitted` with `prior = null` | Keep the new active selected and advance directly to `RetiredProved` with `retirement.status = not_applicable`, `priorReconcileRef = null`, and no degraded/block-next-promotion flag. First install must not wait for or invent predecessor proof. |
 | `NewActiveCommitted` or `PriorRetiredDraining` with a prior active | Keep the new active selected and degraded; block the next promotion; retry producer retirement proof only through `RuntimeSessionJournal::reconcile(priorReconcileRef)`. A missing, present, reused, unqueryable, or ambiguous prior observation remains `reconcile-required`; candidate cleanup proof cannot satisfy prior retirement, and a missing durable prior ref cannot become `RetiredProved`. |
 | `RetiredProved` | Keep the new active selected. Delete a prior root only by its recorded exact ref after a fresh identity/pointer check; never delete an unreferenced root or cache entry. |
@@ -439,46 +470,51 @@ rollback contract.
 ### Two consumer acceptance events and producer handoff
 
 Cert Prep performs its own acceptance twice for the same candidate identity.
-Each event consumes a producer-owned, read-only invocation and returns one
-consumer semantic result; the producer remains the sole writer of the mutable
-scope and the canonical child wire:
+Each event consumes a producer-owned, frozen/read-only invocation and returns
+one exact producer-schema semantic result; the producer remains the sole writer
+of the mutable scope and the canonical child wire. Cert imports producer
+`ProducerAcceptanceContractV1` version `"1"` and the exact D3/D6-bound
+`contractSha256` from the invocation/ledger; it does not define or extend any
+producer record.
 
 1. **D4 `CandidateAccepted` (pre-publication).** After the producer's D3
-   candidate record exists, the producer creates or refreshes the mutable
-   `ProducerChildScopeV1` at `CAPTURE_ACCEPTANCE_SCOPE_PATH` and passes Cert a
-   read-only `ProducerChildInvocationV1`. Cert never overwrites, returns, or
-   treats that scope as consumer output. Cert runs the immutable candidate in
-   the strict serial lane and writes exactly one `ConsumerSemanticResultV1` at
-   `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`. The result's `fixtureResults[]`
-   contains the private JPEG and scanned-PDF page-1 observations: actual
-   normalized-output digest (`actualNormalizedOutputSha256`), CER, anchor
-   omissions (`anchorOmissions`), outcome, and projection digest
-   (`projectionSha256`). It is bound to the invocation's D4/candidate tier and
-   D3 ledger identity, and contains no cleanup, process, path, or raw OCR/truth
-   data.
+   candidate record exists, the producer owns the mutable
+   `ProducerChildScopeV1` at
+   `CAPTURE_ACCEPTANCE_SCOPE_PATH`; the producer publishes the separate frozen
+   `ProducerChildInvocationV1` at `CAPTURE_ACCEPTANCE_INVOCATION_PATH` (or its
+   canonical read-only handle/pipe). Cert never consumes, overwrites, returns,
+   or treats the scope as consumer output. Cert verifies the invocation's
+   frozen/read-only canonical bytes and `invocationSha256`, runs the immutable
+   candidate in the strict serial lane, and atomically create-new exactly one
+   complete exact-schema `ConsumerSemanticResultV1` at
+   `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`. The ordered producer
+   `fixtureAssignments[]` are mapped one-for-one to equal-cardinality,
+   equal-order `fixtureResults[]`; both the private JPEG and scanned PDF page 1
+   retain their assignment identity/media/page/oracle/truth/anchor/threshold/
+   artifact fields, while the child supplies only canonical measurements.
 2. **D7 `PublishedAccepted` (post-publication).** After the producer publishes
    the exact D3 bytes and provides the D6 download-back identity, Cert consumes
-   a new read-only invocation from the mutable
-   `CAPTURE_ACCEPTANCE_SCOPE_PATH`, reruns the installed journey from those
-   downloaded bytes only, and writes one
+   a fresh frozen/read-only invocation from
+   `CAPTURE_ACCEPTANCE_INVOCATION_PATH`, verifies its canonical digest and D7/
+   D6 binding, reruns the installed journey from those downloaded bytes only,
+   and atomically create-new one exact producer-schema
    `ConsumerSemanticResultV1` at the distinct
-   `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`. The result is bound to the
-   published tier and D6 ledger identity and carries the same per-fixture
-   `actualNormalizedOutputSha256`, `cer`, `anchorOmissions`, `outcome`, and
-   `projectionSha256`/privacy rules; it contains no cleanup, process, path, or
-   raw text.
+   `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`. The same ordered assignments and
+   results are retained with equal cardinality/order and exact identity fields;
+   the result is bound to the published tier and D6 ledger identity.
 
 After Cert's write-once result is validated, the producer performs its own
 cleanup/proof and later writes the immutable `AcceptanceChildWireV1` at
-`CAPTURE_ACCEPTANCE_WIRE_PATH`. Cert never receives or writes the wire path,
-never defines a competing child wire, and never claims ownership of producer
-cleanup fields. A green D4 hands the result to the producer publication lane;
-a green D7 makes the result available for producer validation. The producer
-alone emits its child wire and directs any handoff to LAW. Cert does not wait
-for LAW, hand off a wire, aggregate consumer ledgers, or move/mutate the
-producer's stable pointer. A Cert candidate/active pointer is local install
-state and must not be confused with that producer-owned stable release
-pointer.
+`CAPTURE_ACCEPTANCE_WIRE_PATH`. `ConsumerSemanticResultV1` has no Cert-local
+privacy, cleanup, process, path, or wire fields; producer cleanup and privacy
+fields are added only to the canonical wire. Cert never receives or writes the
+wire path, never defines a competing child wire, and never claims ownership of
+producer cleanup. A green D4 hands the exact result to the producer publication
+lane; a green D7 makes the result available for producer validation. The
+producer alone emits its child wire and directs any handoff to LAW. Cert does
+not wait for LAW, hand off a wire, aggregate consumer ledgers, or move/mutate
+the producer's stable pointer. A Cert candidate/active pointer is local install
+state and must not be confused with that producer-owned stable release pointer.
 
 ## Candidate identity and installation tiers
 
@@ -568,19 +604,20 @@ anchor must be present (zero omissions). The producer field must be
       `apps/cert-prep-desktop/scripts/acceptance-artifacts.mts::writeAcceptanceManifest`
       and its `acceptance-artifacts.test.mts` coverage;
       `acceptance-real.mts::acceptancePassed` remains the caller/verdict only.
-      A new D4/D7 run consumes the producer's read-only invocation from
-      `CAPTURE_ACCEPTANCE_SCOPE_PATH` and writes exactly one
+      A new D4/D7 run imports producer `ProducerAcceptanceContractV1` version
+      `"1"` and the exact D3/D6-bound `contractSha256`, consumes only the
+      frozen/read-only invocation from
+      `CAPTURE_ACCEPTANCE_INVOCATION_PATH`, verifies its canonical digest, and
+      atomically create-new exactly one exact-schema
       `ConsumerSemanticResultV1` at the distinct
-      `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`. Its `fixtureResults[]` must
-      include the private JPEG and scanned PDF page-1 observations with actual
-      normalized-output digest (`actualNormalizedOutputSha256`), CER, anchor
-      omissions (`anchorOmissions`), outcome, and projection digest
-      (`projectionSha256`), bound to the invocation/tier and D4/D3 or D7/D6
-      identity. It
-      contains no cleanup, process, path, or raw OCR/truth data; the producer
-      later validates it, performs cleanup, and writes `AcceptanceChildWireV1`.
-      Cert emits no aggregate/D8 record and never writes the producer scope or
-      wire path.
+      `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`. Its ordered
+      `fixtureResults[]` must match ordered `fixtureAssignments[]` one-for-one,
+      with equal cardinality, identity, and order for the private JPEG and
+      scanned PDF page-1 assignments; Cert defines no local result fields or
+      privacy/cleanup block. The producer later validates the exact result,
+      performs cleanup, adds producer cleanup/privacy to `AcceptanceChildWireV1`,
+      and emits the wire. Cert emits no aggregate/D8 record and never writes the
+      producer scope or wire path.
 - [ ] Complete D4 `CandidateAccepted` with the pre-publication immutable
       candidate root and Cert's one `ConsumerSemanticResultV1` at
       `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`; hand the result to the
@@ -612,12 +649,13 @@ anchor must be present (zero omissions). The producer field must be
       retaining durable runtime/model assets and the pre-existing external
       Ollama baseline.
 - [ ] Record candidate/archive/runtime-worker/contract identities and semantic
-      result digests in privacy-safe evidence. The consumer result carries only
-      bounded `fixtureResults[]`, invocation/tier/ledger binding, projection
-      digests, CER, anchor omissions, outcomes, and privacy booleans; producer
-      cleanup flags belong only to the later child wire. Raw OCR text, truth
-      text, media, bearer tokens, local paths, host/user names, process/native
-      IDs, and environment dumps never enter the result.
+      result digests in privacy-safe evidence. The consumer result is the exact
+      producer schema and carries only its canonical fields; ordered
+      `fixtureResults[]` match ordered `fixtureAssignments[]` for the private
+      JPEG and scanned PDF page 1. Producer cleanup/privacy flags belong only to
+      the later child wire. Raw OCR text, truth text, media, bearer tokens,
+      local paths, host/user names, process/native IDs, and environment dumps
+      never enter the semantic result.
 
 ## Design and verification workflow
 
@@ -661,39 +699,46 @@ the existing migration owners:
   anchor-only expectations may remain in unit-only regression tests, but are
   barred from D4/D7 acceptance.
 
-The producer runner supplies the mutable, producer-owned
-`CAPTURE_ACCEPTANCE_SCOPE_PATH` as a read-only invocation input. Cert must not
-overwrite, return, or write that scope, invent a fallback path, or treat it as
-a local process handle. A new D4/D7 run writes exactly one complete
+The producer runner owns the mutable
+`ProducerChildScopeV1` at `CAPTURE_ACCEPTANCE_SCOPE_PATH` and publishes the
+separate immutable `ProducerChildInvocationV1` at
+`CAPTURE_ACCEPTANCE_INVOCATION_PATH` (or its canonical read-only handle/pipe).
+Cert must consume only that frozen/read-only invocation, verify its canonical
+bytes and `invocationSha256` plus the exact producer contract version/hash, and
+must not consume, overwrite, return, or write the scope. A new D4/D7 run
+atomically create-new exactly one complete producer-schema
 `ConsumerSemanticResultV1` at the distinct
 `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`; a second write, overwrite, partial
-record, missing result, or unbound result fails closed. The producer validates
-the result, performs its own cleanup/proof, and later writes immutable
-`AcceptanceChildWireV1` at `CAPTURE_ACCEPTANCE_WIRE_PATH`. Cert never receives
-or writes the producer wire path and never defines a competing child wire.
+record, pre-existing final path, missing result, or unbound result fails closed.
+The producer validates the result, performs its own cleanup/proof, and later
+writes immutable `AcceptanceChildWireV1` at `CAPTURE_ACCEPTANCE_WIRE_PATH`.
+Cert never receives or writes the producer wire path and never defines a
+competing child wire.
 
-`ConsumerSemanticResultV1` is privacy-safe semantic evidence only. It is bound
-to the read-only invocation's parent gate/tier and closed D4 -> D3 or D7 -> D6
-ledger identity. Its mandatory `fixtureResults[]` contains the Cert private
-JPEG and scanned PDF page-1 observations, each with the actual normalized
-output digest (`actualNormalizedOutputSha256`), CER, anchor omissions
-(`anchorOmissions`), outcome, and projection digest (`projectionSha256`). The
-result may carry only bounded identity/digest fields and privacy booleans; it
-contains no cleanup flags, process/native identity, private path, raw OCR or
-truth text, media bytes, token, or host diagnostic. Producer cleanup flags,
-invocation digest, full ledger binding, and the canonical wire digest belong to
-the later producer `AcceptanceChildWireV1`.
+`ConsumerSemanticResultV1` is the exact producer-generated schema, not a
+Cert-local type or extension. It is bound to the invocation's parent gate/tier
+and closed D4 -> D3 or D7 -> D6 ledger identity. Its mandatory ordered
+`fixtureResults[]` has equal cardinality and order with the producer's ordered
+`fixtureAssignments[]`; the private JPEG and scanned PDF page 1 are mapped to
+their corresponding assignments. Assignment identity, media/page, oracle,
+expected-truth/anchor, threshold, and artifact fields remain equal, while the
+child supplies only the canonical actual normalized-output digest, CER, anchor
+omissions, outcome, projection digest, and semantic-result digest fields. No
+Cert-local privacy or cleanup fields are allowed; producer cleanup/privacy,
+full ledger binding, invocation digest, and canonical wire digest belong to the
+later producer `AcceptanceChildWireV1`.
 
 The full private normalized reference and critical anchors are mandatory for
 both D4 and D7. A garbage-around-anchors output must not receive CER 0: the
 RED regression must prove that anchor presence alone cannot pass. Missing or
-unscoped `CAPTURE_ACCEPTANCE_SCOPE_PATH`, missing or overwritten semantic
-result path, missing JPEG/PDF fixture result, false/omitted outcome, duplicate
-identity, schema/scope mismatch, or a candidate/prior receipt reference
+unscoped `CAPTURE_ACCEPTANCE_INVOCATION_PATH`, mutable/writable invocation,
+canonical-digest mismatch, missing or overwritten semantic-result path,
+missing JPEG/PDF fixture result, false/omitted outcome, duplicate identity,
+schema/contract/ledger mismatch, or a candidate/prior receipt reference
 mismatch fails closed before handoff. During migration, schema-1 manifests are
-read/retained only for compatibility until the producer scope/result/wire
-contract is implemented and the legacy output is deleted; new formal runs emit
-only the consumer semantic result.
+read/retained only for compatibility until the producer scope/invocation/result/
+wire contract is implemented and the legacy output is deleted; new formal runs
+emit only the exact producer semantic result.
 
 ### Design-It-Twice record for the consumer seam
 
