@@ -1,96 +1,165 @@
-# Capture Runtime Release Consumer TODO
+# Capture Runtime 0.4.2 Cert Prep consumer TODO
 
-- [x] Record the completed Phase 1 local-probe checkpoint without upgrading it
-      into a published-release claim. The accepted manifest SHA-256 is
-      `1e001417498de86556de4f9984338cfe62079b84be96f434b5163d10c8925765`;
-      it proves real installed JPEG and scanned-PDF page-one OCR, `gpu-dml`,
-      durable `windowsml_ocr` records, and owned cleanup for the tested bytes.
+## Current checkpoint (2026-09-09)
 
-- [x] Inventory the fixed-base range `ea720334...56c1cd3`. The 17 commits map to
-      Phase 1 OCR-only integration/evidence, the local-probe identity policy,
-      GPU preflight, or pnpm 12.0.0 governance. No agent-owned implementation
-      was identified as safe to delete at this checkpoint. Preserve the
-      content-identical tracked status entries and unknown untracked `name`.
-      This inventory is not the pending independent two-axis review.
+Capture Workbench PR #39 at `c6d2140` is deterministic-green but unmerged.
+There is no current-HEAD real OCR result, candidate, or published 0.4.2.
+Cert Prep PR #19 is open at HEAD
+`d5af0f2a3939949bc10667a40252e96963ba64bb`; production remains blocked on a
+formal, complete 0.4.2 candidate. Older local OCR evidence is historical and
+must not be called a completed Phase 1 gate.
 
-- [ ] At the exact post-design HEAD, run independent Standards and Spec reviews
-      against fixed base `ea720334`, then have Root use `grill-me` one finding
-      at a time. Any commit or rebase makes the approval stale. Do not begin a
-      product implementation slice until this gate passes.
+This TODO is the consumer delta only. Capture Runtime remains the sole OCR
+projection owner. Cert Prep owns durable sources, review overrides, export,
+and persistence. `DesktopRuntimeSupervisor` and `RuntimeAssetInstaller` are
+adapters and do not own models, preprocessing, device ranking, or process
+policy.
 
-- [ ] With a fresh implementation worker, replace scattered backend/runtime
-      process ownership with the deep `DesktopRuntimeSupervisor` interface and
-      launcher-native `OwnedRuntimeSession`. Start with a red native test for a
-      failed candidate retaining the active stack, then implement only that
-      vertical slice and commit it.
-      Verify: `pnpm nx run cert-prep-desktop:cargo-test --skip-nx-cache`
+Every item below is a small, independently reviewable slice. The red proof is
+written before implementation; the listed `--skip-nx-cache` command is the
+verification floor for that future slice. A green slice gets its own focused
+commit checkpoint before the next slice starts.
 
-- [ ] Add vertical native slices for normal/window close, every readiness
-      failure, runtime-root crash, host termination, an app-started model
-      descendant, and a pre-existing baseline process. Prove owned roots and
-      descendants terminate while the baseline survives; do not mock Windows
-      process inheritance or use broad process-name kills.
-      Verify: installed lifecycle evidence records terminate-and-prove results.
+## Slices
 
-- [ ] Deepen transactional install/reconciliation into
-      `RuntimeAssetInstaller`. Preserve durable runtime/model assets and caches;
-      remove only validated app-owned PID/listener/run-scoped/staging/backup
-      residue, including safe reconciliation after an unclean prior exit.
-      Verify: native tests exercise real temporary directories and fail-closed
-      recovery through the module interface.
+- [x] **Consumer docs cleanup and status freeze.** Replace stale claims with
+      the 2026-09-09 checkpoint; state OCR-only admission, producer ownership,
+      tiered identity, lifecycle invariants, private acceptance, supersession,
+      design-before-code, TDD, two review axes, and deterministic staging.
+  Red proof: the pre-change docs could call historical local OCR “Phase 1
+  complete” or omit the unmerged producer/candidate blocker; required current
+  checkpoint and fail-closed phrases must be present after the edit.
+  Owner: Cert Prep consumer documentation owner; Root performs exact-HEAD
+  review.
+  Verify: `git diff --check -- .agents/SPECS/capture-runtime-consumer.md .agents/DECISIONS/capture-runtime-consumer.md .agents/TODOS/capture-runtime-consumer.md .agents/TODOS/cert-prep-pdf-image-acceptance.md`; future affected-code gate `pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`.
+  Rollback: additive revert of the documentation commit only.
+  Commit checkpoint: `docs(phase2): define cert runtime consumer hardening`;
+  record the resulting SHA.
 
-- [ ] Consume the authenticated runtime compute decision without adding a host
-      selector: usable dGPU, otherwise usable iGPU, otherwise explicit
-      user-visible CPU fallback. Keep DirectML initialization/inference failure
-      fail-closed. Real dGPU/iGPU claims require hardware evidence; deterministic
-      projection tests alone do not prove the hardware lane.
-      Verify: backend/UI contract tests plus the assigned real-hardware gate.
+- [ ] **Canonical version inventory and package expectation.** Inventory the
+      runtime, API/schema, Python/npm/Cargo clients, desktop metadata,
+      catalogs, manifests, and Cert expectations from one source. Generate a
+      next-version check that rejects stale literals and mixed 0.4.1/0.4.2
+      locks. Keep current `pnpm@12.0.0`; track Nx `23.1.0` to `23.1.2` as a
+      separate backlog upgrade.
+  Red proof: a deliberately stale version or mixed lock passes the old checks;
+  the new inventory/check must fail it before any artifact is installed.
+  Owner: Capture release inventory owner with Cert package consumer owner.
+  Verify: `pnpm nx run cert-prep-desktop:release-tool-test --skip-nx-cache`; `pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`.
+  Rollback: additive revert of the inventory/check and generated changes;
+  restore the last reviewed 0.4.1 expectation without mixing versions.
+  Commit checkpoint: `chore(phase2): add canonical runtime version inventory`;
+  record the exact SHA and generated inventory.
 
-- [ ] Capture performance baselines before optimizing: model-ready latency,
-      per-page latency, peak process memory, and GPU memory by adapter. Commit
-      each measured vertical optimization separately and retain the sequential
-      model lane.
+- [ ] **Deterministic candidate staging and clean install.** Stage one local
+      candidate with an isolated archive boundary and shared-resource scope.
+      Require contract/schema, archive/provenance, and loaded runtime-worker
+      identity; reject sibling junctions, source-tree/local paths,
+      `direct_url`, and mixed versions where applicable. Treat URL/port as
+      transport only, never as a HEAD binding.
+  Red proof: a clean-install test using a sibling junction, local path,
+  `direct_url`, or mixed 0.4.1/0.4.2 lock must be rejected; a URL-only match
+  must not satisfy identity.
+  Owner: Cert desktop packaging owner with producer candidate owner.
+  Verify: `pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`; `pnpm nx run cert-prep-desktop:typecheck-scripts --skip-nx-cache`.
+  Rollback: additive revert of staging/identity checks; retain durable assets
+  and remove only the isolated run staging created by the slice.
+  Commit checkpoint: `test(phase2): harden cert candidate staging identity`;
+  record candidate/archive/runtime-worker identities.
 
-- [x] Add the authenticated project-scoped privacy-safe OCR summary interface
-      as three narrow commits: durable contract/task updates; primitive-`const`
-      generated-client support with exhaustive provenance narrowing; then the
-      pure summary mapper plus HTTP lifecycle/error matrix. Start every code
-      slice with a focused red test. Prove the runtime adapter calls only
-      `get_capture` and `get_ocr`, the project-scoped session is read before and
-      after remote work, and structure/commit/provider/draft/DB writes remain
-      zero. `projectionSchemaVersion: 3` is the OCR projection identity, not a
-      `CaptureDocument` schema-version change.
-      Verify: `pnpm nx run cert-prep-backend:test-unit --skip-nx-cache`,
-      `pnpm nx run cert-prep-backend:test-integration --skip-nx-cache`,
-      `pnpm nx run cert-prep-backend:lint --skip-nx-cache`, and
-      `pnpm nx run cert-prep:build --skip-nx-cache`.
-      Rollback: remove only the additive route, summary module/tests, generator
-      const handling, and regenerated client symbols; no database or runtime
-      artifact rollback is required.
+- [ ] **Candidate/active supervision adapter.** Wire Cert's
+      `DesktopRuntimeSupervisor` adapter to one producer-owned
+      `OwnedRuntimeSession` per active or candidate launch. A failed candidate
+      must terminate-and-prove only itself and leave active service usable;
+      swap only after candidate readiness is proven.
+  Red proof: a candidate failure in the old path tears down or corrupts the
+  active session; the new public seam must keep active state and report a
+  failed candidate.
+  Owner: Cert desktop/native adapter owner; producer owns native session
+  semantics.
+  Verify: `pnpm nx run cert-prep-desktop:cargo-test --skip-nx-cache`; `pnpm nx run cert-prep-desktop:typecheck-scripts --skip-nx-cache`.
+  Rollback: additive revert of adapter wiring and focused tests; do not alter
+  producer runtime assets or expose native handles.
+  Commit checkpoint: `feat(phase2): isolate cert runtime candidate sessions`;
+  record the terminate-and-prove evidence SHA.
 
-- [ ] Refresh every consumer artifact to the producer-published `0.4.2` SDK,
-      launcher, schema-3 page projection, manifest, and matching locks. Do not
-      invent a local sibling fallback or update locks before publication.
-      Verify: strict source/registry resolution and schema-byte checks agree on
-      one producer release.
+- [ ] **Close and lifecycle handoff.** Cover app/window close, readiness
+      failure, runtime-root crash, and host termination through the same
+      producer terminal proof. Clear owned listeners/PIDs/run data/staging,
+      leave durable assets, and preserve the baseline external Ollama process.
+      Run Cert only after the producer's ordered JPEG then PDF page-1 gate;
+      hand off to LAW only after Cert cleanup is zero.
+  Red proof: the old close path leaks an owned listener/PID/run directory,
+  kills a pre-existing Ollama, or allows Cert and LAW model runs to overlap;
+  each case must fail before the fix.
+  Owner: Cert desktop lifecycle owner with acceptance owner.
+  Verify: `pnpm nx run cert-prep-desktop:cargo-test --skip-nx-cache`; `pnpm nx run cert-prep-desktop:acceptance-real --skip-nx-cache`.
+  Rollback: additive revert of the lifecycle adapter/acceptance slice; leave
+  unrelated external processes and durable model/runtime assets untouched.
+  Commit checkpoint: `feat(phase2): prove cert runtime close handoff`;
+  record cleanup and handoff evidence.
 
-- [ ] Run real OCR-only PDF/image positive capture against the published
-      engine-bearing `capture-runtime@0.4.2` release after explicit consent.
-      Every page must persist `windowsml_ocr`; embedded/mixed outputs fail.
-      Verify: installed-artifact smoke records page provenance, CER/anchor
-      evidence, restart persistence, and cleanup.
+- [ ] **Next-start identity reconciliation.** Reconcile stale app-owned PIDs,
+      listeners, run data, staging, and backups after an unclean exit only
+      when ownership identity is proven. Unknown, ambiguous, or mismatched
+      state must remain untouched and visible for recovery.
+  Red proof: inject a wrong-owner PID/path and an identity-matching stale
+  record; the former must survive and the latter must be removed. No broad
+  process-name kill is permitted.
+  Owner: Cert installer adapter owner with producer lifecycle owner.
+  Verify: `pnpm nx run cert-prep-desktop:cargo-test --skip-nx-cache`; `pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`.
+  Rollback: additive revert of reconciliation logic; preserve durable assets
+  and retain unproven residue for manual recovery.
+  Commit checkpoint: `fix(phase2): reconcile cert runtime state by identity`;
+  record proof of preserved unknown state and removed owned state.
 
-- [ ] Re-run the independent freshly installed Cert Prep app after the native
-      or performance slices affect its evidence. Use the private JPEG and only
-      page one of the real 46-page scanned PDF for the routine parse gate;
-      process a complete document only when an accuracy/lifecycle gate requires
-      it. Run in the producer-assigned sequential model slot and release the
-      slot only after all owned PID/listener/model evidence is zero.
+- [ ] **Performance measurement before optimization.** Add privacy-safe
+      internal measurements for model-ready time, per-page latency, first-page
+      and total elapsed time, process/Job memory, and GPU memory by producer
+      adapter. Use the private JPEG and PDF page 1 first; do not change
+      production behavior or record raw text, truth text, paths, or tokens.
+  Red proof: the measurement path either has no reproducible baseline or leaks
+  private OCR/truth content into evidence; the new test must fail those cases.
+  Owner: Cert acceptance/performance owner with producer measurement owner.
+  Verify: `pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`; `pnpm nx run cert-prep-desktop:acceptance-real --skip-nx-cache`.
+  Rollback: additive revert of measurement-only code and evidence schema;
+  production capture behavior and durable records remain unchanged.
+  Commit checkpoint: `test(phase2): record cert OCR performance baseline`;
+  record the privacy-safe baseline identity and metric set.
 
-- [ ] After all Phase 2 gates are green, commit the remaining necessary Cert
-      changes, open this repository's PR, and monitor CI on the reviewed exact
-      SHA. Do not push or open the PR from an intermediate design checkpoint.
+- [ ] **Published 0.4.2 cutover and real consumer acceptance.** Wait for the
+      formal complete candidate and producer publication. Refresh strict
+      registry locks and exact artifact hashes; reject local path/
+      `direct_url`, sibling, and mixed-version provenance. Then run the
+      installed Cert journey with a real private JPEG and PDF page 1, prove
+      `windowsml_ocr`, restart persistence, review/export, cleanup, and
+      baseline Ollama survival. Raw OCR text never enters the manifest.
+  Red proof: a local candidate, URL-only transport, supplied old executable,
+  package smoke, or fake OCR can pass the old gate; the published gate must
+  reject each substitute and bind the downloaded-back bytes.
+  Owner: Cert release/acceptance owner after producer release owner publishes
+  the exact candidate.
+  Verify: `pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`; `pnpm nx run cert-prep-desktop:acceptance-real --skip-nx-cache`; `pnpm nx run cert-prep-desktop:release-tool-test --skip-nx-cache`.
+  Rollback: restore the last reviewed 0.4.1 pins/assets/locks consistently;
+  stop ordered promotion and preserve failure evidence. Do not publish a
+  failed candidate or start LAW.
+  Commit checkpoint: `release(phase2): cut cert consumer to capture-runtime-0.4.2`;
+  record exact published bytes, lockfile, manifest, and acceptance SHA.
 
-The readiness/host-protocol consumer smoke, deterministic fixtures, and any
-source-import or registry prototype are not substitutes for the engine-bearing
-real OCR/Whisper smoke above.
+## Cross-slice rules
+
+- New imports are OCR-only: `windowsml_ocr` is the only current projection;
+  `embedded` and `mixed` remain legacy read-only compatibility values.
+- The UI presents producer `OcrComputePreflight` and notice only. It never
+  ranks adapters. The canonical order is dGPU, iGPU, then noticed CPU; a
+  DirectML failure never receives a host CPU retry.
+- Real model runs are sequential: Capture Workbench's JPEG then PDF page 1,
+  Cert Prep, then GX Law Prep. Each owner proves cleanup before handoff.
+- The current local candidate tier is not published evidence. Published
+  acceptance requires strict locks, immutable bytes, and download-back
+  identity.
+- Image-flow changes require design and both review axes before code; TDD red
+  tests cross the public seam; staging is isolated before installed evidence.
+- The existing lazy-install and package-smoke specs/TODOs remain in place.
+  Their relevant content will eventually merge into these consumer docs; do
+  not delete them in this backlog.

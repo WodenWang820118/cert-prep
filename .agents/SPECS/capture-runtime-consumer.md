@@ -1,218 +1,209 @@
-# Capture Runtime release consumer spec
+# Capture Runtime 0.4.2 Cert Prep consumer delta
 
-`cert-prep` consumes a published Windows x64 `capture-runtime` executable. The
-currently published pin remains `0.4.1` until the producer publishes the
-decision-complete `0.4.2` contract; this spec freezes the `0.4.2` consumer
-requirements and must not be used to claim that package is already available.
-It does not import the runtime as Python, link a workspace package, or retain a
-local extraction provider.
+This document is the Cert Prep consumer specification for the OCR-only
+0.4.2 cutover and its Phase 2 hardening follow-up. It defines what this
+repository must consume and prove. Producer implementation policy remains in
+Capture Workbench's canonical Phase 2 documents; this document does not copy
+that policy.
 
-## Contract
+## Current checkpoint (2026-09-09)
 
-- Runtime API: `2.0`.
-- Current published runtime version: `0.4.1` from the canonical
-  `gx-capture/capture-workbench` GitHub Release.
-- Target cutover runtime version: `0.4.2`.
-- Target `CaptureDocument` schema: `3`, with the page/segment-bound typed OCR
-  projection consumed by Cert Prep and Law.
-- Target contract-set and schema digests are producer release inputs; do not
-  invent or pin them before the `0.4.2` release exists.
-- Consumer assets: executable, checksum, `capture-runtime-manifest.json`, and
-  the schema file.
-- Published-byte evidence pins the downloaded v0.4.1 executable to the
-  SHA-256 recorded by its release manifest and requires the staged
-  manifest/checksum to agree before launch. The earlier v0.3.8 hash remains
-  historical evidence only.
-- The published schema bytes have SHA-256
-  `850afd212d049c25da41d3867ba5477451a6a2c6c7e41f116fe60f26b6a35335` and
-  retain the canonical `gx-capture` schema identifier.
-- The target OCR-only candidate requires `windowsml-ocr` for every PDF page and
-  image. The runtime rasterizes every page and recognizes it with canonical
-  PaddleOCR; embedded extraction and LLM route selection are forbidden. Audio
-  requires ready Whisper after explicit consent. A local candidate is not
-  evidence that immutable published bytes changed.
-- Requirements/readiness/install/cancel are proxied through the authenticated
-  backend; the sidecar token never reaches Angular/WebView.
-- Cert Prep configures the published component with `structuringMode: 'host'`,
-  `hostStructuringOwner: 'component'`, `hostManagedHandshake: true`, and
-  `showRuntimeSetup: false`, with `enabledSources: ['pdf', 'image', 'audio']`.
-  The host UI gates OCR/STT-dependent sources on runtime readiness while the backend adapter performs
-  the compatibility and requirement checks immediately before opening each
-  sidecar ingestion.
-- The UI exposes image/audio controls only when the corresponding runtime
-  requirement is ready and never claims PDF support without ready OCR. The
-  runtime installs `windowsml-ocr` first and
-  `whisper-primary` second after explicit consent; no capture starts until each
-  selected dependency is ready. The host adapter verifies the sidecar is ready,
-  has the expected service identity, exact runtime release/API major, schema, host
-  structuring mode, and requested capture-kind capability. An incompatible
-  handshake blocks every source and does not open a sidecar ingestion. It
-  then applies a source-aware requirement policy: PDF and image are admitted
-  only while `windowsml-ocr` is `ready`, audio only while `whisper-primary` is
-  `ready`, and otherwise each is rejected before dispatch. A generic extraction
-  error after a ready OCR preflight preserves the original sidecar error rather
-  than being reclassified.
-- Image/audio admission failures preserve the runtime requirement detail and use
-  the same product messages across the Trial client and `/documents` path:
-  `WindowsML OCR is unavailable. <detail>` and
-  `Whisper transcription is unavailable. <detail>`. They are host-side
-  failures before a capture ID exists, not fabricated failed runtime captures.
-- Source bytes cross the v2 ingestion lifecycle only: open with a source digest,
-  upload ordered checksum-bounded chunks with `Content-Range`, `Digest`, and
-  stable idempotency keys, finalize, then start the capture. Uncertain open/start
-  responses recover through the matching by-client-request lookup.
-- Normal capture progress is authenticated replayable SSE from
-  `/v2/captures/{id}/events`, not polling. The consumer validates content type,
-  UTF-8, framing, capture/sequence identity, event names, monotonic ordering,
-  and bounded input before exposing events. Reconnect uses `Last-Event-ID`;
-  listener disconnect never cancels the runtime capture. Snapshot, partial,
-  raw, and result reads support reconciliation and review, followed by typed
-  pull-session structuring/failure, cancel, and delete. The runtime validates
-  and reconstructs the final base document; Cert Prep applies only its local
-  review overlay and domain mapping.
+- Capture Workbench PR #39 at `c6d2140` is deterministic-green but has not
+  merged.
+- There is no current-HEAD real OCR result, candidate artifact, or published
+  `capture-runtime` 0.4.2 artifact that Cert Prep can claim.
+- Cert Prep PR #19 is open at HEAD `d5af0f2a3939949bc10667a40252e96963ba64bb`.
+  Production remains blocked on a formal, complete 0.4.2 candidate and its
+  consumer evidence.
+- Older local OCR evidence is historical. It cannot be described as a
+  completed Phase 1 gate for this checkpoint or for a later Cert Prep HEAD.
 
-## Failure policy
+This is a coordination checkpoint, not installed-artifact acceptance. The
+ordered producer gate must be current before a Cert Prep model-enabled run;
+Cert Prep then runs before GX Law Prep, with cleanup proven between consumers.
 
-Missing or malformed assets, checksum/byte drift, incompatible handshake,
-unsupported capture kind, unavailable requirements, sidecar failure, timeout,
-and cancellation are terminal/unavailable states. Any PDF with non-ready OCR
-is rejected before sidecar ingestion with the clear OCR-unavailable product
-state. Other runtime failures remain their original typed error. Cert Prep
-never falls back to an OCR or Whisper provider of its own.
+## Purpose and non-goals
 
-## Phase 2 hardening after the Phase 1 proof
+Cert Prep owns the durable product experience around a capture. It consumes
+the runtime's typed OCR projection through its public/generated seam and keeps
+the domain state useful after the ephemeral runtime job ends.
 
-The accepted Phase 1 local-probe record is the fresh installed-app manifest
-whose SHA-256 is
-`1e001417498de86556de4f9984338cfe62079b84be96f434b5163d10c8925765`.
-It records real JPEG and scanned-PDF page-one OCR, `gpu-dml`, one matched
-critical anchor per source, durable `windowsml_ocr` page projection, and clean
-owned-process/listener shutdown against the producer candidate aggregate
-`cc5df53d8244d121c1ee96be250948b329211f78b57f3b32587c7c2c03777e29`.
-It is evidence for the already completed Phase 1 checkpoint, not a newly built
-installed-artifact result for every later Cert Prep HEAD. A change to an OCR,
-packaging, native lifecycle, or app-journey source invalidates only the
-affected evidence and requires the corresponding sequential real acceptance
-to run again.
+This specification does not authorize:
 
-Phase 2 optimizes this established OCR-only path. It must not introduce an
-embedded-text route, mixed arbitration, a Cert Prep Paddle implementation, or
-a fallback that bypasses the capture-runtime projection.
+- a Cert Prep PaddleOCR, PDF rasterization, embedded-text, mixed-arbitration,
+  OCR-provider, or host CPU-retry implementation;
+- host-side GPU enumeration, ranking, device-ID persistence, model creation,
+  preprocessing, inference, or process-name cleanup;
+- treating a local candidate, package smoke, snapshot, or successful command as
+  published-release or real-OCR proof; or
+- deleting the existing lazy-install/package-smoke specifications before
+  their relevant consumer content is merged here.
 
-### Deep native modules
+## Responsibility and seam
 
-The desktop host will concentrate lifecycle policy in two deep modules:
+| Concern | Owner | Cert Prep consumer rule |
+| --- | --- | --- |
+| Durable sources and domain records | Cert Prep | Persist source identity and domain data; runtime jobs are ephemeral. |
+| Review override and export | Cert Prep | Apply the local review overlay, retain user overrides, and export the domain result. |
+| Persistence and restart recovery | Cert Prep | Reconcile durable source/review state across app restarts; do not persist a runtime process as domain state. |
+| OCR projection | `capture-runtime` | The runtime is the sole OCR projection owner. Cert maps the typed projection and does not recreate it. |
+| Runtime/model installation | Producer contract via `RuntimeAssetInstaller` adapter | Verify and stage producer assets; do not choose models or invent a second install policy. |
+| Runtime process lifecycle | Producer contract via `DesktopRuntimeSupervisor` adapter | Present product status and invoke the owned-session seam; do not own native process policy. |
 
-- `DesktopRuntimeSupervisor` is the only product interface for activating,
-  observing, replacing, and shutting down the owned Python-backend plus
-  Capture Runtime stack. Its implementation uses the published launcher's
-  native `OwnedRuntimeSession`; callers never receive a raw Windows Job handle,
-  process handle, or bearer token. Each launch attempt creates a distinct
-  candidate session. Roots are assigned before user code executes, readiness
-  is proven before an atomic active-session swap, and a failed candidate is
-  terminated and proven empty without disturbing the previous active session.
-- `RuntimeAssetInstaller` owns verified transactional installation and startup
-  reconciliation. Durable installed runtime/model assets and caches survive
-  normal shutdown. It reconciles only UUID-shaped app-owned staging/backup
-  directories and attested app-owned PID, listener, and run-scoped residue; it
-  never removes an arbitrary path or kills by process name.
+`DesktopRuntimeSupervisor` and `RuntimeAssetInstaller` are Cert Prep adapters
+to the producer-owned seams. They do not own a model, preprocessing, device
+ranking, inference, Windows process policy, or broad cleanup rule. A raw Job
+handle, process handle, sidecar bearer token, or runtime URL never crosses the
+Angular/WebView seam.
 
-The Python `CertPrepCaptureCoordinator` remains the capture interface for the
-application. It consumes the generated client and canonical OCR projection,
-then maps and persists Cert Prep-owned records. It must not acquire native
-process ownership or duplicate runtime compute selection.
+## Consumer contract
 
-The launcher and Capture Runtime are remote-but-owned dependencies at these
-seams. Production uses their native/generated adapters. Deterministic tests may
-use an in-memory adapter for protocol outcomes, but Windows process ownership,
-inheritance, and termination are verified with real helper processes through
-the native interface rather than mocked process trees.
+The target producer contract is API `2.0` with the schema-3 typed,
+page/segment-bound OCR projection. Cert Prep must regenerate or consume the
+producer-published contract artifacts only after the complete 0.4.2 candidate
+exists; no digest is invented in advance.
 
-### Compute selection and user notice
+### OCR-only source admission
 
-Capture Runtime remains the sole owner of GPU inventory and device selection.
-Its authenticated preflight must prefer a usable dedicated GPU, otherwise a
-usable integrated GPU, and only then report `cpu-fallback`. Both GPU classes
-use `gpu-dml`; the selected adapter class and provenance remain visible to Cert
-Prep. If neither GPU class is usable, Cert Prep must explicitly notify the
-user of CPU fallback before import. A selected DirectML provider that later
-fails initialization or inference remains fail-closed and is not silently
-retried on CPU.
+- Every new PDF page and image import enters the `windowsml_ocr` capture
+  projection. Rasterization and OCR happen in `capture-runtime`.
+- `embedded` and `mixed` are fail-closed at the new import seam. Cert Prep
+  must not inspect an embedded text layer, arbitrate a mixed result, or call a
+  second OCR provider.
+- Existing persisted `embedded` and `mixed` rows are legacy read-only
+  compatibility data. They are never written as the result of a new import,
+  never used to select an OCR route, and never silently rewritten as current
+  OCR evidence.
+- Runtime capture state and OCR projection are transient execution data. Cert
+  owns the durable source, review, export, and domain records that consume the
+  projection.
 
-### Phase 2 test seams and performance evidence
+The public capture seam remains authenticated and fail-closed. An invalid
+contract, unsupported source, unavailable OCR requirement, malformed
+projection, cancellation, timeout, or runtime failure is a typed unavailable
+or terminal result; it is not an invitation to fall back locally.
 
-TDD proceeds as vertical slices through three pre-agreed seams only:
+### User-facing compute projection
 
-1. the native owned-session interface for candidate/active isolation,
-   terminate-and-prove, crash handling, and startup reconciliation;
-2. the public backend capture interface for authenticated compute preflight,
-   OCR projection, durable page records, and typed failures; and
-3. the freshly installed application's public PDF/JPEG journey.
+The UI presents only the producer's authenticated `OcrComputePreflight` and
+its user notice. It may display the producer-reported compute mode/class and
+the explicit CPU notice, but it does not rank adapters, interpret adapter
+names or ordinals, or calculate a device ID. The canonical producer policy is
+usable dGPU, then usable iGPU, then noticed CPU; see
+`C:\software-dev\capture-workbench\.agents\SPECS\capture-runtime-042-p2-hardening.md`.
 
-Registry, network, and time may use adapters. Internal modules, process
-ownership, OCR output, and cleanup are not replaced with mocks. Phase 2 first
-records model-ready latency, per-page latency, peak process memory, and
-per-adapter GPU memory before changing performance behavior. Real
-model-enabled acceptance stays sequential and runs only after the prior app's
-owned PIDs, descendants, listeners, and model memory are gone. A one-page
-projection is sufficient for the routine real-PDF parse check; complete
-documents are OCRed only for an explicitly required accuracy or lifecycle
-gate.
+DirectML construction or inference failure after a GPU plan is selected is a
+failed capture. The Cert host never retries that operation on CPU or chooses a
+different GPU. An indeterminate producer preflight remains unavailable and
+does not become a CPU notice.
 
-Normal close, window close, every readiness failure, runtime-root crash, host
-termination, an app-started model descendant, and a pre-existing baseline
-process are lifecycle acceptance cases. Owned processes/listeners and
-ephemeral residue must reach zero, while the baseline process and durable
-runtime/model assets survive. OS crash and power loss are handled by safe
-next-start reconciliation rather than an immediate-hook claim.
+## Owned runtime sessions and cleanup
 
-## Evidence
+Each active launch and each candidate launch has a distinct producer-owned
+`OwnedRuntimeSession`.
 
-The installer contract, package QA, Tauri contract tests, backend coordinator
-tests, and the published-byte consumer smoke must prove staging, authenticated
-readiness/requirements, host-protocol compatibility, cleanup, and rejection of
-tampered or missing runtime assets. The product E2E must use the local candidate
-executable and a real, non-fake raster/scanned PDF through real PaddleOCR; it proves UI
-selection, backend-to-sidecar capture, review confirmation, host persistence,
-and Markdown export with `windowsml-ocr` provenance. Its negative cases prove
-PDF, image, and audio fail closed when their requirements are not ready, with
-no browser sidecar token and no false OCR/STT claim. They also prove an
-incompatible handshake opens no sidecar ingestion, and that the host-owned UI
-states image/audio are unavailable while their requirements are not ready. Fake
-extraction may exercise only the backend host protocol. The opt-in
-model-enabled smoke proves the core-first install order plus real PDF OCR and
-audio time-locator extraction once an approved engine catalog is published.
-The backend contract test owns the exact no-dispatch assertion for PDF/image/audio;
-the installed product smoke does not infer internal sidecar state from a public
-error response. The 2026-08-02 fresh-installed v0.3.8 embedded-PDF run is
-historical only and does not satisfy the OCR-only contract. New evidence must
-show PaddleOCR provenance for every PDF page and image, with no embedded or
-mixed extraction result.
+- A candidate is readiness-checked before an active-session swap. Candidate
+  failure terminates and proves only that candidate; the existing active
+  session remains untouched.
+- After a successful swap, the retired active session is closed and proved
+  empty before the replacement is reported active.
+- App close, window close, readiness failure, runtime-root crash, and host
+  termination converge on the producer's owned-session terminal proof. Cert
+  observes that proof through its adapter rather than duplicating native
+  cleanup.
+- Close clears Cert-owned listeners, PIDs, run data, and staging residue. It
+  leaves durable runtime/model assets and caches in place for the next start.
+- An external Ollama process that predates the Cert session is a baseline and
+  must survive. Cleanup is identity-scoped and never kills by executable name.
+- Next-start reconciliation removes only stale app-owned listeners, PIDs,
+  run data, staging, or backups after ownership identity is proven. Unknown,
+  ambiguous, or mismatched identity fails closed and is left for explicit
+  recovery.
 
-## Modular package consumer boundary
+The adapter may report lifecycle state, but it must not expose raw OS handles
+or ask the Angular host to terminate a process tree.
 
-Cert Prep now imports generated wire DTOs from `capture_runtime_client`; the former
-`capture_workbench/contracts.py` hand mirror is deleted. Raw capture and
-document responses cross the Angular client boundary through fail-closed
-mappers that reject schema drift, unknown discriminators, invalid locators,
-and illegal bounding boxes before domain use. The deterministic client spec
-was removed because it was only a local spec fixture.
+## Candidate identity and installation tiers
 
-The package declarations and lockfiles must resolve matching `0.4.2` npm,
-PyPI, and Cargo artifacts only after those public artifacts exist. The permanent
-consumer consistency target rejects local path sources in strict release CI and
-verifies npm, PyPI, Cargo, runtime declarations, and lockfiles all resolve the
-same release. The 0.4.2 published-byte proof and engine-bearing real smoke are
-release gates; the current 0.4.1 pin remains until then.
+Local candidate acceptance is intentionally tiered:
 
-For a local producer candidate, `CERT_PREP_CAPTURE_RUNTIME_RELEASE_DIRECTORY`
-lets the installer and consumer handshake smoke stage the canonical executable,
-checksum, manifest, and schema directly from an existing release directory.
-This path is deliberately local-only: it does not alter the canonical public
-URL, does not satisfy published-byte evidence, and the independent consumer
-bundle is built by `cert-prep-desktop`'s own Tauri app.
+- A local transport URL or port identifies transport only. It does not bind a
+  candidate to repository HEAD, and it is not sufficient identity.
+- The hard gate binds the API/schema and contract identity, the packaged
+  archive boundary, package/provenance metadata, and the loaded runtime and
+  OCR worker executable identities. The loaded runtime-worker identity must
+  agree with the candidate record before capture.
+- A clean-install check rejects a sibling junction, source-tree import,
+  local-path substitution, `direct_url`/path provenance, and mixed 0.4.1/
+  0.4.2 versions wherever those checks apply. A local candidate may retain
+  diagnostic local metadata, but that metadata never satisfies a published
+  claim.
 
-When a GitHub runner is unavailable, `pnpm nx run cert-prep-desktop:capture-runtime-consumer-test`
-may run locally against the current published pin. The 0.4.2 cutover remains
-blocked until strict source, registry install, schema, and real OCR evidence
-all use the same producer release.
+Published-consumer acceptance restores strict locks: exact 0.4.2 semver,
+frozen registry resolution, every declared artifact/checksum/manifest entry,
+download-back byte identity, and no local path or `direct_url`. Until those
+immutable producer bytes exist, the current 0.4.1 pin remains a compatibility
+baseline rather than evidence for the 0.4.2 cutover.
+
+## Tooling baseline
+
+The current workspace package manager is `pnpm@12.0.0`. Nx packages and the
+workspace CLI are currently `23.1.0`; upgrading to `23.1.2` is a tracked
+backlog item, not part of this consumer documentation commit. Verification
+uses package-manager-prefixed Nx commands and `--skip-nx-cache` for final
+confidence.
+
+## Acceptance checklist
+
+The real consumer gate is an installed Cert Prep app using private fixtures
+and an exact producer candidate. Package QA and protocol fakes are supporting
+checks only.
+
+- [ ] Run a real private JPEG through the installed app and persist a semantic
+      `windowsml_ocr` projection with producer provenance.
+- [ ] Run the real private PDF's page 1 through the same installed app after
+      the JPEG run, sequentially in the assigned model slot. The routine gate
+      is page 1; full-document OCR is reserved for an explicitly tested
+      accumulation, ordering, or accuracy risk.
+- [ ] Prove the producer gate and Cert capture cleanup before handing the
+      model slot to GX Law Prep. No owned backend/capture/OCR/model PIDs,
+      listeners, run data, or staging may remain at handoff.
+- [ ] Restart the app and prove durable source, projection reference, review
+      override, and domain persistence remain available without reviving a
+      stale runtime session.
+- [ ] Confirm review/export output comes from Cert-owned durable domain data
+      and retains `windowsml_ocr` provenance; do not export raw runtime
+      diagnostics as product data.
+- [ ] Confirm app close removes owned listeners/PIDs/run data/staging while
+      retaining durable runtime/model assets and the pre-existing external
+      Ollama baseline.
+- [ ] Record candidate/archive/runtime-worker/contract identities and cleanup
+      flags in a privacy-safe manifest. Raw OCR text, truth text, bearer
+      tokens, local paths, host/user names, and environment dumps never enter
+      the manifest.
+
+## Design and verification workflow
+
+Any image/PDF-flow implementation starts with the design and a serious review
+before code. The red test crosses the public consumer seam, then TDD proceeds
+as one observable vertical slice. Standards review and Specification review
+are independent axes and are bound to the exact commit; a later commit makes
+both approvals stale. Candidate staging is deterministic and isolated before
+an installed journey is trusted.
+
+The planned verification floor for implementation slices is the narrowest
+relevant `pnpm nx` target with `--skip-nx-cache`, followed by the installed
+real journey for changes that affect it. This documentation checkpoint runs
+docs checks and `git diff --check` only.
+
+## Supersession and rollback
+
+The existing lazy-install and package-smoke specs/TODOs remain in the tree.
+Their consumer-relevant content will eventually be merged into this consumer
+specification, decision record, and TODO; they are not deleted now. This
+specification supersedes stale statements that call historical local OCR
+evidence a completed Phase 1 gate.
+
+Rollback for this documentation-only change is an additive revert of the
+focused documentation commit. It does not alter runtime assets, database
+records, package locks, or published artifacts.
