@@ -2,11 +2,21 @@
 
 ## 2026-09-09 checkpoint
 
-Capture Workbench PR #39 (`c6d2140`) is deterministic-green but unmerged. No
-current-HEAD real OCR result, candidate artifact, or published 0.4.2 exists.
-Cert Prep PR #19 is open at `d5af0f2a3939949bc10667a40252e96963ba64bb`, and
-production remains blocked on a formal, complete 0.4.2 candidate. Older local
-OCR evidence is historical only; it does not close Phase 1.
+Phase 1 is complete at the `local-probe` tier. Capture Workbench, Cert Prep,
+and GX Law Prep each passed real local-package OCR, and Cert Prep's
+local-package OCR evidence is accepted at that tier. This is not published or
+release evidence: the formal `capture-runtime` 0.4.2 candidate/package remains
+unbuilt and unpublished.
+
+Capture Workbench PR #39 (`c6d2140`), Cert Prep PR #19 at
+`d5af0f2a3939949bc10667a40252e96963ba64bb`, and their recorded heads are
+release-freshness facts only; they do not reopen the completed Phase 1 status.
+Older local OCR records remain historical and do not substitute for the
+accepted local-probe result or for published/release evidence.
+
+Phase 2 now owns hardening, the Nx 23.1.2 upgrade, lifecycle and performance
+work, version inventory, deterministic candidate staging, and then sequential
+formal/published-package regression across the consumers.
 
 These decisions describe the consumer delta. The producer's canonical Phase 2
 specification remains the authority for OCR internals, compute truth, and
@@ -51,9 +61,11 @@ native ownership details.
    wherever applicable. Published acceptance instead requires strict exact
    0.4.2 locks, hashes, manifests, and download-back byte identity with no
    local provenance.
-8. **Tooling drift is visible debt.** `pnpm@12.0.0` is current. Nx is
-   currently `23.1.0`; `23.1.2` is a backlog upgrade, not a hidden part of
-   this consumer documentation checkpoint.
+8. **Phase 2 owns hardening and release preparation.** `pnpm@12.0.0` remains
+   current and Nx is currently `23.1.0`; Phase 2 owns the upgrade to `23.1.2`,
+   lifecycle and performance work, version inventory, deterministic candidate
+   staging, and then sequential formal/published-package regression. No such
+   upgrade or release claim is made by this local-probe checkpoint.
 9. **Real evidence is sequential and private.** Acceptance uses a real
    private JPEG and PDF page 1, then proves Cert cleanup before the model slot
    is handed to GX Law Prep. Restart persistence, review/export, cleanup, and
@@ -104,10 +116,11 @@ use stricter immutable bytes and frozen locks.
 
 ## Supersession, review, and rollback
 
-This record supersedes older Cert statements that treated a historical local
-OCR run as a completed Phase 1 gate or allowed embedded/mixed output for a new
-import. It does not delete the existing lazy-install or package-smoke docs;
-their relevant content will eventually be merged into this consumer record.
+This record supersedes older Cert statements that denied the completed Phase 1
+local-probe gate, treated local-probe evidence as published/release acceptance,
+or allowed embedded/mixed output for a new import. It does not delete the
+existing lazy-install or package-smoke docs; their relevant content will
+eventually be merged into this consumer record.
 
 The review unit is the exact documentation commit. Any subsequent commit,
 generated artifact, or rebase invalidates both review axes. The rollback is an

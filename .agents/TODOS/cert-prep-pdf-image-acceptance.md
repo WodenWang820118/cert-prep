@@ -2,18 +2,28 @@
 
 ## Status checkpoint (2026-09-09)
 
-Capture Workbench PR #39 at `c6d2140` is deterministic-green but unmerged.
-There is no current-HEAD real OCR result, complete candidate, or published
-0.4.2 artifact. Cert Prep PR #19 is open at HEAD
-`d5af0f2a3939949bc10667a40252e96963ba64bb`, so production remains blocked on
-the formal complete candidate. Older local OCR evidence is historical only and
-does not close Phase 1.
+Phase 1 is complete at the `local-probe` tier. Capture Workbench, Cert Prep,
+and GX Law Prep each passed real local-package OCR, and Cert Prep's
+local-package OCR evidence is accepted at that tier. This is not published or
+release evidence: the formal `capture-runtime` 0.4.2 candidate/package remains
+unbuilt and unpublished.
 
-This checklist is for Cert Prep's installed consumer journey. The producer
-must first pass its ordered gate. Cert then owns durable source/review/export
-state; `capture-runtime` owns the OCR projection. New imports accept only
-`windowsml_ocr`; `embedded` and `mixed` are legacy read-only compatibility
-rows and fail closed at the new import seam.
+Capture Workbench PR #39 at `c6d2140`, Cert Prep PR #19 at
+`d5af0f2a3939949bc10667a40252e96963ba64bb`, and their recorded heads are
+release-freshness facts only; they do not reopen the completed Phase 1 status.
+Older local OCR records remain historical and do not substitute for the
+accepted local-probe result or for published/release evidence.
+
+Phase 2 now owns hardening, the Nx 23.1.2 upgrade, lifecycle and performance
+work, version inventory, deterministic candidate staging, and then sequential
+formal/published-package regression across the consumers.
+
+Phase 1 local-probe acceptance is complete. This checklist captures the
+remaining Phase 2 sequential formal/published-package regression path. The
+producer must first pass its formal release gate. Cert then owns durable
+source/review/export state; `capture-runtime` owns the OCR projection. New
+imports accept only `windowsml_ocr`; `embedded` and `mixed` are legacy
+read-only compatibility rows and fail closed at the new import seam.
 
 ## Ordered real journey
 
@@ -64,7 +74,8 @@ rows and fail closed at the new import seam.
   rank adapters. Producer order is usable dGPU, usable iGPU, then noticed CPU;
   post-selection DirectML failure is fail-closed and receives no host CPU
   retry.
-- A local candidate result is `local-probe` evidence only. A clean local
+- The accepted local-package result is `local-probe` evidence only: it
+  completes Phase 1 but is not published/release evidence. A clean local
   install cannot become published evidence by changing the URL or claiming
   the current repository HEAD.
 - Package QA, protocol fakes, snapshots, a supplied older executable, and a
@@ -88,5 +99,6 @@ docs checks and `git diff --check` only.
 The lazy-install and package-smoke specs/TODOs remain in the repository. Their
 consumer-relevant content will eventually merge into the canonical consumer
 spec/decision/TODO; this checkpoint does not delete them. This document
-supersedes older acceptance wording that treated local OCR evidence as Phase 1
-completion or allowed embedded/mixed output for new imports.
+supersedes older acceptance wording that denied the completed Phase 1
+local-probe gate, treated local-probe evidence as published/release acceptance,
+or allowed embedded/mixed output for new imports.

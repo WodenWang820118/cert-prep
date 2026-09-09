@@ -2,12 +2,21 @@
 
 ## Current checkpoint (2026-09-09)
 
-Capture Workbench PR #39 at `c6d2140` is deterministic-green but unmerged.
-There is no current-HEAD real OCR result, candidate, or published 0.4.2.
-Cert Prep PR #19 is open at HEAD
-`d5af0f2a3939949bc10667a40252e96963ba64bb`; production remains blocked on a
-formal, complete 0.4.2 candidate. Older local OCR evidence is historical and
-must not be called a completed Phase 1 gate.
+Phase 1 is complete at the `local-probe` tier. Capture Workbench, Cert Prep,
+and GX Law Prep each passed real local-package OCR, and Cert Prep's
+local-package OCR evidence is accepted at that tier. This is not published or
+release evidence: the formal `capture-runtime` 0.4.2 candidate/package remains
+unbuilt and unpublished.
+
+Capture Workbench PR #39 at `c6d2140`, Cert Prep PR #19 at
+`d5af0f2a3939949bc10667a40252e96963ba64bb`, and their recorded heads are
+release-freshness facts only; they do not reopen the completed Phase 1 status.
+Older local OCR records remain historical and do not substitute for the
+accepted local-probe result or for published/release evidence.
+
+Phase 2 now owns hardening, the Nx 23.1.2 upgrade, lifecycle and performance
+work, version inventory, deterministic candidate staging, and then sequential
+formal/published-package regression across the consumers.
 
 This TODO is the consumer delta only. Capture Runtime remains the sole OCR
 projection owner. Cert Prep owns durable sources, review overrides, export,
@@ -155,7 +164,8 @@ commit checkpoint before the next slice starts.
   DirectML failure never receives a host CPU retry.
 - Real model runs are sequential: Capture Workbench's JPEG then PDF page 1,
   Cert Prep, then GX Law Prep. Each owner proves cleanup before handoff.
-- The current local candidate tier is not published evidence. Published
+- The accepted local-package result is `local-probe` evidence only: it
+  completes Phase 1 but is not published/release evidence. Published
   acceptance requires strict locks, immutable bytes, and download-back
   identity.
 - Image-flow changes require design and both review axes before code; TDD red

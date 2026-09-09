@@ -8,19 +8,22 @@ that policy.
 
 ## Current checkpoint (2026-09-09)
 
-- Capture Workbench PR #39 at `c6d2140` is deterministic-green but has not
-  merged.
-- There is no current-HEAD real OCR result, candidate artifact, or published
-  `capture-runtime` 0.4.2 artifact that Cert Prep can claim.
-- Cert Prep PR #19 is open at HEAD `d5af0f2a3939949bc10667a40252e96963ba64bb`.
-  Production remains blocked on a formal, complete 0.4.2 candidate and its
-  consumer evidence.
-- Older local OCR evidence is historical. It cannot be described as a
-  completed Phase 1 gate for this checkpoint or for a later Cert Prep HEAD.
+- Phase 1 is complete at the `local-probe` tier. Capture Workbench, Cert Prep,
+  and GX Law Prep each passed real local-package OCR, and Cert Prep's
+  local-package OCR evidence is accepted at that tier.
+- This is not published or release evidence. The formal `capture-runtime`
+  0.4.2 candidate/package remains unbuilt and unpublished.
+- Capture Workbench PR #39 at `c6d2140`, Cert Prep PR #19 at
+  `d5af0f2a3939949bc10667a40252e96963ba64bb`, and their recorded heads are
+  release-freshness facts only; they do not reopen the completed Phase 1
+  status.
+- Older local OCR records remain historical and do not substitute for the
+  accepted local-probe result or for published/release evidence.
 
-This is a coordination checkpoint, not installed-artifact acceptance. The
-ordered producer gate must be current before a Cert Prep model-enabled run;
-Cert Prep then runs before GX Law Prep, with cleanup proven between consumers.
+This checkpoint records local-probe acceptance, not published/release
+acceptance. Phase 2 now owns hardening, the Nx 23.1.2 upgrade, lifecycle and
+performance work, version inventory, deterministic candidate staging, and
+then sequential formal/published-package regression across the consumers.
 
 ## Purpose and non-goals
 
@@ -34,8 +37,9 @@ This specification does not authorize:
   OCR-provider, or host CPU-retry implementation;
 - host-side GPU enumeration, ranking, device-ID persistence, model creation,
   preprocessing, inference, or process-name cleanup;
-- treating a local candidate, package smoke, snapshot, or successful command as
-  published-release or real-OCR proof; or
+- treating local-probe evidence, a package smoke, snapshot, or successful
+  command as published-release proof, or treating a protocol fake as real OCR
+  proof; or
 - deleting the existing lazy-install/package-smoke specifications before
   their relevant consumer content is merged here.
 
@@ -148,16 +152,17 @@ baseline rather than evidence for the 0.4.2 cutover.
 ## Tooling baseline
 
 The current workspace package manager is `pnpm@12.0.0`. Nx packages and the
-workspace CLI are currently `23.1.0`; upgrading to `23.1.2` is a tracked
-backlog item, not part of this consumer documentation commit. Verification
+workspace CLI are currently `23.1.0`; Phase 2 owns the upgrade to `23.1.2`.
+This local-probe checkpoint makes no upgrade or release claim. Verification
 uses package-manager-prefixed Nx commands and `--skip-nx-cache` for final
 confidence.
 
 ## Acceptance checklist
 
-The real consumer gate is an installed Cert Prep app using private fixtures
-and an exact producer candidate. Package QA and protocol fakes are supporting
-checks only.
+Phase 1 local-probe acceptance is complete. The following remains the Phase 2
+sequential formal/published-package regression checklist: it uses private
+fixtures and an exact producer candidate. Package QA and protocol fakes are
+supporting checks only.
 
 - [ ] Run a real private JPEG through the installed app and persist a semantic
       `windowsml_ocr` projection with producer provenance.
@@ -201,8 +206,8 @@ docs checks and `git diff --check` only.
 The existing lazy-install and package-smoke specs/TODOs remain in the tree.
 Their consumer-relevant content will eventually be merged into this consumer
 specification, decision record, and TODO; they are not deleted now. This
-specification supersedes stale statements that call historical local OCR
-evidence a completed Phase 1 gate.
+specification supersedes stale statements that deny the completed Phase 1
+local-probe gate or treat it as published/release evidence.
 
 Rollback for this documentation-only change is an additive revert of the
 focused documentation commit. It does not alter runtime assets, database
