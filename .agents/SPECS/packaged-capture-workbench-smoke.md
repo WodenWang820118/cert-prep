@@ -1,5 +1,11 @@
 # Packaged Capture Workbench Smoke Spec
 
+> Historical/superseded (2026-09-09): retained for traceability only. Current
+> 0.4.2 consumer policy is defined by the [consumer specification](capture-runtime-consumer.md),
+> [decision](../DECISIONS/capture-runtime-consumer.md), and [TODO](../TODOS/capture-runtime-consumer.md).
+> This older body does not define D4/D7, immutable roots, or the current
+> version-first gate; do not use its old runtime/version details for new work.
+
 ## Purpose
 
 Prove a fresh NSIS-installed Cert Prep Desktop executable can install the OCR

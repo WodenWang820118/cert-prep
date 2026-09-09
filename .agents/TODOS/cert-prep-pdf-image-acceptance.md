@@ -19,11 +19,82 @@ work, version inventory, deterministic candidate staging, and then sequential
 formal/published-package regression across the consumers.
 
 Phase 1 local-probe acceptance is complete. This checklist captures the
-remaining Phase 2 sequential formal/published-package regression path. The
-producer must first pass its formal release gate. Cert then owns durable
-source/review/export state; `capture-runtime` owns the OCR projection. New
-imports accept only `windowsml_ocr`; `embedded` and `mixed` are legacy
-read-only compatibility rows and fail closed at the new import seam.
+remaining Phase 2 sequential formal/published-package regression path. D4 is
+the pre-publication immutable-candidate acceptance; D7 repeats the same
+journey from D5/D6 published download-back bytes and is the formal published
+acceptance. The stable pointer moves only after Capture Workbench, Cert Prep,
+and GX Law Prep each have green D7 ledgers for the same bytes. Cert owns
+durable source/review/export state; `capture-runtime` owns the OCR projection.
+The producer engine `windowsml-ocr` maps to the Cert durable discriminator
+`windowsml_ocr`; embedded layers are ignored, and `embedded`/`mixed` are
+legacy read-only compatibility values only.
+
+The canonical implementation slices, exact owners, red proofs, prerequisites,
+stop conditions, rollback, and discovered Nx commands are in the [consumer
+TODO](capture-runtime-consumer.md). The register below binds this acceptance
+checklist to those slices without inventing a second owner.
+
+## Acceptance slice register
+
+- **D4 candidate journey:** owned by
+  `apps/cert-prep-desktop/scripts/acceptance-real.mts`
+  (`acceptancePassed`, `writeAcceptanceManifest`),
+  `apps/cert-prep-desktop/scripts/acceptance-real-options.mts`
+  (`createAcceptanceSmokeOptions`, `loadPhase1FinalCandidate`),
+  `apps/cert-prep-desktop/scripts/ocr-truth-contract.mts`
+  (`parseOcrTruthManifest`), and backend
+  `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/ocr_summary.py`
+  (`build_ocr_summary`, `_map_provenance`),
+  `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/mapping.py`
+  (`_ocr_only_extraction_method`), and
+  `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/persistence.py`
+  (`publish_capture_document`). First red proof:
+  old/local/fake/mismatched candidate or threshold/anchor/cleanup failure
+  must fail before a D4 manifest. Prerequisite: consumer TODO Slices 1-6 and
+  producer D3 candidate ledger. Stop if D4 changes a stable pointer, writes
+  embedded/mixed, or records raw text/token/path. Rollback keeps the prior
+  active root and candidate evidence. Commit boundary: the D4 evidence-only
+  acceptance change.
+- **D7 published download-back journey:** owned by
+  `apps/cert-prep-desktop/scripts/acceptance-real.mts`
+  (`acceptancePassed`, `writeAcceptanceManifest`),
+  `apps/cert-prep-desktop/scripts/acceptance-real-options.mts`
+  (`loadRuntimeCandidate`, `strictRuntimeIdentity`),
+  `apps/cert-prep-desktop/scripts/ocr-truth-contract.mts`
+  (`parseOcrTruthManifest`, `evaluateOcrTruth`),
+  `apps/cert-prep-desktop/scripts/ocr-page-record-evidence.mts`
+  (`assertOcrPageRecordEvidenceIntegrity`),
+  `apps/cert-prep-desktop/scripts/phase1-acceptance-evidence.mts`
+  (`buildPhase1AcceptanceEvidence`),
+  `apps/cert-prep-desktop/scripts/phase1-final-identity.mts`
+  (`loadPhase1FinalEvidence`), plus `tools/capture-runtime-version-check.mts`
+  (`assertCaptureRuntimeConsumerVersions`) and
+  `apps/cert-prep-desktop/src-tauri/src/capture_manifest.rs`
+  (`verify_capture_runtime`, `validate_capture_manifest_contract`) and
+  `apps/cert-prep-desktop/src-tauri/src/manifests.rs` (`verify_artifact`).
+  First red proof: local URL/path, mutable artifact,
+  stale/mixed lock, or download-back byte mismatch must fail. Prerequisite:
+  D5 published exact D3 bytes and D6 download-back ledger. Stop without a
+  complete three-consumer D7 ledger. Rollback restores the previous active
+  identity and retains failure evidence. Commit boundary: the D7 acceptance
+  evidence and manifest update.
+- **D8 stable-pointer decision:** there is no existing Cert stable-pointer
+  writer. Any new writer is **proposed** and must be owned by the bounded
+  promotion slice, not by this acceptance checklist. First red proof: one
+  consumer's D7 failure must leave the old pointer/root/session usable.
+  Prerequisite: all three D7 ledgers and atomic promotion/rollback proof.
+  Stop on any identity, cleanup, or privacy mismatch. Rollback atomically
+  restores the prior pointer. Commit boundary: the promotion decision only.
+- **Privacy and semantic evidence:** owned by
+  `ocr-truth-contract.mts` (`parseOcrTruthManifest`),
+  `ocr-page-record-evidence.mts` (`assertOcrPageRecordEvidenceIntegrity`),
+  `phase1-acceptance-evidence.mts` (`buildPhase1AcceptanceEvidence`), and
+  `phase1-final-identity.mts` (`loadPhase1FinalEvidence`). First red proof:
+  raw OCR/truth text, bearer token, local path, host/user name, or environment
+  dump must fail manifest validation. Prerequisite: the exact candidate or
+  download-back bytes. Stop on CER > 1% for scanned PDF page 1, CER > 3% for
+  real JPEG, or any missing critical anchor. Rollback retains failed evidence
+  without publishing it. Commit boundary: the privacy-safe evidence schema.
 
 ## Ordered real journey
 
@@ -39,13 +110,15 @@ read-only compatibility rows and fail closed at the new import seam.
 - [ ] Launch the installed Cert Prep app with the real private JPEG. Assert
       the resulting page projection is semantic, ordered, and
       `windowsml_ocr`-provenanced; no embedded-text or host OCR route is used.
+      Require CER <= 3% and zero missing critical anchors.
 - [ ] Complete `afterCapture` cleanup for the JPEG before beginning the PDF
       run. Prove owned listeners, PIDs, run data, and staging are gone while
       durable runtime/model assets remain.
 - [ ] Run the real private PDF's page 1 only. Assert the same
       `windowsml_ocr` projection and producer provenance. Full-document OCR is
-      a separate gate reserved for a tested ordering, accumulation, memory,
-      or accuracy risk.
+      a separate gate reserved for a tested ordering, accumulation, memory, or
+      accuracy risk. Require page-1 CER <= 1% and zero missing critical
+      anchors.
 - [ ] Complete `afterCapture` cleanup for the PDF before any next consumer.
       Before handing the model slot to LAW, prove zero owned backend,
       Capture Runtime, OCR/model PIDs, listeners, run data, and staging.
@@ -64,13 +137,19 @@ read-only compatibility rows and fail closed at the new import seam.
       cleanup flags. Raw OCR text, truth text, tokens, local paths,
       host/user names, and environment dumps must not be present.
 
+- [ ] Label the manifest `D4 CandidateAccepted` before publication. It must
+      identify the immutable candidate and must not move the stable pointer.
+- [ ] After D5 publication and D6 download-back hash verification, rerun from
+      downloaded bytes and label the result `D7 PublishedAccepted`. Do not
+      call D4 local/candidate evidence published acceptance.
+
 ## Failure and evidence rules
 
 - A missing/malformed asset, identity mismatch, incompatible handshake,
   unavailable OCR requirement, malformed projection, cancellation, timeout,
   or runtime failure is terminal or unavailable. Cert does not create a local
   OCR fallback.
-- The UI presents producer `OcrComputePreflight` and notice only. It does not
+- The UI presents producer `OcrComputePreflightV2` and notice only. It does not
   rank adapters. Producer order is usable dGPU, usable iGPU, then noticed CPU;
   post-selection DirectML failure is fail-closed and receives no host CPU
   retry.
@@ -96,9 +175,9 @@ docs checks and `git diff --check` only.
 
 ## Supersession
 
-The lazy-install and package-smoke specs/TODOs remain in the repository. Their
-consumer-relevant content will eventually merge into the canonical consumer
-spec/decision/TODO; this checkpoint does not delete them. This document
-supersedes older acceptance wording that denied the completed Phase 1
-local-probe gate, treated local-probe evidence as published/release acceptance,
-or allowed embedded/mixed output for new imports.
+The historical [lazy-install decision](../DECISIONS/lazy-capture-runtime-installation.md)
+and [packaged-smoke spec](../SPECS/packaged-capture-workbench-smoke.md) remain
+for traceability. No corresponding TODO files exist; do not invent or revive
+those references as active work. Current D4/D7, roots, version-first staging,
+and exact projection mapping are defined by the [consumer specification](../SPECS/capture-runtime-consumer.md),
+[decision](../DECISIONS/capture-runtime-consumer.md), and [consumer TODO](capture-runtime-consumer.md).

@@ -1,5 +1,11 @@
 # Lazy Capture Runtime Installation Decision
 
+> Historical/superseded (2026-09-09): retained for traceability only. Current
+> 0.4.2 consumer policy is defined by the [consumer specification](../SPECS/capture-runtime-consumer.md),
+> [decision](capture-runtime-consumer.md), and [TODO](../TODOS/capture-runtime-consumer.md).
+> This older body does not define D4/D7, immutable roots, or the current
+> version-first gate; do not use its old runtime/version details for new work.
+
 ## 2026-08-25 OCR-only consumer boundary
 
 - Installation remains a lifecycle concern only. The target 0.4.2 runtime is

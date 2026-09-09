@@ -6,6 +6,15 @@ commits, and release promotion. This document records the responsibilities
 that belong to this consumer; it does not redefine the capture-runtime OCR
 policy.
 
+## Current Phase 2 checkpoint
+
+Phase 1 is complete at the `local-probe` tier only. That evidence is not
+published `capture-runtime` 0.4.2 evidence and does not prove installed formal
+acceptance. The authoritative Phase 2 records are the [consumer specification](../SPECS/capture-runtime-consumer.md),
+[decision](../DECISIONS/capture-runtime-consumer.md), and [consumer TODO](../TODOS/capture-runtime-consumer.md).
+They define the first executable Nx `23.1.2` plus version-inventory slice,
+which must be green before candidate staging.
+
 ## Phase 1: prove the consumer journey
 
 Before implementation, write or update the local spec, decision, and task
@@ -26,17 +35,27 @@ For the first real journey:
 - Use the application journey and public capture contract, not a private OCR
   implementation or a test-only shortcut. Preserve page order, page status,
   text, confidence, boxes, failure evidence, and provenance.
-- Run real PaddleOCR acceptance only after the Capture Workbench app has passed.
-  The required order is **Capture Workbench → Cert Prep → GX Law Prep**. Run
+- Run producer-owned real OCR acceptance only after the Capture Workbench app
+  has passed. The required order is **Capture Workbench -> Cert Prep -> GX Law
+  Prep**. Run
   model-enabled apps sequentially; after Capture Workbench, prove its owned
   processes/listeners and run-scoped residue are gone and model memory is
   released before starting Cert Prep.
 - Use scanned PDF/JPEG truth fixtures with no text layer. Local package QA,
   fake OCR, snapshots, or a successful process exit are not real OCR proof.
 
-Phase 1 is complete for Cert Prep only when the freshly installed app produces
-semantic OCR evidence from the real model and its candidate identity matches
-the tested producer artifact. Do not claim Phase 2 hardening at this point.
+The recorded Phase 1 result for Cert Prep is complete at `local-probe`: the
+real local-package journey produced semantic OCR evidence with the tested
+local candidate identity. This does not claim a published 0.4.2 artifact or
+installed formal acceptance. Phase 2 begins with the version-first gate and
+hardening slices below.
+
+Consumer acceptance has two named events. D4 `CandidateAccepted` runs the
+immutable candidate before publication and never moves a stable pointer. D7
+`PublishedAccepted` repeats the same journey from D5/D6 published
+download-back bytes. D8 may move the stable pointer only after Capture
+Workbench, Cert Prep, and GX Law Prep each have green D7 ledgers for the same
+bytes.
 
 ## Phase 2: consumer hardening
 
@@ -44,10 +63,28 @@ After Phase 1, adopt the producer's deep modules rather than growing local
 policy:
 
 - Keep the canonical OCR pipeline behind its small interface. Cert Prep owns
-  durable source/domain persistence and presentation; it does not own Paddle
+  durable source/domain persistence and presentation; it does not own runtime
   initialization, preprocessing, inference, OCR arbitration, or confidence
   semantics.
-- Use the native `OwnedRuntimeSession` seam for each active/candidate launch.
+- Use the producer-owned `OwnedRuntimeSession` seam for each active/candidate
+  launch; it is not a current Cert symbol. Current Cert owners are
+  `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/ocr_summary.py`
+  (`build_ocr_summary`, `_map_provenance`),
+  `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/mapping.py`
+  (`_ocr_only_extraction_method`),
+  `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/persistence.py`
+  (`publish_capture_document`),
+  `apps/cert-prep-backend/src/cert_prep_backend/domains/source_documents/operations.py`
+  (`publish_success`, recovery),
+  `apps/cert-prep-backend/src/cert_prep_backend/domains/mock_exams/draft_jobs.py`
+  (job ordering), and desktop Rust
+  `apps/cert-prep-desktop/src-tauri/src/capture_runtime.rs`,
+  `apps/cert-prep-desktop/src-tauri/src/manifests.rs`,
+  `apps/cert-prep-desktop/src-tauri/src/capture_manifest.rs`, and
+  `apps/cert-prep-desktop/src-tauri/src/process_owner.rs`.
+  The producer engine `windowsml-ocr` maps to Cert's
+  durable `windowsml_ocr`; embedded layers are ignored and new `embedded` or
+  `mixed` writes are forbidden.
   A failed candidate cleanup must not destroy the active backend. Stop only
   app-owned runtime/model descendants; a baseline process that existed before
   launch must survive. Reconcile stale PID/listener/staging state safely at
