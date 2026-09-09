@@ -14,9 +14,16 @@ release-freshness facts only; they do not reopen the completed Phase 1 status.
 Older local OCR records remain historical and do not substitute for the
 accepted local-probe result or for published/release evidence.
 
+CI repair is paused and has no authority over this checkpoint or the Phase 2
+acceptance record. Do not treat a repair branch or CI result as release,
+publication, or consumer-ownership authority until the owning lane resumes.
+
 Phase 2 now owns hardening, the Nx 23.1.2 upgrade, lifecycle and performance
 work, version inventory, deterministic candidate staging, and then sequential
 formal/published-package regression across the consumers.
+
+Audio transcription/translation is a separate domain and acceptance lane; it
+is not part of this OCR-only Phase 2 TODO.
 
 This TODO is the consumer delta only. Capture Runtime remains the sole OCR
 projection owner. Cert Prep owns durable sources, review overrides, export,
@@ -28,7 +35,8 @@ Every item below is an independently reviewable slice. Each item names exact
 owned paths/symbols, the red proof to write first, prerequisites, a stop
 condition, a complete discovered Nx verification floor, rollback, and the
 smallest commit boundary. No candidate staging is allowed before Slice 1 is
-green.
+green. The listed verification is the green proof; an unavailable package
+manager or undiscovered target is a discovery-stop, never a green claim.
 
 ## Slices
 
@@ -39,14 +47,17 @@ green.
   - Owned paths/symbols: `.agents/SPECS/capture-runtime-consumer.md`,
     `.agents/DECISIONS/capture-runtime-consumer.md`,
     `.agents/TODOS/capture-runtime-consumer.md`, and
-    `.agents/TODOS/cert-prep-pdf-image-acceptance.md`; no product symbol.
+    `.agents/TODOS/cert-prep-pdf-image-acceptance.md`,
+    `.agents/GUIDES/staged-ocr-delivery-adoption.md`, and the two historical
+    TODO banners `.agents/TODOS/capture-workbench-ocr-review.md` and
+    `.agents/TODOS/capture-workbench-cert-prep-pdf.md`; no product symbol.
   - Prerequisite: none; this slice is the current documentation checkpoint.
   - Red proof (write first): stale text could call local OCR published or
     omit the producer candidate blocker; a docs scan must fail until the
     checkpoint, OCR-only rule, and D4/D7 distinction are present.
-  - Verification: `pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`;
+  - Verification: docs link/anchor/fence scan; `pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`;
     `pnpm nx run cert-prep-desktop:typecheck-scripts --skip-nx-cache`;
-    `git diff --check -- .agents/SPECS/capture-runtime-consumer.md .agents/DECISIONS/capture-runtime-consumer.md .agents/TODOS/capture-runtime-consumer.md .agents/TODOS/cert-prep-pdf-image-acceptance.md`.
+    `git diff --check -- .agents/SPECS/capture-runtime-consumer.md .agents/DECISIONS/capture-runtime-consumer.md .agents/TODOS/capture-runtime-consumer.md .agents/TODOS/cert-prep-pdf-image-acceptance.md .agents/GUIDES/staged-ocr-delivery-adoption.md .agents/TODOS/capture-workbench-ocr-review.md .agents/TODOS/capture-workbench-cert-prep-pdf.md`.
     The current worker runs docs checks only; implementation targets are
     future gates.
   - Stop condition: any absolute machine path, nonexistent target, published
@@ -56,10 +67,13 @@ green.
     record the exact SHA.
 
 - [ ] **Slice 1: Nx 23.1.2 and canonical version inventory.** This is the
-      first executable Phase 2 slice. Upgrade the workspace Nx packages and
-      lockfile from the discovered `23.1.0` baseline to `23.1.2`, then make one
-      read-only inventory/check reject stale and mixed 0.4.1/0.4.2 values before
-      any candidate root, shared cache, active pointer, or acceptance staging.
+      first executable Phase 2 slice. Keep `pnpm@12.0.0`, upgrade the workspace
+      Nx packages and lockfile from the discovered `23.1.0` baseline to
+      `23.1.2`, then make one read-only version/projection inventory/check
+      reject stale and mixed 0.4.1/0.4.2 values before any candidate root,
+      shared cache, active pointer, or acceptance staging. The inventory
+      hard-gates API `2.0`, typed projection schema `3`, and the exact
+      producer-generated contract SHA-256; no digest is invented in advance.
   - Owned paths/symbols: `package.json`, `pnpm-lock.yaml`,
     `tools/capture-runtime-version.mts` (`CAPTURE_RUNTIME_VERSION`,
     `CAPTURE_RUNTIME_API_VERSION`, `CAPTURE_DOCUMENT_SCHEMA_VERSION`),
@@ -76,17 +90,24 @@ green.
     `apps/cert-prep-desktop/src-tauri/src/backend_process.rs`
     (`backend_launch_env`, capture-runtime environment identity fields), and
     `apps/cert-prep-desktop/src-tauri/src/capture_runtime.rs`
-    (`CaptureRuntimeConnection`).
+    (`CaptureRuntimeConnection`); `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/runtime_provenance.py`
+    (`capture_runtime_attestation`, `_validate_candidate`); and the loaded
+    producer SDK public `RuntimeReady`/`OcrComputePreflightV2` model and exact
+    contract hash from the candidate ledger. The generated consumer view
+    `libs/cert-prep-api/src/lib/cert-prep-api.generated.ts`
+    (`RuntimeReady`, `OcrComputePreflightV2`) is inspected, not hand-edited.
   - Prerequisite: current Nx discovery found `cert-prep-desktop` and its
     `release-tool-test`, `typecheck-scripts`, and `package-qa-test` targets;
     no `version-check` target exists. Attach the inventory to an existing
     discovered target or add and rediscover a target in this slice; never write
     a guessed `pnpm nx run ...:version-check` command.
   - Red proof (write first): mutate one owner to a stale version, mix a
-    0.4.1 lock with a 0.4.2 artifact, or omit one language/client value; the
-    old subset checks must be shown green while the complete inventory must
-    fail closed before installation. **Proposed** regression names are
-    `test_version_inventory_rejects_stale_owner` and
+    0.4.1 lock with a 0.4.2 artifact, omit the schema-3 projection or exact
+    contract hash, or omit one language/client value; the old subset checks
+    must be shown green while the complete inventory must fail closed before
+    installation. **Proposed** regression names are
+    `test_version_inventory_rejects_stale_owner`,
+    `test_version_inventory_rejects_missing_projection_contract_hash`, and
     `test_version_inventory_rejects_mixed_lock_and_artifact`.
   - Verification: `pnpm nx run cert-prep-desktop:release-tool-test --skip-nx-cache`;
     `pnpm nx run cert-prep-desktop:typecheck-scripts --skip-nx-cache`;
@@ -150,10 +171,93 @@ green.
   - Commit boundary: `fix(phase2): enforce exact OCR projection mapping`;
     record red/green test names and SHA.
 
-- [ ] **Slice 3: immutable candidate/active roots and identity gate.** Define
+- [ ] **Slice 3: delete-first host compute-policy inventory and pass-through contract.**
+      Once the producer's generated public readiness contract is available,
+      remove host policy duplication rather than adding another adapter layer.
+      Hosts decode the exact public `RuntimeReady`/
+      `OcrComputePreflightV2` model and display producer-owned notice truth;
+      they do not recalculate mode, adapter, reason, or notice. Retain the
+      producer fields needed to tell the user CPU fallback when no dGPU/iGPU is
+      usable.
+  - Owned paths/symbols: delete the fallback import/class and
+    `_validate_decision` in
+    `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/host_models.py`;
+    delete `CertPrepCaptureCoordinator._assert_ocr_compute_preflight` and its
+    `begin_capture` call in
+    `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/coordinator.py`;
+    delete `_install_candidate_runtime_ready_decoder` in
+    `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/client.py`;
+    retain the producer public generated model and inspect
+    `libs/cert-prep-api/src/lib/cert-prep-api.generated.ts`
+    (`RuntimeReady`, `OcrComputePreflightV2`) without hand-editing it; delete
+    `mapOcrCompute` in
+    `apps/cert-prep/src/app/pages/capture-workbench-trial/cert-prep-capture-client.ts`;
+    delete duplicate `OcrComputeMode`, `OcrAdapterClass`,
+    `OcrComputeReasonCode`, `OcrComputeNoticeCode`, and
+    `OcrComputePreflight` in
+    `apps/cert-prep/src/app/pages/capture-workbench-trial/contracts/capture-workbench-trial.contracts.ts`;
+    and delete `GPU_ACCELERATION_MESSAGE`, `CPU_FALLBACK_MESSAGE`,
+    `gpuAccelerationMessage`, and `cpuFallbackNotice` from
+    `apps/cert-prep/src/app/stores/capture-runtime/capture-runtime-preflight.store.ts`.
+  - Prerequisite: Slice 1 is green and the producer public generated contract
+    exposes the projection schema `3`, exact contract hash, compute decision,
+    and user-notice truth. Do not replace the deleted policy with a new local
+    enum or reason-to-copy map.
+  - Red proof (write first): the existing matrix/validator tests must expose
+    the duplication before deletion: backend
+    `apps/cert-prep-backend/tests/integration/test_capture_workbench_host.py`
+    (`test_capture_coordinator_accepts_only_the_runtime_ocr_compute_decision`,
+    `test_capture_coordinator_fails_closed_before_pdf_upload_without_valid_preflight`),
+    and `apps/cert-prep-backend/tests/unit/test_capture_runtime_v2_contract.py`
+    (`test_runtime_ready_accepts_the_generated_ocr_compute_preflight`
+    [keep/rework at the public seam],
+    `test_runtime_ready_rejects_a_preflight_that_silently_changes_compute_policy`);
+    frontend `apps/cert-prep/src/app/pages/capture-workbench-trial/cert-prep-capture-client.spec.ts`
+    (`maps the runtime-owned %s %s OCR compute decision`,
+    `rejects a malformed GPU-DML preflight instead of creating a CPU fallback state`),
+    and `apps/cert-prep/src/app/stores/capture-runtime/capture-runtime-preflight.store.spec.ts`
+    (`keeps GPU acceleration visible without a CPU fallback notice`,
+    `exposes the CPU fallback notice for %s`).
+    Replace them with proposed pass-through tests in the same files:
+    `test_capture_coordinator_forwards_generated_runtime_notice_without_policy_recalculation`
+    in `apps/cert-prep-backend/tests/integration/test_capture_workbench_host.py`,
+    `it('decodes the generated producer preflight without a host matrix')` in
+    `apps/cert-prep/src/app/pages/capture-workbench-trial/cert-prep-capture-client.spec.ts`,
+    and `it('displays the producer CPU fallback notice when no GPU is usable')`
+    in `apps/cert-prep/src/app/stores/capture-runtime/capture-runtime-preflight.store.spec.ts`.
+    A test must fail if the host drops producer notice truth, derives a reason,
+    or accepts a host-only mode.
+  - Verification: `pnpm nx run cert-prep-backend:test --skip-nx-cache`;
+    `pnpm nx run cert-prep-backend:lint --skip-nx-cache`;
+    `pnpm nx run cert-prep-backend:generate-openapi-client --skip-nx-cache`;
+    `pnpm nx run cert-prep:test --skip-nx-cache`;
+    `pnpm nx run cert-prep:lint --skip-nx-cache`;
+    `pnpm nx run cert-prep:build --skip-nx-cache`;
+    `pnpm nx run cert-prep-api:vite:test --skip-nx-cache`; and
+    `pnpm nx run cert-prep-api:lint --skip-nx-cache`. Rerun
+    `pnpm nx show projects --json` and
+    `pnpm nx show project cert-prep-backend --json`,
+    `pnpm nx show project cert-prep --json`, and
+    `pnpm nx show project cert-prep-api --json` after target changes; these are
+    discovery evidence, not acceptance proof.
+  - Stop condition: any host fallback DTO, local preflight validator,
+    mode/adapter/reason/notice matrix, generated-contract shim, dropped
+    producer notice field, host GPU enumeration/ranking, or CPU retry remains;
+    the generated public contract is unavailable; or a target is not
+    discovered. Do not stage a candidate or call D4 while stopped.
+  - Rollback: additive revert of the deletion/pass-through change and focused
+    tests only; do not restore a second policy owner or alter producer bytes,
+    stable-pointer state, durable source rows, or acceptance ledgers.
+  - Commit boundary: `fix(phase2): remove cert compute policy duplication`;
+    record the delete-first inventory, red/green names, generated contract
+    identity, and exact SHA.
+
+- [ ] **Slice 4: immutable candidate/active roots and identity gate.** Define
       separate immutable candidate and active roots, a verified durable
-      content-addressed cache, atomic active-pointer promotion, and rollback
-      that leaves the prior active session usable.
+      content-addressed cache, an atomic active-pointer promotion boundary, and
+      next-start reconciliation. Replace the impossible all-or-nothing rollback
+      contract with `CandidateReady -> NewActiveCommitted ->
+      PriorRetiredDraining -> RetiredProved`.
   - Owned paths/symbols: `apps/cert-prep-desktop/src-tauri/src/capture_runtime.rs`
     (`install_bundled_capture_runtime`, `installed_capture_runtime_paths`,
     `replace_runtime_directory`, `clean_stale_capture_runtime_staging`,
@@ -161,32 +265,54 @@ green.
     (`RuntimeManifest`, `RuntimeArtifact`, `verify_artifact`),
     `capture_manifest.rs` (`verify_capture_runtime`,
     `validate_capture_manifest_contract`), `process_owner.rs`
-    (`RuntimeProcessOwner`, `terminate_once`), and
+    (`RuntimeProcessOwner`, `from_termination`, `terminate_once`,
+    `owned_runtime_process!`), and
     `apps/cert-prep-desktop/scripts/acceptance-real-options.mts`
     (existing candidate identity helpers) plus
     `tools/capture-candidate-gate.mts` and its existing
     `tools/capture-candidate-gate.test.mts` tests. **Proposed** root labels
-    `active`, `candidate`, and `active pointer`
-    must be recorded as design labels, not assumed existing directories.
+    `active`, `candidate`, `active pointer`, `CandidateReady`,
+    `NewActiveCommitted`, `PriorRetiredDraining`, and `RetiredProved` must be
+    recorded as design labels, not assumed existing directories. The current
+    `RuntimeProcessOwner` stores a one-shot `FnOnce` and returns false success
+    on a second `terminate_once` call; replacement with a retryable,
+    proof-bearing producer-session seam is part of this slice, not a second
+    cleanup policy.
   - Prerequisite: Slice 1 inventory is green; the producer D3 candidate ledger
     identifies manifest, schema, core, worker/catalog, contract, and lock bytes.
   - Red proof (write first): a tampered candidate, sibling junction, local path,
     `direct_url`, URL/port-only match, mutable shared cache, or mixed lock must
-    fail. Inject candidate-launch and pointer-swap failures; assert the old
-    active pointer/root/session remains usable and the candidate is terminated.
+    fail. Inject failures before and after the atomic pointer boundary. Before
+    `NewActiveCommitted`, assert the active pointer/root/session remains usable
+    and the candidate is terminated. After commit, assert the new active
+    remains selected and degraded, the next promotion is blocked, the exact
+    producer session/proof token is retained, and cleanup retries until
+    `RetiredProved`. A second cleanup call must not pass as a no-op success. A
+    file-install restore is `Restored` only with re-proofs of the prior
+    manifest, byte count, content hash, and session; otherwise it is
+    `InstallAmbiguous`.
   - Verification: `pnpm nx run cert-prep-desktop:capture-candidate-gate-test --skip-nx-cache`;
+    `pnpm nx run cert-prep-desktop:cargo-test --skip-nx-cache`;
+    `pnpm nx run cert-prep-desktop:cargo-check --skip-nx-cache`;
     `pnpm nx run cert-prep-desktop:typecheck-scripts --skip-nx-cache`;
     `pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`.
-  - Stop condition: active bytes are mutated in place, a failed swap damages
-    active state, cache bytes are reused without verified digest/size, or the
-    implementation invents a target/path without discovery. Do not run D4.
-  - Rollback: additive revert of root/pointer/identity changes; retain the
-    prior active root and durable cache, and remove only isolated candidate
-    staging proven to be slice-owned.
+  - Stop condition: active bytes are mutated in place, a failed pre-commit step
+    damages active state, a post-commit cleanup path claims old-active
+    rollback, cache bytes are reused without verified digest/size, a second
+    `terminate_once`-style false success remains, `InstallAmbiguous` is called
+    restored without proof, or the implementation invents a target/path
+    without discovery. Do not run D4.
+  - Rollback: before commit, discard only isolated candidate staging proven to
+    be slice-owned and leave active untouched. After commit, do not roll back
+    the old active; retain the new active, session/proof token, degraded
+    marker, and failure evidence while retrying/reconciling cleanup at next
+    start. Additive revert is limited to the implementation commit and must
+    not pretend an install was restored without proof.
   - Commit boundary: `test(phase2): harden immutable candidate promotion`;
-    record candidate/archive/runtime-worker identities and rollback evidence.
+    record candidate/archive/runtime-worker identities, transaction state,
+    session/proof token handling, and pre/post-commit evidence.
 
-- [ ] **Slice 4: candidate/active supervision adapter.** Expose only semantic
+- [ ] **Slice 5: candidate/active supervision adapter.** Expose only semantic
       readiness and terminal cleanup through a **proposed**
       `DesktopRuntimeSupervisor`; use one producer-owned `OwnedRuntimeSession`
       per active or candidate launch without exposing handles or PIDs.
@@ -200,23 +326,28 @@ green.
     `apps/cert-prep-desktop/src-tauri/src/capture_manifest.rs`
     (`verify_capture_runtime`). The adapter name and its public methods are
     **proposed**; the producer's `OwnedRuntimeSession` is not a Cert symbol.
-  - Prerequisite: Slice 3 identity/root failure proofs are green and the
+  - Prerequisite: Slice 4 identity/root failure proofs are green and the
     producer session contract is available.
   - Red proof (write first): candidate readiness failure must terminate/prove
     only the candidate; active readiness and capture remain usable. A successful
-    swap must close/prove the retired active session before reporting active.
+    commit enters `PriorRetiredDraining`; it must not claim the old session is
+    retired until producer proof reaches `RetiredProved`. A post-commit cleanup
+    failure keeps the new active selected/degraded, retains the exact producer
+    session/proof token, blocks the next promotion, and retries at next start.
     A caller must not receive a native handle, bearer token, PID, or URL.
   - Verification: `pnpm nx run cert-prep-desktop:cargo-test --skip-nx-cache`;
     `pnpm nx run cert-prep-desktop:cargo-check --skip-nx-cache`;
     `pnpm nx run cert-prep-desktop:typecheck-scripts --skip-nx-cache`.
   - Stop condition: candidate failure tears down active, cleanup is reported
-    before it is proved, or a proposed adapter becomes a second coordinator.
+    before it is proved, second-call cleanup is a false success, post-commit
+    code rolls back the old active, or a proposed adapter becomes a second
+    coordinator.
   - Rollback: additive revert of adapter wiring and focused tests; do not alter
     producer assets, durable source rows, or credentials.
   - Commit boundary: `feat(phase2): isolate cert runtime candidate sessions`;
     record terminate-and-prove evidence and SHA.
 
-- [ ] **Slice 5: close, restart reconciliation, and durable handoff.** Cover
+- [ ] **Slice 6: close, restart reconciliation, and durable handoff.** Cover
       normal/window close, readiness failure, runtime-root crash, host
       termination, and next-start identity reconciliation. Preserve durable
       runtime/model assets and an external Ollama baseline; remove only proven
@@ -240,7 +371,7 @@ green.
     `restartAndVerifyPersistence`) and
     `apps/cert-prep-desktop/scripts/process-residue-audit.mts`
     (`buildProcessResidueAuditReport`).
-  - Prerequisite: Slices 2-4 are green; producer ordered JPEG then PDF page-1
+  - Prerequisite: Slices 2-5 are green; producer ordered JPEG then PDF page-1
     gate has a current cleanup proof before Cert starts.
   - Red proof (write first): inject leaked owned listener/PID/run directory,
     wrong-owner PID/path, stale reparse point, runtime-root crash, and a
@@ -259,7 +390,7 @@ green.
   - Commit boundary: `feat(phase2): prove cert runtime close handoff`;
     record cleanup/handoff evidence and SHA.
 
-- [ ] **Slice 6: performance baseline before optimization.** Measure model-ready
+- [ ] **Slice 7: performance baseline before optimization.** Measure model-ready
       time, per-page and first-page latency, total elapsed time, process/Job
       memory, GPU memory, and cleanup duration by producer-reported compute
       mode. Do not change OCR behavior or persist private content.
@@ -278,7 +409,7 @@ green.
     `apps/cert-prep-desktop/src-tauri/src/process_owner.rs`
     (`RuntimeProcessOwner::terminate_once`). Any new metric name is
     **proposed** until its privacy contract is reviewed.
-  - Prerequisite: Slices 1-5 are green and the sequential private JPEG/PDF
+  - Prerequisite: Slices 1-6 are green and the sequential private JPEG/PDF
     page-1 fixtures are available in the producer-assigned slot.
   - Red proof (write first): an evidence fixture that lacks a reproducible
     baseline or includes raw OCR/truth text, tokens, local paths, host names,
@@ -293,12 +424,15 @@ green.
   - Commit boundary: `test(phase2): record cert OCR performance baseline`;
     record only privacy-safe baseline identities and metrics.
 
-- [ ] **Slice 7: D4 pre-publication immutable-candidate acceptance.** Use the
+- [ ] **Slice 8: D4 pre-publication immutable-candidate acceptance and producer handoff.** Use the
       exact producer D3 bytes in Cert's installed real journey: JPEG first,
       cleanup/model-memory release, PDF page 1, restart persistence,
       review/export, and cleanup. Require producer `windowsml-ocr` provenance,
       Cert `windowsml_ocr`, JPEG CER <= 3%, PDF page-1 CER <= 1%, and zero
-      missing critical anchors. D4 never moves the stable pointer.
+      missing critical anchors. D4 writes only Cert's candidate child ledger,
+      then hands the candidate and child ledger to the producer publication
+      lane; it never waits for LAW, aggregates ledgers, or moves/mutates the
+      producer stable pointer.
   - Owned paths/symbols: `apps/cert-prep-desktop/scripts/acceptance-real.mts`
     (`acceptancePassed`, `writeAcceptanceManifest`),
     `apps/cert-prep-desktop/scripts/acceptance-real-options.mts`
@@ -316,31 +450,41 @@ green.
     (`capture_document_to_pdf_extraction`, `_ocr_only_extraction_method`), and
     `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/persistence.py`
     (`publish_capture_document`).
-  - Prerequisite: Slices 1-6 green, producer D3 candidate ledger complete,
-    candidate root verified, and producer Capture JPEG -> PDF page-1 gate
-    green with cleanup before Cert starts.
+  - Prerequisite: Slices 1-7 green, producer D3 candidate record complete,
+     candidate root verified, and producer Capture JPEG -> PDF page-1 gate
+     green with cleanup before Cert starts.
   - Red proof (write first): local URL-only transport, a supplied old
-    executable, protocol fake, candidate with mismatched worker/contract,
-    CER over threshold, missing anchor, or incomplete cleanup must fail before
-    a passing D4 manifest. Prove D4 evidence is labeled pre-publication and no
-    stable pointer is changed.
+     executable, protocol fake, candidate with mismatched worker/contract,
+     CER over threshold, missing anchor, or incomplete cleanup must fail before
+     a passing D4 manifest. Prove D4 evidence is labeled pre-publication,
+     contains only Cert's candidate child ledger, and no producer stable pointer
+     or aggregate ledger is changed.
   - Verification: `pnpm nx run cert-prep-desktop:capture-candidate-gate-test --skip-nx-cache`;
     `pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`;
     `pnpm nx run cert-prep-desktop:acceptance-real --skip-nx-cache`.
   - Stop condition: candidate identity is incomplete, semantic/cleanup proof
-    is partial, manifest contains raw text/token/path, or D4 is reported as
-    published acceptance. Preserve the failed artifact and do not start LAW.
-  - Rollback: restore the last reviewed 0.4.1 pins/assets/locks consistently;
-    preserve candidate evidence and keep the previous active root/pointer.
+     is partial, manifest contains raw text/token/path, D4 is reported as
+     published acceptance, Cert waits for LAW, or Cert writes an aggregate or
+     stable-pointer mutation. Preserve the failed artifact and do not start
+     LAW from a stopped Cert lane.
+  - Rollback: apply Slice 4 transaction semantics. Before the local active
+     commit, discard only isolated candidate staging and keep active untouched.
+     After commit, do not restore the old active or producer stable pointer;
+     keep the new active degraded with its exact session/proof token and retry
+     or reconcile cleanup. Preserve the candidate child ledger and failure
+     evidence.
   - Commit boundary: `test(phase2): accept immutable cert candidate`;
-    record candidate hashes, D4 manifest SHA, and cleanup proof.
+     record candidate hashes, Cert D4 child-ledger SHA, transaction state, and
+     cleanup proof before handing off to the producer.
 
-- [ ] **Slice 8: D7 published download-back acceptance and D8 promotion.**
+- [ ] **Slice 9: D7 published download-back acceptance and producer handoff.**
       After D5 publishes the exact D3 bytes and D6 verifies download-back
       hashes, rerun the same Cert journey from downloaded bytes only. D7 is
-      formal published acceptance. Move the stable pointer only after Capture
-      Workbench, Cert Prep, and GX Law Prep each have green D7 ledgers for the
-      same bytes; one consumer or D4 never promotes it.
+      formal published acceptance. Cert writes only its own published child
+      ledger, then hands that ledger and privacy-safe evidence to LAW. Cert
+      does not wait for LAW, aggregate consumer ledgers, or move/mutate/rollback
+      the producer's stable pointer; the producer alone owns aggregation and
+      D8 promotion.
   - Owned paths/symbols: `tools/capture-runtime-version.mts`
     (`CAPTURE_RUNTIME_RELEASE_BASE_URL`, `CAPTURE_RUNTIME_PACKAGE_NAME`,
     `CAPTURE_RUNTIME_CLIENT_PACKAGE_NAME`),
@@ -355,46 +499,65 @@ green.
     `apps/cert-prep-desktop/scripts/package-qa.mts` (`main`),
     `apps/cert-prep-desktop/src-tauri/src/capture_manifest.rs`
     (`verify_capture_runtime`, `validate_capture_manifest_contract`), and
-    `apps/cert-prep-desktop/src-tauri/src/manifests.rs` (`verify_artifact`). A
-    shared stable-pointer writer is **proposed** and has no current Cert
-    symbol.
-  - Prerequisite: Slices 1-7 green; producer D5 publication and D6
-    download-back ledger prove byte identity; all three consumers are assigned
-    the same immutable bytes and no local path/direct URL.
+     `apps/cert-prep-desktop/src-tauri/src/manifests.rs` (`verify_artifact`).
+     There is no Cert stable-pointer writer; producer aggregation and D8 are
+     outside this TODO's ownership.
+  - Prerequisite: Slices 1-8 green; producer D5 publication and D6
+     download-back record prove byte identity for the exact candidate; Cert has
+     no local path/direct URL and no downstream LAW result is required to start
+     or complete this Cert D7 run.
   - Red proof (write first): local candidate, mutable URL, URL/port-only match,
-    stale 0.4.1 lock, mixed dependency, old executable, or download-back byte
-    mismatch must fail. Inject a one-consumer D7 failure and prove the stable
-    pointer does not move; only all-three D7 success permits D8.
+     stale 0.4.1 lock, mixed dependency, old executable, or download-back byte
+     mismatch must fail. Prove the run writes only Cert's published child
+     ledger, hands it to LAW after green, and never waits for LAW or writes an
+     aggregate ledger/stable-pointer mutation.
   - Verification: `pnpm nx run cert-prep-desktop:release-tool-test --skip-nx-cache`;
     `pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`;
     `pnpm nx run cert-prep-desktop:acceptance-real --skip-nx-cache`.
-    The three-repository D7 ledger is an external coordination prerequisite,
-    not something inferred from a local target result.
+    Producer aggregation and D8 stable-pointer promotion are external
+    coordination outcomes, not something inferred from a local Cert target
+    result; Cert verifies and hands off only its own D7 child ledger.
   - Stop condition: any artifact/lock/manifest/hash mismatch, local provenance,
-    CER/anchor/cleanup failure, missing consumer ledger, or attempted pointer
-    move before all D7 results is terminal. Do not publish a failed candidate
-    or start LAW.
-  - Rollback: restore the last reviewed 0.4.1 pins/assets/locks consistently;
-    atomically restore the prior stable pointer if promotion had begun, retain
-    old active bytes and failure evidence, and never mix versions.
+     CER/anchor/cleanup failure, missing Cert child ledger, attempted aggregate
+     ledger, stable-pointer mutation, or wait for LAW is terminal. Do not
+     publish a failed candidate or hand off a failed Cert ledger.
+  - Rollback: apply Slice 4 transaction semantics for Cert's local install.
+     Before commit, preserve the active root/session and discard only proven
+     candidate staging. After commit, do not roll back the old active or the
+     producer stable pointer; retain the new active degraded with its exact
+     session/proof token while cleanup is retried/reconciled. Preserve the
+     failed published child ledger/evidence and do not relabel it green.
   - Commit boundary: `release(phase2): accept published capture-runtime bytes`;
-    record exact published/download-back hashes, lockfile, manifests, all
-    three D7 ledgers, and the stable-pointer decision.
+     record exact published/download-back hashes, lockfile, manifests, Cert's
+     D7 child-ledger SHA, and the handoff to LAW. Producer aggregation and D8
+     are not part of this commit.
 
 ## Cross-slice rules
 
 - New imports are OCR-only: producer `windowsml-ocr` maps to Cert durable
   `windowsml_ocr`; embedded PDF layers are ignored, and `embedded`/`mixed` are
   legacy read-only values only.
-- The UI presents producer `OcrComputePreflightV2` and notice only. It never
-  ranks adapters. The canonical order is dGPU, iGPU, then noticed CPU; a
-  DirectML failure never receives a host CPU retry.
+- The UI decodes the exact generated producer `OcrComputePreflightV2` contract
+  and displays producer-owned notice truth only. It never enumerates/ranks
+  adapters, derives mode/reason/notice values, or retries a failed DirectML
+  plan on CPU. Preserve the producer notice needed to tell the user CPU
+  fallback was selected because no dGPU/iGPU was usable.
 - Real model runs are sequential: Capture Workbench JPEG then PDF page 1,
   Cert Prep, then GX Law Prep. Each owner proves cleanup before handoff.
 - Phase 1 is complete at `local-probe` only; it is not published or installed
-  formal acceptance. D4 is pre-publication candidate acceptance; D7 is
-  download-back published acceptance; D8 stable-pointer movement waits for all
-  three D7 ledgers.
+  formal acceptance. Cert D4 is pre-publication candidate acceptance that
+  writes only a Cert child ledger and hands it to the producer. Cert D7 is
+  download-back published acceptance that writes only a Cert child ledger and
+  hands it to LAW. Cert never waits for LAW, aggregates ledgers, or owns D8;
+  the producer alone aggregates child ledgers and moves its stable pointer.
+- Promotion is `CandidateReady -> NewActiveCommitted ->
+  PriorRetiredDraining -> RetiredProved`. Before commit, failure preserves the
+  active root/pointer/session. After commit, the new active remains selected and
+  degraded, the next promotion is blocked, the exact producer session/proof
+  token is retained, and cleanup is retried/reconciled at next start. A file
+  install is `Restored` only with proof; otherwise it is `InstallAmbiguous`.
+- Audio transcription/translation is a separate domain and acceptance lane,
+  not an OCR Phase 2 requirement.
 - Image-flow changes require design and both review axes before code; TDD red
   tests cross the public seam; staging is isolated before installed evidence.
 - The historical [lazy-install decision](../DECISIONS/lazy-capture-runtime-installation.md)

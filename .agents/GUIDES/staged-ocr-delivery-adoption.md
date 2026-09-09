@@ -14,6 +14,12 @@ acceptance. The authoritative Phase 2 records are the [consumer specification](.
 [decision](../DECISIONS/capture-runtime-consumer.md), and [consumer TODO](../TODOS/capture-runtime-consumer.md).
 They define the first executable Nx `23.1.2` plus version-inventory slice,
 which must be green before candidate staging.
+CI repair is paused and has no authority over this checkpoint or its acceptance
+record; a repair branch or CI result cannot establish publication, release, or
+consumer-ownership status until the owning lane resumes.
+
+Audio transcription/translation is a separate domain and acceptance lane. It is
+not part of the OCR-only Phase 2 D4/D7 checklist.
 
 ## Phase 1: prove the consumer journey
 
@@ -50,12 +56,14 @@ local candidate identity. This does not claim a published 0.4.2 artifact or
 installed formal acceptance. Phase 2 begins with the version-first gate and
 hardening slices below.
 
-Consumer acceptance has two named events. D4 `CandidateAccepted` runs the
-immutable candidate before publication and never moves a stable pointer. D7
-`PublishedAccepted` repeats the same journey from D5/D6 published
-download-back bytes. D8 may move the stable pointer only after Capture
-Workbench, Cert Prep, and GX Law Prep each have green D7 ledgers for the same
-bytes.
+Consumer acceptance has two named events owned by each consumer. D4
+`CandidateAccepted` runs the immutable candidate before publication; Cert
+writes only its own candidate child ledger and hands it to the producer
+publication lane. D7 `PublishedAccepted` repeats the same journey from D5/D6
+published download-back bytes; Cert writes only its own published child ledger
+and hands it to LAW. Cert never waits for LAW or aggregates consumer ledgers.
+The producer alone aggregates all child ledgers and owns D8 stable-pointer
+promotion. Cert never moves, mutates, or rolls back that producer pointer.
 
 ## Phase 2: consumer hardening
 
@@ -66,6 +74,12 @@ policy:
   durable source/domain persistence and presentation; it does not own runtime
   initialization, preprocessing, inference, OCR arbitration, or confidence
   semantics.
+- Decode the exact generated producer `RuntimeReady`/`OcrComputePreflightV2`
+  contract and display producer-owned notice truth. Delete host fallback DTOs,
+  validators, mode/adapter/reason/notice matrices, and reason-to-copy mappings
+  rather than copying producer GPU policy. Retain enough producer notice truth
+  to tell the user when CPU fallback was selected because no dGPU/iGPU was
+  usable.
 - Use the producer-owned `OwnedRuntimeSession` seam for each active/candidate
   launch; it is not a current Cert symbol. Current Cert owners are
   `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/ocr_summary.py`
@@ -89,6 +103,16 @@ policy:
   app-owned runtime/model descendants; a baseline process that existed before
   launch must survive. Reconcile stale PID/listener/staging state safely at
   startup without broad process-name kills.
+- Candidate/active promotion is the transaction
+  `CandidateReady -> NewActiveCommitted -> PriorRetiredDraining ->
+  RetiredProved`. Before commit, failure preserves the active root/pointer/
+  session. After commit, no old-active rollback is claimed: the new active
+  remains selected and degraded, the next promotion is blocked, the exact
+  producer session/proof token is retained, and cleanup is retried/reconciled
+  at next start. A file-install restore is `Restored` only with proof;
+  otherwise it is `InstallAmbiguous`. The current one-shot
+  `RuntimeProcessOwner` `FnOnce` seam must be replaced so a second cleanup call
+  cannot be a false success.
 - Measure real model memory and latency before optimizing. Keep the ordered,
   sequential acceptance lane because the available memory is constrained.
 - Keep evidence privacy-safe: manifests contain hashes, CER/anchor counts,
@@ -105,14 +129,15 @@ to the exact HEAD and must be repeated after any commit or rebase.
 
 Label evidence as fast/local, local-real, or published. A Cert Prep PR must
 name the exact candidate or published artifact hashes, the tested producer
-HEAD, evidence tier, deferred gates, and the 0.4.1 rollback pins. Published
-0.4.2 bytes are immutable; the stable pointer moves only after all three apps'
-ordered published-artifact acceptance is green.
+HEAD, evidence tier, deferred gates, and the 0.4.1 compatibility baseline.
+Any future published 0.4.2 bytes are immutable. Cert's D4/D7 child-ledger
+handoffs are consumer-local; only the producer may aggregate them and move its
+stable pointer after its own promotion gate.
 
 ## Identity policy by evidence tier
 
 Phase 1 local-package E2E evidence is labeled `local-probe` and hard-gates API
-`2.0`, schema `3`, the exact contract hash, the packaged archive boundary (no
+`2.0`, typed projection schema `3`, the exact producer contract hash, the packaged archive boundary (no
 sibling junction or source-tree import), and loaded runtime-executable plus
 OCR-worker SHAs matching the local probe. It records, but does not hard-fail
 solely on, package semver, the full all-asset byte/size inventory, an app/desktop
@@ -129,7 +154,8 @@ local paths and `direct_url`. The full inventory, legitimate app/desktop hashes,
 and registry purity are release gates. Keep the evidence label and tier explicit
 when reporting a local-probe result.
 
-This repository has its own focused commits, PR, and CI. Root coordinates and
+This repository has its own focused commits, PR, and CI, but CI repair is
+paused and has no authority over this checkpoint. Root coordinates and
 reviews; the Luna worker implements, verifies, and commits the owned slice. A
 failure stops the ordered promotion and is repaired by the owning slice; it is
 never hidden by mixing runtime versions or restoring removed private OCR.

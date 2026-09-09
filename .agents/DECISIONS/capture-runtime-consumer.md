@@ -14,6 +14,10 @@ release-freshness facts only; they do not reopen the completed Phase 1 status.
 Older local OCR records remain historical and do not substitute for the
 accepted local-probe result or for published/release evidence.
 
+CI repair is paused and has no authority over this checkpoint or the Phase 2
+acceptance record. Do not treat a repair branch or CI result as release,
+publication, or consumer-ownership authority until the owning lane resumes.
+
 Phase 2 now owns hardening, the Nx 23.1.2 upgrade, lifecycle and performance
 work, version inventory, deterministic candidate staging, and then sequential
 formal/published-package regression across the consumers.
@@ -47,18 +51,24 @@ machine-specific path is part of this decision.
 4. **Candidate and active sessions are isolated.** Every active and candidate
    launch has its own producer-owned `OwnedRuntimeSession` interface (not a
    current Cert symbol). A failed candidate is terminated and proved
-   independently; it never tears down the active session. A successful swap
-   closes the retired active session before reporting the new one active.
+   independently; it never tears down the active session before commit. The
+   atomic pointer commit selects the new active, then retirement drains the
+   prior session until producer proof reaches `RetiredProved`; a retirement
+   failure leaves the new active selected/degraded and is retried, not rolled
+   back to the old active.
 5. **Close and recovery preserve durable assets.** App close clears owned
    listeners, PIDs, run data, and staging while leaving durable runtime/model
    assets and caches. A pre-existing external Ollama process is a baseline and
    survives. Next-start reconciliation may remove only stale state whose
    app-owned identity is proven; ambiguous state fails closed.
-6. **The UI presents producer truth.** Cert displays the authenticated
-   `OcrComputePreflightV2` and notice. The canonical policy is usable dGPU,
-   then usable iGPU, then noticed CPU; the exact truth is referenced from
-   Capture Workbench's Phase 2 spec, not restated here. Cert never ranks
-   adapters or derives an ordinal. Post-selection DirectML failure is
+6. **The UI presents producer truth.** Cert decodes the exact generated public
+   `OcrComputePreflightV2`/`RuntimeReady` contract and displays its
+   producer-owned notice. It never ranks adapters, derives an ordinal or
+   device id, translates a reason into local copy, or recomputes a
+   mode/adapter/reason/notice matrix. The producer response retains enough
+   notice truth (`mode`, `reasonCode`, `userNoticeRequired`, and `noticeCode`
+   or the contract's equivalent notice payload) to tell the user about CPU
+   fallback when no dGPU/iGPU is usable. Post-selection DirectML failure is
    terminal and receives no host CPU retry.
 7. **Identity is tiered by evidence.** For local candidates, URL and port
    identify transport only and do not bind repository HEAD. Contract/schema,
@@ -74,30 +84,41 @@ machine-specific path is part of this decision.
    staging, and then sequential formal/published-package regression. No such
    upgrade or release claim is made by this local-probe checkpoint.
 9. **Real evidence is sequential and private.** Acceptance uses a real
-   private JPEG and PDF page 1, then proves Cert cleanup before the model slot
-   is handed to GX Law Prep. Restart persistence, review/export, cleanup, and
-   baseline survival are required. JPEG CER must be <= 3%, scanned PDF page-1
-   CER must be <= 1%, and critical anchors must have zero omissions. Raw
-   OCR/truth text, tokens, paths, and host-specific diagnostics never enter a
-   manifest.
+    private JPEG and PDF page 1, then proves Cert cleanup before handing the
+    model slot to GX Law Prep. Cert writes only its own child ledger and hands
+    it off; it does not wait for LAW or aggregate consumer ledgers. Restart
+    persistence, review/export, cleanup, and baseline survival are required.
+    JPEG CER must be <= 3%, scanned PDF page-1 CER must be <= 1%, and critical
+    anchors must have zero omissions. Raw OCR/truth text, tokens, paths, and
+    host-specific diagnostics never enter a manifest.
 10. **Design gates precede image-flow code.** The image/PDF design receives
     both an independent Standards review and an independent Specification
     review before code. Implementation uses TDD red tests at the public seam,
     deterministic staging, small vertical slices, and exact-HEAD approvals.
-11. **Cert acceptance has two named events.** D4
+11. **Cert acceptance has two named events and a bounded handoff.** D4
     `CandidateAccepted` consumes one immutable, pre-publication candidate and
-    does not move a stable pointer. After D5 publication and D6 download-back
-    byte verification, D7 `PublishedAccepted` repeats the same installed
-    journey using only the downloaded bytes. Stable pointer movement is D8 and
-    is allowed only after Capture Workbench, Cert Prep, and GX Law Prep all
-    have green D7 ledgers for the same bytes.
-12. **Immutable roots are explicit.** A **proposed** active root and
-    **proposed** candidate root are immutable, separate content identities
-    under the app-owned runtime root. Only a verified, durable,
-    content-addressed cache may be shared. An atomic **proposed** active-pointer
-    replacement occurs only after candidate readiness. Candidate or swap
-    failure leaves the old active pointer/root/session usable; rollback restores
-    the old pointer before reporting failure and never mixes versions.
+    writes only Cert's candidate child ledger. On green it hands that ledger
+    back to the producer publication lane. After D5 publication and D6
+    download-back byte verification, D7 `PublishedAccepted` repeats the same
+    installed journey using only the downloaded bytes and writes only Cert's
+    published child ledger. On green it hands that ledger to LAW. Cert never
+    waits for downstream LAW, aggregates ledgers, or moves a shared stable
+    pointer.
+12. **Immutable roots and a non-rollback promotion transaction are explicit.**
+    A **proposed** active root and **proposed** candidate root are immutable,
+    separate content identities under the app-owned runtime root. Only a
+    verified, durable, content-addressed cache may be shared. Promotion is
+    `CandidateReady -> NewActiveCommitted -> PriorRetiredDraining ->
+    RetiredProved`, with an atomic active-pointer replacement at commit. Before
+    commit, failure preserves the active root/pointer/session. After commit,
+    there is no rollback to the old active: the new active remains selected and
+    degraded, blocks the next promotion, retains the exact producer
+    session/proof token, and retries/reconciles cleanup at next start. A file
+    install is `Restored` only after the prior root, manifest, byte count,
+    content hash, and session identity are re-proved; otherwise it is
+    `InstallAmbiguous`. Replace the current one-shot `RuntimeProcessOwner`
+    `FnOnce` termination seam; a second termination call must never return a
+    false success.
 13. **Projection strings are not interchangeable.** Producer
     `provenance.engine == "windowsml-ocr"` maps through the existing
     `mapping.py` seam to Cert durable `documents.extraction_method` and page or
@@ -105,10 +126,33 @@ machine-specific path is part of this decision.
     ignored. No new document/page/chunk may write `embedded` or `mixed`; those
     values remain legacy read compatibility only.
 14. **Version-first is a hard stop.** The first executable Phase 2 slice is
-    Nx `23.1.2` upgrade plus the complete version inventory. No candidate root,
+    the `pnpm@12.0.0`/Nx `23.1.2` upgrade plus one complete
+    version/projection inventory for API `2.0`, typed projection schema `3`,
+    and the exact producer-generated contract SHA-256. No candidate root,
     shared cache, active pointer, or acceptance staging may be created until
     that slice is green. Current Nx `23.1.0` and the 0.4.1 baseline are facts,
-    not a passing Phase 2 gate.
+    not a passing Phase 2 gate; no contract digest is invented in advance.
+15. **Compute-policy deletion is first-class.** Once the generated public
+     producer contract is available, delete the fallback DTO and validator in
+     `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/host_models.py`,
+     `CertPrepCaptureCoordinator._assert_ocr_compute_preflight` in
+     `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/coordinator.py`,
+     the candidate decoder shim in
+     `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/client.py`,
+     and the generated consumer view
+     `libs/cert-prep-api/src/lib/cert-prep-api.generated.ts` only after its
+     producer contract is present. Delete frontend `mapOcrCompute` from
+     `apps/cert-prep/src/app/pages/capture-workbench-trial/cert-prep-capture-client.ts`,
+     duplicate `OcrCompute*` contract types from
+     `apps/cert-prep/src/app/pages/capture-workbench-trial/contracts/capture-workbench-trial.contracts.ts`,
+     and hardcoded preflight-store messages/matrices from
+     `apps/cert-prep/src/app/stores/capture-runtime/capture-runtime-preflight.store.ts`.
+     Replace policy-only tests with pass-through tests at the generated public
+     seam. Preserve producer-owned notice truth so the UI can say CPU fallback
+     when no dGPU/iGPU is usable; Cert does not recalculate it.
+16. **Audio is a separate lane.** Audio transcription/translation remains in
+    its domain specification and is not part of the OCR-only Phase 2 D4/D7
+    acceptance or its handoff ledger.
 
 ## Why these decisions are consumer-specific
 
@@ -147,7 +191,7 @@ none of these proposed names is an existing Cert symbol.
 | --- | --- | --- | --- |
 | **proposed `CaptureRuntimeFacade`** | `facade.capture(candidate, upload) -> receipt`; hides auth, roots, session, projection, mapping, and durable commit. | Installed runtime remote-owned; filesystem local-substitutable; SQLite durable; deterministic receipt test adapter. | Deep for one caller but fuses unrelated failure modes and risks a second coordinator. Rejected. |
 | **proposed explicit ports**: `RuntimeAssetInstaller`, `DesktopRuntimeSupervisor`, `OcrProjectionMapper` | `installer.prepare(candidate)`, `supervisor.start(verified)`, `mapper.map(projection)`; hides manifest/hash, producer session/pointer, and discriminator details. | Existing Rust verification functions are native filesystem adapters; producer session is remote-owned; existing Python owners are domain adapters; failure-injection fakes are test adapters. | More interface knowledge, but high leverage/locality and readable typed failures. Selected. |
-| **proposed `CaptureRuntimePromotion`** | `ensure_active(candidate) -> receipt`, then `capture(upload)`; hides cache, pointer journal, rollback, readiness, and publication. | Filesystem/pointer local-substitutable; producer session remote-owned; journal fixture test adapter. | Common caller is simple, but promotion becomes coupled to persistence and harder to test independently. Rejected. |
+| **proposed `CaptureRuntimePromotion`** | `prepare(candidate) -> CandidateReady`; `commit(candidate) -> NewActiveCommitted`; `reconcile(receipt) -> RetiredProved or InstallAmbiguous`; hides cache, pointer journal, retirement proof, readiness, and publication. | Filesystem/pointer local-substitutable; producer session remote-owned; journal fixture test adapter. | Common caller is simple, but promotion becomes coupled to persistence and harder to test independently. Rejected. |
 
 The selected explicit ports retain the existing public seams: `build_ocr_summary`
 validates the typed projection, `capture_document_to_pdf_extraction` performs
@@ -162,8 +206,9 @@ implemented.
 
 - **Host OCR or embedded-text fallback:** rejected because it creates a second
   projection owner and makes PDF/image behavior differ from the producer.
-- **Host GPU ranking or CPU retry:** rejected because readiness could disagree
-  with the executing plan and hide a DirectML defect.
+- **Host GPU ranking, CPU retry, or copied preflight matrices:** rejected
+  because readiness could disagree with the executing plan, hide a DirectML
+  defect, and drift from the generated producer contract.
 - **One shared active/candidate process tree:** rejected because a failed
   candidate could destroy a working active session.
 - **Broad process-name cleanup:** rejected because it can terminate the
@@ -182,7 +227,7 @@ implemented.
   and [packaged-smoke spec](../SPECS/packaged-capture-workbench-smoke.md) are
   present; they are historical source documents, not active task owners.
 
-## Supersession, review, and rollback
+## Supersession, review, and documentation rollback
 
 This record supersedes older Cert statements that denied the completed Phase 1
 local-probe gate, treated local-probe evidence as published/release acceptance,
