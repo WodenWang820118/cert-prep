@@ -75,7 +75,9 @@ policy:
   initialization, preprocessing, inference, OCR arbitration, or confidence
   semantics.
 - Decode the exact generated producer `RuntimeReady`/`OcrComputePreflightV2`
-  contract and display producer-owned notice truth. Delete host fallback DTOs,
+  contract and display producer-owned notice truth. Retain/regenerate
+  `libs/cert-prep-api/src/lib/cert-prep-api.generated.ts`; never hand-edit or
+  delete that generated consumer view. Delete only host fallback DTOs,
   validators, mode/adapter/reason/notice matrices, and reason-to-copy mappings
   rather than copying producer GPU policy. Retain enough producer notice truth
   to tell the user when CPU fallback was selected because no dGPU/iGPU was
@@ -105,19 +107,41 @@ policy:
   startup without broad process-name kills.
 - Candidate/active promotion is the transaction
   `CandidateReady -> NewActiveCommitted -> PriorRetiredDraining ->
-  RetiredProved`. Before commit, failure preserves the active root/pointer/
-  session. After commit, no old-active rollback is claimed: the new active
-  remains selected and degraded, the next promotion is blocked, the exact
-  producer session/proof token is retained, and cleanup is retried/reconciled
-  at next start. A file-install restore is `Restored` only with proof;
-  otherwise it is `InstallAmbiguous`. The current one-shot
-  `RuntimeProcessOwner` `FnOnce` seam must be replaced so a second cleanup call
-  cannot be a false success.
+  RetiredProved`. The **proposed**
+  `apps/cert-prep-desktop/src-tauri/src/runtime_promotion.rs` module's
+  `RuntimePromotionStore` and `RuntimePromotionReceiptV1` are the sole Cert
+  owner of the local installed-runtime pointer/receipt; they are distinct from
+  the producer session journal and D8 stable pointer. Verify the immutable
+  candidate/root, flush `CandidateReady`, flush `commitIntent` with the
+  expected prior pointer, lock/CAS and atomically replace/flush plus reread, flush
+  irreversible `NewActiveCommitted`, persist `PriorRetiredDraining` before
+  cleanup, obtain producer proof, then flush `RetiredProved` before optional
+  exact prior-root deletion. Before commit, failure preserves active; after
+  commit, never roll back: the new active remains selected/degraded and blocks
+  the next promotion until proof. Intent plus prior pointer means no commit;
+  intent plus candidate pointer advances; an unexpected pointer is
+  `InstallAmbiguous`; missing producer refs stay blocked; and temporary,
+  root, backup, or cache deletion uses exact receipt refs only. The current
+  one-shot `RuntimeProcessOwner` `FnOnce` seam in `process_owner.rs` must be
+  replaced by a retryable proof-bearing seam so a second cleanup call cannot
+  be a false success. `capture_runtime.rs` verifies/stages/launches,
+  `backend.rs` callers request promotion, `lib.rs` wires startup
+  reconciliation, and the Python
+  `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_installations/manager.py`
+  (`RuntimeInstallationManager`, `RuntimeInstaller`) plus
+  `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_installations/installers.py`
+  (`LLMModelInstaller`) remain a separate provider/model installer.
 - Measure real model memory and latency before optimizing. Keep the ordered,
   sequential acceptance lane because the available memory is constrained.
 - Keep evidence privacy-safe: manifests contain hashes, CER/anchor counts,
   provenance, and cleanup flags, never raw OCR/truth text, tokens, or machine
   paths. Screenshots mask the complete privacy-sensitive card before capture.
+
+The acceptance manifest writer is
+`apps/cert-prep-desktop/scripts/acceptance-artifacts.mts::writeAcceptanceManifest`
+with coverage in `apps/cert-prep-desktop/scripts/acceptance-artifacts.test.mts`.
+`acceptance-real.mts::acceptancePassed` is the caller's verdict only; it is not
+the manifest writer.
 
 ## Local reviews, evidence, and promotion
 

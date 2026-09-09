@@ -67,6 +67,7 @@ not a Cert Prep file and is not copied into this specification.
 | Compute decision and notice | `capture-runtime` | The producer owns adapter selection, mode/reason semantics, and the CPU-fallback notice. Cert decodes the exact generated public contract and displays producer notice truth without recomputation. |
 | Runtime/model installation | **Proposed** `RuntimeAssetInstaller` adapter over the existing Rust installation/manifest functions | Verify and stage producer assets; do not choose models or invent a second install policy. The name is a design candidate, not a current Cert symbol. |
 | Runtime process lifecycle | **Proposed** `DesktopRuntimeSupervisor` adapter over the existing `CaptureRuntimeState`/`RuntimeProcessOwner` seams | Present product status and invoke the producer-owned session seam; do not own native process policy. The name is a design candidate, not a current Cert symbol. |
+| Local installed-runtime pointer and promotion receipt | **Proposed** `apps/cert-prep-desktop/src-tauri/src/runtime_promotion.rs`: `RuntimePromotionStore`, `RuntimePromotionReceiptV1` | Sole Cert owner of the local logical active pointer and its durable receipt/reconciliation record. This is not the producer session journal or producer D8 stable pointer. The module does not exist yet. |
 
 The proposed adapter names above do not exist in the current checkout. Until a
 slice creates one and records its public interface, the real owners remain the
@@ -88,14 +89,133 @@ if they were already implemented.
 | Producer-to-Cert mapping | `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/mapping.py`: `capture_document_to_pdf_extraction`, `capture_document_to_audio_segments`, `_ocr_only_extraction_method` | Map the producer projection without reading a PDF embedded layer or creating a second OCR route. |
 | Durable capture publication | `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/persistence.py`: `publish_capture_document`; `apps/cert-prep-backend/src/cert_prep_backend/domains/source_documents/operations.py`: `create_and_attach_document`, `mark_capture_review_pending`, `begin_capture_review_commit`, `publish_success`, `publish_capture_audio_success`, `finish_failed`, `recover_operations` | Keep source/review/domain records durable and commit or fail them atomically. |
 | Draft-job lifecycle | `apps/cert-prep-backend/src/cert_prep_backend/domains/mock_exams/draft_jobs.py`: `enqueue_chunk_job`, `recover_runnable_jobs`, `begin_commit`, `request_cancel`, `mark_canceled`, `mark_failed` | Keep generation jobs downstream of durable source publication and preserve cancel/commit ordering. |
+| Python backend installer (separate scope) | `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_installations/manager.py`: `RuntimeInstallationManager`, `RuntimeInstaller`; `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_installations/installers.py`: `LLMModelInstaller` | Own provider/model requirement jobs and snapshots only; never write the desktop local installed-runtime pointer or promotion receipt. |
 | Runtime installation and launch | `apps/cert-prep-desktop/src-tauri/src/capture_runtime.rs`: `CaptureRuntimeState::launch_cancellable`, `install_bundled_capture_runtime`, `installed_capture_runtime_paths`, `replace_runtime_directory`, `clean_stale_capture_runtime_staging`, `CaptureLaunchPolicy`; `apps/cert-prep-desktop/src-tauri/src/manifests.rs`: `RuntimeManifest`, `RuntimeArtifact`, `load_runtime_manifest`, `write_installed_manifest`, `verify_artifact` | Verify immutable bytes, launch only verified resources, and isolate candidate failure from active state. |
 | Runtime manifest and cleanup seams | `apps/cert-prep-desktop/src-tauri/src/capture_manifest.rs`: `verify_capture_runtime`, `validate_capture_manifest_contract`, `capture_manifest_expectations`, `capture_runtime_expected_version`; `apps/cert-prep-desktop/src-tauri/src/process_owner.rs`: `RuntimeProcessOwner`, `from_termination`, `terminate_once`, `owned_runtime_process!`, `sanitize_termination_error` | Keep manifest/schema identity and owned-process cleanup fail-closed and privacy-safe. |
-| Host compute-policy cleanup (planned) | `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/host_models.py`: fallback `OcrComputePreflightV2` and `_validate_decision`; `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/coordinator.py`: `CertPrepCaptureCoordinator._assert_ocr_compute_preflight`; `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/client.py`: `_install_candidate_runtime_ready_decoder`; `apps/cert-prep/src/app/pages/capture-workbench-trial/cert-prep-capture-client.ts`: `mapOcrCompute`; `apps/cert-prep/src/app/pages/capture-workbench-trial/contracts/capture-workbench-trial.contracts.ts`: `OcrComputeMode`, `OcrAdapterClass`, `OcrComputeReasonCode`, `OcrComputeNoticeCode`, `OcrComputePreflight`; `apps/cert-prep/src/app/stores/capture-runtime/capture-runtime-preflight.store.ts`: `GPU_ACCELERATION_MESSAGE`, `CPU_FALLBACK_MESSAGE`, `gpuAccelerationMessage`, `cpuFallbackNotice` | Delete the host fallback/validator and hardcoded mode/adapter/reason/notice matrices after the generated public producer contract is available. Preserve producer-owned notice fields needed to tell the user about CPU fallback. |
+| Local installed-runtime pointer/receipt (planned) | **Proposed** `apps/cert-prep-desktop/src-tauri/src/runtime_promotion.rs`: `RuntimePromotionStore`, `RuntimePromotionReceiptV1`; `apps/cert-prep-desktop/src-tauri/src/lib.rs`: `run`; `apps/cert-prep-desktop/src-tauri/src/backend.rs`: `install_capture_runtime`, `start_capture_runtime`, `restart_owned_backend_with_capture_runtime` | Sole Cert owner of the local logical pointer, revision/CAS, receipt, and startup reconciliation. It is distinct from the producer session journal and D8 stable pointer; no current implementation exists. |
+| Host compute-policy cleanup (planned) | `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/host_models.py`: fallback `OcrComputePreflightV2` and `_validate_decision`; `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/coordinator.py`: `CertPrepCaptureCoordinator._assert_ocr_compute_preflight`; `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/client.py`: `_install_candidate_runtime_ready_decoder`; `apps/cert-prep/src/app/pages/capture-workbench-trial/cert-prep-capture-client.ts`: `mapOcrCompute`; `apps/cert-prep/src/app/pages/capture-workbench-trial/contracts/capture-workbench-trial.contracts.ts`: `OcrComputeMode`, `OcrAdapterClass`, `OcrComputeReasonCode`, `OcrComputeNoticeCode`, `OcrComputePreflight`; `apps/cert-prep/src/app/stores/capture-runtime/capture-runtime-preflight.store.ts`: `GPU_ACCELERATION_MESSAGE`, `CPU_FALLBACK_MESSAGE`, `gpuAccelerationMessage`, `cpuFallbackNotice` | After the producer-generated public contract exists, retain/regenerate `libs/cert-prep-api/src/lib/cert-prep-api.generated.ts` and delete only the fallback DTO/validator/decoder shim and local GPU mode/adapter/reason/notice matrices. Never hand-edit or delete the generated consumer view. Preserve producer-owned notice fields needed to tell the user about CPU fallback. |
 
 The current Rust installation path uses `app_data_dir/runtimes` and a
 `capture-runtime` directory; an `active/`, `candidate/`, or pointer layout is
 not yet an existing symbol. Any such layout in the next sections is explicitly
 **proposed** until an implementation slice adds it.
+
+### Proposed local promotion receipt seam
+
+Cert Prep's sole owner for the local installed-runtime pointer and its durable
+promotion receipt is the **proposed** module
+`apps/cert-prep-desktop/src-tauri/src/runtime_promotion.rs`, with the
+**proposed** `RuntimePromotionStore` implementation and
+`RuntimePromotionReceiptV1` record. Neither symbol exists in this checkout.
+The first implementation slice must add `mod runtime_promotion;` in
+`apps/cert-prep-desktop/src-tauri/src/lib.rs` and construct/reconcile the store
+from the Tauri setup/startup path. `backend.rs` callers
+`install_capture_runtime`, `start_capture_runtime`, and
+`restart_owned_backend_with_capture_runtime` request promotion or
+reconciliation; `capture_runtime.rs` remains the adapter that verifies,
+stages, launches, and reports the runtime; and `process_owner.rs` remains the
+cleanup/proof seam. These callers must not write a second pointer or receipt.
+
+The store is an internal durable persistence module, not a new public facade or
+second coordinator. It owns the logical pointer record, its compare-and-swap
+(CAS) revision, atomic receipt writes, and startup reconciliation. Filesystem
+adapters may resolve internal roots, but persisted receipts contain logical
+references and content identities only. The producer's session journal and
+retryable session/proof reference remain producer-owned; the store records only
+opaque references to them. The producer's shared release stable pointer and D8
+ledger aggregation remain outside Cert authority.
+
+`RuntimePromotionReceiptV1` must be sufficient to reconcile a crash without
+reading a private path or secret. Its path-free fields are:
+
+| Field | Required contents and invariant |
+| --- | --- |
+| `schemaVersion`, `promotionId`, `state`, `revision` | `1`; a non-secret logical promotion id; one of `CandidateReady`, `NewActiveCommitted`, `PriorRetiredDraining`, `RetiredProved`, or `InstallAmbiguous`; and a monotonically increasing durable revision. |
+| `candidate`, `prior` | `ContentIdentityV1` for the candidate and prior active (prior may be `null` on first install). Each identity contains `contentIdSha256`, `rootSha256`, `manifestSha256`, `schemaSha256`, `coreSha256`, `workerSha256`, `catalogSha256`, `contractSha256`, `lockSha256`, and verified `byteCount`; optional artifact fields are `null`, never omitted as an invitation to guess. |
+| `activePointer`, `priorPointer` | Logical pointer `generation` and `sha256` for the selected and prior values; pointer hashes are over canonical pointer bytes, not a path. |
+| `cas` | `expectedRevision`, `expectedPointerGeneration`, `expectedPointerSha256`, `observedRevision`, `observedPointerGeneration`, `observedPointerSha256`, and a bounded result (`matched`, `replaced`, `conflict`, or `ambiguous`). A conflict never silently retries against a different prior. |
+| `commitIntent` | `null` before intent, otherwise the expected prior pointer generation/hash, candidate pointer generation/hash, and expected revision. It is flushed before any pointer replacement. |
+| `degraded`, `blockNextPromotion` | Durable booleans. Any post-commit retirement/proof uncertainty sets both true; they clear only after `RetiredProved`. |
+| `producerSessionRef`, `producerProofRef` | Opaque, retryable producer-owned references. They are not bearer tokens, raw session journals, PIDs, URLs, or paths, and a missing proof reference keeps the promotion blocked. |
+| `retirement` | `attempts`, bounded `status` (`not_started`, `draining`, `proof_pending`, `proved`, `failed`, or `blocked`), and the latest attempt revision. Proof status is never inferred from a process exit. |
+| `cleanupRefs` | Exact logical references for candidate root, prior root, temporary staging, backup, and cache entries, each with kind, content id/hash, byte count, and cleanup status. A cleanup adapter may delete only a reference whose identity still matches. |
+| `sanitizedError` | Optional stable error `code` and safe public `message`; raw diagnostics, paths, tokens, PIDs, command lines, host names, and OCR/truth text are forbidden. |
+
+The proposed store interface stays small and internal: load the latest receipt;
+record verified candidate readiness; record the flushed commit intent; perform
+the locked logical CAS/atomic pointer replace and reread; record retirement
+draining and each producer proof attempt; and reconcile startup against the
+observed pointer. These are design-only operations until the module is added;
+callers do not receive a path, handle, token, PID, or producer journal. A
+candidate cannot skip a receipt state by calling a lower-level file helper.
+
+The record is a durable local receipt, not an OpenAPI/generated view. It must
+be written atomically (private temporary file, flush, atomic replace, and
+parent-directory flush as supported by the platform) before the next
+irreversible step. No field may encode a raw root path, bearer token, process
+handle/PID, OCR payload, or producer journal contents.
+
+### Promotion ordering and crash reconciliation
+
+The exact order is part of the interface and is not an all-or-nothing rollback
+promise:
+
+1. `capture_runtime.rs` verifies the immutable candidate root and every
+   manifest/schema/core/worker/catalog/contract identity. Candidate assembly
+   writes only its isolated root; the verified active root is untouched.
+2. `RuntimePromotionStore` flushes a `CandidateReady` receipt. The receipt
+   includes candidate/prior identities and the currently observed pointer; no
+   pointer change has occurred.
+3. The store flushes `commitIntent` with the expected prior pointer generation
+   and hash plus the intended candidate pointer generation and hash.
+4. Under the store lock, the implementation performs a logical CAS against
+   the expected revision and prior pointer, atomically replaces and flushes the
+   local active pointer, and rereads it while still holding the lock. A conflict or
+   unexpected reread is `InstallAmbiguous`; it is never a reason to choose a
+   different candidate.
+5. Only after the reread matches does the store flush the irreversible
+   `NewActiveCommitted` receipt. There is no rollback operation after this
+   pointer commit; the new active remains selected.
+6. Before touching the prior session or root, the store flushes
+   `PriorRetiredDraining` with exact cleanup references. Retirement cleanup may
+   then ask the producer for proof through the retryable opaque reference.
+7. Each proof attempt updates the receipt. Only producer proof permits a
+   flushed `RetiredProved` receipt and clearing `degraded`/`blockNextPromotion`.
+8. Optional prior-root deletion happens last and only through the exact prior
+   cleanup reference after identity and pointer rereads pass. Cache deletion is
+   likewise limited to an exact unreferenced cache reference.
+
+Startup reconciliation is owned by the same store and follows this matrix;
+the app must not infer a state from directory names or process names:
+
+| Durable receipt / observed pointer at startup | Required reconciliation |
+| --- | --- |
+| No `CandidateReady` or candidate verification failed | Preserve the active root/pointer/session. Delete only an exact, verified candidate/temp reference if one is recorded; otherwise leave it for explicit recovery. |
+| `CandidateReady` (or no intent) and the prior pointer still matches | Treat the operation as pre-commit. Do not commit. Preserve active; retain failure evidence and clean only exact candidate/staging refs. |
+| `commitIntent` exists and the prior pointer still matches | The crash happened before commit. Do not commit or reinterpret the intent as permission to replace; preserve active and reconcile only the recorded candidate refs. |
+| `commitIntent` exists and the candidate pointer matches its intended generation/hash | The pointer replacement committed before its receipt. Advance durably to `NewActiveCommitted`, then persist `PriorRetiredDraining` before any cleanup. Never restore the prior pointer. |
+| Pointer matches neither the recorded prior nor candidate identity, or receipt and pointer generations conflict | Persist/report `InstallAmbiguous`, keep the selected bytes untouched, set degraded/block-next-promotion, retain all exact refs and sanitized error, and require explicit recovery. No rollback or broad deletion. |
+| `NewActiveCommitted` or `PriorRetiredDraining` | Keep the new active selected and degraded; block the next promotion; retry producer retirement proof by the retained opaque ref. A missing durable producer session/proof ref remains blocked and cannot become `RetiredProved`. |
+| `RetiredProved` | Keep the new active selected. Delete a prior root only by its recorded exact ref after a fresh identity/pointer check; never delete an unreferenced root or cache entry. |
+| Any temporary, backup, root, or cache candidate | Remove only when its receipt cleanup reference, content hash, byte count, and ownership all match. Unknown, mismatched, or path-only entries stay untouched. |
+
+The current one-shot `RuntimeProcessOwner` `FnOnce` termination seam in
+`process_owner.rs` is not sufficient for steps 6-7: replacing it is a planned
+implementation requirement. The replacement must retain a retryable producer
+proof/reference and return a real failure on a second unsuccessful call; a
+second call must never be reported as false success merely because a closure
+was consumed. `RuntimePromotionStore` still does not own that producer journal
+or its native process policy.
+
+The Python backend installer is a separate scope. The existing
+`apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_installations/manager.py`
+(`RuntimeInstallationManager`, `RuntimeInstaller`) and
+`apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_installations/installers.py`
+(`LLMModelInstaller`) own provider/model requirement jobs and their durable
+installation snapshots. They do not write the local installed-runtime pointer
+or promotion receipt. `routers/capture_runtime.py` and the capture client are
+authenticated proxy/SDK seams only; they do not become a second promotion
+owner.
 
 ## Consumer contract
 
@@ -198,7 +318,7 @@ that adapter's interface is reviewed and implemented.
   with the verified candidate.
 - After `NewActiveCommitted`, there is no rollback to the old active. The new
    active remains selected in a degraded state and blocks the next promotion
-   while the exact producer session/proof token is retained. Retiring the old
+   while the exact opaque producer session/proof refs are retained. Retiring the old
    session is retried and reconciled until `RetiredProved`; only then may the
    degraded marker clear. Replace the current one-shot `RuntimeProcessOwner`
    `FnOnce` termination seam; a second cleanup call must not become a false
@@ -247,7 +367,7 @@ are **proposed** until a bounded implementation slice records them.
   leaves the prior active pointer/root/session usable. Pointer replacement is
   the commit boundary. After commit, retired-session cleanup failure leaves
   the new active selected, marks the install degraded, blocks the next
-  promotion, retains the exact producer session/proof token, and retries or
+   promotion, retains the exact opaque producer session/proof refs, and retries or
   reconciles cleanup at next start. It never restores the old active by claim.
 - A file-install restore may be called `Restored` only after the prior root's
   path, manifest, byte count, content hash, and session identity have been
@@ -414,6 +534,13 @@ are independent axes and are bound to the exact commit; a later commit makes
 both approvals stale. Candidate staging is deterministic and isolated before
 an installed journey is trusted.
 
+The acceptance manifest owner is
+`apps/cert-prep-desktop/scripts/acceptance-artifacts.mts::writeAcceptanceManifest`,
+covered by `apps/cert-prep-desktop/scripts/acceptance-artifacts.test.mts`. The
+`acceptancePassed` value in
+`apps/cert-prep-desktop/scripts/acceptance-real.mts` is only the caller's final
+verdict; it is not a second manifest writer or artifact-owner seam.
+
 ### Design-It-Twice record for the consumer seam
 
 The current checkout has deep existing seams in `build_ocr_summary`,
@@ -458,7 +585,7 @@ recalculation into a caller, the producer contract is incomplete and the slice
 stops.
 
 The planned verification floor for implementation slices is the narrowest
-relevant `pnpm nx` target with `--skip-nx-cache`, followed by the installed
+relevant `corepack pnpm nx` target with `--skip-nx-cache`, followed by the installed
 real journey for changes that affect it. This documentation checkpoint runs
 docs checks and `git diff --check` only.
 

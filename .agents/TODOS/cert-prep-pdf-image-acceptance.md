@@ -46,11 +46,29 @@ below binds this acceptance checklist to those slices without inventing a
 second owner. An unavailable package manager or undiscovered target is a
 discovery-stop, never a green claim.
 
+For both events, the **proposed** `runtime_promotion.rs` store is the sole Cert
+local installed-runtime pointer/receipt owner. `lib.rs::run` wires startup
+reconciliation; `backend.rs::install_capture_runtime`,
+`start_capture_runtime`, and `restart_owned_backend_with_capture_runtime` are
+callers; `capture_runtime.rs` verifies/stages/launches; and
+`process_owner.rs` supplies the planned retryable producer proof/cleanup seam.
+The store is distinct from the producer session journal and D8 stable pointer.
+The Python `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_installations/manager.py`
+(`RuntimeInstallationManager`, `RuntimeInstaller`) and its
+`apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_installations/installers.py`
+(`LLMModelInstaller`) remain provider/model installation only.
+
 ## Acceptance slice register
 
 - **D4 candidate journey:** owned by
+  the **proposed** local pointer/receipt seam
+  `apps/cert-prep-desktop/src-tauri/src/runtime_promotion.rs`
+  (`RuntimePromotionStore`, `RuntimePromotionReceiptV1`) plus
+  `apps/cert-prep-desktop/scripts/acceptance-artifacts.mts`
+  (`writeAcceptanceManifest`) and its
+  `apps/cert-prep-desktop/scripts/acceptance-artifacts.test.mts` tests;
   `apps/cert-prep-desktop/scripts/acceptance-real.mts`
-  (`acceptancePassed`, `writeAcceptanceManifest`),
+  (`acceptancePassed`, caller/verdict only),
   `apps/cert-prep-desktop/scripts/acceptance-real-options.mts`
   (`createAcceptanceSmokeOptions`, `loadPhase1FinalCandidate`),
   `apps/cert-prep-desktop/scripts/ocr-truth-contract.mts`
@@ -65,18 +83,29 @@ discovery-stop, never a green claim.
   must fail before a D4 manifest. Prerequisite: consumer TODO Slices 1-7 and
   producer D3 candidate record. Stop if D4 changes the producer stable pointer,
   writes embedded/mixed, waits for LAW, aggregates ledgers, or records raw
-  text/token/path. Rollback follows the consumer transaction: before local
-  active commit preserve the active root/session; after commit keep the new
-  active degraded with its exact producer session/proof token and retry or
+  text/token/path. The local promotion red proof must also verify immutable
+  candidate/root -> flushed `CandidateReady` -> flushed `commitIntent` with
+  expected prior pointer -> locked logical CAS/atomic pointer replace plus
+  reread -> irreversible `NewActiveCommitted` -> flushed
+  `PriorRetiredDraining` before cleanup -> producer proof -> `RetiredProved`.
+  Rollback follows the consumer transaction: before local active commit
+  preserve the active root/session; after commit keep the new active degraded
+  with its exact opaque producer session/proof refs and retry or
   reconcile cleanup; never roll back the producer stable pointer. Cert writes
   only its D4 candidate child ledger, then hands it to the producer.
-  Green verification: `pnpm nx run cert-prep-desktop:capture-candidate-gate-test --skip-nx-cache`;
-  `pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`; and
-  `pnpm nx run cert-prep-desktop:acceptance-real --skip-nx-cache`.
+  Green verification: `corepack pnpm nx run cert-prep-desktop:capture-candidate-gate-test --skip-nx-cache`;
+  `corepack pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`; and
+  `corepack pnpm nx run cert-prep-desktop:acceptance-real --skip-nx-cache`.
   Commit boundary: the D4 evidence-only child-ledger acceptance change.
 - **D7 published download-back journey:** owned by
+  the **proposed** local pointer/receipt seam
+  `apps/cert-prep-desktop/src-tauri/src/runtime_promotion.rs`
+  (`RuntimePromotionStore`, `RuntimePromotionReceiptV1`) plus
+  `apps/cert-prep-desktop/scripts/acceptance-artifacts.mts`
+  (`writeAcceptanceManifest`) and its
+  `apps/cert-prep-desktop/scripts/acceptance-artifacts.test.mts` tests;
   `apps/cert-prep-desktop/scripts/acceptance-real.mts`
-  (`acceptancePassed`, `writeAcceptanceManifest`),
+  (`acceptancePassed`, caller/verdict only),
   `apps/cert-prep-desktop/scripts/acceptance-real-options.mts`
   (`loadRuntimeCandidate`, `strictRuntimeIdentity`),
   `apps/cert-prep-desktop/scripts/ocr-truth-contract.mts`
@@ -94,15 +123,19 @@ discovery-stop, never a green claim.
   First red proof: local URL/path, mutable artifact,
   stale/mixed lock, or download-back byte mismatch must fail. Prerequisite:
   D5 published exact D3 bytes and D6 download-back record. Stop without a
-  complete Cert D7 child ledger. Cert does not wait for LAW's ledger. Rollback
-  follows the consumer transaction: before local active commit preserve the
-  active identity; after commit keep the new active degraded with its exact
-  producer session/proof token and retry/reconcile cleanup. Never mutate or
+  complete Cert D7 child ledger. Cert does not wait for LAW's ledger. The same
+  promotion order and startup crash matrix apply: intent plus prior pointer is
+  no commit; intent plus candidate pointer advances to committed; an
+  unexpected pointer is `InstallAmbiguous`; missing producer refs remain
+  blocked; and deletion uses exact cleanup refs only. Rollback follows the
+  consumer transaction: before local active commit preserve the active
+  identity; after commit keep the new active degraded with its exact opaque
+  producer session/proof refs and retry/reconcile cleanup. Never mutate or
   roll back the producer stable pointer. Commit boundary: the D7 evidence and
   Cert child-ledger update followed by handoff to LAW. Green verification:
-  `pnpm nx run cert-prep-desktop:release-tool-test --skip-nx-cache`;
-  `pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`; and
-  `pnpm nx run cert-prep-desktop:acceptance-real --skip-nx-cache`.
+  `corepack pnpm nx run cert-prep-desktop:release-tool-test --skip-nx-cache`;
+  `corepack pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`; and
+  `corepack pnpm nx run cert-prep-desktop:acceptance-real --skip-nx-cache`.
 - **D8 stable-pointer decision (producer-owned and out of scope):** Cert has
   no stable-pointer writer, aggregate-ledger owner, or D8 commit. The producer
   alone aggregates Capture Workbench, Cert Prep, and LAW child ledgers and moves
@@ -123,9 +156,9 @@ discovery-stop, never a green claim.
   download-back bytes. Stop on CER > 1% for scanned PDF page 1, CER > 3% for
   real JPEG, or any missing critical anchor. Rollback retains failed evidence
   without publishing it. Green verification:
-  `pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`;
-  `pnpm nx run cert-prep-desktop:acceptance-real --skip-nx-cache`; and
-  `pnpm nx run cert-prep-desktop:typecheck-scripts --skip-nx-cache`.
+  `corepack pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`;
+  `corepack pnpm nx run cert-prep-desktop:acceptance-real --skip-nx-cache`; and
+  `corepack pnpm nx run cert-prep-desktop:typecheck-scripts --skip-nx-cache`.
   Commit boundary: the privacy-safe evidence schema.
 
 ## Ordered real journey
@@ -200,7 +233,7 @@ discovery-stop, never a green claim.
   the privacy-safe failure artifact, and do not start LAW. Apply the consumer
   transaction rule: before local active commit preserve the active
   root/pointer/session; after commit retain the new active degraded with its
-  exact producer session/proof token and retry/reconcile cleanup. Never mutate
+  exact opaque producer session/proof refs and retry/reconcile cleanup. Never mutate
   or roll back the producer stable pointer.
 
 ## Design and verification gate

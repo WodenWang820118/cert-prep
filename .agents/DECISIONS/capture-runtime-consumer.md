@@ -112,8 +112,8 @@ machine-specific path is part of this decision.
     RetiredProved`, with an atomic active-pointer replacement at commit. Before
     commit, failure preserves the active root/pointer/session. After commit,
     there is no rollback to the old active: the new active remains selected and
-    degraded, blocks the next promotion, retains the exact producer
-    session/proof token, and retries/reconciles cleanup at next start. A file
+    degraded, blocks the next promotion, retains the exact opaque producer
+    session/proof refs, and retries/reconciles cleanup at next start. A file
     install is `Restored` only after the prior root, manifest, byte count,
     content hash, and session identity are re-proved; otherwise it is
     `InstallAmbiguous`. Replace the current one-shot `RuntimeProcessOwner`
@@ -132,27 +132,60 @@ machine-specific path is part of this decision.
     shared cache, active pointer, or acceptance staging may be created until
     that slice is green. Current Nx `23.1.0` and the 0.4.1 baseline are facts,
     not a passing Phase 2 gate; no contract digest is invented in advance.
-15. **Compute-policy deletion is first-class.** Once the generated public
-     producer contract is available, delete the fallback DTO and validator in
-     `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/host_models.py`,
-     `CertPrepCaptureCoordinator._assert_ocr_compute_preflight` in
-     `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/coordinator.py`,
-     the candidate decoder shim in
-     `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/client.py`,
-     and the generated consumer view
-     `libs/cert-prep-api/src/lib/cert-prep-api.generated.ts` only after its
-     producer contract is present. Delete frontend `mapOcrCompute` from
-     `apps/cert-prep/src/app/pages/capture-workbench-trial/cert-prep-capture-client.ts`,
-     duplicate `OcrCompute*` contract types from
-     `apps/cert-prep/src/app/pages/capture-workbench-trial/contracts/capture-workbench-trial.contracts.ts`,
-     and hardcoded preflight-store messages/matrices from
-     `apps/cert-prep/src/app/stores/capture-runtime/capture-runtime-preflight.store.ts`.
-     Replace policy-only tests with pass-through tests at the generated public
-     seam. Preserve producer-owned notice truth so the UI can say CPU fallback
-     when no dGPU/iGPU is usable; Cert does not recalculate it.
+15. **Compute-policy deletion is first-class.** Once the producer-generated
+    public contract is available, retain and regenerate the generated
+    consumer view
+    `libs/cert-prep-api/src/lib/cert-prep-api.generated.ts`; it is never
+    hand-edited or deleted. Delete only the fallback DTO and validator in
+    `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/host_models.py`,
+    `CertPrepCaptureCoordinator._assert_ocr_compute_preflight` in
+    `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/coordinator.py`,
+    the candidate decoder shim in
+    `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/client.py`,
+    frontend `mapOcrCompute` from
+    `apps/cert-prep/src/app/pages/capture-workbench-trial/cert-prep-capture-client.ts`,
+    duplicate `OcrCompute*` contract types from
+    `apps/cert-prep/src/app/pages/capture-workbench-trial/contracts/capture-workbench-trial.contracts.ts`,
+    and hardcoded preflight-store messages/matrices from
+    `apps/cert-prep/src/app/stores/capture-runtime/capture-runtime-preflight.store.ts`.
+    Replace policy-only tests with pass-through tests at the retained
+    generated public seam. Preserve producer-owned notice truth so the UI can
+    say CPU fallback when no dGPU/iGPU is usable; Cert does not recalculate it.
 16. **Audio is a separate lane.** Audio transcription/translation remains in
     its domain specification and is not part of the OCR-only Phase 2 D4/D7
     acceptance or its handoff ledger.
+17. **One Cert-owned local pointer and receipt owner.** The proposed
+    `apps/cert-prep-desktop/src-tauri/src/runtime_promotion.rs` module defines
+    `RuntimePromotionStore` and `RuntimePromotionReceiptV1` as the sole owner
+    of the local installed-runtime logical active pointer, revision/CAS, and
+    durable promotion receipts. The module is not yet implemented and is not
+    the producer session journal or producer D8 stable pointer. Its receipt
+    records candidate/prior content identities, pointer generations/hashes,
+    state, commit intent, degraded/block-next-promotion flags, opaque
+    producer session/proof refs, retirement attempts/status, exact cleanup
+    refs, and sanitized errors; raw paths, tokens, PIDs, and OCR are forbidden.
+    `capture_runtime.rs` verifies/stages/launches, `backend.rs` invokes the
+    store from `install_capture_runtime`, `start_capture_runtime`, and
+    `restart_owned_backend_with_capture_runtime`, `lib.rs` wires the module
+    and startup reconciliation, and `process_owner.rs` supplies the planned
+    retryable proof/cleanup seam. The Python
+    `RuntimeInstallationManager`/`RuntimeInstaller` scope in
+    `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_installations/`
+    remains provider/model installation and never writes this pointer or
+    receipt.
+18. **Promotion ordering is irreversible after local pointer commit.** Verify
+    the immutable candidate/root; flush `CandidateReady`; flush
+    `commitIntent` with the expected prior pointer; take the store lock,
+    perform the logical CAS/atomic pointer replace and flush it, then reread it; flush
+    `NewActiveCommitted`; persist `PriorRetiredDraining` before cleanup; ask
+    the producer for proof through the retained retryable opaque ref; and
+    flush `RetiredProved` before optional exact prior-root deletion. Before
+    commit, failures preserve active. After commit, never roll back: keep the
+    new active selected/degraded and block the next promotion until proof.
+    Startup reconciliation treats intent plus prior pointer as no commit,
+    intent plus candidate pointer as committed, and an unexpected pointer as
+    `InstallAmbiguous`; missing producer refs remain blocked, and temporary,
+    root, backup, or cache deletion uses only exact receipt refs.
 
 ## Why these decisions are consumer-specific
 
@@ -181,6 +214,8 @@ The selected design is grounded in current symbols, not planned names:
 | Draft job ordering | `apps/cert-prep-backend/src/cert_prep_backend/domains/mock_exams/draft_jobs.py`: `enqueue_chunk_job`, `recover_runnable_jobs`, `begin_commit`, `request_cancel` |
 | Install/manifest verification | `apps/cert-prep-desktop/src-tauri/src/capture_runtime.rs`: `install_bundled_capture_runtime`, `installed_capture_runtime_paths`, `replace_runtime_directory`; `apps/cert-prep-desktop/src-tauri/src/manifests.rs`: `RuntimeManifest`, `RuntimeArtifact`, `load_runtime_manifest`, `verify_artifact` |
 | Runtime identity/cleanup | `apps/cert-prep-desktop/src-tauri/src/capture_manifest.rs`: `verify_capture_runtime`, `validate_capture_manifest_contract`, `capture_runtime_expected_version`; `apps/cert-prep-desktop/src-tauri/src/process_owner.rs`: `RuntimeProcessOwner`, `terminate_once`, `owned_runtime_process!` |
+| Local installed-runtime pointer/receipt (planned) | **Proposed** `apps/cert-prep-desktop/src-tauri/src/runtime_promotion.rs`: `RuntimePromotionStore`, `RuntimePromotionReceiptV1`; `apps/cert-prep-desktop/src-tauri/src/lib.rs`: `run`; `apps/cert-prep-desktop/src-tauri/src/backend.rs`: `install_capture_runtime`, `start_capture_runtime`, `restart_owned_backend_with_capture_runtime` | Sole Cert owner of the local logical pointer and durable promotion receipt/reconciliation. It is distinct from the producer session journal and producer D8 stable pointer; current symbols do not exist. |
+| Python backend installer (separate) | `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_installations/manager.py`: `RuntimeInstallationManager`, `RuntimeInstaller`; `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_installations/installers.py`: `LLMModelInstaller` | Owns provider/model requirement jobs and snapshots only; it never writes the desktop local runtime pointer or receipt. |
 
 ## Design-It-Twice selection
 
@@ -192,6 +227,12 @@ none of these proposed names is an existing Cert symbol.
 | **proposed `CaptureRuntimeFacade`** | `facade.capture(candidate, upload) -> receipt`; hides auth, roots, session, projection, mapping, and durable commit. | Installed runtime remote-owned; filesystem local-substitutable; SQLite durable; deterministic receipt test adapter. | Deep for one caller but fuses unrelated failure modes and risks a second coordinator. Rejected. |
 | **proposed explicit ports**: `RuntimeAssetInstaller`, `DesktopRuntimeSupervisor`, `OcrProjectionMapper` | `installer.prepare(candidate)`, `supervisor.start(verified)`, `mapper.map(projection)`; hides manifest/hash, producer session/pointer, and discriminator details. | Existing Rust verification functions are native filesystem adapters; producer session is remote-owned; existing Python owners are domain adapters; failure-injection fakes are test adapters. | More interface knowledge, but high leverage/locality and readable typed failures. Selected. |
 | **proposed `CaptureRuntimePromotion`** | `prepare(candidate) -> CandidateReady`; `commit(candidate) -> NewActiveCommitted`; `reconcile(receipt) -> RetiredProved or InstallAmbiguous`; hides cache, pointer journal, retirement proof, readiness, and publication. | Filesystem/pointer local-substitutable; producer session remote-owned; journal fixture test adapter. | Common caller is simple, but promotion becomes coupled to persistence and harder to test independently. Rejected. |
+
+The rejected public `CaptureRuntimePromotion` facade does not preclude the
+proposed internal `RuntimePromotionStore`. The store is a deep persistence
+module behind the selected explicit ports: it owns only Cert's local pointer,
+receipt, CAS, and crash reconciliation, while the ports retain responsibility
+for verification, lifecycle, projection mapping, and durable domain commits.
 
 The selected explicit ports retain the existing public seams: `build_ocr_summary`
 validates the typed projection, `capture_document_to_pdf_extraction` performs

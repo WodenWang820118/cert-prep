@@ -28,8 +28,19 @@ is not part of this OCR-only Phase 2 TODO.
 This TODO is the consumer delta only. Capture Runtime remains the sole OCR
 projection owner. Cert Prep owns durable sources, review overrides, export,
 and persistence. **Proposed** `DesktopRuntimeSupervisor` and **proposed**
-`RuntimeAssetInstaller` are future adapter names only; the current owners are
-the paths and symbols listed in the [consumer specification](../SPECS/capture-runtime-consumer.md).
+`RuntimeAssetInstaller` are future adapter names only. The proposed
+`apps/cert-prep-desktop/src-tauri/src/runtime_promotion.rs` is the sole Cert
+owner for the local installed-runtime pointer and `RuntimePromotionReceiptV1`;
+it is not the producer session journal or D8 stable-pointer owner. Its receipt
+must carry candidate/prior content identities, pointer generation/hash,
+revision/CAS, flushed `commitIntent`, degraded/block-next-promotion flags,
+opaque producer session/proof refs, retirement attempts/status, exact cleanup
+refs, and sanitized errors, with no raw path/token/PID/OCR fields. Current
+owners and symbols remain the paths listed in the [consumer specification](../SPECS/capture-runtime-consumer.md).
+The Python backend's `RuntimeInstallationManager`/`RuntimeInstaller` in
+`apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_installations/`
+continue to own provider/model installation jobs only; they do not write the
+desktop pointer or receipt.
 
 Every item below is an independently reviewable slice. Each item names exact
 owned paths/symbols, the red proof to write first, prerequisites, a stop
@@ -55,8 +66,8 @@ manager or undiscovered target is a discovery-stop, never a green claim.
   - Red proof (write first): stale text could call local OCR published or
     omit the producer candidate blocker; a docs scan must fail until the
     checkpoint, OCR-only rule, and D4/D7 distinction are present.
-  - Verification: docs link/anchor/fence scan; `pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`;
-    `pnpm nx run cert-prep-desktop:typecheck-scripts --skip-nx-cache`;
+  - Verification: docs link/anchor/fence scan; `corepack pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`;
+    `corepack pnpm nx run cert-prep-desktop:typecheck-scripts --skip-nx-cache`;
     `git diff --check -- .agents/SPECS/capture-runtime-consumer.md .agents/DECISIONS/capture-runtime-consumer.md .agents/TODOS/capture-runtime-consumer.md .agents/TODOS/cert-prep-pdf-image-acceptance.md .agents/GUIDES/staged-ocr-delivery-adoption.md .agents/TODOS/capture-workbench-ocr-review.md .agents/TODOS/capture-workbench-cert-prep-pdf.md`.
     The current worker runs docs checks only; implementation targets are
     future gates.
@@ -93,14 +104,15 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     (`CaptureRuntimeConnection`); `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/runtime_provenance.py`
     (`capture_runtime_attestation`, `_validate_candidate`); and the loaded
     producer SDK public `RuntimeReady`/`OcrComputePreflightV2` model and exact
-    contract hash from the candidate ledger. The generated consumer view
-    `libs/cert-prep-api/src/lib/cert-prep-api.generated.ts`
-    (`RuntimeReady`, `OcrComputePreflightV2`) is inspected, not hand-edited.
+    contract hash from the candidate ledger. Retain/regenerate the generated
+    consumer view `libs/cert-prep-api/src/lib/cert-prep-api.generated.ts`
+    (`RuntimeReady`, `OcrComputePreflightV2`); inspect it, but never hand-edit
+    or delete it.
   - Prerequisite: current Nx discovery found `cert-prep-desktop` and its
     `release-tool-test`, `typecheck-scripts`, and `package-qa-test` targets;
     no `version-check` target exists. Attach the inventory to an existing
     discovered target or add and rediscover a target in this slice; never write
-    a guessed `pnpm nx run ...:version-check` command.
+    a guessed `corepack pnpm nx run ...:version-check` command.
   - Red proof (write first): mutate one owner to a stale version, mix a
     0.4.1 lock with a 0.4.2 artifact, omit the schema-3 projection or exact
     contract hash, or omit one language/client value; the old subset checks
@@ -109,11 +121,11 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     `test_version_inventory_rejects_stale_owner`,
     `test_version_inventory_rejects_missing_projection_contract_hash`, and
     `test_version_inventory_rejects_mixed_lock_and_artifact`.
-  - Verification: `pnpm nx run cert-prep-desktop:release-tool-test --skip-nx-cache`;
-    `pnpm nx run cert-prep-desktop:typecheck-scripts --skip-nx-cache`;
-    `pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`.
-    Also rerun `pnpm nx show projects --json` and
-    `pnpm nx show project cert-prep-desktop --json` after any target change;
+  - Verification: `corepack pnpm nx run cert-prep-desktop:release-tool-test --skip-nx-cache`;
+    `corepack pnpm nx run cert-prep-desktop:typecheck-scripts --skip-nx-cache`;
+    `corepack pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`.
+    Also rerun `corepack pnpm nx show projects --json` and
+    `corepack pnpm nx show project cert-prep-desktop --json` after any target change;
     these are discovery commands, not acceptance proof.
   - Stop condition: Nx is not `23.1.2`, any declared owner is missing from the
     inventory, a stale/mixed value passes, or a target has not been discovered.
@@ -161,8 +173,8 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     publication seam with `embedded` and `mixed` engine provenance and proves no
     new durable row is written. Also prove a noncanonical engine such as
     `windowsml-v2` cannot pass merely because it contains `windowsml`.
-  - Verification: `pnpm nx run cert-prep-backend:test --skip-nx-cache`;
-    `pnpm nx run cert-prep-backend:lint --skip-nx-cache`.
+  - Verification: `corepack pnpm nx run cert-prep-backend:test --skip-nx-cache`;
+    `corepack pnpm nx run cert-prep-backend:lint --skip-nx-cache`.
   - Stop condition: any new document/page/chunk can persist `embedded` or
     `mixed`, the embedded layer is read, a substring engine is accepted, or
     producer and durable strings are conflated. Stop before acceptance staging.
@@ -187,9 +199,10 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/coordinator.py`;
     delete `_install_candidate_runtime_ready_decoder` in
     `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/client.py`;
-    retain the producer public generated model and inspect
-    `libs/cert-prep-api/src/lib/cert-prep-api.generated.ts`
-    (`RuntimeReady`, `OcrComputePreflightV2`) without hand-editing it; delete
+     retain and regenerate the producer public generated model view
+     `libs/cert-prep-api/src/lib/cert-prep-api.generated.ts`
+     (`RuntimeReady`, `OcrComputePreflightV2`) without hand-editing or deleting
+     it; delete only
     `mapOcrCompute` in
     `apps/cert-prep/src/app/pages/capture-workbench-trial/cert-prep-capture-client.ts`;
     delete duplicate `OcrComputeMode`, `OcrAdapterClass`,
@@ -227,24 +240,25 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     in `apps/cert-prep/src/app/stores/capture-runtime/capture-runtime-preflight.store.spec.ts`.
     A test must fail if the host drops producer notice truth, derives a reason,
     or accepts a host-only mode.
-  - Verification: `pnpm nx run cert-prep-backend:test --skip-nx-cache`;
-    `pnpm nx run cert-prep-backend:lint --skip-nx-cache`;
-    `pnpm nx run cert-prep-backend:generate-openapi-client --skip-nx-cache`;
-    `pnpm nx run cert-prep:test --skip-nx-cache`;
-    `pnpm nx run cert-prep:lint --skip-nx-cache`;
-    `pnpm nx run cert-prep:build --skip-nx-cache`;
-    `pnpm nx run cert-prep-api:vite:test --skip-nx-cache`; and
-    `pnpm nx run cert-prep-api:lint --skip-nx-cache`. Rerun
-    `pnpm nx show projects --json` and
-    `pnpm nx show project cert-prep-backend --json`,
-    `pnpm nx show project cert-prep --json`, and
-    `pnpm nx show project cert-prep-api --json` after target changes; these are
+  - Verification: `corepack pnpm nx run cert-prep-backend:test --skip-nx-cache`;
+    `corepack pnpm nx run cert-prep-backend:lint --skip-nx-cache`;
+    `corepack pnpm nx run cert-prep-backend:generate-openapi-client --skip-nx-cache`;
+    `corepack pnpm nx run cert-prep:test --skip-nx-cache`;
+    `corepack pnpm nx run cert-prep:lint --skip-nx-cache`;
+    `corepack pnpm nx run cert-prep:build --skip-nx-cache`;
+    `corepack pnpm nx run cert-prep-api:vite:test --skip-nx-cache`; and
+    `corepack pnpm nx run cert-prep-api:lint --skip-nx-cache`. Rerun
+    `corepack pnpm nx show projects --json` and
+    `corepack pnpm nx show project cert-prep-backend --json`,
+    `corepack pnpm nx show project cert-prep --json`, and
+    `corepack pnpm nx show project cert-prep-api --json` after target changes; these are
     discovery evidence, not acceptance proof.
   - Stop condition: any host fallback DTO, local preflight validator,
-    mode/adapter/reason/notice matrix, generated-contract shim, dropped
-    producer notice field, host GPU enumeration/ranking, or CPU retry remains;
-    the generated public contract is unavailable; or a target is not
-    discovered. Do not stage a candidate or call D4 while stopped.
+     mode/adapter/reason/notice matrix, generated-contract shim, dropped
+     producer notice field, host GPU enumeration/ranking, or CPU retry remains;
+     the generated public contract is unavailable; the generated consumer view
+     was hand-edited or deleted; or a target is not discovered. Do not stage a
+     candidate or call D4 while stopped.
   - Rollback: additive revert of the deletion/pass-through change and focused
     tests only; do not restore a second policy owner or alter producer bytes,
     stable-pointer state, durable source rows, or acceptance ledgers.
@@ -258,26 +272,40 @@ manager or undiscovered target is a discovery-stop, never a green claim.
       next-start reconciliation. Replace the impossible all-or-nothing rollback
       contract with `CandidateReady -> NewActiveCommitted ->
       PriorRetiredDraining -> RetiredProved`.
-  - Owned paths/symbols: `apps/cert-prep-desktop/src-tauri/src/capture_runtime.rs`
+  - Owned paths/symbols: **proposed**
+    `apps/cert-prep-desktop/src-tauri/src/runtime_promotion.rs`
+    (`RuntimePromotionStore`, `RuntimePromotionReceiptV1`) as the sole Cert
+    local installed-runtime pointer/receipt owner; `apps/cert-prep-desktop/src-tauri/src/lib.rs`
+    (`run`) for module wiring/startup reconciliation; `apps/cert-prep-desktop/src-tauri/src/backend.rs`
+    (`install_capture_runtime`, `start_capture_runtime`,
+    `restart_owned_backend_with_capture_runtime`) as callers;
+    `apps/cert-prep-desktop/src-tauri/src/capture_runtime.rs`
     (`install_bundled_capture_runtime`, `installed_capture_runtime_paths`,
     `replace_runtime_directory`, `clean_stale_capture_runtime_staging`,
     `CaptureRuntimeState::launch_cancellable`), `manifests.rs`
     (`RuntimeManifest`, `RuntimeArtifact`, `verify_artifact`),
     `capture_manifest.rs` (`verify_capture_runtime`,
-    `validate_capture_manifest_contract`), `process_owner.rs`
+    `validate_capture_manifest_contract`), and `process_owner.rs`
     (`RuntimeProcessOwner`, `from_termination`, `terminate_once`,
-    `owned_runtime_process!`), and
+    `owned_runtime_process!`). The Python
+    `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_installations/manager.py`
+    (`RuntimeInstallationManager`, `RuntimeInstaller`) and
+    `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_installations/installers.py`
+    (`LLMModelInstaller`) remain a separate provider/model-installation scope;
+    they do not write this pointer or receipt. The store is distinct from the
+    producer session journal and producer D8 stable pointer. The existing
     `apps/cert-prep-desktop/scripts/acceptance-real-options.mts`
-    (existing candidate identity helpers) plus
-    `tools/capture-candidate-gate.mts` and its existing
-    `tools/capture-candidate-gate.test.mts` tests. **Proposed** root labels
+    candidate identity helpers, `tools/capture-candidate-gate.mts`, and its
+    `tools/capture-candidate-gate.test.mts` tests remain acceptance adapters.
+    **Proposed** root labels
     `active`, `candidate`, `active pointer`, `CandidateReady`,
     `NewActiveCommitted`, `PriorRetiredDraining`, and `RetiredProved` must be
     recorded as design labels, not assumed existing directories. The current
     `RuntimeProcessOwner` stores a one-shot `FnOnce` and returns false success
     on a second `terminate_once` call; replacement with a retryable,
     proof-bearing producer-session seam is part of this slice, not a second
-    cleanup policy.
+    cleanup policy. The proposed store persists opaque session/proof refs and
+    never persists raw paths, tokens, PIDs, process handles, or OCR.
   - Prerequisite: Slice 1 inventory is green; the producer D3 candidate ledger
     identifies manifest, schema, core, worker/catalog, contract, and lock bytes.
   - Red proof (write first): a tampered candidate, sibling junction, local path,
@@ -286,16 +314,47 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     `NewActiveCommitted`, assert the active pointer/root/session remains usable
     and the candidate is terminated. After commit, assert the new active
     remains selected and degraded, the next promotion is blocked, the exact
-    producer session/proof token is retained, and cleanup retries until
-    `RetiredProved`. A second cleanup call must not pass as a no-op success. A
-    file-install restore is `Restored` only with re-proofs of the prior
-    manifest, byte count, content hash, and session; otherwise it is
-    `InstallAmbiguous`.
-  - Verification: `pnpm nx run cert-prep-desktop:capture-candidate-gate-test --skip-nx-cache`;
-    `pnpm nx run cert-prep-desktop:cargo-test --skip-nx-cache`;
-    `pnpm nx run cert-prep-desktop:cargo-check --skip-nx-cache`;
-    `pnpm nx run cert-prep-desktop:typecheck-scripts --skip-nx-cache`;
-    `pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`.
+    opaque producer session/proof refs are retained, and cleanup retries until
+     `RetiredProved`. A second cleanup call must not pass as a no-op success. A
+     file-install restore is `Restored` only with re-proofs of the prior
+     manifest, byte count, content hash, and session; otherwise it is
+     `InstallAmbiguous`.
+  - Ordering proof (write first): verify the immutable candidate/root; flush
+    `CandidateReady`; flush `commitIntent` with the expected prior pointer;
+    lock and logically CAS/atomically replace and flush the pointer, then reread it;
+    flush irreversible `NewActiveCommitted`; persist
+    `PriorRetiredDraining` before cleanup; call the producer proof seam with
+    the retained opaque ref; flush `RetiredProved`; and only then optionally
+    delete the exact prior root. There is no rollback after pointer commit.
+  - Crash/startup reconciliation proof (write first):
+
+    | Receipt and observed pointer | Required result |
+    | --- | --- |
+    | pre-`CandidateReady`, or candidate verification failed | Preserve active; clean only an exact recorded candidate/temp ref. |
+    | `CandidateReady`/no intent plus prior pointer | Pre-commit; do not commit; preserve active and reconcile exact candidate refs. |
+    | `commitIntent` plus prior pointer | No commit; preserve active; never treat intent as permission to replace. |
+    | `commitIntent` plus intended candidate pointer | Advance to `NewActiveCommitted`, then persist `PriorRetiredDraining`; never restore prior. |
+    | unexpected pointer or generation/hash conflict | `InstallAmbiguous`, degraded and blocked; retain refs/errors; no rollback/deletion. |
+    | post-commit state | Keep new active selected/degraded and block the next promotion; retry proof. |
+    | missing durable producer session/proof ref | Remain blocked; do not claim `RetiredProved` or delete prior. |
+    | temp/root/backup/cache entry | Delete only the exact receipt cleanup ref whose identity/hash/size matches. |
+
+    Startup reconciliation is owned by `RuntimePromotionStore`, not by
+    directory/process-name heuristics. The red matrix must cover a crash at
+    every ordering edge and a second cleanup call that returns a real failure,
+    not false success.
+    Proposed focused Rust tests in `runtime_promotion.rs` are
+    `receipt_round_trips_path_free_promotion_fields`,
+    `commit_intent_with_prior_pointer_does_not_commit`,
+    `commit_intent_with_candidate_pointer_advances_without_rollback`,
+    `unexpected_pointer_is_install_ambiguous`,
+    `missing_producer_proof_ref_blocks_next_promotion`, and
+    `cleanup_requires_exact_recorded_reference`.
+  - Verification: `corepack pnpm nx run cert-prep-desktop:capture-candidate-gate-test --skip-nx-cache`;
+    `corepack pnpm nx run cert-prep-desktop:cargo-test --skip-nx-cache`;
+    `corepack pnpm nx run cert-prep-desktop:cargo-check --skip-nx-cache`;
+    `corepack pnpm nx run cert-prep-desktop:typecheck-scripts --skip-nx-cache`;
+    `corepack pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`.
   - Stop condition: active bytes are mutated in place, a failed pre-commit step
     damages active state, a post-commit cleanup path claims old-active
     rollback, cache bytes are reused without verified digest/size, a second
@@ -304,28 +363,37 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     without discovery. Do not run D4.
   - Rollback: before commit, discard only isolated candidate staging proven to
     be slice-owned and leave active untouched. After commit, do not roll back
-    the old active; retain the new active, session/proof token, degraded
+    the old active; retain the new active, opaque session/proof refs, degraded
     marker, and failure evidence while retrying/reconciling cleanup at next
     start. Additive revert is limited to the implementation commit and must
     not pretend an install was restored without proof.
   - Commit boundary: `test(phase2): harden immutable candidate promotion`;
     record candidate/archive/runtime-worker identities, transaction state,
-    session/proof token handling, and pre/post-commit evidence.
+    session/proof reference handling, and pre/post-commit evidence.
 
 - [ ] **Slice 5: candidate/active supervision adapter.** Expose only semantic
       readiness and terminal cleanup through a **proposed**
       `DesktopRuntimeSupervisor`; use one producer-owned `OwnedRuntimeSession`
       per active or candidate launch without exposing handles or PIDs.
-  - Owned paths/symbols: `apps/cert-prep-desktop/src-tauri/src/capture_runtime.rs`
+  - Owned paths/symbols: **proposed**
+    `apps/cert-prep-desktop/src-tauri/src/runtime_promotion.rs`
+    (`RuntimePromotionStore`, `RuntimePromotionReceiptV1`) for the local
+    pointer/receipt only; `apps/cert-prep-desktop/src-tauri/src/lib.rs`
+    (`run`) and `backend.rs` (`install_capture_runtime`, `start_capture_runtime`,
+    `restart_owned_backend_with_capture_runtime`) as callers;
+    `apps/cert-prep-desktop/src-tauri/src/capture_runtime.rs`
     (`CaptureRuntimeState`, `CaptureRuntimeInner::terminate_child_process_tree`,
     `CaptureLaunchPolicy`),
     `apps/cert-prep-desktop/src-tauri/src/process_owner.rs`
     (`RuntimeProcessOwner`, `from_termination`, `terminate_once`,
     `owned_runtime_process!`),
     `apps/cert-prep-desktop/src-tauri/src/manifests.rs` (`verify_artifact`), and
-    `apps/cert-prep-desktop/src-tauri/src/capture_manifest.rs`
-    (`verify_capture_runtime`). The adapter name and its public methods are
-    **proposed**; the producer's `OwnedRuntimeSession` is not a Cert symbol.
+     `apps/cert-prep-desktop/src-tauri/src/capture_manifest.rs`
+     (`verify_capture_runtime`). The adapter name and its public methods are
+     **proposed**; the producer's `OwnedRuntimeSession` is not a Cert symbol,
+     and its session journal/proof remains producer-owned. The current Python
+     `RuntimeInstallationManager`/`RuntimeInstaller` is not an adapter for
+     this pointer or receipt.
   - Prerequisite: Slice 4 identity/root failure proofs are green and the
     producer session contract is available.
   - Red proof (write first): candidate readiness failure must terminate/prove
@@ -333,11 +401,13 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     commit enters `PriorRetiredDraining`; it must not claim the old session is
     retired until producer proof reaches `RetiredProved`. A post-commit cleanup
     failure keeps the new active selected/degraded, retains the exact producer
-    session/proof token, blocks the next promotion, and retries at next start.
+     opaque session/proof refs, blocks the next promotion, and retries at next
+     start. A second cleanup call must return a real failure when proof is not
+     available, never a false success from a consumed `FnOnce`.
     A caller must not receive a native handle, bearer token, PID, or URL.
-  - Verification: `pnpm nx run cert-prep-desktop:cargo-test --skip-nx-cache`;
-    `pnpm nx run cert-prep-desktop:cargo-check --skip-nx-cache`;
-    `pnpm nx run cert-prep-desktop:typecheck-scripts --skip-nx-cache`.
+  - Verification: `corepack pnpm nx run cert-prep-desktop:cargo-test --skip-nx-cache`;
+     `corepack pnpm nx run cert-prep-desktop:cargo-check --skip-nx-cache`;
+     `corepack pnpm nx run cert-prep-desktop:typecheck-scripts --skip-nx-cache`.
   - Stop condition: candidate failure tears down active, cleanup is reported
     before it is proved, second-call cleanup is a false success, post-commit
     code rolls back the old active, or a proposed adapter becomes a second
@@ -352,7 +422,14 @@ manager or undiscovered target is a discovery-stop, never a green claim.
       termination, and next-start identity reconciliation. Preserve durable
       runtime/model assets and an external Ollama baseline; remove only proven
       Cert-owned listeners, PIDs, run data, staging, and backups.
-  - Owned paths/symbols: `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/persistence.py`
+  - Owned paths/symbols: **proposed**
+     `apps/cert-prep-desktop/src-tauri/src/runtime_promotion.rs`
+     (`RuntimePromotionStore`, `RuntimePromotionReceiptV1`) for durable local
+     pointer/receipt reconciliation; `apps/cert-prep-desktop/src-tauri/src/lib.rs`
+     (`run`) for startup wiring; `apps/cert-prep-desktop/src-tauri/src/backend.rs`
+     (`install_capture_runtime`, `start_capture_runtime`,
+     `restart_owned_backend_with_capture_runtime`) as callers;
+     `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/persistence.py`
     (`publish_capture_document`),
     `apps/cert-prep-backend/src/cert_prep_backend/domains/source_documents/operations.py`
     (`recover_operations`, `finish_failed`, `acknowledge_cancellation`,
@@ -365,7 +442,10 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     `installed_capture_runtime_paths`, `clean_stale_capture_runtime_staging`),
     and `apps/cert-prep-desktop/src-tauri/src/process_owner.rs`
     (`RuntimeProcessOwner::from_termination`, `RuntimeProcessOwner::terminate_once`,
-    `owned_runtime_process!`). Acceptance helpers are the existing
+     `owned_runtime_process!`). The Python
+     `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_installations/manager.py`
+     (`RuntimeInstallationManager`, `RuntimeInstaller`) remains model/provider
+     installation only. Acceptance helpers are the existing
     `apps/cert-prep-desktop/scripts/packaged-flow-smoke/app-lifecycle.mts`
     (`closeAppAndCheckResidue`, `cleanupAfterRunWithTimeout`,
     `restartAndVerifyPersistence`) and
@@ -374,14 +454,19 @@ manager or undiscovered target is a discovery-stop, never a green claim.
   - Prerequisite: Slices 2-5 are green; producer ordered JPEG then PDF page-1
     gate has a current cleanup proof before Cert starts.
   - Red proof (write first): inject leaked owned listener/PID/run directory,
-    wrong-owner PID/path, stale reparse point, runtime-root crash, and a
-    pre-existing Ollama PID. Prove owned residue is removed, unknown state and
-    baseline survive, durable source/review/domain rows reload, and Cert never
-    overlaps the LAW model slot.
-  - Verification: `pnpm nx run cert-prep-backend:test --skip-nx-cache`;
-    `pnpm nx run cert-prep-desktop:cargo-test --skip-nx-cache`;
-    `pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`;
-    `pnpm nx run cert-prep-desktop:acceptance-real --skip-nx-cache`.
+     wrong-owner PID/path, stale reparse point, runtime-root crash, and a
+     pre-existing Ollama PID. Prove owned residue is removed, unknown state and
+     baseline survive, durable source/review/domain rows reload, and Cert never
+     overlaps the LAW model slot. Also crash the store at every promotion
+     edge: `commitIntent` plus prior pointer must not commit; `commitIntent`
+     plus candidate pointer must advance and persist `PriorRetiredDraining`;
+     unexpected pointers must be `InstallAmbiguous`; missing producer refs must
+     stay blocked; and temp/root/backup/cache deletion must use exact cleanup
+     refs only.
+  - Verification: `corepack pnpm nx run cert-prep-backend:test --skip-nx-cache`;
+     `corepack pnpm nx run cert-prep-desktop:cargo-test --skip-nx-cache`;
+     `corepack pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`;
+     `corepack pnpm nx run cert-prep-desktop:acceptance-real --skip-nx-cache`.
   - Stop condition: broad process-name kill, unknown residue deletion, durable
     asset deletion, nonterminal cleanup marked clean, or any Cert/Law overlap.
     Preserve failure evidence and do not hand off to LAW.
@@ -414,9 +499,9 @@ manager or undiscovered target is a discovery-stop, never a green claim.
   - Red proof (write first): an evidence fixture that lacks a reproducible
     baseline or includes raw OCR/truth text, tokens, local paths, host names,
     or environment dumps must fail validation.
-  - Verification: `pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`;
-    `pnpm nx run cert-prep-desktop:acceptance-real --skip-nx-cache`;
-    `pnpm nx run cert-prep-desktop:typecheck-scripts --skip-nx-cache`.
+  - Verification: `corepack pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`;
+    `corepack pnpm nx run cert-prep-desktop:acceptance-real --skip-nx-cache`;
+    `corepack pnpm nx run cert-prep-desktop:typecheck-scripts --skip-nx-cache`.
   - Stop condition: measurement alters production behavior, includes unbounded
     diagnostics, or compares averages that hide a failed fixture/anchor.
   - Rollback: additive revert of measurement-only code and evidence schema;
@@ -433,8 +518,16 @@ manager or undiscovered target is a discovery-stop, never a green claim.
       then hands the candidate and child ledger to the producer publication
       lane; it never waits for LAW, aggregates ledgers, or moves/mutates the
       producer stable pointer.
-  - Owned paths/symbols: `apps/cert-prep-desktop/scripts/acceptance-real.mts`
-    (`acceptancePassed`, `writeAcceptanceManifest`),
+  - Owned paths/symbols: **proposed**
+    `apps/cert-prep-desktop/src-tauri/src/runtime_promotion.rs`
+    (`RuntimePromotionStore`, `RuntimePromotionReceiptV1`) as the sole Cert
+    local pointer/receipt owner, with `apps/cert-prep-desktop/src-tauri/src/backend.rs`
+    (`install_capture_runtime`, `start_capture_runtime`) as callers;
+    `apps/cert-prep-desktop/scripts/acceptance-artifacts.mts`
+    (`writeAcceptanceManifest`) and its
+    `apps/cert-prep-desktop/scripts/acceptance-artifacts.test.mts` tests;
+    `apps/cert-prep-desktop/scripts/acceptance-real.mts`
+    (`acceptancePassed`, caller/verdict only),
     `apps/cert-prep-desktop/scripts/acceptance-real-options.mts`
     (`createAcceptanceSmokeOptions`, `loadPhase1FinalCandidate`,
     `strictRuntimeIdentity`),
@@ -459,9 +552,9 @@ manager or undiscovered target is a discovery-stop, never a green claim.
      a passing D4 manifest. Prove D4 evidence is labeled pre-publication,
      contains only Cert's candidate child ledger, and no producer stable pointer
      or aggregate ledger is changed.
-  - Verification: `pnpm nx run cert-prep-desktop:capture-candidate-gate-test --skip-nx-cache`;
-    `pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`;
-    `pnpm nx run cert-prep-desktop:acceptance-real --skip-nx-cache`.
+  - Verification: `corepack pnpm nx run cert-prep-desktop:capture-candidate-gate-test --skip-nx-cache`;
+     `corepack pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`;
+     `corepack pnpm nx run cert-prep-desktop:acceptance-real --skip-nx-cache`.
   - Stop condition: candidate identity is incomplete, semantic/cleanup proof
      is partial, manifest contains raw text/token/path, D4 is reported as
      published acceptance, Cert waits for LAW, or Cert writes an aggregate or
@@ -470,7 +563,7 @@ manager or undiscovered target is a discovery-stop, never a green claim.
   - Rollback: apply Slice 4 transaction semantics. Before the local active
      commit, discard only isolated candidate staging and keep active untouched.
      After commit, do not restore the old active or producer stable pointer;
-     keep the new active degraded with its exact session/proof token and retry
+     keep the new active degraded with its exact opaque session/proof refs and retry
      or reconcile cleanup. Preserve the candidate child ledger and failure
      evidence.
   - Commit boundary: `test(phase2): accept immutable cert candidate`;
@@ -485,13 +578,21 @@ manager or undiscovered target is a discovery-stop, never a green claim.
       does not wait for LAW, aggregate consumer ledgers, or move/mutate/rollback
       the producer's stable pointer; the producer alone owns aggregation and
       D8 promotion.
-  - Owned paths/symbols: `tools/capture-runtime-version.mts`
+  - Owned paths/symbols: **proposed**
+    `apps/cert-prep-desktop/src-tauri/src/runtime_promotion.rs`
+    (`RuntimePromotionStore`, `RuntimePromotionReceiptV1`) as the sole Cert
+    local pointer/receipt owner, with `apps/cert-prep-desktop/src-tauri/src/backend.rs`
+    (`install_capture_runtime`, `start_capture_runtime`) as callers;
+    `tools/capture-runtime-version.mts`
     (`CAPTURE_RUNTIME_RELEASE_BASE_URL`, `CAPTURE_RUNTIME_PACKAGE_NAME`,
     `CAPTURE_RUNTIME_CLIENT_PACKAGE_NAME`),
     `tools/capture-runtime-version-check.mts`
     (`assertCaptureRuntimeConsumerVersions`),
+    `apps/cert-prep-desktop/scripts/acceptance-artifacts.mts`
+    (`writeAcceptanceManifest`) and its
+    `apps/cert-prep-desktop/scripts/acceptance-artifacts.test.mts` tests;
     `apps/cert-prep-desktop/scripts/acceptance-real.mts`
-    (`acceptancePassed`, `writeAcceptanceManifest`),
+    (`acceptancePassed`, caller/verdict only),
     `apps/cert-prep-desktop/scripts/acceptance-real-options.mts`
     (`loadRuntimeCandidate`, `strictRuntimeIdentity`),
     `apps/cert-prep-desktop/scripts/phase1-final-identity.mts`
@@ -511,9 +612,9 @@ manager or undiscovered target is a discovery-stop, never a green claim.
      mismatch must fail. Prove the run writes only Cert's published child
      ledger, hands it to LAW after green, and never waits for LAW or writes an
      aggregate ledger/stable-pointer mutation.
-  - Verification: `pnpm nx run cert-prep-desktop:release-tool-test --skip-nx-cache`;
-    `pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`;
-    `pnpm nx run cert-prep-desktop:acceptance-real --skip-nx-cache`.
+  - Verification: `corepack pnpm nx run cert-prep-desktop:release-tool-test --skip-nx-cache`;
+     `corepack pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`;
+     `corepack pnpm nx run cert-prep-desktop:acceptance-real --skip-nx-cache`.
     Producer aggregation and D8 stable-pointer promotion are external
     coordination outcomes, not something inferred from a local Cert target
     result; Cert verifies and hands off only its own D7 child ledger.
@@ -525,7 +626,7 @@ manager or undiscovered target is a discovery-stop, never a green claim.
      Before commit, preserve the active root/session and discard only proven
      candidate staging. After commit, do not roll back the old active or the
      producer stable pointer; retain the new active degraded with its exact
-     session/proof token while cleanup is retried/reconciled. Preserve the
+     opaque session/proof refs while cleanup is retried/reconciled. Preserve the
      failed published child ledger/evidence and do not relabel it green.
   - Commit boundary: `release(phase2): accept published capture-runtime bytes`;
      record exact published/download-back hashes, lockfile, manifests, Cert's
@@ -554,8 +655,12 @@ manager or undiscovered target is a discovery-stop, never a green claim.
   PriorRetiredDraining -> RetiredProved`. Before commit, failure preserves the
   active root/pointer/session. After commit, the new active remains selected and
   degraded, the next promotion is blocked, the exact producer session/proof
-  token is retained, and cleanup is retried/reconciled at next start. A file
-  install is `Restored` only with proof; otherwise it is `InstallAmbiguous`.
+  refs are retained, and cleanup is retried/reconciled at next start. The
+  proposed `RuntimePromotionStore` in
+  `apps/cert-prep-desktop/src-tauri/src/runtime_promotion.rs` is the sole Cert
+  local pointer/receipt owner; it is distinct from the producer session journal
+  and D8 stable pointer. A file install is `Restored` only with proof; otherwise
+  it is `InstallAmbiguous`.
 - Audio transcription/translation is a separate domain and acceptance lane,
   not an OCR Phase 2 requirement.
 - Image-flow changes require design and both review axes before code; TDD red
