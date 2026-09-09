@@ -121,9 +121,9 @@ second coordinator. It owns the logical pointer record, its compare-and-swap
 (CAS) revision, atomic receipt writes, and startup reconciliation. Filesystem
 adapters may resolve internal roots, but persisted receipts contain logical
 references and content identities only. The producer's session journal and
-retryable session/proof reference remain producer-owned; the store records only
-opaque references to them. The producer's shared release stable pointer and D8
-ledger aggregation remain outside Cert authority.
+retryable session/proof references remain producer-owned; the store records
+only distinct candidate/prior opaque references to them. The producer's shared
+release stable pointer and D8 ledger aggregation remain outside Cert authority.
 
 `RuntimePromotionReceiptV1` must be sufficient to reconcile a crash without
 reading a private path or secret. Its path-free fields are:
@@ -136,7 +136,8 @@ reading a private path or secret. Its path-free fields are:
 | `cas` | `expectedRevision`, `expectedPointerGeneration`, `expectedPointerSha256`, `observedRevision`, `observedPointerGeneration`, `observedPointerSha256`, and a bounded result (`matched`, `replaced`, `conflict`, or `ambiguous`). A conflict never silently retries against a different prior. |
 | `commitIntent` | `null` before intent, otherwise the expected prior pointer generation/hash, candidate pointer generation/hash, and expected revision. It is flushed before any pointer replacement. |
 | `degraded`, `blockNextPromotion` | Durable booleans. Any post-commit retirement/proof uncertainty sets both true; they clear only after `RetiredProved`. |
-| `producerSessionRef`, `producerProofRef` | Opaque, retryable producer-owned references. They are not bearer tokens, raw session journals, PIDs, URLs, or paths, and a missing proof reference keeps the promotion blocked. |
+| `candidateReconcileRef`, `candidateProofRef` | Distinct opaque, retryable producer-owned references for candidate-session cleanup before the local pointer commit. They are not bearer tokens, raw session journals, PIDs, URLs, paths, or local/native handles. A missing candidate reference or proof keeps pre-commit cleanup recoverable but unproven; it must not be substituted with the prior slot. |
+| `priorReconcileRef`, `priorProofRef` | Distinct opaque, retryable producer-owned references for prior-session retirement after the local pointer commit. They are not interchangeable with the candidate slots. A missing prior reference or proof keeps the new active selected/degraded and blocks the next promotion; it must not become `RetiredProved`. |
 | `retirement` | `attempts`, bounded `status` (`not_started`, `draining`, `proof_pending`, `proved`, `failed`, or `blocked`), and the latest attempt revision. Proof status is never inferred from a process exit. |
 | `cleanupRefs` | Exact logical references for candidate root, prior root, temporary staging, backup, and cache entries, each with kind, content id/hash, byte count, and cleanup status. A cleanup adapter may delete only a reference whose identity still matches. |
 | `sanitizedError` | Optional stable error `code` and safe public `message`; raw diagnostics, paths, tokens, PIDs, command lines, host names, and OCR/truth text are forbidden. |
@@ -148,6 +149,21 @@ draining and each producer proof attempt; and reconcile startup against the
 observed pointer. These are design-only operations until the module is added;
 callers do not receive a path, handle, token, PID, or producer journal. A
 candidate cannot skip a receipt state by calling a lower-level file helper.
+
+The producer proof seam is addressable, not handle-based:
+`RuntimeSessionJournal::reconcile(ReconcileRef) -> ReconcileResult`. A
+`ReconcileRef` is an opaque producer journal index/address; Cert must not retain
+or reconstruct a Job handle, process handle, PID, path, port, or takeover lease.
+The candidate and prior sessions each receive their own ref and proof slot.
+After restart the call is observe-only. Complete proof of absent exact process
+identities, absent owned listeners, and exact staging binding may advance that
+ref to terminal; a present, PID-reused, unqueryable, or otherwise ambiguous
+observation returns `reconcile-required`, touches nothing, and leaves the
+corresponding Cert promotion path degraded/blocked. Candidate pre-commit
+cleanup therefore has its own retry/reconcile path that can preserve the prior
+active without invoking prior retirement. Prior post-commit retirement has its
+own retry/reconcile path and can never be satisfied by candidate proof. The
+receipt must retain both paths independently across a crash.
 
 The record is a durable local receipt, not an OpenAPI/generated view. It must
 be written atomically (private temporary file, flush, atomic replace, and
@@ -164,8 +180,9 @@ promise:
    manifest/schema/core/worker/catalog/contract identity. Candidate assembly
    writes only its isolated root; the verified active root is untouched.
 2. `RuntimePromotionStore` flushes a `CandidateReady` receipt. The receipt
-   includes candidate/prior identities and the currently observed pointer; no
-   pointer change has occurred.
+   includes candidate/prior identities, the currently observed pointer, and the
+   distinct candidate/prior reconcile/proof slots; no pointer change has
+   occurred.
 3. The store flushes `commitIntent` with the expected prior pointer generation
    and hash plus the intended candidate pointer generation and hash.
 4. Under the store lock, the implementation performs a logical CAS against
@@ -177,10 +194,15 @@ promise:
    `NewActiveCommitted` receipt. There is no rollback operation after this
    pointer commit; the new active remains selected.
 6. Before touching the prior session or root, the store flushes
-   `PriorRetiredDraining` with exact cleanup references. Retirement cleanup may
-   then ask the producer for proof through the retryable opaque reference.
-7. Each proof attempt updates the receipt. Only producer proof permits a
-   flushed `RetiredProved` receipt and clearing `degraded`/`blockNextPromotion`.
+   `PriorRetiredDraining` with exact cleanup references and the prior
+   reconcile/proof slots. Retirement cleanup then asks the producer for proof
+   through `RuntimeSessionJournal::reconcile(priorReconcileRef)`; it never uses
+   the candidate ref as a prior-session handle.
+7. Each candidate cleanup or prior retirement attempt updates only its own
+   receipt slot. Complete producer proof permits a flushed `RetiredProved`
+   receipt and clearing `degraded`/`blockNextPromotion`; absence of a proof,
+   presence, reuse, unqueryability, or ambiguity remains
+   `reconcile-required`/degraded.
 8. Optional prior-root deletion happens last and only through the exact prior
    cleanup reference after identity and pointer rereads pass. Cache deletion is
    likewise limited to an exact unreferenced cache reference.
@@ -191,11 +213,11 @@ the app must not infer a state from directory names or process names:
 | Durable receipt / observed pointer at startup | Required reconciliation |
 | --- | --- |
 | No `CandidateReady` or candidate verification failed | Preserve the active root/pointer/session. Delete only an exact, verified candidate/temp reference if one is recorded; otherwise leave it for explicit recovery. |
-| `CandidateReady` (or no intent) and the prior pointer still matches | Treat the operation as pre-commit. Do not commit. Preserve active; retain failure evidence and clean only exact candidate/staging refs. |
+| `CandidateReady` (or no intent) and the prior pointer still matches | Treat the operation as pre-commit. Do not commit. Preserve active; invoke only `RuntimeSessionJournal::reconcile(candidateReconcileRef)` for exact candidate cleanup. Complete absence/listener/staging proof may terminalize the candidate ref; present, reused, unqueryable, or ambiguous observations remain `reconcile-required` and do not touch the prior slot. |
 | `commitIntent` exists and the prior pointer still matches | The crash happened before commit. Do not commit or reinterpret the intent as permission to replace; preserve active and reconcile only the recorded candidate refs. |
 | `commitIntent` exists and the candidate pointer matches its intended generation/hash | The pointer replacement committed before its receipt. Advance durably to `NewActiveCommitted`, then persist `PriorRetiredDraining` before any cleanup. Never restore the prior pointer. |
 | Pointer matches neither the recorded prior nor candidate identity, or receipt and pointer generations conflict | Persist/report `InstallAmbiguous`, keep the selected bytes untouched, set degraded/block-next-promotion, retain all exact refs and sanitized error, and require explicit recovery. No rollback or broad deletion. |
-| `NewActiveCommitted` or `PriorRetiredDraining` | Keep the new active selected and degraded; block the next promotion; retry producer retirement proof by the retained opaque ref. A missing durable producer session/proof ref remains blocked and cannot become `RetiredProved`. |
+| `NewActiveCommitted` or `PriorRetiredDraining` | Keep the new active selected and degraded; block the next promotion; retry producer retirement proof only through `RuntimeSessionJournal::reconcile(priorReconcileRef)`. A missing, present, reused, unqueryable, or ambiguous prior observation remains `reconcile-required`; candidate cleanup proof cannot satisfy prior retirement, and a missing durable prior ref/proof cannot become `RetiredProved`. |
 | `RetiredProved` | Keep the new active selected. Delete a prior root only by its recorded exact ref after a fresh identity/pointer check; never delete an unreferenced root or cache entry. |
 | Any temporary, backup, root, or cache candidate | Remove only when its receipt cleanup reference, content hash, byte count, and ownership all match. Unknown, mismatched, or path-only entries stay untouched. |
 
@@ -228,11 +250,12 @@ exists; no digest is invented in advance.
 
 - Every new PDF page and image import enters the `windowsml_ocr` capture
   projection. Rasterization and OCR happen in `capture-runtime`.
-- `embedded` and `mixed` are fail-closed at the new import seam. Cert Prep
-  must not inspect an embedded text layer, arbitrate a mixed result, or call a
-  second OCR provider.
-- Existing persisted `embedded` and `mixed` rows are legacy read-only
-  compatibility data. They are never written as the result of a new import,
+- `direct_pdf`, `embedded`, and `mixed` are fail-closed at the new import
+  seam. Cert Prep must not inspect an embedded text layer, arbitrate a mixed
+  result, write a `direct_pdf` result, or call a second OCR provider.
+- Existing persisted `direct_pdf`, `embedded`, and `mixed` rows are legacy
+  read-only compatibility data. They are never written as the result of a new
+  import,
   never used to select an OCR route, and never silently rewritten as current
   OCR evidence.
 - Runtime capture state and OCR projection are transient execution data. Cert
@@ -262,9 +285,9 @@ durable discriminator.
 must therefore accept the exact producer engine `windowsml-ocr`, then return
 the exact Cert value `windowsml_ocr`. It must not infer either value from a
 substring or from the presence of an embedded PDF layer. The embedded layer is
-always ignored; no new document, page, or chunk may be written as `embedded`
-or `mixed`. Those values are legacy read compatibility only. A legacy row may
-be displayed or exported according to its existing domain rules, but it is
+always ignored; no new document, page, or chunk may be written as `direct_pdf`,
+`embedded`, or `mixed`. Those values are legacy read compatibility only. A legacy
+row may be displayed or exported according to its existing domain rules, but it is
 never a new import target, route selector, or source for silently rewriting
 current OCR evidence.
 
@@ -279,6 +302,9 @@ must retain enough authenticated notice truth (`mode`, `reasonCode`,
 `userNoticeRequired`, and `noticeCode` or the contract's equivalent user-notice
 payload) for the host to tell the user when CPU fallback was selected because
 no dGPU or iGPU was usable.
+
+CPU fallback messaging is a projection of that producer truth only. Cert does
+not recompute, enrich, or otherwise reinterpret the notice.
 
 The delete-first implementation inventory is explicit: remove the fallback
 `OcrComputePreflightV2` model and `_validate_decision` from
@@ -318,11 +344,17 @@ that adapter's interface is reviewed and implemented.
   with the verified candidate.
 - After `NewActiveCommitted`, there is no rollback to the old active. The new
    active remains selected in a degraded state and blocks the next promotion
-   while the exact opaque producer session/proof refs are retained. Retiring the old
-   session is retried and reconciled until `RetiredProved`; only then may the
-   degraded marker clear. Replace the current one-shot `RuntimeProcessOwner`
-   `FnOnce` termination seam; a second cleanup call must not become a false
-   success.
+   while the distinct candidate/prior opaque producer references remain in the
+   receipt. Before commit, candidate cleanup calls
+   `RuntimeSessionJournal::reconcile(candidateReconcileRef)` and can be
+   recovered independently without touching the active or prior session. After
+   commit, prior retirement calls
+   `RuntimeSessionJournal::reconcile(priorReconcileRef)` and can be recovered
+   independently until `RetiredProved`; only then may the degraded marker
+   clear. A present, reused, unqueryable, or ambiguous observation remains
+   `reconcile-required` and must not be treated as proof. Replace the current
+   one-shot `RuntimeProcessOwner` `FnOnce` termination seam; a second cleanup
+   call must not become a false success.
 - App close, window close, readiness failure, runtime-root crash, and host
   termination converge on the producer's owned-session terminal proof. Cert
   observes that proof through its adapter rather than duplicating native
@@ -332,9 +364,12 @@ that adapter's interface is reviewed and implemented.
 - An external Ollama process that predates the Cert session is a baseline and
   must survive. Cleanup is identity-scoped and never kills by executable name.
 - Next-start reconciliation removes only stale app-owned listeners, PIDs,
-  run data, staging, or backups after ownership identity is proven. Unknown,
-  ambiguous, or mismatched identity fails closed and is left for explicit
-  recovery.
+   run data, staging, or backups after ownership identity is proven. Unknown,
+   ambiguous, or mismatched identity fails closed and is left for explicit
+   recovery. The producer's addressable observe-only seam is
+   `RuntimeSessionJournal::reconcile(ReconcileRef) -> ReconcileResult`; no
+   local Job/process handle, PID, path, port, or takeover lease is a substitute
+   for either the candidate or prior `ReconcileRef`.
 
 The adapter may report lifecycle state, but it must not expose raw OS handles
 or ask the Angular host to terminate a process tree.
@@ -364,11 +399,15 @@ are **proposed** until a bounded implementation slice records them.
   `NewActiveCommitted`; retain the prior root while it drains, but do not use a
   rollback operation after commit.
 - Candidate verification or candidate launch failure is pre-commit failure and
-  leaves the prior active pointer/root/session usable. Pointer replacement is
-  the commit boundary. After commit, retired-session cleanup failure leaves
-  the new active selected, marks the install degraded, blocks the next
-   promotion, retains the exact opaque producer session/proof refs, and retries or
-  reconciles cleanup at next start. It never restores the old active by claim.
+   leaves the prior active pointer/root/session usable. Pointer replacement is
+   the commit boundary. After commit, retired-session cleanup failure leaves
+   the new active selected, marks the install degraded, blocks the next
+   promotion, retains the exact candidate/prior reconcile and proof slots, and
+   retries or reconciles each slot at next start. It never restores the old
+   active by claim. Candidate pre-commit cleanup may terminalize only on exact
+   absence/listener/staging proof; prior post-commit retirement uses its own
+   `priorReconcileRef` and remains degraded/blocked for missing, present,
+   reused, unqueryable, or ambiguous observations.
 - A file-install restore may be called `Restored` only after the prior root's
   path, manifest, byte count, content hash, and session identity have been
   re-verified. If any proof is missing or conflicting, return
@@ -395,17 +434,20 @@ each result is a child ledger of the producer's candidate/publication record:
 1. **D4 `CandidateAccepted` (pre-publication).** After the producer's D3
    candidate record exists, Cert installs and runs the immutable candidate in
    the strict serial lane. Cert writes only its own D4 candidate child ledger
-   containing its JPEG/PDF, semantic OCR/provenance, durable
-   restart/review/export, and identity-scoped cleanup proof. A green D4 hands
-   the candidate and Cert child ledger back to the producer publication lane;
+   containing its independently scoped JPEG/PDF evidence, semantic
+   OCR/provenance, durable restart/review/export, and identity-scoped cleanup
+   proof. The ledger is emitted through the producer `AcceptanceChildWireV1`
+   adapter at the supplied `E2E_ACCEPTANCE_SCOPE_PATH`, not through the legacy
+   schema-1 aggregate manifest. A green D4 hands the candidate and Cert child
+   ledger back to the producer publication lane;
    Cert does not wait for LAW, aggregate consumer ledgers, or move/mutate the
    producer's stable pointer.
 2. **D7 `PublishedAccepted` (post-publication).** After the producer publishes
    the exact D3 bytes and provides the D6 download-back identity, Cert repeats
    the installed journey from those downloaded bytes only. Cert writes only its
-   own D7 published child ledger. A green D7 hands that child ledger and its
-   privacy-safe evidence to LAW; Cert does not wait for LAW's result or create
-   an aggregate ledger.
+   own D7 published child ledger through the same scoped child-wire adapter. A
+   green D7 hands that child ledger and its privacy-safe evidence to LAW; Cert
+   does not wait for LAW's result or create an aggregate ledger.
 
 The producer alone aggregates the Capture Workbench, Cert Prep, and GX Law Prep
 child ledgers and owns D8 stable-pointer promotion. Cert never owns D8 and
@@ -496,6 +538,12 @@ anchor must be present (zero omissions). The producer field must be
       is page 1; require CER <= 1% and zero missing critical anchors.
       Full-document OCR is reserved for an explicitly tested accumulation,
       ordering, or accuracy risk.
+- [ ] Migrate the schema-1 Cert acceptance manifest through
+      `writeAcceptanceManifest` to one producer `AcceptanceChildWireV1` at the
+      supplied run-scoped `E2E_ACCEPTANCE_SCOPE_PATH`. Bind separate JPEG and
+      PDF page-1 child evidence, the proposed installed candidate receipt, all
+      seven required cleanup flags, and the producer's unique leg identities;
+      emit no `evidence.aggregate`, aggregate ledger, or D8 record.
 - [ ] Complete D4 `CandidateAccepted` with the pre-publication immutable
       candidate root and Cert's own candidate child ledger. Hand the candidate
       and child ledger to the producer publication lane; do not wait for LAW,
@@ -540,6 +588,50 @@ covered by `apps/cert-prep-desktop/scripts/acceptance-artifacts.test.mts`. The
 `acceptancePassed` value in
 `apps/cert-prep-desktop/scripts/acceptance-real.mts` is only the caller's final
 verdict; it is not a second manifest writer or artifact-owner seam.
+
+### Acceptance child-wire migration
+
+The current Cert `acceptance-manifest.json` is a schema-1 local diagnostic
+manifest. It is not the producer's cross-project acceptance record. The
+executable migration slice must make
+`apps/cert-prep-desktop/scripts/acceptance-artifacts.mts::writeAcceptanceManifest`
+the compatibility adapter from that schema-1 input to the producer-owned
+`AcceptanceChildWireV1` and its scoped `E2E_ACCEPTANCE_SCOPE_PATH` contract.
+The migration is covered by
+`apps/cert-prep-desktop/scripts/acceptance-artifacts.test.mts`; the verdict
+caller remains
+`apps/cert-prep-desktop/scripts/acceptance-real.mts::acceptancePassed`, and the
+privacy-safe semantic producer is
+`apps/cert-prep-desktop/scripts/ocr-semantic-evidence.mts::serializePrivacySafeOcrSemanticEvidence`
+with `OCR_NORMALIZATION_VERSION`. The candidate installed-runtime identity and
+promotion proof are supplied by the proposed
+`apps/cert-prep-desktop/src-tauri/src/runtime_promotion.rs::RuntimePromotionStore`
+and `RuntimePromotionReceiptV1`; these are planned symbols, not current ones.
+
+The producer runner supplies one safe, run-scoped
+`E2E_ACCEPTANCE_SCOPE_PATH` for Cert. Cert must not invent a fallback path,
+write outside that scope, or treat a scope path as a local process handle. The
+JPEG and scanned-PDF page-1 evidence remain independently bound child scopes
+(`sourceSuite.image` and `sourceSuite.pdf`) with distinct media/page digests,
+candidate identity, and cleanup proof. A green child wire carries the
+producer-required schema/run/candidate identities, six unique leg fields
+(`sequenceIndex`, `childKey`, `legId`, `childId`, `root`, and `artifactId`),
+raw-byte artifact digests, expected normalized-truth and anchor-set digests,
+CER threshold, `nfkc-whitespace-v1`, `code-point-levenshtein-v1`, and its
+self-excluded digest. It also carries the complete lifecycle proof:
+`app`, `sidecar`, `cdpPort`, `temporaryAppData`, `ownedPids`,
+`ownedListeners`, and `ownedWorkers` must all be true, with the scoped child
+terminal, evidence-complete, and cleanup-verifier results proven. Raw OCR or
+truth text, tokens, paths, host diagnostics, and process handles remain local
+and are never emitted.
+
+During migration, schema-1 manifests are read only for compatibility. New Cert
+runs emit only the Cert child wire/child ledger for their D4 or D7 event; they
+must not emit `evidence.aggregate`, an aggregate ledger, a producer D8 record,
+or a stable-pointer mutation. Missing or unscoped `E2E_ACCEPTANCE_SCOPE_PATH`,
+missing JPEG/PDF child proof, any false lifecycle flag, duplicate leg identity,
+schema/scope mismatch, or a candidate/prior receipt reference mismatch fails
+closed before handoff.
 
 ### Design-It-Twice record for the consumer seam
 

@@ -25,16 +25,18 @@ formal/published-package regression across the consumers.
 Phase 1 local-probe acceptance is complete. This checklist captures the
 remaining Phase 2 sequential formal/published-package regression path. D4 is
 the pre-publication immutable-candidate acceptance; Cert writes only its own
-candidate child ledger and hands it to the producer publication lane. D7
+`AcceptanceChildWireV1` candidate child ledger at the scoped
+`E2E_ACCEPTANCE_SCOPE_PATH` and hands it to the producer publication lane. D7
 repeats the same journey from D5/D6 published download-back bytes and is the
-formal published acceptance; Cert writes only its own published child ledger
-and hands it to LAW. Cert never waits for LAW, aggregates consumer ledgers, or
-mutates/rolls back the producer stable pointer. The producer alone aggregates
-child ledgers and owns D8 stable-pointer promotion. Cert owns durable
+formal published acceptance; Cert writes only its own published child wire/
+ledger and hands it to LAW. Cert never waits for LAW, aggregates consumer
+ledgers, or mutates/rolls back the producer stable pointer. The producer alone
+aggregates child ledgers and owns D8 stable-pointer promotion. Cert owns durable
 source/review/export state; `capture-runtime` owns the OCR projection.
 The producer engine `windowsml-ocr` maps to the Cert durable discriminator
-`windowsml_ocr`; embedded layers are ignored, and `embedded`/`mixed` are
-legacy read-only compatibility values only.
+`windowsml_ocr`; embedded layers are ignored, and `direct_pdf`/`embedded`/`mixed`
+are legacy read-only compatibility values only. No new `direct_pdf`, `embedded`,
+or `mixed` write is permitted.
 
 Audio transcription/translation is a separate Capture Runtime lane and is not
 part of this OCR-only PDF/JPEG Phase 2 acceptance.
@@ -53,12 +55,62 @@ reconciliation; `backend.rs::install_capture_runtime`,
 callers; `capture_runtime.rs` verifies/stages/launches; and
 `process_owner.rs` supplies the planned retryable producer proof/cleanup seam.
 The store is distinct from the producer session journal and D8 stable pointer.
+Its receipt must retain distinct `candidateReconcileRef`/`candidateProofRef`
+and `priorReconcileRef`/`priorProofRef` slots. The producer API is
+`RuntimeSessionJournal::reconcile(ReconcileRef) -> ReconcileResult`; the ref is
+an opaque journal address, not a local Job/process handle, PID, path, port, or
+takeover lease. Complete absence/listener/staging proof may terminalize its
+addressed ref; present, reused, unqueryable, or ambiguous observations remain
+`reconcile-required` and degraded. Candidate pre-commit cleanup and prior
+post-commit retirement are independent recovery paths and never substitute one
+another's ref or proof.
 The Python `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_installations/manager.py`
 (`RuntimeInstallationManager`, `RuntimeInstaller`) and its
 `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_installations/installers.py`
 (`LLMModelInstaller`) remain provider/model installation only.
 
 ## Acceptance slice register
+
+- **Cert child-wire migration (prerequisite to D4/D7):** migrate the current
+  schema-1 local `acceptance-manifest.json` through
+  `apps/cert-prep-desktop/scripts/acceptance-artifacts.mts::writeAcceptanceManifest`
+  (covered by `apps/cert-prep-desktop/scripts/acceptance-artifacts.test.mts`)
+  to producer `AcceptanceChildWireV1` at the producer-supplied,
+  run-scoped `E2E_ACCEPTANCE_SCOPE_PATH`. Keep
+  `apps/cert-prep-desktop/scripts/acceptance-real.mts::acceptancePassed` as
+  the caller/verdict only, and use
+  `apps/cert-prep-desktop/scripts/ocr-semantic-evidence.mts::serializePrivacySafeOcrSemanticEvidence`
+  (`OCR_NORMALIZATION_VERSION`) plus
+  `apps/cert-prep-desktop/scripts/phase1-acceptance-evidence.mts::buildPhase1AcceptanceEvidence`
+  for privacy-safe semantic proof. Retain/regenerate the producer-generated
+  view `libs/cert-prep-api/src/lib/cert-prep-api.generated.ts`
+  (`RuntimeReady`, `OcrComputePreflightV2`) without hand-editing or deleting it;
+  it is not a child-wire writer. The proposed installed candidate receipt
+  owner is `apps/cert-prep-desktop/src-tauri/src/runtime_promotion.rs`
+  (`RuntimePromotionStore`, `RuntimePromotionReceiptV1`) with distinct
+  candidate/prior reconcile/proof slots. JPEG and scanned-PDF page-1 evidence
+  remain independent child scopes (`sourceSuite.image` and `sourceSuite.pdf`),
+  each bound to its own media/page identity, artifact digests, and cleanup
+  proof. The producer wire must retain the unique leg identities and all seven
+  lifecycle flags: `app`, `sidecar`, `cdpPort`, `temporaryAppData`,
+  `ownedPids`, `ownedListeners`, and `ownedWorkers`; a green scoped child is
+  terminal, evidence-complete, and cleanup-verified. Prerequisite: consumer
+  TODO Slices 1-4.5 and the producer child-wire/scope contract. Red proof:
+  schema-1 output for a new run, missing/escaped/unbound scope, missing JPEG or
+  PDF child, duplicate child identity, any false lifecycle flag, missing or
+  substituted receipt ref, raw OCR/token/path data, a new `direct_pdf`,
+  `embedded`, or `mixed` value, `evidence.aggregate`, an aggregate/D8 field, or
+  stable-pointer mutation must fail closed. Green
+  verification uses the existing discovered targets:
+  `corepack pnpm nx run cert-prep-desktop:phase1-evidence-test --skip-nx-cache`;
+  `corepack pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`;
+  `corepack pnpm nx run cert-prep-desktop:typecheck-scripts --skip-nx-cache`.
+  First run `corepack pnpm nx show project cert-prep-desktop --json` if a
+  wire-specific target is needed; no such target exists at this head, so target
+  or schema creation is an explicit discovery stop rather than an invented
+  command. Rollback is an additive revert of the adapter/tests, retaining
+  schema-1 reads and failed child evidence without publication. Commit boundary:
+  `feat(phase2): emit cert acceptance child wire`.
 
 - **D4 candidate journey:** owned by
   the **proposed** local pointer/receipt seam
@@ -72,7 +124,11 @@ The Python `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_install
   `apps/cert-prep-desktop/scripts/acceptance-real-options.mts`
   (`createAcceptanceSmokeOptions`, `loadPhase1FinalCandidate`),
   `apps/cert-prep-desktop/scripts/ocr-truth-contract.mts`
-  (`parseOcrTruthManifest`), and backend
+  (`parseOcrTruthManifest`),
+  `apps/cert-prep-desktop/scripts/ocr-semantic-evidence.mts`
+  (`serializePrivacySafeOcrSemanticEvidence`, `OCR_NORMALIZATION_VERSION`),
+  `apps/cert-prep-desktop/scripts/ocr-page-record-evidence.mts`
+  (`assertOcrPageRecordEvidenceIntegrity`), and backend
   `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/ocr_summary.py`
   (`build_ocr_summary`, `_map_provenance`),
   `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/mapping.py`
@@ -80,9 +136,11 @@ The Python `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_install
   `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/persistence.py`
   (`publish_capture_document`). First red proof:
   old/local/fake/mismatched candidate or threshold/anchor/cleanup failure
-  must fail before a D4 manifest. Prerequisite: consumer TODO Slices 1-7 and
+  must fail before a D4 wire/manifest. The child is emitted at the supplied
+  `E2E_ACCEPTANCE_SCOPE_PATH`, with separate JPEG/PDF child scopes and all
+  required lifecycle flags. Prerequisite: consumer TODO Slices 1-7 and 4.5 and
   producer D3 candidate record. Stop if D4 changes the producer stable pointer,
-  writes embedded/mixed, waits for LAW, aggregates ledgers, or records raw
+  writes direct_pdf/embedded/mixed, waits for LAW, aggregates ledgers, or records raw
   text/token/path. The local promotion red proof must also verify immutable
   candidate/root -> flushed `CandidateReady` -> flushed `commitIntent` with
   expected prior pointer -> locked logical CAS/atomic pointer replace plus
@@ -90,9 +148,10 @@ The Python `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_install
   `PriorRetiredDraining` before cleanup -> producer proof -> `RetiredProved`.
   Rollback follows the consumer transaction: before local active commit
   preserve the active root/session; after commit keep the new active degraded
-  with its exact opaque producer session/proof refs and retry or
-  reconcile cleanup; never roll back the producer stable pointer. Cert writes
-  only its D4 candidate child ledger, then hands it to the producer.
+  with its exact candidate/prior reconcile/proof refs and retry or reconcile
+  the relevant cleanup slot independently; never roll back the producer stable
+  pointer. Cert writes only its D4 `AcceptanceChildWireV1` candidate child
+  ledger, then hands it to the producer.
   Green verification: `corepack pnpm nx run cert-prep-desktop:capture-candidate-gate-test --skip-nx-cache`;
   `corepack pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`; and
   `corepack pnpm nx run cert-prep-desktop:acceptance-real --skip-nx-cache`.
@@ -115,24 +174,32 @@ The Python `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_install
   `apps/cert-prep-desktop/scripts/phase1-acceptance-evidence.mts`
   (`buildPhase1AcceptanceEvidence`),
   `apps/cert-prep-desktop/scripts/phase1-final-identity.mts`
-  (`loadPhase1FinalEvidence`), plus `tools/capture-runtime-version-check.mts`
+  (`loadPhase1FinalEvidence`),
+  `apps/cert-prep-desktop/scripts/ocr-semantic-evidence.mts`
+  (`serializePrivacySafeOcrSemanticEvidence`, `OCR_NORMALIZATION_VERSION`),
+  and the producer-supplied scoped `E2E_ACCEPTANCE_SCOPE_PATH`, plus
+  `tools/capture-runtime-version-check.mts`
   (`assertCaptureRuntimeConsumerVersions`) and
   `apps/cert-prep-desktop/src-tauri/src/capture_manifest.rs`
   (`verify_capture_runtime`, `validate_capture_manifest_contract`) and
   `apps/cert-prep-desktop/src-tauri/src/manifests.rs` (`verify_artifact`).
   First red proof: local URL/path, mutable artifact,
   stale/mixed lock, or download-back byte mismatch must fail. Prerequisite:
-  D5 published exact D3 bytes and D6 download-back record. Stop without a
-  complete Cert D7 child ledger. Cert does not wait for LAW's ledger. The same
-  promotion order and startup crash matrix apply: intent plus prior pointer is
-  no commit; intent plus candidate pointer advances to committed; an
-  unexpected pointer is `InstallAmbiguous`; missing producer refs remain
-  blocked; and deletion uses exact cleanup refs only. Rollback follows the
+  D5 published exact D3 bytes and D6 download-back record, and consumer TODO
+  Slice 4.5 is green. Stop without a complete Cert D7 child wire/ledger. Cert
+  does not wait for LAW's ledger. The same promotion order and startup crash
+  matrix apply: intent plus prior pointer is no commit; intent plus candidate
+  pointer advances to committed; an unexpected pointer is `InstallAmbiguous`;
+  candidate cleanup and prior retirement use their distinct producer refs;
+  missing/present/reused/unqueryable/ambiguous producer observations remain
+  `reconcile-required`/degraded; and deletion uses exact cleanup refs only.
+  Rollback follows the
   consumer transaction: before local active commit preserve the active
-  identity; after commit keep the new active degraded with its exact opaque
-  producer session/proof refs and retry/reconcile cleanup. Never mutate or
-  roll back the producer stable pointer. Commit boundary: the D7 evidence and
-  Cert child-ledger update followed by handoff to LAW. Green verification:
+  identity; after commit keep the new active degraded with its exact
+  candidate/prior reconcile/proof refs and retry/reconcile the relevant slot
+  independently. Never mutate or roll back the producer stable pointer. Commit
+  boundary: the D7 `AcceptanceChildWireV1` evidence and Cert child-ledger
+  update followed by handoff to LAW. Green verification:
   `corepack pnpm nx run cert-prep-desktop:release-tool-test --skip-nx-cache`;
   `corepack pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`; and
   `corepack pnpm nx run cert-prep-desktop:acceptance-real --skip-nx-cache`.
@@ -174,7 +241,8 @@ The Python `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_install
       memory between runs. Do not start Cert before that gate is current.
 - [ ] Launch the installed Cert Prep app with the real private JPEG. Assert
       the resulting page projection is semantic, ordered, and
-      `windowsml_ocr`-provenanced; no embedded-text or host OCR route is used.
+      `windowsml_ocr`-provenanced; no direct_pdf, embedded-text, or host OCR route
+      is used.
       Require CER <= 3% and zero missing critical anchors.
 - [ ] Complete `afterCapture` cleanup for the JPEG before beginning the PDF
       run. Prove owned listeners, PIDs, run data, and staging are gone while
@@ -199,8 +267,13 @@ The Python `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_install
       removed.
 - [ ] Inspect the privacy-safe manifest. It may contain bounded identities,
       hashes, semantic counts/anchors, provenance, timing/memory numbers, and
-      cleanup flags. Raw OCR text, truth text, tokens, local paths,
-      host/user names, and environment dumps must not be present.
+      cleanup flags. For a new D4/D7 run, emit the Cert
+      `AcceptanceChildWireV1` only at the producer-supplied scoped
+      `E2E_ACCEPTANCE_SCOPE_PATH`; its JPEG/PDF child scopes must be bound to
+      the candidate receipt and carry true `app`, `sidecar`, `cdpPort`,
+      `temporaryAppData`, `ownedPids`, `ownedListeners`, and `ownedWorkers`
+      flags. Raw OCR text, truth text, tokens, local paths, host/user names,
+      and environment dumps must not be present.
 
 - [ ] Label the manifest `D4 CandidateAccepted` before publication. It must
       identify the immutable candidate and must not move the producer stable
@@ -220,9 +293,10 @@ The Python `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_install
   rank adapters, derive mode/reason/notice values, or recalculate policy. It
   decodes the exact generated public contract and displays producer-owned
   notice truth, retaining enough truth to tell the user CPU fallback was
-  selected when no dGPU/iGPU was usable. Post-selection DirectML failure is
-  fail-closed and receives no host CPU retry. The delete-first inventory and
-  tests are tracked in consumer TODO Slice 3.
+  selected when no dGPU/iGPU was usable. The CPU notice is a projection of
+  producer truth only; Cert does not recalculate mode/reason/notice.
+  Post-selection DirectML failure is fail-closed and receives no host CPU retry.
+  The delete-first inventory and tests are tracked in consumer TODO Slice 3.
 - The accepted local-package result is `local-probe` evidence only: it
   completes Phase 1 but is not published/release evidence. A clean local
   install cannot become published evidence by changing the URL or claiming
@@ -232,9 +306,11 @@ The Python `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_install
 - If any ordered run or cleanup proof fails, stop the Cert handoff, preserve
   the privacy-safe failure artifact, and do not start LAW. Apply the consumer
   transaction rule: before local active commit preserve the active
-  root/pointer/session; after commit retain the new active degraded with its
-  exact opaque producer session/proof refs and retry/reconcile cleanup. Never mutate
-  or roll back the producer stable pointer.
+  root/pointer/session and retry candidate cleanup only through its distinct
+  `candidateReconcileRef`; after commit retain the new active degraded with its
+  distinct `priorReconcileRef`/`priorProofRef` and retry/reconcile prior
+  retirement only through the producer API. Never mutate or roll back the
+  producer stable pointer.
 
 ## Design and verification gate
 

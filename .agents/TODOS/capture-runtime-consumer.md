@@ -34,8 +34,17 @@ owner for the local installed-runtime pointer and `RuntimePromotionReceiptV1`;
 it is not the producer session journal or D8 stable-pointer owner. Its receipt
 must carry candidate/prior content identities, pointer generation/hash,
 revision/CAS, flushed `commitIntent`, degraded/block-next-promotion flags,
-opaque producer session/proof refs, retirement attempts/status, exact cleanup
-refs, and sanitized errors, with no raw path/token/PID/OCR fields. Current
+distinct `candidateReconcileRef`/`candidateProofRef` and
+`priorReconcileRef`/`priorProofRef` slots, retirement attempts/status, exact
+cleanup refs, and sanitized errors, with no raw path/token/PID/handle/OCR
+fields. The producer exposes
+`RuntimeSessionJournal::reconcile(ReconcileRef) -> ReconcileResult` as an
+opaque, addressable observe-only semantic API; Cert never assumes a local Job
+handle, process handle, PID, path, port, or takeover lease. Only complete
+absence/listener/staging proof may advance a ref; present, reused,
+unqueryable, or ambiguous observations remain `reconcile-required` and
+degraded. Candidate pre-commit cleanup and prior post-commit retirement must
+remain independently recoverable. Current
 owners and symbols remain the paths listed in the [consumer specification](../SPECS/capture-runtime-consumer.md).
 The Python backend's `RuntimeInstallationManager`/`RuntimeInstaller` in
 `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_installations/`
@@ -139,7 +148,8 @@ manager or undiscovered target is a discovery-stop, never a green claim.
 - [ ] **Slice 2: exact OCR projection mapping and legacy-write deletion.** Keep
       `windowsml-ocr` as the producer engine and `windowsml_ocr` as the Cert
       durable discriminator. Ignore the embedded layer and reject every new
-      `embedded`/`mixed` write; retain legacy rows only for read compatibility.
+      `direct_pdf`/`embedded`/`mixed` write; retain legacy rows only for read
+      compatibility.
   - Owned paths/symbols: `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/ocr_summary.py`
     (`build_ocr_summary`, `CaptureOcrSummaryRead`, `_map_provenance`),
     `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/mapping.py`
@@ -159,7 +169,7 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     and `apps/cert-prep-backend/tests/integration/test_capture_workbench_pipeline.py`
     (`test_upload_delegates_to_capture_runtime_and_atomically_maps_existing_chunks`).
     **Proposed** replacement tests must include
-    `test_capture_document_rejects_embedded_and_mixed_write_provenance`,
+     `test_capture_document_rejects_direct_pdf_embedded_and_mixed_write_provenance`,
     `test_capture_document_rejects_noncanonical_engine_substring`, and
     `test_legacy_embedded_and_mixed_rows_remain_read_compatible`; no test may
     target a nonexistent ownership class. Preserve
@@ -170,13 +180,13 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     is available. Do not migrate existing legacy rows.
   - Red proof (write first): replace the marker/substrings fixture with exact
     producer `windowsml-ocr`; add delete/replace coverage that calls the public
-    publication seam with `embedded` and `mixed` engine provenance and proves no
+    publication seam with `direct_pdf`, `embedded`, and `mixed` provenance and proves no
     new durable row is written. Also prove a noncanonical engine such as
     `windowsml-v2` cannot pass merely because it contains `windowsml`.
   - Verification: `corepack pnpm nx run cert-prep-backend:test --skip-nx-cache`;
     `corepack pnpm nx run cert-prep-backend:lint --skip-nx-cache`.
-  - Stop condition: any new document/page/chunk can persist `embedded` or
-    `mixed`, the embedded layer is read, a substring engine is accepted, or
+  - Stop condition: any new document/page/chunk can persist `direct_pdf`,
+     `embedded`, or `mixed`, the embedded layer is read, a substring engine is accepted, or
     producer and durable strings are conflated. Stop before acceptance staging.
   - Rollback: additive revert of mapping/projection/persistence changes and
     replacement tests; preserve legacy rows and durable domain records.
@@ -293,7 +303,12 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_installations/installers.py`
     (`LLMModelInstaller`) remain a separate provider/model-installation scope;
     they do not write this pointer or receipt. The store is distinct from the
-    producer session journal and producer D8 stable pointer. The existing
+    producer session journal and producer D8 stable pointer. The receipt must
+    expose distinct `candidateReconcileRef`/`candidateProofRef` and
+    `priorReconcileRef`/`priorProofRef` slots. The producer proof seam is
+    `RuntimeSessionJournal::reconcile(ReconcileRef) -> ReconcileResult`;
+    `ReconcileRef` is an opaque journal index/address, not a local Job/process
+    handle, PID, path, port, or takeover lease. The existing
     `apps/cert-prep-desktop/scripts/acceptance-real-options.mts`
     candidate identity helpers, `tools/capture-candidate-gate.mts`, and its
     `tools/capture-candidate-gate.test.mts` tests remain acceptance adapters.
@@ -304,8 +319,12 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     `RuntimeProcessOwner` stores a one-shot `FnOnce` and returns false success
     on a second `terminate_once` call; replacement with a retryable,
     proof-bearing producer-session seam is part of this slice, not a second
-    cleanup policy. The proposed store persists opaque session/proof refs and
-    never persists raw paths, tokens, PIDs, process handles, or OCR.
+    cleanup policy. The proposed store persists distinct candidate/prior
+    reconcile/proof refs and
+    never persists raw paths, tokens, PIDs, process handles, or OCR. Complete
+    absence/listener/staging proof may terminalize the addressed ref; present,
+    reused, unqueryable, or ambiguous observations remain
+    `reconcile-required` and touch nothing.
   - Prerequisite: Slice 1 inventory is green; the producer D3 candidate ledger
     identifies manifest, schema, core, worker/catalog, contract, and lock bytes.
   - Red proof (write first): a tampered candidate, sibling junction, local path,
@@ -314,29 +333,36 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     `NewActiveCommitted`, assert the active pointer/root/session remains usable
     and the candidate is terminated. After commit, assert the new active
     remains selected and degraded, the next promotion is blocked, the exact
-    opaque producer session/proof refs are retained, and cleanup retries until
-     `RetiredProved`. A second cleanup call must not pass as a no-op success. A
-     file-install restore is `Restored` only with re-proofs of the prior
-     manifest, byte count, content hash, and session; otherwise it is
-     `InstallAmbiguous`.
+    distinct candidate/prior producer reconcile/proof refs are retained. A
+    candidate pre-commit cleanup failure must be independently retryable without
+    touching active; a prior post-commit retirement failure must be independently
+    retryable while the new active remains selected/degraded. Cleanup retries
+    until `RetiredProved`; a second cleanup call must not pass as a no-op
+    success. A file-install restore is `Restored` only with re-proofs of the
+    prior manifest, byte count, content hash, and session; otherwise it is
+    `InstallAmbiguous`.
   - Ordering proof (write first): verify the immutable candidate/root; flush
     `CandidateReady`; flush `commitIntent` with the expected prior pointer;
     lock and logically CAS/atomically replace and flush the pointer, then reread it;
     flush irreversible `NewActiveCommitted`; persist
     `PriorRetiredDraining` before cleanup; call the producer proof seam with
-    the retained opaque ref; flush `RetiredProved`; and only then optionally
-    delete the exact prior root. There is no rollback after pointer commit.
+    `priorReconcileRef` (never the candidate ref); flush `RetiredProved`; and
+    only then optionally delete the exact prior root. If candidate cleanup
+    fails before commit, retry `candidateReconcileRef` independently while the
+    prior active remains untouched. If prior retirement fails after commit,
+    retry `priorReconcileRef` independently while the new active remains
+    selected/degraded. There is no rollback after pointer commit.
   - Crash/startup reconciliation proof (write first):
 
     | Receipt and observed pointer | Required result |
     | --- | --- |
     | pre-`CandidateReady`, or candidate verification failed | Preserve active; clean only an exact recorded candidate/temp ref. |
-    | `CandidateReady`/no intent plus prior pointer | Pre-commit; do not commit; preserve active and reconcile exact candidate refs. |
+    | `CandidateReady`/no intent plus prior pointer | Pre-commit; do not commit; preserve active and invoke only `RuntimeSessionJournal::reconcile(candidateReconcileRef)` for exact candidate refs. Complete absence/listener/staging proof may terminalize; present, reused, unqueryable, or ambiguous observations remain `reconcile-required` and touch nothing. |
     | `commitIntent` plus prior pointer | No commit; preserve active; never treat intent as permission to replace. |
     | `commitIntent` plus intended candidate pointer | Advance to `NewActiveCommitted`, then persist `PriorRetiredDraining`; never restore prior. |
     | unexpected pointer or generation/hash conflict | `InstallAmbiguous`, degraded and blocked; retain refs/errors; no rollback/deletion. |
-    | post-commit state | Keep new active selected/degraded and block the next promotion; retry proof. |
-    | missing durable producer session/proof ref | Remain blocked; do not claim `RetiredProved` or delete prior. |
+    | post-commit state | Keep new active selected/degraded and block the next promotion; invoke only `RuntimeSessionJournal::reconcile(priorReconcileRef)` for prior retirement proof. |
+    | missing durable candidate/prior reconcile or proof ref | Keep the relevant cleanup path independently recoverable; for prior retirement remain blocked and do not claim `RetiredProved` or delete prior. |
     | temp/root/backup/cache entry | Delete only the exact receipt cleanup ref whose identity/hash/size matches. |
 
     Startup reconciliation is owned by `RuntimePromotionStore`, not by
@@ -348,8 +374,12 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     `commit_intent_with_prior_pointer_does_not_commit`,
     `commit_intent_with_candidate_pointer_advances_without_rollback`,
     `unexpected_pointer_is_install_ambiguous`,
+    `distinct_candidate_and_prior_reconcile_refs_round_trip`,
+    `candidate_precommit_cleanup_reconciles_without_prior_retirement`,
+    `prior_postcommit_retirement_reconciles_without_candidate_cleanup`,
+    `reconcile_present_reused_unqueryable_or_ambiguous_stays_blocked`,
     `missing_producer_proof_ref_blocks_next_promotion`, and
-    `cleanup_requires_exact_recorded_reference`.
+     `cleanup_requires_exact_recorded_reference`.
   - Verification: `corepack pnpm nx run cert-prep-desktop:capture-candidate-gate-test --skip-nx-cache`;
     `corepack pnpm nx run cert-prep-desktop:cargo-test --skip-nx-cache`;
     `corepack pnpm nx run cert-prep-desktop:cargo-check --skip-nx-cache`;
@@ -363,13 +393,97 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     without discovery. Do not run D4.
   - Rollback: before commit, discard only isolated candidate staging proven to
     be slice-owned and leave active untouched. After commit, do not roll back
-    the old active; retain the new active, opaque session/proof refs, degraded
-    marker, and failure evidence while retrying/reconciling cleanup at next
+    the old active; retain the new active, distinct candidate/prior
+    reconcile/proof refs, degraded marker, and failure evidence while
+    retrying/reconciling cleanup at next
     start. Additive revert is limited to the implementation commit and must
     not pretend an install was restored without proof.
   - Commit boundary: `test(phase2): harden immutable candidate promotion`;
     record candidate/archive/runtime-worker identities, transaction state,
     session/proof reference handling, and pre/post-commit evidence.
+
+- [ ] **Slice 4.5: migrate the schema-1 acceptance manifest to the producer
+      child wire and scoped child evidence.** Keep the current
+      `acceptance-manifest.json` readable as a legacy local diagnostic, but make
+      new Cert D4/D7 runs emit only producer `AcceptanceChildWireV1` at the
+      producer-supplied, run-scoped `E2E_ACCEPTANCE_SCOPE_PATH`. Cert emits its
+      own child wire/ledger only; it never emits `evidence.aggregate`, an
+      aggregate ledger, a producer D8 record, or a stable-pointer mutation.
+  - Owned paths/symbols: `apps/cert-prep-desktop/scripts/acceptance-artifacts.mts`
+    (`writeAcceptanceManifest`) is the writer/compatibility adapter, covered by
+    `apps/cert-prep-desktop/scripts/acceptance-artifacts.test.mts`;
+    `apps/cert-prep-desktop/scripts/acceptance-real.mts`
+    (`acceptancePassed`) remains the caller's verdict only and must not become a
+    second writer; `apps/cert-prep-desktop/scripts/ocr-semantic-evidence.mts`
+    (`serializePrivacySafeOcrSemanticEvidence`,
+    `OCR_NORMALIZATION_VERSION`); `apps/cert-prep-desktop/scripts/phase1-acceptance-evidence.mts`
+    (`buildPhase1AcceptanceEvidence`); and
+    `apps/cert-prep-desktop/scripts/ocr-page-record-evidence.mts`
+    (`assertOcrPageRecordEvidenceIntegrity`) provide the semantic/page proof.
+    Retain/regenerate the producer-generated view
+    `libs/cert-prep-api/src/lib/cert-prep-api.generated.ts`
+    (`RuntimeReady`, `OcrComputePreflightV2`) without hand-editing or deleting
+    it; it is not a child-wire writer.
+    The proposed candidate installed-receipt owner
+    `apps/cert-prep-desktop/src-tauri/src/runtime_promotion.rs`
+    (`RuntimePromotionStore`, `RuntimePromotionReceiptV1`) binds the child to
+    the candidate/phase and its distinct
+    `candidateReconcileRef`/`candidateProofRef` and
+    `priorReconcileRef`/`priorProofRef` slots. The existing JPEG/PDF child
+    inputs are `acceptance-real.mts` `sourceSuite.image` and `sourceSuite.pdf`;
+    each must retain its own media/page identity and cleanup evidence. The
+    producer's `AcceptanceChildWireV1` and scoped
+    `E2E_ACCEPTANCE_SCOPE_PATH` are producer contract symbols, not Cert
+    implementations.
+  - Wire requirements: preserve the producer schema/run/candidate identity,
+    `sequenceIndex`, `childKey`, `legId`, `childId`, `root`, and `artifactId`,
+    media and raw-byte artifact digests, expected normalized-truth and
+    anchor-set digests, CER threshold, `nfkc-whitespace-v1`,
+    `code-point-levenshtein-v1`, and self-excluded wire digest. The Cert child
+    must carry all required lifecycle flags as booleans:
+    `app`, `sidecar`, `cdpPort`, `temporaryAppData`, `ownedPids`,
+    `ownedListeners`, and `ownedWorkers`; all are true for a green child. The
+    scoped child must also be terminal, evidence-complete, and independently
+    cleanup-verified. Raw OCR/truth text, bearer tokens, paths, host/user
+    diagnostics, PIDs, and native handles remain local.
+  - Prerequisite: Slice 1 version inventory, Slices 2-3 exact projection and
+    generated-contract pass-through gates, Slice 4 candidate/active receipt
+    contract, current owner discovery, and the producer child-wire/scope
+    contract are green or available. Do not create or stage a candidate in this
+    contract migration slice. Schema-1 manifests are read-only compatibility
+    inputs; `E2E_ACCEPTANCE_SCOPE_PATH` must be supplied and bound to the exact
+    run/child rather than defaulted or inferred from a local path.
+  - Red proof (write first): the migration must fail closed when the old schema-1
+    shape is emitted for a new run, the scope is missing/escaped/unbound, either
+    JPEG or scanned-PDF page-1 child is missing, a required lifecycle flag is
+    false or omitted, the child identity is duplicated, candidate receipt refs
+    are missing/substituted, the exact producer/projection mapping is absent,
+    or raw OCR/truth/token/path data appears. A writer that emits a new
+    `direct_pdf`, `embedded`, or `mixed` value, or that emits
+    `evidence.aggregate`, any aggregate/D8 field, or any stable-pointer action
+    is also a failing red proof.
+  - Verification: the existing discovered targets are
+    `corepack pnpm nx run cert-prep-desktop:phase1-evidence-test --skip-nx-cache`;
+    `corepack pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`;
+    and `corepack pnpm nx run cert-prep-desktop:typecheck-scripts --skip-nx-cache`.
+    Before using any new wire-specific target, rerun
+    `corepack pnpm nx show project cert-prep-desktop --json`; no dedicated
+    `acceptance-child-wire-test` target exists at this head. If coverage needs
+    a new target/schema, create it in an explicitly authorized slice and
+    rediscover its metadata first; do not invoke an invented target. These
+    checks are contract/evidence checks, not installed OCR or publication proof.
+  - Stop condition: a new run still writes schema-1 aggregate evidence, scope
+    or child identity is not exact, any lifecycle proof is partial, candidate or
+    prior receipt refs are conflated, generated API view is hand-edited/deleted,
+    `windowsml-ocr` is not mapped exactly to `windowsml_ocr`, or Cert waits for
+    LAW/aggregates/mutates D8. Stop before D4/D7 staging or handoff.
+  - Rollback: additive revert of the migration adapter and focused contract
+    tests only; keep schema-1 reads available for legacy evidence, retain failed
+    child evidence without publication, and do not alter runtime assets,
+    receipts, stable-pointer state, or durable source rows.
+  - Commit boundary: `feat(phase2): emit cert acceptance child wire`; record
+    the schema/scope identity, red/green names, lifecycle flags, and child-wire
+    SHA.
 
 - [ ] **Slice 5: candidate/active supervision adapter.** Expose only semantic
       readiness and terminal cleanup through a **proposed**
@@ -401,10 +515,14 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     commit enters `PriorRetiredDraining`; it must not claim the old session is
     retired until producer proof reaches `RetiredProved`. A post-commit cleanup
     failure keeps the new active selected/degraded, retains the exact producer
-     opaque session/proof refs, blocks the next promotion, and retries at next
-     start. A second cleanup call must return a real failure when proof is not
-     available, never a false success from a consumed `FnOnce`.
-    A caller must not receive a native handle, bearer token, PID, or URL.
+     distinct candidate/prior reconcile/proof refs, blocks the next promotion,
+     and retries at next start. A second cleanup call must return a real
+     failure when proof is not available, never a false success from a
+     consumed `FnOnce`. The adapter receives only the opaque producer
+     `ReconcileRef` for the phase it owns and calls
+     `RuntimeSessionJournal::reconcile(ref)`; it never assumes a local handle
+     or substitutes candidate proof for prior retirement proof.
+     A caller must not receive a native handle, bearer token, PID, or URL.
   - Verification: `corepack pnpm nx run cert-prep-desktop:cargo-test --skip-nx-cache`;
      `corepack pnpm nx run cert-prep-desktop:cargo-check --skip-nx-cache`;
      `corepack pnpm nx run cert-prep-desktop:typecheck-scripts --skip-nx-cache`.
@@ -451,24 +569,32 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     `restartAndVerifyPersistence`) and
     `apps/cert-prep-desktop/scripts/process-residue-audit.mts`
     (`buildProcessResidueAuditReport`).
-  - Prerequisite: Slices 2-5 are green; producer ordered JPEG then PDF page-1
+   - Prerequisite: Slices 2-5 are green; the producer
+     `RuntimeSessionJournal::reconcile(ReconcileRef) -> ReconcileResult`
+     contract is available; producer ordered JPEG then PDF page-1
     gate has a current cleanup proof before Cert starts.
   - Red proof (write first): inject leaked owned listener/PID/run directory,
      wrong-owner PID/path, stale reparse point, runtime-root crash, and a
      pre-existing Ollama PID. Prove owned residue is removed, unknown state and
      baseline survive, durable source/review/domain rows reload, and Cert never
      overlaps the LAW model slot. Also crash the store at every promotion
-     edge: `commitIntent` plus prior pointer must not commit; `commitIntent`
-     plus candidate pointer must advance and persist `PriorRetiredDraining`;
-     unexpected pointers must be `InstallAmbiguous`; missing producer refs must
-     stay blocked; and temp/root/backup/cache deletion must use exact cleanup
-     refs only.
+      edge: `commitIntent` plus prior pointer must not commit; `commitIntent`
+      plus candidate pointer must advance and persist `PriorRetiredDraining`;
+      candidate pre-commit cleanup must use only its candidate ref; prior
+      post-commit retirement must use only its prior ref; absent/listener/staging
+      proof may advance each independently; present, reused, unqueryable, or
+      ambiguous observations must remain `reconcile-required`/degraded;
+      unexpected pointers must be `InstallAmbiguous`; missing producer refs must
+      stay blocked; and temp/root/backup/cache deletion must use exact cleanup
+      refs only.
   - Verification: `corepack pnpm nx run cert-prep-backend:test --skip-nx-cache`;
      `corepack pnpm nx run cert-prep-desktop:cargo-test --skip-nx-cache`;
      `corepack pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`;
      `corepack pnpm nx run cert-prep-desktop:acceptance-real --skip-nx-cache`.
-  - Stop condition: broad process-name kill, unknown residue deletion, durable
-    asset deletion, nonterminal cleanup marked clean, or any Cert/Law overlap.
+   - Stop condition: broad process-name kill, unknown residue deletion, durable
+     asset deletion, nonterminal cleanup marked clean, a local-handle
+     reconciliation assumption, candidate/prior proof-slot substitution, or any
+     Cert/Law overlap.
     Preserve failure evidence and do not hand off to LAW.
   - Rollback: additive revert of lifecycle/reconciliation changes; preserve
     durable assets and unproven residue for explicit manual recovery.
@@ -514,9 +640,11 @@ manager or undiscovered target is a discovery-stop, never a green claim.
       cleanup/model-memory release, PDF page 1, restart persistence,
       review/export, and cleanup. Require producer `windowsml-ocr` provenance,
       Cert `windowsml_ocr`, JPEG CER <= 3%, PDF page-1 CER <= 1%, and zero
-      missing critical anchors. D4 writes only Cert's candidate child ledger,
-      then hands the candidate and child ledger to the producer publication
-      lane; it never waits for LAW, aggregates ledgers, or moves/mutates the
+      missing critical anchors. D4 writes only Cert's candidate child ledger
+      through producer `AcceptanceChildWireV1` at the scoped
+      `E2E_ACCEPTANCE_SCOPE_PATH`, then hands the candidate and child ledger to
+      the producer publication lane; it never waits for LAW, aggregates ledgers,
+      or moves/mutates the
       producer stable pointer.
   - Owned paths/symbols: **proposed**
     `apps/cert-prep-desktop/src-tauri/src/runtime_promotion.rs`
@@ -539,19 +667,23 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     (`buildPhase1AcceptanceEvidence`),
     `apps/cert-prep-desktop/scripts/phase1-final-identity.mts`
     (`loadPhase1FinalEvidence`),
+    `apps/cert-prep-desktop/scripts/ocr-semantic-evidence.mts`
+    (`serializePrivacySafeOcrSemanticEvidence`, `OCR_NORMALIZATION_VERSION`),
+    and the candidate receipt's distinct candidate/prior reconcile/proof slots,
     `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/mapping.py`
     (`capture_document_to_pdf_extraction`, `_ocr_only_extraction_method`), and
     `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/persistence.py`
     (`publish_capture_document`).
-  - Prerequisite: Slices 1-7 green, producer D3 candidate record complete,
+  - Prerequisite: Slices 1-7 and Slice 4.5 green, producer D3 candidate record complete,
      candidate root verified, and producer Capture JPEG -> PDF page-1 gate
      green with cleanup before Cert starts.
   - Red proof (write first): local URL-only transport, a supplied old
      executable, protocol fake, candidate with mismatched worker/contract,
-     CER over threshold, missing anchor, or incomplete cleanup must fail before
-     a passing D4 manifest. Prove D4 evidence is labeled pre-publication,
-     contains only Cert's candidate child ledger, and no producer stable pointer
-     or aggregate ledger is changed.
+     CER over threshold, missing anchor, missing/false scoped lifecycle flag,
+     or incomplete cleanup must fail before a passing D4 wire/manifest. Prove
+     D4 evidence is labeled pre-publication, contains only Cert's candidate
+     child wire/ledger, and no producer stable pointer or aggregate ledger is
+     changed.
   - Verification: `corepack pnpm nx run cert-prep-desktop:capture-candidate-gate-test --skip-nx-cache`;
      `corepack pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`;
      `corepack pnpm nx run cert-prep-desktop:acceptance-real --skip-nx-cache`.
@@ -563,9 +695,9 @@ manager or undiscovered target is a discovery-stop, never a green claim.
   - Rollback: apply Slice 4 transaction semantics. Before the local active
      commit, discard only isolated candidate staging and keep active untouched.
      After commit, do not restore the old active or producer stable pointer;
-     keep the new active degraded with its exact opaque session/proof refs and retry
-     or reconcile cleanup. Preserve the candidate child ledger and failure
-     evidence.
+     keep the new active degraded with its exact candidate/prior reconcile and
+     proof refs and retry or reconcile the relevant slot independently. Preserve
+     the candidate child wire/ledger and failure evidence.
   - Commit boundary: `test(phase2): accept immutable cert candidate`;
      record candidate hashes, Cert D4 child-ledger SHA, transaction state, and
      cleanup proof before handing off to the producer.
@@ -574,7 +706,8 @@ manager or undiscovered target is a discovery-stop, never a green claim.
       After D5 publishes the exact D3 bytes and D6 verifies download-back
       hashes, rerun the same Cert journey from downloaded bytes only. D7 is
       formal published acceptance. Cert writes only its own published child
-      ledger, then hands that ledger and privacy-safe evidence to LAW. Cert
+      wire/ledger at the producer-supplied scoped `E2E_ACCEPTANCE_SCOPE_PATH`,
+      then hands that ledger and privacy-safe evidence to LAW. Cert
       does not wait for LAW, aggregate consumer ledgers, or move/mutate/rollback
       the producer's stable pointer; the producer alone owns aggregation and
       D8 promotion.
@@ -597,21 +730,27 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     (`loadRuntimeCandidate`, `strictRuntimeIdentity`),
     `apps/cert-prep-desktop/scripts/phase1-final-identity.mts`
     (`loadPhase1FinalEvidence`),
+    `apps/cert-prep-desktop/scripts/ocr-semantic-evidence.mts`
+    (`serializePrivacySafeOcrSemanticEvidence`, `OCR_NORMALIZATION_VERSION`),
+    and the separate `acceptance-real.mts` `sourceSuite.image` and
+    `sourceSuite.pdf` child scopes,
     `apps/cert-prep-desktop/scripts/package-qa.mts` (`main`),
     `apps/cert-prep-desktop/src-tauri/src/capture_manifest.rs`
     (`verify_capture_runtime`, `validate_capture_manifest_contract`), and
      `apps/cert-prep-desktop/src-tauri/src/manifests.rs` (`verify_artifact`).
      There is no Cert stable-pointer writer; producer aggregation and D8 are
      outside this TODO's ownership.
-  - Prerequisite: Slices 1-8 green; producer D5 publication and D6
+  - Prerequisite: Slices 1-8 and Slice 4.5 green; producer D5 publication and D6
      download-back record prove byte identity for the exact candidate; Cert has
      no local path/direct URL and no downstream LAW result is required to start
      or complete this Cert D7 run.
   - Red proof (write first): local candidate, mutable URL, URL/port-only match,
-     stale 0.4.1 lock, mixed dependency, old executable, or download-back byte
-     mismatch must fail. Prove the run writes only Cert's published child
-     ledger, hands it to LAW after green, and never waits for LAW or writes an
-     aggregate ledger/stable-pointer mutation.
+      stale 0.4.1 lock, mixed dependency, old executable, download-back byte
+      mismatch, missing scoped JPEG/PDF child, false lifecycle flag, or
+      missing/substituted candidate/prior receipt ref must fail. Prove the run
+      writes only Cert's published `AcceptanceChildWireV1` child ledger, hands
+      it to LAW after green, and never waits for LAW or writes an aggregate
+      ledger/stable-pointer mutation.
   - Verification: `corepack pnpm nx run cert-prep-desktop:release-tool-test --skip-nx-cache`;
      `corepack pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`;
      `corepack pnpm nx run cert-prep-desktop:acceptance-real --skip-nx-cache`.
@@ -626,8 +765,9 @@ manager or undiscovered target is a discovery-stop, never a green claim.
      Before commit, preserve the active root/session and discard only proven
      candidate staging. After commit, do not roll back the old active or the
      producer stable pointer; retain the new active degraded with its exact
-     opaque session/proof refs while cleanup is retried/reconciled. Preserve the
-     failed published child ledger/evidence and do not relabel it green.
+      candidate/prior reconcile/proof refs while the relevant cleanup slot is
+      retried/reconciled independently. Preserve the failed published child
+      wire/ledger/evidence and do not relabel it green.
   - Commit boundary: `release(phase2): accept published capture-runtime bytes`;
      record exact published/download-back hashes, lockfile, manifests, Cert's
      D7 child-ledger SHA, and the handoff to LAW. Producer aggregation and D8
@@ -636,8 +776,8 @@ manager or undiscovered target is a discovery-stop, never a green claim.
 ## Cross-slice rules
 
 - New imports are OCR-only: producer `windowsml-ocr` maps to Cert durable
-  `windowsml_ocr`; embedded PDF layers are ignored, and `embedded`/`mixed` are
-  legacy read-only values only.
+  `windowsml_ocr`; embedded PDF layers are ignored, and
+  `direct_pdf`/`embedded`/`mixed` are legacy read-only values only.
 - The UI decodes the exact generated producer `OcrComputePreflightV2` contract
   and displays producer-owned notice truth only. It never enumerates/ranks
   adapters, derives mode/reason/notice values, or retries a failed DirectML
@@ -647,15 +787,20 @@ manager or undiscovered target is a discovery-stop, never a green claim.
   Cert Prep, then GX Law Prep. Each owner proves cleanup before handoff.
 - Phase 1 is complete at `local-probe` only; it is not published or installed
   formal acceptance. Cert D4 is pre-publication candidate acceptance that
-  writes only a Cert child ledger and hands it to the producer. Cert D7 is
-  download-back published acceptance that writes only a Cert child ledger and
-  hands it to LAW. Cert never waits for LAW, aggregates ledgers, or owns D8;
+  writes only a Cert `AcceptanceChildWireV1` child ledger at its scoped
+  `E2E_ACCEPTANCE_SCOPE_PATH` and hands it to the producer. Cert D7 is
+  download-back published acceptance that writes only a Cert child wire/ledger
+  and hands it to LAW. Cert never waits for LAW, aggregates ledgers, or owns D8;
   the producer alone aggregates child ledgers and moves its stable pointer.
 - Promotion is `CandidateReady -> NewActiveCommitted ->
   PriorRetiredDraining -> RetiredProved`. Before commit, failure preserves the
   active root/pointer/session. After commit, the new active remains selected and
-  degraded, the next promotion is blocked, the exact producer session/proof
-  refs are retained, and cleanup is retried/reconciled at next start. The
+  degraded, the next promotion is blocked, distinct candidate/prior
+  `ReconcileRef`/proof slots are retained, and cleanup is retried/reconciled at
+  next start through `RuntimeSessionJournal::reconcile(ref)`. The producer API
+  is observe-only after restart: complete absence/listener/staging proof may
+  advance its own ref, while present, reused, unqueryable, or ambiguous state
+  remains `reconcile-required`/degraded. The
   proposed `RuntimePromotionStore` in
   `apps/cert-prep-desktop/src-tauri/src/runtime_promotion.rs` is the sole Cert
   local pointer/receipt owner; it is distinct from the producer session journal
