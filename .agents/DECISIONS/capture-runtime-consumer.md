@@ -58,13 +58,15 @@ machine-specific path is part of this decision.
    failure leaves the new active selected/degraded and is retried, not rolled
    back to the old active. The addressable producer seam is
    `RuntimeSessionJournal::reconcile(ReconcileRef) -> ReconcileResult`:
-   candidate and prior sessions receive distinct opaque refs, and Cert never
+   candidate and prior sessions receive distinct nullable refs, and Cert never
    assumes a local Job/process handle, PID, path, port, or takeover lease.
    Complete absence/listener/staging proof may terminalize the addressed ref;
-   present, reused, unqueryable, or ambiguous observations remain
-   `reconcile-required` and touch nothing. Candidate pre-commit cleanup and
-   prior post-commit retirement retain separate refs/proofs and remain
-   independently recoverable.
+   only its returned `proofSha256` is retained. Present, reused, unqueryable,
+   or ambiguous observations remain `reconcile-required` and touch nothing.
+   Candidate pre-commit cleanup and prior post-commit retirement retain their
+   own ref/proof result and remain independently recoverable. When `prior =
+   null` on first install, the prior ref is null and no predecessor proof is
+   required.
 5. **Close and recovery preserve durable assets.** App close clears owned
    listeners, PIDs, run data, and staging while leaving durable runtime/model
    assets and caches. A pre-existing external Ollama process is a baseline and
@@ -93,42 +95,65 @@ machine-specific path is part of this decision.
    staging, and then sequential formal/published-package regression. No such
    upgrade or release claim is made by this local-probe checkpoint.
 9. **Real evidence is sequential and private.** Acceptance uses a real
-    private JPEG and PDF page 1, then proves Cert cleanup before handing the
-    model slot to GX Law Prep. Cert writes only its own scoped
-    `AcceptanceChildWireV1` child wire/ledger and hands it off; it does not
-    wait for LAW or aggregate consumer ledgers. Restart
-    persistence, review/export, cleanup, and baseline survival are required.
-    JPEG CER must be <= 3%, scanned PDF page-1 CER must be <= 1%, and critical
-    anchors must have zero omissions. Raw OCR/truth text, tokens, paths, and
-    host-specific diagnostics never enter a manifest.
+     private JPEG and PDF page 1, then proves Cert cleanup before handing the
+     model slot to GX Law Prep. Cert consumes the producer's read-only
+     invocation from mutable `CAPTURE_ACCEPTANCE_SCOPE_PATH` and writes only
+     one `ConsumerSemanticResultV1` at
+     `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`; the producer validates it,
+     performs cleanup, and later writes `AcceptanceChildWireV1`. The result's
+     `fixtureResults[]` contains both Cert private fixtures with observed
+     normalized-output digest (`actualNormalizedOutputSha256`), CER, anchor
+     omissions (`anchorOmissions`), outcome, and projection digest
+     (`projectionSha256`), bound to invocation/tier and D4/D3 or D7/D6. It
+     contains no cleanup, process, path, or raw OCR/truth data. Restart persistence,
+     review/export, cleanup, and baseline survival are required. JPEG CER must
+     be <= 3%, scanned PDF page-1 CER must be <= 1%, and critical anchors must
+     have zero omissions. D4/D7 require the full private normalized reference
+     plus critical anchors; formal acceptance deletes/prohibits `anchorOnly` and
+     `parseOcrAnchorExpectation` in the
+     `ocr-truth-contract.mts`/`acceptance-real-options.mts` path. A
+     garbage-around-anchors RED fixture must not receive CER 0. Synthetic
+     anchor-only expectations may remain unit-only and are barred from D4/D7.
 10. **Design gates precede image-flow code.** The image/PDF design receives
     both an independent Standards review and an independent Specification
     review before code. Implementation uses TDD red tests at the public seam,
     deterministic staging, small vertical slices, and exact-HEAD approvals.
 11. **Cert acceptance has two named events and a bounded handoff.** D4
-    `CandidateAccepted` consumes one immutable, pre-publication candidate and
-    writes only Cert's candidate child ledger. On green it hands that ledger
-    back to the producer publication lane. After D5 publication and D6
-    download-back byte verification, D7 `PublishedAccepted` repeats the same
-    installed journey using only the downloaded bytes and writes only Cert's
-    published child ledger. On green it hands that ledger to LAW. Cert never
-    waits for downstream LAW, aggregates ledgers, or moves a shared stable
-    pointer. The schema-1 Cert acceptance manifest migrates through
-    `acceptance-artifacts.mts::writeAcceptanceManifest` to the producer
-    `AcceptanceChildWireV1` at the producer-supplied scoped
-    `E2E_ACCEPTANCE_SCOPE_PATH`; JPEG and scanned-PDF page-1 evidence remain
-    separate child scopes, and Cert emits no aggregate/D8 record.
+     `CandidateAccepted` consumes one immutable, pre-publication candidate and
+     the producer's read-only invocation input from the mutable
+     `CAPTURE_ACCEPTANCE_SCOPE_PATH`; Cert writes exactly one
+     `ConsumerSemanticResultV1` at the distinct
+     `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`. The producer validates that
+     result, proves cleanup, and later writes immutable
+     `AcceptanceChildWireV1` at `CAPTURE_ACCEPTANCE_WIRE_PATH`. After D5 publication and D6
+     download-back byte verification, D7 `PublishedAccepted` repeats the same
+     installed journey using only the downloaded bytes and writes the same
+     result type at the semantic-result path, bound to D6. Cert never
+     overwrites/returns the producer scope, receives/writes the wire path,
+     waits for downstream LAW, aggregates ledgers, or moves a shared stable
+     pointer. The schema-1 Cert acceptance manifest remains a compatibility
+     input through `acceptance-artifacts.mts::writeAcceptanceManifest` and its
+     tests; it is not canonical output. JPEG and scanned-PDF page-1 evidence
+     remain separate `fixtureResults[]` entries carrying those observed fields,
+     and Cert emits no aggregate/D8 record.
 12. **Immutable roots and a non-rollback promotion transaction are explicit.**
     A **proposed** active root and **proposed** candidate root are immutable,
     separate content identities under the app-owned runtime root. Only a
     verified, durable, content-addressed cache may be shared. Promotion is
-    `CandidateReady -> NewActiveCommitted -> PriorRetiredDraining ->
-    RetiredProved`, with an atomic active-pointer replacement at commit. Before
-    commit, failure preserves the active root/pointer/session. After commit,
-    there is no rollback to the old active: the new active remains selected and
-    degraded, blocks the next promotion, retains distinct candidate/prior
-    opaque producer reconcile/proof refs, and retries/reconciles cleanup at next
-    start. A file
+     `CandidateReady -> NewActiveCommitted -> RetiredProved` for first install
+     (`prior = null`), and
+     `CandidateReady -> NewActiveCommitted -> PriorRetiredDraining ->
+     RetiredProved` when a prior active exists, with an atomic active-pointer
+     replacement at commit. Before
+     commit, failure preserves the active root/pointer/session and the candidate
+     `ReconcileRef` is already durable. If `prior = null` on first install,
+     `NewActiveCommitted` advances directly to `RetiredProved` with
+     `retirement.status = not_applicable`, no degraded flag, and no blocked
+     next promotion. For a later promotion with a prior active, after commit
+     there is no rollback to the old active: the new active remains selected and
+     degraded, blocks the next promotion, retains distinct candidate/prior
+     opaque producer refs and only returned `proofSha256` values, and
+     retries/reconciles cleanup at next start. A file
     install is `Restored` only after the prior root, manifest, byte count,
     content hash, and session identity are re-proved; otherwise it is
     `InstallAmbiguous`. Replace the current one-shot `RuntimeProcessOwner`
@@ -177,13 +202,15 @@ machine-specific path is part of this decision.
     durable promotion receipts. The module is not yet implemented and is not
     the producer session journal or producer D8 stable pointer. Its receipt
     records candidate/prior content identities, pointer generations/hashes,
-    state, commit intent, degraded/block-next-promotion flags, distinct
-    `candidateReconcileRef`/`candidateProofRef` and
-    `priorReconcileRef`/`priorProofRef` slots, retirement attempts/status,
-    exact cleanup refs, and sanitized errors; raw paths, tokens, PIDs, local
-    handles, and OCR are forbidden. Candidate cleanup is independently
+    state, commit intent, degraded/block-next-promotion flags, separate
+    nullable `candidateReconcileRef` and `priorReconcileRef` slots, the
+    `proofSha256` returned by each addressed producer reconcile result when
+    available, retirement attempts/status, exact cleanup refs, and sanitized
+    errors; raw paths, tokens, PIDs, local handles, and OCR are forbidden. There
+    is no independent proof-reference field. Candidate cleanup is independently
     recoverable before commit; prior retirement is independently recoverable
-    after commit and cannot consume candidate proof.
+    after commit and cannot consume candidate proof. For `prior = null`, the
+    prior ref is null and `retirement.status = not_applicable`.
     `capture_runtime.rs` verifies/stages/launches, `backend.rs` invokes the
     store from `install_capture_runtime`, `start_capture_runtime`, and
     `restart_owned_backend_with_capture_runtime`, `lib.rs` wires the module
@@ -194,24 +221,28 @@ machine-specific path is part of this decision.
     remains provider/model installation and never writes this pointer or
     receipt.
 18. **Promotion ordering is irreversible after local pointer commit.** Verify
-    the immutable candidate/root; flush `CandidateReady`; flush
-    `commitIntent` with the expected prior pointer; take the store lock,
-    perform the logical CAS/atomic pointer replace and flush it, then reread it;
-    flush `NewActiveCommitted`; persist `PriorRetiredDraining` before cleanup;
-    ask the producer for prior proof through
-    `RuntimeSessionJournal::reconcile(priorReconcileRef)`; and flush
-    `RetiredProved` before optional exact prior-root deletion. A failed
-    candidate before commit uses only
+    the immutable candidate/root; allocate and persist the candidate
+    `ReconcileRef`; flush `CandidateReady`; flush `commitIntent` with the
+    expected prior pointer; take the store lock, perform the logical CAS/atomic
+    pointer replace and flush it, then reread it; flush
+    `NewActiveCommitted`. If `prior = null`, flush `RetiredProved` directly with
+    `retirement.status = not_applicable`, retaining no prior ref and leaving
+    degraded/block-next-promotion false. If a prior exists, persist
+    `PriorRetiredDraining` before cleanup, ask the producer for prior proof
+    through `RuntimeSessionJournal::reconcile(priorReconcileRef)`, retain only
+    its returned `proofSha256`, and flush `RetiredProved` before optional exact
+    prior-root deletion. A failed candidate before commit uses only
     `RuntimeSessionJournal::reconcile(candidateReconcileRef)` and leaves the
-    active untouched. Before commit, failures preserve active. After commit,
-    never roll back: keep the new active selected/degraded and block the next
-    promotion until prior proof. Complete absence/listener/staging proof may
-    advance a ref; missing, present, reused, unqueryable, or ambiguous results
-    remain `reconcile-required`/degraded. Startup reconciliation treats intent
-    plus prior pointer as no commit, intent plus candidate pointer as
-    committed, and an unexpected pointer as `InstallAmbiguous`; missing
-    candidate/prior refs remain independently blocked, and temporary, root,
-    backup, or cache deletion uses only exact receipt refs.
+    active untouched. Before commit, failures preserve active. After commit of
+    a later promotion, never roll back: keep the new active selected/degraded
+    and block the next promotion until prior proof. Complete
+    absence/listener/staging proof may advance a ref; missing, present, reused,
+    unqueryable, or ambiguous results remain `reconcile-required`/degraded.
+    Startup reconciliation treats intent plus prior pointer as no commit,
+    intent plus candidate pointer as committed, and an unexpected pointer as
+    `InstallAmbiguous`; missing refs remain independently recoverable/blocked
+    only for the applicable cleanup path, and temporary, root, backup, or cache
+    deletion uses only exact receipt refs.
 
 ## Why these decisions are consumer-specific
 
@@ -241,7 +272,7 @@ The selected design is grounded in current symbols, not planned names:
 | Install/manifest verification | `apps/cert-prep-desktop/src-tauri/src/capture_runtime.rs`: `install_bundled_capture_runtime`, `installed_capture_runtime_paths`, `replace_runtime_directory`; `apps/cert-prep-desktop/src-tauri/src/manifests.rs`: `RuntimeManifest`, `RuntimeArtifact`, `load_runtime_manifest`, `verify_artifact` |
 | Runtime identity/cleanup | `apps/cert-prep-desktop/src-tauri/src/capture_manifest.rs`: `verify_capture_runtime`, `validate_capture_manifest_contract`, `capture_runtime_expected_version`; `apps/cert-prep-desktop/src-tauri/src/process_owner.rs`: `RuntimeProcessOwner`, `terminate_once`, `owned_runtime_process!` |
 | Local installed-runtime pointer/receipt (planned) | **Proposed** `apps/cert-prep-desktop/src-tauri/src/runtime_promotion.rs`: `RuntimePromotionStore`, `RuntimePromotionReceiptV1`; `apps/cert-prep-desktop/src-tauri/src/lib.rs`: `run`; `apps/cert-prep-desktop/src-tauri/src/backend.rs`: `install_capture_runtime`, `start_capture_runtime`, `restart_owned_backend_with_capture_runtime` | Sole Cert owner of the local logical pointer and durable promotion receipt/reconciliation. It is distinct from the producer session journal and producer D8 stable pointer; current symbols do not exist. |
-| Acceptance manifest to child wire (planned migration) | `apps/cert-prep-desktop/scripts/acceptance-artifacts.mts`: `writeAcceptanceManifest`; `apps/cert-prep-desktop/scripts/acceptance-artifacts.test.mts`; `apps/cert-prep-desktop/scripts/acceptance-real.mts`: `acceptancePassed`; `apps/cert-prep-desktop/scripts/ocr-semantic-evidence.mts`: `serializePrivacySafeOcrSemanticEvidence`, `OCR_NORMALIZATION_VERSION`; proposed installed receipt `apps/cert-prep-desktop/src-tauri/src/runtime_promotion.rs`: `RuntimePromotionStore`, `RuntimePromotionReceiptV1` | Adapt the current schema-1 local manifest into producer `AcceptanceChildWireV1` at the supplied scoped `E2E_ACCEPTANCE_SCOPE_PATH`. Preserve separate JPEG/PDF child scopes and all seven lifecycle flags; emit only Cert's child wire/ledger, never an aggregate or D8 record. The producer wire/scope symbols are not Cert symbols. |
+| Schema-1 manifest to semantic result (planned migration) | `apps/cert-prep-desktop/scripts/acceptance-artifacts.mts`: `writeAcceptanceManifest`; `apps/cert-prep-desktop/scripts/acceptance-artifacts.test.mts`; `apps/cert-prep-desktop/scripts/acceptance-real.mts`: `acceptancePassed`; `apps/cert-prep-desktop/scripts/ocr-semantic-evidence.mts`: `serializePrivacySafeOcrSemanticEvidence`, `OCR_NORMALIZATION_VERSION`; `apps/cert-prep-desktop/scripts/phase1-acceptance-evidence.mts`: `buildPhase1AcceptanceEvidence`; `apps/cert-prep-desktop/scripts/ocr-page-record-evidence.mts`: `assertOcrPageRecordEvidenceIntegrity`; proposed installed receipt `apps/cert-prep-desktop/src-tauri/src/runtime_promotion.rs`: `RuntimePromotionStore`, `RuntimePromotionReceiptV1` | Keep schema-1 as a compatibility input, consume the producer read-only invocation from `CAPTURE_ACCEPTANCE_SCOPE_PATH`, and write one `ConsumerSemanticResultV1` at `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH` with per-fixture semantic/privacy fields. The producer validates/cleans up and later writes `AcceptanceChildWireV1`; its scope/wire symbols and cleanup fields are not Cert symbols. Preserve the generated view `libs/cert-prep-api/src/lib/cert-prep-api.generated.ts` and never create an aggregate/D8 record. |
 | Python backend installer (separate) | `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_installations/manager.py`: `RuntimeInstallationManager`, `RuntimeInstaller`; `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_installations/installers.py`: `LLMModelInstaller` | Owns provider/model requirement jobs and snapshots only; it never writes the desktop local runtime pointer or receipt. |
 
 ## Design-It-Twice selection
@@ -297,10 +328,13 @@ implemented.
   duplicated truth table and lifecycle rules would drift. Cert links to the
   canonical producer documents instead.
 - **Keeping the schema-1 aggregate acceptance manifest as the handoff:**
-  rejected because it collapses Cert's JPEG/PDF child scopes and can imply
-  producer aggregation/D8 authority. The migration emits only the producer
-  `AcceptanceChildWireV1` for Cert at its scoped
-  `E2E_ACCEPTANCE_SCOPE_PATH`; the producer remains the aggregate/D8 owner.
+  rejected because it collapses Cert's JPEG/PDF fixture results and can imply
+  producer aggregation/D8 authority. The migration consumes the producer's
+  read-only invocation from mutable `CAPTURE_ACCEPTANCE_SCOPE_PATH` and writes
+  only `ConsumerSemanticResultV1` at
+  `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`; the producer remains the sole
+  scope owner and later emits `AcceptanceChildWireV1` at its wire path. Cert
+  never writes or receives that scope/wire output.
 - **Treating historical documents as active task files:** rejected because
   only the existing [lazy-install decision](lazy-capture-runtime-installation.md)
   and [packaged-smoke spec](../SPECS/packaged-capture-workbench-smoke.md) are

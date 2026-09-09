@@ -24,14 +24,18 @@ formal/published-package regression across the consumers.
 
 Phase 1 local-probe acceptance is complete. This checklist captures the
 remaining Phase 2 sequential formal/published-package regression path. D4 is
-the pre-publication immutable-candidate acceptance; Cert writes only its own
-`AcceptanceChildWireV1` candidate child ledger at the scoped
-`E2E_ACCEPTANCE_SCOPE_PATH` and hands it to the producer publication lane. D7
-repeats the same journey from D5/D6 published download-back bytes and is the
-formal published acceptance; Cert writes only its own published child wire/
-ledger and hands it to LAW. Cert never waits for LAW, aggregates consumer
-ledgers, or mutates/rolls back the producer stable pointer. The producer alone
-aggregates child ledgers and owns D8 stable-pointer promotion. Cert owns durable
+the pre-publication immutable-candidate acceptance. The producer supplies a
+mutable `ProducerChildScopeV1` at `CAPTURE_ACCEPTANCE_SCOPE_PATH` and passes
+Cert only a read-only invocation input; Cert never overwrites, returns, or
+writes that scope. Cert writes exactly one `ConsumerSemanticResultV1` at the
+distinct `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH` and never writes a child
+wire. D7 repeats the same journey from D5/D6 published download-back bytes and
+writes the same semantic result type at that result path. The producer
+validates the result, proves cleanup, and later writes immutable
+`AcceptanceChildWireV1` at `CAPTURE_ACCEPTANCE_WIRE_PATH`, then directs any
+handoff to LAW. Cert never waits for LAW, aggregates consumer ledgers, or
+mutates/rolls back the producer stable pointer. The producer alone aggregates
+child wires and owns D8 stable-pointer promotion. Cert owns durable
 source/review/export state; `capture-runtime` owns the OCR projection.
 The producer engine `windowsml-ocr` maps to the Cert durable discriminator
 `windowsml_ocr`; embedded layers are ignored, and `direct_pdf`/`embedded`/`mixed`
@@ -55,15 +59,21 @@ reconciliation; `backend.rs::install_capture_runtime`,
 callers; `capture_runtime.rs` verifies/stages/launches; and
 `process_owner.rs` supplies the planned retryable producer proof/cleanup seam.
 The store is distinct from the producer session journal and D8 stable pointer.
-Its receipt must retain distinct `candidateReconcileRef`/`candidateProofRef`
-and `priorReconcileRef`/`priorProofRef` slots. The producer API is
-`RuntimeSessionJournal::reconcile(ReconcileRef) -> ReconcileResult`; the ref is
-an opaque journal address, not a local Job/process handle, PID, path, port, or
-takeover lease. Complete absence/listener/staging proof may terminalize its
-addressed ref; present, reused, unqueryable, or ambiguous observations remain
-`reconcile-required` and degraded. Candidate pre-commit cleanup and prior
-post-commit retirement are independent recovery paths and never substitute one
-another's ref or proof.
+Its receipt retains separate nullable `candidateReconcileRef` and
+`priorReconcileRef` slots and only the `proofSha256` returned by each addressed
+producer reconcile result; it has no independent proof-reference field. The
+candidate ref is persisted before activation. For first install (`prior =
+null`), retirement is `not_applicable` and, after candidate/session conditions,
+`NewActiveCommitted` advances directly to `RetiredProved` without degraded or
+permanently blocked state. When a prior exists, candidate pre-commit cleanup
+and prior post-commit retirement are independent recovery paths and never
+substitute one another's ref or returned proof.
+The producer API is `RuntimeSessionJournal::reconcile(ReconcileRef) ->
+ReconcileResult`; the ref is an opaque journal address, not a local Job/process
+handle, PID, path, port, or takeover lease. Complete absence/listener/staging
+proof may terminalize its addressed ref; present, reused, unqueryable, or
+ambiguous observations remain `reconcile-required` and degraded only for the
+applicable prior-retirement path.
 The Python `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_installations/manager.py`
 (`RuntimeInstallationManager`, `RuntimeInstaller`) and its
 `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_installations/installers.py`
@@ -71,46 +81,70 @@ The Python `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_install
 
 ## Acceptance slice register
 
-- **Cert child-wire migration (prerequisite to D4/D7):** migrate the current
-  schema-1 local `acceptance-manifest.json` through
-  `apps/cert-prep-desktop/scripts/acceptance-artifacts.mts::writeAcceptanceManifest`
+- **Cert semantic-result migration (prerequisite to D4/D7):** preserve the
+  current schema-1 local `acceptance-manifest.json` as a compatibility input
+  through `apps/cert-prep-desktop/scripts/acceptance-artifacts.mts::writeAcceptanceManifest`
   (covered by `apps/cert-prep-desktop/scripts/acceptance-artifacts.test.mts`)
-  to producer `AcceptanceChildWireV1` at the producer-supplied,
-  run-scoped `E2E_ACCEPTANCE_SCOPE_PATH`. Keep
-  `apps/cert-prep-desktop/scripts/acceptance-real.mts::acceptancePassed` as
-  the caller/verdict only, and use
-  `apps/cert-prep-desktop/scripts/ocr-semantic-evidence.mts::serializePrivacySafeOcrSemanticEvidence`
-  (`OCR_NORMALIZATION_VERSION`) plus
-  `apps/cert-prep-desktop/scripts/phase1-acceptance-evidence.mts::buildPhase1AcceptanceEvidence`
-  for privacy-safe semantic proof. Retain/regenerate the producer-generated
-  view `libs/cert-prep-api/src/lib/cert-prep-api.generated.ts`
+  and keep `apps/cert-prep-desktop/scripts/acceptance-real.mts::acceptancePassed`
+  as the caller/verdict only. Consume the producer's read-only invocation from
+  mutable `CAPTURE_ACCEPTANCE_SCOPE_PATH` and write exactly one
+  `ConsumerSemanticResultV1` at the distinct
+  `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`; never overwrite/return/write the
+  producer scope or write/receive `CAPTURE_ACCEPTANCE_WIRE_PATH`. The producer
+  validates the result, proves cleanup, and later writes `AcceptanceChildWireV1`.
+  Use `apps/cert-prep-desktop/scripts/ocr-semantic-evidence.mts::serializePrivacySafeOcrSemanticEvidence`
+  (`OCR_NORMALIZATION_VERSION`),
+  `apps/cert-prep-desktop/scripts/phase1-acceptance-evidence.mts::buildPhase1AcceptanceEvidence`,
+  and `apps/cert-prep-desktop/scripts/ocr-page-record-evidence.mts::assertOcrPageRecordEvidenceIntegrity`
+  for semantic/page proof. The full-reference seams remain
+  `apps/cert-prep-desktop/scripts/ocr-truth-contract.mts::evaluateOcrTruth`,
+  `normalizeOcrText`, `parseOcrTruthManifest`, and `levenshtein`. Formal D4/D7
+  deletes/prohibits `anchorOnly` and `parseOcrAnchorExpectation` there,
+  including the import/call in `apps/cert-prep-desktop/scripts/acceptance-real-options.mts`;
+  synthetic anchor-only expectations may remain unit-only but are barred from
+  acceptance. Retain/regenerate the producer-generated view
+  `libs/cert-prep-api/src/lib/cert-prep-api.generated.ts`
   (`RuntimeReady`, `OcrComputePreflightV2`) without hand-editing or deleting it;
   it is not a child-wire writer. The proposed installed candidate receipt
   owner is `apps/cert-prep-desktop/src-tauri/src/runtime_promotion.rs`
-  (`RuntimePromotionStore`, `RuntimePromotionReceiptV1`) with distinct
-  candidate/prior reconcile/proof slots. JPEG and scanned-PDF page-1 evidence
-  remain independent child scopes (`sourceSuite.image` and `sourceSuite.pdf`),
-  each bound to its own media/page identity, artifact digests, and cleanup
-  proof. The producer wire must retain the unique leg identities and all seven
-  lifecycle flags: `app`, `sidecar`, `cdpPort`, `temporaryAppData`,
-  `ownedPids`, `ownedListeners`, and `ownedWorkers`; a green scoped child is
-  terminal, evidence-complete, and cleanup-verified. Prerequisite: consumer
-  TODO Slices 1-4.5 and the producer child-wire/scope contract. Red proof:
-  schema-1 output for a new run, missing/escaped/unbound scope, missing JPEG or
-  PDF child, duplicate child identity, any false lifecycle flag, missing or
-  substituted receipt ref, raw OCR/token/path data, a new `direct_pdf`,
-  `embedded`, or `mixed` value, `evidence.aggregate`, an aggregate/D8 field, or
-  stable-pointer mutation must fail closed. Green
-  verification uses the existing discovered targets:
+  (`RuntimePromotionStore`, `RuntimePromotionReceiptV1`) with separate nullable
+  candidate/prior reconcile refs and only returned `proofSha256` values.
+  `fixtureResults[]` is mandatory and contains separate Cert private JPEG and
+  scanned-PDF page-1 observations, each with actual normalized-output digest
+  (`actualNormalizedOutputSha256`), CER, anchor omissions (`anchorOmissions`),
+  outcome, and projection digest (`projectionSha256`). Bind the result to the
+  invocation/tier and closed D4/D3 or D7/D6 ledger identity. The result is
+  privacy-safe semantic data only: no cleanup, process/native identity, path,
+  raw OCR/truth, media, token, or host diagnostic. Prerequisite: consumer TODO
+  Slices 1-4.5 and the producer scope/invocation/result/wire contract. Red
+  proof: schema-1 output for a new run, missing/escaped/unbound scope or
+  result, scope overwrite/return, second/partial result write, missing JPEG or
+  PDF fixture result, duplicate identity, missing binding, missing semantic
+  digest/CER/anchor/outcome, any false lifecycle flag, missing/substituted
+  receipt ref, raw OCR/token/path/process data, a garbage-around-anchors result
+  receiving CER 0, a new `direct_pdf`, `embedded`, or `mixed` value,
+  `evidence.aggregate`, an aggregate/D8 field, child-wire/cleanup write, or
+  stable-pointer mutation must fail closed. Green verification uses the existing
+  discovered targets:
   `corepack pnpm nx run cert-prep-desktop:phase1-evidence-test --skip-nx-cache`;
   `corepack pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`;
   `corepack pnpm nx run cert-prep-desktop:typecheck-scripts --skip-nx-cache`.
+  Proposed focused regression names in
+  `apps/cert-prep-desktop/scripts/acceptance-artifacts.test.mts` and the
+  semantic-evidence tests are `rejects_schema1_output_for_new_run`,
+  `writes_one_consumer_semantic_result_only`,
+  `rejects_scope_overwrite_or_wire_write`,
+  `requires_private_jpeg_and_scanned_pdf_page1_fixture_results`,
+  `rejects_garbage_around_anchors_even_when_anchors_are_present`, and
+  `rejects_anchor_only_expectation_in_formal_acceptance`. Keep these red until
+  the producer-compatible result handoff is implemented; green requires the
+  complete semantic result and no Cert child-wire output.
   First run `corepack pnpm nx show project cert-prep-desktop --json` if a
-  wire-specific target is needed; no such target exists at this head, so target
-  or schema creation is an explicit discovery stop rather than an invented
-  command. Rollback is an additive revert of the adapter/tests, retaining
-  schema-1 reads and failed child evidence without publication. Commit boundary:
-  `feat(phase2): emit cert acceptance child wire`.
+  semantic-result target is needed; no dedicated child-wire target exists at
+  this head, so target or schema creation is an explicit discovery stop rather
+  than an invented command. Rollback is an additive revert of the adapter/tests,
+  retaining schema-1 compatibility and failed semantic evidence without
+  publication. Commit boundary: `feat(phase2): emit cert semantic result`.
 
 - **D4 candidate journey:** owned by
   the **proposed** local pointer/receipt seam
@@ -124,7 +158,7 @@ The Python `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_install
   `apps/cert-prep-desktop/scripts/acceptance-real-options.mts`
   (`createAcceptanceSmokeOptions`, `loadPhase1FinalCandidate`),
   `apps/cert-prep-desktop/scripts/ocr-truth-contract.mts`
-  (`parseOcrTruthManifest`),
+  (`parseOcrTruthManifest`, `evaluateOcrTruth`, `normalizeOcrText`),
   `apps/cert-prep-desktop/scripts/ocr-semantic-evidence.mts`
   (`serializePrivacySafeOcrSemanticEvidence`, `OCR_NORMALIZATION_VERSION`),
   `apps/cert-prep-desktop/scripts/ocr-page-record-evidence.mts`
@@ -135,27 +169,40 @@ The Python `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_install
   (`_ocr_only_extraction_method`), and
   `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/persistence.py`
   (`publish_capture_document`). First red proof:
-  old/local/fake/mismatched candidate or threshold/anchor/cleanup failure
-  must fail before a D4 wire/manifest. The child is emitted at the supplied
-  `E2E_ACCEPTANCE_SCOPE_PATH`, with separate JPEG/PDF child scopes and all
-  required lifecycle flags. Prerequisite: consumer TODO Slices 1-7 and 4.5 and
-  producer D3 candidate record. Stop if D4 changes the producer stable pointer,
-  writes direct_pdf/embedded/mixed, waits for LAW, aggregates ledgers, or records raw
-  text/token/path. The local promotion red proof must also verify immutable
-  candidate/root -> flushed `CandidateReady` -> flushed `commitIntent` with
-  expected prior pointer -> locked logical CAS/atomic pointer replace plus
-  reread -> irreversible `NewActiveCommitted` -> flushed
-  `PriorRetiredDraining` before cleanup -> producer proof -> `RetiredProved`.
+  old/local/fake/mismatched candidate or threshold/anchor/cleanup failure,
+  missing full private normalized reference, or garbage around otherwise
+  present anchors must fail before a D4 semantic result. Cert consumes the
+  read-only D4 invocation from `CAPTURE_ACCEPTANCE_SCOPE_PATH` and writes only
+  one `ConsumerSemanticResultV1` at
+  `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`, with separate JPEG/PDF
+  `fixtureResults[]` entries (`actualNormalizedOutputSha256`, `cer`,
+  `anchorOmissions`, `outcome`, and `projectionSha256`) and invocation/tier/D3
+  binding; the producer
+  validates/cleans up and later writes the child wire. Prerequisite: consumer
+  TODO Slices 1-7 and 4.5 and producer D3 candidate record. Stop if D4 changes
+  the producer stable pointer, overwrites/returns scope, writes wire/cleanup,
+  writes direct_pdf/embedded/mixed, waits for LAW, aggregates ledgers, or
+  records raw text/token/path/process data. Formal D4 deletes/prohibits
+  `anchorOnly` and `parseOcrAnchorExpectation`; synthetic anchor-only fixtures
+  are unit-only. The local promotion red proof must also verify immutable
+  candidate/root -> persisted candidate `ReconcileRef` -> flushed `CandidateReady`
+  -> flushed `commitIntent` with expected prior pointer -> locked logical
+  CAS/atomic pointer replace plus reread -> irreversible `NewActiveCommitted`.
+  If `prior = null`, advance directly to `RetiredProved` with
+  `retirement.status = not_applicable` and no degraded/block-next-promotion
+  flag; otherwise flush `PriorRetiredDraining` before cleanup -> producer proof
+  -> `RetiredProved`.
   Rollback follows the consumer transaction: before local active commit
   preserve the active root/session; after commit keep the new active degraded
-  with its exact candidate/prior reconcile/proof refs and retry or reconcile
-  the relevant cleanup slot independently; never roll back the producer stable
-  pointer. Cert writes only its D4 `AcceptanceChildWireV1` candidate child
-  ledger, then hands it to the producer.
+  with its exact candidate/prior reconcile refs and returned `proofSha256`
+  values and retry or reconcile the relevant cleanup slot independently; never
+  roll back the producer stable pointer. Cert writes no child wire or cleanup
+  proof.
   Green verification: `corepack pnpm nx run cert-prep-desktop:capture-candidate-gate-test --skip-nx-cache`;
   `corepack pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`; and
   `corepack pnpm nx run cert-prep-desktop:acceptance-real --skip-nx-cache`.
-  Commit boundary: the D4 evidence-only child-ledger acceptance change.
+  Commit boundary: the D4 evidence-only semantic-result acceptance change; the
+  producer child wire is emitted later by the producer-owned flow.
 - **D7 published download-back journey:** owned by
   the **proposed** local pointer/receipt seam
   `apps/cert-prep-desktop/src-tauri/src/runtime_promotion.rs`
@@ -168,7 +215,7 @@ The Python `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_install
   `apps/cert-prep-desktop/scripts/acceptance-real-options.mts`
   (`loadRuntimeCandidate`, `strictRuntimeIdentity`),
   `apps/cert-prep-desktop/scripts/ocr-truth-contract.mts`
-  (`parseOcrTruthManifest`, `evaluateOcrTruth`),
+  (`parseOcrTruthManifest`, `evaluateOcrTruth`, `normalizeOcrText`),
   `apps/cert-prep-desktop/scripts/ocr-page-record-evidence.mts`
   (`assertOcrPageRecordEvidenceIntegrity`),
   `apps/cert-prep-desktop/scripts/phase1-acceptance-evidence.mts`
@@ -177,56 +224,79 @@ The Python `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_install
   (`loadPhase1FinalEvidence`),
   `apps/cert-prep-desktop/scripts/ocr-semantic-evidence.mts`
   (`serializePrivacySafeOcrSemanticEvidence`, `OCR_NORMALIZATION_VERSION`),
-  and the producer-supplied scoped `E2E_ACCEPTANCE_SCOPE_PATH`, plus
+  and the producer's mutable `CAPTURE_ACCEPTANCE_SCOPE_PATH` read-only
+  invocation input, plus
   `tools/capture-runtime-version-check.mts`
   (`assertCaptureRuntimeConsumerVersions`) and
   `apps/cert-prep-desktop/src-tauri/src/capture_manifest.rs`
   (`verify_capture_runtime`, `validate_capture_manifest_contract`) and
   `apps/cert-prep-desktop/src-tauri/src/manifests.rs` (`verify_artifact`).
   First red proof: local URL/path, mutable artifact,
-  stale/mixed lock, or download-back byte mismatch must fail. Prerequisite:
-  D5 published exact D3 bytes and D6 download-back record, and consumer TODO
-  Slice 4.5 is green. Stop without a complete Cert D7 child wire/ledger. Cert
-  does not wait for LAW's ledger. The same promotion order and startup crash
-  matrix apply: intent plus prior pointer is no commit; intent plus candidate
-  pointer advances to committed; an unexpected pointer is `InstallAmbiguous`;
-  candidate cleanup and prior retirement use their distinct producer refs;
-  missing/present/reused/unqueryable/ambiguous producer observations remain
-  `reconcile-required`/degraded; and deletion uses exact cleanup refs only.
+  stale/mixed lock, download-back byte mismatch, missing full private
+  normalized reference, or garbage around otherwise present anchors must fail.
+  Prerequisite: D5 published exact D3 bytes and D6 download-back record, and
+  consumer TODO Slice 4.5 is green. Cert consumes the read-only D7 invocation
+  from `CAPTURE_ACCEPTANCE_SCOPE_PATH` and writes only one
+  `ConsumerSemanticResultV1` at `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`,
+  with separate JPEG/PDF `fixtureResults[]` entries
+  (`actualNormalizedOutputSha256`, `cer`, `anchorOmissions`, `outcome`, and
+  `projectionSha256`) and D7/tier/D6 binding.
+  Stop without a complete semantic result. The producer validates/cleans up
+  and later writes the D7 `AcceptanceChildWireV1`; Cert never writes/receives
+  that wire or waits for LAW's ledger. The same promotion order and startup
+  crash matrix apply: intent plus prior pointer is no commit; intent plus
+  candidate pointer advances to committed; with `prior = null`, committed
+  advances directly to `RetiredProved`/`not_applicable`; an unexpected pointer
+  is `InstallAmbiguous`; candidate cleanup and prior retirement use their
+  distinct producer refs; missing/present/reused/unqueryable/ambiguous
+  producer observations remain `reconcile-required`/degraded for a prior
+  retirement; and deletion uses exact cleanup refs only.
   Rollback follows the
   consumer transaction: before local active commit preserve the active
   identity; after commit keep the new active degraded with its exact
-  candidate/prior reconcile/proof refs and retry/reconcile the relevant slot
-  independently. Never mutate or roll back the producer stable pointer. Commit
-  boundary: the D7 `AcceptanceChildWireV1` evidence and Cert child-ledger
-  update followed by handoff to LAW. Green verification:
+  candidate/prior reconcile refs and returned `proofSha256` values and
+  retry/reconcile the relevant slot independently. Never mutate or roll back
+  the producer stable pointer. Commit
+  boundary: the D7 `ConsumerSemanticResultV1` update followed by the
+  producer-directed child-wire handoff to LAW. Green verification:
   `corepack pnpm nx run cert-prep-desktop:release-tool-test --skip-nx-cache`;
   `corepack pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`; and
   `corepack pnpm nx run cert-prep-desktop:acceptance-real --skip-nx-cache`.
 - **D8 stable-pointer decision (producer-owned and out of scope):** Cert has
   no stable-pointer writer, aggregate-ledger owner, or D8 commit. The producer
-  alone aggregates Capture Workbench, Cert Prep, and LAW child ledgers and moves
-  its stable pointer. Cert must not wait for downstream LAW before completing
-  or handing off its own D7 ledger. There is no Cert red/green/rollback step
-  for D8.
+  alone validates/cleans up, writes `AcceptanceChildWireV1`, aggregates Capture
+  Workbench, Cert Prep, and LAW child wires, and moves its stable pointer. Cert
+  must not wait for downstream LAW before completing its semantic result; the
+  producer owns emission and handoff of its D7 wire. There is no Cert
+  red/green/rollback step for D8.
 - **Privacy and semantic evidence:** owned by
   `apps/cert-prep-desktop/scripts/ocr-truth-contract.mts`
-  (`parseOcrTruthManifest`),
+  (`parseOcrTruthManifest`, `evaluateOcrTruth`, `normalizeOcrText`,
+  `levenshtein`),
+  `apps/cert-prep-desktop/scripts/ocr-semantic-evidence.mts`
+  (`serializePrivacySafeOcrSemanticEvidence`, `OCR_NORMALIZATION_VERSION`),
   `apps/cert-prep-desktop/scripts/ocr-page-record-evidence.mts`
   (`assertOcrPageRecordEvidenceIntegrity`),
   `apps/cert-prep-desktop/scripts/phase1-acceptance-evidence.mts`
   (`buildPhase1AcceptanceEvidence`), and
   `apps/cert-prep-desktop/scripts/phase1-final-identity.mts`
-  (`loadPhase1FinalEvidence`). First red proof:
-  raw OCR/truth text, bearer token, local path, host/user name, or environment
-  dump must fail manifest validation. Prerequisite: the exact candidate or
-  download-back bytes. Stop on CER > 1% for scanned PDF page 1, CER > 3% for
-  real JPEG, or any missing critical anchor. Rollback retains failed evidence
+  (`loadPhase1FinalEvidence`). First red proof: raw OCR/truth text, bearer
+  token, local path, process/native identity, host/user name, or environment
+  dump must fail semantic-result validation. The full private normalized
+  reference plus critical anchors is mandatory for D4/D7; explicit formal
+  deletion/prohibition of `anchorOnly` and `parseOcrAnchorExpectation` is
+  required, and a garbage-around-anchors result must not receive CER 0.
+  Synthetic anchor-only expectations are unit-only and barred from acceptance.
+  Prerequisite: the exact candidate or download-back bytes. Stop on CER > 1%
+  for scanned PDF page 1, CER > 3% for real JPEG, or any missing critical
+  anchor. `ConsumerSemanticResultV1` contains only per-fixture semantic
+  measurements and privacy booleans; cleanup/process/path/raw text remain out
+  of it and are producer-wire concerns. Rollback retains failed evidence
   without publishing it. Green verification:
   `corepack pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`;
   `corepack pnpm nx run cert-prep-desktop:acceptance-real --skip-nx-cache`; and
   `corepack pnpm nx run cert-prep-desktop:typecheck-scripts --skip-nx-cache`.
-  Commit boundary: the privacy-safe evidence schema.
+  Commit boundary: the privacy-safe semantic-result schema.
 
 ## Ordered real journey
 
@@ -265,22 +335,28 @@ The Python `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_install
       assets and caches survive; the pre-existing external Ollama baseline
       survives; only Cert-owned listeners, PIDs, run data, and staging are
       removed.
-- [ ] Inspect the privacy-safe manifest. It may contain bounded identities,
-      hashes, semantic counts/anchors, provenance, timing/memory numbers, and
-      cleanup flags. For a new D4/D7 run, emit the Cert
-      `AcceptanceChildWireV1` only at the producer-supplied scoped
-      `E2E_ACCEPTANCE_SCOPE_PATH`; its JPEG/PDF child scopes must be bound to
-      the candidate receipt and carry true `app`, `sidecar`, `cdpPort`,
-      `temporaryAppData`, `ownedPids`, `ownedListeners`, and `ownedWorkers`
-      flags. Raw OCR text, truth text, tokens, local paths, host/user names,
-      and environment dumps must not be present.
+- [ ] Inspect the privacy-safe `ConsumerSemanticResultV1`. It may contain only
+      bounded identities/digests, invocation/tier and D4/D3 or D7/D6 binding,
+      per-fixture semantic measurements, provenance, and privacy booleans. Its
+      `fixtureResults[]` must include the private JPEG and scanned PDF page-1
+      actual normalized-output digest, CER, anchor omissions, outcome, and
+      projection digest. Cert consumes the read-only invocation from the
+      producer's mutable `CAPTURE_ACCEPTANCE_SCOPE_PATH` and writes the result
+      only at `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`; it never writes or
+      receives the producer `CAPTURE_ACCEPTANCE_WIRE_PATH`. The producer adds
+      cleanup flags and emits `AcceptanceChildWireV1` only after validation and
+      cleanup. Raw OCR text, truth text, tokens, local paths, process/native
+      IDs, host/user names, and environment dumps must not be present in the
+      semantic result.
 
-- [ ] Label the manifest `D4 CandidateAccepted` before publication. It must
-      identify the immutable candidate and must not move the producer stable
-      pointer; write only Cert's D4 candidate child ledger before handoff.
+- [ ] Label the semantic result `D4 CandidateAccepted` before publication. It
+      must identify the immutable candidate and must not move the producer
+      stable pointer; write only Cert's D4 semantic result before the producer
+      validates it and emits any child wire.
 - [ ] After D5 publication and D6 download-back hash verification, rerun from
       downloaded bytes and label the result `D7 PublishedAccepted`. Write only
-      Cert's D7 published child ledger, hand it to LAW, and do not wait for LAW
+      Cert's D7 semantic result; the producer validates/cleans up and directs
+      its emitted child wire to LAW. Do not write the scope/wire, wait for LAW,
       or call D4 local/candidate evidence published acceptance.
 
 ## Failure and evidence rules
@@ -304,13 +380,15 @@ The Python `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_install
 - Package QA, protocol fakes, snapshots, a supplied older executable, and a
   successful exit code are supporting checks, not real OCR acceptance.
 - If any ordered run or cleanup proof fails, stop the Cert handoff, preserve
-  the privacy-safe failure artifact, and do not start LAW. Apply the consumer
-  transaction rule: before local active commit preserve the active
-  root/pointer/session and retry candidate cleanup only through its distinct
-  `candidateReconcileRef`; after commit retain the new active degraded with its
-  distinct `priorReconcileRef`/`priorProofRef` and retry/reconcile prior
-  retirement only through the producer API. Never mutate or roll back the
-  producer stable pointer.
+  the privacy-safe semantic-result failure artifact, and do not start LAW.
+  Apply the consumer transaction rule: before local active commit preserve the
+  active root/pointer/session and retry candidate cleanup only through its
+  distinct `candidateReconcileRef`; after commit of a later promotion retain the
+  new active degraded with its distinct `priorReconcileRef` and only returned
+  `proofSha256`, then retry/reconcile prior retirement through the producer API.
+  For first install (`prior = null`), do not invent predecessor proof or enter a
+  degraded/block-next-promotion loop. Never mutate or roll back the producer
+  stable pointer or write its scope/wire.
 
 ## Design and verification gate
 
