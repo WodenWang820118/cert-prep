@@ -33,33 +33,42 @@ and persistence. **Proposed** `DesktopRuntimeSupervisor` and **proposed**
 owner for the local installed-runtime pointer and `RuntimePromotionReceiptV1`;
 it is not the producer session journal or D8 stable-pointer owner. Its receipt
 must carry candidate/prior content identities, pointer generation/hash,
-revision/CAS, flushed `commitIntent`, degraded/block-next-promotion flags,
-separate nullable `candidateReconcileRef` and `priorReconcileRef` slots, and
-only the `proofSha256` returned by each addressed producer reconcile result;
-there is no independent proof-reference field. Persist the candidate ref before
-activation. For `prior = null`, the prior ref is null and retirement is
-`not_applicable`; after candidate/session conditions, first install advances
-directly from `NewActiveCommitted` to `RetiredProved` without degrading or
-blocking forever. For later promotions, candidate pre-commit cleanup and prior
-post-commit retirement remain independently recoverable. The producer exposes
+revision/CAS, the candidate whole-group binding, flushed activation and
+`commitIntent` states, degraded/block-next-promotion flags, separate nullable
+candidate/prior group/ref slots, and only the `proofSha256` returned by each
+addressed producer reconcile result; there is no independent proof-reference
+field. Candidate preparation persists the exact producer group ref,
+`groupGeneration`, `activationReceiptDigest`, and `ActivationPermitV1` before
+calling `activate_group`; only a complete loaded-worker/readiness identity may
+then flush `CandidateReady`. Candidate and prior group refs are distinct. For
+`prior = null`, the prior ref is null and retirement is `not_applicable`; after
+candidate/session conditions, first install advances directly from
+`NewActiveCommitted` to `RetiredProved` without degrading or blocking forever.
+For later promotions, candidate pre-commit cleanup and prior post-commit
+retirement remain independently recoverable. The producer exposes
 `RuntimeSessionJournal::reconcile(ReconcileRef) -> ReconcileResult` as an
 opaque, addressable observe-only semantic API; Cert never assumes a local Job
 handle, process handle, PID, path, port, or takeover lease. Only complete
 absence/listener/staging proof may advance a ref; present, reused,
 unqueryable, or ambiguous observations remain `reconcile-required` and
-degraded where a prior retirement exists. Current
-owners and symbols remain the paths listed in the [consumer specification](../SPECS/capture-runtime-consumer.md).
+degraded where a prior retirement exists. Current owners and symbols remain
+the paths listed in the [consumer specification](../SPECS/capture-runtime-consumer.md).
 The Python backend's `RuntimeInstallationManager`/`RuntimeInstaller` in
 `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_installations/`
 continue to own provider/model installation jobs only; they do not write the
 desktop pointer or receipt.
 
-The acceptance seam imports the producer-generated
-`ProducerAcceptanceContractV1` at contract version `"1"` and the exact D3/D6-
-bound `contractSha256` from the producer ledger. Cert does not define or extend
+The acceptance seam consumes only the future producer package/bundle
+`@capture-runtime/acceptance-contract` (proposed at
+`packages/capture-acceptance-contract/`) and its literal D3/D6-bound
+`contractSha256`. That package/bundle is the only acceptance schema/codec/hash
+authority and is absent at this checkpoint, so package/target creation is a
+producer discovery/creation stop. Cert does not define, extend, or restate
 `ProducerChildScopeV1`, `ProducerChildInvocationV1`,
-`ConsumerSemanticResultV1`, or `AcceptanceChildWireV1`; the producer's
-canonical Phase 2 specification is the sole schema and validation authority.
+`ConsumerSemanticResultV1`, or `AcceptanceChildWireV1`. The authenticated
+runtime contract-set for `RuntimeReady` and OCR projection is separate
+(`contractSetVersion`/`contractSetSha256`); the two hashes are never compared
+or substituted.
 Every local pointer observation is the closed union
 `absent | present{generation,sha256}` in the receipt, intent, logical CAS,
 reread, and crash matrix. First install uses pointer observation `absent` with
@@ -291,14 +300,16 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     record the delete-first inventory, red/green names, generated contract
     identity, and exact SHA.
 
-- [ ] **Slice 4: immutable candidate/active roots and identity gate.** Define
-       separate immutable candidate and active roots, a verified durable
-       content-addressed cache, an atomic active-pointer promotion boundary, and
+- [ ] **Slice 4: immutable candidate/active roots, legacy observation, and
+       identity gate.** Define separate immutable candidate and active roots, a
+       verified durable content-addressed cache, an atomic active-pointer
+       promotion boundary, safe adoption of the existing legacy root, and
        next-start reconciliation. Replace the impossible all-or-nothing rollback
-       contract with `CandidateReady -> NewActiveCommitted -> RetiredProved` for
-       first install (`prior = null`), and
-       `CandidateReady -> NewActiveCommitted -> PriorRetiredDraining ->
-       RetiredProved` when a prior active exists.
+       contract with
+       `CandidatePrepared -> CandidateReady -> NewActiveCommitted ->
+       RetiredProved` for first install (`prior = null`), and
+       `CandidatePrepared -> CandidateReady -> NewActiveCommitted ->
+       PriorRetiredDraining -> RetiredProved` when a prior active exists.
   - Owned paths/symbols: **proposed**
     `apps/cert-prep-desktop/src-tauri/src/runtime_promotion.rs`
     (`RuntimePromotionStore`, `RuntimePromotionReceiptV1`) as the sole Cert
@@ -306,15 +317,20 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     (`run`) for module wiring/startup reconciliation; `apps/cert-prep-desktop/src-tauri/src/backend.rs`
     (`install_capture_runtime`, `start_capture_runtime`,
     `restart_owned_backend_with_capture_runtime`) as callers;
-    `apps/cert-prep-desktop/src-tauri/src/capture_runtime.rs`
-    (`install_bundled_capture_runtime`, `installed_capture_runtime_paths`,
-    `replace_runtime_directory`, `clean_stale_capture_runtime_staging`,
-    `CaptureRuntimeState::launch_cancellable`), `manifests.rs`
-    (`RuntimeManifest`, `RuntimeArtifact`, `verify_artifact`),
-    `capture_manifest.rs` (`verify_capture_runtime`,
-    `validate_capture_manifest_contract`), and `process_owner.rs`
-    (`RuntimeProcessOwner`, `from_termination`, `terminate_once`,
-    `owned_runtime_process!`). The Python
+     `apps/cert-prep-desktop/src-tauri/src/capture_runtime.rs`
+     (`install_bundled_capture_runtime`, `installed_capture_runtime_paths`,
+     `replace_runtime_directory`, `clean_stale_capture_runtime_staging`,
+     `CaptureRuntimeState::launch_cancellable`), `manifests.rs`
+     (`RuntimeManifest`, `RuntimeArtifact`, `verify_artifact`),
+     `capture_manifest.rs` (`verify_capture_runtime`,
+     `validate_capture_manifest_contract`,
+     `capture_runtime_expected_version`), and `process_owner.rs`
+     (`RuntimeProcessOwner`, `from_termination`, `terminate_once`,
+     `owned_runtime_process!`). The proposed legacy-observation methods are
+     `RuntimePromotionStore::observe_legacy_root` and
+     `RuntimePromotionStore::adopt_verified_legacy_root`; their path-free
+     `LegacyAdoptionPrepared`/`LegacyAdopted` receipt states are not current
+     symbols. The Python
     `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_installations/manager.py`
     (`RuntimeInstallationManager`, `RuntimeInstaller`) and
     `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_installations/installers.py`
@@ -324,24 +340,32 @@ manager or undiscovered target is a discovery-stop, never a green claim.
      expose separate nullable `candidateReconcileRef` and `priorReconcileRef`
      slots and retain only the `proofSha256` returned by the addressed producer
      reconcile result; it must not invent a `ProofRef` type or independent
-     proof-reference field. R3 persistence uses the producer
-     `ReconcileRefSink::persist(reconcile_ref, generation) -> ActivationPermit`
-     contract; the exact ref/generation and
-     `ActivationPermit{refDigest,generation,receiptDigest}` receipt are flushed
-     before activation. Persist the candidate ref before activation. For `prior = null`, the prior
+     proof-reference field. R3 persistence uses the producer whole-group
+     `prepare_group(immutable_plan, ReconcileRefSink)` and
+     `ReconcileRefSink::persist_group_refs`/`verify_group_receipt` contract;
+     the exact candidate group ref/generation, activation receipt digest, and
+     producer-supplied `ActivationPermitV1` are flushed in `CandidatePrepared`
+     before calling `activate_group(prepared, permit)`. Persist the candidate
+     group ref before activation. For `prior = null`, the prior
      ref is null and first install advances directly from `NewActiveCommitted`
      to `RetiredProved` with `retirement.status = not_applicable`, without a
      degraded or permanently blocked state. The producer proof seam is
      `RuntimeSessionJournal::reconcile(ReconcileRef)`;
      `ReconcileRef` is an opaque journal index/address, not a local Job/process
-     handle, PID, path, port, or takeover lease. The existing
-    `apps/cert-prep-desktop/scripts/acceptance-real-options.mts`
-    candidate identity helpers, `tools/capture-candidate-gate.mts`, and its
-    `tools/capture-candidate-gate.test.mts` tests remain acceptance adapters.
-    **Proposed** root labels
-    `active`, `candidate`, `active pointer`, `CandidateReady`,
-    `NewActiveCommitted`, `PriorRetiredDraining`, and `RetiredProved` must be
-    recorded as design labels, not assumed existing directories. The current
+      handle, PID, path, port, or takeover lease. The existing
+     `apps/cert-prep-desktop/scripts/acceptance-real-options.mts`
+     candidate identity helpers, `tools/capture-candidate-gate.mts`, and its
+     `tools/capture-candidate-gate.test.mts` tests remain acceptance adapters.
+     The legacy observation is the existing
+     `app_data_dir/runtimes/capture-runtime` root, classified before auto-launch
+     by the proposed `RuntimePromotionStore::observe_legacy_root` and adopted
+     only by `RuntimePromotionStore::adopt_verified_legacy_root` after manifest,
+     content, known-version, and no-owned-listener/session proof.
+     **Proposed** root labels
+     `active`, `candidate`, `active pointer`, `CandidatePrepared`,
+     `CandidateReady`, `NewActiveCommitted`, `PriorRetiredDraining`,
+     `RetiredProved`, `LegacyAdoptionPrepared`, and `LegacyAdopted` must be
+     recorded as design labels, not assumed existing directories. The current
     `RuntimeProcessOwner` stores a one-shot `FnOnce` and returns false success
     on a second `terminate_once` call; replacement with a retryable,
     proof-bearing producer-session seam is part of this slice, not a second
@@ -354,54 +378,78 @@ manager or undiscovered target is a discovery-stop, never a green claim.
   - Prerequisite: Slice 1 inventory is green; the producer D3 candidate ledger
     identifies manifest, schema, core, worker/catalog, contract, and lock bytes.
    - Red proof (write first): a tampered candidate, sibling junction, local path,
-     `direct_url`, URL/port-only match, mutable shared cache, or mixed lock must
-     fail. Persist the candidate `ReconcileRef` before activation. Inject
-     failures before and after the atomic pointer boundary. For `prior = null`,
-     assert first install reaches `NewActiveCommitted -> RetiredProved` with
-     `retirement.status = not_applicable`, no prior ref, and no degraded or
-     permanently blocked state. For a later promotion, assert the new active
-     remains selected/degraded after prior-retirement failure, the next
-      promotion is blocked, and the exact distinct candidate/prior refs plus
-      returned `proofSha256` values are retained. A candidate pre-commit cleanup
-     failure must be independently retryable without touching active; a prior
-     post-commit retirement failure must be independently retryable while the
-     new active remains selected/degraded. Cleanup retries until
-     `RetiredProved`; a second cleanup call must not pass as a no-op success. A
-     file-install restore is `Restored` only with re-proofs of the prior
-     manifest, byte count, content hash, and session; otherwise it is
-     `InstallAmbiguous`.
-   - Ordering proof (write first): verify the immutable candidate/root; persist
-    the candidate `ReconcileRef` through the producer `ReconcileRefSink`, flush
-    the returned `ActivationPermit{refDigest,generation,receiptDigest}`
-    receipt before activation; flush `CandidateReady`; flush `commitIntent`
-    with the expected prior and intended candidate pointer observations from
-    the closed union `absent | present{generation,sha256}`; lock and logically
-    CAS/atomically replace and flush the pointer, then reread it; flush
-    irreversible `NewActiveCommitted` only after an exact reread. First
-    install (`prior = null`, prior observation `absent`) uses
-    compare-and-create-if-absent; an unexpected present observation is a
-    conflict/`InstallAmbiguous`. Flush `RetiredProved` directly with
-    `retirement.status = not_applicable` and no degraded/block-next-promotion
-    flag. Otherwise persist `PriorRetiredDraining` before cleanup; call the
-    producer proof seam with `priorReconcileRef` (never the candidate ref),
-    retain only returned `proofSha256`, flush `RetiredProved`; and only then
-    optionally delete the exact prior root. If candidate cleanup fails before
-    commit, retry `candidateReconcileRef` independently while the prior active
-    remains untouched. If prior retirement fails after commit, retry
-    `priorReconcileRef` independently while the new active remains
-    selected/degraded. There is no rollback after pointer commit.
+      `direct_url`, URL/port-only match, mutable shared cache, or mixed lock must
+      fail. Prove that `CandidatePrepared` persists the exact candidate group
+      ref, `groupGeneration`, `activationReceiptDigest`, and producer-supplied
+      `ActivationPermitV1` before `activate_group(prepared, permit)`; a partial
+      activation, loaded-worker mismatch, readiness mismatch, or timeout must
+      not flush `CandidateReady`, `commitIntent`, or the pointer. Inject
+      failures before and after the atomic pointer boundary. For `prior = null`,
+      assert first install reaches `NewActiveCommitted -> RetiredProved` with
+      `retirement.status = not_applicable`, no prior ref, and no degraded or
+      permanently blocked state. For a later promotion, assert the new active
+      remains selected/degraded after prior-retirement failure, the next
+      promotion is blocked, and the exact distinct candidate/prior group refs
+      plus returned `proofSha256` values are retained. A candidate pre-commit
+      cleanup failure must be independently retryable without touching active;
+      a prior post-commit retirement failure must be independently retryable
+      while the new active remains selected/degraded. Cleanup retries until
+      `RetiredProved`; a second cleanup call must not pass as a no-op success. A
+      file-install restore is `Restored` only with re-proofs of the prior
+      manifest, byte count, content hash, and session; otherwise it is
+      `InstallAmbiguous`.
+   - Legacy red proof (write first): with the existing
+      `app_data_dir/runtimes/capture-runtime` present, a valid known-version
+      manifest/content but live owned listener/session, an unreadable or
+      reparse/path failure, an unknown/mismatched version, an empty legacy root,
+      or an ambiguous pointer must return `InstallAmbiguous`, touch no runtime
+      root/pointer/session, and perform no promotion. A valid, quiescent root
+      with pointer observation `absent` must atomically adopt into
+      `active/<legacyId>` with pointer `present{generation,sha256}` and
+      `activeSessionRef = null`/`sessionState = not-running`; it must not emit
+      `CandidateReady`. Crash before move, after move before pointer creation,
+      and after pointer creation before receipt flush are separate red cases;
+      only an exact prepared identity may complete adoption, and no rollback or
+      cleanup is allowed for an ambiguous path.
+   - Ordering proof (write first): verify the immutable candidate/root; call the
+     producer whole-group `prepare_group(immutable_plan, ReconcileRefSink)`;
+     persist and verify the complete group/root binding through
+     `persist_group_refs`/`verify_group_receipt`; flush the exact candidate
+     group ref/generation, `activationReceiptDigest`, and
+     `ActivationPermitV1` as `CandidatePrepared` before calling
+     `activate_group(prepared, permit)`. Wait for complete activation and the
+     loaded worker/readiness identity, then flush `CandidateReady`; only after
+     that flush `commitIntent` with the expected prior and intended candidate
+     pointer observations from the closed union `absent | present{generation,sha256}`;
+     lock and logically CAS/atomically replace and flush the pointer, then
+     reread it; flush irreversible `NewActiveCommitted` only after an exact
+     reread. First install (`prior = null`, prior observation `absent`) uses
+     compare-and-create-if-absent; an unexpected present observation is a
+     conflict/`InstallAmbiguous`. Flush `RetiredProved` directly with
+     `retirement.status = not_applicable` and no degraded/block-next-promotion
+     flag. Otherwise persist `PriorRetiredDraining` before cleanup; call the
+     producer proof seam with the distinct `priorReconcileRef` (never the
+     candidate ref), retain only returned `proofSha256`, flush `RetiredProved`,
+     and only then optionally delete the exact prior root. If candidate cleanup
+     fails before commit, retry `candidateReconcileRef` independently while the
+     prior active remains untouched. If prior retirement fails after commit,
+     retry `priorReconcileRef` independently while the new active remains
+     selected/degraded. There is no rollback after pointer commit.
   - Crash/startup reconciliation proof (write first):
 
     | Receipt and observed pointer (`absent | present{generation,sha256}`) | Required result |
     | --- | --- |
-    | pre-`CandidateReady`, or candidate verification failed | Preserve active; clean only an exact recorded candidate/temp ref. |
+    | `CandidatePrepared` before activation/readiness, or candidate verification failed | Preserve active; reconcile only the exact candidate group/ref and clean only an exact recorded candidate/temp ref. Never flush `CandidateReady` or touch the pointer. |
+    | `CandidatePrepared` with an activation/readiness crash and an exact candidate group observation | Reconcile the candidate group only. Complete activation/readiness may resume only from the exact prepared group and permit; missing, partial, live, reused, unqueryable, or ambiguous observations remain `reconcile-required` and never become `CandidateReady`. |
     | `CandidateReady`/no intent plus an observed pointer exactly matching the recorded prior observation | Pre-commit; do not commit; preserve active and invoke only `RuntimeSessionJournal::reconcile(candidateReconcileRef)` for exact candidate refs. Complete absence/listener/staging proof may terminalize; present, reused, unqueryable, or ambiguous observations remain `reconcile-required` and touch nothing. |
     | `commitIntent` plus an observed pointer exactly matching the expected prior `PointerObservation` | No commit; preserve active; never treat intent as permission to replace. |
     | `commitIntent` plus an observed pointer exactly matching the intended candidate `present{generation,sha256}` | Advance to `NewActiveCommitted`; if `prior = null`, advance directly to `RetiredProved` with `retirement.status = not_applicable`; otherwise persist `PriorRetiredDraining`. Never restore prior. |
     | unexpected pointer observation or generation/hash conflict | `InstallAmbiguous`, degraded and blocked; retain refs/errors; on first install any unexpected `present{generation,sha256}` is a compare-and-create-if-absent conflict; no rollback/deletion. |
-     | `NewActiveCommitted` with `prior = null` | Keep new active selected and advance directly to `RetiredProved` with `retirement.status = not_applicable`; keep degraded/block-next-promotion false and do not invent predecessor proof. |
-     | post-commit state with a prior active | Keep new active selected/degraded and block the next promotion; invoke only `RuntimeSessionJournal::reconcile(priorReconcileRef)` for prior retirement proof. |
-     | missing durable candidate/prior reconcile ref | Keep the applicable cleanup path independently recoverable; for prior retirement remain blocked and do not claim `RetiredProved` or delete prior. |
+    | `NewActiveCommitted` with `prior = null` | Keep new active selected and advance directly to `RetiredProved` with `retirement.status = not_applicable`; keep degraded/block-next-promotion false and do not invent predecessor proof. |
+    | post-commit state with a prior active | Keep new active selected/degraded and block the next promotion; invoke only `RuntimeSessionJournal::reconcile(priorReconcileRef)` for prior retirement proof. |
+    | missing durable candidate/prior reconcile ref | Keep the applicable cleanup path independently recoverable; for prior retirement remain blocked and do not claim `RetiredProved` or delete prior. |
+    | `LegacyAdoptionPrepared` | Re-observe the legacy root and exact path-free identity. Complete only an exact recorded move followed by compare-and-create-if-absent; any live/unverifiable/path/pointer mismatch is `InstallAmbiguous` and touches no runtime bytes. |
+    | `LegacyAdopted` with `activeSessionRef = null`/`sessionState = not-running` | Keep `active/<legacyId>` selected, do not invent a group/ref, and require a later launch to run `prepare_group`/`activate_group` before it records a session ref. |
     | temp/root/backup/cache entry | Delete only the exact receipt cleanup ref whose identity/hash/size matches. |
 
     Startup reconciliation is owned by `RuntimePromotionStore`, not by
@@ -409,49 +457,75 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     every ordering edge and a second cleanup call that returns a real failure,
     not false success.
     Proposed focused Rust tests in `runtime_promotion.rs` are
-    `receipt_round_trips_path_free_promotion_fields`,
-    `commit_intent_with_prior_pointer_does_not_commit`,
-    `commit_intent_with_candidate_pointer_advances_without_rollback`,
-    `unexpected_pointer_is_install_ambiguous`,
+     `receipt_round_trips_path_free_promotion_fields`,
+     `candidate_prepared_persists_group_ref_generation_receipt_and_permit`,
+     `activate_group_and_readiness_precede_candidate_ready`,
+     `candidate_activation_failure_preserves_active_and_never_commits`,
+     `commit_intent_with_prior_pointer_does_not_commit`,
+     `commit_intent_with_candidate_pointer_advances_without_rollback`,
+     `unexpected_pointer_is_install_ambiguous`,
     `distinct_candidate_and_prior_reconcile_refs_round_trip`,
     `candidate_precommit_cleanup_reconciles_without_prior_retirement`,
     `prior_postcommit_retirement_reconciles_without_candidate_cleanup`,
      `reconcile_present_reused_unqueryable_or_ambiguous_stays_blocked`,
      `first_install_without_prior_retirement_is_not_applicable`,
      `missing_prior_reconcile_ref_blocks_later_promotion`, and
-     `cleanup_requires_exact_recorded_reference`.
-  - Verification: `corepack pnpm nx run cert-prep-desktop:capture-candidate-gate-test --skip-nx-cache`;
-    `corepack pnpm nx run cert-prep-desktop:cargo-test --skip-nx-cache`;
-    `corepack pnpm nx run cert-prep-desktop:cargo-check --skip-nx-cache`;
-    `corepack pnpm nx run cert-prep-desktop:typecheck-scripts --skip-nx-cache`;
-    `corepack pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`.
-  - Stop condition: active bytes are mutated in place, a failed pre-commit step
-    damages active state, a post-commit cleanup path claims old-active
-    rollback, cache bytes are reused without verified digest/size, a second
-    `terminate_once`-style false success remains, `InstallAmbiguous` is called
-    restored without proof, or the implementation invents a target/path
-    without discovery. Do not run D4.
-  - Rollback: before commit, discard only isolated candidate staging proven to
-    be slice-owned and leave active untouched. After commit, do not roll back
-    the old active; retain the new active, distinct candidate/prior
-    reconcile/proof refs, degraded marker, and failure evidence while
-    retrying/reconciling cleanup at next
-    start. Additive revert is limited to the implementation commit and must
-    not pretend an install was restored without proof.
-  - Commit boundary: `test(phase2): harden immutable candidate promotion`;
-    record candidate/archive/runtime-worker identities, transaction state,
-    candidate/prior `ReconcileRef` and returned `proofSha256` handling, and
-    pre/post-commit evidence.
+     `cleanup_requires_exact_recorded_reference`,
+     `legacy_quiescent_root_adopts_to_immutable_active`,
+     `legacy_live_root_is_install_ambiguous_without_touching`,
+     `legacy_unverifiable_or_path_failure_is_install_ambiguous_without_touching`,
+     `legacy_root_is_not_empty_for_create_if_absent`,
+     `legacy_adoption_crash_edges_reconcile_without_promotion`, and
+     `legacy_adoption_launch_records_a_new_group_ref`.
+   - Verification: `corepack pnpm nx run cert-prep-desktop:capture-candidate-gate-test --skip-nx-cache`;
+     `corepack pnpm nx run cert-prep-desktop:cargo-test --skip-nx-cache`;
+     `corepack pnpm nx run cert-prep-desktop:cargo-check --skip-nx-cache`;
+     `corepack pnpm nx run cert-prep-desktop:typecheck-scripts --skip-nx-cache`;
+     `corepack pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`.
+   - Stop condition: active bytes are mutated in place, a failed pre-commit step
+     damages active state, a post-commit cleanup path claims old-active
+     rollback, cache bytes are reused without verified digest/size, a second
+     `terminate_once`-style false success remains, `CandidateReady` or
+     `commitIntent` can be flushed before `activate_group` and loaded-worker/
+     readiness proof, the activation permit is reconstructed or applied to a
+     different group, a legacy root is migrated while live/unverifiable/
+     ambiguous, `InstallAmbiguous` is called restored without proof, an
+     ambiguous legacy path is touched, or the implementation invents a
+     target/path without discovery. Do not run D4.
+   - Rollback: before pointer commit, discard only isolated candidate staging
+     proven to be slice-owned and leave active untouched. A failed or
+     ambiguous legacy observation/adoption leaves
+     `app_data_dir/runtimes/capture-runtime` byte-for-byte untouched; only an
+     exact `LegacyAdoptionPrepared` identity may resume the recorded atomic
+     move, and there is no rollback after the pointer is created. After commit,
+     do not roll back the old active; retain the new active, distinct
+     candidate/prior reconcile/proof refs, degraded marker, and failure
+     evidence while retrying/reconciling cleanup at next start. Additive revert
+     is limited to the implementation commit and must not pretend an install
+     was restored without proof.
+   - Commit boundary: `test(phase2): harden immutable candidate promotion`;
+     record candidate/archive/runtime-worker identities, transaction state,
+     candidate/prior `ReconcileRef`, candidate group generation, activation
+     receipt digest/permit, the `prepare_group`/`activate_group`/readiness
+     ordering, legacy observation/adoption outcome, returned `proofSha256`
+     handling, and pre/post-commit evidence.
 
 - [ ] **Slice 4.5: migrate the schema-1 acceptance manifest to the producer's
       semantic result and handoff.** Keep the current
       `acceptance-manifest.json` readable as a legacy local diagnostic. New Cert
-      D4/D7 runs import producer `ProducerAcceptanceContractV1` version `"1"`
-      and the exact D3/D6-bound `contractSha256`, consume only the frozen,
-      read-only invocation from `CAPTURE_ACCEPTANCE_INVOCATION_PATH`, verify
-      its canonical digest, and atomically create-new exactly one complete
-      producer-schema `ConsumerSemanticResultV1` at the distinct
-      `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`. The producer owns the mutable
+      D4/D7 runs consume the future producer bundle/package
+      `@capture-runtime/acceptance-contract` and its exact D3/D6-bound
+      `contractSha256`; the package is the sole authority for version, schema,
+      codec, manifest, and hash. Its package/target are absent at this
+      checkpoint, so package/target creation is a discovery/creation stop.
+      Cert consumes only the frozen, read-only invocation from
+      `CAPTURE_ACCEPTANCE_INVOCATION_PATH`, verifies its canonical digest, and
+      atomically create-new exactly one complete package-defined
+      `ConsumerSemanticResultV1` at the distinct
+      `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`. The runtime contract-set
+      identity (`contractSetSha256`) used by `RuntimeReady`/typed OCR remains
+      separate from the acceptance bundle hash; neither may be substituted for
+      the other. The producer owns the mutable
       scope at `CAPTURE_ACCEPTANCE_SCOPE_PATH`, validates the result, proves
       cleanup, and later writes immutable `AcceptanceChildWireV1` at
       `CAPTURE_ACCEPTANCE_WIRE_PATH`. Cert never consumes/overwrites/returns/writes
@@ -485,18 +559,21 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     only returned `proofSha256` values. The producer's
     `ProducerChildScopeV1`, `ProducerChildInvocationV1`,
     `ConsumerSemanticResultV1`, `AcceptanceChildWireV1`, and their path
-    variables are producer contract symbols, not Cert implementations.
-  - Semantic-result requirements: import the exact producer schema/version and
-    hash, consumer/child identity, and parent gate/tier binding; do not add or
-    redefine local fields. The frozen/read-only invocation binds D4 to the D3
-    candidate ledger or D7 to the D6 publication/download ledger; its canonical
-    digest and contract version/hash must match or the run fails closed.
-    Producer `fixtureAssignments[]` is mandatory and ordered. Cert maps both
-    private JPEG and scanned PDF page-1 assignments to ordered
-    `fixtureResults[]` with exactly equal cardinality/order and assignment
-    identity/media/page/oracle/truth/anchor/threshold/artifact fields; the
-    child supplies only the canonical measurements. `ConsumerSemanticResultV1`
-    has no Cert-local privacy or cleanup fields. Raw OCR, raw truth, raw media,
+    variables are producer package symbols, not Cert implementations. Add the
+    proposed private `FixtureCapabilityResolver` adapter in
+    `apps/cert-prep-desktop/scripts/acceptance-real-options.mts`; it resolves
+    only the ordered fixture capabilities and complete full-truth oracle
+    handles required by the package, without becoming a second schema owner.
+  - Semantic-result requirements: consume the exact future package/bundle
+    version and `contractSha256`, consumer/child identity, and parent gate/tier
+    binding; do not add, redefine, or restate local result fields. The
+    frozen/read-only invocation binds D4 to the D3 candidate ledger or D7 to
+    the D6 publication/download ledger; its canonical digest and package
+    version/hash must match or the run fails closed. The package-defined
+    `fixtureAssignments[]` is mandatory and ordered. The resolver supplies
+    private JPEG and scanned PDF page-1 capabilities in exactly that order and
+    the package codec writes the exact `ConsumerSemanticResultV1` with matching
+    ordered results and canonical measurements. Raw OCR, raw truth, raw media,
     tokens, paths, and native IDs remain outside the result; producer cleanup,
     privacy, full D3/D6 ledger binding, invocation digest, and canonical wire
     digest are added only to the later producer wire.
@@ -722,11 +799,17 @@ manager or undiscovered target is a discovery-stop, never a green claim.
       review/export, and cleanup. Require producer `windowsml-ocr` provenance,
       Cert `windowsml_ocr`, JPEG CER <= 3%, PDF page-1 CER <= 1%, and zero
       missing critical anchors. Cert imports the exact producer
-      `ProducerAcceptanceContractV1` version `"1"` and D3-bound
-      `contractSha256`, consumes only the frozen/read-only D4 invocation from
-      `CAPTURE_ACCEPTANCE_INVOCATION_PATH`, verifies its canonical digest, and
-      atomically create-new exactly one producer-schema
-      `ConsumerSemanticResultV1` at `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`;
+       future producer bundle/package `@capture-runtime/acceptance-contract`
+       (proposed `packages/capture-acceptance-contract/`) and the exact
+       D3-bound `contractSha256`; that package is the sole authority for the
+       result schema/codec/manifest/hash and is absent at this checkpoint, so
+       package/target creation is a discovery/creation stop. Cert consumes only
+       the frozen/read-only D4 invocation from
+       `CAPTURE_ACCEPTANCE_INVOCATION_PATH`, verifies its canonical digest, and
+       atomically create-new exactly one package-defined
+       `ConsumerSemanticResultV1` at `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`;
+       the runtime contract-set identity (`contractSetSha256`) remains separate
+       from the acceptance bundle hash;
       the producer owns mutable `CAPTURE_ACCEPTANCE_SCOPE_PATH`, validates the
       result, proves cleanup, and later writes `AcceptanceChildWireV1` at
       `CAPTURE_ACCEPTANCE_WIRE_PATH`. Cert never writes the scope/wire, waits
@@ -743,7 +826,8 @@ manager or undiscovered target is a discovery-stop, never a green claim.
      (`acceptancePassed`, caller/verdict only),
     `apps/cert-prep-desktop/scripts/acceptance-real-options.mts`
     (`createAcceptanceSmokeOptions`, `loadPhase1FinalCandidate`,
-    `strictRuntimeIdentity`),
+    `strictRuntimeIdentity`, and proposed private `FixtureCapabilityResolver`
+    adapter for ordered fixture capabilities and full-truth oracle handles),
     `apps/cert-prep-desktop/scripts/ocr-truth-contract.mts`
     (`parseOcrTruthManifest`, `evaluateOcrTruth`),
     `apps/cert-prep-desktop/scripts/ocr-page-record-evidence.mts`
@@ -770,8 +854,8 @@ manager or undiscovered target is a discovery-stop, never a green claim.
       lifecycle flag, writable/replaced invocation, canonical-digest/contract
       mismatch, reordered or incomplete fixture results, or incomplete cleanup
       must fail before a passing D4 semantic result or producer wire. Prove D4
-      evidence is labeled pre-publication, Cert writes only one exact
-      producer-schema semantic result matching ordered `fixtureAssignments[]`,
+       evidence is labeled pre-publication, Cert writes only one exact
+       package-defined semantic result matching the ordered package invocation,
       the producer writes the child wire only after cleanup, and no producer
       stable pointer or aggregate ledger is changed. `anchorOnly` and
       `parseOcrAnchorExpectation` are deleted/prohibited in the formal path;
@@ -803,12 +887,18 @@ manager or undiscovered target is a discovery-stop, never a green claim.
       After D5 publishes the exact D3 bytes and D6 verifies download-back
       hashes, rerun the same Cert journey from downloaded bytes only. D7 is
       formal published acceptance. Cert imports the exact producer
-      `ProducerAcceptanceContractV1` version `"1"` and D6-bound
-      `contractSha256`, consumes only the frozen/read-only D7 invocation from
-      `CAPTURE_ACCEPTANCE_INVOCATION_PATH`, verifies its canonical digest, and
-      atomically create-new exactly one producer-schema
-      `ConsumerSemanticResultV1` at `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`,
-      bound to D6. The producer owns mutable `CAPTURE_ACCEPTANCE_SCOPE_PATH`,
+       future producer bundle/package `@capture-runtime/acceptance-contract`
+       (proposed `packages/capture-acceptance-contract/`) and the exact
+       D6-bound `contractSha256`; that package is the sole authority for the
+       result schema/codec/manifest/hash and is absent at this checkpoint, so
+       package/target creation is a discovery/creation stop. Cert consumes only
+       the frozen/read-only D7 invocation from
+       `CAPTURE_ACCEPTANCE_INVOCATION_PATH`, verifies its canonical digest, and
+       atomically create-new exactly one package-defined
+       `ConsumerSemanticResultV1` at `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`,
+       bound to D6. The runtime contract-set identity (`contractSetSha256`)
+       remains separate from the acceptance bundle hash. The producer owns
+       mutable `CAPTURE_ACCEPTANCE_SCOPE_PATH`,
       validates/cleans up, and later writes `AcceptanceChildWireV1` at
       `CAPTURE_ACCEPTANCE_WIRE_PATH`, then directs the handoff to LAW. Cert
       does not write the scope/wire, wait for LAW, aggregate consumer ledgers,
@@ -830,7 +920,9 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     `apps/cert-prep-desktop/scripts/acceptance-real.mts`
     (`acceptancePassed`, caller/verdict only),
     `apps/cert-prep-desktop/scripts/acceptance-real-options.mts`
-    (`loadRuntimeCandidate`, `strictRuntimeIdentity`),
+    (`loadRuntimeCandidate`, `strictRuntimeIdentity`, and proposed private
+    `FixtureCapabilityResolver` adapter for ordered fixture capabilities and
+    full-truth oracle handles),
     `apps/cert-prep-desktop/scripts/phase1-final-identity.mts`
     (`loadPhase1FinalEvidence`),
     `apps/cert-prep-desktop/scripts/ocr-semantic-evidence.mts`
@@ -855,8 +947,8 @@ manager or undiscovered target is a discovery-stop, never a green claim.
        writable/replaced invocation, canonical-digest/contract mismatch,
        reordered fixture result, garbage around anchors, missing full private
        normalized reference, or missing/substituted candidate/prior reconcile
-       ref must fail. Prove the run writes only Cert's exact producer-schema D7
-       `ConsumerSemanticResultV1`, matching ordered `fixtureAssignments[]`; the
+       ref must fail. Prove the run writes only Cert's exact package-defined D7
+       `ConsumerSemanticResultV1`, matching the ordered package invocation; the
        producer emits its child wire only after validation/cleanup and directs
        it to LAW after green. Cert never writes the scope/wire, waits for LAW,
        or writes an aggregate ledger/stable-pointer mutation. Formal D7
@@ -902,34 +994,42 @@ manager or undiscovered target is a discovery-stop, never a green claim.
 - Real model runs are sequential: Capture Workbench JPEG then PDF page 1,
   Cert Prep, then GX Law Prep. Each owner proves cleanup before handoff.
 - Phase 1 is complete at `local-probe` only; it is not published or installed
-  formal acceptance. Cert D4 is pre-publication candidate acceptance that
-  imports the exact producer `ProducerAcceptanceContractV1` version `"1"` and
-  D3-bound `contractSha256`, consumes only the frozen/read-only invocation at
-  `CAPTURE_ACCEPTANCE_INVOCATION_PATH`, verifies its canonical digest, and
-  atomically create-new one exact producer-schema `ConsumerSemanticResultV1`
-  at `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`. Cert D7 repeats this from D6
-  download-back bytes with a fresh invocation and the same exact result type at
-  that distinct path. The producer owns mutable
+   formal acceptance. Cert D4 is pre-publication candidate acceptance that
+   consumes the future producer bundle/package
+   `@capture-runtime/acceptance-contract` and exact D3-bound `contractSha256`;
+   that package is the sole authority for the result schema/codec/manifest/hash
+   and is absent at this checkpoint, so package/target creation is a
+   discovery/creation stop. Cert consumes only the frozen/read-only invocation
+   at `CAPTURE_ACCEPTANCE_INVOCATION_PATH`, verifies its canonical digest, and
+   atomically create-new one exact package-defined `ConsumerSemanticResultV1`
+   at `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`. Cert D7 repeats this from D6
+   download-back bytes with a fresh invocation and the same exact result type at
+   that distinct path. The runtime contract-set identity (`contractSetSha256`)
+   remains separate from the acceptance bundle hash. The producer owns mutable
   `CAPTURE_ACCEPTANCE_SCOPE_PATH`, validates the result, proves cleanup, and
   later writes `AcceptanceChildWireV1` at `CAPTURE_ACCEPTANCE_WIRE_PATH`,
   aggregates child wires, and moves its stable pointer. Cert never writes the
-  scope/wire, waits for LAW, aggregates ledgers, or owns D8. Each result's
-  ordered `fixtureResults[]` matches ordered `fixtureAssignments[]` one-for-one
-  for the private JPEG and scanned PDF page 1, preserving assignment identity
-  and only canonical measurements; no Cert-local privacy/cleanup fields are
-  allowed. Full private normalized reference plus critical anchors is
-  mandatory; formal D4/D7 deletes/prohibits `anchorOnly` and
-  `parseOcrAnchorExpectation`, and a garbage-around-anchors result must not
-  receive CER 0. Synthetic anchor-only fixtures are unit-only.
-- Promotion is `CandidateReady -> NewActiveCommitted -> RetiredProved` for
-  first install (`prior = null`) and
-  `CandidateReady -> NewActiveCommitted -> PriorRetiredDraining ->
-  RetiredProved` for later promotions. Pointer observations use the closed
-  union `absent | present{generation,sha256}` in the receipt, intent, logical
-  CAS, reread, and crash matrix. Persist the candidate `ReconcileRef` through
-  producer `ReconcileRefSink` and its
-  `ActivationPermit{refDigest,generation,receiptDigest}` before activation;
-  candidate/prior refs are distinct and no `ProofRef` exists. First install
+  scope/wire, waits for LAW, aggregates ledgers, or owns D8. The package-defined
+  ordered fixture assignments are supplied through the
+   private `FixtureCapabilityResolver` adapter for the JPEG and scanned PDF
+   page-1 capabilities; the package codec writes the exact ordered semantic
+   result and only canonical measurements. No Cert-local privacy/cleanup fields
+   or result-schema restatement is allowed. Full private normalized reference
+   plus critical anchors is mandatory; formal D4/D7 deletes/prohibits
+   `anchorOnly` and `parseOcrAnchorExpectation`, and a garbage-around-anchors
+   result must not receive CER 0. Synthetic anchor-only fixtures are unit-only.
+- Promotion is `CandidatePrepared -> CandidateReady -> NewActiveCommitted ->
+   RetiredProved` for first install (`prior = null`) and
+   `CandidatePrepared -> CandidateReady -> NewActiveCommitted ->
+   PriorRetiredDraining -> RetiredProved` for later promotions. Pointer
+   observations use the closed union `absent | present{generation,sha256}` in
+   the receipt, intent, logical CAS, reread, and crash matrix. Persist the
+   candidate whole-group `groupRef`/`groupGeneration`, activation receipt
+   digest, and producer-supplied `ActivationPermitV1` through the producer
+   `ReconcileRefSink` before activation; call producer `activate_group`, wait
+   for loaded-worker/readiness identity, and only then flush `CandidateReady`.
+   Candidate/prior group and reconcile refs are distinct and no `ProofRef`
+   exists. First install
   uses compare-and-create-if-absent with prior observation `absent`,
   `retirement.status = not_applicable`, keeps degraded/block-next-promotion
   false, and requires no predecessor proof. For a later promotion, the new

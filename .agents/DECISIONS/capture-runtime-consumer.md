@@ -32,12 +32,18 @@ defines the executable slices. The producer source is referenced portably as
 `capture-workbench/.agents/SPECS/capture-runtime-042-p2-hardening.md`; no
 machine-specific path is part of this decision.
 
-The acceptance seam imports the producer-generated `ProducerAcceptanceContractV1`
-at contract version `"1"` and the exact D3/D6-bound `contractSha256` supplied by
-the producer ledger. Cert does not define or extend
+The acceptance seam consumes the future producer bundle/package
+`@capture-runtime/acceptance-contract` (proposed
+`packages/capture-acceptance-contract/`) and the exact D3/D6-bound
+`contractSha256` supplied by the producer ledger. That package is the sole
+authority for version, schema, codec, manifest, and hash; its package/target
+are absent at this checkpoint, so package/target creation is a producer
+discovery/creation stop. The runtime contract-set identity
+(`contractSetSha256`) used by `RuntimeReady`/typed OCR is separate from the
+acceptance bundle hash. Cert does not define or extend
 `ProducerChildScopeV1`, `ProducerChildInvocationV1`,
-`ConsumerSemanticResultV1`, or `AcceptanceChildWireV1`; the producer
-specification is the sole schema and validation authority.
+`ConsumerSemanticResultV1`, or `AcceptanceChildWireV1`; the producer package
+is the sole schema and validation authority.
 
 ## Chosen decisions
 
@@ -73,7 +79,17 @@ specification is the sole schema and validation authority.
    Candidate pre-commit cleanup and prior post-commit retirement retain their
    own ref/proof result and remain independently recoverable. When `prior =
    null` on first install, the prior ref is null and no predecessor proof is
-   required.
+   required. Candidate promotion is whole-group R3:
+   `prepare_group(immutable_plan, &dyn ReconcileRefSink)` returns an opaque
+   candidate group ref/generation; the sink persists and verifies the complete
+   group binding and returns the producer activation receipt digest plus
+   producer-supplied `ActivationPermitV1`. Cert flushes those candidate group
+   fields and the permit as `CandidatePrepared` before calling producer
+   `activate_group(prepared, permit)`. It waits for the loaded worker and
+   readiness identity of that same group, and only then flushes
+   `CandidateReady`; pointer commit intent/CAS follows. Candidate and prior
+   group refs remain distinct. A pre-activation/readiness crash never becomes
+   `CandidateReady` or changes the pointer.
 5. **Close and recovery preserve durable assets.** App close clears owned
    listeners, PIDs, run data, and staging while leaving durable runtime/model
    assets and caches. A pre-existing external Ollama process is a baseline and
@@ -103,50 +119,58 @@ specification is the sole schema and validation authority.
    upgrade or release claim is made by this local-probe checkpoint.
 9. **Real evidence is sequential and private.** Acceptance uses a real
       private JPEG and PDF page 1, then proves Cert cleanup before handing the
-      model slot to GX Law Prep. Cert consumes only the producer's frozen,
-      read-only `ProducerChildInvocationV1` from the separate immutable
+      model slot to GX Law Prep. Cert consumes the future producer bundle/package
+      `@capture-runtime/acceptance-contract` and the exact D3/D6-bound
+      `contractSha256`; that package is the sole authority for version, schema,
+      codec, manifest, and hash, and is absent at this checkpoint, so package/
+      target creation is a producer discovery/creation stop. Cert consumes only
+      the producer's frozen, read-only invocation from the separate immutable
       `CAPTURE_ACCEPTANCE_INVOCATION_PATH`; it never consumes the mutable
       `CAPTURE_ACCEPTANCE_SCOPE_PATH`. Cert verifies the invocation's frozen
       canonical bytes and `invocationSha256`, then atomically create-new exactly
-      one complete producer-schema `ConsumerSemanticResultV1` at
-      `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`. The producer validates that
+      one complete package-defined `ConsumerSemanticResultV1` at
+      `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`. The runtime contract-set
+      identity (`contractSetSha256`) used by `RuntimeReady`/typed OCR is
+      separate from the acceptance bundle hash. The producer validates that
       result, performs cleanup, and later writes `AcceptanceChildWireV1`.
-      Cert maps the invocation's ordered `fixtureAssignments[]` one-for-one to
-      ordered `fixtureResults[]`, including both the private JPEG and scanned
-      PDF page-1 assignments; assignment identity/media/page/oracle/truth/
-      anchor/threshold/artifact fields remain equal and Cert supplies only the
-      canonical per-fixture measurements. `ConsumerSemanticResultV1` has no
-      Cert-local privacy or cleanup fields; the producer adds cleanup/privacy to
-      the canonical wire. Restart persistence, review/export, cleanup, and
-      baseline survival are required. JPEG CER must be <= 3%, scanned PDF
-      page-1 CER must be <= 1%, and critical anchors must have zero omissions.
-      D4/D7 require the full private normalized reference plus critical anchors;
-      formal acceptance deletes/prohibits `anchorOnly` and
-      `parseOcrAnchorExpectation` in the
-      `ocr-truth-contract.mts`/`acceptance-real-options.mts` path. A
-      garbage-around-anchors RED fixture must not receive CER 0. Synthetic
-      anchor-only expectations may remain unit-only and are barred from D4/D7.
+      The package-defined ordered fixture assignments are resolved by the
+      proposed private `FixtureCapabilityResolver` adapter for the private JPEG
+      and scanned PDF page-1 capabilities; the package codec writes matching
+      ordered results and only canonical measurements. No Cert-local result
+      fields, privacy block, or cleanup block may be added or restated.
+      Restart persistence, review/export, cleanup, and baseline survival are
+      required. JPEG CER must be <= 3%, scanned PDF page-1 CER must be <= 1%,
+      and critical anchors must have zero omissions. D4/D7 require the full
+      private normalized reference plus critical anchors; formal acceptance
+      deletes/prohibits `anchorOnly` and `parseOcrAnchorExpectation` in the
+      `ocr-truth-contract.mts`/`acceptance-real-options.mts` path. A garbage-
+      around-anchors RED fixture must not receive CER 0. Synthetic anchor-only
+      expectations may remain unit-only and are barred from D4/D7.
 10. **Design gates precede image-flow code.** The image/PDF design receives
     both an independent Standards review and an independent Specification
     review before code. Implementation uses TDD red tests at the public seam,
     deterministic staging, small vertical slices, and exact-HEAD approvals.
 11. **Cert acceptance has two named events and a bounded handoff.** D4
       `CandidateAccepted` consumes one immutable, pre-publication candidate and
-      the producer's frozen, read-only invocation from
+      the future producer bundle/package `@capture-runtime/acceptance-contract`
+      with the exact D3-bound `contractSha256`; that package is the sole
+      authority for the result schema/codec/manifest/hash and is absent at this
+      checkpoint, so package/target creation is a producer discovery/creation
+      stop. Cert consumes the producer's frozen, read-only invocation from
       `CAPTURE_ACCEPTANCE_INVOCATION_PATH`; the producer's mutable scope remains
       at `CAPTURE_ACCEPTANCE_SCOPE_PATH` and is never a Cert input. Cert verifies
       the canonical invocation digest and atomically create-new exactly one
-      complete producer-schema `ConsumerSemanticResultV1` at the distinct
+      complete package-defined `ConsumerSemanticResultV1` at the distinct
       `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`. After D5 publication and D6
       download-back byte verification, D7 `PublishedAccepted` repeats the same
       installed journey using only the downloaded bytes and a fresh frozen
       invocation from that invocation path, then writes the same exact producer
-      result type bound to D6. For each event, the ordered producer
-      `fixtureAssignments[]` and ordered `fixtureResults[]` have equal
-      cardinality and identity/order; the private JPEG and scanned PDF page 1
-      are mapped as their corresponding assignments. Cert never overwrites or
-      returns the producer scope, receives/writes the wire path, defines local
-      result fields, waits for downstream LAW, aggregates ledgers, or moves a
+      result type bound to D6. For each event, the package-defined ordered
+      fixture assignments are resolved by the proposed private
+      `FixtureCapabilityResolver` adapter for the JPEG and scanned PDF page-1
+      capabilities; the package codec owns the exact ordered result. Cert never
+      overwrites or returns the producer scope, receives/writes the wire path,
+      defines or restates local result fields, waits for downstream LAW, aggregates ledgers, or moves a
       shared stable pointer. The producer validates the exact result, proves
       cleanup, adds its cleanup/privacy fields to `AcceptanceChildWireV1`, and
       writes that wire at `CAPTURE_ACCEPTANCE_WIRE_PATH`. The schema-1 Cert
@@ -160,15 +184,19 @@ specification is the sole schema and validation authority.
      observation uses the closed union `absent | present{generation,sha256}` in
      the receipt, `commitIntent`, logical CAS, locked reread, and crash matrix;
      no null, omitted, or free-form pointer state is valid. Promotion is
-      `CandidateReady -> NewActiveCommitted -> RetiredProved` for first install
-     (`prior = null`), and
-     `CandidateReady -> NewActiveCommitted -> PriorRetiredDraining ->
-     RetiredProved` when a prior active exists, with an atomic active-pointer
+     `CandidatePrepared -> CandidateReady -> NewActiveCommitted -> RetiredProved`
+     for first install (`prior = null`), and
+     `CandidatePrepared -> CandidateReady -> NewActiveCommitted ->
+     PriorRetiredDraining -> RetiredProved` when a prior active exists, with an
+     atomic active-pointer
      replacement at commit. Before commit, failure preserves the active
-     root/pointer/session and the candidate `ReconcileRef` is already durable.
-     R3 persistence uses the producer `ReconcileRefSink::persist(ref,
-     generation) -> ActivationPermit{refDigest,generation,receiptDigest}`;
-     activation requires that permit after its receipt is flushed, and no
+     root/pointer/session and the candidate group binding is already durable.
+     R3 uses producer `prepare_group(immutable_plan, &dyn ReconcileRefSink)`;
+     the sink persists/verifies the complete group and returns its opaque group
+     ref/generation, activation receipt digest, and producer-supplied
+     `ActivationPermitV1`. Cert flushes those fields as `CandidatePrepared`,
+     calls producer `activate_group(prepared, permit)`, waits for the loaded
+     worker/readiness identity, and only then flushes `CandidateReady`; no
      `ProofRef` type or slot exists. If `prior = null` on first install,
      compare-and-create-if-absent is the only valid pointer operation;
      `NewActiveCommitted` advances directly to `RetiredProved` with
@@ -179,9 +207,32 @@ specification is the sole schema and validation authority.
      remains selected and degraded, blocks the next promotion, retains distinct
      candidate/prior opaque producer refs and only returned `proofSha256`
      values, and retries/reconciles cleanup at next start. A file install is
-     `Restored` only after the prior root, manifest, byte count, content hash,
-     and session identity are re-proved; otherwise it is `InstallAmbiguous`.
-     Replace the current one-shot `RuntimeProcessOwner` `FnOnce` termination
+      `Restored` only after the prior root, manifest, byte count, content hash,
+      and session identity are re-proved; otherwise it is `InstallAmbiguous`.
+      Before any auto-launch, observe the existing
+      `app_data_dir/runtimes/capture-runtime` through the proposed
+      `RuntimePromotionStore::observe_legacy_root`. Use existing
+      `capture_runtime.rs::installed_capture_runtime_paths`,
+      `capture_manifest.rs::verify_capture_runtime` and
+      `capture_runtime_expected_version`, `manifests.rs::load_runtime_manifest`
+      and `verify_artifact`, plus identity-scoped `process_owner.rs` proof, to
+      verify manifest/content hashes, byte count, known version, and quiescence:
+      no owned listener, process, producer session, or unqueryable session.
+      A present root with missing, mismatched, unreadable, reparse, unknown, or
+      ambiguous evidence is not empty and is `InstallAmbiguous`; touch nothing
+      (no launch, migrate, delete, overwrite, or promotion). A valid known and
+      quiescent root with pointer observation `absent` may use proposed
+      `RuntimePromotionStore::adopt_verified_legacy_root`: flush
+      `LegacyAdoptionPrepared`, recheck the exact identity, atomically move it
+      under immutable `active/<legacyId>`, create the closed-union pointer
+      `present{generation,sha256}`, and flush `LegacyAdopted` with
+      `activeSessionRef = null`/`sessionState = not-running`. A later launch
+      must run the whole-group prepare/activate/readiness flow and create a new
+      session ref; adoption is not `CandidateReady`. A crash before the move
+      leaves the legacy root unchanged; after an exact move before pointer
+      creation, only the exact prepared identity may complete the move/pointer,
+      while any mismatch is `InstallAmbiguous` with no rollback or byte touch.
+      Replace the current one-shot `RuntimeProcessOwner` `FnOnce` termination
      seam; a second termination call must never return a false success.
 13. **Projection strings are not interchangeable.** Producer
     `provenance.engine == "windowsml-ocr"` maps through the existing
@@ -231,10 +282,11 @@ specification is the sole schema and validation authority.
     `proofSha256` returned by each addressed producer reconcile result when
     available, retirement attempts/status, exact cleanup refs, and sanitized
      errors; raw paths, tokens, PIDs, local handles, and OCR are forbidden. There
-     is no `ProofRef` type or independent proof-reference field. R3 uses the
-     producer `ReconcileRefSink::persist(reconcile_ref, generation) ->
-     ActivationPermit{refDigest,generation,receiptDigest}`; the candidate ref and
-     its permit receipt are durable before activation. Candidate cleanup is independently
+     is no `ProofRef` type or independent proof-reference field. R3 uses
+     producer `prepare_group(immutable_plan, &dyn ReconcileRefSink)` and the
+     whole-group sink `persist_group_refs`/`verify_group_receipt`; the candidate
+     group ref/generation, activation receipt digest, and producer-supplied
+     `ActivationPermitV1` are durable before `activate_group`. Candidate cleanup is independently
     recoverable before commit; prior retirement is independently recoverable
     after commit and cannot consume candidate proof. For `prior = null`, the
     prior ref is null and `retirement.status = not_applicable`.
@@ -253,13 +305,17 @@ specification is the sole schema and validation authority.
      reread, and startup crash matrix; no null, omitted, or free-form pointer
      state is valid. First install has content identity `prior = null`, pointer
      observation `absent`, and uses compare-and-create-if-absent. Verify the
-     immutable candidate/root; persist its producer `ReconcileRef` through the
-     producer `ReconcileRefSink` and flush the returned
-     `ActivationPermit{refDigest,generation,receiptDigest}` before activation;
-     candidate and prior refs remain distinct and no `ProofRef` is retained.
-     Flush `CandidateReady`; flush `commitIntent` with expected prior and
-     intended candidate pointer observations; take the store lock, perform the
-     logical CAS/atomic pointer operation and flush it, then reread it; flush
+     immutable candidate/root; call producer
+     `prepare_group(immutable_plan, &dyn ReconcileRefSink)`, persist/verify the
+     complete group through the sink, and flush its opaque group ref/generation,
+     activation receipt digest, and producer-supplied `ActivationPermitV1` as
+     `CandidatePrepared` before activation. Call only producer
+     `activate_group(prepared, permit)`, wait for the loaded worker/readiness
+     identity of that group, and then flush `CandidateReady`; candidate and
+     prior group/refs remain distinct and no `ProofRef` is retained. Flush
+     `commitIntent` with expected prior and intended candidate pointer
+     observations; take the store lock, perform the logical CAS/atomic pointer
+     operation and flush it, then reread it; flush
      `NewActiveCommitted` only after an exact match. An unexpected present
      pointer on first install is a conflict and `InstallAmbiguous`, never an
      overwrite. If `prior = null`, flush `RetiredProved` directly with
@@ -309,8 +365,8 @@ The selected design is grounded in current symbols, not planned names:
 | Draft job ordering | `apps/cert-prep-backend/src/cert_prep_backend/domains/mock_exams/draft_jobs.py`: `enqueue_chunk_job`, `recover_runnable_jobs`, `begin_commit`, `request_cancel` |
 | Install/manifest verification | `apps/cert-prep-desktop/src-tauri/src/capture_runtime.rs`: `install_bundled_capture_runtime`, `installed_capture_runtime_paths`, `replace_runtime_directory`; `apps/cert-prep-desktop/src-tauri/src/manifests.rs`: `RuntimeManifest`, `RuntimeArtifact`, `load_runtime_manifest`, `verify_artifact` |
 | Runtime identity/cleanup | `apps/cert-prep-desktop/src-tauri/src/capture_manifest.rs`: `verify_capture_runtime`, `validate_capture_manifest_contract`, `capture_runtime_expected_version`; `apps/cert-prep-desktop/src-tauri/src/process_owner.rs`: `RuntimeProcessOwner`, `terminate_once`, `owned_runtime_process!` |
-| Local installed-runtime pointer/receipt (planned) | **Proposed** `apps/cert-prep-desktop/src-tauri/src/runtime_promotion.rs`: `RuntimePromotionStore`, `RuntimePromotionReceiptV1`; `apps/cert-prep-desktop/src-tauri/src/lib.rs`: `run`; `apps/cert-prep-desktop/src-tauri/src/backend.rs`: `install_capture_runtime`, `start_capture_runtime`, `restart_owned_backend_with_capture_runtime` | Sole Cert owner of the local logical pointer and durable promotion receipt/reconciliation. It is distinct from the producer session journal and producer D8 stable pointer; current symbols do not exist. |
-| Schema-1 manifest to semantic result (planned migration) | `apps/cert-prep-desktop/scripts/acceptance-artifacts.mts`: `writeAcceptanceManifest`; `apps/cert-prep-desktop/scripts/acceptance-artifacts.test.mts`; `apps/cert-prep-desktop/scripts/acceptance-real.mts`: `acceptancePassed`; `apps/cert-prep-desktop/scripts/ocr-semantic-evidence.mts`: `serializePrivacySafeOcrSemanticEvidence`, `OCR_NORMALIZATION_VERSION`; `apps/cert-prep-desktop/scripts/phase1-acceptance-evidence.mts`: `buildPhase1AcceptanceEvidence`; `apps/cert-prep-desktop/scripts/ocr-page-record-evidence.mts`: `assertOcrPageRecordEvidenceIntegrity`; proposed installed receipt `apps/cert-prep-desktop/src-tauri/src/runtime_promotion.rs`: `RuntimePromotionStore`, `RuntimePromotionReceiptV1` | Keep schema-1 as a compatibility input, import producer `ProducerAcceptanceContractV1` version `"1"` plus the exact D3/D6-bound `contractSha256`, consume only the frozen/read-only `CAPTURE_ACCEPTANCE_INVOCATION_PATH`, verify its canonical digest, and atomically create-new one exact producer-schema `ConsumerSemanticResultV1` at `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`. Map ordered `fixtureAssignments[]` one-for-one to ordered `fixtureResults[]` for the private JPEG and scanned PDF page 1; no Cert-local schema fields, cleanup, or privacy block. The producer validates/cleans up and later writes `AcceptanceChildWireV1`; its scope/wire symbols and cleanup fields are not Cert symbols. Preserve the generated view `libs/cert-prep-api/src/lib/cert-prep-api.generated.ts` and never create an aggregate/D8 record. |
+| Local installed-runtime pointer/receipt (planned) | **Proposed** `apps/cert-prep-desktop/src-tauri/src/runtime_promotion.rs`: `RuntimePromotionStore`, `RuntimePromotionReceiptV1`, `observe_legacy_root`, `adopt_verified_legacy_root`; `apps/cert-prep-desktop/src-tauri/src/lib.rs`: `run`; `apps/cert-prep-desktop/src-tauri/src/backend.rs`: `install_capture_runtime`, `start_capture_runtime`, `restart_owned_backend_with_capture_runtime` | Sole Cert owner of the local logical pointer and durable promotion receipt/reconciliation, including legacy-root observation/adoption. It is distinct from the producer session journal and producer D8 stable pointer; current symbols do not exist. |
+| Schema-1 manifest to semantic result (planned migration) | `apps/cert-prep-desktop/scripts/acceptance-artifacts.mts`: `writeAcceptanceManifest`; `apps/cert-prep-desktop/scripts/acceptance-artifacts.test.mts`; `apps/cert-prep-desktop/scripts/acceptance-real.mts`: `acceptancePassed`; `apps/cert-prep-desktop/scripts/ocr-semantic-evidence.mts`: `serializePrivacySafeOcrSemanticEvidence`, `OCR_NORMALIZATION_VERSION`; `apps/cert-prep-desktop/scripts/phase1-acceptance-evidence.mts`: `buildPhase1AcceptanceEvidence`; `apps/cert-prep-desktop/scripts/ocr-page-record-evidence.mts`: `assertOcrPageRecordEvidenceIntegrity`; proposed private `FixtureCapabilityResolver` adapter at `apps/cert-prep-desktop/scripts/acceptance-real-options.mts`; proposed installed receipt `apps/cert-prep-desktop/src-tauri/src/runtime_promotion.rs`: `RuntimePromotionStore`, `RuntimePromotionReceiptV1` | Keep schema-1 as a compatibility input, consume the future `@capture-runtime/acceptance-contract` bundle/package and exact D3/D6-bound `contractSha256`, consume only the frozen/read-only `CAPTURE_ACCEPTANCE_INVOCATION_PATH`, verify its canonical digest, and atomically create-new one exact package-defined `ConsumerSemanticResultV1` at `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`. The package is the sole schema/codec/manifest/hash authority and is absent at this checkpoint, so package/target creation is a discovery/creation stop. The resolver supplies ordered private JPEG and scanned PDF page-1 capabilities; no Cert-local schema restatement, cleanup, or privacy block. The producer validates/cleans up and later writes `AcceptanceChildWireV1`; its scope/wire symbols and cleanup fields are not Cert symbols. Preserve the generated view `libs/cert-prep-api/src/lib/cert-prep-api.generated.ts` and never create an aggregate/D8 record. |
 | Python backend installer (separate) | `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_installations/manager.py`: `RuntimeInstallationManager`, `RuntimeInstaller`; `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_installations/installers.py`: `LLMModelInstaller` | Owns provider/model requirement jobs and snapshots only; it never writes the desktop local runtime pointer or receipt. |
 
 ## Design-It-Twice selection
@@ -322,7 +378,7 @@ none of these proposed names is an existing Cert symbol.
 | --- | --- | --- | --- |
 | **proposed `CaptureRuntimeFacade`** | `facade.capture(candidate, upload) -> receipt`; hides auth, roots, session, projection, mapping, and durable commit. | Installed runtime remote-owned; filesystem local-substitutable; SQLite durable; deterministic receipt test adapter. | Deep for one caller but fuses unrelated failure modes and risks a second coordinator. Rejected. |
 | **proposed explicit ports**: `RuntimeAssetInstaller`, `DesktopRuntimeSupervisor`, `OcrProjectionMapper` | `installer.prepare(candidate)`, `supervisor.start(verified)`, `mapper.map(projection)`; hides manifest/hash, producer session/pointer, and discriminator details. | Existing Rust verification functions are native filesystem adapters; producer session is remote-owned; existing Python owners are domain adapters; failure-injection fakes are test adapters. | More interface knowledge, but high leverage/locality and readable typed failures. Selected. |
-| **proposed `CaptureRuntimePromotion`** | `prepare(candidate) -> CandidateReady`; `commit(candidate) -> NewActiveCommitted`; `reconcile(receipt) -> RetiredProved or InstallAmbiguous`; hides cache, pointer journal, retirement proof, readiness, and publication. | Filesystem/pointer local-substitutable; producer session remote-owned; journal fixture test adapter. | Common caller is simple, but promotion becomes coupled to persistence and harder to test independently. Rejected. |
+| **proposed `CaptureRuntimePromotion`** | `prepare_group(candidate) -> CandidatePrepared`; `activate_group(prepared, permit)` plus loaded-worker/readiness proof -> `CandidateReady`; `commit(candidate) -> NewActiveCommitted`; `reconcile(receipt) -> RetiredProved or InstallAmbiguous`; hides cache, pointer journal, retirement proof, readiness, and publication. | Filesystem/pointer local-substitutable; producer session remote-owned; journal fixture test adapter. | Common caller is simple, but promotion becomes coupled to persistence and harder to test independently. Rejected. |
 
 The rejected public `CaptureRuntimePromotion` facade does not preclude the
 proposed internal `RuntimePromotionStore`. The store is a deep persistence
@@ -367,14 +423,18 @@ implemented.
   canonical producer documents instead.
 - **Keeping the schema-1 aggregate acceptance manifest as the handoff:**
   rejected because it collapses Cert's JPEG/PDF fixture results and can imply
-  producer aggregation/D8 authority. The migration imports the producer's exact
-  `ProducerAcceptanceContractV1` version/hash, consumes only the frozen,
-  read-only `CAPTURE_ACCEPTANCE_INVOCATION_PATH` after canonical-digest
-  verification, and atomically create-new one exact
-  `ConsumerSemanticResultV1` at `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`.
-  Ordered `fixtureAssignments[]` and `fixtureResults[]` are matched one-for-one;
-  the producer remains the sole scope owner and later emits
-  `AcceptanceChildWireV1` at its wire path, including cleanup/privacy fields.
+  producer aggregation/D8 authority. The migration consumes the future
+  `@capture-runtime/acceptance-contract` bundle/package and exact D3/D6-bound
+  `contractSha256`, consumes only the frozen, read-only
+  `CAPTURE_ACCEPTANCE_INVOCATION_PATH` after canonical-digest verification,
+  and atomically create-new one exact package-defined `ConsumerSemanticResultV1`
+  at `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`. The package is the sole schema/
+  codec/manifest/hash authority and is absent at this checkpoint, so package/
+  target creation is a producer discovery/creation stop. The proposed private
+  `FixtureCapabilityResolver` supplies ordered fixture capabilities and full
+  truth to the package codec; no Cert-local result schema is restated. The
+  producer remains the sole scope owner and later emits `AcceptanceChildWireV1`
+  at its wire path, including cleanup/privacy fields.
   Cert never writes or receives the mutable scope/wire output.
 - **Treating historical documents as active task files:** rejected because
   only the existing [lazy-install decision](lazy-capture-runtime-installation.md)
