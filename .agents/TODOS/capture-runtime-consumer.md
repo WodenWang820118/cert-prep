@@ -48,7 +48,7 @@ it is not the producer session journal or D8 stable-pointer owner. Its receipt
   prior group refs are distinct. For `prior = null`, the prior ref is null and
   retirement is `not_applicable`; after candidate/session conditions, first
   install advances directly from `NewActiveCommitted` to `RetiredProved`
-  without degrading or blocking forever. For later promotions, candidate
+  without degrading or blocking forever. For later promotions with a prior session, candidate
   pre-commit cleanup and prior post-commit retirement remain independently
   recoverable. On any Cert restart, old prepared/ready receipts are
   observation-only: Cert never reuses a private permit or resumes their group.
@@ -317,9 +317,9 @@ manager or undiscovered target is a discovery-stop, never a green claim.
        next-start reconciliation. Replace the impossible all-or-nothing rollback
        contract with
        `CandidatePrepared -> CandidateReady -> NewActiveCommitted ->
-       RetiredProved` for first install (`prior = null`), and
+       RetiredProved` for first install (`prior = null`) or the proven no-session legacy prior, and
        `CandidatePrepared -> CandidateReady -> NewActiveCommitted ->
-       PriorRetiredDraining -> RetiredProved` when a prior active exists.
+       PriorRetiredDraining -> RetiredProved` when a prior session exists (excluding the proven no-session legacy prior below).
   - Owned paths/symbols: **proposed**
     `apps/cert-prep-desktop/src-tauri/src/runtime_promotion.rs`
     (`RuntimePromotionStore`, `RuntimePromotionReceiptV1`) as the sole Cert
@@ -414,7 +414,7 @@ manager or undiscovered target is a discovery-stop, never a green claim.
        Inject failures before and after the atomic pointer boundary. For `prior =
        null`, assert first install reaches `NewActiveCommitted -> RetiredProved`
        with `retirement.status = not_applicable`, no prior ref, and no degraded or
-       permanently blocked state. For a later promotion, assert the new active
+       permanently blocked state. For a later promotion with a prior session, assert the new active
        remains selected/degraded after prior-retirement failure, the next
        promotion is blocked, and the exact distinct candidate/prior group refs
        plus returned `proofSha256` values are retained. A candidate pre-commit
@@ -428,6 +428,38 @@ manager or undiscovered target is a discovery-stop, never a green claim.
        verified ownership may continue an existing lease semantically, but a
        producer restart/lost handle must reconcile old refs observe-only and use
        fresh refs/prepare after terminal/no-resource proof.
+   - Proven no-session legacy prior RED proof (write first; conceptual only,
+     no test has been run in this docs slice): adopt a verified quiescent root,
+     never launch it, promote a ready candidate, and recover a crash after the
+     pointer replace. Both paths must reach `RetiredProved`/`not_applicable`
+     with present prior content identity, null prior group/ref, no fabricated
+     producer proof hash, and no degraded/block flag. Content presence alone
+     must not demand a live-session reconcile ref or a pointless prior launch.
+     Require durable completed adoption identity and uninterrupted no-launch
+     history, serialized with durable launch intent before prepare; reverify
+     exact content/layout/pointer and unambiguous quiescent listener/process
+     ownership, and persist/revalidate path-free identity, history revision
+     interval, and bounded ownership evidence. RED countercases remove history
+     or completed adoption evidence, inject launch intent before a ref exists,
+     add a historical group/ref, change content/pointer, or make ownership
+     ambiguous/unqueryable: each must stay `InstallAmbiguous`/
+     `reconcile-required`; post-commit new active remains selected/degraded
+     and the next promotion blocked. Actual prior sessions still need their
+     distinct producer ref/proof. Optional content deletion requires exact
+     cleanup-reference and fresh identity/pointer checks.
+     Exact planned test owner: proposed
+     `apps/cert-prep-desktop/src-tauri/src/runtime_promotion.rs` tests module,
+     exercised by `cert-prep-desktop:cargo-test`:
+     `adopted_never_launched_prior_retires_not_applicable`,
+     `no_session_prior_commit_crash_revalidates_evidence`,
+     `no_session_prior_missing_adoption_or_history_stays_ambiguous`,
+     `no_session_prior_launch_intent_or_historical_ref_stays_blocked`,
+     `no_session_prior_changed_content_or_ownership_stays_ambiguous`, and
+     `no_session_prior_retirement_never_fabricates_ref_or_launches`.
+     These tests cross the store's public seam with ownership/launch adapter
+     fixtures; the canonical
+     [no-session branch](../SPECS/capture-runtime-consumer.md#proven-no-session-legacy-prior-retirement)
+     qualifies all prior-session clauses and crash rows in this TODO.
    - Legacy red proof (write first): with the existing
        `app_data_dir/runtimes/capture-runtime` present, a valid known-version
        manifest/content but live owned listener/session, an unreadable or
@@ -467,7 +499,7 @@ manager or undiscovered target is a discovery-stop, never a green claim.
      compare-and-create-if-absent; an unexpected present observation is a
      conflict/`InstallAmbiguous`. Flush `RetiredProved` directly with
      `retirement.status = not_applicable` and no degraded/block-next-promotion
-     flag. Otherwise persist `PriorRetiredDraining` before cleanup; call the
+     flag. For a prior session, persist `PriorRetiredDraining` before cleanup; call the
      producer proof seam with the distinct `priorReconcileRef` (never the
      candidate ref), retain only returned `proofSha256`, flush `RetiredProved`,
      and only then optionally delete the exact prior root. If candidate cleanup
@@ -483,11 +515,11 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     | `CandidatePrepared` with an activation/readiness crash and an exact candidate group observation | Never replay the old prepared value. If the original producer remains alive and verifies live ownership of the exact whole-group lease, the existing lease may continue semantically after fresh all-root readiness proof; otherwise reconcile the old ref observe-only. Producer restart/lost handle, partial, live-but-unverified, reused, unqueryable, or ambiguous observations remain `reconcile-required`; after terminal/no-resource proof, a new launch uses fresh refs/prepare. |
     | `CandidateReady`/no intent plus an observed pointer exactly matching the recorded prior observation | Pre-commit; do not commit from the stale receipt; preserve active and invoke only `RuntimeSessionJournal::reconcile(candidateReconcileRef)` for exact candidate refs. Complete absence/listener/staging proof may terminalize; only a still-running original producer with verified live lease ownership may continue semantically after fresh all-root readiness proof. Never deserialize a permit or resume a serialized ready group; otherwise wait for terminal/no-resource proof and use fresh refs/prepare for any launch. |
     | `commitIntent` plus an observed pointer exactly matching the expected prior `PointerObservation` | No commit; preserve active; never treat intent as permission to replace. |
-    | `commitIntent` plus an observed pointer exactly matching the intended candidate `present{generation,sha256}` | Advance to `NewActiveCommitted`; if `prior = null`, advance directly to `RetiredProved` with `retirement.status = not_applicable`, `priorReconcileRef = null`, and no degraded/block-next-promotion flag; if a real prior exists, persist `PriorRetiredDraining` before cleanup. Never restore prior. |
+    | `commitIntent` plus an observed pointer exactly matching the intended candidate `present{generation,sha256}` | Advance to `NewActiveCommitted`; if `prior = null`, advance directly to `RetiredProved` with `retirement.status = not_applicable`, `priorReconcileRef = null`, and no degraded/block-next-promotion flag; for the proven no-session legacy prior, revalidate its evidence and advance directly to `RetiredProved`/`not_applicable`; otherwise persist `PriorRetiredDraining` before prior-session cleanup. Never restore prior. |
     | unexpected pointer observation or generation/hash conflict | `InstallAmbiguous`, degraded and blocked; retain refs/errors; on first install any unexpected `present{generation,sha256}` is a compare-and-create-if-absent conflict; no rollback/deletion. |
     | `NewActiveCommitted` with `prior = null` | Keep new active selected and advance directly to `RetiredProved` with `retirement.status = not_applicable`; keep degraded/block-next-promotion false and do not invent predecessor proof. |
-    | post-commit state with a prior active | Keep new active selected/degraded and block the next promotion; invoke only `RuntimeSessionJournal::reconcile(priorReconcileRef)` for prior retirement proof. |
-    | missing durable candidate/prior reconcile ref | Keep the applicable cleanup path independently recoverable; for prior retirement remain blocked and do not claim `RetiredProved` or delete prior. |
+    | post-commit state with a prior active outside the proven no-session legacy branch | Keep new active selected/degraded and block the next promotion; invoke only `RuntimeSessionJournal::reconcile(priorReconcileRef)` for prior retirement proof. |
+    | missing required durable candidate/prior session reconcile ref, outside first install or the proven no-session legacy prior | Keep the applicable cleanup path independently recoverable; for prior-session retirement remain blocked and do not claim `RetiredProved` or delete prior. |
     | `LegacyAdoptionPrepared` | Re-observe exact state-discriminated source, destination, content, layout, pointer intent, and move phase. Source exact/destination absent/pointer absent continues only the recorded move; source absent/destination exact/pointer absent completes only the recorded pointer; source absent/destination exact/pointer exact flushes `LegacyAdopted`. Both/unexpected/mismatch/reparse/unqueryable/missing intent is `InstallAmbiguous` and touches no runtime bytes. |
     | `LegacyAdopted` with `activeSessionRef = null`/`sessionState = not-running` | Keep `active/<legacyId>` selected, never flush `CandidateReady`, do not invent a group/ref, and require a later launch to use fresh `prepare_group`/`activate_group`/all-root readiness before it records a new session ref. |
     | temp/root/backup/cache entry | Delete only the exact receipt cleanup ref whose identity/hash/size matches. |
@@ -514,7 +546,7 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     `prior_postcommit_retirement_reconciles_without_candidate_cleanup`,
      `reconcile_present_reused_unqueryable_or_ambiguous_stays_blocked`,
      `first_install_without_prior_retirement_is_not_applicable`,
-     `missing_prior_reconcile_ref_blocks_later_promotion`, and
+     `missing_prior_reconcile_ref_without_no_session_evidence_blocks_later_promotion`, and
      `cleanup_requires_exact_recorded_reference`,
      `legacy_quiescent_root_adopts_to_immutable_active`,
      `legacy_live_root_is_install_ambiguous_without_touching`,
@@ -720,9 +752,9 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     producer session contract is available.
   - Red proof (write first): candidate readiness failure must terminate/prove
       only the candidate; active readiness and capture remain usable. A successful
-      commit with a real prior enters `PriorRetiredDraining`; first install
+      commit with a prior session enters `PriorRetiredDraining`; first install
       (`prior = null`) advances directly to `RetiredProved`/`not_applicable`.
-      A real prior must not be claimed retired until producer proof reaches
+      A prior session must not be claimed retired until producer proof reaches
       `RetiredProved`. A post-commit cleanup
       failure keeps the new active selected/degraded, retains the exact producer
        distinct candidate/prior reconcile refs and returned `proofSha256` values,
@@ -797,15 +829,18 @@ manager or undiscovered target is a discovery-stop, never a green claim.
      overlaps the LAW model slot. Also crash the store at every promotion
       edge: `commitIntent` plus prior pointer must not commit; `commitIntent`
       plus exact candidate pointer must advance to `NewActiveCommitted`, then
-      to `RetiredProved`/`not_applicable` when `prior = null`, or persist
-      `PriorRetiredDraining` when a real prior exists;
+      to `RetiredProved`/`not_applicable` when `prior = null` or the proven
+      no-session legacy prior evidence is revalidated, or persist
+      `PriorRetiredDraining` when a prior session exists;
       candidate pre-commit cleanup must use only its candidate ref; prior
       post-commit retirement must use only its prior ref; absent/listener/staging
       proof may advance each independently; present, reused, unqueryable, or
       ambiguous observations must remain `reconcile-required`/degraded;
       unexpected pointers must be `InstallAmbiguous`; a missing producer ref
-      must stay blocked on the applicable prior-retirement path (first install
-      has no prior ref and is `not_applicable`); restart must never replay a
+      must stay blocked on the applicable prior-session retirement path (first
+      install and the proven no-session legacy prior have no prior ref and are
+      `not_applicable`, with the latter requiring its documented evidence);
+      restart must never replay a
       prepared/ready value or private permit, and only a verified live lease
       owned by the still-running original producer may continue semantically;
       producer restart/lost handle requires terminal/no-resource proof before
@@ -1013,8 +1048,8 @@ manager or undiscovered target is a discovery-stop, never a green claim.
        mismatch, missing scoped JPEG/PDF fixture result, false lifecycle flag,
        writable/replaced invocation, canonical-digest/contract mismatch,
        reordered fixture result, garbage around anchors, missing full private
-       normalized reference, or missing/substituted candidate/prior reconcile
-       ref must fail. Prove the run writes only Cert's exact package-defined D7
+       normalized reference, or missing/substituted required session reconcile
+       ref must fail (the proven no-session legacy prior requires its own durable evidence). Prove the run writes only Cert's exact package-defined D7
        `ConsumerSemanticResultV1`, matching the ordered package invocation; the
        producer emits its child wire only after validation/cleanup and directs
        it to LAW after green. Cert never writes the scope/wire, waits for LAW,
@@ -1086,9 +1121,9 @@ manager or undiscovered target is a discovery-stop, never a green claim.
    `anchorOnly` and `parseOcrAnchorExpectation`, and a garbage-around-anchors
    result must not receive CER 0. Synthetic anchor-only fixtures are unit-only.
 - Promotion is `CandidatePrepared -> CandidateReady -> NewActiveCommitted ->
-    RetiredProved` for first install (`prior = null`) and
+    RetiredProved` for first install (`prior = null`) or the proven no-session legacy prior, and
     `CandidatePrepared -> CandidateReady -> NewActiveCommitted ->
-    PriorRetiredDraining -> RetiredProved` for later promotions. Pointer
+    PriorRetiredDraining -> RetiredProved` for later promotions with a prior session. Pointer
     observations use the closed union `absent | present{generation,sha256}` in
     the receipt, intent, logical CAS, reread, and crash matrix. Persist the
     complete candidate group/root binding and verified sink receipt through the
@@ -1103,7 +1138,7 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     refs/prepare follow terminal/no-resource proof. First install
   uses compare-and-create-if-absent with prior observation `absent`,
   `retirement.status = not_applicable`, keeps degraded/block-next-promotion
-  false, and requires no predecessor proof. For a later promotion, the new
+  false, and requires no predecessor proof. For a later promotion with a prior session, the new
   active remains selected/degraded and the next promotion is blocked until
   `RuntimeSessionJournal::reconcile(priorReconcileRef)` returns complete proof;
   retain only returned `proofSha256` values in the separate nullable candidate /

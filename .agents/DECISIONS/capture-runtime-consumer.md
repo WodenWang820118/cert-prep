@@ -200,9 +200,9 @@ is the sole schema and validation authority.
      the receipt, `commitIntent`, logical CAS, locked reread, and crash matrix;
      no null, omitted, or free-form pointer state is valid. Promotion is
      `CandidatePrepared -> CandidateReady -> NewActiveCommitted -> RetiredProved`
-     for first install (`prior = null`), and
+     for first install (`prior = null`) or the proven no-session legacy prior, and
      `CandidatePrepared -> CandidateReady -> NewActiveCommitted ->
-     PriorRetiredDraining -> RetiredProved` when a prior active exists, with an
+     PriorRetiredDraining -> RetiredProved` when a prior session exists (excluding the proven no-session legacy prior below), with an
      atomic active-pointer
      replacement at commit. Before commit, failure preserves the active
      root/pointer/session and the candidate group binding is already durable.
@@ -223,12 +223,35 @@ is the sole schema and validation authority.
      `retirement.status = not_applicable`, no degraded flag, and no blocked
      next promotion. An unexpected present pointer is a conflict and
      `InstallAmbiguous`, never an overwrite. For a later promotion with a prior
-     active, after commit there is no rollback to the old active: the new active
+     session, after commit there is no rollback to the old active: the new active
      remains selected and degraded, blocks the next promotion, retains distinct
      candidate/prior opaque producer refs and only returned `proofSha256`
      values, and retries/reconciles cleanup at next start. A file install is
       `Restored` only after the prior root, manifest, byte count, content hash,
       and session identity are re-proved; otherwise it is `InstallAmbiguous`.
+      A completed adopted legacy root may instead be a **proven no-session
+      legacy prior**: durable completed adoption identity, uninterrupted
+      durable history with no launch intent/group/ref since adoption, reverified
+      exact prior content/layout/pointer identity, and unambiguous quiescent
+      listener/process ownership are all required. The store serializes this
+      check with launch/promotion; launch records durable intent before prepare.
+      Persist path-free adoption/content/pointer identities, history revision
+      interval, and bounded ownership evidence; revalidate them on recovery.
+      Content existence is not a live session. After candidate readiness and
+      exact committed pointer proof, advance directly to
+      `RetiredProved`/`retirement.status = not_applicable` with present prior
+      content identity, null prior group/ref, and no degraded/block flag.
+      No fabricated producer ref/hash or pointless prior launch is allowed.
+      Missing history/adoption evidence, any intervening launch intent/group/ref,
+      changed content, or ambiguous/unqueryable ownership is
+      `InstallAmbiguous`/`reconcile-required`; after commit keep new active
+      selected/degraded and block further promotion. Actual prior sessions
+      still require their own producer ref/proof; missing refs stay blocked.
+      Optional content deletion retains exact cleanup-reference checks.
+      This branch qualifies all prior-session retirement requirements here;
+      the [canonical specification](../SPECS/capture-runtime-consumer.md#proven-no-session-legacy-prior-retirement)
+      defines the evidence and crash semantics.
+
       Before any auto-launch, observe the existing
       `app_data_dir/runtimes/capture-runtime` through the proposed
       `RuntimePromotionStore::observe_legacy_root`. Use existing
@@ -362,21 +385,21 @@ is the sole schema and validation authority.
      pointer on first install is a conflict and `InstallAmbiguous`, never an
      overwrite. If `prior = null`, flush `RetiredProved` directly with
      `retirement.status = not_applicable`, retaining no prior ref and leaving
-     degraded/block-next-promotion false. If a prior exists, persist
+     degraded/block-next-promotion false. If a prior session exists, persist
      `PriorRetiredDraining` before cleanup, ask the producer for prior proof
      through `RuntimeSessionJournal::reconcile(priorReconcileRef)`, retain only
      its returned `proofSha256`, and flush `RetiredProved` before optional exact
      prior-root deletion. A failed candidate before commit uses only
      `RuntimeSessionJournal::reconcile(candidateReconcileRef)` and leaves the
      active untouched. Before commit, failures preserve active. After commit of
-     a later promotion, never roll back: keep the new active selected/degraded
+     a later promotion with a prior session, never roll back: keep the new active selected/degraded
      and block the next promotion until prior proof. Complete
      absence/listener/staging proof may advance a ref; missing, present, reused,
      unqueryable, or ambiguous results remain `reconcile-required`/degraded.
      Startup reconciliation compares the same closed pointer observations:
      intent plus prior observation is no commit, intent plus exact candidate
      observation is committed, and any unexpected observation is a conflict/
-     `InstallAmbiguous`; missing refs remain independently recoverable/blocked
+     `InstallAmbiguous`; missing required session refs remain independently recoverable/blocked
      only for the applicable cleanup path, and temporary, root, backup, or cache
      deletion uses only exact receipt refs. A Cert restart never reuses a
      private permit or resumes a serialized prepared/ready group: it invokes
