@@ -80,16 +80,31 @@ is the sole schema and validation authority.
    own ref/proof result and remain independently recoverable. When `prior =
    null` on first install, the prior ref is null and no predecessor proof is
    required. Candidate promotion is whole-group R3:
-   `prepare_group(immutable_plan, &dyn ReconcileRefSink)` returns an opaque
-   candidate group ref/generation; the sink persists and verifies the complete
-   group binding and returns the producer activation receipt digest plus
-   producer-supplied `ActivationPermitV1`. Cert flushes those candidate group
-   fields and the permit as `CandidatePrepared` before calling producer
-   `activate_group(prepared, permit)`. It waits for the loaded worker and
-   readiness identity of that same group, and only then flushes
+   `OwnedRuntimeSession::prepare_group(plan: &ImmutableGroupPlan, sink: &dyn
+   ReconcileRefSink) -> Result<PreparedGroup, PrepareError>` asks the sink to
+   `persist`, `read_back`, and `verify` one complete ordered group/root binding.
+   All three sink calls bind the same fresh `bindingAttemptId`, persisted in
+   both complete binding and receipt. Cert flushes that complete path-free binding and the verified sink receipt
+   digest as `CandidatePrepared` before activation. `PreparedGroup` is
+   producer-private, opaque, move-only, live-only, and nonserializable; its
+   private `ActivationPermitV1` is never a Cert field or public parameter.
+   `OwnedRuntimeSession::activate_group(prepared: PreparedGroup) ->
+   Result<GroupLease, LaunchError>` consumes it and activates the whole group.
+   Cert verifies all-root loaded-worker/readiness identity, then flushes
    `CandidateReady`; pointer commit intent/CAS follows. Candidate and prior
    group refs remain distinct. A pre-activation/readiness crash never becomes
    `CandidateReady` or changes the pointer.
+
+   A Cert restart never deserializes a permit or resumes an old prepared/ready
+   group from its receipt. It reconciles the exact recorded refs and complete
+   binding observe-only. If the original producer is still alive and verifies
+   live ownership of the exact `GroupLease`, the existing lease may continue
+   semantically after a fresh all-root readiness observation; this is not
+   replaying `PreparedGroup`. If the producer restarted or lost its native
+   handle, Cert cannot claim or adopt the old group. It waits for exact
+   terminal/no-resource proof, and every later launch allocates fresh refs and
+   runs a fresh `prepare_group`/sink binding. Present, reused, unqueryable, or
+   ambiguous observations remain `reconcile-required` and block launch.
 5. **Close and recovery preserve durable assets.** App close clears owned
    listeners, PIDs, run data, and staging while leaving durable runtime/model
    assets and caches. A pre-existing external Ollama process is a baseline and
@@ -191,13 +206,18 @@ is the sole schema and validation authority.
      atomic active-pointer
      replacement at commit. Before commit, failure preserves the active
      root/pointer/session and the candidate group binding is already durable.
-     R3 uses producer `prepare_group(immutable_plan, &dyn ReconcileRefSink)`;
-     the sink persists/verifies the complete group and returns its opaque group
-     ref/generation, activation receipt digest, and producer-supplied
-     `ActivationPermitV1`. Cert flushes those fields as `CandidatePrepared`,
-     calls producer `activate_group(prepared, permit)`, waits for the loaded
-     worker/readiness identity, and only then flushes `CandidateReady`; no
-     `ProofRef` type or slot exists. If `prior = null` on first install,
+     R3 uses the exact producer contract
+     `prepare_group(plan: &ImmutableGroupPlan, sink: &dyn ReconcileRefSink) ->
+     Result<PreparedGroup, PrepareError>` and sink `persist`, `read_back`, and
+     `verify` calls for one complete ordered group/root binding. Cert flushes
+     that binding and the verified sink receipt digest as `CandidatePrepared`.
+     `PreparedGroup` is producer-private, opaque, move-only, live-only, and
+     nonserializable; its private `ActivationPermitV1` is never persisted by
+     Cert and is not a public activation parameter. The producer consumes it
+     through `activate_group(prepared: PreparedGroup) -> Result<GroupLease,
+     LaunchError>`, activates the whole group, and returns a lease only after
+     all-root readiness. Cert then flushes `CandidateReady`; no `ProofRef` type
+     or slot exists. If `prior = null` on first install,
      compare-and-create-if-absent is the only valid pointer operation;
      `NewActiveCommitted` advances directly to `RetiredProved` with
      `retirement.status = not_applicable`, no degraded flag, and no blocked
@@ -222,16 +242,27 @@ is the sole schema and validation authority.
       ambiguous evidence is not empty and is `InstallAmbiguous`; touch nothing
       (no launch, migrate, delete, overwrite, or promotion). A valid known and
       quiescent root with pointer observation `absent` may use proposed
-      `RuntimePromotionStore::adopt_verified_legacy_root`: flush
-      `LegacyAdoptionPrepared`, recheck the exact identity, atomically move it
-      under immutable `active/<legacyId>`, create the closed-union pointer
-      `present{generation,sha256}`, and flush `LegacyAdopted` with
-      `activeSessionRef = null`/`sessionState = not-running`. A later launch
-      must run the whole-group prepare/activate/readiness flow and create a new
-      session ref; adoption is not `CandidateReady`. A crash before the move
-      leaves the legacy root unchanged; after an exact move before pointer
-      creation, only the exact prepared identity may complete the move/pointer,
-      while any mismatch is `InstallAmbiguous` with no rollback or byte touch.
+      `RuntimePromotionStore::adopt_verified_legacy_root`, but only after a
+      fully state-discriminated `LegacyAdoptionPrepared` receipt is flushed.
+      That receipt records exact logical source and destination root refs,
+      content identity, canonical layout identity, pointer intent (expected
+      prior `absent`, intended `present{generation,sha256}`, expected revision),
+      and move phase (`prepared`, `moved`, `pointer_created`, or `adopted`).
+      These are closed populated variants retaining the immutable tuple;
+      `none` is allowed only outside adoption states. The spec's phase-aware
+      recovery matrix allows one completed-operation crash edge of receipt lag,
+      never a receipt phase ahead of the observed move/pointer operation.
+      Recovery permits only these exact observations: source exact/destination
+      absent/pointer absent continues the recorded move; source absent/
+      destination exact/pointer absent completes the recorded pointer; source
+      absent/destination exact/pointer exact flushes `LegacyAdopted`. Both
+      roots, unexpected or any content/layout/pointer-intent/move-phase
+      mismatch, reparse, unqueryable evidence,
+      or missing intent is `InstallAmbiguous` and touches nothing. Adoption
+      flushes `LegacyAdopted` with `activeSessionRef = null`/
+      `sessionState = not-running`, never `CandidateReady`; a later launch must
+      run fresh whole-group prepare/activate/readiness and create a new session
+      ref. An exact pointer create is never rolled back.
       Replace the current one-shot `RuntimeProcessOwner` `FnOnce` termination
      seam; a second termination call must never return a false success.
 13. **Projection strings are not interchangeable.** Producer
@@ -282,14 +313,22 @@ is the sole schema and validation authority.
     `proofSha256` returned by each addressed producer reconcile result when
     available, retirement attempts/status, exact cleanup refs, and sanitized
      errors; raw paths, tokens, PIDs, local handles, and OCR are forbidden. There
-     is no `ProofRef` type or independent proof-reference field. R3 uses
-     producer `prepare_group(immutable_plan, &dyn ReconcileRefSink)` and the
-     whole-group sink `persist_group_refs`/`verify_group_receipt`; the candidate
-     group ref/generation, activation receipt digest, and producer-supplied
-     `ActivationPermitV1` are durable before `activate_group`. Candidate cleanup is independently
-    recoverable before commit; prior retirement is independently recoverable
-    after commit and cannot consume candidate proof. For `prior = null`, the
-    prior ref is null and `retirement.status = not_applicable`.
+     is no `ProofRef` type or independent proof-reference field. R3 uses the
+     exact producer `prepare_group(plan, sink) -> PreparedGroup` contract and
+     sink `persist`/`read_back`/`verify` calls. The complete group/root binding
+     and verified sink receipt digest are durable before activation; the
+     producer-private, move-only, nonserializable `PreparedGroup`, its private
+     `ActivationPermitV1`, and the live `GroupLease` never enter the Cert
+     receipt. The producer consumes the value through
+     `activate_group(prepared)`, then Cert verifies all-root readiness before
+     `CandidateReady`. Candidate cleanup is independently recoverable before
+     commit; prior retirement is independently recoverable after commit and
+     cannot consume candidate proof. On Cert restart, old prepared/ready values
+     are never replayed: only a still-running original producer with verified
+     live lease ownership may continue semantically. After producer restart or
+     lost handle, old refs are observe-only until terminal/no-resource proof,
+     then any launch uses fresh refs/prepare. For `prior = null`, the prior ref
+     is null and `retirement.status = not_applicable`.
     `capture_runtime.rs` verifies/stages/launches, `backend.rs` invokes the
     store from `install_capture_runtime`, `start_capture_runtime`, and
     `restart_owned_backend_with_capture_runtime`, `lib.rs` wires the module
@@ -305,14 +344,17 @@ is the sole schema and validation authority.
      reread, and startup crash matrix; no null, omitted, or free-form pointer
      state is valid. First install has content identity `prior = null`, pointer
      observation `absent`, and uses compare-and-create-if-absent. Verify the
-     immutable candidate/root; call producer
-     `prepare_group(immutable_plan, &dyn ReconcileRefSink)`, persist/verify the
-     complete group through the sink, and flush its opaque group ref/generation,
-     activation receipt digest, and producer-supplied `ActivationPermitV1` as
-     `CandidatePrepared` before activation. Call only producer
-     `activate_group(prepared, permit)`, wait for the loaded worker/readiness
-     identity of that group, and then flush `CandidateReady`; candidate and
-     prior group/refs remain distinct and no `ProofRef` is retained. Flush
+     immutable candidate/root; call the exact producer
+     `prepare_group(plan, sink) -> PreparedGroup`, let the sink
+     `persist`/`read_back`/`verify` the complete ordered group/root binding, and
+     flush that binding plus its verified sink receipt digest as
+     `CandidatePrepared` before activation. `PreparedGroup` is producer-private,
+     move-only, live-only, and nonserializable; its private
+     `ActivationPermitV1` is never a Cert field. Call only producer
+     `activate_group(prepared)`, which consumes the value and activates the
+     whole group; verify all-root loaded-worker/readiness identity and then
+     flush `CandidateReady`. Candidate and prior group/refs remain distinct and
+     no `ProofRef` is retained. Flush
      `commitIntent` with expected prior and intended candidate pointer
      observations; take the store lock, perform the logical CAS/atomic pointer
      operation and flush it, then reread it; flush
@@ -336,7 +378,13 @@ is the sole schema and validation authority.
      observation is committed, and any unexpected observation is a conflict/
      `InstallAmbiguous`; missing refs remain independently recoverable/blocked
      only for the applicable cleanup path, and temporary, root, backup, or cache
-     deletion uses only exact receipt refs.
+     deletion uses only exact receipt refs. A Cert restart never reuses a
+     private permit or resumes a serialized prepared/ready group: it invokes
+     observe-only reconciliation for old refs. A still-running original
+     producer with verified live ownership may continue its existing lease
+     semantically after fresh all-root readiness proof; a producer restart or
+     lost handle cannot claim it. After terminal/no-resource proof, any launch
+     uses fresh refs and a fresh prepare/binding sequence.
 
 ## Why these decisions are consumer-specific
 
@@ -378,7 +426,7 @@ none of these proposed names is an existing Cert symbol.
 | --- | --- | --- | --- |
 | **proposed `CaptureRuntimeFacade`** | `facade.capture(candidate, upload) -> receipt`; hides auth, roots, session, projection, mapping, and durable commit. | Installed runtime remote-owned; filesystem local-substitutable; SQLite durable; deterministic receipt test adapter. | Deep for one caller but fuses unrelated failure modes and risks a second coordinator. Rejected. |
 | **proposed explicit ports**: `RuntimeAssetInstaller`, `DesktopRuntimeSupervisor`, `OcrProjectionMapper` | `installer.prepare(candidate)`, `supervisor.start(verified)`, `mapper.map(projection)`; hides manifest/hash, producer session/pointer, and discriminator details. | Existing Rust verification functions are native filesystem adapters; producer session is remote-owned; existing Python owners are domain adapters; failure-injection fakes are test adapters. | More interface knowledge, but high leverage/locality and readable typed failures. Selected. |
-| **proposed `CaptureRuntimePromotion`** | `prepare_group(candidate) -> CandidatePrepared`; `activate_group(prepared, permit)` plus loaded-worker/readiness proof -> `CandidateReady`; `commit(candidate) -> NewActiveCommitted`; `reconcile(receipt) -> RetiredProved or InstallAmbiguous`; hides cache, pointer journal, retirement proof, readiness, and publication. | Filesystem/pointer local-substitutable; producer session remote-owned; journal fixture test adapter. | Common caller is simple, but promotion becomes coupled to persistence and harder to test independently. Rejected. |
+| **proposed `CaptureRuntimePromotion`** | `prepare_group(plan, sink) -> PreparedGroup`; Cert persists the complete verified binding as `CandidatePrepared`; producer consumes the move-only `PreparedGroup` through `activate_group(prepared) -> GroupLease`; all-root readiness -> `CandidateReady`; `commit(candidate) -> NewActiveCommitted`; `reconcile(receipt) -> RetiredProved or InstallAmbiguous`; hides cache, pointer journal, retirement proof, readiness, and publication. | Filesystem/pointer local-substitutable; producer session remote-owned; journal fixture test adapter. | Common caller is simple, but promotion becomes coupled to persistence and harder to test independently. Rejected. |
 
 The rejected public `CaptureRuntimePromotion` facade does not preclude the
 proposed internal `RuntimePromotionStore`. The store is a deep persistence

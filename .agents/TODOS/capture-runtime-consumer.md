@@ -32,27 +32,37 @@ and persistence. **Proposed** `DesktopRuntimeSupervisor` and **proposed**
 `apps/cert-prep-desktop/src-tauri/src/runtime_promotion.rs` is the sole Cert
 owner for the local installed-runtime pointer and `RuntimePromotionReceiptV1`;
 it is not the producer session journal or D8 stable-pointer owner. Its receipt
-must carry candidate/prior content identities, pointer generation/hash,
-revision/CAS, the candidate whole-group binding, flushed activation and
-`commitIntent` states, degraded/block-next-promotion flags, separate nullable
-candidate/prior group/ref slots, and only the `proofSha256` returned by each
-addressed producer reconcile result; there is no independent proof-reference
-field. Candidate preparation persists the exact producer group ref,
-`groupGeneration`, `activationReceiptDigest`, and `ActivationPermitV1` before
-calling `activate_group`; only a complete loaded-worker/readiness identity may
-then flush `CandidateReady`. Candidate and prior group refs are distinct. For
-`prior = null`, the prior ref is null and retirement is `not_applicable`; after
-candidate/session conditions, first install advances directly from
-`NewActiveCommitted` to `RetiredProved` without degrading or blocking forever.
-For later promotions, candidate pre-commit cleanup and prior post-commit
-retirement remain independently recoverable. The producer exposes
-`RuntimeSessionJournal::reconcile(ReconcileRef) -> ReconcileResult` as an
-opaque, addressable observe-only semantic API; Cert never assumes a local Job
-handle, process handle, PID, path, port, or takeover lease. Only complete
-absence/listener/staging proof may advance a ref; present, reused,
-unqueryable, or ambiguous observations remain `reconcile-required` and
-degraded where a prior retirement exists. Current owners and symbols remain
-the paths listed in the [consumer specification](../SPECS/capture-runtime-consumer.md).
+  must carry candidate/prior content identities, pointer generation/hash,
+  revision/CAS, the candidate complete producer group/root binding and verified
+  sink receipt, flushed activation and `commitIntent` states,
+  degraded/block-next-promotion flags, separate nullable candidate/prior
+  group/ref slots, and only the `proofSha256` returned by each addressed
+  producer reconcile result; there is no independent proof-reference field and
+  no `PreparedGroup`, `GroupLease`, or permit field. Candidate preparation uses
+  the exact producer `prepare_group(plan, sink) -> PreparedGroup` contract and
+  sink `persist`/`read_back`/`verify` calls; Cert flushes the complete binding
+  and verified receipt as `CandidatePrepared` before calling
+  `activate_group(prepared)`. The producer-private `PreparedGroup` is opaque,
+  move-only, live-only, and nonserializable; all-root loaded-worker/readiness
+  identity must be proved before Cert flushes `CandidateReady`. Candidate and
+  prior group refs are distinct. For `prior = null`, the prior ref is null and
+  retirement is `not_applicable`; after candidate/session conditions, first
+  install advances directly from `NewActiveCommitted` to `RetiredProved`
+  without degrading or blocking forever. For later promotions, candidate
+  pre-commit cleanup and prior post-commit retirement remain independently
+  recoverable. On any Cert restart, old prepared/ready receipts are
+  observation-only: Cert never reuses a private permit or resumes their group.
+  Only a still-running original producer with verified live ownership may
+  continue an existing live lease semantically; after producer restart/lost
+  handle, old refs reconcile observe-only until terminal/no-resource proof, then
+  any launch uses fresh refs/prepare. The producer exposes
+  `RuntimeSessionJournal::reconcile(ReconcileRef) -> ReconcileResult` as an
+  opaque, addressable observe-only semantic API; Cert never assumes a local Job
+  handle, process handle, PID, path, port, or takeover lease. Only complete
+  absence/listener/staging proof may advance a ref; present, reused,
+  unqueryable, or ambiguous observations remain `reconcile-required` and
+  degraded where a prior retirement exists. Current owners and symbols remain
+  the paths listed in the [consumer specification](../SPECS/capture-runtime-consumer.md).
 The Python backend's `RuntimeInstallationManager`/`RuntimeInstaller` in
 `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_installations/`
 continue to own provider/model installation jobs only; they do not write the
@@ -335,28 +345,38 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     (`RuntimeInstallationManager`, `RuntimeInstaller`) and
     `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_installations/installers.py`
     (`LLMModelInstaller`) remain a separate provider/model-installation scope;
-     they do not write this pointer or receipt. The store is distinct from the
-     producer session journal and producer D8 stable pointer. The receipt must
-     expose separate nullable `candidateReconcileRef` and `priorReconcileRef`
-     slots and retain only the `proofSha256` returned by the addressed producer
-     reconcile result; it must not invent a `ProofRef` type or independent
-     proof-reference field. R3 persistence uses the producer whole-group
-     `prepare_group(immutable_plan, ReconcileRefSink)` and
-     `ReconcileRefSink::persist_group_refs`/`verify_group_receipt` contract;
-     the exact candidate group ref/generation, activation receipt digest, and
-     producer-supplied `ActivationPermitV1` are flushed in `CandidatePrepared`
-     before calling `activate_group(prepared, permit)`. Persist the candidate
-     group ref before activation. For `prior = null`, the prior
-     ref is null and first install advances directly from `NewActiveCommitted`
-     to `RetiredProved` with `retirement.status = not_applicable`, without a
-     degraded or permanently blocked state. The producer proof seam is
+      they do not write this pointer or receipt. The store is distinct from the
+      producer session journal and producer D8 stable pointer. The receipt must
+      expose separate nullable `candidateReconcileRef` and `priorReconcileRef`
+      slots and retain only the `proofSha256` returned by the addressed producer
+      reconcile result; it must not invent a `ProofRef` type or independent
+      proof-reference field. R3 uses the exact producer whole-group contract
+      `prepare_group(plan, sink) -> PreparedGroup` and sink
+      `persist`/`read_back`/`verify` calls. The complete path-free candidate
+      group/root binding and verified sink receipt are flushed in
+      `CandidatePrepared` before activation. `PreparedGroup` is producer-private,
+      opaque, move-only, live-only, and nonserializable; no permit is persisted
+      or passed as a public parameter. The producer consumes it through
+      `activate_group(prepared) -> GroupLease`, activates every root, and Cert
+      verifies all-root readiness before `CandidateReady`. Persist the complete
+      group/root binding before activation. For `prior = null`, the prior
+      ref is null and first install advances directly from `NewActiveCommitted`
+      to `RetiredProved` with `retirement.status = not_applicable`, without a
+      degraded or permanently blocked state. The producer proof seam is
      `RuntimeSessionJournal::reconcile(ReconcileRef)`;
      `ReconcileRef` is an opaque journal index/address, not a local Job/process
       handle, PID, path, port, or takeover lease. The existing
-     `apps/cert-prep-desktop/scripts/acceptance-real-options.mts`
-     candidate identity helpers, `tools/capture-candidate-gate.mts`, and its
-     `tools/capture-candidate-gate.test.mts` tests remain acceptance adapters.
-     The legacy observation is the existing
+      `apps/cert-prep-desktop/scripts/acceptance-real-options.mts`
+      candidate identity helpers, `tools/capture-candidate-gate.mts`, and its
+      `tools/capture-candidate-gate.test.mts` tests remain acceptance adapters.
+      The producer lifecycle owner and exact contract are referenced portably
+      as `capture-workbench/.agents/SPECS/capture-runtime-042-p2-hardening.md`:
+      `OwnedRuntimeSession::prepare_group(plan, sink) -> PreparedGroup`,
+      `ReconcileRefSink::persist`/`read_back`/`verify`, and
+      `OwnedRuntimeSession::activate_group(PreparedGroup) -> GroupLease`.
+      They are producer-owned symbols; this Cert slice must not recreate or
+      modify them.
+      The legacy observation is the existing
      `app_data_dir/runtimes/capture-runtime` root, classified before auto-launch
      by the proposed `RuntimePromotionStore::observe_legacy_root` and adopted
      only by `RuntimePromotionStore::adopt_verified_legacy_root` after manifest,
@@ -374,53 +394,73 @@ manager or undiscovered target is a discovery-stop, never a green claim.
      raw paths, tokens, PIDs, process handles, or OCR. Complete
      absence/listener/staging proof may terminalize the addressed ref; present,
      reused, unqueryable, or ambiguous observations remain
-     `reconcile-required` and touch nothing.
+      `reconcile-required` and touch nothing. On Cert restart, old prepared or
+      ready receipts are never replayed: only the still-running original
+      producer with verified live ownership may continue an existing lease
+      semantically. A producer restart or lost handle requires observe-only
+      reconciliation of the old ref until terminal/no-resource proof; any later
+      launch uses fresh refs and a fresh prepare/sink binding.
   - Prerequisite: Slice 1 inventory is green; the producer D3 candidate ledger
     identifies manifest, schema, core, worker/catalog, contract, and lock bytes.
    - Red proof (write first): a tampered candidate, sibling junction, local path,
-      `direct_url`, URL/port-only match, mutable shared cache, or mixed lock must
-      fail. Prove that `CandidatePrepared` persists the exact candidate group
-      ref, `groupGeneration`, `activationReceiptDigest`, and producer-supplied
-      `ActivationPermitV1` before `activate_group(prepared, permit)`; a partial
-      activation, loaded-worker mismatch, readiness mismatch, or timeout must
-      not flush `CandidateReady`, `commitIntent`, or the pointer. Inject
-      failures before and after the atomic pointer boundary. For `prior = null`,
-      assert first install reaches `NewActiveCommitted -> RetiredProved` with
-      `retirement.status = not_applicable`, no prior ref, and no degraded or
-      permanently blocked state. For a later promotion, assert the new active
-      remains selected/degraded after prior-retirement failure, the next
-      promotion is blocked, and the exact distinct candidate/prior group refs
-      plus returned `proofSha256` values are retained. A candidate pre-commit
-      cleanup failure must be independently retryable without touching active;
-      a prior post-commit retirement failure must be independently retryable
-      while the new active remains selected/degraded. Cleanup retries until
-      `RetiredProved`; a second cleanup call must not pass as a no-op success. A
-      file-install restore is `Restored` only with re-proofs of the prior
-      manifest, byte count, content hash, and session; otherwise it is
-      `InstallAmbiguous`.
+       `direct_url`, URL/port-only match, mutable shared cache, or mixed lock must
+       fail. Prove that `CandidatePrepared` persists the complete candidate
+       group/root binding and verified sink receipt from producer
+       `prepare_group(plan, sink)`/`persist`/`read_back`/`verify` before
+       `activate_group(prepared)`; no `PreparedGroup`, `GroupLease`, or private
+       permit may be serialized into the Cert receipt. A partial activation,
+       incomplete all-root readiness, loaded-worker mismatch, readiness mismatch,
+       or timeout must not flush `CandidateReady`, `commitIntent`, or the pointer.
+       Inject failures before and after the atomic pointer boundary. For `prior =
+       null`, assert first install reaches `NewActiveCommitted -> RetiredProved`
+       with `retirement.status = not_applicable`, no prior ref, and no degraded or
+       permanently blocked state. For a later promotion, assert the new active
+       remains selected/degraded after prior-retirement failure, the next
+       promotion is blocked, and the exact distinct candidate/prior group refs
+       plus returned `proofSha256` values are retained. A candidate pre-commit
+       cleanup failure must be independently retryable without touching active;
+       a prior post-commit retirement failure must be independently retryable
+       while the new active remains selected/degraded. Cleanup retries until
+       `RetiredProved`; a second cleanup call must not pass as a no-op success. A
+       file-install restore is `Restored` only with re-proofs of the prior
+       manifest, byte count, content hash, and session; otherwise it is
+       `InstallAmbiguous`. On Cert restart, a live original producer with
+       verified ownership may continue an existing lease semantically, but a
+       producer restart/lost handle must reconcile old refs observe-only and use
+       fresh refs/prepare after terminal/no-resource proof.
    - Legacy red proof (write first): with the existing
-      `app_data_dir/runtimes/capture-runtime` present, a valid known-version
-      manifest/content but live owned listener/session, an unreadable or
-      reparse/path failure, an unknown/mismatched version, an empty legacy root,
-      or an ambiguous pointer must return `InstallAmbiguous`, touch no runtime
-      root/pointer/session, and perform no promotion. A valid, quiescent root
-      with pointer observation `absent` must atomically adopt into
-      `active/<legacyId>` with pointer `present{generation,sha256}` and
-      `activeSessionRef = null`/`sessionState = not-running`; it must not emit
-      `CandidateReady`. Crash before move, after move before pointer creation,
-      and after pointer creation before receipt flush are separate red cases;
-      only an exact prepared identity may complete adoption, and no rollback or
-      cleanup is allowed for an ambiguous path.
+       `app_data_dir/runtimes/capture-runtime` present, a valid known-version
+       manifest/content but live owned listener/session, an unreadable or
+       reparse/path failure, an unknown/mismatched version, an empty legacy root,
+       or an ambiguous pointer must return `InstallAmbiguous`, touch no runtime
+       root/pointer/session, and perform no promotion. Before the move, the
+       `LegacyAdoptionPrepared` receipt must contain exact source, destination,
+       content, layout, pointer-intent, and move-phase fields as the spec's
+       closed populated variants (`none` only outside adoption). Exercise the
+       spec's phase-aware matrix: receipt lag after move/pointer creation is
+       recoverable only at its exact crash edge; a phase ahead of observed
+       operations is ambiguous. Exercise the
+       exact recovery cases: source exact/destination absent/pointer absent
+       continues the recorded move; source absent/destination exact/pointer
+       absent completes only the recorded pointer; source absent/destination
+       exact/pointer exact flushes `LegacyAdopted`. Both roots, unexpected or
+       any content/layout/pointer-intent/move-phase mismatch, reparse/unqueryable
+       evidence, or missing intent are `InstallAmbiguous` and touch nothing. A
+       valid, quiescent root adopts
+       to `active/<legacyId>` with pointer `present{generation,sha256}` and
+       `activeSessionRef = null`/`sessionState = not-running`; it never emits
+       `CandidateReady`. A later launch uses fresh whole-group refs/prepare.
    - Ordering proof (write first): verify the immutable candidate/root; call the
-     producer whole-group `prepare_group(immutable_plan, ReconcileRefSink)`;
-     persist and verify the complete group/root binding through
-     `persist_group_refs`/`verify_group_receipt`; flush the exact candidate
-     group ref/generation, `activationReceiptDigest`, and
-     `ActivationPermitV1` as `CandidatePrepared` before calling
-     `activate_group(prepared, permit)`. Wait for complete activation and the
-     loaded worker/readiness identity, then flush `CandidateReady`; only after
-     that flush `commitIntent` with the expected prior and intended candidate
-     pointer observations from the closed union `absent | present{generation,sha256}`;
+      exact producer `prepare_group(plan, sink) -> PreparedGroup`; the sink must
+      `persist`, `read_back`, and `verify` the complete ordered group/root
+      binding. Flush that complete binding and verified sink receipt as
+      `CandidatePrepared` before activation. `PreparedGroup` is opaque,
+      move-only, live-only, and nonserializable; never serialize or pass its
+      private permit through Cert. Call `activate_group(prepared)`, which
+      consumes the value and activates the whole group. Wait for all-root
+      loaded-worker/readiness identity, then flush `CandidateReady`; only after
+      that flush `commitIntent` with the expected prior and intended candidate
+      pointer observations from the closed union `absent | present{generation,sha256}`;
      lock and logically CAS/atomically replace and flush the pointer, then
      reread it; flush irreversible `NewActiveCommitted` only after an exact
      reread. First install (`prior = null`, prior observation `absent`) uses
@@ -439,17 +479,17 @@ manager or undiscovered target is a discovery-stop, never a green claim.
 
     | Receipt and observed pointer (`absent | present{generation,sha256}`) | Required result |
     | --- | --- |
-    | `CandidatePrepared` before activation/readiness, or candidate verification failed | Preserve active; reconcile only the exact candidate group/ref and clean only an exact recorded candidate/temp ref. Never flush `CandidateReady` or touch the pointer. |
-    | `CandidatePrepared` with an activation/readiness crash and an exact candidate group observation | Reconcile the candidate group only. Complete activation/readiness may resume only from the exact prepared group and permit; missing, partial, live, reused, unqueryable, or ambiguous observations remain `reconcile-required` and never become `CandidateReady`. |
-    | `CandidateReady`/no intent plus an observed pointer exactly matching the recorded prior observation | Pre-commit; do not commit; preserve active and invoke only `RuntimeSessionJournal::reconcile(candidateReconcileRef)` for exact candidate refs. Complete absence/listener/staging proof may terminalize; present, reused, unqueryable, or ambiguous observations remain `reconcile-required` and touch nothing. |
+    | `CandidatePrepared` before activation/readiness, or candidate verification failed | Preserve active; reconcile only the exact candidate ref and complete group/root binding observe-only, and clean only an exact recorded candidate/temp ref. Never deserialize/replay `PreparedGroup` or a permit, flush `CandidateReady`, or touch the pointer. After terminal/no-resource proof, any retry uses fresh refs/prepare. |
+    | `CandidatePrepared` with an activation/readiness crash and an exact candidate group observation | Never replay the old prepared value. If the original producer remains alive and verifies live ownership of the exact whole-group lease, the existing lease may continue semantically after fresh all-root readiness proof; otherwise reconcile the old ref observe-only. Producer restart/lost handle, partial, live-but-unverified, reused, unqueryable, or ambiguous observations remain `reconcile-required`; after terminal/no-resource proof, a new launch uses fresh refs/prepare. |
+    | `CandidateReady`/no intent plus an observed pointer exactly matching the recorded prior observation | Pre-commit; do not commit from the stale receipt; preserve active and invoke only `RuntimeSessionJournal::reconcile(candidateReconcileRef)` for exact candidate refs. Complete absence/listener/staging proof may terminalize; only a still-running original producer with verified live lease ownership may continue semantically after fresh all-root readiness proof. Never deserialize a permit or resume a serialized ready group; otherwise wait for terminal/no-resource proof and use fresh refs/prepare for any launch. |
     | `commitIntent` plus an observed pointer exactly matching the expected prior `PointerObservation` | No commit; preserve active; never treat intent as permission to replace. |
-    | `commitIntent` plus an observed pointer exactly matching the intended candidate `present{generation,sha256}` | Advance to `NewActiveCommitted`; if `prior = null`, advance directly to `RetiredProved` with `retirement.status = not_applicable`; otherwise persist `PriorRetiredDraining`. Never restore prior. |
+    | `commitIntent` plus an observed pointer exactly matching the intended candidate `present{generation,sha256}` | Advance to `NewActiveCommitted`; if `prior = null`, advance directly to `RetiredProved` with `retirement.status = not_applicable`, `priorReconcileRef = null`, and no degraded/block-next-promotion flag; if a real prior exists, persist `PriorRetiredDraining` before cleanup. Never restore prior. |
     | unexpected pointer observation or generation/hash conflict | `InstallAmbiguous`, degraded and blocked; retain refs/errors; on first install any unexpected `present{generation,sha256}` is a compare-and-create-if-absent conflict; no rollback/deletion. |
     | `NewActiveCommitted` with `prior = null` | Keep new active selected and advance directly to `RetiredProved` with `retirement.status = not_applicable`; keep degraded/block-next-promotion false and do not invent predecessor proof. |
     | post-commit state with a prior active | Keep new active selected/degraded and block the next promotion; invoke only `RuntimeSessionJournal::reconcile(priorReconcileRef)` for prior retirement proof. |
     | missing durable candidate/prior reconcile ref | Keep the applicable cleanup path independently recoverable; for prior retirement remain blocked and do not claim `RetiredProved` or delete prior. |
-    | `LegacyAdoptionPrepared` | Re-observe the legacy root and exact path-free identity. Complete only an exact recorded move followed by compare-and-create-if-absent; any live/unverifiable/path/pointer mismatch is `InstallAmbiguous` and touches no runtime bytes. |
-    | `LegacyAdopted` with `activeSessionRef = null`/`sessionState = not-running` | Keep `active/<legacyId>` selected, do not invent a group/ref, and require a later launch to run `prepare_group`/`activate_group` before it records a session ref. |
+    | `LegacyAdoptionPrepared` | Re-observe exact state-discriminated source, destination, content, layout, pointer intent, and move phase. Source exact/destination absent/pointer absent continues only the recorded move; source absent/destination exact/pointer absent completes only the recorded pointer; source absent/destination exact/pointer exact flushes `LegacyAdopted`. Both/unexpected/mismatch/reparse/unqueryable/missing intent is `InstallAmbiguous` and touches no runtime bytes. |
+    | `LegacyAdopted` with `activeSessionRef = null`/`sessionState = not-running` | Keep `active/<legacyId>` selected, never flush `CandidateReady`, do not invent a group/ref, and require a later launch to use fresh `prepare_group`/`activate_group`/all-root readiness before it records a new session ref. |
     | temp/root/backup/cache entry | Delete only the exact receipt cleanup ref whose identity/hash/size matches. |
 
     Startup reconciliation is owned by `RuntimePromotionStore`, not by
@@ -457,12 +497,17 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     every ordering edge and a second cleanup call that returns a real failure,
     not false success.
     Proposed focused Rust tests in `runtime_promotion.rs` are
-     `receipt_round_trips_path_free_promotion_fields`,
-     `candidate_prepared_persists_group_ref_generation_receipt_and_permit`,
-     `activate_group_and_readiness_precede_candidate_ready`,
-     `candidate_activation_failure_preserves_active_and_never_commits`,
-     `commit_intent_with_prior_pointer_does_not_commit`,
-     `commit_intent_with_candidate_pointer_advances_without_rollback`,
+      `receipt_round_trips_path_free_promotion_fields`,
+      `candidate_prepared_persists_complete_group_binding_and_verified_receipt_without_permit`,
+      `activate_group_and_all_root_readiness_precede_candidate_ready`,
+      `candidate_activation_failure_preserves_active_and_never_commits`,
+      `restart_never_replays_prepared_or_ready_group`,
+      `live_producer_lease_continues_only_with_verified_ownership`,
+      `producer_restart_requires_fresh_prepare_after_terminal_reconcile`,
+      `commit_intent_with_prior_pointer_does_not_commit`,
+      `commit_intent_with_candidate_pointer_advances_without_rollback`,
+      `committed_first_install_recovers_to_retired_proved_not_applicable`,
+      `committed_prior_recovers_to_prior_retired_draining`,
      `unexpected_pointer_is_install_ambiguous`,
     `distinct_candidate_and_prior_reconcile_refs_round_trip`,
     `candidate_precommit_cleanup_reconciles_without_prior_retirement`,
@@ -475,29 +520,36 @@ manager or undiscovered target is a discovery-stop, never a green claim.
      `legacy_live_root_is_install_ambiguous_without_touching`,
      `legacy_unverifiable_or_path_failure_is_install_ambiguous_without_touching`,
      `legacy_root_is_not_empty_for_create_if_absent`,
-     `legacy_adoption_crash_edges_reconcile_without_promotion`, and
+      `legacy_adoption_receipt_requires_exact_state_and_intent`,
+      `legacy_adoption_recovery_cases_are_state_discriminated`,
+      `legacy_adoption_crash_edges_reconcile_without_promotion`, and
      `legacy_adoption_launch_records_a_new_group_ref`.
    - Verification: `corepack pnpm nx run cert-prep-desktop:capture-candidate-gate-test --skip-nx-cache`;
      `corepack pnpm nx run cert-prep-desktop:cargo-test --skip-nx-cache`;
      `corepack pnpm nx run cert-prep-desktop:cargo-check --skip-nx-cache`;
      `corepack pnpm nx run cert-prep-desktop:typecheck-scripts --skip-nx-cache`;
      `corepack pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`.
-   - Stop condition: active bytes are mutated in place, a failed pre-commit step
-     damages active state, a post-commit cleanup path claims old-active
-     rollback, cache bytes are reused without verified digest/size, a second
-     `terminate_once`-style false success remains, `CandidateReady` or
-     `commitIntent` can be flushed before `activate_group` and loaded-worker/
-     readiness proof, the activation permit is reconstructed or applied to a
-     different group, a legacy root is migrated while live/unverifiable/
-     ambiguous, `InstallAmbiguous` is called restored without proof, an
-     ambiguous legacy path is touched, or the implementation invents a
-     target/path without discovery. Do not run D4.
+    - Stop condition: active bytes are mutated in place, a failed pre-commit step
+      damages active state, a post-commit cleanup path claims old-active
+      rollback, cache bytes are reused without verified digest/size, a second
+      `terminate_once`-style false success remains, `CandidateReady` or
+      `commitIntent` can be flushed before producer whole-group activation and
+      all-root readiness proof, a `PreparedGroup`, `GroupLease`, or private
+      permit is serialized/replayed by Cert, a stale receipt resumes an old
+      group after restart, or a fresh launch is attempted before old refs have
+      terminal/no-resource proof. Also stop if a legacy root is migrated while
+      live/unverifiable/ambiguous, the exact adoption receipt fields or pointer
+      intent are missing, `InstallAmbiguous` is called restored without proof,
+      an ambiguous legacy path is touched, or the implementation invents a
+      target/path without discovery. Do not run D4.
    - Rollback: before pointer commit, discard only isolated candidate staging
      proven to be slice-owned and leave active untouched. A failed or
      ambiguous legacy observation/adoption leaves
-     `app_data_dir/runtimes/capture-runtime` byte-for-byte untouched; only an
-     exact `LegacyAdoptionPrepared` identity may resume the recorded atomic
-     move, and there is no rollback after the pointer is created. After commit,
+      `app_data_dir/runtimes/capture-runtime` byte-for-byte untouched; only an
+      exact state-discriminated `LegacyAdoptionPrepared` receipt may continue
+      its recorded adoption move/pointer operation, and there is no rollback
+      after the pointer is created. A runtime `PreparedGroup` or `GroupLease`
+      is never resumed from a Cert receipt. After commit,
      do not roll back the old active; retain the new active, distinct
      candidate/prior reconcile/proof refs, degraded marker, and failure
      evidence while retrying/reconciling cleanup at next start. Additive revert
@@ -505,10 +557,11 @@ manager or undiscovered target is a discovery-stop, never a green claim.
      was restored without proof.
    - Commit boundary: `test(phase2): harden immutable candidate promotion`;
      record candidate/archive/runtime-worker identities, transaction state,
-     candidate/prior `ReconcileRef`, candidate group generation, activation
-     receipt digest/permit, the `prepare_group`/`activate_group`/readiness
-     ordering, legacy observation/adoption outcome, returned `proofSha256`
-     handling, and pre/post-commit evidence.
+      candidate/prior `ReconcileRef`, complete group/root binding, verified sink
+      receipt, the `prepare_group`/`activate_group`/all-root-readiness ordering,
+      restart ownership distinction, legacy observation/adoption outcome,
+      returned `proofSha256` handling, and pre/post-commit evidence. It must not
+      record a private activation permit, prepared value, or live lease.
 
 - [ ] **Slice 4.5: migrate the schema-1 acceptance manifest to the producer's
       semantic result and handoff.** Keep the current
@@ -666,9 +719,11 @@ manager or undiscovered target is a discovery-stop, never a green claim.
   - Prerequisite: Slice 4 identity/root failure proofs are green and the
     producer session contract is available.
   - Red proof (write first): candidate readiness failure must terminate/prove
-    only the candidate; active readiness and capture remain usable. A successful
-    commit enters `PriorRetiredDraining`; it must not claim the old session is
-    retired until producer proof reaches `RetiredProved`. A post-commit cleanup
+      only the candidate; active readiness and capture remain usable. A successful
+      commit with a real prior enters `PriorRetiredDraining`; first install
+      (`prior = null`) advances directly to `RetiredProved`/`not_applicable`.
+      A real prior must not be claimed retired until producer proof reaches
+      `RetiredProved`. A post-commit cleanup
       failure keeps the new active selected/degraded, retains the exact producer
        distinct candidate/prior reconcile refs and returned `proofSha256` values,
        blocks the next promotion, and retries at next start. A second cleanup
@@ -676,9 +731,15 @@ manager or undiscovered target is a discovery-stop, never a green claim.
      failure when proof is not available, never a false success from a
      consumed `FnOnce`. The adapter receives only the opaque producer
      `ReconcileRef` for the phase it owns and calls
-     `RuntimeSessionJournal::reconcile(ref)`; it never assumes a local handle
-     or substitutes candidate proof for prior retirement proof.
-     A caller must not receive a native handle, bearer token, PID, or URL.
+      `RuntimeSessionJournal::reconcile(ref)`; it never assumes a local handle
+      or substitutes candidate proof for prior retirement proof.
+      On Cert restart, a still-running original producer may continue an
+      existing live lease only when its exact ownership and all-root readiness
+      are freshly verified; Cert never deserializes a permit or resumes a
+      prepared/ready receipt. Producer restart or lost handle requires
+      observe-only reconciliation and fresh refs/prepare after
+      terminal/no-resource proof.
+      A caller must not receive a native handle, bearer token, PID, or URL.
   - Verification: `corepack pnpm nx run cert-prep-desktop:cargo-test --skip-nx-cache`;
      `corepack pnpm nx run cert-prep-desktop:cargo-check --skip-nx-cache`;
      `corepack pnpm nx run cert-prep-desktop:typecheck-scripts --skip-nx-cache`.
@@ -735,15 +796,21 @@ manager or undiscovered target is a discovery-stop, never a green claim.
      baseline survive, durable source/review/domain rows reload, and Cert never
      overlaps the LAW model slot. Also crash the store at every promotion
       edge: `commitIntent` plus prior pointer must not commit; `commitIntent`
-      plus candidate pointer must advance and persist `PriorRetiredDraining`;
+      plus exact candidate pointer must advance to `NewActiveCommitted`, then
+      to `RetiredProved`/`not_applicable` when `prior = null`, or persist
+      `PriorRetiredDraining` when a real prior exists;
       candidate pre-commit cleanup must use only its candidate ref; prior
       post-commit retirement must use only its prior ref; absent/listener/staging
       proof may advance each independently; present, reused, unqueryable, or
       ambiguous observations must remain `reconcile-required`/degraded;
       unexpected pointers must be `InstallAmbiguous`; a missing producer ref
       must stay blocked on the applicable prior-retirement path (first install
-      has no prior ref and is `not_applicable`); and temp/root/backup/cache
-      deletion must use exact cleanup refs only.
+      has no prior ref and is `not_applicable`); restart must never replay a
+      prepared/ready value or private permit, and only a verified live lease
+      owned by the still-running original producer may continue semantically;
+      producer restart/lost handle requires terminal/no-resource proof before
+      fresh prepare; temp/root/backup/cache deletion must use exact cleanup refs
+      only.
   - Verification: `corepack pnpm nx run cert-prep-backend:test --skip-nx-cache`;
      `corepack pnpm nx run cert-prep-desktop:cargo-test --skip-nx-cache`;
      `corepack pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`;
@@ -1019,17 +1086,21 @@ manager or undiscovered target is a discovery-stop, never a green claim.
    `anchorOnly` and `parseOcrAnchorExpectation`, and a garbage-around-anchors
    result must not receive CER 0. Synthetic anchor-only fixtures are unit-only.
 - Promotion is `CandidatePrepared -> CandidateReady -> NewActiveCommitted ->
-   RetiredProved` for first install (`prior = null`) and
-   `CandidatePrepared -> CandidateReady -> NewActiveCommitted ->
-   PriorRetiredDraining -> RetiredProved` for later promotions. Pointer
-   observations use the closed union `absent | present{generation,sha256}` in
-   the receipt, intent, logical CAS, reread, and crash matrix. Persist the
-   candidate whole-group `groupRef`/`groupGeneration`, activation receipt
-   digest, and producer-supplied `ActivationPermitV1` through the producer
-   `ReconcileRefSink` before activation; call producer `activate_group`, wait
-   for loaded-worker/readiness identity, and only then flush `CandidateReady`.
-   Candidate/prior group and reconcile refs are distinct and no `ProofRef`
-   exists. First install
+    RetiredProved` for first install (`prior = null`) and
+    `CandidatePrepared -> CandidateReady -> NewActiveCommitted ->
+    PriorRetiredDraining -> RetiredProved` for later promotions. Pointer
+    observations use the closed union `absent | present{generation,sha256}` in
+    the receipt, intent, logical CAS, reread, and crash matrix. Persist the
+    complete candidate group/root binding and verified sink receipt through the
+    producer `ReconcileRefSink` before activation; call producer
+    `activate_group(prepared)` with its live-only move-only `PreparedGroup`,
+    wait for all-root loaded-worker/readiness identity, and only then flush
+    `CandidateReady`. The private permit inside `PreparedGroup` is never
+    serialized or persisted by Cert. Candidate/prior group and reconcile refs
+    are distinct and no `ProofRef` exists. On restart, only a verified live
+    lease owned by the still-running original producer may continue
+    semantically; otherwise old refs reconcile observe-only and fresh
+    refs/prepare follow terminal/no-resource proof. First install
   uses compare-and-create-if-absent with prior observation `absent`,
   `retirement.status = not_applicable`, keeps degraded/block-next-promotion
   false, and requires no predecessor proof. For a later promotion, the new
