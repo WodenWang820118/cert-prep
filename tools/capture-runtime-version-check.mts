@@ -8,9 +8,31 @@ import {
   CAPTURE_RUNTIME_PACKAGE_NAME,
   CAPTURE_RUNTIME_VERSION,
 } from './capture-runtime-version.mts';
+import {
+  CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS,
+  captureRuntimeConsumerSnapshot,
+  createCaptureRuntimeConsumerDiskSource,
+  readCaptureRuntimeConsumerSnapshot,
+  type CaptureRuntimeConsumerSnapshot,
+  type CaptureRuntimeConsumerSource,
+  verifyCaptureRuntimeConsumerSnapshot,
+} from './capture-runtime-consumer-source.mts';
 
 function read(workspaceRoot: string, relativePath: string): string {
   return readFileSync(join(workspaceRoot, relativePath), 'utf8');
+}
+
+function readSource(
+  source: CaptureRuntimeConsumerSource,
+  relativePath: (typeof CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS)[number],
+): string {
+  const file = source.readFile(relativePath);
+  if (file.kind !== 'file' || file.bytes === undefined) {
+    throw new Error(
+      `Capture Runtime consumer source ${relativePath} is ${file.kind}; expected a regular file.`,
+    );
+  }
+  return new TextDecoder().decode(file.bytes);
 }
 
 function requireMatch(
@@ -314,7 +336,7 @@ function field(
 }
 
 function present(
-  workspaceRoot: string,
+  sourceReader: CaptureRuntimeConsumerSource,
   relativePath: string,
   expression: RegExp,
   key: CaptureRuntimeConsumerInventoryKey,
@@ -324,9 +346,10 @@ function present(
     ? expression.flags
     : `${expression.flags}g`;
   const matches = [
-    ...read(workspaceRoot, relativePath).matchAll(
-      new RegExp(expression.source, flags),
-    ),
+    ...readSource(
+      sourceReader,
+      relativePath as (typeof CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS)[number],
+    ).matchAll(new RegExp(expression.source, flags)),
   ];
   return field(
     key,
@@ -424,15 +447,57 @@ export function readCaptureRuntimeConsumerInventory(
   workspaceRoot: string,
   contract: CaptureRuntimeContractSource,
 ): CaptureRuntimeConsumerInventoryInput {
+  return readCaptureRuntimeConsumerInventoryFromSource(
+    createCaptureRuntimeConsumerDiskSource(workspaceRoot),
+    contract,
+  );
+}
+
+export function captureRuntimeConsumerSnapshotFromWorkspace(
+  workspaceRoot: string,
+  sourceHead: string,
+): CaptureRuntimeConsumerSnapshot {
+  return captureRuntimeConsumerSnapshot(
+    createCaptureRuntimeConsumerDiskSource(workspaceRoot),
+    sourceHead,
+  );
+}
+
+export function readCaptureRuntimeConsumerInventoryFromSnapshot(
+  snapshot: CaptureRuntimeConsumerSnapshot,
+  contract: CaptureRuntimeContractSource,
+): CaptureRuntimeConsumerInventoryInput {
+  return readCaptureRuntimeConsumerInventoryFromSource(
+    readCaptureRuntimeConsumerSnapshot(snapshot),
+    contract,
+  );
+}
+
+export function verifyCaptureRuntimeConsumerSnapshotAgainstWorkspace(
+  snapshot: CaptureRuntimeConsumerSnapshot,
+  workspaceRoot: string,
+  currentSourceHead: string,
+): void {
+  verifyCaptureRuntimeConsumerSnapshot(
+    snapshot,
+    createCaptureRuntimeConsumerDiskSource(workspaceRoot),
+    currentSourceHead,
+  );
+}
+
+function readCaptureRuntimeConsumerInventoryFromSource(
+  sourceReader: CaptureRuntimeConsumerSource,
+  contract: CaptureRuntimeContractSource,
+): CaptureRuntimeConsumerInventoryInput {
   const sourceErrors: string[] = [];
-  const packageManifestContent = read(workspaceRoot, 'package.json');
+  const packageManifestContent = readSource(sourceReader, 'package.json');
   JSON.parse(packageManifestContent) as {
     dependencies?: Record<string, unknown>;
   };
-  const workspace = read(workspaceRoot, 'pnpm-workspace.yaml');
-  const pnpmLock = read(workspaceRoot, 'pnpm-lock.yaml');
-  const versionSource = read(
-    workspaceRoot,
+  const workspace = readSource(sourceReader, 'pnpm-workspace.yaml');
+  const pnpmLock = readSource(sourceReader, 'pnpm-lock.yaml');
+  const versionSource = readSource(
+    sourceReader,
     'tools/capture-runtime-version.mts',
   );
   const backendPolicy =
@@ -461,7 +526,10 @@ export function readCaptureRuntimeConsumerInventory(
     'apps/cert-prep/src/app/pages/capture-workbench-trial/cert-prep-capture-client.ts';
   const generated = 'libs/cert-prep-api/src/lib/cert-prep-api.generated.ts';
 
-  const cargoLockContent = read(workspaceRoot, desktopCargoLock);
+  const cargoLockContent = readSource(
+    sourceReader,
+    desktopCargoLock as (typeof CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS)[number],
+  );
   const packageUi = CAPTURE_RUNTIME_PACKAGE_NAME;
   const packageClient = CAPTURE_RUNTIME_CLIENT_PACKAGE_NAME;
   const workspaceValue = (packageName: string): string | undefined =>
@@ -488,9 +556,18 @@ export function readCaptureRuntimeConsumerInventory(
     `pnpm-lock.yaml:${packageClient}`,
     sourceErrors,
   );
-  const runtimeProvenanceContent = read(workspaceRoot, runtimeProvenance);
-  const desktopLaunchContent = read(workspaceRoot, desktopLaunch);
-  const generatedContent = read(workspaceRoot, generated);
+  const runtimeProvenanceContent = readSource(
+    sourceReader,
+    runtimeProvenance as (typeof CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS)[number],
+  );
+  const desktopLaunchContent = readSource(
+    sourceReader,
+    desktopLaunch as (typeof CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS)[number],
+  );
+  const generatedContent = readSource(
+    sourceReader,
+    generated as (typeof CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS)[number],
+  );
 
   return {
     contract,
@@ -550,7 +627,7 @@ export function readCaptureRuntimeConsumerInventory(
         'cert.backend.pythonClient',
         'apps/cert-prep-backend/pyproject.toml:capture-runtime-client',
         captureSingle(
-          read(workspaceRoot, 'apps/cert-prep-backend/pyproject.toml'),
+          readSource(sourceReader, 'apps/cert-prep-backend/pyproject.toml'),
           /capture-runtime-client==([^\s,"']+)/u,
           'apps/cert-prep-backend/pyproject.toml:capture-runtime-client',
           sourceErrors,
@@ -560,28 +637,28 @@ export function readCaptureRuntimeConsumerInventory(
         'cert.backend.uvLock',
         'apps/cert-prep-backend/uv.lock:capture-runtime-client',
         packageBlockVersion(
-          read(workspaceRoot, 'apps/cert-prep-backend/uv.lock'),
+          readSource(sourceReader, 'apps/cert-prep-backend/uv.lock'),
           'capture-runtime-client',
           sourceErrors,
           'apps/cert-prep-backend/uv.lock',
         ),
       ),
       present(
-        workspaceRoot,
+        sourceReader,
         backendPolicy,
         /SUPPORTED_RUNTIME_VERSION = CAPTURE_RUNTIME_VERSION/u,
         'cert.backend.runtimePolicy',
         'SUPPORTED_RUNTIME_VERSION',
       ),
       present(
-        workspaceRoot,
+        sourceReader,
         backendMapping,
         /from capture_runtime_client import/u,
         'cert.backend.mapping',
         'capture_runtime_client import',
       ),
       present(
-        workspaceRoot,
+        sourceReader,
         backendClient,
         /SdkCaptureRuntimeClient/u,
         'cert.backend.client',
@@ -600,7 +677,10 @@ export function readCaptureRuntimeConsumerInventory(
         'cert.desktop.constants.runtime',
         `${desktopConstants}:CAPTURE_RUNTIME_VERSION`,
         captureSingle(
-          read(workspaceRoot, desktopConstants),
+          readSource(
+            sourceReader,
+            desktopConstants as (typeof CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS)[number],
+          ),
           /CAPTURE_RUNTIME_VERSION: &str = "([^"]+)"/u,
           `${desktopConstants}:CAPTURE_RUNTIME_VERSION`,
           sourceErrors,
@@ -610,7 +690,10 @@ export function readCaptureRuntimeConsumerInventory(
         'cert.desktop.constants.api',
         `${desktopConstants}:CAPTURE_RUNTIME_API_VERSION`,
         captureSingle(
-          read(workspaceRoot, desktopConstants),
+          readSource(
+            sourceReader,
+            desktopConstants as (typeof CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS)[number],
+          ),
           /CAPTURE_RUNTIME_API_VERSION: &str = "([^"]+)"/u,
           `${desktopConstants}:CAPTURE_RUNTIME_API_VERSION`,
           sourceErrors,
@@ -620,7 +703,10 @@ export function readCaptureRuntimeConsumerInventory(
         'cert.desktop.constants.documentSchema',
         `${desktopConstants}:CAPTURE_DOCUMENT_SCHEMA_VERSION`,
         captureSingle(
-          read(workspaceRoot, desktopConstants),
+          readSource(
+            sourceReader,
+            desktopConstants as (typeof CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS)[number],
+          ),
           /CAPTURE_DOCUMENT_SCHEMA_VERSION: &str = "([^"]+)"/u,
           `${desktopConstants}:CAPTURE_DOCUMENT_SCHEMA_VERSION`,
           sourceErrors,
@@ -630,7 +716,10 @@ export function readCaptureRuntimeConsumerInventory(
         'cert.desktop.cargoToml',
         `${desktopCargo}:capture-sidecar-launcher`,
         captureSingle(
-          read(workspaceRoot, desktopCargo),
+          readSource(
+            sourceReader,
+            desktopCargo as (typeof CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS)[number],
+          ),
           /capture-sidecar-launcher\s*=\s*"([^"]+)"/u,
           `${desktopCargo}:capture-sidecar-launcher`,
           sourceErrors,
@@ -650,21 +739,24 @@ export function readCaptureRuntimeConsumerInventory(
         'cert.desktop.projectRuntime',
         `${desktopProject}:outputs`,
         captureSingle(
-          read(workspaceRoot, desktopProject),
+          readSource(
+            sourceReader,
+            desktopProject as (typeof CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS)[number],
+          ),
           /capture-runtime\/(\d+\.\d+\.\d+(?:-[^"/]+)?)/u,
           `${desktopProject}:outputs`,
           sourceErrors,
         ),
       ),
       present(
-        workspaceRoot,
+        sourceReader,
         desktopManifest,
         /capture_manifest_expectations[\s\S]*capture_runtime_expected_version/u,
         'cert.desktop.captureManifest',
         'capture_manifest_expectations/capture_runtime_expected_version',
       ),
       present(
-        workspaceRoot,
+        sourceReader,
         desktopManifests,
         /RuntimeManifest[\s\S]*verify_artifact/u,
         'cert.desktop.manifests',
@@ -680,35 +772,35 @@ export function readCaptureRuntimeConsumerInventory(
           : undefined,
       ),
       present(
-        workspaceRoot,
+        sourceReader,
         desktopConnection,
         /CaptureRuntimeConnection/u,
         'cert.desktop.captureRuntimeConnection',
         'CaptureRuntimeConnection',
       ),
       present(
-        workspaceRoot,
+        sourceReader,
         packageQa,
         /from ['"]\.\.\/\.\.\/\.\.\/\.\.\/tools\/capture-runtime-version\.mts['"]/u,
         'cert.desktop.packageQa',
         'capture-runtime-version import',
       ),
       present(
-        workspaceRoot,
+        sourceReader,
         installScript,
         /from ['"]\.\/capture-runtime-version\.mts['"]/u,
         'cert.installScript',
         'capture-runtime-version import',
       ),
       present(
-        workspaceRoot,
+        sourceReader,
         consumerSmoke,
         /CAPTURE_RUNTIME_RELEASE_BASE_URL/u,
         'cert.consumerSmoke',
         'CAPTURE_RUNTIME_RELEASE_BASE_URL',
       ),
       present(
-        workspaceRoot,
+        sourceReader,
         frontendCompatibility,
         /assertCaptureRuntimeCompatible\(ready, CAPTURE_RUNTIME_MAJOR, 'host'\)/u,
         'cert.frontendCompatibility',

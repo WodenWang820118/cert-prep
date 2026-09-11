@@ -5,7 +5,9 @@ import {
   mkdtempSync,
   mkdirSync,
   readFileSync,
+  renameSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -15,11 +17,21 @@ import { test } from 'node:test';
 import {
   assertCaptureRuntimeConsumerVersions,
   CAPTURE_RUNTIME_CONSUMER_INVENTORY_FIELDS,
+  captureRuntimeConsumerSnapshotFromWorkspace,
   inspectCaptureRuntimeConsumerInventory,
   readCaptureRuntimeConsumerInventory,
+  readCaptureRuntimeConsumerInventoryFromSnapshot,
+  verifyCaptureRuntimeConsumerSnapshotAgainstWorkspace,
   type CaptureRuntimeContractSource,
   type CaptureRuntimeConsumerInventoryEntry,
 } from './capture-runtime-version-check.mts';
+import {
+  CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS,
+  captureRuntimeConsumerSnapshot,
+  readCaptureRuntimeConsumerSnapshot,
+  type CaptureRuntimeConsumerSnapshotFile,
+  type CaptureRuntimeConsumerSource,
+} from './capture-runtime-consumer-source.mts';
 
 const CONTRACT_FIXTURE = JSON.stringify({
   contractSetVersion: '2',
@@ -58,32 +70,6 @@ const CONTRACT_FIXTURE = JSON.stringify({
     },
   ],
 });
-
-const INVENTORY_SOURCE_PATHS = [
-  'package.json',
-  'pnpm-workspace.yaml',
-  'pnpm-lock.yaml',
-  'tools/capture-runtime-version.mts',
-  'apps/cert-prep-backend/pyproject.toml',
-  'apps/cert-prep-backend/uv.lock',
-  'apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/runtime_policy.py',
-  'apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/mapping.py',
-  'apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/client.py',
-  'apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/runtime_provenance.py',
-  'apps/cert-prep-desktop/src-tauri/src/constants.rs',
-  'apps/cert-prep-desktop/src-tauri/Cargo.toml',
-  'apps/cert-prep-desktop/src-tauri/Cargo.lock',
-  'apps/cert-prep-desktop/project.json',
-  'apps/cert-prep-desktop/src-tauri/src/capture_manifest.rs',
-  'apps/cert-prep-desktop/src-tauri/src/manifests.rs',
-  'apps/cert-prep-desktop/src-tauri/src/backend_process.rs',
-  'apps/cert-prep-desktop/src-tauri/src/capture_runtime.rs',
-  'apps/cert-prep-desktop/scripts/package-qa/constants.mts',
-  'tools/install-capture-runtime.mts',
-  'tools/capture-runtime-consumer-smoke.mts',
-  'apps/cert-prep/src/app/pages/capture-workbench-trial/cert-prep-capture-client.ts',
-  'libs/cert-prep-api/src/lib/cert-prep-api.generated.ts',
-] as const;
 
 function sha256(value: Uint8Array): string {
   return createHash('sha256').update(value).digest('hex');
@@ -127,7 +113,7 @@ function inventoryInput(entries = validEntries(), source = contractSource()) {
 function withInventoryWorkspace<T>(callback: (workspaceRoot: string) => T): T {
   const workspaceRoot = mkdtempSync(join(tmpdir(), 'cert-inventory-'));
   try {
-    for (const relativePath of INVENTORY_SOURCE_PATHS) {
+    for (const relativePath of CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS) {
       const target = join(workspaceRoot, relativePath);
       mkdirSync(dirname(target), { recursive: true });
       cpSync(join(process.cwd(), relativePath), target);
@@ -135,6 +121,46 @@ function withInventoryWorkspace<T>(callback: (workspaceRoot: string) => T): T {
     return callback(workspaceRoot);
   } finally {
     rmSync(workspaceRoot, { recursive: true, force: true });
+  }
+}
+
+function withDirectoryJunction<T>(
+  workspaceRoot: string,
+  relativeDirectory: 'apps' | 'tools',
+  outsideWorkspace: boolean,
+  callback: () => T,
+): T {
+  const directory = join(workspaceRoot, relativeDirectory);
+  const backup = join(workspaceRoot, `${relativeDirectory}-original`);
+  const outsideRoot = outsideWorkspace
+    ? mkdtempSync(join(tmpdir(), 'cert-consumer-junction-outside-'))
+    : undefined;
+  const target = outsideRoot ? join(outsideRoot, relativeDirectory) : backup;
+  renameSync(directory, backup);
+  if (outsideRoot) renameSync(backup, target);
+  try {
+    symlinkSync(target, directory, 'junction');
+    return callback();
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+    renameSync(target, directory);
+    if (outsideRoot) rmSync(outsideRoot, { recursive: true, force: true });
+  }
+}
+
+function cloneSnapshot<T extends { readonly files: readonly unknown[] }>(
+  snapshot: T,
+): T {
+  return structuredClone(snapshot);
+}
+
+function rewriteRuntimeVersion(workspaceRoot: string, version: string): void {
+  for (const relativePath of CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS) {
+    const path = join(workspaceRoot, relativePath);
+    writeFileSync(
+      path,
+      readFileSync(path, 'utf8').replaceAll('0.4.1', version),
+    );
   }
 }
 
@@ -398,6 +424,289 @@ test('the current installed 0.4.1 owners are reported blocked against the 0.4.2 
   assert.equal(report.expectedRuntimeVersion, '0.4.2');
   assert.doesNotMatch(report.errors.join('\n'), /missing inventory owner/u);
   assert.ok(report.errors.some((error) => error.includes('0.4.1')));
+});
+
+test('a canonical snapshot reads the same inventory and survives workspace mutation', () => {
+  withInventoryWorkspace((workspaceRoot) => {
+    const snapshot = captureRuntimeConsumerSnapshotFromWorkspace(
+      workspaceRoot,
+      'synthetic-consumer-head-1',
+    );
+    const repeatedSnapshot = captureRuntimeConsumerSnapshotFromWorkspace(
+      workspaceRoot,
+      'synthetic-consumer-head-1',
+    );
+    const diskInput = readCaptureRuntimeConsumerInventory(
+      workspaceRoot,
+      contractSource(),
+    );
+    const snapshotInput = readCaptureRuntimeConsumerInventoryFromSnapshot(
+      snapshot,
+      contractSource(),
+    );
+    const snapshotReport =
+      inspectCaptureRuntimeConsumerInventory(snapshotInput);
+
+    assert.equal(
+      snapshot.files.length,
+      CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS.length,
+    );
+    assert.equal(CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS.length, 23);
+    assert.equal(CAPTURE_RUNTIME_CONSUMER_INVENTORY_FIELDS.length, 29);
+    assert.equal(repeatedSnapshot.aggregateSha256, snapshot.aggregateSha256);
+    assert.deepEqual(repeatedSnapshot.files, snapshot.files);
+    assert.deepEqual(snapshotInput.entries, diskInput.entries);
+    assert.deepEqual(snapshotInput.sourceErrors, diskInput.sourceErrors);
+    assert.equal(snapshotReport.status, 'blocked');
+    assert.equal(snapshotReport.expectedRuntimeVersion, '0.4.2');
+    assert.ok(snapshotReport.errors.some((error) => error.includes('0.4.1')));
+
+    rewriteRuntimeVersion(workspaceRoot, '0.4.2');
+    assert.deepEqual(
+      readCaptureRuntimeConsumerInventoryFromSnapshot(
+        snapshot,
+        contractSource(),
+      ).entries,
+      snapshotInput.entries,
+    );
+    assert.throws(
+      () =>
+        verifyCaptureRuntimeConsumerSnapshotAgainstWorkspace(
+          snapshot,
+          workspaceRoot,
+          'synthetic-consumer-head-1',
+        ),
+      /source drifted/u,
+    );
+    assert.throws(
+      () =>
+        verifyCaptureRuntimeConsumerSnapshotAgainstWorkspace(
+          snapshot,
+          workspaceRoot,
+          'synthetic-consumer-head-2',
+        ),
+      /sourceHead is stale/u,
+    );
+
+    rmSync(join(workspaceRoot, 'package.json'));
+    assert.deepEqual(
+      readCaptureRuntimeConsumerInventoryFromSnapshot(
+        snapshot,
+        contractSource(),
+      ).entries,
+      snapshotInput.entries,
+    );
+    assert.throws(
+      () =>
+        verifyCaptureRuntimeConsumerSnapshotAgainstWorkspace(
+          snapshot,
+          workspaceRoot,
+          'synthetic-consumer-head-1',
+        ),
+      /package\.json is missing/u,
+    );
+  });
+});
+
+test('a consistent synthetic 0.4.2 workspace has identical disk and snapshot reports', () => {
+  withInventoryWorkspace((workspaceRoot) => {
+    rewriteRuntimeVersion(workspaceRoot, '0.4.2');
+    const snapshot = captureRuntimeConsumerSnapshotFromWorkspace(
+      workspaceRoot,
+      'synthetic-consumer-head-2',
+    );
+    const diskReport = inspectCaptureRuntimeConsumerInventory(
+      readCaptureRuntimeConsumerInventory(workspaceRoot, contractSource()),
+    );
+    const snapshotReport = inspectCaptureRuntimeConsumerInventory(
+      readCaptureRuntimeConsumerInventoryFromSnapshot(
+        snapshot,
+        contractSource(),
+      ),
+    );
+
+    assert.equal(diskReport.status, 'ready');
+    assert.deepEqual(snapshotReport, diskReport);
+
+    const packagePath = join(workspaceRoot, 'package.json');
+    writeFileSync(packagePath, `${readFileSync(packagePath, 'utf8')}\n`);
+    assert.throws(
+      () =>
+        verifyCaptureRuntimeConsumerSnapshotAgainstWorkspace(
+          snapshot,
+          workspaceRoot,
+          'synthetic-consumer-head-2',
+        ),
+      /source drifted at package\.json/u,
+    );
+  });
+});
+
+test('snapshot validation rejects missing, extra, duplicate, traversal, byte, and digest tampering', () => {
+  withInventoryWorkspace((workspaceRoot) => {
+    const snapshot = captureRuntimeConsumerSnapshotFromWorkspace(
+      workspaceRoot,
+      'synthetic-consumer-head-3',
+    );
+    const missing = cloneSnapshot(snapshot) as typeof snapshot;
+    (missing.files as CaptureRuntimeConsumerSnapshotFile[]).pop();
+    assert.throws(
+      () => readCaptureRuntimeConsumerSnapshot(missing),
+      /exactly .* files/u,
+    );
+
+    const extra = cloneSnapshot(snapshot) as typeof snapshot;
+    (extra.files as CaptureRuntimeConsumerSnapshotFile[]).push(
+      structuredClone(extra.files[0]),
+    );
+    assert.throws(
+      () => readCaptureRuntimeConsumerSnapshot(extra),
+      /exactly .* files/u,
+    );
+
+    const duplicate = cloneSnapshot(snapshot) as typeof snapshot;
+    (duplicate.files as CaptureRuntimeConsumerSnapshotFile[])[1] =
+      structuredClone(duplicate.files[0]);
+    assert.throws(
+      () => readCaptureRuntimeConsumerSnapshot(duplicate),
+      /canonical at index 1/u,
+    );
+
+    const traversal = cloneSnapshot(snapshot) as typeof snapshot;
+    (traversal.files as Array<{ path: string }>)[0].path = '../package.json';
+    assert.throws(
+      () => readCaptureRuntimeConsumerSnapshot(traversal),
+      /outside the canonical registry/u,
+    );
+
+    const bytes = cloneSnapshot(snapshot) as typeof snapshot;
+    (bytes.files[0].bytes as Uint8Array)[0] ^= 1;
+    assert.throws(
+      () => readCaptureRuntimeConsumerSnapshot(bytes),
+      /bytes do not match/u,
+    );
+
+    const digest = cloneSnapshot(snapshot) as typeof snapshot;
+    (digest as { aggregateSha256: string }).aggregateSha256 = '0'.repeat(64);
+    assert.throws(
+      () => readCaptureRuntimeConsumerSnapshot(digest),
+      /aggregate SHA-256/u,
+    );
+  });
+});
+
+test('snapshot capture rejects symlink, missing, and non-file source owners', () => {
+  withInventoryWorkspace((workspaceRoot) => {
+    const baseline = captureRuntimeConsumerSnapshotFromWorkspace(
+      workspaceRoot,
+      'synthetic-consumer-head-4',
+    );
+    const baselineSource = readCaptureRuntimeConsumerSnapshot(baseline);
+    const alteredSource = (
+      kind: 'symlink' | 'missing' | 'other',
+    ): CaptureRuntimeConsumerSource => ({
+      readFile(path) {
+        if (path === CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS[0]) {
+          return { kind };
+        }
+        return baselineSource.readFile(path);
+      },
+    });
+
+    for (const kind of ['symlink', 'missing', 'other'] as const) {
+      assert.throws(
+        () =>
+          captureRuntimeConsumerSnapshot(
+            alteredSource(kind),
+            'synthetic-consumer-head-4',
+          ),
+        new RegExp(`${kind}.*regular file`, 'u'),
+      );
+    }
+  });
+});
+
+test('disk source rejects parent junctions before reading ordinary child files', (testContext) => {
+  withInventoryWorkspace((workspaceRoot) => {
+    for (const relativeDirectory of ['apps', 'tools'] as const) {
+      for (const outsideWorkspace of [false, true]) {
+        try {
+          withDirectoryJunction(
+            workspaceRoot,
+            relativeDirectory,
+            outsideWorkspace,
+            () =>
+              assert.throws(
+                () =>
+                  captureRuntimeConsumerSnapshotFromWorkspace(
+                    workspaceRoot,
+                    `junction-${relativeDirectory}-${outsideWorkspace}`,
+                  ),
+                new RegExp(`${relativeDirectory}.*symlink.*regular file`, 'u'),
+              ),
+          );
+        } catch (error) {
+          if (
+            error &&
+            typeof error === 'object' &&
+            'code' in error &&
+            (error.code === 'EPERM' || error.code === 'EACCES')
+          ) {
+            testContext.skip(
+              `junction creation unavailable: ${String(error.code)}`,
+            );
+            return;
+          }
+          throw error;
+        }
+      }
+    }
+  });
+});
+
+test('the canonical source registry cannot be mutated at runtime', () => {
+  const original = [...CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS];
+  const mutableView =
+    CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS as unknown as string[];
+  assert.throws(() => mutableView.push('unexpected.ts'), TypeError);
+  assert.throws(() => mutableView.sort(), TypeError);
+  assert.throws(() => {
+    mutableView[0] = 'unexpected.ts';
+  }, TypeError);
+  assert.deepEqual([...CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS], original);
+});
+
+test('snapshot capture copies source bytes and rejects mutation of its own bytes', () => {
+  withInventoryWorkspace((workspaceRoot) => {
+    const original = captureRuntimeConsumerSnapshotFromWorkspace(
+      workspaceRoot,
+      'synthetic-consumer-head-5',
+    );
+    const bytesByPath = new Map(
+      original.files.map((file) => [file.path, Uint8Array.from(file.bytes)]),
+    );
+    const mutableSource: CaptureRuntimeConsumerSource = {
+      readFile(path) {
+        return { kind: 'file', bytes: bytesByPath.get(path) };
+      },
+    };
+    const captured = captureRuntimeConsumerSnapshot(
+      mutableSource,
+      'synthetic-consumer-head-5',
+    );
+    const mutablePackageBytes = bytesByPath.get(
+      CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS[0],
+    );
+    assert.ok(mutablePackageBytes);
+    mutablePackageBytes[0] ^= 1;
+    assert.equal(sha256(captured.files[0].bytes), original.files[0].sha256);
+
+    (captured.files[0].bytes as Uint8Array)[0] ^= 1;
+    assert.throws(
+      () => readCaptureRuntimeConsumerSnapshot(captured),
+      /bytes do not match/u,
+    );
+  });
 });
 
 test('the lock reader separates package and snapshot ownership', () => {
