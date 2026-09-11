@@ -187,6 +187,46 @@ def build_ocr_summary(
     )
 
 
+def validate_ocr_projection_provenance(
+    projection: object,
+    *,
+    expected_engine: str,
+) -> None:
+    """Validate the projection provenance before durable document publication.
+
+    The coordinator normally calls ``build_ocr_summary`` before persistence.
+    The public publication seam also accepts a projection directly, so it
+    reuses the same provenance mapper here rather than trusting a document's
+    engine string to authenticate projection evidence.
+    """
+
+    if expected_engine != "windowsml-ocr":
+        raise OcrSummaryValidationError("Document extraction provenance is not canonical OCR.")
+    runtime_version = _required_string(projection, "runtime_version")
+    contract_sha256 = _required_string(projection, "contract_sha256")
+    expected = _map_provenance(
+        _required_field(projection, "provenance"),
+        runtime_version=runtime_version,
+        contract_sha256=contract_sha256,
+    )
+    if not isinstance(expected.root, CaptureOcrResolvedProvenanceRead):
+        raise OcrSummaryValidationError("Resolved OCR provenance is required for publication.")
+    if expected.root.engine != expected_engine:
+        raise OcrSummaryValidationError("OCR projection provenance does not match the document engine.")
+
+    pages = _required_field(projection, "pages")
+    if not isinstance(pages, list):
+        raise OcrSummaryValidationError("OCR projection pages are invalid.")
+    for page in pages:
+        page_provenance = _map_provenance(
+            _required_field(page, "provenance"),
+            runtime_version=runtime_version,
+            contract_sha256=contract_sha256,
+        )
+        if page_provenance != expected:
+            raise OcrSummaryValidationError("OCR page provenance does not match the projection.")
+
+
 def _map_page(
     page: object,
     *,

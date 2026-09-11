@@ -11,6 +11,9 @@ from capture_runtime_client import (
     RawCapture,
 )
 from cert_prep_backend.domains.capture_workbench.host_models import CaptureReview
+from cert_prep_backend.domains.capture_workbench.ocr_summary import (
+    validate_ocr_projection_provenance,
+)
 from cert_prep_backend.domains.capture_workbench.review import reviewed_text_overrides
 from cert_prep_backend.domains.exam_content import classify_exam_text, line_metadata
 from cert_prep_backend.domains.source_documents.models import (
@@ -67,6 +70,11 @@ def capture_document_to_pdf_extraction(
     }
     extracted_pages: list[ExtractedPage] = []
     extraction_method = _ocr_only_extraction_method(document)
+    if ocr_projection is not None:
+        validate_ocr_projection_provenance(
+            ocr_projection,
+            expected_engine=document.extraction_engine.engine,
+        )
     for page_number in sorted(pages):
         projection_page = projection_pages.get(page_number)
         if ocr_projection is not None and projection_page is None:
@@ -147,17 +155,9 @@ def capture_document_to_audio_segments(
 
 
 def _ocr_only_extraction_method(document: CaptureDocument) -> str:
-    engine = document.extraction_engine.engine.lower()
-    identity = (
-        f"{document.extraction_engine.engine} {document.extraction_engine.model}"
-    ).lower()
-    if "embedded" in identity or "mixed" in identity:
+    if document.extraction_engine.engine != "windowsml-ocr":
         raise ValueError(
             "Capture document extraction provenance violates the OCR-only contract."
-        )
-    if not any(marker in engine for marker in ("ocr", "windowsml", "paddle")):
-        raise ValueError(
-            "Capture document extraction provenance is not canonical OCR-only."
         )
     return "windowsml_ocr"
 

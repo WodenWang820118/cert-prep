@@ -297,7 +297,7 @@ class TestCaptureRuntimeClient(TypedPullSessionRuntimeMixin):
                 "segments": segments,
                 "sourceText": source_text,
                 "extractionEngine": {
-                    "engine": "capture-runtime-whisper" if is_audio else "capture-runtime-windowsml",
+                    "engine": "capture-runtime-whisper" if is_audio else "windowsml-ocr",
                     "model": f"capture-runtime@{CAPTURE_RUNTIME_VERSION}",
                     "digest": f"sha256:{'a' * 64}",
                     "device": "test",
