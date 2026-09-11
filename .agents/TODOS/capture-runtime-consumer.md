@@ -164,7 +164,9 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     `test_version_inventory_rejects_stale_owner`,
     `test_version_inventory_rejects_missing_projection_contract_hash`, and
     `test_version_inventory_rejects_mixed_lock_and_artifact`.
-  - Verification: `corepack pnpm nx run cert-prep-desktop:release-tool-test --skip-nx-cache`;
+  - Verification:
+    `corepack pnpm nx run cert-prep-desktop:capture-runtime-consumer-test --skip-nx-cache`;
+    `corepack pnpm nx run cert-prep-desktop:release-tool-test --skip-nx-cache`;
     `corepack pnpm nx run cert-prep-desktop:typecheck-scripts --skip-nx-cache`;
     `corepack pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`.
     Also rerun `corepack pnpm nx show projects --json` and
