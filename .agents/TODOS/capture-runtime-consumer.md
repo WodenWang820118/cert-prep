@@ -181,6 +181,27 @@ manager or undiscovered target is a discovery-stop, never a green claim.
   - Commit boundary: `chore(phase2): upgrade Nx and add runtime version inventory`;
     record the inventory report and SHA.
 
+  - **Evidence audit (2026-09-11; this slice remains unchecked).** The current
+    checkout is on Nx `23.1.2` with pnpm `12.0.0`; discovery resolves the named
+    `capture-runtime-consumer-test`, `release-tool-test`, `typecheck-scripts`,
+    and `package-qa-test` targets. The consumer inventory, 23-file source
+    snapshot, producer-contract byte digest, required `RuntimeReady`,
+    `OcrComputePreflightV2`, and `CaptureOcrProjectionV3` identities, and
+    stale/mixed/missing-owner regressions establish a fail-closed consumer
+    guard. No-cache verification passed: consumer `29/29`, release tools
+    `47` Node tests plus `16` Python tests, package QA `277` passed with `1`
+    platform-unavailable skip, and script typecheck passed.
+
+    This guard does not establish 0.4.2 migration readiness. The package and
+    lock inputs, `CAPTURE_RUNTIME_VERSION`, Python SDK pin, and sidecar Cargo
+    inputs remain `0.4.1`; the generated TypeScript view and host fallback do
+    not prove that a verified candidate 0.4.2 SDK is loaded. The passing
+    0.4.2 values come from synthetic producer-contract fixtures. The
+    canonical producer source contract exists, but a real producer D3
+    candidate, immutable ledger, and verified candidate-delivered/loaded
+    0.4.2 schema-3 contract remain unavailable, so the checkbox and candidate
+    staging stay blocked pending that evidence.
+
 - [ ] **Slice 2: exact OCR projection mapping and legacy-write deletion.** Keep
       `windowsml-ocr` as the producer engine and `windowsml_ocr` as the Cert
       durable discriminator. Ignore the embedded layer and reject every new
