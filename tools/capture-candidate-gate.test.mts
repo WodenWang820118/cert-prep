@@ -1,7 +1,16 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  cp,
+  mkdir,
+  mkdtemp,
+  rename,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import test from 'node:test';
 import { basename, dirname, join } from 'node:path';
 
@@ -16,9 +25,11 @@ import {
   assertCandidateConsumerVersionContract,
   assertConsumerVersionContract,
   parseArguments,
+  reverifyCandidateArtifactReceipt,
   runCandidateGate,
   validateRuntimeCandidateContent,
   validateRuntimeCandidateManifest,
+  verifyCandidateArtifactReceipt,
   verifyCandidate,
 } from './capture-candidate-gate.mts';
 
@@ -406,6 +417,350 @@ test('release identity accepts an exact model-enabled candidate', async () => {
     assert.equal(result.identity.mode, 'release');
   } finally {
     await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test('candidate artifact receipt verifies the complete producer manifest and ledger', async () => {
+  const fixture = await createCombinedCandidateFixture();
+  try {
+    const receipt = await verifyCandidateArtifactReceipt(fixture.input);
+    assert.equal(receipt.candidateId, fixture.input.candidateId);
+    assert.equal(receipt.sourceCommit, fixture.input.sourceCommit);
+    assert.equal(receipt.releaseVersion, fixture.input.releaseVersion);
+    assert.equal(receipt.releaseMode, 'model-enabled');
+    assert.match(receipt.packageCandidateId, /^[0-9a-f]{64}$/u);
+    assert.match(receipt.runtimeCandidateId, /^[0-9a-f]{64}$/u);
+    assert.equal(receipt.artifacts.length, fixture.artifactCount);
+    await reverifyCandidateArtifactReceipt(receipt);
+    await assert.rejects(
+      verifyCandidateArtifactReceipt({
+        ...fixture.input,
+        candidateManifestSha256: '0'.repeat(64),
+      }),
+      /manifest hash/u,
+    );
+    await assert.rejects(
+      verifyCandidateArtifactReceipt({
+        ...fixture.input,
+        candidateId: '0'.repeat(64),
+      }),
+      /manifest identity/u,
+    );
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test('candidate artifact receipt rejects a consistently substituted runtime schema', async () => {
+  const fixture = await createCombinedCandidateFixture();
+  try {
+    const schemaPath = join(
+      fixture.root,
+      'runtime',
+      CAPTURE_DOCUMENT_SCHEMA_FILE,
+    );
+    const substitutedSchemaBytes = Buffer.from('substituted schema bytes');
+    const substitutedSchemaSha256 = sha256(substitutedSchemaBytes);
+    await writeFile(schemaPath, substitutedSchemaBytes);
+
+    const runtimeManifestPath = join(
+      fixture.root,
+      'runtime',
+      'capture-runtime-manifest.json',
+    );
+    const runtimeManifest = JSON.parse(
+      await readFile(runtimeManifestPath, 'utf8'),
+    ) as Record<string, unknown>;
+    runtimeManifest.schemaSha256 = substitutedSchemaSha256;
+    const runtimeManifestBytes = Buffer.from(JSON.stringify(runtimeManifest));
+    await writeFile(runtimeManifestPath, runtimeManifestBytes);
+
+    const manifest = JSON.parse(
+      await readFile(fixture.manifestPath, 'utf8'),
+    ) as Record<string, unknown>;
+    const artifacts = manifest.artifacts as Array<Record<string, unknown>>;
+    const schemaArtifact = artifacts.find(
+      (artifact) => artifact.path === `runtime/${CAPTURE_DOCUMENT_SCHEMA_FILE}`,
+    );
+    assert.ok(schemaArtifact);
+    schemaArtifact.bytes = substitutedSchemaBytes.length;
+    schemaArtifact.sha256 = substitutedSchemaSha256;
+    const runtimeManifestArtifact = artifacts.find(
+      (artifact) => artifact.path === 'runtime/capture-runtime-manifest.json',
+    );
+    assert.ok(runtimeManifestArtifact);
+    runtimeManifestArtifact.bytes = runtimeManifestBytes.length;
+    runtimeManifestArtifact.sha256 = sha256(runtimeManifestBytes);
+    const { candidateId: _candidateId, ...baseManifest } = manifest;
+    manifest.candidateId = sha256(Buffer.from(JSON.stringify(baseManifest)));
+    const manifestBytes = Buffer.from(JSON.stringify(manifest));
+    await writeFile(fixture.manifestPath, manifestBytes);
+    const candidateManifestSha256 = sha256(manifestBytes);
+    await writeFile(
+      join(fixture.root, 'candidate-manifest.json.sha256'),
+      `${candidateManifestSha256}  candidate-manifest.json\n`,
+    );
+
+    const ledgerPath = join(fixture.root, 'release-ledger.json');
+    const ledger = JSON.parse(await readFile(ledgerPath, 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    ledger.candidateId = manifest.candidateId;
+    ledger.candidateManifestSha256 = candidateManifestSha256;
+    ledger.schemaSha256 = substitutedSchemaSha256;
+    await writeFile(ledgerPath, JSON.stringify(ledger));
+
+    await assert.rejects(
+      verifyCandidateArtifactReceipt({
+        ...fixture.input,
+        candidateId: String(manifest.candidateId),
+        candidateManifestSha256,
+      }),
+      /pinned canonical schema/u,
+    );
+    assert.notEqual(
+      substitutedSchemaSha256,
+      CAPTURE_DOCUMENT_SCHEMA_SHA256,
+    );
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test('candidate artifact receipt binds every supplied release identity', async () => {
+  const fixture = await createCombinedCandidateFixture();
+  try {
+    const cases = [
+      { field: 'releaseMode' as const, value: 'core-only' as const },
+      { field: 'packageCandidateId' as const, value: '0'.repeat(64) },
+      { field: 'runtimeCandidateId' as const, value: '0'.repeat(64) },
+      { field: 'contractSetSha256' as const, value: '0'.repeat(64) },
+    ];
+    for (const testCase of cases) {
+      await assert.rejects(
+        verifyCandidateArtifactReceipt({
+          ...fixture.input,
+          [testCase.field]: testCase.value,
+        }),
+        /Candidate manifest identity is invalid/u,
+        testCase.field,
+      );
+    }
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test('candidate artifact receipt rejects stale same-version bytes, size, and hash', async () => {
+  const fixture = await createCombinedCandidateFixture();
+  try {
+    const receipt = await verifyCandidateArtifactReceipt(fixture.input);
+    await writeFile(fixture.artifactPath, Buffer.from('same version but changed'));
+    await assert.rejects(
+      reverifyCandidateArtifactReceipt(receipt),
+      /changed or mismatched/u,
+    );
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test('candidate artifact receipt rejects an omitted release-ledger entry', async () => {
+  const fixture = await createCombinedCandidateFixture();
+  try {
+    const ledgerPath = join(fixture.root, 'release-ledger.json');
+    const ledger = JSON.parse(await readFile(ledgerPath, 'utf8')) as {
+      artifacts: unknown[];
+    };
+    ledger.artifacts = ledger.artifacts.slice(1);
+    await writeFile(ledgerPath, JSON.stringify(ledger));
+    await assert.rejects(
+      verifyCandidateArtifactReceipt(fixture.input),
+      /artifact inventory is incomplete/u,
+    );
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test('candidate artifact receipt rejects incomplete, extra, duplicate, and aliased records', async () => {
+  const cases = [
+    {
+      name: 'omitted artifact',
+      mutate: (manifest: Record<string, unknown>) => {
+        manifest.artifacts = (manifest.artifacts as unknown[]).slice(1);
+      },
+      error: /does not match the candidate root/u,
+    },
+    {
+      name: 'extra declared artifact',
+      mutate: (manifest: Record<string, unknown>) => {
+        const artifacts = manifest.artifacts as Array<Record<string, unknown>>;
+        manifest.artifacts = [
+          ...artifacts,
+          { path: 'runtime/not-present.bin', bytes: 1, sha256: 'a'.repeat(64) },
+        ];
+      },
+      error: /does not match the candidate root/u,
+    },
+    {
+      name: 'duplicate artifact',
+      mutate: (manifest: Record<string, unknown>) => {
+        const artifacts = manifest.artifacts as unknown[];
+        manifest.artifacts = [...artifacts, artifacts[0]];
+      },
+      error: /inventory is not canonical/u,
+    },
+    {
+      name: 'traversal artifact',
+      mutate: (manifest: Record<string, unknown>) => {
+        const artifacts = [...(manifest.artifacts as Array<Record<string, unknown>>)];
+        artifacts[0] = { ...artifacts[0], path: '../escape.bin' };
+        manifest.artifacts = artifacts.sort((left, right) =>
+          String(left.path).localeCompare(String(right.path)),
+        );
+      },
+      error: /not canonical/u,
+    },
+  ];
+  for (const testCase of cases) {
+    const fixture = await createCombinedCandidateFixture();
+    try {
+      const input = await refreshCombinedCandidateManifest(
+        fixture,
+        testCase.mutate,
+      );
+      await assert.rejects(
+        verifyCandidateArtifactReceipt(input),
+        testCase.error,
+        testCase.name,
+      );
+    } finally {
+      await rm(fixture.root, { recursive: true, force: true });
+    }
+  }
+});
+
+test('candidate artifact receipt rejects a filesystem extra and link', async () => {
+  const extraFixture = await createCombinedCandidateFixture();
+  try {
+    await writeFile(
+      join(extraFixture.root, 'runtime', 'unexpected.bin'),
+      Buffer.from('unexpected'),
+    );
+    await assert.rejects(
+      verifyCandidateArtifactReceipt(extraFixture.input),
+      /does not match the candidate root/u,
+    );
+  } finally {
+    await rm(extraFixture.root, { recursive: true, force: true });
+  }
+
+  const linkFixture = await createCombinedCandidateFixture();
+  const backup = `${linkFixture.artifactPath}.regular`;
+  try {
+    await rename(linkFixture.artifactPath, backup);
+    await symlink(backup, linkFixture.artifactPath, 'file');
+    await assert.rejects(
+      verifyCandidateArtifactReceipt(linkFixture.input),
+      /link or non-file|regular file/u,
+    );
+  } catch (error) {
+    if (
+      !(
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        (error.code === 'EPERM' || error.code === 'EACCES')
+      )
+    ) {
+      throw error;
+    }
+  } finally {
+    await rm(linkFixture.artifactPath, { force: true });
+    await rename(backup, linkFixture.artifactPath).catch(() => undefined);
+    await rm(linkFixture.root, { recursive: true, force: true });
+  }
+
+  const parentLinkFixture = await createCombinedCandidateFixture();
+  const parentDirectory = dirname(parentLinkFixture.root);
+  const parentLink = join(
+    parentDirectory,
+    `${basename(parentLinkFixture.root)}-parent-link`,
+  );
+  try {
+    await symlink(
+      parentDirectory,
+      parentLink,
+      process.platform === 'win32' ? 'junction' : 'dir',
+    );
+    await assert.rejects(
+      verifyCandidateArtifactReceipt({
+        ...parentLinkFixture.input,
+        candidate: join(parentLink, basename(parentLinkFixture.root)),
+      }),
+      /symbolic-link or junction ancestor/u,
+    );
+  } catch (error) {
+    if (
+      !(
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        (error.code === 'EPERM' ||
+          error.code === 'EACCES' ||
+          error.code === 'ENOTSUP')
+      )
+    ) {
+      throw error;
+    }
+  } finally {
+    await rm(parentLink, { recursive: true, force: true });
+    await rm(parentLinkFixture.root, { recursive: true, force: true });
+  }
+});
+
+test('candidate artifact receipt rejects candidate ID replay and caller mutation', async () => {
+  const replayFixture = await createCombinedCandidateFixture();
+  try {
+    const input = await refreshCombinedCandidateManifest(
+      replayFixture,
+      (manifest) => {
+        manifest.releaseMode = 'core-only';
+      },
+      true,
+    );
+    await assert.rejects(
+      verifyCandidateArtifactReceipt(input),
+      /candidateId derivation/u,
+    );
+  } finally {
+    await rm(replayFixture.root, { recursive: true, force: true });
+  }
+
+  const mutationFixture = await createCombinedCandidateFixture();
+  try {
+    const receipt = await verifyCandidateArtifactReceipt(mutationFixture.input);
+    assert.throws(() => {
+      (receipt as { candidateId: string }).candidateId = 'f'.repeat(64);
+    }, TypeError);
+    assert.throws(() => {
+      (receipt.artifacts as Array<unknown>).pop();
+    }, TypeError);
+    assert.throws(() => {
+      (receipt.artifacts[0] as { sha256: string }).sha256 = 'f'.repeat(64);
+    }, TypeError);
+    await reverifyCandidateArtifactReceipt(receipt);
+    await assert.rejects(
+      reverifyCandidateArtifactReceipt({
+        ...receipt,
+        schemaVersion: '2',
+      } as unknown as typeof receipt),
+      /receipt schema/u,
+    );
+  } finally {
+    await rm(mutationFixture.root, { recursive: true, force: true });
   }
 });
 
@@ -1402,4 +1757,219 @@ function writeZipEntry(
     if (result.status === 0) return;
   }
   throw new Error('Could not create the strict runtime candidate archive.');
+}
+
+interface CombinedCandidateFixture {
+  readonly root: string;
+  readonly manifestPath: string;
+  readonly artifactPath: string;
+  readonly artifactCount: number;
+  readonly input: {
+    readonly candidate: string;
+    readonly candidateId: string;
+    readonly candidateManifestSha256: string;
+    readonly sourceCommit: string;
+    readonly releaseVersion: string;
+    readonly releaseMode: 'core-only' | 'model-enabled';
+    readonly packageCandidateId: string;
+    readonly runtimeCandidateId: string;
+    readonly contractSetSha256: string;
+  };
+}
+
+async function createCombinedCandidateFixture(): Promise<CombinedCandidateFixture> {
+  const root = await mkdtemp(
+    join(process.env.TEMP ?? process.env.TMP ?? '.', 'cert-combined-candidate-'),
+  );
+  for (const directory of [
+    'runtime',
+    'package',
+    'python',
+    'crate',
+    'desktop',
+    'checksums',
+    'contracts',
+  ]) {
+    await mkdir(join(root, directory), { recursive: true });
+  }
+  const schemaBytes = await readFile(
+    join(
+      import.meta.dirname,
+      '..',
+      'apps/cert-prep-desktop/test-fixtures',
+      CAPTURE_DOCUMENT_SCHEMA_FILE,
+    ),
+  );
+  const contractBytes = Buffer.from(
+    JSON.stringify({
+      contractSetVersion: '2',
+      schemas: [{ name: 'CaptureOcrProjectionV3', schema: {} }],
+    }),
+  );
+  const contractSetSha256 = sha256(contractBytes);
+  const sourceCommit = 'd'.repeat(40);
+  const releaseVersion = '0.4.2';
+  const packageCandidateId = 'e'.repeat(64);
+  const runtimeCandidateId = 'f'.repeat(64);
+  const artifactContents: Array<[string, Buffer]> = [
+    ['runtime/capture-document-v2.schema.json', schemaBytes],
+    [
+      'runtime/capture-runtime-manifest.json',
+      Buffer.from(
+        JSON.stringify({
+          runtimeVersion: releaseVersion,
+          schemaFileName: CAPTURE_DOCUMENT_SCHEMA_FILE,
+          schemaSha256: sha256(schemaBytes),
+        }),
+      ),
+    ],
+    ['package/gx-capture-capture-runtime-client-0.4.2.tgz', Buffer.from('runtime client archive')],
+    ['package/gx-capture-capture-workbench-ui-0.4.2.tgz', Buffer.from('workbench archive')],
+    ['python/capture_runtime_client-0.4.2-py3-none-any.whl', Buffer.from('python wheel')],
+    ['python/capture_runtime_client-0.4.2.tar.gz', Buffer.from('python source')],
+    ['crate/capture-sidecar-launcher-0.4.2.crate', Buffer.from('launcher crate')],
+    ['desktop/Capture.Workbench_0.4.2_x64-setup.exe', Buffer.from('desktop installer')],
+    ['contracts/contract-set.json', contractBytes],
+    ['contracts/contract-set.sha256', Buffer.from(contractSetSha256)],
+    ['contracts/contract-snapshot.json', Buffer.from('{"schemaVersion":"1"}')],
+  ];
+  for (const [path, bytes] of artifactContents) {
+    await writeFile(join(root, path), bytes);
+  }
+  const packageEntries = artifactContents.filter(([path]) => path.startsWith('package/'));
+  const pythonEntries = artifactContents.filter(([path]) => path.startsWith('python/'));
+  const crateEntries = artifactContents.filter(([path]) => path.startsWith('crate/'));
+  const checksumEntries = [...packageEntries, ...pythonEntries, ...crateEntries].map(
+    ([path, bytes]) => {
+      const name = basename(path);
+      return [
+        `checksums/${name}.sha256`,
+        Buffer.from(`${sha256(bytes)}  ${name}\n`),
+      ] as [string, Buffer];
+    },
+  );
+  for (const [path, bytes] of checksumEntries) {
+    await writeFile(join(root, path), bytes);
+  }
+  const allArtifactContents = [...artifactContents, ...checksumEntries];
+  const artifacts = allArtifactContents
+    .map(([path, bytes]) => ({ path, bytes: bytes.length, sha256: sha256(bytes) }))
+    .sort((left, right) => left.path.localeCompare(right.path));
+  const baseManifest = {
+    schemaVersion: '1',
+    sourceCommit,
+    releaseVersion,
+    releaseMode: 'model-enabled',
+    runtimeApiVersion: '2.0',
+    documentSchemaVersion: '2',
+    contractSetSha256,
+    artifacts,
+    toolchains: { node: '24.0.0' },
+    contractImpact: null,
+    packageCandidateId,
+    runtimeCandidateId,
+  };
+  const candidateId = sha256(Buffer.from(JSON.stringify(baseManifest)));
+  const manifestPath = join(root, 'candidate-manifest.json');
+  const manifestBytes = Buffer.from(
+    JSON.stringify({ ...baseManifest, candidateId }),
+  );
+  await writeFile(manifestPath, manifestBytes);
+  const candidateManifestSha256 = sha256(manifestBytes);
+  await writeFile(
+    join(root, 'candidate-manifest.json.sha256'),
+    `${candidateManifestSha256}  candidate-manifest.json\n`,
+  );
+  const ledger = {
+    candidateId,
+    sourceCommit,
+    releaseMode: 'model-enabled',
+    candidateManifestSha256,
+    version: releaseVersion,
+    schemaSha256: sha256(schemaBytes),
+    artifacts: [
+      ...packageEntries.map(([path, bytes]) => ({
+        registry: 'npm',
+        name: basename(path),
+        sha256: sha256(bytes),
+      })),
+      ...pythonEntries.map(([path, bytes]) => ({
+        registry: 'pypi',
+        name: basename(path),
+        sha256: sha256(bytes),
+      })),
+      ...crateEntries.map(([path, bytes]) => ({
+        registry: 'crates.io',
+        name: basename(path),
+        sha256: sha256(bytes),
+      })),
+    ],
+    status: 'candidate-verified',
+  };
+  await writeFile(
+    join(root, 'release-ledger.json'),
+    JSON.stringify(ledger),
+  );
+  return {
+    root,
+    manifestPath,
+    artifactPath: join(root, packageEntries[0][0]),
+    artifactCount: artifacts.length,
+    input: {
+      candidate: root,
+      candidateId,
+      candidateManifestSha256,
+      sourceCommit,
+      releaseVersion,
+      releaseMode: 'model-enabled',
+      packageCandidateId,
+      runtimeCandidateId,
+      contractSetSha256,
+    },
+  };
+}
+
+async function refreshCombinedCandidateManifest(
+  fixture: CombinedCandidateFixture,
+  mutate: (manifest: Record<string, unknown>) => void,
+  reuseCandidateId = false,
+): Promise<CombinedCandidateFixture['input']> {
+  const manifest = JSON.parse(
+    await readFile(fixture.manifestPath, 'utf8'),
+  ) as Record<string, unknown>;
+  const originalCandidateId = manifest.candidateId;
+  mutate(manifest);
+  const { candidateId: _candidateId, ...baseManifest } = manifest;
+  manifest.candidateId = reuseCandidateId
+    ? originalCandidateId
+    : sha256(Buffer.from(JSON.stringify(baseManifest)));
+  const manifestBytes = Buffer.from(JSON.stringify(manifest));
+  await writeFile(fixture.manifestPath, manifestBytes);
+  const candidateManifestSha256 = sha256(manifestBytes);
+  await writeFile(
+    join(fixture.root, 'candidate-manifest.json.sha256'),
+    `${candidateManifestSha256}  candidate-manifest.json\n`,
+  );
+  const ledgerPath = join(fixture.root, 'release-ledger.json');
+  const ledger = JSON.parse(await readFile(ledgerPath, 'utf8')) as Record<
+    string,
+    unknown
+  >;
+  ledger.candidateId = manifest.candidateId;
+  ledger.candidateManifestSha256 = candidateManifestSha256;
+  ledger.sourceCommit = manifest.sourceCommit;
+  ledger.releaseMode = manifest.releaseMode;
+  ledger.version = manifest.releaseVersion;
+  await writeFile(ledgerPath, JSON.stringify(ledger));
+  return {
+    ...fixture.input,
+    candidateId: String(manifest.candidateId),
+    candidateManifestSha256,
+    sourceCommit: String(manifest.sourceCommit),
+    releaseVersion: String(manifest.releaseVersion),
+    releaseMode: manifest.releaseMode as 'core-only' | 'model-enabled',
+    packageCandidateId: String(manifest.packageCandidateId),
+    runtimeCandidateId: String(manifest.runtimeCandidateId),
+    contractSetSha256: String(manifest.contractSetSha256),
+  };
 }

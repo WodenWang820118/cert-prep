@@ -26,6 +26,10 @@ import {
   validateCaptureRuntimeReleaseManifest,
 } from './install-capture-runtime.mts';
 import {
+  CAPTURE_DOCUMENT_SCHEMA_FILE,
+  CAPTURE_DOCUMENT_SCHEMA_SHA256,
+} from '../apps/cert-prep-desktop/scripts/package-qa/constants.mts';
+import {
   assertCaptureRuntimeConsumerInventory,
   assertCaptureRuntimeConsumerVersions,
   readCaptureRuntimeConsumerInventory,
@@ -535,6 +539,602 @@ async function assertPackagedArtifactBoundary(
     throw new Error('Release candidate contains local direct_url metadata.');
   }
   return { hasDirectUrlMetadata };
+}
+
+const COMBINED_CANDIDATE_ARTIFACT_DIRECTORIES = [
+  'runtime',
+  'package',
+  'python',
+  'crate',
+  'desktop',
+  'checksums',
+  'contracts',
+] as const;
+
+const COMBINED_CANDIDATE_CONTROL_FILES = new Set([
+  'candidate-manifest.json',
+  'candidate-manifest.json.sha256',
+  'release-ledger.json',
+  'contract-impact.json',
+]);
+
+type CombinedCandidateArtifact = {
+  readonly path: string;
+  readonly bytes: number;
+  readonly sha256: string;
+};
+
+/**
+ * Complete declared artifact directory plus the producer-required artifact
+ * subset. This receipt does not establish full D3 runtime or installer
+ * readiness because the producer manifest only closes over files that exist.
+ */
+export type CandidateArtifactReceipt = Readonly<{
+  readonly schemaVersion: '1';
+  readonly candidateRoot: string;
+  readonly candidateId: string;
+  readonly candidateManifestSha256: string;
+  readonly sourceCommit: string;
+  readonly releaseVersion: string;
+  readonly releaseMode: 'core-only' | 'model-enabled';
+  readonly packageCandidateId: string;
+  readonly runtimeCandidateId: string;
+  /** Runtime contract-set identity; this is not the D3 acceptance hash. */
+  readonly contractSetSha256: string;
+  readonly artifacts: readonly CombinedCandidateArtifact[];
+}>;
+
+export type CandidateArtifactReceiptInput = Readonly<{
+  readonly candidate: string;
+  readonly candidateId: string;
+  readonly candidateManifestSha256: string;
+  readonly sourceCommit: string;
+  readonly releaseVersion: string;
+  readonly releaseMode: 'core-only' | 'model-enabled';
+  readonly packageCandidateId: string;
+  readonly runtimeCandidateId: string;
+  /** Runtime contract-set identity; this is not the D3 acceptance hash. */
+  readonly contractSetSha256: string;
+}>;
+
+function exactRecordKeys(
+  value: Record<string, unknown>,
+  expected: readonly string[],
+  label: string,
+): void {
+  const actual = Object.keys(value).sort();
+  const canonical = [...expected].sort();
+  if (
+    actual.length !== canonical.length ||
+    actual.some((key, index) => key !== canonical[index])
+  ) {
+    throw new Error(`${label} fields are not canonical.`);
+  }
+}
+
+function sameFilesystemPath(left: string, right: string): boolean {
+  const normalizedLeft = resolve(left).replaceAll('\\', '/');
+  const normalizedRight = resolve(right).replaceAll('\\', '/');
+  return process.platform === 'win32'
+    ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
+    : normalizedLeft === normalizedRight;
+}
+
+async function canonicalCandidateRoot(
+  candidate: string,
+): Promise<{ readonly root: string; readonly realRoot: string }> {
+  const root = resolve(candidate);
+  const details = await lstat(root);
+  if (!details.isDirectory() || details.isSymbolicLink()) {
+    throw new Error('Candidate artifact root is not a regular directory.');
+  }
+  const parent = dirname(root);
+  if (!sameFilesystemPath(parent, await realpath(parent))) {
+    throw new Error(
+      'Candidate artifact root has a symbolic-link or junction ancestor.',
+    );
+  }
+  const realRoot = await realpath(root);
+  if (!sameFilesystemPath(root, realRoot)) {
+    throw new Error('Candidate artifact root is a symbolic link or junction.');
+  }
+  return { root, realRoot };
+}
+
+function assertCanonicalCandidateArtifactPath(path: string): void {
+  if (
+    !path ||
+    path.includes('\\') ||
+    isAbsolute(path) ||
+    path.endsWith('/') ||
+    path.split('/').some((part) => !part || part === '.' || part === '..') ||
+    !COMBINED_CANDIDATE_ARTIFACT_DIRECTORIES.includes(
+      path.split('/')[0] as (typeof COMBINED_CANDIDATE_ARTIFACT_DIRECTORIES)[number],
+    )
+  ) {
+    throw new Error(`Candidate artifact path is not canonical: ${path}.`);
+  }
+}
+
+async function assertCandidateRootShape(root: string): Promise<void> {
+  const entries = await readdir(root, { withFileTypes: true });
+  const expectedDirectories = new Set<string>(
+    COMBINED_CANDIDATE_ARTIFACT_DIRECTORIES,
+  );
+  const seen = new Set<string>();
+  for (const entry of entries) {
+    if (seen.has(entry.name)) {
+      throw new Error(`Candidate root contains duplicate entry: ${entry.name}.`);
+    }
+    seen.add(entry.name);
+    const path = join(root, entry.name);
+    const details = await lstat(path);
+    if (expectedDirectories.has(entry.name)) {
+      if (!details.isDirectory() || details.isSymbolicLink()) {
+        throw new Error(
+          `Candidate artifact directory is not a regular directory: ${path}.`,
+        );
+      }
+      continue;
+    }
+    if (!COMBINED_CANDIDATE_CONTROL_FILES.has(entry.name)) {
+      throw new Error(`Candidate root contains an unexpected entry: ${entry.name}.`);
+    }
+    if (!details.isFile() || details.isSymbolicLink()) {
+      throw new Error(
+        `Candidate control entry is not a regular file: ${path}.`,
+      );
+    }
+  }
+  for (const directory of COMBINED_CANDIDATE_ARTIFACT_DIRECTORIES) {
+    if (!seen.has(directory)) {
+      throw new Error(`Candidate artifact directory is missing: ${directory}.`);
+    }
+  }
+}
+
+async function collectCombinedCandidateArtifactPaths(
+  root: string,
+  realRoot: string,
+): Promise<readonly string[]> {
+  const paths: string[] = [];
+  const visit = async (directory: string): Promise<void> => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const path = join(directory, entry.name);
+      const details = await lstat(path);
+      if (
+        details.isSymbolicLink() ||
+        (!details.isFile() && !details.isDirectory())
+      ) {
+        throw new Error(
+          `Candidate artifact inventory contains a link or non-file entry: ${path}.`,
+        );
+      }
+      const actualPath = await realpath(path);
+      if (!containedWithin(realRoot, actualPath)) {
+        throw new Error(
+          `Candidate artifact resolves outside its root: ${path}.`,
+        );
+      }
+      if (details.isDirectory()) {
+        await visit(path);
+      } else {
+        const relativePath = relative(root, path).replaceAll('\\', '/');
+        assertCanonicalCandidateArtifactPath(relativePath);
+        paths.push(relativePath);
+      }
+    }
+  };
+  for (const directory of COMBINED_CANDIDATE_ARTIFACT_DIRECTORIES) {
+    await visit(join(root, directory));
+  }
+  return paths.sort((left, right) => left.localeCompare(right));
+}
+
+async function readCandidateArtifact(
+  root: string,
+  realRoot: string,
+  expected: CombinedCandidateArtifact,
+): Promise<CombinedCandidateArtifact> {
+  assertCanonicalCandidateArtifactPath(expected.path);
+  const path = join(root, expected.path);
+  const before = await lstat(path).catch(() => undefined);
+  if (!before?.isFile() || before.isSymbolicLink()) {
+    throw new Error(`Candidate artifact is missing or not a regular file: ${expected.path}.`);
+  }
+  const actualPath = await realpath(path);
+  if (!containedWithin(realRoot, actualPath) || !sameFilesystemPath(path, actualPath)) {
+    throw new Error(`Candidate artifact is a link or escaped its root: ${expected.path}.`);
+  }
+  const bytes = await readFile(path);
+  const after = await lstat(path);
+  const digest = sha256(bytes);
+  if (
+    !after.isFile() ||
+    after.size !== before.size ||
+    bytes.length !== expected.bytes ||
+    digest !== expected.sha256
+  ) {
+    throw new Error(`Candidate artifact changed or mismatched: ${expected.path}.`);
+  }
+  return { path: expected.path, bytes: bytes.length, sha256: digest };
+}
+
+function manifestArtifact(
+  value: unknown,
+  index: number,
+): CombinedCandidateArtifact {
+  if (!isRecord(value)) {
+    throw new Error(`Candidate manifest artifact ${index} is invalid.`);
+  }
+  exactRecordKeys(value, ['path', 'bytes', 'sha256'], `Candidate manifest artifact ${index}`);
+  if (
+    typeof value.path !== 'string' ||
+    typeof value.bytes !== 'number' ||
+    !Number.isSafeInteger(value.bytes) ||
+    value.bytes < 0 ||
+    typeof value.sha256 !== 'string' ||
+    !SHA256_PATTERN.test(value.sha256)
+  ) {
+    throw new Error(`Candidate manifest artifact ${index} is invalid.`);
+  }
+  assertCanonicalCandidateArtifactPath(value.path);
+  return { path: value.path, bytes: value.bytes, sha256: value.sha256 };
+}
+
+function ledgerArtifact(
+  value: unknown,
+  index: number,
+): { readonly registry: string; readonly name: string; readonly sha256: string } {
+  if (!isRecord(value)) {
+    throw new Error(`Candidate release ledger artifact ${index} is invalid.`);
+  }
+  exactRecordKeys(value, ['name', 'registry', 'sha256'], `Candidate release ledger artifact ${index}`);
+  if (
+    typeof value.registry !== 'string' ||
+    typeof value.name !== 'string' ||
+    typeof value.sha256 !== 'string' ||
+    !SHA256_PATTERN.test(value.sha256)
+  ) {
+    throw new Error(`Candidate release ledger artifact ${index} is invalid.`);
+  }
+  return { registry: value.registry, name: value.name, sha256: value.sha256 };
+}
+
+async function verifyCombinedCandidateRoot(
+  input: CandidateArtifactReceiptInput,
+): Promise<CandidateArtifactReceipt> {
+  if (
+    !SHA256_PATTERN.test(input.candidateId) ||
+    !SHA256_PATTERN.test(input.candidateManifestSha256) ||
+    !GIT_SHA_PATTERN.test(input.sourceCommit) ||
+    !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(input.releaseVersion) ||
+    (input.releaseMode !== 'core-only' &&
+      input.releaseMode !== 'model-enabled') ||
+    !SHA256_PATTERN.test(input.packageCandidateId) ||
+    !SHA256_PATTERN.test(input.runtimeCandidateId) ||
+    !SHA256_PATTERN.test(input.contractSetSha256)
+  ) {
+    throw new Error('Candidate artifact receipt identity is invalid.');
+  }
+  const { root, realRoot } = await canonicalCandidateRoot(input.candidate);
+  await assertCandidateRootShape(root);
+  await assertPackagedArtifactBoundary(root, 'release');
+  const manifestPath = join(root, 'candidate-manifest.json');
+  const manifestBytes = await readFile(manifestPath);
+  const manifestSha256 = sha256(manifestBytes);
+  if (manifestSha256 !== input.candidateManifestSha256) {
+    throw new Error('Candidate manifest hash does not match the expected hash.');
+  }
+  const manifest = parseJsonBytes(manifestBytes, 'Candidate manifest');
+  exactRecordKeys(
+    manifest,
+    [
+      'artifacts',
+      'candidateId',
+      'contractImpact',
+      'contractSetSha256',
+      'documentSchemaVersion',
+      'packageCandidateId',
+      'releaseMode',
+      'releaseVersion',
+      'runtimeApiVersion',
+      'runtimeCandidateId',
+      'schemaVersion',
+      'sourceCommit',
+      'toolchains',
+    ],
+    'Candidate manifest',
+  );
+  if (
+    manifest.schemaVersion !== '1' ||
+    manifest.runtimeApiVersion !== '2.0' ||
+    manifest.documentSchemaVersion !== '2' ||
+    manifest.sourceCommit !== input.sourceCommit ||
+    manifest.releaseVersion !== input.releaseVersion ||
+    manifest.releaseMode !== input.releaseMode ||
+    manifest.contractImpact !== null ||
+    typeof manifest.candidateId !== 'string' ||
+    manifest.candidateId !== input.candidateId ||
+    typeof manifest.packageCandidateId !== 'string' ||
+    manifest.packageCandidateId !== input.packageCandidateId ||
+    typeof manifest.runtimeCandidateId !== 'string' ||
+    manifest.runtimeCandidateId !== input.runtimeCandidateId ||
+    typeof manifest.contractSetSha256 !== 'string' ||
+    manifest.contractSetSha256 !== input.contractSetSha256 ||
+    !isRecord(manifest.toolchains) ||
+    Object.values(manifest.toolchains).some((value) => typeof value !== 'string') ||
+    !Array.isArray(manifest.artifacts)
+  ) {
+    throw new Error('Candidate manifest identity is invalid.');
+  }
+  const { candidateId: manifestCandidateId, ...baseManifest } = manifest;
+  if (
+    sha256(Buffer.from(JSON.stringify(baseManifest))) !== manifestCandidateId
+  ) {
+    throw new Error('Candidate manifest candidateId derivation is invalid.');
+  }
+  const declaredArtifacts = manifest.artifacts.map(manifestArtifact);
+  const declaredPaths = declaredArtifacts.map((artifact) => artifact.path);
+  const sortedDeclaredPaths = [...declaredPaths].sort((left, right) =>
+    left.localeCompare(right),
+  );
+  if (
+    new Set(declaredPaths).size !== declaredPaths.length ||
+    declaredPaths.some((path, index) => path !== sortedDeclaredPaths[index])
+  ) {
+    throw new Error('Candidate manifest artifact inventory is not canonical.');
+  }
+  const actualPaths = await collectCombinedCandidateArtifactPaths(root, realRoot);
+  if (
+    actualPaths.length !== declaredPaths.length ||
+    actualPaths.some((path, index) => path !== declaredPaths[index])
+  ) {
+    throw new Error(
+      'Candidate manifest artifact inventory does not match the candidate root.',
+    );
+  }
+  const artifacts: CombinedCandidateArtifact[] = [];
+  for (const artifact of declaredArtifacts) {
+    artifacts.push(await readCandidateArtifact(root, realRoot, artifact));
+  }
+
+  const sidecar = (
+    await readFile(join(root, 'candidate-manifest.json.sha256'), 'utf8')
+  ).trim();
+  if (sidecar !== `${manifestSha256}  candidate-manifest.json`) {
+    throw new Error('Candidate manifest SHA-256 sidecar is invalid.');
+  }
+  const ledger = parseJsonBytes(
+    await readFile(join(root, 'release-ledger.json')),
+    'Candidate release ledger',
+  );
+  exactRecordKeys(
+    ledger,
+    [
+      'artifacts',
+      'candidateId',
+      'candidateManifestSha256',
+      'releaseMode',
+      'schemaSha256',
+      'sourceCommit',
+      'status',
+      'version',
+    ],
+    'Candidate release ledger',
+  );
+  if (
+    ledger.candidateId !== manifestCandidateId ||
+    ledger.candidateManifestSha256 !== manifestSha256 ||
+    ledger.sourceCommit !== input.sourceCommit ||
+    ledger.version !== input.releaseVersion ||
+    ledger.releaseMode !== manifest.releaseMode ||
+    ledger.status !== 'candidate-verified' ||
+    !Array.isArray(ledger.artifacts)
+  ) {
+    throw new Error('Candidate release ledger identity is invalid.');
+  }
+  const schemaArtifact = artifacts.find(
+    (artifact) => artifact.path === 'runtime/capture-document-v2.schema.json',
+  );
+  if (!schemaArtifact) {
+    throw new Error('Candidate runtime schema artifact is missing.');
+  }
+  if (ledger.schemaSha256 !== schemaArtifact.sha256) {
+    throw new Error('Candidate release ledger schema digest is invalid.');
+  }
+  if (schemaArtifact.sha256 !== CAPTURE_DOCUMENT_SCHEMA_SHA256) {
+    throw new Error(
+      'Candidate runtime schema digest is not the pinned canonical schema.',
+    );
+  }
+  const runtimeManifestArtifact = artifacts.find(
+    (artifact) => artifact.path === 'runtime/capture-runtime-manifest.json',
+  );
+  if (!runtimeManifestArtifact) {
+    throw new Error('Candidate runtime manifest artifact is missing.');
+  }
+  const runtimeManifest = parseJsonBytes(
+    await readFile(join(root, runtimeManifestArtifact.path)),
+    'Candidate Capture Runtime manifest',
+  );
+  if (
+    runtimeManifest.runtimeVersion !== input.releaseVersion ||
+    runtimeManifest.schemaFileName !== CAPTURE_DOCUMENT_SCHEMA_FILE ||
+    runtimeManifest.schemaSha256 !== schemaArtifact.sha256
+  ) {
+    throw new Error('Candidate Capture Runtime manifest identity is invalid.');
+  }
+  const contractSnapshotArtifact = artifacts.find(
+    (artifact) => artifact.path === 'contracts/contract-snapshot.json',
+  );
+  if (!contractSnapshotArtifact) {
+    throw new Error('Candidate contract snapshot artifact is missing.');
+  }
+  const contractSnapshot = parseJsonBytes(
+    await readFile(join(root, contractSnapshotArtifact.path)),
+    'Candidate contract snapshot',
+  );
+  if (contractSnapshot.schemaVersion !== '1') {
+    throw new Error('Candidate contract snapshot schema is unsupported.');
+  }
+  const expectedPackageNames = new Set([
+    `gx-capture-capture-workbench-ui-${input.releaseVersion}.tgz`,
+    `gx-capture-capture-runtime-client-${input.releaseVersion}.tgz`,
+  ]);
+  const packageArtifacts = artifacts.filter((artifact) =>
+    /^package\/[^/]+\.tgz$/u.test(artifact.path),
+  );
+  if (
+    packageArtifacts.length !== expectedPackageNames.size ||
+    packageArtifacts.some(
+      (artifact) => !expectedPackageNames.has(basename(artifact.path)),
+    )
+  ) {
+    throw new Error('Candidate npm artifact inventory is incomplete.');
+  }
+  const escapedReleaseVersion = input.releaseVersion.replace(
+    /[.*+?^${}()|[\]\\]/gu,
+    '\\$&',
+  );
+  const pythonArtifacts = artifacts.filter((artifact) =>
+    new RegExp(
+      `^python\\/capture_runtime_client-${escapedReleaseVersion}(?:-[^/]+)?\\.(?:whl|tar\\.gz)$`,
+      'u',
+    ).test(artifact.path),
+  );
+  if (pythonArtifacts.length === 0) {
+    throw new Error('Candidate Python artifact inventory is incomplete.');
+  }
+  const cratePath = `crate/capture-sidecar-launcher-${input.releaseVersion}.crate`;
+  const crateArtifacts = artifacts.filter((artifact) => artifact.path === cratePath);
+  if (crateArtifacts.length !== 1) {
+    throw new Error('Candidate Cargo artifact inventory is incomplete.');
+  }
+  const expectedRegistryArtifacts = [
+    ...packageArtifacts,
+    ...pythonArtifacts,
+    ...crateArtifacts,
+  ];
+  const expectedLedgerArtifacts = expectedRegistryArtifacts.map((artifact) => {
+    const [registryDirectory, name] = artifact.path.split('/');
+    return {
+      registry:
+        registryDirectory === 'package'
+          ? 'npm'
+          : registryDirectory === 'python'
+            ? 'pypi'
+            : 'crates.io',
+      name,
+      sha256: artifact.sha256,
+    };
+  });
+  const declaredLedgerArtifacts = ledger.artifacts.map(ledgerArtifact);
+  const ledgerArtifactKey = (artifact: {
+    readonly registry: string;
+    readonly name: string;
+    readonly sha256: string;
+  }): string => `${artifact.registry}\u0000${artifact.name}\u0000${artifact.sha256}`;
+  const expectedLedgerKeys = new Set(expectedLedgerArtifacts.map(ledgerArtifactKey));
+  const declaredLedgerKeys = declaredLedgerArtifacts.map(ledgerArtifactKey);
+  if (
+    declaredLedgerArtifacts.length !== expectedLedgerArtifacts.length ||
+    expectedLedgerKeys.size !== expectedLedgerArtifacts.length ||
+    new Set(declaredLedgerKeys).size !== declaredLedgerKeys.length ||
+    declaredLedgerKeys.some((key) => !expectedLedgerKeys.has(key))
+  ) {
+    throw new Error('Candidate release ledger artifact inventory is incomplete.');
+  }
+  for (const artifact of expectedRegistryArtifacts) {
+    const name = basename(artifact.path);
+    const checksumPath = `checksums/${name}.sha256`;
+    const checksumArtifact = artifacts.find((entry) => entry.path === checksumPath);
+    if (!checksumArtifact) {
+      throw new Error(`Candidate checksum inventory is missing: ${checksumPath}.`);
+    }
+    const checksumText = (
+      await readFile(join(root, checksumPath), 'utf8')
+    ).trim();
+    if (checksumText !== `${artifact.sha256}  ${name}`) {
+      throw new Error(`Candidate checksum record is invalid: ${name}.`);
+    }
+  }
+  const contractArtifact = artifacts.find(
+    (artifact) => artifact.path === 'contracts/contract-set.json',
+  );
+  const contractDigestArtifact = artifacts.find(
+    (artifact) => artifact.path === 'contracts/contract-set.sha256',
+  );
+  if (!contractArtifact || !contractDigestArtifact) {
+    throw new Error('Candidate contract-set artifacts are missing.');
+  }
+  const contractBytes = await readFile(join(root, contractArtifact.path));
+  const contractSetSha256 = sha256(contractBytes);
+  const declaredContractSha256 = (
+    await readFile(join(root, contractDigestArtifact.path), 'utf8')
+  ).trim();
+  if (
+    contractSetSha256 !== manifest.contractSetSha256 ||
+    declaredContractSha256 !== contractSetSha256
+  ) {
+    throw new Error('Candidate runtime contract-set identity is invalid.');
+  }
+  const frozenArtifacts = Object.freeze(
+    artifacts.map((artifact) => Object.freeze({ ...artifact })),
+  );
+  return Object.freeze({
+    schemaVersion: '1',
+    candidateRoot: root,
+    candidateId: manifestCandidateId,
+    candidateManifestSha256: manifestSha256,
+    sourceCommit: input.sourceCommit,
+    releaseVersion: input.releaseVersion,
+    releaseMode: input.releaseMode,
+    packageCandidateId: manifest.packageCandidateId,
+    runtimeCandidateId: manifest.runtimeCandidateId,
+    contractSetSha256,
+    artifacts: frozenArtifacts,
+  });
+}
+
+export async function verifyCandidateArtifactReceipt(
+  input: CandidateArtifactReceiptInput,
+): Promise<CandidateArtifactReceipt> {
+  return verifyCombinedCandidateRoot(input);
+}
+
+export async function reverifyCandidateArtifactReceipt(
+  receipt: CandidateArtifactReceipt,
+): Promise<void> {
+  if (receipt.schemaVersion !== '1') {
+    throw new Error('Candidate artifact receipt schema is unsupported.');
+  }
+  const current = await verifyCombinedCandidateRoot({
+    candidate: receipt.candidateRoot,
+    candidateId: receipt.candidateId,
+    candidateManifestSha256: receipt.candidateManifestSha256,
+    sourceCommit: receipt.sourceCommit,
+    releaseVersion: receipt.releaseVersion,
+    releaseMode: receipt.releaseMode,
+    packageCandidateId: receipt.packageCandidateId,
+    runtimeCandidateId: receipt.runtimeCandidateId,
+    contractSetSha256: receipt.contractSetSha256,
+  });
+  if (
+    current.releaseMode !== receipt.releaseMode ||
+    current.packageCandidateId !== receipt.packageCandidateId ||
+    current.runtimeCandidateId !== receipt.runtimeCandidateId ||
+    current.contractSetSha256 !== receipt.contractSetSha256 ||
+    current.artifacts.length !== receipt.artifacts.length ||
+    current.artifacts.some(
+      (artifact, index) =>
+        artifact.path !== receipt.artifacts[index].path ||
+        artifact.bytes !== receipt.artifacts[index].bytes ||
+        artifact.sha256 !== receipt.artifacts[index].sha256,
+    )
+  ) {
+    throw new Error('Candidate artifact receipt no longer matches its root.');
+  }
 }
 
 async function loadContractIdentity(
