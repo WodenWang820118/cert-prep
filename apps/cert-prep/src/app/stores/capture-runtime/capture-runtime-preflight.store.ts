@@ -30,8 +30,9 @@ export class CaptureRuntimePreflightStore {
   );
   readonly cpuFallbackNotice = computed(() => {
     const preflight = this.ocrCompute();
-    return preflight?.mode === 'cpu-fallback' &&
-      preflight.userNoticeRequired &&
+    // The producer contract owns mode/reason consistency. The host only
+    // localizes the authenticated notice flag and code it received.
+    return preflight?.userNoticeRequired &&
       preflight.noticeCode === 'ocr_cpu_fallback'
       ? CPU_FALLBACK_MESSAGE
       : null;

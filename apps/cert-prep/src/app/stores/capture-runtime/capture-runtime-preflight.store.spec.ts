@@ -33,20 +33,51 @@ describe('CaptureRuntimePreflightStore', () => {
   });
 
   it.each([
-    'no_compatible_gpu',
-    'dml_provider_unavailable',
-  ] as const)('exposes the CPU fallback notice for %s', (reasonCode) => {
-    client.getReady.mockReturnValue(
-      of(runtimeReady('cpu-fallback', 'integrated', reasonCode)),
-    );
+    [
+      'CPU fallback with no compatible GPU',
+      () => runtimeReady('cpu-fallback', 'integrated', 'no_compatible_gpu'),
+      'no compatible GPU/DML, CPU may be slower',
+    ],
+    [
+      'CPU fallback with unavailable DirectML provider',
+      () => runtimeReady('cpu-fallback', 'unknown', 'dml_provider_unavailable'),
+      'no compatible GPU/DML, CPU may be slower',
+    ],
+    [
+      'producer notice flag false',
+      () =>
+        withOcrComputePatch(
+          runtimeReady('cpu-fallback', 'integrated', 'no_compatible_gpu'),
+          { userNoticeRequired: false },
+        ),
+      null,
+    ],
+    [
+      'producer notice code absent',
+      () =>
+        withOcrComputePatch(
+          runtimeReady('cpu-fallback', 'integrated', 'no_compatible_gpu'),
+          { noticeCode: null },
+        ),
+      null,
+    ],
+    [
+      'unknown producer notice code',
+      () =>
+        withOcrComputePatch(
+          runtimeReady('cpu-fallback', 'integrated', 'no_compatible_gpu'),
+          { noticeCode: 'ocr_future_notice' },
+        ),
+      null,
+    ],
+  ] as const)('%s', (_caseName, createReady, expectedNotice) => {
+    client.getReady.mockReturnValue(of(createReady()));
     const store = TestBed.inject(CaptureRuntimePreflightStore);
 
     store.load().subscribe();
 
     expect(store.gpuAccelerationMessage()).toBeNull();
-    expect(store.cpuFallbackNotice()).toBe(
-      'no compatible GPU/DML, CPU may be slower',
-    );
+    expect(store.cpuFallbackNotice()).toBe(expectedNotice);
     expect(store.canImport()).toBe(true);
   });
 
@@ -104,5 +135,21 @@ function runtimeReady(
       noticeCode: mode === 'cpu-fallback' ? 'ocr_cpu_fallback' : null,
     },
     message: null,
+  };
+}
+
+function withOcrComputePatch(
+  ready: CaptureRuntimeReady,
+  patch: Record<string, unknown>,
+): CaptureRuntimeReady {
+  if (ready.ocrCompute === null) {
+    throw new Error('Test runtime readiness must include OCR compute.');
+  }
+  return {
+    ...ready,
+    ocrCompute: {
+      ...ready.ocrCompute,
+      ...patch,
+    } as NonNullable<CaptureRuntimeReady['ocrCompute']>,
   };
 }
