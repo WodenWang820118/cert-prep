@@ -1,5 +1,13 @@
 import { createHash } from 'node:crypto';
-import { lstat, readdir, readFile, realpath, stat } from 'node:fs/promises';
+import {
+  lstat,
+  mkdir,
+  readdir,
+  readFile,
+  realpath,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import {
   basename,
   dirname,
@@ -17,7 +25,12 @@ import {
   CAPTURE_RUNTIME_VERSION,
   validateCaptureRuntimeReleaseManifest,
 } from './install-capture-runtime.mts';
-import { assertCaptureRuntimeConsumerVersions } from './capture-runtime-version-check.mts';
+import {
+  assertCaptureRuntimeConsumerInventory,
+  assertCaptureRuntimeConsumerVersions,
+  readCaptureRuntimeConsumerInventory,
+  type CaptureRuntimeContractSource,
+} from './capture-runtime-version-check.mts';
 import {
   assertCaptureRuntimeIdentity,
   parseCaptureRuntimeProbe,
@@ -28,6 +41,7 @@ import {
 
 const CONSUMER_REPOSITORY = 'WodenWang820118/cert-prep';
 const WORKFLOW_PATH = '.github/workflows/capture-candidate-gate.yml';
+const LEGACY_PUBLISHED_CAPTURE_RUNTIME_VERSION = '0.4.1';
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
 const GIT_SHA_PATTERN = /^[0-9a-f]{40}$/u;
 
@@ -325,9 +339,9 @@ async function requireRegularFile(path: string, label: string): Promise<void> {
 }
 
 async function assertInstalledCandidatePackages(
+  workspaceRoot: string,
   expectedVersion: string,
 ): Promise<void> {
-  const workspaceRoot = resolve(import.meta.dirname, '..');
   for (const packageName of [
     '@gx-capture/capture-workbench-ui',
     '@gx-capture/capture-runtime-client',
@@ -367,25 +381,60 @@ async function assertInstalledCandidatePackages(
   }
 }
 
-async function assertConsumerVersionContract(
+export async function assertCandidateConsumerVersionContract(input: {
+  readonly workspaceRoot: string;
+  readonly expectedVersion: string;
+  readonly contractSource: CaptureRuntimeContractSource;
+}): Promise<void> {
+  const report = assertCaptureRuntimeConsumerInventory(
+    readCaptureRuntimeConsumerInventory(
+      input.workspaceRoot,
+      input.contractSource,
+    ),
+  );
+  if (report.expectedRuntimeVersion !== input.expectedVersion) {
+    throw new Error(
+      `Candidate contract runtime identity must be ${input.expectedVersion}, found ${String(report.expectedRuntimeVersion)}.`,
+    );
+  }
+  await assertInstalledCandidatePackages(
+    input.workspaceRoot,
+    input.expectedVersion,
+  );
+}
+
+export async function assertConsumerVersionContract(
   expectedVersion: string,
   identityMode: CaptureRuntimeIdentityMode = 'release',
+  contractSource?: CaptureRuntimeContractSource,
+  workspaceRoot = resolve(import.meta.dirname, '..'),
 ): Promise<void> {
   if (identityMode === 'local-probe') return;
-  const workspaceRoot = resolve(import.meta.dirname, '..');
   const packageJson = JSON.parse(
     await readFile(join(workspaceRoot, 'package.json'), 'utf8'),
   ) as { dependencies?: Record<string, unknown> };
   const workbenchDependency =
     packageJson.dependencies?.['@gx-capture/capture-workbench-ui'];
-  if (
+  const isPublishedLegacyPath =
+    expectedVersion === LEGACY_PUBLISHED_CAPTURE_RUNTIME_VERSION &&
+    CAPTURE_RUNTIME_VERSION === LEGACY_PUBLISHED_CAPTURE_RUNTIME_VERSION &&
+    process.env.CAPTURE_CANDIDATE_INSTALL !== '1' &&
     typeof workbenchDependency === 'string' &&
-    workbenchDependency.startsWith('file:')
-  ) {
-    await assertInstalledCandidatePackages(expectedVersion);
+    !workbenchDependency.startsWith('file:');
+  if (isPublishedLegacyPath) {
+    assertCaptureRuntimeConsumerVersions(workspaceRoot);
     return;
   }
-  assertCaptureRuntimeConsumerVersions();
+  if (!contractSource) {
+    throw new Error(
+      `Verified candidate consumer contract source is required for release ${expectedVersion}.`,
+    );
+  }
+  await assertCandidateConsumerVersionContract({
+    workspaceRoot,
+    expectedVersion,
+    contractSource,
+  });
 }
 
 async function readJsonRecord(
@@ -494,6 +543,7 @@ async function loadContractIdentity(
 ): Promise<{
   readonly contractSetSha256: string;
   readonly ocrProjectionSchemaVersion: '3';
+  readonly contractSource: CaptureRuntimeContractSource;
 }> {
   const contractPath = join(candidateRoot, 'contracts', 'contract-set.json');
   const contractBytes = await readFile(contractPath).catch((error: unknown) => {
@@ -519,7 +569,12 @@ async function loadContractIdentity(
     await readFile(
       join(candidateRoot, 'contracts', 'contract-set.sha256'),
       'utf8',
-    )
+    ).catch((error: unknown) => {
+      throw new Error(
+        `Candidate contract-set SHA-256 file is not readable: ${join(candidateRoot, 'contracts', 'contract-set.sha256')}.`,
+        { cause: error },
+      );
+    })
   ).trim();
   if (declaredFile !== contractSetSha256) {
     throw new Error(
@@ -547,7 +602,39 @@ async function loadContractIdentity(
       'Candidate contract set does not expose the CaptureOcrProjectionV3 schema.',
     );
   }
-  return { contractSetSha256, ocrProjectionSchemaVersion: '3' };
+  const schemas = Array.isArray(contractSet.schemas)
+    ? contractSet.schemas.filter(isRecord)
+    : [];
+  const projectionSchemas = schemas.filter(
+    (schema) => schema.name === 'CaptureOcrProjectionV3',
+  );
+  if (projectionSchemas.length !== 1) {
+    throw new Error(
+      'Candidate contract set must declare exactly one CaptureOcrProjectionV3 schema.',
+    );
+  }
+  const projectionProperties = isRecord(projectionSchemas[0].schema)
+    ? projectionSchemas[0].schema.properties
+    : undefined;
+  const projectionSchemaVersion = isRecord(projectionProperties)
+    ? isRecord(projectionProperties.schemaVersion)
+      ? projectionProperties.schemaVersion.const
+      : undefined
+    : undefined;
+  if (projectionSchemaVersion !== '3') {
+    throw new Error(
+      `Candidate CaptureOcrProjectionV3 schema version must be 3, found ${String(projectionSchemaVersion)}.`,
+    );
+  }
+  return {
+    contractSetSha256,
+    ocrProjectionSchemaVersion: '3',
+    contractSource: {
+      source: 'candidate/contracts/contract-set.json',
+      bytes: contractBytes,
+      declaredSha256: contractSetSha256,
+    },
+  };
 }
 
 async function loadCandidateWorker(
@@ -656,7 +743,9 @@ export async function verifyCandidate(
     >,
 ): Promise<{
   readonly releaseMode: 'core-only' | 'model-enabled';
+  readonly runtimeVersion: string;
   readonly identity: CaptureRuntimeIdentityReport;
+  readonly contractSource: CaptureRuntimeContractSource;
 }> {
   const identityMode = input.identityMode ?? 'release';
   if (identityMode === 'local-probe' && !input.probeManifest) {
@@ -789,6 +878,8 @@ export async function verifyCandidate(
   });
   return {
     releaseMode: manifest.releaseMode,
+    runtimeVersion,
+    contractSource: contract.contractSource,
     identity: {
       ...identity,
       softChecks: [
@@ -850,6 +941,90 @@ function currentCommit(): string {
   return commit;
 }
 
+export type CandidateGateDependencies = {
+  readonly workspaceRoot?: string;
+  readonly runNx?: (target: string) => void;
+  readonly writeResult?: (
+    path: string,
+    result: CaptureCandidateGateResult,
+  ) => Promise<void>;
+  readonly consumerCommit?: string;
+};
+
+async function writeCandidateGateResult(
+  path: string,
+  result: CaptureCandidateGateResult,
+): Promise<void> {
+  await mkdir(resolve(path, '..'), { recursive: true });
+  await writeFile(path, `${JSON.stringify(result, null, 2)}\n`, 'utf8');
+}
+
+export async function runCandidateGate(
+  input: CaptureCandidateGateArguments,
+  dependencies: CandidateGateDependencies = {},
+): Promise<CaptureCandidateGateResult> {
+  const startedAt = new Date().toISOString();
+  const workspaceRoot =
+    dependencies.workspaceRoot ?? resolve(import.meta.dirname, '..');
+  const candidate = await verifyCandidate(input);
+  await assertConsumerVersionContract(
+    candidate.runtimeVersion,
+    input.identityMode,
+    candidate.contractSource,
+    workspaceRoot,
+  );
+  const checks: { name: string; status: 'passed' }[] = [
+    { name: 'candidate-identity', status: 'passed' },
+    { name: 'candidate-runtime-assets', status: 'passed' },
+    { name: 'candidate-workbench-package', status: 'passed' },
+    {
+      name:
+        input.identityMode === 'local-probe'
+          ? 'consumer-version-lock-recorded-only'
+          : 'consumer-version-lock',
+      status: 'passed',
+    },
+  ];
+  if (candidate.releaseMode === 'model-enabled') {
+    const modelCatalog = join(
+      input.candidate,
+      'runtime',
+      'capture-engine-catalog.json',
+    );
+    await requireRegularFile(modelCatalog, 'Model-enabled candidate catalog');
+    checks.push({ name: 'model-enabled-catalog-present', status: 'passed' });
+  }
+  if (!input.skipChecks) {
+    const invokeNx = dependencies.runNx ?? runNx;
+    invokeNx('cert-prep-desktop:capture-runtime-consumer-test');
+    checks.push({ name: 'capture-runtime-consumer-tests', status: 'passed' });
+    invokeNx('cert-prep-backend:test');
+    checks.push({ name: 'cert-prep-backend-tests', status: 'passed' });
+    invokeNx('cert-prep-desktop:package-qa-test');
+    checks.push({ name: 'cert-prep-desktop-package-qa', status: 'passed' });
+  }
+  const completedAt = new Date().toISOString();
+  const result = createResult({
+    consumerCommit: dependencies.consumerCommit ?? currentCommit(),
+    workflowRunId: input.workflowRunId,
+    candidateId: input.candidateId,
+    candidateManifestSha256: input.candidateManifestSha256,
+    startedAt,
+    completedAt,
+    checks,
+    ...(input.identityMode === 'local-probe'
+      ? {
+          identityMode: input.identityMode,
+          softChecks: candidate.identity.softChecks,
+        }
+      : {}),
+  });
+  if (dependencies.writeResult) {
+    await dependencies.writeResult(input.output, result);
+  }
+  return result;
+}
+
 export function createResult(input: {
   readonly consumerCommit: string;
   readonly workflowRunId: number;
@@ -887,59 +1062,11 @@ export function createResult(input: {
 
 async function main(): Promise<void> {
   const input = parseArguments(process.argv.slice(2));
-  const startedAt = new Date().toISOString();
-  const candidate = await verifyCandidate(input);
-  await assertConsumerVersionContract(input.releaseVersion, input.identityMode);
-  const checks: { name: string; status: 'passed' }[] = [
-    { name: 'candidate-identity', status: 'passed' },
-    { name: 'candidate-runtime-assets', status: 'passed' },
-    { name: 'candidate-workbench-package', status: 'passed' },
-    {
-      name:
-        input.identityMode === 'local-probe'
-          ? 'consumer-version-lock-recorded-only'
-          : 'consumer-version-lock',
-      status: 'passed',
-    },
-  ];
-  if (!input.skipChecks) {
-    runNx('cert-prep-desktop:capture-runtime-consumer-test');
-    checks.push({ name: 'capture-runtime-consumer-tests', status: 'passed' });
-    runNx('cert-prep-backend:test');
-    checks.push({ name: 'cert-prep-backend-tests', status: 'passed' });
-    runNx('cert-prep-desktop:package-qa-test');
-    checks.push({ name: 'cert-prep-desktop-package-qa', status: 'passed' });
-  }
-  if (candidate.releaseMode === 'model-enabled') {
-    const modelCatalog = join(
-      input.candidate,
-      'runtime',
-      'capture-engine-catalog.json',
-    );
-    await requireRegularFile(modelCatalog, 'Model-enabled candidate catalog');
-    checks.push({ name: 'model-enabled-catalog-present', status: 'passed' });
-  }
-  const completedAt = new Date().toISOString();
-  const result = createResult({
-    consumerCommit: currentCommit(),
-    workflowRunId: input.workflowRunId,
-    candidateId: input.candidateId,
-    candidateManifestSha256: input.candidateManifestSha256,
-    startedAt,
-    completedAt,
-    checks,
-    ...(input.identityMode === 'local-probe'
-      ? {
-          identityMode: input.identityMode,
-          softChecks: candidate.identity.softChecks,
-        }
-      : {}),
+  const result = await runCandidateGate(input, {
+    writeResult: writeCandidateGateResult,
   });
-  const { mkdir, writeFile } = await import('node:fs/promises');
-  await mkdir(resolve(input.output, '..'), { recursive: true });
-  await writeFile(input.output, `${JSON.stringify(result, null, 2)}\n`, 'utf8');
   process.stdout.write(
-    `Cert Prep consumer gate passed for candidate ${input.candidateId}.\n`,
+    `Cert Prep consumer gate passed for candidate ${result.candidateId}.\n`,
   );
 }
 

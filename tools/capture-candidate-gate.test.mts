@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import test from 'node:test';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 
 import {
   CAPTURE_DOCUMENT_SCHEMA_FILE,
@@ -13,7 +13,10 @@ import {
 import { CAPTURE_RUNTIME_VERSION } from './capture-runtime-version.mts';
 import {
   createResult,
+  assertCandidateConsumerVersionContract,
+  assertConsumerVersionContract,
   parseArguments,
+  runCandidateGate,
   validateRuntimeCandidateContent,
   validateRuntimeCandidateManifest,
   verifyCandidate,
@@ -303,22 +306,16 @@ test('local-probe identity rejects mixed runtime, worker, contract, or source-tr
     {
       name: 'contract set',
       mutate: async (fixture) => {
-        const changedContract = JSON.stringify({
-          contractSetVersion: '2',
-          operations: [
-            {
-              method: 'GET',
-              path: '/v2/captures/{capture_id}/ocr',
-              responseSchema: 'CaptureOcrProjectionV3',
-            },
-            {
-              method: 'GET',
-              path: '/v2/captures/{capture_id}/result',
-              responseSchema: 'CaptureDocument',
-            },
-          ],
+        const changedContract = JSON.parse(
+          await readFile(fixture.contractPath, 'utf8'),
+        ) as { operations: unknown[] };
+        changedContract.operations.push({
+          method: 'GET',
+          path: '/v2/captures/{capture_id}/result',
+          responseSchema: 'CaptureDocument',
         });
-        const contractBytes = Buffer.from(changedContract);
+        const changedContractJson = JSON.stringify(changedContract);
+        const contractBytes = Buffer.from(changedContractJson);
         await writeFile(fixture.contractPath, contractBytes);
         await writeFile(fixture.contractDigestPath, sha256(contractBytes));
         const manifest = JSON.parse(
@@ -409,6 +406,522 @@ test('release identity accepts an exact model-enabled candidate', async () => {
     assert.equal(result.identity.mode, 'release');
   } finally {
     await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+const CONSUMER_INVENTORY_SOURCE_PATHS = [
+  'package.json',
+  'pnpm-workspace.yaml',
+  'pnpm-lock.yaml',
+  'tools/capture-runtime-version.mts',
+  'apps/cert-prep-backend/pyproject.toml',
+  'apps/cert-prep-backend/uv.lock',
+  'apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/runtime_policy.py',
+  'apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/mapping.py',
+  'apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/client.py',
+  'apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/runtime_provenance.py',
+  'apps/cert-prep-desktop/src-tauri/src/constants.rs',
+  'apps/cert-prep-desktop/src-tauri/Cargo.toml',
+  'apps/cert-prep-desktop/src-tauri/Cargo.lock',
+  'apps/cert-prep-desktop/src-tauri/src/capture_manifest.rs',
+  'apps/cert-prep-desktop/src-tauri/src/manifests.rs',
+  'apps/cert-prep-desktop/src-tauri/src/backend_process.rs',
+  'apps/cert-prep-desktop/src-tauri/src/capture_runtime.rs',
+  'apps/cert-prep-desktop/project.json',
+  'apps/cert-prep-desktop/scripts/package-qa/constants.mts',
+  'tools/install-capture-runtime.mts',
+  'tools/capture-runtime-consumer-smoke.mts',
+  'apps/cert-prep/src/app/pages/capture-workbench-trial/cert-prep-capture-client.ts',
+  'libs/cert-prep-api/src/lib/cert-prep-api.generated.ts',
+] as const;
+
+async function createConsistentConsumerWorkspace(): Promise<string> {
+  const workspaceRoot = await mkdtemp(
+    join(
+      process.env.TEMP ?? process.env.TMP ?? '.',
+      'cert-candidate-consumer-4-2-',
+    ),
+  );
+  const sourceRoot = join(import.meta.dirname, '..');
+  for (const relativePath of CONSUMER_INVENTORY_SOURCE_PATHS) {
+    const destination = join(workspaceRoot, relativePath);
+    await mkdir(dirname(destination), { recursive: true });
+    await cp(join(sourceRoot, relativePath), destination);
+  }
+
+  const replace = async (
+    relativePath: string,
+    transform: (content: string) => string,
+  ): Promise<void> => {
+    const path = join(workspaceRoot, relativePath);
+    await writeFile(path, transform(await readFile(path, 'utf8')));
+  };
+  await replace('package.json', (content) =>
+    content.replace(
+      /("@gx-capture\/capture-workbench-ui"\s*:\s*")0\.4\.1("\s*[,}])/u,
+      '$10.4.2$2',
+    ),
+  );
+  await replace('pnpm-workspace.yaml', (content) =>
+    content.replace(
+      /(@gx-capture\/capture-(?:workbench-ui|runtime-client)@)0\.4\.1/gu,
+      '$10.4.2',
+    ),
+  );
+  await replace('pnpm-lock.yaml', (content) =>
+    content.replace(
+      /(@gx-capture\/capture-(?:workbench-ui|runtime-client)@)0\.4\.1/gu,
+      '$10.4.2',
+    ),
+  );
+  await replace('tools/capture-runtime-version.mts', (content) =>
+    content.replaceAll("'0.4.1'", "'0.4.2'"),
+  );
+  await replace('apps/cert-prep-backend/pyproject.toml', (content) =>
+    content.replaceAll('capture-runtime-client==0.4.1', 'capture-runtime-client==0.4.2'),
+  );
+  await replace('apps/cert-prep-backend/uv.lock', (content) =>
+    content.replace(
+      /(name = "capture-runtime-client"\r?\nversion = ")0\.4\.1("\r?\n)/u,
+      '$10.4.2$2',
+    ),
+  );
+  await replace('apps/cert-prep-desktop/src-tauri/src/constants.rs', (content) =>
+    content.replaceAll('"0.4.1"', '"0.4.2"'),
+  );
+  await replace('apps/cert-prep-desktop/src-tauri/Cargo.toml', (content) =>
+    content.replace(
+      /(capture-sidecar-launcher\s*=\s*")0\.4\.1("\s*$)/mu,
+      '$10.4.2$2',
+    ),
+  );
+  await replace('apps/cert-prep-desktop/src-tauri/Cargo.lock', (content) =>
+    content.replace(
+      /(\[\[package\]\]\r?\nname = "capture-sidecar-launcher"\r?\nversion = ")0\.4\.1("\r?\n)/u,
+      '$10.4.2$2',
+    ),
+  );
+  await replace('apps/cert-prep-desktop/project.json', (content) =>
+    content.replaceAll('capture-runtime/0.4.1', 'capture-runtime/0.4.2'),
+  );
+  await mkdir(join(workspaceRoot, 'node_modules/@gx-capture/capture-workbench-ui'), {
+    recursive: true,
+  });
+  await mkdir(join(workspaceRoot, 'node_modules/@gx-capture/capture-runtime-client'), {
+    recursive: true,
+  });
+  await writeFile(
+    join(
+      workspaceRoot,
+      'node_modules/@gx-capture/capture-workbench-ui/package.json',
+    ),
+    JSON.stringify({ name: '@gx-capture/capture-workbench-ui', version: '0.4.2' }),
+  );
+  await writeFile(
+    join(
+      workspaceRoot,
+      'node_modules/@gx-capture/capture-runtime-client/package.json',
+    ),
+    JSON.stringify({ name: '@gx-capture/capture-runtime-client', version: '0.4.2' }),
+  );
+  return workspaceRoot;
+}
+
+async function rewriteCandidateContract(
+  fixture: CandidateFixture,
+  value: unknown,
+): Promise<void> {
+  const bytes = Buffer.from(JSON.stringify(value));
+  await writeFile(fixture.contractPath, bytes);
+  await writeFile(fixture.contractDigestPath, sha256(bytes));
+  const manifest = JSON.parse(
+    await readFile(fixture.manifestPath, 'utf8'),
+  ) as Record<string, unknown>;
+  manifest.contractSetSha256 = sha256(bytes);
+  const manifestBytes = Buffer.from(JSON.stringify(manifest));
+  await writeFile(fixture.manifestPath, manifestBytes);
+  fixture.input.candidateManifestSha256 = sha256(manifestBytes);
+}
+
+test('file candidate binds verified contract bytes and reaches complete inventory', async () => {
+  const fixture = await createCandidateFixture({ candidateVersion: '0.4.2' });
+  const workspaceRoot = await createConsistentConsumerWorkspace();
+  try {
+    const verified = await verifyCandidate({
+      ...fixture.input,
+      identityMode: 'release',
+      releaseVersion: '0.4.2',
+    });
+    const before = Buffer.from(verified.contractSource.bytes);
+    await assertCandidateConsumerVersionContract({
+      workspaceRoot,
+      expectedVersion: '0.4.2',
+      contractSource: verified.contractSource,
+    });
+    assert.deepEqual(Buffer.from(verified.contractSource.bytes), before);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+    await rm(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test('file dependency cannot bypass the verified consumer contract source', async () => {
+  const fixture = await createCandidateFixture({ candidateVersion: '0.4.2' });
+  const workspaceRoot = await createConsistentConsumerWorkspace();
+  try {
+    const packagePath = join(workspaceRoot, 'package.json');
+    const packageManifest = JSON.parse(await readFile(packagePath, 'utf8')) as {
+      dependencies: Record<string, unknown>;
+    };
+    packageManifest.dependencies['@gx-capture/capture-workbench-ui'] =
+      'file:../candidate';
+    await writeFile(packagePath, JSON.stringify(packageManifest));
+    await assert.rejects(
+      assertConsumerVersionContract('0.4.2', 'release', undefined, workspaceRoot),
+      /Verified candidate consumer contract source is required/u,
+    );
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+    await rm(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test('a phase2 candidate cannot use the published consumer pins as a legacy bypass', async () => {
+  const fixture = await createCandidateFixture({ candidateVersion: '0.4.2' });
+  let nxCalled = false;
+  let outputWritten = false;
+  try {
+    await assert.rejects(
+      runCandidateGate(
+        {
+          ...fixture.input,
+          identityMode: 'release',
+          releaseVersion: '0.4.2',
+          output: join(fixture.root, 'result.json'),
+          workflowRunId: 2,
+          skipChecks: false,
+        },
+        {
+          workspaceRoot: join(import.meta.dirname, '..'),
+          runNx: () => {
+            nxCalled = true;
+          },
+          writeResult: async () => {
+            outputWritten = true;
+          },
+          consumerCommit: commit,
+        },
+      ),
+      /Capture Runtime consumer inventory blocked/u,
+    );
+    assert.equal(nxCalled, false);
+    assert.equal(outputWritten, false);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test('the exact published 0.4.1 non-file path remains a named legacy case', async () => {
+  const fixture = await createCandidateFixture({ candidateVersion: '0.4.1' });
+  const nxTargets: string[] = [];
+  let outputWritten = false;
+  try {
+    const result = await runCandidateGate(
+      {
+        ...fixture.input,
+        identityMode: 'release',
+        releaseVersion: CAPTURE_RUNTIME_VERSION,
+        output: join(fixture.root, 'legacy-result.json'),
+        workflowRunId: 5,
+        skipChecks: false,
+      },
+      {
+        workspaceRoot: join(import.meta.dirname, '..'),
+        runNx: (target) => nxTargets.push(target),
+        writeResult: async () => {
+          outputWritten = true;
+        },
+        consumerCommit: commit,
+      },
+    );
+    assert.equal(result.verdict, 'passed');
+    assert.deepEqual(nxTargets, [
+      'cert-prep-desktop:capture-runtime-consumer-test',
+      'cert-prep-backend:test',
+      'cert-prep-desktop:package-qa-test',
+    ]);
+    assert.equal(outputWritten, true);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test('a consistent phase2 non-file candidate reaches Nx and result output only after inventory', async () => {
+  const fixture = await createCandidateFixture({ candidateVersion: '0.4.2' });
+  const workspaceRoot = await createConsistentConsumerWorkspace();
+  const nxTargets: string[] = [];
+  let outputWritten = false;
+  try {
+    const result = await runCandidateGate(
+      {
+        ...fixture.input,
+        identityMode: 'release',
+        releaseVersion: '0.4.2',
+        output: join(workspaceRoot, 'result.json'),
+        workflowRunId: 3,
+        skipChecks: false,
+      },
+      {
+        workspaceRoot,
+        runNx: (target) => nxTargets.push(target),
+        writeResult: async () => {
+          outputWritten = true;
+        },
+        consumerCommit: commit,
+      },
+    );
+    assert.equal(result.verdict, 'passed');
+    assert.deepEqual(nxTargets, [
+      'cert-prep-desktop:capture-runtime-consumer-test',
+      'cert-prep-backend:test',
+      'cert-prep-desktop:package-qa-test',
+    ]);
+    assert.equal(outputWritten, true);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+    await rm(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test('contract source and manifest failures stop before Nx and result output', async () => {
+  const fixture = await createCandidateFixture({ candidateVersion: '0.4.2' });
+  const workspaceRoot = await createConsistentConsumerWorkspace();
+  let nxCalled = false;
+  let outputWritten = false;
+  try {
+    await rm(fixture.contractPath);
+    await assert.rejects(
+      runCandidateGate(
+        {
+          ...fixture.input,
+          identityMode: 'release',
+          releaseVersion: '0.4.2',
+          output: join(workspaceRoot, 'result.json'),
+          workflowRunId: 1,
+          skipChecks: false,
+        },
+        {
+          workspaceRoot,
+          runNx: () => {
+            nxCalled = true;
+          },
+          writeResult: async () => {
+            outputWritten = true;
+          },
+          consumerCommit: commit,
+        },
+      ),
+      /Candidate contract set is not readable/u,
+    );
+    assert.equal(nxCalled, false);
+    assert.equal(outputWritten, false);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+    await rm(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test('contract bytes, sidecar digest, and manifest digest are all required', async () => {
+  const fixture = await createCandidateFixture({ candidateVersion: '0.4.2' });
+  try {
+    const validContract = JSON.parse(
+      await readFile(fixture.contractPath, 'utf8'),
+    );
+    await writeFile(fixture.contractDigestPath, 'f'.repeat(64));
+    await assert.rejects(
+      verifyCandidate({
+        ...fixture.input,
+        identityMode: 'release',
+        releaseVersion: '0.4.2',
+      }),
+      /Candidate contract-set SHA-256 file does not match its bytes/u,
+    );
+
+    await rewriteCandidateContract(fixture, validContract);
+    const manifest = JSON.parse(
+      await readFile(fixture.manifestPath, 'utf8'),
+    ) as Record<string, unknown>;
+    manifest.contractSetSha256 = 'e'.repeat(64);
+    const manifestBytes = Buffer.from(JSON.stringify(manifest));
+    await writeFile(fixture.manifestPath, manifestBytes);
+    fixture.input.candidateManifestSha256 = sha256(manifestBytes);
+    await assert.rejects(
+      verifyCandidate({
+        ...fixture.input,
+        identityMode: 'release',
+        releaseVersion: '0.4.2',
+      }),
+      /Candidate manifest contract-set SHA-256 does not match/u,
+    );
+
+    await writeFile(fixture.contractPath, '{');
+    const malformedBytes = await readFile(fixture.contractPath);
+    await writeFile(fixture.contractDigestPath, sha256(malformedBytes));
+    const malformedManifest = JSON.parse(
+      await readFile(fixture.manifestPath, 'utf8'),
+    ) as Record<string, unknown>;
+    malformedManifest.contractSetSha256 = sha256(malformedBytes);
+    const malformedManifestBytes = Buffer.from(JSON.stringify(malformedManifest));
+    await writeFile(fixture.manifestPath, malformedManifestBytes);
+    fixture.input.candidateManifestSha256 = sha256(malformedManifestBytes);
+    await assert.rejects(
+      verifyCandidate({
+        ...fixture.input,
+        identityMode: 'release',
+        releaseVersion: '0.4.2',
+      }),
+      /Candidate contract set is not valid JSON/u,
+    );
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test('wrong contract identity is rejected by complete inventory after byte binding', async () => {
+  const fixture = await createCandidateFixture({ candidateVersion: '0.4.2' });
+  const workspaceRoot = await createConsistentConsumerWorkspace();
+  let nxCalled = false;
+  let outputWritten = false;
+  try {
+    const wrongContract = {
+      contractSetVersion: '9',
+      schemas: [
+        {
+          name: 'CaptureOcrProjectionV3',
+          schema: {
+            properties: {
+              apiVersion: { const: '9.0' },
+              runtimeVersion: { const: '9.9.9' },
+              schemaVersion: { const: '3' },
+            },
+          },
+        },
+        {
+          name: 'OcrComputePreflightV2',
+          schema: {
+            properties: {
+              apiVersion: { const: '9.0' },
+              contractSetVersion: { const: '9' },
+              runtimeVersion: { const: '9.9.9' },
+              schemaVersion: { const: '9' },
+            },
+          },
+        },
+        {
+          name: 'RuntimeReady',
+          schema: {
+            properties: {
+              apiVersion: { const: '9.0' },
+              captureDocumentSchemaVersion: { const: '9' },
+              contractSetVersion: { const: '9' },
+              runtimeVersion: { const: '9.9.9' },
+            },
+          },
+        },
+      ],
+      operations: [
+        {
+          method: 'GET',
+          path: '/v2/captures/{capture_id}/ocr',
+          responseSchema: 'CaptureOcrProjectionV3',
+        },
+      ],
+    };
+    await rewriteCandidateContract(fixture, wrongContract);
+    await assert.rejects(
+      runCandidateGate(
+        {
+          ...fixture.input,
+          identityMode: 'release',
+          releaseVersion: '0.4.2',
+          output: join(workspaceRoot, 'result.json'),
+          workflowRunId: 4,
+          skipChecks: false,
+        },
+        {
+          workspaceRoot,
+          runNx: () => {
+            nxCalled = true;
+          },
+          writeResult: async () => {
+            outputWritten = true;
+          },
+          consumerCommit: commit,
+        },
+      ),
+      /Capture Runtime consumer inventory blocked/u,
+    );
+    assert.equal(nxCalled, false);
+    assert.equal(outputWritten, false);
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+    await rm(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test('wrong projection schema identity is rejected from candidate contract bytes', async () => {
+  const fixture = await createCandidateFixture({ candidateVersion: '0.4.2' });
+  try {
+    const contract = JSON.parse(
+      await readFile(fixture.contractPath, 'utf8'),
+    ) as {
+      schemas: { name: string; schema: { properties: { schemaVersion: { const: string } } } }[];
+    };
+    const projection = contract.schemas.find(
+      (schema) => schema.name === 'CaptureOcrProjectionV3',
+    );
+    assert.ok(projection);
+    projection.schema.properties.schemaVersion.const = '9';
+    await rewriteCandidateContract(fixture, contract);
+    await assert.rejects(
+      verifyCandidate({
+        ...fixture.input,
+        identityMode: 'release',
+        releaseVersion: '0.4.2',
+      }),
+      /Candidate CaptureOcrProjectionV3 schema version must be 3/u,
+    );
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test('missing consumer inventory owner fails closed before mutation', async () => {
+  const fixture = await createCandidateFixture({ candidateVersion: '0.4.2' });
+  const workspaceRoot = await createConsistentConsumerWorkspace();
+  try {
+    const packagePath = join(workspaceRoot, 'package.json');
+    const packageManifest = JSON.parse(await readFile(packagePath, 'utf8')) as {
+      dependencies: Record<string, unknown>;
+    };
+    delete packageManifest.dependencies['@gx-capture/capture-workbench-ui'];
+    await writeFile(packagePath, JSON.stringify(packageManifest));
+    const verified = await verifyCandidate({
+      ...fixture.input,
+      identityMode: 'release',
+      releaseVersion: '0.4.2',
+    });
+    await assert.rejects(
+      assertCandidateConsumerVersionContract({
+        workspaceRoot,
+        expectedVersion: '0.4.2',
+        contractSource: verified.contractSource,
+      }),
+      /Capture Runtime consumer inventory blocked/u,
+    );
+  } finally {
+    await rm(fixture.root, { recursive: true, force: true });
+    await rm(workspaceRoot, { recursive: true, force: true });
   }
 });
 
@@ -515,6 +1028,40 @@ async function createCandidateFixture(input: {
   const contractBytes = Buffer.from(
     JSON.stringify({
       contractSetVersion: '2',
+      schemas: [
+        {
+          name: 'CaptureOcrProjectionV3',
+          schema: {
+            properties: {
+              apiVersion: { const: '2.0' },
+              runtimeVersion: { const: input.candidateVersion },
+              schemaVersion: { const: '3' },
+            },
+          },
+        },
+        {
+          name: 'OcrComputePreflightV2',
+          schema: {
+            properties: {
+              apiVersion: { const: '2.0' },
+              contractSetVersion: { const: '2' },
+              runtimeVersion: { const: input.candidateVersion },
+              schemaVersion: { const: '1' },
+            },
+          },
+        },
+        {
+          name: 'RuntimeReady',
+          schema: {
+            properties: {
+              apiVersion: { const: '2.0' },
+              captureDocumentSchemaVersion: { const: '2' },
+              contractSetVersion: { const: '2' },
+              runtimeVersion: { const: input.candidateVersion },
+            },
+          },
+        },
+      ],
       operations: [
         {
           method: 'GET',
