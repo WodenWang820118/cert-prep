@@ -25,6 +25,43 @@ formal/published-package regression across the consumers.
 Audio transcription/translation is a separate domain and acceptance lane; it
 is not part of this OCR-only Phase 2 TODO.
 
+## Current implementation status (2026-09-13)
+
+The 2026-09-09 checkpoint above remains the historical Phase 1 baseline. This
+status note records reviewed implementation evidence only; it does not change
+any unchecked Phase 2 slice.
+
+- Cert Prep is clean at `df9175a2deffe9f6297abf327ec824fb6c0386c4` and contains
+  the reviewed candidate artifact receipt/preflight binding, exact OCR
+  projection mapping, and producer-notice presentation foundations. These are
+  consumer guards and presentation seams; no candidate SDK was installed or
+  loaded and no promotion was performed.
+- Capture Workbench's current committed head is `fa5ed29e0b55dd5fc02f400634f3803fb3f56dc4`,
+  following `ca9500b`, `5d92374`, `4c36ce1`, and `6127eca`. The private R3
+  Running/Closing/native and staging-cleanup/Terminal foundations are committed
+  there. The producer public SDK and the required `GroupLease`, restart,
+  recovery, and `RequestRef` seams, together with a verified D3 candidate,
+  remain pending dependencies for Cert.
+- Capture evidence is reported as `231` main plus `14` fixture tests passing,
+  with a known startup flake. This is test evidence only: it does not establish
+  an installed package, publication, or real JPEG/PDF OCR acceptance. The
+  existing `0.4.1` source pins remain active, and synthetic `0.4.2` fixtures do
+  not prove a delivered and loaded `0.4.2` schema-3 SDK.
+- Slice 1 migration readiness and the later candidate/promotion/D4/D7 slices
+  therefore stay unchecked. Cert must wait for the producer public API and an
+  immutable, verified D3 candidate/ledger; it must not create substitute
+  interfaces or claim readiness from the private producer commits.
+
+Rollback boundaries for the next slices remain local: a public-API adapter
+change is reverted additively without changing the active `0.4.1` source; a
+failed candidate preflight discards only proven isolated candidate staging and
+leaves the active pointer/session unchanged; after a pointer commit, retain the
+selected candidate with its reconcile refs/proofs and recover it independently
+rather than restoring the prior active root. D4/D7 evidence changes are
+reverted by their own evidence/adapter commit while durable source and domain
+rows remain preserved; no publication or producer stable-pointer rollback is
+implied.
+
 This TODO is the consumer delta only. Capture Runtime remains the sole OCR
 projection owner. Cert Prep owns durable sources, review overrides, export,
 and persistence. **Proposed** `DesktopRuntimeSupervisor` and **proposed**

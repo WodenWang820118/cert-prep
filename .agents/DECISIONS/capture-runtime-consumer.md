@@ -45,6 +45,39 @@ acceptance bundle hash. Cert does not define or extend
 `ConsumerSemanticResultV1`, or `AcceptanceChildWireV1`; the producer package
 is the sole schema and validation authority.
 
+## 2026-09-13 implementation status refresh
+
+The 2026-09-09 checkpoint remains the historical Phase 1 baseline. The current
+ledger records bounded implementation evidence and does not mark an unchecked
+Phase 2 slice complete.
+
+- Cert Prep is clean at `df9175a2deffe9f6297abf327ec824fb6c0386c4`. Its reviewed
+  consumer foundations cover candidate artifact receipt/preflight binding,
+  exact OCR projection mapping, and producer-notice presentation. They do not
+  install or load a candidate SDK and do not perform promotion.
+- Capture Workbench's current committed runtime head is
+  `fa5ed29e0b55dd5fc02f400634f3803fb3f56dc4`, following `ca9500b`, `5d92374`,
+  `4c36ce1`, and `6127eca`. These commits provide private R3
+  Running/Closing/native and staging-cleanup/Terminal foundations. The public
+  producer SDK and required `GroupLease`, restart, recovery, and `RequestRef`
+  seams, plus a verified D3 candidate/ledger, remain Cert prerequisites.
+- The reported Capture evidence is `231` main plus `14` fixture tests passing
+  with a known startup flake. It is not evidence of an installed package,
+  publication, or real JPEG/PDF OCR acceptance. The active source remains
+  pinned to `0.4.1`; synthetic `0.4.2` fixtures do not establish a delivered
+  and loaded `0.4.2` schema-3 SDK.
+
+The dependency decision is therefore unchanged: leave Slice 1 migration
+readiness and later candidate/promotion/D4/D7 work unchecked until the public
+producer seam and immutable verified D3 candidate are available. The next
+consumer cut is a private adapter over that exact generated/public seam, then
+candidate installation and D4 only after the candidate ledger is verified; no
+Cert-local contract substitute is permitted. Rollback stays additive for each
+slice, preserves the active `0.4.1` source and durable domain rows, discards
+only proven isolated candidate staging before pointer commit, and retains
+post-commit candidate reconcile refs/proofs for independent recovery rather
+than restoring the prior active root.
+
 ## Chosen decisions
 
 1. **Cert owns durable product state.** Cert Prep owns durable sources, domain
