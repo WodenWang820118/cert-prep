@@ -25,6 +25,37 @@ formal/published-package regression across the consumers.
 Audio transcription/translation is a separate domain and acceptance lane; it
 is not part of this OCR-only Phase 2 TODO.
 
+## Continuation checkpoint (2026-09-21)
+
+`CERT_PREP_CHECKOUT` resolves to this repository, clean before this documentation
+edit on `docs/capture-runtime-042-phase2` at
+`948f875a91ac032b3e7dfda0e0d9bc3de9a63b07`. Earlier checkpoints and test counts
+below remain historical; no Cert Prep tests were rerun for this checkpoint.
+
+- Exact schema-3 OCR mapping/provenance (`ocr_summary.py`, `mapping.py`),
+  candidate inventory/preflight (`tools/capture-runtime-version-check.mts`,
+  `tools/capture-candidate-gate.mts`), and producer-notice foundations are
+  present. Nx is `23.1.2`, but active npm, Python SDK, and Rust launcher pins
+  remain `0.4.1`; these foundations do not establish migration readiness.
+- Per the continuation handoff, producer HEAD
+  `12fe94c60970876413628d619b732c59fae67585` contains the private strict
+  RequestRef metadata codec, not a delivered public authenticated RequestRef
+  `start_or_get`/`get`/`cancel`/`delete` operation or SDK. Public R3
+  activate/observe/close repairs now pass three complete uncached standard Nx
+  runs at four threads (322 library, 7 API, 12 lifecycle tests per run), plus
+  33 fixture tests and desktop compile/53 tests. Two fresh producer reviews,
+  each lasting over 30 minutes, found no blockers in that bounded repair.
+  These are local source checks, not a delivered SDK or candidate;
+  see the [producer closeout record](../../../capture-workbench/.agents/TODOS/capture-runtime-042-r3-closeout.md).
+- Host compute-policy deletion and lifecycle/promotion wiring remain gated by
+  the delivered public `0.4.2` SDK and verified immutable producer-D3
+  candidate/ledger. No candidate has been created or installed in this
+  continuation. Private foundations and code-only fixtures cannot replace
+  that handoff; do not create substitute APIs or close migration/release boxes.
+
+The [consumer specification](../SPECS/capture-runtime-consumer.md) remains the
+ownership and rollback authority; this addition records readiness only.
+
 ## Current implementation status (2026-09-13)
 
 The 2026-09-09 checkpoint above remains the historical Phase 1 baseline. This
