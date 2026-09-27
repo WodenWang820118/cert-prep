@@ -170,7 +170,6 @@ async function install(mode: InstallMode): Promise<void> {
     await runPnpm([
       'install',
       '--no-frozen-lockfile',
-      '--lockfile=false',
       '--ignore-scripts',
     ]);
   } finally {

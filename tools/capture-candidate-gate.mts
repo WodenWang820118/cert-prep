@@ -350,17 +350,22 @@ async function assertInstalledCandidatePackages(
     '@gx-capture/capture-runtime-client',
   ]) {
     const packageSegments = packageName.split('/');
+    // pnpm links a transitive dependency next to its dependent inside the
+    // virtual store, so resolve the UI package's real directory first.
+    const workbenchRealPath = await realpath(
+      join(workspaceRoot, 'node_modules', '@gx-capture', 'capture-workbench-ui'),
+    ).catch(() => undefined);
     const manifestCandidates = [
       join(workspaceRoot, 'node_modules', ...packageSegments, 'package.json'),
-      join(
-        workspaceRoot,
-        'node_modules',
-        '@gx-capture',
-        'capture-workbench-ui',
-        'node_modules',
-        ...packageSegments,
-        'package.json',
-      ),
+      ...(workbenchRealPath
+        ? [
+            join(
+              dirname(dirname(workbenchRealPath)),
+              ...packageSegments,
+              'package.json',
+            ),
+          ]
+        : []),
     ];
     let packageManifest: { version?: unknown } | undefined;
     for (const manifestPath of manifestCandidates) {

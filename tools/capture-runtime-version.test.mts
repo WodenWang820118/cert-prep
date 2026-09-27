@@ -33,6 +33,10 @@ import {
   type CaptureRuntimeConsumerSource,
 } from './capture-runtime-consumer-source.mts';
 
+// The Capture consumer gate sets CAPTURE_CANDIDATE_INSTALL=1 for its own
+// checks; these tests opt into candidate mode explicitly where they need it.
+delete process.env.CAPTURE_CANDIDATE_INSTALL;
+
 const CONTRACT_FIXTURE = JSON.stringify({
   contractSetVersion: '2',
   schemas: [
