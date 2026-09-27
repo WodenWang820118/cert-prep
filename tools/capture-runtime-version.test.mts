@@ -101,7 +101,7 @@ function validEntries(): CaptureRuntimeConsumerInventoryEntry[] {
               : field.kind === 'runtimeReadyIdentity'
                 ? 'api=2.0;document=2;contractSet=2'
                 : field.kind === 'preflightIdentity'
-                  ? 'api=2.0;contractSet=2'
+                  ? 'runtime=0.4.2;api=2.0;contractSet=2'
                   : 'structural',
   }));
 }
@@ -159,7 +159,7 @@ function rewriteRuntimeVersion(workspaceRoot: string, version: string): void {
     const path = join(workspaceRoot, relativePath);
     writeFileSync(
       path,
-      readFileSync(path, 'utf8').replaceAll('0.4.1', version),
+      readFileSync(path, 'utf8').replaceAll('0.4.2', version),
     );
   }
 }
@@ -390,7 +390,7 @@ test('the inventory rejects a missing projection schema and a corrupted contract
   assert.deepEqual(Buffer.from(source.bytes), originalBytes);
 });
 
-test('the current installed 0.4.1 owners are reported blocked against the 0.4.2 producer target', () => {
+test('the current installed 0.4.2 owners are ready against the 0.4.2 producer target', () => {
   const input = readCaptureRuntimeConsumerInventory(
     process.cwd(),
     contractSource(),
@@ -401,16 +401,16 @@ test('the current installed 0.4.1 owners are reported blocked against the 0.4.2 
   );
   assert.equal(
     input.entries.find((entry) => entry.key === 'cert.lock.workbenchUi')?.value,
-    '0.4.1',
+    '0.4.2',
   );
   assert.equal(
     input.entries.find((entry) => entry.key === 'cert.backend.uvLock')?.value,
-    '0.4.1',
+    '0.4.2',
   );
   assert.equal(
     input.entries.find((entry) => entry.key === 'cert.desktop.cargoLock')
       ?.value,
-    '0.4.1',
+    '0.4.2',
   );
   assert.equal(
     input.entries.find((entry) => entry.key === 'cert.desktop.captureManifest')
@@ -420,10 +420,9 @@ test('the current installed 0.4.1 owners are reported blocked against the 0.4.2 
   assert.deepEqual(input.sourceErrors, []);
   const report = inspectCaptureRuntimeConsumerInventory(input);
 
-  assert.equal(report.status, 'blocked');
+  assert.equal(report.status, 'ready');
   assert.equal(report.expectedRuntimeVersion, '0.4.2');
-  assert.doesNotMatch(report.errors.join('\n'), /missing inventory owner/u);
-  assert.ok(report.errors.some((error) => error.includes('0.4.1')));
+  assert.deepEqual(report.errors, []);
 });
 
 test('a canonical snapshot reads the same inventory and survives workspace mutation', () => {
@@ -457,11 +456,11 @@ test('a canonical snapshot reads the same inventory and survives workspace mutat
     assert.deepEqual(repeatedSnapshot.files, snapshot.files);
     assert.deepEqual(snapshotInput.entries, diskInput.entries);
     assert.deepEqual(snapshotInput.sourceErrors, diskInput.sourceErrors);
-    assert.equal(snapshotReport.status, 'blocked');
+    assert.equal(snapshotReport.status, 'ready');
     assert.equal(snapshotReport.expectedRuntimeVersion, '0.4.2');
-    assert.ok(snapshotReport.errors.some((error) => error.includes('0.4.1')));
+    assert.deepEqual(snapshotReport.errors, []);
 
-    rewriteRuntimeVersion(workspaceRoot, '0.4.2');
+    rewriteRuntimeVersion(workspaceRoot, '0.4.3');
     assert.deepEqual(
       readCaptureRuntimeConsumerInventoryFromSnapshot(
         snapshot,
@@ -828,7 +827,7 @@ test('the lock reader rejects duplicate sections and ignores unrelated blocks', 
       readFileSync(lockPath, 'utf8'),
       'packages',
       '@gx-capture/capture-runtime-client',
-      '0.4.1',
+      '0.4.2',
       'remove',
     );
     writeFileSync(

@@ -404,9 +404,15 @@ test('0.4.1 consumer bytes cannot prepare a 0.4.2 candidate and do not write', a
   const git = await createGitFixture();
   const candidate = await createCandidateFixture();
   const current = await createConsistentSource();
+  // Simulate the previous published consumer pins against this candidate.
   for (const path of CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS) {
     const bytes = await readFile(join(workspaceRoot, path));
-    current.files.set(path, Uint8Array.from(bytes));
+    current.files.set(
+      path,
+      Uint8Array.from(
+        Buffer.from(bytes.toString('utf8').replaceAll('0.4.2', '0.4.1')),
+      ),
+    );
   }
   let writes = 0;
   try {

@@ -941,8 +941,8 @@ test('file dependency cannot bypass the verified consumer contract source', asyn
   }
 });
 
-test('a phase2 candidate cannot use the published consumer pins as a legacy bypass', async () => {
-  const fixture = await createCandidateFixture({ candidateVersion: '0.4.2' });
+test('a newer candidate cannot use the published consumer pins as a bypass', async () => {
+  const fixture = await createCandidateFixture({ candidateVersion: '0.4.3' });
   let nxCalled = false;
   let outputWritten = false;
   try {
@@ -951,7 +951,7 @@ test('a phase2 candidate cannot use the published consumer pins as a legacy bypa
         {
           ...fixture.input,
           identityMode: 'release',
-          releaseVersion: '0.4.2',
+          releaseVersion: '0.4.3',
           output: join(fixture.root, 'result.json'),
           workflowRunId: 2,
           skipChecks: false,
@@ -976,8 +976,10 @@ test('a phase2 candidate cannot use the published consumer pins as a legacy bypa
   }
 });
 
-test('the exact published 0.4.1 non-file path remains a named legacy case', async () => {
-  const fixture = await createCandidateFixture({ candidateVersion: '0.4.1' });
+test('the exact published pin non-file path passes without a candidate contract', async () => {
+  const fixture = await createCandidateFixture({
+    candidateVersion: CAPTURE_RUNTIME_VERSION,
+  });
   const nxTargets: string[] = [];
   let outputWritten = false;
   try {

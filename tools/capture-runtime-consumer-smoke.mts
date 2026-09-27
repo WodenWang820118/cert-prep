@@ -2,9 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { join, relative, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pathToFileURL } from 'node:url';
 
 import {
   CAPTURE_RUNTIME_RELEASE_BASE_URL_ENV,
@@ -18,7 +18,6 @@ import {
 } from './install-capture-runtime.mts';
 import { CAPTURE_RUNTIME_RELEASE_BASE_URL } from './capture-runtime-version.mts';
 
-const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLISHED_RELEASE_BASE_URL = CAPTURE_RUNTIME_RELEASE_BASE_URL;
 const EXPECTED_REQUIREMENT_IDS = Object.freeze([
   'windowsml-ocr',
@@ -126,7 +125,6 @@ function startRuntime(
   port: number,
   token: string,
   dataRoot: string,
-  options: { readonly fakeExtraction: boolean },
 ): ChildProcess {
   const environment = {
     ...process.env,
@@ -140,7 +138,6 @@ function startRuntime(
     CAPTURE_STRUCTURING_PROVIDER: 'host',
   } as NodeJS.ProcessEnv;
   delete environment.CAPTURE_EXTRACTION_PROVIDER;
-  if (options.fakeExtraction) environment.CAPTURE_EXTRACTION_PROVIDER = 'fake';
   return spawn(
     join(runtimeRoot, CAPTURE_RUNTIME_FILE),
     ['serve', '--host', '127.0.0.1', '--port', String(port)],
@@ -284,60 +281,6 @@ async function waitForPublishedRuntimeContract(
   throw new Error(`capture-runtime did not become ready: ${runtimeError}`);
 }
 
-async function runBackendConsumer(port: number, token: string): Promise<void> {
-  const child = spawn(
-    'uv',
-    [
-      'run',
-      '--project',
-      'apps/cert-prep-backend',
-      'python',
-      'tools/capture-runtime-host-flow-smoke.py',
-    ],
-    {
-      cwd: workspaceRoot,
-      env: {
-        ...process.env,
-        PYTHONPATH: join(workspaceRoot, 'apps/cert-prep-backend/src'),
-        CERT_PREP_CAPTURE_RUNTIME_URL: `http://127.0.0.1:${port}`,
-        CERT_PREP_CAPTURE_RUNTIME_TOKEN: token,
-      },
-      windowsHide: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    },
-  );
-  let stderr = '';
-  child.stderr?.on('data', (chunk) => {
-    stderr += String(chunk);
-  });
-  try {
-    const exitCode = await new Promise<number>((resolvePromise, reject) => {
-      const timeout = setTimeout(() => {
-        if (child.pid) killProcessTree(child.pid);
-        reject(new Error('cert-prep host flow timed out after 60 seconds.'));
-      }, 60_000);
-      child.once('error', (error) => {
-        clearTimeout(timeout);
-        reject(error);
-      });
-      child.once('exit', (code) => {
-        clearTimeout(timeout);
-        resolvePromise(code ?? 1);
-      });
-    });
-    if (exitCode !== 0) {
-      throw new Error(
-        `cert-prep host flow failed with exit code ${exitCode}: ${stderr}`,
-      );
-    }
-  } catch (error) {
-    if (child.pid && child.exitCode === null && child.signalCode === null) {
-      killProcessTree(child.pid);
-    }
-    throw error;
-  }
-}
-
 async function runSmoke(): Promise<void> {
   if (process.platform !== 'win32') {
     throw new Error('capture-runtime consumer smoke requires Windows x64.');
@@ -372,30 +315,14 @@ async function runSmoke(): Promise<void> {
     runtimePort = await findFreePort();
     const runtimeData = join(temporaryRoot, 'runtime-data-published-release');
     await mkdir(runtimeData, { recursive: true });
-    runtime = startRuntime(
-      installed.outputRoot,
-      runtimePort,
-      token,
-      runtimeData,
-      { fakeExtraction: false },
-    );
+    runtime = startRuntime(installed.outputRoot, runtimePort, token, runtimeData);
     await waitForPublishedRuntimeContract(runtime, runtimePort, token);
-    await stopRuntime(runtime, runtimePort);
-    runtime = undefined;
-    runtimePort = await findFreePort();
-    const fakeRuntimeData = join(temporaryRoot, 'runtime-data-fake-protocol');
-    await mkdir(fakeRuntimeData, { recursive: true });
-    runtime = startRuntime(
-      installed.outputRoot,
-      runtimePort,
-      token,
-      fakeRuntimeData,
-      { fakeExtraction: true },
-    );
-    await waitForPublishedRuntimeContract(runtime, runtimePort, token);
-    await runBackendConsumer(runtimePort, token);
+    // 0.4.2 is OCR-only: its fake extraction mode still requires the real OCR
+    // compute preflight, so the former fake host-protocol leg cannot run here.
+    // Host protocol is covered by backend integration tests and real OCR by
+    // the installed acceptance; this smoke proves the published runtime only.
     console.log(
-      `cert-prep ${releaseDirectory ? 'local' : 'published'} capture-runtime@${CAPTURE_RUNTIME_VERSION} handshake passed; fake extraction host protocol passed (not OCR/STT evidence).`,
+      `cert-prep ${releaseDirectory ? 'local' : 'published'} capture-runtime@${CAPTURE_RUNTIME_VERSION} download, verification and handshake passed (not OCR/STT evidence).`,
     );
   } finally {
     if (runtime && runtimePort) await stopRuntime(runtime, runtimePort);

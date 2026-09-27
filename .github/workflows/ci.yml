@@ -175,8 +175,8 @@ jobs:
           $ErrorActionPreference = 'Stop'
           pnpm nx run cert-prep-desktop:capture-runtime-consumer-test --skip-nx-cache
           uv run --isolated --no-project `
-            --with 'capture-runtime-client==0.4.1' `
-            -- python -c "import capture_runtime_client; assert capture_runtime_client.CAPTURE_RUNTIME_VERSION == '0.4.1'"
+            --with 'capture-runtime-client==0.4.2' `
+            -- python -c "import capture_runtime_client; assert capture_runtime_client.CAPTURE_RUNTIME_VERSION == '0.4.2'"
 
       - name: Test Tauri host
         run: pnpm nx run cert-prep-desktop:cargo-test

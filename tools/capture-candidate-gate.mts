@@ -45,7 +45,6 @@ import {
 
 const CONSUMER_REPOSITORY = 'WodenWang820118/cert-prep';
 const WORKFLOW_PATH = '.github/workflows/capture-candidate-gate.yml';
-const LEGACY_PUBLISHED_CAPTURE_RUNTIME_VERSION = '0.4.1';
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
 const GIT_SHA_PATTERN = /^[0-9a-f]{40}$/u;
 
@@ -419,14 +418,21 @@ export async function assertConsumerVersionContract(
   ) as { dependencies?: Record<string, unknown> };
   const workbenchDependency =
     packageJson.dependencies?.['@gx-capture/capture-workbench-ui'];
-  const isPublishedLegacyPath =
-    expectedVersion === LEGACY_PUBLISHED_CAPTURE_RUNTIME_VERSION &&
-    CAPTURE_RUNTIME_VERSION === LEGACY_PUBLISHED_CAPTURE_RUNTIME_VERSION &&
+  // The release already pinned from public registries needs the pin
+  // consistency check, plus the inventory whenever a candidate contract is
+  // supplied; any other version must supply a candidate contract.
+  const isPublishedPinPath =
+    expectedVersion === CAPTURE_RUNTIME_VERSION &&
     process.env.CAPTURE_CANDIDATE_INSTALL !== '1' &&
     typeof workbenchDependency === 'string' &&
     !workbenchDependency.startsWith('file:');
-  if (isPublishedLegacyPath) {
+  if (isPublishedPinPath) {
     assertCaptureRuntimeConsumerVersions(workspaceRoot);
+    if (contractSource) {
+      assertCaptureRuntimeConsumerInventory(
+        readCaptureRuntimeConsumerInventory(workspaceRoot, contractSource),
+      );
+    }
     return;
   }
   if (!contractSource) {
