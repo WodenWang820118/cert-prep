@@ -56,6 +56,19 @@ class RecordingSetupClient:
                 "supportsRawDiagnostics": True,
                 "maxUploadBytes": 50_000_000,
             },
+            ocr_compute={
+                "apiVersion": "2.0",
+                "schemaVersion": "1",
+                "service": "capture-runtime",
+                "runtimeVersion": CAPTURE_RUNTIME_VERSION,
+                "contractSetVersion": "2",
+                "contractSha256": "a" * 64,
+                "mode": "gpu-dml",
+                "adapterClass": "dedicated",
+                "reasonCode": None,
+                "userNoticeRequired": False,
+                "noticeCode": None,
+            },
             message="ready",
         )
 
@@ -180,6 +193,8 @@ def test_capture_runtime_ready_proxy_requires_auth_and_keeps_sidecar_token_backe
     assert response.status_code == 200
     assert response.json()["runtimeVersion"] == CAPTURE_RUNTIME_VERSION
     assert response.json()["capabilities"]["structuringModes"] == ["host"]
+    assert response.json()["ocrCompute"]["mode"] == "gpu-dml"
+    assert response.json()["ocrCompute"]["adapterClass"] == "dedicated"
 
 
 def test_capture_runtime_setup_proxy_keeps_sidecar_token_backend_only(

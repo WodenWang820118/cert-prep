@@ -11,14 +11,16 @@ use std::{
 
 use capture_sidecar_launcher::{
     generate_bearer_token, launch_sidecar, reserve_distinct_loopback_port, LaunchOptions,
-    OwnedSidecarProcess, SidecarLaunchSpec,
+    SidecarLaunchSpec,
 };
 
 use crate::{
+    capture_launch_policy::acceptance_ocr_execution_evidence_environment,
     capture_manifest::{
         load_capture_runtime_manifest, validate_capture_manifest_contract, verify_capture_runtime,
     },
     constants::{CAPTURE_RUNTIME_DIR, CAPTURE_RUNTIME_MANIFEST},
+    process_owner::{owned_runtime_process, RuntimeProcessOwner},
 };
 
 const LOOPBACK_HOST: &str = "127.0.0.1";
@@ -30,6 +32,17 @@ const CERT_MAX_IMAGE_PIXELS: &str = "50000000";
 const ACCEPTANCE_ISOLATION_ENV: &str = "CERT_PREP_ACCEPTANCE_ISOLATION";
 const ACCEPTANCE_WORKER_MIRROR_URL_ENV: &str =
     "CERT_PREP_CAPTURE_RUNTIME_WORKER_MIRROR_URL";
+const ACCEPTANCE_LOCAL_MODEL_ROOT_ENV: &str =
+    "CERT_PREP_CAPTURE_RUNTIME_LOCAL_MODEL_ROOT";
+const CAPTURE_RUNTIME_PROBE_ENV: &str = "CERT_PREP_CAPTURE_RUNTIME_PROBE";
+const CAPTURE_RUNTIME_PROBE_VERSION_ENV: &str =
+    "CERT_PREP_CAPTURE_RUNTIME_EXPECTED_VERSION";
+const OCR_EXECUTION_EVIDENCE_OPT_IN_ENV: &str =
+    "CAPTURE_OCR_EXECUTION_EVIDENCE_OPT_IN";
+const OCR_EXECUTION_EVIDENCE_ROOT_ENV: &str =
+    "CAPTURE_OCR_EXECUTION_EVIDENCE_ROOT";
+const OCR_EXECUTION_RUNTIME_SHA256_ENV: &str =
+    "CAPTURE_OCR_EXECUTION_RUNTIME_SHA256";
 const CAPTURE_CHILD_ENV_ALLOWLIST: &[&str] = &[
     "SystemRoot",
     "WINDIR",
@@ -61,7 +74,7 @@ pub(crate) struct CaptureRuntimeConnection {
 }
 
 struct CaptureRuntimeInner {
-    child: Mutex<Option<OwnedSidecarProcess>>,
+    process: Mutex<Option<RuntimeProcessOwner>>,
     connection: CaptureRuntimeConnection,
 }
 
@@ -78,9 +91,9 @@ impl Drop for CaptureRuntimeInner {
 
 impl CaptureRuntimeInner {
     fn terminate_child_process_tree(&self) {
-        if let Ok(mut child) = self.child.lock() {
-            if let Some(child) = child.take() {
-                let _ = child.terminate();
+        if let Ok(mut process) = self.process.lock() {
+            if let Some(mut process) = process.take() {
+                let _ = process.terminate_once();
             }
         }
     }
@@ -134,7 +147,7 @@ impl CaptureRuntimeState {
 
         Ok(Self {
             inner: Arc::new(CaptureRuntimeInner {
-                child: Mutex::new(Some(launched.process)),
+                process: Mutex::new(Some(owned_runtime_process!(launched.process))),
                 connection: CaptureRuntimeConnection {
                     base_url: launched.connection.base_url,
                     token: launched.connection.token,
@@ -240,7 +253,16 @@ fn replace_runtime_directory(staging: &Path, destination: &Path) -> Result<(), S
         ));
     }
     if had_previous {
-        let _ = fs::remove_dir_all(backup);
+        if let Err(error) = fs::remove_dir_all(&backup) {
+            let _ = fs::remove_dir_all(destination);
+            let restore = fs::rename(&backup, destination);
+            return Err(match restore {
+                Ok(()) => format!("Capture Runtime backup could not be cleaned: {error}"),
+                Err(restore_error) => format!(
+                    "Capture Runtime backup could not be cleaned ({error}); rollback failed: {restore_error}"
+                ),
+            });
+        }
     }
     Ok(())
 }
@@ -262,9 +284,10 @@ fn clean_stale_capture_runtime_staging(runtime_root: &Path) -> Result<(), String
         }
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        let Some(uuid) = name.strip_prefix(".capture-runtime-install-") else {
-            continue;
-        };
+        let uuid = name
+            .strip_prefix(".capture-runtime-install-")
+            .or_else(|| name.strip_prefix(".capture-runtime-backup-"));
+        let Some(uuid) = uuid else { continue };
         if uuid::Uuid::parse_str(uuid).is_ok() {
             fs::remove_dir_all(entry.path()).map_err(|error| {
                 format!("Stale Capture Runtime staging directory could not be removed: {error}")
@@ -320,6 +343,24 @@ impl CaptureLaunchPolicy {
                 environment.push(("CAPTURE_SMOKE_WORKER_MIRROR_URL", url));
             }
         }
+        if local_model_probe_enabled() {
+            if let Ok(root) = std::env::var(ACCEPTANCE_LOCAL_MODEL_ROOT_ENV) {
+                if !root.trim().is_empty() {
+                    environment.push((
+                        "CAPTURE_PDF_OCR_E2E_LOCAL_MODEL_OPT_IN",
+                        "1".into(),
+                    ));
+                    environment.push(("CAPTURE_PDF_OCR_E2E_LOCAL_MODEL_ROOT", root));
+                }
+            }
+        }
+        if acceptance_worker_mirror_enabled() {
+            environment.extend(acceptance_ocr_execution_evidence_environment(
+                std::env::var(OCR_EXECUTION_EVIDENCE_OPT_IN_ENV).ok().as_deref(),
+                std::env::var(OCR_EXECUTION_EVIDENCE_ROOT_ENV).ok().as_deref(),
+                std::env::var(OCR_EXECUTION_RUNTIME_SHA256_ENV).ok().as_deref(),
+            ));
+        }
         environment
     }
 }
@@ -328,6 +369,15 @@ fn acceptance_worker_mirror_enabled() -> bool {
     std::env::var(ACCEPTANCE_ISOLATION_ENV)
         .ok()
         .is_some_and(|value| value.trim() == "1")
+}
+
+fn local_model_probe_enabled() -> bool {
+    std::env::var(CAPTURE_RUNTIME_PROBE_ENV)
+        .ok()
+        .is_some_and(|value| value.trim() == "1")
+        && std::env::var(CAPTURE_RUNTIME_PROBE_VERSION_ENV)
+            .ok()
+            .is_some_and(|value| value.trim() == "0.4.2")
 }
 
 fn capture_ready_timeout() -> Duration {
@@ -427,21 +477,27 @@ mod tests {
     }
 
     #[test]
-    fn stale_install_cleanup_removes_only_uuid_owned_directories() {
+    fn stale_install_cleanup_removes_only_uuid_owned_staging_and_backup_directories() {
         let root = std::env::temp_dir().join(format!(
             "cert-prep-capture-runtime-staging-{}",
             uuid::Uuid::new_v4()
         ));
         fs::create_dir_all(&root).expect("root");
         let owned = root.join(format!(".capture-runtime-install-{}", uuid::Uuid::new_v4()));
+        let backup = root.join(format!(".capture-runtime-backup-{}", uuid::Uuid::new_v4()));
         let unrelated = root.join(".capture-runtime-install-not-a-uuid");
+        let unrelated_backup = root.join(".capture-runtime-backup-not-a-uuid");
         fs::create_dir_all(&owned).expect("owned");
+        fs::create_dir_all(&backup).expect("backup");
         fs::create_dir_all(&unrelated).expect("unrelated");
+        fs::create_dir_all(&unrelated_backup).expect("unrelated backup");
 
         clean_stale_capture_runtime_staging(&root).expect("cleanup");
 
         assert!(!owned.exists());
+        assert!(!backup.exists());
         assert!(unrelated.exists());
+        assert!(unrelated_backup.exists());
         let _ = fs::remove_dir_all(root);
     }
 

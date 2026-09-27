@@ -21,6 +21,7 @@ import { ProjectStore } from '../../stores/project.store';
 import { SourceImportStore } from '../../stores/source-import/source-import.store';
 import { CertPrepCaptureClient } from './cert-prep-capture-client';
 import { DesktopRuntimeStore } from '../../stores/desktop-runtime/desktop-runtime.store';
+import { CaptureRuntimePreflightStore } from '../../stores/capture-runtime/capture-runtime-preflight.store';
 
 @Component({
   selector: 'app-capture-workbench-trial-page',
@@ -48,6 +49,7 @@ export class CaptureWorkbenchTrialPage implements AfterViewInit, OnDestroy {
     'runtime_unavailable' | 'registering' | 'ready' | 'error'
   >('runtime_unavailable');
   protected readonly desktopRuntime = inject(DesktopRuntimeStore);
+  protected readonly ocrPreflight = inject(CaptureRuntimePreflightStore);
   protected readonly trialStatus = signal(
     'Choose a source to run through Capture Workbench and Capture Runtime.',
   );
@@ -58,11 +60,25 @@ export class CaptureWorkbenchTrialPage implements AfterViewInit, OnDestroy {
   );
   protected readonly markdownDownloadError = signal<string | null>(null);
   private readonly registration = new Subscription();
+  private preflightLoadQueued = false;
 
   constructor() {
     effect(() => {
+      if (!this.desktopRuntime.isCaptureRuntimeReady()) return;
+      if (this.ocrPreflight.status() === 'idle' && !this.preflightLoadQueued) {
+        this.preflightLoadQueued = true;
+        queueMicrotask(() => {
+          this.preflightLoadQueued = false;
+          if (
+            this.desktopRuntime.isCaptureRuntimeReady() &&
+            this.ocrPreflight.status() === 'idle'
+          ) {
+            this.registration.add(this.ocrPreflight.load().subscribe());
+          }
+        });
+      }
       if (
-        this.desktopRuntime.isCaptureRuntimeReady() &&
+        this.ocrPreflight.canImport() &&
         this.registrationState() === 'runtime_unavailable'
       ) {
         queueMicrotask(() => this.registerCaptureWorkbench());
@@ -84,6 +100,10 @@ export class CaptureWorkbenchTrialPage implements AfterViewInit, OnDestroy {
 
   protected startCaptureRuntime(): void {
     this.desktopRuntime.startCaptureRuntime();
+  }
+
+  protected retryOcrPreflight(): void {
+    this.ocrPreflight.retry();
   }
 
   private registerCaptureWorkbench(): void {

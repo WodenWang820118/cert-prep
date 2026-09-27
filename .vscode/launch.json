@@ -5,8 +5,8 @@
       "type": "node",
       "request": "launch",
       "name": "Debug api with Nx",
-      "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["nx", "serve", "api"],
+      "runtimeExecutable": "corepack",
+      "runtimeArgs": ["pnpm", "nx", "serve", "api"],
       "env": {
         "NODE_OPTIONS": "--inspect=9229"
       },

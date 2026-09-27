@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { readFile, unlink, writeFile } from 'node:fs/promises';
-import { basename, isAbsolute, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { CAPTURE_RUNTIME_VERSION } from './capture-runtime-version.mts';
@@ -41,12 +42,18 @@ function parseMode(args: readonly string[]): InstallMode {
 }
 
 async function runPnpm(args: readonly string[]): Promise<void> {
-  const command = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm';
+  const corepackPath = resolve(
+    dirname(process.execPath),
+    'node_modules/corepack/dist/corepack.js',
+  );
+  if (!existsSync(corepackPath)) {
+    throw new Error(`Corepack entry point is missing: ${corepackPath}`);
+  }
   await new Promise<void>((resolvePromise, reject) => {
-    const child = spawn(command, args, {
+    const child = spawn(process.execPath, [corepackPath, 'pnpm', ...args], {
       cwd: repoRoot,
       env: process.env,
-      shell: process.platform === 'win32',
+      shell: false,
       stdio: 'inherit',
     });
     child.once('error', reject);
@@ -100,10 +107,9 @@ async function install(mode: InstallMode): Promise<void> {
   const preserveInstallFiles =
     process.env.CAPTURE_PRESERVE_INSTALL_FILES === 'true';
   try {
-    const packageJson = JSON.parse(originalPackageJson.toString('utf8')) as Record<
-      string,
-      unknown
-    >;
+    const packageJson = JSON.parse(
+      originalPackageJson.toString('utf8'),
+    ) as Record<string, unknown>;
     if (mode.kind === 'published') {
       process.stdout.write(
         `Installing published ${workbenchPackageName}@${CAPTURE_RUNTIME_VERSION} and ${runtimeClientPackageName}@${CAPTURE_RUNTIME_VERSION}.\n`,
@@ -138,8 +144,9 @@ async function install(mode: InstallMode): Promise<void> {
       throw new Error('package.json dependencies are missing.');
     }
     const runtimeClientOverride = runtimeClientArchive.replaceAll('\\', '/');
-    (candidateDependencies as Record<string, unknown>)[runtimeClientPackageName] =
-      `file:${runtimeClientOverride}`;
+    (candidateDependencies as Record<string, unknown>)[
+      runtimeClientPackageName
+    ] = `file:${runtimeClientOverride}`;
     await writeFile(
       packageJsonPath,
       `${JSON.stringify(candidatePackageJson, null, 2)}\n`,

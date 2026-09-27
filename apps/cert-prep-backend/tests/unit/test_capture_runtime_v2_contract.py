@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 import hashlib
 from importlib.resources import files
 import json
+from threading import Barrier, Event, Lock as ThreadLock
+from types import SimpleNamespace
 from uuid import UUID
 
 import httpx
@@ -35,6 +38,207 @@ TOKEN = "capture-sidecar-process-token-that-stays-in-backend"
 NOW = datetime(2026, 8, 13, 4, 0, tzinfo=UTC)
 SOURCE = b"ordered-v2-capture"
 SOURCE_SHA256 = hashlib.sha256(SOURCE).hexdigest()
+
+
+def test_runtime_ready_accepts_the_generated_ocr_compute_preflight() -> None:
+    ready = RuntimeReady.model_validate(
+        {
+            "ready": True,
+            "service": "capture-runtime",
+            "apiVersion": "2.0",
+            "runtimeVersion": CAPTURE_RUNTIME_VERSION,
+            "captureDocumentSchemaVersion": "2",
+            "capabilities": {},
+            "ocrCompute": {
+                "apiVersion": "2.0",
+                "schemaVersion": "1",
+                "service": "capture-runtime",
+                "runtimeVersion": CAPTURE_RUNTIME_VERSION,
+                "contractSetVersion": "2",
+                "contractSha256": "a" * 64,
+                "mode": "cpu-fallback",
+                "adapterClass": "integrated",
+                "reasonCode": "no_compatible_gpu",
+                "userNoticeRequired": True,
+                "noticeCode": "ocr_cpu_fallback",
+            },
+        }
+    )
+
+    assert ready.ocr_compute is not None
+    assert ready.ocr_compute.mode == "cpu-fallback"
+    assert ready.ocr_compute.reason_code == "no_compatible_gpu"
+    assert ready.model_dump(mode="json", by_alias=True)["ocrCompute"]["noticeCode"] == (
+        "ocr_cpu_fallback"
+    )
+
+
+def test_candidate_discovery_is_single_flight(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Concurrent UI readiness calls must not trip the candidate SDK guard."""
+
+    import cert_prep_backend.domains.capture_workbench.client as client_module
+
+    entered = Event()
+    release = Event()
+    state_lock = ThreadLock()
+
+    class FakeSdk:
+        active = False
+
+        def __init__(self, **_kwargs: object) -> None:
+            pass
+
+        def discover(self) -> SimpleNamespace:
+            with state_lock:
+                if self.active:
+                    raise CaptureRuntimeProtocolError(
+                        "Capture Runtime contract discovery re-entered."
+                    )
+                self.active = True
+            entered.set()
+            try:
+                assert release.wait(5)
+                return SimpleNamespace(
+                    ready=RuntimeReady.model_validate(
+                        {
+                            "ready": True,
+                            "service": "capture-runtime",
+                            "apiVersion": "2.0",
+                            "runtimeVersion": CAPTURE_RUNTIME_VERSION,
+                            "captureDocumentSchemaVersion": "2",
+                            "capabilities": {},
+                        }
+                    )
+                )
+            finally:
+                with state_lock:
+                    self.active = False
+
+    monkeypatch.setattr(client_module, "SdkCaptureRuntimeClient", FakeSdk)
+    client = client_module.CaptureRuntimeClient(
+        base_url="http://127.0.0.1:43123",
+        bearer_token=TOKEN,
+    )
+    barrier = Barrier(2)
+
+    def invoke() -> RuntimeReady:
+        barrier.wait(timeout=5)
+        return client.handshake()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(invoke)
+        second = executor.submit(invoke)
+        assert entered.wait(5)
+        release.set()
+        assert first.result(timeout=5).ready is True
+        assert second.result(timeout=5).ready is True
+
+
+def test_terminal_installation_refreshes_candidate_discovery_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A post-install readiness check must observe newly available OCR compute."""
+
+    import cert_prep_backend.domains.capture_workbench.client as client_module
+
+    def ready(*, with_gpu: bool) -> RuntimeReady:
+        payload: dict[str, object] = {
+            "ready": True,
+            "service": "capture-runtime",
+            "apiVersion": "2.0",
+            "runtimeVersion": CAPTURE_RUNTIME_VERSION,
+            "captureDocumentSchemaVersion": "2",
+            "capabilities": {},
+        }
+        if with_gpu:
+            payload["ocrCompute"] = {
+                "apiVersion": "2.0",
+                "schemaVersion": "1",
+                "service": "capture-runtime",
+                "runtimeVersion": CAPTURE_RUNTIME_VERSION,
+                "contractSetVersion": "2",
+                "contractSha256": "a" * 64,
+                "mode": "gpu-dml",
+                "adapterClass": "dedicated",
+                "reasonCode": None,
+                "userNoticeRequired": False,
+                "noticeCode": None,
+            }
+        return RuntimeReady.model_validate(payload)
+
+    class FakeSdk:
+        def __init__(self, **_kwargs: object) -> None:
+            self._discovery: SimpleNamespace | None = None
+            self.discover_calls = 0
+
+        def discover(self) -> SimpleNamespace:
+            if self._discovery is None:
+                self.discover_calls += 1
+                self._discovery = SimpleNamespace(
+                    ready=ready(with_gpu=self.discover_calls > 1)
+                )
+            return self._discovery
+
+        def get_installation(self, _installation_id: str) -> SimpleNamespace:
+            return SimpleNamespace(status=SimpleNamespace(value="completed"))
+
+    monkeypatch.setattr(client_module, "SdkCaptureRuntimeClient", FakeSdk)
+    client = client_module.CaptureRuntimeClient(
+        base_url="http://127.0.0.1:43123",
+        bearer_token=TOKEN,
+    )
+
+    assert client.handshake().ocr_compute is None
+    client.get_installation("installation-1")
+    refreshed = client.handshake()
+
+    assert refreshed.ocr_compute is not None
+    assert refreshed.ocr_compute.mode == "gpu-dml"
+    assert client._sdk.discover_calls == 2
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {
+            "mode": "gpu-dml",
+            "adapterClass": "dedicated",
+            "reasonCode": "no_compatible_gpu",
+            "userNoticeRequired": True,
+            "noticeCode": "ocr_cpu_fallback",
+        },
+        {
+            "mode": "cpu-fallback",
+            "adapterClass": "integrated",
+            "reasonCode": None,
+            "userNoticeRequired": False,
+            "noticeCode": None,
+        },
+    ],
+)
+def test_runtime_ready_rejects_a_preflight_that_silently_changes_compute_policy(
+    payload: dict[str, object],
+) -> None:
+    with pytest.raises(ValueError, match="(gpu-dml|cpu-fallback)"):
+        RuntimeReady.model_validate(
+            {
+                "ready": True,
+                "service": "capture-runtime",
+                "apiVersion": "2.0",
+                "runtimeVersion": CAPTURE_RUNTIME_VERSION,
+                "captureDocumentSchemaVersion": "2",
+                "capabilities": {},
+                "ocrCompute": {
+                    "apiVersion": "2.0",
+                    "schemaVersion": "1",
+                    "service": "capture-runtime",
+                    "runtimeVersion": CAPTURE_RUNTIME_VERSION,
+                    "contractSetVersion": "2",
+                    "contractSha256": "a" * 64,
+                    **payload,
+                },
+            }
+        )
 
 
 def test_v2_capture_lifecycle_is_checksum_bounded_ordered_and_authenticated() -> None:
@@ -176,6 +380,65 @@ def test_v2_uncertain_open_and_capture_create_retry_the_canonical_idempotent_rou
     assert starts == 2
 
 
+def test_v2_page_scoped_capture_sends_only_the_ordered_page_prefix() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET" and request.url.path == "/v2/streaming/health/ready":
+            return _json_response(request, _streaming_capabilities(max_chunk_bytes=64))
+        if request.method == "POST" and request.url.path == "/v2/ingestions":
+            return _json_response(request, _ingestion(received=0, next_chunk=0), status=201)
+        if request.method == "PUT":
+            return _json_response(
+                request,
+                _ingestion(received=len(SOURCE), next_chunk=1),
+            )
+        if request.method == "POST" and request.url.path.endswith("/finalize"):
+            return _json_response(
+                request,
+                _ingestion(
+                    received=len(SOURCE),
+                    next_chunk=1,
+                    status="ready",
+                    finalized_sha256=SOURCE_SHA256,
+                ),
+            )
+        if request.method == "POST" and request.url.path == "/v2/captures":
+            payload = json.loads(request.content)
+            assert payload["pdfPageNumbers"] == [1]
+            assert payload["structuringMode"] == "host"
+            return _json_response(request, _operation(), status=202)
+        raise AssertionError(f"Unexpected request: {request.method} {request.url.path}")
+
+    operation = _client(handler).start_capture(
+        CaptureUpload(
+            "sample.pdf",
+            SOURCE,
+            "application/pdf",
+            pdf_page_numbers=(1,),
+        ),
+        source_kind="pdf",
+        client_request_id="request-page-1",
+    )
+
+    assert operation.capture_id == "capture-1"
+
+
+@pytest.mark.parametrize("page_numbers", [(), (2,), (1, 3)])
+def test_v2_page_scope_rejects_non_prefix_page_numbers(
+    page_numbers: tuple[int, ...],
+) -> None:
+    with pytest.raises(ValueError, match="ordered prefix"):
+        _client(lambda _request: pytest.fail("invalid scope must not send a request")).start_capture(
+            CaptureUpload(
+                "sample.pdf",
+                SOURCE,
+                "application/pdf",
+                pdf_page_numbers=page_numbers,
+            ),
+            source_kind="pdf",
+            client_request_id="request-invalid-page-scope",
+        )
+
+
 def test_v2_sse_requires_auth_replays_after_cursor_and_closes_on_terminal() -> None:
     event = _event(sequence=5, event_type="completed", stage="completed")
     body = (
@@ -298,6 +561,39 @@ def test_coordinator_reconciles_once_after_the_sdk_stream_ends() -> None:
     assert runtime.snapshot_calls == 1
     assert runtime.cancel_calls == 0
     assert started == ["capture-1"]
+
+
+def test_coordinator_forwards_acceptance_pdf_page_scope(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _PageScopedRuntimeClient(_ReconnectingRuntimeClient):
+        def __init__(self) -> None:
+            super().__init__()
+            self.page_numbers: list[tuple[int, ...] | None] = []
+
+        def start_capture(self, upload, **kwargs):
+            self.page_numbers.append(upload.pdf_page_numbers)
+            return super().start_capture(upload, **kwargs)
+
+    runtime = _PageScopedRuntimeClient()
+    monkeypatch.setenv("CAPTURE_ACCEPTANCE_PDF_PAGE_SCOPE", "page-1")
+    coordinator = CertPrepCaptureCoordinator(
+        client=runtime,
+        structurer=object(),
+        reconciliation_interval_seconds=0.01,
+        timeout_seconds=30,
+    )
+
+    with pytest.raises(CaptureRuntimeStateUnknownError, match="stream ended"):
+        coordinator.begin_capture(
+            operation_id="operation-page-1",
+            file_name="sample.pdf",
+            content=SOURCE,
+            media_type="application/pdf",
+            source_kind="pdf",
+            target_language=None,
+            should_cancel=lambda: False,
+        )
+
+    assert runtime.page_numbers == [(1,)]
 
 
 def test_coordinator_polls_durable_status_after_sse_utf8_framing_failure() -> None:
@@ -462,6 +758,19 @@ class _ReconnectingRuntimeClient:
                     "supportsCancellation": True,
                     "supportsRawDiagnostics": True,
                     "maxUploadBytes": 50_000_000,
+                },
+                "ocrCompute": {
+                    "apiVersion": "2.0",
+                    "schemaVersion": "1",
+                    "service": "capture-runtime",
+                    "runtimeVersion": CAPTURE_RUNTIME_VERSION,
+                    "contractSetVersion": "2",
+                    "contractSha256": "a" * 64,
+                    "mode": "gpu-dml",
+                    "adapterClass": "dedicated",
+                    "reasonCode": None,
+                    "userNoticeRequired": False,
+                    "noticeCode": None,
                 },
             }
         )

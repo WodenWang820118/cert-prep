@@ -1,5 +1,11 @@
 # Lazy Capture Runtime Installation Spec
 
+> Historical/superseded (2026-09-09): retained for traceability only. Current
+> 0.4.2 consumer policy is defined by the [consumer specification](capture-runtime-consumer.md),
+> [decision](../DECISIONS/capture-runtime-consumer.md), and [TODO](../TODOS/capture-runtime-consumer.md).
+> This older body does not define D4/D7, immutable roots, or the current
+> version-first gate; do not use its old runtime/version details for new work.
+
 ## Purpose
 
 Allow Cert Prep Desktop to open its shell and normal local backend without
@@ -23,11 +29,13 @@ Capture Runtime from Capture Workbench when they want to debug or use capture.
 - Capture Workbench polls that desktop state. It shows the explicit install or
   start action before loading the custom-element capture client. Once started, it
   refreshes the cached Cert Prep backend configuration and configures the
-  normal host-managed embedded-text-PDF flow.
+  normal host-managed OCR-only PDF/image flow. The Capture Runtime owns
+  rasterization and PaddleOCR; the host does not inspect embedded text or ask an
+  LLM to choose an extraction route.
 
 ## Non-goals
 
-- Changing capture-workbench `0.4.1`, adding a runtime download, side-loading
+- Changing capture-workbench `0.4.1` outside the producer cutover, adding a runtime download, side-loading
   WindowsML/Whisper assets, browser-side sidecar access, fake extraction, or
   persisting a sidecar token.
 
@@ -43,10 +51,11 @@ Capture Runtime from Capture Workbench when they want to debug or use capture.
   rollback-capable owned-backend restart.
 - The capture page tells a desktop user Capture Runtime is unavailable and
   presents a clear action; it does not construct a usable capture client first.
-- The current 0.4.1 embedded-text PDF flow still requires `pdf-embedded-text`
-  on CPU. OCR/STT/image/audio/scanned-PDF support remains fail-closed until
-  the engine-bearing real-smoke gate is complete; the earlier v0.3.8 result is
-  retained as historical evidence only.
+- The 0.4.2 cutover must require ready `windowsml-ocr` before every PDF/image
+  dispatch and must persist only `windowsml_ocr` for new pages/documents.
+  Embedded/mixed rows are legacy read-only data. A missing or non-ready OCR
+  requirement is rejected before sidecar ingestion; no host OCR provider or
+  LLM route selection is permitted.
 
 ## Test plan
 

@@ -2,8 +2,12 @@
 
 ## Current ownership
 
-Cert Prep consumes the published `capture-runtime@0.4.1` Windows x64 executable,
-manifest, checksum, and `CaptureDocument` schema `2`. It also consumes the
+Cert Prep currently consumes the published `capture-runtime@0.4.1` Windows x64
+executable, manifest, checksum, and `CaptureDocument` schema `2`. The target
+0.4.2 cutover consumes the matching published executable, Web Component,
+generated SDK, manifest, `CaptureDocument` schema `2`, and the separate OCR
+projection schema `3`; no local sibling fallback is allowed.
+It also consumes the
 published `@gx-capture/capture-workbench-ui@0.4.1` Web Component and generated
 `@gx-capture/capture-runtime-client@0.4.1` package for source import,
 runtime setup, review, cancellation, retry, and completion UI.
@@ -26,6 +30,43 @@ provider fallback path.
   its configured provider and submits typed semantic blocks through the SDK;
   raw segments, locators, source text, and engine provenance remain runtime
   owned.
+- The 0.4.2 SDK must add a typed capture-bound page/segment OCR projection.
+  Cert Prep and Law consume that projection without reconstructing provider
+  routing. Every PDF page and image is rasterized and recognized by canonical
+  PaddleOCR; embedded and mixed extraction are legacy read-only values, never
+  new writes.
+
+### Authenticated privacy-safe OCR summary
+
+- Cert Prep exposes one additive project-scoped read interface at
+  `GET /projects/{project_id}/capture-workbench/captures/{capture_id}/ocr-summary`.
+  It resolves the durable review session, reads the matching runtime operation
+  and typed OCR projection through the SDK, validates capture/source/schema
+  identity, maps an allowlisted summary, and finally reloads the same
+  project-scoped session before returning. It never reads raw capture data,
+  structures or commits a capture, invokes a provider, or writes durable state.
+- `projectionSchemaVersion: 3` identifies the Capture Runtime OCR projection.
+  It is deliberately distinct from `CaptureDocument` schema `2`; the summary
+  interface does not claim or require a schema-3 `CaptureDocument`.
+- A pending review session with runtime `awaiting_structuring` and a completed
+  projection returns `200`. A pending or failed review session with an exact
+  runtime-failed/projection-failed pair also returns `200` privacy-safe failure
+  evidence. Early pending runtime states return `409`; confirming, completed,
+  and canceled review sessions return `410`.
+- Missing, deleted, and cross-project captures share the same `404` response.
+  Transport unavailability returns `503`. Authentication, protocol,
+  compatibility, stable-projection absence, and identity/schema drift return a
+  sanitized `502` without forwarding runtime diagnostics.
+- The summary exposes only host capture identity, projection status and page
+  count, per-page status/normalized character count/box count/confidence/typed
+  failure, and resolved or unavailable runtime/model/device/profile/contract
+  provenance. Typed failures contain only `code` and `retryable`. Raw text, box
+  text, polygons, filenames, paths, runtime capture ids, bearer tokens, warnings,
+  and free-form failure messages are excluded.
+- Normalized character counts follow the shared privacy-safe evidence rule:
+  Unicode NFKC, CRLF normalization, Unicode whitespace collapse, trim, then
+  Unicode code-point count. Runtime page confidence is preserved rather than
+  recomputed.
 
 ## Single production path
 
@@ -63,8 +104,10 @@ provider fallback path.
 
 ## Persistence boundary
 
-After review confirmation, the host maps the validated v2 `CaptureDocument` into
-the existing document/chunk model. `document_chunks.raw_text` retains the
+After review confirmation, the host maps the validated schema-2 `CaptureDocument`
+into the existing document/chunk model. Every new PDF/image page persists
+`windowsml_ocr`; legacy `embedded` and `mixed` rows remain readable but are not
+created by the 0.4.2 consumer. `document_chunks.raw_text` retains the
 Japanese/OCR/transcript source, while `document_chunks.text` stores the
 reviewed or Traditional Chinese text. Existing extraction and transcription
 columns remain readable for historical documents; new production writes come
@@ -78,7 +121,7 @@ never writes Cert Prep SQLite and does not own Cert Prep review decisions.
 ## Desktop and release boundary
 
 Tauri stages and verifies only the backend runtime and Capture Runtime assets.
-The engine-bearing `0.4.1` contract verifies the runtime manifest, checksum,
+The target engine-bearing `0.4.2` contract verifies the runtime manifest, checksum,
 schema, and executable bytes before launch. It injects
 the sidecar URL/token only into the backend child, records both process trees,
 and performs PID-scoped cleanup. Cert Prep's retired OCR manifest, executable,

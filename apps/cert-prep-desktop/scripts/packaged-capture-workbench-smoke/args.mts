@@ -6,6 +6,7 @@ export interface PackagedCaptureWorkbenchSmokeOptions {
   readonly outDir: string;
   readonly appDataDir: string;
   readonly cdpPort: number;
+  readonly pdfPath: string;
 }
 
 export function parsePackagedCaptureWorkbenchSmokeArgs(
@@ -16,6 +17,7 @@ export function parsePackagedCaptureWorkbenchSmokeArgs(
   let outDir: string | undefined;
   let appDataDir: string | undefined;
   let cdpPort: number | undefined;
+  let pdfPath: string | undefined;
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
     const value = args[index + 1];
@@ -25,11 +27,13 @@ export function parsePackagedCaptureWorkbenchSmokeArgs(
     else if (argument === '--out-dir') outDir = resolve(workspaceRoot, value);
     else if (argument === '--app-data-dir') appDataDir = resolve(workspaceRoot, value);
     else if (argument === '--cdp-port') cdpPort = Number(value);
+    else if (argument === '--pdf') pdfPath = resolve(workspaceRoot, value);
     else throw new Error(`Unknown argument: ${argument}`);
   }
   if (!exePath) throw new Error('--exe is required.');
   if (!outDir) throw new Error('--out-dir is required.');
   if (!appDataDir) throw new Error('--app-data-dir is required.');
+  if (!pdfPath) throw new Error('--pdf is required.');
   if (
     cdpPort === undefined ||
     !Number.isInteger(cdpPort) ||
@@ -42,7 +46,7 @@ export function parsePackagedCaptureWorkbenchSmokeArgs(
   if (!child || child === '..' || child.startsWith(`..${sep}`) || isAbsolute(child) || dirnameSegments(child) !== 1) {
     throw new Error('--app-data-dir must be a direct child of --out-dir.');
   }
-  return { workspaceRoot, exePath, outDir, appDataDir, cdpPort };
+  return { workspaceRoot, exePath, outDir, appDataDir, cdpPort, pdfPath };
 }
 
 function dirnameSegments(value: string): number {

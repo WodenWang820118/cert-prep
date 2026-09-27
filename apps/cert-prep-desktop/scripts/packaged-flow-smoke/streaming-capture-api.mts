@@ -1,9 +1,13 @@
 import type { Page, Response } from 'playwright';
 
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { DEFAULT_LLM_MODEL } from '../package-qa/constants.mts';
 import { errorMessage, isRecord, stringField } from './text-utils.mts';
 import type {
   LlmHealthSnapshot,
+  SmokeMetrics,
   SmokeRunState,
   UploadedDocumentRef,
 } from './types.mts';
@@ -17,6 +21,9 @@ import {
   recordStreamingDraftJobSnapshot,
   recordStreamingQuestionSnapshot,
 } from './streaming-capture-snapshots.mts';
+import { evaluateOcrTruth } from '../ocr-truth-contract.mts';
+import { buildOcrPageRecordEvidence } from '../ocr-page-record-evidence.mts';
+import { serializePrivacySafeOcrSemanticEvidence } from '../ocr-semantic-evidence.mts';
 
 export function observeStreamingApiResponses(
   run: SmokeRunState,
@@ -277,13 +284,137 @@ export async function captureDocumentOcrEvidence(
   }
 
   recordDocumentOcrCompletionEvidence(run, payload);
+  if (run.options.acceptanceFixture?.truth) {
+    if (payload.sha256 !== run.options.acceptanceFixture.sha256) {
+      throw new Error(
+        `PDF OCR evidence source SHA expected ${run.options.acceptanceFixture.sha256} but received ${String(payload.sha256)}.`,
+      );
+    }
+    if (payload.extraction_method !== 'windowsml_ocr') {
+      throw new Error(
+        `PDF OCR evidence extraction_method expected windowsml_ocr but received ${String(payload.extraction_method)}.`,
+      );
+    }
+    if (stringField(payload.ocr_fallback_reason).trim()) {
+      throw new Error(
+        'PDF OCR evidence reported a fallback reason under the OCR-only contract.',
+      );
+    }
+    const chunksPayload = await streamingApiGet(
+      run,
+      uploadedDocument,
+      `/projects/${encodeURIComponent(uploadedDocument.projectId)}/documents/${encodeURIComponent(
+        uploadedDocument.documentId,
+      )}/chunks`,
+    );
+    const chunks = responseItems(chunksPayload);
+    if (chunks.length === 0) {
+      throw new Error('PDF OCR truth evaluation received no persisted chunks.');
+    }
+    const actualPages = new Map<number, string[]>();
+    for (const chunk of chunks) {
+      const pageNumber = valueNumber(chunk, 'page_number');
+      if (pageNumber === null || !Number.isInteger(pageNumber) || pageNumber < 1) {
+        throw new Error('PDF OCR chunks did not expose valid page_number values.');
+      }
+      if (
+        chunk.extraction_method !== undefined &&
+        chunk.extraction_method !== 'windowsml_ocr'
+      ) {
+        throw new Error(
+          `PDF OCR chunk extraction_method expected windowsml_ocr but received ${String(chunk.extraction_method)}.`,
+        );
+      }
+      const rawText =
+        typeof chunk.raw_text === 'string'
+          ? chunk.raw_text
+          : typeof chunk.text === 'string'
+            ? chunk.text
+            : '';
+      if (!rawText.trim()) {
+        throw new Error(`PDF OCR page ${pageNumber} exposed no raw text.`);
+      }
+      const page = actualPages.get(pageNumber) ?? [];
+      page.push(rawText);
+      actualPages.set(pageNumber, page);
+    }
+    const pageRecords = buildOcrPageRecordEvidence({
+      runId: process.env.E2E_ACCEPTANCE_RUN_ID ?? 'unknown',
+      expectedDocumentId: uploadedDocument.documentId,
+      expectedProjectId: uploadedDocument.projectId,
+      document: payload,
+      chunks,
+      expectedPageNumbers: run.options.acceptanceFixture.truth.pages.map(
+        (page) => page.pageNumber,
+      ),
+      appDataEmptyAtLaunch:
+        run.metrics.acceptance_isolation_at_launch?.app_data_dir_empty_at_launch ===
+        true,
+      runtimeAttestation: run.metrics.runtime_attestation,
+    });
+    run.metrics.ocr_page_records = pageRecords;
+    writeFileSync(
+      join(run.options.outDir, 'ocr-page-record-evidence.json'),
+      `${JSON.stringify(pageRecords, null, 2)}\n`,
+      'utf8',
+    );
+    const evaluatedTruth = evaluateOcrTruth(
+      run.options.acceptanceFixture.truth,
+      [...actualPages.entries()]
+        .sort(([left], [right]) => left - right)
+        .map(([pageNumber, texts]) => ({ pageNumber, text: texts.join('\n') })),
+    );
+    run.metrics.ocr_truth = evaluatedTruth;
+    run.metrics.ocr_semantic_evidence = serializePrivacySafeOcrSemanticEvidence({
+      truth: run.options.acceptanceFixture.truth,
+      evaluation: evaluatedTruth,
+      actualPages: [...actualPages.entries()]
+        .sort(([left], [right]) => left - right)
+        .map(([pageNumber, texts]) => ({ pageNumber, text: texts.join('\n') })),
+    });
+    if (run.options.acceptancePdfPageScope === 'page-1') {
+      const pageNumbers = [...actualPages.keys()].sort((left, right) => left - right);
+      const sourcePageCount = assertPdfPageOneScope(payload, pageNumbers);
+      run.metrics.observations.push(
+        `PDF acceptance page scope verified: source=${sourcePageCount}, requested=[1], processed=[1].`,
+      );
+    }
+  }
   const device = stringField(payload.ocr_device).trim() || 'unknown';
+  (run.metrics as SmokeMetrics & { ocr_device?: string }).ocr_device = device;
+  if (run.options.acceptanceRuntimeIdentity && device !== 'windowsml-dml') throw new Error(`Local OCR acceptance requires persisted windowsml-dml device, found ${device}.`);
   const fallback = stringField(payload.ocr_fallback_reason).trim();
   run.metrics.observations.push(
     fallback
       ? `Document OCR completed on ${device}; fallback_reason=${fallback}.`
       : `Document OCR completed on ${device}.`,
   );
+}
+
+export function assertPdfPageOneScope(
+  payload: Record<string, unknown>,
+  persistedPageNumbers: readonly number[],
+): number {
+  const pageCount = valueNumber(payload, 'page_count');
+  if (
+    pageCount === null ||
+    !Number.isSafeInteger(pageCount) ||
+    pageCount < 1 ||
+    valueNumber(payload, 'processed_page_count') !== 1 ||
+    valueNumber(payload, 'chunks_count') !== 1 ||
+    persistedPageNumbers.length !== 1 ||
+    persistedPageNumbers[0] !== 1
+  ) {
+    throw new Error(
+      `PDF page-one scope was not preserved through the durable document: ${JSON.stringify({
+        pageCount,
+        processedPageCount: valueNumber(payload, 'processed_page_count'),
+        chunksCount: valueNumber(payload, 'chunks_count'),
+        pageNumbers: persistedPageNumbers,
+      })}`,
+    );
+  }
+  return pageCount;
 }
 
 export function recordDocumentOcrCompletionEvidence(
@@ -294,8 +425,14 @@ export function recordDocumentOcrCompletionEvidence(
     pages_processed: valueNumber(payload, 'processed_page_count'),
     total_pages: valueNumber(payload, 'page_count'),
     chunks: valueNumber(payload, 'chunks_count'),
-    expected_pages: run.metrics.ocr_completion?.expected_pages ?? 46,
-    expected_chunks: run.metrics.ocr_completion?.expected_chunks ?? 46,
+    expected_pages:
+      run.options.acceptancePdfPageScope === 'page-1'
+        ? 1
+        : run.metrics.ocr_completion?.expected_pages ?? 46,
+    expected_chunks:
+      run.options.acceptancePdfPageScope === 'page-1'
+        ? 1
+        : run.metrics.ocr_completion?.expected_chunks ?? 46,
   };
 }
 
@@ -424,7 +561,7 @@ export async function answerForVisiblePracticeQuestion(
   return answer;
 }
 
-function responseItems(payload: unknown): object[] {
+function responseItems(payload: unknown): Record<string, unknown>[] {
   if (
     typeof payload !== 'object' ||
     payload === null ||
@@ -433,7 +570,8 @@ function responseItems(payload: unknown): object[] {
     return [];
   }
   return (payload as { items: unknown[] }).items.filter(
-    (item): item is object => typeof item === 'object' && item !== null,
+    (item): item is Record<string, unknown> =>
+      typeof item === 'object' && item !== null && !Array.isArray(item),
   );
 }
 

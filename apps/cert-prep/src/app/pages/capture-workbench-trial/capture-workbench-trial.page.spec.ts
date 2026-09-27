@@ -11,6 +11,7 @@ import { DesktopRuntimeBridgeService } from '../../stores/desktop-runtime/deskto
 import { CertPrepRuntimeConfig } from '../../services/cert-prep-api.service';
 import { CertPrepCaptureClient } from './cert-prep-capture-client';
 import { CaptureWorkbenchTrialPage } from './capture-workbench-trial.page';
+import { CaptureRuntimePreflightStore } from '../../stores/capture-runtime/capture-runtime-preflight.store';
 
 describe('CaptureWorkbenchTrialPage', () => {
   const activeDocument = signal<DocumentRead | null>(null);
@@ -21,6 +22,7 @@ describe('CaptureWorkbenchTrialPage', () => {
   };
   let refreshUploadedDocument: ReturnType<typeof vi.fn>;
   let loadLatestDocument: ReturnType<typeof vi.fn>;
+  let preflightStore: ReturnType<typeof fakePreflightStore>;
 
   beforeEach(() => {
     activeDocument.set(null);
@@ -31,6 +33,7 @@ describe('CaptureWorkbenchTrialPage', () => {
     };
     refreshUploadedDocument = vi.fn();
     loadLatestDocument = vi.fn();
+    preflightStore = fakePreflightStore('gpu-dml');
     TestBed.configureTestingModule({
       imports: [CaptureWorkbenchTrialPage],
       providers: [
@@ -50,6 +53,7 @@ describe('CaptureWorkbenchTrialPage', () => {
             loadLatestDocument,
           },
         },
+        { provide: CaptureRuntimePreflightStore, useValue: preflightStore },
       ],
     });
   });
@@ -83,6 +87,12 @@ describe('CaptureWorkbenchTrialPage', () => {
     ).toBe(captureClient);
     expect(fixture.nativeElement.textContent).toContain(
       'PDF, image, and audio sources are processed',
+    );
+    expect(
+      fixture.nativeElement.querySelector('[data-testid="ocr-compute-status"]'),
+    ).not.toBeNull();
+    expect(fixture.nativeElement.textContent).toContain(
+      'OCR acceleration enabled (DirectML).',
     );
     expect(fixture.nativeElement.textContent).not.toContain('in-memory');
   });
@@ -122,6 +132,46 @@ describe('CaptureWorkbenchTrialPage', () => {
       enabledSources: ['pdf', 'image', 'audio'],
       showRuntimeSetup: false,
     });
+  });
+
+  it('shows the CPU fallback notice before mounting the import surface', async () => {
+    TestBed.overrideProvider(CaptureRuntimePreflightStore, {
+      useValue: fakePreflightStore('cpu-fallback'),
+    });
+    const fixture = TestBed.createComponent(CaptureWorkbenchTrialPage);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="ocr-compute-notice"]'))
+      .not.toBeNull();
+    expect(fixture.nativeElement.textContent).toContain(
+      'no compatible GPU/DML, CPU may be slower',
+    );
+    expect(
+      fixture.nativeElement.querySelector('[data-testid="ocr-compute-status"]'),
+    ).toBeNull();
+    const html = fixture.nativeElement.innerHTML as string;
+    expect(html.indexOf('ocr-compute-notice')).toBeLessThan(
+      html.indexOf('<capture-workbench'),
+    );
+  });
+
+  it('keeps import blocked and surfaces a preflight authentication error', () => {
+    const failedPreflight = fakePreflightStore('error');
+    TestBed.overrideProvider(CaptureRuntimePreflightStore, {
+      useValue: failedPreflight,
+    });
+    const fixture = TestBed.createComponent(CaptureWorkbenchTrialPage);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain(
+      'Capture Runtime authentication failed.',
+    );
+    expect(fixture.nativeElement.querySelector('capture-workbench')).toBeNull();
+    const retry = fixture.nativeElement.querySelector('button') as
+      | HTMLButtonElement
+      | null;
+    retry?.click();
+    expect(failedPreflight.retry).toHaveBeenCalledTimes(1);
   });
 
   it('waits for an explicit Capture Runtime install before configuring the desktop capture client', () => {
@@ -291,5 +341,27 @@ function captureRuntimeStatus(status: 'missing' | 'running') {
     completed: null,
     total: null,
     error: null,
+  };
+}
+
+function fakePreflightStore(
+  mode: 'gpu-dml' | 'cpu-fallback' | 'error',
+) {
+  const isError = mode === 'error';
+  return {
+    status: signal(isError ? 'error' : 'ready'),
+    canImport: signal(!isError),
+    isLoading: signal(false),
+    error: signal(isError ? 'Capture Runtime authentication failed.' : null),
+    gpuAccelerationMessage: signal(
+      mode === 'gpu-dml' ? 'OCR acceleration enabled (DirectML).' : null,
+    ),
+    cpuFallbackNotice: signal(
+      mode === 'cpu-fallback'
+        ? 'no compatible GPU/DML, CPU may be slower'
+        : null,
+    ),
+    retry: vi.fn(),
+    load: vi.fn().mockReturnValue(of(null)),
   };
 }

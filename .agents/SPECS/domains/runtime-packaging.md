@@ -6,8 +6,9 @@ Tauri packages the backend runtime and the published Capture Runtime
 `0.4.1` Windows x64 assets. Cert Prep does not own an OCR/Whisper provider,
 legacy manifest, local provider, or fallback installer.
 
-The release contract pins Capture Runtime API `2.0`, runtime `0.4.1`, and
-`CaptureDocument` schema `2`. Package QA and Tauri validate executable bytes,
+The target release contract pins Capture Runtime API `2.0`, runtime `0.4.2`,
+and `CaptureDocument` schema `3` with the typed page/segment OCR projection.
+Package QA and Tauri validate executable bytes,
 checksum, manifest, and schema bytes before launch. Capture Runtime owns
 requirement validation and publishes the engine catalog consumed by the host
 readiness checks.
@@ -39,6 +40,7 @@ artifacts or real engine-smoke evidence.
 The release candidate must pass backend/frontend/desktop Nx checks, package QA,
 release-tool tests, clean-install contract tests, resource staging checks, and
 published-byte handshake/requirements checks. The real PDF/image/audio consumer
-smoke remains pending for the engine-bearing `0.4.1` release;
-readiness/host-protocol checks and fake extraction are not positive
-OCR/Whisper evidence.
+smoke remains pending for the engine-bearing `0.4.2` release. Its model-enabled
+journey is sequential across consumers and must release all owned PIDs/listeners
+before the next consumer starts; readiness/host-protocol checks and fake
+extraction are not positive OCR/Whisper evidence.

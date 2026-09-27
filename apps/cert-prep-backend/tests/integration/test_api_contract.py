@@ -345,6 +345,91 @@ def test_commit_started_at_is_optional_and_nullable_for_durable_jobs(tmp_path) -
         } == {"string", "null"}
 
 
+def test_capture_ocr_summary_contract_is_named_discriminated_and_privacy_safe(
+    tmp_path,
+) -> None:
+    openapi = create_app(Settings(data_dir=tmp_path, api_token="contract-token")).openapi()
+    path = "/projects/{project_id}/capture-workbench/captures/{capture_id}/ocr-summary"
+    operation = openapi["paths"][path]["get"]
+
+    assert operation["operationId"] == "get_capture_ocr_summary_projects__project_id__capture_workbench_captures__capture_id__ocr_summary_get"
+    assert _response_schema_name(openapi, path, "get", 200) == "CaptureOcrSummaryRead"
+    for status_code in (404, 409, 410, 502, 503):
+        assert _response_schema_name(openapi, path, "get", status_code) == "ApiErrorRead"
+
+    summary = openapi["components"]["schemas"]["CaptureOcrSummaryRead"]
+    assert set(summary["required"]) == {
+        "projectionSchemaVersion",
+        "captureId",
+        "status",
+        "pageCount",
+        "pages",
+        "provenance",
+        "failure",
+    }
+    assert summary["properties"]["projectionSchemaVersion"]["const"] == 3
+    assert summary["properties"]["provenance"]["$ref"].endswith(
+        "/CaptureOcrProvenanceRead"
+    )
+
+    page = openapi["components"]["schemas"]["CaptureOcrPageSummaryRead"]
+    assert set(page["properties"]) == {
+        "page",
+        "status",
+        "normalizedCharCount",
+        "boxCount",
+        "confidence",
+        "failure",
+    }
+    failure = openapi["components"]["schemas"]["CaptureOcrFailureRead"]
+    assert set(failure["properties"]) == {"code", "retryable"}
+    assert set(failure["required"]) == {"code", "retryable"}
+
+    provenance = openapi["components"]["schemas"]["CaptureOcrProvenanceRead"]
+    assert provenance["discriminator"]["propertyName"] == "status"
+    assert set(provenance["discriminator"]["mapping"]) == {
+        "resolved",
+        "unavailable",
+    }
+    assert {
+        item["$ref"].rsplit("/", 1)[-1] for item in provenance["oneOf"]
+    } == {
+        "CaptureOcrResolvedProvenanceRead",
+        "CaptureOcrUnavailableProvenanceRead",
+    }
+    assert (
+        openapi["components"]["schemas"]["CaptureOcrResolvedProvenanceRead"]
+        ["properties"]["status"]["const"]
+        == "resolved"
+    )
+    assert (
+        openapi["components"]["schemas"]["CaptureOcrUnavailableProvenanceRead"]
+        ["properties"]["status"]["const"]
+        == "unavailable"
+    )
+
+    serialized_components = str(
+        {
+            name: schema
+            for name, schema in openapi["components"]["schemas"].items()
+            if name.startswith("CaptureOcr")
+        }
+    ).lower()
+    for forbidden in (
+        "raw",
+        "text",
+        "polygon",
+        "filename",
+        "path",
+        "runtimeid",
+        "token",
+        "warning",
+        "message",
+        "stage",
+    ):
+        assert forbidden not in serialized_components
+
+
 def _enum_values(openapi: dict[str, Any], schema_name: str, property_name: str) -> list[str]:
     schema = openapi["components"]["schemas"][schema_name]["properties"][property_name]
     if "$ref" in schema:

@@ -33,11 +33,15 @@ from capture_runtime_client import (
     StructuringBatchStatus,
     StructuringSession,
     StructuringSessionStatus,
+    StreamingCaptureStatus,
     RuntimeRequirementStatus,
     RuntimeRequirements,
     CaptureStreamingResult as RuntimeStreamingResult,
 )
-from cert_prep_backend.domains.capture_workbench.host_models import RuntimeReady
+from cert_prep_backend.domains.capture_workbench.host_models import (
+    OcrComputePreflightV2,
+    RuntimeReady,
+)
 from cert_prep_backend.domains.capture_workbench.coordinator import (
     CaptureRunResult,
     CaptureRuntimeCanceledError,
@@ -51,6 +55,7 @@ from cert_prep_backend.domains.capture_workbench.mapping import (
     capture_document_to_audio_segments,
     capture_document_to_pdf_extraction,
 )
+from conftest import _test_ocr_projection
 from cert_prep_backend.domains.capture_workbench.structuring import (
     CaptureStructuringCanceledError,
     CaptureStructuringTimeoutError,
@@ -397,6 +402,9 @@ class PullSessionRuntime:
             }
         )
         return RuntimeStreamingResult(operation=operation, raw=self.raw, result=self._document)
+
+    def get_ocr(self, capture_id: str) -> object:
+        return _test_ocr_projection(self.raw, capture_id)
 
     def get_capture(self, capture_id: str) -> CaptureOperation:
         return self.get_result(capture_id).operation
@@ -870,7 +878,7 @@ def test_sidecar_client_rejects_incompatible_runtime_release() -> None:
 
     with pytest.raises(
         CaptureRuntimeCompatibilityError,
-        match="runtime version 0.2.8 is incompatible with 0.4.1",
+        match=rf"runtime version 0\.2\.8 is incompatible with {CAPTURE_RUNTIME_VERSION}",
     ):
         client.handshake()
 
@@ -887,7 +895,10 @@ def test_sidecar_client_requires_the_coordinated_runtime_release() -> None:
         client=httpx.Client(transport=transport),
     )
 
-    with pytest.raises(CaptureRuntimeCompatibilityError, match="incompatible with 0.4.1"):
+    with pytest.raises(
+        CaptureRuntimeCompatibilityError,
+        match=rf"incompatible with {CAPTURE_RUNTIME_VERSION}",
+    ):
         client.handshake()
 
 
@@ -908,6 +919,19 @@ class RecordingCaptureRuntime:
         ready = _ready_payload()
         ready["runtimeVersion"] = runtime_version
         ready["capabilities"]["captureKinds"] = capture_kinds or ["pdf", "image", "audio"]
+        ready["ocrCompute"] = {
+            "apiVersion": "2.0",
+            "schemaVersion": "1",
+            "service": "capture-runtime",
+            "runtimeVersion": CAPTURE_RUNTIME_VERSION,
+            "contractSetVersion": "2",
+            "contractSha256": "a" * 64,
+            "mode": "gpu-dml",
+            "adapterClass": "dedicated",
+            "reasonCode": None,
+            "userNoticeRequired": False,
+            "noticeCode": None,
+        }
         self.ready = RuntimeReady.model_validate(ready)
         detail = (
             None
@@ -997,6 +1021,9 @@ class RecordingCaptureRuntime:
 
     def get_raw(self, _capture_id):
         return self.raw
+
+    def get_ocr(self, capture_id: str) -> object:
+        return _test_ocr_projection(self.raw, capture_id)
 
     def capture_events(
         self,
@@ -1260,6 +1287,96 @@ def test_capture_coordinator_rejects_unsupported_source_kind_before_requirement_
     assert runtime.creates == 0
 
 
+@pytest.mark.parametrize(
+    ("mode", "adapter_class", "reason_code"),
+    [
+        ("gpu-dml", "dedicated", None),
+        ("gpu-dml", "integrated", None),
+        ("cpu-fallback", "integrated", "no_compatible_gpu"),
+        ("cpu-fallback", "unknown", "dml_provider_unavailable"),
+    ],
+)
+def test_capture_coordinator_accepts_only_the_runtime_ocr_compute_decision(
+    mode: str,
+    adapter_class: str,
+    reason_code: str | None,
+) -> None:
+    runtime = RecordingCaptureRuntime()
+    runtime.ready = runtime.ready.model_copy(
+        update={
+            "ocr_compute": OcrComputePreflightV2.model_validate(
+                {
+                    "apiVersion": "2.0",
+                    "schemaVersion": "1",
+                    "service": "capture-runtime",
+                    "runtimeVersion": CAPTURE_RUNTIME_VERSION,
+                    "contractSetVersion": "2",
+                    "contractSha256": "a" * 64,
+                    "mode": mode,
+                    "adapterClass": adapter_class,
+                    "reasonCode": reason_code,
+                    "userNoticeRequired": mode == "cpu-fallback",
+                    "noticeCode": "ocr_cpu_fallback" if mode == "cpu-fallback" else None,
+                }
+            )
+        },
+    )
+    coordinator = CertPrepCaptureCoordinator(
+        client=runtime,
+        structurer=StaticStructurer(_document_payload()),
+    )
+
+    operation = coordinator.begin_capture(
+        operation_id=f"compute-{mode}-{adapter_class}",
+        file_name="sample.pdf",
+        content=b"source bytes",
+        media_type="application/pdf",
+        source_kind=CaptureSourceKind.PDF,
+        target_language=None,
+        should_cancel=lambda: False,
+    )
+
+    assert operation.status is StreamingCaptureStatus.AWAITING_STRUCTURING
+    assert runtime.creates == 1
+
+
+@pytest.mark.parametrize(
+    "preflight",
+    [
+        None,
+        SimpleNamespace(
+            mode="gpu-dml",
+            adapter_class="dedicated",
+            reason_code="no_compatible_gpu",
+            user_notice_required=True,
+            notice_code="ocr_cpu_fallback",
+        ),
+    ],
+)
+def test_capture_coordinator_fails_closed_before_pdf_upload_without_valid_preflight(
+    preflight: object | None,
+) -> None:
+    runtime = RecordingCaptureRuntime()
+    runtime.ready = runtime.ready.model_copy(update={"ocr_compute": preflight})
+    coordinator = CertPrepCaptureCoordinator(
+        client=runtime,
+        structurer=StaticStructurer(_document_payload()),
+    )
+
+    with pytest.raises(CaptureRuntimeCompatibilityError, match="OCR compute preflight"):
+        coordinator.begin_capture(
+            operation_id="blocked-ocr-preflight",
+            file_name="sample.pdf",
+            content=b"source bytes",
+            media_type="application/pdf",
+            source_kind=CaptureSourceKind.PDF,
+            target_language=None,
+            should_cancel=lambda: False,
+        )
+
+    assert runtime.creates == 0
+
+
 def test_future_runtime_generic_pdf_extraction_failure_is_not_reclassified() -> None:
     failed = _operation_payload(status="failed")
     failed["error"] = {
@@ -1459,3 +1576,147 @@ def test_capture_document_maps_page_and_time_provenance_without_restructuring() 
     assert segments[0].transcript.start_ms == 125
     assert segments[0].transcript.end_ms == 950
     assert segments[0].target_text == "Visible target text"
+
+
+@pytest.mark.parametrize("engine", ["embedded-text", "mixed", "ollama"])
+def test_capture_document_rejects_non_ocr_extraction_provenance(
+    engine: str,
+) -> None:
+    payload = _document_payload()
+    extraction_engine = payload["extractionEngine"]
+    assert isinstance(extraction_engine, dict)
+    extraction_engine["engine"] = engine
+
+    document = CaptureDocument.model_validate(payload)
+
+    with pytest.raises(ValueError, match="OCR-only"):
+        capture_document_to_pdf_extraction(document)
+
+
+def test_capture_document_persists_ocr_only_method_for_every_page() -> None:
+    payload = _document_payload()
+    raw_segments = payload["rawSegments"]
+    blocks = payload["blocks"]
+    assert isinstance(raw_segments, list)
+    assert isinstance(blocks, list)
+    raw_segments.append(
+        {
+            "segmentId": "page-2",
+            "order": 1,
+            "locator": {"kind": "page", "page": 2},
+            "text": "Second OCR page",
+        }
+    )
+    blocks.append(
+        {
+            "blockId": "block-2",
+            "order": 1,
+            "type": "paragraph",
+            "sourceSegmentId": "page-2",
+            "locator": {"kind": "page", "page": 2},
+            "sourceText": "Second OCR page",
+            "targetText": "Second OCR page",
+        }
+    )
+    payload["sourceText"] = "Visible source text\nSecond OCR page"
+    payload["targetText"] = "Visible target text\nSecond OCR page"
+
+    extraction = capture_document_to_pdf_extraction(
+        CaptureDocument.model_validate(payload)
+    )
+
+    assert [page.extraction_method for page in extraction.pages] == [
+        "windowsml_ocr",
+        "windowsml_ocr",
+    ]
+    assert extraction.extraction_method == "windowsml_ocr"
+
+
+def test_capture_document_mapping_uses_runtime_ocr_projection_text_and_device() -> None:
+    raw = RawCapture.model_validate(_raw_payload())
+    document = CaptureDocument.model_validate(_document_payload())
+    projection = _test_ocr_projection(raw, "capture-1")
+    projection.pages[0].text = "Canonical Paddle OCR text"
+    projection.provenance.device = "windowsml-dml"
+
+    extraction = capture_document_to_pdf_extraction(
+        document,
+        ocr_projection=projection,
+    )
+
+    assert extraction.page_count == 1
+    assert extraction.processed_page_count == 1
+    assert extraction.pages[0].raw_text == "Canonical Paddle OCR text"
+    assert extraction.pages[0].text == "Visible target text"
+    assert extraction.ocr_device == "windowsml-dml"
+
+
+def test_coordinator_rejects_incomplete_runtime_ocr_projection() -> None:
+    raw = RawCapture.model_validate(_raw_payload())
+    runtime = PullSessionRuntime(raw)
+    provider = RecordingStructuredProvider(_valid_batch_candidate)
+    adapter = CertPrepCaptureStructuringAdapter(provider, runtime, clock=lambda: NOW)
+    candidate = CaptureDocument.model_validate(
+        adapter.structure(
+            raw,
+            capture_id="capture-1",
+            operation_id="operation-1",
+            target_language="zh-TW",
+        )
+    )
+    projection = _test_ocr_projection(raw, "capture-1")
+    projection.page_count = 2
+    runtime.get_ocr = lambda _capture_id: projection
+
+    coordinator = CertPrepCaptureCoordinator(
+        client=runtime,
+        structurer=adapter,
+        clock=lambda: 0.0,
+        sleeper=lambda _seconds: None,
+    )
+
+    with pytest.raises(CaptureRuntimeProtocolError, match="cover 1..N"):
+        coordinator.commit_capture(
+            operation_id="operation-1",
+            capture_id="capture-1",
+            candidate=candidate,
+            should_cancel=lambda: False,
+        )
+
+
+def test_coordinator_accepts_sdk_ocr_string_status_values() -> None:
+    """The 0.4.2 SDK exposes OCR status properties as strings, not enums."""
+
+    raw = RawCapture.model_validate(_raw_payload())
+    runtime = PullSessionRuntime(raw)
+    provider = RecordingStructuredProvider(_valid_batch_candidate)
+    adapter = CertPrepCaptureStructuringAdapter(provider, runtime, clock=lambda: NOW)
+    candidate = CaptureDocument.model_validate(
+        adapter.structure(
+            raw,
+            capture_id="capture-1",
+            operation_id="operation-1",
+            target_language="zh-TW",
+        )
+    )
+    projection = _test_ocr_projection(raw, "capture-1")
+    projection.status = "completed"
+    projection.pages[0].status = "recognized"
+    projection.pages[0].provenance.status = "resolved"
+    runtime.get_ocr = lambda _capture_id: projection
+
+    coordinator = CertPrepCaptureCoordinator(
+        client=runtime,
+        structurer=adapter,
+        clock=lambda: 0.0,
+        sleeper=lambda _seconds: None,
+    )
+
+    result = coordinator.commit_capture(
+        operation_id="operation-1",
+        capture_id="capture-1",
+        candidate=candidate,
+        should_cancel=lambda: False,
+    )
+
+    assert result.ocr_projection is projection

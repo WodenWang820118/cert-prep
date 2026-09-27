@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 import json
+import os
 from time import monotonic, sleep
 from uuid import UUID, uuid5
 
@@ -131,6 +132,7 @@ class CaptureRunResult:
     last_event_sequence: int
     raw: RawCapture
     document: CaptureDocument
+    ocr_projection: object | None = None
 
 
 class CertPrepCaptureCoordinator:
@@ -204,11 +206,18 @@ class CertPrepCaptureCoordinator:
             raise CaptureRuntimeCompatibilityError(
                 f"Capture Runtime does not support {kind.value.upper()} capture."
             )
+        self._assert_ocr_compute_preflight(kind, ready)
         self._assert_source_requirement_ready(kind)
         if should_cancel():
             raise CaptureRuntimeCanceledError("Document processing was cancelled.")
+        pdf_page_numbers = _acceptance_pdf_page_numbers(kind)
         operation = self._client.start_capture(
-            CaptureUpload(file_name=file_name, content=content, media_type=media_type),
+            CaptureUpload(
+                file_name=file_name,
+                content=content,
+                media_type=media_type,
+                pdf_page_numbers=pdf_page_numbers,
+            ),
             source_kind=kind,
             client_request_id=operation_id,
             target_language=target_language,
@@ -305,6 +314,14 @@ class CertPrepCaptureCoordinator:
             raise CaptureRuntimeProtocolError(
                 "Capture Runtime result is not attached to a completed operation"
             )
+        ocr_projection = None
+        if _is_ocr_source(result.raw.source.media_type):
+            ocr_projection = self._client.get_ocr(capture_id)
+            _validate_ocr_projection(
+                ocr_projection,
+                capture_id=capture_id,
+                raw=result.raw,
+            )
         # Pull-session submission has already caused the runtime to validate,
         # reconstruct, and complete the base document.  A Cert Prep review may
         # then change only targetText for local persistence; never bypass the
@@ -315,6 +332,7 @@ class CertPrepCaptureCoordinator:
             last_event_sequence=result.operation.last_event_sequence,
             raw=result.raw,
             document=document,
+            ocr_projection=ocr_projection,
         )
 
     def confirm_capture(
@@ -403,6 +421,63 @@ class CertPrepCaptureCoordinator:
             display_name=display_name,
             status=requirement.status if requirement is not None else None,
             detail=requirement.detail if requirement is not None else None,
+        )
+
+    def _assert_ocr_compute_preflight(
+        self,
+        source_kind: CaptureSourceKind,
+        ready: object,
+    ) -> None:
+        """Require the runtime-owned OCR decision before PDF/image upload.
+
+        Capture Runtime owns adapter discovery and fallback policy. Cert Prep
+        only admits the generated decision and presents its user notice; it
+        never probes hardware or changes a selected GPU-DML decision.
+        """
+
+        if source_kind not in {CaptureSourceKind.PDF, CaptureSourceKind.IMAGE}:
+            return
+        preflight = getattr(ready, "ocr_compute", None)
+        if preflight is None:
+            raise CaptureRuntimeCompatibilityError(
+                "Capture Runtime did not return the required OCR compute preflight."
+            )
+        mode = _status_value(getattr(preflight, "mode", None))
+        reason = _status_value(getattr(preflight, "reason_code", None))
+        notice_required = getattr(preflight, "user_notice_required", None)
+        notice_code = _status_value(getattr(preflight, "notice_code", None))
+        expected_contract = os.environ.get(
+            "CERT_PREP_CAPTURE_RUNTIME_CONTRACT_SHA256", ""
+        ).strip()
+        expected_worker = os.environ.get(
+            "CERT_PREP_CAPTURE_RUNTIME_WORKER_SHA256", ""
+        ).strip()
+        if expected_contract and getattr(preflight, "contract_sha256", None) != expected_contract:
+            raise CaptureRuntimeCompatibilityError(
+                "Capture Runtime OCR preflight contract identity does not match the acceptance candidate."
+            )
+        if expected_worker and getattr(preflight, "worker_sha256", None) != expected_worker:
+            raise CaptureRuntimeCompatibilityError(
+                "Capture Runtime OCR preflight worker identity does not match the acceptance candidate."
+            )
+        if mode == "gpu-dml":
+            if reason is not None or notice_required is not False or notice_code is not None:
+                raise CaptureRuntimeCompatibilityError(
+                    "Capture Runtime returned an invalid GPU-DML OCR compute preflight."
+                )
+            return
+        if mode == "cpu-fallback":
+            if (
+                reason not in {"no_compatible_gpu", "dml_provider_unavailable"}
+                or notice_required is not True
+                or notice_code != "ocr_cpu_fallback"
+            ):
+                raise CaptureRuntimeCompatibilityError(
+                    "Capture Runtime returned an invalid CPU-fallback OCR compute preflight."
+                )
+            return
+        raise CaptureRuntimeCompatibilityError(
+            "Capture Runtime returned an unsupported OCR compute mode."
         )
 
     def _runtime_requirement(
@@ -671,6 +746,118 @@ def _capture_document(
         raise CaptureRuntimeProtocolError(
             "Host structuring candidate does not satisfy CaptureDocument"
         ) from error
+
+
+def _is_ocr_source(media_type: str) -> bool:
+    normalized = media_type.strip().lower()
+    return normalized == "application/pdf" or normalized.startswith("image/")
+
+
+def _validate_ocr_projection(
+    projection: object,
+    *,
+    capture_id: str,
+    raw: RawCapture,
+) -> None:
+    """Enforce the runtime page/provenance seam before host persistence.
+
+    The generated 0.4.2 SDK validates the wire shape. This small consumer
+    guard validates the invariants that matter to Cert Prep: source identity,
+    complete page coverage, successful page status, and resolved Paddle
+    provenance. It deliberately does not recreate OCR or confidence logic.
+    """
+
+    actual_capture_id = getattr(projection, "capture_id", None)
+    if actual_capture_id != capture_id:
+        raise CaptureRuntimeProtocolError(
+            "Capture Runtime OCR projection capture identity does not match."
+        )
+    projection_status = _status_value(getattr(projection, "status", None))
+    if projection_status != "completed":
+        raise CaptureRuntimeProtocolError(
+            "Capture Runtime OCR projection did not complete successfully."
+        )
+    source = getattr(projection, "source", None)
+    if source is None or getattr(source, "sha256", None) != raw.source.sha256:
+        raise CaptureRuntimeProtocolError(
+            "Capture Runtime OCR projection source digest does not match."
+        )
+    page_count = getattr(projection, "page_count", None)
+    pages = getattr(projection, "pages", None)
+    if not isinstance(page_count, int) or page_count < 1 or not isinstance(pages, list):
+        raise CaptureRuntimeProtocolError(
+            "Capture Runtime OCR projection page envelope is invalid."
+        )
+    if len(pages) != page_count or [getattr(page, "page", None) for page in pages] != list(
+        range(1, page_count + 1)
+    ):
+        raise CaptureRuntimeProtocolError(
+            "Capture Runtime OCR projection pages must cover 1..N exactly once."
+        )
+
+    provenance = getattr(projection, "provenance", None)
+    if not _resolved_ocr_provenance(provenance):
+        raise CaptureRuntimeProtocolError(
+            "Capture Runtime OCR projection provenance is not resolved PaddleOCR."
+        )
+    for page in pages:
+        status = _status_value(getattr(page, "status", None))
+        text = getattr(page, "text", "")
+        if status == "failed":
+            raise CaptureRuntimeProtocolError(
+                "Capture Runtime OCR projection contains a failed page."
+            )
+        if status == "recognized" and not isinstance(text, str):
+            raise CaptureRuntimeProtocolError(
+                "Capture Runtime OCR recognized page text is invalid."
+            )
+        if status == "recognized" and not text.strip():
+            raise CaptureRuntimeProtocolError(
+                "Capture Runtime OCR recognized page has no text."
+            )
+        if status == "empty" and text.strip():
+            raise CaptureRuntimeProtocolError(
+                "Capture Runtime OCR empty page contains text."
+            )
+        if not _resolved_ocr_provenance(getattr(page, "provenance", None)):
+            raise CaptureRuntimeProtocolError(
+                "Capture Runtime OCR page provenance is not resolved PaddleOCR."
+            )
+
+
+def _resolved_ocr_provenance(provenance: object) -> bool:
+    status = _status_value(getattr(provenance, "status", None))
+    return (
+        status == "resolved"
+        and getattr(provenance, "engine", None) == "windowsml-ocr"
+        and bool(str(getattr(provenance, "model", "")).strip())
+        and bool(str(getattr(provenance, "model_digest", "")).strip())
+        and bool(str(getattr(provenance, "device", "")).strip())
+        and bool(str(getattr(provenance, "profile_id", "")).strip())
+        and bool(str(getattr(provenance, "profile_spec_sha256", "")).strip())
+    )
+
+
+def _status_value(value: object) -> str | None:
+    """Read enum-backed test fakes and string-backed 0.4.2 SDK statuses."""
+
+    candidate = getattr(value, "value", value)
+    return candidate if isinstance(candidate, str) else None
+
+
+def _acceptance_pdf_page_numbers(
+    source_kind: CaptureSourceKind,
+) -> tuple[int, ...] | None:
+    """Translate the isolated Phase 1 acceptance switch into a bounded scope."""
+
+    scope = os.environ.get("CAPTURE_ACCEPTANCE_PDF_PAGE_SCOPE", "").strip()
+    if not scope or source_kind is not CaptureSourceKind.PDF:
+        return None
+    if scope != "page-1":
+        raise CaptureRuntimeCompatibilityError(
+            "CAPTURE_ACCEPTANCE_PDF_PAGE_SCOPE only supports page-1."
+        )
+    return (1,)
 
 
 def _assert_review_overlay(candidate: CaptureDocument, runtime_document: CaptureDocument) -> None:

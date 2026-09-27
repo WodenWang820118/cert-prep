@@ -67,7 +67,8 @@ pub(crate) fn launch_backend_entrypoint(
     );
     forward_env(&mut command, "CERT_PREP_STREAMING_DRAFT_WORKERS");
 
-    let child = OwnedSidecarProcess::spawn(&mut command)
+    #[allow(unused_mut)]
+    let mut child = OwnedSidecarProcess::spawn(&mut command)
         .map_err(|error| format!("failed to launch backend runtime: {error}"))?;
     if let Err(error) = wait_for_backend(port, backend_ready_timeout(), Some(&inner.closing)) {
         let _ = child.terminate();
@@ -106,7 +107,8 @@ pub(crate) fn launch_backend_entrypoint(
     ));
     drop(current_child);
     drop(config);
-    if let Some(old_child) = old_child {
+    #[allow(unused_mut)]
+    if let Some(mut old_child) = old_child {
         let _ = old_child.terminate();
     }
     Ok(())
@@ -167,6 +169,17 @@ fn backend_launch_env(
                 capture_runtime.capture_document_schema_version.clone(),
             ),
         ]);
+        if acceptance_isolation_enabled() {
+            for name in [
+                "CERT_PREP_CAPTURE_RUNTIME_CONTRACT_SHA256",
+                "CERT_PREP_CAPTURE_RUNTIME_WORKER_SHA256",
+                "CAPTURE_ACCEPTANCE_PDF_PAGE_SCOPE",
+            ] {
+                if let Some(value) = trimmed_env_var(name) {
+                    environment.push(BackendEnv::new(name, value));
+                }
+            }
+        }
     }
     environment
 }
@@ -436,6 +449,40 @@ mod tests {
     }
 
     #[test]
+    fn backend_launch_env_forwards_phase1_acceptance_contract_and_scope() {
+        let _env = lock_env();
+        std::env::set_var("CERT_PREP_ACCEPTANCE_ISOLATION", "1");
+        std::env::set_var("CERT_PREP_CAPTURE_RUNTIME_CONTRACT_SHA256", "a".repeat(64));
+        std::env::set_var("CERT_PREP_CAPTURE_RUNTIME_WORKER_SHA256", "b".repeat(64));
+        std::env::set_var("CAPTURE_ACCEPTANCE_PDF_PAGE_SCOPE", "page-1");
+
+        let env = backend_launch_env(
+            Path::new("cert-prep-data"),
+            8123,
+            "test-token",
+            Some(&capture_runtime()),
+        );
+
+        assert_eq!(
+            env_value(&env, "CERT_PREP_CAPTURE_RUNTIME_CONTRACT_SHA256"),
+            Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+        );
+        assert_eq!(
+            env_value(&env, "CERT_PREP_CAPTURE_RUNTIME_WORKER_SHA256"),
+            Some("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+        );
+        assert_eq!(
+            env_value(&env, "CAPTURE_ACCEPTANCE_PDF_PAGE_SCOPE"),
+            Some("page-1"),
+        );
+
+        std::env::remove_var("CERT_PREP_ACCEPTANCE_ISOLATION");
+        std::env::remove_var("CERT_PREP_CAPTURE_RUNTIME_CONTRACT_SHA256");
+        std::env::remove_var("CERT_PREP_CAPTURE_RUNTIME_WORKER_SHA256");
+        std::env::remove_var("CAPTURE_ACCEPTANCE_PDF_PAGE_SCOPE");
+    }
+
+    #[test]
     fn backend_launch_env_ignores_legacy_ollama_model_override() {
         let _env = lock_env();
         std::env::set_var("CERT_PREP_OLLAMA_MODEL", " qwen3.5:2b ");
@@ -468,6 +515,9 @@ mod tests {
             "CERT_PREP_CAPTURE_RUNTIME_VERSION",
             "CERT_PREP_CAPTURE_RUNTIME_API_VERSION",
             "CERT_PREP_CAPTURE_DOCUMENT_SCHEMA_VERSION",
+            "CERT_PREP_CAPTURE_RUNTIME_CONTRACT_SHA256",
+            "CERT_PREP_CAPTURE_RUNTIME_WORKER_SHA256",
+            "CAPTURE_ACCEPTANCE_PDF_PAGE_SCOPE",
         ] {
             assert_eq!(env_value(&env, name), None, "{name} must be absent");
         }

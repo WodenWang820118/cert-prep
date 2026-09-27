@@ -49,12 +49,13 @@ from cert_prep_backend.api.dependencies import (
     get_settings,
     get_streaming_draft_generation_manager,
 )
-from cert_prep_backend.api.errors import api_error, not_found_error
+from cert_prep_backend.api.errors import ApiErrorRead, api_error, not_found_error
 from cert_prep_backend.core.config import Settings
 from cert_prep_backend.core.exceptions import BackendError, NotFoundError
 from cert_prep_backend.domains.capture_workbench import review_sessions
 from cert_prep_backend.domains.capture_workbench.host_models import CaptureReview
 from cert_prep_backend.domains.capture_workbench.client import (
+    CaptureRuntimeClient,
     CaptureRuntimeError,
     CaptureRuntimeProtocolError,
 )
@@ -64,6 +65,11 @@ from cert_prep_backend.domains.capture_workbench.coordinator import (
     CaptureRuntimeRequirementUnavailableError,
     CertPrepCaptureCoordinator,
     PDF_OCR_UNAVAILABLE_MESSAGE,
+)
+from cert_prep_backend.domains.capture_workbench.ocr_summary import (
+    CaptureOcrSummaryRead,
+    OcrSummaryValidationError,
+    build_ocr_summary,
 )
 from cert_prep_backend.domains.capture_workbench.review import reviewed_text_overrides
 from cert_prep_backend.domains.capture_workbench.review_workflow import (
@@ -96,6 +102,26 @@ router = APIRouter(
     tags=["capture-workbench"],
 )
 logger = logging.getLogger(__name__)
+_OCR_SUMMARY_NOT_FOUND_RESPONSE = {
+    "model": ApiErrorRead,
+    "description": "The project-scoped capture was not found.",
+}
+_OCR_SUMMARY_CONFLICT_RESPONSE = {
+    "model": ApiErrorRead,
+    "description": "The OCR summary has not reached a stable projection.",
+}
+_OCR_SUMMARY_GONE_RESPONSE = {
+    "model": ApiErrorRead,
+    "description": "The durable capture review is closed.",
+}
+_OCR_SUMMARY_BAD_GATEWAY_RESPONSE = {
+    "model": ApiErrorRead,
+    "description": "Capture Runtime did not provide safe stable OCR evidence.",
+}
+_OCR_SUMMARY_UNAVAILABLE_RESPONSE = {
+    "model": ApiErrorRead,
+    "description": "Capture Runtime transport is unavailable.",
+}
 OperationIdHeader = Annotated[
     str | None,
     Header(alias="X-Cert-Prep-Operation-Id", min_length=1, max_length=128),
@@ -383,6 +409,90 @@ def get_capture(
         session=session,
         document=document,
     )
+
+
+@router.get(
+    "/{capture_id}/ocr-summary",
+    response_model=CaptureOcrSummaryRead,
+    responses={
+        status.HTTP_404_NOT_FOUND: _OCR_SUMMARY_NOT_FOUND_RESPONSE,
+        status.HTTP_409_CONFLICT: _OCR_SUMMARY_CONFLICT_RESPONSE,
+        status.HTTP_410_GONE: _OCR_SUMMARY_GONE_RESPONSE,
+        status.HTTP_502_BAD_GATEWAY: _OCR_SUMMARY_BAD_GATEWAY_RESPONSE,
+        status.HTTP_503_SERVICE_UNAVAILABLE: _OCR_SUMMARY_UNAVAILABLE_RESPONSE,
+    },
+)
+def get_capture_ocr_summary(
+    request: Request,
+    project_id: str,
+    capture_id: str,
+    db: Database = Depends(get_database),
+) -> CaptureOcrSummaryRead:
+    """Return stable OCR evidence without exposing diagnostic capture data."""
+
+    session = _ocr_summary_session_or_404(db, project_id, capture_id)
+    _ensure_ocr_summary_session_open(session)
+    runtime_id = session.get("runtime_capture_id")
+    if not isinstance(runtime_id, str) or not runtime_id:
+        if session["status"] == review_sessions.PENDING:
+            raise _ocr_summary_not_ready()
+        raise _ocr_summary_bad_gateway()
+
+    runtime: CaptureRuntimeClient | None = request.app.state.capture_runtime_client
+    if runtime is None:
+        raise api_error(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            code="capture_runtime_unavailable",
+            message="Capture Runtime is unavailable.",
+        )
+
+    try:
+        operation = runtime.get_capture(runtime_id)
+    except CaptureRuntimeError as error:
+        raise _ocr_summary_runtime_error(error) from None
+    except Exception:
+        raise _ocr_summary_bad_gateway() from None
+
+    try:
+        operation_status = _runtime_enum_value(operation.status)
+    except Exception:
+        raise _ocr_summary_bad_gateway() from None
+    if (
+        session["status"] == review_sessions.PENDING
+        and operation_status in {"created", "waiting_input", "extracting"}
+    ):
+        raise _ocr_summary_not_ready()
+    if operation_status not in {"awaiting_structuring", "failed"}:
+        raise _ocr_summary_bad_gateway()
+    if session["status"] == review_sessions.FAILED and operation_status != "failed":
+        raise _ocr_summary_bad_gateway()
+
+    try:
+        projection = runtime.get_ocr(runtime_id)
+    except CaptureRuntimeError as error:
+        raise _ocr_summary_runtime_error(error) from None
+    except Exception:
+        raise _ocr_summary_bad_gateway() from None
+
+    try:
+        summary = build_ocr_summary(
+            host_capture_id=capture_id,
+            runtime_capture_id=runtime_id,
+            operation=operation,
+            projection=projection,
+        )
+    except OcrSummaryValidationError:
+        raise _ocr_summary_bad_gateway() from None
+    except Exception:
+        raise _ocr_summary_bad_gateway() from None
+
+    final_session = _ocr_summary_session_or_404(db, project_id, capture_id)
+    _ensure_ocr_summary_session_open(final_session)
+    if final_session.get("runtime_capture_id") != runtime_id:
+        raise _ocr_summary_bad_gateway()
+    if final_session["status"] == review_sessions.FAILED and summary.status != "failed":
+        raise _ocr_summary_bad_gateway()
+    return summary
 
 
 @router.get("/{capture_id}/events")
@@ -1393,6 +1503,71 @@ def _operation_active(db: Database, project_id: str, operation_id: str) -> bool:
         )
     except Exception:
         return False
+
+
+def _ocr_summary_session_or_404(
+    db: Database,
+    project_id: str,
+    capture_id: str,
+) -> dict:
+    try:
+        return review_sessions.get(db, project_id=project_id, session_id=capture_id)
+    except NotFoundError:
+        raise not_found_error("Capture not found.") from None
+
+
+def _ensure_ocr_summary_session_open(session: dict) -> None:
+    session_status = session.get("status")
+    if session_status in {
+        review_sessions.CONFIRMING,
+        review_sessions.COMPLETED,
+        review_sessions.CANCELED,
+    }:
+        raise api_error(
+            status_code=status.HTTP_410_GONE,
+            code="capture_closed",
+            message="Capture review is closed.",
+        )
+    if session_status not in {review_sessions.PENDING, review_sessions.FAILED}:
+        raise _ocr_summary_bad_gateway()
+
+
+def _ocr_summary_not_ready() -> HTTPException:
+    return api_error(
+        status_code=status.HTTP_409_CONFLICT,
+        code="ocr_summary_not_ready",
+        message="OCR summary is not ready.",
+    )
+
+
+def _ocr_summary_bad_gateway() -> HTTPException:
+    return api_error(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        code="capture_runtime_ocr_unavailable",
+        message="Capture Runtime OCR summary is unavailable.",
+    )
+
+
+def _ocr_summary_runtime_error(error: CaptureRuntimeError) -> HTTPException:
+    if getattr(error, "category", None) == "transport":
+        return api_error(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            code="capture_runtime_unavailable",
+            message="Capture Runtime is unavailable.",
+        )
+    if (
+        getattr(error, "status_code", None) == status.HTTP_404_NOT_FOUND
+        and getattr(error, "code", None) == "capture_not_found"
+    ):
+        return not_found_error("Capture not found.")
+    return _ocr_summary_bad_gateway()
+
+
+def _runtime_enum_value(value: object) -> str:
+    candidate = getattr(value, "value", value)
+    if not isinstance(candidate, str):
+        raise TypeError("Runtime status must be a string enum.")
+    return candidate
 
 
 def _session_or_404(db: Database, project_id: str, capture_id: str) -> dict:

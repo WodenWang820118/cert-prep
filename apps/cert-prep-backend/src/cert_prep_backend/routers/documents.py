@@ -600,7 +600,7 @@ def _process_capture_workbench_upload(*, db, settings: Settings, llm_provider: L
     finally:
         del source_bytes
 
-    document = publish_capture_document(db, project_id=project_id, document_id=document_id, operation_id=operation_id, source_kind=source.kind, expected_sha256=source_sha256, document=capture.document)
+    document = publish_capture_document(db, project_id=project_id, document_id=document_id, operation_id=operation_id, source_kind=source.kind, expected_sha256=source_sha256, document=capture.document, ocr_projection=capture.ocr_projection)
     try:
         coordinator.delete(capture.capture_id)
     except Exception:

@@ -1,7 +1,11 @@
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
-import { relative, resolve, sep } from 'node:path';
+import { basename, relative, resolve, sep } from 'node:path';
+
+import { validateCanonicalOcrExecutionProofArtifact } from './ocr-execution-proof.mts';
+
+const OCR_EXECUTION_PROOF_ARTIFACT = 'ocr-device-proof-v1.json';
 
 export interface AcceptanceRun {
   readonly project: string;
@@ -74,6 +78,7 @@ export async function writeAcceptanceManifest(
     cleanup: Record<string, boolean>;
     fixture?: { name: string; sha256: string };
     fixtures?: Record<string, unknown>;
+    evidence?: Record<string, unknown>;
   },
 ): Promise<string> {
   await mkdir(artifactRoot, { recursive: true });
@@ -116,12 +121,39 @@ export async function writeAcceptanceManifest(
     consoleErrors: input.consoleErrors.map(redact),
     pageErrors: input.pageErrors.map(redact),
     cleanup: input.cleanup,
-    fixture: input.fixture,
-    fixtures: input.fixtures,
+    fixture: sanitizeAcceptanceFixtureMetadata(input.fixture),
+    fixtures: sanitizeAcceptanceFixtureMetadata(input.fixtures),
+    evidence: sanitizeAcceptanceFixtureMetadata(input.evidence),
   };
   const path = resolve(artifactRoot, 'acceptance-manifest.json');
   await writeFile(path, `${JSON.stringify(result, null, 2)}\n`, 'utf8');
   return path;
+}
+
+/**
+ * Keep fixture identity hash-only in persisted acceptance metadata. Fixture
+ * records are recognized structurally (sha256 + name), so this never depends
+ * on a particular private basename. Explicit fixtureName fields are also
+ * excluded wherever they occur in evidence projections.
+ */
+export function sanitizeAcceptanceFixtureMetadata(value: unknown): unknown {
+  return sanitizeFixtureMetadata(value);
+}
+
+function sanitizeFixtureMetadata(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeFixtureMetadata(item));
+  }
+  if (value === null || typeof value !== 'object') return value;
+
+  const record = value as Record<string, unknown>;
+  const fixtureRecord =
+    typeof record.sha256 === 'string' && typeof record.name === 'string';
+  return Object.fromEntries(
+    Object.entries(record)
+      .filter(([key]) => key !== 'fixtureName' && !(fixtureRecord && key === 'name'))
+      .map(([key, nested]) => [key, sanitizeFixtureMetadata(nested)]),
+  );
 }
 
 function sanitizeAcceptanceArchive(filePath: string): void {
@@ -235,6 +267,19 @@ finally:
 
 async function sanitizeTextArtifact(filePath: string): Promise<void> {
   if (!/\.(?:html|json|jsonl|log|md|txt)$/iu.test(filePath)) return;
+  // The runtime publishes this artifact with canonical bytes and its producer
+  // summary is bound to those exact bytes. Pretty-printing it here would
+  // invalidate that proof-to-artifact identity after a successful run.
+  if (basename(filePath) === OCR_EXECUTION_PROOF_ARTIFACT) {
+    try {
+      validateCanonicalOcrExecutionProofArtifact(await readFile(filePath));
+    } catch {
+      throw new Error(
+        'Acceptance unsafe OCR execution proof cannot be published.',
+      );
+    }
+    return;
+  }
   const value = await readFile(filePath, 'utf8');
   if (filePath.toLowerCase().endsWith('.json')) {
     try {

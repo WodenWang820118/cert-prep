@@ -28,6 +28,9 @@ from capture_runtime_client import (
     RuntimeRequirements,
 )
 from cert_prep_backend.domains.capture_workbench.host_models import RuntimeReady
+from cert_prep_backend.domains.capture_workbench.runtime_provenance import (
+    capture_runtime_attestation,
+)
 
 
 router = APIRouter(prefix="/capture-runtime", tags=["capture-runtime"])
@@ -60,6 +63,34 @@ def capture_runtime_ready(
         CaptureRuntimeProtocolError,
     ) as error:
         _raise_runtime_error(error)
+
+
+@router.get("/provenance")
+def capture_runtime_provenance(
+    client: CaptureRuntimeClient = Depends(get_capture_runtime_client),
+) -> dict[str, object]:
+    """Return candidate-bound build metadata and a live runtime handshake.
+
+    This endpoint is intentionally authenticated by the router dependency and
+    exposes hashes/counts only.  The backend build embeds the Python wheel and
+    staged native tuple; the live handshake proves the running sidecar reports
+    the same OCR contract and worker executable before source import.
+    """
+
+    try:
+        return capture_runtime_attestation(client)
+    except (
+        CaptureRuntimeCompatibilityError,
+        CaptureRuntimeError,
+        CaptureRuntimeProtocolError,
+    ) as error:
+        _raise_runtime_error(error)
+    except RuntimeError as error:
+        raise api_error(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            code="capture_runtime_provenance_unavailable",
+            message="Installed Capture Runtime provenance is unavailable.",
+        ) from error
 
 
 @router.get("/requirements", response_model=RuntimeRequirements)

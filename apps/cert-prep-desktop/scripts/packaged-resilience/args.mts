@@ -32,14 +32,23 @@ const DEFAULT_CDP_PORT = 9591;
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const defaultWorkspaceRoot = resolve(scriptDir, '../../../..');
 
-export interface InstalledCandidateRunnerBinding {
+export interface InstalledExecutionCandidateBinding {
+  readonly candidateId: string;
+  readonly harnessSha256: string;
+}
+
+export interface InstalledExecutionRunnerBinding {
   readonly workspaceRoot: string;
   readonly candidateRoot: string;
   readonly installedExePath: string;
   readonly acceptanceRunId: string;
+  readonly candidate: InstalledExecutionCandidateBinding;
+  readonly installation: InstalledCandidateBinding;
+}
+
+export interface InstalledCandidateRunnerBinding extends InstalledExecutionRunnerBinding {
   readonly candidate: CandidateBinding;
   readonly candidateDistributionProfile: CandidateDistributionProfile;
-  readonly installation: InstalledCandidateBinding;
 }
 
 export interface DocumentCancellationRunnerOptions extends InstalledCandidateRunnerBinding {
@@ -63,16 +72,19 @@ export interface InstalledCandidateBinding {
   readonly installedAt: string;
 }
 
-interface CandidateIdentityDocument {
+interface CandidateContentDocument {
   readonly schemaVersion: 1;
   readonly candidateId: string;
+  readonly files: readonly string[];
+}
+
+interface CandidateIdentityDocument extends CandidateContentDocument {
   readonly version: string;
   readonly tag: string;
   readonly repository: string;
   readonly commitSha: string;
   readonly distributionProfile: CandidateDistributionProfile;
   readonly publishable: boolean;
-  readonly files: readonly string[];
 }
 
 interface InstallReceiptDocument {
@@ -158,6 +170,28 @@ export async function loadDocumentCancellationOptions(
   };
 }
 
+interface InstalledExecutionState {
+  readonly binding: InstalledExecutionRunnerBinding;
+}
+
+interface InstalledReleaseState extends InstalledExecutionState {
+  readonly candidateDocument: CandidateIdentityDocument;
+  readonly candidateDistributionProfile: CandidateDistributionProfile;
+}
+
+/**
+ * Validates candidate and installed-package content without applying release
+ * metadata policy. Commit, tag, and distribution profile remain outside this
+ * execution interface.
+ */
+export async function loadInstalledExecutionBinding(
+  environment: Readonly<NodeJS.ProcessEnv> = process.env,
+  workspaceRoot = defaultWorkspaceRoot,
+): Promise<InstalledExecutionRunnerBinding> {
+  return (await loadInstalledExecutionState(environment, workspaceRoot))
+    .binding;
+}
+
 /**
  * Validates the exact candidate, release plan, installed executable, and
  * schema-v1 install receipt without claiming or creating an acceptance output.
@@ -168,6 +202,40 @@ export async function loadInstalledCandidateBinding(
   environment: Readonly<NodeJS.ProcessEnv> = process.env,
   workspaceRoot = defaultWorkspaceRoot,
 ): Promise<InstalledCandidateRunnerBinding> {
+  const state = await loadInstalledExecutionState(
+    environment,
+    workspaceRoot,
+    true,
+  );
+
+  return {
+    ...state.binding,
+    candidate: {
+      candidateId: state.candidateDocument.candidateId.toLowerCase(),
+      version: state.candidateDocument.version,
+      tag: state.candidateDocument.tag,
+      commitSha: state.candidateDocument.commitSha.toLowerCase(),
+      harnessSha256: state.binding.candidate.harnessSha256,
+    },
+    candidateDistributionProfile: state.candidateDistributionProfile,
+  };
+}
+
+async function loadInstalledExecutionState(
+  environment: Readonly<NodeJS.ProcessEnv>,
+  workspaceRoot: string,
+  enforceReleasePolicy: true,
+): Promise<InstalledReleaseState>;
+async function loadInstalledExecutionState(
+  environment: Readonly<NodeJS.ProcessEnv>,
+  workspaceRoot: string,
+  enforceReleasePolicy?: false,
+): Promise<InstalledExecutionState>;
+async function loadInstalledExecutionState(
+  environment: Readonly<NodeJS.ProcessEnv>,
+  workspaceRoot: string,
+  enforceReleasePolicy = false,
+): Promise<InstalledExecutionState | InstalledReleaseState> {
   const resolvedWorkspaceRoot = realpathSync(resolve(workspaceRoot));
   const candidateRoot = requiredAbsolutePath(
     environment,
@@ -196,45 +264,51 @@ export async function loadInstalledCandidateBinding(
 
   const candidatePath = resolve(candidateRoot, 'candidate.json');
   const candidateValue = readJsonObject(candidatePath, 'candidate.json');
-  await validateCandidateRoot(candidateRoot, candidateValue);
-  const candidateDocument = candidateIdentity(candidateValue);
-  if (candidateDocument.candidateId.toLowerCase() !== expectedCandidateId) {
+  const candidateContent = await validateCandidateRoot(
+    candidateRoot,
+    candidateValue,
+  );
+  const candidateDocument = enforceReleasePolicy
+    ? candidateIdentity(candidateValue)
+    : undefined;
+  if (candidateContent.candidateId.toLowerCase() !== expectedCandidateId) {
     throw new Error(
       'CERT_PREP_RELEASE_CANDIDATE_ID does not match the verified candidate.json.',
     );
   }
-  const plan = readJsonObject(
-    resolve(candidateRoot, 'release', 'metadata', 'release-plan.json'),
-    'release plan',
-  );
-  const candidateDistributionProfile = await validateCandidateDistribution(
-    candidateDocument,
-    plan,
-  );
+  const candidateDistributionProfile = candidateDocument
+    ? await validateCandidateDistribution(
+        candidateDocument,
+        readJsonObject(
+          resolve(candidateRoot, 'release', 'metadata', 'release-plan.json'),
+          'release plan',
+        ),
+      )
+    : undefined;
   const installation = await validateInstallReceipt({
     environment,
     candidateRoot,
-    candidate: candidateDocument,
+    candidate: candidateContent,
     installedExePath,
     acceptanceRunId,
     harnessSha256,
   });
 
-  return {
+  const binding: InstalledExecutionRunnerBinding = {
     workspaceRoot: resolvedWorkspaceRoot,
     candidateRoot: realpathSync(candidateRoot),
     installedExePath,
     acceptanceRunId,
     candidate: {
-      candidateId: candidateDocument.candidateId.toLowerCase(),
-      version: candidateDocument.version,
-      tag: candidateDocument.tag,
-      commitSha: candidateDocument.commitSha.toLowerCase(),
+      candidateId: candidateContent.candidateId.toLowerCase(),
       harnessSha256,
     },
-    candidateDistributionProfile,
     installation,
   };
+  if (candidateDocument && candidateDistributionProfile) {
+    return { binding, candidateDocument, candidateDistributionProfile };
+  }
+  return { binding };
 }
 
 async function validateInstallReceipt({
@@ -247,7 +321,7 @@ async function validateInstallReceipt({
 }: {
   readonly environment: Readonly<NodeJS.ProcessEnv>;
   readonly candidateRoot: string;
-  readonly candidate: CandidateIdentityDocument;
+  readonly candidate: CandidateContentDocument;
   readonly installedExePath: string;
   readonly acceptanceRunId: string;
   readonly harnessSha256: string;
@@ -493,9 +567,9 @@ async function sha256File(path: string): Promise<string> {
 async function validateCandidateRoot(
   candidateRoot: string,
   candidate: Record<string, unknown>,
-): Promise<void> {
+): Promise<CandidateContentDocument> {
   const releaseLib = await loadReleaseValidation();
-  await releaseLib.validateCandidateFiles(candidateRoot, candidate);
+  return releaseLib.validateCandidateFiles(candidateRoot, candidate);
 }
 
 async function validateCandidateDistribution(
@@ -512,7 +586,7 @@ interface ReleaseValidation {
   readonly validateCandidateFiles: (
     root: string,
     value: Record<string, unknown>,
-  ) => Promise<unknown>;
+  ) => Promise<CandidateContentDocument>;
   readonly assertSupportedDistributionPlan: (
     value: Record<string, unknown>,
   ) => unknown;

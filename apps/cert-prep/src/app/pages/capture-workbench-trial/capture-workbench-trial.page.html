@@ -48,7 +48,50 @@
     </button>
     }
   </section>
+  } @else if (
+    ocrPreflight.status() === 'idle' ||
+    ocrPreflight.status() === 'loading'
+  ) {
+  <section class="capture-trial-preflight" role="status" aria-live="polite">
+    <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
+    <span>Checking OCR compute availability before import...</span>
+  </section>
+  } @else if (!ocrPreflight.canImport()) {
+  <section class="capture-trial-runtime-unavailable" role="alert">
+    <h3>OCR preflight is unavailable</h3>
+    <p>{{ ocrPreflight.error() ?? 'Capture Runtime OCR preflight is unavailable.' }}</p>
+    <button
+      type="button"
+      class="capture-trial-download-button"
+      [disabled]="ocrPreflight.isLoading()"
+      (click)="retryOcrPreflight()"
+    >
+      Retry OCR preflight
+    </button>
+  </section>
   } @else {
+  @if (ocrPreflight.gpuAccelerationMessage(); as message) {
+  <section
+    class="capture-trial-compute-status"
+    data-testid="ocr-compute-status"
+    role="status"
+    aria-live="polite"
+  >
+    <i class="pi pi-bolt" aria-hidden="true"></i>
+    <span>{{ message }}</span>
+  </section>
+  }
+  @if (ocrPreflight.cpuFallbackNotice(); as notice) {
+  <section
+    class="capture-trial-compute-notice"
+    data-testid="ocr-compute-notice"
+    role="status"
+    aria-live="polite"
+  >
+    <i class="pi pi-info-circle" aria-hidden="true"></i>
+    <span>{{ notice }}</span>
+  </section>
+  }
   <capture-workbench #captureWorkbench></capture-workbench>
   }
 

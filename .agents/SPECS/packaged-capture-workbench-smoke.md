@@ -1,5 +1,11 @@
 # Packaged Capture Workbench Smoke Spec
 
+> Historical/superseded (2026-09-09): retained for traceability only. Current
+> 0.4.2 consumer policy is defined by the [consumer specification](capture-runtime-consumer.md),
+> [decision](../DECISIONS/capture-runtime-consumer.md), and [TODO](../TODOS/capture-runtime-consumer.md).
+> This older body does not define D4/D7, immutable roots, or the current
+> version-first gate; do not use its old runtime/version details for new work.
+
 ## Purpose
 
 Prove a fresh NSIS-installed Cert Prep Desktop executable can install the OCR
@@ -13,6 +19,8 @@ processes behind.
 - `--out-dir`: a non-existent evidence directory.
 - `--app-data-dir`: a non-existent isolated app-data directory.
 - `--cdp-port`: positive loopback CDP port.
+- `--pdf`: a caller-supplied raster/scanned PDF truth fixture. The harness
+  rejects embedded text operators and never generates a born-digital PDF.
 
 ## Constraints
 
@@ -36,10 +44,14 @@ processes behind.
   action starts the owned sidecar, restarts the owned backend with fresh
   configuration, and makes prior backend authorization unusable.
 - The harness explicitly installs `windowsml-ocr`; only then is the PDF picker
-  enabled and a generated rendered-text PDF accepted.
+  enabled and the supplied raster/scanned PDF accepted. Every page must be
+  processed by PaddleOCR; embedded extraction and LLM route selection are not
+  valid test paths.
 - The UI review edit, confirmation, durable ready document, and Markdown
   download succeed. A same-browser authenticated request proves raw engine
   `windowsml-ocr` and a recognized OCR device without persisting credentials.
+  The persisted document and every page must report `windowsml_ocr`; embedded
+  and mixed extraction are rejected for new captures.
 - Normal close leaves owned processes and captured listener ports at zero.
   Relaunching with the same app-data reports installed-but-stopped and no
   Capture Runtime process/listener until a second explicit Start, after which

@@ -50,6 +50,10 @@ import { ProjectStore } from '../../stores/project.store';
 import { certPrepCaptureEventStream } from './cert-prep-capture-event-stream';
 import type {
   CaptureRecord,
+  CaptureRuntimeReady,
+  OcrAdapterClass,
+  OcrComputePreflight,
+  OcrComputeReasonCode,
   UnknownRecord,
 } from './contracts/capture-workbench-trial.contracts';
 
@@ -70,7 +74,7 @@ export class CertPrepCaptureClient
   private readonly completedDocuments = new Map<string, string>();
   private latestDocumentId: string | null = null;
 
-  getReady(signal?: AbortSignal): Observable<RuntimeReady> {
+  getReady(signal?: AbortSignal): Observable<CaptureRuntimeReady> {
     return this.api.captureRuntimeReady({ signal }).pipe(map(mapReady));
   }
 
@@ -435,7 +439,7 @@ export class CertPrepCaptureClient
   }
 }
 
-function mapReady(response: ApiRuntimeReady): RuntimeReady {
+function mapReady(response: ApiRuntimeReady): CaptureRuntimeReady {
   if (response.service !== 'capture-runtime') {
     throw new Error('Cert Prep backend returned a non-Capture Runtime service.');
   }
@@ -478,7 +482,90 @@ function mapReady(response: ApiRuntimeReady): RuntimeReady {
     captureDocumentSchemaSha256: response.captureDocumentSchemaSha256 ?? undefined,
     schemaSha256: response.schemaSha256 ?? undefined,
     contractSetVersion: response.contractSetVersion,
+    ocrCompute: mapOcrCompute(response.ocrCompute, response.runtimeVersion),
     message: response.message,
+  };
+}
+
+function mapOcrCompute(
+  value: ApiRuntimeReady['ocrCompute'],
+  runtimeVersion: string,
+): OcrComputePreflight | null {
+  if (value == null) return null;
+  const preflight = record(value, 'ocrCompute');
+  literal(preflight, 'apiVersion', '2.0');
+  literal(preflight, 'schemaVersion', '1');
+  literal(preflight, 'service', 'capture-runtime');
+  const preflightRuntimeVersion = text(
+    preflight['runtimeVersion'],
+    'ocrCompute.runtimeVersion',
+  );
+  if (preflightRuntimeVersion !== runtimeVersion) {
+    fail('ocrCompute.runtimeVersion does not match runtimeVersion');
+  }
+  literal(preflight, 'contractSetVersion', '2');
+  const contractSha256 = pattern(
+    preflight['contractSha256'],
+    'ocrCompute.contractSha256',
+    /^[0-9a-f]{64}$/u,
+  );
+  const workerSha256 =
+    preflight['workerSha256'] === null
+      ? null
+      : pattern(
+          preflight['workerSha256'],
+          'ocrCompute.workerSha256',
+          /^[0-9a-f]{64}$/u,
+        );
+  const mode = enumValue(
+    preflight['mode'],
+    'ocrCompute.mode',
+    ['gpu-dml', 'cpu-fallback'],
+  ) as OcrComputePreflight['mode'];
+  const adapterClass = enumValue(
+    preflight['adapterClass'],
+    'ocrCompute.adapterClass',
+    ['dedicated', 'integrated', 'unknown'],
+  ) as OcrAdapterClass;
+  const reasonCode = nullableEnumValue(
+    preflight['reasonCode'],
+    'ocrCompute.reasonCode',
+    ['no_compatible_gpu', 'dml_provider_unavailable'],
+  ) as OcrComputeReasonCode | null;
+  const userNoticeRequired = booleanValue(
+    preflight['userNoticeRequired'],
+    'ocrCompute.userNoticeRequired',
+  );
+  const noticeCode = nullableEnumValue(
+    preflight['noticeCode'],
+    'ocrCompute.noticeCode',
+    ['ocr_cpu_fallback'],
+  ) as OcrComputePreflight['noticeCode'];
+  if (mode === 'gpu-dml') {
+    if (reasonCode !== null || userNoticeRequired || noticeCode !== null) {
+      fail('ocrCompute gpu-dml cannot carry a fallback reason or notice');
+    }
+  } else if (
+    reasonCode === null || !userNoticeRequired || noticeCode !== 'ocr_cpu_fallback'
+  ) {
+    fail('ocrCompute cpu-fallback requires a reason and user notice');
+  }
+  return {
+    apiVersion: '2.0',
+    schemaVersion: '1',
+    service: 'capture-runtime',
+    // The generated package contract narrows this field to the projected
+    // release. Incompatible handshakes are still returned for the outer
+    // compatibility gate below, so preserve the validated wire value here.
+    runtimeVersion: preflightRuntimeVersion as OcrComputePreflight['runtimeVersion'],
+    contractSetVersion: '2',
+    contractSha256,
+    workerSha256,
+    mode,
+    adapterClass,
+    reasonCode,
+    userNoticeRequired,
+    noticeCode,
   };
 }
 
@@ -899,6 +986,31 @@ function text(value: unknown, label: string): string {
 function stringValue(value: unknown, label: string): string {
   if (typeof value !== 'string') fail(`${label} must be a string`);
   return value;
+}
+
+function booleanValue(value: unknown, label: string): boolean {
+  if (typeof value !== 'boolean') fail(`${label} must be a boolean`);
+  return value;
+}
+
+function enumValue<T extends string>(
+  value: unknown,
+  label: string,
+  allowed: readonly T[],
+): T {
+  if (typeof value !== 'string' || !allowed.includes(value as T)) {
+    fail(`${label} has an unsupported value`);
+  }
+  return value as T;
+}
+
+function nullableEnumValue<T extends string>(
+  value: unknown,
+  label: string,
+  allowed: readonly T[],
+): T | null {
+  if (value == null) return null;
+  return enumValue(value, label, allowed);
 }
 
 function integer(value: unknown, label: string): number {

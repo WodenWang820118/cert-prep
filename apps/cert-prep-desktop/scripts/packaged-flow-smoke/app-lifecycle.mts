@@ -32,6 +32,7 @@ import {
   snapshotWindowsProcesses,
   terminateProcessTreeByPid,
 } from '../process-lifecycle/processes.mts';
+import { snapshotWindowsListeningPorts, type ListeningPortRecord } from '../packaged-capture-workbench-smoke/runtime-process-evidence.mts';
 import { packagedAppDataDir } from './runtime-sync.mts';
 import { DEFAULT_LLM_MODEL } from '../package-qa/constants.mts';
 import {
@@ -55,7 +56,12 @@ import type {
   ProcessRecord,
   PublicProcessRecord,
 } from '../process-lifecycle/processes.mts';
-import type { CloseSummary, SmokeRunState } from './types.mts';
+import type {
+  CloseSummary,
+  OwnedCleanupEvidenceUnavailable,
+  OwnedCleanupProof,
+  SmokeRunState,
+} from './types.mts';
 
 type ProcessTerminationResult = ReturnType<typeof terminateProcessTreeByPid>;
 
@@ -81,19 +87,41 @@ export interface ForcedCrashReconnectHooks {
   readonly launch?: (run: SmokeRunState) => Promise<void>;
 }
 
+export interface CloseAppAndCheckResidueHooks {
+  readonly snapshotProcesses?: () => ProcessRecord[];
+  readonly snapshotListeners?: () => ListeningPortRecord[];
+  readonly stopCapture?: (run: SmokeRunState) => Promise<void>;
+  readonly requestWindowClose?: (pid: number) => boolean;
+  readonly waitForExit?: (
+    child: ChildProcess,
+    timeoutMs: number,
+  ) => Promise<boolean>;
+  readonly terminateProcessTree?: (pid: number) => ProcessTerminationResult;
+}
+
 export interface ForcedCrashSummary {
   readonly appPid: number;
   readonly termination: ProcessTerminationResult;
 }
 
 const ACCEPTANCE_ENV_PREFIXES = ['cert_prep_', 'ollama_', 'webview2_'] as const;
-const ACCEPTANCE_REMOVED_ENV_NAMES = new Set(['no_proxy']);
+const ACCEPTANCE_REMOVED_ENV_NAMES = new Set([
+  'no_proxy',
+  'capture_ocr_execution_evidence_opt_in',
+  'capture_ocr_execution_evidence_root',
+  'capture_ocr_execution_runtime_sha256',
+]);
 const RETIRED_MODEL_ENV_NAMES = new Set([
   'cert_prep_ollama_model',
   'cert_prep_ollama_fallback_models',
   'cert_prep_package_smoke_llm_model',
   'cert_prep_package_smoke_llm_fallback_models',
 ]);
+const CAPTURE_RUNTIME_PROBE_ENV = 'CERT_PREP_CAPTURE_RUNTIME_PROBE';
+const CAPTURE_RUNTIME_PROBE_VERSION_ENV =
+  'CERT_PREP_CAPTURE_RUNTIME_EXPECTED_VERSION';
+const CAPTURE_RUNTIME_LOCAL_MODEL_ROOT_ENV =
+  'CERT_PREP_CAPTURE_RUNTIME_LOCAL_MODEL_ROOT';
 const ACCEPTANCE_LOOPBACK_NO_PROXY = 'localhost,127.0.0.1,::1';
 
 export function createCleanupWithTimeoutController<T extends object>({
@@ -156,6 +184,14 @@ const cleanupAfterRunController = createCleanupWithTimeoutController({
 export async function closeAppAndCheckResidue(
   run: SmokeRunState,
   label: string,
+  {
+    snapshotProcesses = snapshotWindowsProcesses,
+    snapshotListeners = snapshotWindowsListeningPorts,
+    stopCapture = stopAcceptanceCapture,
+    requestWindowClose = requestWindowsCloseByPid,
+    waitForExit = waitForChildExit,
+    terminateProcessTree = terminateProcessTreeByPid,
+  }: CloseAppAndCheckResidueHooks = {},
 ): Promise<CloseSummary> {
   const currentApp = run.app;
   const pid = currentApp?.pid ?? null;
@@ -177,28 +213,55 @@ export async function closeAppAndCheckResidue(
   let ownedBeforeClose: ProcessRecord[] = [];
   let ownedBeforeCloseError: unknown = null;
   try {
-    ownedBeforeClose = collectLiveProcessTree(snapshotWindowsProcesses(), pid);
+    ownedBeforeClose = collectLiveProcessTree(snapshotProcesses(), pid);
   } catch (error) {
     ownedBeforeCloseError = error;
     run.metrics.observations.push(
       `${label} pre-close process snapshot failed: ${errorMessage(error)}`,
     );
   }
-
-  await stopAcceptanceCapture(run);
-  const normalCloseRequested = requestWindowsCloseByPid(pid);
-  const exitedAfterNormalClose = await waitForChildExit(currentApp, 8_000);
-  const exitCode = run.appExit?.code ?? currentApp.exitCode ?? null;
-  let forced = false;
-
-  if (!exitedAfterNormalClose) {
-    forced = true;
+  let ownedBeforeCloseListeners: ListeningPortRecord[] = [];
+  let listenerEvidenceUnavailable: OwnedCleanupEvidenceUnavailable | null = null;
+  try {
+    ownedBeforeCloseListeners = snapshotListeners();
+  } catch (error) {
+    listenerEvidenceUnavailable = {
+      evidenceUnavailable: {
+        source: 'windows_listener_snapshot',
+        stage: 'before_close',
+      },
+    };
     run.metrics.observations.push(
-      `${label} app process ${pid} did not exit after normal close; terminating its process tree.`,
+      `${label} pre-close listener snapshot failed: ${errorMessage(error)}`,
     );
-    terminateProcessTreeByPid(pid);
-    await waitForChildExit(currentApp, 8_000);
   }
+
+  let stopCaptureError: unknown = null;
+  let normalCloseRequested = false;
+  let exitedAfterNormalClose = false;
+  let forced = false;
+  try {
+    try {
+      await stopCapture(run);
+    } catch (error) {
+      stopCaptureError = error;
+      run.metrics.observations.push(
+        `${label} acceptance capture stop failed: ${errorMessage(error)}`,
+      );
+    }
+    normalCloseRequested = requestWindowClose(pid);
+    exitedAfterNormalClose = await waitForExit(currentApp, 8_000);
+  } finally {
+    if (!exitedAfterNormalClose) {
+      forced = true;
+      run.metrics.observations.push(
+        `${label} app process ${pid} did not exit after normal close; terminating its process tree.`,
+      );
+      terminateProcessTree(pid);
+      await waitForExit(currentApp, 8_000);
+    }
+  }
+  const exitCode = run.appExit?.code ?? currentApp.exitCode ?? null;
 
   await run.browser?.close().catch(ignoreCleanupError);
   run.browser = null;
@@ -206,16 +269,22 @@ export async function closeAppAndCheckResidue(
   run.app = null;
   run.appExit = null;
 
-  let afterClose = snapshotWindowsProcesses();
+  let afterClose = snapshotProcesses();
+  let afterCloseListeners = listenerEvidenceUnavailable
+    ? []
+    : snapshotListeners();
   let residue = selectCertPrepResidue(afterClose, pid);
   let capturedOwnedResidue = selectCapturedProcessResidue(ownedBeforeClose, afterClose);
   if (residue.length > 0 || capturedOwnedResidue.length > 0) {
     forced = true;
     for (const record of uniqueProcessRecords([...capturedOwnedResidue, ...residue])) {
-      terminateProcessTreeByPid(record.pid);
+      terminateProcessTree(record.pid);
     }
     await delay(1_000);
-    afterClose = snapshotWindowsProcesses();
+    afterClose = snapshotProcesses();
+    afterCloseListeners = listenerEvidenceUnavailable
+      ? []
+      : snapshotListeners();
     residue = selectCertPrepResidue(afterClose, pid);
     capturedOwnedResidue = selectCapturedProcessResidue(ownedBeforeClose, afterClose);
   }
@@ -235,6 +304,15 @@ export async function closeAppAndCheckResidue(
     fallbackUsed: forced,
     exitCode,
     residualProcesses: publicResidue,
+    ownedCleanupObservation:
+      listenerEvidenceUnavailable ??
+      buildOwnedCleanupObservation(
+        ownedBeforeClose,
+        ownedBeforeCloseListeners,
+        afterClose,
+        afterCloseListeners,
+        pid,
+      ),
   };
 
   if (summary.residue.length > 0) {
@@ -249,7 +327,31 @@ export async function closeAppAndCheckResidue(
       `${label} could not capture the owned process tree before close: ${errorMessage(ownedBeforeCloseError)}`,
     );
   }
+  if (stopCaptureError !== null) {
+    throw new Error(
+      `${label} could not stop acceptance capture before close: ${errorMessage(stopCaptureError)}`,
+    );
+  }
   return summary;
+}
+
+export function buildOwnedCleanupObservation(beforeProcesses: readonly ProcessRecord[], beforeListeners: readonly ListeningPortRecord[], afterProcesses: readonly ProcessRecord[], afterListeners: readonly ListeningPortRecord[], appPid: number): OwnedCleanupProof {
+  const owned = collectProcessTree(beforeProcesses, appPid);
+  const remaining = owned.filter((record) => afterProcesses.some((current) => record.pid === current.pid && record.name.toLowerCase() === current.name.toLowerCase() && (!record.creationDate || !current.creationDate || record.creationDate === current.creationDate)));
+  const pids = (records: readonly ProcessRecord[]) => [...new Set(records.map((record) => record.pid))].sort((a, b) => a - b);
+  const ownedPids = pids(owned), remainingPids = pids(remaining);
+  const remainingSet = new Set(remainingPids);
+  const ports = (listeners: readonly ListeningPortRecord[], selected: ReadonlySet<number>) =>
+    [...new Set(listeners.filter((listener) => selected.has(listener.pid)).map((listener) => listener.port))].sort((a, b) => a - b);
+  const workers = pids(owned.filter((record) => /capture-engine-ocr|paddle|onnx|ocr[_ -]?worker/i.test(`${record.name} ${record.commandLine}`)));
+  return {
+    ownedProcessPids: ownedPids,
+    remainingOwnedProcessPids: remainingPids,
+    ownedListenerPorts: ports(beforeListeners, new Set(ownedPids)),
+    remainingOwnedListenerPorts: ports(afterListeners, remainingSet),
+    ocrModelWorkerPids: workers,
+    remainingOcrModelWorkerPids: workers.filter((pid) => remainingSet.has(pid)),
+  };
 }
 
 async function closeNewNodeHelpers(
@@ -633,6 +735,7 @@ export function buildAppLaunchEnvironment(
   );
   const appDataDir = launchAppDataDir(run);
   const isolatedOllamaEnvironment = buildIsolatedOllamaLaunchEnvironment(run);
+  const ocrExecutionEnvironment = buildOcrExecutionEnvironment(run);
   return {
     ...guardedBaseEnvironment,
     ...(acceptanceIsolation
@@ -640,6 +743,22 @@ export function buildAppLaunchEnvironment(
           NO_PROXY: ACCEPTANCE_LOOPBACK_NO_PROXY,
           WEBVIEW2_USER_DATA_FOLDER: join(appDataDir, 'webview2'),
           CERT_PREP_ACCEPTANCE_ISOLATION: '1',
+          ...captureRuntimeProbeEnvironment(
+            inherited,
+            run.options.acceptanceRuntimeIdentity !== undefined,
+          ),
+          ...(run.options.acceptanceRuntimeIdentity
+            ? {
+                CERT_PREP_CAPTURE_RUNTIME_CONTRACT_SHA256:
+                  run.options.acceptanceRuntimeIdentity.contractSetSha256,
+                CERT_PREP_CAPTURE_RUNTIME_WORKER_SHA256:
+                  run.options.acceptanceRuntimeIdentity.workerExecutableSha256,
+              }
+            : {}),
+          ...ocrExecutionEnvironment,
+          ...(run.options.acceptancePdfPageScope === 'page-1'
+            ? { CAPTURE_ACCEPTANCE_PDF_PAGE_SCOPE: 'page-1' }
+            : {}),
           ...(run.options.captureRuntimeWorkerMirrorUrl
             ? {
                 CERT_PREP_CAPTURE_RUNTIME_WORKER_MIRROR_URL:
@@ -667,6 +786,43 @@ export function buildAppLaunchEnvironment(
           CERT_PREP_STREAMING_DRAFT_WORKERS: String(
             run.options.streamingDraftWorkers,
           ),
+        }
+      : {}),
+  };
+}
+
+function buildOcrExecutionEnvironment(run: SmokeRunState): NodeJS.ProcessEnv {
+  const expected = run.options.ocrExecutionProofExpected;
+  if (!expected) return {};
+  const root = run.options.ocrExecutionEvidenceRoot?.trim();
+  if (!root) {
+    throw new Error('OCR execution proof acceptance requires a run-scoped evidence root.');
+  }
+  return {
+    CAPTURE_OCR_EXECUTION_EVIDENCE_OPT_IN: '1',
+    CAPTURE_OCR_EXECUTION_EVIDENCE_ROOT: root,
+    CAPTURE_OCR_EXECUTION_RUNTIME_SHA256: expected.runtimeSha256,
+  };
+}
+
+function captureRuntimeProbeEnvironment(
+  inherited: Readonly<NodeJS.ProcessEnv>,
+  force = false,
+): NodeJS.ProcessEnv {
+  if (
+    !force &&
+    (inherited[CAPTURE_RUNTIME_PROBE_ENV]?.trim() !== '1' ||
+      inherited[CAPTURE_RUNTIME_PROBE_VERSION_ENV]?.trim() !== '0.4.2')
+  ) {
+    return {};
+  }
+  return {
+    [CAPTURE_RUNTIME_PROBE_ENV]: '1',
+    [CAPTURE_RUNTIME_PROBE_VERSION_ENV]: '0.4.2',
+    ...(inherited[CAPTURE_RUNTIME_LOCAL_MODEL_ROOT_ENV]?.trim()
+      ? {
+          [CAPTURE_RUNTIME_LOCAL_MODEL_ROOT_ENV]:
+            inherited[CAPTURE_RUNTIME_LOCAL_MODEL_ROOT_ENV].trim(),
         }
       : {}),
   };

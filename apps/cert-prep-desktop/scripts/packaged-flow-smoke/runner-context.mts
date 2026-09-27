@@ -59,8 +59,7 @@ export function acceptancePrivacyMasks(page: Page): Locator[] {
       .filter({ hasNotText: 'No source file selected' }),
     page
       .locator('.workbench-field')
-      .filter({ hasText: 'Project document library' })
-      .locator('select'),
+      .filter({ hasText: /Project source library/u }),
   ];
 }
 

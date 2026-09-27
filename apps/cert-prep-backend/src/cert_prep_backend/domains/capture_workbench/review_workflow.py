@@ -160,6 +160,7 @@ def commit_review_capture(
             source_kind=source["source_kind"],
             expected_sha256=source["sha256"],
             document=capture.document,
+            ocr_projection=capture.ocr_projection,
         )
         review_sessions.finish(
             db,

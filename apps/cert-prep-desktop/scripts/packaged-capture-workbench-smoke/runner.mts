@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import type { Page, Request } from 'playwright';
@@ -67,8 +67,8 @@ import {
   runPublishedRuntimeNegativeDataCases,
   type PublishedRuntimeNegativeCaseEvidence,
 } from './negative-data-contract.mts';
+import { assertRasterPdfFixture } from './fixture-contract.mts';
 
-const FIXTURE = 'packaged-capture-paddleocr.pdf';
 const REVIEW_MARKER = '[packaged review]';
 export const CAPTURE_WORKBENCH_READY_STATUS_PATTERN =
   /Capture Workbench is ready\./;
@@ -93,17 +93,19 @@ export async function runPackagedCaptureWorkbenchSmoke(
   assertSafePackagedCaptureEnvironment(process.env);
   const run = createRun(options);
   prepareRunDirectories(run);
-  const fixturePath = join(options.outDir, FIXTURE);
-  writeFileSync(
-    fixturePath,
-    renderedTextPdf('Packaged Capture Workbench PaddleOCR fixture.'),
-  );
+  const fixturePath = options.pdfPath;
+  const fixtureName = basename(fixturePath);
+  if (!existsSync(fixturePath)) {
+    throw new Error(`Missing supplied raster/scanned PDF fixture: ${fixturePath}`);
+  }
+  assertRasterPdfFixture(readFileSync(fixturePath));
   run.processBaseline = processSnapshot();
   let failure: unknown;
   try {
     const { journey, capture, negativeCases } = await runLazyCaptureJourney(
       run,
       fixturePath,
+      fixtureName,
     );
     assertLazyCaptureRuntimeJourney(journey);
     writeFileSync(
@@ -160,6 +162,7 @@ export async function runPackagedCaptureWorkbenchSmoke(
 async function runLazyCaptureJourney(
   run: SmokeRunState,
   fixturePath: string,
+  fixtureName: string,
 ): Promise<{
   readonly journey: LazyCaptureRuntimeJourney;
   readonly capture: CaptureResult;
@@ -250,7 +253,7 @@ async function runLazyCaptureJourney(
     priorBackendAccessRejected: true,
   });
   await ensureCaptureRuntimeRequirement(run, 'windowsml-ocr');
-  const capture = await runCaptureDocumentFlow(run, fixturePath);
+  const capture = await runCaptureDocumentFlow(run, fixturePath, fixtureName);
   const negativeCases = await runPublishedRuntimeNegativeDataCases(
     firstPage,
     firstRotation.api,
@@ -317,7 +320,7 @@ async function runLazyCaptureJourney(
   await waitText(run, /Step 01: Source files/, 60_000, 'Build source files');
   await waitText(
     run,
-    new RegExp(FIXTURE.replace('.', '\\.')),
+    new RegExp(fixtureName.replace('.', '\\.')),
     60_000,
     'persisted Capture document visible',
   );
@@ -354,7 +357,6 @@ async function runLazyCaptureJourney(
     negativeCases,
   };
 }
-
 async function startCaptureRuntimeAndRotateBackend(
   run: SmokeRunState,
   security: BrowserSecurityTracker,
@@ -399,6 +401,7 @@ async function startCaptureRuntimeAndRotateBackend(
 async function runCaptureDocumentFlow(
   run: SmokeRunState,
   fixturePath: string,
+  fixtureName: string,
 ): Promise<CaptureResult> {
   const page = activePage(run);
   const projectApi = requiredProjectApi(run);
@@ -490,12 +493,12 @@ async function runCaptureDocumentFlow(
     !documentResponse.ok() ||
     !isRecord(documentPayload) ||
     documentPayload.status !== 'ready' ||
-    documentPayload.extraction_method !== 'embedded' ||
+    documentPayload.extraction_method !== 'windowsml_ocr' ||
     typeof documentPayload.chunks_count !== 'number' ||
     documentPayload.chunks_count < 1
   ) {
     throw new Error(
-      'Capture document was not durably ready with embedded extraction.',
+      'Capture document was not durably ready with OCR-only extraction.',
     );
   }
 
@@ -512,7 +515,7 @@ async function runCaptureDocumentFlow(
   const source = requiredRecord(rawPayload.source, 'source identity');
   const sourceSha256 = stringValue(source.sha256);
   const sourceFileName = stringValue(source.fileName);
-  if (!/^[0-9a-f]{64}$/i.test(sourceSha256) || sourceFileName !== FIXTURE) {
+  if (!/^[0-9a-f]{64}$/i.test(sourceSha256) || sourceFileName !== fixtureName) {
     throw new Error(
       'Capture raw source identity did not match the uploaded fixture.',
     );
@@ -556,7 +559,7 @@ async function verifyPersistedDocument(
     !response.ok() ||
     !isRecord(payload) ||
     payload.status !== 'ready' ||
-    payload.extraction_method !== 'embedded'
+    payload.extraction_method !== 'windowsml_ocr'
   ) {
     throw new Error('Persisted Capture document was not ready after relaunch.');
   }
@@ -840,7 +843,7 @@ function createRun(
   const smoke: SmokeOptions = {
     workspaceRoot: options.workspaceRoot,
     exePath: options.exePath,
-    pdfPath: join(options.outDir, FIXTURE),
+    pdfPath: options.pdfPath,
     outDir: options.outDir,
     appDataDir: options.appDataDir,
     cdpPort: options.cdpPort,
@@ -892,33 +895,4 @@ function createRun(
     streamingDraftCaptureOpen: false,
     streamingApiPollErrorCaptured: false,
   };
-}
-
-function renderedTextPdf(text: string): Buffer {
-  const escaped = text
-    .replaceAll('\\', '\\\\')
-    .replaceAll('(', '\\(')
-    .replaceAll(')', '\\)');
-  const stream = `BT /F1 12 Tf 72 720 Td (${escaped}) Tj ET`;
-  const objects = [
-    '<< /Type /Catalog /Pages 2 0 R >>',
-    '<< /Type /Pages /Kids [4 0 R] /Count 1 >>',
-    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
-    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>',
-    `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`,
-  ];
-  let body = '%PDF-1.4\n';
-  const offsets = [0];
-  objects.forEach((object, index) => {
-    offsets.push(Buffer.byteLength(body));
-    body += `${index + 1} 0 obj\n${object}\nendobj\n`;
-  });
-  const xref = Buffer.byteLength(body);
-  body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets
-    .slice(1)
-    .map((offset) => `${String(offset).padStart(10, '0')} 00000 n \n`)
-    .join(
-      '',
-    )}trailer << /Root 1 0 R /Size ${objects.length + 1} >>\nstartxref\n${xref}\n%%EOF\n`;
-  return Buffer.from(body);
 }

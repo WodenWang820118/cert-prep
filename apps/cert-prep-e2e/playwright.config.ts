@@ -27,7 +27,7 @@ export default defineConfig({
   },
   /* Run your local dev server before starting the tests. */
   webServer: {
-    command: 'pnpm nx run cert-prep:serve',
+    command: 'corepack pnpm nx run cert-prep:serve',
     url: baseURL,
     reuseExistingServer: true,
     timeout: 120_000,

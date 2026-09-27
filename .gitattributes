@@ -1,2 +1,3 @@
 libs/cert-prep-api/src/lib/cert-prep-api.generated.ts text eol=lf
 apps/cert-prep-desktop/test-fixtures/capture-document-v1.schema.json text eol=crlf
+pnpm-lock.yaml text eol=lf

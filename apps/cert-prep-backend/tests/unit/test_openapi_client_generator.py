@@ -50,6 +50,71 @@ def _schema(*, request_required: bool = True) -> dict:
                     "type": "string",
                     "enum": ["first", "second"],
                 },
+                "CaptureOcrResolvedProvenanceRead": {
+                    "type": "object",
+                    "properties": {
+                        "status": {"type": "string", "const": "resolved"},
+                        "model": {"type": "string"},
+                    },
+                    "required": ["status", "model"],
+                },
+                "CaptureOcrUnavailableProvenanceRead": {
+                    "type": "object",
+                    "properties": {
+                        "status": {"type": "string", "const": "unavailable"},
+                        "reason": {"type": "string"},
+                    },
+                    "required": ["status", "reason"],
+                },
+                "CaptureOcrProvenanceRead": {
+                    "oneOf": [
+                        {
+                            "$ref": (
+                                "#/components/schemas/"
+                                "CaptureOcrResolvedProvenanceRead"
+                            )
+                        },
+                        {
+                            "$ref": (
+                                "#/components/schemas/"
+                                "CaptureOcrUnavailableProvenanceRead"
+                            )
+                        },
+                    ],
+                    "discriminator": {
+                        "propertyName": "status",
+                        "mapping": {
+                            "resolved": (
+                                "#/components/schemas/"
+                                "CaptureOcrResolvedProvenanceRead"
+                            ),
+                            "unavailable": (
+                                "#/components/schemas/"
+                                "CaptureOcrUnavailableProvenanceRead"
+                            ),
+                        },
+                    },
+                },
+                "PrimitiveConstRead": {
+                    "type": "object",
+                    "properties": {
+                        "projectionSchemaVersion": {"type": "integer", "const": 3},
+                        "consent": {"type": "boolean", "const": True},
+                        "empty": {"type": "null", "const": None},
+                        "shape": {
+                            "type": "object",
+                            "const": {"value": "fixed"},
+                            "properties": {"value": {"type": "string"}},
+                            "required": ["value"],
+                        },
+                    },
+                    "required": [
+                        "projectionSchemaVersion",
+                        "consent",
+                        "empty",
+                        "shape",
+                    ],
+                },
             }
         },
         "paths": {
@@ -142,6 +207,28 @@ def test_generated_client_preserves_openapi_enum_literals() -> None:
     assert 'ManualDraftOperationStatus: "queued" | "running" | "canceled";' in output
     assert 'RuntimeInstallationStatus: "queued" | "running" | "canceled";' in output
     assert "LegacyStatus: string;" in output
+
+
+def test_generated_client_preserves_primitive_consts_and_discriminants() -> None:
+    output = render_typescript(_schema())
+
+    assert (
+        'CaptureOcrResolvedProvenanceRead: { "status": "resolved"; '
+        '"model": string };' in output
+    )
+    assert (
+        'CaptureOcrUnavailableProvenanceRead: { "status": "unavailable"; '
+        '"reason": string };' in output
+    )
+    assert (
+        "CaptureOcrProvenanceRead: "
+        "Components['schemas']['CaptureOcrResolvedProvenanceRead'] | "
+        "Components['schemas']['CaptureOcrUnavailableProvenanceRead'];" in output
+    )
+    assert (
+        'PrimitiveConstRead: { "projectionSchemaVersion": 3; "consent": true; '
+        '"empty": null; "shape": { "value": string } };' in output
+    )
 
 
 def test_generated_client_preserves_optional_request_body() -> None:

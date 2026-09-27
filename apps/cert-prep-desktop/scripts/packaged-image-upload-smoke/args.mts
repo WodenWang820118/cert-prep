@@ -1,6 +1,10 @@
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import type { OcrTruthManifest } from '../ocr-truth-contract.mts';
+import type { AcceptanceRuntimeIdentityExpectation } from '../packaged-flow-smoke/types.mts';
+import type { OcrExecutionProofExpectation } from '../ocr-execution-proof.mts';
+
 export interface PackagedImageUploadSmokeOptions {
   readonly workspaceRoot: string;
   readonly exePath: string;
@@ -13,8 +17,11 @@ export interface PackagedImageUploadSmokeOptions {
   readonly acceptanceArtifactRoot?: string;
   readonly imagePath?: string;
   readonly expectedTextIncludes?: readonly string[];
+  readonly ocrTruth?: OcrTruthManifest;
   readonly languageHint?: string;
   readonly llmProvider?: string;
+  readonly acceptanceRuntimeIdentity?: AcceptanceRuntimeIdentityExpectation;
+  readonly ocrExecutionProofExpected?: OcrExecutionProofExpectation;
 }
 
 const DEFAULT_TARGET_TRIPLE = 'x86_64-pc-windows-msvc';

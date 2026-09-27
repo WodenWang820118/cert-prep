@@ -70,6 +70,31 @@ h3 {
   color: var(--primary-color);
 }
 
+.capture-trial-preflight,
+.capture-trial-compute-status,
+.capture-trial-compute-notice {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.85rem 1rem;
+  border-radius: 0.75rem;
+}
+
+.capture-trial-preflight {
+  color: var(--text-color-secondary);
+  background: var(--surface-ground);
+}
+
+.capture-trial-compute-status {
+  color: var(--green-700);
+  background: var(--green-50);
+}
+
+.capture-trial-compute-notice {
+  color: var(--orange-800);
+  background: var(--orange-50);
+}
+
 .capture-trial-error {
   margin: 0;
   padding: 0.85rem 1rem;

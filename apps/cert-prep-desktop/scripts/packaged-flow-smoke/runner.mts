@@ -33,6 +33,11 @@ import { refreshFirstChunkGateMetrics } from './streaming-capture.mts';
 import { FIRST_CHUNK_GATE_MS } from './streaming-evidence.mts';
 import { errorMessage, normalizePath } from './text-utils.mts';
 import { unavailableGenerationReadinessSnapshot } from './generation-readiness.mts';
+import { buildPhase1AcceptanceEvidence } from '../phase1-acceptance-evidence.mts';
+import {
+  createOcrExecutionEvidenceRoot,
+  readAndValidateOcrExecutionProof,
+} from '../ocr-execution-proof.mts';
 import {
   assertWebmArtifact,
   writeAcceptanceManifest,
@@ -65,6 +70,17 @@ async function runFlow(run: SmokeRunState): Promise<void> {
     await ensureCaptureRuntimeReady(run);
   }
   await uploadAndParsePdf(run);
+  if (run.options.ocrExecutionProofExpected) {
+    run.metrics.ocr_execution_proof = await readAndValidateOcrExecutionProof(
+      run.options.ocrExecutionEvidenceRoot ?? '',
+      run.options.ocrExecutionProofExpected,
+    );
+  }
+  if (run.options.acceptanceOcrOnly) {
+    run.metrics.status = 'completed';
+    log(run, 'OCR-only acceptance completed');
+    return;
+  }
   if (run.options.waitForStreamingComplete) {
     if (run.options.verifyStreamingPracticeReady) {
       await verifyStreamingPracticeReady(run);
@@ -95,9 +111,11 @@ async function runFlow(run: SmokeRunState): Promise<void> {
 function saveMetrics(run: SmokeRunState): void {
   refreshFirstChunkGateMetrics(run);
   run.metrics.finished_at = new Date().toISOString();
+  const privacySafeMetrics = { ...run.metrics };
+  delete privacySafeMetrics.ocr_truth;
   writeFileSync(
     join(run.options.outDir, 'metrics.json'),
-    `${JSON.stringify(run.metrics, null, 2)}\n`,
+    `${JSON.stringify(privacySafeMetrics, null, 2)}\n`,
   );
 }
 
@@ -218,6 +236,11 @@ export async function runPackagedFlowSmoke(
     acceptanceCaptureActive: false,
   };
   prepareRunDirectories(run);
+  if (run.options.ocrExecutionProofExpected) {
+    run.options.ocrExecutionEvidenceRoot = await createOcrExecutionEvidenceRoot(
+      run.options.outDir,
+    );
+  }
   const removeShutdownCleanup = installProcessShutdownCleanup({
     cleanup: async (reason, error) => {
       run.metrics.status = 'failed';
@@ -355,6 +378,11 @@ async function finalizeAcceptanceArtifacts(run: SmokeRunState): Promise<void> {
     run.metrics.errors.push('Acceptance cleanup proof was incomplete.');
   }
 
+  const evidence = buildPackagedFlowAcceptanceEvidence(run, cleanup);
+  if (evidence) {
+    run.metrics.acceptance_evidence = evidence;
+  }
+
   await writeAcceptanceManifest(artifactRoot, {
     project: 'cert-prep',
     runId: process.env.E2E_ACCEPTANCE_RUN_ID ?? 'unknown',
@@ -368,8 +396,86 @@ async function finalizeAcceptanceArtifacts(run: SmokeRunState): Promise<void> {
     consoleErrors: run.acceptanceConsoleErrors ?? [],
     pageErrors: run.acceptancePageErrors ?? [],
     cleanup,
-    fixture: run.options.acceptanceFixture,
+    fixture: run.options.acceptanceFixture
+      ? {
+          name: run.options.acceptanceFixture.name,
+          sha256: run.options.acceptanceFixture.sha256,
+        }
+      : undefined,
+    evidence,
   });
+}
+
+function buildPackagedFlowAcceptanceEvidence(
+  run: SmokeRunState,
+  cleanup: Record<string, boolean>,
+): Record<string, unknown> | undefined {
+  const identity = run.options.acceptanceRuntimeIdentity;
+  const fixture = run.options.acceptanceFixture;
+  const preflight = run.metrics.ocr_preflight;
+  const ocrTruth = run.metrics.ocr_truth;
+  const ocrSemanticEvidence = run.metrics.ocr_semantic_evidence;
+  if (!identity) return undefined;
+  if (!fixture || !fixture.truth || !preflight || !ocrTruth || !ocrSemanticEvidence) {
+    run.metrics.errors.push(
+      'Acceptance OCR evidence was incomplete: fixture, identity, preflight, and truth are required.',
+    );
+    return undefined;
+  }
+  const completion = run.metrics.ocr_completion;
+  const sourcePageCount = completion?.total_pages;
+  const pageScope =
+    run.options.acceptancePdfPageScope === 'page-1'
+      ? {
+          sourcePageCount: sourcePageCount ?? 0,
+          requestedPageNumbers: [1] as const,
+          processedPageNumbers: [1] as const,
+          uiRawPageNumbers: [1] as const,
+          uiStructuredPageNumbers: [1] as const,
+        }
+      : undefined;
+  if (
+    pageScope &&
+    (!Number.isSafeInteger(pageScope.sourcePageCount) ||
+      pageScope.sourcePageCount < 1 ||
+      completion?.pages_processed !== 1 ||
+      completion.chunks !== 1)
+  ) {
+    run.metrics.errors.push(
+      'Acceptance PDF page scope completion metrics were not source=N>=1, processed=1, chunks=1.',
+    );
+    return undefined;
+  }
+  try {
+    const evidence = buildPhase1AcceptanceEvidence({
+      identity,
+      fixture: {
+        name: fixture.name,
+        sha256: fixture.sha256,
+        truth: fixture.truth,
+      },
+      preflight,
+      runtimeAttestation: run.metrics.runtime_attestation,
+      pageRecords: run.metrics.ocr_page_records ?? (() => {
+        throw new Error('Phase 1 PDF acceptance missed page-record evidence.');
+      })(),
+      ocrTruth,
+      ocrSemanticEvidence,
+      ocrExecutionProof: run.metrics.ocr_execution_proof,
+      cleanup: {
+        app: cleanup.app === true,
+        sidecar: cleanup.sidecar === true,
+        cdpPort: cleanup.cdpPort === true,
+        temporaryAppData: cleanup.temporaryAppData === true,
+      },
+      cleanupObservation: run.metrics.final_close?.ownedCleanupObservation,
+      ...(pageScope ? { pageScope } : {}),
+    });
+    return { ...evidence, ocrDevice: (run.metrics as SmokeMetrics & { ocr_device?: string }).ocr_device };
+  } catch (error) {
+    run.metrics.errors.push(`Acceptance OCR evidence invalid: ${errorMessage(error)}`);
+    return undefined;
+  }
 }
 
 function escapeHtml(value: string): string {

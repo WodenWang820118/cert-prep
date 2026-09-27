@@ -9,12 +9,14 @@ from threading import Event
 import time
 from pathlib import Path
 import weakref
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 import pytest
 
 from conftest import (
     AUTH_TOKEN,
+    _test_ocr_projection,
     _test_runtime_ready,
     _test_runtime_requirements,
     minimal_audio,
@@ -31,6 +33,11 @@ from cert_prep_backend.domains.capture_workbench.client import (
     CaptureUpload,
 )
 from cert_prep_backend.domains.capture_workbench import review_workflow
+from cert_prep_backend.domains.capture_workbench.persistence import (
+    publish_capture_document,
+)
+from cert_prep_backend.domains.source_documents import operations
+from cert_prep_backend.domains.source_documents.models import ExtractedPage, PdfExtractionResult
 from capture_runtime_client import (
     CAPTURE_RUNTIME_VERSION,
     CaptureDocument,
@@ -48,6 +55,419 @@ from document_test_llm_fakes import MockExamProvider
 
 
 NOW = datetime(2026, 7, 20, 5, 0, tzinfo=UTC)
+
+
+def _public_capture_document(
+    *,
+    engine: str = "windowsml-ocr",
+) -> tuple[CaptureDocument, RawCapture]:
+    raw = RawCapture.model_validate(
+        {
+            "schemaVersion": "2",
+            "diagnosticOnly": True,
+            "source": {
+                "sha256": "a" * 64,
+                "fileName": "capture.pdf",
+                "mediaType": "application/pdf",
+                "bytes": 42,
+            },
+            "segments": [
+                {
+                    "segmentId": "page-1",
+                    "order": 0,
+                    "locator": {"kind": "page", "page": 1},
+                    "text": "Runtime OCR text",
+                }
+            ],
+            "sourceText": "Runtime OCR text",
+            "extractionEngine": {
+                "engine": engine,
+                "model": "capture-ocr-v1",
+                "digest": "sha256:" + "b" * 64,
+                "device": "igpu",
+            },
+            "warnings": [],
+            "createdAt": NOW.isoformat(),
+        }
+    )
+    document = CaptureDocument.model_validate(
+        {
+            "schemaVersion": "2",
+            "source": raw.source.model_dump(mode="json", by_alias=True),
+            "rawSegments": raw.segments,
+            "blocks": [
+                {
+                    "blockId": "block-1",
+                    "order": 0,
+                    "type": "paragraph",
+                    "sourceSegmentId": "page-1",
+                    "locator": {"kind": "page", "page": 1},
+                    "sourceText": "Runtime OCR text",
+                    "targetText": "Translated text",
+                }
+            ],
+            "sourceText": "Runtime OCR text",
+            "targetText": "Translated text",
+            "extractionEngine": {
+                "engine": engine,
+                "model": "capture-ocr-v1",
+                "digest": "sha256:" + "b" * 64,
+                "device": "igpu",
+            },
+            "structuringEngine": {
+                "engine": "ollama",
+                "model": "cert-prep-qwen",
+                "digest": "sha256:" + "c" * 64,
+            },
+            "warnings": [],
+            "createdAt": NOW.isoformat(),
+            "completedAt": NOW.isoformat(),
+        }
+    )
+    return document, raw
+
+
+def _attach_public_capture(
+    app,
+    client: TestClient,
+    tmp_path: Path,
+    *,
+    engine: str = "windowsml-ocr",
+) -> dict[str, object]:
+    headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
+    project_id = _create_project(client, headers)
+    operation_id = str(uuid4())
+    document_id = str(uuid4())
+    operations.claim_operation(
+        app.state.database,
+        project_id=project_id,
+        operation_id=operation_id,
+    )
+    operations.create_and_attach_document(
+        app.state.database,
+        project_id=project_id,
+        operation_id=operation_id,
+        document_id=document_id,
+        filename="capture.pdf",
+        sha256="a" * 64,
+        language_hint="auto",
+        storage_path=str(tmp_path / "capture.pdf"),
+        page_count=1,
+    )
+    document, raw = _public_capture_document(engine=engine)
+    return {
+        "project_id": project_id,
+        "operation_id": operation_id,
+        "document_id": document_id,
+        "document": document,
+        "projection": _test_ocr_projection(raw, "capture-1"),
+    }
+
+
+def _public_capture_counts(
+    app,
+    *,
+    project_id: str,
+    document_id: str,
+) -> tuple[int, int, str, int]:
+    with app.state.database.connect() as connection:
+        document = connection.execute(
+            "SELECT status, processed_page_count FROM documents WHERE project_id = ? AND id = ?",
+            (project_id, document_id),
+        ).fetchone()
+        assert document is not None
+        documents = connection.execute(
+            "SELECT COUNT(*) FROM documents WHERE project_id = ?",
+            (project_id,),
+        ).fetchone()[0]
+        chunks = connection.execute(
+            "SELECT COUNT(*) FROM document_chunks WHERE project_id = ? AND document_id = ?",
+            (project_id, document_id),
+        ).fetchone()[0]
+    return int(documents), int(chunks), str(document["status"]), int(document["processed_page_count"])
+
+
+@pytest.mark.parametrize(
+    "engine",
+    ["direct_pdf", "embedded", "mixed", "windowsml-v2", "direct_pdf-windowsml"],
+)
+def test_public_capture_publication_rejects_noncanonical_write_provenance(
+    tmp_path: Path,
+    engine: str,
+) -> None:
+    app = create_app(
+        settings=Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake"),
+        document_processing_async_jobs=False,
+        streaming_draft_generation_async_jobs=False,
+    )
+    with TestClient(app) as client:
+        fixture = _attach_public_capture(app, client, tmp_path, engine=engine)
+        document = fixture["document"]
+        projection = fixture["projection"]
+        assert isinstance(document, CaptureDocument)
+        with pytest.raises(ValueError, match="OCR-only"):
+            publish_capture_document(
+                app.state.database,
+                project_id=str(fixture["project_id"]),
+                document_id=str(fixture["document_id"]),
+                operation_id=str(fixture["operation_id"]),
+                source_kind="document",
+                expected_sha256="a" * 64,
+                document=document,
+                ocr_projection=projection,
+            )
+
+        assert _public_capture_counts(
+            app,
+            project_id=str(fixture["project_id"]),
+            document_id=str(fixture["document_id"]),
+        ) == (1, 0, "processing", 0)
+
+
+def test_public_capture_publication_maps_exact_producer_engine_to_durable_method(
+    tmp_path: Path,
+) -> None:
+    app = create_app(
+        settings=Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake"),
+        document_processing_async_jobs=False,
+        streaming_draft_generation_async_jobs=False,
+    )
+    with TestClient(app) as client:
+        fixture = _attach_public_capture(app, client, tmp_path)
+        document = fixture["document"]
+        projection = fixture["projection"]
+        assert isinstance(document, CaptureDocument)
+        result = publish_capture_document(
+            app.state.database,
+            project_id=str(fixture["project_id"]),
+            document_id=str(fixture["document_id"]),
+            operation_id=str(fixture["operation_id"]),
+            source_kind="document",
+            expected_sha256="a" * 64,
+            document=document,
+            ocr_projection=projection,
+        )
+
+        assert result["extraction_method"] == "windowsml_ocr"
+        assert _public_capture_counts(
+            app,
+            project_id=str(fixture["project_id"]),
+            document_id=str(fixture["document_id"]),
+        ) == (1, 1, "ready", 1)
+
+
+@pytest.mark.parametrize("projection_engine", ["windowsml-v2", "direct_pdf"])
+def test_public_capture_publication_rejects_projection_engine_mismatch(
+    tmp_path: Path,
+    projection_engine: str,
+) -> None:
+    app = create_app(
+        settings=Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake"),
+        document_processing_async_jobs=False,
+        streaming_draft_generation_async_jobs=False,
+    )
+    with TestClient(app) as client:
+        fixture = _attach_public_capture(app, client, tmp_path)
+        document = fixture["document"]
+        projection = fixture["projection"]
+        assert isinstance(document, CaptureDocument)
+        document.extraction_engine.model = "embedded-text-model"
+        projection.provenance.engine = projection_engine
+        for page in projection.pages:
+            page.provenance.engine = projection_engine
+
+        with pytest.raises(ValueError, match="provenance"):
+            publish_capture_document(
+                app.state.database,
+                project_id=str(fixture["project_id"]),
+                document_id=str(fixture["document_id"]),
+                operation_id=str(fixture["operation_id"]),
+                source_kind="document",
+                expected_sha256="a" * 64,
+                document=document,
+                ocr_projection=projection,
+            )
+
+        assert _public_capture_counts(
+            app,
+            project_id=str(fixture["project_id"]),
+            document_id=str(fixture["document_id"]),
+        ) == (1, 0, "processing", 0)
+
+
+def test_public_capture_publication_rejects_page_provenance_mismatch_without_writes(
+    tmp_path: Path,
+) -> None:
+    app = create_app(
+        settings=Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake"),
+        document_processing_async_jobs=False,
+        streaming_draft_generation_async_jobs=False,
+    )
+    with TestClient(app) as client:
+        fixture = _attach_public_capture(app, client, tmp_path)
+        document = fixture["document"]
+        projection = fixture["projection"]
+        assert isinstance(document, CaptureDocument)
+        projection.pages[0].provenance.engine = "windowsml-v2"
+
+        with pytest.raises(ValueError, match="provenance"):
+            publish_capture_document(
+                app.state.database,
+                project_id=str(fixture["project_id"]),
+                document_id=str(fixture["document_id"]),
+                operation_id=str(fixture["operation_id"]),
+                source_kind="document",
+                expected_sha256="a" * 64,
+                document=document,
+                ocr_projection=projection,
+            )
+
+        assert _public_capture_counts(
+            app,
+            project_id=str(fixture["project_id"]),
+            document_id=str(fixture["document_id"]),
+        ) == (1, 0, "processing", 0)
+
+
+def test_public_capture_publication_rejects_unresolved_page_without_writes(
+    tmp_path: Path,
+) -> None:
+    app = create_app(
+        settings=Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake"),
+        document_processing_async_jobs=False,
+        streaming_draft_generation_async_jobs=False,
+    )
+    with TestClient(app) as client:
+        fixture = _attach_public_capture(app, client, tmp_path)
+        document = fixture["document"]
+        projection = fixture["projection"]
+        assert isinstance(document, CaptureDocument)
+        projection.pages[0].provenance.status.value = "unavailable"
+        projection.pages[0].provenance.reason = "model_unavailable"
+
+        with pytest.raises(ValueError, match="provenance"):
+            publish_capture_document(
+                app.state.database,
+                project_id=str(fixture["project_id"]),
+                document_id=str(fixture["document_id"]),
+                operation_id=str(fixture["operation_id"]),
+                source_kind="document",
+                expected_sha256="a" * 64,
+                document=document,
+                ocr_projection=projection,
+            )
+
+        assert _public_capture_counts(
+            app,
+            project_id=str(fixture["project_id"]),
+            document_id=str(fixture["document_id"]),
+        ) == (1, 0, "processing", 0)
+
+
+def test_public_capture_publication_uses_projection_validation_for_embedded_model_marker(
+    tmp_path: Path,
+) -> None:
+    app = create_app(
+        settings=Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake"),
+        document_processing_async_jobs=False,
+        streaming_draft_generation_async_jobs=False,
+    )
+    with TestClient(app) as client:
+        fixture = _attach_public_capture(app, client, tmp_path)
+        document = fixture["document"]
+        projection = fixture["projection"]
+        assert isinstance(document, CaptureDocument)
+        document.extraction_engine.model = "embedded-text-model"
+
+        result = publish_capture_document(
+            app.state.database,
+            project_id=str(fixture["project_id"]),
+            document_id=str(fixture["document_id"]),
+            operation_id=str(fixture["operation_id"]),
+            source_kind="document",
+            expected_sha256="a" * 64,
+            document=document,
+            ocr_projection=projection,
+        )
+
+        assert result["extraction_method"] == "windowsml_ocr"
+
+
+def test_legacy_embedded_and_mixed_rows_remain_read_compatible(tmp_path: Path) -> None:
+    app = create_app(
+        settings=Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake"),
+        document_processing_async_jobs=False,
+        streaming_draft_generation_async_jobs=False,
+    )
+    with TestClient(app) as client:
+        headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
+        project_id = _create_project(
+            client,
+            headers,
+        )
+        expected_document_ids: dict[str, str] = {}
+        for method in ("embedded", "mixed"):
+            operation_id = str(uuid4())
+            document_id = str(uuid4())
+            expected_document_ids[method] = document_id
+            operations.claim_operation(
+                app.state.database,
+                project_id=project_id,
+                operation_id=operation_id,
+            )
+            operations.create_and_attach_document(
+                app.state.database,
+                project_id=project_id,
+                operation_id=operation_id,
+                document_id=document_id,
+                filename=f"legacy-{method}.pdf",
+                sha256="a" * 64,
+                language_hint="auto",
+                storage_path=str(tmp_path / f"legacy-{method}.pdf"),
+                page_count=1,
+            )
+            operations.publish_success(
+                app.state.database,
+                project_id=project_id,
+                operation_id=operation_id,
+                document_id=document_id,
+                extraction=PdfExtractionResult(
+                    page_count=1,
+                    pages=(
+                        ExtractedPage(
+                            page_number=1,
+                            text=f"Legacy {method} text",
+                            raw_text=f"Legacy {method} text",
+                            source_excerpt=f"Legacy {method} text",
+                            extraction_method=method,
+                            line_start=1,
+                            line_end=1,
+                            line_count=1,
+                        ),
+                    ),
+                    status="ready",
+                    extraction_method=method,
+                    ocr_device=None,
+                    ocr_fallback_reason=None,
+                    ocr_duration_ms=0,
+                    processed_page_count=1,
+                ),
+            )
+
+        documents = client.get(
+            f"/projects/{project_id}/documents",
+            headers=headers,
+        )
+        assert documents.status_code == 200
+        by_id = {item["id"]: item for item in documents.json()["items"]}
+        for method, document_id in expected_document_ids.items():
+            assert by_id[document_id]["extraction_method"] == method
+            chunks = client.get(
+                f"/projects/{project_id}/documents/{document_id}/chunks",
+                headers=headers,
+            )
+            assert chunks.status_code == 200
+            assert chunks.json()["items"][0]["extraction_method"] == method
 
 
 def test_runtime_event_registry_wakes_listeners_without_retaining_capture_identity() -> None:

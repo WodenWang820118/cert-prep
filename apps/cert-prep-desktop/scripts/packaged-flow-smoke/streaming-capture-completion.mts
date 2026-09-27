@@ -110,29 +110,45 @@ function assertSuccessfulStreamingBaseline(
     );
   }
   const ocr = run.metrics.ocr_completion;
+  const expectedPages =
+    run.options.acceptancePdfPageScope === 'page-1'
+      ? 1
+      : EXPECTED_BASELINE_PAGES;
+  const expectedChunks =
+    run.options.acceptancePdfPageScope === 'page-1'
+      ? 1
+      : EXPECTED_BASELINE_CHUNKS;
+  const sourcePageCount = ocr?.total_pages;
   if (
-    ocr?.pages_processed !== EXPECTED_BASELINE_PAGES ||
-    ocr.total_pages !== EXPECTED_BASELINE_PAGES ||
-    !ocrChunksAccepted(run)
+    ocr?.pages_processed !== expectedPages ||
+    (run.options.acceptancePdfPageScope === 'page-1'
+      ? !isPositivePageCount(sourcePageCount)
+      : ocr.total_pages !== expectedPages) ||
+    !ocrChunksAccepted(run, expectedChunks)
   ) {
     throw new Error(
-      `OCR completion did not match expected ${EXPECTED_BASELINE_PAGES} pages / ${EXPECTED_BASELINE_CHUNKS} chunks: ${JSON.stringify(
+      `OCR completion did not match expected ${expectedPages} processed pages / ${expectedChunks} chunks: ${JSON.stringify(
         ocr,
       )}`,
     );
   }
 }
 
-function ocrChunksAccepted(run: SmokeRunState): boolean {
+function ocrChunksAccepted(run: SmokeRunState, expectedChunks: number): boolean {
   const chunks = run.metrics.ocr_completion?.chunks;
-  if (chunks === EXPECTED_BASELINE_CHUNKS) {
+  if (chunks === expectedChunks) {
     return true;
   }
+  if (run.options.acceptancePdfPageScope === 'page-1') return false;
   return (
     run.options.allowCaptureChunkVariance &&
     chunks !== null &&
     chunks !== undefined &&
     chunks > 0 &&
-    chunks <= EXPECTED_BASELINE_CHUNKS
+    chunks <= expectedChunks
   );
+}
+
+function isPositivePageCount(value: number | null | undefined): value is number {
+  return value !== null && value !== undefined && Number.isSafeInteger(value) && value >= 1;
 }

@@ -2,10 +2,12 @@ mod archives;
 mod backend;
 mod backend_process;
 mod capture_manifest;
+mod capture_launch_policy;
 mod capture_runtime;
 mod commands;
 mod constants;
 mod manifests;
+mod process_owner;
 mod runtime_installation;
 
 use std::{fs, path::PathBuf, thread};
@@ -70,8 +72,15 @@ pub fn run() {
             commands::start_capture_runtime,
             commands::get_capture_runtime_installation
         ])
-        .run(tauri::generate_context!())
-        .expect("failed to run cert prep desktop app");
+        .build(tauri::generate_context!())
+        .expect("failed to build cert prep desktop app")
+        .run(|app, event| {
+            if matches!(event, tauri::RunEvent::Exit | tauri::RunEvent::ExitRequested { .. }) {
+                if let Some(state) = app.try_state::<BackendState>() {
+                    state.terminate_child_process_tree();
+                }
+            }
+        });
 }
 
 fn package_qa_auto_install_enabled() -> bool {

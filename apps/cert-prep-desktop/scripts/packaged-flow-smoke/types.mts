@@ -1,9 +1,19 @@
 import type { Browser, Page } from 'playwright';
 import type { ChildProcess } from 'node:child_process';
 import type {
+  OcrTruthEvaluation,
+  OcrTruthManifest,
+} from '../ocr-truth-contract.mts';
+import type {
   ProcessSnapshot,
   PublicProcessRecord,
 } from '../process-lifecycle/processes.mts';
+import type { OcrPageRecordEvidence } from '../ocr-page-record-evidence.mts';
+import type {
+  OcrExecutionProofExpectation,
+  OcrExecutionProofSummary,
+} from '../ocr-execution-proof.mts';
+import type { PrivacySafeOcrSemanticEvidence } from '../ocr-semantic-evidence.mts';
 
 export type CandidateDistributionProfile =
   | 'public_unsigned_alpha'
@@ -34,8 +44,73 @@ export interface SmokeOptions {
   acceptanceArtifactRoot?: string;
   acceptanceRecordVideo?: boolean;
   acceptanceVisualCheckpoint?: (page: Page, name: string) => Promise<void>;
-  acceptanceFixture?: { name: string; sha256: string };
+  acceptanceFixture?: {
+    name: string;
+    sha256: string;
+    truth?: OcrTruthManifest;
+  };
+  /**
+   * Exact identity required by the Phase 1 local-probe journey. This is
+   * deliberately optional so ordinary packaged-flow smoke and release-mode
+   * acceptance retain their existing policy.
+   */
+  acceptanceRuntimeIdentity?: AcceptanceRuntimeIdentityExpectation;
+  /** Runtime sink and exact GPU proof identity for the JPEG Phase 1 lane. */
+  ocrExecutionEvidenceRoot?: string;
+  ocrExecutionProofExpected?: OcrExecutionProofExpectation;
+  /** Page-one scope is an acceptance-only override for the PDF child. */
+  acceptancePdfPageScope?: 'page-1';
+  /** Phase 1 stops after OCR evidence; question generation is a separate lane. */
+  acceptanceOcrOnly?: boolean;
   acceptanceVerifyMarkdownExport?: boolean;
+}
+
+export interface AcceptanceRuntimeIdentityExpectation {
+  readonly runtimeArtifactSha256: string;
+  readonly contractSetSha256: string;
+  readonly workerArchiveSha256: string;
+  readonly workerExecutableSha256: string;
+  readonly preflightMode: 'gpu-dml';
+  /** Hashes re-read from the exact executable under test, not a build path. */
+  readonly installedExecutableSha256?: string;
+  readonly installedRuntimeManifestIdentitySha256?: string;
+  readonly installedRuntimeCoreSha256?: string;
+  readonly installedRuntimeCoreBytes?: number;
+}
+
+export interface InstalledRuntimeTupleAttestation {
+  readonly schema_version: 1;
+  readonly candidate: {
+    readonly runtime_version: string;
+    readonly runtime_core_sha256: string;
+    readonly runtime_core_bytes: number;
+    readonly runtime_manifest_identity_sha256: string;
+    readonly worker_archive_sha256: string;
+    readonly worker_archive_bytes: number;
+    readonly worker_executable_sha256: string;
+    readonly contract_set_sha256: string;
+    readonly python_wheel: {
+      readonly file_name: string;
+      readonly sha256: string;
+      readonly bytes: number;
+      readonly package_name: string;
+      readonly package_version: string;
+      readonly contract_set_sha256: string;
+      readonly generated_models: {
+        readonly worker_sha256: true;
+        readonly pdf_page_numbers: true;
+      };
+    };
+  };
+  readonly observed: {
+    readonly ready: true;
+    readonly runtime_version: string;
+    readonly api_version: string;
+    readonly capture_document_schema_version: string;
+    readonly contract_set_sha256: string;
+    readonly worker_executable_sha256: string;
+    readonly mode: 'gpu-dml';
+  };
 }
 
 export interface SmokeMetrics {
@@ -68,7 +143,14 @@ export interface SmokeMetrics {
   wait_for_streaming_complete?: boolean;
   app_data_dir?: string;
   acceptance_isolation_at_launch?: AcceptanceIsolationSnapshot;
+  ocr_preflight?: OcrPreflightMetrics;
+  runtime_attestation?: InstalledRuntimeTupleAttestation;
   ocr_completion?: OcrCompletionMetrics;
+  ocr_page_records?: OcrPageRecordEvidence;
+  ocr_execution_proof?: OcrExecutionProofSummary;
+  ocr_truth?: OcrTruthEvaluation;
+  ocr_semantic_evidence?: PrivacySafeOcrSemanticEvidence;
+  acceptance_evidence?: Record<string, unknown>;
   streaming_baseline?: StreamingBaselineArtifacts;
   production_summary?: string;
   practice_ready_from_streamed_questions?: boolean;
@@ -101,6 +183,14 @@ export interface AcceptanceIsolationSnapshot {
   readonly reparse_points_absent: boolean;
 }
 
+export interface OcrPreflightMetrics {
+  readonly mode: 'gpu-dml' | 'cpu-fallback';
+  readonly contract_sha256: string;
+  readonly worker_sha256: string | null;
+  readonly ui_gpu_before_import: boolean;
+  readonly source_import_enabled: boolean;
+}
+
 export interface ResourceSamplingArtifacts {
   windows_counters_csv?: string;
   windows_summary_json?: string;
@@ -123,8 +213,8 @@ export interface OcrCompletionMetrics {
   pages_processed: number | null;
   total_pages: number | null;
   chunks: number | null;
-  expected_pages: 46;
-  expected_chunks: 46;
+  expected_pages: number;
+  expected_chunks: number;
 }
 
 export interface StreamingBaselineArtifacts {
@@ -257,6 +347,24 @@ export interface CloseSummary {
   fallbackUsed: boolean;
   exitCode: number | null;
   residualProcesses: PublicProcessRecord[];
+  ownedCleanupObservation?: OwnedCleanupObservation;
+}
+
+export type OwnedCleanupObservation =
+  | OwnedCleanupProof
+  | OwnedCleanupEvidenceUnavailable;
+
+export interface OwnedCleanupProof {
+  readonly ownedProcessPids: number[]; readonly remainingOwnedProcessPids: number[];
+  readonly ownedListenerPorts: number[]; readonly remainingOwnedListenerPorts: number[];
+  readonly ocrModelWorkerPids: number[]; readonly remainingOcrModelWorkerPids: number[];
+}
+
+export interface OwnedCleanupEvidenceUnavailable {
+  readonly evidenceUnavailable: {
+    readonly source: 'windows_listener_snapshot';
+    readonly stage: 'before_close';
+  };
 }
 
 export interface ChildExitState {
