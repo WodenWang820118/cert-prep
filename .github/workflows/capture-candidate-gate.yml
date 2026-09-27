@@ -35,6 +35,7 @@ on:
 permissions:
   actions: read
   contents: read
+  packages: read
 
 jobs:
   gate:
@@ -71,6 +72,8 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+          registry-url: https://npm.pkg.github.com
+          scope: '@gx-capture'
 
       - name: Install uv
         uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990
@@ -118,6 +121,8 @@ jobs:
         shell: pwsh
         env:
           CAPTURE_CANDIDATE_INSTALL: '1'
+          # pnpm verifies the committed lockfile's @gx-capture entries.
+          NODE_AUTH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
