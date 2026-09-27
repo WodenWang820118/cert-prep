@@ -27,6 +27,7 @@ import {
   waitText,
 } from '../packaged-flow-smoke/runner-context.mts';
 import {
+  CAPTURE_REQUIREMENT_INSTALL_TIMEOUT_MS,
   ensureCaptureRuntimeReady,
   installPythonRuntimeIfNeeded,
 } from '../packaged-flow-smoke/runtime-install-flow.mts';
@@ -198,7 +199,10 @@ export async function runPackagedImageUploadSmoke(
     await installPythonRuntimeIfNeeded(run);
     await createProject(run);
     if (options.acceptanceIsolation) {
-      await ensureCaptureRuntimeReady(run);
+      await ensureCaptureRuntimeReady(
+        run,
+        Math.max(CAPTURE_REQUIREMENT_INSTALL_TIMEOUT_MS, options.timeoutMs),
+      );
     }
     const imageResult = await uploadAndVerifyImage(
       run,
@@ -462,6 +466,11 @@ async function uploadAndVerifyImage(
       );
     }
     textAnchors = inspectExpectedTextAnchors(chunks, expectedTextIncludes);
+    if (textAnchors.missing.length > 0) {
+      throw new Error(
+        `Persisted OCR text is missing ${textAnchors.missing.length} expected anchor(s).`,
+      );
+    }
     if (ocrTruth) {
       actualPages = actualOcrPages(chunks);
       truthEvaluation = evaluateOcrTruth(ocrTruth, actualPages);

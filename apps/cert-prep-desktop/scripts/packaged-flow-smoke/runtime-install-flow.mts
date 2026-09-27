@@ -86,6 +86,7 @@ export function pythonRuntimeReadyPattern(): RegExp {
 
 export async function ensureCaptureRuntimeReady(
   run: SmokeRunState,
+  requirementTimeoutMs = CAPTURE_REQUIREMENT_INSTALL_TIMEOUT_MS,
 ): Promise<void> {
   const page = activePage(run);
   await page
@@ -135,7 +136,11 @@ export async function ensureCaptureRuntimeReady(
     projectIdBeforeRequirement,
     120_000,
   );
-  await ensureCaptureRuntimeRequirement(run, 'windowsml-ocr');
+  await ensureCaptureRuntimeRequirement(
+    run,
+    'windowsml-ocr',
+    requirementTimeoutMs,
+  );
 
   // Requirement installation changes sidecar state but does not reload the
   // Angular preflight store. Reconnect through a fresh page so the visible UI
@@ -463,9 +468,14 @@ export function parseAcceptanceOcrPreflight(
   };
 }
 
+// A fresh install downloads the OCR worker from the GitHub release, which can
+// exceed ten minutes on slow links; callers with a longer run budget pass it.
+export const CAPTURE_REQUIREMENT_INSTALL_TIMEOUT_MS = 10 * 60_000;
+
 export async function ensureCaptureRuntimeRequirement(
   run: SmokeRunState,
   requirementId: 'windowsml-ocr',
+  timeoutMs = CAPTURE_REQUIREMENT_INSTALL_TIMEOUT_MS,
 ): Promise<void> {
   const projectApi = run.projectApi;
   if (!projectApi) {
@@ -520,7 +530,7 @@ export async function ensureCaptureRuntimeRequirement(
     );
   }
 
-  const deadline = Date.now() + 10 * 60_000;
+  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const statusResponse = await page.request.get(
       `${projectApi.apiBaseUrl}/capture-runtime/installations/${encodeURIComponent(installationId)}`,
