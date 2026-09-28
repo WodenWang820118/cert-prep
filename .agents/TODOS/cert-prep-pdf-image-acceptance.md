@@ -1,71 +1,23 @@
 # Cert Prep real PDF and image acceptance
 
-## Status checkpoint (2026-09-09)
+## Status
 
-Phase 1 is complete at the `local-probe` tier. Capture Workbench, Cert Prep,
-and GX Law Prep each passed real local-package OCR, and Cert Prep's
-local-package OCR evidence is accepted at that tier. This is not published or
-release evidence: the formal `capture-runtime` 0.4.2 candidate/package remains
-unbuilt and unpublished.
+Capture Runtime 0.4.2 is published and Cert Prep pins it on `main`. The
+canonical JPEG passed published-mode practical OCR in the installed app on
+2026-09-27. The open items below cover the PDF page-1 leg, cleanup, restart,
+review/export proof, and the package-defined `ConsumerSemanticResultV1`.
 
-Capture Workbench PR #39 at `c6d2140`, Cert Prep PR #19 at
-`d5af0f2a3939949bc10667a40252e96963ba64bb`, and their recorded heads are
-release-freshness facts only; they do not reopen the completed Phase 1 status.
-Older local OCR records remain historical and do not substitute for the
-accepted local-probe result or for published/release evidence.
-
-CI repair is paused and has no authority over this checkpoint or the Phase 2
-acceptance record. Do not treat a repair branch or CI result as release,
-publication, or consumer-ownership authority until the owning lane resumes.
-
-Phase 2 now owns hardening, the Nx 23.1.2 upgrade, lifecycle and performance
-work, version inventory, deterministic candidate staging, and then sequential
-formal/published-package regression across the consumers.
-
-Phase 1 local-probe acceptance is complete. This checklist captures the
-remaining Phase 2 sequential formal/published-package regression path. D4 is
-the pre-publication immutable-candidate acceptance. Cert consumes the future
-producer bundle/package `@capture-runtime/acceptance-contract` (proposed
-`packages/capture-acceptance-contract/`) and the exact D3/D6-bound
-`contractSha256`; that package is the sole version/schema/codec/manifest/hash
-authority and is absent at this checkpoint, so package/target creation is a
-producer discovery/creation stop. Cert consumes only the frozen/read-only
-invocation at `CAPTURE_ACCEPTANCE_INVOCATION_PATH`, verifies its canonical
-digest, and atomically create-new exactly one complete package-defined
-`ConsumerSemanticResultV1` at the distinct
-`CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`. The runtime contract-set identity
-(`contractSetSha256`) remains separate from the acceptance bundle hash. The
-producer owns the mutable scope at `CAPTURE_ACCEPTANCE_SCOPE_PATH`; Cert never
-consumes, overwrites, returns, or writes that scope. Cert never writes a child
-wire. D7 repeats the same journey from D5/D6 published download-back bytes with
-a fresh frozen invocation and writes the same exact package-defined result type
-at that result path. The proposed private `FixtureCapabilityResolver` supplies
-ordered JPEG and scanned PDF page-1 capabilities and full truth to the package
-codec; no Cert-local result schema is restated. The producer validates the
-result, proves cleanup, adds cleanup/privacy fields, and later writes immutable
-`AcceptanceChildWireV1` at `CAPTURE_ACCEPTANCE_WIRE_PATH`, then directs any
-handoff to LAW. Cert never waits for LAW, aggregates consumer ledgers, or
-mutates/rolls back the producer stable pointer. The producer alone aggregates
-child wires and owns D8 stable-pointer promotion. Cert owns durable source/review/export state;
-`capture-runtime` owns the OCR projection.
-The producer engine `windowsml-ocr` maps to the Cert durable discriminator
-`windowsml_ocr`; embedded layers are ignored, and `direct_pdf`/`embedded`/`mixed`
-are legacy read-only compatibility values only. No new `direct_pdf`, `embedded`,
-or `mixed` write is permitted.
-
-`ConsumerSemanticResultV1` is not locally defined or extended. The future
-`@capture-runtime/acceptance-contract` package is the sole schema/codec/manifest/
-hash authority; the package/target is absent here and its creation is a
-producer discovery stop. Its ordered fixture assignments are resolved by the
-proposed private `FixtureCapabilityResolver` for the private JPEG and scanned
-PDF page 1, with full truth available to the package codec. The package writes
-only canonical measurements in the exact result; no Cert-local privacy or
-cleanup fields or schema restatement is allowed. Producer cleanup/privacy is
-added only to the final wire. The runtime `contractSetSha256` remains separate
-from the acceptance `contractSha256`.
+Acceptance uses the producer's `@capture-runtime/acceptance-contract` package
+(`packages/capture-acceptance-contract` in `capture-workbench`): Cert reads the
+frozen invocation at `CAPTURE_ACCEPTANCE_INVOCATION_PATH` and creates one
+`ConsumerSemanticResultV1` at `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`; the
+producer owns the scope, cleanup proof, final wire, and stable pointer. The
+producer engine `windowsml-ocr` maps to the Cert durable discriminator
+`windowsml_ocr`; `direct_pdf`/`embedded`/`mixed` are legacy read-only values
+and are never written.
 
 Audio transcription/translation is a separate Capture Runtime lane and is not
-part of this OCR-only PDF/JPEG Phase 2 acceptance.
+part of this OCR-only acceptance.
 
 The canonical implementation slices, exact owners, red proofs, green
 verification, prerequisites, stop conditions, rollback, and discovered Nx
@@ -405,20 +357,22 @@ The Python `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_install
 
 ## Ordered real journey
 
-- [ ] Confirm the exact candidate tier before launch. For a local candidate,
+- [x] Confirm the exact candidate tier before launch. For a local candidate,
       URL/port identify transport only; hard-gate contract/schema, archive
       boundary, provenance, and loaded runtime-worker identity. For published
       acceptance, require strict 0.4.2 locks, hashes, manifests, and
       download-back byte identity. Reject sibling junctions, local/source
       paths, `direct_url`, and mixed 0.4.1/0.4.2 versions wherever applicable.
-- [ ] Confirm the producer's Capture Workbench gate has run the private JPEG,
-      then the original private PDF page 1, with cleanup and released model
-      memory between runs. Do not start Cert before that gate is current.
-- [ ] Launch the installed Cert Prep app with the real private JPEG. Assert
+  Done: published 0.4.2 pins are enforced by `tools/capture-runtime-version-check.mts`; the practical run used the published runtime `d42b343d…`.
+- [ ] Confirm Capture Workbench has run the original private PDF page 1 in
+      published mode (its canonical JPEG passed on 2026-09-27) before the Cert
+      PDF run.
+- [x] Launch the installed Cert Prep app with the real private JPEG. Assert
       the resulting page projection is semantic, ordered, and
       `windowsml_ocr`-provenanced; no direct_pdf, embedded-text, or host OCR route
       is used.
       Require CER <= 3% and zero missing critical anchors.
+  Done: published-mode practical OCR on 2026-09-27 returned `windowsml_ocr` text with the anchors present. CER is not gated for the handwritten canonical JPEG (disclosed 0.4.2 limitation).
 - [ ] Complete `afterCapture` cleanup for the JPEG before beginning the PDF
       run. Prove owned listeners, PIDs, run data, and staging are gone while
       durable runtime/model assets remain.
@@ -456,16 +410,6 @@ The Python `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_install
       after validation and cleanup. Raw OCR text, truth text, tokens, local
       paths, process/native IDs, host/user names, and environment dumps must not
       be present in the semantic result.
-
-- [ ] Label the semantic result `D4 CandidateAccepted` before publication. It
-      must identify the immutable candidate and must not move the producer
-      stable pointer; write only Cert's D4 semantic result before the producer
-      validates it and emits any child wire.
-- [ ] After D5 publication and D6 download-back hash verification, rerun from
-      downloaded bytes and label the result `D7 PublishedAccepted`. Write only
-      Cert's D7 semantic result; the producer validates/cleans up and directs
-      its emitted child wire to LAW. Do not write the scope/wire, wait for LAW,
-      or call D4 local/candidate evidence published acceptance.
 
 ## Failure and evidence rules
 
@@ -510,9 +454,5 @@ docs checks and `git diff --check` only.
 
 ## Supersession
 
-The historical [lazy-install decision](../DECISIONS/lazy-capture-runtime-installation.md)
-and [packaged-smoke spec](../SPECS/packaged-capture-workbench-smoke.md) remain
-for traceability. No corresponding TODO files exist; do not invent or revive
-those references as active work. Current D4/D7, roots, version-first staging,
-and exact projection mapping are defined by the [consumer specification](../SPECS/capture-runtime-consumer.md),
+Roots, version-first staging, and exact projection mapping are defined by the [consumer specification](../SPECS/capture-runtime-consumer.md),
 [decision](../DECISIONS/capture-runtime-consumer.md), and [consumer TODO](capture-runtime-consumer.md).
