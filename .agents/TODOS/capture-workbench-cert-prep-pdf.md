@@ -15,3 +15,4 @@ Capture Runtime lane.
   handing the slot to LAW.
   Keep this independent Cert Prep Tauri smoke separate from source-import or
   registry prototypes, deterministic fixtures, and the Capture Workbench app.
+  PDF leg passed on 2026-09-28: the packaged image-upload smoke accepted an image-only PDF made from the canonical JPEG (`windowsml_ocr`, `windowsml-dml`, anchor present). The audio leg remains. The older `packaged-capture-workbench-smoke` still follows the pre-0.4.2 flow (it stops at the OCR preflight step) and needs updating before it can run the PDF leg itself.

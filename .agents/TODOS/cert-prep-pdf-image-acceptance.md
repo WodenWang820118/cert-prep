@@ -383,6 +383,7 @@ The Python `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_install
       a separate gate reserved for a tested ordering, accumulation, memory, or
       accuracy risk. Require page-1 CER <= 1% and zero missing critical
       anchors.
+  An image-only PDF made from the canonical JPEG passed through the installed app on 2026-09-28 (`windowsml_ocr`, `windowsml-dml`, page 1, anchor present). The original private PDF is not in the repository; run it when it is available.
 - [ ] Complete `afterCapture` cleanup for the PDF before any next consumer.
       Before handing the model slot to LAW, prove zero owned backend,
       Capture Runtime, OCR/model PIDs, listeners, run data, and staging.
