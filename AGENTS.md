@@ -36,3 +36,10 @@
 - If the namespace is not already available in the active tool list, use `tool_search` to lazy-load `agy_mcp` before falling back to any shell command.
 - Prefer `mode=review` for code review and `mode=planning` for implementation planning. Keep it read-only unless the user explicitly authorizes writes.
 - AGY has the global `grill-me` skill installed at `~/.gemini/config/skills/grill-me/SKILL.md`. When the user asks to be grilled or to stress-test a plan, ask `agy_mcp` to use `grill-me` and return user-visible questions or a concise report.
+
+# Capture Runtime integration
+
+- Cert Prep consumes Capture Runtime **0.4.2**. The pin lives in `tools/capture-runtime-version.mts`, `package.json`, `pnpm-workspace.yaml`, `apps/cert-prep-backend/pyproject.toml` (and `uv.lock`), `apps/cert-prep-desktop/src-tauri/Cargo.toml` (and `Cargo.lock`), and `apps/cert-prep-desktop/src-tauri/src/constants.rs`. Bump them together; `tools/capture-runtime-version-check.mts` fails on any mismatch. Regenerate `libs/cert-prep-api` after contract changes.
+- `@gx-capture/*` packages come from GitHub Packages, which needs a token even for public packages (`packages: read` plus `NODE_AUTH_TOKEN` in workflows).
+- The Capture producer dispatches `.github/workflows/capture-candidate-gate.yml` during a release. Before that, pre-run `tools/capture-candidate-gate.mts` locally against the downloaded release candidate, following `.agents/GUIDES/release-runbook.md` in the sibling `capture-workbench` checkout. Keep the gate's `pnpm/action-setup` pin identical to `ci.yml`.
+- Open Capture consumer work is in `.agents/TODOS/capture-runtime-consumer.md` and `.agents/TODOS/cert-prep-pdf-image-acceptance.md`. Handwriting OCR quality is a known 0.4.2 limitation.

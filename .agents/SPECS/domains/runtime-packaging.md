@@ -40,7 +40,8 @@ artifacts or real engine-smoke evidence.
 The release candidate must pass backend/frontend/desktop Nx checks, package QA,
 release-tool tests, clean-install contract tests, resource staging checks, and
 published-byte handshake/requirements checks. The real PDF/image/audio consumer
-smoke remains pending for the engine-bearing `0.4.2` release. Its model-enabled
+smoke has passed for images against published `0.4.2` (2026-09-27); the PDF
+and audio legs remain open. Its model-enabled
 journey is sequential across consumers and must release all owned PIDs/listeners
 before the next consumer starts; readiness/host-protocol checks and fake
 extraction are not positive OCR/Whisper evidence.

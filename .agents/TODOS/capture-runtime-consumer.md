@@ -1,164 +1,19 @@
 # Capture Runtime 0.4.2 Cert Prep consumer TODO
 
-## Current checkpoint (2026-09-09)
+## Status
 
-Phase 1 is complete at the `local-probe` tier. Capture Workbench, Cert Prep,
-and GX Law Prep each passed real local-package OCR, and Cert Prep's
-local-package OCR evidence is accepted at that tier. This is not published or
-release evidence: the formal `capture-runtime` 0.4.2 candidate/package remains
-unbuilt and unpublished.
-
-Capture Workbench PR #39 at `c6d2140`, Cert Prep PR #19 at
-`d5af0f2a3939949bc10667a40252e96963ba64bb`, and their recorded heads are
-release-freshness facts only; they do not reopen the completed Phase 1 status.
-Older local OCR records remain historical and do not substitute for the
-accepted local-probe result or for published/release evidence.
-
-CI repair is paused and has no authority over this checkpoint or the Phase 2
-acceptance record. Do not treat a repair branch or CI result as release,
-publication, or consumer-ownership authority until the owning lane resumes.
-
-Phase 2 now owns hardening, the Nx 23.1.2 upgrade, lifecycle and performance
-work, version inventory, deterministic candidate staging, and then sequential
-formal/published-package regression across the consumers.
+Capture Runtime 0.4.2 was published on 2026-09-27 and Cert Prep pins it on
+`main` (PR #21). The canonical JPEG passed published-mode practical OCR in the
+installed app, and the Capture consumer gate passed for the 0.4.2 release
+candidate (gate fixes: PRs #22-#24). Slices 1-3 are done. Slices 4-7 (runtime
+promotion store, package-defined semantic result, supervision adapter,
+close/restart reconciliation, and the performance baseline) are open hardening
+work; 0.4.2 consumption does not depend on them. The producer's release
+procedure is `.agents/GUIDES/release-runbook.md` in the sibling
+`capture-workbench` checkout.
 
 Audio transcription/translation is a separate domain and acceptance lane; it
-is not part of this OCR-only Phase 2 TODO.
-
-## Continuation checkpoint (2026-09-21)
-
-`CERT_PREP_CHECKOUT` resolves to this repository, clean before this documentation
-edit on `docs/capture-runtime-042-phase2` at
-`948f875a91ac032b3e7dfda0e0d9bc3de9a63b07`. Earlier checkpoints and test counts
-below remain historical; no Cert Prep tests were rerun for this checkpoint.
-
-- Exact schema-3 OCR mapping/provenance (`ocr_summary.py`, `mapping.py`),
-  candidate inventory/preflight (`tools/capture-runtime-version-check.mts`,
-  `tools/capture-candidate-gate.mts`), and producer-notice foundations are
-  present. Nx is `23.1.2`, but active npm, Python SDK, and Rust launcher pins
-  remain `0.4.1`; these foundations do not establish migration readiness.
-- Per the continuation handoff, producer HEAD
-  `12fe94c60970876413628d619b732c59fae67585` contains the private strict
-  RequestRef metadata codec, not a delivered public authenticated RequestRef
-  `start_or_get`/`get`/`cancel`/`delete` operation or SDK. Public R3
-  activate/observe/close repairs now pass three complete uncached standard Nx
-  runs at four threads (322 library, 7 API, 12 lifecycle tests per run), plus
-  33 fixture tests and desktop compile/53 tests. Two fresh producer reviews,
-  each lasting over 30 minutes, found no blockers in that bounded repair.
-  These are local source checks, not a delivered SDK or candidate;
-  see the [producer closeout record](../../../capture-workbench/.agents/TODOS/capture-runtime-042-r3-closeout.md).
-- Host compute-policy deletion and lifecycle/promotion wiring remain gated by
-  the delivered public `0.4.2` SDK and verified immutable producer-D3
-  candidate/ledger. No candidate has been created or installed in this
-  continuation. Private foundations and code-only fixtures cannot replace
-  that handoff; do not create substitute APIs or close migration/release boxes.
-
-The [consumer specification](../SPECS/capture-runtime-consumer.md) remains the
-ownership and rollback authority; this addition records readiness only.
-
-## Current implementation status (2026-09-13)
-
-The 2026-09-09 checkpoint above remains the historical Phase 1 baseline. This
-status note records reviewed implementation evidence only; it does not change
-any unchecked Phase 2 slice.
-
-- Cert Prep is clean at `df9175a2deffe9f6297abf327ec824fb6c0386c4` and contains
-  the reviewed candidate artifact receipt/preflight binding, exact OCR
-  projection mapping, and producer-notice presentation foundations. These are
-  consumer guards and presentation seams; no candidate SDK was installed or
-  loaded and no promotion was performed.
-- Capture Workbench's current committed head is `fa5ed29e0b55dd5fc02f400634f3803fb3f56dc4`,
-  following `ca9500b`, `5d92374`, `4c36ce1`, and `6127eca`. The private R3
-  Running/Closing/native and staging-cleanup/Terminal foundations are committed
-  there. The producer public SDK and the required `GroupLease`, restart,
-  recovery, and `RequestRef` seams, together with a verified D3 candidate,
-  remain pending dependencies for Cert.
-- Capture evidence is reported as `231` main plus `14` fixture tests passing,
-  with a known startup flake. This is test evidence only: it does not establish
-  an installed package, publication, or real JPEG/PDF OCR acceptance. The
-  existing `0.4.1` source pins remain active, and synthetic `0.4.2` fixtures do
-  not prove a delivered and loaded `0.4.2` schema-3 SDK.
-- Slice 1 migration readiness and the later candidate/promotion/D4/D7 slices
-  therefore stay unchecked. Cert must wait for the producer public API and an
-  immutable, verified D3 candidate/ledger; it must not create substitute
-  interfaces or claim readiness from the private producer commits.
-
-Rollback boundaries for the next slices remain local: a public-API adapter
-change is reverted additively without changing the active `0.4.1` source; a
-failed candidate preflight discards only proven isolated candidate staging and
-leaves the active pointer/session unchanged; after a pointer commit, retain the
-selected candidate with its reconcile refs/proofs and recover it independently
-rather than restoring the prior active root. D4/D7 evidence changes are
-reverted by their own evidence/adapter commit while durable source and domain
-rows remain preserved; no publication or producer stable-pointer rollback is
-implied.
-
-This TODO is the consumer delta only. Capture Runtime remains the sole OCR
-projection owner. Cert Prep owns durable sources, review overrides, export,
-and persistence. **Proposed** `DesktopRuntimeSupervisor` and **proposed**
-`RuntimeAssetInstaller` are future adapter names only. The proposed
-`apps/cert-prep-desktop/src-tauri/src/runtime_promotion.rs` is the sole Cert
-owner for the local installed-runtime pointer and `RuntimePromotionReceiptV1`;
-it is not the producer session journal or D8 stable-pointer owner. Its receipt
-  must carry candidate/prior content identities, pointer generation/hash,
-  revision/CAS, the candidate complete producer group/root binding and verified
-  sink receipt, flushed activation and `commitIntent` states,
-  degraded/block-next-promotion flags, separate nullable candidate/prior
-  group/ref slots, and only the `proofSha256` returned by each addressed
-  producer reconcile result; there is no independent proof-reference field and
-  no `PreparedGroup`, `GroupLease`, or permit field. Candidate preparation uses
-  the exact producer `prepare_group(plan, sink) -> PreparedGroup` contract and
-  sink `persist`/`read_back`/`verify` calls; Cert flushes the complete binding
-  and verified receipt as `CandidatePrepared` before calling
-  `activate_group(prepared)`. The producer-private `PreparedGroup` is opaque,
-  move-only, live-only, and nonserializable; all-root loaded-worker/readiness
-  identity must be proved before Cert flushes `CandidateReady`. Candidate and
-  prior group refs are distinct. For `prior = null`, the prior ref is null and
-  retirement is `not_applicable`; after candidate/session conditions, first
-  install advances directly from `NewActiveCommitted` to `RetiredProved`
-  without degrading or blocking forever. For later promotions with a prior session, candidate
-  pre-commit cleanup and prior post-commit retirement remain independently
-  recoverable. On any Cert restart, old prepared/ready receipts are
-  observation-only: Cert never reuses a private permit or resumes their group.
-  Only a still-running original producer with verified live ownership may
-  continue an existing live lease semantically; after producer restart/lost
-  handle, old refs reconcile observe-only until terminal/no-resource proof, then
-  any launch uses fresh refs/prepare. The producer exposes
-  `RuntimeSessionJournal::reconcile(ReconcileRef) -> ReconcileResult` as an
-  opaque, addressable observe-only semantic API; Cert never assumes a local Job
-  handle, process handle, PID, path, port, or takeover lease. Only complete
-  absence/listener/staging proof may advance a ref; present, reused,
-  unqueryable, or ambiguous observations remain `reconcile-required` and
-  degraded where a prior retirement exists. Current owners and symbols remain
-  the paths listed in the [consumer specification](../SPECS/capture-runtime-consumer.md).
-The Python backend's `RuntimeInstallationManager`/`RuntimeInstaller` in
-`apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_installations/`
-continue to own provider/model installation jobs only; they do not write the
-desktop pointer or receipt.
-
-The acceptance seam consumes only the future producer package/bundle
-`@capture-runtime/acceptance-contract` (proposed at
-`packages/capture-acceptance-contract/`) and its literal D3/D6-bound
-`contractSha256`. That package/bundle is the only acceptance schema/codec/hash
-authority and is absent at this checkpoint, so package/target creation is a
-producer discovery/creation stop. Cert does not define, extend, or restate
-`ProducerChildScopeV1`, `ProducerChildInvocationV1`,
-`ConsumerSemanticResultV1`, or `AcceptanceChildWireV1`. The authenticated
-runtime contract-set for `RuntimeReady` and OCR projection is separate
-(`contractSetVersion`/`contractSetSha256`); the two hashes are never compared
-or substituted.
-Every local pointer observation is the closed union
-`absent | present{generation,sha256}` in the receipt, intent, logical CAS,
-reread, and crash matrix. First install uses pointer observation `absent` with
-content identity `prior = null`; an unexpected present pointer is a conflict/
-`InstallAmbiguous`.
-
-Every item below is an independently reviewable slice. Each item names exact
-owned paths/symbols, the red proof to write first, prerequisites, a stop
-condition, a complete discovered Nx verification floor, rollback, and the
-smallest commit boundary. No candidate staging is allowed before Slice 1 is
-green. The listed verification is the green proof; an unavailable package
-manager or undiscovered target is a discovery-stop, never a green claim.
+is not part of this OCR-only TODO.
 
 ## Slices
 
@@ -188,7 +43,7 @@ manager or undiscovered target is a discovery-stop, never a green claim.
   - Commit boundary: `docs(phase2): define cert runtime consumer hardening`;
     record the exact SHA.
 
-- [ ] **Slice 1: Nx 23.1.2 and canonical version inventory.** This is the
+- [x] **Slice 1: Nx 23.1.2 and canonical version inventory.** This is the
       first executable Phase 2 slice. Keep `pnpm@12.0.0`, upgrade the workspace
       Nx packages and lockfile from the discovered `23.1.0` baseline to
       `23.1.2`, then make one read-only version/projection inventory/check
@@ -269,8 +124,9 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     candidate, immutable ledger, and verified candidate-delivered/loaded
     0.4.2 schema-3 contract remain unavailable, so the checkbox and candidate
     staging stay blocked pending that evidence.
+  Done: Nx 23.1.2 with pnpm 12.0.0; the version inventory is enforced by `tools/capture-runtime-version-check.mts` (0.4.2 migration, PR #21).
 
-- [ ] **Slice 2: exact OCR projection mapping and legacy-write deletion.** Keep
+- [x] **Slice 2: exact OCR projection mapping and legacy-write deletion.** Keep
       `windowsml-ocr` as the producer engine and `windowsml_ocr` as the Cert
       durable discriminator. Ignore the embedded layer and reject every new
       `direct_pdf`/`embedded`/`mixed` write; retain legacy rows only for read
@@ -317,8 +173,9 @@ manager or undiscovered target is a discovery-stop, never a green claim.
     replacement tests; preserve legacy rows and durable domain records.
   - Commit boundary: `fix(phase2): enforce exact OCR projection mapping`;
     record red/green test names and SHA.
+  Done: `domains/capture_workbench/ocr_summary.py` maps the producer OCR projection.
 
-- [ ] **Slice 3: delete-first host compute-policy inventory and pass-through contract.**
+- [x] **Slice 3: delete-first host compute-policy inventory and pass-through contract.**
       Once the producer's generated public readiness contract is available,
       remove host policy duplication rather than adding another adapter layer.
       Hosts decode the exact public `RuntimeReady`/
@@ -400,6 +257,7 @@ manager or undiscovered target is a discovery-stop, never a green claim.
   - Commit boundary: `fix(phase2): remove cert compute policy duplication`;
     record the delete-first inventory, red/green names, generated contract
     identity, and exact SHA.
+  Done: `CertPrepCaptureCoordinator._assert_ocr_compute_preflight` with the models in `host_models.py`.
 
 - [ ] **Slice 4: immutable candidate/active roots, legacy observation, and
        identity gate.** Define separate immutable candidate and active roots, a
@@ -986,97 +844,7 @@ manager or undiscovered target is a discovery-stop, never a green claim.
   - Commit boundary: `test(phase2): record cert OCR performance baseline`;
     record only privacy-safe baseline identities and metrics.
 
-- [ ] **Slice 8: D4 pre-publication immutable-candidate acceptance and producer handoff.** Use the
-      exact producer D3 bytes in Cert's installed real journey: JPEG first,
-      cleanup/model-memory release, PDF page 1, restart persistence,
-      review/export, and cleanup. Require producer `windowsml-ocr` provenance,
-      Cert `windowsml_ocr`, JPEG CER <= 3%, PDF page-1 CER <= 1%, and zero
-      missing critical anchors. Cert imports the exact producer
-       future producer bundle/package `@capture-runtime/acceptance-contract`
-       (proposed `packages/capture-acceptance-contract/`) and the exact
-       D3-bound `contractSha256`; that package is the sole authority for the
-       result schema/codec/manifest/hash and is absent at this checkpoint, so
-       package/target creation is a discovery/creation stop. Cert consumes only
-       the frozen/read-only D4 invocation from
-       `CAPTURE_ACCEPTANCE_INVOCATION_PATH`, verifies its canonical digest, and
-       atomically create-new exactly one package-defined
-       `ConsumerSemanticResultV1` at `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`;
-       the runtime contract-set identity (`contractSetSha256`) remains separate
-       from the acceptance bundle hash;
-      the producer owns mutable `CAPTURE_ACCEPTANCE_SCOPE_PATH`, validates the
-      result, proves cleanup, and later writes `AcceptanceChildWireV1` at
-      `CAPTURE_ACCEPTANCE_WIRE_PATH`. Cert never writes the scope/wire, waits
-      for LAW, aggregates ledgers, or moves/mutates the producer stable pointer.
-  - Owned paths/symbols: **proposed**
-    `apps/cert-prep-desktop/src-tauri/src/runtime_promotion.rs`
-    (`RuntimePromotionStore`, `RuntimePromotionReceiptV1`) as the sole Cert
-    local pointer/receipt owner, with `apps/cert-prep-desktop/src-tauri/src/backend.rs`
-    (`install_capture_runtime`, `start_capture_runtime`) as callers;
-    `apps/cert-prep-desktop/scripts/acceptance-artifacts.mts`
-    (`writeAcceptanceManifest`) and its
-    `apps/cert-prep-desktop/scripts/acceptance-artifacts.test.mts` tests;
-    `apps/cert-prep-desktop/scripts/acceptance-real.mts`
-     (`acceptancePassed`, caller/verdict only),
-    `apps/cert-prep-desktop/scripts/acceptance-real-options.mts`
-    (`createAcceptanceSmokeOptions`, `loadPhase1FinalCandidate`,
-    `strictRuntimeIdentity`, and proposed private `FixtureCapabilityResolver`
-    adapter for ordered fixture capabilities and full-truth oracle handles),
-    `apps/cert-prep-desktop/scripts/ocr-truth-contract.mts`
-    (`parseOcrTruthManifest`, `evaluateOcrTruth`),
-    `apps/cert-prep-desktop/scripts/ocr-page-record-evidence.mts`
-    (`assertOcrPageRecordEvidenceIntegrity`),
-    `apps/cert-prep-desktop/scripts/phase1-acceptance-evidence.mts`
-    (`buildPhase1AcceptanceEvidence`),
-    `apps/cert-prep-desktop/scripts/phase1-final-identity.mts`
-    (`loadPhase1FinalEvidence`),
-    `apps/cert-prep-desktop/scripts/ocr-semantic-evidence.mts`
-     (`serializePrivacySafeOcrSemanticEvidence`, `OCR_NORMALIZATION_VERSION`),
-     and the candidate receipt's separate nullable candidate/prior
-     `ReconcileRef` slots with only returned `proofSha256`,
-    `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/mapping.py`
-    (`capture_document_to_pdf_extraction`, `_ocr_only_extraction_method`), and
-    `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/persistence.py`
-    (`publish_capture_document`).
-  - Prerequisite: Slices 1-7 and Slice 4.5 green, producer D3 candidate record complete,
-     candidate root verified, and producer Capture JPEG -> PDF page-1 gate
-     green with cleanup before Cert starts.
-   - Red proof (write first): local URL-only transport, a supplied old
-      executable, protocol fake, candidate with mismatched worker/contract,
-      CER over threshold, missing anchor, garbage around otherwise present
-      anchors, missing full private normalized reference, missing/false scoped
-      lifecycle flag, writable/replaced invocation, canonical-digest/contract
-      mismatch, reordered or incomplete fixture results, or incomplete cleanup
-      must fail before a passing D4 semantic result or producer wire. Prove D4
-       evidence is labeled pre-publication, Cert writes only one exact
-       package-defined semantic result matching the ordered package invocation,
-      the producer writes the child wire only after cleanup, and no producer
-      stable pointer or aggregate ledger is changed. `anchorOnly` and
-      `parseOcrAnchorExpectation` are deleted/prohibited in the formal path;
-      full private normalized truth plus critical anchors is mandatory and
-      synthetic anchor-only fixtures are unit-only.
-  - Verification: `corepack pnpm nx run cert-prep-desktop:capture-candidate-gate-test --skip-nx-cache`;
-     `corepack pnpm nx run cert-prep-desktop:package-qa-test --skip-nx-cache`;
-     `corepack pnpm nx run cert-prep-desktop:acceptance-real --skip-nx-cache`.
-  - Stop condition: candidate identity is incomplete, the semantic result is
-      partial, invocation/result binding or canonical digest is wrong, result
-      contains raw text/token/path/process data, D4 is reported as published
-      acceptance, formal full-truth evaluation still accepts anchor-only input,
-      Cert writes a wire/cleanup proof, waits for LAW, or writes an
-      aggregate/stable-pointer mutation. Preserve the failed result and do not
-      start LAW from a stopped Cert lane.
-  - Rollback: apply Slice 4 transaction semantics. Before the local active
-     commit, discard only isolated candidate staging and keep active untouched.
-     After commit, do not restore the old active or producer stable pointer;
-     keep the new active degraded with its exact candidate/prior reconcile refs
-     and returned `proofSha256` values and retry or reconcile the relevant slot
-     independently. Preserve the consumer semantic result and failure
-     evidence; the producer emits no child wire until validation/cleanup pass.
-   - Commit boundary: `test(phase2): accept immutable cert candidate`;
-      record candidate hashes, exact producer contract version/hash, Cert D4
-      semantic-result SHA, transaction state, and the producer cleanup/wire
-      handoff only when producer-emitted.
-
-- [ ] **Slice 9: D7 published download-back acceptance and producer handoff.**
+- [x] **Slice 9: D7 published download-back acceptance and producer handoff.**
       After D5 publishes the exact D3 bytes and D6 verifies download-back
       hashes, rerun the same Cert journey from downloaded bytes only. D7 is
       formal published acceptance. Cert imports the exact producer
@@ -1173,6 +941,7 @@ manager or undiscovered target is a discovery-stop, never a green claim.
       D7 semantic-result SHA, and the producer-directed handoff to LAW when the
       producer wire exists. Producer aggregation and D8 are not part of this
       commit.
+  Done: published-mode practical OCR of the canonical JPEG in the installed app against published 0.4.2 (2026-09-27); PDF page 1 is tracked in `cert-prep-pdf-image-acceptance.md`.
 
 ## Cross-slice rules
 
@@ -1186,31 +955,17 @@ manager or undiscovered target is a discovery-stop, never a green claim.
   fallback was selected because no dGPU/iGPU was usable.
 - Real model runs are sequential: Capture Workbench JPEG then PDF page 1,
   Cert Prep, then GX Law Prep. Each owner proves cleanup before handoff.
-- Phase 1 is complete at `local-probe` only; it is not published or installed
-   formal acceptance. Cert D4 is pre-publication candidate acceptance that
-   consumes the future producer bundle/package
-   `@capture-runtime/acceptance-contract` and exact D3-bound `contractSha256`;
-   that package is the sole authority for the result schema/codec/manifest/hash
-   and is absent at this checkpoint, so package/target creation is a
-   discovery/creation stop. Cert consumes only the frozen/read-only invocation
-   at `CAPTURE_ACCEPTANCE_INVOCATION_PATH`, verifies its canonical digest, and
-   atomically create-new one exact package-defined `ConsumerSemanticResultV1`
-   at `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`. Cert D7 repeats this from D6
-   download-back bytes with a fresh invocation and the same exact result type at
-   that distinct path. The runtime contract-set identity (`contractSetSha256`)
-   remains separate from the acceptance bundle hash. The producer owns mutable
-  `CAPTURE_ACCEPTANCE_SCOPE_PATH`, validates the result, proves cleanup, and
-  later writes `AcceptanceChildWireV1` at `CAPTURE_ACCEPTANCE_WIRE_PATH`,
-  aggregates child wires, and moves its stable pointer. Cert never writes the
-  scope/wire, waits for LAW, aggregates ledgers, or owns D8. The package-defined
-  ordered fixture assignments are supplied through the
-   private `FixtureCapabilityResolver` adapter for the JPEG and scanned PDF
-   page-1 capabilities; the package codec writes the exact ordered semantic
-   result and only canonical measurements. No Cert-local privacy/cleanup fields
-   or result-schema restatement is allowed. Full private normalized reference
-   plus critical anchors is mandatory; formal D4/D7 deletes/prohibits
-   `anchorOnly` and `parseOcrAnchorExpectation`, and a garbage-around-anchors
-   result must not receive CER 0. Synthetic anchor-only fixtures are unit-only.
+- Cert's acceptance consumes the producer's `@capture-runtime/acceptance-contract`
+  package (`packages/capture-acceptance-contract` in `capture-workbench`). Cert
+  reads only the frozen invocation at `CAPTURE_ACCEPTANCE_INVOCATION_PATH`,
+  verifies its canonical digest, and creates exactly one package-defined
+  `ConsumerSemanticResultV1` at `CAPTURE_ACCEPTANCE_SEMANTIC_RESULT_PATH`. The
+  runtime `contractSetSha256` is separate from the acceptance `contractSha256`.
+  The producer owns the scope at `CAPTURE_ACCEPTANCE_SCOPE_PATH`, validates the
+  result, proves cleanup, writes `AcceptanceChildWireV1`, and moves the stable
+  pointer; Cert never writes the scope or wire and never waits for LAW. Fixture
+  assignments are resolved by the private `FixtureCapabilityResolver`; no
+  Cert-local privacy/cleanup fields or result-schema restatement is allowed.
 - Promotion is `CandidatePrepared -> CandidateReady -> NewActiveCommitted ->
     RetiredProved` for first install (`prior = null`) or the proven no-session legacy prior, and
     `CandidatePrepared -> CandidateReady -> NewActiveCommitted ->
@@ -1243,7 +998,3 @@ manager or undiscovered target is a discovery-stop, never a green claim.
   not an OCR Phase 2 requirement.
 - Image-flow changes require design and both review axes before code; TDD red
   tests cross the public seam; staging is isolated before installed evidence.
-- The historical [lazy-install decision](../DECISIONS/lazy-capture-runtime-installation.md)
-  and [packaged-smoke spec](../SPECS/packaged-capture-workbench-smoke.md) remain
-  for traceability. No lazy/package TODO files exist; do not invent or revive
-  those references as active work.

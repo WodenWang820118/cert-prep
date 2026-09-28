@@ -540,22 +540,28 @@ implemented.
   producer remains the sole scope owner and later emits `AcceptanceChildWireV1`
   at its wire path, including cleanup/privacy fields.
   Cert never writes or receives the mutable scope/wire output.
-- **Treating historical documents as active task files:** rejected because
-  only the existing [lazy-install decision](lazy-capture-runtime-installation.md)
-  and [packaged-smoke spec](../SPECS/packaged-capture-workbench-smoke.md) are
-  present; they are historical source documents, not active task owners.
 
 ## Supersession, review, and documentation rollback
 
 This record supersedes older Cert statements that denied the completed Phase 1
 local-probe gate, treated local-probe evidence as published/release acceptance,
-or allowed embedded/mixed output for a new import. The historical [lazy-install
-decision](lazy-capture-runtime-installation.md) and [packaged-smoke
-spec](../SPECS/packaged-capture-workbench-smoke.md) remain only for traceability;
-there are no corresponding TODO files. Their body text does not define D4/D7,
-the immutable root/pointer contract, or the current projection mapping.
+or allowed embedded/mixed output for a new import. The earlier lazy-install and
+packaged-smoke documents were removed; this record and the consumer
+specification replace them.
 
 The review unit is the exact documentation commit. Any subsequent commit,
 generated artifact, or rebase invalidates both review axes. The rollback is an
 additive revert of the documentation commit only; runtime assets, database
 records, lockfiles, and published artifacts are untouched.
+
+## 2026-09-27 publication
+
+Capture Runtime 0.4.2 was published and Cert Prep moved its pins to it (PR #21)
+after its CI and a published-mode practical OCR run of the canonical JPEG in
+the installed app. Test scope was relaxed in favour of publishing: the fake
+host-flow smoke was removed, and the candidate gate treats a candidate equal to
+the pinned version as the published-pin path. The Capture candidate gate was
+repaired for pnpm 12 (PRs #22-#24): the pinned `pnpm/action-setup`, no
+`--lockfile=false`, committed pins restored after the candidate install, the
+runtime client resolved beside the UI package in pnpm's store, and GitHub
+Packages auth for the checks.

@@ -6,27 +6,13 @@ repository must consume and prove. Producer implementation policy remains in
 Capture Workbench's canonical Phase 2 documents; this document does not copy
 that policy.
 
-## Current checkpoint (2026-09-09)
+## Status
 
-- Phase 1 is complete at the `local-probe` tier. Capture Workbench, Cert Prep,
-  and GX Law Prep each passed real local-package OCR, and Cert Prep's
-  local-package OCR evidence is accepted at that tier.
-- This is not published or release evidence. The formal `capture-runtime`
-  0.4.2 candidate/package remains unbuilt and unpublished.
-- Capture Workbench PR #39 at `c6d2140`, Cert Prep PR #19 at
-  `d5af0f2a3939949bc10667a40252e96963ba64bb`, and their recorded heads are
-  release-freshness facts only; they do not reopen the completed Phase 1
-  status.
-- Older local OCR records remain historical and do not substitute for the
-  accepted local-probe result or for published/release evidence.
-- CI repair is paused and has no authority over this checkpoint or the Phase 2
-  acceptance record. Do not treat a repair branch or CI result as release,
-  publication, or consumer-ownership authority until the owning lane resumes.
-
-This checkpoint records local-probe acceptance, not published/release
-acceptance. Phase 2 now owns hardening, the Nx 23.1.2 upgrade, lifecycle and
-performance work, version inventory, deterministic candidate staging, and
-then sequential formal/published-package regression across the consumers.
+Capture Runtime 0.4.2 was published on 2026-09-27 and Cert Prep pins it on
+`main`. The canonical JPEG passed published-mode practical OCR in the installed
+app, and the Capture consumer gate passed for the 0.4.2 release candidate.
+Open consumer work is tracked in the [consumer TODO](../TODOS/capture-runtime-consumer.md)
+and the [acceptance TODO](../TODOS/cert-prep-pdf-image-acceptance.md).
 
 ## Purpose and non-goals
 
@@ -1018,11 +1004,8 @@ docs checks and `git diff --check` only.
 
 ## Supersession and documentation rollback
 
-The historical [lazy-install decision](../DECISIONS/lazy-capture-runtime-installation.md)
-and [packaged-smoke spec](packaged-capture-workbench-smoke.md) remain in the
-tree for traceability. Neither historical document has an active task file;
-references that treat either one as current implementation work are stale and
-must not be used. This specification supersedes their consumer policy for 0.4.2, including the D4/D7
+The earlier lazy-install and packaged-smoke documents were removed. This
+specification defines the consumer policy for 0.4.2, including the D4/D7
 acceptance distinction, immutable roots, exact engine/discriminator mapping,
 and stable-pointer rule. It also supersedes stale statements that deny the
 completed Phase 1 local-probe gate or treat it as published/release evidence.

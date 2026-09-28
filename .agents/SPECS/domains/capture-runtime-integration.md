@@ -135,6 +135,7 @@ published-byte handshake/requirements smoke. A local candidate may be staged
 from `CERT_PREP_CAPTURE_RUNTIME_RELEASE_DIRECTORY`, but that is not published
 release evidence. The independent Cert Prep Tauri bundle, not the Capture
 Workbench app, is the consumer artifact. The real PDF OCR/audio consumer smoke
-is an opt-in model-enabled gate for the engine-bearing `0.4.1` release.
+is an opt-in model-enabled gate for each engine-bearing release (currently
+`0.4.2`).
 Source-import or registry prototypes and deterministic fixtures prove
 distribution or host protocol only; they do not close the real engine smoke.
