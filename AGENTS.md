@@ -31,4 +31,4 @@
 
 # Testing
 
-- Tests must not leave temporary files. Node test targets load `apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.mts` with `--import`, which gives each process a private temp root removed on exit; pytest runs with `tmp_path_retention_policy = "none"`.
+- Tests must not leave temporary files. Node test targets load `apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.mts` with `--import`, which gives each process a private temp root removed on exit; pytest uses `tmp_path_retention_policy = "failed"` (passed tests' dirs are removed; only failed ones from the last 3 sessions stay). Never use `"none"`: it disables pytest's session lock, so concurrent pytest runs delete each other's temp dirs.
