@@ -28,3 +28,7 @@
 - `@gx-capture/*` packages come from GitHub Packages, which needs a token even for public packages (`packages: read` plus `NODE_AUTH_TOKEN` in workflows).
 - The Capture producer dispatches `.github/workflows/capture-candidate-gate.yml` during a release. Before that, pre-run `tools/capture-candidate-gate.mts` locally against the downloaded release candidate, following `.agents/GUIDES/release-runbook.md` in the sibling `capture-workbench` checkout. Keep the gate's `pnpm/action-setup` pin identical to `ci.yml`.
 - Open Capture consumer work is in `.agents/TODOS/capture-runtime-consumer.md` and `.agents/TODOS/cert-prep-pdf-image-acceptance.md`. Handwriting OCR quality is a known 0.4.2 limitation.
+
+# Testing
+
+- Tests must not leave temporary files. Node test targets load `apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.mts` with `--import`, which gives each process a private temp root removed on exit; pytest uses `tmp_path_retention_policy = "failed"` (passed tests' dirs are removed; only failed ones from the last 3 sessions stay). Never use `"none"`: it disables pytest's session lock, so concurrent pytest runs delete each other's temp dirs.
