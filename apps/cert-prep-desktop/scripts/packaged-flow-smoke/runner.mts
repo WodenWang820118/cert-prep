@@ -1,3 +1,6 @@
+// PDF leg of the real OCR acceptance (see ../acceptance-real.spec.mts) and the
+// packaged product flow: runtime install, project, scanned-PDF OCR, questions,
+// Full Exam, Random Quiz or Markdown export, and persistence after a restart.
 import { existsSync, rmSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 

@@ -179,6 +179,11 @@ jobs:
       - name: Build and verify the NSIS installer through Nx
         run: pnpm nx run cert-prep-desktop:package-qa
 
+      # Guards the 8 MiB main-thread stack the desktop needs; only a release
+      # build has the binary to inspect.
+      - name: Verify the built desktop stack reserve
+        run: node --test apps/cert-prep-desktop/scripts/desktop-startup-probe-built.test.mts
+
       - name: Collect fail-closed dependency inventories
         shell: pwsh
         run: |

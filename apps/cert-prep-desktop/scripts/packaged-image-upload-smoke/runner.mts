@@ -1,3 +1,6 @@
+// JPEG leg of the real OCR acceptance (see ../acceptance-real.spec.mts):
+// launches the packaged app, uploads one scanned image, waits for real OCR, and
+// checks the text against the expectation file.
 import { createHash } from 'node:crypto';
 import {
   existsSync,

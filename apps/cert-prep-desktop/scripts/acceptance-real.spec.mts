@@ -1,3 +1,20 @@
+// Real OCR acceptance: the journeys closest to how a student uses Cert Prep.
+// `nx run cert-prep-desktop:acceptance-real` (acceptance-real.mts) drives the
+// packaged desktop app (CERT_PREP_ACCEPTANCE_EXE) over CDP with the published
+// Capture Runtime and real OCR. Question generation uses the fake LLM
+// (CERT_PREP_PACKAGE_SMOKE_LLM_PROVIDER=fake) so results are deterministic.
+//
+// 1. JPEG (packaged-image-upload-smoke): upload one scanned image, OCR it, and
+//    check the document becomes ready with chunks and the expected text.
+// 2. PDF (packaged-flow-smoke): consent to the Python runtime install, create a
+//    project, upload the scanned PDF and OCR it, edit a question, take a Full
+//    Exam and a Random Quiz (or the Markdown export), then restart the app and
+//    verify the project and review state persisted.
+//
+// CERT_PREP_ACCEPTANCE_IMAGE / _PDF name the private fixtures and
+// *_EXPECTATIONS the text each OCR result must contain; the fixtures are not
+// tracked. Each journey uses its own temporary app-data directory, removed at
+// the end. Only the privacy-free runtime screens are pixel baselines.
 import { expect, test } from '@playwright/test';
 import { writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';

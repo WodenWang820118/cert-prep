@@ -17,6 +17,9 @@ env:
   NX_CLOUD_DISTRIBUTED_EXECUTION: 'false'
   PYTHON_VERSION: '3.12'
 
+# PR and main run the same checks in two parallel jobs. Platform-neutral lint
+# and tests run once, on Linux; the Windows job covers only what needs the
+# shipped platform: packaging, the Capture Runtime install, and the Tauri host.
 jobs:
   portable-quality:
     name: Portable quality
@@ -76,6 +79,9 @@ jobs:
           -p cert-prep cert-prep-contracts cert-prep-ollama
           cert-prep-backend
           --parallel=3
+
+      - name: Test generated API client
+        run: pnpm nx run cert-prep-api:vite:test
 
       - name: Build Angular application
         run: pnpm nx run cert-prep:build
@@ -140,20 +146,6 @@ jobs:
           --frozen
           --reinstall-package capture-runtime-client
 
-      - name: Lint Windows-owned Python and Angular projects
-        run: >-
-          pnpm nx run-many -t lint
-          -p cert-prep-contracts cert-prep-ollama
-          cert-prep-backend cert-prep
-          --parallel=2
-
-      - name: Test Windows-owned Python and Angular projects
-        run: >-
-          pnpm nx run-many -t test
-          -p cert-prep-contracts cert-prep-ollama
-          cert-prep-backend cert-prep
-          --parallel=2
-
       - name: Type-check desktop scripts
         run: pnpm nx run cert-prep-desktop:typecheck-scripts
 
@@ -177,6 +169,12 @@ jobs:
           uv run --isolated --no-project `
             --with 'capture-runtime-client==0.4.2' `
             -- python -c "import capture_runtime_client; assert capture_runtime_client.CAPTURE_RUNTIME_VERSION == '0.4.2'"
+
+      - name: Test Capture candidate gate and OCR evidence tooling
+        run: >-
+          pnpm nx run-many -p cert-prep-desktop
+          -t capture-candidate-gate-test capture-candidate-install-binding-test
+          capture-fresh-projection-test phase1-evidence-test
 
       - name: Test Tauri host
         run: pnpm nx run cert-prep-desktop:cargo-test

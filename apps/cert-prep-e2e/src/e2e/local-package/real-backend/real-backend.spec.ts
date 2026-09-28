@@ -1,3 +1,10 @@
+// Real-backend browser E2E, run by release CI
+// (`cert-prep-e2e:e2e-real-backend-local-package`): the Angular app and the
+// real FastAPI backend with a real Ollama model, while
+// Capture Runtime is the deterministic fixture in capture-runtime-fixture.mts
+// (no real OCR). It proves ingestion, SSE replay, question generation, and
+// Full Exam across the real HTTP boundaries. Real OCR on a packaged app is
+// apps/cert-prep-desktop/scripts/acceptance-real.spec.mts.
 import { createHash } from 'node:crypto';
 import { mkdirSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';

@@ -1,3 +1,8 @@
+// Mocked browser regression: user journeys in the Angular app with every API
+// call answered by installMockCertPrepApi (no backend, no OCR, no LLM). It
+// covers upload queues and ordering, practice, Random Quiz, Full Exam, review,
+// and project switching. Real OCR on a packaged app is
+// apps/cert-prep-desktop/scripts/acceptance-real.spec.mts.
 import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
