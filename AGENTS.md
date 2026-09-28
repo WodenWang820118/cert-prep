@@ -22,21 +22,6 @@
 
 <!-- nx configuration end-->
 
-# Claude Profile MCP Servers
-
-- `claude-deepseek-mcp` and `claude-glm-mcp` are Codex MCP servers, not shell CLI wrappers. Use the `mcp__claude_deepseek_mcp` and `mcp__claude_glm_mcp` tool namespaces when a second-opinion review, plan critique, or adversarial evaluation is requested. `claude-deepseek` and `claude-glm` are user CLI wrappers only; do not route Codex MCP calls through those names.
-- If the namespace is not already available in the active tool list, use `tool_search` to lazy-load it before falling back to any shell command. Only use a CLI fallback when the MCP server is unavailable and the user has approved or explicitly requested that fallback.
-- Prefer `Agent` tool calls for multi-step review, critique, or adversarial evaluation prompts, and ask for a user-visible structured report. Do not request hidden chain-of-thought.
-- Required report fields for reviews are `publicReasoningSummary`, `evidenceChecked`, `findings`, `blockers`, `risks`, `missingDecisions`, `suggestedMarkdownSection`, and `writeRecommendation`.
-- Relay the structured report in the Codex session before or alongside any file write that depends on it.
-
-# Antigravity MCP Server
-
-- `agy_mcp` is the Codex MCP server for Antigravity CLI. Use it for second-opinion review, plan critique, adversarial evaluation, or repository-grounded planning; use this general MCP name consistently.
-- If the namespace is not already available in the active tool list, use `tool_search` to lazy-load `agy_mcp` before falling back to any shell command.
-- Prefer `mode=review` for code review and `mode=planning` for implementation planning. Keep it read-only unless the user explicitly authorizes writes.
-- AGY has the global `grill-me` skill installed at `~/.gemini/config/skills/grill-me/SKILL.md`. When the user asks to be grilled or to stress-test a plan, ask `agy_mcp` to use `grill-me` and return user-visible questions or a concise report.
-
 # Capture Runtime integration
 
 - Cert Prep consumes Capture Runtime **0.4.2**. The pin lives in `tools/capture-runtime-version.mts`, `package.json`, `pnpm-workspace.yaml`, `apps/cert-prep-backend/pyproject.toml` (and `uv.lock`), `apps/cert-prep-desktop/src-tauri/Cargo.toml` (and `Cargo.lock`), and `apps/cert-prep-desktop/src-tauri/src/constants.rs`. Bump them together; `tools/capture-runtime-version-check.mts` fails on any mismatch. Regenerate `libs/cert-prep-api` after contract changes.
