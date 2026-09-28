@@ -470,7 +470,8 @@ export function parseAcceptanceOcrPreflight(
 
 // A fresh install downloads the OCR worker from the GitHub release, which can
 // exceed ten minutes on slow links; callers with a longer run budget pass it.
-export const CAPTURE_REQUIREMENT_INSTALL_TIMEOUT_MS = 10 * 60_000;
+// The first OCR engine download from GitHub Releases can take ~15 minutes.
+export const CAPTURE_REQUIREMENT_INSTALL_TIMEOUT_MS = 30 * 60_000;
 
 export async function ensureCaptureRuntimeRequirement(
   run: SmokeRunState,
