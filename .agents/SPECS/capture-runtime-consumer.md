@@ -1004,8 +1004,10 @@ docs checks and `git diff --check` only.
 
 ## Supersession and documentation rollback
 
-The earlier lazy-install and packaged-smoke documents were removed. This
-specification defines the consumer policy for 0.4.2, including the D4/D7
+The [lazy-install decision](../DECISIONS/lazy-capture-runtime-installation.md)
+and [packaged-smoke spec](packaged-capture-workbench-smoke.md) describe the
+current install/start lifecycle and smoke harness. This specification defines
+the consumer policy for 0.4.2, including the D4/D7
 acceptance distinction, immutable roots, exact engine/discriminator mapping,
 and stable-pointer rule. It also supersedes stale statements that deny the
 completed Phase 1 local-probe gate or treat it as published/release evidence.

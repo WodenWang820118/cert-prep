@@ -5,7 +5,9 @@
 Capture Runtime 0.4.2 is published and Cert Prep pins it on `main`. The
 canonical JPEG passed published-mode practical OCR in the installed app on
 2026-09-27. The open items below cover the PDF page-1 leg, cleanup, restart,
-review/export proof, and the package-defined `ConsumerSemanticResultV1`.
+review/export proof, and the package-defined `ConsumerSemanticResultV1`. Gate
+inputs and thresholds are defined in the
+[acceptance SPEC](../SPECS/cert-prep-pdf-image-acceptance.md).
 
 Acceptance uses the producer's `@capture-runtime/acceptance-contract` package
 (`packages/capture-acceptance-contract` in `capture-workbench`): Cert reads the

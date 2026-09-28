@@ -545,9 +545,11 @@ implemented.
 
 This record supersedes older Cert statements that denied the completed Phase 1
 local-probe gate, treated local-probe evidence as published/release acceptance,
-or allowed embedded/mixed output for a new import. The earlier lazy-install and
-packaged-smoke documents were removed; this record and the consumer
-specification replace them.
+or allowed embedded/mixed output for a new import. The
+[lazy-install decision](lazy-capture-runtime-installation.md) and
+[packaged-smoke spec](../SPECS/packaged-capture-workbench-smoke.md) describe the
+current install/start lifecycle and smoke harness; this record and the consumer
+specification define the 0.4.2 consumer policy.
 
 The review unit is the exact documentation commit. Any subsequent commit,
 generated artifact, or rebase invalidates both review axes. The rollback is an
