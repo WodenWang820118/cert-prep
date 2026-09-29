@@ -9,5 +9,3 @@ stable taxonomy for runner-owned suites:
   `../cert-prep-backend/tests/integration`.
 - `e2e/local-package/`: local browser package E2E lives in
   `../cert-prep-e2e/src/e2e/local-package`.
-- `e2e/online-package/`: reserved for a pinned online package; no case is
-  enabled here.

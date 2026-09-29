@@ -44,7 +44,7 @@ not a prerequisite for manual review or deterministic tests.
 | [`apps/cert-prep`](apps/cert-prep) | Angular standalone-component UI, workbench screens, signal stores, API services, and runtime status views. |
 | [`apps/cert-prep-backend`](apps/cert-prep-backend) | FastAPI sidecar, SQLite persistence, source-document handling, question generation, practice, wrong-answer review, and runtime integration. |
 | [`apps/cert-prep-desktop`](apps/cert-prep-desktop) | Tauri 2 Windows host, backend process management, sidecar installation/verification, packaging, and desktop smoke/QA scripts. |
-| [`apps/cert-prep-e2e`](apps/cert-prep-e2e) | Playwright mock-UI tests and real-backend browser tests. |
+| [`apps/cert-prep-e2e`](apps/cert-prep-e2e) | Playwright browser tests of the UI against a route-mocked API. |
 | [`libs/cert-prep-api`](libs/cert-prep-api) | Generated TypeScript client and typed request helpers derived from the backend OpenAPI contract. |
 | [`packages/cert-prep-contracts`](packages/cert-prep-contracts) | Shared Python value types and provider protocols. |
 | [`packages/cert-prep-ollama`](packages/cert-prep-ollama) | Ollama discovery, lifecycle, model, profile, and installer utilities shared by the backend and related packages. |
@@ -123,19 +123,11 @@ corepack pnpm nx run cert-prep-contracts:test
 corepack pnpm nx run cert-prep-ollama:lint
 corepack pnpm nx run cert-prep-ollama:test
 corepack pnpm nx run cert-prep-e2e:e2e
-corepack pnpm nx run cert-prep-e2e:e2e-real-backend-local-package
 ```
 
-The real-backend browser suite is fail-closed: it requires an actual PDF and
-an Ollama provider, and it asserts a question from that PDF. Set
-`CERT_PREP_E2E_REAL_PDF` (or `CERT_PREP_ACCEPTANCE_PDF`),
-`CERT_PREP_E2E_REAL_EXPECTED_QUESTION`, and
-`CERT_PREP_E2E_LLM_PROVIDER=ollama` before running it. The route-mocked suite
-is the only suite allowed to use placeholder data and writes its explicitly
-mocked screenshots under `output/playwright/cert-prep/e2e-route-mocked-cycle`.
-Real-document screenshots are written under
-`output/playwright/cert-prep/e2e-real-document-cycle` only after the uploaded
-PDF source assertion succeeds.
+The browser suite answers every API call from a route mock and writes its
+screenshots under `output/playwright/cert-prep/e2e-route-mocked-cycle`. Real
+OCR on the packaged app is `cert-prep-desktop:acceptance-real`.
 
 ### Desktop and packaging
 
