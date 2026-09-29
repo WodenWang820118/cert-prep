@@ -74,14 +74,14 @@
       "cache": false,
       "executor": "nx:run-commands",
       "options": {
-        "command": "node --test tools/capture-candidate-gate.test.mts"
+        "command": "node --import ./apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.mts --test tools/capture-candidate-gate.test.mts"
       }
     },
     "capture-candidate-install-binding-test": {
       "cache": false,
       "executor": "nx:run-commands",
       "options": {
-        "command": "node --test tools/capture-candidate-install-binding.test.mts"
+        "command": "node --import ./apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.mts --test tools/capture-candidate-install-binding.test.mts"
       }
     },
     "capture-fresh-projection-typecheck": {
@@ -124,7 +124,7 @@
         "capture-fresh-projection-lint"
       ],
       "options": {
-        "command": "node --test tools/capture-fresh-projection.test.mts tools/capture-fresh-projection-artifact.test.mts tools/capture-projection-process.test.mts"
+        "command": "node --import ./apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.mts --test tools/capture-fresh-projection.test.mts tools/capture-fresh-projection-artifact.test.mts tools/capture-projection-process.test.mts"
       }
     },
     "capture-runtime-consumer-smoke": {
