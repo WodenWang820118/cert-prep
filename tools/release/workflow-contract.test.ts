@@ -60,13 +60,6 @@ const portableProjects = [
   'cert-prep-backend',
 ];
 
-const windowsCiProjects = [
-  'cert-prep-contracts',
-  'cert-prep-ollama',
-  'cert-prep-backend',
-  'cert-prep',
-];
-
 const windowsOwnedTestProjects = windowsOwnedProjects.filter(
   (project) => project !== 'cert-prep-api',
 );
@@ -335,19 +328,15 @@ test('release workflow quality targets exist in the resolved Nx projects', () =>
   assert.match(workflow, /pnpm nx run cert-prep-api:vite:test/);
 });
 
-test('continuous integration selects separate lint and test tasks instead of a zero-task command', () => {
+test('continuous integration lints and tests platform-neutral projects once, on Linux', () => {
   assertSeparateNxQualitySteps(workflowJobBody(ciWorkflow, 'portable-quality'), {
     stepLabel: 'portable projects',
     projects: portableProjects,
     parallel: 3,
-    nextStepLabel: 'Build Angular application',
+    nextStepLabel: 'Test generated API client',
   });
-  assertSeparateNxQualitySteps(workflowJobBody(ciWorkflow, 'windows-quality'), {
-    stepLabel: 'Windows-owned Python and Angular projects',
-    projects: windowsCiProjects,
-    parallel: 2,
-    nextStepLabel: 'Type-check desktop scripts',
-  });
+  const windowsJob = workflowJobBody(ciWorkflow, 'windows-quality');
+  assert.doesNotMatch(windowsJob, /pnpm nx run-many -t (?:lint|test)/);
 });
 
 test('downstream jobs reuse the exact candidate without checkout or rebuild', () => {
