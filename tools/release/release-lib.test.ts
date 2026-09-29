@@ -387,6 +387,86 @@ test('release documents contain checksums, SPDX and unsigned metadata', async ()
   }
 });
 
+test('release documents map the installer, backend, and Capture Runtime artifacts', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'cert-prep-release-scopes-'));
+  try {
+    mkdirSync(join(root, 'installers'), { recursive: true });
+    mkdirSync(join(root, 'runtimes'), { recursive: true });
+    writeFileSync(join(root, 'installers', 'cert-prep-setup.exe'), 'installer');
+    writeFileSync(
+      join(root, 'runtimes', 'cert-prep-backend-runtime-0.1.0-alpha.1.zip'),
+      'backend',
+    );
+    writeFileSync(
+      join(root, 'runtimes', 'capture-runtime-x86_64-pc-windows-msvc.exe'),
+      'capture',
+    );
+    const plan = deriveReleaseIdentity({
+      eventName: 'workflow_dispatch',
+      refName: 'main',
+      requestedVersion: '0.1.0-alpha.1',
+      repository: 'owner/cert-prep',
+      commitSha: sha,
+    });
+    const purl = 'pkg:npm/dependency@1.0.0';
+    const release = (captureScope: Record<string, unknown>) =>
+      writeReleaseDocuments({
+        releaseRoot: root,
+        plan,
+        components: [
+          {
+            ecosystem: 'npm',
+            name: 'dependency',
+            version: '1.0.0',
+            license: 'MIT',
+            purl,
+            licenseTexts: [
+              { name: 'LICENSE', text: 'MIT license text', primary: true },
+            ],
+          },
+        ],
+        artifactDependencies: [
+          {
+            id: 'nsis',
+            artifactPath: 'installers/cert-prep-setup.exe',
+            componentPurls: [purl],
+          },
+          {
+            id: 'backend-runtime',
+            artifactPath: 'runtimes/cert-prep-backend-runtime-0.1.0-alpha.1.zip',
+            componentPurls: [purl],
+          },
+          captureScope,
+        ],
+      });
+    // The producer-built Capture Runtime carries its own SBOM, so its scope
+    // may list no Cert Prep components.
+    await release({
+      id: 'capture-runtime',
+      artifactPath: 'runtimes/capture-runtime-x86_64-pc-windows-msvc.exe',
+      componentPurls: [],
+    });
+    await assert.rejects(
+      release({
+        id: 'capture-runtime',
+        artifactPath: 'runtimes/cert-prep-backend-runtime-0.1.0-alpha.1.zip',
+        componentPurls: [],
+      }),
+      /wrong artifact type: capture-runtime/,
+    );
+    await assert.rejects(
+      release({
+        id: 'unknown-runtime',
+        artifactPath: 'runtimes/capture-runtime-x86_64-pc-windows-msvc.exe',
+        componentPurls: [],
+      }),
+      /invalid ID: unknown-runtime/,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('release documents fail closed when no required license text exists', async () => {
   const root = mkdtempSync(join(tmpdir(), 'cert-prep-release-license-text-'));
   try {

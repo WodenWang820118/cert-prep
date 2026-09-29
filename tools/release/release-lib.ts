@@ -981,11 +981,15 @@ function validateArtifactDependencies(
   if (!Array.isArray(artifactDependencies)) {
     throw new Error('Artifact dependency mapping must be an array.');
   }
-  const requiredIds = new Set(['nsis', 'backend-runtime']);
+  const requiredIds = new Set(['nsis', 'backend-runtime', 'capture-runtime']);
   const artifactPatterns = new Map([
     ['nsis', /^installers\/.*setup\.exe$/i],
     ['backend-runtime', /^runtimes\/cert-prep-backend-runtime-.*\.zip$/i],
+    ['capture-runtime', /^runtimes\/capture-runtime-[^/]*\.exe$/i],
   ]);
+  // Capture Runtime is the producer's prebuilt binary; its components are in
+  // the producer's release SBOM, so its scope may list none here.
+  const scopesWithoutComponents = new Set(['capture-runtime']);
   const artifactPaths = new Set(artifacts.map((artifact) => artifact.path));
   const componentPurls = new Set(components.map((component) => component.purl));
   const ids = new Set();
@@ -1012,7 +1016,10 @@ function validateArtifactDependencies(
       );
     }
     mappedArtifactPaths.add(artifactPath);
-    if (purls.length === 0 || purls.some((purl) => !componentPurls.has(purl))) {
+    if (
+      (purls.length === 0 && !scopesWithoutComponents.has(id)) ||
+      purls.some((purl) => !componentPurls.has(purl))
+    ) {
       throw new Error(
         `Artifact dependency mapping has missing or unknown components: ${id}.`,
       );
