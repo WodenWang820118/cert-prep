@@ -24,12 +24,12 @@ import {
 } from './capture-runtime-version-check.mts';
 
 /**
- * Phase 2's producer receipt binding is for release 0.4.2. It proves a
+ * Phase 2's producer receipt binding is for release 0.4.3. It proves a
  * complete declared candidate directory plus the producer-required subset and
  * a matching consumer source snapshot. It does not prove full D3 runtime or
  * installer readiness, and it never performs installation.
  */
-export const CAPTURE_CANDIDATE_INSTALL_RELEASE_VERSION = '0.4.2';
+export const CAPTURE_CANDIDATE_INSTALL_RELEASE_VERSION = '0.4.3';
 
 export type CandidateInstallGitResolver = Readonly<{
   resolveTopLevel(workspaceRoot: string): string;

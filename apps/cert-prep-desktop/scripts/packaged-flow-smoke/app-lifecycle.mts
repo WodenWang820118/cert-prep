@@ -812,13 +812,13 @@ function captureRuntimeProbeEnvironment(
   if (
     !force &&
     (inherited[CAPTURE_RUNTIME_PROBE_ENV]?.trim() !== '1' ||
-      inherited[CAPTURE_RUNTIME_PROBE_VERSION_ENV]?.trim() !== '0.4.2')
+      inherited[CAPTURE_RUNTIME_PROBE_VERSION_ENV]?.trim() !== '0.4.3')
   ) {
     return {};
   }
   return {
     [CAPTURE_RUNTIME_PROBE_ENV]: '1',
-    [CAPTURE_RUNTIME_PROBE_VERSION_ENV]: '0.4.2',
+    [CAPTURE_RUNTIME_PROBE_VERSION_ENV]: '0.4.3',
     ...(inherited[CAPTURE_RUNTIME_LOCAL_MODEL_ROOT_ENV]?.trim()
       ? {
           [CAPTURE_RUNTIME_LOCAL_MODEL_ROOT_ENV]:

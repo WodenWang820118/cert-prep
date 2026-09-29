@@ -374,7 +374,7 @@ function captureRuntimeExpectedVersion(): string {
   if (probeEnabled === '1') {
     const candidateVersion =
       process.env[CAPTURE_RUNTIME_PROBE_VERSION_ENV]?.trim();
-    if (candidateVersion === '0.4.2') return candidateVersion;
+    if (candidateVersion === '0.4.3') return candidateVersion;
   }
   return CAPTURE_RUNTIME_VERSION;
 }

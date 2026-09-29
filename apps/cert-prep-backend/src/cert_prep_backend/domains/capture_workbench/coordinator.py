@@ -761,7 +761,7 @@ def _validate_ocr_projection(
 ) -> None:
     """Enforce the runtime page/provenance seam before host persistence.
 
-    The generated 0.4.2 SDK validates the wire shape. This small consumer
+    The generated 0.4.3 SDK validates the wire shape. This small consumer
     guard validates the invariants that matter to Cert Prep: source identity,
     complete page coverage, successful page status, and resolved Paddle
     provenance. It deliberately does not recreate OCR or confidence logic.
@@ -839,7 +839,7 @@ def _resolved_ocr_provenance(provenance: object) -> bool:
 
 
 def _status_value(value: object) -> str | None:
-    """Read enum-backed test fakes and string-backed 0.4.2 SDK statuses."""
+    """Read enum-backed test fakes and string-backed 0.4.3 SDK statuses."""
 
     candidate = getattr(value, "value", value)
     return candidate if isinstance(candidate, str) else None

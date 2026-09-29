@@ -1,16 +1,18 @@
 # Lazy Capture Runtime Installation Decision
 
-## 2026-09-27 current state
+## 2026-09-29 current state
 
-- The installer bundles the pinned Capture Runtime **0.4.2** executable,
+- The installer bundles the pinned Capture Runtime **0.4.3** executable,
   manifest, and schema (`capture_runtime_bundled` in the package QA resource
   contract); the version comes from `tools/capture-runtime-version.mts`.
 - The explicit install and start actions described below are unchanged
   (`install_capture_runtime`, `start_capture_runtime`, and
   `restart_owned_backend_with_capture_runtime` in `backend.rs`; the UI lives in
   the Capture Workbench trial page and `desktop-runtime.store.ts`).
-- Unlike 0.3.8, the 0.4.2 runtime installs its `windowsml-ocr` engine from the
+- Unlike 0.3.8, the 0.4 runtime installs its `windowsml-ocr` engine from the
   release catalog on request; Cert does not bundle or side-load engines.
+  Engine downloads are verified and kept in the machine-wide Capture engine
+  cache, so a reinstall or another Capture host reuses them.
 
 ## 2026-08-25 OCR-only consumer boundary
 
