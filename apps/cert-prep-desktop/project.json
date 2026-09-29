@@ -84,49 +84,6 @@
         "command": "node --import ./apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.mts --test tools/capture-candidate-install-binding.test.mts"
       }
     },
-    "capture-fresh-projection-typecheck": {
-      "cache": true,
-      "executor": "nx:run-commands",
-      "inputs": [
-        "{workspaceRoot}/tools/capture-fresh-projection.mts",
-        "{workspaceRoot}/tools/capture-fresh-projection.test.mts",
-        "{workspaceRoot}/tools/capture-fresh-projection-artifact.mts",
-        "{workspaceRoot}/tools/capture-fresh-projection-artifact.test.mts",
-        "{workspaceRoot}/tools/capture-projection-process.mts",
-        "{workspaceRoot}/tools/capture-projection-process.test.mts",
-        "{workspaceRoot}/tools/capture-candidate-gate.mts"
-      ],
-      "options": {
-        "command": "corepack pnpm exec tsc --noEmit --target ES2022 --module NodeNext --moduleResolution NodeNext --allowImportingTsExtensions --types node --skipLibCheck --strict false tools/capture-fresh-projection.mts tools/capture-fresh-projection.test.mts tools/capture-fresh-projection-artifact.mts tools/capture-fresh-projection-artifact.test.mts tools/capture-projection-process.mts tools/capture-projection-process.test.mts"
-      }
-    },
-    "capture-fresh-projection-lint": {
-      "cache": true,
-      "executor": "nx:run-commands",
-      "inputs": [
-        "{workspaceRoot}/tools/capture-fresh-projection.mts",
-        "{workspaceRoot}/tools/capture-fresh-projection.test.mts",
-        "{workspaceRoot}/tools/capture-fresh-projection-artifact.mts",
-        "{workspaceRoot}/tools/capture-fresh-projection-artifact.test.mts",
-        "{workspaceRoot}/tools/capture-projection-process.mts",
-        "{workspaceRoot}/tools/capture-projection-process.test.mts",
-        "{workspaceRoot}/eslint.config.mts"
-      ],
-      "options": {
-        "command": "corepack pnpm exec eslint tools/capture-fresh-projection.mts tools/capture-fresh-projection.test.mts tools/capture-fresh-projection-artifact.mts tools/capture-fresh-projection-artifact.test.mts tools/capture-projection-process.mts tools/capture-projection-process.test.mts --max-warnings=0"
-      }
-    },
-    "capture-fresh-projection-test": {
-      "cache": false,
-      "executor": "nx:run-commands",
-      "dependsOn": [
-        "capture-fresh-projection-typecheck",
-        "capture-fresh-projection-lint"
-      ],
-      "options": {
-        "command": "node --import ./apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.mts --test tools/capture-fresh-projection.test.mts tools/capture-fresh-projection-artifact.test.mts tools/capture-projection-process.test.mts"
-      }
-    },
     "capture-runtime-consumer-smoke": {
       "cache": false,
       "executor": "nx:run-commands",

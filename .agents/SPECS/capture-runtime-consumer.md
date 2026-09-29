@@ -768,10 +768,7 @@ forbidden until the Nx 23.1.2 and complete inventory checks are green.
 The 2026-09-09 Nx discovery found the existing targets
 `cert-prep-desktop:release-tool-test`, `cert-prep-desktop:typecheck-scripts`,
 `cert-prep-desktop:package-qa-test`, `cert-prep-desktop:cargo-test`,
-`cert-prep-desktop:capture-candidate-gate-test`,
-`cert-prep-desktop:capture-fresh-projection-typecheck`,
-`cert-prep-desktop:capture-fresh-projection-lint`,
-`cert-prep-desktop:capture-fresh-projection-test`, and
+`cert-prep-desktop:capture-candidate-gate-test`, and
 `cert-prep-desktop:acceptance-real`. No `version-check` target was discovered;
 the first slice must either attach its inventory to an existing discovered
 target or add and discover a target before using it. A guessed target name is

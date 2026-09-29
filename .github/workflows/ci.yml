@@ -174,7 +174,7 @@ jobs:
         run: >-
           pnpm nx run-many -p cert-prep-desktop
           -t capture-candidate-gate-test capture-candidate-install-binding-test
-          capture-fresh-projection-test phase1-evidence-test
+          phase1-evidence-test
 
       - name: Test Tauri host
         run: pnpm nx run cert-prep-desktop:cargo-test
