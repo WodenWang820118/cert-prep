@@ -50,7 +50,6 @@ package validation before creating an artifact. It:
 - runs the Windows-owned lint and test targets through Nx;
 - runs desktop script type-checking, package-QA tests, release-tool tests, and
   Rust host tests;
-- runs the real-backend browser smoke once;
 - builds and validates one unsigned NSIS installer;
 - inventories Node, backend Python, OCR Python, OCR payload, and Rust
   dependencies;
