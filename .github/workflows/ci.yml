@@ -152,6 +152,9 @@ jobs:
       - name: Test package QA
         run: pnpm nx run cert-prep-desktop:package-qa-test
 
+      - name: Test release tooling contract
+        run: pnpm nx run cert-prep-desktop:release-tool-test
+
       - name: Stage the published Capture Runtime release
         run: pnpm nx run cert-prep-desktop:install-capture-runtime --skip-nx-cache
 

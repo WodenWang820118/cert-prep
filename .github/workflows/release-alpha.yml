@@ -18,6 +18,11 @@ on:
         required: true
         default: false
         type: boolean
+      validate_only:
+        description: Build and verify the candidate only; skip the prerelease reservation, clean install, and publishing
+        required: false
+        default: false
+        type: boolean
   push:
     tags:
       - 'cert-prep-v*-alpha.*'
@@ -234,6 +239,9 @@ jobs:
   clean-install:
     name: Reserve candidate and verify a fresh NSIS install
     needs: build-candidate
+    # validate_only stops after build-candidate, so nothing is reserved or
+    # published; publish-alpha and the cleanup job depend on this job.
+    if: ${{ !inputs.validate_only }}
     runs-on: windows-2025
     environment: alpha-release
     permissions:
