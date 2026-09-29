@@ -142,12 +142,12 @@ async function createCandidateFixture(sourceCommit = 'a'.repeat(40)): Promise<{
         }),
       ),
     ],
-    ['package/gx-capture-capture-runtime-client-0.4.2.tgz', Buffer.from('runtime client archive')],
-    ['package/gx-capture-capture-workbench-ui-0.4.2.tgz', Buffer.from('workbench archive')],
-    ['python/capture_runtime_client-0.4.2-py3-none-any.whl', Buffer.from('python wheel')],
-    ['python/capture_runtime_client-0.4.2.tar.gz', Buffer.from('python source')],
-    ['crate/capture-sidecar-launcher-0.4.2.crate', Buffer.from('launcher crate')],
-    ['desktop/Capture.Workbench_0.4.2_x64-setup.exe', Buffer.from('desktop installer')],
+    ['package/gx-capture-capture-runtime-client-0.4.3.tgz', Buffer.from('runtime client archive')],
+    ['package/gx-capture-capture-workbench-ui-0.4.3.tgz', Buffer.from('workbench archive')],
+    ['python/capture_runtime_client-0.4.3-py3-none-any.whl', Buffer.from('python wheel')],
+    ['python/capture_runtime_client-0.4.3.tar.gz', Buffer.from('python source')],
+    ['crate/capture-sidecar-launcher-0.4.3.crate', Buffer.from('launcher crate')],
+    ['desktop/Capture.Workbench_0.4.3_x64-setup.exe', Buffer.from('desktop installer')],
     ['contracts/contract-set.json', contractBytes],
     ['contracts/contract-set.sha256', Buffer.from(contractSetSha256)],
     ['contracts/contract-snapshot.json', Buffer.from('{"schemaVersion":"1"}')],
@@ -246,7 +246,7 @@ async function createConsistentSource(): Promise<{
   const files = new Map<string, Uint8Array>();
   for (const path of CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS) {
     const bytes = await readFile(join(workspaceRoot, path));
-    files.set(path, Uint8Array.from(Buffer.from(bytes.toString('utf8').replaceAll('0.4.1', '0.4.2'))));
+    files.set(path, Uint8Array.from(Buffer.from(bytes.toString('utf8').replaceAll('0.4.1', '0.4.3'))));
   }
   return {
     files,
@@ -340,7 +340,7 @@ test('wrong Git root and malformed HEAD fail closed before preparation can write
   }
 });
 
-test('consistent synthetic 0.4.2 receipt prepares and writes exactly once', async () => {
+test('consistent synthetic 0.4.3 receipt prepares and writes exactly once', async () => {
   const git = await createGitFixture();
   const candidate = await createCandidateFixture();
   const consistent = await createConsistentSource();
@@ -400,7 +400,7 @@ test('consistent synthetic 0.4.2 receipt prepares and writes exactly once', asyn
   }
 });
 
-test('0.4.1 consumer bytes cannot prepare a 0.4.2 candidate and do not write', async () => {
+test('0.4.1 consumer bytes cannot prepare a 0.4.3 candidate and do not write', async () => {
   const git = await createGitFixture();
   const candidate = await createCandidateFixture();
   const current = await createConsistentSource();
@@ -410,7 +410,7 @@ test('0.4.1 consumer bytes cannot prepare a 0.4.2 candidate and do not write', a
     current.files.set(
       path,
       Uint8Array.from(
-        Buffer.from(bytes.toString('utf8').replaceAll('0.4.2', '0.4.1')),
+        Buffer.from(bytes.toString('utf8').replaceAll('0.4.3', '0.4.1')),
       ),
     );
   }

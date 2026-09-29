@@ -139,7 +139,7 @@ test('installed-app attestation binds wheel, staged runtime, worker, contract an
   const payload = {
     schema_version: 1,
     candidate: {
-      runtime_version: '0.4.2',
+      runtime_version: '0.4.3',
       runtime_core_sha256: expected.runtimeArtifactSha256,
       runtime_core_bytes: expected.installedRuntimeCoreBytes,
       runtime_manifest_identity_sha256: expected.installedRuntimeManifestIdentitySha256,
@@ -148,18 +148,18 @@ test('installed-app attestation binds wheel, staged runtime, worker, contract an
       worker_executable_sha256: expected.workerExecutableSha256,
       contract_set_sha256: expected.contractSetSha256,
       python_wheel: {
-        file_name: 'capture_runtime_client-0.4.2-py3-none-any.whl',
+        file_name: 'capture_runtime_client-0.4.3-py3-none-any.whl',
         sha256: '1'.repeat(64),
         bytes: 56,
         package_name: 'capture-runtime-client',
-        package_version: '0.4.2',
+        package_version: '0.4.3',
         contract_set_sha256: expected.contractSetSha256,
         generated_models: { worker_sha256: true, pdf_page_numbers: true },
       },
     },
     observed: {
       ready: true,
-      runtime_version: '0.4.2',
+      runtime_version: '0.4.3',
       api_version: '2.0',
       capture_document_schema_version: '2',
       contract_set_sha256: expected.contractSetSha256,

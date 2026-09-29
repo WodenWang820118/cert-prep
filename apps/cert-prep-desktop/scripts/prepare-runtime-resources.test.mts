@@ -75,16 +75,16 @@ test('preserves the validated Capture Runtime manifest bytes when staging resour
   );
 });
 
-test('explicit local probe accepts the immutable 0.4.2 candidate without changing pins', async () => {
+test('explicit local probe accepts the immutable 0.4.3 candidate without changing pins', async () => {
   const fixture = createFixture();
   const outputDir = join(fixture.workspaceRoot, 'generated-resources');
   const manifest = readJson(fixture.captureRuntimeManifestPath);
-  manifest.runtimeVersion = '0.4.2';
+  manifest.runtimeVersion = '0.4.3';
   writeJson(fixture.captureRuntimeManifestPath, manifest);
   const previousProbe = process.env.CERT_PREP_CAPTURE_RUNTIME_PROBE;
   const previousVersion = process.env.CERT_PREP_CAPTURE_RUNTIME_EXPECTED_VERSION;
   process.env.CERT_PREP_CAPTURE_RUNTIME_PROBE = '1';
-  process.env.CERT_PREP_CAPTURE_RUNTIME_EXPECTED_VERSION = '0.4.2';
+  process.env.CERT_PREP_CAPTURE_RUNTIME_EXPECTED_VERSION = '0.4.3';
   try {
     await prepareRuntimeResources({ ...fixture, outputDir, mode: 'dev' });
   } finally {
@@ -98,7 +98,7 @@ test('explicit local probe accepts the immutable 0.4.2 candidate without changin
   }
   const capture = readJson(join(outputDir, 'capture-runtime-manifest.json'));
   const metadata = readJson(join(outputDir, 'release-metadata.json'));
-  assert.equal(capture.runtimeVersion, '0.4.2');
+  assert.equal(capture.runtimeVersion, '0.4.3');
   assert.equal(metadata.channel, 'local_nonpublishable');
   assert.equal(metadata.publishable, false);
 });

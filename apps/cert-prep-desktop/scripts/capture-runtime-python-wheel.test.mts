@@ -11,14 +11,14 @@ import { inspectCaptureRuntimePythonWheel } from './capture-runtime-python-wheel
 const CONTRACT_BYTES = Buffer.from('{"contract":"phase1"}', 'utf8');
 const CONTRACT_SHA256 = createHash('sha256').update(CONTRACT_BYTES).digest('hex');
 const EXPECTED = {
-  runtimeVersion: '0.4.2',
+  runtimeVersion: '0.4.3',
   contractSetSha256: CONTRACT_SHA256,
 };
 
 test('Python wheel provenance re-hashes the wheel and requires Phase 1 generated fields', async () => {
   const root = await mkdtemp(join(tmpdir(), 'cert-python-wheel-'));
   try {
-    const wheelPath = join(root, 'capture_runtime_client-0.4.2-py3-none-any.whl');
+    const wheelPath = join(root, 'capture_runtime_client-0.4.3-py3-none-any.whl');
     const wheel = createWheel({
       'capture_runtime_client/private/generated_models.py':
         Buffer.from(
@@ -26,8 +26,8 @@ test('Python wheel provenance re-hashes the wheel and requires Phase 1 generated
         ),
       'capture_runtime_client/private/assets/contract-set.json': CONTRACT_BYTES,
       'capture_runtime_client/private/assets/contract-set.sha256': Buffer.from(`${CONTRACT_SHA256}\n`),
-      'capture_runtime_client-0.4.2.dist-info/METADATA': Buffer.from(
-        'Metadata-Version: 2.5\nName: capture-runtime-client\nVersion: 0.4.2\n',
+      'capture_runtime_client-0.4.3.dist-info/METADATA': Buffer.from(
+        'Metadata-Version: 2.5\nName: capture-runtime-client\nVersion: 0.4.3\n',
       ),
     });
     await writeFile(wheelPath, wheel);
@@ -35,11 +35,11 @@ test('Python wheel provenance re-hashes the wheel and requires Phase 1 generated
     const result = await inspectCaptureRuntimePythonWheel(wheelPath, EXPECTED);
 
     assert.deepEqual(result, {
-      fileName: 'capture_runtime_client-0.4.2-py3-none-any.whl',
+      fileName: 'capture_runtime_client-0.4.3-py3-none-any.whl',
       sha256: createHash('sha256').update(wheel).digest('hex'),
       bytes: wheel.length,
       packageName: 'capture-runtime-client',
-      packageVersion: '0.4.2',
+      packageVersion: '0.4.3',
       contractSetSha256: CONTRACT_SHA256,
       generatedModels: { workerSha256: true, pdfPageNumbers: true },
     });
@@ -48,10 +48,10 @@ test('Python wheel provenance re-hashes the wheel and requires Phase 1 generated
   }
 });
 
-test('Python wheel provenance rejects a stale 0.4.2 wheel without worker identity', async () => {
+test('Python wheel provenance rejects a stale 0.4.3 wheel without worker identity', async () => {
   const root = await mkdtemp(join(tmpdir(), 'cert-python-wheel-stale-'));
   try {
-    const wheelPath = join(root, 'capture_runtime_client-0.4.2-py3-none-any.whl');
+    const wheelPath = join(root, 'capture_runtime_client-0.4.3-py3-none-any.whl');
     await writeFile(
       wheelPath,
       createWheel({
@@ -61,8 +61,8 @@ test('Python wheel provenance rejects a stale 0.4.2 wheel without worker identit
           ),
         'capture_runtime_client/private/assets/contract-set.json': CONTRACT_BYTES,
         'capture_runtime_client/private/assets/contract-set.sha256': Buffer.from(`${CONTRACT_SHA256}\n`),
-        'capture_runtime_client-0.4.2.dist-info/METADATA': Buffer.from(
-          'Name: capture-runtime-client\nVersion: 0.4.2\n',
+        'capture_runtime_client-0.4.3.dist-info/METADATA': Buffer.from(
+          'Name: capture-runtime-client\nVersion: 0.4.3\n',
         ),
       }),
     );
@@ -79,7 +79,7 @@ test('Python wheel provenance rejects a stale 0.4.2 wheel without worker identit
 test('Python wheel provenance rejects an embedded contract identity drift', async () => {
   const root = await mkdtemp(join(tmpdir(), 'cert-python-wheel-contract-'));
   try {
-    const wheelPath = join(root, 'capture_runtime_client-0.4.2-py3-none-any.whl');
+    const wheelPath = join(root, 'capture_runtime_client-0.4.3-py3-none-any.whl');
     const changedContract = Buffer.from('{"contract":"different"}', 'utf8');
     const changedDigest = createHash('sha256').update(changedContract).digest('hex');
     await writeFile(
@@ -91,8 +91,8 @@ test('Python wheel provenance rejects an embedded contract identity drift', asyn
           ),
         'capture_runtime_client/private/assets/contract-set.json': changedContract,
         'capture_runtime_client/private/assets/contract-set.sha256': Buffer.from(`${changedDigest}\n`),
-        'capture_runtime_client-0.4.2.dist-info/METADATA': Buffer.from(
-          'Name: capture-runtime-client\nVersion: 0.4.2\n',
+        'capture_runtime_client-0.4.3.dist-info/METADATA': Buffer.from(
+          'Name: capture-runtime-client\nVersion: 0.4.3\n',
         ),
       }),
     );
