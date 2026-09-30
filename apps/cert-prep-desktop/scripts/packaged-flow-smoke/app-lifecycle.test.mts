@@ -498,12 +498,12 @@ test('ordinary smoke preserves unrelated environment and pins the fixed model', 
   );
 });
 
-test('isolated acceptance forwards only the explicit 0.4.3 local probe marker', () => {
+test('isolated acceptance forwards only the explicit 0.4.4 local probe marker', () => {
   const environment = buildAppLaunchEnvironment(
     launchEnvironmentRun(true),
     {
       CERT_PREP_CAPTURE_RUNTIME_PROBE: ' 1 ',
-      CERT_PREP_CAPTURE_RUNTIME_EXPECTED_VERSION: ' 0.4.3 ',
+      CERT_PREP_CAPTURE_RUNTIME_EXPECTED_VERSION: ' 0.4.4 ',
       CERT_PREP_CAPTURE_RUNTIME_LOCAL_MODEL_ROOT:
         ' C:\\qa\\capture-runtime-models ',
       CERT_PREP_BACKEND_URL: 'http://127.0.0.1:9999',
@@ -515,7 +515,7 @@ test('isolated acceptance forwards only the explicit 0.4.3 local probe marker', 
   assert.equal(normalized.cert_prep_capture_runtime_probe, '1');
   assert.equal(
     normalized.cert_prep_capture_runtime_expected_version,
-    '0.4.3',
+    '0.4.4',
   );
   assert.equal(
     normalized.cert_prep_capture_runtime_local_model_root,
@@ -525,7 +525,7 @@ test('isolated acceptance forwards only the explicit 0.4.3 local probe marker', 
   assert.equal(normalized.cert_prep_untrusted_override, undefined);
 });
 
-test('Phase 1 acceptance identity forces the 0.4.3 local probe marker', () => {
+test('Phase 1 acceptance identity forces the 0.4.4 local probe marker', () => {
   const run = launchEnvironmentRun(true);
   run.options.acceptanceRuntimeIdentity = {
     runtimeArtifactSha256: 'a'.repeat(64),
@@ -541,7 +541,7 @@ test('Phase 1 acceptance identity forces the 0.4.3 local probe marker', () => {
   assert.equal(normalized.cert_prep_capture_runtime_probe, '1');
   assert.equal(
     normalized.cert_prep_capture_runtime_expected_version,
-    '0.4.3',
+    '0.4.4',
   );
 });
 

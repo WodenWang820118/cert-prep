@@ -58,7 +58,7 @@
     "install-capture-runtime": {
       "cache": false,
       "executor": "nx:run-commands",
-      "outputs": ["{workspaceRoot}/tmp/cert-prep/capture-runtime/0.4.3"],
+      "outputs": ["{workspaceRoot}/tmp/cert-prep/capture-runtime/0.4.4"],
       "options": {
         "command": "node tools/install-capture-runtime.mts"
       }

@@ -91,7 +91,7 @@ def _validate_candidate(value: object) -> dict[str, Any]:
         raise RuntimeError("Packaged Capture Runtime provenance is invalid.")
     if value.get("status") != "bound":
         raise RuntimeError("Packaged Capture Runtime provenance is not candidate-bound.")
-    if value.get("runtime_version") != "0.4.3":
+    if value.get("runtime_version") != "0.4.4":
         raise RuntimeError("Packaged Capture Runtime provenance runtime version is invalid.")
     for key in (
         "runtime_core_sha256",
@@ -113,7 +113,7 @@ def _validate_candidate(value: object) -> dict[str, Any]:
         _require_digest(wheel.get(key), f"python_wheel.{key}")
     if wheel.get("package_name") != "capture-runtime-client" or wheel.get(
         "package_version"
-    ) != "0.4.3":
+    ) != "0.4.4":
         raise RuntimeError("Packaged Capture Runtime Python wheel identity is invalid.")
     wheel_bytes = wheel.get("bytes")
     if not isinstance(wheel_bytes, int) or isinstance(wheel_bytes, bool) or wheel_bytes <= 0:
@@ -142,7 +142,7 @@ def _validate_candidate(value: object) -> dict[str, Any]:
             "sha256": str(wheel["sha256"]),
             "bytes": int(wheel_bytes),
             "package_name": "capture-runtime-client",
-            "package_version": "0.4.3",
+            "package_version": "0.4.4",
             "contract_set_sha256": str(wheel["contract_set_sha256"]),
             "generated_models": {
                 "worker_sha256": True,

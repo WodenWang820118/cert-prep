@@ -420,7 +420,7 @@ async function loadPhase1FinalCandidate(
     profile === 'local_probe' ||
     Boolean(manifestPath) ||
     (environment['CERT_PREP_CAPTURE_RUNTIME_PROBE']?.trim() === '1' &&
-      environment['CERT_PREP_CAPTURE_RUNTIME_EXPECTED_VERSION']?.trim() === '0.4.3');
+      environment['CERT_PREP_CAPTURE_RUNTIME_EXPECTED_VERSION']?.trim() === '0.4.4');
   if (!probeRequested) return undefined;
   if (!manifestPath) {
     throw new Error(
@@ -609,7 +609,7 @@ export async function localProbeFinalizationErrors(
     ['workerExecutableSha256', /^[0-9a-f]{64}$/u],
     ['profileSpecSha256', /^[0-9a-f]{64}$/u],
   ];
-  if (!candidate || candidate.runtimeVersion !== '0.4.3' || typeof candidate.profileId !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/u.test(candidate.profileId)) errors.push('Local OCR candidate identity was missing.');
+  if (!candidate || candidate.runtimeVersion !== '0.4.4' || typeof candidate.profileId !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/u.test(candidate.profileId)) errors.push('Local OCR candidate identity was missing.');
   for (const [field, pattern] of candidateFields) if (!candidate || typeof candidate[field] !== 'string' || !pattern.test(candidate[field])) errors.push(`Local OCR candidate ${field} was invalid.`);
   for (const [field, envName] of [['candidateId', 'CERT_PREP_ACCEPTANCE_EXPECTED_CANDIDATE_ID'], ['candidateSourceCommit', 'CERT_PREP_ACCEPTANCE_EXPECTED_SOURCE_COMMIT'], ['candidateManifestSha256', 'CERT_PREP_ACCEPTANCE_EXPECTED_CANDIDATE_MANIFEST_SHA256']] as const) if (environment[envName]?.trim() && candidate?.[field] !== environment[envName]?.trim()) errors.push(`Local OCR candidate ${field} did not match the expected identity.`);
   const runId = typeof suite?.runId === 'string' && suite.runId.trim() ? suite.runId : undefined;

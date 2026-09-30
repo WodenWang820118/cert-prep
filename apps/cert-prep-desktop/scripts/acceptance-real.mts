@@ -290,7 +290,7 @@ function checkPythonWheel(
   }
   if (
     typeof wheel.fileName !== 'string' ||
-    !/^capture[_-]runtime[_-]client-0\.4\.3-[A-Za-z0-9._-]+\.whl$/u.test(wheel.fileName)
+    !/^capture[_-]runtime[_-]client-0\.4\.4-[A-Za-z0-9._-]+\.whl$/u.test(wheel.fileName)
   ) {
     errors.push('Phase 1 candidate Python wheel filename was invalid.');
   }
@@ -304,7 +304,7 @@ function checkPythonWheel(
   ) {
     errors.push('Phase 1 candidate Python wheel byte count was invalid.');
   }
-  if (wheel.packageName !== 'capture-runtime-client' || wheel.packageVersion !== '0.4.3') {
+  if (wheel.packageName !== 'capture-runtime-client' || wheel.packageVersion !== '0.4.4') {
     errors.push('Phase 1 candidate Python wheel package identity was invalid.');
   }
   if (wheel.contractSetSha256 !== PHASE1_FINAL_IDENTITY.contractSetSha256) {
@@ -409,11 +409,11 @@ function checkAttestedWheel(
   }
   if (
     typeof value.file_name !== 'string' ||
-    !/^capture[_-]runtime[_-]client-0\.4\.3-[A-Za-z0-9._-]+\.whl$/u.test(value.file_name) ||
+    !/^capture[_-]runtime[_-]client-0\.4\.4-[A-Za-z0-9._-]+\.whl$/u.test(value.file_name) ||
     !isSha256(value.sha256) ||
     !isPositiveInteger(value.bytes) ||
     value.package_name !== 'capture-runtime-client' ||
-    value.package_version !== '0.4.3' ||
+    value.package_version !== '0.4.4' ||
     value.contract_set_sha256 !== PHASE1_FINAL_IDENTITY.contractSetSha256 ||
     !isRecord(value.generated_models) ||
     value.generated_models.worker_sha256 !== true ||

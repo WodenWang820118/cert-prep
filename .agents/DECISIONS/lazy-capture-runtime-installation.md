@@ -1,8 +1,8 @@
 # Lazy Capture Runtime Installation Decision
 
-## 2026-09-29 current state
+## 2026-09-30 current state
 
-- The installer bundles the pinned Capture Runtime **0.4.3** executable,
+- The installer bundles the pinned Capture Runtime **0.4.4** executable,
   manifest, and schema (`capture_runtime_bundled` in the package QA resource
   contract); the version comes from `tools/capture-runtime-version.mts`.
 - The explicit install and start actions described below are unchanged

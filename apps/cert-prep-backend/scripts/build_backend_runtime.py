@@ -128,7 +128,7 @@ def _candidate_provenance(runtime_root: Path, wheel_path: Path) -> dict[str, obj
 
     manifest_path = runtime_root / "capture-runtime-manifest.json"
     manifest = _read_json_object(manifest_path, "Capture Runtime manifest")
-    _require_exact(manifest, "runtimeVersion", "0.4.3", "Capture Runtime manifest")
+    _require_exact(manifest, "runtimeVersion", "0.4.4", "Capture Runtime manifest")
     runtime_file = _safe_file_name(manifest.get("fileName"), "Capture Runtime fileName")
     core_path = runtime_root / runtime_file
     core_bytes = _read_hashed_file(
@@ -140,7 +140,7 @@ def _candidate_provenance(runtime_root: Path, wheel_path: Path) -> dict[str, obj
 
     catalog_path = runtime_root / "capture-engine-catalog.json"
     catalog = _read_json_object(catalog_path, "Capture Runtime engine catalog")
-    _require_exact(catalog, "runtimeVersion", "0.4.3", "Capture Runtime engine catalog")
+    _require_exact(catalog, "runtimeVersion", "0.4.4", "Capture Runtime engine catalog")
     requirements = catalog.get("requirements")
     if not isinstance(requirements, list):
         raise SystemExit("Capture Runtime engine catalog has no requirements.")
@@ -187,7 +187,7 @@ def _candidate_provenance(runtime_root: Path, wheel_path: Path) -> dict[str, obj
     return {
         "schema_version": 1,
         "status": "bound",
-        "runtime_version": "0.4.3",
+        "runtime_version": "0.4.4",
         "runtime_core_sha256": core_bytes[1],
         "runtime_core_bytes": core_bytes[0],
         "runtime_manifest_identity_sha256": _canonical_sha256(manifest),
@@ -202,8 +202,8 @@ def _candidate_provenance(runtime_root: Path, wheel_path: Path) -> dict[str, obj
 def _inspect_python_wheel(path: Path) -> dict[str, object]:
     if not path.is_file() or path.stat().st_size <= 0:
         raise SystemExit(f"Capture Runtime Python wheel is missing: {path}")
-    if not re.fullmatch(r"capture[_-]runtime[_-]client-0\.4\.3-.+\.whl", path.name):
-        raise SystemExit("Capture Runtime Python wheel must be the 0.4.3 client package.")
+    if not re.fullmatch(r"capture[_-]runtime[_-]client-0\.4\.4-.+\.whl", path.name):
+        raise SystemExit("Capture Runtime Python wheel must be the 0.4.4 client package.")
     wheel_bytes = path.read_bytes()
     try:
         with zipfile.ZipFile(path) as archive:
@@ -216,7 +216,7 @@ def _inspect_python_wheel(path: Path) -> dict[str, object]:
             metadata = archive.read(metadata_names[0]).decode("utf-8")
             package_name = _metadata_field(metadata, "Name")
             package_version = _metadata_field(metadata, "Version")
-            if package_name != "capture-runtime-client" or package_version != "0.4.3":
+            if package_name != "capture-runtime-client" or package_version != "0.4.4":
                 raise SystemExit("Capture Runtime Python wheel package identity is invalid.")
             generated = archive.read(
                 "capture_runtime_client/private/generated_models.py"
@@ -244,7 +244,7 @@ def _inspect_python_wheel(path: Path) -> dict[str, object]:
         "sha256": _sha256(wheel_bytes),
         "bytes": len(wheel_bytes),
         "package_name": "capture-runtime-client",
-        "package_version": "0.4.3",
+        "package_version": "0.4.4",
         "contract_set_sha256": contract_digest,
         "generated_models": {"worker_sha256": True, "pdf_page_numbers": True},
     }
@@ -264,12 +264,12 @@ def _assert_installed_python_candidate(wheel: dict[str, object], wheel_path: Pat
             "private", "assets", "contract-set.json"
         ).read_bytes()
     except (ImportError, OSError, UnicodeError, importlib.metadata.PackageNotFoundError) as error:
-        raise SystemExit("The build environment does not contain capture-runtime-client 0.4.3.") from error
+        raise SystemExit("The build environment does not contain capture-runtime-client 0.4.4.") from error
     del capture_runtime_client
-    if installed_version != "0.4.3" or not re.search(
+    if installed_version != "0.4.4" or not re.search(
         r"^\s*worker_sha256\s*:", generated, re.MULTILINE
     ) or not re.search(r"^\s*pdf_page_numbers\s*:", generated, re.MULTILINE):
-        raise SystemExit("The installed Python client is not the candidate 0.4.3 generated model.")
+        raise SystemExit("The installed Python client is not the candidate 0.4.4 generated model.")
     if _sha256(contract) != wheel["contract_set_sha256"]:
         raise SystemExit("The installed Python client contract differs from the candidate wheel.")
 
