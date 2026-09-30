@@ -323,14 +323,14 @@ export function parseInstalledRuntimeTupleAttestation(
   const generatedModels = wheel.generated_models;
   if (
     typeof wheel.file_name !== 'string' ||
-    !/^capture[_-]runtime[_-]client-0\.4\.3-[A-Za-z0-9._-]+\.whl$/u.test(
+    !/^capture[_-]runtime[_-]client-0\.4\.4-[A-Za-z0-9._-]+\.whl$/u.test(
       wheel.file_name,
     ) ||
     !isRecord(generatedModels) ||
     generatedModels.worker_sha256 !== true ||
     generatedModels.pdf_page_numbers !== true ||
     wheel.package_name !== 'capture-runtime-client' ||
-    wheel.package_version !== '0.4.3' ||
+    wheel.package_version !== '0.4.4' ||
     requiredSha256(wheel.sha256, 'candidate.python_wheel.sha256') === '' ||
     requiredPositiveInteger(wheel.bytes, 'candidate.python_wheel.bytes') !== wheel.bytes ||
     requiredSha256(wheel.contract_set_sha256, 'candidate.python_wheel.contract_set_sha256') !==
@@ -360,7 +360,7 @@ export function parseInstalledRuntimeTupleAttestation(
         sha256: requiredSha256(wheel.sha256, 'candidate.python_wheel.sha256'),
         bytes: requiredPositiveInteger(wheel.bytes, 'candidate.python_wheel.bytes'),
         package_name: 'capture-runtime-client',
-        package_version: '0.4.3',
+        package_version: '0.4.4',
         contract_set_sha256: requiredSha256(
           wheel.contract_set_sha256,
           'candidate.python_wheel.contract_set_sha256',

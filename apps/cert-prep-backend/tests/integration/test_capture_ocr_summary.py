@@ -580,7 +580,7 @@ def _completed_projection() -> SimpleNamespace:
             )
         ],
         page_count=1,
-        runtime_version="0.4.3",
+        runtime_version="0.4.4",
         contract_sha256="d" * 64,
         provenance=provenance,
         failure=None,
@@ -608,7 +608,7 @@ def _failed_projection() -> SimpleNamespace:
         source=None,
         pages=[],
         page_count=0,
-        runtime_version="0.4.3",
+        runtime_version="0.4.4",
         contract_sha256="d" * 64,
         provenance=provenance,
         failure=failure,

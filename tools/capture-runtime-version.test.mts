@@ -45,7 +45,7 @@ const CONTRACT_FIXTURE = JSON.stringify({
       schema: {
         properties: {
           apiVersion: { const: '2.0' },
-          runtimeVersion: { const: '0.4.3' },
+          runtimeVersion: { const: '0.4.4' },
           schemaVersion: { const: '3' },
         },
       },
@@ -56,7 +56,7 @@ const CONTRACT_FIXTURE = JSON.stringify({
         properties: {
           apiVersion: { const: '2.0' },
           contractSetVersion: { const: '2' },
-          runtimeVersion: { const: '0.4.3' },
+          runtimeVersion: { const: '0.4.4' },
           schemaVersion: { const: '1' },
         },
       },
@@ -68,7 +68,7 @@ const CONTRACT_FIXTURE = JSON.stringify({
           apiVersion: { const: '2.0' },
           captureDocumentSchemaVersion: { const: '2' },
           contractSetVersion: { const: '2' },
-          runtimeVersion: { const: '0.4.3' },
+          runtimeVersion: { const: '0.4.4' },
         },
       },
     },
@@ -95,17 +95,17 @@ function validEntries(): CaptureRuntimeConsumerInventoryEntry[] {
     source: `fixture/${field.key}`,
     value:
       field.kind === 'runtimeVersion'
-        ? '0.4.3'
+        ? '0.4.4'
         : field.kind === 'apiVersion'
           ? '2.0'
           : field.kind === 'documentSchemaVersion'
             ? '2'
             : field.kind === 'runtimeProvenanceIdentity'
-              ? 'runtime=0.4.3;wheel=0.4.3'
+              ? 'runtime=0.4.4;wheel=0.4.4'
               : field.kind === 'runtimeReadyIdentity'
                 ? 'api=2.0;document=2;contractSet=2'
                 : field.kind === 'preflightIdentity'
-                  ? 'runtime=0.4.3;api=2.0;contractSet=2'
+                  ? 'runtime=0.4.4;api=2.0;contractSet=2'
                   : 'structural',
   }));
 }
@@ -163,7 +163,7 @@ function rewriteRuntimeVersion(workspaceRoot: string, version: string): void {
     const path = join(workspaceRoot, relativePath);
     writeFileSync(
       path,
-      readFileSync(path, 'utf8').replaceAll('0.4.3', version),
+      readFileSync(path, 'utf8').replaceAll('0.4.4', version),
     );
   }
 }
@@ -346,7 +346,7 @@ test('the inventory rejects duplicate and missing consumer owners', () => {
 test('the inventory rejects stale and mixed runtime owners', () => {
   const entries = validEntries();
   entries[0] = { ...entries[0], value: '0.4.1' };
-  entries[1] = { ...entries[1], value: '0.4.3' };
+  entries[1] = { ...entries[1], value: '0.4.4' };
 
   const report = inspectCaptureRuntimeConsumerInventory(
     inventoryInput(entries),
@@ -354,7 +354,7 @@ test('the inventory rejects stale and mixed runtime owners', () => {
 
   assert.equal(report.status, 'blocked');
   assert.ok(report.errors.some((error) => error.includes('0.4.1')));
-  assert.ok(report.errors.some((error) => error.includes('0.4.3')));
+  assert.ok(report.errors.some((error) => error.includes('0.4.4')));
 });
 
 test('the inventory rejects a missing projection schema and a corrupted contract digest', () => {
@@ -367,7 +367,7 @@ test('the inventory rejects a missing projection schema and a corrupted contract
             properties: {
               apiVersion: { const: '2.0' },
               captureDocumentSchemaVersion: { const: '2' },
-              runtimeVersion: { const: '0.4.3' },
+              runtimeVersion: { const: '0.4.4' },
             },
           },
         },
@@ -394,7 +394,7 @@ test('the inventory rejects a missing projection schema and a corrupted contract
   assert.deepEqual(Buffer.from(source.bytes), originalBytes);
 });
 
-test('the current installed 0.4.3 owners are ready against the 0.4.3 producer target', () => {
+test('the current installed 0.4.4 owners are ready against the 0.4.4 producer target', () => {
   const input = readCaptureRuntimeConsumerInventory(
     process.cwd(),
     contractSource(),
@@ -405,16 +405,16 @@ test('the current installed 0.4.3 owners are ready against the 0.4.3 producer ta
   );
   assert.equal(
     input.entries.find((entry) => entry.key === 'cert.lock.workbenchUi')?.value,
-    '0.4.3',
+    '0.4.4',
   );
   assert.equal(
     input.entries.find((entry) => entry.key === 'cert.backend.uvLock')?.value,
-    '0.4.3',
+    '0.4.4',
   );
   assert.equal(
     input.entries.find((entry) => entry.key === 'cert.desktop.cargoLock')
       ?.value,
-    '0.4.3',
+    '0.4.4',
   );
   assert.equal(
     input.entries.find((entry) => entry.key === 'cert.desktop.captureManifest')
@@ -425,7 +425,7 @@ test('the current installed 0.4.3 owners are ready against the 0.4.3 producer ta
   const report = inspectCaptureRuntimeConsumerInventory(input);
 
   assert.equal(report.status, 'ready');
-  assert.equal(report.expectedRuntimeVersion, '0.4.3');
+  assert.equal(report.expectedRuntimeVersion, '0.4.4');
   assert.deepEqual(report.errors, []);
 });
 
@@ -461,7 +461,7 @@ test('a canonical snapshot reads the same inventory and survives workspace mutat
     assert.deepEqual(snapshotInput.entries, diskInput.entries);
     assert.deepEqual(snapshotInput.sourceErrors, diskInput.sourceErrors);
     assert.equal(snapshotReport.status, 'ready');
-    assert.equal(snapshotReport.expectedRuntimeVersion, '0.4.3');
+    assert.equal(snapshotReport.expectedRuntimeVersion, '0.4.4');
     assert.deepEqual(snapshotReport.errors, []);
 
     rewriteRuntimeVersion(workspaceRoot, '99.0.0');
@@ -511,9 +511,9 @@ test('a canonical snapshot reads the same inventory and survives workspace mutat
   });
 });
 
-test('a consistent synthetic 0.4.3 workspace has identical disk and snapshot reports', () => {
+test('a consistent synthetic 0.4.4 workspace has identical disk and snapshot reports', () => {
   withInventoryWorkspace((workspaceRoot) => {
-    rewriteRuntimeVersion(workspaceRoot, '0.4.3');
+    rewriteRuntimeVersion(workspaceRoot, '0.4.4');
     const snapshot = captureRuntimeConsumerSnapshotFromWorkspace(
       workspaceRoot,
       'synthetic-consumer-head-2',
@@ -717,7 +717,7 @@ test('the lock reader separates package and snapshot ownership', () => {
     const lockPath = join(workspaceRoot, 'pnpm-lock.yaml');
     const original = readFileSync(lockPath, 'utf8').replaceAll(
       '@gx-capture/capture-runtime-client@0.4.1',
-      '@gx-capture/capture-runtime-client@0.4.3',
+      '@gx-capture/capture-runtime-client@0.4.4',
     );
     writeFileSync(
       lockPath,
@@ -726,12 +726,12 @@ test('the lock reader separates package and snapshot ownership', () => {
           original,
           'packages',
           '@gx-capture/capture-runtime-client',
-          '0.4.3',
+          '0.4.4',
           'duplicate',
         ),
         'snapshots',
         '@gx-capture/capture-runtime-client',
-        '0.4.3',
+        '0.4.4',
         'remove',
       ),
     );
@@ -760,7 +760,7 @@ test('the lock reader separates package and snapshot ownership', () => {
     const lockPath = join(workspaceRoot, 'pnpm-lock.yaml');
     const original = readFileSync(lockPath, 'utf8').replaceAll(
       '@gx-capture/capture-runtime-client@0.4.1',
-      '@gx-capture/capture-runtime-client@0.4.3',
+      '@gx-capture/capture-runtime-client@0.4.4',
     );
     writeFileSync(
       lockPath,
@@ -769,12 +769,12 @@ test('the lock reader separates package and snapshot ownership', () => {
           original,
           'packages',
           '@gx-capture/capture-runtime-client',
-          '0.4.3',
+          '0.4.4',
           'remove',
         ),
         'snapshots',
         '@gx-capture/capture-runtime-client',
-        '0.4.3',
+        '0.4.4',
         'duplicate',
       ),
     );
@@ -831,12 +831,12 @@ test('the lock reader rejects duplicate sections and ignores unrelated blocks', 
       readFileSync(lockPath, 'utf8'),
       'packages',
       '@gx-capture/capture-runtime-client',
-      '0.4.3',
+      '0.4.4',
       'remove',
     );
     writeFileSync(
       lockPath,
-      `${lockWithoutPackage}\nforeign:\n  '@gx-capture/capture-runtime-client@0.4.3': {}\n`,
+      `${lockWithoutPackage}\nforeign:\n  '@gx-capture/capture-runtime-client@0.4.4': {}\n`,
     );
     const input = readCaptureRuntimeConsumerInventory(
       workspaceRoot,
@@ -861,7 +861,7 @@ test('the reader rejects duplicate or mixed package and lock source owners', () 
     const lockPath = join(workspaceRoot, 'pnpm-lock.yaml');
     writeFileSync(
       lockPath,
-      `${readFileSync(lockPath, 'utf8')}\n  '@gx-capture/capture-runtime-client@0.4.3':\n    resolution: {}\n`,
+      `${readFileSync(lockPath, 'utf8')}\n  '@gx-capture/capture-runtime-client@0.4.4':\n    resolution: {}\n`,
     );
     assert.doesNotThrow(() =>
       assertCaptureRuntimeConsumerVersions(workspaceRoot),
@@ -885,7 +885,7 @@ test('the reader rejects duplicate or mixed package and lock source owners', () 
     const uvPath = join(workspaceRoot, 'apps/cert-prep-backend/uv.lock');
     writeFileSync(
       uvPath,
-      `${readFileSync(uvPath, 'utf8')}\n[[package]]\nname = "capture-runtime-client"\nversion = "0.4.3"\n`,
+      `${readFileSync(uvPath, 'utf8')}\n[[package]]\nname = "capture-runtime-client"\nversion = "0.4.4"\n`,
     );
     assert.doesNotThrow(() =>
       assertCaptureRuntimeConsumerVersions(workspaceRoot),
@@ -910,7 +910,7 @@ test('the reader rejects duplicate or mixed package and lock source owners', () 
     );
     writeFileSync(
       cargoPath,
-      `${readFileSync(cargoPath, 'utf8')}\n[[package]]\nname = "capture-sidecar-launcher"\nversion = "0.4.3"\n`,
+      `${readFileSync(cargoPath, 'utf8')}\n[[package]]\nname = "capture-sidecar-launcher"\nversion = "0.4.4"\n`,
     );
     assert.doesNotThrow(() =>
       assertCaptureRuntimeConsumerVersions(workspaceRoot),

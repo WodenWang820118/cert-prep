@@ -170,8 +170,8 @@ jobs:
           $ErrorActionPreference = 'Stop'
           pnpm nx run cert-prep-desktop:capture-runtime-consumer-test --skip-nx-cache
           uv run --isolated --no-project `
-            --with 'capture-runtime-client==0.4.3' `
-            -- python -c "import capture_runtime_client; assert capture_runtime_client.CAPTURE_RUNTIME_VERSION == '0.4.3'"
+            --with 'capture-runtime-client==0.4.4' `
+            -- python -c "import capture_runtime_client; assert capture_runtime_client.CAPTURE_RUNTIME_VERSION == '0.4.4'"
 
       - name: Test Capture candidate gate and OCR evidence tooling
         run: >-

@@ -26,14 +26,14 @@ def test_index_installed_candidate_without_direct_url_metadata_is_accepted(
     tmp_path: Path,
 ) -> None:
     site_packages = tmp_path / "site-packages"
-    dist_info = site_packages / "capture_runtime_client-0.4.3.dist-info"
+    dist_info = site_packages / "capture_runtime_client-0.4.4.dist-info"
     package = site_packages / "capture_runtime_client"
     package.mkdir(parents=True)
     dist_info.mkdir()
     members = (
         "capture_runtime_client/__init__.py",
-        "capture_runtime_client-0.4.3.dist-info/METADATA",
-        "capture_runtime_client-0.4.3.dist-info/RECORD",
+        "capture_runtime_client-0.4.4.dist-info/METADATA",
+        "capture_runtime_client-0.4.4.dist-info/RECORD",
     )
     for member in members:
         path = site_packages.joinpath(*member.split("/"))
@@ -50,5 +50,5 @@ def test_index_installed_candidate_without_direct_url_metadata_is_accepted(
     _assert_installed_wheel_source(
         distribution,
         tuple(PackagePath(member) for member in members),
-        tmp_path / "capture_runtime_client-0.4.3-py3-none-any.whl",
+        tmp_path / "capture_runtime_client-0.4.4-py3-none-any.whl",
     )

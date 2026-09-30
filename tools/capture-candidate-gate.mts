@@ -155,7 +155,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export interface RuntimeCandidateArtifactObservation { readonly path: string; readonly bytes: number; readonly sha256: string; readonly content?: Uint8Array; }
 export interface ValidatedRuntimeCandidateContent {
   readonly candidateKind: 'runtime'; readonly candidateId: string; readonly candidateManifestSha256: string;
-  readonly manifestSha256: string; readonly sourceCommit?: string; readonly runtimeVersion: '0.4.3';
+  readonly manifestSha256: string; readonly sourceCommit?: string; readonly runtimeVersion: '0.4.4';
   readonly contractSetSha256: string; readonly modelEntryCount: number; readonly profilePath: '_internal/capture_runtime/assets/ocr-profile.json';
   readonly workerEntryPoint: 'capture-engine-ocr.exe'; readonly inventory: readonly RuntimeCandidateArtifactObservation[];
   readonly runtime: RuntimeCandidateArtifactObservation; readonly ocrArchive: RuntimeCandidateArtifactObservation;
@@ -164,7 +164,7 @@ export interface ValidatedRuntimeCandidateContent {
 }
 export interface ValidatedRuntimeCandidateManifest extends ValidatedRuntimeCandidateContent { readonly sourceCommit: string; }
 
-const LOCAL_RUNTIME_VERSION = '0.4.3';
+const LOCAL_RUNTIME_VERSION = '0.4.4';
 const LOCAL_RUNTIME_ARTIFACT_COUNT = 20;
 
 function localRuntimeInventoryPaths(): readonly string[] {

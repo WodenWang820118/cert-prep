@@ -1122,7 +1122,7 @@ export function inspectCaptureRuntimeConsumerInventory(
                 : definition.kind === 'preflightIdentity'
                   ? identityTuple(
                       {
-                        // 0.4.3 pins runtimeVersion in the producer preflight
+                        // 0.4.4 pins runtimeVersion in the producer preflight
                         // schema; the generated view must mirror the contract.
                         runtimeVersion: parsedContract.preflightRuntimeVersion,
                         apiVersion: CAPTURE_RUNTIME_API_VERSION_FLOOR,

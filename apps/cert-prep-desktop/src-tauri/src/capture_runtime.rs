@@ -377,7 +377,7 @@ fn local_model_probe_enabled() -> bool {
         .is_some_and(|value| value.trim() == "1")
         && std::env::var(CAPTURE_RUNTIME_PROBE_VERSION_ENV)
             .ok()
-            .is_some_and(|value| value.trim() == "0.4.3")
+            .is_some_and(|value| value.trim() == "0.4.4")
 }
 
 fn capture_ready_timeout() -> Duration {
