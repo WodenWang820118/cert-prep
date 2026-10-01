@@ -19,7 +19,9 @@ domains stay focused on product behavior.
   project names.
 - New evidence and ignored output folders should use `tmp/cert-prep-desktop`;
   old ignored local evidence does not need migration.
-- Use exact `pnpm@12.0.0`; do not mix npm and pnpm after migration.
+- Use the exact pnpm version declared by root `package.json#packageManager`;
+  keep `engines.pnpm` and the generated package-manager lock in sync. CI reads
+  this declaration through `pnpm/action-setup`. Do not mix npm and pnpm.
 
 ## Nx And Verification Rules
 

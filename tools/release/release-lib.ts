@@ -323,9 +323,11 @@ export function assertWorkspaceVersions(workspaceRoot, expectedVersion) {
     ),
     'utf8',
   );
-  const packageQaAlphaVersion = packageQaConstants.match(
-    /^export const ALPHA_VERSION = ['"]([^'"]+)['"];$/m,
-  )?.[1];
+  const packageQaAlphaVersion = packageQaConstants.includes(
+    "new URL('../../src-tauri/tauri.conf.json', import.meta.url)",
+  ) && packageQaConstants.includes('export const ALPHA_VERSION: string = JSON.parse(')
+    ? tauriConfig.version
+    : packageQaConstants.match(/^export const ALPHA_VERSION = ['"]([^'"]+)['"];$/m)?.[1];
   const packageQaPythonRuntimeVersion = packageQaConstants.match(
     /^export const PYTHON_RUNTIME_VERSION = ['"]([^'"]+)['"];$/m,
   )?.[1];
@@ -380,7 +382,10 @@ export function assertWorkspaceVersions(workspaceRoot, expectedVersion) {
       backendProject.targets?.[targetName]?.options?.command ?? '';
     if (
       !command.includes(`--python ${RELEASE_PYTHON_VERSION}`) ||
-      !command.includes(`--version ${expectedVersion}`) ||
+      !(command.includes(`--version ${expectedVersion}`) ||
+        (!command.includes('--version') && readFileSync(
+          join(workspaceRoot, 'apps/cert-prep-backend/scripts/build_backend_runtime.py'), 'utf8',
+        ).includes('tomllib.loads((BACKEND_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]'))) ||
       !command.includes(`--target ${TARGET_TRIPLE}`)
     ) {
       throw new Error(

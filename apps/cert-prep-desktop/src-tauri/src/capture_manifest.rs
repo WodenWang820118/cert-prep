@@ -63,9 +63,9 @@ fn capture_runtime_expected_version() -> String {
         .is_some_and(|value| value.trim() == "1")
         && std::env::var("CERT_PREP_CAPTURE_RUNTIME_EXPECTED_VERSION")
             .ok()
-            .is_some_and(|value| value.trim() == "0.4.4")
+            .is_some_and(|value| value.trim() == CAPTURE_RUNTIME_VERSION)
     {
-        return "0.4.4".into();
+        return CAPTURE_RUNTIME_VERSION.into();
     }
     CAPTURE_RUNTIME_VERSION.into()
 }

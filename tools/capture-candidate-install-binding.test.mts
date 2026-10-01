@@ -1,3 +1,4 @@
+import { CAPTURE_RUNTIME_VERSION } from './capture-runtime-version.mts';
 import { createHash } from 'node:crypto';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
@@ -142,12 +143,12 @@ async function createCandidateFixture(sourceCommit = 'a'.repeat(40)): Promise<{
         }),
       ),
     ],
-    ['package/gx-capture-capture-runtime-client-0.4.4.tgz', Buffer.from('runtime client archive')],
-    ['package/gx-capture-capture-workbench-ui-0.4.4.tgz', Buffer.from('workbench archive')],
-    ['python/capture_runtime_client-0.4.4-py3-none-any.whl', Buffer.from('python wheel')],
-    ['python/capture_runtime_client-0.4.4.tar.gz', Buffer.from('python source')],
-    ['crate/capture-sidecar-launcher-0.4.4.crate', Buffer.from('launcher crate')],
-    ['desktop/Capture.Workbench_0.4.4_x64-setup.exe', Buffer.from('desktop installer')],
+    [`package/gx-capture-capture-runtime-client-${CAPTURE_RUNTIME_VERSION}.tgz`, Buffer.from('runtime client archive')],
+    [`package/gx-capture-capture-workbench-ui-${CAPTURE_RUNTIME_VERSION}.tgz`, Buffer.from('workbench archive')],
+    [`python/capture_runtime_client-${CAPTURE_RUNTIME_VERSION}-py3-none-any.whl`, Buffer.from('python wheel')],
+    [`python/capture_runtime_client-${CAPTURE_RUNTIME_VERSION}.tar.gz`, Buffer.from('python source')],
+    [`crate/capture-sidecar-launcher-${CAPTURE_RUNTIME_VERSION}.crate`, Buffer.from('launcher crate')],
+    [`desktop/Capture.Workbench_${CAPTURE_RUNTIME_VERSION}_x64-setup.exe`, Buffer.from('desktop installer')],
     ['contracts/contract-set.json', contractBytes],
     ['contracts/contract-set.sha256', Buffer.from(contractSetSha256)],
     ['contracts/contract-snapshot.json', Buffer.from('{"schemaVersion":"1"}')],
@@ -246,7 +247,7 @@ async function createConsistentSource(): Promise<{
   const files = new Map<string, Uint8Array>();
   for (const path of CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS) {
     const bytes = await readFile(join(workspaceRoot, path));
-    files.set(path, Uint8Array.from(Buffer.from(bytes.toString('utf8').replaceAll('0.4.1', '0.4.4'))));
+    files.set(path, Uint8Array.from(Buffer.from(bytes.toString('utf8').replaceAll('0.4.1', CAPTURE_RUNTIME_VERSION))));
   }
   return {
     files,
@@ -410,7 +411,7 @@ test('0.4.1 consumer bytes cannot prepare a 0.4.4 candidate and do not write', a
     current.files.set(
       path,
       Uint8Array.from(
-        Buffer.from(bytes.toString('utf8').replaceAll('0.4.4', '0.4.1')),
+        Buffer.from(bytes.toString('utf8').replaceAll(CAPTURE_RUNTIME_VERSION, '0.4.1')),
       ),
     );
   }

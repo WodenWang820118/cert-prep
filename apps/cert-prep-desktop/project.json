@@ -6,6 +6,34 @@
   "tags": ["scope:cert", "type:desktop"],
   "implicitDependencies": ["cert-prep", "cert-prep-backend"],
   "targets": {
+    "version-plan": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/version-owner.mts plan"
+      }
+    },
+    "version-check": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/version-owner.mts check"
+      }
+    },
+    "version-apply": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node tools/version-owner.mts apply"
+      }
+    },
+    "version-management-test": {
+      "cache": false,
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node --import ./apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.mts --test tools/version-owner.test.mts"
+      }
+    },
     "lint": {
       "cache": true,
       "executor": "nx:run-commands",
@@ -58,7 +86,7 @@
     "install-capture-runtime": {
       "cache": false,
       "executor": "nx:run-commands",
-      "outputs": ["{workspaceRoot}/tmp/cert-prep/capture-runtime/0.4.4"],
+      "outputs": ["{workspaceRoot}/tmp/cert-prep/capture-runtime"],
       "options": {
         "command": "node tools/install-capture-runtime.mts"
       }
@@ -67,7 +95,7 @@
       "cache": false,
       "executor": "nx:run-commands",
       "options": {
-        "command": "node --test tools/capture-runtime-version.test.mts tools/install-capture-runtime.test.mts"
+        "command": "node --import ./apps/cert-prep-desktop/scripts/package-qa/canonical-test-temp.mts --test tools/capture-runtime-version.test.mts tools/install-capture-runtime.test.mts tools/version-owner.test.mts"
       }
     },
     "capture-candidate-gate-test": {

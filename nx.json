@@ -12,7 +12,12 @@
       "!{projectRoot}/jest.config.[jt]s",
       "!{projectRoot}/test-setup.[jt]s"
     ],
-    "sharedGlobals": []
+    "sharedGlobals": [
+      "{workspaceRoot}/tools/capture-runtime-version.json",
+      "{workspaceRoot}/tools/capture-runtime-version.mts",
+      "{workspaceRoot}/tools/capture-version-source.mts",
+      "{workspaceRoot}/apps/cert-prep-desktop/src-tauri/tauri.conf.json"
+    ]
   },
   "targetDefaults": {
     "@angular/build:application": {

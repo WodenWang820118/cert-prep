@@ -43,7 +43,9 @@ const assemble = readFileSync(
   resolve(import.meta.dirname, 'assemble.ts'),
   'utf8',
 );
-const expectedPnpmVersion = '12.0.0';
+const expectedPnpmVersion = /^pnpm@(\d+\.\d+\.\d+)$/.exec(
+  packageJson.packageManager,
+)?.[1];
 
 const windowsOwnedProjects = [
   'cert-prep-contracts',
@@ -192,31 +194,38 @@ test('all third-party actions are pinned and every Node setup uses Node 24', () 
   );
 });
 
-test('all package-manager entrypoints pin exact pnpm 12.0.0', () => {
-  assert.equal(packageJson.packageManager, `pnpm@${expectedPnpmVersion}`);
+test('package-manager entrypoints use the exact root pnpm declaration', () => {
+  assert.ok(
+    expectedPnpmVersion,
+    'packageManager must declare an exact pnpm version',
+  );
   assert.equal(packageJson.engines?.pnpm, expectedPnpmVersion);
+  const versionPattern = expectedPnpmVersion.replaceAll('.', '\\.');
   assert.match(
     lockfile,
     new RegExp(
-      `packageManagerDependencies:\\s+pnpm:\\s+specifier: ${expectedPnpmVersion}\\s+version: ${expectedPnpmVersion}`,
+      `packageManagerDependencies:\\s+pnpm:\\s+specifier: ${versionPattern}\\s+version: ${versionPattern}`,
     ),
   );
 
-  for (const source of [ciWorkflow, captureCandidateWorkflow]) {
-    assert.equal(
-      (source.match(/uses:\s*pnpm\/action-setup@/g) ?? []).length,
-      (
-        source.match(new RegExp(`version:\\s*${expectedPnpmVersion}`, 'g')) ??
-        []
-      ).length,
-    );
-    assert.doesNotMatch(source, /version:\s*(?:latest|next(?:-[^\s]+)?)/);
+  for (const source of [ciWorkflow, captureCandidateWorkflow, workflow]) {
+    const setupSteps = [
+      ...source.matchAll(
+        /      - (?:name:[^\n]*\n\s+)?uses:\s*pnpm\/action-setup@[^\n]+\n(?:(?!      - )[^\n]*\n)*/g,
+      ),
+    ];
+    assert.ok(setupSteps.length > 0, 'workflow must install the declared pnpm');
+    for (const step of setupSteps) {
+      assert.ok(
+        source.lastIndexOf('uses: actions/checkout@', step.index) >= 0,
+        'checkout must precede packageManager discovery',
+      );
+      assert.doesNotMatch(step[0], /^\s+version:/m);
+      assert.doesNotMatch(step[0], /^\s+package_json_file:/m);
+      assert.match(step[0], /run_install:\s*false/);
+    }
+    assert.doesNotMatch(source, /PNPM_VERSION:/);
   }
-  assert.match(
-    workflow,
-    new RegExp(`PNPM_VERSION:\\s*${expectedPnpmVersion}`),
-  );
-  assert.match(workflow, /version:\s*\$\{\{ env\.PNPM_VERSION \}\}/);
 
   for (const [name, command] of Object.entries(packageJson.scripts ?? {})) {
     assert.match(

@@ -1,3 +1,5 @@
+import { isCaptureRuntimePythonWheelFileName } from '../capture-runtime-python-wheel.mts';
+import { PHASE1_FINAL_IDENTITY } from '../phase1-final-identity.mts';
 import { setTimeout as delay } from 'node:timers/promises';
 import { randomUUID } from 'node:crypto';
 import type { Locator } from 'playwright';
@@ -323,14 +325,12 @@ export function parseInstalledRuntimeTupleAttestation(
   const generatedModels = wheel.generated_models;
   if (
     typeof wheel.file_name !== 'string' ||
-    !/^capture[_-]runtime[_-]client-0\.4\.4-[A-Za-z0-9._-]+\.whl$/u.test(
-      wheel.file_name,
-    ) ||
+    !isCaptureRuntimePythonWheelFileName(wheel.file_name, PHASE1_FINAL_IDENTITY.runtimeVersion) ||
     !isRecord(generatedModels) ||
     generatedModels.worker_sha256 !== true ||
     generatedModels.pdf_page_numbers !== true ||
     wheel.package_name !== 'capture-runtime-client' ||
-    wheel.package_version !== '0.4.4' ||
+    wheel.package_version !== PHASE1_FINAL_IDENTITY.runtimeVersion ||
     requiredSha256(wheel.sha256, 'candidate.python_wheel.sha256') === '' ||
     requiredPositiveInteger(wheel.bytes, 'candidate.python_wheel.bytes') !== wheel.bytes ||
     requiredSha256(wheel.contract_set_sha256, 'candidate.python_wheel.contract_set_sha256') !==
@@ -360,7 +360,7 @@ export function parseInstalledRuntimeTupleAttestation(
         sha256: requiredSha256(wheel.sha256, 'candidate.python_wheel.sha256'),
         bytes: requiredPositiveInteger(wheel.bytes, 'candidate.python_wheel.bytes'),
         package_name: 'capture-runtime-client',
-        package_version: '0.4.4',
+        package_version: PHASE1_FINAL_IDENTITY.runtimeVersion,
         contract_set_sha256: requiredSha256(
           wheel.contract_set_sha256,
           'candidate.python_wheel.contract_set_sha256',

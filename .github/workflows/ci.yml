@@ -36,7 +36,6 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
         with:
-          version: 12.0.0
           run_install: false
 
       - name: Install Node
@@ -107,7 +106,6 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
         with:
-          version: 12.0.0
           run_install: false
 
       - name: Install Node
@@ -164,14 +162,20 @@ jobs:
       - name: Run the Capture Runtime consumer smoke
         run: pnpm nx run cert-prep-desktop:capture-runtime-consumer-smoke --skip-nx-cache
 
+      - name: Test Capture consumer contract
+        run: pnpm nx run cert-prep-desktop:capture-runtime-consumer-test --skip-nx-cache
+
+      - name: Verify adopted Capture versions and installed contract
+        run: pnpm nx run cert-prep-desktop:version-check --skip-nx-cache
+
       - name: Verify published Capture registry installation
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          pnpm nx run cert-prep-desktop:capture-runtime-consumer-test --skip-nx-cache
+          $captureVersion = (Get-Content tools/capture-runtime-version.json -Raw | ConvertFrom-Json).runtimeVersion
           uv run --isolated --no-project `
-            --with 'capture-runtime-client==0.4.4' `
-            -- python -c "import capture_runtime_client; assert capture_runtime_client.CAPTURE_RUNTIME_VERSION == '0.4.4'"
+            --with "capture-runtime-client==$captureVersion" `
+            -- python -c "import capture_runtime_client; assert capture_runtime_client.CAPTURE_RUNTIME_VERSION == '$captureVersion'"
 
       - name: Test Capture candidate gate and OCR evidence tooling
         run: >-

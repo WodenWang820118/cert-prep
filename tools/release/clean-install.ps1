@@ -14,6 +14,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+$captureAdoptionVersion = (Get-Content -LiteralPath (Join-Path $PSScriptRoot '../capture-runtime-version.json') -Raw | ConvertFrom-Json).runtimeVersion
 
 function Get-Sha256([string]$Path) {
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -244,7 +245,7 @@ function Assert-InstalledRuntimeContract([string]$InstallRoot, [pscustomobject]$
     if ($backend.version -ne $Plan.version -or $backend.artifact.url -ne $null) {
         throw 'Installed backend manifest does not describe the bundled alpha runtime.'
     }
-    if ($capture.runtimeVersion -ne '0.4.4' -or
+    if ($capture.runtimeVersion -ne $captureAdoptionVersion -or
         $capture.apiVersion -ne '2.0' -or
         $capture.captureDocumentSchemaVersion -ne '2') {
         throw 'Installed Capture Runtime manifest does not describe the pinned contract.'
