@@ -34,7 +34,8 @@ import {
 } from '../process-lifecycle/processes.mts';
 import { snapshotWindowsListeningPorts, type ListeningPortRecord } from '../packaged-capture-workbench-smoke/runtime-process-evidence.mts';
 import { packagedAppDataDir } from './runtime-sync.mts';
-import { DEFAULT_LLM_MODEL } from '../package-qa/constants.mts';
+import { PHASE1_FINAL_IDENTITY } from '../phase1-final-identity.mts';
+import { CAPTURE_RUNTIME_VERSION, DEFAULT_LLM_MODEL } from '../package-qa/constants.mts';
 import {
   activePage,
   bodyText,
@@ -809,16 +810,17 @@ function captureRuntimeProbeEnvironment(
   inherited: Readonly<NodeJS.ProcessEnv>,
   force = false,
 ): NodeJS.ProcessEnv {
+  const expectedVersion = force ? PHASE1_FINAL_IDENTITY.runtimeVersion : CAPTURE_RUNTIME_VERSION;
   if (
     !force &&
     (inherited[CAPTURE_RUNTIME_PROBE_ENV]?.trim() !== '1' ||
-      inherited[CAPTURE_RUNTIME_PROBE_VERSION_ENV]?.trim() !== '0.4.4')
+      inherited[CAPTURE_RUNTIME_PROBE_VERSION_ENV]?.trim() !== expectedVersion)
   ) {
     return {};
   }
   return {
     [CAPTURE_RUNTIME_PROBE_ENV]: '1',
-    [CAPTURE_RUNTIME_PROBE_VERSION_ENV]: '0.4.4',
+    [CAPTURE_RUNTIME_PROBE_VERSION_ENV]: expectedVersion,
     ...(inherited[CAPTURE_RUNTIME_LOCAL_MODEL_ROOT_ENV]?.trim()
       ? {
           [CAPTURE_RUNTIME_LOCAL_MODEL_ROOT_ENV]:

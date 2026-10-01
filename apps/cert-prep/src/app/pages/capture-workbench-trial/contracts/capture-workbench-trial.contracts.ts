@@ -1,4 +1,3 @@
-import { CAPTURE_RUNTIME_VERSION } from '@cert-prep/capture-runtime-version';
 import type { RuntimeReady } from '@gx-capture/capture-workbench-ui';
 
 export interface CaptureRecord {
@@ -32,7 +31,7 @@ export interface OcrComputePreflight {
   readonly apiVersion: '2.0';
   readonly schemaVersion: '1';
   readonly service: 'capture-runtime';
-  readonly runtimeVersion: typeof CAPTURE_RUNTIME_VERSION;
+  readonly runtimeVersion: NonNullable<RuntimeReady['ocrCompute']>['runtimeVersion'];
   readonly contractSetVersion: '2';
   readonly contractSha256: string;
   readonly workerSha256: string | null;

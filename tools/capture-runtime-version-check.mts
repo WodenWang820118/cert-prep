@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { readCaptureVersion } from './capture-version-source.mts';
 
 import {
   CAPTURE_SIDECAR_LAUNCHER_VERSION,
@@ -78,7 +79,7 @@ export const CAPTURE_RUNTIME_CONSUMER_INVENTORY_FIELDS = [
   },
   { key: 'cert.desktop.cargoToml', kind: 'runtimeVersion' },
   { key: 'cert.desktop.cargoLock', kind: 'runtimeVersion' },
-  { key: 'cert.desktop.projectRuntime', kind: 'runtimeVersion' },
+  { key: 'cert.desktop.projectRuntime', kind: 'structural' },
   { key: 'cert.desktop.captureManifest', kind: 'structural' },
   { key: 'cert.desktop.manifests', kind: 'structural' },
   { key: 'cert.desktop.backendLaunchEnv', kind: 'structural' },
@@ -425,7 +426,13 @@ function runtimeProvenanceIdentity(
   content: string,
   sourceLabel: string,
   sourceErrors: string[],
+  adoptedVersion: string | undefined,
 ): string | undefined {
+  if (/from capture_runtime_client import CAPTURE_RUNTIME_VERSION/u.test(content) &&
+      /value\.get\("runtime_version"\) != CAPTURE_RUNTIME_VERSION/u.test(content) &&
+      /wheel\.get\(\s*"package_version"\s*\)\s*!=\s*CAPTURE_RUNTIME_VERSION/u.test(content)) {
+    return adoptedVersion ? `runtime=${adoptedVersion};wheel=${adoptedVersion}` : undefined;
+  }
   const runtime = captureSingle(
     content,
     /value\.get\("runtime_version"\) != "([^"]+)"/u,
@@ -500,6 +507,23 @@ function readCaptureRuntimeConsumerInventoryFromSource(
     sourceReader,
     'tools/capture-runtime-version.mts',
   );
+  let adoptedVersion: string | undefined;
+  try {
+    adoptedVersion = readCaptureVersion(readSource(sourceReader, 'tools/capture-runtime-version.json'));
+  } catch (error) {
+    sourceErrors.push(String(error));
+  }
+  if (!versionSource.includes("import captureVersion from './capture-runtime-version.json'") ||
+      !/CAPTURE_RUNTIME_VERSION:\s*string\s*=\s*captureVersion\.runtimeVersion;/u.test(versionSource) ||
+      !versionSource.includes('CAPTURE_SIDECAR_LAUNCHER_VERSION = CAPTURE_RUNTIME_VERSION;')) {
+    sourceErrors.push('Capture TypeScript facade must read the shared adoption source.');
+  }
+  const rustBuild = readSource(sourceReader, 'apps/cert-prep-desktop/src-tauri/build.rs');
+  const rustConstants = readSource(sourceReader, 'apps/cert-prep-desktop/src-tauri/src/constants.rs');
+  const rustShared = rustBuild.includes('../../../tools/capture-runtime-version.json') &&
+    /pin\["runtimeVersion"\]\s*\.as_str\(\)/u.test(rustBuild) &&
+    rustBuild.includes('cargo:rustc-env=CERT_PREP_CAPTURE_RUNTIME_VERSION={version}') &&
+    rustConstants.includes('CAPTURE_RUNTIME_VERSION: &str = env!("CERT_PREP_CAPTURE_RUNTIME_VERSION")');
   const backendPolicy =
     'apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/runtime_policy.py';
   const backendMapping =
@@ -606,22 +630,12 @@ function readCaptureRuntimeConsumerInventoryFromSource(
       field(
         'cert.version.runtime',
         'tools/capture-runtime-version.mts:CAPTURE_RUNTIME_VERSION',
-        captureSingle(
-          versionSource,
-          /CAPTURE_RUNTIME_VERSION = '([^']+)'/u,
-          'tools/capture-runtime-version.mts:CAPTURE_RUNTIME_VERSION',
-          sourceErrors,
-        ),
+        adoptedVersion,
       ),
       field(
         'cert.version.sidecar',
         'tools/capture-runtime-version.mts:CAPTURE_SIDECAR_LAUNCHER_VERSION',
-        captureSingle(
-          versionSource,
-          /CAPTURE_SIDECAR_LAUNCHER_VERSION = '([^']+)'/u,
-          'tools/capture-runtime-version.mts:CAPTURE_SIDECAR_LAUNCHER_VERSION',
-          sourceErrors,
-        ),
+        adoptedVersion,
       ),
       field(
         'cert.backend.pythonClient',
@@ -671,12 +685,13 @@ function readCaptureRuntimeConsumerInventoryFromSource(
           runtimeProvenanceContent,
           `${runtimeProvenance}:_validate_candidate`,
           sourceErrors,
+          adoptedVersion,
         ),
       ),
       field(
         'cert.desktop.constants.runtime',
         `${desktopConstants}:CAPTURE_RUNTIME_VERSION`,
-        captureSingle(
+        rustShared ? adoptedVersion : captureSingle(
           readSource(
             sourceReader,
             desktopConstants as (typeof CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS)[number],
@@ -720,7 +735,7 @@ function readCaptureRuntimeConsumerInventoryFromSource(
             sourceReader,
             desktopCargo as (typeof CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS)[number],
           ),
-          /capture-sidecar-launcher\s*=\s*"([^"]+)"/u,
+          /capture-sidecar-launcher\s*=\s*"=([^"]+)"/u,
           `${desktopCargo}:capture-sidecar-launcher`,
           sourceErrors,
         ),
@@ -735,18 +750,12 @@ function readCaptureRuntimeConsumerInventoryFromSource(
           desktopCargoLock,
         ),
       ),
-      field(
+      present(
+        sourceReader,
+        desktopProject,
+        /"outputs": \["\{workspaceRoot\}\/tmp\/cert-prep\/capture-runtime"\]/u,
         'cert.desktop.projectRuntime',
-        `${desktopProject}:outputs`,
-        captureSingle(
-          readSource(
-            sourceReader,
-            desktopProject as (typeof CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS)[number],
-          ),
-          /capture-runtime\/(\d+\.\d+\.\d+(?:-[^"/]+)?)/u,
-          `${desktopProject}:outputs`,
-          sourceErrors,
-        ),
+        'install-capture-runtime outputs',
       ),
       present(
         sourceReader,
@@ -1280,6 +1289,9 @@ export function assertCaptureRuntimeConsumerVersions(
     assertCandidateInstallVersions(workspaceRoot);
     return;
   }
+  if (readCaptureVersion(read(workspaceRoot, 'tools/capture-runtime-version.json')) !== CAPTURE_RUNTIME_VERSION) {
+    throw new Error('Capture adoption source changed; restart the version command.');
+  }
   const packageManifest = JSON.parse(read(workspaceRoot, 'package.json')) as {
     dependencies?: Record<string, unknown>;
   };
@@ -1370,12 +1382,12 @@ export function assertCaptureRuntimeConsumerVersions(
   requireMatch(
     workspaceRoot,
     'apps/cert-prep-desktop/src-tauri/src/constants.rs',
-    new RegExp(`CAPTURE_RUNTIME_VERSION: &str = "${CAPTURE_RUNTIME_VERSION}"`),
+    /CAPTURE_RUNTIME_VERSION: &str = env!\("CERT_PREP_CAPTURE_RUNTIME_VERSION"\)/u,
   );
   requireMatch(
     workspaceRoot,
     'apps/cert-prep-desktop/project.json',
-    new RegExp(`capture-runtime\\/${CAPTURE_RUNTIME_VERSION}`),
+    /"outputs": \["\{workspaceRoot\}\/tmp\/cert-prep\/capture-runtime"\]/u,
   );
   requireMatch(
     workspaceRoot,
@@ -1401,7 +1413,7 @@ export function assertCaptureRuntimeConsumerVersions(
     workspaceRoot,
     'apps/cert-prep-desktop/src-tauri/Cargo.toml',
     new RegExp(
-      `capture-sidecar-launcher\\s*=\\s*(?:["']${CAPTURE_SIDECAR_LAUNCHER_VERSION.replaceAll('.', '\\.')}["']|\\{[\\s\\S]*?version\\s*=\\s*["']${CAPTURE_SIDECAR_LAUNCHER_VERSION.replaceAll('.', '\\.')}["'])`,
+      `capture-sidecar-launcher\\s*=\\s*(?:["']=${CAPTURE_SIDECAR_LAUNCHER_VERSION.replaceAll('.', '\\.')}["']|\\{[\\s\\S]*?version\\s*=\\s*["']=${CAPTURE_SIDECAR_LAUNCHER_VERSION.replaceAll('.', '\\.')}["'])`,
     ),
   );
   requirePublishedCaptureArtifacts(workspaceRoot);

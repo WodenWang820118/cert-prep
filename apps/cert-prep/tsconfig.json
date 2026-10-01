@@ -9,6 +9,7 @@
     "isolatedModules": true,
     "target": "es2022",
     "moduleResolution": "bundler",
+    "resolveJsonModule": true,
     "emitDecoratorMetadata": false,
     "module": "preserve",
     "ignoreDeprecations": "6.0"

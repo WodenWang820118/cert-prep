@@ -313,3 +313,9 @@ function decodeUtf8(bytes: Uint8Array, label: string): string {
 function sha256(bytes: Uint8Array): string {
   return createHash('sha256').update(bytes).digest('hex');
 }
+
+/** Exact wheel identity for the caller's current or historical acceptance scope. */
+export function isCaptureRuntimePythonWheelFileName(fileName: unknown, runtimeVersion: string): fileName is string {
+  const escaped = runtimeVersion.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+  return typeof fileName === 'string' && new RegExp(`^capture[_-]runtime[_-]client-${escaped}-[A-Za-z0-9._-]+\\.whl$`, 'u').test(fileName);
+}

@@ -1,3 +1,4 @@
+import { CAPTURE_RUNTIME_VERSION } from './capture-runtime-version.mts';
 import { createHash } from 'node:crypto';
 import { readFile as readFileAsync, realpathSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -29,7 +30,7 @@ import {
  * a matching consumer source snapshot. It does not prove full D3 runtime or
  * installer readiness, and it never performs installation.
  */
-export const CAPTURE_CANDIDATE_INSTALL_RELEASE_VERSION = '0.4.4';
+export const CAPTURE_CANDIDATE_INSTALL_RELEASE_VERSION = CAPTURE_RUNTIME_VERSION;
 
 export type CandidateInstallGitResolver = Readonly<{
   resolveTopLevel(workspaceRoot: string): string;

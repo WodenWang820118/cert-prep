@@ -1,3 +1,4 @@
+import { CAPTURE_RUNTIME_VERSION } from './capture-runtime-version.mts';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import {
@@ -45,7 +46,7 @@ const CONTRACT_FIXTURE = JSON.stringify({
       schema: {
         properties: {
           apiVersion: { const: '2.0' },
-          runtimeVersion: { const: '0.4.4' },
+          runtimeVersion: { const: CAPTURE_RUNTIME_VERSION },
           schemaVersion: { const: '3' },
         },
       },
@@ -56,7 +57,7 @@ const CONTRACT_FIXTURE = JSON.stringify({
         properties: {
           apiVersion: { const: '2.0' },
           contractSetVersion: { const: '2' },
-          runtimeVersion: { const: '0.4.4' },
+          runtimeVersion: { const: CAPTURE_RUNTIME_VERSION },
           schemaVersion: { const: '1' },
         },
       },
@@ -68,7 +69,7 @@ const CONTRACT_FIXTURE = JSON.stringify({
           apiVersion: { const: '2.0' },
           captureDocumentSchemaVersion: { const: '2' },
           contractSetVersion: { const: '2' },
-          runtimeVersion: { const: '0.4.4' },
+          runtimeVersion: { const: CAPTURE_RUNTIME_VERSION },
         },
       },
     },
@@ -95,17 +96,17 @@ function validEntries(): CaptureRuntimeConsumerInventoryEntry[] {
     source: `fixture/${field.key}`,
     value:
       field.kind === 'runtimeVersion'
-        ? '0.4.4'
+        ? CAPTURE_RUNTIME_VERSION
         : field.kind === 'apiVersion'
           ? '2.0'
           : field.kind === 'documentSchemaVersion'
             ? '2'
             : field.kind === 'runtimeProvenanceIdentity'
-              ? 'runtime=0.4.4;wheel=0.4.4'
+              ? `runtime=${CAPTURE_RUNTIME_VERSION};wheel=${CAPTURE_RUNTIME_VERSION}`
               : field.kind === 'runtimeReadyIdentity'
                 ? 'api=2.0;document=2;contractSet=2'
                 : field.kind === 'preflightIdentity'
-                  ? 'runtime=0.4.4;api=2.0;contractSet=2'
+                  ? `runtime=${CAPTURE_RUNTIME_VERSION};api=2.0;contractSet=2`
                   : 'structural',
   }));
 }
@@ -163,7 +164,7 @@ function rewriteRuntimeVersion(workspaceRoot: string, version: string): void {
     const path = join(workspaceRoot, relativePath);
     writeFileSync(
       path,
-      readFileSync(path, 'utf8').replaceAll('0.4.4', version),
+      readFileSync(path, 'utf8').replaceAll(CAPTURE_RUNTIME_VERSION, version),
     );
   }
 }
@@ -346,7 +347,7 @@ test('the inventory rejects duplicate and missing consumer owners', () => {
 test('the inventory rejects stale and mixed runtime owners', () => {
   const entries = validEntries();
   entries[0] = { ...entries[0], value: '0.4.1' };
-  entries[1] = { ...entries[1], value: '0.4.4' };
+  entries[1] = { ...entries[1], value: CAPTURE_RUNTIME_VERSION };
 
   const report = inspectCaptureRuntimeConsumerInventory(
     inventoryInput(entries),
@@ -354,7 +355,7 @@ test('the inventory rejects stale and mixed runtime owners', () => {
 
   assert.equal(report.status, 'blocked');
   assert.ok(report.errors.some((error) => error.includes('0.4.1')));
-  assert.ok(report.errors.some((error) => error.includes('0.4.4')));
+  assert.ok(report.errors.some((error) => error.includes(CAPTURE_RUNTIME_VERSION)));
 });
 
 test('the inventory rejects a missing projection schema and a corrupted contract digest', () => {
@@ -367,7 +368,7 @@ test('the inventory rejects a missing projection schema and a corrupted contract
             properties: {
               apiVersion: { const: '2.0' },
               captureDocumentSchemaVersion: { const: '2' },
-              runtimeVersion: { const: '0.4.4' },
+              runtimeVersion: { const: CAPTURE_RUNTIME_VERSION },
             },
           },
         },
@@ -405,16 +406,16 @@ test('the current installed 0.4.4 owners are ready against the 0.4.4 producer ta
   );
   assert.equal(
     input.entries.find((entry) => entry.key === 'cert.lock.workbenchUi')?.value,
-    '0.4.4',
+    CAPTURE_RUNTIME_VERSION,
   );
   assert.equal(
     input.entries.find((entry) => entry.key === 'cert.backend.uvLock')?.value,
-    '0.4.4',
+    CAPTURE_RUNTIME_VERSION,
   );
   assert.equal(
     input.entries.find((entry) => entry.key === 'cert.desktop.cargoLock')
       ?.value,
-    '0.4.4',
+    CAPTURE_RUNTIME_VERSION,
   );
   assert.equal(
     input.entries.find((entry) => entry.key === 'cert.desktop.captureManifest')
@@ -425,7 +426,7 @@ test('the current installed 0.4.4 owners are ready against the 0.4.4 producer ta
   const report = inspectCaptureRuntimeConsumerInventory(input);
 
   assert.equal(report.status, 'ready');
-  assert.equal(report.expectedRuntimeVersion, '0.4.4');
+  assert.equal(report.expectedRuntimeVersion, CAPTURE_RUNTIME_VERSION);
   assert.deepEqual(report.errors, []);
 });
 
@@ -454,14 +455,14 @@ test('a canonical snapshot reads the same inventory and survives workspace mutat
       snapshot.files.length,
       CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS.length,
     );
-    assert.equal(CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS.length, 23);
+    assert.equal(CAPTURE_RUNTIME_CONSUMER_SOURCE_PATHS.length, 26);
     assert.equal(CAPTURE_RUNTIME_CONSUMER_INVENTORY_FIELDS.length, 29);
     assert.equal(repeatedSnapshot.aggregateSha256, snapshot.aggregateSha256);
     assert.deepEqual(repeatedSnapshot.files, snapshot.files);
     assert.deepEqual(snapshotInput.entries, diskInput.entries);
     assert.deepEqual(snapshotInput.sourceErrors, diskInput.sourceErrors);
     assert.equal(snapshotReport.status, 'ready');
-    assert.equal(snapshotReport.expectedRuntimeVersion, '0.4.4');
+    assert.equal(snapshotReport.expectedRuntimeVersion, CAPTURE_RUNTIME_VERSION);
     assert.deepEqual(snapshotReport.errors, []);
 
     rewriteRuntimeVersion(workspaceRoot, '99.0.0');
@@ -513,7 +514,7 @@ test('a canonical snapshot reads the same inventory and survives workspace mutat
 
 test('a consistent synthetic 0.4.4 workspace has identical disk and snapshot reports', () => {
   withInventoryWorkspace((workspaceRoot) => {
-    rewriteRuntimeVersion(workspaceRoot, '0.4.4');
+    rewriteRuntimeVersion(workspaceRoot, CAPTURE_RUNTIME_VERSION);
     const snapshot = captureRuntimeConsumerSnapshotFromWorkspace(
       workspaceRoot,
       'synthetic-consumer-head-2',
@@ -717,7 +718,7 @@ test('the lock reader separates package and snapshot ownership', () => {
     const lockPath = join(workspaceRoot, 'pnpm-lock.yaml');
     const original = readFileSync(lockPath, 'utf8').replaceAll(
       '@gx-capture/capture-runtime-client@0.4.1',
-      '@gx-capture/capture-runtime-client@0.4.4',
+      `@gx-capture/capture-runtime-client@${CAPTURE_RUNTIME_VERSION}`,
     );
     writeFileSync(
       lockPath,
@@ -726,12 +727,12 @@ test('the lock reader separates package and snapshot ownership', () => {
           original,
           'packages',
           '@gx-capture/capture-runtime-client',
-          '0.4.4',
+          CAPTURE_RUNTIME_VERSION,
           'duplicate',
         ),
         'snapshots',
         '@gx-capture/capture-runtime-client',
-        '0.4.4',
+        CAPTURE_RUNTIME_VERSION,
         'remove',
       ),
     );
@@ -760,7 +761,7 @@ test('the lock reader separates package and snapshot ownership', () => {
     const lockPath = join(workspaceRoot, 'pnpm-lock.yaml');
     const original = readFileSync(lockPath, 'utf8').replaceAll(
       '@gx-capture/capture-runtime-client@0.4.1',
-      '@gx-capture/capture-runtime-client@0.4.4',
+      `@gx-capture/capture-runtime-client@${CAPTURE_RUNTIME_VERSION}`,
     );
     writeFileSync(
       lockPath,
@@ -769,12 +770,12 @@ test('the lock reader separates package and snapshot ownership', () => {
           original,
           'packages',
           '@gx-capture/capture-runtime-client',
-          '0.4.4',
+          CAPTURE_RUNTIME_VERSION,
           'remove',
         ),
         'snapshots',
         '@gx-capture/capture-runtime-client',
-        '0.4.4',
+        CAPTURE_RUNTIME_VERSION,
         'duplicate',
       ),
     );
@@ -831,12 +832,12 @@ test('the lock reader rejects duplicate sections and ignores unrelated blocks', 
       readFileSync(lockPath, 'utf8'),
       'packages',
       '@gx-capture/capture-runtime-client',
-      '0.4.4',
+      CAPTURE_RUNTIME_VERSION,
       'remove',
     );
     writeFileSync(
       lockPath,
-      `${lockWithoutPackage}\nforeign:\n  '@gx-capture/capture-runtime-client@0.4.4': {}\n`,
+      `${lockWithoutPackage}\nforeign:\n  '@gx-capture/capture-runtime-client@${CAPTURE_RUNTIME_VERSION}': {}\n`,
     );
     const input = readCaptureRuntimeConsumerInventory(
       workspaceRoot,
@@ -856,12 +857,68 @@ test('the lock reader rejects duplicate sections and ignores unrelated blocks', 
   });
 });
 
+test('consumer checks require exact Cargo pins in published and candidate modes', () => {
+  withInventoryWorkspace((workspaceRoot) => {
+    const cargo = join(workspaceRoot, 'apps/cert-prep-desktop/src-tauri/Cargo.toml');
+    const original = readFileSync(cargo, 'utf8');
+    const setRequirement = (requirement: string) =>
+      writeFileSync(
+        cargo,
+        original.replace(
+          /^capture-sidecar-launcher[^\r\n]*/mu,
+          `capture-sidecar-launcher = "${requirement}"`,
+        ),
+      );
+    setRequirement(`=${CAPTURE_RUNTIME_VERSION}`);
+    assert.doesNotThrow(() => assertCaptureRuntimeConsumerVersions(workspaceRoot));
+    const exact = readCaptureRuntimeConsumerInventory(workspaceRoot, contractSource());
+    assert.equal(
+      exact.entries.find((entry) => entry.key === 'cert.desktop.cargoToml')?.value,
+      CAPTURE_RUNTIME_VERSION,
+    );
+    assert.equal(inspectCaptureRuntimeConsumerInventory(exact).status, 'ready');
+
+    for (const requirement of [
+      CAPTURE_RUNTIME_VERSION,
+      `^${CAPTURE_RUNTIME_VERSION}`,
+      `~${CAPTURE_RUNTIME_VERSION}`,
+      `>=${CAPTURE_RUNTIME_VERSION}`,
+      `=${CAPTURE_RUNTIME_VERSION}, <1.0.0`,
+      '*',
+    ]) {
+      setRequirement(requirement);
+      assert.throws(
+        () => assertCaptureRuntimeConsumerVersions(workspaceRoot),
+        /Cargo\.toml/,
+      );
+      const report = inspectCaptureRuntimeConsumerInventory(
+        readCaptureRuntimeConsumerInventory(workspaceRoot, contractSource()),
+      );
+      assert.equal(report.status, 'blocked', requirement);
+      assert.ok(report.errors.some((error) => error.includes('Cargo.toml')));
+      const previous = process.env.CAPTURE_CANDIDATE_INSTALL;
+      process.env.CAPTURE_CANDIDATE_INSTALL = '1';
+      try {
+        assert.throws(
+          () => assertCaptureRuntimeConsumerVersions(workspaceRoot, {
+            contractSource: contractSource(),
+          }),
+          /Cargo\.toml/,
+        );
+      } finally {
+        if (previous === undefined) delete process.env.CAPTURE_CANDIDATE_INSTALL;
+        else process.env.CAPTURE_CANDIDATE_INSTALL = previous;
+      }
+    }
+  });
+});
+
 test('the reader rejects duplicate or mixed package and lock source owners', () => {
   withInventoryWorkspace((workspaceRoot) => {
     const lockPath = join(workspaceRoot, 'pnpm-lock.yaml');
     writeFileSync(
       lockPath,
-      `${readFileSync(lockPath, 'utf8')}\n  '@gx-capture/capture-runtime-client@0.4.4':\n    resolution: {}\n`,
+      `${readFileSync(lockPath, 'utf8')}\n  '@gx-capture/capture-runtime-client@${CAPTURE_RUNTIME_VERSION}':\n    resolution: {}\n`,
     );
     assert.doesNotThrow(() =>
       assertCaptureRuntimeConsumerVersions(workspaceRoot),
@@ -885,7 +942,7 @@ test('the reader rejects duplicate or mixed package and lock source owners', () 
     const uvPath = join(workspaceRoot, 'apps/cert-prep-backend/uv.lock');
     writeFileSync(
       uvPath,
-      `${readFileSync(uvPath, 'utf8')}\n[[package]]\nname = "capture-runtime-client"\nversion = "0.4.4"\n`,
+      `${readFileSync(uvPath, 'utf8')}\n[[package]]\nname = "capture-runtime-client"\nversion = "${CAPTURE_RUNTIME_VERSION}"\n`,
     );
     assert.doesNotThrow(() =>
       assertCaptureRuntimeConsumerVersions(workspaceRoot),
@@ -910,7 +967,7 @@ test('the reader rejects duplicate or mixed package and lock source owners', () 
     );
     writeFileSync(
       cargoPath,
-      `${readFileSync(cargoPath, 'utf8')}\n[[package]]\nname = "capture-sidecar-launcher"\nversion = "0.4.4"\n`,
+      `${readFileSync(cargoPath, 'utf8')}\n[[package]]\nname = "capture-sidecar-launcher"\nversion = "${CAPTURE_RUNTIME_VERSION}"\n`,
     );
     assert.doesNotThrow(() =>
       assertCaptureRuntimeConsumerVersions(workspaceRoot),

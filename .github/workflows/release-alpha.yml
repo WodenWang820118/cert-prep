@@ -37,7 +37,6 @@ permissions:
 env:
   CI: 'true'
   NX_CLOUD_DISTRIBUTED_EXECUTION: 'false'
-  PNPM_VERSION: 12.0.0
   PYTHON_VERSION: '3.12'
 
 jobs:
@@ -61,7 +60,6 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
         with:
-          version: ${{ env.PNPM_VERSION }}
           run_install: false
 
       - name: Install Node
@@ -93,6 +91,9 @@ jobs:
 
       - name: Sync backend Python environment
         run: uv sync --project apps/cert-prep-backend --frozen --python ${{ env.PYTHON_VERSION }}
+
+      - name: Verify adopted Capture versions and installed contract
+        run: pnpm nx run cert-prep-desktop:version-check --skip-nx-cache
 
       - name: Stage the published Capture Runtime release
         run: pnpm nx run cert-prep-desktop:install-capture-runtime --skip-nx-cache

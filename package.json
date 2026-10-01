@@ -2,7 +2,7 @@
   "name": "@cert-prep/source",
   "version": "0.0.0",
   "license": "MIT",
-  "packageManager": "pnpm@12.0.0",
+  "packageManager": "pnpm@12.8.2",
   "scripts": {
     "dev": "corepack pnpm nx run-many --target=serve --projects=cert-prep,cert-prep-backend --parallel=2",
     "dev:frontend": "corepack pnpm nx run cert-prep:serve",
@@ -17,7 +17,7 @@
   "private": true,
   "engines": {
     "node": ">=24.0.0",
-    "pnpm": "12.0.0"
+    "pnpm": "12.8.2"
   },
   "dependencies": {
     "@angular-devkit/build-angular": "22.0.7",

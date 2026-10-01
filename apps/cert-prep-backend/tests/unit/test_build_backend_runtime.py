@@ -10,6 +10,7 @@ SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 from build_backend_runtime import (  # noqa: E402
+    CAPTURE_RUNTIME_VERSION,
     _assert_installed_wheel_source,
     _pyinstaller_command,
 )
@@ -26,14 +27,14 @@ def test_index_installed_candidate_without_direct_url_metadata_is_accepted(
     tmp_path: Path,
 ) -> None:
     site_packages = tmp_path / "site-packages"
-    dist_info = site_packages / "capture_runtime_client-0.4.4.dist-info"
+    dist_info = site_packages / f"capture_runtime_client-{CAPTURE_RUNTIME_VERSION}.dist-info"
     package = site_packages / "capture_runtime_client"
     package.mkdir(parents=True)
     dist_info.mkdir()
     members = (
         "capture_runtime_client/__init__.py",
-        "capture_runtime_client-0.4.4.dist-info/METADATA",
-        "capture_runtime_client-0.4.4.dist-info/RECORD",
+        f"capture_runtime_client-{CAPTURE_RUNTIME_VERSION}.dist-info/METADATA",
+        f"capture_runtime_client-{CAPTURE_RUNTIME_VERSION}.dist-info/RECORD",
     )
     for member in members:
         path = site_packages.joinpath(*member.split("/"))

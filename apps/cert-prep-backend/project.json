@@ -49,7 +49,7 @@
       "options": {
         "cwd": "apps/cert-prep-backend",
         "env": { "UV_LINK_MODE": "copy" },
-        "command": "uv run --isolated --python 3.12 python scripts/build_backend_runtime.py --target x86_64-pc-windows-msvc --version 0.1.0-alpha.1"
+        "command": "uv run --isolated --python 3.12 python scripts/build_backend_runtime.py --target x86_64-pc-windows-msvc"
       }
     },
     "generate-openapi-client": {

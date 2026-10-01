@@ -4,6 +4,7 @@ import json
 from types import SimpleNamespace
 
 import pytest
+from capture_runtime_client import CAPTURE_RUNTIME_VERSION
 
 from cert_prep_backend.domains.capture_workbench.runtime_provenance import (
     capture_runtime_attestation,
@@ -15,7 +16,7 @@ def _candidate() -> dict[str, object]:
     return {
         "schema_version": 1,
         "status": "bound",
-        "runtime_version": "0.4.4",
+        "runtime_version": CAPTURE_RUNTIME_VERSION,
         "runtime_core_sha256": "a" * 64,
         "runtime_core_bytes": 12,
         "runtime_manifest_identity_sha256": "b" * 64,
@@ -24,11 +25,11 @@ def _candidate() -> dict[str, object]:
         "worker_executable_sha256": "d" * 64,
         "contract_set_sha256": "e" * 64,
         "python_wheel": {
-            "file_name": "capture_runtime_client-0.4.4-py3-none-any.whl",
+            "file_name": f"capture_runtime_client-{CAPTURE_RUNTIME_VERSION}-py3-none-any.whl",
             "sha256": "f" * 64,
             "bytes": 56,
             "package_name": "capture-runtime-client",
-            "package_version": "0.4.4",
+            "package_version": CAPTURE_RUNTIME_VERSION,
             "contract_set_sha256": "e" * 64,
             "generated_models": {
                 "worker_sha256": True,
@@ -57,7 +58,7 @@ def test_runtime_attestation_combines_candidate_and_live_handshake(tmp_path, mon
     client = SimpleNamespace(
         handshake=lambda: SimpleNamespace(
             ready=True,
-            runtime_version="0.4.4",
+            runtime_version=CAPTURE_RUNTIME_VERSION,
             api_version="2.0",
             capture_document_schema_version="2",
             ocr_compute=SimpleNamespace(

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -9,7 +10,9 @@ import {
 } from '../../../../tools/capture-runtime-version.mts';
 
 export const DEFAULT_TARGET_TRIPLE = 'x86_64-pc-windows-msvc';
-export const ALPHA_VERSION = '0.1.0-alpha.1';
+export const ALPHA_VERSION: string = JSON.parse(
+  readFileSync(new URL('../../src-tauri/tauri.conf.json', import.meta.url), 'utf8'),
+).version;
 export const PYTHON_RUNTIME_VERSION = '3.12';
 export const CAPTURE_RUNTIME_MANIFEST_VERSION = '1';
 export const CAPTURE_RUNTIME_FILE =

@@ -1,3 +1,4 @@
+import type { ALPHA_VERSION } from './constants.mts';
 import { CAPTURE_RUNTIME_VERSION } from '../../../../tools/capture-runtime-version.mts';
 
 export interface PackageQaOptions {
@@ -103,7 +104,7 @@ export interface PackagedResourceContract {
   readonly capture_document_schema_version: '2';
   readonly capture_structuring_mode: 'host';
   readonly release_urls_only: true;
-  readonly version: '0.1.0-alpha.1';
+  readonly version: typeof ALPHA_VERSION;
   readonly python_runtime_version: '3.12';
   readonly channel: 'unsigned_public_alpha';
   readonly signed: false;
