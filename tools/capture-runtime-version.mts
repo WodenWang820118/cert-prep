@@ -1,5 +1,4 @@
-import { readFileSync } from 'node:fs';
-import { readCaptureVersion } from './capture-version-source.mts';
+import captureVersion from './capture-runtime-version.json' with { type: 'json' };
 
 /**
  * Cert Prep's single source for the Capture Workbench release contract.
@@ -12,12 +11,7 @@ export const CAPTURE_RUNTIME_PACKAGE_NAME =
   '@gx-capture/capture-workbench-ui' as const;
 export const CAPTURE_RUNTIME_CLIENT_PACKAGE_NAME =
   '@gx-capture/capture-runtime-client' as const;
-export const CAPTURE_RUNTIME_VERSION: string = readCaptureVersion(
-  readFileSync(
-    new URL('./capture-runtime-version.json', import.meta.url),
-    'utf8',
-  ),
-);
+export const CAPTURE_RUNTIME_VERSION: string = captureVersion.runtimeVersion;
 export const CAPTURE_RUNTIME_MAJOR = Number(
   CAPTURE_RUNTIME_VERSION.split('.')[0],
 );

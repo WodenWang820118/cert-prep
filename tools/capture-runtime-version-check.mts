@@ -513,7 +513,8 @@ function readCaptureRuntimeConsumerInventoryFromSource(
   } catch (error) {
     sourceErrors.push(String(error));
   }
-  if (!versionSource.includes("new URL('./capture-runtime-version.json', import.meta.url)") ||
+  if (!versionSource.includes("import captureVersion from './capture-runtime-version.json'") ||
+      !/CAPTURE_RUNTIME_VERSION:\s*string\s*=\s*captureVersion\.runtimeVersion;/u.test(versionSource) ||
       !versionSource.includes('CAPTURE_SIDECAR_LAUNCHER_VERSION = CAPTURE_RUNTIME_VERSION;')) {
     sourceErrors.push('Capture TypeScript facade must read the shared adoption source.');
   }

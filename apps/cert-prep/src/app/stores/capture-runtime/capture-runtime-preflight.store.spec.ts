@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
 import { CAPTURE_RUNTIME_VERSION } from '@cert-prep/capture-runtime-version';
+import { CAPTURE_RUNTIME_VERSION as SDK_RUNTIME_VERSION } from '@gx-capture/capture-workbench-ui';
 import { CertPrepCaptureClient } from '../../pages/capture-workbench-trial/cert-prep-capture-client';
 import type { CaptureRuntimeReady } from '../../pages/capture-workbench-trial/contracts/capture-workbench-trial.contracts';
 import { CaptureRuntimePreflightStore } from './capture-runtime-preflight.store';
@@ -16,6 +17,10 @@ describe('CaptureRuntimePreflightStore', () => {
         { provide: CertPrepCaptureClient, useValue: client },
       ],
     });
+  });
+
+  it('keeps the browser adoption pin aligned with the installed SDK', () => {
+    expect(CAPTURE_RUNTIME_VERSION).toBe(SDK_RUNTIME_VERSION);
   });
 
   it('keeps GPU acceleration visible without a CPU fallback notice', () => {
@@ -124,7 +129,7 @@ function runtimeReady(
       apiVersion: '2.0',
       schemaVersion: '1',
       service: 'capture-runtime',
-      runtimeVersion: CAPTURE_RUNTIME_VERSION,
+      runtimeVersion: SDK_RUNTIME_VERSION,
       contractSetVersion: '2',
       contractSha256: 'a'.repeat(64),
       workerSha256: 'b'.repeat(64),
