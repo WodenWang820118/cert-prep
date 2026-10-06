@@ -317,7 +317,7 @@ async function runSmoke(): Promise<void> {
     await mkdir(runtimeData, { recursive: true });
     runtime = startRuntime(installed.outputRoot, runtimePort, token, runtimeData);
     await waitForPublishedRuntimeContract(runtime, runtimePort, token);
-    // 0.4.4 is OCR-only: its fake extraction mode still requires the real OCR
+    // 0.5.0 is OCR-only: its fake extraction mode still requires the real OCR
     // compute preflight, so the former fake host-protocol leg cannot run here.
     // Host protocol is covered by backend integration tests and real OCR by
     // the installed acceptance; this smoke proves the published runtime only.

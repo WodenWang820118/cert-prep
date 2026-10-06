@@ -1,5 +1,5 @@
 // Standalone packaged smoke for the embedded Capture Workbench (scanned PDF).
-// It still follows the flow before the 0.4.4 OCR preflight and stops at that
+// It still follows the flow before the 0.5.0 OCR preflight and stops at that
 // step; updating it (and adding the audio leg) is tracked in
 // .agents/TODOS/capture-workbench-cert-prep-pdf.md. The real OCR acceptance is
 // acceptance-real.spec.mts.

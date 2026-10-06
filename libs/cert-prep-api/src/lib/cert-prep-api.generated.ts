@@ -62,7 +62,7 @@ export interface Components {
     OcrAdapterClass: string;
     OcrComputeMode: string;
     OcrComputeNoticeCode: string;
-    OcrComputePreflightV2: { "apiVersion"?: "2.0"; "schemaVersion"?: "1"; "service"?: "capture-runtime"; "runtimeVersion"?: "0.4.4"; "contractSetVersion"?: "2"; "contractSha256": string; "workerSha256"?: string | null; "mode": Components['schemas']['OcrComputeMode']; "adapterClass": Components['schemas']['OcrAdapterClass']; "reasonCode"?: Components['schemas']['OcrComputeReasonCode'] | null; "userNoticeRequired": boolean; "noticeCode"?: Components['schemas']['OcrComputeNoticeCode'] | null };
+    OcrComputePreflightV2: { "apiVersion"?: "2.0"; "schemaVersion"?: "1"; "service"?: "capture-runtime"; "runtimeVersion"?: "0.5.0"; "contractSetVersion"?: "2"; "contractSha256": string; "workerSha256"?: string | null; "mode": Components['schemas']['OcrComputeMode']; "adapterClass": Components['schemas']['OcrAdapterClass']; "reasonCode"?: Components['schemas']['OcrComputeReasonCode'] | null; "userNoticeRequired": boolean; "noticeCode"?: Components['schemas']['OcrComputeNoticeCode'] | null };
     OcrComputeReasonCode: string;
     OcrPageScopeV2: { "sourcePageCount": number; "requestedPageNumbers": number[]; "processedPageNumbers": number[] };
     OllamaModelProfileRead: { "profile_id": string; "display_name": string; "description": string; "base_model": string; "local_model": string; "context_window": number; "system_prompt": string; "parameters"?: Record<string, unknown>; "min_total_ram_bytes"?: number | null; "min_available_ram_bytes"?: number | null; "min_free_disk_bytes"?: number | null; "min_vram_bytes"?: number | null; "auto_selectable": boolean; "explicit_opt_in_required": boolean; "fallback_profile_ids"?: string[] };

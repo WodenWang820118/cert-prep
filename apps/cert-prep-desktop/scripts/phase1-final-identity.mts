@@ -10,7 +10,7 @@ const SAFE_RELATIVE_PATH = /^(?![\\/])[^<>:"|?*]+$/u;
 export const PHASE1_FINAL_IDENTITY = Object.freeze({
   manifestKind: 'capture-runtime-phase1-final',
   manifestVersion: 3,
-  runtimeVersion: '0.4.4',
+  runtimeVersion: '0.5.0',
   runtimeArtifactSha256:
     '3d37b8507e44069ea6f9f29643b4bc9c3941550fd81481b558df5e2f4c9d029b',
   ocrWorkerArchiveSha256:
@@ -18,7 +18,7 @@ export const PHASE1_FINAL_IDENTITY = Object.freeze({
   ocrWorkerExecutableSha256:
     'b26cbb2d55eae84d00c7bae4aeadf73cb602ef68556face5efefd44fb250d887',
   contractSetSha256:
-    '03ba27e42e13292162b0f3da12bf3fe065edad12806efdf4bb19e0cc360e42d7',
+    '4c63044191551bf3f7c36d24d08cc6ced25fcc701bf1e06a0fa69626b1e18f1b',
   jpegSha256:
     '9b1a9a87bae10ecd07b4b7874d5f8e46fbd8b798cc0becb20825636637da99b1',
   pdfSha256:

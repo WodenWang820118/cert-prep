@@ -601,7 +601,7 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
           structuringMode: 'host',
         }),
       ),
-    ).rejects.toThrow('incompatible with client runtime minor 4');
+    ).rejects.toThrow('incompatible with client runtime minor 5');
     expect(api.createCapture).not.toHaveBeenCalled();
   });
 

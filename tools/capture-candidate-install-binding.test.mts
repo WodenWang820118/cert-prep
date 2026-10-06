@@ -341,7 +341,7 @@ test('wrong Git root and malformed HEAD fail closed before preparation can write
   }
 });
 
-test('consistent synthetic 0.4.4 receipt prepares and writes exactly once', async () => {
+test('consistent synthetic 0.5.0 receipt prepares and writes exactly once', async () => {
   const git = await createGitFixture();
   const candidate = await createCandidateFixture();
   const consistent = await createConsistentSource();
@@ -401,7 +401,7 @@ test('consistent synthetic 0.4.4 receipt prepares and writes exactly once', asyn
   }
 });
 
-test('0.4.1 consumer bytes cannot prepare a 0.4.4 candidate and do not write', async () => {
+test('0.4.1 consumer bytes cannot prepare a 0.5.0 candidate and do not write', async () => {
   const git = await createGitFixture();
   const candidate = await createCandidateFixture();
   const current = await createConsistentSource();
