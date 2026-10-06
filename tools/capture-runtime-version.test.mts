@@ -395,7 +395,7 @@ test('the inventory rejects a missing projection schema and a corrupted contract
   assert.deepEqual(Buffer.from(source.bytes), originalBytes);
 });
 
-test('the current installed 0.4.4 owners are ready against the 0.4.4 producer target', () => {
+test('the current installed 0.5.0 owners are ready against the 0.5.0 producer target', () => {
   const input = readCaptureRuntimeConsumerInventory(
     process.cwd(),
     contractSource(),
@@ -512,7 +512,7 @@ test('a canonical snapshot reads the same inventory and survives workspace mutat
   });
 });
 
-test('a consistent synthetic 0.4.4 workspace has identical disk and snapshot reports', () => {
+test('a consistent synthetic 0.5.0 workspace has identical disk and snapshot reports', () => {
   withInventoryWorkspace((workspaceRoot) => {
     rewriteRuntimeVersion(workspaceRoot, CAPTURE_RUNTIME_VERSION);
     const snapshot = captureRuntimeConsumerSnapshotFromWorkspace(
