@@ -18,7 +18,7 @@ serde_json = "1"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-capture-sidecar-launcher = "=0.5.0"
+capture-sidecar-launcher = "=0.5.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
