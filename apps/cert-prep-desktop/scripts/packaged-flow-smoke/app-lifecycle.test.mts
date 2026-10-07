@@ -28,6 +28,7 @@ import {
   createAcceptanceAppDataDirectory,
   removeAcceptanceAppDataDirectory,
 } from '../acceptance-app-data.mts';
+import { CAPTURE_RUNTIME_VERSION } from '../../../../tools/capture-runtime-version.mts';
 import { selectCertPrepResidue } from '../process-lifecycle/processes.mts';
 import type { ProcessRecord } from '../process-lifecycle/processes.mts';
 import type { SmokeRunState } from './types.mts';
@@ -498,12 +499,12 @@ test('ordinary smoke preserves unrelated environment and pins the fixed model', 
   );
 });
 
-test('isolated acceptance forwards only the explicit 0.5.0 local probe marker', () => {
+test('isolated acceptance forwards only the explicit local probe marker', () => {
   const environment = buildAppLaunchEnvironment(
     launchEnvironmentRun(true),
     {
       CERT_PREP_CAPTURE_RUNTIME_PROBE: ' 1 ',
-      CERT_PREP_CAPTURE_RUNTIME_EXPECTED_VERSION: ' 0.5.0 ',
+      CERT_PREP_CAPTURE_RUNTIME_EXPECTED_VERSION: ` ${CAPTURE_RUNTIME_VERSION} `,
       CERT_PREP_CAPTURE_RUNTIME_LOCAL_MODEL_ROOT:
         ' C:\\qa\\capture-runtime-models ',
       CERT_PREP_BACKEND_URL: 'http://127.0.0.1:9999',
@@ -515,7 +516,7 @@ test('isolated acceptance forwards only the explicit 0.5.0 local probe marker', 
   assert.equal(normalized.cert_prep_capture_runtime_probe, '1');
   assert.equal(
     normalized.cert_prep_capture_runtime_expected_version,
-    '0.5.0',
+    CAPTURE_RUNTIME_VERSION,
   );
   assert.equal(
     normalized.cert_prep_capture_runtime_local_model_root,
@@ -525,7 +526,7 @@ test('isolated acceptance forwards only the explicit 0.5.0 local probe marker', 
   assert.equal(normalized.cert_prep_untrusted_override, undefined);
 });
 
-test('Phase 1 acceptance identity forces the 0.5.0 local probe marker', () => {
+test('Phase 1 acceptance identity forces the pinned local probe marker', () => {
   const run = launchEnvironmentRun(true);
   run.options.acceptanceRuntimeIdentity = {
     runtimeArtifactSha256: 'a'.repeat(64),
@@ -541,7 +542,7 @@ test('Phase 1 acceptance identity forces the 0.5.0 local probe marker', () => {
   assert.equal(normalized.cert_prep_capture_runtime_probe, '1');
   assert.equal(
     normalized.cert_prep_capture_runtime_expected_version,
-    '0.5.0',
+    CAPTURE_RUNTIME_VERSION,
   );
 });
 

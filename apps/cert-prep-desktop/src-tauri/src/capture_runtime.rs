@@ -19,7 +19,7 @@ use crate::{
     capture_manifest::{
         load_capture_runtime_manifest, validate_capture_manifest_contract, verify_capture_runtime,
     },
-    constants::{CAPTURE_RUNTIME_DIR, CAPTURE_RUNTIME_MANIFEST},
+    constants::{CAPTURE_RUNTIME_DIR, CAPTURE_RUNTIME_MANIFEST, CAPTURE_RUNTIME_VERSION},
     process_owner::{owned_runtime_process, RuntimeProcessOwner},
 };
 
@@ -377,7 +377,7 @@ fn local_model_probe_enabled() -> bool {
         .is_some_and(|value| value.trim() == "1")
         && std::env::var(CAPTURE_RUNTIME_PROBE_VERSION_ENV)
             .ok()
-            .is_some_and(|value| value.trim() == "0.5.0")
+            .is_some_and(|value| value.trim() == CAPTURE_RUNTIME_VERSION)
 }
 
 fn capture_ready_timeout() -> Duration {

@@ -51,5 +51,5 @@ def test_index_installed_candidate_without_direct_url_metadata_is_accepted(
     _assert_installed_wheel_source(
         distribution,
         tuple(PackagePath(member) for member in members),
-        tmp_path / "capture_runtime_client-0.5.0-py3-none-any.whl",
+        tmp_path / f"capture_runtime_client-{CAPTURE_RUNTIME_VERSION}-py3-none-any.whl",
     )

@@ -42,7 +42,7 @@ interface WheelEntry {
  * Re-hashes and inspects the exact Python wheel used by a local-probe
  * acceptance setup. The wheel is deliberately inspected without importing the
  * ambient virtual environment: a stale wheel can otherwise retain a valid
- * 0.5.0 version while omitting the generated fields needed by Phase 1.
+ * pinned version while omitting the generated fields needed by Phase 1.
  */
 export async function inspectCaptureRuntimePythonWheel(
   wheelPath: string,

@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from capture_runtime_client import CAPTURE_RUNTIME_VERSION
 from fastapi.testclient import TestClient
 
 from cert_prep_backend.api.app import create_app
@@ -580,7 +581,7 @@ def _completed_projection() -> SimpleNamespace:
             )
         ],
         page_count=1,
-        runtime_version="0.5.0",
+        runtime_version=CAPTURE_RUNTIME_VERSION,
         contract_sha256="d" * 64,
         provenance=provenance,
         failure=None,
@@ -608,7 +609,7 @@ def _failed_projection() -> SimpleNamespace:
         source=None,
         pages=[],
         page_count=0,
-        runtime_version="0.5.0",
+        runtime_version=CAPTURE_RUNTIME_VERSION,
         contract_sha256="d" * 64,
         provenance=provenance,
         failure=failure,

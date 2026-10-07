@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+from capture_runtime_client import CAPTURE_RUNTIME_VERSION
 
 from cert_prep_backend.domains.capture_workbench.ocr_summary import (
     OcrSummaryValidationError,
@@ -59,7 +60,7 @@ def test_completed_projection_maps_only_privacy_safe_page_evidence() -> None:
         ],
         "provenance": {
             "status": "resolved",
-            "runtimeVersion": "0.5.0",
+            "runtimeVersion": CAPTURE_RUNTIME_VERSION,
             "contractSha256": "d" * 64,
             "engine": "windowsml-ocr",
             "model": "capture-ocr-model",
@@ -114,7 +115,7 @@ def test_failed_projection_redacts_free_form_failure_and_unavailable_provenance(
     }
     assert payload["provenance"] == {
         "status": "unavailable",
-        "runtimeVersion": "0.5.0",
+        "runtimeVersion": CAPTURE_RUNTIME_VERSION,
         "contractSha256": "d" * 64,
         "profileId": "profile-1",
         "profileSpecSha256": "c" * 64,
@@ -242,7 +243,7 @@ def _projection(
         source=source,
         pages=projection_pages,
         page_count=len(projection_pages),
-        runtime_version="0.5.0",
+        runtime_version=CAPTURE_RUNTIME_VERSION,
         contract_sha256="d" * 64,
         provenance=provenance or _resolved_provenance(),
         failure=failure,

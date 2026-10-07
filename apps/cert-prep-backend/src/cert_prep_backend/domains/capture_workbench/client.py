@@ -96,7 +96,7 @@ class CaptureRuntimeClient:
             timeout_seconds=timeout_seconds,
             **sdk_options,
         )
-        # The 0.5.0 candidate discovery guard is instance-scoped and rejects
+        # The candidate discovery guard is instance-scoped and rejects
         # overlapping negotiations. FastAPI serves the readiness and
         # provenance endpoints concurrently during the UI preflight, so keep
         # the SDK's discovery state machine single-flight at the host boundary.
@@ -120,7 +120,7 @@ class CaptureRuntimeClient:
         with self._discovery_lock:
             ready = self._sdk.discover().ready
         # Keep the host boundary typed with the generated OCR preflight field.
-        # The conversion is intentionally lossless for the 0.5.0 SDK and lets
+        # The conversion is intentionally lossless for the pinned SDK and lets
         # the current 0.4.1 rollback pin continue to represent a missing
         # preflight as ``None`` until the candidate SDK is installed.
         return RuntimeReady.model_validate(
@@ -213,9 +213,9 @@ class CaptureRuntimeClient:
         client_request_id: str,
         page_numbers: tuple[int, ...],
     ) -> CaptureOperation:
-        """Use the SDK transport seam while adding the 0.5.0 page-scope field.
+        """Use the SDK transport seam while adding the page-scope field.
 
-        The published 0.5.0 SDK validates the generated StartCaptureV2 model,
+        The published SDK validates the generated StartCaptureV2 model,
         but its convenience upload method predates ``pdfPageNumbers``. Keep
         discovery, authentication, retries, and response decoding in that SDK;
         this narrow compatibility path only supplies the optional request
@@ -352,7 +352,7 @@ class CaptureRuntimeClient:
     def get_ocr(self, capture_id: str) -> object:
         """Return the runtime-owned schema-3 OCR page projection.
 
-        The 0.5.0 candidate SDK owns decoding and validation of this endpoint.
+        The candidate SDK owns decoding and validation of this endpoint.
         Keep the compatibility error explicit while the repository still
         carries the published 0.4.1 dependency pin; a production capture must
         never silently fall back to the legacy raw/embedded path.
@@ -361,7 +361,7 @@ class CaptureRuntimeClient:
         method = getattr(self._sdk, "get_ocr", None)
         if not callable(method):
             raise CaptureRuntimeCompatibilityError(
-                "Capture Runtime OCR projection requires the 0.5.0 SDK."
+                "Capture Runtime OCR projection requires the pinned SDK."
             )
         return method(capture_id)
 
@@ -461,7 +461,7 @@ __all__ = [
 
 
 def _install_candidate_runtime_ready_decoder() -> None:
-    """Route SDK discovery through the 0.5.0 generated readiness model.
+    """Route SDK discovery through the generated readiness model.
 
     The candidate wheel's public ``contracts.RuntimeReady`` omits the
     generated ``ocrCompute`` member even though the candidate runtime emits
@@ -491,7 +491,7 @@ def _installation_status_value(installation: RuntimeInstallation) -> object:
 def _invalidate_sdk_discovery_cache(sdk: object) -> None:
     """Refresh the SDK's cached discovery after runtime state changes.
 
-    The 0.5.0 candidate exposes this state privately and has no public refresh
+    The candidate exposes this state privately and has no public refresh
     operation. Keep the compatibility seam narrow and a no-op for the pinned
     rollback client if it does not carry the cache attribute.
     """

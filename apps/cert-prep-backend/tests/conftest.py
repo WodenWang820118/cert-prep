@@ -387,12 +387,11 @@ class TestCaptureRuntimeClient(TypedPullSessionRuntimeMixin):
 
 
 def _test_ocr_projection(raw: RawCapture, capture_id: str) -> object:
-    """Build a small projection-shaped fake without requiring the 0.5.0 SDK.
+    """Build a small projection-shaped fake without requiring the pinned SDK.
 
-    Cert Prep keeps the published 0.4.1 pin until 0.5.0 is public. These
-    hermetic host fakes therefore use the public attribute seam rather than
+    These hermetic host fakes use the public attribute seam rather than
     importing candidate-only DTOs; the installed acceptance uses the real
-    generated projection from the 0.5.0 SDK.
+    generated projection from the pinned SDK.
     """
 
     page_numbers = sorted(
@@ -433,7 +432,7 @@ def _test_ocr_projection(raw: RawCapture, capture_id: str) -> object:
         source=raw.source,
         pages=pages,
         page_count=len(pages),
-        runtime_version="0.5.0",
+        runtime_version=CAPTURE_RUNTIME_VERSION,
         contract_sha256="d" * 64,
         provenance=provenance,
         warnings=[],

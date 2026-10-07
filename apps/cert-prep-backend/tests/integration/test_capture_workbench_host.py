@@ -1685,7 +1685,7 @@ def test_coordinator_rejects_incomplete_runtime_ocr_projection() -> None:
 
 
 def test_coordinator_accepts_sdk_ocr_string_status_values() -> None:
-    """The 0.5.0 SDK exposes OCR status properties as strings, not enums."""
+    """The SDK exposes OCR status properties as strings, not enums."""
 
     raw = RawCapture.model_validate(_raw_payload())
     runtime = PullSessionRuntime(raw)

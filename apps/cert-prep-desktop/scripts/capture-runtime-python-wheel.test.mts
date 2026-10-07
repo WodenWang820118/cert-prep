@@ -49,7 +49,7 @@ test('Python wheel provenance re-hashes the wheel and requires Phase 1 generated
   }
 });
 
-test('Python wheel provenance rejects a stale 0.5.0 wheel without worker identity', async () => {
+test('Python wheel provenance rejects a stale wheel of the pinned version without worker identity', async () => {
   const root = await mkdtemp(join(tmpdir(), 'cert-python-wheel-stale-'));
   try {
     const wheelPath = join(root, `capture_runtime_client-${CAPTURE_RUNTIME_VERSION}-py3-none-any.whl`);
