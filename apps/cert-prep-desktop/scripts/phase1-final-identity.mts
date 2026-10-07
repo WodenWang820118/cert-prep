@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
+import { CAPTURE_RUNTIME_VERSION } from '../../../tools/capture-runtime-version.mts';
 import { isRecord } from './packaged-flow-smoke/text-utils.mts';
 
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
@@ -10,7 +11,7 @@ const SAFE_RELATIVE_PATH = /^(?![\\/])[^<>:"|?*]+$/u;
 export const PHASE1_FINAL_IDENTITY = Object.freeze({
   manifestKind: 'capture-runtime-phase1-final',
   manifestVersion: 3,
-  runtimeVersion: '0.5.0',
+  runtimeVersion: CAPTURE_RUNTIME_VERSION,
   runtimeArtifactSha256:
     '3d37b8507e44069ea6f9f29643b4bc9c3941550fd81481b558df5e2f4c9d029b',
   ocrWorkerArchiveSha256:

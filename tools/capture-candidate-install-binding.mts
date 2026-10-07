@@ -25,7 +25,7 @@ import {
 } from './capture-runtime-version-check.mts';
 
 /**
- * Phase 2's producer receipt binding is for release 0.5.0. It proves a
+ * Phase 2's producer receipt binding is for the pinned release. It proves a
  * complete declared candidate directory plus the producer-required subset and
  * a matching consumer source snapshot. It does not prove full D3 runtime or
  * installer readiness, and it never performs installation.

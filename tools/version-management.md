@@ -23,4 +23,4 @@ An apply result is **source-prepared**, not a synchronized release. Resolve npm,
 
 `cert-prep-desktop:version-management-test` rehearses an alternate version in an isolated temporary workspace and tests scope, no-op, read-only checks, duplicate owners, stale plans and rejection of a wrong installed SDK. These tests also run in `capture-runtime-consumer-test`.
 
-Current checked-in versions remain Capture 0.5.0 and Cert 0.1.0-alpha.1. Existing schemas and lockfiles are unchanged by this reference refactor.
+The checked-in versions are the ones in the two owners above. Existing schemas and lockfiles are unchanged by this reference refactor.

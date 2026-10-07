@@ -8,14 +8,14 @@ from pydantic.alias_generators import to_camel
 from capture_runtime_client import CAPTURE_RUNTIME_VERSION
 
 try:
-    # 0.5.0 publishes this generated contract through the public Python SDK.
+    # The SDK publishes this generated contract through the public Python SDK.
     # Keep the fallback below only while the repository's published pin is
     # still 0.4.1; it is replaced by the generated model automatically when
     # the candidate SDK is installed for local-probe verification.
     from capture_runtime_client import OcrComputePreflightV2
 except ImportError:
     try:
-        # Some 0.5.0 candidate builds retain the generated model behind the
+        # Some candidate builds retain the generated model behind the
         # public contracts module until the next SDK packaging cut.
         from capture_runtime_client.private.generated_models import OcrComputePreflightV2
     except ImportError:
@@ -47,7 +47,7 @@ class CaptureReview(_HostModel):
 if OcrComputePreflightV2 is None:
 
     class OcrComputePreflightV2(_HostModel):
-        """Compatibility shape for the generated 0.5.0 OCR preflight DTO."""
+        """Compatibility shape for the generated OCR preflight DTO."""
 
         api_version: Literal["2.0"] = "2.0"
         schema_version: Literal["1"] = "1"
