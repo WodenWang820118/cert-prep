@@ -16,10 +16,11 @@ import { ProjectStore } from '../../stores/project.store';
 import { SourceImportStore } from '../../stores/source-import/source-import.store';
 import type { QuestionNavigatorItem } from './contracts/practice-panel.contracts';
 import { ChoiceKeyService } from '../../services/choice-key.service';
+import { AppIconComponent } from '../ui/app-icon.component';
 
 @Component({
   selector: 'app-practice-panel',
-  imports: [FormsModule],
+  imports: [FormsModule, AppIconComponent],
   templateUrl: './practice-panel.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './practice-panel.component.css',

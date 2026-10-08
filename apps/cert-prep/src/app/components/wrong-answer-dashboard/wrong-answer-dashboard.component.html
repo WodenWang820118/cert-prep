@@ -14,14 +14,10 @@
       "
       (click)="refresh()"
     >
-      <i
-        [class]="
-          operations.isBusyFor(busyActions)
-            ? 'pi pi-spin pi-spinner'
-            : 'pi pi-refresh'
-        "
-        aria-hidden="true"
-      ></i>
+      <app-icon
+        name="lucideRefreshCw"
+        [busy]="operations.isBusyFor(busyActions)"
+      />
       <span>Refresh</span>
     </button>
   </header>
@@ -74,7 +70,7 @@
                 "
                 (click)="retryAttemptIds(area.attemptIds)"
               >
-                <i class="pi pi-refresh" aria-hidden="true"></i>
+                <app-icon name="lucideRefreshCw" />
                 <span>
                   {{
                     area.attemptIds.length === 0
@@ -120,7 +116,7 @@
                 "
                 (click)="retryAttemptIds(miss.attemptIds)"
               >
-                <i class="pi pi-refresh" aria-hidden="true"></i>
+                <app-icon name="lucideRefreshCw" />
                 <span>
                   {{
                     miss.attemptIds.length === 0
@@ -149,7 +145,7 @@
             <section class="answer-pattern-row">
               <div class="answer-pattern-flow">
                 <span>{{ pattern.selectedAnswer }}</span>
-                <i class="pi pi-arrow-right" aria-hidden="true"></i>
+                <app-icon name="lucideArrowRight" />
                 <strong>{{ pattern.correctAnswer }}</strong>
               </div>
               <span class="answer-pattern-count">{{ pattern.count }}</span>
@@ -167,7 +163,7 @@
     </section>
   } @else {
     <article class="dashboard-empty-state">
-      <i class="pi pi-chart-bar" aria-hidden="true"></i>
+      <app-icon name="lucideChartColumn" />
       <h3>No weakness data yet.</h3>
       <p>
         Practice questions in this project first. Missed answers will appear

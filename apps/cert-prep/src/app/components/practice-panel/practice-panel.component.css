@@ -86,7 +86,7 @@
   max-width: 40rem;
 }
 
-.practice-select-field i {
+.practice-select-field app-icon {
   position: absolute;
   top: 50%;
   left: 0.75rem;

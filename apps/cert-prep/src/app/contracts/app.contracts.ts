@@ -1,3 +1,4 @@
+import type { AppIconName } from '../components/ui/app-icons';
 export type StudyPageId =
   | 'build'
   | 'full_exam'
@@ -13,7 +14,7 @@ export type StudyPageId =
 export interface StudyPageOption {
   readonly id: StudyPageId;
   readonly label: string;
-  readonly icon: string;
+  readonly icon: AppIconName;
   readonly path: string;
 }
 

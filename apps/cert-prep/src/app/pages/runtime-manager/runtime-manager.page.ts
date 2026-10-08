@@ -7,17 +7,18 @@ import {
   inject,
   ChangeDetectionStrategy
 } from '@angular/core';
-import { Button } from 'primeng/button';
-import { ProgressBar } from 'primeng/progressbar';
 import { ModelHealthViewModelFacade } from '../../components/model-health/model-health-view-model.facade';
 import { RuntimeStatusRowComponent } from '../../components/model-health/runtime-status-row.component';
 import { DesktopRuntimeStore } from '../../stores/desktop-runtime/desktop-runtime.store';
 import { HealthStore } from '../../stores/health/health.store';
 import { OperationStore } from '../../stores/operation.store';
+import { ActionButtonComponent } from '../../components/ui/action-button.component';
+import { AppIconComponent } from '../../components/ui/app-icon.component';
+import { HlmProgressImports } from '@spartan-ng/helm/progress';
 
 @Component({
   selector: 'app-runtime-manager-page',
-  imports: [Button, ProgressBar, RuntimeStatusRowComponent],
+  imports: [RuntimeStatusRowComponent, ActionButtonComponent, AppIconComponent, HlmProgressImports],
   templateUrl: './runtime-manager.page.html',
   changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './runtime-manager.page.css',

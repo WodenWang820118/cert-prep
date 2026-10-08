@@ -7,16 +7,17 @@ import {
   viewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Tag } from 'primeng/tag';
-import { ToggleSwitch } from 'primeng/toggleswitch';
 import type {
   SourceImportAction,
   SourceUploadQueueViewModel,
 } from './source-import-panel.contracts';
+import { AppIconComponent } from '../ui/app-icon.component';
+import { HlmBadge } from '@spartan-ng/helm/badge';
+import { HlmSwitch } from '@spartan-ng/helm/switch';
 
 @Component({
   selector: 'app-source-upload-queue',
-  imports: [FormsModule, Tag, ToggleSwitch],
+  imports: [FormsModule, AppIconComponent, HlmBadge, HlmSwitch],
   templateUrl: './source-upload-queue.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
 })

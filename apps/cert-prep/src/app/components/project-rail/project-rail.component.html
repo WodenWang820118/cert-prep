@@ -1,7 +1,7 @@
 <div class="project-rail">
   <div class="project-rail-heading">
     <div class="project-rail-icon" aria-hidden="true">
-      <i class="pi pi-folder"></i>
+      <app-icon name="lucideFolder" />
     </div>
     <div>
       <p class="workbench-section-label">Local Workspace</p>
@@ -15,7 +15,7 @@
       type="button"
       (click)="openCreateForm()"
     >
-      <i class="pi pi-plus" aria-hidden="true"></i>
+      <app-icon name="lucidePlus" />
       <span>Create project</span>
     </button>
   } @else {
@@ -27,7 +27,7 @@
       <label class="workbench-field" for="projectName">
         <span>Name</span>
         <input
-          pInputText
+          hlmInput
           id="projectName"
           name="projectName"
           type="text"
@@ -39,11 +39,10 @@
       <label class="workbench-field" for="projectDescription">
         <span>Description</span>
         <textarea
-          pTextarea
+          hlmTextarea
           id="projectDescription"
           name="projectDescription"
           rows="3"
-          [autoResize]="true"
           [ngModel]="projects.projectDescription()"
           (ngModelChange)="projects.setProjectDescription($event)"
         ></textarea>
@@ -53,10 +52,7 @@
         type="submit"
         [disabled]="operations.isBusyFor('project') || projects.projectName().trim().length === 0"
       >
-        <i
-          [class]="operations.isBusyFor('project') ? 'pi pi-spin pi-spinner' : 'pi pi-plus'"
-          aria-hidden="true"
-        ></i>
+        <app-icon name="lucidePlus" [busy]="operations.isBusyFor('project')" />
         <span>Create project</span>
       </button>
     </form>

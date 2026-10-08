@@ -1,14 +1,15 @@
 import { Component, inject, signal, ChangeDetectionStrategy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { InputText } from 'primeng/inputtext';
-import { Textarea } from 'primeng/textarea';
 import { OperationStore } from '../../stores/operation.store';
 import { ProjectStore } from '../../stores/project.store';
 import { WorkspaceFacade } from '../../stores/workspace.facade';
+import { AppIconComponent } from '../ui/app-icon.component';
+import { HlmInput } from '@spartan-ng/helm/input';
+import { HlmTextarea } from '@spartan-ng/helm/textarea';
 
 @Component({
   selector: 'app-project-rail',
-  imports: [FormsModule, InputText, Textarea],
+  imports: [FormsModule, AppIconComponent, HlmInput, HlmTextarea],
   templateUrl: './project-rail.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './project-rail.component.css',

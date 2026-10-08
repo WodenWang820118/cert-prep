@@ -50,7 +50,13 @@ describe('SourceUploadQueueComponent', () => {
     component.chooseFiles({ target: input } as unknown as Event);
     component.setCropImagesBeforeUpload(true);
     component.setLanguage('ja');
-    (fixture.nativeElement.querySelector('button') as HTMLButtonElement).click();
+    (
+      Array.from(
+        fixture.nativeElement.querySelectorAll('button'),
+      ) as HTMLButtonElement[]
+    )
+      .find((button) => button.textContent?.includes('Upload files'))
+      ?.click();
 
     expect(actions).toEqual([
       { type: 'choose-files', files: [file] },

@@ -28,17 +28,10 @@ import { ProjectStore } from '../../stores/project.store';
 import { DesktopRuntimeStore } from '../../stores/desktop-runtime/desktop-runtime.store';
 import { WorkspaceFacade } from '../../stores/workspace.facade';
 import { LAST_PROJECT_STORAGE_KEY } from '../../constants/runtime.constants';
+import { AppIconComponent } from '../ui/app-icon.component';
 
 @Component({
-  imports: [
-    CdkTrapFocus,
-    ProjectRailComponent,
-    RuntimeManagerPage,
-    RuntimeConsentDialogsComponent,
-    RouterLink,
-    RouterLinkActive,
-    RouterOutlet,
-  ],
+  imports: [CdkTrapFocus, ProjectRailComponent, RuntimeManagerPage, RuntimeConsentDialogsComponent, RouterLink, RouterLinkActive, RouterOutlet, AppIconComponent],
   selector: 'app-root',
   templateUrl: './app.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
@@ -54,11 +47,11 @@ export class App implements OnInit, OnDestroy {
       id: 'build',
       label: 'Build',
       pages: [
-        { id: 'build', label: 'Build', icon: 'pi pi-wrench', path: '/build' },
+        { id: 'build', label: 'Build', icon: 'lucideWrench', path: '/build' },
         {
           id: 'capture_workbench_trial',
           label: 'Capture Workbench',
-          icon: 'pi pi-box',
+          icon: 'lucideBox',
           path: '/capture-workbench-trial',
         },
       ],
@@ -70,13 +63,13 @@ export class App implements OnInit, OnDestroy {
         {
           id: 'full_exam',
           label: 'Full Exam',
-          icon: 'pi pi-file-check',
+          icon: 'lucideFileCheck',
           path: '/full-exam',
         },
         {
           id: 'random_quiz',
           label: 'Random Quiz',
-          icon: 'pi pi-sync',
+          icon: 'lucideRefreshCcw',
           path: '/random-quiz',
         },
       ],
@@ -88,13 +81,13 @@ export class App implements OnInit, OnDestroy {
         {
           id: 'dashboard',
           label: 'Dashboard',
-          icon: 'pi pi-chart-bar',
+          icon: 'lucideChartColumn',
           path: '/dashboard',
         },
         {
           id: 'review',
           label: 'Wrong Answers',
-          icon: 'pi pi-history',
+          icon: 'lucideHistory',
           path: '/review',
         },
       ],

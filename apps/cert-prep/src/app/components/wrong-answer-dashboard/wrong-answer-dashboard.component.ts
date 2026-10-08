@@ -14,9 +14,11 @@ import type {
   WrongAnswerCluster,
   WrongAnswerRepeatedMiss,
 } from './contracts/wrong-answer-dashboard.contracts';
+import { AppIconComponent } from '../ui/app-icon.component';
 
 @Component({
   selector: 'app-wrong-answer-dashboard',
+  imports: [AppIconComponent],
   templateUrl: './wrong-answer-dashboard.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './wrong-answer-dashboard.component.css',

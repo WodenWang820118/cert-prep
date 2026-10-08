@@ -18,11 +18,15 @@ practice, or review flows after a source has been captured.
   practice sessions, and wrong-answer review state.
 - The Angular UI keeps workflow panels for projects, source import, question
   review/editing, practice, and wrong-answer review.
-- Use PrimeNG 21 with Angular 22.0.7.
-- Use Tailwind CSS 4 through `@tailwindcss/postcss`.
-- Integrate PrimeNG and Tailwind through `tailwindcss-primeui` CSS imports,
-  keeping PrimeNG's CSS layer before Tailwind utilities.
-- Keep standalone Angular components and signal stores. Import PrimeNG modules
+- Use spartan-ng components with Angular 22.0.7. Their styled layer is copied
+  into `libs/ui` (import alias `@spartan-ng/helm/*`) and is this project's own
+  code; add more with `pnpm nx g @spartan-ng/cli:ui <name>`. Do not add
+  PrimeNG: its releases from version 22 need a commercial licence.
+- Draw icons with Lucide through `app-icon`; `components/ui/app-icons.ts`
+  lists the icons the app ships.
+- Use Tailwind CSS 4 through `@tailwindcss/postcss`. The colours the spartan
+  components read are set in `styles.css` from the workbench palette.
+- Keep standalone Angular components and signal stores. Import UI components
   per component instead of centralizing every UI dependency in the root app.
 - Use Angular `httpResource` for stable signal-driven reads. The generated
   OpenAPI client keeps its Promise contract for commands and compatibility,

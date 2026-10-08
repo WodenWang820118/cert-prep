@@ -22,9 +22,11 @@ import { SourceImportStore } from '../../stores/source-import/source-import.stor
 import { CertPrepCaptureClient } from './cert-prep-capture-client';
 import { DesktopRuntimeStore } from '../../stores/desktop-runtime/desktop-runtime.store';
 import { CaptureRuntimePreflightStore } from '../../stores/capture-runtime/capture-runtime-preflight.store';
+import { AppIconComponent } from '../../components/ui/app-icon.component';
 
 @Component({
   selector: 'app-capture-workbench-trial-page',
+  imports: [AppIconComponent],
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
   templateUrl: './capture-workbench-trial.page.html',
   styleUrl: './capture-workbench-trial.page.css',

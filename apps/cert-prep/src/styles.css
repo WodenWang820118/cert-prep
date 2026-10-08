@@ -1,6 +1,5 @@
 @import 'tailwindcss';
-@import 'tailwindcss-primeui';
-@import 'primeicons/primeicons.css';
+@import '@spartan-ng/brain/hlm-tailwind-preset.css';
 
 @theme {
   --font-sans: 'Inter', 'Aptos', 'Segoe UI', 'Helvetica Neue', sans-serif;
@@ -71,7 +70,7 @@
   body {
     margin: 0;
     background: #f3f4f5;
-    color: var(--p-text-color);
+    color: var(--foreground);
     font-family: var(--font-sans);
   }
 
@@ -103,7 +102,8 @@
 }
 
 @layer components {
-  .workbench-shell {
+  /* On the root so dialogs, which render outside the shell, share the palette. */
+  :root {
     --workbench-background: #f3f4f5;
     --workbench-surface: #ffffff;
     --workbench-surface-low: #f8f9fa;
@@ -120,6 +120,9 @@
     --workbench-panel: #ffffff;
     --workbench-panel-muted: #f8f9fa;
     --workbench-canvas: #f3f4f5;
+  }
+
+  .workbench-shell {
     display: grid;
     grid-template-rows: auto auto minmax(0, 1fr) auto;
     color: var(--workbench-text);
@@ -849,11 +852,11 @@
   }
 
   .empty-workbench-state {
-    border: 1px dashed var(--p-surface-300);
+    border: 1px dashed #cbd5e1;
     border-radius: 8px;
     background: var(--workbench-panel);
     padding: 1rem;
-    color: var(--p-text-muted-color);
+    color: var(--muted-foreground);
     font-size: 0.875rem;
   }
 
@@ -980,4 +983,29 @@
       width: 100%;
     }
   }
+}
+
+/* Colours the spartan components read. They follow the workbench palette. */
+:root {
+  color-scheme: light;
+
+  --radius: 0.5rem;
+  --background: #ffffff;
+  --foreground: #334155;
+  --card: #ffffff;
+  --card-foreground: #334155;
+  --popover: #ffffff;
+  --popover-foreground: #334155;
+  --primary: #00488d;
+  --primary-foreground: #ffffff;
+  --secondary: #edeeef;
+  --secondary-foreground: #191c1d;
+  --muted: #edeeef;
+  --muted-foreground: #64748b;
+  --accent: #edeeef;
+  --accent-foreground: #191c1d;
+  --destructive: #b3261e;
+  --border: #c2c6d4;
+  --input: #c2c6d4;
+  --ring: #005fb8;
 }

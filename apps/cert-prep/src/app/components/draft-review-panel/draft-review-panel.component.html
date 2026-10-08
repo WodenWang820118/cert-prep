@@ -3,7 +3,7 @@
     <div class="min-w-0">
       <div class="workbench-panel-title">
         <span class="workbench-panel-icon" aria-hidden="true">
-          <i class="pi pi-sparkles"></i>
+          <app-icon name="lucideSparkles" />
         </span>
         <h2 id="drafts-heading">Step 02: Exam Questions</h2>
       </div>
@@ -34,7 +34,7 @@
       <label class="workbench-field">
         <span>Question count</span>
         <input
-          pInputText
+          hlmInput
           name="questionLimit"
           type="number"
           min="1"
@@ -43,7 +43,7 @@
           (ngModelChange)="drafts.setQuestionLimit($event)"
         />
       </label>
-      <span class="text-sm text-muted-color">
+      <span class="text-sm text-muted-foreground">
         Only questions tied to a source item can be used for practice.
       </span>
     </div>

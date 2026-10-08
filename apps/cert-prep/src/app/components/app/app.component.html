@@ -1,10 +1,10 @@
 <app-runtime-consent-dialogs />
 
-<main class="workbench-shell min-h-screen text-color">
+<main class="workbench-shell min-h-screen text-foreground">
   <header class="workbench-topbar">
     <div class="workbench-brand">
       <span class="workbench-brand-mark" aria-hidden="true">
-        <i class="pi pi-book"></i>
+        <app-icon name="lucideBookOpen" />
       </span>
       <h1>{{ title }}</h1>
     </div>
@@ -15,7 +15,7 @@
         type="button"
         (click)="openRuntimeManager()"
       >
-        <i class="pi pi-wrench" aria-hidden="true"></i>
+        <app-icon name="lucideWrench" />
         <span>Manage runtime</span>
       </button>
       <button
@@ -24,7 +24,7 @@
         aria-label="About Cert Prep"
         (click)="openAboutDialog()"
       >
-        <i class="pi pi-info-circle" aria-hidden="true"></i>
+        <app-icon name="lucideInfo" />
       </button>
       <button
         class="workbench-icon-button"
@@ -32,7 +32,7 @@
         aria-label="Settings"
         disabled
       >
-        <i class="pi pi-cog" aria-hidden="true"></i>
+        <app-icon name="lucideSettings" />
       </button>
       <button
         class="workbench-icon-button"
@@ -40,7 +40,7 @@
         aria-label="Account"
         disabled
       >
-        <i class="pi pi-user" aria-hidden="true"></i>
+        <app-icon name="lucideUser" />
       </button>
     </div>
   </header>
@@ -51,12 +51,12 @@
       role="alert"
       aria-live="assertive"
     >
-      <i class="pi pi-exclamation-circle" aria-hidden="true"></i>
+      <app-icon name="lucideCircleAlert" />
       <span>{{ error }}</span>
     </section>
   } @else if (operations.busy()) {
     <section class="workbench-message-strip" aria-live="polite">
-      <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
+      <app-icon name="lucideLoaderCircle" [busy]="true" />
       <span>Working...</span>
     </section>
   }
@@ -88,7 +88,7 @@
                 [routerLinkActiveOptions]="{ exact: true }"
                 [attr.aria-current]="activePage.isActive ? 'page' : null"
               >
-                <i [class]="page.icon" aria-hidden="true"></i>
+                <app-icon [name]="page.icon" />
                 <span>{{ page.label }}</span>
               </a>
             }
@@ -185,7 +185,7 @@
             aria-label="Close About Cert Prep"
             (click)="closeAboutDialog()"
           >
-            <i class="pi pi-times" aria-hidden="true"></i>
+            <app-icon name="lucideX" />
           </button>
         </header>
 

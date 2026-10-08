@@ -5,7 +5,6 @@ import {
   inject,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { InputText } from 'primeng/inputtext';
 import { RouterLink } from '@angular/router';
 import { DraftReviewStore } from '../../stores/draft-review/draft-review.store';
 import { OperationStore } from '../../stores/operation.store';
@@ -23,16 +22,12 @@ import {
   formatDraftGenerationMessage,
   formatDraftQuestionStatus,
 } from './draft-review-panel.formatters';
+import { AppIconComponent } from '../ui/app-icon.component';
+import { HlmInput } from '@spartan-ng/helm/input';
 
 @Component({
   selector: 'app-draft-review-panel',
-  imports: [
-    DraftGenerationStatusComponent,
-    DraftQuestionEditorCardComponent,
-    FormsModule,
-    InputText,
-    RouterLink,
-  ],
+  imports: [DraftGenerationStatusComponent, DraftQuestionEditorCardComponent, FormsModule, RouterLink, AppIconComponent, HlmInput],
   templateUrl: './draft-review-panel.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './draft-review-panel.component.css',

@@ -4,16 +4,17 @@ import {
   input,
   output,
 } from '@angular/core';
-import { InputText } from 'primeng/inputtext';
 import type {
   DraftQuestionEditorAction,
   DraftQuestionEditorViewModel,
 } from './draft-review-panel.contracts';
 import { formatChoiceKey } from './draft-review-panel.formatters';
+import { AppIconComponent } from '../ui/app-icon.component';
+import { HlmInput } from '@spartan-ng/helm/input';
 
 @Component({
   selector: 'app-draft-question-editor-card',
-  imports: [InputText],
+  imports: [AppIconComponent, HlmInput],
   templateUrl: './draft-question-editor-card.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
 })

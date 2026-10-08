@@ -8,9 +8,11 @@ import type {
   DraftGenerationAction,
   DraftGenerationStatusViewModel,
 } from './draft-review-panel.contracts';
+import { AppIconComponent } from '../ui/app-icon.component';
 
 @Component({
   selector: 'app-draft-generation-status',
+  imports: [AppIconComponent],
   templateUrl: './draft-generation-status.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
 })

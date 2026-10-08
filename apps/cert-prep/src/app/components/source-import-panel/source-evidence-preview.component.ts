@@ -11,9 +11,11 @@ import type {
   SourceEvidenceViewModel,
   SourceImportAction,
 } from './source-import-panel.contracts';
+import { AppIconComponent } from '../ui/app-icon.component';
 
 @Component({
   selector: 'app-source-evidence-preview',
+  imports: [AppIconComponent],
   templateUrl: './source-evidence-preview.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
 })
