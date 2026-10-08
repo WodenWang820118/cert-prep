@@ -215,12 +215,10 @@ describe('PracticePanelComponent', () => {
     fixture.detectChanges();
 
     const submitButton = buttonByText(fixture.nativeElement, 'Submit answer');
-    const icon = submitButton?.querySelector('i');
+    const icon = submitButton?.querySelector('app-icon');
 
     expect(submitButton?.disabled).toBe(true);
-    expect(icon?.classList).toContain('pi-spinner');
-    expect(icon?.classList).toContain('pi-spin');
-    expect(icon?.classList).not.toContain('pi-send');
+    expect(icon?.getAttribute('data-icon')).toBe('lucideLoaderCircle');
   });
 
   it('renders answered, current, and pending question navigator states', () => {

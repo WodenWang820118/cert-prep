@@ -16,7 +16,16 @@
       "@cert-prep/api": ["./libs/cert-prep-api/src/index.ts"],
       "@cert-prep/capture-runtime-version": [
         "./tools/capture-runtime-version.mts"
-      ]
+      ],
+      "@spartan-ng/helm": ["./libs/ui/src/index.ts"],
+      "@spartan-ng/helm/button": ["./libs/ui/button/src/index.ts"],
+      "@spartan-ng/helm/utils": ["./libs/ui/utils/src/index.ts"],
+      "@spartan-ng/helm/badge": ["./libs/ui/badge/src/index.ts"],
+      "@spartan-ng/helm/input": ["./libs/ui/input/src/index.ts"],
+      "@spartan-ng/helm/textarea": ["./libs/ui/textarea/src/index.ts"],
+      "@spartan-ng/helm/dialog": ["./libs/ui/dialog/src/index.ts"],
+      "@spartan-ng/helm/switch": ["./libs/ui/switch/src/index.ts"],
+      "@spartan-ng/helm/progress": ["./libs/ui/progress/src/index.ts"]
     },
     "strict": false,
     "noUncheckedSideEffectImports": false,

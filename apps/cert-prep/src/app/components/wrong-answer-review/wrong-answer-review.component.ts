@@ -6,9 +6,11 @@ import { ReviewRetryNavigationService } from '../../stores/practice/review-retry
 import { ProjectStore } from '../../stores/project.store';
 import { SourceImportStore } from '../../stores/source-import/source-import.store';
 import { WrongAnswerReviewStore } from '../../stores/wrong-answer-review.store';
+import { AppIconComponent } from '../ui/app-icon.component';
 
 @Component({
   selector: 'app-wrong-answer-review',
+  imports: [AppIconComponent],
   templateUrl: './wrong-answer-review.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './wrong-answer-review.component.css',

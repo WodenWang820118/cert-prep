@@ -277,7 +277,10 @@ test('optionally crops selected images before preserving mixed upload order', as
     name: 'Crop images before upload',
   });
   await expect(cropToggle).not.toBeChecked();
-  await cropToggle.check();
+  // The switch reflects its new state on the next render, so click and wait
+  // rather than use check(), which reads the state immediately.
+  await cropToggle.click();
+  await expect(cropToggle).toBeChecked();
 
   const sourceImageDataUrl = await page.evaluate(() => {
     const canvas = document.createElement('canvas');

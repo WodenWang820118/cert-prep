@@ -58,7 +58,7 @@
             [disabled]="operations.isBusyFor('session')"
             (click)="practice.resumeActiveSession()"
           >
-            <i class="pi pi-play" aria-hidden="true"></i>
+            <app-icon name="lucidePlay" />
             Resume session
           </button>
         </div>
@@ -74,7 +74,7 @@
         </p>
         @if (sessionMode() === 'full_document') {
           <label class="practice-select-field">
-            <i class="pi pi-file" aria-hidden="true"></i>
+            <app-icon name="lucideFile" />
             <select
               [ngModel]="practice.fullExamDocumentSelectValue()"
               (ngModelChange)="practice.setSelectedDocumentId($event)"
@@ -108,13 +108,7 @@
         [disabled]="operations.isBusyFor('session') || !practice.canCreatePracticeSession(sessionMode())"
         (click)="startPracticeSession()"
       >
-        <i
-          class="pi"
-          [class.pi-play]="!operations.isBusyFor('session')"
-          [class.pi-spinner]="operations.isBusyFor('session')"
-          [class.pi-spin]="operations.isBusyFor('session')"
-          aria-hidden="true"
-        ></i>
+        <app-icon name="lucidePlay" [busy]="operations.isBusyFor('session')" />
         <span>{{ startButtonLabel() }}</span>
       </button>
     </div>
@@ -213,13 +207,7 @@
               [disabled]="operations.isBusyFor('attempt') || practice.selectedAnswer().length === 0"
               (click)="practice.submitAnswer()"
             >
-              <i
-                class="pi"
-                [class.pi-send]="!operations.isBusyFor('attempt')"
-                [class.pi-spinner]="operations.isBusyFor('attempt')"
-                [class.pi-spin]="operations.isBusyFor('attempt')"
-                aria-hidden="true"
-              ></i>
+              <app-icon name="lucideSend" [busy]="operations.isBusyFor('attempt')" />
               <span>Submit answer</span>
             </button>
           </div>

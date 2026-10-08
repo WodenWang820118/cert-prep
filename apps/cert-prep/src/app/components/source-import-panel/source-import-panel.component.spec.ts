@@ -99,7 +99,8 @@ describe('SourceImportPanelComponent', () => {
     component.handleAction({ type: 'set-crop-images', enabled: true });
     component.handleAction({ type: 'choose-files', files: [image, pdf] });
     fixture.detectChanges();
-    expect(fixture.nativeElement.textContent).toContain('Image 1 of 1');
+    // The crop dialog renders in the overlay container, outside the fixture.
+    expect(document.body.textContent).toContain('Image 1 of 1');
 
     component.handleAction({ type: 'crop-applied', file: cropped });
 

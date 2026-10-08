@@ -12,14 +12,7 @@
         [disabled]="!canStartReviewQuiz()"
         (click)="startReviewQuiz()"
       >
-        <i
-          [class]="
-            operations.isBusyFor(busyActions)
-              ? 'pi pi-spin pi-spinner'
-              : 'pi pi-refresh'
-          "
-          aria-hidden="true"
-        ></i>
+        <app-icon name="lucideRefreshCw" [busy]="operations.isBusyFor(busyActions)" />
         <span>Start review quiz</span>
       </button>
 
@@ -31,14 +24,7 @@
         "
         (click)="review.refresh()"
       >
-        <i
-          [class]="
-            operations.isBusyFor(busyActions)
-              ? 'pi pi-spin pi-spinner'
-              : 'pi pi-refresh'
-          "
-          aria-hidden="true"
-        ></i>
+        <app-icon name="lucideRefreshCw" [busy]="operations.isBusyFor(busyActions)" />
         <span>Refresh</span>
       </button>
     </div>
@@ -91,7 +77,7 @@
 
           <section class="answer-panel is-correct" aria-label="Correct answer">
             <span>
-              <i class="pi pi-check-circle" aria-hidden="true"></i>
+              <app-icon name="lucideCircleCheck" />
               Correct Answer
             </span>
             <p>{{ wrong.correct_answer ?? 'Not set' }}</p>
@@ -123,14 +109,7 @@
               "
               (click)="retryWrongAnswer(wrong)"
             >
-              <i
-                [class]="
-                  operations.isBusyFor(busyActions)
-                    ? 'pi pi-spin pi-spinner'
-                    : 'pi pi-refresh'
-                "
-                aria-hidden="true"
-              ></i>
+              <app-icon name="lucideRefreshCw" [busy]="operations.isBusyFor(busyActions)" />
               <span>Retry</span>
             </button>
 
@@ -140,14 +119,7 @@
               [disabled]="explanation.loading"
               (click)="review.discussMistake(wrong)"
             >
-              <i
-                [class]="
-                  explanation.loading
-                    ? 'pi pi-spin pi-spinner'
-                    : 'pi pi-comments'
-                "
-                aria-hidden="true"
-              ></i>
+              <app-icon name="lucideMessagesSquare" [busy]="explanation.loading" />
               <span>
                 {{
                   explanation.loading
@@ -191,7 +163,7 @@
   </div>
 
   <p class="review-footnote">
-    <i class="pi pi-info-circle" aria-hidden="true"></i>
+    <app-icon name="lucideInfo" />
     <span>Answer correctly in a later session to clear them.</span>
   </p>
 </section>

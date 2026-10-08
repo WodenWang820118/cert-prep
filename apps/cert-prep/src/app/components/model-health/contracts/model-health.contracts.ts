@@ -5,7 +5,7 @@ import type {
 import type { LLMProviderSelectionRead } from '../../../stores/health/contracts/health-runtime.contracts';
 
 /**
- * PrimeNG tag severities used by the health/runtime status UI.
+ * Badge colours used by the health/runtime status UI.
  */
 export type HealthStatusSeverity = 'success' | 'danger' | 'info' | 'warn';
 

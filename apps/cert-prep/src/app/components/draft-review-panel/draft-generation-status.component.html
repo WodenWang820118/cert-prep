@@ -14,12 +14,7 @@
           [disabled]="model().generateBusy"
           (click)="emit({ type: 'generate' })"
         >
-          <i
-            [class]="
-              model().generateBusy ? 'pi pi-spin pi-spinner' : 'pi pi-sparkles'
-            "
-            aria-hidden="true"
-          ></i>
+          <app-icon name="lucideSparkles" [busy]="model().generateBusy" />
           <span>Generate questions</span>
         </button>
       }
@@ -31,12 +26,7 @@
           [disabled]="model().retryBusy"
           (click)="emit({ type: 'retry' })"
         >
-          <i
-            [class]="
-              model().retryBusy ? 'pi pi-spin pi-spinner' : 'pi pi-refresh'
-            "
-            aria-hidden="true"
-          ></i>
+          <app-icon name="lucideRefreshCw" [busy]="model().retryBusy" />
           <span>Retry</span>
         </button>
       }
@@ -48,12 +38,7 @@
           [disabled]="model().cancelBusy"
           (click)="emit({ type: 'cancel' })"
         >
-          <i
-            [class]="
-              model().cancelBusy ? 'pi pi-spin pi-spinner' : 'pi pi-times'
-            "
-            aria-hidden="true"
-          ></i>
+          <app-icon name="lucideX" [busy]="model().cancelBusy" />
           <span>Cancel</span>
         </button>
       }

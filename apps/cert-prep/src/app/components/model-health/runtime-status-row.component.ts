@@ -1,10 +1,10 @@
 import { Component, Input, ChangeDetectionStrategy } from '@angular/core';
-import { Tag } from 'primeng/tag';
 import type { RuntimeStatusSectionView } from './contracts/model-health.contracts';
+import { HlmBadge } from '@spartan-ng/helm/badge';
 
 @Component({
   selector: 'app-runtime-status-row',
-  imports: [Tag],
+  imports: [HlmBadge],
   template: `
     <div
       class="runtime-status-row"
@@ -15,12 +15,7 @@ import type { RuntimeStatusSectionView } from './contracts/model-health.contract
           {{ section.detail }}
         </p>
       </div>
-      <p-tag
-        styleClass="runtime-status-row-tag"
-        [severity]="section.severity"
-        [value]="section.statusLabel"
-        [rounded]="false"
-      />
+      <span hlmBadge class="runtime-status-row-tag" [variant]="section.severity">{{ section.statusLabel }}</span>
       <div class="runtime-status-row-actions">
         <ng-content select="[actions]" />
       </div>
@@ -93,7 +88,7 @@ import type { RuntimeStatusSectionView } from './contracts/model-health.contract
         text-transform: uppercase;
       }
 
-      ::ng-deep .runtime-status-row-actions .p-button {
+      ::ng-deep .runtime-status-row-actions [hlmBtn] {
         min-height: 2rem;
         padding: 0.375rem 0.625rem;
         font-size: 0.75rem;

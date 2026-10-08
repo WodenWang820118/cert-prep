@@ -1,31 +1,21 @@
 import { Component, EventEmitter, Input, Output, ChangeDetectionStrategy } from '@angular/core';
-import { Button } from 'primeng/button';
-import { Tag } from 'primeng/tag';
 import type { RuntimeStatusChipView } from './contracts/model-health.contracts';
+import { ActionButtonComponent } from '../ui/action-button.component';
+import { HlmBadge } from '@spartan-ng/helm/badge';
 
 @Component({
   selector: 'app-runtime-status-chip-bar',
-  imports: [Button, Tag],
+  imports: [ActionButtonComponent, HlmBadge],
   changeDetection: ChangeDetectionStrategy.Eager,
   template: `
     <div class="runtime-chip-bar">
       <div class="runtime-chip-list">
         @for (chip of chips; track chip.label) {
-          <p-tag
-            [severity]="chip.severity"
-            [value]="chip.label"
-            [rounded]="true"
-          />
+          <span hlmBadge [variant]="chip.severity">{{ chip.label }}</span>
         }
       </div>
       @if (showManageButton) {
-        <p-button
-          label="Manage runtime"
-          icon="pi pi-sliders-h"
-          severity="secondary"
-          [outlined]="true"
-          (onClick)="manageRuntime.emit()"
-        />
+        <app-action-button label="Manage runtime" icon="lucideSlidersHorizontal" variant="outline" (pressed)="manageRuntime.emit()" />
       }
     </div>
   `,

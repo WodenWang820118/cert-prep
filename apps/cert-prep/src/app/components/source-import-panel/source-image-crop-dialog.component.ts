@@ -10,8 +10,6 @@ import {
   viewChild,
   ChangeDetectionStrategy
 } from '@angular/core';
-import { Button } from 'primeng/button';
-import { Dialog } from 'primeng/dialog';
 import type {
   CropField,
   ImageCropRect,
@@ -19,10 +17,12 @@ import type {
 } from './contracts/source-image-crop.contracts';
 import { SourceImageCropService } from './source-image-crop.service';
 import type { SourceImportAction } from './source-import-panel.contracts';
+import { HlmDialogImports } from '@spartan-ng/helm/dialog';
+import { ActionButtonComponent } from '../ui/action-button.component';
 
 @Component({
   selector: 'app-source-image-crop-dialog',
-  imports: [Button, Dialog],
+  imports: [ActionButtonComponent, HlmDialogImports],
   templateUrl: './source-image-crop-dialog.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
   styleUrl: './source-image-crop-dialog.component.css',

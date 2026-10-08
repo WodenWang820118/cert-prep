@@ -284,7 +284,7 @@
   text-align: center;
 }
 
-.dashboard-empty-state i {
+.dashboard-empty-state app-icon {
   color: var(--workbench-muted);
   font-size: 2rem;
 }

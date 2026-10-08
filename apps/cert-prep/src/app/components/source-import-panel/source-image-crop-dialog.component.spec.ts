@@ -40,7 +40,7 @@ describe('SourceImageCropDialogComponent', () => {
     loadFixtureImage(fixture, 12, 8);
     fixture.detectChanges();
 
-    const root = fixture.nativeElement as HTMLElement;
+    const root = overlayRoot();
     expect(root.textContent).toContain('Crop image: capture.png');
     expect(root.textContent).toContain('Image 1 of 2');
     expect(root.textContent).toContain('12 × 8 px');
@@ -81,7 +81,7 @@ describe('SourceImageCropDialogComponent', () => {
     component.updateCropField('width', 6);
     component.updateCropField('height', 4);
     fixture.detectChanges();
-    expect(button(fixture.nativeElement, 'Apply crop')?.disabled).toBe(false);
+    expect(button(overlayRoot(), 'Apply crop')?.disabled).toBe(false);
 
     component.applyCrop();
     TestBed.tick();
@@ -99,7 +99,7 @@ describe('SourceImageCropDialogComponent', () => {
       new File(['png'], 'capture.png', { type: 'image/png' }),
     );
     loadFixtureImage(fixture, 12, 8);
-    const surface = fixture.nativeElement.querySelector(
+    const surface = overlayRoot().querySelector(
       '.crop-surface',
     ) as HTMLElement;
     vi.spyOn(surface, 'getBoundingClientRect').mockReturnValue({
@@ -131,7 +131,7 @@ describe('SourceImageCropDialogComponent', () => {
       new File(['png'], 'capture.png', { type: 'image/png' }),
     );
     loadFixtureImage(fixture, 12, 8);
-    const widthInput = fixture.nativeElement.querySelector(
+    const widthInput = overlayRoot().querySelector(
       '[aria-label="Crop width"]',
     ) as HTMLInputElement;
 
@@ -167,7 +167,7 @@ describe('SourceImageCropDialogComponent', () => {
     component.failImageLoad();
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.textContent).toContain(
+    expect(overlayRoot().textContent).toContain(
       'could not be previewed',
     );
     component.keepOriginal();
@@ -202,7 +202,7 @@ describe('SourceImageCropDialogComponent', () => {
     const component = componentActions(fixture.componentInstance);
     component.updateCropField('width', 6);
     fixture.detectChanges();
-    const applyButton = button(fixture.nativeElement, 'Apply crop');
+    const applyButton = button(overlayRoot(), 'Apply crop');
     applyButton?.focus();
 
     component.applyCrop();
@@ -216,12 +216,12 @@ describe('SourceImageCropDialogComponent', () => {
     TestBed.tick();
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.textContent).toContain('Encoder failed.');
-    expect(button(fixture.nativeElement, 'Keep original')?.disabled).toBe(
+    expect(overlayRoot().textContent).toContain('Encoder failed.');
+    expect(button(overlayRoot(), 'Keep original')?.disabled).toBe(
       false,
     );
     expect(document.activeElement).toBe(
-      fixture.nativeElement.querySelector('[aria-label="Crop review status"]'),
+      overlayRoot().querySelector('[aria-label="Crop review status"]'),
     );
   });
 });
@@ -240,7 +240,7 @@ function loadFixtureImage(
   width: number,
   height: number,
 ): void {
-  const image = fixture.nativeElement.querySelector('img') as HTMLImageElement;
+  const image = overlayRoot().querySelector('img') as HTMLImageElement;
   Object.defineProperty(image, 'naturalWidth', {
     configurable: true,
     value: width,
@@ -322,4 +322,9 @@ function button(root: ParentNode, label: string): HTMLButtonElement | null {
       (candidate) => candidate.textContent?.trim() === label,
     ) ?? null
   );
+}
+
+/** The dialog renders in the CDK overlay container, outside the fixture's element. */
+function overlayRoot(): HTMLElement {
+  return document.querySelector('.cdk-overlay-container') as HTMLElement;
 }

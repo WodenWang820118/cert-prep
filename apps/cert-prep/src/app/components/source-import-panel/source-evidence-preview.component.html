@@ -10,20 +10,20 @@
             [disabled]="model().transcriptMutationBusy"
             (click)="translateStaleTranscript()"
           >
-            <i class="pi pi-language" aria-hidden="true"></i>
+            <app-icon name="lucideLanguages" />
             <span>Translate unfinished segments</span>
           </button>
         }
       </div>
 
       @if (document.source_kind === 'audio') {
-        <div class="rounded-md border border-surface-200 bg-surface-50 p-3">
+        <div class="rounded-md border border-slate-200 bg-slate-50 p-3">
           @if (model().audio.loading) {
-            <p class="m-0 text-sm font-semibold text-muted-color">Loading source audio...</p>
+            <p class="m-0 text-sm font-semibold text-muted-foreground">Loading source audio...</p>
           } @else if (model().audio.error; as audioError) {
             <p class="m-0 text-sm font-semibold text-red-700" role="alert">{{ audioError }}</p>
             <button class="workbench-secondary-button mt-2" type="button" (click)="retryAudio()">
-              <i class="pi pi-refresh" aria-hidden="true"></i>
+              <app-icon name="lucideRefreshCw" />
               <span>Retry audio playback</span>
             </button>
           } @else if (model().audio.url; as audioUrl) {
@@ -58,7 +58,7 @@
                 [attr.aria-label]="segmentPlaybackLabel(chunk)"
                 (click)="playTranscriptChunk(chunk)"
               >
-                <i class="pi pi-play" aria-hidden="true"></i>
+                <app-icon name="lucidePlay" />
                 <span>Play this segment</span>
               </button>
               <label class="workbench-field mt-2">
@@ -76,7 +76,7 @@
                   [disabled]="model().transcriptMutationBusy"
                   (click)="updateTranscript(chunk.id, japaneseText.value)"
                 >
-                  <i class="pi pi-save" aria-hidden="true"></i>
+                  <app-icon name="lucideSave" />
                   <span>Save transcript</span>
                 </button>
                 <button
@@ -85,7 +85,7 @@
                   [disabled]="model().transcriptMutationBusy"
                   (click)="translateTranscript(chunk.id)"
                 >
-                  <i class="pi pi-language" aria-hidden="true"></i>
+                  <app-icon name="lucideLanguages" />
                   <span>Translate</span>
                 </button>
               </div>
@@ -103,9 +103,9 @@
         }
         @if (model().hiddenChunkCount > 0) {
           <div class="flex flex-wrap items-center justify-between gap-2 p-3">
-            <p class="m-0 text-sm text-muted-color">More source evidence is available.</p>
+            <p class="m-0 text-sm text-muted-foreground">More source evidence is available.</p>
             <button class="workbench-secondary-button" type="button" (click)="showMoreEvidence()">
-              <i class="pi pi-chevron-down" aria-hidden="true"></i>
+              <app-icon name="lucideChevronDown" />
               <span>Show more</span>
             </button>
           </div>
@@ -113,12 +113,12 @@
       </div>
     </section>
   } @else {
-    <p class="m-0 rounded-md border border-dashed border-surface-300 bg-surface-0 p-3 text-sm text-muted-color">
+    <p class="m-0 rounded-md border border-dashed border-slate-300 bg-white p-3 text-sm text-muted-foreground">
       No source evidence is available yet.
     </p>
   }
 } @else {
-  <p class="m-0 rounded-md border border-dashed border-surface-300 bg-surface-0 p-3 text-sm text-muted-color">
+  <p class="m-0 rounded-md border border-dashed border-slate-300 bg-white p-3 text-sm text-muted-foreground">
     Select a source to inspect its evidence.
   </p>
 }

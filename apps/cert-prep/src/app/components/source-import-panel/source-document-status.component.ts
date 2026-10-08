@@ -5,15 +5,16 @@ import {
   input,
   output,
 } from '@angular/core';
-import { Tag } from 'primeng/tag';
 import type {
   SourceDocumentStatusViewModel,
   SourceImportAction,
 } from './source-import-panel.contracts';
+import { AppIconComponent } from '../ui/app-icon.component';
+import { HlmBadge } from '@spartan-ng/helm/badge';
 
 @Component({
   selector: 'app-source-document-status',
-  imports: [Tag],
+  imports: [AppIconComponent, HlmBadge],
   templateUrl: './source-document-status.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,
 })

@@ -17,7 +17,7 @@
         <label class="workbench-field">
           <span>Question</span>
           <input
-            pInputText
+            hlmInput
             [name]="model().fieldPrefix + '-question'"
             [value]="edit.question"
             (input)="emit({ type: 'set-question', value: valueFrom($event) })"
@@ -25,13 +25,13 @@
         </label>
 
         <fieldset class="m-0 grid gap-2 border-0 p-0">
-          <legend class="pb-1 text-sm font-bold text-muted-color">
+          <legend class="pb-1 text-sm font-bold text-muted-foreground">
             Choices
           </legend>
           @for (choice of edit.choices; track $index) {
             <div class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
               <input
-                pInputText
+                hlmInput
                 [name]="model().fieldPrefix + '-choice-' + $index"
                 [value]="choice"
                 (input)="
@@ -49,7 +49,7 @@
                 [disabled]="edit.choices.length <= 2"
                 (click)="emit({ type: 'remove-choice', index: $index })"
               >
-                <i class="pi pi-times" aria-hidden="true"></i>
+                <app-icon name="lucideX" />
               </button>
             </div>
           }
@@ -58,7 +58,7 @@
             type="button"
             (click)="emit({ type: 'add-choice' })"
           >
-            <i class="pi pi-plus" aria-hidden="true"></i>
+            <app-icon name="lucidePlus" />
             <span>Add choice</span>
           </button>
         </fieldset>
@@ -100,7 +100,7 @@
           <span class="workbench-choice-key">{{ choiceKey($index) }}</span>
           <span>{{ choice }}</span>
           @if (choice === model().answer) {
-            <i class="pi pi-check" aria-hidden="true"></i>
+            <app-icon name="lucideCheck" />
           }
         </li>
       }
@@ -142,10 +142,7 @@
         [disabled]="model().saveBusy"
         (click)="emit({ type: 'save' })"
       >
-        <i
-          [class]="model().saveBusy ? 'pi pi-spin pi-spinner' : 'pi pi-save'"
-          aria-hidden="true"
-        ></i>
+        <app-icon name="lucideSave" [busy]="model().saveBusy" />
         <span>Save</span>
       </button>
     } @else {
@@ -154,7 +151,7 @@
         type="button"
         (click)="emit({ type: 'start-edit' })"
       >
-        <i class="pi pi-pencil" aria-hidden="true"></i>
+        <app-icon name="lucidePencil" />
         <span>Edit</span>
       </button>
     }

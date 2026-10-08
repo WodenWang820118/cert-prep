@@ -226,7 +226,7 @@
   color: #7aa8f7;
 }
 
-.answer-panel.is-correct i {
+.answer-panel.is-correct app-icon {
   font-size: 0.75rem;
 }
 

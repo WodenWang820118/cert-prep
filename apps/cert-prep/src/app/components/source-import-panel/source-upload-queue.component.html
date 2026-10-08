@@ -2,7 +2,7 @@
   <header class="workbench-panel-header">
     <div class="workbench-panel-title">
       <span class="workbench-panel-icon" aria-hidden="true">
-        <i class="pi pi-file"></i>
+        <app-icon name="lucideFile" />
       </span>
       <h2 id="source-files-heading">Step 01: Source files</h2>
     </div>
@@ -13,7 +13,7 @@
       [attr.for]="model().fileSelectionBlocked ? null : 'sourceFiles'"
       [attr.aria-disabled]="model().fileSelectionBlocked"
     >
-      <i class="pi pi-upload" aria-hidden="true"></i>
+      <app-icon name="lucideUpload" />
       <span>Choose files</span>
     </label>
   </header>
@@ -38,7 +38,7 @@
 
     <div class="workbench-file-row">
       <div class="workbench-file-name">
-        <i class="pi pi-file" aria-hidden="true"></i>
+        <app-icon name="lucideFile" />
         <span>{{ model().selectedFileLabel }}</span>
       </div>
       <span class="workbench-tag">
@@ -49,18 +49,14 @@
     @if (model().items.length > 0) {
       <div class="grid gap-2" aria-label="Selected source file upload status">
         @for (item of model().items; track item.id) {
-          <div class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-surface-200 bg-surface-0 p-3">
+          <div class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-200 bg-white p-3">
             <div class="min-w-0 flex-1">
-              <p class="m-0 truncate text-sm font-semibold text-color">{{ item.file.name }}</p>
+              <p class="m-0 truncate text-sm font-semibold text-foreground">{{ item.file.name }}</p>
               @if (item.error; as error) {
                 <p class="m-0 mt-1 text-xs font-semibold text-red-700">{{ error }}</p>
               }
             </div>
-            <p-tag
-              [value]="uploadStatusLabel(item.status)"
-              [severity]="uploadStatusSeverity(item.status)"
-              [rounded]="true"
-            />
+            <span hlmBadge [variant]="uploadStatusSeverity(item.status)">{{ uploadStatusLabel(item.status) }}</span>
             @if (canCancel(item)) {
               <button
                 class="workbench-secondary-button"
@@ -68,7 +64,7 @@
                 [disabled]="item.status === 'cancel_requested'"
                 (click)="cancelUpload(item.id)"
               >
-                <i class="pi pi-times" aria-hidden="true"></i>
+                <app-icon name="lucideX" />
                 <span>{{ item.status === 'cancel_requested' ? 'Canceling' : 'Cancel' }}</span>
               </button>
             }
@@ -79,7 +75,7 @@
                 [attr.aria-label]="'Retry upload of ' + item.file.name"
                 (click)="retryUpload(item.id)"
               >
-                <i class="pi pi-refresh" aria-hidden="true"></i>
+                <app-icon name="lucideRefreshCw" />
                 <span>Retry</span>
               </button>
             }
@@ -102,23 +98,17 @@
       <small>Choose the language used to parse this source.</small>
     </label>
 
-    <details class="rounded-md border border-surface-200 bg-surface-50 p-3">
-      <summary class="cursor-pointer text-sm font-semibold text-color">Advanced settings</summary>
+    <details class="rounded-md border border-slate-200 bg-slate-50 p-3">
+      <summary class="cursor-pointer text-sm font-semibold text-foreground">Advanced settings</summary>
       <div class="mt-3">
-        <div class="flex items-center justify-between gap-3 rounded-md border border-surface-200 bg-surface-0 p-3">
+        <div class="flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-white p-3">
           <div>
-            <label id="crop-images-label" class="text-sm font-semibold text-color" for="cropImagesBeforeUpload">
+            <label id="crop-images-label" class="text-sm font-semibold text-foreground" for="cropImagesBeforeUpload">
               Crop images before upload (optional)
             </label>
-            <p class="m-0 mt-1 text-xs leading-5 text-muted-color">Review supported images one at a time. PDF files stay unchanged.</p>
+            <p class="m-0 mt-1 text-xs leading-5 text-muted-foreground">Review supported images one at a time. PDF files stay unchanged.</p>
           </div>
-          <p-toggleswitch
-            inputId="cropImagesBeforeUpload"
-            ariaLabelledBy="crop-images-label"
-            [ngModel]="model().cropImagesBeforeUpload"
-            [disabled]="model().uploadBusy"
-            (ngModelChange)="setCropImagesBeforeUpload($event)"
-          />
+          <hlm-switch inputId="cropImagesBeforeUpload" aria-labelledby="crop-images-label" [checked]="model().cropImagesBeforeUpload" [disabled]="model().uploadBusy" (checkedChange)="setCropImagesBeforeUpload($event)" />
         </div>
       </div>
     </details>
@@ -129,7 +119,7 @@
       [disabled]="model().uploadBusy || !model().canUpload"
       (click)="upload()"
     >
-      <i [class]="model().uploadBusy ? 'pi pi-spin pi-spinner' : 'pi pi-upload'" aria-hidden="true"></i>
+      <app-icon name="lucideUpload" [busy]="model().uploadBusy" />
       <span>Upload files</span>
     </button>
   </div>
