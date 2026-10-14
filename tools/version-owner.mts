@@ -392,6 +392,7 @@ export function readInstalledCaptureContract(
       join(dirname(clientManifestPath), 'private/assets/contract-set.json'),
     ),
     declaredSha256: client.contractSetSha256,
+    runtimeVersion: client.version,
   };
 }
 

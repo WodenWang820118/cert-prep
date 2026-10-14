@@ -1244,6 +1244,9 @@ async function loadContractIdentity(
       source: 'candidate/contracts/contract-set.json',
       bytes: contractBytes,
       declaredSha256: contractSetSha256,
+      ...(typeof candidateManifest.releaseVersion === 'string'
+        ? { runtimeVersion: candidateManifest.releaseVersion }
+        : {}),
     },
   };
 }

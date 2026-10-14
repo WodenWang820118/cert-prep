@@ -19,7 +19,7 @@ export const PHASE1_FINAL_IDENTITY = Object.freeze({
   ocrWorkerExecutableSha256:
     'b26cbb2d55eae84d00c7bae4aeadf73cb602ef68556face5efefd44fb250d887',
   contractSetSha256:
-    'f72e22229bbc726f1feff4c8ea99ab7e68c64dfa893b038bb731a99255b6495c',
+    'fc8a994e5a2a822376821da277e949eb203df9223977da4db4cdc7ab29724523',
   jpegSha256:
     '9b1a9a87bae10ecd07b4b7874d5f8e46fbd8b798cc0becb20825636637da99b1',
   pdfSha256:

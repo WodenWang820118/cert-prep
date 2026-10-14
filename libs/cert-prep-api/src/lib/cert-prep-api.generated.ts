@@ -11,7 +11,7 @@ export interface Components {
     Body_create_capture_projects__project_id__capture_workbench_captures_post: { "file": string };
     Body_upload_document_projects__project_id__documents_post: { "file": string; "language_hint"?: string };
     CaptureBlock: { "blockId": string; "order": number; "type": string; "sourceSegmentId": string; "locator": Components['schemas']['PageLocator'] | Components['schemas']['TimeLocator']; "sourceText": string; "targetText": string };
-    CaptureDocument: { "schemaVersion"?: "2"; "source": Components['schemas']['CaptureSource']; "rawSegments": Components['schemas']['RawCaptureSegment'][]; "blocks": Components['schemas']['CaptureBlock'][]; "sourceText": string; "targetText": string; "extractionEngine": Components['schemas']['CaptureEngine']; "structuringEngine": Components['schemas']['CaptureEngine']; "warnings"?: string[]; "createdAt": string; "completedAt": string };
+    CaptureDocument: { "schemaVersion"?: "2"; "source": Components['schemas']['CaptureSource']; "rawSegments": Components['schemas']['RawCaptureSegment'][]; "blocks": Components['schemas']['CaptureBlock'][]; "sourceText": string; "targetText": string; "extractionEngine": Components['schemas']['CaptureEngine']; "diarizationEngine"?: Components['schemas']['CaptureEngine'] | null; "speakers"?: Components['schemas']['CaptureSpeaker'][]; "suggestedUnits"?: string[]; "structuringEngine": Components['schemas']['CaptureEngine']; "warnings"?: string[]; "createdAt": string; "completedAt": string };
     CaptureEngine: { "engine": string; "model": string; "digest": string; "device"?: string | null };
     CaptureFailureV2: { "code": string; "message": string; "stage"?: string | null; "retryable"?: boolean };
     CaptureOcrFailureRead: { "code": string; "retryable": boolean };
@@ -26,6 +26,7 @@ export interface Components {
     CaptureReviewStructureRequest: { "clientRequestId": string; "review": Components['schemas']['CaptureReview'] };
     CaptureSource: { "sha256": string; "fileName": string; "mediaType": string; "bytes": number };
     CaptureSourceKind: string;
+    CaptureSpeaker: { "speakerId": string; "sample"?: Components['schemas']['TimeLocator'] | null; "displayName"?: string | null };
     CaptureStreamingCommitRequest: { "clientRequestId": string; "candidate": Components['schemas']['CaptureDocument'] };
     CaptureStreamingFailureRequest: { "clientRequestId"?: string | null; "code": string; "message": string };
     CaptureStreamingResultRead: { "operation": Components['schemas']['CaptureReviewOperationRead']; "raw": Components['schemas']['RawCapture']; "result": Components['schemas']['CaptureDocument'] };
@@ -62,7 +63,7 @@ export interface Components {
     OcrAdapterClass: string;
     OcrComputeMode: string;
     OcrComputeNoticeCode: string;
-    OcrComputePreflightV2: { "apiVersion"?: "2.0"; "schemaVersion"?: "1"; "service"?: "capture-runtime"; "runtimeVersion"?: "0.5.1"; "contractSetVersion"?: "2"; "contractSha256": string; "workerSha256"?: string | null; "mode": Components['schemas']['OcrComputeMode']; "adapterClass": Components['schemas']['OcrAdapterClass']; "reasonCode"?: Components['schemas']['OcrComputeReasonCode'] | null; "userNoticeRequired": boolean; "noticeCode"?: Components['schemas']['OcrComputeNoticeCode'] | null };
+    OcrComputePreflightV2: { "apiVersion"?: "2.0"; "schemaVersion"?: "1"; "service"?: "capture-runtime"; "runtimeVersion": string; "contractSetVersion"?: "2"; "contractSha256": string; "workerSha256"?: string | null; "mode": Components['schemas']['OcrComputeMode']; "adapterClass": Components['schemas']['OcrAdapterClass']; "reasonCode"?: Components['schemas']['OcrComputeReasonCode'] | null; "userNoticeRequired": boolean; "noticeCode"?: Components['schemas']['OcrComputeNoticeCode'] | null };
     OcrComputeReasonCode: string;
     OcrPageScopeV2: { "sourcePageCount": number; "requestedPageNumbers": number[]; "processedPageNumbers": number[] };
     OllamaModelProfileRead: { "profile_id": string; "display_name": string; "description": string; "base_model": string; "local_model": string; "context_window": number; "system_prompt": string; "parameters"?: Record<string, unknown>; "min_total_ram_bytes"?: number | null; "min_available_ram_bytes"?: number | null; "min_free_disk_bytes"?: number | null; "min_vram_bytes"?: number | null; "auto_selectable": boolean; "explicit_opt_in_required": boolean; "fallback_profile_ids"?: string[] };
@@ -89,8 +90,8 @@ export interface Components {
     QuestionDraftRead: { "id": string; "project_id": string; "document_id": string | null; "chunk_id": string | null; "question": string; "choices": string[]; "answer": string | null; "answer_key_source": Components['schemas']['AnswerKeySource'] | string; "rationale": string | null; "citation_page": number | null; "citation_locator_kind"?: string; "citation_start_ms"?: number | null; "citation_end_ms"?: number | null; "source_excerpt": string | null; "confidence": number | null; "source_order": number | null; "source_question_number": string | null; "item_kind": Components['schemas']['QuestionItemKind'] | string; "group_key": string | null; "group_prompt": string | null; "status": Components['schemas']['DraftStatus'] | string; "rejection_reason": string | null; "created_at": string; "updated_at": string };
     QuestionDraftUpdate: { "question"?: string | null; "choices"?: string[] | null; "answer"?: string | null; "answer_key_source"?: Components['schemas']['AnswerKeySource'] | string | null; "rationale"?: string | null; "citation_page"?: number | null; "source_excerpt"?: string | null; "confidence"?: number | null; "source_order"?: number | null; "source_question_number"?: string | null; "item_kind"?: Components['schemas']['QuestionItemKind'] | string | null; "group_key"?: string | null; "group_prompt"?: string | null };
     QuestionItemKind: string;
-    RawCapture: { "schemaVersion"?: "2"; "diagnosticOnly"?: true; "source": Components['schemas']['CaptureSource']; "segments": Components['schemas']['RawCaptureSegment'][]; "sourceText": string; "extractionEngine": Components['schemas']['CaptureEngine']; "warnings"?: string[]; "ocrPageScope"?: Components['schemas']['OcrPageScopeV2'] | null; "createdAt": string };
-    RawCaptureSegment: { "segmentId": string; "order": number; "locator": Components['schemas']['PageLocator'] | Components['schemas']['TimeLocator']; "text": string };
+    RawCapture: { "schemaVersion"?: "2"; "diagnosticOnly"?: true; "source": Components['schemas']['CaptureSource']; "segments": Components['schemas']['RawCaptureSegment'][]; "sourceText": string; "extractionEngine": Components['schemas']['CaptureEngine']; "diarizationEngine"?: Components['schemas']['CaptureEngine'] | null; "speakers"?: Components['schemas']['CaptureSpeaker'][]; "suggestedUnits"?: string[]; "warnings"?: string[]; "ocrPageScope"?: Components['schemas']['OcrPageScopeV2'] | null; "createdAt": string };
+    RawCaptureSegment: { "segmentId": string; "order": number; "locator": Components['schemas']['PageLocator'] | Components['schemas']['TimeLocator']; "text": string; "speaker"?: string | null; "speakerOverlap"?: boolean };
     RuntimeArtifactDescriptorV2: { "artifactUrl": string; "artifactFileName": string; "bytes": number; "sha256": string };
     RuntimeInstallation: { "installationId": string; "requirementId": string; "status": Components['schemas']['capture_runtime_client__private__generated_models__RuntimeInstallationStatus']; "progress": number; "error"?: Components['schemas']['CaptureFailureV2'] | null; "createdAt": string; "updatedAt": string; "completedAt"?: string | null };
     RuntimeInstallationRead: { "id": string; "kind": Components['schemas']['RuntimeRequirementKind']; "provider": string; "model": string; "status": Components['schemas']['cert_prep_contracts__runtime__RuntimeInstallationStatus']; "phase": string; "cancellable": boolean; "detail": string; "completed": number | null; "total": number | null; "created_at": string; "updated_at": string; "commit_started_at"?: string | null; "error"?: string | null };
@@ -100,7 +101,7 @@ export interface Components {
     RuntimeRequirementKind: string;
     RuntimeRequirementRead: { "kind": Components['schemas']['RuntimeRequirementKind']; "label": string; "available": boolean; "detail": string; "unavailable_reason": string | null; "version"?: string | null; "bytes"?: number | null; "installed_path"?: string | null };
     RuntimeRequirementStatus: string;
-    RuntimeRequirementV2: { "requirementId": string; "kind": string; "displayName": string; "status": Components['schemas']['RuntimeRequirementStatus']; "requiredFor": string[]; "installStrategy": string; "detail"?: string | null; "artifact"?: Components['schemas']['RuntimeArtifactDescriptorV2'] | null };
+    RuntimeRequirementV2: { "requirementId": string; "kind": string; "displayName": string; "status": Components['schemas']['RuntimeRequirementStatus']; "requiredFor": string[]; "installStrategy": string; "optional"?: boolean; "detail"?: string | null; "artifact"?: Components['schemas']['RuntimeArtifactDescriptorV2'] | null };
     RuntimeRequirements: { "items": Components['schemas']['RuntimeRequirementV2'][] };
     RuntimeRequirementsRead: { "items": Components['schemas']['RuntimeRequirementRead'][] };
     SourceDocumentStatus: string;
@@ -141,6 +142,7 @@ export type CaptureReviewOperationRead = Components['schemas']['CaptureReviewOpe
 export type CaptureReviewStructureRequest = Components['schemas']['CaptureReviewStructureRequest'];
 export type CaptureSource = Components['schemas']['CaptureSource'];
 export type CaptureSourceKind = Components['schemas']['CaptureSourceKind'];
+export type CaptureSpeaker = Components['schemas']['CaptureSpeaker'];
 export type CaptureStreamingCommitRequest = Components['schemas']['CaptureStreamingCommitRequest'];
 export type CaptureStreamingFailureRequest = Components['schemas']['CaptureStreamingFailureRequest'];
 export type CaptureStreamingResultRead = Components['schemas']['CaptureStreamingResultRead'];
