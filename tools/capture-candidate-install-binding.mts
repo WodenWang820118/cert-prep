@@ -188,6 +188,7 @@ async function readCandidateContractSource(
     source: contractPath,
     bytes,
     declaredSha256: receipt.contractSetSha256,
+    runtimeVersion: receipt.releaseVersion,
   });
 }
 

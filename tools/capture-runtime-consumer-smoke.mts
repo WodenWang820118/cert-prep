@@ -19,9 +19,12 @@ import {
 import { CAPTURE_RUNTIME_RELEASE_BASE_URL } from './capture-runtime-version.mts';
 
 const PUBLISHED_RELEASE_BASE_URL = CAPTURE_RUNTIME_RELEASE_BASE_URL;
+// Since 0.6.0 the runtime also lists its optional units; Cert Prep installs neither.
 const EXPECTED_REQUIREMENT_IDS = Object.freeze([
   'windowsml-ocr',
   'whisper-primary',
+  'speaker-diarization',
+  'vertical-japanese-reader',
 ]);
 const FORBIDDEN_RELEASE_OVERRIDES = Object.freeze([
   'CAPTURE_WORKBENCH_ROOT',

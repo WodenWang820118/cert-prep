@@ -114,6 +114,11 @@ export type CaptureRuntimeContractSource = {
   readonly source: string;
   readonly bytes: Uint8Array;
   readonly declaredSha256: string;
+  /**
+   * The producer's release version, from its package or candidate manifest.
+   * Since Capture 0.6.0 the contract set no longer carries it.
+   */
+  readonly runtimeVersion?: string;
 };
 
 export type CaptureRuntimeConsumerInventoryReport = {
@@ -981,7 +986,11 @@ export function inspectCaptureRuntimeConsumerInventory(
   }
 
   try {
-    parsedContract = parseContractIdentity(contract.bytes);
+    const parsed = parseContractIdentity(contract.bytes);
+    parsedContract = {
+      ...parsed,
+      runtimeVersion: parsed.runtimeVersion ?? contract.runtimeVersion,
+    };
   } catch (error) {
     errors.push(
       `producer contract-set JSON cannot be parsed: ${String(error)}.`,
@@ -1069,9 +1078,13 @@ export function inspectCaptureRuntimeConsumerInventory(
       parsedContract.runtimeVersion,
     ],
   ];
+  if (parsedContract.runtimeVersion === undefined) {
+    errors.push('producer contract-set is missing its runtime version identity.');
+  }
   for (const [label, actual, expected] of runtimeIdentityChecks) {
+    // A contract set that does not pin the version in a schema has nothing to mix.
     if (actual === undefined || expected === undefined) {
-      errors.push(`producer contract-set is missing its ${label} identity.`);
+      continue;
     } else if (actual !== expected) {
       errors.push(
         `producer contract-set ${label} is mixed: expected ${expected}, found ${actual}.`,

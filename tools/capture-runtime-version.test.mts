@@ -38,6 +38,7 @@ import {
 // checks; these tests opt into candidate mode explicitly where they need it.
 delete process.env.CAPTURE_CANDIDATE_INSTALL;
 
+// Like a Capture 0.6.0 contract set: no schema pins the release version.
 const CONTRACT_FIXTURE = JSON.stringify({
   contractSetVersion: '2',
   schemas: [
@@ -46,7 +47,7 @@ const CONTRACT_FIXTURE = JSON.stringify({
       schema: {
         properties: {
           apiVersion: { const: '2.0' },
-          runtimeVersion: { const: CAPTURE_RUNTIME_VERSION },
+          runtimeVersion: { type: 'string', pattern: '^[0-9]+\\.[0-9]+\\.[0-9]+$' },
           schemaVersion: { const: '3' },
         },
       },
@@ -57,7 +58,7 @@ const CONTRACT_FIXTURE = JSON.stringify({
         properties: {
           apiVersion: { const: '2.0' },
           contractSetVersion: { const: '2' },
-          runtimeVersion: { const: CAPTURE_RUNTIME_VERSION },
+          runtimeVersion: { type: 'string', pattern: '^[0-9]+\\.[0-9]+\\.[0-9]+$' },
           schemaVersion: { const: '1' },
         },
       },
@@ -69,7 +70,7 @@ const CONTRACT_FIXTURE = JSON.stringify({
           apiVersion: { const: '2.0' },
           captureDocumentSchemaVersion: { const: '2' },
           contractSetVersion: { const: '2' },
-          runtimeVersion: { const: CAPTURE_RUNTIME_VERSION },
+          runtimeVersion: { type: 'string', pattern: '^[0-9]+\\.[0-9]+\\.[0-9]+$' },
         },
       },
     },
@@ -87,6 +88,7 @@ function contractSource(
     source: 'deterministic producer-contract fixture',
     bytes,
     declaredSha256: sha256(bytes),
+    runtimeVersion: CAPTURE_RUNTIME_VERSION,
   };
 }
 
@@ -106,7 +108,7 @@ function validEntries(): CaptureRuntimeConsumerInventoryEntry[] {
               : field.kind === 'runtimeReadyIdentity'
                 ? 'api=2.0;document=2;contractSet=2'
                 : field.kind === 'preflightIdentity'
-                  ? `runtime=${CAPTURE_RUNTIME_VERSION};api=2.0;contractSet=2`
+                  ? 'api=2.0;contractSet=2'
                   : 'structural',
   }));
 }
@@ -393,6 +395,44 @@ test('the inventory rejects a missing projection schema and a corrupted contract
     ),
   );
   assert.deepEqual(Buffer.from(source.bytes), originalBytes);
+});
+
+test('a producer contract without a version needs the version from its package', () => {
+  const { runtimeVersion: _omitted, ...withoutVersion } = contractSource();
+  const report = inspectCaptureRuntimeConsumerInventory(
+    inventoryInput(validEntries(), withoutVersion),
+  );
+
+  assert.equal(report.status, 'blocked');
+  assert.ok(
+    report.errors.includes(
+      'producer contract-set is missing its runtime version identity.',
+    ),
+  );
+});
+
+test('a producer contract that pins another version in a schema is mixed', () => {
+  const fixture = JSON.parse(CONTRACT_FIXTURE) as {
+    schemas: { name: string; schema: { properties: Record<string, unknown> } }[];
+  };
+  const preflight = fixture.schemas.find(
+    (schema) => schema.name === 'OcrComputePreflightV2',
+  );
+  assert.ok(preflight);
+  preflight.schema.properties.runtimeVersion = { const: '99.0.0' };
+  const report = inspectCaptureRuntimeConsumerInventory(
+    inventoryInput(
+      validEntries(),
+      contractSource(Buffer.from(JSON.stringify(fixture), 'utf8')),
+    ),
+  );
+
+  assert.equal(report.status, 'blocked');
+  assert.ok(
+    report.errors.some((error) =>
+      error.includes('preflight runtime version is mixed'),
+    ),
+  );
 });
 
 test('the current installed owners are ready against the pinned producer target', () => {

@@ -1368,7 +1368,7 @@ async function createCandidateFixture(input: {
           schema: {
             properties: {
               apiVersion: { const: '2.0' },
-              runtimeVersion: { const: input.candidateVersion },
+              runtimeVersion: { type: 'string', pattern: '^[0-9]+\\.[0-9]+\\.[0-9]+$' },
               schemaVersion: { const: '3' },
             },
           },
@@ -1379,7 +1379,7 @@ async function createCandidateFixture(input: {
             properties: {
               apiVersion: { const: '2.0' },
               contractSetVersion: { const: '2' },
-              runtimeVersion: { const: input.candidateVersion },
+              runtimeVersion: { type: 'string', pattern: '^[0-9]+\\.[0-9]+\\.[0-9]+$' },
               schemaVersion: { const: '1' },
             },
           },
@@ -1391,7 +1391,7 @@ async function createCandidateFixture(input: {
               apiVersion: { const: '2.0' },
               captureDocumentSchemaVersion: { const: '2' },
               contractSetVersion: { const: '2' },
-              runtimeVersion: { const: input.candidateVersion },
+              runtimeVersion: { type: 'string', pattern: '^[0-9]+\\.[0-9]+\\.[0-9]+$' },
             },
           },
         },
