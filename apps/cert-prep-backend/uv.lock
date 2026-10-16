@@ -73,15 +73,15 @@ wheels = [
 
 [[package]]
 name = "capture-runtime-client"
-version = "0.6.1"
+version = "0.6.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c0/b6/4ebaf2d3c31078531e539c996bdfacda2b83c4a566de4342636b427128f4/capture_runtime_client-0.6.1.tar.gz", hash = "sha256:92f2732fcb2d4714192d5143f071ab24b373cdc802208c616204bb0e1d7bd5b7", size = 87163, upload-time = "2026-10-14T12:05:25.846Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/75/5a/dd29904c8cf87b0d2c742eb1fb12b117bfd58c3526c5bb11b0b0b19444a5/capture_runtime_client-0.6.3.tar.gz", hash = "sha256:e6a89ce286fedfeb809ba8b708c41e0b48ce8cf8e46b14f3fa19f67c9d9b5317", size = 87163, upload-time = "2026-10-16T00:33:14.803Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e1/79/6447b64fed3dabb8c6e6b419ee44f08322b6faf24b5dd2145b215ae60bad/capture_runtime_client-0.6.1-py3-none-any.whl", hash = "sha256:53ac9422e9d567875bdc73abb3ce51cc2933597ed650a1a1d5cf2899c3018d40", size = 90049, upload-time = "2026-10-14T12:05:24.191Z" },
+    { url = "https://files.pythonhosted.org/packages/91/bf/4a4cf8a255b0ff955330eca9bf0cf969e3730e81a63dddd7b266e769349b/capture_runtime_client-0.6.3-py3-none-any.whl", hash = "sha256:d0f692201d1e4218a0cf5f1cd7214358156af0bea0ee54aa32149a6ee7dc847d", size = 90050, upload-time = "2026-10-16T00:33:13.614Z" },
 ]
 
 [[package]]
@@ -114,7 +114,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "av", specifier = ">=18.0.0,<19.0.0" },
-    { name = "capture-runtime-client", specifier = "==0.6.1" },
+    { name = "capture-runtime-client", specifier = "==0.6.3" },
     { name = "cert-prep-contracts", editable = "../../packages/cert-prep-contracts" },
     { name = "cert-prep-ollama", editable = "../../packages/cert-prep-ollama" },
     { name = "fastapi", specifier = ">=0.124.0,<1.0.0" },
