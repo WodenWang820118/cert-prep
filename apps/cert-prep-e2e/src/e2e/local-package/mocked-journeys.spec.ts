@@ -5,6 +5,7 @@
 // apps/cert-prep-desktop/scripts/acceptance-real.spec.mts.
 import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { workspaceRoot } from '@nx/devkit';
 import { expect, test, type Page } from '@playwright/test';
 import {
   apiBaseUrl,
@@ -63,9 +64,11 @@ test('captures the route-mocked practice journey for UI regression only', async 
 }, testInfo) => {
   const api = await installMockCertPrepApi(page);
   await seedMockApiConfig(page, apiBaseUrl, devToken);
+  // Nx runs Playwright from the workspace root, so a cwd-relative '../..'
+  // escaped the checkout and wrote to the drive root.
   const screenshotDirectory = resolve(
-    process.cwd(),
-    '../../output/playwright/cert-prep/e2e-route-mocked-cycle',
+    workspaceRoot,
+    'output/playwright/cert-prep/e2e-route-mocked-cycle',
     testInfo.project.name,
   );
   await mkdir(screenshotDirectory, { recursive: true });
