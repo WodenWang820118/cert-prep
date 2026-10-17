@@ -58,7 +58,7 @@ The workspace uses:
 
 - Windows for the Tauri desktop and packaged sidecar workflows.
 - Node.js 24 with Corepack and pnpm 12.0.0 for the Nx/Angular workspace.
-- Python 3.12 with `uv` for the backend and Python packages.
+- Python 3.14 with `uv` for the backend and Python packages.
 - Stable Rust with the MSVC Windows toolchain for Tauri.
 
 Install JavaScript dependencies from the repository root:

@@ -21,7 +21,7 @@ export const PUBLIC_UNSIGNED_ALPHA_PROFILE = 'public_unsigned_alpha';
 export const LOCAL_NONPUBLISHABLE_PROFILE = 'local_nonpublishable';
 export const RELEASE_TAG_PREFIX = 'cert-prep-v';
 export const TARGET_TRIPLE = 'x86_64-pc-windows-msvc';
-export const RELEASE_PYTHON_VERSION = '3.12';
+export const RELEASE_PYTHON_VERSION = '3.14';
 
 export function assertSupportedDistributionPlan(plan) {
   const version = String(plan?.version ?? '');

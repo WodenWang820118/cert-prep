@@ -15,7 +15,7 @@ permissions:
 env:
   CI: 'true'
   NX_CLOUD_DISTRIBUTED_EXECUTION: 'false'
-  PYTHON_VERSION: '3.12'
+  PYTHON_VERSION: '3.14'
 
 # PR and main run the same checks in two parallel jobs. Platform-neutral lint
 # and tests run once, on Linux; the Windows job covers only what needs the
