@@ -99,7 +99,7 @@ test('release identity derives and validates the canonical alpha tag', () => {
   assert.equal(identity.distributionProfile, PUBLIC_UNSIGNED_ALPHA_PROFILE);
   assert.equal(identity.publishable, true);
   assert.equal(identity.signed, false);
-  assert.equal(identity.pythonRuntimeVersion, '3.12');
+  assert.equal(identity.pythonRuntimeVersion, '3.14');
 });
 
 test('tag events fail when tag and version cannot be made identical', () => {
@@ -200,7 +200,7 @@ test('metadata validates every source release version', () => {
       join(root, 'apps/cert-prep-desktop/src-tauri/Cargo.toml'),
       '[package]\nname = "cert-prep-desktop"\nversion = "0.1.0-alpha.1"\n',
     );
-    writeFileSync(join(root, '.python-version'), '3.12\n');
+    writeFileSync(join(root, '.python-version'), '3.14\n');
     for (const path of [
       'apps/cert-prep-backend',
       'packages/cert-prep-contracts',
@@ -226,7 +226,7 @@ test('metadata validates every source release version', () => {
       join(root, 'apps/cert-prep-desktop/scripts/package-qa/constants.mts'),
       [
         "export const ALPHA_VERSION = '0.1.0-alpha.1';",
-        "export const PYTHON_RUNTIME_VERSION = '3.12';",
+        "export const PYTHON_RUNTIME_VERSION = '3.14';",
       ].join('\n'),
     );
     writeFileSync(
@@ -239,7 +239,7 @@ test('metadata validates every source release version', () => {
               {
                 options: {
                   command:
-                    'uv run --isolated --python 3.12 python build.py --target x86_64-pc-windows-msvc --version 0.1.0-alpha.1',
+                    'uv run --isolated --python 3.14 python build.py --target x86_64-pc-windows-msvc --version 0.1.0-alpha.1',
                 },
               },
             ],
@@ -268,9 +268,9 @@ test('metadata validates every source release version', () => {
       contractsProjectVersion: '0.1.0-alpha.1',
       ollamaProjectVersion: '0.1.0-alpha.1',
       backendRuntimeVersion: '0.1.0-alpha.1',
-      pythonRuntimeVersion: '3.12',
+      pythonRuntimeVersion: '3.14',
       packageQaAlphaVersion: '0.1.0-alpha.1',
-      packageQaPythonRuntimeVersion: '3.12',
+      packageQaPythonRuntimeVersion: '3.14',
     });
   } finally {
     rmSync(root, { recursive: true, force: true });

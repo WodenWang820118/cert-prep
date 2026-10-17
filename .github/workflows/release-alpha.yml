@@ -37,7 +37,7 @@ permissions:
 env:
   CI: 'true'
   NX_CLOUD_DISTRIBUTED_EXECUTION: 'false'
-  PYTHON_VERSION: '3.12'
+  PYTHON_VERSION: '3.14'
 
 jobs:
   build-candidate:
