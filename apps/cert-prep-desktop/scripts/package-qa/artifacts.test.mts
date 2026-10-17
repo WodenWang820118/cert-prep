@@ -180,7 +180,7 @@ function createResourceFixture(): {
   writeJson(join(resourceRoot, 'release-metadata.json'), {
     schema_version: 1,
     version: '0.1.0-alpha.1',
-    python_runtime_version: '3.12',
+    python_runtime_version: '3.14',
     release_tag: 'cert-prep-v0.1.0-alpha.1',
     channel: 'unsigned_public_alpha',
     distribution_profile: 'public_unsigned_alpha',

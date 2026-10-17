@@ -15,7 +15,7 @@ const publicPlan = {
   publishable: true,
   channel: 'unsigned_public_alpha',
   target: 'x86_64-pc-windows-msvc',
-  pythonRuntimeVersion: '3.12',
+  pythonRuntimeVersion: '3.14',
   signed: false,
   assetBaseUrl: 'https://github.com/example/cert-prep/releases/download/cert-prep-v0.1.0-alpha.1',
 };
@@ -34,7 +34,7 @@ test('package QA accepts the backend plus Capture Runtime public contract', () =
             distribution_profile: 'public_unsigned_alpha',
             publishable: true,
             version: '0.1.0-alpha.1',
-            python_runtime_version: '3.12',
+            python_runtime_version: '3.14',
             channel: 'unsigned_public_alpha',
             signed: false,
           },

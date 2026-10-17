@@ -105,7 +105,7 @@ export interface PackagedResourceContract {
   readonly capture_structuring_mode: 'host';
   readonly release_urls_only: true;
   readonly version: typeof ALPHA_VERSION;
-  readonly python_runtime_version: '3.12';
+  readonly python_runtime_version: '3.14';
   readonly channel: 'unsigned_public_alpha';
   readonly signed: false;
   readonly target: string;

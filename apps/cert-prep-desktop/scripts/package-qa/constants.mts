@@ -13,7 +13,7 @@ export const DEFAULT_TARGET_TRIPLE = 'x86_64-pc-windows-msvc';
 export const ALPHA_VERSION: string = JSON.parse(
   readFileSync(new URL('../../src-tauri/tauri.conf.json', import.meta.url), 'utf8'),
 ).version;
-export const PYTHON_RUNTIME_VERSION = '3.12';
+export const PYTHON_RUNTIME_VERSION = '3.14';
 export const CAPTURE_RUNTIME_MANIFEST_VERSION = '1';
 export const CAPTURE_RUNTIME_FILE =
   'capture-runtime-x86_64-pc-windows-msvc.exe';
