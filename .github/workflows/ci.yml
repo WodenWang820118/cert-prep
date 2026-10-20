@@ -1,13 +1,76 @@
 name: CI
 
+# Run only when code or build/test configuration changes. Docs-only changes
+# (Markdown, .agents/ prose, agent/editor config) skip CI. Both lists must stay
+# identical; the trailing '!**/*.md' must stay last (no test reads Markdown).
+# Workflow files are listed because tools/ contract tests read them.
 on:
   push:
     branches: [main]
+    paths:
+      - 'apps/**'
+      - 'libs/**'
+      - 'packages/**'
+      - 'tools/**'
+      - '.github/workflows/**'
+      - '.agents/skills/*/scripts/**'
+      - '.github/skills/*/scripts/**'
+      - '.opencode/skills/*/scripts/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'nx.json'
+      - 'tsconfig.base.json'
+      - 'tsconfig.scripts.json'
+      - 'vitest.workspace.ts'
+      - 'eslint.config.mts'
+      - '.prettierrc'
+      - '.prettierignore'
+      - '.editorconfig'
+      - '.postcssrc.json'
+      - 'components.json'
+      - '.node-version'
+      - '.python-version'
+      - 'rust-toolchain.toml'
+      - '.npmrc.example'
+      - '.gitattributes'
+      - '.gitignore'
+      - '!**/*.md'
   pull_request:
+    paths:
+      - 'apps/**'
+      - 'libs/**'
+      - 'packages/**'
+      - 'tools/**'
+      - '.github/workflows/**'
+      - '.agents/skills/*/scripts/**'
+      - '.github/skills/*/scripts/**'
+      - '.opencode/skills/*/scripts/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'nx.json'
+      - 'tsconfig.base.json'
+      - 'tsconfig.scripts.json'
+      - 'vitest.workspace.ts'
+      - 'eslint.config.mts'
+      - '.prettierrc'
+      - '.prettierignore'
+      - '.editorconfig'
+      - '.postcssrc.json'
+      - 'components.json'
+      - '.node-version'
+      - '.python-version'
+      - 'rust-toolchain.toml'
+      - '.npmrc.example'
+      - '.gitattributes'
+      - '.gitignore'
+      - '!**/*.md'
 
+# A newer push to the same PR cancels the older run; runs on main always finish.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
