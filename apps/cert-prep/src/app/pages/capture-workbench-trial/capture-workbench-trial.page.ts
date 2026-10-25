@@ -180,7 +180,7 @@ export class CaptureWorkbenchTrialPage implements AfterViewInit, OnDestroy {
     );
     this.registrationState.set('ready');
     this.trialStatus.set(
-      'Capture Workbench is ready. Capture Runtime can process PDF, image, and audio sources after their explicit OCR and Whisper consent steps.',
+      'Capture Workbench is ready. Capture Runtime can process PDF, image, and audio sources after their explicit OCR and speech recognition consent steps.',
     );
   }
 

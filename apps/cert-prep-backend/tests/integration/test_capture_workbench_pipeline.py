@@ -836,8 +836,8 @@ class DeterministicAudioCaptureRuntime(DeterministicCaptureRuntime):
                 ],
                 "sourceText": "Audio source text",
                 "extractionEngine": {
-                    "engine": "faster-whisper",
-                    "model": "whisper-primary",
+                    "engine": "speech-recognition",
+                    "model": "tea-asr-1.1-mini",
                     "digest": f"sha256:{'e' * 64}",
                     "device": "cpu",
                 },
@@ -1178,7 +1178,7 @@ def test_audio_upload_uses_capture_time_provenance_without_cert_whisper(
         assert document["source_kind"] == "audio"
         assert document["transcription_status"] == "succeeded"
         assert document["translation_status"] == "succeeded"
-        assert document["effective_transcription_model"] == "whisper-primary"
+        assert document["effective_transcription_model"] == "tea-asr-1.1-mini"
         assert document["duration_ms"] == 900
         chunks = client.get(
             f"/projects/{project_id}/documents/{document['id']}/chunks",
@@ -1280,7 +1280,7 @@ def test_review_result_fails_closed_when_runtime_replay_violates_contract(
             "capture.wav",
             "audio/wav",
             "transcription_failed",
-            "Whisper transcription is unavailable. No downloadable model is published for this runtime release.",
+            "Speech recognition is unavailable. No downloadable model is published for this runtime release.",
         ),
     ],
 )

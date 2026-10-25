@@ -52,5 +52,5 @@
 - Browser-side direct sidecar setup: it would expose a bearer credential and
   crosses the established host adapter boundary.
 - Making the v0.3.8 requirements installable: its public release is core-only;
-  `windowsml-ocr` and `whisper-primary` must remain unavailable and fail
+  `windowsml-ocr` and `speech-recognition` (formerly `whisper-primary`) must remain unavailable and fail
   closed.

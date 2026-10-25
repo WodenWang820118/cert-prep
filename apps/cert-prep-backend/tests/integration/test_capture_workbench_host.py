@@ -951,9 +951,9 @@ class RecordingCaptureRuntime:
                         "detail": detail,
                     },
                     {
-                        "requirementId": "whisper-primary",
+                        "requirementId": "speech-recognition",
                         "kind": "speech-to-text",
-                        "displayName": "Whisper",
+                        "displayName": "Speech recognition",
                         "status": requirement_status.value,
                         "requiredFor": ["audio"],
                         "installStrategy": "unavailable",
@@ -1223,7 +1223,7 @@ def test_capture_coordinator_uses_host_provider_then_fetches_validated_result() 
             CaptureSourceKind.AUDIO,
             "sample.wav",
             "audio/wav",
-            "Whisper transcription is unavailable. No downloadable model is published for this runtime release.",
+            "Speech recognition is unavailable. No downloadable model is published for this runtime release.",
         ),
     ],
 )

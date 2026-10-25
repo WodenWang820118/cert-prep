@@ -53,7 +53,7 @@ _SOURCE_REQUIREMENTS: dict[
 ] = {
     CaptureSourceKind.PDF: ("windowsml-ocr", "WindowsML OCR"),
     CaptureSourceKind.IMAGE: ("windowsml-ocr", "WindowsML OCR"),
-    CaptureSourceKind.AUDIO: ("whisper-primary", "Whisper transcription"),
+    CaptureSourceKind.AUDIO: ("speech-recognition", "Speech recognition"),
 }
 _TERMINAL_STATUSES = {
     StreamingCaptureStatus.COMPLETED,

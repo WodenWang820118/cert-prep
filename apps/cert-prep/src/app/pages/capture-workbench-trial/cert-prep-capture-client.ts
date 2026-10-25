@@ -1167,8 +1167,8 @@ function assertCaptureAdmission(
   if (sourceKind === 'audio') {
     assertRequirementReady(
       requirements,
-      'whisper-primary',
-      'Whisper transcription',
+      'speech-recognition',
+      'Speech recognition',
     );
   }
 }

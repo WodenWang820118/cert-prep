@@ -49,7 +49,7 @@ export async function assertPublishedCaptureSurface(page: Page): Promise<void> {
   const copy = await page.locator('main').innerText();
   for (const statement of [
     'PDF, image, and audio sources are processed',
-    'explicit OCR and Whisper consent',
+    'explicit OCR and speech recognition consent',
   ]) {
     if (!copy.includes(statement)) {
       throw new Error(`${CAPTURE_RUNTIME_VERSION} host copy omitted: ${statement}`);
@@ -57,7 +57,7 @@ export async function assertPublishedCaptureSurface(page: Page): Promise<void> {
   }
   if (
     (await page
-      .getByRole('button', { name: /Install (WindowsML|Whisper)/i })
+      .getByRole('button', { name: /Install (WindowsML|Speech recognition)/i })
       .count()) !== 0
   ) {
     throw new Error(
@@ -87,7 +87,7 @@ export async function runPublishedRuntimeNegativeDataCases(
       mediaType: 'audio/wav',
       content: minimalWav(),
       expectedDocumentStatus: 'transcription_failed',
-      expectedError: /^Whisper transcription is unavailable\. .+$/,
+      expectedError: /^Speech recognition is unavailable\. .+$/,
     },
     {
       case: 'scanned-pdf',

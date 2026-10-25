@@ -90,9 +90,9 @@ class RecordingSetupClient:
                     ),
                 ),
                 RuntimeRequirement(
-                    requirement_id="whisper-primary",
+                    requirement_id="speech-recognition",
                     kind="speech-to-text",
-                    display_name="Whisper",
+                    display_name="Speech recognition",
                     status=RuntimeRequirementStatus.READY,
                     required_for=["audio"],
                     install_strategy="managed-model-download",
@@ -145,9 +145,9 @@ class CoreOnlySetupClient(RecordingSetupClient):
                     detail=detail,
                 ),
                 RuntimeRequirement(
-                    requirement_id="whisper-primary",
+                    requirement_id="speech-recognition",
                     kind="speech-to-text",
-                    display_name="Whisper",
+                    display_name="Speech recognition",
                     status=RuntimeRequirementStatus.UNAVAILABLE,
                     required_for=["audio"],
                     install_strategy="unavailable",
@@ -217,7 +217,7 @@ def test_capture_runtime_setup_proxy_keeps_sidecar_token_backend_only(
         ).json()["items"]
         assert [item["requirementId"] for item in requirements] == [
             "windowsml-ocr",
-            "whisper-primary",
+            "speech-recognition",
         ]
         assert requirements[0]["artifact"]["artifactFileName"] == (
             "capture-windowsml-ocr-windows-x64.zip"
@@ -275,7 +275,7 @@ def test_capture_runtime_setup_proxy_preserves_core_only_unavailable_requirement
             "No downloadable model is published for this runtime release.",
         ),
         (
-            "whisper-primary",
+            "speech-recognition",
             "unavailable",
             "No downloadable model is published for this runtime release.",
         ),
