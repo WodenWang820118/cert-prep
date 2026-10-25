@@ -307,7 +307,7 @@ class TestCaptureRuntimeClient(TypedPullSessionRuntimeMixin):
                 "segments": segments,
                 "sourceText": source_text,
                 "extractionEngine": {
-                    "engine": "capture-runtime-whisper" if is_audio else "windowsml-ocr",
+                    "engine": "speech-recognition" if is_audio else "windowsml-ocr",
                     "model": f"capture-runtime@{CAPTURE_RUNTIME_VERSION}",
                     "digest": f"sha256:{'a' * 64}",
                     "device": "test",
@@ -486,9 +486,9 @@ def _test_runtime_requirements(status: str) -> RuntimeRequirements:
                     "installStrategy": "test",
                 },
                 {
-                    "requirementId": "whisper-primary",
+                    "requirementId": "speech-recognition",
                     "kind": "speech-to-text",
-                    "displayName": "Whisper",
+                    "displayName": "Speech recognition",
                     "status": status,
                     "requiredFor": ["audio"],
                     "installStrategy": "test",

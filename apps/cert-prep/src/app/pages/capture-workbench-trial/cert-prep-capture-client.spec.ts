@@ -44,7 +44,7 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
         of({
           items: [
             readyRequirement('windowsml-ocr', ['pdf', 'image']),
-            readyRequirement('whisper-primary', ['audio']),
+            readyRequirement('speech-recognition', ['audio']),
           ],
         }),
       ),
@@ -553,8 +553,8 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
     ],
     [
       'audio',
-      'whisper-primary',
-      'Whisper transcription is unavailable',
+      'speech-recognition',
+      'Speech recognition is unavailable',
       new File(['audio'], 'lecture.mp3', { type: 'audio/mpeg' }),
     ],
   ] as const)(
@@ -566,9 +566,9 @@ describe('CertPrepCaptureClient streaming v2 seam', () => {
             requirementId === 'windowsml-ocr'
               ? unavailableRequirement('windowsml-ocr', ['pdf', 'image'])
               : readyRequirement('windowsml-ocr', ['pdf', 'image']),
-            requirementId === 'whisper-primary'
-              ? unavailableRequirement('whisper-primary', ['audio'])
-              : readyRequirement('whisper-primary', ['audio']),
+            requirementId === 'speech-recognition'
+              ? unavailableRequirement('speech-recognition', ['audio'])
+              : readyRequirement('speech-recognition', ['audio']),
           ],
         }),
       );
@@ -823,7 +823,7 @@ function readyResponse(override: Record<string, unknown>) {
 }
 
 function unavailableRequirement(
-  requirementId: 'windowsml-ocr' | 'whisper-primary',
+  requirementId: 'windowsml-ocr' | 'speech-recognition',
   requiredFor: readonly string[],
 ) {
   return {
@@ -832,7 +832,7 @@ function unavailableRequirement(
     displayName:
       requirementId === 'windowsml-ocr'
         ? 'WindowsML OCR'
-        : 'Whisper transcription',
+        : 'Speech recognition',
     status: 'unavailable',
     requiredFor,
     installStrategy: 'runtime-catalog',
@@ -842,7 +842,7 @@ function unavailableRequirement(
 }
 
 function readyRequirement(
-  requirementId: 'windowsml-ocr' | 'whisper-primary',
+  requirementId: 'windowsml-ocr' | 'speech-recognition',
   requiredFor: readonly string[],
 ) {
   return {

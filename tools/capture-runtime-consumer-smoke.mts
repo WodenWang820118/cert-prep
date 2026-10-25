@@ -22,7 +22,7 @@ const PUBLISHED_RELEASE_BASE_URL = CAPTURE_RUNTIME_RELEASE_BASE_URL;
 // Since 0.6.0 the runtime also lists its optional units; Cert Prep installs neither.
 const EXPECTED_REQUIREMENT_IDS = Object.freeze([
   'windowsml-ocr',
-  'whisper-primary',
+  'speech-recognition',
   'speaker-diarization',
   'vertical-japanese-reader',
 ]);

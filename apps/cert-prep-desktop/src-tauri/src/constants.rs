@@ -15,4 +15,4 @@ pub(crate) const CAPTURE_RUNTIME_API_VERSION: &str = "2.0";
 pub(crate) const CAPTURE_DOCUMENT_SCHEMA_VERSION: &str = "2";
 pub(crate) const CAPTURE_DOCUMENT_SCHEMA_FILE: &str = "capture-document-v2.schema.json";
 pub(crate) const CAPTURE_DOCUMENT_SCHEMA_SHA256: &str =
-    "5131125b6851bccb8da96150e12c2c50170ad45c2f4a31768404a5406ad8598f";
+    "5452631ce9d8eea48851a819530d94920a39f41350d5575df0f8f97f82171774";

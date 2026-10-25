@@ -13,15 +13,19 @@ bundled in Cert Prep installers. The Qwen3.5-4B model is provided under the
 Apache License 2.0:
 https://huggingface.co/Qwen/Qwen3.5-4B/blob/main/LICENSE
 
-## Whisper speech models
+## Speech recognition models
 
-Whisper speech models are downloaded only after explicit user consent and are
-not bundled in Cert Prep installers. The primary faster-whisper
-`large-v3-turbo` model and the CPU `small` fallback are provided under the MIT
-License:
+Speech recognition models are downloaded by Capture Runtime only after explicit
+user consent and are not bundled in Cert Prep installers. TEA-ASR-1.1 (CUDA) and
+its CPU fallback TEA-ASR-1.1-mini are provided under the MIT License and the
+Apache License 2.0. They build on Qwen3-ASR, and word timing uses
+Qwen3-ForcedAligner; both are provided under the Apache License 2.0:
 
-- https://huggingface.co/dropbox-dash/faster-whisper-large-v3-turbo
-- https://huggingface.co/Systran/faster-whisper-small
+- https://huggingface.co/JacobLinCool/TEA-ASR-1.1
+- https://huggingface.co/JacobLinCool/TEA-ASR-1.1-mini
+- https://huggingface.co/Qwen/Qwen3-ASR-1.7B-hf
+- https://huggingface.co/Qwen/Qwen3-ASR-0.6B-hf
+- https://huggingface.co/Qwen/Qwen3-ForcedAligner-0.6B-hf
 
 ## WindowsML OCR payload
 

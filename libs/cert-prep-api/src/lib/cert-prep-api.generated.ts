@@ -12,7 +12,7 @@ export interface Components {
     Body_upload_document_projects__project_id__documents_post: { "file": string; "language_hint"?: string };
     CaptureBlock: { "blockId": string; "order": number; "type": string; "sourceSegmentId": string; "locator": Components['schemas']['PageLocator'] | Components['schemas']['TimeLocator']; "sourceText": string; "targetText": string };
     CaptureDocument: { "schemaVersion"?: "2"; "source": Components['schemas']['CaptureSource']; "rawSegments": Components['schemas']['RawCaptureSegment'][]; "blocks": Components['schemas']['CaptureBlock'][]; "sourceText": string; "targetText": string; "extractionEngine": Components['schemas']['CaptureEngine']; "diarizationEngine"?: Components['schemas']['CaptureEngine'] | null; "speakers"?: Components['schemas']['CaptureSpeaker'][]; "suggestedUnits"?: string[]; "structuringEngine": Components['schemas']['CaptureEngine']; "warnings"?: string[]; "createdAt": string; "completedAt": string };
-    CaptureEngine: { "engine": string; "model": string; "digest": string; "device"?: string | null };
+    CaptureEngine: { "engine": string; "model": string; "digest": string; "device"?: string | null; "elapsedMs"?: number | null; "stageMs"?: Record<string, unknown> | null };
     CaptureFailureV2: { "code": string; "message": string; "stage"?: string | null; "retryable"?: boolean };
     CaptureOcrFailureRead: { "code": string; "retryable": boolean };
     CaptureOcrPageSummaryRead: { "page": number; "status": string; "normalizedCharCount": number; "boxCount": number; "confidence": number | null; "failure": Components['schemas']['CaptureOcrFailureRead'] | null };
