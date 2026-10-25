@@ -37,8 +37,16 @@
     "lint": {
       "cache": true,
       "executor": "nx:run-commands",
+      "dependsOn": ["lint-architecture"],
       "inputs": ["default"],
       "options": { "cwd": "apps/cert-prep-backend", "command": "uv run ruff check ." }
+    },
+    "lint-architecture": {
+      "cache": true,
+      "executor": "nx:run-commands",
+      "metadata": { "description": "import-linter contracts for the DDD refactor (.agents/PLANS/ddd-refactor/)." },
+      "inputs": ["default"],
+      "options": { "cwd": "apps/cert-prep-backend", "env": { "PYTHONPATH": "src" }, "command": "uv run lint-imports" }
     },
     "build-backend-runtime": {
       "cache": true,

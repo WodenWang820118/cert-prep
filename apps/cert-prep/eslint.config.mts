@@ -1,4 +1,5 @@
 import nx from '@nx/eslint-plugin';
+import sheriff from '@softarc/eslint-plugin-sheriff';
 import baseConfig from '../../eslint.config.mts';
 
 export default [
@@ -33,5 +34,11 @@ export default [
     files: ['**/*.html'],
     // Override or add rules here
     rules: {},
+  },
+  {
+    // Architecture rules (sheriff.config.ts); tests may import any layer.
+    ...sheriff.configs.all,
+    files: ['**/*.ts'],
+    ignores: ['**/*.spec.ts', '**/testing/**'],
   },
 ];

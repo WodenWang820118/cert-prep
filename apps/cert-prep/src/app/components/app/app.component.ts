@@ -22,6 +22,7 @@ import { RuntimeConsentDialogsComponent } from '../model-health/runtime-consent-
 import { ProjectRailComponent } from '../project-rail/project-rail.component';
 import { BACKEND_READINESS_POLL_LIMIT } from '../../constants/app.constants';
 import type { StudyNavigationGroup } from '../../contracts/app.contracts';
+// eslint-disable-next-line @softarc/sheriff/dependency-rule -- Known before C6: the shell links the runtime manager page; C6 gives the runtime context a public entry.
 import { RuntimeManagerPage } from '../../pages/runtime-manager/runtime-manager.page';
 import { OperationStore } from '../../stores/operation.store';
 import { ProjectStore } from '../../stores/project.store';

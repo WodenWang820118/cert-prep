@@ -293,6 +293,12 @@ importers:
       '@schematics/angular':
         specifier: 22.0.7
         version: 22.0.7(chokidar@5.0.0)
+      '@softarc/eslint-plugin-sheriff':
+        specifier: ^0.20.0
+        version: 0.20.0(@softarc/sheriff-core@0.20.0(typescript@6.0.3))(@typescript-eslint/utils@8.61.0(eslint@9.39.4(jiti@2.4.2)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint@9.39.4(jiti@2.4.2)(supports-color@7.2.0))
+      '@softarc/sheriff-core':
+        specifier: ^0.20.0
+        version: 0.20.0(typescript@6.0.3)
       '@spartan-ng/cli':
         specifier: 1.6.1
         version: 1.6.1(dfd9d4c133083e87ec607b737d34170e)
@@ -3381,6 +3387,19 @@ packages:
   '@sigstore/verify@3.1.1':
     resolution: {integrity: sha512-qv7+G3J2cc6wwFj3yKvXOamzqhMwSk1ogPGmhpS8iXllcPrJaIIBA+4HbttlHVu1pqWTdmaCH/WE7UOC51kdoA==}
     engines: {node: ^20.17.0 || >=22.9.0}
+
+  '@softarc/eslint-plugin-sheriff@0.20.0':
+    resolution: {integrity: sha512-l0PiMLANwigPtTTPuOQUzQFbgXrmnhZhFWpTCmOfwO9aADorZoY9NdU0FJkq5G5O9Dg+Xnu0oIkMHrxFwQYDog==}
+    peerDependencies:
+      '@softarc/sheriff-core': 0.20.0
+      '@typescript-eslint/utils': ^5.48.2 || ^6.0.0 || ^7.0.0 || ^8.0.0-alpha.20
+      eslint: ^8.0.0 || ^9.0.0 || ^10.0.0
+
+  '@softarc/sheriff-core@0.20.0':
+    resolution: {integrity: sha512-dTm5dOUMOGTV3ql7ZIuI8rE+gZawIcJLEluqRYX3KDVJ215vfUzpC9LlSL4pTW0lAAeNLelmPZBzY57jLvOPpg==}
+    hasBin: true
+    peerDependencies:
+      typescript: '>=4.8'
 
   '@spartan-ng/brain@1.6.1':
     resolution: {integrity: sha512-LYUaJ23DWC2ejLvKfSTWQKoqyL3Jv9pHVQp2JmvrduKFSXGZ5uo2EKBhpd8cnRM1C3tU7rN6Nm12xOZM6nPJIQ==}
@@ -10850,6 +10869,16 @@ snapshots:
       '@sigstore/bundle': 4.0.0
       '@sigstore/core': 3.2.1
       '@sigstore/protobuf-specs': 0.5.1
+
+  '@softarc/eslint-plugin-sheriff@0.20.0(@softarc/sheriff-core@0.20.0(typescript@6.0.3))(@typescript-eslint/utils@8.61.0(eslint@9.39.4(jiti@2.4.2)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint@9.39.4(jiti@2.4.2)(supports-color@7.2.0))':
+    dependencies:
+      '@softarc/sheriff-core': 0.20.0(typescript@6.0.3)
+      '@typescript-eslint/utils': 8.61.0(eslint@9.39.4(jiti@2.4.2)(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3)
+      eslint: 9.39.4(jiti@2.4.2)(supports-color@7.2.0)
+
+  '@softarc/sheriff-core@0.20.0(typescript@6.0.3)':
+    dependencies:
+      typescript: 6.0.3
 
   '@spartan-ng/brain@1.6.1(150ac470c7fef1a260237fe707af8f50)':
     dependencies:
