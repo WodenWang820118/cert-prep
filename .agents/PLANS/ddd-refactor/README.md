@@ -111,6 +111,31 @@ flowchart TB
   ctx --> PLAT["platform"]
 ```
 
+## 4.1 語意分層：每一層代表什麼
+
+分層不只是依賴方向。import-linter 與 Sheriff 只檢查「誰可以引用誰」；每一層放什麼、叫什麼名字，依業務的意義決定，並另有檢查（第 5 節最後三列）。
+
+| 層               | 放什麼                                                                                                                                  | 例子（練習與複習）                                                                                                                                 |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `domain`         | 依**聚合**分子套件。聚合根守住不變條件；值物件取代 `dict` 與裸字串；領域事件描述業務上發生的事。名稱一律用 [glossary](glossary.md) 的詞 | `practice.domain.session.PracticeSession`：只有進行中的練習能作答；開始後題目快照不變。值物件 `PracticeMode`、`Answer`；事件 `WrongAnswerRecorded` |
+| `application`    | 每個**用例**一個以業務動作命名的函式或類別，交易邊界在這裡；不用 `service`、`manager`、`helpers` 這類不說明業務的名字                   | `StartPractice`、`AnswerQuestion`、`RequestExplanation`、`RetryWrongAnswers`                                                                       |
+| `infrastructure` | 技術格式與領域物件互轉：SQL 列 ↔ 聚合（repository 回傳領域物件，不回傳 `dict`）、Ollama 與 Capture SDK 的格式 ↔ 領域                    | `SqlitePracticeSessionRepository`                                                                                                                  |
+| `api`            | HTTP 的 DTO ↔ 用例的輸入與結果；把領域錯誤轉成 HTTP 狀態                                                                                | `routers/practice.py` 的端點只呼叫用例                                                                                                             |
+
+各上下文的聚合（C4 逐一定案並寫進 `docs/domain/<上下文>.md`）：
+
+| 上下文     | 聚合（`domain` 的子套件）                          |
+| ---------- | -------------------------------------------------- |
+| 學習專案   | `project`                                          |
+| 教材來源   | `document`（含段落與內容類型）、`operation`        |
+| 擷取整合   | `review`（擷取檢閱：檢查、確認、寫入）             |
+| 題目編寫   | `draft`（草稿與核可）、`generation`（產生工作）    |
+| 練習與複習 | `session`（含題目快照）、`attempt`、`wrong_answer` |
+| AI 供應    | `provider`（port 與模型設定）                      |
+| 執行環境   | `installation`                                     |
+
+**概念集**：用語另寫成機器可讀的 `packages/cert-prep-contracts/vocabulary/cert-prep-vocabulary-v1.json`，每個概念有固定 id、中文標籤與程式名稱；OpenAPI 的每個列舉值（練習模式、內容類型、教材與草稿狀態、作業種類）以 `{ enumId, value }` 對應到一個概念。比照 LAW A13–A15 與 A29：JSON 是唯一來源，只在開發時檢查，執行時不用 RDF 或推理引擎。
+
 ## 5. 自動檢查
 
 | 範圍     | 工具                                                                                                     | 規則                                                                                                                                                                                                                                              |
@@ -120,22 +145,26 @@ flowchart TB
 | Nx 專案  | 既有 `@nx/enforce-module-boundaries`                                                                     | 把目前不生效的 `type:data` 規則改成實際的標籤規則（`type:app` → `type:api`、`scope:shared`）                                                                                                                                                      |
 | Rust     | 模組可見性（`pub(crate)`）與 `src-tauri` 一個允許清單測試                                                | `backend.rs` 不再是所有模組的中心；排在最後                                                                                                                                                                                                       |
 | 已知例外 | import-linter `ignore_imports`、ESLint bulk suppressions                                                 | 規則上線時把現有違規逐條列入，每個 PR 只能減少；新增違規讓 CI 失敗                                                                                                                                                                                |
+| 用語     | 測試（`tests/unit/test_ubiquitous_language.py`）                                                         | `domain` 的公開類別與列舉名稱都在 glossary 的程式名稱欄；OpenAPI 的每個列舉值都對應到概念集裡的一個概念                                                                                                                                           |
+| 用例     | 測試（`tests/unit/test_use_cases.py`）                                                                   | `docs/domain/<上下文>.md` 的用例表與 `application` 公開的用例一一對應                                                                                                                                                                             |
+| 領域物件 | 測試（`tests/unit/test_repositories_return_domain_objects.py`）                                          | repository 的公開函式不以 `dict` 為參數或回傳值（C4 起逐上下文加入）                                                                                                                                                                              |
 
 ## 6. 遷移步驟
 
 每一步都是可以單獨合併、跑完全部檢查的 PR。凡是搬套件的步驟，另外要通過第 7 節的打包版檢查。
 
-| 步驟 | 內容                                                                                                                                          | 驗證                                                                   |
-| ---- | --------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| C0   | 本文件、[decisions.md](decisions.md)、[glossary.md](glossary.md)、`docs/domain/` 骨架                                                         | 產品負責人核可                                                         |
-| C1   | import-linter 與 Sheriff 上線，規則依現有套件與資料夾寫，現有違規列為已知例外                                                                 | 故意加一個違規時 CI 失敗；既有測試全過                                 |
-| C2   | 平台：錯誤型別改由 `platform`（原 `core/exceptions`）提供，領域不再 import `api.errors`；資料庫、migration、SSE、作業事件移到 `platform`      | `api` 與領域之間的套件循環歸零；OpenAPI 與產生的 client 不變           |
-| C3   | 依上下文機械式搬移（每個上下文一個 PR）：學習專案 → 練習與複習 → 教材來源 → 題目編寫 → AI 供應 → 擷取整合 → 執行環境；router 移到各自的 `api` | 逐檔比對只差 import；OpenAPI 與 client 逐 byte 相同；第 7 節打包版檢查 |
-| C4   | 資料表歸屬：跨上下文的 SQL 改經所屬上下文的 `application`（練習讀題目、題目產生改教材狀態、教材刪產生工作）                                   | 特性測試（characterization test）先寫；資料庫內容與 API 行為不變       |
-| C5   | 擷取整合的業務規則從 router 移到 `application`／`domain`（`commit_capture` 等）；`api` 只轉換 DTO 與錯誤                                      | 規則的單元測試；HTTP 測試不變                                          |
-| C6   | 前端依上下文分資料夾，store 依上下文分組，修正反向 import；Sheriff 規則全面生效                                                               | 單元測試、Playwright e2e；已知例外清單縮小                             |
-| C7   | Rust：`backend.rs` 拆分，模組改 `pub(crate)`，加允許清單測試                                                                                  | cargo test；桌面打包版啟動                                             |
-| C8   | 每個上下文的 `docs/domain/<上下文>.md` 補齊（隨 C3–C6 同一個 PR 更新）                                                                        | 文件審閱                                                               |
+| 步驟 | 內容                                                                                                                                                                               | 驗證                                                                          |
+| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| C0   | 本文件、[decisions.md](decisions.md)、[glossary.md](glossary.md)、`docs/domain/` 骨架                                                                                              | 產品負責人核可                                                                |
+| C1   | import-linter 與 Sheriff 上線，規則依現有套件與資料夾寫，現有違規列為已知例外                                                                                                      | 故意加一個違規時 CI 失敗；既有測試全過                                        |
+| C2   | 平台：錯誤型別改由 `platform`（原 `core/exceptions`）提供，領域不再 import `api.errors`；資料庫、migration、SSE、作業事件移到 `platform`                                           | `api` 與領域之間的套件循環歸零；OpenAPI 與產生的 client 不變                  |
+| C3   | 依上下文機械式搬移（每個上下文一個 PR）：學習專案 → 練習與複習 → 教材來源 → 題目編寫 → AI 供應 → 擷取整合 → 執行環境；router 移到各自的 `api`                                      | 逐檔比對只差 import；OpenAPI 與 client 逐 byte 相同；第 7 節打包版檢查        |
+| C4   | 語意模型（每個上下文一個 PR，順序同 C3）：`domain` 依聚合分子套件，規則移進聚合與值物件，repository 改回傳領域物件，`application` 改成以業務動作命名的用例；概念集與用語、用例檢查 | 每條不變條件與用例的單元測試；第 5 節的用語、用例、領域物件檢查；API 行為不變 |
+| C5   | 資料表歸屬：跨上下文的 SQL 改經所屬上下文的用例（練習讀題目、題目產生改教材狀態、教材刪產生工作）                                                                                  | 特性測試先寫；資料庫內容與 API 行為不變                                       |
+| C6   | 擷取整合的業務規則從 router 移到 `application`／`domain`（`commit_capture` 等）；`api` 只轉換 DTO 與錯誤                                                                           | 規則的單元測試；HTTP 測試不變                                                 |
+| C7   | 前端依上下文分資料夾，每個上下文內也分 `feature`、`ui`、`data`、`domain`，名稱用 glossary 的詞；store 依上下文分組，修正反向 import；Sheriff 規則全面生效                          | 單元測試、Playwright e2e；已知例外清單縮小                                    |
+| C8   | Rust：`backend.rs` 拆分，模組改 `pub(crate)`，加允許清單測試                                                                                                                       | cargo test；桌面打包版啟動                                                    |
+| C9   | 每個上下文的 `docs/domain/<上下文>.md` 補齊（隨 C3–C7 同一個 PR 更新）                                                                                                             | 文件審閱                                                                      |
 
 ## 7. 每個 PR 的驗證
 
@@ -150,11 +179,12 @@ flowchart TB
 | ----- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | C1–C2 | 1–2 天          | 例外清單太長看不出重點：依上下文分組列出；`create_app` 移到 `bootstrap` 時，`scripts/build_backend_runtime.py` 的 hidden import（`cert_prep_backend.api.app`）、`serve` target 與打包入口 `entrypoints/backend_runtime.py` 同一個 PR 更新                      |
 | C3    | 4–6 天，7 個 PR | 測試以字串 monkeypatch 模組路徑；`tools/capture-runtime-consumer-source.mts` 與 `capture-runtime-version-check.mts` 以檔案路徑列出 `domains/capture_workbench/*.py`，Capture Workbench 的 consumer gate 也跑它們，搬移時同一個 PR 更新；與進行中的功能分支衝突 |
-| C4–C5 | 3–4 天          | 交易邊界：跨上下文的寫入原本在同一個 SQL 交易，改經 application 後仍要在同一個交易                                                                                                                                                                             |
-| C6    | 3–4 天          | root store 的注入順序與 effect 時序；e2e 是主要防線                                                                                                                                                                                                            |
-| C7    | 1–2 天          | 行程管理（後端與 Capture Runtime 的啟停）不能退步                                                                                                                                                                                                              |
+| C4    | 5–7 天，7 個 PR | 把規則移進聚合時改變了行為：先為每條規則寫特性測試；repository 改回傳領域物件會牽動 router 與 DTO 的轉換                                                                                                                                                       |
+| C5–C6 | 3–4 天          | 交易邊界：跨上下文的寫入原本在同一個 SQL 交易，改經 application 後仍要在同一個交易                                                                                                                                                                             |
+| C7    | 3–4 天          | root store 的注入順序與 effect 時序；e2e 是主要防線                                                                                                                                                                                                            |
+| C8    | 1–2 天          | 行程管理（後端與 Capture Runtime 的啟停）不能退步                                                                                                                                                                                                              |
 
-合計約 2.5–3.5 週、15–20 個 PR。目前本機 `cert-prep` 的 main 有未提交的修改（`domains/mock_exams`、`exam_content`），C3 搬題目編寫前要先合併或另行處理，以免衝突。
+合計約 3.5–4.5 週、22–27 個 PR。目前本機 `cert-prep` 的 main 有未提交的修改（`domains/mock_exams`、`exam_content`），C3 搬題目編寫前要先合併或另行處理，以免衝突。
 
 ## 9. 給人讀的文件
 
@@ -162,15 +192,15 @@ flowchart TB
 
 ## 10. 實作安排
 
-產品負責人於 2026-10-26 核可：規則先在兩個 repo 並行上線，搬移先做 Cert Prep；Capture 等 Cert Prep 與 LAW 換到 0.7.2 之後才開始搬移；機械式搬移派給其他 worker，由 Claude 驗證。
+產品負責人於 2026-10-26 核可：規則先在兩個 repo 並行上線，搬移先做 Cert Prep；Capture 等 Cert Prep 與 LAW 換到 0.7.2 之後才開始搬移；機械式搬移派給其他 worker，由 Claude 驗證。DDD 除了依賴方向的限制，也要語意分層（第 4.1 節）。
 
-| 順序 | Cert Prep                             | Capture Workbench                  | 誰做                                 |
-| ---- | ------------------------------------- | ---------------------------------- | ------------------------------------ |
-| 1    | C1 規則與已知例外                     | W1 規則與已知例外                  | Claude                               |
-| 2    | C2 平台（錯誤型別、資料庫）           | —                                  | Claude                               |
-| 3    | C3 依上下文搬移（7 個 PR）            | —                                  | worker 搬移，Claude 審查、驗證、合併 |
-| 4    | C4 資料表歸屬、C5 擷取規則移出 router | W2–W4 拆大檔（engine_adapters 等） | Claude                               |
-| 5    | C6 前端依上下文分資料夾               | W5 依上下文搬移（6 個 PR）         | worker 搬移，Claude 審查、驗證、合併 |
-| 6    | C7 Rust                               | W6–W8                              | Claude；W7、W8 的搬移部分可派工      |
+| 順序 | Cert Prep                                                     | Capture Workbench                  | 誰做                                 |
+| ---- | ------------------------------------------------------------- | ---------------------------------- | ------------------------------------ |
+| 1    | C1 規則與已知例外                                             | W1 規則與已知例外                  | Claude                               |
+| 2    | C2 平台（錯誤型別、資料庫）                                   | —                                  | Claude                               |
+| 3    | C3 依上下文搬移（7 個 PR）                                    | —                                  | worker 搬移，Claude 審查、驗證、合併 |
+| 4    | C4 語意模型（7 個 PR）、C5 資料表歸屬、C6 擷取規則移出 router | W2–W4 拆大檔（engine_adapters 等） | Claude                               |
+| 5    | C7 前端依上下文分資料夾                                       | W5 依上下文搬移（6 個 PR）         | worker 搬移，Claude 審查、驗證、合併 |
+| 6    | C8 Rust                                                       | W6 語意模型、W7–W9                 | Claude；W8、W9 的搬移部分可派工      |
 
-派工的規則：每個 worker 在自己的 git worktree 工作、不自動核准任何指令、不 commit 也不 push；同時最多兩個；建置、測試與安裝都由 Claude 執行，並檢查 worktree 以外沒有任何變動。worker 交回的是搬移與 import 的修改，第 7 節的驗證全部由 Claude 跑過才開 PR。
+派工的規則：每個 worker 在自己的 git worktree 工作、不自動核准任何指令、不 commit 也不 push；同時最多兩個；建置、測試與安裝都由 Claude 執行，並檢查 worktree 以外沒有任何變動。worker 交回的是搬移與 import 的修改，第 7 節的驗證全部由 Claude 跑過才開 PR。語意模型（C4、W6）由 Claude 做，因為它要判斷業務意義，不是機械式的修改。
