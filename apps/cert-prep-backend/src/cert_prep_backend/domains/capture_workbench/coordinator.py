@@ -530,6 +530,7 @@ class CertPrepCaptureCoordinator:
         )
         last_sequence = operation.last_event_sequence
         stream_error: Exception | None = None
+        terminal_event_seen = False
         try:
             for event in self._client.capture_events(
                 operation.capture_id,
@@ -541,6 +542,7 @@ class CertPrepCaptureCoordinator:
                 ),
             ):
                 last_sequence = event.sequence
+                terminal_event_seen = event.event_type in _TERMINAL_EVENTS
                 if (
                     event.event_type is StreamingEventType.RESYNC_REQUIRED
                     or event.event_type in _TERMINAL_EVENTS
@@ -574,6 +576,17 @@ class CertPrepCaptureCoordinator:
         )
         if current.status in stop_statuses:
             return current
+        if terminal_event_seen and current.status not in _TERMINAL_STATUSES:
+            # Capture Runtime 0.7 publishes the speech session's `completed`
+            # before the capture leaves `extracting`; the snapshot catches up
+            # once the session worker has exited. Poll until it agrees.
+            return self._poll_after_stream_protocol_error(
+                operation.capture_id,
+                observed_sequence=last_sequence,
+                stop_statuses=stop_statuses,
+                deadline=deadline,
+                should_cancel=should_cancel,
+            )
         raise CaptureRuntimeStateUnknownError(
             current.capture_id,
             "Capture Runtime event stream ended before the requested state was confirmed.",

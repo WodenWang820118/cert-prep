@@ -596,6 +596,33 @@ def test_coordinator_forwards_acceptance_pdf_page_scope(monkeypatch: pytest.Monk
     assert runtime.page_numbers == [(1,)]
 
 
+def test_coordinator_waits_for_the_snapshot_after_an_early_completed_event() -> None:
+    # Capture Runtime 0.7.1 streams the speech session's `completed` while the
+    # capture is still `extracting`; the next snapshots move on.
+    runtime = _EarlyCompletedRuntimeClient()
+    coordinator = CertPrepCaptureCoordinator(
+        client=runtime,
+        structurer=object(),
+        reconciliation_interval_seconds=0.01,
+        timeout_seconds=30,
+    )
+
+    operation = coordinator.begin_capture(
+        operation_id="operation-early-completed",
+        file_name="sample.pdf",
+        content=SOURCE,
+        media_type="application/pdf",
+        source_kind="pdf",
+        target_language=None,
+        should_cancel=lambda: False,
+    )
+
+    assert operation.status is StreamingCaptureStatus.AWAITING_STRUCTURING
+    assert runtime.event_cursors == [0]
+    assert runtime.snapshot_calls == 3
+    assert runtime.cancel_calls == 0
+
+
 def test_coordinator_polls_durable_status_after_sse_utf8_framing_failure() -> None:
     runtime = _MalformedEventRuntimeClient()
     coordinator = CertPrepCaptureCoordinator(
@@ -816,6 +843,27 @@ class _ReconnectingRuntimeClient:
     def cancel_capture(self, _capture_id: str) -> CaptureOperation:
         self.cancel_calls += 1
         raise AssertionError("A disconnected event listener must not cancel the runtime job")
+
+
+class _EarlyCompletedRuntimeClient(_ReconnectingRuntimeClient):
+    def capture_events(
+        self,
+        _capture_id: str,
+        *,
+        last_event_id: int | str | None,
+        on_activity=None,
+    ) -> Iterator[CaptureEvent]:
+        self.event_cursors.append(last_event_id)
+        yield CaptureEvent.model_validate(
+            _event(sequence=2, event_type="completed", stage="completed")
+        )
+
+    def get_capture(self, _capture_id: str) -> CaptureOperation:
+        self.snapshot_calls += 1
+        payload = _operation()
+        payload["status"] = "extracting" if self.snapshot_calls < 3 else "awaiting_structuring"
+        payload["lastEventSequence"] = 2 if self.snapshot_calls < 3 else 3
+        return CaptureOperation.model_validate(payload)
 
 
 class _MalformedEventRuntimeClient(_ReconnectingRuntimeClient):
