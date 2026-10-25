@@ -49,34 +49,34 @@ flowchart LR
     CR[(Capture Runtime)]
     OL[(Ollama)]
   end
-  PROJ --> SRC
+  PROJ -- "專案範圍" --> SRC
   PROJ --> AUTH
   PROJ --> PRAC
-  CAP -- "檢閱後的段落" --> SRC
-  SRC -- "段落" --> AUTH
+  SRC -- "段落、內容類型" --> AUTH
+  SRC -- "寫入教材與段落" --> CAP
+  SRC --> PRAC
   AUTH -- "已核可的題目" --> PRAC
-  AI --> AUTH
-  AI -- "解說" --> PRAC
-  AI -- "結構化" --> CAP
-  AI -- "翻譯" --> SRC
-  RUN --> AI
-  RUN --> CAP
+  AI -- "LLM 介面" --> AUTH
+  AI --> PRAC
+  AI --> CAP
+  AI --> SRC
+  AI --> RUN
   CAP -. 防腐層：Capture SDK .-> CR
   AI -. 防腐層：Ollama .-> OL
 ```
 
-實線箭頭表示資料由上游流向下游：下游使用上游公開的資料，上游不知道下游。虛線箭頭是**防腐層**：外部格式只在這一層轉換。
+實線箭頭由上游指向下游：下游使用上游公開的介面與資料，上游不知道下游；第 5 節的規則就是依這些箭頭檢查。擷取整合在使用者確認後經教材來源的介面寫入段落，所以教材來源是它的上游。虛線箭頭是**防腐層**：外部格式只在這一層轉換。
 
-| 上下文     | 套件（重構後）         | 負責                                                          | 主要模型                                                | 現在的程式                                                                          |
-| ---------- | ---------------------- | ------------------------------------------------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| 學習專案   | `projects`             | 專案身分與範圍                                                | `Project`                                               | `domains/projects`、`routers/projects`；前端 `project.store`、`project-rail`        |
-| 教材來源   | `source_library`       | 匯入檔案、儲存、段落、匯入作業、音訊翻譯                      | `SourceDocument`、`DocumentChunk`、`DocumentOperation`  | `domains/source_documents`、`routers/documents`；前端 `stores/source-import`        |
-| 擷取整合   | `capture_integration`  | Capture Runtime 的擷取、檢閱、確認後寫入教材                  | `CaptureReviewSession`                                  | `domains/capture_workbench`、`routers/capture_workbench`、`routers/capture_runtime` |
-| 題目編寫   | `authoring`            | 解析、產生與編修題目草稿、產生工作                            | `QuestionDraft`、`DraftGenerationJob`、`ContentProfile` | `domains/mock_exams`（模型、repository、parser、streaming）、`exam_content`         |
-| 練習與複習 | `practice`             | 練習、作答、錯題、解說                                        | `PracticeSession`、`PracticeAttempt`、`WrongAnswer`     | `domains/practice`、`routers/practice`；前端 `stores/practice`                      |
-| AI 供應    | `ai_providers`         | 選擇與呼叫 LLM、模型清單、假供應者                            | `DraftGenerationProvider`（port）                       | `mock_exams` 的 provider*、ollama\_*、fake_provider；`packages/cert-prep-ollama`    |
-| 執行環境   | `runtime_provisioning` | 安裝與檢查 Capture Runtime、Ollama 等元件                     | `RuntimeInstallationJob`                                | `domains/runtime_installations`、`routers/runtime`；Tauri crate                     |
-| 平台       | `platform`             | 設定、錯誤型別、資料庫與 migration、SSE、作業事件、背景工作池 | —                                                       | `core/`、`persistence/`、`api/sse`、`operation_events`                              |
+| 上下文     | 套件（重構後）         | 負責                                                          | 主要模型                                               | 現在的程式                                                                                   |
+| ---------- | ---------------------- | ------------------------------------------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| 學習專案   | `projects`             | 專案身分與範圍                                                | `Project`                                              | `domains/projects`、`routers/projects`；前端 `project.store`、`project-rail`                 |
+| 教材來源   | `source_library`       | 匯入檔案、儲存、段落、內容類型、匯入作業、音訊翻譯            | `SourceDocument`、`DocumentChunk`、`DocumentOperation` | `domains/source_documents`、`exam_content`、`routers/documents`；前端 `stores/source-import` |
+| 擷取整合   | `capture_integration`  | Capture Runtime 的擷取、檢閱、確認後寫入教材                  | `CaptureReviewSession`                                 | `domains/capture_workbench`、`routers/capture_workbench`、`routers/capture_runtime`          |
+| 題目編寫   | `authoring`            | 解析、產生與編修題目草稿、產生工作                            | `QuestionDraft`、`DraftGenerationJob`                  | `domains/mock_exams`（模型、repository、parser、streaming）                                  |
+| 練習與複習 | `practice`             | 練習、作答、錯題、解說                                        | `PracticeSession`、`PracticeAttempt`、`WrongAnswer`    | `domains/practice`、`routers/practice`；前端 `stores/practice`                               |
+| AI 供應    | `ai_providers`         | 選擇與呼叫 LLM、模型清單、假供應者                            | `DraftGenerationProvider`（port）                      | `mock_exams` 的 provider*、ollama\_*、fake_provider；`packages/cert-prep-ollama`             |
+| 執行環境   | `runtime_provisioning` | 安裝與檢查 Capture Runtime、Ollama 等元件                     | `RuntimeInstallationJob`                               | `domains/runtime_installations`、`routers/runtime`；Tauri crate                              |
+| 平台       | `platform`             | 設定、錯誤型別、資料庫與 migration、SSE、作業事件、背景工作池 | —                                                      | `core/`、`persistence/`、`api/sse`、`operation_events`                                       |
 
 ## 4. 程式結構
 

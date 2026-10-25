@@ -12,15 +12,15 @@ flowchart LR
   PROJ["學習專案"] --> SRC["教材來源"]
   PROJ --> AUTH["題目編寫"]
   PROJ --> PRAC["練習與複習"]
-  CAP["擷取整合"] -- 檢閱後的段落 --> SRC
-  SRC -- 段落 --> AUTH
+  SRC -- 段落、內容類型 --> AUTH
+  SRC -- 寫入教材與段落 --> CAP["擷取整合"]
+  SRC --> PRAC
   AUTH -- 已核可的題目 --> PRAC
   AI["AI 供應"] --> AUTH
   AI --> PRAC
   AI --> CAP
   AI --> SRC
-  RUN["執行環境"] --> AI
-  RUN --> CAP
+  AI --> RUN["執行環境"]
 ```
 
 | 上下文     | 說明文件       | 程式（重構後）                                           | 狀態   |
@@ -33,7 +33,7 @@ flowchart LR
 | AI 供應    | 待補（C3）     | `cert_prep_backend/ai_providers`                         | 規劃中 |
 | 執行環境   | 待補（C3、C7） | `cert_prep_backend/runtime_provisioning`、`app/runtime`  | 規劃中 |
 
-實線箭頭表示資料由上游流向下游：下游讀取上游公開的資料，上游不知道下游。
+實線箭頭由上游指向下游：下游使用上游公開的介面與資料，上游不知道下游。
 
 ## 每份說明的固定段落
 
