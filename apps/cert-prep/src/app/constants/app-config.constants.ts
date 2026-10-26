@@ -1,3 +1,4 @@
+/* eslint-disable @softarc/sheriff/dependency-rule -- Known before C6: the app config is the composition root; C6 moves it out of constants. */
 import {
   HTTP_INTERCEPTORS,
   provideHttpClient,

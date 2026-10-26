@@ -64,6 +64,8 @@
     "@nx/workspace": "23.1.2",
     "@playwright/test": "^1.36.0",
     "@schematics/angular": "22.0.7",
+    "@softarc/eslint-plugin-sheriff": "^0.20.0",
+    "@softarc/sheriff-core": "^0.20.0",
     "@spartan-ng/cli": "1.6.1",
     "@swc-node/register": "1.11.1",
     "@swc/core": "1.15.8",

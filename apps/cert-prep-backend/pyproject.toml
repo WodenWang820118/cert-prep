@@ -26,6 +26,7 @@ cert-prep-ollama = { path = "../../packages/cert-prep-ollama", editable = true }
 [dependency-groups]
 dev = [
   "httpx>=0.27.0,<1.0.0",
+  "import-linter>=2.1,<3",
   "pyinstaller>=6.19.0,<7.0.0",
   "pytest>=9.1.0,<10.0.0",
   "ruff>=0.15.0,<0.16.0",
@@ -40,3 +41,131 @@ tmp_path_retention_policy = "failed"
 [tool.ruff]
 line-length = 100
 target-version = "py314"
+
+# Architecture rules (DDD refactor step C1, .agents/PLANS/ddd-refactor/). The rules
+# describe the target dependency direction on today's packages; imports that break them
+# today are listed under ignore_imports as known exceptions, and each later step may
+# only shorten those lists.
+[tool.importlinter]
+root_package = "cert_prep_backend"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Platform does not depend on contexts or the web layer"
+type = "forbidden"
+source_modules = ["cert_prep_backend.core", "cert_prep_backend.persistence"]
+forbidden_modules = [
+  "cert_prep_backend.domains",
+  "cert_prep_backend.api",
+  "cert_prep_backend.routers",
+]
+
+[[tool.importlinter.contracts]]
+name = "Contexts do not depend on the web layer"
+type = "forbidden"
+source_modules = ["cert_prep_backend.domains"]
+forbidden_modules = [
+  "cert_prep_backend.api",
+  "cert_prep_backend.routers",
+  "fastapi",
+  "starlette",
+]
+# Known before C2: the error types are re-exported by api.errors, which imports FastAPI;
+# C2 moves them to the platform package and removes this list.
+ignore_imports = [
+  "cert_prep_backend.domains.capture_workbench.review_sessions -> cert_prep_backend.api.errors",
+  "cert_prep_backend.domains.capture_workbench.structuring -> cert_prep_backend.api.errors",
+  "cert_prep_backend.domains.mock_exams.draft_jobs -> cert_prep_backend.api.errors",
+  "cert_prep_backend.domains.mock_exams.manual_operations -> cert_prep_backend.api.errors",
+  "cert_prep_backend.domains.mock_exams.ollama_transport -> cert_prep_backend.api.errors",
+  "cert_prep_backend.domains.mock_exams.provider -> cert_prep_backend.api.errors",
+  "cert_prep_backend.domains.mock_exams.reasoning_parser -> cert_prep_backend.api.errors",
+  "cert_prep_backend.domains.mock_exams.repository -> cert_prep_backend.api.errors",
+  "cert_prep_backend.domains.mock_exams.response_parsing -> cert_prep_backend.api.errors",
+  "cert_prep_backend.domains.mock_exams.streaming -> cert_prep_backend.api.errors",
+  "cert_prep_backend.domains.practice.attempt_repository -> cert_prep_backend.api.errors",
+  "cert_prep_backend.domains.practice.explanations -> cert_prep_backend.api.errors",
+  "cert_prep_backend.domains.practice.query_helpers -> cert_prep_backend.api.errors",
+  "cert_prep_backend.domains.practice.session_repository -> cert_prep_backend.api.errors",
+  "cert_prep_backend.domains.practice.wrong_answer_repository -> cert_prep_backend.api.errors",
+  "cert_prep_backend.domains.projects.repository -> cert_prep_backend.api.errors",
+  "cert_prep_backend.domains.runtime_installations.installers -> cert_prep_backend.api.errors",
+  "cert_prep_backend.domains.runtime_installations.manager -> cert_prep_backend.api.errors",
+  "cert_prep_backend.domains.source_documents.chunks -> cert_prep_backend.api.errors",
+  "cert_prep_backend.domains.source_documents.documents -> cert_prep_backend.api.errors",
+  "cert_prep_backend.domains.source_documents.progress -> cert_prep_backend.api.errors",
+  "cert_prep_backend.domains.source_documents.records -> cert_prep_backend.api.errors",
+  "cert_prep_backend.domains.source_documents.source_preparation -> cert_prep_backend.api.errors",
+]
+
+[[tool.importlinter.contracts]]
+name = "Domain models and policies stay free of frameworks and I/O"
+type = "forbidden"
+source_modules = [
+  "cert_prep_backend.domains.mock_exams.models",
+  "cert_prep_backend.domains.mock_exams.ports",
+  "cert_prep_backend.domains.mock_exams.deterministic_parser",
+  "cert_prep_backend.domains.mock_exams.normalization",
+  "cert_prep_backend.domains.source_documents.models",
+  "cert_prep_backend.domains.source_documents.statuses",
+  "cert_prep_backend.domains.source_documents.policies",
+  "cert_prep_backend.domains.source_documents.ports",
+  "cert_prep_backend.domains.practice.models",
+  "cert_prep_backend.domains.practice.policies",
+]
+forbidden_modules = [
+  "fastapi",
+  "starlette",
+  "pydantic",
+  "httpx",
+  "ollama",
+  "capture_runtime_client",
+  "cert_prep_backend.persistence",
+  "cert_prep_backend.api",
+  "cert_prep_backend.routers",
+]
+
+[[tool.importlinter.contracts]]
+name = "Study Projects does not depend on other contexts"
+type = "forbidden"
+source_modules = ["cert_prep_backend.domains.projects"]
+forbidden_modules = [
+  "cert_prep_backend.domains.source_documents",
+  "cert_prep_backend.domains.capture_workbench",
+  "cert_prep_backend.domains.mock_exams",
+  "cert_prep_backend.domains.practice",
+  "cert_prep_backend.domains.runtime_installations",
+]
+
+[[tool.importlinter.contracts]]
+name = "Source Library does not depend on its downstream contexts"
+type = "forbidden"
+source_modules = [
+  "cert_prep_backend.domains.source_documents",
+  "cert_prep_backend.domains.exam_content",
+]
+forbidden_modules = [
+  "cert_prep_backend.domains.capture_workbench",
+  "cert_prep_backend.domains.mock_exams",
+  "cert_prep_backend.domains.practice",
+  "cert_prep_backend.domains.runtime_installations",
+]
+
+[[tool.importlinter.contracts]]
+name = "Question Authoring does not depend on its downstream contexts"
+type = "forbidden"
+source_modules = ["cert_prep_backend.domains.mock_exams"]
+forbidden_modules = [
+  "cert_prep_backend.domains.capture_workbench",
+  "cert_prep_backend.domains.practice",
+  "cert_prep_backend.domains.runtime_installations",
+]
+
+[[tool.importlinter.contracts]]
+name = "Capture Integration, Practice and Runtime Provisioning do not depend on each other"
+type = "independence"
+modules = [
+  "cert_prep_backend.domains.capture_workbench",
+  "cert_prep_backend.domains.practice",
+  "cert_prep_backend.domains.runtime_installations",
+]

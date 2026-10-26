@@ -1,3 +1,4 @@
+// eslint-disable-next-line @softarc/sheriff/dependency-rule -- Known before C6: contracts import a UI component type; C6 moves the type.
 import type { AppIconName } from '../components/ui/app-icons';
 export type StudyPageId =
   | 'build'

@@ -1,6 +1,7 @@
 import { inject, InjectionToken } from '@angular/core';
 import { createCertPrepGeneratedClient } from '@cert-prep/api';
 import type { CertPrepGeneratedClient } from '../contracts/api.contracts';
+// eslint-disable-next-line @softarc/sheriff/dependency-rule -- Known before C6: API constants read a service; C6 separates them.
 import { CertPrepAuthenticatedTransport } from '../services/cert-prep-api.service';
 
 export const CERT_PREP_API = new InjectionToken<CertPrepGeneratedClient>(
