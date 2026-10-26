@@ -44,10 +44,12 @@ from capture_runtime_client import (
 )
 from cert_prep_backend.api.dependencies import (
     get_capture_coordinator,
-    get_database,
     get_document_worker_pool,
-    get_settings,
     get_streaming_draft_generation_manager,
+)
+from cert_prep_backend.platform.dependencies import (
+    get_database,
+    get_settings,
 )
 from cert_prep_backend.api.errors import ApiErrorRead, api_error, not_found_error
 from cert_prep_backend.platform.config import Settings

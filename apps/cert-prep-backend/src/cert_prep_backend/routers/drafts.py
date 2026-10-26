@@ -4,10 +4,10 @@ from fastapi import APIRouter, Depends, status
 
 from cert_prep_backend.platform.database import Database
 from cert_prep_backend.api.dependencies import (
-    get_database,
     get_llm_provider,
     get_streaming_draft_generation_manager,
 )
+from cert_prep_backend.platform.dependencies import get_database
 from cert_prep_backend.domains.mock_exams import draft_jobs
 from cert_prep_backend.domains.mock_exams import repository as mock_exams_repository
 from cert_prep_backend.domains.mock_exams.models import source_chunk_from_record

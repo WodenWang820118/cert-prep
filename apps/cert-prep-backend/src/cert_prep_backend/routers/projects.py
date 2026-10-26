@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Response, status
 
 from cert_prep_backend.platform.database import Database
-from cert_prep_backend.api.dependencies import get_database
+from cert_prep_backend.platform.dependencies import get_database
 from cert_prep_backend.domains.projects import repository as projects_repository
 from cert_prep_backend.domains.projects.schemas import (
     ProjectCreate,

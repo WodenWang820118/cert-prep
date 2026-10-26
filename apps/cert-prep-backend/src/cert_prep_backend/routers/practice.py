@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from cert_prep_backend.api.dependencies import get_database, get_llm_provider
+from cert_prep_backend.api.dependencies import get_llm_provider
+from cert_prep_backend.platform.dependencies import get_database
 from cert_prep_backend.api.errors import (
     ApiErrorRead,
     api_error,

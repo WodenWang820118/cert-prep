@@ -6,10 +6,12 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, Path
 
 from cert_prep_backend.api.dependencies import (
-    get_database,
-    get_database_change_notifier,
     get_runtime_installation_manager,
     get_streaming_draft_generation_manager,
+)
+from cert_prep_backend.platform.dependencies import (
+    get_database,
+    get_database_change_notifier,
 )
 from cert_prep_backend.api.errors import not_found_error
 from cert_prep_backend.platform.errors import NotFoundError

@@ -5,8 +5,8 @@ from fastapi import APIRouter, Depends, status
 from cert_prep_backend.api.dependencies import (
     get_llm_provider,
     get_runtime_installation_manager,
-    get_settings,
 )
+from cert_prep_backend.platform.dependencies import get_settings
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.domains.mock_exams.ollama_profiles import (
     profile_catalog_payload,

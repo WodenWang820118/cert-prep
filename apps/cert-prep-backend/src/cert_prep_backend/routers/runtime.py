@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, status
 
-from cert_prep_backend.api.dependencies import get_runtime_installation_manager, get_settings
+from cert_prep_backend.api.dependencies import get_runtime_installation_manager
+from cert_prep_backend.platform.dependencies import get_settings
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.domains.mock_exams.ollama_profiles import (
     collect_ollama_machine_inventory,
