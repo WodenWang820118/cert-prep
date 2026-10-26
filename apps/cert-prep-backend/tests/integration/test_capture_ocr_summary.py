@@ -13,8 +13,8 @@ from cert_prep_backend.api.app import create_app
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.capture_integration.infrastructure import review_sessions
 from cert_prep_backend.capture_integration.infrastructure.client import CaptureRuntimeError
-from cert_prep_backend.projects.infrastructure import repository as projects_repository
-from cert_prep_backend.projects.api.schemas import ProjectCreate
+from cert_prep_backend.platform.database import utc_now
+from cert_prep_backend.projects.application.use_cases import create_project
 from cert_prep_backend.source_library.infrastructure import operations
 
 
@@ -494,10 +494,12 @@ def _app(tmp_path: Path, runtime: RecordingOcrRuntime):
 
 
 def _create_project(app, name: str = "OCR Summary") -> str:
-    return projects_repository.create_project(
-        app.state.database,
-        ProjectCreate(name=name),
-    )["id"]
+    return create_project(
+        app.state.project_repository,
+        name=name,
+        description="",
+        now=utc_now(),
+    ).id
 
 
 def _create_capture_session(

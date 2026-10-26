@@ -23,15 +23,15 @@ flowchart LR
   AI --> RUN["執行環境"]
 ```
 
-| 上下文     | 說明文件       | 程式（重構後）                                           | 狀態   |
-| ---------- | -------------- | -------------------------------------------------------- | ------ |
-| 學習專案   | 待補（C3）     | `cert_prep_backend/projects`、`app/projects`             | 規劃中 |
-| 教材來源   | 待補（C3）     | `cert_prep_backend/source_library`、`app/source-library` | 規劃中 |
-| 擷取整合   | 待補（C3、C6） | `cert_prep_backend/capture_integration`、`app/capture`   | 規劃中 |
-| 題目編寫   | 待補（C3）     | `cert_prep_backend/authoring`、`app/authoring`           | 規劃中 |
-| 練習與複習 | 待補（C3）     | `cert_prep_backend/practice`、`app/practice`             | 規劃中 |
-| AI 供應    | 待補（C3）     | `cert_prep_backend/ai_providers`                         | 規劃中 |
-| 執行環境   | 待補（C3、C8） | `cert_prep_backend/runtime_provisioning`、`app/runtime`  | 規劃中 |
+| 上下文     | 說明文件                   | 程式（重構後）                                           | 狀態    |
+| ---------- | -------------------------- | -------------------------------------------------------- | ------- |
+| 學習專案   | [projects.md](projects.md) | `cert_prep_backend/projects`、`app/projects`             | C4 完成 |
+| 教材來源   | 待補（C3）                 | `cert_prep_backend/source_library`、`app/source-library` | 規劃中  |
+| 擷取整合   | 待補（C3、C6）             | `cert_prep_backend/capture_integration`、`app/capture`   | 規劃中  |
+| 題目編寫   | 待補（C3）                 | `cert_prep_backend/authoring`、`app/authoring`           | 規劃中  |
+| 練習與複習 | 待補（C3）                 | `cert_prep_backend/practice`、`app/practice`             | 規劃中  |
+| AI 供應    | 待補（C3）                 | `cert_prep_backend/ai_providers`                         | 規劃中  |
+| 執行環境   | 待補（C3、C8）             | `cert_prep_backend/runtime_provisioning`、`app/runtime`  | 規劃中  |
 
 實線箭頭由上游指向下游：下游使用上游公開的介面與資料，上游不知道下游。
 
