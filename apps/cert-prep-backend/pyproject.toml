@@ -94,6 +94,7 @@ forbidden_modules = [
 name = "Domain models and policies stay free of frameworks and I/O"
 type = "forbidden"
 source_modules = [
+  "cert_prep_backend.projects.domain",
   "cert_prep_backend.authoring.domain",
   "cert_prep_backend.source_library.domain",
   "cert_prep_backend.practice.domain",
@@ -185,7 +186,7 @@ containers = [
 ]
 layers = ["(api) | (infrastructure)", "(application)", "(domain)"]
 # Known before C4, which adds the use cases and the aggregates: the routers call the
-# repositories directly, the projects and authoring repositories take the HTTP DTOs, and the
+# repositories directly, the authoring repository takes the HTTP DTOs, and the
 # authoring DTOs use job and operation statuses that still live in infrastructure. The capture
 # routers keep their workflow and an upload helper of routers.documents until C6.
 ignore_imports = [
@@ -211,8 +212,33 @@ ignore_imports = [
   "cert_prep_backend.capture_integration.api.runtime_router -> cert_prep_backend.capture_integration.infrastructure.host_models",
   "cert_prep_backend.capture_integration.api.runtime_router -> cert_prep_backend.capture_integration.infrastructure.runtime_provenance",
   "cert_prep_backend.practice.api.router -> cert_prep_backend.practice.infrastructure.repository",
-  "cert_prep_backend.projects.api.router -> cert_prep_backend.projects.infrastructure.repository",
-  "cert_prep_backend.projects.infrastructure.repository -> cert_prep_backend.projects.api.schemas",
   "cert_prep_backend.runtime_provisioning.api.router -> cert_prep_backend.api.dependencies",
   "cert_prep_backend.runtime_provisioning.api.router -> cert_prep_backend.runtime_provisioning.infrastructure",
+]
+
+[[tool.importlinter.contracts]]
+name = "Other contexts reach Study Projects only through its application and domain"
+type = "forbidden"
+source_modules = [
+  "cert_prep_backend.practice",
+  "cert_prep_backend.source_library",
+  "cert_prep_backend.authoring",
+  "cert_prep_backend.capture_integration",
+  "cert_prep_backend.runtime_provisioning",
+  "cert_prep_backend.routers",
+]
+forbidden_modules = [
+  "cert_prep_backend.projects.infrastructure",
+  "cert_prep_backend.projects.api",
+]
+# Known before each context's C4 gives its code a project lookup instead of a database:
+# they check that a project exists through ensure_project_exists(db, project_id).
+ignore_imports = [
+  "cert_prep_backend.authoring.infrastructure.draft_jobs -> cert_prep_backend.projects.infrastructure.repository",
+  "cert_prep_backend.authoring.infrastructure.manual_operations -> cert_prep_backend.projects.infrastructure.repository",
+  "cert_prep_backend.authoring.infrastructure.repository -> cert_prep_backend.projects.infrastructure.repository",
+  "cert_prep_backend.capture_integration.api.router -> cert_prep_backend.projects.infrastructure.repository",
+  "cert_prep_backend.routers.documents -> cert_prep_backend.projects.infrastructure.repository",
+  "cert_prep_backend.source_library.infrastructure.documents -> cert_prep_backend.projects.infrastructure.repository",
+  "cert_prep_backend.source_library.infrastructure.operations -> cert_prep_backend.projects.infrastructure.repository",
 ]
