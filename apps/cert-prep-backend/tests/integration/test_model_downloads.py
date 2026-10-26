@@ -3,7 +3,7 @@ from threading import Event
 from fastapi.testclient import TestClient
 
 from cert_prep_backend.api.app import create_app
-from cert_prep_backend.core.config import DEFAULT_OLLAMA_MODEL, Settings
+from cert_prep_backend.platform.config import DEFAULT_OLLAMA_MODEL, Settings
 from cert_prep_backend.domains.mock_exams import ollama_profiles as ollama_profile_module
 from cert_prep_ollama.profiles import DEFAULT_PROFILE_ID
 from llm_test_fakes import (

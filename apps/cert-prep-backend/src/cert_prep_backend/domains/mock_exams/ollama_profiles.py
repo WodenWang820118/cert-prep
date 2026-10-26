@@ -5,7 +5,7 @@ from threading import Lock
 import time
 from typing import Any, cast
 
-from cert_prep_backend.core.config import Settings
+from cert_prep_backend.platform.config import Settings
 from cert_prep_contracts.hardware import MachineInventorySnapshot
 from cert_prep_contracts.llm_profiles import (
     OllamaModelProfile,

@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from threading import Lock
 
-from cert_prep_backend.core.config import Settings
+from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.domains.mock_exams.deterministic_parser import (
     MAX_PROMPT_SOURCE_CHARS,
     extract_jlpt_question_blocks as _extract_jlpt_question_blocks,
@@ -47,7 +47,7 @@ from cert_prep_backend.domains.mock_exams.reasoning_parser import (
     draft_suggestion_from_item as _draft_suggestion_from_item,
     json_response as _json_response,
 )
-from cert_prep_backend.api.errors import ProviderUnavailableError
+from cert_prep_backend.platform.errors import ProviderUnavailableError
 from cert_prep_backend.domains.mock_exams.response_parsing import (
     is_non_fatal_generation_error,
 )

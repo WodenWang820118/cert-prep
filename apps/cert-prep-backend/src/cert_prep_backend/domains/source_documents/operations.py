@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from cert_prep_contracts.transcription import TranscriptSegment
 
-from cert_prep_backend.core.exceptions import (
+from cert_prep_backend.platform.errors import (
     DocumentOperationConflictError,
     DocumentOperationStateError,
     DocumentProcessingCanceledError,
@@ -28,7 +28,7 @@ from cert_prep_backend.domains.source_documents.records import (
     document_from_row,
     document_query,
 )
-from cert_prep_backend.persistence.database import Database, utc_now
+from cert_prep_backend.platform.database import Database, utc_now
 
 
 TERMINAL_STATUSES: Final[frozenset[str]] = frozenset({"canceled", "succeeded", "failed"})

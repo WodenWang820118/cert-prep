@@ -2,7 +2,7 @@ import os
 
 import uvicorn
 
-from cert_prep_backend.core.frozen_extraction_residue import start_stale_extraction_sweep
+from cert_prep_backend.platform.frozen_extraction_residue import start_stale_extraction_sweep
 
 
 def main() -> None:

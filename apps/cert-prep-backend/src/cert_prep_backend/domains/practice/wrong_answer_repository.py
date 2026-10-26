@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from sqlite3 import Connection, Row
 
-from cert_prep_backend.api.errors import NotFoundError
+from cert_prep_backend.platform.errors import NotFoundError
 from cert_prep_backend.domains.practice.models import PracticeQuestion, WrongAnswer
 from cert_prep_backend.domains.practice.policies import current_wrong_answers
 from cert_prep_backend.domains.practice.query_helpers import ensure_project_row_exists
@@ -11,7 +11,7 @@ from cert_prep_backend.domains.practice.row_mappers import (
     practice_attempt_from_wrong_answer_row,
     practice_question_from_wrong_answer_row,
 )
-from cert_prep_backend.persistence.database import Database
+from cert_prep_backend.platform.database import Database
 
 
 def list_wrong_answers(db: Database, project_id: str) -> list[dict]:

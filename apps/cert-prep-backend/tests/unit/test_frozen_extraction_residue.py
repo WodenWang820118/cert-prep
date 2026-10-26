@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-import cert_prep_backend.core.frozen_extraction_residue as residue
-from cert_prep_backend.core.frozen_extraction_residue import (
+import cert_prep_backend.platform.frozen_extraction_residue as residue
+from cert_prep_backend.platform.frozen_extraction_residue import (
     MINIMUM_AGE_SECONDS,
     start_stale_extraction_sweep,
     sweep_stale_extractions,

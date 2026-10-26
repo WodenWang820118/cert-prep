@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 
 from cert_prep_backend.api.app import create_app
-from cert_prep_backend.api.errors import ProviderUnavailableError
-from cert_prep_backend.core.config import Settings
+from cert_prep_backend.platform.errors import ProviderUnavailableError
+from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.domains.mock_exams import ollama_profiles as ollama_profile_module
 from cert_prep_backend.domains.mock_exams import ollama_transport
 from cert_prep_backend.domains.mock_exams.models import DraftSuggestion, SourceChunk

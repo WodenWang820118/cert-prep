@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from sqlite3 import Row
 from uuid import uuid4
 
-from cert_prep_backend.api.errors import NotFoundError, ValidationError
+from cert_prep_backend.platform.errors import NotFoundError, ValidationError
 from cert_prep_backend.domains.practice.exceptions import PracticeSessionConflict
 from cert_prep_backend.domains.practice.models import (
     PracticeSessionMode,
@@ -33,7 +33,7 @@ from cert_prep_backend.domains.practice.wrong_answer_repository import (
     list_current_wrong_answer_models,
 )
 from cert_prep_backend.domains.source_documents import repository as documents_repository
-from cert_prep_backend.persistence.database import Database, utc_now
+from cert_prep_backend.platform.database import Database, utc_now
 
 
 DEFAULT_RANDOM_QUESTION_COUNT = 10

@@ -6,9 +6,9 @@ from fastapi import Depends, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from cert_prep_backend.api.errors import api_error
-from cert_prep_backend.core.config import Settings
-from cert_prep_backend.persistence.database import Database
-from cert_prep_backend.persistence.change_notifications import DatabaseChangeNotifier
+from cert_prep_backend.platform.config import Settings
+from cert_prep_backend.platform.database import Database
+from cert_prep_backend.platform.change_notifications import DatabaseChangeNotifier
 from cert_prep_backend.domains.capture_workbench.client import CaptureRuntimeClient
 from cert_prep_backend.domains.capture_workbench.coordinator import CertPrepCaptureCoordinator
 from cert_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider

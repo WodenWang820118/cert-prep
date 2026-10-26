@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from threading import BoundedSemaphore, Lock, Thread
 
-from cert_prep_backend.api.errors import ProviderUnavailableError
-from cert_prep_backend.core.config import Settings
+from cert_prep_backend.platform.errors import ProviderUnavailableError
+from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.domains.mock_exams import draft_jobs
 from cert_prep_backend.domains.mock_exams import manual_operations
 from cert_prep_backend.domains.mock_exams import repository as drafts_repository
@@ -37,7 +37,7 @@ from cert_prep_backend.domains.mock_exams.response_parsing import (
     is_non_fatal_generation_error,
 )
 from cert_prep_backend.domains.source_documents import repository as documents_repository
-from cert_prep_backend.persistence.database import Database
+from cert_prep_backend.platform.database import Database
 
 
 STREAMING_FAST_FIRST_NUM_CTX = 2048

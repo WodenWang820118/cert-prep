@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from cert_prep_backend.api.errors import NotFoundError, ValidationError
+from cert_prep_backend.platform.errors import NotFoundError, ValidationError
 from cert_prep_backend.domains.practice.exceptions import PracticeSessionConflict
 from cert_prep_backend.domains.practice.models import (
     PracticeQuestion,
@@ -20,7 +20,7 @@ from cert_prep_backend.domains.practice.row_mappers import (
     practice_question_from_row,
     practice_session_from_row,
 )
-from cert_prep_backend.persistence.database import Database, utc_now
+from cert_prep_backend.platform.database import Database, utc_now
 
 
 def record_attempt(

@@ -7,7 +7,7 @@ from cert_prep_backend.api.dependencies import (
     get_runtime_installation_manager,
     get_settings,
 )
-from cert_prep_backend.core.config import Settings
+from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.domains.mock_exams.ollama_profiles import (
     profile_catalog_payload,
     profile_selection_payload,
@@ -25,11 +25,10 @@ from cert_prep_backend.domains.mock_exams.provider_selection import (
 )
 from cert_prep_backend.domains.runtime_installations import RuntimeInstallationManager
 from cert_prep_backend.api.errors import (
-    ProviderUnavailableError,
     api_error,
     not_found_error,
 )
-from cert_prep_backend.core.exceptions import OperationNotCancellableError
+from cert_prep_backend.platform.errors import OperationNotCancellableError, ProviderUnavailableError
 
 
 router = APIRouter(prefix="/llm", tags=["llm"])

@@ -1,6 +1,6 @@
 import pytest
 
-from cert_prep_backend.api.errors import ProviderUnavailableError
+from cert_prep_backend.platform.errors import ProviderUnavailableError
 from cert_prep_backend.domains.mock_exams.models import (
     DraftGenerationStrategy,
     DraftSuggestion,

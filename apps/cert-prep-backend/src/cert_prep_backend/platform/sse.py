@@ -8,7 +8,7 @@ from typing import Any
 
 from fastapi.responses import StreamingResponse
 
-from cert_prep_backend.persistence.change_notifications import DatabaseChangeNotifier
+from cert_prep_backend.platform.change_notifications import DatabaseChangeNotifier
 
 
 SSE_HEARTBEAT_SECONDS = 15.0

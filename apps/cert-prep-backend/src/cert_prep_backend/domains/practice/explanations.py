@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
-from cert_prep_backend.api.errors import ProviderUnavailableError
+from cert_prep_backend.platform.errors import ProviderUnavailableError
 from cert_prep_backend.domains.mock_exams.ports import ProviderHealth, provider_capability
 from cert_prep_backend.domains.practice.models import WrongAnswer
 

@@ -9,7 +9,7 @@ from cert_prep_backend.domains.capture_workbench.mapping import (
     capture_document_to_pdf_extraction,
 )
 from cert_prep_backend.domains.source_documents import operations
-from cert_prep_backend.persistence.database import Database
+from cert_prep_backend.platform.database import Database
 
 
 def publish_capture_document(

@@ -25,7 +25,7 @@ from cert_prep_backend.domains.practice.wrong_answer_repository import (
 from cert_prep_backend.domains.practice.wrong_answer_repository import (
     summarize_wrong_answers as _summarize_wrong_answers,
 )
-from cert_prep_backend.persistence.database import Database
+from cert_prep_backend.platform.database import Database
 
 
 def create_session(

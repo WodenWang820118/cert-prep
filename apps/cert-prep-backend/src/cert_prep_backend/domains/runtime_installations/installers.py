@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from cert_prep_backend.api.errors import ProviderUnavailableError
+from cert_prep_backend.platform.errors import ProviderUnavailableError
 from cert_prep_backend.domains.mock_exams.ports import (
     ModelDownloadProvider,
     ModelOnboardingProvider,

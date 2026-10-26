@@ -5,11 +5,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from cert_prep_backend.api.dependencies import get_database, get_llm_provider
 from cert_prep_backend.api.errors import (
     ApiErrorRead,
-    NotFoundError,
-    ValidationError,
     api_error,
     not_found_error,
     validation_error,
+)
+from cert_prep_backend.platform.errors import (
+    NotFoundError,
+    ValidationError,
 )
 from cert_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
 from cert_prep_backend.domains.practice import explanations as practice_explanations
@@ -25,7 +27,7 @@ from cert_prep_backend.domains.practice.schemas import (
     WrongAnswerList,
     WrongAnswerSummaryRead,
 )
-from cert_prep_backend.persistence.database import Database
+from cert_prep_backend.platform.database import Database
 
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["practice"])

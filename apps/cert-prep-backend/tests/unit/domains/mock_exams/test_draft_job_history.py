@@ -5,9 +5,9 @@ import sqlite3
 
 import pytest
 
-from cert_prep_backend.core.config import Settings
+from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.domains.mock_exams import draft_jobs
-from cert_prep_backend.persistence.database import Database
+from cert_prep_backend.platform.database import Database
 
 
 def test_detached_terminal_job_keeps_public_attribution_and_is_not_retried(

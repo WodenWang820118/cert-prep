@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Response, status
 
-from cert_prep_backend.persistence.database import Database
+from cert_prep_backend.platform.database import Database
 from cert_prep_backend.api.dependencies import get_database
 from cert_prep_backend.domains.projects import repository as projects_repository
 from cert_prep_backend.domains.projects.schemas import (
@@ -11,7 +11,8 @@ from cert_prep_backend.domains.projects.schemas import (
     ProjectRead,
     ProjectUpdate,
 )
-from cert_prep_backend.api.errors import NotFoundError, not_found_error
+from cert_prep_backend.api.errors import not_found_error
+from cert_prep_backend.platform.errors import NotFoundError
 
 
 router = APIRouter(prefix="/projects", tags=["projects"])

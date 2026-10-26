@@ -22,7 +22,7 @@ from cert_prep_backend.domains.capture_workbench.persistence import (
 from cert_prep_backend.domains.capture_workbench import review_sessions
 from cert_prep_backend.domains.source_documents import operations
 from cert_prep_backend.domains.source_documents import repository as source_documents_repository
-from cert_prep_backend.persistence.database import Database
+from cert_prep_backend.platform.database import Database
 
 
 @dataclass(frozen=True, slots=True)

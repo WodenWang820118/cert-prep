@@ -24,20 +24,20 @@ from cert_prep_backend.api.dependencies import (
 )
 from cert_prep_backend.api.errors import (
     ApiErrorRead,
-    InvalidSourceError,
-    NotFoundError,
-    ProviderUnavailableError,
     api_error,
     not_found_error,
     validation_error,
 )
-from cert_prep_backend.core.config import Settings
-from cert_prep_backend.core.exceptions import (
+from cert_prep_backend.platform.errors import (
     DocumentOperationConflictError,
     DocumentOperationStateError,
     DocumentProcessingCanceledError,
+    InvalidSourceError,
+    NotFoundError,
     OperationNotCancellableError,
+    ProviderUnavailableError,
 )
+from cert_prep_backend.platform.config import Settings
 from capture_runtime_client import CaptureSourceKind
 from cert_prep_backend.domains.capture_workbench.coordinator import (
     CaptureRuntimeCanceledError,

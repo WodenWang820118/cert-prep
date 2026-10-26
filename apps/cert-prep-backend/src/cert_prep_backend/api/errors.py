@@ -5,23 +5,8 @@ from typing import Any
 from fastapi import HTTPException, status
 from pydantic import BaseModel
 
-from cert_prep_backend.core.exceptions import (
-    BackendError,
-    InvalidPdfError,
-    InvalidSourceError,
-    NotFoundError,
-    ProviderUnavailableError,
-    ValidationError,
-)
-
 __all__ = [
     "ApiErrorRead",
-    "BackendError",
-    "InvalidPdfError",
-    "InvalidSourceError",
-    "NotFoundError",
-    "ProviderUnavailableError",
-    "ValidationError",
     "api_error",
     "not_found_error",
     "validation_error",
