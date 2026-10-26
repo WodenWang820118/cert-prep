@@ -4,12 +4,12 @@ from collections.abc import Sequence
 
 from cert_prep_backend.platform.config import DEFAULT_OLLAMA_MODEL
 from cert_prep_backend.source_library.domain.exam_content import QuestionItemKind
-from cert_prep_backend.domains.mock_exams.models import (
+from cert_prep_backend.authoring.domain.models import (
     AnswerKeySource,
     DraftSuggestion,
     SourceChunk,
 )
-from cert_prep_backend.domains.mock_exams.ports import ProviderHealth
+from cert_prep_backend.authoring.domain.ports import ProviderHealth
 from cert_prep_contracts.llm import GenerationAttribution
 
 

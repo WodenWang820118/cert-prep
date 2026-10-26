@@ -33,7 +33,7 @@ from cert_prep_backend.domains.capture_workbench.client import (
     CaptureRuntimeClient,
     CaptureRuntimeProtocolError,
 )
-from cert_prep_backend.domains.mock_exams.ports import (
+from cert_prep_backend.authoring.domain.ports import (
     StructuredJsonGenerationProvider,
     provider_capability,
 )

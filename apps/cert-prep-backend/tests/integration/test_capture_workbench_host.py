@@ -61,8 +61,8 @@ from cert_prep_backend.domains.capture_workbench.structuring import (
     CaptureStructuringTimeoutError,
     CertPrepCaptureStructuringAdapter,
 )
-from cert_prep_backend.domains.mock_exams.ollama_transport import OllamaProvider
-from cert_prep_backend.domains.mock_exams.provider import LazyDraftGenerationProvider
+from cert_prep_backend.authoring.infrastructure.ollama_transport import OllamaProvider
+from cert_prep_backend.authoring.infrastructure.provider import LazyDraftGenerationProvider
 from llm_test_fakes import RecordingOllamaClient
 
 

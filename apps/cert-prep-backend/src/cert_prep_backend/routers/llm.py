@@ -8,19 +8,19 @@ from cert_prep_backend.api.dependencies import (
 )
 from cert_prep_backend.platform.dependencies import get_settings
 from cert_prep_backend.platform.config import Settings
-from cert_prep_backend.domains.mock_exams.ollama_profiles import (
+from cert_prep_backend.authoring.infrastructure.ollama_profiles import (
     profile_catalog_payload,
     profile_selection_payload,
 )
-from cert_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
-from cert_prep_backend.domains.mock_exams.schemas import (
+from cert_prep_backend.authoring.domain.ports import DraftGenerationProvider as LLMProvider
+from cert_prep_backend.authoring.api.schemas import (
     LLMHealthRead,
     LLMProviderSelectionRead,
     ModelDownloadRead,
     OllamaProfileSelectionRead,
     OllamaProfilesRead,
 )
-from cert_prep_backend.domains.mock_exams.provider_selection import (
+from cert_prep_backend.authoring.infrastructure.provider_selection import (
     provider_selection_from_settings,
 )
 from cert_prep_backend.domains.runtime_installations import RuntimeInstallationManager

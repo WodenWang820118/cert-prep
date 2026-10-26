@@ -1,13 +1,13 @@
 import pytest
 
 from cert_prep_backend.platform.errors import ProviderUnavailableError
-from cert_prep_backend.domains.mock_exams.models import (
+from cert_prep_backend.authoring.domain.models import (
     DraftGenerationStrategy,
     DraftSuggestion,
     SourceChunk,
     source_chunk_from_record,
 )
-from cert_prep_backend.domains.mock_exams.provider import (
+from cert_prep_backend.authoring.infrastructure.provider import (
     MAX_PROMPT_SOURCE_CHARS,
     _draft_suggestion_from_item,
     _extract_jlpt_question_blocks,

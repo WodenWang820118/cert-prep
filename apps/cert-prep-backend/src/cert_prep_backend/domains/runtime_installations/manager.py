@@ -8,7 +8,7 @@ from typing import Protocol
 from uuid import uuid4
 
 from cert_prep_backend.platform.config import Settings
-from cert_prep_backend.domains.mock_exams.ports import (
+from cert_prep_backend.authoring.domain.ports import (
     RuntimeInstallationProvider,
     provider_capability,
 )
@@ -706,7 +706,7 @@ class _LazyOllamaProfileInstaller:
             return installer
         with self._lock:
             if self._installer is None:
-                from cert_prep_backend.domains.mock_exams.ollama_profiles import (
+                from cert_prep_backend.authoring.infrastructure.ollama_profiles import (
                     ollama_profile_selection_from_settings,
                 )
                 from cert_prep_ollama.profile_installer import OllamaProfileInstaller

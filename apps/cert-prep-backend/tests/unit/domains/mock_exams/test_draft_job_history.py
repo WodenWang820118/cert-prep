@@ -6,7 +6,7 @@ import sqlite3
 import pytest
 
 from cert_prep_backend.platform.config import Settings
-from cert_prep_backend.domains.mock_exams import draft_jobs
+from cert_prep_backend.authoring.infrastructure import draft_jobs
 from cert_prep_backend.platform.database import Database
 
 

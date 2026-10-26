@@ -5,10 +5,10 @@ import sqlite3
 import pytest
 
 from conftest import minimal_pdf
-from cert_prep_backend.domains.mock_exams import draft_jobs
-from cert_prep_backend.domains.mock_exams import manual_operations
-from cert_prep_backend.domains.mock_exams import repository as drafts_repository
-from cert_prep_backend.domains.mock_exams.models import DraftSuggestion, UnavailableDraftBlock
+from cert_prep_backend.authoring.infrastructure import draft_jobs
+from cert_prep_backend.authoring.infrastructure import manual_operations
+from cert_prep_backend.authoring.infrastructure import repository as drafts_repository
+from cert_prep_backend.authoring.domain.models import DraftSuggestion, UnavailableDraftBlock
 
 
 def test_draft_insert_and_success_attribution_commit_together(client, auth_headers) -> None:

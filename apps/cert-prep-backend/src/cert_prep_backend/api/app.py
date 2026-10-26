@@ -33,9 +33,9 @@ from cert_prep_backend.domains.capture_workbench.review_workflow import (
 from cert_prep_backend.domains.capture_workbench.structuring import (
     CertPrepCaptureStructuringAdapter,
 )
-from cert_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
-from cert_prep_backend.domains.mock_exams.provider import lazy_provider_from_settings
-from cert_prep_backend.domains.mock_exams.streaming import StreamingDraftGenerationManager
+from cert_prep_backend.authoring.domain.ports import DraftGenerationProvider as LLMProvider
+from cert_prep_backend.authoring.infrastructure.provider import lazy_provider_from_settings
+from cert_prep_backend.authoring.infrastructure.streaming import StreamingDraftGenerationManager
 from cert_prep_backend.domains.runtime_installations import RuntimeInstallationManager
 from cert_prep_backend.source_library.infrastructure import repository as source_documents_repository
 from cert_prep_backend.platform.document_worker_pool import (
@@ -46,11 +46,11 @@ from cert_prep_backend.routers import (
     capture_runtime,
     capture_workbench,
     documents,
-    drafts,
     llm,
     operation_events,
     runtime,
 )
+from cert_prep_backend.authoring.api import router as drafts
 from cert_prep_backend.practice.api import router as practice
 from cert_prep_backend.projects.api import router as projects
 

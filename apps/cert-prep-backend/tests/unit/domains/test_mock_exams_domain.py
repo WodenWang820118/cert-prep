@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from cert_prep_backend.domains.mock_exams import (
+from cert_prep_backend.authoring.domain import (
     GENERATED_DRAFT_STATUS,
     AnswerKeySource,
     DraftStatus,

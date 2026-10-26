@@ -19,7 +19,7 @@ from cert_prep_backend.source_library.domain.models import (
     ExtractedPage,
     PdfExtraction,
 )
-from cert_prep_backend.domains.mock_exams import draft_jobs
+from cert_prep_backend.authoring.infrastructure import draft_jobs
 from cert_prep_backend.source_library.infrastructure import operations
 from cert_prep_backend.source_library.infrastructure.progress import (
     record_extraction_progress,

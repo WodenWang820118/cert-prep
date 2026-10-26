@@ -5,8 +5,8 @@ import re
 from typing import Any
 
 from cert_prep_backend.source_library.domain.exam_content import question_item_kind_from_value
-from cert_prep_backend.domains.mock_exams.models import DraftSuggestion, SourceChunk
-from cert_prep_backend.domains.mock_exams.normalization import normalize_answer
+from cert_prep_backend.authoring.domain.models import DraftSuggestion, SourceChunk
+from cert_prep_backend.authoring.domain.normalization import normalize_answer
 from cert_prep_backend.platform.errors import ProviderUnavailableError
 
 

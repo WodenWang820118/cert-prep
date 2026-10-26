@@ -5,24 +5,24 @@ import logging
 from threading import local
 from typing import Any, TypeVar
 
-from cert_prep_backend.domains.mock_exams.deterministic_parser import (
+from cert_prep_backend.authoring.domain.deterministic_parser import (
     extract_jlpt_question_blocks,
     is_exam_source_chunk,
     source_text_and_chunks_for_prompt,
 )
-from cert_prep_backend.domains.mock_exams.models import (
+from cert_prep_backend.authoring.domain.models import (
     AnswerKeySource,
     DraftSuggestion,
     SourceChunk,
 )
-from cert_prep_backend.domains.mock_exams.normalization import dedupe_suggestions
-from cert_prep_backend.domains.mock_exams.ollama_client import OllamaClient
-from cert_prep_backend.domains.mock_exams.ports import ProviderHealth
-from cert_prep_backend.domains.mock_exams.reasoning_parser import (
+from cert_prep_backend.authoring.domain.normalization import dedupe_suggestions
+from cert_prep_backend.authoring.infrastructure.ollama_client import OllamaClient
+from cert_prep_backend.authoring.domain.ports import ProviderHealth
+from cert_prep_backend.authoring.infrastructure.reasoning_parser import (
     draft_suggestion_from_item,
     json_response,
 )
-from cert_prep_backend.domains.mock_exams.response_parsing import (
+from cert_prep_backend.authoring.infrastructure.response_parsing import (
     answer_from_payload,
     confidence_from_payload,
     fast_first_prompt,
