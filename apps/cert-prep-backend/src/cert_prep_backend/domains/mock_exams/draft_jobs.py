@@ -5,7 +5,7 @@ from sqlite3 import Row
 from uuid import uuid4
 
 from cert_prep_backend.platform.database import Database, utc_now
-from cert_prep_backend.domains.projects.repository import ensure_project_exists
+from cert_prep_backend.projects.infrastructure.repository import ensure_project_exists
 from cert_prep_backend.domains.source_documents import repository as documents_repository
 from cert_prep_backend.platform.errors import NotFoundError
 

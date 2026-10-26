@@ -15,7 +15,7 @@ from cert_prep_backend.platform.errors import (
     NotFoundError,
     OperationNotCancellableError,
 )
-from cert_prep_backend.domains.projects.repository import ensure_project_exists
+from cert_prep_backend.projects.infrastructure.repository import ensure_project_exists
 from cert_prep_backend.domains.source_documents.documents import (
     insert_processing_document,
 )
