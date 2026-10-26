@@ -9,8 +9,8 @@ from cert_prep_backend.api.errors import api_error
 from cert_prep_backend.platform.dependencies import get_settings
 from cert_prep_backend.domains.capture_workbench.client import CaptureRuntimeClient
 from cert_prep_backend.domains.capture_workbench.coordinator import CertPrepCaptureCoordinator
-from cert_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
-from cert_prep_backend.domains.mock_exams.streaming import StreamingDraftGenerationManager
+from cert_prep_backend.authoring.domain.ports import DraftGenerationProvider as LLMProvider
+from cert_prep_backend.authoring.infrastructure.streaming import StreamingDraftGenerationManager
 from cert_prep_backend.domains.runtime_installations import RuntimeInstallationManager
 from cert_prep_backend.platform.document_worker_pool import (
     DocumentWorkerPool,

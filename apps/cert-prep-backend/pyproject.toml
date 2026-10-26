@@ -59,6 +59,7 @@ forbidden_modules = [
   "cert_prep_backend.projects",
   "cert_prep_backend.practice",
   "cert_prep_backend.source_library",
+  "cert_prep_backend.authoring",
   "cert_prep_backend.api",
   "cert_prep_backend.routers",
 ]
@@ -75,6 +76,8 @@ source_modules = [
   "cert_prep_backend.practice.infrastructure",
   "cert_prep_backend.source_library.domain",
   "cert_prep_backend.source_library.infrastructure",
+  "cert_prep_backend.authoring.domain",
+  "cert_prep_backend.authoring.infrastructure",
 ]
 forbidden_modules = [
   "cert_prep_backend.api",
@@ -87,10 +90,7 @@ forbidden_modules = [
 name = "Domain models and policies stay free of frameworks and I/O"
 type = "forbidden"
 source_modules = [
-  "cert_prep_backend.domains.mock_exams.models",
-  "cert_prep_backend.domains.mock_exams.ports",
-  "cert_prep_backend.domains.mock_exams.deterministic_parser",
-  "cert_prep_backend.domains.mock_exams.normalization",
+  "cert_prep_backend.authoring.domain",
   "cert_prep_backend.source_library.domain",
   "cert_prep_backend.practice.domain",
 ]
@@ -115,7 +115,7 @@ source_modules = ["cert_prep_backend.projects"]
 forbidden_modules = [
   "cert_prep_backend.source_library",
   "cert_prep_backend.domains.capture_workbench",
-  "cert_prep_backend.domains.mock_exams",
+  "cert_prep_backend.authoring",
   "cert_prep_backend.practice",
   "cert_prep_backend.domains.runtime_installations",
 ]
@@ -126,7 +126,7 @@ type = "forbidden"
 source_modules = ["cert_prep_backend.source_library"]
 forbidden_modules = [
   "cert_prep_backend.domains.capture_workbench",
-  "cert_prep_backend.domains.mock_exams",
+  "cert_prep_backend.authoring",
   "cert_prep_backend.practice",
   "cert_prep_backend.domains.runtime_installations",
 ]
@@ -134,11 +134,16 @@ forbidden_modules = [
 [[tool.importlinter.contracts]]
 name = "Question Authoring does not depend on its downstream contexts"
 type = "forbidden"
-source_modules = ["cert_prep_backend.domains.mock_exams"]
+source_modules = ["cert_prep_backend.authoring"]
 forbidden_modules = [
   "cert_prep_backend.domains.capture_workbench",
   "cert_prep_backend.practice",
   "cert_prep_backend.domains.runtime_installations",
+]
+# Known until the router takes its providers from the contexts that own them (C4): it reads
+# the LLM provider and the streaming manager from api.dependencies, which imports every context.
+ignore_imports = [
+  "cert_prep_backend.authoring.api.router -> cert_prep_backend.api.dependencies",
 ]
 
 [[tool.importlinter.contracts]]
@@ -164,11 +169,21 @@ containers = [
   "cert_prep_backend.projects",
   "cert_prep_backend.practice",
   "cert_prep_backend.source_library",
+  "cert_prep_backend.authoring",
 ]
 layers = ["(api) | (infrastructure)", "(application)", "(domain)"]
 # Known before C4, which adds the use cases and the aggregates: the routers call the
-# repositories directly, and the projects repository takes the HTTP DTOs.
+# repositories directly, the projects and authoring repositories take the HTTP DTOs, and the
+# authoring DTOs use job and operation statuses that still live in infrastructure.
 ignore_imports = [
+  "cert_prep_backend.authoring.api.router -> cert_prep_backend.api.dependencies",
+  "cert_prep_backend.authoring.api.router -> cert_prep_backend.authoring.infrastructure.draft_jobs",
+  "cert_prep_backend.authoring.api.router -> cert_prep_backend.authoring.infrastructure.provider",
+  "cert_prep_backend.authoring.api.router -> cert_prep_backend.authoring.infrastructure.repository",
+  "cert_prep_backend.authoring.api.router -> cert_prep_backend.authoring.infrastructure.streaming",
+  "cert_prep_backend.authoring.api.schemas -> cert_prep_backend.authoring.infrastructure.draft_jobs",
+  "cert_prep_backend.authoring.api.schemas -> cert_prep_backend.authoring.infrastructure.manual_operations",
+  "cert_prep_backend.authoring.infrastructure.repository -> cert_prep_backend.authoring.api.schemas",
   "cert_prep_backend.practice.api.router -> cert_prep_backend.practice.infrastructure.repository",
   "cert_prep_backend.projects.api.router -> cert_prep_backend.projects.infrastructure.repository",
   "cert_prep_backend.projects.infrastructure.repository -> cert_prep_backend.projects.api.schemas",

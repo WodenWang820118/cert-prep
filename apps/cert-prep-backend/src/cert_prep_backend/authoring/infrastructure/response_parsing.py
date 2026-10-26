@@ -5,7 +5,7 @@ import json
 from typing import Any
 
 from cert_prep_backend.platform.errors import ProviderUnavailableError
-from cert_prep_backend.domains.mock_exams.models import DraftSuggestion
+from cert_prep_backend.authoring.domain.models import DraftSuggestion
 
 
 def fast_first_prompt(candidate: DraftSuggestion) -> str:

@@ -6,10 +6,10 @@ import pytest
 
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.platform.config import Settings
-from cert_prep_backend.domains.mock_exams import ollama_profiles as ollama_profile_module
-from cert_prep_backend.domains.mock_exams import provider as provider_module
-from cert_prep_backend.domains.mock_exams.ollama_transport import OllamaProvider
-from cert_prep_backend.domains.mock_exams.provider import provider_from_settings
+from cert_prep_backend.authoring.infrastructure import ollama_profiles as ollama_profile_module
+from cert_prep_backend.authoring.infrastructure import provider as provider_module
+from cert_prep_backend.authoring.infrastructure.ollama_transport import OllamaProvider
+from cert_prep_backend.authoring.infrastructure.provider import provider_from_settings
 from cert_prep_contracts.hardware import MachineAcceleratorSnapshot
 from cert_prep_contracts.llm import LLMExecutionMode
 from cert_prep_contracts.runtime import RuntimeRequirementKind

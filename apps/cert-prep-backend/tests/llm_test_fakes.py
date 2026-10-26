@@ -2,8 +2,8 @@ from collections.abc import Sequence
 from threading import Event
 
 from cert_prep_backend.platform.config import DEFAULT_OLLAMA_MODEL
-from cert_prep_backend.domains.mock_exams.models import DraftSuggestion, SourceChunk
-from cert_prep_backend.domains.mock_exams.ports import ProviderHealth
+from cert_prep_backend.authoring.domain.models import DraftSuggestion, SourceChunk
+from cert_prep_backend.authoring.domain.ports import ProviderHealth
 from cert_prep_contracts.hardware import (
     MachineCpuSnapshot,
     MachineInventorySnapshot,

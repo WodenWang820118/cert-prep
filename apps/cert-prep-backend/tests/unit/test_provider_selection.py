@@ -1,15 +1,13 @@
 from __future__ import annotations
 
 from cert_prep_backend.platform.config import Settings
-from cert_prep_backend.domains.mock_exams import (
-    ollama_profiles as ollama_profile_module,
-)
-from cert_prep_backend.domains.mock_exams.ollama_transport import OllamaProvider
-from cert_prep_backend.domains.mock_exams.provider import (
+from cert_prep_backend.authoring.infrastructure import ollama_profiles as ollama_profile_module
+from cert_prep_backend.authoring.infrastructure.ollama_transport import OllamaProvider
+from cert_prep_backend.authoring.infrastructure.provider import (
     lazy_provider_from_settings,
     provider_from_settings,
 )
-from cert_prep_backend.domains.mock_exams.provider_selection import (
+from cert_prep_backend.authoring.infrastructure.provider_selection import (
     provider_selection_from_settings,
 )
 from cert_prep_contracts.llm import LLMProviderName, LLMProviderPreference

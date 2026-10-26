@@ -4,51 +4,51 @@ from collections.abc import Callable, Sequence
 from threading import Lock
 
 from cert_prep_backend.platform.config import Settings
-from cert_prep_backend.domains.mock_exams.deterministic_parser import (
+from cert_prep_backend.authoring.domain.deterministic_parser import (
     MAX_PROMPT_SOURCE_CHARS,
     extract_jlpt_question_blocks as _extract_jlpt_question_blocks,
     source_text_for_prompt as _source_text_for_prompt,
 )
-from cert_prep_backend.domains.mock_exams.fake_provider import FakeLLMProvider
-from cert_prep_backend.domains.mock_exams.models import (
+from cert_prep_backend.authoring.infrastructure.fake_provider import FakeLLMProvider
+from cert_prep_backend.authoring.domain.models import (
     DraftGenerationResult,
     DraftGenerationStrategy,
     DraftSuggestion,
     SourceChunk,
     UnavailableDraftBlock,
 )
-from cert_prep_backend.domains.mock_exams.normalization import (
+from cert_prep_backend.authoring.domain.normalization import (
     as_editable_question as _as_editable_question,
     dedupe_suggestions as _dedupe_suggestions,
 )
-from cert_prep_backend.domains.mock_exams.ollama_transport import (
+from cert_prep_backend.authoring.infrastructure.ollama_transport import (
     OllamaProvider,
     extract_model_names as _extract_model_names,
     pull_progress as _pull_progress,
 )
-from cert_prep_backend.domains.mock_exams.ollama_profiles import (
+from cert_prep_backend.authoring.infrastructure.ollama_profiles import (
     collect_ollama_machine_inventory,
     ollama_profile_selection_from_settings,
 )
-from cert_prep_backend.domains.mock_exams.ports import (
+from cert_prep_backend.authoring.domain.ports import (
     FastFirstDraftProvider,
     ReasoningDraftProvider,
     provider_capability,
 )
-from cert_prep_backend.domains.mock_exams.provider_selection import (
+from cert_prep_backend.authoring.infrastructure.provider_selection import (
     provider_selection_from_settings,
 )
 from cert_prep_contracts.hardware import MachineInventorySnapshot
 from cert_prep_contracts.llm import LLMProviderName
 from cert_prep_contracts.runtime import RuntimeRequirementKind
 from cert_prep_ollama.profiles import select_ollama_execution_policy
-from cert_prep_backend.domains.mock_exams.reasoning_parser import (
+from cert_prep_backend.authoring.infrastructure.reasoning_parser import (
     EXAM_ITEMS_SCHEMA,
     draft_suggestion_from_item as _draft_suggestion_from_item,
     json_response as _json_response,
 )
 from cert_prep_backend.platform.errors import ProviderUnavailableError
-from cert_prep_backend.domains.mock_exams.response_parsing import (
+from cert_prep_backend.authoring.infrastructure.response_parsing import (
     is_non_fatal_generation_error,
 )
 

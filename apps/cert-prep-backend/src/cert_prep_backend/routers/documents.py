@@ -49,11 +49,11 @@ from cert_prep_backend.domains.capture_workbench.coordinator import (
     PDF_OCR_UNAVAILABLE_MESSAGE,
 )
 from cert_prep_backend.domains.capture_workbench.persistence import publish_capture_document
-from cert_prep_backend.domains.mock_exams import repository as mock_exams_repository
-from cert_prep_backend.domains.mock_exams.models import source_chunk_from_record
-from cert_prep_backend.domains.mock_exams.normalization import as_editable_question
-from cert_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
-from cert_prep_backend.domains.mock_exams.streaming import StreamingDraftGenerationManager
+from cert_prep_backend.authoring.infrastructure import repository as mock_exams_repository
+from cert_prep_backend.authoring.domain.models import source_chunk_from_record
+from cert_prep_backend.authoring.domain.normalization import as_editable_question
+from cert_prep_backend.authoring.domain.ports import DraftGenerationProvider as LLMProvider
+from cert_prep_backend.authoring.infrastructure.streaming import StreamingDraftGenerationManager
 from cert_prep_backend.projects.infrastructure import repository as projects_repository
 from cert_prep_backend.source_library.infrastructure import operations as document_operations
 from cert_prep_backend.source_library.infrastructure import repository as source_documents_repository

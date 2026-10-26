@@ -4,21 +4,21 @@ from threading import BoundedSemaphore, Lock, Thread
 
 from cert_prep_backend.platform.errors import ProviderUnavailableError
 from cert_prep_backend.platform.config import Settings
-from cert_prep_backend.domains.mock_exams import draft_jobs
-from cert_prep_backend.domains.mock_exams import manual_operations
-from cert_prep_backend.domains.mock_exams import repository as drafts_repository
-from cert_prep_backend.domains.mock_exams.deterministic_parser import (
+from cert_prep_backend.authoring.infrastructure import draft_jobs
+from cert_prep_backend.authoring.infrastructure import manual_operations
+from cert_prep_backend.authoring.infrastructure import repository as drafts_repository
+from cert_prep_backend.authoring.domain.deterministic_parser import (
     extract_jlpt_question_blocks,
     is_exam_source_chunk,
 )
-from cert_prep_backend.domains.mock_exams.models import (
+from cert_prep_backend.authoring.domain.models import (
     DraftGenerationStrategy,
     DraftSuggestion,
     SourceChunk,
     source_chunk_from_record,
 )
-from cert_prep_backend.domains.mock_exams.normalization import as_editable_question
-from cert_prep_backend.domains.mock_exams.ports import (
+from cert_prep_backend.authoring.domain.normalization import as_editable_question
+from cert_prep_backend.authoring.domain.ports import (
     DraftGenerationProvider,
     FastFirstDraftProvider,
     GenerationAttributionProvider,
@@ -29,11 +29,11 @@ from cert_prep_backend.domains.mock_exams.ports import (
     provider_capability,
 )
 from cert_prep_contracts.llm import GenerationAttribution
-from cert_prep_backend.domains.mock_exams.provider import (
+from cert_prep_backend.authoring.infrastructure.provider import (
     generate_drafts_for_strategy,
     generate_drafts_with_annotations_for_strategy,
 )
-from cert_prep_backend.domains.mock_exams.response_parsing import (
+from cert_prep_backend.authoring.infrastructure.response_parsing import (
     is_non_fatal_generation_error,
 )
 from cert_prep_backend.source_library.infrastructure import repository as documents_repository

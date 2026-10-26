@@ -7,7 +7,7 @@ from sqlite3 import Row
 from uuid import uuid4
 
 from cert_prep_backend.platform.errors import NotFoundError
-from cert_prep_backend.domains.mock_exams.draft_jobs import (
+from cert_prep_backend.authoring.infrastructure.draft_jobs import (
     DraftJobCanceledError,
     DraftJobNotCancellableError,
 )

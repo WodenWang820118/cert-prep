@@ -7,10 +7,10 @@ import pytest
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.platform.errors import ProviderUnavailableError
 from cert_prep_backend.platform.config import Settings
-from cert_prep_backend.domains.mock_exams import ollama_profiles as ollama_profile_module
-from cert_prep_backend.domains.mock_exams import ollama_transport
-from cert_prep_backend.domains.mock_exams.models import DraftSuggestion, SourceChunk
-from cert_prep_backend.domains.mock_exams.ollama_transport import OllamaProvider
+from cert_prep_backend.authoring.infrastructure import ollama_profiles as ollama_profile_module
+from cert_prep_backend.authoring.infrastructure import ollama_transport
+from cert_prep_backend.authoring.domain.models import DraftSuggestion, SourceChunk
+from cert_prep_backend.authoring.infrastructure.ollama_transport import OllamaProvider
 from cert_prep_contracts.llm import LLMExecutionMode, LLMExecutionPolicy
 from cert_prep_ollama.profiles import DEFAULT_PROFILE_ID, select_ollama_profile
 from fastapi.testclient import TestClient

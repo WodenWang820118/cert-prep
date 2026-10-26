@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 
-from cert_prep_backend.domains.mock_exams.models import DraftSuggestion
+from cert_prep_backend.authoring.domain.models import DraftSuggestion
 
 
 _CHOICE_MARKER_PREFIX = re.compile(
