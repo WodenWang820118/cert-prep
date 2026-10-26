@@ -53,7 +53,7 @@ include_external_packages = true
 [[tool.importlinter.contracts]]
 name = "Platform does not depend on contexts or the web layer"
 type = "forbidden"
-source_modules = ["cert_prep_backend.core", "cert_prep_backend.persistence"]
+source_modules = ["cert_prep_backend.platform"]
 forbidden_modules = [
   "cert_prep_backend.domains",
   "cert_prep_backend.api",
@@ -69,33 +69,6 @@ forbidden_modules = [
   "cert_prep_backend.routers",
   "fastapi",
   "starlette",
-]
-# Known before C2: the error types are re-exported by api.errors, which imports FastAPI;
-# C2 moves them to the platform package and removes this list.
-ignore_imports = [
-  "cert_prep_backend.domains.capture_workbench.review_sessions -> cert_prep_backend.api.errors",
-  "cert_prep_backend.domains.capture_workbench.structuring -> cert_prep_backend.api.errors",
-  "cert_prep_backend.domains.mock_exams.draft_jobs -> cert_prep_backend.api.errors",
-  "cert_prep_backend.domains.mock_exams.manual_operations -> cert_prep_backend.api.errors",
-  "cert_prep_backend.domains.mock_exams.ollama_transport -> cert_prep_backend.api.errors",
-  "cert_prep_backend.domains.mock_exams.provider -> cert_prep_backend.api.errors",
-  "cert_prep_backend.domains.mock_exams.reasoning_parser -> cert_prep_backend.api.errors",
-  "cert_prep_backend.domains.mock_exams.repository -> cert_prep_backend.api.errors",
-  "cert_prep_backend.domains.mock_exams.response_parsing -> cert_prep_backend.api.errors",
-  "cert_prep_backend.domains.mock_exams.streaming -> cert_prep_backend.api.errors",
-  "cert_prep_backend.domains.practice.attempt_repository -> cert_prep_backend.api.errors",
-  "cert_prep_backend.domains.practice.explanations -> cert_prep_backend.api.errors",
-  "cert_prep_backend.domains.practice.query_helpers -> cert_prep_backend.api.errors",
-  "cert_prep_backend.domains.practice.session_repository -> cert_prep_backend.api.errors",
-  "cert_prep_backend.domains.practice.wrong_answer_repository -> cert_prep_backend.api.errors",
-  "cert_prep_backend.domains.projects.repository -> cert_prep_backend.api.errors",
-  "cert_prep_backend.domains.runtime_installations.installers -> cert_prep_backend.api.errors",
-  "cert_prep_backend.domains.runtime_installations.manager -> cert_prep_backend.api.errors",
-  "cert_prep_backend.domains.source_documents.chunks -> cert_prep_backend.api.errors",
-  "cert_prep_backend.domains.source_documents.documents -> cert_prep_backend.api.errors",
-  "cert_prep_backend.domains.source_documents.progress -> cert_prep_backend.api.errors",
-  "cert_prep_backend.domains.source_documents.records -> cert_prep_backend.api.errors",
-  "cert_prep_backend.domains.source_documents.source_preparation -> cert_prep_backend.api.errors",
 ]
 
 [[tool.importlinter.contracts]]
@@ -120,7 +93,9 @@ forbidden_modules = [
   "httpx",
   "ollama",
   "capture_runtime_client",
-  "cert_prep_backend.persistence",
+  "cert_prep_backend.platform.database",
+  "cert_prep_backend.platform.change_notifications",
+  "cert_prep_backend.platform.sse",
   "cert_prep_backend.api",
   "cert_prep_backend.routers",
 ]

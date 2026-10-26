@@ -25,7 +25,7 @@ from conftest import (
     TypedPullSessionRuntimeMixin,
 )
 from cert_prep_backend.api.app import create_app
-from cert_prep_backend.core.config import Settings
+from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.domains.capture_workbench.client import (
     CaptureRuntimeError,
     CaptureRuntimeProtocolError,

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from cert_prep_backend.persistence.database import Database, utc_now
+from cert_prep_backend.platform.database import Database, utc_now
 from cert_prep_backend.domains.projects.repository import ensure_project_exists
 from cert_prep_backend.domains.source_documents.models import SourceFile
 from cert_prep_backend.domains.source_documents.records import document_from_row, document_query
 from cert_prep_backend.domains.source_documents.statuses import SourceDocumentStatus
-from cert_prep_backend.api.errors import NotFoundError
+from cert_prep_backend.platform.errors import NotFoundError
 
 
 def insert_processing_document(

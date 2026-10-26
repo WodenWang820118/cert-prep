@@ -4,7 +4,7 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from cert_prep_backend.api.app import create_app
-from cert_prep_backend.core.config import Settings
+from cert_prep_backend.platform.config import Settings
 from conftest import AUTH_TOKEN, TestCaptureRuntimeClient
 from practice_test_support import (
     UnavailableExplanationProvider,

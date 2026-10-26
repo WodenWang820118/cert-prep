@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from cert_prep_backend.core.config import Settings
+from cert_prep_backend.platform.config import Settings
 from cert_prep_contracts.llm import (
     LLMProviderName,
     LLMProviderPreference,

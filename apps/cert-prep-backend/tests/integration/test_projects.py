@@ -4,8 +4,8 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from cert_prep_backend.api.app import create_app
-from cert_prep_backend.core.config import Settings
-from cert_prep_backend.persistence.database import MIGRATIONS
+from cert_prep_backend.platform.config import Settings
+from cert_prep_backend.platform.database import MIGRATIONS
 
 
 def test_project_crud_and_versioned_migrations(tmp_path: Path, auth_headers) -> None:

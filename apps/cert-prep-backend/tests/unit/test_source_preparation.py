@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from cert_prep_backend.api.errors import InvalidSourceError
+from cert_prep_backend.platform.errors import InvalidSourceError
 from cert_prep_backend.domains.source_documents.source_preparation import prepare_source
 from conftest import minimal_audio, minimal_image, minimal_pdf
 

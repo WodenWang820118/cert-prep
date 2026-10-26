@@ -28,7 +28,7 @@ from capture_runtime_client import (
     SubmitStructuringBatch,
 )
 
-from cert_prep_backend.api.errors import ProviderUnavailableError
+from cert_prep_backend.platform.errors import ProviderUnavailableError
 from cert_prep_backend.domains.capture_workbench.client import (
     CaptureRuntimeClient,
     CaptureRuntimeProtocolError,

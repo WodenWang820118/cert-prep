@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from cert_prep_backend.core.config import Settings
+from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.domains.mock_exams import (
     ollama_profiles as ollama_profile_module,
 )

@@ -5,12 +5,12 @@ from sqlite3 import Connection
 
 from ollama import Client
 
-from cert_prep_backend.core.config import Settings
-from cert_prep_backend.core.exceptions import (
+from cert_prep_backend.platform.config import Settings
+from cert_prep_backend.platform.errors import (
     DocumentOperationStateError,
     DocumentProcessingCanceledError,
 )
-from cert_prep_backend.persistence.database import Database
+from cert_prep_backend.platform.database import Database
 from cert_prep_backend.domains.source_documents import chunks
 
 

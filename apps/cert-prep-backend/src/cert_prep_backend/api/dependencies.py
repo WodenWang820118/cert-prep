@@ -6,9 +6,7 @@ from fastapi import Depends, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from cert_prep_backend.api.errors import api_error
-from cert_prep_backend.core.config import Settings
-from cert_prep_backend.persistence.database import Database
-from cert_prep_backend.persistence.change_notifications import DatabaseChangeNotifier
+from cert_prep_backend.platform.dependencies import get_settings
 from cert_prep_backend.domains.capture_workbench.client import CaptureRuntimeClient
 from cert_prep_backend.domains.capture_workbench.coordinator import CertPrepCaptureCoordinator
 from cert_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
@@ -20,18 +18,6 @@ from cert_prep_backend.domains.source_documents.document_worker_pool import (
 
 
 bearer_scheme = HTTPBearer(auto_error=False)
-
-
-def get_settings(request: Request) -> Settings:
-    return request.app.state.settings
-
-
-def get_database(request: Request) -> Database:
-    return request.app.state.database
-
-
-def get_database_change_notifier(request: Request) -> DatabaseChangeNotifier:
-    return request.app.state.database_change_notifier
 
 
 def get_capture_runtime_client(request: Request) -> CaptureRuntimeClient:

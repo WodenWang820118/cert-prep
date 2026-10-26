@@ -7,8 +7,8 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Final
 
-from cert_prep_backend.core.config import Settings
-from cert_prep_backend.persistence.change_notifications import DatabaseChangeNotifier
+from cert_prep_backend.platform.config import Settings
+from cert_prep_backend.platform.change_notifications import DatabaseChangeNotifier
 
 
 # Migration strategy: keep these local SQLite migrations append-only for now so

@@ -11,7 +11,7 @@ from PIL import Image, UnidentifiedImageError
 import pypdfium2 as pdfium
 
 from cert_prep_contracts.transcription import MAX_AUDIO_DURATION_MS
-from cert_prep_backend.api.errors import InvalidSourceError
+from cert_prep_backend.platform.errors import InvalidSourceError
 
 
 SourceKind = Literal["pdf", "image", "audio"]

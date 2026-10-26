@@ -36,7 +36,7 @@ from cert_prep_contracts.llm import (
     LLMExecutionMode,
     LLMExecutionPolicy,
 )
-from cert_prep_backend.api.errors import ProviderUnavailableError
+from cert_prep_backend.platform.errors import ProviderUnavailableError
 from cert_prep_contracts.llm_profiles import OllamaProfileSelection
 from cert_prep_contracts.runtime import RuntimeRequirementKind
 from cert_prep_ollama.models import extract_model_names, pull_progress

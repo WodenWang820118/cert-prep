@@ -5,7 +5,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from cert_prep_backend.api.app import create_app
-from cert_prep_backend.core.config import Settings
+from cert_prep_backend.platform.config import Settings
 
 
 def test_status_like_fields_are_documented_as_openapi_enums(tmp_path) -> None:

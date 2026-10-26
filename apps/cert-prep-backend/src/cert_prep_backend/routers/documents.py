@@ -16,28 +16,30 @@ from cert_prep_contracts.documents import DocumentOperationRead
 
 from cert_prep_backend.api.dependencies import (
     get_capture_coordinator,
-    get_database,
     get_document_worker_pool,
     get_llm_provider,
-    get_settings,
     get_streaming_draft_generation_manager,
+)
+from cert_prep_backend.platform.dependencies import (
+    get_database,
+    get_settings,
 )
 from cert_prep_backend.api.errors import (
     ApiErrorRead,
-    InvalidSourceError,
-    NotFoundError,
-    ProviderUnavailableError,
     api_error,
     not_found_error,
     validation_error,
 )
-from cert_prep_backend.core.config import Settings
-from cert_prep_backend.core.exceptions import (
+from cert_prep_backend.platform.errors import (
     DocumentOperationConflictError,
     DocumentOperationStateError,
     DocumentProcessingCanceledError,
+    InvalidSourceError,
+    NotFoundError,
     OperationNotCancellableError,
+    ProviderUnavailableError,
 )
+from cert_prep_backend.platform.config import Settings
 from capture_runtime_client import CaptureSourceKind
 from cert_prep_backend.domains.capture_workbench.coordinator import (
     CaptureRuntimeCanceledError,

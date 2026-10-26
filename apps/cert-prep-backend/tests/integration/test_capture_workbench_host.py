@@ -12,7 +12,7 @@ import httpx
 from pydantic import ValidationError
 import pytest
 
-from cert_prep_backend.api.errors import ProviderUnavailableError
+from cert_prep_backend.platform.errors import ProviderUnavailableError
 from cert_prep_backend.domains.capture_workbench.client import (
     CaptureRuntimeClient,
     CaptureRuntimeCompatibilityError,

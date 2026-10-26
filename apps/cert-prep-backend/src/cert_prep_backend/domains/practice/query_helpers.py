@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from sqlite3 import Row
 
-from cert_prep_backend.api.errors import NotFoundError
+from cert_prep_backend.platform.errors import NotFoundError
 
 
 def fetch_practice_session_row(connection, project_id: str, session_id: str) -> Row | None:

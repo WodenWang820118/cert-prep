@@ -7,7 +7,7 @@ from uuid import UUID
 from fastapi.testclient import TestClient
 
 from cert_prep_backend.api.app import create_app
-from cert_prep_backend.core.config import Settings
+from cert_prep_backend.platform.config import Settings
 from capture_runtime_client import (
     CAPTURE_RUNTIME_VERSION,
     CaptureSourceKind,

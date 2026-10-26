@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 from cert_prep_backend.api.app import create_app
-from cert_prep_backend.core.config import Settings
+from cert_prep_backend.platform.config import Settings
 
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "scripts"

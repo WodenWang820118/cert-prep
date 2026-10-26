@@ -44,14 +44,16 @@ from capture_runtime_client import (
 )
 from cert_prep_backend.api.dependencies import (
     get_capture_coordinator,
-    get_database,
     get_document_worker_pool,
-    get_settings,
     get_streaming_draft_generation_manager,
 )
+from cert_prep_backend.platform.dependencies import (
+    get_database,
+    get_settings,
+)
 from cert_prep_backend.api.errors import ApiErrorRead, api_error, not_found_error
-from cert_prep_backend.core.config import Settings
-from cert_prep_backend.core.exceptions import BackendError, NotFoundError
+from cert_prep_backend.platform.config import Settings
+from cert_prep_backend.platform.errors import BackendError, NotFoundError
 from cert_prep_backend.domains.capture_workbench import review_sessions
 from cert_prep_backend.domains.capture_workbench.host_models import CaptureReview
 from cert_prep_backend.domains.capture_workbench.client import (
@@ -93,7 +95,7 @@ from cert_prep_backend.domains.source_documents.document_worker_pool import (
 )
 from cert_prep_backend.domains.source_documents.source_preparation import prepare_source
 from cert_prep_backend.domains.source_documents.storage import store_source_file
-from cert_prep_backend.persistence.database import Database
+from cert_prep_backend.platform.database import Database
 from cert_prep_backend.routers.documents import _read_limited_upload
 
 

@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from cert_prep_backend.core.config import Settings
+from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.domains.source_documents import chunks as chunk_repository
-from cert_prep_backend.persistence import database as database_module
-from cert_prep_backend.persistence.database import MIGRATIONS, Database
+from cert_prep_backend.platform import database as database_module
+from cert_prep_backend.platform.database import MIGRATIONS, Database
 
 
 def test_saved_exam_runtime_metadata_columns_are_migrated(tmp_path: Path) -> None:

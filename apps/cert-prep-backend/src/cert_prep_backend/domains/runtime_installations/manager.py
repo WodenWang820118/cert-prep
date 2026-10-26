@@ -7,7 +7,7 @@ from threading import Event, Lock, Thread
 from typing import Protocol
 from uuid import uuid4
 
-from cert_prep_backend.core.config import Settings
+from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.domains.mock_exams.ports import (
     RuntimeInstallationProvider,
     provider_capability,
@@ -16,9 +16,8 @@ from cert_prep_backend.domains.runtime_installations.models import (
     RuntimeInstallationSnapshot,
     utcnow,
 )
-from cert_prep_backend.persistence.database import Database
-from cert_prep_backend.api.errors import ProviderUnavailableError
-from cert_prep_backend.core.exceptions import OperationNotCancellableError
+from cert_prep_backend.platform.database import Database
+from cert_prep_backend.platform.errors import OperationNotCancellableError, ProviderUnavailableError
 from cert_prep_contracts.runtime import (
     RuntimeInstallationStatus,
     RuntimeInstallProgress,

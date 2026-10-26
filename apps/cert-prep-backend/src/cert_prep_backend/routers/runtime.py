@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, status
 
-from cert_prep_backend.api.dependencies import get_runtime_installation_manager, get_settings
-from cert_prep_backend.core.config import Settings
+from cert_prep_backend.api.dependencies import get_runtime_installation_manager
+from cert_prep_backend.platform.dependencies import get_settings
+from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.domains.mock_exams.ollama_profiles import (
     collect_ollama_machine_inventory,
 )
@@ -14,11 +15,10 @@ from cert_prep_backend.domains.runtime_schemas import (
     RuntimeRequirementsRead,
 )
 from cert_prep_backend.api.errors import (
-    ProviderUnavailableError,
     api_error,
     not_found_error,
 )
-from cert_prep_backend.core.exceptions import OperationNotCancellableError
+from cert_prep_backend.platform.errors import OperationNotCancellableError, ProviderUnavailableError
 from cert_prep_contracts.runtime import RuntimeRequirementKind
 
 

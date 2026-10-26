@@ -15,9 +15,9 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from cert_prep_backend import __version__
 from cert_prep_backend.api.dependencies import require_bearer_auth
-from cert_prep_backend.core.config import Settings
-from cert_prep_backend.persistence.database import Database
-from cert_prep_backend.persistence.change_notifications import DatabaseChangeNotifier
+from cert_prep_backend.platform.config import Settings
+from cert_prep_backend.platform.database import Database
+from cert_prep_backend.platform.change_notifications import DatabaseChangeNotifier
 from cert_prep_backend.domains.capture_workbench.client import CaptureRuntimeClient
 from cert_prep_backend.domains.capture_workbench.runtime_policy import (
     CAPTURE_DOCUMENT_SCHEMA_VERSION,

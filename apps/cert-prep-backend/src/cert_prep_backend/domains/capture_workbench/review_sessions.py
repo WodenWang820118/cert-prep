@@ -6,8 +6,8 @@ from datetime import UTC, datetime, timedelta
 from sqlite3 import Connection, Row
 from uuid import uuid4
 
-from cert_prep_backend.api.errors import NotFoundError
-from cert_prep_backend.persistence.database import Database, utc_now
+from cert_prep_backend.platform.errors import NotFoundError
+from cert_prep_backend.platform.database import Database, utc_now
 
 
 PENDING = "pending"
