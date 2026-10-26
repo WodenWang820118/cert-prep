@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends, Response, status
 
 from cert_prep_backend.platform.database import Database
 from cert_prep_backend.platform.dependencies import get_database
-from cert_prep_backend.domains.projects import repository as projects_repository
-from cert_prep_backend.domains.projects.schemas import (
+from cert_prep_backend.projects.infrastructure import repository as projects_repository
+from cert_prep_backend.projects.api.schemas import (
     ProjectCreate,
     ProjectList,
     ProjectRead,

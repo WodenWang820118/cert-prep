@@ -13,8 +13,8 @@ from cert_prep_backend.api.app import create_app
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.domains.capture_workbench import review_sessions
 from cert_prep_backend.domains.capture_workbench.client import CaptureRuntimeError
-from cert_prep_backend.domains.projects import repository as projects_repository
-from cert_prep_backend.domains.projects.schemas import ProjectCreate
+from cert_prep_backend.projects.infrastructure import repository as projects_repository
+from cert_prep_backend.projects.api.schemas import ProjectCreate
 from cert_prep_backend.domains.source_documents import operations
 
 

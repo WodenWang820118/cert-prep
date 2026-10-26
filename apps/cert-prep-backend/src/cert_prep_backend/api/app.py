@@ -50,9 +50,9 @@ from cert_prep_backend.routers import (
     llm,
     operation_events,
     practice,
-    projects,
     runtime,
 )
+from cert_prep_backend.projects.api import router as projects
 
 
 class HealthResponse(BaseModel):

@@ -84,7 +84,7 @@ from cert_prep_backend.domains.capture_workbench.review_workflow import (
 from cert_prep_backend.domains.capture_workbench.runtime_policy import (
     SUPPORTED_RUNTIME_VERSION,
 )
-from cert_prep_backend.domains.projects import repository as projects_repository
+from cert_prep_backend.projects.infrastructure import repository as projects_repository
 from cert_prep_backend.domains.source_documents import operations
 from cert_prep_backend.domains.source_documents import (
     repository as source_documents_repository,

@@ -10,7 +10,7 @@ from cert_prep_backend.domains.mock_exams.models import DraftSuggestion, Unavail
 from cert_prep_backend.domains.mock_exams.draft_jobs import DraftJobCanceledError
 from cert_prep_backend.domains.mock_exams.schemas import QuestionDraftCreate, QuestionDraftUpdate
 from cert_prep_backend.domains.source_documents import repository as documents_repository
-from cert_prep_backend.domains.projects.repository import ensure_project_exists
+from cert_prep_backend.projects.infrastructure.repository import ensure_project_exists
 from cert_prep_backend.platform.errors import NotFoundError, ValidationError
 
 

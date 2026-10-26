@@ -56,6 +56,7 @@ type = "forbidden"
 source_modules = ["cert_prep_backend.platform"]
 forbidden_modules = [
   "cert_prep_backend.domains",
+  "cert_prep_backend.projects",
   "cert_prep_backend.api",
   "cert_prep_backend.routers",
 ]
@@ -63,7 +64,8 @@ forbidden_modules = [
 [[tool.importlinter.contracts]]
 name = "Contexts do not depend on the web layer"
 type = "forbidden"
-source_modules = ["cert_prep_backend.domains"]
+# A moved context keeps its own endpoints in <context>.api; its other layers stay free of the web.
+source_modules = ["cert_prep_backend.domains", "cert_prep_backend.projects.infrastructure"]
 forbidden_modules = [
   "cert_prep_backend.api",
   "cert_prep_backend.routers",
@@ -103,7 +105,7 @@ forbidden_modules = [
 [[tool.importlinter.contracts]]
 name = "Study Projects does not depend on other contexts"
 type = "forbidden"
-source_modules = ["cert_prep_backend.domains.projects"]
+source_modules = ["cert_prep_backend.projects"]
 forbidden_modules = [
   "cert_prep_backend.domains.source_documents",
   "cert_prep_backend.domains.capture_workbench",
@@ -143,4 +145,18 @@ modules = [
   "cert_prep_backend.domains.capture_workbench",
   "cert_prep_backend.domains.practice",
   "cert_prep_backend.domains.runtime_installations",
+]
+
+[[tool.importlinter.contracts]]
+name = "Each moved context layers api and infrastructure over application over domain"
+type = "layers"
+# D2: only layers with code exist, so each layer is optional; api and infrastructure do not
+# import each other. C3 adds each context here as it moves.
+containers = ["cert_prep_backend.projects"]
+layers = ["(api) | (infrastructure)", "(application)", "(domain)"]
+# Known before C4, which adds the use cases and the Project aggregate: the router calls the
+# repository directly, and the repository takes the HTTP DTOs.
+ignore_imports = [
+  "cert_prep_backend.projects.api.router -> cert_prep_backend.projects.infrastructure.repository",
+  "cert_prep_backend.projects.infrastructure.repository -> cert_prep_backend.projects.api.schemas",
 ]

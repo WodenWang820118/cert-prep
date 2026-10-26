@@ -54,7 +54,7 @@ from cert_prep_backend.domains.mock_exams.models import source_chunk_from_record
 from cert_prep_backend.domains.mock_exams.normalization import as_editable_question
 from cert_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
 from cert_prep_backend.domains.mock_exams.streaming import StreamingDraftGenerationManager
-from cert_prep_backend.domains.projects import repository as projects_repository
+from cert_prep_backend.projects.infrastructure import repository as projects_repository
 from cert_prep_backend.domains.source_documents import operations as document_operations
 from cert_prep_backend.domains.source_documents import repository as source_documents_repository
 from cert_prep_backend.domains.source_documents.audio import (
