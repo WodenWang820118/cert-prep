@@ -3,19 +3,19 @@ from __future__ import annotations
 from uuid import uuid4
 
 from cert_prep_backend.platform.errors import NotFoundError, ValidationError
-from cert_prep_backend.domains.practice.exceptions import PracticeSessionConflict
-from cert_prep_backend.domains.practice.models import (
+from cert_prep_backend.practice.domain.exceptions import PracticeSessionConflict
+from cert_prep_backend.practice.domain.models import (
     PracticeQuestion,
     PracticeSession,
     PracticeSessionStatus,
 )
-from cert_prep_backend.domains.practice.policies import (
+from cert_prep_backend.practice.domain.policies import (
     PracticeRuleViolation,
     build_practice_attempt,
     is_playable_practice_question,
 )
-from cert_prep_backend.domains.practice.query_helpers import fetch_practice_session_row
-from cert_prep_backend.domains.practice.row_mappers import (
+from cert_prep_backend.practice.infrastructure.query_helpers import fetch_practice_session_row
+from cert_prep_backend.practice.infrastructure.row_mappers import (
     attempt_to_record,
     practice_question_from_row,
     practice_session_from_row,

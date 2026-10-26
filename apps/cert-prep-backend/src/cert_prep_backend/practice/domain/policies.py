@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 import random
 
-from cert_prep_backend.domains.practice.models import (
+from cert_prep_backend.practice.domain.models import (
     PracticeAttempt,
     PracticeQuestion,
     PracticeSession,

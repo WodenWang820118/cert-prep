@@ -57,6 +57,7 @@ source_modules = ["cert_prep_backend.platform"]
 forbidden_modules = [
   "cert_prep_backend.domains",
   "cert_prep_backend.projects",
+  "cert_prep_backend.practice",
   "cert_prep_backend.api",
   "cert_prep_backend.routers",
 ]
@@ -65,7 +66,13 @@ forbidden_modules = [
 name = "Contexts do not depend on the web layer"
 type = "forbidden"
 # A moved context keeps its own endpoints in <context>.api; its other layers stay free of the web.
-source_modules = ["cert_prep_backend.domains", "cert_prep_backend.projects.infrastructure"]
+source_modules = [
+  "cert_prep_backend.domains",
+  "cert_prep_backend.projects.infrastructure",
+  "cert_prep_backend.practice.domain",
+  "cert_prep_backend.practice.application",
+  "cert_prep_backend.practice.infrastructure",
+]
 forbidden_modules = [
   "cert_prep_backend.api",
   "cert_prep_backend.routers",
@@ -85,8 +92,7 @@ source_modules = [
   "cert_prep_backend.domains.source_documents.statuses",
   "cert_prep_backend.domains.source_documents.policies",
   "cert_prep_backend.domains.source_documents.ports",
-  "cert_prep_backend.domains.practice.models",
-  "cert_prep_backend.domains.practice.policies",
+  "cert_prep_backend.practice.domain",
 ]
 forbidden_modules = [
   "fastapi",
@@ -110,7 +116,7 @@ forbidden_modules = [
   "cert_prep_backend.domains.source_documents",
   "cert_prep_backend.domains.capture_workbench",
   "cert_prep_backend.domains.mock_exams",
-  "cert_prep_backend.domains.practice",
+  "cert_prep_backend.practice",
   "cert_prep_backend.domains.runtime_installations",
 ]
 
@@ -124,7 +130,7 @@ source_modules = [
 forbidden_modules = [
   "cert_prep_backend.domains.capture_workbench",
   "cert_prep_backend.domains.mock_exams",
-  "cert_prep_backend.domains.practice",
+  "cert_prep_backend.practice",
   "cert_prep_backend.domains.runtime_installations",
 ]
 
@@ -134,7 +140,7 @@ type = "forbidden"
 source_modules = ["cert_prep_backend.domains.mock_exams"]
 forbidden_modules = [
   "cert_prep_backend.domains.capture_workbench",
-  "cert_prep_backend.domains.practice",
+  "cert_prep_backend.practice",
   "cert_prep_backend.domains.runtime_installations",
 ]
 
@@ -143,8 +149,13 @@ name = "Capture Integration, Practice and Runtime Provisioning do not depend on 
 type = "independence"
 modules = [
   "cert_prep_backend.domains.capture_workbench",
-  "cert_prep_backend.domains.practice",
+  "cert_prep_backend.practice",
   "cert_prep_backend.domains.runtime_installations",
+]
+# Known until AI Providers moves (C3) and owns the LLM provider dependency: the practice
+# router takes it from api.dependencies, which imports every context.
+ignore_imports = [
+  "cert_prep_backend.practice.api.router -> cert_prep_backend.api.dependencies",
 ]
 
 [[tool.importlinter.contracts]]
@@ -152,11 +163,12 @@ name = "Each moved context layers api and infrastructure over application over d
 type = "layers"
 # D2: only layers with code exist, so each layer is optional; api and infrastructure do not
 # import each other. C3 adds each context here as it moves.
-containers = ["cert_prep_backend.projects"]
+containers = ["cert_prep_backend.projects", "cert_prep_backend.practice"]
 layers = ["(api) | (infrastructure)", "(application)", "(domain)"]
-# Known before C4, which adds the use cases and the Project aggregate: the router calls the
-# repository directly, and the repository takes the HTTP DTOs.
+# Known before C4, which adds the use cases and the aggregates: the routers call the
+# repositories directly, and the projects repository takes the HTTP DTOs.
 ignore_imports = [
+  "cert_prep_backend.practice.api.router -> cert_prep_backend.practice.infrastructure.repository",
   "cert_prep_backend.projects.api.router -> cert_prep_backend.projects.infrastructure.repository",
   "cert_prep_backend.projects.infrastructure.repository -> cert_prep_backend.projects.api.schemas",
 ]

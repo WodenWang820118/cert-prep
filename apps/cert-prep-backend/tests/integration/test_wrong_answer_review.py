@@ -3,7 +3,7 @@ from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
-from cert_prep_backend.domains.practice import attempt_repository
+from cert_prep_backend.practice.infrastructure import attempt_repository
 from practice_test_support import _create_manual_question, _create_project, _upload_document
 
 
