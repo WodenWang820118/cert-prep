@@ -211,7 +211,6 @@ ignore_imports = [
   "cert_prep_backend.capture_integration.api.runtime_router -> cert_prep_backend.capture_integration.infrastructure.client",
   "cert_prep_backend.capture_integration.api.runtime_router -> cert_prep_backend.capture_integration.infrastructure.host_models",
   "cert_prep_backend.capture_integration.api.runtime_router -> cert_prep_backend.capture_integration.infrastructure.runtime_provenance",
-  "cert_prep_backend.practice.api.router -> cert_prep_backend.practice.infrastructure.repository",
   "cert_prep_backend.runtime_provisioning.api.router -> cert_prep_backend.api.dependencies",
   "cert_prep_backend.runtime_provisioning.api.router -> cert_prep_backend.runtime_provisioning.infrastructure",
 ]
@@ -241,4 +240,20 @@ ignore_imports = [
   "cert_prep_backend.routers.documents -> cert_prep_backend.projects.infrastructure.repository",
   "cert_prep_backend.source_library.infrastructure.documents -> cert_prep_backend.projects.infrastructure.repository",
   "cert_prep_backend.source_library.infrastructure.operations -> cert_prep_backend.projects.infrastructure.repository",
+]
+
+[[tool.importlinter.contracts]]
+name = "Other contexts reach Practice and Review only through its application and domain"
+type = "forbidden"
+source_modules = [
+  "cert_prep_backend.projects",
+  "cert_prep_backend.source_library",
+  "cert_prep_backend.authoring",
+  "cert_prep_backend.capture_integration",
+  "cert_prep_backend.runtime_provisioning",
+  "cert_prep_backend.routers",
+]
+forbidden_modules = [
+  "cert_prep_backend.practice.infrastructure",
+  "cert_prep_backend.practice.api",
 ]

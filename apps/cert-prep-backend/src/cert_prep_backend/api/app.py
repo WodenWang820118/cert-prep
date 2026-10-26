@@ -54,6 +54,7 @@ from cert_prep_backend.routers import (
 from cert_prep_backend.runtime_provisioning.api import router as runtime
 from cert_prep_backend.authoring.api import router as drafts
 from cert_prep_backend.practice.api import router as practice
+from cert_prep_backend.practice.infrastructure.repository import SqlitePracticeStore
 from cert_prep_backend.projects.api import router as projects
 from cert_prep_backend.projects.infrastructure.repository import SqliteProjectRepository
 
@@ -123,6 +124,7 @@ def create_app(
         change_notifier=app.state.database_change_notifier,
     )
     app.state.project_repository = SqliteProjectRepository(app.state.database)
+    app.state.practice_store = SqlitePracticeStore(app.state.database)
     recover_operations(app.state.database)
     source_documents_repository.recover_processing_documents(app.state.database)
     app.state.llm_provider = llm_provider or lazy_provider_from_settings(app_settings)

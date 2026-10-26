@@ -5,7 +5,7 @@ from typing import Protocol, runtime_checkable
 
 from cert_prep_backend.platform.errors import ProviderUnavailableError
 from cert_prep_backend.authoring.domain.ports import ProviderHealth, provider_capability
-from cert_prep_backend.practice.domain.models import WrongAnswer
+from cert_prep_backend.practice.domain.wrong_answer import WrongAnswer
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,15 +28,6 @@ class WrongAnswerGroundedFields:
             source_excerpt=wrong_answer.source_excerpt,
         )
 
-    def to_record(self) -> dict[str, object]:
-        return {
-            "question": self.question,
-            "selected_answer": self.selected_answer,
-            "correct_answer": self.correct_answer,
-            "rationale": self.rationale,
-            "citation_page": self.citation_page,
-            "source_excerpt": self.source_excerpt,
-        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,15 +39,6 @@ class WrongAnswerExplanation:
     grounded_fields: WrongAnswerGroundedFields
     fallback: bool
 
-    def to_record(self) -> dict[str, object]:
-        return {
-            "attempt_id": self.attempt_id,
-            "explanation": self.explanation,
-            "provider": self.provider,
-            "model": self.model,
-            "grounded_fields": self.grounded_fields.to_record(),
-            "fallback": self.fallback,
-        }
 
 
 @runtime_checkable
@@ -66,7 +48,7 @@ class PracticeExplanationProvider(Protocol):
         pass
 
 
-def explain_wrong_answer(provider: object, wrong_answer: WrongAnswer) -> dict:
+def explain_wrong_answer(provider: object, wrong_answer: WrongAnswer) -> WrongAnswerExplanation:
     fields = WrongAnswerGroundedFields.from_wrong_answer(wrong_answer)
     metadata = _provider_metadata(provider)
     explanation_provider = provider_capability(provider, PracticeExplanationProvider)
@@ -79,7 +61,7 @@ def explain_wrong_answer(provider: object, wrong_answer: WrongAnswer) -> dict:
             model=metadata.model,
             grounded_fields=fields,
             fallback=False,
-        ).to_record()
+        )
 
     if metadata.available and explanation_provider is not None:
         try:
@@ -94,7 +76,7 @@ def explain_wrong_answer(provider: object, wrong_answer: WrongAnswer) -> dict:
                 model=metadata.model,
                 grounded_fields=fields,
                 fallback=False,
-            ).to_record()
+            )
 
     return WrongAnswerExplanation(
         attempt_id=wrong_answer.attempt_id,
@@ -103,7 +85,7 @@ def explain_wrong_answer(provider: object, wrong_answer: WrongAnswer) -> dict:
         model=metadata.model,
         grounded_fields=fields,
         fallback=True,
-    ).to_record()
+    )
 
 
 @dataclass(frozen=True, slots=True)

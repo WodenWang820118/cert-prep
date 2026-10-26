@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "description": "Cert Prep concept set (DDD plan decision D12). Each OpenAPI enum value of a modelled context maps to exactly one concept. A concept is never deleted and its id never changes; retire it instead.",
+  "concepts": [
+    {
+      "id": "practice.session-status.active",
+      "label": "進行中",
+      "codeName": "PracticeSessionStatus.ACTIVE",
+      "enum": { "enumId": "PracticeSessionStatus", "value": "active" },
+      "retired": false
+    },
+    {
+      "id": "practice.session-status.completed",
+      "label": "完成",
+      "codeName": "PracticeSessionStatus.COMPLETED",
+      "enum": { "enumId": "PracticeSessionStatus", "value": "completed" },
+      "retired": false
+    },
+    {
+      "id": "practice.session-status.abandoned",
+      "label": "放棄",
+      "codeName": "PracticeSessionStatus.ABANDONED",
+      "enum": { "enumId": "PracticeSessionStatus", "value": "abandoned" },
+      "retired": false
+    },
+    {
+      "id": "practice.session-mode.random-draw",
+      "label": "隨機抽題",
+      "codeName": "PracticeSessionMode.RANDOM_DRAW",
+      "enum": { "enumId": "PracticeSessionMode", "value": "random_draw" },
+      "retired": false
+    },
+    {
+      "id": "practice.session-mode.full-document",
+      "label": "整份教材",
+      "codeName": "PracticeSessionMode.FULL_DOCUMENT",
+      "enum": { "enumId": "PracticeSessionMode", "value": "full_document" },
+      "retired": false
+    },
+    {
+      "id": "practice.session-mode.review-retry",
+      "label": "錯題重練",
+      "codeName": "PracticeSessionMode.REVIEW_RETRY",
+      "enum": { "enumId": "PracticeSessionMode", "value": "review_retry" },
+      "retired": false
+    }
+  ]
+}
