@@ -189,6 +189,11 @@ class CaptureRuntimeEventRegistry:
 
         self._publish_change()
 
+    def publish_review_ready(self, project_id: str, session_id: str) -> None:
+        """Notify listeners after the host operation has entered capture review."""
+
+        self._publish_change()
+
     def revision(self) -> int:
         with self._condition:
             return self._revision
@@ -392,6 +397,15 @@ def get_capture(
                 review_sessions.FAILED: StreamingCaptureStatus.FAILED,
             }.get(session["status"])
             if expected_terminal is None or operation.status is expected_terminal:
+                if (
+                    operation.status is StreamingCaptureStatus.AWAITING_STRUCTURING
+                    and not _review_ready(db, project_id, session)
+                ):
+                    # The runtime awaits structuring before the host operation can
+                    # take the review; until then the host is still extracting.
+                    operation = operation.model_copy(
+                        update={"status": StreamingCaptureStatus.EXTRACTING}
+                    )
                 return _host_operation(
                     operation,
                     capture_id=capture_id,
@@ -1006,6 +1020,8 @@ def _run_begin(
             registry=registry,
             error="Capture Runtime extraction failed.",
         )
+    else:
+        registry.publish_review_ready(project_id, session_id)
 
 
 def _run_commit(
@@ -1206,6 +1222,38 @@ def _host_event_stream(
                     if _cursor_before(last_event_id, terminal.sequence):
                         yield _encode_sse_event(terminal)
                     return
+                if event.stage == StreamingCaptureStatus.AWAITING_STRUCTURING.value:
+                    # Clients confirm as soon as they see this stage, so hold it until
+                    # the host operation can take the review.
+                    while session["status"] in review_sessions.ACTIVE and not _review_ready(
+                        db, project_id, session
+                    ):
+                        observed_revision = registry.revision()
+                        session = _session_or_404(db, project_id, capture_id)
+                        if session["status"] not in review_sessions.ACTIVE or _review_ready(
+                            db, project_id, session
+                        ):
+                            break
+                        registry.wait_for_change(observed_revision, timeout_seconds=1)
+                        session = _session_or_404(db, project_id, capture_id)
+                        if session["status"] in review_sessions.ACTIVE and not _review_ready(
+                            db, project_id, session
+                        ):
+                            yield ": cert-prep waiting for capture review\n\n"
+                    if session["status"] not in review_sessions.ACTIVE:
+                        terminal = _terminal_host_event(
+                            capture_id,
+                            session,
+                            document,
+                            source_kind=_document_source_kind(
+                                db,
+                                project_id,
+                                document["id"],
+                            ),
+                        )
+                        if _cursor_before(last_event_id, terminal.sequence):
+                            yield _encode_sse_event(terminal)
+                        return
                 yield _encode_sse_event(
                     CaptureEvent.model_validate(
                         {
@@ -1489,6 +1537,26 @@ def _raw_projection(document: CaptureDocument) -> RawCapture:
         warnings=document.warnings,
         created_at=document.created_at,
     )
+
+
+def _review_ready(db: Database, project_id: str, session: dict) -> bool:
+    """Whether the host operation can take a review confirmation.
+
+    The runtime reports awaiting_structuring before the background begin has moved
+    the host operation into review, and a confirmation in that window is rejected.
+    """
+
+    if session["status"] != review_sessions.PENDING:
+        return True
+    try:
+        operation = operations.get_operation(
+            db,
+            project_id=project_id,
+            operation_id=session["operation_id"],
+        )
+    except Exception:
+        return False
+    return operation["phase"] == "awaiting_review"
 
 
 def _operation_active(db: Database, project_id: str, operation_id: str) -> bool:

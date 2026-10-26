@@ -1685,6 +1685,102 @@ def test_host_events_wait_for_durable_commit_before_emitting_terminal(
     assert runtime.event_cursors == [1]
 
 
+def test_capture_awaits_structuring_only_once_its_review_can_be_confirmed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The runtime reaches awaiting_structuring before the host operation enters
+    # review. A client that confirms as soon as it sees that status must not get 409.
+    runtime = ReplayableEventCaptureRuntime()
+    review_entered = Event()
+    allow_review = Event()
+    events_finished = Event()
+    mark_capture_review_pending = operations.mark_capture_review_pending
+
+    def blocked_mark_capture_review_pending(*args, **kwargs):
+        review_entered.set()
+        if not allow_review.wait(timeout=5):
+            raise RuntimeError("test did not release the capture review")
+        return mark_capture_review_pending(*args, **kwargs)
+
+    monkeypatch.setattr(
+        operations,
+        "mark_capture_review_pending",
+        blocked_mark_capture_review_pending,
+    )
+    settings = Settings(data_dir=tmp_path, api_token=AUTH_TOKEN, llm_provider="fake")
+    with TestClient(
+        create_app(
+            settings=settings,
+            llm_provider=EchoCaptureProvider(),
+            capture_runtime_client=runtime,
+            document_processing_async_jobs=False,
+            streaming_draft_generation_async_jobs=False,
+        )
+    ) as client:
+        headers = {"Authorization": f"Bearer {AUTH_TOKEN}"}
+        project_id = _create_project(client, headers)
+        created = client.post(
+            f"/projects/{project_id}/capture-workbench/captures",
+            headers=headers,
+            files={"file": ("review.pdf", minimal_pdf("Review gate."), "application/pdf")},
+        )
+        capture_id = created.json()["captureId"]
+        capture_url = f"/projects/{project_id}/capture-workbench/captures/{capture_id}"
+
+        def read_events():
+            response = client.get(
+                f"{capture_url}/events",
+                headers={**headers, "Last-Event-ID": "1"},
+            )
+            events_finished.set()
+            return response
+
+        assert review_entered.wait(timeout=5)
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            try:
+                before_review = client.get(capture_url, headers=headers)
+                assert before_review.status_code == 200
+                assert before_review.json()["status"] == "extracting"
+                events_future = executor.submit(read_events)
+                assert not events_finished.wait(timeout=0.5)
+            finally:
+                allow_review.set()
+            events = events_future.result(timeout=5)
+
+        assert events.status_code == 200
+        assert '"stage":"awaiting_structuring"' in events.text
+        _wait_for_capture_status(
+            client,
+            project_id=project_id,
+            capture_id=capture_id,
+            headers=headers,
+            status_value="awaiting_structuring",
+        )
+        structured = client.post(
+            f"{capture_url}/structure",
+            headers=headers,
+            json={
+                "clientRequestId": "review-gate-structure",
+                "review": {"reviewVersion": 2, "edits": []},
+            },
+        )
+        assert structured.status_code == 200, structured.text
+        committed = client.post(
+            f"{capture_url}/structure/commit",
+            headers=headers,
+            json={"clientRequestId": "review-gate-commit", "candidate": structured.json()},
+        )
+        assert committed.status_code == 202, committed.text
+        _wait_for_capture_status(
+            client,
+            project_id=project_id,
+            capture_id=capture_id,
+            headers=headers,
+            status_value="completed",
+        )
+
+
 def test_review_capture_events_proxy_replays_with_host_identity_without_cancel(
     tmp_path: Path,
 ) -> None:
