@@ -55,12 +55,12 @@ name = "Platform does not depend on contexts or the web layer"
 type = "forbidden"
 source_modules = ["cert_prep_backend.platform"]
 forbidden_modules = [
-  "cert_prep_backend.domains",
   "cert_prep_backend.projects",
   "cert_prep_backend.practice",
   "cert_prep_backend.source_library",
   "cert_prep_backend.authoring",
   "cert_prep_backend.capture_integration",
+  "cert_prep_backend.runtime_provisioning",
   "cert_prep_backend.api",
   "cert_prep_backend.routers",
 ]
@@ -68,9 +68,8 @@ forbidden_modules = [
 [[tool.importlinter.contracts]]
 name = "Contexts do not depend on the web layer"
 type = "forbidden"
-# A moved context keeps its own endpoints in <context>.api; its other layers stay free of the web.
+# Each context keeps its endpoints in <context>.api; its other layers stay free of the web.
 source_modules = [
-  "cert_prep_backend.domains",
   "cert_prep_backend.projects.infrastructure",
   "cert_prep_backend.practice.domain",
   "cert_prep_backend.practice.application",
@@ -81,6 +80,8 @@ source_modules = [
   "cert_prep_backend.authoring.infrastructure",
   "cert_prep_backend.capture_integration.application",
   "cert_prep_backend.capture_integration.infrastructure",
+  "cert_prep_backend.runtime_provisioning.domain",
+  "cert_prep_backend.runtime_provisioning.infrastructure",
 ]
 forbidden_modules = [
   "cert_prep_backend.api",
@@ -120,7 +121,7 @@ forbidden_modules = [
   "cert_prep_backend.capture_integration",
   "cert_prep_backend.authoring",
   "cert_prep_backend.practice",
-  "cert_prep_backend.domains.runtime_installations",
+  "cert_prep_backend.runtime_provisioning",
 ]
 
 [[tool.importlinter.contracts]]
@@ -131,7 +132,7 @@ forbidden_modules = [
   "cert_prep_backend.capture_integration",
   "cert_prep_backend.authoring",
   "cert_prep_backend.practice",
-  "cert_prep_backend.domains.runtime_installations",
+  "cert_prep_backend.runtime_provisioning",
 ]
 
 [[tool.importlinter.contracts]]
@@ -141,12 +142,14 @@ source_modules = ["cert_prep_backend.authoring"]
 forbidden_modules = [
   "cert_prep_backend.capture_integration",
   "cert_prep_backend.practice",
-  "cert_prep_backend.domains.runtime_installations",
+  "cert_prep_backend.runtime_provisioning",
 ]
-# Known until the router takes its providers from the contexts that own them (C4): it reads
-# the LLM provider and the streaming manager from api.dependencies, which imports every context.
+# Known until C4: the router reads the LLM provider and the streaming manager from
+# api.dependencies, which imports every context, and the LLM DTOs use the machine inventory
+# DTO of Runtime Provisioning; both move to AI Providers.
 ignore_imports = [
   "cert_prep_backend.authoring.api.router -> cert_prep_backend.api.dependencies",
+  "cert_prep_backend.authoring.api.schemas -> cert_prep_backend.runtime_provisioning.api.schemas",
 ]
 
 [[tool.importlinter.contracts]]
@@ -155,7 +158,7 @@ type = "independence"
 modules = [
   "cert_prep_backend.capture_integration",
   "cert_prep_backend.practice",
-  "cert_prep_backend.domains.runtime_installations",
+  "cert_prep_backend.runtime_provisioning",
 ]
 # Known until the routers take their providers from the contexts that own them (C4, C6):
 # they read them from api.dependencies, which imports every context.
@@ -164,19 +167,21 @@ ignore_imports = [
   "cert_prep_backend.capture_integration.api.router -> cert_prep_backend.routers.documents",
   "cert_prep_backend.capture_integration.api.runtime_router -> cert_prep_backend.api.dependencies",
   "cert_prep_backend.practice.api.router -> cert_prep_backend.api.dependencies",
+  "cert_prep_backend.runtime_provisioning.api.router -> cert_prep_backend.api.dependencies",
 ]
 
 [[tool.importlinter.contracts]]
-name = "Each moved context layers api and infrastructure over application over domain"
+name = "Each context layers api and infrastructure over application over domain"
 type = "layers"
 # D2: only layers with code exist, so each layer is optional; api and infrastructure do not
-# import each other. C3 adds each context here as it moves.
+# import each other.
 containers = [
   "cert_prep_backend.projects",
   "cert_prep_backend.practice",
   "cert_prep_backend.source_library",
   "cert_prep_backend.authoring",
   "cert_prep_backend.capture_integration",
+  "cert_prep_backend.runtime_provisioning",
 ]
 layers = ["(api) | (infrastructure)", "(application)", "(domain)"]
 # Known before C4, which adds the use cases and the aggregates: the routers call the
@@ -208,4 +213,6 @@ ignore_imports = [
   "cert_prep_backend.practice.api.router -> cert_prep_backend.practice.infrastructure.repository",
   "cert_prep_backend.projects.api.router -> cert_prep_backend.projects.infrastructure.repository",
   "cert_prep_backend.projects.infrastructure.repository -> cert_prep_backend.projects.api.schemas",
+  "cert_prep_backend.runtime_provisioning.api.router -> cert_prep_backend.api.dependencies",
+  "cert_prep_backend.runtime_provisioning.api.router -> cert_prep_backend.runtime_provisioning.infrastructure",
 ]

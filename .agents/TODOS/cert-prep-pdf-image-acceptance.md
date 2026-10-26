@@ -79,9 +79,9 @@ A later launch creates a new session ref through whole-group activation. A
 crash before move leaves the root unchanged; after an exact move, only the
 exact prepared identity may complete, while mismatch remains
 `InstallAmbiguous` with no rollback or byte touch.
-The Python `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_installations/manager.py`
+The Python `apps/cert-prep-backend/src/cert_prep_backend/runtime_provisioning/infrastructure/manager.py`
 (`RuntimeInstallationManager`, `RuntimeInstaller`) and its
-`apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_installations/installers.py`
+`apps/cert-prep-backend/src/cert_prep_backend/runtime_provisioning/infrastructure/installers.py`
 (`LLMModelInstaller`) remain provider/model installation only.
 
 ## Acceptance slice register

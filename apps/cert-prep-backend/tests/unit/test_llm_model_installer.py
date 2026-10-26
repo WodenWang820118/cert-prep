@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from cert_prep_backend.domains.runtime_installations.installers import LLMModelInstaller
+from cert_prep_backend.runtime_provisioning.infrastructure.installers import LLMModelInstaller
 from cert_prep_contracts.llm import ModelPullProgress
 from cert_prep_contracts.runtime import (
     RuntimeInstallationStatus,

@@ -12,7 +12,7 @@ from cert_prep_backend.authoring.domain.ports import (
     RuntimeInstallationProvider,
     provider_capability,
 )
-from cert_prep_backend.domains.runtime_installations.models import (
+from cert_prep_backend.runtime_provisioning.domain.models import (
     RuntimeInstallationSnapshot,
     utcnow,
 )
@@ -109,7 +109,7 @@ class RuntimeInstallationManager:
         async_jobs: bool = True,
         installers: list[RuntimeInstaller] | None = None,
     ) -> None:
-        from cert_prep_backend.domains.runtime_installations.installers import (
+        from cert_prep_backend.runtime_provisioning.infrastructure.installers import (
             LLMModelInstaller,
         )
         from cert_prep_ollama.installers import OllamaRuntimeInstaller
