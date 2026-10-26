@@ -41,14 +41,14 @@ from cert_prep_backend.platform.errors import (
 )
 from cert_prep_backend.platform.config import Settings
 from capture_runtime_client import CaptureSourceKind
-from cert_prep_backend.domains.capture_workbench.coordinator import (
+from cert_prep_backend.capture_integration.infrastructure.coordinator import (
     CaptureRuntimeCanceledError,
     CaptureRuntimeJobError,
     CaptureRuntimeRequirementUnavailableError,
     CertPrepCaptureCoordinator,
     PDF_OCR_UNAVAILABLE_MESSAGE,
 )
-from cert_prep_backend.domains.capture_workbench.persistence import publish_capture_document
+from cert_prep_backend.capture_integration.infrastructure.persistence import publish_capture_document
 from cert_prep_backend.authoring.infrastructure import repository as mock_exams_repository
 from cert_prep_backend.authoring.domain.models import source_chunk_from_record
 from cert_prep_backend.authoring.domain.normalization import as_editable_question

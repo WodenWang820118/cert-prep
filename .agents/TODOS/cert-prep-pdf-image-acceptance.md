@@ -177,11 +177,11 @@ The Python `apps/cert-prep-backend/src/cert_prep_backend/domains/runtime_install
   (`serializePrivacySafeOcrSemanticEvidence`, `OCR_NORMALIZATION_VERSION`),
   `apps/cert-prep-desktop/scripts/ocr-page-record-evidence.mts`
   (`assertOcrPageRecordEvidenceIntegrity`), and backend
-  `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/ocr_summary.py`
+  `apps/cert-prep-backend/src/cert_prep_backend/capture_integration/application/ocr_summary.py`
   (`build_ocr_summary`, `_map_provenance`),
-  `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/mapping.py`
+  `apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/mapping.py`
   (`_ocr_only_extraction_method`), and
-  `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/persistence.py`
+  `apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/persistence.py`
   (`publish_capture_document`). First red proof:
   old/local/fake/mismatched candidate or threshold/anchor/cleanup failure,
   missing full private normalized reference, or garbage around otherwise

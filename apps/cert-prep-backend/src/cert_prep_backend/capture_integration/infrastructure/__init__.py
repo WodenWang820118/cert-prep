@@ -1,6 +1,6 @@
 """Host-side Capture Workbench integration contracts and adapters."""
 
-from cert_prep_backend.domains.capture_workbench.client import (
+from cert_prep_backend.capture_integration.infrastructure.client import (
     CaptureRuntimeClient,
     CaptureRuntimeCompatibilityError,
     CaptureRuntimeError,
@@ -15,12 +15,12 @@ from capture_runtime_client import (
     PartialCapture,
     RawCapture,
 )
-from cert_prep_backend.domains.capture_workbench.host_models import (
+from cert_prep_backend.capture_integration.infrastructure.host_models import (
     CaptureReview,
     CaptureReviewEdit,
     RuntimeReady,
 )
-from cert_prep_backend.domains.capture_workbench.structuring import (
+from cert_prep_backend.capture_integration.infrastructure.structuring import (
     CertPrepCaptureStructuringAdapter,
 )
 

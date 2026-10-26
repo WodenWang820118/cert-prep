@@ -54,34 +54,34 @@ from cert_prep_backend.platform.dependencies import (
 from cert_prep_backend.api.errors import ApiErrorRead, api_error, not_found_error
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.platform.errors import BackendError, NotFoundError
-from cert_prep_backend.domains.capture_workbench import review_sessions
-from cert_prep_backend.domains.capture_workbench.host_models import CaptureReview
-from cert_prep_backend.domains.capture_workbench.client import (
+from cert_prep_backend.capture_integration.infrastructure import review_sessions
+from cert_prep_backend.capture_integration.infrastructure.host_models import CaptureReview
+from cert_prep_backend.capture_integration.infrastructure.client import (
     CaptureRuntimeClient,
     CaptureRuntimeError,
     CaptureRuntimeProtocolError,
 )
-from cert_prep_backend.domains.capture_workbench.coordinator import (
+from cert_prep_backend.capture_integration.infrastructure.coordinator import (
     CaptureRuntimeCanceledError,
     CaptureRuntimeJobError,
     CaptureRuntimeRequirementUnavailableError,
     CertPrepCaptureCoordinator,
     PDF_OCR_UNAVAILABLE_MESSAGE,
 )
-from cert_prep_backend.domains.capture_workbench.ocr_summary import (
+from cert_prep_backend.capture_integration.application.ocr_summary import (
     CaptureOcrSummaryRead,
     OcrSummaryValidationError,
     build_ocr_summary,
 )
-from cert_prep_backend.domains.capture_workbench.review import reviewed_text_overrides
-from cert_prep_backend.domains.capture_workbench.review_workflow import (
+from cert_prep_backend.capture_integration.infrastructure.review import reviewed_text_overrides
+from cert_prep_backend.capture_integration.infrastructure.review_workflow import (
     begin_capture_commit,
     begin_review_capture,
     candidate_digest,
     cleanup_expired_review_sessions,
     commit_review_capture,
 )
-from cert_prep_backend.domains.capture_workbench.runtime_policy import (
+from cert_prep_backend.capture_integration.infrastructure.runtime_policy import (
     SUPPORTED_RUNTIME_VERSION,
 )
 from cert_prep_backend.projects.infrastructure import repository as projects_repository

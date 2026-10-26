@@ -26,14 +26,14 @@ from conftest import (
 )
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.platform.config import Settings
-from cert_prep_backend.domains.capture_workbench.client import (
+from cert_prep_backend.capture_integration.infrastructure.client import (
     CaptureRuntimeError,
     CaptureRuntimeProtocolError,
     CaptureStreamingResult,
     CaptureUpload,
 )
-from cert_prep_backend.domains.capture_workbench import review_workflow
-from cert_prep_backend.domains.capture_workbench.persistence import (
+from cert_prep_backend.capture_integration.infrastructure import review_workflow
+from cert_prep_backend.capture_integration.infrastructure.persistence import (
     publish_capture_document,
 )
 from cert_prep_backend.source_library.infrastructure import operations
@@ -48,8 +48,8 @@ from capture_runtime_client import (
     RawCapture,
     RuntimeRequirements,
 )
-from cert_prep_backend.domains.capture_workbench.host_models import RuntimeReady
-from cert_prep_backend.routers.capture_workbench import CaptureRuntimeEventRegistry
+from cert_prep_backend.capture_integration.infrastructure.host_models import RuntimeReady
+from cert_prep_backend.capture_integration.api.router import CaptureRuntimeEventRegistry
 from document_test_helpers import _create_project
 from document_test_llm_fakes import MockExamProvider
 

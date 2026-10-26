@@ -18,7 +18,7 @@ from typing import Any
 
 from capture_runtime_client import CAPTURE_RUNTIME_VERSION
 
-from cert_prep_backend.domains.capture_workbench.client import CaptureRuntimeClient
+from cert_prep_backend.capture_integration.infrastructure.client import CaptureRuntimeClient
 
 
 PROVENANCE_FILE_NAME = "capture-runtime-provenance.json"

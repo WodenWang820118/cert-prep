@@ -11,15 +11,15 @@ from capture_runtime_client import (
     CaptureDocument,
     CaptureSourceKind,
 )
-from cert_prep_backend.domains.capture_workbench.coordinator import (
+from cert_prep_backend.capture_integration.infrastructure.coordinator import (
     CaptureRuntimeCanceledError,
     CaptureRuntimeJobError,
     CertPrepCaptureCoordinator,
 )
-from cert_prep_backend.domains.capture_workbench.persistence import (
+from cert_prep_backend.capture_integration.infrastructure.persistence import (
     publish_capture_document,
 )
-from cert_prep_backend.domains.capture_workbench import review_sessions
+from cert_prep_backend.capture_integration.infrastructure import review_sessions
 from cert_prep_backend.source_library.infrastructure import operations
 from cert_prep_backend.source_library.infrastructure import repository as source_documents_repository
 from cert_prep_backend.platform.database import Database

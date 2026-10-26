@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 from capture_runtime_client import CAPTURE_RUNTIME_VERSION
 
-from cert_prep_backend.domains.capture_workbench.runtime_provenance import (
+from cert_prep_backend.capture_integration.infrastructure.runtime_provenance import (
     capture_runtime_attestation,
     load_packaged_provenance,
 )

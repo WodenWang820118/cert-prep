@@ -17,7 +17,7 @@ import pypdfium2 as pdfium
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.authoring.infrastructure import ollama_profiles
-from cert_prep_backend.domains.capture_workbench.client import (
+from cert_prep_backend.capture_integration.infrastructure.client import (
     CaptureStreamingResult,
     CaptureUpload,
 )
@@ -35,7 +35,7 @@ from capture_runtime_client import (
     StructuringSession,
     StructuringSessionStatus,
 )
-from cert_prep_backend.domains.capture_workbench.host_models import RuntimeReady
+from cert_prep_backend.capture_integration.infrastructure.host_models import RuntimeReady
 
 
 AUTH_TOKEN = "test-token"
