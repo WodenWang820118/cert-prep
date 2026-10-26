@@ -85,16 +85,14 @@ from cert_prep_backend.domains.capture_workbench.runtime_policy import (
     SUPPORTED_RUNTIME_VERSION,
 )
 from cert_prep_backend.projects.infrastructure import repository as projects_repository
-from cert_prep_backend.domains.source_documents import operations
-from cert_prep_backend.domains.source_documents import (
-    repository as source_documents_repository,
-)
-from cert_prep_backend.domains.source_documents.document_worker_pool import (
+from cert_prep_backend.source_library.infrastructure import operations
+from cert_prep_backend.source_library.infrastructure import repository as source_documents_repository
+from cert_prep_backend.platform.document_worker_pool import (
     DocumentWorkItem,
     DocumentWorkerPool,
 )
-from cert_prep_backend.domains.source_documents.source_preparation import prepare_source
-from cert_prep_backend.domains.source_documents.storage import store_source_file
+from cert_prep_backend.source_library.infrastructure.source_preparation import prepare_source
+from cert_prep_backend.source_library.infrastructure.storage import store_source_file
 from cert_prep_backend.platform.database import Database
 from cert_prep_backend.routers.documents import _read_limited_upload
 

@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 
 from conftest import minimal_image, minimal_pdf
 from document_test_helpers import _create_project
-from cert_prep_backend.domains.source_documents.markdown import (
+from cert_prep_backend.source_library.api.markdown import (
     markdown_content_disposition,
     markdown_download_filename,
     render_pdf_markdown,

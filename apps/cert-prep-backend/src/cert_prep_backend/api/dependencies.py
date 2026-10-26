@@ -12,7 +12,7 @@ from cert_prep_backend.domains.capture_workbench.coordinator import CertPrepCapt
 from cert_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
 from cert_prep_backend.domains.mock_exams.streaming import StreamingDraftGenerationManager
 from cert_prep_backend.domains.runtime_installations import RuntimeInstallationManager
-from cert_prep_backend.domains.source_documents.document_worker_pool import (
+from cert_prep_backend.platform.document_worker_pool import (
     DocumentWorkerPool,
 )
 

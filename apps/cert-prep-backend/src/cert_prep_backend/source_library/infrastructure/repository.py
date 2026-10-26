@@ -1,23 +1,23 @@
 from __future__ import annotations
 
-from cert_prep_backend.domains.source_documents.chunks import (
+from cert_prep_backend.source_library.infrastructure.chunks import (
     get_chunk,
     get_source_chunks,
     list_chunks,
     update_chunk_text,
     update_chunk_translation,
 )
-from cert_prep_backend.domains.source_documents.documents import (
+from cert_prep_backend.source_library.infrastructure.documents import (
     get_document,
     get_source_file,
     list_documents,
     update_exam_state,
 )
-from cert_prep_backend.domains.source_documents.progress import (
+from cert_prep_backend.source_library.infrastructure.progress import (
     record_extraction_progress,
     recover_processing_documents,
 )
-from cert_prep_backend.domains.source_documents.records import ensure_document_exists
+from cert_prep_backend.source_library.infrastructure.records import ensure_document_exists
 
 __all__ = [
     "ensure_document_exists",

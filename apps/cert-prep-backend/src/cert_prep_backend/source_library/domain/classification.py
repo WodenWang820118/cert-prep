@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from cert_prep_backend.domains.exam_content import (
+from cert_prep_backend.source_library.domain.exam_content import (
     aggregate_content_profile,
     classification_summary,
     content_profile_from_value,
 )
-from cert_prep_backend.domains.source_documents.models import ExtractedPage
+from cert_prep_backend.source_library.domain.models import ExtractedPage
 
 
 def document_extraction_method_from_db(

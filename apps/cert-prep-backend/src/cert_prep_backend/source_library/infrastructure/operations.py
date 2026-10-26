@@ -16,15 +16,15 @@ from cert_prep_backend.platform.errors import (
     OperationNotCancellableError,
 )
 from cert_prep_backend.projects.infrastructure.repository import ensure_project_exists
-from cert_prep_backend.domains.source_documents.documents import (
+from cert_prep_backend.source_library.infrastructure.documents import (
     insert_processing_document,
 )
-from cert_prep_backend.domains.source_documents import chunks
-from cert_prep_backend.domains.source_documents.models import PdfExtractionResult
-from cert_prep_backend.domains.source_documents.progress import (
+from cert_prep_backend.source_library.infrastructure import chunks
+from cert_prep_backend.source_library.domain.models import PdfExtractionResult
+from cert_prep_backend.source_library.infrastructure.progress import (
     complete_document_extraction_in_transaction,
 )
-from cert_prep_backend.domains.source_documents.records import (
+from cert_prep_backend.source_library.infrastructure.records import (
     document_from_row,
     document_query,
 )

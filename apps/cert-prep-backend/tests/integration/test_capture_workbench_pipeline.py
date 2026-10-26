@@ -36,8 +36,8 @@ from cert_prep_backend.domains.capture_workbench import review_workflow
 from cert_prep_backend.domains.capture_workbench.persistence import (
     publish_capture_document,
 )
-from cert_prep_backend.domains.source_documents import operations
-from cert_prep_backend.domains.source_documents.models import ExtractedPage, PdfExtractionResult
+from cert_prep_backend.source_library.infrastructure import operations
+from cert_prep_backend.source_library.domain.models import ExtractedPage, PdfExtractionResult
 from capture_runtime_client import (
     CAPTURE_RUNTIME_VERSION,
     CaptureDocument,

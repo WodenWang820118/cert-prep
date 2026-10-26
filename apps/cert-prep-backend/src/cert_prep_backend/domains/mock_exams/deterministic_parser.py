@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from cert_prep_backend.domains.exam_content import parse_jlpt_question_blocks
+from cert_prep_backend.source_library.domain.exam_content import parse_jlpt_question_blocks
 from cert_prep_backend.domains.mock_exams.models import (
     AnswerKeySource,
     DraftSuggestion,

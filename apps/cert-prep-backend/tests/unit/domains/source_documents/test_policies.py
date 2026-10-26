@@ -1,4 +1,4 @@
-from cert_prep_backend.domains.source_documents import (
+from cert_prep_backend.source_library.domain import (
     DOCUMENT_STATUS_VALUES,
     PDF_EXTRACTION_METHOD_VALUES,
     ExtractedPage,

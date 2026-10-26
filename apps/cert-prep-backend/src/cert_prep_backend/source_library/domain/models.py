@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from cert_prep_backend.domains.exam_content import ContentProfileValue
+from cert_prep_backend.source_library.domain.exam_content import ContentProfileValue
 
-from .statuses import PdfExtractionMethodValue, SourceDocumentStatus, SourceDocumentStatusValue
+from cert_prep_backend.source_library.domain.statuses import PdfExtractionMethodValue, SourceDocumentStatus, SourceDocumentStatusValue
 
 
 DocumentStatus = SourceDocumentStatusValue

@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from cert_prep_backend.platform.database import Database, utc_now
-from cert_prep_backend.domains.source_documents.chunks import sync_document_chunks, upsert_page_chunk
-from cert_prep_backend.domains.source_documents.classification import (
+from cert_prep_backend.source_library.infrastructure.chunks import sync_document_chunks, upsert_page_chunk
+from cert_prep_backend.source_library.domain.classification import (
     document_classification_from_db,
     document_extraction_method_from_db,
 )
-from cert_prep_backend.domains.source_documents.models import ExtractedPage, PdfExtractionResult
-from cert_prep_backend.domains.source_documents.records import document_from_row, document_query
+from cert_prep_backend.source_library.domain.models import ExtractedPage, PdfExtractionResult
+from cert_prep_backend.source_library.infrastructure.records import document_from_row, document_query
 from cert_prep_backend.platform.errors import DocumentProcessingCanceledError, NotFoundError
 
 

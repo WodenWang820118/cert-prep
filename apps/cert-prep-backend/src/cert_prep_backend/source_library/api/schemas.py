@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
-from cert_prep_backend.domains.exam_content import ContentProfileValue
-from cert_prep_backend.domains.source_documents.models import (
+from cert_prep_backend.source_library.domain.exam_content import ContentProfileValue
+from cert_prep_backend.source_library.domain.models import (
     DocumentStatus,
     ExtractionMethod,
 )

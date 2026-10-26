@@ -24,7 +24,7 @@ from cert_prep_backend.domains.mock_exams.schemas import (
     QuestionDraftUpdate,
 )
 from cert_prep_backend.domains.mock_exams.streaming import StreamingDraftGenerationManager
-from cert_prep_backend.domains.source_documents import repository as source_documents_repository
+from cert_prep_backend.source_library.infrastructure import repository as source_documents_repository
 from cert_prep_backend.api.errors import (
     api_error,
     not_found_error,
