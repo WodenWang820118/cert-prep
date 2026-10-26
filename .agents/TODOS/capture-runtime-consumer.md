@@ -67,7 +67,7 @@ is not part of this OCR-only TODO.
     `apps/cert-prep-desktop/src-tauri/src/backend_process.rs`
     (`backend_launch_env`, capture-runtime environment identity fields), and
     `apps/cert-prep-desktop/src-tauri/src/capture_runtime.rs`
-    (`CaptureRuntimeConnection`); `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/runtime_provenance.py`
+    (`CaptureRuntimeConnection`); `apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/runtime_provenance.py`
     (`capture_runtime_attestation`, `_validate_candidate`); and the loaded
     producer SDK public `RuntimeReady`/`OcrComputePreflightV2` model and exact
     contract hash from the candidate ledger. Retain/regenerate the generated
@@ -131,16 +131,16 @@ is not part of this OCR-only TODO.
       durable discriminator. Ignore the embedded layer and reject every new
       `direct_pdf`/`embedded`/`mixed` write; retain legacy rows only for read
       compatibility.
-  - Owned paths/symbols: `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/ocr_summary.py`
+  - Owned paths/symbols: `apps/cert-prep-backend/src/cert_prep_backend/capture_integration/application/ocr_summary.py`
     (`build_ocr_summary`, `CaptureOcrSummaryRead`, `_map_provenance`),
-    `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/mapping.py`
+    `apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/mapping.py`
     (`capture_document_to_pdf_extraction`, `_ocr_only_extraction_method`),
-    `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/persistence.py`
+    `apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/persistence.py`
     (`publish_capture_document`),
-    `apps/cert-prep-backend/src/cert_prep_backend/domains/source_documents/operations.py`
+    `apps/cert-prep-backend/src/cert_prep_backend/source_library/infrastructure/operations.py`
     (`publish_success`, `create_and_attach_document`,
     `begin_capture_review_commit`, `finish_failed`), and
-    `apps/cert-prep-backend/src/cert_prep_backend/domains/mock_exams/draft_jobs.py`
+    `apps/cert-prep-backend/src/cert_prep_backend/authoring/infrastructure/draft_jobs.py`
     (`enqueue_chunk_job`, `begin_commit`, `request_cancel`).
     Replace/update focused tests in
     `apps/cert-prep-backend/tests/integration/test_capture_workbench_host.py`
@@ -173,7 +173,7 @@ is not part of this OCR-only TODO.
     replacement tests; preserve legacy rows and durable domain records.
   - Commit boundary: `fix(phase2): enforce exact OCR projection mapping`;
     record red/green test names and SHA.
-  Done: `domains/capture_workbench/ocr_summary.py` maps the producer OCR projection.
+  Done: `capture_integration/application/ocr_summary.py` maps the producer OCR projection.
 
 - [x] **Slice 3: delete-first host compute-policy inventory and pass-through contract.**
       Once the producer's generated public readiness contract is available,
@@ -185,12 +185,12 @@ is not part of this OCR-only TODO.
       usable.
   - Owned paths/symbols: delete the fallback import/class and
     `_validate_decision` in
-    `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/host_models.py`;
+    `apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/host_models.py`;
     delete `CertPrepCaptureCoordinator._assert_ocr_compute_preflight` and its
     `begin_capture` call in
-    `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/coordinator.py`;
+    `apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/coordinator.py`;
     delete `_install_candidate_runtime_ready_decoder` in
-    `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/client.py`;
+    `apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/client.py`;
      retain and regenerate the producer public generated model view
      `libs/cert-prep-api/src/lib/cert-prep-api.generated.ts`
      (`RuntimeReady`, `OcrComputePreflightV2`) without hand-editing or deleting
@@ -745,12 +745,12 @@ is not part of this OCR-only TODO.
      (`run`) for startup wiring; `apps/cert-prep-desktop/src-tauri/src/backend.rs`
      (`install_capture_runtime`, `start_capture_runtime`,
      `restart_owned_backend_with_capture_runtime`) as callers;
-     `apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/persistence.py`
+     `apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/persistence.py`
     (`publish_capture_document`),
-    `apps/cert-prep-backend/src/cert_prep_backend/domains/source_documents/operations.py`
+    `apps/cert-prep-backend/src/cert_prep_backend/source_library/infrastructure/operations.py`
     (`recover_operations`, `finish_failed`, `acknowledge_cancellation`,
     `_reset_document_derived_state`),
-    `apps/cert-prep-backend/src/cert_prep_backend/domains/mock_exams/draft_jobs.py`
+    `apps/cert-prep-backend/src/cert_prep_backend/authoring/infrastructure/draft_jobs.py`
     (`recover_runnable_jobs`, `request_cancel`, `begin_commit`),
     `apps/cert-prep-desktop/src-tauri/src/capture_runtime.rs`
     (`CaptureRuntimeInner::terminate_child_process_tree`,

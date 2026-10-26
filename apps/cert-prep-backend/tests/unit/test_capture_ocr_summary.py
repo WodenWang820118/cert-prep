@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 from capture_runtime_client import CAPTURE_RUNTIME_VERSION
 
-from cert_prep_backend.domains.capture_workbench.ocr_summary import (
+from cert_prep_backend.capture_integration.application.ocr_summary import (
     OcrSummaryValidationError,
     build_ocr_summary,
 )

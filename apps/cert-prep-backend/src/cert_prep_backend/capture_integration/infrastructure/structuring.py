@@ -29,7 +29,7 @@ from capture_runtime_client import (
 )
 
 from cert_prep_backend.platform.errors import ProviderUnavailableError
-from cert_prep_backend.domains.capture_workbench.client import (
+from cert_prep_backend.capture_integration.infrastructure.client import (
     CaptureRuntimeClient,
     CaptureRuntimeProtocolError,
 )

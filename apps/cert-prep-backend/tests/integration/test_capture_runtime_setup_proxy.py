@@ -20,7 +20,7 @@ from capture_runtime_client import (
     RuntimeRequirements,
     StructuringMode,
 )
-from cert_prep_backend.domains.capture_workbench.host_models import RuntimeReady
+from cert_prep_backend.capture_integration.infrastructure.host_models import RuntimeReady
 
 
 TOKEN = "cert-browser-token"

@@ -530,13 +530,13 @@ function readCaptureRuntimeConsumerInventoryFromSource(
     rustBuild.includes('cargo:rustc-env=CERT_PREP_CAPTURE_RUNTIME_VERSION={version}') &&
     rustConstants.includes('CAPTURE_RUNTIME_VERSION: &str = env!("CERT_PREP_CAPTURE_RUNTIME_VERSION")');
   const backendPolicy =
-    'apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/runtime_policy.py';
+    'apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/runtime_policy.py';
   const backendMapping =
-    'apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/mapping.py';
+    'apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/mapping.py';
   const backendClient =
-    'apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/client.py';
+    'apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/client.py';
   const runtimeProvenance =
-    'apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/runtime_provenance.py';
+    'apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/runtime_provenance.py';
   const desktopConstants = 'apps/cert-prep-desktop/src-tauri/src/constants.rs';
   const desktopCargo = 'apps/cert-prep-desktop/src-tauri/Cargo.toml';
   const desktopCargoLock = 'apps/cert-prep-desktop/src-tauri/Cargo.lock';
@@ -1354,12 +1354,12 @@ export function assertCaptureRuntimeConsumerVersions(
 
   requireMatch(
     workspaceRoot,
-    'apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/runtime_policy.py',
+    'apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/runtime_policy.py',
     /SUPPORTED_RUNTIME_VERSION = CAPTURE_RUNTIME_VERSION/u,
   );
   requireNotExists(
     workspaceRoot,
-    'apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/contracts.py',
+    'apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/contracts.py',
   );
   const pyproject = read(
     workspaceRoot,
@@ -1384,12 +1384,12 @@ export function assertCaptureRuntimeConsumerVersions(
   );
   requireMatch(
     workspaceRoot,
-    'apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/mapping.py',
+    'apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/mapping.py',
     /from capture_runtime_client import/u,
   );
   requireMatch(
     workspaceRoot,
-    'apps/cert-prep-backend/src/cert_prep_backend/domains/capture_workbench/client.py',
+    'apps/cert-prep-backend/src/cert_prep_backend/capture_integration/infrastructure/client.py',
     /SdkCaptureRuntimeClient/,
   );
   requireMatch(

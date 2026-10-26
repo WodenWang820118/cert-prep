@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from capture_runtime_client import CaptureDocument
-from cert_prep_backend.domains.capture_workbench.host_models import CaptureReview
-from cert_prep_backend.domains.capture_workbench.mapping import (
+from cert_prep_backend.capture_integration.infrastructure.host_models import CaptureReview
+from cert_prep_backend.capture_integration.infrastructure.mapping import (
     capture_document_to_audio_segments,
     capture_document_to_pdf_extraction,
 )

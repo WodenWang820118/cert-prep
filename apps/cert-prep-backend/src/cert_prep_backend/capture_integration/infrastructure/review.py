@@ -2,7 +2,7 @@
 
 from capture_runtime_client import RawCapture
 
-from cert_prep_backend.domains.capture_workbench.host_models import CaptureReview
+from cert_prep_backend.capture_integration.infrastructure.host_models import CaptureReview
 
 
 def reviewed_text_overrides(

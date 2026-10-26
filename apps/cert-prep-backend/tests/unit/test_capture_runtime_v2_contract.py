@@ -21,17 +21,17 @@ from capture_runtime_client import (
     RuntimeRequirements,
     StreamingCaptureStatus,
 )
-from cert_prep_backend.domains.capture_workbench.client import (
+from cert_prep_backend.capture_integration.infrastructure.client import (
     CaptureRuntimeClient,
     CaptureRuntimeProtocolError,
     CaptureUpload,
 )
-from cert_prep_backend.domains.capture_workbench.coordinator import (
+from cert_prep_backend.capture_integration.infrastructure.coordinator import (
     CaptureRuntimeStateUnknownError,
     CaptureRuntimeTimeoutError,
     CertPrepCaptureCoordinator,
 )
-from cert_prep_backend.domains.capture_workbench.host_models import RuntimeReady
+from cert_prep_backend.capture_integration.infrastructure.host_models import RuntimeReady
 
 
 TOKEN = "capture-sidecar-process-token-that-stays-in-backend"
@@ -76,7 +76,7 @@ def test_runtime_ready_accepts_the_generated_ocr_compute_preflight() -> None:
 def test_candidate_discovery_is_single_flight(monkeypatch: pytest.MonkeyPatch) -> None:
     """Concurrent UI readiness calls must not trip the candidate SDK guard."""
 
-    import cert_prep_backend.domains.capture_workbench.client as client_module
+    import cert_prep_backend.capture_integration.infrastructure.client as client_module
 
     entered = Event()
     release = Event()
@@ -139,7 +139,7 @@ def test_terminal_installation_refreshes_candidate_discovery_cache(
 ) -> None:
     """A post-install readiness check must observe newly available OCR compute."""
 
-    import cert_prep_backend.domains.capture_workbench.client as client_module
+    import cert_prep_backend.capture_integration.infrastructure.client as client_module
 
     def ready(*, with_gpu: bool) -> RuntimeReady:
         payload: dict[str, object] = {

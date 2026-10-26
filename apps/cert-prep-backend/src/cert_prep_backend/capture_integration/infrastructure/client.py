@@ -44,7 +44,7 @@ from capture_runtime_client import (
     SubmitStructuringBatch,
 )
 from capture_runtime_client.codec import decode_model as _decode_model
-from cert_prep_backend.domains.capture_workbench.host_models import RuntimeReady
+from cert_prep_backend.capture_integration.infrastructure.host_models import RuntimeReady
 
 
 _SHA256_PATTERN = re.compile(r"^[a-f0-9]{64}$")

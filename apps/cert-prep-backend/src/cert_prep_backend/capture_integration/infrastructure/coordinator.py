@@ -26,16 +26,16 @@ from capture_runtime_client import (
     StreamingCaptureStatus,
     StreamingEventType,
 )
-from cert_prep_backend.domains.capture_workbench.client import (
+from cert_prep_backend.capture_integration.infrastructure.client import (
     CaptureRuntimeClient,
     CaptureRuntimeCompatibilityError,
     CaptureRuntimeProtocolError,
     CaptureStreamingResult,
     CaptureUpload,
 )
-from cert_prep_backend.domains.capture_workbench.review import reviewed_text_overrides
-from cert_prep_backend.domains.capture_workbench.host_models import CaptureReview
-from cert_prep_backend.domains.capture_workbench.structuring import (
+from cert_prep_backend.capture_integration.infrastructure.review import reviewed_text_overrides
+from cert_prep_backend.capture_integration.infrastructure.host_models import CaptureReview
+from cert_prep_backend.capture_integration.infrastructure.structuring import (
     CaptureStructuringCanceledError,
     CaptureStructuringTimeoutError,
     CertPrepCaptureStructuringAdapter,

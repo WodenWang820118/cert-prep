@@ -18,19 +18,19 @@ from cert_prep_backend.api.dependencies import require_bearer_auth
 from cert_prep_backend.platform.config import Settings
 from cert_prep_backend.platform.database import Database
 from cert_prep_backend.platform.change_notifications import DatabaseChangeNotifier
-from cert_prep_backend.domains.capture_workbench.client import CaptureRuntimeClient
-from cert_prep_backend.domains.capture_workbench.runtime_policy import (
+from cert_prep_backend.capture_integration.infrastructure.client import CaptureRuntimeClient
+from cert_prep_backend.capture_integration.infrastructure.runtime_policy import (
     CAPTURE_DOCUMENT_SCHEMA_VERSION,
     SUPPORTED_API_VERSION,
     SUPPORTED_RUNTIME_VERSION,
 )
-from cert_prep_backend.domains.capture_workbench.coordinator import (
+from cert_prep_backend.capture_integration.infrastructure.coordinator import (
     CertPrepCaptureCoordinator,
 )
-from cert_prep_backend.domains.capture_workbench.review_workflow import (
+from cert_prep_backend.capture_integration.infrastructure.review_workflow import (
     cleanup_active_review_sessions,
 )
-from cert_prep_backend.domains.capture_workbench.structuring import (
+from cert_prep_backend.capture_integration.infrastructure.structuring import (
     CertPrepCaptureStructuringAdapter,
 )
 from cert_prep_backend.authoring.domain.ports import DraftGenerationProvider as LLMProvider
@@ -42,9 +42,11 @@ from cert_prep_backend.platform.document_worker_pool import (
     DocumentWorkerPool,
 )
 from cert_prep_backend.source_library.infrastructure.operations import recover_operations
+from cert_prep_backend.capture_integration.api import (
+    runtime_router as capture_runtime,
+    router as capture_workbench,
+)
 from cert_prep_backend.routers import (
-    capture_runtime,
-    capture_workbench,
     documents,
     llm,
     operation_events,

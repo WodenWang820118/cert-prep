@@ -13,7 +13,7 @@ from pydantic import ValidationError
 import pytest
 
 from cert_prep_backend.platform.errors import ProviderUnavailableError
-from cert_prep_backend.domains.capture_workbench.client import (
+from cert_prep_backend.capture_integration.infrastructure.client import (
     CaptureRuntimeClient,
     CaptureRuntimeCompatibilityError,
     CaptureRuntimeError,
@@ -38,11 +38,11 @@ from capture_runtime_client import (
     RuntimeRequirements,
     CaptureStreamingResult as RuntimeStreamingResult,
 )
-from cert_prep_backend.domains.capture_workbench.host_models import (
+from cert_prep_backend.capture_integration.infrastructure.host_models import (
     OcrComputePreflightV2,
     RuntimeReady,
 )
-from cert_prep_backend.domains.capture_workbench.coordinator import (
+from cert_prep_backend.capture_integration.infrastructure.coordinator import (
     CaptureRunResult,
     CaptureRuntimeCanceledError,
     CaptureRuntimeJobError,
@@ -51,12 +51,12 @@ from cert_prep_backend.domains.capture_workbench.coordinator import (
     CaptureRuntimeTimeoutError,
     CertPrepCaptureCoordinator,
 )
-from cert_prep_backend.domains.capture_workbench.mapping import (
+from cert_prep_backend.capture_integration.infrastructure.mapping import (
     capture_document_to_audio_segments,
     capture_document_to_pdf_extraction,
 )
 from conftest import _test_ocr_projection
-from cert_prep_backend.domains.capture_workbench.structuring import (
+from cert_prep_backend.capture_integration.infrastructure.structuring import (
     CaptureStructuringCanceledError,
     CaptureStructuringTimeoutError,
     CertPrepCaptureStructuringAdapter,

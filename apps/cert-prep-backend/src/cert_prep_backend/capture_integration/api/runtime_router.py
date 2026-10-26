@@ -15,7 +15,7 @@ from pydantic.alias_generators import to_camel
 
 from cert_prep_backend.api.dependencies import get_capture_runtime_client
 from cert_prep_backend.api.errors import api_error
-from cert_prep_backend.domains.capture_workbench.client import (
+from cert_prep_backend.capture_integration.infrastructure.client import (
     CaptureRuntimeClient,
     CaptureRuntimeCompatibilityError,
     CaptureRuntimeError,
@@ -27,8 +27,8 @@ from capture_runtime_client import (
     RuntimeInstallations,
     RuntimeRequirements,
 )
-from cert_prep_backend.domains.capture_workbench.host_models import RuntimeReady
-from cert_prep_backend.domains.capture_workbench.runtime_provenance import (
+from cert_prep_backend.capture_integration.infrastructure.host_models import RuntimeReady
+from cert_prep_backend.capture_integration.infrastructure.runtime_provenance import (
     capture_runtime_attestation,
 )
 

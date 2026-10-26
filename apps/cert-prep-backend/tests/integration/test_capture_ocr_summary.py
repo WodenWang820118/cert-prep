@@ -11,8 +11,8 @@ from fastapi.testclient import TestClient
 
 from cert_prep_backend.api.app import create_app
 from cert_prep_backend.platform.config import Settings
-from cert_prep_backend.domains.capture_workbench import review_sessions
-from cert_prep_backend.domains.capture_workbench.client import CaptureRuntimeError
+from cert_prep_backend.capture_integration.infrastructure import review_sessions
+from cert_prep_backend.capture_integration.infrastructure.client import CaptureRuntimeError
 from cert_prep_backend.projects.infrastructure import repository as projects_repository
 from cert_prep_backend.projects.api.schemas import ProjectCreate
 from cert_prep_backend.source_library.infrastructure import operations
