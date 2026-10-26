@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from cert_prep_backend.platform.config import Settings
-from cert_prep_backend.domains.source_documents import chunks as chunk_repository
+from cert_prep_backend.source_library.infrastructure import chunks as chunk_repository
 from cert_prep_backend.platform import database as database_module
 from cert_prep_backend.platform.database import MIGRATIONS, Database
 

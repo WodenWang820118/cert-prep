@@ -58,6 +58,7 @@ forbidden_modules = [
   "cert_prep_backend.domains",
   "cert_prep_backend.projects",
   "cert_prep_backend.practice",
+  "cert_prep_backend.source_library",
   "cert_prep_backend.api",
   "cert_prep_backend.routers",
 ]
@@ -72,6 +73,8 @@ source_modules = [
   "cert_prep_backend.practice.domain",
   "cert_prep_backend.practice.application",
   "cert_prep_backend.practice.infrastructure",
+  "cert_prep_backend.source_library.domain",
+  "cert_prep_backend.source_library.infrastructure",
 ]
 forbidden_modules = [
   "cert_prep_backend.api",
@@ -88,10 +91,7 @@ source_modules = [
   "cert_prep_backend.domains.mock_exams.ports",
   "cert_prep_backend.domains.mock_exams.deterministic_parser",
   "cert_prep_backend.domains.mock_exams.normalization",
-  "cert_prep_backend.domains.source_documents.models",
-  "cert_prep_backend.domains.source_documents.statuses",
-  "cert_prep_backend.domains.source_documents.policies",
-  "cert_prep_backend.domains.source_documents.ports",
+  "cert_prep_backend.source_library.domain",
   "cert_prep_backend.practice.domain",
 ]
 forbidden_modules = [
@@ -113,7 +113,7 @@ name = "Study Projects does not depend on other contexts"
 type = "forbidden"
 source_modules = ["cert_prep_backend.projects"]
 forbidden_modules = [
-  "cert_prep_backend.domains.source_documents",
+  "cert_prep_backend.source_library",
   "cert_prep_backend.domains.capture_workbench",
   "cert_prep_backend.domains.mock_exams",
   "cert_prep_backend.practice",
@@ -123,10 +123,7 @@ forbidden_modules = [
 [[tool.importlinter.contracts]]
 name = "Source Library does not depend on its downstream contexts"
 type = "forbidden"
-source_modules = [
-  "cert_prep_backend.domains.source_documents",
-  "cert_prep_backend.domains.exam_content",
-]
+source_modules = ["cert_prep_backend.source_library"]
 forbidden_modules = [
   "cert_prep_backend.domains.capture_workbench",
   "cert_prep_backend.domains.mock_exams",
@@ -163,7 +160,11 @@ name = "Each moved context layers api and infrastructure over application over d
 type = "layers"
 # D2: only layers with code exist, so each layer is optional; api and infrastructure do not
 # import each other. C3 adds each context here as it moves.
-containers = ["cert_prep_backend.projects", "cert_prep_backend.practice"]
+containers = [
+  "cert_prep_backend.projects",
+  "cert_prep_backend.practice",
+  "cert_prep_backend.source_library",
+]
 layers = ["(api) | (infrastructure)", "(application)", "(domain)"]
 # Known before C4, which adds the use cases and the aggregates: the routers call the
 # repositories directly, and the projects repository takes the HTTP DTOs.

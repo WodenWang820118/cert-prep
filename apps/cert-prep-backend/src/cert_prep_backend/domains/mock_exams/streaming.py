@@ -36,7 +36,7 @@ from cert_prep_backend.domains.mock_exams.provider import (
 from cert_prep_backend.domains.mock_exams.response_parsing import (
     is_non_fatal_generation_error,
 )
-from cert_prep_backend.domains.source_documents import repository as documents_repository
+from cert_prep_backend.source_library.infrastructure import repository as documents_repository
 from cert_prep_backend.platform.database import Database
 
 

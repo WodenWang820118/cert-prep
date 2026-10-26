@@ -55,35 +55,35 @@ from cert_prep_backend.domains.mock_exams.normalization import as_editable_quest
 from cert_prep_backend.domains.mock_exams.ports import DraftGenerationProvider as LLMProvider
 from cert_prep_backend.domains.mock_exams.streaming import StreamingDraftGenerationManager
 from cert_prep_backend.projects.infrastructure import repository as projects_repository
-from cert_prep_backend.domains.source_documents import operations as document_operations
-from cert_prep_backend.domains.source_documents import repository as source_documents_repository
-from cert_prep_backend.domains.source_documents.audio import (
+from cert_prep_backend.source_library.infrastructure import operations as document_operations
+from cert_prep_backend.source_library.infrastructure import repository as source_documents_repository
+from cert_prep_backend.source_library.infrastructure.audio import (
     BATCH_TRANSLATION_KEEP_ALIVE,
     OllamaTraditionalChineseTranslator,
     translate_chunk,
     translate_stale_chunks,
 )
-from cert_prep_backend.domains.source_documents.document_worker_pool import (
+from cert_prep_backend.platform.document_worker_pool import (
     DocumentWorkerPool,
     DocumentWorkItem,
 )
-from cert_prep_backend.domains.source_documents.markdown import (
+from cert_prep_backend.source_library.api.markdown import (
     markdown_content_disposition,
     render_pdf_markdown,
 )
-from cert_prep_backend.domains.source_documents.schemas import (
+from cert_prep_backend.source_library.api.schemas import (
     ChunkList,
     ChunkRead,
     ChunkUpdate,
     DocumentList,
     DocumentRead,
 )
-from cert_prep_backend.domains.source_documents.source_preparation import (
+from cert_prep_backend.source_library.infrastructure.source_preparation import (
     PreparedSource,
     StoredSourceReference,
     prepare_source,
 )
-from cert_prep_backend.domains.source_documents.storage import sha256_hex, store_source_file
+from cert_prep_backend.source_library.infrastructure.storage import sha256_hex, store_source_file
 
 
 logger = logging.getLogger(__name__)

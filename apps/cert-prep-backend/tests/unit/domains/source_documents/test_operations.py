@@ -15,13 +15,13 @@ from cert_prep_backend.platform.errors import (
     DocumentProcessingCanceledError,
     OperationNotCancellableError,
 )
-from cert_prep_backend.domains.source_documents.models import (
+from cert_prep_backend.source_library.domain.models import (
     ExtractedPage,
     PdfExtraction,
 )
 from cert_prep_backend.domains.mock_exams import draft_jobs
-from cert_prep_backend.domains.source_documents import operations
-from cert_prep_backend.domains.source_documents.progress import (
+from cert_prep_backend.source_library.infrastructure import operations
+from cert_prep_backend.source_library.infrastructure.progress import (
     record_extraction_progress,
 )
 from cert_prep_backend.platform.database import Database

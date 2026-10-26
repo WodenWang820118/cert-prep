@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from .models import PdfExtraction, SourceDocument, SourceDocumentChunk, SourceFile
-from .statuses import SourceDocumentStatus
+from cert_prep_backend.source_library.domain.models import PdfExtraction, SourceDocument, SourceDocumentChunk, SourceFile
+from cert_prep_backend.source_library.domain.statuses import SourceDocumentStatus
 
 
 class SourceTextExtractor(Protocol):

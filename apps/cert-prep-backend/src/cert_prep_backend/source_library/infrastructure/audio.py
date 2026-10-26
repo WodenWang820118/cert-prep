@@ -11,7 +11,7 @@ from cert_prep_backend.platform.errors import (
     DocumentProcessingCanceledError,
 )
 from cert_prep_backend.platform.database import Database
-from cert_prep_backend.domains.source_documents import chunks
+from cert_prep_backend.source_library.infrastructure import chunks
 
 
 TRANSLATION_OPTIONS = {

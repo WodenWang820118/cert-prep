@@ -1,4 +1,4 @@
-from cert_prep_backend.domains.exam_content import (
+from cert_prep_backend.source_library.domain.exam_content import (
     ContentProfile,
     QuestionItemKind,
     classify_exam_text,

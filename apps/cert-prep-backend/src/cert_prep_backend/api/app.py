@@ -37,11 +37,11 @@ from cert_prep_backend.domains.mock_exams.ports import DraftGenerationProvider a
 from cert_prep_backend.domains.mock_exams.provider import lazy_provider_from_settings
 from cert_prep_backend.domains.mock_exams.streaming import StreamingDraftGenerationManager
 from cert_prep_backend.domains.runtime_installations import RuntimeInstallationManager
-from cert_prep_backend.domains.source_documents import repository as source_documents_repository
-from cert_prep_backend.domains.source_documents.document_worker_pool import (
+from cert_prep_backend.source_library.infrastructure import repository as source_documents_repository
+from cert_prep_backend.platform.document_worker_pool import (
     DocumentWorkerPool,
 )
-from cert_prep_backend.domains.source_documents.operations import recover_operations
+from cert_prep_backend.source_library.infrastructure.operations import recover_operations
 from cert_prep_backend.routers import (
     capture_runtime,
     capture_workbench,

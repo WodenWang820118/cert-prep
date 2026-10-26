@@ -15,8 +15,8 @@ from cert_prep_backend.domains.capture_workbench.ocr_summary import (
     validate_ocr_projection_provenance,
 )
 from cert_prep_backend.domains.capture_workbench.review import reviewed_text_overrides
-from cert_prep_backend.domains.exam_content import classify_exam_text, line_metadata
-from cert_prep_backend.domains.source_documents.models import (
+from cert_prep_backend.source_library.domain.exam_content import classify_exam_text, line_metadata
+from cert_prep_backend.source_library.domain.models import (
     ExtractedPage,
     PdfExtractionResult,
 )

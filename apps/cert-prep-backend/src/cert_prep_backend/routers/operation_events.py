@@ -19,8 +19,8 @@ from cert_prep_backend.platform.sse import operation_snapshot_stream, streaming_
 from cert_prep_backend.domains.mock_exams import draft_jobs
 from cert_prep_backend.domains.mock_exams.streaming import StreamingDraftGenerationManager
 from cert_prep_backend.domains.runtime_installations import RuntimeInstallationManager
-from cert_prep_backend.domains.source_documents import operations as document_operations
-from cert_prep_backend.domains.source_documents import repository as source_documents_repository
+from cert_prep_backend.source_library.infrastructure import operations as document_operations
+from cert_prep_backend.source_library.infrastructure import repository as source_documents_repository
 from cert_prep_backend.platform.change_notifications import DatabaseChangeNotifier
 from cert_prep_backend.platform.database import Database
 

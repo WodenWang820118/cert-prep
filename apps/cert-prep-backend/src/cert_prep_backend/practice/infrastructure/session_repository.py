@@ -32,7 +32,7 @@ from cert_prep_backend.practice.infrastructure.row_mappers import (
 from cert_prep_backend.practice.infrastructure.wrong_answer_repository import (
     list_current_wrong_answer_models,
 )
-from cert_prep_backend.domains.source_documents import repository as documents_repository
+from cert_prep_backend.source_library.infrastructure import repository as documents_repository
 from cert_prep_backend.platform.database import Database, utc_now
 
 

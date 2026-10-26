@@ -3,7 +3,7 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field
 
 from cert_prep_backend.domains.runtime_schemas import MachineInventoryRead
-from cert_prep_backend.domains.exam_content import QuestionItemKind, QuestionItemKindValue
+from cert_prep_backend.source_library.domain.exam_content import QuestionItemKind, QuestionItemKindValue
 from cert_prep_backend.domains.mock_exams.models import (
     AnswerKeySource,
     AnswerKeySourceValue,
