@@ -3,26 +3,27 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 import re
 import unicodedata
 from urllib.parse import quote
 
+from cert_prep_backend.source_library.domain.models import DocumentChunk
 
 def render_pdf_markdown(
     *,
     filename: str,
-    chunks: Sequence[Mapping[str, object]],
+    chunks: Sequence[DocumentChunk],
 ) -> str:
     """Render current persisted page text without changing its OCR content."""
 
     pages: dict[int, list[str]] = defaultdict(list)
     for chunk in chunks:
-        page_number = int(chunk["page_number"])
+        page_number = int(chunk.page_number)
         if page_number < 1:
             raise ValueError("PDF Markdown chunks must have a positive page number")
-        pages[page_number].append(str(chunk.get("text") or "").rstrip())
+        pages[page_number].append(str(chunk.text or "").rstrip())
 
     lines = [f"# {Path(filename).name}", ""]
     for page_number in sorted(pages):

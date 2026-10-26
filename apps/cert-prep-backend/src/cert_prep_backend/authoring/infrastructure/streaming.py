@@ -15,7 +15,7 @@ from cert_prep_backend.authoring.domain.models import (
     DraftGenerationStrategy,
     DraftSuggestion,
     SourceChunk,
-    source_chunk_from_record,
+    source_chunk_from_document_chunk,
 )
 from cert_prep_backend.authoring.domain.normalization import as_editable_question
 from cert_prep_backend.authoring.domain.ports import (
@@ -80,7 +80,7 @@ class StreamingDraftGenerationManager:
             if len(jobs) >= max_jobs:
                 break
 
-            source_chunk = _source_chunk_from_record(chunk)
+            source_chunk = source_chunk_from_document_chunk(chunk)
             if not _should_enqueue_streaming_chunk(source_chunk, DraftGenerationStrategy(strategy)):
                 continue
 
@@ -89,8 +89,8 @@ class StreamingDraftGenerationManager:
                     db,
                     project_id=project_id,
                     document_id=document_id,
-                    chunk_id=chunk["id"],
-                    page_number=chunk["page_number"],
+                    chunk_id=chunk.id,
+                    page_number=chunk.page_number,
                     strategy=strategy,
                     provider=str(getattr(self._provider, "provider", "unknown")),
                     model=str(getattr(self._provider, "model", "")),
@@ -222,7 +222,7 @@ class StreamingDraftGenerationManager:
             chunk = documents_repository.get_chunk(
                 db, job["project_id"], job["document_id"], job["chunk_id"]
             )
-            source_chunk = _source_chunk_from_record(chunk)
+            source_chunk = source_chunk_from_document_chunk(chunk)
             suggestions = [
                 as_editable_question(suggestion)
                 for suggestion in _generate_streaming_fast_first_drafts(
@@ -338,7 +338,7 @@ class StreamingDraftGenerationManager:
             if operation["status"] != manual_operations.ManualDraftOperationStatus.RUNNING:
                 return
             chunks = [
-                _source_chunk_from_record(chunk)
+                source_chunk_from_document_chunk(chunk)
                 for chunk in documents_repository.get_source_chunks(
                     db,
                     operation["project_id"],
@@ -531,5 +531,3 @@ def _compact_reasoning_chunk(source_chunk: SourceChunk) -> SourceChunk:
     )
 
 
-def _source_chunk_from_record(chunk: dict) -> SourceChunk:
-    return source_chunk_from_record(chunk)

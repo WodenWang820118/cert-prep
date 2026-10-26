@@ -10,7 +10,7 @@ from cert_prep_backend.api.dependencies import (
 from cert_prep_backend.platform.dependencies import get_database
 from cert_prep_backend.authoring.infrastructure import draft_jobs
 from cert_prep_backend.authoring.infrastructure import repository as mock_exams_repository
-from cert_prep_backend.authoring.domain.models import source_chunk_from_record
+from cert_prep_backend.authoring.domain.models import source_chunk_from_document_chunk
 from cert_prep_backend.authoring.domain.ports import DraftGenerationProvider as LLMProvider
 from cert_prep_backend.authoring.infrastructure.provider import generate_drafts_for_strategy
 from cert_prep_backend.authoring.api.schemas import (
@@ -203,7 +203,7 @@ def generate_document_drafts(
 ) -> dict:
     try:
         chunks = [
-            source_chunk_from_record(chunk)
+            source_chunk_from_document_chunk(chunk)
             for chunk in source_documents_repository.get_source_chunks(
                 db, project_id, document_id
             )

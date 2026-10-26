@@ -93,7 +93,7 @@ class SourceDocument:
 
 
 @dataclass(frozen=True, slots=True)
-class SourceDocumentChunk:
+class DocumentChunk:
     id: str
     document_id: str
     page_number: int
@@ -113,3 +113,9 @@ class SourceDocumentChunk:
     source_revision: int = 1
     translated_text: str | None = None
     translation_source_revision: int | None = None
+
+    @property
+    def translation_stale(self) -> bool:
+        """An audio transcript chunk edited since its translation was made."""
+
+        return self.locator_kind == "time" and self.translation_source_revision != self.source_revision

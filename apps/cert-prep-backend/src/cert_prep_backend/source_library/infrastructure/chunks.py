@@ -7,12 +7,12 @@ from cert_prep_contracts.transcription import TranscriptSegment
 
 from cert_prep_backend.platform.database import Database, utc_now
 from cert_prep_backend.source_library.domain.exam_content import content_profile_from_value, line_metadata
-from cert_prep_backend.source_library.domain.models import ExtractedPage
+from cert_prep_backend.source_library.domain.models import DocumentChunk, ExtractedPage
 from cert_prep_backend.source_library.infrastructure.records import ensure_document_exists
 from cert_prep_backend.platform.errors import NotFoundError
 
 
-def list_chunks(db: Database, project_id: str, document_id: str) -> list[dict]:
+def list_chunks(db: Database, project_id: str, document_id: str) -> list[DocumentChunk]:
     """List persisted page chunks for a source document."""
 
     ensure_document_exists(db, project_id, document_id)
@@ -29,13 +29,13 @@ def list_chunks(db: Database, project_id: str, document_id: str) -> list[dict]:
     return [chunk_from_row(row) for row in rows]
 
 
-def get_source_chunks(db: Database, project_id: str, document_id: str) -> list[dict]:
+def get_source_chunks(db: Database, project_id: str, document_id: str) -> list[DocumentChunk]:
     """Return chunks in the shape consumed by mock-exam draft generation."""
 
     return list_chunks(db, project_id, document_id)
 
 
-def get_chunk(db: Database, project_id: str, document_id: str, chunk_id: str) -> dict:
+def get_chunk(db: Database, project_id: str, document_id: str, chunk_id: str) -> DocumentChunk:
     """Load a single source document chunk."""
 
     with db.connect() as connection:
@@ -52,39 +52,35 @@ def get_chunk(db: Database, project_id: str, document_id: str, chunk_id: str) ->
     return chunk_from_row(row)
 
 
-def chunk_from_row(row: Row) -> dict:
-    """Map a persisted chunk row into the API/domain dictionary shape."""
+def chunk_from_row(row: Row) -> DocumentChunk:
+    """Map a persisted chunk row into a DocumentChunk."""
 
-    return {
-        "id": row["id"],
-        "document_id": row["document_id"],
-        "page_number": row["page_number"],
-        "chunk_index": row["chunk_index"],
-        "text": row["text"],
-        "raw_text": row["raw_text"],
-        "line_start": row["line_start"],
-        "line_end": row["line_end"],
-        "line_count": row["line_count"],
-        "source_excerpt": row["source_excerpt"],
-        "extraction_method": row["extraction_method"],
-        "content_profile": row["content_profile"],
-        "created_at": row["created_at"],
-        "locator_kind": row["locator_kind"],
-        "start_ms": row["start_ms"],
-        "end_ms": row["end_ms"],
-        "source_revision": row["source_revision"],
-        "translated_text": row["translated_text"],
-        "translation_source_revision": row["translation_source_revision"],
-        "translation_stale": (
-            row["locator_kind"] == "time"
-            and row["translation_source_revision"] != row["source_revision"]
-        ),
-    }
+    return DocumentChunk(
+        id=row["id"],
+        document_id=row["document_id"],
+        page_number=row["page_number"],
+        chunk_index=row["chunk_index"],
+        text=row["text"],
+        raw_text=row["raw_text"],
+        line_start=row["line_start"],
+        line_end=row["line_end"],
+        line_count=row["line_count"],
+        source_excerpt=row["source_excerpt"],
+        extraction_method=row["extraction_method"],
+        content_profile=row["content_profile"],
+        created_at=row["created_at"],
+        locator_kind=row["locator_kind"],
+        start_ms=row["start_ms"],
+        end_ms=row["end_ms"],
+        source_revision=row["source_revision"],
+        translated_text=row["translated_text"],
+        translation_source_revision=row["translation_source_revision"],
+    )
 
 
 def update_chunk_text(
     db: Database, project_id: str, document_id: str, chunk_id: str, text: str
-) -> dict:
+) -> DocumentChunk:
     normalized = text.strip()
     if not normalized:
         raise ValueError("Japanese transcript text must not be empty.")
@@ -119,7 +115,7 @@ def update_chunk_translation(
     translated_text: str,
     *,
     expected_source_revision: int,
-) -> dict:
+) -> DocumentChunk:
     with db.connect() as connection:
         connection.execute("BEGIN IMMEDIATE")
         updated = compare_and_set_chunk_translation(

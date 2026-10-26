@@ -85,7 +85,7 @@ from cert_prep_backend.capture_integration.infrastructure.runtime_policy import 
     SUPPORTED_RUNTIME_VERSION,
 )
 from cert_prep_backend.projects.infrastructure import repository as projects_repository
-from cert_prep_backend.source_library.domain.models import SourceDocument
+from cert_prep_backend.source_library.domain.models import DocumentChunk, SourceDocument
 from cert_prep_backend.source_library.infrastructure import operations
 from cert_prep_backend.source_library.infrastructure import repository as source_documents_repository
 from cert_prep_backend.platform.document_worker_pool import (
@@ -1467,14 +1467,14 @@ def _document_projection(
     db: Database,
     project_id: str,
     document: SourceDocument,
-    chunks: list[dict],
+    chunks: list[DocumentChunk],
 ) -> CaptureDocument:
     segments = [
         RawCaptureSegment(
-            segment_id=chunk["id"],
+            segment_id=chunk.id,
             order=index,
-            locator={"kind": "page", "page": max(1, chunk["page_number"])},
-            text=(chunk["raw_text"] or chunk["text"]).strip(),
+            locator={"kind": "page", "page": max(1, chunk.page_number)},
+            text=(chunk.raw_text or chunk.text).strip(),
         )
         for index, chunk in enumerate(chunks)
     ]
@@ -1486,7 +1486,7 @@ def _document_projection(
             source_segment_id=segment.segment_id,
             locator=segment.locator,
             source_text=segment.text,
-            target_text=chunks[index]["text"].strip(),
+            target_text=chunks[index].text.strip(),
         )
         for index, segment in enumerate(segments)
     ]
